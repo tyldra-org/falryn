@@ -81,6 +81,13 @@ tests small, explicit, and user-focused.
   required children and integrated acceptance criteria pass, then close the
   parent and verify **Done**. Do not mix unrelated issues in one branch or pull
   request.
+- Name branches with a concise repository type prefix such as `feat/`, `fix/`,
+  `docs/`, `refactor/`, `test/`, or `chore/`, followed by the issue number and
+  purpose when applicable. Do not require or add an agent-name prefix such as
+  `codex/`.
+- After review and explicit approval, use a merge method enabled and selected
+  by the repository's current GitHub settings. Do not hard-code squash, rebase,
+  or merge commits as a repository rule.
 - Treat `Plan — Target: ...`, `Implement — Target: ...`, and
   `Verify — Target: ...` as mandatory mode selectors. Before acting, read the
   canonical contracts in
