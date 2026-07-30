@@ -95,6 +95,13 @@ tests small, explicit, and user-focused.
   resolve the exact GitHub target, and obey the selected mode's scope, allowed
   mutations, stop conditions, status transitions, validation, and final report.
   Do not interpret RavenCode milestone or phase identifiers as Falryn targets.
+- End every Plan, Implement, Verify, merge, and release-related report with one
+  copy-ready `Suggested next prompt: ...` selected from current GitHub state.
+  Follow the transition rules in
+  [`falryn-docs/DEVELOPMENT.md`](https://github.com/yogeshprasad098/falryn-docs/blob/main/DEVELOPMENT.md#suggesting-the-next-prompt).
+  Use exact repository object numbers or milestone titles, never placeholders.
+  A suggestion helps the user choose the next action; it does not authorize the
+  agent to run that action.
 - Read `CURRENT-STATE.md` before making implementation or availability claims.
   It is the sole concise implementation-status owner. Update it only with
   behavior supported by current source and validation; do not copy roadmap

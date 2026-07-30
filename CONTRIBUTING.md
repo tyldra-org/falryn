@@ -42,6 +42,10 @@ integration subissue rather than a parent mega-PR.
   `CURRENT-STATE.md`. Verification does not merge without a separate explicit
   instruction.
 
+Every result ends with one exact, copy-ready `Suggested next prompt` based on
+the refreshed GitHub state. The suggestion is guidance, not authorization to
+perform the next action.
+
 ## Documentation
 
 User-facing or developer-facing documentation belongs in the companion
