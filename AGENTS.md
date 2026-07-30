@@ -102,6 +102,12 @@ tests small, explicit, and user-focused.
   Use exact repository object numbers or milestone titles, never placeholders.
   A suggestion helps the user choose the next action; it does not authorize the
   agent to run that action.
+- When a report names a repository file the user may need to open, provide both
+  its clickable absolute path in the current local checkout and its
+  repository-qualified path with a canonical GitHub link when one exists.
+  Resolve the physical path at report time; never commit a user-specific
+  absolute path or copy one into an issue or pull request. Follow
+  [`falryn-docs/DEVELOPMENT.md`](https://github.com/yogeshprasad098/falryn-docs/blob/main/DEVELOPMENT.md#reporting-file-locations).
 - Read `CURRENT-STATE.md` before making implementation or availability claims.
   It is the sole concise implementation-status owner. Update it only with
   behavior supported by current source and validation; do not copy roadmap

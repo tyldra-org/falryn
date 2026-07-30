@@ -46,6 +46,11 @@ Every result ends with one exact, copy-ready `Suggested next prompt` based on
 the refreshed GitHub state. The suggestion is guidance, not authorization to
 perform the next action.
 
+When a report points to a repository file, it includes a clickable local path
+when a checkout is available plus the repository-qualified path and GitHub
+link. Machine-specific absolute paths belong only in the report, never in
+committed documentation or GitHub planning records.
+
 ## Documentation
 
 User-facing or developer-facing documentation belongs in the companion
