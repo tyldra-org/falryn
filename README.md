@@ -4,6 +4,23 @@ Falryn is a new local terminal coding agent built from scratch with Bun and
 TypeScript. It is neither a RavenCode migration nor a compatibility layer:
 Falryn owns its code, architecture, data, documentation, and release history.
 
+## Track Falryn
+
+- [Current state](CURRENT-STATE.md) — what is actually implemented and verified
+  in this repository, plus the current planning frontier.
+- [Falryn Roadmap](https://github.com/users/yogeshprasad098/projects/2) — live
+  milestones, parent outcomes, native subissues, status, priority, and linked
+  pull requests.
+- [Documentation map](https://github.com/yogeshprasad098/falryn-docs/blob/main/DOCUMENTATION-MAP.md)
+  — canonical product, architecture, subsystem, UI, guide, reference, and
+  operations owners.
+- [Falryn Docs](https://github.com/yogeshprasad098/falryn-docs) — the companion
+  documentation repository.
+
+Design pages describe the target. GitHub owns planning and workflow state.
+[`CURRENT-STATE.md`](CURRENT-STATE.md), source, tests, and released artifacts
+establish what exists. These roles are linked but never interchangeable.
+
 ## Direction
 
 - TypeScript and TSX product code; no Rust workspace or Cargo toolchain.
@@ -38,8 +55,9 @@ protects important behavior with its own tests and fixtures.
 - `falryn-docs` contains user and developer documentation.
 
 The minimal Bun and TypeScript toolchain scaffold is present; product behavior
-has not been implemented yet. Start meaningful work from a Ready GitHub issue
-and keep each pull request focused on that issue.
+has not been implemented yet. See [Current state](CURRENT-STATE.md) for the
+verified inventory and next planning action. Start meaningful work from a Ready
+GitHub issue and keep each pull request focused on that issue.
 
 ## Development commands
 

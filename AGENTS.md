@@ -70,7 +70,15 @@ tests small, explicit, and user-focused.
 - Treat the companion `falryn-docs` repository as the home for user and
   developer documentation. Keep this repository's Markdown code-adjacent.
 - Work from a Ready GitHub issue when the change is meaningful. Do not create
-  phase, gate, evidence, or status-inventory documents.
+  phase, gate, evidence, or duplicate status-inventory documents.
+- Read `CURRENT-STATE.md` before making implementation or availability claims.
+  It is the sole concise implementation-status owner. Update it only with
+  behavior supported by current source and validation; do not copy roadmap
+  checklists or design contracts into it.
+- Use the [Falryn Roadmap](https://github.com/users/yogeshprasad098/projects/2)
+  for live planning state and `falryn-docs/DOCUMENTATION-MAP.md` for canonical
+  design ownership. An issue, Project field, or design target does not establish
+  implementation truth.
 - Run `bun run check` for the normal repository checks. Run `bun run build`
   when packaging changes. Add validation with the behavior it protects and
   report any check that could not run.
