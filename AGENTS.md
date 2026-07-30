@@ -81,6 +81,13 @@ tests small, explicit, and user-focused.
   required children and integrated acceptance criteria pass, then close the
   parent and verify **Done**. Do not mix unrelated issues in one branch or pull
   request.
+- Treat `Plan — Target: ...`, `Implement — Target: ...`, and
+  `Verify — Target: ...` as mandatory mode selectors. Before acting, read the
+  canonical contracts in
+  [`falryn-docs/DEVELOPMENT.md`](https://github.com/yogeshprasad098/falryn-docs/blob/main/DEVELOPMENT.md#recognized-prompt-forms),
+  resolve the exact GitHub target, and obey the selected mode's scope, allowed
+  mutations, stop conditions, status transitions, validation, and final report.
+  Do not interpret RavenCode milestone or phase identifiers as Falryn targets.
 - Read `CURRENT-STATE.md` before making implementation or availability claims.
   It is the sole concise implementation-status owner. Update it only with
   behavior supported by current source and validation; do not copy roadmap
