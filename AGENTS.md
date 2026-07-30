@@ -1,0 +1,76 @@
+@/Users/yogeshprasad/.codex/AGENTS.md
+
+# Falryn agent guidance
+
+Falryn is a new Bun and TypeScript terminal product built from scratch. It is
+not a RavenCode migration, fork, or compatibility layer. Keep its source and
+tests small, explicit, and user-focused.
+
+## Required guidance and skills
+
+- The global guidance imported from `/Users/yogeshprasad/.codex/AGENTS.md` is
+  mandatory for every task in this repository. Read and apply it before this
+  file and before inspecting, creating, editing, updating, deleting, moving,
+  reviewing, or validating repository content. This file only adds
+  Falryn-specific rules; it never replaces or weakens the global documentation,
+  command, safety, and Git workflow rules.
+- Load and follow the global `typescript-best-practices` skill before creating,
+  editing, updating, moving, deleting, reviewing, debugging, or configuring any
+  TypeScript, TSX, JavaScript, type declaration, TypeScript test, build script,
+  or `tsconfig` behavior. This requirement applies to new features, bug fixes,
+  refactors, small edits, generated source, tests, configuration, and review
+  work. Select and read the skill's relevant module, then apply its guidance for
+  strict typing, contracts, module boundaries, dependency direction, async and
+  error handling, tests, compiler configuration, and maintainability.
+- Load and follow the global `opentui` skill before creating, editing, updating,
+  moving, deleting, reviewing, debugging, testing, configuring, or packaging
+  any OpenTUI-related code or behavior. This includes React TUI components,
+  presentation adapters, renderer lifecycle, screen modes, layout, styling,
+  input, focus, keymaps, animation, terminal compatibility, frame and
+  interaction tests, native assets, and Bun standalone packaging. Inspect the
+  installed OpenTUI version and read the skill-routed current upstream
+  documentation for every affected API; use documented components, explicit
+  renderer cleanup, and focused tests.
+- When a task touches OpenTUI TypeScript or TSX, both skills are mandatory:
+  apply the global guidance first, then the relevant
+  `typescript-best-practices` module and OpenTUI upstream guidance before
+  changing code.
+- Skill guidance supports implementation quality but does not override Falryn's
+  architecture, a Ready issue's scope, or repository-owned validation.
+
+- Use TypeScript and TSX for product code; do not introduce Rust, Cargo, or an
+  internal IPC engine.
+- Use Bun for package management, scripts, tests, bundling, and compiled
+  executables. Use Biome for formatting and linting and `tsc --noEmit` for
+  type-checking. Do not add esbuild unless a documented Bun limitation requires
+  it.
+- Keep the interactive application in one normal Bun process. Put intentional
+  external commands behind a narrow tool-runner boundary.
+- Use yargs for command routing and React with OpenTUI for the terminal UI.
+- Keep persistence local and simple with `bun:sqlite` plus versioned SQL
+  migrations.
+- Build the complete planned capability set in TypeScript: the unified agent runtime,
+  provider and tool-call lifecycle, workspace/file/search/Git/LSP tools,
+  context, compression, Brief, Hush, Loom, Memory, artifacts, and computer
+  use. Do not silently reduce a capability because earlier experiments used
+  Rust.
+- Keep provider and UI code behind one explicit tool path: validate and record
+  an invocation, adapt it to a domain tool, execute it through a narrow
+  boundary, then return typed output and artifacts. Do not let those layers
+  access files or external tools directly.
+- Earlier RavenCode documents and archives are research references only. Agents
+  may inspect their source, tests, fixtures, and history to understand call
+  flow, algorithms, invariants, failures, performance choices, and edge cases.
+  Translate useful findings into language-independent Falryn contracts and
+  implement them for TypeScript/Bun. Archive repositories do not define Falryn
+  truth or become dependencies; exact source/text reuse requires explicit
+  provenance, license, attribution, changed-assumption, destination, and test
+  review. Record Falryn decisions in focused GitHub issues and protect adopted
+  behavior with Falryn-owned tests or fixtures.
+- Treat the companion `falryn-docs` repository as the home for user and
+  developer documentation. Keep this repository's Markdown code-adjacent.
+- Work from a Ready GitHub issue when the change is meaningful. Do not create
+  phase, gate, evidence, or status-inventory documents.
+- Run `bun run check` for the normal repository checks. Run `bun run build`
+  when packaging changes. Add validation with the behavior it protects and
+  report any check that could not run.
