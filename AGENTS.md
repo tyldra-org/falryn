@@ -73,11 +73,14 @@ tests small, explicit, and user-focused.
   phase, gate, evidence, or duplicate status-inventory documents.
 - Follow the canonical delivery workflow in
   [`falryn-docs/DEVELOPMENT.md`](https://github.com/yogeshprasad098/falryn-docs/blob/main/DEVELOPMENT.md):
-  normally one native implementation subissue maps to one short-lived branch
-  and one pull request containing `Closes #<subissue>`. Parent issues are
-  outcome trackers, not implementation branches or mega-PRs; close a parent
-  only after all required subissues and its integrated acceptance criteria
-  pass. Do not mix unrelated subissues in one branch or pull request.
+  one PR-sized standalone issue or native implementation subissue maps to one
+  short-lived branch and one pull request containing `Closes #<issue>`. Plan
+  keeps work **Todo**; Implement assigns the issue and sets **In Progress**;
+  after an approved merge, re-read GitHub and verify that the intended issue
+  closed and its Project status is **Done**. Keep any parent open until all
+  required children and integrated acceptance criteria pass, then close the
+  parent and verify **Done**. Do not mix unrelated issues in one branch or pull
+  request.
 - Read `CURRENT-STATE.md` before making implementation or availability claims.
   It is the sole concise implementation-status owner. Update it only with
   behavior supported by current source and validation; do not copy roadmap
