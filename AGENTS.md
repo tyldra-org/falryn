@@ -71,6 +71,13 @@ tests small, explicit, and user-focused.
   developer documentation. Keep this repository's Markdown code-adjacent.
 - Work from a Ready GitHub issue when the change is meaningful. Do not create
   phase, gate, evidence, or duplicate status-inventory documents.
+- Follow the canonical delivery workflow in
+  [`falryn-docs/DEVELOPMENT.md`](https://github.com/yogeshprasad098/falryn-docs/blob/main/DEVELOPMENT.md):
+  normally one native implementation subissue maps to one short-lived branch
+  and one pull request containing `Closes #<subissue>`. Parent issues are
+  outcome trackers, not implementation branches or mega-PRs; close a parent
+  only after all required subissues and its integrated acceptance criteria
+  pass. Do not mix unrelated subissues in one branch or pull request.
 - Read `CURRENT-STATE.md` before making implementation or availability claims.
   It is the sole concise implementation-status owner. Update it only with
   behavior supported by current source and validation; do not copy roadmap
