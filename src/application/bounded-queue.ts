@@ -47,7 +47,13 @@ export type BoundedQueue<Payload> = {
   size(): number;
   byteLength(): number;
   report(): QueueReport;
-  /** Fails every waiting producer. Used when the queue's owner is shutting down. */
+  /**
+   * Wakes every waiting producer to re-check for room.
+   *
+   * Used when the queue's owner is shutting down. A producer released this way
+   * is admitted if room appeared and rejected if it did not; it is never left
+   * waiting on a queue nobody will drain.
+   */
   drain(): void;
 };
 

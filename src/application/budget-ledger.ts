@@ -29,7 +29,12 @@ import {
   validateAmounts,
 } from "../domain/index.ts";
 
-/** Nesting depth for budgets, matching the runtime's ownership chain. */
+/**
+ * Deepest budget a child may be created at, with the root at depth zero.
+ *
+ * The guard below compares against this inclusively, so a budget may exist at
+ * exactly this depth.
+ */
 export const MAX_BUDGET_DEPTH = 16;
 
 type BudgetNode = {
@@ -157,7 +162,7 @@ export function createBudgetLedger(): BudgetLedger {
       if (nodes.has(budgetId)) {
         return err({ code: "duplicate-budget", budgetId });
       }
-      if (parent.depth + 1 >= MAX_BUDGET_DEPTH) {
+      if (parent.depth + 1 > MAX_BUDGET_DEPTH) {
         return err({ code: "budget-depth-exceeded", maximumDepth: MAX_BUDGET_DEPTH });
       }
       nodes.set(budgetId, {

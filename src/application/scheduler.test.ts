@@ -757,3 +757,128 @@ describe("cancellation and terminal outcomes", () => {
     }
   });
 });
+
+describe("completion is not inferred from the value", () => {
+  test("a unit that legitimately resolves null still completes", async () => {
+    const clock = createManualClock(instant(0));
+    const scheduler = createScheduler<string | null>({ clock });
+
+    const result = await scheduler.submit(unit("producer"), () => Promise.resolve(null));
+
+    expect(result.kind).toBe("completed");
+    if (result.kind === "completed") {
+      expect(result.value).toBeNull();
+    }
+    expect(scheduler.report().completed).toBe(1);
+  });
+
+  test("its dependents run rather than being refused", async () => {
+    const clock = createManualClock(instant(0));
+    const scheduler = createScheduler<string | null>({ clock });
+    const started: string[] = [];
+
+    const results = await scheduler.schedule([
+      {
+        unit: unit("producer"),
+        run: () => {
+          started.push("producer");
+          return Promise.resolve(null);
+        },
+      },
+      {
+        unit: unit("dependent", { dependencies: [workUnitId("producer")] }),
+        run: () => {
+          started.push("dependent");
+          return Promise.resolve("ok");
+        },
+      },
+    ]);
+
+    expect(started).toEqual(["producer", "dependent"]);
+    expect(results.every((result) => result.kind === "completed")).toBe(true);
+    expect(scheduler.report().completed).toBe(2);
+  });
+
+  test("a unit that resolves undefined completes too", async () => {
+    const clock = createManualClock(instant(0));
+    const scheduler = createScheduler<void>({ clock });
+    const result = await scheduler.submit(unit("void"), () => Promise.resolve());
+    expect(result.kind).toBe("completed");
+  });
+});
+
+describe("scheduler reporting", () => {
+  test("a lock timeout names the deadline that was exceeded", async () => {
+    const clock = createManualClock(instant(0));
+    const scheduler = createScheduler<string>({
+      clock,
+      limits: { lockAcquisitionTimeoutMs: 50 },
+    });
+    const key = conflictKey("file", "/repo/a.ts");
+    const holder = deferred<string>();
+
+    const pending = scheduler.schedule([
+      {
+        unit: unit("holder", { effect: "mutation", conflictKeys: [key] }),
+        run: () => holder.promise,
+      },
+      {
+        unit: unit("waiter", { effect: "mutation", conflictKeys: [key] }),
+        run: () => Promise.resolve("waiter"),
+      },
+    ]);
+
+    await flush();
+    await clock.advance(duration(60));
+    await flush();
+    holder.resolve("holder");
+    const results = await pending;
+
+    const waiter = results.find((result) => result.unitId === ("waiter" as WorkUnitId));
+    if (waiter?.kind === "refused" && waiter.error.code === "lock-acquisition-timeout") {
+      // Ready at 0, timeout 50 — the reported deadline is 50, not the instant
+      // the expiry happened to be noticed.
+      expect(waiter.error.deadline).toEqual(deadlineAt(instant(50)));
+    } else {
+      throw new Error("expected a lock-acquisition-timeout refusal");
+    }
+  });
+
+  test("counts refusals from every graph-validation path", async () => {
+    const clock = createManualClock(instant(0));
+    const scheduler = createScheduler<string>({ clock });
+
+    await scheduler.schedule([
+      { unit: unit("same"), run: () => Promise.resolve("a") },
+      { unit: unit("same"), run: () => Promise.resolve("b") },
+    ]);
+
+    expect(scheduler.report().refused).toBe(2);
+  });
+
+  test("queue depth covers every live generation, not just the last one", async () => {
+    const clock = createManualClock(instant(0));
+    const scheduler = createScheduler<string>({ clock, limits: { maxConcurrent: 1 } });
+    const gate = deferred<string>();
+
+    const first = scheduler.schedule([
+      { unit: unit("running"), run: () => gate.promise },
+      { unit: unit("queued-a", { priority: "maintenance" }), run: () => Promise.resolve("a") },
+    ]);
+    await flush();
+    const second = scheduler.schedule([
+      { unit: unit("queued-b", { priority: "interactive" }), run: () => Promise.resolve("b") },
+    ]);
+    await flush();
+
+    const report = scheduler.report();
+    expect(report.queued).toBe(2);
+    expect(report.queuedByPriority.maintenance).toBe(1);
+    expect(report.queuedByPriority.interactive).toBe(1);
+
+    gate.resolve("running");
+    await flush(20);
+    await Promise.all([first, second]);
+    expect(scheduler.report().queued).toBe(0);
+  });
+});

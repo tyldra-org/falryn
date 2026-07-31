@@ -162,14 +162,31 @@ export function createScheduler<Value>(options: SchedulerOptions): SchedulerPort
   /** Held keys and how many holders each has, shared across generations. */
   const held = new Map<ConflictKey, number>();
   let running = 0;
-  let queued = 0;
-  let queuedByPriority: Record<PriorityClass, number> = {
-    interactive: 0,
-    "active-turn": 0,
-    "user-visible-background": 0,
-    maintenance: 0,
-  };
+  /**
+   * Every unit currently waiting across all generations.
+   *
+   * Held here rather than per generation: two concurrent `schedule()` calls
+   * share the caps, so a report written by whichever generation ran last would
+   * hide the other's queue.
+   */
+  const waitingUnits = new Set<Entry<Value>>();
   const counters = { completed: 0, refused: 0, settledNonCompleted: 0, promotions: 0 };
+
+  /**
+   * Woken whenever a unit releases capacity.
+   *
+   * Generations share the global cap and the key locks, so one that is fully
+   * blocked has to be told when the other made room.
+   */
+  let capacityWaiters: (() => void)[] = [];
+
+  const notifyCapacityChanged = (): void => {
+    const waiting = capacityWaiters;
+    capacityWaiters = [];
+    for (const wake of waiting) {
+      wake();
+    }
+  };
 
   const keysAvailable = (keys: readonly ConflictKey[]): boolean =>
     keys.every((key) => (held.get(key) ?? 0) < limits.maxConcurrentPerKey);
@@ -238,6 +255,7 @@ export function createScheduler<Value>(options: SchedulerOptions): SchedulerPort
       const seen = new Set<WorkUnitId>();
       for (const entry of entries) {
         if (seen.has(entry.unit.id)) {
+          counters.refused += entries.length;
           return entries.map((candidate) => ({
             kind: "refused" as const,
             unitId: candidate.unit.id,
@@ -332,12 +350,24 @@ export function createScheduler<Value>(options: SchedulerOptions): SchedulerPort
       signal?.addEventListener("abort", onOuterAbort, { once: true });
 
       const deadline: Deadline | null = entry.unit.deadline;
-      const finish = (outcome: TerminalOutcome | "completed", value: Value | null): void => {
+      /**
+       * Settles the unit.
+       *
+       * Completion is carried in the variant, never inferred from the value:
+       * `null` is an ordinary success value for work that produces nothing, and
+       * reading it as "did not complete" would refuse every dependent while
+       * reporting the dependency as completed.
+       */
+      const finish = (
+        settlement:
+          | { readonly kind: "completed"; readonly value: Value }
+          | { readonly kind: "settled"; readonly outcome: TerminalOutcome },
+      ): void => {
         release(entry.keys);
         running -= 1;
         signal?.removeEventListener("abort", onOuterAbort);
         if (budget !== undefined && entry.reservation !== null) {
-          if (outcome === "completed") {
+          if (settlement.kind === "completed") {
             budget.ledger.consume(entry.reservation, {
               operations: 1,
               bytes: entry.unit.expectedOutputBytes,
@@ -346,13 +376,15 @@ export function createScheduler<Value>(options: SchedulerOptions): SchedulerPort
             budget.ledger.release(entry.reservation);
           }
         }
-        if (outcome === "completed" && value !== null) {
+        if (settlement.kind === "completed") {
           entry.state = "settled";
-          entry.result = { kind: "completed", unitId: entry.unit.id, value };
+          entry.result = { kind: "completed", unitId: entry.unit.id, value: settlement.value };
           counters.completed += 1;
+          notifyCapacityChanged();
           return;
         }
-        settle(entry, outcome === "completed" ? { kind: "completed" } : outcome);
+        settle(entry, settlement.outcome);
+        notifyCapacityChanged();
       };
 
       const execution = (async (): Promise<void> => {
@@ -398,36 +430,24 @@ export function createScheduler<Value>(options: SchedulerOptions): SchedulerPort
               ]),
         ]);
 
+        // An observation that stopped changed nothing; anything else may have.
+        const stoppedEffect = entry.unit.effect === "observation" ? "none" : "uncertain";
+
         if (raced.kind === "value") {
-          finish("completed", raced.value);
+          finish({ kind: "completed", value: raced.value });
           return;
         }
         if (raced.kind === "error") {
-          finish(
-            { kind: "failed", effect: entry.unit.effect === "observation" ? "none" : "uncertain" },
-            null,
-          );
+          finish({ kind: "settled", outcome: { kind: "failed", effect: stoppedEffect } });
           return;
         }
         if (raced.kind === "expired") {
           controller.abort();
-          finish(
-            {
-              kind: "timed-out",
-              effect: entry.unit.effect === "observation" ? "none" : "uncertain",
-            },
-            null,
-          );
+          finish({ kind: "settled", outcome: { kind: "timed-out", effect: stoppedEffect } });
           return;
         }
         // The generation was cancelled while this unit was running.
-        finish(
-          {
-            kind: "cancelled",
-            effect: entry.unit.effect === "observation" ? "none" : "uncertain",
-          },
-          null,
-        );
+        finish({ kind: "settled", outcome: { kind: "cancelled", effect: stoppedEffect } });
       })().finally(() => {
         inflight.delete(entry.unit.id);
       });
@@ -488,16 +508,6 @@ export function createScheduler<Value>(options: SchedulerOptions): SchedulerPort
       }
 
       const ready = entries.filter((entry) => entry.state === "ready");
-      queued = ready.length;
-      queuedByPriority = {
-        interactive: 0,
-        "active-turn": 0,
-        "user-visible-background": 0,
-        maintenance: 0,
-      };
-      for (const entry of ready) {
-        queuedByPriority[entry.unit.priority] += 1;
-      }
 
       // Order by effective priority: a waiting unit's class improves by one step
       // for every full starvation threshold it has been passed over.
@@ -530,6 +540,16 @@ export function createScheduler<Value>(options: SchedulerOptions): SchedulerPort
         }
       }
 
+      // Synced after admission so a unit that just started is not still counted
+      // as queued.
+      for (const entry of entries) {
+        if (entry.state === "ready") {
+          waitingUnits.add(entry);
+        } else {
+          waitingUnits.delete(entry);
+        }
+      }
+
       // Refuse anything that waited past its lock acquisition deadline.
       const lockDeadlines = skipped
         .filter((entry) => entry.state === "ready" && entry.readySince !== null)
@@ -548,7 +568,8 @@ export function createScheduler<Value>(options: SchedulerOptions): SchedulerPort
               code: "lock-acquisition-timeout",
               unitId: candidate.entry.unit.id,
               conflictKey: contended,
-              deadline: deadlineAt(addDuration(clock.now(), duration(0))),
+              // The deadline that was exceeded, not the instant it was noticed.
+              deadline: deadlineAt(instant(candidate.expiresAt)),
             });
           } else {
             refuse(candidate.entry, {
@@ -564,32 +585,31 @@ export function createScheduler<Value>(options: SchedulerOptions): SchedulerPort
         continue;
       }
 
-      if (inflight.size === 0) {
-        if (admitted === 0) {
-          // Nothing running and nothing admissible: the remaining units can
-          // only be waiting on a lock nobody holds, which cannot happen. Refuse
-          // rather than spin.
-          for (const entry of entries) {
-            if (entry.state !== "settled") {
-              refuse(entry, {
-                code: "concurrency-limit",
-                unitId: entry.unit.id,
-                limit: limits.maxConcurrent,
-              });
-            }
-          }
-        }
-        continue;
-      }
-
       const nextLockDeadline = lockDeadlines.reduce<number | null>(
         (earliest, candidate) =>
           earliest === null || candidate.expiresAt < earliest ? candidate.expiresAt : earliest,
         null,
       );
 
+      // Admission and refusal above may have settled the last unit; there is
+      // then nothing to wait for, and parking on a capacity wake-up nobody will
+      // send would hang the generation.
+      if (entries.every((entry) => entry.state === "settled")) {
+        break;
+      }
+
+      // Nothing of this generation's own is running. That does not mean nothing
+      // can ever run: another generation shares the global cap and the key
+      // locks, so this one waits for capacity rather than refusing work that is
+      // merely queued behind someone else. The lock-acquisition deadline is
+      // what eventually turns a wait into a refusal.
+      const wakeUp: Promise<unknown>[] =
+        inflight.size > 0
+          ? [...inflight.values()]
+          : [new Promise<void>((resolve) => capacityWaiters.push(resolve))];
+
       if (nextLockDeadline === null) {
-        await Promise.race([...inflight.values()]);
+        await Promise.race(wakeUp);
         continue;
       }
 
@@ -599,12 +619,17 @@ export function createScheduler<Value>(options: SchedulerOptions): SchedulerPort
       const lockWait = new AbortController();
       try {
         await Promise.race([
-          ...inflight.values(),
+          ...wakeUp,
           clock.waitUntil(instant(nextLockDeadline), lockWait.signal).then(() => undefined),
         ]);
       } finally {
         lockWait.abort();
       }
+    }
+
+    // The generation is over; nothing in it is waiting any more.
+    for (const entry of entries) {
+      waitingUnits.delete(entry);
     }
 
     return entries.map(
@@ -639,9 +664,18 @@ export function createScheduler<Value>(options: SchedulerOptions): SchedulerPort
     },
 
     report(): SchedulerReport {
+      const queuedByPriority: Record<PriorityClass, number> = {
+        interactive: 0,
+        "active-turn": 0,
+        "user-visible-background": 0,
+        maintenance: 0,
+      };
+      for (const entry of waitingUnits) {
+        queuedByPriority[entry.unit.priority] += 1;
+      }
       return {
         running,
-        queued,
+        queued: waitingUnits.size,
         queuedByPriority,
         heldKeys: [...held.keys()],
         ...counters,
