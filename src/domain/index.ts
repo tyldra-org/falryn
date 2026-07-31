@@ -7,6 +7,23 @@
  */
 
 export type {
+  BudgetAmounts,
+  BudgetDimension,
+  BudgetError,
+  BudgetId,
+  BudgetLimits,
+  BudgetReport,
+  DimensionReport,
+  ReservationId,
+} from "./budget.ts";
+export {
+  BUDGET_DIMENSIONS,
+  enlargesLimits,
+  isBudgetDimension,
+  narrowLimits,
+  validateAmounts,
+} from "./budget.ts";
+export type {
   ClockPort,
   DurationMs,
   Instant,
@@ -125,8 +142,32 @@ export {
   requiresInspection,
   TERMINAL_OUTCOME_KINDS,
 } from "./outcome.ts";
+export type {
+  ArtifactHandle,
+  ArtifactSpillPort,
+  EnqueueOutcome,
+  LimitKind,
+  OverflowPolicy,
+  QueueItem,
+  QueueItemId,
+  QueueLimits,
+  QueueReport,
+} from "./queue.ts";
+export { OVERFLOW_POLICIES } from "./queue.ts";
 export type { Err, Ok, Result } from "./result.ts";
 export { assertNever, err, ok } from "./result.ts";
+export type {
+  QueueDepthByPriority,
+  RecoveryOption,
+  ScheduledWork,
+  SchedulerLimits,
+  SchedulerPort,
+  SchedulerReport,
+  SchedulingError,
+  SchedulingResult,
+  WorkRunner,
+} from "./scheduling.ts";
+export { RECOVERY_OPTIONS } from "./scheduling.ts";
 export type {
   CancellationReason,
   ScopeError,
@@ -189,3 +230,27 @@ export {
   timestampFromEpochMilliseconds,
   timestampToEpochMilliseconds,
 } from "./time.ts";
+export type {
+  ConflictKey,
+  EffectClass,
+  PriorityClass,
+  RetryPolicy,
+  WorkUnit,
+  WorkUnitError,
+  WorkUnitId,
+} from "./work.ts";
+export {
+  conflictKey,
+  EFFECT_CLASSES,
+  effectiveConflictKeys,
+  GLOBAL_CONFLICT_KEY,
+  isEffectClass,
+  isFreelyParallel,
+  isPriorityClass,
+  MAX_WORK_IDENTIFIER_LENGTH,
+  NO_RETRY,
+  PRIORITY_CLASSES,
+  parseWorkUnitId,
+  priorityRank,
+  workUnitId,
+} from "./work.ts";

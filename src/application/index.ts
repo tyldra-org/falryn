@@ -6,6 +6,14 @@
  */
 
 export type {
+  BoundedQueue,
+  BoundedQueueOptions,
+  EnqueueRequest,
+} from "./bounded-queue.ts";
+export { createBoundedQueue } from "./bounded-queue.ts";
+export type { BudgetLedger } from "./budget-ledger.ts";
+export { createBudgetLedger, MAX_BUDGET_DEPTH } from "./budget-ledger.ts";
+export type {
   InterruptionDecision,
   InterruptionPolicy,
   InterruptionState,
@@ -26,6 +34,8 @@ export {
 } from "./runtime-context.ts";
 export type { RuntimeLifecycle, RuntimeLifecycleOptions } from "./runtime-lifecycle.ts";
 export { createRuntimeLifecycle } from "./runtime-lifecycle.ts";
+export type { SchedulerBudget, SchedulerOptions } from "./scheduler.ts";
+export { createScheduler, DEFAULT_SCHEDULER_LIMITS } from "./scheduler.ts";
 export type {
   DeriveScopeOptions,
   ScopeHandle,
