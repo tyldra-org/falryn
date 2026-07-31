@@ -1,22 +1,92 @@
 # Contributing to Falryn
 
+The canonical issue lifecycle and the `Plan`, `Implement`, and `Verify` agent
+modes are defined in
+[`falryn-docs/DEVELOPMENT.md`](https://github.com/yogeshprasad098/falryn-docs/blob/main/DEVELOPMENT.md).
+
 ## Workflow
 
-1. Use a GitHub issue for each meaningful feature, bug, or refactor.
-2. Move an issue to Ready when its goal, scope, acceptance checks, and any
-   dependency are clear.
-3. Create a short-lived branch such as `feat/123-chat-composer`.
-4. Open one focused pull request and include `Closes #123` in its description.
-5. Record the checks actually run, merge, and let GitHub close the issue.
+1. Use a GitHub issue for each meaningful feature, bug, refactor, or
+   documentation outcome.
+2. Plan the issue while its Project status remains **Todo**. An issue is
+   **Ready** when its scope, non-goals, acceptance criteria, dependencies,
+   validation, and documentation impact are resolved; Ready is a planning
+   condition, not a separate Project status.
+3. For implementation, assign one Ready, unblocked PR-sized issue, set it
+   **In Progress**, set its parent **In Progress** when this is the first
+   required child to begin, and create a short-lived branch such as
+   `feat/123-chat-composer`. Do not add an agent-name prefix.
+4. Open one focused Falryn delivery PR and include `Closes #123` only when it
+   fully resolves the issue. Record the checks actually run. When canonical
+   docs change, open a companion `falryn-docs` PR that references the delivery
+   issue and cross-links the delivery PR.
+5. Verify the complete delivery bundle. Preview the docs-first merge order and
+   the final squash subject and concise body for every PR.
+6. After the explicit Merge prompt confirms an unchanged preview, squash-merge
+   required docs companions first and the Falryn delivery PR last.
+7. Re-read GitHub after merge. Verify every required PR is merged, its
+   PR-sized issue is closed, and its Project status is **Done**. Leave a parent
+   issue open and **In Progress** until all required children and its integrated
+   acceptance criteria pass; then verify, close, and mark the parent **Done**.
 
 Use an issue checklist for small steps. Create sub-issues only when a child
 item needs its own branch and pull request. Keep the hierarchy to one level.
+One PR-sized standalone issue or subissue normally maps to one branch and one
+closing application delivery PR; a companion docs branch and PR are added only
+when canonical documentation changes. If a parent needs integration code,
+create an explicit integration subissue rather than a parent mega-PR.
+
+## Agent modes
+
+Ordinary prompts do not need repository names. `Issue`, `Parent issue`, `PR`,
+and milestone targets resolve to `falryn`; the delivery PR includes explicitly
+linked docs companions automatically. Use `Docs issue` or `Docs PR` only for
+docs-only work.
+
+- `Plan — Target: Issue #N` refines GitHub planning and keeps the issue
+  **Todo**; it does not create product code, a branch, or a pull request.
+- `Implement — Target: Issue #N` accepts one Ready, unblocked PR-sized issue,
+  moves it to **In Progress**, and produces its branch and closing pull request.
+- `Verify — Target: ...` audits the named pull request, issue, parent, or
+  milestone against GitHub state, source, checks, documentation, and
+  `CURRENT-STATE.md`. Verification does not merge without a separate explicit
+  instruction.
+- `Merge — Target: PR #N` merges the verified delivery bundle when its preview
+  is still current: companion docs PRs first and the Falryn delivery PR last.
+  `Merge — Target: Docs PR #N` is the docs-only equivalent.
+
+Every result ends with one exact, copy-ready `Suggested next prompt` based on
+the refreshed GitHub state. The suggestion is guidance, not authorization to
+perform the next action.
+
+When a report points to a repository file, it includes a clickable local path
+when a checkout is available plus the repository-qualified path and GitHub
+link. Machine-specific absolute paths belong only in the report, never in
+committed documentation or GitHub planning records.
 
 ## Documentation
 
 User-facing or developer-facing documentation belongs in the companion
-`falryn-docs` repository. Link any related docs pull request from the product
-pull request; land both before calling a user-facing change complete.
+`falryn-docs` repository. Before implementation, locate the affected canonical
+owner through
+[`falryn-docs/DOCUMENTATION-MAP.md`](https://github.com/yogeshprasad098/falryn-docs/blob/main/DOCUMENTATION-MAP.md)
+and the issue's canonical links. Read the owner and classify its impact as
+`create`, `update`, `verify-unaffected`, or `not-applicable`.
+
+Do not invent behavior outside the Ready issue and canonical contracts or
+create a second architecture, roadmap, or implementation-status owner. If the
+implementation changes a contract, update the existing owner in a companion
+documentation pull request, give both pull requests the same Falryn delivery
+owner, cross-link them, and land both before calling the behavior complete. The
+docs PR references the Falryn issue; the application delivery PR closes it.
+When no documentation changes, name the owners checked and explain why they
+remain unaffected.
+
+When both repositories are checked out as siblings, the local documentation
+root is normally `../falryn-docs`; otherwise use its actual checkout location.
+Agent reports provide the resolved clickable absolute path plus the
+repository-qualified path and GitHub link. Never persist a contributor-specific
+absolute path in source, documentation, issues, or pull requests.
 
 ## Checks
 

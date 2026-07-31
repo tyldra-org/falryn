@@ -70,7 +70,74 @@ tests small, explicit, and user-focused.
 - Treat the companion `falryn-docs` repository as the home for user and
   developer documentation. Keep this repository's Markdown code-adjacent.
 - Work from a Ready GitHub issue when the change is meaningful. Do not create
-  phase, gate, evidence, or status-inventory documents.
+  phase, gate, evidence, or duplicate status-inventory documents.
+- Follow the canonical delivery workflow in
+  [`falryn-docs/DEVELOPMENT.md`](https://github.com/yogeshprasad098/falryn-docs/blob/main/DEVELOPMENT.md):
+  one PR-sized standalone issue or native implementation subissue maps to one
+  short-lived implementation branch and one delivery PR containing `Closes
+  #<issue>`, plus a companion docs PR only when canonical documentation
+  changes. Plan keeps work **Todo**; Implement assigns the issue and sets **In
+  Progress**, and sets its parent **In Progress** when the first required child
+  begins; after an approved merge, re-read GitHub and verify that the intended
+  issue closed and its Project status is **Done**. Keep any parent open and
+  **In Progress** until all required children and integrated acceptance
+  criteria pass, then close the parent and verify **Done**. Do not mix unrelated
+  issues in one branch or pull request.
+- Name branches with a concise repository type prefix such as `feat/`, `fix/`,
+  `docs/`, `refactor/`, `test/`, or `chore/`, followed by the issue number and
+  purpose when applicable. Do not require or add an agent-name prefix such as
+  `codex/`.
+- Resolve ordinary repository-free prompts to this `falryn` repository:
+  `Issue`, `Parent issue`, `PR`, and milestone targets all name Falryn objects.
+  A Falryn PR is the delivery PR and automatically includes its explicitly
+  linked `falryn-docs` companions. Use `Docs issue` and `Docs PR` only for
+  docs-only work. Never substitute a same-numbered object from the other
+  repository.
+- After a fresh Verify previews the complete delivery bundle, docs-first merge
+  order, and final messages, an explicit Merge prompt authorizes the unchanged
+  preview. Use squash merge for ordinary short-lived PRs when enabled, with the
+  reviewed PR title as subject and a concise body instead of aggregated
+  incremental messages. Merge required docs companions first and the Falryn
+  delivery PR last; stop if state changed or any sequential merge fails.
+- Treat `Plan — Target: ...`, `Implement — Target: ...`, and
+  `Verify — Target: ...` as mandatory mode selectors. Before acting, read the
+  canonical contracts in
+  [`falryn-docs/DEVELOPMENT.md`](https://github.com/yogeshprasad098/falryn-docs/blob/main/DEVELOPMENT.md#recognized-prompt-forms),
+  resolve the exact GitHub target, and obey the selected mode's scope, allowed
+  mutations, stop conditions, status transitions, validation, and final report.
+  `Merge — Target: PR #N` is the separate delivery action after a fresh Verify.
+  Do not interpret RavenCode milestone or phase identifiers as Falryn targets.
+- End every Plan, Implement, Verify, merge, and release-related report with one
+  copy-ready `Suggested next prompt: ...` selected from current GitHub state.
+  Follow the transition rules in
+  [`falryn-docs/DEVELOPMENT.md`](https://github.com/yogeshprasad098/falryn-docs/blob/main/DEVELOPMENT.md#suggesting-the-next-prompt).
+  Use exact repository object numbers or milestone titles, never placeholders.
+  A suggestion helps the user choose the next action; it does not authorize the
+  agent to run that action.
+- When a report names a repository file the user may need to open, provide both
+  its clickable absolute path in the current local checkout and its
+  repository-qualified path with a canonical GitHub link when one exists.
+  Resolve the physical path at report time; never commit a user-specific
+  absolute path or copy one into an issue or pull request. Follow
+  [`falryn-docs/DEVELOPMENT.md`](https://github.com/yogeshprasad098/falryn-docs/blob/main/DEVELOPMENT.md#reporting-file-locations).
+- Before planning, implementing, or reviewing behavior, use
+  `falryn-docs/DOCUMENTATION-MAP.md` and the issue's canonical-design links to
+  locate and read the exact documentation owners. Prefer the local
+  `falryn-docs` checkout when available, record each owner's impact as
+  `create`, `update`, `verify-unaffected`, or `not-applicable`, and stop when a
+  required contract is missing or conflicts with the issue. Do not invent
+  behavior outside the selected issue and canonical contracts, silently
+  diverge from them, or create duplicate documentation owners. Resolve contract
+  changes in a linked documentation pull request and cross-link both pull
+  requests as one delivery unit.
+- Read `CURRENT-STATE.md` before making implementation or availability claims.
+  It is the sole concise implementation-status owner. Update it only with
+  behavior supported by current source and validation; do not copy roadmap
+  checklists or design contracts into it.
+- Use the [Falryn Roadmap](https://github.com/users/yogeshprasad098/projects/2)
+  for live planning state and `falryn-docs/DOCUMENTATION-MAP.md` for canonical
+  design ownership. An issue, Project field, or design target does not establish
+  implementation truth.
 - Run `bun run check` for the normal repository checks. Run `bun run build`
   when packaging changes. Add validation with the behavior it protects and
   report any check that could not run.
