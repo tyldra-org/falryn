@@ -95,8 +95,10 @@ Its verified behavior:
   and
 - resource bounds count live scopes only, so completed work never exhausts the
   budget. Settled scopes are evicted beyond a retention window after their
-  effect is folded into their parent, and the lifecycle event log is bounded
-  with the number of dropped events reported rather than truncating silently.
+  effect is folded into every ancestor — so an evicted descendant's uncertainty
+  stays visible from above whatever order the scopes settled in — and the
+  lifecycle event log is bounded with the number of dropped events reported
+  rather than truncating silently.
 
 The scheduling engine introduced by
 [#3](https://github.com/yogeshprasad098/falryn/issues/3) adds the work-unit,
@@ -165,7 +167,7 @@ Observed on 2026-07-31:
 ```text
 bun run check  PASS
 bun run build  PASS  (112 modules bundled)
-bun test       432 pass, 0 fail
+bun test       440 pass, 0 fail
 ```
 
 The compiled file is a development bootstrap artifact. It is not a supported
@@ -203,8 +205,8 @@ Their implementation breakdown lives in GitHub Issues and the Project.
 - **Live roadmap:** [Falryn Roadmap](https://github.com/users/yogeshprasad098/projects/2)
 - **Current release outcome:** [v0.1 Foundation issues](https://github.com/yogeshprasad098/falryn/issues?q=is%3Aissue%20is%3Aopen%20milestone%3A%22v0.1%20Foundation%22)
 - **First parent outcome:** [#1 Establish the unified runtime and lifecycle](https://github.com/yogeshprasad098/falryn/issues/1)
-- **Open children of #1:** [#292](https://github.com/yogeshprasad098/falryn/issues/292).
-- **Next planning action:** plan [#292 Preserve an evicted scope's uncertainty regardless of settle order](https://github.com/yogeshprasad098/falryn/issues/292), which still needs a fix chosen.
+- **Open children of #1:** none once [#292](https://github.com/yogeshprasad098/falryn/issues/292) lands.
+- **Next planning action:** verify parent [#1 Establish the unified runtime and lifecycle](https://github.com/yogeshprasad098/falryn/issues/1) against its integrated acceptance criteria.
 
 [#2 Define stable runtime identities and event envelopes](https://github.com/yogeshprasad098/falryn/issues/2)
 and [#4 Implement cancellation, deadlines, interruption, and
