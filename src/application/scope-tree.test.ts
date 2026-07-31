@@ -606,3 +606,150 @@ describe("resource bounds", () => {
     expect(tree.liveScopeCount()).toBe(2);
   });
 });
+
+describe("effect folding survives any settle ordering", () => {
+  /** Evicts everything currently retained by settling past the window. */
+  function evictRetained(tree: ScopeTree, root: ScopeId): void {
+    for (let index = 0; index < MAX_RETAINED_TERMINAL_SCOPES + 5; index += 1) {
+      const filler = tree.derive(root, { kind: "turn" });
+      if (!filler.ok) {
+        throw new Error(`filler derive failed: ${filler.error.code}`);
+      }
+      tree.complete(filler.value.scopeId);
+    }
+  }
+
+  test.each([
+    ["child first", false],
+    ["parent first", true],
+  ])("a two-level subtree keeps its uncertainty when the %s", (_label, parentFirst) => {
+    const { tree } = makeTree();
+    const root = tree.root().scopeId;
+    const session = derive(tree, root, "session-1", "session");
+    const turn = derive(tree, session, "turn-1");
+    tree.recordEffect(turn, "uncertain");
+
+    if (parentFirst) {
+      tree.complete(session);
+      tree.complete(turn);
+    } else {
+      tree.complete(turn);
+      tree.complete(session);
+    }
+
+    expect(tree.report(root)?.subtreeEffect).toBe("uncertain");
+    evictRetained(tree, root);
+
+    const report = tree.report(root);
+    expect(report?.subtreeEffect).toBe("uncertain");
+    expect(report?.requiresInspection).toBe(true);
+  });
+
+  test("a three-level subtree survives the middle scope settling first", () => {
+    const { tree } = makeTree();
+    const root = tree.root().scopeId;
+    const session = derive(tree, root, "session-1", "session");
+    const turn = derive(tree, session, "turn-1");
+    const invocation = derive(tree, turn, "invocation-1", "invocation");
+    tree.recordEffect(invocation, "uncertain");
+
+    // Middle first, then the outermost, then the innermost — the ordering that
+    // leaves the most folds already computed before the effect is recorded.
+    tree.complete(turn);
+    tree.complete(session);
+    tree.complete(invocation);
+
+    evictRetained(tree, root);
+    expect(tree.report(root)?.subtreeEffect).toBe("uncertain");
+  });
+
+  test("a partial effect folds upward too", () => {
+    const { tree } = makeTree();
+    const root = tree.root().scopeId;
+    const session = derive(tree, root, "session-1", "session");
+    const turn = derive(tree, session, "turn-1");
+    tree.recordEffect(turn, "partial");
+
+    tree.complete(session);
+    tree.complete(turn);
+    evictRetained(tree, root);
+
+    const report = tree.report(root);
+    expect(report?.subtreeEffect).toBe("partial");
+    expect(report?.requiresInspection).toBe(true);
+  });
+
+  test("siblings settling in mixed order surface only the one that mattered", () => {
+    const { tree } = makeTree();
+    const root = tree.root().scopeId;
+    const session = derive(tree, root, "session-1", "session");
+    const clean = derive(tree, session, "turn-clean");
+    const risky = derive(tree, session, "turn-risky");
+    tree.recordEffect(risky, "uncertain");
+
+    tree.complete(clean);
+    tree.complete(session);
+    tree.complete(risky);
+    evictRetained(tree, root);
+
+    expect(tree.report(root)?.subtreeEffect).toBe("uncertain");
+  });
+
+  test("a subtree that changed nothing still reports nothing", () => {
+    const { tree } = makeTree();
+    const root = tree.root().scopeId;
+    const session = derive(tree, root, "session-1", "session");
+    const turn = derive(tree, session, "turn-1");
+
+    tree.complete(session);
+    tree.complete(turn);
+    evictRetained(tree, root);
+
+    const report = tree.report(root);
+    expect(report?.subtreeEffect).toBe("none");
+    expect(report?.requiresInspection).toBe(false);
+  });
+
+  test("eviction is still refused while a descendant is live", () => {
+    const { tree } = makeTree();
+    const root = tree.root().scopeId;
+    const session = derive(tree, root, "session-1", "session");
+    const turn = derive(tree, session, "turn-1");
+    tree.recordEffect(turn, "uncertain");
+
+    // The parent settles; the child stays live and cannot be evicted, so the
+    // parent cannot be either.
+    tree.complete(session);
+    evictRetained(tree, root);
+
+    expect(tree.state(turn)).toEqual({ status: "active" });
+    expect(tree.report(session)?.subtreeEffect).toBe("uncertain");
+  });
+
+  test("the ancestor walk stays bounded at maximum nesting", () => {
+    const { tree } = makeTree();
+    const root = tree.root().scopeId;
+
+    let parent = root;
+    const chain: ScopeId[] = [];
+    for (let depth = 1; depth <= MAX_SCOPE_DEPTH - 1; depth += 1) {
+      parent = derive(tree, parent, `depth-${depth}`, "child");
+      chain.push(parent);
+    }
+
+    const deepest = chain[chain.length - 1];
+    if (deepest === undefined) {
+      throw new Error("no chain");
+    }
+    tree.recordEffect(deepest, "uncertain");
+
+    // Settle outermost-first, the worst ordering for a parent-only fold.
+    for (const scope of chain) {
+      tree.complete(scope);
+    }
+
+    expect(tree.report(root)?.subtreeEffect).toBe("uncertain");
+    evictRetained(tree, root);
+    expect(tree.report(root)?.subtreeEffect).toBe("uncertain");
+  });
+});

@@ -345,14 +345,31 @@ export function createScopeTree(options: ScopeTreeOptions): ScopeTree {
     node.state = { status: "terminal", outcome, reason, settledAt: at };
     liveCount -= 1;
 
-    // Fold this scope's total effect into its parent before it can be evicted,
-    // so an evicted uncertainty is still visible from above.
-    const parent = node.parentId === null ? undefined : nodes.get(node.parentId);
-    if (parent !== undefined) {
-      parent.settledDescendantEffect = worstEffect(
-        parent.settledDescendantEffect,
-        totalEffectOf(node),
+    // Fold this scope's total effect into every ancestor before it can be
+    // evicted, so an evicted uncertainty is still visible from above.
+    //
+    // Every ancestor, not just the parent: a parent may settle before its child,
+    // in which case the parent's own fold upward already happened and nothing
+    // would re-propagate the child's effect past it. While both remain in the
+    // retention window `subtreeEffectOf` still walks them and hides the gap;
+    // once both are evicted the ancestor reports `none` for work nobody
+    // observed finishing.
+    //
+    // `worstEffect` is an idempotent maximum, so reaching an ancestor that the
+    // bottom-up ordering would have reached transitively costs nothing. The
+    // walk is bounded by `MAX_SCOPE_DEPTH`, and `evict` refuses a node with a
+    // live child, so the chain is always intact here.
+    //
+    // This folds *effect reporting* upward. Cancellation still propagates
+    // downward only; the two travel in opposite directions by design.
+    const settledEffect = totalEffectOf(node);
+    let ancestor = node.parentId === null ? undefined : nodes.get(node.parentId);
+    while (ancestor !== undefined) {
+      ancestor.settledDescendantEffect = worstEffect(
+        ancestor.settledDescendantEffect,
+        settledEffect,
       );
+      ancestor = ancestor.parentId === null ? undefined : nodes.get(ancestor.parentId);
     }
 
     const event = emit("scope.terminal", node, at, { outcome, reason, effect: node.effect });
