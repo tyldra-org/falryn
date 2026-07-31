@@ -71,12 +71,14 @@ Workflow prompts stay repository-free: `Issue`, `Parent issue`, `PR`, and
 milestone targets resolve to this repository. A Falryn delivery PR includes its
 explicitly linked docs companion automatically for Verify and Merge. Use the
 short `Docs issue` or `Docs PR` qualifier only for docs-only work. Verify
-previews every final squash message, the docs-first merge order, and safe local
-checkout synchronization before the explicit Merge prompt lands the unchanged
-bundle. After every required PR lands, Merge returns each available clean local
-checkout to its fetched default branch with a fast-forward-only update; unsafe
-checkouts are left untouched and reported, and branch deletion remains
-separately authorized.
+previews every exact final squash subject and any optional single
+issue-reference footer, the docs-first merge order, and safe local checkout
+synchronization before the explicit Merge prompt lands the unchanged bundle.
+Squash commits use the reviewed PR title and no body by default; detailed
+delivery information remains in the PR. After every required PR lands, Merge
+returns each available clean local checkout to its fetched default branch with
+a fast-forward-only update; unsafe checkouts are left untouched and reported,
+and branch deletion remains separately authorized.
 
 The minimal Bun and TypeScript toolchain scaffold is present; product behavior
 has not been implemented yet. See [Current state](CURRENT-STATE.md) for the

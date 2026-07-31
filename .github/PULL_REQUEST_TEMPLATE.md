@@ -44,6 +44,7 @@ Closes #
 - [ ] The branch targets the current default branch and contains no unrelated work.
 - [ ] Any parent remains open and **In Progress** for integrated verification.
 - [ ] The PR title is a clean conventional subject suitable for squash merge.
-- [ ] Verify can derive a concise squash body without aggregating incremental commit messages.
+- [ ] The squash commit is subject-only by default; any body is limited to one useful short issue-reference footer.
+- [ ] Validation, risks, documentation impact, companion links, delivery details, and incremental messages remain in this PR rather than the squash commit.
 - [ ] Verify includes every required companion and previews docs-first/application-last merge order.
 - [ ] Verify identifies available local checkouts and previews safe post-merge default-branch synchronization.

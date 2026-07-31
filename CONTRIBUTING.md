@@ -21,8 +21,11 @@ modes are defined in
    docs change, open a companion `falryn-docs` PR that references the delivery
    issue and cross-links the delivery PR.
 5. Verify the complete delivery bundle. Preview the docs-first merge order,
-   final squash subject and concise body for every PR, and safe post-merge
-   synchronization of each available local checkout.
+   exact final squash subject and whether its optional single issue-reference
+   footer is omitted or present for every PR, and safe post-merge
+   synchronization of each available local checkout. Squash commits are
+   subject-only by default; detailed validation, risks, documentation impact,
+   companion links, and delivery context remain in the PR body.
 6. After the explicit Merge prompt confirms an unchanged preview, squash-merge
    required docs companions first and the Falryn delivery PR last.
 7. Re-read GitHub after merge. Verify every required PR is merged, its
