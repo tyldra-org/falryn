@@ -607,18 +607,18 @@ describe("resource bounds", () => {
   });
 });
 
-describe("effect folding survives any settle ordering", () => {
-  /** Evicts everything currently retained by settling past the window. */
-  function evictRetained(tree: ScopeTree, root: ScopeId): void {
-    for (let index = 0; index < MAX_RETAINED_TERMINAL_SCOPES + 5; index += 1) {
-      const filler = tree.derive(root, { kind: "turn" });
-      if (!filler.ok) {
-        throw new Error(`filler derive failed: ${filler.error.code}`);
-      }
-      tree.complete(filler.value.scopeId);
+/** Evicts everything currently retained by settling past the window. */
+function evictRetained(tree: ScopeTree, root: ScopeId): void {
+  for (let index = 0; index < MAX_RETAINED_TERMINAL_SCOPES + 5; index += 1) {
+    const filler = tree.derive(root, { kind: "turn" });
+    if (!filler.ok) {
+      throw new Error(`filler derive failed: ${filler.error.code}`);
     }
+    tree.complete(filler.value.scopeId);
   }
+}
 
+describe("effect folding survives any settle ordering", () => {
   test.each([
     ["child first", false],
     ["parent first", true],
@@ -751,5 +751,163 @@ describe("effect folding survives any settle ordering", () => {
     expect(tree.report(root)?.subtreeEffect).toBe("uncertain");
     evictRetained(tree, root);
     expect(tree.report(root)?.subtreeEffect).toBe("uncertain");
+  });
+});
+
+describe("an effect that arrives after its scope settled", () => {
+  test("folds into the nearest surviving ancestor", () => {
+    const { tree } = makeTree();
+    const root = tree.root().scopeId;
+    const session = derive(tree, root, "session-1", "session");
+    const turn = derive(tree, session, "turn-1");
+    tree.complete(turn);
+
+    const record = tree.recordLateEffect(turn, "uncertain");
+    expect(record.ok).toBe(true);
+    if (!record.ok) {
+      return;
+    }
+    expect(record.value).toEqual({
+      scopeId: turn,
+      effect: "uncertain",
+      late: true,
+      foldedInto: [session, root],
+    });
+
+    const report = tree.report(session);
+    expect(report?.subtreeEffect).toBe("uncertain");
+    expect(report?.requiresInspection).toBe(true);
+  });
+
+  test("reaches every level of a nested chain", () => {
+    const { tree } = makeTree();
+    const root = tree.root().scopeId;
+    const session = derive(tree, root, "session-1", "session");
+    const turn = derive(tree, session, "turn-1");
+    const invocation = derive(tree, turn, "invocation-1", "invocation");
+    tree.complete(invocation);
+    tree.complete(turn);
+
+    tree.recordLateEffect(invocation, "uncertain");
+
+    for (const ancestor of [turn, session, root]) {
+      const report = tree.report(ancestor);
+      expect(report?.subtreeEffect).toBe("uncertain");
+      expect(report?.requiresInspection).toBe(true);
+    }
+  });
+
+  test("survives the ancestors being evicted afterwards", () => {
+    const { tree } = makeTree();
+    const root = tree.root().scopeId;
+    const session = derive(tree, root, "session-1", "session");
+    const turn = derive(tree, session, "turn-1");
+    tree.complete(turn);
+    tree.complete(session);
+
+    tree.recordLateEffect(turn, "uncertain");
+    evictRetained(tree, root);
+
+    expect(tree.report(root)?.subtreeEffect).toBe("uncertain");
+  });
+
+  test("never mutates the settled scope's own outcome or effect", () => {
+    const { tree } = makeTree();
+    const root = tree.root().scopeId;
+    const turn = derive(tree, root, "turn-1");
+    tree.complete(turn);
+    const before = tree.report(turn);
+
+    tree.recordLateEffect(turn, "uncertain");
+
+    const after = tree.report(turn);
+    expect(after?.state).toEqual(before?.state);
+    expect(after?.recordedEffect).toBe("none");
+    expect(tree.state(turn)).toMatchObject({
+      status: "terminal",
+      outcome: { kind: "completed" },
+    });
+  });
+
+  test("emits no further lifecycle event for the settled scope", () => {
+    const { tree } = makeTree();
+    const root = tree.root().scopeId;
+    const turn = derive(tree, root, "turn-1");
+    tree.complete(turn);
+    const before = tree.events().length;
+
+    tree.recordLateEffect(turn, "uncertain");
+
+    expect(tree.events().length).toBe(before);
+  });
+
+  test("reports an evicted scope as unknown rather than throwing", () => {
+    const { tree } = makeTree();
+    const root = tree.root().scopeId;
+    const turn = derive(tree, root, "turn-1");
+    tree.complete(turn);
+    evictRetained(tree, root);
+
+    const record = tree.recordLateEffect(turn, "uncertain");
+    expect(record.ok).toBe(false);
+    if (!record.ok) {
+      expect(record.error).toEqual({ code: "unknown-scope", scopeId: turn });
+    }
+  });
+
+  test("a settled root has no ancestor left to carry the effect", () => {
+    const { tree } = makeTree();
+    const root = tree.root().scopeId;
+    tree.complete(root);
+
+    const record = tree.recordLateEffect(root, "uncertain");
+    expect(record.ok).toBe(true);
+    if (record.ok) {
+      expect(record.value.late).toBe(true);
+      expect(record.value.foldedInto).toEqual([]);
+    }
+  });
+
+  test("records on a scope that is still live, exactly as recordEffect would", () => {
+    const { tree } = makeTree();
+    const root = tree.root().scopeId;
+    const turn = derive(tree, root, "turn-1");
+
+    const record = tree.recordLateEffect(turn, "partial");
+    expect(record.ok).toBe(true);
+    if (record.ok) {
+      expect(record.value.late).toBe(false);
+      expect(record.value.foldedInto).toEqual([]);
+    }
+    expect(tree.report(turn)?.recordedEffect).toBe("partial");
+    expect(tree.events().some((event) => event.kind === "scope.effect.recorded")).toBe(true);
+  });
+
+  test("a cancelling scope still records the effect itself", () => {
+    const { tree } = makeTree();
+    const root = tree.root().scopeId;
+    const turn = derive(tree, root, "turn-1");
+    tree.cancel(turn, { kind: "requested" });
+
+    const record = tree.recordLateEffect(turn, "uncertain");
+    expect(record.ok).toBe(true);
+    if (record.ok) {
+      expect(record.value.late).toBe(false);
+    }
+    expect(tree.report(turn)?.recordedEffect).toBe("uncertain");
+  });
+
+  test("a completed effect folds without claiming uncertainty", () => {
+    const { tree } = makeTree();
+    const root = tree.root().scopeId;
+    const session = derive(tree, root, "session-1", "session");
+    const turn = derive(tree, session, "turn-1");
+    tree.complete(turn);
+
+    tree.recordLateEffect(turn, "completed");
+
+    const report = tree.report(session);
+    expect(report?.subtreeEffect).toBe("completed");
+    expect(report?.requiresInspection).toBe(false);
   });
 });

@@ -13,12 +13,18 @@ import {
   instant,
   NO_RETRY,
   type PriorityClass,
+  type SchedulerPort,
+  type ScopeId,
+  type ScopeKind,
+  scopeId as scopeIdCodec,
   type WorkUnit,
   type WorkUnitId,
   workUnitId,
 } from "../domain/index.ts";
 import { createBudgetLedger } from "./budget-ledger.ts";
+import { createDiagnosticsCollector, type DiagnosticsCollector } from "./diagnostics-collector.ts";
 import { createScheduler } from "./scheduler.ts";
+import { createScopeTree, MAX_RETAINED_TERMINAL_SCOPES, type ScopeTree } from "./scope-tree.ts";
 
 type UnitOverrides = Partial<Omit<WorkUnit, "id">>;
 
@@ -880,5 +886,194 @@ describe("scheduler reporting", () => {
     await flush(20);
     await Promise.all([first, second]);
     expect(scheduler.report().queued).toBe(0);
+  });
+});
+
+describe("a unit that outlives its scope", () => {
+  type ScopedHarness = {
+    readonly diagnostics: DiagnosticsCollector;
+    readonly scopes: ScopeTree;
+    readonly scheduler: SchedulerPort<string>;
+  };
+
+  function scopedHarness(): ScopedHarness {
+    const clock = createManualClock(instant(0));
+    const diagnostics = createDiagnosticsCollector({ clock });
+    const scopes = createScopeTree({ clock, diagnostics });
+    return {
+      diagnostics,
+      scopes,
+      scheduler: createScheduler<string>({ clock, scopeTree: scopes, diagnostics }),
+    };
+  }
+
+  function derive(scopes: ScopeTree, parent: ScopeId, id: string, kind: ScopeKind): ScopeId {
+    const derived = scopes.derive(parent, { kind, scopeId: scopeIdCodec.from(id) });
+    if (!derived.ok) {
+      throw new Error(`derive failed: ${derived.error.code}`);
+    }
+    return derived.value.scopeId;
+  }
+
+  /** Settles past the retention window so everything currently retained is evicted. */
+  function evictRetained(scopes: ScopeTree, root: ScopeId): void {
+    for (let index = 0; index < MAX_RETAINED_TERMINAL_SCOPES + 5; index += 1) {
+      const filler = scopes.derive(root, { kind: "turn" });
+      if (!filler.ok) {
+        throw new Error(`filler derive failed: ${filler.error.code}`);
+      }
+      scopes.complete(filler.value.scopeId);
+    }
+  }
+
+  const lateEffects = (diagnostics: DiagnosticsCollector) =>
+    diagnostics.events().filter((event) => event.code === "scheduler.unit.late-effect");
+
+  /**
+   * Runs one mutating unit under `scope`, settles the scope mid-flight, and then
+   * lets the unit fail — the ordering the scheduler used to drop silently.
+   */
+  async function settleScopeMidFlight(
+    harness: ScopedHarness,
+    scope: ScopeId,
+    settle: (scope: ScopeId) => void = (id) => {
+      harness.scopes.complete(id);
+    },
+  ): Promise<void> {
+    const gate = deferred<string>();
+    const pending = harness.scheduler.submit(
+      unit("outliving", { effect: "mutation", scopeId: scope }),
+      () => gate.promise,
+    );
+    await flush();
+    settle(scope);
+    gate.reject(new Error("stopped mid-mutation"));
+    const result = await pending;
+    expect(result.kind).toBe("settled");
+  }
+
+  test("folds its effect into the nearest surviving ancestor", async () => {
+    const harness = scopedHarness();
+    const root = harness.scopes.root().scopeId;
+    const session = derive(harness.scopes, root, "session-1", "session");
+    const turn = derive(harness.scopes, session, "turn-1", "turn");
+
+    await settleScopeMidFlight(harness, turn);
+
+    const report = harness.scopes.report(session);
+    expect(report?.subtreeEffect).toBe("uncertain");
+    expect(report?.requiresInspection).toBe(true);
+  });
+
+  test("reaches every ancestor when the settled scopes are nested", async () => {
+    const harness = scopedHarness();
+    const root = harness.scopes.root().scopeId;
+    const session = derive(harness.scopes, root, "session-1", "session");
+    const turn = derive(harness.scopes, session, "turn-1", "turn");
+    const invocation = derive(harness.scopes, turn, "invocation-1", "invocation");
+
+    await settleScopeMidFlight(harness, invocation, (scope) => {
+      harness.scopes.complete(scope);
+      harness.scopes.complete(turn);
+    });
+
+    for (const ancestor of [turn, session, root]) {
+      const report = harness.scopes.report(ancestor);
+      expect(report?.subtreeEffect).toBe("uncertain");
+      expect(report?.requiresInspection).toBe(true);
+    }
+  });
+
+  test("leaves the settled scope's own terminal outcome alone", async () => {
+    const harness = scopedHarness();
+    const root = harness.scopes.root().scopeId;
+    const turn = derive(harness.scopes, root, "turn-1", "turn");
+
+    await settleScopeMidFlight(harness, turn);
+
+    expect(harness.scopes.state(turn)).toMatchObject({
+      status: "terminal",
+      outcome: { kind: "completed" },
+    });
+    expect(harness.scopes.report(turn)?.recordedEffect).toBe("none");
+  });
+
+  test("warns, naming the unit, the scope, and the effect", async () => {
+    const harness = scopedHarness();
+    const root = harness.scopes.root().scopeId;
+    const session = derive(harness.scopes, root, "session-1", "session");
+    const turn = derive(harness.scopes, session, "turn-1", "turn");
+
+    await settleScopeMidFlight(harness, turn);
+
+    const [warning, ...rest] = lateEffects(harness.diagnostics);
+    expect(rest).toEqual([]);
+    expect(warning?.level).toBe("warn");
+    expect(warning?.correlation.scopeId).toBe(turn);
+    expect(warning?.metadata).toMatchObject({
+      unit: "outliving",
+      scope: turn,
+      effect: "uncertain",
+      refusal: "scope-already-terminal",
+      attributed: session,
+    });
+  });
+
+  test("reports an evicted scope as unattributable rather than throwing", async () => {
+    const harness = scopedHarness();
+    const root = harness.scopes.root().scopeId;
+    const turn = derive(harness.scopes, root, "turn-1", "turn");
+
+    await settleScopeMidFlight(harness, turn, (scope) => {
+      harness.scopes.complete(scope);
+      evictRetained(harness.scopes, root);
+    });
+
+    const [warning] = lateEffects(harness.diagnostics);
+    expect(warning?.level).toBe("warn");
+    expect(warning?.metadata).toMatchObject({
+      unit: "outliving",
+      effect: "uncertain",
+      refusal: "unknown-scope",
+      attributed: false,
+    });
+  });
+
+  test("a completed effect arriving late does not become a warning", async () => {
+    const harness = scopedHarness();
+    const root = harness.scopes.root().scopeId;
+    const turn = derive(harness.scopes, root, "turn-1", "turn");
+    const gate = deferred<string>();
+
+    const pending = harness.scheduler.submit(
+      unit("outliving", { effect: "mutation", scopeId: turn }),
+      () => gate.promise,
+    );
+    await flush();
+    harness.scopes.complete(turn);
+    gate.resolve("done");
+    expect((await pending).kind).toBe("completed");
+
+    const [recorded] = lateEffects(harness.diagnostics);
+    expect(recorded?.level).toBe("debug");
+    expect(recorded?.metadata).toMatchObject({ effect: "completed" });
+    expect(harness.scopes.report(root)?.requiresInspection).toBe(false);
+  });
+
+  test("the ordinary ordering still records on the scope itself", async () => {
+    const harness = scopedHarness();
+    const root = harness.scopes.root().scopeId;
+    const session = derive(harness.scopes, root, "session-1", "session");
+    const turn = derive(harness.scopes, session, "turn-1", "turn");
+
+    const result = await harness.scheduler.submit(
+      unit("ordinary", { effect: "mutation", scopeId: turn }),
+      () => Promise.reject(new Error("stopped mid-mutation")),
+    );
+
+    expect(result.kind).toBe("settled");
+    expect(harness.scopes.report(turn)?.recordedEffect).toBe("uncertain");
+    expect(harness.scopes.report(session)?.subtreeEffect).toBe("uncertain");
+    expect(lateEffects(harness.diagnostics)).toEqual([]);
   });
 });

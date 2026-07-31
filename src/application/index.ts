@@ -77,6 +77,7 @@ export type { SchedulerBudget, SchedulerOptions } from "./scheduler.ts";
 export { createScheduler, DEFAULT_SCHEDULER_LIMITS } from "./scheduler.ts";
 export type {
   DeriveScopeOptions,
+  LateEffectRecord,
   ScopeHandle,
   ScopeTree,
   ScopeTreeOptions,
