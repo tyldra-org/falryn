@@ -103,12 +103,16 @@ tests small, explicit, and user-focused.
   docs-only work. Never substitute a same-numbered object from the other
   repository.
 - After a fresh Verify previews the complete delivery bundle, docs-first merge
-  order, final messages, and safe post-merge checkout synchronization, an
-  explicit Merge prompt authorizes the unchanged preview. Use squash merge for
-  ordinary short-lived PRs when enabled, with the reviewed PR title as subject
-  and a concise body instead of aggregated incremental messages. Merge required
-  docs companions first and the Falryn delivery PR last; stop if state changed
-  or any sequential merge fails.
+  order, exact final subjects and optional issue-reference footers, and safe
+  post-merge checkout synchronization, an explicit Merge prompt authorizes the
+  unchanged preview. Use squash merge for ordinary short-lived PRs when
+  enabled, with the reviewed PR title as the subject and no body by default.
+  Add at most one short `Closes #N` or repository-qualified `Refs owner/repo#N`
+  footer only when it adds useful durable traceability. Keep validation, risks,
+  documentation impact, companion links, delivery details, and incremental
+  commit messages in the PR rather than the squash commit. Merge required docs
+  companions first and the Falryn delivery PR last; stop if state changed or
+  any sequential merge fails.
 - After every required PR in the delivery bundle has merged successfully,
   return each available clean local checkout to its repository's exact default
   branch and fast-forward it to the fetched remote default. Before switching,
