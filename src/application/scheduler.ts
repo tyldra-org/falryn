@@ -22,13 +22,11 @@
  */
 
 import {
-  addDuration,
   type BudgetId,
   type ClockPort,
   type ConflictKey,
   type Deadline,
   deadlineAt,
-  duration,
   effectiveConflictKeys,
   instant,
   type PriorityClass,
