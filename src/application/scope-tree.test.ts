@@ -189,11 +189,67 @@ describe("terminal semantics", () => {
   test("cancelling an observation is cancelled, and its evidence is kept", () => {
     const { tree } = makeTree();
     const turn = derive(tree, tree.root().scopeId, "turn-1");
-    tree.cancel(turn, { kind: "requested" });
+    // Work an observation already finished before the cancellation arrived.
+    const finished = derive(tree, turn, "read-1", "invocation");
+    tree.recordEffect(finished, "completed");
+    tree.complete(finished);
 
+    tree.cancel(turn, { kind: "requested" });
     const acknowledged = tree.acknowledge(turn);
+
     expect(acknowledged).toEqual({ ok: true, value: { kind: "cancelled", effect: "none" } });
     expect(tree.report(turn)?.requiresInspection).toBe(false);
+
+    // The evidence gathered before cancellation survives it unchanged.
+    expect(tree.state(finished)).toMatchObject({
+      status: "terminal",
+      outcome: { kind: "completed" },
+    });
+    expect(tree.report(finished)?.recordedEffect).toBe("completed");
+    expect(tree.report(turn)?.subtreeEffect).toBe("completed");
+  });
+
+  test("acknowledgement latency is observable once a scope settles", async () => {
+    const clock = createManualClock(instant(0));
+    const tree = createScopeTree({ clock });
+    const turn = tree.derive(tree.root().scopeId, { kind: "turn" });
+    if (!turn.ok) {
+      throw new Error("derive failed");
+    }
+
+    expect(tree.report(turn.value.scopeId)?.cancellationLatency).toBeNull();
+
+    await clock.advance(duration(40));
+    tree.cancel(turn.value.scopeId, { kind: "requested" });
+    expect(tree.report(turn.value.scopeId)?.cancellationLatency).toBeNull();
+
+    await clock.advance(duration(120));
+    tree.acknowledge(turn.value.scopeId);
+    expect(tree.report(turn.value.scopeId)?.cancellationLatency).toBe(duration(120));
+  });
+
+  test("a scope that was never cancelled reports no latency", () => {
+    const { tree } = makeTree();
+    const turn = derive(tree, tree.root().scopeId, "turn-1");
+    tree.complete(turn);
+    expect(tree.report(turn)?.cancellationLatency).toBeNull();
+  });
+
+  test("latency is measured from the first request, not a later one", async () => {
+    const clock = createManualClock(instant(0));
+    const tree = createScopeTree({ clock });
+    const turn = tree.derive(tree.root().scopeId, { kind: "turn" });
+    if (!turn.ok) {
+      throw new Error("derive failed");
+    }
+
+    tree.cancel(turn.value.scopeId, { kind: "requested" });
+    await clock.advance(duration(50));
+    tree.cancel(turn.value.scopeId, { kind: "shutdown" });
+    await clock.advance(duration(50));
+    tree.acknowledge(turn.value.scopeId);
+
+    expect(tree.report(turn.value.scopeId)?.cancellationLatency).toBe(duration(100));
   });
 
   test("cancelling a mutation is uncertain, not cancelled", () => {

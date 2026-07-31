@@ -7,7 +7,6 @@ import {
   duration,
   elapsedBetween,
   instant,
-  instantToTimestamp,
   parseDuration,
   parseInstant,
   type WaitOutcome,
@@ -39,12 +38,6 @@ describe("time values", () => {
   test("elapsed time never goes negative", () => {
     expect(elapsedBetween(instant(100), instant(40))).toBe(duration(0));
     expect(elapsedBetween(instant(40), instant(100))).toBe(duration(60));
-  });
-
-  test("renders an instant as a canonical timestamp", () => {
-    expect(String(instantToTimestamp(instant(Date.UTC(2026, 6, 31))))).toBe(
-      "2026-07-31T00:00:00.000Z",
-    );
   });
 });
 

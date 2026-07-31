@@ -21,7 +21,7 @@ import {
   type Deadline,
   deriveDeadline,
   type EffectCertainty,
-  enlargesDeadline,
+  elapsedBetween,
   err,
   type Instant,
   isExpired,
@@ -140,6 +140,8 @@ type ScopeNode = {
   readonly children: ScopeId[];
   state: ScopeState;
   effect: EffectCertainty;
+  /** When cancellation was first requested, so acknowledgement latency is observable. */
+  cancellationRequestedAt: Instant | null;
 };
 
 export type ScopeTreeOptions = {
@@ -194,6 +196,7 @@ export function createScopeTree(options: ScopeTreeOptions): ScopeTree {
     children: [],
     state: { status: "active" },
     effect: "none",
+    cancellationRequestedAt: null,
   };
   nodes.set(rootId, rootNode);
   emit("scope.opened", rootNode, clock.now());
@@ -241,6 +244,7 @@ export function createScopeTree(options: ScopeTreeOptions): ScopeTree {
       return;
     }
     node.state = { status: "cancelling", reason, requestedAt: at };
+    node.cancellationRequestedAt = at;
     node.controller.abort();
     collected.push(emit("scope.cancellation.requested", node, at, { reason }));
   };
@@ -310,6 +314,7 @@ export function createScopeTree(options: ScopeTreeOptions): ScopeTree {
         children: [],
         state: { status: "active" },
         effect: "none",
+        cancellationRequestedAt: null,
       };
       nodes.set(childId, node);
       parent.children.push(childId);
@@ -455,6 +460,10 @@ export function createScopeTree(options: ScopeTreeOptions): ScopeTree {
         recordedEffect: node.effect,
         subtreeEffect,
         requiresInspection: subtreeEffect === "partial" || subtreeEffect === "uncertain",
+        cancellationLatency:
+          node.cancellationRequestedAt === null || node.state.status !== "terminal"
+            ? null
+            : elapsedBetween(node.cancellationRequestedAt, node.state.settledAt),
       };
     },
 
@@ -481,9 +490,4 @@ export function createScopeTree(options: ScopeTreeOptions): ScopeTree {
       };
     },
   };
-}
-
-/** Whether a requested deadline was narrowed by what it inherited. */
-export function deadlineWasCapped(inherited: Deadline | null, requested: Deadline | null): boolean {
-  return enlargesDeadline(inherited, requested);
 }

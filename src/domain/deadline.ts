@@ -64,8 +64,3 @@ export function isExpired(deadline: Deadline, clock: ClockPort): boolean {
 export function remainingDuration(deadline: Deadline, clock: ClockPort): DurationMs {
   return elapsedBetween(clock.now(), deadline.expiresAt);
 }
-
-/** The earlier of two deadlines, treating `null` as no limit. */
-export function earlierDeadline(left: Deadline | null, right: Deadline | null): Deadline | null {
-  return deriveDeadline(left, right);
-}

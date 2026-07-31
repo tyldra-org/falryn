@@ -25,7 +25,6 @@ import {
   duration,
   err,
   graceForLevel,
-  type Instant,
   MAX_SHUTDOWN_PARTICIPANTS,
   ok,
   type ParticipantReport,
@@ -129,6 +128,9 @@ export function createShutdownCoordinator(
     );
 
     const reports = new Map<string, ParticipantReport>();
+    // The context carries the phase's initial deadline. Escalation shortens the
+    // window the coordinator waits, but a participant is not handed a second,
+    // conflicting contract mid-flight: `signal` is the authority for "stop now".
     const context: ShutdownPhaseContext = {
       phase,
       signal: phaseController.signal,
@@ -298,9 +300,4 @@ export function createShutdownCoordinator(
       return participants.map(({ name, phase }) => ({ name, phase }));
     },
   };
-}
-
-/** The instant a phase started under a given level, for callers reporting progress. */
-export function phaseDeadlineFor(clock: ClockPort, level: ShutdownLevel): Instant {
-  return addDuration(clock.now(), duration(graceForLevel(level)));
 }

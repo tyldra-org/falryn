@@ -141,6 +141,32 @@ describe("deadlines and hanging participants", () => {
     expect(phase?.endedAt).toBe(instant(DEFAULT_PHASE_GRACE_MS));
   });
 
+  test("a hanging participant does not stop its own phase's other participants", async () => {
+    const clock = createManualClock(instant(0));
+    const coordinator = createShutdownCoordinator({ clock });
+    const log: string[] = [];
+
+    coordinator.register(hangingParticipant("stuck", "drain-events"));
+    coordinator.register(recorder("healthy", "drain-events", log));
+    coordinator.register({
+      name: "broken",
+      phase: "drain-events",
+      run: () => Promise.reject(new Error("boom")),
+    });
+
+    const report = await runToCompletion(clock, coordinator.shutdown());
+
+    expect(log).toEqual(["healthy"]);
+    expect(report.unfinished).toEqual(["stuck"]);
+    expect(report.failures.map((failure) => failure.name)).toEqual(["broken"]);
+    const drain = report.phases.find((phase) => phase.phase === "drain-events");
+    expect(drain?.participants.map((participant) => participant.status)).toEqual([
+      "timed-out",
+      "completed",
+      "failed",
+    ]);
+  });
+
   test("a hanging participant does not stop later phases", async () => {
     const clock = createManualClock(instant(0));
     const coordinator = createShutdownCoordinator({ clock });

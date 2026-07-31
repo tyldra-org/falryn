@@ -11,7 +11,6 @@
  */
 
 import { err, ok, type Result } from "./result.ts";
-import { type Timestamp, timestampFromEpochMilliseconds } from "./time.ts";
 
 declare const brand: unique symbol;
 
@@ -71,10 +70,6 @@ export function addDuration(from: Instant, span: DurationMs): Instant {
 /** Elapsed time between two instants, clamped at zero rather than going negative. */
 export function elapsedBetween(from: Instant, to: Instant): DurationMs {
   return Math.max(0, to - from) as DurationMs;
-}
-
-export function instantToTimestamp(value: Instant): Timestamp {
-  return timestampFromEpochMilliseconds(value);
 }
 
 /** Why a wait ended. A caller must distinguish these; they are not interchangeable. */

@@ -12,7 +12,7 @@
  * something.
  */
 
-import type { Instant } from "./clock.ts";
+import type { DurationMs, Instant } from "./clock.ts";
 import type { Deadline } from "./deadline.ts";
 import type { ScopeId } from "./identity.ts";
 import type { EffectCertainty, TerminalOutcome } from "./outcome.ts";
@@ -115,6 +115,14 @@ export type ScopeReport = {
   readonly subtreeEffect: EffectCertainty;
   /** Whether external state must be observed before this work is retried. */
   readonly requiresInspection: boolean;
+  /**
+   * How long the scope took to acknowledge a cancellation request.
+   *
+   * `null` until the scope has both been asked to stop and settled. This is the
+   * observation, not a threshold: whether a given latency is acceptable, and how
+   * it is profiled, is owned by the performance work.
+   */
+  readonly cancellationLatency: DurationMs | null;
 };
 
 export type ScopeError =

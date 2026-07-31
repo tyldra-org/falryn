@@ -32,15 +32,10 @@ export type {
   ScopeTree,
   ScopeTreeOptions,
 } from "./scope-tree.ts";
-export {
-  createScopeTree,
-  deadlineWasCapped,
-  MAX_LIVE_SCOPES,
-  MAX_SCOPE_DEPTH,
-} from "./scope-tree.ts";
+export { createScopeTree, MAX_LIVE_SCOPES, MAX_SCOPE_DEPTH } from "./scope-tree.ts";
 export type {
   ShutdownCoordinator,
   ShutdownCoordinatorOptions,
   ShutdownOptions,
 } from "./shutdown-coordinator.ts";
-export { createShutdownCoordinator, phaseDeadlineFor } from "./shutdown-coordinator.ts";
+export { createShutdownCoordinator } from "./shutdown-coordinator.ts";

@@ -89,7 +89,9 @@ Its verified behavior:
   dropping them, records participants that did not finish, and leaves no scope
   in a non-terminal state; and
 - forced termination reports `uncertain` for anything it did not observe
-  stopping, never `completed`.
+  stopping, never `completed`; and
+- a scope reports how long it took to acknowledge cancellation, measured from
+  the first request, so a slow drain is observable. No threshold is asserted.
 
 `src/main.ts` now composes that lifecycle, so the compiled executable includes
 the domain, application, and integration layers and the real process-signal
@@ -101,7 +103,7 @@ Observed on 2026-07-31:
 ```text
 bun run check  PASS
 bun run build  PASS  (105 modules bundled)
-bun test       244 pass, 0 fail
+bun test       246 pass, 0 fail
 ```
 
 The compiled file is a development bootstrap artifact. It is not a supported

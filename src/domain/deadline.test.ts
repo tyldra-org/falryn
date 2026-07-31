@@ -5,7 +5,6 @@ import {
   deadlineAt,
   deadlineIn,
   deriveDeadline,
-  earlierDeadline,
   enlargesDeadline,
   isExpired,
   remainingDuration,
@@ -41,12 +40,6 @@ describe("deadline derivation", () => {
   test("equal deadlines resolve to the inherited one", () => {
     const inherited = deadlineAt(instant(1_000));
     expect(deriveDeadline(inherited, deadlineAt(instant(1_000)))).toEqual(inherited);
-  });
-
-  test("earlierDeadline is the same rule under another name", () => {
-    const left = deadlineAt(instant(200));
-    const right = deadlineAt(instant(100));
-    expect(earlierDeadline(left, right)).toEqual(right);
   });
 });
 
