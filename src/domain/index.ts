@@ -6,8 +6,36 @@
  * domain itself imports no framework, transport, or storage types.
  */
 
+export type {
+  ClockPort,
+  DurationMs,
+  Instant,
+  ManualClock,
+  TimeError,
+  WaitOutcome,
+} from "./clock.ts";
+export {
+  addDuration,
+  createManualClock,
+  createSystemClock,
+  duration,
+  elapsedBetween,
+  instant,
+  parseDuration,
+  parseInstant,
+  ZERO_DURATION,
+} from "./clock.ts";
 export { decodeRuntimeEvent, encodedByteLength, encodeRuntimeEvent } from "./codec.ts";
 export type { CodecError, CodecIssue } from "./codec-error.ts";
+export type { Deadline } from "./deadline.ts";
+export {
+  deadlineAt,
+  deadlineIn,
+  deriveDeadline,
+  enlargesDeadline,
+  isExpired,
+  remainingDuration,
+} from "./deadline.ts";
 export type {
   CapabilityInvocationCompletedEvent,
   CapabilityInvocationStartedEvent,
@@ -55,6 +83,7 @@ export type {
   IntegerCodec,
   InvocationId,
   ModelAttemptId,
+  ScopeId,
   Sequence,
   SessionId,
   StreamId,
@@ -72,6 +101,7 @@ export {
   invocationId,
   modelAttemptId,
   nextSequence,
+  scopeId,
   sequence,
   sessionId,
   streamId,
@@ -98,6 +128,25 @@ export {
 export type { Err, Ok, Result } from "./result.ts";
 export { assertNever, err, ok } from "./result.ts";
 export type {
+  CancellationReason,
+  ScopeError,
+  ScopeEvent,
+  ScopeEventKind,
+  ScopeKind,
+  ScopeReport,
+  ScopeState,
+  ScopeStatus,
+} from "./scope.ts";
+export {
+  cancellationOutcomeFor,
+  effectSeverity,
+  isScopeKind,
+  SCOPE_KINDS,
+  SCOPE_STATUSES,
+  timeoutOutcomeFor,
+  worstEffect,
+} from "./scope.ts";
+export type {
   AppendDecision,
   ReplayAnomaly,
   ReplayReport,
@@ -109,6 +158,29 @@ export {
   inspectReplay,
   MAX_TRACKED_EVENTS_PER_STREAM,
 } from "./sequence.ts";
+export type {
+  ParticipantReport,
+  ParticipantStatus,
+  PhaseReport,
+  ShutdownError,
+  ShutdownLevel,
+  ShutdownParticipant,
+  ShutdownPhase,
+  ShutdownPhaseContext,
+  ShutdownReport,
+} from "./shutdown.ts";
+export {
+  DEFAULT_PHASE_GRACE_MS,
+  ESCALATED_PHASE_GRACE_MS,
+  FORCED_PHASE_GRACE_MS,
+  graceForLevel,
+  isShutdownPhase,
+  MAX_SHUTDOWN_PARTICIPANTS,
+  SHUTDOWN_LEVELS,
+  SHUTDOWN_PHASES,
+} from "./shutdown.ts";
+export type { InterruptSignal, ManualSignalPort, SignalPort, Unsubscribe } from "./signal.ts";
+export { createManualSignalPort, INTERRUPT_SIGNALS } from "./signal.ts";
 export type { StoredEvent } from "./stored-event.ts";
 export { fromStoredEvent, toStoredEvent } from "./stored-event.ts";
 export type { Timestamp, TimestampError } from "./time.ts";

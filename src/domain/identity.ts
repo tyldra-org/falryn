@@ -23,6 +23,7 @@ export type CapabilityId = Brand<string, "CapabilityId">;
 export type EventId = Brand<string, "EventId">;
 export type TraceId = Brand<string, "TraceId">;
 export type StreamId = Brand<string, "StreamId">;
+export type ScopeId = Brand<string, "ScopeId">;
 export type IdempotencyKey = Brand<string, "IdempotencyKey">;
 
 export type ConfigurationGeneration = Brand<number, "ConfigurationGeneration">;
@@ -111,6 +112,7 @@ export const capabilityId = createIdentifierCodec<CapabilityId>("capabilityId");
 export const eventId = createIdentifierCodec<EventId>("eventId");
 export const traceId = createIdentifierCodec<TraceId>("traceId");
 export const streamId = createIdentifierCodec<StreamId>("streamId");
+export const scopeId = createIdentifierCodec<ScopeId>("scopeId");
 export const idempotencyKey = createIdentifierCodec<IdempotencyKey>("idempotencyKey");
 
 export type IntegerCodec<Value extends number> = {

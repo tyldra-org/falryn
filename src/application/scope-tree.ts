@@ -1,0 +1,611 @@
+/**
+ * The runtime's cancellation scope tree.
+ *
+ * One tree owns every scope in the process. Cancellation is applied
+ * breadth-first from the cancelled scope downward, so a parent's request is
+ * always observed before its children's, and the resulting event order is the
+ * order a surface can render without reordering.
+ *
+ * Two invariants are enforced here rather than left to callers:
+ *
+ * - a scope's deadline is the tighter of its parent's and its own request, so
+ *   deriving a child can only ever narrow what it inherited; and
+ * - a scope's recorded effect only moves toward more uncertainty, so settling a
+ *   scope cannot erase a partial mutation it already reported.
+ */
+
+import {
+  type CancellationReason,
+  type ClockPort,
+  cancellationOutcomeFor,
+  type Deadline,
+  deriveDeadline,
+  type EffectCertainty,
+  elapsedBetween,
+  err,
+  type Instant,
+  isExpired,
+  ok,
+  type Result,
+  type ScopeError,
+  type ScopeEvent,
+  type ScopeId,
+  type ScopeKind,
+  type ScopeReport,
+  type ScopeState,
+  scopeId as scopeIdCodec,
+  type TerminalOutcome,
+  timeoutOutcomeFor,
+  worstEffect,
+} from "../domain/index.ts";
+
+/** Depth of the application → session → turn → attempt → invocation → child chain. */
+export const MAX_SCOPE_DEPTH = 16;
+
+/**
+ * Scopes that may be live — not yet terminal — at one time.
+ *
+ * This counts live scopes only. Settled scopes do not consume the budget: a
+ * session that completes ten thousand turns has done nothing wrong, and
+ * refusing its next turn would be a false report of runaway work.
+ */
+export const MAX_LIVE_SCOPES = 10_000;
+
+/**
+ * Settled scopes kept for inspection after they finish.
+ *
+ * A caller needs to read the outcome of work that just ended, so a terminal
+ * scope is retained rather than dropped immediately. Beyond this window the
+ * oldest are evicted; their effect has already been folded into their parent,
+ * so evicting one never loses the fact that something uncertain happened.
+ */
+export const MAX_RETAINED_TERMINAL_SCOPES = 1_000;
+
+/** Lifecycle events retained for diagnostics. Older ones are dropped and counted. */
+export const MAX_RETAINED_SCOPE_EVENTS = 10_000;
+
+/** Events discarded per trim, so trimming is amortized rather than per-event. */
+const SCOPE_EVENT_TRIM_CHUNK = 1_024;
+
+export type ScopeHandle = {
+  readonly scopeId: ScopeId;
+  readonly kind: ScopeKind;
+  readonly parentId: ScopeId | null;
+  readonly deadline: Deadline | null;
+  /** Aborts when this scope, or any ancestor, begins cancelling. */
+  readonly signal: AbortSignal;
+  /** Distance from the root. The root is zero. */
+  readonly depth: number;
+};
+
+export type DeriveScopeOptions = {
+  readonly kind: ScopeKind;
+  /** Capped by the parent's deadline. A looser request is narrowed, not rejected. */
+  readonly deadline?: Deadline | null;
+  /** Supplied by the caller so a scope can be correlated with work it already named. */
+  readonly scopeId?: ScopeId;
+};
+
+export type ScopeTree = {
+  root(): ScopeHandle;
+  derive(parentId: ScopeId, options: DeriveScopeOptions): Result<ScopeHandle, ScopeError>;
+
+  /**
+   * Requests cancellation of a scope and every descendant.
+   *
+   * Returns the ordered events it produced. Scopes move to `cancelling`, not to
+   * a terminal state: the work still has to acknowledge, and pretending
+   * otherwise is exactly the "reported completion before cleanup" failure.
+   */
+  cancel(scopeId: ScopeId, reason: CancellationReason): Result<readonly ScopeEvent[], ScopeError>;
+
+  /**
+   * Records what a scope has done to the world.
+   *
+   * Monotonic toward uncertainty. Recording `none` over a `partial` is accepted
+   * and ignored rather than rejected, because a caller reporting progress
+   * should not have to know what was recorded before it.
+   */
+  recordEffect(scopeId: ScopeId, effect: EffectCertainty): Result<void, ScopeError>;
+
+  /**
+   * Settles a scope that finished on its own.
+   *
+   * The recorded effect is preserved, so a scope that mutated something and
+   * then completed still reports the mutation.
+   */
+  complete(scopeId: ScopeId): Result<TerminalOutcome, ScopeError>;
+
+  /** Settles a scope that failed on its own. */
+  fail(scopeId: ScopeId): Result<TerminalOutcome, ScopeError>;
+
+  /**
+   * Acknowledges that a cancelling scope has stopped.
+   *
+   * This is the terminal acknowledgement a surface waits for. The outcome
+   * follows the scope's recorded effect, not the cancellation request.
+   */
+  acknowledge(scopeId: ScopeId): Result<TerminalOutcome, ScopeError>;
+
+  /**
+   * Cancels every scope whose deadline has passed, according to the clock.
+   *
+   * Expiry is polled rather than timer-driven so the tree stays a pure function
+   * of the clock; the coordinator that owns waiting decides when to poll.
+   */
+  expireDeadlines(escalated?: boolean): readonly ScopeEvent[];
+
+  /**
+   * Settles every scope still cancelling, without waiting for acknowledgement.
+   *
+   * Used only under force. Anything unacknowledged becomes `uncertain`: the
+   * work was not observed stopping, and force must not upgrade that to success.
+   */
+  forceSettleUnacknowledged(): readonly ScopeEvent[];
+
+  report(scopeId: ScopeId): ScopeReport | null;
+  /** Scopes held in memory: live ones plus settled ones still inside the retention window. */
+  retainedScopeCount(): number;
+  /** Lifecycle events discarded from the retained log, so truncation stays visible. */
+  droppedEventCount(): number;
+  state(scopeId: ScopeId): ScopeState | null;
+  children(scopeId: ScopeId): readonly ScopeId[];
+  /** Scopes not yet terminal. This is what the live-scope bound measures. */
+  liveScopeCount(): number;
+  /** Every event so far, in order. */
+  events(): readonly ScopeEvent[];
+  subscribe(listener: (event: ScopeEvent) => void): () => void;
+};
+
+type ScopeNode = {
+  readonly scopeId: ScopeId;
+  readonly kind: ScopeKind;
+  readonly parentId: ScopeId | null;
+  readonly depth: number;
+  readonly deadline: Deadline | null;
+  readonly controller: AbortController;
+  readonly children: ScopeId[];
+  state: ScopeState;
+  effect: EffectCertainty;
+  /**
+   * The worst effect any already-settled descendant reported.
+   *
+   * Folded in when a child settles, so a parent keeps surfacing a descendant's
+   * uncertainty after that descendant has been evicted.
+   */
+  settledDescendantEffect: EffectCertainty;
+  /** When cancellation was first requested, so acknowledgement latency is observable. */
+  cancellationRequestedAt: Instant | null;
+  /**
+   * Ordinal for the next generated child identifier.
+   *
+   * Monotonic, and deliberately not derived from `children.length`: children are
+   * evicted once settled, so a length-based name would be reissued and collide
+   * with a scope still retained.
+   */
+  nextChildOrdinal: number;
+};
+
+export type ScopeTreeOptions = {
+  readonly clock: ClockPort;
+  readonly rootScopeId?: ScopeId;
+  readonly rootDeadline?: Deadline | null;
+};
+
+export function createScopeTree(options: ScopeTreeOptions): ScopeTree {
+  const { clock } = options;
+  const nodes = new Map<ScopeId, ScopeNode>();
+  const events: ScopeEvent[] = [];
+  /** Settled scopes still retained, oldest first. */
+  const retained: ScopeId[] = [];
+  let listeners: ((event: ScopeEvent) => void)[] = [];
+  let order = 0;
+  let liveCount = 0;
+  let droppedEvents = 0;
+
+  const emit = (
+    kind: ScopeEvent["kind"],
+    node: ScopeNode,
+    at: Instant,
+    detail: {
+      reason?: CancellationReason | null;
+      outcome?: TerminalOutcome | null;
+      effect?: EffectCertainty | null;
+    } = {},
+  ): ScopeEvent => {
+    order += 1;
+    const event: ScopeEvent = {
+      order,
+      kind,
+      scopeId: node.scopeId,
+      scopeKind: node.kind,
+      at,
+      reason: detail.reason ?? null,
+      outcome: detail.outcome ?? null,
+      effect: detail.effect ?? null,
+    };
+    events.push(event);
+    if (events.length > MAX_RETAINED_SCOPE_EVENTS) {
+      droppedEvents += events.splice(0, SCOPE_EVENT_TRIM_CHUNK).length;
+    }
+    for (const listener of [...listeners]) {
+      listener(event);
+    }
+    return event;
+  };
+
+  const rootId = options.rootScopeId ?? scopeIdCodec.from("scope-root");
+  const rootNode: ScopeNode = {
+    scopeId: rootId,
+    kind: "application",
+    parentId: null,
+    depth: 0,
+    deadline: options.rootDeadline ?? null,
+    controller: new AbortController(),
+    children: [],
+    state: { status: "active" },
+    effect: "none",
+    settledDescendantEffect: "none",
+    cancellationRequestedAt: null,
+    nextChildOrdinal: 1,
+  };
+  nodes.set(rootId, rootNode);
+  liveCount += 1;
+  emit("scope.opened", rootNode, clock.now());
+
+  const handleOf = (node: ScopeNode): ScopeHandle => ({
+    scopeId: node.scopeId,
+    kind: node.kind,
+    parentId: node.parentId,
+    deadline: node.deadline,
+    signal: node.controller.signal,
+    depth: node.depth,
+  });
+
+  const descendantsOf = (start: ScopeNode): ScopeNode[] => {
+    const collected: ScopeNode[] = [];
+    const queue: ScopeId[] = [...start.children];
+    while (queue.length > 0) {
+      const next = queue.shift();
+      if (next === undefined) {
+        break;
+      }
+      const node = nodes.get(next);
+      if (node === undefined) {
+        continue;
+      }
+      collected.push(node);
+      queue.push(...node.children);
+    }
+    return collected;
+  };
+
+  const totalEffectOf = (node: ScopeNode): EffectCertainty =>
+    worstEffect(node.effect, node.settledDescendantEffect);
+
+  const subtreeEffectOf = (node: ScopeNode): EffectCertainty =>
+    descendantsOf(node).reduce<EffectCertainty>(
+      (worst, descendant) => worstEffect(worst, totalEffectOf(descendant)),
+      totalEffectOf(node),
+    );
+
+  const beginCancelling = (
+    node: ScopeNode,
+    reason: CancellationReason,
+    at: Instant,
+    collected: ScopeEvent[],
+  ): void => {
+    if (node.state.status !== "active") {
+      return;
+    }
+    node.state = { status: "cancelling", reason, requestedAt: at };
+    node.cancellationRequestedAt = at;
+    node.controller.abort();
+    collected.push(emit("scope.cancellation.requested", node, at, { reason }));
+  };
+
+  /**
+   * Removes a settled scope from the tree.
+   *
+   * A scope is only evictable once nothing under it is still retained, so
+   * eviction never orphans a live child or a descendant a caller can still read.
+   */
+  const evict = (node: ScopeNode): boolean => {
+    if (node.children.some((child) => nodes.has(child))) {
+      return false;
+    }
+    const parent = node.parentId === null ? undefined : nodes.get(node.parentId);
+    if (parent !== undefined) {
+      const index = parent.children.indexOf(node.scopeId);
+      if (index >= 0) {
+        parent.children.splice(index, 1);
+      }
+    }
+    nodes.delete(node.scopeId);
+    return true;
+  };
+
+  const trimRetained = (): void => {
+    let index = 0;
+    while (retained.length - index > MAX_RETAINED_TERMINAL_SCOPES && index < retained.length) {
+      const candidateId = retained[index];
+      const candidate = candidateId === undefined ? undefined : nodes.get(candidateId);
+      if (candidate === undefined || evict(candidate)) {
+        retained.splice(index, 1);
+        continue;
+      }
+      // Still has retained descendants. Leave it and try the next oldest; it
+      // becomes evictable once they are gone.
+      index += 1;
+    }
+  };
+
+  const settle = (node: ScopeNode, outcome: TerminalOutcome, at: Instant): ScopeEvent => {
+    const reason = node.state.status === "cancelling" ? node.state.reason : null;
+    node.state = { status: "terminal", outcome, reason, settledAt: at };
+    liveCount -= 1;
+
+    // Fold this scope's total effect into its parent before it can be evicted,
+    // so an evicted uncertainty is still visible from above.
+    const parent = node.parentId === null ? undefined : nodes.get(node.parentId);
+    if (parent !== undefined) {
+      parent.settledDescendantEffect = worstEffect(
+        parent.settledDescendantEffect,
+        totalEffectOf(node),
+      );
+    }
+
+    const event = emit("scope.terminal", node, at, { outcome, reason, effect: node.effect });
+    retained.push(node.scopeId);
+    trimRetained();
+    return event;
+  };
+
+  const requireNode = (id: ScopeId): Result<ScopeNode, ScopeError> => {
+    const node = nodes.get(id);
+    return node === undefined ? err({ code: "unknown-scope", scopeId: id }) : ok(node);
+  };
+
+  const settleSelf = (
+    id: ScopeId,
+    outcome: TerminalOutcome,
+  ): Result<TerminalOutcome, ScopeError> => {
+    const found = requireNode(id);
+    if (!found.ok) {
+      return found;
+    }
+    const node = found.value;
+    if (node.state.status === "terminal") {
+      return err({ code: "scope-already-terminal", scopeId: id });
+    }
+    settle(node, outcome, clock.now());
+    return ok(outcome);
+  };
+
+  return {
+    root(): ScopeHandle {
+      return handleOf(rootNode);
+    },
+
+    derive(parentId: ScopeId, deriveOptions: DeriveScopeOptions): Result<ScopeHandle, ScopeError> {
+      const found = requireNode(parentId);
+      if (!found.ok) {
+        return found;
+      }
+      const parent = found.value;
+      if (parent.state.status === "terminal") {
+        return err({ code: "scope-already-terminal", scopeId: parentId });
+      }
+      if (parent.depth + 1 >= MAX_SCOPE_DEPTH) {
+        return err({ code: "scope-depth-exceeded", maximumDepth: MAX_SCOPE_DEPTH });
+      }
+      if (liveCount >= MAX_LIVE_SCOPES) {
+        return err({ code: "scope-count-exceeded", maximumScopes: MAX_LIVE_SCOPES });
+      }
+
+      const childId =
+        deriveOptions.scopeId ?? scopeIdCodec.from(`${parentId}.${parent.nextChildOrdinal}`);
+      if (nodes.has(childId)) {
+        return err({ code: "duplicate-scope", scopeId: childId });
+      }
+
+      const controller = new AbortController();
+      const node: ScopeNode = {
+        scopeId: childId,
+        kind: deriveOptions.kind,
+        parentId,
+        depth: parent.depth + 1,
+        deadline: deriveDeadline(parent.deadline, deriveOptions.deadline ?? null),
+        controller,
+        children: [],
+        state: { status: "active" },
+        effect: "none",
+        settledDescendantEffect: "none",
+        cancellationRequestedAt: null,
+        nextChildOrdinal: 1,
+      };
+      nodes.set(childId, node);
+      liveCount += 1;
+      parent.nextChildOrdinal += 1;
+      parent.children.push(childId);
+      emit("scope.opened", node, clock.now());
+
+      // A child derived under an already-cancelling parent starts cancelling
+      // too. Anything else would let a late child escape its parent's stop.
+      if (parent.state.status === "cancelling") {
+        const collected: ScopeEvent[] = [];
+        beginCancelling(
+          node,
+          { kind: "parent-cancelled", originScopeId: parentId },
+          clock.now(),
+          collected,
+        );
+      }
+      return ok(handleOf(node));
+    },
+
+    cancel(
+      targetId: ScopeId,
+      reason: CancellationReason,
+    ): Result<readonly ScopeEvent[], ScopeError> {
+      const found = requireNode(targetId);
+      if (!found.ok) {
+        return found;
+      }
+      const target = found.value;
+      const at = clock.now();
+      const collected: ScopeEvent[] = [];
+
+      beginCancelling(target, reason, at, collected);
+      for (const descendant of descendantsOf(target)) {
+        beginCancelling(
+          descendant,
+          { kind: "parent-cancelled", originScopeId: targetId },
+          at,
+          collected,
+        );
+      }
+      return ok(collected);
+    },
+
+    recordEffect(id: ScopeId, effect: EffectCertainty): Result<void, ScopeError> {
+      const found = requireNode(id);
+      if (!found.ok) {
+        return found;
+      }
+      const node = found.value;
+      if (node.state.status === "terminal") {
+        return err({ code: "scope-already-terminal", scopeId: id });
+      }
+      const updated = worstEffect(node.effect, effect);
+      if (updated !== node.effect) {
+        node.effect = updated;
+        emit("scope.effect.recorded", node, clock.now(), { effect: updated });
+      }
+      return ok(undefined);
+    },
+
+    complete(id: ScopeId): Result<TerminalOutcome, ScopeError> {
+      return settleSelf(id, { kind: "completed" });
+    },
+
+    fail(id: ScopeId): Result<TerminalOutcome, ScopeError> {
+      const found = requireNode(id);
+      if (!found.ok) {
+        return found;
+      }
+      return settleSelf(id, { kind: "failed", effect: found.value.effect });
+    },
+
+    acknowledge(id: ScopeId): Result<TerminalOutcome, ScopeError> {
+      const found = requireNode(id);
+      if (!found.ok) {
+        return found;
+      }
+      const node = found.value;
+      if (node.state.status === "terminal") {
+        return err({ code: "scope-already-terminal", scopeId: id });
+      }
+      const reason = node.state.status === "cancelling" ? node.state.reason : null;
+      const outcome =
+        reason?.kind === "deadline-exceeded"
+          ? timeoutOutcomeFor(node.effect)
+          : cancellationOutcomeFor(node.effect);
+      settle(node, outcome, clock.now());
+      return ok(outcome);
+    },
+
+    expireDeadlines(escalated = false): readonly ScopeEvent[] {
+      const at = clock.now();
+      const collected: ScopeEvent[] = [];
+      for (const node of [...nodes.values()]) {
+        if (node.state.status !== "active" || node.deadline === null) {
+          continue;
+        }
+        if (!isExpired(node.deadline, clock)) {
+          continue;
+        }
+        const reason: CancellationReason = {
+          kind: "deadline-exceeded",
+          deadline: node.deadline,
+          escalated,
+        };
+        beginCancelling(node, reason, at, collected);
+        for (const descendant of descendantsOf(node)) {
+          beginCancelling(
+            descendant,
+            { kind: "parent-cancelled", originScopeId: node.scopeId },
+            at,
+            collected,
+          );
+        }
+      }
+      return collected;
+    },
+
+    forceSettleUnacknowledged(): readonly ScopeEvent[] {
+      const at = clock.now();
+      const collected: ScopeEvent[] = [];
+      for (const node of [...nodes.values()]) {
+        if (node.state.status === "terminal") {
+          continue;
+        }
+        collected.push(settle(node, { kind: "uncertain", effect: "uncertain" }, at));
+      }
+      return collected;
+    },
+
+    report(id: ScopeId): ScopeReport | null {
+      const node = nodes.get(id);
+      if (node === undefined) {
+        return null;
+      }
+      const subtreeEffect = subtreeEffectOf(node);
+      return {
+        scopeId: node.scopeId,
+        kind: node.kind,
+        parentId: node.parentId,
+        state: node.state,
+        deadline: node.deadline,
+        recordedEffect: node.effect,
+        subtreeEffect,
+        requiresInspection: subtreeEffect === "partial" || subtreeEffect === "uncertain",
+        cancellationLatency:
+          node.cancellationRequestedAt === null || node.state.status !== "terminal"
+            ? null
+            : elapsedBetween(node.cancellationRequestedAt, node.state.settledAt),
+      };
+    },
+
+    state(id: ScopeId): ScopeState | null {
+      return nodes.get(id)?.state ?? null;
+    },
+
+    children(id: ScopeId): readonly ScopeId[] {
+      return [...(nodes.get(id)?.children ?? [])];
+    },
+
+    liveScopeCount(): number {
+      return liveCount;
+    },
+
+    retainedScopeCount(): number {
+      return nodes.size;
+    },
+
+    events(): readonly ScopeEvent[] {
+      return [...events];
+    },
+
+    droppedEventCount(): number {
+      return droppedEvents;
+    },
+
+    subscribe(listener: (event: ScopeEvent) => void): () => void {
+      listeners.push(listener);
+      return () => {
+        listeners = listeners.filter((candidate) => candidate !== listener);
+      };
+    },
+  };
+}
