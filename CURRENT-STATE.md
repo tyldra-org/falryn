@@ -170,16 +170,28 @@ Because `cancel-root-scope` runs before `stop-scheduling`, scoped work is
 already stopping by the time the drain participant runs; the drain exists for
 work that named no scope, and reports it unfinished when it will not stop.
 
+A unit can outlive its scope, because settling is cooperative and a scope may
+complete while work under it is still stopping.
+[#299](https://github.com/yogeshprasad098/falryn/issues/299) makes that ordering
+observable rather than silent: the scheduler no longer discards the refusal, and
+`ScopeTree.recordLateEffect` folds the late effect into every surviving ancestor
+using the same upward fold a scope performs when it settles normally. The settled
+scope's own terminal outcome is never rewritten, and the scheduler warns —
+naming the unit, the scope, and the effect — whenever a late effect demands
+inspection.
+
 Two limitations of that wiring:
 
 - the drain polls every 10 ms through `ClockPort` rather than waiting on a
   quiescence signal, because the scheduler reports a running count and publishes
   no such signal. The poll is bounded and deterministic under a manual clock and
   carries no correctness risk; and
-- the scheduler discards the result of recording a unit's effect on its scope,
-  so a unit terminating after its scope has already settled can leave that scope
-  unaware of it. That is a defect, not an accepted limitation, and is owned by
-  [#299](https://github.com/yogeshprasad098/falryn/issues/299).
+- a late effect whose scope was already evicted is reported but not attributed.
+  Eviction refuses a scope with live scope *children*, and scheduled units are
+  not children, so a settled scope with a still-running unit is evictable. The
+  diagnostic still names the unit and the effect; there is no ancestor chain left
+  to fold into. Changing that would change the eviction policy, which #299's
+  non-goals excluded.
 
 **`RuntimeEvent` has no production producer yet.** All eight declared kinds
 describe sessions, turns, model attempts, and capability invocations, and the

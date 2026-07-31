@@ -88,6 +88,32 @@ export type DeriveScopeOptions = {
   readonly scopeId?: ScopeId;
 };
 
+/**
+ * What recording an effect that may have arrived late did to the tree.
+ *
+ * Returned instead of `void` so a caller can tell an ordinary record from one
+ * that missed its scope, and report the difference rather than discarding it.
+ */
+export type LateEffectRecord = {
+  readonly scopeId: ScopeId;
+  readonly effect: EffectCertainty;
+  /**
+   * Whether the scope had already settled when the effect arrived.
+   *
+   * `false` is the ordinary case: the scope was still live and recorded the
+   * effect itself.
+   */
+  readonly late: boolean;
+  /**
+   * Ancestors that absorbed a late effect, nearest first.
+   *
+   * Empty when the scope was still live — it recorded the effect itself — or
+   * when a settled root had no ancestor left to carry it. An empty list on a
+   * late record means the effect is real but unattributable.
+   */
+  readonly foldedInto: readonly ScopeId[];
+};
+
 export type ScopeTree = {
   root(): ScopeHandle;
   derive(parentId: ScopeId, options: DeriveScopeOptions): Result<ScopeHandle, ScopeError>;
@@ -109,6 +135,30 @@ export type ScopeTree = {
    * should not have to know what was recorded before it.
    */
   recordEffect(scopeId: ScopeId, effect: EffectCertainty): Result<void, ScopeError>;
+
+  /**
+   * Records an effect from work that may have outlived its scope.
+   *
+   * `complete()` accepts a scope with live work still under it, and stopping is
+   * cooperative — work is asked to stop and settles when it chooses to. So a
+   * scope can settle first and its work report an effect afterwards, and
+   * `recordEffect` refuses that with `scope-already-terminal`. Refusing is
+   * right: a terminal outcome that could still change is not terminal, and
+   * rewriting one would erase the fact a caller already read.
+   *
+   * The effect is real regardless, so it is folded into every surviving
+   * ancestor's settled-descendant effect instead — the same upward fold a scope
+   * performs when it settles normally. The settled scope's own frozen outcome
+   * is left alone; its ancestors are what still have to report that something
+   * uncertain happened underneath them.
+   *
+   * A scope that is still live simply records the effect, so a caller racing
+   * the settle does not have to check the state first.
+   *
+   * `unknown-scope` means the scope was evicted before the effect arrived.
+   * Nothing is left to attribute it to; only the caller's diagnostic records it.
+   */
+  recordLateEffect(scopeId: ScopeId, effect: EffectCertainty): Result<LateEffectRecord, ScopeError>;
 
   /**
    * Settles a scope that finished on its own.
@@ -390,37 +440,43 @@ export function createScopeTree(options: ScopeTreeOptions): ScopeTree {
     }
   };
 
+  /**
+   * Folds an effect into every surviving ancestor, nearest first.
+   *
+   * Every ancestor, not just the parent: a parent may settle before its child,
+   * in which case the parent's own fold upward already happened and nothing
+   * would re-propagate the child's effect past it. While both remain in the
+   * retention window `subtreeEffectOf` still walks them and hides the gap; once
+   * both are evicted the ancestor reports `none` for work nobody observed
+   * finishing.
+   *
+   * `worstEffect` is an idempotent maximum, so reaching an ancestor that the
+   * bottom-up ordering would have reached transitively costs nothing. The walk
+   * is bounded by `MAX_SCOPE_DEPTH`, because `derive` refuses to nest deeper.
+   *
+   * This folds *effect reporting* upward. Cancellation still propagates
+   * downward only; the two travel in opposite directions by design.
+   */
+  const foldIntoAncestors = (node: ScopeNode, effect: EffectCertainty): ScopeId[] => {
+    const reached: ScopeId[] = [];
+    let ancestor = node.parentId === null ? undefined : nodes.get(node.parentId);
+    while (ancestor !== undefined) {
+      ancestor.settledDescendantEffect = worstEffect(ancestor.settledDescendantEffect, effect);
+      reached.push(ancestor.scopeId);
+      ancestor = ancestor.parentId === null ? undefined : nodes.get(ancestor.parentId);
+    }
+    return reached;
+  };
+
   const settle = (node: ScopeNode, outcome: TerminalOutcome, at: Instant): ScopeEvent => {
     const reason = node.state.status === "cancelling" ? node.state.reason : null;
     node.state = { status: "terminal", outcome, reason, settledAt: at };
     liveCount -= 1;
 
-    // Fold this scope's total effect into every ancestor before it can be
-    // evicted, so an evicted uncertainty is still visible from above.
-    //
-    // Every ancestor, not just the parent: a parent may settle before its child,
-    // in which case the parent's own fold upward already happened and nothing
-    // would re-propagate the child's effect past it. While both remain in the
-    // retention window `subtreeEffectOf` still walks them and hides the gap;
-    // once both are evicted the ancestor reports `none` for work nobody
-    // observed finishing.
-    //
-    // `worstEffect` is an idempotent maximum, so reaching an ancestor that the
-    // bottom-up ordering would have reached transitively costs nothing. The
-    // walk is bounded by `MAX_SCOPE_DEPTH`, and `evict` refuses a node with a
-    // live child, so the chain is always intact here.
-    //
-    // This folds *effect reporting* upward. Cancellation still propagates
-    // downward only; the two travel in opposite directions by design.
-    const settledEffect = totalEffectOf(node);
-    let ancestor = node.parentId === null ? undefined : nodes.get(node.parentId);
-    while (ancestor !== undefined) {
-      ancestor.settledDescendantEffect = worstEffect(
-        ancestor.settledDescendantEffect,
-        settledEffect,
-      );
-      ancestor = ancestor.parentId === null ? undefined : nodes.get(ancestor.parentId);
-    }
+    // Fold before this scope can be evicted, so an evicted uncertainty is still
+    // visible from above. `evict` refuses a node with a live child, so the
+    // ancestor chain is always intact here.
+    foldIntoAncestors(node, totalEffectOf(node));
 
     const event = emit("scope.terminal", node, at, { outcome, reason, effect: node.effect });
     retained.push(node.scopeId);
@@ -431,6 +487,15 @@ export function createScopeTree(options: ScopeTreeOptions): ScopeTree {
   const requireNode = (id: ScopeId): Result<ScopeNode, ScopeError> => {
     const node = nodes.get(id);
     return node === undefined ? err({ code: "unknown-scope", scopeId: id }) : ok(node);
+  };
+
+  /** Raises a live scope's own effect, emitting only when it actually moved. */
+  const applyEffect = (node: ScopeNode, effect: EffectCertainty): void => {
+    const updated = worstEffect(node.effect, effect);
+    if (updated !== node.effect) {
+      node.effect = updated;
+      emit("scope.effect.recorded", node, clock.now(), { effect: updated });
+    }
   };
 
   const settleSelf = (
@@ -544,12 +609,24 @@ export function createScopeTree(options: ScopeTreeOptions): ScopeTree {
       if (node.state.status === "terminal") {
         return err({ code: "scope-already-terminal", scopeId: id });
       }
-      const updated = worstEffect(node.effect, effect);
-      if (updated !== node.effect) {
-        node.effect = updated;
-        emit("scope.effect.recorded", node, clock.now(), { effect: updated });
-      }
+      applyEffect(node, effect);
       return ok(undefined);
+    },
+
+    recordLateEffect(id: ScopeId, effect: EffectCertainty): Result<LateEffectRecord, ScopeError> {
+      const found = requireNode(id);
+      if (!found.ok) {
+        return found;
+      }
+      const node = found.value;
+      if (node.state.status !== "terminal") {
+        applyEffect(node, effect);
+        return ok({ scopeId: id, effect, late: false, foldedInto: [] });
+      }
+      // The scope's own frozen effect and outcome stay as they settled. Only
+      // the ancestors, which are still accountable for what happened beneath
+      // them, take the update.
+      return ok({ scopeId: id, effect, late: true, foldedInto: foldIntoAncestors(node, effect) });
     },
 
     complete(id: ScopeId): Result<TerminalOutcome, ScopeError> {

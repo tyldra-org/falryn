@@ -27,6 +27,7 @@ import {
   type ConflictKey,
   type Deadline,
   deadlineAt,
+  type EffectCertainty,
   effectiveConflictKeys,
   effectOf,
   instant,
@@ -35,12 +36,15 @@ import {
   priorityRank,
   type RecoveryOption,
   type ReservationId,
+  type Result,
   type ScheduledWork,
   type SchedulerLimits,
   type SchedulerPort,
   type SchedulerReport,
   type SchedulingError,
   type SchedulingResult,
+  type ScopeError,
+  type ScopeId,
   type TerminalOutcome,
   type WorkRunner,
   type WorkUnit,
@@ -48,7 +52,7 @@ import {
 } from "../domain/index.ts";
 import type { BudgetLedger } from "./budget-ledger.ts";
 import type { DiagnosticsCollector } from "./diagnostics-collector.ts";
-import type { ScopeTree } from "./scope-tree.ts";
+import type { LateEffectRecord, ScopeTree } from "./scope-tree.ts";
 
 export const DEFAULT_SCHEDULER_LIMITS: SchedulerLimits = {
   maxConcurrent: 8,
@@ -221,17 +225,61 @@ export function createScheduler<Value>(options: SchedulerOptions): SchedulerPort
   };
 
   /**
+   * Reports an effect the unit's own scope would not take.
+   *
+   * Warn only when the effect demands inspection. A unit that completed after
+   * its scope settled is an ordering curiosity, not an operational problem, and
+   * warning about it would train an operator to ignore the warning that matters.
+   */
+  const emitLateEffectDiagnostic = <V>(
+    entry: Entry<V>,
+    scopeId: ScopeId,
+    effect: EffectCertainty,
+    record: Result<LateEffectRecord, ScopeError>,
+  ): void => {
+    const attributedTo = record.ok ? (record.value.foldedInto[0] ?? null) : null;
+    const demandsInspection = effect === "partial" || effect === "uncertain";
+    diagnostics?.emit({
+      level: demandsInspection ? "warn" : "debug",
+      subsystem: "scheduler",
+      code: "scheduler.unit.late-effect",
+      correlation: { ...NO_CORRELATION, scopeId },
+      stage: entry.unit.effect,
+      metadata: {
+        unit: entry.unit.id,
+        scope: scopeId,
+        effect,
+        refusal: record.ok ? "scope-already-terminal" : record.error.code,
+        // Named rather than counted: an operator inspecting external state needs
+        // to know which scope now carries the uncertainty.
+        ...(attributedTo === null ? { attributed: false } : { attributed: attributedTo }),
+      },
+    });
+  };
+
+  /**
    * Tells a unit's scope what the unit did to the world.
    *
    * The scope is the authority on effect certainty, and it only ever moves
    * toward more uncertainty — so a unit that stopped mid-mutation makes its
    * scope report uncertain too, and the two cannot disagree.
+   *
+   * A unit can outlive its scope: settling is cooperative, and a scope may
+   * complete while work under it is still stopping. The scope then refuses the
+   * record, and the tree folds the effect into its ancestors instead. Either
+   * way the refusal is reported rather than discarded — a dropped `Result` here
+   * is exactly how a mutation becomes invisible to recovery.
    */
   const recordOnScope = <V>(entry: Entry<V>, outcome: TerminalOutcome): void => {
     if (scopeTree === undefined || entry.unit.scopeId === null) {
       return;
     }
-    scopeTree.recordEffect(entry.unit.scopeId, effectOf(outcome));
+    const scopeId = entry.unit.scopeId;
+    const effect = effectOf(outcome);
+    if (scopeTree.recordEffect(scopeId, effect).ok) {
+      return;
+    }
+    emitLateEffectDiagnostic(entry, scopeId, effect, scopeTree.recordLateEffect(scopeId, effect));
   };
 
   const emitUnitDiagnostic = <V>(entry: Entry<V>, outcome: TerminalOutcome): void => {
