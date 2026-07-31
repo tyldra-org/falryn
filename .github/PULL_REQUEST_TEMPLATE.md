@@ -4,6 +4,11 @@ Closes #
 
 <!-- Use Refs # instead when this PR does not fully resolve the issue. -->
 
+## Delivery identity
+
+- Delivery owner:
+- Companion docs PR or not applicable:
+
 ## Scope
 
 <!-- Summarize the implementation shape and affected contracts. -->
@@ -24,6 +29,7 @@ Closes #
 - [ ] The implementation stays within the Ready issue and canonical contracts; any contract change is explained and linked.
 - [ ] The existing canonical owner was updated instead of creating a duplicate contract, roadmap, or implementation inventory.
 - [ ] Not user-facing, or the related `falryn-docs` pull request is cross-linked for coordinated landing.
+- [ ] Any companion docs PR references this delivery owner and links back to this delivery PR.
 - [ ] Repository-qualified paths and GitHub links are shareable; no contributor-specific local path is persisted.
 
 ## Risk and limitations
@@ -37,4 +43,6 @@ Closes #
 - [ ] Its parent is **In Progress** when this is the first required child to begin.
 - [ ] The branch targets the current default branch and contains no unrelated work.
 - [ ] Any parent remains open and **In Progress** for integrated verification.
-- [ ] The PR does not assume a merge method; GitHub repository settings control it.
+- [ ] The PR title is a clean conventional subject suitable for squash merge.
+- [ ] Verify can derive a concise squash body without aggregating incremental commit messages.
+- [ ] Verify includes every required companion and previews docs-first/application-last merge order.

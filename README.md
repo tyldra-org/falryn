@@ -67,6 +67,13 @@ within those contracts. If implementation requires a contract change, update
 the existing canonical owner in a linked `falryn-docs` pull request instead of
 silently diverging or creating a duplicate document.
 
+Workflow prompts stay repository-free: `Issue`, `Parent issue`, `PR`, and
+milestone targets resolve to this repository. A Falryn delivery PR includes its
+explicitly linked docs companion automatically for Verify and Merge. Use the
+short `Docs issue` or `Docs PR` qualifier only for docs-only work. Verify
+previews every final squash message and the docs-first merge order before the
+explicit Merge prompt lands the unchanged bundle.
+
 The minimal Bun and TypeScript toolchain scaffold is present; product behavior
 has not been implemented yet. See [Current state](CURRENT-STATE.md) for the
 verified inventory and next planning action. Start meaningful work from a Ready

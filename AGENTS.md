@@ -74,27 +74,38 @@ tests small, explicit, and user-focused.
 - Follow the canonical delivery workflow in
   [`falryn-docs/DEVELOPMENT.md`](https://github.com/yogeshprasad098/falryn-docs/blob/main/DEVELOPMENT.md):
   one PR-sized standalone issue or native implementation subissue maps to one
-  short-lived branch and one pull request containing `Closes #<issue>`. Plan
-  keeps work **Todo**; Implement assigns the issue and sets **In Progress**,
-  and sets its parent **In Progress** when the first required child begins;
-  after an approved merge, re-read GitHub and verify that the intended issue
-  closed and its Project status is **Done**. Keep any parent open and **In
-  Progress** until all required children and integrated acceptance criteria
-  pass, then close the parent and verify **Done**. Do not mix unrelated issues
-  in one branch or pull request.
+  short-lived implementation branch and one delivery PR containing `Closes
+  #<issue>`, plus a companion docs PR only when canonical documentation
+  changes. Plan keeps work **Todo**; Implement assigns the issue and sets **In
+  Progress**, and sets its parent **In Progress** when the first required child
+  begins; after an approved merge, re-read GitHub and verify that the intended
+  issue closed and its Project status is **Done**. Keep any parent open and
+  **In Progress** until all required children and integrated acceptance
+  criteria pass, then close the parent and verify **Done**. Do not mix unrelated
+  issues in one branch or pull request.
 - Name branches with a concise repository type prefix such as `feat/`, `fix/`,
   `docs/`, `refactor/`, `test/`, or `chore/`, followed by the issue number and
   purpose when applicable. Do not require or add an agent-name prefix such as
   `codex/`.
-- After review and explicit approval, use a merge method enabled and selected
-  by the repository's current GitHub settings. Do not hard-code squash, rebase,
-  or merge commits as a repository rule.
+- Resolve ordinary repository-free prompts to this `falryn` repository:
+  `Issue`, `Parent issue`, `PR`, and milestone targets all name Falryn objects.
+  A Falryn PR is the delivery PR and automatically includes its explicitly
+  linked `falryn-docs` companions. Use `Docs issue` and `Docs PR` only for
+  docs-only work. Never substitute a same-numbered object from the other
+  repository.
+- After a fresh Verify previews the complete delivery bundle, docs-first merge
+  order, and final messages, an explicit Merge prompt authorizes the unchanged
+  preview. Use squash merge for ordinary short-lived PRs when enabled, with the
+  reviewed PR title as subject and a concise body instead of aggregated
+  incremental messages. Merge required docs companions first and the Falryn
+  delivery PR last; stop if state changed or any sequential merge fails.
 - Treat `Plan — Target: ...`, `Implement — Target: ...`, and
   `Verify — Target: ...` as mandatory mode selectors. Before acting, read the
   canonical contracts in
   [`falryn-docs/DEVELOPMENT.md`](https://github.com/yogeshprasad098/falryn-docs/blob/main/DEVELOPMENT.md#recognized-prompt-forms),
   resolve the exact GitHub target, and obey the selected mode's scope, allowed
   mutations, stop conditions, status transitions, validation, and final report.
+  `Merge — Target: PR #N` is the separate delivery action after a fresh Verify.
   Do not interpret RavenCode milestone or phase identifiers as Falryn targets.
 - End every Plan, Implement, Verify, merge, and release-related report with one
   copy-ready `Suggested next prompt: ...` selected from current GitHub state.
