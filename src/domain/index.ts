@@ -54,6 +54,45 @@ export {
   remainingDuration,
 } from "./deadline.ts";
 export type {
+  DiagnosticEvent,
+  DiagnosticLevel,
+  DiagnosticSubsystem,
+  DiagnosticsReport,
+  DiagnosticValue,
+} from "./diagnostics.ts";
+export {
+  DIAGNOSTIC_LEVELS,
+  DIAGNOSTIC_SUBSYSTEMS,
+  isDiagnosticSubsystem,
+  MAX_DIAGNOSTIC_CARDINALITY,
+  MAX_DIAGNOSTIC_METADATA_KEYS,
+  MAX_DIAGNOSTIC_VALUE_LENGTH,
+  MAX_RETAINED_DIAGNOSTICS,
+} from "./diagnostics.ts";
+export type {
+  CorrelationIds,
+  ErrorCategory,
+  ExitCategory,
+  FalrynError,
+  RecoveryAction,
+  RuntimeEmittedCategory,
+  SafeCause,
+} from "./error.ts";
+export {
+  ERROR_CATEGORIES,
+  EXIT_CATEGORIES,
+  flattenErrors,
+  isErrorCategory,
+  isSafeToRetryWithoutInspection,
+  MAX_CAUSE_DETAIL_LENGTH,
+  MAX_ERROR_MESSAGE_LENGTH,
+  MAX_RELATED_ERRORS,
+  NO_CORRELATION,
+  RECOVERY_ACTIONS,
+  RUNTIME_EMITTED_CATEGORIES,
+  recoveryForEffect,
+} from "./error.ts";
+export type {
   CapabilityInvocationCompletedEvent,
   CapabilityInvocationStartedEvent,
   ConfigurationApplicationClass,
@@ -156,6 +195,8 @@ export type {
 export { OVERFLOW_POLICIES } from "./queue.ts";
 export type { Err, Ok, Result } from "./result.ts";
 export { assertNever, err, ok } from "./result.ts";
+export type { RetryBackoff, RetryDecision, RetryRefusal, RetryRequest } from "./retry.ts";
+export { backoffDelayMs, DEFAULT_RETRY_BACKOFF, evaluateRetry } from "./retry.ts";
 export type {
   QueueDepthByPriority,
   RecoveryOption,
