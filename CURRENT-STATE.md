@@ -170,6 +170,17 @@ Because `cancel-root-scope` runs before `stop-scheduling`, scoped work is
 already stopping by the time the drain participant runs; the drain exists for
 work that named no scope, and reports it unfinished when it will not stop.
 
+Two limitations of that wiring:
+
+- the drain polls every 10 ms through `ClockPort` rather than waiting on a
+  quiescence signal, because the scheduler reports a running count and publishes
+  no such signal. The poll is bounded and deterministic under a manual clock and
+  carries no correctness risk; and
+- the scheduler discards the result of recording a unit's effect on its scope,
+  so a unit terminating after its scope has already settled can leave that scope
+  unaware of it. That is a defect, not an accepted limitation, and is owned by
+  [#299](https://github.com/yogeshprasad098/falryn/issues/299).
+
 **`RuntimeEvent` has no production producer yet.** All eight declared kinds
 describe sessions, turns, model attempts, and capability invocations, and the
 runtime backbone has none of those concepts. The envelope, sequencer, and
@@ -205,11 +216,14 @@ check`.
 No end-user product behavior has been implemented. In particular, the
 repository does not yet provide:
 
-- any real shutdown participant — the registry exists, but scheduling drain,
-  persistence, artifact finalize, child-process termination, and terminal
-  restoration each register from their own owner and none exist yet;
-- configuration, credentials, local-data, SQLite, session, or artifact
-  behavior;
+- the shutdown participants other than the scheduler drain — persistence,
+  artifact finalize, child-process termination, and terminal restoration each
+  register from their own owner and none exist yet;
+- configuration composition, sources, precedence, validation, or reload;
+  credential storage; local-data layout; SQLite; or artifacts. A configuration
+  *generation* identity is carried through `RuntimeContext`, and session, turn,
+  and event *identities* exist — what does not exist is anything that produces
+  or persists them;
 - yargs commands, headless product behavior, or the OpenTUI application;
 - provider integration, model routing, the agent loop, or unified tool
   execution;
@@ -228,15 +242,17 @@ Their implementation breakdown lives in GitHub Issues and the Project.
 - **Live roadmap:** [Falryn Roadmap](https://github.com/users/yogeshprasad098/projects/2)
 - **Current release outcome:** [v0.1 Foundation issues](https://github.com/yogeshprasad098/falryn/issues?q=is%3Aissue%20is%3Aopen%20milestone%3A%22v0.1%20Foundation%22)
 - **First parent outcome:** [#1 Establish the unified runtime and lifecycle](https://github.com/yogeshprasad098/falryn/issues/1)
-- **Open children of #1:** [#296](https://github.com/yogeshprasad098/falryn/issues/296).
-- **Next planning action:** verify parent [#1 Establish the unified runtime and lifecycle](https://github.com/yogeshprasad098/falryn/issues/1) against its integrated acceptance criteria once #296 lands.
+- **Next planning action:** verify parent [#1 Establish the unified runtime and lifecycle](https://github.com/yogeshprasad098/falryn/issues/1) against its integrated acceptance criteria.
 
-Issues [#2](https://github.com/yogeshprasad098/falryn/issues/2),
-[#3](https://github.com/yogeshprasad098/falryn/issues/3),
-[#4](https://github.com/yogeshprasad098/falryn/issues/4),
-[#5](https://github.com/yogeshprasad098/falryn/issues/5), and
-[#292](https://github.com/yogeshprasad098/falryn/issues/292) are the issues with
-implemented behavior recorded here. No release has been published.
+Which of #1's children are open, and which delivered the behavior recorded
+above, is read from
+[#1](https://github.com/yogeshprasad098/falryn/issues/1) and the
+[v0.1 Foundation milestone](https://github.com/yogeshprasad098/falryn/milestone/1)
+rather than copied here. GitHub renders that live; a hand-maintained list of it
+went stale three deliveries running, and the "Implemented and verified" section
+above already attributes each capability to the issue that delivered it.
+
+No release has been published.
 GitHub owns live workflow state; this section provides a stable entry point and
 must be reconciled when the frontier materially changes.
 
