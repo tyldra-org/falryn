@@ -23,6 +23,7 @@ import {
   type Deadline,
   deadlineAt,
   duration,
+  elapsedBetween,
   err,
   graceForLevel,
   MAX_SHUTDOWN_PARTICIPANTS,
@@ -39,6 +40,7 @@ import {
   type ShutdownReport,
   type TerminalOutcome,
 } from "../domain/index.ts";
+import type { DiagnosticsCollector } from "./diagnostics-collector.ts";
 import type { ScopeTree } from "./scope-tree.ts";
 
 /** Longest a failure message may be before it is truncated into the report. */
@@ -76,6 +78,7 @@ export type ShutdownCoordinator = {
 
 export type ShutdownCoordinatorOptions = {
   readonly clock: ClockPort;
+  readonly diagnostics?: DiagnosticsCollector;
   /**
    * Cancelled during `cancel-root-scope`, and swept for anything still
    * non-terminal once every phase has run.
@@ -99,7 +102,7 @@ function safeFailureMessage(error: unknown): string {
 export function createShutdownCoordinator(
   options: ShutdownCoordinatorOptions,
 ): ShutdownCoordinator {
-  const { clock, scopeTree } = options;
+  const { clock, scopeTree, diagnostics } = options;
   const participants: ShutdownParticipant[] = [];
 
   let currentLevel: ShutdownLevel = "graceful";
@@ -201,11 +204,27 @@ export function createShutdownCoordinator(
     );
 
     const unfinished = participantReports.some((report) => report.status === "timed-out");
+    const endedAt = clock.now();
+
+    diagnostics?.emit({
+      level: timedOut || unfinished ? "warn" : "info",
+      subsystem: "shutdown",
+      code: "shutdown.phase",
+      stage: phase,
+      durationMs: elapsedBetween(startedAt, endedAt),
+      metadata: {
+        status: timedOut || unfinished ? "timed-out" : "completed",
+        level: currentLevel,
+        participants: participantReports.length,
+        unfinished: participantReports.filter((report) => report.status === "timed-out").length,
+      },
+    });
+
     return {
       phase,
       status: timedOut || unfinished ? "timed-out" : "completed",
       startedAt,
-      endedAt: clock.now(),
+      endedAt,
       participants: participantReports,
     };
   };

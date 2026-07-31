@@ -8,17 +8,22 @@
  */
 
 import {
+  addDuration,
   type ClockPort,
   type ConfigurationGeneration,
   type Deadline,
+  duration,
   FIRST_CONFIGURATION_GENERATION,
   type InterruptSignal,
+  type SchedulerLimits,
+  type SchedulerPort,
   type ScopeId,
   type ShutdownLevel,
   type ShutdownReport,
   type SignalPort,
   type Unsubscribe,
 } from "../domain/index.ts";
+import { createDiagnosticsCollector, type DiagnosticsCollector } from "./diagnostics-collector.ts";
 import {
   attachInterruptionPolicy,
   createInterruptionPolicy,
@@ -26,6 +31,7 @@ import {
   type InterruptionPolicy,
 } from "./interruption.ts";
 import { contextFromScope, type RuntimeContext } from "./runtime-context.ts";
+import { createScheduler } from "./scheduler.ts";
 import { createScopeTree, type ScopeTree } from "./scope-tree.ts";
 import { createShutdownCoordinator, type ShutdownCoordinator } from "./shutdown-coordinator.ts";
 
@@ -35,11 +41,25 @@ export type RuntimeLifecycleOptions = {
   readonly configurationGeneration?: ConfigurationGeneration;
   readonly rootScopeId?: ScopeId;
   readonly rootDeadline?: Deadline | null;
+  /** Shared by every subsystem. One is created when none is supplied. */
+  readonly diagnostics?: DiagnosticsCollector;
+  readonly schedulerLimits?: Partial<SchedulerLimits>;
 };
+
+/**
+ * How often the drain participant re-checks for in-flight work.
+ *
+ * Polled rather than event-driven because the scheduler reports its running
+ * count and does not publish a quiescence signal; the poll resolves through
+ * `ClockPort`, so it costs nothing under a manual clock.
+ */
+const DRAIN_POLL_MS = 10;
 
 export type RuntimeLifecycle = {
   readonly scopes: ScopeTree;
   readonly shutdown: ShutdownCoordinator;
+  readonly scheduler: SchedulerPort<unknown>;
+  readonly diagnostics: DiagnosticsCollector;
   readonly interruption: InterruptionPolicy;
   readonly rootContext: RuntimeContext;
 
@@ -62,12 +82,48 @@ export function createRuntimeLifecycle(options: RuntimeLifecycleOptions): Runtim
   const { clock, signals } = options;
   const generation = options.configurationGeneration ?? FIRST_CONFIGURATION_GENERATION;
 
+  const diagnostics = options.diagnostics ?? createDiagnosticsCollector({ clock });
   const scopes = createScopeTree({
     clock,
+    diagnostics,
     ...(options.rootScopeId === undefined ? {} : { rootScopeId: options.rootScopeId }),
     ...(options.rootDeadline === undefined ? {} : { rootDeadline: options.rootDeadline }),
   });
-  const shutdown = createShutdownCoordinator({ clock, scopeTree: scopes });
+  const shutdown = createShutdownCoordinator({ clock, scopeTree: scopes, diagnostics });
+  const scheduler = createScheduler<unknown>({
+    clock,
+    scopeTree: scopes,
+    diagnostics,
+    ...(options.schedulerLimits === undefined ? {} : { limits: options.schedulerLimits }),
+  });
+
+  // Registered in `stop-scheduling`, the phase the canonical shutdown order
+  // assigns to it — third, immediately after the root scope is cancelled.
+  // `drain-events` is the semantic event log, not scheduled work.
+  //
+  // The participant does both halves within its own phase deadline: the root
+  // cancellation in the previous phase has already told in-flight units to
+  // stop, so this waits for them to actually reach a terminal state. A unit
+  // that will not stop leaves this participant unfinished, which is what turns
+  // it into an `uncertain` shutdown rather than a clean exit.
+  shutdown.register({
+    name: "scheduler-drain",
+    phase: "stop-scheduling",
+    async run(context) {
+      while (scheduler.report().running > 0) {
+        if (context.signal.aborted) {
+          // The phase ended first. Returning would claim a drain that did not
+          // happen, so this participant stays unfinished by never resolving
+          // before its phase closed.
+          throw new Error("scheduler did not drain before the phase deadline");
+        }
+        await context.clock.waitUntil(
+          addDuration(context.clock.now(), duration(DRAIN_POLL_MS)),
+          context.signal,
+        );
+      }
+    },
+  });
   const interruption = createInterruptionPolicy(clock);
   const observed: { decision: InterruptionDecision; signal: InterruptSignal }[] = [];
 
@@ -105,6 +161,8 @@ export function createRuntimeLifecycle(options: RuntimeLifecycleOptions): Runtim
   return {
     scopes,
     shutdown,
+    scheduler,
+    diagnostics,
     interruption,
     rootContext: contextFromScope(scopes.root(), generation),
 
