@@ -21,16 +21,36 @@ export const REDACTED = "[redacted]";
  * Ordered most specific first: a credential-bearing URL is rewritten before the
  * generic key/value rule can partially mangle it.
  */
+/**
+ * Names that mean the value beside them is a credential.
+ *
+ * Shared by the free-text rule and the structured-metadata rule below. In text
+ * a secret appears as `apiKey=hunter2`; in metadata the same pair arrives as a
+ * key and a value that never form that string, so the name has to be matched on
+ * its own or the structured form silently bypasses redaction.
+ */
+const SECRET_NAME_SOURCE =
+  "(?:secret|password|passwd|token|api[_-]?key|access[_-]?key|private[_-]?key|credential|auth)";
+
+const SECRET_NAME = new RegExp(`^[A-Za-z0-9_.-]*${SECRET_NAME_SOURCE}[A-Za-z0-9_.-]*$`, "i");
+
 const REDACTION_RULES: readonly { readonly pattern: RegExp; readonly replace: string }[] = [
   // scheme://user:secret@host — keep the shape, drop the credential.
   { pattern: /\b([a-z][a-z0-9+.-]*:\/\/)[^\s/@:]+:[^\s/@]+@/gi, replace: `$1${REDACTED}@` },
   // Authorization headers and bearer tokens.
-  { pattern: /\b(authorization|proxy-authorization)\s*[:=]\s*\S+/gi, replace: `$1: ${REDACTED}` },
+  // Consumes the whole header value, not just its first token: stopping at the
+  // scheme would leave `Bearer <token>` with the token intact.
+  {
+    pattern: /\b(authorization|proxy-authorization)\s*[:=]\s*[^\r\n]+/gi,
+    replace: `$1: ${REDACTED}`,
+  },
   { pattern: /\bbearer\s+[A-Za-z0-9._~+/-]{8,}=*/gi, replace: `bearer ${REDACTED}` },
   // Secret-ish assignments in any of the usual spellings.
   {
-    pattern:
-      /\b([A-Za-z0-9_.-]*(?:secret|password|passwd|token|api[_-]?key|access[_-]?key|private[_-]?key|credential)[A-Za-z0-9_.-]*)\s*[:=]\s*("[^"]*"|'[^']*'|\S+)/gi,
+    pattern: new RegExp(
+      `\\b([A-Za-z0-9_.-]*${SECRET_NAME_SOURCE}[A-Za-z0-9_.-]*)\\s*[:=]\\s*("[^"]*"|'[^']*'|\\S+)`,
+      "gi",
+    ),
     replace: `$1=${REDACTED}`,
   },
   // Well-known credential shapes that appear bare, with no key beside them.
@@ -54,7 +74,8 @@ export function redactText(text: string, maxLength = MAX_CAUSE_DETAIL_LENGTH): s
     result = result.replace(rule.pattern, rule.replace);
   }
   result = result.replace(/\s+/g, " ").trim();
-  return result.length > maxLength ? `${result.slice(0, maxLength)}…` : result;
+  // The ellipsis counts toward the bound, so the result never exceeds it.
+  return result.length > maxLength ? `${result.slice(0, Math.max(0, maxLength - 1))}…` : result;
 }
 
 /** Whether redaction would change this text. Used by negative controls. */
@@ -66,12 +87,26 @@ export function redactDiagnosticValue(value: DiagnosticValue): DiagnosticValue {
   return typeof value === "string" ? redactText(value) : value;
 }
 
+/** Whether a metadata key names something whose value is a credential. */
+export function isSecretName(key: string): boolean {
+  return SECRET_NAME.test(key.trim());
+}
+
+/**
+ * Redacts structured metadata.
+ *
+ * A key and a value are separate here, so the free-text `key=value` rule can
+ * never fire on them. A key that names a credential therefore has its value
+ * replaced wholesale, whatever the value looks like — a password of `p4ss`
+ * matches no known credential shape and would otherwise pass straight through.
+ */
 export function redactMetadata(
   metadata: Readonly<Record<string, DiagnosticValue>>,
 ): Readonly<Record<string, DiagnosticValue>> {
   const result: Record<string, DiagnosticValue> = {};
   for (const [key, value] of Object.entries(metadata)) {
-    result[redactText(key, 64)] = redactDiagnosticValue(value);
+    const safeKey = redactText(key, 64);
+    result[safeKey] = isSecretName(key) ? REDACTED : redactDiagnosticValue(value);
   }
   return result;
 }

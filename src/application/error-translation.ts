@@ -26,6 +26,7 @@ import {
   type FalrynError,
   type IdentityError,
   isErrorCategory,
+  MAX_CAUSE_DETAIL_LENGTH,
   MAX_ERROR_MESSAGE_LENGTH,
   MAX_RELATED_ERRORS,
   NO_CORRELATION,
@@ -37,6 +38,9 @@ import {
   type TimestampError,
 } from "../domain/index.ts";
 import { redactText } from "./redaction.ts";
+
+/** Longest a single operation description may be before it is truncated. */
+const MAX_OPERATION_LENGTH = 120;
 
 export type ErrorContext = {
   readonly correlation?: CorrelationIds;
@@ -59,6 +63,33 @@ function exitCategoryFor(category: ErrorCategory): ExitCategory {
   }
 }
 
+/**
+ * Folds an operation description into a cause.
+ *
+ * Re-bounded after concatenation, not only per-operation: a failure surfacing
+ * through a deep call chain would otherwise accumulate one bounded fragment per
+ * layer and carry unbounded text into a log.
+ */
+function foldOperation(
+  cause: SafeCause | null,
+  fallbackCode: string,
+  operation: string | undefined,
+): SafeCause | null {
+  if (operation === undefined) {
+    return cause;
+  }
+  const safeOperation = redactText(operation, MAX_OPERATION_LENGTH);
+  const existing = cause?.detail ?? null;
+  return {
+    source: cause?.source ?? "application",
+    code: cause?.code ?? fallbackCode,
+    detail:
+      existing === null
+        ? safeOperation
+        : redactText(`${safeOperation}: ${existing}`, MAX_CAUSE_DETAIL_LENGTH),
+  };
+}
+
 function build(input: {
   readonly code: string;
   readonly category: ErrorCategory;
@@ -69,6 +100,8 @@ function build(input: {
   readonly correlation?: CorrelationIds;
   readonly recovery?: readonly RecoveryAction[];
   readonly recognized?: boolean;
+  /** Folded into the cause, so a translator's caller context is not discarded. */
+  readonly operation?: string;
 }): FalrynError {
   return {
     code: input.code,
@@ -76,7 +109,7 @@ function build(input: {
     message: redactText(input.message, MAX_ERROR_MESSAGE_LENGTH),
     retryable: input.retryable,
     effect: input.effect,
-    cause: input.cause,
+    cause: foldOperation(input.cause, input.code, input.operation),
     correlation: input.correlation ?? NO_CORRELATION,
     recovery: input.recovery ?? recoveryForEffect(input.effect),
     exitCategory: exitCategoryFor(input.category),
@@ -258,23 +291,10 @@ export function adoptForeignError(
  * service adding context is not re-deciding what went wrong.
  */
 export function withContext(error: FalrynError, context: ErrorContext): FalrynError {
-  const operation = context.operation === undefined ? null : redactText(context.operation, 120);
-  const cause: SafeCause | null =
-    operation === null
-      ? error.cause
-      : {
-          source: error.cause?.source ?? "application",
-          code: error.cause?.code ?? error.code,
-          detail:
-            error.cause?.detail === null || error.cause?.detail === undefined
-              ? operation
-              : `${operation}: ${error.cause.detail}`,
-        };
-
   return {
     ...error,
     correlation: context.correlation ?? error.correlation,
-    cause,
+    cause: foldOperation(error.cause, error.code, context.operation),
   };
 }
 

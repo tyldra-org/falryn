@@ -138,9 +138,11 @@ recovery catalog to `src/application/`:
   shutdown; failed and unfinished stay different facts;
 - an unrecognized category is preserved and marked unrecognized rather than
   mapped onto a known one;
-- redaction runs wherever foreign text enters, with negative controls for
-  credential-bearing URLs, bearer tokens, provider keys, and key/value secrets;
-  debug mode is time-scoped, preview-bounded, and still redacts;
+- redaction runs wherever foreign text enters, covering credential-bearing URLs,
+  bearer tokens, provider keys, key/value secrets in text, and — separately —
+  any value under a secret-named key in structured metadata, where no key/value
+  string exists for a text rule to match; debug mode is time-scoped,
+  preview-bounded, and still redacts;
 - diagnostics carry timestamp, level, subsystem, code, correlation, stage,
   duration, limits, and safe metadata, bounded in retention, cardinality, and
   metadata keys, and carry no payload content; and
@@ -163,7 +165,7 @@ Observed on 2026-07-31:
 ```text
 bun run check  PASS
 bun run build  PASS  (112 modules bundled)
-bun test       413 pass, 0 fail
+bun test       432 pass, 0 fail
 ```
 
 The compiled file is a development bootstrap artifact. It is not a supported

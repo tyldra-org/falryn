@@ -200,6 +200,25 @@ describe("redaction", () => {
     expect(JSON.stringify(collector.events())).not.toContain(SECRET);
   });
 
+  test("a shapeless value under a secret-named metadata key is still redacted", () => {
+    const clock = createManualClock(instant(0));
+    const collector = createDiagnosticsCollector({ clock });
+
+    // No recognizable credential shape, so only the key name can save it.
+    const outcome = collector.emit({
+      level: "error",
+      subsystem: "codec",
+      code: "codec.rejected",
+      metadata: { authToken: "p4ss", note: "fine" },
+    });
+
+    if (outcome.kind === "recorded") {
+      expect(outcome.event.metadata.authToken).toBe("[redacted]");
+      expect(outcome.event.metadata.note).toBe("fine");
+    }
+    expect(JSON.stringify(collector.events())).not.toContain("p4ss");
+  });
+
   test("a secret in a code or stage never reaches a recorded event", () => {
     const clock = createManualClock(instant(0));
     const collector = createDiagnosticsCollector({ clock });
