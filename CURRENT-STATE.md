@@ -157,6 +157,29 @@ Only the `data`, `cancellation`, and `internal` categories are emitted today.
 The rest of the vocabulary is declared so later owners attach to it. No error
 code is stable.
 
+The wiring introduced by
+[#296](https://github.com/yogeshprasad098/falryn/issues/296) connects those
+parts into one lifecycle. `src/application/runtime-lifecycle.ts` constructs the
+scheduler, shares one diagnostics collector across the scope tree, scheduler,
+and shutdown coordinator, and registers the scheduler's drain as a
+`stop-scheduling` shutdown participant. A `WorkUnit.scopeId` is now honoured:
+cancelling a scope cancels its queued and running units, and a unit's effect is
+recorded on its scope so the two cannot disagree about what happened.
+
+Because `cancel-root-scope` runs before `stop-scheduling`, scoped work is
+already stopping by the time the drain participant runs; the drain exists for
+work that named no scope, and reports it unfinished when it will not stop.
+
+**`RuntimeEvent` has no production producer yet.** All eight declared kinds
+describe sessions, turns, model attempts, and capability invocations, and the
+runtime backbone has none of those concepts. The envelope, sequencer, and
+in-memory store are implemented and tested but are not emitted from anywhere;
+their first real producers are
+[#13](https://github.com/yogeshprasad098/falryn/issues/13) for sessions and
+turns and [#40](https://github.com/yogeshprasad098/falryn/issues/40) for model
+and capability kinds. Inventing scope or scheduler event kinds to fill the gap
+would create events with no consumer.
+
 `src/main.ts` composes the cancellation lifecycle, so the compiled executable includes
 the domain, application, and integration layers and the real process-signal
 adapter. There is no product work to run yet, so the bootstrap shuts down
@@ -167,7 +190,7 @@ Observed on 2026-07-31:
 ```text
 bun run check  PASS
 bun run build  PASS  (112 modules bundled)
-bun test       440 pass, 0 fail
+bun test       463 pass, 0 fail
 ```
 
 The compiled file is a development bootstrap artifact. It is not a supported
@@ -205,15 +228,15 @@ Their implementation breakdown lives in GitHub Issues and the Project.
 - **Live roadmap:** [Falryn Roadmap](https://github.com/users/yogeshprasad098/projects/2)
 - **Current release outcome:** [v0.1 Foundation issues](https://github.com/yogeshprasad098/falryn/issues?q=is%3Aissue%20is%3Aopen%20milestone%3A%22v0.1%20Foundation%22)
 - **First parent outcome:** [#1 Establish the unified runtime and lifecycle](https://github.com/yogeshprasad098/falryn/issues/1)
-- **Open children of #1:** none once [#292](https://github.com/yogeshprasad098/falryn/issues/292) lands.
-- **Next planning action:** verify parent [#1 Establish the unified runtime and lifecycle](https://github.com/yogeshprasad098/falryn/issues/1) against its integrated acceptance criteria.
+- **Open children of #1:** [#296](https://github.com/yogeshprasad098/falryn/issues/296).
+- **Next planning action:** verify parent [#1 Establish the unified runtime and lifecycle](https://github.com/yogeshprasad098/falryn/issues/1) against its integrated acceptance criteria once #296 lands.
 
-[#2 Define stable runtime identities and event envelopes](https://github.com/yogeshprasad098/falryn/issues/2)
-and [#4 Implement cancellation, deadlines, interruption, and
-shutdown](https://github.com/yogeshprasad098/falryn/issues/4), and
-[#3 Implement bounded scheduling, concurrency, and
-backpressure](https://github.com/yogeshprasad098/falryn/issues/3) are the issues
-with implemented behavior recorded here. No release has been published.
+Issues [#2](https://github.com/yogeshprasad098/falryn/issues/2),
+[#3](https://github.com/yogeshprasad098/falryn/issues/3),
+[#4](https://github.com/yogeshprasad098/falryn/issues/4),
+[#5](https://github.com/yogeshprasad098/falryn/issues/5), and
+[#292](https://github.com/yogeshprasad098/falryn/issues/292) are the issues with
+implemented behavior recorded here. No release has been published.
 GitHub owns live workflow state; this section provides a stable entry point and
 must be reconciled when the frontier materially changes.
 
