@@ -1,9 +1,61 @@
-.DS_Store
+# Dependencies and package-manager state
 node_modules/
-dist/
-coverage/
-*.log
+.bun/
+
+# Build, test, and generated output
+/dist/
+/build/
+/out/
+/coverage/
+/.nyc_output/
+/test-results/
+/playwright-report/
+/blob-report/
+*.lcov
 *.tsbuildinfo
+
+# Caches and temporary work
+/.cache/
+/.tmp/
+/tmp/
+/temp/
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+
+# Logs and process state
+*.log
+logs/
+*.pid
+*.pid.lock
+
+# Local environment and secrets
 .env
 .env.*
 !.env.example
+!.env.*.example
+.envrc
+!.envrc.example
+
+# Local agent settings
+.claude/settings.local.json
+.claude/*.local.*
+
+# Editors and IDEs
+.idea/
+.fleet/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/launch.json
+!.vscode/settings.json
+!.vscode/tasks.json
+
+# Operating-system metadata
+.DS_Store
+._*
+.AppleDouble
+.LSOverride
+Thumbs.db
+Desktop.ini
