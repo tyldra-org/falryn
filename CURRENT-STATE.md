@@ -98,7 +98,30 @@ Its verified behavior:
   effect is folded into their parent, and the lifecycle event log is bounded
   with the number of dropped events reported rather than truncating silently.
 
-`src/main.ts` now composes that lifecycle, so the compiled executable includes
+The scheduling engine introduced by
+[#3](https://github.com/yogeshprasad098/falryn/issues/3) adds the work-unit,
+budget, queue, and scheduler contracts to `src/domain/`, and three engines to
+`src/application/`:
+
+- **bounded queues** where every enqueue resolves to accept, wait with
+  cancellation, spill, coalesce, or a typed limit rejection. Items past the age
+  limit are dropped and counted. Display-only deltas coalesce; a semantic fact
+  is never merged away and is rejected instead. Separate queues mean a saturated
+  maintenance queue cannot block a lifecycle queue;
+- **hierarchical budgets** in integer units, where a reservation counts against
+  the limit from the moment it is taken, a child can never enlarge what it
+  inherited, and a reservation refused by an ancestor is rolled back rather than
+  left as a partial charge; and
+- **the scheduler**, which validates each generation's dependency graph whole —
+  rejecting cycles and dangling edges before anything runs — serializes work on
+  normalized conflict keys, treats a mutation that declared no key as contending
+  globally rather than guessing it is independent, holds global and per-key
+  concurrency caps, ages waiting units so a lower class still makes bounded
+  progress under sustained interactive load, releases locks on every terminal
+  path, and abandons a runner that ignores its abort signal rather than letting
+  it hold the scheduler.
+
+`src/main.ts` composes the cancellation lifecycle, so the compiled executable includes
 the domain, application, and integration layers and the real process-signal
 adapter. There is no product work to run yet, so the bootstrap shuts down
 immediately and exits.
@@ -107,8 +130,8 @@ Observed on 2026-07-31:
 
 ```text
 bun run check  PASS
-bun run build  PASS  (105 modules bundled)
-bun test       254 pass, 0 fail
+bun run build  PASS  (112 modules bundled)
+bun test       325 pass, 0 fail
 ```
 
 The compiled file is a development bootstrap artifact. It is not a supported
@@ -123,7 +146,6 @@ check`.
 No end-user product behavior has been implemented. In particular, the
 repository does not yet provide:
 
-- runtime scheduling, concurrency caps, bounded queues, or backpressure;
 - runtime error families, diagnostics, observability, or the recovery catalog;
 - any real shutdown participant — the registry exists, but scheduling drain,
   persistence, artifact finalize, child-process termination, and terminal
@@ -148,11 +170,16 @@ Their implementation breakdown lives in GitHub Issues and the Project.
 - **Live roadmap:** [Falryn Roadmap](https://github.com/users/yogeshprasad098/projects/2)
 - **Current release outcome:** [v0.1 Foundation issues](https://github.com/yogeshprasad098/falryn/issues?q=is%3Aissue%20is%3Aopen%20milestone%3A%22v0.1%20Foundation%22)
 - **First parent outcome:** [#1 Establish the unified runtime and lifecycle](https://github.com/yogeshprasad098/falryn/issues/1)
-- **Next planning action:** implement [#3 Implement bounded scheduling, concurrency, and backpressure](https://github.com/yogeshprasad098/falryn/issues/3), which #4 unblocks by declaring `ClockPort` and the cancellation scope it consumes.
+- **Open children of #1:** [#3](https://github.com/yogeshprasad098/falryn/issues/3),
+  [#5](https://github.com/yogeshprasad098/falryn/issues/5), and
+  [#292](https://github.com/yogeshprasad098/falryn/issues/292).
+- **Next planning action:** implement [#5 Implement runtime errors, diagnostics, observability, and recovery](https://github.com/yogeshprasad098/falryn/issues/5), then plan [#292 Preserve an evicted scope's uncertainty regardless of settle order](https://github.com/yogeshprasad098/falryn/issues/292), which still needs a fix chosen.
 
 [#2 Define stable runtime identities and event envelopes](https://github.com/yogeshprasad098/falryn/issues/2)
 and [#4 Implement cancellation, deadlines, interruption, and
-shutdown](https://github.com/yogeshprasad098/falryn/issues/4) are the issues
+shutdown](https://github.com/yogeshprasad098/falryn/issues/4), and
+[#3 Implement bounded scheduling, concurrency, and
+backpressure](https://github.com/yogeshprasad098/falryn/issues/3) are the issues
 with implemented behavior recorded here. No release has been published.
 GitHub owns live workflow state; this section provides a stable entry point and
 must be reconciled when the frontier materially changes.
