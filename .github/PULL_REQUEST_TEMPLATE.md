@@ -46,3 +46,4 @@ Closes #
 - [ ] The PR title is a clean conventional subject suitable for squash merge.
 - [ ] Verify can derive a concise squash body without aggregating incremental commit messages.
 - [ ] Verify includes every required companion and previews docs-first/application-last merge order.
+- [ ] Verify identifies available local checkouts and previews safe post-merge default-branch synchronization.

@@ -83,6 +83,15 @@ tests small, explicit, and user-focused.
   **In Progress** until all required children and integrated acceptance
   criteria pass, then close the parent and verify **Done**. Do not mix unrelated
   issues in one branch or pull request.
+- Resolve correction work from the pull request's actual state. Continue a
+  valid open PR on its existing branch and require a fresh Verify after every
+  push. Reopen a closed-unmerged PR only when its branch, base, issue scope, and
+  companion set remain valid. A merged PR cannot be reopened or merged again:
+  reopen the owning issue when its original acceptance is incomplete, or
+  create a focused follow-up issue for a new outcome, then branch from the
+  updated default branch and open a new PR. Never reuse a squash-merged branch
+  for post-merge correction. Parent integration gaps use a dedicated child
+  issue and PR, not a parent branch.
 - Name branches with a concise repository type prefix such as `feat/`, `fix/`,
   `docs/`, `refactor/`, `test/`, or `chore/`, followed by the issue number and
   purpose when applicable. Do not require or add an agent-name prefix such as
@@ -94,11 +103,22 @@ tests small, explicit, and user-focused.
   docs-only work. Never substitute a same-numbered object from the other
   repository.
 - After a fresh Verify previews the complete delivery bundle, docs-first merge
-  order, and final messages, an explicit Merge prompt authorizes the unchanged
-  preview. Use squash merge for ordinary short-lived PRs when enabled, with the
-  reviewed PR title as subject and a concise body instead of aggregated
-  incremental messages. Merge required docs companions first and the Falryn
-  delivery PR last; stop if state changed or any sequential merge fails.
+  order, final messages, and safe post-merge checkout synchronization, an
+  explicit Merge prompt authorizes the unchanged preview. Use squash merge for
+  ordinary short-lived PRs when enabled, with the reviewed PR title as subject
+  and a concise body instead of aggregated incremental messages. Merge required
+  docs companions first and the Falryn delivery PR last; stop if state changed
+  or any sequential merge fails.
+- After every required PR in the delivery bundle has merged successfully,
+  return each available clean local checkout to its repository's exact default
+  branch and fast-forward it to the fetched remote default. Before switching,
+  verify that the checkout is attached, clean, outside any Git operation, and
+  that its local default branch can fast-forward. Re-read the final branch,
+  local/default SHA, and cleanliness. Leave a dirty, detached, conflicted,
+  divergent, unavailable, or otherwise unsafe checkout untouched and report
+  why. Merge authorizes this safe synchronization; it never authorizes stash,
+  reset, rebase, force push, conflict resolution, or local/remote branch
+  deletion.
 - Treat `Plan — Target: ...`, `Implement — Target: ...`, and
   `Verify — Target: ...` as mandatory mode selectors. Before acting, read the
   canonical contracts in
