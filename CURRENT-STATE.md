@@ -121,6 +121,38 @@ budget, queue, and scheduler contracts to `src/domain/`, and three engines to
   path, and abandons a runner that ignores its abort signal rather than letting
   it hold the scheduler.
 
+The failure contract introduced by
+[#5](https://github.com/yogeshprasad098/falryn/issues/5) adds `FalrynError`,
+`SafeCause`, `CorrelationIds`, the recovery-action and exit-category
+vocabularies, the structured diagnostic event, and the retry-decision contract
+to `src/domain/`, and translation, redaction, the diagnostics collector, and the
+recovery catalog to `src/application/`:
+
+- every failure carries code, category, user-safe message, retryability, effect
+  certainty, bounded safe cause, correlation, recovery actions, and exit
+  category as independent fields;
+- each boundary union #2 shipped — codec, identity, sequence, timestamp, and
+  event store — maps onto a category while keeping its no-user-data guarantee;
+- a cleanup failure is attached to its primary rather than dropped, and #4's
+  shutdown participant reports are adopted into that shape without changing
+  shutdown; failed and unfinished stay different facts;
+- an unrecognized category is preserved and marked unrecognized rather than
+  mapped onto a known one;
+- redaction runs wherever foreign text enters, with negative controls for
+  credential-bearing URLs, bearer tokens, provider keys, and key/value secrets;
+  debug mode is time-scoped, preview-bounded, and still redacts;
+- diagnostics carry timestamp, level, subsystem, code, correlation, stage,
+  duration, limits, and safe metadata, bounded in retention, cardinality, and
+  metadata keys, and carry no payload content; and
+- the retry decision weighs the effect contract, idempotency, attempt count, and
+  elapsed budget with bounded, jittered, cancellable backoff. Retryable never
+  authorizes an automatic retry, and recovery after uncertainty observes present
+  state before acting.
+
+Only the `data`, `cancellation`, and `internal` categories are emitted today.
+The rest of the vocabulary is declared so later owners attach to it. No error
+code is stable.
+
 `src/main.ts` composes the cancellation lifecycle, so the compiled executable includes
 the domain, application, and integration layers and the real process-signal
 adapter. There is no product work to run yet, so the bootstrap shuts down
@@ -131,7 +163,7 @@ Observed on 2026-07-31:
 ```text
 bun run check  PASS
 bun run build  PASS  (112 modules bundled)
-bun test       325 pass, 0 fail
+bun test       413 pass, 0 fail
 ```
 
 The compiled file is a development bootstrap artifact. It is not a supported
@@ -146,7 +178,6 @@ check`.
 No end-user product behavior has been implemented. In particular, the
 repository does not yet provide:
 
-- runtime error families, diagnostics, observability, or the recovery catalog;
 - any real shutdown participant — the registry exists, but scheduling drain,
   persistence, artifact finalize, child-process termination, and terminal
   restoration each register from their own owner and none exist yet;
@@ -170,10 +201,8 @@ Their implementation breakdown lives in GitHub Issues and the Project.
 - **Live roadmap:** [Falryn Roadmap](https://github.com/users/yogeshprasad098/projects/2)
 - **Current release outcome:** [v0.1 Foundation issues](https://github.com/yogeshprasad098/falryn/issues?q=is%3Aissue%20is%3Aopen%20milestone%3A%22v0.1%20Foundation%22)
 - **First parent outcome:** [#1 Establish the unified runtime and lifecycle](https://github.com/yogeshprasad098/falryn/issues/1)
-- **Open children of #1:** [#3](https://github.com/yogeshprasad098/falryn/issues/3),
-  [#5](https://github.com/yogeshprasad098/falryn/issues/5), and
-  [#292](https://github.com/yogeshprasad098/falryn/issues/292).
-- **Next planning action:** implement [#5 Implement runtime errors, diagnostics, observability, and recovery](https://github.com/yogeshprasad098/falryn/issues/5), then plan [#292 Preserve an evicted scope's uncertainty regardless of settle order](https://github.com/yogeshprasad098/falryn/issues/292), which still needs a fix chosen.
+- **Open children of #1:** [#292](https://github.com/yogeshprasad098/falryn/issues/292).
+- **Next planning action:** plan [#292 Preserve an evicted scope's uncertainty regardless of settle order](https://github.com/yogeshprasad098/falryn/issues/292), which still needs a fix chosen.
 
 [#2 Define stable runtime identities and event envelopes](https://github.com/yogeshprasad098/falryn/issues/2)
 and [#4 Implement cancellation, deadlines, interruption, and

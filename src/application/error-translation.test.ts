@@ -1,0 +1,315 @@
+import { describe, expect, test } from "bun:test";
+
+import {
+  type CodecError,
+  type CorrelationIds,
+  ERROR_CATEGORIES,
+  type EventStoreError,
+  type FalrynError,
+  flattenErrors,
+  isSafeToRetryWithoutInspection,
+  MAX_RELATED_ERRORS,
+  NO_CORRELATION,
+  type ParticipantReport,
+  recoveryForEffect,
+  type SequenceError,
+  scopeId,
+  sessionId,
+  streamId,
+  traceId,
+} from "../domain/index.ts";
+import {
+  adoptForeignError,
+  aggregate,
+  fromCodecError,
+  fromEventStoreError,
+  fromIdentityError,
+  fromParticipantReports,
+  fromSequenceError,
+  fromTimestampError,
+  fromUnknown,
+  withContext,
+} from "./error-translation.ts";
+
+const SECRET = "sk-live-DEADBEEFDEADBEEF";
+
+const CORRELATION: CorrelationIds = {
+  ...NO_CORRELATION,
+  sessionId: sessionId.from("session-1"),
+  traceId: traceId.from("trace-1"),
+  scopeId: scopeId.from("scope-1"),
+};
+
+function everyErrorText(error: FalrynError): string {
+  return JSON.stringify(flattenErrors(error));
+}
+
+describe("boundary translation", () => {
+  test("a codec rejection becomes a data error with no user data", () => {
+    const codec: CodecError = {
+      kind: "invalid-envelope",
+      issues: [{ path: "payload.apiKey", code: "invalid_type" }],
+    };
+    const error = fromCodecError(codec);
+
+    expect(error.category).toBe("data");
+    expect(error.effect).toBe("none");
+    expect(error.retryable).toBe(false);
+    expect(error.cause?.source).toBe("codec");
+    expect(error.cause?.detail).toBe("payload.apiKey:invalid_type");
+  });
+
+  test("an unknown event kind is preserved in the cause", () => {
+    const error = fromCodecError({ kind: "unknown-event-kind", observedKind: "session.resumed" });
+    expect(error.cause?.detail).toBe("session.resumed");
+    expect(error.code).toBe("data.codec.unknown-event-kind");
+  });
+
+  test("an identity rejection reports which identity, never the value", () => {
+    const error = fromIdentityError({
+      kind: "identity",
+      code: "identifier-illegal-character",
+      identity: "sessionId",
+    });
+    expect(error.category).toBe("data");
+    expect(error.cause?.detail).toBe("sessionId");
+  });
+
+  test("a timestamp rejection carries no detail at all", () => {
+    const error = fromTimestampError({ kind: "timestamp", code: "timestamp-not-canonical-utc" });
+    expect(error.cause?.detail).toBeNull();
+  });
+
+  test.each<[SequenceError["code"], boolean]>([
+    ["sequence-gap", true],
+    ["sequence-out-of-order", true],
+    ["idempotency-conflict", false],
+    ["event-id-conflict", false],
+    ["ledger-capacity-exceeded", false],
+  ])("a %s sequence rejection is retryable=%s", (code, retryable) => {
+    const stream = streamId.from("stream-1");
+    const error = fromSequenceError({ code, streamId: stream } as SequenceError);
+    expect(error.retryable).toBe(retryable);
+    expect(error.category).toBe("data");
+  });
+
+  test("an event-store cancellation is a cancellation, not a data failure", () => {
+    const error = fromEventStoreError({ code: "cancelled" });
+    expect(error.category).toBe("cancellation");
+    expect(error.exitCategory).toBe("cancelled");
+    expect(error.effect).toBe("none");
+    expect(error.retryable).toBe(true);
+  });
+
+  test("an event-store error delegates to the union it wraps", () => {
+    const wrapped: EventStoreError = {
+      code: "codec",
+      error: { kind: "malformed-json" },
+    };
+    expect(fromEventStoreError(wrapped).code).toBe("data.codec.malformed-json");
+  });
+
+  test("an invalid read limit reports the bound, not the caller's data", () => {
+    const error = fromEventStoreError({
+      code: "invalid-read-limit",
+      requestedLimit: 5_000,
+      maximumLimit: 1_000,
+    });
+    expect(error.cause?.detail).toBe("requested=5000 maximum=1000");
+  });
+
+  test("an unknown throw is internal and uncertain", () => {
+    const error = fromUnknown(new Error("something went wrong"));
+    expect(error.category).toBe("internal");
+    expect(error.effect).toBe("uncertain");
+    expect(error.exitCategory).toBe("internal");
+    expect(error.recovery).toEqual(["inspect-state"]);
+  });
+
+  test("an unknown throw discards the stack", () => {
+    const thrown = new Error("boom");
+    const error = fromUnknown(thrown);
+    expect(JSON.stringify(error)).not.toContain("at ");
+    expect(error.cause?.detail).toBe("boom");
+  });
+
+  test("a non-error throw is still described safely", () => {
+    expect(fromUnknown(42).cause?.detail).toBeNull();
+  });
+});
+
+describe("effect certainty and recovery", () => {
+  test.each([
+    ["none", ["retry"]],
+    ["completed", ["inspect-state"]],
+    ["partial", ["inspect-state", "re-read-stale-evidence"]],
+    ["uncertain", ["inspect-state"]],
+  ] as const)("%s carries its documented normal recovery", (effect, expected) => {
+    expect([...recoveryForEffect(effect)]).toEqual([...expected]);
+  });
+
+  test("only an observed effect may be retried without inspection", () => {
+    const base = fromEventStoreError({ code: "cancelled" });
+    expect(isSafeToRetryWithoutInspection(base)).toBe(true);
+    expect(isSafeToRetryWithoutInspection({ ...base, effect: "partial" })).toBe(false);
+    expect(isSafeToRetryWithoutInspection({ ...base, effect: "uncertain" })).toBe(false);
+    expect(isSafeToRetryWithoutInspection({ ...base, retryable: false })).toBe(false);
+  });
+});
+
+describe("aggregation", () => {
+  test("a cleanup failure is attached, not dropped", () => {
+    const primary = fromUnknown(new Error("operation failed"));
+    const cleanup = fromUnknown(new Error("cleanup failed"));
+    const combined = aggregate(primary, [cleanup]);
+
+    expect(combined.code).toBe(primary.code);
+    expect(combined.related).toHaveLength(1);
+    expect(combined.related[0]?.cause?.detail).toBe("cleanup failed");
+    expect(flattenErrors(combined)).toHaveLength(2);
+  });
+
+  test("related errors keep the order they occurred in", () => {
+    const primary = fromUnknown(new Error("first"));
+    const combined = aggregate(primary, [
+      fromUnknown(new Error("second")),
+      fromUnknown(new Error("third")),
+    ]);
+    expect(combined.related.map((related) => related.cause?.detail)).toEqual(["second", "third"]);
+  });
+
+  test("the related list is bounded and reports what it dropped", () => {
+    const primary = fromUnknown(new Error("primary"));
+    const many = Array.from({ length: MAX_RELATED_ERRORS + 5 }, (_value, index) =>
+      fromUnknown(new Error(`related-${index}`)),
+    );
+    const combined = aggregate(primary, many);
+
+    expect(combined.related).toHaveLength(MAX_RELATED_ERRORS);
+    expect(combined.relatedDropped).toBe(5);
+  });
+});
+
+describe("adopting shutdown participant failures", () => {
+  const reports: readonly ParticipantReport[] = [
+    { name: "drain", status: "completed", failure: null },
+    { name: "persist", status: "failed", failure: "disk full" },
+    { name: "restore", status: "timed-out", failure: null },
+  ];
+
+  test("only non-completed participants become errors", () => {
+    const adopted = fromParticipantReports(reports);
+    expect(adopted).toHaveLength(2);
+  });
+
+  test("failed and unfinished stay different facts", () => {
+    const [failed, unfinished] = fromParticipantReports(reports);
+
+    expect(failed?.category).toBe("internal");
+    expect(failed?.effect).toBe("partial");
+    expect(failed?.cause?.detail).toBe("persist: disk full");
+
+    expect(unfinished?.category).toBe("cancellation");
+    expect(unfinished?.effect).toBe("uncertain");
+    expect(unfinished?.cause?.code).toBe("timed-out");
+  });
+
+  test("they compose into primary-plus-related without changing shutdown", () => {
+    const primary = fromUnknown(new Error("shutdown reported an uncertain outcome"));
+    const combined = aggregate(primary, fromParticipantReports(reports));
+    expect(combined.related).toHaveLength(2);
+    // The source reports are untouched.
+    expect(reports[1]?.failure).toBe("disk full");
+  });
+});
+
+describe("context is added once, not wrapped repeatedly", () => {
+  test("adds correlation and operation without changing the decision fields", () => {
+    const original = fromCodecError({ kind: "malformed-json" });
+    const contextual = withContext(original, {
+      correlation: CORRELATION,
+      operation: "replay session events",
+    });
+
+    expect(contextual.code).toBe(original.code);
+    expect(contextual.category).toBe(original.category);
+    expect(contextual.effect).toBe(original.effect);
+    expect(contextual.retryable).toBe(original.retryable);
+    expect(contextual.correlation.sessionId).toBe(sessionId.from("session-1"));
+    expect(contextual.cause?.detail).toBe("replay session events");
+  });
+
+  test("a second layer of context does not nest a second error", () => {
+    const original = fromCodecError({ kind: "malformed-json" });
+    const once = withContext(original, { operation: "read" });
+    const twice = withContext(once, { operation: "resume" });
+
+    expect(twice.related).toEqual([]);
+    expect(twice.cause?.source).toBe("codec");
+    expect(flattenErrors(twice)).toHaveLength(1);
+  });
+});
+
+describe("unknown and future codes", () => {
+  test("a recognized foreign category is kept", () => {
+    const adopted = adoptForeignError({ code: "provider.rate-limited", category: "provider" });
+    expect(adopted.category).toBe("provider");
+    expect(adopted.recognized).toBe(true);
+    expect(adopted.code).toBe("provider.rate-limited");
+  });
+
+  test("an unrecognized category is preserved, not mapped onto a known one", () => {
+    const adopted = adoptForeignError({ code: "quantum.entangled", category: "quantum" });
+
+    expect(adopted.recognized).toBe(false);
+    expect(adopted.category).toBe("internal");
+    // The observed category survives instead of being reinterpreted.
+    expect(adopted.cause?.detail).toBe("quantum");
+    expect(adopted.code).toBe("quantum.entangled");
+    expect(ERROR_CATEGORIES).not.toContain("quantum");
+  });
+
+  test("an unrecognized error is uncertain rather than assumed harmless", () => {
+    expect(adoptForeignError({ code: "x", category: "y" }).effect).toBe("uncertain");
+  });
+});
+
+describe("negative controls", () => {
+  test("a credential in a foreign message never reaches the error", () => {
+    const error = fromUnknown(new Error(`request failed: api_key=${SECRET}`));
+    expect(everyErrorText(error)).not.toContain(SECRET);
+  });
+
+  test("a credential-bearing URL is stripped of its credential", () => {
+    const error = fromUnknown(new Error("connect postgres://admin:hunter2@db.internal/app failed"));
+    const text = everyErrorText(error);
+    expect(text).not.toContain("hunter2");
+    expect(text).toContain("db.internal");
+  });
+
+  test("a secret in an operation description does not survive withContext", () => {
+    const error = withContext(fromCodecError({ kind: "malformed-json" }), {
+      operation: `authorization: Bearer ${SECRET}`,
+    });
+    expect(everyErrorText(error)).not.toContain(SECRET);
+  });
+
+  test("a secret in a shutdown participant failure is redacted on adoption", () => {
+    const adopted = fromParticipantReports([
+      { name: "persist", status: "failed", failure: `token=${SECRET}` },
+    ]);
+    expect(JSON.stringify(adopted)).not.toContain(SECRET);
+  });
+
+  test("a secret inside an aggregate's related error is redacted too", () => {
+    const combined = aggregate(fromUnknown(new Error("primary")), [
+      fromUnknown(new Error(`password: ${SECRET}`)),
+    ]);
+    expect(everyErrorText(combined)).not.toContain(SECRET);
+  });
+
+  test("every runtime error carries a correlation object", () => {
+    const error = fromCodecError({ kind: "malformed-json" });
+    expect(Object.keys(error.correlation).sort()).toEqual(Object.keys(NO_CORRELATION).sort());
+  });
+});
