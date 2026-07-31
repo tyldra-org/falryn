@@ -189,10 +189,10 @@ describe("deadlines and hanging participants", () => {
       name: "cooperative",
       phase: "drain-events",
       async run(context) {
-        // Waits well past its own phase, so only the abort can release it.
+        // Waits far beyond any phase grace, so only the abort can release it.
         observed.push(
           await context.clock.waitUntil(
-            addDuration(context.deadline.expiresAt, duration(60_000)),
+            addDuration(context.clock.now(), duration(60_000)),
             context.signal,
           ),
         );

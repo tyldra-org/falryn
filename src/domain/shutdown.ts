@@ -14,7 +14,6 @@
  */
 
 import type { ClockPort, Instant } from "./clock.ts";
-import type { Deadline } from "./deadline.ts";
 import type { TerminalOutcome } from "./outcome.ts";
 
 export const SHUTDOWN_PHASES = [
@@ -47,13 +46,19 @@ export const SHUTDOWN_LEVELS = ["graceful", "escalated", "forced"] as const;
 
 export type ShutdownLevel = (typeof SHUTDOWN_LEVELS)[number];
 
+/**
+ * What a participant is handed when its phase runs.
+ *
+ * `signal` is the only authority for "stop now". A deadline and an urgency
+ * level are deliberately absent: escalation can shorten a phase after it has
+ * begun, so any copy handed out at phase start would be stale, and a value a
+ * participant is told not to trust is worse than no value at all.
+ */
 export type ShutdownPhaseContext = {
   readonly phase: ShutdownPhase;
-  /** Aborts when the phase deadline expires or the level escalates. */
+  /** Aborts when the phase ends, whether by deadline or by escalation. */
   readonly signal: AbortSignal;
-  readonly deadline: Deadline;
   readonly clock: ClockPort;
-  readonly level: ShutdownLevel;
 };
 
 export type ShutdownParticipant = {

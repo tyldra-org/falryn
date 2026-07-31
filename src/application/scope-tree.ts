@@ -42,8 +42,30 @@ import {
 /** Depth of the application → session → turn → attempt → invocation → child chain. */
 export const MAX_SCOPE_DEPTH = 16;
 
-/** Live scopes allowed at once. Exceeding it means scopes are not being settled. */
+/**
+ * Scopes that may be live — not yet terminal — at one time.
+ *
+ * This counts live scopes only. Settled scopes do not consume the budget: a
+ * session that completes ten thousand turns has done nothing wrong, and
+ * refusing its next turn would be a false report of runaway work.
+ */
 export const MAX_LIVE_SCOPES = 10_000;
+
+/**
+ * Settled scopes kept for inspection after they finish.
+ *
+ * A caller needs to read the outcome of work that just ended, so a terminal
+ * scope is retained rather than dropped immediately. Beyond this window the
+ * oldest are evicted; their effect has already been folded into their parent,
+ * so evicting one never loses the fact that something uncertain happened.
+ */
+export const MAX_RETAINED_TERMINAL_SCOPES = 1_000;
+
+/** Lifecycle events retained for diagnostics. Older ones are dropped and counted. */
+export const MAX_RETAINED_SCOPE_EVENTS = 10_000;
+
+/** Events discarded per trim, so trimming is amortized rather than per-event. */
+const SCOPE_EVENT_TRIM_CHUNK = 1_024;
 
 export type ScopeHandle = {
   readonly scopeId: ScopeId;
@@ -122,8 +144,13 @@ export type ScopeTree = {
   forceSettleUnacknowledged(): readonly ScopeEvent[];
 
   report(scopeId: ScopeId): ScopeReport | null;
+  /** Scopes held in memory: live ones plus settled ones still inside the retention window. */
+  retainedScopeCount(): number;
+  /** Lifecycle events discarded from the retained log, so truncation stays visible. */
+  droppedEventCount(): number;
   state(scopeId: ScopeId): ScopeState | null;
   children(scopeId: ScopeId): readonly ScopeId[];
+  /** Scopes not yet terminal. This is what the live-scope bound measures. */
   liveScopeCount(): number;
   /** Every event so far, in order. */
   events(): readonly ScopeEvent[];
@@ -140,8 +167,23 @@ type ScopeNode = {
   readonly children: ScopeId[];
   state: ScopeState;
   effect: EffectCertainty;
+  /**
+   * The worst effect any already-settled descendant reported.
+   *
+   * Folded in when a child settles, so a parent keeps surfacing a descendant's
+   * uncertainty after that descendant has been evicted.
+   */
+  settledDescendantEffect: EffectCertainty;
   /** When cancellation was first requested, so acknowledgement latency is observable. */
   cancellationRequestedAt: Instant | null;
+  /**
+   * Ordinal for the next generated child identifier.
+   *
+   * Monotonic, and deliberately not derived from `children.length`: children are
+   * evicted once settled, so a length-based name would be reissued and collide
+   * with a scope still retained.
+   */
+  nextChildOrdinal: number;
 };
 
 export type ScopeTreeOptions = {
@@ -154,8 +196,12 @@ export function createScopeTree(options: ScopeTreeOptions): ScopeTree {
   const { clock } = options;
   const nodes = new Map<ScopeId, ScopeNode>();
   const events: ScopeEvent[] = [];
+  /** Settled scopes still retained, oldest first. */
+  const retained: ScopeId[] = [];
   let listeners: ((event: ScopeEvent) => void)[] = [];
   let order = 0;
+  let liveCount = 0;
+  let droppedEvents = 0;
 
   const emit = (
     kind: ScopeEvent["kind"],
@@ -179,6 +225,9 @@ export function createScopeTree(options: ScopeTreeOptions): ScopeTree {
       effect: detail.effect ?? null,
     };
     events.push(event);
+    if (events.length > MAX_RETAINED_SCOPE_EVENTS) {
+      droppedEvents += events.splice(0, SCOPE_EVENT_TRIM_CHUNK).length;
+    }
     for (const listener of [...listeners]) {
       listener(event);
     }
@@ -196,9 +245,12 @@ export function createScopeTree(options: ScopeTreeOptions): ScopeTree {
     children: [],
     state: { status: "active" },
     effect: "none",
+    settledDescendantEffect: "none",
     cancellationRequestedAt: null,
+    nextChildOrdinal: 1,
   };
   nodes.set(rootId, rootNode);
+  liveCount += 1;
   emit("scope.opened", rootNode, clock.now());
 
   const handleOf = (node: ScopeNode): ScopeHandle => ({
@@ -228,10 +280,13 @@ export function createScopeTree(options: ScopeTreeOptions): ScopeTree {
     return collected;
   };
 
+  const totalEffectOf = (node: ScopeNode): EffectCertainty =>
+    worstEffect(node.effect, node.settledDescendantEffect);
+
   const subtreeEffectOf = (node: ScopeNode): EffectCertainty =>
     descendantsOf(node).reduce<EffectCertainty>(
-      (worst, descendant) => worstEffect(worst, descendant.effect),
-      node.effect,
+      (worst, descendant) => worstEffect(worst, totalEffectOf(descendant)),
+      totalEffectOf(node),
     );
 
   const beginCancelling = (
@@ -249,10 +304,61 @@ export function createScopeTree(options: ScopeTreeOptions): ScopeTree {
     collected.push(emit("scope.cancellation.requested", node, at, { reason }));
   };
 
+  /**
+   * Removes a settled scope from the tree.
+   *
+   * A scope is only evictable once nothing under it is still retained, so
+   * eviction never orphans a live child or a descendant a caller can still read.
+   */
+  const evict = (node: ScopeNode): boolean => {
+    if (node.children.some((child) => nodes.has(child))) {
+      return false;
+    }
+    const parent = node.parentId === null ? undefined : nodes.get(node.parentId);
+    if (parent !== undefined) {
+      const index = parent.children.indexOf(node.scopeId);
+      if (index >= 0) {
+        parent.children.splice(index, 1);
+      }
+    }
+    nodes.delete(node.scopeId);
+    return true;
+  };
+
+  const trimRetained = (): void => {
+    let index = 0;
+    while (retained.length - index > MAX_RETAINED_TERMINAL_SCOPES && index < retained.length) {
+      const candidateId = retained[index];
+      const candidate = candidateId === undefined ? undefined : nodes.get(candidateId);
+      if (candidate === undefined || evict(candidate)) {
+        retained.splice(index, 1);
+        continue;
+      }
+      // Still has retained descendants. Leave it and try the next oldest; it
+      // becomes evictable once they are gone.
+      index += 1;
+    }
+  };
+
   const settle = (node: ScopeNode, outcome: TerminalOutcome, at: Instant): ScopeEvent => {
     const reason = node.state.status === "cancelling" ? node.state.reason : null;
     node.state = { status: "terminal", outcome, reason, settledAt: at };
-    return emit("scope.terminal", node, at, { outcome, reason, effect: node.effect });
+    liveCount -= 1;
+
+    // Fold this scope's total effect into its parent before it can be evicted,
+    // so an evicted uncertainty is still visible from above.
+    const parent = node.parentId === null ? undefined : nodes.get(node.parentId);
+    if (parent !== undefined) {
+      parent.settledDescendantEffect = worstEffect(
+        parent.settledDescendantEffect,
+        totalEffectOf(node),
+      );
+    }
+
+    const event = emit("scope.terminal", node, at, { outcome, reason, effect: node.effect });
+    retained.push(node.scopeId);
+    trimRetained();
+    return event;
   };
 
   const requireNode = (id: ScopeId): Result<ScopeNode, ScopeError> => {
@@ -293,12 +399,12 @@ export function createScopeTree(options: ScopeTreeOptions): ScopeTree {
       if (parent.depth + 1 >= MAX_SCOPE_DEPTH) {
         return err({ code: "scope-depth-exceeded", maximumDepth: MAX_SCOPE_DEPTH });
       }
-      if (nodes.size >= MAX_LIVE_SCOPES) {
+      if (liveCount >= MAX_LIVE_SCOPES) {
         return err({ code: "scope-count-exceeded", maximumScopes: MAX_LIVE_SCOPES });
       }
 
       const childId =
-        deriveOptions.scopeId ?? scopeIdCodec.from(`${parentId}.${parent.children.length + 1}`);
+        deriveOptions.scopeId ?? scopeIdCodec.from(`${parentId}.${parent.nextChildOrdinal}`);
       if (nodes.has(childId)) {
         return err({ code: "duplicate-scope", scopeId: childId });
       }
@@ -314,9 +420,13 @@ export function createScopeTree(options: ScopeTreeOptions): ScopeTree {
         children: [],
         state: { status: "active" },
         effect: "none",
+        settledDescendantEffect: "none",
         cancellationRequestedAt: null,
+        nextChildOrdinal: 1,
       };
       nodes.set(childId, node);
+      liveCount += 1;
+      parent.nextChildOrdinal += 1;
       parent.children.push(childId);
       emit("scope.opened", node, clock.now());
 
@@ -476,11 +586,19 @@ export function createScopeTree(options: ScopeTreeOptions): ScopeTree {
     },
 
     liveScopeCount(): number {
-      return [...nodes.values()].filter((node) => node.state.status !== "terminal").length;
+      return liveCount;
+    },
+
+    retainedScopeCount(): number {
+      return nodes.size;
     },
 
     events(): readonly ScopeEvent[] {
       return [...events];
+    },
+
+    droppedEventCount(): number {
+      return droppedEvents;
     },
 
     subscribe(listener: (event: ScopeEvent) => void): () => void {

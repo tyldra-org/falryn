@@ -10,7 +10,14 @@ import {
   type ScopeKind,
   scopeId,
 } from "../domain/index.ts";
-import { createScopeTree, MAX_SCOPE_DEPTH, type ScopeTree } from "./scope-tree.ts";
+import {
+  createScopeTree,
+  MAX_LIVE_SCOPES,
+  MAX_RETAINED_SCOPE_EVENTS,
+  MAX_RETAINED_TERMINAL_SCOPES,
+  MAX_SCOPE_DEPTH,
+  type ScopeTree,
+} from "./scope-tree.ts";
 
 function makeTree(): { clock: ManualClock; tree: ScopeTree } {
   const clock = createManualClock(instant(0));
@@ -437,5 +444,165 @@ describe("scope events", () => {
     expect(terminal?.outcome).toEqual({ kind: "uncertain", effect: "uncertain" });
     expect(terminal?.effect).toBe("partial");
     expect(terminal?.reason).toEqual({ kind: "requested" });
+  });
+});
+
+describe("resource bounds", () => {
+  test("settled scopes do not consume the live budget", () => {
+    const { tree } = makeTree();
+    const root = tree.root().scopeId;
+
+    // Far past the live bound, but every scope finishes before the next starts.
+    for (let index = 0; index < MAX_LIVE_SCOPES * 2; index += 1) {
+      const turn = tree.derive(root, { kind: "turn" });
+      if (!turn.ok) {
+        throw new Error(`derive refused after ${index} settled scopes: ${turn.error.code}`);
+      }
+      tree.complete(turn.value.scopeId);
+    }
+
+    expect(tree.liveScopeCount()).toBe(1);
+    expect(tree.derive(root, { kind: "turn" }).ok).toBe(true);
+  });
+
+  test("the live bound refuses only when scopes really are not settling", () => {
+    const { tree } = makeTree();
+    const root = tree.root().scopeId;
+
+    let derived = 0;
+    for (;;) {
+      const turn = tree.derive(root, { kind: "turn" });
+      if (!turn.ok) {
+        expect(turn.error).toEqual({
+          code: "scope-count-exceeded",
+          maximumScopes: MAX_LIVE_SCOPES,
+        });
+        break;
+      }
+      derived += 1;
+    }
+
+    // The root plus the derived scopes are all still live.
+    expect(derived).toBe(MAX_LIVE_SCOPES - 1);
+    expect(tree.liveScopeCount()).toBe(MAX_LIVE_SCOPES);
+  });
+
+  test("settling a scope frees budget for the next one", () => {
+    const { tree } = makeTree();
+    const root = tree.root().scopeId;
+    const live: ScopeId[] = [];
+
+    for (let index = 0; index < MAX_LIVE_SCOPES - 1; index += 1) {
+      const turn = tree.derive(root, { kind: "turn" });
+      if (!turn.ok) {
+        throw new Error("derive failed early");
+      }
+      live.push(turn.value.scopeId);
+    }
+    expect(tree.derive(root, { kind: "turn" }).ok).toBe(false);
+
+    const first = live[0];
+    if (first === undefined) {
+      throw new Error("no scope to settle");
+    }
+    tree.complete(first);
+    expect(tree.derive(root, { kind: "turn" }).ok).toBe(true);
+  });
+
+  test("retained settled scopes are bounded", () => {
+    const { tree } = makeTree();
+    const root = tree.root().scopeId;
+
+    for (let index = 0; index < MAX_RETAINED_TERMINAL_SCOPES * 3; index += 1) {
+      const turn = tree.derive(root, { kind: "turn" });
+      if (!turn.ok) {
+        throw new Error("derive failed");
+      }
+      tree.complete(turn.value.scopeId);
+    }
+
+    // The root stays, plus at most one retention window of settled scopes.
+    expect(tree.retainedScopeCount()).toBeLessThanOrEqual(MAX_RETAINED_TERMINAL_SCOPES + 1);
+    expect(tree.children(root).length).toBeLessThanOrEqual(MAX_RETAINED_TERMINAL_SCOPES);
+  });
+
+  test("an evicted scope's uncertainty stays visible from its parent", () => {
+    const { tree } = makeTree();
+    const root = tree.root().scopeId;
+
+    const mutation = tree.derive(root, { kind: "invocation" });
+    if (!mutation.ok) {
+      throw new Error("derive failed");
+    }
+    tree.recordEffect(mutation.value.scopeId, "uncertain");
+    tree.complete(mutation.value.scopeId);
+
+    // Push it out of the retention window.
+    for (let index = 0; index < MAX_RETAINED_TERMINAL_SCOPES + 5; index += 1) {
+      const turn = tree.derive(root, { kind: "turn" });
+      if (!turn.ok) {
+        throw new Error("derive failed");
+      }
+      tree.complete(turn.value.scopeId);
+    }
+
+    expect(tree.report(mutation.value.scopeId)).toBeNull();
+    const rootReport = tree.report(root);
+    expect(rootReport?.subtreeEffect).toBe("uncertain");
+    expect(rootReport?.requiresInspection).toBe(true);
+  });
+
+  test("a generated identifier is never reissued after eviction", () => {
+    const { tree } = makeTree();
+    const root = tree.root().scopeId;
+    const seen = new Set<string>();
+
+    for (let index = 0; index < MAX_RETAINED_TERMINAL_SCOPES * 2; index += 1) {
+      const turn = tree.derive(root, { kind: "turn" });
+      if (!turn.ok) {
+        throw new Error(`derive failed: ${turn.error.code}`);
+      }
+      expect(seen.has(turn.value.scopeId)).toBe(false);
+      seen.add(turn.value.scopeId);
+      tree.complete(turn.value.scopeId);
+    }
+  });
+
+  test("the event log is bounded and reports what it dropped", () => {
+    const { tree } = makeTree();
+    const root = tree.root().scopeId;
+
+    for (let index = 0; index < MAX_RETAINED_SCOPE_EVENTS; index += 1) {
+      const turn = tree.derive(root, { kind: "turn" });
+      if (!turn.ok) {
+        throw new Error("derive failed");
+      }
+      tree.complete(turn.value.scopeId);
+    }
+
+    expect(tree.events().length).toBeLessThanOrEqual(MAX_RETAINED_SCOPE_EVENTS);
+    expect(tree.droppedEventCount()).toBeGreaterThan(0);
+    // Order keeps counting past the drop, so a consumer can tell it missed some.
+    expect(tree.events()[0]?.order).toBeGreaterThan(1);
+  });
+
+  test("a live scope is never evicted to make room", () => {
+    const { tree } = makeTree();
+    const root = tree.root().scopeId;
+    const survivor = tree.derive(root, { kind: "session" });
+    if (!survivor.ok) {
+      throw new Error("derive failed");
+    }
+
+    for (let index = 0; index < MAX_RETAINED_TERMINAL_SCOPES * 2; index += 1) {
+      const turn = tree.derive(root, { kind: "turn" });
+      if (!turn.ok) {
+        throw new Error("derive failed");
+      }
+      tree.complete(turn.value.scopeId);
+    }
+
+    expect(tree.state(survivor.value.scopeId)).toEqual({ status: "active" });
+    expect(tree.liveScopeCount()).toBe(2);
   });
 });

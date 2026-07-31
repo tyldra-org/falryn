@@ -128,15 +128,12 @@ export function createShutdownCoordinator(
     );
 
     const reports = new Map<string, ParticipantReport>();
-    // The context carries the phase's initial deadline. Escalation shortens the
-    // window the coordinator waits, but a participant is not handed a second,
-    // conflicting contract mid-flight: `signal` is the authority for "stop now".
+    // Escalation can shorten this phase after it starts, so the participant is
+    // given the signal rather than a deadline that could go stale behind it.
     const context: ShutdownPhaseContext = {
       phase,
       signal: phaseController.signal,
-      deadline,
       clock,
-      level: currentLevel,
     };
 
     // Built-in phase work runs before registered participants, so a participant

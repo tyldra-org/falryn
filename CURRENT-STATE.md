@@ -91,7 +91,12 @@ Its verified behavior:
 - forced termination reports `uncertain` for anything it did not observe
   stopping, never `completed`; and
 - a scope reports how long it took to acknowledge cancellation, measured from
-  the first request, so a slow drain is observable. No threshold is asserted.
+  the first request, so a slow drain is observable. No threshold is asserted;
+  and
+- resource bounds count live scopes only, so completed work never exhausts the
+  budget. Settled scopes are evicted beyond a retention window after their
+  effect is folded into their parent, and the lifecycle event log is bounded
+  with the number of dropped events reported rather than truncating silently.
 
 `src/main.ts` now composes that lifecycle, so the compiled executable includes
 the domain, application, and integration layers and the real process-signal
@@ -103,7 +108,7 @@ Observed on 2026-07-31:
 ```text
 bun run check  PASS
 bun run build  PASS  (105 modules bundled)
-bun test       246 pass, 0 fail
+bun test       254 pass, 0 fail
 ```
 
 The compiled file is a development bootstrap artifact. It is not a supported
