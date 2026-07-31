@@ -190,7 +190,7 @@ Observed on 2026-07-31:
 ```text
 bun run check  PASS
 bun run build  PASS  (112 modules bundled)
-bun test       462 pass, 0 fail
+bun test       463 pass, 0 fail
 ```
 
 The compiled file is a development bootstrap artifact. It is not a supported

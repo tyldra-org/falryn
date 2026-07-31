@@ -402,11 +402,20 @@ export function createScheduler<Value>(options: SchedulerOptions): SchedulerPort
         scopeTree === undefined || entry.unit.scopeId === null
           ? null
           : scopeTree.handle(entry.unit.scopeId);
+
+      // Held so the listener can be released when the unit settles. `once: true`
+      // self-removes only if the scope actually cancels; a unit that completes
+      // normally would otherwise leave its listener — and the controller it
+      // closes over — attached for the scope's whole lifetime. A session scope
+      // outlives thousands of units, so that accumulates without bound.
+      let releaseScopeListener: (() => void) | null = null;
       if (scopeHandle !== null) {
         if (scopeHandle.signal.aborted) {
           controller.abort();
         } else {
           scopeHandle.signal.addEventListener("abort", onOuterAbort, { once: true });
+          releaseScopeListener = () =>
+            scopeHandle.signal.removeEventListener("abort", onOuterAbort);
         }
       }
 
@@ -427,6 +436,7 @@ export function createScheduler<Value>(options: SchedulerOptions): SchedulerPort
         release(entry.keys);
         running -= 1;
         signal?.removeEventListener("abort", onOuterAbort);
+        releaseScopeListener?.();
         if (budget !== undefined && entry.reservation !== null) {
           if (settlement.kind === "completed") {
             budget.ledger.consume(entry.reservation, {

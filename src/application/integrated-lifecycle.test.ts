@@ -230,6 +230,42 @@ describe("scheduling under cancellation scopes", () => {
     runtime.dispose();
   });
 
+  test("a long-lived scope does not accumulate a listener per unit", async () => {
+    const { runtime } = makeRuntime();
+    const session = deriveScope(runtime, "session-1");
+    const handle = runtime.scopes.handle(session);
+    if (handle === null) {
+      throw new Error("no handle");
+    }
+
+    // `AbortSignal` exposes no listener count, so count the calls. A completed
+    // unit never fires its `once: true` listener, so nothing but an explicit
+    // removal can release it.
+    let attached = 0;
+    const add = handle.signal.addEventListener.bind(handle.signal);
+    const remove = handle.signal.removeEventListener.bind(handle.signal);
+    handle.signal.addEventListener = (...args: Parameters<typeof add>) => {
+      attached += 1;
+      return add(...args);
+    };
+    handle.signal.removeEventListener = (...args: Parameters<typeof remove>) => {
+      attached -= 1;
+      return remove(...args);
+    };
+
+    for (let index = 0; index < 50; index += 1) {
+      const result = await runtime.scheduler.submit(unit(`u-${index}`, session), () =>
+        Promise.resolve("value"),
+      );
+      expect(result.kind).toBe("completed");
+    }
+
+    expect(attached).toBe(0);
+    // The scope is still live and still cancels the work under it.
+    expect(runtime.scopes.state(session)).toEqual({ status: "active" });
+    runtime.dispose();
+  });
+
   test("a unit with no scope is unaffected by scope cancellation", async () => {
     const { runtime } = makeRuntime();
     const scope = deriveScope(runtime, "turn-1");
