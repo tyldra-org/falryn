@@ -20,14 +20,21 @@ modes are defined in
    fully resolves the issue. Record the checks actually run. When canonical
    docs change, open a companion `falryn-docs` PR that references the delivery
    issue and cross-links the delivery PR.
-5. Verify the complete delivery bundle. Preview the docs-first merge order and
-   the final squash subject and concise body for every PR.
+5. Verify the complete delivery bundle. Preview the docs-first merge order,
+   final squash subject and concise body for every PR, and safe post-merge
+   synchronization of each available local checkout.
 6. After the explicit Merge prompt confirms an unchanged preview, squash-merge
    required docs companions first and the Falryn delivery PR last.
 7. Re-read GitHub after merge. Verify every required PR is merged, its
    PR-sized issue is closed, and its Project status is **Done**. Leave a parent
    issue open and **In Progress** until all required children and its integrated
    acceptance criteria pass; then verify, close, and mark the parent **Done**.
+8. After the complete bundle has landed, return every available clean local
+   checkout to its repository's fetched default branch with a fast-forward-only
+   update. Verify the resulting branch, SHA, and clean state. Leave dirty,
+   detached, conflicted, divergent, or unavailable checkouts untouched and
+   report them. Deleting the merged local or remote branch remains a separate
+   explicit action.
 
 Use an issue checklist for small steps. Create sub-issues only when a child
 item needs its own branch and pull request. Keep the hierarchy to one level.
@@ -49,11 +56,14 @@ docs-only work.
   moves it to **In Progress**, and produces its branch and closing pull request.
 - `Verify — Target: ...` audits the named pull request, issue, parent, or
   milestone against GitHub state, source, checks, documentation, and
-  `CURRENT-STATE.md`. Verification does not merge without a separate explicit
+  `CURRENT-STATE.md`, and previews any post-merge local-checkout
+  synchronization. Verification does not merge without a separate explicit
   instruction.
 - `Merge — Target: PR #N` merges the verified delivery bundle when its preview
-  is still current: companion docs PRs first and the Falryn delivery PR last.
-  `Merge — Target: Docs PR #N` is the docs-only equivalent.
+  is still current: companion docs PRs first and the Falryn delivery PR last,
+  followed by safe fast-forward synchronization of available clean local
+  checkouts to their default branches. `Merge — Target: Docs PR #N` is the
+  docs-only equivalent. Neither form deletes branches implicitly.
 
 Every result ends with one exact, copy-ready `Suggested next prompt` based on
 the refreshed GitHub state. The suggestion is guidance, not authorization to
