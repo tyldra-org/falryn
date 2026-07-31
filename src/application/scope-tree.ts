@@ -25,6 +25,7 @@ import {
   err,
   type Instant,
   isExpired,
+  NO_CORRELATION,
   ok,
   type Result,
   type ScopeError,
@@ -38,6 +39,7 @@ import {
   timeoutOutcomeFor,
   worstEffect,
 } from "../domain/index.ts";
+import type { DiagnosticsCollector } from "./diagnostics-collector.ts";
 
 /** Depth of the application → session → turn → attempt → invocation → child chain. */
 export const MAX_SCOPE_DEPTH = 16;
@@ -143,6 +145,13 @@ export type ScopeTree = {
    */
   forceSettleUnacknowledged(): readonly ScopeEvent[];
 
+  /**
+   * The handle for an existing scope.
+   *
+   * The scheduler needs a scope's abort signal to bind work to it, and it is
+   * handed a `WorkUnit.scopeId` rather than the handle that created the scope.
+   */
+  handle(scopeId: ScopeId): ScopeHandle | null;
   report(scopeId: ScopeId): ScopeReport | null;
   /** Scopes held in memory: live ones plus settled ones still inside the retention window. */
   retainedScopeCount(): number;
@@ -188,12 +197,20 @@ type ScopeNode = {
 
 export type ScopeTreeOptions = {
   readonly clock: ClockPort;
+  /**
+   * Where lifecycle diagnostics go.
+   *
+   * Injected rather than constructed here: one collector serves the whole
+   * runtime, and a tree that made its own would report into a buffer nobody
+   * reads.
+   */
+  readonly diagnostics?: DiagnosticsCollector;
   readonly rootScopeId?: ScopeId;
   readonly rootDeadline?: Deadline | null;
 };
 
 export function createScopeTree(options: ScopeTreeOptions): ScopeTree {
-  const { clock } = options;
+  const { clock, diagnostics } = options;
   const nodes = new Map<ScopeId, ScopeNode>();
   const events: ScopeEvent[] = [];
   /** Settled scopes still retained, oldest first. */
@@ -202,6 +219,38 @@ export function createScopeTree(options: ScopeTreeOptions): ScopeTree {
   let order = 0;
   let liveCount = 0;
   let droppedEvents = 0;
+
+  /**
+   * Mirrors a lifecycle event into diagnostics.
+   *
+   * Carries identity, ordering, and — on a terminal event — how long the scope
+   * took to acknowledge. No payload: a scope event has none, and the diagnostic
+   * shape would not accept one anyway.
+   */
+  const emitDiagnostic = (event: ScopeEvent, node: ScopeNode): void => {
+    if (diagnostics === undefined) {
+      return;
+    }
+    const latency =
+      event.kind === "scope.terminal" && node.cancellationRequestedAt !== null
+        ? elapsedBetween(node.cancellationRequestedAt, event.at)
+        : null;
+
+    diagnostics.emit({
+      level: event.kind === "scope.terminal" ? "info" : "debug",
+      subsystem: "scope",
+      code: event.kind,
+      correlation: { ...NO_CORRELATION, scopeId: event.scopeId },
+      stage: event.scopeKind,
+      durationMs: latency,
+      metadata: {
+        order: event.order,
+        ...(event.outcome === null ? {} : { outcome: event.outcome.kind }),
+        ...(event.effect === null ? {} : { effect: event.effect }),
+        ...(event.reason === null ? {} : { reason: event.reason.kind }),
+      },
+    });
+  };
 
   const emit = (
     kind: ScopeEvent["kind"],
@@ -228,6 +277,7 @@ export function createScopeTree(options: ScopeTreeOptions): ScopeTree {
     if (events.length > MAX_RETAINED_SCOPE_EVENTS) {
       droppedEvents += events.splice(0, SCOPE_EVENT_TRIM_CHUNK).length;
     }
+    emitDiagnostic(event, node);
     for (const listener of [...listeners]) {
       listener(event);
     }
@@ -570,6 +620,11 @@ export function createScopeTree(options: ScopeTreeOptions): ScopeTree {
         collected.push(settle(node, { kind: "uncertain", effect: "uncertain" }, at));
       }
       return collected;
+    },
+
+    handle(id: ScopeId): ScopeHandle | null {
+      const node = nodes.get(id);
+      return node === undefined ? null : handleOf(node);
     },
 
     report(id: ScopeId): ScopeReport | null {

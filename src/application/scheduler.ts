@@ -28,7 +28,9 @@ import {
   type Deadline,
   deadlineAt,
   effectiveConflictKeys,
+  effectOf,
   instant,
+  NO_CORRELATION,
   type PriorityClass,
   priorityRank,
   type RecoveryOption,
@@ -45,6 +47,8 @@ import {
   type WorkUnitId,
 } from "../domain/index.ts";
 import type { BudgetLedger } from "./budget-ledger.ts";
+import type { DiagnosticsCollector } from "./diagnostics-collector.ts";
+import type { ScopeTree } from "./scope-tree.ts";
 
 export const DEFAULT_SCHEDULER_LIMITS: SchedulerLimits = {
   maxConcurrent: 8,
@@ -63,6 +67,16 @@ export type SchedulerOptions = {
   readonly limits?: Partial<SchedulerLimits>;
   /** When present, every unit reserves against it before it is admitted. */
   readonly budget?: SchedulerBudget;
+  /**
+   * When present, a unit's `scopeId` is honoured.
+   *
+   * Cancelling a scope then cancels its queued and running units, and a unit's
+   * effect is recorded on its scope so the two agree about what happened.
+   * Without a tree a `scopeId` is inert metadata — which is what it was before
+   * this wiring existed.
+   */
+  readonly scopeTree?: ScopeTree;
+  readonly diagnostics?: DiagnosticsCollector;
 };
 
 type EntryState = "blocked" | "ready" | "running" | "settled";
@@ -154,7 +168,7 @@ function findCycle(units: readonly WorkUnit[]): readonly WorkUnitId[] | null {
 }
 
 export function createScheduler<Value>(options: SchedulerOptions): SchedulerPort<Value> {
-  const { clock, budget } = options;
+  const { clock, budget, scopeTree, diagnostics } = options;
   const limits: SchedulerLimits = { ...DEFAULT_SCHEDULER_LIMITS, ...options.limits };
 
   /** Held keys and how many holders each has, shared across generations. */
@@ -204,6 +218,40 @@ export function createScheduler<Value>(options: SchedulerOptions): SchedulerPort
         held.set(key, count);
       }
     }
+  };
+
+  /**
+   * Tells a unit's scope what the unit did to the world.
+   *
+   * The scope is the authority on effect certainty, and it only ever moves
+   * toward more uncertainty — so a unit that stopped mid-mutation makes its
+   * scope report uncertain too, and the two cannot disagree.
+   */
+  const recordOnScope = <V>(entry: Entry<V>, outcome: TerminalOutcome): void => {
+    if (scopeTree === undefined || entry.unit.scopeId === null) {
+      return;
+    }
+    scopeTree.recordEffect(entry.unit.scopeId, effectOf(outcome));
+  };
+
+  const emitUnitDiagnostic = <V>(entry: Entry<V>, outcome: TerminalOutcome): void => {
+    diagnostics?.emit({
+      level: outcome.kind === "completed" ? "debug" : "warn",
+      subsystem: "scheduler",
+      code: `scheduler.unit.${outcome.kind}`,
+      correlation: {
+        ...NO_CORRELATION,
+        ...(entry.unit.scopeId === null ? {} : { scopeId: entry.unit.scopeId }),
+      },
+      stage: entry.unit.effect,
+      limits: { maxConcurrent: limits.maxConcurrent },
+      metadata: {
+        unit: entry.unit.id,
+        priority: entry.unit.priority,
+        effect: effectOf(outcome),
+        queued: waitingUnits.size,
+      },
+    });
   };
 
   const refuse = <V>(entry: Entry<V>, error: SchedulingError): void => {
@@ -347,6 +395,30 @@ export function createScheduler<Value>(options: SchedulerOptions): SchedulerPort
       const onOuterAbort = (): void => controller.abort();
       signal?.addEventListener("abort", onOuterAbort, { once: true });
 
+      // Bind the unit to its cancellation scope. A scope that is already
+      // stopping aborts the unit immediately rather than letting it start work
+      // the runtime has already decided to give up on.
+      const scopeHandle =
+        scopeTree === undefined || entry.unit.scopeId === null
+          ? null
+          : scopeTree.handle(entry.unit.scopeId);
+
+      // Held so the listener can be released when the unit settles. `once: true`
+      // self-removes only if the scope actually cancels; a unit that completes
+      // normally would otherwise leave its listener — and the controller it
+      // closes over — attached for the scope's whole lifetime. A session scope
+      // outlives thousands of units, so that accumulates without bound.
+      let releaseScopeListener: (() => void) | null = null;
+      if (scopeHandle !== null) {
+        if (scopeHandle.signal.aborted) {
+          controller.abort();
+        } else {
+          scopeHandle.signal.addEventListener("abort", onOuterAbort, { once: true });
+          releaseScopeListener = () =>
+            scopeHandle.signal.removeEventListener("abort", onOuterAbort);
+        }
+      }
+
       const deadline: Deadline | null = entry.unit.deadline;
       /**
        * Settles the unit.
@@ -364,6 +436,7 @@ export function createScheduler<Value>(options: SchedulerOptions): SchedulerPort
         release(entry.keys);
         running -= 1;
         signal?.removeEventListener("abort", onOuterAbort);
+        releaseScopeListener?.();
         if (budget !== undefined && entry.reservation !== null) {
           if (settlement.kind === "completed") {
             budget.ledger.consume(entry.reservation, {
@@ -374,6 +447,11 @@ export function createScheduler<Value>(options: SchedulerOptions): SchedulerPort
             budget.ledger.release(entry.reservation);
           }
         }
+        const outcome: TerminalOutcome =
+          settlement.kind === "completed" ? { kind: "completed" } : settlement.outcome;
+        recordOnScope(entry, outcome);
+        emitUnitDiagnostic(entry, outcome);
+
         if (settlement.kind === "completed") {
           entry.state = "settled";
           entry.result = { kind: "completed", unitId: entry.unit.id, value: settlement.value };
