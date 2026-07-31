@@ -211,10 +211,16 @@ immediately and exits.
 Observed on 2026-07-31:
 
 ```text
-bun run check  PASS
-bun run build  PASS  (112 modules bundled)
-bun test       463 pass, 0 fail
+bun run check  PASS  (Biome, tsc --noEmit, and bun test)
+bun run build  PASS  (Bun standalone executable compiled to dist/falryn)
 ```
+
+No module or test count is recorded here. Re-running these commands re-proves
+that they pass, but it re-proves no count, so a count decays silently between
+runs — one did so by mis-transcription and one by an ordinary sibling delivery,
+which is why neither is recorded now. Exact output belongs to the pull request
+that observed it, which is dated by its own merge and is never re-read as a
+current claim.
 
 The compiled file is a development bootstrap artifact. It is not a supported
 Falryn product binary or release. A separate compiled probe confirmed that a
