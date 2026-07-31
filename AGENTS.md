@@ -83,6 +83,15 @@ tests small, explicit, and user-focused.
   **In Progress** until all required children and integrated acceptance
   criteria pass, then close the parent and verify **Done**. Do not mix unrelated
   issues in one branch or pull request.
+- Resolve correction work from the pull request's actual state. Continue a
+  valid open PR on its existing branch and require a fresh Verify after every
+  push. Reopen a closed-unmerged PR only when its branch, base, issue scope, and
+  companion set remain valid. A merged PR cannot be reopened or merged again:
+  reopen the owning issue when its original acceptance is incomplete, or
+  create a focused follow-up issue for a new outcome, then branch from the
+  updated default branch and open a new PR. Never reuse a squash-merged branch
+  for post-merge correction. Parent integration gaps use a dedicated child
+  issue and PR, not a parent branch.
 - Name branches with a concise repository type prefix such as `feat/`, `fix/`,
   `docs/`, `refactor/`, `test/`, or `chore/`, followed by the issue number and
   purpose when applicable. Do not require or add an agent-name prefix such as

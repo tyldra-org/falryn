@@ -36,6 +36,15 @@ modes are defined in
    report them. Deleting the merged local or remote branch remains a separate
    explicit action.
 
+When Verify finds a gap in an open pull request, continue on that pull request's
+existing branch and run Verify again after pushing the correction. A
+closed-unmerged pull request may be reopened only when its branch, base, issue
+scope, and companion set remain valid. A merged pull request cannot be reopened
+or merged again: reopen the owning issue when its original acceptance remains
+incomplete, or create a focused follow-up issue for a new outcome, then create
+a fresh branch from the updated default branch and open a new pull request. Do
+not reuse a squash-merged branch for post-merge corrections.
+
 Use an issue checklist for small steps. Create sub-issues only when a child
 item needs its own branch and pull request. Keep the hierarchy to one level.
 One PR-sized standalone issue or subissue normally maps to one branch and one
