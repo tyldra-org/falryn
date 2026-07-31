@@ -54,6 +54,19 @@ protects important behavior with its own tests and fixtures.
 - `falryn` contains the application and its tests.
 - `falryn-docs` contains user and developer documentation.
 
+The durable documentation entry point is
+[`falryn-docs/DOCUMENTATION-MAP.md`](https://github.com/yogeshprasad098/falryn-docs/blob/main/DOCUMENTATION-MAP.md).
+When both repositories are cloned as siblings, its usual local location from
+this repository is `../falryn-docs/DOCUMENTATION-MAP.md`; a checkout may live
+elsewhere, so agents resolve and report its actual clickable absolute path at
+runtime rather than committing one contributor's machine-specific location.
+
+Before implementation, use that map and the selected issue's canonical links
+to read the affected documentation owners. Implement only the Ready issue
+within those contracts. If implementation requires a contract change, update
+the existing canonical owner in a linked `falryn-docs` pull request instead of
+silently diverging or creating a duplicate document.
+
 The minimal Bun and TypeScript toolchain scaffold is present; product behavior
 has not been implemented yet. See [Current state](CURRENT-STATE.md) for the
 verified inventory and next planning action. Start meaningful work from a Ready

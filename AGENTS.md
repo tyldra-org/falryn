@@ -75,12 +75,13 @@ tests small, explicit, and user-focused.
   [`falryn-docs/DEVELOPMENT.md`](https://github.com/yogeshprasad098/falryn-docs/blob/main/DEVELOPMENT.md):
   one PR-sized standalone issue or native implementation subissue maps to one
   short-lived branch and one pull request containing `Closes #<issue>`. Plan
-  keeps work **Todo**; Implement assigns the issue and sets **In Progress**;
+  keeps work **Todo**; Implement assigns the issue and sets **In Progress**,
+  and sets its parent **In Progress** when the first required child begins;
   after an approved merge, re-read GitHub and verify that the intended issue
-  closed and its Project status is **Done**. Keep any parent open until all
-  required children and integrated acceptance criteria pass, then close the
-  parent and verify **Done**. Do not mix unrelated issues in one branch or pull
-  request.
+  closed and its Project status is **Done**. Keep any parent open and **In
+  Progress** until all required children and integrated acceptance criteria
+  pass, then close the parent and verify **Done**. Do not mix unrelated issues
+  in one branch or pull request.
 - Name branches with a concise repository type prefix such as `feat/`, `fix/`,
   `docs/`, `refactor/`, `test/`, or `chore/`, followed by the issue number and
   purpose when applicable. Do not require or add an agent-name prefix such as
@@ -108,6 +109,16 @@ tests small, explicit, and user-focused.
   Resolve the physical path at report time; never commit a user-specific
   absolute path or copy one into an issue or pull request. Follow
   [`falryn-docs/DEVELOPMENT.md`](https://github.com/yogeshprasad098/falryn-docs/blob/main/DEVELOPMENT.md#reporting-file-locations).
+- Before planning, implementing, or reviewing behavior, use
+  `falryn-docs/DOCUMENTATION-MAP.md` and the issue's canonical-design links to
+  locate and read the exact documentation owners. Prefer the local
+  `falryn-docs` checkout when available, record each owner's impact as
+  `create`, `update`, `verify-unaffected`, or `not-applicable`, and stop when a
+  required contract is missing or conflicts with the issue. Do not invent
+  behavior outside the selected issue and canonical contracts, silently
+  diverge from them, or create duplicate documentation owners. Resolve contract
+  changes in a linked documentation pull request and cross-link both pull
+  requests as one delivery unit.
 - Read `CURRENT-STATE.md` before making implementation or availability claims.
   It is the sole concise implementation-status owner. Update it only with
   behavior supported by current source and validation; do not copy roadmap

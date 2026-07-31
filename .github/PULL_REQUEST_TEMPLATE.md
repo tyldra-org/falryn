@@ -19,7 +19,12 @@ Closes #
 ## Documentation
 
 - [ ] `CURRENT-STATE.md` reflects only behavior supported by this change.
-- [ ] Not user-facing, or the related `falryn-docs` pull request is linked.
+- [ ] Affected canonical owners were located through `falryn-docs/DOCUMENTATION-MAP.md` or the issue's canonical links.
+- [ ] Each relevant owner is classified as `create`, `update`, `verify-unaffected`, or `not-applicable`, with a reason.
+- [ ] The implementation stays within the Ready issue and canonical contracts; any contract change is explained and linked.
+- [ ] The existing canonical owner was updated instead of creating a duplicate contract, roadmap, or implementation inventory.
+- [ ] Not user-facing, or the related `falryn-docs` pull request is cross-linked for coordinated landing.
+- [ ] Repository-qualified paths and GitHub links are shareable; no contributor-specific local path is persisted.
 
 ## Risk and limitations
 
@@ -29,6 +34,7 @@ Closes #
 
 - [ ] The target is one Ready, unblocked PR-sized issue.
 - [ ] The issue is assigned and **In Progress**.
+- [ ] Its parent is **In Progress** when this is the first required child to begin.
 - [ ] The branch targets the current default branch and contains no unrelated work.
-- [ ] Any parent remains open for integrated verification.
+- [ ] Any parent remains open and **In Progress** for integrated verification.
 - [ ] The PR does not assume a merge method; GitHub repository settings control it.

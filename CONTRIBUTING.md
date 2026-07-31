@@ -13,7 +13,8 @@ modes are defined in
    validation, and documentation impact are resolved; Ready is a planning
    condition, not a separate Project status.
 3. For implementation, assign one Ready, unblocked PR-sized issue, set it
-   **In Progress**, and create a short-lived branch such as
+   **In Progress**, set its parent **In Progress** when this is the first
+   required child to begin, and create a short-lived branch such as
    `feat/123-chat-composer`. Do not add an agent-name prefix.
 4. Open one focused pull request and include `Closes #123` only when it fully
    resolves the issue. Record the checks actually run and link any companion
@@ -22,8 +23,8 @@ modes are defined in
    repository's current GitHub settings.
 6. Re-read GitHub after merge. Verify the pull request is merged, its PR-sized
    issue is closed, and its Project status is **Done**. Leave a parent issue
-   open until all required children and its integrated acceptance criteria
-   pass; then verify and close the parent.
+   open and **In Progress** until all required children and its integrated
+   acceptance criteria pass; then verify, close, and mark the parent **Done**.
 
 Use an issue checklist for small steps. Create sub-issues only when a child
 item needs its own branch and pull request. Keep the hierarchy to one level.
@@ -54,8 +55,24 @@ committed documentation or GitHub planning records.
 ## Documentation
 
 User-facing or developer-facing documentation belongs in the companion
-`falryn-docs` repository. Link any related docs pull request from the product
-pull request; land both before calling a user-facing change complete.
+`falryn-docs` repository. Before implementation, locate the affected canonical
+owner through
+[`falryn-docs/DOCUMENTATION-MAP.md`](https://github.com/yogeshprasad098/falryn-docs/blob/main/DOCUMENTATION-MAP.md)
+and the issue's canonical links. Read the owner and classify its impact as
+`create`, `update`, `verify-unaffected`, or `not-applicable`.
+
+Do not invent behavior outside the Ready issue and canonical contracts or
+create a second architecture, roadmap, or implementation-status owner. If the
+implementation changes a contract, update the existing owner in a companion
+documentation pull request, cross-link the two pull requests, and land both
+before calling the behavior complete. When no documentation changes, name the
+owners checked and explain why they remain unaffected.
+
+When both repositories are checked out as siblings, the local documentation
+root is normally `../falryn-docs`; otherwise use its actual checkout location.
+Agent reports provide the resolved clickable absolute path plus the
+repository-qualified path and GitHub link. Never persist a contributor-specific
+absolute path in source, documentation, issues, or pull requests.
 
 ## Checks
 
