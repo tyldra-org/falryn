@@ -13,6 +13,8 @@ export type {
 export { createBoundedQueue } from "./bounded-queue.ts";
 export type { BudgetLedger } from "./budget-ledger.ts";
 export { createBudgetLedger, MAX_BUDGET_DEPTH } from "./budget-ledger.ts";
+export type { SecretResolverOptions } from "./credential-resolver.ts";
+export { createSecretResolver } from "./credential-resolver.ts";
 export type { DiagnosticsCollector, EmitOutcome, EmitRequest } from "./diagnostics-collector.ts";
 export { createDiagnosticsCollector, DIAGNOSTICS_OWNERSHIP } from "./diagnostics-collector.ts";
 export type { ErrorContext } from "./error-translation.ts";
@@ -22,6 +24,7 @@ export {
   fromCodecError,
   fromConfigurationIssue,
   fromConfigurationIssues,
+  fromCredentialFailure,
   fromEventStoreError,
   fromIdentityError,
   fromParticipantReports,

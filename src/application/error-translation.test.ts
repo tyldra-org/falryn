@@ -27,6 +27,7 @@ import {
   fromCodecError,
   fromConfigurationIssue,
   fromConfigurationIssues,
+  fromCredentialFailure,
   fromEventStoreError,
   fromIdentityError,
   fromParticipantReports,
@@ -399,5 +400,21 @@ describe("configuration rejections", () => {
     for (const category of RUNTIME_EMITTED_CATEGORIES) {
       expect(ERROR_CATEGORIES).toContain(category);
     }
+  });
+
+  test("authentication is now a category the runtime emits", () => {
+    // A category is listed here because something produces it. The credential
+    // resolver does, through `fromCredentialFailure`.
+    expect(RUNTIME_EMITTED_CATEGORIES).toContain("authentication");
+    expect(
+      fromCredentialFailure({
+        status: "missing",
+        code: "not-in-store",
+        retryable: false,
+        storeKind: "operating-system-keychain",
+        consumer: "example-provider",
+        health: { state: "absent", storeKind: "operating-system-keychain", observedAt: null },
+      }).category,
+    ).toBe("authentication");
   });
 });

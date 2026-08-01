@@ -23,7 +23,13 @@ export type DiagnosticLevel = (typeof DIAGNOSTIC_LEVELS)[number];
  * Each corresponds to something a sibling already produces. A subsystem is not
  * added here until it emits.
  */
-export const DIAGNOSTIC_SUBSYSTEMS = ["scope", "scheduler", "shutdown", "codec"] as const;
+export const DIAGNOSTIC_SUBSYSTEMS = [
+  "scope",
+  "scheduler",
+  "shutdown",
+  "codec",
+  "credentials",
+] as const;
 
 export type DiagnosticSubsystem = (typeof DIAGNOSTIC_SUBSYSTEMS)[number];
 

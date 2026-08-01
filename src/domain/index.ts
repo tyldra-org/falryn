@@ -103,6 +103,41 @@ export type {
   ValueProvenance,
 } from "./configuration-source.ts";
 export { CONFIGURATION_LAYER_ORDER, SOURCE_OUTCOMES } from "./configuration-source.ts";
+export type {
+  CredentialFailure,
+  CredentialHealth,
+  CredentialHealthState,
+  CredentialPartOutcome,
+  CredentialPartResult,
+  CredentialReferenceStorePort,
+  CredentialRemovalCompleteness,
+  CredentialRemovalConfirmation,
+  CredentialRemovalOutcome,
+  CredentialRemovalRefusal,
+  CredentialRequestOptions,
+  CredentialResolution,
+  CredentialStoreAvailability,
+  CredentialStorePort,
+  CredentialUnresolvedStatus,
+  InMemoryCredentialStoreOptions,
+  SecretRequest,
+  SecretResolverPort,
+  SecretUse,
+} from "./credential.ts";
+export {
+  CREDENTIAL_HEALTH_STATES,
+  CREDENTIAL_PART_RESULTS,
+  CREDENTIAL_UNRESOLVED_STATUSES,
+  createInMemoryCredentialStore,
+  credentialRemovalIdentity,
+  DEFAULT_CREDENTIAL_TIMEOUT_MS,
+  healthForStatus,
+  isCredentialUnresolvedStatus,
+  MAX_CREDENTIAL_LABEL_LENGTH,
+  MAX_CREDENTIAL_LOCATOR_LENGTH,
+  MAX_CREDENTIAL_SECRET_BYTES,
+  unknownHealth,
+} from "./credential.ts";
 export type { Deadline } from "./deadline.ts";
 export {
   deadlineAt,
@@ -321,6 +356,17 @@ export {
   requiresInspection,
   TERMINAL_OUTCOME_KINDS,
 } from "./outcome.ts";
+export type {
+  CommandOutcome,
+  CommandRequest,
+  CommandRunnerPort,
+  StubCommandRunner,
+} from "./process.ts";
+export {
+  createStubCommandRunner,
+  MAX_COMMAND_ARGUMENTS,
+  MAX_COMMAND_OUTPUT_BYTES,
+} from "./process.ts";
 export type {
   ArtifactHandle,
   ArtifactSpillPort,
