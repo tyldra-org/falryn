@@ -169,6 +169,8 @@ export type FileSystemErrorCode =
   | "not-a-directory"
   | "permission-denied"
   | "not-empty"
+  | "oversized"
+  | "malformed-encoding"
   | "io-failure"
   | "unsupported"
   | "cancelled";
@@ -179,7 +181,8 @@ export type FileSystemOperation =
   | "list"
   | "remove"
   | "real-path"
-  | "probe-writable";
+  | "probe-writable"
+  | "read-text";
 
 /**
  * A filesystem failure.
@@ -227,11 +230,28 @@ export type FileSystemPort = {
 
   /** Whether this process may write into an existing directory. */
   probeWritable(path: LocalPath, signal?: AbortSignal): Promise<Result<boolean, FileSystemError>>;
+
+  /**
+   * Reads one file as UTF-8 text, refusing anything past `maximumBytes`.
+   *
+   * The bound is checked against the file's size before the bytes are read, so
+   * an oversized file costs a stat rather than its own length in memory. A
+   * missing file reports `not-found` rather than resolving to empty text: an
+   * absent configuration source and an empty one mean different things, and a
+   * reader that conflated them would silently accept a truncated write.
+   */
+  readText(
+    path: LocalPath,
+    maximumBytes: number,
+    signal?: AbortSignal,
+  ): Promise<Result<string, FileSystemError>>;
 };
 
 /** How an in-memory node is described to the test double. */
 export type InMemoryNode = {
   readonly kind: FileKind;
+  /** File content. `byteLength` is derived from it when both are absent. */
+  readonly text?: string;
   readonly byteLength?: number;
   readonly mode?: number;
   /** For a symlink: the absolute path it points at. */
@@ -275,10 +295,13 @@ export function createInMemoryFileSystem(
     return {
       path,
       kind: node.kind,
-      byteLength: node.kind === "file" ? (node.byteLength ?? 0) : 0,
+      byteLength: node.kind === "file" ? byteLengthOf(node) : 0,
       mode: node.mode ?? defaultMode,
     };
   };
+
+  const byteLengthOf = (node: InMemoryNode): number =>
+    node.byteLength ?? (node.text === undefined ? 0 : Buffer.byteLength(node.text, "utf8"));
 
   const cancelled = (
     path: LocalPath,
@@ -406,6 +429,23 @@ export function createInMemoryFileSystem(
         return err({ kind: "filesystem", code: "not-found", path, operation: "probe-writable" });
       }
       return ok(node.writable !== false);
+    },
+
+    async readText(path, maximumBytes, signal) {
+      if (signal?.aborted === true) {
+        return cancelled(path, "read-text");
+      }
+      const node = nodes.get(path);
+      if (node === undefined) {
+        return err({ kind: "filesystem", code: "not-found", path, operation: "read-text" });
+      }
+      if (node.kind !== "file") {
+        return err({ kind: "filesystem", code: "not-a-directory", path, operation: "read-text" });
+      }
+      if (byteLengthOf(node) > maximumBytes) {
+        return err({ kind: "filesystem", code: "oversized", path, operation: "read-text" });
+      }
+      return ok(node.text ?? "");
     },
   };
 }

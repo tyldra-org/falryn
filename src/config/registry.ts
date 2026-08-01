@@ -331,14 +331,18 @@ function foldOverDefaults(
 }
 
 /**
- * One key's declared merge.
+ * One key's declared merge, exported for the composition owner.
+ *
+ * Composition folds the same declarations across six layers that this module
+ * folds across two, and a second implementation of the same rule is a second
+ * chance to get it wrong.
  *
  * A shape mismatch falls back to replacement rather than guessing: a base that
  * is not the shape the declaration describes cannot be merged into, and
  * inventing a combination there would be exactly the accidental deep merge this
  * contract exists to prevent.
  */
-function foldDeclaredValue(
+export function foldDeclaredValue(
   merge: ConfigurationMergeBehavior,
   base: ConfigurationValue | undefined,
   incoming: ConfigurationValue,

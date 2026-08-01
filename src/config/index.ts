@@ -11,6 +11,10 @@
  * supplies it; this area writes no redaction rules of its own.
  */
 
+export type { BridgeResult } from "./bridges.ts";
+export { readEnvironmentLayer, readOverrideLayer } from "./bridges.ts";
+export type { Composition, CompositionInputs, LayerInput } from "./composition.ts";
+export { composeLayers, declaredKeysOf } from "./composition.ts";
 export type { ConfigurationKeyDeclaration } from "./declaration.ts";
 export {
   enumKey,
@@ -23,6 +27,13 @@ export {
   objectKey,
   pathOverrideKey,
 } from "./declaration.ts";
+export {
+  diffGenerations,
+  nextGeneration,
+  strongestApplicationClass,
+} from "./generation.ts";
+export { inspectGeneration } from "./inspection.ts";
+export { MAX_CONFIGURATION_FILE_BYTES, parseJsonc, positionOf } from "./jsonc.ts";
 export type { RetentionClass } from "./keys.ts";
 export {
   DATA_KEYS,
@@ -37,12 +48,18 @@ export {
   V0_1_CONFIGURATION_KEYS,
   V0_1_CROSS_FIELD_RULES,
 } from "./keys.ts";
+export type {
+  ConfigurationLoader,
+  ConfigurationLoaderOptions,
+  LoadRequest,
+} from "./loader.ts";
+export { createConfigurationLoader } from "./loader.ts";
 export { CONFIGURATION_OWNERSHIP } from "./ownership.ts";
 export type {
   ConfigurationCrossFieldRule,
   ConfigurationRegistryOptions,
 } from "./registry.ts";
-export { createConfigurationRegistry } from "./registry.ts";
+export { createConfigurationRegistry, foldDeclaredValue } from "./registry.ts";
 export type { SchemaVersionPolicy, SchemaVersionVerdict } from "./schema-family.ts";
 export {
   CONFIGURATION_MINIMUM_SCHEMA_VERSION,
@@ -54,3 +71,14 @@ export {
   RESERVED_DOCUMENT_FIELDS,
   SCHEMA_VERSION_FIELD,
 } from "./schema-family.ts";
+export type { DiscoveredSource, DiscoveryInputs, ReadSource } from "./sources.ts";
+export {
+  CONFIGURATION_FILE_NAME,
+  discoverSources,
+  isLegalProfileName,
+  MAX_PROFILE_NAME_LENGTH,
+  PROFILE_DIRECTORY,
+  PROJECT_CONFIGURATION_DIRECTORY,
+  readSource,
+  sourceLabel,
+} from "./sources.ts";
