@@ -464,11 +464,14 @@ Two limitations of that wiring:
 
 **One `RuntimeEvent` kind now has a production producer.** The configuration
 loader appends `configuration.generation.changed` whenever it publishes a
-generation, through the in-memory store #2 shipped; durable persistence stays
-with [#13](https://github.com/yogeshprasad098/falryn/issues/13). The remaining
-seven kinds describe sessions, turns, model attempts, and capability
-invocations, and the runtime backbone still has none of those concepts — their
-first producers are #13 for sessions and turns and
+generation, through the in-memory store #2 shipped. A durable store now exists
+beside it — see the persistence section below — and nothing composes the two
+together yet, because the loader is not composed into a running program either.
+The remaining seven kinds describe sessions, turns, model attempts, and
+capability invocations, and the runtime backbone still has none of those
+concepts — their first producers are
+[#33](https://github.com/yogeshprasad098/falryn/issues/33) for sessions and
+turns and
 [#40](https://github.com/yogeshprasad098/falryn/issues/40) for model and
 capability kinds. Inventing scope or scheduler event kinds to fill the gap would
 create events with no consumer.
@@ -529,20 +532,75 @@ Its verified behavior:
   `application-restart` class. Journal mode, foreign keys, and `synchronous` are
   deliberately not configurable.
 
-The production migration list is empty at v0.1. A real run creates the database,
-creates the bookkeeping table, verifies integrity, and closes cleanly at schema
-version 0; migration `0001` for sessions, turns, and events belongs to
-[#13](https://github.com/yogeshprasad098/falryn/issues/13). The runner itself is
-driven by fixture migration sets, which is what covers ordering, failure,
-contention, and interruption without depending on a schema that does not exist.
+The runner itself is driven by fixture migration sets, which is what covers
+ordering, failure, contention, and interruption independently of the production
+schema.
+
+The durable records introduced by
+[#13](https://github.com/yogeshprasad098/falryn/issues/13) add the production
+schema and everything that reads and writes it:
+
+- migration `0001` is the whole production list, and a real run now ends at
+  schema version 1. It creates `sessions`, `turns`, `model_attempts`,
+  `invocations`, `events`, and `projection_cursors` as `STRICT` tables, plus the
+  four indexes the listings below actually use. It is non-destructive, so it
+  takes no backup. There is no `workspaces` table: a session carries
+  `workspace_id` as an identity column with no foreign key, because the
+  workspace record is owned by
+  [#55](https://github.com/yogeshprasad098/falryn/issues/55) and
+  `foreign_keys = ON` would otherwise block every session write;
+- `EventStorePort` has exactly one durable implementation, and
+  `createInMemoryEventStore` remains a test double. The database is the ordering
+  and idempotency authority: expected sequence, duplicate detection, and
+  identifier conflicts are all decided from stored rows inside the same
+  `immediate` transaction that inserts, backed by `UNIQUE (stream_id,
+  sequence)`, `UNIQUE (stream_id, idempotency_key)`, and the event-identifier
+  primary key. No in-memory ledger is rehydrated at open, so a restart continues
+  at the correct sequence and a second connection sees the first's committed
+  events. The durable store is stricter than the double in one respect, on
+  purpose: an event identifier is unique across every stream, not only within
+  one;
+- rejections use the four applicable `SequenceError` codes and no others;
+  `ledger-capacity-exceeded` is an in-memory bound and is never emitted.
+  `EventStoreError` gained one member carrying a `SqliteStoreError`, so a busy,
+  full, unavailable, or closed database is not folded onto a codec or sequence
+  failure;
+- the 64 KiB bound is enforced before the insert, and every row read back is
+  revalidated through the same codec as an event arriving from transport. A
+  hand-edited row with an unknown kind, a malformed identity, a non-JSON
+  payload, or an oversized payload is rejected on read with a path and an issue
+  code and never the rejected value;
+- typed repositories for sessions, turns, model attempts, and invocations return
+  domain records under branded identities and expose no row shape. Existence is
+  decided inside the write transaction, so a repeated insert reports
+  `already-exists` and a completion with no record reports `not-found` rather
+  than a constraint violation. A terminal outcome is stored as its kind beside
+  its effect certainty, constrained by `CHECK`, and a record cannot be left
+  half-terminal;
+- one deterministic projection, `terminal-outcomes`, derives each turn's, model
+  attempt's, and invocation's completion time and outcome from stored events
+  alone — no provider, network, filesystem, or tool lookup. It is applied in
+  pages of 256, and each page's cursor is written in the same transaction as the
+  state it describes, so a rolled-back page moves neither. Dropping the derived
+  state and its cursor and rebuilding reproduces identical state, and a cursor
+  recorded under a different reducer generation triggers a rebuild rather than a
+  resume; and
+- `persist-outcomes` and `checkpoint-projections` each do real work.
+  `persist-outcomes` stops the event store accepting appends and awaits those in
+  flight; `checkpoint-projections` then brings every stream holding events up to
+  its head, and does nothing for a stream whose cursor is already there. Both
+  run before `close-storage`, so the truncating checkpoint meets a database with
+  nothing still writing.
 
 `src/main.ts` composes the cancellation lifecycle and the local data foundation,
 so the compiled executable includes the domain, application, data, and
 integration layers and the real process-signal, filesystem, and `bun:sqlite`
 adapters. It resolves roots, registers `sqliteState`, prepares the `state` root,
-opens and migrates the database, and registers its `close-storage` participant.
-There is no product work to run yet, so the bootstrap shuts down immediately and
-exits.
+opens and migrates the database, constructs the durable event store and its
+projection runner, and registers the `persist-outcomes`,
+`checkpoint-projections`, and `close-storage` participants. There is no producer
+yet, so a real run writes no session, turn, or event; what it exercises is the
+schema, the migration, and the three shutdown phases.
 
 Observed on 2026-08-01:
 
@@ -555,9 +613,10 @@ bun run ci     PASS  (quality, tsc --noEmit, build, then bun test)
 `bun run ci` now builds before it tests, so `src/main.compiled.test.ts` runs
 against a real `dist/falryn`: the standalone executable opens, migrates, and
 closes a database under a temporary state root, leaves one file, carries its
-migration bookkeeping into the binary, and reopens the same database on a second
-run. Without a build the check reports itself as skipped rather than passing on
-an executable that does not exist.
+migration bookkeeping and every product table into the binary at schema version
+1, and reopens the same database on a second run. Without a build the check
+reports itself as skipped rather than passing on an executable that does not
+exist.
 
 One limitation observed by that check: the process lingers for one full shutdown
 phase grace after its work is done. The delay is in the lifecycle owner rather
@@ -605,8 +664,8 @@ rather than `bun run check`, because `bun run check` does not build.
 No end-user product behavior has been implemented. In particular, the
 repository does not yet provide:
 
-- the shutdown participants other than the scheduler drain and the storage
-  close — persisting outcomes, checkpointing projections, artifact finalize,
+- the shutdown participants other than the scheduler drain, the event-store
+  quiesce, the projection checkpoint, and the storage close — artifact finalize,
   child-process termination, and terminal restoration each register from their
   own owner and none of those owners exists yet;
 - watching configuration sources, and writing configuration files. Nothing in
@@ -620,13 +679,23 @@ repository does not yet provide:
 - any composition of the credential resolver. The stores, the resolver, and the
   host command runner exist and are tested, and `src/main.ts` constructs none of
   them, so no real run resolves a credential. The first consumer is #35;
-- any product table, repository, or domain record in SQLite. The database, its
-  migration runner, its transaction boundary, and its close path exist and are
-  composed, and the production migration list is empty, so a real run ends at
-  schema version 0 with only the runner's own bookkeeping table. A session,
-  turn, and event *identity* exists — what does not exist is anything that
-  produces or persists those, or any read-connection pooling, which stays
-  undecided until there are real read paths to measure;
+- any *producer* of a session, turn, model attempt, invocation, or event. The
+  tables, the typed repositories, the durable event store, and the projection
+  cursor all exist and are composed, and nothing in a real run starts a session
+  or opens a turn, because the agent loop that would is
+  [#33](https://github.com/yogeshprasad098/falryn/issues/33) and later. Also
+  absent: usage accounting and provider routing on a model attempt, which arrive
+  with the model path, and read-connection pooling, which stays undecided until
+  there are enough real read paths to measure;
+- any command, human, JSON, JSONL, or terminal rendering of those records. The
+  shared `SessionView` shape exists so a renderer does not have to restate it;
+  the renderers are [#16](https://github.com/yogeshprasad098/falryn/issues/16)
+  and [#21](https://github.com/yogeshprasad098/falryn/issues/21);
+- a projection registry. One projection is maintained and its name is a closed
+  union of one; a registry for a single member would be a framework built for
+  one caller. Interrupted-write recovery, export, deterministic replay, fork,
+  rewind, and reachability garbage collection over these rows are each owned
+  elsewhere and none is implemented;
 - artifact metadata or artifact bytes;
 - any composition of the configuration loader into a running program.
   `src/main.ts` constructs no loader, so no configuration file is read on a real

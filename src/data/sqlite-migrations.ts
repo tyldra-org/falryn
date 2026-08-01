@@ -6,11 +6,10 @@
  * gap, a repeat, or a version out of order is defective, and finding out
  * halfway through applying it means finding out on a user's only copy.
  *
- * The production list is empty at v0.1. A real run creates the database,
- * creates the runner's bookkeeping table, verifies integrity, and closes at
- * schema version 0. Migration `0001` — sessions, turns, events, and their
- * indexes — belongs to the issue that designs those tables, which is why this
- * one delivers the runner and its fixtures rather than a schema.
+ * The production list holds one step: migration `0001`, which creates the
+ * session, turn, model-attempt, invocation, event, and projection-cursor
+ * tables. Its SQL lives in `schema.ts` beside this list, so this module stays
+ * the rules a set must satisfy and that one stays the schema itself.
  */
 
 import {
@@ -23,6 +22,7 @@ import {
   ok,
   type Result,
 } from "../domain/index.ts";
+import { MIGRATION_0001 } from "./schema.ts";
 
 /**
  * The migrations this build applies.
@@ -32,7 +32,7 @@ import {
  * needs a loader to be embedded, and a migration missing from the standalone
  * executable would surface as a database that silently looks unmigrated.
  */
-export const PRODUCTION_MIGRATIONS: readonly Migration[] = [];
+export const PRODUCTION_MIGRATIONS: readonly Migration[] = [MIGRATION_0001];
 
 function issue(
   code: MigrationSetErrorCode,

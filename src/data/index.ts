@@ -12,6 +12,12 @@
  * artifact bytes and no export format.
  */
 
+export type { DurableEventStore, StreamHead } from "./event-store.ts";
+export {
+  createEventStoreShutdownParticipant,
+  createSqliteEventStore,
+  EVENT_STORE_PARTICIPANT_NAME,
+} from "./event-store.ts";
 export type { LocalDataService, LocalDataServiceOptions } from "./local-data-service.ts";
 export { createLocalDataService, UNCONSTRAINED_RETENTION } from "./local-data-service.ts";
 export type { OwnershipRegistry } from "./ownership.ts";
@@ -20,6 +26,12 @@ export {
   createOwnershipRegistry,
   TEMPORARY_INGEST_OWNERSHIP,
 } from "./ownership.ts";
+export type { ProjectionRunner, ProjectionRunnerOptions } from "./projections.ts";
+export {
+  createProjectionRunner,
+  createProjectionShutdownParticipant,
+  PROJECTION_PARTICIPANT_NAME,
+} from "./projections.ts";
 export { MAX_RECONCILED_ENTRIES, reconcileTemporaryIngest } from "./reconciliation.ts";
 export type { PlanInputs, ResetSelection } from "./removal.ts";
 export {
@@ -30,6 +42,13 @@ export {
   planReset,
   planUninstall,
 } from "./removal.ts";
+export type { SessionViewLimits } from "./repositories.ts";
+export {
+  applyCompletion,
+  createRecordRepositories,
+  DEFAULT_SESSION_VIEW_LIMITS,
+  readSessionView,
+} from "./repositories.ts";
 export type { RetentionInputs, UsageMeasurement } from "./retention.ts";
 export {
   MAX_MEASURED_DEPTH,
@@ -51,6 +70,17 @@ export {
   rootChild,
   usableRoots,
 } from "./roots.ts";
+export {
+  EVENTS_TABLE,
+  INVOCATIONS_TABLE,
+  MIGRATION_0001,
+  MODEL_ATTEMPTS_TABLE,
+  PRODUCT_SCHEMA_VERSION,
+  PRODUCT_TABLES,
+  PROJECTION_CURSORS_TABLE,
+  SESSIONS_TABLE,
+  TURNS_TABLE,
+} from "./schema.ts";
 export {
   latestVersion,
   PRODUCTION_MIGRATIONS,

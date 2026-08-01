@@ -105,11 +105,16 @@ describe("latest version", () => {
 });
 
 describe("the production set", () => {
-  test("is empty and valid at v0.1", () => {
+  test("is migration 0001 and validates", () => {
     // A real run creates the database, creates the bookkeeping table, verifies
-    // integrity, and closes at schema version 0. Migration 0001 ships with the
-    // issue that designs sessions, turns, and events.
-    expect(PRODUCTION_MIGRATIONS).toEqual([]);
+    // integrity, applies the product schema, and closes at version 1.
+    expect(PRODUCTION_MIGRATIONS.map((migration) => migration.version)).toEqual([1]);
     expect(validateMigrationSet(PRODUCTION_MIGRATIONS).ok).toBe(true);
+  });
+
+  test("creates its tables without being allowed to alter durable data", () => {
+    // Non-destructive, which is what lets the runner skip a pre-migration
+    // backup: a database at version 0 holds no product row this step can lose.
+    expect(PRODUCTION_MIGRATIONS.every((migration) => !migration.destructive)).toBe(true);
   });
 });

@@ -9,142 +9,34 @@
  */
 
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtemp, readdir, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { readdir } from "node:fs/promises";
 import { createShutdownCoordinator } from "../application/index.ts";
 import {
   createManualClock,
-  err,
   instant,
   type LocalPath,
-  localPath,
   type ManualClock,
   type Migration,
-  ok,
   type ShutdownReport,
-  type SqliteConnectionPort,
-  type SqliteFailure,
-  type SqliteFailureCode,
-  type SqliteOpener,
-  type SqliteOperation,
-  type SqliteRow,
   type SqliteStorePort,
-  SqliteWorkError,
 } from "../domain/index.ts";
-import { openBunSqlite } from "../integrations/index.ts";
+import {
+  type Faults,
+  faultingOpener,
+  temporaryRoot as makeTemporaryRoot,
+  removeTemporaryRoots,
+} from "./fixtures.ts";
 import {
   createSqliteShutdownParticipant,
   openSqliteStore,
   sqliteDatabasePath,
 } from "./sqlite-store.ts";
 
-const roots: string[] = [];
-
-async function temporaryRoot(): Promise<LocalPath> {
-  const created = await mkdtemp(join(tmpdir(), "falryn-sqlite-fault-"));
-  roots.push(created);
-  return localPath(created);
+function temporaryRoot(): Promise<LocalPath> {
+  return makeTemporaryRoot("falryn-sqlite-fault-");
 }
 
-afterEach(async () => {
-  while (roots.length > 0) {
-    const root = roots.pop();
-    if (root !== undefined) {
-      await rm(root, { recursive: true, force: true });
-    }
-  }
-});
-
-type Faults = {
-  /** Operations to fail, with the driver code to fail them as. */
-  readonly failOperations?: Partial<Record<SqliteOperation, SqliteFailureCode>>;
-  /** Rows `PRAGMA integrity_check` should answer with instead of `ok`. */
-  readonly integrityProblems?: readonly string[];
-  /** Whether `close` never resolves, as a connection with a stuck reader would. */
-  readonly closeHangs?: boolean;
-};
-
-function failure(code: SqliteFailureCode, operation: SqliteOperation): SqliteFailure {
-  return {
-    kind: "sqlite",
-    code,
-    operation,
-    driverCode: `SQLITE_${code.toUpperCase().replaceAll("-", "_")}`,
-    detail: `injected ${code} on ${operation}`,
-  };
-}
-
-function faultingOpener(faults: Faults): SqliteOpener {
-  return (options) => {
-    const opened = openBunSqlite(options);
-    if (!opened.ok) {
-      return opened;
-    }
-    return ok(decorate(opened.value, faults));
-  };
-}
-
-function decorate(inner: SqliteConnectionPort, faults: Faults): SqliteConnectionPort {
-  const failFor = (operation: SqliteOperation): SqliteFailure | null => {
-    const code = faults.failOperations?.[operation];
-    return code === undefined ? null : failure(code, operation);
-  };
-
-  return {
-    run(sql, bindings) {
-      const injected = failFor("run");
-      if (injected !== null) {
-        throw new SqliteWorkError(injected);
-      }
-      return inner.run(sql, bindings);
-    },
-    all(sql, bindings) {
-      return inner.all(sql, bindings);
-    },
-    pragma(statement) {
-      const injected = failFor("pragma");
-      if (injected !== null) {
-        return err(injected);
-      }
-      if (statement === "integrity_check" && faults.integrityProblems !== undefined) {
-        const rows: SqliteRow[] = faults.integrityProblems.map((problem) => ({
-          integrity_check: problem,
-        }));
-        return ok(rows);
-      }
-      return inner.pragma(statement);
-    },
-    transaction(kind, work) {
-      const injected = failFor("transaction");
-      if (injected !== null) {
-        return err(injected);
-      }
-      return inner.transaction(kind, work);
-    },
-    backupInto(path) {
-      const injected = failFor("backup");
-      return injected === null ? inner.backupInto(path) : err(injected);
-    },
-    setPersistentWal(enabled) {
-      const injected = failFor("file-control");
-      return injected === null ? inner.setPersistentWal(enabled) : err(injected);
-    },
-    async close() {
-      if (faults.closeHangs === true) {
-        // A connection whose truncating checkpoint is waiting on a reader that
-        // never finishes. The phase deadline has to be what ends this.
-        return new Promise(() => {});
-      }
-      const injected = failFor("close");
-      if (injected !== null) {
-        await inner.close();
-        return err(injected);
-      }
-      return inner.close();
-    },
-  };
-}
+afterEach(removeTemporaryRoots);
 
 function createTable(version: number, table: string): Migration {
   return {

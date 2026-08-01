@@ -26,6 +26,8 @@ import {
   idempotencyKey,
   invocationId,
   modelAttemptId,
+  modelId,
+  providerId,
   sequence,
   sessionId,
   streamId,
@@ -35,6 +37,7 @@ import {
 } from "./identity.ts";
 import { RUNTIME_EVENT_SCHEMA_VERSION } from "./limits.ts";
 import type { TerminalOutcome } from "./outcome.ts";
+import type { InvocationRecord, ModelAttemptRecord, SessionRecord, TurnRecord } from "./records.ts";
 import { timestampFromEpochMilliseconds } from "./time.ts";
 
 export const FIXTURE_OCCURRED_AT = timestampFromEpochMilliseconds(Date.UTC(2026, 6, 31, 12, 0, 0));
@@ -211,4 +214,67 @@ export function everyEventKind(): readonly RuntimeEvent[] {
 /** Places a fixture event on a second stream so isolation can be observed. */
 export function onOtherStream<Event extends RuntimeEvent>(event: Event): Event {
   return { ...event, streamId: FIXTURE_OTHER_STREAM };
+}
+
+/**
+ * Durable records matching the fixture events above.
+ *
+ * Deliberately the same identities: the events describe the lifecycle of these
+ * exact records, which is what lets a projection test apply
+ * {@link everyEventKind} to them and check the result rather than inventing a
+ * second, unrelated set of identifiers.
+ */
+export function sessionRecord(overrides: Partial<SessionRecord> = {}): SessionRecord {
+  return {
+    sessionId: FIXTURE_SESSION_CORRELATION.sessionId,
+    workspaceId: FIXTURE_SESSION_CORRELATION.workspaceId,
+    streamId: FIXTURE_STREAM,
+    title: "fixture session",
+    configurationGeneration: FIXTURE_SESSION_CORRELATION.configurationGeneration,
+    startedAt: FIXTURE_OCCURRED_AT,
+    closedAt: null,
+    outcome: null,
+    ...overrides,
+  };
+}
+
+export function turnRecord(overrides: Partial<TurnRecord> = {}): TurnRecord {
+  return {
+    turnId: FIXTURE_TURN_CORRELATION.turnId,
+    sessionId: FIXTURE_SESSION_CORRELATION.sessionId,
+    parentTurnId: null,
+    startedAt: FIXTURE_OCCURRED_AT,
+    completedAt: null,
+    outcome: null,
+    ...overrides,
+  };
+}
+
+export function modelAttemptRecord(
+  overrides: Partial<ModelAttemptRecord> = {},
+): ModelAttemptRecord {
+  return {
+    modelAttemptId: modelAttemptId.from("attempt-fixture"),
+    turnId: FIXTURE_TURN_CORRELATION.turnId,
+    providerId: providerId.from("provider-fixture"),
+    modelId: modelId.from("model-fixture"),
+    startedAt: FIXTURE_OCCURRED_AT,
+    completedAt: null,
+    outcome: null,
+    ...overrides,
+  };
+}
+
+export function invocationRecord(overrides: Partial<InvocationRecord> = {}): InvocationRecord {
+  return {
+    invocationId: invocationId.from("invocation-fixture"),
+    turnId: FIXTURE_TURN_CORRELATION.turnId,
+    capabilityId: capabilityId.from("workspace.read"),
+    capabilityVersion: 1,
+    inputDigest: "0f1e2d3c4b5a6978",
+    startedAt: FIXTURE_OCCURRED_AT,
+    completedAt: null,
+    outcome: null,
+    ...overrides,
+  };
 }
