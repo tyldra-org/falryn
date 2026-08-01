@@ -48,6 +48,7 @@ const ERRNO_CODES: Readonly<Record<string, FileSystemErrorCode>> = {
   ELOOP: "io-failure",
   ENAMETOOLONG: "io-failure",
   ENOSYS: "unsupported",
+  EFBIG: "oversized",
 };
 
 function errnoOf(thrown: unknown): string | null {
@@ -235,6 +236,42 @@ export function createHostFileSystem(): FileSystemPort {
           return ok(false);
         }
         return err(translate(thrown, path, "probe-writable"));
+      }
+    },
+
+    async readText(
+      path: LocalPath,
+      maximumBytes: number,
+      signal?: AbortSignal,
+    ): Promise<Result<string, FileSystemError>> {
+      if (signal?.aborted === true) {
+        return cancelled(path, "read-text");
+      }
+      try {
+        // Sized first. Reading then measuring would already have spent the
+        // memory the bound exists to refuse.
+        const stats = await fs.stat(path);
+        if (!stats.isFile()) {
+          return err({ kind: "filesystem", code: "not-a-directory", path, operation: "read-text" });
+        }
+        if (stats.size > maximumBytes) {
+          return err({ kind: "filesystem", code: "oversized", path, operation: "read-text" });
+        }
+        const bytes = await fs.readFile(path);
+        const text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+        return ok(text);
+      } catch (thrown: unknown) {
+        // A decoder failure is a TypeError with no errno, which would otherwise
+        // land on the generic io-failure and lose why the file was refused.
+        if (thrown instanceof TypeError) {
+          return err({
+            kind: "filesystem",
+            code: "malformed-encoding",
+            path,
+            operation: "read-text",
+          });
+        }
+        return err(translate(thrown, path, "read-text"));
       }
     },
   };

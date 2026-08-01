@@ -219,6 +219,92 @@ describe("resolving links and probing writability", () => {
   });
 });
 
+describe("reading text", () => {
+  test("reads a file's contents as UTF-8", async () => {
+    await fs.writeFile(at("note.txt"), "hello — world");
+    const read = await fileSystem.readText(at("note.txt"), 1_024);
+
+    expect(read.ok).toBe(true);
+    if (read.ok) {
+      expect(read.value).toBe("hello — world");
+    }
+  });
+
+  test("refuses a file past the bound by its size, without reading it", async () => {
+    const content = "x".repeat(2_048);
+    await fs.writeFile(at("big.txt"), content);
+
+    const read = await fileSystem.readText(at("big.txt"), 1_024);
+    expect(read.ok).toBe(false);
+    if (!read.ok) {
+      expect(read.error.code).toBe("oversized");
+      expect(read.error.operation).toBe("read-text");
+    }
+    // The file is untouched; refusing it is not a reason to remove it.
+    expect((await fs.stat(at("big.txt"))).size).toBe(2_048);
+  });
+
+  test("accepts a file exactly at the bound", async () => {
+    await fs.writeFile(at("exact.txt"), "y".repeat(16));
+    const read = await fileSystem.readText(at("exact.txt"), 16);
+    expect(read.ok).toBe(true);
+  });
+
+  test("measures the bound in bytes, not characters", async () => {
+    // Three characters, nine bytes. A character-counting bound would accept it.
+    await fs.writeFile(at("wide.txt"), "———");
+    const read = await fileSystem.readText(at("wide.txt"), 5);
+
+    expect(read.ok).toBe(false);
+    if (!read.ok) {
+      expect(read.error.code).toBe("oversized");
+    }
+  });
+
+  test("reports a missing file as not-found rather than as empty text", async () => {
+    const read = await fileSystem.readText(at("absent.txt"), 1_024);
+    expect(read.ok).toBe(false);
+    if (!read.ok) {
+      // An absent configuration source and an empty one mean different things,
+      // and conflating them would make a truncated write look deliberate.
+      expect(read.error.code).toBe("not-found");
+    }
+  });
+
+  test("reports a directory as not a directory to read", async () => {
+    await fs.mkdir(at("adir"));
+    const read = await fileSystem.readText(at("adir"), 1_024);
+    expect(read.ok).toBe(false);
+    if (!read.ok) {
+      expect(read.error.code).toBe("not-a-directory");
+    }
+  });
+
+  test("refuses bytes that are not valid UTF-8", async () => {
+    // A lone continuation byte: valid on disk, not decodable as UTF-8.
+    await fs.writeFile(at("bad.bin"), Buffer.from([0x68, 0x69, 0x80]));
+
+    const read = await fileSystem.readText(at("bad.bin"), 1_024);
+    expect(read.ok).toBe(false);
+    if (!read.ok) {
+      // Decoding leniently would substitute replacement characters and hand a
+      // parser text the file does not contain.
+      expect(read.error.code).toBe("malformed-encoding");
+      expect(read.error.operation).toBe("read-text");
+    }
+  });
+
+  test("reads an empty file as empty text rather than as missing", async () => {
+    await fs.writeFile(at("empty.txt"), "");
+    const read = await fileSystem.readText(at("empty.txt"), 1_024);
+
+    expect(read.ok).toBe(true);
+    if (read.ok) {
+      expect(read.value).toBe("");
+    }
+  });
+});
+
 describe("cancellation", () => {
   test("every operation refuses an already-aborted signal", async () => {
     const controller = new AbortController();
@@ -232,6 +318,7 @@ describe("cancellation", () => {
       await fileSystem.removeEntry(at("x"), signal),
       await fileSystem.realPath(root, signal),
       await fileSystem.probeWritable(root, signal),
+      await fileSystem.readText(at("note.txt"), 1_024, signal),
     ]) {
       expect(result.ok).toBe(false);
       if (!result.ok) {
@@ -250,6 +337,34 @@ describe("the in-memory double agrees with the adapter", () => {
 
     expect(fromDouble.ok && fromDouble.value).toBeNull();
     expect(fromHost.ok && fromHost.value).toBeNull();
+  });
+
+  test("both report a missing file the same way when reading text", async () => {
+    const double = createInMemoryFileSystem();
+    const fromDouble = await double.readText(localPath("/absent.txt"), 1_024);
+    const fromHost = await fileSystem.readText(at("absent.txt"), 1_024);
+
+    expect(fromDouble.ok).toBe(false);
+    expect(fromHost.ok).toBe(false);
+    if (!fromDouble.ok && !fromHost.ok) {
+      expect(fromDouble.error.code).toBe(fromHost.error.code);
+    }
+  });
+
+  test("both refuse an oversized file the same way", async () => {
+    const double = createInMemoryFileSystem({
+      nodes: { "/big.txt": { kind: "file", text: "x".repeat(2_048) } },
+    });
+    await fs.writeFile(at("big.txt"), "x".repeat(2_048));
+
+    const fromDouble = await double.readText(localPath("/big.txt"), 1_024);
+    const fromHost = await fileSystem.readText(at("big.txt"), 1_024);
+
+    expect(fromDouble.ok).toBe(false);
+    expect(fromHost.ok).toBe(false);
+    if (!fromDouble.ok && !fromHost.ok) {
+      expect(fromDouble.error.code).toBe(fromHost.error.code);
+    }
   });
 
   test("both refuse to remove a non-empty directory", async () => {
