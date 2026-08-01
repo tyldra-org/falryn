@@ -26,8 +26,8 @@ import {
   SECURITY_EXECUTABLE,
 } from "./keychain-credentials.ts";
 
-function exited(exitCode: number, stdout = "", outputTruncated = false): CommandOutcome {
-  return { kind: "exited", exitCode, stdout, outputTruncated };
+function exited(exitCode: number, stdout = ""): CommandOutcome {
+  return { kind: "exited", exitCode, stdout };
 }
 
 function harness(
@@ -132,10 +132,15 @@ describe("reading a secret", () => {
     expect(resolution.kind === "unresolved" && resolution.failure.status).toBe("empty");
   });
 
-  test("a truncated read is refused rather than returned short", async () => {
-    const { store } = harness(exited(0, "partial", true));
+  test("output past the bound is refused rather than returned short", async () => {
+    // A prefix of an over-long value is not a shorter secret; it is a different
+    // one, and using it would authenticate as nobody.
+    const { store } = harness({ kind: "output-exceeded", maxOutputBytes: 64 });
     const resolution = await store.read(reference(), (secret) => secret);
     expect(resolution.kind === "unresolved" && resolution.failure.status).toBe("malformed");
+    expect(resolution.kind === "unresolved" && resolution.failure.code).toBe(
+      "spawn-output-exceeded",
+    );
   });
 });
 

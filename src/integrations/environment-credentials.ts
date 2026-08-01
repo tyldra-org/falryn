@@ -84,7 +84,9 @@ export function createEnvironmentCredentialStore(options: {
         // certainly true is better than inventing the one that might be.
         return unresolved("missing", "variable-unset", false, reference.consumer);
       }
-      if (value.length > MAX_CREDENTIAL_SECRET_BYTES) {
+      // Byte length, not code-unit length: the bound is declared in bytes, and
+      // a multibyte secret would otherwise pass a check it exceeds.
+      if (Buffer.byteLength(value, "utf8") > MAX_CREDENTIAL_SECRET_BYTES) {
         return unresolved("malformed", "secret-too-large", false, reference.consumer);
       }
 

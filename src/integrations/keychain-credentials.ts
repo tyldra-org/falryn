@@ -35,7 +35,6 @@ import {
   healthForStatus,
   type LocalDataPlatform,
   MAX_COMMAND_OUTPUT_BYTES,
-  MAX_CREDENTIAL_SECRET_BYTES,
   type SecretUse,
 } from "../domain/index.ts";
 
@@ -194,10 +193,6 @@ export function createKeychainCredentialStore(
         const status = KEYCHAIN_EXIT_STATUSES[outcome.exitCode] ?? "unavailable";
         return unresolved(status, `keychain-exit-${outcome.exitCode}`, reference.consumer);
       }
-      if (outcome.outputTruncated) {
-        // A truncated read is not a shorter secret; it is the wrong secret.
-        return unresolved("malformed", "output-truncated", reference.consumer);
-      }
 
       // `security -w` terminates the password with one newline. Only that one is
       // removed: trimming further would silently alter a secret whose own last
@@ -205,9 +200,6 @@ export function createKeychainCredentialStore(
       const secret = outcome.stdout.endsWith("\n") ? outcome.stdout.slice(0, -1) : outcome.stdout;
       if (secret.length === 0) {
         return unresolved("empty", "empty-entry", reference.consumer);
-      }
-      if (secret.length > MAX_CREDENTIAL_SECRET_BYTES) {
-        return unresolved("malformed", "secret-too-large", reference.consumer);
       }
 
       return {
@@ -242,7 +234,7 @@ export function createKeychainCredentialStore(
 }
 
 function nonExitStatus(
-  kind: "timed-out" | "cancelled" | "spawn-failed",
+  kind: "timed-out" | "cancelled" | "spawn-failed" | "output-exceeded",
 ): CredentialUnresolvedStatus {
   switch (kind) {
     case "timed-out":
@@ -251,5 +243,9 @@ function nonExitStatus(
       return "cancelled";
     case "spawn-failed":
       return "unavailable";
+    case "output-exceeded":
+      // The command wrote more than a credential can be, so whatever it wrote
+      // is not one. A prefix of it is not a shorter secret.
+      return "malformed";
   }
 }

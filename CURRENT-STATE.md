@@ -154,8 +154,8 @@ recovery catalog to `src/application/`:
   state before acting.
 
 Only the `configuration`, `authentication`, `data`, `cancellation`, and
-`internal` categories are emitted today. The rest of the vocabulary is declared so later owners attach to
-it. No error code is stable.
+`internal` categories are emitted today. The rest of the vocabulary is declared
+so later owners attach to it. No error code is stable.
 
 The configuration schema introduced by
 [#7](https://github.com/yogeshprasad098/falryn/issues/7) adds the configuration
@@ -326,8 +326,17 @@ Its verified behavior:
   vector, an empty environment, a bounded output, and a deadline. `security`
   exits with the low byte of the `OSStatus` it received, which is what makes the
   exit-status table derivable rather than guessed; a status the table does not
-  name is `unavailable` with its code preserved, never `missing`. `stderr` never
-  crosses the boundary at all; and
+  name is `unavailable` with its code preserved, never `missing`; and
+- **the command adapter is tested against real processes.** An empty supplied
+  environment reaches the child empty while a variable set in this process does
+  not reach it at all; shell metacharacters and `$HOME` arrive as literal
+  argument text, because no shell parses them; a child that writes past its
+  output bound is killed at the moment the bound is reached and reported as
+  exceeding it, rather than left blocked on a full pipe until its deadline
+  expires; a deadline and an abort each kill the child and stay distinct facts;
+  a missing executable reports an `errno` code and never the path it tried; and
+  `stderr` is drained to completion so a noisy child cannot stall the call, and
+  then discarded, so no field exists for it to come back in.
 - **this adapter is internal.** It is not a tool, is registered in no capability
   catalog, and does not pass through the tool boundary
   [#47](https://github.com/yogeshprasad098/falryn/issues/47) will own. A
@@ -496,8 +505,8 @@ executable resolved the reference through the real `/usr/bin/security`, reported
 `present` health, and handed the callback a secret of the expected length; the
 same probe run in source mode produced identical output. A locator with no
 keychain entry reported `missing` from exit status 44 in both modes, and a
-lookup after the item was deleted reported 44 again. Nothing in the probe printed
-a secret. `src/main.ts` composes no credential resolver, so nothing in the
+lookup after the item was deleted reported 44 again. Nothing in the probe
+printed a secret. `src/main.ts` composes no credential resolver, so nothing in the
 shipped bootstrap reaches a keychain.
 
 The compiled file is a development bootstrap artifact. It is not a supported

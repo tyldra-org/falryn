@@ -54,8 +54,16 @@ export type CommandOutcome =
       readonly exitCode: number;
       /** May hold a secret. Never logged, reported, or attached to an error. */
       readonly stdout: string;
-      readonly outputTruncated: boolean;
     }
+  /**
+   * The command wrote more than its bound allowed and was stopped.
+   *
+   * Its own outcome rather than a truncated `exited`, because truncated output
+   * is not shorter output — it is different output, and a caller that treated
+   * the two the same would act on a fragment. The child is killed as soon as
+   * the bound is reached rather than left to run out its deadline.
+   */
+  | { readonly kind: "output-exceeded"; readonly maxOutputBytes: number }
   | { readonly kind: "timed-out"; readonly timeoutMs: DurationMs }
   | { readonly kind: "cancelled" }
   /** The command could not be started: absent, not executable, refused. */
