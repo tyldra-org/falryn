@@ -15,8 +15,19 @@ export type { BridgeResult } from "./bridges.ts";
 export { readEnvironmentLayer, readOverrideLayer } from "./bridges.ts";
 export type { Composition, CompositionInputs, LayerInput } from "./composition.ts";
 export { composeLayers, declaredKeysOf } from "./composition.ts";
+export type {
+  CredentialReferenceLookup,
+  CredentialRemovalRequest,
+} from "./credentials.ts";
+export {
+  createInMemoryReferenceStore,
+  parseCredentialReference,
+  readCredentialReference,
+  removeCredential,
+} from "./credentials.ts";
 export type { ConfigurationKeyDeclaration } from "./declaration.ts";
 export {
+  credentialReferenceKey,
   enumKey,
   identifiedArrayKey,
   integerKey,

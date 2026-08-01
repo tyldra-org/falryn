@@ -60,6 +60,7 @@ export function isErrorCategory(value: unknown): value is ErrorCategory {
  */
 export const RUNTIME_EMITTED_CATEGORIES = [
   "configuration",
+  "authentication",
   "data",
   "cancellation",
   "internal",

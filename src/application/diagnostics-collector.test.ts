@@ -28,7 +28,15 @@ const CORRELATION: CorrelationIds = {
 
 describe("what the runtime can describe", () => {
   test("only names subsystems that actually emit today", () => {
-    expect([...DIAGNOSTIC_SUBSYSTEMS]).toEqual(["scope", "scheduler", "shutdown", "codec"]);
+    // `credentials` joined the list with the secret resolver, which emits one
+    // diagnostic per resolution.
+    expect([...DIAGNOSTIC_SUBSYSTEMS]).toEqual([
+      "scope",
+      "scheduler",
+      "shutdown",
+      "codec",
+      "credentials",
+    ]);
   });
 
   test("records a scope state transition with its correlation", () => {
