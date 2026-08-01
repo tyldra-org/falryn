@@ -10,8 +10,21 @@
  * this catches what slips through, particularly text from a foreign `Error`.
  */
 
-import type { ClockPort, DiagnosticValue, DurationMs, Instant } from "../domain/index.ts";
-import { addDuration, duration, MAX_CAUSE_DETAIL_LENGTH } from "../domain/index.ts";
+import type {
+  ClockPort,
+  DiagnosticValue,
+  DurationMs,
+  Instant,
+  SensitiveValueRedactor,
+} from "../domain/index.ts";
+import {
+  addDuration,
+  duration,
+  MAX_CAUSE_DETAIL_LENGTH,
+  MAX_DEBUG_PREVIEW_LENGTH,
+  MAX_DEBUG_PREVIEWS,
+  MAX_DEBUG_WINDOW_MS,
+} from "../domain/index.ts";
 
 export const REDACTED = "[redacted]";
 
@@ -112,6 +125,17 @@ export function redactMetadata(
 }
 
 /**
+ * This module packaged as the domain's redaction port.
+ *
+ * Areas that depend on domain ports only — configuration among them — cannot
+ * import this module, and writing them a second redactor would mean keeping two
+ * sets of credential patterns correct forever. Composition passes this instead.
+ */
+export function createRuntimeRedactor(): SensitiveValueRedactor {
+  return { placeholder: REDACTED, redactText, isSecretName };
+}
+
+/**
  * A bounded, time-scoped window in which extra detail may be requested.
  *
  * Opening it never disables redaction. It widens *how much* redacted detail is
@@ -138,15 +162,6 @@ export type DebugWindowOptions = {
   /** How many previews it will produce. Bounded by `MAX_DEBUG_PREVIEWS`. */
   readonly maxPreviews: number;
 };
-
-/** Longest a debug window may stay open, regardless of what was requested. */
-export const MAX_DEBUG_WINDOW_MS = 15 * 60 * 1_000;
-
-/** Most previews one window will produce. */
-export const MAX_DEBUG_PREVIEWS = 100;
-
-/** Longest a debug preview may be. */
-export const MAX_DEBUG_PREVIEW_LENGTH = 512;
 
 export function openDebugWindow(options: DebugWindowOptions): DebugWindow {
   const { clock } = options;

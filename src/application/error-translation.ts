@@ -17,7 +17,9 @@
  */
 
 import {
+  blockingIssues,
   type CodecError,
+  type ConfigurationIssue,
   type CorrelationIds,
   type EffectCertainty,
   type ErrorCategory,
@@ -222,6 +224,143 @@ export function fromEventStoreError(
     },
     ...context,
   });
+}
+
+/**
+ * A configuration rejection.
+ *
+ * Every field folded into the cause is structural — a key path, a declared
+ * bound, an allowed option list, a schema version. The registry guarantees the
+ * issue never carries the rejected value, so a file whose invalid value is a
+ * token produces an error that is safe to log, export, and attach to a support
+ * bundle. Nothing here is redacted for the same reason a codec rejection is
+ * not: redacting a key path legitimately named `apiKey` would destroy the only
+ * useful part of the diagnostic while protecting nothing.
+ */
+export function fromConfigurationIssue(
+  issue: ConfigurationIssue,
+  context: ErrorContext = {},
+): FalrynError {
+  return build({
+    code: `configuration.${issue.kind}`,
+    category: "configuration",
+    message: configurationMessage(issue),
+    // A file does not become valid on a second read; someone has to change it.
+    retryable: false,
+    effect: "none",
+    recovery: ["inspect-state"],
+    cause: { source: "configuration", code: issue.kind, detail: configurationDetail(issue) },
+    ...context,
+  });
+}
+
+/**
+ * Every blocking issue as one error.
+ *
+ * Warnings are dropped rather than promoted: a resolved alias and a deprecated
+ * key are accepted facts, and turning them into failures would make a working
+ * configuration look broken. Returns `null` when nothing blocked.
+ */
+export function fromConfigurationIssues(
+  issues: readonly ConfigurationIssue[],
+  context: ErrorContext = {},
+): FalrynError | null {
+  const blocking = blockingIssues(issues);
+  const [primary, ...rest] = blocking;
+  if (primary === undefined) {
+    return null;
+  }
+  return aggregate(
+    fromConfigurationIssue(primary, context),
+    rest.map((issue) => fromConfigurationIssue(issue, context)),
+  );
+}
+
+function configurationMessage(issue: ConfigurationIssue): string {
+  switch (issue.kind) {
+    case "unknown-key":
+      return "A configuration key is not recognized.";
+    case "invalid-type":
+      return `A configuration value is not a ${issue.expected}.`;
+    case "out-of-range":
+      return "A configuration value is outside its allowed range.";
+    case "invalid-value":
+      return "A configuration value is not one of the allowed values.";
+    case "scope-unavailable":
+      return `A configuration key cannot be set from ${issue.scope} configuration.`;
+    case "duplicate-identity":
+      return "A configuration list repeats an identity.";
+    case "cross-field-conflict":
+      return "Two configuration values cannot both be in effect.";
+    case "invalid-schema-version":
+      return "A configuration document does not declare a usable schema version.";
+    case "unsupported-schema-version":
+      return "A configuration document requires a newer build.";
+    case "retired-schema-version":
+      return "A configuration document predates the oldest version this build reads.";
+    case "alias-resolved":
+      return "A configuration key was written using a deprecated name.";
+    case "deprecated-key":
+      return "A configuration key is deprecated.";
+    case "ignored-forward-key":
+      return "A configuration key from a newer schema version was ignored.";
+  }
+}
+
+function configurationDetail(issue: ConfigurationIssue): string {
+  const facts: string[] = [`path=${issue.path || "<root>"}`];
+  switch (issue.kind) {
+    case "invalid-type":
+      facts.push(`expected=${issue.expected}`);
+      break;
+    case "out-of-range":
+      facts.push(`minimum=${issue.minimum ?? "none"}`, `maximum=${issue.maximum ?? "none"}`);
+      if (issue.unit !== null) {
+        facts.push(`unit=${issue.unit}`);
+      }
+      break;
+    case "invalid-value":
+      facts.push(`allowed=${issue.allowed.join("|")}`);
+      break;
+    case "scope-unavailable":
+      facts.push(`scope=${issue.scope}`, `available=${issue.availableScopes.join("|")}`);
+      break;
+    case "duplicate-identity":
+      facts.push(`identityField=${issue.identityField}`);
+      break;
+    case "cross-field-conflict":
+      facts.push(`rule=${issue.rule}`, `related=${issue.relatedPaths.join("|")}`);
+      break;
+    case "unsupported-schema-version":
+      facts.push(
+        `observed=${issue.observedSchemaVersion}`,
+        `minimumCompatible=${issue.minimumCompatibleVersion}`,
+        `reader=${issue.readerSchemaVersion}`,
+      );
+      break;
+    case "retired-schema-version":
+      facts.push(
+        `observed=${issue.observedSchemaVersion}`,
+        `minimumSupported=${issue.minimumSupportedVersion}`,
+      );
+      break;
+    case "alias-resolved":
+      facts.push(`canonical=${issue.canonical}`);
+      break;
+    case "deprecated-key":
+      facts.push(
+        `replacement=${issue.replacement ?? "none"}`,
+        `removedIn=${issue.removedInSchemaVersion ?? "none"}`,
+      );
+      break;
+    case "ignored-forward-key":
+      facts.push(`observed=${issue.observedSchemaVersion}`, `reader=${issue.readerSchemaVersion}`);
+      break;
+    case "unknown-key":
+    case "invalid-schema-version":
+      break;
+  }
+  return facts.join(" ");
 }
 
 /**

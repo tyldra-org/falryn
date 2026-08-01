@@ -12,7 +12,14 @@ import { err, ok, type Result } from "./result.ts";
 
 declare const brand: unique symbol;
 
-type Brand<Value, Name extends string> = Value & { readonly [brand]: Name };
+/**
+ * The domain's branding helper.
+ *
+ * Exported for other domain modules that own an opaque primitive of their own,
+ * such as a configuration key path. It is not part of the domain's public
+ * surface: outer layers consume the branded types, never the helper.
+ */
+export type Brand<Value, Name extends string> = Value & { readonly [brand]: Name };
 
 export type WorkspaceId = Brand<string, "WorkspaceId">;
 export type SessionId = Brand<string, "SessionId">;

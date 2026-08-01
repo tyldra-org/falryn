@@ -65,6 +65,23 @@ export const MAX_DIAGNOSTIC_METADATA_KEYS = 16;
 /** Longest metadata string value before truncation. */
 export const MAX_DIAGNOSTIC_VALUE_LENGTH = 120;
 
+/**
+ * Bounds on a debug window.
+ *
+ * They live beside the other declared diagnostic bounds rather than with the
+ * redactor that enforces them, because configuration declares keys against
+ * them and configuration depends on the domain only.
+ */
+
+/** Longest a debug window may stay open, regardless of what was requested. */
+export const MAX_DEBUG_WINDOW_MS = 15 * 60 * 1_000;
+
+/** Most previews one window will produce. */
+export const MAX_DEBUG_PREVIEWS = 100;
+
+/** Longest a debug preview may be. */
+export const MAX_DEBUG_PREVIEW_LENGTH = 512;
+
 export type DiagnosticsReport = {
   readonly retained: number;
   readonly dropped: number;
