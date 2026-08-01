@@ -60,9 +60,28 @@ describe("application bootstrap", () => {
       localPath(`${options.root}/falryn.sqlite`),
     );
     expect(report.storage.ok && report.storage.value.created).toBe(true);
-    // The v0.1 production set is empty, so a clean run ends at version 0 with
-    // the runner's bookkeeping in place and nothing else.
-    expect(report.storage.ok && report.storage.value.schemaVersion).toBe(0);
+    // The production set is migration 0001, so a clean run ends at version 1
+    // with the product schema in place.
+    expect(report.storage.ok && report.storage.value.schemaVersion).toBe(1);
+    expect(report.storage.ok && report.storage.value.appliedThisRun).toEqual([1]);
+  });
+
+  test("registers the persistence phases in the order they have to run", async () => {
+    const options = await isolated();
+    const report = await main(options);
+
+    const participants = (phase: string): readonly string[] =>
+      report.shutdown.phases
+        .find((entry) => entry.phase === phase)
+        ?.participants.map((entry) => entry.name) ?? [];
+
+    // `persist-outcomes` stops accepting appends, `checkpoint-projections`
+    // writes each cursor, and only then does `close-storage` run its truncating
+    // checkpoint against a database with nothing still writing to it.
+    expect(participants("persist-outcomes")).toEqual(["event-store"]);
+    expect(participants("checkpoint-projections")).toEqual(["projection-cursors"]);
+    expect(participants("close-storage")).toEqual(["sqlite-store"]);
+    expect(report.shutdown.failures).toEqual([]);
   });
 
   test("closes storage through the close-storage phase, leaving one file", async () => {

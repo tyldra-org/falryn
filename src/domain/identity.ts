@@ -32,6 +32,10 @@ export type TraceId = Brand<string, "TraceId">;
 export type StreamId = Brand<string, "StreamId">;
 export type ScopeId = Brand<string, "ScopeId">;
 export type IdempotencyKey = Brand<string, "IdempotencyKey">;
+/** Which provider a model attempt was routed to, such as an API vendor. */
+export type ProviderId = Brand<string, "ProviderId">;
+/** Which model that provider was asked for. Opaque: providers name their own. */
+export type ModelId = Brand<string, "ModelId">;
 
 export type ConfigurationGeneration = Brand<number, "ConfigurationGeneration">;
 export type Sequence = Brand<number, "Sequence">;
@@ -121,6 +125,8 @@ export const traceId = createIdentifierCodec<TraceId>("traceId");
 export const streamId = createIdentifierCodec<StreamId>("streamId");
 export const scopeId = createIdentifierCodec<ScopeId>("scopeId");
 export const idempotencyKey = createIdentifierCodec<IdempotencyKey>("idempotencyKey");
+export const providerId = createIdentifierCodec<ProviderId>("providerId");
+export const modelId = createIdentifierCodec<ModelId>("modelId");
 
 export type IntegerCodec<Value extends number> = {
   readonly identity: string;

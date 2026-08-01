@@ -18,7 +18,11 @@
 
 import { createRuntimeLifecycle, fromSqliteStoreError, fromUnknown } from "./application/index.ts";
 import {
+  createEventStoreShutdownParticipant,
   createLocalDataService,
+  createProjectionRunner,
+  createProjectionShutdownParticipant,
+  createSqliteEventStore,
   createSqliteShutdownParticipant,
   FALLBACK_HOME,
   openSqliteStore,
@@ -134,9 +138,28 @@ export async function main(options: BootstrapOptions = {}): Promise<BootstrapRep
       return err(fromSqliteStoreError(opened.error, { operation: "open local database" }));
     }
 
-    // The first `close-storage` participant. A statement still running when the
-    // phase deadline passes leaves it unfinished, which makes the shutdown
-    // `uncertain` — the coordinator's existing contract, not a new one.
+    // The durable event store and its projection runner, composed over the one
+    // open database. There is no producer yet — the agent loop that starts a
+    // session and records a turn is a later change — so this build exercises
+    // the schema rather than writing a synthetic session into a user's
+    // database.
+    const eventStore = createSqliteEventStore(opened.value);
+    const projections = createProjectionRunner({
+      store: opened.value,
+      events: eventStore,
+      clock: systemClock,
+    });
+
+    // Registered in phase order, and the order is the point: `persist-outcomes`
+    // stops accepting appends and awaits the ones in flight,
+    // `checkpoint-projections` then writes each cursor at the last sequence it
+    // applied, and only then does `close-storage` run its truncating
+    // checkpoint — against a database with nothing still writing to it.
+    lifecycle.shutdown.register(createEventStoreShutdownParticipant(eventStore));
+    lifecycle.shutdown.register(createProjectionShutdownParticipant(projections));
+    // A statement still running when the phase deadline passes leaves this
+    // participant unfinished, which makes the shutdown `uncertain` — the
+    // coordinator's existing contract, not a new one.
     lifecycle.shutdown.register(createSqliteShutdownParticipant(opened.value));
     return ok(opened.value.report);
   }
