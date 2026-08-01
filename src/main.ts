@@ -18,6 +18,10 @@
 
 import { createRuntimeLifecycle, fromSqliteStoreError, fromUnknown } from "./application/index.ts";
 import {
+  ARTIFACTS_OWNERSHIP,
+  createArtifactRepository,
+  createArtifactShutdownParticipant,
+  createArtifactStore,
   createEventStoreShutdownParticipant,
   createLocalDataService,
   createProjectionRunner,
@@ -46,9 +50,11 @@ import {
   type SqliteOpenReport,
 } from "./domain/index.ts";
 import {
+  createHostBlobStore,
   createHostEnvironment,
   createHostFileSystem,
   createProcessSignalPort,
+  createSha256Hasher,
   hostHome,
   hostPlatform,
   openBunSqlite,
@@ -91,6 +97,9 @@ export async function main(options: BootstrapOptions = {}): Promise<BootstrapRep
   // registry even on a run where the database could not be opened — a reset
   // plan has to be able to name state it failed to reach.
   localData.register(SQLITE_STATE_OWNERSHIP);
+  // Registered for the same reason, and before any byte is written: a reset
+  // plan has to be able to name artifacts on a run where none was ingested.
+  localData.register(ARTIFACTS_OWNERSHIP);
 
   const storage = await openStorage(localData, clock);
 
@@ -155,6 +164,27 @@ export async function main(options: BootstrapOptions = {}): Promise<BootstrapRep
     // `checkpoint-projections` then writes each cursor at the last sequence it
     // applied, and only then does `close-storage` run its truncating
     // checkpoint — against a database with nothing still writing to it.
+    // The artifact store, composed over the same database and the host blob
+    // adapter. There is no producer yet either — nothing in a real run creates
+    // an artifact — so this build exercises the schema, the ports, and the
+    // `finalize-artifacts` phase rather than writing bytes into a user's roots.
+    const artifactsRoot = rootChild(service.layout, "artifacts");
+    const temporaryRoot = rootChild(service.layout, "temporaryIngest");
+    if (artifactsRoot !== null && temporaryRoot !== null) {
+      const artifacts = createArtifactStore({
+        repository: createArtifactRepository(opened.value),
+        blobs: createHostBlobStore({ artifactsRoot, temporaryRoot }),
+        hasher: createSha256Hasher(),
+        clock: systemClock,
+      });
+      // `finalize-artifacts` runs before `persist-outcomes`, so an ingest that
+      // was still streaming has either committed its record or had its
+      // temporary bytes discarded before anything downstream persists an
+      // outcome that would reference it. Neither root is prepared here: a run
+      // that writes no artifact has no reason to create an artifacts
+      // directory, and the adapter creates what it needs when it needs it.
+      lifecycle.shutdown.register(createArtifactShutdownParticipant(artifacts));
+    }
     lifecycle.shutdown.register(createEventStoreShutdownParticipant(eventStore));
     lifecycle.shutdown.register(createProjectionShutdownParticipant(projections));
     // A statement still running when the phase deadline passes leaves this

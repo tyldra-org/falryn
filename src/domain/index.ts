@@ -6,6 +6,71 @@
  * domain itself imports no framework, transport, or storage types.
  */
 
+export type {
+  ArtifactAvailability,
+  ArtifactEncoding,
+  ArtifactError,
+  ArtifactId,
+  ArtifactIngestReceipt,
+  ArtifactIngestRequest,
+  ArtifactOrigin,
+  ArtifactRange,
+  ArtifactRecord,
+  ArtifactRepositoryPort,
+  ArtifactRetentionCount,
+  ArtifactRetentionReason,
+  ArtifactSensitivity,
+  ArtifactStorageFailure,
+  ArtifactStorePort,
+  ArtifactSweepReport,
+  ArtifactWrite,
+  ContentDigest,
+} from "./artifact.ts";
+export {
+  ARTIFACT_AVAILABILITIES,
+  ARTIFACT_ENCODINGS,
+  ARTIFACT_ORIGINS,
+  ARTIFACT_RETENTION_REASONS,
+  ARTIFACT_SENSITIVITIES,
+  artifactId,
+  CONTENT_DIGEST_ALGORITHM,
+  contentDigest,
+  DEFAULT_ARTIFACT_MAX_BYTES,
+  isArtifactAvailability,
+  isArtifactSensitivity,
+  isReadable,
+  isTemporaryArtifactName,
+  MAX_ARTIFACT_BYTES,
+  MAX_ARTIFACT_ID_LENGTH,
+  MAX_ARTIFACT_LIST_LIMIT,
+  MAX_ARTIFACT_PREVIEW_BYTES,
+  MAX_ARTIFACT_RANGE_BYTES,
+  MAX_DIGEST_BATCH,
+  MAX_MEDIA_TYPE_LENGTH,
+  MAX_SWEPT_BLOBS,
+  parseArtifactRecord,
+  TEMPORARY_ARTIFACT_PREFIX,
+  TEMPORARY_ARTIFACT_SUFFIX,
+  temporaryArtifactName,
+} from "./artifact.ts";
+export type {
+  BlobError,
+  BlobErrorCode,
+  BlobLocation,
+  BlobOperation,
+  BlobScope,
+  BlobStorePort,
+  ContentHasher,
+  ContentHasherPort,
+  InMemoryBlobStoreOptions,
+} from "./blob.ts";
+export {
+  BLOB_ERROR_CODES,
+  BLOB_OPERATIONS,
+  BLOB_SCOPES,
+  blobKey,
+  createInMemoryBlobStore,
+} from "./blob.ts";
 export {
   brandedInteger,
   brandedString,
@@ -342,6 +407,7 @@ export type {
   RootProvenance,
   RootStatus,
   RootStatusCode,
+  TemporaryIngestOwner,
 } from "./local-data.ts";
 export {
   DURABILITY_CLASSES,
@@ -358,6 +424,7 @@ export {
   REMOVAL_POSTURES,
   RETENTION_REASONS,
   ROOT_STATUS_CODES,
+  TEMPORARY_INGEST_OWNERS,
 } from "./local-data.ts";
 export type { EffectCertainty, TerminalOutcome, TerminalOutcomeKind } from "./outcome.ts";
 export {

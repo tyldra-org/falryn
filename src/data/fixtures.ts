@@ -16,6 +16,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import {
+  type ArtifactRecord,
+  artifactId,
+  CONTENT_DIGEST_ALGORITHM,
+  type ContentDigest,
+  type ContentHasher,
+  type ContentHasherPort,
+  contentDigest,
   createManualClock,
   err,
   instant,
@@ -34,7 +41,7 @@ import {
   type SqliteStorePort,
   SqliteWorkError,
 } from "../domain/index.ts";
-import { openBunSqlite } from "../integrations/index.ts";
+import { createSha256Hasher, openBunSqlite } from "../integrations/index.ts";
 import { PRODUCTION_MIGRATIONS } from "./sqlite-migrations.ts";
 import { openSqliteStore, sqliteDatabasePath } from "./sqlite-store.ts";
 
@@ -173,6 +180,56 @@ export function openProductStore(
     backupDirectory: root,
     migrations: options.migrations ?? PRODUCTION_MIGRATIONS,
   });
+}
+
+/** A digest literal that is structurally valid without hashing anything. */
+export function fixtureDigest(seed: string): ContentDigest {
+  return contentDigest.from(`${CONTENT_DIGEST_ALGORITHM}:${seed.repeat(64).slice(0, 64)}`);
+}
+
+/** A reserved record, which is the only state `reserve` accepts. */
+export function reservedArtifact(
+  id: string,
+  digest: ContentDigest,
+  overrides: Partial<ArtifactRecord> = {},
+): ArtifactRecord {
+  return {
+    artifactId: artifactId.from(id),
+    digest,
+    mediaType: "text/plain",
+    encoding: "identity",
+    byteLength: 0,
+    sensitivity: "user-content",
+    origin: "tool-output",
+    invocationId: null,
+    createdAt: "2026-07-31T12:00:00.000Z" as ArtifactRecord["createdAt"],
+    finalizedAt: null,
+    availability: "reserved",
+    ...overrides,
+  };
+}
+
+/**
+ * The real hasher, with chosen answers substituted at chosen positions.
+ *
+ * The only honest way to stage bytes that stopped matching their digest: every
+ * other layer is genuine, so a test proves the store quarantines rather than
+ * proving a mock returned what it was told to. `null` means "answer honestly".
+ */
+export function stagedHasher(answers: readonly (ContentDigest | null)[]): ContentHasherPort {
+  const real = createSha256Hasher();
+  let created = 0;
+  return {
+    create(): ContentHasher {
+      const staged = answers[created] ?? null;
+      created += 1;
+      const inner = real.create();
+      return {
+        update: (chunk) => inner.update(chunk),
+        digest: () => staged ?? inner.digest(),
+      };
+    },
+  };
 }
 
 export async function openProductStoreOrThrow(

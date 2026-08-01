@@ -6,7 +6,10 @@
  */
 
 export { classifySqliteError, openBunSqlite } from "./bun-sqlite.ts";
+export { createSha256Hasher } from "./content-digest.ts";
 export { createEnvironmentCredentialStore } from "./environment-credentials.ts";
+export type { HostBlobStoreOptions } from "./host-blobs.ts";
+export { createHostBlobStore } from "./host-blobs.ts";
 export { createHostCommandRunner } from "./host-commands.ts";
 export { createHostEnvironment, hostHome, hostPlatform } from "./host-environment.ts";
 export { createHostFileSystem } from "./host-filesystem.ts";

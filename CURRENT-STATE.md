@@ -521,9 +521,9 @@ Its verified behavior:
   before the phase deadline leaves the shutdown `uncertain`;
 - `sqliteState` is registered with the ownership registry as `app-owned` with
   the `export-before-reset` posture in the `state` root. It has no
-  `data.retention` entry: retention classes are the rotating and rebuildable
-  ones, so durable state is measured for usage — sidecars included — and counted
-  against `data.quotas.totalMaxBytes` rather than aged out;
+  `data.retention` entry, so durable state is measured for usage — sidecars
+  included — and counted against `data.quotas.totalMaxBytes` rather than aged
+  out;
 - every failure is a `data` error in #5's shape except cancellation, which stays
   `cancellation`. The driver's own message reaches the developer cause through
   the runtime's single redactor and never reaches a user-facing message; and
@@ -540,8 +540,7 @@ The durable records introduced by
 [#13](https://github.com/yogeshprasad098/falryn/issues/13) add the production
 schema and everything that reads and writes it:
 
-- migration `0001` is the whole production list, and a real run now ends at
-  schema version 1. It creates `sessions`, `turns`, `model_attempts`,
+- migration `0001` is the first production step. It creates `sessions`, `turns`, `model_attempts`,
   `invocations`, `events`, and `projection_cursors` as `STRICT` tables, plus the
   four indexes the listings below actually use. It is non-destructive, so it
   takes no backup. There is no `workspaces` table: a session carries
@@ -592,15 +591,90 @@ schema and everything that reads and writes it:
   run before `close-storage`, so the truncating checkpoint meets a database with
   nothing still writing.
 
+The artifact foundation introduced by
+[#14](https://github.com/yogeshprasad098/falryn/issues/14) adds large and binary
+content, stored as bytes outside SQLite and described by a durable record:
+
+- migration `0002` creates `artifacts` as a `STRICT` table, so a real run now
+  ends at schema version 2. Its `invocation_id` is nullable and is its only
+  foreign key, because bytes can be ingested before any invocation claims them.
+  Sensitivity, availability, origin, and encoding are `CHECK`-constrained closed
+  unions, and finalized time is constrained against availability so no row can
+  be half-finalized. The digest is indexed and deliberately not unique: two
+  artifacts with distinct lineage may share exact bytes;
+- the sensitivity vocabulary is `public`, `user-content`, `sensitive`, and
+  `restricted`, and the availability vocabulary is `reserved`, `available`,
+  `quarantined`, and `missing`. Both were decided by this delivery and are
+  recorded in the canonical design documents;
+- artifacts are reachable only through `ArtifactStorePort`, and bytes only
+  through a separate narrow `BlobStorePort` that addresses them by scope and
+  content digest. No filesystem path crosses either port, so no path, digest, or
+  byte reaches an error, an event, or a diagnostic. Negative controls assert
+  that artifact bytes are written in exactly one adapter module and that the
+  store names no path type;
+- ingest runs `allocate temp → stream and hash → flush and close → atomic
+  finalize → commit metadata → available`. The declared byte length is enforced
+  against the configured ceiling before a byte is written and against the
+  observed count before anything is finalized, and the digest is verified by
+  re-reading the *finalized* bytes rather than by trusting the stream;
+- a digest mismatch quarantines the bytes instead of deleting them and records
+  the artifact as `quarantined` beside them, so there is something to inspect
+  them with. A caller-supplied expected digest that disagrees quarantines the
+  same way, before anything reaches content;
+- metadata is committed twice on purpose: a `reserved` row before the bytes
+  move, and the move to `available` only after they verify. A run that dies
+  between the two leaves a row that says exactly that, and a failed commit
+  leaves finalized bytes the sweep can collect;
+- exact bytes deduplicate by digest while the records keep distinct lineage;
+- range reads validate their bounds and return the actual offset and length, so
+  a short tail is reported as what it read. A zero-length read, a read at
+  exactly the end, and an offset past the end are three distinct answers, and
+  previews are bounded separately from range reads;
+- cancellation is checked at every stage. Before the final commit it reports
+  `cancelled`; after it, the commit stands and the cancellation is reported
+  beside the committed value;
+- `artifacts` is registered with the ownership registry as `app-owned` with the
+  `lifecycle-aware` posture, so reset and uninstall plans name it instead of
+  reporting it unregistered. Its `data.retention` entry carries a byte budget
+  and no age, because durable user content is collected by reachability rather
+  than by clock;
+- in-flight bytes are written under a declared temporary-ingest name, so startup
+  reconciliation now reports the owner of every entry it finds. Naming an owner
+  is not a claim that the write finished: reconciliation still removes nothing
+  and still reports `uncertain`;
+- `finalize-artifacts` does real work. It stops accepting ingest, awaits what is
+  in flight, and discards the temporary bytes *this run* allocated and
+  abandoned — safe precisely because this run knows it abandoned them; and
+- a sweep marks, rechecks, and then deletes bytes this store wrote that no
+  record references, in that order, because a record can commit between the
+  first answer and the deletion. Quarantined bytes with a record are kept for
+  inspection, another run's in-flight bytes are reported and left alone, and
+  deleted, retained, and failed stay three separate counts.
+
+Not yet present in this area: reachability garbage collection driven by session
+retention, pinning, and export dependency
+([#121](https://github.com/yogeshprasad098/falryn/issues/121)); startup recovery
+of interrupted writes and export foundations
+([#15](https://github.com/yogeshprasad098/falryn/issues/15)); corruption and
+missing-blob detection
+([#120](https://github.com/yogeshprasad098/falryn/issues/120)); viewers and
+rendered previews
+([#117](https://github.com/yogeshprasad098/falryn/issues/117)); and the complete
+typed artifact API and provenance graph
+([#116](https://github.com/yogeshprasad098/falryn/issues/116)).
+
 `src/main.ts` composes the cancellation lifecycle and the local data foundation,
 so the compiled executable includes the domain, application, data, and
-integration layers and the real process-signal, filesystem, and `bun:sqlite`
-adapters. It resolves roots, registers `sqliteState`, prepares the `state` root,
-opens and migrates the database, constructs the durable event store and its
-projection runner, and registers the `persist-outcomes`,
+integration layers and the real process-signal, filesystem, `bun:sqlite`, blob,
+and SHA-256 adapters. It resolves roots, registers `sqliteState` and
+`artifacts`, prepares the `state` root, opens and migrates the database,
+constructs the durable event store, its projection runner, and the artifact
+store, and registers the `finalize-artifacts`, `persist-outcomes`,
 `checkpoint-projections`, and `close-storage` participants. There is no producer
-yet, so a real run writes no session, turn, or event; what it exercises is the
-schema, the migration, and the three shutdown phases.
+yet, so a real run writes no session, turn, event, or artifact — and neither the
+`artifacts` nor the `temporaryIngest` root is created, because the blob adapter
+creates what it needs when it needs it. What a real run exercises is the schema,
+both migrations, and the four shutdown phases.
 
 Observed on 2026-08-01:
 
@@ -614,7 +688,7 @@ bun run ci     PASS  (quality, tsc --noEmit, build, then bun test)
 against a real `dist/falryn`: the standalone executable opens, migrates, and
 closes a database under a temporary state root, leaves one file, carries its
 migration bookkeeping and every product table into the binary at schema version
-1, and reopens the same database on a second run. Without a build the check
+2, and reopens the same database on a second run. Without a build the check
 reports itself as skipped rather than passing on an executable that does not
 exist.
 
@@ -664,10 +738,10 @@ rather than `bun run check`, because `bun run check` does not build.
 No end-user product behavior has been implemented. In particular, the
 repository does not yet provide:
 
-- the shutdown participants other than the scheduler drain, the event-store
-  quiesce, the projection checkpoint, and the storage close — artifact finalize,
-  child-process termination, and terminal restoration each register from their
-  own owner and none of those owners exists yet;
+- the shutdown participants other than the scheduler drain, the artifact
+  finalize, the event-store quiesce, the projection checkpoint, and the storage
+  close — child-process termination and terminal restoration each register from
+  their own owner and neither of those owners exists yet;
 - watching configuration sources, and writing configuration files. Nothing in
   v0.1 runs long enough to observe a live reload and nothing sets a value, so a
   watcher and a serializer would be scaffolding with no caller. Refresh is an
@@ -696,7 +770,17 @@ repository does not yet provide:
   one caller. Interrupted-write recovery, export, deterministic replay, fork,
   rewind, and reachability garbage collection over these rows are each owned
   elsewhere and none is implemented;
-- artifact metadata or artifact bytes;
+- any *producer* of an artifact. The table, the repository, the store, the blob
+  adapter, and the `finalize-artifacts` participant all exist and are composed,
+  and nothing in a real run ingests bytes, because the tools and providers that
+  would are later work. Also absent from this area: reachability garbage
+  collection, startup recovery of interrupted writes, export, import, replay,
+  viewers, and the provenance graph, each owned by
+  [#15](https://github.com/yogeshprasad098/falryn/issues/15),
+  [#116](https://github.com/yogeshprasad098/falryn/issues/116),
+  [#117](https://github.com/yogeshprasad098/falryn/issues/117),
+  [#120](https://github.com/yogeshprasad098/falryn/issues/120), or
+  [#121](https://github.com/yogeshprasad098/falryn/issues/121);
 - any composition of the configuration loader into a running program.
   `src/main.ts` constructs no loader, so no configuration file is read on a real
   run;
@@ -705,7 +789,7 @@ repository does not yet provide:
   that one directory is created on a real run. Retention reporting, removal
   planning, guarded execution, and reconciliation exist and are tested, and
   nothing calls them on a real run, so nothing is measured or removed. The
-  owners that will register the remaining ownership classes — artifacts, memory,
+  owners that will register the remaining ownership classes — memory,
   extensions, exports — do not exist, and each is reported as unregistered
   rather than assumed absent;
 - the command surfaces that would show a reset or uninstall plan and collect its

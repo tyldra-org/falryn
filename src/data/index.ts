@@ -12,6 +12,19 @@
  * artifact bytes and no export format.
  */
 
+export { createArtifactRepository } from "./artifact-repository.ts";
+export {
+  ARTIFACT_SCHEMA_VERSION,
+  ARTIFACTS_TABLE,
+  MIGRATION_0002,
+} from "./artifact-schema.ts";
+export type { ArtifactStoreOptions, DurableArtifactStore } from "./artifact-store.ts";
+export {
+  ARTIFACT_PARTICIPANT_NAME,
+  createArtifactShutdownParticipant,
+  createArtifactStore,
+  VERIFICATION_CHUNK_BYTES,
+} from "./artifact-store.ts";
 export type { DurableEventStore, StreamHead } from "./event-store.ts";
 export {
   createEventStoreShutdownParticipant,
@@ -22,6 +35,7 @@ export type { LocalDataService, LocalDataServiceOptions } from "./local-data-ser
 export { createLocalDataService, UNCONSTRAINED_RETENTION } from "./local-data-service.ts";
 export type { OwnershipRegistry } from "./ownership.ts";
 export {
+  ARTIFACTS_OWNERSHIP,
   CREDENTIAL_REFERENCE_OWNERSHIP,
   createOwnershipRegistry,
   TEMPORARY_INGEST_OWNERSHIP,
@@ -75,14 +89,16 @@ export {
   INVOCATIONS_TABLE,
   MIGRATION_0001,
   MODEL_ATTEMPTS_TABLE,
-  PRODUCT_SCHEMA_VERSION,
-  PRODUCT_TABLES,
   PROJECTION_CURSORS_TABLE,
+  RECORD_SCHEMA_VERSION,
+  RECORD_TABLES,
   SESSIONS_TABLE,
   TURNS_TABLE,
 } from "./schema.ts";
 export {
   latestVersion,
+  PRODUCT_SCHEMA_VERSION,
+  PRODUCT_TABLES,
   PRODUCTION_MIGRATIONS,
   validateMigrationSet,
 } from "./sqlite-migrations.ts";
