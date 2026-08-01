@@ -5,6 +5,7 @@
  * Bun and system APIs; nothing here may be imported by `src/domain`.
  */
 
+export { classifySqliteError, openBunSqlite } from "./bun-sqlite.ts";
 export { createEnvironmentCredentialStore } from "./environment-credentials.ts";
 export { createHostCommandRunner } from "./host-commands.ts";
 export { createHostEnvironment, hostHome, hostPlatform } from "./host-environment.ts";

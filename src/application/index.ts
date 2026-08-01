@@ -29,6 +29,7 @@ export {
   fromIdentityError,
   fromParticipantReports,
   fromSequenceError,
+  fromSqliteStoreError,
   fromTimestampError,
   fromUnknown,
   withContext,

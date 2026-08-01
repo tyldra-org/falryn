@@ -10,12 +10,14 @@ import {
   type FalrynError,
   flattenErrors,
   isSafeToRetryWithoutInspection,
+  localPath,
   MAX_RELATED_ERRORS,
   NO_CORRELATION,
   type ParticipantReport,
   RUNTIME_EMITTED_CATEGORIES,
   recoveryForEffect,
   type SequenceError,
+  type SqliteStoreError,
   scopeId,
   sessionId,
   streamId,
@@ -32,6 +34,7 @@ import {
   fromIdentityError,
   fromParticipantReports,
   fromSequenceError,
+  fromSqliteStoreError,
   fromTimestampError,
   fromUnknown,
   withContext,
@@ -416,5 +419,147 @@ describe("configuration rejections", () => {
         health: { state: "absent", storeKind: "operating-system-keychain", observedAt: null },
       }).category,
     ).toBe("authentication");
+  });
+});
+
+describe("local-database failures", () => {
+  const busy: SqliteStoreError = {
+    kind: "sqlite-store",
+    code: "busy",
+    operation: "transaction",
+    effect: "none",
+    cause: {
+      kind: "sqlite",
+      code: "busy",
+      operation: "transaction",
+      driverCode: "SQLITE_BUSY",
+      detail: "database is locked",
+    },
+  };
+
+  test("are the data category, with the driver code kept on the cause", () => {
+    const error = fromSqliteStoreError(busy);
+
+    expect(error.category).toBe("data");
+    expect(error.code).toBe("data.sqlite.busy");
+    expect(error.retryable).toBe(true);
+    expect(error.effect).toBe("none");
+    expect(error.cause?.source).toBe("sqlite");
+    expect(error.cause?.detail).toContain("SQLITE_BUSY");
+  });
+
+  test("redact the driver message, which is the one piece of foreign text", () => {
+    const error = fromSqliteStoreError({
+      ...busy,
+      cause: {
+        ...busy.cause,
+        detail: "cannot open /Users/someone/.config token=sk-live-abcdefghij",
+      },
+    });
+
+    expect(error.cause?.detail).not.toContain("sk-live-abcdefghij");
+    // The user-facing message never carries it at all.
+    expect(error.message).toBe("Another process is using the local database.");
+  });
+
+  test("keep an unobserved commit uncertain rather than retryable", () => {
+    const error = fromSqliteStoreError({
+      kind: "sqlite-store",
+      code: "unavailable",
+      operation: "transaction",
+      effect: "uncertain",
+      cause: {
+        kind: "sqlite",
+        code: "io-failure",
+        operation: "transaction",
+        driverCode: "SQLITE_IOERR",
+        detail: null,
+      },
+    });
+
+    expect(error.effect).toBe("uncertain");
+    expect(error.retryable).toBe(false);
+    expect(isSafeToRetryWithoutInspection(error)).toBe(false);
+  });
+
+  test("send a refusal to inspection rather than to a retry that repeats it", () => {
+    for (const error of [
+      fromSqliteStoreError({
+        kind: "sqlite-store",
+        code: "schema-too-new",
+        effect: "none",
+        recordedVersion: 7,
+        applicationVersion: 3,
+      }),
+      fromSqliteStoreError({
+        kind: "sqlite-store",
+        code: "invalid-migration-set",
+        effect: "none",
+        issues: [{ kind: "migration-set", code: "version-gap", version: 3, name: "later" }],
+      }),
+    ]) {
+      expect(error.retryable).toBe(false);
+      expect(error.recovery).toEqual(["inspect-state"]);
+    }
+  });
+
+  test("report both versions when a database is newer than this build", () => {
+    const error = fromSqliteStoreError({
+      kind: "sqlite-store",
+      code: "schema-too-new",
+      effect: "none",
+      recordedVersion: 7,
+      applicationVersion: 3,
+    });
+
+    expect(error.cause?.detail).toBe("recorded=7 application=3");
+  });
+
+  test("name the recorded version, the applied set, and whether a backup exists", () => {
+    const error = fromSqliteStoreError({
+      kind: "sqlite-store",
+      code: "migration-interrupted",
+      effect: "partial",
+      recordedVersion: 2,
+      appliedVersions: [1, 2],
+      backupPath: localPath("/state/falryn-backup-v1.sqlite"),
+    });
+
+    expect(error.effect).toBe("partial");
+    expect(error.cause?.detail).toBe("recorded=2 applied=1|2 backup=taken");
+    // The backup's path is a fact for the report, not for the error text.
+    expect(error.cause?.detail).not.toContain("/state/");
+  });
+
+  test("treat cancellation as control flow rather than as a data failure", () => {
+    const error = fromSqliteStoreError({
+      kind: "sqlite-store",
+      code: "cancelled",
+      operation: "transaction",
+      effect: "none",
+    });
+
+    expect(error.category).toBe("cancellation");
+    expect(error.exitCategory).toBe("cancelled");
+    expect(error.effect).toBe("none");
+  });
+
+  test("distinguish a rejected statement from a database that cannot be used", () => {
+    const error = fromSqliteStoreError({
+      kind: "sqlite-store",
+      code: "statement-rejected",
+      operation: "transaction",
+      effect: "none",
+      cause: {
+        kind: "sqlite",
+        code: "constraint",
+        operation: "transaction",
+        driverCode: "SQLITE_CONSTRAINT_NOTNULL",
+        detail: "NOT NULL constraint failed",
+      },
+    });
+
+    expect(error.code).toBe("data.sqlite.statement-rejected");
+    expect(error.message).toBe("The local database rejected a statement.");
   });
 });
