@@ -153,9 +153,61 @@ recovery catalog to `src/application/`:
   authorizes an automatic retry, and recovery after uncertainty observes present
   state before acting.
 
-Only the `data`, `cancellation`, and `internal` categories are emitted today.
-The rest of the vocabulary is declared so later owners attach to it. No error
-code is stable.
+Only the `configuration`, `data`, `cancellation`, and `internal` categories are
+emitted today. The rest of the vocabulary is declared so later owners attach to
+it. No error code is stable.
+
+The configuration schema introduced by
+[#7](https://github.com/yogeshprasad098/falryn/issues/7) adds the configuration
+contract — value model, scope, source kind, sensitivity, declared merge
+behavior, credential-reference type, validation-issue union, and the registry
+port — to `src/domain/`, and a new source area at `src/config/` behind
+`src/config/index.ts`. It owns the `falryn.configuration` schema family, whose
+source owner is that area and whose `schemaVersion` starts at `1`. The area
+imports `src/domain` and Zod and nothing further out; it opens no file, reads no
+environment, and composes no layer.
+
+Its verified behavior:
+
+- every key declares a Zod 4 type, default, unit and range, scope availability,
+  merge behavior, sensitivity, application class, environment mapping, alias and
+  deprecation, and cross-field dependencies, and merge behavior is declared per
+  key so composition has no generic deep merge to fall back on;
+- a document declares its `schemaVersion`. A version this build owns is read
+  strictly and an unrecognized key is an error; a newer version whose
+  `minimumReaderSchemaVersion` this build meets is read tolerantly and an
+  unknown key is dropped with a warning naming both versions; a newer required
+  semantic is rejected while reporting the minimum compatible version;
+- a limit is a bounded positive integer or the word `unlimited`, so zero,
+  negative, missing, and unlimited stay four distinct facts, and a value above a
+  safe hard maximum is an error rather than a silent clamp;
+- a deprecated spelling resolves to its canonical path and a deprecated key is
+  accepted, each with a visible warning; a key set from a scope it does not
+  declare is refused;
+- cross-field rules run over the composed value, so an impossible combination
+  fails at compose time rather than at use time;
+- every issue reports a path, an issue kind, and the constraint that was
+  violated, and never the rejected value — proven by negative controls that feed
+  credential-shaped values through every declared type; and
+- rendering withholds by declaration: a declared-sensitive value is replaced
+  wholesale, a credential reference is shown as store kind, consumer, and
+  account label with its locator withheld, and a public value still passes
+  through #5's redactor. Configuration writes no redaction rules of its own —
+  the redactor is injected as a domain port, because `src/config/` may not
+  import the application layer.
+
+The catalog is deliberately smaller than the mechanism. Only the `data` group
+consumed by [#10](https://github.com/yogeshprasad098/falryn/issues/10) — root
+overrides, retention classes, and quotas — and the `diagnostics` group consumed
+by #5's collector and debug window are declared. The other groups named in the
+configuration reference are owned elsewhere and are not invented here, on the
+same rule that keeps an unemitted error category out of the emitted set. No
+declared key relocates the configuration root, because discovery has to find
+that root before it can read a key. No declared key has an alias or a
+deprecation either, because none has a predecessor; those shapes, the
+merge-by-identity list, the declared-sensitive value, and the credential
+reference are proven against fixture registries rather than against an invented
+product key.
 
 The wiring introduced by
 [#296](https://github.com/yogeshprasad098/falryn/issues/296) connects those
@@ -237,11 +289,14 @@ repository does not yet provide:
 - the shutdown participants other than the scheduler drain — persistence,
   artifact finalize, child-process termination, and terminal restoration each
   register from their own owner and none exist yet;
-- configuration composition, sources, precedence, validation, or reload;
-  credential storage; local-data layout; SQLite; or artifacts. A configuration
-  *generation* identity is carried through `RuntimeContext`, and session, turn,
-  and event *identities* exist — what does not exist is anything that produces
-  or persists them;
+- configuration sources, discovery, JSONC parsing, precedence, merge execution,
+  provenance, generation publishing, or reload; credential resolution and
+  storage; local-data layout; SQLite; or artifacts. The key registry, defaults,
+  validation, and schema-version policy exist and nothing calls them yet: no
+  file is read, no layer is composed, and no `configuration.generation.changed`
+  event is produced. A configuration *generation* identity is carried through
+  `RuntimeContext`, and session, turn, and event *identities* exist — what does
+  not exist is anything that produces or persists them;
 - yargs commands, headless product behavior, or the OpenTUI application;
 - provider integration, model routing, the agent loop, or unified tool
   execution;

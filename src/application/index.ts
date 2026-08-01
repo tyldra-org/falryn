@@ -20,6 +20,8 @@ export {
   adoptForeignError,
   aggregate,
   fromCodecError,
+  fromConfigurationIssue,
+  fromConfigurationIssues,
   fromEventStoreError,
   fromIdentityError,
   fromParticipantReports,
@@ -50,9 +52,8 @@ export {
 export type { DebugWindow, DebugWindowOptions } from "./redaction.ts";
 export {
   containsRedactableSecret,
-  MAX_DEBUG_PREVIEW_LENGTH,
-  MAX_DEBUG_PREVIEWS,
-  MAX_DEBUG_WINDOW_MS,
+  createRuntimeRedactor,
+  isSecretName,
   openDebugWindow,
   REDACTED,
   redactMetadata,

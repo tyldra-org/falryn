@@ -2,7 +2,9 @@ import { describe, expect, test } from "bun:test";
 
 import {
   type CodecError,
+  type ConfigurationIssue,
   type CorrelationIds,
+  configurationKeyPath,
   ERROR_CATEGORIES,
   type EventStoreError,
   type FalrynError,
@@ -11,6 +13,7 @@ import {
   MAX_RELATED_ERRORS,
   NO_CORRELATION,
   type ParticipantReport,
+  RUNTIME_EMITTED_CATEGORIES,
   recoveryForEffect,
   type SequenceError,
   scopeId,
@@ -22,6 +25,8 @@ import {
   adoptForeignError,
   aggregate,
   fromCodecError,
+  fromConfigurationIssue,
+  fromConfigurationIssues,
   fromEventStoreError,
   fromIdentityError,
   fromParticipantReports,
@@ -311,5 +316,88 @@ describe("negative controls", () => {
   test("every runtime error carries a correlation object", () => {
     const error = fromCodecError({ kind: "malformed-json" });
     expect(Object.keys(error.correlation).sort()).toEqual(Object.keys(NO_CORRELATION).sort());
+  });
+});
+
+describe("configuration rejections", () => {
+  const unknownKey: ConfigurationIssue = {
+    kind: "unknown-key",
+    severity: "error",
+    path: "data.rootz",
+  };
+
+  test("carry the configuration category and exit as a user error", () => {
+    const error = fromConfigurationIssue(unknownKey);
+    expect(error.category).toBe("configuration");
+    expect(error.exitCategory).toBe("user-error");
+    expect(error.code).toBe("configuration.unknown-key");
+    expect(error.cause).toEqual({
+      source: "configuration",
+      code: "unknown-key",
+      detail: "path=data.rootz",
+    });
+  });
+
+  test("are not retryable, because a file does not change itself", () => {
+    const error = fromConfigurationIssue(unknownKey);
+    expect(error.retryable).toBe(false);
+    expect(error.effect).toBe("none");
+    expect(error.recovery).toEqual(["inspect-state"]);
+  });
+
+  test("carry the declared constraint, so the fix is readable", () => {
+    const error = fromConfigurationIssue({
+      kind: "out-of-range",
+      severity: "error",
+      path: "diagnostics.retention.maxEvents",
+      unit: "items",
+      minimum: 1,
+      maximum: 2_000,
+    });
+    expect(error.cause?.detail).toBe(
+      "path=diagnostics.retention.maxEvents minimum=1 maximum=2000 unit=items",
+    );
+  });
+
+  test("report the minimum compatible version on version skew", () => {
+    const error = fromConfigurationIssue({
+      kind: "unsupported-schema-version",
+      severity: "error",
+      path: "minimumReaderSchemaVersion",
+      observedSchemaVersion: 4,
+      minimumCompatibleVersion: 3,
+      readerSchemaVersion: 1,
+    });
+    expect(error.cause?.detail).toContain("minimumCompatible=3");
+    expect(error.cause?.detail).toContain("reader=1");
+  });
+
+  test("collapse a batch into one primary with the rest attached", () => {
+    const combined = fromConfigurationIssues([
+      unknownKey,
+      { kind: "invalid-type", severity: "error", path: "data.roots.cache", expected: "string" },
+    ]);
+    expect(combined).not.toBeNull();
+    expect(flattenErrors(combined as FalrynError).map((error) => error.code)).toEqual([
+      "configuration.unknown-key",
+      "configuration.invalid-type",
+    ]);
+  });
+
+  test("do not promote a warning into a failure", () => {
+    const aliasResolved: ConfigurationIssue = {
+      kind: "alias-resolved",
+      severity: "warning",
+      path: "fixture.legacyMode",
+      canonical: configurationKeyPath("fixture.mode"),
+    };
+    expect(fromConfigurationIssues([aliasResolved])).toBeNull();
+  });
+
+  test("configuration is now a category the runtime emits", () => {
+    expect(RUNTIME_EMITTED_CATEGORIES).toContain("configuration");
+    for (const category of RUNTIME_EMITTED_CATEGORIES) {
+      expect(ERROR_CATEGORIES).toContain(category);
+    }
   });
 });

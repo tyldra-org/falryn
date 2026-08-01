@@ -58,7 +58,12 @@ export function isErrorCategory(value: unknown): value is ErrorCategory {
  * The rest of the vocabulary is declared so later owners attach to it; emitting
  * one of them today would be a claim about behavior that does not exist.
  */
-export const RUNTIME_EMITTED_CATEGORIES = ["data", "cancellation", "internal"] as const;
+export const RUNTIME_EMITTED_CATEGORIES = [
+  "configuration",
+  "data",
+  "cancellation",
+  "internal",
+] as const;
 
 export type RuntimeEmittedCategory = (typeof RUNTIME_EMITTED_CATEGORIES)[number];
 
