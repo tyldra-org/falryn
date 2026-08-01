@@ -4,7 +4,7 @@ This file is Falryn's sole concise implementation-status owner. It records what
 exists and has been verified in the `falryn` repository. It does not duplicate
 the product design or GitHub roadmap.
 
-Last reconciled: **2026-07-31**
+Last reconciled: **2026-08-01**
 
 ## Where to look
 
@@ -189,6 +189,11 @@ Its verified behavior:
   entries beside it, and cross-field rules run over that whole value — an
   impossible combination fails at compose time rather than at use time.
   Combining several layers across sources is still #8's;
+- a folded value is rechecked against the declaration that bounds it, because a
+  fold can produce a value neither the document nor the default stated: an
+  identified list at exactly its maximum, folded onto a non-empty default, is
+  longer than both and longer than the key allows. A declared bound the
+  effective value does not obey would be the same defect as a silent clamp;
 - every issue reports a path, an issue kind, and the constraint that was
   violated, and never the rejected value — proven by negative controls that feed
   credential-shaped values through every declared type; and
@@ -330,7 +335,7 @@ the domain, application, and integration layers and the real process-signal
 adapter. There is no product work to run yet, so the bootstrap shuts down
 immediately and exits.
 
-Observed on 2026-07-31:
+Observed on 2026-08-01:
 
 ```text
 bun run check  PASS  (Biome, tsc --noEmit, and bun test)
