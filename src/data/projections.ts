@@ -280,6 +280,30 @@ export function createProjectionRunner(options: ProjectionRunnerOptions): Projec
     return advanceFrom(streamId, null, signal);
   };
 
+  /**
+   * The one decision about how to bring a stream up to date.
+   *
+   * Shared by `advance` and `checkpoint` rather than spelled at each. A cursor
+   * recorded under a different reducer generation describes state this build
+   * did not produce, so it is rebuilt; resuming from it in one path while
+   * rebuilding in the other would leave whichever path resumed carrying rows
+   * the current reducer never wrote and would never overwrite.
+   */
+  const catchUp = (
+    streamId: StreamId,
+    cursor: ProjectionCursor | null,
+    signal: AbortSignal | undefined,
+  ): Promise<Result<ProjectionRunReport, ProjectionError>> =>
+    cursor !== null && cursor.schemaGeneration !== TERMINAL_OUTCOME_PROJECTION_GENERATION
+      ? rebuild(streamId, signal)
+      : advanceFrom(streamId, cursor?.lastAppliedSequence ?? null, signal);
+
+  /** Whether a cursor already describes everything the stream holds. */
+  const isCurrent = (cursor: ProjectionCursor | null, head: Sequence): boolean =>
+    cursor !== null &&
+    cursor.schemaGeneration === TERMINAL_OUTCOME_PROJECTION_GENERATION &&
+    cursor.lastAppliedSequence === head;
+
   return {
     readCursor,
 
@@ -291,13 +315,7 @@ export function createProjectionRunner(options: ProjectionRunnerOptions): Projec
       if (!cursor.ok) {
         return err(cursor.error);
       }
-      if (
-        cursor.value !== null &&
-        cursor.value.schemaGeneration !== TERMINAL_OUTCOME_PROJECTION_GENERATION
-      ) {
-        return rebuild(streamId, signal);
-      }
-      return advanceFrom(streamId, cursor.value?.lastAppliedSequence ?? null, signal);
+      return catchUp(streamId, cursor.value, signal);
     },
 
     rebuild,
@@ -323,22 +341,12 @@ export function createProjectionRunner(options: ProjectionRunnerOptions): Projec
         if (!cursor.ok) {
           return err(cursor.error);
         }
-        if (
-          cursor.value !== null &&
-          cursor.value.schemaGeneration === TERMINAL_OUTCOME_PROJECTION_GENERATION &&
-          cursor.value.lastAppliedSequence === head.lastSequence
-        ) {
-          // Already current. A phase that ticks by rewriting an unchanged
-          // cursor would be doing nothing while reporting that it did.
+        if (isCurrent(cursor.value, head.lastSequence)) {
+          // A phase that ticks by rewriting an unchanged cursor would be doing
+          // nothing while reporting that it did.
           continue;
         }
-        const run = await advanceFrom(
-          head.streamId,
-          cursor.value?.schemaGeneration === TERMINAL_OUTCOME_PROJECTION_GENERATION
-            ? (cursor.value?.lastAppliedSequence ?? null)
-            : null,
-          signal,
-        );
+        const run = await catchUp(head.streamId, cursor.value, signal);
         if (!run.ok) {
           return err(run.error);
         }

@@ -26,6 +26,7 @@ import {
   SqliteWorkError,
   sequence,
   TERMINAL_OUTCOME_PROJECTION_GENERATION,
+  turnId as turnIdCodec,
 } from "../domain/index.ts";
 import { createSqliteEventStore, type DurableEventStore } from "./event-store.ts";
 import {
@@ -291,6 +292,34 @@ describe("the checkpoint-projections participant", () => {
 
     expect(checkpointed.ok && checkpointed.value.truncated).toBe(false);
     expect(checkpointed.ok && checkpointed.value.runs).toHaveLength(1);
+    expect(derived(repositories).turn?.outcome).toEqual({ kind: "completed" });
+    await store.close();
+  });
+
+  test("rebuilds rather than resumes when the reducer generation changed", async () => {
+    const { store, repositories, runner } = await seeded();
+    // A turn no event completes, carrying derived state an older reducer wrote.
+    // Re-applying the stream would leave it untouched; only a rebuild clears it,
+    // which is the whole difference a generation change is declared to make.
+    const stale = turnRecord({ turnId: turnIdCodec.from("turn-stale") });
+    repositories.turns.insert(stale);
+    await runner.advance(sessionRecord().streamId);
+    store.write((statements) => {
+      statements.run(
+        `UPDATE turns SET completed_at = $completedAt, outcome_kind = 'failed',
+         outcome_effect = 'none' WHERE turn_id = $turnId`,
+        { completedAt: stale.startedAt, turnId: stale.turnId },
+      );
+      statements.run("UPDATE projection_cursors SET schema_generation = 99");
+    });
+
+    const checkpointed = await runner.checkpoint();
+
+    expect(checkpointed.ok).toBe(true);
+    const rebuilt = repositories.turns.get(stale.turnId);
+    expect(rebuilt.ok && rebuilt.value?.outcome).toBeNull();
+    expect(rebuilt.ok && rebuilt.value?.completedAt).toBeNull();
+    // And the completions the current reducer does derive are still there.
     expect(derived(repositories).turn?.outcome).toEqual({ kind: "completed" });
     await store.close();
   });
