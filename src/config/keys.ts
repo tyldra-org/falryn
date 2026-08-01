@@ -3,8 +3,9 @@
  *
  * The mechanism in this source area is complete; this catalog is not, and is
  * not meant to be. A key is declared here only when something in this milestone
- * actually reads it — the `data` group for local-data roots, retention, and
- * quotas, and the `diagnostics` group for the collector and its debug window.
+ * actually reads it — the `data` group for local-data roots, retention, quotas,
+ * and the SQLite busy timeout, and the `diagnostics` group for the collector
+ * and its debug window.
  *
  * The groups named in the configuration reference but owned elsewhere —
  * application, interface, workspace, providers, agents, context, tools,
@@ -30,11 +31,14 @@ import {
   type ConfigurationValue,
   type ConfigurationValues,
   configurationKeyPath,
+  DEFAULT_BUSY_TIMEOUT_MS,
   DIAGNOSTIC_LEVELS,
+  MAX_BUSY_TIMEOUT_MS,
   MAX_DEBUG_PREVIEWS,
   MAX_DEBUG_WINDOW_MS,
   MAX_DIAGNOSTIC_CARDINALITY,
   MAX_RETAINED_DIAGNOSTICS,
+  MIN_BUSY_TIMEOUT_MS,
   UNLIMITED,
 } from "../domain/index.ts";
 import {
@@ -154,6 +158,18 @@ export const DATA_KEYS: readonly ConfigurationKeyDeclaration[] = [
     scopes: ["user", "environment", "cli"],
     applicationClass: "next-operation",
     crossFieldDependencies: [TOTAL_QUOTA_PATH],
+  }),
+  integerKey({
+    path: "data.sqlite.busyTimeoutMs",
+    summary: "How long a contended SQLite statement waits before reporting busy.",
+    unit: "milliseconds",
+    minimum: MIN_BUSY_TIMEOUT_MS,
+    maximum: MAX_BUSY_TIMEOUT_MS,
+    defaultValue: DEFAULT_BUSY_TIMEOUT_MS,
+    scopes: ["user", "environment", "cli"],
+    // Applied once, when the connection opens. Nothing re-reads it later, so a
+    // change takes effect on the next run rather than on the next operation.
+    applicationClass: "application-restart",
   }),
   limitKey({
     path: "data.quotas.totalMaxBytes",

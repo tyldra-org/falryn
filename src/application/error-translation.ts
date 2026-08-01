@@ -39,6 +39,8 @@ import {
   recoveryForEffect,
   type SafeCause,
   type SequenceError,
+  type SqliteFailure,
+  type SqliteStoreError,
   type TimestampError,
 } from "../domain/index.ts";
 import { redactText } from "./redaction.ts";
@@ -426,6 +428,136 @@ function credentialMessage(status: CredentialUnresolvedStatus): string {
     case "malformed":
       return "The credential reference does not name something this store can look for.";
   }
+}
+
+/**
+ * A local-database failure.
+ *
+ * Every member is `data` except cancellation, which is control flow and belongs
+ * to `cancellation` wherever it appears. Retryability comes from whether the
+ * condition can change on its own: a busy lock clears, a defective migration
+ * set does not.
+ *
+ * The driver's own message is the one piece of foreign text here, and it is the
+ * reason this translation redacts at all. A SQLite message routinely embeds the
+ * absolute path of the database and, for a constraint failure, the column and
+ * value that violated it. It reaches the developer cause through the runtime's
+ * single redactor and never reaches `message`.
+ */
+export function fromSqliteStoreError(
+  error: SqliteStoreError,
+  context: ErrorContext = {},
+): FalrynError {
+  const cancelled = error.code === "cancelled";
+  return build({
+    code: cancelled ? "cancellation.sqlite.cancelled" : `data.sqlite.${error.code}`,
+    category: cancelled ? "cancellation" : "data",
+    message: sqliteStoreMessage(error),
+    retryable: error.code === "busy",
+    effect: error.effect,
+    recovery: sqliteRecovery(error),
+    cause: {
+      source: "sqlite",
+      code: error.code,
+      detail: sqliteStoreDetail(error),
+    },
+    ...context,
+  });
+}
+
+/**
+ * Recovery for the failures whose normal answer is not the effect's default.
+ *
+ * A refused migration set, a mismatched checksum, and a database from a newer
+ * build are all `none` effect, whose default recovery is "retry" — and retrying
+ * any of them repeats the same refusal. They need a person to look.
+ */
+function sqliteRecovery(error: SqliteStoreError): readonly RecoveryAction[] {
+  switch (error.code) {
+    case "invalid-migration-set":
+    case "checksum-mismatch":
+    case "schema-too-new":
+    case "integrity-check-failed":
+    case "statement-rejected":
+    case "migration-failed":
+    case "migration-interrupted":
+      return ["inspect-state"];
+    default:
+      return recoveryForEffect(error.effect);
+  }
+}
+
+function sqliteStoreMessage(error: SqliteStoreError): string {
+  switch (error.code) {
+    case "unavailable":
+      return "The local database could not be opened or used.";
+    case "busy":
+      return "Another process is using the local database.";
+    case "disk-full":
+      return "There is not enough disk space to write to the local database.";
+    case "integrity-check-failed":
+      return "The local database failed its integrity check and was not modified.";
+    case "schema-too-new":
+      return "The local database was written by a newer version of Falryn.";
+    case "checksum-mismatch":
+      return "An applied database migration does not match this build.";
+    case "invalid-migration-set":
+      return "This build declares a database migration set it cannot apply.";
+    case "migration-failed":
+      return "A database migration failed and was rolled back.";
+    case "migration-interrupted":
+      return "A database migration stopped part-way and left a diagnosable state.";
+    case "statement-rejected":
+      return "The local database rejected a statement.";
+    case "cancelled":
+      return "The database operation was cancelled before it committed.";
+    case "closed":
+      return "The local database is already closed.";
+  }
+}
+
+/**
+ * The facts a developer needs, structural first.
+ *
+ * Only the driver's message is redacted; a version number, a checksum, and a
+ * migration name are Falryn's own and mean nothing without them.
+ */
+function sqliteStoreDetail(error: SqliteStoreError): string | null {
+  switch (error.code) {
+    case "unavailable":
+    case "busy":
+    case "disk-full":
+    case "statement-rejected":
+      return causeDetail(error.operation, error.cause);
+    case "integrity-check-failed":
+      return redactText(`problems=${error.problems.join("; ")}`, MAX_CAUSE_DETAIL_LENGTH);
+    case "schema-too-new":
+      return `recorded=${error.recordedVersion} application=${error.applicationVersion}`;
+    case "checksum-mismatch":
+      return `version=${error.version} recorded=${error.recordedChecksum} declared=${error.declaredChecksum}`;
+    case "invalid-migration-set":
+      return error.issues
+        .map((issue) => `${issue.code}@${issue.version ?? "?"}`)
+        .join(" ")
+        .slice(0, MAX_CAUSE_DETAIL_LENGTH);
+    case "migration-failed":
+      return redactText(
+        `version=${error.version} recorded=${error.recordedVersion} applied=${error.appliedVersions.join("|")} backup=${error.backupPath === null ? "none" : "taken"} ${causeDetail("transaction", error.cause) ?? ""}`,
+        MAX_CAUSE_DETAIL_LENGTH,
+      );
+    case "migration-interrupted":
+      return `recorded=${error.recordedVersion} applied=${error.appliedVersions.join("|")} backup=${error.backupPath === null ? "none" : "taken"}`;
+    case "cancelled":
+    case "closed":
+      return `operation=${error.operation}`;
+  }
+}
+
+function causeDetail(operation: string, cause: SqliteFailure): string | null {
+  const facts = `operation=${operation} driver=${cause.driverCode ?? "none"}`;
+  return cause.detail === null
+    ? facts
+    : redactText(`${facts} ${cause.detail}`, MAX_CAUSE_DETAIL_LENGTH);
 }
 
 /**

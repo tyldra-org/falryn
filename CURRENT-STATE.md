@@ -473,17 +473,98 @@ first producers are #13 for sessions and turns and
 capability kinds. Inventing scope or scheduler event kinds to fill the gap would
 create events with no consumer.
 
-`src/main.ts` composes the cancellation lifecycle, so the compiled executable includes
-the domain, application, and integration layers and the real process-signal
-adapter. There is no product work to run yet, so the bootstrap shuts down
-immediately and exits.
+**Falryn has one database.**
+[#12](https://github.com/yogeshprasad098/falryn/issues/12) adds `SqliteConnectionPort`
+to `src/domain/`, its `bun:sqlite` adapter at `src/integrations/bun-sqlite.ts`,
+and the owner at `src/data/sqlite-store.ts` with its migration list beside it.
+The port is SQL-shaped rather than SDK-shaped: it runs a statement, reads rows,
+applies a pragma, runs synchronous work inside a transaction, copies the
+database, controls persistent WAL, and closes. No `Database`, `Statement`, or
+driver constant crosses it.
+
+Its verified behavior:
+
+- one connection opens at `<state root>/falryn.sqlite` in strict mode, so a
+  mis-named bound parameter is an error rather than a silent `null`, and one
+  pragma set is applied in one place — `busy_timeout` from configuration,
+  `foreign_keys = ON`, `journal_mode = WAL`, `synchronous = NORMAL`, and an
+  `integrity_check` probe;
+- the registered migration list is validated at load for gaps, duplicates,
+  ordering, names, and empty SQL, so a defective set is refused before it
+  touches a database. Every defect in the set is reported, not only the first;
+- the runner owns a bookkeeping table created outside that list, recording
+  version, name, a checksum of the applied SQL, and the applied instant. Each
+  migration applies inside its own `exclusive` transaction that re-reads the
+  recorded version, so a second process racing the same upgrade waits its busy
+  timeout and then finds the work done rather than repeating it;
+- a checksum mismatch, a database recorded newer than the build, and a failed
+  integrity check are each refused with both facts needed to diagnose them. A
+  failed migration rolls back and leaves its version unrecorded; an interrupted
+  run names the recorded version, the applied set, and the backup path. None of
+  them deletes anything;
+- a destructive migration takes a bounded backup with `VACUUM INTO` into the
+  `state` root first. `.serialize()` is refused for that purpose, and a negative
+  control proves it appears nowhere in the tree, because it materializes the
+  whole database in memory;
+- writes use the `immediate` transaction variant. Cancellation before `BEGIN`
+  returns `cancelled` and nothing commits; cancellation after `COMMIT` reports
+  itself beside the committed value rather than claiming nothing happened. A
+  transaction wraps a synchronous function, so work inside one cannot `await` a
+  provider, process, or user;
+- close is a sequence — persistent WAL off, `wal_checkpoint(TRUNCATE)`, then a
+  close that does not force statements still running — and leaves one file, so a
+  leftover `-wal` is a real signal of a crashed run. It is registered as the
+  first `close-storage` shutdown participant, and a close that does not finish
+  before the phase deadline leaves the shutdown `uncertain`;
+- `sqliteState` is registered with the ownership registry as `app-owned` with
+  the `export-before-reset` posture in the `state` root. It has no
+  `data.retention` entry: retention classes are the rotating and rebuildable
+  ones, so durable state is measured for usage — sidecars included — and counted
+  against `data.quotas.totalMaxBytes` rather than aged out;
+- every failure is a `data` error in #5's shape except cancellation, which stays
+  `cancellation`. The driver's own message reaches the developer cause through
+  the runtime's single redactor and never reaches a user-facing message; and
+- `data.sqlite.busyTimeoutMs` is declared in #7's registry with its unit,
+  bounds, default, `user`/`environment`/`cli` scopes, and the
+  `application-restart` class. Journal mode, foreign keys, and `synchronous` are
+  deliberately not configurable.
+
+The production migration list is empty at v0.1. A real run creates the database,
+creates the bookkeeping table, verifies integrity, and closes cleanly at schema
+version 0; migration `0001` for sessions, turns, and events belongs to
+[#13](https://github.com/yogeshprasad098/falryn/issues/13). The runner itself is
+driven by fixture migration sets, which is what covers ordering, failure,
+contention, and interruption without depending on a schema that does not exist.
+
+`src/main.ts` composes the cancellation lifecycle and the local data foundation,
+so the compiled executable includes the domain, application, data, and
+integration layers and the real process-signal, filesystem, and `bun:sqlite`
+adapters. It resolves roots, registers `sqliteState`, prepares the `state` root,
+opens and migrates the database, and registers its `close-storage` participant.
+There is no product work to run yet, so the bootstrap shuts down immediately and
+exits.
 
 Observed on 2026-08-01:
 
 ```text
 bun run check  PASS  (Biome, tsc --noEmit, and bun test)
 bun run build  PASS  (Bun standalone executable compiled to dist/falryn)
+bun run ci     PASS  (quality, tsc --noEmit, build, then bun test)
 ```
+
+`bun run ci` now builds before it tests, so `src/main.compiled.test.ts` runs
+against a real `dist/falryn`: the standalone executable opens, migrates, and
+closes a database under a temporary state root, leaves one file, carries its
+migration bookkeeping into the binary, and reopens the same database on a second
+run. Without a build the check reports itself as skipped rather than passing on
+an executable that does not exist.
+
+One limitation observed by that check: the process lingers for one full shutdown
+phase grace after its work is done. The delay is in the lifecycle owner rather
+than in storage — a bare `createRuntimeLifecycle` plus `requestShutdown` shows
+the same wait with no database composed — and it is tracked as
+[#316](https://github.com/yogeshprasad098/falryn/issues/316) rather than fixed in
+a data change.
 
 No module or test count is recorded here. Re-running these commands re-proves
 that they pass, but it re-proves no count, so a count decays silently between
@@ -494,9 +575,11 @@ current claim.
 
 A separate compiled probe confirmed that root resolution produces byte-identical
 output in source mode and in a Bun standalone executable, both for platform
-defaults and for an environment override. The probe is not part of `bun run
-check`; `src/main.ts` composes no local-data service, so nothing in the shipped
-bootstrap resolves a root.
+defaults and for an environment override. That probe is not part of `bun run
+check`, but root resolution is no longer unexercised in a real run:
+`src/main.ts` now resolves roots and prepares the `state` root before it opens
+the database, and the compiled smoke check drives that path through
+`FALRYN_STATE_DIR`.
 
 A separate compiled probe confirmed the keychain adapter on macOS 26.6, observed
 manually on 2026-08-01 and not part of `bun run check`. Against a temporary
@@ -513,17 +596,19 @@ The compiled file is a development bootstrap artifact. It is not a supported
 Falryn product binary or release. A separate compiled probe confirmed that a
 `SIGINT` delivered to a Bun standalone executable reaches the runtime lifecycle,
 cancels the root scope, and runs all ten shutdown phases to a `completed`
-outcome. Automated compiled-executable checks are not yet part of `bun run
-check`.
+outcome. That probe remains manual; the storage smoke check described above is
+the first automated compiled-executable check, and it runs under `bun run ci`
+rather than `bun run check`, because `bun run check` does not build.
 
 ## Not implemented
 
 No end-user product behavior has been implemented. In particular, the
 repository does not yet provide:
 
-- the shutdown participants other than the scheduler drain — persistence,
-  artifact finalize, child-process termination, and terminal restoration each
-  register from their own owner and none exist yet;
+- the shutdown participants other than the scheduler drain and the storage
+  close — persisting outcomes, checkpointing projections, artifact finalize,
+  child-process termination, and terminal restoration each register from their
+  own owner and none of those owners exists yet;
 - watching configuration sources, and writing configuration files. Nothing in
   v0.1 runs long enough to observe a live reload and nothing sets a value, so a
   watcher and a serializer would be scaffolding with no caller. Refresh is an
@@ -535,19 +620,25 @@ repository does not yet provide:
 - any composition of the credential resolver. The stores, the resolver, and the
   host command runner exist and are tested, and `src/main.ts` constructs none of
   them, so no real run resolves a credential. The first consumer is #35;
-- SQLite or artifacts. A session, turn, and
-  event *identity* exists — what does not exist is anything that produces or
-  persists those;
+- any product table, repository, or domain record in SQLite. The database, its
+  migration runner, its transaction boundary, and its close path exist and are
+  composed, and the production migration list is empty, so a real run ends at
+  schema version 0 with only the runner's own bookkeeping table. A session,
+  turn, and event *identity* exists — what does not exist is anything that
+  produces or persists those, or any read-connection pooling, which stays
+  undecided until there are real read paths to measure;
+- artifact metadata or artifact bytes;
 - any composition of the configuration loader into a running program.
   `src/main.ts` constructs no loader, so no configuration file is read on a real
   run;
-- any composition of the local-data service. Roots, ownership classes,
-  retention reporting, removal planning, guarded execution, and reconciliation
-  exist and are tested, and `src/main.ts` constructs none of them, so no
-  directory is created and nothing is measured or removed on a real run. The
-  owners that will register the remaining ownership classes — SQLite state,
-  artifacts, memory, extensions, exports — do not exist, and each is reported as
-  unregistered rather than assumed absent;
+- any composed use of the local-data service beyond storage. `src/main.ts`
+  resolves roots, registers `sqliteState`, and prepares the `state` root, so
+  that one directory is created on a real run. Retention reporting, removal
+  planning, guarded execution, and reconciliation exist and are tested, and
+  nothing calls them on a real run, so nothing is measured or removed. The
+  owners that will register the remaining ownership classes — artifacts, memory,
+  extensions, exports — do not exist, and each is reported as unregistered
+  rather than assumed absent;
 - the command surfaces that would show a reset or uninstall plan and collect its
   confirmation. This area produces the plan and the typed outcome; rendering
   them and asking is the CLI's;

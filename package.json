@@ -20,7 +20,7 @@
     "test": "bun test",
     "build": "bun build src/main.ts --compile --outfile dist/falryn",
     "check": "bun run quality && bun run typecheck && bun run test",
-    "ci": "bun run check && bun run build"
+    "ci": "bun run quality && bun run typecheck && bun run build && bun run test"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.6",
