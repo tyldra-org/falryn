@@ -333,6 +333,20 @@ export type ConfigurationIssue =
       readonly rule: string;
       readonly relatedPaths: readonly ConfigurationKeyPath[];
     }
+  /**
+   * A secret was written where a reference belongs.
+   *
+   * Named separately from `invalid-type` because the two need different
+   * answers: a wrong type is a typo, and this is a credential now sitting in a
+   * file that may be committed. It is refused rather than coerced, and — like
+   * every issue here — it reports the constraint rather than what was written.
+   */
+  | {
+      readonly kind: "plaintext-credential";
+      readonly severity: "error";
+      readonly path: string;
+      readonly expectedStoreKinds: readonly CredentialStoreKind[];
+    }
   | { readonly kind: "invalid-schema-version"; readonly severity: "error"; readonly path: string }
   | {
       readonly kind: "unsupported-schema-version";

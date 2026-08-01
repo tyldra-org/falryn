@@ -27,9 +27,13 @@ import {
   type ConfigurationUnit,
   type ConfigurationValue,
   type ConfigurationValueType,
+  CREDENTIAL_STORE_KINDS,
+  type CredentialStoreKind,
   configurationKeyPath,
   err,
   MAX_CONFIGURATION_KEY_PATH_LENGTH,
+  MAX_CREDENTIAL_LABEL_LENGTH,
+  MAX_CREDENTIAL_LOCATOR_LENGTH,
   ok,
   type Result,
   UNLIMITED,
@@ -444,6 +448,80 @@ export function identifiedArrayKey(
         seen.add(identity);
       }
       return parsed;
+    },
+  };
+}
+
+/**
+ * A key that holds a credential reference, or nothing.
+ *
+ * Three constraints are applied here rather than left to each author, because
+ * getting any of them wrong puts a secret in a file:
+ *
+ * - **The sensitivity is forced**, so a credential key cannot be declared
+ *   public by omission and rendered in full by the projection that follows the
+ *   declaration.
+ * - **The `project` scope is refused at declaration time.** A checked-in
+ *   project file is the single worst place for a credential, and a key that
+ *   cannot be set there cannot be set there by accident.
+ * - **A value that is not a reference is a named diagnostic**, not a type
+ *   error. `"sk-live-…"` written where a reference belongs is a credential in a
+ *   file, and it is worth saying so exactly.
+ *
+ * The default is `null` — no credential configured — because a declared
+ * placeholder locator would be a reference pointing at nothing.
+ */
+export function credentialReferenceKey(
+  input: Omit<CommonInput, "sensitivity"> & {
+    readonly storeKinds?: readonly [CredentialStoreKind, ...CredentialStoreKind[]];
+  },
+): ConfigurationKeyDeclaration {
+  if (input.scopes.includes("project")) {
+    throw new Error(`credential key may not be set from project scope: ${input.path}`);
+  }
+  const storeKinds = input.storeKinds ?? CREDENTIAL_STORE_KINDS;
+  const descriptor = describe(
+    { ...input, sensitivity: "credential-reference" },
+    {
+      valueType: "object",
+      unit: null,
+      defaultValue: null,
+      allowedValues: [...storeKinds],
+      minimum: null,
+      maximum: null,
+      merge: { kind: "replace" },
+    },
+  );
+  // `.nullable()` rather than a union with `z.null()`, for the reason
+  // `pathOverrideKey` gives: a union reports that the union failed, which
+  // describes the schema instead of the mistake. A secret smuggled in beside
+  // the reference has to report itself as an unknown key.
+  const schema = z
+    .strictObject({
+      storeKind: z.literal(storeKinds),
+      locator: z.string().min(1).max(MAX_CREDENTIAL_LOCATOR_LENGTH),
+      consumer: z.string().min(1).max(MAX_CREDENTIAL_LABEL_LENGTH),
+      accountLabel: z.union([z.string().min(1).max(MAX_CREDENTIAL_LABEL_LENGTH), z.null()]),
+    })
+    .nullable();
+  const declaration = declare(descriptor, schema);
+
+  return {
+    ...declaration,
+    validate(raw: unknown): Result<ConfigurationValue, readonly ConfigurationIssue[]> {
+      // A scalar where a reference belongs is a secret someone pasted in, not a
+      // shape mistake. Checked before Zod so the diagnostic says which it is.
+      if (typeof raw === "string" || typeof raw === "number" || typeof raw === "boolean") {
+        return err([
+          {
+            kind: "plaintext-credential",
+            severity: "error",
+            path: descriptor.path,
+            expectedStoreKinds: storeKinds,
+          },
+        ]);
+      }
+      return declaration.validate(raw);
     },
   };
 }

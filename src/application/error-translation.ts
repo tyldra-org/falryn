@@ -21,6 +21,8 @@ import {
   type CodecError,
   type ConfigurationIssue,
   type CorrelationIds,
+  type CredentialFailure,
+  type CredentialUnresolvedStatus,
   type EffectCertainty,
   type ErrorCategory,
   type EventStoreError,
@@ -286,6 +288,8 @@ function configurationMessage(issue: ConfigurationIssue): string {
       return "A configuration value is outside its allowed range.";
     case "invalid-value":
       return "A configuration value is not one of the allowed values.";
+    case "plaintext-credential":
+      return "A configuration key expects a credential reference, not a secret value.";
     case "scope-unavailable":
       return `A configuration key cannot be set from ${issue.scope} configuration.`;
     case "duplicate-identity":
@@ -321,6 +325,9 @@ function configurationDetail(issue: ConfigurationIssue): string {
       break;
     case "invalid-value":
       facts.push(`allowed=${issue.allowed.join("|")}`);
+      break;
+    case "plaintext-credential":
+      facts.push(`expectedStoreKinds=${issue.expectedStoreKinds.join("|")}`);
       break;
     case "scope-unavailable":
       facts.push(`scope=${issue.scope}`, `available=${issue.availableScopes.join("|")}`);
@@ -361,6 +368,64 @@ function configurationDetail(issue: ConfigurationIssue): string {
       break;
   }
   return facts.join(" ");
+}
+
+/**
+ * A credential that could not be resolved.
+ *
+ * This is the first producer of the `authentication` category. Nothing here is
+ * redacted, for the same reason a configuration issue is not: a credential
+ * failure is built from a status, a Falryn code, a store kind, and a consumer
+ * name, all of which come from declarations rather than from the store. The
+ * locator is deliberately absent — it is withheld from every rendering, and an
+ * error is a rendering.
+ *
+ * `effect` is always `none`. Reading a credential changes nothing, so a caller
+ * never has to inspect state before trying again; what stops an automatic retry
+ * is `retryable`, which the store sets from whether the state that caused the
+ * failure can change at all.
+ */
+export function fromCredentialFailure(
+  failure: CredentialFailure,
+  context: ErrorContext = {},
+): FalrynError {
+  return build({
+    code: `authentication.${failure.status}`,
+    category: "authentication",
+    message: credentialMessage(failure.status),
+    retryable: failure.retryable,
+    effect: "none",
+    recovery: ["inspect-state"],
+    cause: {
+      source: "credentials",
+      code: failure.code,
+      detail: `store=${failure.storeKind} consumer=${failure.consumer} health=${failure.health.state}`,
+    },
+    ...context,
+  });
+}
+
+function credentialMessage(status: CredentialUnresolvedStatus): string {
+  switch (status) {
+    case "missing":
+      return "No credential is stored for this reference.";
+    case "empty":
+      return "The stored credential is empty.";
+    case "locked":
+      return "The credential store is locked and cannot be opened without interaction.";
+    case "denied":
+      return "The credential store refused this request.";
+    case "unavailable":
+      return "The credential store could not be reached.";
+    case "unsupported":
+      return "This build does not support this credential store on this platform.";
+    case "timed-out":
+      return "The credential store did not answer before the deadline.";
+    case "cancelled":
+      return "The credential lookup was cancelled before it completed.";
+    case "malformed":
+      return "The credential reference does not name something this store can look for.";
+  }
 }
 
 /**

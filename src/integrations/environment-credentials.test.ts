@@ -1,0 +1,111 @@
+/**
+ * The environment-reference store.
+ *
+ * The variable map is supplied through `EnvironmentPort`, so nothing here reads
+ * or mutates `process.env`.
+ */
+
+import { describe, expect, test } from "bun:test";
+
+import {
+  type CredentialReference,
+  createManualClock,
+  createStaticEnvironment,
+  MAX_CREDENTIAL_SECRET_BYTES,
+} from "../domain/index.ts";
+import { createEnvironmentCredentialStore } from "./environment-credentials.ts";
+
+function store(values: Readonly<Record<string, string>> = {}) {
+  return createEnvironmentCredentialStore({
+    environment: createStaticEnvironment(values),
+    clock: createManualClock(),
+  });
+}
+
+function reference(overrides: Partial<CredentialReference> = {}): CredentialReference {
+  return {
+    storeKind: "environment",
+    locator: "FALRYN_PROVIDER_TOKEN",
+    consumer: "example-provider",
+    accountLabel: null,
+    ...overrides,
+  };
+}
+
+describe("the environment credential store", () => {
+  test("is available on every platform", () => {
+    expect(store().availability()).toEqual({ kind: "available" });
+  });
+
+  test("resolves a variable that is set", async () => {
+    const resolution = await store({ FALRYN_PROVIDER_TOKEN: "sk-live-value" }).read(
+      reference(),
+      (secret) => secret.length,
+    );
+
+    expect(resolution.kind).toBe("resolved");
+    if (resolution.kind !== "resolved") {
+      throw new Error("expected a resolved outcome");
+    }
+    expect(resolution.value).toBe("sk-live-value".length);
+    expect(resolution.health.state).toBe("present");
+    expect(JSON.stringify(resolution)).not.toContain("sk-live");
+  });
+
+  test("reports an unset variable as missing", async () => {
+    const resolution = await store().read(reference(), (secret) => secret);
+    expect(resolution.kind === "unresolved" && resolution.failure.status).toBe("missing");
+    expect(resolution.kind === "unresolved" && resolution.failure.health.state).toBe("absent");
+  });
+
+  test("never scans for variables that merely look like credentials", async () => {
+    // `API_KEY` is set and is not the declared locator, so it is not a
+    // credential — a variable becoming one by being spelled a certain way is
+    // exactly what this store refuses to do.
+    const resolution = await store({ API_KEY: "sk-live-value" }).read(
+      reference(),
+      (secret) => secret,
+    );
+    expect(resolution.kind === "unresolved" && resolution.failure.status).toBe("missing");
+  });
+
+  test("refuses a locator that is not a legal variable name", async () => {
+    for (const locator of ["lowercase", "WITH SPACE", "-DASH", "WITH;SEMICOLON", ""]) {
+      const resolution = await store().read(reference({ locator }), (secret) => secret);
+      expect(resolution.kind === "unresolved" && resolution.failure.status).toBe("malformed");
+    }
+  });
+
+  test("refuses a value larger than a credential can be", async () => {
+    const oversized = "x".repeat(MAX_CREDENTIAL_SECRET_BYTES + 1);
+    const resolution = await store({ FALRYN_PROVIDER_TOKEN: oversized }).read(
+      reference(),
+      (secret) => secret,
+    );
+    expect(resolution.kind === "unresolved" && resolution.failure.status).toBe("malformed");
+  });
+
+  test("an already-aborted read never touches the environment", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    let used = false;
+    const resolution = await store({ FALRYN_PROVIDER_TOKEN: "value" }).read(
+      reference(),
+      (secret) => {
+        used = true;
+        return secret;
+      },
+      { signal: controller.signal },
+    );
+
+    expect(used).toBe(false);
+    expect(resolution.kind === "unresolved" && resolution.failure.status).toBe("cancelled");
+  });
+
+  test("cannot delete a secret, and says so rather than reporting success", async () => {
+    expect(await store({ FALRYN_PROVIDER_TOKEN: "value" }).removeSecret(reference())).toEqual({
+      result: "unsupported",
+      code: "environment-not-writable",
+    });
+  });
+});

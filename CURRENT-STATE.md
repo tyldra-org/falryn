@@ -153,8 +153,8 @@ recovery catalog to `src/application/`:
   authorizes an automatic retry, and recovery after uncertainty observes present
   state before acting.
 
-Only the `configuration`, `data`, `cancellation`, and `internal` categories are
-emitted today. The rest of the vocabulary is declared so later owners attach to
+Only the `configuration`, `authentication`, `data`, `cancellation`, and
+`internal` categories are emitted today. The rest of the vocabulary is declared so later owners attach to
 it. No error code is stable.
 
 The configuration schema introduced by
@@ -273,6 +273,82 @@ The redacted inspection projection is a data structure: effective value rendered
 through each key's declared sensitivity, winning source, overridden values, the
 per-source reports, and diagnostics. Rendering it for humans or machines is
 #18's and #19's.
+
+The credential contract introduced by
+[#9](https://github.com/yogeshprasad098/falryn/issues/9) adds `CredentialStorePort`,
+`SecretResolverPort`, `CredentialReferenceStorePort`, the credential health and
+removal contracts, and a supervised `CommandRunnerPort` to `src/domain/`;
+reference resolution and two-part removal to `src/config/`; the secret resolver
+to `src/application/`; and the keychain, environment-reference, and host-command
+adapters to `src/integrations/`. `authentication` joins the emitted error
+categories and `credentials` joins the diagnostic subsystems, because the
+resolver now produces both.
+
+Its verified behavior:
+
+- **a reference carries store kind, opaque locator, consumer, optional account
+  label, and observed health, and never the secret.** It is an ordinary
+  configuration value with #7's declared-sensitive type, so it inherits that
+  registry's validation and its rendering — store kind, consumer, and account
+  label shown, locator withheld;
+- **resolution is late and narrow.** The port hands the secret to a
+  caller-supplied callback and returns only that callback's result. There is no
+  `getSecret()`, no store enumeration, and no export. A sweep serializes the
+  resolution, the health, the translated error, the inspection projection, the
+  `configuration.generation.changed` event, the provenance, the source reports,
+  and the diagnostics buffer, and asserts the secret's and the locator's bytes
+  appear in none of them;
+- **a request is bound to one consumer.** A reference declares who may resolve
+  it and a caller declares who is asking; a mismatch is denied before any store
+  is named, so a mismatched consumer learns nothing about whether the credential
+  exists;
+- **nine unresolved statuses stay nine facts** — missing, empty, locked, denied,
+  unavailable, unsupported, timed out, cancelled, malformed — each with the
+  health it implies. Only a store that answered can report `absent`; a locked or
+  unreachable store reports `unreachable`, because reporting it as absent would
+  invite writing over a credential that is already there;
+- **a plaintext credential is refused with a named diagnostic.** A credential
+  key cannot be declared settable from project scope at all, a scalar written
+  where a reference belongs is a `plaintext-credential` issue, and a secret
+  smuggled in beside the reference is an unknown key. Every one of them reports
+  the constraint and never the value, and a user file containing one refuses the
+  whole load rather than publishing the rest;
+- **local removal is two reported halves.** The secret is deleted first, so a
+  failure leaves a reference naming a secret that is still there rather than a
+  secret nothing can name again; execution requires a confirmation carrying an
+  identity re-derived from the reference's own content; and removing an
+  environment-backed credential reports `partial`, because no process can unset
+  a variable in the shell that exported it. Remote revocation is
+  [#35](https://github.com/yogeshprasad098/falryn/issues/35) and is neither
+  attempted nor implied;
+- **no native credential module enters the lockfile.** The keychain adapter is a
+  narrow `Bun.spawn` leaf over `/usr/bin/security` with a structured argument
+  vector, an empty environment, a bounded output, and a deadline. `security`
+  exits with the low byte of the `OSStatus` it received, which is what makes the
+  exit-status table derivable rather than guessed; a status the table does not
+  name is `unavailable` with its code preserved, never `missing`. `stderr` never
+  crosses the boundary at all; and
+- **this adapter is internal.** It is not a tool, is registered in no capability
+  catalog, and does not pass through the tool boundary
+  [#47](https://github.com/yogeshprasad098/falryn/issues/47) will own. A
+  model-requested credential read is not a supported path.
+
+**macOS is the qualified keychain target.** Linux and Windows report
+`unsupported` with a stated reason and spawn nothing; qualifying them is
+[#220](https://github.com/yogeshprasad098/falryn/issues/220). The
+environment-reference store works on every platform, so no host is left without
+a credential path.
+
+Two limitations of this slice:
+
+- **a secret cannot be wiped from memory.** JavaScript strings are immutable and
+  not zeroable, so the mitigation is to keep the secret inside the callback's
+  scope rather than to claim it is erased afterwards; and
+- **nothing supplies the reference half of a removal in production.**
+  Configuration writing does not exist — #8 excluded it because nothing in v0.1
+  sets a value — so `CredentialReferenceStorePort` has an in-memory supplier
+  only. The port exists so that removal is one operation with two reported
+  halves; its production supplier arrives with the configuration writer.
 
 The local-data layout introduced by
 [#10](https://github.com/yogeshprasad098/falryn/issues/10) adds `FileSystemPort`,
@@ -413,6 +489,17 @@ defaults and for an environment override. The probe is not part of `bun run
 check`; `src/main.ts` composes no local-data service, so nothing in the shipped
 bootstrap resolves a root.
 
+A separate compiled probe confirmed the keychain adapter on macOS 26.6, observed
+manually on 2026-08-01 and not part of `bun run check`. Against a temporary
+generic-password item created and then deleted for the probe, a Bun standalone
+executable resolved the reference through the real `/usr/bin/security`, reported
+`present` health, and handed the callback a secret of the expected length; the
+same probe run in source mode produced identical output. A locator with no
+keychain entry reported `missing` from exit status 44 in both modes, and a
+lookup after the item was deleted reported 44 again. Nothing in the probe printed
+a secret. `src/main.ts` composes no credential resolver, so nothing in the
+shipped bootstrap reaches a keychain.
+
 The compiled file is a development bootstrap artifact. It is not a supported
 Falryn product binary or release. A separate compiled probe confirmed that a
 `SIGINT` delivered to a Bun standalone executable reaches the runtime lifecycle,
@@ -432,7 +519,14 @@ repository does not yet provide:
   v0.1 runs long enough to observe a live reload and nothing sets a value, so a
   watcher and a serializer would be scaffolding with no caller. Refresh is an
   explicit call carrying the complete diff, classification, and publish path;
-- credential resolution and storage; SQLite; or artifacts. A session, turn, and
+- writing a credential *into* a store. The keychain adapter reads and deletes;
+  nothing creates an entry, because the flow that would — interactive
+  authentication — is [#35](https://github.com/yogeshprasad098/falryn/issues/35).
+  A credential is placed in the keychain by the user today;
+- any composition of the credential resolver. The stores, the resolver, and the
+  host command runner exist and are tested, and `src/main.ts` constructs none of
+  them, so no real run resolves a credential. The first consumer is #35;
+- SQLite or artifacts. A session, turn, and
   event *identity* exists — what does not exist is anything that produces or
   persists those;
 - any composition of the configuration loader into a running program.
