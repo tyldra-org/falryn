@@ -353,6 +353,52 @@ describe("cross-field validation", () => {
     }
   });
 
+  test("folding over defaults obeys the declared merge, not a blanket replace", () => {
+    const result = registry().validateComplete(
+      document({ fixture: { map: { alpha: { weight: 9 } } } }),
+      USER_LAYER,
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      // `beta` is untouched by the document and has to survive it: replacing the
+      // map wholesale would silently drop a default the user never mentioned.
+      expect(result.values["fixture.map"]).toEqual({
+        alpha: { weight: 9 },
+        beta: { weight: 2 },
+      });
+    }
+  });
+
+  test("an identified element is amended in place and a new one appended", () => {
+    const result = registry().validateComplete(
+      document({
+        fixture: {
+          list: [
+            { name: "second", enabled: false },
+            { name: "third", enabled: true },
+          ],
+        },
+      }),
+      USER_LAYER,
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.values["fixture.list"]).toEqual([
+        { name: "builtin", enabled: true },
+        { name: "second", enabled: false },
+        { name: "third", enabled: true },
+      ]);
+    }
+  });
+
+  test("a scalar still replaces outright", () => {
+    const result = registry().validateComplete(document({ fixture: { scalar: 7 } }), USER_LAYER);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.values["fixture.scalar"]).toBe(7);
+    }
+  });
+
   test("each key naming a cross-field dependency names a declared key", () => {
     const port = registry();
     for (const descriptor of port.keys()) {

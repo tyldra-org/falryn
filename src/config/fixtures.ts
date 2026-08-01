@@ -58,7 +58,12 @@ export const FIXTURE_IDENTIFIED_LIST_KEY: ConfigurationKeyDeclaration = identifi
   summary: "A list whose elements a later layer amends by identity.",
   identityField: "name",
   elementSchema: z.strictObject({ name: z.string().min(1).max(64), enabled: z.boolean() }),
-  defaultValue: [],
+  // Non-empty, so folding a document over it exercises amend-in-place rather
+  // than degenerating into replacement.
+  defaultValue: [
+    { name: "builtin", enabled: true },
+    { name: "second", enabled: true },
+  ],
   maximumItems: 16,
   scopes: ["user", "project"],
   applicationClass: "application-restart",

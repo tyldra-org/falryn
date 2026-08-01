@@ -23,6 +23,7 @@ import {
   type ConfigurationKeyPath,
   type ConfigurationKeyResolution,
   type ConfigurationLayerContext,
+  type ConfigurationMergeBehavior,
   type ConfigurationRegistryPort,
   type ConfigurationValidationResult,
   type ConfigurationValue,
@@ -221,9 +222,15 @@ export function createConfigurationRegistry(
     /**
      * Defaults plus one document.
      *
-     * This is the single-source path. Combining several layers applies each
-     * key's declared merge behavior and belongs to the composition owner, which
-     * calls `validateLayer` and `crossValidate` directly.
+     * This is the single-source path. Combining several *layers* applies the
+     * same declared behavior across sources and belongs to the composition
+     * owner, which calls `validateLayer` and `crossValidate` directly.
+     *
+     * Folding the document over the defaults is itself a merge, so it obeys
+     * each key's declaration rather than replacing wholesale. Replacing would
+     * make a document that sets one entry of a `merge-map` key drop every
+     * default entry beside it — and a cross-field rule reading that value would
+     * then approve a configuration the complete value violates.
      */
     validateComplete(
       document: unknown,
@@ -233,7 +240,7 @@ export function createConfigurationRegistry(
       if (!layer.ok) {
         return layer;
       }
-      const effective = { ...defaults(), ...layer.values };
+      const effective = foldOverDefaults(descriptors, defaults(), layer.values);
       const conflicts = crossValidate(effective);
       const issues = [...layer.issues, ...conflicts];
       return issues.some(isBlockingIssue)
@@ -258,6 +265,110 @@ export function createConfigurationRegistry(
       }
     },
   };
+}
+
+/**
+ * Folds one document's values onto the defaults, per key declaration.
+ *
+ * The composition owner performs the same fold repeatedly across its six
+ * layers. It lives here for now because the defaults fold is the one merge this
+ * area cannot avoid performing: without it, `crossValidate` would see a value
+ * that is complete only by accident.
+ */
+function foldOverDefaults(
+  descriptors: readonly ConfigurationKeyDescriptor[],
+  defaults: ConfigurationValues,
+  layer: ConfigurationValues,
+): ConfigurationValues {
+  const effective: Record<string, ConfigurationValue> = { ...defaults };
+  for (const descriptor of descriptors) {
+    const incoming = layer[descriptor.path];
+    if (incoming === undefined) {
+      continue;
+    }
+    effective[descriptor.path] = foldDeclaredValue(
+      descriptor.merge,
+      defaults[descriptor.path],
+      incoming,
+    );
+  }
+  return effective;
+}
+
+/**
+ * One key's declared merge.
+ *
+ * A shape mismatch falls back to replacement rather than guessing: a base that
+ * is not the shape the declaration describes cannot be merged into, and
+ * inventing a combination there would be exactly the accidental deep merge this
+ * contract exists to prevent.
+ */
+function foldDeclaredValue(
+  merge: ConfigurationMergeBehavior,
+  base: ConfigurationValue | undefined,
+  incoming: ConfigurationValue,
+): ConfigurationValue {
+  switch (merge.kind) {
+    case "replace":
+      return incoming;
+    case "merge-map":
+      // One level only. An entry is a value, not a nested key path.
+      return isValueRecord(base) && isValueRecord(incoming) ? { ...base, ...incoming } : incoming;
+    case "merge-by-identity":
+      return Array.isArray(base) && Array.isArray(incoming)
+        ? foldByIdentity(base, incoming, merge.identityField)
+        : incoming;
+  }
+}
+
+/**
+ * Elements sharing the declared identity are the same element.
+ *
+ * A matched element is amended in place, so the base's order is preserved and a
+ * later layer can change one entry without restating the list. An unmatched
+ * element is appended.
+ */
+function foldByIdentity(
+  base: readonly ConfigurationValue[],
+  incoming: readonly ConfigurationValue[],
+  identityField: string,
+): readonly ConfigurationValue[] {
+  const result = [...base];
+  const positionByIdentity = new Map<string, number>();
+  base.forEach((element, index) => {
+    const identity = identityOf(element, identityField);
+    if (identity !== null) {
+      positionByIdentity.set(identity, index);
+    }
+  });
+
+  for (const element of incoming) {
+    const identity = identityOf(element, identityField);
+    const position = identity === null ? undefined : positionByIdentity.get(identity);
+    if (position === undefined) {
+      if (identity !== null) {
+        positionByIdentity.set(identity, result.length);
+      }
+      result.push(element);
+      continue;
+    }
+    result[position] = element;
+  }
+  return result;
+}
+
+function identityOf(element: ConfigurationValue, identityField: string): string | null {
+  if (!isValueRecord(element)) {
+    return null;
+  }
+  const identity = element[identityField];
+  return typeof identity === "string" || typeof identity === "number" ? String(identity) : null;
+}
+
+function isValueRecord(
+  value: ConfigurationValue | undefined,
+): value is { readonly [key: string]: ConfigurationValue } {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 type Assignment = {

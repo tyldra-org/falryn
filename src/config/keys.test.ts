@@ -1,7 +1,11 @@
 import { describe, expect, test } from "bun:test";
 
 import { createRuntimeRedactor } from "../application/index.ts";
-import type { ConfigurationIssue, ConfigurationLayerContext } from "../domain/index.ts";
+import type {
+  ConfigurationIssue,
+  ConfigurationLayerContext,
+  ConfigurationValue,
+} from "../domain/index.ts";
 import {
   configurationKeyPath,
   DIAGNOSTIC_LEVELS,
@@ -340,6 +344,40 @@ describe("cross-field validation", () => {
         configurationKeyPath("data.retention"),
       ],
     });
+  });
+
+  test("a partial retention map keeps the classes it did not mention", () => {
+    const defaults = port.defaults()["data.retention"] as Record<string, ConfigurationValue>;
+    const result = port.validateComplete(
+      document({
+        data: { retention: { logs: { maxAgeMs: MIN_RETENTION_MS, maxBytes: MIN_CLASS_BYTES } } },
+      }),
+      USER_LAYER,
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      const retention = result.values["data.retention"] as Record<string, ConfigurationValue>;
+      expect(Object.keys(retention).sort()).toEqual([...RETENTION_CLASSES].sort());
+      expect(retention.logs).toEqual({ maxAgeMs: MIN_RETENTION_MS, maxBytes: MIN_CLASS_BYTES });
+      expect(retention.cache).toEqual(defaults.cache);
+      expect(retention.temporaryIngest).toEqual(defaults.temporaryIngest);
+    }
+  });
+
+  test("a partial retention map is still weighed whole against the total", () => {
+    // Only `logs` is set, and on its own it fits. Together with the `cache` and
+    // `temporaryIngest` defaults beside it, the claim exceeds the default total
+    // — which is exactly the combination a wholesale replace would hide.
+    const result = port.validateComplete(
+      document({
+        data: {
+          retention: { logs: { maxAgeMs: MIN_RETENTION_MS, maxBytes: 4 * 1_024 * 1_024 * 1_024 } },
+        },
+      }),
+      USER_LAYER,
+    );
+    expect(result.ok).toBe(false);
+    expect(result.issues.map((issue) => issue.kind)).toContain("cross-field-conflict");
   });
 
   test("an unbounded class cannot fit inside a bounded total", () => {

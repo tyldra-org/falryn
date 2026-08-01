@@ -184,8 +184,11 @@ Its verified behavior:
 - a deprecated spelling resolves to its canonical path and a deprecated key is
   accepted, each with a visible warning; a key set from a scope it does not
   declare is refused;
-- cross-field rules run over the composed value, so an impossible combination
-  fails at compose time rather than at use time;
+- folding one document over the defaults obeys each key's declared merge
+  behavior, so a document that sets one entry of a map key keeps the default
+  entries beside it, and cross-field rules run over that whole value — an
+  impossible combination fails at compose time rather than at use time.
+  Combining several layers across sources is still #8's;
 - every issue reports a path, an issue kind, and the constraint that was
   violated, and never the rejected value — proven by negative controls that feed
   credential-shaped values through every declared type; and
