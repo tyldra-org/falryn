@@ -212,6 +212,69 @@ merge-by-identity list, the declared-sensitive value, and the credential
 reference are proven against fixture registries rather than against an invented
 product key.
 
+The local-data layout introduced by
+[#10](https://github.com/yogeshprasad098/falryn/issues/10) adds `FileSystemPort`,
+`EnvironmentPort`, and the local-data contracts — roots, ownership classes,
+durability, removal posture, retention report, removal plan and outcome — to
+`src/domain/`, a new source area at `src/data/` behind `src/data/index.ts`, and
+the host filesystem and environment adapters to `src/integrations/`.
+
+The filesystem port is deliberately shallow: it stats, creates one directory,
+lists one directory, removes one entry, and resolves one link. Recursion,
+symlink-escape checks, and every other dangerous decision live in `src/data/`,
+where they are tested against an in-memory double rather than against a real
+disk.
+
+Its verified behavior:
+
+- seven separate roots — configuration, state, cache, logs, temporary ingest,
+  artifacts, exports — resolve from platform conventions and explicit
+  environment overrides and from nothing else. Durable data and rebuildable
+  caches never share a root, so they can never share deletion semantics;
+- **configuration never relocates the roots configuration discovery needs.**
+  The configuration root moves only through `FALRYN_CONFIG_DIR`, which is what
+  breaks the otherwise-circular dependency between root resolution and
+  configuration composition;
+- preparation creates only the roots the caller asked for, with owner-only
+  permissions. A root that is a file, is unwritable, or is group- or
+  world-readable is a named diagnostic and is never repaired, replaced, or
+  chmod-ed — each of those destroys the evidence that something else is using
+  the path. An unusable environment override falls back and is reported rather
+  than silently ignored;
+- an ownership class exists because an owner registered it, not because it
+  appears in the documented vocabulary. Registrations sit with their owners:
+  configuration in `src/config/`, logs beside the diagnostics collector, and
+  temporary ingest and the external credential-reference class in `src/data/`.
+  A second owner for one class is refused, and a class no owner registered is
+  named in every plan and never acted on;
+- retention reports bytes and item counts per class against budgets a caller
+  supplies, and enforces nothing. The walk is bounded and never follows a
+  symlink; a walk that stops at its bound reports `unmeasured` rather than a
+  verdict drawn from a number it knows is short;
+- reset and uninstall produce a plan naming every class, its exact paths, its
+  counts, what is preserved, and what is out of scope. Execution requires a
+  confirmation carrying that exact plan's identity, and the identity is
+  re-derived from the plan's own content, so a plan edited after being shown is
+  refused;
+- the executor re-checks every path against the layout at delete time, removes
+  a symlink as a link without touching its target, refuses a directory that
+  resolves outside its root, is idempotent, and reports deleted, retained, and
+  failed as three separate facts. A partial removal reports `partial`, never
+  `completed`; and
+- uninstall's blast radius is bounded by what owners registered. A fixture
+  containing a project, a shell startup file, a package-manager directory, and a
+  user export proves none of them appears in a plan or is removed, and a user's
+  own exports are out of scope for both actions.
+
+Startup reconciliation of temporary ingest reports every entry it finds as
+`uncertain` and removes nothing. Whether a leftover file represents finished
+work is knowable only by the owner that wrote it, and no such owner exists yet.
+
+**macOS is the qualified target.** The Linux XDG and Windows layouts are
+declared so the layout is not macOS-shaped by accident, and both are marked
+unqualified: they resolve, and nothing claims they were verified on those
+targets.
+
 The wiring introduced by
 [#296](https://github.com/yogeshprasad098/falryn/issues/296) connects those
 parts into one lifecycle. `src/application/runtime-lifecycle.ts` constructs the
@@ -277,6 +340,12 @@ which is why neither is recorded now. Exact output belongs to the pull request
 that observed it, which is dated by its own merge and is never re-read as a
 current claim.
 
+A separate compiled probe confirmed that root resolution produces byte-identical
+output in source mode and in a Bun standalone executable, both for platform
+defaults and for an environment override. The probe is not part of `bun run
+check`; `src/main.ts` composes no local-data service, so nothing in the shipped
+bootstrap resolves a root.
+
 The compiled file is a development bootstrap artifact. It is not a supported
 Falryn product binary or release. A separate compiled probe confirmed that a
 `SIGINT` delivered to a Bun standalone executable reaches the runtime lifecycle,
@@ -294,12 +363,22 @@ repository does not yet provide:
   register from their own owner and none exist yet;
 - configuration sources, discovery, JSONC parsing, precedence, merge execution,
   provenance, generation publishing, or reload; credential resolution and
-  storage; local-data layout; SQLite; or artifacts. The key registry, defaults,
-  validation, and schema-version policy exist and nothing calls them yet: no
-  file is read, no layer is composed, and no `configuration.generation.changed`
-  event is produced. A configuration *generation* identity is carried through
+  storage; SQLite; or artifacts. The key registry, defaults, validation, and
+  schema-version policy exist and nothing calls them yet: no file is read, no
+  layer is composed, and no `configuration.generation.changed` event is
+  produced. A configuration *generation* identity is carried through
   `RuntimeContext`, and session, turn, and event *identities* exist — what does
   not exist is anything that produces or persists them;
+- any composition of the local-data service. Roots, ownership classes,
+  retention reporting, removal planning, guarded execution, and reconciliation
+  exist and are tested, and `src/main.ts` constructs none of them, so no
+  directory is created and nothing is measured or removed on a real run. The
+  owners that will register the remaining ownership classes — SQLite state,
+  artifacts, memory, extensions, exports — do not exist, and each is reported as
+  unregistered rather than assumed absent;
+- the command surfaces that would show a reset or uninstall plan and collect its
+  confirmation. This area produces the plan and the typed outcome; rendering
+  them and asking is the CLI's;
 - yargs commands, headless product behavior, or the OpenTUI application;
 - provider integration, model routing, the agent loop, or unified tool
   execution;
