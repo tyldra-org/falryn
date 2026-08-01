@@ -562,8 +562,9 @@ an executable that does not exist.
 One limitation observed by that check: the process lingers for one full shutdown
 phase grace after its work is done. The delay is in the lifecycle owner rather
 than in storage — a bare `createRuntimeLifecycle` plus `requestShutdown` shows
-the same wait with no database composed — and it is recorded here rather than
-fixed in a data change.
+the same wait with no database composed — and it is tracked as
+[#316](https://github.com/yogeshprasad098/falryn/issues/316) rather than fixed in
+a data change.
 
 No module or test count is recorded here. Re-running these commands re-proves
 that they pass, but it re-proves no count, so a count decays silently between

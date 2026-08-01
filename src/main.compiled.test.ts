@@ -49,8 +49,8 @@ const built = await stat(EXECUTABLE)
  *
  * Generous because the process currently lingers for one full shutdown phase
  * grace after its work is done — an uncleared phase timer in the lifecycle
- * owner, unrelated to storage, tracked separately. The check is about what the
- * executable produces, not how fast it exits.
+ * owner, unrelated to storage, tracked as falryn#316. The check is about what
+ * the executable produces, not how fast it exits.
  */
 const COMPILED_RUN_TIMEOUT_MS = 30_000;
 
