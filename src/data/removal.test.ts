@@ -399,6 +399,144 @@ describe("executing a removal", () => {
   });
 });
 
+describe("a removal that stops before it finishes", () => {
+  /** Aborts once `trigger` has been removed, so the abort lands between calls. */
+  function abortingAfter(
+    fileSystem: ReturnType<typeof createInMemoryFileSystem>,
+    controller: AbortController,
+    trigger: string,
+  ): ReturnType<typeof createInMemoryFileSystem> {
+    const remove = fileSystem.removeEntry.bind(fileSystem);
+    return Object.assign(fileSystem, {
+      removeEntry: async (path: Parameters<typeof remove>[0], signal?: AbortSignal) => {
+        const result = await remove(path, signal);
+        if (path === localPath(trigger)) {
+          controller.abort();
+        }
+        return result;
+      },
+    });
+  }
+
+  test("reports partial, never completed, when a class is left untouched", async () => {
+    const fileSystem = createInMemoryFileSystem({ nodes: TREE });
+    const inputs = inputsFor(fileSystem, ALL_V0_1);
+    const plan = await planReset(inputs, { classes: ["configuration", "logs"] });
+    const controller = new AbortController();
+    abortingAfter(fileSystem, controller, "/d/config");
+
+    const outcome = await executeRemoval(
+      fileSystem,
+      inputs.layout,
+      plan,
+      { planId: plan.planId },
+      controller.signal,
+    );
+
+    expect(outcome.ok).toBe(true);
+    if (outcome.ok) {
+      // The log class was selected and is still on disk. Saying `completed`
+      // here would tell a user their logs are gone when they are not.
+      expect(outcome.value.effect).toBe("partial");
+      expect(outcome.value.completeness).toBe("partial");
+    }
+    expect(fileSystem.paths()).toContain(localPath("/d/logs/old.log"));
+  });
+
+  test("marks what it never reached as not-reached, not as out of scope", async () => {
+    const fileSystem = createInMemoryFileSystem({ nodes: TREE });
+    const inputs = inputsFor(fileSystem, ALL_V0_1);
+    const plan = await planReset(inputs, { classes: ["configuration", "logs"] });
+    const controller = new AbortController();
+    abortingAfter(fileSystem, controller, "/d/config");
+
+    const outcome = await executeRemoval(
+      fileSystem,
+      inputs.layout,
+      plan,
+      { planId: plan.planId },
+      controller.signal,
+    );
+
+    expect(outcome.ok).toBe(true);
+    if (outcome.ok) {
+      // `out-of-scope` means the plan decided this stays. Nothing decided this.
+      expect(outcome.value.retained).toContainEqual({
+        path: localPath("/d/logs"),
+        reason: "not-reached",
+      });
+      expect(
+        outcome.value.retained.filter(
+          (entry) => entry.path === localPath("/d/logs") && entry.reason === "out-of-scope",
+        ),
+      ).toEqual([]);
+    }
+  });
+
+  test("still reports what it did delete before it stopped", async () => {
+    const fileSystem = createInMemoryFileSystem({ nodes: TREE });
+    const inputs = inputsFor(fileSystem, ALL_V0_1);
+    const plan = await planReset(inputs, { classes: ["configuration", "logs"] });
+    const controller = new AbortController();
+    abortingAfter(fileSystem, controller, "/d/config");
+
+    const outcome = await executeRemoval(
+      fileSystem,
+      inputs.layout,
+      plan,
+      { planId: plan.planId },
+      controller.signal,
+    );
+
+    expect(outcome.ok).toBe(true);
+    if (outcome.ok) {
+      // A refusal would claim the operation did not happen, and by now some
+      // bytes are already gone.
+      expect(outcome.value.deleted).toContain(localPath("/d/config/settings.jsonc"));
+    }
+    expect(fileSystem.paths()).not.toContain(localPath("/d/config"));
+  });
+
+  test("an abort landing inside a call is partial too", async () => {
+    const fileSystem = createInMemoryFileSystem({ nodes: TREE });
+    const inputs = inputsFor(fileSystem, ALL_V0_1);
+    const plan = await planReset(inputs, { classes: ["logs"] });
+    const controller = new AbortController();
+    abortingAfter(fileSystem, controller, "/d/logs/old.log");
+
+    const outcome = await executeRemoval(
+      fileSystem,
+      inputs.layout,
+      plan,
+      { planId: plan.planId },
+      controller.signal,
+    );
+
+    expect(outcome.ok).toBe(true);
+    if (outcome.ok) {
+      expect(outcome.value.effect).toBe("partial");
+      expect(outcome.value.completeness).toBe("partial");
+    }
+  });
+
+  test("a completed removal reports complete", async () => {
+    const fileSystem = createInMemoryFileSystem({ nodes: TREE });
+    const inputs = inputsFor(fileSystem, ALL_V0_1);
+    const plan = await planReset(inputs, { classes: ["logs"] });
+
+    const outcome = await executeRemoval(fileSystem, inputs.layout, plan, {
+      planId: plan.planId,
+    });
+
+    expect(outcome.ok).toBe(true);
+    if (outcome.ok) {
+      expect(outcome.value.completeness).toBe("complete");
+      expect(outcome.value.effect).toBe("completed");
+      expect(outcome.value.retained.some((entry) => entry.reason === "not-reached")).toBe(false);
+    }
+  });
+});
+
 describe("symlink safety", () => {
   test("a symlink out of a root is removed as a link, and its target is not", async () => {
     const fileSystem = createInMemoryFileSystem({

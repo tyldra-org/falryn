@@ -23,7 +23,6 @@ import {
   type MeasurementCompleteness,
   type OwnershipClass,
   type OwnershipRegistration,
-  type PathEntry,
   type QuotaPressure,
   type RetentionPolicy,
   type RetentionReport,
@@ -247,9 +246,4 @@ export function owningRoot(
     }
   }
   return null;
-}
-
-/** Sorts entries deepest-first, so a directory is removed after its children. */
-export function deepestFirst(entries: readonly PathEntry[]): readonly PathEntry[] {
-  return [...entries].sort((left, right) => right.path.length - left.path.length);
 }

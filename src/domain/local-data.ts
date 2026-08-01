@@ -331,6 +331,15 @@ export const RETENTION_REASONS = [
   "out-of-scope",
   "escapes-registered-root",
   "unregistered-class",
+  /**
+   * Execution stopped before it got here.
+   *
+   * Distinct from every reason above, all of which mean the plan decided this
+   * path stays. This one means nothing decided anything — the run was cancelled
+   * or hit a bound — and reporting it as a deliberate exclusion would tell a
+   * user their data was spared on purpose when it was merely missed.
+   */
+  "not-reached",
 ] as const;
 
 export type RetentionReason = (typeof RETENTION_REASONS)[number];
@@ -358,6 +367,15 @@ export type RemovalOutcome = {
   readonly deleted: readonly LocalPath[];
   readonly retained: readonly RetainedPath[];
   readonly failed: readonly FailedPath[];
+  /**
+   * Whether execution reached everything the plan named.
+   *
+   * `partial` after a cancellation or a bound, even when nothing failed. The
+   * plan carries the same field for its measurement; an outcome needs it for
+   * the same reason — a run that stopped early has not disproved anything about
+   * the paths it never looked at.
+   */
+  readonly completeness: MeasurementCompleteness;
   readonly effect: EffectCertainty;
 };
 

@@ -47,6 +47,19 @@ import {
 } from "../domain/index.ts";
 import { MAX_MEASURED_ENTRIES, measureClass, owningRoot, pathsForClass } from "./retention.ts";
 
+/**
+ * Re-reads the abort flag without letting the compiler narrow it away.
+ *
+ * `AbortSignal.aborted` is a mutable getter, but it is typed as a readonly
+ * property, so a direct `signal?.aborted === true` early in a function narrows
+ * every later read of it to `false` and TypeScript rejects the re-check as
+ * unreachable. Reading it through a call is what keeps the second and third
+ * checks — the ones that catch an abort arriving mid-run — real.
+ */
+function isAborted(signal: AbortSignal | undefined): boolean {
+  return signal?.aborted === true;
+}
+
 /** Entries one execution will visit. Bounds the work a plan can authorize. */
 export const MAX_REMOVED_ENTRIES = 200_000;
 
@@ -241,6 +254,8 @@ type Collected = {
   readonly deleted: LocalPath[];
   readonly retained: RetainedPath[];
   readonly failed: FailedPath[];
+  /** Set when a cancellation or a bound stopped the walk before it finished. */
+  stoppedEarly: boolean;
 };
 
 /**
@@ -249,6 +264,12 @@ type Collected = {
  * The plan is re-derived from its own classes before anything is touched, so a
  * caller cannot hand over a plan whose `planId` was edited to match a
  * confirmation for something else.
+ *
+ * Cancellation after the first deletion returns an outcome rather than a
+ * refusal. A refusal would say the operation did not happen, and by then some
+ * bytes are already gone — so the run reports what it deleted, marks itself
+ * `partial`, and records everything it never reached as `not-reached` rather
+ * than as a path the plan chose to keep.
  */
 export async function executeRemoval(
   fileSystem: FileSystemPort,
@@ -261,11 +282,11 @@ export async function executeRemoval(
   if (expected !== confirmation.planId || expected !== plan.planId) {
     return err({ code: "plan-mismatch", expected, confirmed: confirmation.planId });
   }
-  if (signal?.aborted === true) {
+  if (isAborted(signal)) {
     return err({ code: "cancelled" });
   }
 
-  const collected: Collected = { deleted: [], retained: [], failed: [] };
+  const collected: Collected = { deleted: [], retained: [], failed: [], stoppedEarly: false };
   const budget = { remaining: MAX_REMOVED_ENTRIES };
 
   for (const entry of plan.classes) {
@@ -279,6 +300,14 @@ export async function executeRemoval(
       continue;
     }
     for (const path of entry.paths) {
+      // Checked per class, not once before the loop. An abort that lands
+      // between two classes would otherwise leave the remaining ones silently
+      // absent from a report that claimed to be complete.
+      if (isAborted(signal)) {
+        collected.stoppedEarly = true;
+        collected.retained.push({ path, reason: "not-reached" });
+        continue;
+      }
       await removeTree(fileSystem, layout, path, collected, budget, 0, signal);
     }
   }
@@ -289,6 +318,7 @@ export async function executeRemoval(
     deleted: collected.deleted,
     retained: collected.retained,
     failed: collected.failed,
+    completeness: collected.stoppedEarly ? "partial" : "complete",
     effect: effectFor(collected),
   });
 }
@@ -298,17 +328,19 @@ function reasonFor(entry: PlannedClass): RetainedPath["reason"] {
 }
 
 /**
- * Deleted, retained, and failed, folded into one certainty.
+ * Deleted, retained, failed, and stopped-early, folded into one certainty.
  *
- * Anything that failed after something else was deleted is `partial`, never
- * `completed`: some bytes are gone and some are not, and that is precisely the
- * state a caller must not mistake for either extreme.
+ * Anything that failed *or was never reached* after something else was deleted
+ * is `partial`, never `completed`: some bytes are gone and some are not, and
+ * that is precisely the state a caller must not mistake for either extreme. A
+ * run that stopped before deleting anything changed nothing, which is `none`.
  */
 function effectFor(collected: Collected): EffectCertainty {
-  if (collected.failed.length > 0) {
-    return collected.deleted.length > 0 ? "partial" : "none";
+  const changedSomething = collected.deleted.length > 0;
+  if (collected.failed.length > 0 || collected.stoppedEarly) {
+    return changedSomething ? "partial" : "none";
   }
-  return collected.deleted.length > 0 ? "completed" : "none";
+  return changedSomething ? "completed" : "none";
 }
 
 async function removeTree(
@@ -320,8 +352,12 @@ async function removeTree(
   depth: number,
   signal?: AbortSignal,
 ): Promise<void> {
-  if (signal?.aborted === true || budget.remaining <= 0 || depth > MAX_REMOVAL_DEPTH) {
-    collected.retained.push({ path, reason: "out-of-scope" });
+  // Three different ways to stop short, and none of them is a decision that
+  // this path should survive. Reporting them as `out-of-scope` would tell a
+  // user their data was deliberately spared when it was merely missed.
+  if (isAborted(signal) || budget.remaining <= 0 || depth > MAX_REMOVAL_DEPTH) {
+    collected.stoppedEarly = true;
+    collected.retained.push({ path, reason: "not-reached" });
     return;
   }
 

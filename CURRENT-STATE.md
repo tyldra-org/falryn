@@ -259,8 +259,12 @@ Its verified behavior:
 - the executor re-checks every path against the layout at delete time, removes
   a symlink as a link without touching its target, refuses a directory that
   resolves outside its root, is idempotent, and reports deleted, retained, and
-  failed as three separate facts. A partial removal reports `partial`, never
-  `completed`; and
+  failed as three separate facts. A removal that failed on some paths, or that a
+  cancellation or a bound stopped before it reached them, reports `partial` and
+  a `partial` completeness — never `completed`. A path it never reached is
+  recorded as `not-reached` rather than as one the plan chose to keep, and a
+  cancellation after the first deletion returns that outcome rather than a
+  refusal, because by then some bytes are already gone; and
 - uninstall's blast radius is bounded by what owners registered. A fixture
   containing a project, a shell startup file, a package-manager directory, and a
   user export proves none of them appears in a plan or is removed, and a user's
