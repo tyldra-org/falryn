@@ -449,6 +449,47 @@ export {
 } from "./shutdown.ts";
 export type { InterruptSignal, ManualSignalPort, SignalPort, Unsubscribe } from "./signal.ts";
 export { createManualSignalPort, INTERRUPT_SIGNALS } from "./signal.ts";
+export type {
+  AppliedMigration,
+  Migration,
+  MigrationSetError,
+  MigrationSetErrorCode,
+  SqliteBindings,
+  SqliteCloseReport,
+  SqliteConnectionPort,
+  SqliteFailure,
+  SqliteFailureCode,
+  SqliteOpener,
+  SqliteOpenOptions,
+  SqliteOpenReport,
+  SqliteOperation,
+  SqliteRow,
+  SqliteRunOutcome,
+  SqliteStatements,
+  SqliteStoreError,
+  SqliteStoreFailure,
+  SqliteStoreOptions,
+  SqliteStorePort,
+  SqliteTransactionKind,
+  SqliteValue,
+  SqliteWriteOutcome,
+} from "./sqlite.ts";
+export {
+  DEFAULT_BUSY_TIMEOUT_MS,
+  INITIAL_SCHEMA_VERSION,
+  isCleanClose,
+  MAX_BUSY_TIMEOUT_MS,
+  MAX_INTEGRITY_PROBLEMS,
+  MAX_MIGRATION_NAME_LENGTH,
+  MAX_MIGRATIONS,
+  MAX_SQLITE_DETAIL_LENGTH,
+  MIN_BUSY_TIMEOUT_MS,
+  migrationChecksum,
+  SQLITE_FAILURE_CODES,
+  SQLITE_OPERATIONS,
+  SQLITE_TRANSACTION_KINDS,
+  SqliteWorkError,
+} from "./sqlite.ts";
 export type { StoredEvent } from "./stored-event.ts";
 export { fromStoredEvent, toStoredEvent } from "./stored-event.ts";
 export type { Timestamp, TimestampError } from "./time.ts";

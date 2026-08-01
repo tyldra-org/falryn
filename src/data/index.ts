@@ -7,7 +7,9 @@
  * wired at the composition root, which is what keeps every removal rule
  * testable without a real disk.
  *
- * It owns no database, no artifact bytes, and no export format.
+ * It owns Falryn's one database through `sqlite-store.ts` — its open sequence,
+ * pragmas, migration runner, transaction boundary, and close path — and no
+ * artifact bytes and no export format.
  */
 
 export type { LocalDataService, LocalDataServiceOptions } from "./local-data-service.ts";
@@ -49,3 +51,18 @@ export {
   rootChild,
   usableRoots,
 } from "./roots.ts";
+export {
+  latestVersion,
+  PRODUCTION_MIGRATIONS,
+  validateMigrationSet,
+} from "./sqlite-migrations.ts";
+export {
+  createSqliteShutdownParticipant,
+  MIGRATION_TABLE,
+  openSqliteStore,
+  SQLITE_DATABASE_FILE,
+  SQLITE_PARTICIPANT_NAME,
+  SQLITE_STATE_OWNERSHIP,
+  sqliteDatabasePath,
+  storeErrorForFailure,
+} from "./sqlite-store.ts";

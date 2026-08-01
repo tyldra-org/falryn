@@ -8,10 +8,13 @@ import type {
 } from "../domain/index.ts";
 import {
   configurationKeyPath,
+  DEFAULT_BUSY_TIMEOUT_MS,
   DIAGNOSTIC_LEVELS,
+  MAX_BUSY_TIMEOUT_MS,
   MAX_DEBUG_WINDOW_MS,
   MAX_DIAGNOSTIC_CARDINALITY,
   MAX_RETAINED_DIAGNOSTICS,
+  MIN_BUSY_TIMEOUT_MS,
   UNLIMITED,
 } from "../domain/index.ts";
 import {
@@ -89,6 +92,41 @@ describe("the v0.1 catalog", () => {
         expect(descriptor.defaultValue).toBeNull();
       }
     }
+  });
+
+  test("declares the SQLite busy timeout with its unit, bounds, and scopes", () => {
+    const descriptor = port.describe("data.sqlite.busyTimeoutMs");
+
+    expect(descriptor).toMatchObject({
+      valueType: "integer",
+      unit: "milliseconds",
+      minimum: MIN_BUSY_TIMEOUT_MS,
+      maximum: MAX_BUSY_TIMEOUT_MS,
+      defaultValue: DEFAULT_BUSY_TIMEOUT_MS,
+      scopes: ["user", "environment", "cli"],
+      // Applied once when the connection opens, so a change takes effect on the
+      // next run rather than on the next operation.
+      applicationClass: "application-restart",
+      sensitivity: "public",
+    });
+  });
+
+  test("declares no key that could change SQLite's durability semantics", () => {
+    // Journal mode, foreign keys, and `synchronous` are owned centrally on
+    // purpose: a user who turned foreign keys off would silently change a
+    // guarantee the data owner exists to hold.
+    const sqliteKeys = port
+      .keys()
+      .filter((descriptor) => descriptor.path.startsWith("data.sqlite."))
+      .map((descriptor) => String(descriptor.path));
+    expect(sqliteKeys).toEqual(["data.sqlite.busyTimeoutMs"]);
+  });
+
+  test("declares no key that relocates the database, only the state root", () => {
+    // Relocating the database means relocating the `state` root through the
+    // existing key, not adding a second path key that could disagree with it.
+    expect(port.describe("data.sqlite.path")).toBeNull();
+    expect(port.describe("data.roots.state")).not.toBeNull();
   });
 
   test("declares map merging only for the retention map", () => {
@@ -194,6 +232,22 @@ describe("invalid values per declared type, range, and unit", () => {
       unit: "items",
       minimum: 1,
       maximum: MAX_RETAINED_DIAGNOSTICS,
+    });
+  });
+
+  test("a busy timeout outside its declared range is an error, not a clamp", () => {
+    const result = port.validateLayer(
+      document({ data: { sqlite: { busyTimeoutMs: MAX_BUSY_TIMEOUT_MS + 1 } } }),
+      USER_LAYER,
+    );
+    expect(result.ok).toBe(false);
+    expect(firstIssue(result.issues)).toEqual({
+      kind: "out-of-range",
+      severity: "error",
+      path: "data.sqlite.busyTimeoutMs",
+      unit: "milliseconds",
+      minimum: MIN_BUSY_TIMEOUT_MS,
+      maximum: MAX_BUSY_TIMEOUT_MS,
     });
   });
 
