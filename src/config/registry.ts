@@ -241,8 +241,9 @@ export function createConfigurationRegistry(
         return layer;
       }
       const effective = foldOverDefaults(descriptors, defaults(), layer.values);
+      const folded = revalidateFolded(entries, layer.values, effective);
       const conflicts = crossValidate(effective);
-      const issues = [...layer.issues, ...conflicts];
+      const issues = [...layer.issues, ...folded, ...conflicts];
       return issues.some(isBlockingIssue)
         ? { ok: false, issues }
         : { ok: true, values: effective, issues };
@@ -265,6 +266,40 @@ export function createConfigurationRegistry(
       }
     },
   };
+}
+
+/**
+ * Checks each folded value against the declaration that bounds it.
+ *
+ * Per-key validation runs on what a document *said*, and a fold can produce a
+ * value neither side stated: a `merge-by-identity` list at exactly its maximum,
+ * folded onto a non-empty default, is longer than either input and longer than
+ * the key allows. A declared bound the effective value does not obey is the
+ * same defect as a silent clamp.
+ *
+ * Every folded key is rechecked, not only the ones whose merge grows a value.
+ * Rechecking a `replace` is provably redundant today, and paying that to have
+ * the guarantee hold for whatever merge behavior is declared next is the right
+ * trade — the alternative is a rule that silently stops covering a new shape.
+ */
+function revalidateFolded(
+  entries: ReadonlyMap<string, Entry>,
+  layerValues: ConfigurationValues,
+  effective: ConfigurationValues,
+): readonly ConfigurationIssue[] {
+  const issues: ConfigurationIssue[] = [];
+  for (const path of Object.keys(layerValues)) {
+    const declaration = entries.get(path)?.declaration;
+    const value = effective[path];
+    if (declaration === undefined || value === undefined) {
+      continue;
+    }
+    const rechecked = declaration.validate(value);
+    if (!rechecked.ok) {
+      issues.push(...rechecked.error);
+    }
+  }
+  return issues;
 }
 
 /**

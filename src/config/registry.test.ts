@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { z } from "zod";
 
 import { createRuntimeRedactor, REDACTED } from "../application/index.ts";
 import type {
@@ -7,6 +8,7 @@ import type {
   ConfigurationValue,
 } from "../domain/index.ts";
 import { configurationKeyPath } from "../domain/index.ts";
+import { type ConfigurationKeyDeclaration, identifiedArrayKey } from "./declaration.ts";
 import {
   FIXTURE_CREDENTIAL_KEY,
   FIXTURE_CROSS_FIELD_RULE,
@@ -29,6 +31,20 @@ function registry(redactor = MARKING_REDACTOR) {
 
 function document(body: Record<string, unknown>, schemaVersion = 1): Record<string, unknown> {
   return { [SCHEMA_VERSION_FIELD]: schemaVersion, ...body };
+}
+
+/** The identified-list key with nothing to fold onto, for the positive control. */
+function emptyDefaultList(maximumItems: number): ConfigurationKeyDeclaration {
+  return identifiedArrayKey({
+    path: "fixture.list",
+    summary: "A list whose default is empty.",
+    identityField: "name",
+    elementSchema: z.strictObject({ name: z.string().min(1).max(64), enabled: z.boolean() }),
+    defaultValue: [],
+    maximumItems,
+    scopes: ["user", "project"],
+    applicationClass: "application-restart",
+  });
 }
 
 function kinds(issues: readonly ConfigurationIssue[]): readonly string[] {
@@ -388,6 +404,87 @@ describe("cross-field validation", () => {
         { name: "second", enabled: false },
         { name: "third", enabled: true },
       ]);
+    }
+  });
+
+  test("a fold that exceeds the key's declared maximum is rejected", () => {
+    const port = registry();
+    const maximum = port.describe("fixture.list")?.maximum ?? 0;
+    // At the bound on its own, and every name new — so the fold appends the
+    // default's entries on top of a list that was already full.
+    const list = Array.from({ length: maximum }, (_value, index) => ({
+      name: `fresh-${index}`,
+      enabled: true,
+    }));
+
+    expect(port.validateLayer(document({ fixture: { list } }), USER_LAYER).ok).toBe(true);
+
+    const result = port.validateComplete(document({ fixture: { list } }), USER_LAYER);
+    expect(result.ok).toBe(false);
+    expect(result.issues).toContainEqual({
+      kind: "out-of-range",
+      severity: "error",
+      path: "fixture.list",
+      unit: "items",
+      minimum: 0,
+      maximum,
+    });
+  });
+
+  test("the same layer folded onto an empty default is accepted", () => {
+    const port = createConfigurationRegistry({
+      declarations: FIXTURE_KEYS.map((declaration) =>
+        declaration.descriptor.path === "fixture.list"
+          ? emptyDefaultList(declaration.descriptor.maximum ?? 16)
+          : declaration,
+      ),
+      redactor: MARKING_REDACTOR,
+    });
+    const maximum = port.describe("fixture.list")?.maximum ?? 0;
+    const list = Array.from({ length: maximum }, (_value, index) => ({
+      name: `fresh-${index}`,
+      enabled: true,
+    }));
+
+    const result = port.validateComplete(document({ fixture: { list } }), USER_LAYER);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect((result.values["fixture.list"] as readonly unknown[]).length).toBe(maximum);
+    }
+  });
+
+  test("amending existing identities stays within the bound however tight it is", () => {
+    // Nothing is appended, so the folded length equals the default's. A rule
+    // that counted the inputs instead of the result would reject this.
+    const result = registry().validateComplete(
+      document({
+        fixture: {
+          list: [
+            { name: "builtin", enabled: false },
+            { name: "second", enabled: false },
+          ],
+        },
+      }),
+      USER_LAYER,
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.values["fixture.list"]).toEqual([
+        { name: "builtin", enabled: false },
+        { name: "second", enabled: false },
+      ]);
+    }
+  });
+
+  test("a fold within its bound is untouched by the recheck", () => {
+    const result = registry().validateComplete(
+      document({ fixture: { list: [{ name: "third", enabled: true }] } }),
+      USER_LAYER,
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect((result.values["fixture.list"] as readonly unknown[]).length).toBe(3);
+      expect(result.issues).toEqual([]);
     }
   });
 
