@@ -88,6 +88,21 @@ export {
   scopeForSourceKind,
   UNLIMITED,
 } from "./configuration.ts";
+export type {
+  ConfigurationChange,
+  ConfigurationGenerationRecord,
+  ConfigurationInspection,
+  ConfigurationLoadOutcome,
+  ConfigurationSource,
+  InspectedValue,
+  OverriddenValue,
+  ParseFailure,
+  SourceOutcome,
+  SourcePosition,
+  SourceReport,
+  ValueProvenance,
+} from "./configuration-source.ts";
+export { CONFIGURATION_LAYER_ORDER, SOURCE_OUTCOMES } from "./configuration-source.ts";
 export type { Deadline } from "./deadline.ts";
 export {
   deadlineAt,

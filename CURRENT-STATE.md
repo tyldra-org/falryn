@@ -217,6 +217,59 @@ merge-by-identity list, the declared-sensitive value, and the credential
 reference are proven against fixture registries rather than against an invented
 product key.
 
+The configuration load lifecycle introduced by
+[#8](https://github.com/yogeshprasad098/falryn/issues/8) adds the source,
+provenance, and generation contracts to `src/domain/`, a bounded `readText` to
+`FileSystemPort`, and discovery, JSONC parsing, composition, diffing,
+classification, publishing, and the inspection projection to `src/config/`.
+`jsonc-parser 3.3.1` enters as a product dependency, so the standalone
+executable now bundles it.
+
+Its verified behavior:
+
+- **six ordered layers** — built-in defaults, user file, project file, selected
+  profile, environment bridge, CLI override — with precedence declared as data
+  rather than as the order a function calls things in;
+- discovery reads bytes and executes nothing. The project source resolves from a
+  caller-supplied workspace path rather than by walking ancestors or consulting
+  Git, and a profile name that is not a legal file name is refused rather than
+  sanitized into a different profile;
+- every failure mode of a source is its own reported outcome — absent, empty,
+  unreadable, oversized, mis-encoded, malformed, rejected — and one bad file
+  never stops the other layers loading;
+- JSONC with comments and trailing commas is accepted; a file that is only
+  comments is an empty document rather than a syntax error; a malformed file
+  reports a line and a column and never a fragment of its text;
+- merging is schema-defined per key across layers, using the same fold the
+  registry applies between a document and the defaults, and the folded result is
+  rechecked against the declaration that bounds it;
+- every effective value carries provenance — source, scope, layer index, schema
+  version, and redacted original — and every value a later layer beat is kept,
+  so inspection answers "where did this come from and what did it beat" without
+  re-reading a file;
+- **the environment bridge reads only keys that declare a mapping.** It never
+  scans for names that look like settings, and a CLI path nothing declares is an
+  unknown key rather than a silent no-op;
+- cross-field rules run over the composed whole, so a conflict that no single
+  layer contains still fails;
+- a change publishes the next generation and appends one
+  `configuration.generation.changed` event keyed by the generation, so a
+  re-append is a duplicate rather than a second event. A refresh that changes
+  nothing publishes no generation and appends nothing;
+- each change carries its key's declared application class, and a refresh
+  reports the strongest class among them — applying the live half of a mixed
+  refresh and calling it done would leave the restart half configured and not in
+  effect; and
+- **an invalid refresh leaves the last valid generation active**, with the
+  reason reported. Composition succeeding while publication fails is a separate
+  outcome again, because valid values nobody was told about must not take hold
+  silently.
+
+The redacted inspection projection is a data structure: effective value rendered
+through each key's declared sensitivity, winning source, overridden values, the
+per-source reports, and diagnostics. Rendering it for humans or machines is
+#18's and #19's.
+
 The local-data layout introduced by
 [#10](https://github.com/yogeshprasad098/falryn/issues/10) adds `FileSystemPort`,
 `EnvironmentPort`, and the local-data contracts — roots, ownership classes,
@@ -320,15 +373,16 @@ Two limitations of that wiring:
   to fold into. Changing that would change the eviction policy, which #299's
   non-goals excluded.
 
-**`RuntimeEvent` has no production producer yet.** All eight declared kinds
-describe sessions, turns, model attempts, and capability invocations, and the
-runtime backbone has none of those concepts. The envelope, sequencer, and
-in-memory store are implemented and tested but are not emitted from anywhere;
-their first real producers are
-[#13](https://github.com/yogeshprasad098/falryn/issues/13) for sessions and
-turns and [#40](https://github.com/yogeshprasad098/falryn/issues/40) for model
-and capability kinds. Inventing scope or scheduler event kinds to fill the gap
-would create events with no consumer.
+**One `RuntimeEvent` kind now has a production producer.** The configuration
+loader appends `configuration.generation.changed` whenever it publishes a
+generation, through the in-memory store #2 shipped; durable persistence stays
+with [#13](https://github.com/yogeshprasad098/falryn/issues/13). The remaining
+seven kinds describe sessions, turns, model attempts, and capability
+invocations, and the runtime backbone still has none of those concepts — their
+first producers are #13 for sessions and turns and
+[#40](https://github.com/yogeshprasad098/falryn/issues/40) for model and
+capability kinds. Inventing scope or scheduler event kinds to fill the gap would
+create events with no consumer.
 
 `src/main.ts` composes the cancellation lifecycle, so the compiled executable includes
 the domain, application, and integration layers and the real process-signal
@@ -370,14 +424,16 @@ repository does not yet provide:
 - the shutdown participants other than the scheduler drain — persistence,
   artifact finalize, child-process termination, and terminal restoration each
   register from their own owner and none exist yet;
-- configuration sources, discovery, JSONC parsing, precedence, merge execution,
-  provenance, generation publishing, or reload; credential resolution and
-  storage; SQLite; or artifacts. The key registry, defaults, validation, and
-  schema-version policy exist and nothing calls them yet: no file is read, no
-  layer is composed, and no `configuration.generation.changed` event is
-  produced. A configuration *generation* identity is carried through
-  `RuntimeContext`, and session, turn, and event *identities* exist — what does
-  not exist is anything that produces or persists them;
+- watching configuration sources, and writing configuration files. Nothing in
+  v0.1 runs long enough to observe a live reload and nothing sets a value, so a
+  watcher and a serializer would be scaffolding with no caller. Refresh is an
+  explicit call carrying the complete diff, classification, and publish path;
+- credential resolution and storage; SQLite; or artifacts. A session, turn, and
+  event *identity* exists — what does not exist is anything that produces or
+  persists those;
+- any composition of the configuration loader into a running program.
+  `src/main.ts` constructs no loader, so no configuration file is read on a real
+  run;
 - any composition of the local-data service. Roots, ownership classes,
   retention reporting, removal planning, guarded execution, and reconciliation
   exist and are tested, and `src/main.ts` constructs none of them, so no
