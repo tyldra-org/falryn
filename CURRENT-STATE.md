@@ -235,8 +235,12 @@ Its verified behavior:
   Git, and a profile name that is not a legal file name is refused rather than
   sanitized into a different profile;
 - every failure mode of a source is its own reported outcome — absent, empty,
-  unreadable, oversized, mis-encoded, malformed, rejected — and one bad file
-  never stops the other layers loading;
+  unreadable, oversized, mis-encoded, malformed, rejected — and the load fails
+  closed on bad *content* and open on an unavailable *source*. A source that
+  could not be read at all is skipped and the load publishes without it; a
+  source that was read and does not describe a valid configuration refuses the
+  whole load and retains the previous generation. Silently dropping a file whose
+  key was mistyped would be the same failure as accepting the typo;
 - JSONC with comments and trailing commas is accepted; a file that is only
   comments is an empty document rather than a syntax error; a malformed file
   reports a line and a column and never a fragment of its text;

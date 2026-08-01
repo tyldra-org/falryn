@@ -346,6 +346,59 @@ describe("reading sources", () => {
   });
 });
 
+describe("failing closed on content, open on availability", () => {
+  const GOOD = `{ "schemaVersion": 1, "diagnostics": { "level": "warn" } }`;
+
+  test("an unavailable source is skipped and the rest still publish", async () => {
+    const { loader } = harness({
+      nodes: { [USER_FILE]: file(GOOD) },
+      // The project source does not exist at all.
+    });
+    const outcome = published(await loader.load(REQUEST));
+
+    expect(outcome.record.values["diagnostics.level"]).toBe("warn");
+    expect(
+      outcome.record.sources.find((entry) => entry.source.kind === "project-file")?.outcome,
+    ).toBe("absent");
+  });
+
+  test("a source that was read but is invalid refuses the whole load", async () => {
+    const { loader } = harness({
+      nodes: {
+        [USER_FILE]: file(GOOD),
+        [PROJECT_FILE]: file(`{ "schemaVersion": 1, "diagnostics": { "levl": "warn" } }`),
+      },
+    });
+    const outcome = await loader.load(REQUEST);
+
+    // The valid user file does *not* take effect. Dropping the mistyped file
+    // and carrying on would apply a configuration the user did not write, which
+    // is the same failure as accepting the typo.
+    expect(outcome.kind).toBe("rejected");
+  });
+
+  test("a malformed source refuses the load even beside a valid one", async () => {
+    const { loader } = harness({
+      nodes: {
+        [USER_FILE]: file(GOOD),
+        [PROJECT_FILE]: file(`{ "schemaVersion": 1, `),
+      },
+    });
+    expect((await loader.load(REQUEST)).kind).toBe("rejected");
+  });
+
+  test("an oversized source is skipped, because it was never read", async () => {
+    const { loader } = harness({
+      nodes: {
+        [USER_FILE]: file(GOOD),
+        [PROJECT_FILE]: { kind: "file", text: "{}", byteLength: 10_000_000 },
+      },
+    });
+    const outcome = published(await loader.load(REQUEST));
+    expect(outcome.record.values["diagnostics.level"]).toBe("warn");
+  });
+});
+
 describe("invalid content", () => {
   test("an unknown key in one file rejects the load and keeps the last generation", async () => {
     const { loader } = harness({

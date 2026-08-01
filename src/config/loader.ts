@@ -155,9 +155,12 @@ export function createConfigurationLoader(
         };
         const validated = options.registry.validateLayer(read.document, context);
         if (!validated.ok) {
-          // The file parsed but does not describe a valid configuration. It
-          // contributes nothing and says why, and the load continues so that
-          // one bad file cannot take every other source down with it.
+          // The file parsed but does not describe a valid configuration. The
+          // loop continues so that every source still gets a report, but the
+          // issues it raises are blocking, so the load as a whole is refused
+          // below and the previous generation stays in effect. Dropping the
+          // file and carrying on would apply a configuration the user did not
+          // write — the same failure as accepting the mistyped key.
           reports.push({
             source: read.source,
             outcome: "rejected",
@@ -278,6 +281,15 @@ function pushSupplied(
  * The idempotency key is the generation itself, so re-appending a generation is
  * a duplicate receipt rather than a second event — which is what makes a retry
  * after an ambiguous failure safe.
+ *
+ * That identity is unique per loader, not per machine: generation numbering
+ * restarts at zero with each loader, as does the stream sequence. Against the
+ * in-memory store both are correct, because the store's lifetime is the
+ * loader's. Once persistence outlives the process, a second run's generation
+ * zero would collide with the first's, and both the generation counter and the
+ * sequence need to resume from what was stored rather than from their first
+ * value. That is the persistence owner's to resolve, and it is why neither
+ * counter is treated here as durable.
  */
 async function appendGenerationEvent(
   options: ConfigurationLoaderOptions,

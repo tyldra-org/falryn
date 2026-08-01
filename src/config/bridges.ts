@@ -29,8 +29,6 @@ import {
 export type BridgeResult = {
   readonly values: ConfigurationValues;
   readonly issues: readonly ConfigurationIssue[];
-  /** Variables that were set but map to no key. Reported, never applied. */
-  readonly ignored: readonly string[];
 };
 
 /**
@@ -63,7 +61,7 @@ export function readEnvironmentLayer(
     values[descriptor.path] = coerced;
   }
 
-  return { values, issues, ignored: [] };
+  return { values, issues };
 }
 
 /**
@@ -80,13 +78,11 @@ export function readOverrideLayer(
 ): BridgeResult {
   const values: Record<string, ConfigurationValue> = {};
   const issues: ConfigurationIssue[] = [];
-  const ignored: string[] = [];
 
   for (const [path, raw] of Object.entries(overrides)) {
     const resolution = registry.resolve(path);
     if (resolution.kind === "unknown") {
       issues.push({ kind: "unknown-key", severity: "error", path });
-      ignored.push(path);
       continue;
     }
     const { descriptor } = resolution;
@@ -98,7 +94,7 @@ export function readOverrideLayer(
     values[descriptor.path] = coerced;
   }
 
-  return { values, issues, ignored };
+  return { values, issues };
 }
 
 function invalidFor(descriptor: ConfigurationKeyDescriptor): ConfigurationIssue {

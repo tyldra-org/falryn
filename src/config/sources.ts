@@ -135,9 +135,11 @@ export type ReadSource = {
 /**
  * Reads and parses one discovered source.
  *
- * Nothing here throws and nothing here stops the load: a source that could not
- * be used contributes no values and reports why, so one unreadable file cannot
- * take the whole configuration down with it.
+ * Nothing here throws. A source that could not be read contributes no values
+ * and reports why; whether that refuses the whole load is the loader's
+ * decision, not this function's. Reading is separated from deciding precisely
+ * so that "the file is missing" and "the file is wrong" can be answered
+ * differently.
  */
 export async function readSource(
   fileSystem: FileSystemPort,

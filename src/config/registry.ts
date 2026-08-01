@@ -337,8 +337,6 @@ function foldOverDefaults(
  * folds across two, and a second implementation of the same rule is a second
  * chance to get it wrong.
  *
- * One key's declared merge.
- *
  * A shape mismatch falls back to replacement rather than guessing: a base that
  * is not the shape the declaration describes cannot be merged into, and
  * inventing a combination there would be exactly the accidental deep merge this
