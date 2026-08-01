@@ -27,7 +27,6 @@ import {
   type ConfigurationValue,
   type ConfigurationValues,
   configurationKeyPath,
-  isBlockingIssue,
   type OverriddenValue,
   type SensitiveValueRedactor,
   type ValueProvenance,
@@ -166,18 +165,6 @@ function applyLayer(layer: LayerInput, layerIndex: number, context: ApplyContext
       redactedOriginal: context.registry.render(path, incoming),
     });
   }
-}
-
-/** Cross-field rules over the composed whole, after every layer has folded. */
-export function crossValidateComposition(
-  registry: ConfigurationRegistryPort,
-  composition: Composition,
-): readonly ConfigurationIssue[] {
-  return registry.crossValidate(composition.values);
-}
-
-export function hasBlockingIssue(issues: readonly ConfigurationIssue[]): boolean {
-  return issues.some(isBlockingIssue);
 }
 
 /** The keys one layer contributed, for its source report. */
