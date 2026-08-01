@@ -11,6 +11,7 @@
  * value could escape into a log, so it does not trust its callers.
  */
 
+import type { OwnershipRegistration } from "../domain/index.ts";
 import {
   type ClockPort,
   type CorrelationIds,
@@ -29,6 +30,22 @@ import { redactMetadata, redactText } from "./redaction.ts";
 
 /** Events discarded per trim, so trimming is amortized rather than per-event. */
 const TRIM_CHUNK = 256;
+
+/**
+ * This subsystem's claim on the log ownership class.
+ *
+ * Declared beside the collector because an owner registers its own class. Logs
+ * rotate and are cleaned by retention, so they are safe to remove on a scoped
+ * reset — unlike the user-authored classes beside them.
+ */
+export const DIAGNOSTICS_OWNERSHIP: OwnershipRegistration = {
+  ownershipClass: "logs",
+  owner: "diagnostics",
+  durability: "rotating",
+  removalPosture: "retention-cleanup",
+  roots: ["logs"],
+  external: false,
+};
 
 export type EmitRequest = {
   readonly level: DiagnosticLevel;

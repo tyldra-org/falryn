@@ -14,7 +14,7 @@ export { createBoundedQueue } from "./bounded-queue.ts";
 export type { BudgetLedger } from "./budget-ledger.ts";
 export { createBudgetLedger, MAX_BUDGET_DEPTH } from "./budget-ledger.ts";
 export type { DiagnosticsCollector, EmitOutcome, EmitRequest } from "./diagnostics-collector.ts";
-export { createDiagnosticsCollector } from "./diagnostics-collector.ts";
+export { createDiagnosticsCollector, DIAGNOSTICS_OWNERSHIP } from "./diagnostics-collector.ts";
 export type { ErrorContext } from "./error-translation.ts";
 export {
   adoptForeignError,

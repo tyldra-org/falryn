@@ -37,6 +37,7 @@ export {
   V0_1_CONFIGURATION_KEYS,
   V0_1_CROSS_FIELD_RULES,
 } from "./keys.ts";
+export { CONFIGURATION_OWNERSHIP } from "./ownership.ts";
 export type {
   ConfigurationCrossFieldRule,
   ConfigurationRegistryOptions,

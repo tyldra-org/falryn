@@ -116,6 +116,8 @@ export {
   MAX_DIAGNOSTIC_VALUE_LENGTH,
   MAX_RETAINED_DIAGNOSTICS,
 } from "./diagnostics.ts";
+export type { EnvironmentPort } from "./environment.ts";
+export { createStaticEnvironment } from "./environment.ts";
 export type {
   CorrelationIds,
   ErrorCategory,
@@ -176,6 +178,29 @@ export type {
 } from "./event-store.ts";
 export { createInMemoryEventStore } from "./event-store.ts";
 export type {
+  CreateDirectoryOutcome,
+  FileKind,
+  FileSystemError,
+  FileSystemErrorCode,
+  FileSystemOperation,
+  FileSystemPort,
+  InMemoryFileSystemOptions,
+  InMemoryNode,
+  LocalPath,
+  LocalPathError,
+  LocalPathErrorCode,
+  PathEntry,
+} from "./filesystem.ts";
+export {
+  baseName,
+  createInMemoryFileSystem,
+  isInside,
+  joinPath,
+  localPath,
+  MAX_LOCAL_PATH_LENGTH,
+  parseLocalPath,
+} from "./filesystem.ts";
+export type {
   CapabilityId,
   ConfigurationGeneration,
   EventId,
@@ -220,6 +245,59 @@ export {
   RUNTIME_EVENT_SCHEMA_FAMILY,
   RUNTIME_EVENT_SCHEMA_VERSION,
 } from "./limits.ts";
+export type {
+  ClassBudget,
+  ClassPressure,
+  ClassUsage,
+  DurabilityClass,
+  FailedPath,
+  LocalDataPlatform,
+  LocalDataRoot,
+  MeasurementCompleteness,
+  OutOfScopeCategory,
+  OwnershipClass,
+  OwnershipRegistration,
+  PlanId,
+  PlannedAction,
+  PlannedClass,
+  PlannedReason,
+  QuotaPressure,
+  ReconciledEntry,
+  ReconciliationReport,
+  RegistrationError,
+  RegistrationErrorCode,
+  RemovalConfirmation,
+  RemovalKind,
+  RemovalOutcome,
+  RemovalPlan,
+  RemovalPosture,
+  RemovalRefusal,
+  ResolvedRoot,
+  RetainedPath,
+  RetentionPolicy,
+  RetentionReason,
+  RetentionReport,
+  RootLayout,
+  RootProvenance,
+  RootStatus,
+  RootStatusCode,
+} from "./local-data.ts";
+export {
+  DURABILITY_CLASSES,
+  isLocalDataRoot,
+  isOwnershipClass,
+  isRootUsable,
+  LOCAL_DATA_PLATFORMS,
+  LOCAL_DATA_ROOTS,
+  OUT_OF_SCOPE_CATEGORIES,
+  OWNERSHIP_CLASSES,
+  PLANNED_ACTIONS,
+  PLANNED_REASONS,
+  QUOTA_PRESSURES,
+  REMOVAL_POSTURES,
+  RETENTION_REASONS,
+  ROOT_STATUS_CODES,
+} from "./local-data.ts";
 export type { EffectCertainty, TerminalOutcome, TerminalOutcomeKind } from "./outcome.ts";
 export {
   EFFECT_CERTAINTIES,
