@@ -135,3 +135,87 @@ describe("the source tree", () => {
     expect(owners.map((file) => relative(SQL_OWNER, file))).toEqual(["sqlite-store.ts"]);
   });
 });
+
+describe("the event store", () => {
+  test("has exactly one durable implementation", async () => {
+    const implementations: string[] = [];
+    for (const file of await sourceFiles()) {
+      if (!isProduct(file) || file === SELF) {
+        continue;
+      }
+      if ((await readSource(file)).includes("EventStorePort = {")) {
+        implementations.push(file);
+      }
+    }
+    // The port is declared once. A second declaration would be a second
+    // persistence interface, which is exactly what the port exists to prevent.
+    expect(implementations).toEqual(["domain/event-store.ts"]);
+
+    const factories: string[] = [];
+    for (const file of await sourceFiles()) {
+      if (!isProduct(file) || file === SELF) {
+        continue;
+      }
+      const source = await readSource(file);
+      if (source.includes("export function createSqliteEventStore")) {
+        factories.push(file);
+      }
+    }
+    expect(factories).toEqual(["data/event-store.ts"]);
+  });
+
+  test("keeps the in-memory double in the domain, as a double", async () => {
+    // Neither deleted nor promoted to a fallback: it is what lets everything
+    // above persistence be tested without a disk.
+    expect(await readSource("domain/event-store.ts")).toContain(
+      "export function createInMemoryEventStore",
+    );
+  });
+});
+
+describe("row shapes and the database handle", () => {
+  test("reach no provider, UI, extension, or agent path", async () => {
+    // The three tokens that would mean a caller is holding storage rather than
+    // records: a row, a statement, and the store itself.
+    const storageTokens = /\b(SqliteRow|SqliteStatements|SqliteStorePort|SqliteBindings)\b/;
+    const offenders: string[] = [];
+    for (const file of await sourceFiles()) {
+      if (!isProduct(file) || file === SELF) {
+        continue;
+      }
+      if (file.startsWith("domain/") || file.startsWith(SQL_OWNER) || file === ADAPTER) {
+        continue;
+      }
+      if (storageTokens.test(await readSource(file))) {
+        offenders.push(file);
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  test("do not appear in the composition root either", async () => {
+    // The bootstrap wires the store into its owners and never reads a row
+    // itself, so it has no reason to name one.
+    const source = await readSource("main.ts");
+    expect(source).not.toMatch(/\b(SqliteRow|SqliteStatements)\b/);
+  });
+});
+
+describe("the product tables", () => {
+  test("are named only by the area that owns their SQL", async () => {
+    // Snake-cased identifiers only. `sessions` and `turns` are also ordinary
+    // English, so matching them would flag prose rather than a leaked schema.
+    const tables =
+      /\b(model_attempts|projection_cursors|stream_id|outcome_kind|outcome_effect|input_digest|last_applied_sequence)\b/;
+    const offenders: string[] = [];
+    for (const file of await sourceFiles()) {
+      if (!isProduct(file) || file === SELF || file.startsWith(SQL_OWNER)) {
+        continue;
+      }
+      if (tables.test(await readSource(file))) {
+        offenders.push(file);
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+});

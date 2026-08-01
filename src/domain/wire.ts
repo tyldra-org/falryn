@@ -9,6 +9,13 @@
 
 import { z } from "zod";
 
+import {
+  brandedInteger,
+  brandedString,
+  terminalOutcomeSchema,
+  timestampSchema,
+  toCodecIssues,
+} from "./branded-schema.ts";
 import type { CodecIssue } from "./codec-error.ts";
 import {
   CONFIGURATION_APPLICATION_CLASSES,
@@ -25,8 +32,6 @@ import {
   capabilityId,
   configurationGeneration,
   eventId,
-  type IdentifierCodec,
-  type IntegerCodec,
   idempotencyKey,
   invocationId,
   modelAttemptId,
@@ -37,56 +42,9 @@ import {
   turnId,
   workspaceId,
 } from "./identity.ts";
-import { EFFECT_CERTAINTIES, type TerminalOutcome } from "./outcome.ts";
-import { parseTimestamp } from "./time.ts";
-
-function brandedString<Id extends string>(codec: IdentifierCodec<Id>): z.ZodType<Id> {
-  return z.string().transform((value, ctx) => {
-    const parsed = codec.parse(value);
-    if (!parsed.ok) {
-      ctx.addIssue({ code: "custom", message: parsed.error.code });
-      return z.NEVER;
-    }
-    return parsed.value;
-  });
-}
-
-function brandedInteger<Value extends number>(codec: IntegerCodec<Value>): z.ZodType<Value> {
-  return z.number().transform((value, ctx) => {
-    const parsed = codec.parse(value);
-    if (!parsed.ok) {
-      ctx.addIssue({ code: "custom", message: parsed.error.code });
-      return z.NEVER;
-    }
-    return parsed.value;
-  });
-}
-
-const timestampSchema = z.string().transform((value, ctx) => {
-  const parsed = parseTimestamp(value);
-  if (!parsed.ok) {
-    ctx.addIssue({ code: "custom", message: parsed.error.code });
-    return z.NEVER;
-  }
-  return parsed.value;
-});
+import type { TerminalOutcome } from "./outcome.ts";
 
 const schemaVersionSchema = z.int().min(1);
-
-const effectSchema = z.literal(EFFECT_CERTAINTIES);
-
-/**
- * `completed` carries no effect field: a completed operation applied its
- * effect by definition, and `uncertain` is pinned so an uncertain outcome can
- * never claim a settled effect.
- */
-const terminalOutcomeSchema: z.ZodType<TerminalOutcome> = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("completed") }),
-  z.object({ kind: z.literal("failed"), effect: effectSchema }),
-  z.object({ kind: z.literal("cancelled"), effect: effectSchema }),
-  z.object({ kind: z.literal("timed-out"), effect: effectSchema }),
-  z.object({ kind: z.literal("uncertain"), effect: z.literal("uncertain") }),
-]);
 
 const sessionCorrelationSchema: z.ZodType<SessionCorrelation> = z.object({
   workspaceId: brandedString(workspaceId),
@@ -203,13 +161,6 @@ export function parseWireEvent(value: unknown): WireParseResult {
     return { ok: true, event: result.data };
   }
   return { ok: false, issues: toCodecIssues(result.error) };
-}
-
-function toCodecIssues(error: z.ZodError): readonly CodecIssue[] {
-  return error.issues.map((issue) => ({
-    path: issue.path.map((segment) => String(segment)).join("."),
-    code: issue.code,
-  }));
 }
 
 function correlationToJson(

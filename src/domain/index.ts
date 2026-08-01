@@ -6,6 +6,13 @@
  * domain itself imports no framework, transport, or storage types.
  */
 
+export {
+  brandedInteger,
+  brandedString,
+  terminalOutcomeSchema,
+  timestampSchema,
+  toCodecIssues,
+} from "./branded-schema.ts";
 export type {
   BudgetAmounts,
   BudgetDimension,
@@ -261,6 +268,8 @@ export type {
   IntegerCodec,
   InvocationId,
   ModelAttemptId,
+  ModelId,
+  ProviderId,
   ScopeId,
   Sequence,
   SessionId,
@@ -278,7 +287,9 @@ export {
   idempotencyKey,
   invocationId,
   modelAttemptId,
+  modelId,
   nextSequence,
+  providerId,
   scopeId,
   sequence,
   sessionId,
@@ -368,6 +379,23 @@ export {
   MAX_COMMAND_OUTPUT_BYTES,
 } from "./process.ts";
 export type {
+  ProjectionCheckpointReport,
+  ProjectionCursor,
+  ProjectionError,
+  ProjectionName,
+  ProjectionRunReport,
+  RecordCompletion,
+} from "./projection.ts";
+export {
+  isProjectionName,
+  MAX_CHECKPOINTED_STREAMS,
+  PROJECTION_NAMES,
+  PROJECTION_PAGE_SIZE,
+  parseProjectionCursor,
+  reduceCompletions,
+  TERMINAL_OUTCOME_PROJECTION_GENERATION,
+} from "./projection.ts";
+export type {
   ArtifactHandle,
   ArtifactSpillPort,
   EnqueueOutcome,
@@ -379,6 +407,35 @@ export type {
   QueueReport,
 } from "./queue.ts";
 export { OVERFLOW_POLICIES } from "./queue.ts";
+export type {
+  InvocationRecord,
+  InvocationRepositoryPort,
+  ModelAttemptRecord,
+  ModelAttemptRepositoryPort,
+  RecordCompletionInput,
+  RecordEntity,
+  RecordError,
+  RecordRepositories,
+  RecordRepositoryPort,
+  RecordWrite,
+  SessionRecord,
+  SessionRepositoryPort,
+  SessionView,
+  TurnRecord,
+  TurnRepositoryPort,
+  TurnView,
+} from "./records.ts";
+export {
+  MAX_INPUT_DIGEST_LENGTH,
+  MAX_RECORD_LIST_LIMIT,
+  MAX_SESSION_TITLE_LENGTH,
+  outcomeFromColumns,
+  parseInvocationRecord,
+  parseModelAttemptRecord,
+  parseSessionRecord,
+  parseTurnRecord,
+  RECORD_ENTITIES,
+} from "./records.ts";
 export type { Err, Ok, Result } from "./result.ts";
 export { assertNever, err, ok } from "./result.ts";
 export type { RetryBackoff, RetryDecision, RetryRefusal, RetryRequest } from "./retry.ts";

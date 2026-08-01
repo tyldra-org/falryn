@@ -17,7 +17,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtemp, readdir, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { MIGRATION_TABLE } from "./data/index.ts";
+import { MIGRATION_TABLE, PRODUCT_SCHEMA_VERSION, PRODUCT_TABLES } from "./data/index.ts";
 import { type LocalPath, localPath } from "./domain/index.ts";
 import { openBunSqlite } from "./integrations/index.ts";
 
@@ -94,10 +94,15 @@ describe.if(built)("the standalone executable", () => {
       const tables = opened.value.all(
         "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name",
       );
-      // The v0.1 production set is empty, so the runner's own table is the whole
-      // schema — and its presence proves the runner ran rather than being
-      // optimized away.
-      expect(tables).toEqual([{ name: MIGRATION_TABLE }]);
+      // The runner's own table plus every product table migration 0001
+      // declares. SQL kept in a file tree would need a loader to be embedded,
+      // so a missing table here is exactly the failure this check exists for.
+      expect(tables).toEqual([MIGRATION_TABLE, ...PRODUCT_TABLES].sort().map((name) => ({ name })));
+
+      const version = opened.value.all(
+        `SELECT COALESCE(MAX(version), 0) AS recordedVersion FROM ${MIGRATION_TABLE}`,
+      );
+      expect(version).toEqual([{ recordedVersion: PRODUCT_SCHEMA_VERSION }]);
       await opened.value.close();
     },
     COMPILED_RUN_TIMEOUT_MS,

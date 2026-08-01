@@ -215,6 +215,12 @@ export function fromEventStoreError(
       ...context,
     });
   }
+  if (error.code === "storage") {
+    // Translated by the store's own owner rather than re-summarized here: a
+    // busy database, a full disk, and a closed connection each carry an
+    // operation and an effect certainty that this layer would have to discard.
+    return fromSqliteStoreError(error.error, context);
+  }
   return build({
     code: "data.event-store.invalid-read-limit",
     category: "data",

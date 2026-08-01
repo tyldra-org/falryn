@@ -17,7 +17,10 @@ describe("append", () => {
     const store = createInMemoryEventStore();
     for (const event of everyEventKind()) {
       const receipt = await store.append(event);
-      expect(receipt).toEqual({ ok: true, value: { kind: "appended", sequence: event.sequence } });
+      expect(receipt).toEqual({
+        ok: true,
+        value: { kind: "appended", sequence: event.sequence, cancelledAfterCommit: false },
+      });
     }
   });
 
@@ -26,7 +29,10 @@ describe("append", () => {
     const event = sessionStarted(1);
     await store.append(event);
     const retry = await store.append(event);
-    expect(retry).toEqual({ ok: true, value: { kind: "duplicate", sequence: event.sequence } });
+    expect(retry).toEqual({
+      ok: true,
+      value: { kind: "duplicate", sequence: event.sequence, cancelledAfterCommit: false },
+    });
 
     const read = await store.readFrom({ streamId: FIXTURE_STREAM, afterSequence: null }, 10);
     expect(read.ok).toBe(true);
