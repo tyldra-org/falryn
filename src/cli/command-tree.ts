@@ -34,6 +34,15 @@ import type { CommandId } from "./result.ts";
 export const SCRIPT_NAME = "falryn";
 
 /**
+ * A command the tree can dispatch.
+ *
+ * `help` and `version` are answered by their own invocation kinds, so they are
+ * excluded here rather than being reachable as a run — which is what lets the
+ * dispatch switch be exhaustive without branches that cannot happen.
+ */
+export type RunnableCommand = Exclude<CommandId, "help" | "version">;
+
+/**
  * What parsing an argument vector produced.
  *
  * A closed union rather than a partly-filled record: an invocation that failed
@@ -42,7 +51,7 @@ export const SCRIPT_NAME = "falryn";
  */
 export type Invocation =
   /** Run this command with these options. */
-  | { readonly kind: "run"; readonly command: CommandId; readonly options: GlobalOptions }
+  | { readonly kind: "run"; readonly command: RunnableCommand; readonly options: GlobalOptions }
   /** Show help. `topic` is `null` for the root, or the subcommand asked about. */
   | { readonly kind: "help"; readonly topic: string | null; readonly options: GlobalOptions }
   | { readonly kind: "version"; readonly options: GlobalOptions }
@@ -255,7 +264,7 @@ async function parseForHelp(
 }
 
 /** The command a positional vector names, or `null` when it names none. */
-function commandFrom(positional: readonly string[], action: string | null): CommandId | null {
+function commandFrom(positional: readonly string[], action: string | null): RunnableCommand | null {
   const [group] = positional;
   if (group === undefined) {
     // The no-argument invocation. It prints help and exits 0 until #21 lands
