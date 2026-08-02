@@ -705,6 +705,45 @@ export {
 } from "./sqlite.ts";
 export type { StoredEvent } from "./stored-event.ts";
 export { fromStoredEvent, toStoredEvent } from "./stored-event.ts";
+export type {
+  ColorLevel,
+  FlushReport,
+  FlushStatus,
+  HandleFacts,
+  InputStreamPort,
+  ObservedHandles,
+  OutputStreamPort,
+  RecordingOutputStream,
+  RecordingOutputStreamOptions,
+  StaticInputStreamOptions,
+  StdinContent,
+  StdinError,
+  StreamCapability,
+  StreamWrite,
+  StreamWriteStatus,
+  TerminalCapabilities,
+} from "./terminal.ts";
+export {
+  COLOR_LEVELS,
+  colorLevelFor,
+  createRecordingOutputStream,
+  createStaticInputStream,
+  DEFAULT_STDIN_MAX_BYTES,
+  DETACHED_HANDLE,
+  DETACHED_HANDLES,
+  decodeStdin,
+  FLUSH_STATUSES,
+  isCompleteFlush,
+  isReadableBound,
+  MAX_STDIN_BYTES,
+  MAX_STREAM_WRITE_BYTES,
+  MAX_TERMINAL_COLUMNS,
+  MIN_TERMINAL_COLUMNS,
+  STDIN_ENCODING,
+  STREAM_WRITE_STATUSES,
+  terminalCapabilities,
+  terminalSize,
+} from "./terminal.ts";
 export type { Timestamp, TimestampError } from "./time.ts";
 export {
   parseTimestamp,
