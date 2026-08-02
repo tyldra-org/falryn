@@ -929,12 +929,14 @@ same database on a second run. Without a build the check
 reports itself as skipped rather than passing on an executable that does not
 exist.
 
-One limitation observed by that check: the process lingers for one full shutdown
-phase grace after its work is done. The delay is in the lifecycle owner rather
-than in storage — a bare `createRuntimeLifecycle` plus `requestShutdown` shows
-the same wait with no database composed — and it is tracked as
-[#316](https://github.com/yogeshprasad098/falryn/issues/316) rather than fixed in
-a data change.
+A run now exits as soon as its work is done. It previously lingered for one full
+shutdown phase grace: each phase armed a deadline wait through `ClockPort` and,
+when its participants finished first, the losing wait stayed armed — `Promise.race`
+settles but does not cancel — so the host kept the process alive for a timer
+whose answer was already known. The coordinator now releases that wait the moment
+the race is decided, by completion, deadline, or escalation. `src/main.test.ts`
+measures the latency on a real spawned process rather than trusting the report,
+which had always claimed every phase finished in milliseconds.
 
 No module or test count is recorded here. Re-running these commands re-proves
 that they pass, but it re-proves no count, so a count decays silently between
