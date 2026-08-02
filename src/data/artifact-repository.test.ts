@@ -15,6 +15,7 @@ import {
   invocationId,
   type LocalPath,
   MAX_ARTIFACT_LIST_LIMIT,
+  runId,
   type SqliteStorePort,
   type Timestamp,
 } from "../domain/index.ts";
@@ -28,6 +29,7 @@ import {
 } from "./fixtures.ts";
 
 const FINALIZED = "2026-07-31T12:00:05.000Z" as Timestamp;
+const THIS_RUN = runId.from("run-this");
 const DIGEST = fixtureDigest("a");
 const OTHER_DIGEST = fixtureDigest("b");
 
@@ -39,7 +41,21 @@ async function openRepository(): Promise<{
 }> {
   const root: LocalPath = await makeTemporaryRoot("falryn-artifact-repo-");
   const store = await openProductStoreOrThrow(root);
-  return { store, repository: createArtifactRepository(store) };
+  // A real run, because every reserved row is stamped with the run that made
+  // it and `foreign_keys = ON` means the row has to exist.
+  insertRun(store);
+  return { store, repository: createArtifactRepository(store, THIS_RUN) };
+}
+
+/** The run whose ingest these rows belong to. */
+function insertRun(store: SqliteStorePort): void {
+  store.write((statements) =>
+    statements.run(
+      `INSERT INTO runs (run_id, started_at, ended_at, schema_version)
+       VALUES ($runId, '2026-07-31T12:00:00.000Z', NULL, 3)`,
+      { runId: THIS_RUN },
+    ),
+  );
 }
 
 /** An invocation row, so the artifact's foreign key has something to point at. */

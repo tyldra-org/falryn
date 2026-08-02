@@ -335,6 +335,7 @@ export type {
   ModelAttemptId,
   ModelId,
   ProviderId,
+  RunId,
   ScopeId,
   Sequence,
   SessionId,
@@ -355,6 +356,7 @@ export {
   modelId,
   nextSequence,
   providerId,
+  runId,
   scopeId,
   sequence,
   sessionId,
@@ -507,6 +509,29 @@ export type { Err, Ok, Result } from "./result.ts";
 export { assertNever, err, ok } from "./result.ts";
 export type { RetryBackoff, RetryDecision, RetryRefusal, RetryRequest } from "./retry.ts";
 export { backoffDelayMs, DEFAULT_RETRY_BACKOFF, evaluateRetry } from "./retry.ts";
+export type {
+  ArtifactRecoveryOutcome,
+  CrashSignals,
+  RecoveryCount,
+  RecoveryError,
+  RecoveryReport,
+  RunRecord,
+  TemporaryBlobOutcome,
+} from "./run.ts";
+export {
+  ARTIFACT_RECOVERY_OUTCOMES,
+  DEFAULT_RECOVERY_WINDOW_MS,
+  isPresumedLive,
+  MAX_RECOVERED_ARTIFACTS,
+  MAX_RECOVERED_BLOBS,
+  MAX_RECOVERED_RECORDS,
+  MAX_RECOVERY_VERIFIED_BYTES,
+  MAX_RECOVERY_WINDOW_MS,
+  MIN_RECOVERY_WINDOW_MS,
+  NO_CRASH_SIGNALS,
+  parseRunRecord,
+  TEMPORARY_BLOB_OUTCOMES,
+} from "./run.ts";
 export type {
   QueueDepthByPriority,
   RecoveryOption,

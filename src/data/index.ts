@@ -18,12 +18,13 @@ export {
   ARTIFACTS_TABLE,
   MIGRATION_0002,
 } from "./artifact-schema.ts";
-export type { ArtifactStoreOptions, DurableArtifactStore } from "./artifact-store.ts";
+export type { ArtifactStoreOptions, DurableArtifactStore, StoredBytes } from "./artifact-store.ts";
 export {
   ARTIFACT_PARTICIPANT_NAME,
   createArtifactShutdownParticipant,
   createArtifactStore,
   VERIFICATION_CHUNK_BYTES,
+  verifyStoredBytes,
 } from "./artifact-store.ts";
 export type { DurableEventStore, StreamHead } from "./event-store.ts";
 export {
@@ -47,6 +48,15 @@ export {
   PROJECTION_PARTICIPANT_NAME,
 } from "./projections.ts";
 export { MAX_RECONCILED_ENTRIES, reconcileTemporaryIngest } from "./reconciliation.ts";
+export type { BeginRunOptions, RecoveryOptions, RunSession } from "./recovery.ts";
+export {
+  beginRun,
+  createRunShutdownParticipant,
+  isCompleteRecovery,
+  probeCrashSignals,
+  RUN_PARTICIPANT_NAME,
+  recoverInterruptedWork,
+} from "./recovery.ts";
 export type { PlanInputs, ResetSelection } from "./removal.ts";
 export {
   computePlanId,
@@ -84,6 +94,7 @@ export {
   rootChild,
   usableRoots,
 } from "./roots.ts";
+export { MIGRATION_0003, RUN_SCHEMA_VERSION, RUNS_TABLE } from "./run-schema.ts";
 export {
   EVENTS_TABLE,
   INVOCATIONS_TABLE,

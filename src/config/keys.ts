@@ -33,14 +33,17 @@ import {
   configurationKeyPath,
   DEFAULT_ARTIFACT_MAX_BYTES,
   DEFAULT_BUSY_TIMEOUT_MS,
+  DEFAULT_RECOVERY_WINDOW_MS,
   DIAGNOSTIC_LEVELS,
   MAX_ARTIFACT_BYTES,
   MAX_BUSY_TIMEOUT_MS,
   MAX_DEBUG_PREVIEWS,
   MAX_DEBUG_WINDOW_MS,
   MAX_DIAGNOSTIC_CARDINALITY,
+  MAX_RECOVERY_WINDOW_MS,
   MAX_RETAINED_DIAGNOSTICS,
   MIN_BUSY_TIMEOUT_MS,
+  MIN_RECOVERY_WINDOW_MS,
   UNLIMITED,
 } from "../domain/index.ts";
 import {
@@ -201,6 +204,18 @@ export const DATA_KEYS: readonly ConfigurationKeyDeclaration[] = [
     // Read when an ingest begins, so the next artifact uses the new ceiling
     // without a restart. It never changes an artifact already stored.
     applicationClass: "next-operation",
+  }),
+  integerKey({
+    path: "data.recovery.windowMs",
+    summary: "How long startup recovery leaves in-flight bytes it cannot attribute.",
+    unit: "milliseconds",
+    minimum: MIN_RECOVERY_WINDOW_MS,
+    maximum: MAX_RECOVERY_WINDOW_MS,
+    defaultValue: DEFAULT_RECOVERY_WINDOW_MS,
+    scopes: ["user", "environment", "cli"],
+    // Read once, by the recovery pass that runs before anything else. Nothing
+    // re-reads it, so a change takes effect on the next run.
+    applicationClass: "application-restart",
   }),
   limitKey({
     path: "data.quotas.totalMaxBytes",
