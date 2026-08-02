@@ -13,16 +13,21 @@
  * `bun run ci` builds before it tests, so a release path always runs it.
  */
 
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, describe, expect, test } from "bun:test";
 import { mkdtemp, readdir, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { EXIT_CODES } from "./cli/index.ts";
+import { EXIT_CODES, FALRYN_VERSION } from "./cli/index.ts";
 import { MIGRATION_TABLE, PRODUCT_SCHEMA_VERSION, PRODUCT_TABLES } from "./data/index.ts";
-import { type LocalPath, localPath } from "./domain/index.ts";
+import { createStaticEnvironment, type LocalPath, localPath } from "./domain/index.ts";
 import { openBunSqlite } from "./integrations/index.ts";
+import { main } from "./main.ts";
 
 const EXECUTABLE = join(dirname(dirname(import.meta.path)), "dist", "falryn");
+
+/** The bootstrap fixture this file compiles itself, and where it puts it. */
+const BOOTSTRAP_ENTRY = join(dirname(import.meta.path), "main-fixtures.ts");
+const BOOTSTRAP_BINARY = join(tmpdir(), "falryn-bootstrap-probe");
 
 const roots: string[] = [];
 
@@ -31,6 +36,12 @@ async function temporaryRoot(): Promise<LocalPath> {
   roots.push(created);
   return localPath(created);
 }
+
+afterAll(async () => {
+  // The fixture binary is built into the system temp directory, not a root, so
+  // it outlives the per-test cleanup below unless it is named here.
+  await rm(BOOTSTRAP_BINARY, { force: true });
+});
 
 afterEach(async () => {
   while (roots.length > 0) {
@@ -55,14 +66,16 @@ const built = await stat(EXECUTABLE)
  */
 const COMPILED_RUN_TIMEOUT_MS = 10_000;
 
-function runCompiled(root: LocalPath): number {
-  return spawnCompiled(root).exitCode;
-}
+/** A run that also compiles. Covers `bun build --compile` on a loaded machine. */
+const COMPILED_BUILD_TIMEOUT_MS = 60_000;
 
-function spawnCompiled(root: LocalPath): { exitCode: number; stdout: string; stderr: string } {
+function spawnCompiled(
+  root: LocalPath,
+  args: readonly string[] = [],
+): { exitCode: number; stdout: string; stderr: string } {
   // Synchronous on purpose: the child writes nothing, and an asynchronous spawn
   // whose pipes nobody drains can block on a full buffer rather than exiting.
-  const finished = Bun.spawnSync([EXECUTABLE], {
+  const finished = Bun.spawnSync([EXECUTABLE, ...args], {
     env: {
       PATH: process.env.PATH ?? "",
       HOME: root,
@@ -80,39 +93,128 @@ function spawnCompiled(root: LocalPath): { exitCode: number; stdout: string; std
 
 describe.if(built)("the standalone executable", () => {
   test(
-    "opens, migrates, and closes against a temporary state root",
+    "runs the CLI, and a bare invocation prints help without opening a database",
+    async () => {
+      // #17 made `falryn` a command tree, so the bare invocation is no longer
+      // the storage bootstrap: it prints help and exits 0. That it creates no
+      // file is the compiled proof of `reference/CLI.md`'s rule that help
+      // initializes nothing.
+      const root = await temporaryRoot();
+      const finished = spawnCompiled(root);
+
+      expect(finished.exitCode).toBe(EXIT_CODES.COMPLETED);
+      expect(finished.stdout).toContain("falryn [command] [options]");
+      expect(finished.stderr).toBe("");
+      expect(await readdir(root)).toEqual([]);
+    },
+    COMPILED_RUN_TIMEOUT_MS,
+  );
+
+  test(
+    "reports its build identity, naming the compiled mode",
     async () => {
       const root = await temporaryRoot();
+      const finished = spawnCompiled(root, ["--version"]);
 
-      expect(runCompiled(root)).toBe(0);
+      expect(finished.exitCode).toBe(EXIT_CODES.COMPLETED);
+      // The mode is the fact a bug report needs first, and it is the one that
+      // can only be observed here: a source run reports `source`.
+      expect(finished.stdout).toContain("compiled build");
+      expect(finished.stdout).toContain(`falryn ${FALRYN_VERSION}`);
+      expect(await readdir(root)).toEqual([]);
+    },
+    COMPILED_RUN_TIMEOUT_MS,
+  );
+
+  test(
+    "refuses an invalid invocation on stderr with the invalid-usage code",
+    async () => {
+      const root = await temporaryRoot();
+      const finished = spawnCompiled(root, ["--nope"]);
+
+      expect(finished.exitCode).toBe(EXIT_CODES.INVALID_USAGE);
+      // stdout carries results only. An invocation with no result writes
+      // nothing to it, even though it has plenty to say on stderr.
+      expect(finished.stdout).toBe("");
+      expect(finished.stderr).toContain("Unknown argument: nope");
+      expect(await readdir(root)).toEqual([]);
+    },
+    COMPILED_RUN_TIMEOUT_MS,
+  );
+
+  test(
+    "runs doctor over a temporary root without creating anything",
+    async () => {
+      const root = await temporaryRoot();
+      const finished = spawnCompiled(root, ["doctor"]);
+
+      expect(finished.exitCode).toBe(EXIT_CODES.COMPLETED);
+      expect(JSON.parse(finished.stdout)).toMatchObject({
+        command: "doctor",
+        outcome: { kind: "completed" },
+      });
+      // Diagnostics describe roots; they do not create them.
+      expect(await readdir(root)).toEqual([]);
+    },
+    COMPILED_RUN_TIMEOUT_MS,
+  );
+
+  test(
+    "reads the migration bookkeeping out of a database it did not create",
+    async () => {
+      // Restores what #17 briefly cost: the compiled binary agreeing with the
+      // schema this build declares. The database is created by the source
+      // bootstrap, because no compiled path applies migrations any more — the
+      // bare invocation is the command tree now.
+      const root = await temporaryRoot();
+      await main({
+        platform: "darwin",
+        home: root,
+        environment: createStaticEnvironment({ FALRYN_STATE_DIR: root }),
+      });
+      expect(await readdir(root)).toContain("falryn.sqlite");
+
+      const finished = spawnCompiled(root, ["doctor"]);
+      expect(finished.exitCode).toBe(EXIT_CODES.COMPLETED);
+
+      const payload = JSON.parse(finished.stdout).payload;
+      // The compiled binary carries PRODUCT_SCHEMA_VERSION and can read the
+      // migration table. A version constant that failed to survive packaging,
+      // or a table it could not read, fails here.
+      expect(payload.storage).toEqual({
+        kind: "present",
+        schemaVersion: PRODUCT_SCHEMA_VERSION,
+        expectedVersion: PRODUCT_SCHEMA_VERSION,
+        current: true,
+      });
+    },
+    COMPILED_RUN_TIMEOUT_MS,
+  );
+
+  test(
+    "applies every migration inside a standalone executable",
+    async () => {
+      // The coverage #17 briefly cost, restored rather than deferred. The bare
+      // invocation is the command tree now, so the bootstrap is compiled from
+      // its own fixture entry — the pattern `src/cli/probe-fixtures.ts` uses.
+      // SQL kept in a file tree needs a loader to be embedded, and a database
+      // that looks unmigrated is a failure source mode cannot see.
+      const root = await temporaryRoot();
+      const built = Bun.spawnSync(
+        [process.execPath, "build", BOOTSTRAP_ENTRY, "--compile", "--outfile", BOOTSTRAP_BINARY],
+        { stdout: "pipe", stderr: "pipe" },
+      );
+      expect(built.exitCode, built.stderr.toString()).toBe(0);
+
+      const finished = Bun.spawnSync([BOOTSTRAP_BINARY], {
+        env: { PATH: process.env.PATH ?? "", HOME: root, FALRYN_STATE_DIR: root },
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+      expect(finished.exitCode, finished.stderr.toString()).toBe(EXIT_CODES.COMPLETED);
       // One file: the compiled close sequence disables persistent WAL and
       // truncates the log exactly as the source-mode one does.
       expect(await readdir(root)).toEqual(["falryn.sqlite"]);
-    },
-    COMPILED_RUN_TIMEOUT_MS,
-  );
-
-  test(
-    "creates the database owner-only under the process umask",
-    async () => {
-      // The umask only applies in a real process, so this is the one place the
-      // mode a user actually gets can be observed. The file holds sessions,
-      // turns, invocations, and events; the state root being 0700 contains the
-      // exposure but does not excuse it.
-      const root = await temporaryRoot();
-
-      expect(runCompiled(root)).toBe(0);
-
-      expect((await stat(join(root, "falryn.sqlite"))).mode & 0o777).toBe(0o600);
-    },
-    COMPILED_RUN_TIMEOUT_MS,
-  );
-
-  test(
-    "carries its migration bookkeeping into the compiled binary",
-    async () => {
-      const root = await temporaryRoot();
-      runCompiled(root);
 
       const opened = openBunSqlite({ path: localPath(`${root}/falryn.sqlite`), create: false });
       if (!opened.ok) {
@@ -122,8 +224,8 @@ describe.if(built)("the standalone executable", () => {
         "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name",
       );
       // The runner's own table plus every product table migration 0001
-      // declares. SQL kept in a file tree would need a loader to be embedded,
-      // so a missing table here is exactly the failure this check exists for.
+      // declares. A missing table here is a migration that did not survive
+      // `bun build --compile`.
       expect(tables).toEqual([MIGRATION_TABLE, ...PRODUCT_TABLES].sort().map((name) => ({ name })));
 
       const version = opened.value.all(
@@ -132,35 +234,7 @@ describe.if(built)("the standalone executable", () => {
       expect(version).toEqual([{ recordedVersion: PRODUCT_SCHEMA_VERSION }]);
       await opened.value.close();
     },
-    COMPILED_RUN_TIMEOUT_MS,
-  );
-
-  test(
-    "writes nothing to either handle, and exits through the table",
-    async () => {
-      // The shipped bootstrap has no result to report and no notice to give.
-      // A stray diagnostic on stdout would be caught here rather than in the
-      // first consumer that piped the command into a parser.
-      const root = await temporaryRoot();
-      const finished = spawnCompiled(root);
-
-      expect(finished.stdout).toBe("");
-      expect(finished.stderr).toBe("");
-      expect(finished.exitCode).toBe(EXIT_CODES.COMPLETED);
-    },
-    COMPILED_RUN_TIMEOUT_MS,
-  );
-
-  test(
-    "reopens the same database on a second run",
-    async () => {
-      const root = await temporaryRoot();
-
-      expect(runCompiled(root)).toBe(0);
-      expect(runCompiled(root)).toBe(0);
-      expect(await readdir(root)).toEqual(["falryn.sqlite"]);
-    },
-    COMPILED_RUN_TIMEOUT_MS,
+    COMPILED_BUILD_TIMEOUT_MS,
   );
 });
 

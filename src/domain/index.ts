@@ -370,8 +370,10 @@ export {
   isInside,
   joinPath,
   localPath,
+  localPathTextError,
   MAX_LOCAL_PATH_LENGTH,
   parseLocalPath,
+  resolveLocalPath,
 } from "./filesystem.ts";
 export type {
   CapabilityId,

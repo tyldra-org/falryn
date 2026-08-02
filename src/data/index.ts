@@ -132,3 +132,5 @@ export {
   sqliteDatabasePath,
   storeErrorForFailure,
 } from "./sqlite-store.ts";
+export type { StorageProbe, StorageProbeOptions } from "./storage-probe.ts";
+export { probeStorage } from "./storage-probe.ts";
