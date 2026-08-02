@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-
+import { EXIT_CODES } from "./cli/index.ts";
 import {
   createStaticEnvironment,
   DEFAULT_PHASE_GRACE_MS,
@@ -10,7 +10,7 @@ import {
   localPath,
   SHUTDOWN_PHASES,
 } from "./domain/index.ts";
-import { type BootstrapOptions, main } from "./main.ts";
+import { type BootstrapOptions, bootstrapExitCode, main } from "./main.ts";
 
 const roots: string[] = [];
 
@@ -116,6 +116,32 @@ describe("application bootstrap", () => {
     const before = process.listenerCount("SIGINT");
     await main(options);
     expect(process.listenerCount("SIGINT")).toBe(before);
+  });
+
+  test("resolves its exit status through the CLI table", async () => {
+    const options = await isolated();
+    expect(bootstrapExitCode(await main(options))).toBe(EXIT_CODES.COMPLETED);
+  });
+
+  test("reports storage that never opened through the failure it actually carried", async () => {
+    // The state root is a file, so it cannot be prepared. `fromUnknown` records
+    // that nothing observed the effect of the code that threw, and uncertain
+    // effect outranks the `internal` category — so this exits 8, not 70, and
+    // certainly not the flat 1 this replaced. A caller reading 8 knows to look
+    // before it retries, which is exactly right for a half-prepared state root.
+    const file = join(await mkdtemp(join(tmpdir(), "falryn-unusable-")), "not-a-directory");
+    roots.push(dirname(file));
+    await Bun.write(file, "");
+
+    const report = await main({
+      platform: "darwin",
+      home: localPath(file),
+      environment: createStaticEnvironment({ FALRYN_STATE_DIR: file }),
+    });
+
+    expect(report.storage.ok).toBe(false);
+    expect(report.storage.ok || report.storage.error.effect).toBe("uncertain");
+    expect(bootstrapExitCode(report)).toBe(EXIT_CODES.UNCERTAIN_EFFECT);
   });
 });
 

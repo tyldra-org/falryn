@@ -17,6 +17,7 @@
  */
 
 import { createRuntimeLifecycle, fromSqliteStoreError, fromUnknown } from "./application/index.ts";
+import { type ExitCode, resolveExitCode } from "./cli/index.ts";
 import {
   ARTIFACTS_OWNERSHIP,
   beginRun,
@@ -55,6 +56,7 @@ import {
   runId,
   type ShutdownReport,
   type SqliteOpenReport,
+  type TerminalOutcome,
 } from "./domain/index.ts";
 import {
   createHostBlobStore,
@@ -263,7 +265,27 @@ export async function main(options: BootstrapOptions = {}): Promise<BootstrapRep
   }
 }
 
+/**
+ * What this run's outcome and failure were, in the vocabulary the exit table
+ * reads.
+ *
+ * Storage is consulted before shutdown because a run whose storage never opened
+ * did not do its work, whatever the shutdown sequence then reported about
+ * releasing a database it never had. The failure's own effect certainty is
+ * carried through rather than flattened to `none`, so a bootstrap that changed
+ * something it could not observe still exits as uncertain.
+ */
+export function bootstrapExitCode(report: BootstrapReport): ExitCode {
+  const failure = report.storage.ok ? null : report.storage.error;
+  const outcome: TerminalOutcome =
+    failure === null ? report.shutdown.outcome : { kind: "failed", effect: failure.effect };
+  return resolveExitCode({ outcome, error: failure });
+}
+
 if (import.meta.main) {
   const report = await main();
-  process.exitCode = report.shutdown.outcome.kind === "completed" && report.storage.ok ? 0 : 1;
+  // Set rather than called: `process.exit()` would skip the drain the loop is
+  // in the middle of, and the whole point of the shutdown sequence is that
+  // nothing is abandoned to claim a faster exit.
+  process.exitCode = bootstrapExitCode(report);
 }
