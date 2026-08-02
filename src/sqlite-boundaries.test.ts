@@ -208,11 +208,18 @@ describe("artifact bytes", () => {
   test("are written in exactly one adapter module", async () => {
     // The three ways a module could hold a byte stream of its own: an open
     // handle, a whole-file write, and a stream. Any of them outside the adapter
-    // would be a second answer to where artifact bytes live.
+    // would be a second answer to where artifact bytes live. The package
+    // adapter is exempt because it writes packages, not artifacts; that its
+    // own bytes stay in one module is asserted separately below.
     const byteWriters = /\b(fs\.open|open\(|writeFile|createWriteStream|Bun\.write)\b/;
     const offenders: string[] = [];
     for (const file of await sourceFiles()) {
-      if (!isProduct(file) || file === SELF || file === BLOB_ADAPTER) {
+      if (
+        !isProduct(file) ||
+        file === SELF ||
+        file === BLOB_ADAPTER ||
+        file === "integrations/host-packages.ts"
+      ) {
         continue;
       }
       if (byteWriters.test(await readSource(file))) {
@@ -300,6 +307,70 @@ describe("startup recovery", () => {
     // No process, no network, no host command. Recovery reads durable state
     // and writes durable state; anything else would be re-running the work it
     // is describing.
+    expect(source).not.toMatch(/\b(CommandRunnerPort|Bun\.spawn|child_process|fetch\()\b/);
+  });
+});
+
+describe("an export package", () => {
+  const EXPORT = "data/export.ts";
+  /** The one module allowed to write one. */
+  const PACKAGE_ADAPTER = "integrations/host-packages.ts";
+
+  test("is written in exactly one adapter module", async () => {
+    const byteWriters = /\b(fs\.open|writeFile|createWriteStream|Bun\.write)\b/;
+    const offenders: string[] = [];
+    for (const file of await sourceFiles()) {
+      if (
+        !isProduct(file) ||
+        file === SELF ||
+        file === PACKAGE_ADAPTER ||
+        file === "integrations/host-blobs.ts"
+      ) {
+        continue;
+      }
+      if (byteWriters.test(await readSource(file))) {
+        offenders.push(file);
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  test("is reached by name, never by path", async () => {
+    // A package is named and the adapter decides where that lands, so no path
+    // type reaches the service that decides what goes into one.
+    const source = await readSource(EXPORT);
+    expect(source).not.toMatch(/\b(LocalPath|joinPath|localPath)\b/);
+    expect(await readSource("domain/package.ts")).not.toMatch(/\bLocalPath\b/);
+  });
+
+  test("can never reach a credential", async () => {
+    // Not a policy the writer applies — a reachability fact. Nothing in the
+    // export path names the credential vocabulary at all, so no selection can
+    // route one into a package.
+    const credentials =
+      /\b(CredentialStorePort|SecretResolverPort|CredentialReference|SecretRequest)\b/;
+    for (const file of [EXPORT, "domain/export.ts", "domain/package.ts", PACKAGE_ADAPTER]) {
+      expect(credentials.test(await readSource(file))).toBe(false);
+    }
+  });
+
+  test("refuses restricted artifacts by vocabulary rather than by flag", async () => {
+    const source = await readSource(EXPORT);
+    // The check exists, and it is made before the sensitivity opt-in is
+    // consulted, so a selection cannot opt back into content the label says
+    // never leaves the machine.
+    const decision = source.slice(
+      source.indexOf("function decide("),
+      source.indexOf("function resolveSessions("),
+    );
+    expect(decision).toContain(`"restricted"`);
+    // Decided before the sensitivity opt-in is consulted, so a selection cannot
+    // opt back into content the label says never leaves the machine.
+    expect(decision.indexOf(`=== "restricted"`)).toBeLessThan(decision.indexOf(`=== "sensitive"`));
+  });
+
+  test("performs no external effect beyond its own destination", async () => {
+    const source = await readSource(EXPORT);
     expect(source).not.toMatch(/\b(CommandRunnerPort|Bun\.spawn|child_process|fetch\()\b/);
   });
 });

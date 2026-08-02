@@ -13,6 +13,8 @@ export { createHostBlobStore } from "./host-blobs.ts";
 export { createHostCommandRunner } from "./host-commands.ts";
 export { createHostEnvironment, hostHome, hostPlatform } from "./host-environment.ts";
 export { createHostFileSystem } from "./host-filesystem.ts";
+export type { HostPackageWriterOptions } from "./host-packages.ts";
+export { createHostPackageWriter, STAGED_SUFFIX } from "./host-packages.ts";
 export type { KeychainCredentialStoreOptions } from "./keychain-credentials.ts";
 export {
   createKeychainCredentialStore,

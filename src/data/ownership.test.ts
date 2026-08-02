@@ -7,6 +7,7 @@ import {
   ARTIFACTS_OWNERSHIP,
   CREDENTIAL_REFERENCE_OWNERSHIP,
   createOwnershipRegistry,
+  EXPORTS_OWNERSHIP,
   TEMPORARY_INGEST_OWNERSHIP,
 } from "./ownership.ts";
 
@@ -15,6 +16,7 @@ const V0_1_REGISTRATIONS: readonly OwnershipRegistration[] = [
   CONFIGURATION_OWNERSHIP,
   CREDENTIAL_REFERENCE_OWNERSHIP,
   DIAGNOSTICS_OWNERSHIP,
+  EXPORTS_OWNERSHIP,
   TEMPORARY_INGEST_OWNERSHIP,
 ];
 
@@ -82,7 +84,6 @@ describe("the ownership registry", () => {
     }
     expect([...registry.unregistered()].sort()).toEqual([
       "cache",
-      "exports",
       "extensions",
       "memory",
       "sqliteState",
@@ -109,6 +110,25 @@ describe("the artifacts class", () => {
   });
 });
 
+describe("the exports class", () => {
+  test("is never cleaned up implicitly, whatever a plan selects by default", () => {
+    const registry = createOwnershipRegistry();
+
+    expect(registry.register(EXPORTS_OWNERSHIP).ok).toBe(true);
+
+    expect(registry.unregistered()).not.toContain("exports");
+    expect(registry.find("exports")).toMatchObject({
+      owner: "export-writer",
+      roots: ["exports"],
+      durability: "user-created",
+      // A package is content the user asked to create, often to hand to
+      // somebody else. An application that tidied one away on its own would be
+      // deleting the only copy of something nobody chose to lose.
+      removalPosture: "never-implicit",
+    });
+  });
+});
+
 describe("the v0.1 registrations", () => {
   test("each sits with the owner that claims it", () => {
     // The rule is that an owner registers its own class. Configuration is
@@ -120,7 +140,7 @@ describe("the v0.1 registrations", () => {
     expect(CREDENTIAL_REFERENCE_OWNERSHIP.owner).toBe("credentials");
   });
 
-  test("all five register together without conflicting", () => {
+  test("all six register together without conflicting", () => {
     const registry = createOwnershipRegistry();
     for (const registration of V0_1_REGISTRATIONS) {
       expect(registry.register(registration).ok).toBe(true);

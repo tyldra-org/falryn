@@ -105,6 +105,24 @@ export const ARTIFACTS_OWNERSHIP: OwnershipRegistration = {
 };
 
 /**
+ * Exports, owned by the export writer.
+ *
+ * `never-implicit` is the whole point of the posture: a package is content the
+ * user asked to create, often to hand to somebody else, and an application that
+ * tidied one away on its own would be deleting the only copy of something
+ * nobody chose to lose. Reset and uninstall name it and act on it only when it
+ * is explicitly selected.
+ */
+export const EXPORTS_OWNERSHIP: OwnershipRegistration = {
+  ownershipClass: "exports",
+  owner: "export-writer",
+  durability: "user-created",
+  removalPosture: "never-implicit",
+  roots: ["exports"],
+  external: false,
+};
+
+/**
  * Temporary ingest, owned here.
  *
  * This area reconciles it at startup, so this area registers it. Artifact

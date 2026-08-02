@@ -33,6 +33,7 @@ import {
   configurationKeyPath,
   DEFAULT_ARTIFACT_MAX_BYTES,
   DEFAULT_BUSY_TIMEOUT_MS,
+  DEFAULT_PACKAGE_MAX_BYTES,
   DEFAULT_RECOVERY_WINDOW_MS,
   DIAGNOSTIC_LEVELS,
   MAX_ARTIFACT_BYTES,
@@ -40,9 +41,11 @@ import {
   MAX_DEBUG_PREVIEWS,
   MAX_DEBUG_WINDOW_MS,
   MAX_DIAGNOSTIC_CARDINALITY,
+  MAX_PACKAGE_BYTES,
   MAX_RECOVERY_WINDOW_MS,
   MAX_RETAINED_DIAGNOSTICS,
   MIN_BUSY_TIMEOUT_MS,
+  MIN_PACKAGE_MAX_BYTES,
   MIN_RECOVERY_WINDOW_MS,
   UNLIMITED,
 } from "../domain/index.ts";
@@ -216,6 +219,18 @@ export const DATA_KEYS: readonly ConfigurationKeyDeclaration[] = [
     // Read once, by the recovery pass that runs before anything else. Nothing
     // re-reads it, so a change takes effect on the next run.
     applicationClass: "application-restart",
+  }),
+  integerKey({
+    path: "data.exports.maxBytes",
+    summary: "Largest export package this machine will write.",
+    unit: "bytes",
+    minimum: MIN_PACKAGE_MAX_BYTES,
+    maximum: MAX_PACKAGE_BYTES,
+    defaultValue: DEFAULT_PACKAGE_MAX_BYTES,
+    scopes: ["user", "environment", "cli"],
+    // Read when an export begins, so the next package uses the new ceiling
+    // without a restart. It never changes a package already written.
+    applicationClass: "next-operation",
   }),
   limitKey({
     path: "data.quotas.totalMaxBytes",
