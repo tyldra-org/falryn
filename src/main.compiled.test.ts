@@ -69,10 +69,6 @@ const COMPILED_RUN_TIMEOUT_MS = 10_000;
 /** A run that also compiles. Covers `bun build --compile` on a loaded machine. */
 const COMPILED_BUILD_TIMEOUT_MS = 60_000;
 
-function runCompiled(root: LocalPath): number {
-  return spawnCompiled(root).exitCode;
-}
-
 function spawnCompiled(
   root: LocalPath,
   args: readonly string[] = [],

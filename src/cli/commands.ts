@@ -18,13 +18,7 @@
 
 import { fromConfigurationIssues, fromUnknown } from "../application/index.ts";
 import { CONFIGURATION_FILE_NAME, inspectGeneration, PROFILE_DIRECTORY } from "../config/index.ts";
-import {
-  probeStorage,
-  rootChild,
-  type StorageProbe,
-  sqliteDatabasePath,
-  usableRoots,
-} from "../data/index.ts";
+import { probeStorage, rootChild, type StorageProbe, sqliteDatabasePath } from "../data/index.ts";
 import {
   type ConfigurationInspection,
   type ConfigurationIssue,
@@ -33,7 +27,6 @@ import {
   LOCAL_DATA_ROOTS,
   type LocalDataRoot,
   type OwnershipClass,
-  type RootStatus,
 } from "../domain/index.ts";
 import { openBunSqlite } from "../integrations/index.ts";
 import type { GlobalOptions } from "./options.ts";
@@ -290,9 +283,4 @@ export async function runDoctor(services: ServiceProvider): Promise<CommandResul
       fromUnknown(error, { operation: "collect diagnostics" }),
     ]);
   }
-}
-
-/** Whether a root status reports a usable root. Kept for the status form. */
-export function usableRootNames(statuses: readonly RootStatus[]): readonly LocalDataRoot[] {
-  return usableRoots(statuses);
 }
