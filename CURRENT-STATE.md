@@ -910,6 +910,11 @@ Its verified behavior:
   unconfirmed carried in the report. A flush that could not complete turns the
   run's outcome `uncertain` rather than letting it claim success over output
   nobody received;
+- **a stream releases what it holds on the host.** The adapter must attach an
+  error listener to observe a departed reader, and a standard handle is one
+  object for the whole process, so the port carries a `dispose` for the same
+  reason `SignalPort` returns an `Unsubscribe`. Releasing twice removes nothing
+  extra, and releasing one handle does not detach the other;
 - **stdout carries the selected result format and nothing else**, including
   when the human format is the selected result format. Progress, warnings, and
   notices go to stderr. The rule is a negative control over the source tree,
@@ -927,10 +932,11 @@ Its verified behavior:
   the code;
 - **an unrecognized error resolves to the internal code** and never to a
   category-specific one it was not entitled to;
-- **five of the thirteen codes are declared and unreachable today.** Which nine
-  a v0.1 build can produce is derived from `RUNTIME_EMITTED_CATEGORIES` rather
-  than listed, following that constant's own precedent, and both halves of the
-  partition are asserted against real processes;
+- **four of the thirteen codes are declared and unreachable today** — 5, 6, 7,
+  and 9. Which nine a v0.1 build can produce is derived from
+  `RUNTIME_EMITTED_CATEGORIES` rather than listed, following that constant's own
+  precedent, and both halves of the partition are asserted against real
+  processes;
 - **a closed reader is a normal end.** Writing stops, stderr is not used to
   complain about it, and the run keeps the code its work earned. `EPIPE`
   reaching the default handler would end the process with a stack trace over an
