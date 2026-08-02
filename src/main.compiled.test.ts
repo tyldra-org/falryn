@@ -82,6 +82,22 @@ describe.if(built)("the standalone executable", () => {
   );
 
   test(
+    "creates the database owner-only under the process umask",
+    async () => {
+      // The umask only applies in a real process, so this is the one place the
+      // mode a user actually gets can be observed. The file holds sessions,
+      // turns, invocations, and events; the state root being 0700 contains the
+      // exposure but does not excuse it.
+      const root = await temporaryRoot();
+
+      expect(runCompiled(root)).toBe(0);
+
+      expect((await stat(join(root, "falryn.sqlite"))).mode & 0o777).toBe(0o600);
+    },
+    COMPILED_RUN_TIMEOUT_MS,
+  );
+
+  test(
     "carries its migration bookkeeping into the compiled binary",
     async () => {
       const root = await temporaryRoot();

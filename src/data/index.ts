@@ -37,6 +37,7 @@ export {
   EXPORT_CHUNK_BYTES,
   resolveInventory,
   verifyPackage,
+  WRITTEN_SCHEMA_FAMILIES,
   writePackage,
 } from "./export.ts";
 export type { LocalDataService, LocalDataServiceOptions } from "./local-data-service.ts";

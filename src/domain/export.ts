@@ -3,13 +3,18 @@
  * reader must satisfy to open one.
  *
  * An export is the one Falryn artifact that outlives the machine that made it,
- * so it is the one place where a version number is not a formality. Six rules
+ * so it is the one place where a version number is not a formality. Seven rules
  * the types carry rather than document:
  *
  * - **A package carries its own schema version, separate from the database's.**
  *   A package opened two releases later must be able to say what it needs;
  *   asking the database version would answer a question about a machine that no
  *   longer exists.
+ * - **A package names the schema families it carries.** The package version
+ *   answers "what shape is this file"; the family list answers "what is inside
+ *   it, written at what version". A reader that has to parse the records to
+ *   learn which vocabulary they speak has already opened content it may not
+ *   understand.
  * - **A manifest is a trailer, not a header.** Members are streamed, their
  *   digests are known only once they have been written, and a manifest written
  *   first would either be a lie or force the whole package through memory. A
@@ -35,6 +40,7 @@ import type { BlobError } from "./blob.ts";
 import { brandedString, timestampSchema } from "./branded-schema.ts";
 import type { CodecIssue } from "./codec-error.ts";
 import type { IdentifierCodec, IdentityError, IdentityErrorCode, SessionId } from "./identity.ts";
+import { RUNTIME_EVENT_SCHEMA_FAMILY } from "./limits.ts";
 import type { ExportName, PackageError } from "./package.ts";
 import { err, ok, type Result } from "./result.ts";
 import type { SqliteStoreError } from "./sqlite.ts";
@@ -53,6 +59,33 @@ export const EXPORT_SCHEMA_VERSION = 1;
 
 /** The oldest reader this build's packages can be opened by. */
 export const MINIMUM_COMPATIBLE_EXPORT_SCHEMA_VERSION = 1;
+
+/**
+ * The schema families a package may declare.
+ *
+ * Built from the family's own source owner rather than restating its name: a
+ * second `"falryn.runtime-event"` literal in the export path is a copy that can
+ * drift from the one `src/domain/limits.ts` owns.
+ *
+ * The tuple is also the list's bound — a package cannot name more families than
+ * exist.
+ */
+export const EXPORT_SCHEMA_FAMILIES = [RUNTIME_EVENT_SCHEMA_FAMILY] as const;
+
+export type ExportSchemaFamily = (typeof EXPORT_SCHEMA_FAMILIES)[number];
+
+/**
+ * One family a package carries, and the version it was written at.
+ *
+ * Two fields and no more: the name answers "what is in here" and the version
+ * answers "written at what". A bare list of names would leave a reader unable
+ * to tell a v1 record stream from a v2 one, which is the point of naming the
+ * family at all.
+ */
+export type ExportSchemaFamilyDeclaration = {
+  readonly family: ExportSchemaFamily;
+  readonly schemaVersion: number;
+};
 
 /** The generated member holding every record the selection reached. */
 export const RECORDS_MEMBER = "records.jsonl";
@@ -262,6 +295,8 @@ export type ExportManifest = {
   readonly schemaVersion: number;
   /** The oldest reader that can open this package. */
   readonly minimumCompatibleSchemaVersion: number;
+  /** Every family the package carries. Never empty; a package always carries records. */
+  readonly schemaFamilies: readonly ExportSchemaFamilyDeclaration[];
   readonly createdAt: Timestamp;
   /** The build that wrote it. Identity, never a path or a machine name. */
   readonly createdBy: string;
@@ -374,10 +409,31 @@ const countsSchema = z.object({
   artifacts: z.int().min(0),
 });
 
+/**
+ * The declared family list.
+ *
+ * Bounded by the vocabulary rather than by a separate number, non-empty because
+ * a package always carries records, and unique because two versions for one
+ * family is a manifest that contradicts itself.
+ */
+const schemaFamiliesSchema = z
+  .array(
+    z.object({
+      family: z.literal(EXPORT_SCHEMA_FAMILIES),
+      schemaVersion: z.int().min(1),
+    }),
+  )
+  .min(1)
+  .max(EXPORT_SCHEMA_FAMILIES.length)
+  .refine((declared) => new Set(declared.map((entry) => entry.family)).size === declared.length, {
+    error: "a schema family is declared more than once",
+  });
+
 const manifestSchema = z.object({
   format: z.literal(EXPORT_FORMAT),
   schemaVersion: z.int().min(1),
   minimumCompatibleSchemaVersion: z.int().min(1),
+  schemaFamilies: schemaFamiliesSchema,
   createdAt: timestampSchema,
   createdBy: z.string().min(1).max(128),
   selection: z.object({

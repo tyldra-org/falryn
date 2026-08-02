@@ -29,6 +29,8 @@ import {
   RECORDS_MEMBER,
   type RecordRepositories,
   type Result,
+  RUNTIME_EVENT_SCHEMA_FAMILY,
+  RUNTIME_EVENT_SCHEMA_VERSION,
   runId,
   type SessionId,
   type SqliteStorePort,
@@ -39,7 +41,13 @@ import { createSha256Hasher } from "../integrations/index.ts";
 import { createArtifactRepository } from "./artifact-repository.ts";
 import { createArtifactStore } from "./artifact-store.ts";
 import { createSqliteEventStore } from "./event-store.ts";
-import { type ExportOptions, resolveInventory, verifyPackage, writePackage } from "./export.ts";
+import {
+  type ExportOptions,
+  resolveInventory,
+  verifyPackage,
+  WRITTEN_SCHEMA_FAMILIES,
+  writePackage,
+} from "./export.ts";
 import {
   FIXTURE_INSTANT,
   temporaryRoot as makeTemporaryRoot,
@@ -448,6 +456,38 @@ describe("writing a package", () => {
     await built.store.close();
   });
 
+  test("declares the schema families a reader has to understand", async () => {
+    const built = await harness();
+    stageSession(built.repositories);
+    await appendEvent(built, 1);
+    const inventory = await inventoryOf(built);
+
+    const written = await writePackage(built.options, NAME, SESSIONS_SELECTION, inventory);
+
+    expect(written.ok && written.value.manifest.schemaFamilies).toEqual([
+      { family: RUNTIME_EVENT_SCHEMA_FAMILY, schemaVersion: RUNTIME_EVENT_SCHEMA_VERSION },
+    ]);
+    await built.store.close();
+  });
+
+  test("declares the family for a selection whose sessions produced no events", async () => {
+    // The families name the shape a reader must understand, not the rows that
+    // happen to be present: the records member is that family's encoding by
+    // construction, so an events-free selection is still a legal export.
+    const built = await harness();
+    stageSession(built.repositories);
+    const inventory = await inventoryOf(built);
+    expect(inventory.counts.events).toBe(0);
+
+    const write = await writePackage(built.options, NAME, SESSIONS_SELECTION, inventory);
+    const verified = await verifyPackage(built.options, NAME);
+
+    expect(write.ok && write.value.manifest.schemaFamilies).toEqual(WRITTEN_SCHEMA_FAMILIES);
+    expect(verified.ok && verified.value.verified).toBe(true);
+    expect(verified.ok && verified.value.manifest.schemaFamilies).toEqual(WRITTEN_SCHEMA_FAMILIES);
+    await built.store.close();
+  });
+
   test("carries the omissions the inventory declared", async () => {
     const built = await harness();
     stageSession(built.repositories);
@@ -698,6 +738,21 @@ describe("verifying a finished package", () => {
     const verified = await verifyPackage(built.options, NAME);
 
     expect(errorOf(verified)?.code).toBe("truncated-package");
+    await built.store.close();
+  });
+
+  test("refuses a package that declares no schema families", async () => {
+    // `falryn-export/1` requires the field, so a development-tree package
+    // written before it existed is refused rather than leniently accepted.
+    const built = await written();
+    restamp(built, ({ schemaFamilies: _dropped, ...manifest }) => manifest);
+
+    const verified = await verifyPackage(built.options, NAME);
+
+    expect(errorOf(verified)).toMatchObject({
+      code: "malformed-manifest",
+      issues: [{ path: "schemaFamilies" }],
+    });
     await built.store.close();
   });
 

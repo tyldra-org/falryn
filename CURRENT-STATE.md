@@ -788,6 +788,36 @@ that nothing in a real run writes a package. Redaction, import, replay, and fork
 are owned by [#118](https://github.com/yogeshprasad098/falryn/issues/118) and
 [#119](https://github.com/yogeshprasad098/falryn/issues/119).
 
+The seams closed by
+[#323](https://github.com/yogeshprasad098/falryn/issues/323) complete two of
+those foundations:
+
+- **an export names the schema families it carries.** The manifest's
+  `schemaFamilies` list declares each family with the version it was written at,
+  built from `RUNTIME_EVENT_SCHEMA_FAMILY` rather than a second literal, so the
+  package version answers "what shape is this file" and the family list answers
+  "what is inside it". Every package this build writes declares
+  `falryn.runtime-event` at `schemaVersion` 1, including one whose selection
+  produced no events — the records member is that family's encoding by
+  construction. The parser refuses an absent, empty, unknown, repeated,
+  non-object, or non-positive-versioned entry with a path and an issue code and
+  never the rejected value, so a development-tree package written before the
+  field existed is refused as `malformed-manifest` rather than leniently
+  accepted. `EXPORT_SCHEMA_VERSION` stays 1 and the container stays
+  `falryn-export/1`, because nothing has been released for a reader to negotiate
+  with; and
+- **the database file is owner-only.** `src/integrations/bun-sqlite.ts` creates
+  the path exclusively at `0600` and sets the mode explicitly before SQLite
+  opens it, so there is no world-readable window and SQLite derives owner-only
+  `-wal` and `-shm` files from it. The pre-create runs only when creation is
+  permitted, and any errno other than `EEXIST` is left to the one classification
+  table the adapter already owns rather than given a second spelling. A
+  pre-migration `VACUUM INTO` backup is set to `0600` too, and a backup that
+  could not be made private fails the backup. An existing database an earlier
+  build left at `0644` is opened and left alone — the same diagnose-rather-than-
+  adjust rule the roots follow. Observed on a real compiled run against an
+  isolated state root, which is the only place the process umask applies.
+
 `src/main.ts` composes the cancellation lifecycle and the local data foundation,
 so the compiled executable includes the domain, application, data, and
 integration layers and the real process-signal, filesystem, `bun:sqlite`, blob,
@@ -816,7 +846,8 @@ bun run ci     PASS  (quality, tsc --noEmit, build, then bun test)
 against a real `dist/falryn`: the standalone executable opens, migrates, and
 closes a database under a temporary state root, leaves one file, carries its
 migration bookkeeping and every product table into the binary at schema version
-3, and reopens the same database on a second run. Without a build the check
+3, creates that database owner-only under the process umask, and reopens the
+same database on a second run. Without a build the check
 reports itself as skipped rather than passing on an executable that does not
 exist.
 
