@@ -235,7 +235,9 @@ export async function main(options: BootstrapOptions = {}): Promise<BootstrapRep
       lifecycle.shutdown.register(
         createArtifactShutdownParticipant(
           createArtifactStore({
-            repository: createArtifactRepository(opened.value),
+            // Stamped with this run, so recovery on a later start can tell an
+            // abandoned ingest from one this process was still making.
+            repository: createArtifactRepository(opened.value, run.value.record.runId),
             blobs,
             hasher,
             clock: systemClock,

@@ -45,6 +45,7 @@ import {
   type FileSystemPort,
   type Instant,
   invocationId,
+  isPresumedLive,
   joinPath,
   type LocalPath,
   MAX_RECOVERED_ARTIFACTS,
@@ -324,9 +325,13 @@ export async function recoverInterruptedWork(
   }
   const known = runs.ok ? runs.value : [];
 
+  // Decided once, from the same rows, so the artifact pass and the orphan
+  // sweep cannot reach opposite conclusions about the same class of bytes.
+  const quiet = noOtherRunOpen(known, options.runId) && windowElapsed(options, known);
+
   completeInterruptedRecords(options, tally, signal);
-  await resolveReservedArtifacts(options, known, tally, signal);
-  await collectTemporaryBlobs(options, known, tally, signal);
+  await resolveReservedArtifacts(options, known, quiet, tally, signal);
+  await collectTemporaryBlobs(options, known, quiet, tally, signal);
 
   return {
     runId: options.runId,
@@ -517,6 +522,7 @@ type ReservedArtifact = {
 async function resolveReservedArtifacts(
   options: RecoveryOptions,
   runs: readonly RunRecord[],
+  quiet: boolean,
   tally: Tally,
   signal: AbortSignal | undefined,
 ): Promise<void> {
@@ -555,13 +561,14 @@ async function resolveReservedArtifacts(
       continue;
     }
 
-    await resolveOne(options, reserved, tally, signal);
+    await resolveOne(options, reserved, quiet, tally, signal);
   }
 }
 
 async function resolveOne(
   options: RecoveryOptions,
   reserved: ReservedArtifact,
+  quiet: boolean,
   tally: Tally,
   signal: AbortSignal | undefined,
 ): Promise<void> {
@@ -579,7 +586,16 @@ async function resolveOne(
     // Nothing was ever moved into place, or it is gone. Either way the record
     // describes bytes that are not there, which is the one state #14 declared
     // and left for this pass to infer.
-    await discardTemporary(options, reserved.artifactId, tally, signal);
+    // A row whose owner ended is safe to clean up on that fact alone. A row
+    // nothing attributes gets the same quiet period the orphan sweep applies,
+    // so the two passes never disagree about the same bytes.
+    await discardTemporary(
+      options,
+      reserved.artifactId,
+      reserved.runId !== null || quiet,
+      tally,
+      signal,
+    );
     move(options, reserved.artifactId, "missing", tally);
     return;
   }
@@ -655,14 +671,16 @@ function parseReserved(row: SqliteRow): ReservedArtifact | null {
 /**
  * Whether anything may still be writing these bytes.
  *
- * True for an unended run other than this one, which is presumed live, and
- * true for *this* run as well: recovery runs before this process has created
- * anything, so a row it appears to own is a row it cannot have abandoned, and
- * resolving it would be repairing a state this pass does not understand.
+ * Defers to {@link isPresumedLive} for the question it owns, so there is one
+ * answer to "may that run still be writing" rather than two that can drift.
+ * This function adds only what is specific to a recovery pass: *this* run
+ * counts as still writing, because recovery runs before this process has
+ * created anything, so a row it appears to own is a row it cannot have
+ * abandoned and resolving it would be repairing a state the pass does not
+ * understand.
  *
- * A null owner is never still being written: rows written before migration
- * `0003` predate every run, and a blob nothing attributes has no run to be
- * writing it.
+ * A null owner predates run identity — migration `0003` added the column and
+ * rows written under `0002` have no run to be writing them.
  */
 function mayStillBeWritten(
   owner: RunId | null,
@@ -676,7 +694,7 @@ function mayStillBeWritten(
     return true;
   }
   const found = runs.find((candidate) => candidate.runId === owner);
-  return found !== undefined && found.endedAt === null;
+  return found !== undefined && isPresumedLive(found, thisRun);
 }
 
 /**
@@ -697,6 +715,7 @@ function mayStillBeWritten(
 async function collectTemporaryBlobs(
   options: RecoveryOptions,
   runs: readonly RunRecord[],
+  quiet: boolean,
   tally: Tally,
   signal: AbortSignal | undefined,
 ): Promise<void> {
@@ -708,8 +727,6 @@ async function collectTemporaryBlobs(
   if (listed.value.length >= MAX_RECOVERED_BLOBS) {
     tally.completeness = "partial";
   }
-
-  const quiet = noOtherRunOpen(runs, options.runId) && windowElapsed(options, runs);
 
   for (const location of listed.value) {
     if (signal?.aborted === true) {
@@ -799,12 +816,18 @@ function windowElapsed(options: RecoveryOptions, runs: readonly RunRecord[]): bo
 async function discardTemporary(
   options: RecoveryOptions,
   id: ArtifactId,
+  mayRemove: boolean,
   tally: Tally,
   signal: AbortSignal | undefined,
 ): Promise<void> {
   const location: BlobLocation = { scope: "temporary", artifactId: id };
   const present = await options.blobs.byteLength(location, signal);
   if (!present.ok || present.value === null) {
+    return;
+  }
+  if (!mayRemove) {
+    tally.temporaryBlobsExamined += 1;
+    record(tally.blobs, "left-for-inspection");
     return;
   }
   // Unverified partials belonging to a run that is gone. They never reached

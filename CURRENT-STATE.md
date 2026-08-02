@@ -668,7 +668,8 @@ The startup recovery introduced by
 earlier run left behind, and never invents a completion:
 
 - migration `0003` creates a `STRICT` `runs` table and adds a nullable
-  `artifacts.run_id`, so a real run now ends at schema version 3. A run inserts
+  `artifacts.run_id`, **stamped by the artifact repository on every reserve**,
+  so a real run now ends at schema version 3. A run inserts
   its row at startup and stamps a clean end during shutdown, so **a row with no
   end time is the durable trace of a run that did not close**. The added column
   is nullable by necessity — `ALTER TABLE ... ADD COLUMN` can only add one whose
@@ -691,8 +692,14 @@ earlier run left behind, and never invents a completion:
   liveness probe in v0.1 this is the only rule that cannot destroy a concurrent
   Falryn's in-flight work; treating an unended run as abandoned once it is old
   enough would delete the temporary bytes of any session that outlives the
-  window. In-flight bytes are discarded when their owning run is known to have
-  ended, and unattributable bytes only when no other run is open at all — with
+  window. The ingest path is what makes that defence real rather than nominal:
+  the repository stamps the run on the row it reserves, so a reserved artifact
+  whose bytes have not yet been renamed into content scope is attributable to
+  the process still making it. That state is exercised through the shipped
+  repository rather than by staging the column, because a column only a test
+  writes is a column production never writes. In-flight bytes are discarded
+  when their owning run is known to have ended, and unattributable bytes only
+  when no other run is open at all — with
   no other run open, nothing on the machine is past startup, so nothing can be
   writing them — and, on top of that, only once `data.recovery.windowMs` has
   elapsed since any *other* run started, which keeps the sweep away from a

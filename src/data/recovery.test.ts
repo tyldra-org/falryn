@@ -28,10 +28,12 @@ import {
   type TemporaryBlobOutcome,
 } from "../domain/index.ts";
 import { createSha256Hasher } from "../integrations/index.ts";
+import { createArtifactRepository } from "./artifact-repository.ts";
 import {
   temporaryRoot as makeTemporaryRoot,
   openProductStoreOrThrow,
   removeTemporaryRoots,
+  reservedArtifact,
 } from "./fixtures.ts";
 import {
   beginRun,
@@ -327,6 +329,54 @@ describe("an artifact an earlier run left reserved", () => {
     expect(availabilityOf(store, "a1")).toBe("reserved");
     expect(report.completeness).toBe("partial");
     expect(artifactCount(report, "left-for-inspection")).toBe(1);
+    await store.close();
+  });
+});
+
+describe("a live process's ingest, staged through the production path", () => {
+  test("is never resolved or removed by a second Falryn recovering", async () => {
+    const { store, blobs, clock, recover } = await harness();
+    // Everything here goes through the shipped repository rather than
+    // hand-written SQL, so `run_id` holds exactly what production writes. A
+    // test that stages the column itself proves the property only for data the
+    // product never produces.
+    const live = beginRun({ store, clock, runId: LIVE_RUN });
+    if (!live.ok) {
+      throw new Error("expected the live run to begin");
+    }
+    const repository = createArtifactRepository(store, LIVE_RUN);
+    const reserved = repository.reserve(
+      reservedArtifact("a1", DIGEST, { byteLength: BYTES.byteLength }),
+    );
+    expect(reserved.ok).toBe(true);
+    // The window the real ingest leaves open: the row is committed and the
+    // bytes have not been renamed into content scope yet.
+    blobs.put({ scope: "temporary", artifactId: artifactId.from("a1") }, BYTES);
+
+    const report = await recover({ recoveryWindowMs: 1_000 });
+
+    expect(availabilityOf(store, "a1")).toBe("reserved");
+    expect(blobs.bytesAt({ scope: "temporary", artifactId: artifactId.from("a1") })).not.toBeNull();
+    expect(artifactCount(report, "left-for-inspection")).toBe(1);
+    expect(blobCount(report, "discarded")).toBe(0);
+    await store.close();
+  });
+
+  test("is resolved once that process has recorded its end", async () => {
+    const { store, blobs, clock, recover } = await harness();
+    const live = beginRun({ store, clock, runId: LIVE_RUN });
+    if (!live.ok) {
+      throw new Error("expected the live run to begin");
+    }
+    createArtifactRepository(store, LIVE_RUN).reserve(
+      reservedArtifact("a1", DIGEST, { byteLength: BYTES.byteLength }),
+    );
+    blobs.put({ scope: "content", digest: DIGEST }, BYTES);
+    live.value.end();
+
+    await recover({ recoveryWindowMs: 1_000 });
+
+    expect(availabilityOf(store, "a1")).toBe("available");
     await store.close();
   });
 });
