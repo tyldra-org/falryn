@@ -300,6 +300,53 @@ export type {
 } from "./event-store.ts";
 export { createInMemoryEventStore } from "./event-store.ts";
 export type {
+  ExportArtifactEntry,
+  ExportBound,
+  ExportCounts,
+  ExportError,
+  ExportInventory,
+  ExportManifest,
+  ExportMember,
+  ExportMemberCheck,
+  ExportMemberKind,
+  ExportOmission,
+  ExportOmissionReason,
+  ExportResult,
+  ExportSelection,
+  ExportSelectionKind,
+  ExportSelectionSummary,
+  ExportVerification,
+  MemberCheckStatus,
+} from "./export.ts";
+export {
+  artifactMemberName,
+  DEFAULT_PACKAGE_MAX_BYTES,
+  EMPTY_COUNTS,
+  EXPORT_BOUNDS,
+  EXPORT_FOOTER_BYTES,
+  EXPORT_FOOTER_DIGITS,
+  EXPORT_FORMAT,
+  EXPORT_MEMBER_KINDS,
+  EXPORT_OMISSION_REASONS,
+  EXPORT_SCHEMA_VERSION,
+  EXPORT_SELECTION_KINDS,
+  exportName,
+  isCompatible,
+  MAX_EXPORT_MEMBERS,
+  MAX_EXPORT_NAME_LENGTH,
+  MAX_EXPORTED_ARTIFACTS,
+  MAX_EXPORTED_SESSIONS,
+  MAX_MANIFEST_BYTES,
+  MAX_PACKAGE_BYTES,
+  MEMBER_CHECK_STATUSES,
+  MIN_PACKAGE_MAX_BYTES,
+  MINIMUM_COMPATIBLE_EXPORT_SCHEMA_VERSION,
+  parseExportManifest,
+  RECORDS_MEMBER,
+  selectedSessions,
+  summarize,
+} from "./export.ts";
+export type {
   CreateDirectoryOutcome,
   FileKind,
   FileSystemError,
@@ -436,6 +483,19 @@ export {
   requiresInspection,
   TERMINAL_OUTCOME_KINDS,
 } from "./outcome.ts";
+export type {
+  ExportName,
+  InMemoryPackageWriterOptions,
+  PackageError,
+  PackageErrorCode,
+  PackageOperation,
+  PackageWriterPort,
+} from "./package.ts";
+export {
+  createInMemoryPackageWriter,
+  PACKAGE_ERROR_CODES,
+  PACKAGE_OPERATIONS,
+} from "./package.ts";
 export type {
   CommandOutcome,
   CommandRequest,

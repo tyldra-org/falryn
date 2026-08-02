@@ -32,6 +32,13 @@ export {
   createSqliteEventStore,
   EVENT_STORE_PARTICIPANT_NAME,
 } from "./event-store.ts";
+export type { ExportOptions } from "./export.ts";
+export {
+  EXPORT_CHUNK_BYTES,
+  resolveInventory,
+  verifyPackage,
+  writePackage,
+} from "./export.ts";
 export type { LocalDataService, LocalDataServiceOptions } from "./local-data-service.ts";
 export { createLocalDataService, UNCONSTRAINED_RETENTION } from "./local-data-service.ts";
 export type { OwnershipRegistry } from "./ownership.ts";
@@ -39,6 +46,7 @@ export {
   ARTIFACTS_OWNERSHIP,
   CREDENTIAL_REFERENCE_OWNERSHIP,
   createOwnershipRegistry,
+  EXPORTS_OWNERSHIP,
   TEMPORARY_INGEST_OWNERSHIP,
 } from "./ownership.ts";
 export type { ProjectionRunner, ProjectionRunnerOptions } from "./projections.ts";

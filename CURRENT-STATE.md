@@ -725,11 +725,67 @@ column on four more tables. The issue's own design scopes the concurrency
 guarantee to bytes and to simultaneous *startup*, which is covered; the general
 case is follow-up work rather than a hidden TODO.
 
+The export foundations introduced by
+[#320](https://github.com/yogeshprasad098/falryn/issues/320) turn a selection of
+durable local state into one portable, versioned, digest-verified package:
+
+- an export declares **its own schema version**, separate from the database's. A
+  package outlives the database that produced it, so one number cannot answer
+  both "what shape are these rows" and "what shape is this file". A reader
+  refuses a package that requires a newer one, and accepts a newer package that
+  says an older reader is enough;
+- the container is `falryn-export/1`: a format line, the members in the order
+  the manifest declares them, the manifest itself, and a fixed-width footer
+  giving the manifest's length. **The manifest is a trailer, not a header**,
+  because a member's digest is known only once it has been streamed — and the
+  fixed footer is what still lets a reader seek to the manifest and refuse an
+  incompatible package before reading its body;
+- a selection names sessions or a time range. Resolving it walks the existing
+  repositories to the turns, model attempts, invocations, events, and artifacts
+  it reaches, and every bound — sessions, artifacts, members, package bytes — is
+  checked **before the writer is touched**, so a selection too large is an error
+  rather than a package that stops halfway;
+- an artifact reached but not carried appears in the manifest as a declared
+  omission with a reason: `restricted-sensitivity`, `sensitive-not-selected`,
+  `bytes-missing`, or `bytes-quarantined`. A package that silently lacks
+  something is a package nobody can audit;
+- **`restricted` artifacts never leave the machine, whatever the selection
+  asks.** The check runs before the sensitivity opt-in is consulted, so a
+  selection cannot opt back into content the vocabulary #14 decided says stays.
+  Credentials are not excluded by a rule but by reachability: nothing in the
+  export path names the credential vocabulary at all, and a negative control
+  asserts that absence;
+- the writer streams: free space and the ceiling are checked first, artifact
+  bytes are copied in chunks and **re-hashed as they go**, and a digest that
+  changed between inventory and write is reported rather than written around.
+  The package is staged under a visible `.partial` name beside its destination
+  and published by one atomic rename, so a failed or cancelled export leaves
+  nothing where a finished one would be;
+- a verification pass reads a finished package, parses its manifest, and
+  re-hashes every member against what was declared — without importing it.
+  That is what makes an export claim checkable in a release where nothing can
+  import one, and it catches a tampered member, a truncated package, and a file
+  that is not a Falryn export at all; and
+- the `exports` ownership class is registered with the `never-implicit` posture,
+  retiring another *unregistered* row, and `data.exports.maxBytes` is declared
+  with its unit, bounds, default, and the `next-operation` class.
+
+Two limitations this slice carries deliberately. **No producer of sessions or
+artifacts exists**, so on a real run an export has nothing to export and an
+empty selection is a reported fact rather than an edge case; the tests stage
+records through the repositories and artifacts through the artifact store.
+And the export service is **not composed** into `src/main.ts` — only its
+ownership class is registered. Constructing a writer that no run can call would
+add a dead object rather than exercised behavior, so the honest statement is
+that nothing in a real run writes a package. Redaction, import, replay, and fork
+are owned by [#118](https://github.com/yogeshprasad098/falryn/issues/118) and
+[#119](https://github.com/yogeshprasad098/falryn/issues/119).
+
 `src/main.ts` composes the cancellation lifecycle and the local data foundation,
 so the compiled executable includes the domain, application, data, and
 integration layers and the real process-signal, filesystem, `bun:sqlite`, blob,
 and SHA-256 adapters. It resolves roots, registers `sqliteState` and
-`artifacts`, prepares the `state` root, probes for crash signals, opens and
+`artifacts` and `exports`, prepares the `state` root, probes for crash signals, opens and
 migrates the database, records this run, runs startup recovery, constructs the
 durable event store, its projection runner, and the artifact store, and
 registers the `finalize-artifacts`, `persist-outcomes`,
@@ -832,9 +888,8 @@ repository does not yet provide:
   and [#21](https://github.com/yogeshprasad098/falryn/issues/21);
 - a projection registry. One projection is maintained and its name is a closed
   union of one; a registry for a single member would be a framework built for
-  one caller. Export, deterministic replay, fork, rewind, and reachability
-  garbage collection over these rows are each owned elsewhere and none is
-  implemented;
+  one caller. Deterministic replay, fork, rewind, and reachability garbage
+  collection over these rows are each owned elsewhere and none is implemented;
 - any *producer* of an artifact. The table, the repository, the store, the blob
   adapter, and the `finalize-artifacts` participant all exist and are composed,
   and nothing in a real run ingests bytes, because the tools and providers that
@@ -854,8 +909,8 @@ repository does not yet provide:
   planning, guarded execution, and reconciliation exist and are tested, and
   nothing calls them on a real run, so nothing is measured or removed. The
   owners that will register the remaining ownership classes — memory,
-  extensions, exports — do not exist, and each is reported as unregistered
-  rather than assumed absent;
+  extensions — do not exist, and each is reported as unregistered rather than
+  assumed absent;
 - the command surfaces that would show a reset or uninstall plan and collect its
   confirmation. This area produces the plan and the typed outcome; rendering
   them and asking is the CLI's;
