@@ -774,16 +774,26 @@ function noOtherRunOpen(runs: readonly RunRecord[], thisRun: RunId): boolean {
 }
 
 /**
- * Whether every run this database knows about started long enough ago.
+ * Whether every *other* run started long enough ago.
  *
- * The window exists for exactly one race: a second process that has written its
- * run row and has not yet allocated the bytes it is about to write. This run's
- * own row is included, because a simultaneous start is precisely that race.
+ * This run's own row is excluded, and that exclusion is the whole correctness
+ * of this function: recovery runs immediately after the row is written, so its
+ * age is always zero and including it would make the window unsatisfiable for
+ * any configured value — leaving the branch it guards permanently unreachable.
+ * Its age says nothing anyway, because this run has allocated nothing yet.
+ *
+ * The primary guarantee is {@link noOtherRunOpen}: with no other run open,
+ * nothing on this machine is past startup, so nothing can be writing these
+ * bytes. This window is the margin on top of it — a quiet period that keeps the
+ * sweep away from a machine that is actively cycling Falryn processes, where
+ * attribution is at its least reliable.
  */
 function windowElapsed(options: RecoveryOptions, runs: readonly RunRecord[]): boolean {
   const window = options.recoveryWindowMs ?? DEFAULT_RECOVERY_WINDOW_MS;
   const now: Instant = options.clock.now();
-  return runs.every((run) => now - timestampToEpochMilliseconds(run.startedAt) >= window);
+  return runs
+    .filter((run) => run.runId !== options.runId)
+    .every((run) => now - timestampToEpochMilliseconds(run.startedAt) >= window);
 }
 
 async function discardTemporary(

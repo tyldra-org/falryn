@@ -446,6 +446,40 @@ describe("in-flight bytes left behind", () => {
     await store.close();
   });
 
+  test("are discarded after this run has written its own row, as composition does", async () => {
+    // The order a real start uses: `beginRun` then recover. This run's row is
+    // zero milliseconds old at that moment, so a window measured over it could
+    // never elapse and this branch would be unreachable in production — which
+    // is exactly what every other test here missed by never calling `beginRun`.
+    const { store, blobs, clock, recover } = await harness();
+    insertRun(store, ENDED_RUN, { endedAt: iso(-10_000), startedAt: iso(-86_400_000) });
+    const run = beginRun({ store, clock, runId: THIS_RUN });
+    expect(run.ok).toBe(true);
+    blobs.put({ scope: "temporary", artifactId: artifactId.from("orphan") }, BYTES);
+
+    const report = await recover({ recoveryWindowMs: 60_000 });
+
+    expect(blobs.locations()).toEqual([]);
+    expect(blobCount(report, "discarded")).toBe(1);
+    await store.close();
+  });
+
+  test("are left alone while another run started inside the window", async () => {
+    const { store, blobs, clock, recover } = await harness();
+    // A peer that started a moment ago and has already ended. It cannot be
+    // writing, but a machine cycling processes is where attribution is least
+    // reliable, so the sweep stays away.
+    insertRun(store, ENDED_RUN, { startedAt: iso(-2_000), endedAt: iso(-1_000) });
+    beginRun({ store, clock, runId: THIS_RUN });
+    blobs.put({ scope: "temporary", artifactId: artifactId.from("orphan") }, BYTES);
+
+    const report = await recover({ recoveryWindowMs: 60_000 });
+
+    expect(blobs.locations()).toHaveLength(1);
+    expect(blobCount(report, "left-for-inspection")).toBe(1);
+    await store.close();
+  });
+
   test("are left alone inside the recovery window, which covers the startup race", async () => {
     const { store, blobs, recover } = await harness();
     insertRun(store, ENDED_RUN, { endedAt: iso(-1_000), startedAt: iso(-2_000) });

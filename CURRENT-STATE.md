@@ -692,9 +692,14 @@ earlier run left behind, and never invents a completion:
   Falryn's in-flight work; treating an unended run as abandoned once it is old
   enough would delete the temporary bytes of any session that outlives the
   window. In-flight bytes are discarded when their owning run is known to have
-  ended, and unattributable bytes only when no other run is open at all and the
-  recovery window has elapsed — the window covering the one remaining race, a
-  process that has written its run row and not yet allocated;
+  ended, and unattributable bytes only when no other run is open at all — with
+  no other run open, nothing on the machine is past startup, so nothing can be
+  writing them — and, on top of that, only once `data.recovery.windowMs` has
+  elapsed since any *other* run started, which keeps the sweep away from a
+  machine that is actively cycling Falryn processes. This run's own row is
+  excluded from that window: recovery runs immediately after the row is written,
+  so including it would make the window unsatisfiable and the branch
+  unreachable;
 - a leftover `falryn.sqlite-wal` or `-shm` is probed *before* the database is
   opened, because opening it creates both, and reported as the crashed-run
   signal `reference/LOCAL-DATA.md` already documents;
