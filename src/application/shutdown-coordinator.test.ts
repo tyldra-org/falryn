@@ -83,6 +83,68 @@ describe("phase order", () => {
   });
 });
 
+describe("released waits", () => {
+  test("a shutdown with no participants finishes without the clock moving", async () => {
+    const clock = createManualClock(instant(0));
+    const coordinator = createShutdownCoordinator({ clock });
+
+    // Awaited directly rather than through `runUntilIdle`: a sequence that only
+    // finishes once something advances time is a sequence that made the process
+    // wait for a grace it had no reason to serve.
+    const report = await coordinator.shutdown();
+
+    expect(report.outcome).toEqual({ kind: "completed" });
+    expect(clock.now()).toBe(instant(0));
+    expect(clock.pendingWaitCount()).toBe(0);
+  });
+
+  test("a phase releases its deadline wait as soon as its participants settle", async () => {
+    const clock = createManualClock(instant(0));
+    const coordinator = createShutdownCoordinator({ clock });
+    const log: string[] = [];
+    for (const phase of SHUTDOWN_PHASES) {
+      coordinator.register(recorder(phase, phase, log));
+    }
+
+    const report = await coordinator.shutdown();
+
+    expect(log).toEqual([...SHUTDOWN_PHASES]);
+    expect(report.outcome).toEqual({ kind: "completed" });
+    // The wait each phase armed lost its race and was cancelled. Left armed, it
+    // is what holds a host event loop open for a full grace per phase.
+    expect(clock.now()).toBe(instant(0));
+    expect(clock.pendingWaitCount()).toBe(0);
+  });
+
+  test("a phase that ends on its deadline leaves no wait armed either", async () => {
+    const clock = createManualClock(instant(0));
+    const coordinator = createShutdownCoordinator({ clock });
+    coordinator.register(hangingParticipant("stuck", "drain-events"));
+
+    const report = await runToCompletion(clock, coordinator.shutdown());
+
+    expect(report.unfinished).toEqual(["stuck"]);
+    expect(clock.pendingWaitCount()).toBe(0);
+  });
+
+  test("an escalated phase leaves no wait armed after it re-arms", async () => {
+    const clock = createManualClock(instant(0));
+    const coordinator = createShutdownCoordinator({ clock });
+    coordinator.register(hangingParticipant("stuck", "stop-accepting-work"));
+
+    const pending = coordinator.shutdown();
+    await clock.advance(duration(10));
+    coordinator.escalate("forced");
+
+    const report = await runToCompletion(clock, pending);
+
+    expect(report.level).toBe("forced");
+    expect(report.unfinished).toEqual(["stuck"]);
+    // Both the wait the escalation replaced and the shortened one that followed.
+    expect(clock.pendingWaitCount()).toBe(0);
+  });
+});
+
 describe("registration", () => {
   test("refuses a participant once shutdown has begun", async () => {
     const clock = createManualClock(instant(0));

@@ -47,12 +47,12 @@ const built = await stat(EXECUTABLE)
 /**
  * How long one compiled run may take.
  *
- * Generous because the process currently lingers for one full shutdown phase
- * grace after its work is done — an uncleared phase timer in the lifecycle
- * owner, unrelated to storage, tracked as falryn#316. The check is about what
- * the executable produces, not how fast it exits.
+ * Covers process start, migration, and close on a loaded machine, and nothing
+ * more. It no longer has to absorb a shutdown wait: the coordinator releases a
+ * phase's deadline timer when the phase ends, so a run exits as soon as its
+ * work is done. `src/main.test.ts` is what measures that latency.
  */
-const COMPILED_RUN_TIMEOUT_MS = 30_000;
+const COMPILED_RUN_TIMEOUT_MS = 10_000;
 
 function runCompiled(root: LocalPath): number {
   // Synchronous on purpose: the child writes nothing, and an asynchronous spawn
