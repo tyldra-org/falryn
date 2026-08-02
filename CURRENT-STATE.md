@@ -1048,7 +1048,7 @@ Their implementation breakdown lives in GitHub Issues and the Project.
 - **Live roadmap:** [Falryn Roadmap](https://github.com/users/yogeshprasad098/projects/2)
 - **Current release outcome:** [v0.1 Foundation issues](https://github.com/yogeshprasad098/falryn/issues?q=is%3Aissue%20is%3Aopen%20milestone%3A%22v0.1%20Foundation%22)
 - **First parent outcome:** [#1 Establish the unified runtime and lifecycle](https://github.com/yogeshprasad098/falryn/issues/1)
-- **Next planning action:** verify parent [#1 Establish the unified runtime and lifecycle](https://github.com/yogeshprasad098/falryn/issues/1) against its integrated acceptance criteria.
+- **Next planning action:** plan parent [#16 Deliver the CLI and headless foundation](https://github.com/yogeshprasad098/falryn/issues/16), the next open parent outcome in the v0.1 Foundation milestone.
 
 Which of #1's children are open, and which delivered the behavior recorded
 above, is read from
