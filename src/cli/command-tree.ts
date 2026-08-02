@@ -20,6 +20,7 @@
 import yargs from "yargs";
 
 import { isLegalProfileName } from "../config/index.ts";
+import { localPathTextError, MAX_LOCAL_PATH_LENGTH } from "../domain/index.ts";
 import {
   COLOR_CHOICES,
   type ColorChoice,
@@ -311,8 +312,11 @@ function conflictIn(parsed: RawArguments): string | null {
     // written here.
     return `Argument profile: "${parsed.profile}" is not a legal profile name.`;
   }
-  if (parsed.workspace !== undefined && parsed.workspace.trim() === "") {
-    return "Argument workspace: a workspace root cannot be empty.";
+  if (parsed.workspace !== undefined) {
+    const issue = workspaceIssue(parsed.workspace);
+    if (issue !== null) {
+      return issue;
+    }
   }
   if (parsed.timeout !== undefined) {
     if (!Number.isInteger(parsed.timeout) || parsed.timeout <= 0) {
@@ -323,6 +327,31 @@ function conflictIn(parsed: RawArguments): string | null {
     }
   }
   return null;
+}
+
+/**
+ * Why a `--workspace` could never name a directory, or `null` when it can.
+ *
+ * Relative is not a reason: `--workspace ./site` resolves against the current
+ * directory in `src/cli/services.ts`. What is refused here is text no
+ * resolution can rescue — and it is refused rather than resolved to "no
+ * workspace", because a run that silently drops the project configuration layer
+ * answers a different question than the one asked, which is the same reason a
+ * mistyped key in a file is reported instead of ignored.
+ */
+function workspaceIssue(value: string): string | null {
+  if (value.trim() === "") {
+    return "Argument workspace: a workspace root cannot be empty.";
+  }
+  const error = localPathTextError(value);
+  if (error === null) {
+    return null;
+  }
+  // The rejected text is never echoed; it is untrusted and may carry control
+  // sequences, and the caller already knows what they typed.
+  return error.code === "path-too-long"
+    ? `Argument workspace: a workspace root cannot exceed ${MAX_LOCAL_PATH_LENGTH} characters.`
+    : "Argument workspace: the path contains a character that cannot appear in one.";
 }
 
 function optionsFrom(parsed: RawArguments): GlobalOptions {

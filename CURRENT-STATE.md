@@ -990,8 +990,8 @@ Its verified behavior:
   parsing one would advertise it in `--help`;
 - **invalid usage never reaches application work.** Unknown flags, unknown
   commands and subcommands, wrong-typed values, out-of-range timeouts, an
-  illegal profile name, an empty workspace, and every refused option
-  combination exit `2` on stderr with an empty stdout;
+  illegal profile name, a workspace root no resolution could rescue, and every
+  refused option combination exit `2` on stderr with an empty stdout;
 - **help and version initialize nothing.** No provider, no database, no
   workspace scan, no integration, and no directory created. Proven by running
   every such path against a service factory that throws if constructed — the
@@ -1003,6 +1003,11 @@ Its verified behavior:
   precedence, coercion, or range rule. `--workspace` and `--profile` are loader
   inputs, and `--format`, `--color`, `--non-interactive`, and `--timeout` are
   facts about the invocation that no declared key describes;
+- **a relative `--workspace` resolves against the current directory.**
+  `./site` and `../sibling` name the directories a caller means, through the
+  domain's own resolution and normalization rather than a rule written in the
+  CLI. A root that no base could rescue is invalid usage rather than a silently
+  absent project layer;
 - **`config show`, `validate`, and `path` run over the existing loader**, with
   the runtime redactor injected rather than reimplemented and the generation
   event appended to an in-memory store, so inspecting settings never writes to

@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
+import { MAX_LOCAL_PATH_LENGTH } from "../domain/index.ts";
 import { helpText, type Invocation, parseInvocation } from "./command-tree.ts";
 import {
   configurationOverridesFor,
@@ -100,6 +101,23 @@ describe("invalid usage", () => {
 
   test("refuses an empty workspace rather than resolving it to the current directory", async () => {
     expect(await invalidMessage("--workspace", "")).toContain("cannot be empty");
+  });
+
+  test("refuses a workspace no resolution could rescue", async () => {
+    // Silently dropping one would take the project configuration layer out of
+    // the run while still reporting success, which is the failure a mistyped
+    // key in a file is deliberately not allowed to have either.
+    expect(await invalidMessage("--workspace", "site\0/etc")).toContain("cannot appear");
+    expect(await invalidMessage("--workspace", "x".repeat(MAX_LOCAL_PATH_LENGTH + 1))).toContain(
+      "cannot exceed",
+    );
+    // The rejected text is untrusted and is never echoed back into the message.
+    expect(await invalidMessage("--workspace", "site\0/etc")).not.toContain("/etc");
+  });
+
+  test("accepts a relative workspace, which the service layer resolves", async () => {
+    expect(await commandOf("--workspace", "./site", "doctor")).toBe("doctor");
+    expect(await commandOf("--workspace", "../sibling", "doctor")).toBe("doctor");
   });
 });
 

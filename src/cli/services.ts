@@ -31,7 +31,10 @@ import {
   type FileSystemPort,
   type LocalDataPlatform,
   type LocalPath,
+  type LocalPathError,
   parseLocalPath,
+  type Result,
+  resolveLocalPath,
   sessionId,
   streamId,
   traceId,
@@ -73,6 +76,8 @@ export type HostServiceOptions = {
   readonly platform?: LocalDataPlatform;
   readonly home?: LocalPath;
   readonly clock?: ClockPort;
+  /** The directory a relative `--workspace` resolves against. */
+  readonly currentDirectory?: LocalPath;
 };
 
 export function createServiceProvider(
@@ -135,7 +140,7 @@ export function createServiceProvider(
         streamId: streamId.from("configuration"),
       }),
       configurationRoot: rootChild(localData.layout, "configuration") ?? home,
-      workspaceRoot: workspaceRootFrom(options),
+      workspaceRoot: workspaceRootFrom(options, overrides),
     };
     built = services;
     return services;
@@ -145,14 +150,34 @@ export function createServiceProvider(
 /**
  * The workspace this invocation operates on.
  *
- * An explicit `--workspace` wins; otherwise the current directory. Git-aware
- * discovery belongs with the workspace capability in v0.2, and guessing here
- * would be a second resolution rule to unpick later.
+ * An explicit `--workspace` wins; otherwise the current directory. A relative
+ * `--workspace` resolves against that same current directory, because that is
+ * what a person typing `--workspace ./site` means and refusing it outright
+ * would have made the ordinary form of the flag unusable. This is not a second
+ * resolution rule: the domain owns both the resolution and the normalization,
+ * and Git-aware discovery still belongs with the workspace capability in v0.2.
  */
-function workspaceRootFrom(options: GlobalOptions): LocalPath | null {
-  // An unusable path is reported as absent rather than thrown: a workspace
-  // that cannot be named is a workspace this run does not have, and the
-  // command says so in its result instead of failing to construct.
-  const parsed = parseLocalPath(options.workspace ?? process.cwd());
+function workspaceRootFrom(
+  options: GlobalOptions,
+  overrides: HostServiceOptions,
+): LocalPath | null {
+  const current = overrides.currentDirectory ?? currentDirectory();
+  if (options.workspace === null) {
+    return current;
+  }
+  // Text that can never name a path is refused at parse time and exits 2, so
+  // reaching `null` here means the process itself has no nameable current
+  // directory to resolve against. The command reports the missing layer in its
+  // result rather than failing to construct.
+  return current === null
+    ? valueOrNull(parseLocalPath(options.workspace))
+    : valueOrNull(resolveLocalPath(current, options.workspace));
+}
+
+function currentDirectory(): LocalPath | null {
+  return valueOrNull(parseLocalPath(process.cwd()));
+}
+
+function valueOrNull(parsed: Result<LocalPath, LocalPathError>): LocalPath | null {
   return parsed.ok ? parsed.value : null;
 }
