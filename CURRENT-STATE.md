@@ -962,6 +962,80 @@ interrupt, and the stdin contract are driven through `src/cli/probe-fixtures.ts`
 compiled mode by `src/cli/process-boundary.test.ts`. `src/main.ts` is the only
 product path through the table today, and it writes nothing to either handle.
 
+The command tree introduced by
+[#17](https://github.com/yogeshprasad098/falryn/issues/17) makes `falryn` a real
+executable. It adds the yargs tree, global options, dispatch, the
+`CommandResult` contract, a service factory, and the `config` and `doctor`
+commands to `src/cli/`, plus a read-only `probeStorage` to `src/data/`.
+`src/main.ts` is now the CLI entry: it composes #20's streams, dispatches one
+invocation, and exits through #20's table.
+
+Its verified behavior:
+
+- **yargs has no authority over the process.** It does not print and does not
+  exit: `help(false)`, `version(false)`, `exitProcess(false)`, help pulled as a
+  string, `--help` and `--version` as ordinary booleans, and a fail handler
+  that raises. The raise is load-bearing — with `exitProcess(false)` yargs
+  calls the handler and then resolves normally, so a handler that only recorded
+  the failure let an invalid invocation continue, which the packaging probe
+  reproduced;
+- **the compiled packaging probe passed**, and was run before anything was
+  built on yargs. A standalone executable produced identical help to source
+  mode, produced version output, and reported unknown flags, unknown commands,
+  and out-of-choice values; non-English locales changed and failed nothing.
+  `@types/yargs` type-checks clean under `skipLibCheck: false` and
+  `exactOptionalPropertyTypes`, so no accommodation was added;
+- **only `config` and `doctor` are declared.** Every other group named in
+  `reference/CLI.md` is absent from the tree, asserted by a control, because
+  parsing one would advertise it in `--help`;
+- **invalid usage never reaches application work.** Unknown flags, unknown
+  commands and subcommands, wrong-typed values, out-of-range timeouts, an
+  illegal profile name, an empty workspace, and every refused option
+  combination exit `2` on stderr with an empty stdout;
+- **help and version initialize nothing.** No provider, no database, no
+  workspace scan, no integration, and no directory created. Proven by running
+  every such path against a service factory that throws if constructed — the
+  reason the factory is a function — with the positive case asserted too, so
+  the control tests a boundary rather than a dead branch;
+- **`--verbose` and `--quiet` are the only global options that map to a
+  declared configuration key.** They set `diagnostics.level` through the
+  existing `cli-override` layer; the CLI supplies a key-path map and writes no
+  precedence, coercion, or range rule. `--workspace` and `--profile` are loader
+  inputs, and `--format`, `--color`, `--non-interactive`, and `--timeout` are
+  facts about the invocation that no declared key describes;
+- **`config show`, `validate`, and `path` run over the existing loader**, with
+  the runtime redactor injected rather than reimplemented and the generation
+  event appended to an in-memory store, so inspecting settings never writes to
+  a user's database. An unknown override key refuses the load rather than being
+  ignored;
+- **`doctor` describes without creating.** It names each root and the database
+  path, and reads the database with `create: false` — so asking whether one
+  exists never creates it. A fresh root reports `absent`; after a bootstrap it
+  reports the schema version it carries;
+- **`--version` names the build**: version, Bun, platform, architecture, and
+  whether the run is source or compiled, detected from the `$bunfs` module root
+  a standalone executable mounts; and
+- **the CLI area restates nothing it consumes.** Controls assert it authors no
+  SQL, imports no database driver, touches no filesystem module directly,
+  declares one parser, and writes no second precedence, redaction, or
+  profile-name rule.
+
+Rendering is not implemented. `--format` records the selection and a command
+result is written as one placeholder JSON line so the tree is runnable;
+[#18](https://github.com/yogeshprasad098/falryn/issues/18) and
+[#19](https://github.com/yogeshprasad098/falryn/issues/19) own the human, JSON,
+and JSON Lines contracts. Shell completion is deferred rather than
+hand-written.
+
+One coverage reduction belongs with this delivery. The compiled check used to
+assert that migrations *apply* under `bun build --compile`, which rode on the
+bare invocation being the storage bootstrap; the bare invocation is now the
+command tree, and no compiled path applies a migration. What the compiled check
+asserts today is that the binary reads a database's migration bookkeeping and
+agrees on the expected schema version. The gap is recorded as an explicit
+`test.todo` rather than dropped, and the first command that opens storage for
+writing closes it.
+
 `src/main.ts` composes the cancellation lifecycle and the local data foundation,
 so the compiled executable includes the domain, application, data, and
 integration layers and the real process-signal, filesystem, `bun:sqlite`, blob,
@@ -985,6 +1059,10 @@ bun run check    PASS  (Biome, tsc --noEmit, and bun test)
 bun run build    PASS  (Bun standalone executable compiled to dist/falryn)
 bun run ci       PASS  (quality, tsc --noEmit, build, then bun test)
 ```
+
+The compiled file is now a runnable CLI rather than a bootstrap: `dist/falryn`
+answers `--help`, `--version`, `config`, and `doctor`, and reports its own
+compiled mode.
 
 `bun run measure`, the gated persistence resource measurement, was last
 observed passing on macOS on 2026-08-01 and is unaffected by the process
@@ -1110,16 +1188,16 @@ repository does not yet provide:
 - the command surfaces that would show a reset or uninstall plan and collect its
   confirmation. This area produces the plan and the typed outcome; rendering
   them and asking is the CLI's;
-- yargs commands, headless product behavior, or the OpenTUI application. The
-  process boundary beneath them exists and is exercised — exit codes, the
-  stdout/stderr split, stdin, broken pipes, and terminal capability — but
-  nothing parses an argument, names a command, or renders a result in any
-  format. Parsing is [#17](https://github.com/yogeshprasad098/falryn/issues/17)
-  and the formats are [#18](https://github.com/yogeshprasad098/falryn/issues/18)
-  and [#19](https://github.com/yogeshprasad098/falryn/issues/19). Four of the
-  thirteen declared exit codes have no producer at all, and shell completion,
-  help text, and the `--color` override that would sit on top of the capability
-  facts are each absent;
+- headless product behavior beyond `config` and `doctor`, or the OpenTUI
+  application. The command tree, global options, help, version, and the process
+  boundary beneath them are real, and no command renders a result in any
+  declared format: `--format` records the selection and a placeholder line is
+  written instead. The formats are
+  [#18](https://github.com/yogeshprasad098/falryn/issues/18) and
+  [#19](https://github.com/yogeshprasad098/falryn/issues/19), and the
+  interactive shell is [#21](https://github.com/yogeshprasad098/falryn/issues/21).
+  Also absent: every command group whose capability does not exist, shell
+  completion, and hidden or deprecated command policy beyond its declaration;
 - provider integration, model routing, the agent loop, or unified tool
   execution;
 - workspace, read, search, patch, shell, Git, LSP, DAP, browser, or computer-use
@@ -1138,7 +1216,7 @@ Their implementation breakdown lives in GitHub Issues and the Project.
 - **Current release outcome:** [v0.1 Foundation issues](https://github.com/yogeshprasad098/falryn/issues?q=is%3Aissue%20is%3Aopen%20milestone%3A%22v0.1%20Foundation%22)
 - **First parent outcome:** [#1 Establish the unified runtime and lifecycle](https://github.com/yogeshprasad098/falryn/issues/1)
 - **Current parent outcome:** [#16 Deliver the CLI and headless foundation](https://github.com/yogeshprasad098/falryn/issues/16), now in progress; #20 is its first child.
-- **Next planning action:** plan [#17](https://github.com/yogeshprasad098/falryn/issues/17), the next child of #16, whose failure path must exit through the table #20 froze.
+- **Next planning action:** plan [#18](https://github.com/yogeshprasad098/falryn/issues/18), the next child of #16, which renders the `CommandResult` #17 defined.
 
 Which of #1's children are open, and which delivered the behavior recorded
 above, is read from
