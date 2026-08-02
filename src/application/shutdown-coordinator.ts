@@ -177,12 +177,24 @@ export function createShutdownCoordinator(
       if (shortened.expiresAt < deadline.expiresAt) {
         deadline = shortened;
       }
-      const waited = await Promise.race([
-        allSettled,
-        clock
-          .waitUntil(deadline.expiresAt, escalation.signal)
-          .then((outcome) => (outcome === "reached" ? ("expired" as const) : ("rearm" as const))),
-      ]);
+      // `Promise.race` settles; it does not cancel the loser. So the deadline
+      // wait gets a signal of its own and is released the moment the race is
+      // decided. Without that, a phase whose participants finished in a
+      // millisecond leaves a timer armed for the rest of its grace, and the
+      // host keeps the process alive for a wait whose answer is already known.
+      const waitReleased = new AbortController();
+      const releaseWait = AbortSignal.any([escalation.signal, waitReleased.signal]);
+      let waited: "settled" | "expired" | "rearm";
+      try {
+        waited = await Promise.race([
+          allSettled,
+          clock
+            .waitUntil(deadline.expiresAt, releaseWait)
+            .then((outcome) => (outcome === "reached" ? ("expired" as const) : ("rearm" as const))),
+        ]);
+      } finally {
+        waitReleased.abort();
+      }
       if (waited === "settled") {
         break;
       }

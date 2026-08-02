@@ -1,10 +1,11 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 import {
   createStaticEnvironment,
+  DEFAULT_PHASE_GRACE_MS,
   type LocalPath,
   localPath,
   SHUTDOWN_PHASES,
@@ -116,4 +117,43 @@ describe("application bootstrap", () => {
     await main(options);
     expect(process.listenerCount("SIGINT")).toBe(before);
   });
+});
+
+/**
+ * How long a whole run may take, measured from spawn to exit.
+ *
+ * Sized to catch a held resource, not to benchmark: a warm run finishes in tens
+ * of milliseconds, and the budget still leaves room for a cold interpreter
+ * start on a loaded machine. What it will not tolerate is a wait of one phase
+ * grace, which is what an unreleased shutdown timer costs.
+ */
+const EXIT_BUDGET_MS = 2_000;
+
+describe("process exit", () => {
+  test("a clean run exits without waiting out a shutdown phase grace", async () => {
+    expect(EXIT_BUDGET_MS).toBeLessThan(DEFAULT_PHASE_GRACE_MS);
+
+    const options = await isolated();
+    const entry = join(dirname(import.meta.path), "main.ts");
+
+    // A real process is the only place this is observable: the report already
+    // said the sequence finished in milliseconds while the host stayed alive
+    // for an armed timer nobody was waiting on. Synchronous on purpose — the
+    // run writes nothing, and an undrained pipe could block the exit being
+    // measured.
+    const startedAt = Date.now();
+    const finished = Bun.spawnSync([process.execPath, "run", entry], {
+      env: {
+        PATH: process.env.PATH ?? "",
+        HOME: options.root,
+        FALRYN_STATE_DIR: options.root,
+      },
+    });
+    const elapsedMs = Date.now() - startedAt;
+
+    expect(finished.exitCode).toBe(0);
+    expect(elapsedMs).toBeLessThan(EXIT_BUDGET_MS);
+    // Above the budget so a regression fails on the measured latency rather
+    // than on a framework timeout that reports nothing about the cause.
+  }, 10_000);
 });
