@@ -19,8 +19,9 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { EXIT_CODES, FALRYN_VERSION } from "./cli/index.ts";
 import { MIGRATION_TABLE, PRODUCT_SCHEMA_VERSION, PRODUCT_TABLES } from "./data/index.ts";
-import { type LocalPath, localPath } from "./domain/index.ts";
+import { createStaticEnvironment, type LocalPath, localPath } from "./domain/index.ts";
 import { openBunSqlite } from "./integrations/index.ts";
+import { main } from "./main.ts";
 
 const EXECUTABLE = join(dirname(dirname(import.meta.path)), "dist", "falryn");
 
@@ -149,19 +150,45 @@ describe.if(built)("the standalone executable", () => {
     COMPILED_RUN_TIMEOUT_MS,
   );
 
-  test.todo("carries its migration bookkeeping into the compiled binary — pending doctor's storage report", () => {
-    // These assertions used to ride on the bare invocation running the
-    // storage bootstrap, which #17 replaced with the command tree. #17 gives
-    // `doctor` "the database open and migration report", and this check
-    // returns when it does: `doctor` opens an existing database with
-    // `create: false`, reports its schema version and applied migrations,
-    // and reports "not created" rather than creating one.
-    //
-    // Recorded as a todo rather than deleted, because SQL kept in a file
-    // tree needs a loader to be embedded and that is exactly the failure a
-    // compiled check exists to catch. `src/main.test.ts` still exercises the
-    // bootstrap and its migrations in source mode, so the behavior is
-    // covered; what is currently uncovered is that it survives packaging.
+  test(
+    "reads the migration bookkeeping out of a database it did not create",
+    async () => {
+      // Restores what #17 briefly cost: the compiled binary agreeing with the
+      // schema this build declares. The database is created by the source
+      // bootstrap, because no compiled path applies migrations any more — the
+      // bare invocation is the command tree now.
+      const root = await temporaryRoot();
+      await main({
+        platform: "darwin",
+        home: root,
+        environment: createStaticEnvironment({ FALRYN_STATE_DIR: root }),
+      });
+      expect(await readdir(root)).toContain("falryn.sqlite");
+
+      const finished = spawnCompiled(root, ["doctor"]);
+      expect(finished.exitCode).toBe(EXIT_CODES.COMPLETED);
+
+      const payload = JSON.parse(finished.stdout).payload;
+      // The compiled binary carries PRODUCT_SCHEMA_VERSION and can read the
+      // migration table. A version constant that failed to survive packaging,
+      // or a table it could not read, fails here.
+      expect(payload.storage).toEqual({
+        kind: "present",
+        schemaVersion: PRODUCT_SCHEMA_VERSION,
+        expectedVersion: PRODUCT_SCHEMA_VERSION,
+        current: true,
+      });
+    },
+    COMPILED_RUN_TIMEOUT_MS,
+  );
+
+  test.todo("applies migrations in compiled mode — pending a command that opens storage for writing", () => {
+    // The original check rode on the bare invocation running the storage
+    // bootstrap, which #17 replaced with the command tree. Nothing compiled
+    // applies a migration today, so there is no path to assert it on.
+    // `src/main.test.ts` covers migrations in source mode; what is uncovered
+    // is that applying them survives `bun build --compile`. The first command
+    // that opens storage for writing restores it.
   });
 });
 

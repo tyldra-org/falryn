@@ -18,7 +18,13 @@
 
 import { fromConfigurationIssues, fromUnknown } from "../application/index.ts";
 import { CONFIGURATION_FILE_NAME, inspectGeneration, PROFILE_DIRECTORY } from "../config/index.ts";
-import { rootChild, sqliteDatabasePath, usableRoots } from "../data/index.ts";
+import {
+  probeStorage,
+  rootChild,
+  type StorageProbe,
+  sqliteDatabasePath,
+  usableRoots,
+} from "../data/index.ts";
 import {
   type ConfigurationInspection,
   type ConfigurationIssue,
@@ -29,6 +35,7 @@ import {
   type OwnershipClass,
   type RootStatus,
 } from "../domain/index.ts";
+import { openBunSqlite } from "../integrations/index.ts";
 import type { GlobalOptions } from "./options.ts";
 import {
   COMMAND_RESULT_SCHEMA_FAMILY,
@@ -223,8 +230,16 @@ export type DoctorPayload = {
   }[];
   /** Overrides the layout could not use, with the reason each was rejected. */
   readonly rootIssues: readonly string[];
-  /** Where the database would live. Reported without opening it. */
+  /** Where the database would live. Named whether or not one exists. */
   readonly databasePath: string | null;
+  /**
+   * What the database on disk reports about itself.
+   *
+   * Read with `create: false`, so asking whether a database exists never
+   * creates one. `absent` is a normal answer on a machine that has not run
+   * Falryn yet.
+   */
+  readonly storage: StorageProbe;
   /** Ownership classes with an owner, and those still unregistered. */
   readonly registeredClasses: readonly OwnershipClass[];
   readonly unregisteredClasses: readonly OwnershipClass[];
@@ -240,7 +255,7 @@ export type DoctorPayload = {
  * The database is named, not opened, for the same reason — opening it creates
  * it.
  */
-export function runDoctor(services: ServiceProvider): CommandResult<DoctorPayload> {
+export async function runDoctor(services: ServiceProvider): Promise<CommandResult<DoctorPayload>> {
   try {
     const { localData } = services();
     const layout = localData.layout;
@@ -257,10 +272,15 @@ export function runDoctor(services: ServiceProvider): CommandResult<DoctorPayloa
     });
 
     const stateRoot = rootChild(layout, "state");
+    const databasePath = stateRoot === null ? null : sqliteDatabasePath(stateRoot);
     return resultFor("doctor", {
       roots,
       rootIssues: localData.resolutionIssues.map((issue) => issue.code),
-      databasePath: stateRoot === null ? null : sqliteDatabasePath(stateRoot),
+      databasePath,
+      storage:
+        databasePath === null
+          ? { kind: "unreadable", code: "unresolved-path" }
+          : await probeStorage({ open: openBunSqlite, databasePath }),
       registeredClasses: localData.registrations().map((entry) => entry.ownershipClass),
       unregisteredClasses: localData.unregistered(),
       build: { platform: process.platform, architecture: process.arch },
