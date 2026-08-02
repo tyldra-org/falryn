@@ -13,7 +13,7 @@
  * `bun run ci` builds before it tests, so a release path always runs it.
  */
 
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, describe, expect, test } from "bun:test";
 import { mkdtemp, readdir, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -25,6 +25,10 @@ import { main } from "./main.ts";
 
 const EXECUTABLE = join(dirname(dirname(import.meta.path)), "dist", "falryn");
 
+/** The bootstrap fixture this file compiles itself, and where it puts it. */
+const BOOTSTRAP_ENTRY = join(dirname(import.meta.path), "main-fixtures.ts");
+const BOOTSTRAP_BINARY = join(tmpdir(), "falryn-bootstrap-probe");
+
 const roots: string[] = [];
 
 async function temporaryRoot(): Promise<LocalPath> {
@@ -32,6 +36,12 @@ async function temporaryRoot(): Promise<LocalPath> {
   roots.push(created);
   return localPath(created);
 }
+
+afterAll(async () => {
+  // The fixture binary is built into the system temp directory, not a root, so
+  // it outlives the per-test cleanup below unless it is named here.
+  await rm(BOOTSTRAP_BINARY, { force: true });
+});
 
 afterEach(async () => {
   while (roots.length > 0) {
@@ -55,6 +65,9 @@ const built = await stat(EXECUTABLE)
  * work is done. `src/main.test.ts` is what measures that latency.
  */
 const COMPILED_RUN_TIMEOUT_MS = 10_000;
+
+/** A run that also compiles. Covers `bun build --compile` on a loaded machine. */
+const COMPILED_BUILD_TIMEOUT_MS = 60_000;
 
 function runCompiled(root: LocalPath): number {
   return spawnCompiled(root).exitCode;
@@ -182,14 +195,51 @@ describe.if(built)("the standalone executable", () => {
     COMPILED_RUN_TIMEOUT_MS,
   );
 
-  test.todo("applies migrations in compiled mode — pending a command that opens storage for writing", () => {
-    // The original check rode on the bare invocation running the storage
-    // bootstrap, which #17 replaced with the command tree. Nothing compiled
-    // applies a migration today, so there is no path to assert it on.
-    // `src/main.test.ts` covers migrations in source mode; what is uncovered
-    // is that applying them survives `bun build --compile`. The first command
-    // that opens storage for writing restores it.
-  });
+  test(
+    "applies every migration inside a standalone executable",
+    async () => {
+      // The coverage #17 briefly cost, restored rather than deferred. The bare
+      // invocation is the command tree now, so the bootstrap is compiled from
+      // its own fixture entry — the pattern `src/cli/probe-fixtures.ts` uses.
+      // SQL kept in a file tree needs a loader to be embedded, and a database
+      // that looks unmigrated is a failure source mode cannot see.
+      const root = await temporaryRoot();
+      const built = Bun.spawnSync(
+        [process.execPath, "build", BOOTSTRAP_ENTRY, "--compile", "--outfile", BOOTSTRAP_BINARY],
+        { stdout: "pipe", stderr: "pipe" },
+      );
+      expect(built.exitCode, built.stderr.toString()).toBe(0);
+
+      const finished = Bun.spawnSync([BOOTSTRAP_BINARY], {
+        env: { PATH: process.env.PATH ?? "", HOME: root, FALRYN_STATE_DIR: root },
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+      expect(finished.exitCode, finished.stderr.toString()).toBe(EXIT_CODES.COMPLETED);
+      // One file: the compiled close sequence disables persistent WAL and
+      // truncates the log exactly as the source-mode one does.
+      expect(await readdir(root)).toEqual(["falryn.sqlite"]);
+
+      const opened = openBunSqlite({ path: localPath(`${root}/falryn.sqlite`), create: false });
+      if (!opened.ok) {
+        throw new Error(`expected a readable database: ${opened.error.code}`);
+      }
+      const tables = opened.value.all(
+        "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name",
+      );
+      // The runner's own table plus every product table migration 0001
+      // declares. A missing table here is a migration that did not survive
+      // `bun build --compile`.
+      expect(tables).toEqual([MIGRATION_TABLE, ...PRODUCT_TABLES].sort().map((name) => ({ name })));
+
+      const version = opened.value.all(
+        `SELECT COALESCE(MAX(version), 0) AS recordedVersion FROM ${MIGRATION_TABLE}`,
+      );
+      expect(version).toEqual([{ recordedVersion: PRODUCT_SCHEMA_VERSION }]);
+      await opened.value.close();
+    },
+    COMPILED_BUILD_TIMEOUT_MS,
+  );
 });
 
 describe.if(!built)("the standalone executable", () => {
