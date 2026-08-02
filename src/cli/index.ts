@@ -10,8 +10,17 @@
  * rendering is #18's and #19's; this area moves bytes and picks a number.
  */
 
-export type { Invocation } from "./command-tree.ts";
+export type { Invocation, RunnableCommand } from "./command-tree.ts";
 export { helpText, parseInvocation, SCRIPT_NAME } from "./command-tree.ts";
+export type {
+  ConfigPathPayload,
+  ConfigShowPayload,
+  ConfigValidatePayload,
+  DoctorPayload,
+} from "./commands.ts";
+export { runConfigPath, runConfigShow, runConfigValidate, runDoctor } from "./commands.ts";
+export type { DispatchOptions } from "./dispatch.ts";
+export { dispatch } from "./dispatch.ts";
 export type { ExitCode, ExitResolution } from "./exit.ts";
 export {
   DECLARED_EXIT_CODES,
@@ -51,6 +60,8 @@ export {
   READ_ONLY_EFFECT,
   succeeded,
 } from "./result.ts";
+export type { HostServiceOptions, ServiceProvider, Services } from "./services.ts";
+export { createServiceProvider } from "./services.ts";
 export type {
   CliStreams,
   CliStreamsParts,

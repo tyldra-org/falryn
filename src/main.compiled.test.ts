@@ -17,7 +17,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtemp, readdir, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { EXIT_CODES } from "./cli/index.ts";
+import { EXIT_CODES, FALRYN_VERSION } from "./cli/index.ts";
 import { MIGRATION_TABLE, PRODUCT_SCHEMA_VERSION, PRODUCT_TABLES } from "./data/index.ts";
 import { type LocalPath, localPath } from "./domain/index.ts";
 import { openBunSqlite } from "./integrations/index.ts";
@@ -59,10 +59,13 @@ function runCompiled(root: LocalPath): number {
   return spawnCompiled(root).exitCode;
 }
 
-function spawnCompiled(root: LocalPath): { exitCode: number; stdout: string; stderr: string } {
+function spawnCompiled(
+  root: LocalPath,
+  args: readonly string[] = [],
+): { exitCode: number; stdout: string; stderr: string } {
   // Synchronous on purpose: the child writes nothing, and an asynchronous spawn
   // whose pipes nobody drains can block on a full buffer rather than exiting.
-  const finished = Bun.spawnSync([EXECUTABLE], {
+  const finished = Bun.spawnSync([EXECUTABLE, ...args], {
     env: {
       PATH: process.env.PATH ?? "",
       HOME: root,
@@ -80,88 +83,86 @@ function spawnCompiled(root: LocalPath): { exitCode: number; stdout: string; std
 
 describe.if(built)("the standalone executable", () => {
   test(
-    "opens, migrates, and closes against a temporary state root",
+    "runs the CLI, and a bare invocation prints help without opening a database",
     async () => {
-      const root = await temporaryRoot();
-
-      expect(runCompiled(root)).toBe(0);
-      // One file: the compiled close sequence disables persistent WAL and
-      // truncates the log exactly as the source-mode one does.
-      expect(await readdir(root)).toEqual(["falryn.sqlite"]);
-    },
-    COMPILED_RUN_TIMEOUT_MS,
-  );
-
-  test(
-    "creates the database owner-only under the process umask",
-    async () => {
-      // The umask only applies in a real process, so this is the one place the
-      // mode a user actually gets can be observed. The file holds sessions,
-      // turns, invocations, and events; the state root being 0700 contains the
-      // exposure but does not excuse it.
-      const root = await temporaryRoot();
-
-      expect(runCompiled(root)).toBe(0);
-
-      expect((await stat(join(root, "falryn.sqlite"))).mode & 0o777).toBe(0o600);
-    },
-    COMPILED_RUN_TIMEOUT_MS,
-  );
-
-  test(
-    "carries its migration bookkeeping into the compiled binary",
-    async () => {
-      const root = await temporaryRoot();
-      runCompiled(root);
-
-      const opened = openBunSqlite({ path: localPath(`${root}/falryn.sqlite`), create: false });
-      if (!opened.ok) {
-        throw new Error(`expected a readable database: ${opened.error.code}`);
-      }
-      const tables = opened.value.all(
-        "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name",
-      );
-      // The runner's own table plus every product table migration 0001
-      // declares. SQL kept in a file tree would need a loader to be embedded,
-      // so a missing table here is exactly the failure this check exists for.
-      expect(tables).toEqual([MIGRATION_TABLE, ...PRODUCT_TABLES].sort().map((name) => ({ name })));
-
-      const version = opened.value.all(
-        `SELECT COALESCE(MAX(version), 0) AS recordedVersion FROM ${MIGRATION_TABLE}`,
-      );
-      expect(version).toEqual([{ recordedVersion: PRODUCT_SCHEMA_VERSION }]);
-      await opened.value.close();
-    },
-    COMPILED_RUN_TIMEOUT_MS,
-  );
-
-  test(
-    "writes nothing to either handle, and exits through the table",
-    async () => {
-      // The shipped bootstrap has no result to report and no notice to give.
-      // A stray diagnostic on stdout would be caught here rather than in the
-      // first consumer that piped the command into a parser.
+      // #17 made `falryn` a command tree, so the bare invocation is no longer
+      // the storage bootstrap: it prints help and exits 0. That it creates no
+      // file is the compiled proof of `reference/CLI.md`'s rule that help
+      // initializes nothing.
       const root = await temporaryRoot();
       const finished = spawnCompiled(root);
 
-      expect(finished.stdout).toBe("");
-      expect(finished.stderr).toBe("");
       expect(finished.exitCode).toBe(EXIT_CODES.COMPLETED);
+      expect(finished.stdout).toContain("falryn [command] [options]");
+      expect(finished.stderr).toBe("");
+      expect(await readdir(root)).toEqual([]);
     },
     COMPILED_RUN_TIMEOUT_MS,
   );
 
   test(
-    "reopens the same database on a second run",
+    "reports its build identity, naming the compiled mode",
     async () => {
       const root = await temporaryRoot();
+      const finished = spawnCompiled(root, ["--version"]);
 
-      expect(runCompiled(root)).toBe(0);
-      expect(runCompiled(root)).toBe(0);
-      expect(await readdir(root)).toEqual(["falryn.sqlite"]);
+      expect(finished.exitCode).toBe(EXIT_CODES.COMPLETED);
+      // The mode is the fact a bug report needs first, and it is the one that
+      // can only be observed here: a source run reports `source`.
+      expect(finished.stdout).toContain("compiled build");
+      expect(finished.stdout).toContain(`falryn ${FALRYN_VERSION}`);
+      expect(await readdir(root)).toEqual([]);
     },
     COMPILED_RUN_TIMEOUT_MS,
   );
+
+  test(
+    "refuses an invalid invocation on stderr with the invalid-usage code",
+    async () => {
+      const root = await temporaryRoot();
+      const finished = spawnCompiled(root, ["--nope"]);
+
+      expect(finished.exitCode).toBe(EXIT_CODES.INVALID_USAGE);
+      // stdout carries results only. An invocation with no result writes
+      // nothing to it, even though it has plenty to say on stderr.
+      expect(finished.stdout).toBe("");
+      expect(finished.stderr).toContain("Unknown argument: nope");
+      expect(await readdir(root)).toEqual([]);
+    },
+    COMPILED_RUN_TIMEOUT_MS,
+  );
+
+  test(
+    "runs doctor over a temporary root without creating anything",
+    async () => {
+      const root = await temporaryRoot();
+      const finished = spawnCompiled(root, ["doctor"]);
+
+      expect(finished.exitCode).toBe(EXIT_CODES.COMPLETED);
+      expect(JSON.parse(finished.stdout)).toMatchObject({
+        command: "doctor",
+        outcome: { kind: "completed" },
+      });
+      // Diagnostics describe roots; they do not create them.
+      expect(await readdir(root)).toEqual([]);
+    },
+    COMPILED_RUN_TIMEOUT_MS,
+  );
+
+  test.todo("carries its migration bookkeeping into the compiled binary — pending doctor's storage report", () => {
+    // These assertions used to ride on the bare invocation running the
+    // storage bootstrap, which #17 replaced with the command tree. #17 gives
+    // `doctor` "the database open and migration report", and this check
+    // returns when it does: `doctor` opens an existing database with
+    // `create: false`, reports its schema version and applied migrations,
+    // and reports "not created" rather than creating one.
+    //
+    // Recorded as a todo rather than deleted, because SQL kept in a file
+    // tree needs a loader to be embedded and that is exactly the failure a
+    // compiled check exists to catch. `src/main.test.ts` still exercises the
+    // bootstrap and its migrations in source mode, so the behavior is
+    // covered; what is currently uncovered is that it survives packaging.
+  });
 });
 
 describe.if(!built)("the standalone executable", () => {
