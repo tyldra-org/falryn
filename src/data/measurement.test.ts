@@ -11,11 +11,13 @@
  * Five rules it carries rather than documents:
  *
  * - **It is gated and visibly absent when ungated.** `bun run measure` sets
- *   `FALRYN_MEASURE=1`; a default `bun run check` reports one skipped test
- *   naming why, the same shape `src/main.compiled.test.ts` uses for an unbuilt
- *   executable. It joins neither `check` nor `ci`, because a measurement that
- *   gates a merge is a threshold, and thresholds are the benchmark harness this
- *   repository has no owner for yet.
+ *   `FALRYN_MEASURE=1`; a default `bun run check` reports five skipped tests
+ *   from this module — Bun records each test inside a false `describe.if` as
+ *   skipped, and the last one exists only to name `bun run measure`, the same
+ *   shape `src/main.compiled.test.ts` uses for an unbuilt executable. It joins
+ *   neither `check` nor `ci`, because a measurement that gates a merge is a
+ *   threshold, and thresholds are the benchmark harness this repository has no
+ *   owner for yet.
  * - **It asserts no timing threshold.** A timing assertion on a developer
  *   machine is a flake. What it does assert is that the work it measured
  *   actually happened — the rows are there, the bytes read back, the schema
@@ -368,7 +370,10 @@ function holderScript(): string {
   return [
     `import { openBunSqlite } from ${JSON.stringify(adapterUrl)};`,
     "const opened = openBunSqlite({ path: process.env.MEASURE_DB, create: false });",
-    "if (!opened.ok) { throw new Error(`could not open: ${opened.error.code}`); }",
+    // Concatenated rather than interpolated: a `${}` inside this string is
+    // source text for the child, and writing it that way makes the linter read
+    // it as a template literal that lost its backticks.
+    'if (!opened.ok) { throw new Error("could not open: " + opened.error.code); }',
     "const connection = opened.value;",
     // Held open across the sleep, which a `transaction` call could not do: it
     // commits when its callback returns.
@@ -782,7 +787,12 @@ describe.if(measuring)("persistence resource behavior", () => {
         unmeasured("range-read latency", "no artifact was finalized to read from");
       }
       const readable = lastId;
-      const stride = RANGE_BYTES;
+      // One byte past the read length, so no sampled offset is a multiple of it
+      // and no two samples share a residue mod 256. An aligned stride would
+      // make every byte-identity assertion below resolve to the same expected
+      // value whatever offset was actually read — an assertion that passes for
+      // a reason unrelated to the offset is not an assertion.
+      const stride = RANGE_BYTES + 1;
       const positions = ARTIFACT_BYTES - RANGE_BYTES;
 
       // One discarded warm-up, then the samples.
@@ -791,7 +801,7 @@ describe.if(measuring)("persistence resource behavior", () => {
 
       const rangeSamples: number[] = [];
       for (let sample = 0; sample < RANGE_SAMPLES; sample += 1) {
-        const offset = (sample * stride * 7) % positions;
+        const offset = (sample * stride) % positions;
         const started = Bun.nanoseconds();
         const range = await artifacts.readRange(readable, offset, RANGE_BYTES);
         rangeSamples.push(Bun.nanoseconds() - started);
@@ -801,7 +811,12 @@ describe.if(measuring)("persistence resource behavior", () => {
         expect(range.value.bytes.byteLength).toBe(RANGE_BYTES);
         // The bytes are the ones that were written, so the number describes a
         // real read rather than an empty one.
+        // Both ends, so a read that returned the right length from the wrong
+        // place fails rather than passing on its first byte.
         expect(range.value.bytes[0]).toBe((offset + lastSample) % 256);
+        expect(range.value.bytes[RANGE_BYTES - 1]).toBe(
+          (offset + RANGE_BYTES - 1 + lastSample) % 256,
+        );
       }
 
       report({

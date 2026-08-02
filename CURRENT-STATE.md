@@ -861,13 +861,13 @@ rows of which 1,000 are events — plus 8 MiB artifacts and 64 KiB range reads.
 
 | Quantity | Against | State | Result |
 | --- | --- | --- | --- |
-| transaction latency | one `SqliteStorePort.write` `immediate` transaction, via `turns.insert` | warm | 250 samples; median 0.026 ms, p95 0.040 ms, min 0.024 ms, max 2.883 ms |
-| busy wait | a second process holding `BEGIN IMMEDIATE` for 300 ms, 5,000 ms busy timeout | warm | 5 samples; median 302.688 ms, p95 303.511 ms; refused 0/5 |
-| refusal rate | the same contention held 2,000 ms against a 300 ms busy timeout | warm | 5 samples; refused 5/5 as `busy` with effect `none`; median wait 302.348 ms |
-| migration time | `openSqliteStore` bringing a fresh database to schema version 3 | cold | 5 samples on 5 fresh roots; median 2.477 ms, p95 5.351 ms |
+| transaction latency | one `SqliteStorePort.write` `immediate` transaction, via `turns.insert` | warm | 250 samples; median 0.027 ms, p95 0.039 ms, min 0.024 ms, max 2.639 ms |
+| busy wait | a second process holding `BEGIN IMMEDIATE` for 300 ms, 5,000 ms busy timeout | warm | 5 samples; median 301.911 ms, p95 302.290 ms; refused 0/5 |
+| refusal rate | the same contention held 2,000 ms against a 300 ms busy timeout | warm | 5 samples; refused 5/5 as `busy` with effect `none`; median wait 301.363 ms |
+| migration time | `openSqliteStore` bringing a fresh database to schema version 3 | cold | 5 samples on 5 fresh roots; median 2.283 ms, p95 5.602 ms |
 | database size | `falryn.sqlite` after the dataset is written and closed | cold | 868,352 bytes (0.83 MiB) for 1,800 rows, no `-wal` or `-shm` |
-| artifact throughput | `ingest` through atomic finalize over the host blob adapter | cold and warm | 3 samples of 8 MiB; median 13.827 ms ≈ 579 MiB/s, max 18.074 ms; includes the SHA-256 pass |
-| range-read latency | `readRange` over the host blob adapter | warm | 64 samples of 64 KiB; median 0.065 ms, p95 0.094 ms, max 0.670 ms |
+| artifact throughput | `ingest` through atomic finalize over the host blob adapter | cold and warm | 3 samples of 8 MiB; median 13.337 ms ≈ 600 MiB/s, max 20.757 ms; includes the SHA-256 pass |
+| range-read latency | `readRange` over the host blob adapter | warm | 64 samples of 64 KiB at unaligned offsets; median 0.058 ms, p95 0.080 ms, max 0.437 ms |
 
 Five limitations belong with those numbers:
 
