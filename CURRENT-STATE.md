@@ -818,6 +818,30 @@ those foundations:
   adjust rule the roots follow. Observed on a real compiled run against an
   isolated state root, which is the only place the process umask applies.
 
+The integrated persistence walk added by
+[#325](https://github.com/yogeshprasad098/falryn/issues/325) demonstrates the
+whole chain at one source revision rather than leaving it inferred from the
+per-seam files. `src/data/integrated-persistence.test.ts` holds **one** test — it
+opens a fresh temporary state root, asserts the store created the database and
+applied every production migration, records a session, a turn, a model attempt,
+and an invocation through the typed repositories, appends the eight ordered
+events, ingests an artifact through the artifact store's declared boundary so its
+bytes are finalized and its metadata committed rather than inserted directly,
+advances the projection cursor, then closes the store and opens the same root
+again. The second process asserts it created nothing and applied no migration,
+and reads back the session view with its turn, model attempt, invocation, and the
+events **in order**, the artifact's committed metadata, its bytes through the
+same host blob adapter, and the cursor at the sequence the events actually
+reached along with the derived outcomes it claims to describe.
+
+Every owner in it is the real one — the store, the repositories, the durable
+event store, the artifact store over the host blob adapter and the real SHA-256
+hasher, and the projection runner — because a double anywhere would make it a
+sixth unit file rather than the integration proof. It changes no production
+source. Removing a seam was demonstrated to fail it: dropping any of the four
+record inserts, reversing the event order, skipping the ingest, skipping the
+projection advance, or reopening a different root each turn the test red.
+
 `src/main.ts` composes the cancellation lifecycle and the local data foundation,
 so the compiled executable includes the domain, application, data, and
 integration layers and the real process-signal, filesystem, `bun:sqlite`, blob,
