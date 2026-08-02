@@ -17,8 +17,16 @@ const SOURCE_ROOT = dirname(import.meta.path);
 /** The one module allowed to speak to the driver. */
 const ADAPTER = "integrations/bun-sqlite.ts";
 
-/** This control file names every forbidden token, so it excludes itself. */
+/**
+ * The boundary controls, which are exempt from every rule they state.
+ *
+ * A control has to name the token it forbids in order to search for it, so
+ * scanning it would always report a hit. `src/cli-boundaries.test.ts` asserts
+ * that the CLI area authors no SQL and imports no driver, which means it spells
+ * both — and this file scans for exactly those.
+ */
 const SELF = "sqlite-boundaries.test.ts";
+const CONTROLS: readonly string[] = [SELF, "cli-boundaries.test.ts"];
 
 /** The area allowed to author SQL. Its migration list lives beside it. */
 const SQL_OWNER = "data/";
@@ -45,7 +53,7 @@ describe("the driver import", () => {
   test("appears only in the adapter", async () => {
     const offenders: string[] = [];
     for (const file of await sourceFiles()) {
-      if (file === ADAPTER || file === SELF) {
+      if (file === ADAPTER || CONTROLS.includes(file)) {
         continue;
       }
       if ((await readSource(file)).includes(`from "bun:sqlite"`)) {
@@ -64,7 +72,7 @@ describe("the connection", () => {
   test("is constructed exactly once in the whole tree", async () => {
     const constructions: string[] = [];
     for (const file of await sourceFiles()) {
-      if (file === SELF) {
+      if (CONTROLS.includes(file)) {
         continue;
       }
       const source = await readSource(file);
@@ -140,7 +148,7 @@ describe("the event store", () => {
   test("has exactly one durable implementation", async () => {
     const implementations: string[] = [];
     for (const file of await sourceFiles()) {
-      if (!isProduct(file) || file === SELF) {
+      if (!isProduct(file) || CONTROLS.includes(file)) {
         continue;
       }
       if ((await readSource(file)).includes("EventStorePort = {")) {
@@ -153,7 +161,7 @@ describe("the event store", () => {
 
     const factories: string[] = [];
     for (const file of await sourceFiles()) {
-      if (!isProduct(file) || file === SELF) {
+      if (!isProduct(file) || CONTROLS.includes(file)) {
         continue;
       }
       const source = await readSource(file);
@@ -180,7 +188,7 @@ describe("row shapes and the database handle", () => {
     const storageTokens = /\b(SqliteRow|SqliteStatements|SqliteStorePort|SqliteBindings)\b/;
     const offenders: string[] = [];
     for (const file of await sourceFiles()) {
-      if (!isProduct(file) || file === SELF) {
+      if (!isProduct(file) || CONTROLS.includes(file)) {
         continue;
       }
       if (file.startsWith("domain/") || file.startsWith(SQL_OWNER) || file === ADAPTER) {
@@ -216,7 +224,7 @@ describe("artifact bytes", () => {
     for (const file of await sourceFiles()) {
       if (
         !isProduct(file) ||
-        file === SELF ||
+        CONTROLS.includes(file) ||
         file === BLOB_ADAPTER ||
         file === "integrations/host-packages.ts"
       ) {
@@ -241,7 +249,7 @@ describe("artifact bytes", () => {
     const ports: string[] = [];
     const stores: string[] = [];
     for (const file of await sourceFiles()) {
-      if (!isProduct(file) || file === SELF) {
+      if (!isProduct(file) || CONTROLS.includes(file)) {
         continue;
       }
       const source = await readSource(file);
@@ -322,7 +330,7 @@ describe("an export package", () => {
     for (const file of await sourceFiles()) {
       if (
         !isProduct(file) ||
-        file === SELF ||
+        CONTROLS.includes(file) ||
         file === PACKAGE_ADAPTER ||
         file === "integrations/host-blobs.ts"
       ) {
@@ -383,7 +391,7 @@ describe("the product tables", () => {
       /\b(model_attempts|projection_cursors|stream_id|outcome_kind|outcome_effect|input_digest|last_applied_sequence)\b/;
     const offenders: string[] = [];
     for (const file of await sourceFiles()) {
-      if (!isProduct(file) || file === SELF || file.startsWith(SQL_OWNER)) {
+      if (!isProduct(file) || CONTROLS.includes(file) || file.startsWith(SQL_OWNER)) {
         continue;
       }
       if (tables.test(await readSource(file))) {

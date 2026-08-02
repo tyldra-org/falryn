@@ -5,8 +5,10 @@ import {
   isInside,
   joinPath,
   localPath,
+  localPathTextError,
   MAX_LOCAL_PATH_LENGTH,
   parseLocalPath,
+  resolveLocalPath,
 } from "./filesystem.ts";
 
 describe("parsing a path", () => {
@@ -72,6 +74,52 @@ describe("parsing a path", () => {
   test("the throwing form is for literals only", () => {
     expect(localPath("/tmp") as string).toBe("/tmp");
     expect(() => localPath("nope")).toThrow(/path-not-absolute/);
+  });
+});
+
+describe("resolving a path against a base", () => {
+  test("resolves a relative path, including one that climbs out", () => {
+    for (const [input, expected] of [
+      ["site", "/tmp/work/site"],
+      ["./site", "/tmp/work/site"],
+      ["../sibling", "/tmp/sibling"],
+      ["a/../b", "/tmp/work/b"],
+    ] as const) {
+      const resolved = resolveLocalPath(localPath("/tmp/work"), input);
+      expect(resolved.ok).toBe(true);
+      if (resolved.ok) {
+        expect(resolved.value as string).toBe(expected);
+      }
+    }
+  });
+
+  test("leaves an absolute path alone, whichever separator it uses", () => {
+    const posix = resolveLocalPath(localPath("/tmp/work"), "/etc/falryn");
+    expect(posix.ok && (posix.value as string)).toBe("/etc/falryn");
+    const windows = resolveLocalPath(localPath("C:/work"), "D:\\data");
+    expect(windows.ok && (windows.value as string)).toBe("D:/data");
+  });
+
+  test("refuses text no base could rescue", () => {
+    expect(resolveLocalPath(localPath("/tmp"), "").ok).toBe(false);
+    expect(resolveLocalPath(localPath("/tmp"), "a\0b")).toEqual({
+      ok: false,
+      error: { kind: "local-path", code: "path-illegal-character" },
+    });
+    // Bounded against the joined text, so a short segment under a long base is
+    // still refused rather than producing a path nothing can open.
+    expect(
+      resolveLocalPath(localPath(`/${"x".repeat(MAX_LOCAL_PATH_LENGTH - 2)}`), "child"),
+    ).toEqual({
+      ok: false,
+      error: { kind: "local-path", code: "path-too-long" },
+    });
+  });
+
+  test("reports text rules without demanding an absolute path", () => {
+    expect(localPathTextError("relative/path")).toBeNull();
+    expect(localPathTextError("")?.code).toBe("path-empty");
+    expect(localPathTextError(42)?.code).toBe("path-not-a-string");
   });
 });
 

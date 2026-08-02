@@ -75,25 +75,68 @@ function normalize(value: string): string {
   return windowsPrefix === null ? `/${joined}` : `${windowsPrefix}${joined}`;
 }
 
-/** Validates an untrusted path. Never echoes the rejected text. */
-export function parseLocalPath(value: unknown): Result<LocalPath, LocalPathError> {
+/**
+ * Why a path's text could never name a location, or `null` when it could.
+ *
+ * Separate from `parseLocalPath` because these rules hold whether or not the
+ * text is absolute: a caller that is about to resolve a relative path still has
+ * to refuse a NUL before it builds one. Never echoes the rejected text.
+ */
+export function localPathTextError(value: unknown): LocalPathError | null {
   if (typeof value !== "string") {
-    return err(pathError("path-not-a-string"));
+    return pathError("path-not-a-string");
   }
   if (value.length === 0) {
-    return err(pathError("path-empty"));
+    return pathError("path-empty");
   }
   if (value.length > MAX_LOCAL_PATH_LENGTH) {
-    return err(pathError("path-too-long"));
+    return pathError("path-too-long");
   }
   // A NUL truncates the path at every syscall boundary underneath us.
   if (value.includes("\0")) {
-    return err(pathError("path-illegal-character"));
+    return pathError("path-illegal-character");
   }
-  if (!isAbsolute(value.replace(/\\/g, "/"))) {
+  return null;
+}
+
+/** Validates an untrusted path. Never echoes the rejected text. */
+export function parseLocalPath(value: unknown): Result<LocalPath, LocalPathError> {
+  const text = localPathTextError(value);
+  if (text !== null) {
+    return err(text);
+  }
+  const candidate = value as string;
+  if (!isAbsolute(candidate.replace(/\\/g, "/"))) {
     return err(pathError("path-not-absolute"));
   }
-  return ok(normalize(value) as LocalPath);
+  return ok(normalize(candidate) as LocalPath);
+}
+
+/**
+ * Resolves a possibly-relative path against an absolute base.
+ *
+ * `parseLocalPath` refuses anything relative, which is right for a stored or
+ * declared path: those name a location on their own. A path a person typed does
+ * not. `--workspace ./site` means the directory beside them, and treating it as
+ * unnameable would discard the layer they were pointing at. Resolution is
+ * textual and runs before anything touches the disk, exactly as normalization
+ * does; `..` is collapsed here rather than refused, because climbing out of the
+ * current directory is what `../sibling` was asked to do.
+ */
+export function resolveLocalPath(
+  base: LocalPath,
+  value: unknown,
+): Result<LocalPath, LocalPathError> {
+  const text = localPathTextError(value);
+  if (text !== null) {
+    return err(text);
+  }
+  const candidate = value as string;
+  // Length is re-checked by `parseLocalPath` against the joined text, so a
+  // short relative path under a long base is still refused.
+  return parseLocalPath(
+    isAbsolute(candidate.replace(/\\/g, "/")) ? candidate : `${base}/${candidate}`,
+  );
 }
 
 /**

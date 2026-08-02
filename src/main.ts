@@ -17,7 +17,7 @@
  */
 
 import { createRuntimeLifecycle, fromSqliteStoreError, fromUnknown } from "./application/index.ts";
-import { type ExitCode, resolveExitCode } from "./cli/index.ts";
+import { createHostCliStreams, dispatch, type ExitCode, resolveExitCode } from "./cli/index.ts";
 import {
   ARTIFACTS_OWNERSHIP,
   beginRun,
@@ -283,9 +283,17 @@ export function bootstrapExitCode(report: BootstrapReport): ExitCode {
 }
 
 if (import.meta.main) {
-  const report = await main();
-  // Set rather than called: `process.exit()` would skip the drain the loop is
-  // in the middle of, and the whole point of the shutdown sequence is that
-  // nothing is abandoned to claim a faster exit.
-  process.exitCode = bootstrapExitCode(report);
+  // The CLI is the entry now. `main()` — the storage bootstrap — is composed by
+  // the commands that need it rather than run on every invocation: `--help` and
+  // `--version` must open no database, and a bootstrap here would open one
+  // before the tree had even parsed.
+  const streams = createHostCliStreams();
+  try {
+    // Set rather than called: `process.exit()` would skip the drain the loop is
+    // in the middle of, and the whole point of the flush contract is that
+    // nothing is abandoned to claim a faster exit.
+    process.exitCode = await dispatch({ argv: Bun.argv.slice(2), streams });
+  } finally {
+    streams.dispose();
+  }
 }
