@@ -742,9 +742,16 @@ durable local state into one portable, versioned, digest-verified package:
   incompatible package before reading its body;
 - a selection names sessions or a time range. Resolving it walks the existing
   repositories to the turns, model attempts, invocations, events, and artifacts
-  it reaches, and every bound — sessions, artifacts, members, package bytes — is
-  checked **before the writer is touched**, so a selection too large is an error
-  rather than a package that stops halfway;
+  it reaches. Sessions, events, artifacts, members, and artifact bytes are all
+  bounded **before the writer is touched**. The package total is enforced as it
+  is written, because the records member's size is not knowable until it has
+  been generated — a selection carrying no artifacts at all still produces a
+  member that grows with every session, turn, and event it names. Either way a
+  selection above a bound is an error and no package appears;
+- events are read a page at a time until the stream is exhausted, and a stream
+  past the declared bound is refused. A single bounded read would have exported
+  a stream's first page and dropped the rest without saying so, which is the one
+  thing the omission rule exists to prevent;
 - an artifact reached but not carried appears in the manifest as a declared
   omission with a reason: `restricted-sensitivity`, `sensitive-not-selected`,
   `bytes-missing`, or `bytes-quarantined`. A package that silently lacks
@@ -784,13 +791,13 @@ are owned by [#118](https://github.com/yogeshprasad098/falryn/issues/118) and
 `src/main.ts` composes the cancellation lifecycle and the local data foundation,
 so the compiled executable includes the domain, application, data, and
 integration layers and the real process-signal, filesystem, `bun:sqlite`, blob,
-and SHA-256 adapters. It resolves roots, registers `sqliteState` and
-`artifacts` and `exports`, prepares the `state` root, probes for crash signals, opens and
+and SHA-256 adapters. It resolves roots, registers `sqliteState`, `artifacts`,
+and `exports`, prepares the `state` root, probes for crash signals, opens and
 migrates the database, records this run, runs startup recovery, constructs the
 durable event store, its projection runner, and the artifact store, and
 registers the `finalize-artifacts`, `persist-outcomes`,
-`checkpoint-projections`, and `close-storage` participants — the run's clean end
-among them, in `persist-outcomes` rather than `close-storage`, because
+`checkpoint-projections`, and `close-storage` participants — the run's clean
+end among them, in `persist-outcomes` rather than `close-storage`, because
 participants inside one phase run concurrently. There is no producer yet, so a
 real run writes no session, turn, event, or artifact — and neither the
 `artifacts` nor the `temporaryIngest` root is created, because the blob adapter

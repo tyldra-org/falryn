@@ -80,6 +80,16 @@ export const MAX_EXPORTED_SESSIONS = 1_000;
 /** Artifacts one package may carry. */
 export const MAX_EXPORTED_ARTIFACTS = 10_000;
 
+/**
+ * Events one package may carry, across every session it names.
+ *
+ * A bound rather than a page size: a stream longer than this is refused, not
+ * exported as its first pages. Silently carrying a prefix would be the one
+ * thing this module's omission rule exists to prevent — an absence nobody
+ * declared.
+ */
+export const MAX_EXPORTED_EVENTS = 250_000;
+
 /** Members one package may carry: the records member plus its artifacts. */
 export const MAX_EXPORT_MEMBERS = MAX_EXPORTED_ARTIFACTS + 1;
 
@@ -264,6 +274,7 @@ export type ExportManifest = {
 /** Which bound a request exceeded. */
 export const EXPORT_BOUNDS = [
   "sessions",
+  "events",
   "artifacts",
   "members",
   "package-bytes",

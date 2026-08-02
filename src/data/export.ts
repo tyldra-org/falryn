@@ -58,6 +58,7 @@ import {
   isCompatible,
   MAX_EXPORT_MEMBERS,
   MAX_EXPORTED_ARTIFACTS,
+  MAX_EXPORTED_EVENTS,
   MAX_EXPORTED_SESSIONS,
   MAX_MANIFEST_BYTES,
   MAX_PACKAGE_BYTES,
@@ -71,6 +72,8 @@ import {
   type RecordError,
   type RecordRepositories,
   type Result,
+  type RuntimeEvent,
+  type Sequence,
   type SessionId,
   type SqliteRow,
   type SqliteStoreError,
@@ -179,6 +182,7 @@ export async function resolveInventory(
     -readonly [Key in keyof ExportCounts]: ExportCounts[Key];
   } = { ...EMPTY_COUNTS, sessions: sessions.value.length };
   const artifacts: ExportArtifactEntry[] = [];
+  const carried = new Set<ContentDigest>();
   const omissions: ExportOmission[] = [];
   let artifactBytes = 0;
 
@@ -189,6 +193,17 @@ export async function resolveInventory(
     const counted = countSession(options, session, counts);
     if (!counted.ok) {
       return err(counted.error);
+    }
+    // Counted here rather than while writing, because the manifest declares
+    // these numbers and a count taken after the fact could only ever agree with
+    // itself. It is also where the bound is enforced.
+    const events = await countEvents(options, session, signal);
+    if (!events.ok) {
+      return err(events.error);
+    }
+    counts.events += events.value;
+    if (counts.events > MAX_EXPORTED_EVENTS) {
+      return err(oversize("events", counts.events, MAX_EXPORTED_EVENTS));
     }
 
     const reachable = readSessionArtifacts(options, session);
@@ -201,13 +216,14 @@ export async function resolveInventory(
         omissions.push({ artifactId: candidate.artifactId, reason: decision });
         continue;
       }
-      if (artifacts.some((existing) => existing.digest === candidate.digest)) {
+      if (carried.has(candidate.digest)) {
         // Exact bytes are carried once. Two records sharing a digest is the
         // deduplication the artifact store already performs, and a package
         // repeating those bytes would be larger for no reason.
         counts.artifacts += 1;
         continue;
       }
+      carried.add(candidate.digest);
       artifacts.push({
         artifactId: candidate.artifactId,
         digest: candidate.digest,
@@ -367,6 +383,75 @@ function countSession(
   return ok(null);
 }
 
+/**
+ * Reads one session's events a page at a time, stopping at the export bound.
+ *
+ * `readFrom` answers one bounded page, so a single call would export a stream's
+ * first page and drop the rest without saying so. Paging until the stream is
+ * exhausted is what makes the count in the manifest the count in the member.
+ */
+async function eachEvent(
+  options: ExportOptions,
+  session: SessionId,
+  visit: (event: RuntimeEvent) => Promise<Result<null, ExportError>> | Result<null, ExportError>,
+  signal: AbortSignal | undefined,
+): Promise<Result<number, ExportError>> {
+  const record = options.repositories.sessions.get(session);
+  if (!record.ok) {
+    return err(fromRecordError(record.error));
+  }
+  if (record.value === null) {
+    return err({ kind: "export", code: "not-found", sessionId: session });
+  }
+
+  let afterSequence: Sequence | null = null;
+  let seen = 0;
+  for (;;) {
+    if (aborted(signal)) {
+      return err(cancelled);
+    }
+    const page = await options.events.readFrom(
+      { streamId: record.value.streamId, afterSequence },
+      MAX_STREAM_READ_LIMIT,
+      signal,
+    );
+    if (!page.ok) {
+      // An event store failure is not a record failure, and folding the two
+      // would send someone looking at the wrong table.
+      return err({
+        kind: "export",
+        code: "storage",
+        error:
+          page.error.code === "storage"
+            ? page.error.error
+            : { kind: "sqlite-store", code: "closed", operation: "read", effect: "none" },
+      });
+    }
+    for (const event of page.value) {
+      const visited = await visit(event);
+      if (!visited.ok) {
+        return err(visited.error);
+      }
+      seen += 1;
+      afterSequence = event.sequence;
+    }
+    if (page.value.length < MAX_STREAM_READ_LIMIT) {
+      return ok(seen);
+    }
+    if (seen > MAX_EXPORTED_EVENTS) {
+      return err(oversize("events", seen, MAX_EXPORTED_EVENTS));
+    }
+  }
+}
+
+function countEvents(
+  options: ExportOptions,
+  session: SessionId,
+  signal: AbortSignal | undefined,
+): Promise<Result<number, ExportError>> {
+  return eachEvent(options, session, () => ok(null), signal);
+}
+
 function readSessionArtifacts(
   options: ExportOptions,
   session: SessionId,
@@ -418,15 +503,48 @@ type MemberSink = {
   finish(): { readonly byteLength: number; readonly digest: ContentDigest };
 };
 
+/**
+ * The bytes one package has written so far, shared by every member.
+ *
+ * The ceiling has to be enforced here rather than only over the inventory,
+ * because the records member's size is not knowable until it has been
+ * generated: a selection with no artifacts at all still produces a member whose
+ * length grows with every session, turn, and event it names. Checking only the
+ * artifact total would let such a selection publish a package many times the
+ * configured limit.
+ */
+type PackageBudget = {
+  spend(bytes: number): ExportError | null;
+  spent(): number;
+};
+
+function createBudget(ceiling: number): PackageBudget {
+  let spent = 0;
+  return {
+    spend(bytes: number): ExportError | null {
+      spent += bytes;
+      return spent > ceiling ? oversize("package-bytes", spent, ceiling) : null;
+    },
+    spent: () => spent,
+  };
+}
+
 function createSink(
   options: ExportOptions,
   name: ExportName,
+  budget: PackageBudget,
   signal: AbortSignal | undefined,
 ): MemberSink {
   const hasher = options.hasher.create();
   let byteLength = 0;
   return {
     async write(chunk: Uint8Array): Promise<Result<null, ExportError>> {
+      // Checked before the chunk is written, so the ceiling bounds what reaches
+      // the device rather than what has already reached it.
+      const exceeded = budget.spend(chunk.byteLength);
+      if (exceeded !== null) {
+        return err(exceeded);
+      }
       const written = await options.packages.write(name, chunk, signal);
       if (!written.ok) {
         return err({ kind: "export", code: "package", error: written.error });
@@ -482,40 +600,35 @@ export async function writePackage(
   if (!begun.ok) {
     return err({ kind: "export", code: "package", error: begun.error });
   }
+  const budget = createBudget(ceiling);
 
   const abandon = async (failure: ExportError): Promise<Result<never, ExportError>> => {
     await options.packages.discard(name);
     return err(failure);
   };
 
-  const header = await writeHeader(options, name, signal);
+  const header = await writeHeader(options, name, budget, signal);
   if (!header.ok) {
     return await abandon(header.error);
   }
 
   const members: ExportMember[] = [];
-  let bodyBytes = header.value;
 
-  const records = await writeRecords(options, name, inventory, signal);
+  const records = await writeRecords(options, name, inventory, budget, signal);
   if (!records.ok) {
     return await abandon(records.error);
   }
   members.push(records.value);
-  bodyBytes += records.value.byteLength;
 
   for (const entry of inventory.artifacts) {
     if (aborted(signal)) {
       return await abandon(cancelled);
     }
-    const copied = await copyArtifact(options, name, entry, signal);
+    const copied = await copyArtifact(options, name, entry, budget, signal);
     if (!copied.ok) {
       return await abandon(copied.error);
     }
     members.push(copied.value);
-    bodyBytes += copied.value.byteLength;
-    if (bodyBytes > ceiling) {
-      return await abandon(oversize("package-bytes", bodyBytes, ceiling));
-    }
   }
 
   const manifest: ExportManifest = {
@@ -534,6 +647,10 @@ export async function writePackage(
   if (trailer.byteLength > MAX_MANIFEST_BYTES) {
     return await abandon(oversize("manifest-bytes", trailer.byteLength, MAX_MANIFEST_BYTES));
   }
+  const spentTrailer = budget.spend(trailer.byteLength);
+  if (spentTrailer !== null) {
+    return await abandon(spentTrailer);
+  }
   const written = await options.packages.write(name, trailer, signal);
   if (!written.ok) {
     return await abandon({ kind: "export", code: "package", error: written.error });
@@ -544,6 +661,10 @@ export async function writePackage(
   const footer = encoder.encode(
     `${String(trailer.byteLength).padStart(EXPORT_FOOTER_DIGITS, "0")}\n`,
   );
+  const spentFooter = budget.spend(footer.byteLength);
+  if (spentFooter !== null) {
+    return await abandon(spentFooter);
+  }
   const stamped = await options.packages.write(name, footer, signal);
   if (!stamped.ok) {
     return await abandon({ kind: "export", code: "package", error: stamped.error });
@@ -568,7 +689,7 @@ export async function writePackage(
   return ok({
     name,
     manifest,
-    byteLength: bodyBytes + trailer.byteLength + footer.byteLength,
+    byteLength: budget.spent(),
     // The publish stands. Reporting it as cancelled would tell a caller nothing
     // happened when a package is sitting at the destination.
     cancelledAfterFinalize: aborted(signal),
@@ -578,9 +699,14 @@ export async function writePackage(
 async function writeHeader(
   options: ExportOptions,
   name: ExportName,
+  budget: PackageBudget,
   signal: AbortSignal | undefined,
 ): Promise<Result<number, ExportError>> {
   const header = encoder.encode(`${EXPORT_FORMAT}\n`);
+  const exceeded = budget.spend(header.byteLength);
+  if (exceeded !== null) {
+    return err(exceeded);
+  }
   const written = await options.packages.write(name, header, signal);
   return written.ok
     ? ok(header.byteLength)
@@ -597,9 +723,10 @@ async function writeRecords(
   options: ExportOptions,
   name: ExportName,
   inventory: ExportInventory,
+  budget: PackageBudget,
   signal: AbortSignal | undefined,
 ): Promise<Result<ExportMember, ExportError>> {
-  const sink = createSink(options, name, signal);
+  const sink = createSink(options, name, budget, signal);
 
   for (const id of inventory.sessionIds) {
     if (aborted(signal)) {
@@ -632,28 +759,14 @@ async function writeRecords(
       }
     }
 
-    const events = await options.events.readFrom(
-      { streamId: session.value.streamId, afterSequence: null },
-      MAX_STREAM_READ_LIMIT,
+    const events = await eachEvent(
+      options,
+      id,
+      (event) => sink.write(line({ entity: "event", record: event })),
       signal,
     );
     if (!events.ok) {
-      // An event store failure is not a record failure, and folding the two
-      // would send someone looking at the wrong table.
-      return err({
-        kind: "export",
-        code: "storage",
-        error:
-          events.error.code === "storage"
-            ? events.error.error
-            : { kind: "sqlite-store", code: "closed", operation: "read", effect: "none" },
-      });
-    }
-    for (const event of events.value) {
-      const wroteEvent = await sink.write(line({ entity: "event", record: event }));
-      if (!wroteEvent.ok) {
-        return err(wroteEvent.error);
-      }
+      return err(events.error);
     }
   }
 
@@ -710,9 +823,10 @@ async function copyArtifact(
   options: ExportOptions,
   name: ExportName,
   entry: ExportArtifactEntry,
+  budget: PackageBudget,
   signal: AbortSignal | undefined,
 ): Promise<Result<ExportMember, ExportError>> {
-  const sink = createSink(options, name, signal);
+  const sink = createSink(options, name, budget, signal);
   let offset = 0;
 
   while (offset < entry.byteLength) {

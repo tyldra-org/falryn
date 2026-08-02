@@ -9,7 +9,7 @@
  */
 
 import { afterEach, describe, expect, test } from "bun:test";
-
+import { sessionStarted } from "../domain/fixtures.ts";
 import {
   type ArtifactSensitivity,
   artifactId,
@@ -23,9 +23,9 @@ import {
   type ExportName,
   type ExportSelection,
   exportName,
-  instant,
   invocationId,
   MAX_EXPORTED_SESSIONS,
+  MAX_STREAM_READ_LIMIT,
   RECORDS_MEMBER,
   type RecordRepositories,
   type Result,
@@ -169,11 +169,48 @@ function stageSession(repositories: RecordRepositories, id: SessionId = SESSION)
   });
 }
 
+/** One event on a session's stream, through the durable store. */
+async function appendEvent(built: Harness, sequence: number): Promise<void> {
+  const appended = await built.events.append({
+    ...sessionStarted(sequence),
+    streamId: `stream-${SESSION}` as never,
+  });
+  if (!appended.ok) {
+    throw new Error(`expected the event to append: ${appended.error.code}`);
+  }
+}
+
 const SESSIONS_SELECTION: ExportSelection = {
   kind: "sessions",
   sessionIds: [SESSION],
   includeSensitive: false,
 };
+
+const DIGEST_LITERAL = `sha-256:${"a".repeat(64)}`;
+
+/**
+ * Rewrites a published package's manifest, footer and all.
+ *
+ * The body is left untouched, so what a test stages is a well-formed package
+ * whose *claim* is wrong — which is the only thing verification can be asked
+ * about.
+ */
+function restamp(
+  built: Harness,
+  change: (manifest: Record<string, unknown>) => Record<string, unknown>,
+): void {
+  const decoded = new TextDecoder().decode(built.packages.bytesOf(NAME) as Uint8Array);
+  const start = decoded.indexOf(`{"format"`);
+  const manifest = JSON.parse(decoded.slice(start, decoded.lastIndexOf("}\n") + 1));
+  const rewritten = JSON.stringify(change(manifest));
+  const length = new TextEncoder().encode(`${rewritten}\n`).byteLength;
+  built.packages.put(
+    NAME,
+    new TextEncoder().encode(
+      `${decoded.slice(0, start)}${rewritten}\n${String(length).padStart(20, "0")}\n`,
+    ),
+  );
+}
 
 function errorOf<Value>(result: Result<Value, ExportError>): ExportError | null {
   return result.ok ? null : result.error;
@@ -199,6 +236,20 @@ describe("resolving a selection", () => {
     expect(inventory.artifacts).toHaveLength(1);
     expect(inventory.artifactBytes).toBe(CONTENT.byteLength);
     expect(built.packages.staged()).toEqual([]);
+    await built.store.close();
+  });
+
+  test("counts the events it will write, because the manifest declares them", async () => {
+    const built = await harness();
+    stageSession(built.repositories);
+    await appendEvent(built, 1);
+    await appendEvent(built, 2);
+
+    const inventory = await inventoryOf(built);
+
+    // A count the manifest declares and the member does not match is a package
+    // nobody can check, which is the whole point of declaring it.
+    expect(inventory.counts.events).toBe(2);
     await built.store.close();
   });
 
@@ -268,6 +319,23 @@ describe("resolving a selection", () => {
     await built.store.close();
   });
 
+  test("refuses an artifact-free selection whose records exceed the ceiling", async () => {
+    // The records member grows with every session, turn, and event named, so a
+    // ceiling that only bounded artifact bytes would let a selection with no
+    // artifacts publish a package many times the configured limit.
+    const built = await harness({ maxPackageBytes: 1 });
+    stageSession(built.repositories);
+    await appendEvent(built, 1);
+    const inventory = await inventoryOf(built);
+
+    const written = await writePackage(built.options, NAME, SESSIONS_SELECTION, inventory);
+
+    expect(errorOf(written)).toMatchObject({ code: "oversize", bound: "package-bytes" });
+    expect(built.packages.finalized()).toEqual([]);
+    expect(built.packages.staged()).toEqual([]);
+    await built.store.close();
+  });
+
   test("refuses a package larger than its configured ceiling", async () => {
     const built = await harness({ maxPackageBytes: 4 });
     stageSession(built.repositories);
@@ -276,6 +344,31 @@ describe("resolving a selection", () => {
     const inventory = await resolveInventory(built.options, SESSIONS_SELECTION);
 
     expect(errorOf(inventory)).toMatchObject({ code: "oversize", bound: "package-bytes" });
+    await built.store.close();
+  });
+});
+
+describe("the events member", () => {
+  test("carries every event, rather than the first page of them", async () => {
+    const built = await harness();
+    stageSession(built.repositories);
+    // Past one page of the underlying stream read, which a single call would
+    // silently truncate — an absence nobody declared.
+    for (let sequence = 1; sequence <= MAX_STREAM_READ_LIMIT + 3; sequence += 1) {
+      await appendEvent(built, sequence);
+    }
+    const inventory = await inventoryOf(built);
+
+    const written = await writePackage(built.options, NAME, SESSIONS_SELECTION, inventory);
+
+    expect(inventory.counts.events).toBe(MAX_STREAM_READ_LIMIT + 3);
+    const bytes = built.packages.bytesOf(NAME);
+    const lines = new TextDecoder()
+      .decode(bytes as Uint8Array)
+      .split("\n")
+      .filter((entry) => entry.includes(`"entity":"event"`));
+    expect(lines).toHaveLength(MAX_STREAM_READ_LIMIT + 3);
+    expect(written.ok && written.value.manifest.counts.events).toBe(lines.length);
     await built.store.close();
   });
 });
@@ -393,6 +486,58 @@ describe("writing a package", () => {
     // A half-written package must never be where a finished one would be.
     expect(packages.finalized()).toEqual([]);
     expect(packages.staged()).toEqual([]);
+    await built.store.close();
+  });
+
+  test("leaves nothing at the destination when the flush fails", async () => {
+    // A device that accepted every byte and then failed to flush is the case a
+    // write-only fault cannot reach: the package looks complete right up to the
+    // moment it is closed.
+    const packages = createInMemoryPackageWriter({ failOperations: { close: "io-failure" } });
+    const built = await harness({ packages });
+    stageSession(built.repositories);
+    const inventory = await inventoryOf(built);
+
+    const written = await writePackage(built.options, NAME, SESSIONS_SELECTION, inventory);
+
+    expect(errorOf(written)).toMatchObject({ code: "package", error: { code: "io-failure" } });
+    expect(packages.finalized()).toEqual([]);
+    expect(packages.staged()).toEqual([]);
+    await built.store.close();
+  });
+
+  test("reports a cancellation that arrived after the publish beside the package", async () => {
+    const built = await harness();
+    stageSession(built.repositories);
+    const inventory = await inventoryOf(built);
+    const controller = new AbortController();
+    const inner = built.packages;
+    const options: ExportOptions = {
+      ...built.options,
+      packages: {
+        ...inner,
+        async finalize(name, signal) {
+          const published = await inner.finalize(name, signal);
+          // The publish stands; the cancellation arrived after it.
+          controller.abort();
+          return published;
+        },
+      },
+    };
+
+    const written = await writePackage(
+      options,
+      NAME,
+      SESSIONS_SELECTION,
+      inventory,
+      controller.signal,
+    );
+
+    // Calling this cancelled would tell a caller nothing happened when a
+    // package is sitting at the destination.
+    expect(written.ok).toBe(true);
+    expect(written.ok && written.value.cancelledAfterFinalize).toBe(true);
+    expect(inner.finalized()).toEqual([NAME]);
     await built.store.close();
   });
 
@@ -558,18 +703,10 @@ describe("verifying a finished package", () => {
 
   test("reports a package this build is too old to open", async () => {
     const built = await written();
-    const decoded = new TextDecoder().decode(built.packages.bytesOf(NAME) as Uint8Array);
-    // Re-stamp the manifest as requiring a newer reader, footer and all.
-    const start = decoded.indexOf(`{"format"`);
-    const manifestText = decoded.slice(start, decoded.lastIndexOf("}\n") + 1);
-    const raised = JSON.stringify({
-      ...JSON.parse(manifestText),
+    restamp(built, (manifest) => ({
+      ...manifest,
       minimumCompatibleSchemaVersion: EXPORT_SCHEMA_VERSION + 1,
-    });
-    const rebuilt = `${decoded.slice(0, start)}${raised}\n${String(
-      new TextEncoder().encode(`${raised}\n`).byteLength,
-    ).padStart(20, "0")}\n`;
-    built.packages.put(NAME, new TextEncoder().encode(rebuilt));
+    }));
 
     const verified = await verifyPackage(built.options, NAME);
 
@@ -578,6 +715,53 @@ describe("verifying a finished package", () => {
       packageRequiresAtLeast: EXPORT_SCHEMA_VERSION + 1,
       readerSchemaVersion: EXPORT_SCHEMA_VERSION,
     });
+    await built.store.close();
+  });
+
+  test("reports a member the package does not actually contain", async () => {
+    const built = await written();
+    // A manifest declaring more than the body holds. Re-stamped whole, footer
+    // included, so the package is well-formed and only its claim is wrong.
+    restamp(built, (manifest) => ({
+      ...manifest,
+      members: [
+        ...(manifest.members as readonly unknown[]),
+        { name: "artifacts/absent", kind: "artifact", byteLength: 4_096, digest: DIGEST_LITERAL },
+      ],
+    }));
+
+    const verified = await verifyPackage(built.options, NAME);
+
+    expect(verified.ok && verified.value.verified).toBe(false);
+    expect(verified.ok && verified.value.members.at(-1)?.status).toBe("missing");
+    await built.store.close();
+  });
+
+  test("reports a member the package stops short of", async () => {
+    const built = await written();
+    const inner = built.packages;
+    let reads = 0;
+    // A device that answers the first read of a member and then returns
+    // nothing: the member is inside the body, so it is not missing, and it is
+    // not a digest mismatch either — it is shorter than declared.
+    const options: ExportOptions = {
+      ...built.options,
+      packages: {
+        ...inner,
+        async readRange(name, offset, length, signal) {
+          reads += 1;
+          return reads > 3
+            ? { ok: true, value: new Uint8Array(0) }
+            : inner.readRange(name, offset, length, signal);
+        },
+      },
+    };
+
+    const verified = await verifyPackage(options, NAME);
+
+    expect(
+      verified.ok && verified.value.members.some((member) => member.status === "wrong-length"),
+    ).toBe(true);
     await built.store.close();
   });
 
