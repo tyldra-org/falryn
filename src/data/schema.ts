@@ -42,8 +42,8 @@ export const INVOCATIONS_TABLE = "invocations";
 export const EVENTS_TABLE = "events";
 export const PROJECTION_CURSORS_TABLE = "projection_cursors";
 
-/** Every product table migration `0001` creates, in creation order. */
-export const PRODUCT_TABLES: readonly string[] = [
+/** Every table migration `0001` creates, in creation order. */
+export const RECORD_TABLES: readonly string[] = [
   SESSIONS_TABLE,
   TURNS_TABLE,
   MODEL_ATTEMPTS_TABLE,
@@ -53,7 +53,7 @@ export const PRODUCT_TABLES: readonly string[] = [
 ];
 
 /** The schema version a database is at once migration `0001` has been applied. */
-export const PRODUCT_SCHEMA_VERSION = 1;
+export const RECORD_SCHEMA_VERSION = 1;
 
 const CREATE_SESSIONS = `CREATE TABLE sessions (
   session_id TEXT PRIMARY KEY,
@@ -178,7 +178,7 @@ const CREATE_INVOCATIONS_BY_TURN =
  * row this step could alter.
  */
 export const MIGRATION_0001: Migration = {
-  version: PRODUCT_SCHEMA_VERSION,
+  version: RECORD_SCHEMA_VERSION,
   name: "create-session-turn-and-event-records",
   statements: [
     CREATE_SESSIONS,

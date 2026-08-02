@@ -380,17 +380,31 @@ export type RemovalOutcome = {
 };
 
 /**
+ * Who wrote a temporary-ingest entry, as far as its name can say.
+ *
+ * `artifact-ingest` is claimed by the naming convention artifact ingest writes
+ * under; anything else is `unknown` rather than guessed at. Naming an owner is
+ * not a claim that the write finished — that stays knowable only from the
+ * record beside it — it is what makes the entry addressable by the owner that
+ * can decide.
+ */
+export const TEMPORARY_INGEST_OWNERS = ["artifact-ingest", "unknown"] as const;
+
+export type TemporaryIngestOwner = (typeof TEMPORARY_INGEST_OWNERS)[number];
+
+/**
  * What startup found in temporary ingest.
  *
  * Every entry is recorded as uncertain and nothing is removed. Whether a
  * temporary file represents finished work is knowable only by the owner that
- * wrote it, and no such owner exists yet — so this reports what is there and
- * refuses to conclude anything about it.
+ * wrote it, so this reports what is there, names the owner when the entry says
+ * who it is, and refuses to conclude anything about its completeness.
  */
 export type ReconciledEntry = {
   readonly path: LocalPath;
   readonly kind: string;
   readonly byteLength: number;
+  readonly owner: TemporaryIngestOwner;
 };
 
 export type ReconciliationReport = {

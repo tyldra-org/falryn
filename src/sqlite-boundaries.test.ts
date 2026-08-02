@@ -201,6 +201,71 @@ describe("row shapes and the database handle", () => {
   });
 });
 
+describe("artifact bytes", () => {
+  /** The one module allowed to write them. */
+  const BLOB_ADAPTER = "integrations/host-blobs.ts";
+
+  test("are written in exactly one adapter module", async () => {
+    // The three ways a module could hold a byte stream of its own: an open
+    // handle, a whole-file write, and a stream. Any of them outside the adapter
+    // would be a second answer to where artifact bytes live.
+    const byteWriters = /\b(fs\.open|open\(|writeFile|createWriteStream|Bun\.write)\b/;
+    const offenders: string[] = [];
+    for (const file of await sourceFiles()) {
+      if (!isProduct(file) || file === SELF || file === BLOB_ADAPTER) {
+        continue;
+      }
+      if (byteWriters.test(await readSource(file))) {
+        offenders.push(file);
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  test("are reachable only by scope and digest, never by path", async () => {
+    // `BlobLocation` names a scope and a digest. A module that turned one into
+    // a path would put that path into an error, an event, or a diagnostic.
+    const source = await readSource("data/artifact-store.ts");
+    expect(source).not.toMatch(/\b(LocalPath|joinPath|localPath)\b/);
+    expect(await readSource("domain/blob.ts")).not.toMatch(/\bLocalPath\b/);
+  });
+
+  test("have one artifact store and one blob port declaration", async () => {
+    const ports: string[] = [];
+    const stores: string[] = [];
+    for (const file of await sourceFiles()) {
+      if (!isProduct(file) || file === SELF) {
+        continue;
+      }
+      const source = await readSource(file);
+      if (source.includes("BlobStorePort = {")) {
+        ports.push(file);
+      }
+      if (source.includes("export function createArtifactStore")) {
+        stores.push(file);
+      }
+    }
+    expect(ports).toEqual(["domain/blob.ts"]);
+    expect(stores).toEqual(["data/artifact-store.ts"]);
+  });
+});
+
+describe("an artifact failure", () => {
+  test("carries no digest, path, or byte in any declared member", async () => {
+    const artifactErrors = /code: "(malformed-row|storage|already-exists|not-found)"/;
+    const source = await readSource("domain/artifact.ts");
+    const union = source.slice(
+      source.indexOf("export type ArtifactError"),
+      source.indexOf("/** What a caller declares"),
+    );
+
+    expect(artifactErrors.test(source) || union.length > 0).toBe(true);
+    // A digest or a byte array in a failure is content in something meant to be
+    // loggable. A byte length and an offset are structure, and are allowed.
+    expect(union).not.toMatch(/readonly (digest|bytes|content|path):/);
+  });
+});
+
 describe("the product tables", () => {
   test("are named only by the area that owns their SQL", async () => {
     // Snake-cased identifiers only. `sessions` and `turns` are also ordinary

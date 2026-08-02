@@ -15,12 +15,14 @@ import {
   type LocalPath,
   TERMINAL_OUTCOME_KINDS,
 } from "../domain/index.ts";
+import { ARTIFACT_SCHEMA_VERSION } from "./artifact-schema.ts";
 import {
   temporaryRoot as makeTemporaryRoot,
   openProductStoreOrThrow,
   removeTemporaryRoots,
 } from "./fixtures.ts";
-import { MIGRATION_0001, PRODUCT_SCHEMA_VERSION, PRODUCT_TABLES } from "./schema.ts";
+import { MIGRATION_0001, RECORD_SCHEMA_VERSION, RECORD_TABLES } from "./schema.ts";
+import { PRODUCT_SCHEMA_VERSION, PRODUCT_TABLES } from "./sqlite-migrations.ts";
 import { MIGRATION_TABLE } from "./sqlite-store.ts";
 
 function temporaryRoot(): Promise<LocalPath> {
@@ -47,13 +49,13 @@ describe("the declared migration", () => {
       statement.startsWith("CREATE TABLE"),
     );
 
-    expect(tables).toHaveLength(PRODUCT_TABLES.length);
+    expect(tables).toHaveLength(RECORD_TABLES.length);
     expect(tables.every((statement) => statement.endsWith(") STRICT"))).toBe(true);
   });
 
   test("is the version a migrated database reports", () => {
-    expect(MIGRATION_0001.version).toBe(PRODUCT_SCHEMA_VERSION);
-    expect(PRODUCT_SCHEMA_VERSION).toBeGreaterThan(INITIAL_SCHEMA_VERSION);
+    expect(MIGRATION_0001.version).toBe(RECORD_SCHEMA_VERSION);
+    expect(RECORD_SCHEMA_VERSION).toBeGreaterThan(INITIAL_SCHEMA_VERSION);
   });
 });
 
@@ -64,7 +66,7 @@ describe("a fresh database", () => {
 
     expect(store.report.created).toBe(true);
     expect(store.report.schemaVersion).toBe(PRODUCT_SCHEMA_VERSION);
-    expect(store.report.appliedThisRun).toEqual([PRODUCT_SCHEMA_VERSION]);
+    expect(store.report.appliedThisRun).toEqual([RECORD_SCHEMA_VERSION, ARTIFACT_SCHEMA_VERSION]);
     // Nothing to lose: a database at version 0 holds no product row.
     expect(store.report.backupPath).toBeNull();
     await store.close();
@@ -96,6 +98,8 @@ describe("a fresh database", () => {
     // Implicit indexes behind UNIQUE and PRIMARY KEY are excluded by
     // `sql IS NOT NULL`; what is listed here is what was declared on purpose.
     expect(indexes.ok && indexes.value.map((row) => row.name)).toEqual([
+      "artifacts_by_digest",
+      "artifacts_by_invocation",
       "invocations_by_turn",
       "model_attempts_by_turn",
       "sessions_by_workspace",

@@ -31,8 +31,10 @@ import {
   type ConfigurationValue,
   type ConfigurationValues,
   configurationKeyPath,
+  DEFAULT_ARTIFACT_MAX_BYTES,
   DEFAULT_BUSY_TIMEOUT_MS,
   DIAGNOSTIC_LEVELS,
+  MAX_ARTIFACT_BYTES,
   MAX_BUSY_TIMEOUT_MS,
   MAX_DEBUG_PREVIEWS,
   MAX_DEBUG_WINDOW_MS,
@@ -69,14 +71,26 @@ export const MIN_CLASS_BYTES = MEBIBYTE;
 export const MAX_CLASS_BYTES = 1_024 * GIBIBYTE;
 
 /**
+ * Smallest per-artifact ceiling a machine may configure.
+ *
+ * A ceiling below this would refuse an ordinary diff or log, which is a
+ * configuration that only looks like it works until the first real artifact.
+ */
+export const MIN_ARTIFACT_MAX_BYTES = MEBIBYTE;
+
+/**
  * Classes with a retention posture.
  *
- * Only the rotating and rebuildable classes appear. Configuration and
+ * The rotating and rebuildable classes, plus artifacts. Configuration and
  * credential-reference metadata are preserved until explicitly selected for
  * removal, so a retention duration for them would describe a deletion that
  * never happens.
+ *
+ * Artifacts carry a byte budget and no age: durable user content is not aged
+ * out, it is collected once nothing references it, and a duration here would
+ * promise a deletion by clock that no owner performs.
  */
-export const RETENTION_CLASSES = ["logs", "cache", "temporaryIngest"] as const;
+export const RETENTION_CLASSES = ["logs", "cache", "temporaryIngest", "artifacts"] as const;
 
 export type RetentionClass = (typeof RETENTION_CLASSES)[number];
 
@@ -90,6 +104,8 @@ const DEFAULT_RETENTION: { readonly [key in RetentionClass]: ConfigurationValue 
   // A cache is rebuilt rather than expired, so only its size is bounded.
   cache: { maxAgeMs: UNLIMITED, maxBytes: GIBIBYTE },
   temporaryIngest: { maxAgeMs: DAY_MS, maxBytes: 256 * MEBIBYTE },
+  // Collected by reachability rather than by clock, so only its size is bounded.
+  artifacts: { maxAgeMs: UNLIMITED, maxBytes: 2 * GIBIBYTE },
 };
 
 const RETENTION_PATH = configurationKeyPath("data.retention");
@@ -170,6 +186,21 @@ export const DATA_KEYS: readonly ConfigurationKeyDeclaration[] = [
     // Applied once, when the connection opens. Nothing re-reads it later, so a
     // change takes effect on the next run rather than on the next operation.
     applicationClass: "application-restart",
+  }),
+  integerKey({
+    path: "data.artifacts.maxBytes",
+    summary: "Largest single artifact this machine will ingest.",
+    unit: "bytes",
+    minimum: MIN_ARTIFACT_MAX_BYTES,
+    // The declared runtime bound is a safe hard maximum: a larger request is an
+    // error rather than a silent clamp, so nobody believes a ceiling they asked
+    // for is in effect when it is not.
+    maximum: MAX_ARTIFACT_BYTES,
+    defaultValue: DEFAULT_ARTIFACT_MAX_BYTES,
+    scopes: ["user", "environment", "cli"],
+    // Read when an ingest begins, so the next artifact uses the new ceiling
+    // without a restart. It never changes an artifact already stored.
+    applicationClass: "next-operation",
   }),
   limitKey({
     path: "data.quotas.totalMaxBytes",
