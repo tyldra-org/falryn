@@ -1,13 +1,21 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { REDACTED } from "../application/index.ts";
+import {
+  CONFIGURATION_FILE_NAME,
+  CONFIGURATION_SCHEMA_VERSION,
+  SCHEMA_VERSION_FIELD,
+} from "../config/index.ts";
 import { createStaticEnvironment, localPath } from "../domain/index.ts";
 import { runConfigPath, runConfigShow, runConfigValidate, runDoctor } from "./commands.ts";
 import { DIAGNOSTIC_LEVEL_KEY, type GlobalOptions } from "./options.ts";
-import { createServiceProvider } from "./services.ts";
+import { createServiceProvider, type ServiceProvider } from "./services.ts";
+
+/** Token-shaped text the runtime redactor recognizes. Never a real credential. */
+const SECRET = "sk-live-ABCDEFGH12345678";
 
 const DEFAULTS: GlobalOptions = {
   format: "human",
@@ -30,7 +38,7 @@ const roots: string[] = [];
  * The real host adapters, so what is exercised is the composition rather than
  * a double — but never the developer's own roots.
  */
-async function isolated(options: Partial<GlobalOptions> = {}) {
+async function isolated(options: Partial<GlobalOptions> = {}, currentDirectory?: string) {
   const home = await mkdtemp(join(tmpdir(), "falryn-command-"));
   roots.push(home);
   const globals = { ...DEFAULTS, ...options };
@@ -41,8 +49,24 @@ async function isolated(options: Partial<GlobalOptions> = {}) {
       home: localPath(home),
       platform: "darwin",
       environment: createStaticEnvironment({ FALRYN_STATE_DIR: home }),
+      // Named rather than inherited so a relative `--workspace` resolves
+      // against a known directory instead of wherever the suite was started.
+      ...(currentDirectory === undefined ? {} : { currentDirectory: localPath(currentDirectory) }),
     }),
   };
+}
+
+/** Writes the user-scope configuration file this provider will read. */
+async function writeUserConfiguration(
+  services: ServiceProvider,
+  document: Record<string, unknown>,
+): Promise<void> {
+  const root = services().configurationRoot;
+  await mkdir(root, { recursive: true });
+  await writeFile(
+    join(root, CONFIGURATION_FILE_NAME),
+    JSON.stringify({ [SCHEMA_VERSION_FIELD]: CONFIGURATION_SCHEMA_VERSION, ...document }),
+  );
 }
 
 afterEach(async () => {
@@ -97,14 +121,71 @@ describe("config show", () => {
 
   test("puts no secret in its payload", async () => {
     const { services, globals } = await isolated();
-    const result = await runConfigShow(services, {}, globals);
+    // A real value someone typed a token into, not an empty configuration:
+    // asserting the absence of a secret that was never present would pass with
+    // redaction removed, which is no control at all. `data.roots.cache` is a
+    // public string key, so its text reaches the redactor rather than being
+    // withheld wholesale — the case where a leak would actually happen.
+    await writeUserConfiguration(services, {
+      data: { roots: { cache: `/tmp/falryn-cache-${SECRET}` } },
+    });
 
-    // Rendered through each key's declared sensitivity by the registry's own
-    // redactor. Nothing here reimplements redaction, so the assertion is that
-    // the projection carries only what that redactor allowed.
+    const result = await runConfigShow(services, {}, globals);
+    expect(result.outcome).toEqual({ kind: "completed" });
+
+    const cache = result.payload?.inspection.values.find(
+      (value) => value.path === "data.roots.cache",
+    );
+    // The value is still reported, and still recognizable — this is redaction
+    // rather than the key having failed to load.
+    expect(String(cache?.value)).toContain("/tmp/falryn-cache-");
+    expect(String(cache?.value)).toContain(REDACTED);
+
     const serialized = JSON.stringify(result.payload);
-    expect(serialized).not.toMatch(/sk-[A-Za-z0-9]/);
-    expect(serialized.includes(REDACTED) || !serialized.includes("secret")).toBe(true);
+    expect(serialized).not.toContain(SECRET);
+  });
+});
+
+describe("workspace resolution", () => {
+  test("resolves a relative --workspace against the current directory", async () => {
+    const { services, globals } = await isolated({ workspace: "./site" }, "/tmp/falryn-cwd");
+
+    // The ordinary way to write the flag. Discarding it would take the project
+    // layer out of every load while reporting success.
+    const sources = runConfigPath(services, globals).payload?.sources ?? [];
+    expect(sources.find((source) => source.kind === "project-file")?.path).toBe(
+      `/tmp/falryn-cwd/site/${CONFIGURATION_FILE_NAME}`,
+    );
+  });
+
+  test("resolves a --workspace that climbs out of the current directory", async () => {
+    const { services, globals } = await isolated({ workspace: "../sibling" }, "/tmp/falryn-cwd");
+
+    const sources = runConfigPath(services, globals).payload?.sources ?? [];
+    expect(sources.find((source) => source.kind === "project-file")?.path).toBe(
+      `/tmp/sibling/${CONFIGURATION_FILE_NAME}`,
+    );
+  });
+
+  test("leaves an absolute --workspace alone", async () => {
+    const { services, globals } = await isolated(
+      { workspace: "/tmp/falryn-explicit" },
+      "/tmp/other",
+    );
+
+    const sources = runConfigPath(services, globals).payload?.sources ?? [];
+    expect(sources.find((source) => source.kind === "project-file")?.path).toBe(
+      `/tmp/falryn-explicit/${CONFIGURATION_FILE_NAME}`,
+    );
+  });
+
+  test("falls back to the current directory when no workspace was given", async () => {
+    const { services, globals } = await isolated({}, "/tmp/falryn-cwd");
+
+    const sources = runConfigPath(services, globals).payload?.sources ?? [];
+    expect(sources.find((source) => source.kind === "project-file")?.path).toBe(
+      `/tmp/falryn-cwd/${CONFIGURATION_FILE_NAME}`,
+    );
   });
 });
 
