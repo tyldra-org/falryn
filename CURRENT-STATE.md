@@ -4,7 +4,7 @@ This file is Falryn's sole concise implementation-status owner. It records what
 exists and has been verified in the `falryn` repository. It does not duplicate
 the product design or GitHub roadmap.
 
-Last reconciled: **2026-08-01**
+Last reconciled: **2026-08-02**
 
 ## Where to look
 
@@ -895,6 +895,73 @@ Five limitations belong with those numbers:
   names `bun run measure`. The measurement is visibly absent either way, which is
   the point.
 
+The process boundary introduced by
+[#20](https://github.com/yogeshprasad098/falryn/issues/20) adds
+`OutputStreamPort`, `InputStreamPort`, and the terminal capability facts to
+`src/domain/terminal.ts`; the one Bun-backed handle adapter to
+`src/integrations/host-terminal.ts`; and a new `src/cli/` area, behind
+`src/cli/index.ts`, owning the numeric exit table and the stdout/stderr
+contract. `src/main.ts` sets its exit status through that table.
+
+Its verified behavior:
+
+- **a write is never assumed to have landed.** `write` reports what the stream
+  accepted and `flush` reports what left the process, with the bytes still
+  unconfirmed carried in the report. A flush that could not complete turns the
+  run's outcome `uncertain` rather than letting it claim success over output
+  nobody received;
+- **a stream releases what it holds on the host.** The adapter must attach an
+  error listener to observe a departed reader, and a standard handle is one
+  object for the whole process, so the port carries a `dispose` for the same
+  reason `SignalPort` returns an `Unsubscribe`. Releasing twice removes nothing
+  extra, and releasing one handle does not detach the other;
+- **stdout carries the selected result format and nothing else**, including
+  when the human format is the selected result format. Progress, warnings, and
+  notices go to stderr. The rule is a negative control over the source tree,
+  not a convention: outside `src/integrations/host-terminal.ts` nothing names a
+  host handle, nothing anywhere calls a `console` method, and every stdout line
+  of every scenario is parsed back on a real run;
+- **the exit table is frozen at thirteen codes** — 0, 1, 2, 3, 4, 5, 6, 7, 8,
+  9, 70, 124, and 130 — resolved from the terminal outcome, the error's
+  `exitCategory`, and its `category` together, because four exit categories
+  cannot distinguish thirteen outcomes. 126, 127, and 128 are never assigned;
+  the shell owns them;
+- **effect certainty outranks the failure.** A cancelled operation that already
+  changed something exits 8, not 130 — the reason effect is carried separately
+  from outcome. An error whose effect is less certain than its outcome's decides
+  the code;
+- **an unrecognized error resolves to the internal code** and never to a
+  category-specific one it was not entitled to;
+- **four of the thirteen codes are declared and unreachable today** — 5, 6, 7,
+  and 9. Which nine a v0.1 build can produce is derived from
+  `RUNTIME_EMITTED_CATEGORIES` rather than listed, following that constant's own
+  precedent, and both halves of the partition are asserted against real
+  processes;
+- **a closed reader is a normal end.** Writing stops, stderr is not used to
+  complain about it, and the run keeps the code its work earned. `EPIPE`
+  reaching the default handler would end the process with a stack trace over an
+  ordinary `| head -1`;
+- **stdin never blocks when nothing is attached.** A TTY handle resolves
+  immediately as `not-connected` rather than being read, `</dev/null` reads as
+  `empty`, and the two stay distinguishable. An over-bound read is reported as
+  invalid input rather than truncated, and bytes that are not the declared
+  encoding are reported as such;
+- **capability is a fact about this process**, derived per handle through
+  `EnvironmentPort` from `NO_COLOR`, `FORCE_COLOR`, `TERM`, `COLORTERM`, and
+  TTY-ness. A handle that reports no size has none; a non-TTY is never treated
+  as a narrow terminal. The `--color` option that overrides this is #17's, and
+  it overrides a fact rather than replacing the computation; and
+- **the exit is taken by setting `process.exitCode`.** No governed source calls
+  `process.exit()`, which would abandon the drain the flush contract exists to
+  complete.
+
+The boundary is composed and exercised, not a shipped command surface. No
+command exists yet, so the table, the handle split, the broken pipe, the
+interrupt, and the stdin contract are driven through `src/cli/probe-fixtures.ts`
+— a scenario harness that ships in no build — spawned in both source and
+compiled mode by `src/cli/process-boundary.test.ts`. `src/main.ts` is the only
+product path through the table today, and it writes nothing to either handle.
+
 `src/main.ts` composes the cancellation lifecycle and the local data foundation,
 so the compiled executable includes the domain, application, data, and
 integration layers and the real process-signal, filesystem, `bun:sqlite`, blob,
@@ -911,23 +978,34 @@ real run writes no session, turn, event, or artifact — and neither the
 creates what it needs when it needs it. What a real run exercises is the schema,
 all three migrations, the recovery pass, and the four shutdown phases.
 
-Observed on 2026-08-01:
+Observed on 2026-08-02:
 
 ```text
 bun run check    PASS  (Biome, tsc --noEmit, and bun test)
 bun run build    PASS  (Bun standalone executable compiled to dist/falryn)
 bun run ci       PASS  (quality, tsc --noEmit, build, then bun test)
-bun run measure  PASS  (the gated persistence resource measurement, macOS only)
 ```
+
+`bun run measure`, the gated persistence resource measurement, was last
+observed passing on macOS on 2026-08-01 and is unaffected by the process
+boundary.
 
 `bun run ci` now builds before it tests, so `src/main.compiled.test.ts` runs
 against a real `dist/falryn`: the standalone executable opens, migrates, and
 closes a database under a temporary state root, leaves one file, carries its
 migration bookkeeping and every product table into the binary at schema version
 3, creates that database owner-only under the process umask, and reopens the
-same database on a second run. Without a build the check
-reports itself as skipped rather than passing on an executable that does not
-exist.
+same database on a second run, and writes nothing to stdout or stderr while
+exiting through the CLI table. Without a build the check reports itself as
+skipped rather than passing on an executable that does not exist.
+
+`src/cli/process-boundary.test.ts` is the second automated compiled check, and
+it runs under `bun run check` because it compiles what it needs itself: it
+builds the scenario harness once with `bun build --compile` into a temporary
+directory and then spawns it for every assertion, in source mode and compiled
+mode alike. That is what proves `src/cli/` survives packaging rather than only
+working under the interpreter. A build failure there is reported as a failing
+test rather than as a skipped one.
 
 A run now exits as soon as its work is done. It previously lingered for one full
 shutdown phase grace: each phase armed a deadline wait through `ClockPort` and,
@@ -1032,7 +1110,16 @@ repository does not yet provide:
 - the command surfaces that would show a reset or uninstall plan and collect its
   confirmation. This area produces the plan and the typed outcome; rendering
   them and asking is the CLI's;
-- yargs commands, headless product behavior, or the OpenTUI application;
+- yargs commands, headless product behavior, or the OpenTUI application. The
+  process boundary beneath them exists and is exercised — exit codes, the
+  stdout/stderr split, stdin, broken pipes, and terminal capability — but
+  nothing parses an argument, names a command, or renders a result in any
+  format. Parsing is [#17](https://github.com/yogeshprasad098/falryn/issues/17)
+  and the formats are [#18](https://github.com/yogeshprasad098/falryn/issues/18)
+  and [#19](https://github.com/yogeshprasad098/falryn/issues/19). Four of the
+  thirteen declared exit codes have no producer at all, and shell completion,
+  help text, and the `--color` override that would sit on top of the capability
+  facts are each absent;
 - provider integration, model routing, the agent loop, or unified tool
   execution;
 - workspace, read, search, patch, shell, Git, LSP, DAP, browser, or computer-use
@@ -1050,7 +1137,8 @@ Their implementation breakdown lives in GitHub Issues and the Project.
 - **Live roadmap:** [Falryn Roadmap](https://github.com/users/yogeshprasad098/projects/2)
 - **Current release outcome:** [v0.1 Foundation issues](https://github.com/yogeshprasad098/falryn/issues?q=is%3Aissue%20is%3Aopen%20milestone%3A%22v0.1%20Foundation%22)
 - **First parent outcome:** [#1 Establish the unified runtime and lifecycle](https://github.com/yogeshprasad098/falryn/issues/1)
-- **Next planning action:** plan parent [#16 Deliver the CLI and headless foundation](https://github.com/yogeshprasad098/falryn/issues/16), the next open parent outcome in the v0.1 Foundation milestone.
+- **Current parent outcome:** [#16 Deliver the CLI and headless foundation](https://github.com/yogeshprasad098/falryn/issues/16), now in progress; #20 is its first child.
+- **Next planning action:** plan [#17](https://github.com/yogeshprasad098/falryn/issues/17), the next child of #16, whose failure path must exit through the table #20 froze.
 
 Which of #1's children are open, and which delivered the behavior recorded
 above, is read from

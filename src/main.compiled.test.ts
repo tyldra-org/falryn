@@ -17,6 +17,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtemp, readdir, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { EXIT_CODES } from "./cli/index.ts";
 import { MIGRATION_TABLE, PRODUCT_SCHEMA_VERSION, PRODUCT_TABLES } from "./data/index.ts";
 import { type LocalPath, localPath } from "./domain/index.ts";
 import { openBunSqlite } from "./integrations/index.ts";
@@ -55,6 +56,10 @@ const built = await stat(EXECUTABLE)
 const COMPILED_RUN_TIMEOUT_MS = 10_000;
 
 function runCompiled(root: LocalPath): number {
+  return spawnCompiled(root).exitCode;
+}
+
+function spawnCompiled(root: LocalPath): { exitCode: number; stdout: string; stderr: string } {
   // Synchronous on purpose: the child writes nothing, and an asynchronous spawn
   // whose pipes nobody drains can block on a full buffer rather than exiting.
   const finished = Bun.spawnSync([EXECUTABLE], {
@@ -63,8 +68,14 @@ function runCompiled(root: LocalPath): number {
       HOME: root,
       FALRYN_STATE_DIR: root,
     },
+    stdout: "pipe",
+    stderr: "pipe",
   });
-  return finished.exitCode;
+  return {
+    exitCode: finished.exitCode,
+    stdout: finished.stdout.toString(),
+    stderr: finished.stderr.toString(),
+  };
 }
 
 describe.if(built)("the standalone executable", () => {
@@ -120,6 +131,22 @@ describe.if(built)("the standalone executable", () => {
       );
       expect(version).toEqual([{ recordedVersion: PRODUCT_SCHEMA_VERSION }]);
       await opened.value.close();
+    },
+    COMPILED_RUN_TIMEOUT_MS,
+  );
+
+  test(
+    "writes nothing to either handle, and exits through the table",
+    async () => {
+      // The shipped bootstrap has no result to report and no notice to give.
+      // A stray diagnostic on stdout would be caught here rather than in the
+      // first consumer that piped the command into a parser.
+      const root = await temporaryRoot();
+      const finished = spawnCompiled(root);
+
+      expect(finished.stdout).toBe("");
+      expect(finished.stderr).toBe("");
+      expect(finished.exitCode).toBe(EXIT_CODES.COMPLETED);
     },
     COMPILED_RUN_TIMEOUT_MS,
   );
