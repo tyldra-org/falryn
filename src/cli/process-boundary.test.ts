@@ -21,8 +21,8 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
-import { EMITTABLE_EXIT_CODES, EXIT_CODES, UNEMITTABLE_EXIT_CODES } from "./exit.ts";
-import { type ProbeScenario, STREAM_RECORD_COUNT } from "./probe-fixtures.ts";
+import { EMITTABLE_EXIT_CODES, EXIT_CODES, type ExitCode, UNEMITTABLE_EXIT_CODES } from "./exit.ts";
+import { type OutcomeScenario, STREAM_RECORD_COUNT } from "./probe-fixtures.ts";
 
 const PROBE_ENTRY = join(dirname(import.meta.path), "probe-fixtures.ts");
 
@@ -79,8 +79,14 @@ function run(
   };
 }
 
-/** Each reachable code, and the scenario that produces it on a real run. */
-const CODE_BY_SCENARIO: Readonly<Partial<Record<ProbeScenario, number>>> = {
+/**
+ * Each outcome scenario, and the code it must produce on a real run.
+ *
+ * Total over `OutcomeScenario` rather than partial: adding a scenario to the
+ * harness fails to compile here until its expected code is stated. A partial
+ * map would accept the new name and silently stop asserting a code.
+ */
+const CODE_BY_SCENARIO: Readonly<Record<OutcomeScenario, ExitCode>> = {
   completed: EXIT_CODES.COMPLETED,
   failed: EXIT_CODES.OPERATION_FAILED,
   "invalid-input": EXIT_CODES.INVALID_USAGE,
@@ -109,7 +115,7 @@ for (const mode of [SOURCE, COMPILED]) {
       test(
         `exits ${expected} for ${scenario}`,
         () => {
-          expect(run(mode, scenario).exitCode).toBe(expected as number);
+          expect(run(mode, scenario).exitCode).toBe(expected);
         },
         PROBE_TIMEOUT_MS,
       );

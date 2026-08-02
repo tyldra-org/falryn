@@ -17,7 +17,7 @@ import {
   MAX_STDIN_BYTES,
   terminalCapabilities,
 } from "../domain/index.ts";
-import { createHostInputStream, observeHandles } from "./host-terminal.ts";
+import { createHostInputStream, createHostOutputStream, observeHandles } from "./host-terminal.ts";
 
 describe("the input stream", () => {
   test("declares the encoding and bound it reads to", () => {
@@ -33,6 +33,43 @@ describe("the input stream", () => {
     expect(() => createHostInputStream({ maxBytes: 0 })).toThrow(RangeError);
     expect(() => createHostInputStream({ maxBytes: -1 })).toThrow(RangeError);
     expect(() => createHostInputStream({ maxBytes: MAX_STDIN_BYTES + 1 })).toThrow(RangeError);
+  });
+});
+
+describe("the output stream", () => {
+  test("releases its host listener, and releasing twice removes nothing extra", () => {
+    // The handle outlives the port: `process.stdout` is one object for the
+    // whole process, so a listener nobody removes accumulates once per port
+    // ever built. Twelve undisposed ports already trip Node's leak warning.
+    // This mirrors `process-signals.test.ts`, because both adapters attach to
+    // something that is not theirs to keep.
+    const before = process.stdout.listenerCount("error");
+
+    const streams = Array.from({ length: 8 }, () => createHostOutputStream({ handle: "stdout" }));
+    expect(process.stdout.listenerCount("error")).toBe(before + 8);
+
+    for (const stream of streams) {
+      stream.dispose();
+      stream.dispose();
+    }
+    expect(process.stdout.listenerCount("error")).toBe(before);
+  });
+
+  test("releases each handle independently", () => {
+    const beforeOut = process.stdout.listenerCount("error");
+    const beforeErr = process.stderr.listenerCount("error");
+
+    const out = createHostOutputStream({ handle: "stdout" });
+    const errors = createHostOutputStream({ handle: "stderr" });
+    out.dispose();
+
+    // Disposing one must not detach the other, the same guarantee
+    // `SignalPort` gives two independent subscribers.
+    expect(process.stdout.listenerCount("error")).toBe(beforeOut);
+    expect(process.stderr.listenerCount("error")).toBe(beforeErr + 1);
+
+    errors.dispose();
+    expect(process.stderr.listenerCount("error")).toBe(beforeErr);
   });
 });
 

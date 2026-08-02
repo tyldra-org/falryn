@@ -108,7 +108,7 @@ describe("the outcome a run ends with", () => {
 
     const outcome = outcomeAfterFlush(COMPLETED, await streams.flush());
     expect(outcome).toEqual(COMPLETED);
-    expect(resolveExitCode({ outcome })).toBe(EXIT_CODES.COMPLETED);
+    expect(resolveExitCode({ outcome, error: null })).toBe(EXIT_CODES.COMPLETED);
   });
 
   test("becomes uncertain when the result could not be flushed", async () => {
@@ -119,7 +119,7 @@ describe("the outcome a run ends with", () => {
 
     const outcome = outcomeAfterFlush(COMPLETED, await streams.flush());
     expect(outcome).toEqual({ kind: "uncertain", effect: "uncertain" });
-    expect(resolveExitCode({ outcome })).toBe(EXIT_CODES.UNCERTAIN_EFFECT);
+    expect(resolveExitCode({ outcome, error: null })).toBe(EXIT_CODES.UNCERTAIN_EFFECT);
   });
 });
 

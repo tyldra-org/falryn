@@ -87,6 +87,17 @@ export type OutputStreamPort = {
   flush(): Promise<FlushReport>;
   /** Whether the reader is known to be gone. Once true it stays true. */
   isClosed(): boolean;
+  /**
+   * Releases whatever the stream holds on the host.
+   *
+   * Declared for the same reason `SignalPort` returns an `Unsubscribe`: an
+   * adapter over a process-lifetime handle has to attach a listener to observe
+   * a departed reader, and a listener nobody removes accumulates on a stream
+   * that outlives every port built over it. Calling it more than once is safe,
+   * and a stream that holds nothing implements it as a no-op rather than
+   * omitting it — an optional release is one a caller forgets.
+   */
+  dispose(): void;
 };
 
 /** Whether a flush confirmed everything the stream had accepted. */
@@ -170,6 +181,11 @@ export function createRecordingOutputStream(
     isClosed(): boolean {
       return closed;
     },
+
+    // The double holds nothing on the host, so releasing it is a no-op. It is
+    // implemented rather than omitted so a caller written against the double
+    // and a caller written against the adapter are the same caller.
+    dispose(): void {},
 
     writes(): readonly string[] {
       return [...accepted];

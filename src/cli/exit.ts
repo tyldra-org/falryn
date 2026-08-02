@@ -137,8 +137,15 @@ export function exitCodeForError(error: FalrynError): ExitCode {
 
 export type ExitResolution = {
   readonly outcome: TerminalOutcome;
-  /** The failure that ended the run, or `null` when there was none. */
-  readonly error?: FalrynError | null;
+  /**
+   * The failure that ended the run, or `null` when there was none.
+   *
+   * Present and nullable rather than optional, the convention
+   * `src/domain/error.ts` states for `CorrelationIds`: an optional nullable
+   * field has three spellings for two facts, and a caller would have to
+   * distinguish "absent" from "not applicable" to read it.
+   */
+  readonly error: FalrynError | null;
 };
 
 /**
@@ -148,8 +155,7 @@ export type ExitResolution = {
  * then the outcome, then the error.
  */
 export function resolveExitCode(resolution: ExitResolution): ExitCode {
-  const { outcome } = resolution;
-  const error = resolution.error ?? null;
+  const { outcome, error } = resolution;
 
   if (outcome.kind === "completed") {
     return EXIT_CODES.COMPLETED;

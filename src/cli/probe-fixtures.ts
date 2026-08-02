@@ -16,6 +16,7 @@
 
 import { createRuntimeLifecycle } from "../application/index.ts";
 import {
+  assertNever,
   createSystemClock,
   type FalrynError,
   NO_CORRELATION,
@@ -31,8 +32,16 @@ import {
   writeResultLine,
 } from "./streams.ts";
 
-/** Every scenario this harness can run. Named so a test cannot drift from it. */
-export const PROBE_SCENARIOS = [
+/**
+ * Scenarios whose whole behavior is the outcome they end with.
+ *
+ * Separated from the behavioral ones because a test can state the exact code
+ * each must produce, and `Record<OutcomeScenario, …>` then makes that table
+ * total: adding a name here fails to compile until both the fixture's outcome
+ * and the test's expected code exist. A `Partial<Record<…>>` would accept the
+ * new name silently and quietly stop asserting a code.
+ */
+export const OUTCOME_SCENARIOS = [
   "completed",
   "failed",
   "invalid-input",
@@ -44,12 +53,19 @@ export const PROBE_SCENARIOS = [
   "unrecognized",
   "timed-out",
   "cancelled",
-  "stream",
-  "stdin",
-  "interrupt",
 ] as const;
 
-export type ProbeScenario = (typeof PROBE_SCENARIOS)[number];
+export type OutcomeScenario = (typeof OUTCOME_SCENARIOS)[number];
+
+/** Scenarios that exercise a handle rather than a code: streaming, input, interruption. */
+export const BEHAVIOR_SCENARIOS = ["stream", "stdin", "interrupt"] as const;
+
+export type BehaviorScenario = (typeof BEHAVIOR_SCENARIOS)[number];
+
+/** Every scenario this harness can run. Named so a test cannot drift from it. */
+export const PROBE_SCENARIOS = [...OUTCOME_SCENARIOS, ...BEHAVIOR_SCENARIOS] as const;
+
+export type ProbeScenario = OutcomeScenario | BehaviorScenario;
 
 export function isProbeScenario(value: string): value is ProbeScenario {
   return (PROBE_SCENARIOS as readonly string[]).includes(value);
@@ -78,13 +94,14 @@ function error(overrides: Partial<FalrynError>): FalrynError {
 
 type ScenarioResult = {
   readonly outcome: TerminalOutcome;
-  readonly error?: FalrynError | null;
+  readonly error: FalrynError | null;
 };
 
-const STATIC_SCENARIOS: Readonly<Partial<Record<ProbeScenario, ScenarioResult>>> = {
-  completed: { outcome: { kind: "completed" } },
+/** Total over `OutcomeScenario`: a new name here fails to compile until it has an outcome. */
+const OUTCOMES: Readonly<Record<OutcomeScenario, ScenarioResult>> = {
+  completed: { outcome: { kind: "completed" }, error: null },
   // A failure carrying nothing more specific than the fact that it failed.
-  failed: { outcome: { kind: "failed", effect: "none" } },
+  failed: { outcome: { kind: "failed", effect: "none" }, error: null },
   "invalid-input": {
     outcome: { kind: "failed", effect: "none" },
     error: error({ category: "data", exitCategory: "user-error" }),
@@ -97,10 +114,10 @@ const STATIC_SCENARIOS: Readonly<Partial<Record<ProbeScenario, ScenarioResult>>>
     outcome: { kind: "failed", effect: "none" },
     error: error({ category: "authentication", exitCategory: "user-error" }),
   },
-  uncertain: { outcome: { kind: "uncertain", effect: "uncertain" } },
+  uncertain: { outcome: { kind: "uncertain", effect: "uncertain" }, error: null },
   // Effect outranks outcome: something already changed, so this is not a plain
   // cancellation however it ended.
-  "cancelled-partial": { outcome: { kind: "cancelled", effect: "partial" } },
+  "cancelled-partial": { outcome: { kind: "cancelled", effect: "partial" }, error: null },
   internal: {
     outcome: { kind: "failed", effect: "none" },
     error: error({ category: "internal", exitCategory: "internal" }),
@@ -111,9 +128,13 @@ const STATIC_SCENARIOS: Readonly<Partial<Record<ProbeScenario, ScenarioResult>>>
     outcome: { kind: "failed", effect: "none" },
     error: error({ category: "configuration", exitCategory: "user-error", recognized: false }),
   },
-  "timed-out": { outcome: { kind: "timed-out", effect: "none" } },
-  cancelled: { outcome: { kind: "cancelled", effect: "none" } },
+  "timed-out": { outcome: { kind: "timed-out", effect: "none" }, error: null },
+  cancelled: { outcome: { kind: "cancelled", effect: "none" }, error: null },
 };
+
+function isOutcomeScenario(scenario: ProbeScenario): scenario is OutcomeScenario {
+  return (OUTCOME_SCENARIOS as readonly string[]).includes(scenario);
+}
 
 /**
  * Runs one scenario and returns the code the process should exit with.
@@ -137,16 +158,16 @@ export async function runProbe(scenario: string, streams: CliStreams): Promise<E
   const flush = await streams.flush();
   return resolveExitCode({
     outcome: outcomeAfterFlush(result.outcome, flush),
-    error: result.error ?? null,
+    error: result.error,
   });
 }
 
 async function execute(scenario: ProbeScenario, streams: CliStreams): Promise<ScenarioResult> {
-  const staticResult = STATIC_SCENARIOS[scenario];
-  if (staticResult !== undefined) {
+  if (isOutcomeScenario(scenario)) {
+    const result = OUTCOMES[scenario];
     writeDiagnosticLine(streams, `scenario: ${scenario}`);
-    writeResultLine(streams, JSON.stringify({ scenario, kind: staticResult.outcome.kind }));
-    return staticResult;
+    writeResultLine(streams, JSON.stringify({ scenario, kind: result.outcome.kind }));
+    return result;
   }
 
   switch (scenario) {
@@ -157,13 +178,9 @@ async function execute(scenario: ProbeScenario, streams: CliStreams): Promise<Sc
     case "interrupt":
       return interruptScenario(streams);
     default:
-      // Every scenario is either static or handled above; a new one added to
-      // the list without a branch lands here rather than silently completing.
-      writeDiagnosticLine(streams, `scenario not implemented: ${scenario}`);
-      return {
-        outcome: { kind: "failed", effect: "none" },
-        error: error({ category: "internal", exitCategory: "internal" }),
-      };
+      // A behavioral scenario added without a branch fails to compile here
+      // rather than silently completing with someone else's outcome.
+      return assertNever(scenario, "unhandled probe scenario");
   }
 }
 
@@ -179,11 +196,11 @@ function streamScenario(streams: CliStreams): ScenarioResult {
     if (write.status === "closed") {
       // The reader left. Stop writing, say nothing about it on stderr, and end
       // normally — this is `falryn ... | head -1`, not a failure.
-      return { outcome: { kind: "completed" } };
+      return { outcome: { kind: "completed" }, error: null };
     }
   }
   writeResultLine(streams, JSON.stringify({ kind: "terminal", status: "completed" }));
-  return { outcome: { kind: "completed" } };
+  return { outcome: { kind: "completed" }, error: null };
 }
 
 async function stdinScenario(streams: CliStreams): Promise<ScenarioResult> {
@@ -208,7 +225,7 @@ async function stdinScenario(streams: CliStreams): Promise<ScenarioResult> {
       stdoutColor: streams.capabilities.stdout.color,
     }),
   );
-  return { outcome: { kind: "completed" } };
+  return { outcome: { kind: "completed" }, error: null };
 }
 
 /**
@@ -244,7 +261,7 @@ async function interruptScenario(streams: CliStreams): Promise<ScenarioResult> {
     // reports how it ended rather than stopping mid-sequence.
     writeResultLine(streams, JSON.stringify({ kind: "terminal", status: "cancelled", index }));
     await lifecycle.requestShutdown();
-    return { outcome: { kind: "cancelled", effect: "none" } };
+    return { outcome: { kind: "cancelled", effect: "none" }, error: null };
   } finally {
     lifecycle.dispose();
   }
@@ -252,5 +269,12 @@ async function interruptScenario(streams: CliStreams): Promise<ScenarioResult> {
 
 if (import.meta.main) {
   const streams = createHostCliStreams();
-  process.exitCode = await runProbe(Bun.argv[2] ?? "", streams);
+  try {
+    process.exitCode = await runProbe(Bun.argv[2] ?? "", streams);
+  } finally {
+    // Releases what the ports hold on the host handles, the same discipline
+    // `src/main.ts` applies to its signal subscription. Always after the
+    // flush inside `runProbe`, and always even on a throw.
+    streams.dispose();
+  }
 }

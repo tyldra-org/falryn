@@ -50,12 +50,36 @@ import {
  * of these is holding a handle, which is the thing this module exists to
  * prevent.
  */
+/**
+ * What an emitter actually hands a listener.
+ *
+ * `unknown`, because that is the truth: the host emits whatever it emits, and
+ * a listener that declared `NodeJS.ErrnoException` would be asserting a shape
+ * nothing checked. The one place that needs a field narrows for it.
+ */
+type HostListener = (...args: unknown[]) => void;
+
 type HostWritable = {
   write(chunk: Uint8Array): boolean;
-  once(event: string, listener: () => void): unknown;
-  off(event: string, listener: () => void): unknown;
-  on(event: string, listener: (error: NodeJS.ErrnoException) => void): unknown;
+  on(event: "error", listener: HostListener): unknown;
+  once(event: "drain" | "error" | "close", listener: HostListener): unknown;
+  off(event: "drain" | "error" | "close", listener: HostListener): unknown;
 };
+
+/**
+ * The `code` an errno-carrying value reports, or `unknown` when it carries none.
+ *
+ * A guard rather than an assertion: a stream can emit something that is not an
+ * `Error`, and `(thrown as NodeJS.ErrnoException).code` would quietly produce
+ * `undefined` for it and call that a missing code.
+ */
+function errnoCode(value: unknown): string {
+  if (typeof value !== "object" || value === null || !("code" in value)) {
+    return "unknown";
+  }
+  const { code } = value;
+  return typeof code === "string" ? code : "unknown";
+}
 
 export type HostOutputStreamOptions = {
   /** Which handle to write to. Defaults to the process's standard output. */
@@ -70,10 +94,9 @@ export type HostOutputStreamOptions = {
  * when the process is asked to end.
  */
 export function createHostOutputStream(options: HostOutputStreamOptions = {}): OutputStreamPort {
-  const stream: HostWritable =
-    options.handle === "stderr"
-      ? (process.stderr as unknown as HostWritable)
-      : (process.stdout as unknown as HostWritable);
+  // Assignable without an assertion: `HostWritable` describes exactly the four
+  // members this adapter uses, with the host's own listener arity.
+  const stream: HostWritable = options.handle === "stderr" ? process.stderr : process.stdout;
 
   return outputStreamOver(stream);
 }
@@ -84,12 +107,18 @@ function outputStreamOver(stream: HostWritable): OutputStreamPort {
   /** Set when the stream refused a write and has not drained since. */
   let congested = false;
 
-  // Attached once, for the lifetime of the stream. Without it an `EPIPE`
-  // reaches the default handler, which ends the process on an error that this
-  // boundary treats as an ordinary end.
-  stream.on("error", (error: NodeJS.ErrnoException) => {
-    closedCode = error.code ?? "unknown";
-  });
+  // Attached for the lifetime of this port. Without it an `EPIPE` reaches the
+  // default handler, which ends the process on an error that this boundary
+  // treats as an ordinary end.
+  //
+  // Released by `dispose`, because the handle outlives the port: `process.stdout`
+  // is one object for the whole process, so a listener nobody removes
+  // accumulates once per port ever built over it.
+  const onError: HostListener = (...args) => {
+    closedCode = errnoCode(args[0]);
+  };
+  stream.on("error", onError);
+  let released = false;
 
   const settle = (): Promise<void> =>
     new Promise<void>((resolve) => {
@@ -121,7 +150,7 @@ function outputStreamOver(stream: HostWritable): OutputStreamPort {
       } catch (error) {
         // A synchronous throw is the same fact as the error event, and both
         // mean the same thing: there is no reader left.
-        closedCode = (error as NodeJS.ErrnoException).code ?? "unknown";
+        closedCode = errnoCode(error);
         return { status: "closed", accepted: 0, pending };
       }
 
@@ -152,6 +181,14 @@ function outputStreamOver(stream: HostWritable): OutputStreamPort {
 
     isClosed(): boolean {
       return closedCode !== null;
+    },
+
+    dispose(): void {
+      if (released) {
+        return;
+      }
+      released = true;
+      stream.off("error", onError);
     },
   };
 }
@@ -190,10 +227,8 @@ export function createHostInputStream(options: HostInputStreamOptions = {}): Inp
         const bytes = await readBounded(process.stdin, maxBytes + 1);
         return decodeStdin(bytes, maxBytes);
       } catch (error) {
-        return err({
-          code: "unreadable",
-          detail: (error as NodeJS.ErrnoException).code ?? null,
-        });
+        const code = errnoCode(error);
+        return err({ code: "unreadable", detail: code === "unknown" ? null : code });
       }
     },
   };

@@ -45,6 +45,15 @@ export type CliStreams = {
   readonly capabilities: TerminalCapabilities;
   /** Confirms both handles emptied. Called before the process is allowed to end. */
   flush(): Promise<StreamsFlushReport>;
+  /**
+   * Releases both handles.
+   *
+   * Paired with `flush`, and always after it: flushing confirms the bytes left,
+   * releasing gives the host back what the ports were holding. A caller that
+   * builds streams and never disposes them accumulates a listener per handle
+   * on objects that live as long as the process.
+   */
+  dispose(): void;
 };
 
 export type StreamsFlushReport = {
@@ -90,6 +99,13 @@ export function createCliStreams(parts: CliStreamsParts): CliStreams {
           result.status !== "failed" &&
           diagnostic.status !== "failed",
       };
+    },
+
+    dispose(): void {
+      // Both, unconditionally. A throw from one release must not strand the
+      // other, and each port's own `dispose` is safe to call more than once.
+      parts.result.dispose();
+      parts.diagnostic.dispose();
     },
   };
 }

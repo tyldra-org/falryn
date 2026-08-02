@@ -66,11 +66,21 @@ describe("the frozen table", () => {
 
 describe("a completed run", () => {
   test("exits zero", () => {
-    expect(resolveExitCode({ outcome: { kind: "completed" } })).toBe(EXIT_CODES.COMPLETED);
+    expect(resolveExitCode({ outcome: { kind: "completed" }, error: null })).toBe(
+      EXIT_CODES.COMPLETED,
+    );
   });
 
-  test("exits zero even with no error argument supplied at all", () => {
-    expect(resolveExitCode({ outcome: { kind: "completed" }, error: null })).toBe(0);
+  test("exits zero even when a failure was carried alongside the completion", () => {
+    // The outcome decides. A completed run that collected a non-fatal failure
+    // along the way still completed, and reporting the failure is the result's
+    // job rather than the exit status's.
+    expect(
+      resolveExitCode({
+        outcome: { kind: "completed" },
+        error: failure({ category: "configuration", exitCategory: "user-error" }),
+      }),
+    ).toBe(0);
   });
 });
 
@@ -78,12 +88,18 @@ describe("effect certainty", () => {
   test("outranks the outcome that carried it", () => {
     // The whole reason effect is carried separately from outcome. A caller that
     // read 130 and retried would repeat a change that already happened.
-    expect(resolveExitCode({ outcome: { kind: "cancelled", effect: "partial" } })).toBe(
-      EXIT_CODES.UNCERTAIN_EFFECT,
-    );
-    expect(resolveExitCode({ outcome: { kind: "cancelled", effect: "uncertain" } })).toBe(8);
-    expect(resolveExitCode({ outcome: { kind: "timed-out", effect: "uncertain" } })).toBe(8);
-    expect(resolveExitCode({ outcome: { kind: "uncertain", effect: "uncertain" } })).toBe(8);
+    expect(
+      resolveExitCode({ outcome: { kind: "cancelled", effect: "partial" }, error: null }),
+    ).toBe(EXIT_CODES.UNCERTAIN_EFFECT);
+    expect(
+      resolveExitCode({ outcome: { kind: "cancelled", effect: "uncertain" }, error: null }),
+    ).toBe(8);
+    expect(
+      resolveExitCode({ outcome: { kind: "timed-out", effect: "uncertain" }, error: null }),
+    ).toBe(8);
+    expect(
+      resolveExitCode({ outcome: { kind: "uncertain", effect: "uncertain" }, error: null }),
+    ).toBe(8);
   });
 
   test("outranks the error's own category", () => {
@@ -108,10 +124,10 @@ describe("effect certainty", () => {
 
   test("leaves a fully-applied or absent effect alone", () => {
     for (const effect of ["none", "completed"] satisfies EffectCertainty[]) {
-      expect(resolveExitCode({ outcome: { kind: "cancelled", effect } })).toBe(
+      expect(resolveExitCode({ outcome: { kind: "cancelled", effect }, error: null })).toBe(
         EXIT_CODES.CANCELLED,
       );
-      expect(resolveExitCode({ outcome: { kind: "timed-out", effect } })).toBe(
+      expect(resolveExitCode({ outcome: { kind: "timed-out", effect }, error: null })).toBe(
         EXIT_CODES.TIMED_OUT,
       );
     }
@@ -120,7 +136,7 @@ describe("effect certainty", () => {
 
 describe("a failure", () => {
   test("with no error attached says only that it failed", () => {
-    expect(resolveExitCode({ outcome: FAILED })).toBe(EXIT_CODES.OPERATION_FAILED);
+    expect(resolveExitCode({ outcome: FAILED, error: null })).toBe(EXIT_CODES.OPERATION_FAILED);
   });
 
   test("resolves through its category when the exit category permits it", () => {
