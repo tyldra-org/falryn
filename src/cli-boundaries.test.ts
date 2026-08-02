@@ -233,12 +233,88 @@ describe("the CLI area", () => {
     expect(deep).toEqual([]);
   });
 
-  test("owns no command, option, or output format yet", async () => {
-    // The non-goals, asserted rather than remembered. Parsing is #17's and
-    // rendering is #18's and #19's; this area moves bytes and picks a number.
-    for (const file of ["cli/exit.ts", "cli/streams.ts", "cli/index.ts"]) {
-      const source = await readSource(file);
-      expect(source).not.toMatch(/\b(yargs|hideBin|commandDir)\b/);
+  test("keeps parsing out of the modules that move bytes and pick a number", async () => {
+    // #20's owners stayed unaware of #17. A yargs import in the exit table or
+    // the stream contract would mean the process boundary had learned what a
+    // command is.
+    for (const file of ["cli/exit.ts", "cli/streams.ts", "cli/result.ts"]) {
+      expect(await readCode(file)).not.toMatch(/\b(yargs|hideBin|commandDir)\b/);
+    }
+    // And the one module that is allowed to know is the one that does.
+    expect(await readCode("cli/command-tree.ts")).toContain("yargs");
+  });
+
+  test("declares the parser in exactly one module", async () => {
+    // A second yargs instance would be a second answer to strictness, failure
+    // handling, and whether the library may print or exit.
+    const parsers = await offenders(/from "yargs"/, ["cli/command-tree.ts"]);
+    expect(parsers).toEqual([]);
+  });
+});
+
+describe("the CLI area", () => {
+  /** Every governed file inside `src/cli/`. */
+  async function cliFiles(): Promise<readonly string[]> {
+    return (await sourceFiles()).filter(
+      (file) => file.startsWith("cli/") && isGoverned(file) && file !== SELF,
+    );
+  }
+
+  test("writes no second precedence, redaction, or validation rule", async () => {
+    // #17 consumes `src/config/`; it does not restate it. A layer order, a
+    // redaction placeholder, or a profile-name rule appearing here would be a
+    // second owner of something already declared and tested.
+    const duplicated =
+      /\b(CONFIGURATION_LAYER_ORDER|createRuntimeRedactor\s*=|REDACTED\s*=|function isLegalProfileName|function redactText)\b/;
+    for (const file of await cliFiles()) {
+      expect({ file, duplicated: duplicated.test(await readCode(file)) }).toEqual({
+        file,
+        duplicated: false,
+      });
+    }
+  });
+
+  test("reaches configuration only through the area that owns it", async () => {
+    // Imported, injected, and used — never reimplemented. The redactor the
+    // loader gets is the runtime one.
+    const services = await readCode("cli/services.ts");
+    expect(services).toContain("createRuntimeRedactor()");
+    expect(services).toContain("V0_1_CONFIGURATION_KEYS");
+  });
+
+  test("authors no SQL and opens no database driver", async () => {
+    // The database is reached through the data area's own read-only probe.
+    // A statement here would be a second place schema knowledge lives.
+    const statement =
+      /\b(CREATE\s+TABLE|INSERT\s+INTO|UPDATE\s+\w+\s+SET|DELETE\s+FROM|SELECT\s+[\w*]+\s+FROM)\b/i;
+    for (const file of await cliFiles()) {
+      const source = await readCode(file);
+      expect({ file, sql: statement.test(source) }).toEqual({ file, sql: false });
+      expect({ file, driver: source.includes(`from "bun:sqlite"`) }).toEqual({
+        file,
+        driver: false,
+      });
+    }
+  });
+
+  test("touches no filesystem module directly", async () => {
+    // Files are reached through `FileSystemPort`. A `node:fs` import here
+    // would be a path the in-memory double could not stand in for.
+    for (const file of await cliFiles()) {
+      const source = await readCode(file);
+      expect({ file, fs: /from "node:fs(\/promises)?"/.test(source) }).toEqual({ file, fs: false });
+    }
+  });
+
+  test("declares only commands whose capability exists", async () => {
+    // The non-goal, asserted rather than remembered. Parsing one of these
+    // would advertise it in `--help` and promise behavior nothing implements.
+    const tree = await readCode("cli/command-tree.ts");
+    for (const absent of ["provider", "session", "extension", "artifact", "uninstall"]) {
+      expect({ absent, declared: tree.includes(`.command("${absent}`) }).toEqual({
+        absent,
+        declared: false,
+      });
     }
   });
 });
