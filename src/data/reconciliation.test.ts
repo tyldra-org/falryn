@@ -56,6 +56,30 @@ describe("startup reconciliation of temporary ingest", () => {
     expect(report.completeness).toBe("complete");
   });
 
+  test("names the owner an entry's name claims, and guesses at no other", async () => {
+    const report = await reconcile({
+      "/d/tmp": { kind: "directory" },
+      "/d/tmp/artifact-capture-1.part": { kind: "file", byteLength: 512 },
+      "/d/tmp/something-else.tmp": { kind: "file", byteLength: 8 },
+    });
+
+    expect(report.entries.map((entry) => [String(entry.path), entry.owner]).sort()).toEqual([
+      ["/d/tmp/artifact-capture-1.part", "artifact-ingest"],
+      ["/d/tmp/something-else.tmp", "unknown"],
+    ]);
+  });
+
+  test("naming an owner is not a claim that the write finished", async () => {
+    const report = await reconcile({
+      "/d/tmp": { kind: "directory" },
+      "/d/tmp/artifact-capture-1.part": { kind: "file", byteLength: 512 },
+    });
+
+    // A half-written blob and a complete one are named identically, which is
+    // exactly why the effect stays uncertain and nothing is removed.
+    expect(report.effect).toBe("uncertain");
+  });
+
   test("nothing is removed", async () => {
     const fileSystem = createInMemoryFileSystem({
       nodes: {

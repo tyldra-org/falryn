@@ -6,10 +6,15 @@
  * gap, a repeat, or a version out of order is defective, and finding out
  * halfway through applying it means finding out on a user's only copy.
  *
- * The production list holds one step: migration `0001`, which creates the
+ * The production list holds two steps: migration `0001`, which creates the
  * session, turn, model-attempt, invocation, event, and projection-cursor
- * tables. Its SQL lives in `schema.ts` beside this list, so this module stays
- * the rules a set must satisfy and that one stays the schema itself.
+ * tables, and migration `0002`, which creates the artifact metadata table.
+ * Their SQL lives in `schema.ts` and `artifact-schema.ts` beside this list, so
+ * this module stays the rules a set must satisfy and those stay the schema.
+ *
+ * The aggregate view of what the set produces — every product table and the
+ * version a fully migrated database reports — lives here rather than in either
+ * schema module, because neither one can answer it alone.
  */
 
 import {
@@ -22,7 +27,8 @@ import {
   ok,
   type Result,
 } from "../domain/index.ts";
-import { MIGRATION_0001 } from "./schema.ts";
+import { ARTIFACTS_TABLE, MIGRATION_0002 } from "./artifact-schema.ts";
+import { MIGRATION_0001, RECORD_TABLES } from "./schema.ts";
 
 /**
  * The migrations this build applies.
@@ -32,7 +38,10 @@ import { MIGRATION_0001 } from "./schema.ts";
  * needs a loader to be embedded, and a migration missing from the standalone
  * executable would surface as a database that silently looks unmigrated.
  */
-export const PRODUCTION_MIGRATIONS: readonly Migration[] = [MIGRATION_0001];
+export const PRODUCTION_MIGRATIONS: readonly Migration[] = [MIGRATION_0001, MIGRATION_0002];
+
+/** Every product table the registered set creates, in creation order. */
+export const PRODUCT_TABLES: readonly string[] = [...RECORD_TABLES, ARTIFACTS_TABLE];
 
 function issue(
   code: MigrationSetErrorCode,
@@ -103,3 +112,6 @@ function isBlank(statement: string): boolean {
 export function latestVersion(migrations: readonly Migration[]): number {
   return migrations.reduce((highest, migration) => Math.max(highest, migration.version), 0);
 }
+
+/** The version a fully migrated database reports. Derived, never restated. */
+export const PRODUCT_SCHEMA_VERSION = latestVersion(PRODUCTION_MIGRATIONS);

@@ -87,11 +87,29 @@ export function createOwnershipRegistry(): OwnershipRegistry {
 }
 
 /**
+ * Artifacts, owned by the artifact store.
+ *
+ * Registered so reset and uninstall can name the class instead of reporting it
+ * unregistered. `lifecycle-aware` rather than `safe-cleanup`: an artifact's
+ * bytes are only removable once nothing references them, which is a question
+ * about records rather than about files, and a plan that deleted this class the
+ * way it deletes a cache would drop the bytes a retained session points at.
+ */
+export const ARTIFACTS_OWNERSHIP: OwnershipRegistration = {
+  ownershipClass: "artifacts",
+  owner: "artifact-store",
+  durability: "app-owned",
+  removalPosture: "lifecycle-aware",
+  roots: ["artifacts"],
+  external: false,
+};
+
+/**
  * Temporary ingest, owned here.
  *
- * This area reconciles it at startup, so this area registers it. The owner that
- * eventually *writes* into it — artifact ingest — will declare the completion
- * marker that lets reconciliation say more than "something is here".
+ * This area reconciles it at startup, so this area registers it. Artifact
+ * ingest is the owner that writes into it, and the name it writes under is what
+ * now lets reconciliation say who an entry belongs to.
  */
 export const TEMPORARY_INGEST_OWNERSHIP: OwnershipRegistration = {
   ownershipClass: "temporaryIngest",

@@ -4,12 +4,14 @@ import { DIAGNOSTICS_OWNERSHIP } from "../application/index.ts";
 import { CONFIGURATION_OWNERSHIP } from "../config/index.ts";
 import { OWNERSHIP_CLASSES, type OwnershipRegistration } from "../domain/index.ts";
 import {
+  ARTIFACTS_OWNERSHIP,
   CREDENTIAL_REFERENCE_OWNERSHIP,
   createOwnershipRegistry,
   TEMPORARY_INGEST_OWNERSHIP,
 } from "./ownership.ts";
 
 const V0_1_REGISTRATIONS: readonly OwnershipRegistration[] = [
+  ARTIFACTS_OWNERSHIP,
   CONFIGURATION_OWNERSHIP,
   CREDENTIAL_REFERENCE_OWNERSHIP,
   DIAGNOSTICS_OWNERSHIP,
@@ -79,13 +81,31 @@ describe("the ownership registry", () => {
       registry.register(registration);
     }
     expect([...registry.unregistered()].sort()).toEqual([
-      "artifacts",
       "cache",
       "exports",
       "extensions",
       "memory",
       "sqliteState",
     ]);
+  });
+});
+
+describe("the artifacts class", () => {
+  test("has an owner, so a plan names it instead of reporting it unregistered", () => {
+    const registry = createOwnershipRegistry();
+
+    expect(registry.register(ARTIFACTS_OWNERSHIP).ok).toBe(true);
+
+    expect(registry.unregistered()).not.toContain("artifacts");
+    expect(registry.find("artifacts")).toMatchObject({
+      owner: "artifact-store",
+      roots: ["artifacts"],
+      external: false,
+      // Not `safe-cleanup`: whether an artifact's bytes are removable is a
+      // question about records, so a plan that deleted this class the way it
+      // deletes a cache would drop bytes a retained session points at.
+      removalPosture: "lifecycle-aware",
+    });
   });
 });
 
@@ -100,12 +120,12 @@ describe("the v0.1 registrations", () => {
     expect(CREDENTIAL_REFERENCE_OWNERSHIP.owner).toBe("credentials");
   });
 
-  test("all four register together without conflicting", () => {
+  test("all five register together without conflicting", () => {
     const registry = createOwnershipRegistry();
     for (const registration of V0_1_REGISTRATIONS) {
       expect(registry.register(registration).ok).toBe(true);
     }
-    expect(registry.registrations()).toHaveLength(4);
+    expect(registry.registrations()).toHaveLength(V0_1_REGISTRATIONS.length);
   });
 
   test("credentials own no bytes inside these roots", () => {
