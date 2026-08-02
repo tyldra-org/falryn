@@ -30,6 +30,7 @@ import {
   createRunShutdownParticipant,
   createSqliteEventStore,
   createSqliteShutdownParticipant,
+  EXPORTS_OWNERSHIP,
   FALLBACK_HOME,
   openSqliteStore,
   PRODUCTION_MIGRATIONS,
@@ -117,6 +118,9 @@ export async function main(options: BootstrapOptions = {}): Promise<BootstrapRep
   // Registered for the same reason, and before any byte is written: a reset
   // plan has to be able to name artifacts on a run where none was ingested.
   localData.register(ARTIFACTS_OWNERSHIP);
+  // Registered for the same reason. Its posture is `never-implicit`, so naming
+  // it is exactly what keeps a reset from treating a user's package as debris.
+  localData.register(EXPORTS_OWNERSHIP);
 
   let recovery: RecoveryReport | null = null;
   const storage = await openStorage(localData, clock);
