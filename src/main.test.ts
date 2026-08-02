@@ -60,10 +60,10 @@ describe("application bootstrap", () => {
       localPath(`${options.root}/falryn.sqlite`),
     );
     expect(report.storage.ok && report.storage.value.created).toBe(true);
-    // The production set is migrations 0001 and 0002, so a clean run ends at
-    // version 2 with the record and artifact schemas in place.
-    expect(report.storage.ok && report.storage.value.schemaVersion).toBe(2);
-    expect(report.storage.ok && report.storage.value.appliedThisRun).toEqual([1, 2]);
+    // The production set is migrations 0001 through 0003, so a clean run ends
+    // at version 3 with the record, artifact, and run schemas in place.
+    expect(report.storage.ok && report.storage.value.schemaVersion).toBe(3);
+    expect(report.storage.ok && report.storage.value.appliedThisRun).toEqual([1, 2, 3]);
   });
 
   test("registers the persistence phases in the order they have to run", async () => {
@@ -82,7 +82,10 @@ describe("application bootstrap", () => {
     // `close-storage` run its truncating checkpoint against a database with
     // nothing still writing to it.
     expect(participants("finalize-artifacts")).toEqual(["artifact-store"]);
-    expect(participants("persist-outcomes")).toEqual(["event-store"]);
+    // Both are durable writes and both belong here: the run's clean end is the
+    // fact recovery reads on the next start, and `close-storage` is too late
+    // for it because participants inside one phase run concurrently.
+    expect(participants("persist-outcomes")).toEqual(["event-store", "run-record"]);
     expect(participants("checkpoint-projections")).toEqual(["projection-cursors"]);
     expect(participants("close-storage")).toEqual(["sqlite-store"]);
     expect(report.shutdown.failures).toEqual([]);

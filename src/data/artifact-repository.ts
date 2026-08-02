@@ -38,6 +38,7 @@ import {
   ok,
   parseArtifactRecord,
   type Result,
+  type RunId,
   type SqliteBindings,
   type SqliteRow,
   type SqliteStatements,
@@ -55,9 +56,9 @@ const SELECT_LIST = `artifact_id AS artifactId, digest AS digest, media_type AS 
 
 const INSERT_RESERVED = `INSERT INTO ${ARTIFACTS_TABLE}
   (artifact_id, digest, media_type, encoding, byte_length, sensitivity, origin,
-   invocation_id, created_at, finalized_at, availability)
+   invocation_id, created_at, finalized_at, availability, run_id)
   VALUES ($artifactId, $digest, $mediaType, $encoding, $byteLength, $sensitivity, $origin,
-          $invocationId, $createdAt, NULL, 'reserved')`;
+          $invocationId, $createdAt, NULL, 'reserved', $runId)`;
 
 const SELECT_EXISTING = `SELECT artifact_id AS artifactId FROM ${ARTIFACTS_TABLE}
   WHERE artifact_id = $id`;
@@ -94,8 +95,9 @@ function malformedRow(issues: readonly CodecIssue[]): ArtifactError {
   return { kind: "artifact", code: "malformed-row", issues };
 }
 
-function bindingsFor(record: ArtifactRecord): SqliteBindings {
+function bindingsFor(record: ArtifactRecord, run: RunId): SqliteBindings {
   return {
+    runId: run,
     artifactId: record.artifactId,
     digest: record.digest,
     mediaType: record.mediaType,
@@ -117,7 +119,20 @@ function textOf(value: SqliteRow[string] | undefined): string | null {
   return typeof value === "string" ? value : null;
 }
 
-export function createArtifactRepository(store: SqliteStorePort): ArtifactRepositoryPort {
+/**
+ * Every repository over one open database, stamping one run.
+ *
+ * The run is taken here rather than per record because it is ambient to the
+ * process: every row this repository reserves was reserved by *this* run, and
+ * threading it through each call would invite a caller to pass a different one.
+ * Without it the column migration `0003` adds would always be null, and the
+ * attribution recovery depends on to tell an abandoned write from a live one
+ * would be inert.
+ */
+export function createArtifactRepository(
+  store: SqliteStorePort,
+  run: RunId,
+): ArtifactRepositoryPort {
   /**
    * Runs one write and folds its two failure sources into one answer.
    *
@@ -207,7 +222,7 @@ export function createArtifactRepository(store: SqliteStorePort): ArtifactReposi
           if (statements.all(SELECT_EXISTING, { id: identity }).length > 0) {
             return { kind: "artifact", code: "already-exists", artifactId: identity };
           }
-          statements.run(INSERT_RESERVED, bindingsFor(record));
+          statements.run(INSERT_RESERVED, bindingsFor(record, run));
           return null;
         },
         signal,

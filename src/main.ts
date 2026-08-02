@@ -19,6 +19,7 @@
 import { createRuntimeLifecycle, fromSqliteStoreError, fromUnknown } from "./application/index.ts";
 import {
   ARTIFACTS_OWNERSHIP,
+  beginRun,
   createArtifactRepository,
   createArtifactShutdownParticipant,
   createArtifactStore,
@@ -26,11 +27,14 @@ import {
   createLocalDataService,
   createProjectionRunner,
   createProjectionShutdownParticipant,
+  createRunShutdownParticipant,
   createSqliteEventStore,
   createSqliteShutdownParticipant,
   FALLBACK_HOME,
   openSqliteStore,
   PRODUCTION_MIGRATIONS,
+  probeCrashSignals,
+  recoverInterruptedWork,
   rootChild,
   SQLITE_STATE_OWNERSHIP,
   sqliteDatabasePath,
@@ -45,7 +49,9 @@ import {
   type LocalDataPlatform,
   type LocalPath,
   ok,
+  type RecoveryReport,
   type Result,
+  runId,
   type ShutdownReport,
   type SqliteOpenReport,
 } from "./domain/index.ts";
@@ -65,6 +71,8 @@ export type BootstrapOptions = {
   readonly environment?: EnvironmentPort;
   readonly platform?: LocalDataPlatform;
   readonly home?: LocalPath;
+  /** Supplied by tests so a run's identity is stable across a comparison. */
+  readonly runId?: string;
 };
 
 export type BootstrapReport = {
@@ -77,6 +85,14 @@ export type BootstrapReport = {
    * folding one into the other would hide whichever failed second.
    */
   readonly storage: Result<SqliteOpenReport, FalrynError>;
+  /**
+   * What startup recovery established about earlier runs.
+   *
+   * `null` when storage never opened or the artifact roots could not be
+   * resolved, so "recovery found nothing" and "recovery did not run" stay
+   * distinguishable.
+   */
+  readonly recovery: RecoveryReport | null;
 };
 
 export async function main(options: BootstrapOptions = {}): Promise<BootstrapReport> {
@@ -87,8 +103,9 @@ export async function main(options: BootstrapOptions = {}): Promise<BootstrapRep
   });
 
   const environment = options.environment ?? createHostEnvironment();
+  const fileSystem = createHostFileSystem();
   const localData = createLocalDataService({
-    fileSystem: createHostFileSystem(),
+    fileSystem,
     environment,
     platform: options.platform ?? hostPlatform(),
     home: options.home ?? hostHome() ?? FALLBACK_HOME,
@@ -101,10 +118,11 @@ export async function main(options: BootstrapOptions = {}): Promise<BootstrapRep
   // plan has to be able to name artifacts on a run where none was ingested.
   localData.register(ARTIFACTS_OWNERSHIP);
 
+  let recovery: RecoveryReport | null = null;
   const storage = await openStorage(localData, clock);
 
   try {
-    return { shutdown: await lifecycle.requestShutdown(), storage };
+    return { shutdown: await lifecycle.requestShutdown(), storage, recovery };
   } finally {
     // Releases the host signal subscription. Without this the process stays
     // alive holding a listener nothing is waiting on.
@@ -135,6 +153,10 @@ export async function main(options: BootstrapOptions = {}): Promise<BootstrapRep
       );
     }
 
+    // Probed before the database is opened, because opening it creates both
+    // files. A probe taken afterwards would report every run as crashed.
+    const crashSignals = await probeCrashSignals(fileSystem, stateRoot);
+
     const opened = await openSqliteStore({
       open: openBunSqlite,
       clock: systemClock,
@@ -145,6 +167,44 @@ export async function main(options: BootstrapOptions = {}): Promise<BootstrapRep
     });
     if (!opened.ok) {
       return err(fromSqliteStoreError(opened.error, { operation: "open local database" }));
+    }
+
+    // This run's row, written before anything else reads or writes. Without it
+    // a later pass would read this process's in-flight bytes as unattributable,
+    // so a failure here is a startup failure rather than a skipped step.
+    const run = beginRun({
+      store: opened.value,
+      clock: systemClock,
+      runId: runId.from(options.runId ?? crypto.randomUUID()),
+    });
+    if (!run.ok) {
+      return err(
+        fromUnknown(new Error(`the run could not be recorded: ${run.error.code}`), {
+          operation: "record run",
+        }),
+      );
+    }
+
+    const artifactsRoot = rootChild(service.layout, "artifacts");
+    const temporaryRoot = rootChild(service.layout, "temporaryIngest");
+    const blobs =
+      artifactsRoot === null || temporaryRoot === null
+        ? null
+        : createHostBlobStore({ artifactsRoot, temporaryRoot });
+    const hasher = createSha256Hasher();
+
+    // Runs after migrations and before any producer, which is what makes its
+    // central claim safe: anything without a completion time belongs to a run
+    // that is gone, because this run has not created anything yet.
+    if (blobs !== null) {
+      recovery = await recoverInterruptedWork({
+        store: opened.value,
+        blobs,
+        hasher,
+        clock: systemClock,
+        runId: run.value.record.runId,
+        crashSignals,
+      });
     }
 
     // The durable event store and its projection runner, composed over the one
@@ -159,33 +219,37 @@ export async function main(options: BootstrapOptions = {}): Promise<BootstrapRep
       clock: systemClock,
     });
 
-    // Registered in phase order, and the order is the point: `persist-outcomes`
-    // stops accepting appends and awaits the ones in flight,
-    // `checkpoint-projections` then writes each cursor at the last sequence it
-    // applied, and only then does `close-storage` run its truncating
-    // checkpoint — against a database with nothing still writing to it.
-    // The artifact store, composed over the same database and the host blob
-    // adapter. There is no producer yet either — nothing in a real run creates
-    // an artifact — so this build exercises the schema, the ports, and the
-    // `finalize-artifacts` phase rather than writing bytes into a user's roots.
-    const artifactsRoot = rootChild(service.layout, "artifacts");
-    const temporaryRoot = rootChild(service.layout, "temporaryIngest");
-    if (artifactsRoot !== null && temporaryRoot !== null) {
-      const artifacts = createArtifactStore({
-        repository: createArtifactRepository(opened.value),
-        blobs: createHostBlobStore({ artifactsRoot, temporaryRoot }),
-        hasher: createSha256Hasher(),
-        clock: systemClock,
-      });
-      // `finalize-artifacts` runs before `persist-outcomes`, so an ingest that
-      // was still streaming has either committed its record or had its
-      // temporary bytes discarded before anything downstream persists an
-      // outcome that would reference it. Neither root is prepared here: a run
-      // that writes no artifact has no reason to create an artifacts
-      // directory, and the adapter creates what it needs when it needs it.
-      lifecycle.shutdown.register(createArtifactShutdownParticipant(artifacts));
+    // Registered in phase order, and the order is the point: `finalize-artifacts`
+    // settles or discards in-flight bytes, `persist-outcomes` then stops
+    // accepting appends and stamps this run's clean end, `checkpoint-projections`
+    // writes each cursor at the last sequence it applied, and only then does
+    // `close-storage` run its truncating checkpoint — against a database with
+    // nothing still writing to it.
+    if (blobs !== null) {
+      // The artifact store, composed over the same database and the host blob
+      // adapter. There is no producer yet either, so this build exercises the
+      // schema, the ports, and the `finalize-artifacts` phase rather than
+      // writing bytes into a user's roots. Neither root is prepared here: a run
+      // that writes no artifact has no reason to create an artifacts directory,
+      // and the adapter creates what it needs when it needs it.
+      lifecycle.shutdown.register(
+        createArtifactShutdownParticipant(
+          createArtifactStore({
+            // Stamped with this run, so recovery on a later start can tell an
+            // abandoned ingest from one this process was still making.
+            repository: createArtifactRepository(opened.value, run.value.record.runId),
+            blobs,
+            hasher,
+            clock: systemClock,
+          }),
+        ),
+      );
     }
     lifecycle.shutdown.register(createEventStoreShutdownParticipant(eventStore));
+    // Registered in `persist-outcomes` rather than `close-storage`, because
+    // participants inside one phase run concurrently and the run's end is a
+    // durable write that has to land before the connection is closing.
+    lifecycle.shutdown.register(createRunShutdownParticipant(run.value));
     lifecycle.shutdown.register(createProjectionShutdownParticipant(projections));
     // A statement still running when the phase deadline passes leaves this
     // participant unfinished, which makes the shutdown `uncertain` — the

@@ -6,10 +6,11 @@
  * gap, a repeat, or a version out of order is defective, and finding out
  * halfway through applying it means finding out on a user's only copy.
  *
- * The production list holds two steps: migration `0001`, which creates the
+ * The production list holds three steps: migration `0001`, which creates the
  * session, turn, model-attempt, invocation, event, and projection-cursor
- * tables, and migration `0002`, which creates the artifact metadata table.
- * Their SQL lives in `schema.ts` and `artifact-schema.ts` beside this list, so
+ * tables, migration `0002`, which creates the artifact metadata table, and
+ * migration `0003`, which creates run identity. Their SQL lives in
+ * `schema.ts`, `artifact-schema.ts`, and `run-schema.ts` beside this list, so
  * this module stays the rules a set must satisfy and those stay the schema.
  *
  * The aggregate view of what the set produces — every product table and the
@@ -28,6 +29,7 @@ import {
   type Result,
 } from "../domain/index.ts";
 import { ARTIFACTS_TABLE, MIGRATION_0002 } from "./artifact-schema.ts";
+import { MIGRATION_0003, RUNS_TABLE } from "./run-schema.ts";
 import { MIGRATION_0001, RECORD_TABLES } from "./schema.ts";
 
 /**
@@ -38,10 +40,14 @@ import { MIGRATION_0001, RECORD_TABLES } from "./schema.ts";
  * needs a loader to be embedded, and a migration missing from the standalone
  * executable would surface as a database that silently looks unmigrated.
  */
-export const PRODUCTION_MIGRATIONS: readonly Migration[] = [MIGRATION_0001, MIGRATION_0002];
+export const PRODUCTION_MIGRATIONS: readonly Migration[] = [
+  MIGRATION_0001,
+  MIGRATION_0002,
+  MIGRATION_0003,
+];
 
 /** Every product table the registered set creates, in creation order. */
-export const PRODUCT_TABLES: readonly string[] = [...RECORD_TABLES, ARTIFACTS_TABLE];
+export const PRODUCT_TABLES: readonly string[] = [...RECORD_TABLES, ARTIFACTS_TABLE, RUNS_TABLE];
 
 function issue(
   code: MigrationSetErrorCode,

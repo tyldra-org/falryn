@@ -29,6 +29,7 @@ import {
   MAX_ARTIFACT_PREVIEW_BYTES,
   MAX_ARTIFACT_RANGE_BYTES,
   type Result,
+  runId,
   type SqliteStorePort,
 } from "../domain/index.ts";
 import { createSha256Hasher } from "../integrations/index.ts";
@@ -51,6 +52,7 @@ import {
 afterEach(removeTemporaryRoots);
 
 const CONTENT = new TextEncoder().encode("the quick brown fox");
+const THIS_RUN = runId.from("run-this");
 
 async function* chunks(...parts: readonly Uint8Array[]): AsyncIterable<Uint8Array> {
   for (const part of parts) {
@@ -76,7 +78,16 @@ async function harness(
   const root = await makeTemporaryRoot("falryn-artifact-store-");
   const database = await openProductStoreOrThrow(root);
   const blobs = overrides.blobs ?? createInMemoryBlobStore();
-  const inner = createArtifactRepository(overrides.decorateStore?.(database) ?? database);
+  // The run row exists first: every reserved row is stamped with the run that
+  // made it, and the schema will not accept one that names no run.
+  database.write((statements) =>
+    statements.run(
+      `INSERT INTO runs (run_id, started_at, ended_at, schema_version)
+       VALUES ($runId, '2026-07-31T12:00:00.000Z', NULL, 3)`,
+      { runId: THIS_RUN },
+    ),
+  );
+  const inner = createArtifactRepository(overrides.decorateStore?.(database) ?? database, THIS_RUN);
   const repository = overrides.repository?.(inner) ?? inner;
   const store = createArtifactStore({
     repository,
@@ -178,6 +189,32 @@ describe("ingesting an artifact", () => {
     expect(errorOf(ingested)?.code).toBe("malformed-row");
     expect(blobs.locations()).toEqual([]);
     expect(store.get(artifactId.from("a1"))).toMatchObject({ ok: true, value: null });
+    await database.close();
+  });
+});
+
+describe("attribution", () => {
+  test("stamps every reserved row with the run that made it", async () => {
+    const { store, database } = await harness();
+
+    await store.ingest(request());
+
+    // Without this the column migration 0003 adds would always be null, and
+    // the attribution startup recovery depends on would be inert: it could not
+    // tell an abandoned ingest from one a live process was still making.
+    const rows = database.read("SELECT run_id AS runId FROM artifacts WHERE artifact_id = 'a1'");
+    expect(rows.ok && rows.value[0]?.runId).toBe(THIS_RUN);
+    await database.close();
+  });
+
+  test("stamps a deduplicated record too, because its lineage is this run's", async () => {
+    const { store, database } = await harness();
+    await store.ingest(request());
+
+    await store.ingest(request({ artifactId: artifactId.from("a2"), content: chunks(CONTENT) }));
+
+    const rows = database.read("SELECT run_id AS runId FROM artifacts WHERE artifact_id = 'a2'");
+    expect(rows.ok && rows.value[0]?.runId).toBe(THIS_RUN);
     await database.close();
   });
 });

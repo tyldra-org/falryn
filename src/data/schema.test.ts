@@ -21,6 +21,7 @@ import {
   openProductStoreOrThrow,
   removeTemporaryRoots,
 } from "./fixtures.ts";
+import { RUN_SCHEMA_VERSION } from "./run-schema.ts";
 import { MIGRATION_0001, RECORD_SCHEMA_VERSION, RECORD_TABLES } from "./schema.ts";
 import { PRODUCT_SCHEMA_VERSION, PRODUCT_TABLES } from "./sqlite-migrations.ts";
 import { MIGRATION_TABLE } from "./sqlite-store.ts";
@@ -66,7 +67,11 @@ describe("a fresh database", () => {
 
     expect(store.report.created).toBe(true);
     expect(store.report.schemaVersion).toBe(PRODUCT_SCHEMA_VERSION);
-    expect(store.report.appliedThisRun).toEqual([RECORD_SCHEMA_VERSION, ARTIFACT_SCHEMA_VERSION]);
+    expect(store.report.appliedThisRun).toEqual([
+      RECORD_SCHEMA_VERSION,
+      ARTIFACT_SCHEMA_VERSION,
+      RUN_SCHEMA_VERSION,
+    ]);
     // Nothing to lose: a database at version 0 holds no product row.
     expect(store.report.backupPath).toBeNull();
     await store.close();
@@ -100,6 +105,7 @@ describe("a fresh database", () => {
     expect(indexes.ok && indexes.value.map((row) => row.name)).toEqual([
       "artifacts_by_digest",
       "artifacts_by_invocation",
+      "artifacts_reserved",
       "invocations_by_turn",
       "model_attempts_by_turn",
       "sessions_by_workspace",

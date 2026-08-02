@@ -266,6 +266,44 @@ describe("an artifact failure", () => {
   });
 });
 
+describe("startup recovery", () => {
+  const RECOVERY = "data/recovery.ts";
+
+  test("deletes no record, whatever it concludes", async () => {
+    const source = await readSource(RECOVERY);
+    // It marks, it moves an availability, and it discards bytes. A `DELETE`
+    // here would be recovery destroying the evidence it exists to describe.
+    expect(source).not.toMatch(/\bDELETE\s+FROM\b/i);
+    expect(source).not.toMatch(/\bDROP\s+TABLE\b/i);
+  });
+
+  test("never writes a failure where it observed none", async () => {
+    const source = await readSource(RECOVERY);
+    // Interrupted work is `uncertain`, never `failed`: failure is an
+    // observation and this is the absence of one.
+    expect(source).toContain(`kind: "uncertain", effect: "uncertain"`);
+    expect(source).not.toContain(`kind: "failed"`);
+  });
+
+  test("reports counts, and no path, digest, or byte", async () => {
+    const source = await readSource("domain/run.ts");
+    const report = source.slice(
+      source.indexOf("export type RecoveryReport"),
+      source.indexOf("export type RecoveryError"),
+    );
+    expect(report.length).toBeGreaterThan(0);
+    expect(report).not.toMatch(/readonly (path|digest|bytes|content):/);
+  });
+
+  test("performs no external effect", async () => {
+    const source = await readSource(RECOVERY);
+    // No process, no network, no host command. Recovery reads durable state
+    // and writes durable state; anything else would be re-running the work it
+    // is describing.
+    expect(source).not.toMatch(/\b(CommandRunnerPort|Bun\.spawn|child_process|fetch\()\b/);
+  });
+});
+
 describe("the product tables", () => {
   test("are named only by the area that owns their SQL", async () => {
     // Snake-cased identifiers only. `sessions` and `turns` are also ordinary

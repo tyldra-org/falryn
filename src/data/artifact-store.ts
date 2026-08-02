@@ -406,28 +406,8 @@ export function createArtifactStore(options: ArtifactStoreOptions): DurableArtif
     byteLength: number,
     signal?: AbortSignal,
   ): Promise<Result<boolean, ArtifactError>> {
-    const rehashing = hasher.create();
-    let offset = 0;
-    while (offset < byteLength) {
-      if (aborted(signal)) {
-        return err({ kind: "artifact", code: "cancelled", artifactId: null });
-      }
-      const length = Math.min(VERIFICATION_CHUNK_BYTES, byteLength - offset);
-      const read = await blobs.readRange(content(digest), offset, length, signal);
-      if (!read.ok) {
-        return err(blobFailure(read.error, null));
-      }
-      if (read.value.byteLength === 0) {
-        // Fewer bytes on the device than the record claims. Advancing by the
-        // requested length would loop forever, and the answer is already known.
-        return ok(false);
-      }
-      rehashing.update(read.value);
-      // Advanced by what was read, not by what was asked for, so a short read
-      // resumes where it stopped instead of skipping the bytes it did not get.
-      offset += read.value.byteLength;
-    }
-    return ok(rehashing.digest() === digest);
+    const verified = await verifyStoredBytes({ blobs, hasher, digest, byteLength }, signal);
+    return verified.ok ? ok(verified.value) : err(blobFailure(verified.error, null));
   }
 
   async function read(
@@ -545,6 +525,50 @@ export function createArtifactStore(options: ArtifactStoreOptions): DurableArtif
 
     isAccepting: () => accepting,
   };
+}
+
+/** What proving a stored blob's digest needs, independent of any record. */
+export type StoredBytes = {
+  readonly blobs: BlobStorePort;
+  readonly hasher: ContentHasherPort;
+  readonly digest: ContentDigest;
+  readonly byteLength: number;
+};
+
+/**
+ * Re-reads finalized bytes and re-hashes them. `false` means they changed.
+ *
+ * Exported because startup recovery asks the same question of an artifact left
+ * in the reserved state, and two spellings of "do these bytes still hash to
+ * their digest" would be two answers to whether an artifact is intact.
+ */
+export async function verifyStoredBytes(
+  stored: StoredBytes,
+  signal?: AbortSignal,
+): Promise<Result<boolean, BlobError>> {
+  const { blobs, hasher, digest, byteLength } = stored;
+  const rehashing = hasher.create();
+  let offset = 0;
+  while (offset < byteLength) {
+    if (aborted(signal)) {
+      return err({ kind: "blob", code: "cancelled", operation: "read", scope: "content" });
+    }
+    const length = Math.min(VERIFICATION_CHUNK_BYTES, byteLength - offset);
+    const read = await blobs.readRange(content(digest), offset, length, signal);
+    if (!read.ok) {
+      return err(read.error);
+    }
+    if (read.value.byteLength === 0) {
+      // Fewer bytes on the device than the record claims. Advancing by the
+      // requested length would loop forever, and the answer is already known.
+      return ok(false);
+    }
+    rehashing.update(read.value);
+    // Advanced by what was read, not by what was asked for, so a short read
+    // resumes where it stopped instead of skipping the bytes it did not get.
+    offset += read.value.byteLength;
+  }
+  return ok(rehashing.digest() === digest);
 }
 
 /**
