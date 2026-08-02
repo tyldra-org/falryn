@@ -52,6 +52,7 @@ import {
   type ExportName,
   type ExportOmission,
   type ExportResult,
+  type ExportSchemaFamilyDeclaration,
   type ExportSelection,
   type ExportVerification,
   err,
@@ -72,6 +73,8 @@ import {
   type RecordError,
   type RecordRepositories,
   type Result,
+  RUNTIME_EVENT_SCHEMA_FAMILY,
+  RUNTIME_EVENT_SCHEMA_VERSION,
   type RuntimeEvent,
   type Sequence,
   type SessionId,
@@ -89,6 +92,20 @@ import { SESSIONS_TABLE } from "./schema.ts";
 
 /** How many bytes one artifact copy moves at a time. */
 export const EXPORT_CHUNK_BYTES = 1_024 * 1_024;
+
+/**
+ * The families every package this build writes declares.
+ *
+ * Fixed rather than derived from `counts.events`, because a family describes the
+ * shape a reader must understand and not the rows that happen to be present:
+ * the records member is this family's canonical encoding by construction, so a
+ * selection whose sessions produced no events still carries a member defined in
+ * its terms. Deriving the list would turn such a selection into an empty list,
+ * which the parser refuses — an unexportable legal selection.
+ */
+export const WRITTEN_SCHEMA_FAMILIES: readonly ExportSchemaFamilyDeclaration[] = [
+  { family: RUNTIME_EVENT_SCHEMA_FAMILY, schemaVersion: RUNTIME_EVENT_SCHEMA_VERSION },
+];
 
 const SELECT_SESSIONS_IN_RANGE = `SELECT session_id AS sessionId FROM ${SESSIONS_TABLE}
   WHERE ($after IS NULL OR started_at >= $after)
@@ -635,6 +652,7 @@ export async function writePackage(
     format: EXPORT_FORMAT,
     schemaVersion: EXPORT_SCHEMA_VERSION,
     minimumCompatibleSchemaVersion: MINIMUM_COMPATIBLE_EXPORT_SCHEMA_VERSION,
+    schemaFamilies: WRITTEN_SCHEMA_FAMILIES,
     createdAt: timestampFromEpochMilliseconds(options.clock.now()) as Timestamp,
     createdBy: options.buildIdentity,
     selection: summarize(selection, inventory.counts.sessions),

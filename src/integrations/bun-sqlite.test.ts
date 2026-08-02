@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtemp, readdir, rm } from "node:fs/promises";
+import { chmod, mkdtemp, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -108,7 +108,63 @@ describe("opening", () => {
 
     expect(opened.ok).toBe(false);
     expect(!opened.ok && opened.error.code).toBe("cannot-open");
+    // Nothing was pre-created either: `create: false` must not invent a file.
     expect(await readdir(root)).toEqual([]);
+  });
+});
+
+describe("the database file's permissions", () => {
+  async function modeOf(path: string): Promise<number> {
+    return (await stat(path)).mode & 0o777;
+  }
+
+  test("is owner-only from the moment it exists", async () => {
+    const root = await temporaryRoot();
+    const connection = openIn(root);
+
+    // Created before SQLite opened it, so there is no window in which sessions,
+    // turns, invocations, and events are readable by anyone else.
+    expect(await modeOf(`${root}/adapter.sqlite`)).toBe(0o600);
+    await connection.close();
+  });
+
+  test("carries into the write-ahead log and shared-memory files", async () => {
+    const root = await temporaryRoot();
+    const connection = openIn(root);
+    // SQLite derives these from the database's own permissions, which is why
+    // the mode has to be in place before the journal mode is switched.
+    expect(connection.pragma("journal_mode = WAL").ok).toBe(true);
+    connection.run("CREATE TABLE t (id INTEGER PRIMARY KEY) STRICT");
+    connection.run("INSERT INTO t (id) VALUES (1)");
+
+    expect(await modeOf(`${root}/adapter.sqlite-wal`)).toBe(0o600);
+    expect(await modeOf(`${root}/adapter.sqlite-shm`)).toBe(0o600);
+    await connection.close();
+  });
+
+  test("is neither widened nor narrowed by an unusual umask", async () => {
+    const root = await temporaryRoot();
+    const previous = process.umask(0o477);
+    try {
+      const connection = openIn(root);
+      expect(await modeOf(`${root}/adapter.sqlite`)).toBe(0o600);
+      await connection.close();
+    } finally {
+      process.umask(previous);
+    }
+  });
+
+  test("is left alone when the database already exists", async () => {
+    // Diagnose rather than adjust: the mode applies at creation, and a database
+    // an earlier build left at 0644 is opened untouched.
+    const root = await temporaryRoot();
+    await writeFile(`${root}/adapter.sqlite`, "");
+    await chmod(`${root}/adapter.sqlite`, 0o644);
+
+    const connection = openIn(root);
+
+    expect(await modeOf(`${root}/adapter.sqlite`)).toBe(0o644);
+    await connection.close();
   });
 });
 
@@ -228,6 +284,17 @@ describe("backup", () => {
     // Never silently replaced: a leftover backup is evidence of an earlier run,
     // not scratch space.
     expect(connection.backupInto(target).ok).toBe(false);
+    await connection.close();
+  });
+
+  test("leaves the copy owner-only, because it is the whole database again", async () => {
+    const root = await temporaryRoot();
+    const connection = openIn(root);
+    connection.run("CREATE TABLE t (id INTEGER PRIMARY KEY) STRICT");
+
+    expect(connection.backupInto(localPath(`${root}/copy.sqlite`)).ok).toBe(true);
+
+    expect((await stat(`${root}/copy.sqlite`)).mode & 0o777).toBe(0o600);
     await connection.close();
   });
 });
