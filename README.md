@@ -94,8 +94,16 @@ Install the pinned dependencies with `bun install`. The repository uses:
 - `bun run typecheck` for independent TypeScript checking;
 - `bun test` for the Bun test suite;
 - `bun run check` for the normal local quality suite;
+- `bun run measure` for the gated persistence resource measurement;
 - `bun run build` to compile `dist/falryn` as a standalone Bun executable; and
 - `bun run ci` to run the quality suite and compiled build together.
+
+`bun run measure` is deliberately part of neither `bun run check` nor `bun run
+ci`. It measures transaction latency, busy wait and refusal rate, migration
+time, database size, artifact throughput, and range-read latency against the
+real owners, prints each number with the platform, dataset, cold/warm state,
+sample count, and spread that make it comparable, and asserts no timing
+threshold. Ungated it reports itself as skipped rather than silently absent.
 
 Bun owns transpilation, bundling, and executable compilation. Falryn does not
 carry an esbuild dependency.
