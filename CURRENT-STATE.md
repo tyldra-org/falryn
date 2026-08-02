@@ -1027,14 +1027,13 @@ result is written as one placeholder JSON line so the tree is runnable;
 and JSON Lines contracts. Shell completion is deferred rather than
 hand-written.
 
-One coverage reduction belongs with this delivery. The compiled check used to
-assert that migrations *apply* under `bun build --compile`, which rode on the
-bare invocation being the storage bootstrap; the bare invocation is now the
-command tree, and no compiled path applies a migration. What the compiled check
-asserts today is that the binary reads a database's migration bookkeeping and
-agrees on the expected schema version. The gap is recorded as an explicit
-`test.todo` rather than dropped, and the first command that opens storage for
-writing closes it.
+The compiled check covers the bootstrap through its own fixture entry. The bare
+invocation is the command tree now, so `src/main-fixtures.ts` — an entry that
+ships in no build and is compiled by the check that needs it, the pattern
+`src/cli/probe-fixtures.ts` established — calls `main()` inside a standalone
+executable. What that asserts is unchanged from before #17: every product table
+present and the recorded schema version equal to `PRODUCT_SCHEMA_VERSION`, in a
+database a compiled binary created and migrated.
 
 `src/main.ts` composes the cancellation lifecycle and the local data foundation,
 so the compiled executable includes the domain, application, data, and
