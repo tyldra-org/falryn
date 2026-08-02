@@ -842,6 +842,59 @@ source. Removing a seam was demonstrated to fail it: dropping any of the four
 record inserts, reversing the event order, skipping the ingest, skipping the
 projection advance, or reopening a different root each turn the test red.
 
+The persistence resource measurement added by
+[#326](https://github.com/yogeshprasad098/falryn/issues/326) turns "resource
+behavior is verified" into numbers. `src/data/measurement.test.ts` is gated
+behind `FALRYN_MEASURE=1`, runs from `bun run measure`, is part of neither `bun
+run check` nor `bun run ci`, asserts no timing threshold, and changes no
+production source. What it does assert is that the work it measured happened —
+the rows are counted, the digests are distinct, the read-back bytes are the ones
+written, the schema reached version 3 — so a run that measured nothing cannot
+report zero and look fast. Every owner in it is the real one, and the blob store
+is `createHostBlobStore` against a real temporary root rather than the in-memory
+double, because a throughput number taken against memory measures RAM.
+
+Observed on 2026-08-01, on macOS 26.6 (`darwin arm64 25.6.0`), Apple M3, 8
+logical cores, 16 GiB RAM, Bun 1.3.14. The declared dataset is 50 sessions of 5
+turns — each turn carrying a model attempt, an invocation, and 4 events, so 1,800
+rows of which 1,000 are events — plus 8 MiB artifacts and 64 KiB range reads.
+
+| Quantity | Against | State | Result |
+| --- | --- | --- | --- |
+| transaction latency | one `SqliteStorePort.write` `immediate` transaction, via `turns.insert` | warm | 250 samples; median 0.026 ms, p95 0.040 ms, min 0.024 ms, max 2.883 ms |
+| busy wait | a second process holding `BEGIN IMMEDIATE` for 300 ms, 5,000 ms busy timeout | warm | 5 samples; median 302.688 ms, p95 303.511 ms; refused 0/5 |
+| refusal rate | the same contention held 2,000 ms against a 300 ms busy timeout | warm | 5 samples; refused 5/5 as `busy` with effect `none`; median wait 302.348 ms |
+| migration time | `openSqliteStore` bringing a fresh database to schema version 3 | cold | 5 samples on 5 fresh roots; median 2.477 ms, p95 5.351 ms |
+| database size | `falryn.sqlite` after the dataset is written and closed | cold | 868,352 bytes (0.83 MiB) for 1,800 rows, no `-wal` or `-shm` |
+| artifact throughput | `ingest` through atomic finalize over the host blob adapter | cold and warm | 3 samples of 8 MiB; median 13.827 ms ≈ 579 MiB/s, max 18.074 ms; includes the SHA-256 pass |
+| range-read latency | `readRange` over the host blob adapter | warm | 64 samples of 64 KiB; median 0.065 ms, p95 0.094 ms, max 0.670 ms |
+
+Five limitations belong with those numbers:
+
+- **Falryn performs no application-level retry.** `src/data/sqlite-store.ts`
+  reports `busy` and returns. `evaluateRetry` and `DEFAULT_RETRY_BACKOFF` in
+  `src/domain/retry.ts` are an application-layer policy reached only from
+  `src/application/recovery.ts`; nothing in `src/data/` calls them, and no
+  persistence path routes a `busy` through them. The waiting measured above happens
+  inside SQLite's own busy handler, in C, where no counter is reachable. "Busy
+  retries" is therefore recorded as busy wait and refusal rate; a retry counter
+  would have been product behavior invented inside a measurement.
+- **There is no regression gate and no CI job.** These are one observation, not
+  a threshold. Thresholds, regression detection, and a performance job are the
+  benchmark harness, which [#28](https://github.com/yogeshprasad098/falryn/issues/28)
+  defers and none of whose children (#29, #30, #31, #32) owns. That gap has no
+  owner today and is recorded here rather than closed by inventing a sibling.
+- **One platform.** macOS is the only qualified target; measuring on it
+  qualifies no other, and a second platform is
+  [#220](https://github.com/yogeshprasad098/falryn/issues/220).
+- **Nothing was tuned.** This issue measures. A number that turns out to be bad
+  is a new issue, not a silent rewrite.
+- **Ungated, `bun test` reports five skipped tests from this module** rather than
+  the single one the plan anticipated: Bun records each test inside a false
+  `describe.if` as skipped, and the module keeps one explicitly skipped test that
+  names `bun run measure`. The measurement is visibly absent either way, which is
+  the point.
+
 `src/main.ts` composes the cancellation lifecycle and the local data foundation,
 so the compiled executable includes the domain, application, data, and
 integration layers and the real process-signal, filesystem, `bun:sqlite`, blob,
@@ -861,9 +914,10 @@ all three migrations, the recovery pass, and the four shutdown phases.
 Observed on 2026-08-01:
 
 ```text
-bun run check  PASS  (Biome, tsc --noEmit, and bun test)
-bun run build  PASS  (Bun standalone executable compiled to dist/falryn)
-bun run ci     PASS  (quality, tsc --noEmit, build, then bun test)
+bun run check    PASS  (Biome, tsc --noEmit, and bun test)
+bun run build    PASS  (Bun standalone executable compiled to dist/falryn)
+bun run ci       PASS  (quality, tsc --noEmit, build, then bun test)
+bun run measure  PASS  (the gated persistence resource measurement, macOS only)
 ```
 
 `bun run ci` now builds before it tests, so `src/main.compiled.test.ts` runs
