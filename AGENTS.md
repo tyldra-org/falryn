@@ -1,5 +1,3 @@
-@/Users/yogeshprasad/.codex/AGENTS.md
-
 # Falryn agent guidance
 
 Falryn is a new Bun and TypeScript terminal product built from scratch. It is
@@ -8,12 +6,6 @@ tests small, explicit, and user-focused.
 
 ## Required guidance and skills
 
-- The global guidance imported from `/Users/yogeshprasad/.codex/AGENTS.md` is
-  mandatory for every task in this repository. Read and apply it before this
-  file and before inspecting, creating, editing, updating, deleting, moving,
-  reviewing, or validating repository content. This file only adds
-  Falryn-specific rules; it never replaces or weakens the global documentation,
-  command, safety, and Git workflow rules.
 - Load and follow the global `typescript-best-practices` skill before creating,
   editing, updating, moving, deleting, reviewing, debugging, or configuring any
   TypeScript, TSX, JavaScript, type declaration, TypeScript test, build script,
@@ -32,9 +24,8 @@ tests small, explicit, and user-focused.
   documentation for every affected API; use documented components, explicit
   renderer cleanup, and focused tests.
 - When a task touches OpenTUI TypeScript or TSX, both skills are mandatory:
-  apply the global guidance first, then the relevant
-  `typescript-best-practices` module and OpenTUI upstream guidance before
-  changing code.
+  apply the relevant `typescript-best-practices` module and OpenTUI upstream
+  guidance before changing code.
 - Skill guidance supports implementation quality but does not override Falryn's
   architecture, a Ready issue's scope, or repository-owned validation.
 
