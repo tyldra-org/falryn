@@ -663,18 +663,71 @@ rendered previews
 typed artifact API and provenance graph
 ([#116](https://github.com/yogeshprasad098/falryn/issues/116)).
 
+The startup recovery introduced by
+[#319](https://github.com/yogeshprasad098/falryn/issues/319) establishes what an
+earlier run left behind, and never invents a completion:
+
+- migration `0003` creates a `STRICT` `runs` table and adds a nullable
+  `artifacts.run_id`, so a real run now ends at schema version 3. A run inserts
+  its row at startup and stamps a clean end during shutdown, so **a row with no
+  end time is the durable trace of a run that did not close**. The added column
+  is nullable by necessity — `ALTER TABLE ... ADD COLUMN` can only add one whose
+  default is `NULL` — and rows written under migration `0002` predate every run,
+  so there is nothing to backfill. The index on it is partial, covering only the
+  reserved rows recovery reads;
+- one pass runs after migrations and before any producer. Every session, turn,
+  model attempt, and invocation without a completion time is therefore from a
+  run that is gone, and each is completed as `uncertain` carrying `uncertain`
+  effect. **None becomes `failed` and none is deleted** — failure is an
+  observation, and this is the absence of one;
+- an artifact an earlier run left `reserved` is resolved from its bytes rather
+  than from its row: present and verifying becomes `available`, present and not
+  verifying becomes `quarantined` with the bytes moved aside rather than
+  deleted, and absent becomes `missing` — the availability state #14 declared
+  and deliberately left uninferred. Verification re-reads and re-hashes through
+  the same helper the artifact store uses, so "are these bytes intact" has one
+  answer;
+- **an unended run is presumed live and its bytes are never touched.** With no
+  liveness probe in v0.1 this is the only rule that cannot destroy a concurrent
+  Falryn's in-flight work; treating an unended run as abandoned once it is old
+  enough would delete the temporary bytes of any session that outlives the
+  window. In-flight bytes are discarded when their owning run is known to have
+  ended, and unattributable bytes only when no other run is open at all and the
+  recovery window has elapsed — the window covering the one remaining race, a
+  process that has written its run row and not yet allocated;
+- a leftover `falryn.sqlite-wal` or `-shm` is probed *before* the database is
+  opened, because opening it creates both, and reported as the crashed-run
+  signal `reference/LOCAL-DATA.md` already documents;
+- the pass is idempotent: a second one over an already-recovered database
+  changes nothing and reports no repairs. Bounds on records, artifacts, blobs,
+  and bytes re-read are each reported as `partial` rather than rounded off, and
+  a cancelled pass claims nothing about what it did not reach; and
+- `data.recovery.windowMs` is declared with its unit, bounds, default, and the
+  `application-restart` class.
+
+One limitation this slice does not close: records carry no run identity, so a
+recovery pass starting while a *second* Falryn holds an open session would mark
+that session's live records `uncertain`. Artifact bytes are protected against
+this by run attribution; records are not, because attributing them needs a
+column on four more tables. The issue's own design scopes the concurrency
+guarantee to bytes and to simultaneous *startup*, which is covered; the general
+case is follow-up work rather than a hidden TODO.
+
 `src/main.ts` composes the cancellation lifecycle and the local data foundation,
 so the compiled executable includes the domain, application, data, and
 integration layers and the real process-signal, filesystem, `bun:sqlite`, blob,
 and SHA-256 adapters. It resolves roots, registers `sqliteState` and
-`artifacts`, prepares the `state` root, opens and migrates the database,
-constructs the durable event store, its projection runner, and the artifact
-store, and registers the `finalize-artifacts`, `persist-outcomes`,
-`checkpoint-projections`, and `close-storage` participants. There is no producer
-yet, so a real run writes no session, turn, event, or artifact — and neither the
+`artifacts`, prepares the `state` root, probes for crash signals, opens and
+migrates the database, records this run, runs startup recovery, constructs the
+durable event store, its projection runner, and the artifact store, and
+registers the `finalize-artifacts`, `persist-outcomes`,
+`checkpoint-projections`, and `close-storage` participants — the run's clean end
+among them, in `persist-outcomes` rather than `close-storage`, because
+participants inside one phase run concurrently. There is no producer yet, so a
+real run writes no session, turn, event, or artifact — and neither the
 `artifacts` nor the `temporaryIngest` root is created, because the blob adapter
 creates what it needs when it needs it. What a real run exercises is the schema,
-both migrations, and the four shutdown phases.
+all three migrations, the recovery pass, and the four shutdown phases.
 
 Observed on 2026-08-01:
 
@@ -688,7 +741,7 @@ bun run ci     PASS  (quality, tsc --noEmit, build, then bun test)
 against a real `dist/falryn`: the standalone executable opens, migrates, and
 closes a database under a temporary state root, leaves one file, carries its
 migration bookkeeping and every product table into the binary at schema version
-2, and reopens the same database on a second run. Without a build the check
+3, and reopens the same database on a second run. Without a build the check
 reports itself as skipped rather than passing on an executable that does not
 exist.
 
@@ -767,16 +820,15 @@ repository does not yet provide:
   and [#21](https://github.com/yogeshprasad098/falryn/issues/21);
 - a projection registry. One projection is maintained and its name is a closed
   union of one; a registry for a single member would be a framework built for
-  one caller. Interrupted-write recovery, export, deterministic replay, fork,
-  rewind, and reachability garbage collection over these rows are each owned
-  elsewhere and none is implemented;
+  one caller. Export, deterministic replay, fork, rewind, and reachability
+  garbage collection over these rows are each owned elsewhere and none is
+  implemented;
 - any *producer* of an artifact. The table, the repository, the store, the blob
   adapter, and the `finalize-artifacts` participant all exist and are composed,
   and nothing in a real run ingests bytes, because the tools and providers that
   would are later work. Also absent from this area: reachability garbage
-  collection, startup recovery of interrupted writes, export, import, replay,
-  viewers, and the provenance graph, each owned by
-  [#15](https://github.com/yogeshprasad098/falryn/issues/15),
+  collection, export, import, replay, viewers, and the provenance graph, each
+  owned by [#15](https://github.com/yogeshprasad098/falryn/issues/15),
   [#116](https://github.com/yogeshprasad098/falryn/issues/116),
   [#117](https://github.com/yogeshprasad098/falryn/issues/117),
   [#120](https://github.com/yogeshprasad098/falryn/issues/120), or

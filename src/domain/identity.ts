@@ -22,6 +22,8 @@ declare const brand: unique symbol;
 export type Brand<Value, Name extends string> = Value & { readonly [brand]: Name };
 
 export type WorkspaceId = Brand<string, "WorkspaceId">;
+/** One execution of the Falryn process, from start to clean end. */
+export type RunId = Brand<string, "RunId">;
 export type SessionId = Brand<string, "SessionId">;
 export type TurnId = Brand<string, "TurnId">;
 export type ModelAttemptId = Brand<string, "ModelAttemptId">;
@@ -115,6 +117,7 @@ function createIdentifierCodec<Id extends string>(identity: string): IdentifierC
 }
 
 export const workspaceId = createIdentifierCodec<WorkspaceId>("workspaceId");
+export const runId = createIdentifierCodec<RunId>("runId");
 export const sessionId = createIdentifierCodec<SessionId>("sessionId");
 export const turnId = createIdentifierCodec<TurnId>("turnId");
 export const modelAttemptId = createIdentifierCodec<ModelAttemptId>("modelAttemptId");
