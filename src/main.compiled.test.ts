@@ -17,7 +17,7 @@ import { afterAll, afterEach, describe, expect, test } from "bun:test";
 import { mkdtemp, readdir, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { EXIT_CODES, FALRYN_VERSION } from "./cli/index.ts";
+import { CLI_SCHEMA_FAMILY, EXIT_CODES, FALRYN_VERSION, readCliStream } from "./cli/index.ts";
 import { MIGRATION_TABLE, PRODUCT_SCHEMA_VERSION, PRODUCT_TABLES } from "./data/index.ts";
 import { createStaticEnvironment, type LocalPath, localPath } from "./domain/index.ts";
 import { openBunSqlite } from "./integrations/index.ts";
@@ -156,6 +156,45 @@ describe.if(built)("the standalone executable", () => {
       expect(finished.stderr).toContain("Completed.");
       // Diagnostics describe roots; they do not create them.
       expect(await readdir(root)).toEqual([]);
+    },
+    COMPILED_RUN_TIMEOUT_MS,
+  );
+
+  test(
+    "emits one parseable machine record from a standalone executable",
+    async () => {
+      // The compiled path is where a schema constant or a Zod parser can go
+      // missing without a source-mode test noticing.
+      const root = await temporaryRoot();
+      const finished = spawnCompiled(root, ["doctor", "--format", "json"]);
+
+      expect(finished.exitCode).toBe(EXIT_CODES.COMPLETED);
+      const reading = readCliStream(finished.stdout.split("\n"));
+      expect(reading.terminal?.kind).toBe("result");
+      expect(reading.refusals).toEqual([]);
+      expect(reading.terminal?.schemaFamily).toBe(CLI_SCHEMA_FAMILY);
+      // stdout holds the record and nothing else.
+      expect(finished.stderr).toBe("");
+    },
+    COMPILED_RUN_TIMEOUT_MS,
+  );
+
+  test(
+    "emits a whole JSON Lines stream from a standalone executable",
+    async () => {
+      const root = await temporaryRoot();
+      const finished = spawnCompiled(root, ["config", "show", "--format", "jsonl"]);
+
+      expect(finished.exitCode).toBe(EXIT_CODES.COMPLETED);
+      const reading = readCliStream(finished.stdout.split("\n"));
+      expect(reading.terminal?.kind).toBe("result");
+      expect(reading.gaps).toEqual([]);
+      expect(reading.refusals).toEqual([]);
+      // Every line stands alone, which is what makes the stream consumable a
+      // record at a time rather than only in full.
+      for (const line of finished.stdout.split("\n").filter((entry) => entry !== "")) {
+        expect(() => JSON.parse(line)).not.toThrow();
+      }
     },
     COMPILED_RUN_TIMEOUT_MS,
   );

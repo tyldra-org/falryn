@@ -28,6 +28,7 @@ import {
   createInMemoryEventStore,
   createSystemClock,
   type EnvironmentPort,
+  type EventStorePort,
   type FileSystemPort,
   type LocalDataPlatform,
   type LocalPath,
@@ -48,10 +49,27 @@ import {
 } from "../integrations/index.ts";
 import type { GlobalOptions } from "./options.ts";
 
+/**
+ * The stream every event this process appends belongs to.
+ *
+ * Named here rather than at the append site so the machine projections can read
+ * back what the run produced. One stream because one invocation is one run; a
+ * session-scoped stream arrives with the capability that produces sessions.
+ */
+export const CLI_EVENT_STREAM = "configuration";
+
 export type Services = {
   readonly fileSystem: FileSystemPort;
   readonly environment: EnvironmentPort;
   readonly clock: ClockPort;
+  /**
+   * Where this run's events were appended.
+   *
+   * In memory, and exposed so the JSON Lines projection can read the lifecycle
+   * back. Inspecting settings still writes nothing durable — that is the
+   * property the in-memory store exists for, and it is unchanged by reading it.
+   */
+  readonly eventStore: EventStorePort;
   readonly localData: ReturnType<typeof createLocalDataService>;
   readonly registry: ConfigurationRegistryPort;
   readonly loader: ConfigurationLoader;
@@ -110,10 +128,12 @@ export function createServiceProvider(
       redactor: createRuntimeRedactor(),
     });
 
+    const eventStore = createInMemoryEventStore();
     const services: Services = {
       fileSystem,
       environment,
       clock,
+      eventStore,
       localData,
       registry,
       loader: createConfigurationLoader({
@@ -128,7 +148,7 @@ export function createServiceProvider(
         // In memory on purpose: `config show` is a read, and appending a
         // durable generation event because someone inspected their settings
         // would write to a user's database for a question.
-        eventStore: createInMemoryEventStore(),
+        eventStore,
         // Synthetic identities for a read that belongs to no session. The
         // loader's event never leaves this process, so these correlate the
         // inspection rather than naming durable work.
@@ -137,7 +157,7 @@ export function createServiceProvider(
           sessionId: sessionId.from("cli"),
           traceId: traceId.from("cli"),
         },
-        streamId: streamId.from("configuration"),
+        streamId: streamId.from(CLI_EVENT_STREAM),
       }),
       configurationRoot: rootChild(localData.layout, "configuration") ?? home,
       workspaceRoot: workspaceRootFrom(options, overrides),

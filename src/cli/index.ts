@@ -50,6 +50,10 @@ export {
   renderPlainText,
   renderQuiet,
 } from "./render-human.ts";
+export type { MachineRenderRequest, RenderedRecords } from "./render-json.ts";
+export { renderJson } from "./render-json.ts";
+export type { JsonlRenderRequest } from "./render-jsonl.ts";
+export { renderJsonl } from "./render-jsonl.ts";
 export type {
   CommandEffect,
   CommandId,
@@ -70,8 +74,39 @@ export {
   READ_ONLY_EFFECT,
   succeeded,
 } from "./result.ts";
+export type {
+  CliEncodeError,
+  CliEncodeErrorCode,
+  CliEncodeResult,
+  CliEventRecord,
+  CliReadRefusal,
+  CliReadVerdict,
+  CliRecord,
+  CliRecordEnvelope,
+  CliRecordKind,
+  CliRefusalRecord,
+  CliResultBody,
+  CliResultRecord,
+  CliStreamReading,
+} from "./schema.ts";
+export {
+  CLI_ENCODE_ERROR_CODES,
+  CLI_MINIMUM_SCHEMA_VERSION,
+  CLI_RECORD_KINDS,
+  CLI_SCHEMA_FAMILY,
+  CLI_SCHEMA_VERSION,
+  cliEventRecord,
+  cliRefusalRecord,
+  cliResultRecord,
+  encodeCliRecord,
+  isTerminalCliRecordKind,
+  MAX_CLI_RECORD_BYTES,
+  readCliRecord,
+  readCliStream,
+  TERMINAL_CLI_RECORD_KINDS,
+} from "./schema.ts";
 export type { HostServiceOptions, ServiceProvider, Services } from "./services.ts";
-export { createServiceProvider } from "./services.ts";
+export { CLI_EVENT_STREAM, createServiceProvider } from "./services.ts";
 export type {
   CliStreams,
   CliStreamsParts,

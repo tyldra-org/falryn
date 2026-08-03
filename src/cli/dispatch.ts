@@ -6,13 +6,20 @@
  * it composes already exists — #20's streams and exit table, the command tree,
  * and the two commands.
  *
- * The human and quiet formats render through `render-human.ts`. The machine
- * formats are #19's: until they land, their arm writes one placeholder line so
- * the tree stays runnable, and the line is explicitly not the JSON *contract*
- * that issue will define.
+ * Every output format renders through a pure projection: `render-human.ts` for
+ * the human and quiet contracts, `render-json.ts` and `render-jsonl.ts` for the
+ * machine ones. This module chooses which, supplies the facts each needs, and
+ * writes what comes back to the handle that owns it.
  */
 
-import { assertNever } from "../domain/index.ts";
+import {
+  assertNever,
+  MAX_STREAM_READ_LIMIT,
+  type RuntimeEvent,
+  streamId,
+  type Timestamp,
+  timestampFromEpochMilliseconds,
+} from "../domain/index.ts";
 import {
   helpText,
   type Invocation,
@@ -33,8 +40,11 @@ import {
   type GlobalOptions,
   resolveColor,
 } from "./options.ts";
-import { type RenderedText, renderHuman, renderQuiet } from "./render-human.ts";
+import { renderHuman, renderQuiet } from "./render-human.ts";
+import { type RenderedRecords, renderJson } from "./render-json.ts";
+import { renderJsonl } from "./render-jsonl.ts";
 import {
+  CLI_EVENT_STREAM,
   createServiceProvider,
   type HostServiceOptions,
   type ServiceProvider,
@@ -130,7 +140,7 @@ async function runCommand(
   const overrides = configurationOverridesFor(globals);
 
   const result = await produce(command, services, overrides, globals);
-  emit(streams, render(result, globals, streams));
+  emit(streams, await render(result, globals, streams, services));
   return resolveExitCode({
     outcome: result.outcome,
     error: result.errors[0] ?? null,
@@ -138,57 +148,102 @@ async function runCommand(
 }
 
 /**
- * The selected format's text.
+ * The selected format's lines.
  *
- * The switch is shared with #19: this issue implements `human` and `quiet`, and
- * the machine arms stay on the placeholder until #19 replaces them. Neither
- * issue changes the other's arm.
+ * One switch over the four declared contracts. The human projections produce a
+ * single text and the machine ones produce a record per line, so both are
+ * carried as a list — which is also what lets the writer stop cleanly when a
+ * reader leaves partway through a stream.
  */
-function render(
+async function render(
   result: RunCommandResult,
   globals: GlobalOptions,
   streams: CliStreams,
-): RenderedText {
+  services: ServiceProvider,
+): Promise<RenderedRecords> {
   switch (globals.format) {
     case "human":
-      return renderHuman({
-        result,
-        // Keyed to stdout, which is the handle the result lands on. A format
-        // that is not `human` never gets colour at all, and `--color` overrides
-        // the derived fact rather than replacing the derivation.
-        color: allowsColor(globals.format)
-          ? resolveColor(globals.color, streams.capabilities.stdout.color)
-          : "none",
-        symbols: streams.capabilities.stdout.symbols,
-        columns: streams.capabilities.stdout.columns,
-        verbose: globals.verbose,
-      });
+      return asRecords(
+        renderHuman({
+          result,
+          // Keyed to stdout, which is the handle the result lands on. A format
+          // that is not `human` never gets colour at all, and `--color`
+          // overrides the derived fact rather than replacing the derivation.
+          color: allowsColor(globals.format)
+            ? resolveColor(globals.color, streams.capabilities.stdout.color)
+            : "none",
+          symbols: streams.capabilities.stdout.symbols,
+          columns: streams.capabilities.stdout.columns,
+          verbose: globals.verbose,
+        }),
+      );
     case "quiet":
-      return renderQuiet(result);
+      return asRecords(renderQuiet(result));
     case "json":
+      return renderJson({ result, occurredAt: nowFor(services) });
     case "jsonl":
-      // #19. One JSON line so the tree stays runnable and machine-checkable
-      // while the schemas are unwritten; no schema is promised here, and the
-      // machine projections replace this rather than extending it.
-      return { result: placeholderLine(result), diagnostics: "" };
+      return renderJsonl({
+        result,
+        occurredAt: nowFor(services),
+        events: await lifecycleEvents(services),
+      });
     default:
       return assertNever(globals.format, "unhandled output format");
   }
 }
 
+/** A single rendered text as the one-line list the writer takes. */
+function asRecords(text: {
+  readonly result: string;
+  readonly diagnostics: string;
+}): RenderedRecords {
+  return {
+    result: text.result === "" ? [] : [text.result],
+    diagnostics: text.diagnostics,
+  };
+}
+
+/** When the run finished, in the canonical form every record carries. */
+function nowFor(services: ServiceProvider): Timestamp {
+  return timestampFromEpochMilliseconds(services().clock.now());
+}
+
 /**
- * Writes each text to the handle that owns it.
+ * The events this run appended, in sequence order.
  *
- * An empty text writes nothing at all, rather than a blank line: a run whose
- * format has no primary result must leave stdout untouched, and a newline is
- * not nothing to a consumer counting records.
+ * Read back from the in-memory store the service graph already writes to, so a
+ * JSON Lines run reports the lifecycle it actually produced rather than one
+ * staged for it. A read that fails yields no events: a lifecycle this build
+ * could not recover is detail, and the terminal record still carries the answer.
  */
-function emit(streams: CliStreams, text: RenderedText): void {
-  if (text.result !== "") {
-    writeResultLine(streams, text.result);
+async function lifecycleEvents(services: ServiceProvider): Promise<readonly RuntimeEvent[]> {
+  const { eventStore } = services();
+  const read = await eventStore.readFrom(
+    { streamId: streamId.from(CLI_EVENT_STREAM), afterSequence: null },
+    MAX_STREAM_READ_LIMIT,
+  );
+  return read.ok ? read.value : [];
+}
+
+/**
+ * Writes each line to the handle that owns it.
+ *
+ * An empty list writes nothing at all, rather than a blank line: a run whose
+ * format has no primary result must leave stdout untouched, and a newline is not
+ * nothing to a consumer counting records.
+ *
+ * Writing stops as soon as the stream reports the reader is gone. A consumer
+ * running `falryn ... --format jsonl | head -1` gets whole lines and no partial
+ * one, and the run does not go on producing records nobody is reading.
+ */
+function emit(streams: CliStreams, records: RenderedRecords): void {
+  for (const line of records.result) {
+    if (writeResultLine(streams, line).status === "closed") {
+      break;
+    }
   }
-  if (text.diagnostics !== "") {
-    writeDiagnosticLine(streams, text.diagnostics);
+  if (records.diagnostics !== "") {
+    writeDiagnosticLine(streams, records.diagnostics);
   }
 }
 
@@ -216,20 +271,4 @@ async function produce(
       // so a new command reaching here without a branch fails to compile.
       return assertNever(command, "unhandled command");
   }
-}
-
-/**
- * The stand-in for a rendered result.
- *
- * One JSON line, so it is parseable and machine-checkable while #18 and #19 are
- * unwritten. It is not their contract: no schema is promised here, and the
- * projections replace this entirely rather than extending it.
- */
-function placeholderLine(result: RunCommandResult): string {
-  return JSON.stringify({
-    command: result.command,
-    outcome: result.outcome,
-    payload: result.payload,
-    errors: result.errors.map((error) => ({ code: error.code, message: error.message })),
-  });
 }
