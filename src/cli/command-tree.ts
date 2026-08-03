@@ -112,8 +112,9 @@ function build(argv: readonly string[], lenientPositionals = false): ReturnType<
       .wrap(null)
       .usage(
         `${SCRIPT_NAME} [command] [options]\n\n` +
-          "Falryn is a local terminal coding agent. The interactive shell is not\n" +
-          "implemented yet, so running it with no command prints this help.",
+          "Falryn is a local terminal coding agent. Running it with no command opens\n" +
+          "the interactive shell on a capable terminal, and prints this help with a\n" +
+          "reason on any run that cannot host one.",
       )
       .command(configCommand, "Inspect and validate effective configuration.", (group) =>
         group.positional("action", {
@@ -268,8 +269,9 @@ async function parseForHelp(
 function commandFrom(positional: readonly string[], action: string | null): RunnableCommand | null {
   const [group] = positional;
   if (group === undefined) {
-    // The no-argument invocation. It prints help and exits 0 until #21 lands
-    // the interactive shell; help says so rather than leaving it implied.
+    // The no-argument invocation. `src/cli/dispatch.ts` decides from observed
+    // facts whether it opens the shell or falls back to help, and this module
+    // does not know the difference — parsing names the command, nothing more.
     return "default";
   }
   if (group === "doctor") {

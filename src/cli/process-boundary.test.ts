@@ -143,6 +143,7 @@ const CODE_BY_SCENARIO: Readonly<Record<OutcomeScenario, ExitCode>> = {
   "invalid-input": EXIT_CODES.INVALID_USAGE,
   configuration: EXIT_CODES.CONFIGURATION,
   authentication: EXIT_CODES.AUTHENTICATION,
+  integration: EXIT_CODES.UNAVAILABLE,
   uncertain: EXIT_CODES.UNCERTAIN_EFFECT,
   "cancelled-partial": EXIT_CODES.UNCERTAIN_EFFECT,
   internal: EXIT_CODES.INTERNAL,

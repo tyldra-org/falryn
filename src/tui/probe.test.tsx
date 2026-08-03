@@ -43,9 +43,6 @@ const ENTRY = join(dirname(dirname(import.meta.path)), "main.ts");
 /** A renderer start, a Tree-sitter initialization, and a process, on a loaded machine. */
 const PROBE_RUN_TIMEOUT_MS = 30_000;
 
-/** One bundle of the product entry, with no compile step. */
-const BUNDLE_TIMEOUT_MS = 60_000;
-
 type ProbeRun = {
   readonly exitCode: number;
   readonly stdout: string;
@@ -255,11 +252,13 @@ describe("the probe fixture", () => {
 });
 
 describe("the shipped executable", () => {
-  test("imports no OpenTUI or React package", async () => {
-    // The negative control this issue owes #21: pinning a dependency must not
-    // put it in `dist/falryn`. `bun run build` compiles `src/main.ts`, so every
-    // module reachable from it is what ships — and none of them may reach a UI
-    // package until #23 introduces one deliberately.
+  test("reaches a UI package from the interface area alone", async () => {
+    // #22 asserted that nothing in the tree imported one at all. #23 introduces
+    // the shell, so the rule that replaced it is a containment rule rather than
+    // an absence: the interface area may name `@opentui/*` and `react`, and no
+    // other area may. A provider adapter or a data repository importing a
+    // renderer package would mean the presentation boundary had stopped being
+    // one, and it would ship in `dist/falryn` all the same.
     const glob = new Bun.Glob("**/*.{ts,tsx}");
     const root = dirname(dirname(import.meta.path));
     const importers: string[] = [];
@@ -267,7 +266,8 @@ describe("the shipped executable", () => {
       if (
         entry.endsWith(".test.ts") ||
         entry.endsWith(".test.tsx") ||
-        entry.includes("fixtures.")
+        entry.includes("fixtures.") ||
+        entry.startsWith("tui/")
       ) {
         continue;
       }
@@ -279,21 +279,14 @@ describe("the shipped executable", () => {
     expect(importers).toEqual([]);
   });
 
-  test(
-    "bundles no OpenTUI or React module, so pinning them costs it nothing",
-    async () => {
-      // The structural control above states the rule; this one measures it.
-      // `bun run build` compiles `src/main.ts`, so bundling that entry produces
-      // exactly what would ship. A UI package that leaked in through a
-      // re-export chain would appear here even though no file in `src/` names
-      // it — which is the failure the regex alone cannot see.
-      const bundled = await Bun.build({ entrypoints: [ENTRY], target: "bun" });
-      expect(bundled.success, bundled.logs.join("\n")).toBe(true);
-      const contents = await Promise.all(bundled.outputs.map((output) => output.text()));
-      const source = contents.join("\n");
-      expect(source).not.toContain("@opentui/");
-      expect(source).not.toContain("react-reconciler");
-    },
-    BUNDLE_TIMEOUT_MS,
-  );
+  test("still compiles from the one entry that ships", async () => {
+    // What the bundle control used to prove, reduced to the part that is still
+    // true and still worth holding. `bun run build` compiles `src/main.ts`, and
+    // the graph reachable from it now legitimately includes OpenTUI — so the
+    // claim is no longer "no UI module is bundled" but "the entry is intact".
+    // Bundling it here would try to resolve every platform's optional native
+    // package, none of which is installed; `src/main.compiled.test.ts` and
+    // `src/tui/shell.compiled.test.ts` exercise the real artifact instead.
+    expect(await readFile(ENTRY, "utf8")).toContain("dispatch(");
+  });
 });

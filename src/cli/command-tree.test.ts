@@ -47,10 +47,18 @@ describe("the declared tree", () => {
     expect(await helpText(null)).not.toContain("provider");
   });
 
-  test("says in help that the bare invocation is not the interactive shell", async () => {
+  test("says in help what the bare invocation actually does", async () => {
     // Stated rather than implied: a user typing `falryn` and getting help
-    // should be told why, not left to guess that it failed.
-    expect(await helpText(null)).toContain("interactive shell is not");
+    // should be told why, not left to guess that it failed. Since #23 the bare
+    // invocation *does* open the shell on a capable terminal, so help says both
+    // halves — the one that happens and the one that explains a run where it
+    // did not. Help that still claimed the shell was unimplemented would be a
+    // lie the binary tells about itself.
+    const text = await helpText(null);
+    expect(text).toContain("opens");
+    expect(text).toContain("interactive shell");
+    expect(text).toContain("reason");
+    expect(text).not.toContain("not\nimplemented yet");
   });
 });
 
