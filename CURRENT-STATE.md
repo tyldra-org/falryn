@@ -1643,6 +1643,13 @@ fixtures only, because no agent loop, provider, tool runner, or process boundary
 emits them. A test asserts the count of five, so a sixth producer cannot appear
 without this file being wrong.
 
+Every block the reducer produces is `ordinary`: the runtime's events carry no
+payload, so nothing sensitive or secret reaches it. The `sensitive` and `secret`
+classes are constructed by fixtures — for the same reason as the eleven
+producerless kinds, and so the transcript surface has something to render them
+against. A test asserts the reducer's output is all `ordinary`, so the first
+payload-carrying event has to revisit it rather than inherit the default.
+
 **A status is not an outcome.** `status` says whether a block is still changing;
 it never says whether anything succeeded. Only the kinds that carry a
 `TerminalOutcome` report one, reused from the runtime rather than re-declared, and
@@ -1668,9 +1675,14 @@ in it and a note about the hole is more useful than a seamless wrong one. The
 transcript is deliberately **not** in the domain's `PROJECTION_NAMES`: that union
 names projections this build persists, and nothing stores a transcript cursor.
 
-The reducer's output for a fixed event run is recorded as a literal snapshot
-beside a declared generation, so the output and the generation can only change
-together. A boundary control asserts the area imports from the domain and
+The reducer's **structural** output for a fixed event run — which blocks exist,
+their anchors, kinds, statuses, and outcomes — is recorded as a literal snapshot
+beside a declared generation, so the two can only change together. Summary
+wording is deliberately outside that boundary and both the module and the test
+say so: a snapshot pinning every sentence would fail on a typo fix and teach
+everyone to update it without reading it. The cost is a resumed transcript that
+may mix wordings, which is cosmetic; a structural change is not, which is why
+that is the half enforced. A boundary control asserts the area imports from the domain and
 nowhere else, reads no clock and no randomness, writes no second escaping rule
 or outcome vocabulary, declares no second session read model, and exports no
 expansion route that nothing produces.

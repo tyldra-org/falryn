@@ -65,6 +65,21 @@ describe("what this build can produce", () => {
     expect(blockFor(modelAttemptStarted(4))).toBe(null);
   });
 
+  test("marks every produced block ordinary, because no payload reaches it", () => {
+    // Asserted rather than described. The runtime's events carry no payload, so
+    // nothing here is sensitive or secret — and the first event that does carry
+    // content has to revisit this instead of inheriting `ordinary` by default.
+    for (const event of everyEventKind()) {
+      const block = blockFor(event);
+      if (block !== null) {
+        expect({ kind: block.kind, sensitivity: block.sensitivity }).toEqual({
+          kind: block.kind,
+          sensitivity: "ordinary",
+        });
+      }
+    }
+  });
+
   test("stamps every block with the generation that produced it", () => {
     for (const event of everyEventKind()) {
       const block = blockFor(event);

@@ -14,6 +14,7 @@
 import { describe, expect, test } from "bun:test";
 import type { TranscriptBlock } from "./blocks.ts";
 import {
+  BLOCK_SENSITIVITIES,
   blockKey,
   boundedTextsOf,
   describeBlock,
@@ -180,6 +181,59 @@ describe("expansion routes", () => {
         unique: true,
       });
     }
+  });
+});
+
+describe("sensitivity", () => {
+  test("declares no class the corpus does not construct", () => {
+    // The same rule the expansion-route control states, in the other dimension:
+    // a class that is exported, typed, and never constructed is not a contract,
+    // it is a comment that compiles. It matters concretely for the transcript
+    // surface — a rendering tested only against `ordinary` blocks would ship its
+    // sensitivity handling unexercised.
+    const constructed = new Set(CORPUS.map((block) => block.sensitivity));
+    expect([...constructed].sort()).toEqual([...BLOCK_SENSITIVITIES].sort());
+  });
+
+  test("never projects the content of a secret block", () => {
+    // A secret is not a stronger `sensitive`. Sensitive content may be revealed
+    // by an explicit expansion; secret content has no expansion at all, so it is
+    // never present in the projection to begin with.
+    for (const block of CORPUS) {
+      if (block.sensitivity !== "secret") {
+        continue;
+      }
+      for (const bounded of boundedTextsOf(block)) {
+        if (bounded === block.summary) {
+          // The summary still says what is happening. A secret block is
+          // withheld, not invisible.
+          continue;
+        }
+        expect({ kind: block.kind, disclosure: bounded.disclosure.kind }).not.toEqual({
+          kind: block.kind,
+          disclosure: "complete",
+        });
+        expect({ kind: block.kind, text: bounded.text }).toEqual({ kind: block.kind, text: "" });
+      }
+    }
+  });
+
+  test("offers no route out of a secret block", () => {
+    for (const block of CORPUS) {
+      if (block.sensitivity === "secret") {
+        expect({ kind: block.kind, routes: expansionRoutesFor(block) }).toEqual({
+          kind: block.kind,
+          routes: [],
+        });
+      }
+    }
+  });
+
+  test("lets a sensitive block keep a route, because expansion may reveal it", () => {
+    // The difference from a secret, asserted rather than described.
+    const reasoning = ofKind("model-reasoning");
+    expect(reasoning.sensitivity).toBe("sensitive");
+    expect(expansionRoutesFor(reasoning)).toContain("transcript.expand");
   });
 });
 

@@ -13,10 +13,17 @@
  * commit; a change to one without the other is the failure the replay test
  * exists to catch.
  *
+ * The corpus also covers all three sensitivity classes, and not only because a
+ * declared class nothing constructs is the same dead vocabulary a declared route
+ * nothing returns would be. It is what lets a rendering test see a block it must
+ * not show in full: a surface tested only against `ordinary` blocks ships its
+ * sensitivity handling unexercised.
+ *
  * Nothing here contains anything secret. A fixture is checked into the
- * repository, and a fixture that demonstrated secret handling by holding a
- * credential would be the leak it was written to prevent — so the sensitive and
- * secret cases carry *redactions*, which is what a real one would carry too.
+ * repository, and one that demonstrated secret handling by holding a credential
+ * would be the leak it was written to prevent — so the sensitive and secret
+ * blocks carry *redactions* in place of their content, which is exactly what a
+ * real one would carry.
  */
 
 import type { ArtifactId, ConfigurationGeneration, Timestamp } from "../../domain/index.ts";
@@ -90,11 +97,12 @@ export function everyBlockKind(): readonly TranscriptBlock[] {
       ...spine(declared("model-reasoning", 2), 2),
       kind: "model-reasoning",
       source: "model",
+      // The canonical `sensitive` case: content that exists and may be revealed
+      // by an explicit expansion, unlike a secret, which has none.
+      sensitivity: "sensitive",
       status: "final",
       summary: complete("Reasoning withheld."),
-      // Reasoning is the canonical sensitive case: bounded metadata rather than
-      // content, and withheld rather than shortened.
-      text: redacted("reasoning is not projected by default"),
+      text: redacted("reasoning is not projected by default", "transcript.expand"),
     },
     {
       ...spine({ of: "model-attempt", modelAttemptId: FIXTURE_MODEL_ATTEMPT }, 3),
@@ -108,10 +116,15 @@ export function everyBlockKind(): readonly TranscriptBlock[] {
       ...spine(declared("tool-request", 4), 4),
       kind: "tool-request",
       source: "tool",
+      // The canonical `secret` case: a tool invoked with a credential. The
+      // summary still says what is happening — a secret block is not an
+      // invisible one — but the content is withheld with no route, because
+      // there is no expansion that may reveal it.
+      sensitivity: "secret",
       status: "in-progress",
-      summary: complete("Running search."),
-      capability: "search",
-      input: complete("port"),
+      summary: complete("Running a provider check."),
+      capability: "provider.check",
+      input: redacted("the invocation carries a credential"),
     },
     {
       ...spine(declared("tool-progress", 5), 5),

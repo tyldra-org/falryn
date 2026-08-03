@@ -26,11 +26,25 @@
 import type { Sequence, StreamId } from "../../domain/index.ts";
 
 /**
- * Raised whenever the reducer's output for the same events would change.
+ * Raised whenever the reducer's **structural** output for the same events would
+ * change: which blocks exist, what each is anchored to, its kind, its status, or
+ * the outcome it reports. Adding a kind nothing produces is not a change.
  *
- * Adding a block kind that an existing event now produces, changing an
- * anchor, or changing what a summary says are all changes to output. Adding a
- * kind nothing produces is not.
+ * Summary wording is deliberately outside the rule, and the boundary is drawn
+ * where the replay guard can actually hold it. `./replay.test.ts` records the
+ * structural facts and not the strings, because a snapshot that pinned every
+ * sentence would fail on a typo fix and teach everyone to update it without
+ * reading it — at which point the guard stops guarding anything.
+ *
+ * The cost of that boundary is real and small: a cursor resumed across a wording
+ * change yields a transcript whose older blocks are phrased one way and whose
+ * newer blocks are phrased another. That is cosmetic, and nobody can act on it.
+ * A structural change is not — it produces blocks a reader would take for
+ * something they are not — which is why that half is the half enforced.
+ *
+ * State the rule no wider than the guard. A module documenting a discipline its
+ * own checks do not apply is a comment that is quietly false, and the next
+ * person to change a summary will believe they were covered.
  */
 export const TRANSCRIPT_PROJECTION_GENERATION = 1;
 

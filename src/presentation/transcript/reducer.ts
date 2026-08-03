@@ -15,6 +15,14 @@
  * number here rather than leaving it to be counted is the point: a transcript
  * that looked complete would be the most misleading thing this area could ship.
  *
+ * **Every block this build produces is `ordinary`.** The runtime's invocation and
+ * turn events carry no payload, so nothing reaching this reducer is sensitive or
+ * secret, and claiming otherwise would be theatre. The other two sensitivity
+ * classes are constructed by fixtures so the transcript surface has something to
+ * render them against — see `./fixtures.ts`. A test asserts this, so the first
+ * event that does carry content has to revisit it rather than inherit
+ * `ordinary` by default.
+ *
  * **Two events deliberately produce nothing.** `turn.started` and
  * `model.attempt.started` open a scope; they do not say anything. A block for
  * them would read "a turn began" directly above the blocks that show what the

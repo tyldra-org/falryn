@@ -8,14 +8,22 @@
  *
  * The guard has two directions, and both matter:
  *
- * - Change the reducer's output without raising the generation, and the
- *   snapshot fails.
+ * - Change the reducer's structural output without raising the generation, and
+ *   the snapshot fails.
  * - Raise the generation without updating the snapshot, and the generation
  *   assertion fails.
  *
  * So the pair can only be changed together, in one commit, deliberately — which
  * is exactly the review moment that a silent reducer change would otherwise
- * skip. A cursor recorded under an older reducer describes blocks this build
+ * skip.
+ *
+ * "Structural" is the honest word and `./generation.ts` draws the same boundary:
+ * which blocks exist, their anchors, kinds, statuses, and outcomes. Summary
+ * wording is not pinned, because a snapshot that failed on a typo fix would
+ * teach everyone to update it without reading it, and a guard nobody reads is
+ * not a guard. That is a deliberate limit rather than an oversight, and it is
+ * stated in both places so nobody has to infer it from what the snapshot
+ * happens to contain. A cursor recorded under an older reducer describes blocks this build
  * would not produce, and resuming from it would splice two reducers' output
  * into one transcript with an invisible seam.
  */
