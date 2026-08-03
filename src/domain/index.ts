@@ -723,6 +723,7 @@ export type {
   StreamCapability,
   StreamWrite,
   StreamWriteStatus,
+  SymbolSupport,
   TerminalCapabilities,
 } from "./terminal.ts";
 export {
@@ -743,9 +744,18 @@ export {
   MIN_TERMINAL_COLUMNS,
   STDIN_ENCODING,
   STREAM_WRITE_STATUSES,
+  SYMBOL_SUPPORTS,
+  symbolSupportFor,
   terminalCapabilities,
   terminalSize,
 } from "./terminal.ts";
+export {
+  displayWidth,
+  MAX_DISPLAY_WIDTH,
+  sanitizeTerminalText,
+  truncateToWidth,
+  wrapToWidth,
+} from "./text-display.ts";
 export type { Timestamp, TimestampError } from "./time.ts";
 export {
   parseTimestamp,

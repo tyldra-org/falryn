@@ -162,6 +162,19 @@ export type CommandResult<Payload> = {
   readonly correlation: CorrelationIds;
 };
 
+/**
+ * A `CommandResult` whose command identity is known at compile time.
+ *
+ * The identity is a literal rather than the whole union, which is what lets a
+ * projection discriminate on `command` and read the payload that command
+ * actually produces. Without it every projection would receive
+ * `CommandResult<unknown>` and would have to re-check at runtime what the type
+ * system already knew.
+ */
+export type CommandResultOf<Command extends CommandId, Payload> = CommandResult<Payload> & {
+  readonly command: Command;
+};
+
 /** Whether the command's own work succeeded, whatever its subject reported. */
 export function succeeded<Payload>(result: CommandResult<Payload>): boolean {
   return result.outcome.kind === "completed";

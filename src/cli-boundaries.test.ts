@@ -25,6 +25,9 @@ const STREAM_OWNER = "cli/streams.ts";
 /** The one module that assigns a numeric exit code. */
 const EXIT_OWNER = "cli/exit.ts";
 
+/** The one module that turns a result into human-readable text. */
+const RENDERER = "cli/render-human.ts";
+
 /** The composition root, and the only product module that sets an exit status. */
 const COMPOSITION_ROOT = "main.ts";
 
@@ -210,6 +213,22 @@ describe("terminal capability", () => {
     expect(derivers).toEqual(["domain/terminal.ts"]);
   });
 
+  test("derives the symbol repertoire in one place too", async () => {
+    // The same rule colour follows. A second derivation would be a second
+    // answer to whether this terminal can draw a character, and the two would
+    // disagree the first time one of them learned about a new locale.
+    const derivers: string[] = [];
+    for (const file of await sourceFiles()) {
+      if (!isProduct(file) || file === SELF) {
+        continue;
+      }
+      if ((await readSource(file)).includes("export function symbolSupportFor")) {
+        derivers.push(file);
+      }
+    }
+    expect(derivers).toEqual(["domain/terminal.ts"]);
+  });
+
   test("substitutes no width for a handle that reports none", async () => {
     const source = await readSource("domain/terminal.ts");
     // The failure this guards: `columns ?? 80`. A non-TTY treated as a narrow
@@ -304,6 +323,35 @@ describe("the CLI area", () => {
       const source = await readCode(file);
       expect({ file, fs: /from "node:fs(\/promises)?"/.test(source) }).toEqual({ file, fs: false });
     }
+  });
+
+  test("keeps the projection a pure function of the result it was given", async () => {
+    // A renderer that could reach a stream, a clock, or the filesystem could
+    // answer differently on two runs over the same result — and could put text
+    // on a handle the stream owner never decided about.
+    const renderer = await readCode(RENDERER);
+    for (const forbidden of [
+      /\bfrom "\.\/streams\.ts"/,
+      /\bwriteResultLine\b/,
+      /\bwriteDiagnosticLine\b/,
+      /\bDate\b/,
+      /\bcreateSystemClock\b/,
+      /\bfrom "node:/,
+      /\bFileSystemPort\b/,
+    ]) {
+      expect({ forbidden: forbidden.source, found: forbidden.test(renderer) }).toEqual({
+        forbidden: forbidden.source,
+        found: false,
+      });
+    }
+  });
+
+  test("emits an escape sequence from the one module entitled to", async () => {
+    // Every other module writing an ANSI escape would be a second colour
+    // policy, reachable on paths where colour was refused.
+    const escapes = await offenders(/\\u001b\[/, [RENDERER]);
+    expect(escapes).toEqual([]);
+    expect(await readCode(RENDERER)).toContain("\\u001b[");
   });
 
   test("declares only commands whose capability exists", async () => {

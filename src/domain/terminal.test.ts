@@ -13,6 +13,7 @@ import {
   MAX_STDIN_BYTES,
   MAX_STREAM_WRITE_BYTES,
   MAX_TERMINAL_COLUMNS,
+  symbolSupportFor,
   terminalCapabilities,
   terminalSize,
 } from "./terminal.ts";
@@ -265,5 +266,95 @@ describe("colour", () => {
     expect(capabilities.stdout.color).toBe("ansi256");
     expect(capabilities.stderr.color).toBe("none");
     expect(capabilities.stdin.isTty).toBe(true);
+  });
+});
+
+describe("symbol support", () => {
+  test("is Unicode when nothing in the environment says otherwise", () => {
+    expect(symbolSupportFor(createStaticEnvironment())).toBe("unicode");
+    expect(symbolSupportFor(createStaticEnvironment({ TERM: "xterm-256color" }))).toBe("unicode");
+  });
+
+  test("is ASCII on a terminal that said it renders nothing else", () => {
+    expect(symbolSupportFor(createStaticEnvironment({ TERM: "dumb" }))).toBe("ascii");
+    // Outranks a UTF-8 locale: the terminal is the thing that has to draw it.
+    expect(symbolSupportFor(createStaticEnvironment({ TERM: "dumb", LANG: "en_US.UTF-8" }))).toBe(
+      "ascii",
+    );
+  });
+
+  test("is Unicode for a UTF-8 locale, however it is spelled", () => {
+    for (const value of ["en_US.UTF-8", "en_US.utf8", "C.UTF-8", "de_DE.UTF-8@euro"]) {
+      expect(symbolSupportFor(createStaticEnvironment({ LANG: value }))).toBe("unicode");
+    }
+  });
+
+  test("is ASCII for a locale that names a charset that is not UTF-8", () => {
+    expect(symbolSupportFor(createStaticEnvironment({ LANG: "en_US.ISO-8859-1" }))).toBe("ascii");
+    expect(symbolSupportFor(createStaticEnvironment({ LC_CTYPE: "ja_JP.eucJP" }))).toBe("ascii");
+  });
+
+  test("reads LC_ALL, then LC_CTYPE, then LANG", () => {
+    expect(
+      symbolSupportFor(
+        createStaticEnvironment({ LC_ALL: "en_US.ISO-8859-1", LANG: "en_US.UTF-8" }),
+      ),
+    ).toBe("ascii");
+    expect(
+      symbolSupportFor(
+        createStaticEnvironment({ LC_CTYPE: "en_US.ISO-8859-1", LANG: "en_US.UTF-8" }),
+      ),
+    ).toBe("ascii");
+    expect(
+      symbolSupportFor(
+        createStaticEnvironment({ LC_ALL: "en_US.UTF-8", LC_CTYPE: "en_US.ISO-8859-1" }),
+      ),
+    ).toBe("unicode");
+  });
+
+  test("takes a locale that names no charset as saying nothing about the repertoire", () => {
+    // `C` and `en_US` name a locale, not an encoding. Lowering the repertoire
+    // on them would drop symbols for an environment that never refused them.
+    expect(symbolSupportFor(createStaticEnvironment({ LANG: "C" }))).toBe("unicode");
+    expect(symbolSupportFor(createStaticEnvironment({ LC_ALL: "en_US" }))).toBe("unicode");
+  });
+
+  test("is a process fact carried on every handle", () => {
+    const capabilities = terminalCapabilities(
+      {
+        stdout: { isTty: true, columns: 100, rows: 30 },
+        stderr: DETACHED_HANDLE,
+        stdin: { isTty: false },
+      },
+      createStaticEnvironment({ LANG: "en_US.ISO-8859-1" }),
+    );
+
+    expect(capabilities.stdout.symbols).toBe("ascii");
+    expect(capabilities.stderr.symbols).toBe("ascii");
+  });
+
+  test("is independent of colour in both directions", () => {
+    // Losing decoration and losing a character repertoire are different losses.
+    const noColour = terminalCapabilities(
+      {
+        stdout: { isTty: true, columns: 100, rows: 30 },
+        stderr: DETACHED_HANDLE,
+        stdin: { isTty: false },
+      },
+      createStaticEnvironment({ NO_COLOR: "1", TERM: "xterm-256color", LANG: "en_US.UTF-8" }),
+    );
+    expect(noColour.stdout.color).toBe("none");
+    expect(noColour.stdout.symbols).toBe("unicode");
+
+    const noSymbols = terminalCapabilities(
+      {
+        stdout: { isTty: true, columns: 100, rows: 30 },
+        stderr: DETACHED_HANDLE,
+        stdin: { isTty: false },
+      },
+      createStaticEnvironment({ TERM: "xterm-256color", LANG: "en_US.ISO-8859-1" }),
+    );
+    expect(noSymbols.stdout.color).toBe("ansi256");
+    expect(noSymbols.stdout.symbols).toBe("ascii");
   });
 });
