@@ -96,15 +96,21 @@ describe.if(built)("the standalone executable", () => {
     "runs the CLI, and a bare invocation prints help without opening a database",
     async () => {
       // #17 made `falryn` a command tree, so the bare invocation is no longer
-      // the storage bootstrap: it prints help and exits 0. That it creates no
-      // file is the compiled proof of `reference/CLI.md`'s rule that help
-      // initializes nothing.
+      // the storage bootstrap. #23 gave it a shell, and this is the run that
+      // cannot have one: the spawn's handles are pipes, so the launch decision
+      // refuses and the invocation keeps exactly the behavior it had before —
+      // help on stdout, exit 0. That it creates no file is the compiled proof
+      // of `reference/CLI.md`'s rule that help initializes nothing.
       const root = await temporaryRoot();
       const finished = spawnCompiled(root);
 
       expect(finished.exitCode).toBe(EXIT_CODES.COMPLETED);
       expect(finished.stdout).toContain("falryn [command] [options]");
-      expect(finished.stderr).toBe("");
+      // The named reason, on the diagnostic handle and nowhere else. stdout
+      // carries the selected result format, so a run redirecting it gets help
+      // and not a notice about terminals.
+      expect(finished.stderr).toContain("needs a terminal on standard input");
+      expect(finished.stdout).not.toContain("needs a terminal");
       expect(await readdir(root)).toEqual([]);
     },
     COMPILED_RUN_TIMEOUT_MS,

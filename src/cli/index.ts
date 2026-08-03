@@ -44,6 +44,7 @@ export {
   createInvocationGovernance,
   openInvocationScope,
   runUnderScope,
+  untilScopeStops,
 } from "./invocation-scope.ts";
 export type { ColorChoice, GlobalOptions, OutputFormat } from "./options.ts";
 export {

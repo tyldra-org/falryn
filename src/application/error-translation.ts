@@ -37,6 +37,7 @@ import {
   NO_CORRELATION,
   type ParticipantReport,
   type RecoveryAction,
+  type RendererFailure,
   recoveryForEffect,
   type SafeCause,
   type SequenceError,
@@ -636,6 +637,56 @@ function causeDetail(operation: string, cause: SqliteFailure): string | null {
   return cause.detail === null
     ? facts
     : redactText(`${facts} ${cause.detail}`, MAX_CAUSE_DETAIL_LENGTH);
+}
+
+/**
+ * A terminal renderer that could not start, or that went away.
+ *
+ * Split across two categories on purpose, because the two failures ask
+ * different things of the reader. A renderer that failed to initialize or was
+ * lost is an *integration* failure — the platform's native library, the host
+ * streams, or the terminal itself did not provide what this run needed — and it
+ * exits as an unavailable dependency, which is a true statement about a machine
+ * that may simply not have a terminal today. A second renderer being opened is
+ * not that: nothing was unavailable, Falryn asked for two owners of one
+ * terminal, and calling that an unavailable dependency would send someone to
+ * check their environment for a defect in this program.
+ *
+ * The effect is `none` in both cases, and that is the load-bearing claim: a
+ * renderer draws. It changes nothing outside Falryn, so a caller reading this
+ * may retry without inspecting anything first.
+ */
+export function fromRendererFailure(
+  failure: RendererFailure,
+  context: ErrorContext = {},
+): FalrynError {
+  const detail =
+    failure.detail === null ? null : redactText(failure.detail, MAX_CAUSE_DETAIL_LENGTH);
+
+  if (failure.code === "already-open") {
+    return build({
+      code: "internal.renderer-already-open",
+      category: "internal",
+      message: "A terminal renderer is already open in this process.",
+      retryable: false,
+      effect: "none",
+      cause: { source: "renderer", code: failure.code, detail },
+      ...context,
+    });
+  }
+
+  return build({
+    code: `integration.renderer.${failure.code}`,
+    category: "integration",
+    message:
+      failure.code === "initialization-failed"
+        ? "The terminal interface could not be started."
+        : "The terminal interface stopped unexpectedly.",
+    retryable: true,
+    effect: "none",
+    cause: { source: "renderer", code: failure.code, detail },
+    ...context,
+  });
 }
 
 /**

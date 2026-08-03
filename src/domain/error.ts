@@ -62,6 +62,9 @@ export const RUNTIME_EMITTED_CATEGORIES = [
   "configuration",
   "authentication",
   "data",
+  // Since #23: a terminal renderer that could not start, or that went away
+  // underneath the shell, is a dependency this run needed and did not have.
+  "integration",
   "cancellation",
   "internal",
 ] as const;

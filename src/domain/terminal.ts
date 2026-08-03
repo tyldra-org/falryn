@@ -507,6 +507,38 @@ export function terminalCapabilities(
   };
 }
 
+/* -------------------------------------------------------------------------- */
+/* Renderer failure                                                            */
+/* -------------------------------------------------------------------------- */
+
+export const RENDERER_FAILURE_CODES = [
+  /** A renderer is already open. Two owners of one terminal is a defect. */
+  "already-open",
+  /** Creation failed. The terminal was never taken, or was given back already. */
+  "initialization-failed",
+  /** It went away underneath the caller: a crash, or a host stream that closed. */
+  "lost",
+] as const;
+
+export type RendererFailureCode = (typeof RENDERER_FAILURE_CODES)[number];
+
+/**
+ * What went wrong with a terminal renderer.
+ *
+ * Declared here rather than beside the renderer for the same reason
+ * `SqliteStoreError` is declared away from the driver: the vocabulary is a
+ * boundary fact, the translation to a `FalrynError` belongs to the application
+ * layer, and neither may depend on the adapter that produces it. Nothing in this
+ * module knows what a renderer *is*.
+ *
+ * `detail` is bounded and structural, never the thrown value — a renderer
+ * failure message is written by a library with no idea what is sensitive.
+ */
+export type RendererFailure = {
+  readonly code: RendererFailureCode;
+  readonly detail: string | null;
+};
+
 /** Handles for a run with nothing attached. The shape a test starts from. */
 export const DETACHED_HANDLES: ObservedHandles = {
   stdout: DETACHED_HANDLE,

@@ -24,6 +24,7 @@ import {
   createScopeTree,
   type ScopeHandle,
   type ScopeTree,
+  type ShutdownCoordinator,
 } from "../application/index.ts";
 import {
   type ClockPort,
@@ -39,14 +40,25 @@ import { createProcessSignalPort } from "../integrations/index.ts";
 /**
  * What governs one invocation.
  *
- * A clock and a scope tree, and nothing else. The tree may be the composed
- * runtime's — the entry supplies that one, so an interrupt on the root reaches
- * the invocation — or a private one, which is what a caller that never needs to
+ * A clock and a scope tree, and — when the caller composed a runtime — the
+ * shutdown coordinator that runtime owns. The tree may be the composed
+ * runtime's, which the entry supplies so an interrupt on the root reaches the
+ * invocation, or a private one, which is what a caller that never needs to
  * interrupt anything gets.
  */
 export type InvocationGovernance = {
   readonly clock: ClockPort;
   readonly scopes: ScopeTree;
+  /**
+   * Where a long-lived surface registers what has to be released on the way out.
+   *
+   * Absent for a private governance, which composed no runtime and so has no
+   * coordinator to offer. Present since #23, because the interactive shell holds
+   * the user's terminal: an escalated interrupt returns from no command and
+   * flushes no stream, and `restore-terminal` is the only path that gives the
+   * terminal back on it.
+   */
+  readonly shutdown?: ShutdownCoordinator;
   /**
    * The scope the invocation is derived under. The tree's root when absent.
    */
@@ -103,6 +115,10 @@ export function createHostGovernance(scopeId?: ScopeId): HostGovernance {
     governance: {
       clock,
       scopes: lifecycle.scopes,
+      // The composed runtime's own coordinator, so a surface that registers with
+      // it is registering with the sequence an interrupt actually starts —
+      // rather than with a second one nothing would ever run.
+      shutdown: lifecycle.shutdown,
       ...(scopeId === undefined ? {} : { scopeId }),
     },
     dispose: () => lifecycle.dispose(),
@@ -167,7 +183,7 @@ export async function runUnderScope<Value>(
   const decided = new AbortController();
 
   const finished = work().then((value) => ({ kind: "finished", value }) as const);
-  const stopped = waitForStop(governance, scope, decided.signal).then(
+  const stopped = untilScopeStops(governance, scope, decided.signal).then(
     () => ({ kind: "stopped" }) as const,
   );
 
@@ -199,8 +215,19 @@ export async function runUnderScope<Value>(
  * followed by `expireDeadlines`, which is what turns a passed instant into a
  * cancelling scope with a `deadline-exceeded` reason — the reason
  * `acknowledge` later reads to answer `timed-out` rather than `cancelled`.
+ *
+ * Exported since #23 for the one caller that cannot use {@link runUnderScope}.
+ * That helper *races* work against the scope, which is exactly right for a
+ * command that runs to completion on its own. The interactive shell has no such
+ * completion in this build: the scope stopping is the only thing that ends it,
+ * so racing the two would be racing a promise against the very signal that
+ * resolves it. It observes the stop directly instead, tears itself down, and
+ * lets the caller read the outcome off the same scope.
+ *
+ * The `settled` signal must be aborted once the caller is done, or a run given a
+ * long `--timeout` keeps a timer armed after there is nothing left to govern.
  */
-async function waitForStop(
+export async function untilScopeStops(
   governance: InvocationGovernance,
   scope: ScopeHandle,
   /** Aborts once the race is decided, so a wait outlives nothing. */
