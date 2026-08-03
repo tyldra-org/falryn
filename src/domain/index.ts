@@ -762,6 +762,8 @@ export {
   timestampFromEpochMilliseconds,
   timestampToEpochMilliseconds,
 } from "./time.ts";
+export type { WireParseResult } from "./wire.ts";
+export { parseWireEvent, toWireEvent } from "./wire.ts";
 export type {
   ConflictKey,
   EffectClass,

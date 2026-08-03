@@ -28,6 +28,9 @@ const EXIT_OWNER = "cli/exit.ts";
 /** The one module that turns a result into human-readable text. */
 const RENDERER = "cli/render-human.ts";
 
+/** The projections that turn a result into records a machine reads. */
+const MACHINE_RENDERERS = ["cli/render-json.ts", "cli/render-jsonl.ts", "cli/schema.ts"];
+
 /** The composition root, and the only product module that sets an exit status. */
 const COMPOSITION_ROOT = "main.ts";
 
@@ -352,6 +355,59 @@ describe("the CLI area", () => {
     const escapes = await offenders(/\\u001b\[/, [RENDERER]);
     expect(escapes).toEqual([]);
     expect(await readCode(RENDERER)).toContain("\\u001b[");
+  });
+
+  test("keeps the machine projections pure too", async () => {
+    // The same rule the human renderer follows, for the same reason: a record
+    // has to be a function of the result and the time it was handed, or two
+    // runs over one result disagree and a consumer cannot diff them.
+    for (const file of MACHINE_RENDERERS) {
+      const source = await readCode(file);
+      for (const forbidden of [
+        /\bfrom "\.\/streams\.ts"/,
+        /\bwriteResultLine\b/,
+        /\bwriteDiagnosticLine\b/,
+        /\bDate\.now\b/,
+        /\bnew Date\b/,
+        /\bcreateSystemClock\b/,
+        /\bfrom "node:/,
+      ]) {
+        expect({ file, forbidden: forbidden.source, found: forbidden.test(source) }).toEqual({
+          file,
+          forbidden: forbidden.source,
+          found: false,
+        });
+      }
+    }
+  });
+
+  test("declares the machine schema family in exactly one module", async () => {
+    // A second declaration would be a second published contract, and a
+    // consumer pinned to one of them would silently follow the other.
+    const declarers: string[] = [];
+    for (const file of await sourceFiles()) {
+      if (!isProduct(file) || file === SELF) {
+        continue;
+      }
+      if ((await readSource(file)).includes("export const CLI_SCHEMA_FAMILY")) {
+        declarers.push(file);
+      }
+    }
+    expect(declarers).toEqual(["cli/schema.ts"]);
+  });
+
+  test("projects runtime events rather than describing them again", async () => {
+    // JSON Lines carries the wire form the codec owns. A second event
+    // vocabulary here would have to be kept in step with the first, and would
+    // not be.
+    const source = await readCode("cli/render-jsonl.ts");
+    expect(source).toContain("toWireEvent");
+    for (const reinvented of ["session.started", "turn.completed", "EVENT_KINDS"]) {
+      expect({ reinvented, found: source.includes(reinvented) }).toEqual({
+        reinvented,
+        found: false,
+      });
+    }
   });
 
   test("declares only commands whose capability exists", async () => {

@@ -1078,9 +1078,53 @@ Only `config` and `doctor` produce results in v0.1, so the renderer is exercised
 against those two payloads plus fixtures covering the outcome, certainty, and
 failure matrix. It has not been proven against a rich command surface.
 
-The machine formats are still #19's: `--format json` and `--format jsonl` record
-the selection and write the same placeholder line the tree has carried since
-#17. Shell completion is deferred rather than hand-written.
+The machine projections introduced by
+[#19](https://github.com/yogeshprasad098/falryn/issues/19) complete the four
+declared output contracts. They add `src/cli/schema.ts` — the `falryn.cli`
+schema family, its encoder, and its reader policy — plus `src/cli/render-json.ts`
+and `src/cli/render-jsonl.ts`, and expose the run's in-memory event store on
+`Services` so a JSON Lines run reports the lifecycle it actually produced.
+
+Its verified behavior:
+
+- **`falryn.cli` is the third declared schema family**, beside
+  `falryn.runtime-event` and `falryn.configuration`, with a version and a
+  minimum-reader version following the pattern those two established. A source
+  control asserts it is declared in exactly one module;
+- **a reader can refuse a record without parsing its body.** Family, version,
+  minimum reader version, kind, and a `terminal` flag are all in the envelope;
+- **an unknown *terminal* kind is refused and an unknown non-terminal kind is
+  tolerated.** A terminal record this build cannot read leaves the run's
+  outcome unknown, and unknown is never read as success. An added optional
+  field is tolerated, and a record whose `minimumReaderSchemaVersion` exceeds
+  this build's is refused with the version it would need;
+- **JSON emits exactly one bounded terminal record.** A result that will not
+  encode becomes a `refusal` record — still terminal, so a consumer never waits
+  for an answer that is not coming — carrying a code and the bytes it would
+  have taken. It is never a trimmed object, which would parse cleanly and lie;
+- **JSON Lines emits ordered lifecycle records and exactly one terminal
+  record.** Sequences are monotonic and contiguous, and the reader reports a
+  gap and a stream that ended without a terminal record. Lifecycle records
+  carry the wire form `toWireEvent` already produces, so this format invents no
+  second event vocabulary — asserted by a control;
+- **encoding is deterministic and refuses what JSON would corrupt.** Object
+  keys are sorted, so equal results produce equal bytes however they were
+  assembled; a non-finite or unsafe-integer number, a lone surrogate, and a
+  value with no JSON form are each refused rather than written as `null` or as
+  a replacement character a consumer would read as content;
+- **a reader that leaves gets whole records.** Writing stops between lines when
+  the stream reports the reader gone, so `--format jsonl | head -1` yields one
+  complete record, no partial one, and the run neither claims a terminal record
+  it did not deliver nor changes the code its work earned; and
+- **neither format contains ANSI, diagnostics, or a secret.** Controls run both
+  formats under a forced-colour environment and over a configuration file
+  containing token-shaped text, and assert stdout holds records only.
+
+Both formats are exercised from the standalone executable as well as from
+source. The pinned v0.1 record fixture is byte-checked, so a change that would
+break a deployed consumer fails a test rather than a pipeline.
+
+Shell completion is deferred rather than hand-written.
 
 The compiled check covers the bootstrap through its own fixture entry. The bare
 invocation is the command tree now, so `src/main-fixtures.ts` — an entry that
@@ -1244,11 +1288,13 @@ repository does not yet provide:
   them and asking is the CLI's;
 - headless product behavior beyond `config` and `doctor`, or the OpenTUI
   application. The command tree, global options, help, version, the process
-  boundary beneath them, and the human and quiet projections are real; the
-  machine formats are not. `--format json` and `--format jsonl` record the
-  selection and write a placeholder line, and
-  [#19](https://github.com/yogeshprasad098/falryn/issues/19) owns them. The
-  interactive shell is [#21](https://github.com/yogeshprasad098/falryn/issues/21).
+  boundary beneath them, and all four output projections are real; what is
+  absent is commands to render. The interactive shell is
+  [#21](https://github.com/yogeshprasad098/falryn/issues/21). No producer of
+  sessions or turns exists, so a JSON Lines run today carries the short
+  lifecycle a `config` or `doctor` command produces rather than a model turn,
+  and no CLI path cancels or times out — those terminal records are proven
+  against staged results rather than observed runs.
   Also absent: every command group whose capability does not exist, shell
   completion, and hidden or deprecated command policy beyond its declaration;
 - provider integration, model routing, the agent loop, or unified tool
@@ -1268,8 +1314,8 @@ Their implementation breakdown lives in GitHub Issues and the Project.
 - **Live roadmap:** [Falryn Roadmap](https://github.com/users/yogeshprasad098/projects/2)
 - **Current release outcome:** [v0.1 Foundation issues](https://github.com/yogeshprasad098/falryn/issues?q=is%3Aissue%20is%3Aopen%20milestone%3A%22v0.1%20Foundation%22)
 - **First parent outcome:** [#1 Establish the unified runtime and lifecycle](https://github.com/yogeshprasad098/falryn/issues/1)
-- **Current parent outcome:** [#16 Deliver the CLI and headless foundation](https://github.com/yogeshprasad098/falryn/issues/16), now in progress; #20, #17, and #18 have landed.
-- **Next planning action:** implement [#19](https://github.com/yogeshprasad098/falryn/issues/19), the next child of #16, which renders the same `CommandResult` as versioned JSON and JSON Lines.
+- **Current parent outcome:** [#16 Deliver the CLI and headless foundation](https://github.com/yogeshprasad098/falryn/issues/16), now in progress; #20, #17, #18, and #19 have landed.
+- **Next planning action:** verify [#16](https://github.com/yogeshprasad098/falryn/issues/16) as a parent outcome; #17, #18, #19, and #20 are its complete child set and all four have landed.
 
 Which of #1's children are open, and which delivered the behavior recorded
 above, is read from
