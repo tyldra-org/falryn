@@ -29,7 +29,7 @@ import { type ReactNode, useMemo, useRef } from "react";
 import { type LayoutDecision, primaryColumns, selectLayout, type Viewport } from "../layout.ts";
 import { createTextCache } from "../text-cache.ts";
 import { resolveTheme, type ThemeRequest } from "../theme/index.ts";
-import type { ShellModel } from "../view-model.ts";
+import type { CommandEntry, ShellModel } from "../view-model.ts";
 import { type Frame, FrameProvider } from "./context.tsx";
 import { OverlayHost } from "./overlay.tsx";
 import { CommandPalette, HelpOverlay } from "./overlay-routes.tsx";
@@ -56,6 +56,15 @@ export type AppShellProps = {
    * one.
    */
   readonly children?: ReactNode;
+  /**
+   * Every command as a row, for the help overlay.
+   *
+   * Passed rather than derived here because deriving it needs the keymap plan,
+   * and this component is deliberately the half that does not know one exists.
+   * An empty list is the correct default: a frame rendered without a runtime
+   * has no bindings to describe.
+   */
+  readonly commandRows?: readonly CommandEntry[];
 };
 
 export function AppShell(props: AppShellProps): ReactNode {
@@ -64,8 +73,13 @@ export function AppShell(props: AppShellProps): ReactNode {
   // resize; the renderer's own terminal size is read during that render rather
   // than subscribed to separately, so there is one resize path and not two that
   // could arrive a frame apart.
-  const dimensions = useTerminalDimensions();
-  const viewport: Viewport = { columns: dimensions.width, rows: dimensions.height };
+  // Called for its subscription, not for its value: it is what re-renders this
+  // tree on a resize. The *value* comes from the renderer, because the drawable
+  // region also changes for reasons that are not resizes — an overlay growing
+  // the footer, for one — and a hook that only tracks the terminal would hand
+  // back a height that was correct one render ago.
+  useTerminalDimensions();
+  const viewport: Viewport = { columns: renderer.width, rows: renderer.height };
   const terminal: Viewport = {
     columns: renderer.terminalWidth,
     rows: renderer.terminalHeight,
@@ -90,7 +104,12 @@ export function AppShell(props: AppShellProps): ReactNode {
       {layout.kind === "insufficient" ? (
         <MinimumSizeNotice viewport={terminal} decision={layout} />
       ) : (
-        <ShellFrame model={props.model} viewport={viewport} layout={layout}>
+        <ShellFrame
+          model={props.model}
+          viewport={viewport}
+          layout={layout}
+          commandRows={props.commandRows ?? []}
+        >
           {props.children}
         </ShellFrame>
       )}
@@ -102,6 +121,7 @@ function ShellFrame(props: {
   readonly model: ShellModel;
   readonly viewport: Viewport;
   readonly layout: Extract<LayoutDecision, { kind: "layout" }>;
+  readonly commandRows: readonly CommandEntry[];
   readonly children?: ReactNode;
 }): ReactNode {
   const { model } = props;
@@ -123,11 +143,13 @@ function ShellFrame(props: {
             title={model.overlay.kind === "help" ? "Help" : "Commands"}
             dismissHint="Esc closes this"
           >
-            {model.overlay.kind === "help" ? (
-              <HelpOverlay sections={model.help} />
-            ) : (
-              <CommandPalette commands={model.commands} />
-            )}
+            {(rows) =>
+              model.overlay.kind === "help" ? (
+                <HelpOverlay sections={model.help} commands={props.commandRows} rows={rows} />
+              ) : (
+                <CommandPalette commands={model.commands} query="" rows={rows} />
+              )
+            }
           </OverlayHost>
         )}
       </box>

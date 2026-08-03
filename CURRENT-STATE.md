@@ -1572,6 +1572,54 @@ construction test over every declared mode, a compiled run on a terminal too
 short for a footer and one per override mode, and a control asserting that
 `capturesStdout` has a product caller at all.
 
+The shell is operable from the keyboard, delivered by
+[#26](https://github.com/yogeshprasad098/falryn/issues/26).
+
+**Before this, it could not be left.** A terminal in raw mode has `ISIG`
+disabled, so pressing Ctrl+C sends the byte `0x03` to stdin and raises no
+`SIGINT` — and nothing consumed it. The only way out of a running shell was
+killing the process from another window, while the status line said `^C exit`.
+Underneath that sat a second silent failure: `createOpenTuiKeymap` returns a
+keymap with no binding parsers registered, so the first `registerLayer` threw
+inside a React effect where nothing surfaced it. `createDefaultOpenTuiKeymap` is
+the constructor that works.
+
+A command is the stable identity. Each declares an id, a title, a description, a
+context, a default binding or an explicit `null`, and an availability predicate
+that says *why* when the answer is no. Today five commands run — exit, help, the
+palette, and focus movement — and the rest are listed, discoverable, and
+answered: "there is no composer yet", "nothing is running to cancel". Commands
+whose concept does not exist at all, like task inspection, are omitted rather
+than listed as unavailable. The ids are `reference/KEYBOARD-SHORTCUTS.md`'s, so
+the published table and the palette name the same things.
+
+Bindings are grouped into layers by context and resolved by priority, so a
+narrower scope wins only while its surface exists — `escape` closes an overlay
+when one is open and reports that there is nothing to cancel when none is. A
+conflict is a refusal naming both command ids rather than a last-registration
+race, and `app.exit` and `overlay.close` cannot be unbound: they are the two ways
+out of a full-screen interface.
+
+Focus is a logical path rather than a component pointer, so it survives a
+resize, an overlay opening and closing, and a region going away — moving to the
+region that took its place rather than back to the top. Every region carries a
+label, because an indicator that is not colour-only needs words.
+
+Help and the palette are rendered from the registry rather than a maintained
+table, showing each command's effective binding and its unavailability reason.
+Both bound their content to the rows they have: an overlay in `split-footer`
+grows the footer while it is open and restores it after, because the default
+six-row live region left a help panel one row to draw twenty commands into — and
+a terminal does not clip, it overdraws.
+
+Paste is classified before it reaches anything: small text inline, large text as
+a bounded preview, and binary, over-long, or invalidly encoded content refused
+with the reason. A paste never runs a command.
+
+The keyboard journey is proved twice — through a real renderer with a real
+keymap, and against the shipped `dist/falryn` on a pseudo-terminal, where Ctrl+C
+now exits `0` with the terminal restored and `?` draws the command table.
+
 The compiled file is a development bootstrap artifact. It is not a supported
 Falryn product binary or release. A separate compiled probe confirmed that a
 `SIGINT` delivered to a Bun standalone executable reaches the runtime lifecycle,
@@ -1652,10 +1700,10 @@ repository does not yet provide:
   [#25](https://github.com/yogeshprasad098/falryn/issues/25), and the keymap,
   focus routing, and command registry are
   [#26](https://github.com/yogeshprasad098/falryn/issues/26). The overlay routes
-  are mounted and nothing opens them, because no key is bound; the command
-  palette renders its empty state because there are no commands. The shell has
-  no way to quit other than an interrupt or a deadline, for the same reason. No
-  producer of
+  open on their keys since #26, and the palette lists every command with its
+  binding and its availability. What the palette does not yet do is accept typed
+  input to narrow the list — the search is implemented and nothing feeds it a
+  query. No producer of
   sessions or turns exists, so a JSON Lines run today carries the short
   lifecycle a `config` or `doctor` command produces rather than a model turn.
   Since [#345](https://github.com/yogeshprasad098/falryn/issues/345) a CLI
@@ -1680,8 +1728,8 @@ Their implementation breakdown lives in GitHub Issues and the Project.
 - **Live roadmap:** [Falryn Roadmap](https://github.com/users/yogeshprasad098/projects/2)
 - **Current release outcome:** [v0.1 Foundation issues](https://github.com/yogeshprasad098/falryn/issues?q=is%3Aissue%20is%3Aopen%20milestone%3A%22v0.1%20Foundation%22)
 - **First parent outcome:** [#1 Establish the unified runtime and lifecycle](https://github.com/yogeshprasad098/falryn/issues/1)
-- **Current parent outcome:** [#21 Deliver the OpenTUI application shell](https://github.com/yogeshprasad098/falryn/issues/21), in progress with #22, #23, and #24 landed. [#16 Deliver the CLI and headless foundation](https://github.com/yogeshprasad098/falryn/issues/16) remains in progress with #17, #18, #19, and #20 landed.
-- **Next planning action:** implement [#26](https://github.com/yogeshprasad098/falryn/issues/26), which #24 unblocked, or [#25](https://github.com/yogeshprasad098/falryn/issues/25) for the views that mount into the regions #24 defined. Read GitHub for which is Ready.
+- **Current parent outcome:** [#21 Deliver the OpenTUI application shell](https://github.com/yogeshprasad098/falryn/issues/21), in progress with #22, #23, #24, and #26 landed. [#16 Deliver the CLI and headless foundation](https://github.com/yogeshprasad098/falryn/issues/16) remains in progress with #17, #18, #19, and #20 landed.
+- **Next planning action:** implement [#25](https://github.com/yogeshprasad098/falryn/issues/25), the transcript, composer, and activity views that mount into the regions #24 defined and consume the bindings #26 declared.
 
 Which of #1's children are open, and which delivered the behavior recorded
 above, is read from

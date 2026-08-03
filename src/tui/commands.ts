@@ -1,0 +1,403 @@
+/**
+ * The command registry: what the shell can be asked to do.
+ *
+ * A command is the stable identity. Bindings change, titles get reworded, and
+ * a palette entry is display text — the ID is what a keymap override, a help
+ * entry, and a palette dispatch all reference, and it is the only part of this
+ * module that is a compatibility promise.
+ *
+ * Every command declares whether it is available *right now* and, when it is
+ * not, why. That is the honesty mechanism this milestone most needs: there is no
+ * agent loop, no transcript, and no composer, so a registry that listed
+ * `composer.submit` as a working command would be advertising a key that does
+ * nothing. Listing it as unavailable with "no composer yet" is a different
+ * statement, and a true one — the command exists, the binding is reserved, and
+ * the user is told what is missing rather than left pressing a key.
+ *
+ * Commands whose *concept* does not exist are omitted entirely rather than
+ * listed as unavailable. `task.inspect` has no task to inspect and no task
+ * anywhere in the build; carrying it here would be inventing a domain.
+ *
+ * This module imports no OpenTUI value and holds no state. Availability is a
+ * function of a state value the caller supplies.
+ */
+
+/**
+ * Where a command is reachable from.
+ *
+ * The layer order the canonical contract names, narrowest last. A binding in a
+ * more specific context wins over the same key in a broader one, which is what
+ * lets `escape` close an overlay when one is open and request cancellation when
+ * none is.
+ */
+export const COMMAND_CONTEXTS = [
+  "global",
+  "overlay",
+  "scrollable",
+  "transcript",
+  "composer",
+  "confirmation",
+] as const;
+
+export type CommandContext = (typeof COMMAND_CONTEXTS)[number];
+
+/** Layer priority per context. Higher wins; the keymap resolves by this number. */
+export const CONTEXT_PRIORITY: Readonly<Record<CommandContext, number>> = {
+  global: 10,
+  scrollable: 20,
+  transcript: 30,
+  composer: 40,
+  overlay: 50,
+  // Highest of all: a confirmation is asking a question, and nothing behind it
+  // may answer on the user's behalf.
+  confirmation: 60,
+};
+
+export type CommandAvailability =
+  | { readonly kind: "available" }
+  /** Carries why, because "unavailable" alone is a category rather than an answer. */
+  | { readonly kind: "unavailable"; readonly reason: string };
+
+export const AVAILABLE: CommandAvailability = { kind: "available" };
+
+function unavailable(reason: string): CommandAvailability {
+  return { kind: "unavailable", reason };
+}
+
+/**
+ * What the shell can currently do, as the registry sees it.
+ *
+ * Deliberately a set of capability facts rather than the view model: a command's
+ * availability must not depend on what is drawn, only on what exists. Every
+ * field here is `false` in this build except `overlayOpen`, and each one is a
+ * seam a later issue fills.
+ */
+export type CommandState = {
+  readonly overlayOpen: boolean;
+  readonly hasComposer: boolean;
+  readonly hasTranscript: boolean;
+  readonly hasScrollableContent: boolean;
+  readonly hasConfirmation: boolean;
+  /** Whether any cancellable work is in flight. Nothing runs work yet. */
+  readonly hasRunningWork: boolean;
+};
+
+/** The state of a shell with nothing behind it, which is every run today. */
+export const EMPTY_COMMAND_STATE: CommandState = {
+  overlayOpen: false,
+  hasComposer: false,
+  hasTranscript: false,
+  hasScrollableContent: false,
+  hasConfirmation: false,
+  hasRunningWork: false,
+};
+
+export type ShellCommand = {
+  /** Stable. Overrides, help, and the palette all reference this and not the title. */
+  readonly id: string;
+  readonly title: string;
+  readonly description: string;
+  readonly context: CommandContext;
+  /**
+   * The default key, or `null` for a command that deliberately has none.
+   *
+   * `null` is a real answer rather than a gap: an essential action must have a
+   * name even when no key is worth spending on it, so it stays reachable from
+   * the palette and discoverable in help.
+   */
+  readonly defaultBinding: string | null;
+  /** Words for search, beyond the title. The palette matches these too. */
+  readonly keywords: readonly string[];
+  availability(state: CommandState): CommandAvailability;
+};
+
+/**
+ * Commands that may never be unbound.
+ *
+ * Exit and overlay-close are the two paths out. A customization that removed
+ * either would leave someone in a full-screen interface with no way back, and
+ * on a terminal in raw mode that is a window they have to close. Customization
+ * itself is deferred, but the rule is declared and enforced now so the layer
+ * that adds it inherits a constraint rather than having to invent one.
+ */
+export const RESERVED_COMMANDS: readonly string[] = ["app.exit", "overlay.close"];
+
+/**
+ * Every command this build declares.
+ *
+ * The IDs are the canonical reference's, so a user reading the published table
+ * and a user reading the palette see the same names. Order is reading order for
+ * help: what you can do, then how you move, then what is not here yet.
+ */
+export const SHELL_COMMANDS: readonly ShellCommand[] = [
+  {
+    id: "app.help",
+    title: "Help",
+    description: "Show every command, its key, and whether it is available.",
+    context: "global",
+    defaultBinding: "?",
+    keywords: ["keys", "shortcuts", "bindings"],
+    availability: () => AVAILABLE,
+  },
+  {
+    id: "app.commandPalette",
+    title: "Command palette",
+    description: "Search commands by name and run one.",
+    context: "global",
+    defaultBinding: "ctrl+p",
+    keywords: ["commands", "run", "search"],
+    availability: () => AVAILABLE,
+  },
+  {
+    id: "app.exit",
+    title: "Exit",
+    description: "Close the shell and restore the terminal.",
+    context: "global",
+    // The binding that makes the interface usable at all. In raw mode Ctrl+C is
+    // delivered as a byte rather than as `SIGINT` — the terminal's own signal
+    // generation is off — so without this the shell has no keyboard route out,
+    // which is exactly what it had before this command existed.
+    defaultBinding: "ctrl+c",
+    keywords: ["quit", "close", "leave"],
+    availability: () => AVAILABLE,
+  },
+  {
+    id: "app.cancel",
+    title: "Cancel current work",
+    description: "Ask the running operation to stop, without leaving the shell.",
+    context: "global",
+    defaultBinding: "escape",
+    keywords: ["stop", "abort", "interrupt"],
+    availability: (state) =>
+      state.hasRunningWork ? AVAILABLE : unavailable("nothing is running to cancel"),
+  },
+  {
+    id: "focus.next",
+    title: "Focus next region",
+    description: "Move to the next region in reading order.",
+    context: "global",
+    defaultBinding: "tab",
+    keywords: ["move", "region", "forward"],
+    availability: () => AVAILABLE,
+  },
+  {
+    id: "focus.previous",
+    title: "Focus previous region",
+    description: "Move to the previous region in reading order.",
+    context: "global",
+    defaultBinding: "shift+tab",
+    keywords: ["move", "region", "back"],
+    availability: () => AVAILABLE,
+  },
+  {
+    id: "overlay.close",
+    title: "Close overlay",
+    description: "Close the open overlay and return focus where it was.",
+    context: "overlay",
+    defaultBinding: "escape",
+    keywords: ["dismiss", "back", "escape"],
+    availability: (state) => (state.overlayOpen ? AVAILABLE : unavailable("no overlay is open")),
+  },
+  {
+    id: "view.scrollUp",
+    title: "Scroll up",
+    description: "Move the view up by a bounded amount.",
+    context: "scrollable",
+    defaultBinding: "pageup",
+    keywords: ["scroll", "up"],
+    availability: (state) =>
+      state.hasScrollableContent ? AVAILABLE : unavailable("nothing is scrollable yet"),
+  },
+  {
+    id: "view.scrollDown",
+    title: "Scroll down",
+    description: "Move the view down by a bounded amount.",
+    context: "scrollable",
+    defaultBinding: "pagedown",
+    keywords: ["scroll", "down"],
+    availability: (state) =>
+      state.hasScrollableContent ? AVAILABLE : unavailable("nothing is scrollable yet"),
+  },
+  {
+    id: "view.top",
+    title: "Go to top",
+    description: "Move to the start of the view.",
+    context: "scrollable",
+    defaultBinding: "home",
+    keywords: ["start", "beginning"],
+    availability: (state) =>
+      state.hasScrollableContent ? AVAILABLE : unavailable("nothing is scrollable yet"),
+  },
+  {
+    id: "view.bottom",
+    title: "Go to bottom",
+    description: "Move to the end of the view.",
+    context: "scrollable",
+    defaultBinding: "end",
+    keywords: ["end", "latest"],
+    availability: (state) =>
+      state.hasScrollableContent ? AVAILABLE : unavailable("nothing is scrollable yet"),
+  },
+  {
+    id: "transcript.search",
+    title: "Search the transcript",
+    description: "Find text in the projected conversation.",
+    context: "transcript",
+    defaultBinding: "ctrl+f",
+    keywords: ["find", "filter"],
+    availability: (state) =>
+      state.hasTranscript ? AVAILABLE : unavailable("there is no transcript yet"),
+  },
+  {
+    id: "transcript.expand",
+    title: "Expand the selected entry",
+    description: "Inspect a tool call or artifact in full.",
+    context: "transcript",
+    defaultBinding: "enter",
+    keywords: ["inspect", "open", "detail"],
+    availability: (state) =>
+      state.hasTranscript ? AVAILABLE : unavailable("there is no transcript yet"),
+  },
+  {
+    id: "composer.submit",
+    title: "Submit",
+    description: "Send what is in the composer.",
+    context: "composer",
+    defaultBinding: "enter",
+    keywords: ["send", "run", "ask"],
+    availability: (state) =>
+      state.hasComposer ? AVAILABLE : unavailable("there is no composer yet"),
+  },
+  {
+    id: "composer.newline",
+    title: "Insert a newline",
+    description: "Add a line without submitting.",
+    context: "composer",
+    defaultBinding: "shift+enter",
+    keywords: ["newline", "multiline"],
+    availability: (state) =>
+      state.hasComposer ? AVAILABLE : unavailable("there is no composer yet"),
+  },
+  {
+    id: "composer.historyPrevious",
+    title: "Previous entry",
+    description: "Recall the previous submission without losing the draft.",
+    context: "composer",
+    defaultBinding: "up",
+    keywords: ["history", "previous", "recall"],
+    availability: (state) =>
+      state.hasComposer ? AVAILABLE : unavailable("there is no composer yet"),
+  },
+  {
+    id: "composer.historyNext",
+    title: "Next entry",
+    description: "Move forward through recalled submissions.",
+    context: "composer",
+    defaultBinding: "down",
+    keywords: ["history", "next"],
+    availability: (state) =>
+      state.hasComposer ? AVAILABLE : unavailable("there is no composer yet"),
+  },
+  {
+    id: "confirmation.accept",
+    title: "Accept",
+    description: "Confirm the exact action described.",
+    context: "confirmation",
+    // No default key, deliberately. A reusable single key that accepts anything
+    // is how someone confirms a destructive action they had not read; a
+    // confirmation binds its own keys to its own labelled choices.
+    defaultBinding: null,
+    keywords: ["yes", "confirm", "ok"],
+    availability: (state) =>
+      state.hasConfirmation ? AVAILABLE : unavailable("nothing is waiting for confirmation"),
+  },
+  {
+    id: "confirmation.deny",
+    title: "Decline",
+    description: "Refuse the action described.",
+    context: "confirmation",
+    defaultBinding: null,
+    keywords: ["no", "cancel", "refuse"],
+    availability: (state) =>
+      state.hasConfirmation ? AVAILABLE : unavailable("nothing is waiting for confirmation"),
+  },
+];
+
+/** A command by ID, or `undefined`. Lookup is by identity and never by title. */
+export function commandById(id: string): ShellCommand | undefined {
+  return SHELL_COMMANDS.find((command) => command.id === id);
+}
+
+/**
+ * Commands matching a search, in registry order.
+ *
+ * Matches the title, the description, the keywords, and the ID — the ID because
+ * someone reading the published reference will type `app.exit`, and a palette
+ * that only searched display text would not find the thing the documentation
+ * told them to look for.
+ */
+export function searchCommands(query: string): readonly ShellCommand[] {
+  const needle = query.trim().toLowerCase();
+  if (needle === "") {
+    return SHELL_COMMANDS;
+  }
+  return SHELL_COMMANDS.filter((command) =>
+    [command.id, command.title, command.description, ...command.keywords].some((field) =>
+      field.toLowerCase().includes(needle),
+    ),
+  );
+}
+
+export type BindingConflict = {
+  readonly context: CommandContext;
+  readonly binding: string;
+  /** Both IDs, sorted, so the report names what collided rather than which lost. */
+  readonly commands: readonly string[];
+};
+
+/**
+ * Bindings that collide within one context.
+ *
+ * A conflict is a validation error, not a last-registration-wins accident: two
+ * commands on one key in one context means one of them is unreachable, and
+ * which one depends on registration order — a fact no user can see and no
+ * reviewer can predict.
+ *
+ * The same key in *different* contexts is not a conflict. `escape` closing an
+ * overlay and `escape` cancelling work is the layering working as designed.
+ */
+export function bindingConflicts(
+  commands: readonly ShellCommand[] = SHELL_COMMANDS,
+): readonly BindingConflict[] {
+  const seen = new Map<string, string[]>();
+  for (const command of commands) {
+    if (command.defaultBinding === null) {
+      continue;
+    }
+    const key = `${command.context}\0${command.defaultBinding}`;
+    seen.set(key, [...(seen.get(key) ?? []), command.id]);
+  }
+
+  const conflicts: BindingConflict[] = [];
+  for (const [key, ids] of seen) {
+    if (ids.length < 2) {
+      continue;
+    }
+    const [context = "global", binding = ""] = key.split("\0");
+    conflicts.push({
+      context: context as CommandContext,
+      binding,
+      commands: [...ids].sort(),
+    });
+  }
+  return conflicts;
+}
+
+/** Reserved commands missing from a set. Empty when every one is still bound. */
+export function missingReservedCommands(
+  commands: readonly ShellCommand[] = SHELL_COMMANDS,
+): readonly string[] {
+  return RESERVED_COMMANDS.filter(
+    (id) => !commands.some((command) => command.id === id && command.defaultBinding !== null),
+  );
+}

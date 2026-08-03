@@ -90,11 +90,24 @@ export type StatusLineModel = {
   readonly hints: readonly KeyHint[];
 };
 
-/** An entry in the command palette. Resolves a stable identity, never display text. */
+/**
+ * An entry in the palette and in help.
+ *
+ * Resolves a stable identity, never display text — `id` is what a dispatch and
+ * an override reference, and the title is only what a person reads.
+ *
+ * `unavailableReason` is present and nullable rather than optional, and the
+ * distinction is the whole honesty mechanism: `null` means the command runs,
+ * and a string means it exists, is listed, is discoverable, and will tell you
+ * what is missing instead of doing nothing when you press its key.
+ */
 export type CommandEntry = {
   readonly id: string;
   readonly title: string;
-  readonly hint: string | null;
+  readonly description: string;
+  /** The key that runs it right now, or `null` when it has no default. */
+  readonly binding: string | null;
+  readonly unavailableReason: string | null;
 };
 
 export type HelpSection = {

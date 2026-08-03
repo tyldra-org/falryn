@@ -25,7 +25,7 @@
 
 import { dlopen, FFIType, ptr } from "bun:ffi";
 import { afterEach, describe, expect, test } from "bun:test";
-import { closeSync, createReadStream } from "node:fs";
+import { closeSync, createReadStream, writeSync } from "node:fs";
 import { stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { EXIT_CODES } from "../cli/index.ts";
@@ -143,7 +143,7 @@ type ShellRun = {
 /** Starts the compiled shell on a pseudo-terminal and runs `act` once it has drawn. */
 async function runOnPty(
   argv: readonly string[],
-  act: (started: { readonly process: Bun.Subprocess }) => void,
+  act: (started: { readonly process: Bun.Subprocess; readonly pty: Pty }) => void,
   options: {
     readonly columns?: number;
     readonly rows?: number;
@@ -299,6 +299,51 @@ describe.if(runnable)("the compiled shell on a real terminal", () => {
       }
     },
     RUN_TIMEOUT_MS * 2,
+  );
+
+  test(
+    "exits from the keyboard, and restores the terminal",
+    async () => {
+      // The defect #26 fixed, on the shipped artifact. A terminal in raw mode
+      // has `ISIG` off, so this byte is Ctrl+C arriving as *input* rather than
+      // as `SIGINT` — before the keymap existed nothing consumed it, and the
+      // only way out of the interface was killing the process from another
+      // window while the status line said `^C exit`.
+      const run = await runOnPty([], ({ pty }) => {
+        writeSync(pty.master, Buffer.from([0x03]));
+      });
+      // Zero, not 130: this is a deliberate quit, not a cancellation.
+      expect(run.exitCode).toBe(EXIT_CODES.COMPLETED);
+      for (const [what, sequence] of Object.entries(RESTORED)) {
+        expect({ what, restored: run.transcript.includes(sequence) }).toEqual({
+          what,
+          restored: true,
+        });
+      }
+    },
+    RUN_TIMEOUT_MS,
+  );
+
+  test(
+    "opens help from the keyboard, with every command and its key",
+    async () => {
+      // The overlay grows the footer to make room for itself, so this also
+      // proves that: at the default six-row footer the panel would have had one
+      // row and the commands would have drawn over each other.
+      const run = await runOnPty([], ({ pty }) => {
+        writeSync(pty.master, Buffer.from("?"));
+        setTimeout(() => writeSync(pty.master, Buffer.from([0x03])), 600);
+      });
+      expect(run.exitCode).toBe(EXIT_CODES.COMPLETED);
+      expect(run.transcript).toContain("Help");
+      expect(run.transcript).toContain("ctrl+c");
+      // A command that cannot run, listed with its reason rather than hidden.
+      // `app.cancel` rather than a composer command: at this terminal height the
+      // list truncates before the composer rows, which is the bounded-overlay
+      // behavior working rather than a missing entry.
+      expect(run.transcript).toContain("nothing is running to cancel");
+    },
+    RUN_TIMEOUT_MS,
   );
 
   test(
