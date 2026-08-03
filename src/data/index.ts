@@ -95,6 +95,7 @@ export {
 export type { PlatformInputs, RootResolution, RootResolutionIssue } from "./roots.ts";
 export {
   FALLBACK_HOME,
+  inspectRoots,
   PRIVATE_DIRECTORY_MODE,
   prepareRoots,
   QUALIFIED_PLATFORM,

@@ -187,6 +187,67 @@ export function isRootUsable(status: RootStatus): boolean {
   return status.code === "created" || status.code === "existed";
 }
 
+/**
+ * Whether a root can hold data, without creating anything to find out.
+ *
+ * Four states rather than a boolean, because the two that a boolean would merge
+ * are the two a reader most needs apart: a root that does not exist yet is the
+ * normal first-run state, and a root that is a regular file is a fault. Calling
+ * both "not usable" is how a diagnostic tells someone their machine is fine
+ * when it cannot persist anything.
+ *
+ * `unknown` is its own state for the same reason `EffectCertainty` has one: a
+ * probe that did not complete has not established health, and reporting it as
+ * `ready` is a claim the probe never made.
+ */
+export const ROOT_VIABILITIES = ["ready", "absent", "blocked", "unknown"] as const;
+
+export type RootViability = (typeof ROOT_VIABILITIES)[number];
+
+/**
+ * Why a root is not ready.
+ *
+ * `insecure-permissions` appears on a `ready` root rather than a blocked one,
+ * matching preparation: it describes a directory that works and should not,
+ * not one that cannot hold data.
+ */
+export const ROOT_VIABILITY_CODES = [
+  "not-a-directory",
+  "not-writable",
+  "parent-not-writable",
+  "dangling-symlink",
+  "insecure-permissions",
+] as const;
+
+export type RootViabilityCode = (typeof ROOT_VIABILITY_CODES)[number];
+
+export type RootInspection = {
+  readonly root: LocalDataRoot;
+  readonly path: LocalPath;
+  readonly viability: RootViability;
+  /**
+   * Why this root is not `ready`, or the advisory finding on one that is.
+   *
+   * A {@link RootViabilityCode} for a state this probe diagnosed, and the
+   * boundary's own code when the viability is `unknown` — a probe that failed
+   * reports what the filesystem said rather than a verdict it did not reach.
+   */
+  readonly code: string | null;
+  /** Bits observed on an existing directory, or `null` when there is none. */
+  readonly observedMode: number | null;
+};
+
+/**
+ * Whether this root's state prevents Falryn from holding data there.
+ *
+ * `absent` is deliberately not blocking: the first run that needs the root will
+ * create it, and reporting a fresh machine as faulty would train a reader to
+ * ignore the finding that matters.
+ */
+export function blocksLocalData(inspection: RootInspection): boolean {
+  return inspection.viability === "blocked" || inspection.viability === "unknown";
+}
+
 /** Whether a measurement saw everything, or stopped at its bound. */
 export type MeasurementCompleteness = "complete" | "partial";
 
