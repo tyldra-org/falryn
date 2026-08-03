@@ -32,6 +32,7 @@ import type { ThemeRequest } from "../theme/index.ts";
 import type { ShellModel } from "../view-model.ts";
 import { AppShell } from "./app-shell.tsx";
 import { KeymapBridge } from "./keymap-bridge.tsx";
+import { useOverlayRoom } from "./overlay-room.tsx";
 import { activeContexts, useShellRuntime } from "./shell-runtime.tsx";
 
 export type ShellAppProps = {
@@ -69,6 +70,9 @@ export function ShellApp(props: ShellAppProps): ReactNode {
     : `The keymap was refused: ${verdict.refusals.map(describeRefusal).join("; ")}.`;
 
   const runtime = useShellRuntime({ plan, onExit: props.onExit });
+  // The footer grows to hold an overlay and shrinks back when it closes. See
+  // `./overlay-room.tsx` for why this is not a constant.
+  useOverlayRoom(runtime.state.overlay.kind !== "none");
   const rows = commandRows(plan, runtime.commandState);
 
   const model: ShellModel = {

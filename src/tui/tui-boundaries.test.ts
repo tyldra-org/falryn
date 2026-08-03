@@ -36,6 +36,9 @@ const RENDERER_OWNERS = [
   // owns and a dispatcher it does not.
   "components/shell-app.tsx",
   "components/keymap-bridge.tsx",
+  // Grows the footer while an overlay is open, which is a renderer setting and
+  // nothing else. See `./overlay-room.tsx` for why a constant would not do.
+  "components/overlay-room.tsx",
 ];
 
 /** The one module allowed to author a colour. */
