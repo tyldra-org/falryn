@@ -201,7 +201,7 @@ describe("reading", () => {
   });
 
   test("withholds a family name that is not a structural identifier", () => {
-    const verdict = readCliRecord({ schemaFamily: "[2J", kind: "result" });
+    const verdict = readCliRecord({ schemaFamily: "\u001b[2J", kind: "result" });
     expect(verdict.kind === "refused" && verdict.reason.code === "foreign-family").toBe(true);
     expect(JSON.stringify(verdict)).not.toContain("[2J");
   });

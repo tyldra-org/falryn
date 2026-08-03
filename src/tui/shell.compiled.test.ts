@@ -54,9 +54,9 @@ const RUN_TIMEOUT_MS = 30_000;
  * sides be wrong together.
  */
 const RESTORED = {
-  cursorVisible: "[?25h",
-  scrollRegionReset: "[r",
-  bracketedPasteOff: "[?2004l",
+  cursorVisible: "\u001b[?25h",
+  scrollRegionReset: "\u001b[r",
+  bracketedPasteOff: "\u001b[?2004l",
 } as const;
 
 type Pty = {

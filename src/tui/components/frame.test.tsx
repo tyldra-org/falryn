@@ -213,13 +213,13 @@ describe("the header's states", () => {
     // outside Falryn, and any of them can carry an escape sequence.
     const frame = await shell({
       header: {
-        workspace: known("a[2Jb"),
+        workspace: known("a\u001b[2Jb"),
         branch: known("main"),
         session: known("s"),
         model: known("m"),
       },
     });
-    expect(frame).not.toContain("[2J");
+    expect(frame).not.toContain("\u001b[2J");
     expect(frame).toContain("\\x1b");
   });
 });
