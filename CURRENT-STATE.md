@@ -1620,6 +1620,73 @@ The keyboard journey is proved twice — through a real renderer with a real
 keymap, and against the shipped `dist/falryn` on a pseudo-terminal, where Ctrl+C
 now exits `0` with the terminal restored and `?` draws the command table.
 
+A transcript exists as a contract rather than as a view, delivered by
+[#354](https://github.com/yogeshprasad098/falryn/issues/354).
+
+**Nothing renders it, and nothing outside it consumes it yet.** The shared
+projection area `src/presentation/` is not reachable from `src/main.ts`, so it
+is absent from the compiled bundle. Its consumers are the transcript surface
+([#355](https://github.com/yogeshprasad098/falryn/issues/355)) and the activity
+and status projections
+([#358](https://github.com/yogeshprasad098/falryn/issues/358)), neither of which
+exists. What is delivered is the block model, the reducer, and the controls that
+will catch the first change [#33](https://github.com/yogeshprasad098/falryn/issues/33)
+makes to either.
+
+A transcript block is a semantic object, not a log line. Sixteen kinds are
+declared as a closed union, and **five of them have a producer**: `notice`,
+`turn-outcome`, `model-outcome`, `tool-request`, and `tool-result`, derived from
+the eight runtime event kinds that exist. The other eleven — model text and
+reasoning, tool progress, process stream and exit, file change, repository
+activity, task progress, artifact, and diagnostic — are declared and exercised by
+fixtures only, because no agent loop, provider, tool runner, or process boundary
+emits them. A test asserts the count of five, so a sixth producer cannot appear
+without this file being wrong.
+
+Every block the reducer produces is `ordinary`: the runtime's events carry no
+payload, so nothing sensitive or secret reaches it. The `sensitive` and `secret`
+classes are constructed by fixtures — for the same reason as the eleven
+producerless kinds, and so the transcript surface has something to render them
+against. A test asserts the reducer's output is all `ordinary`, so the first
+payload-carrying event has to revisit it rather than inherit the default.
+
+**A status is not an outcome.** `status` says whether a block is still changing;
+it never says whether anything succeeded. Only the kinds that carry a
+`TerminalOutcome` report one, reused from the runtime rather than re-declared, and
+a tool result, a process exit, and a turn outcome stay three separate facts with
+nothing aggregating them into a fourth.
+
+Truncation, redaction, and omission are three values rather than one boolean.
+Truncation carries exact byte, line, and result counts and always names a route;
+redaction and omission carry a reason and may honestly have no route at all,
+because content that was withheld or never collected has nowhere to expand to.
+
+Identity is the anchor, not the kind, so a tool call that is running and the same
+call once it has finished are one block that changed rather than two rows. A
+block keeps its first-appearance position through any number of revisions, and a
+block that has settled refuses a later revision and counts it instead of
+reopening a finished call. Folding is frame-independent: every split point of a
+revision run is checked, so what a user sees does not depend on when a producer
+flushed.
+
+Sequence gaps, repeats, and out-of-order arrivals are detected per stream and
+reported on the projection rather than smoothed over — a transcript with a hole
+in it and a note about the hole is more useful than a seamless wrong one. The
+transcript is deliberately **not** in the domain's `PROJECTION_NAMES`: that union
+names projections this build persists, and nothing stores a transcript cursor.
+
+The reducer's **structural** output for a fixed event run — which blocks exist,
+their anchors, kinds, statuses, and outcomes — is recorded as a literal snapshot
+beside a declared generation, so the two can only change together. Summary
+wording is deliberately outside that boundary and both the module and the test
+say so: a snapshot pinning every sentence would fail on a typo fix and teach
+everyone to update it without reading it. The cost is a resumed transcript that
+may mix wordings, which is cosmetic; a structural change is not, which is why
+that is the half enforced. A boundary control asserts the area imports from the domain and
+nowhere else, reads no clock and no randomness, writes no second escaping rule
+or outcome vocabulary, declares no second session read model, and exports no
+expansion route that nothing produces.
+
 The compiled file is a development bootstrap artifact. It is not a supported
 Falryn product binary or release. A separate compiled probe confirmed that a
 `SIGINT` delivered to a Bun standalone executable reaches the runtime lifecycle,
