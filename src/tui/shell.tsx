@@ -40,8 +40,8 @@ import {
   requestedVariant,
 } from "./appearance.ts";
 import type { ShellCapabilities } from "./capabilities.ts";
-import { AppShell } from "./components/app-shell.tsx";
 import { Line } from "./components/primitives.tsx";
+import { ShellApp } from "./components/shell-app.tsx";
 import {
   nothingToRestore,
   openRendererSession,
@@ -135,6 +135,12 @@ async function drive(session: RendererSession, request: ShellRunRequest): Promis
   const onDestroy = (): void => lost.abort();
   session.renderer.on("destroy", onDestroy);
 
+  // The shell ending itself. #23 built this seam and nothing reached it: the
+  // scope stopping was the only way out, and on a terminal in raw mode — where
+  // Ctrl+C arrives as a byte rather than as `SIGINT` — that meant killing the
+  // process from another window. `app.exit` aborts this.
+  const closed = new AbortController();
+
   let paused = false;
   const unsubscribe = session.onResize(() => {
     // Only the pause decision. The tree re-renders itself: `AppShell` measures
@@ -159,16 +165,19 @@ async function drive(session: RendererSession, request: ShellRunRequest): Promis
   });
 
   try {
-    root.render(await frameFor(session, request));
-    await settled(request.stop, lost.signal);
+    root.render(await frameFor(session, request, () => closed.abort()));
+    await settled(request.stop, lost.signal, closed.signal);
 
-    if (lost.signal.aborted && !request.stop.aborted) {
+    if (lost.signal.aborted && !request.stop.aborted && !closed.signal.aborted) {
       return {
         kind: "failed",
         error: fromRendererFailure({ code: "lost", detail: null }),
       };
     }
-    return request.stop.aborted ? { kind: "stopped" } : { kind: "closed" };
+    // A deliberate quit outranks the stop signal: pressing the exit key and an
+    // interrupt arriving in the same moment is one departure, and the user's own
+    // is the one to report.
+    return closed.signal.aborted ? { kind: "closed" } : { kind: "stopped" };
   } finally {
     unsubscribe();
     session.renderer.off("destroy", onDestroy);
@@ -186,7 +195,7 @@ async function drive(session: RendererSession, request: ShellRunRequest): Promis
 const THEME_QUERY_TIMEOUT_MS = 120;
 
 /** The whole tree, with the theme resolved from what this terminal reported. */
-async function frameFor(session: RendererSession, request: ShellRunRequest) {
+async function frameFor(session: RendererSession, request: ShellRunRequest, onExit: () => void) {
   const { capabilities, environment, options } = request;
 
   // Asked before the first paint rather than reacted to afterwards. A frame
@@ -208,12 +217,14 @@ async function frameFor(session: RendererSession, request: ShellRunRequest) {
     generation: capabilities.generation,
   } satisfies ThemeRequest;
 
+  const { overlay: _overlay, commands: _commands, ...model } = shellModel(options);
+
   return (
-    <AppShell theme={theme} model={shellModel(options)}>
+    <ShellApp theme={theme} model={model} onExit={onExit}>
       <Line color="mutedForeground" typography="muted">
         Nothing is running yet.
       </Line>
-    </AppShell>
+    </ShellApp>
   );
 }
 
