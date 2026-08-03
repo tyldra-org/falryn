@@ -32,6 +32,21 @@ import type { ShellCapabilities } from "./capabilities.ts";
 export const SPLIT_FOOTER_HEIGHT = 6;
 
 /**
+ * Every mode Falryn selects, documents, and must be able to start.
+ *
+ * Declared here rather than left implicit in a union, because a list is
+ * something a test can iterate. #351 shipped with two of the three unable to
+ * construct at all, and the reason nothing caught it is that no check ever
+ * walked the modes — each was named individually, in the places somebody
+ * remembered to name it.
+ */
+export const SCREEN_MODES: readonly ScreenMode[] = [
+  "split-footer",
+  "alternate-screen",
+  "main-screen",
+];
+
+/**
  * Rows a terminal needs before a footer is worth reserving.
  *
  * A footer that leaves nothing above it is an alternate screen with extra

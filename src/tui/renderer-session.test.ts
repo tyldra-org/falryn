@@ -32,7 +32,7 @@ import {
   type RendererSession,
   rendererConfigFor,
 } from "./renderer-session.ts";
-import { SPLIT_FOOTER_HEIGHT, selectScreenMode } from "./screen-mode.ts";
+import { SCREEN_MODES, SPLIT_FOOTER_HEIGHT, selectScreenMode } from "./screen-mode.ts";
 
 const HANDLES: ObservedHandles = {
   stdout: { isTty: true, columns: 100, rows: 30 },
@@ -121,6 +121,29 @@ describe("the renderer options that are not defaults", () => {
     ).toBe(true);
   });
 
+  test("pair stdout capture with the one mode that permits it", () => {
+    // The assertion whose absence let #351 ship. `capture-stdout` is legal only
+    // with `split-footer`, and OpenTUI rejects the pairing during construction
+    // rather than ignoring it — so a constant here does not configure the other
+    // modes wrongly, it stops them starting at all.
+    expect(
+      rendererConfigFor({
+        capabilities: record(),
+        selection: { mode: "split-footer", reason: "transcript-first" },
+      }).externalOutputMode,
+    ).toBe("capture-stdout");
+
+    for (const mode of ["alternate-screen", "main-screen"] as const) {
+      expect({
+        mode,
+        output: rendererConfigFor({
+          capabilities: record(),
+          selection: { mode, reason: "override" },
+        }).externalOutputMode,
+      }).toEqual({ mode, output: "passthrough" });
+    }
+  });
+
   test("reserve the footer only in the mode that has one", () => {
     const split = record();
     expect(
@@ -172,6 +195,42 @@ describe("the modes a session asks for", () => {
     expect(
       enabledModes({ screenMode: "alternate-screen", externalOutputMode: "capture-stdout" }),
     ).not.toContain("stdout-capture");
+  });
+});
+
+describe("every declared mode", () => {
+  test("constructs a real renderer", async () => {
+    // The check #351 needed and did not have. A mode that cannot start now fails
+    // here rather than in a user's session, and it is a *construction* test
+    // because that is where OpenTUI rejects an illegal pairing — a configuration
+    // assertion alone would not have caught a rule this code does not own.
+    for (const mode of SCREEN_MODES) {
+      const capabilities = record();
+      const result = await openRendererSession({
+        capabilities,
+        selection: { mode, reason: "override" },
+        createRenderer: inMemory,
+      });
+      expect({ mode, opened: result.ok }).toEqual({ mode, opened: true });
+      if (result.ok) {
+        // Restored immediately rather than in teardown: the guard is
+        // process-wide, so the next mode cannot open until this one lets go.
+        result.value.restore();
+      }
+    }
+  });
+
+  test("reports stdout capture as enabled only where it is", async () => {
+    // Restoration names exactly what was enabled. A mode that does not capture
+    // must not claim it gave the handle back.
+    for (const mode of SCREEN_MODES) {
+      const capabilities = record();
+      const config = rendererConfigFor({ capabilities, selection: { mode, reason: "override" } });
+      expect({ mode, captured: enabledModes(config).includes("stdout-capture") }).toEqual({
+        mode,
+        captured: mode === "split-footer",
+      });
+    }
   });
 });
 

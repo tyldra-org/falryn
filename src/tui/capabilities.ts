@@ -26,6 +26,7 @@
 
 import type { ScreenMode, ThemeMode } from "@opentui/core";
 import { type EnvironmentPort, type TerminalCapabilities, terminalSize } from "../domain/index.ts";
+import { SCREEN_MODES } from "./screen-mode.ts";
 
 /**
  * The variable that overrides detection.
@@ -54,8 +55,6 @@ export type ShellOverride =
    * did nothing.
    */
   | { readonly kind: "unrecognized"; readonly value: string };
-
-const SCREEN_MODES: readonly ScreenMode[] = ["alternate-screen", "main-screen", "split-footer"];
 
 /** Every legal value of the override, for a diagnostic that names them. */
 export const SHELL_OVERRIDE_VALUES: readonly string[] = [SHELL_OVERRIDE_OFF, ...SCREEN_MODES];

@@ -358,3 +358,27 @@ describe("the design system", () => {
     expect(await readCode("theme/symbols.ts")).toContain("SymbolSupport");
   });
 });
+
+describe("the mode contract", () => {
+  test("is consulted by the renderer configuration rather than only exported", async () => {
+    // #351 in one assertion. `capturesStdout` existed, was exported, was
+    // re-exported from the entrypoint, and had three tests — and no product
+    // caller, so the configuration used a constant and two of the three screen
+    // modes could not start. A predicate nothing calls is not a contract, it is
+    // a comment that compiles.
+    expect(await readCode("renderer-session.ts")).toContain("capturesStdout(");
+  });
+
+  test("names every screen mode in one list", async () => {
+    // So a check can walk them. Each mode being named individually wherever
+    // somebody remembered to name it is why nothing noticed that two of them
+    // were unreachable.
+    const declarers: string[] = [];
+    for (const file of await productFiles()) {
+      if ((await readCode(file)).includes("SCREEN_MODES: readonly ScreenMode[]")) {
+        declarers.push(file);
+      }
+    }
+    expect(declarers).toEqual(["screen-mode.ts"]);
+  });
+});

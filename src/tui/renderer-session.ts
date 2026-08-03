@@ -54,6 +54,7 @@ import {
   withSize,
 } from "./capabilities.ts";
 import {
+  capturesStdout,
   EXTERNAL_OUTPUT_MODE,
   reservesFooter,
   type ScreenModeSelection,
@@ -193,7 +194,11 @@ export function rendererConfigFor(request: OpenSessionRequest): CliRendererConfi
     useMouse: usesMouse(capabilities),
     enableMouseMovement: false,
     screenMode: selection.mode,
-    externalOutputMode: EXTERNAL_OUTPUT_MODE,
+    // Derived from the mode, never asserted. `capture-stdout` is legal *only*
+    // with `split-footer`, and OpenTUI rejects the pairing during construction
+    // rather than ignoring it — so a constant here does not merely configure the
+    // other two modes wrongly, it stops them starting at all.
+    externalOutputMode: capturesStdout(selection.mode) ? EXTERNAL_OUTPUT_MODE : "passthrough",
     ...(reservesFooter(selection.mode) ? { footerHeight: SPLIT_FOOTER_HEIGHT } : {}),
     debounceDelay: RESIZE_DEBOUNCE_MS,
   };

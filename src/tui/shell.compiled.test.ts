@@ -25,7 +25,7 @@
 
 import { dlopen, FFIType, ptr } from "bun:ffi";
 import { afterEach, describe, expect, test } from "bun:test";
-import { createReadStream } from "node:fs";
+import { closeSync, createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { EXIT_CODES } from "../cli/index.ts";
@@ -76,11 +76,11 @@ type Pty = {
  * a size from the moment it exists — which matters, since a terminal reporting
  * none is one the launch decision refuses.
  */
-function openPty(): Pty | null {
+function openPty(columns = COLUMNS, rows = ROWS): Pty | null {
   const master = new Int32Array(1);
   const slave = new Int32Array(1);
   // `struct winsize`: rows, columns, then pixel dimensions nothing here uses.
-  const size = new Uint16Array([ROWS, COLUMNS, 0, 0]);
+  const size = new Uint16Array([rows, columns, 0, 0]);
 
   try {
     const libc = dlopen(process.platform === "darwin" ? "libSystem.B.dylib" : "libutil.so.1", {
@@ -144,8 +144,13 @@ type ShellRun = {
 async function runOnPty(
   argv: readonly string[],
   act: (started: { readonly process: Bun.Subprocess }) => void,
+  options: {
+    readonly columns?: number;
+    readonly rows?: number;
+    readonly env?: Readonly<Record<string, string>>;
+  } = {},
 ): Promise<ShellRun> {
-  const pty = openPty();
+  const pty = openPty(options.columns ?? COLUMNS, options.rows ?? ROWS);
   if (pty === null) {
     throw new Error("no pseudo-terminal");
   }
@@ -158,10 +163,21 @@ async function runOnPty(
       PATH: process.env.PATH ?? "",
       HOME: process.env.HOME ?? "",
       TERM: "xterm-256color",
+      ...options.env,
     },
   });
   const run = { process: started, pty };
   live.push(run);
+  // The parent's copy of the slave, released as soon as the child has its own.
+  // Standard practice for a pseudo-terminal, and load-bearing here: a suite that
+  // opens one per screen mode leaks a descriptor pair per run without it, and
+  // the master is left holding a writer that never goes away. The master itself
+  // stays open — the reader owns it until `close()`.
+  try {
+    closeSync(pty.slave);
+  } catch {
+    // Already released. Harmless, and not worth failing a run over.
+  }
 
   await Bun.sleep(MOUNT_MS);
   act(run);
@@ -176,13 +192,14 @@ async function runOnPty(
 }
 
 /**
- * Two runs, not five.
+ * Grouped by the path a run exercises, not one run per assertion.
  *
- * Each one costs a pseudo-terminal, a compiled process, and several seconds of
- * a native renderer starting — so the assertions are grouped by the *path* they
- * exercise rather than one per run. Five separate spawns of the same interrupt
- * path told us nothing extra and made the file slow enough to be flaky, which is
- * worse than telling us nothing.
+ * Each run costs a pseudo-terminal, a compiled process, and several seconds of a
+ * native renderer starting, so five spawns of the same interrupt path tell us
+ * nothing extra and make the file flaky. But *one size in one mode* is how #351
+ * shipped: `alternate-screen` could not construct at all, and this file only
+ * ever ran the 100×30 terminal that selects `split-footer`. Every distinct
+ * *mode* now gets a run, which is a different axis from repeating a path.
  */
 describe.if(runnable)("the compiled shell on a real terminal", () => {
   const interrupted = runOnPty([], ({ process: started }) => started.kill("SIGINT"));
@@ -242,6 +259,46 @@ describe.if(runnable)("the compiled shell on a real terminal", () => {
       }
     },
     RUN_TIMEOUT_MS,
+  );
+
+  test(
+    "opens the shell on a terminal too short for a footer",
+    async () => {
+      // The regression #351 was. Below `MIN_SPLIT_FOOTER_ROWS` the mode falls
+      // back to `alternate-screen`, which could not construct — so every
+      // terminal shorter than ten rows exited 5 instead of drawing anything.
+      // Eight rows is above the 24×6 minimum, so a frame is the correct answer.
+      const run = await runOnPty([], ({ process: started }) => started.kill("SIGINT"), {
+        columns: 100,
+        rows: 8,
+      });
+      expect(run.exitCode).toBe(EXIT_CODES.CANCELLED);
+      expect(run.transcript).not.toContain("could not be started");
+      // Content, not merely the absence of the failure. At eight rows the class
+      // is compact, so the header's labels are gone and the value is what
+      // survives — asserting on "workspace" here would fail for the right
+      // behavior.
+      expect(run.transcript).toContain("current directory");
+    },
+    RUN_TIMEOUT_MS,
+  );
+
+  test(
+    "opens the shell in every mode the override accepts",
+    async () => {
+      // `FALRYN_TUI` accepts all three and `reference/CLI.md` documents all
+      // three. Two of them were unreachable. Driven through the override rather
+      // than through a terminal size because that is the only way to reach
+      // `main-screen` at all, which had never been exercised.
+      for (const mode of ["alternate-screen", "main-screen"]) {
+        const run = await runOnPty([], ({ process: started }) => started.kill("SIGINT"), {
+          env: { FALRYN_TUI: mode },
+        });
+        expect({ mode, code: run.exitCode }).toEqual({ mode, code: EXIT_CODES.CANCELLED });
+        expect({ mode, drew: run.transcript.includes("workspace") }).toEqual({ mode, drew: true });
+      }
+    },
+    RUN_TIMEOUT_MS * 2,
   );
 
   test(
