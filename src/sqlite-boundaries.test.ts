@@ -32,6 +32,10 @@ const CONTROLS: readonly string[] = [
   // Since #23, and for the same reason: it asserts that the interface area
   // opens no database, which it can only do by spelling the driver import.
   "tui/tui-boundaries.test.ts",
+  // Since #354, and for the same reason again: the shared-projection area is
+  // downstream of the domain and nothing else, and saying so requires naming
+  // the driver it must not reach.
+  "presentation-boundaries.test.ts",
 ];
 
 /** The area allowed to author SQL. Its migration list lives beside it. */
