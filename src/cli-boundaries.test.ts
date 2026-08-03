@@ -46,8 +46,20 @@ const SELF = "cli-boundaries.test.ts";
  */
 const HARNESS = "cli/probe-fixtures.ts";
 
+/**
+ * The OpenTUI packaging probe, held to the same rules for the same reason.
+ *
+ * It is the first `.tsx` in the tree, and one of its scenarios exists to find
+ * out what a live renderer does to the handle `cli/streams.ts` owns — which it
+ * can only answer by writing through the real port rather than around it.
+ */
+const TUI_HARNESS = "tui/probe-fixtures.tsx";
+
 async function sourceFiles(): Promise<readonly string[]> {
-  const glob = new Bun.Glob("**/*.ts");
+  // `.tsx` too, since #22. A renderer module that reached a handle directly
+  // would cross exactly the boundary these controls exist to hold, and a glob
+  // that stopped at `.ts` would never look at one.
+  const glob = new Bun.Glob("**/*.{ts,tsx}");
   const files: string[] = [];
   for await (const entry of glob.scan({ cwd: SOURCE_ROOT })) {
     files.push(entry);
@@ -73,12 +85,12 @@ async function readCode(file: string): Promise<string> {
 
 /** Files that are neither tests nor fixtures — the ones that ship. */
 function isProduct(file: string): boolean {
-  return !file.endsWith(".test.ts") && !file.endsWith("fixtures.ts");
+  return !/\.test\.tsx?$/.test(file) && !/fixtures\.tsx?$/.test(file);
 }
 
-/** Everything held to the boundary's rules: what ships, plus the harness. */
+/** Everything held to the boundary's rules: what ships, plus the harnesses. */
 function isGoverned(file: string): boolean {
-  return isProduct(file) || file === HARNESS;
+  return isProduct(file) || file === HARNESS || file === TUI_HARNESS;
 }
 
 async function offenders(
@@ -142,8 +154,12 @@ describe("the process exit", () => {
     expect(await offenders(/\bprocess\.exit\s*\(/, [])).toEqual([]);
   });
 
-  test("is set in the composition root and the harness, and nowhere else", async () => {
-    const setters = await offenders(/\bprocess\.exitCode\b/, [COMPOSITION_ROOT, HARNESS]);
+  test("is set in the composition root and the harnesses, and nowhere else", async () => {
+    const setters = await offenders(/\bprocess\.exitCode\b/, [
+      COMPOSITION_ROOT,
+      HARNESS,
+      TUI_HARNESS,
+    ]);
     expect(setters).toEqual([]);
     expect(await readSource(COMPOSITION_ROOT)).toContain("process.exitCode");
   });

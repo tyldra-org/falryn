@@ -4,7 +4,7 @@ This file is Falryn's sole concise implementation-status owner. It records what
 exists and has been verified in the `falryn` repository. It does not duplicate
 the product design or GitHub roadmap.
 
-Last reconciled: **2026-08-02**
+Last reconciled: **2026-08-03**
 
 ## Where to look
 
@@ -1380,6 +1380,60 @@ lookup after the item was deleted reported 44 again. Nothing in the probe
 printed a secret. `src/main.ts` composes no credential resolver, so nothing in the
 shipped bootstrap reaches a keychain.
 
+React and OpenTUI are pinned and their packaging is proven, delivered by
+[#22](https://github.com/yogeshprasad098/falryn/issues/22). `react` is `19.2.8`
+and `@opentui/core`, `@opentui/react`, and `@opentui/keymap` are all `0.4.5` —
+one version across the three, because they are released together. The lockfile
+carries every platform's optional native package and resolves
+`@opentui/core-darwin-arm64` for this host; a multi-target release build will
+need `bun install --os="*" --cpu="*"` and, on Linux, `process.env.OPENTUI_LIBC`
+defined at build time so only one libc branch is embedded.
+
+`tsconfig.json` gained `jsxImportSource: "@opentui/react"` and nothing else.
+`skipLibCheck` is still `false`, `exactOptionalPropertyTypes` and
+`noUncheckedIndexedAccess` are still on, and `lib` is still `["ESNext"]` — the
+OpenTUI React documentation recommends adding `DOM`, and it is not required;
+adding it would have put browser globals in scope for every module in `src/`.
+Two upstream declaration files do not type-check under `skipLibCheck: false`,
+and both are accommodated by a type-only Bun patch in `patches/` rather than by
+loosening a compiler option: `@opentui/core` narrows `emit` in a way its base
+`EventEmitter` does not permit, and `@opentui/react` extends
+`React.JSX.IntrinsicElements` while redeclaring `a`, `span`, `input`, and the
+other names it shares with the DOM. The second patch drops the DOM intrinsics
+from the JSX namespace entirely, so `<div>` in a terminal application is now a
+type error rather than an accepted element. Both patches are pinned to `0.4.5`
+and fail loudly on an upgrade, which is when they should be retried.
+
+The packaging probe passed, and was run before anything was built on OpenTUI. A
+`bun build --compile` artifact created a real `CliRenderer`, mounted a React
+tree, rendered a frame with a drawn border, and highlighted TypeScript through
+Tree-sitter — proving the native Zig library, the parser worker, the default
+grammar, and the Tree-sitter WASM all resolved from inside the executable with
+no `OTUI_ASSET_ROOT` set. `src/tui/probe.test.tsx` makes every assertion twice,
+in source mode and against an artifact it compiles itself, and reports itself
+skipped rather than passed when that artifact could not be built.
+`src/tui/probe-fixtures.tsx` is the harness; it ships in no build and is held to
+the process boundary's rules, which is why `src/cli-boundaries.test.ts` now
+scans `.tsx` as well as `.ts`.
+
+Four facts were recorded from observed behavior for the shell to design against.
+`screenMode: "split-footer"` works. Its `externalOutputMode: "capture-stdout"`
+intercepts the same handle `src/cli/streams.ts` writes results through, so a
+line a command emits while a footer renderer is up lands in the renderer's
+scrollback queue instead of reaching the consumer — a shell wanting both has to
+route machine output around the renderer or leave capture off; the interception
+is undone by `destroy()`. `exitOnCtrlC: false` with `exitSignals: []` installs
+no `SIGINT` or `SIGTERM` listener at all, measured beside a default renderer
+that installs one of each, so signal handling stays entirely with
+`src/cli/invocation-scope.ts`. `createCliRenderer` itself costs about 4 ms in
+both modes; the compiled *process* starts about 170 ms slower than `bun run`,
+which is the standalone executable's own cost and not the renderer's.
+
+Nothing shipped grew. No module reachable from `src/main.ts` imports an OpenTUI
+or React package, asserted both over the source tree and by bundling the product
+entry and searching its output, and `dist/falryn` is byte-identical to the build
+before the pins.
+
 The compiled file is a development bootstrap artifact. It is not a supported
 Falryn product binary or release. A separate compiled probe confirmed that a
 `SIGINT` delivered to a Bun standalone executable reaches the runtime lifecycle,
@@ -1452,7 +1506,10 @@ repository does not yet provide:
   application. The command tree, global options, help, version, the process
   boundary beneath them, and all four output projections are real; what is
   absent is commands to render. The interactive shell is
-  [#21](https://github.com/yogeshprasad098/falryn/issues/21). No producer of
+  [#21](https://github.com/yogeshprasad098/falryn/issues/21); its dependencies
+  are pinned and their packaging is proven, and no application shell, component,
+  theme, view model, or keymap layer exists yet — only a probe fixture that
+  ships in no build. No producer of
   sessions or turns exists, so a JSON Lines run today carries the short
   lifecycle a `config` or `doctor` command produces rather than a model turn.
   Since [#345](https://github.com/yogeshprasad098/falryn/issues/345) a CLI
@@ -1477,8 +1534,8 @@ Their implementation breakdown lives in GitHub Issues and the Project.
 - **Live roadmap:** [Falryn Roadmap](https://github.com/users/yogeshprasad098/projects/2)
 - **Current release outcome:** [v0.1 Foundation issues](https://github.com/yogeshprasad098/falryn/issues?q=is%3Aissue%20is%3Aopen%20milestone%3A%22v0.1%20Foundation%22)
 - **First parent outcome:** [#1 Establish the unified runtime and lifecycle](https://github.com/yogeshprasad098/falryn/issues/1)
-- **Current parent outcome:** [#16 Deliver the CLI and headless foundation](https://github.com/yogeshprasad098/falryn/issues/16), now in progress; #20, #17, #18, and #19 have landed.
-- **Next planning action:** verify [#16](https://github.com/yogeshprasad098/falryn/issues/16) as a parent outcome; #17, #18, #19, and #20 are its complete child set and all four have landed.
+- **Current parent outcome:** [#21 Deliver the OpenTUI application shell](https://github.com/yogeshprasad098/falryn/issues/21), now in progress; #22 is its first landed child. [#16 Deliver the CLI and headless foundation](https://github.com/yogeshprasad098/falryn/issues/16) remains in progress with #17, #18, #19, and #20 landed.
+- **Next planning action:** implement [#23](https://github.com/yogeshprasad098/falryn/issues/23), which #22 unblocked and supplied its four renderer observations to.
 
 Which of #1's children are open, and which delivered the behavior recorded
 above, is read from
