@@ -184,6 +184,21 @@ export function baseName(path: LocalPath): string {
 }
 
 /**
+ * The directory containing this path, or `null` at the filesystem root.
+ *
+ * Textual, like every other path rule here, and it runs before anything touches
+ * a disk. `null` rather than `/` for the root itself, so a caller walking
+ * upwards terminates instead of circling on a path that is its own parent.
+ */
+export function parentPath(path: LocalPath): LocalPath | null {
+  const index = path.lastIndexOf("/");
+  if (index < 0 || path === "/") {
+    return null;
+  }
+  return (index === 0 ? "/" : path.slice(0, index)) as LocalPath;
+}
+
+/**
  * Whether `candidate` is `root` or lies beneath it.
  *
  * Compares whole segments, so `/data/falryn-old` is not inside `/data/falryn`.

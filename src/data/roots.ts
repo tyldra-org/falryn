@@ -25,8 +25,11 @@ import {
   type LocalDataRoot,
   type LocalPath,
   localPath,
+  type PathEntry,
+  parentPath,
   parseLocalPath,
   type ResolvedRoot,
+  type RootInspection,
   type RootLayout,
   type RootStatus,
 } from "../domain/index.ts";
@@ -269,6 +272,157 @@ async function prepareOneRoot(
   }
 
   return { ...base, code: "existed", observedMode: mode };
+}
+
+/**
+ * Reports whether each root can hold data, and creates nothing.
+ *
+ * The read-only sibling of {@link prepareRoots}. It runs the same sequence
+ * `prepareOneRoot` does — stat, kind, writability, permission bits — with the
+ * creation removed and the "it does not exist yet" branch answered by looking
+ * at the nearest existing ancestor instead. That is the whole reason it exists:
+ * a diagnostic that had to create a directory to find out whether it could is
+ * not a diagnostic.
+ *
+ * It needs no new port. `stat` neither creates nor follows a final symlink,
+ * `realPath` resolves one, and `probeWritable` is an access check — so the
+ * whole probe is non-mutating with what the boundary already offers.
+ */
+export async function inspectRoots(
+  fileSystem: FileSystemPort,
+  layout: RootLayout,
+  signal?: AbortSignal,
+): Promise<readonly RootInspection[]> {
+  const inspections: RootInspection[] = [];
+  for (const resolved of layout.roots) {
+    inspections.push(await inspectOneRoot(fileSystem, resolved, signal));
+  }
+  return inspections;
+}
+
+async function inspectOneRoot(
+  fileSystem: FileSystemPort,
+  resolved: ResolvedRoot,
+  signal?: AbortSignal,
+): Promise<RootInspection> {
+  const base = { root: resolved.root, path: resolved.path };
+
+  const existing = await fileSystem.stat(resolved.path, signal);
+  if (!existing.ok) {
+    // A stat that failed for any reason other than absence has established
+    // nothing. Reporting it as healthy is the claim this state exists to avoid.
+    return { ...base, viability: "unknown", code: existing.error.code, observedMode: null };
+  }
+
+  if (existing.value === null) {
+    return inspectAbsent(fileSystem, base, signal);
+  }
+
+  // `stat` deliberately does not follow a final symlink, so a root that is a
+  // symlink to a real directory would otherwise be judged `not-a-directory`.
+  // `prepareOneRoot` has this blind spot today; fixing preparation is a
+  // separate outcome, and the divergence is deliberate rather than overlooked.
+  if (existing.value.kind === "symlink") {
+    return inspectSymlink(fileSystem, base, signal);
+  }
+
+  return judgeEntry(fileSystem, base, existing.value, signal);
+}
+
+type InspectionBase = { readonly root: LocalDataRoot; readonly path: LocalPath };
+
+/** Whether an existing directory can be written into, and how private it is. */
+async function judgeEntry(
+  fileSystem: FileSystemPort,
+  base: InspectionBase,
+  entry: PathEntry,
+  signal?: AbortSignal,
+): Promise<RootInspection> {
+  if (entry.kind !== "directory") {
+    return { ...base, viability: "blocked", code: "not-a-directory", observedMode: entry.mode };
+  }
+
+  const writable = await fileSystem.probeWritable(entry.path, signal);
+  if (!writable.ok) {
+    return { ...base, viability: "unknown", code: writable.error.code, observedMode: entry.mode };
+  }
+  if (!writable.value) {
+    return { ...base, viability: "blocked", code: "not-writable", observedMode: entry.mode };
+  }
+
+  // Reported on a root that works, never as a reason it does not. Matching
+  // `prepareOneRoot`, which warns about the bits rather than repairing them.
+  const insecure = entry.mode !== null && (entry.mode & GROUP_AND_OTHER_BITS) !== 0;
+  return {
+    ...base,
+    viability: "ready",
+    code: insecure ? "insecure-permissions" : null,
+    observedMode: entry.mode,
+  };
+}
+
+/** A root that is a symlink: the target is what has to hold the data. */
+async function inspectSymlink(
+  fileSystem: FileSystemPort,
+  base: InspectionBase,
+  signal?: AbortSignal,
+): Promise<RootInspection> {
+  const target = await fileSystem.realPath(base.path, signal);
+  if (!target.ok) {
+    return { ...base, viability: "blocked", code: "dangling-symlink", observedMode: null };
+  }
+
+  const entry = await fileSystem.stat(target.value, signal);
+  if (!entry.ok) {
+    return { ...base, viability: "unknown", code: entry.error.code, observedMode: null };
+  }
+  if (entry.value === null) {
+    return { ...base, viability: "blocked", code: "dangling-symlink", observedMode: null };
+  }
+  return judgeEntry(fileSystem, base, entry.value, signal);
+}
+
+/**
+ * A root that is not there yet.
+ *
+ * Absent is the normal first-run state, but only when something could actually
+ * create it — so the nearest existing ancestor decides. A path under a
+ * directory nobody may write into will never appear, and calling that `absent`
+ * would promise a first run that cannot happen.
+ */
+async function inspectAbsent(
+  fileSystem: FileSystemPort,
+  base: InspectionBase,
+  signal?: AbortSignal,
+): Promise<RootInspection> {
+  let candidate = parentPath(base.path);
+  while (candidate !== null) {
+    const entry = await fileSystem.stat(candidate, signal);
+    if (!entry.ok) {
+      return { ...base, viability: "unknown", code: entry.error.code, observedMode: null };
+    }
+    if (entry.value === null) {
+      candidate = parentPath(candidate);
+      continue;
+    }
+    if (entry.value.kind !== "directory") {
+      // A file where a parent directory has to go. Nothing will create the
+      // root beneath it, so this is blocked rather than merely absent.
+      return { ...base, viability: "blocked", code: "parent-not-writable", observedMode: null };
+    }
+    const writable = await fileSystem.probeWritable(candidate, signal);
+    if (!writable.ok) {
+      return { ...base, viability: "unknown", code: writable.error.code, observedMode: null };
+    }
+    return writable.value
+      ? { ...base, viability: "absent", code: null, observedMode: null }
+      : { ...base, viability: "blocked", code: "parent-not-writable", observedMode: null };
+  }
+
+  // Every ancestor up to the filesystem root was missing, which no real
+  // filesystem reports. It is a state rather than a throw, because a probe
+  // racing with another process removing a tree must still return an answer.
+  return { ...base, viability: "unknown", code: "not-found", observedMode: null };
 }
 
 /** The roots that a caller may safely write into. */

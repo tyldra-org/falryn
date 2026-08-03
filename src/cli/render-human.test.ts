@@ -126,10 +126,17 @@ function showPayload(values: readonly InspectedValue[], usable = true): ConfigSh
 
 const DOCTOR: DoctorPayload = {
   roots: [
-    { root: "state", path: "/tmp/falryn/state", usable: true, code: null },
-    { root: "cache", path: null, usable: false, code: "unresolved" },
+    { root: "state", path: "/tmp/falryn/state", resolved: true, viability: "ready", code: null },
+    {
+      root: "cache",
+      path: "/tmp/falryn/cache",
+      resolved: true,
+      viability: "blocked",
+      code: "not-a-directory",
+    },
   ],
   rootIssues: [],
+  blocked: true,
   databasePath: "/tmp/falryn/state/falryn.sqlite",
   storage: { kind: "present", schemaVersion: 3, expectedVersion: 3, current: true },
   registeredClasses: ["sqliteState"],
@@ -788,7 +795,7 @@ describe("doctor", () => {
         storage: { kind: "unreadable", code: "corrupt" },
       }),
     );
-    expect(flat(rendered.diagnostics)).toContain("The cache data root did not resolve");
+    expect(flat(rendered.diagnostics)).toContain("The cache data root cannot hold data");
     expect(flat(rendered.diagnostics)).toContain("A data-root override was refused");
     expect(flat(rendered.diagnostics)).toContain("The database could not be read");
   });
@@ -841,7 +848,7 @@ describe("quiet", () => {
 
     const doctor = renderQuiet(resultOf("doctor", DOCTOR));
     expect(doctor.result).toBe("");
-    expect(flat(doctor.diagnostics)).toContain("The cache data root did not resolve");
+    expect(flat(doctor.diagnostics)).toContain("The cache data root cannot hold data");
   });
 
   test("still reports a failure on stderr", () => {

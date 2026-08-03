@@ -20,13 +20,18 @@ import { fromConfigurationIssues, fromUnknown } from "../application/index.ts";
 import { CONFIGURATION_FILE_NAME, inspectGeneration, PROFILE_DIRECTORY } from "../config/index.ts";
 import { probeStorage, rootChild, type StorageProbe, sqliteDatabasePath } from "../data/index.ts";
 import {
+  blocksLocalData,
   type ConfigurationInspection,
   type ConfigurationIssue,
   type FalrynError,
   joinPath,
   LOCAL_DATA_ROOTS,
   type LocalDataRoot,
+  type LocalPath,
   type OwnershipClass,
+  type RootInspection,
+  type RootViability,
+  type TerminalOutcome,
 } from "../domain/index.ts";
 import { openBunSqlite } from "../integrations/index.ts";
 import type { GlobalOptions } from "./options.ts";
@@ -44,12 +49,17 @@ function resultFor<Command extends CommandId, Payload>(
   command: Command,
   payload: Payload | null,
   errors: readonly FalrynError[] = [],
+  outcome?: TerminalOutcome,
 ): CommandResultOf<Command, Payload> {
   return {
     schemaFamily: COMMAND_RESULT_SCHEMA_FAMILY,
     schemaVersion: COMMAND_RESULT_SCHEMA_VERSION,
     command,
-    outcome: errors.length === 0 ? { kind: "completed" } : { kind: "failed", effect: "none" },
+    // A command whose *finding* is the failure supplies its own outcome: it
+    // raised no `FalrynError`, because nothing went wrong with the command —
+    // what it diagnosed is what is wrong.
+    outcome:
+      outcome ?? (errors.length === 0 ? { kind: "completed" } : { kind: "failed", effect: "none" }),
     effect: READ_ONLY_EFFECT,
     payload,
     errors,
@@ -213,26 +223,50 @@ export function runConfigPath(
 /* doctor                                                                      */
 /* -------------------------------------------------------------------------- */
 
+/**
+ * What `doctor` could establish about the database.
+ *
+ * A superset of `StorageProbe` rather than a change to it. `probeStorage` maps
+ * every `cannot-open` to `absent`, which is the right answer for a reachable
+ * root and a wrong one for a root that is a regular file — so when the state
+ * root cannot hold data, `doctor` reports that it did not determine the answer
+ * instead of running a probe whose result it could not trust.
+ */
+export type DoctorStorage =
+  | StorageProbe
+  | { readonly kind: "undetermined"; readonly reason: "state-root-not-viable" };
+
 export type DoctorPayload = {
-  /** Every declared root, whether it resolved, and whether it is usable. */
+  /**
+   * Every declared root, where it would be, and whether it can hold data.
+   *
+   * `resolved` and `viability` are separate because they answer different
+   * questions. `resolved` is whether the layout produced a path at all;
+   * `viability` is whether that path can hold data. The field this replaced was
+   * called `usable` and measured only the first, which is how a state root that
+   * was a regular file was reported as healthy.
+   */
   readonly roots: readonly {
     readonly root: LocalDataRoot;
     readonly path: string | null;
-    readonly usable: boolean;
+    readonly resolved: boolean;
+    readonly viability: RootViability;
     readonly code: string | null;
   }[];
   /** Overrides the layout could not use, with the reason each was rejected. */
   readonly rootIssues: readonly string[];
   /** Where the database would live. Named whether or not one exists. */
   readonly databasePath: string | null;
+  /** Whether any finding means Falryn cannot hold data here. */
+  readonly blocked: boolean;
   /**
    * What the database on disk reports about itself.
    *
    * Read with `create: false`, so asking whether a database exists never
    * creates one. `absent` is a normal answer on a machine that has not run
-   * Falryn yet.
+   * Falryn yet — but only when the state root could actually be reached.
    */
-  readonly storage: StorageProbe;
+  readonly storage: DoctorStorage;
   /** Ownership classes with an owner, and those still unregistered. */
   readonly registeredClasses: readonly OwnershipClass[];
   readonly unregisteredClasses: readonly OwnershipClass[];
@@ -255,36 +289,83 @@ export async function runDoctor(
     const { localData } = services();
     const layout = localData.layout;
 
+    // Read-only throughout: this probes what is there and creates nothing, so
+    // a root that does not exist stays a root that does not exist.
+    const inspections = await localData.inspectRoots();
+    const byRoot = new Map<LocalDataRoot, RootInspection>(
+      inspections.map((inspection) => [inspection.root, inspection]),
+    );
+
     const roots = LOCAL_DATA_ROOTS.map((root) => {
-      const resolved = layout.roots.find((candidate) => candidate.root === root);
-      const path = rootChild(layout, root);
+      const inspection = byRoot.get(root);
       return {
         root,
-        path,
-        usable: resolved !== undefined,
-        code: resolved === undefined ? "unresolved" : null,
+        path: rootChild(layout, root),
+        // An unresolved root produced no path to inspect, so its viability is
+        // genuinely unknown rather than blocked — nothing was probed.
+        resolved: inspection !== undefined,
+        viability: inspection?.viability ?? ("unknown" as RootViability),
+        code: inspection === undefined ? "unresolved" : inspection.code,
       };
     });
 
     const stateRoot = rootChild(layout, "state");
     const databasePath = stateRoot === null ? null : sqliteDatabasePath(stateRoot);
-    return resultFor("doctor", {
-      roots,
-      rootIssues: localData.resolutionIssues.map((issue) => issue.code),
-      databasePath,
-      storage:
-        databasePath === null
-          ? { kind: "unreadable", code: "unresolved-path" }
-          : await probeStorage({ open: openBunSqlite, databasePath }),
-      registeredClasses: localData.registrations().map((entry) => entry.ownershipClass),
-      unregisteredClasses: localData.unregistered(),
-      build: { platform: process.platform, architecture: process.arch },
-    });
+    const state = byRoot.get("state");
+    const storage = await storageFor(databasePath, state);
+
+    const blocked =
+      inspections.some(blocksLocalData) ||
+      roots.some((entry) => !entry.resolved) ||
+      storage.kind === "unreadable" ||
+      storage.kind === "undetermined";
+
+    return resultFor(
+      "doctor",
+      {
+        roots,
+        rootIssues: localData.resolutionIssues.map((issue) => issue.code),
+        databasePath,
+        blocked,
+        storage,
+        registeredClasses: localData.registrations().map((entry) => entry.ownershipClass),
+        unregisteredClasses: localData.unregistered(),
+        build: { platform: process.platform, architecture: process.arch },
+      },
+      [],
+      // A blocking finding is the diagnosis, not a failure of the command, so
+      // it carries no error — but it must reach the exit status, because
+      // `reference/CLI.md` makes the verdict of a diagnostic its exit code and
+      // an unconditional `0` leaves that verdict carried by nothing. The effect
+      // is `none`: diagnosing changed nothing.
+      blocked ? { kind: "failed", effect: "none" } : undefined,
+    );
   } catch (error) {
     return resultFor<"doctor", DoctorPayload>("doctor", null, [
       fromUnknown(error, { operation: "collect diagnostics" }),
     ]);
   }
+}
+
+/**
+ * What the database reports, or why `doctor` did not ask.
+ *
+ * A state root that cannot hold data would make `probeStorage` report `absent`,
+ * because the driver's `cannot-open` covers both "no file yet" and "no path at
+ * all". Rather than teach the probe a distinction it has no way to draw, the
+ * command declines to run it and says so.
+ */
+async function storageFor(
+  databasePath: LocalPath | null,
+  state: RootInspection | undefined,
+): Promise<DoctorStorage> {
+  if (databasePath === null) {
+    return { kind: "unreadable", code: "unresolved-path" };
+  }
+  if (state !== undefined && blocksLocalData(state)) {
+    return { kind: "undetermined", reason: "state-root-not-viable" };
+  }
+  return probeStorage({ open: openBunSqlite, databasePath });
 }
 
 /* -------------------------------------------------------------------------- */

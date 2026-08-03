@@ -33,7 +33,7 @@ import {
   type TerminalOutcome,
   type Timestamp,
 } from "../domain/index.ts";
-import type { RunCommandResult } from "./commands.ts";
+import type { DoctorPayload, RunCommandResult } from "./commands.ts";
 import { dispatch } from "./dispatch.ts";
 import type { GlobalOptions } from "./options.ts";
 import { renderJson } from "./render-json.ts";
@@ -428,6 +428,80 @@ describe("through dispatch", () => {
     expect(partial.terminal).toBeNull();
     // The reader left on purpose, so the run keeps the code its work earned.
     expect(code).toBe(0);
+  });
+
+  test("carries a blocked root into every output contract, and into the exit status", async () => {
+    // The finding has to survive all four projections: a diagnostic that
+    // reports a fault in one format and health in another is worse than one
+    // that reports nothing.
+    const home = await mkdtemp(join(tmpdir(), "falryn-viability-"));
+    homes.push(home);
+    const stateFile = join(home, "state-file");
+    await writeFile(stateFile, "not a directory");
+
+    const services = (globals: GlobalOptions) =>
+      createServiceProvider(globals, {
+        home: localPath(home),
+        platform: "darwin",
+        environment: createStaticEnvironment({ FALRYN_STATE_DIR: stateFile }),
+      });
+
+    async function doctor(argv: readonly string[]) {
+      const streams = createRecordingCliStreams();
+      const code = await dispatch({ argv, streams, services });
+      return {
+        code,
+        out: streams.resultWrites().join(""),
+        err: streams.diagnosticWrites().join(""),
+      };
+    }
+
+    const human = await doctor(["doctor"]);
+    expect(human.err).toContain("cannot hold data");
+    expect(human.out).not.toContain("no database has been created yet");
+    expect(human.code).toBe(1);
+
+    const quiet = await doctor(["doctor", "--format", "quiet"]);
+    expect(quiet.out).toBe("");
+    expect(quiet.err).toContain("cannot hold data");
+    expect(quiet.code).toBe(1);
+
+    for (const format of ["json", "jsonl"]) {
+      const machine = await doctor(["doctor", "--format", format]);
+      const reading = readCliStream(machine.out.split("\n"));
+      const terminal = reading.terminal as { payload?: DoctorPayload } | null;
+      const state = terminal?.payload?.roots.find((entry) => entry.root === "state");
+
+      expect(state?.viability).toBe("blocked");
+      expect(state?.code).toBe("not-a-directory");
+      expect(terminal?.payload?.storage).toEqual({
+        kind: "undetermined",
+        reason: "state-root-not-viable",
+      });
+      expect(machine.code).toBe(1);
+    }
+  });
+
+  test("leaves an advisory-only run at exit zero in every contract", async () => {
+    const home = await mkdtemp(join(tmpdir(), "falryn-viability-"));
+    homes.push(home);
+    const services = (globals: GlobalOptions) =>
+      createServiceProvider(globals, {
+        home: localPath(home),
+        platform: "darwin",
+        environment: createStaticEnvironment({ FALRYN_STATE_DIR: join(home, "not-created-yet") }),
+      });
+
+    for (const argv of [
+      ["doctor"],
+      ["doctor", "--format", "quiet"],
+      ["doctor", "--format", "json"],
+    ]) {
+      const streams = createRecordingCliStreams();
+      // Unregistered ownership classes are advisory and always present here,
+      // so this also proves an advisory finding does not reach the status.
+      expect(await dispatch({ argv, streams, services })).toBe(0);
+    }
   });
 
   test("refuses --color always with a machine format at parse time", async () => {

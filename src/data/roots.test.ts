@@ -1,13 +1,17 @@
 import { describe, expect, test } from "bun:test";
 
 import {
+  blocksLocalData,
   createInMemoryFileSystem,
   createStaticEnvironment,
+  type InMemoryNode,
   LOCAL_DATA_ROOTS,
   type LocalDataPlatform,
   localPath,
+  type RootInspection,
 } from "../domain/index.ts";
 import {
+  inspectRoots,
   PRIVATE_DIRECTORY_MODE,
   prepareRoots,
   QUALIFIED_PLATFORM,
@@ -249,6 +253,152 @@ describe("preparing roots", () => {
 
     expect(statuses[0]?.code).toBe("unavailable");
     expect(fileSystem.paths()).not.toContain(localPath("/tmp/logs"));
+  });
+});
+
+describe("inspecting roots", () => {
+  /** One root under `/tmp/logs`, so each case names exactly one path. */
+  async function inspectLogs(nodes: Readonly<Record<string, InMemoryNode>>) {
+    const fileSystem = createInMemoryFileSystem({ nodes });
+    const { layout } = resolve("darwin", { FALRYN_LOG_DIR: "/tmp/logs" });
+    const inspections = await inspectRoots(fileSystem, layout);
+    const logs = inspections.find((entry) => entry.root === "logs");
+    return { fileSystem, logs };
+  }
+
+  test("reports a directory this process may write into as ready", async () => {
+    const { logs } = await inspectLogs({ "/tmp/logs": { kind: "directory", mode: 0o700 } });
+    expect(logs?.viability).toBe("ready");
+    expect(logs?.code).toBeNull();
+    expect(logs?.observedMode).toBe(0o700);
+  });
+
+  test("creates nothing, which is the whole reason it exists", async () => {
+    // `prepareRoots` would create this path. A diagnostic that had to create a
+    // directory to find out whether it could is not a diagnostic.
+    const { fileSystem } = await inspectLogs({ "/tmp": { kind: "directory" } });
+    expect(fileSystem.paths()).toEqual([localPath("/tmp")]);
+  });
+
+  test("reports a missing root as absent when something could create it", async () => {
+    const { logs } = await inspectLogs({ "/tmp": { kind: "directory" } });
+    // Not a fault. The first run that needs it will create it, and reporting a
+    // fresh machine as broken trains a reader to ignore real findings.
+    expect(logs?.viability).toBe("absent");
+    expect(logs?.code).toBeNull();
+  });
+
+  test("keeps absent and ready distinguishable", async () => {
+    const absent = await inspectLogs({ "/tmp": { kind: "directory" } });
+    const ready = await inspectLogs({ "/tmp/logs": { kind: "directory", mode: 0o700 } });
+    expect(absent.logs?.viability).not.toBe(ready.logs?.viability);
+  });
+
+  test("reports a regular file as blocked, not as an empty root", async () => {
+    // The reported bug: this used to render as a healthy root with no database
+    // created yet.
+    const { logs } = await inspectLogs({ "/tmp/logs": { kind: "file", byteLength: 10 } });
+    expect(logs?.viability).toBe("blocked");
+    expect(logs?.code).toBe("not-a-directory");
+  });
+
+  test("reports a directory it cannot write into as blocked", async () => {
+    const { logs } = await inspectLogs({
+      "/tmp/logs": { kind: "directory", mode: 0o500, writable: false },
+    });
+    expect(logs?.viability).toBe("blocked");
+    expect(logs?.code).toBe("not-writable");
+  });
+
+  test("reports a missing root under an unwritable parent as blocked", async () => {
+    // Absent would promise a first run that can never happen.
+    const { logs } = await inspectLogs({
+      "/tmp": { kind: "directory", writable: false },
+    });
+    expect(logs?.viability).toBe("blocked");
+    expect(logs?.code).toBe("parent-not-writable");
+  });
+
+  test("reports a missing root under a parent that is a file as blocked", async () => {
+    const { logs } = await inspectLogs({ "/tmp": { kind: "file", byteLength: 1 } });
+    expect(logs?.viability).toBe("blocked");
+    expect(logs?.code).toBe("parent-not-writable");
+  });
+
+  test("walks up to the nearest existing ancestor", async () => {
+    const fileSystem = createInMemoryFileSystem({ nodes: { "/tmp": { kind: "directory" } } });
+    const { layout } = resolve("darwin", { FALRYN_LOG_DIR: "/tmp/a/b/c/logs" });
+    const inspections = await inspectRoots(fileSystem, layout);
+    // `/tmp` is writable and every level between is missing, so the root is
+    // absent rather than blocked.
+    expect(inspections.find((entry) => entry.root === "logs")?.viability).toBe("absent");
+  });
+
+  test("judges a symlink by its target rather than by the link", async () => {
+    // `stat` does not follow a final symlink, so without resolution a symlink
+    // to a perfectly good directory reads as `not-a-directory`.
+    const { logs } = await inspectLogs({
+      "/tmp/logs": { kind: "symlink", target: "/tmp/real" },
+      "/tmp/real": { kind: "directory", mode: 0o700 },
+    });
+    expect(logs?.viability).toBe("ready");
+  });
+
+  test("reports a symlink with no target as blocked", async () => {
+    const { logs } = await inspectLogs({
+      "/tmp/logs": { kind: "symlink", target: "/tmp/missing" },
+    });
+    expect(logs?.viability).toBe("blocked");
+    expect(logs?.code).toBe("dangling-symlink");
+  });
+
+  test("reports a symlink to a file as blocked for the right reason", async () => {
+    const { logs } = await inspectLogs({
+      "/tmp/logs": { kind: "symlink", target: "/tmp/real" },
+      "/tmp/real": { kind: "file", byteLength: 4 },
+    });
+    expect(logs?.viability).toBe("blocked");
+    expect(logs?.code).toBe("not-a-directory");
+  });
+
+  test("reports wide permissions on a root that otherwise works", async () => {
+    // Advisory, not blocking: the directory holds data, and should not be
+    // readable by everyone while it does.
+    const { logs } = await inspectLogs({ "/tmp/logs": { kind: "directory", mode: 0o755 } });
+    expect(logs?.viability).toBe("ready");
+    expect(logs?.code).toBe("insecure-permissions");
+  });
+
+  test("reports a probe that did not complete as unknown, never as ready", async () => {
+    const fileSystem = createInMemoryFileSystem({
+      nodes: { "/tmp/logs": { kind: "directory", mode: 0o700 } },
+    });
+    const { layout } = resolve("darwin", { FALRYN_LOG_DIR: "/tmp/logs" });
+    const controller = new AbortController();
+    controller.abort();
+
+    const inspections = await inspectRoots(fileSystem, layout, controller.signal);
+    for (const inspection of inspections) {
+      expect(inspection.viability).toBe("unknown");
+      expect(inspection.code).toBe("cancelled");
+    }
+  });
+
+  test("answers for every declared root", async () => {
+    const fileSystem = createInMemoryFileSystem({ nodes: { "/tmp": { kind: "directory" } } });
+    const { layout } = resolve("darwin");
+    const inspections = await inspectRoots(fileSystem, layout);
+    expect(inspections.map((entry) => entry.root)).toEqual([...LOCAL_DATA_ROOTS]);
+  });
+
+  test("says a blocked and an unknown root prevent use, and absent does not", async () => {
+    const blocked = await inspectLogs({ "/tmp/logs": { kind: "file", byteLength: 1 } });
+    const absent = await inspectLogs({ "/tmp": { kind: "directory" } });
+    const ready = await inspectLogs({ "/tmp/logs": { kind: "directory", mode: 0o700 } });
+
+    expect(blocksLocalData(blocked.logs as RootInspection)).toBe(true);
+    expect(blocksLocalData(absent.logs as RootInspection)).toBe(false);
+    expect(blocksLocalData(ready.logs as RootInspection)).toBe(false);
   });
 });
 

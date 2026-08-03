@@ -818,6 +818,10 @@ function issueSentence(issue: ConfigurationIssue): string {
 
 function storageSentence(storage: DoctorPayload["storage"]): string {
   switch (storage.kind) {
+    case "undetermined":
+      // Never "no database yet". That sentence is exactly the false comfort
+      // this state exists to withhold when the state root cannot be reached.
+      return "not determined, because the state root cannot hold data";
     case "absent":
       return "no database has been created yet";
     case "present":
@@ -845,7 +849,11 @@ function renderDoctor(
     ...payload.roots.map((entry) => {
       const prefix = `    ${entry.root.padEnd(rootWidth)}  `;
       const where = entry.path === null ? "unresolved" : safe(entry.path);
-      const state = entry.usable ? where : `${where} (${safe(entry.code ?? "unusable")})`;
+      // The viability word is always shown, so `ready` and `absent` are told
+      // apart at a glance rather than by the absence of a complaint.
+      const note =
+        entry.code === null ? entry.viability : `${entry.viability}: ${safe(entry.code)}`;
+      const state = `${where}  [${note}]`;
       return `${prefix}${fit(session, state, session.columns - prefix.length)}`;
     }),
     `  Database   ${fit(session, payload.databasePath === null ? "no path could be resolved" : safe(payload.databasePath), session.columns - 13)}`,
@@ -880,14 +888,34 @@ function renderDoctor(
 function doctorFindings(payload: DoctorPayload): readonly string[] {
   const findings: string[] = [];
   for (const entry of payload.roots) {
-    if (!entry.usable) {
+    if (!entry.resolved) {
+      findings.push(`The ${entry.root} data root did not resolve to a path.`);
+      continue;
+    }
+    // `absent` is deliberately not a finding: the first run that needs the
+    // root creates it, and reporting a fresh machine as faulty would train a
+    // reader to ignore the findings that matter.
+    if (entry.viability === "blocked") {
       findings.push(
-        `The ${entry.root} data root did not resolve (${safe(entry.code ?? "unusable")}).`,
+        `The ${entry.root} data root cannot hold data (${safe(entry.code ?? "blocked")}).`,
       );
+    }
+    if (entry.viability === "unknown") {
+      findings.push(
+        `The ${entry.root} data root could not be checked (${safe(entry.code ?? "unknown")}).`,
+      );
+    }
+    if (entry.viability === "ready" && entry.code === "insecure-permissions") {
+      findings.push(`The ${entry.root} data root is readable by other users on this machine.`);
     }
   }
   for (const issue of payload.rootIssues) {
     findings.push(`A data-root override was refused (${safe(issue)}).`);
+  }
+  if (payload.storage.kind === "undetermined") {
+    findings.push(
+      "Whether a database exists could not be determined, because the state root cannot hold data.",
+    );
   }
   if (payload.storage.kind === "unreadable") {
     findings.push(`The database could not be read (${safe(payload.storage.code)}).`);
@@ -899,7 +927,7 @@ function doctorFindings(payload: DoctorPayload): readonly string[] {
   }
   if (payload.unregisteredClasses.length > 0) {
     findings.push(
-      `${payload.unregisteredClasses.length} ownership ${plural(payload.unregisteredClasses.length, "class", "classes")} have no owner: ${payload.unregisteredClasses.join(", ")}.`,
+      `${payload.unregisteredClasses.length} ownership ${plural(payload.unregisteredClasses.length, "class", "classes")} ${plural(payload.unregisteredClasses.length, "has", "have")} no owner: ${payload.unregisteredClasses.join(", ")}.`,
     );
   }
   return findings;
