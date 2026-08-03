@@ -1429,10 +1429,79 @@ that installs one of each, so signal handling stays entirely with
 both modes; the compiled *process* starts about 170 ms slower than `bun run`,
 which is the standalone executable's own cost and not the renderer's.
 
-Nothing shipped grew. No module reachable from `src/main.ts` imports an OpenTUI
-or React package, asserted both over the source tree and by bundling the product
-entry and searching its output, and `dist/falryn` is byte-identical to the build
-before the pins.
+The interactive shell exists, delivered by
+[#23](https://github.com/yogeshprasad098/falryn/issues/23). `falryn` with no
+arguments decides from observed facts whether this terminal can host it, owns
+exactly one renderer when it can, keeps the previous behavior when it cannot,
+and restores the terminal on every exit path.
+
+The launch decision is a pure function of a capability record and the parsed
+options, in `src/tui/launch.ts`, and returns either a launch or one of seven
+named reasons: `machine-format`, `non-interactive`, `unsupported`, `not-a-tty`,
+`piped-output`, `dumb-terminal`, and `no-dimensions`. Precedence is what the
+caller asked for, then the documented override, then the handles, then the
+terminal, then its size — so `--format json` on a perfect terminal reports the
+format rather than sending someone to check a handle that was never the problem.
+A refusal is an ordinary answer: help on stdout and exit 0, exactly as before
+the shell existed, with the reason on the diagnostic handle. A run that will not
+launch loads no renderer at all, because `src/cli/dispatch.ts` reaches
+`src/tui/shell.tsx` through a dynamic import and only after the decision said
+yes; `src/tui/tui-boundaries.test.ts` walks the entrypoint's value-import graph
+to assert that, and `src/cli/dispatch-shell.test.ts` proves it behaviorally with
+a renderer factory that throws if anything calls it.
+
+The capability record in `src/tui/capabilities.ts` extends the domain's facts
+and recomputes none of them: colour, character repertoire, TTY status, and size
+are carried verbatim from `terminalCapabilities()`. What it adds is dumb,
+multiplexer, remote, and CI hints derived from the environment, the documented
+`FALRYN_TUI` override, and — once a renderer exists — the facts only a renderer
+can report. It carries a generation and its detection provenance, so "not
+observed yet" stays distinguishable from "not supported". `FALRYN_TUI` accepts
+`off` or a screen mode; a value this build does not understand is reported and
+then ignored rather than treated as a refusal, so a typo cannot lock a user out.
+
+Four OpenTUI defaults are overridden, each for a reason #22 measured or the
+architecture already owns: `exitOnCtrlC: false` and `exitSignals: []` leave
+interrupt and signals with `src/application/interruption.ts` and
+`createProcessSignalPort`, `consoleMode: "disabled"` keeps diagnostics on the
+stderr boundary, and mouse reporting is gated on the record rather than left at
+OpenTUI's default of on — it is off today because nothing consumes a pointer
+event until [#26](https://github.com/yogeshprasad098/falryn/issues/26).
+
+`split-footer` is the delivered default, qualified by #22, with
+`alternate-screen` when the terminal has too few rows to leave anything above a
+footer. The stdout reconciliation is explicit: while a split-footer renderer is
+alive it owns the handle `src/cli/streams.ts` normally owns, which is safe only
+because the launch decision has already refused every machine format, so no
+result record can be in flight. The shell writes nothing through the result
+stream during a session. `destroy()` puts the original `write` back, so the
+invocation's closing flush still reports what left the process.
+
+`restore-terminal` has its owner. `src/tui/shutdown.ts` registers the phase's
+only participant, and restoration happens at most once in effect and any number
+of times safely — both the shell's own teardown and the shutdown coordinator
+call it, frequently at once. It writes no escape sequence: OpenTUI's `destroy()`
+owns the sequences and this area owns when they run. A renderer that never
+started still registers a restoration, which reports that there was nothing to
+give back rather than leaving the path silent. A second renderer in one process
+is refused as the defect it is, and is reported as `internal` rather than as an
+unavailable dependency — nothing was missing.
+
+`src/tui/shell.compiled.test.ts` runs the real `dist/falryn` on a pseudo-terminal
+allocated through libc's `openpty`, and asserts on the bytes the terminal
+received rather than on anything the program says about itself: the shell draws
+its interface at the terminal's real size, `SIGINT` exits `130` through Falryn's
+own governance, a `--timeout` exits `124`, and both paths emit the sequences
+that show the cursor, reset the scroll region, and turn bracketed paste off. It
+reports itself skipped rather than passed when `dist/falryn` is unbuilt or the
+platform has no `openpty`.
+
+`integration` joined `RUNTIME_EMITTED_CATEGORIES`, so exit code `5` is now
+reachable: a renderer that could not start is a dependency this run needed and
+did not have. `dist/falryn` grew from 64,568,930 to 75,054,050 bytes — the
+OpenTUI native library and the React reconciler are now genuinely part of what
+ships, which is the deliberate change #22's byte-identical result was measuring
+the absence of.
 
 The compiled file is a development bootstrap artifact. It is not a supported
 Falryn product binary or release. A separate compiled probe confirmed that a
@@ -1448,9 +1517,9 @@ No end-user product behavior has been implemented. In particular, the
 repository does not yet provide:
 
 - the shutdown participants other than the scheduler drain, the artifact
-  finalize, the event-store quiesce, the projection checkpoint, and the storage
-  close — child-process termination and terminal restoration each register from
-  their own owner and neither of those owners exists yet;
+  finalize, the event-store quiesce, the projection checkpoint, the storage
+  close, and the terminal restore — child-process termination registers from its
+  own owner, and that owner does not exist yet;
 - watching configuration sources, and writing configuration files. Nothing in
   v0.1 runs long enough to observe a live reload and nothing sets a value, so a
   watcher and a serializer would be scaffolding with no caller. Refresh is an
@@ -1502,14 +1571,20 @@ repository does not yet provide:
 - the command surfaces that would show a reset or uninstall plan and collect its
   confirmation. This area produces the plan and the typed outcome; rendering
   them and asking is the CLI's;
-- headless product behavior beyond `config` and `doctor`, or the OpenTUI
-  application. The command tree, global options, help, version, the process
-  boundary beneath them, and all four output projections are real; what is
-  absent is commands to render. The interactive shell is
-  [#21](https://github.com/yogeshprasad098/falryn/issues/21); its dependencies
-  are pinned and their packaging is proven, and no application shell, component,
-  theme, view model, or keymap layer exists yet — only a probe fixture that
-  ships in no build. No producer of
+- headless product behavior beyond `config` and `doctor`, or anything the
+  OpenTUI application shows. The command tree, global options, help, version,
+  the process boundary beneath them, and all four output projections are real;
+  what is absent is commands to render. The shell's *lifecycle* is real — it
+  launches, owns one renderer, and restores the terminal — and what it renders
+  is a placeholder that reports the version, the screen mode, the terminal size,
+  and that Ctrl+C exits. No theme, token, component, layout class, overlay, view
+  model, keymap, focus model, or command registry exists yet; those are
+  [#24](https://github.com/yogeshprasad098/falryn/issues/24),
+  [#25](https://github.com/yogeshprasad098/falryn/issues/25), and
+  [#26](https://github.com/yogeshprasad098/falryn/issues/26), and the shell has
+  no transcript, composer, or agent loop behind it. It also has no way to quit
+  other than an interrupt or a deadline, because a quit binding needs the input
+  model #26 delivers. No producer of
   sessions or turns exists, so a JSON Lines run today carries the short
   lifecycle a `config` or `doctor` command produces rather than a model turn.
   Since [#345](https://github.com/yogeshprasad098/falryn/issues/345) a CLI
@@ -1534,8 +1609,8 @@ Their implementation breakdown lives in GitHub Issues and the Project.
 - **Live roadmap:** [Falryn Roadmap](https://github.com/users/yogeshprasad098/projects/2)
 - **Current release outcome:** [v0.1 Foundation issues](https://github.com/yogeshprasad098/falryn/issues?q=is%3Aissue%20is%3Aopen%20milestone%3A%22v0.1%20Foundation%22)
 - **First parent outcome:** [#1 Establish the unified runtime and lifecycle](https://github.com/yogeshprasad098/falryn/issues/1)
-- **Current parent outcome:** [#21 Deliver the OpenTUI application shell](https://github.com/yogeshprasad098/falryn/issues/21), now in progress; #22 is its first landed child. [#16 Deliver the CLI and headless foundation](https://github.com/yogeshprasad098/falryn/issues/16) remains in progress with #17, #18, #19, and #20 landed.
-- **Next planning action:** implement [#23](https://github.com/yogeshprasad098/falryn/issues/23), which #22 unblocked and supplied its four renderer observations to.
+- **Current parent outcome:** [#21 Deliver the OpenTUI application shell](https://github.com/yogeshprasad098/falryn/issues/21), in progress with #22 and #23 landed. [#16 Deliver the CLI and headless foundation](https://github.com/yogeshprasad098/falryn/issues/16) remains in progress with #17, #18, #19, and #20 landed.
+- **Next planning action:** implement [#24](https://github.com/yogeshprasad098/falryn/issues/24), which #23 unblocked by giving it a renderer to draw into.
 
 Which of #1's children are open, and which delivered the behavior recorded
 above, is read from
