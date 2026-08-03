@@ -1552,6 +1552,26 @@ fast animation. It is on by request, on a dumb terminal, and in CI.
 beside `FALRYN_TUI` from #23. Refusing colour does not reduce motion: they are
 different requests.
 
+Every declared screen mode starts, which [#351](https://github.com/yogeshprasad098/falryn/issues/351)
+fixed. `split-footer`, `alternate-screen`, and `main-screen` each construct a
+renderer; before the fix only the first did, because the configuration paired
+`capture-stdout` with every mode and OpenTUI rejects that pairing outside
+`split-footer` during construction. The practical effect was that any terminal
+with fewer than ten rows — the point where mode selection falls back to
+`alternate-screen` — exited `5` instead of opening a shell, and both non-default
+`FALRYN_TUI` modes did the same on any terminal. The output mode is now derived
+from the screen mode through `capturesStdout`, which had been written, exported,
+and tested with no product caller.
+
+A renderer failure now carries its cause onto the diagnostic line rather than
+only the sentence saying one occurred. The detail is the bounded, redacted one
+the error already held; the raw thrown value still never reaches a handle.
+
+Three checks were added for the class of defect rather than the instance: a
+construction test over every declared mode, a compiled run on a terminal too
+short for a footer and one per override mode, and a control asserting that
+`capturesStdout` has a product caller at all.
+
 The compiled file is a development bootstrap artifact. It is not a supported
 Falryn product binary or release. A separate compiled probe confirmed that a
 `SIGINT` delivered to a Bun standalone executable reaches the runtime lifecycle,

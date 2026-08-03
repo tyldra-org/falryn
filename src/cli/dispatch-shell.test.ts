@@ -242,4 +242,41 @@ describe("a shell whose renderer never started", () => {
     // And nothing that failed said anything on stdout.
     expect(streams.resultWrites()).toEqual([]);
   });
+
+  test("says what went wrong, not only that something did", async () => {
+    // #351's second half. The message alone — "The terminal interface could not
+    // be started." — is what made a one-line configuration defect take a
+    // pseudo-terminal and three experiments to locate, when the renderer had
+    // already handed over a complete sentence naming the cause.
+    const streams = streamsFor();
+    await dispatch({
+      argv: [],
+      streams,
+      environment: environment(),
+      governance: governanceFor(),
+      createRenderer: () => {
+        throw new Error('externalOutputMode "capture-stdout" requires screenMode "split-footer"');
+      },
+    });
+    expect(streams.diagnosticWrites().join("")).toContain("requires screenMode");
+  });
+
+  test("carries the bounded detail rather than the thrown value", async () => {
+    // The detail is redacted and length-bounded on its way through the error
+    // translator. A raw thrown value reaching a diagnostic is how a path, an
+    // argument, or a credential ends up in someone's terminal.
+    const streams = streamsFor();
+    await dispatch({
+      argv: [],
+      streams,
+      environment: environment(),
+      governance: governanceFor(),
+      createRenderer: () => {
+        throw new Error("x".repeat(1000));
+      },
+    });
+    const written = streams.diagnosticWrites().join("");
+    expect(written.length).toBeLessThan(600);
+    expect(written).toContain("could not be started");
+  });
 });
