@@ -205,7 +205,7 @@ describe("what this build can actually emit", () => {
   test("is derived from the categories the runtime emits", () => {
     // Derived rather than listed, so a category joining the emitted set widens
     // this in the same commit instead of leaving a stale claim behind.
-    expect(EMITTABLE_EXIT_CODES).toEqual([0, 1, 2, 3, 4, 8, 70, 124, 130]);
+    expect(EMITTABLE_EXIT_CODES).toEqual([0, 1, 2, 3, 4, 5, 8, 70, 124, 130]);
     for (const category of RUNTIME_EMITTED_CATEGORIES) {
       expect(EMITTABLE_EXIT_CODES).toContain(
         exitCodeForError(failure({ category, exitCategory: "runtime-error" })),
@@ -233,7 +233,6 @@ describe("what this build can actually emit", () => {
 
   test("leaves the rest declared and unreachable", () => {
     expect(UNEMITTABLE_EXIT_CODES).toEqual([
-      EXIT_CODES.UNAVAILABLE,
       EXIT_CODES.PROVIDER_OR_NETWORK,
       EXIT_CODES.WORKSPACE_OR_TOOL,
       EXIT_CODES.COMPATIBILITY_REFUSAL,

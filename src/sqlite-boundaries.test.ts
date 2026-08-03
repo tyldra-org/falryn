@@ -26,7 +26,13 @@ const ADAPTER = "integrations/bun-sqlite.ts";
  * both — and this file scans for exactly those.
  */
 const SELF = "sqlite-boundaries.test.ts";
-const CONTROLS: readonly string[] = [SELF, "cli-boundaries.test.ts"];
+const CONTROLS: readonly string[] = [
+  SELF,
+  "cli-boundaries.test.ts",
+  // Since #23, and for the same reason: it asserts that the interface area
+  // opens no database, which it can only do by spelling the driver import.
+  "tui/tui-boundaries.test.ts",
+];
 
 /** The area allowed to author SQL. Its migration list lives beside it. */
 const SQL_OWNER = "data/";

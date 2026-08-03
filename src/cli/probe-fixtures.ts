@@ -53,6 +53,7 @@ export const OUTCOME_SCENARIOS = [
   "invalid-input",
   "configuration",
   "authentication",
+  "integration",
   "uncertain",
   "cancelled-partial",
   "internal",
@@ -160,6 +161,14 @@ const OUTCOMES: Readonly<Record<OutcomeScenario, ScenarioResult>> = {
   authentication: {
     outcome: { kind: "failed", effect: "none" },
     error: error({ category: "authentication", exitCategory: "user-error" }),
+  },
+  // A dependency this run needed and did not have. Reachable since #23, whose
+  // renderer failures are the first thing in the build to produce the category
+  // — staged here rather than run for real, because what is under test is the
+  // table, and a real one would need a terminal.
+  integration: {
+    outcome: { kind: "failed", effect: "none" },
+    error: error({ category: "integration", exitCategory: "runtime-error" }),
   },
   uncertain: { outcome: { kind: "uncertain", effect: "uncertain" }, error: null },
   // Effect outranks outcome: something already changed, so this is not a plain

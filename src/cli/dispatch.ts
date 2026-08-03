@@ -14,12 +14,23 @@
 
 import {
   assertNever,
+  type EnvironmentPort,
   MAX_STREAM_READ_LIMIT,
   type RuntimeEvent,
   streamId,
   type Timestamp,
   timestampFromEpochMilliseconds,
 } from "../domain/index.ts";
+import { createHostEnvironment } from "../integrations/index.ts";
+import {
+  decideLaunch,
+  nonLaunchNotice,
+  type RendererFactory,
+  SHELL_OVERRIDE_VALUES,
+  SHELL_OVERRIDE_VARIABLE,
+  type ShellCapabilities,
+  shellCapabilities,
+} from "../tui/index.ts";
 import {
   helpText,
   type Invocation,
@@ -40,6 +51,7 @@ import {
   type InvocationGovernance,
   openInvocationScope,
   runUnderScope,
+  untilScopeStops,
 } from "./invocation-scope.ts";
 import {
   allowsColor,
@@ -82,6 +94,23 @@ export type DispatchOptions = {
    * interrupt a run nobody is holding a signal for.
    */
   readonly governance?: InvocationGovernance;
+  /**
+   * Supplied by tests, so a launch decision never reads the developer's shell.
+   *
+   * Only the no-argument invocation reads it: every other path takes its
+   * environment from the service graph, which a command that must construct
+   * nothing never builds.
+   */
+  readonly environment?: EnvironmentPort;
+  /**
+   * Supplied by tests, so a shell run needs no terminal and no native library.
+   *
+   * Typed as the factory the session takes rather than as `unknown`, and
+   * declared here rather than threaded through an options bag, because the
+   * control that proves a refused run creates no renderer works by handing over
+   * a factory that throws when it is called.
+   */
+  readonly createRenderer?: RendererFactory;
 };
 
 /**
@@ -145,10 +174,7 @@ async function runCommand(
   const { command, options: globals } = invocation;
 
   if (command === "default") {
-    // The no-argument invocation prints help and exits 0 until #21 lands the
-    // interactive shell. Help text says so rather than leaving it implied.
-    writeResultLine(streams, await helpText(null));
-    return EXIT_CODES.COMPLETED;
+    return runDefault(globals, options);
   }
 
   // Built here and not before: every path above returns without a service.
@@ -160,6 +186,125 @@ async function runCommand(
   return resolveExitCode({
     outcome: result.outcome,
     error: result.errors[0] ?? null,
+  });
+}
+
+/* -------------------------------------------------------------------------- */
+/* The no-argument invocation                                                  */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * `falryn`, with nothing after it.
+ *
+ * The decision is taken from observed facts rather than guessed, and it is taken
+ * *here* — before anything OpenTUI-shaped is loaded. `src/tui/index.ts` is the
+ * pure half of the interface area: a capability record, a launch decision, and a
+ * mode selection, none of which touches a renderer. Only a decision to launch
+ * reaches for `src/tui/shell.tsx`, and only that import pulls in the native
+ * library. A run that was never going to open a shell pays nothing to find out.
+ *
+ * A refusal keeps exactly the behavior this invocation had before the shell
+ * existed — help on stdout, exit zero — and names its reason on the diagnostic
+ * handle, because "falryn printed help at me" and "falryn printed help at me
+ * because stdout is a pipe" are different things to the person reading it.
+ */
+async function runDefault(globals: GlobalOptions, options: DispatchOptions): Promise<ExitCode> {
+  const { streams } = options;
+  const environment = options.environment ?? createHostEnvironment();
+  const capabilities = shellCapabilities({ handles: streams.capabilities, environment });
+
+  if (capabilities.override.kind === "unrecognized") {
+    // Reported rather than obeyed or silently dropped. A misspelled override
+    // that changed nothing and said nothing would look exactly like an override
+    // that was honoured.
+    writeDiagnosticLine(
+      streams,
+      `${SHELL_OVERRIDE_VARIABLE}=${capabilities.override.value} is not recognized; expected one of: ${SHELL_OVERRIDE_VALUES.join(", ")}.`,
+    );
+  }
+
+  const decision = decideLaunch(capabilities, globals);
+  if (decision.kind === "declined") {
+    writeDiagnosticLine(streams, nonLaunchNotice(decision.reason));
+    writeResultLine(streams, await helpText(null));
+    return EXIT_CODES.COMPLETED;
+  }
+
+  return launchShell(capabilities, globals, options);
+}
+
+/**
+ * Runs the shell under this invocation's scope.
+ *
+ * The scope is opened the same way a command's is, and for the same reasons:
+ * `--timeout` becomes its deadline, and an interrupt on the root reaches it. It
+ * is not run through {@link runUnderScope} though, and that difference is the
+ * point — see {@link untilScopeStops}. The shell has no completion of its own in
+ * this build, so the scope stopping is not something to race against the work,
+ * it *is* the work ending.
+ */
+async function launchShell(
+  capabilities: ShellCapabilities,
+  globals: GlobalOptions,
+  options: DispatchOptions,
+): Promise<ExitCode> {
+  const { streams } = options;
+  const governance = options.governance ?? createInvocationGovernance();
+  const scope = openInvocationScope(governance, globals.timeoutMs);
+
+  // Aborts when the shell is done, so a run given a long `--timeout` does not
+  // leave a timer armed over a process with nothing left to govern.
+  const finished = new AbortController();
+  const stopped = new AbortController();
+  if (scope !== null) {
+    void untilScopeStops(governance, scope, finished.signal).then(() => stopped.abort());
+  }
+
+  // Loaded here and nowhere earlier: this is the first line of the whole
+  // invocation that requires OpenTUI to exist.
+  const { runShell } = await import("../tui/shell.tsx");
+
+  let run: Awaited<ReturnType<typeof runShell>>;
+  try {
+    run = await runShell({
+      streams,
+      capabilities,
+      stop: stopped.signal,
+      ...(governance.shutdown === undefined ? {} : { shutdown: governance.shutdown }),
+      ...(options.createRenderer === undefined ? {} : { createRenderer: options.createRenderer }),
+    });
+  } finally {
+    finished.abort();
+  }
+
+  if (run.kind === "failed") {
+    // Plain text on the diagnostic handle. The renderer is already gone by the
+    // time this runs, so this is an ordinary line into an ordinary terminal.
+    writeDiagnosticLine(streams, run.error.message);
+    return resolveExitCode({
+      outcome: { kind: "failed", effect: run.error.effect },
+      error: run.error,
+    });
+  }
+
+  if (scope === null) {
+    // The tree refused to derive, so nothing governed the run. It ended, and
+    // there is no scope to read an outcome from.
+    return EXIT_CODES.COMPLETED;
+  }
+
+  if (run.kind === "closed") {
+    governance.scopes.complete(scope.scopeId);
+    return EXIT_CODES.COMPLETED;
+  }
+
+  // Stopped. `acknowledge` decides between `cancelled` and `timed-out` from the
+  // reason the tree recorded, so an interrupt and a deadline are told apart by
+  // the owner of that distinction rather than re-derived here.
+  const settled = governance.scopes.acknowledge(scope.scopeId);
+  return resolveExitCode({
+    outcome: settled.ok ? settled.value : { kind: "uncertain", effect: "uncertain" },
+    error: null,
   });
 }
 
