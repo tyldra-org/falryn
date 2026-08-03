@@ -29,7 +29,7 @@ import { type ReactNode, useMemo, useRef } from "react";
 import { type LayoutDecision, primaryColumns, selectLayout, type Viewport } from "../layout.ts";
 import { createTextCache } from "../text-cache.ts";
 import { resolveTheme, type ThemeRequest } from "../theme/index.ts";
-import type { ShellModel } from "../view-model.ts";
+import type { CommandEntry, ShellModel } from "../view-model.ts";
 import { type Frame, FrameProvider } from "./context.tsx";
 import { OverlayHost } from "./overlay.tsx";
 import { CommandPalette, HelpOverlay } from "./overlay-routes.tsx";
@@ -56,6 +56,15 @@ export type AppShellProps = {
    * one.
    */
   readonly children?: ReactNode;
+  /**
+   * Every command as a row, for the help overlay.
+   *
+   * Passed rather than derived here because deriving it needs the keymap plan,
+   * and this component is deliberately the half that does not know one exists.
+   * An empty list is the correct default: a frame rendered without a runtime
+   * has no bindings to describe.
+   */
+  readonly commandRows?: readonly CommandEntry[];
 };
 
 export function AppShell(props: AppShellProps): ReactNode {
@@ -90,7 +99,12 @@ export function AppShell(props: AppShellProps): ReactNode {
       {layout.kind === "insufficient" ? (
         <MinimumSizeNotice viewport={terminal} decision={layout} />
       ) : (
-        <ShellFrame model={props.model} viewport={viewport} layout={layout}>
+        <ShellFrame
+          model={props.model}
+          viewport={viewport}
+          layout={layout}
+          commandRows={props.commandRows ?? []}
+        >
           {props.children}
         </ShellFrame>
       )}
@@ -102,6 +116,7 @@ function ShellFrame(props: {
   readonly model: ShellModel;
   readonly viewport: Viewport;
   readonly layout: Extract<LayoutDecision, { kind: "layout" }>;
+  readonly commandRows: readonly CommandEntry[];
   readonly children?: ReactNode;
 }): ReactNode {
   const { model } = props;
@@ -123,11 +138,13 @@ function ShellFrame(props: {
             title={model.overlay.kind === "help" ? "Help" : "Commands"}
             dismissHint="Esc closes this"
           >
-            {model.overlay.kind === "help" ? (
-              <HelpOverlay sections={model.help} />
-            ) : (
-              <CommandPalette commands={model.commands} />
-            )}
+            {(rows) =>
+              model.overlay.kind === "help" ? (
+                <HelpOverlay sections={model.help} commands={props.commandRows} rows={rows} />
+              ) : (
+                <CommandPalette commands={model.commands} query="" rows={rows} />
+              )
+            }
           </OverlayHost>
         )}
       </box>

@@ -289,16 +289,25 @@ describe("overlays", () => {
     expect(frame).toContain("ends the session");
   });
 
-  test("mount the palette route, and say so when it is empty", async () => {
-    // The honest state for a build with no commands, rather than a staged list.
+  test("mount the palette route, and say so when nothing matches", async () => {
+    // Since #26 the palette is driven by the registry, so an empty list means a
+    // search matched nothing rather than a build with no commands.
     const frame = await shell({ overlay: { kind: "palette" }, commands: [] });
-    expect(frame).toContain("No commands are available yet");
+    expect(frame).toContain("Nothing matches that");
   });
 
   test("list commands when there are some", async () => {
     const frame = await shell({
       overlay: { kind: "palette" },
-      commands: [{ id: "shell.exit", title: "Exit Falryn", hint: "^C" }],
+      commands: [
+        {
+          id: "app.exit",
+          title: "Exit Falryn",
+          description: "Close the shell.",
+          binding: "ctrl+c",
+          unavailableReason: null,
+        },
+      ],
     });
     expect(frame).toContain("Exit Falryn");
   });

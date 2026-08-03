@@ -56,7 +56,15 @@ export const OPENING_ROWS = 3;
 
 export type OverlayHostProps = {
   readonly route: OverlayRoute;
-  readonly children: ReactNode;
+  /**
+   * The content, given the rows it actually has.
+   *
+   * A function rather than a node because the panel's height is decided here and
+   * the content has to respect it. Rendering more rows than the panel has does
+   * not clip in a terminal — the lines draw over each other, which is how a
+   * 25-command help overlay in a six-row footer became an unreadable smear.
+   */
+  readonly children: (rows: number) => ReactNode;
   /** The words on the dismissal surface. #26 supplies the key that runs it. */
   readonly dismissHint: string;
   readonly title: string;
@@ -110,9 +118,12 @@ export function OverlayHost(props: OverlayHostProps): ReactNode {
   // without content appearing at a size it will not stay at.
   const height = arrived ? target : Math.min(target, OPENING_ROWS);
 
+  // Two rows for the panel's own border, one for the dismissal hint.
+  const contentRows = Math.max(1, height - 3);
+
   return (
     <Panel strength="focus" surface="overlay" title={props.title} height={height}>
-      {props.children}
+      {props.children(contentRows)}
       <Line color="mutedForeground" typography="muted">
         {props.dismissHint}
       </Line>

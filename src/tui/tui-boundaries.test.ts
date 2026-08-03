@@ -31,6 +31,11 @@ const RENDERER_OWNERS = [
   // below it does: every component reads the frame from context instead, which
   // is what keeps the measurement in one place.
   "components/app-shell.tsx",
+  // The interactive root builds the keymap over the live renderer, and the
+  // bridge registers layers with it. Both are the seam between a plan this area
+  // owns and a dispatcher it does not.
+  "components/shell-app.tsx",
+  "components/keymap-bridge.tsx",
 ];
 
 /** The one module allowed to author a colour. */
@@ -314,7 +319,11 @@ describe("the design system", () => {
         /function wrapToWidth/,
         /\.padEnd\(/,
         /\.padStart\(/,
-        /\.slice\(0,/,
+        // Slicing a *string* by index is the width bug this guards: it counts
+        // UTF-16 units, so it cuts a wide glyph in half. Slicing an array of
+        // rows is bounding a list and has nothing to do with cell width, which
+        // is why the pattern names the receiver rather than the method.
+        /\b(text|line|label|title|value|content)\w*\.slice\(/i,
       ]) {
         expect({ file, forbidden: forbidden.source, found: forbidden.test(source) }).toEqual({
           file,
