@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -7,9 +7,18 @@ import { REDACTED } from "../application/index.ts";
 import {
   CONFIGURATION_FILE_NAME,
   CONFIGURATION_SCHEMA_VERSION,
+  PROJECT_CONFIGURATION_DIRECTORY,
   SCHEMA_VERSION_FIELD,
 } from "../config/index.ts";
-import { createStaticEnvironment, localPath } from "../domain/index.ts";
+import {
+  createInMemoryFileSystem,
+  createStaticEnvironment,
+  err,
+  type FileSystemErrorCode,
+  type FileSystemPort,
+  type InMemoryNode,
+  localPath,
+} from "../domain/index.ts";
 import { runConfigPath, runConfigShow, runConfigValidate, runDoctor } from "./commands.ts";
 import { EXIT_CODES, resolveExitCode } from "./exit.ts";
 import { DIAGNOSTIC_LEVEL_KEY, type GlobalOptions } from "./options.ts";
@@ -54,6 +63,53 @@ async function isolated(options: Partial<GlobalOptions> = {}, currentDirectory?:
       // against a known directory instead of wherever the suite was started.
       ...(currentDirectory === undefined ? {} : { currentDirectory: localPath(currentDirectory) }),
     }),
+  };
+}
+
+/**
+ * A provider over the in-memory filesystem double.
+ *
+ * No temporary directory, and no dependence on what the running user is
+ * permitted to do: every read outcome the matrix needs is stated rather than
+ * arranged. The user file's path comes from the same layout the loader will
+ * use, so nothing here re-derives where a source lives.
+ */
+function doubled(options: Partial<GlobalOptions> = {}) {
+  const fileSystem = createInMemoryFileSystem();
+  const globals = { ...DEFAULTS, ...options };
+  const services = providerOver(fileSystem, globals);
+  return {
+    fileSystem,
+    globals,
+    services,
+    workspaceFile: `/workspace/${PROJECT_CONFIGURATION_DIRECTORY}/${CONFIGURATION_FILE_NAME}`,
+    userFile: `${services().configurationRoot}/${CONFIGURATION_FILE_NAME}`,
+  };
+}
+
+/** A provider over a supplied filesystem, and a home no test shares. */
+function providerOver(fileSystem: FileSystemPort, globals: GlobalOptions): ServiceProvider {
+  return createServiceProvider(globals, {
+    home: localPath("/home/tester"),
+    platform: "darwin",
+    environment: createStaticEnvironment({}),
+    currentDirectory: localPath("/workspace"),
+    fileSystem,
+  });
+}
+
+/** One path's `readText` failing with a stated code, and everything else real. */
+function refusingRead(
+  base: FileSystemPort,
+  path: string,
+  code: FileSystemErrorCode,
+): FileSystemPort {
+  return {
+    ...base,
+    readText: async (target, maximumBytes, signal) =>
+      target === path
+        ? err({ kind: "filesystem", code, path: localPath(path), operation: "read-text" })
+        : base.readText(target, maximumBytes, signal),
   };
 }
 
@@ -196,7 +252,7 @@ describe("config validate", () => {
     const result = await runConfigValidate(services, {}, globals);
 
     expect(result.outcome).toEqual({ kind: "completed" });
-    expect(result.payload).toEqual({ issues: [], valid: true });
+    expect(result.payload).toEqual({ issues: [], valid: true, unreadSources: [] });
   });
 
   test("reports the issues that make one invalid", async () => {
@@ -206,6 +262,149 @@ describe("config validate", () => {
     expect(result.payload?.valid).toBe(false);
     expect(result.payload?.issues.map((issue) => issue.kind)).toContain("unknown-key");
     expect(result.outcome.kind).toBe("failed");
+  });
+});
+
+describe("config validate over a source it could not read", () => {
+  // The double rather than a real disk: what a `chmod 000` file, a directory in
+  // a file's place, and a mis-encoded document each produce is a property of
+  // the `FileSystemPort` contract, and a matrix that depended on what the
+  // running user happens to be permitted would be a test of the machine.
+  const UNREAD: readonly { readonly state: string; readonly node: InMemoryNode }[] = [
+    { state: "a directory where the file should be", node: { kind: "directory" } },
+    { state: "a document past the byte bound", node: { kind: "file", byteLength: 300_000 } },
+  ];
+  for (const { state, node } of UNREAD) {
+    test(`reports ${state} as unread, and exits 3`, async () => {
+      const { fileSystem, services, globals, userFile } = doubled();
+      fileSystem.put(userFile, node);
+
+      const result = await runConfigValidate(services, {}, globals);
+
+      // `valid` still answers only its own question: what loaded is usable.
+      expect(result.payload?.valid).toBe(true);
+      expect(result.payload?.unreadSources.map((report) => report.source.kind)).toEqual([
+        "user-file",
+      ]);
+      expect(resolveExitCode({ outcome: result.outcome, error: result.errors[0] ?? null })).toBe(
+        EXIT_CODES.CONFIGURATION,
+      );
+    });
+  }
+
+  test("tells an oversized document apart from one it could not open", async () => {
+    const unreadable = doubled();
+    unreadable.fileSystem.put(unreadable.userFile, { kind: "directory" });
+    const oversized = doubled();
+    oversized.fileSystem.put(oversized.userFile, { kind: "file", byteLength: 300_000 });
+
+    const first = await runConfigValidate(unreadable.services, {}, unreadable.globals);
+    const second = await runConfigValidate(oversized.services, {}, oversized.globals);
+
+    // Two different repairs — a permission and a file size — so one word for
+    // both would send half of the readers to the wrong place.
+    expect(first.payload?.unreadSources[0]?.outcome).toBe("unreadable");
+    expect(second.payload?.unreadSources[0]?.outcome).toBe("oversized");
+    expect(first.errors[0]?.code).toBe("configuration.source-unreadable");
+    expect(second.errors[0]?.code).toBe("configuration.source-oversized");
+  });
+
+  test("reports a document that is not valid UTF-8 as mis-encoded", async () => {
+    const { fileSystem, globals, userFile } = doubled();
+    // The double decodes whatever it is given, so the boundary failure is
+    // supplied here. The host adapter's own mapping is covered by
+    // `src/integrations/host-filesystem.test.ts`.
+    const failing = refusingRead(fileSystem, userFile, "malformed-encoding");
+
+    const result = await runConfigValidate(providerOver(failing, globals), {}, globals);
+
+    expect(result.payload?.unreadSources[0]?.outcome).toBe("malformed-encoding");
+    expect(result.errors[0]?.code).toBe("configuration.source-malformed-encoding");
+  });
+
+  test("says nothing about an absent or an empty source", async () => {
+    const absent = doubled();
+    const empty = doubled();
+    empty.fileSystem.put(empty.userFile, { kind: "file", text: "  // only a comment\n" });
+
+    for (const { services, globals } of [absent, empty]) {
+      const result = await runConfigValidate(services, {}, globals);
+
+      // A file that is not there says nothing, and `> falryn.jsonc` is a
+      // deliberate act. Reporting either would train a reader to ignore the
+      // finding that matters.
+      expect(result.payload).toEqual({ issues: [], valid: true, unreadSources: [] });
+      expect(result.outcome).toEqual({ kind: "completed" });
+    }
+  });
+
+  test("names which source it was when another one loads normally", async () => {
+    const { fileSystem, services, globals, userFile, workspaceFile } = doubled();
+    fileSystem.put(userFile, { kind: "directory" });
+    fileSystem.put(workspaceFile, {
+      kind: "file",
+      text: JSON.stringify({ [SCHEMA_VERSION_FIELD]: CONFIGURATION_SCHEMA_VERSION }),
+    });
+
+    const result = await runConfigValidate(services, {}, globals);
+
+    expect(result.payload?.unreadSources.map((report) => report.source.kind)).toEqual([
+      "user-file",
+    ]);
+    expect(String(result.payload?.unreadSources[0]?.source.file)).toBe(userFile);
+  });
+
+  test("carries no byte of the document it could not read", async () => {
+    const { fileSystem, globals, userFile } = doubled();
+    // Token-shaped content in a file that is then refused at the boundary: the
+    // read produced these bytes for nobody, and no surface may show them.
+    fileSystem.put(userFile, { kind: "file", text: `{"token": "${SECRET}"}` });
+    const failing = refusingRead(fileSystem, userFile, "malformed-encoding");
+
+    const result = await runConfigValidate(providerOver(failing, globals), {}, globals);
+
+    expect(result.payload?.unreadSources.length).toBe(1);
+    expect(JSON.stringify(result)).not.toContain(SECRET);
+  });
+
+  test("reports it on a real disk too, for a file this user may not read", async () => {
+    // One check against the actual boundary, so the matrix above is not the
+    // only thing standing between a permission and a false verdict.
+    if (process.getuid?.() === 0) {
+      return;
+    }
+    const { services, globals } = await isolated();
+    const root = services().configurationRoot;
+    await mkdir(root, { recursive: true });
+    const file = join(root, CONFIGURATION_FILE_NAME);
+    await writeFile(file, "{}");
+    await chmod(file, 0o000);
+
+    const result = await runConfigValidate(services, {}, globals);
+
+    expect(result.payload?.unreadSources[0]?.outcome).toBe("unreadable");
+    expect(resolveExitCode({ outcome: result.outcome, error: result.errors[0] ?? null })).toBe(
+      EXIT_CODES.CONFIGURATION,
+    );
+  });
+});
+
+describe("config show over a source it could not read", () => {
+  test("still shows what loaded, and still exits zero", async () => {
+    const { fileSystem, services, globals, userFile } = doubled();
+    fileSystem.put(userFile, { kind: "directory" });
+
+    const result = await runConfigShow(services, {}, globals);
+
+    // The values it displayed did load, and displaying them is the command's
+    // purpose. The finding is advisory here and blocking in `validate`.
+    expect(result.outcome).toEqual({ kind: "completed" });
+    expect(result.errors).toEqual([]);
+    expect((result.payload?.inspection.values.length ?? 0) > 0).toBe(true);
+    // Its payload already carried the report; #344 changed only who reads it.
+    expect(
+      result.payload?.inspection.sources.filter((report) => report.outcome === "unreadable").length,
+    ).toBe(1);
   });
 });
 

@@ -27,6 +27,9 @@
  * what a result says drift, and then disagree in front of a user.
  */
 
+// The label a source is named by, bounded by its own owner. Re-deriving it here
+// would be a second answer to how long a path a diagnostic may print.
+import { sourceLabel } from "../config/index.ts";
 import {
   assertNever,
   type ColorLevel,
@@ -35,8 +38,10 @@ import {
   type EffectCertainty,
   type FalrynError,
   type InspectedValue,
+  isUnreadSource,
   MAX_RELATED_ERRORS,
   recoveryForEffect,
+  type SourceReport,
   type SymbolSupport,
   sanitizeTerminalText,
   type TerminalOutcome,
@@ -661,7 +666,14 @@ function renderConfigShow(
     return { lines: ["No configuration to show."], diagnostics: [] };
   }
 
-  const diagnostics: string[] = [];
+  const diagnostics: string[] = [
+    // Advisory here, and blocking in `config validate`. The values below did
+    // load and displaying them is this command's purpose, so it still exits
+    // `0` — but a reader must not be left thinking they are the whole story.
+    ...unreadSourceFindings(payload.inspection.sources).flatMap((finding) =>
+      sentence(session, `${paint(session, "warn", session.glyphs.warning)} ${finding}`),
+    ),
+  ];
   if (!payload.usable) {
     diagnostics.push(
       ...sentence(
@@ -735,22 +747,76 @@ function renderConfigValidate(
   }
 
   const count = payload.issues.length;
-  const lines = payload.valid
-    ? [paint(session, "good", `${session.glyphs.completed} Configuration is valid.`)]
-    : [
+  const unread = payload.unreadSources.length;
+  const lines = !payload.valid
+    ? [
         paint(
           session,
           "bad",
           `${session.glyphs.failed} Configuration is not usable: ${count} ${plural(count, "issue")}.`,
         ),
-      ];
+      ]
+    : unread > 0
+      ? // Never "valid" here. The values that loaded are usable, and they are
+        // not the ones the user wrote — which is the question this command was
+        // asked, so it answers it rather than the easier one.
+        [
+          paint(
+            session,
+            "bad",
+            `${session.glyphs.failed} Configuration loaded without ${unread} ${plural(unread, "source")} that could not be read.`,
+          ),
+        ]
+      : [paint(session, "good", `${session.glyphs.completed} Configuration is valid.`)];
 
   const { shown, dropped } = bound(payload.issues, session.bounds.issues);
-  const diagnostics = shown.flatMap((issue) => issueLines(session, issue));
+  const diagnostics = [
+    ...unreadSourceFindings(payload.unreadSources).flatMap((finding) =>
+      sentence(session, `${paint(session, "bad", session.glyphs.failed)} ${finding}`),
+    ),
+    ...shown.flatMap((issue) => issueLines(session, issue)),
+  ];
   if (dropped > 0) {
     diagnostics.push(...sentence(session, droppedNotice(session, dropped, "issue", shown.length)));
   }
   return { lines, diagnostics };
+}
+
+/**
+ * What each skipped source says, in one sentence.
+ *
+ * The path and the outcome, and nothing else. No byte of the document appears:
+ * `unreadable` and `oversized` produced none, and `malformed-encoding` produced
+ * exactly the bytes a diagnostic must not echo. The list is bounded by the
+ * session's own source bound rather than by how many files happened to fail.
+ */
+function unreadSourceFindings(sources: readonly SourceReport[]): readonly string[] {
+  const unread = sources.filter(isUnreadSource);
+  // The concise bound, in every projection including quiet: there are six
+  // layers and at most four of them read a file, so this never truncates a real
+  // run — it bounds a payload that arrived from somewhere else.
+  const { shown, dropped } = bound(unread, NORMAL_BOUNDS.sources);
+  const findings = shown.map(
+    (report) => `The ${report.source.kind} configuration source ${skipSentence(report)}`,
+  );
+  if (dropped > 0) {
+    findings.push(
+      `${dropped} further unread ${plural(dropped, "source")} ${plural(dropped, "was", "were")} not listed.`,
+    );
+  }
+  return findings;
+}
+
+function skipSentence(report: SourceReport): string {
+  const where = safe(sourceLabel(report.source));
+  switch (report.outcome) {
+    case "oversized":
+      return `is larger than this build reads and was skipped: ${where}.`;
+    case "malformed-encoding":
+      return `is not valid UTF-8 text and was skipped: ${where}.`;
+    default:
+      return `could not be read and was skipped: ${where}.`;
+  }
 }
 
 function issueLines(session: Session, issue: ConfigurationIssue): readonly string[] {
@@ -970,12 +1036,19 @@ function quietFindingLines(result: RunCommandResult): readonly string[] {
     case "config.validate":
       return result.payload === null
         ? []
-        : result.payload.issues.map(
-            (issue) => `${issue.severity}: ${safe(issue.path)}: ${issueSentence(issue)}`,
-          );
+        : [
+            ...unreadSourceFindings(result.payload.unreadSources),
+            ...result.payload.issues.map(
+              (issue) => `${issue.severity}: ${safe(issue.path)}: ${issueSentence(issue)}`,
+            ),
+          ];
     case "doctor":
       return result.payload === null ? [] : doctorFindings(result.payload);
     case "config.show":
+      // Quiet still reports a source that was skipped. `config show` prints the
+      // values it has; stderr is where the reader is told those values are not
+      // the whole of what they wrote.
+      return result.payload === null ? [] : unreadSourceFindings(result.payload.inspection.sources);
     case "config.path":
       return [];
     default:

@@ -1012,7 +1012,10 @@ Its verified behavior:
   the runtime redactor injected rather than reimplemented and the generation
   event appended to an in-memory store, so inspecting settings never writes to
   a user's database. An unknown override key refuses the load rather than being
-  ignored;
+  ignored, and since
+  [#344](https://github.com/yogeshprasad098/falryn/issues/344) a source that
+  exists and could not be read is reported rather than silently skipped, which
+  is described below;
 - **`doctor` describes without creating.** It names each root and the database
   path, and reads the database with `create: false` — so asking whether one
   exists never creates it. A fresh root reports `absent`; after a bootstrap it
@@ -1176,6 +1179,57 @@ The finding reaches all four output contracts. The machine payload changed
 shape: `usable` is gone and `resolved`, `viability`, and `blocked` are new. No
 `CLI_SCHEMA_VERSION` bump was taken, because v0.1 payloads are not published and
 the family declares no compatibility promise yet.
+
+`config validate` and `config show` report a configuration source that exists
+and could not be read, which
+[#344](https://github.com/yogeshprasad098/falryn/issues/344) added after
+verifying #16's "unreadable configuration" scenario found `config validate`
+calling a configuration valid when the only file it had was at mode `000`. The
+loader is unchanged — it already recorded the outcome and skipped the source —
+so the change is a `UNREAD_SOURCE_OUTCOMES` vocabulary and `isUnreadSource` in
+`src/domain/configuration-source.ts`, `fromUnreadConfigurationSource(s)` in
+`src/application/error-translation.ts`, one payload field, and the rendering
+that reads it.
+
+Its verified behavior:
+
+- **three outcomes are findings and two are not.** `unreadable`, `oversized`,
+  and `malformed-encoding` each mean a document exists at a path the user chose
+  and the configuration in effect is not the one they wrote. `absent` and
+  `empty` stay silent: a file that is not there says nothing, and an empty file
+  is what `> falryn.jsonc` deliberately leaves;
+- **the outcomes stay distinguishable.** A permission, a file size, and an
+  encoding are three different repairs, and each is named as itself rather than
+  collapsed into "could not be read";
+- **an unread source is blocking for `validate` and advisory for `show`.**
+  `validate` reports a `configuration` failure and exits `3` — the same code a
+  malformed document produces, because both mean the effective configuration is
+  not the authored one. `show` exits `0`: the values it displayed did load, and
+  displaying them is its purpose;
+- **`valid` still answers only its own question.** It reports whether an issue
+  blocks use of the configuration that loaded. Whether every declared source was
+  read is the separate `unreadSources` field, so a mistyped key and an
+  unopenable file stay tellable apart;
+- **the finding names the source and never the document.** The layer, the
+  outcome, and the path bounded by `sourceLabel`. The read produced no bytes in
+  the `unreadable` and `oversized` cases, and the `malformed-encoding` case is
+  the one whose bytes must not be echoed — asserted by a control that puts
+  token-shaped content in a file that is then refused at the boundary; and
+- **the finding reaches all four output contracts**: stderr in human and quiet,
+  the payload in JSON and JSON Lines, with stdout still carrying only the
+  configuration under `config show`.
+
+A load refused for bad content keeps its previous behavior and exit status, and
+carries its unread sources alongside the issues rather than instead of them. The
+`config.validate` payload gained `unreadSources`, which is additive under the
+reader policy `src/cli/schema.ts` states; no `CLI_SCHEMA_VERSION` bump was taken,
+for the same reason #342 took none.
+
+The matrix is exercised over the in-memory `FileSystemPort` double, so what a
+directory-in-place, an oversized document, and a mis-encoded one each produce
+does not depend on what the running user is permitted to do; one real-disk check
+over a mode `000` file covers the boundary itself, and is skipped when the suite
+runs as root.
 
 The compiled check covers the bootstrap through its own fixture entry. The bare
 invocation is the command tree now, so `src/main-fixtures.ts` — an entry that

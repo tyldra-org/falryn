@@ -30,6 +30,7 @@ import {
   type FalrynError,
   type IdentityError,
   isErrorCategory,
+  isUnreadSource,
   MAX_CAUSE_DETAIL_LENGTH,
   MAX_ERROR_MESSAGE_LENGTH,
   MAX_RELATED_ERRORS,
@@ -39,6 +40,8 @@ import {
   recoveryForEffect,
   type SafeCause,
   type SequenceError,
+  type SourceOutcome,
+  type SourceReport,
   type SqliteFailure,
   type SqliteStoreError,
   type TimestampError,
@@ -376,6 +379,75 @@ function configurationDetail(issue: ConfigurationIssue): string {
       break;
   }
   return facts.join(" ");
+}
+
+/**
+ * A configuration document that exists and was not read.
+ *
+ * The loader fails open on an unavailable source: it skips the file, records
+ * why, and composes the remaining layers. That keeps a machine working, and it
+ * also means the configuration in effect is not the one its author wrote — so a
+ * surface whose whole purpose is to answer "is my configuration right" has to
+ * be able to say so, and to say it in the exit status.
+ *
+ * Nothing here carries the document. The read produced no bytes in the
+ * `unreadable` and `oversized` cases, and the `malformed-encoding` case is
+ * precisely the one whose bytes must not be echoed. The path is left to the
+ * payload and the rendered finding, which bound it; the cause names the layer
+ * and the outcome, both of which come from declarations.
+ */
+export function fromUnreadConfigurationSource(
+  report: SourceReport,
+  context: ErrorContext = {},
+): FalrynError {
+  return build({
+    code: `configuration.source-${report.outcome}`,
+    category: "configuration",
+    message: unreadSourceMessage(report.outcome),
+    // Re-reading changes nothing: a permission, a size, or an encoding has to
+    // change first, and each of those is a person's decision.
+    retryable: false,
+    effect: "none",
+    recovery: ["inspect-state"],
+    cause: {
+      source: "configuration",
+      code: `source-${report.outcome}`,
+      detail: `kind=${report.source.kind}`,
+    },
+    ...context,
+  });
+}
+
+/**
+ * Every unread source as one error, or `null` when every source was read.
+ *
+ * Aggregated the way `fromConfigurationIssues` aggregates issues, so a run with
+ * an unreadable user file and an oversized project file reports both rather
+ * than whichever came first.
+ */
+export function fromUnreadConfigurationSources(
+  reports: readonly SourceReport[],
+  context: ErrorContext = {},
+): FalrynError | null {
+  const [primary, ...rest] = reports.filter(isUnreadSource);
+  if (primary === undefined) {
+    return null;
+  }
+  return aggregate(
+    fromUnreadConfigurationSource(primary, context),
+    rest.map((report) => fromUnreadConfigurationSource(report, context)),
+  );
+}
+
+function unreadSourceMessage(outcome: SourceOutcome): string {
+  switch (outcome) {
+    case "oversized":
+      return "A configuration file is larger than the limit this build reads, and was skipped.";
+    case "malformed-encoding":
+      return "A configuration file is not valid UTF-8 text, and was skipped.";
+    default:
+      return "A configuration file exists and could not be read, and was skipped.";
+  }
 }
 
 /**
