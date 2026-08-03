@@ -16,7 +16,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { createTestRenderer, type TestRendererSetup } from "@opentui/core/testing";
 import { createShutdownCoordinator } from "../application/index.ts";
-import { createRecordingCliStreams } from "../cli/index.ts";
+import { createRecordingCliStreams, type GlobalOptions } from "../cli/index.ts";
 import {
   createManualClock,
   createStaticEnvironment,
@@ -26,7 +26,7 @@ import {
 import { type ShellCapabilities, shellCapabilities } from "./capabilities.ts";
 import { hasOpenRendererSession, type RendererFactory } from "./renderer-session.ts";
 import { runShell } from "./shell.tsx";
-import { SHELL_EXIT_HINT } from "./shell-view.tsx";
+import { SHELL_KEY_HINTS } from "./shell-model.ts";
 import { TERMINAL_RESTORE_PARTICIPANT } from "./shutdown.ts";
 
 const HANDLES: ObservedHandles = {
@@ -35,10 +35,29 @@ const HANDLES: ObservedHandles = {
   stdin: { isTty: true },
 };
 
+const ENVIRONMENT = createStaticEnvironment({ TERM: "xterm-256color" });
+
+/** The parsed options a launched shell always has: human format, no timeout. */
+const OPTIONS: GlobalOptions = {
+  format: "human",
+  color: "auto",
+  quiet: false,
+  verbose: false,
+  nonInteractive: false,
+  workspace: null,
+  profile: null,
+  timeoutMs: null,
+  help: false,
+  version: false,
+};
+
 function record(variables: Readonly<Record<string, string>> = {}): ShellCapabilities {
   const environment = createStaticEnvironment({ TERM: "xterm-256color", ...variables });
   return shellCapabilities({ handles: terminalCapabilities(HANDLES, environment), environment });
 }
+
+/** The words the status line draws for the one key this build honours. */
+const EXIT_HINT = SHELL_KEY_HINTS[0].command;
 
 /**
  * The renderer a run is creating, captured the moment the factory is called.
@@ -101,12 +120,14 @@ async function shell(options: Partial<Parameters<typeof runShell>[0]> = {}) {
   const run = runShell({
     streams,
     capabilities: record(),
+    options: OPTIONS,
+    environment: ENVIRONMENT,
     stop: stop.signal,
     createRenderer: inMemory,
     ...options,
   });
   const setup = await mounting;
-  const frame = setup === null ? "" : await frameWith(setup, SHELL_EXIT_HINT);
+  const frame = setup === null ? "" : await frameWith(setup, EXIT_HINT);
   return { streams, stop, run, setup, frame };
 }
 
@@ -137,6 +158,8 @@ describe("a shell that was stopped", () => {
       await runShell({
         streams,
         capabilities: record(),
+        options: OPTIONS,
+        environment: ENVIRONMENT,
         stop: stopped.signal,
         createRenderer: inMemory,
       }),
@@ -148,10 +171,13 @@ describe("a shell that was stopped", () => {
 describe("what the shell drew", () => {
   test("mounted a tree with the one interaction this build promises", async () => {
     const { stop, run, frame } = await shell();
-    expect(frame).toContain(SHELL_EXIT_HINT);
-    // The size it was laid out against, taken from the record rather than from
-    // a default nobody could see was wrong.
-    expect(frame).toContain("100×30");
+    expect(frame).toContain(EXIT_HINT);
+    // The frame the shell actually mounts since #24: a workspace header, a
+    // primary region, and a status line. The header's labels are what prove the
+    // layout class came from the terminal rather than from the footer the tree
+    // is drawn into — six rows would have selected compact and dropped them.
+    expect(frame).toContain("workspace");
+    expect(frame).toContain("no Git yet");
     stop.abort();
     await run;
   });
@@ -172,6 +198,8 @@ describe("a renderer that never started", () => {
     const result = await runShell({
       streams,
       capabilities: record(),
+      options: OPTIONS,
+      environment: ENVIRONMENT,
       stop: new AbortController().signal,
       createRenderer: () => {
         throw new Error("no native library for this platform");
@@ -193,6 +221,8 @@ describe("a renderer that never started", () => {
     await runShell({
       streams,
       capabilities: record(),
+      options: OPTIONS,
+      environment: ENVIRONMENT,
       stop: new AbortController().signal,
       createRenderer: () => Promise.reject(new Error("refused")),
     });
@@ -209,6 +239,8 @@ describe("a renderer that never started", () => {
     await runShell({
       streams: createRecordingCliStreams(),
       capabilities: record(),
+      options: OPTIONS,
+      environment: ENVIRONMENT,
       stop: new AbortController().signal,
       shutdown: coordinator,
       createRenderer: () => {
@@ -286,6 +318,8 @@ describe("a second shell in one process", () => {
     const second = await runShell({
       streams,
       capabilities: record(),
+      options: OPTIONS,
+      environment: ENVIRONMENT,
       stop: new AbortController().signal,
       createRenderer: inMemory,
     });

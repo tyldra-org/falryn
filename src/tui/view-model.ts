@@ -1,0 +1,123 @@
+/**
+ * What the frame is given, and what it may say.
+ *
+ * Every composite in this area renders a value from this module and nothing
+ * else. It holds no renderer, no clock, no port, and no OpenTUI type — so a view
+ * model can be built, compared, and asserted on without a terminal, and a
+ * component's contract is a data shape rather than a description of one.
+ *
+ * The state unions here are the reason the interface can be honest. Falryn's
+ * runtime distinguishes a failure from an effect nobody observed, and a cancelled
+ * operation from one that never started; a view model that flattened those into
+ * a nullable string would force every view to invent the distinction back, badly
+ * and differently each time. Today most of these states are reachable for a
+ * plain reason: no producer of sessions, models, or Git state exists yet, so
+ * `unavailable` is not a placeholder, it is the truth.
+ */
+
+import type { StatusToken } from "./theme/index.ts";
+
+/**
+ * One labelled fact, in whatever condition it is actually in.
+ *
+ * `empty` and `unavailable` are different and the difference is load-bearing:
+ * a workspace with no branch is on a detached head, and a build that cannot
+ * read Git at all knows nothing about branches. Rendering both as a dash would
+ * tell a user their repository has no branch.
+ */
+export type FactValue =
+  | { readonly kind: "known"; readonly text: string }
+  /** Known, but not all of it. Carries why, so the gap is nameable. */
+  | { readonly kind: "partial"; readonly text: string; readonly note: string }
+  | { readonly kind: "loading" }
+  /** Known to be nothing. A repository with no commits, a session with no model. */
+  | { readonly kind: "empty" }
+  | { readonly kind: "error"; readonly reason: string }
+  | { readonly kind: "cancelled" }
+  /** Nothing could look. No producer, no permission, no such capability. */
+  | { readonly kind: "unavailable"; readonly reason: string };
+
+export function known(text: string): FactValue {
+  return { kind: "known", text };
+}
+
+export function unavailable(reason: string): FactValue {
+  return { kind: "unavailable", reason };
+}
+
+/**
+ * The status a fact's condition implies.
+ *
+ * One mapping, here, so a header and a status line cannot disagree about what
+ * colour and symbol an error wears.
+ */
+export function statusOfFact(value: FactValue): StatusToken {
+  switch (value.kind) {
+    case "known":
+      return "success";
+    case "partial":
+      return "warning";
+    case "loading":
+      return "pending";
+    case "empty":
+      return "informational";
+    case "error":
+      return "error";
+    case "cancelled":
+      return "cancelled";
+    case "unavailable":
+      return "uncertain";
+  }
+}
+
+export type WorkspaceHeaderModel = {
+  readonly workspace: FactValue;
+  readonly branch: FactValue;
+  readonly session: FactValue;
+  readonly model: FactValue;
+};
+
+/** A key and the named command it runs. The command name is the durable half. */
+export type KeyHint = {
+  readonly keys: string;
+  readonly command: string;
+};
+
+export type StatusLineModel = {
+  readonly status: StatusToken;
+  /** One short sentence. Never the only carrier of the status — the word is. */
+  readonly message: string;
+  readonly hints: readonly KeyHint[];
+};
+
+/** An entry in the command palette. Resolves a stable identity, never display text. */
+export type CommandEntry = {
+  readonly id: string;
+  readonly title: string;
+  readonly hint: string | null;
+};
+
+export type HelpSection = {
+  readonly title: string;
+  readonly body: string;
+};
+
+/**
+ * Which overlay is open.
+ *
+ * A closed union rather than a stack of arbitrary nodes: an overlay is a route,
+ * and routes are named. #26 binds keys to these; nothing opens one today, which
+ * is why `none` is what the shell supplies.
+ */
+export type OverlayRoute =
+  | { readonly kind: "none" }
+  | { readonly kind: "help" }
+  | { readonly kind: "palette" };
+
+export type ShellModel = {
+  readonly header: WorkspaceHeaderModel;
+  readonly status: StatusLineModel;
+  readonly overlay: OverlayRoute;
+  readonly commands: readonly CommandEntry[];
+  readonly help: readonly HelpSection[];
+};

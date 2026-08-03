@@ -230,7 +230,7 @@ async function runDefault(globals: GlobalOptions, options: DispatchOptions): Pro
     return EXIT_CODES.COMPLETED;
   }
 
-  return launchShell(capabilities, globals, options);
+  return launchShell(capabilities, globals, environment, options);
 }
 
 /**
@@ -246,6 +246,7 @@ async function runDefault(globals: GlobalOptions, options: DispatchOptions): Pro
 async function launchShell(
   capabilities: ShellCapabilities,
   globals: GlobalOptions,
+  environment: EnvironmentPort,
   options: DispatchOptions,
 ): Promise<ExitCode> {
   const { streams } = options;
@@ -269,6 +270,8 @@ async function launchShell(
     run = await runShell({
       streams,
       capabilities,
+      options: globals,
+      environment,
       stop: stopped.signal,
       ...(governance.shutdown === undefined ? {} : { shutdown: governance.shutdown }),
       ...(options.createRenderer === undefined ? {} : { createRenderer: options.createRenderer }),

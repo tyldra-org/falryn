@@ -28,13 +28,20 @@
 import { createRoot, type Root } from "@opentui/react";
 import { fromRendererFailure, type ShutdownCoordinator } from "../application/index.ts";
 import {
-  buildIdentity,
   type CliStreams,
-  FALRYN_VERSION,
+  type GlobalOptions,
+  resolveColor,
   writeDiagnosticLine,
 } from "../cli/index.ts";
-import type { FalrynError } from "../domain/index.ts";
+import type { EnvironmentPort, FalrynError } from "../domain/index.ts";
+import {
+  prefersConservativeSymbols,
+  prefersReducedMotion,
+  requestedVariant,
+} from "./appearance.ts";
 import type { ShellCapabilities } from "./capabilities.ts";
+import { AppShell } from "./components/app-shell.tsx";
+import { Line } from "./components/primitives.tsx";
 import {
   nothingToRestore,
   openRendererSession,
@@ -42,12 +49,17 @@ import {
   type RendererSession,
 } from "./renderer-session.ts";
 import { selectScreenMode } from "./screen-mode.ts";
-import { ShellView, type ShellViewModel } from "./shell-view.tsx";
+import { shellModel } from "./shell-model.ts";
 import { createTerminalShutdownParticipant } from "./shutdown.ts";
+import { selectVariant, type ThemeRequest } from "./theme/index.ts";
 
 export type ShellRunRequest = {
   readonly streams: CliStreams;
   readonly capabilities: ShellCapabilities;
+  /** The parsed options. `--color` and `--workspace` both reach the frame. */
+  readonly options: GlobalOptions;
+  /** Read for the appearance preferences, and for nothing else. */
+  readonly environment: EnvironmentPort;
   /** Aborts when the invocation's scope stops: an interrupt, or a deadline. */
   readonly stop: AbortSignal;
   /**
@@ -124,7 +136,12 @@ async function drive(session: RendererSession, request: ShellRunRequest): Promis
   session.renderer.on("destroy", onDestroy);
 
   let paused = false;
-  const unsubscribe = session.onResize((capabilities) => {
+  const unsubscribe = session.onResize(() => {
+    // Only the pause decision. The tree re-renders itself: `AppShell` measures
+    // the viewport through the renderer, so a resize reaches every component
+    // that cares without this having to re-render anything — and without the
+    // overlay route, the theme, or the cache passing through a re-render that
+    // could drop them.
     if (!session.isRenderable()) {
       // Zero or transient dimensions: stop drawing, keep everything. The session
       // is not torn down and the tree is not unmounted, so the terminal coming
@@ -139,11 +156,10 @@ async function drive(session: RendererSession, request: ShellRunRequest): Promis
       paused = false;
       session.renderer.resume();
     }
-    root.render(<ShellView model={viewModel(capabilities, session)} />);
   });
 
   try {
-    root.render(<ShellView model={viewModel(session.capabilities(), session)} />);
+    root.render(await frameFor(session, request));
     await settled(request.stop, lost.signal);
 
     if (lost.signal.aborted && !request.stop.aborted) {
@@ -160,15 +176,45 @@ async function drive(session: RendererSession, request: ShellRunRequest): Promis
   }
 }
 
-function viewModel(capabilities: ShellCapabilities, session: RendererSession): ShellViewModel {
-  return {
-    version: `${FALRYN_VERSION} (${buildIdentity().mode})`,
-    mode: session.renderer.screenMode,
-    // Never `?? 80`. The shell only draws when the record has a size, so the
-    // fallback here is a value that could never be laid out against by accident.
-    columns: capabilities.columns ?? 0,
-    rows: capabilities.rows ?? 0,
-  };
+/**
+ * How long to wait for the terminal to say whether it is light or dark.
+ *
+ * Bounded and short. The answer decides the palette, so waiting for it means the
+ * first painted frame is not the wrong one — but a terminal that never answers
+ * must not hold the interface closed, and most do not answer at all.
+ */
+const THEME_QUERY_TIMEOUT_MS = 120;
+
+/** The whole tree, with the theme resolved from what this terminal reported. */
+async function frameFor(session: RendererSession, request: ShellRunRequest) {
+  const { capabilities, environment, options } = request;
+
+  // Asked before the first paint rather than reacted to afterwards. A frame
+  // painted dark and corrected to light a moment later is a visible flash, and
+  // it happens on exactly the terminals that answered correctly.
+  const prefers = await session.renderer.waitForThemeMode(THEME_QUERY_TIMEOUT_MS);
+
+  const theme = {
+    variant: selectVariant({
+      requested: requestedVariant(environment),
+      terminalPrefers: prefers,
+    }),
+    // The resolved level, after `--color`. The raw capability would put colour
+    // on a run that asked for none.
+    colorLevel: resolveColor(options.color, capabilities.handles.stdout.color),
+    symbols: capabilities.handles.stdout.symbols,
+    conservativeSymbols: prefersConservativeSymbols(capabilities),
+    reducedMotion: prefersReducedMotion(environment, capabilities),
+    generation: capabilities.generation,
+  } satisfies ThemeRequest;
+
+  return (
+    <AppShell theme={theme} model={shellModel(options)}>
+      <Line color="mutedForeground" typography="muted">
+        Nothing is running yet.
+      </Line>
+    </AppShell>
+  );
 }
 
 /**

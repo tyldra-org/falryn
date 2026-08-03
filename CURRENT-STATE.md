@@ -1503,6 +1503,55 @@ OpenTUI native library and the React reconciler are now genuinely part of what
 ships, which is the deliberate change #22's byte-identical result was measuring
 the absence of.
 
+The shell has a visual vocabulary and a frame, delivered by
+[#24](https://github.com/yogeshprasad098/falryn/issues/24).
+
+Themes are data. Four variants — dark, light, monochrome, high contrast — are
+authored at full colour depth in `src/tui/theme/palette.ts`, and every lower
+depth is *derived* rather than authored again: a colour is snapped to the
+nearest entry of the 256-colour or 16-colour palette, so the bytes Falryn emits
+name a colour the terminal already has and there is nothing left for it to
+reinterpret. At `none` a token resolves to `null` rather than to a grey, which
+is what stops colour-only meaning surviving into a terminal that has no colour.
+Every token resolves at every depth in every variant, checked exhaustively.
+
+No status is ever only a colour. Each carries a symbol *and* a word, and
+`distinguishableWithoutColor` holds that every pair stays distinct in Unicode,
+conservative Unicode, and ASCII. `uncertain` reads "unconfirmed" rather than
+"failed": the runtime distinguishes a failure from an effect nobody observed,
+and the interface may not blur what the exit table separates. Contrast is
+checked against both the base and the elevated surface, with a higher floor for
+high contrast and a lower one for `ignored` — the single token whose job is to
+recede, and which is held to the ordinary floor in high contrast anyway.
+
+Layout classes are a pure function of measured cells: `compact`, `standard`,
+`wide`, or a notice naming the size the terminal needs. The class is selected
+from the *terminal*, while the tree is drawn into the region the renderer gives
+it — in `split-footer` those differ by most of the window, and selecting from
+the drawn region would make every session compact on a terminal with room to
+spare. Row space is shared by need before weight, so a short branch name does
+not cost a long workspace path the room it was not going to use.
+
+The frame is `AppShell`, `WorkspaceHeader`, `StatusLine`, an overlay host, and
+the help and command-palette routes it mounts. Each field of the header carries
+its own condition — known, partial, loading, empty, error, cancelled, or
+unavailable — and today three of the four are `unavailable` on every real run
+with the reason attached, because no producer of sessions, models, or Git state
+exists. Values that come from outside Falryn are escaped before they are drawn,
+so a workspace path cannot forge a line.
+
+Motion is a two-step transition rather than a tween, and the reason is
+verification: OpenTUI's timelines advance from the renderer's own frame loop,
+which a test renderer does not run, so a tweened reveal could not be driven to
+its final frame in a test — and an animation nothing can assert completing is an
+overlay that might never open. Reduced motion maps the duration to zero, so the
+first committed frame is already final rather than the first frame of a very
+fast animation. It is on by request, on a dumb terminal, and in CI.
+
+`FALRYN_THEME` selects a variant and `FALRYN_MOTION=off` removes transitions,
+beside `FALRYN_TUI` from #23. Refusing colour does not reduce motion: they are
+different requests.
+
 The compiled file is a development bootstrap artifact. It is not a supported
 Falryn product binary or release. A separate compiled probe confirmed that a
 `SIGINT` delivered to a Bun standalone executable reaches the runtime lifecycle,
@@ -1576,15 +1625,17 @@ repository does not yet provide:
   the process boundary beneath them, and all four output projections are real;
   what is absent is commands to render. The shell's *lifecycle* is real — it
   launches, owns one renderer, and restores the terminal — and what it renders
-  is a placeholder that reports the version, the screen mode, the terminal size,
-  and that Ctrl+C exits. No theme, token, component, layout class, overlay, view
-  model, keymap, focus model, or command registry exists yet; those are
-  [#24](https://github.com/yogeshprasad098/falryn/issues/24),
-  [#25](https://github.com/yogeshprasad098/falryn/issues/25), and
-  [#26](https://github.com/yogeshprasad098/falryn/issues/26), and the shell has
-  no transcript, composer, or agent loop behind it. It also has no way to quit
-  other than an interrupt or a deadline, because a quit binding needs the input
-  model #26 delivers. No producer of
+  is a frame with nothing in it: a workspace header, an empty primary region, and
+  a status line. Since #24 the theme, layout classes, primitives, overlay host,
+  and frame composites are real. What is absent is content and interaction —
+  `TranscriptView`, `Composer`, and `ActivityRail` are
+  [#25](https://github.com/yogeshprasad098/falryn/issues/25), and the keymap,
+  focus routing, and command registry are
+  [#26](https://github.com/yogeshprasad098/falryn/issues/26). The overlay routes
+  are mounted and nothing opens them, because no key is bound; the command
+  palette renders its empty state because there are no commands. The shell has
+  no way to quit other than an interrupt or a deadline, for the same reason. No
+  producer of
   sessions or turns exists, so a JSON Lines run today carries the short
   lifecycle a `config` or `doctor` command produces rather than a model turn.
   Since [#345](https://github.com/yogeshprasad098/falryn/issues/345) a CLI
@@ -1609,8 +1660,8 @@ Their implementation breakdown lives in GitHub Issues and the Project.
 - **Live roadmap:** [Falryn Roadmap](https://github.com/users/yogeshprasad098/projects/2)
 - **Current release outcome:** [v0.1 Foundation issues](https://github.com/yogeshprasad098/falryn/issues?q=is%3Aissue%20is%3Aopen%20milestone%3A%22v0.1%20Foundation%22)
 - **First parent outcome:** [#1 Establish the unified runtime and lifecycle](https://github.com/yogeshprasad098/falryn/issues/1)
-- **Current parent outcome:** [#21 Deliver the OpenTUI application shell](https://github.com/yogeshprasad098/falryn/issues/21), in progress with #22 and #23 landed. [#16 Deliver the CLI and headless foundation](https://github.com/yogeshprasad098/falryn/issues/16) remains in progress with #17, #18, #19, and #20 landed.
-- **Next planning action:** implement [#24](https://github.com/yogeshprasad098/falryn/issues/24), which #23 unblocked by giving it a renderer to draw into.
+- **Current parent outcome:** [#21 Deliver the OpenTUI application shell](https://github.com/yogeshprasad098/falryn/issues/21), in progress with #22, #23, and #24 landed. [#16 Deliver the CLI and headless foundation](https://github.com/yogeshprasad098/falryn/issues/16) remains in progress with #17, #18, #19, and #20 landed.
+- **Next planning action:** implement [#26](https://github.com/yogeshprasad098/falryn/issues/26), which #24 unblocked, or [#25](https://github.com/yogeshprasad098/falryn/issues/25) for the views that mount into the regions #24 defined. Read GitHub for which is Ready.
 
 Which of #1's children are open, and which delivered the behavior recorded
 above, is read from
