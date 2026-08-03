@@ -24,9 +24,11 @@ import {
 import { CONFIGURATION_FILE_NAME, inspectGeneration, PROFILE_DIRECTORY } from "../config/index.ts";
 import { probeStorage, rootChild, type StorageProbe, sqliteDatabasePath } from "../data/index.ts";
 import {
+  assertNever,
   blocksLocalData,
   type ConfigurationInspection,
   type ConfigurationIssue,
+  effectOf,
   type FalrynError,
   isUnreadSource,
   joinPath,
@@ -44,6 +46,7 @@ import type { GlobalOptions } from "./options.ts";
 import {
   COMMAND_RESULT_SCHEMA_FAMILY,
   COMMAND_RESULT_SCHEMA_VERSION,
+  type CommandEffect,
   type CommandId,
   type CommandResultOf,
   READ_ONLY_EFFECT,
@@ -56,6 +59,7 @@ function resultFor<Command extends CommandId, Payload>(
   payload: Payload | null,
   errors: readonly FalrynError[] = [],
   outcome?: TerminalOutcome,
+  effect?: CommandEffect,
 ): CommandResultOf<Command, Payload> {
   return {
     schemaFamily: COMMAND_RESULT_SCHEMA_FAMILY,
@@ -66,7 +70,7 @@ function resultFor<Command extends CommandId, Payload>(
     // what it diagnosed is what is wrong.
     outcome:
       outcome ?? (errors.length === 0 ? { kind: "completed" } : { kind: "failed", effect: "none" }),
-    effect: READ_ONLY_EFFECT,
+    effect: effect ?? READ_ONLY_EFFECT,
     payload,
     errors,
     warnings: [],
@@ -409,6 +413,53 @@ async function storageFor(
     return { kind: "undetermined", reason: "state-root-not-viable" };
   }
   return probeStorage({ open: openBunSqlite, databasePath });
+}
+
+/* -------------------------------------------------------------------------- */
+/* A command that did not finish                                               */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The result of an invocation that stopped before its command answered.
+ *
+ * An interrupt or an expired deadline ends the *invocation*, and the command it
+ * was running is left where it was. There is no payload, because there is no
+ * answer — and one is still emitted, in the format the caller asked for, so a
+ * reader waiting on a terminal record gets one rather than a stream that stops.
+ *
+ * It carries no `FalrynError`: nothing went wrong with the command. The outcome
+ * came from the scope that stopped, and the exit table reads it directly.
+ */
+export function stoppedResult(
+  command: Exclude<CommandId, "default" | "help" | "version">,
+  outcome: TerminalOutcome,
+): RunCommandResult {
+  // What the scope observed, not what the command declared. Every v0.1 command
+  // intends nothing, and an invocation stopped after it had begun changing
+  // something still has to say that it may have — which is the fact the exit
+  // table reads before it reads the outcome.
+  const effect: CommandEffect = { intent: "none", observed: effectOf(outcome) };
+
+  switch (command) {
+    case "config.show":
+      return resultFor<"config.show", ConfigShowPayload>("config.show", null, [], outcome, effect);
+    case "config.validate":
+      return resultFor<"config.validate", ConfigValidatePayload>(
+        "config.validate",
+        null,
+        [],
+        outcome,
+        effect,
+      );
+    case "config.path":
+      return resultFor<"config.path", ConfigPathPayload>("config.path", null, [], outcome, effect);
+    case "doctor":
+      return resultFor<"doctor", DoctorPayload>("doctor", null, [], outcome, effect);
+    default:
+      // A command added without a branch fails to compile here rather than
+      // reporting a stopped run under someone else's command identity.
+      return assertNever(command, "unhandled command");
+  }
 }
 
 /* -------------------------------------------------------------------------- */

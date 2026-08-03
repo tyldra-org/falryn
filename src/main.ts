@@ -17,7 +17,13 @@
  */
 
 import { createRuntimeLifecycle, fromSqliteStoreError, fromUnknown } from "./application/index.ts";
-import { createHostCliStreams, dispatch, type ExitCode, resolveExitCode } from "./cli/index.ts";
+import {
+  createHostCliStreams,
+  createHostGovernance,
+  dispatch,
+  type ExitCode,
+  resolveExitCode,
+} from "./cli/index.ts";
 import {
   ARTIFACTS_OWNERSHIP,
   beginRun,
@@ -288,12 +294,23 @@ if (import.meta.main) {
   // `--version` must open no database, and a bootstrap here would open one
   // before the tree had even parsed.
   const streams = createHostCliStreams();
+  // The control-flow lifecycle, composed for the invocation rather than for the
+  // storage bootstrap. This is what an interrupt reaches: the policy cancels the
+  // root scope, the invocation's scope is derived from it, and `dispatch` stops
+  // waiting. Building it costs one signal subscription and opens nothing.
+  const host = createHostGovernance();
   try {
     // Set rather than called: `process.exit()` would skip the drain the loop is
     // in the middle of, and the whole point of the flush contract is that
-    // nothing is abandoned to claim a faster exit.
-    process.exitCode = await dispatch({ argv: Bun.argv.slice(2), streams });
+    // nothing is abandoned to claim a faster exit. That holds under an
+    // interrupt too — a cancelled run flushes what it wrote.
+    process.exitCode = await dispatch({
+      argv: Bun.argv.slice(2),
+      streams,
+      governance: host.governance,
+    });
   } finally {
+    host.dispose();
     streams.dispose();
   }
 }

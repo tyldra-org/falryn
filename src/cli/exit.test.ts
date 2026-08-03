@@ -213,6 +213,24 @@ describe("what this build can actually emit", () => {
     }
   });
 
+  test("reaches 124 and 130 from a command, not only from a staged outcome", () => {
+    // Both were declared and emittable before anything produced them. A
+    // `--timeout` that expires and an interrupt now do, through the scope an
+    // invocation runs under — proven on real processes in
+    // `src/cli/process-boundary.test.ts`, and resolved here.
+    expect(resolveExitCode({ outcome: { kind: "timed-out", effect: "none" }, error: null })).toBe(
+      EXIT_CODES.TIMED_OUT,
+    );
+    expect(resolveExitCode({ outcome: { kind: "cancelled", effect: "none" }, error: null })).toBe(
+      EXIT_CODES.CANCELLED,
+    );
+    // And the one a cancellation becomes when the run had already changed
+    // something, which the scope tree decides rather than this table.
+    expect(
+      resolveExitCode({ outcome: { kind: "uncertain", effect: "uncertain" }, error: null }),
+    ).toBe(EXIT_CODES.UNCERTAIN_EFFECT);
+  });
+
   test("leaves the rest declared and unreachable", () => {
     expect(UNEMITTABLE_EXIT_CODES).toEqual([
       EXIT_CODES.UNAVAILABLE,

@@ -6,9 +6,11 @@
  * because "stdout carried only records" and "the terminal record survived the
  * reader leaving" are claims about the composition rather than about a function.
  *
- * The outcome matrix is exercised against staged results rather than real
- * cancellations: nothing in this build cancels or times out a CLI run, and the
- * delivery says so rather than implying otherwise.
+ * The outcome matrix is exercised against staged results, because it covers
+ * every declared outcome and effect certainty — including ones no v0.1 path
+ * produces. The two a CLI run now does produce, `cancelled` and `timed-out`,
+ * are exercised against real runs in `src/cli/dispatch-cancellation.test.ts`
+ * and against real processes in `src/cli/process-boundary.test.ts`.
  */
 
 import { afterEach, describe, expect, test } from "bun:test";
