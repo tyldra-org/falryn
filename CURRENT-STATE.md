@@ -271,8 +271,8 @@ Its verified behavior:
 
 The redacted inspection projection is a data structure: effective value rendered
 through each key's declared sensitivity, winning source, overridden values, the
-per-source reports, and diagnostics. Rendering it for humans or machines is
-#18's and #19's.
+per-source reports, and diagnostics. #18 renders it for people; rendering it for
+machines is #19's.
 
 The credential contract introduced by
 [#9](https://github.com/yogeshprasad098/falryn/issues/9) adds `CredentialStorePort`,
@@ -1025,12 +1025,62 @@ Its verified behavior:
   declares one parser, and writes no second precedence, redaction, or
   profile-name rule.
 
-Rendering is not implemented. `--format` records the selection and a command
-result is written as one placeholder JSON line so the tree is runnable;
-[#18](https://github.com/yogeshprasad098/falryn/issues/18) and
-[#19](https://github.com/yogeshprasad098/falryn/issues/19) own the human, JSON,
-and JSON Lines contracts. Shell completion is deferred rather than
-hand-written.
+The human and quiet projections introduced by
+[#18](https://github.com/yogeshprasad098/falryn/issues/18) render that result.
+They add `src/cli/render-human.ts` — one pure function from a `CommandResult`
+plus resolved terminal facts to text — `src/domain/text-display.ts` for display
+width, wrapping, shortening, and sanitization, and a `symbols` capability fact
+to `src/domain/terminal.ts`. `dispatch` now switches on the selected format.
+
+Its verified behavior:
+
+- **the renderer returns two texts, and `dispatch` routes each to the handle
+  that owns it.** The payload rendering is the result; the status line,
+  warnings, declared omissions, truncation notices, and rendered errors are
+  diagnostics — in human mode too, so `falryn config show > file` produces a
+  file containing the configuration and nothing else;
+- **every terminal outcome and every effect certainty renders distinguishably**,
+  with the certainty as its own clause rather than folded into the outcome word.
+  "Cancelled" and "cancelled, and something may have changed" are different
+  sentences, and the requested intent is rendered beside the observed effect;
+- **nothing is shortened silently.** A bounded list reports how many it dropped,
+  a shortened value is counted and reported once, and each names a route this
+  build honours: `--verbose` where raising the renderer's own bound would
+  actually help, and a wider terminal where the width is what cut the value.
+  What the *command* declared it summarized or omitted is rendered as the
+  command's own statement, distinct from anything the renderer did;
+- **colour is never the only cue.** Every state carries a word; stripping the
+  escape sequences from a coloured rendering reproduces the uncoloured one byte
+  for byte. No ANSI byte appears when the resolved level is `none`, when the
+  handle is not a terminal, or in any format that is not `human`, and a
+  source-tree control keeps the escape sequences in this one module;
+- **an ASCII repertoire carries the same meaning as the Unicode form.**
+  `symbols` is derived once, beside `colorLevelFor`, from `TERM=dumb` and the
+  `LC_ALL`/`LC_CTYPE`/`LANG` charset, and it is independent of colour in both
+  directions;
+- **untrusted text is rendered as data.** Control characters, C1 controls, and
+  lone surrogates are replaced with a visible ASCII escape before a value
+  reaches a line, so a configuration value carrying an escape sequence renders
+  as those characters and cannot forge a line, move the cursor, or repaint the
+  screen. Width is display width, so a wide or combining character is measured
+  by the cells it occupies rather than by its length;
+- **`--format quiet` emits only the primary result**: one `key=value` line per
+  set key for `config show`, one path per line for `config path`, and nothing at
+  all for `config validate` and `doctor`, whose verdict is the exit status and
+  whose findings go to stderr. It is unbounded, uncoloured, and unlabelled — a
+  shortened primary result would be a different answer; and
+- **the renderer is pure.** A control asserts it reaches no stream, no clock,
+  and no filesystem, so a rendering is a function of the result it was given and
+  the terminal facts it was handed. A property check confirms it never changes
+  the outcome kind or the effect certainty it was given.
+
+Only `config` and `doctor` produce results in v0.1, so the renderer is exercised
+against those two payloads plus fixtures covering the outcome, certainty, and
+failure matrix. It has not been proven against a rich command surface.
+
+The machine formats are still #19's: `--format json` and `--format jsonl` record
+the selection and write the same placeholder line the tree has carried since
+#17. Shell completion is deferred rather than hand-written.
 
 The compiled check covers the bootstrap through its own fixture entry. The bare
 invocation is the command tree now, so `src/main-fixtures.ts` — an entry that
@@ -1193,12 +1243,11 @@ repository does not yet provide:
   confirmation. This area produces the plan and the typed outcome; rendering
   them and asking is the CLI's;
 - headless product behavior beyond `config` and `doctor`, or the OpenTUI
-  application. The command tree, global options, help, version, and the process
-  boundary beneath them are real, and no command renders a result in any
-  declared format: `--format` records the selection and a placeholder line is
-  written instead. The formats are
-  [#18](https://github.com/yogeshprasad098/falryn/issues/18) and
-  [#19](https://github.com/yogeshprasad098/falryn/issues/19), and the
+  application. The command tree, global options, help, version, the process
+  boundary beneath them, and the human and quiet projections are real; the
+  machine formats are not. `--format json` and `--format jsonl` record the
+  selection and write a placeholder line, and
+  [#19](https://github.com/yogeshprasad098/falryn/issues/19) owns them. The
   interactive shell is [#21](https://github.com/yogeshprasad098/falryn/issues/21).
   Also absent: every command group whose capability does not exist, shell
   completion, and hidden or deprecated command policy beyond its declaration;
@@ -1219,8 +1268,8 @@ Their implementation breakdown lives in GitHub Issues and the Project.
 - **Live roadmap:** [Falryn Roadmap](https://github.com/users/yogeshprasad098/projects/2)
 - **Current release outcome:** [v0.1 Foundation issues](https://github.com/yogeshprasad098/falryn/issues?q=is%3Aissue%20is%3Aopen%20milestone%3A%22v0.1%20Foundation%22)
 - **First parent outcome:** [#1 Establish the unified runtime and lifecycle](https://github.com/yogeshprasad098/falryn/issues/1)
-- **Current parent outcome:** [#16 Deliver the CLI and headless foundation](https://github.com/yogeshprasad098/falryn/issues/16), now in progress; #20 is its first child.
-- **Next planning action:** plan [#18](https://github.com/yogeshprasad098/falryn/issues/18), the next child of #16, which renders the `CommandResult` #17 defined.
+- **Current parent outcome:** [#16 Deliver the CLI and headless foundation](https://github.com/yogeshprasad098/falryn/issues/16), now in progress; #20, #17, and #18 have landed.
+- **Next planning action:** implement [#19](https://github.com/yogeshprasad098/falryn/issues/19), the next child of #16, which renders the same `CommandResult` as versioned JSON and JSON Lines.
 
 Which of #1's children are open, and which delivered the behavior recorded
 above, is read from
