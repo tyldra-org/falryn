@@ -19,6 +19,7 @@ import { join } from "node:path";
 import {
   CONFIGURATION_FILE_NAME,
   CONFIGURATION_SCHEMA_VERSION,
+  MAX_CONFIGURATION_FILE_BYTES,
   SCHEMA_VERSION_FIELD,
 } from "../config/index.ts";
 import {
@@ -33,7 +34,7 @@ import {
   type TerminalOutcome,
   type Timestamp,
 } from "../domain/index.ts";
-import type { DoctorPayload, RunCommandResult } from "./commands.ts";
+import type { ConfigValidatePayload, DoctorPayload, RunCommandResult } from "./commands.ts";
 import { dispatch } from "./dispatch.ts";
 import type { GlobalOptions } from "./options.ts";
 import { renderJson } from "./render-json.ts";
@@ -314,6 +315,8 @@ describe("through dispatch", () => {
     options: {
       readonly document?: Record<string, unknown>;
       readonly closeAfterBytes?: number;
+      /** Arranges the configuration root itself, for a source that will not read. */
+      readonly prepare?: (configurationRoot: string) => Promise<void>;
     } = {},
   ) {
     const home = await mkdtemp(join(tmpdir(), "falryn-machine-"));
@@ -351,6 +354,12 @@ describe("through dispatch", () => {
       );
     }
 
+    if (options.prepare !== undefined) {
+      const root = services(DEFAULT_OPTIONS)().configurationRoot;
+      await mkdir(root, { recursive: true });
+      await options.prepare(root);
+    }
+
     const code = await dispatch({ argv, streams, services });
     return {
       code,
@@ -358,6 +367,113 @@ describe("through dispatch", () => {
       err: streams.diagnosticWrites().join(""),
     };
   }
+
+  /** A configuration file that exists and cannot be read, in three ways. */
+  const UNREADABLE = {
+    /** A directory where the file should be. */
+    directory: async (root: string) => {
+      await mkdir(join(root, CONFIGURATION_FILE_NAME), { recursive: true });
+    },
+    /** Past the 256 KiB bound, and carrying a secret it must never emit. */
+    oversized: async (root: string) => {
+      await writeFile(
+        join(root, CONFIGURATION_FILE_NAME),
+        `{"provider":{"credential":"${SECRET}"}}${" ".repeat(MAX_CONFIGURATION_FILE_BYTES)}`,
+      );
+    },
+    /** Not valid UTF-8, with the same secret among the bytes. */
+    misEncoded: async (root: string) => {
+      await writeFile(
+        join(root, CONFIGURATION_FILE_NAME),
+        Buffer.concat([
+          Buffer.from(`{"c":"${SECRET}"`),
+          Buffer.from([0xff, 0xfe]),
+          Buffer.from("}"),
+        ]),
+      );
+    },
+  };
+
+  test("carries an unread configuration source into every contract and the exit status", async () => {
+    const validate = async (argv: readonly string[]) =>
+      run(argv, { prepare: UNREADABLE.directory });
+
+    const human = await validate(["config", "validate"]);
+    expect(human.out).not.toContain("Configuration is valid.");
+    expect(human.err).toContain("could not be read and was skipped");
+    // The verdict of a diagnostic is its exit status, and this configuration is
+    // not the one its author wrote.
+    expect(human.code).toBe(3);
+
+    const quiet = await validate(["config", "validate", "--format", "quiet"]);
+    expect(quiet.out).toBe("");
+    expect(quiet.err).toContain("could not be read and was skipped");
+    expect(quiet.code).toBe(3);
+
+    for (const format of ["json", "jsonl"]) {
+      const machine = await validate(["config", "validate", "--format", format]);
+      const reading = readCliStream(machine.out.split("\n"));
+      const terminal = reading.terminal as { payload?: ConfigValidatePayload } | null;
+
+      expect(terminal?.payload?.unreadSources[0]).toMatchObject({
+        outcome: "unreadable",
+        source: { kind: "user-file" },
+      });
+      // `valid` still answers only whether an issue blocks what loaded.
+      expect(terminal?.payload?.valid).toBe(true);
+      expect(machine.code).toBe(3);
+    }
+  });
+
+  test("tells oversized and mis-encoded apart, and keeps both at exit 3", async () => {
+    for (const [prepare, outcome] of [
+      [UNREADABLE.oversized, "oversized"],
+      [UNREADABLE.misEncoded, "malformed-encoding"],
+    ] as const) {
+      const machine = await run(["config", "validate", "--format", "json"], { prepare });
+      const terminal = readCliStream(machine.out.split("\n")).terminal as {
+        payload?: ConfigValidatePayload;
+      } | null;
+
+      expect(terminal?.payload?.unreadSources[0]?.outcome).toBe(outcome);
+      expect(machine.code).toBe(3);
+    }
+  });
+
+  test("reports the same source from config show, and still exits zero", async () => {
+    for (const argv of [
+      ["config", "show"],
+      ["config", "show", "--format", "quiet"],
+    ]) {
+      const shown = await run(argv, { prepare: UNREADABLE.directory });
+
+      // The values it displayed did load, and displaying them is the purpose.
+      expect(shown.code).toBe(0);
+      expect(shown.err).toContain("could not be read and was skipped");
+      // And stdout still carries only the configuration.
+      expect(shown.out).not.toContain("skipped");
+      expect(shown.out.length).toBeGreaterThan(0);
+    }
+  });
+
+  test("emits no byte of a document it could not read, in any format", async () => {
+    // The read produced these bytes for nobody in the oversized case and
+    // produced undecodable ones in the other. Neither may reach a surface.
+    for (const prepare of [UNREADABLE.oversized, UNREADABLE.misEncoded]) {
+      for (const argv of [
+        ["config", "validate"],
+        ["config", "validate", "--format", "quiet"],
+        ["config", "validate", "--format", "json"],
+        ["config", "show", "--format", "jsonl"],
+      ]) {
+        const { out, err } = await run(argv, { prepare });
+        expect(out).not.toContain(SECRET);
+        expect(out).not.toContain("sk-live");
+        expect(err).not.toContain(SECRET);
+        expect(err).not.toContain("sk-live");
+      }
+    }
+  });
 
   test("writes one parseable record for --format json", async () => {
     const { out, err } = await run(["doctor", "--format", "json"]);

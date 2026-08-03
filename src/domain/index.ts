@@ -174,7 +174,12 @@ export type {
   SourceReport,
   ValueProvenance,
 } from "./configuration-source.ts";
-export { CONFIGURATION_LAYER_ORDER, SOURCE_OUTCOMES } from "./configuration-source.ts";
+export {
+  CONFIGURATION_LAYER_ORDER,
+  isUnreadSource,
+  SOURCE_OUTCOMES,
+  UNREAD_SOURCE_OUTCOMES,
+} from "./configuration-source.ts";
 export type {
   CredentialFailure,
   CredentialHealth,

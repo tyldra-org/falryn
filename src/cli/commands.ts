@@ -16,7 +16,11 @@
  * into text.
  */
 
-import { fromConfigurationIssues, fromUnknown } from "../application/index.ts";
+import {
+  fromConfigurationIssues,
+  fromUnknown,
+  fromUnreadConfigurationSources,
+} from "../application/index.ts";
 import { CONFIGURATION_FILE_NAME, inspectGeneration, PROFILE_DIRECTORY } from "../config/index.ts";
 import { probeStorage, rootChild, type StorageProbe, sqliteDatabasePath } from "../data/index.ts";
 import {
@@ -24,6 +28,7 @@ import {
   type ConfigurationInspection,
   type ConfigurationIssue,
   type FalrynError,
+  isUnreadSource,
   joinPath,
   LOCAL_DATA_ROOTS,
   type LocalDataRoot,
@@ -31,6 +36,7 @@ import {
   type OwnershipClass,
   type RootInspection,
   type RootViability,
+  type SourceReport,
   type TerminalOutcome,
 } from "../domain/index.ts";
 import { openBunSqlite } from "../integrations/index.ts";
@@ -101,7 +107,23 @@ export type ConfigShowPayload = {
 
 export type ConfigValidatePayload = {
   readonly issues: readonly ConfigurationIssue[];
+  /**
+   * Whether any issue blocks use of the configuration that loaded.
+   *
+   * Deliberately unchanged in meaning. Whether every declared source was
+   * actually read is a second question, and folding it in here would leave a
+   * reader unable to tell a document with a mistyped key from a document
+   * nobody could open. {@link ConfigValidatePayload.unreadSources} answers it.
+   */
   readonly valid: boolean;
+  /**
+   * Sources that exist and were skipped, exactly as the loader reported them.
+   *
+   * The loader fails open on an unavailable source, so these values loaded
+   * without the file the user edited. Carried rather than re-derived: nothing
+   * here re-reads a path or writes a second precedence rule.
+   */
+  readonly unreadSources: readonly SourceReport[];
 };
 
 export type ConfigPathPayload = {
@@ -174,15 +196,36 @@ export async function runConfigValidate(
   });
 
   if (outcome.kind === "rejected") {
+    // The refusal is the verdict and keeps its own exit status. The unread
+    // sources still travel with it: a load can be refused for a bad key *and*
+    // have skipped a file, and reporting only the first hides the second.
     return resultFor(
       "config.validate",
-      { issues: outcome.issues, valid: false },
+      {
+        issues: outcome.issues,
+        valid: false,
+        unreadSources: outcome.sources.filter(isUnreadSource),
+      },
       errorsFrom(fromConfigurationIssues(outcome.issues, { operation: "validate configuration" })),
     );
   }
-  // A load that published or was unchanged raised no blocking issue; the
-  // command still reports success explicitly rather than by saying nothing.
-  return resultFor("config.validate", { issues: [], valid: true });
+
+  const record =
+    outcome.kind === "published" || outcome.kind === "unchanged" ? outcome.record : null;
+  const unreadSources = (record?.sources ?? []).filter(isUnreadSource);
+
+  // A load that published or was unchanged raised no blocking issue, so what
+  // loaded is valid. Whether it is what the user *wrote* is the other question:
+  // a file that exists and could not be read means these values are not the
+  // authored ones, which is a blocking verdict for the command that exists to
+  // answer exactly that.
+  return resultFor(
+    "config.validate",
+    { issues: [], valid: true, unreadSources },
+    errorsFrom(
+      fromUnreadConfigurationSources(unreadSources, { operation: "validate configuration" }),
+    ),
+  );
 }
 
 /**

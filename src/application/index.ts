@@ -32,6 +32,8 @@ export {
   fromSqliteStoreError,
   fromTimestampError,
   fromUnknown,
+  fromUnreadConfigurationSource,
+  fromUnreadConfigurationSources,
   withContext,
 } from "./error-translation.ts";
 export type {
