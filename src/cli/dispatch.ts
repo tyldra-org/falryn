@@ -32,8 +32,15 @@ import {
   runConfigShow,
   runConfigValidate,
   runDoctor,
+  stoppedResult,
 } from "./commands.ts";
 import { EXIT_CODES, type ExitCode, resolveExitCode } from "./exit.ts";
+import {
+  createInvocationGovernance,
+  type InvocationGovernance,
+  openInvocationScope,
+  runUnderScope,
+} from "./invocation-scope.ts";
 import {
   allowsColor,
   configurationOverridesFor,
@@ -66,6 +73,15 @@ export type DispatchOptions = {
    */
   readonly services?: (options: GlobalOptions) => ServiceProvider;
   readonly serviceOverrides?: HostServiceOptions;
+  /**
+   * The clock and scope tree this invocation runs under.
+   *
+   * Supplied by the entry, which composes the runtime lifecycle and so can
+   * cancel the root scope when a signal arrives. A caller that supplies none
+   * gets a private governance: `--timeout` still applies, and nothing can
+   * interrupt a run nobody is holding a signal for.
+   */
+  readonly governance?: InvocationGovernance;
 };
 
 /**
@@ -139,12 +155,47 @@ async function runCommand(
   const services = (options.services ?? defaultProvider(options))(globals);
   const overrides = configurationOverridesFor(globals);
 
-  const result = await produce(command, services, overrides, globals);
+  const result = await governed(command, services, overrides, globals, options);
   emit(streams, await render(result, globals, streams, services));
   return resolveExitCode({
     outcome: result.outcome,
     error: result.errors[0] ?? null,
   });
+}
+
+/**
+ * The command's result, or the invocation's if it stopped first.
+ *
+ * The scope is opened here rather than at the entry because `--timeout` is not
+ * known until the tree has parsed, and a deadline applied before parsing would
+ * govern the parse rather than the work. Help, version, and an invalid
+ * invocation never reach this: they are answered above, and a run that opened
+ * a scope to print help would be governing nothing.
+ *
+ * A tree that refused to derive leaves `scope` null, and the command runs
+ * ungoverned rather than the invocation failing over a diagnostic facility.
+ */
+async function governed(
+  command: Exclude<RunnableCommand, "default">,
+  services: ServiceProvider,
+  overrides: Readonly<Record<string, string>>,
+  globals: GlobalOptions,
+  options: DispatchOptions,
+): Promise<RunCommandResult> {
+  const governance = options.governance ?? createInvocationGovernance();
+  const scope = openInvocationScope(governance, globals.timeoutMs);
+  if (scope === null) {
+    return produce(command, services, overrides, globals);
+  }
+
+  const run = await runUnderScope(governance, scope, () =>
+    produce(command, services, overrides, globals),
+  );
+  // A stopped invocation still answers, in the format the caller asked for.
+  // Emitting nothing would leave a reader waiting for a record that is not
+  // coming, which is the failure the single-terminal-record contract exists to
+  // prevent.
+  return run.kind === "finished" ? run.value : stoppedResult(command, run.outcome);
 }
 
 /**

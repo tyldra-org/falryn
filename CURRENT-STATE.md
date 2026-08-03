@@ -1231,6 +1231,63 @@ does not depend on what the running user is permitted to do; one real-disk check
 over a mode `000` file covers the boundary itself, and is skipped when the suite
 runs as root.
 
+An interrupt and `--timeout` reach the command that is running, which
+[#345](https://github.com/yogeshprasad098/falryn/issues/345) added after
+verifying #16's "SIGINT" and "deadline expiry" scenarios found `--timeout`
+parsed, range-checked, and then dropped, and `dispatch` taking no signal at all.
+It adds `src/cli/invocation-scope.ts` — the scope one invocation runs under —
+one input on `DispatchOptions`, and the entry composition both `src/main.ts` and
+the probe harness now call.
+
+Its verified behavior:
+
+- **the CLI writes no cancellation model.** The deadline, its inheritance rule,
+  the scope tree, the escalation policy, and the mapping from a stopped scope to
+  a terminal outcome all stay where they were. What this area adds is *when to
+  look*: deadline expiry is polled by design, so the surface that owns waiting
+  decides when to poll;
+- **`--timeout` is the invocation scope's deadline.** It is requested rather
+  than set, so `derive` caps it by whatever the parent carried and a caller can
+  never enlarge a limit it inherited. Expiry produces `timed-out` and exit
+  `124`; a deadline the run meets changes neither its output nor its status;
+- **an interrupt cancels the invocation rather than killing the process.**
+  `SIGINT` reaches the real signal adapter, the policy cancels the root scope,
+  and cancellation travels down to the invocation derived under it. A run that
+  changed nothing exits `130`;
+- **effect certainty still outranks the outcome.** An interrupted run that had
+  already recorded a partial effect reports `uncertain` and exits `8`, and its
+  record's own `effect.observed` agrees with it rather than claiming a
+  read-only run observed nothing;
+- **exactly one terminal record survives, in all four contracts.** A stopped
+  invocation emits a record with a null payload — the command never answered —
+  so a consumer waiting on a terminal record gets one instead of a stream that
+  stops. Under `--format quiet` stdout stays empty and the verdict is the exit
+  status;
+- **nothing is killed and nothing is left armed.** The work is abandoned rather
+  than aborted: it holds no lock and writes nothing after the invocation stops.
+  The deadline wait ends as soon as the race is decided, so a run given the
+  maximum `--timeout` does not sit on a day-long timer after it finishes; and
+- **the exit is still taken by setting `process.exitCode`.** A cancelled run
+  flushes what it wrote, and the existing control that no governed source calls
+  `process.exit()` continues to pass.
+
+Both paths are exercised on real processes in source and compiled mode. The
+probe harness gained `dispatch-run`, `dispatch-timeout`, `dispatch-interrupt`,
+and `dispatch-interrupt-partial`, which run the real command tree, command,
+projections, and exit resolution, and replace only the filesystem the command
+reads with one that holds until the invocation stops — because `config` and
+`doctor` finish in roughly 50 ms, which is too fast to race an interrupt
+against reliably.
+
+`--non-interactive` is still carried without a consumer, and is vacuously
+honoured: nothing in this build prompts, and a run with no stdin attached
+answers rather than blocking, which is asserted rather than assumed.
+
+One limitation stands: an interrupt that arrives before the entry has installed
+its signal handler — roughly the first 30 ms of process startup, before any
+Falryn code runs — terminates the process by the signal's default disposition.
+No handler can be installed earlier than the runtime that would install it.
+
 The compiled check covers the bootstrap through its own fixture entry. The bare
 invocation is the command tree now, so `src/main-fixtures.ts` — an entry that
 ships in no build and is compiled by the check that needs it, the pattern
@@ -1397,9 +1454,10 @@ repository does not yet provide:
   absent is commands to render. The interactive shell is
   [#21](https://github.com/yogeshprasad098/falryn/issues/21). No producer of
   sessions or turns exists, so a JSON Lines run today carries the short
-  lifecycle a `config` or `doctor` command produces rather than a model turn,
-  and no CLI path cancels or times out — those terminal records are proven
-  against staged results rather than observed runs.
+  lifecycle a `config` or `doctor` command produces rather than a model turn.
+  Since [#345](https://github.com/yogeshprasad098/falryn/issues/345) a CLI
+  invocation does cancel and does time out, and both terminal records are
+  proven against observed runs in source and compiled mode.
   Also absent: every command group whose capability does not exist, shell
   completion, and hidden or deprecated command policy beyond its declaration;
 - provider integration, model routing, the agent loop, or unified tool
