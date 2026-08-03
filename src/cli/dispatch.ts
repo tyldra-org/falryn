@@ -6,10 +6,10 @@
  * it composes already exists — #20's streams and exit table, the command tree,
  * and the two commands.
  *
- * Rendering is #18's and #19's. Until they land, a result is written as one
- * placeholder line so the tree is runnable in between; the line is JSON so it
- * is at least parseable, and it is explicitly not the JSON *contract* those
- * issues will define.
+ * The human and quiet formats render through `render-human.ts`. The machine
+ * formats are #19's: until they land, their arm writes one placeholder line so
+ * the tree stays runnable, and the line is explicitly not the JSON *contract*
+ * that issue will define.
  */
 
 import { assertNever } from "../domain/index.ts";
@@ -19,10 +19,21 @@ import {
   parseInvocation,
   type RunnableCommand,
 } from "./command-tree.ts";
-import { runConfigPath, runConfigShow, runConfigValidate, runDoctor } from "./commands.ts";
+import {
+  type RunCommandResult,
+  runConfigPath,
+  runConfigShow,
+  runConfigValidate,
+  runDoctor,
+} from "./commands.ts";
 import { EXIT_CODES, type ExitCode, resolveExitCode } from "./exit.ts";
-import { configurationOverridesFor, type GlobalOptions } from "./options.ts";
-import type { CommandResult } from "./result.ts";
+import {
+  allowsColor,
+  configurationOverridesFor,
+  type GlobalOptions,
+  resolveColor,
+} from "./options.ts";
+import { type RenderedText, renderHuman, renderQuiet } from "./render-human.ts";
 import {
   createServiceProvider,
   type HostServiceOptions,
@@ -119,11 +130,66 @@ async function runCommand(
   const overrides = configurationOverridesFor(globals);
 
   const result = await produce(command, services, overrides, globals);
-  writeResultLine(streams, placeholderLine(result));
+  emit(streams, render(result, globals, streams));
   return resolveExitCode({
     outcome: result.outcome,
     error: result.errors[0] ?? null,
   });
+}
+
+/**
+ * The selected format's text.
+ *
+ * The switch is shared with #19: this issue implements `human` and `quiet`, and
+ * the machine arms stay on the placeholder until #19 replaces them. Neither
+ * issue changes the other's arm.
+ */
+function render(
+  result: RunCommandResult,
+  globals: GlobalOptions,
+  streams: CliStreams,
+): RenderedText {
+  switch (globals.format) {
+    case "human":
+      return renderHuman({
+        result,
+        // Keyed to stdout, which is the handle the result lands on. A format
+        // that is not `human` never gets colour at all, and `--color` overrides
+        // the derived fact rather than replacing the derivation.
+        color: allowsColor(globals.format)
+          ? resolveColor(globals.color, streams.capabilities.stdout.color)
+          : "none",
+        symbols: streams.capabilities.stdout.symbols,
+        columns: streams.capabilities.stdout.columns,
+        verbose: globals.verbose,
+      });
+    case "quiet":
+      return renderQuiet(result);
+    case "json":
+    case "jsonl":
+      // #19. One JSON line so the tree stays runnable and machine-checkable
+      // while the schemas are unwritten; no schema is promised here, and the
+      // machine projections replace this rather than extending it.
+      return { result: placeholderLine(result), diagnostics: "" };
+    default:
+      return assertNever(globals.format, "unhandled output format");
+  }
+}
+
+/**
+ * Writes each text to the handle that owns it.
+ *
+ * An empty text writes nothing at all, rather than a blank line: a run whose
+ * format has no primary result must leave stdout untouched, and a newline is
+ * not nothing to a consumer counting records.
+ */
+function emit(streams: CliStreams, text: RenderedText): void {
+  if (text.result !== "") {
+    writeResultLine(streams, text.result);
+  }
+  if (text.diagnostics !== "") {
+    writeDiagnosticLine(streams, text.diagnostics);
+  }
 }
 
 function defaultProvider(options: DispatchOptions): (globals: GlobalOptions) => ServiceProvider {
@@ -135,7 +201,7 @@ async function produce(
   services: ServiceProvider,
   overrides: Readonly<Record<string, string>>,
   globals: GlobalOptions,
-): Promise<CommandResult<unknown>> {
+): Promise<RunCommandResult> {
   switch (command) {
     case "config.show":
       return runConfigShow(services, overrides, globals);
@@ -159,7 +225,7 @@ async function produce(
  * unwritten. It is not their contract: no schema is promised here, and the
  * projections replace this entirely rather than extending it.
  */
-function placeholderLine(result: CommandResult<unknown>): string {
+function placeholderLine(result: RunCommandResult): string {
   return JSON.stringify({
     command: result.command,
     outcome: result.outcome,

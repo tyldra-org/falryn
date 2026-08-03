@@ -34,17 +34,17 @@ import {
   COMMAND_RESULT_SCHEMA_FAMILY,
   COMMAND_RESULT_SCHEMA_VERSION,
   type CommandId,
-  type CommandResult,
+  type CommandResultOf,
   READ_ONLY_EFFECT,
 } from "./result.ts";
 import type { ServiceProvider } from "./services.ts";
 
 /** A finished result with the fields every command shares already filled in. */
-function resultFor<Payload>(
-  command: CommandId,
+function resultFor<Command extends CommandId, Payload>(
+  command: Command,
   payload: Payload | null,
   errors: readonly FalrynError[] = [],
-): CommandResult<Payload> {
+): CommandResultOf<Command, Payload> {
   return {
     schemaFamily: COMMAND_RESULT_SCHEMA_FAMILY,
     schemaVersion: COMMAND_RESULT_SCHEMA_VERSION,
@@ -111,7 +111,7 @@ export async function runConfigShow(
   services: ServiceProvider,
   overrides: Readonly<Record<string, string>>,
   options: GlobalOptions,
-): Promise<CommandResult<ConfigShowPayload>> {
+): Promise<CommandResultOf<"config.show", ConfigShowPayload>> {
   const { loader, registry, configurationRoot, workspaceRoot } = services();
   const outcome = await loader.load({
     configurationRoot,
@@ -131,7 +131,7 @@ export async function runConfigShow(
         usable: true,
       });
     case "rejected":
-      return resultFor<ConfigShowPayload>(
+      return resultFor<"config.show", ConfigShowPayload>(
         "config.show",
         outcome.retained === null
           ? null
@@ -141,7 +141,7 @@ export async function runConfigShow(
     default:
       // `unpublished` and `cancelled`: composition worked and publication did
       // not, or the caller stopped. Neither is a valid configuration to show.
-      return resultFor<ConfigShowPayload>("config.show", null, [
+      return resultFor<"config.show", ConfigShowPayload>("config.show", null, [
         fromUnknown(new Error(`configuration could not be loaded: ${outcome.kind}`), {
           operation: "load configuration",
         }),
@@ -154,7 +154,7 @@ export async function runConfigValidate(
   services: ServiceProvider,
   overrides: Readonly<Record<string, string>>,
   options: GlobalOptions,
-): Promise<CommandResult<ConfigValidatePayload>> {
+): Promise<CommandResultOf<"config.validate", ConfigValidatePayload>> {
   const { loader, configurationRoot, workspaceRoot } = services();
   const outcome = await loader.load({
     configurationRoot,
@@ -185,7 +185,7 @@ export async function runConfigValidate(
 export function runConfigPath(
   services: ServiceProvider,
   options: GlobalOptions,
-): CommandResult<ConfigPathPayload> {
+): CommandResultOf<"config.path", ConfigPathPayload> {
   const { configurationRoot, workspaceRoot } = services();
   const sources: { kind: string; path: string }[] = [];
 
@@ -248,7 +248,9 @@ export type DoctorPayload = {
  * The database is named, not opened, for the same reason — opening it creates
  * it.
  */
-export async function runDoctor(services: ServiceProvider): Promise<CommandResult<DoctorPayload>> {
+export async function runDoctor(
+  services: ServiceProvider,
+): Promise<CommandResultOf<"doctor", DoctorPayload>> {
   try {
     const { localData } = services();
     const layout = localData.layout;
@@ -279,8 +281,26 @@ export async function runDoctor(services: ServiceProvider): Promise<CommandResul
       build: { platform: process.platform, architecture: process.arch },
     });
   } catch (error) {
-    return resultFor<DoctorPayload>("doctor", null, [
+    return resultFor<"doctor", DoctorPayload>("doctor", null, [
       fromUnknown(error, { operation: "collect diagnostics" }),
     ]);
   }
 }
+
+/* -------------------------------------------------------------------------- */
+/* The result surface a projection renders                                     */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Every result a command that does work can produce.
+ *
+ * Discriminated by `command`, so a projection switching on it reads the payload
+ * that command actually declared instead of an `unknown` it has to re-check at
+ * runtime. `default`, `help`, and `version` are absent because they answer with
+ * text rather than a result — dispatch resolves them before any command runs.
+ */
+export type RunCommandResult =
+  | Awaited<ReturnType<typeof runConfigShow>>
+  | Awaited<ReturnType<typeof runConfigValidate>>
+  | ReturnType<typeof runConfigPath>
+  | Awaited<ReturnType<typeof runDoctor>>;

@@ -332,7 +332,22 @@ export type HandleFacts = {
 /** A handle attached to something that is not a terminal. */
 export const DETACHED_HANDLE: HandleFacts = { isTty: false, columns: null, rows: null };
 
-export type StreamCapability = HandleFacts & { readonly color: ColorLevel };
+export const SYMBOL_SUPPORTS = ["unicode", "ascii"] as const;
+
+/**
+ * The character repertoire a handle can be relied on to draw.
+ *
+ * Independent of colour, and deliberately so: losing decoration and losing a
+ * character repertoire are different losses, so `--color never` on a UTF-8
+ * terminal keeps its symbols and a non-UTF-8 locale on a colour terminal keeps
+ * its colour.
+ */
+export type SymbolSupport = (typeof SYMBOL_SUPPORTS)[number];
+
+export type StreamCapability = HandleFacts & {
+  readonly color: ColorLevel;
+  readonly symbols: SymbolSupport;
+};
 
 /**
  * The capability of each handle this process holds.
@@ -426,14 +441,68 @@ function forcedColorLevel(value: string): ColorLevel {
   }
 }
 
+/**
+ * The character repertoire this process can rely on.
+ *
+ * Precedence, highest first:
+ *
+ * 1. `TERM=dumb` — the terminal said it renders nothing beyond plain text.
+ * 2. `LC_ALL`, `LC_CTYPE`, then `LANG` — the first that names a charset. A
+ *    charset that is not UTF-8 cannot carry the characters, so the fallback is
+ *    ASCII. A value that names no charset at all — `C`, `en_US`, an empty
+ *    environment — is not a statement about the repertoire and does not lower
+ *    it.
+ * 3. Otherwise Unicode.
+ *
+ * Unlike {@link colorLevelFor} this takes no handle: nothing about which handle
+ * is being asked changes the answer, and a parameter that exists only for
+ * symmetry is one a reader has to check for meaning it does not have. The
+ * derivation still lives here, in one module, for the same reason colour's
+ * does.
+ */
+export function symbolSupportFor(environment: EnvironmentPort): SymbolSupport {
+  if (environment.get("TERM") === "dumb") {
+    return "ascii";
+  }
+  for (const variable of ["LC_ALL", "LC_CTYPE", "LANG"] as const) {
+    const value = environment.get(variable);
+    if (value === null) {
+      continue;
+    }
+    const charset = charsetIn(value);
+    // Only the first variable that names a charset speaks. A `LC_ALL` without
+    // one does not hand the question down to `LANG`, because the POSIX
+    // precedence is over the whole setting rather than over each field of it.
+    return charset === null ? "unicode" : isUtf8(charset) ? "unicode" : "ascii";
+  }
+  return "unicode";
+}
+
+/** The charset a locale value names, or `null` when it names none. */
+function charsetIn(locale: string): string | null {
+  const separator = locale.indexOf(".");
+  if (separator < 0) {
+    return null;
+  }
+  // `en_US.UTF-8@euro` — the modifier is not part of the charset.
+  const charset = locale.slice(separator + 1).split("@")[0] ?? "";
+  return charset === "" ? null : charset;
+}
+
+/** Whether a charset name is a spelling of UTF-8. */
+function isUtf8(charset: string): boolean {
+  return charset.toLowerCase().replaceAll(/[^a-z0-9]/g, "") === "utf8";
+}
+
 /** The capability of every handle, derived from what the process observed. */
 export function terminalCapabilities(
   handles: ObservedHandles,
   environment: EnvironmentPort,
 ): TerminalCapabilities {
+  const symbols = symbolSupportFor(environment);
   return {
-    stdout: { ...handles.stdout, color: colorLevelFor(handles.stdout, environment) },
-    stderr: { ...handles.stderr, color: colorLevelFor(handles.stderr, environment) },
+    stdout: { ...handles.stdout, color: colorLevelFor(handles.stdout, environment), symbols },
+    stderr: { ...handles.stderr, color: colorLevelFor(handles.stderr, environment), symbols },
     stdin: { isTty: handles.stdin.isTty },
   };
 }

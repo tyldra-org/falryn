@@ -17,6 +17,7 @@ export type {
   ConfigShowPayload,
   ConfigValidatePayload,
   DoctorPayload,
+  RunCommandResult,
 } from "./commands.ts";
 export { runConfigPath, runConfigShow, runConfigValidate, runDoctor } from "./commands.ts";
 export type { DispatchOptions } from "./dispatch.ts";
@@ -41,11 +42,20 @@ export {
   OUTPUT_FORMATS,
   resolveColor,
 } from "./options.ts";
+export type { HumanRenderRequest, RenderedText } from "./render-human.ts";
+export {
+  DEFAULT_DISPLAY_COLUMNS,
+  MIN_DISPLAY_COLUMNS,
+  renderHuman,
+  renderPlainText,
+  renderQuiet,
+} from "./render-human.ts";
 export type {
   CommandEffect,
   CommandId,
   CommandOmission,
   CommandResult,
+  CommandResultOf,
   CommandTruncation,
   CommandWarning,
 } from "./result.ts";

@@ -132,8 +132,11 @@ export function createHostCliStreams(options: HostCliStreamsOptions = {}): CliSt
 
 /** The capability of a run with nothing attached to any handle. */
 export const DETACHED_CAPABILITIES: TerminalCapabilities = {
-  stdout: { isTty: false, columns: null, rows: null, color: "none" },
-  stderr: { isTty: false, columns: null, rows: null, color: "none" },
+  // Unicode rather than ASCII: nothing is attached, so nothing said it cannot
+  // render the characters. A file and a pipe both carry UTF-8 fine, and the
+  // fallback exists for a terminal that declared a narrower charset.
+  stdout: { isTty: false, columns: null, rows: null, color: "none", symbols: "unicode" },
+  stderr: { isTty: false, columns: null, rows: null, color: "none", symbols: "unicode" },
   stdin: { isTty: false },
 };
 

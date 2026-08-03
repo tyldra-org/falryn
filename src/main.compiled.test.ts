@@ -149,10 +149,11 @@ describe.if(built)("the standalone executable", () => {
       const finished = spawnCompiled(root, ["doctor"]);
 
       expect(finished.exitCode).toBe(EXIT_CODES.COMPLETED);
-      expect(JSON.parse(finished.stdout)).toMatchObject({
-        command: "doctor",
-        outcome: { kind: "completed" },
-      });
+      // #18 renders the result, so stdout carries the report and stderr the
+      // status. The separation is what a compiled run has to keep too.
+      expect(finished.stdout).toContain("Falryn diagnostics");
+      expect(finished.stdout).not.toContain("Completed.");
+      expect(finished.stderr).toContain("Completed.");
       // Diagnostics describe roots; they do not create them.
       expect(await readdir(root)).toEqual([]);
     },
@@ -177,16 +178,14 @@ describe.if(built)("the standalone executable", () => {
       const finished = spawnCompiled(root, ["doctor"]);
       expect(finished.exitCode).toBe(EXIT_CODES.COMPLETED);
 
-      const payload = JSON.parse(finished.stdout).payload;
       // The compiled binary carries PRODUCT_SCHEMA_VERSION and can read the
       // migration table. A version constant that failed to survive packaging,
       // or a table it could not read, fails here.
-      expect(payload.storage).toEqual({
-        kind: "present",
-        schemaVersion: PRODUCT_SCHEMA_VERSION,
-        expectedVersion: PRODUCT_SCHEMA_VERSION,
-        current: true,
-      });
+      expect(finished.stdout).toContain(
+        `schema ${PRODUCT_SCHEMA_VERSION} of ${PRODUCT_SCHEMA_VERSION}, current`,
+      );
+      // A database that is behind or ahead is a finding, and there is none.
+      expect(finished.stderr).not.toContain("this build expects");
     },
     COMPILED_RUN_TIMEOUT_MS,
   );
