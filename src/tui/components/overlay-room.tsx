@@ -19,7 +19,7 @@
  */
 
 import { useRenderer } from "@opentui/react";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { SPLIT_FOOTER_HEIGHT } from "../screen-mode.ts";
 
 /**
@@ -53,6 +53,11 @@ export function overlayFooterHeight(terminalRows: number): number {
  */
 export function useOverlayRoom(open: boolean): void {
   const renderer = useRenderer();
+  // Bumped after the footer changes, purely to re-render. Growing the footer is
+  // not a terminal resize, so nothing else tells the tree its drawable region
+  // just changed — and a panel sized from the old height is exactly the
+  // one-row overlay this hook exists to prevent.
+  const [, applied] = useState(0);
 
   useEffect(() => {
     if (renderer.screenMode !== "split-footer" || !open) {
@@ -60,10 +65,21 @@ export function useOverlayRoom(open: boolean): void {
     }
     const previous = renderer.footerHeight;
     renderer.footerHeight = overlayFooterHeight(renderer.terminalHeight);
+    applied((generation) => generation + 1);
     return () => {
       // Restored on close *and* on unmount. An overlay open when the shell exits
       // must not leave the terminal's scrollback shorter than it found it.
+      //
+      // Unless the renderer has already gone. Exiting *from* an open overlay
+      // runs this cleanup during React's unmount, by which time the session may
+      // have destroyed the renderer — and setting a footer height then reaches
+      // native code that has released its buffers, which throws where nobody can
+      // catch it. The terminal is restored by `destroy()` in that case anyway.
+      if (renderer.isDestroyed) {
+        return;
+      }
       renderer.footerHeight = previous;
+      applied((generation) => generation + 1);
     };
   }, [renderer, open]);
 }

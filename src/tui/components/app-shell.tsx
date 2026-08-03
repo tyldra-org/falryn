@@ -73,8 +73,13 @@ export function AppShell(props: AppShellProps): ReactNode {
   // resize; the renderer's own terminal size is read during that render rather
   // than subscribed to separately, so there is one resize path and not two that
   // could arrive a frame apart.
-  const dimensions = useTerminalDimensions();
-  const viewport: Viewport = { columns: dimensions.width, rows: dimensions.height };
+  // Called for its subscription, not for its value: it is what re-renders this
+  // tree on a resize. The *value* comes from the renderer, because the drawable
+  // region also changes for reasons that are not resizes — an overlay growing
+  // the footer, for one — and a hook that only tracks the terminal would hand
+  // back a height that was correct one render ago.
+  useTerminalDimensions();
+  const viewport: Viewport = { columns: renderer.width, rows: renderer.height };
   const terminal: Viewport = {
     columns: renderer.terminalWidth,
     rows: renderer.terminalHeight,
