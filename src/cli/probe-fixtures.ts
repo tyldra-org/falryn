@@ -16,14 +16,20 @@
 
 import { createRuntimeLifecycle } from "../application/index.ts";
 import {
+  addDuration,
   assertNever,
   createSystemClock,
+  duration,
   type FalrynError,
+  type FileSystemPort,
   NO_CORRELATION,
+  scopeId,
   type TerminalOutcome,
 } from "../domain/index.ts";
-import { createProcessSignalPort } from "../integrations/index.ts";
+import { createHostFileSystem, createProcessSignalPort } from "../integrations/index.ts";
+import { dispatch } from "./dispatch.ts";
 import { type ExitCode, resolveExitCode } from "./exit.ts";
+import { createHostGovernance, type InvocationGovernance } from "./invocation-scope.ts";
 import {
   type CliStreams,
   createHostCliStreams,
@@ -62,13 +68,54 @@ export const BEHAVIOR_SCENARIOS = ["stream", "stdin", "interrupt"] as const;
 
 export type BehaviorScenario = (typeof BEHAVIOR_SCENARIOS)[number];
 
-/** Every scenario this harness can run. Named so a test cannot drift from it. */
-export const PROBE_SCENARIOS = [...OUTCOME_SCENARIOS, ...BEHAVIOR_SCENARIOS] as const;
+/**
+ * Scenarios that run a real command through `dispatch`.
+ *
+ * They exist because `config` and `doctor` finish in roughly 50 ms, which is
+ * far too fast to race an interrupt against reliably. They keep the real
+ * command tree, the real command, the real projections, and the real exit
+ * resolution, and replace only the filesystem the command reads — with one that
+ * waits until the invocation's own scope stops it. What is under test is the
+ * composition; what is staged is how long the work takes.
+ */
+export const DISPATCH_SCENARIOS = [
+  /** A real command through `dispatch`, finishing normally. */
+  "dispatch-run",
+  /** A real command whose work outlives the `--timeout` it was given. */
+  "dispatch-timeout",
+  /** A real command interrupted while its work is in flight. */
+  "dispatch-interrupt",
+  /** The same, on an invocation that had already changed something. */
+  "dispatch-interrupt-partial",
+] as const;
 
-export type ProbeScenario = OutcomeScenario | BehaviorScenario;
+export type DispatchScenario = (typeof DISPATCH_SCENARIOS)[number];
+
+/** The scenarios this harness answers with an outcome of its own. */
+type StagedScenario = OutcomeScenario | BehaviorScenario;
+
+/** Every scenario this harness can run. Named so a test cannot drift from it. */
+export const PROBE_SCENARIOS = [
+  ...OUTCOME_SCENARIOS,
+  ...BEHAVIOR_SCENARIOS,
+  ...DISPATCH_SCENARIOS,
+] as const;
+
+export type ProbeScenario = StagedScenario | DispatchScenario;
 
 export function isProbeScenario(value: string): value is ProbeScenario {
   return (PROBE_SCENARIOS as readonly string[]).includes(value);
+}
+
+function isStagedScenario(value: string): value is StagedScenario {
+  return (
+    (OUTCOME_SCENARIOS as readonly string[]).includes(value) ||
+    (BEHAVIOR_SCENARIOS as readonly string[]).includes(value)
+  );
+}
+
+function isDispatchScenario(value: string): value is DispatchScenario {
+  return (DISPATCH_SCENARIOS as readonly string[]).includes(value);
 }
 
 /** Records the `stream` and `interrupt` scenarios emit before their terminal one. */
@@ -132,7 +179,7 @@ const OUTCOMES: Readonly<Record<OutcomeScenario, ScenarioResult>> = {
   cancelled: { outcome: { kind: "cancelled", effect: "none" }, error: null },
 };
 
-function isOutcomeScenario(scenario: ProbeScenario): scenario is OutcomeScenario {
+function isOutcomeScenario(scenario: StagedScenario): scenario is OutcomeScenario {
   return (OUTCOME_SCENARIOS as readonly string[]).includes(scenario);
 }
 
@@ -142,8 +189,20 @@ function isOutcomeScenario(scenario: ProbeScenario): scenario is OutcomeScenario
  * The order is the contract every future command follows: do the work, write
  * the result, flush, fold the flush into the outcome, resolve the code.
  */
-export async function runProbe(scenario: string, streams: CliStreams): Promise<ExitCode> {
-  if (!isProbeScenario(scenario)) {
+export async function runProbe(
+  scenario: string,
+  streams: CliStreams,
+  /** The command line a `dispatch-*` scenario runs. Ignored by every other one. */
+  argv: readonly string[] = [],
+): Promise<ExitCode> {
+  if (isDispatchScenario(scenario)) {
+    // `dispatch` writes its own records, flushes, and resolves its own code
+    // through the same table. Wrapping that in this harness's outcome shape
+    // would be a second answer to what the run exited with.
+    return dispatchScenario(scenario, streams, argv);
+  }
+
+  if (!isStagedScenario(scenario)) {
     // An unusable invocation, resolved through the same table as everything
     // else rather than through a number written at the call site.
     writeDiagnosticLine(streams, `unknown scenario: ${scenario}`);
@@ -162,7 +221,7 @@ export async function runProbe(scenario: string, streams: CliStreams): Promise<E
   });
 }
 
-async function execute(scenario: ProbeScenario, streams: CliStreams): Promise<ScenarioResult> {
+async function execute(scenario: StagedScenario, streams: CliStreams): Promise<ScenarioResult> {
   if (isOutcomeScenario(scenario)) {
     const result = OUTCOMES[scenario];
     writeDiagnosticLine(streams, `scenario: ${scenario}`);
@@ -267,10 +326,123 @@ async function interruptScenario(streams: CliStreams): Promise<ScenarioResult> {
   }
 }
 
+/* -------------------------------------------------------------------------- */
+/* A real command, through dispatch                                            */
+/* -------------------------------------------------------------------------- */
+
+/** The scope identity the invocation is given, so this harness can reach it. */
+const INVOCATION_SCOPE = scopeId.from("probe-invocation");
+
+/**
+ * Longer than any of these scenarios is meant to take.
+ *
+ * The wait is not what ends it: an interrupt or the invocation's own deadline
+ * does, and both abort the signal this wait is holding. The span only bounds a
+ * scenario nothing stopped, so a broken run fails rather than hanging.
+ */
+const SLOW_READ_MS = 30_000;
+
+/**
+ * Runs one real command through `dispatch`, under a real lifecycle.
+ *
+ * The governance is the composed one — the same shape `src/main.ts` supplies —
+ * so an interrupt reaches the root scope through the real signal adapter and
+ * the real escalation policy, and the invocation's scope is derived from it.
+ * The scope is named, so this harness can record an effect against the scope
+ * the command is actually running under rather than against one of its own.
+ */
+async function dispatchScenario(
+  scenario: DispatchScenario,
+  streams: CliStreams,
+  argv: readonly string[],
+): Promise<ExitCode> {
+  // The entry's own composition, called rather than repeated: what these
+  // scenarios prove about an interrupt has to be true of the binary that ships,
+  // and a second wiring here could agree with it today and drift tomorrow.
+  const host = createHostGovernance(INVOCATION_SCOPE);
+  const governance = host.governance;
+
+  try {
+    return await dispatch({
+      argv,
+      streams,
+      governance,
+      ...(scenario === "dispatch-run"
+        ? {}
+        : { serviceOverrides: { fileSystem: heldFileSystem(scenario, governance, streams) } }),
+    });
+  } finally {
+    host.dispose();
+  }
+}
+
+/**
+ * The host filesystem, with every read held until the invocation stops.
+ *
+ * A command that cannot finish is what makes an interrupt and an expiry
+ * observable: the race these scenarios exist to prove is otherwise decided by
+ * whichever of two ~50 ms events happened to land first. The hold resolves as
+ * soon as the scope aborts, so nothing outlives the run that abandoned it.
+ *
+ * Readiness is announced from the first held call, which is the moment the work
+ * is genuinely in flight — a fixed delay before signalling would be the same
+ * race in a different place.
+ */
+function heldFileSystem(
+  scenario: DispatchScenario,
+  governance: InvocationGovernance,
+  streams: CliStreams,
+): FileSystemPort {
+  const host = createHostFileSystem();
+  let announced = false;
+
+  const hold = async (): Promise<void> => {
+    const scope = governance.scopes.handle(INVOCATION_SCOPE);
+    if (scope === null) {
+      return;
+    }
+    if (!announced) {
+      announced = true;
+      if (scenario === "dispatch-interrupt-partial") {
+        // Recorded against the invocation's own scope, before anything
+        // interrupts it: this is a run that had begun changing something, and
+        // effect certainty has to outrank the cancellation that follows.
+        governance.scopes.recordEffect(INVOCATION_SCOPE, "partial");
+      }
+      writeDiagnosticLine(streams, "ready");
+      await streams.flush();
+    }
+    await governance.clock.waitUntil(
+      addDuration(governance.clock.now(), duration(SLOW_READ_MS)),
+      scope.signal,
+    );
+  };
+
+  return {
+    ...host,
+    async stat(path, signal) {
+      await hold();
+      return host.stat(path, signal);
+    },
+    async readText(path, maximumBytes, signal) {
+      await hold();
+      return host.readText(path, maximumBytes, signal);
+    },
+    async list(path, signal) {
+      await hold();
+      return host.list(path, signal);
+    },
+    async probeWritable(path, signal) {
+      await hold();
+      return host.probeWritable(path, signal);
+    },
+  };
+}
+
 if (import.meta.main) {
   const streams = createHostCliStreams();
   try {
-    process.exitCode = await runProbe(Bun.argv[2] ?? "", streams);
+    process.exitCode = await runProbe(Bun.argv[2] ?? "", streams, Bun.argv.slice(3));
   } finally {
     // Releases what the ports hold on the host handles, the same discipline
     // `src/main.ts` applies to its signal subscription. Always after the

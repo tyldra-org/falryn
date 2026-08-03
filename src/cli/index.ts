@@ -19,7 +19,13 @@ export type {
   DoctorPayload,
   RunCommandResult,
 } from "./commands.ts";
-export { runConfigPath, runConfigShow, runConfigValidate, runDoctor } from "./commands.ts";
+export {
+  runConfigPath,
+  runConfigShow,
+  runConfigValidate,
+  runDoctor,
+  stoppedResult,
+} from "./commands.ts";
 export type { DispatchOptions } from "./dispatch.ts";
 export { dispatch } from "./dispatch.ts";
 export type { ExitCode, ExitResolution } from "./exit.ts";
@@ -32,6 +38,13 @@ export {
   SHELL_RESERVED_EXIT_CODES,
   UNEMITTABLE_EXIT_CODES,
 } from "./exit.ts";
+export type { GovernedRun, HostGovernance, InvocationGovernance } from "./invocation-scope.ts";
+export {
+  createHostGovernance,
+  createInvocationGovernance,
+  openInvocationScope,
+  runUnderScope,
+} from "./invocation-scope.ts";
 export type { ColorChoice, GlobalOptions, OutputFormat } from "./options.ts";
 export {
   allowsColor,
