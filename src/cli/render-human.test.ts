@@ -31,6 +31,8 @@ import {
   localPath,
   MAX_RELATED_ERRORS,
   NO_CORRELATION,
+  type SourceOutcome,
+  type SourceReport,
   type SymbolSupport,
   TERMINAL_OUTCOME_KINDS,
   type TerminalOutcome,
@@ -112,15 +114,34 @@ function inspectedValue(
   };
 }
 
-function showPayload(values: readonly InspectedValue[], usable = true): ConfigShowPayload {
+function showPayload(
+  values: readonly InspectedValue[],
+  usable = true,
+  sources: readonly SourceReport[] = [],
+): ConfigShowPayload {
   return {
     inspection: {
       generation: configurationGeneration.from(1),
       values,
-      sources: [],
+      sources,
       issues: [],
     },
     usable,
+  };
+}
+
+/** One source report, as the loader would have produced it. */
+function unreadSource(kind: ConfigurationSourceKind, outcome: SourceOutcome): SourceReport {
+  return {
+    source: {
+      kind,
+      file: localPath(kind === "user-file" ? "/home/x/falryn.jsonc" : "/work/.falryn/falryn.jsonc"),
+      profile: null,
+    },
+    outcome,
+    issues: [],
+    declaredKeys: [],
+    position: null,
   };
 }
 
@@ -345,7 +366,10 @@ describe("the two texts", () => {
 
   test("gives an empty result rather than a blank line when there is nothing to say", () => {
     expect(renderQuiet(resultOf("doctor", DOCTOR)).result).toBe("");
-    expect(renderQuiet(resultOf("config.validate", { issues: [], valid: true })).result).toBe("");
+    expect(
+      renderQuiet(resultOf("config.validate", { issues: [], valid: true, unreadSources: [] }))
+        .result,
+    ).toBe("");
   });
 });
 
@@ -377,7 +401,7 @@ describe("colour", () => {
   });
 
   test("is never the only carrier of meaning", () => {
-    const result = resultOf("config.validate", { issues: [], valid: false });
+    const result = resultOf("config.validate", { issues: [], valid: false, unreadSources: [] });
     const coloured = human(result, { color: "basic" });
     const uncoloured = human(result, { color: "none" });
 
@@ -711,6 +735,35 @@ describe("config show", () => {
     expect(rendered.result).toContain("[cli-override]");
     expect(rendered.result).toContain("4096");
   });
+
+  test("keeps a skipped source off stdout and on stderr", () => {
+    const rendered = human(
+      resultOf(
+        "config.show",
+        showPayload([inspectedValue("limits.bytes", 4096)], true, [
+          unreadSource("user-file", "unreadable"),
+        ]),
+      ),
+    );
+
+    // `falryn config show > file` must still produce a file containing the
+    // configuration and nothing else, so the notice goes to the other stream.
+    expect(rendered.result).not.toContain("falryn.jsonc");
+    expect(flat(rendered.diagnostics)).toContain("could not be read and was skipped");
+  });
+
+  test("says nothing about a source that is absent or empty", () => {
+    const rendered = human(
+      resultOf(
+        "config.show",
+        showPayload([inspectedValue("limits.bytes", 4096)], true, [
+          unreadSource("user-file", "absent"),
+          unreadSource("project-file", "empty"),
+        ]),
+      ),
+    );
+    expect(flat(rendered.diagnostics)).not.toContain("skipped");
+  });
 });
 
 describe("config path", () => {
@@ -758,7 +811,11 @@ describe("config validate", () => {
 
   test("puts the verdict on stdout and the issues on stderr", () => {
     const rendered = human(
-      resultOf("config.validate", { issues: ISSUES, valid: false } satisfies ConfigValidatePayload),
+      resultOf("config.validate", {
+        issues: ISSUES,
+        valid: false,
+        unreadSources: [],
+      } satisfies ConfigValidatePayload),
     );
     expect(rendered.result).toContain("Configuration is not usable: 5 issues.");
     expect(rendered.result).not.toContain("diagnostics.levl");
@@ -772,9 +829,45 @@ describe("config validate", () => {
   });
 
   test("reports a valid configuration explicitly", () => {
-    expect(human(resultOf("config.validate", { issues: [], valid: true })).result).toContain(
-      "Configuration is valid.",
+    expect(
+      human(resultOf("config.validate", { issues: [], valid: true, unreadSources: [] })).result,
+    ).toContain("Configuration is valid.");
+  });
+
+  test("never calls a configuration valid when a source could not be read", () => {
+    const rendered = human(
+      resultOf("config.validate", {
+        issues: [],
+        valid: true,
+        unreadSources: [unreadSource("user-file", "unreadable")],
+      } satisfies ConfigValidatePayload),
     );
+
+    // The question asked was whether the configuration is right. Answering the
+    // easier question — whether what loaded is usable — is the defect.
+    expect(rendered.result).not.toContain("Configuration is valid.");
+    expect(rendered.result).toContain("Configuration loaded without 1 source");
+    expect(flat(rendered.diagnostics)).toContain(
+      "The user-file configuration source could not be read and was skipped: /home/x/falryn.jsonc.",
+    );
+  });
+
+  test("says which repair each unread source needs", () => {
+    const rendered = human(
+      resultOf("config.validate", {
+        issues: [],
+        valid: true,
+        unreadSources: [
+          unreadSource("user-file", "oversized"),
+          unreadSource("project-file", "malformed-encoding"),
+        ],
+      } satisfies ConfigValidatePayload),
+      { columns: 200 },
+    );
+
+    expect(rendered.result).toContain("Configuration loaded without 2 sources");
+    expect(flat(rendered.diagnostics)).toContain("is larger than this build reads");
+    expect(flat(rendered.diagnostics)).toContain("is not valid UTF-8 text");
   });
 });
 
@@ -841,6 +934,7 @@ describe("quiet", () => {
       resultOf("config.validate", {
         issues: [{ kind: "unknown-key", severity: "error", path: "a.b" }],
         valid: false,
+        unreadSources: [],
       }),
     );
     expect(validate.result).toBe("");
@@ -849,6 +943,24 @@ describe("quiet", () => {
     const doctor = renderQuiet(resultOf("doctor", DOCTOR));
     expect(doctor.result).toBe("");
     expect(flat(doctor.diagnostics)).toContain("The cache data root cannot hold data");
+  });
+
+  test("reports an unread source on stderr from both config commands", () => {
+    const unread = [unreadSource("user-file", "unreadable")];
+
+    const validate = renderQuiet(
+      resultOf("config.validate", { issues: [], valid: true, unreadSources: unread }),
+    );
+    expect(validate.result).toBe("");
+    expect(flat(validate.diagnostics)).toContain("could not be read and was skipped");
+
+    const show = renderQuiet(
+      resultOf("config.show", showPayload([inspectedValue("limits.bytes", 4096)], true, unread)),
+    );
+    // Quiet stdout is still only the values a caller asked for, and the notice
+    // is still delivered rather than dropped for being inconvenient.
+    expect(show.result).toBe("limits.bytes=4096");
+    expect(flat(show.diagnostics)).toContain("could not be read and was skipped");
   });
 
   test("still reports a failure on stderr", () => {

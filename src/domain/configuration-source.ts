@@ -90,6 +90,29 @@ export type SourceReport = {
   readonly position: SourcePosition | null;
 };
 
+/**
+ * The outcomes that mean a document exists and Falryn did not read it.
+ *
+ * `absent` and `empty` are deliberately not here. A file that is not there says
+ * nothing, and an empty file is what `> falryn.jsonc` leaves — neither means the
+ * configuration in effect differs from the one its author wrote. Each outcome
+ * below does: a document exists at a path the user chose, the load carried on
+ * without it, and the settings now in effect are not the settings on disk.
+ *
+ * `malformed-syntax` and `rejected` are absent for the opposite reason. Those
+ * sources *were* read, and they already refuse the whole load.
+ */
+export const UNREAD_SOURCE_OUTCOMES: readonly SourceOutcome[] = [
+  "unreadable",
+  "oversized",
+  "malformed-encoding",
+];
+
+/** Whether one source report describes a document that exists and was skipped. */
+export function isUnreadSource(report: SourceReport): boolean {
+  return UNREAD_SOURCE_OUTCOMES.includes(report.outcome);
+}
+
 /** A parse failure's location. Line and column only, never the text there. */
 export type SourcePosition = {
   readonly line: number;

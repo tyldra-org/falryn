@@ -17,6 +17,8 @@ import {
   RUNTIME_EMITTED_CATEGORIES,
   recoveryForEffect,
   type SequenceError,
+  type SourceOutcome,
+  type SourceReport,
   type SqliteStoreError,
   scopeId,
   sessionId,
@@ -37,6 +39,8 @@ import {
   fromSqliteStoreError,
   fromTimestampError,
   fromUnknown,
+  fromUnreadConfigurationSource,
+  fromUnreadConfigurationSources,
   withContext,
 } from "./error-translation.ts";
 
@@ -419,6 +423,58 @@ describe("configuration rejections", () => {
         health: { state: "absent", storeKind: "operating-system-keychain", observedAt: null },
       }).category,
     ).toBe("authentication");
+  });
+});
+
+describe("a configuration source that was not read", () => {
+  const unread = (outcome: SourceOutcome): SourceReport => ({
+    source: { kind: "user-file", file: localPath("/home/x/falryn.jsonc"), profile: null },
+    outcome,
+    issues: [],
+    declaredKeys: [],
+    position: null,
+  });
+
+  test("is a configuration failure, so it reaches the configuration exit code", () => {
+    const error = fromUnreadConfigurationSource(unread("unreadable"));
+
+    expect(error.category).toBe("configuration");
+    expect(error.exitCategory).toBe("user-error");
+    expect(error.code).toBe("configuration.source-unreadable");
+    // Re-reading changes nothing: a permission has to change first.
+    expect(error.retryable).toBe(false);
+    expect(error.effect).toBe("none");
+  });
+
+  test("keeps the three outcomes distinguishable", () => {
+    expect(fromUnreadConfigurationSource(unread("oversized")).code).toBe(
+      "configuration.source-oversized",
+    );
+    expect(fromUnreadConfigurationSource(unread("malformed-encoding")).code).toBe(
+      "configuration.source-malformed-encoding",
+    );
+  });
+
+  test("reports nothing for a source that is absent, empty, or refused", () => {
+    // The first two are silent by design; the last two already refuse the load
+    // and carry their own issues.
+    for (const outcome of ["absent", "empty", "malformed-syntax", "rejected", "loaded"] as const) {
+      expect(fromUnreadConfigurationSources([unread(outcome)])).toBeNull();
+    }
+  });
+
+  test("collapses several unread sources into one primary with the rest attached", () => {
+    const combined = fromUnreadConfigurationSources([
+      unread("unreadable"),
+      unread("absent"),
+      unread("oversized"),
+    ]);
+
+    expect(combined).not.toBeNull();
+    expect(flattenErrors(combined as FalrynError).map((error) => error.code)).toEqual([
+      "configuration.source-unreadable",
+      "configuration.source-oversized",
+    ]);
   });
 });
 
