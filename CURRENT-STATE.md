@@ -1016,7 +1016,9 @@ Its verified behavior:
 - **`doctor` describes without creating.** It names each root and the database
   path, and reads the database with `create: false` — so asking whether one
   exists never creates it. A fresh root reports `absent`; after a bootstrap it
-  reports the schema version it carries;
+  reports the schema version it carries. Since
+  [#342](https://github.com/yogeshprasad098/falryn/issues/342) it also probes
+  each root's *viability*, which is described below;
 - **`--version` names the build**: version, Bun, platform, architecture, and
   whether the run is source or compiled, detected from the `$bunfs` module root
   a standalone executable mounts; and
@@ -1125,6 +1127,55 @@ source. The pinned v0.1 record fixture is byte-checked, so a change that would
 break a deployed consumer fails a test rather than a pipeline.
 
 Shell completion is deferred rather than hand-written.
+
+`doctor` reports whether each data root can actually hold data, which
+[#342](https://github.com/yogeshprasad098/falryn/issues/342) added after
+verifying #16's "unusable state root" scenario found it reporting a state root
+that was a regular file as healthy. It adds `inspectRoots` to `src/data/roots.ts`
+and to `LocalDataService`, and a `RootViability` vocabulary to
+`src/domain/local-data.ts`.
+
+Its verified behavior:
+
+- **viability is four states, not a boolean.** `ready`, `absent`, `blocked`,
+  and `unknown`. A root that does not exist yet is the normal first-run state
+  and is not a fault; a root that is a regular file is. Merging those two is
+  what let a machine that could not persist anything be reported as healthy;
+- **the probe creates nothing.** It is the read-only sibling of `prepareRoots`
+  and runs the same sequence — stat, kind, writability, permission bits — with
+  creation removed and the missing-path branch answered from the nearest
+  existing ancestor. `blocked` covers `not-a-directory`, `not-writable`,
+  `parent-not-writable`, and `dangling-symlink`; `insecure-permissions` stays
+  an advisory finding on a root that works;
+- **a symlink is judged by its target.** `stat` does not follow a final
+  symlink, so a root that is a symlink to a real directory would otherwise read
+  as `not-a-directory`. `prepareRoots` still has that blind spot; changing
+  preparation is a separate outcome;
+- **a probe that did not complete is `unknown`, never `ready`.** A filesystem
+  error other than absence, and cancellation, both report what the boundary
+  said rather than a verdict the probe did not reach;
+- **`resolved` and `viability` are separate payload fields** and each means
+  what it says. The field they replaced was named `usable` and measured only
+  whether the layout produced a path;
+- **a blocking finding reaches the exit status.** A `blocked` or `unknown`
+  root, an unresolved root, or storage that could not be determined makes
+  `doctor` exit `1`; a refused override, an unregistered ownership class, an
+  `absent` root, wide permissions, and an unexpected schema version stay at
+  `0`. `reference/CLI.md` makes a diagnostic's verdict its exit status, and an
+  unconditional `0` left that verdict carried by nothing;
+- **storage is `undetermined` rather than `absent` when the state root cannot
+  be reached.** `probeStorage` maps every `cannot-open` to `absent`, which is
+  right for a reachable root and wrong for a path that is a regular file;
+  `doctor` composes the two facts rather than teaching the probe a distinction
+  it cannot draw. The probe itself is unchanged; and
+- **`doctor` still creates nothing**, proven by its own control over a blocked,
+  an absent, and a ready root rather than by the help-path control, which never
+  covered it.
+
+The finding reaches all four output contracts. The machine payload changed
+shape: `usable` is gone and `resolved`, `viability`, and `blocked` are new. No
+`CLI_SCHEMA_VERSION` bump was taken, because v0.1 payloads are not published and
+the family declares no compatibility promise yet.
 
 The compiled check covers the bootstrap through its own fixture entry. The bare
 invocation is the command tree now, so `src/main-fixtures.ts` — an entry that

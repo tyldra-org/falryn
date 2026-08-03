@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -11,6 +11,7 @@ import {
 } from "../config/index.ts";
 import { createStaticEnvironment, localPath } from "../domain/index.ts";
 import { runConfigPath, runConfigShow, runConfigValidate, runDoctor } from "./commands.ts";
+import { EXIT_CODES, resolveExitCode } from "./exit.ts";
 import { DIAGNOSTIC_LEVEL_KEY, type GlobalOptions } from "./options.ts";
 import { createServiceProvider, type ServiceProvider } from "./services.ts";
 
@@ -269,5 +270,126 @@ describe("doctor", () => {
 
     const result = await runDoctor(services);
     expect(result.payload?.storage).toMatchObject({ kind: "present", current: true });
+  });
+
+  test("separates whether a root resolved from whether it can hold data", async () => {
+    // The two questions the old `usable` field answered as one. A resolved
+    // root whose path is a regular file resolved perfectly well.
+    const { services } = await isolated();
+    const result = await runDoctor(services);
+    const state = result.payload?.roots.find((entry) => entry.root === "state");
+
+    expect(state?.resolved).toBe(true);
+    expect(state?.viability).toBe("ready");
+    expect(Object.keys(state ?? {})).not.toContain("usable");
+  });
+
+  test("reports a state root that is a regular file as blocked, and exits non-zero", async () => {
+    // The reported bug, end to end: this used to be indistinguishable from a
+    // healthy machine that had not created a database yet.
+    const home = await mkdtemp(join(tmpdir(), "falryn-viability-"));
+    roots.push(home);
+    const stateFile = join(home, "state-file");
+    await writeFile(stateFile, "not a directory");
+
+    const globals = { ...DEFAULTS };
+    const services = createServiceProvider(globals, {
+      home: localPath(home),
+      platform: "darwin",
+      environment: createStaticEnvironment({ FALRYN_STATE_DIR: stateFile }),
+    });
+
+    const result = await runDoctor(services);
+    const state = result.payload?.roots.find((entry) => entry.root === "state");
+
+    expect(state?.viability).toBe("blocked");
+    expect(state?.code).toBe("not-a-directory");
+    expect(result.payload?.blocked).toBe(true);
+    // The diagnosis is the verdict, and the verdict is the exit status.
+    expect(result.outcome).toEqual({ kind: "failed", effect: "none" });
+    expect(resolveExitCode({ outcome: result.outcome, error: null })).toBe(
+      EXIT_CODES.OPERATION_FAILED,
+    );
+    // It diagnosed; it changed nothing.
+    expect(result.effect).toEqual({ intent: "none", observed: "none" });
+  });
+
+  test("does not claim a database is absent when its root cannot be reached", async () => {
+    const home = await mkdtemp(join(tmpdir(), "falryn-viability-"));
+    roots.push(home);
+    const stateFile = join(home, "state-file");
+    await writeFile(stateFile, "not a directory");
+
+    const services = createServiceProvider(
+      { ...DEFAULTS },
+      {
+        home: localPath(home),
+        platform: "darwin",
+        environment: createStaticEnvironment({ FALRYN_STATE_DIR: stateFile }),
+      },
+    );
+
+    const result = await runDoctor(services);
+    // `probeStorage` would map this to `absent`, which is the sentence that
+    // made the original report say the machine was fine.
+    expect(result.payload?.storage).toEqual({
+      kind: "undetermined",
+      reason: "state-root-not-viable",
+    });
+  });
+
+  test("reports a root that does not exist as absent, and stays at exit zero", async () => {
+    const home = await mkdtemp(join(tmpdir(), "falryn-viability-"));
+    roots.push(home);
+
+    const services = createServiceProvider(
+      { ...DEFAULTS },
+      {
+        home: localPath(home),
+        platform: "darwin",
+        environment: createStaticEnvironment({ FALRYN_STATE_DIR: join(home, "not-created-yet") }),
+      },
+    );
+
+    const result = await runDoctor(services);
+    const state = result.payload?.roots.find((entry) => entry.root === "state");
+
+    expect(state?.viability).toBe("absent");
+    // An absent root is the normal first-run state, not a fault.
+    expect(result.payload?.blocked).toBe(false);
+    expect(result.outcome).toEqual({ kind: "completed" });
+  });
+
+  test("creates nothing, whatever it found", async () => {
+    // The read-only control `doctor` never had. `help-does-no-work.test.ts`
+    // covers help, version, and the bare invocation only.
+    for (const state of ["state-file", "not-created-yet", "ready-directory"]) {
+      const home = await mkdtemp(join(tmpdir(), "falryn-viability-"));
+      roots.push(home);
+      const target = join(home, state);
+      if (state === "state-file") {
+        await writeFile(target, "not a directory");
+      }
+      if (state === "ready-directory") {
+        await mkdir(target, { recursive: true });
+      }
+      const before = (await readdir(home)).sort();
+
+      const services = createServiceProvider(
+        { ...DEFAULTS },
+        {
+          home: localPath(home),
+          platform: "darwin",
+          environment: createStaticEnvironment({ FALRYN_STATE_DIR: target }),
+        },
+      );
+      await runDoctor(services);
+
+      expect({ state, after: (await readdir(home)).sort() }).toEqual({ state, after: before });
+      if (state === "ready-directory") {
+        // And nothing inside the root it could reach, either.
+        expect(await readdir(target)).toEqual([]);
+      }
+    }
   });
 });

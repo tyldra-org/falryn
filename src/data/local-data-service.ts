@@ -26,6 +26,7 @@ import type {
   Result,
   RetentionPolicy,
   RetentionReport,
+  RootInspection,
   RootLayout,
   RootStatus,
 } from "../domain/index.ts";
@@ -39,7 +40,7 @@ import {
   type ResetSelection,
 } from "./removal.ts";
 import { reportRetention } from "./retention.ts";
-import { prepareRoots, type RootResolution, resolveRoots } from "./roots.ts";
+import { inspectRoots, prepareRoots, type RootResolution, resolveRoots } from "./roots.ts";
 
 /** A policy that constrains nothing, for a caller that has no configuration. */
 export const UNCONSTRAINED_RETENTION: RetentionPolicy = { byClass: {}, totalMaxBytes: null };
@@ -61,6 +62,15 @@ export type LocalDataService = {
     required: readonly LocalDataRoot[],
     signal?: AbortSignal,
   ): Promise<readonly RootStatus[]>;
+
+  /**
+   * Reports whether each declared root can hold data, creating nothing.
+   *
+   * The read-only sibling of {@link LocalDataService.prepareRoots}, declared
+   * beside it so a diagnostic reaches it through this surface rather than
+   * authoring a filesystem rule of its own.
+   */
+  inspectRoots(signal?: AbortSignal): Promise<readonly RootInspection[]>;
 
   register(registration: OwnershipRegistration): Result<null, RegistrationError>;
   registrations(): readonly OwnershipRegistration[];
@@ -108,6 +118,8 @@ export function createLocalDataService(options: LocalDataServiceOptions): LocalD
     resolutionIssues: resolution.issues,
 
     prepareRoots: (required, signal) => prepareRoots(options.fileSystem, layout, required, signal),
+
+    inspectRoots: (signal) => inspectRoots(options.fileSystem, layout, signal),
 
     register: (registration) => registry.register(registration),
     registrations: () => registry.registrations(),

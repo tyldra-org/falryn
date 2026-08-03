@@ -372,6 +372,7 @@ export {
   localPath,
   localPathTextError,
   MAX_LOCAL_PATH_LENGTH,
+  parentPath,
   parseLocalPath,
   resolveLocalPath,
 } from "./filesystem.ts";
@@ -458,13 +459,17 @@ export type {
   RetentionPolicy,
   RetentionReason,
   RetentionReport,
+  RootInspection,
   RootLayout,
   RootProvenance,
   RootStatus,
   RootStatusCode,
+  RootViability,
+  RootViabilityCode,
   TemporaryIngestOwner,
 } from "./local-data.ts";
 export {
+  blocksLocalData,
   DURABILITY_CLASSES,
   isLocalDataRoot,
   isOwnershipClass,
@@ -479,6 +484,8 @@ export {
   REMOVAL_POSTURES,
   RETENTION_REASONS,
   ROOT_STATUS_CODES,
+  ROOT_VIABILITIES,
+  ROOT_VIABILITY_CODES,
   TEMPORARY_INGEST_OWNERS,
 } from "./local-data.ts";
 export type { EffectCertainty, TerminalOutcome, TerminalOutcomeKind } from "./outcome.ts";
