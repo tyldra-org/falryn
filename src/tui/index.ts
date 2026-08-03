@@ -72,6 +72,7 @@ export {
   MIN_SPLIT_FOOTER_ROWS,
   reservesFooter,
   SCREEN_MODE_REASONS,
+  SCREEN_MODES,
   SPLIT_FOOTER_HEIGHT,
   selectScreenMode,
 } from "./screen-mode.ts";

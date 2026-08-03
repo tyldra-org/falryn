@@ -283,7 +283,18 @@ async function launchShell(
   if (run.kind === "failed") {
     // Plain text on the diagnostic handle. The renderer is already gone by the
     // time this runs, so this is an ordinary line into an ordinary terminal.
-    writeDiagnosticLine(streams, run.error.message);
+    //
+    // With its cause, when there is one. The message alone says the interface
+    // could not start and nothing about why — which is what made #351 take a
+    // pseudo-terminal and three experiments to locate, for a failure whose cause
+    // was a complete sentence the renderer had already handed over. The detail
+    // is the bounded, redacted one the error carries; the raw thrown value never
+    // reaches here.
+    const detail = run.error.cause?.detail ?? null;
+    writeDiagnosticLine(
+      streams,
+      detail === null ? run.error.message : `${run.error.message} ${detail}`,
+    );
     return resolveExitCode({
       outcome: { kind: "failed", effect: run.error.effect },
       error: run.error,
