@@ -54,9 +54,9 @@ const RUN_TIMEOUT_MS = 30_000;
  * sides be wrong together.
  */
 const RESTORED = {
-  cursorVisible: "[?25h",
-  scrollRegionReset: "[r",
-  bracketedPasteOff: "[?2004l",
+  cursorVisible: "\u001b[?25h",
+  scrollRegionReset: "\u001b[r",
+  bracketedPasteOff: "\u001b[?2004l",
 } as const;
 
 type Pty = {
@@ -191,11 +191,22 @@ describe.if(runnable)("the compiled shell on a real terminal", () => {
     "opens an interface and lays it out against the terminal it was given",
     async () => {
       const run = await interrupted;
-      // The size the pseudo-terminal reports, drawn by the shell. A default
-      // substituted for a terminal that reports none would show up here as the
-      // wrong numbers rather than as nothing at all.
-      expect(run.transcript).toContain(`${COLUMNS}×${ROWS}`);
-      expect(run.transcript).toContain("Ctrl+C");
+      // The frame, on a real terminal. The header's labels are the load-bearing
+      // half: they only appear when the layout class was selected from the
+      // terminal's own size, and in `split-footer` the region the tree is drawn
+      // into is six rows — which would have selected compact and dropped them.
+      expect(run.transcript).toContain("workspace");
+      // A fact in its `unavailable` state, in words. Short enough to survive the
+      // header's per-field share at this width, which "no session yet" is not —
+      // that one arrives truncated with the theme's mark, which is itself the
+      // measured-width contract working.
+      expect(run.transcript).toContain("no Git yet");
+      expect(run.transcript).toContain("^C");
+      // 256-colour escapes, not 24-bit: `TERM=xterm-256color` says what this
+      // terminal has, and the palette was lowered to it rather than emitted at
+      // full depth and left for the terminal to reinterpret.
+      expect(run.transcript).toContain("38;5;");
+      expect(run.transcript).not.toContain("38;2;");
     },
     RUN_TIMEOUT_MS,
   );
