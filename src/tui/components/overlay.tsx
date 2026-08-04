@@ -34,19 +34,10 @@
  */
 
 import { type ReactNode, useEffect, useState } from "react";
-import { isSingleRegion } from "../layout.ts";
+import { isSingleRegion, primaryRows } from "../layout.ts";
 import type { OverlayRoute } from "../view-model.ts";
 import { useFrame, useLayoutClass } from "./context.tsx";
 import { Line, Panel } from "./primitives.tsx";
-
-/**
- * Rows the frame keeps for itself whatever an overlay wants.
- *
- * The header and the status line. Named as a constant rather than subtracted
- * inline because it is a promise — "an overlay never hides a terminal outcome"
- * is exactly this number being reserved.
- */
-export const RESERVED_FRAME_ROWS = 2;
 
 /** The most of the viewport an overlay may take, once the frame has its rows. */
 export const MAX_OVERLAY_FRACTION = 0.8;
@@ -145,23 +136,48 @@ export function useReveal(durationMs: number): boolean {
 }
 
 export function OverlayHost(props: OverlayHostProps): ReactNode {
-  const { theme, viewport } = useFrame();
+  const frame = useFrame();
   const layoutClass = useLayoutClass();
-  const arrived = useReveal(theme.motion.reveal);
+  const arrived = useReveal(frame.theme.motion.reveal);
 
   if (props.route.kind === "none") {
     return null;
   }
 
-  const available = Math.max(1, viewport.rows - RESERVED_FRAME_ROWS);
+  // The primary region's own height, from the function the transcript sizes
+  // itself with. This used to be `viewport.rows - 2`, a reserve that named the
+  // header and the status line and was written before #357 put a composer
+  // between them — so on a short terminal the panel was handed rows the composer
+  // and its notice were already drawing into, and the status line ended up
+  // underneath the panel's bottom border. Two regions subtracting their own
+  // idea of the chrome is how a frame overlaps itself; there is one number now.
+  const available = Math.max(0, primaryRows(frame.viewport, frame.composerRows));
   // Compact gives the overlay the whole available region: it is a route there,
   // not a panel floating over one.
   const target = isSingleRegion(layoutClass)
     ? available
-    : Math.max(1, Math.floor(available * MAX_OVERLAY_FRACTION));
+    : Math.max(0, Math.floor(available * MAX_OVERLAY_FRACTION));
   // The first step is the title bar alone: enough to say something opened,
   // without content appearing at a size it will not stay at.
   const height = arrived ? target : Math.min(target, OPENING_ROWS);
+
+  // A panel is its border and a way out of it. A region shorter than both is a
+  // region a panel cannot be drawn into: `Panel` draws two border rows whatever
+  // height it is given, so asking for one is asking for an overdraw — which is
+  // what the frame did at six rows, the smallest terminal the layout accepts.
+  //
+  // The route still opened, so something has to say so. One unbordered line
+  // carrying the title and the way out is the honest remainder: it fits, it
+  // names what is open, and it says how to leave — which drawing nothing at all
+  // would not, and the key that opened this would look broken.
+  if (target < PANEL_BORDER_ROWS + HINT_ROWS) {
+    return target < 1 ? null : (
+      <Line color="mutedForeground" typography="muted" maxColumns={frame.viewport.columns}>
+        {`${props.title} — ${props.dismissHint}`}
+      </Line>
+    );
+  }
+
   const rows = overlayRows(height);
 
   return (

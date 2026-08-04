@@ -177,7 +177,11 @@ describe("an empty transcript", () => {
   });
 
   test("offers no transcript commands, because there is nothing to act on", async () => {
-    const session = await mount(EMPTY_PROJECTION);
+    // Tall enough for help to reach the transcript rows. Since #368 the overlay
+    // is sized from the primary region rather than from `viewport.rows - 2`, so
+    // the composer's three rows come off the panel — and these commands sit far
+    // enough down the registry to be the ones that fall off first.
+    const session = await mount(EMPTY_PROJECTION, { columns: 100, rows: 30 });
     await session.press("?");
     expect(await session.frame()).toContain("there is no transcript yet");
   });
