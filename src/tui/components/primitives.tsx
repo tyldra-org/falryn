@@ -30,6 +30,7 @@ import {
   type StatusToken,
   type SurfaceToken,
   type TypographyRole,
+  textAttributes,
 } from "../theme/index.ts";
 import { useTheme } from "./context.tsx";
 
@@ -74,30 +75,11 @@ export function Line(props: LineProps): ReactNode {
   return (
     <text
       {...(color === null ? {} : { fg: color })}
-      attributes={attributesFor(style)}
+      attributes={textAttributes(style)}
       wrapMode="none"
     >
       {text}
     </text>
-  );
-}
-
-/**
- * Attributes as OpenTUI's bit field.
- *
- * The mapping is written here rather than imported from `@opentui/core`'s
- * helper so this module keeps one dependency on the renderer's shape instead of
- * scattering `createTextAttributes` calls through the views. The bit values are
- * the conventional SGR order.
- */
-function attributesFor(style: {
-  readonly bold: boolean;
-  readonly dim: boolean;
-  readonly italic: boolean;
-  readonly underline: boolean;
-}): number {
-  return (
-    (style.bold ? 1 : 0) | (style.dim ? 2 : 0) | (style.italic ? 4 : 0) | (style.underline ? 8 : 0)
   );
 }
 

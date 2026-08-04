@@ -8,6 +8,8 @@
  * asserted without one.
  */
 
+export type { DrawableLine } from "./lines.ts";
+export { drawableLine, drawableLines } from "./lines.ts";
 export { commandForRoute, describeRouteWith } from "./routes.ts";
 export type { DisclosureNotice, RowsRequest, TranscriptRow } from "./rows.ts";
 export {
