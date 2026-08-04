@@ -369,6 +369,132 @@ describe("reduced motion", () => {
   });
 });
 
+/**
+ * Every frame drawn between mount and the reveal arriving.
+ *
+ * The frames a settling helper exists to skip, which is exactly why #366 lived
+ * so long: `render` waits for the final text, so the transition's own steps were
+ * never asserted on by anything.
+ */
+async function revealFrames(
+  node: ReactNode,
+  size: { columns: number; rows: number },
+  arrivedWhen: string,
+): Promise<{ readonly during: readonly string[]; readonly arrived: string }> {
+  const setup = await createTestRenderer({
+    width: size.columns,
+    height: size.rows,
+    consoleMode: "disabled",
+  });
+  live.push(setup);
+  createRoot(setup.renderer).render(node);
+  const during: string[] = [];
+  for (let attempt = 0; attempt < 80; attempt += 1) {
+    await Bun.sleep(4);
+    await setup.flush();
+    const frame = setup.captureCharFrame();
+    if (frame.includes(arrivedWhen)) {
+      return { during, arrived: frame };
+    }
+    if (frame.includes("┏")) {
+      during.push(frame);
+    }
+  }
+  throw new Error("the reveal never arrived");
+}
+
+/**
+ * The non-blank rows between the overlay panel's own border rows.
+ *
+ * Trimmed, because what is being asserted is which lines reached the panel and
+ * not where they started. A row two lines drew into is one entry holding both of
+ * them, spliced — which is the signature the defect leaves and the reason this
+ * reads rows rather than searching for a substring.
+ */
+function panelInterior(frame: string): readonly string[] {
+  const lines = frame.split("\n");
+  const top = lines.findIndex((line) => line.includes("┏"));
+  // The corner rather than the whole bottom edge: on a six-row terminal the
+  // frame's own rows already land on the panel's bottom border, so the left
+  // corner is overwritten while the right one survives.
+  const bottom = lines.findIndex((line) => line.includes("┛"));
+  if (top < 0 || bottom < 0 || bottom <= top) {
+    throw new Error("the frame has no overlay panel");
+  }
+  return lines
+    .slice(top + 1, bottom)
+    .map((line) => line.replaceAll(/[┃│▏]/gu, "").trim())
+    .filter((line) => line !== "");
+}
+
+describe("the reveal", () => {
+  test("keeps the palette inside its panel at every frame", async () => {
+    // #366. The reveal's first step is a three-row panel: two rows of border and
+    // one inside. The host used to hand the route a row anyway, so the palette's
+    // search line and the dismissal hint drew into the same one and reached the
+    // screen as `Esceclosesathiscommands.`
+    const { during, arrived } = await revealFrames(
+      <AppShell
+        theme={{ ...THEME, reducedMotion: false }}
+        model={model({ overlay: { kind: "palette", query: EMPTY_EDITOR }, commands: [] })}
+      />,
+      { columns: 76, rows: 20 },
+      "Nothing matches that",
+    );
+    expect(during.length).toBeGreaterThan(0);
+    for (const frame of during) {
+      expect(panelInterior(frame)).toEqual(["Esc closes this"]);
+    }
+    // And the way out is still on its own row once the panel is full height.
+    expect(panelInterior(arrived)).toContain("Esc closes this");
+  });
+
+  test("keeps the help route inside its panel at every frame", async () => {
+    // Both routes go through this host, so the defect was never the palette's.
+    const { during, arrived } = await revealFrames(
+      <AppShell
+        theme={{ ...THEME, reducedMotion: false }}
+        model={model({ overlay: { kind: "help" }, help: [{ title: "Leaving", body: "b" }] })}
+      />,
+      { columns: 76, rows: 20 },
+      "Leaving",
+    );
+    expect(during.length).toBeGreaterThan(0);
+    for (const frame of during) {
+      expect(panelInterior(frame)).toEqual(["Esc closes this"]);
+    }
+    expect(panelInterior(arrived)).toContain("Esc closes this");
+  });
+
+  test("holds at the smallest terminal the shell accepts", async () => {
+    // Where the resting panel already fits exactly and only the reveal step does
+    // not — so a fix that merely gave the overlay more rows would pass everywhere
+    // but here.
+    //
+    // Scoped to the panel's interior on purpose. At this size the *frame* also
+    // overdraws: the host reserves two rows for the header and the status line
+    // and the composer takes three more, so the panel's own border lands on the
+    // activity row. That is older than #366, is unchanged by it, and is the
+    // reserve's to fix rather than this budget's.
+    const { during, arrived } = await revealFrames(
+      <AppShell
+        theme={{ ...THEME, reducedMotion: false }}
+        model={model({ overlay: { kind: "palette", query: EMPTY_EDITOR }, commands: [] })}
+      />,
+      { columns: MINIMUM_COLUMNS, rows: MINIMUM_ROWS },
+      "Type to search",
+    );
+    for (const frame of during) {
+      expect(panelInterior(frame)).toEqual(["Esc closes this"]);
+    }
+    // Two rows inside a four-row panel, and neither is two lines on one row.
+    const rested = panelInterior(arrived);
+    expect(rested.length).toBe(2);
+    expect(rested[0]).toStartWith("Type to search");
+    expect(rested[1]).toBe("Esc closes this");
+  });
+});
+
 describe("resize", () => {
   test("keeps the overlay open and re-lays out around it", async () => {
     // The preservation contract. The overlay route, the theme, and the cache all

@@ -1650,6 +1650,25 @@ directly above its own "24 more" line. The rendered checks measure the rows
 actually drawn at every budget, because the panel's height is identical either
 way and a count of the panel cannot see a collision inside it.
 
+The same shape was one level up, and
+[#366](https://github.com/yogeshprasad098/falryn/issues/366) removed it there.
+The overlay host reserved three rows and clamped what remained to
+`Math.max(1, height - 3)`, so at the reveal's three-row step it handed the route
+a row the border and the dismissal hint had already spent — and the search line
+landed on the hint, reaching the screen as `Esceclosesathiscommands.` on every
+overlay open where motion is not reduced, for help as well as the palette. The
+host now measures the split instead: the border is subtracted, the way out is
+paid before the content, and a panel with no room left hands the route zero.
+
+The route is hidden rather than unmounted when nothing fits. A route is not only
+what it draws — the palette's search holds a keyboard subscription while it is
+mounted — so dropping it for the length of the transition would discard whatever
+was typed into an overlay a key had just opened.
+
+The transition's own steps are asserted now, not only its final frame. The
+defect survived a full rendered suite because every helper waited for the content
+to settle before looking, which is exactly the state that was correct.
+
 Paste is classified before it reaches anything: small text inline, large text as
 a bounded preview, and binary, over-long, or invalidly encoded content refused
 with the reason. A paste never runs a command.
