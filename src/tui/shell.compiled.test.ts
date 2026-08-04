@@ -122,6 +122,23 @@ const built = await stat(EXECUTABLE)
   .catch(() => false);
 
 const probe = built ? openPty() : null;
+
+/**
+ * Whether the terminal can be resized under a running child.
+ *
+ * Through `stty` rather than through `ioctl` directly, and this is a measured
+ * constraint rather than a preference: `ioctl` is variadic, and calling it
+ * through a fixed-arity FFI declaration segfaults the process on arm64 — the
+ * third argument goes in a register where the callee reads the stack. `stty` is
+ * POSIX, ships with the system, and reaches `TIOCSWINSZ` from a real C program,
+ * which is the same thing a terminal emulator does.
+ */
+const resizable =
+  probe !== null &&
+  (await Bun.spawn(["stty", "size"], { stdin: probe.master, stdout: "ignore", stderr: "ignore" })
+    .exited.then((code) => code === 0)
+    .catch(() => false));
+
 const runnable = built && probe !== null;
 probe?.close();
 
@@ -140,10 +157,48 @@ type ShellRun = {
   readonly transcript: string;
 };
 
+/**
+ * The start of a synchronized update, which is where one frame ends and the
+ * next begins.
+ *
+ * A step can draw more than one: a resize repaints at the size it had before
+ * re-laying out at the size it was given, so a step's bytes hold a transition
+ * and not a state. Asserting on the whole slice would read both frames and pass
+ * on whichever one happened to match.
+ */
+const FRAME_START = "\u001b[?2026h";
+
+/** The frame a step settled on, rather than every frame it passed through. */
+function settledFrame(step: string): string {
+  const frames = step.split(FRAME_START);
+  return frames[frames.length - 1] ?? step;
+}
+
+/** Bytes a step drew, once the interface stopped drawing more. */
+const QUIET_MS = 300;
+const STEP_TIMEOUT_MS = 4_000;
+
+/**
+ * The interface, driven one step at a time.
+ *
+ * `press` and `resize` return *what that step drew*, which is the only way to
+ * assert that something closed: a pseudo-terminal's transcript is cumulative, so
+ * "Help" is in it forever once the overlay has been open, and an assertion
+ * against the whole transcript can only ever say a thing appeared.
+ */
+type Driver = {
+  readonly process: Bun.Subprocess;
+  readonly pty: Pty;
+  /** Writes bytes as input and returns what the interface drew in response. */
+  press(bytes: string | readonly number[]): Promise<string>;
+  /** Resizes the terminal under the running shell and returns what it redrew. */
+  resize(columns: number, rows: number): Promise<string>;
+};
+
 /** Starts the compiled shell on a pseudo-terminal and runs `act` once it has drawn. */
 async function runOnPty(
   argv: readonly string[],
-  act: (started: { readonly process: Bun.Subprocess; readonly pty: Pty }) => void,
+  act: (driver: Driver) => void | Promise<void>,
   options: {
     readonly columns?: number;
     readonly rows?: number;
@@ -180,7 +235,65 @@ async function runOnPty(
   }
 
   await Bun.sleep(MOUNT_MS);
-  act(run);
+
+  let read = pty.transcript().length;
+  /** Waits until the interface stops drawing, and returns what this step drew. */
+  const drawn = async (): Promise<string> => {
+    const deadline = Bun.nanoseconds() + STEP_TIMEOUT_MS * 1_000_000;
+    let quietSince = Bun.nanoseconds();
+    let seen = pty.transcript().length;
+    while (Bun.nanoseconds() < deadline) {
+      await Bun.sleep(50);
+      const now = pty.transcript().length;
+      if (now !== seen) {
+        seen = now;
+        quietSince = Bun.nanoseconds();
+        continue;
+      }
+      if (Bun.nanoseconds() - quietSince >= QUIET_MS * 1_000_000) {
+        break;
+      }
+    }
+    const whole = pty.transcript();
+    const step = whole.slice(read);
+    read = whole.length;
+    return step;
+  };
+
+  // Everything the mount itself drew, consumed before the first step. Without
+  // this the first step's slice carries the last frame of the *previous* state,
+  // and an assertion that the arrangement changed reads both and passes on the
+  // wrong one.
+  await drawn();
+
+  await act({
+    process: started,
+    pty,
+    async press(bytes) {
+      writeSync(
+        pty.master,
+        Buffer.from(typeof bytes === "string" ? bytes : Uint8Array.from(bytes)),
+      );
+      return await drawn();
+    },
+    async resize(columns, rows) {
+      const stty = Bun.spawn(["stty", "rows", String(rows), "columns", String(columns)], {
+        stdin: pty.master,
+        stdout: "ignore",
+        stderr: "ignore",
+      });
+      if ((await stty.exited) !== 0) {
+        throw new Error(`stty could not resize the terminal to ${columns}x${rows}`);
+      }
+      // The kernel signals the foreground process group of a *controlling*
+      // terminal, and a spawned child has none — `setsid` plus `TIOCSCTTY` is
+      // the other half of what a terminal emulator does, and `TIOCSCTTY` is an
+      // `ioctl`. The size is genuinely changed above; this delivers the
+      // notification the kernel would have.
+      started.kill("SIGWINCH");
+      return await drawn();
+    },
+  });
 
   const exitCode = await Promise.race([
     started.exited,
@@ -202,12 +315,24 @@ async function runOnPty(
  * *mode* now gets a run, which is a different axis from repeating a path.
  */
 describe.if(runnable)("the compiled shell on a real terminal", () => {
-  const interrupted = runOnPty([], ({ process: started }) => started.kill("SIGINT"));
+  /**
+   * The interrupt run, started once and read by the four checks below.
+   *
+   * Lazily, and that is not a micro-optimisation: `describe.if(false)` still
+   * evaluates its body, so starting the run here eagerly spawned the executable
+   * even on a host that has none — which surfaced as an unhandled `ENOENT`
+   * beside the skip notice, in the one case this file exists to report cleanly.
+   */
+  let started: Promise<ShellRun> | null = null;
+  const interrupted = (): Promise<ShellRun> => {
+    started ??= runOnPty([], ({ process: child }) => child.kill("SIGINT"));
+    return started;
+  };
 
   test(
     "opens an interface and lays it out against the terminal it was given",
     async () => {
-      const run = await interrupted;
+      const run = await interrupted();
       // The frame, on a real terminal. The header's labels are the load-bearing
       // half: they only appear when the layout class was selected from the
       // terminal's own size, and in `split-footer` the region the tree is drawn
@@ -231,7 +356,7 @@ describe.if(runnable)("the compiled shell on a real terminal", () => {
   test(
     "draws the transcript's empty state rather than a placeholder",
     async () => {
-      const run = await interrupted;
+      const run = await interrupted();
       // The primary region on the shipped binary. Before #355 this said
       // "Nothing is running yet." — filler that named no action. The empty state
       // that replaced it points at a command the running build actually has, and
@@ -246,7 +371,7 @@ describe.if(runnable)("the compiled shell on a real terminal", () => {
   test(
     "takes an interrupt through Falryn's own governance and exits 130",
     async () => {
-      const run = await interrupted;
+      const run = await interrupted();
       // The whole reason the renderer is created with `exitOnCtrlC: false` and
       // `exitSignals: []`. OpenTUI's default would have destroyed the renderer
       // and left the exit status to whatever happened next; this is Falryn's
@@ -262,7 +387,7 @@ describe.if(runnable)("the compiled shell on a real terminal", () => {
   test(
     "restores the terminal on the interrupt path",
     async () => {
-      const run = await interrupted;
+      const run = await interrupted();
       // Asserted on the bytes the terminal received rather than on anything the
       // program said about itself. This is the failure that leaves a user
       // closing their window, and it is invisible to every other check here.
@@ -340,25 +465,122 @@ describe.if(runnable)("the compiled shell on a real terminal", () => {
   );
 
   test(
-    "opens help from the keyboard, with every command and its key",
+    "opens help from the keyboard, with every command and its key, and closes it",
     async () => {
       // The overlay grows the footer to make room for itself, so this also
       // proves that: at the default six-row footer the panel would have had one
       // row and the commands would have drawn over each other.
-      const run = await runOnPty([], ({ pty }) => {
-        writeSync(pty.master, Buffer.from("?"));
-        setTimeout(() => writeSync(pty.master, Buffer.from([0x03])), 600);
+      let opened = "";
+      let closed = "";
+      const run = await runOnPty([], async (driver) => {
+        opened = await driver.press("?");
+        closed = await driver.press([0x1b]);
+        await driver.press([0x03]);
       });
       expect(run.exitCode).toBe(EXIT_CODES.COMPLETED);
-      expect(run.transcript).toContain("Help");
-      expect(run.transcript).toContain("ctrl+c");
+      expect(opened).toContain("Help");
+      expect(opened).toContain("ctrl+c");
       // A command that cannot run, listed with its reason rather than hidden.
       // `app.cancel` rather than a composer command: at this terminal height the
       // list truncates before the composer rows, which is the bounded-overlay
       // behavior working rather than a missing entry.
-      expect(run.transcript).toContain("nothing is running to cancel");
+      expect(opened).toContain("nothing is running to cancel");
+      // And closing gives the primary view back. Asserted on what the *step*
+      // drew, because the transcript keeps every byte the overlay ever wrote.
+      expect(closed).toContain("workspace");
+      expect(closed).not.toContain("Close overlay");
     },
     RUN_TIMEOUT_MS,
+  );
+
+  test(
+    "opens and closes the command palette",
+    async () => {
+      // Never exercised on the shipped artifact before. The palette holds a
+      // keyboard subscription of its own — #364 — so it is the route where a
+      // compiled build losing its input wiring would show up first.
+      let opened = "";
+      let searched = "";
+      let closed = "";
+      const run = await runOnPty([], async (driver) => {
+        opened = await driver.press([0x10]);
+        searched = await driver.press("exit");
+        closed = await driver.press([0x1b]);
+        await driver.press([0x03]);
+      });
+      expect(run.exitCode).toBe(EXIT_CODES.COMPLETED);
+      expect(opened).toContain("Commands");
+      // The search field takes characters as text rather than routing them
+      // through the command registry, which is the whole of #364.
+      expect(searched).toContain("exit");
+      expect(closed).toContain("workspace");
+      expect(closed).not.toContain("Commands");
+    },
+    RUN_TIMEOUT_MS,
+  );
+
+  test(
+    "takes typing into the composer and answers a submission",
+    async () => {
+      // Input reaching a compiled binary through a real pseudo-terminal is a
+      // different path from the mock keyboard: the bytes cross a tty in raw
+      // mode, and the composer reads them as text rather than as commands.
+      let typed = "";
+      let submitted = "";
+      const run = await runOnPty([], async (driver) => {
+        // Two tabs: header, then the primary region, then the composer.
+        await driver.press([0x09]);
+        await driver.press([0x09]);
+        typed = await driver.press("hello");
+        submitted = await driver.press([0x0d]);
+        await driver.press([0x03]);
+      });
+      expect(run.exitCode).toBe(EXIT_CODES.COMPLETED);
+      expect(typed).toContain("hello");
+      // Submission has no consumer in v0.1 and says so, with the issue that
+      // will give it one. Silently discarding what was typed is the failure.
+      expect(submitted).toContain("Not sent");
+      expect(submitted).toContain("#33");
+    },
+    RUN_TIMEOUT_MS,
+  );
+
+  test.if(resizable)(
+    "re-lays out when the terminal is resized under it",
+    async () => {
+      // The row a fixed-size pseudo-terminal cannot cover. The size is changed
+      // for real — `stty` reaches `TIOCSWINSZ` — and the shell is expected to
+      // draw a *different* arrangement, not merely to survive: at 44 columns the
+      // class is compact, and compact drops the header's labels for its values.
+      let narrow = "";
+      let wide = "";
+      const run = await runOnPty([], async (driver) => {
+        narrow = await driver.resize(44, 14);
+        wide = await driver.resize(COLUMNS, ROWS);
+        await driver.press([0x03]);
+      });
+      expect(run.exitCode).toBe(EXIT_CODES.COMPLETED);
+      // The frame it settled on, not the transition: a resize repaints at the
+      // old size before re-laying out at the new one, so the step carries both.
+      expect(settledFrame(narrow)).not.toContain("workspace");
+      expect(settledFrame(narrow)).toContain("current direct");
+      // And back: the arrangement follows the terminal rather than latching.
+      expect(settledFrame(wide)).toContain("workspace");
+      for (const [what, sequence] of Object.entries(RESTORED)) {
+        expect({ what, restored: run.transcript.includes(sequence) }).toEqual({
+          what,
+          restored: true,
+        });
+      }
+    },
+    RUN_TIMEOUT_MS,
+  );
+
+  test.if(!resizable)(
+    "was not resized, because this platform has no usable stty on a pseudo-terminal",
+    () => {
+      // Recorded rather than absent. The row is unqualified on this host.
+    },
   );
 
   test(

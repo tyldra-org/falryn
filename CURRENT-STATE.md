@@ -1496,6 +1496,35 @@ that show the cursor, reset the scroll region, and turn bracketed paste off. It
 reports itself skipped rather than passed when `dist/falryn` is unbuilt or the
 platform has no `openpty`.
 
+The walk is driven a step at a time now
+([#375](https://github.com/yogeshprasad098/falryn/issues/375)), so both overlays
+are opened *and* closed, the composer is typed into and its submission answered,
+and the terminal is resized under the running shell. Each step returns the bytes
+it drew, because a pseudo-terminal's transcript is cumulative: "Help" stays in it
+forever once the overlay has been open, so asserting that something closed needs
+the step and not the whole run. A step can also carry more than one frame — a
+resize repaints at the old size before re-laying out at the new one — so the
+assertion is on the frame the step settled on, found by splitting on the
+synchronized-update sequence.
+
+Resizing goes through `stty`, which was measured rather than chosen: `ioctl` is
+variadic, and calling it through Bun's fixed-arity FFI segfaults the process on
+arm64, exactly as this file's own comment predicted. `stty` reaches
+`TIOCSWINSZ` from a real C program, and the size change is verified by reading
+it back. The kernel signals the foreground process group of a *controlling*
+terminal and a spawned child has none, so the walk delivers the `SIGWINCH` the
+kernel would have; that half is the operating system's, not Falryn's. At 44
+columns the shell drops the header's labels for their values and puts them back
+when the terminal grows, which is the layout class following the terminal rather
+than latching.
+
+Removing `renderer.destroy()` from the restoration path fails ten of the walk's
+checks, including all four new ones — the restoration assertion is real on every
+path, not only on the two that had it. And with `dist/falryn` absent the file now
+reports fourteen skipped checks where it reported one: the shared interrupt run
+was started while the `describe` body was evaluated, which `describe.if(false)`
+still does, so it threw and the remaining checks were never registered at all.
+
 `integration` joined `RUNTIME_EMITTED_CATEGORIES`, so exit code `5` is now
 reachable: a renderer that could not start is a dependency this run needed and
 did not have. `dist/falryn` grew from 64,568,930 to 75,054,050 bytes — the
