@@ -1496,6 +1496,50 @@ that show the cursor, reset the scroll region, and turn bracketed paste off. It
 reports itself skipped rather than passed when `dist/falryn` is unbuilt or the
 platform has no `openpty`.
 
+The walk is driven a step at a time now
+([#375](https://github.com/yogeshprasad098/falryn/issues/375)), so both overlays
+are opened *and* closed, the composer is typed into and its submission answered,
+and the terminal is resized under the running shell. Each step returns the bytes
+it drew, because a pseudo-terminal's transcript is cumulative: "Help" stays in it
+forever once the overlay has been open, so asserting that something closed needs
+the step and not the whole run. A step can also carry more than one frame — a
+resize repaints at the old size before re-laying out at the new one — so the
+assertion is on the frame the step settled on, found by splitting on the
+synchronized-update sequence.
+
+Resizing goes through `stty`, which was measured rather than chosen: `ioctl` is
+variadic, and calling it through Bun's fixed-arity FFI segfaults the process on
+arm64, exactly as this file's own comment predicted. `stty` reaches
+`TIOCSWINSZ` from a real C program, and the size change is verified by reading
+it back. The kernel signals the foreground process group of a *controlling*
+terminal and a spawned child has none, so the walk delivers the `SIGWINCH` the
+kernel would have; that half is the operating system's, not Falryn's. At 44
+columns the shell drops the header's labels for their values and puts them back
+when the terminal grows, which is the layout class following the terminal rather
+than latching.
+
+Restoration is asserted on every path the walk drives, through one function
+rather than a copy of the loop per check — the copies are how three of the four
+new paths first shipped asserting an exit status and nothing about the terminal
+they left behind. Removing `renderer.destroy()` from the restoration path fails
+ten of the walk's checks.
+
+The negative a check names is chosen by measuring rather than by reading. The
+first version of the help check asserted that a closed overlay had not drawn
+`"Close overlay"` — a real command title, but one the help list truncates before
+reaching at thirty rows, so it appeared in neither the open state nor the closed
+one and the check passed against nothing. The panel's own title discriminates:
+pointed at the step that opened the overlay it fails, where the old predicate
+passes.
+
+A row that could not run reports itself skipped and never as an empty passing
+check. With `dist/falryn` absent the file reports fourteen skips where it
+reported one — the shared interrupt run was started while the `describe` body
+was evaluated, which `describe.if(false)` still does, so it threw and the
+remaining checks were never registered at all. With `stty` unavailable the
+resize row and its explanation are both skips, and the run drops from twelve
+passing checks to eleven rather than substituting a green tick for the row.
+
 `integration` joined `RUNTIME_EMITTED_CATEGORIES`, so exit code `5` is now
 reachable: a renderer that could not start is a dependency this run needed and
 did not have. `dist/falryn` grew from 64,568,930 to 75,054,050 bytes — the
