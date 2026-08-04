@@ -79,12 +79,49 @@ function model(overrides: Partial<ShellModel> = {}): ShellModel {
 }
 
 /**
+ * The cell a test renderer's buffer holds before anything has drawn into it.
+ *
+ * `U+0A00`, and the whole of #372 is that it is not whitespace. The old
+ * predicate asked `frame.trim() !== ""`, which an entirely unpainted buffer
+ * satisfies — so a rendered check could be handed the buffer as its answer,
+ * failing at random where the assertion was positive and *passing against
+ * nothing* where it was negative.
+ */
+const UNPAINTED = "਀";
+
+/**
+ * Whether a captured buffer is a frame the shell drew.
+ *
+ * Two conditions, and both are needed. A buffer holding an unpainted cell
+ * anywhere has not finished being drawn into — the renderer paints the whole
+ * region, so a partial capture is a capture taken mid-pass rather than a frame
+ * with a gap in it. A buffer of nothing but spaces is painted and empty, which
+ * is not a frame either.
+ *
+ * Exported shape rather than an inline comparison so `#372`'s own reproduction
+ * can hand it a buffer directly, which is the only way to check a settle
+ * predicate without waiting for the race it exists to lose.
+ */
+function hasPainted(frame: string): boolean {
+  return frame.trim() !== "" && !frame.includes(UNPAINTED);
+}
+
+/** How long a mount is given before the wait is a failure rather than a delay. */
+const SETTLE_ATTEMPTS = 60;
+const SETTLE_INTERVAL_MS = 5;
+
+/**
  * Mounts a tree and returns the characters it drew.
  *
  * The sleep-and-flush loop is deliberate: React commits on a microtask and the
  * test renderer's own frame predicate advances passes without yielding to the
  * host loop, so a wait that never hands the loop back polls a buffer nothing has
  * drawn into.
+ *
+ * It throws rather than returning the last capture when nothing settles. A
+ * helper that hands back whatever the buffer happened to hold turns "the shell
+ * never painted" into "the assertion below failed", which is a different defect
+ * reported in a different place.
  */
 async function render(
   node: ReactNode,
@@ -93,7 +130,7 @@ async function render(
    * Text to wait for, when the first painted frame is not the final one.
    *
    * An animated reveal commits several frames, and the early ones are a panel
-   * two rows tall with nothing in it yet. A test that took the first non-empty
+   * two rows tall with nothing in it yet. A test that took the first painted
    * frame would be asserting on the middle of a transition.
    */
   until?: string,
@@ -105,16 +142,20 @@ async function render(
   });
   live.push(setup);
   createRoot(setup.renderer).render(node);
-  for (let attempt = 0; attempt < 60; attempt += 1) {
-    await Bun.sleep(5);
+  let last = "";
+  for (let attempt = 0; attempt < SETTLE_ATTEMPTS; attempt += 1) {
+    await Bun.sleep(SETTLE_INTERVAL_MS);
     await setup.flush();
-    const frame = setup.captureCharFrame();
-    const settled = until === undefined ? frame.trim() !== "" : frame.includes(until);
-    if (settled) {
-      return frame;
+    last = setup.captureCharFrame();
+    if (hasPainted(last) && (until === undefined || last.includes(until))) {
+      return last;
     }
   }
-  return setup.captureCharFrame();
+  throw new Error(
+    `the frame never settled after ${SETTLE_ATTEMPTS * SETTLE_INTERVAL_MS}ms` +
+      ` (${size.columns}×${size.rows}, painted: ${hasPainted(last)}` +
+      `${until === undefined ? "" : `, waiting for ${JSON.stringify(until)}`})`,
+  );
 }
 
 /** An open palette, spelled once because the sweeps below open it many times. */
@@ -128,6 +169,54 @@ function shell(
 ): Promise<string> {
   return render(<AppShell theme={{ ...THEME, ...theme }} model={model(overrides)} />, size, until);
 }
+
+describe("the settle predicate", () => {
+  test("refuses the buffer a renderer starts with", async () => {
+    // #372's reproduction, and it needs no race: a renderer's buffer before
+    // anything draws into it is `U+0A00` in every cell, which is not whitespace.
+    // The old predicate — `frame.trim() !== ""` — is *true* for that buffer, so
+    // it was handed back as a settled frame whenever a capture won the race
+    // against the first paint. Roughly one full-suite run in four.
+    const setup = await createTestRenderer({ width: 20, height: 4, consoleMode: "disabled" });
+    live.push(setup);
+    const unpainted = setup.captureCharFrame();
+
+    expect(unpainted.trim() !== "").toBe(true);
+    expect(hasPainted(unpainted)).toBe(false);
+  });
+
+  test("refuses a frame with an unpainted cell left in it", async () => {
+    // A capture taken mid-pass, rather than a whole buffer. The renderer paints
+    // the region it owns, so one unpainted cell means the pass was not finished
+    // and not that the frame has a hole in it.
+    expect(hasPainted(`the header  ${UNPAINTED}`)).toBe(false);
+  });
+
+  test("refuses a frame that is painted and empty", async () => {
+    // The condition the old predicate got right, which is why it survived: a
+    // buffer of spaces is a renderer that drew nothing.
+    expect(hasPainted("   \n   \n")).toBe(false);
+  });
+
+  test("accepts a frame the shell actually drew", async () => {
+    const frame = await render(<AppShell theme={THEME} model={model()} />);
+    expect(hasPainted(frame)).toBe(true);
+    expect(frame).toContain("/work/falryn");
+  });
+
+  test("reports a failure to settle rather than handing back the last capture", async () => {
+    // The other half of #372. A helper that returns whatever the buffer held
+    // reports "the shell never painted" as "the assertion below failed", which
+    // sends a reader to the wrong place entirely.
+    await expect(
+      render(
+        <AppShell theme={THEME} model={model()} />,
+        { columns: 60, rows: 12 },
+        "nothing draws this",
+      ),
+    ).rejects.toThrow(/never settled/);
+  });
+});
 
 describe("the frame", () => {
   test("draws the header, the primary region, and the status line", async () => {
@@ -288,6 +377,12 @@ describe("width classes", () => {
       rows: MINIMUM_ROWS,
     });
     expect(frame).not.toContain("too small");
+    // Said positively as well, and #372 is why. This was the one test in this
+    // file whose only assertion was a negative, so on a run where the settle
+    // predicate accepted an unpainted buffer it passed against nothing. A
+    // negative alone cannot tell "the notice is absent" from "the frame is".
+    expect(frame).toContain("/work/");
+    expect(frame).toContain("Not here yet");
   });
 });
 
@@ -503,6 +598,12 @@ async function revealFrames(
     await Bun.sleep(4);
     await setup.flush();
     const frame = setup.captureCharFrame();
+    // Painted first, for the reason #372 records: a capture taken mid-pass is
+    // not a step of the transition, and collecting one would put an assertion
+    // about what the overlay drew onto a buffer it had not finished drawing.
+    if (!hasPainted(frame)) {
+      continue;
+    }
     if (frame.includes(arrivedWhen)) {
       return { during, arrived: frame };
     }
@@ -510,7 +611,7 @@ async function revealFrames(
       during.push(frame);
     }
   }
-  throw new Error("the reveal never arrived");
+  throw new Error(`the reveal never arrived, waiting for ${JSON.stringify(arrivedWhen)}`);
 }
 
 /**
