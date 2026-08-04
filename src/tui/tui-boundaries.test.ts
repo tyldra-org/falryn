@@ -886,6 +886,10 @@ describe("the rendered test harness", () => {
     // rendered check that rolls its own setup shows up here as a difference
     // rather than as a slow drift back to nine copies.
     expect(await consumers()).toEqual([
+      // #376: the coalescing check mounts the same tree every other rendered
+      // check mounts, which is why it is here rather than standing up a
+      // renderer of its own.
+      "coalescing.test.tsx",
       "components/activity-rail.test.tsx",
       "components/composer.test.tsx",
       "components/frame.test.tsx",
