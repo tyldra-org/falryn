@@ -14,6 +14,36 @@
  */
 
 export type {
+  ActivityCursor,
+  ActivityEntry,
+  ActivityProjection,
+  ActivitySource,
+  HealthFact,
+  HealthInput,
+  HealthLevel,
+  RuntimeHealth,
+  ShutdownState,
+} from "./activity/index.ts";
+export {
+  ACTIVITY_PROJECTION_GENERATION,
+  ACTIVITY_SOURCES,
+  describeActivity,
+  EMPTY_ACTIVITY,
+  entryForEvent,
+  foldEntry,
+  HEALTH_LEVELS,
+  initialActivityCursor,
+  isLive,
+  liveEntries,
+  MAX_SETTLED_ENTRIES,
+  NO_HEALTH_INPUT,
+  projectHealth,
+  reduceActivity,
+  resubscribeActivity,
+  resumableActivity,
+  settledEntries,
+} from "./activity/index.ts";
+export type {
   ArtifactBlock,
   BlockAnchor,
   BlockSensitivity,

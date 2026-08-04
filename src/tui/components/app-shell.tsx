@@ -29,8 +29,10 @@ import { type ReactNode, useMemo, useRef } from "react";
 import { type ComposerAction, linesOf } from "../composer/index.ts";
 import {
   composerRows,
+  hasContextPanel,
   type LayoutDecision,
   primaryColumns,
+  primaryRows,
   selectLayout,
   type Viewport,
 } from "../layout.ts";
@@ -38,6 +40,7 @@ import { createTextCache } from "../text-cache.ts";
 import { resolveTheme, type ThemeRequest } from "../theme/index.ts";
 import type { TranscriptGeometry } from "../transcript-model.ts";
 import type { CommandEntry, ShellModel } from "../view-model.ts";
+import { ActivityRail } from "./activity-rail.tsx";
 import { ComposerView } from "./composer.tsx";
 import { type Frame, FrameProvider } from "./context.tsx";
 import { OverlayHost } from "./overlay.tsx";
@@ -168,37 +171,53 @@ function ShellFrame(props: {
 }): ReactNode {
   const { model } = props;
   // Bounded rather than stretched. A `wide` terminal has room for a contextual
-  // panel, and until #25 puts one there the right thing to do with the extra
-  // columns is not to run prose across all of them — a 300-column line is a
-  // line nobody can track back to its start.
+  // panel, and #358 puts the activity rail there — so the columns the rail
+  // takes are subtracted rather than the transcript being given a proportion,
+  // which is how an interface arrives at a permanently tiled control centre.
   const primary = primaryColumns(props.viewport, props.layout.class);
+  const railRows = primaryRows(
+    props.viewport,
+    composerRows(linesOf(model.composer.state.editor).length),
+  );
 
   return (
     <box flexDirection="column" width={props.viewport.columns} height={props.viewport.rows}>
       <WorkspaceHeader model={model.header} />
-      <box flexGrow={1} flexDirection="column" width={primary}>
-        {model.overlay.kind === "none" ? (
-          <TranscriptView
-            model={model.transcript}
-            {...(props.onTranscriptGeometry === undefined
-              ? {}
-              : { onGeometry: props.onTranscriptGeometry })}
-          />
-        ) : (
-          <OverlayHost
-            route={model.overlay}
-            title={model.overlay.kind === "help" ? "Help" : "Commands"}
-            dismissHint="Esc closes this"
-          >
-            {(rows) =>
-              model.overlay.kind === "help" ? (
-                <HelpOverlay sections={model.help} commands={props.commandRows} rows={rows} />
-              ) : (
-                <CommandPalette commands={model.commands} query="" rows={rows} />
-              )
-            }
-          </OverlayHost>
-        )}
+      <box flexDirection="row" flexGrow={1}>
+        <box flexGrow={1} flexDirection="column" width={primary}>
+          {model.overlay.kind === "none" ? (
+            <TranscriptView
+              model={model.transcript}
+              {...(props.onTranscriptGeometry === undefined
+                ? {}
+                : { onGeometry: props.onTranscriptGeometry })}
+            />
+          ) : (
+            <OverlayHost
+              route={model.overlay}
+              title={model.overlay.kind === "help" ? "Help" : "Commands"}
+              dismissHint="Esc closes this"
+            >
+              {(rows) =>
+                model.overlay.kind === "help" ? (
+                  <HelpOverlay sections={model.help} commands={props.commandRows} rows={rows} />
+                ) : (
+                  <CommandPalette commands={model.commands} query="" rows={rows} />
+                )
+              }
+            </OverlayHost>
+          )}
+        </box>
+        {/*
+         * The one persistent contextual surface a wide layout gets. The design
+         * direction allows exactly one and refuses a permanently tiled control
+         * centre, so narrower layouts get no rail rather than a squeezed one —
+         * and `primaryColumns` already subtracts its width only when it is
+         * drawn, so the transcript keeps the room on every other layout.
+         */}
+        {hasContextPanel(props.layout.class) ? (
+          <ActivityRail projection={model.activity.projection} rows={railRows} />
+        ) : null}
       </box>
       {/*
        * Below the primary region and above the status line, which is reading

@@ -15,6 +15,7 @@
  * `unavailable` is not a placeholder, it is the truth.
  */
 
+import type { ActivityModel } from "./activity-model.ts";
 import type { ComposerModel } from "./composer-model.ts";
 import type { StatusToken } from "./theme/index.ts";
 import type { TranscriptModel } from "./transcript-model.ts";
@@ -152,4 +153,12 @@ export type ShellModel = {
    * would be a frame with two arrangements to keep working.
    */
   readonly composer: ComposerModel;
+  /**
+   * What the runtime is doing.
+   *
+   * Required rather than optional, like the transcript and the composer. A shell
+   * always has a runtime to describe — even when the honest description is that
+   * nothing is attached, which is a different statement from nothing running.
+   */
+  readonly activity: ActivityModel;
 };

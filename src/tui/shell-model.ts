@@ -14,7 +14,13 @@
  */
 
 import type { GlobalOptions } from "../cli/index.ts";
-import { EMPTY_PROJECTION } from "../presentation/index.ts";
+import {
+  EMPTY_ACTIVITY,
+  EMPTY_PROJECTION,
+  NO_HEALTH_INPUT,
+  projectHealth,
+} from "../presentation/index.ts";
+import type { ActivityModel } from "./activity-model.ts";
 import { COMPOSER_FEATURES, INITIAL_COMPOSER_STATE } from "./composer/index.ts";
 import type { ComposerModel } from "./composer-model.ts";
 import { INITIAL_TRANSCRIPT_STATE } from "./transcript/index.ts";
@@ -48,6 +54,19 @@ export const EMPTY_COMPOSER_MODEL: ComposerModel = {
   commands: [],
   features: COMPOSER_FEATURES,
   focused: false,
+};
+
+/**
+ * An activity model for a run with no runtime attached.
+ *
+ * Health is *projected* from the absent inputs rather than written out, so
+ * this value cannot disagree with what a live run would report from the same
+ * facts. The level it resolves to is `unknown`, which is the honest answer:
+ * nothing is attached, which is not the same as nothing running.
+ */
+export const EMPTY_ACTIVITY_MODEL: ActivityModel = {
+  projection: EMPTY_ACTIVITY,
+  health: projectHealth(NO_HEALTH_INPUT),
 };
 
 /**
@@ -111,5 +130,6 @@ export function shellModel(options: GlobalOptions): ShellModel {
     help: [...SHELL_HELP],
     transcript: EMPTY_TRANSCRIPT_MODEL,
     composer: EMPTY_COMPOSER_MODEL,
+    activity: EMPTY_ACTIVITY_MODEL,
   };
 }

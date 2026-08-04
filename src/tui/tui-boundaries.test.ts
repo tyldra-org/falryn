@@ -601,6 +601,67 @@ describe("the scrollback boundary", () => {
   });
 });
 
+describe("the activity rail", () => {
+  test("persists no ephemeral view state", async () => {
+    // The acceptance criterion. Focus, scroll, and animation are properties of a
+    // reading session; restoring one from a previous run would put a reader
+    // somewhere they did not leave, and the only way to be sure it cannot happen
+    // is that nothing here can write anywhere that outlives the process.
+    for (const file of await productFiles()) {
+      if (!file.startsWith("activity") && file !== "components/activity-rail.tsx") {
+        continue;
+      }
+      const source = await readCode(file);
+      for (const forbidden of [
+        /localStorage/,
+        /\bwriteFile\b/,
+        /\bBun\.write\b/,
+        /from "bun:sqlite"/,
+        /\bglobalThis\.[A-Za-z_]+\s*=/,
+      ]) {
+        expect({ file, forbidden: forbidden.source, found: forbidden.test(source) }).toEqual({
+          file,
+          forbidden: forbidden.source,
+          found: false,
+        });
+      }
+    }
+  });
+
+  test("maps a status token in one module, and the projection authors none", async () => {
+    // The same split the transcript makes. The projection says `cancelling` and
+    // `uncertain`; what those look like is the theme's answer, made where the
+    // terminal's capabilities are known.
+    const owners: string[] = [];
+    for (const file of await productFiles()) {
+      if ((await readCode(file)).includes("function statusOfActivity")) {
+        owners.push(file);
+      }
+    }
+    expect(owners).toEqual(["activity/rows.ts"]);
+  });
+
+  test("draws the rail only where the layout says a panel belongs", async () => {
+    // One persistent contextual surface on wide layouts, and no permanently
+    // tiled control centre. The predicate is consulted rather than a width being
+    // compared a second time.
+    expect(await readCode("components/app-shell.tsx")).toContain("hasContextPanel(");
+    expect(await readCode("components/app-shell.tsx")).toContain("<ActivityRail");
+  });
+
+  test("projects health in one place, so the rail and the status line agree", async () => {
+    // Two components each deriving a level from overlapping inputs is exactly
+    // how a status line says "idle" beside a rail showing a failure.
+    const callers: string[] = [];
+    for (const file of await productFiles()) {
+      if (/\bprojectHealth\(/.test(await readCode(file))) {
+        callers.push(file);
+      }
+    }
+    expect(callers).toEqual(["components/shell-app.tsx", "shell-model.ts"]);
+  });
+});
+
 describe("the mode contract", () => {
   test("is consulted by the renderer configuration rather than only exported", async () => {
     // #351 in one assertion. `capturesStdout` existed, was exported, was

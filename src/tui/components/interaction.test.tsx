@@ -39,7 +39,7 @@ const THEME: ThemeRequest = {
   generation: 1,
 };
 
-const MODEL: Omit<ShellModel, "overlay" | "commands" | "transcript" | "composer"> = {
+const MODEL: Omit<ShellModel, "overlay" | "commands" | "transcript" | "composer" | "activity"> = {
   header: {
     workspace: known("/work/falryn"),
     branch: unavailable("no Git yet"),

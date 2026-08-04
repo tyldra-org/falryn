@@ -238,6 +238,66 @@ describe("no second answers", () => {
   });
 });
 
+describe("the activity projection", () => {
+  test("declares no second outcome vocabulary and re-derives no scope state", async () => {
+    // `TerminalOutcome`, `EffectCertainty`, and `ScopeStatus` are the runtime's.
+    // The rail reports one; it does not decide what one is. A copy here would
+    // disagree with the CLI renderer reading the same facts the first time
+    // either changed.
+    for (const file of await productFiles()) {
+      if (!file.startsWith("activity/")) {
+        continue;
+      }
+      const source = await readCode(file);
+      for (const forbidden of [
+        /SCOPE_STATUSES\s*=/,
+        /TERMINAL_OUTCOME_KINDS\s*=/,
+        /EFFECT_CERTAINTIES\s*=/,
+        /function effectOf/,
+      ]) {
+        expect({ file, forbidden: forbidden.source, found: forbidden.test(source) }).toEqual({
+          file,
+          forbidden: forbidden.source,
+          found: false,
+        });
+      }
+    }
+  });
+
+  test("holds nothing it could restart", async () => {
+    // The acceptance criterion, taken structurally. "Resubscription does not
+    // restart the runtime" is strongest when the module doing the resubscribing
+    // cannot reach a runtime at all — no scope tree, no scheduler, no
+    // coordinator, no port to call.
+    for (const file of await productFiles()) {
+      if (!file.startsWith("activity/")) {
+        continue;
+      }
+      const source = await readCode(file);
+      for (const forbidden of [
+        /createScopeTree/,
+        /createScheduler/,
+        /createShutdownCoordinator/,
+        /\.shutdown\(/,
+        /\.cancel\(/,
+        /\.restart\(/,
+      ]) {
+        expect({ file, forbidden: forbidden.source, found: forbidden.test(source) }).toEqual({
+          file,
+          forbidden: forbidden.source,
+          found: false,
+        });
+      }
+    }
+  });
+
+  test("bounds what it retains", async () => {
+    // A rail is a view of what is happening rather than a log of what happened.
+    // An unbounded fold over a long session is memory nothing releases.
+    expect(await readCode("activity/reducer.ts")).toContain("MAX_SETTLED_ENTRIES");
+  });
+});
+
 describe("the expansion contract", () => {
   test("declares no route that nothing produces", async () => {
     // #351 in this area's terms. A route that is exported, typed, and never
