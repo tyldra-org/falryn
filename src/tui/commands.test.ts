@@ -27,9 +27,11 @@ import {
 import {
   activeBindings,
   bindingsForContext,
+  bindingsWhileTyping,
   commandRows,
   describeRefusal,
   isContextActive,
+  isTypedKey,
   planKeymap,
   resolveBinding,
 } from "./keymap.ts";
@@ -329,5 +331,50 @@ describe("the rows help and the palette render", () => {
   test("show no key for a command that deliberately has none", () => {
     const rows = commandRows(plan(), { ...EMPTY_COMMAND_STATE, hasConfirmation: true });
     expect(rows.find((row) => row.id === "confirmation.accept")?.binding).toBe(null);
+  });
+});
+
+describe("bindings while a text control has focus", () => {
+  test("withholds bare single-character keys", () => {
+    // A layer that claims a key means the focused control never sees it, which
+    // was measured against the real keymap rather than assumed. So a composer
+    // with `?` bound anywhere above it is a composer that cannot type a question
+    // mark, and that is not an inconvenience — it is a text control that is
+    // broken for a character prompts use constantly.
+    const declared = bindingsForContext(plan(), "global");
+    expect(declared.some((binding) => binding.key === "?")).toBe(true);
+    expect(bindingsWhileTyping(declared).some((binding) => binding.key === "?")).toBe(false);
+  });
+
+  test("keeps every modified and named binding, including both ways out", () => {
+    // The rule is deliberately narrow, which is what makes it a re-route of one
+    // key rather than a trap: `ctrl+c` and `escape` are the two paths out of a
+    // full-screen interface and neither is a bare character.
+    const live = bindingsWhileTyping(plan().bindings);
+    for (const key of ["ctrl+c", "ctrl+p", "escape", "tab", "shift+tab", "return"]) {
+      expect({ key, kept: live.some((binding) => binding.key === key) }).toEqual({
+        key,
+        kept: true,
+      });
+    }
+  });
+
+  test("recognizes a typed key by what it is rather than from a list", () => {
+    for (const key of ["?", "a", "\u00e9"]) {
+      expect({ key, typed: isTypedKey(key) }).toEqual({ key, typed: true });
+    }
+    for (const key of ["ctrl+c", "tab", "escape", "shift+return", " "]) {
+      expect({ key, typed: isTypedKey(key) }).toEqual({ key, typed: false });
+    }
+  });
+
+  test("withholds nothing a command needs to stay listed", () => {
+    // Withholding a binding is not removing a command. Every one stays
+    // registered, searchable, and reachable from the palette, which is what the
+    // composer's own status row points at.
+    const withheld = plan().bindings.filter((binding) => isTypedKey(binding.key));
+    for (const binding of withheld) {
+      expect(commandById(binding.command)).toBeDefined();
+    }
   });
 });

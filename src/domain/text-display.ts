@@ -83,6 +83,36 @@ function characterWidth(character: string): number {
   return isWide(code) ? 2 : 1;
 }
 
+/**
+ * The user-perceived characters in this text.
+ *
+ * A grapheme cluster is what a person means by "a character" and what a cursor
+ * has to move over: `é` written as `e` plus a combining accent is one of them
+ * over two code points, a flag is one over two, and a family emoji is one over
+ * seven joined by zero-width joiners. Moving by code point through any of those
+ * puts the cursor inside a character, and deleting one leaves a fragment that
+ * renders as something the user never typed.
+ *
+ * `Intl.Segmenter` is the platform's own answer and is the reason this is four
+ * lines rather than a table nobody can maintain across Unicode releases — the
+ * same argument the width ranges above make in the opposite direction, where a
+ * generated table would have to be regenerated per release for characters this
+ * build has no case for.
+ *
+ * Lives here rather than in the composer because it is a pure text fact with no
+ * interface opinion in it, beside the width rule it is the counterpart to. A
+ * second segmenter in a view would be a second answer to what a character is.
+ */
+export function graphemes(text: string): readonly string[] {
+  if (text === "") {
+    return [];
+  }
+  return [...SEGMENTER.segment(text)].map((entry) => entry.segment);
+}
+
+/** Locale-independent on purpose: a cursor does not move differently in French. */
+const SEGMENTER = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+
 /** How many terminal cells this text occupies. */
 export function displayWidth(text: string): number {
   let width = 0;

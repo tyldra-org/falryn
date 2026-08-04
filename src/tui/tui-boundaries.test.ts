@@ -32,6 +32,10 @@ const RENDERER_OWNERS = [
   // narrow by construction rather than by convention.
   "scrollback.ts",
   "components/scrollback-commits.tsx",
+  // The composer subscribes to keys and pastes. #357: typing is not a command,
+  // so the control receives raw input rather than routing every character
+  // through the registry.
+  "components/composer.tsx",
   // The root measures the viewport through the renderer's own hooks. Nothing
   // below it does: every component reads the frame from context instead, which
   // is what keeps the measurement in one place.
@@ -446,6 +450,112 @@ describe("the transcript surface", () => {
       }
     }
     expect(owners).toEqual(["transcript/routes.ts"]);
+  });
+});
+
+describe("the composer", () => {
+  test("keeps the editing model free of the renderer and of React", async () => {
+    // The owner boundary #357 names: graphemes, history, and draft survival are
+    // asserted without a terminal, which only stays true while nothing in the
+    // model can reach one.
+    for (const file of await productFiles()) {
+      if (!file.startsWith("composer/")) {
+        continue;
+      }
+      const source = await readValues(file);
+      expect({ file, opentui: /from "@opentui\//.test(source) }).toEqual({ file, opentui: false });
+      expect({ file, react: /from "react"/.test(source) }).toEqual({ file, react: false });
+    }
+  });
+
+  test("persists no draft and no history", async () => {
+    // Nothing outlives the session. History is where text survives the moment it
+    // was typed, so it is also the one place a secret that slipped past the
+    // refusal could resurface days later — and the only way to be sure it cannot
+    // is that nothing here can write anywhere durable.
+    for (const file of await productFiles()) {
+      if (!file.startsWith("composer/")) {
+        continue;
+      }
+      const source = await readCode(file);
+      for (const forbidden of [
+        /localStorage/,
+        /\bwriteFile\b/,
+        /\bBun\.write\b/,
+        /from "bun:sqlite"/,
+        /\bglobalThis\.[A-Za-z_]+\s*=/,
+      ]) {
+        expect({ file, forbidden: forbidden.source, found: forbidden.test(source) }).toEqual({
+          file,
+          forbidden: forbidden.source,
+          found: false,
+        });
+      }
+    }
+  });
+
+  test("writes no second rule for what a secret looks like", async () => {
+    // `looksSecret` in `./paste.ts` is the one weak signal, and
+    // `src/application/redaction.ts` owns the strong one. A pattern of this
+    // module's own would be a third answer that disagrees with both the first
+    // time any of them learned about a new credential shape.
+    const history = await readCode("composer/history.ts");
+    expect(history).toContain("looksSecret");
+    for (const file of await productFiles()) {
+      if (!file.startsWith("composer/")) {
+        continue;
+      }
+      const source = await readCode(file);
+      for (const forbidden of [/\bapi[_-]?key\b/i, /\bBearer\b/, /PRIVATE KEY/]) {
+        expect({ file, forbidden: forbidden.source, found: forbidden.test(source) }).toEqual({
+          file,
+          forbidden: forbidden.source,
+          found: false,
+        });
+      }
+    }
+  });
+
+  test("segments graphemes through the domain rather than its own segmenter", async () => {
+    // What a character is has one owner. A second `Intl.Segmenter` would be a
+    // second answer, and the two would disagree the first time either was
+    // configured differently.
+    const segmenters: string[] = [];
+    for (const file of await productFiles()) {
+      if ((await readCode(file)).includes("new Intl.Segmenter")) {
+        segmenters.push(file);
+      }
+    }
+    expect(segmenters).toEqual([]);
+    expect(await readCode("composer/editor.ts")).toContain("graphemes");
+  });
+
+  test("routes every submission through the declared port", async () => {
+    // Not a stub agent loop behind the button. The one implementation in this
+    // build refuses and says why, and a second submit path would be a second
+    // answer to what happens to a turn.
+    const ports: string[] = [];
+    for (const file of await productFiles()) {
+      if ((await readCode(file)).includes("SubmissionPort = {")) {
+        ports.push(file);
+      }
+    }
+    expect(ports).toEqual(["composer/submission.ts"]);
+  });
+
+  test("reserves the composer's rows in the layout rather than in the view", async () => {
+    // The transcript sizes its window from what is left, so the two numbers have
+    // to come from one function. A composer that drew a row more than the layout
+    // reserved would overdraw the transcript's last line, and it would read as a
+    // rendering glitch rather than the arithmetic disagreement it is.
+    const declarers: string[] = [];
+    for (const file of await productFiles()) {
+      if ((await readCode(file)).includes("export function composerRows")) {
+        declarers.push(file);
+      }
+    }
+    expect(declarers).toEqual(["layout.ts"]);
+    expect(await readCode("components/composer.tsx")).toContain("frame.composerRows");
   });
 });
 

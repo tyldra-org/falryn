@@ -30,6 +30,16 @@ import {
   type ShellCommand,
 } from "../commands.ts";
 import {
+  type ComposerAction,
+  type ComposerState,
+  composerReducer,
+  cursorPosition,
+  INITIAL_COMPOSER_STATE,
+  linesOf,
+  type SubmissionPort,
+  UNAVAILABLE_SUBMISSION,
+} from "../composer/index.ts";
+import {
   containFocus,
   createFocusModel,
   type FocusModel,
@@ -66,8 +76,15 @@ import type { OverlayRoute } from "../view-model.ts";
 export const FRAME_REGIONS: readonly FocusRegion[] = [
   { id: "frame.header", label: "workspace header" },
   { id: "frame.primary", label: "main region" },
+  // Between the transcript and the status line, which is where it is drawn and
+  // where reading order puts it. #357: the composer is a focusable control, and
+  // its focus is what activates the composer keymap layer.
+  { id: "frame.composer", label: "composer" },
   { id: "frame.status", label: "status line" },
 ];
+
+/** The region id the composer occupies. One owner, so nothing spells it twice. */
+export const COMPOSER_REGION = "frame.composer";
 
 /** The regions an overlay contains focus within while it is open. */
 export function overlayRegions(route: OverlayRoute): readonly FocusRegion[] {
@@ -107,6 +124,8 @@ export type ShellState = {
   /** What the reader has done to the transcript. Never persisted. */
   readonly transcript: TranscriptSurfaceState;
   readonly transcriptFacts: TranscriptFacts;
+  /** The draft, its history, and the phase. Lives here so an overlay cannot reach it. */
+  readonly composer: ComposerState;
 };
 
 export type ShellAction =
@@ -120,6 +139,7 @@ export type ShellAction =
   | { readonly kind: "transcript"; readonly action: TranscriptSurfaceAction }
   /** The surface measured itself. Only dispatched when an answer actually changed. */
   | { readonly kind: "transcript-facts"; readonly facts: TranscriptFacts }
+  | { readonly kind: "composer"; readonly action: ComposerAction }
   | { readonly kind: "exit" };
 
 export const INITIAL_SHELL_STATE: ShellState = {
@@ -129,6 +149,7 @@ export const INITIAL_SHELL_STATE: ShellState = {
   exiting: false,
   transcript: INITIAL_TRANSCRIPT_STATE,
   transcriptFacts: NO_TRANSCRIPT,
+  composer: INITIAL_COMPOSER_STATE,
 };
 
 /**
@@ -171,6 +192,13 @@ export function shellReducer(state: ShellState, action: ShellAction): ShellState
       return { ...state, focus: withRegions(state.focus, action.regions) };
     case "transcript":
       return { ...state, transcript: transcriptSurfaceReducer(state.transcript, action.action) };
+    case "composer": {
+      const composer = composerReducer(state.composer, action.action);
+      // Identity when the composer refused the action. A new state object for an
+      // unchanged answer would re-render the whole frame on every key that did
+      // nothing, which for a text control is most of them at a boundary.
+      return composer === state.composer ? state : { ...state, composer };
+    }
     case "transcript-facts":
       // Identity when nothing changed. The surface reports what it measured on
       // every frame it measures, and a new state object for an unchanged answer
@@ -192,6 +220,9 @@ export function commandStateFor(state: ShellState): CommandState {
     overlayOpen: state.overlay.kind !== "none",
     hasTranscript: state.transcriptFacts.blocks > 0,
     hasScrollableContent: state.transcriptFacts.scrollable,
+    // Focus, not existence. See `CommandState.hasComposer`: an always-active
+    // composer layer would take `up` and `down` from the transcript for good.
+    hasComposer: state.focus.focused === COMPOSER_REGION,
   };
 }
 
@@ -212,6 +243,15 @@ export type ShellRuntime = {
   reseat(regions: readonly FocusRegion[]): void;
   /** Accepts what the transcript measured. Stable, so it may be an effect's dependency. */
   reportTranscriptGeometry(geometry: TranscriptGeometry): void;
+  /**
+   * Sends an action to the composer.
+   *
+   * The control needs this because typing is not a command: a printable key is
+   * text, and routing every character through the registry would put a command
+   * dispatch between a keystroke and the character it produces. Bindings still
+   * go through `run`; this is the path for everything that is not one.
+   */
+  composer(action: ComposerAction): void;
 };
 
 export type ShellRuntimeOptions = {
@@ -232,6 +272,14 @@ export type ShellRuntimeOptions = {
    * reason to see.
    */
   readonly transcriptKeys: readonly string[];
+  /**
+   * Where a submission goes.
+   *
+   * Supplied so a test can hand over a port that accepts, which is the only way
+   * to exercise the accepted path in a build whose one real port refuses. The
+   * default is the honest refusal.
+   */
+  readonly submission?: SubmissionPort;
 };
 
 export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
@@ -275,12 +323,18 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
         return false;
       }
 
-      return runAvailable(command, dispatch, options.onExit, {
-        geometry: geometry.current,
-        anchor: state.transcript.anchor,
-        selected: state.transcript.selected,
-        keys: options.transcriptKeys,
-      });
+      return runAvailable(
+        command,
+        dispatch,
+        options.onExit,
+        {
+          geometry: geometry.current,
+          anchor: state.transcript.anchor,
+          selected: state.transcript.selected,
+          keys: options.transcriptKeys,
+        },
+        state.composer,
+      );
     },
     [state, options.onExit, options.transcriptKeys],
   );
@@ -297,6 +351,10 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
     dispatch({ kind: "reseat", regions });
   }, []);
 
+  const composer = useCallback((action: ComposerAction): void => {
+    dispatch({ kind: "composer", action });
+  }, []);
+
   // The projection changed shape, so a selection or an expansion naming a block
   // that is gone is dropped and an empty selection settles on the latest entry.
   // The reducer returns identity when nothing changed, which is what keeps this
@@ -306,7 +364,20 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
     dispatch({ kind: "transcript", action: { kind: "reconcile", keys: transcriptKeys } });
   }, [transcriptKeys]);
 
-  return { state, commandState, run, press, reseat, reportTranscriptGeometry };
+  // The port answers in the transition after the snapshot was taken, so the
+  // machine really passes through `sending` rather than resolving inside the
+  // same dispatch. That is the phase a later provider will hold open, and a
+  // shortcut here would be a state nothing ever entered.
+  const port = options.submission ?? UNAVAILABLE_SUBMISSION;
+  const inFlight = state.composer.inFlight;
+  useEffect(() => {
+    if (inFlight === null) {
+      return;
+    }
+    dispatch({ kind: "composer", action: { kind: "resolve", outcome: port.submit(inFlight) } });
+  }, [inFlight, port]);
+
+  return { state, commandState, run, press, reseat, reportTranscriptGeometry, composer };
 }
 
 /**
@@ -335,6 +406,7 @@ function runAvailable(
   dispatch: (action: ShellAction) => void,
   onExit: () => void,
   transcript: TranscriptContext,
+  composer: ComposerState,
 ): boolean {
   const request = {
     spans: transcript.geometry.spans,
@@ -410,6 +482,42 @@ function runAvailable(
         kind: "transcript",
         action: { kind: "toggle-expansion", key: transcript.selected },
       });
+      return true;
+    }
+
+    case "composer.submit":
+      dispatch({ kind: "composer", action: { kind: "submit" } });
+      return true;
+    case "composer.newline":
+      dispatch({ kind: "composer", action: { kind: "edit", action: { kind: "newline" } } });
+      return true;
+
+    // `up` and `down` are a line inside the draft and a history step at its
+    // edges. The boundary is decided here rather than in the composer's reducer
+    // because it is a *binding* question — what this key means right now — and
+    // the reducer would have to be told the answer either way.
+    case "composer.historyPrevious": {
+      const at = cursorPosition(composer.editor);
+      if (at.line > 0) {
+        dispatch({
+          kind: "composer",
+          action: { kind: "edit", action: { kind: "move", motion: "up", extend: false } },
+        });
+        return true;
+      }
+      dispatch({ kind: "composer", action: { kind: "history-previous" } });
+      return true;
+    }
+    case "composer.historyNext": {
+      const at = cursorPosition(composer.editor);
+      if (at.line < linesOf(composer.editor).length - 1) {
+        dispatch({
+          kind: "composer",
+          action: { kind: "edit", action: { kind: "move", motion: "down", extend: false } },
+        });
+        return true;
+      }
+      dispatch({ kind: "composer", action: { kind: "history-next" } });
       return true;
     }
 

@@ -11,6 +11,7 @@ import { describe, expect, test } from "bun:test";
 
 import {
   displayWidth,
+  graphemes,
   MAX_DISPLAY_WIDTH,
   sanitizeTerminalText,
   truncateToWidth,
@@ -32,6 +33,33 @@ function holdsControl(text: string): boolean {
   }
   return false;
 }
+
+describe("graphemes", () => {
+  test("counts what a person would call a character", () => {
+    // The three shapes that break a code-point cursor: a combining mark, a
+    // regional-indicator pair, and a zero-width-joiner sequence. Each is one
+    // character to the person typing it and more than one code point to the
+    // machine, and a cursor that moved by the second lands inside a character.
+    expect(graphemes("e\u0301").length).toBe(1);
+    expect(graphemes("\u{1F1EF}\u{1F1F5}").length).toBe(1);
+    expect(graphemes("\u{1F468}\u200D\u{1F469}\u200D\u{1F467}").length).toBe(1);
+  });
+
+  test("round-trips by joining", () => {
+    // The property the editing model relies on: text rebuilt from its graphemes
+    // is the same text, so an index into them can never name a position that is
+    // not a character boundary.
+    for (const text of ["", "plain", "e\u0301clair", "\u65E5\u672C\u8A9E", "a\nb"]) {
+      expect(graphemes(text).join("")).toBe(text);
+    }
+  });
+
+  test("treats a newline as its own character", () => {
+    // Which is what makes the editor's line arithmetic a walk over graphemes
+    // rather than a second split of the string.
+    expect(graphemes("a\nb")).toEqual(["a", "\n", "b"]);
+  });
+});
 
 describe("display width", () => {
   test("counts ASCII by character", () => {

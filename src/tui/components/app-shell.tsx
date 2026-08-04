@@ -26,11 +26,19 @@
 
 import { useRenderer, useTerminalDimensions } from "@opentui/react";
 import { type ReactNode, useMemo, useRef } from "react";
-import { type LayoutDecision, primaryColumns, selectLayout, type Viewport } from "../layout.ts";
+import { type ComposerAction, linesOf } from "../composer/index.ts";
+import {
+  composerRows,
+  type LayoutDecision,
+  primaryColumns,
+  selectLayout,
+  type Viewport,
+} from "../layout.ts";
 import { createTextCache } from "../text-cache.ts";
 import { resolveTheme, type ThemeRequest } from "../theme/index.ts";
 import type { TranscriptGeometry } from "../transcript-model.ts";
 import type { CommandEntry, ShellModel } from "../view-model.ts";
+import { ComposerView } from "./composer.tsx";
 import { type Frame, FrameProvider } from "./context.tsx";
 import { OverlayHost } from "./overlay.tsx";
 import { CommandPalette, HelpOverlay } from "./overlay-routes.tsx";
@@ -67,6 +75,14 @@ export type AppShellProps = {
    * has no bindings to describe.
    */
   readonly commandRows?: readonly CommandEntry[];
+  /**
+   * Where composer input goes.
+   *
+   * Optional for the same reason `onTranscriptGeometry` is: a frame rendered
+   * from a value alone has nothing to type into, and without it the composer
+   * makes no keyboard subscription at all.
+   */
+  readonly onComposerAction?: (action: ComposerAction) => void;
 };
 
 export function AppShell(props: AppShellProps): ReactNode {
@@ -99,7 +115,18 @@ export function AppShell(props: AppShellProps): ReactNode {
   cache.current ??= createTextCache({ generation: theme.generation });
   cache.current.reset(theme.generation);
 
-  const frame: Frame = { theme, viewport, terminal, layout, cache: cache.current };
+  // Computed once, here, and handed to both the composer that draws those rows
+  // and the transcript that sizes itself against what is left.
+  const reserved = composerRows(linesOf(props.model.composer.state.editor).length);
+
+  const frame: Frame = {
+    theme,
+    viewport,
+    terminal,
+    layout,
+    cache: cache.current,
+    composerRows: reserved,
+  };
 
   return (
     <FrameProvider value={frame}>
@@ -122,6 +149,9 @@ export function AppShell(props: AppShellProps): ReactNode {
           {...(props.onTranscriptGeometry === undefined
             ? {}
             : { onTranscriptGeometry: props.onTranscriptGeometry })}
+          {...(props.onComposerAction === undefined
+            ? {}
+            : { onComposerAction: props.onComposerAction })}
         />
       )}
     </FrameProvider>
@@ -134,6 +164,7 @@ function ShellFrame(props: {
   readonly layout: Extract<LayoutDecision, { kind: "layout" }>;
   readonly commandRows: readonly CommandEntry[];
   readonly onTranscriptGeometry?: (geometry: TranscriptGeometry) => void;
+  readonly onComposerAction?: (action: ComposerAction) => void;
 }): ReactNode {
   const { model } = props;
   // Bounded rather than stretched. A `wide` terminal has room for a contextual
@@ -169,6 +200,17 @@ function ShellFrame(props: {
           </OverlayHost>
         )}
       </box>
+      {/*
+       * Below the primary region and above the status line, which is reading
+       * order and is also where the focus ring expects it. Outside the flexing
+       * box on purpose: the composer asks for the rows it needs and the
+       * transcript receives what is left, so a growing draft never pushes the
+       * status line off the screen.
+       */}
+      <ComposerView
+        model={model.composer}
+        {...(props.onComposerAction === undefined ? {} : { onAction: props.onComposerAction })}
+      />
       <StatusLine model={model.status} />
     </box>
   );

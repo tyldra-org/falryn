@@ -155,14 +155,50 @@ export const HEADER_ROWS = 1;
 export const STATUS_ROWS = 1;
 
 /**
+ * Text rows the composer draws before it starts reporting a remainder.
+ *
+ * Six is a paragraph. Past that the composer competes with the transcript for
+ * the screen, which the design direction refuses — an idle composer must not
+ * dominate, and a draft the length of a file would otherwise push the
+ * conversation off the top.
+ */
+export const COMPOSER_MAX_TEXT_ROWS = 6;
+
+/**
+ * Chrome rows the composer always draws.
+ *
+ * Exactly two, always, and the "always" is the load-bearing half. The first row
+ * carries the phase, the keys, and whether the composer has focus; the second
+ * carries the last submission's outcome, or the declared gaps when there is no
+ * outcome to report. Rows that appeared and disappeared with content would make
+ * the composer's height a function of what happened, and every region above it
+ * would be re-laid-out by a message arriving.
+ */
+export const COMPOSER_CHROME_ROWS = 2;
+
+/**
+ * Rows the composer occupies for a draft of this many lines.
+ *
+ * Deterministic, because the transcript sizes its own window from what is left
+ * and the two numbers have to agree exactly. They are computed from one function
+ * for that reason: a composer that drew one row more than the layout reserved
+ * would overdraw the transcript's last line, and the frame would look like a
+ * rendering glitch rather than an arithmetic disagreement.
+ */
+export function composerRows(lines: number): number {
+  const text = Math.min(Math.max(1, Math.floor(lines)), COMPOSER_MAX_TEXT_ROWS);
+  return text + COMPOSER_CHROME_ROWS;
+}
+
+/**
  * Rows the primary region gets.
  *
  * The counterpart to {@link primaryColumns}, and subtractive for the same
  * reason: the chrome asks for what it needs and the primary region receives
  * what is left, never a proportion of the window.
  */
-export function primaryRows(viewport: Viewport): number {
-  return Math.max(0, usable(viewport.rows) - HEADER_ROWS - STATUS_ROWS);
+export function primaryRows(viewport: Viewport, composer = 0): number {
+  return Math.max(0, usable(viewport.rows) - HEADER_ROWS - STATUS_ROWS - composer);
 }
 
 /**

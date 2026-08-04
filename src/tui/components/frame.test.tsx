@@ -19,7 +19,7 @@ import { createRoot } from "@opentui/react";
 import type { ReactNode } from "react";
 import { COLOR_LEVELS, SYMBOL_SUPPORTS } from "../../domain/index.ts";
 import { STANDARD_COLUMNS, WIDE_COLUMNS } from "../layout.ts";
-import { EMPTY_TRANSCRIPT_MODEL } from "../shell-model.ts";
+import { EMPTY_COMPOSER_MODEL, EMPTY_TRANSCRIPT_MODEL } from "../shell-model.ts";
 import {
   MINIMUM_COLUMNS,
   MINIMUM_ROWS,
@@ -67,6 +67,7 @@ function model(overrides: Partial<ShellModel> = {}): ShellModel {
     commands: [],
     help: [],
     transcript: EMPTY_TRANSCRIPT_MODEL,
+    composer: EMPTY_COMPOSER_MODEL,
     ...overrides,
   };
 }

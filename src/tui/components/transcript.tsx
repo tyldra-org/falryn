@@ -64,7 +64,7 @@ export function TranscriptView(props: TranscriptViewProps): ReactNode {
   const { blocks } = props.model.projection;
 
   const columns = primaryColumns(frame.viewport, layoutClass);
-  const region = primaryRows(frame.viewport);
+  const region = primaryRows(frame.viewport, frame.composerRows);
   const measured = measure(props.model, columns, frame.cache.wrap, frame.theme.symbols);
   const view = place(measured.spans, region, props.model.surface.anchor);
 

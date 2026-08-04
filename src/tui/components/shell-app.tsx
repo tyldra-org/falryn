@@ -29,6 +29,8 @@ import { type ReactNode, useMemo } from "react";
 import type { TranscriptProjection } from "../../presentation/index.ts";
 import { EMPTY_PROJECTION } from "../../presentation/index.ts";
 import { searchCommands } from "../commands.ts";
+import { COMPOSER_FEATURES } from "../composer/index.ts";
+import type { ComposerModel } from "../composer-model.ts";
 import { commandRows, describeRefusal, type KeymapPlan, planKeymap } from "../keymap.ts";
 import type { ThemeRequest } from "../theme/index.ts";
 import { keysOf } from "../transcript/index.ts";
@@ -37,11 +39,11 @@ import type { ShellModel } from "../view-model.ts";
 import { AppShell } from "./app-shell.tsx";
 import { KeymapBridge } from "./keymap-bridge.tsx";
 import { useOverlayRoom } from "./overlay-room.tsx";
-import { activeContexts, useShellRuntime } from "./shell-runtime.tsx";
+import { activeContexts, COMPOSER_REGION, useShellRuntime } from "./shell-runtime.tsx";
 
 export type ShellAppProps = {
   /** Everything that does not change with interaction: the header, the help prose. */
-  readonly model: Omit<ShellModel, "overlay" | "commands" | "transcript">;
+  readonly model: Omit<ShellModel, "overlay" | "commands" | "transcript" | "composer">;
   readonly theme: ThemeRequest;
   /** Ends the session. Owned by the invocation's scope, not by this component. */
   readonly onExit: () => void;
@@ -98,9 +100,19 @@ export function ShellApp(props: ShellAppProps): ReactNode {
     emptyStateCommand: "app.help",
   };
 
+  const composer: ComposerModel = {
+    state: runtime.state.composer,
+    // The live rows again, so the composer's own status line names the key that
+    // currently sends rather than the one that did when this was written.
+    commands: rows,
+    features: COMPOSER_FEATURES,
+    focused: runtime.state.focus.focused === COMPOSER_REGION,
+  };
+
   const model: ShellModel = {
     ...props.model,
     transcript,
+    composer,
     overlay: runtime.state.overlay,
     commands: runtime.state.overlay.kind === "palette" ? rows : [],
     status: {
@@ -120,12 +132,18 @@ export function ShellApp(props: ShellAppProps): ReactNode {
 
   return (
     <KeymapProvider keymap={keymap}>
-      <KeymapBridge plan={plan} contexts={activeContexts(runtime.state)} run={runtime.run} />
+      <KeymapBridge
+        plan={plan}
+        contexts={activeContexts(runtime.state)}
+        run={runtime.run}
+        typing={composer.focused}
+      />
       <AppShell
         theme={props.theme}
         model={model}
         commandRows={rows}
         onTranscriptGeometry={runtime.reportTranscriptGeometry}
+        onComposerAction={runtime.composer}
       />
     </KeymapProvider>
   );

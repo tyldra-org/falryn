@@ -103,7 +103,9 @@ describe("focus movement", () => {
   test("walks the frame in reading order and wraps", () => {
     let state = run([{ kind: "focus-next" }]);
     expect(state.focus.focused).toBe("frame.primary");
-    state = run([{ kind: "focus-next" }, { kind: "focus-next" }], state);
+    // Four regions since #357 put the composer between the primary region and
+    // the status line, so the wrap takes one more step than it did.
+    state = run([{ kind: "focus-next" }, { kind: "focus-next" }, { kind: "focus-next" }], state);
     expect(state.focus.focused).toBe("frame.header");
   });
 
@@ -126,7 +128,7 @@ describe("a resize", () => {
   });
 
   test("moves focus to the neighbour when its region went away", () => {
-    const survivors = [FRAME_REGIONS[0] as never, FRAME_REGIONS[2] as never];
+    const survivors = [FRAME_REGIONS[0] as never, FRAME_REGIONS[3] as never];
     const state = run([{ kind: "focus-next" }, { kind: "reseat", regions: survivors }]);
     expect(state.focus.focused).toBe("frame.status");
   });

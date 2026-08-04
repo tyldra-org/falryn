@@ -39,7 +39,7 @@ const THEME: ThemeRequest = {
   generation: 1,
 };
 
-const MODEL: Omit<ShellModel, "overlay" | "commands" | "transcript"> = {
+const MODEL: Omit<ShellModel, "overlay" | "commands" | "transcript" | "composer"> = {
   header: {
     workspace: known("/work/falryn"),
     branch: unavailable("no Git yet"),
@@ -170,7 +170,7 @@ describe("help", () => {
     const session = await mount(40);
     await session.press("?");
     const frame = await session.frame();
-    expect(frame).toContain("no composer yet");
+    expect(frame).toContain("the composer is not focused");
     // The transcript's commands are unavailable for their own reason, and it is
     // a different sentence rather than a shared "unavailable".
     expect(frame).toContain("there is no transcript yet");

@@ -19,7 +19,7 @@ import { useKeymap } from "@opentui/keymap/react";
 import { type ReactNode, useEffect } from "react";
 import type { CommandContext } from "../commands.ts";
 import { CONTEXT_PRIORITY } from "../commands.ts";
-import { bindingsForContext, type KeymapPlan } from "../keymap.ts";
+import { bindingsForContext, bindingsWhileTyping, type KeymapPlan } from "../keymap.ts";
 
 export type KeymapBridgeProps = {
   readonly plan: KeymapPlan;
@@ -27,6 +27,14 @@ export type KeymapBridgeProps = {
   readonly contexts: readonly CommandContext[];
   /** Runs a command by stable id. The bridge never decides what a command does. */
   readonly run: (id: string) => boolean;
+  /**
+   * Whether a text control currently has focus.
+   *
+   * Withholds bare single-character bindings from every layer while it is true,
+   * so a focused composer can receive the characters those keys are made of. See
+   * `bindingsWhileTyping` for why this is a rule rather than a workaround.
+   */
+  readonly typing?: boolean;
 };
 
 export function KeymapBridge(props: KeymapBridgeProps): ReactNode {
@@ -34,18 +42,21 @@ export function KeymapBridge(props: KeymapBridgeProps): ReactNode {
   // Joined rather than passed as an array: the effect must re-run when the *set*
   // changes, and an array literal is a new reference on every render.
   const active = [...props.contexts].sort().join(" ");
+  const typing = props.typing === true;
 
   useEffect(() => {
     const contexts = active === "" ? [] : (active.split(" ") as CommandContext[]);
-    const release = contexts.map((context) =>
-      keymap.registerLayer({
+    const release = contexts.map((context) => {
+      const declared = bindingsForContext(props.plan, context);
+      const live = typing ? bindingsWhileTyping(declared) : declared;
+      return keymap.registerLayer({
         priority: CONTEXT_PRIORITY[context],
-        bindings: bindingsForContext(props.plan, context).map((binding) => ({
+        bindings: live.map((binding) => ({
           key: binding.key,
           cmd: binding.command,
         })),
-      }),
-    );
+      });
+    });
     return () => {
       // Every layer, on every change. A layer left registered for a context that
       // is no longer active is precisely the shadowing this design avoids.
@@ -53,7 +64,7 @@ export function KeymapBridge(props: KeymapBridgeProps): ReactNode {
         dispose();
       }
     };
-  }, [keymap, props.plan, active]);
+  }, [keymap, props.plan, active, typing]);
 
   useEffect(() => {
     // Commands are registered as one layer of handlers that delegate by id, so

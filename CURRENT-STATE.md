@@ -1588,7 +1588,7 @@ A command is the stable identity. Each declares an id, a title, a description, a
 context, a default binding or an explicit `null`, and an availability predicate
 that says *why* when the answer is no. Today five commands run — exit, help, the
 palette, and focus movement — and the rest are listed, discoverable, and
-answered: "there is no composer yet", "nothing is running to cancel". Commands
+answered: "the composer is not focused", "nothing is running to cancel". Commands
 whose concept does not exist at all, like task inspection, are omitted rather
 than listed as unavailable. The ids are `reference/KEYBOARD-SHORTCUTS.md`'s, so
 the published table and the palette name the same things.
@@ -1743,9 +1743,8 @@ content is read from the projection every time it is drawn, so a revised block
 cannot be rendered from a stale copy. Boundary controls assert all of this,
 including that the surface re-derives no part of the block model it is given.
 
-What is **not** delivered by the surface: no composer
-([#357](https://github.com/yogeshprasad098/falryn/issues/357)), and no dashboard,
-artifact viewer, or diff viewer. Duration is reported as a block's age relative
+What is **not** delivered by the surface: no dashboard, artifact viewer, or diff
+viewer. Duration is reported as a block's age relative
 to the transcript's newest block rather than as an elapsed time, because a block
 carries one timestamp that a revision replaces — the start of a tool call is not
 in the projection, and reporting one would be a number the surface invented.
@@ -1797,6 +1796,65 @@ propagated, so one entry that could not land is not a shell that stops drawing.
 
 Nothing produces a transcript yet, so no entry is committed in a real session.
 The behavior is exercised by mounting the shell with a projection.
+
+### The composer
+
+The composer is a real control: it accepts multiline Unicode text, keeps a
+history, preserves a draft, and resolves every submission through one declared
+port ([#357](https://github.com/yogeshprasad098/falryn/issues/357)). The editing
+model, the history, and the state machine are plain data with a pure reducer, so
+graphemes, draft survival, and snapshot immutability are asserted without a
+terminal.
+
+**Positions are grapheme indices, never code-point offsets.** A cursor counting
+code points lands inside a combining sequence, a flag, or a joined emoji, and a
+backspace there deletes half a character and leaves a fragment the user never
+typed. Every index counts what the domain's own segmentation returns, and the
+text is rebuilt by joining those, so an index cannot name a position that is not
+a character boundary. `Intl.Segmenter` is the segmenter, in one place, because a
+second one would be a second answer to what a character is.
+
+**A submission takes a frozen snapshot in the transition that starts it.** Later
+edits reach the next submission and never the one in flight. In this build every
+submission resolves `unavailable` through the port, with a reason naming
+[#33](https://github.com/yogeshprasad098/falryn/issues/33) and a repair route
+that is a registered command id — and the draft is left exactly where the user
+left it. Discarding the input is the failure a composer exists to prevent, and a
+stub agent loop behind the button would be a second answer to what happens to a
+turn.
+
+**History never stores a secret.** Content that reads like a credential is not
+remembered at all — not redacted, not masked, absent. History is the one place a
+prompt outlives the moment it was typed. The signal is the same weak one paste
+classification already owns, used here for a refusal to store, where the failure
+mode is forgetting something harmless rather than keeping something dangerous. A
+recall sets the current text aside and returns it on the way back, so pressing up
+is reversible.
+
+Attachments, artifact references, command completion, suggestion, and including a
+large paste are declared with the reason each is missing and reported in one line
+under the composer. None of them is half-built: a large paste is classified,
+bounded, and described rather than inserted, and there is no attachment control
+that accepts a file and drops it.
+
+Two decisions came out of measuring the keymap rather than reading about it. A
+layer that claims a key means the focused control never sees it, so while the
+composer has focus, bindings whose key is one bare character are not registered —
+otherwise `?` bound to help makes a question mark impossible to type into a
+prompt. The rule is narrow: every modified and named binding keeps working, so
+`ctrl+c` and `escape` are never withheld, and the withheld command stays listed
+and reachable from the palette. And the `composer` keymap context is active on
+**focus** rather than on existence, because the composer's layer outranks the
+transcript's and the two share `up` and `down`.
+
+The composer's height is reserved by the layout rather than chosen by the view,
+and its chrome is a fixed two rows. The transcript sizes its own window from what
+is left, so the two numbers come from one function: a composer that drew one row
+more than the layout reserved overdrew the transcript's last line, which is a
+defect this delivery hit and fixed rather than a hypothetical.
+
+Nothing can answer a prompt, so no submission is ever accepted in a real session.
+The accepted path is exercised by handing the runtime a port that accepts.
 
 The compiled file is a development bootstrap artifact. It is not a supported
 Falryn product binary or release. A separate compiled probe confirmed that a
@@ -1907,7 +1965,7 @@ Their implementation breakdown lives in GitHub Issues and the Project.
 - **Current release outcome:** [v0.1 Foundation issues](https://github.com/yogeshprasad098/falryn/issues?q=is%3Aissue%20is%3Aopen%20milestone%3A%22v0.1%20Foundation%22)
 - **First parent outcome:** [#1 Establish the unified runtime and lifecycle](https://github.com/yogeshprasad098/falryn/issues/1)
 - **Current parent outcome:** [#21 Deliver the OpenTUI application shell](https://github.com/yogeshprasad098/falryn/issues/21), in progress with #22, #23, #24, and #26 landed. [#16 Deliver the CLI and headless foundation](https://github.com/yogeshprasad098/falryn/issues/16) remains in progress with #17, #18, #19, and #20 landed.
-- **Next planning action:** continue [#25](https://github.com/yogeshprasad098/falryn/issues/25), in progress with #354, #355, and #356 landed — the transcript block model, the surface that renders it, and the scrollback commit path. Its remaining children are [#357](https://github.com/yogeshprasad098/falryn/issues/357) the composer and [#358](https://github.com/yogeshprasad098/falryn/issues/358) activity and status projections.
+- **Next planning action:** continue [#25](https://github.com/yogeshprasad098/falryn/issues/25), in progress with #354, #355, #356, and #357 landed — the transcript block model, the surface that renders it, the scrollback commit path, and the composer. Its one remaining child is [#358](https://github.com/yogeshprasad098/falryn/issues/358) activity and status projections.
 
 Which of #1's children are open, and which delivered the behavior recorded
 above, is read from
