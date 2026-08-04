@@ -14,9 +14,18 @@
  * Help wraps its prose through the frame's cache rather than on every frame,
  * which is where that cache has its real caller: help text is paragraphs, and a
  * resize re-measures all of it.
+ *
+ * The palette subscribes to keys, which is why this module reaches OpenTUI's
+ * runtime and help does not. A search field is a focused text control, and the
+ * alternative — routing every character through the command registry — would put
+ * a dispatch between a keystroke and the character it produces.
  */
 
+import type { KeyEvent } from "@opentui/core";
+import { useKeyboard } from "@opentui/react";
 import type { ReactNode } from "react";
+import { graphemes } from "../../domain/index.ts";
+import type { EditorAction } from "../composer/index.ts";
 import type { CommandEntry, HelpSection } from "../view-model.ts";
 import { useFrame } from "./context.tsx";
 import { Line } from "./primitives.tsx";
@@ -89,46 +98,133 @@ export function HelpOverlay(props: HelpOverlayProps): ReactNode {
 }
 
 export type CommandPaletteProps = {
+  /** Already narrowed by the query. This component filters nothing. */
   readonly commands: readonly CommandEntry[];
   /** What was typed. Empty shows everything, which is the useful default. */
   readonly query: string;
   readonly rows: number;
+  /**
+   * Where typing goes.
+   *
+   * Optional, because a frame rendered from a value alone has nothing to type
+   * into — every case in `./frame.test.tsx` renders one. Absent, the key
+   * handler returns immediately and no edit is ever produced.
+   */
+  readonly onQuery?: (action: EditorAction) => void;
 };
 
 export function CommandPalette(props: CommandPaletteProps): ReactNode {
   const { terminal } = useFrame();
   const width = Math.max(8, terminal.columns - PANEL_CHROME_COLUMNS);
+  usePaletteInput(props.onQuery);
 
-  // One row goes to the search line, and one more to the "N more" line when
-  // there is one. Both are subtracted before the slice, for the reason the help
-  // overlay states: an extra row draws over the panel border rather than being
-  // clipped.
-  const budget = Math.max(1, props.rows - 1);
-  const truncated = props.commands.length > budget;
-  const shown = props.commands.slice(0, truncated ? budget - 1 : budget);
-  const hidden = props.commands.length - shown.length;
+  // The search line is drawn first and always, so everything else is measured
+  // against what is left of the budget. Deliberately not clamped to a minimum: a
+  // one-row panel has room for the query and nothing else, and clamping a budget
+  // up to 1 is how a region comes to draw more rows than it was given. A
+  // terminal does not clip — the surplus row lands on its neighbour.
+  const contentRows = Math.max(0, props.rows - 1);
+  const matched = props.commands.length;
+
+  // The notice takes a row of its own, and only when there is a row for it to
+  // take. `matched > contentRows` rather than a separate truncation flag,
+  // because the question is whether the list fits in the rows that remain.
+  const notice = matched > contentRows && contentRows >= 1;
+  const shown = props.commands.slice(0, Math.max(0, contentRows - (notice ? 1 : 0)));
+  const hidden = matched - shown.length;
 
   return (
     <box flexDirection="column">
       <Line color="mutedForeground" typography="label" maxColumns={width}>
         {props.query === "" ? "Type to search commands." : `Search: ${props.query}`}
       </Line>
-      {props.commands.length === 0 ? (
-        <Line color="mutedForeground" typography="muted" maxColumns={width}>
-          Nothing matches that.
-        </Line>
+      {/*
+       * Keyed off what *matched*, never off what fits. Asking whether any row was
+       * shown conflates two different answers — "your search found nothing" and
+       * "the panel is too short to list what it found" — and reports the first
+       * when the second is true. That regressed during #364 and reached every
+       * palette open: the overlay caps its height while the reveal runs, so the
+       * budget is one row for that whole window and a full list rendered
+       * "Nothing matches that." above its own "N more" line.
+       */}
+      {matched === 0 ? (
+        contentRows >= 1 ? (
+          <Line color="mutedForeground" typography="muted" maxColumns={width}>
+            Nothing matches that.
+          </Line>
+        ) : null
       ) : (
-        props.commands
-          .slice(0, Math.max(1, props.rows - 1))
-          .map((command) => <CommandRow key={command.id} command={command} width={width} />)
+        shown.map((command) => <CommandRow key={command.id} command={command} width={width} />)
       )}
-      {props.commands.length > Math.max(1, props.rows - 1) ? (
+      {notice ? (
         <Line color="mutedForeground" typography="muted" maxColumns={width}>
-          {`${props.commands.length - Math.max(1, props.rows - 1)} more — narrow the search`}
+          {/*
+           * Two sentences, because "more" is only true when something was shown.
+           * With no room for a single command, "12 more" invites the reader to
+           * look for the eleven above it.
+           */}
+          {shown.length === 0
+            ? `${hidden} commands; too little room to list them`
+            : `${hidden} more — narrow the search`}
         </Line>
       ) : null}
     </box>
   );
+}
+
+/**
+ * Keys, while the palette is open.
+ *
+ * Everything a binding claims never arrives here — the keymap resolves a bound
+ * key and dispatches before any subscriber sees it — so `escape` still closes
+ * the overlay and `ctrl+c` still leaves. What is left is characters and the
+ * edits a search field needs, which is deliberately less than the composer
+ * handles: a query is one line, so there is no vertical movement to support.
+ *
+ * The palette is only rendered while it is the open route, so there is no
+ * focused check here. Mounting *is* the condition.
+ */
+function usePaletteInput(onQuery: ((action: EditorAction) => void) | undefined): void {
+  useKeyboard((key) => {
+    if (onQuery === undefined) {
+      return;
+    }
+    const edit = editFor(key);
+    if (edit !== null) {
+      onQuery(edit);
+    }
+  });
+}
+
+/** The edit a key means in a search field, or `null` when it means nothing here. */
+function editFor(key: KeyEvent): EditorAction | null {
+  switch (key.name) {
+    case "backspace":
+      return { kind: "delete-backward" };
+    case "delete":
+      return { kind: "delete-forward" };
+    case "left":
+      return { kind: "move", motion: "left", extend: key.shift === true };
+    case "right":
+      return { kind: "move", motion: "right", extend: key.shift === true };
+    case "home":
+      return { kind: "move", motion: "line-start", extend: key.shift === true };
+    case "end":
+      return { kind: "move", motion: "line-end", extend: key.shift === true };
+    default:
+      break;
+  }
+
+  // A modifier means a chord, and a chord that reached here is one nothing
+  // bound — inserting its letter would type `p` for an unregistered `alt+p`.
+  if (key.ctrl === true || key.meta === true) {
+    return null;
+  }
+  const sequence = key.sequence;
+  if (sequence !== "" && graphemes(sequence).length === 1 && sequence >= " ") {
+    return { kind: "insert", text: sequence };
+  }
+  return null;
 }
 
 /**

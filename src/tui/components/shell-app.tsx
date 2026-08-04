@@ -145,7 +145,13 @@ export function ShellApp(props: ShellAppProps): ReactNode {
     composer,
     activity,
     overlay: runtime.state.overlay,
-    commands: runtime.state.overlay.kind === "palette" ? rows : [],
+    // Narrowed by the query, through the registry's own matcher. The palette
+    // filters nothing itself: a second matcher would answer differently from
+    // the one the published reference describes.
+    commands:
+      runtime.state.overlay.kind === "palette"
+        ? paletteRows(plan, runtime.commandState, runtime.state.overlay.query.text)
+        : [],
     status: {
       ...props.model.status,
       // The projected health is the resting answer. A refusal or a command's
@@ -172,7 +178,9 @@ export function ShellApp(props: ShellAppProps): ReactNode {
         plan={plan}
         contexts={activeContexts(runtime.state)}
         run={runtime.run}
-        typing={composer.focused}
+        // The palette is a text control too, so a bare `?` types a question
+        // mark into the search rather than opening help over it.
+        typing={composer.focused || runtime.state.overlay.kind === "palette"}
       />
       <AppShell
         theme={props.theme}
@@ -180,6 +188,7 @@ export function ShellApp(props: ShellAppProps): ReactNode {
         commandRows={rows}
         onTranscriptGeometry={runtime.reportTranscriptGeometry}
         onComposerAction={runtime.composer}
+        onPaletteQuery={runtime.paletteQuery}
       />
     </KeymapProvider>
   );
@@ -225,7 +234,14 @@ export function displayKey(binding: string): string {
   return binding;
 }
 
-/** Commands matching a palette query, as rows. Exported for the palette's tests. */
+/**
+ * Commands matching a palette query, as rows.
+ *
+ * The one narrowing rule, used by the shell above and asserted directly by the
+ * palette's tests. Before #364 it had no product caller at all: the palette was
+ * handed every row and a literal empty query, so typing could not narrow
+ * anything and this function was a matcher nothing matched with.
+ */
 export function paletteRows(
   plan: KeymapPlan,
   state: Parameters<typeof commandRows>[1],
