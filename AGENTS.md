@@ -6,6 +6,8 @@ tests small, explicit, and user-focused.
 
 ## Required guidance and skills
 
+- Read the applicable global `AGENTS.md` first, then read and apply this
+  repository-level guidance before acting. Both instruction layers are required.
 - Load and follow the global `typescript-best-practices` skill before creating,
   editing, updating, moving, deleting, reviewing, debugging, or configuring any
   TypeScript, TSX, JavaScript, type declaration, TypeScript test, build script,
@@ -26,6 +28,11 @@ tests small, explicit, and user-focused.
 - When a task touches OpenTUI TypeScript or TSX, both skills are mandatory:
   apply the relevant `typescript-best-practices` module and OpenTUI upstream
   guidance before changing code.
+- Load and follow the global `github-workflow` skill before any Git or GitHub
+  work, including status inspection, branches, commits, pushes, pull requests,
+  reviews, issues, milestones, Projects, merges, releases, rulesets, or
+  multi-repository delivery. Apply its safety and verification rules together
+  with Falryn's repository workflow.
 - Skill guidance supports implementation quality but does not override Falryn's
   architecture, a Ready issue's scope, or repository-owned validation.
 
