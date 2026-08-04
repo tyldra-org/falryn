@@ -14,9 +14,7 @@
  * decodes.
  */
 
-import { afterEach, describe, expect, test } from "bun:test";
-import { createTestRenderer, type TestRendererSetup } from "@opentui/core/testing";
-import { createRoot } from "@opentui/react";
+import { describe, expect, test } from "bun:test";
 import {
   complete,
   EMPTY_PROJECTION,
@@ -24,17 +22,10 @@ import {
   type TranscriptProjection,
 } from "../../presentation/index.ts";
 import { everyBlockKind, FIXTURE_AT } from "../../presentation/transcript/fixtures.ts";
+import { mount, type Rendered } from "../harness.tsx";
 import type { ThemeRequest } from "../theme/index.ts";
 import { known, type ShellModel, unavailable } from "../view-model.ts";
 import { ShellApp } from "./shell-app.tsx";
-
-const live: TestRendererSetup[] = [];
-
-afterEach(() => {
-  while (live.length > 0) {
-    live.pop()?.renderer.destroy();
-  }
-});
 
 const THEME: ThemeRequest = {
   variant: "dark",
@@ -52,7 +43,7 @@ const MODEL: Omit<ShellModel, "overlay" | "commands" | "transcript" | "composer"
     model: unavailable("no provider yet"),
   },
   status: { status: "informational", message: "Nothing is running.", hints: [] },
-  help: [{ title: "Leaving", body: "Ctrl+C ends the session." }],
+  help: [{ title: "Leaving", body: "Ctrl+C ends the shell." }],
 };
 
 /** A notice block with a chosen key, body, and lifecycle status. */
@@ -81,41 +72,23 @@ function projectionOf(blocks: readonly TranscriptBlock[]): TranscriptProjection 
   return { ...EMPTY_PROJECTION, blocks };
 }
 
-type Session = {
-  show(transcript: TranscriptProjection): Promise<void>;
-  scrollback(): Promise<string>;
-};
-
-async function mount(): Promise<Session> {
-  const setup = await createTestRenderer({
-    width: 100,
-    height: 24,
-    screenMode: "split-footer",
-    externalOutputMode: "capture-stdout",
-    consoleMode: "disabled",
-  });
-  live.push(setup);
-
-  const root = createRoot(setup.renderer);
-  return {
-    async show(transcript) {
-      root.render(
-        <ShellApp theme={THEME} model={MODEL} onExit={() => {}} transcript={transcript} />,
-      );
-      await settle(setup);
-    },
-    async scrollback() {
-      await settle(setup);
-      return setup.externalOutput.takeText();
-    },
-  };
+/** The tree, at whatever transcript a check is showing. */
+function tree(transcript: TranscriptProjection) {
+  return <ShellApp theme={THEME} model={MODEL} onExit={() => {}} transcript={transcript} />;
 }
 
-async function settle(setup: TestRendererSetup): Promise<void> {
-  for (let attempt = 0; attempt < 8; attempt += 1) {
-    await Bun.sleep(10);
-    await setup.flush();
-  }
+/**
+ * A shell in the one mode that commits to scrollback.
+ *
+ * Mounted with nothing showing, because every check here is about what a
+ * *change* in the transcript sends above the footer.
+ */
+function open(): Promise<Rendered> {
+  return mount(null, {
+    shape: { columns: 100, rows: 24 },
+    screenMode: "split-footer",
+    externalOutputMode: "capture-stdout",
+  });
 }
 
 describe("the shell in split-footer", () => {
@@ -123,56 +96,62 @@ describe("the shell in split-footer", () => {
     // The wiring, end to end: a projection reaches the tree, the seam is
     // mounted, and the block's own body — not only its headline — is what
     // landed above the footer.
-    const session = await mount();
-    await session.show(projectionOf([entry("one", "final", 0, "the durable body")]));
+    using shell = await open();
+    await shell.show(tree(projectionOf([entry("one", "final", 0, "the durable body")])));
 
-    const scrollback = await session.scrollback();
+    const scrollback = await shell.scrollback();
     expect(scrollback).toContain("summary of one");
     expect(scrollback).toContain("the durable body");
   });
 
   test("commits an entry once across many renders", async () => {
-    const session = await mount();
+    using shell = await open();
     const transcript = projectionOf([entry("one", "final", 0, "the durable body")]);
 
-    await session.show(transcript);
-    await session.scrollback();
-    await session.show(transcript);
+    await shell.show(tree(transcript));
+    await shell.scrollback();
+    await shell.show(tree(transcript));
 
-    expect(await session.scrollback()).toBe("");
+    expect(await shell.scrollback()).toBe("");
   });
 
   test("holds an unfinished entry and everything behind it", async () => {
-    const session = await mount();
-    await session.show(
-      projectionOf([
-        entry("streaming", "in-progress", 0, "still arriving"),
-        entry("later", "final", 1, "already done"),
-      ]),
+    using shell = await open();
+    await shell.show(
+      tree(
+        projectionOf([
+          entry("streaming", "in-progress", 0, "still arriving"),
+          entry("later", "final", 1, "already done"),
+        ]),
+      ),
     );
 
-    const scrollback = await session.scrollback();
+    const scrollback = await shell.scrollback();
     expect(scrollback).not.toContain("still arriving");
     expect(scrollback).not.toContain("already done");
   });
 
   test("commits a settled entry ahead of the one it held", async () => {
-    const session = await mount();
-    await session.show(
-      projectionOf([
-        entry("streaming", "in-progress", 0, "still arriving"),
-        entry("later", "final", 1, "already done"),
-      ]),
+    using shell = await open();
+    await shell.show(
+      tree(
+        projectionOf([
+          entry("streaming", "in-progress", 0, "still arriving"),
+          entry("later", "final", 1, "already done"),
+        ]),
+      ),
     );
-    await session.scrollback();
-    await session.show(
-      projectionOf([
-        entry("streaming", "final", 0, "finally settled"),
-        entry("later", "final", 1, "already done"),
-      ]),
+    await shell.scrollback();
+    await shell.show(
+      tree(
+        projectionOf([
+          entry("streaming", "final", 0, "finally settled"),
+          entry("later", "final", 1, "already done"),
+        ]),
+      ),
     );
 
-    const scrollback = await session.scrollback();
+    const scrollback = await shell.scrollback();
     expect(scrollback.indexOf("finally settled")).toBeGreaterThanOrEqual(0);
     expect(scrollback.indexOf("finally settled")).toBeLessThan(scrollback.indexOf("already done"));
   });
@@ -181,10 +160,10 @@ describe("the shell in split-footer", () => {
     // Both are answers about a reading session. A committed row outlives the
     // session, so an age is a claim that stops being true and a selection is a
     // cursor position with nothing left to point at.
-    const session = await mount();
-    await session.show(projectionOf([entry("one", "final", 0, "the durable body")]));
+    using shell = await open();
+    await shell.show(tree(projectionOf([entry("one", "final", 0, "the durable body")])));
 
-    const scrollback = await session.scrollback();
+    const scrollback = await shell.scrollback();
     expect(scrollback).not.toContain("ago");
     expect(scrollback).not.toContain("selected");
   });
@@ -192,24 +171,12 @@ describe("the shell in split-footer", () => {
 
 describe("the shell in a mode that owns the whole terminal", () => {
   test("commits nothing to scrollback", async () => {
-    const setup = await createTestRenderer({
-      width: 100,
-      height: 24,
+    using shell = await mount(tree(projectionOf([entry("one", "final", 0, "the durable body")])), {
+      shape: { columns: 100, rows: 24 },
       screenMode: "alternate-screen",
-      consoleMode: "disabled",
     });
-    live.push(setup);
+    await shell.frame();
 
-    createRoot(setup.renderer).render(
-      <ShellApp
-        theme={THEME}
-        model={MODEL}
-        onExit={() => {}}
-        transcript={projectionOf([entry("one", "final", 0, "the durable body")])}
-      />,
-    );
-    await settle(setup);
-
-    expect(setup.externalOutput.takeText()).toBe("");
+    expect(shell.setup.externalOutput.takeText()).toBe("");
   });
 });

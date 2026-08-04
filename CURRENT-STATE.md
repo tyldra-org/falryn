@@ -1680,6 +1680,32 @@ negative, so on those runs it passed against nothing. The predicate now requires
 a painted buffer, the helper throws instead of handing back the last capture,
 and the negative-only check names something that must be present as well.
 
+Every rendered check now mounts through one harness
+([#374](https://github.com/yogeshprasad098/falryn/issues/374)). Nine test files
+each declared their own live-renderer list, teardown hook, mount, and settle;
+that is why #372's correction reached one of them and left the other eight
+settling by a fixed flush count. `src/tui/harness.tsx` owns all four, and
+teardown is a `using` disposable rather than an `afterEach` — Bun evaluates an
+imported module once for the whole run, so a hook registered there would have
+covered whichever file loaded first and nothing else. Disposal unmounts the
+React tree with `flushSync` before destroying the renderer, which makes a
+released subscription observable immediately instead of on a later tick, and
+`src/tui/harness.test.tsx` asserts destruction, unmounting, and release with a
+deliberately leaked renderer as the negative control. `bun test src/tui` fell
+from 65.6s to about 49s, because settling now stops when the frame stops
+changing instead of always sleeping eighty milliseconds.
+
+Text is checked through a painted frame and not only against a string. The
+arithmetic in `src/domain/text-display.ts` was proved against strings; measuring
+it against a buffer found two things, both filed rather than fixed under a test
+issue. `displayWidth` counts each emoji in a zero-width-joiner sequence, so it
+calls `U+1F469 U+200D U+1F4BB` four cells wide where the renderer draws it in
+two ([#377](https://github.com/yogeshprasad098/falryn/issues/377)) — an
+overestimate, so it truncates early and cannot overdraw. And a status message
+reaches the buffer with its control sequence intact, where the header and the
+transcript both escape theirs
+([#378](https://github.com/yogeshprasad098/falryn/issues/378)).
+
 The frame no longer overlaps itself on a short terminal
 ([#368](https://github.com/yogeshprasad098/falryn/issues/368)). The overlay host
 sized its panel against a two-row reserve — the header and the status line — that

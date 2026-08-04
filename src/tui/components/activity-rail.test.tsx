@@ -9,23 +9,14 @@
  * terminal on top of the transcript.
  */
 
-import { afterEach, describe, expect, test } from "bun:test";
-import { createTestRenderer, type TestRendererSetup } from "@opentui/core/testing";
-import { createRoot } from "@opentui/react";
+import { describe, expect, test } from "bun:test";
 import { running, settled } from "../../presentation/activity/fixtures.ts";
 import type { ActivityProjection } from "../../presentation/index.ts";
 import { EMPTY_ACTIVITY, reduceActivity } from "../../presentation/index.ts";
+import { frameOf, type TerminalShape } from "../harness.tsx";
 import type { ThemeRequest } from "../theme/index.ts";
 import { known, type ShellModel, unavailable } from "../view-model.ts";
 import { ShellApp } from "./shell-app.tsx";
-
-const live: TestRendererSetup[] = [];
-
-afterEach(() => {
-  while (live.length > 0) {
-    live.pop()?.renderer.destroy();
-  }
-});
 
 const THEME: ThemeRequest = {
   variant: "dark",
@@ -55,57 +46,41 @@ function projectionOf(events: Parameters<typeof reduceActivity>[1]): ActivityPro
   return reduceActivity(EMPTY_ACTIVITY, events);
 }
 
-async function mount(
-  size: { columns: number; rows: number },
-  activity?: ActivityProjection,
-): Promise<string> {
-  const setup = await createTestRenderer({
-    width: size.columns,
-    height: size.rows,
-    screenMode: "alternate-screen",
-    consoleMode: "disabled",
-  });
-  live.push(setup);
-
-  createRoot(setup.renderer).render(
+/** The frame a shell draws at a shape, with an activity projection or without one. */
+function shell(shape: TerminalShape, activity?: ActivityProjection): Promise<string> {
+  return frameOf(
     <ShellApp
       theme={THEME}
       model={MODEL}
       onExit={() => {}}
       {...(activity === undefined ? {} : { activity })}
     />,
+    { shape, screenMode: "alternate-screen" },
   );
-  for (let attempt = 0; attempt < 8; attempt += 1) {
-    await Bun.sleep(10);
-    await setup.flush();
-  }
-  return setup.captureCharFrame();
 }
 
 describe("where the rail appears", () => {
-  test("is drawn on a wide layout", () => {
-    return mount(WIDE).then((frame) => {
-      expect(frame).toContain("Activity");
-    });
+  test("is drawn on a wide layout", async () => {
+    expect(await shell(WIDE)).toContain("Activity");
   });
 
   test("is absent on a standard layout", async () => {
     // The design direction allows one contextual surface on wide layouts and
     // refuses a permanently tiled control centre. A narrower terminal gets no
     // rail rather than a squeezed one.
-    const frame = await mount(STANDARD);
+    const frame = await shell(STANDARD);
     expect(frame).not.toContain("Activity");
   });
 });
 
 describe("what the rail says", () => {
   test("names running work and what it is", async () => {
-    const frame = await mount(WIDE, projectionOf(running(0, "one")));
+    const frame = await shell(WIDE, projectionOf(running(0, "one")));
     expect(frame).toContain("running");
   });
 
   test("distinguishes a failure from a completion", async () => {
-    const frame = await mount(
+    const frame = await shell(
       WIDE,
       projectionOf([
         ...settled(0, "good", { kind: "completed" }),
@@ -119,7 +94,7 @@ describe("what the rail says", () => {
   test("says nothing is running rather than drawing filler", async () => {
     // A statement about the runtime. The empty state is different from a rail
     // that could not read one, which the status line reports as unknown.
-    const frame = await mount(WIDE, EMPTY_ACTIVITY);
+    const frame = await shell(WIDE, EMPTY_ACTIVITY);
     expect(frame).toContain("Nothing is running.");
   });
 });
@@ -128,17 +103,17 @@ describe("the status line", () => {
   test("reports unknown when no runtime is attached", async () => {
     // Not a green tick. Nothing attached and nothing running are different
     // statements, and only one of them is something to be reassured by.
-    const frame = await mount(STANDARD);
+    const frame = await shell(STANDARD);
     expect(frame).toContain("No runtime is attached");
   });
 
   test("reports busy, with the count, once work is live", async () => {
-    const frame = await mount(STANDARD, projectionOf(running(0, "one")));
+    const frame = await shell(STANDARD, projectionOf(running(0, "one")));
     expect(frame).toContain("1 operation running.");
   });
 
   test("reports an unconfirmed effect ahead of a completed one", async () => {
-    const frame = await mount(
+    const frame = await shell(
       STANDARD,
       projectionOf([
         ...settled(0, "good", { kind: "completed" }),
