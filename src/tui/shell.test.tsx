@@ -15,7 +15,7 @@
 
 import { afterEach, describe, expect, test } from "bun:test";
 import { createTestRenderer, type TestRendererSetup } from "@opentui/core/testing";
-import { createShutdownCoordinator } from "../application/index.ts";
+import { createScopeTree, createShutdownCoordinator } from "../application/index.ts";
 import { createRecordingCliStreams, type GlobalOptions } from "../cli/index.ts";
 import {
   createManualClock,
@@ -307,6 +307,77 @@ describe("the shutdown participant", () => {
     stop.abort();
     await run;
     expect(hasOpenRendererSession()).toBe(false);
+  });
+});
+
+describe("the runtime the shell is running inside", () => {
+  test("does not report nothing attached while it is holding a coordinator", async () => {
+    // #370, and the sentence that made it a bug rather than a gap. `attached()`
+    // counts a non-null shutdown coordinator, `dispatch.ts` has always passed
+    // one, and the shell reported that no runtime was attached anyway — a status
+    // line stating something untrue about state it was holding.
+    const coordinator = createShutdownCoordinator({ clock: createManualClock() });
+    const { stop, run, setup } = await shell({ shutdown: coordinator });
+    const frame = setup === null ? "" : await frameWith(setup, "Nothing is running.");
+    expect(frame).not.toContain("No runtime is attached");
+    expect(frame).toContain("Nothing is running.");
+    stop.abort();
+    await run;
+  });
+
+  test("still reports nothing attached when nothing is", async () => {
+    // The other half, and the reason the first is not just a louder default:
+    // absent has to stay distinguishable from calm. A build with no runtime
+    // composed says so.
+    const { stop, run, frame } = await shell();
+    expect(frame).toContain("No runtime is attached");
+    stop.abort();
+    await run;
+  });
+
+  test("projects a live scope, and its settlement", async () => {
+    // The rail's own content, reached through the shell rather than through the
+    // reducer: a scope opens before the shell mounts, the projection folds the
+    // tree's events, and completing it changes the frame without anything
+    // re-rendering by hand.
+    const clock = createManualClock();
+    const scopes = createScopeTree({ clock });
+    const derived = scopes.derive(scopes.root().scopeId, { kind: "invocation", deadline: null });
+    expect(derived.ok).toBe(true);
+
+    const { stop, run, setup } = await shell({ scopes });
+    // Two: the tree's own root and the invocation under it, which is what a real
+    // dispatch opens as well. The count is the runtime's rather than a fixture's.
+    const running = setup === null ? "" : await frameWith(setup, "2 operations running.");
+    expect(running).toContain("2 operations running.");
+
+    if (derived.ok) {
+      scopes.complete(derived.value.scopeId);
+    }
+    // One, not none: the root scope is still live. A projection that dropped to
+    // zero here would be showing the settlement of something it was not told
+    // about.
+    const settled = setup === null ? "" : await frameWith(setup, "1 operation running.");
+    expect(settled).toContain("1 operation running.");
+    expect(settled).not.toContain("2 operations running.");
+
+    stop.abort();
+    await run;
+  });
+
+  test("reads the tree without being able to touch it", async () => {
+    // The rail is a reader. A view that could cancel a scope is a status line
+    // that will eventually stop the wrong work, so the shell is handed the tree
+    // and the scope it did not open is still live when the run ends.
+    const clock = createManualClock();
+    const scopes = createScopeTree({ clock });
+    const derived = scopes.derive(scopes.root().scopeId, { kind: "invocation", deadline: null });
+
+    const { stop, run } = await shell({ scopes });
+    stop.abort();
+    await run;
+
+    expect(derived.ok ? scopes.state(derived.value.scopeId)?.status : null).toBe("active");
   });
 });
 
