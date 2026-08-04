@@ -1669,6 +1669,24 @@ The transition's own steps are asserted now, not only its final frame. The
 defect survived a full rendered suite because every helper waited for the content
 to settle before looking, which is exactly the state that was correct.
 
+The frame no longer overlaps itself on a short terminal
+([#368](https://github.com/yogeshprasad098/falryn/issues/368)). The overlay host
+sized its panel against a two-row reserve — the header and the status line — that
+was written before the composer sat between them, while the transcript sized
+itself with `primaryRows`, which does subtract the composer. The two regions
+disagreed by three rows, so on a twelve-row terminal and below the panel drew
+over the composer's notice, and at six rows the status line arrived spliced into
+the panel's bottom border as `i━Ready━━━━━━━┛` — the one row an overlay is
+promised never to cover. Both regions now measure with the same function, and a
+control refuses a second opinion about what the frame costs.
+
+Where the primary region cannot seat a border and a way out, the overlay draws
+one plain line naming what is open and how to leave rather than a panel. `Panel`
+draws its two border rows whatever height it is given, so asking for one is
+asking for an overdraw; drawing nothing instead would make the key that opened
+the overlay look broken. An overlay costs the composer's rows now, so a panel of
+a given size needs a terminal three rows taller than it did.
+
 Paste is classified before it reaches anything: small text inline, large text as
 a bounded preview, and binary, over-long, or invalidly encoded content refused
 with the reason. A paste never runs a command.

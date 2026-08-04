@@ -217,7 +217,12 @@ describe("the row budget", () => {
     //
     // So the assertion is intactness rather than a row count. A count cannot see
     // it, because the panel's height is the same either way.
-    const session = await mount({ columns: 100, rows: 16 });
+    // Nineteen rows since #368, which is the sixteen this was written against
+    // plus the three the composer takes. The overlay used to be sized from
+    // `viewport.rows - 2`, a reserve that predates the composer; it is sized from
+    // the primary region now, so the same panel needs a taller terminal. The
+    // budget being asserted is unchanged.
+    const session = await mount({ columns: 100, rows: 19 });
     await session.openPalette();
     const frame = await session.frame();
 

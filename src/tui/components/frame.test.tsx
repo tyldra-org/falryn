@@ -117,6 +117,9 @@ async function render(
   return setup.captureCharFrame();
 }
 
+/** An open palette, spelled once because the sweeps below open it many times. */
+const PALETTE_OPEN = { kind: "palette", query: EMPTY_EDITOR } as const;
+
 function shell(
   overrides: Partial<ShellModel> = {},
   theme: Partial<ThemeRequest> = {},
@@ -285,6 +288,113 @@ describe("width classes", () => {
       rows: MINIMUM_ROWS,
     });
     expect(frame).not.toContain("too small");
+  });
+});
+
+/** Characters only the overlay panel's own border draws. */
+const BORDER = /[┏┓┗┛┃]/u;
+
+/**
+ * The status message the sweeps below use, and the text that says a frame is
+ * finished.
+ *
+ * Short on purpose: the status line is the last region drawn, so it is what
+ * "settled" means here — and a message long enough to be truncated at
+ * `MINIMUM_COLUMNS` would never be found on the narrow half of the sweep.
+ */
+const SETTLED = "Idle.";
+const STATUS: ShellModel["status"] = { status: "informational", message: SETTLED, hints: [] };
+
+/**
+ * Text that belongs to a region other than the primary one.
+ *
+ * Each survives truncation at `MINIMUM_COLUMNS`, which matters: a landmark that
+ * disappears on a narrow terminal would make the sweep below pass by finding
+ * nothing rather than by finding nothing wrong.
+ */
+const ELSEWHERE = ["Ready", "Not here yet", SETTLED] as const;
+
+/** Rows where a region drew over another one. */
+function collisions(frame: string): readonly string[] {
+  return frame
+    .split("\n")
+    .filter((line) => BORDER.test(line) && ELSEWHERE.some((text) => line.includes(text)));
+}
+
+/**
+ * A whole frame at an exact size, waited for rather than caught mid-paint.
+ *
+ * The waiting is the point. `render` returns the first non-empty frame, and on a
+ * six-row terminal that can be the header alone — a frame with no status line in
+ * it has no collision to find, so a sweep that took it would pass by looking at
+ * nothing. Waiting for the status line waits for the last region to arrive.
+ */
+function settledFrame(
+  overlay: ShellModel["overlay"],
+  size: { columns: number; rows: number },
+): Promise<string> {
+  return shell({ overlay, status: STATUS }, {}, size, SETTLED);
+}
+
+describe("short terminals", () => {
+  test("draw every region into rows no other region has", async () => {
+    // #368. `OverlayHost` sized itself against a two-row reserve — the header and
+    // the status line — that was written before #357 put a composer between them.
+    // On a short terminal the panel was handed rows the composer and its notice
+    // were already drawing into, and the status line ended up underneath the
+    // panel's bottom border: the one row `overlay.tsx` opens by promising an
+    // overlay may never cover.
+    //
+    // Every height rather than a sample, at the narrowest accepted width and a
+    // realistic one, with the overlay open and closed. The defect appeared at
+    // twelve and below and was invisible at sixteen and above, which is exactly
+    // the shape a spot check misses.
+    for (let rows = MINIMUM_ROWS; rows <= 24; rows += 1) {
+      for (const columns of [MINIMUM_COLUMNS, 76]) {
+        for (const overlay of [{ kind: "none" } as const, PALETTE_OPEN]) {
+          const frame = await settledFrame(overlay, { columns, rows });
+          expect({ rows, columns, open: overlay.kind, collided: collisions(frame) }).toEqual({
+            rows,
+            columns,
+            open: overlay.kind,
+            collided: [],
+          });
+        }
+      }
+    }
+  }, 60_000);
+
+  test("keep the status line readable with an overlay open", async () => {
+    // The rule this area cannot break, at the size it was broken. At
+    // `MINIMUM_ROWS` the status message used to arrive spliced into the panel's
+    // bottom border as `i━Ready━━━━━━━┛`.
+    const frame = await settledFrame(PALETTE_OPEN, {
+      columns: MINIMUM_COLUMNS,
+      rows: MINIMUM_ROWS,
+    });
+    const status = frame.split("\n").filter((line) => line.includes(SETTLED));
+    expect(status.length).toBe(1);
+    expect(BORDER.test(status[0] ?? "")).toBe(false);
+  });
+
+  test("say what is open and how to leave when a panel will not fit", async () => {
+    // A region shorter than a border and a way out cannot hold a panel, and
+    // `Panel` draws its two border rows whatever height it is given — so asking
+    // for one row is asking for an overdraw. Drawing nothing instead would make
+    // the key that opened this look broken, so the remainder is one plain line
+    // that still names both.
+    const frame = await settledFrame(PALETTE_OPEN, { columns: 76, rows: MINIMUM_ROWS });
+    expect(frame).toContain("Commands — Esc closes this");
+    expect(frame).not.toMatch(BORDER);
+  });
+
+  test("still draw the panel as soon as one fits", async () => {
+    // The other side of that boundary, so the fallback cannot quietly become the
+    // normal case.
+    const frame = await settledFrame(PALETTE_OPEN, { columns: 76, rows: 8 });
+    expect(frame).toMatch(BORDER);
+    expect(frame).toContain("Esc closes this");
+    expect(collisions(frame)).toEqual([]);
   });
 });
 
@@ -466,22 +576,18 @@ describe("the reveal", () => {
     expect(panelInterior(arrived)).toContain("Esc closes this");
   });
 
-  test("holds at the smallest terminal the shell accepts", async () => {
-    // Where the resting panel already fits exactly and only the reveal step does
-    // not — so a fix that merely gave the overlay more rows would pass everywhere
-    // but here.
-    //
-    // Scoped to the panel's interior on purpose. At this size the *frame* also
-    // overdraws: the host reserves two rows for the header and the status line
-    // and the composer takes three more, so the panel's own border lands on the
-    // activity row. That is older than #366, is unchanged by it, and is the
-    // reserve's to fix rather than this budget's.
+  test("holds at the shortest terminal that seats a panel", async () => {
+    // Where the resting panel fits by exactly one content row and the reveal
+    // step does not — so a fix that merely gave the overlay more rows would pass
+    // everywhere but here. Nine rows since #368: below that the frame's own
+    // chrome leaves too little for a border and a way out, and the overlay draws
+    // one plain line instead.
     const { during, arrived } = await revealFrames(
       <AppShell
         theme={{ ...THEME, reducedMotion: false }}
         model={model({ overlay: { kind: "palette", query: EMPTY_EDITOR }, commands: [] })}
       />,
-      { columns: MINIMUM_COLUMNS, rows: MINIMUM_ROWS },
+      { columns: MINIMUM_COLUMNS, rows: 9 },
       "Type to search",
     );
     for (const frame of during) {
