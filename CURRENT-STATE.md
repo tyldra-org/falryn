@@ -1518,12 +1518,27 @@ columns the shell drops the header's labels for their values and puts them back
 when the terminal grows, which is the layout class following the terminal rather
 than latching.
 
-Removing `renderer.destroy()` from the restoration path fails ten of the walk's
-checks, including all four new ones — the restoration assertion is real on every
-path, not only on the two that had it. And with `dist/falryn` absent the file now
-reports fourteen skipped checks where it reported one: the shared interrupt run
-was started while the `describe` body was evaluated, which `describe.if(false)`
-still does, so it threw and the remaining checks were never registered at all.
+Restoration is asserted on every path the walk drives, through one function
+rather than a copy of the loop per check — the copies are how three of the four
+new paths first shipped asserting an exit status and nothing about the terminal
+they left behind. Removing `renderer.destroy()` from the restoration path fails
+ten of the walk's checks.
+
+The negative a check names is chosen by measuring rather than by reading. The
+first version of the help check asserted that a closed overlay had not drawn
+`"Close overlay"` — a real command title, but one the help list truncates before
+reaching at thirty rows, so it appeared in neither the open state nor the closed
+one and the check passed against nothing. The panel's own title discriminates:
+pointed at the step that opened the overlay it fails, where the old predicate
+passes.
+
+A row that could not run reports itself skipped and never as an empty passing
+check. With `dist/falryn` absent the file reports fourteen skips where it
+reported one — the shared interrupt run was started while the `describe` body
+was evaluated, which `describe.if(false)` still does, so it threw and the
+remaining checks were never registered at all. With `stty` unavailable the
+resize row and its explanation are both skips, and the run drops from twelve
+passing checks to eleven rather than substituting a green tick for the row.
 
 `integration` joined `RUNTIME_EMITTED_CATEGORIES`, so exit code `5` is now
 reachable: a renderer that could not start is a dependency this run needed and

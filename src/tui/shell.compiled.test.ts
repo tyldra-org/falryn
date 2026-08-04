@@ -168,6 +168,22 @@ type ShellRun = {
  */
 const FRAME_START = "\u001b[?2026h";
 
+/**
+ * Every sequence that means the terminal was given back, on one run.
+ *
+ * A function rather than four copies of the loop, because the copies are how
+ * three of the paths this file drives ended up asserting an exit status and
+ * nothing about the terminal they left behind.
+ */
+function expectRestored(run: ShellRun): void {
+  for (const [what, sequence] of Object.entries(RESTORED)) {
+    expect({ what, restored: run.transcript.includes(sequence) }).toEqual({
+      what,
+      restored: true,
+    });
+  }
+}
+
 /** The frame a step settled on, rather than every frame it passed through. */
 function settledFrame(step: string): string {
   const frames = step.split(FRAME_START);
@@ -391,12 +407,7 @@ describe.if(runnable)("the compiled shell on a real terminal", () => {
       // Asserted on the bytes the terminal received rather than on anything the
       // program said about itself. This is the failure that leaves a user
       // closing their window, and it is invisible to every other check here.
-      for (const [what, sequence] of Object.entries(RESTORED)) {
-        expect({ what, restored: run.transcript.includes(sequence) }).toEqual({
-          what,
-          restored: true,
-        });
-      }
+      expectRestored(run);
     },
     RUN_TIMEOUT_MS,
   );
@@ -454,12 +465,7 @@ describe.if(runnable)("the compiled shell on a real terminal", () => {
       });
       // Zero, not 130: this is a deliberate quit, not a cancellation.
       expect(run.exitCode).toBe(EXIT_CODES.COMPLETED);
-      for (const [what, sequence] of Object.entries(RESTORED)) {
-        expect({ what, restored: run.transcript.includes(sequence) }).toEqual({
-          what,
-          restored: true,
-        });
-      }
+      expectRestored(run);
     },
     RUN_TIMEOUT_MS,
   );
@@ -487,8 +493,17 @@ describe.if(runnable)("the compiled shell on a real terminal", () => {
       expect(opened).toContain("nothing is running to cancel");
       // And closing gives the primary view back. Asserted on what the *step*
       // drew, because the transcript keeps every byte the overlay ever wrote.
+      //
+      // The panel's own title is the negative, and it was chosen by measuring
+      // rather than by reading: `"Close overlay"` is a real command title, and
+      // at this height the help list truncates before reaching it — so it is
+      // drawn in neither state and a check naming it passes against nothing.
+      // `../components/interaction.test.tsx` still asserts that way, which is
+      // https://github.com/yogeshprasad098/falryn/issues/381 rather than this
+      // issue's to correct.
       expect(closed).toContain("workspace");
-      expect(closed).not.toContain("Close overlay");
+      expect(closed).not.toContain("Help");
+      expectRestored(run);
     },
     RUN_TIMEOUT_MS,
   );
@@ -515,6 +530,7 @@ describe.if(runnable)("the compiled shell on a real terminal", () => {
       expect(searched).toContain("exit");
       expect(closed).toContain("workspace");
       expect(closed).not.toContain("Commands");
+      expectRestored(run);
     },
     RUN_TIMEOUT_MS,
   );
@@ -541,6 +557,7 @@ describe.if(runnable)("the compiled shell on a real terminal", () => {
       // will give it one. Silently discarding what was typed is the failure.
       expect(submitted).toContain("Not sent");
       expect(submitted).toContain("#33");
+      expectRestored(run);
     },
     RUN_TIMEOUT_MS,
   );
@@ -566,22 +583,19 @@ describe.if(runnable)("the compiled shell on a real terminal", () => {
       expect(settledFrame(narrow)).toContain("current direct");
       // And back: the arrangement follows the terminal rather than latching.
       expect(settledFrame(wide)).toContain("workspace");
-      for (const [what, sequence] of Object.entries(RESTORED)) {
-        expect({ what, restored: run.transcript.includes(sequence) }).toEqual({
-          what,
-          restored: true,
-        });
-      }
+      expectRestored(run);
     },
     RUN_TIMEOUT_MS,
   );
 
-  test.if(!resizable)(
-    "was not resized, because this platform has no usable stty on a pseudo-terminal",
-    () => {
+  // Reported as skipped rather than as an empty passing check, which is the
+  // same rule the whole-file fallback below follows: a row that could not run
+  // is unqualified, and a green tick is the one thing it must not look like.
+  if (!resizable) {
+    test.skip("was not resized, because this platform has no usable stty on a pseudo-terminal", () => {
       // Recorded rather than absent. The row is unqualified on this host.
-    },
-  );
+    });
+  }
 
   test(
     "restores the terminal when a deadline ends the session instead",
