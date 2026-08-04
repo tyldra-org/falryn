@@ -8,10 +8,14 @@
  * Falryn's own signal port rather than OpenTUI's, exits with the code the one
  * table owns, and gives the terminal back.
  *
- * A pseudo-terminal is allocated through libc's `openpty`, which is the only way
- * to get a process a real tty without adding a native dependency. `script(1)`
- * cannot be used: it requires a tty on *its* own stdin, so it fails in exactly
- * the non-interactive contexts a test suite runs in.
+ * The terminal itself lives in `./pty-fixtures.ts` — allocated through libc's
+ * `openpty`, which is the only way to get a process a real tty without adding a
+ * native dependency, and not through `script(1)`, which requires a tty on *its*
+ * own stdin and so fails in exactly the non-interactive contexts a test suite
+ * runs in. It moved there when `./measurement.test.tsx` needed the same terminal
+ * for the two quantities a test renderer cannot answer; a second copy of the
+ * descriptor handling and the `SIGWINCH` delivery is a second thing to get
+ * subtly wrong.
  *
  * Restoration is asserted on the bytes the terminal received, not on a report
  * the program made about itself. A shell that claimed it restored the terminal
@@ -23,150 +27,23 @@
  * tests, so a release path always runs it.
  */
 
-import { dlopen, FFIType, ptr } from "bun:ffi";
-import { afterEach, describe, expect, test } from "bun:test";
-import { closeSync, createReadStream, writeSync } from "node:fs";
-import { stat } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { describe, expect, test } from "bun:test";
 import { EXIT_CODES } from "../cli/index.ts";
+import {
+  COLUMNS,
+  compiledArtifactBuilt,
+  compiledShellRunnable,
+  RESTORED,
+  ROWS,
+  resizable,
+  runOnPty,
+  type ShellRun,
+  settledFrame,
+  write,
+} from "./pty-fixtures.ts";
 
-/** Three levels up: this file is `src/tui/`, and the artifact is `dist/` beside `src/`. */
-const EXECUTABLE = join(dirname(dirname(dirname(import.meta.path))), "dist", "falryn");
-
-/** The size the pseudo-terminal reports, and what the shell must lay out against. */
-const COLUMNS = 100;
-const ROWS = 30;
-
-/** Long enough for a native renderer to start and commit a frame on a loaded machine. */
-const MOUNT_MS = 3_000;
-
-/** Long enough for the shutdown sequence, which is bounded by its own phase grace. */
-const EXIT_MS = 8_000;
-
+/** A whole run: a compiled process, a native renderer starting, and its exit. */
 const RUN_TIMEOUT_MS = 30_000;
-
-/**
- * Sequences that mean the terminal was given back.
- *
- * Each one undoes something the renderer turned on. They are asserted by value
- * rather than by a helper, because the whole point is to check what the terminal
- * actually received — a helper shared with the code under test would let both
- * sides be wrong together.
- */
-const RESTORED = {
-  cursorVisible: "\u001b[?25h",
-  scrollRegionReset: "\u001b[r",
-  bracketedPasteOff: "\u001b[?2004l",
-} as const;
-
-type Pty = {
-  readonly master: number;
-  readonly slave: number;
-  transcript(): string;
-  close(): void;
-};
-
-/**
- * A pseudo-terminal, or `null` on a platform that has no `openpty`.
- *
- * `openpty` rather than `posix_openpt` plus a `TIOCSWINSZ` ioctl: `ioctl` is
- * variadic, and a variadic call through a fixed-arity FFI declaration passes its
- * third argument in a register on arm64 where the callee reads it off the stack.
- * `openpty` takes the window size as an ordinary parameter, so the terminal has
- * a size from the moment it exists — which matters, since a terminal reporting
- * none is one the launch decision refuses.
- */
-function openPty(columns = COLUMNS, rows = ROWS): Pty | null {
-  const master = new Int32Array(1);
-  const slave = new Int32Array(1);
-  // `struct winsize`: rows, columns, then pixel dimensions nothing here uses.
-  const size = new Uint16Array([rows, columns, 0, 0]);
-
-  try {
-    const libc = dlopen(process.platform === "darwin" ? "libSystem.B.dylib" : "libutil.so.1", {
-      openpty: {
-        args: [FFIType.ptr, FFIType.ptr, FFIType.ptr, FFIType.ptr, FFIType.ptr],
-        returns: FFIType.i32,
-      },
-    });
-    if (libc.symbols.openpty(ptr(master), ptr(slave), null, null, ptr(size)) !== 0) {
-      return null;
-    }
-  } catch {
-    // No such library, no such symbol, or no pseudo-terminal left to allocate.
-    // The check reports itself skipped rather than failing over the platform.
-    return null;
-  }
-
-  let transcript = "";
-  // Streamed rather than read synchronously: a blocking read on a master with
-  // nothing pending would hang the suite instead of failing it.
-  const reader = createReadStream("", { fd: master[0] ?? -1, autoClose: false });
-  reader.on("data", (chunk) => {
-    transcript += chunk.toString();
-  });
-  reader.on("error", () => {
-    // The far end closing is an ordinary end of a pseudo-terminal, not a failure.
-  });
-
-  return {
-    master: master[0] ?? -1,
-    slave: slave[0] ?? -1,
-    transcript: () => transcript,
-    close: () => reader.destroy(),
-  };
-}
-
-const built = await stat(EXECUTABLE)
-  .then(() => true)
-  .catch(() => false);
-
-const probe = built ? openPty() : null;
-
-/**
- * Whether the terminal can be resized under a running child.
- *
- * Through `stty` rather than through `ioctl` directly, and this is a measured
- * constraint rather than a preference: `ioctl` is variadic, and calling it
- * through a fixed-arity FFI declaration segfaults the process on arm64 — the
- * third argument goes in a register where the callee reads the stack. `stty` is
- * POSIX, ships with the system, and reaches `TIOCSWINSZ` from a real C program,
- * which is the same thing a terminal emulator does.
- */
-const resizable =
-  probe !== null &&
-  (await Bun.spawn(["stty", "size"], { stdin: probe.master, stdout: "ignore", stderr: "ignore" })
-    .exited.then((code) => code === 0)
-    .catch(() => false));
-
-const runnable = built && probe !== null;
-probe?.close();
-
-const live: { process: Bun.Subprocess; pty: Pty }[] = [];
-
-afterEach(() => {
-  while (live.length > 0) {
-    const run = live.pop();
-    run?.process.kill("SIGKILL");
-    run?.pty.close();
-  }
-});
-
-type ShellRun = {
-  readonly exitCode: number | "timed-out";
-  readonly transcript: string;
-};
-
-/**
- * The start of a synchronized update, which is where one frame ends and the
- * next begins.
- *
- * A step can draw more than one: a resize repaints at the size it had before
- * re-laying out at the size it was given, so a step's bytes hold a transition
- * and not a state. Asserting on the whole slice would read both frames and pass
- * on whichever one happened to match.
- */
-const FRAME_START = "\u001b[?2026h";
 
 /**
  * Every sequence that means the terminal was given back, on one run.
@@ -184,153 +61,7 @@ function expectRestored(run: ShellRun): void {
   }
 }
 
-/** The frame a step settled on, rather than every frame it passed through. */
-function settledFrame(step: string): string {
-  const frames = step.split(FRAME_START);
-  return frames[frames.length - 1] ?? step;
-}
-
-/** Bytes a step drew, once the interface stopped drawing more. */
-const QUIET_MS = 300;
-const STEP_TIMEOUT_MS = 4_000;
-
-/**
- * The interface, driven one step at a time.
- *
- * `press` and `resize` return *what that step drew*, which is the only way to
- * assert that something closed: a pseudo-terminal's transcript is cumulative, so
- * "Help" is in it forever once the overlay has been open, and an assertion
- * against the whole transcript can only ever say a thing appeared.
- */
-type Driver = {
-  readonly process: Bun.Subprocess;
-  readonly pty: Pty;
-  /** Writes bytes as input and returns what the interface drew in response. */
-  press(bytes: string | readonly number[]): Promise<string>;
-  /** Resizes the terminal under the running shell and returns what it redrew. */
-  resize(columns: number, rows: number): Promise<string>;
-};
-
-/** Starts the compiled shell on a pseudo-terminal and runs `act` once it has drawn. */
-async function runOnPty(
-  argv: readonly string[],
-  act: (driver: Driver) => void | Promise<void>,
-  options: {
-    readonly columns?: number;
-    readonly rows?: number;
-    readonly env?: Readonly<Record<string, string>>;
-  } = {},
-): Promise<ShellRun> {
-  const pty = openPty(options.columns ?? COLUMNS, options.rows ?? ROWS);
-  if (pty === null) {
-    throw new Error("no pseudo-terminal");
-  }
-
-  const started = Bun.spawn([EXECUTABLE, ...argv], {
-    stdin: pty.slave,
-    stdout: pty.slave,
-    stderr: pty.slave,
-    env: {
-      PATH: process.env.PATH ?? "",
-      HOME: process.env.HOME ?? "",
-      TERM: "xterm-256color",
-      ...options.env,
-    },
-  });
-  const run = { process: started, pty };
-  live.push(run);
-  // The parent's copy of the slave, released as soon as the child has its own.
-  // Standard practice for a pseudo-terminal, and load-bearing here: a suite that
-  // opens one per screen mode leaks a descriptor pair per run without it, and
-  // the master is left holding a writer that never goes away. The master itself
-  // stays open — the reader owns it until `close()`.
-  try {
-    closeSync(pty.slave);
-  } catch {
-    // Already released. Harmless, and not worth failing a run over.
-  }
-
-  await Bun.sleep(MOUNT_MS);
-
-  let read = pty.transcript().length;
-  /** Waits until the interface stops drawing, and returns what this step drew. */
-  const drawn = async (): Promise<string> => {
-    const deadline = Bun.nanoseconds() + STEP_TIMEOUT_MS * 1_000_000;
-    let quietSince = Bun.nanoseconds();
-    let seen = pty.transcript().length;
-    while (Bun.nanoseconds() < deadline) {
-      await Bun.sleep(50);
-      const now = pty.transcript().length;
-      if (now !== seen) {
-        seen = now;
-        quietSince = Bun.nanoseconds();
-        continue;
-      }
-      if (Bun.nanoseconds() - quietSince >= QUIET_MS * 1_000_000) {
-        break;
-      }
-    }
-    const whole = pty.transcript();
-    const step = whole.slice(read);
-    read = whole.length;
-    return step;
-  };
-
-  // Everything the mount itself drew, consumed before the first step. Without
-  // this the first step's slice carries the last frame of the *previous* state,
-  // and an assertion that the arrangement changed reads both and passes on the
-  // wrong one.
-  await drawn();
-
-  await act({
-    process: started,
-    pty,
-    async press(bytes) {
-      writeSync(
-        pty.master,
-        Buffer.from(typeof bytes === "string" ? bytes : Uint8Array.from(bytes)),
-      );
-      return await drawn();
-    },
-    async resize(columns, rows) {
-      const stty = Bun.spawn(["stty", "rows", String(rows), "columns", String(columns)], {
-        stdin: pty.master,
-        stdout: "ignore",
-        stderr: "ignore",
-      });
-      if ((await stty.exited) !== 0) {
-        throw new Error(`stty could not resize the terminal to ${columns}x${rows}`);
-      }
-      // The kernel signals the foreground process group of a *controlling*
-      // terminal, and a spawned child has none — `setsid` plus `TIOCSCTTY` is
-      // the other half of what a terminal emulator does, and `TIOCSCTTY` is an
-      // `ioctl`. The size is genuinely changed above; this delivers the
-      // notification the kernel would have.
-      started.kill("SIGWINCH");
-      return await drawn();
-    },
-  });
-
-  const exitCode = await Promise.race([
-    started.exited,
-    Bun.sleep(EXIT_MS).then(() => "timed-out" as const),
-  ]);
-  // The bytes written on the way out arrive after the process has gone.
-  await Bun.sleep(200);
-  return { exitCode, transcript: pty.transcript() };
-}
-
-/**
- * Grouped by the path a run exercises, not one run per assertion.
- *
- * Each run costs a pseudo-terminal, a compiled process, and several seconds of a
- * native renderer starting, so five spawns of the same interrupt path tell us
- * nothing extra and make the file flaky. But *one size in one mode* is how #351
- * shipped: `alternate-screen` could not construct at all, and this file only
- * ever ran the 100×30 terminal that selects `split-footer`. Every distinct
- * *mode* now gets a run, which is a different axis from repeating a path.
- */
-describe.if(runnable)("the compiled shell on a real terminal", () => {
+describe.if(compiledShellRunnable)("the compiled shell on a real terminal", () => {
   /**
    * The interrupt run, started once and read by the four checks below.
    *
@@ -461,7 +192,7 @@ describe.if(runnable)("the compiled shell on a real terminal", () => {
       // only way out of the interface was killing the process from another
       // window while the status line said `^C exit`.
       const run = await runOnPty([], ({ pty }) => {
-        writeSync(pty.master, Buffer.from([0x03]));
+        write(pty, [0x03]);
       });
       // Zero, not 130: this is a deliberate quit, not a cancellation.
       expect(run.exitCode).toBe(EXIT_CODES.COMPLETED);
@@ -613,9 +344,9 @@ describe.if(runnable)("the compiled shell on a real terminal", () => {
   );
 });
 
-describe.if(!runnable)("the compiled shell on a real terminal", () => {
+describe.if(!compiledShellRunnable)("the compiled shell on a real terminal", () => {
   test.skip(
-    built
+    compiledArtifactBuilt
       ? "no pseudo-terminal is available on this platform, so the shipped artifact was not exercised"
       : "dist/falryn has not been built, so the shipped artifact was not exercised",
     () => {
