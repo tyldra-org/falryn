@@ -27,6 +27,11 @@ const ENTRYPOINT = "index.ts";
 const RENDERER_OWNERS = [
   "renderer-session.ts",
   "shell.tsx",
+  // The one module that writes above the footer, and the seam that drives it.
+  // #356: scrollback is the terminal's own durable region, so the path to it is
+  // narrow by construction rather than by convention.
+  "scrollback.ts",
+  "components/scrollback-commits.tsx",
   // The root measures the viewport through the renderer's own hooks. Nothing
   // below it does: every component reads the frame from context instead, which
   // is what keeps the measurement in one place.
@@ -441,6 +446,48 @@ describe("the transcript surface", () => {
       }
     }
     expect(owners).toEqual(["transcript/routes.ts"]);
+  });
+});
+
+describe("the scrollback boundary", () => {
+  test("writes above the footer from exactly one module", async () => {
+    // The negative control #356 names. Scrollback is append-only and outlives
+    // the process: a row committed to it cannot be repainted, reordered, or
+    // taken back. A second writer would be a second ordering rule over the same
+    // FIFO, and the two would interleave differently on the day either changed —
+    // in the reader's permanent scroll history, where nothing can correct it.
+    const writers: string[] = [];
+    for (const file of await productFiles()) {
+      const source = await readCode(file);
+      if (/\b(writeToScrollback|createScrollbackSurface)\s*\(/.test(source)) {
+        writers.push(file);
+      }
+    }
+    expect(writers).toEqual(["scrollback.ts"]);
+  });
+
+  test("asks the mode contract whether there is a footer at all", async () => {
+    // `alternate-screen` and `main-screen` draw into the whole terminal, and
+    // OpenTUI's scrollback APIs throw rather than degrade when the mode is
+    // wrong. Consulted rather than assumed, and consulted on every commit:
+    // renderer mode is application state, so a check done once at construction
+    // would be right until the first mode change.
+    expect(await readCode("scrollback.ts")).toContain("reservesFooter(host.screenMode)");
+  });
+
+  test("is driven by a product caller rather than only exported", async () => {
+    // #351 in this boundary's terms. An adapter nothing mounts is a capability
+    // that compiles, and the acceptance criterion is about what reaches a
+    // terminal.
+    expect(await readCode("components/app-shell.tsx")).toContain("<ScrollbackCommits");
+  });
+
+  test("keeps the adapter off the pure entrypoint's re-exports", async () => {
+    // `./transcript/index.ts` is imported by modules that must not load a
+    // renderer. The lines it resolves are pure and belong there; the adapter
+    // that draws them is not and does not.
+    const surface = await readValues("transcript/index.ts");
+    expect(surface).not.toContain("scrollback.ts");
   });
 });
 

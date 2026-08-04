@@ -56,4 +56,5 @@ export {
   SURFACE_TOKENS,
   THEME_VARIANTS,
   TYPOGRAPHY_ROLES,
+  textAttributes,
 } from "./tokens.ts";
