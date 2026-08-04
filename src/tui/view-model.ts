@@ -15,6 +15,7 @@
  * `unavailable` is not a placeholder, it is the truth.
  */
 
+import type { ComposerModel } from "./composer-model.ts";
 import type { StatusToken } from "./theme/index.ts";
 import type { TranscriptModel } from "./transcript-model.ts";
 
@@ -143,4 +144,12 @@ export type ShellModel = {
    * better thing than a placeholder line saying nothing is running.
    */
   readonly transcript: TranscriptModel;
+  /**
+   * The composer's draft, phase, and declared gaps.
+   *
+   * Required rather than optional, like the transcript and for the same reason:
+   * a shell always has a composer now, and a frame that could render without one
+   * would be a frame with two arrangements to keep working.
+   */
+  readonly composer: ComposerModel;
 };

@@ -129,6 +129,44 @@ export function bindingsForContext(
 }
 
 /**
+ * Whether a key is a character somebody could be trying to type.
+ *
+ * One character, no modifier. `ctrl+p` is not one, `tab` is not one — its name
+ * is four characters and it produces no glyph — and `?` is.
+ */
+export function isTypedKey(key: string): boolean {
+  return [...key].length === 1 && key.trim() !== "";
+}
+
+/**
+ * The bindings a layer registers while a text control has focus.
+ *
+ * A binding whose key is a bare character is unreachable *as a character* while
+ * it is registered: the keymap resolves the key and dispatches, and the control
+ * never sees it. This was measured rather than assumed — a `useKeyboard` handler
+ * does not receive a key a layer has claimed. So a composer with `?` bound to
+ * help anywhere above it is a composer that cannot type a question mark, which
+ * is not a keymap that is merely inconvenient, it is a text control that is
+ * broken for a character people use in prompts constantly.
+ *
+ * The canonical contract already says an inactive context registers nothing, so
+ * that a broader layer is not shadowed. This is the same rule pointing the other
+ * way: while the narrowest layer is a text editor, a broader layer may not claim
+ * the characters that editor exists to receive.
+ *
+ * It is deliberately narrow. Only bare single characters are withheld, so every
+ * modified and named binding — `ctrl+c`, `ctrl+p`, `escape`, `tab` — keeps
+ * working while typing, including both ways out of the interface. The command
+ * itself is not withheld: it stays listed, stays searchable, and stays reachable
+ * from the palette, which is what makes this a re-route rather than a removal.
+ */
+export function bindingsWhileTyping(
+  bindings: readonly PreparedBinding[],
+): readonly PreparedBinding[] {
+  return bindings.filter((binding) => !isTypedKey(binding.key));
+}
+
+/**
  * Whether a context's bindings should be live right now.
  *
  * Separate from availability. A context is active when its *surface* exists —

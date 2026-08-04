@@ -766,6 +766,7 @@ export {
 } from "./terminal.ts";
 export {
   displayWidth,
+  graphemes,
   MAX_DISPLAY_WIDTH,
   sanitizeTerminalText,
   truncateToWidth,

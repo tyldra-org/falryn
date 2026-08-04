@@ -40,6 +40,7 @@ export const SYMBOL_ROLES = [
   "focus",
   "collapsed",
   "expanded",
+  "caret",
 ] as const;
 
 export type SymbolRole = (typeof SYMBOL_ROLES)[number];
@@ -72,6 +73,12 @@ const UNICODE: SymbolSet = {
   focus: "▸",
   collapsed: "▸",
   expanded: "▾",
+  // A single-width bar, drawn *before* the character the cursor is on. A
+  // reversed cell would be the terminal-native way to show a cursor, but the
+  // line primitive styles a whole line rather than a cell — and a caret that is
+  // a character survives a monochrome terminal, which a reversed cell drawn with
+  // colour alone would not.
+  caret: "▏",
 };
 
 /**
@@ -100,6 +107,7 @@ const CONSERVATIVE: SymbolSet = {
   focus: ">",
   collapsed: ">",
   expanded: "v",
+  caret: "|",
 };
 
 /** ASCII, for a terminal whose locale names a charset that is not UTF-8. */
@@ -124,6 +132,7 @@ const ASCII: SymbolSet = {
   focus: ">",
   collapsed: ">",
   expanded: "v",
+  caret: "|",
 };
 
 export const SYMBOL_SETS = { unicode: UNICODE, conservative: CONSERVATIVE, ascii: ASCII } as const;
