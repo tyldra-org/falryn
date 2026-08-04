@@ -15,6 +15,8 @@
 
 import type { GlobalOptions } from "../cli/index.ts";
 import { EMPTY_PROJECTION } from "../presentation/index.ts";
+import { COMPOSER_FEATURES, INITIAL_COMPOSER_STATE } from "./composer/index.ts";
+import type { ComposerModel } from "./composer-model.ts";
 import { INITIAL_TRANSCRIPT_STATE } from "./transcript/index.ts";
 import type { TranscriptModel } from "./transcript-model.ts";
 import { known, type ShellModel, unavailable } from "./view-model.ts";
@@ -35,6 +37,20 @@ export const EMPTY_TRANSCRIPT_MODEL: TranscriptModel = {
 };
 
 /**
+ * A composer with an empty draft and nothing focused.
+ *
+ * The value-only counterpart to {@link EMPTY_TRANSCRIPT_MODEL}. It carries the
+ * declared feature gaps because they are facts about the build rather than about
+ * a session, so a frame rendered from a value alone still says what is missing.
+ */
+export const EMPTY_COMPOSER_MODEL: ComposerModel = {
+  state: INITIAL_COMPOSER_STATE,
+  commands: [],
+  features: COMPOSER_FEATURES,
+  focused: false,
+};
+
+/**
  * The keys this build actually honours.
  *
  * Exactly one, and it is not a keymap: interrupt reaches the shell through the
@@ -50,8 +66,9 @@ export const SHELL_HELP = [
     title: "Where this is",
     body:
       "Falryn's interface is running and the transcript is real, but nothing " +
-      "produces entries for it yet. There is no agent loop, no provider, and no " +
-      "composer, so the transcript stays empty until those arrive.",
+      "produces entries for it yet. The composer accepts a prompt and keeps your " +
+      "draft, but no provider can answer one, so the transcript stays empty " +
+      "until an agent loop arrives.",
   },
   {
     title: "Leaving",
@@ -93,5 +110,6 @@ export function shellModel(options: GlobalOptions): ShellModel {
     commands: [],
     help: [...SHELL_HELP],
     transcript: EMPTY_TRANSCRIPT_MODEL,
+    composer: EMPTY_COMPOSER_MODEL,
   };
 }

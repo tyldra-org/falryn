@@ -75,6 +75,15 @@ function unavailable(reason: string): CommandAvailability {
  */
 export type CommandState = {
   readonly overlayOpen: boolean;
+  /**
+   * Whether the composer is mounted *and* focused.
+   *
+   * Focus rather than existence, because the canonical layer stack's narrowest
+   * layer is the focused editor or control. An always-active composer layer
+   * would take `up` and `down` from the transcript permanently, since the
+   * composer's priority is higher — so "the composer exists" is the wrong
+   * question for whether its keys should win.
+   */
   readonly hasComposer: boolean;
   /**
    * Whether a transcript is mounted with something in it.
@@ -340,7 +349,7 @@ export const SHELL_COMMANDS: readonly ShellCommand[] = [
     defaultBinding: "return",
     keywords: ["send", "run", "ask"],
     availability: (state) =>
-      state.hasComposer ? AVAILABLE : unavailable("there is no composer yet"),
+      state.hasComposer ? AVAILABLE : unavailable("the composer is not focused"),
   },
   {
     id: "composer.newline",
@@ -350,27 +359,32 @@ export const SHELL_COMMANDS: readonly ShellCommand[] = [
     defaultBinding: "shift+return",
     keywords: ["newline", "multiline"],
     availability: (state) =>
-      state.hasComposer ? AVAILABLE : unavailable("there is no composer yet"),
+      state.hasComposer ? AVAILABLE : unavailable("the composer is not focused"),
   },
   {
     id: "composer.historyPrevious",
-    title: "Previous entry",
-    description: "Recall the previous submission without losing the draft.",
+    title: "Previous line or entry",
+    // Two effects on one key, and the boundary decides which. Inside a multiline
+    // draft `up` moves a line, because a composer whose arrows did not move the
+    // cursor would not be a text editor. From the first line there is no line to
+    // move to, and that is where recall begins — which is what every composer
+    // people already use does, and the reason it is one key rather than two.
+    description: "Move up a line, or recall the previous submission from the first line.",
     context: "composer",
     defaultBinding: "up",
     keywords: ["history", "previous", "recall"],
     availability: (state) =>
-      state.hasComposer ? AVAILABLE : unavailable("there is no composer yet"),
+      state.hasComposer ? AVAILABLE : unavailable("the composer is not focused"),
   },
   {
     id: "composer.historyNext",
-    title: "Next entry",
-    description: "Move forward through recalled submissions.",
+    title: "Next line or entry",
+    description: "Move down a line, or move forward through recalled submissions from the last.",
     context: "composer",
     defaultBinding: "down",
     keywords: ["history", "next"],
     availability: (state) =>
-      state.hasComposer ? AVAILABLE : unavailable("there is no composer yet"),
+      state.hasComposer ? AVAILABLE : unavailable("the composer is not focused"),
   },
   {
     id: "confirmation.accept",

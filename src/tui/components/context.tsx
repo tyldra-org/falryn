@@ -41,6 +41,15 @@ export type Frame = {
   readonly terminal: Viewport;
   readonly layout: LayoutDecision;
   readonly cache: TextCache;
+  /**
+   * Rows the composer has reserved this frame.
+   *
+   * Carried rather than measured, so the transcript sizes its window from the
+   * same number the composer draws. Two components arriving at a height
+   * independently is how a region overdraws the one below it, and the failure
+   * looks like a rendering glitch rather than the arithmetic disagreement it is.
+   */
+  readonly composerRows: number;
 };
 
 const FrameContext = createContext<Frame | null>(null);

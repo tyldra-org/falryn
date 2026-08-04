@@ -1,0 +1,204 @@
+/**
+ * The composer's state machine.
+ *
+ * The two acceptance criteria this file owns are the snapshot's immutability and
+ * the draft surviving a submission that could not be taken. Both are asserted on
+ * the state rather than through a renderer, because both are properties of the
+ * transition and a frame would only show what happened to survive it.
+ */
+
+import { describe, expect, test } from "bun:test";
+import { INLINE_PASTE_LIMIT } from "../paste.ts";
+import {
+  type ComposerAction,
+  type ComposerState,
+  composerNotice,
+  composerReducer,
+  INITIAL_COMPOSER_STATE,
+} from "./state.ts";
+import { type SubmissionOutcome, UNAVAILABLE_SUBMISSION } from "./submission.ts";
+
+function apply(state: ComposerState, ...actions: readonly ComposerAction[]): ComposerState {
+  return actions.reduce(composerReducer, state);
+}
+
+/** A composer holding this draft. */
+function drafting(text: string): ComposerState {
+  return apply(INITIAL_COMPOSER_STATE, { kind: "edit", action: { kind: "set", text } });
+}
+
+/** Submits, asks the build's real port, and resolves — the whole round trip. */
+function submitted(state: ComposerState): ComposerState {
+  const sending = apply(state, { kind: "submit" });
+  if (sending.inFlight === null) {
+    return sending;
+  }
+  return apply(sending, {
+    kind: "resolve",
+    outcome: UNAVAILABLE_SUBMISSION.submit(sending.inFlight),
+  });
+}
+
+describe("submitting", () => {
+  test("passes through sending and takes a frozen snapshot", () => {
+    const sending = apply(drafting("ask something"), { kind: "submit" });
+    expect(sending.phase).toBe("sending");
+    expect(sending.inFlight?.text).toBe("ask something");
+    expect(Object.isFrozen(sending.inFlight)).toBe(true);
+  });
+
+  test("later edits reach the next submission and never the one in flight", () => {
+    // The acceptance criterion, and the property that makes typing while
+    // something runs safe rather than a race between a keystroke and a request.
+    const sending = apply(drafting("first"), { kind: "submit" });
+    const snapshot = sending.inFlight;
+    const typing = apply(sending, { kind: "edit", action: { kind: "insert", text: " and more" } });
+
+    expect(snapshot?.text).toBe("first");
+    expect(typing.inFlight?.text).toBe("first");
+    expect(typing.editor.text).toBe("first and more");
+  });
+
+  test("numbers submissions so one outcome cannot be read as another's", () => {
+    const first = submitted(drafting("one"));
+    const second = apply(first, { kind: "edit", action: { kind: "set", text: "two" } });
+    const sending = apply(second, { kind: "submit" });
+    expect(sending.inFlight?.sequence).toBe(2);
+  });
+
+  test("refuses to submit nothing", () => {
+    const empty = apply(INITIAL_COMPOSER_STATE, { kind: "submit" });
+    expect(empty).toBe(INITIAL_COMPOSER_STATE);
+    const blank = drafting("   \n ");
+    expect(apply(blank, { kind: "submit" })).toBe(blank);
+  });
+
+  test("refuses to submit while disabled", () => {
+    const disabled = apply(drafting("ask"), { kind: "disable" });
+    expect(apply(disabled, { kind: "submit" })).toBe(disabled);
+  });
+});
+
+describe("a submission nothing can take", () => {
+  test("resolves unavailable, names its owner, and offers a route", () => {
+    const after = submitted(drafting("ask something"));
+    const outcome = after.lastOutcome;
+    expect(outcome?.kind).toBe("unavailable");
+    if (outcome?.kind !== "unavailable") {
+      throw new Error("the build's port stopped refusing");
+    }
+    expect(outcome.owner).toBe("#33");
+    expect(outcome.reason).toContain("no provider is configured");
+    expect(outcome.route).toBe("app.commandPalette");
+  });
+
+  test("leaves the draft exactly where the user left it", () => {
+    // The acceptance criterion. Discarding the input is the failure a composer
+    // exists to prevent, and it is the failure that costs the most trust.
+    const after = submitted(drafting("ask something"));
+    expect(after.editor.text).toBe("ask something");
+    expect(after.phase).toBe("editing");
+  });
+
+  test("does not remember it, because it is still in the composer", () => {
+    // Putting it in history too would offer the reader a recall of the text they
+    // are already looking at.
+    const after = submitted(drafting("ask something"));
+    expect(after.history.entries).toEqual([]);
+  });
+});
+
+describe("a submission something takes", () => {
+  test("clears the draft and remembers it", () => {
+    const sending = apply(drafting("ask something"), { kind: "submit" });
+    const snapshot = sending.inFlight;
+    if (snapshot === null) {
+      throw new Error("nothing was in flight");
+    }
+    const accepted: SubmissionOutcome = { kind: "accepted", snapshot };
+    const after = apply(sending, { kind: "resolve", outcome: accepted });
+
+    expect(after.editor.text).toBe("");
+    expect(after.history.entries).toEqual(["ask something"]);
+    expect(after.phase).toBe("editing");
+  });
+
+  test("ignores an outcome with nothing in flight", () => {
+    const idle = drafting("draft");
+    const stray: SubmissionOutcome = {
+      kind: "accepted",
+      snapshot: { text: "elsewhere", sequence: 9 },
+    };
+    expect(apply(idle, { kind: "resolve", outcome: stray })).toBe(idle);
+  });
+});
+
+describe("history through the composer", () => {
+  test("recalling changes the phase, and typing ends it", () => {
+    const sending = apply(drafting("remembered"), { kind: "submit" });
+    const snapshot = sending.inFlight;
+    if (snapshot === null) {
+      throw new Error("nothing was in flight");
+    }
+    const sent = apply(sending, {
+      kind: "resolve",
+      outcome: { kind: "accepted", snapshot },
+    });
+
+    const recalled = apply(sent, { kind: "history-previous" });
+    expect(recalled.phase).toBe("recalling");
+    expect(recalled.editor.text).toBe("remembered");
+
+    const typing = apply(recalled, { kind: "edit", action: { kind: "insert", text: "!" } });
+    expect(typing.phase).toBe("editing");
+  });
+});
+
+describe("paste", () => {
+  test("inlines a small one", () => {
+    const after = apply(drafting("a "), { kind: "paste", text: "pasted" });
+    expect(after.editor.text).toBe("a pasted");
+    expect(composerNotice(after)).toBeNull();
+  });
+
+  test("reports a large one instead of inserting it", () => {
+    // The flood the classification exists to prevent. Including it needs the
+    // attachment path that does not exist, so it is described rather than
+    // quietly committed to the editor.
+    const large = "x".repeat(INLINE_PASTE_LIMIT + 1);
+    const after = apply(drafting("draft"), { kind: "paste", text: large });
+    expect(after.editor.text).toBe("draft");
+    expect(composerNotice(after)).toContain("Pasted");
+  });
+
+  test("reports a refusal instead of inserting it", () => {
+    const after = apply(drafting("draft"), { kind: "paste", text: "before\0after" });
+    expect(after.editor.text).toBe("draft");
+    expect(composerNotice(after)).toContain("refused");
+  });
+});
+
+describe("phases", () => {
+  test("disable and enable are reversible and return identity when they change nothing", () => {
+    const enabled = drafting("draft");
+    expect(composerReducer(enabled, { kind: "enable" })).toBe(enabled);
+
+    const disabled = apply(enabled, { kind: "disable" });
+    expect(disabled.phase).toBe("disabled");
+    expect(composerReducer(disabled, { kind: "disable" })).toBe(disabled);
+    expect(apply(disabled, { kind: "enable" }).phase).toBe("editing");
+  });
+
+  test("cancelling is a no-op when nothing is in flight", () => {
+    const idle = drafting("draft");
+    expect(composerReducer(idle, { kind: "cancel" })).toBe(idle);
+  });
+
+  test("cancelling an in-flight submission keeps the draft", () => {
+    const sending = apply(drafting("ask"), { kind: "submit" });
+    const cancelled = apply(sending, { kind: "cancel" });
+    expect(cancelled.phase).toBe("cancelled");
+    expect(cancelled.inFlight).toBeNull();
+    expect(cancelled.editor.text).toBe("ask");
+  });
+});
