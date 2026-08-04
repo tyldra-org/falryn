@@ -1,0 +1,39 @@
+/**
+ * The transcript surface's contract, in one place.
+ *
+ * Everything exported here is a pure value or function: rows, spans, anchors,
+ * and a reducer over intent. The component that mounts them is
+ * `../components/transcript.tsx`, and it is the only part of this surface that
+ * needs a renderer — which is why every rule this surface promises can be
+ * asserted without one.
+ */
+
+export { commandForRoute, describeRouteWith } from "./routes.ts";
+export type { DisclosureNotice, RowsRequest, TranscriptRow } from "./rows.ts";
+export {
+  collapsedRows,
+  disclosureNotice,
+  EXPANSION_INDENT,
+  relativeTime,
+  rowsForBlock,
+  statusOfBlock,
+} from "./rows.ts";
+export type { TranscriptSurfaceAction, TranscriptSurfaceState } from "./surface.ts";
+export {
+  INITIAL_TRANSCRIPT_STATE,
+  keysOf,
+  neighbourKey,
+  transcriptSurfaceReducer,
+} from "./surface.ts";
+export type { BlockSpan, TranscriptAnchor, TranscriptWindow, WindowRequest } from "./window.ts";
+export {
+  anchorAt,
+  anchorRevealing,
+  DEFAULT_OVERSCAN,
+  LATEST,
+  scrolledBy,
+  startRowOf,
+  topRowOf,
+  totalRowsOf,
+  windowFor,
+} from "./window.ts";

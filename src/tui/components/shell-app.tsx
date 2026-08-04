@@ -26,9 +26,13 @@ import { createDefaultOpenTuiKeymap } from "@opentui/keymap/opentui";
 import { KeymapProvider } from "@opentui/keymap/react";
 import { useRenderer } from "@opentui/react";
 import { type ReactNode, useMemo } from "react";
+import type { TranscriptProjection } from "../../presentation/index.ts";
+import { EMPTY_PROJECTION } from "../../presentation/index.ts";
 import { searchCommands } from "../commands.ts";
 import { commandRows, describeRefusal, type KeymapPlan, planKeymap } from "../keymap.ts";
 import type { ThemeRequest } from "../theme/index.ts";
+import { keysOf } from "../transcript/index.ts";
+import type { TranscriptModel } from "../transcript-model.ts";
 import type { ShellModel } from "../view-model.ts";
 import { AppShell } from "./app-shell.tsx";
 import { KeymapBridge } from "./keymap-bridge.tsx";
@@ -37,11 +41,18 @@ import { activeContexts, useShellRuntime } from "./shell-runtime.tsx";
 
 export type ShellAppProps = {
   /** Everything that does not change with interaction: the header, the help prose. */
-  readonly model: Omit<ShellModel, "overlay" | "commands">;
+  readonly model: Omit<ShellModel, "overlay" | "commands" | "transcript">;
   readonly theme: ThemeRequest;
   /** Ends the session. Owned by the invocation's scope, not by this component. */
   readonly onExit: () => void;
-  readonly children?: ReactNode;
+  /**
+   * The transcript to project.
+   *
+   * A projection rather than a model: what the reader has done to it is this
+   * component's runtime state, and a caller supplying both would be able to hand
+   * the surface an expansion set for blocks that are not in the projection.
+   */
+  readonly transcript?: TranscriptProjection;
 };
 
 /**
@@ -69,14 +80,27 @@ export function ShellApp(props: ShellAppProps): ReactNode {
     ? null
     : `The keymap was refused: ${verdict.refusals.map(describeRefusal).join("; ")}.`;
 
-  const runtime = useShellRuntime({ plan, onExit: props.onExit });
+  const projection = props.transcript ?? EMPTY_PROJECTION;
+  const transcriptKeys = useMemo(() => keysOf(projection.blocks), [projection.blocks]);
+
+  const runtime = useShellRuntime({ plan, onExit: props.onExit, transcriptKeys });
   // The footer grows to hold an overlay and shrinks back when it closes. See
   // `./overlay-room.tsx` for why this is not a constant.
   useOverlayRoom(runtime.state.overlay.kind !== "none");
   const rows = commandRows(plan, runtime.commandState);
 
+  const transcript: TranscriptModel = {
+    projection,
+    surface: runtime.state.transcript,
+    // The live rows, so every route, hint, and empty-state sentence the surface
+    // draws names a command that exists with the key it currently has.
+    commands: rows,
+    emptyStateCommand: "app.help",
+  };
+
   const model: ShellModel = {
     ...props.model,
+    transcript,
     overlay: runtime.state.overlay,
     commands: runtime.state.overlay.kind === "palette" ? rows : [],
     status: {
@@ -97,9 +121,12 @@ export function ShellApp(props: ShellAppProps): ReactNode {
   return (
     <KeymapProvider keymap={keymap}>
       <KeymapBridge plan={plan} contexts={activeContexts(runtime.state)} run={runtime.run} />
-      <AppShell theme={props.theme} model={model} commandRows={rows}>
-        {props.children}
-      </AppShell>
+      <AppShell
+        theme={props.theme}
+        model={model}
+        commandRows={rows}
+        onTranscriptGeometry={runtime.reportTranscriptGeometry}
+      />
     </KeymapProvider>
   );
 }

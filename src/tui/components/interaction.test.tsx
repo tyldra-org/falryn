@@ -39,7 +39,7 @@ const THEME: ThemeRequest = {
   generation: 1,
 };
 
-const MODEL: Omit<ShellModel, "overlay" | "commands"> = {
+const MODEL: Omit<ShellModel, "overlay" | "commands" | "transcript"> = {
   header: {
     workspace: known("/work/falryn"),
     branch: unavailable("no Git yet"),
@@ -163,9 +163,18 @@ describe("help", () => {
 
   test("says why a command cannot run", async () => {
     // Listed, discoverable, and answered — rather than hidden or silently inert.
-    const session = await mount();
+    // Tall enough to show the whole registry: since #355 the transcript's own
+    // commands sit above the composer's, and a 30-row terminal reports the rest
+    // as "6 more" rather than drawing them. That elision is correct behavior, so
+    // the terminal grows instead of the assertion moving to a nearer row.
+    const session = await mount(40);
     await session.press("?");
-    expect(await session.frame()).toContain("no composer yet");
+    const frame = await session.frame();
+    expect(frame).toContain("no composer yet");
+    // The transcript's commands are unavailable for their own reason, and it is
+    // a different sentence rather than a shared "unavailable".
+    expect(frame).toContain("there is no transcript yet");
+    expect(frame).toContain("there is no artifact viewer yet");
   });
 
   test("closes on escape and gives the frame back", async () => {

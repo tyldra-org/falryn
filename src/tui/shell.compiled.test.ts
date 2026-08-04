@@ -229,6 +229,21 @@ describe.if(runnable)("the compiled shell on a real terminal", () => {
   );
 
   test(
+    "draws the transcript's empty state rather than a placeholder",
+    async () => {
+      const run = await interrupted;
+      // The primary region on the shipped binary. Before #355 this said
+      // "Nothing is running yet." — filler that named no action. The empty state
+      // that replaced it points at a command the running build actually has, and
+      // asserting it here rather than only through the test renderer is what
+      // proves the surface reached the compiled artifact at all.
+      expect(run.transcript).toContain("Nothing has happened in this session yet");
+      expect(run.transcript).not.toContain("Nothing is running yet");
+    },
+    RUN_TIMEOUT_MS,
+  );
+
+  test(
     "takes an interrupt through Falryn's own governance and exits 130",
     async () => {
       const run = await interrupted;

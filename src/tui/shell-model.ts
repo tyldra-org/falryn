@@ -14,7 +14,25 @@
  */
 
 import type { GlobalOptions } from "../cli/index.ts";
+import { EMPTY_PROJECTION } from "../presentation/index.ts";
+import { INITIAL_TRANSCRIPT_STATE } from "./transcript/index.ts";
+import type { TranscriptModel } from "./transcript-model.ts";
 import { known, type ShellModel, unavailable } from "./view-model.ts";
+
+/**
+ * A transcript with nothing in it.
+ *
+ * The honest starting point for a build with no agent loop: the projection is
+ * empty because nothing produced an event, not because the surface is waiting
+ * for one to be wired. The empty state points at help, which is a command this
+ * build actually runs.
+ */
+export const EMPTY_TRANSCRIPT_MODEL: TranscriptModel = {
+  projection: EMPTY_PROJECTION,
+  surface: INITIAL_TRANSCRIPT_STATE,
+  commands: [],
+  emptyStateCommand: "app.help",
+};
 
 /**
  * The keys this build actually honours.
@@ -31,9 +49,9 @@ export const SHELL_HELP = [
   {
     title: "Where this is",
     body:
-      "Falryn's interface is running, but nothing is behind it yet. There is no " +
-      "conversation, no composer, and no commands — those arrive with the views " +
-      "and the input model.",
+      "Falryn's interface is running and the transcript is real, but nothing " +
+      "produces entries for it yet. There is no agent loop, no provider, and no " +
+      "composer, so the transcript stays empty until those arrive.",
   },
   {
     title: "Leaving",
@@ -74,5 +92,6 @@ export function shellModel(options: GlobalOptions): ShellModel {
     // which is the honest thing for a build with no commands to run.
     commands: [],
     help: [...SHELL_HELP],
+    transcript: EMPTY_TRANSCRIPT_MODEL,
   };
 }

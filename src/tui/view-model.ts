@@ -16,6 +16,7 @@
  */
 
 import type { StatusToken } from "./theme/index.ts";
+import type { TranscriptModel } from "./transcript-model.ts";
 
 /**
  * One labelled fact, in whatever condition it is actually in.
@@ -133,4 +134,13 @@ export type ShellModel = {
   readonly overlay: OverlayRoute;
   readonly commands: readonly CommandEntry[];
   readonly help: readonly HelpSection[];
+  /**
+   * The primary region's content.
+   *
+   * Required rather than optional, and a projection rather than a node. Since
+   * #355 the transcript *is* the primary region: a shell with nothing in it
+   * renders an empty transcript that names a command, which is a different and
+   * better thing than a placeholder line saying nothing is running.
+   */
+  readonly transcript: TranscriptModel;
 };

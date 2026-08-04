@@ -40,7 +40,6 @@ import {
   requestedVariant,
 } from "./appearance.ts";
 import type { ShellCapabilities } from "./capabilities.ts";
-import { Line } from "./components/primitives.tsx";
 import { ShellApp } from "./components/shell-app.tsx";
 import {
   nothingToRestore,
@@ -217,15 +216,18 @@ async function frameFor(session: RendererSession, request: ShellRunRequest, onEx
     generation: capabilities.generation,
   } satisfies ThemeRequest;
 
-  const { overlay: _overlay, commands: _commands, ...model } = shellModel(options);
+  const {
+    overlay: _overlay,
+    commands: _commands,
+    transcript: _transcript,
+    ...model
+  } = shellModel(options);
 
-  return (
-    <ShellApp theme={theme} model={model} onExit={onExit}>
-      <Line color="mutedForeground" typography="muted">
-        Nothing is running yet.
-      </Line>
-    </ShellApp>
-  );
+  // No transcript is supplied because nothing produces one: there is no agent
+  // loop, provider, or tool runner in this build. The surface renders its empty
+  // state, which names a command that runs — the placeholder line that used to
+  // sit here named nothing and was the filler #355 removed.
+  return <ShellApp theme={theme} model={model} onExit={onExit} />;
 }
 
 /**
