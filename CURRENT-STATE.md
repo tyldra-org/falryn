@@ -1540,6 +1540,80 @@ remaining checks were never registered at all. With `stty` unavailable the
 resize row and its explanation are both skips, and the run drops from twelve
 passing checks to eleven rather than substituting a green tick for the row.
 
+The terminal itself now lives in `src/tui/pty-fixtures.ts`
+([#376](https://github.com/yogeshprasad098/falryn/issues/376)), shared by the
+walk and by the measurements below, for the reason the harness exists: the
+descriptor handling, the `SIGWINCH` delivery, and the teardown are measured
+constraints, and a second copy of them is a second thing to get subtly wrong.
+Teardown is bound to the scope with `using` rather than to an `afterEach`, and
+the module is held out of every shipping graph by two controls in
+`src/tui/tui-boundaries.test.ts`. Closing a terminal closes its reader and
+deliberately leaves the master descriptor open: closing it there was tried and
+hung the suite, because `destroy()` only schedules the stream's teardown and the
+descriptor number is reused by the next `openpty` — so the stream can close a
+terminal that now belongs to another run. The leak is bounded by the run, and
+whoever fixes it should fix it deliberately.
+
+The shell's resource behavior is measured rather than asserted
+([#376](https://github.com/yogeshprasad098/falryn/issues/376)).
+`src/tui/measurement.test.tsx` takes six quantities in the shape
+`src/data/measurement.test.ts` established — that shape now lives in
+`src/measurement-fixtures.ts` rather than in two copies — and `bun run measure`
+names both files. It is in neither `bun run check` nor `bun run ci`: a
+measurement that gates a merge is a threshold, and a threshold invented without
+a measurement behind it is a flake on a loaded machine. An ordinary `bun test`
+reports its checks as skipped, never as passed and never as absent.
+
+Two of the six cannot come from a test renderer, which runs no frame loop:
+cadence taken in process would measure the polling, and startup taken in process
+would exclude process start. Those, and shutdown latency with them, are taken
+from `dist/falryn` on the pseudo-terminal, where a frame is a synchronized-update
+sequence the terminal actually received and is timed at the arrival of the chunk
+carrying it. Observed on 2026-08-04, on macOS 26.6 `arm64`, Apple M3, 16 GiB,
+Bun 1.3.14, at 100×30 with `TERM=xterm-256color`:
+
+```text
+startup to first draw     5 cold starts   median 479 ms   p95 610 ms
+render cadence            60 keys 8 ms apart   32 frames   median interval 17 ms   ≈58 frames/second
+input latency under load  20 presses at 200 events/second  median 17 ms   p95 33 ms
+event-loop delay          200 timer round trips under load  median 1.14 ms   p95 2.44 ms
+memory growth             250 → 2000 transcript blocks   7.4 MiB held   ≈4.4 KiB/block
+shutdown latency          3 interrupts   median 68 ms   (teardown alone, median 0.6 ms)
+```
+
+The renderables the transcript surface holds stay at 78 from 250 blocks to
+2,000, which is the bounded window working; the growth is the projection, not
+the tree. Input latency is quantized to the harness's 5 ms settle interval and
+is an upper bound for that reason. The same 60 keystrokes written back to back
+draw two frames rather than sixty, which is coalescing on the real loop.
+
+Coalescing is asserted rather than assumed. `src/tui/coalescing.test.tsx` emits
+eight scope events as eight separate notifications inside one tick, counts the
+frames the renderer actually committed, and asserts that four distinct terminal
+outcomes are all still readable in the frame those events collapsed into. The
+negative control is a feed that swallows one settlement: the frame it produces
+is missing exactly that outcome and keeps the other three. `cancelled` is the
+one swallowed and the choice was measured — the status line reports health in
+its own vocabulary, so a negative assertion on "failed" would have passed for a
+reason unrelated to the event it named.
+
+The test matrix is a control rather than a list.
+`src/tui/compatibility-matrix.test.ts` declares each row of
+`falryn-docs/ui/TERMINAL-COMPATIBILITY-AND-TESTING.md`'s matrix as exactly one
+of three things: a named check in a named file, a recorded manual result, or
+unqualified with its reason. A row pointing at a check that was renamed or
+deleted fails, which its own negative controls demonstrate for each kind. Its
+reach is short and stated where it is written: it proves a named check
+**exists**, not that it ran or passed — `bun run check` owns that, and a control
+that read its own suite's results would be reporting on a run that had not
+finished.
+
+Nine rows are unqualified and say so: Linux, Windows, and macOS `x86_64`, RTL
+and bidirectional text, clipboard, suspend and resume, and a double interrupt
+into a running shell. A qualified compiled artifact on one platform is not a
+supported-terminal claim, and the rows that are not covered are named rather
+than omitted.
+
 `integration` joined `RUNTIME_EMITTED_CATEGORIES`, so exit code `5` is now
 reachable: a renderer that could not start is a dependency this run needed and
 did not have. `dist/falryn` grew from 64,568,930 to 75,054,050 bytes — the
