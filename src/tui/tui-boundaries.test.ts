@@ -722,8 +722,8 @@ describe("the command palette", () => {
     // spent — and the palette's search line landed on the dismissal hint.
     //
     // Guarded on the function that decides the split rather than the whole
-    // module, because `available` legitimately clamps a *height* up to one; it is
-    // a budget handed to something else that may not be.
+    // module, so the rule stays about the budget handed to a route rather than
+    // about every arithmetic clamp in the file.
     const source = await readCode("components/overlay.tsx");
     const start = source.indexOf("export function overlayRows");
     // Asserted, not assumed. Slicing from a missing marker yields a string that
@@ -733,6 +733,35 @@ describe("the command palette", () => {
     expect(start).toBeGreaterThan(0);
     const rows = source.slice(start);
     expect(rows.slice(0, rows.indexOf("\n}"))).not.toContain("Math.max(1");
+  });
+});
+
+describe("the frame's row arithmetic", () => {
+  test("is one function rather than one subtraction per region", async () => {
+    // #368. The overlay host kept its own `RESERVED_FRAME_ROWS = 2` — the header
+    // and the status line — written before #357 put a composer between them and
+    // never raised. The transcript meanwhile sized itself with `primaryRows`,
+    // which does account for the composer, so the two regions disagreed by three
+    // rows and the panel drew over the status line on a short terminal.
+    //
+    // The rule is not "the constant must be bigger". It is that a region does not
+    // get to hold its own opinion of what the frame costs.
+    const source = await readCode("components/overlay.tsx");
+    expect(source).not.toContain("RESERVED_FRAME_ROWS");
+    expect(source).toContain("primaryRows(frame.viewport, frame.composerRows)");
+  });
+
+  test("is used by every region that has to fit beside another", async () => {
+    // Named callers rather than a count, so adding a region that sizes itself
+    // from the raw viewport is a failure here rather than a smear on a short
+    // terminal three issues later.
+    const callers: string[] = [];
+    for (const file of await productFiles()) {
+      if ((await readCode(file)).includes("primaryRows(frame.viewport")) {
+        callers.push(file);
+      }
+    }
+    expect(callers.toSorted()).toEqual(["components/overlay.tsx", "components/transcript.tsx"]);
   });
 });
 
