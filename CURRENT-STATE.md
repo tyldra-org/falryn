@@ -1669,6 +1669,17 @@ The transition's own steps are asserted now, not only its final frame. The
 defect survived a full rendered suite because every helper waited for the content
 to settle before looking, which is exactly the state that was correct.
 
+A rendered check settles on what was painted rather than on a non-empty
+buffer ([#372](https://github.com/yogeshprasad098/falryn/issues/372)). A test
+renderer's buffer before anything draws into it is `U+0A00` in every cell, not
+whitespace, so the old `frame.trim() !== ""` accepted it as a finished frame
+whenever a capture won the race against the first paint — about one full-suite
+run in four. The random failure was the mild half: an unpainted buffer also
+satisfies a negative assertion, and one check in that file asserted only a
+negative, so on those runs it passed against nothing. The predicate now requires
+a painted buffer, the helper throws instead of handing back the last capture,
+and the negative-only check names something that must be present as well.
+
 The frame no longer overlaps itself on a short terminal
 ([#368](https://github.com/yogeshprasad098/falryn/issues/368)). The overlay host
 sized its panel against a two-row reserve — the header and the status line — that
