@@ -106,6 +106,25 @@ export type TypographyStyle = {
 
 export type Typography = Readonly<Record<TypographyRole, TypographyStyle>>;
 
+/**
+ * A style as OpenTUI's attribute bit field.
+ *
+ * The bit values are the conventional SGR order, written here rather than
+ * imported from `@opentui/core`'s helper so the theme contract keeps its
+ * independence from the renderer — the result is a number, and a number is what
+ * both the live components and the scrollback adapter need.
+ *
+ * One owner on purpose. Two places mapping a style to bits would be two answers
+ * the first time a role learned about an attribute, and the disagreement would
+ * show up only in whichever of the live footer and the terminal's scrollback the
+ * reader happened to look at.
+ */
+export function textAttributes(style: TypographyStyle): number {
+  return (
+    (style.bold ? 1 : 0) | (style.dim ? 2 : 0) | (style.italic ? 4 : 0) | (style.underline ? 8 : 0)
+  );
+}
+
 /* -------------------------------------------------------------------------- */
 /* Structure                                                                   */
 /* -------------------------------------------------------------------------- */

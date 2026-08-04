@@ -1743,13 +1743,60 @@ content is read from the projection every time it is drawn, so a revised block
 cannot be rendered from a stale copy. Boundary controls assert all of this,
 including that the surface re-derives no part of the block model it is given.
 
-What is **not** delivered here: no scrollback commit path
-([#356](https://github.com/yogeshprasad098/falryn/issues/356)), no composer
+What is **not** delivered by the surface: no composer
 ([#357](https://github.com/yogeshprasad098/falryn/issues/357)), and no dashboard,
 artifact viewer, or diff viewer. Duration is reported as a block's age relative
 to the transcript's newest block rather than as an elapsed time, because a block
 carries one timestamp that a revision replaces — the start of a tool call is not
 in the projection, and reporting one would be a number the surface invented.
+
+### Scrollback commits in `split-footer`
+
+Finalized transcript entries reach the terminal's own scrollback through one
+adapter, `src/tui/scrollback.ts`, mounted by `AppShell` through a seam that draws
+nothing ([#356](https://github.com/yogeshprasad098/falryn/issues/356)). A
+boundary control asserts that no other module in the interface area calls
+`writeToScrollback` or `createScrollbackSurface`, so the path above the footer is
+narrow by check rather than by convention.
+
+**One FIFO, asserted rather than assumed.** OpenTUI's renderer already owns an
+ordered queue that captured stdout and programmatic scrollback commits share.
+The adapter adds no second queue and no second ordering rule, and the tests read
+what reached the terminal through the test renderer's external-output recorder
+against a real `split-footer` renderer with stdout capture — including a case
+that writes to the captured handle between two commits and asserts the three land
+in the order they were produced.
+
+**Once, and never out of order.** An entry commits exactly once, and only when
+every entry before it already has. Scrollback is append-only and outlives the
+process, so an entry that overtook an unfinished one would sit in the wrong place
+permanently; an unfinished entry therefore holds everything behind it, and the
+report names which one. Entries that were seen mid-stream commit through
+`createScrollbackSurface` and copy their rows out only after `settle()`, while an
+entry that arrived final is written atomically through `writeToScrollback`. Both
+paths are serialized through one chain, so a settling entry cannot be overtaken
+by the atomic entry enqueued behind it.
+
+The adapter is keyed to the renderer rather than owned by the component that
+drives it. OpenTUI's React root remounts the whole tree on every `render()` call,
+and an adapter that started again with an empty set would write the session into
+scrollback a second time beneath itself.
+
+What a commit contains differs from what the reader sees, and each difference is
+because scrollback is durable: entries are committed expanded, never marked
+selected, and carry no relative time — an age is true for a minute and then is a
+permanent lie that nothing repaints. A secret block is still refused its content.
+Every committed line is sanitized whether or not its row was flagged untrusted,
+because the flag says where text came from and not where it is going.
+
+In `alternate-screen` and `main-screen` the adapter is a no-op, consulted through
+`reservesFooter` on every commit rather than once at construction, because
+renderer mode is application state. OpenTUI's scrollback APIs throw rather than
+degrade when the mode is wrong, and a refused commit is reported instead of
+propagated, so one entry that could not land is not a shell that stops drawing.
+
+Nothing produces a transcript yet, so no entry is committed in a real session.
+The behavior is exercised by mounting the shell with a projection.
 
 The compiled file is a development bootstrap artifact. It is not a supported
 Falryn product binary or release. A separate compiled probe confirmed that a
@@ -1860,7 +1907,7 @@ Their implementation breakdown lives in GitHub Issues and the Project.
 - **Current release outcome:** [v0.1 Foundation issues](https://github.com/yogeshprasad098/falryn/issues?q=is%3Aissue%20is%3Aopen%20milestone%3A%22v0.1%20Foundation%22)
 - **First parent outcome:** [#1 Establish the unified runtime and lifecycle](https://github.com/yogeshprasad098/falryn/issues/1)
 - **Current parent outcome:** [#21 Deliver the OpenTUI application shell](https://github.com/yogeshprasad098/falryn/issues/21), in progress with #22, #23, #24, and #26 landed. [#16 Deliver the CLI and headless foundation](https://github.com/yogeshprasad098/falryn/issues/16) remains in progress with #17, #18, #19, and #20 landed.
-- **Next planning action:** continue [#25](https://github.com/yogeshprasad098/falryn/issues/25), in progress with #354 and #355 landed — the transcript block model and the surface that renders it. Its remaining children are [#356](https://github.com/yogeshprasad098/falryn/issues/356) scrollback commit, [#357](https://github.com/yogeshprasad098/falryn/issues/357) the composer, and [#358](https://github.com/yogeshprasad098/falryn/issues/358) activity and status projections.
+- **Next planning action:** continue [#25](https://github.com/yogeshprasad098/falryn/issues/25), in progress with #354, #355, and #356 landed — the transcript block model, the surface that renders it, and the scrollback commit path. Its remaining children are [#357](https://github.com/yogeshprasad098/falryn/issues/357) the composer and [#358](https://github.com/yogeshprasad098/falryn/issues/358) activity and status projections.
 
 Which of #1's children are open, and which delivered the behavior recorded
 above, is read from

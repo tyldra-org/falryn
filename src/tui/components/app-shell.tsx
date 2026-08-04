@@ -35,6 +35,7 @@ import { type Frame, FrameProvider } from "./context.tsx";
 import { OverlayHost } from "./overlay.tsx";
 import { CommandPalette, HelpOverlay } from "./overlay-routes.tsx";
 import { Line } from "./primitives.tsx";
+import { ScrollbackCommits } from "./scrollback-commits.tsx";
 import { StatusLine } from "./status-line.tsx";
 import { TranscriptView } from "./transcript.tsx";
 import { WorkspaceHeader } from "./workspace-header.tsx";
@@ -102,6 +103,14 @@ export function AppShell(props: AppShellProps): ReactNode {
 
   return (
     <FrameProvider value={frame}>
+      {/*
+       * Above the layout decision on purpose. Scrollback belongs to the terminal
+       * rather than to the arrangement, so a viewport too small for an honest
+       * frame is still a session whose finalized entries have somewhere to go —
+       * and a transcript that stopped committing while a window was briefly
+       * narrow would have a permanent hole in it.
+       */}
+      <ScrollbackCommits model={props.model.transcript} />
       {layout.kind === "insufficient" ? (
         <MinimumSizeNotice viewport={terminal} decision={layout} />
       ) : (
