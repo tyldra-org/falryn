@@ -886,9 +886,9 @@ describe("the rendered test harness", () => {
     // rendered check that rolls its own setup shows up here as a difference
     // rather than as a slow drift back to nine copies.
     expect(await consumers()).toEqual([
-      // #376: the coalescing check mounts the same tree every other rendered
-      // check mounts, which is why it is here rather than standing up a
-      // renderer of its own.
+      // #376: coalescing and the in-process measurements mount the same tree
+      // every other rendered check mounts, which is why they are here rather
+      // than standing up a renderer of their own.
       "coalescing.test.tsx",
       "components/activity-rail.test.tsx",
       "components/composer.test.tsx",
@@ -899,6 +899,7 @@ describe("the rendered test harness", () => {
       "components/transcript.test.tsx",
       // The harness's own checks, which are what prove it cleans up.
       "harness.test.tsx",
+      "measurement.test.tsx",
       "runtime-feed.test.tsx",
       "scrollback.test.ts",
     ]);
@@ -945,5 +946,68 @@ describe("the rendered test harness", () => {
       }
     }
     expect(declarers).toEqual([HARNESS]);
+  });
+});
+
+describe("the pseudo-terminal", () => {
+  /**
+   * The other test-support module in this area, and the one with the sharpest
+   * reason to be held here: it opens a real tty through FFI, spawns the shipped
+   * executable, and runs `stty`. #376 moved it out of the compiled walk so the
+   * measurements could drive the same terminal — and a module doing all of that
+   * on the graph of a real run would be the worst possible import.
+   *
+   * `isProduct` already excludes it by its `-fixtures` name, in the way
+   * `probe-fixtures.tsx` and `main-fixtures.ts` are excluded. These controls are
+   * what make that exclusion safe rather than incidental.
+   */
+  const PTY = "pty-fixtures.ts";
+
+  test("is loaded by checks and by nothing that ships", async () => {
+    const files = await productFiles();
+    expect(files.length).toBeGreaterThan(0);
+    for (const file of files) {
+      expect({ file, imports: (await readValues(file)).includes(PTY) }).toEqual({
+        file,
+        imports: false,
+      });
+    }
+  });
+
+  test("is where every check that drives the shipped artifact opens one", async () => {
+    // Named, so a third file that rolls its own terminal shows up here as a
+    // difference. The descriptor handling and the `SIGWINCH` delivery are
+    // measured constraints rather than preferences, and a copy of them is a copy
+    // that will drift.
+    //
+    // Matched on the call rather than on the word: `./compatibility-matrix.test.ts`
+    // names `openpty` in a row's prose, which is a matrix row talking about a
+    // platform and not a second module opening a terminal.
+    const openers: string[] = [];
+    for (const file of await areaFiles()) {
+      if (file !== SELF && file !== PTY && /\bdlopen\s*\(/.test(await readValues(file))) {
+        openers.push(file);
+      }
+    }
+    expect(openers).toEqual([]);
+
+    const consumers: string[] = [];
+    for (const file of await areaFiles()) {
+      if (file !== SELF && (await readValues(file)).includes(`/${PTY}"`)) {
+        consumers.push(file);
+      }
+    }
+    expect(consumers.toSorted()).toEqual(["measurement.test.tsx", "shell.compiled.test.ts"]);
+  });
+
+  test("owns the run, so no check that uses it declares its own teardown", async () => {
+    // The harness's rule, for the same reason: a shared module is evaluated once
+    // for the whole run, so an `afterEach` written in it would cover whichever
+    // file loaded first. Here the leak is a compiled process and a descriptor
+    // pair rather than a renderer, which is worse — it outlives the suite.
+    for (const file of ["measurement.test.tsx", "shell.compiled.test.ts"]) {
+      const source = await readCode(file);
+      expect({ file, hooks: /\bafterEach\s*\(/.test(source) }).toEqual({ file, hooks: false });
+    }
   });
 });

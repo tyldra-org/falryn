@@ -18,7 +18,7 @@
     "quality:fix": "biome check --write .",
     "typecheck": "tsc --noEmit",
     "test": "bun test",
-    "measure": "FALRYN_MEASURE=1 bun test src/data/measurement.test.ts",
+    "measure": "FALRYN_MEASURE=1 bun test src/data/measurement.test.ts src/tui/measurement.test.tsx",
     "build": "bun build src/main.ts --compile --outfile dist/falryn",
     "check": "bun run quality && bun run typecheck && bun run test",
     "ci": "bun run quality && bun run typecheck && bun run build && bun run test"
