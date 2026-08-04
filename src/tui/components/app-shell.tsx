@@ -26,7 +26,7 @@
 
 import { useRenderer, useTerminalDimensions } from "@opentui/react";
 import { type ReactNode, useMemo, useRef } from "react";
-import { type ComposerAction, linesOf } from "../composer/index.ts";
+import { type ComposerAction, type EditorAction, linesOf } from "../composer/index.ts";
 import {
   composerRows,
   hasContextPanel,
@@ -86,6 +86,8 @@ export type AppShellProps = {
    * makes no keyboard subscription at all.
    */
   readonly onComposerAction?: (action: ComposerAction) => void;
+  /** Where typing in the open palette goes. Absent means a static frame. */
+  readonly onPaletteQuery?: (action: EditorAction) => void;
 };
 
 export function AppShell(props: AppShellProps): ReactNode {
@@ -155,6 +157,7 @@ export function AppShell(props: AppShellProps): ReactNode {
           {...(props.onComposerAction === undefined
             ? {}
             : { onComposerAction: props.onComposerAction })}
+          {...(props.onPaletteQuery === undefined ? {} : { onPaletteQuery: props.onPaletteQuery })}
         />
       )}
     </FrameProvider>
@@ -168,6 +171,7 @@ function ShellFrame(props: {
   readonly commandRows: readonly CommandEntry[];
   readonly onTranscriptGeometry?: (geometry: TranscriptGeometry) => void;
   readonly onComposerAction?: (action: ComposerAction) => void;
+  readonly onPaletteQuery?: (action: EditorAction) => void;
 }): ReactNode {
   const { model } = props;
   // Bounded rather than stretched. A `wide` terminal has room for a contextual
@@ -202,7 +206,14 @@ function ShellFrame(props: {
                 model.overlay.kind === "help" ? (
                   <HelpOverlay sections={model.help} commands={props.commandRows} rows={rows} />
                 ) : (
-                  <CommandPalette commands={model.commands} query="" rows={rows} />
+                  <CommandPalette
+                    commands={model.commands}
+                    query={model.overlay.kind === "palette" ? model.overlay.query.text : ""}
+                    rows={rows}
+                    {...(props.onPaletteQuery === undefined
+                      ? {}
+                      : { onQuery: props.onPaletteQuery })}
+                  />
                 )
               }
             </OverlayHost>

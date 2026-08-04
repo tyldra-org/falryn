@@ -14,9 +14,18 @@
  * Help wraps its prose through the frame's cache rather than on every frame,
  * which is where that cache has its real caller: help text is paragraphs, and a
  * resize re-measures all of it.
+ *
+ * The palette subscribes to keys, which is why this module reaches OpenTUI's
+ * runtime and help does not. A search field is a focused text control, and the
+ * alternative — routing every character through the command registry — would put
+ * a dispatch between a keystroke and the character it produces.
  */
 
+import type { KeyEvent } from "@opentui/core";
+import { useKeyboard } from "@opentui/react";
 import type { ReactNode } from "react";
+import { graphemes } from "../../domain/index.ts";
+import type { EditorAction } from "../composer/index.ts";
 import type { CommandEntry, HelpSection } from "../view-model.ts";
 import { useFrame } from "./context.tsx";
 import { Line } from "./primitives.tsx";
@@ -89,20 +98,35 @@ export function HelpOverlay(props: HelpOverlayProps): ReactNode {
 }
 
 export type CommandPaletteProps = {
+  /** Already narrowed by the query. This component filters nothing. */
   readonly commands: readonly CommandEntry[];
   /** What was typed. Empty shows everything, which is the useful default. */
   readonly query: string;
   readonly rows: number;
+  /**
+   * Where typing goes.
+   *
+   * Optional, because a frame rendered from a value alone has nothing to type
+   * into. Without it no keyboard subscription is made at all, so a static
+   * frame costs nothing.
+   */
+  readonly onQuery?: (action: EditorAction) => void;
 };
 
 export function CommandPalette(props: CommandPaletteProps): ReactNode {
   const { terminal } = useFrame();
   const width = Math.max(8, terminal.columns - PANEL_CHROME_COLUMNS);
+  usePaletteInput(props.onQuery);
 
   // One row goes to the search line, and one more to the "N more" line when
   // there is one. Both are subtracted before the slice, for the reason the help
   // overlay states: an extra row draws over the panel border rather than being
   // clipped.
+  //
+  // #364: these were computed and then discarded — the render recomputed the
+  // budget inline and lost the row reserved for the notice, so a truncated list
+  // drew one row too many over the border the comment above says it must not
+  // touch. The computed values are the ones used now.
   const budget = Math.max(1, props.rows - 1);
   const truncated = props.commands.length > budget;
   const shown = props.commands.slice(0, truncated ? budget - 1 : budget);
@@ -113,22 +137,78 @@ export function CommandPalette(props: CommandPaletteProps): ReactNode {
       <Line color="mutedForeground" typography="label" maxColumns={width}>
         {props.query === "" ? "Type to search commands." : `Search: ${props.query}`}
       </Line>
-      {props.commands.length === 0 ? (
+      {shown.length === 0 ? (
         <Line color="mutedForeground" typography="muted" maxColumns={width}>
+          {/* A sentence rather than an empty panel. "Nothing matches" is an
+              answer; a blank region is a rendering gap the reader has to
+              interpret. */}
           Nothing matches that.
         </Line>
       ) : (
-        props.commands
-          .slice(0, Math.max(1, props.rows - 1))
-          .map((command) => <CommandRow key={command.id} command={command} width={width} />)
+        shown.map((command) => <CommandRow key={command.id} command={command} width={width} />)
       )}
-      {props.commands.length > Math.max(1, props.rows - 1) ? (
+      {hidden > 0 ? (
         <Line color="mutedForeground" typography="muted" maxColumns={width}>
-          {`${props.commands.length - Math.max(1, props.rows - 1)} more — narrow the search`}
+          {`${hidden} more — narrow the search`}
         </Line>
       ) : null}
     </box>
   );
+}
+
+/**
+ * Keys, while the palette is open.
+ *
+ * Everything a binding claims never arrives here — the keymap resolves a bound
+ * key and dispatches before any subscriber sees it — so `escape` still closes
+ * the overlay and `ctrl+c` still leaves. What is left is characters and the
+ * edits a search field needs, which is deliberately less than the composer
+ * handles: a query is one line, so there is no vertical movement to support.
+ *
+ * The palette is only rendered while it is the open route, so there is no
+ * focused check here. Mounting *is* the condition.
+ */
+function usePaletteInput(onQuery: ((action: EditorAction) => void) | undefined): void {
+  useKeyboard((key) => {
+    if (onQuery === undefined) {
+      return;
+    }
+    const edit = editFor(key);
+    if (edit !== null) {
+      onQuery(edit);
+    }
+  });
+}
+
+/** The edit a key means in a search field, or `null` when it means nothing here. */
+function editFor(key: KeyEvent): EditorAction | null {
+  switch (key.name) {
+    case "backspace":
+      return { kind: "delete-backward" };
+    case "delete":
+      return { kind: "delete-forward" };
+    case "left":
+      return { kind: "move", motion: "left", extend: key.shift === true };
+    case "right":
+      return { kind: "move", motion: "right", extend: key.shift === true };
+    case "home":
+      return { kind: "move", motion: "line-start", extend: key.shift === true };
+    case "end":
+      return { kind: "move", motion: "line-end", extend: key.shift === true };
+    default:
+      break;
+  }
+
+  // A modifier means a chord, and a chord that reached here is one nothing
+  // bound — inserting its letter would type `p` for an unregistered `alt+p`.
+  if (key.ctrl === true || key.meta === true) {
+    return null;
+  }
+  const sequence = key.sequence;
+  if (sequence !== "" && graphemes(sequence).length === 1 && sequence >= " ") {
+    return { kind: "insert", text: sequence };
+  }
+  return null;
 }
 
 /**

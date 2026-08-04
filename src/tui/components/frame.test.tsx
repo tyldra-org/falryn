@@ -18,6 +18,7 @@ import { createTestRenderer, type TestRendererSetup } from "@opentui/core/testin
 import { createRoot } from "@opentui/react";
 import type { ReactNode } from "react";
 import { COLOR_LEVELS, SYMBOL_SUPPORTS } from "../../domain/index.ts";
+import { EMPTY_EDITOR } from "../composer/index.ts";
 import { STANDARD_COLUMNS, WIDE_COLUMNS } from "../layout.ts";
 import {
   EMPTY_ACTIVITY_MODEL,
@@ -300,13 +301,13 @@ describe("overlays", () => {
   test("mount the palette route, and say so when nothing matches", async () => {
     // Since #26 the palette is driven by the registry, so an empty list means a
     // search matched nothing rather than a build with no commands.
-    const frame = await shell({ overlay: { kind: "palette" }, commands: [] });
+    const frame = await shell({ overlay: { kind: "palette", query: EMPTY_EDITOR }, commands: [] });
     expect(frame).toContain("Nothing matches that");
   });
 
   test("list commands when there are some", async () => {
     const frame = await shell({
-      overlay: { kind: "palette" },
+      overlay: { kind: "palette", query: EMPTY_EDITOR },
       commands: [
         {
           id: "app.exit",

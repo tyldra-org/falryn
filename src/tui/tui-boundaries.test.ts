@@ -36,6 +36,11 @@ const RENDERER_OWNERS = [
   // so the control receives raw input rather than routing every character
   // through the registry.
   "components/composer.tsx",
+  // The palette's search field. #364: a search field is a focused text control,
+  // and routing every character through the command registry would put a
+  // dispatch between a keystroke and the character it produces. Help shares this
+  // module and subscribes to nothing.
+  "components/overlay-routes.tsx",
   // The root measures the viewport through the renderer's own hooks. Nothing
   // below it does: every component reads the frame from context instead, which
   // is what keeps the measurement in one place.
@@ -659,6 +664,49 @@ describe("the activity rail", () => {
       }
     }
     expect(callers).toEqual(["components/shell-app.tsx", "shell-model.ts"]);
+  });
+});
+
+describe("the command palette", () => {
+  test("narrows through the registry's own matcher, in one place", async () => {
+    // No second matcher. `searchCommands` is what the published reference
+    // describes, and a palette that filtered differently would find different
+    // commands from the ones the documentation says it will.
+    const matchers: string[] = [];
+    for (const file of await productFiles()) {
+      if ((await readCode(file)).includes("function paletteRows")) {
+        matchers.push(file);
+      }
+    }
+    expect(matchers).toEqual(["components/shell-app.tsx"]);
+    expect(await readCode("components/shell-app.tsx")).toContain("searchCommands(");
+  });
+
+  test("is driven by a product caller rather than only exported", async () => {
+    // #364 in one assertion, and the failure it records: `paletteRows` existed,
+    // was exported, and had tests — and no product caller, so the palette was
+    // handed a literal empty query and typing narrowed nothing. A matcher
+    // nothing matches with is not a feature, it is a function that compiles.
+    const source = await readCode("components/shell-app.tsx");
+    expect(source).toContain("paletteRows(plan,");
+    expect(await readCode("components/app-shell.tsx")).not.toContain('query=""');
+  });
+
+  test("holds the query on the route rather than beside it", async () => {
+    // Which is what makes "closing clears the search" true by construction:
+    // closing replaces the route, so there is nowhere a stale query can survive.
+    expect(await readCode("view-model.ts")).toContain(
+      'kind: "palette"; readonly query: EditorState',
+    );
+  });
+
+  test("applies the row budget it computed", async () => {
+    // The second defect. A budget computed and then recomputed inline is a
+    // budget that loses the row reserved for the notice, and the surplus row
+    // collides with the one below it.
+    const source = await readCode("components/overlay-routes.tsx");
+    expect(source).toContain("shown.map(");
+    expect(source).toContain("{hidden > 0 ?");
   });
 });
 
