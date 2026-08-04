@@ -714,6 +714,26 @@ describe("the command palette", () => {
     const palette = source.slice(source.indexOf("export function CommandPalette"));
     expect(palette).not.toContain("Math.max(1, props.rows");
   });
+
+  test("is handed a budget the host does not clamp up either", async () => {
+    // #366: the same shape, one level up. The host reserved three rows and then
+    // clamped what remained to `Math.max(1, height - 3)`, so at the reveal's
+    // three-row step it promised a row that the border and the hint had already
+    // spent — and the palette's search line landed on the dismissal hint.
+    //
+    // Guarded on the function that decides the split rather than the whole
+    // module, because `available` legitimately clamps a *height* up to one; it is
+    // a budget handed to something else that may not be.
+    const source = await readCode("components/overlay.tsx");
+    const start = source.indexOf("export function overlayRows");
+    // Asserted, not assumed. Slicing from a missing marker yields a string that
+    // contains nothing, so without this the control passes against exactly the
+    // code it exists to reject — which is how #364 shipped a test that agreed
+    // with its own bug.
+    expect(start).toBeGreaterThan(0);
+    const rows = source.slice(start);
+    expect(rows.slice(0, rows.indexOf("\n}"))).not.toContain("Math.max(1");
+  });
 });
 
 describe("the mode contract", () => {
