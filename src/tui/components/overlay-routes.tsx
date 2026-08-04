@@ -107,8 +107,8 @@ export type CommandPaletteProps = {
    * Where typing goes.
    *
    * Optional, because a frame rendered from a value alone has nothing to type
-   * into. Without it no keyboard subscription is made at all, so a static
-   * frame costs nothing.
+   * into — every case in `./frame.test.tsx` renders one. Absent, the key
+   * handler returns immediately and no edit is ever produced.
    */
   readonly onQuery?: (action: EditorAction) => void;
 };
@@ -118,38 +118,54 @@ export function CommandPalette(props: CommandPaletteProps): ReactNode {
   const width = Math.max(8, terminal.columns - PANEL_CHROME_COLUMNS);
   usePaletteInput(props.onQuery);
 
-  // One row goes to the search line, and one more to the "N more" line when
-  // there is one. Both are subtracted before the slice, for the reason the help
-  // overlay states: an extra row draws over the panel border rather than being
-  // clipped.
-  //
-  // #364: these were computed and then discarded — the render recomputed the
-  // budget inline and lost the row reserved for the notice, so a truncated list
-  // drew one row too many over the border the comment above says it must not
-  // touch. The computed values are the ones used now.
-  const budget = Math.max(1, props.rows - 1);
-  const truncated = props.commands.length > budget;
-  const shown = props.commands.slice(0, truncated ? budget - 1 : budget);
-  const hidden = props.commands.length - shown.length;
+  // The search line is drawn first and always, so everything else is measured
+  // against what is left of the budget. Deliberately not clamped to a minimum: a
+  // one-row panel has room for the query and nothing else, and clamping a budget
+  // up to 1 is how a region comes to draw more rows than it was given. A
+  // terminal does not clip — the surplus row lands on its neighbour.
+  const contentRows = Math.max(0, props.rows - 1);
+  const matched = props.commands.length;
+
+  // The notice takes a row of its own, and only when there is a row for it to
+  // take. `matched > contentRows` rather than a separate truncation flag,
+  // because the question is whether the list fits in the rows that remain.
+  const notice = matched > contentRows && contentRows >= 1;
+  const shown = props.commands.slice(0, Math.max(0, contentRows - (notice ? 1 : 0)));
+  const hidden = matched - shown.length;
 
   return (
     <box flexDirection="column">
       <Line color="mutedForeground" typography="label" maxColumns={width}>
         {props.query === "" ? "Type to search commands." : `Search: ${props.query}`}
       </Line>
-      {shown.length === 0 ? (
-        <Line color="mutedForeground" typography="muted" maxColumns={width}>
-          {/* A sentence rather than an empty panel. "Nothing matches" is an
-              answer; a blank region is a rendering gap the reader has to
-              interpret. */}
-          Nothing matches that.
-        </Line>
+      {/*
+       * Keyed off what *matched*, never off what fits. Asking whether any row was
+       * shown conflates two different answers — "your search found nothing" and
+       * "the panel is too short to list what it found" — and reports the first
+       * when the second is true. That regressed during #364 and reached every
+       * palette open: the overlay caps its height while the reveal runs, so the
+       * budget is one row for that whole window and a full list rendered
+       * "Nothing matches that." above its own "N more" line.
+       */}
+      {matched === 0 ? (
+        contentRows >= 1 ? (
+          <Line color="mutedForeground" typography="muted" maxColumns={width}>
+            Nothing matches that.
+          </Line>
+        ) : null
       ) : (
         shown.map((command) => <CommandRow key={command.id} command={command} width={width} />)
       )}
-      {hidden > 0 ? (
+      {notice ? (
         <Line color="mutedForeground" typography="muted" maxColumns={width}>
-          {`${hidden} more — narrow the search`}
+          {/*
+           * Two sentences, because "more" is only true when something was shown.
+           * With no room for a single command, "12 more" invites the reader to
+           * look for the eleven above it.
+           */}
+          {shown.length === 0
+            ? `${hidden} commands; too little room to list them`
+            : `${hidden} more — narrow the search`}
         </Line>
       ) : null}
     </box>

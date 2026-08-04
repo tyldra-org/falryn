@@ -15,8 +15,14 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { createTestRenderer, type TestRendererSetup } from "@opentui/core/testing";
 import { createRoot } from "@opentui/react";
+import { SHELL_COMMANDS } from "../commands.ts";
+import { createTextCache } from "../text-cache.ts";
 import type { ThemeRequest } from "../theme/index.ts";
+import { resolveTheme } from "../theme/index.ts";
+import type { CommandEntry } from "../view-model.ts";
 import { known, type ShellModel, unavailable } from "../view-model.ts";
+import { type Frame, FrameProvider } from "./context.tsx";
+import { CommandPalette } from "./overlay-routes.tsx";
 import { ShellApp } from "./shell-app.tsx";
 
 const live: TestRendererSetup[] = [];
@@ -229,5 +235,115 @@ describe("the row budget", () => {
     await session.type("exit");
 
     expect(await session.frame()).not.toContain("more — narrow the search");
+  });
+});
+
+/**
+ * Every registered command as a row, all available.
+ *
+ * The real registry rather than a handful of literals: the defect below is about
+ * a list longer than its budget, and a fixture of three would not be one.
+ */
+const EVERY_COMMAND: readonly CommandEntry[] = SHELL_COMMANDS.map((command) => ({
+  id: command.id,
+  title: command.title,
+  description: command.description,
+  binding: command.defaultBinding,
+  unavailableReason: null,
+}));
+
+/** A frame value, so the palette can be rendered without the whole shell. */
+const FRAME: Frame = {
+  theme: resolveTheme({
+    variant: "dark",
+    colorLevel: "truecolor",
+    symbols: "unicode",
+    reducedMotion: true,
+    generation: 1,
+  }),
+  viewport: { columns: 80, rows: 24 },
+  terminal: { columns: 80, rows: 24 },
+  layout: { kind: "layout", class: "standard" },
+  cache: createTextCache({ generation: 1 }),
+  composerRows: 3,
+};
+
+/** The palette alone, at an exact row budget. */
+async function palette(
+  rows: number,
+  commands: readonly CommandEntry[] = EVERY_COMMAND,
+  query = "",
+): Promise<readonly string[]> {
+  const setup = await createTestRenderer({
+    width: 80,
+    height: 12,
+    screenMode: "alternate-screen",
+    consoleMode: "disabled",
+  });
+  live.push(setup);
+
+  createRoot(setup.renderer).render(
+    <FrameProvider value={FRAME}>
+      <CommandPalette commands={commands} query={query} rows={rows} />
+    </FrameProvider>,
+  );
+  await settle(setup);
+  return setup
+    .captureCharFrame()
+    .split("\n")
+    .map((line) => line.trimEnd())
+    .filter((line) => line !== "");
+}
+
+describe("the row budget it was given", () => {
+  test("never claims nothing matches while reporting what it hid", async () => {
+    // The regression this file exists to prevent a second time. Asking whether
+    // any row was *shown* conflates "your search found nothing" with "there was
+    // no room to show what it found", and reports the first when the second is
+    // true — so the palette said "Nothing matches that." directly above
+    // "24 more", which cannot both be so.
+    //
+    // One and two rows are the reachable budgets: `OverlayHost` caps its height
+    // at `OPENING_ROWS` while the reveal runs, so the palette is handed a
+    // single row on every open where motion is not reduced.
+    for (const rows of [1, 2, 3]) {
+      const lines = await palette(rows);
+      expect({ rows, claimed: lines.some((line) => line.includes("Nothing matches")) }).toEqual({
+        rows,
+        claimed: false,
+      });
+    }
+  });
+
+  test("says how little room there was rather than offering more of nothing", async () => {
+    // "24 more" is only true when something was shown. With no room for a single
+    // command it invites the reader to look for the rows above it.
+    const lines = await palette(2);
+    expect(lines.some((line) => line.includes("too little room to list them"))).toBe(true);
+    expect(lines.some((line) => line.includes("more — narrow the search"))).toBe(false);
+  });
+
+  test("draws no more rows than it was given, at every budget", async () => {
+    // Criterion 4, measured rather than argued. A terminal does not clip: a
+    // surplus row lands on its neighbour, so the count is the guard.
+    for (const rows of [1, 2, 3, 6, 12]) {
+      const lines = await palette(rows);
+      expect({ rows, drawn: lines.length <= rows }).toEqual({ rows, drawn: true });
+    }
+  });
+
+  test("still says nothing matches when the query really matches nothing", async () => {
+    // The other half. The empty-result line is not removed, only stopped from
+    // standing in for a budget that was too small.
+    const lines = await palette(6, [], "zzzz");
+    expect(lines.some((line) => line.includes("Nothing matches that."))).toBe(true);
+  });
+
+  test("spends a one-row budget on the query alone", async () => {
+    // Nothing else fits, and drawing the notice anyway is how the search line
+    // and the notice land on the same row.
+    const lines = await palette(1);
+    expect(lines.length).toBe(1);
+    expect(lines[0] ?? "").toContain("Type to search commands.");
   });
 });

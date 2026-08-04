@@ -1631,9 +1631,24 @@ budget inline and discarded all three — losing the row reserved for the "N mor
 line. A truncated palette therefore asked for one row more than the panel had,
 and because the panel does not grow, two command rows landed on top of each
 other and reached the screen spliced together. That is what the standing
-`noUnusedVariables` warning on that file was pointing at. The rendered check
-asserts intactness rather than a row count, because the panel's height is the
-same either way and a count cannot see the collision.
+`noUnusedVariables` warning on that file was pointing at.
+
+The budget is no longer clamped up to a minimum either, which is what made the
+overdraw reachable at all: `Math.max(1, rows - 1)` promises a row the caller may
+not have given. `OverlayHost` caps its height while the reveal transition runs,
+so the palette is handed a single row on every open where motion is not reduced —
+and with a one-row budget the search line is the whole of it. The palette now
+spends that row on the query, adds the notice only when a row remains for it, and
+says "too little room to list them" rather than "N more" when nothing was shown,
+because "more" is only true beside something.
+
+The empty-result line is keyed off what *matched* rather than off what fits. The
+two are different answers — "your search found nothing" and "there was no room to
+show what it found" — and keying off the second reports the first when it is
+false: during the reveal a full command list rendered "Nothing matches that."
+directly above its own "24 more" line. The rendered checks measure the rows
+actually drawn at every budget, because the panel's height is identical either
+way and a count of the panel cannot see a collision inside it.
 
 Paste is classified before it reaches anything: small text inline, large text as
 a bounded preview, and binary, over-long, or invalidly encoded content refused

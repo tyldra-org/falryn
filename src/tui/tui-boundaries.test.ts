@@ -700,13 +700,19 @@ describe("the command palette", () => {
     );
   });
 
-  test("applies the row budget it computed", async () => {
-    // The second defect. A budget computed and then recomputed inline is a
-    // budget that loses the row reserved for the notice, and the surplus row
-    // collides with the one below it.
+  test("does not clamp its content budget up to a minimum", async () => {
+    // The root cause of both #364 defects, and the only part of them a source
+    // control can see. `Math.max(1, rows - 1)` promises a row that the caller
+    // may not have given, so the palette drew the search line plus a notice into
+    // a one-row panel — and a terminal does not clip, it overdraws.
+    //
+    // What the palette actually draws is measured in
+    // `./palette.test.tsx`, at every budget. This guards the shape that made the
+    // measurement wrong, because a clamp reads as defensive rather than as the
+    // overdraw it is.
     const source = await readCode("components/overlay-routes.tsx");
-    expect(source).toContain("shown.map(");
-    expect(source).toContain("{hidden > 0 ?");
+    const palette = source.slice(source.indexOf("export function CommandPalette"));
+    expect(palette).not.toContain("Math.max(1, props.rows");
   });
 });
 
