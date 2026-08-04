@@ -79,9 +79,19 @@ async function areaFiles(): Promise<readonly string[]> {
   return files.sort();
 }
 
-/** Files that are neither tests nor fixtures — the ones that ship. */
+/**
+ * The shared test harness, which is test support and ships in nothing.
+ *
+ * Named here rather than matched by a pattern, so widening the exemption is a
+ * deliberate edit to this line. #374: the controls below ask what a *run* loads,
+ * and this module is loaded by `bun test` and by nothing else — which the
+ * control in "the rendered test harness" asserts rather than assumes.
+ */
+const HARNESS = "harness.tsx";
+
+/** Files that are neither tests, fixtures, nor the harness — the ones that ship. */
 function isProduct(file: string): boolean {
-  return !/\.test\.tsx?$/.test(file) && !/fixtures\.tsx?$/.test(file);
+  return !/\.test\.tsx?$/.test(file) && !/fixtures\.tsx?$/.test(file) && file !== HARNESS;
 }
 
 async function readCode(file: string): Promise<string> {
@@ -834,5 +844,102 @@ describe("the mode contract", () => {
       }
     }
     expect(declarers).toEqual(["screen-mode.ts"]);
+  });
+});
+
+describe("the rendered test harness", () => {
+  /** Every check in this area, which is what the harness exists for. */
+  async function testFiles(): Promise<readonly string[]> {
+    return (await areaFiles()).filter((file) => /\.test\.tsx?$/.test(file) && file !== SELF);
+  }
+
+  /** The checks that mount through the harness. */
+  async function consumers(): Promise<readonly string[]> {
+    const files: string[] = [];
+    for (const file of await testFiles()) {
+      if ((await readValues(file)).includes(`/${HARNESS}"`)) {
+        files.push(file);
+      }
+    }
+    return files.toSorted();
+  }
+
+  test("is loaded by checks and by nothing that ships", async () => {
+    // The exemption in `isProduct` is only safe while this holds. A product
+    // module importing the harness would put `@opentui/core/testing` on the
+    // graph of a real run, which is the one thing the controls at the top of
+    // this file exist to prevent.
+    const files = await productFiles();
+    // A control that walks an empty list passes against anything, which is the
+    // way #366's own control was found to be worthless.
+    expect(files.length).toBeGreaterThan(0);
+    for (const file of files) {
+      expect({ file, imports: (await readValues(file)).includes(HARNESS) }).toEqual({
+        file,
+        imports: false,
+      });
+    }
+  });
+
+  test("is where every rendered check mounts", async () => {
+    // Not an aspiration: the nine files #374 consolidated are named, so a tenth
+    // rendered check that rolls its own setup shows up here as a difference
+    // rather than as a slow drift back to nine copies.
+    expect(await consumers()).toEqual([
+      "components/activity-rail.test.tsx",
+      "components/composer.test.tsx",
+      "components/frame.test.tsx",
+      "components/interaction.test.tsx",
+      "components/palette.test.tsx",
+      "components/scrollback-commits.test.tsx",
+      "components/transcript.test.tsx",
+      // The harness's own checks, which are what prove it cleans up.
+      "harness.test.tsx",
+      "runtime-feed.test.tsx",
+      "scrollback.test.ts",
+    ]);
+  });
+
+  test("owns teardown, so no check that uses it declares its own", async () => {
+    // The acceptance criterion, as a control. A renderer is process-wide state:
+    // one that outlives its check fails the *next* one, so teardown being in
+    // nine places was nine chances to get it subtly different.
+    const files = await consumers();
+    expect(files.length).toBeGreaterThan(0);
+    for (const file of files) {
+      const source = await readCode(file);
+      // `renderer.destroy()` specifically: `scrollback.test.ts` destroys the
+      // *adapter* it is testing, which is the subject rather than the setup.
+      expect({ file, destroys: /renderer\.destroy\(\)/.test(source) }).toEqual({
+        file,
+        destroys: false,
+      });
+      expect({ file, hooks: /\bafterEach\s*\(/.test(source) }).toEqual({ file, hooks: false });
+    }
+  });
+
+  test("mounts the React tree, so no check creates a root of its own", async () => {
+    // `createRoot` without a matching `unmount` is the leak that survives
+    // destroying a renderer: effects stay subscribed to something that is gone.
+    const roots: string[] = [];
+    for (const file of await areaFiles()) {
+      if (file !== SELF && /\bcreateRoot\s*\(/.test(await readValues(file))) {
+        roots.push(file);
+      }
+    }
+    expect(roots.toSorted()).toEqual([HARNESS, "shell.tsx"]);
+  });
+
+  test("declares the settle predicate once", async () => {
+    // #372 corrected this predicate in one file while eight others went on
+    // settling by a fixed flush count. One declaration is what stops the next
+    // correction from reaching one ninth of the checks.
+    const declarers: string[] = [];
+    for (const file of await areaFiles()) {
+      if (file !== SELF && /function hasPainted\b/.test(await readCode(file))) {
+        declarers.push(file);
+      }
+    }
+    expect(declarers).toEqual([HARNESS]);
   });
 });

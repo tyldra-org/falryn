@@ -13,9 +13,8 @@
  * with a live tree underneath it.
  */
 
-import { afterEach, describe, expect, test } from "bun:test";
-import { createTestRenderer, type TestRendererSetup } from "@opentui/core/testing";
-import { createRoot } from "@opentui/react";
+import { describe, expect, test } from "bun:test";
+import type { ReactNode } from "react";
 import type { ScopeEvent } from "../domain/index.ts";
 import { scopeEvent } from "../presentation/activity/fixtures.ts";
 import {
@@ -25,15 +24,8 @@ import {
   initialActivityCursor,
   type ShutdownState,
 } from "../presentation/index.ts";
+import { mount, type Rendered } from "./harness.tsx";
 import { type RuntimeFeed, useRuntimeProjection } from "./runtime-feed.ts";
-
-const live: TestRendererSetup[] = [];
-
-afterEach(() => {
-  while (live.length > 0) {
-    live.pop()?.renderer.destroy();
-  }
-});
 
 /**
  * One scope's lifecycle, as the tree would emit it.
@@ -106,24 +98,16 @@ function Probe(props: { readonly feed?: RuntimeFeed; readonly resumeFrom?: Activ
   );
 }
 
-async function mount(node: Parameters<ReturnType<typeof createRoot>["render"]>[0]) {
-  const setup = await createTestRenderer({ width: 80, height: 20, consoleMode: "disabled" });
-  live.push(setup);
-  createRoot(setup.renderer).render(node);
-  return {
-    setup,
-    async frame(): Promise<readonly string[]> {
-      for (let attempt = 0; attempt < 20; attempt += 1) {
-        await Bun.sleep(4);
-        await setup.flush();
-      }
-      return setup
-        .captureCharFrame()
-        .split("\n")
-        .map((line) => line.trim())
-        .filter((line) => line !== "");
-    },
-  };
+function probe(node: ReactNode): Promise<Rendered> {
+  return mount(node, { shape: { columns: 80, rows: 20 } });
+}
+
+/** The probe's rows, which is what every check here reads. */
+async function rowsOf(shell: Rendered): Promise<readonly string[]> {
+  return (await shell.frame())
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line !== "");
 }
 
 describe("the shell's view of its runtime", () => {
@@ -131,13 +115,13 @@ describe("the shell's view of its runtime", () => {
     // The rail's whole purpose, through the subscription rather than the
     // reducer: an event arrives, the listener fires, and the frame changes.
     const source = fakeFeed();
-    const view = await mount(<Probe feed={source.feed} />);
+    using view = await probe(<Probe feed={source.feed} />);
 
     source.emit(opened(1, "one"));
-    expect((await view.frame()).some((line) => line.includes("invocation running"))).toBe(true);
+    expect((await rowsOf(view)).some((line) => line.includes("invocation running"))).toBe(true);
 
     source.emit(completed(2, "one"));
-    const settled = await view.frame();
+    const settled = await rowsOf(view);
     expect(settled.some((line) => line.includes("invocation completed"))).toBe(true);
     expect(settled.some((line) => line.includes("invocation running"))).toBe(false);
   });
@@ -148,14 +132,14 @@ describe("the shell's view of its runtime", () => {
     // that a view present from the start would have.
     const whole = [opened(1, "one"), opened(2, "two"), completed(3, "one")];
 
-    const fromStart = await mount(<Probe feed={fakeFeed(whole).feed} />);
-    const resumed = await mount(
+    using fromStart = await probe(<Probe feed={fakeFeed(whole).feed} />);
+    using resumed = await probe(
       <Probe
         feed={fakeFeed(whole).feed}
         resumeFrom={{ lastAppliedOrder: null, generation: ACTIVITY_PROJECTION_GENERATION }}
       />,
     );
-    expect(await resumed.frame()).toEqual(await fromStart.frame());
+    expect(await rowsOf(resumed)).toEqual(await rowsOf(fromStart));
   });
 
   test("rebuilds rather than resumes when the cursor is another build's", async () => {
@@ -164,13 +148,13 @@ describe("the shell's view of its runtime", () => {
     // together with no visible seam, so the whole sequence is folded instead —
     // and the entry that a resumed fold would have skipped is present.
     const whole = [opened(1, "one"), opened(2, "two")];
-    const view = await mount(
+    using view = await probe(
       <Probe
         feed={fakeFeed(whole).feed}
         resumeFrom={{ lastAppliedOrder: 1, generation: ACTIVITY_PROJECTION_GENERATION + 1 }}
       />,
     );
-    const lines = await view.frame();
+    const lines = await rowsOf(view);
     expect(lines.some((line) => line.includes("scope:scope-one"))).toBe(true);
     expect(lines.some((line) => line.includes("scope:scope-two"))).toBe(true);
   });
@@ -179,31 +163,31 @@ describe("the shell's view of its runtime", () => {
     // The other half of the same rule, and what makes the cursor worth carrying:
     // a resumable cursor skips what it has seen rather than replaying it.
     const whole = [opened(1, "one"), opened(2, "two")];
-    const view = await mount(
+    using view = await probe(
       <Probe
         feed={fakeFeed(whole).feed}
         resumeFrom={{ lastAppliedOrder: 1, generation: ACTIVITY_PROJECTION_GENERATION }}
       />,
     );
-    const lines = await view.frame();
+    const lines = await rowsOf(view);
     expect(lines.some((line) => line.includes("scope:scope-two"))).toBe(true);
     expect(lines.some((line) => line.includes("scope:scope-one"))).toBe(false);
   });
 
   test("reports what the shutdown coordinator says, and its absence", async () => {
     const source = fakeFeed();
-    const view = await mount(<Probe feed={source.feed} />);
-    expect(await view.frame()).toContain("shutdown:none");
+    using view = await probe(<Probe feed={source.feed} />);
+    expect(await rowsOf(view)).toContain("shutdown:none");
 
     source.setShutdown({ shuttingDown: true, level: "escalated" });
-    expect(await view.frame()).toContain("shutdown:escalated");
+    expect(await rowsOf(view)).toContain("shutdown:escalated");
   });
 
   test("projects nothing, and subscribes to nothing, without a feed", async () => {
     // A build with no runtime composed. The absence is the answer rather than a
     // value someone filled in.
-    const view = await mount(<Probe />);
-    const lines = await view.frame();
+    using view = await probe(<Probe />);
+    const lines = await rowsOf(view);
     expect(lines).toContain("shutdown:none");
     expect(lines).toContain("cursor:none");
     expect(lines.length).toBe(2);
@@ -212,17 +196,19 @@ describe("the shell's view of its runtime", () => {
   test("lets go of the feed when it goes away", async () => {
     // A subscription outliving its tree is a listener holding a projection for a
     // renderer that no longer exists.
+    // The block is the point: leaving it is what tears the tree down, so this
+    // also asserts that the harness's own teardown unmounts React rather than
+    // only destroying the renderer underneath it.
     const source = fakeFeed();
-    const setup = await createTestRenderer({ width: 40, height: 10, consoleMode: "disabled" });
-    live.push(setup);
-    const root = createRoot(setup.renderer);
-    root.render(<Probe feed={source.feed} />);
-    await Bun.sleep(30);
-    await setup.flush();
-    expect(source.subscriberCount()).toBe(1);
+    {
+      using view = await probe(<Probe feed={source.feed} />);
+      await rowsOf(view);
+      expect(source.subscriberCount()).toBe(1);
+    }
 
-    root.unmount();
-    await Bun.sleep(30);
+    // Immediately, with no wait: the harness unmounts synchronously, so "the
+    // listener was released" is a fact about leaving the scope rather than
+    // about a later tick that may or may not have run.
     expect(source.subscriberCount()).toBe(0);
   });
 });

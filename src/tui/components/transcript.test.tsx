@@ -13,9 +13,7 @@
  * caught a component that mounted them all.
  */
 
-import { afterEach, describe, expect, test } from "bun:test";
-import { createTestRenderer, type TestRendererSetup } from "@opentui/core/testing";
-import { createRoot } from "@opentui/react";
+import { describe, expect, test } from "bun:test";
 import {
   bound,
   complete,
@@ -26,17 +24,10 @@ import {
   type TranscriptProjection,
 } from "../../presentation/index.ts";
 import { everyBlockKind, FIXTURE_AT } from "../../presentation/transcript/fixtures.ts";
+import { mount, type Rendered, type TerminalShape } from "../harness.tsx";
 import type { ThemeRequest } from "../theme/index.ts";
 import { known, type ShellModel, unavailable } from "../view-model.ts";
 import { ShellApp } from "./shell-app.tsx";
-
-const live: TestRendererSetup[] = [];
-
-afterEach(() => {
-  while (live.length > 0) {
-    live.pop()?.renderer.destroy();
-  }
-});
 
 const THEME: ThemeRequest = {
   variant: "dark",
@@ -54,7 +45,7 @@ const MODEL: Omit<ShellModel, "overlay" | "commands" | "transcript" | "composer"
     model: unavailable("no provider yet"),
   },
   status: { status: "informational", message: "Nothing is running.", hints: [] },
-  help: [{ title: "Leaving", body: "Ctrl+C ends the session." }],
+  help: [{ title: "Leaving", body: "Ctrl+C ends the shell." }],
 };
 
 /** A projection over the given blocks, with the reducer's own framing. */
@@ -98,79 +89,29 @@ const SEQUENCES = {
 
 type NamedKey = keyof typeof SEQUENCES | "escape";
 
-type Session = {
-  press(name: string, modifiers?: { ctrl?: boolean; shift?: boolean }): Promise<void>;
-  pressNamed(key: NamedKey): Promise<void>;
-  frame(): Promise<string>;
-  resize(columns: number, rows: number): Promise<void>;
-  renderableCount(): number;
-};
-
-async function mount(
+async function open(
   transcript: TranscriptProjection,
-  size: { columns: number; rows: number } = { columns: 100, rows: 24 },
-): Promise<Session> {
-  const setup = await createTestRenderer({
-    width: size.columns,
-    height: size.rows,
-    screenMode: "alternate-screen",
-    consoleMode: "disabled",
-  });
-  live.push(setup);
-
-  createRoot(setup.renderer).render(
+  shape: TerminalShape = { columns: 100, rows: 24 },
+): Promise<Rendered> {
+  const shell = await mount(
     <ShellApp theme={THEME} model={MODEL} onExit={() => {}} transcript={transcript} />,
+    { shape, screenMode: "alternate-screen" },
   );
-  await settle(setup);
-
-  return {
-    async press(name, modifiers = {}) {
-      setup.mockInput.pressKey(name, modifiers);
-      await settle(setup);
-    },
-    async pressNamed(key) {
-      if (key === "escape") {
-        setup.mockInput.pressEscape();
-      } else {
-        setup.mockInput.pressKey(SEQUENCES[key]);
-      }
-      await settle(setup);
-    },
-    frame: async () => {
-      await settle(setup);
-      return setup.captureCharFrame();
-    },
-    async resize(columns, rows) {
-      setup.resize(columns, rows);
-      await settle(setup);
-    },
-    renderableCount: () => count(setup.renderer.root),
-  };
+  await shell.frame();
+  return shell;
 }
 
-async function settle(setup: TestRendererSetup): Promise<void> {
-  for (let attempt = 0; attempt < 8; attempt += 1) {
-    await Bun.sleep(10);
-    await setup.flush();
-  }
-}
-
-/** Every renderable in the tree, which is what "bounded" is a claim about. */
-function count(node: { getChildren?: () => readonly unknown[] }): number {
-  const children = node.getChildren?.() ?? [];
-  let total = 1;
-  for (const child of children) {
-    total += count(child as { getChildren?: () => readonly unknown[] });
-  }
-  return total;
+/** A named key, through the sequence it actually sends. */
+function named(shell: Rendered, key: NamedKey): Promise<string> {
+  return key === "escape" ? shell.pressEscape() : shell.press(SEQUENCES[key]);
 }
 
 describe("an empty transcript", () => {
   test("names a real command instead of showing filler", async () => {
     // The acceptance criterion. The sentence is built from the registry rows, so
     // it cannot name a key that does nothing.
-    const session = await mount(EMPTY_PROJECTION);
-    const frame = await session.frame();
+    using shell = await open(EMPTY_PROJECTION);
+    const frame = await shell.frame();
     expect(frame).toContain("Nothing has happened in this session yet");
     expect(frame).toContain("?");
     expect(frame).toContain("help");
@@ -181,53 +122,53 @@ describe("an empty transcript", () => {
     // is sized from the primary region rather than from `viewport.rows - 2`, so
     // the composer's three rows come off the panel — and these commands sit far
     // enough down the registry to be the ones that fall off first.
-    const session = await mount(EMPTY_PROJECTION, { columns: 100, rows: 30 });
-    await session.press("?");
-    expect(await session.frame()).toContain("there is no transcript yet");
+    using shell = await open(EMPTY_PROJECTION, { columns: 100, rows: 30 });
+    await shell.press("?");
+    expect(await shell.frame()).toContain("there is no transcript yet");
   });
 });
 
 describe("a transcript with entries", () => {
   test("draws each block's identity and summary", async () => {
-    const session = await mount(projectionOf(everyBlockKind().slice(0, 4)));
-    const frame = await session.frame();
+    using shell = await open(projectionOf(everyBlockKind().slice(0, 4)));
+    const frame = await shell.frame();
     expect(frame).toContain("You said");
     expect(frame).toContain("Rename the port");
     expect(frame).toContain("Model");
   });
 
   test("selects the latest entry so a command has something to act on", async () => {
-    const session = await mount(history(5));
-    expect(await session.frame()).toContain("selected");
+    using shell = await open(history(5));
+    expect(await shell.frame()).toContain("selected");
   });
 });
 
 describe("progressive disclosure", () => {
   test("reveals content on the expansion key and hides it again", async () => {
     // The whole round trip, through the registry's own binding.
-    const session = await mount(history(3));
-    expect(await session.frame()).not.toContain("the body of entry 2");
+    using shell = await open(history(3));
+    expect(await shell.frame()).not.toContain("the body of entry 2");
 
-    await session.pressNamed("enter");
-    expect(await session.frame()).toContain("the body of entry 2");
+    await named(shell, "enter");
+    expect(await shell.frame()).toContain("the body of entry 2");
 
-    await session.pressNamed("enter");
-    expect(await session.frame()).not.toContain("the body of entry 2");
+    await named(shell, "enter");
+    expect(await shell.frame()).not.toContain("the body of entry 2");
   });
 
   test("expands the entry the reader moved to", async () => {
-    const session = await mount(history(4));
-    await session.pressNamed("up");
-    await session.pressNamed("enter");
-    const frame = await session.frame();
+    using shell = await open(history(4));
+    await named(shell, "up");
+    await named(shell, "enter");
+    const frame = await shell.frame();
     expect(frame).toContain("the body of entry 2");
     expect(frame).not.toContain("the body of entry 3");
   });
 
   test("shows provenance rather than only content", async () => {
-    const session = await mount(history(2));
-    await session.pressNamed("enter");
-    expect(await session.frame()).toContain("source runtime");
+    using shell = await open(history(2));
+    await named(shell, "enter");
+    expect(await shell.frame()).toContain("source runtime");
   });
 });
 
@@ -251,7 +192,7 @@ describe("truncation, redaction, and omission", () => {
       throw new Error("the corpus no longer has model text");
     }
 
-    const session = await mount(
+    using shell = await open(
       projectionOf([
         clipped,
         { ...model, anchor: { of: "declared", key: "withheld" }, text: redacted("policy") },
@@ -263,7 +204,7 @@ describe("truncation, redaction, and omission", () => {
       ]),
     );
 
-    const frame = await session.frame();
+    const frame = await shell.frame();
     expect(frame).toContain("Truncated.");
     expect(frame).toContain("Redacted.");
     expect(frame).toContain("Omitted.");
@@ -272,8 +213,8 @@ describe("truncation, redaction, and omission", () => {
   test("each carry a route or an explanation of why there is none", async () => {
     // Wide enough for the whole notice, so both halves can be asserted. The
     // narrow case is the next test: it is what decides which half survives.
-    const session = await mount(projectionOf([clipped]), { columns: 140, rows: 24 });
-    const frame = await session.frame();
+    using shell = await open(projectionOf([clipped]), { columns: 140, rows: 24 });
+    const frame = await shell.frame();
     expect(frame).toContain("Truncated.");
     // The route the reader can actually take, named with the key that runs it.
     expect(frame).toContain("Press return");
@@ -284,8 +225,8 @@ describe("truncation, redaction, and omission", () => {
   test("clip the quantity rather than the action on a narrow terminal", async () => {
     // The ordering decision, asserted. A notice that runs out of room loses its
     // byte counts and keeps the key a reader can press.
-    const session = await mount(projectionOf([clipped]), { columns: 100, rows: 24 });
-    const frame = await session.frame();
+    using shell = await open(projectionOf([clipped]), { columns: 100, rows: 24 });
+    const frame = await shell.frame();
     expect(frame).toContain("Press return");
     expect(frame).toContain("…");
   });
@@ -295,9 +236,9 @@ describe("truncation, redaction, and omission", () => {
     if (secret === undefined) {
       throw new Error("the corpus no longer has a secret block");
     }
-    const session = await mount(projectionOf([secret]));
-    await session.pressNamed("enter");
-    const frame = await session.frame();
+    using shell = await open(projectionOf([secret]));
+    await named(shell, "enter");
+    const frame = await shell.frame();
     expect(frame).toContain("Running a provider check");
     expect(frame).toContain("no expansion");
   });
@@ -307,37 +248,37 @@ describe("scroll anchoring", () => {
   test("does not yank a reader back when new entries arrive", async () => {
     // The contract, end to end. The reader scrolls up, and the arriving history
     // is announced below rather than dragging the view.
-    const session = await mount(history(400), { columns: 100, rows: 24 });
-    await session.pressNamed("pageup");
-    const scrolled = await session.frame();
+    using shell = await open(history(400), { columns: 100, rows: 24 });
+    await named(shell, "pageup");
+    const scrolled = await shell.frame();
     expect(scrolled).toContain("later entries below");
     expect(scrolled).not.toContain("entry 399");
   });
 
   test("surfaces unseen activity with the key that follows it again", async () => {
-    const session = await mount(history(400));
-    await session.pressNamed("pageup");
-    expect(await session.frame()).toContain("press end to follow the latest");
+    using shell = await open(history(400));
+    await named(shell, "pageup");
+    expect(await shell.frame()).toContain("press end to follow the latest");
   });
 
   test("follows the latest again on the jump command", async () => {
-    const session = await mount(history(400));
-    await session.pressNamed("pageup");
-    expect(await session.frame()).toContain("later entries below");
+    using shell = await open(history(400));
+    await named(shell, "pageup");
+    expect(await shell.frame()).toContain("later entries below");
 
-    await session.pressNamed("end");
-    const frame = await session.frame();
+    await named(shell, "end");
+    const frame = await shell.frame();
     expect(frame).toContain("entry 399");
     expect(frame).not.toContain("later entries below");
   });
 
   test("reaches the start and the end of the history", async () => {
-    const session = await mount(history(200));
-    await session.pressNamed("home");
-    expect(await session.frame()).toContain("entry 0");
+    using shell = await open(history(200));
+    await named(shell, "home");
+    expect(await shell.frame()).toContain("entry 0");
 
-    await session.pressNamed("end");
-    expect(await session.frame()).toContain("entry 199");
+    await named(shell, "end");
+    expect(await shell.frame()).toContain("entry 199");
   });
 });
 
@@ -346,21 +287,21 @@ describe("a large history", () => {
     // Ten thousand blocks into a 24-row terminal. What is asserted is the number
     // of renderables in the tree: a component that mounted the history and let
     // the renderer cull it would draw the same frame and fail this.
-    const session = await mount(history(10_000));
-    expect(await session.frame()).toContain("entry 9999");
-    expect(session.renderableCount()).toBeLessThan(200);
+    using shell = await open(history(10_000));
+    expect(await shell.frame()).toContain("entry 9999");
+    expect(shell.renderableCount()).toBeLessThan(200);
   });
 
   test("draws the same bounded frame for a hundred blocks and for ten thousand", async () => {
-    const small = await mount(history(100));
-    const large = await mount(history(10_000));
+    using small = await open(history(100));
+    using large = await open(history(10_000));
     const difference = Math.abs(small.renderableCount() - large.renderableCount());
     expect(difference).toBeLessThanOrEqual(4);
   });
 
   test("never draws past the region it was given", async () => {
-    const session = await mount(history(10_000), { columns: 100, rows: 24 });
-    const frame = await session.frame();
+    using shell = await open(history(10_000), { columns: 100, rows: 24 });
+    const frame = await shell.frame();
     expect(frame.split("\n").filter((line) => line.trim() !== "").length).toBeLessThanOrEqual(24);
   });
 });
@@ -371,12 +312,12 @@ describe("long unbroken content", () => {
     if (model === undefined || model.kind !== "model-text") {
       throw new Error("the corpus no longer has model text");
     }
-    const session = await mount(projectionOf([{ ...model, text: complete("x".repeat(5_000)) }]), {
+    using shell = await open(projectionOf([{ ...model, text: complete("x".repeat(5_000)) }]), {
       columns: 80,
       rows: 24,
     });
-    await session.pressNamed("enter");
-    const frame = await session.frame();
+    await named(shell, "enter");
+    const frame = await shell.frame();
     for (const line of frame.split("\n")) {
       expect(line.length).toBeLessThanOrEqual(81);
     }
@@ -389,9 +330,9 @@ describe("long unbroken content", () => {
     if (model === undefined || model.kind !== "model-text") {
       throw new Error("the corpus no longer has model text");
     }
-    const session = await mount(projectionOf([{ ...model, text: complete("a\u001b[2Jb") }]));
-    await session.pressNamed("enter");
-    const frame = await session.frame();
+    using shell = await open(projectionOf([{ ...model, text: complete("a\u001b[2Jb") }]));
+    await named(shell, "enter");
+    const frame = await shell.frame();
     expect(frame).not.toContain("\u001b[2J");
     expect(frame).toContain("\\x1b");
   });
@@ -399,34 +340,34 @@ describe("long unbroken content", () => {
 
 describe("resize", () => {
   test("re-wraps expanded content without losing the reader's place", async () => {
-    const session = await mount(history(400), { columns: 100, rows: 24 });
-    await session.pressNamed("pageup");
-    const before = await session.frame();
+    using shell = await open(history(400), { columns: 100, rows: 24 });
+    await named(shell, "pageup");
+    const before = await shell.frame();
     const anchored = /entry (\d+)/.exec(before)?.[1];
     expect(anchored).toBeDefined();
 
-    await session.resize(60, 20);
-    const after = await session.frame();
+    await shell.resize(60, 20);
+    const after = await shell.frame();
     // The same entry is still on screen: the anchor names a block, so a narrower
     // terminal changes that block's height and not which block is being read.
     expect(after).toContain(`entry ${anchored}`);
   });
 
   test("survives a resize storm with the transcript still drawn", async () => {
-    const session = await mount(history(500));
+    using shell = await open(history(500));
     for (let columns = 40; columns <= 120; columns += 4) {
-      await session.resize(columns, 24);
+      await shell.resize(columns, 24);
     }
-    expect(await session.frame()).toContain("entry");
+    expect(await shell.frame()).toContain("entry");
   });
 
   test("keeps an expansion open across a resize", async () => {
-    const session = await mount(history(5));
-    await session.pressNamed("enter");
-    expect(await session.frame()).toContain("the body of entry 4");
+    using shell = await open(history(5));
+    await named(shell, "enter");
+    expect(await shell.frame()).toContain("the body of entry 4");
 
-    await session.resize(60, 20);
-    expect(await session.frame()).toContain("the body of entry 4");
+    await shell.resize(60, 20);
+    expect(await shell.frame()).toContain("the body of entry 4");
   });
 });
 
@@ -434,17 +375,17 @@ describe("an overlay over the transcript", () => {
   test("does not disturb the anchor or the expansion underneath it", async () => {
     // The preservation contract. An overlay is a route, and opening one is not a
     // decision about what the reader was reading.
-    const session = await mount(history(400));
-    await session.pressNamed("pageup");
-    await session.pressNamed("enter");
-    const before = await session.frame();
+    using shell = await open(history(400));
+    await named(shell, "pageup");
+    await named(shell, "enter");
+    const before = await shell.frame();
     const anchored = /entry (\d+)/.exec(before)?.[1];
 
-    await session.press("?");
-    expect(await session.frame()).toContain("Help");
+    await shell.press("?");
+    expect(await shell.frame()).toContain("Help");
 
-    await session.pressNamed("escape");
-    const after = await session.frame();
+    await named(shell, "escape");
+    const after = await shell.frame();
     expect(after).toContain(`entry ${anchored}`);
     expect(after).toContain("later entries below");
   });
