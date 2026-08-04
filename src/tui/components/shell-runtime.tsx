@@ -34,6 +34,9 @@ import {
   type ComposerState,
   composerReducer,
   cursorPosition,
+  type EditorAction,
+  EMPTY_EDITOR,
+  editorReducer,
   INITIAL_COMPOSER_STATE,
   linesOf,
   type SubmissionPort,
@@ -140,6 +143,8 @@ export type ShellAction =
   /** The surface measured itself. Only dispatched when an answer actually changed. */
   | { readonly kind: "transcript-facts"; readonly facts: TranscriptFacts }
   | { readonly kind: "composer"; readonly action: ComposerAction }
+  /** Typing in the open palette. Ignored when the palette is not the route. */
+  | { readonly kind: "palette-query"; readonly action: EditorAction }
   | { readonly kind: "exit" };
 
 export const INITIAL_SHELL_STATE: ShellState = {
@@ -192,6 +197,18 @@ export function shellReducer(state: ShellState, action: ShellAction): ShellState
       return { ...state, focus: withRegions(state.focus, action.regions) };
     case "transcript":
       return { ...state, transcript: transcriptSurfaceReducer(state.transcript, action.action) };
+    case "palette-query": {
+      if (state.overlay.kind !== "palette") {
+        // A key that arrived while the palette was closing. Dropped rather
+        // than stored: there is no query to edit, and reviving one would be
+        // the stale-search failure the route shape exists to prevent.
+        return state;
+      }
+      const query = editorReducer(state.overlay.query, action.action);
+      return query === state.overlay.query
+        ? state
+        : { ...state, overlay: { kind: "palette", query } };
+    }
     case "composer": {
       const composer = composerReducer(state.composer, action.action);
       // Identity when the composer refused the action. A new state object for an
@@ -252,6 +269,8 @@ export type ShellRuntime = {
    * go through `run`; this is the path for everything that is not one.
    */
   composer(action: ComposerAction): void;
+  /** Sends an edit to the open palette's search field. */
+  paletteQuery(action: EditorAction): void;
 };
 
 export type ShellRuntimeOptions = {
@@ -355,6 +374,10 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
     dispatch({ kind: "composer", action });
   }, []);
 
+  const paletteQuery = useCallback((action: EditorAction): void => {
+    dispatch({ kind: "palette-query", action });
+  }, []);
+
   // The projection changed shape, so a selection or an expansion naming a block
   // that is gone is dropped and an empty selection settles on the latest entry.
   // The reducer returns identity when nothing changed, which is what keeps this
@@ -377,7 +400,16 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
     dispatch({ kind: "composer", action: { kind: "resolve", outcome: port.submit(inFlight) } });
   }, [inFlight, port]);
 
-  return { state, commandState, run, press, reseat, reportTranscriptGeometry, composer };
+  return {
+    state,
+    commandState,
+    run,
+    press,
+    reseat,
+    reportTranscriptGeometry,
+    composer,
+    paletteQuery,
+  };
 }
 
 /**
@@ -426,7 +458,9 @@ function runAvailable(
       dispatch({ kind: "open-overlay", route: { kind: "help" } });
       return true;
     case "app.commandPalette":
-      dispatch({ kind: "open-overlay", route: { kind: "palette" } });
+      // Always an empty query. The palette opens ready to search rather than
+      // showing whatever was typed the last time it was open.
+      dispatch({ kind: "open-overlay", route: { kind: "palette", query: EMPTY_EDITOR } });
       return true;
     case "overlay.close":
       dispatch({ kind: "close-overlay" });

@@ -16,6 +16,7 @@
  */
 
 import type { ActivityModel } from "./activity-model.ts";
+import type { EditorState } from "./composer/index.ts";
 import type { ComposerModel } from "./composer-model.ts";
 import type { StatusToken } from "./theme/index.ts";
 import type { TranscriptModel } from "./transcript-model.ts";
@@ -128,7 +129,21 @@ export type HelpSection = {
 export type OverlayRoute =
   | { readonly kind: "none" }
   | { readonly kind: "help" }
-  | { readonly kind: "palette" };
+  /**
+   * The palette, and what has been typed into it.
+   *
+   * The query lives on the route rather than beside it, which is what makes
+   * "closing the palette clears the search" true by construction: closing
+   * replaces the route, and there is nowhere left for a stale query to be.
+   * State held alongside would have to be cleared by whoever remembered to,
+   * and reopening onto somebody's last search is the failure that produces.
+   *
+   * An `EditorState` rather than a string, so the palette reuses the editing
+   * model the composer already owns instead of growing a second one. A search
+   * field that could not move its cursor or delete a character mid-word would
+   * be a text input in name only.
+   */
+  | { readonly kind: "palette"; readonly query: EditorState };
 
 export type ShellModel = {
   readonly header: WorkspaceHeaderModel;

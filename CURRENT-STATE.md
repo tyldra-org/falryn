@@ -1612,6 +1612,44 @@ grows the footer while it is open and restores it after, because the default
 six-row live region left a help panel one row to draw twenty commands into — and
 a terminal does not clip, it overdraws.
 
+The palette's search accepts typed input and narrows the list through
+`searchCommands`, the registry's own matcher
+([#364](https://github.com/yogeshprasad098/falryn/issues/364)). It had not
+before: the matcher existed, was tested, and had no product caller, so the
+palette was handed every row and a literal empty query and typing narrowed
+nothing. The query lives on the open-overlay route rather than beside it, which
+is what makes "closing the palette clears the search" true by construction —
+closing replaces the route, so there is nowhere a stale query can survive. The
+search field reuses the composer's editing model rather than growing a second
+text input, and it counts as a focused text control, so the bare
+single-character bindings are withheld while it is open and `?` can be searched
+for.
+
+A second defect in the same function is fixed with it. The palette computed a
+row budget, a truncation flag, and the rows to show, and then recomputed the
+budget inline and discarded all three — losing the row reserved for the "N more"
+line. A truncated palette therefore asked for one row more than the panel had,
+and because the panel does not grow, two command rows landed on top of each
+other and reached the screen spliced together. That is what the standing
+`noUnusedVariables` warning on that file was pointing at.
+
+The budget is no longer clamped up to a minimum either, which is what made the
+overdraw reachable at all: `Math.max(1, rows - 1)` promises a row the caller may
+not have given. `OverlayHost` caps its height while the reveal transition runs,
+so the palette is handed a single row on every open where motion is not reduced —
+and with a one-row budget the search line is the whole of it. The palette now
+spends that row on the query, adds the notice only when a row remains for it, and
+says "too little room to list them" rather than "N more" when nothing was shown,
+because "more" is only true beside something.
+
+The empty-result line is keyed off what *matched* rather than off what fits. The
+two are different answers — "your search found nothing" and "there was no room to
+show what it found" — and keying off the second reports the first when it is
+false: during the reveal a full command list rendered "Nothing matches that."
+directly above its own "24 more" line. The rendered checks measure the rows
+actually drawn at every budget, because the panel's height is identical either
+way and a count of the panel cannot see a collision inside it.
+
 Paste is classified before it reaches anything: small text inline, large text as
 a bounded preview, and binary, over-long, or invalidly encoded content refused
 with the reason. A paste never runs a command.
@@ -1994,10 +2032,10 @@ repository does not yet provide:
   [#25](https://github.com/yogeshprasad098/falryn/issues/25), and the keymap,
   focus routing, and command registry are
   [#26](https://github.com/yogeshprasad098/falryn/issues/26). The overlay routes
-  open on their keys since #26, and the palette lists every command with its
-  binding and its availability. What the palette does not yet do is accept typed
-  input to narrow the list — the search is implemented and nothing feeds it a
-  query. No producer of
+  open on their keys since #26, the palette lists every command with its
+  binding and its availability, and since
+  [#364](https://github.com/yogeshprasad098/falryn/issues/364) typing narrows
+  that list. No producer of
   sessions or turns exists, so a JSON Lines run today carries the short
   lifecycle a `config` or `doctor` command produces rather than a model turn.
   Since [#345](https://github.com/yogeshprasad098/falryn/issues/345) a CLI
@@ -2023,7 +2061,7 @@ Their implementation breakdown lives in GitHub Issues and the Project.
 - **Current release outcome:** [v0.1 Foundation issues](https://github.com/yogeshprasad098/falryn/issues?q=is%3Aissue%20is%3Aopen%20milestone%3A%22v0.1%20Foundation%22)
 - **First parent outcome:** [#1 Establish the unified runtime and lifecycle](https://github.com/yogeshprasad098/falryn/issues/1)
 - **Current parent outcome:** [#21 Deliver the OpenTUI application shell](https://github.com/yogeshprasad098/falryn/issues/21), in progress with #22, #23, #24, and #26 landed. [#16 Deliver the CLI and headless foundation](https://github.com/yogeshprasad098/falryn/issues/16) remains in progress with #17, #18, #19, and #20 landed.
-- **Next planning action:** verify [#25](https://github.com/yogeshprasad098/falryn/issues/25). Every required child has landed — #354 the transcript block model, #355 the surface that renders it, #356 the scrollback commit path, #357 the composer, and #358 the activity and status projections — so what remains is the parent's own integrated acceptance.
+- **Next planning action:** verify [#25](https://github.com/yogeshprasad098/falryn/issues/25). Every required child has landed — #354 the transcript block model, #355 the surface that renders it, #356 the scrollback commit path, #357 the composer, #358 the activity and status projections, and #364 the palette's reachable search, which parent verification raised as the one criterion no child had delivered — so what remains is the parent's own integrated acceptance.
 
 Which of #1's children are open, and which delivered the behavior recorded
 above, is read from

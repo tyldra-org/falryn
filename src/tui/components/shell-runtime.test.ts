@@ -10,6 +10,7 @@
 
 import { describe, expect, test } from "bun:test";
 import { EMPTY_COMMAND_STATE } from "../commands.ts";
+import { EMPTY_EDITOR } from "../composer/index.ts";
 import { isContained } from "../focus.ts";
 import {
   activeContexts,
@@ -53,21 +54,24 @@ describe("opening an overlay", () => {
   });
 
   test("activates the overlay context, so escape means close", () => {
-    const state = run([{ kind: "open-overlay", route: { kind: "palette" } }]);
+    const state = run([{ kind: "open-overlay", route: { kind: "palette", query: EMPTY_EDITOR } }]);
     expect(activeContexts(state)).toEqual(["global", "overlay"]);
     expect(commandStateFor(state).overlayOpen).toBe(true);
   });
 
   test("names a region for each route", () => {
     expect(overlayRegions({ kind: "help" })[0]?.id).toBe("overlay.help");
-    expect(overlayRegions({ kind: "palette" })[0]?.id).toBe("overlay.palette");
+    expect(overlayRegions({ kind: "palette", query: EMPTY_EDITOR })[0]?.id).toBe("overlay.palette");
     // With no overlay the frame's own regions are what is reachable.
     expect(overlayRegions({ kind: "none" })).toEqual(FRAME_REGIONS);
   });
 
   test("gives every region a label", () => {
     // A focus indicator that is not colour-only needs words.
-    for (const route of [{ kind: "help" } as const, { kind: "palette" } as const]) {
+    for (const route of [
+      { kind: "help" } as const,
+      { kind: "palette", query: EMPTY_EDITOR } as const,
+    ]) {
       for (const region of overlayRegions(route)) {
         expect({ id: region.id, labelled: region.label.length > 0 }).toEqual({
           id: region.id,
