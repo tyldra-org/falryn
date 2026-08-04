@@ -20,7 +20,7 @@
  * binding that makes that sentence true.
  */
 
-import { useCallback, useMemo, useReducer } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useRef } from "react";
 import {
   COMMAND_CONTEXTS,
   type CommandContext,
@@ -40,6 +40,19 @@ import {
   withRegions,
 } from "../focus.ts";
 import { isContextActive, type KeymapPlan, resolveBinding } from "../keymap.ts";
+import {
+  anchorAt,
+  anchorRevealing,
+  INITIAL_TRANSCRIPT_STATE,
+  LATEST,
+  neighbourKey,
+  scrolledBy,
+  type TranscriptSurfaceAction,
+  type TranscriptSurfaceState,
+  totalRowsOf,
+  transcriptSurfaceReducer,
+} from "../transcript/index.ts";
+import { EMPTY_GEOMETRY, type TranscriptGeometry } from "../transcript-model.ts";
 import type { OverlayRoute } from "../view-model.ts";
 
 /**
@@ -68,6 +81,22 @@ export function overlayRegions(route: OverlayRoute): readonly FocusRegion[] {
   }
 }
 
+/**
+ * What the transcript surface is, as far as availability is concerned.
+ *
+ * Two numbers rather than the projection, because a command's availability must
+ * depend on what exists and not on what was drawn. "There is a transcript with
+ * entries in it" and "the entries are taller than the region" are the only two
+ * facts any command here needs, and both are answers the surface reports after
+ * it measures.
+ */
+export type TranscriptFacts = {
+  readonly blocks: number;
+  readonly scrollable: boolean;
+};
+
+export const NO_TRANSCRIPT: TranscriptFacts = { blocks: 0, scrollable: false };
+
 export type ShellState = {
   readonly overlay: OverlayRoute;
   readonly focus: FocusModel;
@@ -75,6 +104,9 @@ export type ShellState = {
   readonly notice: string | null;
   /** Set when `app.exit` ran. The caller ends the session; this does not. */
   readonly exiting: boolean;
+  /** What the reader has done to the transcript. Never persisted. */
+  readonly transcript: TranscriptSurfaceState;
+  readonly transcriptFacts: TranscriptFacts;
 };
 
 export type ShellAction =
@@ -85,6 +117,9 @@ export type ShellAction =
   | { readonly kind: "notice"; readonly message: string }
   /** The reachable regions changed: a resize, or an item going away. */
   | { readonly kind: "reseat"; readonly regions: readonly FocusRegion[] }
+  | { readonly kind: "transcript"; readonly action: TranscriptSurfaceAction }
+  /** The surface measured itself. Only dispatched when an answer actually changed. */
+  | { readonly kind: "transcript-facts"; readonly facts: TranscriptFacts }
   | { readonly kind: "exit" };
 
 export const INITIAL_SHELL_STATE: ShellState = {
@@ -92,6 +127,8 @@ export const INITIAL_SHELL_STATE: ShellState = {
   focus: createFocusModel(FRAME_REGIONS),
   notice: null,
   exiting: false,
+  transcript: INITIAL_TRANSCRIPT_STATE,
+  transcriptFacts: NO_TRANSCRIPT,
 };
 
 /**
@@ -127,8 +164,22 @@ export function shellReducer(state: ShellState, action: ShellAction): ShellState
       return { ...state, notice: action.message === "" ? null : action.message };
     case "reseat":
       // Focus stays where it can and moves to the documented neighbour where it
-      // cannot. The overlay is untouched: a resize does not close one.
+      // cannot. The overlay is untouched: a resize does not close one, and it
+      // does not move the transcript's anchor either — the anchor names a block,
+      // so re-wrapping changes that block's height and not which block is being
+      // read.
       return { ...state, focus: withRegions(state.focus, action.regions) };
+    case "transcript":
+      return { ...state, transcript: transcriptSurfaceReducer(state.transcript, action.action) };
+    case "transcript-facts":
+      // Identity when nothing changed. The surface reports what it measured on
+      // every frame it measures, and a new state object for an unchanged answer
+      // would re-render the tree from inside an effect that ran because the tree
+      // rendered — which is a measure/render loop rather than a frame.
+      return state.transcriptFacts.blocks === action.facts.blocks &&
+        state.transcriptFacts.scrollable === action.facts.scrollable
+        ? state
+        : { ...state, transcriptFacts: action.facts };
     case "exit":
       return { ...state, exiting: true };
   }
@@ -139,6 +190,8 @@ export function commandStateFor(state: ShellState): CommandState {
   return {
     ...EMPTY_COMMAND_STATE,
     overlayOpen: state.overlay.kind !== "none",
+    hasTranscript: state.transcriptFacts.blocks > 0,
+    hasScrollableContent: state.transcriptFacts.scrollable,
   };
 }
 
@@ -157,6 +210,8 @@ export type ShellRuntime = {
   press(key: string): boolean;
   /** Re-seats focus over a new region set, keeping it where it can. */
   reseat(regions: readonly FocusRegion[]): void;
+  /** Accepts what the transcript measured. Stable, so it may be an effect's dependency. */
+  reportTranscriptGeometry(geometry: TranscriptGeometry): void;
 };
 
 export type ShellRuntimeOptions = {
@@ -169,11 +224,37 @@ export type ShellRuntimeOptions = {
    * second answer to what a shell exiting means.
    */
   readonly onExit: () => void;
+  /**
+   * The block keys the projection currently holds, in order.
+   *
+   * Keys rather than blocks: selection and expansion are identity, and a
+   * runtime that held the blocks would be a second reader of content it has no
+   * reason to see.
+   */
+  readonly transcriptKeys: readonly string[];
 };
 
 export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
   const [state, dispatch] = useReducer(shellReducer, INITIAL_SHELL_STATE);
   const commandState = useMemo(() => commandStateFor(state), [state]);
+
+  // A ref rather than state. The spans and the row budget are what the reader is
+  // currently looking at, and writing them into state would re-render the tree
+  // on every frame that measured the same thing again. The two *answers* that
+  // change availability are dispatched instead, and only when they change.
+  const geometry = useRef<TranscriptGeometry>(EMPTY_GEOMETRY);
+
+  // `dispatch` is stable, so this callback is too — which matters because the
+  // surface reports from an effect, and an unstable callback there would re-run
+  // the effect on every render. The reducer, not this, decides whether the
+  // report changed anything: see the `transcript-facts` case.
+  const reportTranscriptGeometry = useCallback((next: TranscriptGeometry): void => {
+    geometry.current = next;
+    dispatch({
+      kind: "transcript-facts",
+      facts: { blocks: next.spans.length, scrollable: totalRowsOf(next.spans) > next.rows },
+    });
+  }, []);
 
   const run = useCallback(
     (id: string): boolean => {
@@ -194,9 +275,14 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
         return false;
       }
 
-      return runAvailable(command, dispatch, options.onExit);
+      return runAvailable(command, dispatch, options.onExit, {
+        geometry: geometry.current,
+        anchor: state.transcript.anchor,
+        selected: state.transcript.selected,
+        keys: options.transcriptKeys,
+      });
     },
-    [state, options.onExit],
+    [state, options.onExit, options.transcriptKeys],
   );
 
   const press = useCallback(
@@ -211,8 +297,31 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
     dispatch({ kind: "reseat", regions });
   }, []);
 
-  return { state, commandState, run, press, reseat };
+  // The projection changed shape, so a selection or an expansion naming a block
+  // that is gone is dropped and an empty selection settles on the latest entry.
+  // The reducer returns identity when nothing changed, which is what keeps this
+  // from re-rendering the tree on every projection that happens to be equal.
+  const { transcriptKeys } = options;
+  useEffect(() => {
+    dispatch({ kind: "transcript", action: { kind: "reconcile", keys: transcriptKeys } });
+  }, [transcriptKeys]);
+
+  return { state, commandState, run, press, reseat, reportTranscriptGeometry };
 }
+
+/**
+ * Everything a transcript command needs that is not in the registry.
+ *
+ * Passed rather than read, so the effects below stay a pure function of the
+ * geometry the reader is looking at. A handler that reached for a ref would be
+ * testable only through a renderer.
+ */
+type TranscriptContext = {
+  readonly geometry: TranscriptGeometry;
+  readonly anchor: TranscriptSurfaceState["anchor"];
+  readonly selected: string | null;
+  readonly keys: readonly string[];
+};
 
 /**
  * What an available command does.
@@ -225,7 +334,21 @@ function runAvailable(
   command: ShellCommand,
   dispatch: (action: ShellAction) => void,
   onExit: () => void,
+  transcript: TranscriptContext,
 ): boolean {
+  const request = {
+    spans: transcript.geometry.spans,
+    rows: transcript.geometry.rows,
+    anchor: transcript.anchor,
+  };
+  // A page is the region less one row, so the line a reader was on stays on
+  // screen. A full-height page moves every row they were reading off it.
+  const page = Math.max(1, transcript.geometry.rows - 1);
+  const anchorAction = (anchor: TranscriptSurfaceState["anchor"]): TranscriptSurfaceAction => ({
+    kind: "anchor",
+    anchor,
+  });
+
   switch (command.id) {
     case "app.help":
       dispatch({ kind: "open-overlay", route: { kind: "help" } });
@@ -246,6 +369,50 @@ function runAvailable(
       dispatch({ kind: "exit" });
       onExit();
       return true;
+
+    case "view.scrollUp":
+      dispatch({ kind: "transcript", action: anchorAction(scrolledBy(request, -page)) });
+      return true;
+    case "view.scrollDown":
+      dispatch({ kind: "transcript", action: anchorAction(scrolledBy(request, page)) });
+      return true;
+    case "view.top":
+      dispatch({ kind: "transcript", action: anchorAction(anchorAt(request, 0)) });
+      return true;
+    // The end of a transcript is the latest entry, so both keys resolve to the
+    // following anchor rather than to a pin on the last block — a pin there
+    // would stop following the moment that block grew.
+    case "view.bottom":
+    case "transcript.jumpToLatest":
+      dispatch({ kind: "transcript", action: anchorAction(LATEST) });
+      return true;
+
+    case "transcript.selectNext":
+    case "transcript.selectPrevious": {
+      const step = command.id === "transcript.selectNext" ? 1 : -1;
+      const key = neighbourKey(transcript.keys, transcript.selected, step);
+      if (key === null) {
+        dispatch({ kind: "notice", message: "There is no entry to select." });
+        return false;
+      }
+      dispatch({ kind: "transcript", action: { kind: "select", key } });
+      // Selection moves the window only when it has to. See `anchorRevealing`.
+      dispatch({ kind: "transcript", action: anchorAction(anchorRevealing(request, key)) });
+      return true;
+    }
+
+    case "transcript.expand": {
+      if (transcript.selected === null) {
+        dispatch({ kind: "notice", message: "There is no entry to expand." });
+        return false;
+      }
+      dispatch({
+        kind: "transcript",
+        action: { kind: "toggle-expansion", key: transcript.selected },
+      });
+      return true;
+    }
+
     default:
       // Every other command is declared unavailable in this build, so reaching
       // here means a command was made available without an effect being written

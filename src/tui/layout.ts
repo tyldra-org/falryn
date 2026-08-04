@@ -143,6 +143,29 @@ export function primaryColumns(viewport: Viewport, layoutClass: LayoutClass): nu
 }
 
 /**
+ * Rows the header and the status line take before anything else is offered any.
+ *
+ * One each, and reserved rather than competed for. The status line is the row an
+ * overlay may never cover, so the region that grows to hold content has to be
+ * measured after both are taken — the alternative is a transcript that computes
+ * its own window from the whole viewport and draws its last row over the one
+ * place a terminal outcome arrives.
+ */
+export const HEADER_ROWS = 1;
+export const STATUS_ROWS = 1;
+
+/**
+ * Rows the primary region gets.
+ *
+ * The counterpart to {@link primaryColumns}, and subtractive for the same
+ * reason: the chrome asks for what it needs and the primary region receives
+ * what is left, never a proportion of the window.
+ */
+export function primaryRows(viewport: Viewport): number {
+  return Math.max(0, usable(viewport.rows) - HEADER_ROWS - STATUS_ROWS);
+}
+
+/**
  * Shares a row out among fields that each want a width.
  *
  * The obvious division — an even share, or a fixed weight each — is wrong for

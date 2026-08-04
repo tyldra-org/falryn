@@ -1620,18 +1620,18 @@ The keyboard journey is proved twice — through a real renderer with a real
 keymap, and against the shipped `dist/falryn` on a pseudo-terminal, where Ctrl+C
 now exits `0` with the terminal restored and `?` draws the command table.
 
-A transcript exists as a contract rather than as a view, delivered by
-[#354](https://github.com/yogeshprasad098/falryn/issues/354).
+A transcript exists as a contract, delivered by
+[#354](https://github.com/yogeshprasad098/falryn/issues/354), and as a rendered
+surface over it, delivered by
+[#355](https://github.com/yogeshprasad098/falryn/issues/355).
 
-**Nothing renders it, and nothing outside it consumes it yet.** The shared
-projection area `src/presentation/` is not reachable from `src/main.ts`, so it
-is absent from the compiled bundle. Its consumers are the transcript surface
-([#355](https://github.com/yogeshprasad098/falryn/issues/355)) and the activity
-and status projections
-([#358](https://github.com/yogeshprasad098/falryn/issues/358)), neither of which
-exists. What is delivered is the block model, the reducer, and the controls that
-will catch the first change [#33](https://github.com/yogeshprasad098/falryn/issues/33)
-makes to either.
+**Nothing produces a block yet.** The surface is real and the projection it
+renders is empty on every run, because no agent loop, provider, or tool runner
+emits an event that becomes one. The activity and status projections
+([#358](https://github.com/yogeshprasad098/falryn/issues/358)) do not exist. What
+a user sees today is the transcript's empty state, which names a command the
+build actually runs; every other behavior below is exercised against fixtures and
+a real renderer rather than against live output.
 
 A transcript block is a semantic object, not a log line. Sixteen kinds are
 declared as a closed union, and **five of them have a producer**: `notice`,
@@ -1686,6 +1686,70 @@ that is the half enforced. A boundary control asserts the area imports from the 
 nowhere else, reads no clock and no randomness, writes no second escaping rule
 or outcome vocabulary, declares no second session read model, and exports no
 expansion route that nothing produces.
+
+### The transcript surface
+
+The surface is the primary region: `AppShell` mounts `TranscriptView` where a
+placeholder line used to sit. That placeholder said "Nothing is running yet" and
+named no action; the empty state that replaced it is built from the live command
+rows, so it cannot advertise a key that does nothing. A compiled check asserts it
+on the shipped `dist/falryn` over a pseudo-terminal.
+
+**A collapsed block's height does not depend on the width.** The collapsed form
+is at most two rows, each truncated rather than wrapped, so placing the window
+over a long history is a sum over numbers instead of a wrap of every block's
+text. Only blocks the reader has expanded are measured by wrapping, through the
+bounded text cache that #24 delivered and nothing had used until now. A rendered
+check mounts ten thousand blocks into a 24-row terminal and asserts the number of
+renderables in the tree stays under two hundred and within four of the same frame
+over a hundred blocks — OpenTUI's own `ScrollBox` is deliberately not used,
+because its viewport culling skips render calls while still mounting a renderable
+per item.
+
+**A reader who scrolls away is not pulled back.** The anchor is a closed union of
+two states — following the latest, or pinned to a named block at a row offset
+inside it — so arriving blocks move the content under a following anchor and
+leave a pinned one untouched. Because the pin names a *block* rather than a row
+number, a resize re-wraps the content and changes that block's height without
+changing which block is being read; an overlay does not touch the state at all.
+Unseen activity is reported as a count with the key that follows the latest
+again, and `transcript.jumpToLatest` is registered in the command registry rather
+than bound ad hoc.
+
+Truncation, redaction, and omission render as three notices with three different
+leading nouns and three different status tokens, so they stay distinguishable on
+a monochrome terminal — which is the only test of "visibly distinct" worth
+passing. Each carries a route or the sentence explaining why there is none, and
+the route is placed before the byte and line counts so a narrow terminal clips
+the quantity rather than the action. A secret block's content is refused a second
+time by the surface rather than trusted to have been withheld upstream, and its
+summary is still drawn, because a withheld block is not an invisible one.
+
+Every expansion route the projection can return now resolves to a registered
+command, and a control walks the union to prove it. Two of those commands —
+opening an artifact and showing diagnostics — are registered as unavailable with
+their own reasons, because no artifact viewer or diagnostics view exists; the
+surface says so instead of offering a key. Searching the transcript is
+unavailable for the same reason and was not delivered here.
+
+One latent defect surfaced and was fixed: every binding declared as `enter` was
+never dispatched, because the key parser's canonical name is `return`, so a layer
+registered under `enter` never matched. `transcript.expand` and the composer's
+two bindings now use the parser's own names.
+
+The surface holds no content and no persisted scroll state. Its state is block
+keys — what is expanded, what is selected, and where the anchor is — and full
+content is read from the projection every time it is drawn, so a revised block
+cannot be rendered from a stale copy. Boundary controls assert all of this,
+including that the surface re-derives no part of the block model it is given.
+
+What is **not** delivered here: no scrollback commit path
+([#356](https://github.com/yogeshprasad098/falryn/issues/356)), no composer
+([#357](https://github.com/yogeshprasad098/falryn/issues/357)), and no dashboard,
+artifact viewer, or diff viewer. Duration is reported as a block's age relative
+to the transcript's newest block rather than as an elapsed time, because a block
+carries one timestamp that a revision replaces — the start of a tool call is not
+in the projection, and reporting one would be a number the surface invented.
 
 The compiled file is a development bootstrap artifact. It is not a supported
 Falryn product binary or release. A separate compiled probe confirmed that a
@@ -1796,7 +1860,7 @@ Their implementation breakdown lives in GitHub Issues and the Project.
 - **Current release outcome:** [v0.1 Foundation issues](https://github.com/yogeshprasad098/falryn/issues?q=is%3Aissue%20is%3Aopen%20milestone%3A%22v0.1%20Foundation%22)
 - **First parent outcome:** [#1 Establish the unified runtime and lifecycle](https://github.com/yogeshprasad098/falryn/issues/1)
 - **Current parent outcome:** [#21 Deliver the OpenTUI application shell](https://github.com/yogeshprasad098/falryn/issues/21), in progress with #22, #23, #24, and #26 landed. [#16 Deliver the CLI and headless foundation](https://github.com/yogeshprasad098/falryn/issues/16) remains in progress with #17, #18, #19, and #20 landed.
-- **Next planning action:** implement [#25](https://github.com/yogeshprasad098/falryn/issues/25), the transcript, composer, and activity views that mount into the regions #24 defined and consume the bindings #26 declared.
+- **Next planning action:** continue [#25](https://github.com/yogeshprasad098/falryn/issues/25), in progress with #354 and #355 landed — the transcript block model and the surface that renders it. Its remaining children are [#356](https://github.com/yogeshprasad098/falryn/issues/356) scrollback commit, [#357](https://github.com/yogeshprasad098/falryn/issues/357) the composer, and [#358](https://github.com/yogeshprasad098/falryn/issues/358) activity and status projections.
 
 Which of #1's children are open, and which delivered the behavior recorded
 above, is read from

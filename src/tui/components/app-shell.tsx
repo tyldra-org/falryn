@@ -29,12 +29,14 @@ import { type ReactNode, useMemo, useRef } from "react";
 import { type LayoutDecision, primaryColumns, selectLayout, type Viewport } from "../layout.ts";
 import { createTextCache } from "../text-cache.ts";
 import { resolveTheme, type ThemeRequest } from "../theme/index.ts";
+import type { TranscriptGeometry } from "../transcript-model.ts";
 import type { CommandEntry, ShellModel } from "../view-model.ts";
 import { type Frame, FrameProvider } from "./context.tsx";
 import { OverlayHost } from "./overlay.tsx";
 import { CommandPalette, HelpOverlay } from "./overlay-routes.tsx";
 import { Line } from "./primitives.tsx";
 import { StatusLine } from "./status-line.tsx";
+import { TranscriptView } from "./transcript.tsx";
 import { WorkspaceHeader } from "./workspace-header.tsx";
 
 export type AppShellProps = {
@@ -48,14 +50,13 @@ export type AppShellProps = {
    */
   readonly theme: ThemeRequest;
   /**
-   * The primary region's content.
+   * Reports what the transcript measured, for the layer that dispatches
+   * commands.
    *
-   * `TranscriptView` and `Composer` mount here — they are #25's. Until then the
-   * shell supplies a quiet placeholder rather than this component inventing one,
-   * because an empty region's message is a product decision and not a layout
-   * one.
+   * Optional because a frame rendered from a value alone — every test in
+   * `./frame.test.tsx` — has nothing to report to.
    */
-  readonly children?: ReactNode;
+  readonly onTranscriptGeometry?: (geometry: TranscriptGeometry) => void;
   /**
    * Every command as a row, for the help overlay.
    *
@@ -109,9 +110,10 @@ export function AppShell(props: AppShellProps): ReactNode {
           viewport={viewport}
           layout={layout}
           commandRows={props.commandRows ?? []}
-        >
-          {props.children}
-        </ShellFrame>
+          {...(props.onTranscriptGeometry === undefined
+            ? {}
+            : { onTranscriptGeometry: props.onTranscriptGeometry })}
+        />
       )}
     </FrameProvider>
   );
@@ -122,7 +124,7 @@ function ShellFrame(props: {
   readonly viewport: Viewport;
   readonly layout: Extract<LayoutDecision, { kind: "layout" }>;
   readonly commandRows: readonly CommandEntry[];
-  readonly children?: ReactNode;
+  readonly onTranscriptGeometry?: (geometry: TranscriptGeometry) => void;
 }): ReactNode {
   const { model } = props;
   // Bounded rather than stretched. A `wide` terminal has room for a contextual
@@ -136,7 +138,12 @@ function ShellFrame(props: {
       <WorkspaceHeader model={model.header} />
       <box flexGrow={1} flexDirection="column" width={primary}>
         {model.overlay.kind === "none" ? (
-          props.children
+          <TranscriptView
+            model={model.transcript}
+            {...(props.onTranscriptGeometry === undefined
+              ? {}
+              : { onGeometry: props.onTranscriptGeometry })}
+          />
         ) : (
           <OverlayHost
             route={model.overlay}
