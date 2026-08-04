@@ -69,13 +69,22 @@ function unavailable(reason: string): CommandAvailability {
  *
  * Deliberately a set of capability facts rather than the view model: a command's
  * availability must not depend on what is drawn, only on what exists. Every
- * field here is `false` in this build except `overlayOpen`, and each one is a
- * seam a later issue fills.
+ * field here is `false` in this build except `overlayOpen` and the two the
+ * transcript surface now answers, and each of the rest is a seam a later issue
+ * fills.
  */
 export type CommandState = {
   readonly overlayOpen: boolean;
   readonly hasComposer: boolean;
+  /**
+   * Whether a transcript is mounted with something in it.
+   *
+   * Since #355 this is a fact about the projection rather than a constant. An
+   * empty transcript has no entry to select, expand, or jump to, so its
+   * commands stay unavailable and say why rather than appearing to work.
+   */
   readonly hasTranscript: boolean;
+  /** Whether the mounted content is taller than the region drawing it. */
   readonly hasScrollableContent: boolean;
   readonly hasConfirmation: boolean;
   /** Whether any cancellable work is in flight. Nothing runs work yet. */
@@ -245,25 +254,90 @@ export const SHELL_COMMANDS: readonly ShellCommand[] = [
     context: "transcript",
     defaultBinding: "ctrl+f",
     keywords: ["find", "filter"],
-    availability: (state) =>
-      state.hasTranscript ? AVAILABLE : unavailable("there is no transcript yet"),
+    // Unavailable even once a transcript exists. #355 delivered the surface, not
+    // a search over it, and a command that became available the moment the first
+    // block arrived would answer its key by saying it has no effect — which is
+    // the "appears to work" failure this registry exists to prevent.
+    availability: () => unavailable("there is no transcript search yet"),
   },
   {
     id: "transcript.expand",
     title: "Expand the selected entry",
-    description: "Inspect a tool call or artifact in full.",
+    description: "Inspect a tool call or artifact in full, or collapse it again.",
     context: "transcript",
-    defaultBinding: "enter",
-    keywords: ["inspect", "open", "detail"],
+    // `return` rather than `enter`, and the difference is not cosmetic: the key
+    // parser's canonical name for this key is `return`, and a layer registered
+    // under `enter` is never matched. Every binding here is the parser's own
+    // name so that a declared key is a key that fires — which is the whole
+    // premise of a registry that refuses to advertise what it cannot do.
+    defaultBinding: "return",
+    keywords: ["inspect", "open", "detail", "collapse"],
     availability: (state) =>
       state.hasTranscript ? AVAILABLE : unavailable("there is no transcript yet"),
+  },
+  {
+    id: "transcript.selectPrevious",
+    title: "Select the previous entry",
+    description: "Move the transcript selection one entry towards the start.",
+    context: "transcript",
+    defaultBinding: "up",
+    keywords: ["previous", "move", "entry"],
+    availability: (state) =>
+      state.hasTranscript ? AVAILABLE : unavailable("there is no transcript yet"),
+  },
+  {
+    id: "transcript.selectNext",
+    title: "Select the next entry",
+    description: "Move the transcript selection one entry towards the latest.",
+    context: "transcript",
+    defaultBinding: "down",
+    keywords: ["next", "move", "entry"],
+    availability: (state) =>
+      state.hasTranscript ? AVAILABLE : unavailable("there is no transcript yet"),
+  },
+  {
+    id: "transcript.jumpToLatest",
+    title: "Jump to the latest entry",
+    description: "Follow the transcript again after scrolling away from it.",
+    context: "transcript",
+    // `end` in the transcript layer rather than a key of its own. The scrollable
+    // layer already binds `end` to "go to the end of the view", and for a
+    // transcript the end is the latest — so the narrower layer sharpens what the
+    // key already meant instead of teaching a reader a second one.
+    defaultBinding: "end",
+    keywords: ["latest", "bottom", "follow", "unseen"],
+    availability: (state) =>
+      state.hasTranscript ? AVAILABLE : unavailable("there is no transcript yet"),
+  },
+  {
+    id: "transcript.openArtifact",
+    title: "Open the artifact",
+    description: "Open the artifact an entry's content was clipped from.",
+    context: "transcript",
+    // No default key. The command exists because `transcript.open-artifact` is a
+    // route the projection can return, and a route with no command is an offer
+    // nothing honours — but a key for a viewer that does not exist would be a
+    // second, worse promise.
+    defaultBinding: null,
+    keywords: ["artifact", "open", "export"],
+    availability: () => unavailable("there is no artifact viewer yet"),
+  },
+  {
+    id: "transcript.showDiagnostics",
+    title: "Show the diagnostics",
+    description: "Show the diagnostics behind a failed entry.",
+    context: "transcript",
+    defaultBinding: null,
+    keywords: ["diagnostics", "failure", "why"],
+    availability: () => unavailable("there is no diagnostics view yet"),
   },
   {
     id: "composer.submit",
     title: "Submit",
     description: "Send what is in the composer.",
     context: "composer",
-    defaultBinding: "enter",
+    // The parser's canonical name. See `transcript.expand`.
+    defaultBinding: "return",
     keywords: ["send", "run", "ask"],
     availability: (state) =>
       state.hasComposer ? AVAILABLE : unavailable("there is no composer yet"),
@@ -273,7 +347,7 @@ export const SHELL_COMMANDS: readonly ShellCommand[] = [
     title: "Insert a newline",
     description: "Add a line without submitting.",
     context: "composer",
-    defaultBinding: "shift+enter",
+    defaultBinding: "shift+return",
     keywords: ["newline", "multiline"],
     availability: (state) =>
       state.hasComposer ? AVAILABLE : unavailable("there is no composer yet"),

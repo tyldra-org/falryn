@@ -371,6 +371,79 @@ describe("the design system", () => {
   });
 });
 
+describe("the transcript surface", () => {
+  test("persists no scroll state", async () => {
+    // A scroll position is a property of a reading session. Restoring one from a
+    // previous run would put a reader somewhere they did not leave, and the only
+    // way to be sure it cannot happen is that nothing in this area can write it
+    // anywhere that outlives the process.
+    for (const file of await productFiles()) {
+      if (!file.startsWith("transcript")) {
+        continue;
+      }
+      const source = await readCode(file);
+      for (const forbidden of [
+        /localStorage/,
+        /\bwriteFile\b/,
+        /\bBun\.write\b/,
+        /\bglobalThis\.[A-Za-z_]+\s*=/,
+      ]) {
+        expect({ file, forbidden: forbidden.source, found: forbidden.test(source) }).toEqual({
+          file,
+          forbidden: forbidden.source,
+          found: false,
+        });
+      }
+    }
+  });
+
+  test("re-derives none of the block model it is given", async () => {
+    // The owner boundary #355 names: the surface consumes the projection and the
+    // reducer. A second definition of what a block is, or a second fold of a
+    // stream into blocks, would be a copy that goes stale.
+    for (const file of await productFiles()) {
+      if (!file.startsWith("transcript")) {
+        continue;
+      }
+      const source = await readCode(file);
+      for (const forbidden of [
+        /TRANSCRIPT_BLOCK_KINDS\s*=/,
+        /function reduceTranscript/,
+        /function applyRevision/,
+        /function blockKey/,
+      ]) {
+        expect({ file, forbidden: forbidden.source, found: forbidden.test(source) }).toEqual({
+          file,
+          forbidden: forbidden.source,
+          found: false,
+        });
+      }
+    }
+  });
+
+  test("holds no content of its own, only identities", async () => {
+    // Full content is read from its canonical source every time it is drawn.
+    // The surface's state is keys, which is what the reducer's type says and
+    // what this keeps true of the module that could most easily change it.
+    const surface = await readCode("transcript/surface.ts");
+    expect(surface).toContain("ReadonlySet<string>");
+    expect(surface).not.toMatch(/BoundedText/);
+  });
+
+  test("resolves every expansion route to a registered command", async () => {
+    // A route is a promise the running build has to keep. The walk over the
+    // union lives in `transcript/routes.test.ts`; this asserts the mapping has
+    // exactly one owner, so a second one cannot disagree with it.
+    const owners: string[] = [];
+    for (const file of await productFiles()) {
+      if ((await readCode(file)).includes("function commandForRoute")) {
+        owners.push(file);
+      }
+    }
+    expect(owners).toEqual(["transcript/routes.ts"]);
+  });
+});
+
 describe("the mode contract", () => {
   test("is consulted by the renderer configuration rather than only exported", async () => {
     // #351 in one assertion. `capturesStdout` existed, was exported, was
