@@ -736,6 +736,54 @@ describe("the command palette", () => {
   });
 });
 
+describe("the activity projection", () => {
+  test("is folded by a product caller rather than only by its tests", async () => {
+    // #370, and the same failure #364 recorded one surface over: a correct,
+    // fixture-proved reducer with nothing calling it, behind a rail that
+    // rendered a constant. `reduceActivity` and `resubscribeActivity` were
+    // exported from the presentation barrel and reached only by tests.
+    const callers: string[] = [];
+    for (const file of await productFiles()) {
+      if ((await readCode(file)).includes("reduceActivity(")) {
+        callers.push(file);
+      }
+    }
+    expect(callers).toEqual(["runtime-feed.ts"]);
+    // Both halves. The resume path is what makes a cursor worth carrying, and a
+    // caller that only ever rebuilt would leave it decorative.
+    expect(await readCode("runtime-feed.ts")).toContain("resubscribeActivity(");
+    expect(await readCode("shell.tsx")).toContain("useRuntimeProjection(");
+  });
+
+  test("is read through a feed rather than through the scope tree itself", async () => {
+    // A view holding a `ScopeTree` could cancel a scope. The two modules that
+    // name it are the adapter that narrows it to three read-only questions and
+    // the shell that hands it over; no component sees it at all.
+    const holders: string[] = [];
+    for (const file of await productFiles()) {
+      if (/\bScopeTree\b/.test(await readCode(file))) {
+        holders.push(file);
+      }
+    }
+    expect(holders.toSorted()).toEqual(["runtime-feed.ts", "shell.tsx"]);
+    for (const file of await productFiles()) {
+      if (!file.startsWith("components/")) {
+        continue;
+      }
+      const source = await readCode(file);
+      // The mutating half of the tree's surface. A component that could reach
+      // any of these is a view that can stop work it is only meant to describe.
+      for (const forbidden of [".cancel(", ".complete(", ".acknowledge(", ".recordEffect("]) {
+        expect({ file, forbidden, found: source.includes(forbidden) }).toEqual({
+          file,
+          forbidden,
+          found: false,
+        });
+      }
+    }
+  });
+});
+
 describe("the frame's row arithmetic", () => {
   test("is one function rather than one subtraction per region", async () => {
     // #368. The overlay host kept its own `RESERVED_FRAME_ROWS = 2` — the header

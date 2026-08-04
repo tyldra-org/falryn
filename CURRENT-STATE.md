@@ -1702,11 +1702,14 @@ surface over it, delivered by
 
 **Nothing produces a block yet.** The surface is real and the projection it
 renders is empty on every run, because no agent loop, provider, or tool runner
-emits an event that becomes one. The activity and status projections
-([#358](https://github.com/yogeshprasad098/falryn/issues/358)) do not exist. What
-a user sees today is the transcript's empty state, which names a command the
-build actually runs; every other behavior below is exercised against fixtures and
-a real renderer rather than against live output.
+emits an event that becomes one. The activity rail and the status line are a
+separate case and no longer share it: they are fed from the scope tree and the
+shutdown coordinator the invocation already composed
+([#358](https://github.com/yogeshprasad098/falryn/issues/358) built the
+projection, [#370](https://github.com/yogeshprasad098/falryn/issues/370)
+connected it). What a user sees in the transcript today is its empty state,
+which names a command the build actually runs; every other behavior below is
+exercised against fixtures and a real renderer rather than against live output.
 
 A transcript block is a semantic object, not a log line. Sixteen kinds are
 declared as a closed union, and **five of them have a producer**: `notice`,
@@ -1984,10 +1987,38 @@ The rail keeps every live entry and a bounded tail of settled ones, and reports
 how many it is not showing. Live work is never evicted to make room for finished
 work.
 
-Nothing produces a scope event into a view yet: there is no agent loop attached
-to the shell, so a real run reports `unknown` and an empty rail. The behavior is
-exercised by folding fixture event sequences and mounting the shell with the
-resulting projection.
+The shell reads the runtime it is running inside
+([#370](https://github.com/yogeshprasad098/falryn/issues/370)). Until then the
+projection was correct, fixture-proved, and unreached: `reduceActivity` and
+`resubscribeActivity` had no product caller, the rail rendered the empty value,
+and the status line reported that no runtime was attached while the shell was
+holding a shutdown coordinator its own health module counts as attached — the
+same shape as #364's unreachable matcher, except that this one stated something
+untrue rather than merely doing nothing.
+
+The scope tree and the coordinator reach the projection through a feed of three
+read-only questions: the events so far, a subscription, and what the shutdown
+coordinator says. A view holding the tree could cancel a scope, and a status
+line able to stop work is one that eventually stops the wrong work; a boundary
+control names the two modules allowed to see a `ScopeTree` and refuses any
+component reaching a mutating method.
+
+Subscribing and staying subscribed call different functions. The first read is a
+resubscription — resume from the cursor, or rebuild past one recorded under
+another generation — and every read after it folds onto the projection already
+held, because `resubscribeActivity` starts from an empty entry set by design and
+calling it twice would discard everything applied in between.
+
+What a real run now reports is the runtime's own answer rather than `unknown`:
+the tree's root scope and the invocation under it are both live, so a resting
+session says two operations are running and drops to one when the invocation
+settles. The scheduler, the queue, and the configuration generation are still
+absent and still reported as absent — the honesty #358 built, applied to the
+real answer.
+
+Nothing produces an agent, provider, or tool-runner scope yet, so what the rail
+shows is the shell's own lifecycle rather than work a user asked for. The richer
+sequences are exercised by folding fixture events through the same adapter.
 
 The compiled file is a development bootstrap artifact. It is not a supported
 Falryn product binary or release. A separate compiled probe confirmed that a

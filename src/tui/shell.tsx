@@ -26,7 +26,12 @@
  */
 
 import { createRoot, type Root } from "@opentui/react";
-import { fromRendererFailure, type ShutdownCoordinator } from "../application/index.ts";
+import type { ReactNode } from "react";
+import {
+  fromRendererFailure,
+  type ScopeTree,
+  type ShutdownCoordinator,
+} from "../application/index.ts";
 import {
   type CliStreams,
   type GlobalOptions,
@@ -47,6 +52,7 @@ import {
   type RendererFactory,
   type RendererSession,
 } from "./renderer-session.ts";
+import { type RuntimeFeed, runtimeFeed, useRuntimeProjection } from "./runtime-feed.ts";
 import { selectScreenMode } from "./screen-mode.ts";
 import { shellModel } from "./shell-model.ts";
 import { createTerminalShutdownParticipant } from "./shutdown.ts";
@@ -71,6 +77,15 @@ export type ShellRunRequest = {
    * does.
    */
   readonly shutdown?: ShutdownCoordinator;
+  /**
+   * The scope tree this invocation is running inside.
+   *
+   * Read-only here, and only for the rail: the shell folds its ordered events
+   * into the activity projection. Optional for the same reason `shutdown` is —
+   * a caller that composed no runtime has none — and an absent tree is reported
+   * as nothing attached rather than as nothing happening.
+   */
+  readonly scopes?: ScopeTree;
   /** Supplied by tests, so a shell run needs no terminal and no native library. */
   readonly createRenderer?: RendererFactory;
 };
@@ -227,7 +242,47 @@ async function frameFor(session: RendererSession, request: ShellRunRequest, onEx
   // loop, provider, or tool runner in this build. The surface renders its empty
   // state, which names a command that runs — the placeholder line that used to
   // sit here named nothing and was the filler #355 removed.
-  return <ShellApp theme={theme} model={model} onExit={onExit} />;
+  //
+  // Activity is different, and that difference is #370: the runtime this shell
+  // is running inside does exist, so the rail is fed from it rather than left
+  // empty. `undefined` when the caller composed no scope tree.
+  const feed = runtimeFeed({ scopes: request.scopes, shutdown: request.shutdown });
+
+  return (
+    <LiveShell
+      theme={theme}
+      model={model}
+      onExit={onExit}
+      {...(feed === undefined ? {} : { feed })}
+    />
+  );
+}
+
+/**
+ * The shell, subscribed to the runtime.
+ *
+ * A component rather than a value because the tree is rendered once: `drive`
+ * hands React one element and never hands it another, so anything that changes
+ * during a run has to change from inside the tree. The subscription is here
+ * rather than in `ShellApp` so that component stays something a test can hand a
+ * projection to.
+ */
+function LiveShell(props: {
+  readonly theme: ThemeRequest;
+  readonly model: Parameters<typeof ShellApp>[0]["model"];
+  readonly onExit: () => void;
+  readonly feed?: RuntimeFeed;
+}): ReactNode {
+  const runtime = useRuntimeProjection(props.feed);
+  return (
+    <ShellApp
+      theme={props.theme}
+      model={props.model}
+      onExit={props.onExit}
+      activity={runtime.activity}
+      {...(runtime.shutdown === null ? {} : { shutdown: runtime.shutdown })}
+    />
+  );
 }
 
 /**

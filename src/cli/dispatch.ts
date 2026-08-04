@@ -273,6 +273,11 @@ async function launchShell(
       options: globals,
       environment,
       stop: stopped.signal,
+      // The rail's source. Handed over read-only: the shell folds the tree's
+      // ordered events into its activity projection and never asks it to do
+      // anything. Before #370 nothing supplied this, so the interface reported
+      // that no runtime was attached while running inside one.
+      scopes: governance.scopes,
       ...(governance.shutdown === undefined ? {} : { shutdown: governance.shutdown }),
       ...(options.createRenderer === undefined ? {} : { createRenderer: options.createRenderer }),
     });
