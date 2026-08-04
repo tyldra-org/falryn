@@ -44,7 +44,6 @@
 
 import { afterAll, describe, expect, test } from "bun:test";
 import { stat } from "node:fs/promises";
-import { cpus, release, totalmem } from "node:os";
 import { join } from "node:path";
 
 import {
@@ -84,6 +83,15 @@ import {
   turnId,
 } from "../domain/index.ts";
 import { createHostBlobStore, createSha256Hasher, openBunSqlite } from "../integrations/index.ts";
+import {
+  binarySize,
+  distribution,
+  formatDistribution,
+  MEASURING,
+  mebibytes,
+  report,
+  unmeasured,
+} from "../measurement-fixtures.ts";
 import { createArtifactRepository } from "./artifact-repository.ts";
 import { ARTIFACTS_TABLE } from "./artifact-schema.ts";
 import { createArtifactStore } from "./artifact-store.ts";
@@ -100,9 +108,6 @@ import {
 } from "./schema.ts";
 import { PRODUCT_SCHEMA_VERSION, PRODUCTION_MIGRATIONS } from "./sqlite-migrations.ts";
 import { openSqliteStore, sqliteDatabasePath } from "./sqlite-store.ts";
-
-/** Set by `bun run measure`. Anything else leaves the module visibly skipped. */
-const measuring = process.env.FALRYN_MEASURE === "1";
 
 // ── The declared dataset ────────────────────────────────────────────────────
 //
@@ -141,119 +146,6 @@ const SHORT_BUSY_TIMEOUT_MS = 300;
 const MEASUREMENT_TIMEOUT_MS = 300_000;
 
 afterAll(removeTemporaryRoots);
-
-// ── Reporting ───────────────────────────────────────────────────────────────
-
-type Distribution = {
-  readonly count: number;
-  readonly minMs: number;
-  readonly medianMs: number;
-  readonly p95Ms: number;
-  readonly maxMs: number;
-};
-
-function milliseconds(nanoseconds: number): number {
-  return nanoseconds / 1_000_000;
-}
-
-function rounded(value: number): string {
-  return value.toFixed(3);
-}
-
-/**
- * Median and spread rather than a mean.
- *
- * A mean over a bimodal set is the one summary that hides contention, which is
- * precisely the shape half of these quantities have.
- */
-function distribution(samplesNs: readonly number[]): Distribution {
-  const sorted = [...samplesNs].sort((left, right) => left - right);
-  const middle = Math.floor(sorted.length / 2);
-  const median =
-    sorted.length % 2 === 1
-      ? (sorted[middle] ?? 0)
-      : ((sorted[middle - 1] ?? 0) + (sorted[middle] ?? 0)) / 2;
-  const p95Index = Math.min(sorted.length - 1, Math.ceil(sorted.length * 0.95) - 1);
-  return {
-    count: sorted.length,
-    minMs: milliseconds(sorted[0] ?? 0),
-    medianMs: milliseconds(median),
-    p95Ms: milliseconds(sorted[p95Index] ?? 0),
-    maxMs: milliseconds(sorted[sorted.length - 1] ?? 0),
-  };
-}
-
-function formatDistribution(value: Distribution): string {
-  return [
-    `samples ${value.count}`,
-    `min ${rounded(value.minMs)} ms`,
-    `median ${rounded(value.medianMs)} ms`,
-    `p95 ${rounded(value.p95Ms)} ms`,
-    `max ${rounded(value.maxMs)} ms`,
-  ].join(" | ");
-}
-
-function mebibytes(bytes: number): string {
-  return `${(bytes / (1_024 * 1_024)).toFixed(2)} MiB`;
-}
-
-/** KiB below a mebibyte, so a 64 KiB read is not reported as `0.06 MiB`. */
-function binarySize(bytes: number): string {
-  return bytes < 1_024 * 1_024 ? `${(bytes / 1_024).toFixed(0)} KiB` : mebibytes(bytes);
-}
-
-/** The five qualifiers a recorded performance number has to carry. */
-type Measurement = {
-  readonly quantity: string;
-  readonly against: string;
-  readonly dataset: string;
-  readonly state: "cold" | "warm" | "cold and warm";
-  readonly result: string;
-  readonly notes?: readonly string[];
-};
-
-function platformLine(): string {
-  const model = cpus()[0]?.model ?? "unknown cpu";
-  const cores = cpus().length;
-  return [
-    `${process.platform} ${process.arch} ${release()}`,
-    `${model} (${cores} logical cores)`,
-    `${(totalmem() / (1_024 * 1_024 * 1_024)).toFixed(0)} GiB RAM`,
-    `Bun ${Bun.version}`,
-  ].join(" | ");
-}
-
-function write(line: string): void {
-  process.stdout.write(`${line}\n`);
-}
-
-function report(measurement: Measurement): void {
-  write("");
-  write(`── ${measurement.quantity} ──`);
-  write(`   against   ${measurement.against}`);
-  write(`   dataset   ${measurement.dataset}`);
-  write(`   state     ${measurement.state}`);
-  write(`   platform  ${platformLine()}`);
-  write(`   result    ${measurement.result}`);
-  for (const note of measurement.notes ?? []) {
-    write(`   note      ${note}`);
-  }
-}
-
-/**
- * Records a quantity that could not be measured, with the reason.
- *
- * Then throws it, so the run that could not measure it fails rather than
- * finishing quietly. A missing number that reads as a fast number is the exact
- * failure this module exists to prevent.
- */
-function unmeasured(quantity: string, reason: string): never {
-  write("");
-  write(`── ${quantity} ──`);
-  write(`   result    UNMEASURED`);
-  write(`   reason    ${reason}`);
-  throw new Error(`${quantity} could not be measured: ${reason}`);
-}
 
 // ── Opening ─────────────────────────────────────────────────────────────────
 
@@ -459,7 +351,7 @@ function blobStoreIn(root: LocalPath): BlobStorePort {
 
 // ── The measurements ────────────────────────────────────────────────────────
 
-describe.if(measuring)("persistence resource behavior", () => {
+describe.if(MEASURING)("persistence resource behavior", () => {
   test(
     "measures migration time on a fresh database",
     async () => {
@@ -838,7 +730,7 @@ describe.if(measuring)("persistence resource behavior", () => {
   );
 });
 
-describe.if(!measuring)("persistence resource behavior", () => {
+describe.if(!MEASURING)("persistence resource behavior", () => {
   test.skip("was not measured, because FALRYN_MEASURE is not set — run `bun run measure`", () => {
     // Recorded as skipped rather than silently absent. The measurement is
     // deliberately outside `bun run check` and `bun run ci`: it asserts no
