@@ -26,8 +26,10 @@ import { createDefaultOpenTuiKeymap } from "@opentui/keymap/opentui";
 import { KeymapProvider } from "@opentui/keymap/react";
 import { useRenderer } from "@opentui/react";
 import { type ReactNode, useMemo } from "react";
-import type { TranscriptProjection } from "../../presentation/index.ts";
-import { EMPTY_PROJECTION } from "../../presentation/index.ts";
+import type { ActivityProjection, TranscriptProjection } from "../../presentation/index.ts";
+import { EMPTY_ACTIVITY, EMPTY_PROJECTION, projectHealth } from "../../presentation/index.ts";
+import { statusOfHealth } from "../activity/index.ts";
+import type { ActivityModel } from "../activity-model.ts";
 import { searchCommands } from "../commands.ts";
 import { COMPOSER_FEATURES } from "../composer/index.ts";
 import type { ComposerModel } from "../composer-model.ts";
@@ -43,7 +45,7 @@ import { activeContexts, COMPOSER_REGION, useShellRuntime } from "./shell-runtim
 
 export type ShellAppProps = {
   /** Everything that does not change with interaction: the header, the help prose. */
-  readonly model: Omit<ShellModel, "overlay" | "commands" | "transcript" | "composer">;
+  readonly model: Omit<ShellModel, "overlay" | "commands" | "transcript" | "composer" | "activity">;
   readonly theme: ThemeRequest;
   /** Ends the session. Owned by the invocation's scope, not by this component. */
   readonly onExit: () => void;
@@ -55,6 +57,15 @@ export type ShellAppProps = {
    * the surface an expansion set for blocks that are not in the projection.
    */
   readonly transcript?: TranscriptProjection;
+  /**
+   * What the runtime is doing.
+   *
+   * A projection rather than a model, for the reason the transcript prop gives:
+   * health is derived from it and from the runtime's own reports, and a caller
+   * supplying both could hand the rail a health level that disagrees with the
+   * entries beside it.
+   */
+  readonly activity?: ActivityProjection;
 };
 
 /**
@@ -100,6 +111,25 @@ export function ShellApp(props: ShellAppProps): ReactNode {
     emptyStateCommand: "app.help",
   };
 
+  const activityProjection = props.activity ?? EMPTY_ACTIVITY;
+  const activity: ActivityModel = useMemo(
+    () => ({
+      projection: activityProjection,
+      // Projected once, here, so the rail and the status line cannot disagree
+      // about how the run is going. The other producers are absent in this
+      // build: there is no scheduler, queue, or shutdown to read, and saying so
+      // is what makes the level `unknown` rather than a green tick.
+      health: projectHealth({
+        activity: activityProjection,
+        scheduler: null,
+        queue: null,
+        shutdown: null,
+        configuration: null,
+      }),
+    }),
+    [activityProjection],
+  );
+
   const composer: ComposerModel = {
     state: runtime.state.composer,
     // The live rows again, so the composer's own status line names the key that
@@ -113,10 +143,16 @@ export function ShellApp(props: ShellAppProps): ReactNode {
     ...props.model,
     transcript,
     composer,
+    activity,
     overlay: runtime.state.overlay,
     commands: runtime.state.overlay.kind === "palette" ? rows : [],
     status: {
       ...props.model.status,
+      // The projected health is the resting answer. A refusal or a command's
+      // notice still outranks it below, because the most recent thing that
+      // happened is what a status line is for.
+      status: statusOfHealth(activity.health.level),
+      message: activity.health.headline,
       // A refusal outranks anything a command said, and a notice outranks the
       // resting message: the most recent thing that happened is what a status
       // line is for.

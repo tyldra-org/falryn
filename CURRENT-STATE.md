@@ -1856,6 +1856,64 @@ defect this delivery hit and fixed rather than a hypothetical.
 Nothing can answer a prompt, so no submission is ever accepted in a real session.
 The accepted path is exercised by handing the runtime a port that accepts.
 
+### Activity, status, and projection recovery
+
+The activity rail projects the semantic state the runtime actually owns, and the
+status line projects one health level from it
+([#358](https://github.com/yogeshprasad098/falryn/issues/358)). Both are pure
+data derived in `src/presentation/activity/`; the rail is the one persistent
+contextual surface a `wide` layout gets, and narrower layouts draw none rather
+than a squeezed one.
+
+**Nothing declares a second vocabulary.** `ScopeStatus`, `TerminalOutcome`, and
+`EffectCertainty` are the runtime's and are used unchanged. Every outcome the
+runtime declares reaches a distinct status token, and the check for
+"distinguishable" runs on a monochrome terminal, where colour is unavailable to
+break a tie — the walk is over the runtime's own exported list, so a kind added
+later cannot fall through to a default. An unconfirmed effect outranks the
+outcome that carried it: a scope can complete while something in its subtree left
+an effect nobody observed, and drawing that as success is the failure the outcome
+vocabulary exists to prevent. `cancelling` is its own state rather than a flavour
+of cancelled, because work asked to stop that has not acknowledged is still
+running.
+
+**Health is a precedence, not an aggregate.** Shutting down, then an unconfirmed
+effect, then a failure, then a refusal or expiry, then a cancellation, then live
+work, then idle. A run with three completed scopes and one uncertain effect is
+not "mostly fine", and an average would bury the one fact a reader has to act on.
+`unknown` is a real level: a build with no runtime attached reports it rather
+than reporting idle, because nothing running and nothing able to tell us are
+different statements. It is projected once, by the layer that has every report,
+so the rail and the status line cannot disagree — two components each deriving a
+level from overlapping inputs is exactly how a status line says "idle" beside a
+rail showing a failure.
+
+**Resubscription is a fold from a cursor.** The cursor is a scope event's own
+`order`, monotonic across the whole tree; a wall-clock position could not
+separate two events in the same millisecond, and a cursor that could not would
+replay one or drop one on every resume. Two properties make a resume safe and
+both are asserted: applying a suffix to a projection equals folding the whole
+sequence from nothing, and applying an overlapping range twice changes nothing.
+An overlap is skipped rather than refused, because a resubscribing view cannot
+compute the slice a refusal would make it responsible for. A cursor whose
+generation does not match exactly is rebuilt rather than resumed from, in both
+directions.
+
+That resubscription does not restart the runtime is enforced structurally rather
+than promised: the projection area holds no scope tree, scheduler, or shutdown
+coordinator, and a boundary control asserts it cannot name one. A second control
+asserts no ephemeral view state — focus, scroll, animation — is written anywhere
+that outlives the process.
+
+The rail keeps every live entry and a bounded tail of settled ones, and reports
+how many it is not showing. Live work is never evicted to make room for finished
+work.
+
+Nothing produces a scope event into a view yet: there is no agent loop attached
+to the shell, so a real run reports `unknown` and an empty rail. The behavior is
+exercised by folding fixture event sequences and mounting the shell with the
+resulting projection.
+
 The compiled file is a development bootstrap artifact. It is not a supported
 Falryn product binary or release. A separate compiled probe confirmed that a
 `SIGINT` delivered to a Bun standalone executable reaches the runtime lifecycle,
@@ -1965,7 +2023,7 @@ Their implementation breakdown lives in GitHub Issues and the Project.
 - **Current release outcome:** [v0.1 Foundation issues](https://github.com/yogeshprasad098/falryn/issues?q=is%3Aissue%20is%3Aopen%20milestone%3A%22v0.1%20Foundation%22)
 - **First parent outcome:** [#1 Establish the unified runtime and lifecycle](https://github.com/yogeshprasad098/falryn/issues/1)
 - **Current parent outcome:** [#21 Deliver the OpenTUI application shell](https://github.com/yogeshprasad098/falryn/issues/21), in progress with #22, #23, #24, and #26 landed. [#16 Deliver the CLI and headless foundation](https://github.com/yogeshprasad098/falryn/issues/16) remains in progress with #17, #18, #19, and #20 landed.
-- **Next planning action:** continue [#25](https://github.com/yogeshprasad098/falryn/issues/25), in progress with #354, #355, #356, and #357 landed — the transcript block model, the surface that renders it, the scrollback commit path, and the composer. Its one remaining child is [#358](https://github.com/yogeshprasad098/falryn/issues/358) activity and status projections.
+- **Next planning action:** verify [#25](https://github.com/yogeshprasad098/falryn/issues/25). Every required child has landed — #354 the transcript block model, #355 the surface that renders it, #356 the scrollback commit path, #357 the composer, and #358 the activity and status projections — so what remains is the parent's own integrated acceptance.
 
 Which of #1's children are open, and which delivered the behavior recorded
 above, is read from
