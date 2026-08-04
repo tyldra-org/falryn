@@ -26,7 +26,11 @@ import { createDefaultOpenTuiKeymap } from "@opentui/keymap/opentui";
 import { KeymapProvider } from "@opentui/keymap/react";
 import { useRenderer } from "@opentui/react";
 import { type ReactNode, useMemo } from "react";
-import type { ActivityProjection, TranscriptProjection } from "../../presentation/index.ts";
+import type {
+  ActivityProjection,
+  ShutdownState,
+  TranscriptProjection,
+} from "../../presentation/index.ts";
 import { EMPTY_ACTIVITY, EMPTY_PROJECTION, projectHealth } from "../../presentation/index.ts";
 import { statusOfHealth } from "../activity/index.ts";
 import type { ActivityModel } from "../activity-model.ts";
@@ -66,6 +70,16 @@ export type ShellAppProps = {
    * entries beside it.
    */
   readonly activity?: ActivityProjection;
+  /**
+   * What the shutdown coordinator says, when one is attached.
+   *
+   * The narrow two-field state rather than the coordinator, because a component
+   * holding the coordinator could start a shutdown, and a status line that can
+   * tear the process down is a status line that eventually will. `undefined`
+   * means no coordinator — which `projectHealth` reports as nothing attached
+   * rather than as nothing wrong.
+   */
+  readonly shutdown?: ShutdownState;
 };
 
 /**
@@ -112,22 +126,24 @@ export function ShellApp(props: ShellAppProps): ReactNode {
   };
 
   const activityProjection = props.activity ?? EMPTY_ACTIVITY;
+  const shutdown = props.shutdown ?? null;
   const activity: ActivityModel = useMemo(
     () => ({
       projection: activityProjection,
       // Projected once, here, so the rail and the status line cannot disagree
-      // about how the run is going. The other producers are absent in this
-      // build: there is no scheduler, queue, or shutdown to read, and saying so
-      // is what makes the level `unknown` rather than a green tick.
+      // about how the run is going. The scheduler and the queue are still
+      // absent in this build and stay `null` — saying so is what makes their
+      // half of the answer honest rather than a green tick — while the scopes
+      // and the shutdown coordinator are what the shell actually holds.
       health: projectHealth({
         activity: activityProjection,
         scheduler: null,
         queue: null,
-        shutdown: null,
+        shutdown,
         configuration: null,
       }),
     }),
-    [activityProjection],
+    [activityProjection, shutdown],
   );
 
   const composer: ComposerModel = {
