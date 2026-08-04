@@ -15,21 +15,12 @@
  * it. Two failures, both silent, and a status line promising `^C exit`.
  */
 
-import { afterEach, describe, expect, test } from "bun:test";
-import { createTestRenderer, type TestRendererSetup } from "@opentui/core/testing";
-import { createRoot } from "@opentui/react";
+import { describe, expect, test } from "bun:test";
+import { mount, type Rendered } from "../harness.tsx";
 import type { ThemeRequest } from "../theme/index.ts";
 import type { ShellModel } from "../view-model.ts";
 import { known, unavailable } from "../view-model.ts";
 import { ShellApp } from "./shell-app.tsx";
-
-const live: TestRendererSetup[] = [];
-
-afterEach(() => {
-  while (live.length > 0) {
-    live.pop()?.renderer.destroy();
-  }
-});
 
 const THEME: ThemeRequest = {
   variant: "dark",
@@ -50,13 +41,8 @@ const MODEL: Omit<ShellModel, "overlay" | "commands" | "transcript" | "composer"
   help: [{ title: "Leaving", body: "Ctrl+C ends the session." }],
 };
 
-type Session = {
-  readonly setup: TestRendererSetup;
-  /** A printable character, with modifiers. */
-  press(name: string, modifiers?: { ctrl?: boolean; shift?: boolean }): Promise<void>;
-  /** A named key. `pressKey` types its argument as text, so these have their own methods. */
-  pressNamed(key: "escape" | "tab", modifiers?: { shift?: boolean }): Promise<void>;
-  frame(): Promise<string>;
+/** A mounted shell, plus the count of times it asked to leave. */
+type Session = Rendered & {
   exits(): number;
 };
 
@@ -69,17 +55,9 @@ type Session = {
  * would be measuring the footer rather than the interface. The mode is a
  * property of the terminal, not of the interaction being tested.
  */
-async function mount(rows = 30): Promise<Session> {
+async function open(rows = 30): Promise<Session> {
   let exits = 0;
-  const setup = await createTestRenderer({
-    width: 100,
-    height: rows,
-    screenMode: "alternate-screen",
-    consoleMode: "disabled",
-  });
-  live.push(setup);
-
-  createRoot(setup.renderer).render(
+  const shell = await mount(
     <ShellApp
       theme={THEME}
       model={MODEL}
@@ -87,47 +65,18 @@ async function mount(rows = 30): Promise<Session> {
         exits += 1;
       }}
     />,
+    { shape: { columns: 100, rows }, screenMode: "alternate-screen" },
   );
-  await settle(setup);
-
-  return {
-    setup,
-    async press(name, modifiers = {}) {
-      setup.mockInput.pressKey(name, modifiers);
-      await settle(setup);
-    },
-    async pressNamed(key, modifiers = {}) {
-      // `pressKey("escape")` types the six characters of the word. The named
-      // keys have dedicated methods because they are escape sequences, not text.
-      if (key === "escape") {
-        setup.mockInput.pressEscape(modifiers);
-      } else {
-        setup.mockInput.pressTab(modifiers);
-      }
-      await settle(setup);
-    },
-    frame: async () => {
-      await settle(setup);
-      return setup.captureCharFrame();
-    },
-    exits: () => exits,
-  };
-}
-
-/** Yields to the loop until React has committed and the renderer has drawn. */
-async function settle(setup: TestRendererSetup): Promise<void> {
-  for (let attempt = 0; attempt < 8; attempt += 1) {
-    await Bun.sleep(10);
-    await setup.flush();
-  }
+  await shell.frame("/work/falryn");
+  return Object.assign(shell, { exits: () => exits });
 }
 
 describe("the shell at rest", () => {
   test("advertises only keys that currently run", async () => {
     // A hint for an unavailable command is a promise the interface cannot keep,
     // and the status line is the worst place to make one.
-    const session = await mount();
-    const frame = await session.frame();
+    using shell = await open();
+    const frame = await shell.frame();
     expect(frame).toContain("^C");
     expect(frame).toContain("/work/falryn");
   });
@@ -137,25 +86,24 @@ describe("exit", () => {
   test("responds to Ctrl+C", async () => {
     // The defect, as a test. In raw mode this key is a byte and not a signal, so
     // nothing outside the keymap can act on it.
-    const session = await mount();
-    expect(session.exits()).toBe(0);
-    await session.press("c", { ctrl: true });
-    expect(session.exits()).toBe(1);
+    using shell = await open();
+    expect(shell.exits()).toBe(0);
+    await shell.press("c", { ctrl: true });
+    expect(shell.exits()).toBe(1);
   });
 
   test("does not fire on an ordinary key", async () => {
-    const session = await mount();
-    await session.press("a");
-    await session.press("x");
-    expect(session.exits()).toBe(0);
+    using shell = await open();
+    await shell.press("a");
+    await shell.press("x");
+    expect(shell.exits()).toBe(0);
   });
 });
 
 describe("help", () => {
   test("opens on its key and lists commands with their keys", async () => {
-    const session = await mount();
-    await session.press("?");
-    const frame = await session.frame();
+    using shell = await open();
+    const frame = await shell.press("?");
     expect(frame).toContain("Help");
     expect(frame).toContain("ctrl+c");
     expect(frame).toContain("Exit");
@@ -167,9 +115,8 @@ describe("help", () => {
     // commands sit above the composer's, and a 30-row terminal reports the rest
     // as "6 more" rather than drawing them. That elision is correct behavior, so
     // the terminal grows instead of the assertion moving to a nearer row.
-    const session = await mount(40);
-    await session.press("?");
-    const frame = await session.frame();
+    using shell = await open(40);
+    const frame = await shell.press("?");
     expect(frame).toContain("the composer is not focused");
     // The transcript's commands are unavailable for their own reason, and it is
     // a different sentence rather than a shared "unavailable".
@@ -178,12 +125,10 @@ describe("help", () => {
   });
 
   test("closes on escape and gives the frame back", async () => {
-    const session = await mount();
-    await session.press("?");
-    expect(await session.frame()).toContain("Help");
+    using shell = await open();
+    expect(await shell.press("?")).toContain("Help");
 
-    await session.pressNamed("escape");
-    const frame = await session.frame();
+    const frame = await shell.pressEscape();
     expect(frame).not.toContain("Close overlay");
     expect(frame).toContain("/work/falryn");
   });
@@ -191,16 +136,14 @@ describe("help", () => {
 
 describe("the command palette", () => {
   test("opens on its key", async () => {
-    const session = await mount();
-    await session.press("p", { ctrl: true });
-    expect(await session.frame()).toContain("Commands");
+    using shell = await open();
+    expect(await shell.press("p", { ctrl: true })).toContain("Commands");
   });
 
   test("closes on escape", async () => {
-    const session = await mount();
-    await session.press("p", { ctrl: true });
-    await session.pressNamed("escape");
-    expect(await session.frame()).toContain("/work/falryn");
+    using shell = await open();
+    await shell.press("p", { ctrl: true });
+    expect(await shell.pressEscape()).toContain("/work/falryn");
   });
 });
 
@@ -208,18 +151,17 @@ describe("escape", () => {
   test("closes an overlay when one is open and does not exit", async () => {
     // The layering, at the level a user experiences it: the same key means two
     // things and the narrower one wins while its surface exists.
-    const session = await mount();
-    await session.press("?");
-    await session.pressNamed("escape");
-    expect(session.exits()).toBe(0);
+    using shell = await open();
+    await shell.press("?");
+    await shell.pressEscape();
+    expect(shell.exits()).toBe(0);
   });
 
   test("reports that there is nothing to cancel when no overlay is open", async () => {
     // `app.cancel` owns escape at rest and is unavailable, so pressing it says
     // so rather than doing nothing — which is what makes a key feel broken.
-    const session = await mount();
-    await session.pressNamed("escape");
-    expect(await session.frame()).toContain("nothing is running");
+    using shell = await open();
+    expect(await shell.pressEscape()).toContain("nothing is running");
   });
 });
 
@@ -227,23 +169,18 @@ describe("the keyboard-only journey", () => {
   test("opens help, closes it, opens the palette, closes it, and exits", async () => {
     // The completion proof: every essential action of this shell reached with
     // the keyboard alone, in one sequence, against a real renderer.
-    const session = await mount();
+    using shell = await open();
 
-    await session.press("?");
-    expect(await session.frame()).toContain("Help");
+    expect(await shell.press("?")).toContain("Help");
+    expect(await shell.pressEscape()).not.toContain("Close overlay");
+    expect(await shell.press("p", { ctrl: true })).toContain("Commands");
 
-    await session.pressNamed("escape");
-    expect(await session.frame()).not.toContain("Close overlay");
+    await shell.pressEscape();
+    await shell.pressTab();
+    await shell.pressTab({ shift: true });
 
-    await session.press("p", { ctrl: true });
-    expect(await session.frame()).toContain("Commands");
-
-    await session.pressNamed("escape");
-    await session.pressNamed("tab");
-    await session.pressNamed("tab", { shift: true });
-
-    expect(session.exits()).toBe(0);
-    await session.press("c", { ctrl: true });
-    expect(session.exits()).toBe(1);
+    expect(shell.exits()).toBe(0);
+    await shell.press("c", { ctrl: true });
+    expect(shell.exits()).toBe(1);
   });
 });

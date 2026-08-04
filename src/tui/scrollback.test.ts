@@ -15,21 +15,13 @@
  * would arrive through.
  */
 
-import { afterEach, describe, expect, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { Writable } from "node:stream";
-import { createTestRenderer, type TestRendererSetup } from "@opentui/core/testing";
 import type { TranscriptBlock } from "../presentation/index.ts";
 import { blockKey, complete } from "../presentation/index.ts";
 import { everyBlockKind, FIXTURE_AT } from "../presentation/transcript/fixtures.ts";
+import { type Live, openRenderer } from "./harness.tsx";
 import { createScrollbackAdapter, type ScrollbackRenderer } from "./scrollback.ts";
-
-const live: TestRendererSetup[] = [];
-
-afterEach(() => {
-  while (live.length > 0) {
-    live.pop()?.renderer.destroy();
-  }
-});
 
 /**
  * A stdout the test holds a reference to.
@@ -57,20 +49,17 @@ function captureStdout(columns: number, rows: number): NodeJS.WriteStream {
 
 async function renderer(
   mode: "split-footer" | "alternate-screen" | "main-screen" = "split-footer",
-): Promise<TestRendererSetup & { readonly out: NodeJS.WriteStream }> {
+): Promise<Live & { readonly out: NodeJS.WriteStream }> {
   const out = captureStdout(40, 12);
-  const setup = await createTestRenderer({
-    width: 40,
-    height: 12,
+  const setup = await openRenderer({
+    shape: { columns: 40, rows: 12 },
     stdout: out,
     screenMode: mode,
     // Legal only with `split-footer`; OpenTUI rejects the pairing outright
     // otherwise, which is the same reason `rendererConfigFor` derives it.
     externalOutputMode: mode === "split-footer" ? "capture-stdout" : "passthrough",
-    consoleMode: "disabled",
   });
-  live.push(setup);
-  return { ...setup, out };
+  return Object.assign(setup, { out });
 }
 
 /**
@@ -118,13 +107,13 @@ const name: ScrollbackRenderer = (block) => [
 ];
 
 /** The text of every commit the recorder has, in commit order. */
-function committedText(setup: TestRendererSetup): readonly string[] {
+function committedText(setup: Live): readonly string[] {
   return setup.externalOutput.take().flatMap((commit) => commit.rows.map((row) => row.trimEnd()));
 }
 
 describe("committing finalized entries", () => {
   test("commits each finalized block once, in semantic order", async () => {
-    const setup = await renderer();
+    using setup = await renderer();
     const adapter = createScrollbackAdapter(setup.renderer);
     const blocks = [entry("one", "final", 0), entry("two", "final", 1)];
 
@@ -139,7 +128,7 @@ describe("committing finalized entries", () => {
     // The acceptance criterion, and the failure it guards is duplication rather
     // than absence: a render loop observes the same projection many times, and
     // scrollback has no way to take a row back.
-    const setup = await renderer();
+    using setup = await renderer();
     const adapter = createScrollbackAdapter(setup.renderer);
     const blocks = [entry("one", "final", 0)];
 
@@ -152,7 +141,7 @@ describe("committing finalized entries", () => {
   });
 
   test("commits only the entries a growing projection added", async () => {
-    const setup = await renderer();
+    using setup = await renderer();
     const adapter = createScrollbackAdapter(setup.renderer);
     const first = [entry("one", "final", 0)];
 
@@ -174,7 +163,7 @@ describe("an entry that is still streaming", () => {
     // Scrollback is append-only. Committing the finished entry behind an
     // unfinished one would place it before its predecessor permanently, and
     // there is no later frame in which to correct the order.
-    const setup = await renderer();
+    using setup = await renderer();
     const adapter = createScrollbackAdapter(setup.renderer);
 
     const report = await adapter.commit({
@@ -191,7 +180,7 @@ describe("an entry that is still streaming", () => {
     // The second acceptance criterion. The settling path renders into a backing
     // buffer and copies rows out only after `settle()` — and the entry that was
     // waiting behind it still lands after it.
-    const setup = await renderer();
+    using setup = await renderer();
     const adapter = createScrollbackAdapter(setup.renderer);
 
     await adapter.commit({
@@ -219,7 +208,7 @@ describe("an entry that is still streaming", () => {
     // The ordering the serializing chain exists for. A surface has to settle
     // before it can commit and a writer does not, so without one chain the
     // atomic entry would overtake the streamed one it is supposed to follow.
-    const setup = await renderer();
+    using setup = await renderer();
     const adapter = createScrollbackAdapter(setup.renderer);
 
     await adapter.commit({ blocks: [entry("streamed", "in-progress", 0)], render: name });
@@ -237,7 +226,7 @@ describe("ordering against captured stdout", () => {
     // One FIFO, asserted rather than assumed. Both sources produce styled
     // snapshots that the native side emits alongside the footer repaint, and
     // the recorder observes that single queue.
-    const setup = await renderer();
+    using setup = await renderer();
     const adapter = createScrollbackAdapter(setup.renderer);
 
     await adapter.commit({ blocks: [entry("before", "final", 0)], render: name });
@@ -259,7 +248,7 @@ describe("a mode that draws into the whole terminal", () => {
     // A no-op rather than a refusal. OpenTUI's scrollback APIs throw when the
     // mode is wrong, and an adapter that let that reach the render loop would
     // take the interface down for a mode change the user asked for.
-    const setup = await renderer("alternate-screen");
+    using setup = await renderer("alternate-screen");
     const adapter = createScrollbackAdapter(setup.renderer);
 
     const report = await adapter.commit({
@@ -272,7 +261,7 @@ describe("a mode that draws into the whole terminal", () => {
   });
 
   test("commits nothing in main-screen", async () => {
-    const setup = await renderer("main-screen");
+    using setup = await renderer("main-screen");
     const adapter = createScrollbackAdapter(setup.renderer);
 
     const report = await adapter.commit({ blocks: [entry("one", "final", 0)], render: name });
@@ -281,7 +270,7 @@ describe("a mode that draws into the whole terminal", () => {
   });
 
   test("commits nothing after it is destroyed", async () => {
-    const setup = await renderer();
+    using setup = await renderer();
     const adapter = createScrollbackAdapter(setup.renderer);
     adapter.destroy();
 
@@ -297,7 +286,7 @@ describe("a commit the renderer refused", () => {
     // A renderer that refused one entry is not a scrollback that stops working
     // for the rest of the session, and a shell that stopped drawing because a
     // row could not be committed would be a worse outcome than the missing row.
-    const setup = await renderer();
+    using setup = await renderer();
     const adapter = createScrollbackAdapter(setup.renderer);
     const refuse: ScrollbackRenderer = () => {
       throw new Error("no lines for this block");

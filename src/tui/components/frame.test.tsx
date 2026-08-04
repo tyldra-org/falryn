@@ -13,12 +13,18 @@
  * "every".
  */
 
-import { afterEach, describe, expect, test } from "bun:test";
-import { createTestRenderer, type TestRendererSetup } from "@opentui/core/testing";
-import { createRoot } from "@opentui/react";
+import { describe, expect, test } from "bun:test";
 import type { ReactNode } from "react";
-import { COLOR_LEVELS, SYMBOL_SUPPORTS } from "../../domain/index.ts";
+import { COLOR_LEVELS, displayWidth, graphemes, SYMBOL_SUPPORTS } from "../../domain/index.ts";
 import { EMPTY_EDITOR } from "../composer/index.ts";
+import {
+  frameOf,
+  hasPainted,
+  mount,
+  openRenderer,
+  type TerminalShape,
+  UNPAINTED,
+} from "../harness.tsx";
 import { STANDARD_COLUMNS, WIDE_COLUMNS } from "../layout.ts";
 import {
   EMPTY_ACTIVITY_MODEL,
@@ -36,16 +42,6 @@ import {
 import type { ShellModel } from "../view-model.ts";
 import { known, unavailable } from "../view-model.ts";
 import { AppShell } from "./app-shell.tsx";
-
-const live: TestRendererSetup[] = [];
-
-afterEach(() => {
-  // Unconditionally: a leaked renderer is process-wide state, so it fails the
-  // next test rather than this one.
-  while (live.length > 0) {
-    live.pop()?.renderer.destroy();
-  }
-});
 
 const THEME: ThemeRequest = {
   variant: "dark",
@@ -79,83 +75,26 @@ function model(overrides: Partial<ShellModel> = {}): ShellModel {
 }
 
 /**
- * The cell a test renderer's buffer holds before anything has drawn into it.
- *
- * `U+0A00`, and the whole of #372 is that it is not whitespace. The old
- * predicate asked `frame.trim() !== ""`, which an entirely unpainted buffer
- * satisfies — so a rendered check could be handed the buffer as its answer,
- * failing at random where the assertion was positive and *passing against
- * nothing* where it was negative.
- */
-const UNPAINTED = "਀";
-
-/**
- * Whether a captured buffer is a frame the shell drew.
- *
- * Two conditions, and both are needed. A buffer holding an unpainted cell
- * anywhere has not finished being drawn into — the renderer paints the whole
- * region, so a partial capture is a capture taken mid-pass rather than a frame
- * with a gap in it. A buffer of nothing but spaces is painted and empty, which
- * is not a frame either.
- *
- * Exported shape rather than an inline comparison so `#372`'s own reproduction
- * can hand it a buffer directly, which is the only way to check a settle
- * predicate without waiting for the race it exists to lose.
- */
-function hasPainted(frame: string): boolean {
-  return frame.trim() !== "" && !frame.includes(UNPAINTED);
-}
-
-/** How long a mount is given before the wait is a failure rather than a delay. */
-const SETTLE_ATTEMPTS = 60;
-const SETTLE_INTERVAL_MS = 5;
-
-/**
  * Mounts a tree and returns the characters it drew.
  *
- * The sleep-and-flush loop is deliberate: React commits on a microtask and the
- * test renderer's own frame predicate advances passes without yielding to the
- * host loop, so a wait that never hands the loop back polls a buffer nothing has
- * drawn into.
- *
- * It throws rather than returning the last capture when nothing settles. A
- * helper that hands back whatever the buffer happened to hold turns "the shell
- * never painted" into "the assertion below failed", which is a different defect
- * reported in a different place.
+ * A thin name over the harness, kept because this file renders a tree per check
+ * and `render(node, size, until)` reads as what it is. The settle predicate,
+ * the teardown, and the throw all live in `../harness.tsx` now — #374 — so the
+ * eight other rendered files settle by the same rule this one does.
  */
-async function render(
+function render(
   node: ReactNode,
-  size: { columns: number; rows: number } = { columns: 100, rows: 30 },
+  size: TerminalShape = { columns: 100, rows: 30 },
   /**
    * Text to wait for, when the first painted frame is not the final one.
    *
    * An animated reveal commits several frames, and the early ones are a panel
-   * two rows tall with nothing in it yet. A test that took the first painted
+   * two rows tall with nothing in it yet. A check that took the first painted
    * frame would be asserting on the middle of a transition.
    */
   until?: string,
 ): Promise<string> {
-  const setup = await createTestRenderer({
-    width: size.columns,
-    height: size.rows,
-    consoleMode: "disabled",
-  });
-  live.push(setup);
-  createRoot(setup.renderer).render(node);
-  let last = "";
-  for (let attempt = 0; attempt < SETTLE_ATTEMPTS; attempt += 1) {
-    await Bun.sleep(SETTLE_INTERVAL_MS);
-    await setup.flush();
-    last = setup.captureCharFrame();
-    if (hasPainted(last) && (until === undefined || last.includes(until))) {
-      return last;
-    }
-  }
-  throw new Error(
-    `the frame never settled after ${SETTLE_ATTEMPTS * SETTLE_INTERVAL_MS}ms` +
-      ` (${size.columns}×${size.rows}, painted: ${hasPainted(last)}` +
-      `${until === undefined ? "" : `, waiting for ${JSON.stringify(until)}`})`,
-  );
+  return frameOf(node, { shape: size }, until);
 }
 
 /** An open palette, spelled once because the sweeps below open it many times. */
@@ -164,7 +103,7 @@ const PALETTE_OPEN = { kind: "palette", query: EMPTY_EDITOR } as const;
 function shell(
   overrides: Partial<ShellModel> = {},
   theme: Partial<ThemeRequest> = {},
-  size?: { columns: number; rows: number },
+  size?: TerminalShape,
   until?: string,
 ): Promise<string> {
   return render(<AppShell theme={{ ...THEME, ...theme }} model={model(overrides)} />, size, until);
@@ -177,8 +116,7 @@ describe("the settle predicate", () => {
     // The old predicate — `frame.trim() !== ""` — is *true* for that buffer, so
     // it was handed back as a settled frame whenever a capture won the race
     // against the first paint. Roughly one full-suite run in four.
-    const setup = await createTestRenderer({ width: 20, height: 4, consoleMode: "disabled" });
-    live.push(setup);
+    using setup = await openRenderer({ shape: { columns: 20, rows: 4 } });
     const unpainted = setup.captureCharFrame();
 
     expect(unpainted.trim() !== "").toBe(true);
@@ -549,17 +487,19 @@ describe("reduced motion", () => {
     // Not "eventually the same frame". The first commit is already final, which
     // is what the zero-duration mapping buys — and it is asserted by rendering
     // with no waiting beyond the first flush.
-    const setup = await createTestRenderer({ width: 100, height: 30, consoleMode: "disabled" });
-    live.push(setup);
-    createRoot(setup.renderer).render(
+    using shell = await mount(
       <AppShell
         theme={{ ...THEME, reducedMotion: true }}
         model={model({ overlay: { kind: "help" }, help: [{ title: "Leaving", body: "b" }] })}
       />,
+      { shape: { columns: 100, rows: 30 } },
     );
+    // Deliberately not the harness's settle: this check's whole claim is that no
+    // waiting is needed, so waiting for the frame to stop changing would delete
+    // what it asserts.
     await Bun.sleep(20);
-    await setup.flush();
-    expect(setup.captureCharFrame()).toContain("Leaving");
+    await shell.setup.flush();
+    expect(shell.setup.captureCharFrame()).toContain("Leaving");
   });
 
   test("reaches the same content as an animated reveal", async () => {
@@ -586,13 +526,8 @@ async function revealFrames(
   size: { columns: number; rows: number },
   arrivedWhen: string,
 ): Promise<{ readonly during: readonly string[]; readonly arrived: string }> {
-  const setup = await createTestRenderer({
-    width: size.columns,
-    height: size.rows,
-    consoleMode: "disabled",
-  });
-  live.push(setup);
-  createRoot(setup.renderer).render(node);
+  using shell = await mount(node, { shape: size });
+  const setup = shell.setup;
   const during: string[] = [];
   for (let attempt = 0; attempt < 80; attempt += 1) {
     await Bun.sleep(4);
@@ -707,47 +642,35 @@ describe("resize", () => {
     // The preservation contract. The overlay route, the theme, and the cache all
     // live above the measurement, so a narrower terminal changes the arrangement
     // and cannot change what is open.
-    const setup = await createTestRenderer({
-      width: WIDE_COLUMNS,
-      height: 30,
-      consoleMode: "disabled",
-    });
-    live.push(setup);
-    createRoot(setup.renderer).render(
+    using shell = await mount(
       <AppShell
         theme={THEME}
         model={model({ overlay: { kind: "help" }, help: [{ title: "Leaving", body: "b" }] })}
       />,
+      { shape: { columns: WIDE_COLUMNS, rows: 30 } },
     );
-    await Bun.sleep(30);
-    await setup.flush();
-    expect(setup.captureCharFrame()).toContain("Leaving");
+    expect(await shell.frame("Leaving")).toContain("Leaving");
 
-    setup.resize(44, 12);
-    await Bun.sleep(30);
-    await setup.flush();
-    const narrow = setup.captureCharFrame();
+    const narrow = await shell.resize(44, 12);
     expect(narrow).toContain("Leaving");
     // And the arrangement did change: compact drops the header's labels.
     expect(narrow).not.toContain("workspace");
   });
 
   test("survives a storm without losing what was open", async () => {
-    const setup = await createTestRenderer({ width: 100, height: 30, consoleMode: "disabled" });
-    live.push(setup);
-    createRoot(setup.renderer).render(
+    using shell = await mount(
       <AppShell
         theme={THEME}
         model={model({ overlay: { kind: "help" }, help: [{ title: "Leaving", body: "b" }] })}
       />,
+      { shape: { columns: 100, rows: 30 } },
     );
-    await Bun.sleep(30);
+    await shell.frame("Leaving");
+
     for (let width = 40; width <= 120; width += 4) {
-      setup.resize(width, 24);
+      shell.setup.resize(width, 24);
     }
-    await Bun.sleep(40);
-    await setup.flush();
-    expect(setup.captureCharFrame()).toContain("Leaving");
+    expect(await shell.frame("Leaving")).toContain("Leaving");
   });
 });
 
@@ -784,5 +707,124 @@ describe("long unbroken content", () => {
     );
     expect(frame).toContain("...");
     expect(frame).not.toContain("…");
+  });
+});
+
+/**
+ * Text a terminal has to be asked about rather than reasoned about.
+ *
+ * `../../domain/text-display.test.ts` proves the arithmetic — grapheme
+ * segmentation, display width, truncation — and proves it against strings. None
+ * of it is ever checked against a buffer, and a buffer is where the arithmetic
+ * is actually spent: the width a component computed decides how many cells the
+ * renderer is asked for, and the two agreeing is an assumption until something
+ * measures it.
+ *
+ * Measuring it found two things, both outside this file's ownership and both
+ * filed rather than fixed here: the width disagreement recorded below
+ * (https://github.com/yogeshprasad098/falryn/issues/377), and a status message
+ * reaching the buffer with its control sequence intact where the header and the
+ * transcript escape theirs
+ * (https://github.com/yogeshprasad098/falryn/issues/378). The escaping the two
+ * other surfaces do is asserted in this file and in `./transcript.test.tsx`.
+ */
+const REPERTOIRE = [
+  { name: "ascii", text: "plain text" },
+  { name: "latin combining", text: "e\u0301te\u0301 cafe\u0301" },
+  { name: "wide", text: "日本語のテキスト" },
+  { name: "emoji", text: "\u{1f600}\u{1f680}\u{1f4be}" },
+  { name: "mixed", text: "a\u{1f600}中e\u0301z" },
+  // A lone high surrogate: not a character at all, and the kind of thing that
+  // arrives from a provider or a file rather than from a keyboard.
+  { name: "lone surrogate", text: "before\ud800after" },
+] as const;
+
+/** A status line carrying exactly the text under test. */
+function saying(text: string): Partial<ShellModel> {
+  return { status: { status: "informational", message: text, hints: [] } };
+}
+
+describe("text through a painted frame", () => {
+  test("never draws a row wider than the terminal, in any repertoire", async () => {
+    // The claim the arithmetic exists to support, measured on the buffer rather
+    // than on the string that was handed to it. A grapheme occupies at least
+    // one cell, so a row with more graphemes than columns is a row that
+    // overflowed — and overflow in a terminal is not clipping, it is the next
+    // row being drawn over.
+    for (const { name, text } of REPERTOIRE) {
+      const columns = 48;
+      const frame = await shell(saying(text), {}, { columns, rows: 12 });
+      for (const row of frame.split("\n")) {
+        expect({ name, wide: graphemes(row).length > columns }).toEqual({ name, wide: false });
+      }
+    }
+  });
+
+  test("draws the same number of rows it was given, whatever is in them", async () => {
+    // Wrapping is the other half of overflow: content that wraps where nothing
+    // expected it to pushes every row below it down and off the terminal.
+    for (const { name, text } of REPERTOIRE) {
+      const rows = 12;
+      const frame = await shell(saying(text.repeat(8)), {}, { columns: 40, rows });
+      expect({ name, drawn: frame.split("\n").length <= rows + 1 }).toEqual({ name, drawn: true });
+    }
+  });
+
+  test("draws in the ASCII repertoire everywhere it draws in the Unicode one", async () => {
+    // A terminal that cannot render the symbol set gets a frame, not a gap. The
+    // status text is the reader's, so it survives both; what changes is the
+    // interface's own marks.
+    for (const { name, text } of REPERTOIRE) {
+      const unicode = await shell(saying(text), { symbols: "unicode" }, { columns: 60, rows: 12 });
+      const ascii = await shell(saying(text), { symbols: "ascii" }, { columns: 60, rows: 12 });
+      expect({ name, drew: hasPainted(unicode) && hasPainted(ascii) }).toEqual({
+        name,
+        drew: true,
+      });
+      expect({ name, workspace: ascii.includes("/work/falryn") }).toEqual({
+        name,
+        workspace: true,
+      });
+    }
+  });
+
+  test("agrees with the renderer about width, except on joined emoji", async () => {
+    // Recorded rather than asserted away. `displayWidth` counts each emoji in a
+    // zero-width-joiner sequence, so it calls `👩‍💻` four cells wide where the
+    // renderer draws it in two. The direction is the safe one — an
+    // overestimate truncates a character early and never overdraws — but it is
+    // a real disagreement between the arithmetic and the terminal, and it
+    // belongs to `src/domain/text-display.ts` rather than to this file.
+    //
+    // See https://github.com/yogeshprasad098/falryn/issues/377.
+    expect(displayWidth("\u{1f469}\u200d\u{1f4bb}")).toBe(4);
+    expect(displayWidth("\u{1f600}")).toBe(2);
+    expect(graphemes("\u{1f469}\u200d\u{1f4bb}").length).toBe(1);
+  });
+});
+
+describe("a resize storm", () => {
+  test("crosses every layout class and settles drawing the frame", async () => {
+    // Not the debounce, which `../renderer-session.test.ts` owns as a unit. This
+    // is the whole tree re-laying out across compact, standard, and wide in one
+    // burst, ending at a shape whose frame is then asserted — because the
+    // failure this guards is a layout that survives each individual resize and
+    // not the sequence.
+    using shell = await mount(<AppShell theme={THEME} model={model()} />, {
+      shape: { columns: WIDE_COLUMNS, rows: 30 },
+    });
+    await shell.frame("/work/falryn");
+
+    for (let pass = 0; pass < 3; pass += 1) {
+      for (const columns of [MINIMUM_COLUMNS, 40, STANDARD_COLUMNS, 90, WIDE_COLUMNS, 30]) {
+        shell.setup.resize(columns, columns < 40 ? MINIMUM_ROWS : 24);
+      }
+    }
+
+    const settled = await shell.resize(STANDARD_COLUMNS, 24);
+    expect(settled).toContain("/work/falryn");
+    for (const row of settled.split("\n")) {
+      expect(graphemes(row).length).toBeLessThanOrEqual(STANDARD_COLUMNS);
+    }
   });
 });

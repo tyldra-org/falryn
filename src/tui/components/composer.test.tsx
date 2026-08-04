@@ -12,20 +12,11 @@
  * that held its own text in component state.
  */
 
-import { afterEach, describe, expect, test } from "bun:test";
-import { createTestRenderer, type TestRendererSetup } from "@opentui/core/testing";
-import { createRoot } from "@opentui/react";
+import { describe, expect, test } from "bun:test";
+import { mount, type Rendered, type TerminalShape } from "../harness.tsx";
 import type { ThemeRequest } from "../theme/index.ts";
 import { known, type ShellModel, unavailable } from "../view-model.ts";
 import { ShellApp } from "./shell-app.tsx";
-
-const live: TestRendererSetup[] = [];
-
-afterEach(() => {
-  while (live.length > 0) {
-    live.pop()?.renderer.destroy();
-  }
-});
 
 const THEME: ThemeRequest = {
   variant: "dark",
@@ -43,7 +34,7 @@ const MODEL: Omit<ShellModel, "overlay" | "commands" | "transcript" | "composer"
     model: unavailable("no provider yet"),
   },
   status: { status: "informational", message: "Nothing is running.", hints: [] },
-  help: [{ title: "Leaving", body: "Ctrl+C ends the session." }],
+  help: [{ title: "Leaving", body: "Ctrl+C ends the shell." }],
 };
 
 /**
@@ -59,99 +50,46 @@ const SEQUENCES = {
 
 type NamedKey = keyof typeof SEQUENCES;
 
-type Session = {
-  press(name: string, modifiers?: { ctrl?: boolean; shift?: boolean }): Promise<void>;
-  pressNamed(key: NamedKey): Promise<void>;
-  backspace(): Promise<void>;
-  escape(): Promise<void>;
-  type(text: string): Promise<void>;
+/** A mounted shell whose composer these checks type into. */
+type Session = Rendered & {
   /** Two tabs: header, then the primary region, then the composer. */
-  focusComposer(): Promise<void>;
-  frame(): Promise<string>;
-  resize(columns: number, rows: number): Promise<void>;
+  focusComposer(): Promise<string>;
+  pressNamed(key: NamedKey): Promise<string>;
 };
 
-async function mount(size = { columns: 100, rows: 24 }): Promise<Session> {
-  const setup = await createTestRenderer({
-    width: size.columns,
-    height: size.rows,
+async function open(shape: TerminalShape = { columns: 100, rows: 24 }): Promise<Session> {
+  const shell = await mount(<ShellApp theme={THEME} model={MODEL} onExit={() => {}} />, {
+    shape,
     screenMode: "alternate-screen",
-    consoleMode: "disabled",
   });
-  live.push(setup);
-
-  createRoot(setup.renderer).render(<ShellApp theme={THEME} model={MODEL} onExit={() => {}} />);
-  await settle(setup);
-
-  const session: Session = {
-    async press(name, modifiers = {}) {
-      setup.mockInput.pressKey(name, modifiers);
-      await settle(setup);
-    },
-    async pressNamed(key) {
-      setup.mockInput.pressKey(SEQUENCES[key]);
-      await settle(setup);
-    },
-    async escape() {
-      // The mock's own helper, for the reason `pressKey` cannot be used: the
-      // key is an escape byte and `pressKey("escape")` types the six letters
-      // of the word, which asserts that nothing happened and passes.
-      setup.mockInput.pressEscape();
-      await settle(setup);
-    },
-    async backspace() {
-      // The mock's own helper. Backspace is a control byte rather than a word,
-      // and a test that typed the letters would assert that nothing happened
-      // and pass.
-      setup.mockInput.pressBackspace();
-      await settle(setup);
-    },
-    async type(text) {
-      for (const character of text) {
-        setup.mockInput.pressKey(character);
-      }
-      await settle(setup);
-    },
+  await shell.frame();
+  const pressNamed = (key: NamedKey): Promise<string> => shell.press(SEQUENCES[key]);
+  return Object.assign(shell, {
+    pressNamed,
     async focusComposer() {
-      await session.pressNamed("tab");
-      await session.pressNamed("tab");
+      await pressNamed("tab");
+      return await pressNamed("tab");
     },
-    frame: async () => {
-      await settle(setup);
-      return setup.captureCharFrame();
-    },
-    async resize(columns, rows) {
-      setup.resize(columns, rows);
-      await settle(setup);
-    },
-  };
-  return session;
-}
-
-async function settle(setup: TestRendererSetup): Promise<void> {
-  for (let attempt = 0; attempt < 8; attempt += 1) {
-    await Bun.sleep(10);
-    await setup.flush();
-  }
+  });
 }
 
 describe("focus", () => {
   test("is required before the composer takes any key", async () => {
     // The "background regions do not consume keys intended for the focused
     // control" rule, in the one place it is easiest to break.
-    const session = await mount();
-    await session.type("ignored");
-    expect(await session.frame()).not.toContain("ignored");
+    using shell = await open();
+    await shell.type("ignored");
+    expect(await shell.frame()).not.toContain("ignored");
 
-    await session.focusComposer();
-    await session.type("typed");
-    expect(await session.frame()).toContain("typed");
+    await shell.focusComposer();
+    await shell.type("typed");
+    expect(await shell.frame()).toContain("typed");
   });
 
   test("is stated in words rather than only as a border", async () => {
-    const session = await mount();
-    await session.focusComposer();
-    expect(await session.frame()).toContain("focused");
+    using shell = await open();
+    await shell.focusComposer();
+    expect(await shell.frame()).toContain("focused");
   });
 });
 
@@ -161,23 +99,23 @@ describe("typing", () => {
     // bare single-character bindings are withheld, because a layer that claims a
     // key means the control never sees it — which would make a question mark
     // impossible to type into a prompt.
-    const session = await mount();
-    await session.focusComposer();
-    await session.type("why?");
-    const frame = await session.frame();
+    using shell = await open();
+    await shell.focusComposer();
+    await shell.type("why?");
+    const frame = await shell.frame();
     expect(frame).toContain("why?");
     // Help did not open over it.
-    expect(frame).not.toContain("Ctrl+C ends the session.");
+    expect(frame).not.toContain("Ctrl+C ends the shell.");
   });
 
   test("deletes a whole character rather than half of one", async () => {
-    const session = await mount();
-    await session.focusComposer();
-    await session.type("ok\u00e9");
-    expect(await session.frame()).toContain("ok\u00e9");
+    using shell = await open();
+    await shell.focusComposer();
+    await shell.type("ok\u00e9");
+    expect(await shell.frame()).toContain("ok\u00e9");
 
-    await session.backspace();
-    const frame = await session.frame();
+    await shell.pressBackspace();
+    const frame = await shell.frame();
     // One backspace removed the whole accented character, its base letter
     // included. The failure a code-point cursor produces is `ok` followed by a
     // stranded accent, which is why the assertion names the composed form.
@@ -189,11 +127,11 @@ describe("typing", () => {
     // The rule withholds bare characters only, so every modified and named
     // binding keeps working while typing — including the two commands that may
     // never be unbound.
-    const session = await mount();
-    await session.focusComposer();
-    await session.type("draft");
-    await session.press("p", { ctrl: true });
-    expect(await session.frame()).toContain("Command palette");
+    using shell = await open();
+    await shell.focusComposer();
+    await shell.type("draft");
+    await shell.press("p", { ctrl: true });
+    expect(await shell.frame()).toContain("Command palette");
   });
 });
 
@@ -201,12 +139,12 @@ describe("submitting", () => {
   test("reports an unavailable outcome and keeps the draft", async () => {
     // The acceptance criterion, end to end: the key is bound, the port refuses,
     // the reason names the owning issue, and the text is still there.
-    const session = await mount();
-    await session.focusComposer();
-    await session.type("ask something");
-    await session.pressNamed("enter");
+    using shell = await open();
+    await shell.focusComposer();
+    await shell.type("ask something");
+    await shell.pressNamed("enter");
 
-    const frame = await session.frame();
+    const frame = await shell.frame();
     expect(frame).toContain("Not sent");
     expect(frame).toContain("#33");
     expect(frame).toContain("ask something");
@@ -215,37 +153,37 @@ describe("submitting", () => {
 
 describe("the draft", () => {
   test("survives an overlay opening and closing", async () => {
-    const session = await mount();
-    await session.focusComposer();
-    await session.type("kept");
+    using shell = await open();
+    await shell.focusComposer();
+    await shell.type("kept");
 
     // Focus leaves the composer, so the bare `?` binding is registered again.
-    await session.pressNamed("tab");
-    await session.press("?");
-    expect(await session.frame()).toContain("Esc closes this");
+    await shell.pressNamed("tab");
+    await shell.press("?");
+    expect(await shell.frame()).toContain("Esc closes this");
 
-    await session.escape();
-    const frame = await session.frame();
+    await shell.pressEscape();
+    const frame = await shell.frame();
     expect(frame).not.toContain("Esc closes this");
     expect(frame).toContain("kept");
   });
 
   test("survives a resize", async () => {
-    const session = await mount();
-    await session.focusComposer();
-    await session.type("kept across a resize");
+    using shell = await open();
+    await shell.focusComposer();
+    await shell.type("kept across a resize");
 
-    await session.resize(60, 20);
-    expect(await session.frame()).toContain("kept across a resize");
+    await shell.resize(60, 20);
+    expect(await shell.frame()).toContain("kept across a resize");
 
-    await session.resize(100, 24);
-    expect(await session.frame()).toContain("kept across a resize");
+    await shell.resize(100, 24);
+    expect(await shell.frame()).toContain("kept across a resize");
   });
 });
 
 describe("what is not here", () => {
   test("names the declared gaps rather than half-building them", async () => {
-    const session = await mount();
-    expect(await session.frame()).toContain("Not here yet");
+    using shell = await open();
+    expect(await shell.frame()).toContain("Not here yet");
   });
 });

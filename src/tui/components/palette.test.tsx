@@ -12,10 +12,9 @@
  * panel's own border, which only a frame can show.
  */
 
-import { afterEach, describe, expect, test } from "bun:test";
-import { createTestRenderer, type TestRendererSetup } from "@opentui/core/testing";
-import { createRoot } from "@opentui/react";
+import { describe, expect, test } from "bun:test";
 import { SHELL_COMMANDS } from "../commands.ts";
+import { frameOf, mount, type Rendered, type TerminalShape } from "../harness.tsx";
 import { createTextCache } from "../text-cache.ts";
 import type { ThemeRequest } from "../theme/index.ts";
 import { resolveTheme } from "../theme/index.ts";
@@ -24,14 +23,6 @@ import { known, type ShellModel, unavailable } from "../view-model.ts";
 import { type Frame, FrameProvider } from "./context.tsx";
 import { CommandPalette } from "./overlay-routes.tsx";
 import { ShellApp } from "./shell-app.tsx";
-
-const live: TestRendererSetup[] = [];
-
-afterEach(() => {
-  while (live.length > 0) {
-    live.pop()?.renderer.destroy();
-  }
-});
 
 const THEME: ThemeRequest = {
   variant: "dark",
@@ -49,78 +40,38 @@ const MODEL: Omit<ShellModel, "overlay" | "commands" | "transcript" | "composer"
     model: unavailable("no provider yet"),
   },
   status: { status: "informational", message: "Nothing is running.", hints: [] },
-  help: [{ title: "Leaving", body: "Ctrl+C ends the session." }],
+  help: [{ title: "Leaving", body: "Ctrl+C ends the shell." }],
 };
 
-type Session = {
-  openPalette(): Promise<void>;
-  type(text: string): Promise<void>;
-  backspace(): Promise<void>;
-  escape(): Promise<void>;
-  frame(): Promise<string>;
+/** A mounted shell whose palette these checks open and type into. */
+type Session = Rendered & {
+  openPalette(): Promise<string>;
 };
 
-async function mount(size = { columns: 100, rows: 24 }): Promise<Session> {
-  const setup = await createTestRenderer({
-    width: size.columns,
-    height: size.rows,
+async function open(shape: TerminalShape = { columns: 100, rows: 24 }): Promise<Session> {
+  const shell = await mount(<ShellApp theme={THEME} model={MODEL} onExit={() => {}} />, {
+    shape,
     screenMode: "alternate-screen",
-    consoleMode: "disabled",
   });
-  live.push(setup);
-
-  createRoot(setup.renderer).render(<ShellApp theme={THEME} model={MODEL} onExit={() => {}} />);
-  await settle(setup);
-
-  const session: Session = {
-    async openPalette() {
-      setup.mockInput.pressKey("p", { ctrl: true });
-      await settle(setup);
-    },
-    async type(text) {
-      for (const character of text) {
-        setup.mockInput.pressKey(character);
-      }
-      await settle(setup);
-    },
-    async backspace() {
-      setup.mockInput.pressBackspace();
-      await settle(setup);
-    },
-    async escape() {
-      // The mock's own helper: `pressKey("escape")` would type the six letters
-      // of the word, which asserts that nothing happened and passes.
-      setup.mockInput.pressEscape();
-      await settle(setup);
-    },
-    frame: async () => {
-      await settle(setup);
-      return setup.captureCharFrame();
-    },
-  };
-  return session;
-}
-
-async function settle(setup: TestRendererSetup): Promise<void> {
-  for (let attempt = 0; attempt < 8; attempt += 1) {
-    await Bun.sleep(10);
-    await setup.flush();
-  }
+  await shell.frame();
+  return Object.assign(shell, {
+    openPalette: () => shell.press("p", { ctrl: true }),
+  });
 }
 
 describe("typing into the palette", () => {
   test("narrows the listed commands", async () => {
     // The acceptance criterion, and the whole point of the issue: before this,
     // the palette was handed a literal empty query and typing narrowed nothing.
-    const session = await mount();
-    await session.openPalette();
+    using shell = await open();
+    await shell.openPalette();
 
-    const everything = await session.frame();
+    const everything = await shell.frame();
     expect(everything).toContain("Command palette");
     expect(everything).toContain("Exit");
 
-    await session.type("exit");
-    const narrowed = await session.frame();
+    await shell.type("exit");
+    const narrowed = await shell.frame();
     expect(narrowed).toContain("Search: exit");
     expect(narrowed).toContain("Exit");
     expect(narrowed).not.toContain("Command palette");
@@ -130,11 +81,11 @@ describe("typing into the palette", () => {
     // Someone reading the published reference types `app.help`, and a palette
     // that searched display text alone would not find what the documentation
     // told them to look for. The matcher already did this; now it is reachable.
-    const session = await mount();
-    await session.openPalette();
-    await session.type("app.help");
+    using shell = await open();
+    await shell.openPalette();
+    await shell.type("app.help");
 
-    const frame = await session.frame();
+    const frame = await shell.frame();
     expect(frame).toContain("Help");
     expect(frame).not.toContain("Exit");
   });
@@ -142,21 +93,21 @@ describe("typing into the palette", () => {
   test("says nothing matches rather than showing an empty panel", async () => {
     // The branch that was unreachable before this issue. A blank region is a
     // rendering gap the reader has to interpret; a sentence is an answer.
-    const session = await mount();
-    await session.openPalette();
-    await session.type("zzzznotacommand");
+    using shell = await open();
+    await shell.openPalette();
+    await shell.type("zzzznotacommand");
 
-    expect(await session.frame()).toContain("Nothing matches that.");
+    expect(await shell.frame()).toContain("Nothing matches that.");
   });
 
   test("widens again when characters are removed", async () => {
-    const session = await mount();
-    await session.openPalette();
-    await session.type("exitx");
-    expect(await session.frame()).toContain("Nothing matches that.");
+    using shell = await open();
+    await shell.openPalette();
+    await shell.type("exitx");
+    expect(await shell.frame()).toContain("Nothing matches that.");
 
-    await session.backspace();
-    const frame = await session.frame();
+    await shell.pressBackspace();
+    const frame = await shell.frame();
     expect(frame).toContain("Search: exit");
     expect(frame).toContain("Exit");
   });
@@ -165,14 +116,14 @@ describe("typing into the palette", () => {
     // `?` opens help from every other surface. The palette is a focused text
     // control, so bare single-character bindings are withheld while it is open —
     // otherwise a question mark could never be searched for.
-    const session = await mount();
-    await session.openPalette();
-    await session.type("?");
+    using shell = await open();
+    await shell.openPalette();
+    await shell.type("?");
 
-    const frame = await session.frame();
+    const frame = await shell.frame();
     expect(frame).toContain("Search: ?");
     // Help did not open over it.
-    expect(frame).not.toContain("Ctrl+C ends the session.");
+    expect(frame).not.toContain("Ctrl+C ends the shell.");
   });
 });
 
@@ -181,16 +132,16 @@ describe("closing the palette", () => {
     // True by construction rather than by bookkeeping: the query lives on the
     // route, and closing replaces the route. There is nowhere for a stale search
     // to survive.
-    const session = await mount();
-    await session.openPalette();
-    await session.type("exit");
-    expect(await session.frame()).toContain("Search: exit");
+    using shell = await open();
+    await shell.openPalette();
+    await shell.type("exit");
+    expect(await shell.frame()).toContain("Search: exit");
 
-    await session.escape();
-    expect(await session.frame()).not.toContain("Search: exit");
+    await shell.pressEscape();
+    expect(await shell.frame()).not.toContain("Search: exit");
 
-    await session.openPalette();
-    const reopened = await session.frame();
+    await shell.openPalette();
+    const reopened = await shell.frame();
     expect(reopened).toContain("Type to search commands.");
     expect(reopened).not.toContain("Search: exit");
   });
@@ -198,12 +149,12 @@ describe("closing the palette", () => {
   test("still leaves escape bound while the search has focus", async () => {
     // The withholding rule is narrow: only bare characters are withheld, so the
     // way out of the overlay keeps working while typing.
-    const session = await mount();
-    await session.openPalette();
-    await session.type("e");
-    await session.escape();
+    using shell = await open();
+    await shell.openPalette();
+    await shell.type("e");
+    await shell.pressEscape();
 
-    expect(await session.frame()).not.toContain("Type to search commands.");
+    expect(await shell.frame()).not.toContain("Type to search commands.");
   });
 });
 
@@ -222,9 +173,9 @@ describe("the row budget", () => {
     // `viewport.rows - 2`, a reserve that predates the composer; it is sized from
     // the primary region now, so the same panel needs a taller terminal. The
     // budget being asserted is unchanged.
-    const session = await mount({ columns: 100, rows: 19 });
-    await session.openPalette();
-    const frame = await session.frame();
+    using shell = await open({ columns: 100, rows: 19 });
+    await shell.openPalette();
+    const frame = await shell.frame();
 
     expect(frame).toContain("more — narrow the search");
     // The last row the corrected budget has room for. With the off-by-one it is
@@ -235,11 +186,11 @@ describe("the row budget", () => {
   });
 
   test("drops the notice when nothing is hidden", async () => {
-    const session = await mount();
-    await session.openPalette();
-    await session.type("exit");
+    using shell = await open();
+    await shell.openPalette();
+    await shell.type("exit");
 
-    expect(await session.frame()).not.toContain("more — narrow the search");
+    expect(await shell.frame()).not.toContain("more — narrow the search");
   });
 });
 
@@ -279,22 +230,13 @@ async function palette(
   commands: readonly CommandEntry[] = EVERY_COMMAND,
   query = "",
 ): Promise<readonly string[]> {
-  const setup = await createTestRenderer({
-    width: 80,
-    height: 12,
-    screenMode: "alternate-screen",
-    consoleMode: "disabled",
-  });
-  live.push(setup);
-
-  createRoot(setup.renderer).render(
+  const frame = await frameOf(
     <FrameProvider value={FRAME}>
       <CommandPalette commands={commands} query={query} rows={rows} />
     </FrameProvider>,
+    { shape: { columns: 80, rows: 12 }, screenMode: "alternate-screen" },
   );
-  await settle(setup);
-  return setup
-    .captureCharFrame()
+  return frame
     .split("\n")
     .map((line) => line.trimEnd())
     .filter((line) => line !== "");
