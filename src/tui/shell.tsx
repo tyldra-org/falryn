@@ -38,7 +38,7 @@ import {
   resolveColor,
   writeDiagnosticLine,
 } from "../cli/index.ts";
-import type { EnvironmentPort, FalrynError } from "../domain/index.ts";
+import type { ConfigurationValues, EnvironmentPort, FalrynError } from "../domain/index.ts";
 import {
   prefersConservativeSymbols,
   prefersReducedMotion,
@@ -65,6 +65,22 @@ export type ShellRunRequest = {
   readonly options: GlobalOptions;
   /** Read for the appearance preferences, and for nothing else. */
   readonly environment: EnvironmentPort;
+  /**
+   * The settings this run opens with.
+   *
+   * Values rather than a service, and that direction is the contract: the shell
+   * is handed what it needs and cannot reach back for more, so nothing in the
+   * interface can read a key that was never resolved on the launch path. It is
+   * also `ConfigurationValues` rather than a projected settings object, because
+   * no interface key is declared yet and a projection would be an invented shape
+   * with one field in it.
+   *
+   * Optional for the reason `shutdown` and `scopes` are: a caller that composed
+   * no service graph has nothing to resolve. An absent value is not the same as
+   * an empty one — a caller that resolved settings and found none passes the
+   * registry's defaults, which are complete by construction.
+   */
+  readonly configuration?: ConfigurationValues;
   /** Aborts when the invocation's scope stops: an interrupt, or a deadline. */
   readonly stop: AbortSignal;
   /**
