@@ -78,10 +78,7 @@ describe("the measurement report shape", () => {
         consumers.push(file);
       }
     }
-    expect(consumers.toSorted()).toEqual([
-      "data/measurement.test.ts",
-      "tui/measurement.test.tsx",
-    ]);
+    expect(consumers.toSorted()).toEqual(["data/measurement.test.ts", "tui/measurement.test.tsx"]);
   });
 
   test("declares the gate once, so an ungated measurement cannot exist", async () => {
