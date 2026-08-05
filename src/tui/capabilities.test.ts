@@ -45,7 +45,7 @@ function record(
 }
 
 const OBSERVED: RendererCapabilities = {
-  screenMode: "split-footer",
+  screenMode: "alternate-screen",
   columns: 100,
   rows: 30,
   mouse: false,
@@ -140,21 +140,21 @@ describe("hints", () => {
 });
 
 describe("the override", () => {
-  test("reads off, a mode, or nothing", () => {
+  test("reads off or nothing", () => {
     expect(readShellOverride(createStaticEnvironment({}))).toEqual({ kind: "none" });
     expect(readShellOverride(createStaticEnvironment({ FALRYN_TUI: "off" }))).toEqual({
       kind: "off",
     });
     expect(readShellOverride(createStaticEnvironment({ FALRYN_TUI: "main-screen" }))).toEqual({
-      kind: "mode",
-      mode: "main-screen",
+      kind: "unrecognized",
+      value: "main-screen",
     });
   });
 
   test("is case- and whitespace-insensitive", () => {
     expect(readShellOverride(createStaticEnvironment({ FALRYN_TUI: "  Split-Footer " }))).toEqual({
-      kind: "mode",
-      mode: "split-footer",
+      kind: "unrecognized",
+      value: "split-footer",
     });
   });
 
@@ -168,12 +168,7 @@ describe("the override", () => {
   });
 
   test("names every value it accepts, so a diagnostic can list them", () => {
-    expect([...SHELL_OVERRIDE_VALUES].sort()).toEqual([
-      "alternate-screen",
-      "main-screen",
-      "off",
-      "split-footer",
-    ]);
+    expect(SHELL_OVERRIDE_VALUES).toEqual(["off"]);
   });
 });
 

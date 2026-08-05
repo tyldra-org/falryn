@@ -49,11 +49,8 @@ type Session = Rendered & {
 /**
  * A mounted shell that keys can be pressed into.
  *
- * `alternate-screen` rather than the default `split-footer`, and the reason is
- * worth stating: in split-footer the live region is a six-row footer, so an
- * overlay has almost nothing to draw into and an assertion about its content
- * would be measuring the footer rather than the interface. The mode is a
- * property of the terminal, not of the interaction being tested.
+ * The full screen, which is Falryn's only interactive mode. The test exercises
+ * the same viewport contract a user receives.
  */
 async function open(rows = 30): Promise<Session> {
   let exits = 0;
@@ -65,7 +62,7 @@ async function open(rows = 30): Promise<Session> {
         exits += 1;
       }}
     />,
-    { shape: { columns: 100, rows }, screenMode: "alternate-screen" },
+    { shape: { columns: 100, rows } },
   );
   await shell.frame("/work/falryn");
   return Object.assign(shell, { exits: () => exits });

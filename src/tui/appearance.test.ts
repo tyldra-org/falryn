@@ -64,7 +64,7 @@ describe("the theme request", () => {
   });
 
   test("is absent when unset or unrecognized", () => {
-    // Unlike the screen-mode override, an unrecognized theme needs no diagnostic
+    // Unlike the interactive-shell override, an unrecognized theme needs no diagnostic
     // of its own: getting the default palette is visible on its own.
     expect(requestedVariant(createStaticEnvironment({}))).toBe(null);
     expect(requestedVariant(createStaticEnvironment({ [THEME_VARIABLE]: "solarized" }))).toBe(null);

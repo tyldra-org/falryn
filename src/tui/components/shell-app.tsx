@@ -50,7 +50,6 @@ import type { TranscriptModel } from "../transcript-model.ts";
 import type { ShellModel } from "../view-model.ts";
 import { AppShell } from "./app-shell.tsx";
 import { KeymapBridge } from "./keymap-bridge.tsx";
-import { useOverlayRoom } from "./overlay-room.tsx";
 import { ShellErrorBoundary } from "./shell-error-boundary.tsx";
 import { activeContexts, COMPOSER_REGION, useShellRuntime } from "./shell-runtime.tsx";
 
@@ -118,9 +117,6 @@ export function ShellApp(props: ShellAppProps): ReactNode {
   const transcriptKeys = useMemo(() => keysOf(projection.blocks), [projection.blocks]);
 
   const runtime = useShellRuntime({ onExit: props.onExit, transcriptKeys });
-  // The footer grows to hold an overlay and shrinks back when it closes. See
-  // `./overlay-room.tsx` for why this is not a constant.
-  useOverlayRoom(runtime.state.overlay.kind !== "none");
   const activityProjection = props.activity ?? EMPTY_ACTIVITY;
   const shutdown = props.shutdown ?? null;
   const activity: ActivityModel = useMemo(

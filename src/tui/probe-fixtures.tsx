@@ -36,7 +36,6 @@ import {
   outcomeAfterFlush,
   resolveExitCode,
   writeDiagnosticLine,
-  writeResultLine,
 } from "../cli/index.ts";
 import type { TerminalOutcome } from "../domain/index.ts";
 
@@ -48,8 +47,6 @@ export const PROBE_SCENARIOS = [
   "native",
   /** `@opentui/keymap` with no renderer at all — the thing #26's tests depend on. */
   "keymap",
-  /** What split-footer capture does to a process whose stdout `src/cli/streams.ts` owns. */
-  "split-footer",
   /** Whether a renderer told to install no signal handling installs none. */
   "signals",
 ] as const;
@@ -65,9 +62,6 @@ export const PROBE_MARKER = "falryn.tui.probe";
 
 /** The text the React tree renders, and the only thing the frame assertion looks for. */
 export const FRAME_CONTENT = "falryn-probe-frame";
-
-/** Written through the result stream while a split-footer renderer is capturing it. */
-export const CAPTURED_LINE = "falryn-probe-captured";
 
 type Observation = Record<string, boolean | number | string | readonly string[]>;
 
@@ -196,47 +190,6 @@ function observeKeymap(): Observation {
 }
 
 /**
- * What split-footer capture does to Falryn's own result stream.
- *
- * #23 prefers split-footer because the transcript is the product. The question
- * it cannot answer from documentation is what `capture-stdout` means for a
- * process whose stdout `src/cli/streams.ts` already owns — so this writes a real
- * line through the real result port while the renderer is active and reports
- * whether the renderer took it. The answer decides whether the shell may keep
- * the CLI's stdout contract while a renderer is up.
- */
-async function observeSplitFooter(streams: CliStreams): Promise<Observation> {
-  const commits: number[] = [];
-  const renderer = await createCliRenderer({
-    ...GOVERNED_BY_FALRYN,
-    screenMode: "split-footer",
-    externalOutputMode: "capture-stdout",
-    footerHeight: 4,
-  });
-  try {
-    renderer.on("external_output", (event: { rowColumns: number }) => {
-      commits.push(event.rowColumns);
-    });
-    // The real result port, while the renderer is up. Nothing here reaches a
-    // handle directly, so what happens to this line is what would happen to a
-    // command's output with a shell running above it.
-    writeResultLine(streams, CAPTURED_LINE);
-    renderer.requestRender();
-    await renderer.idle();
-    return {
-      scenario: "split-footer",
-      screenMode: renderer.screenMode,
-      externalOutputMode: renderer.externalOutputMode,
-      // The finding #23 needs: split-footer capture does not leave the CLI's
-      // stdout contract alone, it takes ownership of it.
-      resultLineCaptured: commits.length > 0,
-      commits: commits.length,
-    };
-  } finally {
-    renderer.destroy();
-  }
-}
-
 /**
  * Whether the renderer leaves signal handling alone when told to.
  *
@@ -265,7 +218,7 @@ async function observeSignals(): Promise<Observation> {
   };
 }
 
-async function observe(scenario: ProbeScenario, streams: CliStreams): Promise<Observation> {
+async function observe(scenario: ProbeScenario): Promise<Observation> {
   switch (scenario) {
     case "frame":
       return observeFrame();
@@ -273,8 +226,6 @@ async function observe(scenario: ProbeScenario, streams: CliStreams): Promise<Ob
       return observeNative();
     case "keymap":
       return observeKeymap();
-    case "split-footer":
-      return observeSplitFooter(streams);
     case "signals":
       return observeSignals();
   }
@@ -291,12 +242,10 @@ async function runProbe(requested: string, streams: CliStreams): Promise<ExitCod
 
   let outcome: TerminalOutcome = { kind: "completed" };
   try {
-    const observation = await observe(requested, streams);
+    const observation = await observe(requested);
     // On the diagnostic handle, not the result handle. A live renderer owns
     // stdout and fills it with frame and terminal-setup bytes; stderr is the one
-    // handle it never touches, which is what makes the observation readable —
-    // and it leaves stdout free to be the *subject* of the split-footer
-    // scenario rather than its reporting channel.
+    // handle it never touches, which makes the observation readable.
     writeDiagnosticLine(streams, JSON.stringify({ marker: PROBE_MARKER, ...observation }));
   } catch (cause) {
     // Reported rather than thrown, so a packaging failure arrives as a readable

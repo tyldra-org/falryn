@@ -60,8 +60,8 @@ const CSI = `${ESC}\\[`;
  * sides be wrong together.
  */
 const RESTORED = {
+  alternateScreen: "\u001b[?1049l",
   cursorVisible: "\u001b[?25h",
-  scrollRegionReset: "\u001b[r",
   bracketedPasteOff: "\u001b[?2004l",
 } as const;
 
@@ -331,10 +331,8 @@ async function runOnPty(
  *
  * Each run costs a pseudo-terminal, a compiled process, and several seconds of a
  * native renderer starting, so five spawns of the same interrupt path tell us
- * nothing extra and make the file flaky. But *one size in one mode* is how #351
- * shipped: `alternate-screen` could not construct at all, and this file only
- * ever ran the 100×30 terminal that selects `split-footer`. Every distinct
- * *mode* now gets a run, which is a different axis from repeating a path.
+ * nothing extra and make the file flaky. The shared run below exercises the
+ * one interactive configuration users can receive.
  */
 describe.if(runnable)("the compiled shell on a real terminal", () => {
   /**
@@ -355,10 +353,8 @@ describe.if(runnable)("the compiled shell on a real terminal", () => {
     "opens an interface and lays it out against the terminal it was given",
     async () => {
       const run = await interrupted();
-      // The frame, on a real terminal. The header's labels are the load-bearing
-      // half: they only appear when the layout class was selected from the
-      // terminal's own size, and in `split-footer` the region the tree is drawn
-      // into is six rows — which would have selected compact and dropped them.
+      // The frame, on a real terminal, uses the full alternate-screen viewport.
+      expect(run.transcript).toContain("\u001b[?1049h");
       expect(run.transcript).toContain("workspace");
       // A fact in its `unavailable` state, in words. Short enough to survive the
       // header's per-field share at this width, which "no session yet" is not —
@@ -419,12 +415,10 @@ describe.if(runnable)("the compiled shell on a real terminal", () => {
   );
 
   test(
-    "opens the shell on a terminal too short for a footer",
+    "opens the full-screen shell on a compact terminal",
     async () => {
-      // The regression #351 was. Below `MIN_SPLIT_FOOTER_ROWS` the mode falls
-      // back to `alternate-screen`, which could not construct — so every
-      // terminal shorter than ten rows exited 5 instead of drawing anything.
-      // Eight rows is above the 24×6 minimum, so a frame is the correct answer.
+      // Eight rows is above the 24×6 minimum. No mode fallback is involved:
+      // every interactive terminal opens the alternate screen.
       const run = await runOnPty([], ({ process: started }) => started.kill("SIGINT"), {
         columns: 100,
         rows: 8,
@@ -438,24 +432,6 @@ describe.if(runnable)("the compiled shell on a real terminal", () => {
       expect(run.transcript).toContain("current directory");
     },
     RUN_TIMEOUT_MS,
-  );
-
-  test(
-    "opens the shell in every mode the override accepts",
-    async () => {
-      // `FALRYN_TUI` accepts all three and `reference/CLI.md` documents all
-      // three. Two of them were unreachable. Driven through the override rather
-      // than through a terminal size because that is the only way to reach
-      // `main-screen` at all, which had never been exercised.
-      for (const mode of ["alternate-screen", "main-screen"]) {
-        const run = await runOnPty([], ({ process: started }) => started.kill("SIGINT"), {
-          env: { FALRYN_TUI: mode },
-        });
-        expect({ mode, code: run.exitCode }).toEqual({ mode, code: EXIT_CODES.CANCELLED });
-        expect({ mode, drew: run.transcript.includes("workspace") }).toEqual({ mode, drew: true });
-      }
-    },
-    RUN_TIMEOUT_MS * 2,
   );
 
   test(
@@ -479,9 +455,8 @@ describe.if(runnable)("the compiled shell on a real terminal", () => {
   test(
     "opens help, scrolls through the command registry, and closes it",
     async () => {
-      // The overlay grows the footer to make room for itself, so this also
-      // proves that: at the default six-row footer the panel would have had one
-      // row and the commands would have drawn over each other.
+      // The overlay uses the same full-screen viewport as the shell, so help
+      // has room without changing renderer configuration at runtime.
       let opened = "";
       let scrolled = "";
       let closed = "";
@@ -508,7 +483,7 @@ describe.if(runnable)("the compiled shell on a real terminal", () => {
       // `../components/interaction.test.tsx` still asserts that way, which is
       // https://github.com/yogeshprasad098/falryn/issues/381 rather than this
       // issue's to correct.
-      expect(closed).toContain("workspace");
+      expect(closed).toContain("Nothing has happened in this session yet");
       expect(closed).not.toContain("Help");
       expectRestored(run);
     },
@@ -535,7 +510,7 @@ describe.if(runnable)("the compiled shell on a real terminal", () => {
       // The search field takes characters as text rather than routing them
       // through the command registry, which is the whole of #364.
       expect(searched).toContain("exit");
-      expect(closed).toContain("workspace");
+      expect(closed).toContain("Nothing has happened in this session yet");
       expect(closed).not.toContain("Commands");
       expectRestored(run);
     },
@@ -694,7 +669,6 @@ describe.if(runnable)("the compiled shell on a real terminal", () => {
       const run = await runOnPty(["--timeout", "4000"], () => {});
       expect(run.exitCode).toBe(EXIT_CODES.TIMED_OUT);
       expect(run.transcript).toContain(RESTORED.cursorVisible);
-      expect(run.transcript).toContain(RESTORED.scrollRegionReset);
     },
     RUN_TIMEOUT_MS,
   );

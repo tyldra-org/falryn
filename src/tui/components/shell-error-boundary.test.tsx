@@ -15,7 +15,7 @@ test("a render failure becomes a safe frame with an exit instruction", async () 
       <ShellErrorBoundary>
         <BrokenFrame />
       </ShellErrorBoundary>,
-      { shape: { columns: 70, rows: 6 }, screenMode: "alternate-screen" },
+      { shape: { columns: 70, rows: 6 } },
     );
   } finally {
     consoleError.mockRestore();

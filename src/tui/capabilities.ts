@@ -24,29 +24,27 @@
  * library at all.
  */
 
-import type { ScreenMode, ThemeMode } from "@opentui/core";
+import type { ThemeMode } from "@opentui/core";
 import { type EnvironmentPort, type TerminalCapabilities, terminalSize } from "../domain/index.ts";
-import { SCREEN_MODES } from "./screen-mode.ts";
 
 /**
  * The variable that overrides detection.
  *
  * Documented rather than internal: the whole reason it exists is that a user on
- * a terminal Falryn has never been run against needs a way to force a lower
- * mode or refuse the shell entirely without waiting for a release.
+ * a terminal Falryn has never been run against needs a way to refuse the shell
+ * entirely without waiting for a release. Interactive runs otherwise have one
+ * deliberate configuration: OpenTUI's alternate screen.
  */
 export const SHELL_OVERRIDE_VARIABLE = "FALRYN_TUI";
 
-/** What {@link SHELL_OVERRIDE_VARIABLE} may say, besides naming a screen mode. */
+/** The one value {@link SHELL_OVERRIDE_VARIABLE} accepts. */
 export const SHELL_OVERRIDE_OFF = "off";
 
 export type ShellOverride =
-  /** Unset. Detection decides. */
+  /** Unset. The interactive shell opens in alternate-screen mode. */
   | { readonly kind: "none" }
   /** The shell is refused whatever the terminal reports. */
   | { readonly kind: "off" }
-  /** A specific screen mode, whatever selection would have chosen. */
-  | { readonly kind: "mode"; readonly mode: ScreenMode }
   /**
    * Set to something this build does not understand.
    *
@@ -57,7 +55,7 @@ export type ShellOverride =
   | { readonly kind: "unrecognized"; readonly value: string };
 
 /** Every legal value of the override, for a diagnostic that names them. */
-export const SHELL_OVERRIDE_VALUES: readonly string[] = [SHELL_OVERRIDE_OFF, ...SCREEN_MODES];
+export const SHELL_OVERRIDE_VALUES: readonly string[] = [SHELL_OVERRIDE_OFF];
 
 export function readShellOverride(environment: EnvironmentPort): ShellOverride {
   const value = environment.get(SHELL_OVERRIDE_VARIABLE);
@@ -68,8 +66,7 @@ export function readShellOverride(environment: EnvironmentPort): ShellOverride {
   if (normalized === SHELL_OVERRIDE_OFF) {
     return { kind: "off" };
   }
-  const mode = SCREEN_MODES.find((candidate) => candidate === normalized);
-  return mode === undefined ? { kind: "unrecognized", value: normalized } : { kind: "mode", mode };
+  return { kind: "unrecognized", value: normalized };
 }
 
 export const MULTIPLEXERS = ["tmux", "screen", "zellij"] as const;
@@ -156,7 +153,8 @@ export function terminalHints(environment: EnvironmentPort): TerminalHints {
  * leaving each field with a default that would read as a measurement.
  */
 export type RendererCapabilities = {
-  readonly screenMode: ScreenMode;
+  /** Falryn's sole interactive renderer mode. */
+  readonly screenMode: "alternate-screen";
   readonly columns: number;
   readonly rows: number;
   /** Whether the renderer currently has mouse reporting turned on. */

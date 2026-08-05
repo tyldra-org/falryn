@@ -22,18 +22,9 @@
  * second sequence writer here would be a second answer to what "restored" means,
  * and `src/cli-boundaries.test.ts` already holds that line for the CLI.
  *
- * ## stdout, while the renderer is alive
- *
- * `split-footer` runs with `capture-stdout`, so OpenTUI intercepts
- * `stdout.write` and replays what it takes above the footer. That is the
- * renderer owning the handle `src/cli/streams.ts` normally owns, and it is
- * deliberate: the launch decision has already refused every machine format, so
- * no result record can be in flight, and the alternative — a stray write landing
- * mid-frame — tears the interface. `destroy()` puts the original `write` back,
- * which is what lets the invocation's closing flush still report what left the
- * process. The shell writes nothing through the result stream while a renderer
- * is up; everything it has to say goes to the diagnostic handle, which the
- * renderer never touches.
+ * The renderer always owns the alternate screen. OpenTUI restores the user's
+ * original main-screen scrollback when `destroy()` runs; Falryn supplies the
+ * lifecycle ordering that makes that cleanup reliable.
  */
 
 import type { CliRenderer, CliRendererConfig } from "@opentui/core";
@@ -53,13 +44,6 @@ import {
   withRendererCapabilities,
   withSize,
 } from "./capabilities.ts";
-import {
-  capturesStdout,
-  EXTERNAL_OUTPUT_MODE,
-  reservesFooter,
-  type ScreenModeSelection,
-  SPLIT_FOOTER_HEIGHT,
-} from "./screen-mode.ts";
 
 /**
  * Terminal state the session asks for, so restoration can name what it gave back.
@@ -74,7 +58,6 @@ export const TERMINAL_MODES = [
   "focus-events",
   "bracketed-paste",
   "cursor-visibility",
-  "stdout-capture",
 ] as const;
 
 export type TerminalMode = (typeof TERMINAL_MODES)[number];
@@ -133,7 +116,6 @@ export type RendererFactory = (config: CliRendererConfig) => Promise<CliRenderer
 
 export type OpenSessionRequest = {
   readonly capabilities: ShellCapabilities;
-  readonly selection: ScreenModeSelection;
   /**
    * Supplied by tests.
    *
@@ -184,7 +166,7 @@ function safeDetail(thrown: unknown): string | null {
  * that two of the overrides do what they say.
  */
 export function rendererConfigFor(request: OpenSessionRequest): CliRendererConfig {
-  const { capabilities, selection } = request;
+  const { capabilities } = request;
   return {
     // The default calls `renderer.destroy()` on Ctrl+C, which would bypass the
     // interrupt escalation in `src/application/interruption.ts` and the shutdown
@@ -210,13 +192,13 @@ export function rendererConfigFor(request: OpenSessionRequest): CliRendererConfi
     // mouse — and no such capability exists to wait for. See `usesMouse`.
     useMouse: usesMouse(capabilities, request.pointer),
     enableMouseMovement: false,
-    screenMode: selection.mode,
-    // Derived from the mode, never asserted. `capture-stdout` is legal *only*
-    // with `split-footer`, and OpenTUI rejects the pairing during construction
-    // rather than ignoring it — so a constant here does not merely configure the
-    // other two modes wrongly, it stops them starting at all.
-    externalOutputMode: capturesStdout(selection.mode) ? EXTERNAL_OUTPUT_MODE : "passthrough",
-    ...(reservesFooter(selection.mode) ? { footerHeight: SPLIT_FOOTER_HEIGHT } : {}),
+    // This is an intentional product choice rather than relying on OpenTUI's
+    // current default. It gives every interactive run the full viewport and
+    // lets `destroy()` restore the main-screen scrollback it borrowed.
+    screenMode: "alternate-screen",
+    // Capturing stdout is a split-footer-only OpenTUI feature. Falryn never
+    // opens that mode, so stdout remains the process boundary's own handle.
+    externalOutputMode: "passthrough",
     debounceDelay: RESIZE_DEBOUNCE_MS,
   };
 }
@@ -230,14 +212,9 @@ export function enabledModes(config: CliRendererConfig): readonly TerminalMode[]
     "bracketed-paste",
     "cursor-visibility",
   ];
-  if (config.screenMode === "alternate-screen") {
-    modes.push("alternate-screen");
-  }
+  modes.push("alternate-screen");
   if (config.useMouse === true) {
     modes.push("mouse");
-  }
-  if (config.screenMode === "split-footer" && config.externalOutputMode === "capture-stdout") {
-    modes.push("stdout-capture");
   }
   return modes;
 }
@@ -246,12 +223,9 @@ export function enabledModes(config: CliRendererConfig): readonly TerminalMode[]
 export function observeRenderer(renderer: CliRenderer): RendererCapabilities {
   const reported = renderer.capabilities;
   return {
-    screenMode: renderer.screenMode,
-    // The *terminal's* size, not the renderer's drawable region. In
-    // `split-footer` the two differ: `height` is the footer alone, so a record
-    // built from it would describe a six-row terminal and every decision taken
-    // from it — including whether there is room for a footer at all — would be
-    // made against a number that is a consequence of that decision.
+    screenMode: "alternate-screen",
+    // The terminal's size. In Falryn's one screen mode it is also the drawable
+    // region, but this record remains an observation rather than a layout input.
     columns: renderer.terminalWidth,
     rows: renderer.terminalHeight,
     mouse: renderer.useMouse,
