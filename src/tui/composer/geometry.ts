@@ -84,10 +84,27 @@ export function cellOfColumn(text: string, column: number): number {
  * does not exist in the draft, and inventing one would let a click produce a
  * column the editing model can never hold.
  *
- * That choice is also what makes the round trip exact. `cellOfColumn` answers a
- * grapheme's starting cell, so mapping that cell back returns the column it
- * came from, for every column of every line — which is asserted rather than
- * reasoned about.
+ * That choice is also what makes the round trip well defined, and the exact
+ * statement of it is worth more than the comfortable one. Mapping a column out
+ * to its cell and back returns **the earliest column sharing that cell** — which
+ * is the column itself wherever a grapheme claims a cell of its own, and is
+ * therefore identity for every line whose characters are all visible.
+ *
+ * It is not identity everywhere, and the exception falls out of the rule above
+ * rather than being a flaw in it: a zero-width grapheme claims no cell, so a
+ * column occupied only by one resolves to the position of the character it
+ * decorates. A line beginning with a combining mark has two columns at cell
+ * zero, and cell zero can only answer one of them. That is reachable — the
+ * composer accepts pasted text — and it is correct: there is no cell to click
+ * that means "after the combining mark but before the letter", because the two
+ * are drawn in the same cell.
+ *
+ * Both statements are asserted, the general law over every line and identity
+ * over the lines it holds for. An earlier version of this comment claimed
+ * identity for every column of every line; it was not true, and it was not
+ * checked either, because none of the fixtures began with a zero-width
+ * grapheme. A module whose argument for existing is that unstated arithmetic
+ * bites later has no business overstating its own guarantee.
  *
  * A cell past the line's text resolves to the end of the line. Clicking past
  * the end of a sentence puts the cursor at the end of it, which is what every

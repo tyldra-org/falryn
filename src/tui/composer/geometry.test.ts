@@ -14,6 +14,12 @@
  * relationship stay correct only if something asserts they agree, and asserting
  * it for *every* column of a line is the difference between a property and a
  * spot check.
+ *
+ * It is asserted twice, deliberately. The law that holds everywhere — mapping a
+ * column out and back returns the earliest column sharing that cell — and
+ * identity, over the lines where every grapheme claims a cell of its own. The
+ * two differ only for a column drawn in a cell it does not own, and separating
+ * them is what keeps the exception a stated property rather than a surprise.
  */
 
 import { describe, expect, test } from "bun:test";
@@ -34,6 +40,15 @@ const WIDE = "日本語です";
 const COMBINING = "café latte";
 /** A family sequence: one grapheme, several code points, joined. */
 const EMOJI = "hi 👨‍👩‍👧‍👦 there";
+/**
+ * A line that opens with a combining mark, which claims no cell of its own.
+ *
+ * Reachable by paste, and the one shape where the round trip is not identity:
+ * two columns share cell zero and a cell can only answer one of them. Absent
+ * from the fixtures until a verification of #394 pointed out that the module
+ * claimed identity everywhere while checking it only where it holds.
+ */
+const LEADING_COMBINING = "\u0301abc";
 
 const LINES: readonly DrawnLine[] = [
   { number: 0, text: PLAIN },
@@ -80,16 +95,46 @@ describe("a column and a cell", () => {
 });
 
 describe("the round trip", () => {
-  // The property, over every column of every awkward line. A spot check would
-  // pass against a mapping that is right in the middle and wrong at the edges,
-  // which is exactly the shape this arithmetic fails in.
-  for (const [name, text] of [
+  /** Every line here, including the one identity does not hold for. */
+  const EVERY = [
     ["plain", PLAIN],
     ["wide", WIDE],
     ["combining", COMBINING],
     ["emoji", EMOJI],
-  ] as const) {
+    ["leading combining", LEADING_COMBINING],
+  ] as const;
+
+  /** The lines on which every grapheme claims a cell of its own. */
+  const CELL_CLAIMING = EVERY.filter(([name]) => name !== "leading combining");
+
+  for (const [name, text] of EVERY) {
+    test(`returns the earliest column sharing the cell, for every column of ${name} text`, () => {
+      // The law that holds everywhere, stated as the property it is. Identity is
+      // the special case of it, not the rule — and writing the rule this way is
+      // what stops the exception below from reading as a defect.
+      const units = graphemes(text);
+      for (let column = 0; column <= units.length; column += 1) {
+        const cell = cellOfColumn(text, column);
+        // `column` itself always shares its own cell, so the scan below always
+        // finds one — the initial value is the answer for a line where nothing
+        // earlier shares it, not a fallback for an empty set.
+        let earliest = column;
+        for (let candidate = 0; candidate <= units.length; candidate += 1) {
+          if (cellOfColumn(text, candidate) === cell) {
+            earliest = candidate;
+            break;
+          }
+        }
+        expect({ column, back: columnOfCell(text, cell) }).toEqual({ column, back: earliest });
+      }
+    });
+  }
+
+  for (const [name, text] of CELL_CLAIMING) {
     test(`returns the column it started from, for every column of ${name} text`, () => {
+      // Identity, over every column of every line where it holds. A spot check
+      // would pass against a mapping that is right in the middle and wrong at
+      // the edges, which is exactly the shape this arithmetic fails in.
       const units = graphemes(text);
       for (let column = 0; column <= units.length; column += 1) {
         expect({ column, back: columnOfCell(text, cellOfColumn(text, column)) }).toEqual({
@@ -99,6 +144,28 @@ describe("the round trip", () => {
       }
     });
   }
+
+  test("is not identity where a column claims no cell, and says so", () => {
+    // The stated exception, held by a check rather than by a sentence. The two
+    // opening columns share cell zero: there is no cell to click that means
+    // "after the combining mark but before the letter", because they are drawn
+    // in the same one.
+    const units = graphemes(LEADING_COMBINING);
+    expect(units[0]).toBe("\u0301");
+    expect(cellOfColumn(LEADING_COMBINING, 0)).toBe(0);
+    expect(cellOfColumn(LEADING_COMBINING, 1)).toBe(0);
+    expect(columnOfCell(LEADING_COMBINING, 0)).toBe(0);
+    // And it costs nothing beyond that column: every later position is exact.
+    for (let column = 2; column <= units.length; column += 1) {
+      expect({
+        column,
+        back: columnOfCell(LEADING_COMBINING, cellOfColumn(LEADING_COMBINING, column)),
+      }).toEqual({
+        column,
+        back: column,
+      });
+    }
+  });
 });
 
 describe("a cell inside a wide grapheme", () => {
@@ -110,6 +177,10 @@ describe("a cell inside a wide grapheme", () => {
     expect(columnOfCell(WIDE, 1)).toBe(0);
     expect(columnOfCell(WIDE, 2)).toBe(1);
     expect(columnOfCell(WIDE, 3)).toBe(1);
+    // Resolving the far half to the *next* column instead would break the law
+    // above rather than only this check — measured by making that change and
+    // watching the round trip fail, which is what makes the law load-bearing
+    // rather than a restatement.
   });
 });
 
