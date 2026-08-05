@@ -101,13 +101,18 @@ describe("the renderer options that are not defaults", () => {
     expect(config.enableMouseMovement).toBe(false);
   });
 
-  test("never turn the mouse on at creation, whatever the record says", () => {
-    // The ordering #392 made load-bearing. A renderer is always created with
-    // reporting off, because the record cannot answer whether this terminal has
-    // a mouse until a renderer has reported one — and a terminal that turns out
-    // to have none must never have had reporting turned on for it. Reporting is
-    // enabled after the refresh, by `openRendererSession`, which is where both
-    // inputs exist.
+  test("never turn the mouse on from the record alone", () => {
+    // Creation *is* when reporting is turned on, when the setting says so — see
+    // "mouse reporting" below. What this holds is the other half: a record
+    // reporting a mouse decides nothing on its own.
+    //
+    // That is not a preference. `observeRenderer` records
+    // `mouse: renderer.useMouse`, which is this program's own setting reflected
+    // back rather than anything the terminal said — OpenTUI's
+    // `TerminalCapabilities` declares no mouse field at all. A gate that read it
+    // would ask whether reporting was on in order to decide whether to turn it
+    // on, and would never enable once. #392 was planned that way and this is
+    // where that would have shown up.
     const enabled = withRendererCapabilities(record(), {
       screenMode: "split-footer",
       columns: 100,
