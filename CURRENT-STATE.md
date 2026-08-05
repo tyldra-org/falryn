@@ -1450,6 +1450,57 @@ yes; `src/tui/tui-boundaries.test.ts` walks the entrypoint's value-import graph
 to assert that, and `src/cli/dispatch-shell.test.ts` proves it behaviorally with
 a renderer factory that throws if anything calls it.
 
+**The interactive shell can be configured**
+([#390](https://github.com/yogeshprasad098/falryn/issues/390)). Until now it
+could not: a run that opened the shell read no settings at all, so a key
+declared in `src/config/keys.ts` had no way to reach anything the interface
+does. `src/cli/shell-configuration.ts` is the path, and it runs *after* the
+launch decision and *before* the renderer — after, because the property that a
+declined run constructs nothing is worth keeping and this must not spend it;
+before, because the diagnostic handle is an ordinary terminal until a renderer is
+up and not one afterwards, which is the same reason the unrecognized-override
+notice is written where it is.
+
+The refusal control is now two factories rather than one: a renderer that throws
+if called, and a service provider that throws if asked. A declined run reaching
+either would be a run that built a registry, a loader, and a data layout to
+discover it should not have.
+
+Every outcome that is not a usable generation follows one rule. `load` answers
+five ways; two carry a record and its `values` open the shell, and the other
+three report on the diagnostic handle and hand back `registry.defaults()`, which
+the registry documents as complete by construction. A shell that refused to open
+over a settings file would be the worse failure — it strands a user with no way
+to correct the file that stranded them.
+
+One rule, three sentences, because only one of the three means the user's
+configuration was bad. `rejected` is composition failing, and its sentence comes
+from `fromConfigurationIssues`, so it is the one `config show` would have printed
+for the same issue; no rejected value reaches it, because none of the fourteen
+issue variants carries one. `publish-failed` is composition *succeeding* and the
+generation failing to be recorded, so it says the configuration was valid and
+could not be recorded, and carries the outcome's `code` — the only detail
+available to act on. `cancelled` says the load was stopped, which is not a
+failure of anything.
+
+All three are reachable on a first load, `publish-failed` included: the loader's
+`unchanged` branch is guarded on there being a previous generation, so a first
+load falls through to appending the generation event, where an unwritable or
+full state root fails. This was first written claiming `rejected` was the only
+one reachable there, which gave the other two a sentence telling a user with a
+perfectly good settings file that it could not be loaded. Verification of
+[#395](https://github.com/yogeshprasad098/falryn/pull/395) found it.
+
+What crosses into the shell is `ConfigurationValues` — values, not a service, so
+nothing in the interface can reach back for a key that was never resolved, and
+`src/tui` keeps importing from `src/domain` alone. Precedence is not restated:
+the launch path passes the same `configurationOverridesFor` map and the same
+profile a command passes, so `falryn --verbose` means one thing either way.
+
+Nothing reads a key yet. This is the path, not a setting, and the first
+interface key arrives with
+[#392](https://github.com/yogeshprasad098/falryn/issues/392).
+
 The capability record in `src/tui/capabilities.ts` extends the domain's facts
 and recomputes none of them: colour, character repertoire, TTY status, and size
 are carried verbatim from `terminalCapabilities()`. What it adds is dumb,
