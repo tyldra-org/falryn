@@ -26,6 +26,7 @@
 
 import { useRenderer, useTerminalDimensions } from "@opentui/react";
 import { type ReactNode, useMemo, useRef } from "react";
+import type { Instant } from "../../domain/index.ts";
 import type { ComposerAction } from "../composer/index.ts";
 import {
   composerRows,
@@ -52,6 +53,8 @@ import { WorkspaceHeader } from "./workspace-header.tsx";
 
 export type AppShellProps = {
   readonly model: ShellModel;
+  /** Present only when a composed shell supplies the invocation clock. */
+  readonly now?: () => Instant;
   /**
    * Everything needed to resolve the theme, from the layer that knows.
    *
@@ -142,6 +145,7 @@ export function AppShell(props: AppShellProps): ReactNode {
           viewport={viewport}
           layout={layout}
           commandRows={props.commandRows ?? []}
+          {...(props.now === undefined ? {} : { now: props.now })}
           {...(props.onTranscriptGeometry === undefined
             ? {}
             : { onTranscriptGeometry: props.onTranscriptGeometry })}
@@ -166,6 +170,7 @@ function ShellFrame(props: {
   readonly viewport: Viewport;
   readonly layout: Extract<LayoutDecision, { kind: "layout" }>;
   readonly commandRows: readonly CommandEntry[];
+  readonly now?: () => Instant;
   readonly onTranscriptGeometry?: (geometry: TranscriptGeometry) => void;
   readonly onComposerAction?: (action: ComposerAction) => void;
   /** A click in the composer focuses it, through the shell's own focus model. */
@@ -242,6 +247,7 @@ function ShellFrame(props: {
        */}
       <ComposerView
         model={model.composer}
+        {...(props.now === undefined ? {} : { now: props.now })}
         {...(props.onComposerAction === undefined ? {} : { onAction: props.onComposerAction })}
         {...(props.onComposerFocus === undefined ? {} : { onFocus: props.onComposerFocus })}
       />

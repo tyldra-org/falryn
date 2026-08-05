@@ -38,7 +38,12 @@ import {
   resolveColor,
   writeDiagnosticLine,
 } from "../cli/index.ts";
-import type { ConfigurationValues, EnvironmentPort, FalrynError } from "../domain/index.ts";
+import type {
+  ClockPort,
+  ConfigurationValues,
+  EnvironmentPort,
+  FalrynError,
+} from "../domain/index.ts";
 import {
   prefersConservativeSymbols,
   prefersReducedMotion,
@@ -60,6 +65,12 @@ import { selectVariant, type ThemeRequest } from "./theme/index.ts";
 export type ShellRunRequest = {
   readonly streams: CliStreams;
   readonly capabilities: ShellCapabilities;
+  /**
+   * The invocation clock, supplied by composition and exposed to the interface
+   * only as `now()`. Repeated pointer presses must not create a second time
+   * source or read the wall clock.
+   */
+  readonly clock: Pick<ClockPort, "now">;
   /** The parsed options. `--color` and `--workspace` both reach the frame. */
   readonly options: GlobalOptions;
   /** Read for the appearance preferences, and for nothing else. */
@@ -275,6 +286,7 @@ async function frameFor(session: RendererSession, request: ShellRunRequest, onEx
       theme={theme}
       model={model}
       onExit={onExit}
+      now={request.clock.now}
       {...(feed === undefined ? {} : { feed })}
     />
   );
@@ -293,6 +305,7 @@ function LiveShell(props: {
   readonly theme: ThemeRequest;
   readonly model: Parameters<typeof ShellApp>[0]["model"];
   readonly onExit: () => void;
+  readonly now: ClockPort["now"];
   readonly feed?: RuntimeFeed;
 }): ReactNode {
   const runtime = useRuntimeProjection(props.feed);
@@ -301,6 +314,7 @@ function LiveShell(props: {
       theme={props.theme}
       model={props.model}
       onExit={props.onExit}
+      now={props.now}
       activity={runtime.activity}
       {...(runtime.shutdown === null ? {} : { shutdown: runtime.shutdown })}
     />

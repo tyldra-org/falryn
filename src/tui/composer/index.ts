@@ -9,6 +9,14 @@
  * composer promises can be asserted without one.
  */
 
+export type {
+  ClickSequence,
+  ClickSequenceInput,
+  ClickSequenceTransition,
+  RepeatedPressCount,
+  TerminalCell,
+} from "./click-sequence.ts";
+export { REPEATED_PRESS_WINDOW, transitionClickSequence } from "./click-sequence.ts";
 export type { ComposerFeature } from "./features.ts";
 export { COMPOSER_FEATURES, composerFeature } from "./features.ts";
 export type { InputHistory, Recall } from "./history.ts";
