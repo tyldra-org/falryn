@@ -28,6 +28,8 @@ export {
 } from "./editor.ts";
 export type { ComposerFeature } from "./features.ts";
 export { COMPOSER_FEATURES, composerFeature } from "./features.ts";
+export type { DraftPosition, DrawnLine, DrawnRegion, ScreenCell } from "./geometry.ts";
+export { cellOfColumn, cellOfPosition, columnOfCell, positionOfCell } from "./geometry.ts";
 export type { InputHistory, Recall } from "./history.ts";
 export {
   EMPTY_HISTORY,
