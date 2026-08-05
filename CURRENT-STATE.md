@@ -2005,6 +2005,17 @@ renderable, reached through the `<textarea>` element `@opentui/react` exposes.
 Falryn supplies the frame, the two chrome rows, and the two rules that are
 genuinely its own.
 
+When its native selection is non-empty, the composer passes the resolved
+semantic `selection` background and `foreground` tokens to that renderable and
+the first fixed chrome row says `Selection active`
+([#397](https://github.com/yogeshprasad098/falryn/issues/397)). The range can
+span multiple drawn lines and the renderer retains its cursor at the selection
+focus. At no-colour depth Falryn omits those colour props and keeps the words,
+leaving OpenTUI to paint its fallback rather than inventing a grey. Rendered
+checks drive the textarea's native selection binding, inspect styled spans and
+the cursor coordinate, cover an explicit multi-line range, monochrome, and
+collapse; the normal repository checks and compiled build pass for this change.
+
 **Why, and it is not an off-by-one.** The cursor was drawn in the wrong cell on
 a real terminal — a row above the draft and a cell short of the text. The
 composer drew its own rows and then re-derived where the cursor belonged from a

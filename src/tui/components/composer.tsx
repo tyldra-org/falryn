@@ -65,7 +65,7 @@ import type { ComposerModel } from "../composer-model.ts";
 import { primaryColumns } from "../layout.ts";
 import { classifyPaste } from "../paste.ts";
 import type { StatusToken } from "../theme/index.ts";
-import { useFrame, useLayoutClass } from "./context.tsx";
+import { useFrame, useLayoutClass, useTheme } from "./context.tsx";
 import { Line, StatusMark } from "./primitives.tsx";
 
 export type ComposerViewProps = {
@@ -90,6 +90,7 @@ export type ComposerViewProps = {
 export function ComposerView(props: ComposerViewProps): ReactNode {
   const frame = useFrame();
   const layoutClass = useLayoutClass();
+  const theme = useTheme();
   const columns = primaryColumns(frame.viewport, layoutClass);
   const { model, onAction, onFocus } = props;
   const draft = useRef<TextareaRenderable | null>(null);
@@ -98,6 +99,17 @@ export function ComposerView(props: ComposerViewProps): ReactNode {
   // offset is a fact about what is on screen, not about the session, and the
   // ownership boundary puts it here.
   const [hidden, setHidden] = useState(0);
+  // Whether the renderable has a non-empty range. Falryn needs this only to
+  // state the accessibility alternative; the range itself remains entirely
+  // inside `TextareaRenderable`.
+  const [selectionActive, setSelectionActive] = useState(false);
+  const selectionBg = theme.color("selection");
+  const selectionFg = theme.color("foreground");
+
+  const refreshRenderedState = useCallback((renderable: TextareaRenderable): void => {
+    setHidden(renderable.scrollY);
+    setSelectionActive(renderable.getSelection() !== null);
+  }, []);
 
   // The draft is the renderable's, and this is the one direction Falryn writes
   // it: a history recall replaces the whole text. Typing never comes back
@@ -168,24 +180,31 @@ export function ComposerView(props: ComposerViewProps): ReactNode {
         height={Math.max(1, frame.composerRows - CHROME_ROWS)}
         wrapMode="word"
         keyBindings={[...COMPOSER_KEY_BINDINGS]}
+        {...(selectionBg === null ? {} : { selectionBg })}
+        {...(selectionFg === null ? {} : { selectionFg })}
         {...(onFocus === undefined ? {} : { onMouseDown: onFocus })}
         onContentChange={() => {
           const renderable = draft.current;
           if (renderable !== null) {
-            setHidden(renderable.scrollY);
+            refreshRenderedState(renderable);
             onAction?.({ kind: "draft", text: renderable.plainText });
           }
         }}
         onCursorChange={() => {
           const renderable = draft.current;
           if (renderable !== null) {
-            setHidden(renderable.scrollY);
+            refreshRenderedState(renderable);
           }
         }}
         onKeyDown={keyDown}
         onSubmit={() => onAction?.({ kind: "submit" })}
       />
-      <ComposerStatus model={model} hidden={hidden} maxColumns={columns} />
+      <ComposerStatus
+        model={model}
+        hidden={hidden}
+        selectionActive={selectionActive}
+        maxColumns={columns}
+      />
     </box>
   );
 }
@@ -236,6 +255,7 @@ function edgeOf(renderable: TextareaRenderable): {
 function ComposerStatus(props: {
   readonly model: ComposerModel;
   readonly hidden: number;
+  readonly selectionActive: boolean;
   readonly maxColumns: number;
 }): ReactNode {
   const { model } = props;
@@ -244,6 +264,9 @@ function ComposerStatus(props: {
   const parts: string[] = [phraseFor(state)];
   if (model.focused) {
     parts.push("focused");
+  }
+  if (props.selectionActive) {
+    parts.push("Selection active");
   }
   if (props.hidden > 0) {
     parts.push(`${props.hidden} more ${props.hidden === 1 ? "line" : "lines"} above`);
