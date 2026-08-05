@@ -7,6 +7,7 @@ import type {
 } from "../domain/index.ts";
 import {
   configurationKeyPath,
+  createStaticEnvironment,
   DEFAULT_BUSY_TIMEOUT_MS,
   DIAGNOSTIC_LEVELS,
   MAX_BUSY_TIMEOUT_MS,
@@ -17,6 +18,7 @@ import {
   UNLIMITED,
 } from "../domain/index.ts";
 import { POINTER_KEY } from "../tui/capabilities.ts";
+import { readEnvironmentLayer } from "./bridges.ts";
 import {
   MAX_CLASS_BYTES,
   MAX_RETENTION_MS,
@@ -56,6 +58,32 @@ describe("the v0.1 catalog", () => {
     // do nothing.
     const groups = new Set(port.keys().map((descriptor) => descriptor.path.split(".")[0]));
     expect([...groups].sort()).toEqual(["data", "diagnostics", "interface"]);
+  });
+
+  test("tells a user which two spellings a boolean takes, when they type a third", () => {
+    // The error someone actually hits after `FALRYN_POINTER=0`, which is the
+    // environment layer rather than a file: a file carrying a string where a
+    // boolean belongs is an `invalid-type`, and this is the path where the text
+    // was the right shape to try and the wrong one to accept.
+    //
+    // Without the declaration carrying its two spellings the issue reads "a
+    // configuration value is not one of the allowed values" followed by an empty
+    // list — telling someone their value is wrong and not what would be right.
+    const layer = readEnvironmentLayer(port, createStaticEnvironment({ FALRYN_POINTER: "0" }));
+    expect(layer.issues).toEqual([
+      { kind: "invalid-value", severity: "error", path: POINTER_KEY, allowed: ["true", "false"] },
+    ]);
+    // And the two that work, do.
+    expect(
+      readEnvironmentLayer(port, createStaticEnvironment({ FALRYN_POINTER: "false" })).values[
+        POINTER_KEY
+      ],
+    ).toBe(false);
+    expect(
+      readEnvironmentLayer(port, createStaticEnvironment({ FALRYN_POINTER: "true" })).values[
+        POINTER_KEY
+      ],
+    ).toBe(true);
   });
 
   test("declares the key the interface reads, under the name it reads it by", () => {

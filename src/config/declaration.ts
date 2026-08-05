@@ -249,6 +249,14 @@ export function mapZodIssues(
  * so an environment variable set to `0`, `off`, or `no` is an invalid value
  * reported as an issue — not silently read as false. Documentation that tells a
  * user to type anything else is documentation that does not work.
+ *
+ * Which is why the two accepted spellings are declared rather than left `null`.
+ * The invalid-value issue carries `descriptor.allowedValues`, so a key that
+ * declares none produces "a configuration value is not one of the allowed
+ * values" followed by an empty list — telling a user their value is wrong and
+ * not what would be right. `enumKey` supplies its list for exactly this reason.
+ * Coercion is unaffected: the `boolean` branch tests the two literals itself and
+ * never consults this.
  */
 export function booleanKey(
   input: CommonInput & { readonly defaultValue: boolean },
@@ -257,7 +265,7 @@ export function booleanKey(
     valueType: "boolean",
     unit: null,
     defaultValue: input.defaultValue,
-    allowedValues: null,
+    allowedValues: ["true", "false"],
     minimum: null,
     maximum: null,
     merge: { kind: "replace" },
