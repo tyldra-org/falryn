@@ -141,6 +141,16 @@ export type OpenSessionRequest = {
    * creates no renderer at all" is proved rather than asserted.
    */
   readonly createRenderer?: RendererFactory;
+  /**
+   * Whether the user wants the interface to capture pointer input.
+   *
+   * One resolved boolean rather than the configuration map, so this area
+   * interprets no key and never imports `src/config`. `undefined` is a caller
+   * that resolved no configuration at all — every rendered check that mounts a
+   * shell directly — and is off, because turning a user's terminal selection
+   * over to Falryn is not something to infer from a missing value.
+   */
+  readonly pointer?: boolean;
 };
 
 /**
@@ -190,8 +200,11 @@ export function rendererConfigFor(request: OpenSessionRequest): CliRendererConfi
     // `console.*` would be a second diagnostics path, reachable from code that
     // never asked for one.
     consoleMode: "disabled",
-    // Capability-gated rather than OpenTUI's default of on. See `usesMouse`.
-    useMouse: usesMouse(capabilities),
+    // Gated on the resolved setting rather than left at OpenTUI's default of
+    // on, and decided here rather than after creation. #392 planned to enable
+    // it later, once a refreshed record could say whether the terminal had a
+    // mouse — and no such capability exists to wait for. See `usesMouse`.
+    useMouse: usesMouse(capabilities, request.pointer),
     enableMouseMovement: false,
     screenMode: selection.mode,
     // Derived from the mode, never asserted. `capture-stdout` is legal *only*

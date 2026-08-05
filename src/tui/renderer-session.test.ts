@@ -56,11 +56,13 @@ const opened: RendererSession[] = [];
 async function open(
   capabilities: ShellCapabilities = record(),
   createRenderer: RendererFactory = inMemory,
+  pointer?: boolean,
 ) {
   const result = await openRendererSession({
     capabilities,
     selection: selectScreenMode(capabilities),
     createRenderer,
+    ...(pointer === undefined ? {} : { pointer }),
   });
   if (result.ok) {
     opened.push(result.value);
@@ -99,9 +101,13 @@ describe("the renderer options that are not defaults", () => {
     expect(config.enableMouseMovement).toBe(false);
   });
 
-  test("turn the mouse on when the record says to", () => {
-    // Proving the gate is a gate: it reads the record, so an option that stopped
-    // reading it would fail here rather than silently freezing at off.
+  test("never turn the mouse on at creation, whatever the record says", () => {
+    // The ordering #392 made load-bearing. A renderer is always created with
+    // reporting off, because the record cannot answer whether this terminal has
+    // a mouse until a renderer has reported one — and a terminal that turns out
+    // to have none must never have had reporting turned on for it. Reporting is
+    // enabled after the refresh, by `openRendererSession`, which is where both
+    // inputs exist.
     const enabled = withRendererCapabilities(record(), {
       screenMode: "split-footer",
       columns: 100,
@@ -118,7 +124,7 @@ describe("the renderer options that are not defaults", () => {
     });
     expect(
       rendererConfigFor({ capabilities: enabled, selection: selectScreenMode(enabled) }).useMouse,
-    ).toBe(true);
+    ).toBe(false);
   });
 
   test("pair stdout capture with the one mode that permits it", () => {
@@ -418,5 +424,49 @@ describe("resize", () => {
     // A subscription that outlived its renderer would keep a torn-down session
     // reachable, which is the shape of every listener leak.
     expect(calls).toBe(0);
+  });
+});
+
+describe("mouse reporting", () => {
+  test("is off when the user has not asked for it", async () => {
+    const session = await open(record(), inMemory, false);
+    expect(session.ok).toBe(true);
+    if (!session.ok) {
+      return;
+    }
+    expect(session.value.renderer.useMouse).toBe(false);
+    // And the restoration report does not claim a mode nobody enabled.
+    expect(session.value.enabled).not.toContain("mouse");
+  });
+
+  test("is off when nothing resolved the setting at all", async () => {
+    // Every rendered check that mounts a shell directly is this caller. An
+    // unanswered question is not a yes.
+    const session = await open(record(), inMemory);
+    expect(session.ok).toBe(true);
+    if (!session.ok) {
+      return;
+    }
+    expect(session.value.renderer.useMouse).toBe(false);
+    expect(session.value.enabled).not.toContain("mouse");
+  });
+
+  test("is on when the user asked for it, and is reported as a mode to give back", async () => {
+    // The gate answering yes, which is what makes it a gate — and the mode
+    // appearing in what the session says it enabled, because a terminal left in
+    // mouse reporting after exit is the failure this module exists to prevent
+    // and the report is what says it did not happen.
+    const session = await open(record(), inMemory, true);
+    expect(session.ok).toBe(true);
+    if (!session.ok) {
+      return;
+    }
+    expect(session.value.renderer.useMouse).toBe(true);
+    expect(session.value.enabled).toContain("mouse");
+
+    const report = session.value.restore();
+    expect(report.restoredNow).toBe(true);
+    expect(report.modes).toContain("mouse");
+    expect(report.failure).toBe(null);
   });
 });
