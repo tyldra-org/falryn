@@ -38,13 +38,13 @@ import {
   resolveColor,
   writeDiagnosticLine,
 } from "../cli/index.ts";
-import type { EnvironmentPort, FalrynError } from "../domain/index.ts";
+import type { ConfigurationValues, EnvironmentPort, FalrynError } from "../domain/index.ts";
 import {
   prefersConservativeSymbols,
   prefersReducedMotion,
   requestedVariant,
 } from "./appearance.ts";
-import type { ShellCapabilities } from "./capabilities.ts";
+import { POINTER_KEY, type ShellCapabilities } from "./capabilities.ts";
 import { ShellApp } from "./components/shell-app.tsx";
 import {
   nothingToRestore,
@@ -65,6 +65,22 @@ export type ShellRunRequest = {
   readonly options: GlobalOptions;
   /** Read for the appearance preferences, and for nothing else. */
   readonly environment: EnvironmentPort;
+  /**
+   * The settings this run opens with.
+   *
+   * Values rather than a service, and that direction is the contract: the shell
+   * is handed what it needs and cannot reach back for more, so nothing in the
+   * interface can read a key that was never resolved on the launch path. It is
+   * also `ConfigurationValues` rather than a projected settings object, because
+   * no interface key is declared yet and a projection would be an invented shape
+   * with one field in it.
+   *
+   * Optional for the reason `shutdown` and `scopes` are: a caller that composed
+   * no service graph has nothing to resolve. An absent value is not the same as
+   * an empty one — a caller that resolved settings and found none passes the
+   * registry's defaults, which are complete by construction.
+   */
+  readonly configuration?: ConfigurationValues;
   /** Aborts when the invocation's scope stops: an interrupt, or a deadline. */
   readonly stop: AbortSignal;
   /**
@@ -112,6 +128,16 @@ export async function runShell(request: ShellRunRequest): Promise<ShellRun> {
   const opened = await openRendererSession({
     capabilities: request.capabilities,
     selection,
+    // One key, read here and interpreted nowhere else. The interface is handed
+    // resolved values and takes exactly one boolean out of them — it never
+    // imports `src/config`, and it cannot reach back for a key that was not
+    // resolved on the launch path.
+    //
+    // Anything that is not `true` is off, absence included. A caller that
+    // composed no service graph resolved no configuration, and turning a user's
+    // terminal selection over to Falryn is not something to infer from a missing
+    // value.
+    pointer: request.configuration?.[POINTER_KEY] === true,
     ...(request.createRenderer === undefined ? {} : { createRenderer: request.createRenderer }),
   });
 

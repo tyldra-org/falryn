@@ -1,5 +1,4 @@
 import { describe, expect, test } from "bun:test";
-
 import { createRuntimeRedactor } from "../application/index.ts";
 import type {
   ConfigurationIssue,
@@ -8,6 +7,7 @@ import type {
 } from "../domain/index.ts";
 import {
   configurationKeyPath,
+  createStaticEnvironment,
   DEFAULT_BUSY_TIMEOUT_MS,
   DIAGNOSTIC_LEVELS,
   MAX_BUSY_TIMEOUT_MS,
@@ -17,6 +17,8 @@ import {
   MIN_BUSY_TIMEOUT_MS,
   UNLIMITED,
 } from "../domain/index.ts";
+import { POINTER_KEY } from "../tui/capabilities.ts";
+import { readEnvironmentLayer } from "./bridges.ts";
 import {
   MAX_CLASS_BYTES,
   MAX_RETENTION_MS,
@@ -48,8 +50,54 @@ function firstIssue(issues: readonly ConfigurationIssue[]): ConfigurationIssue |
 
 describe("the v0.1 catalog", () => {
   test("declares only groups that have a v0.1 consumer", () => {
+    // `interface` joined in #392, which is its first reader: the shell gates
+    // pointer input on `interface.pointer.enabled`. The rule this control holds
+    // is that a group appears when something reads it and not before, so the
+    // list moves with the consumer rather than ahead of it — a group declared
+    // for a reader that does not exist is a setting a user can change and watch
+    // do nothing.
     const groups = new Set(port.keys().map((descriptor) => descriptor.path.split(".")[0]));
-    expect([...groups].sort()).toEqual(["data", "diagnostics"]);
+    expect([...groups].sort()).toEqual(["data", "diagnostics", "interface"]);
+  });
+
+  test("tells a user which two spellings a boolean takes, when they type a third", () => {
+    // The error someone actually hits after `FALRYN_POINTER=0`, which is the
+    // environment layer rather than a file: a file carrying a string where a
+    // boolean belongs is an `invalid-type`, and this is the path where the text
+    // was the right shape to try and the wrong one to accept.
+    //
+    // Without the declaration carrying its two spellings the issue reads "a
+    // configuration value is not one of the allowed values" followed by an empty
+    // list — telling someone their value is wrong and not what would be right.
+    const layer = readEnvironmentLayer(port, createStaticEnvironment({ FALRYN_POINTER: "0" }));
+    expect(layer.issues).toEqual([
+      { kind: "invalid-value", severity: "error", path: POINTER_KEY, allowed: ["true", "false"] },
+    ]);
+    // And the two that work, do.
+    expect(
+      readEnvironmentLayer(port, createStaticEnvironment({ FALRYN_POINTER: "false" })).values[
+        POINTER_KEY
+      ],
+    ).toBe(false);
+    expect(
+      readEnvironmentLayer(port, createStaticEnvironment({ FALRYN_POINTER: "true" })).values[
+        POINTER_KEY
+      ],
+    ).toBe(true);
+  });
+
+  test("declares the key the interface reads, under the name it reads it by", () => {
+    // `src/tui` does not import `src/config` — the interface is handed resolved
+    // values and interprets exactly one of them — so the path exists as a string
+    // in two places. This is what stops a rename from turning a setting into a
+    // key nobody reads: the consumer names it, and the registry has to declare
+    // it.
+    expect(port.describe(POINTER_KEY)).not.toBeNull();
+    expect(port.describe(POINTER_KEY)?.valueType).toBe("boolean");
+    // And it is settable without editing a file, which is the whole reason it
+    // declares a variable: a user who wants their terminal's selection back
+    // needs a way to say so that does not involve finding a settings file.
+    expect(port.describe(POINTER_KEY)?.environmentVariable).toBe("FALRYN_POINTER");
   });
 
   test("declares no key that could relocate the configuration root", () => {

@@ -204,6 +204,7 @@ export function ShellApp(props: ShellAppProps): ReactNode {
         commandRows={rows}
         onTranscriptGeometry={runtime.reportTranscriptGeometry}
         onComposerAction={runtime.composer}
+        onComposerFocus={runtime.focusComposer}
         onPaletteQuery={runtime.paletteQuery}
       />
     </KeymapProvider>

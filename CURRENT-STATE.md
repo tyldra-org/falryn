@@ -1450,6 +1450,57 @@ yes; `src/tui/tui-boundaries.test.ts` walks the entrypoint's value-import graph
 to assert that, and `src/cli/dispatch-shell.test.ts` proves it behaviorally with
 a renderer factory that throws if anything calls it.
 
+**The interactive shell can be configured**
+([#390](https://github.com/yogeshprasad098/falryn/issues/390)). Until now it
+could not: a run that opened the shell read no settings at all, so a key
+declared in `src/config/keys.ts` had no way to reach anything the interface
+does. `src/cli/shell-configuration.ts` is the path, and it runs *after* the
+launch decision and *before* the renderer — after, because the property that a
+declined run constructs nothing is worth keeping and this must not spend it;
+before, because the diagnostic handle is an ordinary terminal until a renderer is
+up and not one afterwards, which is the same reason the unrecognized-override
+notice is written where it is.
+
+The refusal control is now two factories rather than one: a renderer that throws
+if called, and a service provider that throws if asked. A declined run reaching
+either would be a run that built a registry, a loader, and a data layout to
+discover it should not have.
+
+Every outcome that is not a usable generation follows one rule. `load` answers
+five ways; two carry a record and its `values` open the shell, and the other
+three report on the diagnostic handle and hand back `registry.defaults()`, which
+the registry documents as complete by construction. A shell that refused to open
+over a settings file would be the worse failure — it strands a user with no way
+to correct the file that stranded them.
+
+One rule, three sentences, because only one of the three means the user's
+configuration was bad. `rejected` is composition failing, and its sentence comes
+from `fromConfigurationIssues`, so it is the one `config show` would have printed
+for the same issue; no rejected value reaches it, because none of the fourteen
+issue variants carries one. `publish-failed` is composition *succeeding* and the
+generation failing to be recorded, so it says the configuration was valid and
+could not be recorded, and carries the outcome's `code` — the only detail
+available to act on. `cancelled` says the load was stopped, which is not a
+failure of anything.
+
+All three are reachable on a first load, `publish-failed` included: the loader's
+`unchanged` branch is guarded on there being a previous generation, so a first
+load falls through to appending the generation event, where an unwritable or
+full state root fails. This was first written claiming `rejected` was the only
+one reachable there, which gave the other two a sentence telling a user with a
+perfectly good settings file that it could not be loaded. Verification of
+[#395](https://github.com/yogeshprasad098/falryn/pull/395) found it.
+
+What crosses into the shell is `ConfigurationValues` — values, not a service, so
+nothing in the interface can reach back for a key that was never resolved, and
+`src/tui` keeps importing from `src/domain` alone. Precedence is not restated:
+the launch path passes the same `configurationOverridesFor` map and the same
+profile a command passes, so `falryn --verbose` means one thing either way.
+
+Nothing reads a key yet. This is the path, not a setting, and the first
+interface key arrives with
+[#392](https://github.com/yogeshprasad098/falryn/issues/392).
+
 The capability record in `src/tui/capabilities.ts` extends the domain's facts
 and recomputes none of them: colour, character repertoire, TTY status, and size
 are carried verbatim from `terminalCapabilities()`. What it adds is dumb,
@@ -1464,9 +1515,50 @@ Four OpenTUI defaults are overridden, each for a reason #22 measured or the
 architecture already owns: `exitOnCtrlC: false` and `exitSignals: []` leave
 interrupt and signals with `src/application/interruption.ts` and
 `createProcessSignalPort`, `consoleMode: "disabled"` keeps diagnostics on the
-stderr boundary, and mouse reporting is gated on the record rather than left at
-OpenTUI's default of on — it is off today because nothing consumes a pointer
-event until [#26](https://github.com/yogeshprasad098/falryn/issues/26).
+stderr boundary, and mouse reporting is gated rather than left at OpenTUI's
+default of on.
+
+**The interface takes pointer input, and only where it is wanted**
+([#392](https://github.com/yogeshprasad098/falryn/issues/392)). A left click in
+the composer places the cursor at the clicked grapheme and focuses the composer,
+through the same anchor-and-cursor model the keyboard uses — the `place` action
+collapses a selection exactly as an unextended motion does, so no second notion
+of where the cursor is exists. The cell it resolves comes from the mapping #391
+delivered, in the space `MouseEvent.x`/`y` already arrive in.
+
+Turning reporting on takes text selection away from the terminal emulator:
+dragging selects inside Falryn, and the emulator's own selection needs a
+modifier bypass that differs per emulator. That cost is paid by every user of
+the default, so it is a declared setting rather than a consequence.
+`interface.pointer.enabled` is the `interface` group's first key — the group was
+proposed until something read it — it defaults to on, and `FALRYN_POINTER` is
+the escape hatch that needs no settings file. `coerce` accepts exactly `true`
+and `false` for a boolean, so `FALRYN_POINTER=0` is an invalid value reported as
+an issue rather than read as off, and the documentation says so.
+
+**There is no terminal mouse capability, and the plan for this assumed there
+was.** #392 was planned around creating the renderer with reporting off,
+refreshing the record, and enabling it once the record said the terminal had a
+mouse. `TerminalCapabilities` declares no such field — kitty keyboard, colour,
+unicode, focus tracking, sync, bracketed paste, hyperlinks, OSC 52, remote,
+multiplexer, and no mouse — and `observeRenderer` records `mouse:
+renderer.useMouse`, which is this program's own setting reflected back. Gating on
+it would have been circular and the feature would never have enabled once. So
+the gate is the two things that are real: the user asked for it, and the terminal
+is not a dumb one. The launch decision has already refused every run whose
+handles are not a terminal, so a renderer only exists where there is one to
+report into. The ordering the plan called for, and the restoration-report
+divergence it would have required, both went away with the capability that was
+never there.
+
+The shell reads exactly one key. `ShellRunRequest` carries the resolved values
+from [#390](https://github.com/yogeshprasad098/falryn/issues/390) and
+`src/tui/shell.tsx` projects one boolean out of them; `src/tui` imports nothing
+from `src/config`. Anything that is not `true` is off, absence included — a
+caller that composed no service graph resolved no configuration, and turning a
+user's terminal selection over to Falryn is not something to infer from a
+missing value. `src/config/keys.test.ts` asserts the registry declares the path
+the interface reads, because the string lives in two places.
 
 `split-footer` is the delivered default, qualified by #22, with
 `alternate-screen` when the terminal has too few rows to leave anything above a
@@ -2072,6 +2164,39 @@ under the composer. None of them is half-built: a large paste is classified,
 bounded, and described rather than inserted, and there is no attachment control
 that accepts a file and drops it.
 
+**The keyboard reaches every position the model can hold**
+([#387](https://github.com/yogeshprasad098/falryn/issues/387)). Characters,
+words, line ends, and the draft's ends, each extending a selection when shift is
+held. `word-left` and `word-right` join `EDITOR_MOTIONS`, and their boundary is
+the platform's: `wordStarts` in `src/domain/text-display.ts` uses
+`Intl.Segmenter` at word granularity beside the grapheme segmenter that was
+already there, for the same reason — what separates a word from the punctuation
+around it is a Unicode question that changes between releases. A word motion
+therefore crosses a CJK run with no spaces in it and steps over punctuation
+rather than stopping on every comma. A joined emoji is not word-like to the
+segmenter, and the motion inherits that answer rather than inventing a second
+one.
+
+Two things were measured rather than assumed, and both changed the design. **A
+modified arrow was not refused, it was silently downgraded**: `editFor` switched
+on `key.name` before considering any modifier, so `alt+left` fell into the plain
+left case and moved one character — a chord that looked bound and behaved worse
+than one that was missing. Modifiers are matched first now. And **`shift+up`
+reaches the composer's own handler while bare `up` does not**: the keymap claims
+the declared binding and not its modified form, so extending a selection upward
+is handled where the key actually lands and the history rule stays with the
+command that owns it. The two never need disambiguating — extending from the
+first line has nothing to do with recalling a submission.
+
+Alt and Ctrl both give the word motions, because a terminal sends whichever its
+user's keyboard produces and binding one would make the feature present on macOS
+and absent on Linux. Command cannot be promised: under the kitty protocol it
+arrives as `super` and is honoured, and most terminals transmit no Command
+modifier at all because the emulator claims those chords first — so `home` and
+`end` remain the line motions that always work, and
+`reference/KEYBOARD-SHORTCUTS.md` records Command as terminal-dependent rather
+than listing it as a binding the build honours.
+
 Two decisions came out of measuring the keymap rather than reading about it. A
 layer that claims a key means the focused control never sees it, so while the
 composer has focus, bindings whose key is one bare character are not registered —
@@ -2081,6 +2206,93 @@ prompt. The rule is narrow: every modified and named binding keeps working, so
 and reachable from the palette. And the `composer` keymap context is active on
 **focus** rather than on existence, because the composer's layer outranks the
 transcript's and the two share `up` and `down`.
+
+**The cursor is the terminal's own, placed rather than drawn**
+([#386](https://github.com/yogeshprasad098/falryn/issues/386)). Until now the
+composer spliced a caret glyph into the line at the cursor's column, which made
+the drawn line one grapheme longer than the buffer line and displaced everything
+after it: `hello world` with the cursor after `wo` was drawn `hello wo▏rld`. At
+the end of a draft that is invisible, which is why it shipped and why every
+existing check passed over it — they all type and assert without moving the
+cursor back into what they typed. It is not only cosmetic: a line at exactly the
+terminal's width gained a cell while the cursor sat on it, and typed text could
+not be asserted in a frame.
+
+The three reasons recorded for drawing a character were each answered against
+the installed renderer rather than in principle. A reversed *cell* would have
+needed a second styling owner; the terminal's own cursor is neither a cell nor a
+style. `Renderable` exposes `screenX` and `screenY` in the renderer's buffer
+space, which is the space `setCursorPosition` takes, so the absolute coordinate a
+flex layout only knows after it runs is readable rather than unavailable. And
+`captureSpans()` reports `cursor: [x, y]` from the state `setCursorPosition`
+writes, so "the cursor moved" stays assertable — the assertion moved to the
+coordinate instead of disappearing. The `caret` symbol role left `SYMBOL_ROLES`
+and all three repertoires with the drawing it existed for.
+
+The column is a *cell* offset and not a grapheme count, through the same
+`displayWidth` the layout and truncation use: `日本` before the cursor is two
+graphemes and four cells, and counting graphemes would have placed the cursor
+short by one cell per wide character — the same defect one layer down. Placement
+subscribes to `LAYOUT_CHANGED` on the composer's own renderable, because an
+effect runs after React commits while Yoga lays out inside the renderer's pass,
+so a first placement can read a position that does not exist yet; the check
+asserts the cursor on the *first settled frame* rather than after a keystroke, so
+a placement one frame behind fails rather than passing on the second.
+
+**Both directions of that mapping live in one module**
+([#391](https://github.com/yogeshprasad098/falryn/issues/391)).
+`src/tui/composer/geometry.ts` turns a draft position into a screen cell and a
+screen cell back into a draft position; the component hands it the drawn lines
+and consumes the answer, and a control asserts that nothing else declares either
+direction or reaches for `displayWidth` to compute its own. The pointer work
+[#388](https://github.com/yogeshprasad098/falryn/issues/388) needs the inward
+direction, and two functions computing one relationship disagree eventually — on
+a wide glyph, or the first time somebody edits one of them — with the
+disagreement surfacing as a cursor landing a cell from where it was clicked.
+
+The module is pure arithmetic: no renderer, no React, no pointer, and no
+editing. It answers *where*, and the caller decides what to do about it, which
+is what lets the awkward cases be checked as data. A cell inside a wide grapheme
+resolves to that grapheme's **start** — a position between the two cells of `日`
+does not exist in the draft, and inventing one would let a click produce a column
+the editing model can never hold. A cell past a line's text resolves to that
+line's end, a row outside the drawn window to the nearest drawn line, and a
+window that drew nothing to no position at all rather than to line zero.
+
+The round trip is the check that holds the two directions together, and it is
+asserted as two statements rather than one. The law that holds everywhere: a
+cell answers **the column of the grapheme drawn in it**, which is the last of
+the columns sharing that cell. And identity — the same column returns — over the
+lines where every grapheme claims a cell of its own. Both are asserted for
+*every* column of six lines rather than for a representative sample.
+
+The two differ wherever columns share a cell, which a paste can produce: a
+zero-width grapheme claims none, so the positions on either side of it are drawn
+in the same place and clicking there answers the one in front of the character a
+reader can see. Cell zero is not special-cased, and that is a correction rather
+than a detail — a short-circuit answering column zero for any cell at or below
+zero made a line *opening* with a combining mark the one position where the
+answer was the first column sharing a cell instead of the last. Only a negative
+cell short-circuits now, for a click left of the region.
+
+Two rounds of verification were needed to get that statement true. The first
+claimed identity for every column of every line, which no fixture could falsify
+because none held a zero-width grapheme. The second claimed the *earliest*
+column sharing the cell, which the one new fixture could not falsify either —
+it opened with the mark, where the special case happened to return the earliest
+while the loop everywhere else returned the last. Both zero-width placements are
+fixtures now, and the set was checked to distinguish the two candidate laws: the
+earlier claim, implemented, fails four of these checks.
+
+The joined-emoji case passes while the recorded disagreement between
+`displayWidth` and the renderer stands, because what the property needs is that
+both directions use the same measurement — not that the measurement is right.
+
+One upstream behavior was measured and is worth recording: the renderer clamps
+the cursor's `x` to a minimum of one, so column 0 and column 1 report the same
+number. Nothing in the placement depends on telling them apart, but a check that
+took its origin from an empty draft would be a cell short — the cursor checks
+measure deltas between two positions clear of the clamp instead.
 
 The composer's height is reserved by the layout rather than chosen by the view,
 and its chrome is a fixed two rows. The transcript sizes its own window from what

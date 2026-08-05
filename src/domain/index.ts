@@ -770,6 +770,7 @@ export {
   MAX_DISPLAY_WIDTH,
   sanitizeTerminalText,
   truncateToWidth,
+  wordStarts,
   wrapToWidth,
 } from "./text-display.ts";
 export type { Timestamp, TimestampError } from "./time.ts";

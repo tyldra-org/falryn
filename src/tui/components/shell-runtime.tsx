@@ -49,6 +49,7 @@ import {
   type FocusRegion,
   focusNext,
   focusPrevious,
+  focusRegion,
   releaseFocus,
   withRegions,
 } from "../focus.ts";
@@ -136,6 +137,15 @@ export type ShellAction =
   | { readonly kind: "close-overlay" }
   | { readonly kind: "focus-next" }
   | { readonly kind: "focus-previous" }
+  /**
+   * Focus a named region directly.
+   *
+   * How a click reaches focus. Through the existing transition rather than a
+   * second concept of it: #386 shows the composer's cursor only while it has
+   * focus, so a click that placed a cursor into an unfocused composer would
+   * have no visible effect and the next keystroke would go somewhere else.
+   */
+  | { readonly kind: "focus-region"; readonly id: string }
   | { readonly kind: "notice"; readonly message: string }
   /** The reachable regions changed: a resize, or an item going away. */
   | { readonly kind: "reseat"; readonly regions: readonly FocusRegion[] }
@@ -186,6 +196,8 @@ export function shellReducer(state: ShellState, action: ShellAction): ShellState
       return { ...state, focus: focusNext(state.focus) };
     case "focus-previous":
       return { ...state, focus: focusPrevious(state.focus) };
+    case "focus-region":
+      return { ...state, focus: focusRegion(state.focus, action.id) };
     case "notice":
       return { ...state, notice: action.message === "" ? null : action.message };
     case "reseat":
@@ -269,6 +281,8 @@ export type ShellRuntime = {
    * go through `run`; this is the path for everything that is not one.
    */
   composer(action: ComposerAction): void;
+  /** Moves focus to the composer, which is what a click into it has to do first. */
+  focusComposer(): void;
   /** Sends an edit to the open palette's search field. */
   paletteQuery(action: EditorAction): void;
 };
@@ -374,6 +388,10 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
     dispatch({ kind: "composer", action });
   }, []);
 
+  const focusComposer = useCallback((): void => {
+    dispatch({ kind: "focus-region", id: COMPOSER_REGION });
+  }, []);
+
   const paletteQuery = useCallback((action: EditorAction): void => {
     dispatch({ kind: "palette-query", action });
   }, []);
@@ -408,6 +426,7 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
     reseat,
     reportTranscriptGeometry,
     composer,
+    focusComposer,
     paletteQuery,
   };
 }

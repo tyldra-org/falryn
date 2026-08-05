@@ -9,6 +9,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { graphemes, wordStarts } from "../../domain/index.ts";
 import {
   cursorPosition,
   type EditorState,
@@ -186,5 +187,135 @@ describe("content", () => {
     const state = apply(editing("first"), { kind: "set", text: "second" });
     expect(state.text).toBe("second");
     expect(state.cursor).toBe(6);
+  });
+});
+
+describe("placing the cursor", () => {
+  test("puts it at the line and column it was given", () => {
+    const state = apply(editing("one\ntwo\nthree"), {
+      kind: "place",
+      at: { line: 1, column: 2 },
+    });
+    expect(cursorPosition(state)).toEqual({ line: 1, column: 2 });
+  });
+
+  test("collapses a selection the way an unextended motion does", () => {
+    // One selection model. A pointer that left the anchor where it was would be
+    // a second notion of where the cursor is, and the first thing to disagree
+    // would be a click inside a keyboard selection.
+    const selected = apply(editing("hello"), { kind: "select-all" });
+    expect(selectedText(selected)).toBe("hello");
+
+    const placed = apply(selected, { kind: "place", at: { line: 0, column: 2 } });
+    expect(selectedText(placed)).toBe("");
+    expect(placed.anchor).toBe(placed.cursor);
+  });
+
+  test("collapses a selection even when the cursor does not move", () => {
+    // Clicking where the cursor already sits is how a user dismisses a
+    // selection, so identity here would make that click do nothing.
+    const selected = apply(editing("hello"), { kind: "select-all" });
+    const placed = apply(selected, { kind: "place", at: cursorPosition(selected) });
+    expect(selectedText(placed)).toBe("");
+  });
+
+  test("clamps a column past the end of its line", () => {
+    // What a click to the right of the text means. The line is `one`, and the
+    // click was somewhere out in the empty part of the row.
+    const state = apply(editing("one\ntwo"), { kind: "place", at: { line: 0, column: 99 } });
+    expect(cursorPosition(state)).toEqual({ line: 0, column: 3 });
+  });
+
+  test("clamps a line past the last one", () => {
+    const state = apply(editing("one\ntwo"), { kind: "place", at: { line: 40, column: 0 } });
+    expect(cursorPosition(state)).toEqual({ line: 1, column: 0 });
+  });
+
+  test("round-trips against the position it reports", () => {
+    // The inverse holding, over every position of a multi-line draft. The two
+    // directions live together for this reason, and a check is what keeps that
+    // worth anything.
+    const text = "one\n\nthree\nfour";
+    const lines = text.split("\n");
+    for (const [line, content] of lines.entries()) {
+      for (let column = 0; column <= graphemes(content).length; column += 1) {
+        const placed = apply(editing(text), { kind: "place", at: { line, column } });
+        expect(cursorPosition(placed)).toEqual({ line, column });
+      }
+    }
+  });
+});
+
+describe("word motions", () => {
+  /** Where the cursor ends up after a motion from a given offset. */
+  function after(text: string, from: number, motion: "word-left" | "word-right"): number {
+    const state = apply(
+      { text, cursor: from, anchor: from },
+      { kind: "move", motion, extend: false },
+    );
+    return state.cursor;
+  }
+
+  test("step between words rather than pausing on the punctuation between them", () => {
+    // The reason the boundary is the platform's and not `split(" ")`: a motion
+    // that stopped on every comma would take three presses to cross `a, b`.
+    const text = "one, two three";
+    expect(after(text, 14, "word-left")).toBe(9);
+    expect(after(text, 9, "word-left")).toBe(5);
+    expect(after(text, 5, "word-left")).toBe(0);
+  });
+
+  test("cross a CJK run, which has no spaces to split on", () => {
+    // `split(" ")` sees one word here and the segmenter sees the words. This is
+    // the case that makes the platform's answer worth taking.
+    const text = "hello 世界です world";
+    const starts = wordStarts(text);
+    expect(starts.length).toBeGreaterThan(2);
+    // The second word's start, which a `split(" ")` boundary would have missed
+    // entirely because there is no space inside the run.
+    expect(after(text, 0, "word-right")).toBe(starts[1] ?? -1);
+  });
+
+  test("treat a joined emoji the way the platform does", () => {
+    // Recorded rather than asserted as a preference: the segmenter reports a ZWJ
+    // sequence as not word-like, so a word motion steps over it as it would over
+    // punctuation. That is the platform's answer and this module inherits it —
+    // the alternative is a second opinion about what a word is.
+    const text = "hi 👨‍👩‍👧 there";
+    const starts = wordStarts(text);
+    expect(starts.length).toBe(2);
+    expect(after(text, 0, "word-right")).toBe(starts[1] ?? -1);
+  });
+
+  test("stop at the ends rather than before them", () => {
+    // The rule `left` and `right` already follow at the buffer's edges: a word
+    // motion never stops moving before the text does.
+    const text = "one two";
+    expect(after(text, 7, "word-right")).toBe(7);
+    expect(after(text, 0, "word-left")).toBe(0);
+    expect(after(text, 5, "word-right")).toBe(7);
+  });
+
+  test("count graphemes, so a wide or combining character is one position", () => {
+    // The offsets a cursor holds are grapheme indices everywhere else in this
+    // model, and a boundary reported in code units would be a second coordinate
+    // system — with the first astral character putting a motion inside a
+    // character.
+    const text = "café 日本 x";
+    const units = graphemes(text);
+    for (const start of wordStarts(text)) {
+      expect(start).toBeLessThanOrEqual(units.length);
+      // A boundary is a position between characters, never inside one.
+      expect(Number.isInteger(start)).toBe(true);
+    }
+  });
+
+  test("extend a selection like every other motion", () => {
+    const selected = apply(editing("one two three"), {
+      kind: "move",
+      motion: "word-left",
+      extend: true,
+    });
+    expect(selectedText(selected)).toBe("three");
   });
 });

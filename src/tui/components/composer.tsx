@@ -7,16 +7,35 @@
  * What is left here is measurement and mounting, which is the part that
  * genuinely needs a renderer.
  *
- * ## Why the caret is a character
+ * ## Why the cursor is the terminal's own
  *
- * A terminal cursor is the natural way to show where typing goes, and OpenTUI
- * can place one. It is not what this draws, for two reasons. The line primitive
- * styles a whole line rather than a cell, so a reversed cursor cell would need a
- * second styling owner; and placing the real cursor needs the composer's
- * absolute screen coordinates, which a flex layout only knows after it has run.
- * A caret glyph from the symbol set is a character, so it survives a monochrome
- * terminal, an ASCII repertoire, and a frame capture — the last of which is what
- * makes "the cursor moved" an assertion rather than a screenshot.
+ * It draws no caret. This component used to splice a glyph into the line at the
+ * cursor's column, which made the drawn line one grapheme longer than the buffer
+ * line and displaced every character after it — #386, visible as `hello wo▏rld`
+ * and invisible at the end of a draft, which is why it shipped. A drawn line
+ * that is not the buffer line is also a line whose width is wrong exactly while
+ * the cursor is on it, and a frame in which typed text cannot be asserted.
+ *
+ * So the cursor is placed rather than drawn. Three objections were recorded
+ * against that when the caret was chosen, and each has an answer against the
+ * installed renderer rather than in principle:
+ *
+ * - the line primitive styles a whole line rather than a cell — which is only a
+ *   problem for a *reversed cell*, and the terminal's own cursor is neither a
+ *   cell nor a style;
+ * - placing a real cursor needs absolute screen coordinates a flex layout only
+ *   knows after it has run — `Renderable` exposes `screenX` and `screenY` in the
+ *   renderer's own buffer space, which is the space `setCursorPosition` takes;
+ * - a glyph survives a frame capture, which is what makes "the cursor moved" an
+ *   assertion rather than a screenshot — and `captureSpans()` reports
+ *   `cursor: [x, y]` from the same state `setCursorPosition` writes, so the
+ *   assertion moves to the coordinate instead of disappearing.
+ *
+ * The column is a *cell* offset, not a grapheme count, and this component no
+ * longer computes it. `../composer/geometry.ts` owns that mapping in both
+ * directions — #391 — because the pointer needs the same arithmetic run
+ * backwards, and two functions computing one relationship disagree eventually.
+ * What is left here is handing it the drawn lines and the position.
  *
  * ## Why the region is bounded
  *
@@ -29,17 +48,22 @@
  * have to agree exactly.
  */
 
-import type { KeyEvent } from "@opentui/core";
-import { useKeyboard, usePaste } from "@opentui/react";
-import type { ReactNode } from "react";
+import type { BoxRenderable, KeyEvent, MouseEvent } from "@opentui/core";
+import { LayoutEvents, MouseButton } from "@opentui/core";
+import { useKeyboard, usePaste, useRenderer } from "@opentui/react";
+import { type ReactNode, type RefObject, useEffect, useRef } from "react";
 import { graphemes } from "../../domain/index.ts";
 import {
   type ComposerAction,
   type ComposerState,
+  cellOfPosition,
   cursorPosition,
+  type DrawnLine,
   describeOutcome,
   type EditorAction,
+  type EditorMotion,
   linesOf,
+  positionOfCell,
   selectionOf,
 } from "../composer/index.ts";
 import type { ComposerModel } from "../composer-model.ts";
@@ -58,6 +82,16 @@ export type ComposerViewProps = {
    * keyboard subscription is made at all, so a static frame costs nothing.
    */
   readonly onAction?: (action: ComposerAction) => void;
+  /**
+   * Focuses the composer, through the shell's own focus model.
+   *
+   * Separate from {@link onAction} because focus is not the composer's to own:
+   * it belongs to the region model that decides which control keys reach. A
+   * click needs both — #386 draws the cursor only while the composer has focus,
+   * so a click that placed one into an unfocused composer would leave no mark
+   * and send the next keystroke somewhere else.
+   */
+  readonly onFocus?: () => void;
 };
 
 export function ComposerView(props: ComposerViewProps): ReactNode {
@@ -67,10 +101,57 @@ export function ComposerView(props: ComposerViewProps): ReactNode {
   const columns = primaryColumns(frame.viewport, layoutClass);
   const { model } = props;
 
-  const window = visibleLines(model.state, frame.theme.symbols.caret);
+  const window = visibleLines(model.state);
+  const box = useRef<BoxRenderable | null>(null);
+  const at = cursorPosition(model.state.editor);
+  useCursorPlacement({
+    box,
+    // Where the cursor's line sits among the drawn ones. The window is anchored
+    // to the cursor, so this is never negative — but the drawn rows are what the
+    // coordinate is relative to, not the draft's own line numbers.
+    row: at.line - window.hidden,
+    cell: cellOfPosition(window.lines, at) ?? 0,
+    columns,
+    focused: model.focused,
+  });
+
+  const { onAction, onFocus } = props;
+  const click = (event: MouseEvent): void => {
+    const renderable = box.current;
+    if (renderable === null || event.button !== MouseButton.LEFT) {
+      return;
+    }
+    // The mapping #391 delivered, in the space the event already arrives in:
+    // `MouseEvent.x`/`y` and `screenX`/`screenY` are both the renderer's own
+    // buffer coordinates, so there is no translation between them to get wrong.
+    const at = positionOfCell(
+      { lines: window.lines, originColumn: renderable.screenX, originRow: renderable.screenY },
+      { column: event.x, row: event.y },
+    );
+    if (at === null) {
+      return;
+    }
+    // Focus first: placing a cursor into a composer that does not have focus
+    // draws nothing and takes no keys.
+    onFocus?.();
+    onAction?.({ kind: "edit", action: { kind: "place", at } });
+  };
 
   return (
-    <box flexDirection="column" width={columns} height={frame.composerRows}>
+    // The rule below is about DOM elements taking a pointer handler without a
+    // role a screen reader can announce. A terminal has neither a role system
+    // nor a screen-reader surface, and the concern the rule stands in for — a
+    // pointer must not be the only way to reach something — is held directly
+    // here: this handler duplicates a position the arrow keys already reach, and
+    // every command stays reachable from the keyboard.
+    // biome-ignore lint/a11y/noStaticElementInteractions: no roles in a terminal, and the keyboard route is complete
+    <box
+      ref={box}
+      flexDirection="column"
+      width={columns}
+      height={frame.composerRows}
+      onMouseDown={click}
+    >
       {window.lines.map((line) => (
         // Keyed by the line's position in the document rather than by its offset
         // in the window, so a key stays with its line while the window scrolls.
@@ -134,6 +215,68 @@ function useComposerInput(
 }
 
 /**
+ * The motion a modified key means, or `null` when it is not one.
+ *
+ * ## Which modifiers, and why these
+ *
+ * Read from what the terminal actually reports, checked against the installed
+ * parser rather than assumed. Alt sets **`option`**, and also sets `meta` —
+ * `key.meta = mods.alt || mods.meta` — so a binding that means Alt has to read
+ * `option` or it will fire for things that are not Alt.
+ *
+ * `option` and `ctrl` both give the word motions, because they are the
+ * conventions of different platforms and a terminal sends whichever its user's
+ * keyboard produces: Alt on macOS, Ctrl on Linux and Windows. Binding one and
+ * not the other would make the feature present on one platform and absent on
+ * another for no reason a user could see.
+ *
+ * `ctrl` plus `home`/`end` is the document motion, which is that same
+ * convention. The line motions need no chord at all: `home` and `end` already
+ * reach them everywhere.
+ *
+ * `super` is Command under the kitty protocol, and most terminals transmit no
+ * Command modifier at all because the emulator claims those chords first. It is
+ * honoured where it arrives and promised nowhere — the documentation says
+ * terminal-dependent rather than listing it as a binding the build honours.
+ *
+ * ## Why `up` and `down` are here only with shift
+ *
+ * Bare `up` and `down` never reach this function: `composer.historyPrevious`
+ * and `composer.historyNext` claim them, and a bound key is dispatched before
+ * any subscriber sees it. That is deliberate — inside a draft they move a line,
+ * and from its edge they recall a submission.
+ *
+ * Shifted, they do arrive, which was measured rather than reasoned about: the
+ * keymap matches the declared binding and does not claim the modified form. So
+ * extending a selection upward is handled here, where the key actually lands,
+ * and the history rule stays with the command that owns it. The two never need
+ * disambiguating, because extending a selection from the first line has nothing
+ * to do with recalling a submission.
+ */
+function chordMotion(key: KeyEvent): EditorMotion | null {
+  const word = key.option === true || key.ctrl === true;
+  const document = key.ctrl === true;
+  const line = key.super === true;
+
+  switch (key.name) {
+    case "left":
+      return word ? "word-left" : line ? "line-start" : null;
+    case "right":
+      return word ? "word-right" : line ? "line-end" : null;
+    case "home":
+      return document ? "document-start" : null;
+    case "end":
+      return document ? "document-end" : null;
+    case "up":
+      return key.shift === true ? "up" : null;
+    case "down":
+      return key.shift === true ? "down" : null;
+    default:
+      return null;
+  }
+}
+
+/**
  * The edit a key means, or `null` when it means nothing here.
  *
  * `null` rather than a no-op action, so a key the composer has no use for is
@@ -142,6 +285,16 @@ function useComposerInput(
  */
 function editFor(key: KeyEvent): EditorAction | null {
   const extend = key.shift === true;
+
+  // Modifiers first, and that ordering is the fix rather than a preference.
+  // The switch below matches on `key.name` alone, so before #387 an `alt+left`
+  // fell into `case "left"` and moved one character — a chord that looked bound
+  // and behaved like a lesser binding, which is worse than one that does
+  // nothing.
+  const chord = chordMotion(key);
+  if (chord !== null) {
+    return { kind: "move", motion: chord, extend };
+  }
 
   switch (key.name) {
     case "backspace":
@@ -178,50 +331,113 @@ function editFor(key: KeyEvent): EditorAction | null {
   return null;
 }
 
-/** One drawn line, carrying where in the draft it came from. */
-type WindowLine = {
-  /** Zero-based line number in the draft. The React key, and never the offset. */
-  readonly number: number;
-  readonly text: string;
-};
-
+/**
+ * The drawn lines, and how many the window starts past.
+ *
+ * The line shape is `DrawnLine` from `../composer/geometry.ts` rather than a
+ * local one: the mapping between a draft position and a screen cell is owned
+ * there, and it takes these lines. Two shapes for one thing is how the two
+ * directions of that mapping would drift apart.
+ */
 type Window = {
-  readonly lines: readonly WindowLine[];
+  readonly lines: readonly DrawnLine[];
   readonly hidden: number;
 };
 
 /**
- * The lines around the cursor, with the caret drawn into the one it is on.
+ * The lines around the cursor, exactly as the draft holds them.
  *
  * The window is anchored to the cursor rather than to the start, because the
  * line being typed is the one that has to stay visible — a composer that showed
  * the first six lines of a long draft would hide the text as it was written.
  */
-function visibleLines(state: ComposerState, caret: string): Window {
+function visibleLines(state: ComposerState): Window {
   const lines = linesOf(state.editor);
   const at = cursorPosition(state.editor);
   // Anchored so the cursor's line is the last one shown, clamped at both ends.
   const start = Math.max(0, Math.min(at.line - COMPOSER_MAX_TEXT_ROWS + 1, lines.length - 1));
-  const shown: WindowLine[] = [];
+  const shown: DrawnLine[] = [];
   for (let line = start; line < lines.length && shown.length < COMPOSER_MAX_TEXT_ROWS; line += 1) {
-    const text = lines[line] ?? "";
-    shown.push({ number: line, text: line === at.line ? withCaret(text, at.column, caret) : text });
+    shown.push({ number: line, text: lines[line] ?? "" });
   }
 
   return { lines: shown, hidden: start };
 }
 
 /**
- * A line with the caret placed before the character the cursor is on.
+ * Puts the terminal's own cursor where the next character will go.
  *
- * Both halves are rebuilt from graphemes rather than cut at a code-unit index.
- * That is the same rule the editing model follows, and it is not pedantry here
- * either: the cursor's column is a grapheme offset that does not correspond to a
- * string index at all, and cutting at one would split a surrogate pair.
+ * The hook shape `./overlay-room.tsx` established: hold the renderer, write on
+ * change, undo on unmount, and check `isDestroyed` first — that guard is not
+ * defensive habit, it is that unmount can run *after* the session destroyed the
+ * renderer, and reaching released native state throws where nothing catches it.
+ *
+ * ## Why it subscribes to layout rather than only to a render
+ *
+ * A `useEffect` runs after React commits, and Yoga runs its layout inside the
+ * renderer's own pass. So the first effect after mount can read a `screenY` that
+ * layout has not produced yet, and the cursor would be placed a frame late —
+ * which looks correct the moment anything else redraws, and is therefore the
+ * kind of defect that survives review. `LAYOUT_CHANGED` on the composer's own
+ * renderable is when the coordinate becomes true, and the check for this asserts
+ * the cursor on the *first settled frame* rather than after a keystroke, so a
+ * placement that is one frame behind fails rather than passing on the second.
+ *
+ * ## Why the column clamps
+ *
+ * `Line` truncates at `maxColumns` and the composer does not scroll
+ * horizontally, so a cursor past the truncation point has no cell of its own. It
+ * clamps to the last drawn one: a cursor placed outside the composer's box lands
+ * on a cell belonging to another region, which is a worse defect than the one
+ * this replaced.
  */
-function withCaret(line: string, column: number, caret: string): string {
-  const units = graphemes(line);
-  return `${units.slice(0, column).join("")}${caret}${units.slice(column).join("")}`;
+function useCursorPlacement(options: {
+  readonly box: RefObject<BoxRenderable | null>;
+  readonly row: number;
+  readonly cell: number;
+  readonly columns: number;
+  readonly focused: boolean;
+}): void {
+  const renderer = useRenderer();
+  const { box, row, cell, columns, focused } = options;
+
+  useEffect(() => {
+    const renderable = box.current;
+    if (renderable === null) {
+      return;
+    }
+
+    const place = (): void => {
+      if (renderer.isDestroyed) {
+        return;
+      }
+      renderer.setCursorPosition(
+        renderable.screenX + Math.min(cell, Math.max(0, columns - 1)),
+        renderable.screenY + row,
+        focused,
+      );
+    };
+
+    place();
+    renderable.on(LayoutEvents.LAYOUT_CHANGED, place);
+    return () => {
+      renderable.off(LayoutEvents.LAYOUT_CHANGED, place);
+    };
+  }, [renderer, box, row, cell, columns, focused]);
+
+  useEffect(() => {
+    // Hidden on the way out, and only on the way out — a cleanup that ran on
+    // every dependency change would hide the cursor between two placements of
+    // it. The shell's own teardown restores cursor visibility through
+    // `destroy()` as well; this is for the case where the composer goes away
+    // while the renderer stays.
+    return () => {
+      if (!renderer.isDestroyed) {
+        const state = renderer.getCursorState();
+        renderer.setCursorPosition(state.x, state.y, false);
+      }
+    };
+  }, [renderer]);
 }
 
 /**

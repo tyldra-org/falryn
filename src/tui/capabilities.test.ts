@@ -221,20 +221,33 @@ describe("refreshing", () => {
 });
 
 describe("the mouse gate", () => {
-  test("is off before a renderer has observed anything", () => {
-    // Every creation happens here, which is the point: nothing consumes a
-    // pointer event yet, and OpenTUI's default is on.
-    expect(usesMouse(record())).toBe(false);
+  test("is on before a renderer exists, because nothing about a renderer decides it", () => {
+    // #392 planned to refresh the record and read whether the terminal had a
+    // mouse. `TerminalCapabilities` declares no such field, and
+    // `observeRenderer` records `mouse: renderer.useMouse` — this program's own
+    // setting reflected back — so gating on it would have been circular and the
+    // feature would never have enabled once. What decides it is the user's
+    // setting and whether the terminal can address a cell at all.
+    expect(usesMouse(record(), true)).toBe(true);
   });
 
-  test("is off on a dumb terminal even when a renderer reports it", () => {
-    const dumb = withRendererCapabilities(record({ TERM: "dumb" }), { ...OBSERVED, mouse: true });
-    expect(usesMouse(dumb)).toBe(false);
-  });
-
-  test("reads the record rather than a constant", () => {
-    // The gate has to be able to answer yes, or it is not a gate.
+  test("is off when the user has not asked for it", () => {
+    // #392: turning reporting on takes text selection away from the terminal
+    // emulator, so it is a setting rather than a consequence of the terminal
+    // being capable.
     const enabled = withRendererCapabilities(record(), { ...OBSERVED, mouse: true });
-    expect(usesMouse(enabled)).toBe(true);
+    expect(usesMouse(enabled, false)).toBe(false);
+  });
+
+  test("is off when nothing resolved the setting at all", () => {
+    // A caller that composed no service graph resolves no configuration, and an
+    // unanswered question is not a yes. Turning a user's terminal selection over
+    // to Falryn is not something to infer from a missing value.
+    expect(usesMouse(record(), undefined)).toBe(false);
+  });
+
+  test("refuses a dumb terminal, whatever the user asked for", () => {
+    // A terminal that cannot address a cell cannot report a click in one.
+    expect(usesMouse(record({ TERM: "dumb" }), true)).toBe(false);
   });
 });

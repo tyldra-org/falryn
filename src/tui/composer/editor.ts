@@ -34,7 +34,7 @@
  * model untestable without deciding a terminal width first.
  */
 
-import { graphemes } from "../../domain/index.ts";
+import { graphemes, wordStarts } from "../../domain/index.ts";
 
 export type EditorState = {
   /** The canonical text. Always the join of its graphemes; never a display form. */
@@ -60,6 +60,8 @@ export const EDITOR_MOTIONS = [
   "down",
   "line-start",
   "line-end",
+  "word-left",
+  "word-right",
   "document-start",
   "document-end",
 ] as const;
@@ -83,12 +85,38 @@ export type EditorAction =
    * inserted the text instead would append it to whatever was already there.
    */
   | { readonly kind: "set"; readonly text: string }
+  /**
+   * Puts the cursor at a line and column, collapsing any selection.
+   *
+   * How a click arrives, and it is deliberately the *same* transition an
+   * unextended motion makes: one anchor, one cursor, one selection model. A
+   * pointer that introduced a second notion of where the cursor is would be two
+   * answers to a question with one, and the first thing to disagree would be a
+   * click landing inside a selection made with the keyboard.
+   *
+   * A position outside the text is clamped rather than refused. The caller is a
+   * pointer, and a click below the last line or past the end of one means the
+   * nearest position that exists — refusing would make every caller write that
+   * rule again.
+   */
+  | { readonly kind: "place"; readonly at: CursorPosition }
   | { readonly kind: "clear" };
 
 export function editorReducer(state: EditorState, action: EditorAction): EditorState {
   const units = graphemes(state.text);
 
   switch (action.kind) {
+    case "place": {
+      const cursor = offsetOf(units, action.at);
+      // Not identity when the cursor did not move: a click that lands where the
+      // cursor already is still collapses a selection, which is what a user
+      // means by clicking inside one.
+      if (cursor === state.cursor && state.anchor === state.cursor) {
+        return state;
+      }
+      return { text: state.text, cursor, anchor: cursor };
+    }
+
     case "insert":
       return insert(state, units, action.text);
 
@@ -198,6 +226,24 @@ export function cursorPosition(state: EditorState): CursorPosition {
   return positionOf(graphemes(state.text), state.cursor);
 }
 
+/**
+ * The grapheme offset a line and column names.
+ *
+ * The inverse of {@link positionOf}, and it lives beside it for the reason
+ * `../composer/geometry.ts` gives about its own pair: two functions computing
+ * one relationship in two places disagree eventually, and the disagreement
+ * surfaces as a cursor landing somewhere nobody clicked.
+ *
+ * Both coordinates clamp. A line past the last is the last, and a column past a
+ * line's end is its end — which is what a click below the text or to the right
+ * of it means.
+ */
+function offsetOf(units: readonly string[], at: CursorPosition): number {
+  const line = Math.max(0, Math.min(at.line, lastLineIndex(units)));
+  const bounds = lineBounds(units, line);
+  return bounds.start + Math.max(0, Math.min(at.column, bounds.length));
+}
+
 function positionOf(units: readonly string[], index: number): CursorPosition {
   let line = 0;
   let column = 0;
@@ -261,6 +307,31 @@ function moved(units: readonly string[], cursor: number, motion: EditorMotion): 
       return Math.max(0, cursor - 1);
     case "right":
       return Math.min(units.length, cursor + 1);
+    case "word-left": {
+      // The last word start strictly before the cursor. From inside a word that
+      // is the word's own start, which is what a user expects from the first
+      // press; from the start of one it is the previous word.
+      const starts = wordStarts(units.join(""));
+      let target = 0;
+      for (const start of starts) {
+        if (start < cursor) {
+          target = start;
+        }
+      }
+      return target;
+    }
+    case "word-right": {
+      // The next word start after the cursor, and the end of the text when
+      // there is none — the same rule `right` follows at the buffer's end, so a
+      // word motion never stops moving before the text does.
+      const starts = wordStarts(units.join(""));
+      for (const start of starts) {
+        if (start > cursor) {
+          return start;
+        }
+      }
+      return units.length;
+    }
     case "document-start":
       return 0;
     case "document-end":

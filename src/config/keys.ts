@@ -50,6 +50,7 @@ import {
   UNLIMITED,
 } from "../domain/index.ts";
 import {
+  booleanKey,
   type ConfigurationKeyDeclaration,
   enumKey,
   integerKey,
@@ -301,9 +302,45 @@ export const DIAGNOSTICS_KEYS: readonly ConfigurationKeyDeclaration[] = [
   }),
 ];
 
+/**
+ * The interface group's first key.
+ *
+ * `reference/CONFIGURATION.md` declared this group — theme, keybindings,
+ * motion, transcript display — as proposed, under the rule that a group is
+ * declared only when something reads it. #392 is its first reader, so the group
+ * becomes real here rather than the key being invented somewhere new.
+ *
+ * The default is on, which is a decision with a cost attached and not a
+ * convenience: turning pointer input on takes text selection away from the
+ * terminal emulator, so a user who wants their emulator's selection back needs
+ * a way to say so that does not involve editing a file. `FALRYN_POINTER` is
+ * that way, and it is the reason the key declares an environment variable at
+ * all.
+ *
+ * `application-restart` rather than `live`: configuration is read once on the
+ * launch path and this build delivers no reload, so claiming a live class would
+ * promise a refresh nothing performs.
+ *
+ * Scoped away from `project`. Whether a pointer is wanted is a fact about the
+ * terminal someone is sitting at, not about the repository they opened — the
+ * same reasoning that keeps a project checkout from relocating this machine's
+ * data roots.
+ */
+export const INTERFACE_KEYS: readonly ConfigurationKeyDeclaration[] = [
+  booleanKey({
+    path: "interface.pointer.enabled",
+    summary: "Whether the interface captures mouse input, which the terminal otherwise owns.",
+    defaultValue: true,
+    scopes: ["user", "profile", "environment", "cli"],
+    applicationClass: "application-restart",
+    environmentVariable: "FALRYN_POINTER",
+  }),
+];
+
 export const V0_1_CONFIGURATION_KEYS: readonly ConfigurationKeyDeclaration[] = [
   ...DATA_KEYS,
   ...DIAGNOSTICS_KEYS,
+  ...INTERFACE_KEYS,
 ];
 
 /**
