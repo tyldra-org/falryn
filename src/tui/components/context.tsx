@@ -21,22 +21,16 @@ import type { Theme } from "../theme/index.ts";
 export type Frame = {
   readonly theme: Theme;
   /**
-   * The region the tree is actually drawn into.
-   *
-   * Not the terminal. In `split-footer` the live region is the footer and
-   * everything above it is the terminal's own scrollback, so these differ by
-   * most of the window — and a component that sized itself to the terminal
-   * would lay out a thirty-row frame into six rows of footer.
+   * The full terminal region the tree is drawn into.
    */
   readonly viewport: Viewport;
   /**
    * The terminal the user is in.
    *
-   * What the layout class is selected from, and the reason the two viewports are
-   * both carried. "Is there room for labels" is a question about the window; "how
-   * many rows may I draw" is a question about the region. Answering the first
-   * from the second makes every split-footer session compact on a terminal with
-   * room to spare.
+   * The physical terminal size reported by OpenTUI.
+   *
+   * It currently matches `viewport` because Falryn uses alternate-screen only,
+   * but remains an observed terminal fact for consumers that need it.
    */
   readonly terminal: Viewport;
   readonly layout: LayoutDecision;

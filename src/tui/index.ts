@@ -2,7 +2,7 @@
  * The terminal interface area's entrypoint — the half that costs nothing.
  *
  * This module exports the *decision* surface only: the capability record, the
- * launch decision, and screen-mode selection. Every one of them is a pure
+ * launch decision, and shell-capability record. Every one of them is a pure
  * function over facts, and none of them imports an OpenTUI runtime value. That
  * is the whole reason the entrypoint is split.
  *
@@ -65,14 +65,3 @@ export type {
   RestorationReport,
   TerminalMode,
 } from "./renderer-session.ts";
-export type { ScreenModeReason, ScreenModeSelection } from "./screen-mode.ts";
-export {
-  capturesStdout,
-  EXTERNAL_OUTPUT_MODE,
-  MIN_SPLIT_FOOTER_ROWS,
-  reservesFooter,
-  SCREEN_MODE_REASONS,
-  SCREEN_MODES,
-  SPLIT_FOOTER_HEIGHT,
-  selectScreenMode,
-} from "./screen-mode.ts";

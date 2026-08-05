@@ -55,7 +55,7 @@ function shell(shape: TerminalShape, activity?: ActivityProjection): Promise<str
       onExit={() => {}}
       {...(activity === undefined ? {} : { activity })}
     />,
-    { shape, screenMode: "alternate-screen" },
+    { shape },
   );
 }
 

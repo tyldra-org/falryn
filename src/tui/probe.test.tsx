@@ -13,10 +13,9 @@
  * a fact about what #21 can promise; the same failure found after a view layer
  * had been written on top of it would be a fact about work already spent.
  *
- * Beyond packaging, four scenarios record what #23 needs to design against:
- * whether split-footer works, what its stdout capture does to Falryn's own
- * result stream, whether the renderer can be told to leave signal handling
- * alone, and what `createCliRenderer` costs to start.
+ * Beyond packaging, the scenarios prove that the fixed alternate-screen
+ * renderer starts, leaves signal handling to Falryn, and reports its startup
+ * cost.
  */
 
 import { afterAll, describe, expect, test } from "bun:test";
@@ -25,7 +24,6 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { EXIT_CODES } from "../cli/index.ts";
 import {
-  CAPTURED_LINE,
   FRAME_CONTENT,
   PROBE_MARKER,
   PROBE_SCENARIOS,
@@ -167,28 +165,6 @@ function assertsFor(mode: "source" | "compiled", invoke: (scenario: ProbeScenari
   );
 
   test(
-    "takes the result stream over when split-footer captures stdout",
-    () => {
-      // Recorded as a finding rather than asserted as a preference. #23 prefers
-      // split-footer, and this is the cost: `capture-stdout` intercepts the
-      // handle `src/cli/streams.ts` writes the result through, so a line a
-      // command emitted lands in the renderer's scrollback queue instead of
-      // going straight to the consumer. A shell that wants both has to route
-      // machine output around the renderer or leave capture off.
-      const finished = invoke("split-footer");
-      expect(finished.exitCode, finished.stderr).toBe(EXIT_CODES.COMPLETED);
-      const observed = finished.observation ?? {};
-      expect(observed.screenMode).toBe("split-footer");
-      expect(observed.externalOutputMode).toBe("capture-stdout");
-      expect(observed.resultLineCaptured).toBe(true);
-      // And the line did not reach the consumer verbatim: it went into the
-      // footer's commit queue, which is exactly what "captured" means.
-      expect(finished.stdout).not.toContain(`${CAPTURED_LINE}\n`);
-    },
-    PROBE_RUN_TIMEOUT_MS,
-  );
-
-  test(
     "installs no signal handling when told not to, and some when not told",
     () => {
       const finished = invoke("signals");
@@ -241,7 +217,7 @@ describe("the probe fixture", () => {
   test("declares every scenario the test drives", () => {
     // Adding a scenario to the fixture without an assertion here would leave it
     // exercised in neither mode.
-    expect([...PROBE_SCENARIOS]).toEqual(["frame", "native", "keymap", "split-footer", "signals"]);
+    expect([...PROBE_SCENARIOS]).toEqual(["frame", "native", "keymap", "signals"]);
   });
 
   test("is the only module that renders the frame content", async () => {

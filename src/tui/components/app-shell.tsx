@@ -46,7 +46,6 @@ import { type Frame, FrameProvider } from "./context.tsx";
 import { OverlayHost } from "./overlay.tsx";
 import { CommandPalette, HelpOverlay } from "./overlay-routes.tsx";
 import { Line } from "./primitives.tsx";
-import { ScrollbackCommits } from "./scrollback-commits.tsx";
 import { StatusLine } from "./status-line.tsx";
 import { TranscriptView } from "./transcript.tsx";
 import { WorkspaceHeader } from "./workspace-header.tsx";
@@ -101,19 +100,15 @@ export function AppShell(props: AppShellProps): ReactNode {
   // than subscribed to separately, so there is one resize path and not two that
   // could arrive a frame apart.
   // Called for its subscription, not for its value: it is what re-renders this
-  // tree on a resize. The *value* comes from the renderer, because the drawable
-  // region also changes for reasons that are not resizes — an overlay growing
-  // the footer, for one — and a hook that only tracks the terminal would hand
-  // back a height that was correct one render ago.
+  // tree on a resize. Falryn always uses OpenTUI's alternate screen, so the
+  // renderer's drawable region is the terminal's full viewport.
   useTerminalDimensions();
   const viewport: Viewport = { columns: renderer.width, rows: renderer.height };
   const terminal: Viewport = {
     columns: renderer.terminalWidth,
     rows: renderer.terminalHeight,
   };
-  // Selected from the terminal, drawn into the viewport. See `Frame` in
-  // `./context.tsx` for why those are different questions.
-  const layout = selectLayout(terminal);
+  const layout = selectLayout(viewport);
 
   const theme = useMemo(() => resolveTheme(props.theme), [props.theme]);
 
@@ -139,16 +134,8 @@ export function AppShell(props: AppShellProps): ReactNode {
 
   return (
     <FrameProvider value={frame}>
-      {/*
-       * Above the layout decision on purpose. Scrollback belongs to the terminal
-       * rather than to the arrangement, so a viewport too small for an honest
-       * frame is still a session whose finalized entries have somewhere to go —
-       * and a transcript that stopped committing while a window was briefly
-       * narrow would have a permanent hole in it.
-       */}
-      <ScrollbackCommits model={props.model.transcript} />
       {layout.kind === "insufficient" ? (
-        <MinimumSizeNotice viewport={terminal} decision={layout} />
+        <MinimumSizeNotice viewport={viewport} decision={layout} />
       ) : (
         <ShellFrame
           model={props.model}

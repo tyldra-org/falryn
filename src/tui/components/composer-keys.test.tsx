@@ -58,7 +58,6 @@ const END = "\u001b[F";
 async function drafting(draft = "alpha\nbravo", kittyKeyboard = false): Promise<Rendered> {
   const shell = await mount(<ShellApp theme={THEME} model={MODEL} onExit={() => {}} />, {
     shape: { columns: 100, rows: 24 },
-    screenMode: "alternate-screen",
     kittyKeyboard,
   });
   await shell.frame();

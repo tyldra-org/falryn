@@ -67,7 +67,6 @@ async function open(
 ): Promise<Session> {
   const shell = await mount(<ShellApp theme={THEME} model={MODEL} onExit={() => {}} />, {
     shape,
-    screenMode: "alternate-screen",
     kittyKeyboard,
   });
   await shell.frame();

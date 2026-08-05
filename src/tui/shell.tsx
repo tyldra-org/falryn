@@ -4,7 +4,7 @@
  * This is the only module that composes a renderer, a React root, and the
  * invocation's stop signal, and it is deliberately shaped like `dispatch`: open,
  * run, tear down, report. Everything it composes is separately testable — the
- * launch decision, the capability record, mode selection, and the session's
+ * launch decision, the capability record, renderer configuration, and the session's
  * restoration each answer on their own — so what is left here is the wiring and
  * the one thing wiring is uniquely able to get wrong, which is the order things
  * are released in.
@@ -53,7 +53,6 @@ import {
   type RendererSession,
 } from "./renderer-session.ts";
 import { type RuntimeFeed, runtimeFeed, useRuntimeProjection } from "./runtime-feed.ts";
-import { selectScreenMode } from "./screen-mode.ts";
 import { shellModel } from "./shell-model.ts";
 import { createTerminalShutdownParticipant } from "./shutdown.ts";
 import { selectVariant, type ThemeRequest } from "./theme/index.ts";
@@ -123,11 +122,8 @@ export type ShellRun =
  * stack unwind.
  */
 export async function runShell(request: ShellRunRequest): Promise<ShellRun> {
-  const selection = selectScreenMode(request.capabilities);
-
   const opened = await openRendererSession({
     capabilities: request.capabilities,
-    selection,
     // One key, read here and interpreted nowhere else. The interface is handed
     // resolved values and takes exactly one boolean out of them — it never
     // imports `src/config`, and it cannot reach back for a key that was not

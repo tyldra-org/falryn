@@ -59,10 +59,7 @@ async function open(shape: TerminalShape = { columns: 100, rows: 24 }): Promise<
         exits += 1;
       }}
     />,
-    {
-      shape,
-      screenMode: "alternate-screen",
-    },
+    { shape },
   );
   await shell.frame();
   return Object.assign(shell, {
@@ -267,7 +264,7 @@ async function palette(
     <FrameProvider value={FRAME}>
       <CommandPalette commands={commands} query={query} rows={rows} />
     </FrameProvider>,
-    { shape: { columns: 80, rows: 12 }, screenMode: "alternate-screen" },
+    { shape: { columns: 80, rows: 12 } },
   );
   return frame
     .split("\n")

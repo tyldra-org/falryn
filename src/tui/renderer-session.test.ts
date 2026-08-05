@@ -32,7 +32,6 @@ import {
   type RendererSession,
   rendererConfigFor,
 } from "./renderer-session.ts";
-import { SCREEN_MODES, SPLIT_FOOTER_HEIGHT, selectScreenMode } from "./screen-mode.ts";
 
 const HANDLES: ObservedHandles = {
   stdout: { isTty: true, columns: 100, rows: 30 },
@@ -60,7 +59,6 @@ async function open(
 ) {
   const result = await openRendererSession({
     capabilities,
-    selection: selectScreenMode(capabilities),
     createRenderer,
     ...(pointer === undefined ? {} : { pointer }),
   });
@@ -81,10 +79,7 @@ afterEach(() => {
 
 describe("the renderer options that are not defaults", () => {
   test("leave interrupt, signals, and diagnostics with their existing owners", () => {
-    const config = rendererConfigFor({
-      capabilities: record(),
-      selection: selectScreenMode(record()),
-    });
+    const config = rendererConfigFor({ capabilities: record() });
     // Each of these would otherwise install a second owner of something Falryn
     // already owns, and the first two were measured by #22 rather than assumed.
     expect(config.exitOnCtrlC).toBe(false);
@@ -93,19 +88,13 @@ describe("the renderer options that are not defaults", () => {
   });
 
   test("gate the mouse rather than leaving OpenTUI's default of on", () => {
-    const config = rendererConfigFor({
-      capabilities: record(),
-      selection: selectScreenMode(record()),
-    });
+    const config = rendererConfigFor({ capabilities: record() });
     expect(config.useMouse).toBe(false);
     expect(config.enableMouseMovement).toBe(false);
   });
 
   test("requests Kitty keyboard modifier reporting explicitly", () => {
-    const config = rendererConfigFor({
-      capabilities: record(),
-      selection: selectScreenMode(record()),
-    });
+    const config = rendererConfigFor({ capabilities: record() });
     expect(config.useKittyKeyboard).toEqual({});
   });
 
@@ -122,7 +111,7 @@ describe("the renderer options that are not defaults", () => {
     // on, and would never enable once. #392 was planned that way and this is
     // where that would have shown up.
     const enabled = withRendererCapabilities(record(), {
-      screenMode: "split-footer",
+      screenMode: "alternate-screen",
       columns: 100,
       rows: 30,
       mouse: true,
@@ -135,120 +124,38 @@ describe("the renderer options that are not defaults", () => {
       remote: false,
       multiplexer: null,
     });
-    expect(
-      rendererConfigFor({ capabilities: enabled, selection: selectScreenMode(enabled) }).useMouse,
-    ).toBe(false);
+    expect(rendererConfigFor({ capabilities: enabled }).useMouse).toBe(false);
   });
 
-  test("pair stdout capture with the one mode that permits it", () => {
-    // The assertion whose absence let #351 ship. `capture-stdout` is legal only
-    // with `split-footer`, and OpenTUI rejects the pairing during construction
-    // rather than ignoring it — so a constant here does not configure the other
-    // modes wrongly, it stops them starting at all.
-    expect(
-      rendererConfigFor({
-        capabilities: record(),
-        selection: { mode: "split-footer", reason: "transcript-first" },
-      }).externalOutputMode,
-    ).toBe("capture-stdout");
-
-    for (const mode of ["alternate-screen", "main-screen"] as const) {
-      expect({
-        mode,
-        output: rendererConfigFor({
-          capabilities: record(),
-          selection: { mode, reason: "override" },
-        }).externalOutputMode,
-      }).toEqual({ mode, output: "passthrough" });
-    }
-  });
-
-  test("reserve the footer only in the mode that has one", () => {
-    const split = record();
-    expect(
-      rendererConfigFor({
-        capabilities: split,
-        selection: { mode: "split-footer", reason: "transcript-first" },
-      }).footerHeight,
-    ).toBe(SPLIT_FOOTER_HEIGHT);
-    expect(
-      rendererConfigFor({
-        capabilities: split,
-        selection: { mode: "alternate-screen", reason: "override" },
-      }).footerHeight,
-    ).toBeUndefined();
+  test("always requests the full alternate screen without capturing stdout", () => {
+    const config = rendererConfigFor({ capabilities: record() });
+    expect(config.screenMode).toBe("alternate-screen");
+    expect(config.externalOutputMode).toBe("passthrough");
+    expect(config.footerHeight).toBeUndefined();
   });
 
   test("debounce resize enough to stop a frame storm and no more", () => {
-    const config = rendererConfigFor({
-      capabilities: record(),
-      selection: selectScreenMode(record()),
-    });
+    const config = rendererConfigFor({ capabilities: record() });
     expect(config.debounceDelay).toBe(RESIZE_DEBOUNCE_MS);
     expect(RESIZE_DEBOUNCE_MS).toBeLessThan(100);
   });
 });
 
-describe("the modes a session asks for", () => {
-  test("are derived from the configuration rather than asserted", () => {
-    // A mode nobody enabled must never be reported as one that was restored.
-    const split = enabledModes({
-      screenMode: "split-footer",
-      externalOutputMode: "capture-stdout",
-    });
-    expect(split).toContain("raw-input");
-    expect(split).toContain("stdout-capture");
-    expect(split).not.toContain("alternate-screen");
-    expect(split).not.toContain("mouse");
+describe("the terminal state a session asks for", () => {
+  test("includes the alternate screen and never claims stdout capture", () => {
+    const modes = enabledModes(rendererConfigFor({ capabilities: record() }));
+    expect(modes).toContain("raw-input");
+    expect(modes).toContain("alternate-screen");
+    expect(modes).not.toContain("stdout-capture");
+    expect(modes).not.toContain("mouse");
   });
 
-  test("include the alternate screen only in that mode", () => {
-    expect(enabledModes({ screenMode: "alternate-screen" })).toContain("alternate-screen");
-    expect(enabledModes({ screenMode: "main-screen" })).not.toContain("alternate-screen");
-  });
-
-  test("include stdout capture only where the renderer actually takes it", () => {
-    expect(
-      enabledModes({ screenMode: "split-footer", externalOutputMode: "passthrough" }),
-    ).not.toContain("stdout-capture");
-    expect(
-      enabledModes({ screenMode: "alternate-screen", externalOutputMode: "capture-stdout" }),
-    ).not.toContain("stdout-capture");
-  });
-});
-
-describe("every declared mode", () => {
-  test("constructs a real renderer", async () => {
-    // The check #351 needed and did not have. A mode that cannot start now fails
-    // here rather than in a user's session, and it is a *construction* test
-    // because that is where OpenTUI rejects an illegal pairing — a configuration
-    // assertion alone would not have caught a rule this code does not own.
-    for (const mode of SCREEN_MODES) {
-      const capabilities = record();
-      const result = await openRendererSession({
-        capabilities,
-        selection: { mode, reason: "override" },
-        createRenderer: inMemory,
-      });
-      expect({ mode, opened: result.ok }).toEqual({ mode, opened: true });
-      if (result.ok) {
-        // Restored immediately rather than in teardown: the guard is
-        // process-wide, so the next mode cannot open until this one lets go.
-        result.value.restore();
-      }
-    }
-  });
-
-  test("reports stdout capture as enabled only where it is", async () => {
-    // Restoration names exactly what was enabled. A mode that does not capture
-    // must not claim it gave the handle back.
-    for (const mode of SCREEN_MODES) {
-      const capabilities = record();
-      const config = rendererConfigFor({ capabilities, selection: { mode, reason: "override" } });
-      expect({ mode, captured: enabledModes(config).includes("stdout-capture") }).toEqual({
-        mode,
-        captured: mode === "split-footer",
-      });
+  test("constructs the only interactive renderer", async () => {
+    const result = await openRendererSession({ capabilities: record(), createRenderer: inMemory });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.renderer.screenMode).toBe("alternate-screen");
+      result.value.restore();
     }
   });
 });

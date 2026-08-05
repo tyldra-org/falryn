@@ -95,7 +95,7 @@ async function open(
 ): Promise<Rendered> {
   const shell = await mount(
     <ShellApp theme={THEME} model={MODEL} onExit={() => {}} transcript={transcript} />,
-    { shape, screenMode: "alternate-screen" },
+    { shape },
   );
   await shell.frame();
   return shell;

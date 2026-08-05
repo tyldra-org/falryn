@@ -28,7 +28,6 @@
  * there is only one place to declare it.
  */
 
-import type { CliRendererConfig } from "@opentui/core";
 import { createTestRenderer, type TestRendererSetup } from "@opentui/core/testing";
 import { createRoot, flushSync, type Root } from "@opentui/react";
 import type { ReactNode } from "react";
@@ -91,18 +90,8 @@ const QUIET_CAPTURES = 3;
 
 export type MountOptions = {
   readonly shape?: TerminalShape;
-  readonly screenMode?: CliRendererConfig["screenMode"];
-  readonly externalOutputMode?: CliRendererConfig["externalOutputMode"];
   /** Enables Kitty keyboard encoding so modified keys remain distinguishable. */
   readonly kittyKeyboard?: boolean;
-  /**
-   * A stdout the check holds a reference to.
-   *
-   * The test renderer makes its own when none is supplied, and split-footer's
-   * capture replaces `write` on *that* object — so a check that wants to ask
-   * what interleaved has to bring its own.
-   */
-  readonly stdout?: NodeJS.WriteStream;
 };
 
 /** A renderer with no React tree in it, disposed with the scope that opened it. */
@@ -111,9 +100,8 @@ export type Live = TestRendererSetup & Disposable;
 /**
  * A test renderer, and nothing mounted into it.
  *
- * For the checks that drive a renderer directly rather than a component tree —
- * the scrollback adapter is one, and it has no React in it at all. They share
- * this module for teardown rather than for mounting.
+ * For checks that drive a renderer directly rather than a component tree. They
+ * share this module for teardown rather than for mounting.
  */
 export async function openRenderer(options: MountOptions = {}): Promise<Live> {
   const shape = options.shape ?? STANDARD_SHAPE;
@@ -121,12 +109,9 @@ export async function openRenderer(options: MountOptions = {}): Promise<Live> {
     width: shape.columns,
     height: shape.rows,
     consoleMode: "disabled",
+    screenMode: "alternate-screen",
+    externalOutputMode: "passthrough",
     ...(options.kittyKeyboard === undefined ? {} : { kittyKeyboard: options.kittyKeyboard }),
-    ...(options.screenMode === undefined ? {} : { screenMode: options.screenMode }),
-    ...(options.externalOutputMode === undefined
-      ? {}
-      : { externalOutputMode: options.externalOutputMode }),
-    ...(options.stdout === undefined ? {} : { stdout: options.stdout }),
   });
   return Object.assign({ ...setup }, { [Symbol.dispose]: () => setup.renderer.destroy() });
 }
@@ -168,8 +153,6 @@ export type Rendered = Disposable & {
   type(text: string): Promise<string>;
   paste(text: string): Promise<string>;
   resize(columns: number, rows: number): Promise<string>;
-  /** What split-footer committed above the footer, consumed. */
-  scrollback(): Promise<string>;
   /** Every renderable currently in the tree, the root included. */
   renderableCount(): number;
 };
@@ -226,10 +209,6 @@ export async function mount(node: ReactNode, options: MountOptions = {}): Promis
     async resize(columns, rows) {
       setup.resize(columns, rows);
       return await settle(setup, { columns, rows });
-    },
-    async scrollback() {
-      await frame();
-      return setup.externalOutput.takeText();
     },
     renderableCount: () => countRenderables(setup.renderer.root),
     [Symbol.dispose]: () => {

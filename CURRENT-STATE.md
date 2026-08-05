@@ -1416,18 +1416,15 @@ skipped rather than passed when that artifact could not be built.
 the process boundary's rules, which is why `src/cli-boundaries.test.ts` now
 scans `.tsx` as well as `.ts`.
 
-Four facts were recorded from observed behavior for the shell to design against.
-`screenMode: "split-footer"` works. Its `externalOutputMode: "capture-stdout"`
-intercepts the same handle `src/cli/streams.ts` writes results through, so a
-line a command emits while a footer renderer is up lands in the renderer's
-scrollback queue instead of reaching the consumer — a shell wanting both has to
-route machine output around the renderer or leave capture off; the interception
-is undone by `destroy()`. `exitOnCtrlC: false` with `exitSignals: []` installs
-no `SIGINT` or `SIGTERM` listener at all, measured beside a default renderer
-that installs one of each, so signal handling stays entirely with
-`src/cli/invocation-scope.ts`. `createCliRenderer` itself costs about 4 ms in
-both modes; the compiled *process* starts about 170 ms slower than `bun run`,
-which is the standalone executable's own cost and not the renderer's.
+The shell's renderer configuration is explicit: every interactive run uses
+`screenMode: "alternate-screen"` with `externalOutputMode: "passthrough"`.
+OpenTUI restores the user’s original main-screen scrollback on `destroy()`.
+`exitOnCtrlC: false` with `exitSignals: []` installs no `SIGINT` or `SIGTERM`
+listener at all, measured beside a default renderer that installs one of each,
+so signal handling stays entirely with `src/cli/invocation-scope.ts`.
+`createCliRenderer` itself costs about 4 ms; the compiled *process* starts about
+170 ms slower than `bun run`, which is the standalone executable's own cost and
+not the renderer's.
 
 The interactive shell exists, delivered by
 [#23](https://github.com/yogeshprasad098/falryn/issues/23). `falryn` with no
@@ -1508,8 +1505,9 @@ multiplexer, remote, and CI hints derived from the environment, the documented
 `FALRYN_TUI` override, and — once a renderer exists — the facts only a renderer
 can report. It carries a generation and its detection provenance, so "not
 observed yet" stays distinguishable from "not supported". `FALRYN_TUI` accepts
-`off` or a screen mode; a value this build does not understand is reported and
-then ignored rather than treated as a refusal, so a typo cannot lock a user out.
+`off`; a value this build does not understand is reported and then ignored rather
+than treated as a refusal, so a typo cannot lock a user out. An interactive run
+always uses the alternate screen.
 
 Four OpenTUI defaults are overridden, each for a reason #22 measured or the
 architecture already owns: `exitOnCtrlC: false` and `exitSignals: []` leave
@@ -1560,14 +1558,9 @@ user's terminal selection over to Falryn is not something to infer from a
 missing value. `src/config/keys.test.ts` asserts the registry declares the path
 the interface reads, because the string lives in two places.
 
-`split-footer` is the delivered default, qualified by #22, with
-`alternate-screen` when the terminal has too few rows to leave anything above a
-footer. The stdout reconciliation is explicit: while a split-footer renderer is
-alive it owns the handle `src/cli/streams.ts` normally owns, which is safe only
-because the launch decision has already refused every machine format, so no
-result record can be in flight. The shell writes nothing through the result
-stream during a session. `destroy()` puts the original `write` back, so the
-invocation's closing flush still reports what left the process.
+`alternate-screen` is the sole delivered interactive mode. It gives the shell
+the complete viewport and keeps stdout in passthrough mode; transcript rows stay
+inside the live interface and are not committed to terminal scrollback.
 
 `restore-terminal` has its owner. `src/tui/shutdown.ts` registers the phase's
 only participant, and restoration happens at most once in effect and any number
@@ -1660,13 +1653,10 @@ checked against both the base and the elevated surface, with a higher floor for
 high contrast and a lower one for `ignored` — the single token whose job is to
 recede, and which is held to the ordinary floor in high contrast anyway.
 
-Layout classes are a pure function of measured cells: `compact`, `standard`,
-`wide`, or a notice naming the size the terminal needs. The class is selected
-from the *terminal*, while the tree is drawn into the region the renderer gives
-it — in `split-footer` those differ by most of the window, and selecting from
-the drawn region would make every session compact on a terminal with room to
-spare. Row space is shared by need before weight, so a short branch name does
-not cost a long workspace path the room it was not going to use.
+Layout classes are a pure function of the full measured viewport: `compact`,
+`standard`, `wide`, or a notice naming the size the terminal needs. Row space is
+shared by need before weight, so a short branch name does not cost a long
+workspace path the room it was not going to use.
 
 The frame is `AppShell`, `WorkspaceHeader`, `StatusLine`, an overlay host, and
 the help and command-palette routes it mounts. Each field of the header carries
@@ -1686,16 +1676,10 @@ enabled by request, for a dumb terminal, and in CI.
 beside `FALRYN_TUI` from #23. Refusing colour does not reduce motion: they are
 different requests.
 
-Every declared screen mode starts, which [#351](https://github.com/yogeshprasad098/falryn/issues/351)
-fixed. `split-footer`, `alternate-screen`, and `main-screen` each construct a
-renderer; before the fix only the first did, because the configuration paired
-`capture-stdout` with every mode and OpenTUI rejects that pairing outside
-`split-footer` during construction. The practical effect was that any terminal
-with fewer than ten rows — the point where mode selection falls back to
-`alternate-screen` — exited `5` instead of opening a shell, and both non-default
-`FALRYN_TUI` modes did the same on any terminal. The output mode is now derived
-from the screen mode through `capturesStdout`, which had been written, exported,
-and tested with no product caller.
+The sole interactive renderer configuration constructs an alternate-screen
+session with passthrough stdout. Both its in-memory construction test and the
+compiled pseudo-terminal walk assert that it enters and restores the alternate
+screen; no unused screen-mode fallback remains reachable.
 
 A renderer failure now carries its cause onto the diagnostic line rather than
 only the sentence saying one occurred. The detail is the bounded, redacted one
@@ -1966,53 +1950,13 @@ to the transcript's newest block rather than as an elapsed time, because a block
 carries one timestamp that a revision replaces — the start of a tool call is not
 in the projection, and reporting one would be a number the surface invented.
 
-### Scrollback commits in `split-footer`
+### Transcript lifetime
 
-Finalized transcript entries reach the terminal's own scrollback through one
-adapter, `src/tui/scrollback.ts`, mounted by `AppShell` through a seam that draws
-nothing ([#356](https://github.com/yogeshprasad098/falryn/issues/356)). A
-boundary control asserts that no other module in the interface area calls
-`writeToScrollback` or `createScrollbackSurface`, so the path above the footer is
-narrow by check rather than by convention.
-
-**One FIFO, asserted rather than assumed.** OpenTUI's renderer already owns an
-ordered queue that captured stdout and programmatic scrollback commits share.
-The adapter adds no second queue and no second ordering rule, and the tests read
-what reached the terminal through the test renderer's external-output recorder
-against a real `split-footer` renderer with stdout capture — including a case
-that writes to the captured handle between two commits and asserts the three land
-in the order they were produced.
-
-**Once, and never out of order.** An entry commits exactly once, and only when
-every entry before it already has. Scrollback is append-only and outlives the
-process, so an entry that overtook an unfinished one would sit in the wrong place
-permanently; an unfinished entry therefore holds everything behind it, and the
-report names which one. Entries that were seen mid-stream commit through
-`createScrollbackSurface` and copy their rows out only after `settle()`, while an
-entry that arrived final is written atomically through `writeToScrollback`. Both
-paths are serialized through one chain, so a settling entry cannot be overtaken
-by the atomic entry enqueued behind it.
-
-The adapter is keyed to the renderer rather than owned by the component that
-drives it. OpenTUI's React root remounts the whole tree on every `render()` call,
-and an adapter that started again with an empty set would write the session into
-scrollback a second time beneath itself.
-
-What a commit contains differs from what the reader sees, and each difference is
-because scrollback is durable: entries are committed expanded, never marked
-selected, and carry no relative time — an age is true for a minute and then is a
-permanent lie that nothing repaints. A secret block is still refused its content.
-Every committed line is sanitized whether or not its row was flagged untrusted,
-because the flag says where text came from and not where it is going.
-
-In `alternate-screen` and `main-screen` the adapter is a no-op, consulted through
-`reservesFooter` on every commit rather than once at construction, because
-renderer mode is application state. OpenTUI's scrollback APIs throw rather than
-degrade when the mode is wrong, and a refused commit is reported instead of
-propagated, so one entry that could not land is not a shell that stops drawing.
-
-Nothing produces a transcript yet, so no entry is committed in a real session.
-The behavior is exercised by mounting the shell with a projection.
+Transcript projections render inside the alternate-screen interface for the
+session lifetime. Falryn does not write to the terminal's main-screen scrollback
+or capture stdout as a second transcript path. Nothing produces a transcript
+entry in a real session yet; mounted-surface tests continue to protect its
+in-screen projection.
 
 ### The composer
 

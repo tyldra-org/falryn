@@ -196,7 +196,7 @@ describe("a run that will not open a shell", () => {
     });
     const diagnostics = streams.diagnosticWrites().join("");
     expect(diagnostics).toContain("FALRYN_TUI=sput");
-    expect(diagnostics).toContain("split-footer");
+    expect(diagnostics).toContain("off");
   });
 });
 
@@ -284,7 +284,7 @@ describe("a shell whose renderer never started", () => {
   });
 
   test("says what went wrong, not only that something did", async () => {
-    // #351's second half. The message alone — "The terminal interface could not
+    // The failure's second half. The message alone — "The terminal interface could not
     // be started." — is what made a one-line configuration defect take a
     // pseudo-terminal and three experiments to locate, when the renderer had
     // already handed over a complete sentence naming the cause.
@@ -295,11 +295,11 @@ describe("a shell whose renderer never started", () => {
       environment: environment(),
       governance: governanceFor(),
       createRenderer: () => {
-        throw new Error('externalOutputMode "capture-stdout" requires screenMode "split-footer"');
+        throw new Error("the native renderer refused its alternate screen");
       },
       services: inMemoryServices(),
     });
-    expect(streams.diagnosticWrites().join("")).toContain("requires screenMode");
+    expect(streams.diagnosticWrites().join("")).toContain("refused its alternate screen");
   });
 
   test("carries the bounded detail rather than the thrown value", async () => {

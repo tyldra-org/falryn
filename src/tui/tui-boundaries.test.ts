@@ -27,11 +27,6 @@ const ENTRYPOINT = "index.ts";
 const RENDERER_OWNERS = [
   "renderer-session.ts",
   "shell.tsx",
-  // The one module that writes above the footer, and the seam that drives it.
-  // #356: scrollback is the terminal's own durable region, so the path to it is
-  // narrow by construction rather than by convention.
-  "scrollback.ts",
-  "components/scrollback-commits.tsx",
   // The composer subscribes to keys and pastes. #357: typing is not a command,
   // so the control receives raw input rather than routing every character
   // through the registry.
@@ -53,9 +48,6 @@ const RENDERER_OWNERS = [
   // owns and a dispatcher it does not.
   "components/shell-app.tsx",
   "components/keymap-bridge.tsx",
-  // Grows the footer while an overlay is open, which is a renderer setting and
-  // nothing else. See `./overlay-room.tsx` for why a constant would not do.
-  "components/overlay-room.tsx",
 ];
 
 /** The one module allowed to author a colour. */
@@ -576,48 +568,6 @@ describe("the composer", () => {
   });
 });
 
-describe("the scrollback boundary", () => {
-  test("writes above the footer from exactly one module", async () => {
-    // The negative control #356 names. Scrollback is append-only and outlives
-    // the process: a row committed to it cannot be repainted, reordered, or
-    // taken back. A second writer would be a second ordering rule over the same
-    // FIFO, and the two would interleave differently on the day either changed —
-    // in the reader's permanent scroll history, where nothing can correct it.
-    const writers: string[] = [];
-    for (const file of await productFiles()) {
-      const source = await readCode(file);
-      if (/\b(writeToScrollback|createScrollbackSurface)\s*\(/.test(source)) {
-        writers.push(file);
-      }
-    }
-    expect(writers).toEqual(["scrollback.ts"]);
-  });
-
-  test("asks the mode contract whether there is a footer at all", async () => {
-    // `alternate-screen` and `main-screen` draw into the whole terminal, and
-    // OpenTUI's scrollback APIs throw rather than degrade when the mode is
-    // wrong. Consulted rather than assumed, and consulted on every commit:
-    // renderer mode is application state, so a check done once at construction
-    // would be right until the first mode change.
-    expect(await readCode("scrollback.ts")).toContain("reservesFooter(host.screenMode)");
-  });
-
-  test("is driven by a product caller rather than only exported", async () => {
-    // #351 in this boundary's terms. An adapter nothing mounts is a capability
-    // that compiles, and the acceptance criterion is about what reaches a
-    // terminal.
-    expect(await readCode("components/app-shell.tsx")).toContain("<ScrollbackCommits");
-  });
-
-  test("keeps the adapter off the pure entrypoint's re-exports", async () => {
-    // `./transcript/index.ts` is imported by modules that must not load a
-    // renderer. The lines it resolves are pure and belong there; the adapter
-    // that draws them is not and does not.
-    const surface = await readValues("transcript/index.ts");
-    expect(surface).not.toContain("scrollback.ts");
-  });
-});
-
 describe("the activity rail", () => {
   test("persists no ephemeral view state", async () => {
     // The acceptance criterion. Focus, scroll, and animation are properties of a
@@ -831,26 +781,12 @@ describe("the frame's row arithmetic", () => {
 });
 
 describe("the mode contract", () => {
-  test("is consulted by the renderer configuration rather than only exported", async () => {
-    // #351 in one assertion. `capturesStdout` existed, was exported, was
-    // re-exported from the entrypoint, and had three tests — and no product
-    // caller, so the configuration used a constant and two of the three screen
-    // modes could not start. A predicate nothing calls is not a contract, it is
-    // a comment that compiles.
-    expect(await readCode("renderer-session.ts")).toContain("capturesStdout(");
-  });
-
-  test("names every screen mode in one list", async () => {
-    // So a check can walk them. Each mode being named individually wherever
-    // somebody remembered to name it is why nothing noticed that two of them
-    // were unreachable.
-    const declarers: string[] = [];
-    for (const file of await productFiles()) {
-      if ((await readCode(file)).includes("SCREEN_MODES: readonly ScreenMode[]")) {
-        declarers.push(file);
-      }
-    }
-    expect(declarers).toEqual(["screen-mode.ts"]);
+  test("has one explicit alternate-screen renderer configuration", async () => {
+    const source = await readCode("renderer-session.ts");
+    expect(source).toContain('screenMode: "alternate-screen"');
+    expect(source).toContain('externalOutputMode: "passthrough"');
+    expect(source).not.toContain('screenMode: "split-footer"');
+    expect(source).not.toContain('screenMode: "main-screen"');
   });
 });
 
@@ -898,13 +834,11 @@ describe("the rendered test harness", () => {
       "components/frame.test.tsx",
       "components/interaction.test.tsx",
       "components/palette.test.tsx",
-      "components/scrollback-commits.test.tsx",
       "components/shell-error-boundary.test.tsx",
       "components/transcript.test.tsx",
       // The harness's own checks, which are what prove it cleans up.
       "harness.test.tsx",
       "runtime-feed.test.tsx",
-      "scrollback.test.ts",
     ]);
   });
 

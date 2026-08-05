@@ -36,7 +36,7 @@ export const THEME_VALUES: readonly string[] = THEME_VARIANTS;
  * The variant the environment asked for.
  *
  * `null` for unset *and* for a value this build does not understand. Unlike the
- * screen-mode override, an unrecognized theme is not worth a diagnostic of its
+ * interactive-shell override, an unrecognized theme is not worth a diagnostic of its
  * own: getting the default palette is a visible outcome on its own, where a
  * silently ignored `FALRYN_TUI` would leave someone wondering why the shell
  * still opened.
