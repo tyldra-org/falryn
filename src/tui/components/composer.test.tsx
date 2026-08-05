@@ -424,24 +424,41 @@ describe("the keyboard reaches every motion", () => {
   });
 
   test("ctrl+home and ctrl+end reach the document's ends", async () => {
-    // Asserted by what typing does rather than by the cursor's cell, and that is
-    // not squeamishness: the renderer clamps the cursor's `x` to a minimum of
-    // one — recorded in #386 — so a line's start and its second cell report the
-    // same number, and a coordinate check here would be off by one for a reason
-    // that has nothing to do with the motion.
+    // Two lines, and that is the whole check rather than a detail. On a
+    // single-line draft a line's start and the document's start are the same
+    // position, so an assertion there passes whether these chords give the
+    // document motions or the line ones — measured, by making them return
+    // `line-start`/`line-end` and watching nothing fail.
+    //
+    // The draft is pasted rather than typed: a newline in pasted text is
+    // content rather than a submission, which is what bracketed paste is for,
+    // and `shift+return` does not produce one through the mock keyboard.
+    //
+    // Asserted by what typing does rather than by the cursor's cell. The
+    // renderer clamps the cursor's `x` to a minimum of one — recorded in #386 —
+    // so a line's start and its second cell report the same number, and a
+    // coordinate check would be off by one for a reason unrelated to the motion.
     using shell = await open();
     await shell.focusComposer();
-    await shell.type("hello");
+    await shell.paste("alpha\nbravo");
 
     shell.setup.mockInput.pressKey(SEQUENCES.home, { ctrl: true });
     await shell.frame();
     await shell.type("X");
-    expect(await shell.frame()).toContain("Xhello");
+    const started = await shell.frame();
+    // The *first* line took it. A line motion from the last line would have put
+    // it at the start of `bravo` instead.
+    expect(started).toContain("Xalpha");
+    expect(started).not.toContain("Xbravo");
 
     shell.setup.mockInput.pressKey(SEQUENCES.end, { ctrl: true });
     await shell.frame();
     await shell.type("Z");
-    expect(await shell.frame()).toContain("XhelloZ");
+    const ended = await shell.frame();
+    // And the *last* line did. A line motion from the first line would have put
+    // it after `Xalpha`.
+    expect(ended).toContain("bravoZ");
+    expect(ended).not.toContain("XalphaZ");
   });
 
   test("shift with a motion extends the selection, on each binding that takes one", async () => {
@@ -457,12 +474,14 @@ describe("the keyboard reaches every motion", () => {
     const CASES = [
       {
         name: "shift+left",
+        from: 0,
         press: (shell: Session) => shell.setup.mockInput.pressArrow("left", { shift: true }),
         extended: "one twX",
         moved: "one twXo",
       },
       {
         name: "shift+alt+left",
+        from: 0,
         press: (shell: Session) =>
           shell.setup.mockInput.pressArrow("left", { shift: true, meta: true }),
         extended: "one X",
@@ -470,6 +489,7 @@ describe("the keyboard reaches every motion", () => {
       },
       {
         name: "shift+ctrl+left",
+        from: 0,
         press: (shell: Session) =>
           shell.setup.mockInput.pressArrow("left", { shift: true, ctrl: true }),
         extended: "one X",
@@ -477,24 +497,64 @@ describe("the keyboard reaches every motion", () => {
       },
       {
         name: "shift+home",
+        from: 0,
         press: (shell: Session) => shell.setup.mockInput.pressKey(SEQUENCES.home, { shift: true }),
         extended: "X",
         moved: "Xone two",
       },
+      // The pair the plan singled out as the missing capability: `up` and `down`
+      // are bound as commands and dispatch with `extend: false`, so shifted they
+      // could not extend until this issue handled them where they land. They are
+      // exercised on a single-line draft, where `up` is the document's start and
+      // `down` its end — the composer's own `shift+return` does not produce a
+      // newline through the mock keyboard, which is recorded on the delivery PR
+      // as a separate observation rather than worked around here.
+      {
+        name: "shift+up",
+        from: 2,
+        press: (shell: Session) => shell.setup.mockInput.pressArrow("up", { shift: true }),
+        extended: "Xwo",
+        moved: "Xone two",
+      },
+      {
+        name: "shift+down",
+        from: 2,
+        press: (shell: Session) => shell.setup.mockInput.pressArrow("down", { shift: true }),
+        extended: "one tX",
+        moved: "one twoX",
+      },
     ] as const;
 
-    for (const { name, press, extended, moved } of CASES) {
+    for (const { name, from, press, extended, moved } of CASES) {
       using shell = await open();
       await shell.focusComposer();
       await shell.type("one two");
+      // Where the motion starts, per case. The vertical pair needs the cursor
+      // inside the text: at the end of the draft `shift+down` would select
+      // nothing and pass whether or not it extended.
+      for (let back = 0; back < from; back += 1) {
+        await shell.press(SEQUENCES.left);
+      }
 
       press(shell);
       await shell.frame();
       await shell.type("X");
       const frame = await shell.frame();
 
-      expect({ name, replaced: frame.includes(extended) }).toEqual({ name, replaced: true });
-      expect({ name, inserted: frame.includes(moved) }).toEqual({ name, inserted: false });
+      // One shape of mistake this cannot catch, stated so nobody assumes it
+      // does: making `chordMotion` claim bare `up` and `down` as well changes
+      // nothing observable here, because the keymap dispatches them before any
+      // subscriber sees them. The branch is unreachable for them by
+      // construction, not by this check.
+      //
+      // The drawn draft line, compared exactly rather than searched for. A
+      // substring match is not enough here and that was measured: with the
+      // shifted vertical branch removed the motion does nothing, leaving
+      // `one tXwo` — which *contains* the `Xwo` an extending motion produces, so
+      // an `includes` check passed against the behaviour it existed to reject.
+      const drawn = frame.split("\n")[chromeRow(frame) - 1]?.trimEnd() ?? "";
+      expect({ name, drawn }).toEqual({ name, drawn: extended });
+      expect({ name, inserted: drawn === moved }).toEqual({ name, inserted: false });
     }
   });
 
