@@ -2006,6 +2006,44 @@ and reachable from the palette. And the `composer` keymap context is active on
 **focus** rather than on existence, because the composer's layer outranks the
 transcript's and the two share `up` and `down`.
 
+**The cursor is the terminal's own, placed rather than drawn**
+([#386](https://github.com/yogeshprasad098/falryn/issues/386)). Until now the
+composer spliced a caret glyph into the line at the cursor's column, which made
+the drawn line one grapheme longer than the buffer line and displaced everything
+after it: `hello world` with the cursor after `wo` was drawn `hello wo▏rld`. At
+the end of a draft that is invisible, which is why it shipped and why every
+existing check passed over it — they all type and assert without moving the
+cursor back into what they typed. It is not only cosmetic: a line at exactly the
+terminal's width gained a cell while the cursor sat on it, and typed text could
+not be asserted in a frame.
+
+The three reasons recorded for drawing a character were each answered against
+the installed renderer rather than in principle. A reversed *cell* would have
+needed a second styling owner; the terminal's own cursor is neither a cell nor a
+style. `Renderable` exposes `screenX` and `screenY` in the renderer's buffer
+space, which is the space `setCursorPosition` takes, so the absolute coordinate a
+flex layout only knows after it runs is readable rather than unavailable. And
+`captureSpans()` reports `cursor: [x, y]` from the state `setCursorPosition`
+writes, so "the cursor moved" stays assertable — the assertion moved to the
+coordinate instead of disappearing. The `caret` symbol role left `SYMBOL_ROLES`
+and all three repertoires with the drawing it existed for.
+
+The column is a *cell* offset and not a grapheme count, through the same
+`displayWidth` the layout and truncation use: `日本` before the cursor is two
+graphemes and four cells, and counting graphemes would have placed the cursor
+short by one cell per wide character — the same defect one layer down. Placement
+subscribes to `LAYOUT_CHANGED` on the composer's own renderable, because an
+effect runs after React commits while Yoga lays out inside the renderer's pass,
+so a first placement can read a position that does not exist yet; the check
+asserts the cursor on the *first settled frame* rather than after a keystroke, so
+a placement one frame behind fails rather than passing on the second.
+
+One upstream behavior was measured and is worth recording: the renderer clamps
+the cursor's `x` to a minimum of one, so column 0 and column 1 report the same
+number. Nothing in the placement depends on telling them apart, but a check that
+took its origin from an empty draft would be a cell short — the cursor checks
+measure deltas between two positions clear of the clamp instead.
+
 The composer's height is reserved by the layout rather than chosen by the view,
 and its chrome is a fixed two rows. The transcript sizes its own window from what
 is left, so the two numbers come from one function: a composer that drew one row
