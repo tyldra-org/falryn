@@ -1608,9 +1608,11 @@ reach is short and stated where it is written: it proves a named check
 that read its own suite's results would be reporting on a run that had not
 finished.
 
-Nine rows are unqualified and say so: Linux, Windows, and macOS `x86_64`, RTL
-and bidirectional text, clipboard, suspend and resume, and a double interrupt
-into a running shell. A qualified compiled artifact on one platform is not a
+Fifty-four rows are declared: forty-seven resolve to a named check and seven are
+unqualified and say so — Linux, Windows, and macOS `x86_64`, RTL and
+bidirectional text, clipboard, suspend and resume, and a double interrupt into a
+running shell. No row is a recorded manual result yet, so no terminal emulator is
+listed as supported. A qualified compiled artifact on one platform is not a
 supported-terminal claim, and the rows that are not covered are named rather
 than omitted.
 
