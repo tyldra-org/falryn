@@ -291,11 +291,20 @@ export function openBunSqlite(
         return err(closedFailure("transaction"));
       }
       try {
-        const wrapped = database.transaction(work as () => void) as unknown as Record<
-          SqliteTransactionKind,
-          () => Value
-        >;
-        return ok(wrapped[kind]());
+        const cell: {
+          outcome: { readonly kind: "pending" } | { readonly kind: "done"; readonly value: Value };
+        } = {
+          outcome: { kind: "pending" },
+        };
+        const wrapped = database.transaction(() => {
+          cell.outcome = { kind: "done", value: work() };
+        });
+        wrapped[kind]();
+        const outcome = cell.outcome;
+        if (outcome.kind === "pending") {
+          throw new Error("SQLite transaction completed without running its work");
+        }
+        return ok(outcome.value);
       } catch (thrown) {
         return err(classifySqliteError(thrown, "transaction"));
       }

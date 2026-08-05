@@ -61,10 +61,14 @@ type Session = Rendered & {
   pressNamed(key: NamedKey): Promise<string>;
 };
 
-async function open(shape: TerminalShape = { columns: 100, rows: 24 }): Promise<Session> {
+async function open(
+  shape: TerminalShape = { columns: 100, rows: 24 },
+  kittyKeyboard = false,
+): Promise<Session> {
   const shell = await mount(<ShellApp theme={THEME} model={MODEL} onExit={() => {}} />, {
     shape,
     screenMode: "alternate-screen",
+    kittyKeyboard,
   });
   await shell.frame();
   const pressNamed = (key: NamedKey): Promise<string> => shell.press(SEQUENCES[key]);
@@ -136,6 +140,99 @@ describe("typing", () => {
     await shell.type("draft");
     await shell.press("p", { ctrl: true });
     expect(await shell.frame()).toContain("Command palette");
+  });
+
+  test("adds a line with Shift+Return without submitting", async () => {
+    using shell = await open({ columns: 100, rows: 24 }, true);
+    await shell.focusComposer();
+    await shell.type("first");
+    shell.setup.mockInput.pressEnter({ shift: true });
+    await shell.type("second");
+
+    const frame = await shell.frame();
+    expect(frame).toContain("first");
+    expect(frame).toContain("second");
+    expect(frame).not.toContain("firstsecond");
+    expect(frame).not.toContain("Not sent");
+  });
+
+  test("honours Command arrows when Kitty reports the Super modifier", async () => {
+    using shell = await open({ columns: 100, rows: 24 }, true);
+    await shell.focusComposer();
+    await shell.paste("one\ntwo");
+
+    shell.setup.mockInput.pressArrow("left", { super: true });
+    await shell.type("X");
+    shell.setup.mockInput.pressArrow("right", { super: true });
+    await shell.type("Y");
+    shell.setup.mockInput.pressArrow("up", { super: true });
+    await shell.type("A");
+    shell.setup.mockInput.pressArrow("down", { super: true });
+    await shell.type("Z");
+
+    const frame = await shell.frame();
+    expect(frame).toContain("Aone");
+    expect(frame).toContain("XtwoYZ");
+  });
+
+  test("honours terminal Command-arrow aliases without Kitty reporting", async () => {
+    using shell = await open();
+    await shell.focusComposer();
+    await shell.paste("one\ntwo");
+
+    await shell.press("a", { ctrl: true });
+    await shell.type("X");
+    await shell.press("e", { ctrl: true });
+    await shell.type("Y");
+    await shell.press(SEQUENCES.home, { ctrl: true });
+    await shell.type("A");
+    await shell.press(SEQUENCES.end, { ctrl: true });
+    await shell.type("Z");
+
+    const frame = await shell.frame();
+    expect(frame).toContain("Aone");
+    expect(frame).toContain("XtwoYZ");
+  });
+
+  test("honours Option arrows with and without Kitty reporting", async () => {
+    for (const kittyKeyboard of [false, true]) {
+      {
+        using shell = await open({ columns: 100, rows: 24 }, kittyKeyboard);
+        await shell.focusComposer();
+        await shell.type("one two");
+
+        shell.setup.mockInput.pressArrow("left", { meta: true });
+        await shell.type("X");
+        shell.setup.mockInput.pressArrow("right", { meta: true });
+        await shell.type("Y");
+
+        expect(await shell.frame()).toContain("one XtwoY");
+      }
+    }
+  });
+
+  test("extends selections with Command and Option arrows", async () => {
+    {
+      using shell = await open({ columns: 100, rows: 24 }, true);
+      await shell.focusComposer();
+      await shell.type("one two");
+      shell.setup.mockInput.pressArrow("left", { super: true, shift: true });
+      await shell.type("X");
+      const rows = (await shell.frame()).split("\n").map((row) => row.trim());
+      expect(rows).toContain("X");
+      expect(rows).not.toContain("one two");
+    }
+
+    for (const kittyKeyboard of [false, true]) {
+      {
+        using shell = await open({ columns: 100, rows: 24 }, kittyKeyboard);
+        await shell.focusComposer();
+        await shell.type("one two");
+        shell.setup.mockInput.pressArrow("left", { meta: true, shift: true });
+        await shell.type("X");
+        expect(await shell.frame()).toContain("one X");
+      }
+    }
   });
 });
 
@@ -299,24 +396,15 @@ describe("a paste", () => {
     expect(await shell.frame()).not.toContain("xxxxxxxxxx");
   });
 
-  test("is described to the state, even though nothing draws the description", async () => {
-    // Recorded rather than asserted as working. `composerNotice` turns a
-    // refusal into a sentence and `../composer/state.test.ts` checks it — and
-    // no component renders it, on this branch or before it. So a user whose
-    // paste was refused sees the text simply not arrive.
-    //
-    // That is a real gap and it is not this issue's to close: #399 moves the
-    // composer onto the library's renderable and its non-goals say the status
-    // rows keep reporting what they report. Asserting the refusal reaches the
-    // state is what can honestly be asserted here, and the missing row is
-    // reported on the delivery PR rather than quietly fixed inside a migration.
+  test("explains why a non-inline paste did not enter the draft", async () => {
+    // A preview or refusal must be visible: silently dropping a clipboard
+    // payload looks like a frozen terminal even when the composer responds.
     using shell = await open();
     await shell.focusComposer();
     await shell.paste("x".repeat(INLINE_PASTE_LIMIT + 1));
-    await shell.frame();
+    expect(await shell.frame()).toContain(`Pasted ${INLINE_PASTE_LIMIT + 1} characters`);
 
-    // The composer still works afterwards, which is the part a user would
-    // otherwise doubt: a paste that vanished silently could look like a hang.
+    // The composer still works afterwards.
     await shell.type("still typing");
     expect(await shell.frame()).toContain("still typing");
   });

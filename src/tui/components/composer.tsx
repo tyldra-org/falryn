@@ -55,7 +55,12 @@ import type { KeyBinding, KeyEvent, PasteEvent, TextareaRenderable } from "@open
 import { defaultTextareaKeyBindings } from "@opentui/core";
 import { usePaste } from "@opentui/react";
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
-import { type ComposerAction, type ComposerState, describeOutcome } from "../composer/index.ts";
+import {
+  type ComposerAction,
+  type ComposerState,
+  composerNotice,
+  describeOutcome,
+} from "../composer/index.ts";
 import type { ComposerModel } from "../composer-model.ts";
 import { primaryColumns } from "../layout.ts";
 import { classifyPaste } from "../paste.ts";
@@ -117,7 +122,7 @@ export function ComposerView(props: ComposerViewProps): ReactNode {
   usePaste(
     useCallback(
       (event: PasteEvent): void => {
-        if (onAction === undefined) {
+        if (onAction === undefined || !model.focused) {
           return;
         }
         // Decoded non-fatally on purpose: invalid UTF-8 becomes replacement
@@ -130,7 +135,7 @@ export function ComposerView(props: ComposerViewProps): ReactNode {
         }
         onAction({ kind: "paste", text });
       },
-      [onAction],
+      [model.focused, onAction],
     ),
   );
 
@@ -143,22 +148,11 @@ export function ComposerView(props: ComposerViewProps): ReactNode {
       if (renderable === null || (key.name !== "up" && key.name !== "down")) {
         return;
       }
-      // The one rule with no `TextareaAction` behind it. Inside a draft these
-      // move a line and the renderable does it; at the draft's edge there is no
-      // line to move to, and that is where recall begins — which is what every
-      // composer people already use does, and the reason it is one key rather
-      // than two.
-      //
-      // A selection is never a recall: shift+up extends upward, and stepping
-      // through history mid-selection would replace text the reader was
-      // choosing.
       const { row, lastRow } = edgeOf(renderable);
       const atEdge = key.name === "up" ? row === 0 : row === lastRow;
       if (!atEdge || key.shift === true) {
         return;
       }
-      // Claimed, so the renderable does not also act on it. `handleKeyPress`
-      // runs only for events that were not default-prevented.
       key.preventDefault();
       onAction({ kind: key.name === "up" ? "history-previous" : "history-next" });
     },
@@ -199,28 +193,7 @@ export function ComposerView(props: ComposerViewProps): ReactNode {
 /** The chrome the composer always draws, which `../layout.ts` reserves for it. */
 const CHROME_ROWS = 2;
 
-/**
- * The keys the composer honours, pinned rather than inherited.
- *
- * Adopting `TextareaRenderable` brought its default bindings with it, and three
- * of them disagree with what `reference/KEYBOARD-SHORTCUTS.md` promises — which
- * is to say, with what Falryn shipped the week before. The library binds `home`
- * and `end` to the *buffer's* ends, `ctrl+a` to the line's start, and nothing at
- * all to `ctrl+home` or `ctrl+end`. So a user pressing `ctrl+a` to select their
- * draft would have found the cursor moving instead, and one pressing `home`
- * would have left the line entirely.
- *
- * That was not a decision anybody made; it was a default arriving with a
- * migration. `keyBindings` exists to make it one, and this list is it. The
- * overridden keys are removed from the defaults rather than shadowed by
- * appending, so the result does not depend on which entry a lookup happens to
- * find first.
- *
- * Everything not named here is the library's, deliberately: word motions,
- * visual-line motions, undo, redo, and the rest are exactly what the reference
- * documents and there is nothing to correct.
- */
-const REPLACED = new Set(["home", "end", "ctrl+a"]);
+const REPLACED = new Set(["home", "end"]);
 
 function keyOf(binding: KeyBinding): string {
   return `${binding.ctrl === true ? "ctrl+" : ""}${binding.name}`;
@@ -228,27 +201,17 @@ function keyOf(binding: KeyBinding): string {
 
 const COMPOSER_KEY_BINDINGS: readonly KeyBinding[] = [
   ...defaultTextareaKeyBindings.filter((binding) => !REPLACED.has(keyOf(binding))),
-  // The line's ends, which is what `home` and `end` mean everywhere else.
+  { name: "return", shift: true, action: "newline" },
   { name: "home", action: "line-home" },
   { name: "end", action: "line-end" },
   { name: "home", shift: true, action: "select-line-home" },
   { name: "end", shift: true, action: "select-line-end" },
-  // The draft's ends, which the library bound to nothing.
   { name: "home", ctrl: true, action: "buffer-home" },
   { name: "end", ctrl: true, action: "buffer-end" },
   { name: "home", ctrl: true, shift: true, action: "select-buffer-home" },
   { name: "end", ctrl: true, shift: true, action: "select-buffer-end" },
-  // Selecting the draft, which the library bound to a motion.
-  { name: "a", ctrl: true, action: "select-all" },
 ];
 
-/**
- * Which line the cursor is on, and which is the last.
- *
- * Read from the renderable rather than from any text Falryn holds. `up` at the
- * first line and `down` at the last are the two edges recall begins at, and the
- * renderable is the only thing that knows where the cursor actually is.
- */
 function edgeOf(renderable: TextareaRenderable): {
   readonly row: number;
   readonly lastRow: number;
@@ -324,6 +287,11 @@ function SecondRow(props: {
         maxColumns={props.maxColumns}
       />
     );
+  }
+
+  const notice = composerNotice(props.model.state);
+  if (notice !== null) {
+    return <StatusMark status="uncertain" label={notice} maxColumns={props.maxColumns} />;
   }
 
   const { features } = props.model;

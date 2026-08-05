@@ -21,19 +21,17 @@
  * final — a mapping rather than a branch, so there is no path where reduced
  * motion *skips* the state change instead of arriving at it immediately.
  *
- * Two steps rather than an interpolated height, and the reason is verification.
- * OpenTUI's timelines advance from the renderer's own frame loop, which a test
- * renderer does not run — so a tweened reveal could not be driven to completion
- * in a test, and an animation nothing can assert reaching its final frame is an
- * overlay that might never open. A transition built from a timer is one whose
- * end state a test can wait for and a reader can predict.
+ * OpenTUI's timeline owns the transition clock. The panel still has two useful
+ * layout states, but there is no second timer implementation competing with the
+ * renderer's animation engine.
  *
  * It is interruptible: unmounting clears the pending step, so an overlay
  * dismissed mid-reveal stops rather than finishing a transition for something
  * that is gone.
  */
 
-import { type ReactNode, useEffect, useState } from "react";
+import { useTimeline } from "@opentui/react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { isSingleRegion, primaryRows } from "../layout.ts";
 import type { OverlayRoute } from "../view-model.ts";
 import { useFrame, useLayoutClass } from "./context.tsx";
@@ -120,17 +118,23 @@ export type OverlayHostProps = {
 export function useReveal(durationMs: number): boolean {
   const immediate = durationMs <= 0;
   const [arrived, setArrived] = useState(immediate);
+  // OpenTUI 0.4 creates the Timeline value during render while registering the
+  // first value in its effect. Keep that registered instance stable across the
+  // state update the animation itself causes.
+  const created = useTimeline({ duration: Math.max(0, durationMs), autoplay: !immediate });
+  const timeline = useRef(created).current;
 
   useEffect(() => {
     if (immediate) {
       setArrived(true);
       return;
     }
-    const timer = setTimeout(() => setArrived(true), durationMs);
-    // Interruptible: an overlay dismissed mid-reveal cancels rather than
-    // finishing a transition for something that is gone.
-    return () => clearTimeout(timer);
-  }, [durationMs, immediate]);
+    setArrived(false);
+    timeline.call(() => setArrived(true), durationMs).restart();
+    return () => {
+      timeline.pause();
+    };
+  }, [durationMs, immediate, timeline]);
 
   return arrived;
 }

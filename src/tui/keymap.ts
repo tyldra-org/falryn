@@ -19,6 +19,7 @@
  * something each binding restates.
  */
 
+import type { ActiveKey, KeymapEvent } from "@opentui/keymap";
 import {
   type BindingConflict,
   bindingConflicts,
@@ -193,41 +194,22 @@ export function isContextActive(context: CommandContext, state: CommandState): b
 }
 
 /**
- * The command a key runs, given what is active.
+ * Command ids OpenTUI says are reachable in the active layer projection.
  *
- * The resolution `@opentui/keymap` performs, expressed here so it can be tested
- * without a host and so the help overlay can answer "what does this key do right
- * now" from the same rule the dispatcher uses. Highest priority active context
- * wins; an inactive context is not consulted at all.
+ * `ActiveKey` is the keymap's own resolved answer, after focus, priorities,
+ * conditions, and shadowing. Falryn narrows its command union here and never
+ * repeats that resolution algorithm.
  */
-export function resolveBinding(
-  plan: KeymapPlan,
-  key: string,
-  state: CommandState,
-): PreparedBinding | null {
-  let best: PreparedBinding | null = null;
-  for (const binding of plan.bindings) {
-    if (binding.key !== key || !isContextActive(binding.context, state)) {
-      continue;
-    }
-    if (best === null || binding.priority > best.priority) {
-      best = binding;
-    }
-  }
-  return best;
-}
-
-/** Every key that currently resolves to something, for help and the status line. */
-export function activeBindings(plan: KeymapPlan, state: CommandState): readonly PreparedBinding[] {
-  const keys = new Set(plan.bindings.map((binding) => binding.key));
-  const active: PreparedBinding[] = [];
+export function activeCommandIds<TTarget extends object, TEvent extends KeymapEvent>(
+  keys: readonly ActiveKey<TTarget, TEvent>[],
+): ReadonlySet<string> {
+  const ids = new Set<string>();
   for (const key of keys) {
-    const resolved = resolveBinding(plan, key, state);
-    if (resolved !== null) {
-      active.push(resolved);
+    if (typeof key.command === "string") {
+      ids.add(key.command);
     }
   }
-  return active.sort((left, right) => left.command.localeCompare(right.command));
+  return ids;
 }
 
 /**
@@ -240,18 +222,14 @@ export function activeBindings(plan: KeymapPlan, state: CommandState): readonly 
  * this key do here" rather than "what is this key usually".
  */
 export function commandRows(
-  plan: KeymapPlan,
   state: CommandState,
+  active: ReadonlySet<string>,
   commands: readonly ShellCommand[] = SHELL_COMMANDS,
 ): readonly CommandEntry[] {
   return commands.map((command) => {
     const availability = command.availability(state);
     const bound =
-      command.defaultBinding === null
-        ? null
-        : resolveBinding(plan, command.defaultBinding, state)?.command === command.id
-          ? command.defaultBinding
-          : null;
+      command.defaultBinding !== null && active.has(command.id) ? command.defaultBinding : null;
     return {
       id: command.id,
       title: command.title,

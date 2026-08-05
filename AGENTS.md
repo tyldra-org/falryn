@@ -25,6 +25,18 @@ tests small, explicit, and user-focused.
   installed OpenTUI version and read the skill-routed current upstream
   documentation for every affected API; use documented components, explicit
   renderer cleanup, and focused tests.
+- Before creating, retaining, or refactoring terminal UI behavior, inventory
+  the installed OpenTUI API and its current upstream documentation for the
+  complete affected capability. Prefer documented components and renderables,
+  actions and default bindings, layout, focus, selection, scrolling, keyboard,
+  paste, mouse, styling, animation, renderer lifecycle, screen modes, terminal
+  capability handling, and test utilities over Falryn-owned reimplementations.
+  Retain custom UI code only for Falryn-specific product policy, domain state,
+  or an integration seam OpenTUI cannot provide; record that ownership boundary
+  in code-adjacent documentation or tests and cover it with focused validation.
+- During implementation and review, map every custom TUI behavior to either
+  the OpenTUI built-in it uses or a documented reason it must remain
+  Falryn-owned. Do not duplicate framework behavior merely to control it.
 - When a task touches OpenTUI TypeScript or TSX, both skills are mandatory:
   apply the relevant `typescript-best-practices` module and OpenTUI upstream
   guidance before changing code.

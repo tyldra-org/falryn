@@ -23,7 +23,7 @@
  */
 
 import { createDefaultOpenTuiKeymap } from "@opentui/keymap/opentui";
-import { KeymapProvider } from "@opentui/keymap/react";
+import { KeymapProvider, useActiveKeys, useKeymap } from "@opentui/keymap/react";
 import { useRenderer } from "@opentui/react";
 import { type ReactNode, useMemo } from "react";
 import type {
@@ -37,7 +37,13 @@ import type { ActivityModel } from "../activity-model.ts";
 import { searchCommands } from "../commands.ts";
 import { COMPOSER_FEATURES } from "../composer/index.ts";
 import type { ComposerModel } from "../composer-model.ts";
-import { commandRows, describeRefusal, type KeymapPlan, planKeymap } from "../keymap.ts";
+import {
+  activeCommandIds,
+  commandRows,
+  describeRefusal,
+  type KeymapPlan,
+  planKeymap,
+} from "../keymap.ts";
 import type { ThemeRequest } from "../theme/index.ts";
 import { keysOf } from "../transcript/index.ts";
 import type { TranscriptModel } from "../transcript-model.ts";
@@ -45,6 +51,7 @@ import type { ShellModel } from "../view-model.ts";
 import { AppShell } from "./app-shell.tsx";
 import { KeymapBridge } from "./keymap-bridge.tsx";
 import { useOverlayRoom } from "./overlay-room.tsx";
+import { ShellErrorBoundary } from "./shell-error-boundary.tsx";
 import { activeContexts, COMPOSER_REGION, useShellRuntime } from "./shell-runtime.tsx";
 
 export type ShellAppProps = {
@@ -110,21 +117,10 @@ export function ShellApp(props: ShellAppProps): ReactNode {
   const projection = props.transcript ?? EMPTY_PROJECTION;
   const transcriptKeys = useMemo(() => keysOf(projection.blocks), [projection.blocks]);
 
-  const runtime = useShellRuntime({ plan, onExit: props.onExit, transcriptKeys });
+  const runtime = useShellRuntime({ onExit: props.onExit, transcriptKeys });
   // The footer grows to hold an overlay and shrinks back when it closes. See
   // `./overlay-room.tsx` for why this is not a constant.
   useOverlayRoom(runtime.state.overlay.kind !== "none");
-  const rows = commandRows(plan, runtime.commandState);
-
-  const transcript: TranscriptModel = {
-    projection,
-    surface: runtime.state.transcript,
-    // The live rows, so every route, hint, and empty-state sentence the surface
-    // draws names a command that exists with the key it currently has.
-    commands: rows,
-    emptyStateCommand: "app.help",
-  };
-
   const activityProjection = props.activity ?? EMPTY_ACTIVITY;
   const shutdown = props.shutdown ?? null;
   const activity: ActivityModel = useMemo(
@@ -146,48 +142,6 @@ export function ShellApp(props: ShellAppProps): ReactNode {
     [activityProjection, shutdown],
   );
 
-  const composer: ComposerModel = {
-    state: runtime.state.composer,
-    // The live rows again, so the composer's own status line names the key that
-    // currently sends rather than the one that did when this was written.
-    commands: rows,
-    features: COMPOSER_FEATURES,
-    focused: runtime.state.focus.focused === COMPOSER_REGION,
-  };
-
-  const model: ShellModel = {
-    ...props.model,
-    transcript,
-    composer,
-    activity,
-    overlay: runtime.state.overlay,
-    // Narrowed by the query, through the registry's own matcher. The palette
-    // filters nothing itself: a second matcher would answer differently from
-    // the one the published reference describes.
-    commands:
-      runtime.state.overlay.kind === "palette"
-        ? paletteRows(plan, runtime.commandState, runtime.state.overlay.query.text)
-        : [],
-    status: {
-      ...props.model.status,
-      // The projected health is the resting answer. A refusal or a command's
-      // notice still outranks it below, because the most recent thing that
-      // happened is what a status line is for.
-      status: statusOfHealth(activity.health.level),
-      message: activity.health.headline,
-      // A refusal outranks anything a command said, and a notice outranks the
-      // resting message: the most recent thing that happened is what a status
-      // line is for.
-      ...(refusal !== null
-        ? { status: "error" as const, message: refusal }
-        : runtime.state.notice !== null
-          ? { status: "warning" as const, message: runtime.state.notice }
-          : {}),
-      hints: hintsFor(rows),
-    },
-    help: props.model.help,
-  };
-
   return (
     <KeymapProvider keymap={keymap}>
       <KeymapBridge
@@ -196,18 +150,84 @@ export function ShellApp(props: ShellAppProps): ReactNode {
         run={runtime.run}
         // The palette is a text control too, so a bare `?` types a question
         // mark into the search rather than opening help over it.
-        typing={composer.focused || runtime.state.overlay.kind === "palette"}
+        typing={
+          runtime.state.focus.focused === COMPOSER_REGION ||
+          runtime.state.overlay.kind === "palette"
+        }
       />
-      <AppShell
-        theme={props.theme}
-        model={model}
-        commandRows={rows}
-        onTranscriptGeometry={runtime.reportTranscriptGeometry}
-        onComposerAction={runtime.composer}
-        onComposerFocus={runtime.focusComposer}
-        onPaletteQuery={runtime.paletteQuery}
-      />
+      <ShellErrorBoundary>
+        <ResolvedShell
+          {...props}
+          refusal={refusal}
+          projection={projection}
+          activityModel={activity}
+          runtime={runtime}
+        />
+      </ShellErrorBoundary>
     </KeymapProvider>
+  );
+}
+
+function ResolvedShell(
+  props: ShellAppProps & {
+    readonly refusal: string | null;
+    readonly projection: TranscriptProjection;
+    readonly activityModel: ActivityModel;
+    readonly runtime: ReturnType<typeof useShellRuntime>;
+  },
+): ReactNode {
+  const keymap = useKeymap();
+  const activeKeys = useActiveKeys({ includeBindings: true });
+  const rows = commandRows(props.runtime.commandState, activeCommandIds(activeKeys));
+  const composer: ComposerModel = {
+    state: props.runtime.state.composer,
+    commands: rows,
+    features: COMPOSER_FEATURES,
+    focused: props.runtime.state.focus.focused === COMPOSER_REGION,
+  };
+  const transcript: TranscriptModel = {
+    projection: props.projection,
+    surface: props.runtime.state.transcript,
+    commands: rows,
+    emptyStateCommand: "app.help",
+  };
+  const model: ShellModel = {
+    ...props.model,
+    transcript,
+    composer,
+    activity: props.activityModel,
+    overlay: props.runtime.state.overlay,
+    commands:
+      props.runtime.state.overlay.kind === "palette"
+        ? paletteRows(rows, props.runtime.state.overlay.query)
+        : [],
+    status: {
+      ...props.model.status,
+      status: statusOfHealth(props.activityModel.health.level),
+      message: props.activityModel.health.headline,
+      ...(props.refusal !== null
+        ? { status: "error" as const, message: props.refusal }
+        : props.runtime.state.notice !== null
+          ? { status: "warning" as const, message: props.runtime.state.notice }
+          : {}),
+      hints: hintsFor(rows),
+    },
+    help: props.model.help,
+  };
+
+  return (
+    <AppShell
+      theme={props.theme}
+      model={model}
+      commandRows={rows}
+      onTranscriptGeometry={props.runtime.reportTranscriptGeometry}
+      onComposerAction={props.runtime.composer}
+      onComposerFocus={props.runtime.focusComposer}
+      onPaletteQuery={props.runtime.paletteQuery}
+      onPaletteSelect={(id) => {
+        keymap.runCommand(id);
+      }}
+    />
   );
 }
 
@@ -260,10 +280,9 @@ export function displayKey(binding: string): string {
  * anything and this function was a matcher nothing matched with.
  */
 export function paletteRows(
-  plan: KeymapPlan,
-  state: Parameters<typeof commandRows>[1],
+  rows: readonly ReturnType<typeof commandRows>[number][],
   query: string,
 ) {
   const matching = new Set(searchCommands(query).map((command) => command.id));
-  return commandRows(plan, state).filter((row) => matching.has(row.id));
+  return rows.filter((row) => matching.has(row.id));
 }

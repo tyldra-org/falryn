@@ -6,10 +6,9 @@
  * test and asserted on, and the shell builds one from the composer state, the
  * registry, and the feature list rather than from anything it drew.
  *
- * The state is carried whole rather than flattened into lines. Flattening here
- * would put a second copy of the editing model in the interface, and the copy is
- * what goes stale — a cursor moved by a keypress would keep rendering from a
- * shape somebody derived one frame earlier.
+ * The state is carried whole rather than flattened into lines. The component
+ * gives its text to OpenTUI's textarea and never derives a second cursor,
+ * selection, or viewport from this model.
  */
 
 import type { ComposerFeature, ComposerState } from "./composer/index.ts";

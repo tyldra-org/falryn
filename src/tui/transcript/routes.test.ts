@@ -11,16 +11,14 @@
 import { describe, expect, test } from "bun:test";
 import { EXPANSION_ROUTES } from "../../presentation/index.ts";
 import { commandById, EMPTY_COMMAND_STATE } from "../commands.ts";
-import { commandRows, planKeymap } from "../keymap.ts";
+import { commandRows } from "../keymap.ts";
 import { commandForRoute, describeRouteWith } from "./routes.ts";
 
-const PLAN = planKeymap();
-
 function rows() {
-  if (!PLAN.ok) {
-    throw new Error("the registry's own keymap was refused");
-  }
-  return commandRows(PLAN.plan, { ...EMPTY_COMMAND_STATE, hasTranscript: true });
+  return commandRows(
+    { ...EMPTY_COMMAND_STATE, hasTranscript: true },
+    new Set(["transcript.expand"]),
+  );
 }
 
 describe("every expansion route", () => {

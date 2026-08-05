@@ -208,7 +208,11 @@ export async function parseInvocation(argv: readonly string[]): Promise<Invocati
 
   let parsed: RawArguments;
   try {
-    parsed = (await build(argv).parse()) as unknown as RawArguments;
+    const candidate: unknown = await build(argv).parse();
+    if (!isRawArguments(candidate)) {
+      return { kind: "invalid", message: "The argument parser returned an invalid result." };
+    }
+    parsed = candidate;
   } catch (error) {
     return { kind: "invalid", message: messageOf(error) };
   }
@@ -250,7 +254,11 @@ async function parseForHelp(
   | { kind: "invalid"; message: string }
 > {
   try {
-    const parsed = (await build(argv, true).parse()) as unknown as RawArguments;
+    const candidate: unknown = await build(argv, true).parse();
+    if (!isRawArguments(candidate)) {
+      return { kind: "invalid", message: "The argument parser returned an invalid result." };
+    }
+    const parsed = candidate;
     const conflict = conflictIn(parsed);
     if (conflict !== null) {
       return { kind: "invalid", message: conflict };
@@ -263,6 +271,34 @@ async function parseForHelp(
   } catch (error) {
     return { kind: "invalid", message: messageOf(error) };
   }
+}
+
+function isRawArguments(value: unknown): value is RawArguments {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+  const field = (key: PropertyKey): unknown => Reflect.get(value, key);
+  const positional = field("_");
+  return (
+    Array.isArray(positional) &&
+    positional.every((item) => typeof item === "string" || typeof item === "number") &&
+    optionalString(field("action")) &&
+    typeof field("format") === "string" &&
+    typeof field("color") === "string" &&
+    typeof field("quiet") === "boolean" &&
+    typeof field("verbose") === "boolean" &&
+    typeof field("non-interactive") === "boolean" &&
+    typeof field("no-color") === "boolean" &&
+    optionalString(field("workspace")) &&
+    optionalString(field("profile")) &&
+    (field("timeout") === undefined || typeof field("timeout") === "number") &&
+    typeof field("help") === "boolean" &&
+    typeof field("version") === "boolean"
+  );
+}
+
+function optionalString(value: unknown): value is string | undefined {
+  return value === undefined || typeof value === "string";
 }
 
 /** The command a positional vector names, or `null` when it names none. */

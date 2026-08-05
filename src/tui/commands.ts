@@ -466,26 +466,26 @@ export type BindingConflict = {
 export function bindingConflicts(
   commands: readonly ShellCommand[] = SHELL_COMMANDS,
 ): readonly BindingConflict[] {
-  const seen = new Map<string, string[]>();
+  const seen = new Map<CommandContext, Map<string, string[]>>();
   for (const command of commands) {
     if (command.defaultBinding === null) {
       continue;
     }
-    const key = `${command.context}\0${command.defaultBinding}`;
-    seen.set(key, [...(seen.get(key) ?? []), command.id]);
+    const inContext = seen.get(command.context) ?? new Map<string, string[]>();
+    inContext.set(command.defaultBinding, [
+      ...(inContext.get(command.defaultBinding) ?? []),
+      command.id,
+    ]);
+    seen.set(command.context, inContext);
   }
 
   const conflicts: BindingConflict[] = [];
-  for (const [key, ids] of seen) {
-    if (ids.length < 2) {
-      continue;
+  for (const [context, bindings] of seen) {
+    for (const [binding, ids] of bindings) {
+      if (ids.length >= 2) {
+        conflicts.push({ context, binding, commands: [...ids].sort() });
+      }
     }
-    const [context = "global", binding = ""] = key.split("\0");
-    conflicts.push({
-      context: context as CommandContext,
-      binding,
-      commands: [...ids].sort(),
-    });
   }
   return conflicts;
 }

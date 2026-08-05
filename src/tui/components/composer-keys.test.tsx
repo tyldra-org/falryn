@@ -3,11 +3,11 @@
  *
  * This file exists because a migration changed them silently. Moving the
  * composer onto `TextareaRenderable` brought the library's default bindings with
- * it, and three disagreed with what `reference/KEYBOARD-SHORTCUTS.md` promises:
- * `home` and `end` went to the draft's ends rather than the line's, `ctrl+a`
- * moved the cursor instead of selecting, and `ctrl+home`/`ctrl+end` did nothing
- * at all. Nobody decided that — a default arrived with a dependency and no check
- * was watching the keys.
+ * it, and `home` and `end` disagreed with what
+ * `reference/KEYBOARD-SHORTCUTS.md` promises by moving to the draft's ends
+ * rather than the line's. `ctrl+home`/`ctrl+end` did nothing at all. Nobody
+ * decided that — defaults arrived with a dependency and no check was watching
+ * the keys.
  *
  * So the checks here are deliberately one per documented binding rather than a
  * representative sample. What they guard is not the library's behaviour, which
@@ -55,10 +55,11 @@ const HOME = "\u001b[H";
 const END = "\u001b[F";
 
 /** A mounted shell with the composer focused and a draft in it. */
-async function drafting(draft = "alpha\nbravo"): Promise<Rendered> {
+async function drafting(draft = "alpha\nbravo", kittyKeyboard = false): Promise<Rendered> {
   const shell = await mount(<ShellApp theme={THEME} model={MODEL} onExit={() => {}} />, {
     shape: { columns: 100, rows: 24 },
     screenMode: "alternate-screen",
+    kittyKeyboard,
   });
   await shell.frame();
   // Two tabs: header, then the primary region, then the composer.
@@ -137,15 +138,19 @@ describe("the keys the reference promises", () => {
     expect(await draftRows(shell)).toEqual(["alpha", "bravoX"]);
   });
 
-  test("ctrl+a selects the draft rather than moving through it", async () => {
-    // The sharpest of the three. The library binds `ctrl+a` to `line-home`, so
-    // a user pressing it to select their draft watched the cursor move instead
-    // — and then typing appended to text they believed they had replaced.
-    //
-    // Typing is the discriminator: it replaces a selection and inserts without
-    // one, so the resulting draft says which happened.
+  test("ctrl+a moves to line home, including a terminal's Command+Left alias", async () => {
     using shell = await drafting();
     shell.setup.mockInput.pressKey("a", { ctrl: true });
+    await shell.frame();
+    await shell.type("X");
+    expect(await draftRows(shell)).toEqual(["alpha", "Xbravo"]);
+  });
+
+  test("Command+a selects the draft when Kitty reports Super", async () => {
+    // Typing distinguishes replacement from insertion without reaching into
+    // the renderable's private selection state.
+    using shell = await drafting("alpha\nbravo", true);
+    shell.setup.mockInput.pressKey("a", { super: true });
     await shell.frame();
     await shell.type("X");
     expect(await draftRows(shell)).toEqual(["X"]);

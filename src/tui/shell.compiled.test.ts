@@ -477,26 +477,27 @@ describe.if(runnable)("the compiled shell on a real terminal", () => {
   );
 
   test(
-    "opens help from the keyboard, with every command and its key, and closes it",
+    "opens help, scrolls through the command registry, and closes it",
     async () => {
       // The overlay grows the footer to make room for itself, so this also
       // proves that: at the default six-row footer the panel would have had one
       // row and the commands would have drawn over each other.
       let opened = "";
+      let scrolled = "";
       let closed = "";
       const run = await runOnPty([], async (driver) => {
         opened = await driver.press("?");
+        scrolled = await driver.press("\u001b[F");
         closed = await driver.press([0x1b]);
         await driver.press([0x03]);
       });
       expect(run.exitCode).toBe(EXIT_CODES.COMPLETED);
       expect(opened).toContain("Help");
-      expect(opened).toContain("ctrl+c");
-      // A command that cannot run, listed with its reason rather than hidden.
-      // `app.cancel` rather than a composer command: at this terminal height the
-      // list truncates before the composer rows, which is the bounded-overlay
-      // behavior working rather than a missing entry.
-      expect(opened).toContain("nothing is running to cancel");
+      expect(opened).toContain("Ctrl+C ends the session");
+      // The focused OpenTUI scrollbox reaches the registry's final command and
+      // keeps its unavailability reason visible rather than truncating it away.
+      expect(scrolled).toContain("Decline");
+      expect(scrolled).toContain("nothing is waiting for confirmation");
       // And closing gives the primary view back. Asserted on what the *step*
       // drew, because the transcript keeps every byte the overlay ever wrote.
       //

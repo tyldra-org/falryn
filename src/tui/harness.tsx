@@ -93,6 +93,8 @@ export type MountOptions = {
   readonly shape?: TerminalShape;
   readonly screenMode?: CliRendererConfig["screenMode"];
   readonly externalOutputMode?: CliRendererConfig["externalOutputMode"];
+  /** Enables Kitty keyboard encoding so modified keys remain distinguishable. */
+  readonly kittyKeyboard?: boolean;
   /**
    * A stdout the check holds a reference to.
    *
@@ -119,6 +121,7 @@ export async function openRenderer(options: MountOptions = {}): Promise<Live> {
     width: shape.columns,
     height: shape.rows,
     consoleMode: "disabled",
+    ...(options.kittyKeyboard === undefined ? {} : { kittyKeyboard: options.kittyKeyboard }),
     ...(options.screenMode === undefined ? {} : { screenMode: options.screenMode }),
     ...(options.externalOutputMode === undefined
       ? {}

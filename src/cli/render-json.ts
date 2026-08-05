@@ -22,6 +22,7 @@ import type { RunCommandResult } from "./commands.ts";
 import {
   type CliEncodeError,
   type CliRecord,
+  type CliResultBody,
   cliRefusalRecord,
   cliResultRecord,
   encodeCliRecord,
@@ -47,7 +48,7 @@ export type MachineRenderRequest = {
 };
 
 /** The body of a terminal record, taken from the result without reshaping it. */
-export function resultBodyOf(result: RunCommandResult) {
+export function resultBodyOf(result: RunCommandResult): CliResultBody {
   return {
     outcome: result.outcome,
     effect: result.effect,

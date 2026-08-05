@@ -4,7 +4,7 @@ This file is Falryn's sole concise implementation-status owner. It records what
 exists and has been verified in the `falryn` repository. It does not duplicate
 the product design or GitHub roadmap.
 
-Last reconciled: **2026-08-03**
+Last reconciled: **2026-08-05**
 
 ## Where to look
 
@@ -1676,13 +1676,11 @@ with the reason attached, because no producer of sessions, models, or Git state
 exists. Values that come from outside Falryn are escaped before they are drawn,
 so a workspace path cannot forge a line.
 
-Motion is a two-step transition rather than a tween, and the reason is
-verification: OpenTUI's timelines advance from the renderer's own frame loop,
-which a test renderer does not run, so a tweened reveal could not be driven to
-its final frame in a test — and an animation nothing can assert completing is an
-overlay that might never open. Reduced motion maps the duration to zero, so the
-first committed frame is already final rather than the first frame of a very
-fast animation. It is on by request, on a dumb terminal, and in CI.
+Overlay reveal is driven by OpenTUI's `useTimeline`, so animation lifecycle
+and frame scheduling stay with the renderer. The route remains mounted while its
+container reveals, preserving focused-control state. Reduced motion skips the
+timeline and renders the final dimensions on the first committed frame; it is
+enabled by request, for a dumb terminal, and in CI.
 
 `FALRYN_THEME` selects a variant and `FALRYN_MOTION=off` removes transitions,
 beside `FALRYN_TUI` from #23. Refusing colour does not reduce motion: they are
@@ -1741,69 +1739,37 @@ resize, an overlay opening and closing, and a region going away — moving to th
 region that took its place rather than back to the top. Every region carries a
 label, because an indicator that is not colour-only needs words.
 
-Help and the palette are rendered from the registry rather than a maintained
-table, showing each command's effective binding and its unavailability reason.
-Both bound their content to the rows they have: an overlay in `split-footer`
-grows the footer while it is open and restores it after, because the default
-six-row live region left a help panel one row to draw twenty commands into — and
-a terminal does not clip, it overdraws.
+Help and the palette are rendered from the command registry rather than a
+maintained table, showing each command's effective OpenTUI binding and its
+unavailability reason. The keymap bridge declares commands and context bindings
+through OpenTUI's `useBindings`; help derives effective bindings from
+`useActiveKeys`, and palette selection executes the selected command through
+`runCommand`. Falryn still validates registry conflicts and controls which
+semantic contexts are active, but it no longer reimplements binding resolution.
 
-The palette's search accepts typed input and narrows the list through
-`searchCommands`, the registry's own matcher
-([#364](https://github.com/yogeshprasad098/falryn/issues/364)). It had not
-before: the matcher existed, was tested, and had no product caller, so the
-palette was handed every row and a literal empty query and typing narrowed
-nothing. The query lives on the open-overlay route rather than beside it, which
-is what makes "closing the palette clears the search" true by construction —
-closing replaces the route, so there is nowhere a stale query can survive. The
-search field reuses the composer's editing model rather than growing a second
-text input, and it counts as a focused text control, so the bare
-single-character bindings are withheld while it is open and `?` can be searched
-for.
+Help content lives in a focused OpenTUI `<scrollbox>`, which owns viewport
+clipping and keyboard scrolling. The command palette uses OpenTUI `<input>` for
+its query and `<select>` for option selection, descriptions, navigation, and
+scroll indicators. Falryn owns only the route query, command filtering, and
+dispatch. Closing the palette replaces the route and therefore clears the query
+by construction.
 
-A second defect in the same function is fixed with it. The palette computed a
-row budget, a truncation flag, and the rows to show, and then recomputed the
-budget inline and discarded all three — losing the row reserved for the "N more"
-line. A truncated palette therefore asked for one row more than the panel had,
-and because the panel does not grow, two command rows landed on top of each
-other and reached the screen spliced together. That is what the standing
-`noUnusedVariables` warning on that file was pointing at.
+While the palette input is focused, background transcript and composer contexts
+are absent. Up and Down are forwarded to the select renderable because the input
+keeps terminal focus; selection state and movement still remain OpenTUI's. The
+composer's submit and newline bindings are advertised by the keymap but pass
+through to the focused textarea, preventing an application layer from consuming
+Enter or Shift+Enter before the built-in editor can act.
 
-The budget is no longer clamped up to a minimum either, which is what made the
-overdraw reachable at all: `Math.max(1, rows - 1)` promises a row the caller may
-not have given. `OverlayHost` caps its height while the reveal transition runs,
-so the palette is handed a single row on every open where motion is not reduced —
-and with a one-row budget the search line is the whole of it. The palette now
-spends that row on the query, adds the notice only when a row remains for it, and
-says "too little room to list them" rather than "N more" when nothing was shown,
-because "more" is only true beside something.
-
-The empty-result line is keyed off what *matched* rather than off what fits. The
-two are different answers — "your search found nothing" and "there was no room to
-show what it found" — and keying off the second reports the first when it is
-false: during the reveal a full command list rendered "Nothing matches that."
-directly above its own "24 more" line. The rendered checks measure the rows
-actually drawn at every budget, because the panel's height is identical either
-way and a count of the panel cannot see a collision inside it.
-
-The same shape was one level up, and
-[#366](https://github.com/yogeshprasad098/falryn/issues/366) removed it there.
-The overlay host reserved three rows and clamped what remained to
-`Math.max(1, height - 3)`, so at the reveal's three-row step it handed the route
-a row the border and the dismissal hint had already spent — and the search line
-landed on the hint, reaching the screen as `Esceclosesathiscommands.` on every
-overlay open where motion is not reduced, for help as well as the palette. The
-host now measures the split instead: the border is subtracted, the way out is
-paid before the content, and a panel with no room left hands the route zero.
-
-The route is hidden rather than unmounted when nothing fits. A route is not only
-what it draws — the palette's search holds a keyboard subscription while it is
-mounted — so dropping it for the length of the transition would discard whatever
-was typed into an overlay a key had just opened.
-
-The transition's own steps are asserted now, not only its final frame. The
-defect survived a full rendered suite because every helper waited for the content
-to settle before looking, which is exactly the state that was correct.
+The renderer explicitly requests Kitty keyboard modifier reporting. OpenTUI's
+textarea owns Command/Super line and buffer movement and Option/Alt word
+movement, including Shift selection variants. Legacy terminal aliases remain
+compatible: `ctrl+a` / `ctrl+e` move to line boundaries, and
+`ctrl+home` / `ctrl+end` move to draft boundaries. This matters in terminals
+such as Ghostty that translate Command+Left/Right before the application sees
+the key; Falryn no longer reinterprets that translated `ctrl+a` as Select All.
+Command+A remains OpenTUI's Super+A Select All binding when the terminal reports
+Super directly.
 
 A rendered check settles on what was painted rather than on a non-empty
 buffer ([#372](https://github.com/yogeshprasad098/falryn/issues/372)). A test
@@ -2138,141 +2104,23 @@ because the renderable places it again afterwards. The faithful mutant
 suppresses the renderable's own cursor and writes a zero-based coordinate, and
 that one fails.
 
-**A gap found and left open.** `composerNotice` turns a refused paste into a
-sentence, `state.test.ts` checks it, and no component renders it — on this branch
-or before it. A user whose paste was refused sees the text simply not arrive.
-Recorded rather than fixed inside a migration whose non-goals say the status rows
-keep reporting what they report.
+**Non-inline pastes are visible.** The composer classifies a paste before the
+renderable sees it. Preview-sized and refused input stays out of the buffer and
+the second status row explains what happened, so a missing payload cannot look
+like a frozen terminal.
 
-**The keyboard reaches every position the model can hold**
-([#387](https://github.com/yogeshprasad098/falryn/issues/387)). Characters,
-words, line ends, and the draft's ends, each extending a selection when shift is
-held. `word-left` and `word-right` join `EDITOR_MOTIONS`, and their boundary is
-the platform's: `wordStarts` in `src/domain/text-display.ts` uses
-`Intl.Segmenter` at word granularity beside the grapheme segmenter that was
-already there, for the same reason — what separates a word from the punctuation
-around it is a Unicode question that changes between releases. A word motion
-therefore crosses a CJK run with no spaces in it and steps over punctuation
-rather than stopping on every comma. A joined emoji is not word-like to the
-segmenter, and the motion inherits that answer rather than inventing a second
-one.
+**Text editing belongs to OpenTUI.** The React `<textarea>` owns the buffer,
+cursor, selection, wrapping, scrolling, and text motion. Falryn extends
+`defaultTextareaKeyBindings` only with documented `TextareaAction` values for
+Home, End, buffer bounds, and selection. The only behavioral seam is submission
+history: `onKeyDown` intercepts bare Up or Down at the corresponding draft edge
+and otherwise lets the focused textarea handle the key.
 
-Two things were measured rather than assumed, and both changed the design. **A
-modified arrow was not refused, it was silently downgraded**: `editFor` switched
-on `key.name` before considering any modifier, so `alt+left` fell into the plain
-left case and moved one character — a chord that looked bound and behaved worse
-than one that was missing. Modifiers are matched first now. And **`shift+up`
-reaches the composer's own handler while bare `up` does not**: the keymap claims
-the declared binding and not its modified form, so extending a selection upward
-is handled where the key actually lands and the history rule stays with the
-command that owns it. The two never need disambiguating — extending from the
-first line has nothing to do with recalling a submission.
-
-Alt and Ctrl both give the word motions, because a terminal sends whichever its
-user's keyboard produces and binding one would make the feature present on macOS
-and absent on Linux. Command cannot be promised: under the kitty protocol it
-arrives as `super` and is honoured, and most terminals transmit no Command
-modifier at all because the emulator claims those chords first — so `home` and
-`end` remain the line motions that always work, and
-`reference/KEYBOARD-SHORTCUTS.md` records Command as terminal-dependent rather
-than listing it as a binding the build honours.
-
-Two decisions came out of measuring the keymap rather than reading about it. A
-layer that claims a key means the focused control never sees it, so while the
-composer has focus, bindings whose key is one bare character are not registered —
-otherwise `?` bound to help makes a question mark impossible to type into a
-prompt. The rule is narrow: every modified and named binding keeps working, so
-`ctrl+c` and `escape` are never withheld, and the withheld command stays listed
-and reachable from the palette. And the `composer` keymap context is active on
-**focus** rather than on existence, because the composer's layer outranks the
-transcript's and the two share `up` and `down`.
-
-**The cursor is the terminal's own, placed rather than drawn**
-([#386](https://github.com/yogeshprasad098/falryn/issues/386)). Until now the
-composer spliced a caret glyph into the line at the cursor's column, which made
-the drawn line one grapheme longer than the buffer line and displaced everything
-after it: `hello world` with the cursor after `wo` was drawn `hello wo▏rld`. At
-the end of a draft that is invisible, which is why it shipped and why every
-existing check passed over it — they all type and assert without moving the
-cursor back into what they typed. It is not only cosmetic: a line at exactly the
-terminal's width gained a cell while the cursor sat on it, and typed text could
-not be asserted in a frame.
-
-The three reasons recorded for drawing a character were each answered against
-the installed renderer rather than in principle. A reversed *cell* would have
-needed a second styling owner; the terminal's own cursor is neither a cell nor a
-style. `Renderable` exposes `screenX` and `screenY` in the renderer's buffer
-space, which is the space `setCursorPosition` takes, so the absolute coordinate a
-flex layout only knows after it runs is readable rather than unavailable. And
-`captureSpans()` reports `cursor: [x, y]` from the state `setCursorPosition`
-writes, so "the cursor moved" stays assertable — the assertion moved to the
-coordinate instead of disappearing. The `caret` symbol role left `SYMBOL_ROLES`
-and all three repertoires with the drawing it existed for.
-
-The column is a *cell* offset and not a grapheme count, through the same
-`displayWidth` the layout and truncation use: `日本` before the cursor is two
-graphemes and four cells, and counting graphemes would have placed the cursor
-short by one cell per wide character — the same defect one layer down. Placement
-subscribes to `LAYOUT_CHANGED` on the composer's own renderable, because an
-effect runs after React commits while Yoga lays out inside the renderer's pass,
-so a first placement can read a position that does not exist yet; the check
-asserts the cursor on the *first settled frame* rather than after a keystroke, so
-a placement one frame behind fails rather than passing on the second.
-
-**Both directions of that mapping live in one module**
-([#391](https://github.com/yogeshprasad098/falryn/issues/391)).
-`src/tui/composer/geometry.ts` turns a draft position into a screen cell and a
-screen cell back into a draft position; the component hands it the drawn lines
-and consumes the answer, and a control asserts that nothing else declares either
-direction or reaches for `displayWidth` to compute its own. The pointer work
-[#388](https://github.com/yogeshprasad098/falryn/issues/388) needs the inward
-direction, and two functions computing one relationship disagree eventually — on
-a wide glyph, or the first time somebody edits one of them — with the
-disagreement surfacing as a cursor landing a cell from where it was clicked.
-
-The module is pure arithmetic: no renderer, no React, no pointer, and no
-editing. It answers *where*, and the caller decides what to do about it, which
-is what lets the awkward cases be checked as data. A cell inside a wide grapheme
-resolves to that grapheme's **start** — a position between the two cells of `日`
-does not exist in the draft, and inventing one would let a click produce a column
-the editing model can never hold. A cell past a line's text resolves to that
-line's end, a row outside the drawn window to the nearest drawn line, and a
-window that drew nothing to no position at all rather than to line zero.
-
-The round trip is the check that holds the two directions together, and it is
-asserted as two statements rather than one. The law that holds everywhere: a
-cell answers **the column of the grapheme drawn in it**, which is the last of
-the columns sharing that cell. And identity — the same column returns — over the
-lines where every grapheme claims a cell of its own. Both are asserted for
-*every* column of six lines rather than for a representative sample.
-
-The two differ wherever columns share a cell, which a paste can produce: a
-zero-width grapheme claims none, so the positions on either side of it are drawn
-in the same place and clicking there answers the one in front of the character a
-reader can see. Cell zero is not special-cased, and that is a correction rather
-than a detail — a short-circuit answering column zero for any cell at or below
-zero made a line *opening* with a combining mark the one position where the
-answer was the first column sharing a cell instead of the last. Only a negative
-cell short-circuits now, for a click left of the region.
-
-Two rounds of verification were needed to get that statement true. The first
-claimed identity for every column of every line, which no fixture could falsify
-because none held a zero-width grapheme. The second claimed the *earliest*
-column sharing the cell, which the one new fixture could not falsify either —
-it opened with the mark, where the special case happened to return the earliest
-while the loop everywhere else returned the last. Both zero-width placements are
-fixtures now, and the set was checked to distinguish the two candidate laws: the
-earlier claim, implemented, fails four of these checks.
-
-The joined-emoji case passes while the recorded disagreement between
-`displayWidth` and the renderer stands, because what the property needs is that
-both directions use the same measurement — not that the measurement is right.
-
-One upstream behavior was measured and is worth recording: the renderer clamps
-the cursor's `x` to a minimum of one, so column 0 and column 1 report the same
-number. Nothing in the placement depends on telling them apart, but a check that
-took its origin from an empty draft would be a cell short — the cursor checks
-measure deltas between two positions clear of the clamp instead.
+The deleted editor reducer and geometry modules no longer duplicate OpenTUI.
+Falryn stores the textarea's reported plain text for submission and recovery,
+but it does not maintain a second cursor, selection, viewport, grapheme-motion,
+or screen-coordinate model. Cursor placement is therefore emitted by the same
+renderable that paints the text, including on wide and joined characters.
 
 The composer's height is reserved by the layout rather than chosen by the view,
 and its chrome is a fixed two rows. The transcript sizes its own window from what
