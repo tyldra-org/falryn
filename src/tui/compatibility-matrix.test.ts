@@ -339,7 +339,34 @@ const MATRIX: readonly Row[] = [
     by: {
       kind: "test",
       file: "tui/renderer-session.test.ts",
-      named: "turn the mouse on when the record says to",
+      named: "is on when the user asked for it, and is reported as a mode to give back",
+    },
+  },
+  {
+    axis: "input",
+    row: "pointer input refused by configuration",
+    by: {
+      kind: "test",
+      file: "tui/renderer-session.test.ts",
+      named: "is off when the user has not asked for it",
+    },
+  },
+  {
+    axis: "input",
+    row: "a click places the cursor where a cell index and a grapheme index differ",
+    by: {
+      kind: "test",
+      file: "tui/components/composer.test.tsx",
+      named: "counts cells rather than graphemes, so a wide character is two",
+    },
+  },
+  {
+    axis: "input",
+    row: "word and document motions from the keyboard",
+    by: {
+      kind: "test",
+      file: "tui/components/composer.test.tsx",
+      named: "alt and ctrl arrows move by word",
     },
   },
   {

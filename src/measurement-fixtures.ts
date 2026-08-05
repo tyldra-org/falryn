@@ -37,6 +37,15 @@ export type Distribution = {
   readonly medianMs: number;
   readonly p95Ms: number;
   readonly maxMs: number;
+  /**
+   * Whether the p95 landed on the last sample, and is therefore the maximum.
+   *
+   * At small counts it always does: the index is `ceil(count × 0.95) - 1`,
+   * which is the last one for anything under twenty. Reporting a number twice
+   * under two names overstates what was measured — a reader comparing a p95 to
+   * a max learns nothing from two figures that cannot differ.
+   */
+  readonly p95IsMax: boolean;
 };
 
 export function milliseconds(nanoseconds: number): number {
@@ -67,16 +76,28 @@ export function distribution(samplesNs: readonly number[]): Distribution {
     medianMs: milliseconds(median),
     p95Ms: milliseconds(sorted[p95Index] ?? 0),
     maxMs: milliseconds(sorted[sorted.length - 1] ?? 0),
+    p95IsMax: p95Index === sorted.length - 1,
   };
 }
 
+/**
+ * A distribution as one line.
+ *
+ * The p95 is omitted when it is the maximum rather than printed as a second
+ * name for it. At fewer than twenty samples the percentile index is the last
+ * one, so the two figures cannot differ — and a line showing both invites a
+ * reader to compare them and conclude something about the tail that the sample
+ * count cannot support. Saying "the maximum is the highest of five" is honest;
+ * calling it a 95th percentile is not.
+ */
 export function formatDistribution(value: Distribution): string {
   return [
     `samples ${value.count}`,
     `min ${rounded(value.minMs)} ms`,
     `median ${rounded(value.medianMs)} ms`,
-    `p95 ${rounded(value.p95Ms)} ms`,
+    ...(value.p95IsMax ? [] : [`p95 ${rounded(value.p95Ms)} ms`]),
     `max ${rounded(value.maxMs)} ms`,
+    ...(value.p95IsMax ? ["p95 not reported: it is the maximum at this sample count"] : []),
   ].join(" | ");
 }
 

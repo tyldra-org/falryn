@@ -1661,22 +1661,31 @@ cadence taken in process would measure the polling, and startup taken in process
 would exclude process start. Those, and shutdown latency with them, are taken
 from `dist/falryn` on the pseudo-terminal, where a frame is a synchronized-update
 sequence the terminal actually received and is timed at the arrival of the chunk
-carrying it. Observed on 2026-08-04, on macOS 26.6 `arm64`, Apple M3, 16 GiB,
-Bun 1.3.14, at 100×30 with `TERM=xterm-256color`:
+carrying it. Observed on 2026-08-05 against the artifact this branch will ship — the shell
+with pointer input, word motions, and the placed cursor — on macOS 26.6
+`arm64`, Apple M3, 16 GiB, Bun 1.3.14, at 100×30 with `TERM=xterm-256color`:
 
 ```text
-startup to first draw     5 cold starts   median 479 ms   p95 610 ms
-render cadence            60 keys 8 ms apart   32 frames   median interval 17 ms   ≈58 frames/second
+startup to first draw     5 cold starts   median 461 ms   max 615 ms
+render cadence            60 keys 8 ms apart   33 frames   median interval 17 ms   ≈60 frames/second
 input latency under load  20 presses at 200 events/second  median 17 ms   p95 33 ms
 event-loop delay          200 timer round trips under load  median 1.14 ms   p95 2.44 ms
-memory growth             250 → 2000 transcript blocks   7.4 MiB held   ≈4.4 KiB/block
-shutdown latency          3 interrupts   median 68 ms   (teardown alone, median 0.6 ms)
+memory growth             250 → 2000 transcript blocks   7.5 MiB held   ≈4.4 KiB/block
+shutdown latency          3 interrupts   median 49 ms   (teardown alone, median 0.45 ms)
 ```
 
 The renderables the transcript surface holds stay at 78 from 250 blocks to
 2,000, which is the bounded window working; the growth is the projection, not
 the tree. Input latency is quantized to the harness's 5 ms settle interval and
-is an upper bound for that reason. The same 60 keystrokes written back to back
+is an upper bound for that reason.
+
+**A p95 is not reported where it would be the maximum.** The percentile index is
+`ceil(count × 0.95) - 1`, which is the last sample for any count under twenty —
+so startup, cadence's frame count, and shutdown were reporting one number under
+two names, inviting a reader to compare a p95 to a max and conclude something
+about the tail that five samples cannot support. The line now says so instead.
+The persistence measurements gained the same correction, since they share the
+shape. The same 60 keystrokes written back to back
 draw two frames rather than sixty, which is coalescing on the real loop.
 
 Coalescing is asserted rather than assumed. `src/tui/coalescing.test.tsx` emits
