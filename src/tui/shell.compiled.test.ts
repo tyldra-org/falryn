@@ -45,6 +45,9 @@ const EXIT_MS = 8_000;
 
 const RUN_TIMEOUT_MS = 30_000;
 
+/** The control sequence introducer, as an escape rather than a raw byte. */
+const CSI = "\u001b\\[";
+
 /**
  * Sequences that mean the terminal was given back.
  *
@@ -558,6 +561,62 @@ describe.if(runnable)("the compiled shell on a real terminal", () => {
       expect(submitted).toContain("Not sent");
       expect(submitted).toContain("#33");
       expectRestored(run);
+    },
+    RUN_TIMEOUT_MS,
+  );
+
+  test(
+    "puts the cursor on the row it drew the text on",
+    async () => {
+      // The check #399 exists for, and the one no frame-level check can make.
+      //
+      // The composer drew its own rows and then re-derived where the cursor
+      // belonged, from a box origin and a width sum. `setCursorPosition` is
+      // one-based and those coordinates were zero-based, so the cursor sat one
+      // row above the draft and one cell short of the text — on a real terminal
+      // only. Every in-memory check agreed with it, because they compared the
+      // code's own coordinates against fixtures built from the same assumption.
+      //
+      // A terminal draws text by moving the cursor and then writing, so the
+      // transcript carries the answer: the cursor-position sequence immediately
+      // before the typed run says which row the text went to, and the last one
+      // of the step says where the cursor was left. They have to be the same
+      // row. Nothing here computes a coordinate — both numbers are read from
+      // what the terminal received.
+      //
+      // Validated by reintroducing the defect, and the first attempt did not
+      // reproduce it: placing the cursor by hand *beside* the renderable still
+      // passes, because the renderable places it again afterwards and the last
+      // sequence is its correct one. The faithful mutant is the historical
+      // shape — the renderable's own cursor suppressed with `showCursor` and
+      // Falryn writing a zero-based coordinate — and that one fails here. Worth
+      // stating so that a later simplification of this check has to answer the
+      // same question.
+      let typed = "";
+      const run = await runOnPty([], async (driver) => {
+        await driver.press([0x09]);
+        await driver.press([0x09]);
+        typed = await driver.press("hello");
+        await driver.press([0x03]);
+      });
+      expect(run.exitCode).toBe(EXIT_CODES.COMPLETED);
+
+      // Built rather than written as a literal: the control character belongs in
+      // an escape sequence, and a raw one in source is what `src/source-text.test.ts`
+      // exists to refuse.
+      const cursorPosition = new RegExp(`${CSI}(\\d+);(\\d+)H`, "g");
+      const positions = [...typed.matchAll(cursorPosition)];
+      const drawn = positions.filter((match) => {
+        const at = (match.index ?? 0) + match[0].length;
+        return typed.slice(at, at + 40).includes("hello");
+      });
+      const wrote = drawn[drawn.length - 1];
+      const left = positions[positions.length - 1];
+      expect({ wroteText: wrote !== undefined, leftCursor: left !== undefined }).toEqual({
+        wroteText: true,
+        leftCursor: true,
+      });
+      expect({ row: left?.[1] }).toEqual({ row: wrote?.[1] });
     },
     RUN_TIMEOUT_MS,
   );

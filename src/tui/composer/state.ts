@@ -24,13 +24,6 @@
 
 import { classifyPaste, describePaste, type PasteClassification } from "../paste.ts";
 import {
-  type EditorAction,
-  type EditorState,
-  EMPTY_EDITOR,
-  editorReducer,
-  hasContent,
-} from "./editor.ts";
-import {
   EMPTY_HISTORY,
   type InputHistory,
   recallNext,
@@ -63,7 +56,17 @@ export const COMPOSER_PHASES = [
 export type ComposerPhase = (typeof COMPOSER_PHASES)[number];
 
 export type ComposerState = {
-  readonly editor: EditorState;
+  /**
+   * The draft, as text.
+   *
+   * A string rather than an editing model since #399: the composer is
+   * `TextareaRenderable`, which owns the buffer, the cursor, the selection, and
+   * every motion over them. What this machine still needs is the *content* — to
+   * snapshot on submission, to remember in history, and to answer whether there
+   * is anything to send. Holding a second cursor beside the renderable's is
+   * exactly the arrangement that put the cursor in the wrong cell.
+   */
+  readonly text: string;
   readonly history: InputHistory;
   readonly phase: ComposerPhase;
   /** The submission awaiting an outcome, or `null`. Frozen when it was taken. */
@@ -84,7 +87,7 @@ export type ComposerState = {
 };
 
 export const INITIAL_COMPOSER_STATE: ComposerState = {
-  editor: EMPTY_EDITOR,
+  text: "",
   history: EMPTY_HISTORY,
   phase: "editing",
   inFlight: null,
@@ -94,8 +97,14 @@ export const INITIAL_COMPOSER_STATE: ComposerState = {
 };
 
 export type ComposerAction =
-  /** Anything the editor owns: typing, movement, selection, deletion. */
-  | { readonly kind: "edit"; readonly action: EditorAction }
+  /**
+   * The draft changed, as the renderable reports it.
+   *
+   * Typing, deleting, motions, and selection are the textarea's and never
+   * arrive here. This is the content afterwards, which is all this machine has
+   * ever needed.
+   */
+  | { readonly kind: "draft"; readonly text: string }
   /** Raw pasted text, before classification. Never inserted without one. */
   | { readonly kind: "paste"; readonly text: string }
   | { readonly kind: "history-previous" }
@@ -110,9 +119,8 @@ export type ComposerAction =
 
 export function composerReducer(state: ComposerState, action: ComposerAction): ComposerState {
   switch (action.kind) {
-    case "edit": {
-      const editor = editorReducer(state.editor, action.action);
-      if (editor === state.editor) {
+    case "draft": {
+      if (action.text === state.text) {
         return state;
       }
       // Typing ends a recall. The reader has made the entry theirs, and leaving
@@ -120,7 +128,7 @@ export function composerReducer(state: ComposerState, action: ComposerAction): C
       // while they write something new.
       return {
         ...state,
-        editor,
+        text: action.text,
         phase: state.phase === "recalling" ? "editing" : state.phase,
       };
     }
@@ -133,23 +141,25 @@ export function composerReducer(state: ComposerState, action: ComposerAction): C
         // the flood the classification exists to prevent.
         return { ...state, lastPaste: classification };
       }
+      // The text itself is inserted by the view, into the renderable that owns
+      // the buffer. What is recorded here is that a paste happened and what it
+      // was classified as, which is what the notice reads.
       return {
         ...state,
-        editor: editorReducer(state.editor, { kind: "insert", text: classification.text }),
         phase: state.phase === "recalling" ? "editing" : state.phase,
         lastPaste: classification,
       };
     }
 
     case "history-previous": {
-      const recall = recallPrevious(state.history, state.editor.text);
+      const recall = recallPrevious(state.history, state.text);
       if (recall.text === null) {
         return state;
       }
       return {
         ...state,
         history: recall.history,
-        editor: editorReducer(state.editor, { kind: "set", text: recall.text }),
+        text: recall.text,
         phase: "recalling",
       };
     }
@@ -162,14 +172,14 @@ export function composerReducer(state: ComposerState, action: ComposerAction): C
       return {
         ...state,
         history: recall.history,
-        editor: editorReducer(state.editor, { kind: "set", text: recall.text }),
+        text: recall.text,
         // Walking off the end returns to the draft, which is editing again.
         phase: recall.history.recalled === null ? "editing" : "recalling",
       };
     }
 
     case "submit": {
-      if (state.phase === "disabled" || !hasContent(state.editor)) {
+      if (state.phase === "disabled" || state.text.trim() === "") {
         return state;
       }
       const sequence = state.submissions + 1;
@@ -177,7 +187,7 @@ export function composerReducer(state: ComposerState, action: ComposerAction): C
         ...state,
         // Frozen here, from the text as it is now. Nothing after this transition
         // can reach it.
-        inFlight: snapshotOf(state.editor.text, sequence),
+        inFlight: snapshotOf(state.text, sequence),
         submissions: sequence,
         phase: "sending",
       };
@@ -200,7 +210,7 @@ export function composerReducer(state: ComposerState, action: ComposerAction): C
         // The draft is cleared only on acceptance. This is the acceptance
         // criterion: a submission that resolved `unavailable` leaves the text
         // exactly where the user left it.
-        editor: accepted ? EMPTY_EDITOR : state.editor,
+        text: accepted ? "" : state.text,
       };
     }
 

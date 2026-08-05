@@ -24,7 +24,7 @@ function apply(state: ComposerState, ...actions: readonly ComposerAction[]): Com
 
 /** A composer holding this draft. */
 function drafting(text: string): ComposerState {
-  return apply(INITIAL_COMPOSER_STATE, { kind: "edit", action: { kind: "set", text } });
+  return apply(INITIAL_COMPOSER_STATE, { kind: "draft", text });
 }
 
 /** Submits, asks the build's real port, and resolves — the whole round trip. */
@@ -52,16 +52,18 @@ describe("submitting", () => {
     // something runs safe rather than a race between a keystroke and a request.
     const sending = apply(drafting("first"), { kind: "submit" });
     const snapshot = sending.inFlight;
-    const typing = apply(sending, { kind: "edit", action: { kind: "insert", text: " and more" } });
+    // The whole content afterwards, because that is what the renderable
+    // reports: this machine is told what the draft *is*, never what changed.
+    const typing = apply(sending, { kind: "draft", text: "first and more" });
 
     expect(snapshot?.text).toBe("first");
     expect(typing.inFlight?.text).toBe("first");
-    expect(typing.editor.text).toBe("first and more");
+    expect(typing.text).toBe("first and more");
   });
 
   test("numbers submissions so one outcome cannot be read as another's", () => {
     const first = submitted(drafting("one"));
-    const second = apply(first, { kind: "edit", action: { kind: "set", text: "two" } });
+    const second = apply(first, { kind: "draft", text: "two" });
     const sending = apply(second, { kind: "submit" });
     expect(sending.inFlight?.sequence).toBe(2);
   });
@@ -96,7 +98,7 @@ describe("a submission nothing can take", () => {
     // The acceptance criterion. Discarding the input is the failure a composer
     // exists to prevent, and it is the failure that costs the most trust.
     const after = submitted(drafting("ask something"));
-    expect(after.editor.text).toBe("ask something");
+    expect(after.text).toBe("ask something");
     expect(after.phase).toBe("editing");
   });
 
@@ -118,7 +120,7 @@ describe("a submission something takes", () => {
     const accepted: SubmissionOutcome = { kind: "accepted", snapshot };
     const after = apply(sending, { kind: "resolve", outcome: accepted });
 
-    expect(after.editor.text).toBe("");
+    expect(after.text).toBe("");
     expect(after.history.entries).toEqual(["ask something"]);
     expect(after.phase).toBe("editing");
   });
@@ -147,17 +149,23 @@ describe("history through the composer", () => {
 
     const recalled = apply(sent, { kind: "history-previous" });
     expect(recalled.phase).toBe("recalling");
-    expect(recalled.editor.text).toBe("remembered");
+    expect(recalled.text).toBe("remembered");
 
-    const typing = apply(recalled, { kind: "edit", action: { kind: "insert", text: "!" } });
+    const typing = apply(recalled, { kind: "draft", text: "!" });
     expect(typing.phase).toBe("editing");
   });
 });
 
 describe("paste", () => {
-  test("inlines a small one", () => {
+  test("records a small one as inline, and inserts nothing itself", () => {
+    // The division #399 drew. The classification is this machine's: it decides
+    // whether a paste may go in at all. Putting the text into the buffer is the
+    // renderable's, because the renderable owns the buffer — so what is
+    // asserted here is the verdict and the silence, and
+    // `../components/composer.test.tsx` asserts the text arriving.
     const after = apply(drafting("a "), { kind: "paste", text: "pasted" });
-    expect(after.editor.text).toBe("a pasted");
+    expect(after.lastPaste?.verdict).toBe("inline");
+    expect(after.text).toBe("a ");
     expect(composerNotice(after)).toBeNull();
   });
 
@@ -167,13 +175,13 @@ describe("paste", () => {
     // quietly committed to the editor.
     const large = "x".repeat(INLINE_PASTE_LIMIT + 1);
     const after = apply(drafting("draft"), { kind: "paste", text: large });
-    expect(after.editor.text).toBe("draft");
+    expect(after.text).toBe("draft");
     expect(composerNotice(after)).toContain("Pasted");
   });
 
   test("reports a refusal instead of inserting it", () => {
     const after = apply(drafting("draft"), { kind: "paste", text: "before\0after" });
-    expect(after.editor.text).toBe("draft");
+    expect(after.text).toBe("draft");
     expect(composerNotice(after)).toContain("refused");
   });
 });
@@ -199,6 +207,6 @@ describe("phases", () => {
     const cancelled = apply(sending, { kind: "cancel" });
     expect(cancelled.phase).toBe("cancelled");
     expect(cancelled.inFlight).toBeNull();
-    expect(cancelled.editor.text).toBe("ask");
+    expect(cancelled.text).toBe("ask");
   });
 });
