@@ -9,6 +9,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { graphemes } from "../../domain/index.ts";
 import {
   cursorPosition,
   type EditorState,
@@ -186,5 +187,61 @@ describe("content", () => {
     const state = apply(editing("first"), { kind: "set", text: "second" });
     expect(state.text).toBe("second");
     expect(state.cursor).toBe(6);
+  });
+});
+
+describe("placing the cursor", () => {
+  test("puts it at the line and column it was given", () => {
+    const state = apply(editing("one\ntwo\nthree"), {
+      kind: "place",
+      at: { line: 1, column: 2 },
+    });
+    expect(cursorPosition(state)).toEqual({ line: 1, column: 2 });
+  });
+
+  test("collapses a selection the way an unextended motion does", () => {
+    // One selection model. A pointer that left the anchor where it was would be
+    // a second notion of where the cursor is, and the first thing to disagree
+    // would be a click inside a keyboard selection.
+    const selected = apply(editing("hello"), { kind: "select-all" });
+    expect(selectedText(selected)).toBe("hello");
+
+    const placed = apply(selected, { kind: "place", at: { line: 0, column: 2 } });
+    expect(selectedText(placed)).toBe("");
+    expect(placed.anchor).toBe(placed.cursor);
+  });
+
+  test("collapses a selection even when the cursor does not move", () => {
+    // Clicking where the cursor already sits is how a user dismisses a
+    // selection, so identity here would make that click do nothing.
+    const selected = apply(editing("hello"), { kind: "select-all" });
+    const placed = apply(selected, { kind: "place", at: cursorPosition(selected) });
+    expect(selectedText(placed)).toBe("");
+  });
+
+  test("clamps a column past the end of its line", () => {
+    // What a click to the right of the text means. The line is `one`, and the
+    // click was somewhere out in the empty part of the row.
+    const state = apply(editing("one\ntwo"), { kind: "place", at: { line: 0, column: 99 } });
+    expect(cursorPosition(state)).toEqual({ line: 0, column: 3 });
+  });
+
+  test("clamps a line past the last one", () => {
+    const state = apply(editing("one\ntwo"), { kind: "place", at: { line: 40, column: 0 } });
+    expect(cursorPosition(state)).toEqual({ line: 1, column: 0 });
+  });
+
+  test("round-trips against the position it reports", () => {
+    // The inverse holding, over every position of a multi-line draft. The two
+    // directions live together for this reason, and a check is what keeps that
+    // worth anything.
+    const text = "one\n\nthree\nfour";
+    const lines = text.split("\n");
+    for (const [line, content] of lines.entries()) {
+      for (let column = 0; column <= graphemes(content).length; column += 1) {
+        const placed = apply(editing(text), { kind: "place", at: { line, column } });
+        expect(cursorPosition(placed)).toEqual({ line, column });
+      }
+    }
   });
 });
