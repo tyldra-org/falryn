@@ -1,73 +1,64 @@
 /**
  * `ComposerView` — the composer, on a terminal.
  *
- * Everything this component *decides* was decided somewhere else: the text and
- * the cursor come from `../composer/editor.ts`, the phase from
- * `../composer/state.ts`, and what is missing from `../composer/features.ts`.
- * What is left here is measurement and mounting, which is the part that
- * genuinely needs a renderer.
+ * The draft is `TextareaRenderable`, through the `<textarea>` element
+ * `@opentui/react` exposes. It owns the buffer, the cursor, the selection, the
+ * scrolling, and every motion over them; this component supplies the frame
+ * around it, the two chrome rows, and the rules that are genuinely Falryn's.
  *
- * ## Why the cursor is the terminal's own
+ * ## Why it is the library's renderable and not a hand-built field
  *
- * It draws no caret. This component used to splice a glyph into the line at the
- * cursor's column, which made the drawn line one grapheme longer than the buffer
- * line and displaced every character after it — #386, visible as `hello wo▏rld`
- * and invisible at the end of a draft, which is why it shipped. A drawn line
- * that is not the buffer line is also a line whose width is wrong exactly while
- * the cursor is on it, and a frame in which typed text cannot be asserted.
+ * It was hand-built until #399, and the cursor was drawn in the wrong cell on a
+ * real terminal — a row above the draft and a cell short of the text. The cause
+ * was not an off-by-one to correct in place. This component drew its own rows
+ * and then *re-derived* where the cursor belonged, from a box origin, a
+ * display-width sum, and a window offset; the renderable already knew, because
+ * it had drawn the text.
  *
- * So the cursor is placed rather than drawn. Three objections were recorded
- * against that when the caret was chosen, and each has an answer against the
- * installed renderer rather than in principle:
+ * The specific failure is worth recording because it explains why every check
+ * passed. `setCursorPosition` is **one-based** — writing zero clamps to one —
+ * and the placement wrote `screenX + cell` and `screenY + row`, which are the
+ * renderable's **zero-based** coordinates. So the cursor sat exactly one row up
+ * and one cell left. The frame checks compared *differences* between two cursor
+ * positions, where a constant offset cancels; the one absolute check compared
+ * the cursor against the same zero-based row the code had used. Both sides
+ * shared the assumption, so they agreed with each other and not with the
+ * terminal.
  *
- * - the line primitive styles a whole line rather than a cell — which is only a
- *   problem for a *reversed cell*, and the terminal's own cursor is neither a
- *   cell nor a style;
- * - placing a real cursor needs absolute screen coordinates a flex layout only
- *   knows after it has run — `Renderable` exposes `screenX` and `screenY` in the
- *   renderer's own buffer space, which is the space `setCursorPosition` takes;
- * - a glyph survives a frame capture, which is what makes "the cursor moved" an
- *   assertion rather than a screenshot — and `captureSpans()` reports
- *   `cursor: [x, y]` from the same state `setCursorPosition` writes, so the
- *   assertion moves to the coordinate instead of disappearing.
+ * Nothing here computes a screen coordinate now. The cursor is the renderable's
+ * and the terminal is told about it by the thing that drew the text.
  *
- * The column is a *cell* offset, not a grapheme count, and this component no
- * longer computes it. `../composer/geometry.ts` owns that mapping in both
- * directions — #391 — because the pointer needs the same arithmetic run
- * backwards, and two functions computing one relationship disagree eventually.
- * What is left here is handing it the drawn lines and the position.
+ * ## What is still Falryn's
+ *
+ * History recall, and only that. `up` and `down` inside a draft move a line —
+ * the textarea's own `move-up`/`move-down` — and at the draft's edges they
+ * recall a submission, which no `TextareaAction` expresses. It is done through
+ * `onKeyDown`, which a focused renderable runs *before* its own key handling
+ * and honours `preventDefault()` from: at an edge the event is claimed and the
+ * history action dispatched, and anywhere else it is left alone. Falryn adds a
+ * rule and reimplements no motion.
+ *
+ * Paste is Falryn's too, for one reason: a large paste is classified, bounded,
+ * and described rather than inserted. The classification runs first and the
+ * text reaches the buffer through `insertText` only when it is inline.
  *
  * ## Why the region is bounded
  *
  * The composer does not dominate the screen when idle, which the design
  * direction states and a growing region would break: a draft the length of a
- * file would push the transcript off the top. It shows the lines around the
- * cursor up to `COMPOSER_MAX_TEXT_ROWS` and says how many it is not showing,
- * rather than growing or silently clipping. `../layout.ts` owns that number,
+ * file would push the transcript off the top. `../layout.ts` owns that number,
  * because the transcript sizes its own window from what is left over and the two
  * have to agree exactly.
  */
 
-import type { BoxRenderable, KeyEvent, MouseEvent } from "@opentui/core";
-import { LayoutEvents, MouseButton } from "@opentui/core";
-import { useKeyboard, usePaste, useRenderer } from "@opentui/react";
-import { type ReactNode, type RefObject, useEffect, useRef } from "react";
-import { graphemes } from "../../domain/index.ts";
-import {
-  type ComposerAction,
-  type ComposerState,
-  cellOfPosition,
-  cursorPosition,
-  type DrawnLine,
-  describeOutcome,
-  type EditorAction,
-  type EditorMotion,
-  linesOf,
-  positionOfCell,
-  selectionOf,
-} from "../composer/index.ts";
+import type { KeyBinding, KeyEvent, PasteEvent, TextareaRenderable } from "@opentui/core";
+import { defaultTextareaKeyBindings } from "@opentui/core";
+import { usePaste } from "@opentui/react";
+import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
+import { type ComposerAction, type ComposerState, describeOutcome } from "../composer/index.ts";
 import type { ComposerModel } from "../composer-model.ts";
-import { COMPOSER_MAX_TEXT_ROWS, primaryColumns } from "../layout.ts";
+import { primaryColumns } from "../layout.ts";
+import { classifyPaste } from "../paste.ts";
 import type { StatusToken } from "../theme/index.ts";
 import { useFrame, useLayoutClass } from "./context.tsx";
 import { Line, StatusMark } from "./primitives.tsx";
@@ -75,369 +66,194 @@ import { Line, StatusMark } from "./primitives.tsx";
 export type ComposerViewProps = {
   readonly model: ComposerModel;
   /**
-   * Where typing goes.
+   * Where the draft's changes go.
    *
    * Optional, because a frame rendered from a value alone has nothing to type
-   * into and every test in `./frame.test.tsx` renders one. When it is absent no
-   * keyboard subscription is made at all, so a static frame costs nothing.
+   * into and every check in `./frame.test.tsx` renders one. When it is absent
+   * the textarea is left unfocused and reports nothing.
    */
   readonly onAction?: (action: ComposerAction) => void;
   /**
    * Focuses the composer, through the shell's own focus model.
    *
    * Separate from {@link onAction} because focus is not the composer's to own:
-   * it belongs to the region model that decides which control keys reach. A
-   * click needs both — #386 draws the cursor only while the composer has focus,
-   * so a click that placed one into an unfocused composer would leave no mark
-   * and send the next keystroke somewhere else.
+   * it belongs to the region model that decides which control keys reach.
    */
   readonly onFocus?: () => void;
 };
 
 export function ComposerView(props: ComposerViewProps): ReactNode {
-  useComposerInput(props.model, props.onAction);
   const frame = useFrame();
   const layoutClass = useLayoutClass();
   const columns = primaryColumns(frame.viewport, layoutClass);
-  const { model } = props;
+  const { model, onAction, onFocus } = props;
+  const draft = useRef<TextareaRenderable | null>(null);
+  // How far the renderable has scrolled, so the chrome can still say how many
+  // rows are above the view. Component state rather than the shell's: a scroll
+  // offset is a fact about what is on screen, not about the session, and the
+  // ownership boundary puts it here.
+  const [hidden, setHidden] = useState(0);
 
-  const window = visibleLines(model.state);
-  const box = useRef<BoxRenderable | null>(null);
-  const at = cursorPosition(model.state.editor);
-  useCursorPlacement({
-    box,
-    // Where the cursor's line sits among the drawn ones. The window is anchored
-    // to the cursor, so this is never negative — but the drawn rows are what the
-    // coordinate is relative to, not the draft's own line numbers.
-    row: at.line - window.hidden,
-    cell: cellOfPosition(window.lines, at) ?? 0,
-    columns,
-    focused: model.focused,
-  });
+  // The draft is the renderable's, and this is the one direction Falryn writes
+  // it: a history recall replaces the whole text. Typing never comes back
+  // through here — `onContentChange` reports it and the state follows.
+  //
+  // Guarded on the text actually differing, because `setText` moves the cursor
+  // to the end: applying it on every render would drag the cursor there after
+  // each keystroke, which is the same class of defect as placing it by hand.
+  useEffect(() => {
+    const renderable = draft.current;
+    if (renderable !== null && renderable.plainText !== model.state.text) {
+      renderable.setText(model.state.text);
+    }
+  }, [model.state.text]);
 
-  const { onAction, onFocus } = props;
-  const click = (event: MouseEvent): void => {
-    const renderable = box.current;
-    if (renderable === null || event.button !== MouseButton.LEFT) {
-      return;
-    }
-    // The mapping #391 delivered, in the space the event already arrives in:
-    // `MouseEvent.x`/`y` and `screenX`/`screenY` are both the renderer's own
-    // buffer coordinates, so there is no translation between them to get wrong.
-    const at = positionOfCell(
-      { lines: window.lines, originColumn: renderable.screenX, originRow: renderable.screenY },
-      { column: event.x, row: event.y },
-    );
-    if (at === null) {
-      return;
-    }
-    // Focus first: placing a cursor into a composer that does not have focus
-    // draws nothing and takes no keys.
-    onFocus?.();
-    onAction?.({ kind: "edit", action: { kind: "place", at } });
-  };
+  // Paste is classified before the renderable sees it, which is the one thing
+  // Falryn must do first: a paste too large to inline is described rather than
+  // inserted, and the renderable would insert it. `usePaste` runs ahead of
+  // renderable handlers and `preventDefault()` stops them — so an inline paste
+  // is simply let through and the renderable puts it in the buffer, and a
+  // refused one is claimed here and reported.
+  usePaste(
+    useCallback(
+      (event: PasteEvent): void => {
+        if (onAction === undefined) {
+          return;
+        }
+        // Decoded non-fatally on purpose: invalid UTF-8 becomes replacement
+        // characters rather than a throw, and the classification then refuses
+        // the result for what it is. A decoder that threw would take the render
+        // down over a bad clipboard.
+        const text = new TextDecoder().decode(event.bytes);
+        if (classifyPaste(text).verdict !== "inline") {
+          event.preventDefault();
+        }
+        onAction({ kind: "paste", text });
+      },
+      [onAction],
+    ),
+  );
+
+  const keyDown = useCallback(
+    (key: KeyEvent): void => {
+      if (onAction === undefined) {
+        return;
+      }
+      const renderable = draft.current;
+      if (renderable === null || (key.name !== "up" && key.name !== "down")) {
+        return;
+      }
+      // The one rule with no `TextareaAction` behind it. Inside a draft these
+      // move a line and the renderable does it; at the draft's edge there is no
+      // line to move to, and that is where recall begins — which is what every
+      // composer people already use does, and the reason it is one key rather
+      // than two.
+      //
+      // A selection is never a recall: shift+up extends upward, and stepping
+      // through history mid-selection would replace text the reader was
+      // choosing.
+      const { row, lastRow } = edgeOf(renderable);
+      const atEdge = key.name === "up" ? row === 0 : row === lastRow;
+      if (!atEdge || key.shift === true) {
+        return;
+      }
+      // Claimed, so the renderable does not also act on it. `handleKeyPress`
+      // runs only for events that were not default-prevented.
+      key.preventDefault();
+      onAction({ kind: key.name === "up" ? "history-previous" : "history-next" });
+    },
+    [onAction],
+  );
 
   return (
-    // The rule below is about DOM elements taking a pointer handler without a
-    // role a screen reader can announce. A terminal has neither a role system
-    // nor a screen-reader surface, and the concern the rule stands in for — a
-    // pointer must not be the only way to reach something — is held directly
-    // here: this handler duplicates a position the arrow keys already reach, and
-    // every command stays reachable from the keyboard.
-    // biome-ignore lint/a11y/noStaticElementInteractions: no roles in a terminal, and the keyboard route is complete
-    <box
-      ref={box}
-      flexDirection="column"
-      width={columns}
-      height={frame.composerRows}
-      onMouseDown={click}
-    >
-      {window.lines.map((line) => (
-        // Keyed by the line's position in the document rather than by its offset
-        // in the window, so a key stays with its line while the window scrolls.
-        <Line
-          key={`composer-line-${line.number}`}
-          color="foreground"
-          typography="body"
-          maxColumns={columns}
-          untrusted
-        >
-          {line.text}
-        </Line>
-      ))}
-      <ComposerStatus model={model} hidden={window.hidden} maxColumns={columns} />
+    <box flexDirection="column" width={columns} height={frame.composerRows}>
+      <textarea
+        ref={draft}
+        focused={model.focused && onAction !== undefined}
+        width={columns}
+        height={Math.max(1, frame.composerRows - CHROME_ROWS)}
+        wrapMode="word"
+        keyBindings={[...COMPOSER_KEY_BINDINGS]}
+        {...(onFocus === undefined ? {} : { onMouseDown: onFocus })}
+        onContentChange={() => {
+          const renderable = draft.current;
+          if (renderable !== null) {
+            setHidden(renderable.scrollY);
+            onAction?.({ kind: "draft", text: renderable.plainText });
+          }
+        }}
+        onCursorChange={() => {
+          const renderable = draft.current;
+          if (renderable !== null) {
+            setHidden(renderable.scrollY);
+          }
+        }}
+        onKeyDown={keyDown}
+        onSubmit={() => onAction?.({ kind: "submit" })}
+      />
+      <ComposerStatus model={model} hidden={hidden} maxColumns={columns} />
     </box>
   );
 }
 
+/** The chrome the composer always draws, which `../layout.ts` reserves for it. */
+const CHROME_ROWS = 2;
+
 /**
- * Keys and pastes, while the composer has focus.
+ * The keys the composer honours, pinned rather than inherited.
  *
- * Everything a binding claims never arrives here — the keymap resolves a bound
- * key and dispatches before any subscriber sees it, which was measured rather
- * than assumed. So this handles exactly what is left: characters, the deletions,
- * and the horizontal and document movements that have no command of their own.
+ * Adopting `TextareaRenderable` brought its default bindings with it, and three
+ * of them disagree with what `reference/KEYBOARD-SHORTCUTS.md` promises — which
+ * is to say, with what Falryn shipped the week before. The library binds `home`
+ * and `end` to the *buffer's* ends, `ctrl+a` to the line's start, and nothing at
+ * all to `ctrl+home` or `ctrl+end`. So a user pressing `ctrl+a` to select their
+ * draft would have found the cursor moving instead, and one pressing `home`
+ * would have left the line entirely.
  *
- * Nothing is handled while the composer is unfocused. A background control that
- * consumed keys would be the "background regions do not consume keys intended
- * for the focused control" rule broken in the one place it is easiest to break.
+ * That was not a decision anybody made; it was a default arriving with a
+ * migration. `keyBindings` exists to make it one, and this list is it. The
+ * overridden keys are removed from the defaults rather than shadowed by
+ * appending, so the result does not depend on which entry a lookup happens to
+ * find first.
+ *
+ * Everything not named here is the library's, deliberately: word motions,
+ * visual-line motions, undo, redo, and the rest are exactly what the reference
+ * documents and there is nothing to correct.
  */
-function useComposerInput(
-  model: ComposerModel,
-  onAction: ((action: ComposerAction) => void) | undefined,
-): void {
-  const active = model.focused && onAction !== undefined;
+const REPLACED = new Set(["home", "end", "ctrl+a"]);
 
-  useKeyboard((key) => {
-    if (!active || onAction === undefined) {
-      return;
-    }
-    const edit = editFor(key);
-    if (edit !== null) {
-      onAction({ kind: "edit", action: edit });
-    }
-  });
-
-  usePaste((event) => {
-    if (!active || onAction === undefined) {
-      return;
-    }
-    // Decoded here because the event carries bytes, and decoded non-fatally on
-    // purpose: invalid UTF-8 becomes replacement characters rather than a throw,
-    // and the classification then refuses the result for what it is. A decoder
-    // that threw would take the render down over a bad clipboard.
-    const text = new TextDecoder().decode(event.bytes);
-    // Through the composer's state machine, which routes it to the
-    // classification. A component that inserted the text itself would be the
-    // path that floods a terminal with a pasted file.
-    onAction({ kind: "paste", text });
-  });
+function keyOf(binding: KeyBinding): string {
+  return `${binding.ctrl === true ? "ctrl+" : ""}${binding.name}`;
 }
 
-/**
- * The motion a modified key means, or `null` when it is not one.
- *
- * ## Which modifiers, and why these
- *
- * Read from what the terminal actually reports, checked against the installed
- * parser rather than assumed. Alt sets **`option`**, and also sets `meta` —
- * `key.meta = mods.alt || mods.meta` — so a binding that means Alt has to read
- * `option` or it will fire for things that are not Alt.
- *
- * `option` and `ctrl` both give the word motions, because they are the
- * conventions of different platforms and a terminal sends whichever its user's
- * keyboard produces: Alt on macOS, Ctrl on Linux and Windows. Binding one and
- * not the other would make the feature present on one platform and absent on
- * another for no reason a user could see.
- *
- * `ctrl` plus `home`/`end` is the document motion, which is that same
- * convention. The line motions need no chord at all: `home` and `end` already
- * reach them everywhere.
- *
- * `super` is Command under the kitty protocol, and most terminals transmit no
- * Command modifier at all because the emulator claims those chords first. It is
- * honoured where it arrives and promised nowhere — the documentation says
- * terminal-dependent rather than listing it as a binding the build honours.
- *
- * ## Why `up` and `down` are here only with shift
- *
- * Bare `up` and `down` never reach this function: `composer.historyPrevious`
- * and `composer.historyNext` claim them, and a bound key is dispatched before
- * any subscriber sees it. That is deliberate — inside a draft they move a line,
- * and from its edge they recall a submission.
- *
- * Shifted, they do arrive, which was measured rather than reasoned about: the
- * keymap matches the declared binding and does not claim the modified form. So
- * extending a selection upward is handled here, where the key actually lands,
- * and the history rule stays with the command that owns it. The two never need
- * disambiguating, because extending a selection from the first line has nothing
- * to do with recalling a submission.
- */
-function chordMotion(key: KeyEvent): EditorMotion | null {
-  const word = key.option === true || key.ctrl === true;
-  const document = key.ctrl === true;
-  const line = key.super === true;
-
-  switch (key.name) {
-    case "left":
-      return word ? "word-left" : line ? "line-start" : null;
-    case "right":
-      return word ? "word-right" : line ? "line-end" : null;
-    case "home":
-      return document ? "document-start" : null;
-    case "end":
-      return document ? "document-end" : null;
-    case "up":
-      return key.shift === true ? "up" : null;
-    case "down":
-      return key.shift === true ? "down" : null;
-    default:
-      return null;
-  }
-}
+const COMPOSER_KEY_BINDINGS: readonly KeyBinding[] = [
+  ...defaultTextareaKeyBindings.filter((binding) => !REPLACED.has(keyOf(binding))),
+  // The line's ends, which is what `home` and `end` mean everywhere else.
+  { name: "home", action: "line-home" },
+  { name: "end", action: "line-end" },
+  { name: "home", shift: true, action: "select-line-home" },
+  { name: "end", shift: true, action: "select-line-end" },
+  // The draft's ends, which the library bound to nothing.
+  { name: "home", ctrl: true, action: "buffer-home" },
+  { name: "end", ctrl: true, action: "buffer-end" },
+  { name: "home", ctrl: true, shift: true, action: "select-buffer-home" },
+  { name: "end", ctrl: true, shift: true, action: "select-buffer-end" },
+  // Selecting the draft, which the library bound to a motion.
+  { name: "a", ctrl: true, action: "select-all" },
+];
 
 /**
- * The edit a key means, or `null` when it means nothing here.
+ * Which line the cursor is on, and which is the last.
  *
- * `null` rather than a no-op action, so a key the composer has no use for is
- * left alone entirely instead of producing a state transition that returns
- * identity.
+ * Read from the renderable rather than from any text Falryn holds. `up` at the
+ * first line and `down` at the last are the two edges recall begins at, and the
+ * renderable is the only thing that knows where the cursor actually is.
  */
-function editFor(key: KeyEvent): EditorAction | null {
-  const extend = key.shift === true;
-
-  // Modifiers first, and that ordering is the fix rather than a preference.
-  // The switch below matches on `key.name` alone, so before #387 an `alt+left`
-  // fell into `case "left"` and moved one character — a chord that looked bound
-  // and behaved like a lesser binding, which is worse than one that does
-  // nothing.
-  const chord = chordMotion(key);
-  if (chord !== null) {
-    return { kind: "move", motion: chord, extend };
-  }
-
-  switch (key.name) {
-    case "backspace":
-      return { kind: "delete-backward" };
-    case "delete":
-      return { kind: "delete-forward" };
-    case "left":
-      return { kind: "move", motion: "left", extend };
-    case "right":
-      return { kind: "move", motion: "right", extend };
-    case "home":
-      return { kind: "move", motion: "line-start", extend };
-    case "end":
-      return { kind: "move", motion: "line-end", extend };
-    default:
-      break;
-  }
-
-  if (key.ctrl === true && key.name === "a") {
-    return { kind: "select-all" };
-  }
-  // A modifier means a chord, and a chord that reached here is one nothing
-  // bound — inserting its letter would type `p` for an unregistered `alt+p`.
-  if (key.ctrl === true || key.meta === true) {
-    return null;
-  }
-  // One character with no modifier is text, whatever character it is. Measured
-  // by grapheme rather than by `length`, so an astral character is one insert
-  // and not a pair of halves.
-  const sequence = key.sequence;
-  if (sequence !== "" && graphemes(sequence).length === 1 && sequence >= " ") {
-    return { kind: "insert", text: sequence };
-  }
-  return null;
-}
-
-/**
- * The drawn lines, and how many the window starts past.
- *
- * The line shape is `DrawnLine` from `../composer/geometry.ts` rather than a
- * local one: the mapping between a draft position and a screen cell is owned
- * there, and it takes these lines. Two shapes for one thing is how the two
- * directions of that mapping would drift apart.
- */
-type Window = {
-  readonly lines: readonly DrawnLine[];
-  readonly hidden: number;
-};
-
-/**
- * The lines around the cursor, exactly as the draft holds them.
- *
- * The window is anchored to the cursor rather than to the start, because the
- * line being typed is the one that has to stay visible — a composer that showed
- * the first six lines of a long draft would hide the text as it was written.
- */
-function visibleLines(state: ComposerState): Window {
-  const lines = linesOf(state.editor);
-  const at = cursorPosition(state.editor);
-  // Anchored so the cursor's line is the last one shown, clamped at both ends.
-  const start = Math.max(0, Math.min(at.line - COMPOSER_MAX_TEXT_ROWS + 1, lines.length - 1));
-  const shown: DrawnLine[] = [];
-  for (let line = start; line < lines.length && shown.length < COMPOSER_MAX_TEXT_ROWS; line += 1) {
-    shown.push({ number: line, text: lines[line] ?? "" });
-  }
-
-  return { lines: shown, hidden: start };
-}
-
-/**
- * Puts the terminal's own cursor where the next character will go.
- *
- * The hook shape `./overlay-room.tsx` established: hold the renderer, write on
- * change, undo on unmount, and check `isDestroyed` first — that guard is not
- * defensive habit, it is that unmount can run *after* the session destroyed the
- * renderer, and reaching released native state throws where nothing catches it.
- *
- * ## Why it subscribes to layout rather than only to a render
- *
- * A `useEffect` runs after React commits, and Yoga runs its layout inside the
- * renderer's own pass. So the first effect after mount can read a `screenY` that
- * layout has not produced yet, and the cursor would be placed a frame late —
- * which looks correct the moment anything else redraws, and is therefore the
- * kind of defect that survives review. `LAYOUT_CHANGED` on the composer's own
- * renderable is when the coordinate becomes true, and the check for this asserts
- * the cursor on the *first settled frame* rather than after a keystroke, so a
- * placement that is one frame behind fails rather than passing on the second.
- *
- * ## Why the column clamps
- *
- * `Line` truncates at `maxColumns` and the composer does not scroll
- * horizontally, so a cursor past the truncation point has no cell of its own. It
- * clamps to the last drawn one: a cursor placed outside the composer's box lands
- * on a cell belonging to another region, which is a worse defect than the one
- * this replaced.
- */
-function useCursorPlacement(options: {
-  readonly box: RefObject<BoxRenderable | null>;
+function edgeOf(renderable: TextareaRenderable): {
   readonly row: number;
-  readonly cell: number;
-  readonly columns: number;
-  readonly focused: boolean;
-}): void {
-  const renderer = useRenderer();
-  const { box, row, cell, columns, focused } = options;
-
-  useEffect(() => {
-    const renderable = box.current;
-    if (renderable === null) {
-      return;
-    }
-
-    const place = (): void => {
-      if (renderer.isDestroyed) {
-        return;
-      }
-      renderer.setCursorPosition(
-        renderable.screenX + Math.min(cell, Math.max(0, columns - 1)),
-        renderable.screenY + row,
-        focused,
-      );
-    };
-
-    place();
-    renderable.on(LayoutEvents.LAYOUT_CHANGED, place);
-    return () => {
-      renderable.off(LayoutEvents.LAYOUT_CHANGED, place);
-    };
-  }, [renderer, box, row, cell, columns, focused]);
-
-  useEffect(() => {
-    // Hidden on the way out, and only on the way out — a cleanup that ran on
-    // every dependency change would hide the cursor between two placements of
-    // it. The shell's own teardown restores cursor visibility through
-    // `destroy()` as well; this is for the case where the composer goes away
-    // while the renderer stays.
-    return () => {
-      if (!renderer.isDestroyed) {
-        const state = renderer.getCursorState();
-        renderer.setCursorPosition(state.x, state.y, false);
-      }
-    };
-  }, [renderer]);
+  readonly lastRow: number;
+} {
+  return { row: renderable.logicalCursor.row, lastRow: Math.max(0, renderable.lineCount - 1) };
 }
 
 /**
@@ -526,7 +342,7 @@ function SecondRow(props: {
 function phraseFor(state: ComposerState): string {
   switch (state.phase) {
     case "editing":
-      return state.editor.text === "" ? "Ready" : "Editing";
+      return state.text === "" ? "Ready" : "Editing";
     case "recalling":
       return "Recalled from history";
     case "sending":
@@ -554,9 +370,4 @@ function statusFor(state: ComposerState): StatusToken {
     case "disabled":
       return "uncertain";
   }
-}
-
-/** Whether anything is selected, for a caller deciding what a copy would take. */
-export function hasSelection(state: ComposerState): boolean {
-  return selectionOf(state.editor) !== null;
 }

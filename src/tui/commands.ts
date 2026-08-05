@@ -363,25 +363,34 @@ export const SHELL_COMMANDS: readonly ShellCommand[] = [
   },
   {
     id: "composer.historyPrevious",
-    title: "Previous line or entry",
+    title: "Previous entry",
     // Two effects on one key, and the boundary decides which. Inside a multiline
     // draft `up` moves a line, because a composer whose arrows did not move the
     // cursor would not be a text editor. From the first line there is no line to
     // move to, and that is where recall begins — which is what every composer
     // people already use does, and the reason it is one key rather than two.
-    description: "Move up a line, or recall the previous submission from the first line.",
+    description: "Recall the previous submission.",
     context: "composer",
-    defaultBinding: "up",
+    // Unbound since #399, and that is the composer becoming the library's
+    // renderable rather than a lost capability. `up` and `down` are the
+    // textarea's motions and it must see them: a binding here claims the key
+    // before any renderable does, which measured out as the cursor never
+    // moving a line at all. The edge rule — recall when there is no line to
+    // move to — lives in `./components/composer.tsx`, where the key lands and
+    // where the renderable's own cursor can be read. This entry keeps the
+    // command listed, searchable, and reachable from the palette.
+    defaultBinding: null,
     keywords: ["history", "previous", "recall"],
     availability: (state) =>
       state.hasComposer ? AVAILABLE : unavailable("the composer is not focused"),
   },
   {
     id: "composer.historyNext",
-    title: "Next line or entry",
-    description: "Move down a line, or move forward through recalled submissions from the last.",
+    title: "Next entry",
+    description: "Move forward through recalled submissions.",
     context: "composer",
-    defaultBinding: "down",
+    // Unbound for the reason `composer.historyPrevious` states.
+    defaultBinding: null,
     keywords: ["history", "next"],
     availability: (state) =>
       state.hasComposer ? AVAILABLE : unavailable("the composer is not focused"),
