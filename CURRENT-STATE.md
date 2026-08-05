@@ -2059,24 +2059,29 @@ line's end, a row outside the drawn window to the nearest drawn line, and a
 window that drew nothing to no position at all rather than to line zero.
 
 The round trip is the check that holds the two directions together, and it is
-asserted as two statements rather than one. The law that holds everywhere:
-mapping a column out to its cell and back returns the **earliest column sharing
-that cell**. And identity — the same column returns — over the lines where every
-grapheme claims a cell of its own. Both are asserted for *every* column of a
-plain line, a CJK run, a combining sequence, and a joined emoji rather than for a
-representative sample.
+asserted as two statements rather than one. The law that holds everywhere: a
+cell answers **the column of the grapheme drawn in it**, which is the last of
+the columns sharing that cell. And identity — the same column returns — over the
+lines where every grapheme claims a cell of its own. Both are asserted for
+*every* column of six lines rather than for a representative sample.
 
-The two statements differ in exactly one place, and it is a real position a paste
-can produce: a line opening with a combining mark has two columns drawn in cell
-zero, and a cell can only answer one of them. There is no cell to click that
-means "after the combining mark but before the letter", so the mapping is not
-injective there and says so. The first version of this module claimed identity
-for every column of every line — which was untrue, and unchecked, because none of
-its fixtures began with a zero-width grapheme. Verification of
-[#394](https://github.com/yogeshprasad098/falryn/pull/394) caught it; the claim
-was narrowed to what holds and the missing line added as a check, because a
-module whose argument for existing is that unstated arithmetic bites later cannot
-overstate its own guarantee.
+The two differ wherever columns share a cell, which a paste can produce: a
+zero-width grapheme claims none, so the positions on either side of it are drawn
+in the same place and clicking there answers the one in front of the character a
+reader can see. Cell zero is not special-cased, and that is a correction rather
+than a detail — a short-circuit answering column zero for any cell at or below
+zero made a line *opening* with a combining mark the one position where the
+answer was the first column sharing a cell instead of the last. Only a negative
+cell short-circuits now, for a click left of the region.
+
+Two rounds of verification were needed to get that statement true. The first
+claimed identity for every column of every line, which no fixture could falsify
+because none held a zero-width grapheme. The second claimed the *earliest*
+column sharing the cell, which the one new fixture could not falsify either —
+it opened with the mark, where the special case happened to return the earliest
+while the loop everywhere else returned the last. Both zero-width placements are
+fixtures now, and the set was checked to distinguish the two candidate laws: the
+earlier claim, implemented, fails four of these checks.
 
 The joined-emoji case passes while the recorded disagreement between
 `displayWidth` and the renderer stands, because what the property needs is that
