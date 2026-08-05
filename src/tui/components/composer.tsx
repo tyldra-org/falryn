@@ -31,10 +31,11 @@
  *   `cursor: [x, y]` from the same state `setCursorPosition` writes, so the
  *   assertion moves to the coordinate instead of disappearing.
  *
- * The column is a *cell* offset, not a grapheme count. `displayWidth` owns that
- * measurement for the rest of the shell, and counting graphemes here would place
- * the cursor short by one cell for every wide character before it — the same
- * class of defect this replaced, one layer down.
+ * The column is a *cell* offset, not a grapheme count, and this component no
+ * longer computes it. `../composer/geometry.ts` owns that mapping in both
+ * directions — #391 — because the pointer needs the same arithmetic run
+ * backwards, and two functions computing one relationship disagree eventually.
+ * What is left here is handing it the drawn lines and the position.
  *
  * ## Why the region is bounded
  *
@@ -51,11 +52,13 @@ import type { BoxRenderable, KeyEvent } from "@opentui/core";
 import { LayoutEvents } from "@opentui/core";
 import { useKeyboard, usePaste, useRenderer } from "@opentui/react";
 import { type ReactNode, type RefObject, useEffect, useRef } from "react";
-import { displayWidth, graphemes } from "../../domain/index.ts";
+import { graphemes } from "../../domain/index.ts";
 import {
   type ComposerAction,
   type ComposerState,
+  cellOfPosition,
   cursorPosition,
+  type DrawnLine,
   describeOutcome,
   type EditorAction,
   linesOf,
@@ -95,7 +98,7 @@ export function ComposerView(props: ComposerViewProps): ReactNode {
     // to the cursor, so this is never negative — but the drawn rows are what the
     // coordinate is relative to, not the draft's own line numbers.
     row: at.line - window.hidden,
-    cell: cursorCell(window.lines, at),
+    cell: cellOfPosition(window.lines, at) ?? 0,
     columns,
     focused: model.focused,
   });
@@ -209,15 +212,16 @@ function editFor(key: KeyEvent): EditorAction | null {
   return null;
 }
 
-/** One drawn line, carrying where in the draft it came from. */
-type WindowLine = {
-  /** Zero-based line number in the draft. The React key, and never the offset. */
-  readonly number: number;
-  readonly text: string;
-};
-
+/**
+ * The drawn lines, and how many the window starts past.
+ *
+ * The line shape is `DrawnLine` from `../composer/geometry.ts` rather than a
+ * local one: the mapping between a draft position and a screen cell is owned
+ * there, and it takes these lines. Two shapes for one thing is how the two
+ * directions of that mapping would drift apart.
+ */
 type Window = {
-  readonly lines: readonly WindowLine[];
+  readonly lines: readonly DrawnLine[];
   readonly hidden: number;
 };
 
@@ -233,35 +237,12 @@ function visibleLines(state: ComposerState): Window {
   const at = cursorPosition(state.editor);
   // Anchored so the cursor's line is the last one shown, clamped at both ends.
   const start = Math.max(0, Math.min(at.line - COMPOSER_MAX_TEXT_ROWS + 1, lines.length - 1));
-  const shown: WindowLine[] = [];
+  const shown: DrawnLine[] = [];
   for (let line = start; line < lines.length && shown.length < COMPOSER_MAX_TEXT_ROWS; line += 1) {
     shown.push({ number: line, text: lines[line] ?? "" });
   }
 
   return { lines: shown, hidden: start };
-}
-
-/**
- * How many cells the cursor is from the start of the line it is on.
- *
- * A grapheme offset and a cell offset are different numbers, and the difference
- * is exactly one cell per wide character: `日本` before the cursor is two
- * graphemes and four cells. `displayWidth` is the measurement the layout, the
- * truncation, and the header's field widths all already use, so the cursor lands
- * where the text it follows actually ends rather than where a character count
- * says it should.
- *
- * The slice is taken from graphemes rather than from a string index for the
- * reason the editing model gives: the cursor's column is a grapheme offset that
- * does not correspond to a code-unit index at all, and cutting at one would
- * split a surrogate pair.
- */
-function cursorCell(lines: readonly WindowLine[], at: { line: number; column: number }): number {
-  const drawn = lines.find((line) => line.number === at.line);
-  if (drawn === undefined) {
-    return 0;
-  }
-  return displayWidth(graphemes(drawn.text).slice(0, at.column).join(""));
 }
 
 /**
