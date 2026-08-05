@@ -14,6 +14,7 @@
 
 import {
   assertNever,
+  type ConfigurationValues,
   type EnvironmentPort,
   MAX_STREAM_READ_LIMIT,
   type RuntimeEvent,
@@ -68,6 +69,7 @@ import {
   type HostServiceOptions,
   type ServiceProvider,
 } from "./services.ts";
+import { resolveShellConfiguration } from "./shell-configuration.ts";
 import {
   type CliStreams,
   outcomeAfterFlush,
@@ -97,9 +99,11 @@ export type DispatchOptions = {
   /**
    * Supplied by tests, so a launch decision never reads the developer's shell.
    *
-   * Only the no-argument invocation reads it: every other path takes its
-   * environment from the service graph, which a command that must construct
-   * nothing never builds.
+   * Read before any service graph exists, which is what makes the launch
+   * decision free: a run that will not open a shell answers from this and
+   * returns. A run that *will* open one goes on to build the same graph a
+   * command builds — see {@link launchShell} — so this is the environment the
+   * decision is taken from rather than the only one an interactive run has.
    */
   readonly environment?: EnvironmentPort;
   /**
@@ -253,6 +257,17 @@ async function launchShell(
   const governance = options.governance ?? createInvocationGovernance();
   const scope = openInvocationScope(governance, globals.timeoutMs);
 
+  // Read here and nowhere earlier. `decideLaunch` has already said launch, so a
+  // run that was never going to open a shell still builds nothing — which is the
+  // property `runDefault` exists to hold and this must not spend. And it is read
+  // before the renderer, because the diagnostic handle is an ordinary terminal
+  // until one is up; after that it is not, which is why the unrecognized-override
+  // notice is written where it is.
+  const configuration = await resolveShellConfiguration(globals, {
+    streams,
+    services: options.services ?? defaultProvider(options),
+  });
+
   // Aborts when the shell is done, so a run given a long `--timeout` does not
   // leave a timer armed over a process with nothing left to govern.
   const finished = new AbortController();
@@ -272,6 +287,7 @@ async function launchShell(
       capabilities,
       options: globals,
       environment,
+      configuration,
       stop: stopped.signal,
       // The rail's source. Handed over read-only: the shell folds the tree's
       // ordered events into its activity projection and never asks it to do
