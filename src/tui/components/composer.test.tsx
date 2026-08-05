@@ -13,9 +13,10 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { type CapturedSpan, TextareaRenderable } from "@opentui/core";
 import { mount, type Rendered, type TerminalShape } from "../harness.tsx";
 import { INLINE_PASTE_LIMIT } from "../paste.ts";
-import type { ThemeRequest } from "../theme/index.ts";
+import { parseHex, resolveTheme, type ThemeRequest } from "../theme/index.ts";
 import { known, type ShellModel, unavailable } from "../view-model.ts";
 import { ShellApp } from "./shell-app.tsx";
 
@@ -64,8 +65,9 @@ type Session = Rendered & {
 async function open(
   shape: TerminalShape = { columns: 100, rows: 24 },
   kittyKeyboard = false,
+  theme: ThemeRequest = THEME,
 ): Promise<Session> {
-  const shell = await mount(<ShellApp theme={THEME} model={MODEL} onExit={() => {}} />, {
+  const shell = await mount(<ShellApp theme={theme} model={MODEL} onExit={() => {}} />, {
     shape,
     kittyKeyboard,
   });
@@ -78,6 +80,41 @@ async function open(
       return await pressNamed("tab");
     },
   });
+}
+
+function requiredColor(theme: ThemeRequest, token: "selection" | "foreground"): string {
+  const color = resolveTheme(theme).color(token);
+  if (color === null) {
+    throw new Error(`expected ${token} to resolve to a colour`);
+  }
+  return color;
+}
+
+function rgba(hex: string): [number, number, number, number] {
+  const { red, green, blue } = parseHex(hex);
+  return [red, green, blue, 255];
+}
+
+function spansWithBackground(session: Session, background: readonly number[]): CapturedSpan[] {
+  return session.setup
+    .captureSpans()
+    .lines.flatMap((line) => line.spans)
+    .filter((span) => span.bg.toInts().every((channel, index) => channel === background[index]));
+}
+
+function composerTextarea(session: Session): TextareaRenderable {
+  const pending = [...session.setup.renderer.root.getChildren()];
+  while (pending.length > 0) {
+    const renderable = pending.pop();
+    if (renderable === undefined) {
+      break;
+    }
+    if (renderable instanceof TextareaRenderable) {
+      return renderable;
+    }
+    pending.push(...renderable.getChildren());
+  }
+  throw new Error("expected the mounted composer to contain a textarea");
 }
 
 describe("focus", () => {
@@ -97,6 +134,99 @@ describe("focus", () => {
     using shell = await open();
     await shell.focusComposer();
     expect(await shell.frame()).toContain("focused");
+  });
+});
+
+describe("selection", () => {
+  test("uses Falryn's selection tokens, announces the range, and keeps its cursor at the focus", async () => {
+    using shell = await open();
+    await shell.focusComposer();
+    await shell.type("chosen");
+
+    const background = rgba(requiredColor(THEME, "selection"));
+    const foreground = rgba(requiredColor(THEME, "foreground"));
+    const before = shell.setup.captureSpans();
+    expect(spansWithBackground(shell, background)).toEqual([]);
+
+    shell.setup.mockInput.pressArrow("left", { shift: true });
+    const frame = await shell.frame();
+    const after = shell.setup.captureSpans();
+    const selected = spansWithBackground(shell, background);
+
+    expect(frame).toContain("Selection active");
+    expect(selected.map((span) => span.fg.toInts())).toEqual([foreground]);
+    expect(after.cursor).toEqual([before.cursor[0] - 1, before.cursor[1]]);
+
+    shell.setup.mockInput.pressArrow("right");
+    expect(await shell.frame()).not.toContain("Selection active");
+    expect(spansWithBackground(shell, background)).toEqual([]);
+  });
+
+  test("announces a native pointer range and clears it after a click", async () => {
+    // The hook is Falryn's observation seam. The pointer itself is OpenTUI's,
+    // so this test drives the renderer's mock mouse rather than creating a
+    // second selection or calling textarea selection APIs directly.
+    using shell = await open();
+    await shell.focusComposer();
+    await shell.type("chosen");
+
+    const background = rgba(requiredColor(THEME, "selection"));
+    const textarea = composerTextarea(shell);
+    const row = textarea.y;
+    const start = textarea.x + 1;
+    const end = textarea.x + 4;
+
+    await shell.setup.mockMouse.drag(start, row, end, row);
+    expect(await shell.frame()).toContain("Selection active");
+    expect(spansWithBackground(shell, background)).not.toEqual([]);
+
+    await shell.setup.mockMouse.click(end, row);
+    expect(await shell.frame()).not.toContain("Selection active");
+    expect(spansWithBackground(shell, background)).toEqual([]);
+  });
+
+  test("keeps an explicit multi-line range styled on each drawn line", async () => {
+    using shell = await open();
+    await shell.focusComposer();
+    await shell.paste("first\nsecond");
+
+    const background = rgba(requiredColor(THEME, "selection"));
+    for (let count = 0; count < 8; count += 1) {
+      shell.setup.mockInput.pressArrow("left", { shift: true });
+    }
+    await shell.frame();
+
+    const selectedLines = shell.setup
+      .captureSpans()
+      .lines.filter((line) =>
+        line.spans.some((span) =>
+          span.bg.toInts().every((channel, index) => channel === background[index]),
+        ),
+      );
+    expect(selectedLines).toHaveLength(2);
+  });
+
+  test("keeps the worded state in monochrome and no-colour modes", async () => {
+    const monochrome = { ...THEME, variant: "monochrome" } as const;
+    using mono = await open(undefined, false, monochrome);
+    await mono.focusComposer();
+    await mono.type("chosen");
+    mono.setup.mockInput.pressArrow("left", { shift: true });
+    expect(await mono.frame()).toContain("Selection active");
+    expect(spansWithBackground(mono, rgba(requiredColor(monochrome, "selection")))).toHaveLength(1);
+
+    const colorless = { ...THEME, colorLevel: "none" } as const;
+    using none = await open(undefined, false, colorless);
+    await none.focusComposer();
+    await none.type("chosen");
+    none.setup.mockInput.pressArrow("left", { shift: true });
+    expect(await none.frame()).toContain("Selection active");
+
+    // A no-colour theme resolves its tokens to null, so the textarea preserves
+    // OpenTUI's native fallback instead of receiving a substitute grey.
+    expect(spansWithBackground(none, [255, 255, 255, 255])).toHaveLength(1);
+    none.setup.mockInput.pressArrow("right");
+    expect(await none.frame()).not.toContain("Selection active");
   });
 });
 
