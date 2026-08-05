@@ -289,3 +289,87 @@ describe("the cursor", () => {
     expect(cursorOf(shell).visible).toBe(true);
   });
 });
+
+/**
+ * The clicks below prove the *handler*, not the gate.
+ *
+ * The mock mouse emits events into the renderer directly, so these run whether
+ * or not mouse reporting was ever turned on. That is the right split rather than
+ * a gap: the gate lives at the transport — with reporting off a terminal sends
+ * no mouse bytes at all — and is checked where it lives, in
+ * `../capabilities.test.ts` and `../renderer-session.test.ts`. Reading these as
+ * evidence that reporting is enabled would be reading them for something they
+ * cannot see.
+ */
+describe("a click in the composer", () => {
+  /** The composer's own row in the frame, and the cell its first character sits in. */
+  async function composerRow(shell: Session): Promise<number> {
+    return chromeRow(await shell.frame()) - 1;
+  }
+
+  test("places the cursor where it was clicked", async () => {
+    using shell = await open();
+    await shell.focusComposer();
+    await shell.type("hello world");
+    const row = await composerRow(shell);
+    const end = cursorOf(shell).x;
+
+    // Six cells in from the start of the draft: between `hello ` and `world`.
+    await shell.setup.mockMouse.click(end - 5, row);
+    await shell.frame();
+
+    expect(cursorOf(shell).x).toBe(end - 5);
+  });
+
+  test("counts cells rather than graphemes, so a wide character is two", async () => {
+    // The acceptance criterion, at a cell where a cell index and a grapheme
+    // index differ. `日本` is two graphemes and four cells; a click on the cell
+    // after them is grapheme two, and a mapping that counted graphemes would put
+    // the cursor inside the first character.
+    using shell = await open();
+    await shell.focusComposer();
+    await shell.type("日本ab");
+    const row = await composerRow(shell);
+    const end = cursorOf(shell).x;
+
+    // Two cells back from the end is the boundary between `日本` and `ab`.
+    await shell.setup.mockMouse.click(end - 2, row);
+    await shell.frame();
+    expect(cursorOf(shell).x).toBe(end - 2);
+
+    // And typing there lands between them rather than inside the wide pair.
+    await shell.type("X");
+    expect(await shell.frame()).toContain("日本Xab");
+  });
+
+  test("places the cursor at the end of the line when clicked past the text", async () => {
+    using shell = await open();
+    await shell.focusComposer();
+    await shell.type("short");
+    const row = await composerRow(shell);
+    const end = cursorOf(shell).x;
+
+    await shell.setup.mockMouse.click(end + 40, row);
+    await shell.frame();
+
+    expect(cursorOf(shell).x).toBe(end);
+  });
+
+  test("focuses the composer, so the cursor it placed is visible", async () => {
+    // #386 draws the cursor only while the composer has focus. A click that
+    // placed one into an unfocused composer would leave no mark and send the
+    // next keystroke somewhere else.
+    using shell = await open();
+    await shell.focusComposer();
+    await shell.type("typed");
+    const row = await composerRow(shell);
+
+    // Away, then back by clicking rather than by tabbing.
+    await shell.pressTab();
+    expect(cursorOf(shell).visible).toBe(false);
+
+    await shell.setup.mockMouse.click(1, row);
+    await shell.frame();
+    expect(cursorOf(shell).visible).toBe(true);
+  });
+});

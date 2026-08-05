@@ -48,8 +48,8 @@
  * have to agree exactly.
  */
 
-import type { BoxRenderable, KeyEvent } from "@opentui/core";
-import { LayoutEvents } from "@opentui/core";
+import type { BoxRenderable, KeyEvent, MouseEvent } from "@opentui/core";
+import { LayoutEvents, MouseButton } from "@opentui/core";
 import { useKeyboard, usePaste, useRenderer } from "@opentui/react";
 import { type ReactNode, type RefObject, useEffect, useRef } from "react";
 import { graphemes } from "../../domain/index.ts";
@@ -62,6 +62,7 @@ import {
   describeOutcome,
   type EditorAction,
   linesOf,
+  positionOfCell,
   selectionOf,
 } from "../composer/index.ts";
 import type { ComposerModel } from "../composer-model.ts";
@@ -80,6 +81,16 @@ export type ComposerViewProps = {
    * keyboard subscription is made at all, so a static frame costs nothing.
    */
   readonly onAction?: (action: ComposerAction) => void;
+  /**
+   * Focuses the composer, through the shell's own focus model.
+   *
+   * Separate from {@link onAction} because focus is not the composer's to own:
+   * it belongs to the region model that decides which control keys reach. A
+   * click needs both — #386 draws the cursor only while the composer has focus,
+   * so a click that placed one into an unfocused composer would leave no mark
+   * and send the next keystroke somewhere else.
+   */
+  readonly onFocus?: () => void;
 };
 
 export function ComposerView(props: ComposerViewProps): ReactNode {
@@ -103,8 +114,43 @@ export function ComposerView(props: ComposerViewProps): ReactNode {
     focused: model.focused,
   });
 
+  const { onAction, onFocus } = props;
+  const click = (event: MouseEvent): void => {
+    const renderable = box.current;
+    if (renderable === null || event.button !== MouseButton.LEFT) {
+      return;
+    }
+    // The mapping #391 delivered, in the space the event already arrives in:
+    // `MouseEvent.x`/`y` and `screenX`/`screenY` are both the renderer's own
+    // buffer coordinates, so there is no translation between them to get wrong.
+    const at = positionOfCell(
+      { lines: window.lines, originColumn: renderable.screenX, originRow: renderable.screenY },
+      { column: event.x, row: event.y },
+    );
+    if (at === null) {
+      return;
+    }
+    // Focus first: placing a cursor into a composer that does not have focus
+    // draws nothing and takes no keys.
+    onFocus?.();
+    onAction?.({ kind: "edit", action: { kind: "place", at } });
+  };
+
   return (
-    <box ref={box} flexDirection="column" width={columns} height={frame.composerRows}>
+    // The rule below is about DOM elements taking a pointer handler without a
+    // role a screen reader can announce. A terminal has neither a role system
+    // nor a screen-reader surface, and the concern the rule stands in for — a
+    // pointer must not be the only way to reach something — is held directly
+    // here: this handler duplicates a position the arrow keys already reach, and
+    // every command stays reachable from the keyboard.
+    // biome-ignore lint/a11y/noStaticElementInteractions: no roles in a terminal, and the keyboard route is complete
+    <box
+      ref={box}
+      flexDirection="column"
+      width={columns}
+      height={frame.composerRows}
+      onMouseDown={click}
+    >
       {window.lines.map((line) => (
         // Keyed by the line's position in the document rather than by its offset
         // in the window, so a key stays with its line while the window scrolls.
