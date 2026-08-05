@@ -2038,6 +2038,33 @@ so a first placement can read a position that does not exist yet; the check
 asserts the cursor on the *first settled frame* rather than after a keystroke, so
 a placement one frame behind fails rather than passing on the second.
 
+**Both directions of that mapping live in one module**
+([#391](https://github.com/yogeshprasad098/falryn/issues/391)).
+`src/tui/composer/geometry.ts` turns a draft position into a screen cell and a
+screen cell back into a draft position; the component hands it the drawn lines
+and consumes the answer, and a control asserts that nothing else declares either
+direction or reaches for `displayWidth` to compute its own. The pointer work
+[#388](https://github.com/yogeshprasad098/falryn/issues/388) needs the inward
+direction, and two functions computing one relationship disagree eventually — on
+a wide glyph, or the first time somebody edits one of them — with the
+disagreement surfacing as a cursor landing a cell from where it was clicked.
+
+The module is pure arithmetic: no renderer, no React, no pointer, and no
+editing. It answers *where*, and the caller decides what to do about it, which
+is what lets the awkward cases be checked as data. A cell inside a wide grapheme
+resolves to that grapheme's **start** — a position between the two cells of `日`
+does not exist in the draft, and inventing one would let a click produce a column
+the editing model can never hold. A cell past a line's text resolves to that
+line's end, a row outside the drawn window to the nearest drawn line, and a
+window that drew nothing to no position at all rather than to line zero.
+
+The round trip is the check that holds the two directions together, asserted for
+*every* column of a plain line, a CJK run, a combining sequence, and a joined
+emoji rather than for a representative sample. The joined-emoji case passes while
+the recorded disagreement between `displayWidth` and the renderer stands, because
+what the property needs is that both directions use the same measurement — not
+that the measurement is right.
+
 One upstream behavior was measured and is worth recording: the renderer clamps
 the cursor's `x` to a minimum of one, so column 0 and column 1 report the same
 number. Nothing in the placement depends on telling them apart, but a check that
