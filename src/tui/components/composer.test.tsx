@@ -47,6 +47,8 @@ const SEQUENCES = {
   enter: "\r",
   tab: "\t",
   left: "\u001b[D",
+  home: "\u001b[H",
+  end: "\u001b[F",
 } as const;
 
 type NamedKey = keyof typeof SEQUENCES;
@@ -371,5 +373,145 @@ describe("a click in the composer", () => {
     await shell.setup.mockMouse.click(1, row);
     await shell.frame();
     expect(cursorOf(shell).visible).toBe(true);
+  });
+});
+
+describe("the keyboard reaches every motion", () => {
+  /** The cursor's cell, which is what a motion visibly changes. */
+  async function cell(shell: Session): Promise<number> {
+    await shell.frame();
+    return cursorOf(shell).x;
+  }
+
+  test("alt and ctrl arrows move by word", async () => {
+    // Both, because they are the conventions of different platforms and a
+    // terminal sends whichever its user's keyboard produces. Binding one would
+    // make the feature present on macOS and absent on Linux for no reason a
+    // user could see.
+    //
+    // The mock's `meta` modifier sets the CSI bit the parser decodes as
+    // `option`, which is what Alt actually arrives as — `key.meta` is set by
+    // Alt *and* by other things, so a binding that means Alt has to read
+    // `option`.
+    for (const modifiers of [{ meta: true }, { ctrl: true }] as const) {
+      using shell = await open();
+      await shell.focusComposer();
+      await shell.type("one two three");
+      const end = await cell(shell);
+
+      shell.setup.mockInput.pressArrow("left", modifiers);
+      const back = await cell(shell);
+      // "three" is five characters, so a word left lands five cells earlier.
+      expect({ modifiers, moved: end - back }).toEqual({ modifiers, moved: 5 });
+
+      shell.setup.mockInput.pressArrow("right", modifiers);
+      expect({ modifiers, at: await cell(shell) }).toEqual({ modifiers, at: end });
+    }
+  });
+
+  test("a modified arrow is a word motion rather than a lesser plain one", async () => {
+    // The defect #387 found rather than the feature it added. `editFor`
+    // switched on `key.name` before any modifier was considered, so `alt+left`
+    // fell into the plain-left case and moved one character — a chord that
+    // looked bound and behaved worse than one that was missing.
+    using shell = await open();
+    await shell.focusComposer();
+    await shell.type("one two");
+    const end = await cell(shell);
+
+    shell.setup.mockInput.pressArrow("left", { meta: true });
+    expect(end - (await cell(shell))).not.toBe(1);
+  });
+
+  test("ctrl+home and ctrl+end reach the document's ends", async () => {
+    // Asserted by what typing does rather than by the cursor's cell, and that is
+    // not squeamishness: the renderer clamps the cursor's `x` to a minimum of
+    // one — recorded in #386 — so a line's start and its second cell report the
+    // same number, and a coordinate check here would be off by one for a reason
+    // that has nothing to do with the motion.
+    using shell = await open();
+    await shell.focusComposer();
+    await shell.type("hello");
+
+    shell.setup.mockInput.pressKey(SEQUENCES.home, { ctrl: true });
+    await shell.frame();
+    await shell.type("X");
+    expect(await shell.frame()).toContain("Xhello");
+
+    shell.setup.mockInput.pressKey(SEQUENCES.end, { ctrl: true });
+    await shell.frame();
+    await shell.type("Z");
+    expect(await shell.frame()).toContain("XhelloZ");
+  });
+
+  test("shift with a motion extends the selection, on each binding that takes one", async () => {
+    // Per binding rather than for one representative: `extend` is threaded
+    // through every branch of the matcher, and a branch that dropped it would
+    // pass a check that only exercised its neighbour.
+    //
+    // Typing is the discriminator, and it had to be measured. Deleting after the
+    // motion does not separate the two — on `one two`, a shift+alt+left that
+    // extended deletes the selection and one that did not deletes the space, and
+    // both stop containing `one two`. Typing replaces a selection and inserts
+    // without one, so the resulting text names which happened.
+    const CASES = [
+      {
+        name: "shift+left",
+        press: (shell: Session) => shell.setup.mockInput.pressArrow("left", { shift: true }),
+        extended: "one twX",
+        moved: "one twXo",
+      },
+      {
+        name: "shift+alt+left",
+        press: (shell: Session) =>
+          shell.setup.mockInput.pressArrow("left", { shift: true, meta: true }),
+        extended: "one X",
+        moved: "one Xtwo",
+      },
+      {
+        name: "shift+ctrl+left",
+        press: (shell: Session) =>
+          shell.setup.mockInput.pressArrow("left", { shift: true, ctrl: true }),
+        extended: "one X",
+        moved: "one Xtwo",
+      },
+      {
+        name: "shift+home",
+        press: (shell: Session) => shell.setup.mockInput.pressKey(SEQUENCES.home, { shift: true }),
+        extended: "X",
+        moved: "Xone two",
+      },
+    ] as const;
+
+    for (const { name, press, extended, moved } of CASES) {
+      using shell = await open();
+      await shell.focusComposer();
+      await shell.type("one two");
+
+      press(shell);
+      await shell.frame();
+      await shell.type("X");
+      const frame = await shell.frame();
+
+      expect({ name, replaced: frame.includes(extended) }).toEqual({ name, replaced: true });
+      expect({ name, inserted: frame.includes(moved) }).toEqual({ name, inserted: false });
+    }
+  });
+
+  test("a chord nothing binds still types nothing", async () => {
+    // The rule that survived the matcher being rewritten. A chord falling
+    // through to the text branch would type its letter — `alt+p` inserting `p`
+    // is the failure this prevents.
+    using shell = await open();
+    await shell.focusComposer();
+    await shell.type("kept");
+
+    shell.setup.mockInput.pressKey("p", { meta: true });
+    shell.setup.mockInput.pressKey("j", { ctrl: true });
+    const frame = await shell.frame();
+
+    expect(frame).toContain("kept");
+    expect(frame).not.toContain("keptp");
+    expect(frame).not.toContain("keptj");
   });
 });
