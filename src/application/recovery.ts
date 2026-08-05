@@ -78,7 +78,7 @@ export type ObservationResult<State> = {
   readonly at: ReturnType<ClockPort["now"]>;
 };
 
-export type RecoveryStep<State> =
+export type RecoveryStep =
   /** Nothing may be done until the caller's observer has reported. */
   | { readonly kind: "observe-first"; readonly reason: "effect-not-observed" }
   | { readonly kind: "retry"; readonly decision: RetryDecision }
@@ -96,7 +96,7 @@ export function planRecovery<State>(
   error: FalrynError,
   request: RetryRequest,
   observation: ObservationResult<State> | null,
-): RecoveryStep<State> {
+): RecoveryStep {
   if (requiresObservationFirst(error) && observation === null) {
     return { kind: "observe-first", reason: "effect-not-observed" };
   }

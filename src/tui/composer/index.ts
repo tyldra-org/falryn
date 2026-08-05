@@ -1,31 +1,14 @@
 /**
  * The composer's contract, in one place.
  *
- * Everything exported here is a pure value or function: an editing model over
- * graphemes, a history that refuses to store a secret, a state machine, and a
- * submission port whose one implementation in this build is an honest refusal.
+ * Everything exported here is a pure value or function: draft and history
+ * state, paste policy, and a submission port whose one implementation in this
+ * build is an honest refusal.
  * The component that mounts them is `../components/composer.tsx`, and it is the
  * only part of the composer that needs a renderer — which is why every rule the
  * composer promises can be asserted without one.
  */
 
-export type {
-  CursorPosition,
-  EditorAction,
-  EditorMotion,
-  EditorState,
-} from "./editor.ts";
-export {
-  cursorPosition,
-  EDITOR_MOTIONS,
-  EMPTY_EDITOR,
-  editorReducer,
-  hasContent,
-  lengthOf,
-  linesOf,
-  selectedText,
-  selectionOf,
-} from "./editor.ts";
 export type { ComposerFeature } from "./features.ts";
 export { COMPOSER_FEATURES, composerFeature } from "./features.ts";
 export type { InputHistory, Recall } from "./history.ts";

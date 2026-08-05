@@ -12,6 +12,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { createTestKeymap } from "@opentui/keymap/testing";
 import {
   bindingConflicts,
   COMMAND_CONTEXTS,
@@ -25,7 +26,7 @@ import {
   searchCommands,
 } from "./commands.ts";
 import {
-  activeBindings,
+  activeCommandIds,
   bindingsForContext,
   bindingsWhileTyping,
   commandRows,
@@ -33,7 +34,6 @@ import {
   isContextActive,
   isTypedKey,
   planKeymap,
-  resolveBinding,
 } from "./keymap.ts";
 
 const OVERLAY_OPEN = { ...EMPTY_COMMAND_STATE, overlayOpen: true };
@@ -44,6 +44,30 @@ function plan() {
     throw new Error(`the shipped keymap is invalid: ${verdict.refusals.map(describeRefusal)}`);
   }
   return verdict.plan;
+}
+
+function activeFor(contexts: readonly (typeof COMMAND_CONTEXTS)[number][]): ReadonlySet<string> {
+  const harness = createTestKeymap({ defaultKeys: true });
+  const current = plan();
+  const releases = contexts.map((context) =>
+    harness.keymap.registerLayer({
+      priority: CONTEXT_PRIORITY[context],
+      bindings: bindingsForContext(current, context).map((binding) => ({
+        key: binding.key,
+        cmd: binding.command,
+      })),
+    }),
+  );
+  const releaseCommands = harness.keymap.registerLayer({
+    commands: SHELL_COMMANDS.map((command) => ({ name: command.id, run: () => true })),
+  });
+  const active = activeCommandIds(harness.keymap.getActiveKeys({ includeBindings: true }));
+  releaseCommands();
+  for (const release of releases) {
+    release();
+  }
+  harness.cleanup();
+  return active;
 }
 
 describe("every command", () => {
@@ -268,9 +292,10 @@ describe("layer resolution", () => {
   });
 
   test("sends escape to the overlay when one is open and to cancel when none is", () => {
-    // The layering, demonstrated on the one key that carries two meanings.
-    expect(resolveBinding(plan(), "escape", OVERLAY_OPEN)?.command).toBe("overlay.close");
-    expect(resolveBinding(plan(), "escape", EMPTY_COMMAND_STATE)?.command).toBe("app.cancel");
+    // The layering, read from OpenTUI's own active-key projection.
+    expect(activeFor(["global", "overlay"]).has("overlay.close")).toBe(true);
+    expect(activeFor(["global", "overlay"]).has("app.cancel")).toBe(false);
+    expect(activeFor(["global"]).has("app.cancel")).toBe(true);
   });
 
   test("consults no inactive context", () => {
@@ -278,11 +303,7 @@ describe("layer resolution", () => {
     // broader one — which is how `escape` in a composer would quietly exit.
     expect(isContextActive("composer", EMPTY_COMMAND_STATE)).toBe(false);
     expect(isContextActive("global", EMPTY_COMMAND_STATE)).toBe(true);
-    expect(resolveBinding(plan(), "enter", EMPTY_COMMAND_STATE)).toBe(null);
-  });
-
-  test("resolves nothing for a key nobody bound", () => {
-    expect(resolveBinding(plan(), "f9", EMPTY_COMMAND_STATE)).toBe(null);
+    expect(activeFor(["global"]).has("composer.submit")).toBe(false);
   });
 
   test("groups bindings by the layer they belong to", () => {
@@ -292,30 +313,30 @@ describe("layer resolution", () => {
   });
 
   test("reports the keys that currently do something", () => {
-    const active = activeBindings(plan(), EMPTY_COMMAND_STATE).map((binding) => binding.command);
-    expect(active).toContain("app.exit");
+    const active = activeFor(["global"]);
+    expect(active.has("app.exit")).toBe(true);
     // `overlay.close` is bound but its context is inactive, so it is not a key
     // that does anything right now.
-    expect(active).not.toContain("overlay.close");
+    expect(active.has("overlay.close")).toBe(false);
   });
 });
 
 describe("the rows help and the palette render", () => {
   test("carry the binding that would run now", () => {
-    const rows = commandRows(plan(), EMPTY_COMMAND_STATE);
+    const rows = commandRows(EMPTY_COMMAND_STATE, activeFor(["global"]));
     expect(rows.find((row) => row.id === "app.exit")?.binding).toBe("ctrl+c");
   });
 
   test("show no binding for a command whose key currently means something else", () => {
     // `app.cancel` owns `escape` until an overlay opens. Showing it afterwards
     // would tell the user to press a key that does something different.
-    const rows = commandRows(plan(), OVERLAY_OPEN);
+    const rows = commandRows(OVERLAY_OPEN, activeFor(["global", "overlay"]));
     expect(rows.find((row) => row.id === "app.cancel")?.binding).toBe(null);
     expect(rows.find((row) => row.id === "overlay.close")?.binding).toBe("escape");
   });
 
   test("carry the reason a command cannot run", () => {
-    const rows = commandRows(plan(), EMPTY_COMMAND_STATE);
+    const rows = commandRows(EMPTY_COMMAND_STATE, activeFor(["global"]));
     expect(rows.find((row) => row.id === "composer.submit")?.unavailableReason).toContain(
       "composer",
     );
@@ -325,11 +346,16 @@ describe("the rows help and the palette render", () => {
   test("include every command, available or not", () => {
     // A palette that hid unavailable commands would leave someone searching for
     // one and concluding it does not exist.
-    expect(commandRows(plan(), EMPTY_COMMAND_STATE).length).toBe(SHELL_COMMANDS.length);
+    expect(commandRows(EMPTY_COMMAND_STATE, activeFor(["global"])).length).toBe(
+      SHELL_COMMANDS.length,
+    );
   });
 
   test("show no key for a command that deliberately has none", () => {
-    const rows = commandRows(plan(), { ...EMPTY_COMMAND_STATE, hasConfirmation: true });
+    const rows = commandRows(
+      { ...EMPTY_COMMAND_STATE, hasConfirmation: true },
+      activeFor(["global", "confirmation"]),
+    );
     expect(rows.find((row) => row.id === "confirmation.accept")?.binding).toBe(null);
   });
 });

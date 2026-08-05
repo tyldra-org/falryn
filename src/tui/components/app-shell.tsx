@@ -26,7 +26,7 @@
 
 import { useRenderer, useTerminalDimensions } from "@opentui/react";
 import { type ReactNode, useMemo, useRef } from "react";
-import type { ComposerAction, EditorAction } from "../composer/index.ts";
+import type { ComposerAction } from "../composer/index.ts";
 import {
   composerRows,
   hasContextPanel,
@@ -89,7 +89,9 @@ export type AppShellProps = {
   /** A click in the composer focuses it, through the shell's own focus model. */
   readonly onComposerFocus?: () => void;
   /** Where typing in the open palette goes. Absent means a static frame. */
-  readonly onPaletteQuery?: (action: EditorAction) => void;
+  readonly onPaletteQuery?: (query: string) => void;
+  /** Runs the selected palette command by stable id. */
+  readonly onPaletteSelect?: (id: string) => void;
 };
 
 export function AppShell(props: AppShellProps): ReactNode {
@@ -163,6 +165,9 @@ export function AppShell(props: AppShellProps): ReactNode {
             ? {}
             : { onComposerFocus: props.onComposerFocus })}
           {...(props.onPaletteQuery === undefined ? {} : { onPaletteQuery: props.onPaletteQuery })}
+          {...(props.onPaletteSelect === undefined
+            ? {}
+            : { onPaletteSelect: props.onPaletteSelect })}
         />
       )}
     </FrameProvider>
@@ -178,7 +183,8 @@ function ShellFrame(props: {
   readonly onComposerAction?: (action: ComposerAction) => void;
   /** A click in the composer focuses it, through the shell's own focus model. */
   readonly onComposerFocus?: () => void;
-  readonly onPaletteQuery?: (action: EditorAction) => void;
+  readonly onPaletteQuery?: (query: string) => void;
+  readonly onPaletteSelect?: (id: string) => void;
 }): ReactNode {
   const { model } = props;
   // Bounded rather than stretched. A `wide` terminal has room for a contextual
@@ -215,11 +221,14 @@ function ShellFrame(props: {
                 ) : (
                   <CommandPalette
                     commands={model.commands}
-                    query={model.overlay.kind === "palette" ? model.overlay.query.text : ""}
+                    query={model.overlay.kind === "palette" ? model.overlay.query : ""}
                     rows={rows}
                     {...(props.onPaletteQuery === undefined
                       ? {}
                       : { onQuery: props.onPaletteQuery })}
+                    {...(props.onPaletteSelect === undefined
+                      ? {}
+                      : { onSelect: props.onPaletteSelect })}
                   />
                 )
               }

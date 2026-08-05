@@ -46,16 +46,28 @@ const MODEL: Omit<ShellModel, "overlay" | "commands" | "transcript" | "composer"
 /** A mounted shell whose palette these checks open and type into. */
 type Session = Rendered & {
   openPalette(): Promise<string>;
+  exits(): number;
 };
 
 async function open(shape: TerminalShape = { columns: 100, rows: 24 }): Promise<Session> {
-  const shell = await mount(<ShellApp theme={THEME} model={MODEL} onExit={() => {}} />, {
-    shape,
-    screenMode: "alternate-screen",
-  });
+  let exits = 0;
+  const shell = await mount(
+    <ShellApp
+      theme={THEME}
+      model={MODEL}
+      onExit={() => {
+        exits += 1;
+      }}
+    />,
+    {
+      shape,
+      screenMode: "alternate-screen",
+    },
+  );
   await shell.frame();
   return Object.assign(shell, {
     openPalette: () => shell.press("p", { ctrl: true }),
+    exits: () => exits,
   });
 }
 
@@ -72,7 +84,7 @@ describe("typing into the palette", () => {
 
     await shell.type("exit");
     const narrowed = await shell.frame();
-    expect(narrowed).toContain("Search: exit");
+    expect(narrowed).toContain("\n┃exit");
     expect(narrowed).toContain("Exit");
     expect(narrowed).not.toContain("Command palette");
   });
@@ -108,7 +120,7 @@ describe("typing into the palette", () => {
 
     await shell.pressBackspace();
     const frame = await shell.frame();
-    expect(frame).toContain("Search: exit");
+    expect(frame).toContain("\n┃exit");
     expect(frame).toContain("Exit");
   });
 
@@ -121,9 +133,31 @@ describe("typing into the palette", () => {
     await shell.type("?");
 
     const frame = await shell.frame();
-    expect(frame).toContain("Search: ?");
+    expect(frame).toContain("\n┃?");
     // Help did not open over it.
     expect(frame).not.toContain("Ctrl+C ends the shell.");
+  });
+
+  test("runs the selected result on Enter", async () => {
+    using shell = await open();
+    await shell.openPalette();
+    await shell.type("app.help");
+    shell.setup.mockInput.pressEnter();
+
+    expect(await shell.frame()).toContain("Ctrl+C ends the shell.");
+  });
+
+  test("moves and executes selection through OpenTUI's select", async () => {
+    using shell = await open();
+    await shell.openPalette();
+    shell.setup.mockInput.pressArrow("down");
+    await shell.frame();
+    shell.setup.mockInput.pressArrow("down");
+    await shell.frame();
+    shell.setup.mockInput.pressEnter();
+    await shell.frame();
+
+    expect(shell.exits()).toBe(1);
   });
 });
 
@@ -135,15 +169,15 @@ describe("closing the palette", () => {
     using shell = await open();
     await shell.openPalette();
     await shell.type("exit");
-    expect(await shell.frame()).toContain("Search: exit");
+    expect(await shell.frame()).toContain("\n┃exit");
 
     await shell.pressEscape();
-    expect(await shell.frame()).not.toContain("Search: exit");
+    expect(await shell.frame()).not.toContain("\n┃exit");
 
     await shell.openPalette();
     const reopened = await shell.frame();
     expect(reopened).toContain("Type to search commands.");
-    expect(reopened).not.toContain("Search: exit");
+    expect(reopened).not.toContain("\n┃exit");
   });
 
   test("still leaves escape bound while the search has focus", async () => {
@@ -177,11 +211,10 @@ describe("the row budget", () => {
     await shell.openPalette();
     const frame = await shell.frame();
 
-    expect(frame).toContain("more — narrow the search");
-    // The last row the corrected budget has room for. With the off-by-one it is
-    // the one overwritten, and the frame shows `Focusrprevious` where two rows
-    // landed on top of each other.
-    expect(frame).toContain("Focus next region");
+    // OpenTUI's select owns clipping and the scroll indicator. The first item
+    // and its description remain intact inside the short panel.
+    expect(frame).toContain("Help");
+    expect(frame).toContain("Show every command");
     expect(frame).not.toMatch(/Focus\S+previous/);
   });
 
@@ -262,12 +295,10 @@ describe("the row budget it was given", () => {
     }
   });
 
-  test("says how little room there was rather than offering more of nothing", async () => {
-    // "24 more" is only true when something was shown. With no room for a single
-    // command it invites the reader to look for the rows above it.
+  test("uses the built-in select when one result row is available", async () => {
     const lines = await palette(2);
-    expect(lines.some((line) => line.includes("too little room to list them"))).toBe(true);
-    expect(lines.some((line) => line.includes("more — narrow the search"))).toBe(false);
+    expect(lines.some((line) => line.includes("Help"))).toBe(true);
+    expect(lines.some((line) => line.includes("too little room"))).toBe(false);
   });
 
   test("draws no more rows than it was given, at every budget", async () => {

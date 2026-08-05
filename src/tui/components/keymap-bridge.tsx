@@ -15,10 +15,9 @@
  * having to reorder.
  */
 
-import { useKeymap } from "@opentui/keymap/react";
-import { type ReactNode, useEffect } from "react";
-import type { CommandContext } from "../commands.ts";
-import { CONTEXT_PRIORITY } from "../commands.ts";
+import { useBindings } from "@opentui/keymap/react";
+import type { ReactNode } from "react";
+import { CONTEXT_PRIORITY, type CommandContext, SHELL_COMMANDS } from "../commands.ts";
 import { bindingsForContext, bindingsWhileTyping, type KeymapPlan } from "../keymap.ts";
 
 export type KeymapBridgeProps = {
@@ -38,47 +37,63 @@ export type KeymapBridgeProps = {
 };
 
 export function KeymapBridge(props: KeymapBridgeProps): ReactNode {
-  const keymap = useKeymap();
-  // Joined rather than passed as an array: the effect must re-run when the *set*
-  // changes, and an array literal is a new reference on every render.
-  const active = [...props.contexts].sort().join(" ");
   const typing = props.typing === true;
+  const active = new Set(props.contexts);
 
-  useEffect(() => {
-    const contexts = active === "" ? [] : (active.split(" ") as CommandContext[]);
-    const release = contexts.map((context) => {
-      const declared = bindingsForContext(props.plan, context);
-      const live = typing ? bindingsWhileTyping(declared) : declared;
-      return keymap.registerLayer({
-        priority: CONTEXT_PRIORITY[context],
-        bindings: live.map((binding) => ({
-          key: binding.key,
-          cmd: binding.command,
-        })),
-      });
-    });
-    return () => {
-      // Every layer, on every change. A layer left registered for a context that
-      // is no longer active is precisely the shadowing this design avoids.
-      for (const dispose of release) {
-        dispose();
-      }
-    };
-  }, [keymap, props.plan, active, typing]);
+  useContextBindings("global", props.plan, active, typing);
+  useContextBindings("scrollable", props.plan, active, typing);
+  useContextBindings("transcript", props.plan, active, typing);
+  useContextBindings("composer", props.plan, active, typing);
+  useContextBindings("overlay", props.plan, active, typing);
+  useContextBindings("confirmation", props.plan, active, typing);
 
-  useEffect(() => {
-    // Commands are registered as one layer of handlers that delegate by id, so
-    // the keymap holds names and this module holds no behavior at all.
-    return keymap.registerLayer({
+  useBindings(
+    () => ({
       priority: 0,
-      commands: [...new Set(props.plan.bindings.map((binding) => binding.command))].map((id) => ({
-        name: id,
+      commands: SHELL_COMMANDS.map((command) => ({
+        name: command.id,
+        desc: command.description,
         run: () => {
-          props.run(id);
+          props.run(command.id);
         },
       })),
-    });
-  }, [keymap, props.plan, props.run]);
+    }),
+    [props.run],
+  );
 
   return null;
+}
+
+function useContextBindings(
+  context: CommandContext,
+  plan: KeymapPlan,
+  active: ReadonlySet<CommandContext>,
+  typing: boolean,
+): void {
+  const enabled = active.has(context);
+  useBindings(() => {
+    const declared = bindingsForContext(plan, context);
+    const live = typing ? bindingsWhileTyping(declared) : declared;
+    return {
+      priority: CONTEXT_PRIORITY[context],
+      bindings: enabled
+        ? live.map((binding) => ({
+            key: binding.key,
+            cmd: binding.command,
+            ...(isTextareaOwned(binding.command) ? { preventDefault: false } : {}),
+          }))
+        : [],
+      commands:
+        enabled && context === "composer"
+          ? [
+              { name: "composer.submit", run: () => false },
+              { name: "composer.newline", run: () => false },
+            ]
+          : [],
+    };
+  }, [plan, context, enabled, typing]);
+}
+
+function isTextareaOwned(command: string): boolean {
+  return command === "composer.submit" || command === "composer.newline";
 }

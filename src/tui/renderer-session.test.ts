@@ -101,6 +101,14 @@ describe("the renderer options that are not defaults", () => {
     expect(config.enableMouseMovement).toBe(false);
   });
 
+  test("requests Kitty keyboard modifier reporting explicitly", () => {
+    const config = rendererConfigFor({
+      capabilities: record(),
+      selection: selectScreenMode(record()),
+    });
+    expect(config.useKittyKeyboard).toEqual({});
+  });
+
   test("never turn the mouse on from the record alone", () => {
     // Creation *is* when reporting is turned on, when the setting says so — see
     // "mouse reporting" below. What this holds is the other half: a record

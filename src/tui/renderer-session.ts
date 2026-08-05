@@ -200,6 +200,10 @@ export function rendererConfigFor(request: OpenSessionRequest): CliRendererConfi
     // `console.*` would be a second diagnostics path, reachable from code that
     // never asked for one.
     consoleMode: "disabled",
+    // Preserve Command, Option, and Shift as modifiers wherever the terminal
+    // supports Kitty keyboard reporting. Legacy aliases remain in the focused
+    // controls for terminals that cannot report those modifiers directly.
+    useKittyKeyboard: {},
     // Gated on the resolved setting rather than left at OpenTUI's default of
     // on, and decided here rather than after creation. #392 planned to enable
     // it later, once a refreshed record could say whether the terminal had a

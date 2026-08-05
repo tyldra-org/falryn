@@ -16,7 +16,6 @@
  */
 
 import type { ActivityModel } from "./activity-model.ts";
-import type { EditorState } from "./composer/index.ts";
 import type { ComposerModel } from "./composer-model.ts";
 import type { StatusToken } from "./theme/index.ts";
 import type { TranscriptModel } from "./transcript-model.ts";
@@ -138,12 +137,12 @@ export type OverlayRoute =
    * State held alongside would have to be cleared by whoever remembered to,
    * and reopening onto somebody's last search is the failure that produces.
    *
-   * An `EditorState` rather than a string, so the palette reuses the editing
-   * model the composer already owns instead of growing a second one. A search
-   * field that could not move its cursor or delete a character mid-word would
-   * be a text input in name only.
+   * A string because OpenTUI's `InputRenderable` owns the cursor, selection,
+   * undo history, and editing actions. Falryn stores only the value needed to
+   * filter commands; keeping a second editor state here would duplicate the
+   * built-in control.
    */
-  | { readonly kind: "palette"; readonly query: EditorState };
+  | { readonly kind: "palette"; readonly query: string };
 
 export type ShellModel = {
   readonly header: WorkspaceHeaderModel;

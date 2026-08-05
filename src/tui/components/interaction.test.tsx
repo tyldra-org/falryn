@@ -111,10 +111,7 @@ describe("help", () => {
 
   test("says why a command cannot run", async () => {
     // Listed, discoverable, and answered — rather than hidden or silently inert.
-    // Tall enough to show the whole registry: since #355 the transcript's own
-    // commands sit above the composer's, and a 30-row terminal reports the rest
-    // as "6 more" rather than drawing them. That elision is correct behavior, so
-    // the terminal grows instead of the assertion moving to a nearer row.
+    // Tall enough to show the whole registry without scrolling.
     using shell = await open(40);
     const frame = await shell.press("?");
     expect(frame).toContain("the composer is not focused");
@@ -122,6 +119,16 @@ describe("help", () => {
     // a different sentence rather than a shared "unavailable".
     expect(frame).toContain("there is no transcript yet");
     expect(frame).toContain("there is no artifact viewer yet");
+  });
+
+  test("scrolls long help through OpenTUI's focused scrollbox", async () => {
+    using shell = await open(14);
+    const opening = await shell.press("?");
+    expect(opening).toContain("Help");
+    expect(opening).not.toContain("Decline");
+
+    await shell.press("\u001b[F");
+    expect(await shell.frame()).toContain("Decline");
   });
 
   test("closes on escape and gives the frame back", async () => {

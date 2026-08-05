@@ -41,6 +41,9 @@ const RENDERER_OWNERS = [
   // dispatch between a keystroke and the character it produces. Help shares this
   // module and subscribes to nothing.
   "components/overlay-routes.tsx",
+  // Overlay motion is registered with OpenTUI's timeline hook rather than a
+  // parallel timer implementation.
+  "components/overlay.tsx",
   // The root measures the viewport through the renderer's own hooks. Nothing
   // below it does: every component reads the frame from context instead, which
   // is what keeps the measurement in one place.
@@ -469,10 +472,9 @@ describe("the transcript surface", () => {
 });
 
 describe("the composer", () => {
-  test("keeps the editing model free of the renderer and of React", async () => {
-    // The owner boundary #357 names: graphemes, history, and draft survival are
-    // asserted without a terminal, which only stays true while nothing in the
-    // model can reach one.
+  test("keeps composer state free of the renderer and of React", async () => {
+    // History, paste policy, and draft survival remain assertable without a
+    // terminal while cursor, selection, and motion stay in OpenTUI's textarea.
     for (const file of await productFiles()) {
       if (!file.startsWith("composer/")) {
         continue;
@@ -542,7 +544,7 @@ describe("the composer", () => {
       }
     }
     expect(segmenters).toEqual([]);
-    expect(await readCode("composer/editor.ts")).toContain("graphemes");
+    expect((await productFiles()).some((file) => file === "composer/editor.ts")).toBe(false);
   });
 
   test("routes every submission through the declared port", async () => {
@@ -698,16 +700,21 @@ describe("the command palette", () => {
     // handed a literal empty query and typing narrowed nothing. A matcher
     // nothing matches with is not a feature, it is a function that compiles.
     const source = await readCode("components/shell-app.tsx");
-    expect(source).toContain("paletteRows(plan,");
+    expect(source).toContain("paletteRows(rows,");
     expect(await readCode("components/app-shell.tsx")).not.toContain('query=""');
   });
 
   test("holds the query on the route rather than beside it", async () => {
     // Which is what makes "closing clears the search" true by construction:
     // closing replaces the route, so there is nowhere a stale query can survive.
-    expect(await readCode("view-model.ts")).toContain(
-      'kind: "palette"; readonly query: EditorState',
-    );
+    expect(await readCode("view-model.ts")).toContain('kind: "palette"; readonly query: string');
+  });
+
+  test("delegates editing and selection to OpenTUI controls", async () => {
+    const source = await readCode("components/overlay-routes.tsx");
+    expect(source).toContain("<input");
+    expect(source).toContain("<select");
+    expect(source).not.toContain("function editFor");
   });
 
   test("does not clamp its content budget up to a minimum", async () => {
@@ -882,9 +889,8 @@ describe("the rendered test harness", () => {
   });
 
   test("is where every rendered check mounts", async () => {
-    // Not an aspiration: the nine files #374 consolidated are named, so a tenth
-    // rendered check that rolls its own setup shows up here as a difference
-    // rather than as a slow drift back to nine copies.
+    // Not an aspiration: every consumer is named, so a rendered check that
+    // rolls its own setup shows up here rather than becoming another copy.
     expect(await consumers()).toEqual([
       "components/activity-rail.test.tsx",
       "components/composer-keys.test.tsx",
@@ -893,6 +899,7 @@ describe("the rendered test harness", () => {
       "components/interaction.test.tsx",
       "components/palette.test.tsx",
       "components/scrollback-commits.test.tsx",
+      "components/shell-error-boundary.test.tsx",
       "components/transcript.test.tsx",
       // The harness's own checks, which are what prove it cleans up.
       "harness.test.tsx",

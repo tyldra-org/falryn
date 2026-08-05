@@ -16,7 +16,6 @@
 import { describe, expect, test } from "bun:test";
 import type { ReactNode } from "react";
 import { COLOR_LEVELS, displayWidth, graphemes, SYMBOL_SUPPORTS } from "../../domain/index.ts";
-import { EMPTY_EDITOR } from "../composer/index.ts";
 import {
   frameOf,
   hasPainted,
@@ -98,7 +97,7 @@ function render(
 }
 
 /** An open palette, spelled once because the sweeps below open it many times. */
-const PALETTE_OPEN = { kind: "palette", query: EMPTY_EDITOR } as const;
+const PALETTE_OPEN = { kind: "palette", query: "" } as const;
 
 function shell(
   overrides: Partial<ShellModel> = {},
@@ -444,13 +443,13 @@ describe("overlays", () => {
   test("mount the palette route, and say so when nothing matches", async () => {
     // Since #26 the palette is driven by the registry, so an empty list means a
     // search matched nothing rather than a build with no commands.
-    const frame = await shell({ overlay: { kind: "palette", query: EMPTY_EDITOR }, commands: [] });
+    const frame = await shell({ overlay: { kind: "palette", query: "" }, commands: [] });
     expect(frame).toContain("Nothing matches that");
   });
 
   test("list commands when there are some", async () => {
     const frame = await shell({
-      overlay: { kind: "palette", query: EMPTY_EDITOR },
+      overlay: { kind: "palette", query: "" },
       commands: [
         {
           id: "app.exit",
@@ -582,7 +581,7 @@ describe("the reveal", () => {
     const { during, arrived } = await revealFrames(
       <AppShell
         theme={{ ...THEME, reducedMotion: false }}
-        model={model({ overlay: { kind: "palette", query: EMPTY_EDITOR }, commands: [] })}
+        model={model({ overlay: { kind: "palette", query: "" }, commands: [] })}
       />,
       { columns: 76, rows: 20 },
       "Nothing matches that",
@@ -621,7 +620,7 @@ describe("the reveal", () => {
     const { during, arrived } = await revealFrames(
       <AppShell
         theme={{ ...THEME, reducedMotion: false }}
-        model={model({ overlay: { kind: "palette", query: EMPTY_EDITOR }, commands: [] })}
+        model={model({ overlay: { kind: "palette", query: "" }, commands: [] })}
       />,
       { columns: MINIMUM_COLUMNS, rows: 9 },
       "Type to search",
