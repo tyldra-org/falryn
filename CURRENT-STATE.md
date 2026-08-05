@@ -1468,13 +1468,28 @@ discover it should not have.
 
 Every outcome that is not a usable generation follows one rule. `load` answers
 five ways; two carry a record and its `values` open the shell, and the other
-three report what was wrong on the diagnostic handle and hand back
-`registry.defaults()`, which the registry documents as complete by construction.
-A shell that refused to open over a settings file would be the worse failure —
-the user gets an interface that works and a line naming what was ignored, in the
-vocabulary `fromConfigurationIssues` already speaks, so the sentence is the same
-one `config show` would have printed. No rejected value reaches it, because no
-issue carries one.
+three report on the diagnostic handle and hand back `registry.defaults()`, which
+the registry documents as complete by construction. A shell that refused to open
+over a settings file would be the worse failure — it strands a user with no way
+to correct the file that stranded them.
+
+One rule, three sentences, because only one of the three means the user's
+configuration was bad. `rejected` is composition failing, and its sentence comes
+from `fromConfigurationIssues`, so it is the one `config show` would have printed
+for the same issue; no rejected value reaches it, because none of the fourteen
+issue variants carries one. `publish-failed` is composition *succeeding* and the
+generation failing to be recorded, so it says the configuration was valid and
+could not be recorded, and carries the outcome's `code` — the only detail
+available to act on. `cancelled` says the load was stopped, which is not a
+failure of anything.
+
+All three are reachable on a first load, `publish-failed` included: the loader's
+`unchanged` branch is guarded on there being a previous generation, so a first
+load falls through to appending the generation event, where an unwritable or
+full state root fails. This was first written claiming `rejected` was the only
+one reachable there, which gave the other two a sentence telling a user with a
+perfectly good settings file that it could not be loaded. Verification of
+[#395](https://github.com/yogeshprasad098/falryn/pull/395) found it.
 
 What crosses into the shell is `ConfigurationValues` — values, not a service, so
 nothing in the interface can reach back for a key that was never resolved, and
