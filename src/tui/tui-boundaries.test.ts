@@ -887,6 +887,7 @@ describe("the rendered test harness", () => {
     // rather than as a slow drift back to nine copies.
     expect(await consumers()).toEqual([
       "components/activity-rail.test.tsx",
+      "components/composer-keys.test.tsx",
       "components/composer.test.tsx",
       "components/frame.test.tsx",
       "components/interaction.test.tsx",
