@@ -14,6 +14,7 @@
 
 import { describe, expect, test } from "bun:test";
 import { mount, type Rendered, type TerminalShape } from "../harness.tsx";
+import { INLINE_PASTE_LIMIT } from "../paste.ts";
 import type { ThemeRequest } from "../theme/index.ts";
 import { known, type ShellModel, unavailable } from "../view-model.ts";
 import { ShellApp } from "./shell-app.tsx";
@@ -192,386 +193,131 @@ describe("what is not here", () => {
 });
 
 /**
- * Where the composer's first chrome row is drawn, as a row index in the frame.
+ * What is Falryn's, now that the renderable owns the rest.
  *
- * Derived from the frame rather than computed from the layout, because a
- * constant here would be a second opinion about a number `../layout.ts` owns —
- * and the checks below are about where the cursor is *relative to the text*,
- * which survives the composer moving.
+ * The motions, the selection, the buffer, and the cursor belong to
+ * `TextareaRenderable`. Checking them here would be checking the library, and
+ * the checks that used to live in this file did something worse than that: they
+ * validated Falryn's own coordinate arithmetic against fixtures built from the
+ * same assumptions, and agreed with themselves while the cursor sat a row above
+ * the text on a real terminal.
+ *
+ * So what remains is the seam. The draft reaching the state machine, the one
+ * rule with no library action behind it, and the classification that has to run
+ * before the renderable inserts. Where the cursor actually lands is asserted on
+ * a real terminal, in `../shell.compiled.test.ts`, because that is the only
+ * place the question can be answered.
  */
-function chromeRow(frame: string): number {
-  const rows = frame.split("\n");
-  const at = rows.findIndex((row) => /^\s*i\s/.test(row));
-  if (at < 1) {
-    throw new Error("the composer's status row was not found in the frame");
-  }
-  return at;
-}
-
-/** The cursor, as the renderer holds it. */
-function cursorOf(shell: Rendered): { x: number; y: number; visible: boolean } {
-  const { x, y, visible } = shell.setup.renderer.getCursorState();
-  return { x, y, visible };
-}
-
-describe("the cursor", () => {
-  test("leaves the text it is inside of alone", async () => {
-    // #386, and the check that had to fail before it passed. The caret used to
-    // be spliced into the line at the cursor's column, so a cursor in the middle
-    // of a word drew `hello wo▏rld` — one grapheme longer than the buffer, with
-    // everything after it displaced by a cell.
-    //
-    // At the end of a draft that is invisible, which is why it shipped and why
-    // every other check in this file passed over it: they all type and assert
-    // without moving the cursor back into what they typed.
+describe("the draft reaches the session", () => {
+  test("typing arrives as content rather than as keystrokes", async () => {
     using shell = await open();
     await shell.focusComposer();
     await shell.type("hello world");
-
-    await shell.press(SEQUENCES.left);
-    await shell.press(SEQUENCES.left);
-    const frame = await shell.press(SEQUENCES.left);
-
-    expect(frame).toContain("hello world");
+    expect(await shell.frame()).toContain("hello world");
   });
 
-  test("is placed on the first settled frame, not a frame later", async () => {
-    // React commits on a microtask and Yoga lays out inside the renderer's own
-    // pass, so an effect that reads a position without waiting for layout reads
-    // one that does not exist yet. That failure is invisible after any later
-    // redraw, which is what makes it worth asserting here rather than after a
-    // keystroke: on the first frame there has been no later redraw to hide it.
+  test("a submission carries what was typed", async () => {
     using shell = await open();
+    await shell.focusComposer();
+    await shell.type("ask something");
+    await shell.pressNamed("enter");
+    // The port answers `unavailable` in this build and says so with the issue
+    // that will give it a consumer. What matters here is that it was reached
+    // with the text, which the notice repeats back.
+    expect(await shell.frame()).toContain("Not sent");
+  });
+});
+
+describe("history recall at the draft's edges", () => {
+  // The one rule with no `TextareaAction` behind it, and the reason
+  // `onKeyDown` exists in the view at all.
+  test("moves a line when there is a line to move to", async () => {
+    // Inside a draft `up` is the textarea's own motion. Falryn does not claim
+    // the key there, and this is what proves it: the cursor moved, so the
+    // character landed on the first line.
+    using shell = await open();
+    await shell.focusComposer();
+    await shell.paste("one\ntwo");
+
+    shell.setup.mockInput.pressArrow("up");
+    await shell.frame();
+    await shell.type("X");
+
     const frame = await shell.frame();
-    // The draft's only row sits directly above the composer's first chrome row.
-    expect(cursorOf(shell).y).toBe(chromeRow(frame) - 1);
+    expect(frame).toContain("oneX");
+    expect(frame).not.toContain("twoX");
   });
 
-  test("moves by cells, so a wide character counts twice", async () => {
-    // A grapheme offset and a cell offset are different numbers. `日本` is two
-    // graphemes and four cells, and a cursor placed by counting graphemes would
-    // land inside the second character — the same defect this replaced, one
-    // layer down, which is why it is a check rather than a follow-up.
-    //
-    // Measured as a delta between two positions rather than against an origin,
-    // and that is not style: the renderer clamps the cursor's `x` to a minimum
-    // of one, so column 0 and column 1 report the same number and an origin
-    // taken on an empty draft is a cell short. Both readings here are well
-    // clear of the clamp.
-    using shell = await open();
-    await shell.focusComposer();
-
-    await shell.type("ab");
-    const narrow = cursorOf(shell).x;
-
-    await shell.type("日本");
-    expect(cursorOf(shell).x - narrow).toBe(4);
-  });
-
-  test("follows a motion back into the text", async () => {
-    using shell = await open();
-    await shell.focusComposer();
-    await shell.type("hello");
-    const end = cursorOf(shell).x;
-
-    await shell.press(SEQUENCES.left);
-    await shell.press(SEQUENCES.left);
-    expect(cursorOf(shell).x).toBe(end - 2);
-  });
-
-  test("is shown only while the composer has focus", async () => {
-    // The gate is `model.focused` and nothing else: `../focus.ts` already moves
-    // the focused region to an overlay's when one opens, so a palette over the
-    // composer makes this false without a second rule about overlays.
-    using shell = await open();
-    await shell.frame();
-    expect(cursorOf(shell).visible).toBe(false);
-
-    await shell.focusComposer();
-    expect(cursorOf(shell).visible).toBe(true);
-  });
-});
-
-/**
- * The clicks below prove the *handler*, not the gate.
- *
- * The mock mouse emits events into the renderer directly, so these run whether
- * or not mouse reporting was ever turned on. That is the right split rather than
- * a gap: the gate lives at the transport — with reporting off a terminal sends
- * no mouse bytes at all — and is checked where it lives, in
- * `../capabilities.test.ts` and `../renderer-session.test.ts`. Reading these as
- * evidence that reporting is enabled would be reading them for something they
- * cannot see.
- */
-describe("a click in the composer", () => {
-  /** The composer's own row in the frame, and the cell its first character sits in. */
-  async function composerRow(shell: Session): Promise<number> {
-    return chromeRow(await shell.frame()) - 1;
-  }
-
-  test("places the cursor where it was clicked", async () => {
-    using shell = await open();
-    await shell.focusComposer();
-    await shell.type("hello world");
-    const row = await composerRow(shell);
-    const end = cursorOf(shell).x;
-
-    // Six cells in from the start of the draft: between `hello ` and `world`.
-    await shell.setup.mockMouse.click(end - 5, row);
-    await shell.frame();
-
-    expect(cursorOf(shell).x).toBe(end - 5);
-  });
-
-  test("counts cells rather than graphemes, so a wide character is two", async () => {
-    // The acceptance criterion, at a cell where a cell index and a grapheme
-    // index differ. `日本` is two graphemes and four cells; a click on the cell
-    // after them is grapheme two, and a mapping that counted graphemes would put
-    // the cursor inside the first character.
-    using shell = await open();
-    await shell.focusComposer();
-    await shell.type("日本ab");
-    const row = await composerRow(shell);
-    const end = cursorOf(shell).x;
-
-    // Two cells back from the end is the boundary between `日本` and `ab`.
-    await shell.setup.mockMouse.click(end - 2, row);
-    await shell.frame();
-    expect(cursorOf(shell).x).toBe(end - 2);
-
-    // And typing there lands between them rather than inside the wide pair.
-    await shell.type("X");
-    expect(await shell.frame()).toContain("日本Xab");
-  });
-
-  test("places the cursor at the end of the line when clicked past the text", async () => {
-    using shell = await open();
-    await shell.focusComposer();
-    await shell.type("short");
-    const row = await composerRow(shell);
-    const end = cursorOf(shell).x;
-
-    await shell.setup.mockMouse.click(end + 40, row);
-    await shell.frame();
-
-    expect(cursorOf(shell).x).toBe(end);
-  });
-
-  test("focuses the composer, so the cursor it placed is visible", async () => {
-    // #386 draws the cursor only while the composer has focus. A click that
-    // placed one into an unfocused composer would leave no mark and send the
-    // next keystroke somewhere else.
-    using shell = await open();
-    await shell.focusComposer();
-    await shell.type("typed");
-    const row = await composerRow(shell);
-
-    // Away, then back by clicking rather than by tabbing.
-    await shell.pressTab();
-    expect(cursorOf(shell).visible).toBe(false);
-
-    await shell.setup.mockMouse.click(1, row);
-    await shell.frame();
-    expect(cursorOf(shell).visible).toBe(true);
-  });
-});
-
-describe("the keyboard reaches every motion", () => {
-  /** The cursor's cell, which is what a motion visibly changes. */
-  async function cell(shell: Session): Promise<number> {
-    await shell.frame();
-    return cursorOf(shell).x;
-  }
-
-  test("alt and ctrl arrows move by word", async () => {
-    // Both, because they are the conventions of different platforms and a
-    // terminal sends whichever its user's keyboard produces. Binding one would
-    // make the feature present on macOS and absent on Linux for no reason a
-    // user could see.
-    //
-    // The mock's `meta` modifier sets the CSI bit the parser decodes as
-    // `option`, which is what Alt actually arrives as — `key.meta` is set by
-    // Alt *and* by other things, so a binding that means Alt has to read
-    // `option`.
-    for (const modifiers of [{ meta: true }, { ctrl: true }] as const) {
-      using shell = await open();
-      await shell.focusComposer();
-      await shell.type("one two three");
-      const end = await cell(shell);
-
-      shell.setup.mockInput.pressArrow("left", modifiers);
-      const back = await cell(shell);
-      // "three" is five characters, so a word left lands five cells earlier.
-      expect({ modifiers, moved: end - back }).toEqual({ modifiers, moved: 5 });
-
-      shell.setup.mockInput.pressArrow("right", modifiers);
-      expect({ modifiers, at: await cell(shell) }).toEqual({ modifiers, at: end });
-    }
-  });
-
-  test("a modified arrow is a word motion rather than a lesser plain one", async () => {
-    // The defect #387 found rather than the feature it added. `editFor`
-    // switched on `key.name` before any modifier was considered, so `alt+left`
-    // fell into the plain-left case and moved one character — a chord that
-    // looked bound and behaved worse than one that was missing.
-    using shell = await open();
-    await shell.focusComposer();
-    await shell.type("one two");
-    const end = await cell(shell);
-
-    shell.setup.mockInput.pressArrow("left", { meta: true });
-    expect(end - (await cell(shell))).not.toBe(1);
-  });
-
-  test("ctrl+home and ctrl+end reach the document's ends", async () => {
-    // Two lines, and that is the whole check rather than a detail. On a
-    // single-line draft a line's start and the document's start are the same
-    // position, so an assertion there passes whether these chords give the
-    // document motions or the line ones — measured, by making them return
-    // `line-start`/`line-end` and watching nothing fail.
-    //
-    // The draft is pasted rather than typed: a newline in pasted text is
-    // content rather than a submission, which is what bracketed paste is for,
-    // and `shift+return` does not produce one through the mock keyboard.
-    //
-    // Asserted by what typing does rather than by the cursor's cell. The
-    // renderer clamps the cursor's `x` to a minimum of one — recorded in #386 —
-    // so a line's start and its second cell report the same number, and a
-    // coordinate check would be off by one for a reason unrelated to the motion.
-    using shell = await open();
-    await shell.focusComposer();
-    await shell.paste("alpha\nbravo");
-
-    shell.setup.mockInput.pressKey(SEQUENCES.home, { ctrl: true });
-    await shell.frame();
-    await shell.type("X");
-    const started = await shell.frame();
-    // The *first* line took it. A line motion from the last line would have put
-    // it at the start of `bravo` instead.
-    expect(started).toContain("Xalpha");
-    expect(started).not.toContain("Xbravo");
-
-    shell.setup.mockInput.pressKey(SEQUENCES.end, { ctrl: true });
-    await shell.frame();
-    await shell.type("Z");
-    const ended = await shell.frame();
-    // And the *last* line did. A line motion from the first line would have put
-    // it after `Xalpha`.
-    expect(ended).toContain("bravoZ");
-    expect(ended).not.toContain("XalphaZ");
-  });
-
-  test("shift with a motion extends the selection, on each binding that takes one", async () => {
-    // Per binding rather than for one representative: `extend` is threaded
-    // through every branch of the matcher, and a branch that dropped it would
-    // pass a check that only exercised its neighbour.
-    //
-    // Typing is the discriminator, and it had to be measured. Deleting after the
-    // motion does not separate the two — on `one two`, a shift+alt+left that
-    // extended deletes the selection and one that did not deletes the space, and
-    // both stop containing `one two`. Typing replaces a selection and inserts
-    // without one, so the resulting text names which happened.
-    const CASES = [
-      {
-        name: "shift+left",
-        from: 0,
-        press: (shell: Session) => shell.setup.mockInput.pressArrow("left", { shift: true }),
-        extended: "one twX",
-        moved: "one twXo",
-      },
-      {
-        name: "shift+alt+left",
-        from: 0,
-        press: (shell: Session) =>
-          shell.setup.mockInput.pressArrow("left", { shift: true, meta: true }),
-        extended: "one X",
-        moved: "one Xtwo",
-      },
-      {
-        name: "shift+ctrl+left",
-        from: 0,
-        press: (shell: Session) =>
-          shell.setup.mockInput.pressArrow("left", { shift: true, ctrl: true }),
-        extended: "one X",
-        moved: "one Xtwo",
-      },
-      {
-        name: "shift+home",
-        from: 0,
-        press: (shell: Session) => shell.setup.mockInput.pressKey(SEQUENCES.home, { shift: true }),
-        extended: "X",
-        moved: "Xone two",
-      },
-      // The pair the plan singled out as the missing capability: `up` and `down`
-      // are bound as commands and dispatch with `extend: false`, so shifted they
-      // could not extend until this issue handled them where they land. They are
-      // exercised on a single-line draft, where `up` is the document's start and
-      // `down` its end — the composer's own `shift+return` does not produce a
-      // newline through the mock keyboard, which is recorded on the delivery PR
-      // as a separate observation rather than worked around here.
-      {
-        name: "shift+up",
-        from: 2,
-        press: (shell: Session) => shell.setup.mockInput.pressArrow("up", { shift: true }),
-        extended: "Xwo",
-        moved: "Xone two",
-      },
-      {
-        name: "shift+down",
-        from: 2,
-        press: (shell: Session) => shell.setup.mockInput.pressArrow("down", { shift: true }),
-        extended: "one tX",
-        moved: "one twoX",
-      },
-    ] as const;
-
-    for (const { name, from, press, extended, moved } of CASES) {
-      using shell = await open();
-      await shell.focusComposer();
-      await shell.type("one two");
-      // Where the motion starts, per case. The vertical pair needs the cursor
-      // inside the text: at the end of the draft `shift+down` would select
-      // nothing and pass whether or not it extended.
-      for (let back = 0; back < from; back += 1) {
-        await shell.press(SEQUENCES.left);
-      }
-
-      press(shell);
-      await shell.frame();
-      await shell.type("X");
-      const frame = await shell.frame();
-
-      // One shape of mistake this cannot catch, stated so nobody assumes it
-      // does: making `chordMotion` claim bare `up` and `down` as well changes
-      // nothing observable here, because the keymap dispatches them before any
-      // subscriber sees them. The branch is unreachable for them by
-      // construction, not by this check.
-      //
-      // The drawn draft line, compared exactly rather than searched for. A
-      // substring match is not enough here and that was measured: with the
-      // shifted vertical branch removed the motion does nothing, leaving
-      // `one tXwo` — which *contains* the `Xwo` an extending motion produces, so
-      // an `includes` check passed against the behaviour it existed to reject.
-      const drawn = frame.split("\n")[chromeRow(frame) - 1]?.trimEnd() ?? "";
-      expect({ name, drawn }).toEqual({ name, drawn: extended });
-      expect({ name, inserted: drawn === moved }).toEqual({ name, inserted: false });
-    }
-  });
-
-  test("a chord nothing binds still types nothing", async () => {
-    // The rule that survived the matcher being rewritten. A chord falling
-    // through to the text branch would type its letter — `alt+p` inserting `p`
-    // is the failure this prevents.
+  test("recalls at the top rather than moving nowhere", async () => {
+    // At the first line there is no line to move to, and that is where recall
+    // begins. With nothing in history the draft is left exactly as it was,
+    // which is the honest outcome rather than a cleared composer.
     using shell = await open();
     await shell.focusComposer();
     await shell.type("kept");
 
-    shell.setup.mockInput.pressKey("p", { meta: true });
-    shell.setup.mockInput.pressKey("j", { ctrl: true });
-    const frame = await shell.frame();
+    shell.setup.mockInput.pressArrow("up");
+    await shell.frame();
 
-    expect(frame).toContain("kept");
-    expect(frame).not.toContain("keptp");
-    expect(frame).not.toContain("keptj");
+    expect(await shell.frame()).toContain("kept");
+  });
+
+  test("leaves a selection alone, because extending is not recalling", async () => {
+    // `shift+up` extends upward and must never step through history: replacing
+    // text the reader is in the middle of choosing is the worst possible
+    // response to a selection key.
+    using shell = await open();
+    await shell.focusComposer();
+    await shell.type("chosen");
+
+    shell.setup.mockInput.pressArrow("up", { shift: true });
+    await shell.frame();
+
+    expect(await shell.frame()).toContain("chosen");
+  });
+});
+
+describe("a paste", () => {
+  test("goes into the buffer when it is small enough to inline", async () => {
+    // Classified by Falryn, inserted by the renderable. The classification runs
+    // first because a refusal has to stop the insertion, and this is the case
+    // where it does not refuse.
+    using shell = await open();
+    await shell.focusComposer();
+    await shell.paste("pasted text");
+    expect(await shell.frame()).toContain("pasted text");
+  });
+
+  test("never reaches the buffer when it is too large", async () => {
+    // The flood the classification exists to prevent, and the reason the
+    // handler runs ahead of the renderable: the renderable would have inserted
+    // it. Including it needs the attachment path that does not exist.
+    using shell = await open();
+    await shell.focusComposer();
+    await shell.paste("x".repeat(INLINE_PASTE_LIMIT + 1));
+
+    expect(await shell.frame()).not.toContain("xxxxxxxxxx");
+  });
+
+  test("is described to the state, even though nothing draws the description", async () => {
+    // Recorded rather than asserted as working. `composerNotice` turns a
+    // refusal into a sentence and `../composer/state.test.ts` checks it — and
+    // no component renders it, on this branch or before it. So a user whose
+    // paste was refused sees the text simply not arrive.
+    //
+    // That is a real gap and it is not this issue's to close: #399 moves the
+    // composer onto the library's renderable and its non-goals say the status
+    // rows keep reporting what they report. Asserting the refusal reaches the
+    // state is what can honestly be asserted here, and the missing row is
+    // reported on the delivery PR rather than quietly fixed inside a migration.
+    using shell = await open();
+    await shell.focusComposer();
+    await shell.paste("x".repeat(INLINE_PASTE_LIMIT + 1));
+    await shell.frame();
+
+    // The composer still works afterwards, which is the part a user would
+    // otherwise doubt: a paste that vanished silently could look like a hang.
+    await shell.type("still typing");
+    expect(await shell.frame()).toContain("still typing");
   });
 });

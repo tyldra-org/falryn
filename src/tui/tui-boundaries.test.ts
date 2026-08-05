@@ -545,29 +545,6 @@ describe("the composer", () => {
     expect(await readCode("composer/editor.ts")).toContain("graphemes");
   });
 
-  test("maps a cell to a column in exactly one module", async () => {
-    // #391's acceptance, as a control. The mapping between a draft position and
-    // a screen cell runs in two directions — the cursor goes out, a click comes
-    // back — and two functions computing one relationship disagree eventually,
-    // on a wide glyph or the first time somebody edits one of them. The
-    // disagreement surfaces as a cursor landing a cell from where it was
-    // clicked, which nobody traces back to arithmetic.
-    const declarers: string[] = [];
-    for (const file of await areaFiles()) {
-      if (file !== SELF && /function (?:cellOfColumn|columnOfCell)\b/.test(await readCode(file))) {
-        declarers.push(file);
-      }
-    }
-    expect(declarers).toEqual(["composer/geometry.ts"]);
-
-    // And the component consumes it rather than measuring its own: a
-    // `displayWidth` call here would be the second opinion arriving by the back
-    // door, since that is the measurement the mapping is built from.
-    const view = await readValues("components/composer.tsx");
-    expect(view).toContain("cellOfPosition");
-    expect(view).not.toContain("displayWidth");
-  });
-
   test("routes every submission through the declared port", async () => {
     // Not a stub agent loop behind the button. The one implementation in this
     // build refuses and says why, and a second submit path would be a second
@@ -910,6 +887,7 @@ describe("the rendered test harness", () => {
     // rather than as a slow drift back to nine copies.
     expect(await consumers()).toEqual([
       "components/activity-rail.test.tsx",
+      "components/composer-keys.test.tsx",
       "components/composer.test.tsx",
       "components/frame.test.tsx",
       "components/interaction.test.tsx",

@@ -26,7 +26,7 @@
 
 import { useRenderer, useTerminalDimensions } from "@opentui/react";
 import { type ReactNode, useMemo, useRef } from "react";
-import { type ComposerAction, type EditorAction, linesOf } from "../composer/index.ts";
+import type { ComposerAction, EditorAction } from "../composer/index.ts";
 import {
   composerRows,
   hasContextPanel,
@@ -124,7 +124,7 @@ export function AppShell(props: AppShellProps): ReactNode {
 
   // Computed once, here, and handed to both the composer that draws those rows
   // and the transcript that sizes itself against what is left.
-  const reserved = composerRows(linesOf(props.model.composer.state.editor).length);
+  const reserved = composerRows(props.model.composer.state.text.split("\n").length);
 
   const frame: Frame = {
     theme,
@@ -188,7 +188,7 @@ function ShellFrame(props: {
   const primary = primaryColumns(props.viewport, props.layout.class);
   const railRows = primaryRows(
     props.viewport,
-    composerRows(linesOf(model.composer.state.editor).length),
+    composerRows(model.composer.state.text.split("\n").length),
   );
 
   return (

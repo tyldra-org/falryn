@@ -33,12 +33,10 @@ import {
   type ComposerAction,
   type ComposerState,
   composerReducer,
-  cursorPosition,
   type EditorAction,
   EMPTY_EDITOR,
   editorReducer,
   INITIAL_COMPOSER_STATE,
-  linesOf,
   type SubmissionPort,
   UNAVAILABLE_SUBMISSION,
 } from "../composer/index.ts";
@@ -356,18 +354,12 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
         return false;
       }
 
-      return runAvailable(
-        command,
-        dispatch,
-        options.onExit,
-        {
-          geometry: geometry.current,
-          anchor: state.transcript.anchor,
-          selected: state.transcript.selected,
-          keys: options.transcriptKeys,
-        },
-        state.composer,
-      );
+      return runAvailable(command, dispatch, options.onExit, {
+        geometry: geometry.current,
+        anchor: state.transcript.anchor,
+        selected: state.transcript.selected,
+        keys: options.transcriptKeys,
+      });
     },
     [state, options.onExit, options.transcriptKeys],
   );
@@ -457,7 +449,6 @@ function runAvailable(
   dispatch: (action: ShellAction) => void,
   onExit: () => void,
   transcript: TranscriptContext,
-  composer: ComposerState,
 ): boolean {
   const request = {
     spans: transcript.geometry.spans,
@@ -542,37 +533,23 @@ function runAvailable(
       dispatch({ kind: "composer", action: { kind: "submit" } });
       return true;
     case "composer.newline":
-      dispatch({ kind: "composer", action: { kind: "edit", action: { kind: "newline" } } });
+      // The textarea's own `newline` action is bound to `shift+return` by its
+      // default bindings, so this command exists for the palette and for help
+      // rather than as the path a key takes.
       return true;
 
     // `up` and `down` are a line inside the draft and a history step at its
-    // edges. The boundary is decided here rather than in the composer's reducer
-    // because it is a *binding* question — what this key means right now — and
-    // the reducer would have to be told the answer either way.
-    case "composer.historyPrevious": {
-      const at = cursorPosition(composer.editor);
-      if (at.line > 0) {
-        dispatch({
-          kind: "composer",
-          action: { kind: "edit", action: { kind: "move", motion: "up", extend: false } },
-        });
-        return true;
-      }
+    // edges. The edge test lives in the composer's `onKeyDown`, where the key
+    // actually lands and where the renderable's own cursor can be read — see
+    // `./composer.tsx`. These entries keep the commands listed and reachable
+    // from the palette; they recall unconditionally, because a palette entry
+    // has no cursor position to be at the edge of.
+    case "composer.historyPrevious":
       dispatch({ kind: "composer", action: { kind: "history-previous" } });
       return true;
-    }
-    case "composer.historyNext": {
-      const at = cursorPosition(composer.editor);
-      if (at.line < linesOf(composer.editor).length - 1) {
-        dispatch({
-          kind: "composer",
-          action: { kind: "edit", action: { kind: "move", motion: "down", extend: false } },
-        });
-        return true;
-      }
+    case "composer.historyNext":
       dispatch({ kind: "composer", action: { kind: "history-next" } });
       return true;
-    }
 
     default:
       // Every other command is declared unavailable in this build, so reaching

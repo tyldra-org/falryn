@@ -2088,6 +2088,62 @@ under the composer. None of them is half-built: a large paste is classified,
 bounded, and described rather than inserted, and there is no attachment control
 that accepts a file and drops it.
 
+**The composer is OpenTUI's `TextareaRenderable`**
+([#399](https://github.com/yogeshprasad098/falryn/issues/399)). The draft, the
+cursor, the selection, the scrolling, and every motion over them belong to the
+renderable, reached through the `<textarea>` element `@opentui/react` exposes.
+Falryn supplies the frame, the two chrome rows, and the two rules that are
+genuinely its own.
+
+**Why, and it is not an off-by-one.** The cursor was drawn in the wrong cell on
+a real terminal — a row above the draft and a cell short of the text. The
+composer drew its own rows and then re-derived where the cursor belonged from a
+box origin, a display-width sum, and a window offset. The specific fault:
+`setCursorPosition` is **one-based**, and the placement wrote `screenX + cell`
+and `screenY + row`, which are the renderable's **zero-based** coordinates.
+
+Every check agreed with it. The rendered checks compared *differences* between
+two cursor positions, where a constant offset cancels; the one absolute check
+compared the cursor against the same zero-based row the code had used. The
+0→1 behaviour had even been measured during #386 and written up as "the renderer
+clamps `x` to a minimum of one" — the evidence was in hand and filed under the
+wrong explanation. Correcting the base would have left Falryn maintaining a
+coordinate the renderable already computes, which is the arrangement that
+produced the divergence, so the arrangement went instead.
+
+**Deleted:** `composer/geometry.ts` and its checks, `useCursorPlacement`, the
+hand-written motion matcher, and the boundary control naming the mapping. #386,
+#391, #392's coordinate half, and #387 are superseded in whole or in part — work
+that merged this week. Each was a second implementation of something the
+renderable owns.
+
+**What stayed Falryn's.** History recall, through `onKeyDown`: a focused
+renderable runs its key listener before its own handling and honours
+`preventDefault()`, so at the draft's edge the event is claimed and a recall
+dispatched, and anywhere else the textarea moves the cursor. `up` and `down`
+lost their registry bindings for this to work — measured, not assumed: with them
+bound the keymap claimed the key first and the cursor never moved a line at all.
+The commands stay listed and reachable from the palette. And paste, because a
+paste too large to inline is classified and refused before the renderable would
+insert it; `usePaste` runs ahead of renderable handlers and `preventDefault()`
+stops them.
+
+**The required check is on a real terminal**, because the defect was invisible
+to every other kind. The compiled artifact is driven on a pseudo-terminal and
+the cursor-position sequence the terminal received is compared against the one
+that preceded the typed text — both read from the transcript, neither computed.
+It was validated by reintroducing the defect, and the first attempt failed to
+reproduce it: placing the cursor by hand *beside* the renderable still passes,
+because the renderable places it again afterwards. The faithful mutant
+suppresses the renderable's own cursor and writes a zero-based coordinate, and
+that one fails.
+
+**A gap found and left open.** `composerNotice` turns a refused paste into a
+sentence, `state.test.ts` checks it, and no component renders it — on this branch
+or before it. A user whose paste was refused sees the text simply not arrive.
+Recorded rather than fixed inside a migration whose non-goals say the status rows
+keep reporting what they report.
+
 **The keyboard reaches every position the model can hold**
 ([#387](https://github.com/yogeshprasad098/falryn/issues/387)). Characters,
 words, line ends, and the draft's ends, each extending a selection when shift is
