@@ -19,9 +19,11 @@ import { describe, expect, test } from "bun:test";
 import { createTestRenderer, type TestRendererSetup } from "@opentui/core/testing";
 import { createScopeTree } from "../application/index.ts";
 import {
+  createInMemoryFileSystem,
   createStaticEnvironment,
   createSystemClock,
   type EnvironmentPort,
+  localPath,
   type ObservedHandles,
   type StreamCapability,
   terminalCapabilities,
@@ -30,6 +32,8 @@ import type { RendererFactory } from "../tui/index.ts";
 import { dispatch } from "./dispatch.ts";
 import { EXIT_CODES } from "./exit.ts";
 import type { InvocationGovernance } from "./invocation-scope.ts";
+import type { GlobalOptions } from "./options.ts";
+import { createServiceProvider, type ServiceProvider } from "./services.ts";
 import { createRecordingCliStreams, type RecordedCliStreams } from "./streams.ts";
 
 const INTERACTIVE: ObservedHandles = {
@@ -56,6 +60,38 @@ const PIPED_STDOUT: StreamCapability = {
 const refuseToRender: RendererFactory = () => {
   throw new Error("a renderer was created on a run that should not have launched");
 };
+
+/**
+ * A provider that fails the test if anything asks it for a service.
+ *
+ * The other half of the same control. #390 reads configuration on the launch
+ * path, which means the no-argument invocation now builds a service graph —
+ * *after* the decision. A refused run that reached this would be one that built
+ * a registry, a loader, and a data layout to discover it should not have.
+ */
+const poisonedServices = (): ServiceProvider => () => {
+  throw new Error("a service was constructed on a run that should not have launched");
+};
+
+/**
+ * A service graph over memory, for the runs that do launch.
+ *
+ * Every launching check below reads configuration now, and a launching check
+ * that read the developer's real home would answer differently on two machines
+ * — and would be the first thing in this file capable of touching one.
+ */
+function inMemoryServices(
+  variables: Readonly<Record<string, string>> = {},
+): (options: GlobalOptions) => ServiceProvider {
+  return (globals) =>
+    createServiceProvider(globals, {
+      home: localPath("/home/tester"),
+      platform: "darwin",
+      environment: createStaticEnvironment(variables),
+      currentDirectory: localPath("/workspace"),
+      fileSystem: createInMemoryFileSystem(),
+    });
+}
 
 let mounting: Promise<TestRendererSetup> | null = null;
 
@@ -112,8 +148,9 @@ describe("a run that will not open a shell", () => {
         argv: [...argv],
         streams,
         environment: environment(variables),
-        // Throws if called. Nothing below asserts it was not — the factory does.
+        // Both throw if called. Nothing below asserts they were not — they do.
         createRenderer: refuseToRender,
+        services: poisonedServices,
       });
       expect({ reason, code }).toEqual({ reason, code: EXIT_CODES.COMPLETED });
     }
@@ -173,6 +210,7 @@ describe("a shell that was interrupted", () => {
       environment: environment(),
       governance,
       createRenderer: inMemory,
+      services: inMemoryServices(),
     });
 
     // Once the renderer exists, so the interrupt is landing on a live shell
@@ -197,6 +235,7 @@ describe("a shell that was interrupted", () => {
       environment: environment(),
       governance,
       createRenderer: inMemory,
+      services: inMemoryServices(),
     });
     await mounting;
     governance.interrupt();
@@ -234,6 +273,7 @@ describe("a shell whose renderer never started", () => {
       createRenderer: () => {
         throw new Error("no native library for this platform");
       },
+      services: inMemoryServices(),
     });
     // 5, through the same table: the platform did not provide what this run
     // needed. Not 70 — that would report a defect in Falryn.
@@ -257,6 +297,7 @@ describe("a shell whose renderer never started", () => {
       createRenderer: () => {
         throw new Error('externalOutputMode "capture-stdout" requires screenMode "split-footer"');
       },
+      services: inMemoryServices(),
     });
     expect(streams.diagnosticWrites().join("")).toContain("requires screenMode");
   });
@@ -274,6 +315,7 @@ describe("a shell whose renderer never started", () => {
       createRenderer: () => {
         throw new Error("x".repeat(1000));
       },
+      services: inMemoryServices(),
     });
     const written = streams.diagnosticWrites().join("");
     expect(written.length).toBeLessThan(600);
