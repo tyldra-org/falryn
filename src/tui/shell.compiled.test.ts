@@ -45,8 +45,11 @@ const EXIT_MS = 8_000;
 
 const RUN_TIMEOUT_MS = 30_000;
 
-/** The control sequence introducer, as an escape rather than a raw byte. */
-const CSI = "\u001b\\[";
+/** Escape itself, as an escape rather than a raw byte. */
+const ESC = "\u001b";
+
+/** The control sequence introducer, as a regular-expression fragment. */
+const CSI = `${ESC}\\[`;
 
 /**
  * Sequences that mean the terminal was given back.
@@ -617,6 +620,30 @@ describe.if(runnable)("the compiled shell on a real terminal", () => {
         leftCursor: true,
       });
       expect({ row: left?.[1] }).toEqual({ row: wrote?.[1] });
+
+      // The column, which is the half of the defect the row alone would miss:
+      // the historical cursor sat one row above *and* one cell short, and a
+      // check that only compared rows would have passed on a cursor sitting
+      // inside the word.
+      //
+      // Derived from the same two sequences rather than from a layout constant.
+      // The write began at `wrote`'s column, `hello` starts some plain
+      // characters into it, and after drawing five cells the cursor belongs
+      // five further along. The offset is only meaningful if nothing between
+      // moved the cursor itself. Colour is the one thing that legitimately sits
+      // there — the draft is drawn in a theme colour, so a select-graphic
+      // sequence precedes the text and occupies no cell. Those are removed, and
+      // any other escape refuses rather than quietly comparing arithmetic
+      // against a sequence this did not model.
+      const wroteAt = (wrote?.index ?? 0) + (wrote?.[0].length ?? 0);
+      const before = typed.slice(wroteAt, typed.indexOf("hello", wroteAt));
+      const painted = before.replaceAll(new RegExp(`${CSI}[\\d;]*m`, "g"), "");
+      expect({ onlyColourBetween: painted.includes(ESC) }).toEqual({
+        onlyColourBetween: false,
+      });
+      expect({ column: Number(left?.[2]) }).toEqual({
+        column: Number(wrote?.[2]) + painted.length + "hello".length,
+      });
     },
     RUN_TIMEOUT_MS,
   );
