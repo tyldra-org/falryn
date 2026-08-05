@@ -7,16 +7,34 @@
  * What is left here is measurement and mounting, which is the part that
  * genuinely needs a renderer.
  *
- * ## Why the caret is a character
+ * ## Why the cursor is the terminal's own
  *
- * A terminal cursor is the natural way to show where typing goes, and OpenTUI
- * can place one. It is not what this draws, for two reasons. The line primitive
- * styles a whole line rather than a cell, so a reversed cursor cell would need a
- * second styling owner; and placing the real cursor needs the composer's
- * absolute screen coordinates, which a flex layout only knows after it has run.
- * A caret glyph from the symbol set is a character, so it survives a monochrome
- * terminal, an ASCII repertoire, and a frame capture — the last of which is what
- * makes "the cursor moved" an assertion rather than a screenshot.
+ * It draws no caret. This component used to splice a glyph into the line at the
+ * cursor's column, which made the drawn line one grapheme longer than the buffer
+ * line and displaced every character after it — #386, visible as `hello wo▏rld`
+ * and invisible at the end of a draft, which is why it shipped. A drawn line
+ * that is not the buffer line is also a line whose width is wrong exactly while
+ * the cursor is on it, and a frame in which typed text cannot be asserted.
+ *
+ * So the cursor is placed rather than drawn. Three objections were recorded
+ * against that when the caret was chosen, and each has an answer against the
+ * installed renderer rather than in principle:
+ *
+ * - the line primitive styles a whole line rather than a cell — which is only a
+ *   problem for a *reversed cell*, and the terminal's own cursor is neither a
+ *   cell nor a style;
+ * - placing a real cursor needs absolute screen coordinates a flex layout only
+ *   knows after it has run — `Renderable` exposes `screenX` and `screenY` in the
+ *   renderer's own buffer space, which is the space `setCursorPosition` takes;
+ * - a glyph survives a frame capture, which is what makes "the cursor moved" an
+ *   assertion rather than a screenshot — and `captureSpans()` reports
+ *   `cursor: [x, y]` from the same state `setCursorPosition` writes, so the
+ *   assertion moves to the coordinate instead of disappearing.
+ *
+ * The column is a *cell* offset, not a grapheme count. `displayWidth` owns that
+ * measurement for the rest of the shell, and counting graphemes here would place
+ * the cursor short by one cell for every wide character before it — the same
+ * class of defect this replaced, one layer down.
  *
  * ## Why the region is bounded
  *
@@ -29,10 +47,11 @@
  * have to agree exactly.
  */
 
-import type { KeyEvent } from "@opentui/core";
-import { useKeyboard, usePaste } from "@opentui/react";
-import type { ReactNode } from "react";
-import { graphemes } from "../../domain/index.ts";
+import type { BoxRenderable, KeyEvent } from "@opentui/core";
+import { LayoutEvents } from "@opentui/core";
+import { useKeyboard, usePaste, useRenderer } from "@opentui/react";
+import { type ReactNode, type RefObject, useEffect, useRef } from "react";
+import { displayWidth, graphemes } from "../../domain/index.ts";
 import {
   type ComposerAction,
   type ComposerState,
@@ -67,10 +86,22 @@ export function ComposerView(props: ComposerViewProps): ReactNode {
   const columns = primaryColumns(frame.viewport, layoutClass);
   const { model } = props;
 
-  const window = visibleLines(model.state, frame.theme.symbols.caret);
+  const window = visibleLines(model.state);
+  const box = useRef<BoxRenderable | null>(null);
+  const at = cursorPosition(model.state.editor);
+  useCursorPlacement({
+    box,
+    // Where the cursor's line sits among the drawn ones. The window is anchored
+    // to the cursor, so this is never negative — but the drawn rows are what the
+    // coordinate is relative to, not the draft's own line numbers.
+    row: at.line - window.hidden,
+    cell: cursorCell(window.lines, at),
+    columns,
+    focused: model.focused,
+  });
 
   return (
-    <box flexDirection="column" width={columns} height={frame.composerRows}>
+    <box ref={box} flexDirection="column" width={columns} height={frame.composerRows}>
       {window.lines.map((line) => (
         // Keyed by the line's position in the document rather than by its offset
         // in the window, so a key stays with its line while the window scrolls.
@@ -191,37 +222,122 @@ type Window = {
 };
 
 /**
- * The lines around the cursor, with the caret drawn into the one it is on.
+ * The lines around the cursor, exactly as the draft holds them.
  *
  * The window is anchored to the cursor rather than to the start, because the
  * line being typed is the one that has to stay visible — a composer that showed
  * the first six lines of a long draft would hide the text as it was written.
  */
-function visibleLines(state: ComposerState, caret: string): Window {
+function visibleLines(state: ComposerState): Window {
   const lines = linesOf(state.editor);
   const at = cursorPosition(state.editor);
   // Anchored so the cursor's line is the last one shown, clamped at both ends.
   const start = Math.max(0, Math.min(at.line - COMPOSER_MAX_TEXT_ROWS + 1, lines.length - 1));
   const shown: WindowLine[] = [];
   for (let line = start; line < lines.length && shown.length < COMPOSER_MAX_TEXT_ROWS; line += 1) {
-    const text = lines[line] ?? "";
-    shown.push({ number: line, text: line === at.line ? withCaret(text, at.column, caret) : text });
+    shown.push({ number: line, text: lines[line] ?? "" });
   }
 
   return { lines: shown, hidden: start };
 }
 
 /**
- * A line with the caret placed before the character the cursor is on.
+ * How many cells the cursor is from the start of the line it is on.
  *
- * Both halves are rebuilt from graphemes rather than cut at a code-unit index.
- * That is the same rule the editing model follows, and it is not pedantry here
- * either: the cursor's column is a grapheme offset that does not correspond to a
- * string index at all, and cutting at one would split a surrogate pair.
+ * A grapheme offset and a cell offset are different numbers, and the difference
+ * is exactly one cell per wide character: `日本` before the cursor is two
+ * graphemes and four cells. `displayWidth` is the measurement the layout, the
+ * truncation, and the header's field widths all already use, so the cursor lands
+ * where the text it follows actually ends rather than where a character count
+ * says it should.
+ *
+ * The slice is taken from graphemes rather than from a string index for the
+ * reason the editing model gives: the cursor's column is a grapheme offset that
+ * does not correspond to a code-unit index at all, and cutting at one would
+ * split a surrogate pair.
  */
-function withCaret(line: string, column: number, caret: string): string {
-  const units = graphemes(line);
-  return `${units.slice(0, column).join("")}${caret}${units.slice(column).join("")}`;
+function cursorCell(lines: readonly WindowLine[], at: { line: number; column: number }): number {
+  const drawn = lines.find((line) => line.number === at.line);
+  if (drawn === undefined) {
+    return 0;
+  }
+  return displayWidth(graphemes(drawn.text).slice(0, at.column).join(""));
+}
+
+/**
+ * Puts the terminal's own cursor where the next character will go.
+ *
+ * The hook shape `./overlay-room.tsx` established: hold the renderer, write on
+ * change, undo on unmount, and check `isDestroyed` first — that guard is not
+ * defensive habit, it is that unmount can run *after* the session destroyed the
+ * renderer, and reaching released native state throws where nothing catches it.
+ *
+ * ## Why it subscribes to layout rather than only to a render
+ *
+ * A `useEffect` runs after React commits, and Yoga runs its layout inside the
+ * renderer's own pass. So the first effect after mount can read a `screenY` that
+ * layout has not produced yet, and the cursor would be placed a frame late —
+ * which looks correct the moment anything else redraws, and is therefore the
+ * kind of defect that survives review. `LAYOUT_CHANGED` on the composer's own
+ * renderable is when the coordinate becomes true, and the check for this asserts
+ * the cursor on the *first settled frame* rather than after a keystroke, so a
+ * placement that is one frame behind fails rather than passing on the second.
+ *
+ * ## Why the column clamps
+ *
+ * `Line` truncates at `maxColumns` and the composer does not scroll
+ * horizontally, so a cursor past the truncation point has no cell of its own. It
+ * clamps to the last drawn one: a cursor placed outside the composer's box lands
+ * on a cell belonging to another region, which is a worse defect than the one
+ * this replaced.
+ */
+function useCursorPlacement(options: {
+  readonly box: RefObject<BoxRenderable | null>;
+  readonly row: number;
+  readonly cell: number;
+  readonly columns: number;
+  readonly focused: boolean;
+}): void {
+  const renderer = useRenderer();
+  const { box, row, cell, columns, focused } = options;
+
+  useEffect(() => {
+    const renderable = box.current;
+    if (renderable === null) {
+      return;
+    }
+
+    const place = (): void => {
+      if (renderer.isDestroyed) {
+        return;
+      }
+      renderer.setCursorPosition(
+        renderable.screenX + Math.min(cell, Math.max(0, columns - 1)),
+        renderable.screenY + row,
+        focused,
+      );
+    };
+
+    place();
+    renderable.on(LayoutEvents.LAYOUT_CHANGED, place);
+    return () => {
+      renderable.off(LayoutEvents.LAYOUT_CHANGED, place);
+    };
+  }, [renderer, box, row, cell, columns, focused]);
+
+  useEffect(() => {
+    // Hidden on the way out, and only on the way out — a cleanup that ran on
+    // every dependency change would hide the cursor between two placements of
+    // it. The shell's own teardown restores cursor visibility through
+    // `destroy()` as well; this is for the case where the composer goes away
+    // while the renderer stays.
+    return () => {
+      if (!renderer.isDestroyed) {
+        const state = renderer.getCursorState();
+        renderer.setCursorPosition(state.x, state.y, false);
+      }
+    };
+  }, [renderer]);
 }
 
 /**

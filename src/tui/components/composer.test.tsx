@@ -46,6 +46,7 @@ const MODEL: Omit<ShellModel, "overlay" | "commands" | "transcript" | "composer"
 const SEQUENCES = {
   enter: "\r",
   tab: "\t",
+  left: "\u001b[D",
 } as const;
 
 type NamedKey = keyof typeof SEQUENCES;
@@ -185,5 +186,106 @@ describe("what is not here", () => {
   test("names the declared gaps rather than half-building them", async () => {
     using shell = await open();
     expect(await shell.frame()).toContain("Not here yet");
+  });
+});
+
+/**
+ * Where the composer's first chrome row is drawn, as a row index in the frame.
+ *
+ * Derived from the frame rather than computed from the layout, because a
+ * constant here would be a second opinion about a number `../layout.ts` owns —
+ * and the checks below are about where the cursor is *relative to the text*,
+ * which survives the composer moving.
+ */
+function chromeRow(frame: string): number {
+  const rows = frame.split("\n");
+  const at = rows.findIndex((row) => /^\s*i\s/.test(row));
+  if (at < 1) {
+    throw new Error("the composer's status row was not found in the frame");
+  }
+  return at;
+}
+
+/** The cursor, as the renderer holds it. */
+function cursorOf(shell: Rendered): { x: number; y: number; visible: boolean } {
+  const { x, y, visible } = shell.setup.renderer.getCursorState();
+  return { x, y, visible };
+}
+
+describe("the cursor", () => {
+  test("leaves the text it is inside of alone", async () => {
+    // #386, and the check that had to fail before it passed. The caret used to
+    // be spliced into the line at the cursor's column, so a cursor in the middle
+    // of a word drew `hello wo▏rld` — one grapheme longer than the buffer, with
+    // everything after it displaced by a cell.
+    //
+    // At the end of a draft that is invisible, which is why it shipped and why
+    // every other check in this file passed over it: they all type and assert
+    // without moving the cursor back into what they typed.
+    using shell = await open();
+    await shell.focusComposer();
+    await shell.type("hello world");
+
+    await shell.press(SEQUENCES.left);
+    await shell.press(SEQUENCES.left);
+    const frame = await shell.press(SEQUENCES.left);
+
+    expect(frame).toContain("hello world");
+  });
+
+  test("is placed on the first settled frame, not a frame later", async () => {
+    // React commits on a microtask and Yoga lays out inside the renderer's own
+    // pass, so an effect that reads a position without waiting for layout reads
+    // one that does not exist yet. That failure is invisible after any later
+    // redraw, which is what makes it worth asserting here rather than after a
+    // keystroke: on the first frame there has been no later redraw to hide it.
+    using shell = await open();
+    const frame = await shell.frame();
+    // The draft's only row sits directly above the composer's first chrome row.
+    expect(cursorOf(shell).y).toBe(chromeRow(frame) - 1);
+  });
+
+  test("moves by cells, so a wide character counts twice", async () => {
+    // A grapheme offset and a cell offset are different numbers. `日本` is two
+    // graphemes and four cells, and a cursor placed by counting graphemes would
+    // land inside the second character — the same defect this replaced, one
+    // layer down, which is why it is a check rather than a follow-up.
+    //
+    // Measured as a delta between two positions rather than against an origin,
+    // and that is not style: the renderer clamps the cursor's `x` to a minimum
+    // of one, so column 0 and column 1 report the same number and an origin
+    // taken on an empty draft is a cell short. Both readings here are well
+    // clear of the clamp.
+    using shell = await open();
+    await shell.focusComposer();
+
+    await shell.type("ab");
+    const narrow = cursorOf(shell).x;
+
+    await shell.type("日本");
+    expect(cursorOf(shell).x - narrow).toBe(4);
+  });
+
+  test("follows a motion back into the text", async () => {
+    using shell = await open();
+    await shell.focusComposer();
+    await shell.type("hello");
+    const end = cursorOf(shell).x;
+
+    await shell.press(SEQUENCES.left);
+    await shell.press(SEQUENCES.left);
+    expect(cursorOf(shell).x).toBe(end - 2);
+  });
+
+  test("is shown only while the composer has focus", async () => {
+    // The gate is `model.focused` and nothing else: `../focus.ts` already moves
+    // the focused region to an overlay's when one opens, so a palette over the
+    // composer makes this false without a second rule about overlays.
+    using shell = await open();
+    await shell.frame();
+    expect(cursorOf(shell).visible).toBe(false);
+
+    await shell.focusComposer();
+    expect(cursorOf(shell).visible).toBe(true);
   });
 });
