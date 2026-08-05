@@ -237,6 +237,34 @@ export function mapZodIssues(
   return issues;
 }
 
+/**
+ * A yes or no.
+ *
+ * Boolean rather than a tri-state, and #392 is where that was decided: the
+ * capability record already answers what a terminal *can* do, so a setting only
+ * has to express what a user *wants*. A third state would be a second place to
+ * say "ask the terminal", which the record already is.
+ *
+ * `coerce` in `./bridges.ts` accepts exactly `true` and `false` for this type,
+ * so an environment variable set to `0`, `off`, or `no` is an invalid value
+ * reported as an issue — not silently read as false. Documentation that tells a
+ * user to type anything else is documentation that does not work.
+ */
+export function booleanKey(
+  input: CommonInput & { readonly defaultValue: boolean },
+): ConfigurationKeyDeclaration {
+  const descriptor = describe(input, {
+    valueType: "boolean",
+    unit: null,
+    defaultValue: input.defaultValue,
+    allowedValues: null,
+    minimum: null,
+    maximum: null,
+    merge: { kind: "replace" },
+  });
+  return declare(descriptor, z.boolean());
+}
+
 /** An enumerated value. */
 export function enumKey(
   input: CommonInput & {
