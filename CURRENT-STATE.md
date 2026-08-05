@@ -2058,12 +2058,29 @@ the editing model can never hold. A cell past a line's text resolves to that
 line's end, a row outside the drawn window to the nearest drawn line, and a
 window that drew nothing to no position at all rather than to line zero.
 
-The round trip is the check that holds the two directions together, asserted for
-*every* column of a plain line, a CJK run, a combining sequence, and a joined
-emoji rather than for a representative sample. The joined-emoji case passes while
-the recorded disagreement between `displayWidth` and the renderer stands, because
-what the property needs is that both directions use the same measurement — not
-that the measurement is right.
+The round trip is the check that holds the two directions together, and it is
+asserted as two statements rather than one. The law that holds everywhere:
+mapping a column out to its cell and back returns the **earliest column sharing
+that cell**. And identity — the same column returns — over the lines where every
+grapheme claims a cell of its own. Both are asserted for *every* column of a
+plain line, a CJK run, a combining sequence, and a joined emoji rather than for a
+representative sample.
+
+The two statements differ in exactly one place, and it is a real position a paste
+can produce: a line opening with a combining mark has two columns drawn in cell
+zero, and a cell can only answer one of them. There is no cell to click that
+means "after the combining mark but before the letter", so the mapping is not
+injective there and says so. The first version of this module claimed identity
+for every column of every line — which was untrue, and unchecked, because none of
+its fixtures began with a zero-width grapheme. Verification of
+[#394](https://github.com/yogeshprasad098/falryn/pull/394) caught it; the claim
+was narrowed to what holds and the missing line added as a check, because a
+module whose argument for existing is that unstated arithmetic bites later cannot
+overstate its own guarantee.
+
+The joined-emoji case passes while the recorded disagreement between
+`displayWidth` and the renderer stands, because what the property needs is that
+both directions use the same measurement — not that the measurement is right.
 
 One upstream behavior was measured and is worth recording: the renderer clamps
 the cursor's `x` to a minimum of one, so column 0 and column 1 report the same
