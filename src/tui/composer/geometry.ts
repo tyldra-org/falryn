@@ -85,33 +85,46 @@ export function cellOfColumn(text: string, column: number): number {
  * column the editing model can never hold.
  *
  * That choice is also what makes the round trip well defined, and the exact
- * statement of it is worth more than the comfortable one. Mapping a column out
- * to its cell and back returns **the earliest column sharing that cell** — which
- * is the column itself wherever a grapheme claims a cell of its own, and is
- * therefore identity for every line whose characters are all visible.
+ * statement is worth more than a comfortable one. A cell answers **the column
+ * of the grapheme drawn in it** — equivalently, the last of the columns sharing
+ * that cell. Mapping a column out to its cell and back therefore returns the
+ * column itself wherever a grapheme claims a cell of its own, which is identity
+ * for every line whose characters are all visible.
  *
- * It is not identity everywhere, and the exception falls out of the rule above
- * rather than being a flaw in it: a zero-width grapheme claims no cell, so a
- * column occupied only by one resolves to the position of the character it
- * decorates. A line beginning with a combining mark has two columns at cell
- * zero, and cell zero can only answer one of them. That is reachable — the
- * composer accepts pasted text — and it is correct: there is no cell to click
- * that means "after the combining mark but before the letter", because the two
- * are drawn in the same cell.
+ * It is not identity everywhere, and the exception follows from the rule rather
+ * than spoiling it. A zero-width grapheme claims no cell, so several columns
+ * are drawn in one: in `a\u200Bbc` the positions before and after the
+ * zero-width space are both at cell one, and clicking there answers the one in
+ * front of the `b` a reader can actually see. That is reachable — the composer
+ * accepts pasted text, and zero-width characters are ordinary in text pasted
+ * from the web.
  *
- * Both statements are asserted, the general law over every line and identity
- * over the lines it holds for. An earlier version of this comment claimed
- * identity for every column of every line; it was not true, and it was not
- * checked either, because none of the fixtures began with a zero-width
- * grapheme. A module whose argument for existing is that unstated arithmetic
- * bites later has no business overstating its own guarantee.
+ * ## Why cell zero is not special-cased
+ *
+ * It was, and the special case was the bug. Answering column zero for any cell
+ * at or below zero made a line *opening* with a combining mark the one place
+ * where the answer was the first column sharing the cell rather than the last —
+ * an asymmetry nothing stated and no fixture exposed, which made a law asserted
+ * over the whole module true only where it happened to be checked. Now only a
+ * negative cell short-circuits, and a leading combining mark answers the letter's
+ * column exactly as a mid-line one answers the character after it.
+ *
+ * The law is asserted over every fixture, identity over the lines it holds for,
+ * and the collision has a check of its own. Two rounds of verification found
+ * this comment claiming more than the code did; the shape of that mistake is
+ * why the statement above is a single rule with no exception attached to it.
  *
  * A cell past the line's text resolves to the end of the line. Clicking past
  * the end of a sentence puts the cursor at the end of it, which is what every
  * text field does and what a caller would otherwise have to special-case.
  */
 export function columnOfCell(text: string, cell: number): number {
-  if (cell <= 0) {
+  if (cell < 0) {
+    // Left of the region entirely, which `positionOfCell` produces for a click
+    // outside it. Zero is the only sensible answer and it is not the loop's:
+    // with no cell to be inside of, the first grapheme that claims one would
+    // otherwise win, which for a line opening with a combining mark is the
+    // letter rather than the start of the line.
     return 0;
   }
   const units = graphemes(text);

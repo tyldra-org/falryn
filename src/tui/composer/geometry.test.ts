@@ -15,11 +15,23 @@
  * it for *every* column of a line is the difference between a property and a
  * spot check.
  *
- * It is asserted twice, deliberately. The law that holds everywhere — mapping a
- * column out and back returns the earliest column sharing that cell — and
- * identity, over the lines where every grapheme claims a cell of its own. The
- * two differ only for a column drawn in a cell it does not own, and separating
- * them is what keeps the exception a stated property rather than a surprise.
+ * It is asserted twice, deliberately. The law that holds everywhere — a cell
+ * answers the column of the grapheme drawn in it, the last of the columns
+ * sharing that cell — and identity, over the lines where every grapheme claims
+ * a cell of its own. The two differ only where columns share a cell, and
+ * separating them is what keeps the exception a stated property rather than a
+ * surprise.
+ *
+ * Both zero-width placements are fixtures, and that is not thoroughness for its
+ * own sake: with only a *leading* one, a law stated as "the earliest column"
+ * passes, because a special case for cell zero happened to return the earliest
+ * while the loop everywhere else returned the last. Two rounds of verification
+ * were needed to find that. A fixture set that cannot tell two candidate laws
+ * apart is the shape of the mistake, not the size of it.
+ *
+ * The set was checked against that: implementing the earlier "earliest column"
+ * claim fails four checks here, and restoring the cell-zero special case fails
+ * two. A property nothing can falsify is a sentence with test syntax around it.
  */
 
 import { describe, expect, test } from "bun:test";
@@ -34,7 +46,7 @@ import {
 
 /** Lines whose cells and columns disagree, each for a different reason. */
 const PLAIN = "hello world";
-/** Two graphemes, four cells. */
+/** Five graphemes, ten cells — two per grapheme, which is the point of it. */
 const WIDE = "日本語です";
 /** `e` plus a combining acute: one grapheme, one cell, two code points. */
 const COMBINING = "café latte";
@@ -43,12 +55,25 @@ const EMOJI = "hi 👨‍👩‍👧‍👦 there";
 /**
  * A line that opens with a combining mark, which claims no cell of its own.
  *
- * Reachable by paste, and the one shape where the round trip is not identity:
- * two columns share cell zero and a cell can only answer one of them. Absent
- * from the fixtures until a verification of #394 pointed out that the module
- * claimed identity everywhere while checking it only where it holds.
+ * Two columns share cell zero, so the round trip is not identity here. Absent
+ * from the fixtures until a verification of #394 found the module claiming
+ * identity everywhere while checking it only where it holds.
  */
 const LEADING_COMBINING = "\u0301abc";
+
+/**
+ * A zero-width space *inside* a line, which is the worse shape and the one the
+ * first correction still got wrong.
+ *
+ * With the mark leading, the columns sharing cell zero are 0 and 1 — and a
+ * special case for cell zero answered 0, which happens to be the first of them.
+ * That made a law stated as "the earliest column sharing the cell" look true
+ * while the loop everywhere else returned the last. A mid-line zero-width
+ * grapheme has no such coincidence available, which is why it is a fixture now:
+ * it is the case that can tell the two laws apart, and zero-width characters
+ * are ordinary in text pasted from the web.
+ */
+const INNER_ZERO_WIDTH = "a\u200Bbc";
 
 const LINES: readonly DrawnLine[] = [
   { number: 0, text: PLAIN },
@@ -102,30 +127,35 @@ describe("the round trip", () => {
     ["combining", COMBINING],
     ["emoji", EMOJI],
     ["leading combining", LEADING_COMBINING],
+    ["inner zero-width", INNER_ZERO_WIDTH],
   ] as const;
 
   /** The lines on which every grapheme claims a cell of its own. */
-  const CELL_CLAIMING = EVERY.filter(([name]) => name !== "leading combining");
+  const CELL_CLAIMING = EVERY.filter(
+    ([name]) => name !== "leading combining" && name !== "inner zero-width",
+  );
 
   for (const [name, text] of EVERY) {
-    test(`returns the earliest column sharing the cell, for every column of ${name} text`, () => {
-      // The law that holds everywhere, stated as the property it is. Identity is
-      // the special case of it, not the rule — and writing the rule this way is
-      // what stops the exception below from reading as a defect.
+    test(`answers the column of the grapheme drawn in the cell, for every column of ${name} text`, () => {
+      // The law that holds everywhere, stated as the property it is: a cell
+      // answers the *last* of the columns sharing it, which is the column of
+      // the grapheme a reader can see there. Identity is the special case of it
+      // rather than the rule.
+      //
+      // Stated as "the earliest" in the first correction, which was false
+      // everywhere a zero-width grapheme sat mid-line and true only for the one
+      // fixture that existed — a law asserted where it held. Hence
+      // `INNER_ZERO_WIDTH` below it.
       const units = graphemes(text);
       for (let column = 0; column <= units.length; column += 1) {
         const cell = cellOfColumn(text, column);
-        // `column` itself always shares its own cell, so the scan below always
-        // finds one — the initial value is the answer for a line where nothing
-        // earlier shares it, not a fallback for an empty set.
-        let earliest = column;
+        let last = column;
         for (let candidate = 0; candidate <= units.length; candidate += 1) {
           if (cellOfColumn(text, candidate) === cell) {
-            earliest = candidate;
-            break;
+            last = candidate;
           }
         }
-        expect({ column, back: columnOfCell(text, cell) }).toEqual({ column, back: earliest });
+        expect({ column, back: columnOfCell(text, cell) }).toEqual({ column, back: last });
       }
     });
   }
@@ -145,26 +175,31 @@ describe("the round trip", () => {
     });
   }
 
-  test("is not identity where a column claims no cell, and says so", () => {
-    // The stated exception, held by a check rather than by a sentence. The two
-    // opening columns share cell zero: there is no cell to click that means
-    // "after the combining mark but before the letter", because they are drawn
-    // in the same one.
-    const units = graphemes(LEADING_COMBINING);
-    expect(units[0]).toBe("\u0301");
+  test("is not identity where columns share a cell, and says which one answers", () => {
+    // The stated exception, held by checks rather than by a sentence, in both
+    // placements. A cell answers the column of the grapheme drawn in it, so the
+    // position a reader would point at is the one they get.
+    expect(graphemes(LEADING_COMBINING)[0]).toBe("\u0301");
     expect(cellOfColumn(LEADING_COMBINING, 0)).toBe(0);
     expect(cellOfColumn(LEADING_COMBINING, 1)).toBe(0);
-    expect(columnOfCell(LEADING_COMBINING, 0)).toBe(0);
-    // And it costs nothing beyond that column: every later position is exact.
-    for (let column = 2; column <= units.length; column += 1) {
-      expect({
-        column,
-        back: columnOfCell(LEADING_COMBINING, cellOfColumn(LEADING_COMBINING, column)),
-      }).toEqual({
-        column,
-        back: column,
-      });
-    }
+    // Columns 0 and 1 are both at cell zero; the answer is the letter's.
+    expect(columnOfCell(LEADING_COMBINING, 0)).toBe(1);
+
+    expect(graphemes(INNER_ZERO_WIDTH)[1]).toBe("\u200b");
+    expect(cellOfColumn(INNER_ZERO_WIDTH, 1)).toBe(1);
+    expect(cellOfColumn(INNER_ZERO_WIDTH, 2)).toBe(1);
+    // And here, where no special case could ever have made "earliest" look
+    // right: clicking cell one answers the position in front of the `b`.
+    expect(columnOfCell(INNER_ZERO_WIDTH, 1)).toBe(2);
+  });
+
+  test("still answers the start of the line for a cell left of it", () => {
+    // The one short-circuit left. `positionOfCell` produces a negative cell for
+    // a click outside the region, and the loop would otherwise hand back the
+    // first grapheme that claims a cell — the letter, on a line opening with a
+    // combining mark, rather than the start of the line.
+    expect(columnOfCell(LEADING_COMBINING, -3)).toBe(0);
+    expect(columnOfCell(INNER_ZERO_WIDTH, -1)).toBe(0);
   });
 });
 
