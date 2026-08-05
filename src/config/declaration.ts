@@ -237,6 +237,42 @@ export function mapZodIssues(
   return issues;
 }
 
+/**
+ * A yes or no.
+ *
+ * Boolean rather than a tri-state, and #392 is where that was decided: the
+ * capability record already answers what a terminal *can* do, so a setting only
+ * has to express what a user *wants*. A third state would be a second place to
+ * say "ask the terminal", which the record already is.
+ *
+ * `coerce` in `./bridges.ts` accepts exactly `true` and `false` for this type,
+ * so an environment variable set to `0`, `off`, or `no` is an invalid value
+ * reported as an issue — not silently read as false. Documentation that tells a
+ * user to type anything else is documentation that does not work.
+ *
+ * Which is why the two accepted spellings are declared rather than left `null`.
+ * The invalid-value issue carries `descriptor.allowedValues`, so a key that
+ * declares none produces "a configuration value is not one of the allowed
+ * values" followed by an empty list — telling a user their value is wrong and
+ * not what would be right. `enumKey` supplies its list for exactly this reason.
+ * Coercion is unaffected: the `boolean` branch tests the two literals itself and
+ * never consults this.
+ */
+export function booleanKey(
+  input: CommonInput & { readonly defaultValue: boolean },
+): ConfigurationKeyDeclaration {
+  const descriptor = describe(input, {
+    valueType: "boolean",
+    unit: null,
+    defaultValue: input.defaultValue,
+    allowedValues: ["true", "false"],
+    minimum: null,
+    maximum: null,
+    merge: { kind: "replace" },
+  });
+  return declare(descriptor, z.boolean());
+}
+
 /** An enumerated value. */
 export function enumKey(
   input: CommonInput & {
