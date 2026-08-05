@@ -274,17 +274,37 @@ export function hasUsableSize(record: ShellCapabilities): boolean {
 /**
  * Whether to ask the terminal for mouse reporting.
  *
- * Gated on the record rather than left at OpenTUI's default of on, and the gate
- * answers `false` before a renderer exists — which is every creation. That is
- * deliberate rather than an oversight: nothing consumes a pointer event until
- * #26 introduces the input model, and a terminal left in mouse-reporting mode by
- * a shell with no handler prints escape bytes into the user's scrollback. The
- * gate reads the record so the answer changes when there is something to gate on
- * instead of a constant somebody has to remember to revisit.
+ * ## There is no terminal mouse capability to gate on
+ *
+ * #392 was planned around refreshing the record after a renderer exists and
+ * reading whether the terminal has a mouse. It does not report one.
+ * `TerminalCapabilities` in the installed OpenTUI declares kitty keyboard,
+ * graphics, colour, unicode, focus tracking, sync, bracketed paste, hyperlinks,
+ * OSC 52, notifications, remote, and multiplexer — and no mouse. Nor could it
+ * usefully: mouse reporting is a *mode a program turns on*, not a property a
+ * terminal answers a query about, and `observeRenderer` records
+ * `mouse: renderer.useMouse`, which is this program's own setting reflected
+ * back. Gating on it would have been circular — reporting can only be on if
+ * reporting is already on — and the feature would never have enabled once.
+ *
+ * So the gate is the two things that are real. A dumb terminal is refused,
+ * because a terminal that cannot address a cell cannot report a click in one.
+ * And the user has to want it: #392 gave that its own key rather than inferring
+ * it, because turning reporting on takes text selection away from the terminal
+ * emulator — dragging selects inside Falryn, and the emulator's own selection
+ * needs a modifier bypass that differs per emulator. That is a real cost paid by
+ * every user of the default, so it is a setting rather than a consequence.
+ *
+ * Nothing else needs gating here. The launch decision has already refused every
+ * run whose handles are not a terminal, so a renderer only exists where there is
+ * one to report into.
+ *
+ * `wanted` is `boolean | undefined`, and `undefined` is off. A caller that
+ * composed no service graph resolves no configuration — every rendered check
+ * that mounts a shell directly is one — and an unanswered question is not a yes.
  */
-export function usesMouse(record: ShellCapabilities): boolean {
-  if (record.hints.dumbTerminal) {
-    return false;
-  }
-  return record.renderer?.mouse === true;
+export function usesMouse(record: ShellCapabilities, wanted: boolean | undefined): boolean {
+  return wanted === true && !record.hints.dumbTerminal;
 }
+
+export const POINTER_KEY = "interface.pointer.enabled";

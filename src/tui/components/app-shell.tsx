@@ -86,6 +86,8 @@ export type AppShellProps = {
    * makes no keyboard subscription at all.
    */
   readonly onComposerAction?: (action: ComposerAction) => void;
+  /** A click in the composer focuses it, through the shell's own focus model. */
+  readonly onComposerFocus?: () => void;
   /** Where typing in the open palette goes. Absent means a static frame. */
   readonly onPaletteQuery?: (action: EditorAction) => void;
 };
@@ -157,6 +159,9 @@ export function AppShell(props: AppShellProps): ReactNode {
           {...(props.onComposerAction === undefined
             ? {}
             : { onComposerAction: props.onComposerAction })}
+          {...(props.onComposerFocus === undefined
+            ? {}
+            : { onComposerFocus: props.onComposerFocus })}
           {...(props.onPaletteQuery === undefined ? {} : { onPaletteQuery: props.onPaletteQuery })}
         />
       )}
@@ -171,6 +176,8 @@ function ShellFrame(props: {
   readonly commandRows: readonly CommandEntry[];
   readonly onTranscriptGeometry?: (geometry: TranscriptGeometry) => void;
   readonly onComposerAction?: (action: ComposerAction) => void;
+  /** A click in the composer focuses it, through the shell's own focus model. */
+  readonly onComposerFocus?: () => void;
   readonly onPaletteQuery?: (action: EditorAction) => void;
 }): ReactNode {
   const { model } = props;
@@ -240,6 +247,7 @@ function ShellFrame(props: {
       <ComposerView
         model={model.composer}
         {...(props.onComposerAction === undefined ? {} : { onAction: props.onComposerAction })}
+        {...(props.onComposerFocus === undefined ? {} : { onFocus: props.onComposerFocus })}
       />
       <StatusLine model={model.status} />
     </box>

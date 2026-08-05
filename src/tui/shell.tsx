@@ -44,7 +44,7 @@ import {
   prefersReducedMotion,
   requestedVariant,
 } from "./appearance.ts";
-import type { ShellCapabilities } from "./capabilities.ts";
+import { POINTER_KEY, type ShellCapabilities } from "./capabilities.ts";
 import { ShellApp } from "./components/shell-app.tsx";
 import {
   nothingToRestore,
@@ -128,6 +128,16 @@ export async function runShell(request: ShellRunRequest): Promise<ShellRun> {
   const opened = await openRendererSession({
     capabilities: request.capabilities,
     selection,
+    // One key, read here and interpreted nowhere else. The interface is handed
+    // resolved values and takes exactly one boolean out of them — it never
+    // imports `src/config`, and it cannot reach back for a key that was not
+    // resolved on the launch path.
+    //
+    // Anything that is not `true` is off, absence included. A caller that
+    // composed no service graph resolved no configuration, and turning a user's
+    // terminal selection over to Falryn is not something to infer from a missing
+    // value.
+    pointer: request.configuration?.[POINTER_KEY] === true,
     ...(request.createRenderer === undefined ? {} : { createRenderer: request.createRenderer }),
   });
 

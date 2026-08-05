@@ -1515,9 +1515,50 @@ Four OpenTUI defaults are overridden, each for a reason #22 measured or the
 architecture already owns: `exitOnCtrlC: false` and `exitSignals: []` leave
 interrupt and signals with `src/application/interruption.ts` and
 `createProcessSignalPort`, `consoleMode: "disabled"` keeps diagnostics on the
-stderr boundary, and mouse reporting is gated on the record rather than left at
-OpenTUI's default of on — it is off today because nothing consumes a pointer
-event until [#26](https://github.com/yogeshprasad098/falryn/issues/26).
+stderr boundary, and mouse reporting is gated rather than left at OpenTUI's
+default of on.
+
+**The interface takes pointer input, and only where it is wanted**
+([#392](https://github.com/yogeshprasad098/falryn/issues/392)). A left click in
+the composer places the cursor at the clicked grapheme and focuses the composer,
+through the same anchor-and-cursor model the keyboard uses — the `place` action
+collapses a selection exactly as an unextended motion does, so no second notion
+of where the cursor is exists. The cell it resolves comes from the mapping #391
+delivered, in the space `MouseEvent.x`/`y` already arrive in.
+
+Turning reporting on takes text selection away from the terminal emulator:
+dragging selects inside Falryn, and the emulator's own selection needs a
+modifier bypass that differs per emulator. That cost is paid by every user of
+the default, so it is a declared setting rather than a consequence.
+`interface.pointer.enabled` is the `interface` group's first key — the group was
+proposed until something read it — it defaults to on, and `FALRYN_POINTER` is
+the escape hatch that needs no settings file. `coerce` accepts exactly `true`
+and `false` for a boolean, so `FALRYN_POINTER=0` is an invalid value reported as
+an issue rather than read as off, and the documentation says so.
+
+**There is no terminal mouse capability, and the plan for this assumed there
+was.** #392 was planned around creating the renderer with reporting off,
+refreshing the record, and enabling it once the record said the terminal had a
+mouse. `TerminalCapabilities` declares no such field — kitty keyboard, colour,
+unicode, focus tracking, sync, bracketed paste, hyperlinks, OSC 52, remote,
+multiplexer, and no mouse — and `observeRenderer` records `mouse:
+renderer.useMouse`, which is this program's own setting reflected back. Gating on
+it would have been circular and the feature would never have enabled once. So
+the gate is the two things that are real: the user asked for it, and the terminal
+is not a dumb one. The launch decision has already refused every run whose
+handles are not a terminal, so a renderer only exists where there is one to
+report into. The ordering the plan called for, and the restoration-report
+divergence it would have required, both went away with the capability that was
+never there.
+
+The shell reads exactly one key. `ShellRunRequest` carries the resolved values
+from [#390](https://github.com/yogeshprasad098/falryn/issues/390) and
+`src/tui/shell.tsx` projects one boolean out of them; `src/tui` imports nothing
+from `src/config`. Anything that is not `true` is off, absence included — a
+caller that composed no service graph resolved no configuration, and turning a
+user's terminal selection over to Falryn is not something to infer from a
+missing value. `src/config/keys.test.ts` asserts the registry declares the path
+the interface reads, because the string lives in two places.
 
 `split-footer` is the delivered default, qualified by #22, with
 `alternate-screen` when the terminal has too few rows to leave anything above a
