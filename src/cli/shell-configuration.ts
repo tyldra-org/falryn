@@ -16,9 +16,10 @@
  * ## One rule for every outcome that is not a record
  *
  * `load` answers five ways. Two carry a usable generation, and its `values` are
- * what the shell opens with. The other three — refused, published nowhere,
- * cancelled — report what was wrong on the diagnostic handle and hand back the
- * registry's declared defaults, which it documents as complete by construction.
+ * what the shell opens with. The other three report on the diagnostic handle and
+ * hand back the registry's declared defaults, which it documents as complete by
+ * construction — one rule, but three sentences, because only one of the three
+ * means the user's configuration was bad. See {@link whyDefaults}.
  *
  * Refusing to open a shell over a settings file would be the worse failure. A
  * user who mistyped a key gets an interface that works and a line saying what
@@ -39,7 +40,11 @@
  */
 
 import { fromConfigurationIssues } from "../application/index.ts";
-import type { ConfigurationValues } from "../domain/index.ts";
+import {
+  assertNever,
+  type ConfigurationLoadOutcome,
+  type ConfigurationValues,
+} from "../domain/index.ts";
 import { configurationOverridesFor, type GlobalOptions } from "./options.ts";
 import type { ServiceProvider } from "./services.ts";
 import { type CliStreams, writeDiagnosticLine } from "./streams.ts";
@@ -80,18 +85,51 @@ export async function resolveShellConfiguration(
     return outcome.record.values;
   }
 
-  // `rejected` is the only one of the three that carries issues, and the only
-  // one reachable on a first load. The other two say what happened by their
-  // kind, which is all there is to say about them.
-  const error =
-    outcome.kind === "rejected"
-      ? fromConfigurationIssues(outcome.issues, { operation: "load configuration" })
-      : null;
-  writeDiagnosticLine(
-    streams,
-    error === null
-      ? `Configuration could not be loaded (${outcome.kind}); declared defaults are in effect.`
-      : `${error.message} Declared defaults are in effect.`,
-  );
+  writeDiagnosticLine(streams, whyDefaults(outcome));
   return registry.defaults();
+}
+
+/** What every answer ends with, because the user's next question is what is in effect. */
+const IN_EFFECT = "Declared defaults are in effect.";
+
+/**
+ * Why this run is opening with defaults, in words the outcome earns.
+ *
+ * Three outcomes, three sentences, and the distinction is not pedantry. Only
+ * one of them means the configuration was bad:
+ *
+ * - `rejected` — composition failed. The user's file is the problem, and the
+ *   sentence comes from `fromConfigurationIssues` so it is the one `config
+ *   show` would have printed for the same issue.
+ * - `publish-failed` — composition *succeeded* and the generation could not be
+ *   recorded. Telling this user their configuration could not be loaded would
+ *   be false: it loaded, it validated, and something else went wrong. The
+ *   `code` is the only detail the outcome carries and dropping it would leave
+ *   nothing to act on.
+ * - `cancelled` — the caller stopped. Nothing was wrong with anything.
+ *
+ * All three are reachable on a first load, `publish-failed` included: the
+ * loader's `unchanged` branch is guarded on there being a previous generation,
+ * so a first load falls through to appending the generation event, and an
+ * unwritable or full state root fails there. An earlier version of this module
+ * claimed `rejected` was the only one — which made the other two share a
+ * sentence that was wrong for both.
+ */
+function whyDefaults(
+  outcome: Extract<ConfigurationLoadOutcome, { kind: "rejected" | "publish-failed" | "cancelled" }>,
+): string {
+  switch (outcome.kind) {
+    case "rejected": {
+      const error = fromConfigurationIssues(outcome.issues, { operation: "load configuration" });
+      return error === null
+        ? `Configuration was refused. ${IN_EFFECT}`
+        : `${error.message} ${IN_EFFECT}`;
+    }
+    case "publish-failed":
+      return `Configuration was valid but could not be recorded (${outcome.code}). ${IN_EFFECT}`;
+    case "cancelled":
+      return `Loading configuration was cancelled. ${IN_EFFECT}`;
+    default:
+      return assertNever(outcome, "an unhandled configuration load outcome");
+  }
 }

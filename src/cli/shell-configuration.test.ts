@@ -15,6 +15,7 @@
 
 import { describe, expect, test } from "bun:test";
 import { CONFIGURATION_FILE_NAME, PROJECT_CONFIGURATION_DIRECTORY } from "../config/index.ts";
+import type { ConfigurationLoadOutcome } from "../domain/index.ts";
 import {
   configurationKeyPath,
   createInMemoryFileSystem,
@@ -117,6 +118,29 @@ describe("the settings an interactive run opens with", () => {
   });
 });
 
+/**
+ * A real graph with the loader replaced, for the outcomes a filesystem cannot
+ * produce on demand.
+ *
+ * The registry, its defaults, and the roots stay real — only the answer changes
+ * — so what is exercised is this module's rule rather than a mock of it.
+ * Making a generation event append actually fail belongs to the loader's own
+ * checks; what belongs here is what an interactive run does when it is told one
+ * did.
+ */
+function loaderAnswering(
+  outcome: ConfigurationLoadOutcome,
+): (options: GlobalOptions) => ServiceProvider {
+  const real = provider(createInMemoryFileSystem());
+  return (globals) => {
+    const services = real(globals);
+    return () => ({
+      ...services(),
+      loader: { load: async () => outcome, current: () => null },
+    });
+  };
+}
+
 describe("settings that cannot be used", () => {
   test("are reported on the diagnostic handle and replaced by the defaults", async () => {
     // The rule the whole module exists for. A shell that refused to open over a
@@ -145,6 +169,54 @@ describe("settings that cannot be used", () => {
     // The rejected value never reaches the diagnostic, because no issue carries
     // one. A settings file is not a place a secret should leak out of.
     expect(said).not.toContain("42");
+  });
+
+  test("say a valid configuration was not recorded, rather than that it failed to load", async () => {
+    // `publish-failed` means composition *succeeded* and the generation could
+    // not be recorded — an unwritable or full state root, not a bad file. It is
+    // reachable on a first load: the loader's `unchanged` branch is guarded on
+    // there being a previous generation, so a first load falls through to the
+    // append. An earlier version of this module claimed only `rejected` could
+    // happen there, and gave this path a sentence that told a user with a
+    // perfectly good settings file that it could not be loaded.
+    const streams = createRecordingCliStreams();
+    const values = await resolveShellConfiguration(GLOBALS, {
+      streams,
+      services: loaderAnswering({
+        kind: "publish-failed",
+        code: "state-root-full",
+        retained: null,
+      }),
+    });
+
+    const said = streams.diagnosticWrites().join("");
+    expect(said).toContain("could not be recorded");
+    expect(said).not.toContain("could not be loaded");
+    // The one detail the outcome carries, which is the only thing a user can
+    // act on. Dropping it would leave the sentence true and useless.
+    expect(said).toContain("state-root-full");
+    expect(said).toContain("defaults are in effect");
+    expect(values[STATE_ROOT]).toBeDefined();
+  });
+
+  test("say a cancelled load was cancelled, rather than that anything was wrong", async () => {
+    const streams = createRecordingCliStreams();
+    const values = await resolveShellConfiguration(GLOBALS, {
+      streams,
+      services: loaderAnswering({ kind: "cancelled" }),
+    });
+
+    const said = streams.diagnosticWrites().join("");
+    expect(said).toContain("cancelled");
+    expect(said).not.toContain("refused");
+    // The discriminator, and it had to be measured rather than assumed: the
+    // sentence this replaced named every outcome by kind — "Configuration could
+    // not be loaded (cancelled)" — so asserting only that the word `cancelled`
+    // appears passes against the message being corrected. A stopped load is not
+    // a failed one, and that is the whole difference.
+    expect(said).not.toContain("could not be loaded");
+    expect(said).toContain("defaults are in effect");
+    expect(values[STATE_ROOT]).toBeDefined();
   });
 
   test("say what was wrong in the vocabulary the config commands already use", async () => {

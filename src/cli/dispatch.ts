@@ -14,7 +14,6 @@
 
 import {
   assertNever,
-  type ConfigurationValues,
   type EnvironmentPort,
   MAX_STREAM_READ_LIMIT,
   type RuntimeEvent,
