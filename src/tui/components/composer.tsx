@@ -61,6 +61,7 @@ import {
   type DrawnLine,
   describeOutcome,
   type EditorAction,
+  type EditorMotion,
   linesOf,
   positionOfCell,
   selectionOf,
@@ -214,6 +215,68 @@ function useComposerInput(
 }
 
 /**
+ * The motion a modified key means, or `null` when it is not one.
+ *
+ * ## Which modifiers, and why these
+ *
+ * Read from what the terminal actually reports, checked against the installed
+ * parser rather than assumed. Alt sets **`option`**, and also sets `meta` —
+ * `key.meta = mods.alt || mods.meta` — so a binding that means Alt has to read
+ * `option` or it will fire for things that are not Alt.
+ *
+ * `option` and `ctrl` both give the word motions, because they are the
+ * conventions of different platforms and a terminal sends whichever its user's
+ * keyboard produces: Alt on macOS, Ctrl on Linux and Windows. Binding one and
+ * not the other would make the feature present on one platform and absent on
+ * another for no reason a user could see.
+ *
+ * `ctrl` plus `home`/`end` is the document motion, which is that same
+ * convention. The line motions need no chord at all: `home` and `end` already
+ * reach them everywhere.
+ *
+ * `super` is Command under the kitty protocol, and most terminals transmit no
+ * Command modifier at all because the emulator claims those chords first. It is
+ * honoured where it arrives and promised nowhere — the documentation says
+ * terminal-dependent rather than listing it as a binding the build honours.
+ *
+ * ## Why `up` and `down` are here only with shift
+ *
+ * Bare `up` and `down` never reach this function: `composer.historyPrevious`
+ * and `composer.historyNext` claim them, and a bound key is dispatched before
+ * any subscriber sees it. That is deliberate — inside a draft they move a line,
+ * and from its edge they recall a submission.
+ *
+ * Shifted, they do arrive, which was measured rather than reasoned about: the
+ * keymap matches the declared binding and does not claim the modified form. So
+ * extending a selection upward is handled here, where the key actually lands,
+ * and the history rule stays with the command that owns it. The two never need
+ * disambiguating, because extending a selection from the first line has nothing
+ * to do with recalling a submission.
+ */
+function chordMotion(key: KeyEvent): EditorMotion | null {
+  const word = key.option === true || key.ctrl === true;
+  const document = key.ctrl === true;
+  const line = key.super === true;
+
+  switch (key.name) {
+    case "left":
+      return word ? "word-left" : line ? "line-start" : null;
+    case "right":
+      return word ? "word-right" : line ? "line-end" : null;
+    case "home":
+      return document ? "document-start" : null;
+    case "end":
+      return document ? "document-end" : null;
+    case "up":
+      return key.shift === true ? "up" : null;
+    case "down":
+      return key.shift === true ? "down" : null;
+    default:
+      return null;
+  }
+}
+
+/**
  * The edit a key means, or `null` when it means nothing here.
  *
  * `null` rather than a no-op action, so a key the composer has no use for is
@@ -222,6 +285,16 @@ function useComposerInput(
  */
 function editFor(key: KeyEvent): EditorAction | null {
   const extend = key.shift === true;
+
+  // Modifiers first, and that ordering is the fix rather than a preference.
+  // The switch below matches on `key.name` alone, so before #387 an `alt+left`
+  // fell into `case "left"` and moved one character — a chord that looked bound
+  // and behaved like a lesser binding, which is worse than one that does
+  // nothing.
+  const chord = chordMotion(key);
+  if (chord !== null) {
+    return { kind: "move", motion: chord, extend };
+  }
 
   switch (key.name) {
     case "backspace":

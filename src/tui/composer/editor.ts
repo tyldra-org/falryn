@@ -34,7 +34,7 @@
  * model untestable without deciding a terminal width first.
  */
 
-import { graphemes } from "../../domain/index.ts";
+import { graphemes, wordStarts } from "../../domain/index.ts";
 
 export type EditorState = {
   /** The canonical text. Always the join of its graphemes; never a display form. */
@@ -60,6 +60,8 @@ export const EDITOR_MOTIONS = [
   "down",
   "line-start",
   "line-end",
+  "word-left",
+  "word-right",
   "document-start",
   "document-end",
 ] as const;
@@ -305,6 +307,31 @@ function moved(units: readonly string[], cursor: number, motion: EditorMotion): 
       return Math.max(0, cursor - 1);
     case "right":
       return Math.min(units.length, cursor + 1);
+    case "word-left": {
+      // The last word start strictly before the cursor. From inside a word that
+      // is the word's own start, which is what a user expects from the first
+      // press; from the start of one it is the previous word.
+      const starts = wordStarts(units.join(""));
+      let target = 0;
+      for (const start of starts) {
+        if (start < cursor) {
+          target = start;
+        }
+      }
+      return target;
+    }
+    case "word-right": {
+      // The next word start after the cursor, and the end of the text when
+      // there is none — the same rule `right` follows at the buffer's end, so a
+      // word motion never stops moving before the text does.
+      const starts = wordStarts(units.join(""));
+      for (const start of starts) {
+        if (start > cursor) {
+          return start;
+        }
+      }
+      return units.length;
+    }
     case "document-start":
       return 0;
     case "document-end":
