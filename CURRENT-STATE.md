@@ -2088,6 +2088,39 @@ under the composer. None of them is half-built: a large paste is classified,
 bounded, and described rather than inserted, and there is no attachment control
 that accepts a file and drops it.
 
+**The keyboard reaches every position the model can hold**
+([#387](https://github.com/yogeshprasad098/falryn/issues/387)). Characters,
+words, line ends, and the draft's ends, each extending a selection when shift is
+held. `word-left` and `word-right` join `EDITOR_MOTIONS`, and their boundary is
+the platform's: `wordStarts` in `src/domain/text-display.ts` uses
+`Intl.Segmenter` at word granularity beside the grapheme segmenter that was
+already there, for the same reason — what separates a word from the punctuation
+around it is a Unicode question that changes between releases. A word motion
+therefore crosses a CJK run with no spaces in it and steps over punctuation
+rather than stopping on every comma. A joined emoji is not word-like to the
+segmenter, and the motion inherits that answer rather than inventing a second
+one.
+
+Two things were measured rather than assumed, and both changed the design. **A
+modified arrow was not refused, it was silently downgraded**: `editFor` switched
+on `key.name` before considering any modifier, so `alt+left` fell into the plain
+left case and moved one character — a chord that looked bound and behaved worse
+than one that was missing. Modifiers are matched first now. And **`shift+up`
+reaches the composer's own handler while bare `up` does not**: the keymap claims
+the declared binding and not its modified form, so extending a selection upward
+is handled where the key actually lands and the history rule stays with the
+command that owns it. The two never need disambiguating — extending from the
+first line has nothing to do with recalling a submission.
+
+Alt and Ctrl both give the word motions, because a terminal sends whichever its
+user's keyboard produces and binding one would make the feature present on macOS
+and absent on Linux. Command cannot be promised: under the kitty protocol it
+arrives as `super` and is honoured, and most terminals transmit no Command
+modifier at all because the emulator claims those chords first — so `home` and
+`end` remain the line motions that always work, and
+`reference/KEYBOARD-SHORTCUTS.md` records Command as terminal-dependent rather
+than listing it as a binding the build honours.
+
 Two decisions came out of measuring the keymap rather than reading about it. A
 layer that claims a key means the focused control never sees it, so while the
 composer has focus, bindings whose key is one bare character are not registered —

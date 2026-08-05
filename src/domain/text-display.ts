@@ -113,6 +113,57 @@ export function graphemes(text: string): readonly string[] {
 /** Locale-independent on purpose: a cursor does not move differently in French. */
 const SEGMENTER = new Intl.Segmenter(undefined, { granularity: "grapheme" });
 
+/**
+ * Where each word starts, as grapheme offsets.
+ *
+ * The counterpart to {@link graphemes} for a cursor that moves by word, and it
+ * is the platform's answer for the same reason: what separates a word from the
+ * punctuation and spaces around it is a Unicode question that changes between
+ * releases, and `Intl.Segmenter` already tracks it. A `split(" ")` here would
+ * disagree with the rest of this module the first time it met `don't`, a CJK
+ * run with no spaces in it, or an emoji.
+ *
+ * Only word-like segments count. `isWordLike` is what the segmenter uses to
+ * separate a word from the run of punctuation or whitespace beside it, so a
+ * cursor moving by word steps between words rather than pausing on every comma.
+ *
+ * Offsets are counted in *graphemes* rather than code units, because that is
+ * what a cursor position is everywhere else in this codebase. A boundary
+ * reported in code units would be a second coordinate system, and the first
+ * character outside the basic plane would put a word motion inside a character.
+ */
+export function wordStarts(text: string): readonly number[] {
+  if (text === "") {
+    return [];
+  }
+  // One pass over graphemes, mapping each code-unit index to its grapheme
+  // index. The segmenter reports both kinds of boundary against the same
+  // string, so the two are aligned by construction rather than by arithmetic.
+  const byCodeUnit = new Map<number, number>();
+  let grapheme = 0;
+  for (const entry of SEGMENTER.segment(text)) {
+    byCodeUnit.set(entry.index, grapheme);
+    grapheme += 1;
+  }
+
+  const starts: number[] = [];
+  for (const entry of WORD_SEGMENTER.segment(text)) {
+    if (!entry.isWordLike) {
+      continue;
+    }
+    const at = byCodeUnit.get(entry.index);
+    // A word starting inside a grapheme cluster is not a position a cursor can
+    // hold, so it is skipped rather than rounded to a neighbour.
+    if (at !== undefined) {
+      starts.push(at);
+    }
+  }
+  return starts;
+}
+
+/** The same platform answer, at word granularity. */
+const WORD_SEGMENTER = new Intl.Segmenter(undefined, { granularity: "word" });
+
 /** How many terminal cells this text occupies. */
 export function displayWidth(text: string): number {
   let width = 0;
