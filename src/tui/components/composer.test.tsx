@@ -13,7 +13,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import type { CapturedSpan } from "@opentui/core";
+import { type CapturedSpan, TextareaRenderable } from "@opentui/core";
 import { mount, type Rendered, type TerminalShape } from "../harness.tsx";
 import { INLINE_PASTE_LIMIT } from "../paste.ts";
 import { parseHex, resolveTheme, type ThemeRequest } from "../theme/index.ts";
@@ -102,6 +102,21 @@ function spansWithBackground(session: Session, background: readonly number[]): C
     .filter((span) => span.bg.toInts().every((channel, index) => channel === background[index]));
 }
 
+function composerTextarea(session: Session): TextareaRenderable {
+  const pending = [...session.setup.renderer.root.getChildren()];
+  while (pending.length > 0) {
+    const renderable = pending.pop();
+    if (renderable === undefined) {
+      break;
+    }
+    if (renderable instanceof TextareaRenderable) {
+      return renderable;
+    }
+    pending.push(...renderable.getChildren());
+  }
+  throw new Error("expected the mounted composer to contain a textarea");
+}
+
 describe("focus", () => {
   test("is required before the composer takes any key", async () => {
     // The "background regions do not consume keys intended for the focused
@@ -143,6 +158,29 @@ describe("selection", () => {
     expect(after.cursor).toEqual([before.cursor[0] - 1, before.cursor[1]]);
 
     shell.setup.mockInput.pressArrow("right");
+    expect(await shell.frame()).not.toContain("Selection active");
+    expect(spansWithBackground(shell, background)).toEqual([]);
+  });
+
+  test("announces a native pointer range and clears it after a click", async () => {
+    // The hook is Falryn's observation seam. The pointer itself is OpenTUI's,
+    // so this test drives the renderer's mock mouse rather than creating a
+    // second selection or calling textarea selection APIs directly.
+    using shell = await open();
+    await shell.focusComposer();
+    await shell.type("chosen");
+
+    const background = rgba(requiredColor(THEME, "selection"));
+    const textarea = composerTextarea(shell);
+    const row = textarea.y;
+    const start = textarea.x + 1;
+    const end = textarea.x + 4;
+
+    await shell.setup.mockMouse.drag(start, row, end, row);
+    expect(await shell.frame()).toContain("Selection active");
+    expect(spansWithBackground(shell, background)).not.toEqual([]);
+
+    await shell.setup.mockMouse.click(end, row);
     expect(await shell.frame()).not.toContain("Selection active");
     expect(spansWithBackground(shell, background)).toEqual([]);
   });

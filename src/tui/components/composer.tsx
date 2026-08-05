@@ -53,7 +53,7 @@
 
 import type { KeyBinding, KeyEvent, PasteEvent, TextareaRenderable } from "@opentui/core";
 import { defaultTextareaKeyBindings } from "@opentui/core";
-import { usePaste } from "@opentui/react";
+import { usePaste, useSelectionHandler } from "@opentui/react";
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import {
   type ComposerAction,
@@ -110,6 +110,19 @@ export function ComposerView(props: ComposerViewProps): ReactNode {
     setHidden(renderable.scrollY);
     setSelectionActive(renderable.getSelection() !== null);
   }, []);
+
+  // A pointer drag changes the textarea's native range without changing its
+  // content or cursor. OpenTUI reports that completed selection through this
+  // renderer hook; Falryn reads only the existing renderable so the range still
+  // has one owner and the chrome remains a view of it.
+  useSelectionHandler(
+    useCallback((): void => {
+      const renderable = draft.current;
+      if (renderable !== null) {
+        refreshRenderedState(renderable);
+      }
+    }, [refreshRenderedState]),
+  );
 
   // The draft is the renderable's, and this is the one direction Falryn writes
   // it: a history recall replaces the whole text. Typing never comes back

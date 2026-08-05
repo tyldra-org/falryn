@@ -2012,9 +2012,10 @@ the first fixed chrome row says `Selection active`
 span multiple drawn lines and the renderer retains its cursor at the selection
 focus. At no-colour depth Falryn omits those colour props and keeps the words,
 leaving OpenTUI to paint its fallback rather than inventing a grey. Rendered
-checks drive the textarea's native selection binding, inspect styled spans and
-the cursor coordinate, cover an explicit multi-line range, monochrome, and
-collapse; the normal repository checks and compiled build pass for this change.
+checks drive the textarea's native keyboard and pointer selection paths, inspect
+styled spans and the cursor coordinate, cover an explicit multi-line range,
+monochrome, and collapse; the normal repository checks and compiled build pass
+for this change.
 
 **Why, and it is not an off-by-one.** The cursor was drawn in the wrong cell on
 a real terminal — a row above the draft and a cell short of the text. The
