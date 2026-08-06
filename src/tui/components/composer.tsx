@@ -51,15 +51,24 @@
  * have to agree exactly.
  */
 
-import type { KeyBinding, KeyEvent, PasteEvent, TextareaRenderable } from "@opentui/core";
-import { defaultTextareaKeyBindings } from "@opentui/core";
+import type {
+  KeyBinding,
+  KeyEvent,
+  MouseEvent,
+  PasteEvent,
+  TextareaRenderable,
+} from "@opentui/core";
+import { defaultTextareaKeyBindings, MouseButton } from "@opentui/core";
 import { usePaste, useSelectionHandler } from "@opentui/react";
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
+import type { Instant } from "../../domain/index.ts";
 import {
+  type ClickSequence,
   type ComposerAction,
   type ComposerState,
   composerNotice,
   describeOutcome,
+  transitionClickSequence,
 } from "../composer/index.ts";
 import type { ComposerModel } from "../composer-model.ts";
 import { primaryColumns } from "../layout.ts";
@@ -85,6 +94,11 @@ export type ComposerViewProps = {
    * it belongs to the region model that decides which control keys reach.
    */
   readonly onFocus?: () => void;
+  /**
+   * The composed invocation clock, reduced to the only capability this view
+   * needs. Static frames omit it and retain native single-press/drag behavior.
+   */
+  readonly now?: () => Instant;
 };
 
 export function ComposerView(props: ComposerViewProps): ReactNode {
@@ -92,8 +106,11 @@ export function ComposerView(props: ComposerViewProps): ReactNode {
   const layoutClass = useLayoutClass();
   const theme = useTheme();
   const columns = primaryColumns(frame.viewport, layoutClass);
-  const { model, onAction, onFocus } = props;
+  const { model, now, onAction, onFocus } = props;
   const draft = useRef<TextareaRenderable | null>(null);
+  // Press recognition is transient interaction state, not view state: it must
+  // not schedule a redraw or store an OpenTUI event beyond its callback.
+  const clickSequence = useRef<ClickSequence | null>(null);
   // How far the renderable has scrolled, so the chrome can still say how many
   // rows are above the view. Component state rather than the shell's: a scroll
   // offset is a fact about what is on screen, not about the session, and the
@@ -184,6 +201,59 @@ export function ComposerView(props: ComposerViewProps): ReactNode {
     [onAction],
   );
 
+  const mouseDown = useCallback(
+    (event: MouseEvent): void => {
+      // The focus model owns focus. OpenTUI has already applied this press to
+      // the textarea before the callback runs, so the first count preserves
+      // native collapsed placement and later counts compose native motions.
+      onFocus?.();
+      if (now === undefined) {
+        return;
+      }
+
+      const transition = transitionClickSequence(
+        clickSequence.current,
+        {
+          kind: "press",
+          button: event.button === MouseButton.LEFT ? "primary" : "other",
+          cell: { x: event.x, y: event.y },
+        },
+        now(),
+      );
+      clickSequence.current = transition.sequence;
+
+      const renderable = draft.current;
+      if (renderable === null) {
+        return;
+      }
+      switch (transition.count) {
+        case 1:
+        case null:
+          return;
+        case 2:
+          renderable.moveCursorRight();
+          renderable.moveWordBackward();
+          renderable.moveWordForward({ select: true });
+          break;
+        case 3:
+          // A native click leaves a collapsed anchor at the clicked offset.
+          // Clear it before composing the complete logical line.
+          renderable.clearSelection();
+          renderable.gotoLineStart();
+          renderable.gotoLineEnd({ select: true });
+          break;
+      }
+      refreshRenderedState(renderable);
+    },
+    [now, onFocus, refreshRenderedState],
+  );
+
+  const mouseDrag = useCallback((): void => {
+    // Drag placement, selection, and auto-scroll are all OpenTUI behavior.
+    // Falryn only ensures a later press begins a new repeated-press sequence.
+    clickSequence.current = null;
+  }, []);
+
   return (
     <box flexDirection="column" width={columns} height={frame.composerRows}>
       <textarea
@@ -195,7 +265,8 @@ export function ComposerView(props: ComposerViewProps): ReactNode {
         keyBindings={[...COMPOSER_KEY_BINDINGS]}
         {...(selectionBg === null ? {} : { selectionBg })}
         {...(selectionFg === null ? {} : { selectionFg })}
-        {...(onFocus === undefined ? {} : { onMouseDown: onFocus })}
+        {...(onFocus === undefined && now === undefined ? {} : { onMouseDown: mouseDown })}
+        {...(now === undefined ? {} : { onMouseDrag: mouseDrag })}
         onContentChange={() => {
           const renderable = draft.current;
           if (renderable !== null) {

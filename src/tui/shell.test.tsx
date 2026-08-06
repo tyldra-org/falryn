@@ -14,6 +14,7 @@
  */
 
 import { afterEach, describe, expect, test } from "bun:test";
+import { MouseButton, TextareaRenderable } from "@opentui/core";
 import { createTestRenderer, type TestRendererSetup } from "@opentui/core/testing";
 import { createScopeTree, createShutdownCoordinator } from "../application/index.ts";
 import { createRecordingCliStreams, type GlobalOptions } from "../cli/index.ts";
@@ -115,20 +116,37 @@ async function frameWith(setup: TestRendererSetup, marker: string): Promise<stri
  * the thing it is trying to observe.
  */
 async function shell(options: Partial<Parameters<typeof runShell>[0]> = {}) {
+  const { clock = createManualClock(), ...overrides } = options;
   const streams = createRecordingCliStreams();
   const stop = new AbortController();
   const run = runShell({
     streams,
     capabilities: record(),
+    clock,
     options: OPTIONS,
     environment: ENVIRONMENT,
     stop: stop.signal,
     createRenderer: inMemory,
-    ...options,
+    ...overrides,
   });
   const setup = await mounting;
   const frame = setup === null ? "" : await frameWith(setup, EXIT_HINT);
   return { streams, stop, run, setup, frame };
+}
+
+function composerTextarea(setup: TestRendererSetup): TextareaRenderable {
+  const pending = [...setup.renderer.root.getChildren()];
+  while (pending.length > 0) {
+    const renderable = pending.pop();
+    if (renderable === undefined) {
+      break;
+    }
+    if (renderable instanceof TextareaRenderable) {
+      return renderable;
+    }
+    pending.push(...renderable.getChildren());
+  }
+  throw new Error("expected the shell to mount a composer textarea");
 }
 
 describe("a shell that was stopped", () => {
@@ -158,6 +176,7 @@ describe("a shell that was stopped", () => {
       await runShell({
         streams,
         capabilities: record(),
+        clock: createManualClock(),
         options: OPTIONS,
         environment: ENVIRONMENT,
         stop: stopped.signal,
@@ -190,6 +209,30 @@ describe("what the shell drew", () => {
     expect(await run).toEqual({ kind: "stopped" });
     expect(setup?.renderer.isDestroyed).toBe(true);
   });
+
+  test("threads the injected invocation clock into pointer recognition", async () => {
+    const clock = createManualClock();
+    let reads = 0;
+    const { stop, run, setup } = await shell({
+      clock: {
+        now: () => {
+          reads += 1;
+          return clock.now();
+        },
+      },
+      configuration: { "interface.pointer.enabled": true },
+    });
+    if (setup === null) {
+      throw new Error("expected the test shell to mount");
+    }
+
+    const textarea = composerTextarea(setup);
+    await setup.mockMouse.click(textarea.x + 1, textarea.y, MouseButton.LEFT, { delayMs: 0 });
+    expect(reads).toBe(1);
+
+    stop.abort();
+    expect(await run).toEqual({ kind: "stopped" });
+  });
 });
 
 describe("a renderer that never started", () => {
@@ -198,6 +241,7 @@ describe("a renderer that never started", () => {
     const result = await runShell({
       streams,
       capabilities: record(),
+      clock: createManualClock(),
       options: OPTIONS,
       environment: ENVIRONMENT,
       stop: new AbortController().signal,
@@ -221,6 +265,7 @@ describe("a renderer that never started", () => {
     await runShell({
       streams,
       capabilities: record(),
+      clock: createManualClock(),
       options: OPTIONS,
       environment: ENVIRONMENT,
       stop: new AbortController().signal,
@@ -239,6 +284,7 @@ describe("a renderer that never started", () => {
     await runShell({
       streams: createRecordingCliStreams(),
       capabilities: record(),
+      clock: createManualClock(),
       options: OPTIONS,
       environment: ENVIRONMENT,
       stop: new AbortController().signal,
@@ -389,6 +435,7 @@ describe("a second shell in one process", () => {
     const second = await runShell({
       streams,
       capabilities: record(),
+      clock: createManualClock(),
       options: OPTIONS,
       environment: ENVIRONMENT,
       stop: new AbortController().signal,

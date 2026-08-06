@@ -1517,12 +1517,20 @@ stderr boundary, and mouse reporting is gated rather than left at OpenTUI's
 default of on.
 
 **The interface takes pointer input, and only where it is wanted**
-([#392](https://github.com/yogeshprasad098/falryn/issues/392)). A left click in
-the composer places the cursor at the clicked grapheme and focuses the composer,
-through the same anchor-and-cursor model the keyboard uses — the `place` action
-collapses a selection exactly as an unextended motion does, so no second notion
-of where the cursor is exists. The cell it resolves comes from the mapping #391
-delivered, in the space `MouseEvent.x`/`y` already arrive in.
+([#392](https://github.com/yogeshprasad098/falryn/issues/392),
+[#393](https://github.com/yogeshprasad098/falryn/issues/393)). OpenTUI's
+textarea owns primary-press focus and placement, collapsed selections, drag
+selection, and pointer auto-scroll. Falryn neither maps a terminal cell to text
+nor stores a second cursor, anchor, range, geometry, or drag model.
+
+Falryn's one pointer-specific rule is a pure, transient repeated-press sequence
+driven by the composed invocation clock. A second primary press at one `x`/`y`
+cell no more than 400 ms after the first invokes the textarea's native word
+motions; the third invokes its native logical-line motions; the fourth begins a
+new first-press cycle. A different cell, backward clock, non-primary press, or
+drag clears the sequence. The first press remains native placement, so
+wide-character, punctuation, CJK, and drag behavior retain the renderable's
+semantics.
 
 Turning reporting on takes text selection away from the terminal emulator:
 dragging selects inside Falryn, and the emulator's own selection needs a
@@ -2002,8 +2010,8 @@ that accepts a file and drops it.
 ([#399](https://github.com/yogeshprasad098/falryn/issues/399)). The draft, the
 cursor, the selection, the scrolling, and every motion over them belong to the
 renderable, reached through the `<textarea>` element `@opentui/react` exposes.
-Falryn supplies the frame, the two chrome rows, and the two rules that are
-genuinely its own.
+Falryn supplies the frame, the two chrome rows, and only its narrow product
+policies.
 
 When its native selection is non-empty, the composer passes the resolved
 semantic `selection` background and `foreground` tokens to that renderable and
@@ -2016,6 +2024,15 @@ checks drive the textarea's native keyboard and pointer selection paths, inspect
 styled spans and the cursor coordinate, cover an explicit multi-line range,
 monochrome, and collapse; the normal repository checks and compiled build pass
 for this change.
+
+[#393](https://github.com/yogeshprasad098/falryn/issues/393) adds native
+double-press word selection and triple-press logical-line selection without
+adding a Falryn selection model. Its pure click-sequence policy receives only
+the invocation clock and terminal cell; the view performs the documented native
+motions after OpenTUI has placed and focused the textarea. Rendered controls
+compare word starts, middles, ends, punctuation, and CJK plus first, middle,
+final, and empty logical lines with the same native sequences, while a
+multi-line drag remains native and resets the count.
 
 **Why, and it is not an off-by-one.** The cursor was drawn in the wrong cell on
 a real terminal — a row above the draft and a cell short of the text. The
