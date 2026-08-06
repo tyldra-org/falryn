@@ -284,6 +284,7 @@ async function launchShell(
     run = await runShell({
       streams,
       capabilities,
+      clock: governance.clock,
       options: globals,
       environment,
       configuration,

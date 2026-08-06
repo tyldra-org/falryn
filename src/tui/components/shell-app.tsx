@@ -26,6 +26,7 @@ import { createDefaultOpenTuiKeymap } from "@opentui/keymap/opentui";
 import { KeymapProvider, useActiveKeys, useKeymap } from "@opentui/keymap/react";
 import { useRenderer } from "@opentui/react";
 import { type ReactNode, useMemo } from "react";
+import type { Instant } from "../../domain/index.ts";
 import type {
   ActivityProjection,
   ShutdownState,
@@ -59,6 +60,8 @@ export type ShellAppProps = {
   readonly theme: ThemeRequest;
   /** Ends the session. Owned by the invocation's scope, not by this component. */
   readonly onExit: () => void;
+  /** Present only in a composed interactive shell, never in a static frame. */
+  readonly now?: () => Instant;
   /**
    * The transcript to project.
    *
@@ -215,6 +218,7 @@ function ResolvedShell(
     <AppShell
       theme={props.theme}
       model={model}
+      {...(props.now === undefined ? {} : { now: props.now })}
       commandRows={rows}
       onTranscriptGeometry={props.runtime.reportTranscriptGeometry}
       onComposerAction={props.runtime.composer}
