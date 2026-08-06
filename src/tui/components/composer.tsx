@@ -236,6 +236,9 @@ export function ComposerView(props: ComposerViewProps): ReactNode {
           renderable.moveWordForward({ select: true });
           break;
         case 3:
+          // A native click leaves a collapsed anchor at the clicked offset.
+          // Clear it before composing the complete logical line.
+          renderable.clearSelection();
           renderable.gotoLineStart();
           renderable.gotoLineEnd({ select: true });
           break;

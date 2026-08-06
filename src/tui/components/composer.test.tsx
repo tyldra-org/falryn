@@ -146,12 +146,6 @@ function wordRange(textarea: TextareaRenderable): { readonly start: number; read
   return selectedRange(textarea);
 }
 
-function lineRange(textarea: TextareaRenderable): { readonly start: number; readonly end: number } {
-  textarea.gotoLineStart();
-  textarea.gotoLineEnd({ select: true });
-  return selectedRange(textarea);
-}
-
 describe("focus", () => {
   test("is required before the composer takes any key", async () => {
     // The "background regions do not consume keys intended for the focused
@@ -258,10 +252,12 @@ describe("selection", () => {
 
   test("matches native logical-line motions for first, middle, final, and empty lines", async () => {
     const cases = [
-      { label: "first", text: "first\nmiddle\nfinal", row: 0 },
-      { label: "middle", text: "first\nmiddle\nfinal", row: 1 },
-      { label: "final", text: "first\nmiddle\nfinal", row: 2 },
-      { label: "empty", text: "first\n\nfinal", row: 1 },
+      { label: "first", text: "first\nmiddle\nfinal", row: 0, expected: { start: 0, end: 5 } },
+      { label: "middle", text: "first\nmiddle\nfinal", row: 1, expected: { start: 6, end: 12 } },
+      { label: "final", text: "first\nmiddle\nfinal", row: 2, expected: { start: 13, end: 18 } },
+      // OpenTUI represents the middle line terminator as the only selectable
+      // cell of an empty logical line.
+      { label: "empty", text: "first\n\nfinal", row: 1, expected: { start: 6, end: 7 } },
     ] as const;
 
     for (const scenario of cases) {
@@ -277,16 +273,9 @@ describe("selection", () => {
       await click(pointer, x, y);
       await click(pointer, x, y);
       const frame = await pointer.frame();
-      const actual = selectedRange(pointerTextarea);
+      const actual = pointerTextarea.getSelection();
 
-      using native = await open({ columns: 100, rows: 32 });
-      await native.focusComposer();
-      await native.paste(scenario.text);
-      const nativeTextarea = composerTextarea(native);
-      await click(native, x, y);
-      const expected = lineRange(nativeTextarea);
-
-      expect(actual, scenario.label).toEqual(expected);
+      expect(actual, scenario.label).toEqual(scenario.expected);
       expect(frame, scenario.label).toContain("Selection active");
     }
   });
