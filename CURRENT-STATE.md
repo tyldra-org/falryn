@@ -2316,8 +2316,8 @@ Their implementation breakdown lives in GitHub Issues and the Project.
 - **Live roadmap:** [Falryn Roadmap](https://github.com/users/yogeshprasad098/projects/2)
 - **Current release outcome:** [v0.1 Foundation issues](https://github.com/yogeshprasad098/falryn/issues?q=is%3Aissue%20is%3Aopen%20milestone%3A%22v0.1%20Foundation%22)
 - **First parent outcome:** [#1 Establish the unified runtime and lifecycle](https://github.com/yogeshprasad098/falryn/issues/1)
-- **Current parent outcome:** [#21 Deliver the OpenTUI application shell](https://github.com/yogeshprasad098/falryn/issues/21), in progress with #22, #23, #24, and #26 landed. [#16 Deliver the CLI and headless foundation](https://github.com/yogeshprasad098/falryn/issues/16) remains in progress with #17, #18, #19, and #20 landed.
-- **Next planning action:** verify [#25](https://github.com/yogeshprasad098/falryn/issues/25). Every required child has landed — #354 the transcript block model, #355 the surface that renders it, #356 the scrollback commit path, #357 the composer, #358 the activity and status projections, and #364 the palette's reachable search, which parent verification raised as the one criterion no child had delivered — so what remains is the parent's own integrated acceptance.
+- **Current parent outcome:** [#21 Deliver the OpenTUI application shell](https://github.com/yogeshprasad098/falryn/issues/21) remains in progress; its shell-delivery work is complete and its parent-level integrated acceptance remains. [#16 Deliver the CLI and headless foundation](https://github.com/yogeshprasad098/falryn/issues/16) is complete.
+- **Next planning action:** verify [#21](https://github.com/yogeshprasad098/falryn/issues/21). Its parent-level integrated acceptance is the current eligible action; GitHub and the live Roadmap remain authoritative for what follows.
 
 Which of #1's children are open, and which delivered the behavior recorded
 above, is read from
