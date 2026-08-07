@@ -4,7 +4,7 @@ This file is Falryn's sole concise implementation-status owner. It records what
 exists and has been verified in the `falryn` repository. It does not duplicate
 the product design or GitHub roadmap.
 
-Last reconciled: **2026-08-05**
+Last reconciled: **2026-08-07**
 
 ## Where to look
 
@@ -1825,6 +1825,24 @@ with the reason. A paste never runs a command.
 The keyboard journey is proved twice — through a real renderer with a real
 keymap, and against the shipped `dist/falryn` on a pseudo-terminal, where Ctrl+C
 now exits `0` with the terminal restored and `?` draws the command table.
+
+Terminal resource behavior and qualification are recorded by
+[#376](https://github.com/yogeshprasad098/falryn/issues/376). `bun run measure`
+gates six measurements outside the ordinary fast checks: compiled startup to
+first draw and native render cadence, plus harness input latency under stream
+load, event-loop delay, long-transcript memory growth, and renderer shutdown.
+Each result names its platform, dataset, sample count, state, and distribution;
+no performance threshold is asserted. A mounted burst check proves that
+coalescing preserves every declared terminal outcome and fails under a negative
+control that drops one terminal event. `src/tui/matrix-fixtures.ts` declares
+the machine-readable row owners, and the boundary test proves each named test
+still exists without claiming that the inventory itself ran those tests.
+
+The current compiled/pty qualification is scoped to macOS arm64. Linux,
+Windows, other operating systems and architectures, suspend/resume,
+clipboard, RTL/mixed text, and multiplexer/remote sessions remain explicitly
+unqualified; the companion terminal document records the emulator metadata,
+interaction limitations, and manual-session boundary.
 
 A transcript exists as a contract, delivered by
 [#354](https://github.com/yogeshprasad098/falryn/issues/354), and as a rendered

@@ -13,12 +13,17 @@
 import { describe, expect, test } from "bun:test";
 import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import { type MatrixRow, rowsWithoutOwner, TUI_MATRIX } from "./matrix-fixtures.ts";
 
 const AREA = dirname(import.meta.path);
 const SOURCE_ROOT = dirname(AREA);
+const REPOSITORY_ROOT = dirname(SOURCE_ROOT);
 
 /** This control file names every forbidden token, so it excludes itself. */
 const SELF = "tui-boundaries.test.ts";
+
+/** Test support is intentionally absent from the graph that `src/main.ts` ships. */
+const TEST_SUPPORT = ["harness.tsx", "matrix-fixtures.ts", "measurement-fixtures.ts"] as const;
 
 /** The pure entrypoint: decisions only, and nothing that loads a renderer. */
 const ENTRYPOINT = "index.ts";
@@ -116,6 +121,28 @@ function withoutTypeImports(source: string): string {
 
 async function readValues(file: string): Promise<string> {
   return withoutTypeImports(await readCode(file));
+}
+
+/** Follows the relative value-import graph from a product entrypoint. */
+async function sourceGraph(entry: string): Promise<ReadonlySet<string>> {
+  const reached = new Set<string>();
+  const visit = async (file: string): Promise<void> => {
+    if (reached.has(file)) {
+      return;
+    }
+    reached.add(file);
+    const source = await readFile(join(SOURCE_ROOT, file), "utf8");
+    for (const match of source.matchAll(/from "(\.\.?\/[^"]+)"/g)) {
+      const target = match[1];
+      if (target === undefined) {
+        continue;
+      }
+      const resolved = join(dirname(file), target);
+      await visit(resolved);
+    }
+  };
+  await visit(entry);
+  return reached;
 }
 
 describe("the cost of not launching", () => {
@@ -787,6 +814,50 @@ describe("the mode contract", () => {
     expect(source).toContain('externalOutputMode: "passthrough"');
     expect(source).not.toContain('screenMode: "split-footer"');
     expect(source).not.toContain('screenMode: "main-screen"');
+  });
+});
+
+describe("the matrix inventory", () => {
+  test("every declared row has a named test or a recorded manual result", () => {
+    // The declaration lives in Falryn test support because this repository cannot
+    // read the companion docs checkout. A row with neither owner is silently
+    // covered by prose, which is exactly the false green this control prevents.
+    expect(rowsWithoutOwner(TUI_MATRIX)).toEqual([]);
+    expect(TUI_MATRIX.length).toBeGreaterThan(0);
+  });
+
+  test("fails the negative control when a row loses its owner", () => {
+    const unowned = {
+      id: "negative-control",
+      description: "deliberately unowned",
+      owner: null,
+    } as const;
+    expect(rowsWithoutOwner([...TUI_MATRIX, unowned])).toEqual([unowned]);
+  });
+
+  test("proves a named test exists, not that it ran or passed", async () => {
+    const testRows = TUI_MATRIX.filter(
+      (row): row is MatrixRow & { owner: { kind: "test" } } => row.owner?.kind === "test",
+    );
+    for (const row of testRows) {
+      const source = await readFile(join(REPOSITORY_ROOT, row.owner.file), "utf8");
+      expect({ row: row.id, namedTest: source.includes(row.owner.test) }).toEqual({
+        row: row.id,
+        namedTest: true,
+      });
+    }
+  });
+});
+
+describe("test-only measurement support", () => {
+  test("is absent from the source graph that the standalone build ships", async () => {
+    const graph = await sourceGraph("main.ts");
+    for (const support of TEST_SUPPORT) {
+      expect({ support, shipped: graph.has(`tui/${support}`) }).toEqual({
+        support,
+        shipped: false,
+      });
+    }
   });
 });
 
