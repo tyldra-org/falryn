@@ -35,6 +35,7 @@ export type MeasurementPty = {
   readonly master: number;
   readonly slave: number;
   transcript(): string;
+  releaseSlave(): void;
   close(): void;
 };
 
@@ -94,11 +95,24 @@ export function openMeasurementPty(
   reader.on("error", () => {
     // The child closing the slave is the ordinary end of a pseudo-terminal.
   });
+  let slaveClosed = false;
+  const releaseSlave = (): void => {
+    if (slaveClosed) {
+      return;
+    }
+    slaveClosed = true;
+    try {
+      closeSync(slaveFd);
+    } catch {
+      // The slave may already have been released by the host runtime.
+    }
+  };
 
   return {
     master: masterFd,
     slave: slaveFd,
     transcript: () => transcript,
+    releaseSlave,
     close: () => {
       if (closed) {
         return;
@@ -110,6 +124,7 @@ export function openMeasurementPty(
       } catch {
         // The master may already have been closed by the host after the child exits.
       }
+      releaseSlave();
     },
   };
 }
@@ -136,11 +151,7 @@ export async function startCompiledMeasurement(): Promise<CompiledMeasurement | 
       TERM: "xterm-256color",
     },
   });
-  try {
-    closeSync(pty.slave);
-  } catch {
-    // The child owns its copy; a repeated close is harmless.
-  }
+  pty.releaseSlave();
 
   const waitForFrame = async (): Promise<{
     readonly elapsedMs: number;
