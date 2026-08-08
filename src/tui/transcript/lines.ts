@@ -4,23 +4,22 @@
  * `./rows.ts` decides *what* a block says; this decides how that reads once a
  * theme has answered what a token is worth on this terminal. It stays a pure
  * function so the answer can be asserted without a renderer, which is the same
- * reason the rows themselves are pure — and it is what lets the live footer and
- * the terminal's own scrollback be drawn from one decision instead of two.
+ * reason the rows themselves are pure — and it lets every rendered transcript
+ * surface use one decision instead of two.
  *
  * Two rules are load-bearing.
  *
  * **A status is a symbol and a word.** Resolved from `STATUS_PRESENTATION`, the
- * same table `StatusMark` reads, so a status committed to scrollback carries the
- * glyph *and* the label a monochrome terminal needs. A second composition here
- * would be a second answer, and the reader would only find the disagreement by
- * comparing the footer against their own scroll history.
+ * same table `StatusMark` reads, so a status rendered in the transcript carries
+ * the glyph *and* the label a monochrome terminal needs. A second composition
+ * here would be a second answer, and the reader would only find the disagreement
+ * by comparing status presentation across surfaces.
  *
  * **Every line is sanitized, not only the ones flagged untrusted.** A row's
- * `untrusted` flag says where the text came from; it does not say where the text
- * is going. These lines go to the terminal's scrollback, which is the one
- * destination Falryn cannot repaint, so a forged escape sequence there is
- * permanent. Sanitizing text that was already safe costs a pass and removes the
- * whole class of failure.
+ * `untrusted` flag says where the text came from; it does not say what the text
+ * can affect once rendered. Sanitizing every line keeps a forged escape sequence
+ * from changing the active terminal surface. Sanitizing text that was already
+ * safe costs a pass and removes the whole class of failure.
  */
 
 import { sanitizeTerminalText, truncateToWidth } from "../../domain/index.ts";

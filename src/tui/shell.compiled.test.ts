@@ -247,7 +247,7 @@ async function runOnPty(
   live.push(run);
   // The parent's copy of the slave, released as soon as the child has its own.
   // Standard practice for a pseudo-terminal, and load-bearing here: a suite that
-  // opens one per screen mode leaks a descriptor pair per run without it, and
+  // opens one per interactive run leaks a descriptor pair per run without it, and
   // the master is left holding a writer that never goes away. The master itself
   // stays open — the reader owns it until `close()`.
   try {
