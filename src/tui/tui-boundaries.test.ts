@@ -921,8 +921,8 @@ describe("the rendered test harness", () => {
     expect(files.length).toBeGreaterThan(0);
     for (const file of files) {
       const source = await readCode(file);
-      // `renderer.destroy()` specifically: `scrollback.test.ts` destroys the
-      // *adapter* it is testing, which is the subject rather than the setup.
+      // `renderer.destroy()` specifically: an adapter-focused check destroys
+      // the subject it is testing, which is different from the harness setup.
       expect({ file, destroys: /renderer\.destroy\(\)/.test(source) }).toEqual({
         file,
         destroys: false,
