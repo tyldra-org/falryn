@@ -4,7 +4,8 @@
  * Wrapping measures every character's display width, so it is linear in the text
  * and repeated on every frame that redraws the same paragraph at the same width
  * — which, for rendered transcript content, is most frames. Caching it is the difference
- * between a resize being smooth and being a re-measure of the whole scrollback.
+ * between a resize being smooth and being a re-measure of the whole rendered
+ * transcript.
  *
  * Two properties matter more than the speed.
  *

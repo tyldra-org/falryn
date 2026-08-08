@@ -193,8 +193,8 @@ describe("what the shell drew", () => {
     expect(frame).toContain(EXIT_HINT);
     // The frame the shell actually mounts since #24: a workspace header, a
     // primary region, and a status line. The header's labels are what prove the
-    // layout class came from the terminal rather than from the footer the tree
-    // is drawn into — six rows would have selected compact and dropped them.
+    // layout class came from the terminal rather than from a fixed alternate-
+    // screen viewport — six rows would have selected compact and dropped them.
     expect(frame).toContain("workspace");
     expect(frame).toContain("no Git yet");
     stop.abort();
