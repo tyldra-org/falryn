@@ -160,11 +160,14 @@ tests small, explicit, and user-focused.
   Use exact repository object numbers or milestone titles, never placeholders.
   A suggestion helps the user choose the next action; it does not authorize the
   agent to run that action.
-- For Next routing, validate `CURRENT-STATE.md`'s Planning frontier and apply
-  the canonical manual transition before considering other work. A Project
-  item's visual position, newly created bottom placement, or recent update is
-  never a priority signal; use the explicit Priority field, dependency graph,
-  and stable issue order only when no valid frontier or continuation exists.
+- For Next routing, validate `CURRENT-STATE.md`'s Planning frontier and use the
+  canonical manual transition only to resolve the next target and state. For
+  every eligible Falryn issue or parent, emit the matching Deliver prompt;
+  suggest a manual prompt only when Deliver cannot own the selected scope or
+  when the user explicitly selected a manual workflow. A Project item's visual
+  position, newly created bottom placement, or recent update is never a
+  priority signal; use the explicit Priority field, dependency graph, and
+  stable issue order only when no valid frontier or continuation exists.
 - When a report names a repository file the user may need to open, provide both
   its clickable absolute path in the current local checkout and its
   repository-qualified path with a canonical GitHub link when one exists.
