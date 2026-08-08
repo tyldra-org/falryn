@@ -2216,10 +2216,13 @@ outcome. That probe remains manual; the storage smoke check described above is
 the first automated compiled-executable check, and it runs under `bun run ci`
 rather than `bun run check`, because `bun run check` does not build.
 
-## Not implemented
+## Remaining implementation gaps
 
-No end-user product behavior has been implemented. In particular, the
-repository does not yet provide:
+The repository now provides end-user behavior for the `config` and `doctor`
+commands and a working v0.1 OpenTUI shell. The shell owns its renderer, frame,
+empty transcript surface, composer, activity rail, status line, overlays, input,
+and terminal restoration; it does not yet have a provider, agent loop,
+session/turn producer, or live transcript producer. The remaining gaps are:
 
 - the shutdown participants other than the scheduler drain, the artifact
   finalize, the event-store quiesce, the projection checkpoint, the storage
@@ -2236,7 +2239,8 @@ repository does not yet provide:
 - any composition of the credential resolver. The stores, the resolver, and the
   host command runner exist and are tested, and `src/main.ts` constructs none of
   them, so no real run resolves a credential. The first consumer is #35;
-- any *producer* of a session, turn, model attempt, invocation, or event. The
+- any *product producer* of a session, turn, model attempt, invocation, or
+  transcript event. The
   tables, the typed repositories, the durable event store, and the projection
   cursor all exist and are composed, and nothing in a real run starts a session
   or opens a turn, because the agent loop that would is
@@ -2244,10 +2248,15 @@ repository does not yet provide:
   absent: usage accounting and provider routing on a model attempt, which arrive
   with the model path, and read-connection pooling, which stays undecided until
   there are enough real read paths to measure;
-- any command, human, JSON, JSONL, or terminal rendering of those records. The
-  shared `SessionView` shape exists so a renderer does not have to restate it;
-  the renderers are [#16](https://github.com/yogeshprasad098/falryn/issues/16)
-  and [#21](https://github.com/yogeshprasad098/falryn/issues/21);
+- command, human, JSON, JSONL, or terminal rendering for the records described
+  above. The shared `SessionView` shape exists so a renderer does not have to
+  restate it. The `config` and `doctor` commands already use all four headless
+  projections, and the OpenTUI shell is delivered as a presentation surface;
+  it has no live conversation to render until the producer path owned by
+  [#33](https://github.com/yogeshprasad098/falryn/issues/33) and later work
+  exists. The CLI/headless foundation and shell delivery are owned by
+  [#16](https://github.com/yogeshprasad098/falryn/issues/16) and
+  [#21](https://github.com/yogeshprasad098/falryn/issues/21);
 - a projection registry. One projection is maintained and its name is a closed
   union of one; a registry for a single member would be a framework built for
   one caller. Deterministic replay, fork, rewind, and reachability garbage
@@ -2276,27 +2285,14 @@ repository does not yet provide:
 - the command surfaces that would show a reset or uninstall plan and collect its
   confirmation. This area produces the plan and the typed outcome; rendering
   them and asking is the CLI's;
-- headless product behavior beyond `config` and `doctor`, or anything the
-  OpenTUI application shows. The command tree, global options, help, version,
-  the process boundary beneath them, and all four output projections are real;
-  what is absent is commands to render. The shell's *lifecycle* is real — it
-  launches, owns one renderer, and restores the terminal — and what it renders
-  is a frame with nothing in it: a workspace header, an empty primary region, and
-  a status line. Since #24 the theme, layout classes, primitives, overlay host,
-  and frame composites are real. What is absent is content and interaction —
-  `TranscriptView`, `Composer`, and `ActivityRail` are
-  [#25](https://github.com/yogeshprasad098/falryn/issues/25), and the keymap,
-  focus routing, and command registry are
-  [#26](https://github.com/yogeshprasad098/falryn/issues/26). The overlay routes
-  open on their keys since #26, the palette lists every command with its
-  binding and its availability, and since
-  [#364](https://github.com/yogeshprasad098/falryn/issues/364) typing narrows
-  that list. No producer of
-  sessions or turns exists, so a JSON Lines run today carries the short
-  lifecycle a `config` or `doctor` command produces rather than a model turn.
-  Since [#345](https://github.com/yogeshprasad098/falryn/issues/345) a CLI
-  invocation does cancel and does time out, and both terminal records are
-  proven against observed runs in source and compiled mode.
+- headless product behavior beyond `config` and `doctor`, or live conversation
+  content in the OpenTUI application. The command tree, global options, help,
+  version, process boundary, and all four output projections are real. The
+  shell is delivered: it renders a workspace header, empty transcript surface,
+  multiline composer, activity rail, status line, and overlays, and it handles
+  focus, keymap, input, paste, and terminal restoration. No provider, agent
+  loop, session/turn producer, or live transcript producer exists yet, so
+  submission resolves to `unavailable` and the transcript remains empty.
   Also absent: every command group whose capability does not exist, shell
   completion, and hidden or deprecated command policy beyond its declaration;
 - provider integration, model routing, the agent loop, or unified tool
