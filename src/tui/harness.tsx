@@ -185,8 +185,14 @@ export async function mount(node: ReactNode, options: MountOptions = {}): Promis
       return await frame();
     },
     async pressEscape(modifiers = {}) {
+      // Escape always targets a visible overlay or the shell's cancellation
+      // notice. Capture the frame before emitting it so a quiet pre-input frame
+      // cannot satisfy the settle heuristic while React is still committing the
+      // dismissal. This is observable under repository-wide test load, where
+      // the old helper could return the still-open Help frame.
+      const previous = setup.captureCharFrame();
       setup.mockInput.pressEscape(modifiers);
-      return await frame();
+      return await settle(setup, shape, undefined, previous);
     },
     async pressTab(modifiers = {}) {
       setup.mockInput.pressTab(modifiers);
@@ -263,6 +269,7 @@ async function settle(
   setup: TestRendererSetup,
   shape: TerminalShape,
   marker?: string,
+  changedFrom?: string,
 ): Promise<string> {
   let last = "";
   let quiet = 0;
@@ -275,6 +282,9 @@ async function settle(
     last = captured;
 
     if (!hasPainted(captured)) {
+      continue;
+    }
+    if (changedFrom !== undefined && captured === changedFrom) {
       continue;
     }
     if (marker === undefined ? quiet >= QUIET_CAPTURES : captured.includes(marker)) {
