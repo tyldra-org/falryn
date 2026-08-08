@@ -45,6 +45,11 @@ tests small, explicit, and user-focused.
   reviews, issues, milestones, Projects, merges, releases, rulesets, or
   multi-repository delivery. Apply its safety and verification rules together
   with Falryn's repository workflow.
+- Load and follow the global `falryn-delivery-loop` skill before responding to
+  `Deliver — Target: ...`, `Next — Target: Falryn Roadmap`, or “what should I
+  implement next?”. It coordinates one Falryn issue through the canonical
+  delivery contract and gives a read-only resume/next-target report; it does not
+  replace the required technical or GitHub workflow skills.
 - Skill guidance supports implementation quality but does not override Falryn's
   architecture, a Ready issue's scope, or repository-owned validation.
 
@@ -112,10 +117,14 @@ tests small, explicit, and user-focused.
   linked `falryn-docs` companions. Use `Docs issue` and `Docs PR` only for
   docs-only work. Never substitute a same-numbered object from the other
   repository.
-- After a fresh Verify previews the complete delivery bundle, docs-first merge
-  order, exact final subjects and optional issue-reference footers, and safe
-  post-merge checkout synchronization, an explicit Merge prompt authorizes the
-  unchanged preview. Use squash merge for ordinary short-lived PRs when
+- In the manual Plan/Implement/Verify workflow, after a fresh Verify previews
+  the complete delivery bundle, docs-first merge order, exact final subjects
+  and optional issue-reference footers, and safe post-merge checkout
+  synchronization, an explicit Merge prompt authorizes the unchanged preview.
+  A `Deliver — Target: ...` prompt instead authorizes the resolved delivery
+  bundle's automatic merge after that same fresh passing Verify; it never
+  authorizes unrelated or changed pull requests. Use squash merge for ordinary
+  short-lived PRs when
   enabled, with the reviewed PR title as the subject and no body by default.
   Add at most one short `Closes #N` or repository-qualified `Refs owner/repo#N`
   footer only when it adds useful durable traceability. Keep validation, risks,
@@ -133,21 +142,29 @@ tests small, explicit, and user-focused.
   why. Merge authorizes this safe synchronization; it never authorizes stash,
   reset, rebase, force push, conflict resolution, or local/remote branch
   deletion.
-- Treat `Plan — Target: ...`, `Implement — Target: ...`, and
-  `Verify — Target: ...` as mandatory mode selectors. Before acting, read the
+- Treat `Plan — Target: ...`, `Implement — Target: ...`, `Verify — Target:
+  ...`, `Deliver — Target: ...`, and `Next — Target: Falryn Roadmap` as
+  mandatory mode selectors. Before acting, read the
   canonical contracts in
   [`falryn-docs/DEVELOPMENT.md`](https://github.com/yogeshprasad098/falryn-docs/blob/main/DEVELOPMENT.md#recognized-prompt-forms),
   resolve the exact GitHub target, and obey the selected mode's scope, allowed
   mutations, stop conditions, status transitions, validation, and final report.
-  `Merge — Target: PR #N` is the separate delivery action after a fresh Verify.
-  Do not interpret RavenCode milestone or phase identifiers as Falryn targets.
-- End every Plan, Implement, Verify, merge, and release-related report with one
-  copy-ready `Suggested next prompt: ...` selected from current GitHub state.
+  `Merge — Target: PR #N` is the separate manual delivery action after a fresh
+  Verify; Deliver follows its distinct composite contract. Do not interpret
+  RavenCode milestone or phase identifiers as Falryn targets.
+- End every Plan, Implement, Verify, Deliver, Next, merge, and release-related
+  report with one copy-ready `Suggested next prompt: ...` selected from current
+  GitHub state.
   Follow the transition rules in
   [`falryn-docs/DEVELOPMENT.md`](https://github.com/yogeshprasad098/falryn-docs/blob/main/DEVELOPMENT.md#suggesting-the-next-prompt).
   Use exact repository object numbers or milestone titles, never placeholders.
   A suggestion helps the user choose the next action; it does not authorize the
   agent to run that action.
+- For Next routing, validate `CURRENT-STATE.md`'s Planning frontier and apply
+  the canonical manual transition before considering other work. A Project
+  item's visual position, newly created bottom placement, or recent update is
+  never a priority signal; use the explicit Priority field, dependency graph,
+  and stable issue order only when no valid frontier or continuation exists.
 - When a report names a repository file the user may need to open, provide both
   its clickable absolute path in the current local checkout and its
   repository-qualified path with a canonical GitHub link when one exists.
