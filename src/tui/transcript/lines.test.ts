@@ -2,7 +2,7 @@
  * Rows, resolved to lines.
  *
  * Pure, so every property here is asserted without a terminal. The three that
- * matter are the ones a scrollback commit cannot take back: a status keeps its
+ * matter are the ones a rendered transcript must preserve: a status keeps its
  * word, a hostile byte cannot forge a line, and a colour the terminal does not
  * have stays absent rather than becoming a grey.
  */
@@ -70,8 +70,8 @@ describe("a status row", () => {
 describe("every line", () => {
   test("is sanitized whether or not the row was flagged untrusted", () => {
     // The flag says where the text came from. It does not say where the text is
-    // going, and scrollback is the one destination nothing can repaint. Written
-    // from a code point rather than as an escape literal so this file does not
+    // going, and every rendered line must carry the same control-byte guarantee.
+    // Written from a code point rather than as an escape literal so this file does not
     // carry a raw control byte of its own.
     const control = String.fromCodePoint(0x1b);
     const forged = drawableLine(

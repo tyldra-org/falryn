@@ -92,7 +92,7 @@ export type OverlayHostProps = {
    * A function rather than a node because the panel's height is decided here and
    * the content has to respect it. Rendering more rows than the panel has does
    * not clip in a terminal — the lines draw over each other, which is how a
-   * 25-command help overlay in a six-row footer became an unreadable smear.
+   * 25-command help overlay in a six-row panel became an unreadable smear.
    *
    * May be zero, and a route is still called with it: the host hides the subtree
    * rather than dropping it, so a route that always draws a line cannot overdraw

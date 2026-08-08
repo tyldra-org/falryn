@@ -140,15 +140,16 @@ describe("hints", () => {
 });
 
 describe("the override", () => {
-  test("reads off or nothing", () => {
+  test("reads off or nothing, while former mode values stay unrecognized", () => {
     expect(readShellOverride(createStaticEnvironment({}))).toEqual({ kind: "none" });
     expect(readShellOverride(createStaticEnvironment({ FALRYN_TUI: "off" }))).toEqual({
       kind: "off",
     });
-    expect(readShellOverride(createStaticEnvironment({ FALRYN_TUI: "main-screen" }))).toEqual({
-      kind: "unrecognized",
-      value: "main-screen",
-    });
+    for (const value of ["split-footer", "main-screen", "alternate-screen"]) {
+      const built = record({ TERM: "xterm-256color", FALRYN_TUI: value });
+      expect(built.override).toEqual({ kind: "unrecognized", value });
+      expect(built.renderer).toBe(null);
+    }
   });
 
   test("is case- and whitespace-insensitive", () => {

@@ -201,8 +201,8 @@ async function runCommand(
  *
  * The decision is taken from observed facts rather than guessed, and it is taken
  * *here* — before anything OpenTUI-shaped is loaded. `src/tui/index.ts` is the
- * pure half of the interface area: a capability record, a launch decision, and a
- * mode selection, none of which touches a renderer. Only a decision to launch
+ * pure half of the interface area: a capability record and a launch decision,
+ * neither of which touches a renderer. Only a decision to launch
  * reaches for `src/tui/shell.tsx`, and only that import pulls in the native
  * library. A run that was never going to open a shell pays nothing to find out.
  *
