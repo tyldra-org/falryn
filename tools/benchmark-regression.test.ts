@@ -123,6 +123,25 @@ describe("benchmark regression comparison", () => {
     expect(formatBenchmarkGateComparison(comparison)).toStartWith("benchmark gate: PASS");
   });
 
+  test("passes a no-difference bracket with sub-threshold order variation", () => {
+    const comparison = compareBenchmarkGate({
+      baseFirst: gateReport("base-sha", "base-first", [10, 11, 12, 13, 14]),
+      candidateFirst: gateReport("candidate-sha", "candidate-first", [11, 12, 13, 14, 15]),
+      candidateSecond: gateReport("candidate-sha", "candidate-second", [11, 12, 13, 14, 15]),
+      baseSecond: gateReport("base-sha", "base-second", [12, 13, 14, 15, 16]),
+    });
+
+    expect(comparison).toMatchObject({
+      kind: "pass",
+      details: {
+        baseControl: { kind: "pass" },
+        candidateControl: { kind: "pass" },
+        baseFirstCandidateFirst: { kind: "pass" },
+        baseSecondCandidateSecond: { kind: "pass" },
+      },
+    });
+  });
+
   test("rejects a synthetic p50 and p95 regression in both relative orders", () => {
     const comparison = compareBenchmarkGate({
       baseFirst: gateReport("base-sha", "base-first"),

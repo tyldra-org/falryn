@@ -165,10 +165,6 @@ const ARTIFACT_SAMPLES = 3;
 
 /** Bounded reads, well under the 8 MiB `MAX_ARTIFACT_RANGE_BYTES` ceiling. */
 const RANGE_BYTES = 64 * 1_024;
-const RANGE_SAMPLES = 64;
-
-/** Fresh databases, each migrated cold. */
-const MIGRATION_SAMPLES = 5;
 
 /** Contending attempts per scenario. Fixed, so the measurement terminates. */
 const CONTENTION_SAMPLES = 5;
@@ -291,6 +287,17 @@ function configuredReportPath(): string | null {
 }
 
 const reportPath = configuredReportPath();
+
+/**
+ * A comparative report needs enough observations for its p95 to describe the
+ * measured operation rather than one scheduler interruption. Local diagnostics
+ * retain their short, bounded profile; CI's four equivalent report trials use
+ * the larger profile and record the resulting sample arrays and dataset ids.
+ */
+const COMPARISON_COLD_SAMPLES = 21;
+const COMPARISON_RANGE_SAMPLES = 256;
+const MIGRATION_SAMPLES = reportPath === null ? 5 : COMPARISON_COLD_SAMPLES;
+const RANGE_SAMPLES = reportPath === null ? 64 : COMPARISON_RANGE_SAMPLES;
 
 function configuredBenchmarkRun(): BenchmarkRun {
   const revision = process.env.FALRYN_BENCHMARK_REVISION ?? "manual";
@@ -1067,6 +1074,7 @@ const MEASURE_SHAPE: TerminalShape = { columns: 100, rows: 30 };
 const STREAM_UPDATES = 96;
 const LONG_TRANSCRIPT_BLOCKS = 2_000;
 const SHELL_SAMPLES = 5;
+const STARTUP_SAMPLES = reportPath === null ? SHELL_SAMPLES : COMPARISON_COLD_SAMPLES;
 
 function shellNode(transcript: TranscriptProjection = EMPTY_PROJECTION): ReactNode {
   return createElement(ShellApp, {
@@ -1172,20 +1180,20 @@ describe.if(measuring && compiledMeasurementReady)("compiled shell measurements"
     "measures startup to first draw on the compiled pseudo-terminal",
     async () => {
       const samples: number[] = [];
-      for (let sample = 0; sample < SHELL_SAMPLES; sample += 1) {
+      for (let sample = 0; sample < STARTUP_SAMPLES; sample += 1) {
         samples.push(await compiledSample(async (run) => (await run.waitForFrame()).elapsedMs));
       }
-      expect(samples).toHaveLength(SHELL_SAMPLES);
+      expect(samples).toHaveLength(STARTUP_SAMPLES);
       report({
         quantity: "startup to first draw",
         against: "`dist/falryn` spawned on a pseudo-terminal until its first synchronized frame",
-        dataset: `${SHELL_SAMPLES} cold compiled-process starts at ${MEASURE_SHAPE.columns}×${MEASURE_SHAPE.rows}`,
+        dataset: `${STARTUP_SAMPLES} cold compiled-process starts at ${MEASURE_SHAPE.columns}×${MEASURE_SHAPE.rows}`,
         state: "cold",
         result: formatMilliseconds(samples),
         notes: ["the clock starts before process spawn, so executable startup is included"],
         benchmark: benchmarkMilliseconds(
           "startup-to-first-draw",
-          `compiled-shell-${MEASURE_SHAPE.columns}x${MEASURE_SHAPE.rows}-${SHELL_SAMPLES}-starts-v1`,
+          `compiled-shell-${MEASURE_SHAPE.columns}x${MEASURE_SHAPE.rows}-${STARTUP_SAMPLES}-starts-v1`,
           "cold",
           samples,
         ),
