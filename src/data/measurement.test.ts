@@ -1,7 +1,7 @@
 /**
  * The persistence resource measurement.
  *
- * Six quantities that were previously asserted rather than measured:
+ * The persistence resource measurements that were previously asserted rather than measured:
  * transaction latency, busy wait and refusal rate, migration time, database
  * size, artifact throughput, and range-read latency. This module measures them
  * against the real owners on the qualified platform and prints each result with
@@ -15,9 +15,9 @@
  *   from this module — Bun records each test inside a false `describe.if` as
  *   skipped, and the last one exists only to name `bun run measure`, the same
  *   shape `src/main.compiled.test.ts` uses for an unbuilt executable. It joins
- *   neither `check` nor `ci`, because a measurement that gates a merge is a
- *   threshold, and thresholds are the benchmark harness this repository has no
- *   owner for yet.
+ *   neither `check` nor `ci`. A caller that supplies
+ *   `FALRYN_MEASURE_REPORT` receives a bounded report for the four signals the
+ *   comparative CI gate owns; ordinary local diagnostics remain threshold-free.
  * - **It asserts no timing threshold.** A timing assertion on a developer
  *   machine is a flake. What it does assert is that the work it measured
  *   actually happened — the rows are there, the bytes read back, the schema
@@ -45,10 +45,18 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { stat } from "node:fs/promises";
 import { cpus, release, totalmem } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
 import { TestRecorder } from "@opentui/core/testing";
 import { createElement, type ReactNode } from "react";
 
+import {
+  BENCHMARK_METRIC_IDS,
+  type BenchmarkMeasurement,
+  type BenchmarkMetricId,
+  createBenchmarkMeasurement,
+  createBenchmarkReport,
+  writeBenchmarkReport,
+} from "../../tools/benchmark-regression.ts";
 import {
   capabilityInvocationCompleted,
   capabilityInvocationStarted,
@@ -171,8 +179,6 @@ const SHORT_BUSY_TIMEOUT_MS = 300;
 
 const MEASUREMENT_TIMEOUT_MS = 300_000;
 
-afterAll(removeTemporaryRoots);
-
 // ── Reporting ───────────────────────────────────────────────────────────────
 
 type Distribution = {
@@ -241,7 +247,47 @@ type Measurement = {
   readonly state: "cold" | "warm" | "cold and warm";
   readonly result: string;
   readonly notes?: readonly string[];
+  readonly benchmark?: BenchmarkMeasurement;
 };
+
+const EXPECTED_MEASUREMENTS = [
+  "migration time",
+  "transaction latency",
+  "database size",
+  "busy wait",
+  "refusal rate",
+  "artifact throughput",
+  "range-read latency",
+  "startup to first draw",
+  "render cadence",
+  "input latency under stream load",
+  "event-loop delay",
+  "memory growth across a long transcript",
+  "shutdown latency",
+] as const;
+
+const reportedMeasurements = new Set<string>();
+const benchmarkMeasurements = new Map<BenchmarkMetricId, BenchmarkMeasurement>();
+
+function configuredReportPath(): string | null {
+  const destination = process.env.FALRYN_MEASURE_REPORT;
+  if (destination === undefined) {
+    return null;
+  }
+  if (!measuring) {
+    throw new Error("FALRYN_MEASURE_REPORT requires FALRYN_MEASURE=1");
+  }
+  if (
+    destination.trim().length === 0 ||
+    destination !== destination.trim() ||
+    !isAbsolute(destination)
+  ) {
+    throw new Error("FALRYN_MEASURE_REPORT must be a non-empty absolute file path");
+  }
+  return destination;
+}
+
+const reportPath = configuredReportPath();
 
 function platformLine(): string {
   const model = cpus()[0]?.model ?? "unknown cpu";
@@ -259,6 +305,25 @@ function write(line: string): void {
 }
 
 function report(measurement: Measurement): void {
+  if (measuring) {
+    if (
+      !EXPECTED_MEASUREMENTS.includes(
+        measurement.quantity as (typeof EXPECTED_MEASUREMENTS)[number],
+      )
+    ) {
+      throw new Error(`unexpected measurement report: ${measurement.quantity}`);
+    }
+    if (reportedMeasurements.has(measurement.quantity)) {
+      throw new Error(`duplicate measurement report: ${measurement.quantity}`);
+    }
+    reportedMeasurements.add(measurement.quantity);
+    if (measurement.benchmark !== undefined) {
+      if (benchmarkMeasurements.has(measurement.benchmark.id)) {
+        throw new Error(`duplicate benchmark measurement: ${measurement.benchmark.id}`);
+      }
+      benchmarkMeasurements.set(measurement.benchmark.id, measurement.benchmark);
+    }
+  }
   write("");
   write(`── ${measurement.quantity} ──`);
   write(`   against   ${measurement.against}`);
@@ -270,6 +335,71 @@ function report(measurement: Measurement): void {
     write(`   note      ${note}`);
   }
 }
+
+function benchmarkMilliseconds(
+  id: BenchmarkMetricId,
+  datasetRevision: string,
+  state: Measurement["state"],
+  samples: readonly number[],
+): BenchmarkMeasurement {
+  return createBenchmarkMeasurement({
+    id,
+    datasetRevision,
+    state,
+    samples,
+  });
+}
+
+function benchmarkNanoseconds(
+  id: BenchmarkMetricId,
+  datasetRevision: string,
+  state: Measurement["state"],
+  samples: readonly number[],
+): BenchmarkMeasurement {
+  return benchmarkMilliseconds(
+    id,
+    datasetRevision,
+    state,
+    samples.map((sample) => milliseconds(sample)),
+  );
+}
+
+afterAll(async () => {
+  try {
+    if (reportPath === null) {
+      return;
+    }
+    if (!compiledMeasurementReady) {
+      throw new Error(
+        "compiled executable or pseudo-terminal unavailable; no benchmark report was written",
+      );
+    }
+    const missingMeasurements = EXPECTED_MEASUREMENTS.filter(
+      (quantity) => !reportedMeasurements.has(quantity),
+    );
+    if (missingMeasurements.length > 0) {
+      throw new Error(
+        `measurement suite was incomplete; no benchmark report was written: ${missingMeasurements.join(", ")}`,
+      );
+    }
+    const missingBenchmarks = BENCHMARK_METRIC_IDS.filter((id) => !benchmarkMeasurements.has(id));
+    if (missingBenchmarks.length > 0) {
+      throw new Error(
+        `benchmark measurements were incomplete; no report was written: ${missingBenchmarks.join(", ")}`,
+      );
+    }
+    const measurements = BENCHMARK_METRIC_IDS.map((id) => {
+      const measurement = benchmarkMeasurements.get(id);
+      if (measurement === undefined) {
+        throw new Error(`benchmark measurement disappeared before reporting: ${id}`);
+      }
+      return measurement;
+    });
+    await writeBenchmarkReport(reportPath, createBenchmarkReport(measurements));
+  } finally {
+    await removeTemporaryRoots();
+  }
+});
 
 /**
  * Records a quantity that could not be measured, with the reason.
@@ -520,6 +650,12 @@ describe.if(measuring)("persistence resource behavior", () => {
           "each sample is a distinct fresh temporary root, so none is warmed by the one before it",
           "includes connection open, the pragma set, the integrity check, and every migration transaction",
         ],
+        benchmark: benchmarkNanoseconds(
+          "migration-time",
+          `sqlite-schema-${PRODUCT_SCHEMA_VERSION}-empty-v1`,
+          "cold",
+          samples,
+        ),
       });
     },
     MEASUREMENT_TIMEOUT_MS,
@@ -605,6 +741,12 @@ describe.if(measuring)("persistence resource behavior", () => {
           `the ${SESSIONS} session inserts preceding these are the discarded warm-up`,
           "each sample is one transaction: the existence check and the insert commit together",
         ],
+        benchmark: benchmarkNanoseconds(
+          "transaction-latency",
+          `sqlite-schema-${PRODUCT_SCHEMA_VERSION}-sessions-${SESSIONS}-turns-${TURNS}-events-${EVENTS}-v1`,
+          "warm",
+          transactionSamples,
+        ),
       });
 
       // Closed before the file is measured: the close sequence disables
@@ -850,6 +992,8 @@ describe.if(measuring)("persistence resource behavior", () => {
         );
       }
 
+      await store.close();
+
       report({
         quantity: "range-read latency",
         against:
@@ -861,9 +1005,13 @@ describe.if(measuring)("persistence resource behavior", () => {
           "one read is discarded as the warm-up before the samples are taken",
           "includes the metadata read that resolves the artifact to its digest",
         ],
+        benchmark: benchmarkNanoseconds(
+          "range-read-latency",
+          `host-blob-${ARTIFACT_BYTES}-byte-artifact-${RANGE_BYTES}-byte-ranges-${RANGE_SAMPLES}-samples-v1`,
+          "warm",
+          rangeSamples,
+        ),
       });
-
-      await store.close();
     },
     MEASUREMENT_TIMEOUT_MS,
   );
@@ -1013,6 +1161,12 @@ describe.if(measuring && compiledMeasurementReady)("compiled shell measurements"
         state: "cold",
         result: formatMilliseconds(samples),
         notes: ["the clock starts before process spawn, so executable startup is included"],
+        benchmark: benchmarkMilliseconds(
+          "startup-to-first-draw",
+          `compiled-shell-${MEASURE_SHAPE.columns}x${MEASURE_SHAPE.rows}-${SHELL_SAMPLES}-starts-v1`,
+          "cold",
+          samples,
+        ),
       });
     },
     MEASUREMENT_TIMEOUT_MS,

@@ -69,3 +69,78 @@ jobs:
 
       - name: Run the macOS arm64 compiled smoke suites
         run: bun run smoke:macos-arm64
+
+  macos-arm64-benchmark-regression:
+    name: macOS arm64 benchmark regression
+    if: github.event_name == 'pull_request'
+    runs-on: macos-15
+    timeout-minutes: 20
+
+    env:
+      BENCHMARK_REPORT_DIRECTORY: ${{ runner.temp }}/falryn-benchmark-reports
+
+    steps:
+      - name: Check out the reviewed revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Set up Bun for the reviewed revision
+        uses: oven-sh/setup-bun@735343b667d3e6f658f44d0eca948eb6282f2b76 # v2.0.2
+        with:
+          bun-version-file: package.json
+
+      - name: Install the reviewed revision's locked dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build the reviewed macOS arm64 executable
+        run: bun run build:macos-arm64
+
+      - name: Measure the reviewed revision
+        continue-on-error: true
+        env:
+          FALRYN_MEASURE_REPORT: ${{ runner.temp }}/falryn-benchmark-reports/candidate.json
+        run: |
+          mkdir -p "$BENCHMARK_REPORT_DIRECTORY"
+          bun run measure
+
+      - name: Check out the pull request base revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: baseline
+
+      - name: Set up Bun for the base revision
+        uses: oven-sh/setup-bun@735343b667d3e6f658f44d0eca948eb6282f2b76 # v2.0.2
+        with:
+          bun-version-file: baseline/package.json
+
+      - name: Install the base revision's locked dependencies
+        working-directory: baseline
+        run: bun install --frozen-lockfile
+
+      - name: Build the base macOS arm64 executable
+        working-directory: baseline
+        run: bun run build:macos-arm64
+
+      - name: Measure the base revision
+        continue-on-error: true
+        working-directory: baseline
+        env:
+          FALRYN_MEASURE_REPORT: ${{ runner.temp }}/falryn-benchmark-reports/base.json
+        run: bun run measure
+
+      - name: Compare the reports
+        if: always()
+        env:
+          FALRYN_BENCHMARK_BASE_REPORT: ${{ runner.temp }}/falryn-benchmark-reports/base.json
+          FALRYN_BENCHMARK_CANDIDATE_REPORT: ${{ runner.temp }}/falryn-benchmark-reports/candidate.json
+        run: bun run benchmark:compare
+
+      - name: Upload benchmark reports
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: macos-arm64-benchmark-reports-${{ github.run_id }}
+          path: ${{ runner.temp }}/falryn-benchmark-reports
+          if-no-files-found: warn
