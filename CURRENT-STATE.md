@@ -916,25 +916,38 @@ Five limitations belong with those numbers:
   retries" is therefore recorded as busy wait and refusal rate; a retry counter
   would have been product behavior invented inside a measurement.
 - **A relative regression gate now owns the comparison boundary.**
-  [#415](https://github.com/yogeshprasad098/falryn/issues/415) adds a
-  pull-request-only `macos-15` arm64 job that builds and measures the reviewed
-  revision and exact PR base SHA on the same runner. With a fresh
+  [#415](https://github.com/yogeshprasad098/falryn/issues/415) and
+  [#418](https://github.com/yogeshprasad098/falryn/issues/418) add a
+  pull-request-only `macos-15` arm64 job that builds each exact revision and
+  immediately warms the same revision before every base-first, candidate-first,
+  candidate-second, and base-second report on one runner. The report profile
+  collects 101 migrations, 250 transaction writes, 256 range reads, and 21
+  compiled-startup samples. Before timing, it discards 21 migrations, 64 turns,
+  and 256 range reads in that same Bun process, so its p95 is neither one
+  cold-run maximum nor a precondition from another process; every ordered array
+  and metric warm-up count stays in the artifact. With a fresh
   `FALRYN_MEASURE_REPORT` path, the existing measurement suite atomically writes
   its test-only report only after every real-owner measurement completed; an
-  unavailable compiled executable/pseudo-terminal, malformed destination,
-  failed measurement, or incomplete suite fails without a report. The comparator
-  accepts only matching schema, platform, architecture, Bun version, dataset
-  revision/state, and sample count, and gates migration time, transaction
-  latency, range-read latency, and startup to first draw. A selected metric is a
-  regression only when both p50 and p95 are at least 50% slower; one-sided,
-  missing, malformed, or incompatible data is a nonzero inconclusive result.
-  The two reports are temporary CI artifacts, never product/runtime/tracked
-  output. Database size, contention, throughput, cadence, memory, and shutdown
-  remain diagnostic observations rather than newly invented budgets. Because
-  the base predates report emission, CI overlays only this PR's test-only report
-  harness into its disposable checkout after building the base source and
-  executable; that harness still imports the base data and terminal owners and
-  cannot enter the already-built artifact.
+  unavailable compiled executable/pseudo-terminal, malformed destination, failed
+  measurement, or incomplete suite fails without a report. Each `v3` report
+  records its revision, ordered trial, completed workflow warm-up count, and
+  per-metric same-process warm-up sample count. The comparator accepts only
+  matching schema, platform, architecture, Bun version, dataset revision/state,
+  warm-up/sample count; it checks each same-revision control in both directions
+  and requires the two relative-order comparisons to agree. It gates migration
+  time, transaction latency, range-read latency, and startup to first draw. A
+  selected metric is a regression only when both p50 and p95 are at least 50%
+  slower. A same-revision control's one-sided tail shift is retained in the
+  report but is not a regression; a two-sided control regression, missing,
+  malformed, incompatible, incomplete-warm-up, or disagreeing data is a nonzero
+  inconclusive result, as is a one-sided base/candidate pair. The four reports
+  are temporary CI artifacts, never product/runtime/tracked output.
+  Database size, contention, throughput, cadence, memory, and shutdown remain
+  diagnostic observations rather than newly invented budgets. Because the base
+  predates report emission, CI overlays only this PR's test-only report harness
+  into its disposable checkout after building the base source and executable;
+  that harness still imports the base data and terminal owners and cannot enter
+  the already-built artifact.
 - **One platform.** macOS is the only qualified target; measuring on it
   qualifies no other, and a second platform is
   [#220](https://github.com/yogeshprasad098/falryn/issues/220).

@@ -9,7 +9,7 @@
 import { appendFile, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
-export const BENCHMARK_REPORT_SCHEMA = "falryn.benchmark-report/v1";
+export const BENCHMARK_REPORT_SCHEMA = "falryn.benchmark-report/v3";
 
 export const BENCHMARK_METRIC_IDS = [
   "migration-time",
@@ -35,6 +35,7 @@ export type BenchmarkMeasurement = Readonly<{
   unit: "milliseconds";
   datasetRevision: string;
   state: BenchmarkState;
+  warmupSamples: number;
   samples: readonly number[];
   distribution: BenchmarkDistribution;
 }>;
@@ -45,9 +46,26 @@ export type BenchmarkEnvironment = Readonly<{
   bunVersion: string;
 }>;
 
+export const BENCHMARK_TRIALS = [
+  "manual",
+  "base-first",
+  "candidate-first",
+  "candidate-second",
+  "base-second",
+] as const;
+
+export type BenchmarkTrial = (typeof BENCHMARK_TRIALS)[number];
+
+export type BenchmarkRun = Readonly<{
+  revision: string;
+  trial: BenchmarkTrial;
+  warmupRuns: number;
+}>;
+
 export type BenchmarkReport = Readonly<{
   schemaVersion: string;
   environment: BenchmarkEnvironment;
+  run: BenchmarkRun;
   measurements: readonly BenchmarkMeasurement[];
 }>;
 
@@ -67,6 +85,7 @@ export const BENCHMARK_COMPARISON_REASONS = [
   "metric-unit-mismatch",
   "dataset-revision-mismatch",
   "state-mismatch",
+  "warmup-sample-count-mismatch",
   "sample-count-mismatch",
   "insufficient-samples",
   "nonpositive-baseline",
@@ -119,6 +138,10 @@ function asNonEmptyString(value: unknown): string | null {
 
 function asState(value: unknown): BenchmarkState | null {
   return value === "cold" || value === "warm" || value === "cold and warm" ? value : null;
+}
+
+function asTrial(value: unknown): BenchmarkTrial | null {
+  return BENCHMARK_TRIALS.includes(value as BenchmarkTrial) ? (value as BenchmarkTrial) : null;
 }
 
 function asMetricId(value: unknown): BenchmarkMetricId | null {
@@ -190,6 +213,7 @@ function parseMeasurement(value: unknown): BenchmarkMeasurement | null {
   const id = asMetricId(record.id);
   const datasetRevision = asNonEmptyString(record.datasetRevision);
   const state = asState(record.state);
+  const warmupSamples = asFiniteNumber(record.warmupSamples);
   const samples = Array.isArray(record.samples) ? record.samples.map(asFiniteNumber) : null;
   const distribution = parseDistribution(record.distribution);
   if (
@@ -197,6 +221,9 @@ function parseMeasurement(value: unknown): BenchmarkMeasurement | null {
     record.unit !== "milliseconds" ||
     datasetRevision === null ||
     state === null ||
+    warmupSamples === null ||
+    !Number.isInteger(warmupSamples) ||
+    warmupSamples < 0 ||
     samples === null ||
     samples.some((sample) => sample === null || sample < 0) ||
     distribution === null
@@ -215,6 +242,7 @@ function parseMeasurement(value: unknown): BenchmarkMeasurement | null {
     unit: "milliseconds",
     datasetRevision,
     state,
+    warmupSamples,
     samples: numericSamples,
     distribution,
   };
@@ -228,8 +256,14 @@ export function parseBenchmarkReport(value: unknown): ParseResult {
   }
 
   const environmentRecord = asRecord(record.environment);
+  const runRecord = asRecord(record.run);
   const schemaVersion = asNonEmptyString(record.schemaVersion);
-  if (environmentRecord === null || schemaVersion === null || !Array.isArray(record.measurements)) {
+  if (
+    environmentRecord === null ||
+    runRecord === null ||
+    schemaVersion === null ||
+    !Array.isArray(record.measurements)
+  ) {
     return { ok: false, reason: "report is missing a required top-level field" };
   }
 
@@ -238,6 +272,19 @@ export function parseBenchmarkReport(value: unknown): ParseResult {
   const bunVersion = asNonEmptyString(environmentRecord.bunVersion);
   if (platform === null || architecture === null || bunVersion === null) {
     return { ok: false, reason: "report environment is incomplete" };
+  }
+
+  const revision = asNonEmptyString(runRecord.revision);
+  const trial = asTrial(runRecord.trial);
+  const warmupRuns = asFiniteNumber(runRecord.warmupRuns);
+  if (
+    revision === null ||
+    trial === null ||
+    warmupRuns === null ||
+    !Number.isInteger(warmupRuns) ||
+    warmupRuns < 0
+  ) {
+    return { ok: false, reason: "report run metadata is incomplete" };
   }
 
   const measurements: BenchmarkMeasurement[] = [];
@@ -256,6 +303,7 @@ export function parseBenchmarkReport(value: unknown): ParseResult {
     value: {
       schemaVersion,
       environment: { platform, architecture, bunVersion },
+      run: { revision, trial, warmupRuns },
       measurements,
     },
   };
@@ -266,11 +314,15 @@ export function createBenchmarkMeasurement(
     id: BenchmarkMetricId;
     datasetRevision: string;
     state: BenchmarkState;
+    warmupSamples?: number;
     samples: readonly number[];
   }>,
 ): BenchmarkMeasurement {
+  const warmupSamples = input.warmupSamples ?? 0;
   if (
     input.datasetRevision.trim().length === 0 ||
+    !Number.isInteger(warmupSamples) ||
+    warmupSamples < 0 ||
     input.samples.length === 0 ||
     input.samples.some((sample) => !Number.isFinite(sample) || sample < 0)
   ) {
@@ -282,6 +334,7 @@ export function createBenchmarkMeasurement(
     unit: "milliseconds",
     datasetRevision: input.datasetRevision,
     state: input.state,
+    warmupSamples,
     samples: [...input.samples],
     distribution: distributionOf(input.samples),
   };
@@ -294,10 +347,12 @@ export function createBenchmarkReport(
     architecture: process.arch,
     bunVersion: Bun.version,
   },
+  run: BenchmarkRun = { revision: "manual", trial: "manual", warmupRuns: 0 },
 ): BenchmarkReport {
   return {
     schemaVersion: BENCHMARK_REPORT_SCHEMA,
     environment,
+    run,
     measurements: [...measurements],
   };
 }
@@ -407,6 +462,9 @@ export function compareBenchmarkReports(
     if (base.state !== candidate.state) {
       return inconclusive("state-mismatch");
     }
+    if (base.warmupSamples !== candidate.warmupSamples) {
+      return inconclusive("warmup-sample-count-mismatch");
+    }
     if (base.samples.length !== candidate.samples.length) {
       return inconclusive("sample-count-mismatch");
     }
@@ -428,8 +486,182 @@ export function compareBenchmarkReports(
   return { kind: "pass", metrics: comparisons };
 }
 
+export const BENCHMARK_GATE_REASONS = [
+  "base-first-report-invalid",
+  "candidate-first-report-invalid",
+  "candidate-second-report-invalid",
+  "base-second-report-invalid",
+  "trial-mismatch",
+  "revision-mismatch",
+  "warmup-incomplete",
+  "base-control-unstable",
+  "candidate-control-unstable",
+  "paired-comparison-inconclusive",
+  "paired-verdict-disagreement",
+] as const;
+
+export type BenchmarkGateReason = (typeof BENCHMARK_GATE_REASONS)[number];
+
+type BenchmarkGateDetails = Readonly<{
+  baseControl: BenchmarkComparison | null;
+  candidateControl: BenchmarkComparison | null;
+  baseFirstCandidateFirst: BenchmarkComparison | null;
+  baseSecondCandidateSecond: BenchmarkComparison | null;
+}>;
+
+export type BenchmarkGateComparison =
+  | Readonly<{
+      kind: "pass" | "regression";
+      details: BenchmarkGateDetails;
+    }>
+  | Readonly<{
+      kind: "inconclusive";
+      reason: BenchmarkGateReason;
+      details: BenchmarkGateDetails;
+    }>;
+
+export type BenchmarkGateReports = Readonly<{
+  baseFirst: unknown;
+  candidateFirst: unknown;
+  candidateSecond: unknown;
+  baseSecond: unknown;
+}>;
+
+function emptyGateDetails(): BenchmarkGateDetails {
+  return {
+    baseControl: null,
+    candidateControl: null,
+    baseFirstCandidateFirst: null,
+    baseSecondCandidateSecond: null,
+  };
+}
+
+function gateInconclusive(
+  reason: BenchmarkGateReason,
+  details: BenchmarkGateDetails,
+): BenchmarkGateComparison {
+  return { kind: "inconclusive", reason, details };
+}
+
+/**
+ * A control can show a one-sided tail shift without meeting this gate's
+ * documented regression definition. Preserve that diagnostic, but reject only
+ * an actual two-sided control regression or an incompatible control; the two
+ * base/candidate pairs remain decisive and never normalize one-sided results.
+ */
+function compareControl(first: BenchmarkReport, second: BenchmarkReport): BenchmarkComparison {
+  const forward = compareBenchmarkReports(first, second);
+  const reverse = compareBenchmarkReports(second, first);
+  if (forward.kind === "regression") {
+    return forward;
+  }
+  if (reverse.kind === "regression") {
+    return reverse;
+  }
+  if (forward.kind === "inconclusive" && forward.reason !== "one-sided-deterioration") {
+    return forward;
+  }
+  if (reverse.kind === "inconclusive" && reverse.reason !== "one-sided-deterioration") {
+    return reverse;
+  }
+  return forward.kind === "inconclusive" ? forward : reverse;
+}
+
+function controlIsUnstable(comparison: BenchmarkComparison): boolean {
+  return (
+    comparison.kind === "regression" ||
+    (comparison.kind === "inconclusive" && comparison.reason !== "one-sided-deterioration")
+  );
+}
+
+/**
+ * Compare two bracketing base/candidate pairs after validating both
+ * same-revision controls. A result becomes a pass or regression only when the
+ * independent pairs agree; any order-sensitive result remains nonzero.
+ */
+export function compareBenchmarkGate(reports: BenchmarkGateReports): BenchmarkGateComparison {
+  const baseFirstResult = parseBenchmarkReport(reports.baseFirst);
+  if (!baseFirstResult.ok) {
+    return gateInconclusive("base-first-report-invalid", emptyGateDetails());
+  }
+  const candidateFirstResult = parseBenchmarkReport(reports.candidateFirst);
+  if (!candidateFirstResult.ok) {
+    return gateInconclusive("candidate-first-report-invalid", emptyGateDetails());
+  }
+  const candidateSecondResult = parseBenchmarkReport(reports.candidateSecond);
+  if (!candidateSecondResult.ok) {
+    return gateInconclusive("candidate-second-report-invalid", emptyGateDetails());
+  }
+  const baseSecondResult = parseBenchmarkReport(reports.baseSecond);
+  if (!baseSecondResult.ok) {
+    return gateInconclusive("base-second-report-invalid", emptyGateDetails());
+  }
+
+  const baseFirst = baseFirstResult.value;
+  const candidateFirst = candidateFirstResult.value;
+  const candidateSecond = candidateSecondResult.value;
+  const baseSecond = baseSecondResult.value;
+  const allReports = [baseFirst, candidateFirst, candidateSecond, baseSecond];
+
+  if (
+    baseFirst.run.trial !== "base-first" ||
+    candidateFirst.run.trial !== "candidate-first" ||
+    candidateSecond.run.trial !== "candidate-second" ||
+    baseSecond.run.trial !== "base-second"
+  ) {
+    return gateInconclusive("trial-mismatch", emptyGateDetails());
+  }
+  if (
+    baseFirst.run.revision !== baseSecond.run.revision ||
+    candidateFirst.run.revision !== candidateSecond.run.revision ||
+    baseFirst.run.revision === candidateFirst.run.revision
+  ) {
+    return gateInconclusive("revision-mismatch", emptyGateDetails());
+  }
+  if (allReports.some((report) => report.run.warmupRuns < 1)) {
+    return gateInconclusive("warmup-incomplete", emptyGateDetails());
+  }
+
+  const baseControl = compareControl(baseFirst, baseSecond);
+  const candidateControl = compareControl(candidateFirst, candidateSecond);
+  const baseFirstCandidateFirst = compareBenchmarkReports(baseFirst, candidateFirst);
+  const baseSecondCandidateSecond = compareBenchmarkReports(baseSecond, candidateSecond);
+  const details: BenchmarkGateDetails = {
+    baseControl,
+    candidateControl,
+    baseFirstCandidateFirst,
+    baseSecondCandidateSecond,
+  };
+
+  if (controlIsUnstable(baseControl)) {
+    return gateInconclusive("base-control-unstable", details);
+  }
+  if (controlIsUnstable(candidateControl)) {
+    return gateInconclusive("candidate-control-unstable", details);
+  }
+  if (
+    baseFirstCandidateFirst.kind === "inconclusive" ||
+    baseSecondCandidateSecond.kind === "inconclusive"
+  ) {
+    return gateInconclusive("paired-comparison-inconclusive", details);
+  }
+  if (baseFirstCandidateFirst.kind !== baseSecondCandidateSecond.kind) {
+    return gateInconclusive("paired-verdict-disagreement", details);
+  }
+  return { kind: baseFirstCandidateFirst.kind, details };
+}
+
 function fixed(value: number): string {
   return value.toFixed(3);
+}
+
+function formatMetricComparisons(comparisons: readonly BenchmarkMetricComparison[]): string[] {
+  return comparisons.map(
+    (metric) =>
+      `${metric.id}: ${metric.classification}; ` +
+      `p50 ${fixed(metric.base.p50)}→${fixed(metric.candidate.p50)} ms; ` +
+      `p95 ${fixed(metric.base.p95)}→${fixed(metric.candidate.p95)} ms`,
+  );
 }
 
 /** Bounded, plain-text output for local use and the GitHub Actions summary. */
@@ -440,13 +672,37 @@ export function formatBenchmarkComparison(comparison: BenchmarkComparison): stri
       : comparison.kind === "regression"
         ? "benchmark comparison: REGRESSION"
         : `benchmark comparison: INCONCLUSIVE (${comparison.reason})`;
-  const details = comparison.metrics.map(
-    (metric) =>
-      `${metric.id}: ${metric.classification}; ` +
-      `p50 ${fixed(metric.base.p50)}→${fixed(metric.candidate.p50)} ms; ` +
-      `p95 ${fixed(metric.base.p95)}→${fixed(metric.candidate.p95)} ms`,
-  );
-  return [headline, ...details].join("\n");
+  return [headline, ...formatMetricComparisons(comparison.metrics)].join("\n");
+}
+
+/** Bounded CI diagnostics for the controls and both relative-order comparisons. */
+export function formatBenchmarkGateComparison(comparison: BenchmarkGateComparison): string {
+  let headline: string;
+  switch (comparison.kind) {
+    case "pass":
+      headline = "benchmark gate: PASS";
+      break;
+    case "regression":
+      headline = "benchmark gate: REGRESSION";
+      break;
+    case "inconclusive":
+      headline = `benchmark gate: INCONCLUSIVE (${comparison.reason})`;
+      break;
+  }
+  const namedDetails: readonly [string, BenchmarkComparison | null][] = [
+    ["base control", comparison.details.baseControl],
+    ["candidate control", comparison.details.candidateControl],
+    ["base-first → candidate-first", comparison.details.baseFirstCandidateFirst],
+    ["base-second → candidate-second", comparison.details.baseSecondCandidateSecond],
+  ];
+  return [
+    headline,
+    ...namedDetails.flatMap(([name, detail]) =>
+      detail === null
+        ? []
+        : [`${name}: ${detail.kind.toUpperCase()}`, ...formatMetricComparisons(detail.metrics)],
+    ),
+  ].join("\n");
 }
 
 /** Reject a malformed or already-existing destination before writing. */
@@ -520,47 +776,39 @@ function isMissingPath(error: unknown): boolean {
   );
 }
 
-async function readReport(
-  path: string | undefined,
-  side: "base" | "candidate",
-): Promise<
-  | Readonly<{ ok: true; value: unknown }>
-  | Readonly<{ ok: false; reason: BenchmarkComparisonReason }>
-> {
+async function readReport(path: string | undefined): Promise<unknown | null> {
   if (path === undefined || path.trim().length === 0) {
-    return { ok: false, reason: `${side}-report-missing` };
+    return null;
   }
   let source: string;
   try {
     source = await readFile(path, "utf8");
   } catch (error) {
-    return {
-      ok: false,
-      reason: isMissingPath(error) ? `${side}-report-missing` : `${side}-report-unreadable`,
-    };
+    if (isMissingPath(error)) {
+      return null;
+    }
+    return null;
   }
   try {
-    return { ok: true, value: JSON.parse(source) };
+    return JSON.parse(source);
   } catch {
-    return { ok: false, reason: `${side}-report-invalid` };
+    return null;
   }
 }
 
-async function compareFromEnvironment(): Promise<BenchmarkComparison> {
-  const base = await readReport(process.env.FALRYN_BENCHMARK_BASE_REPORT, "base");
-  if (!base.ok) {
-    return inconclusive(base.reason);
-  }
-  const candidate = await readReport(process.env.FALRYN_BENCHMARK_CANDIDATE_REPORT, "candidate");
-  if (!candidate.ok) {
-    return inconclusive(candidate.reason);
-  }
-  return compareBenchmarkReports(base.value, candidate.value);
+async function compareFromEnvironment(): Promise<BenchmarkGateComparison> {
+  const [baseFirst, candidateFirst, candidateSecond, baseSecond] = await Promise.all([
+    readReport(process.env.FALRYN_BENCHMARK_BASE_FIRST_REPORT),
+    readReport(process.env.FALRYN_BENCHMARK_CANDIDATE_FIRST_REPORT),
+    readReport(process.env.FALRYN_BENCHMARK_CANDIDATE_SECOND_REPORT),
+    readReport(process.env.FALRYN_BENCHMARK_BASE_SECOND_REPORT),
+  ]);
+  return compareBenchmarkGate({ baseFirst, candidateFirst, candidateSecond, baseSecond });
 }
 
 async function run(): Promise<void> {
   const comparison = await compareFromEnvironment();
-  const output = `${formatBenchmarkComparison(comparison)}\n`;
+  const output = `${formatBenchmarkGateComparison(comparison)}\n`;
   process.stdout.write(output);
 
   const summary = process.env.GITHUB_STEP_SUMMARY;
