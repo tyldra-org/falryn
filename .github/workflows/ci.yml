@@ -76,9 +76,6 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 20
 
-    env:
-      BENCHMARK_REPORT_DIRECTORY: ${{ runner.temp }}/falryn-benchmark-reports
-
     steps:
       - name: Check out the reviewed revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -101,7 +98,7 @@ jobs:
         env:
           FALRYN_MEASURE_REPORT: ${{ runner.temp }}/falryn-benchmark-reports/candidate.json
         run: |
-          mkdir -p "$BENCHMARK_REPORT_DIRECTORY"
+          mkdir -p "$RUNNER_TEMP/falryn-benchmark-reports"
           bun run measure
 
       - name: Check out the pull request base revision
