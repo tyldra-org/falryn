@@ -833,6 +833,15 @@ those foundations:
   adjust rule the roots follow. Observed on a real compiled run against an
   isolated state root, which is the only place the process umask applies.
 
+The test-only harness introduced by
+[#31](https://github.com/yogeshprasad098/falryn/issues/31) exercises the real
+readers for `falryn.runtime-event`, `falryn.configuration`, and
+`falryn-export/1` against current, additive-future, required-future, and
+synthetic-secret malformed inputs. Its source-level negative control discovers
+every `*fixtures.ts` and `*fixtures.tsx` module and refuses imports from product
+source, while test and fixture support remain available. The harness is not
+exported by a product entrypoint and makes no schema-contract or runtime claim.
+
 The integrated persistence walk added by
 [#325](https://github.com/yogeshprasad098/falryn/issues/325) demonstrates the
 whole chain at one source revision rather than leaving it inferred from the
