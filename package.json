@@ -17,13 +17,14 @@
     "quality": "biome check .",
     "quality:fix": "biome check --write .",
     "typecheck": "tsc --noEmit",
+    "verify:repository": "bun run tools/repository-integrity.ts",
     "test": "bun test",
     "measure": "FALRYN_MEASURE=1 bun test src/data/measurement.test.ts",
     "build": "mkdir -p dist && cd dist && bun build ../src/main.ts --compile --outfile falryn",
     "build:macos-arm64": "mkdir -p dist && cd dist && bun build ../src/main.ts --compile --target=bun-darwin-arm64 --outfile falryn",
     "smoke:macos-arm64": "FALRYN_COMPILED_SMOKE_TARGET=darwin-arm64 bun test src/main.compiled.test.ts src/tui/shell.compiled.test.ts",
-    "check": "bun run quality && bun run typecheck && bun run test",
-    "ci": "bun run quality && bun run typecheck && bun run build && bun run test"
+    "check": "bun run quality && bun run typecheck && bun run verify:repository && bun run test",
+    "ci": "bun run quality && bun run typecheck && bun run verify:repository && bun run build && bun run test"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.6",
@@ -37,7 +38,7 @@
     "@opentui/core": "0.4.5",
     "@opentui/keymap": "0.4.5",
     "@opentui/react": "0.4.5",
-    "jsonc-parser": "^3.3.1",
+    "jsonc-parser": "3.3.1",
     "react": "19.2.8",
     "yargs": "18.0.0",
     "zod": "4.4.3"
