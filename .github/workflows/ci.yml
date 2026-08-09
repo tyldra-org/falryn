@@ -120,6 +120,11 @@ jobs:
         working-directory: baseline
         run: bun run build:macos-arm64
 
+      - name: Add the test-only report harness to the base checkout
+        run: |
+          cp src/data/measurement.test.ts baseline/src/data/measurement.test.ts
+          cp tools/benchmark-regression.ts baseline/tools/benchmark-regression.ts
+
       - name: Measure the base revision
         continue-on-error: true
         working-directory: baseline

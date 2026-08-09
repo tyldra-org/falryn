@@ -930,7 +930,11 @@ Five limitations belong with those numbers:
   missing, malformed, or incompatible data is a nonzero inconclusive result.
   The two reports are temporary CI artifacts, never product/runtime/tracked
   output. Database size, contention, throughput, cadence, memory, and shutdown
-  remain diagnostic observations rather than newly invented budgets.
+  remain diagnostic observations rather than newly invented budgets. Because
+  the base predates report emission, CI overlays only this PR's test-only report
+  harness into its disposable checkout after building the base source and
+  executable; that harness still imports the base data and terminal owners and
+  cannot enter the already-built artifact.
 - **One platform.** macOS is the only qualified target; measuring on it
   qualifies no other, and a second platform is
   [#220](https://github.com/yogeshprasad098/falryn/issues/220).
