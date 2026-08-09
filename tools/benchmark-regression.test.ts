@@ -235,7 +235,7 @@ describe("benchmark regression comparison", () => {
   test("rejects each comparison signature mismatch", () => {
     const base = report();
     const signatures = [
-      ["schema-mismatch", { ...report(), schemaVersion: "falryn.benchmark-report/v3" }],
+      ["schema-mismatch", { ...report(), schemaVersion: "falryn.benchmark-report/v4" }],
       [
         "platform-mismatch",
         createBenchmarkReport(report().measurements, {
@@ -275,6 +275,15 @@ describe("benchmark regression comparison", () => {
           ...value,
           measurements: value.measurements.map((measurement, index) =>
             index === 0 ? { ...measurement, state: "warm" } : measurement,
+          ),
+        })),
+      ],
+      [
+        "warmup-sample-count-mismatch",
+        changedReport((value) => ({
+          ...value,
+          measurements: value.measurements.map((measurement, index) =>
+            index === 0 ? { ...measurement, warmupSamples: 1 } : measurement,
           ),
         })),
       ],

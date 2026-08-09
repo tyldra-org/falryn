@@ -294,10 +294,14 @@ const reportPath = configuredReportPath();
  * retain their short, bounded profile; CI's four equivalent report trials use
  * the larger profile and record the resulting sample arrays and dataset ids.
  */
-const COMPARISON_COLD_SAMPLES = 21;
+const COMPARISON_MIGRATION_SAMPLES = 101;
+const COMPARISON_STARTUP_SAMPLES = 21;
 const COMPARISON_RANGE_SAMPLES = 256;
-const MIGRATION_SAMPLES = reportPath === null ? 5 : COMPARISON_COLD_SAMPLES;
+const MIGRATION_SAMPLES = reportPath === null ? 5 : COMPARISON_MIGRATION_SAMPLES;
 const RANGE_SAMPLES = reportPath === null ? 64 : COMPARISON_RANGE_SAMPLES;
+const MIGRATION_WARMUP_SAMPLES = reportPath === null ? 0 : 21;
+const TRANSACTION_WARMUP_SAMPLES = reportPath === null ? 0 : 64;
+const RANGE_WARMUP_SAMPLES = reportPath === null ? 1 : COMPARISON_RANGE_SAMPLES;
 
 function configuredBenchmarkRun(): BenchmarkRun {
   const revision = process.env.FALRYN_BENCHMARK_REVISION ?? "manual";
@@ -367,11 +371,13 @@ function benchmarkMilliseconds(
   datasetRevision: string,
   state: Measurement["state"],
   samples: readonly number[],
+  warmupSamples = 0,
 ): BenchmarkMeasurement {
   return createBenchmarkMeasurement({
     id,
     datasetRevision,
     state,
+    warmupSamples,
     samples,
   });
 }
@@ -381,12 +387,14 @@ function benchmarkNanoseconds(
   datasetRevision: string,
   state: Measurement["state"],
   samples: readonly number[],
+  warmupSamples = 0,
 ): BenchmarkMeasurement {
   return benchmarkMilliseconds(
     id,
     datasetRevision,
     state,
     samples.map((sample) => milliseconds(sample)),
+    warmupSamples,
   );
 }
 
@@ -653,6 +661,17 @@ describe.if(measuring)("persistence resource behavior", () => {
   test(
     "measures migration time on a fresh database",
     async () => {
+      for (let warmup = 0; warmup < MIGRATION_WARMUP_SAMPLES; warmup += 1) {
+        const root = await temporaryRoot("falryn-measure-migration-warmup-");
+        const store = await openStore(root);
+        expect(store.report.created).toBe(true);
+        expect(store.report.schemaVersion).toBe(PRODUCT_SCHEMA_VERSION);
+        expect(store.report.appliedThisRun).toEqual(
+          PRODUCTION_MIGRATIONS.map((migration) => migration.version),
+        );
+        await store.close();
+      }
+
       const samples: number[] = [];
       for (let sample = 0; sample < MIGRATION_SAMPLES; sample += 1) {
         const root = await temporaryRoot("falryn-measure-migration-");
@@ -676,14 +695,16 @@ describe.if(measuring)("persistence resource behavior", () => {
         state: "cold",
         result: formatDistribution(distribution(samples)),
         notes: [
+          `${MIGRATION_WARMUP_SAMPLES} same-process migration warm-ups are discarded before timing`,
           "each sample is a distinct fresh temporary root, so none is warmed by the one before it",
           "includes connection open, the pragma set, the integrity check, and every migration transaction",
         ],
         benchmark: benchmarkNanoseconds(
           "migration-time",
-          `sqlite-schema-${PRODUCT_SCHEMA_VERSION}-empty-v1`,
+          `sqlite-schema-${PRODUCT_SCHEMA_VERSION}-empty-warmup-${MIGRATION_WARMUP_SAMPLES}-v1`,
           "cold",
           samples,
+          MIGRATION_WARMUP_SAMPLES,
         ),
       });
     },
@@ -697,6 +718,34 @@ describe.if(measuring)("persistence resource behavior", () => {
       const store = await openStore(root);
       const repositories = createRecordRepositories(store);
       const events = createSqliteEventStore(store);
+
+      if (TRANSACTION_WARMUP_SAMPLES > 0) {
+        const warmupRoot = await temporaryRoot("falryn-measure-transaction-warmup-");
+        const warmupStore = await openStore(warmupRoot);
+        const warmupRepositories = createRecordRepositories(warmupStore);
+        const warmupSession = sessionIdFor(0);
+        expect(
+          warmupRepositories.sessions.insert(
+            sessionRecord({
+              sessionId: warmupSession,
+              streamId: streamFor(0),
+              title: "measurement transaction warm-up",
+            }),
+          ).ok,
+        ).toBe(true);
+        for (let sample = 0; sample < TRANSACTION_WARMUP_SAMPLES; sample += 1) {
+          expect(
+            warmupRepositories.turns.insert(
+              turnRecord({
+                turnId: turnIdFor(0, TURNS_PER_SESSION + sample),
+                sessionId: warmupSession,
+              }),
+            ).ok,
+          ).toBe(true);
+        }
+        const closedWarmup = await warmupStore.close();
+        expect(closedWarmup.closed).toBe(true);
+      }
 
       // The warm-up, discarded: the session inserts run every code path the
       // timed turn inserts use, so the first timed sample measures the store
@@ -767,14 +816,16 @@ describe.if(measuring)("persistence resource behavior", () => {
         state: "warm",
         result: formatDistribution(distribution(transactionSamples)),
         notes: [
+          `${TRANSACTION_WARMUP_SAMPLES} same-process turn inserts are discarded before timing`,
           `the ${SESSIONS} session inserts preceding these are the discarded warm-up`,
           "each sample is one transaction: the existence check and the insert commit together",
         ],
         benchmark: benchmarkNanoseconds(
           "transaction-latency",
-          `sqlite-schema-${PRODUCT_SCHEMA_VERSION}-sessions-${SESSIONS}-turns-${TURNS}-events-${EVENTS}-v1`,
+          `sqlite-schema-${PRODUCT_SCHEMA_VERSION}-sessions-${SESSIONS}-turns-${TURNS}-events-${EVENTS}-warmup-${TRANSACTION_WARMUP_SAMPLES}-v1`,
           "warm",
           transactionSamples,
+          TRANSACTION_WARMUP_SAMPLES,
         ),
       });
 
@@ -997,28 +1048,32 @@ describe.if(measuring)("persistence resource behavior", () => {
       const stride = RANGE_BYTES + 1;
       const positions = ARTIFACT_BYTES - RANGE_BYTES;
 
-      // One discarded warm-up, then the samples.
-      const warmUp = await artifacts.readRange(readable, 0, RANGE_BYTES);
-      expect(warmUp.ok).toBe(true);
-
-      const rangeSamples: number[] = [];
-      for (let sample = 0; sample < RANGE_SAMPLES; sample += 1) {
-        const offset = (sample * stride) % positions;
-        const started = Bun.nanoseconds();
+      const readRangeAt = async (offset: number): Promise<void> => {
         const range = await artifacts.readRange(readable, offset, RANGE_BYTES);
-        rangeSamples.push(Bun.nanoseconds() - started);
         if (!range.ok) {
           unmeasured("range-read latency", `readRange failed: ${range.error.code}`);
         }
         expect(range.value.bytes.byteLength).toBe(RANGE_BYTES);
         // The bytes are the ones that were written, so the number describes a
-        // real read rather than an empty one.
-        // Both ends, so a read that returned the right length from the wrong
-        // place fails rather than passing on its first byte.
+        // real read rather than an empty one. Both ends make an unrelated
+        // cache hit unable to pass as the requested range.
         expect(range.value.bytes[0]).toBe((offset + lastSample) % 256);
         expect(range.value.bytes[RANGE_BYTES - 1]).toBe(
           (offset + RANGE_BYTES - 1 + lastSample) % 256,
         );
+      };
+
+      for (let warmup = 0; warmup < RANGE_WARMUP_SAMPLES; warmup += 1) {
+        const offset = (warmup * stride) % positions;
+        await readRangeAt(offset);
+      }
+
+      const rangeSamples: number[] = [];
+      for (let sample = 0; sample < RANGE_SAMPLES; sample += 1) {
+        const offset = (sample * stride) % positions;
+        const started = Bun.nanoseconds();
+        await readRangeAt(offset);
+        rangeSamples.push(Bun.nanoseconds() - started);
       }
 
       await store.close();
@@ -1031,14 +1086,15 @@ describe.if(measuring)("persistence resource behavior", () => {
         state: "warm",
         result: formatDistribution(distribution(rangeSamples)),
         notes: [
-          "one read is discarded as the warm-up before the samples are taken",
+          `${RANGE_WARMUP_SAMPLES} same-process reads are discarded before the samples are taken`,
           "includes the metadata read that resolves the artifact to its digest",
         ],
         benchmark: benchmarkNanoseconds(
           "range-read-latency",
-          `host-blob-${ARTIFACT_BYTES}-byte-artifact-${RANGE_BYTES}-byte-ranges-${RANGE_SAMPLES}-samples-v1`,
+          `host-blob-${ARTIFACT_BYTES}-byte-artifact-${RANGE_BYTES}-byte-ranges-${RANGE_SAMPLES}-samples-warmup-${RANGE_WARMUP_SAMPLES}-v1`,
           "warm",
           rangeSamples,
+          RANGE_WARMUP_SAMPLES,
         ),
       });
     },
@@ -1074,7 +1130,7 @@ const MEASURE_SHAPE: TerminalShape = { columns: 100, rows: 30 };
 const STREAM_UPDATES = 96;
 const LONG_TRANSCRIPT_BLOCKS = 2_000;
 const SHELL_SAMPLES = 5;
-const STARTUP_SAMPLES = reportPath === null ? SHELL_SAMPLES : COMPARISON_COLD_SAMPLES;
+const STARTUP_SAMPLES = reportPath === null ? SHELL_SAMPLES : COMPARISON_STARTUP_SAMPLES;
 
 function shellNode(transcript: TranscriptProjection = EMPTY_PROJECTION): ReactNode {
   return createElement(ShellApp, {

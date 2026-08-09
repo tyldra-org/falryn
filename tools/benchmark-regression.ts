@@ -9,7 +9,7 @@
 import { appendFile, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
-export const BENCHMARK_REPORT_SCHEMA = "falryn.benchmark-report/v2";
+export const BENCHMARK_REPORT_SCHEMA = "falryn.benchmark-report/v3";
 
 export const BENCHMARK_METRIC_IDS = [
   "migration-time",
@@ -35,6 +35,7 @@ export type BenchmarkMeasurement = Readonly<{
   unit: "milliseconds";
   datasetRevision: string;
   state: BenchmarkState;
+  warmupSamples: number;
   samples: readonly number[];
   distribution: BenchmarkDistribution;
 }>;
@@ -84,6 +85,7 @@ export const BENCHMARK_COMPARISON_REASONS = [
   "metric-unit-mismatch",
   "dataset-revision-mismatch",
   "state-mismatch",
+  "warmup-sample-count-mismatch",
   "sample-count-mismatch",
   "insufficient-samples",
   "nonpositive-baseline",
@@ -211,6 +213,7 @@ function parseMeasurement(value: unknown): BenchmarkMeasurement | null {
   const id = asMetricId(record.id);
   const datasetRevision = asNonEmptyString(record.datasetRevision);
   const state = asState(record.state);
+  const warmupSamples = asFiniteNumber(record.warmupSamples);
   const samples = Array.isArray(record.samples) ? record.samples.map(asFiniteNumber) : null;
   const distribution = parseDistribution(record.distribution);
   if (
@@ -218,6 +221,9 @@ function parseMeasurement(value: unknown): BenchmarkMeasurement | null {
     record.unit !== "milliseconds" ||
     datasetRevision === null ||
     state === null ||
+    warmupSamples === null ||
+    !Number.isInteger(warmupSamples) ||
+    warmupSamples < 0 ||
     samples === null ||
     samples.some((sample) => sample === null || sample < 0) ||
     distribution === null
@@ -236,6 +242,7 @@ function parseMeasurement(value: unknown): BenchmarkMeasurement | null {
     unit: "milliseconds",
     datasetRevision,
     state,
+    warmupSamples,
     samples: numericSamples,
     distribution,
   };
@@ -307,11 +314,15 @@ export function createBenchmarkMeasurement(
     id: BenchmarkMetricId;
     datasetRevision: string;
     state: BenchmarkState;
+    warmupSamples?: number;
     samples: readonly number[];
   }>,
 ): BenchmarkMeasurement {
+  const warmupSamples = input.warmupSamples ?? 0;
   if (
     input.datasetRevision.trim().length === 0 ||
+    !Number.isInteger(warmupSamples) ||
+    warmupSamples < 0 ||
     input.samples.length === 0 ||
     input.samples.some((sample) => !Number.isFinite(sample) || sample < 0)
   ) {
@@ -323,6 +334,7 @@ export function createBenchmarkMeasurement(
     unit: "milliseconds",
     datasetRevision: input.datasetRevision,
     state: input.state,
+    warmupSamples,
     samples: [...input.samples],
     distribution: distributionOf(input.samples),
   };
@@ -449,6 +461,9 @@ export function compareBenchmarkReports(
     }
     if (base.state !== candidate.state) {
       return inconclusive("state-mismatch");
+    }
+    if (base.warmupSamples !== candidate.warmupSamples) {
+      return inconclusive("warmup-sample-count-mismatch");
     }
     if (base.samples.length !== candidate.samples.length) {
       return inconclusive("sample-count-mismatch");
