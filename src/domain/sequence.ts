@@ -20,6 +20,7 @@ import {
   type Sequence,
   type StreamId,
 } from "./identity.ts";
+import { assertNever } from "./result.ts";
 
 /**
  * Events tracked per stream before the sequencer refuses further appends.
@@ -265,6 +266,8 @@ export function inspectReplay(events: readonly RuntimeEvent[]): ReplayReport {
       case "rejected":
         anomalies.push({ index, error: decision.error });
         break;
+      default:
+        assertNever(decision, "unhandled append decision");
     }
   });
 

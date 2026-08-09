@@ -9,6 +9,7 @@
 
 import {
   addDuration,
+  assertNever,
   type ClockPort,
   type ConfigurationGeneration,
   type Deadline,
@@ -139,7 +140,8 @@ export function createRuntimeLifecycle(options: RuntimeLifecycleOptions): Runtim
     interruption,
     (decision, signal) => {
       observed.push({ decision, signal });
-      switch (decision.action) {
+      const action = decision.action;
+      switch (action) {
         case "request-cancellation":
           scopes.cancel(scopes.root().scopeId, { kind: "requested" });
           void start("graceful");
@@ -154,6 +156,8 @@ export function createRuntimeLifecycle(options: RuntimeLifecycleOptions): Runtim
           break;
         case "ignored":
           break;
+        default:
+          assertNever(action, "unhandled interruption decision");
       }
     },
   );
