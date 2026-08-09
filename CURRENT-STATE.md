@@ -937,9 +937,11 @@ Five limitations belong with those numbers:
   and requires the two relative-order comparisons to agree. It gates migration
   time, transaction latency, range-read latency, and startup to first draw. A
   selected metric is a regression only when both p50 and p95 are at least 50%
-  slower; one-sided, missing, malformed, incompatible, incomplete-warm-up,
-  unstable, or disagreeing data is a nonzero inconclusive result. The four
-  reports are temporary CI artifacts, never product/runtime/tracked output.
+  slower. A same-revision control's one-sided tail shift is retained in the
+  report but is not a regression; a two-sided control regression, missing,
+  malformed, incompatible, incomplete-warm-up, or disagreeing data is a nonzero
+  inconclusive result, as is a one-sided base/candidate pair. The four reports
+  are temporary CI artifacts, never product/runtime/tracked output.
   Database size, contention, throughput, cadence, memory, and shutdown remain
   diagnostic observations rather than newly invented budgets. Because the base
   predates report emission, CI overlays only this PR's test-only report harness

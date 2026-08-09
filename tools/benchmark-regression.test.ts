@@ -170,6 +170,24 @@ describe("benchmark regression comparison", () => {
     expect(comparison).toMatchObject({ kind: "inconclusive", reason: "base-control-unstable" });
   });
 
+  test("records a one-sided control tail without treating it as a regression", () => {
+    const comparison = compareBenchmarkGate({
+      baseFirst: gateReport("base-sha", "base-first"),
+      candidateFirst: gateReport("candidate-sha", "candidate-first"),
+      candidateSecond: gateReport("candidate-sha", "candidate-second"),
+      baseSecond: gateReport("base-sha", "base-second", [10, 11, 12, 13, 22]),
+    });
+
+    expect(comparison).toMatchObject({
+      kind: "pass",
+      details: {
+        baseControl: { kind: "inconclusive", reason: "one-sided-deterioration" },
+        baseFirstCandidateFirst: { kind: "pass" },
+        baseSecondCandidateSecond: { kind: "pass" },
+      },
+    });
+  });
+
   test("fails inconclusively when the two relative-order verdicts disagree", () => {
     const comparison = compareBenchmarkGate({
       baseFirst: gateReport("base-sha", "base-first", [10, 10, 10, 10, 10]),

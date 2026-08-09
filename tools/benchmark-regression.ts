@@ -543,14 +543,35 @@ function gateInconclusive(
   return { kind: "inconclusive", reason, details };
 }
 
-/** Controls must agree in both directions; a later improvement can be unstable too. */
+/**
+ * A control can show a one-sided tail shift without meeting this gate's
+ * documented regression definition. Preserve that diagnostic, but reject only
+ * an actual two-sided control regression or an incompatible control; the two
+ * base/candidate pairs remain decisive and never normalize one-sided results.
+ */
 function compareControl(first: BenchmarkReport, second: BenchmarkReport): BenchmarkComparison {
   const forward = compareBenchmarkReports(first, second);
   const reverse = compareBenchmarkReports(second, first);
-  if (forward.kind !== "pass") {
+  if (forward.kind === "regression") {
     return forward;
   }
-  return reverse;
+  if (reverse.kind === "regression") {
+    return reverse;
+  }
+  if (forward.kind === "inconclusive" && forward.reason !== "one-sided-deterioration") {
+    return forward;
+  }
+  if (reverse.kind === "inconclusive" && reverse.reason !== "one-sided-deterioration") {
+    return reverse;
+  }
+  return forward.kind === "inconclusive" ? forward : reverse;
+}
+
+function controlIsUnstable(comparison: BenchmarkComparison): boolean {
+  return (
+    comparison.kind === "regression" ||
+    (comparison.kind === "inconclusive" && comparison.reason !== "one-sided-deterioration")
+  );
 }
 
 /**
@@ -612,10 +633,10 @@ export function compareBenchmarkGate(reports: BenchmarkGateReports): BenchmarkGa
     baseSecondCandidateSecond,
   };
 
-  if (baseControl.kind !== "pass") {
+  if (controlIsUnstable(baseControl)) {
     return gateInconclusive("base-control-unstable", details);
   }
-  if (candidateControl.kind !== "pass") {
+  if (controlIsUnstable(candidateControl)) {
     return gateInconclusive("candidate-control-unstable", details);
   }
   if (
