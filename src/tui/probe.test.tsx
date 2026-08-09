@@ -19,7 +19,7 @@
  */
 
 import { afterAll, describe, expect, test } from "bun:test";
-import { readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { EXIT_CODES } from "../cli/index.ts";
@@ -32,8 +32,9 @@ import {
 
 const FIXTURE = join(dirname(import.meta.path), "probe-fixtures.tsx");
 
-/** Built into the system temp directory, not the repository, and removed in teardown. */
-const FIXTURE_BINARY = join(tmpdir(), "falryn-opentui-probe");
+/** A disposable compiler workspace, including the fixture executable. */
+const fixtureDirectory = await mkdtemp(join(tmpdir(), "falryn-opentui-probe-"));
+const FIXTURE_BINARY = join(fixtureDirectory, "falryn-opentui-probe");
 
 /** The entry `bun run build` compiles, and therefore the whole of what ships. */
 const ENTRY = join(dirname(dirname(import.meta.path)), "main.ts");
@@ -97,12 +98,12 @@ function run(command: readonly string[], scenario: string): ProbeRun {
 
 const compileAttempt = Bun.spawnSync(
   [process.execPath, "build", FIXTURE, "--compile", "--outfile", FIXTURE_BINARY],
-  { stdout: "pipe", stderr: "pipe" },
+  { cwd: fixtureDirectory, stdout: "pipe", stderr: "pipe" },
 );
 const compiled = compileAttempt.exitCode === 0;
 
 afterAll(async () => {
-  await rm(FIXTURE_BINARY, { force: true });
+  await rm(fixtureDirectory, { recursive: true, force: true });
 });
 
 /** The assertions that must hold identically in both modes. */

@@ -25,9 +25,20 @@ import { main } from "./main.ts";
 
 const EXECUTABLE = join(dirname(dirname(import.meta.path)), "dist", "falryn");
 
-/** The bootstrap fixture this file compiles itself, and where it puts it. */
+/** The one exact executable target qualified by the focused macOS smoke job. */
+const MACOS_ARM64_SMOKE_TARGET = "darwin-arm64";
+const selectedSmokeTarget = process.env.FALRYN_COMPILED_SMOKE_TARGET;
+
+if (selectedSmokeTarget !== undefined && selectedSmokeTarget !== MACOS_ARM64_SMOKE_TARGET) {
+  throw new Error(`unknown compiled smoke target: ${selectedSmokeTarget}`);
+}
+
+const requiresMacosArm64 = selectedSmokeTarget === MACOS_ARM64_SMOKE_TARGET;
+
+/** The bootstrap fixture this file compiles itself. */
 const BOOTSTRAP_ENTRY = join(dirname(import.meta.path), "main-fixtures.ts");
-const BOOTSTRAP_BINARY = join(tmpdir(), "falryn-bootstrap-probe");
+const bootstrapDirectory = await mkdtemp(join(tmpdir(), "falryn-bootstrap-"));
+const BOOTSTRAP_BINARY = join(bootstrapDirectory, "falryn-bootstrap-probe");
 
 const roots: string[] = [];
 
@@ -38,9 +49,10 @@ async function temporaryRoot(): Promise<LocalPath> {
 }
 
 afterAll(async () => {
-  // The fixture binary is built into the system temp directory, not a root, so
-  // it outlives the per-test cleanup below unless it is named here.
-  await rm(BOOTSTRAP_BINARY, { force: true });
+  // Bun's compiler has disposable intermediates as well as the fixture binary,
+  // so one unique directory owns and removes both rather than leaving files in
+  // the checkout that ran the test.
+  await rm(bootstrapDirectory, { recursive: true, force: true });
 });
 
 afterEach(async () => {
@@ -55,6 +67,15 @@ afterEach(async () => {
 const built = await stat(EXECUTABLE)
   .then(() => true)
   .catch(() => false);
+
+if (requiresMacosArm64) {
+  test("requires the selected standalone executable to exist", () => {
+    // The regular suite records a missing binary as skipped for source-only
+    // development. The named target smoke must not turn that absence into a
+    // successful CI result.
+    expect(built).toBe(true);
+  });
+}
 
 /**
  * How long one compiled run may take.
@@ -127,6 +148,12 @@ describe.if(built)("the standalone executable", () => {
       // can only be observed here: a source run reports `source`.
       expect(finished.stdout).toContain("compiled build");
       expect(finished.stdout).toContain(`falryn ${FALRYN_VERSION}`);
+      if (requiresMacosArm64) {
+        // `process.platform` and `process.arch` are compiled into this binary,
+        // so this observes the executed target rather than trusting a runner
+        // label or the test process's host values.
+        expect(finished.stdout).toContain("darwin arm64");
+      }
       expect(await readdir(root)).toEqual([]);
     },
     COMPILED_RUN_TIMEOUT_MS,
@@ -246,7 +273,7 @@ describe.if(built)("the standalone executable", () => {
       const root = await temporaryRoot();
       const built = Bun.spawnSync(
         [process.execPath, "build", BOOTSTRAP_ENTRY, "--compile", "--outfile", BOOTSTRAP_BINARY],
-        { stdout: "pipe", stderr: "pipe" },
+        { cwd: bootstrapDirectory, stdout: "pipe", stderr: "pipe" },
       );
       expect(built.exitCode, built.stderr.toString()).toBe(0);
 

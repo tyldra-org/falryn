@@ -36,7 +36,7 @@ const COMPILED_PROBE = join(temporary, "falryn-probe");
 
 const compiled = Bun.spawnSync(
   [process.execPath, "build", PROBE_ENTRY, "--compile", "--outfile", COMPILED_PROBE],
-  { stdout: "pipe", stderr: "pipe" },
+  { cwd: temporary, stdout: "pipe", stderr: "pipe" },
 );
 
 afterAll(async () => {
