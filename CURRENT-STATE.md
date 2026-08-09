@@ -4,7 +4,7 @@ This file is Falryn's sole concise implementation-status owner. It records what
 exists and has been verified in the `falryn` repository. It does not duplicate
 the product design or GitHub roadmap.
 
-Last reconciled: **2026-08-07**
+Last reconciled: **2026-08-09**
 
 ## Where to look
 
@@ -33,14 +33,20 @@ The implementation scaffold introduced by
 - repository-owned quality, type-check, test, and compiled-build commands;
 - a repository-owned GitHub Actions workflow at `.github/workflows/ci.yml` that
   triggers for pull requests, pushes to `main`, and manual dispatch, installs
-  the manifest-selected Bun version with the frozen lockfile, and runs separate
-  quality, type-check, build, and test gates on `ubuntu-latest`; and
+  the manifest-selected Bun version with the frozen lockfile, runs separate
+  quality, type-check, build, and test gates on `ubuntu-latest`, and runs a
+  focused `macos-15` arm64 job that builds `bun-darwin-arm64` then executes the
+  compiled CLI and pseudo-terminal smoke suites; and
 - a Bun standalone compilation target at `dist/falryn`.
 
 The workflow's first pull-request run in
 [#411](https://github.com/yogeshprasad098/falryn/pull/411) passed every gate on
-the baseline Linux runner. This does not qualify other operating systems,
-architectures, terminals, or release targets.
+the baseline Linux runner. Both the baseline and macOS arm64 compiled-smoke
+jobs passed in [#412](https://github.com/yogeshprasad098/falryn/pull/412): the
+selected executable reported `darwin`, `arm64`, and compiled mode while its
+CLI, migrations, embedded OpenTUI assets, and pseudo-terminal paths ran. This
+is a development qualification, not product platform support, installation,
+signing, update, or release readiness.
 
 The domain contracts introduced by
 [#2](https://github.com/yogeshprasad098/falryn/issues/2) add `src/domain/` with
