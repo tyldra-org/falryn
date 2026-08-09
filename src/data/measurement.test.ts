@@ -51,8 +51,11 @@ import { createElement, type ReactNode } from "react";
 
 import {
   BENCHMARK_METRIC_IDS,
+  BENCHMARK_TRIALS,
   type BenchmarkMeasurement,
   type BenchmarkMetricId,
+  type BenchmarkRun,
+  type BenchmarkTrial,
   createBenchmarkMeasurement,
   createBenchmarkReport,
   writeBenchmarkReport,
@@ -289,6 +292,22 @@ function configuredReportPath(): string | null {
 
 const reportPath = configuredReportPath();
 
+function configuredBenchmarkRun(): BenchmarkRun {
+  const revision = process.env.FALRYN_BENCHMARK_REVISION ?? "manual";
+  const trial = process.env.FALRYN_BENCHMARK_TRIAL ?? "manual";
+  const warmupRunsSource = process.env.FALRYN_BENCHMARK_WARMUP_RUNS ?? "0";
+  const warmupRuns = Number(warmupRunsSource);
+  if (
+    revision.trim().length === 0 ||
+    !BENCHMARK_TRIALS.includes(trial as BenchmarkTrial) ||
+    !Number.isInteger(warmupRuns) ||
+    warmupRuns < 0
+  ) {
+    throw new Error("benchmark report run metadata is invalid");
+  }
+  return { revision, trial: trial as BenchmarkTrial, warmupRuns };
+}
+
 function platformLine(): string {
   const model = cpus()[0]?.model ?? "unknown cpu";
   const cores = cpus().length;
@@ -395,7 +414,10 @@ afterAll(async () => {
       }
       return measurement;
     });
-    await writeBenchmarkReport(reportPath, createBenchmarkReport(measurements));
+    await writeBenchmarkReport(
+      reportPath,
+      createBenchmarkReport(measurements, undefined, configuredBenchmarkRun()),
+    );
   } finally {
     await removeTemporaryRoots();
   }

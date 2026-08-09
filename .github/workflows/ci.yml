@@ -93,13 +93,10 @@ jobs:
       - name: Build the reviewed macOS arm64 executable
         run: bun run build:macos-arm64
 
-      - name: Measure the reviewed revision
+      - name: Warm the reviewed revision
+        id: candidate_warmup
         continue-on-error: true
-        env:
-          FALRYN_MEASURE_REPORT: ${{ runner.temp }}/falryn-benchmark-reports/candidate.json
-        run: |
-          mkdir -p "$RUNNER_TEMP/falryn-benchmark-reports"
-          bun run measure
+        run: bun run measure && echo "completed=1" >> "$GITHUB_OUTPUT"
 
       - name: Check out the pull request base revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -125,18 +122,59 @@ jobs:
           cp src/data/measurement.test.ts baseline/src/data/measurement.test.ts
           cp tools/benchmark-regression.ts baseline/tools/benchmark-regression.ts
 
-      - name: Measure the base revision
+      - name: Warm the base revision
+        id: base_warmup
+        continue-on-error: true
+        working-directory: baseline
+        run: bun run measure && echo "completed=1" >> "$GITHUB_OUTPUT"
+
+      - name: Measure the base revision first
         continue-on-error: true
         working-directory: baseline
         env:
-          FALRYN_MEASURE_REPORT: ${{ runner.temp }}/falryn-benchmark-reports/base.json
+          FALRYN_MEASURE_REPORT: ${{ runner.temp }}/falryn-benchmark-reports/base-first.json
+          FALRYN_BENCHMARK_REVISION: ${{ github.event.pull_request.base.sha }}
+          FALRYN_BENCHMARK_TRIAL: base-first
+          FALRYN_BENCHMARK_WARMUP_RUNS: ${{ steps.base_warmup.outputs.completed || 0 }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/falryn-benchmark-reports"
+          bun run measure
+
+      - name: Measure the reviewed revision first
+        continue-on-error: true
+        env:
+          FALRYN_MEASURE_REPORT: ${{ runner.temp }}/falryn-benchmark-reports/candidate-first.json
+          FALRYN_BENCHMARK_REVISION: ${{ github.event.pull_request.head.sha }}
+          FALRYN_BENCHMARK_TRIAL: candidate-first
+          FALRYN_BENCHMARK_WARMUP_RUNS: ${{ steps.candidate_warmup.outputs.completed || 0 }}
+        run: bun run measure
+
+      - name: Measure the reviewed revision second
+        continue-on-error: true
+        env:
+          FALRYN_MEASURE_REPORT: ${{ runner.temp }}/falryn-benchmark-reports/candidate-second.json
+          FALRYN_BENCHMARK_REVISION: ${{ github.event.pull_request.head.sha }}
+          FALRYN_BENCHMARK_TRIAL: candidate-second
+          FALRYN_BENCHMARK_WARMUP_RUNS: ${{ steps.candidate_warmup.outputs.completed || 0 }}
+        run: bun run measure
+
+      - name: Measure the base revision second
+        continue-on-error: true
+        working-directory: baseline
+        env:
+          FALRYN_MEASURE_REPORT: ${{ runner.temp }}/falryn-benchmark-reports/base-second.json
+          FALRYN_BENCHMARK_REVISION: ${{ github.event.pull_request.base.sha }}
+          FALRYN_BENCHMARK_TRIAL: base-second
+          FALRYN_BENCHMARK_WARMUP_RUNS: ${{ steps.base_warmup.outputs.completed || 0 }}
         run: bun run measure
 
       - name: Compare the reports
         if: always()
         env:
-          FALRYN_BENCHMARK_BASE_REPORT: ${{ runner.temp }}/falryn-benchmark-reports/base.json
-          FALRYN_BENCHMARK_CANDIDATE_REPORT: ${{ runner.temp }}/falryn-benchmark-reports/candidate.json
+          FALRYN_BENCHMARK_BASE_FIRST_REPORT: ${{ runner.temp }}/falryn-benchmark-reports/base-first.json
+          FALRYN_BENCHMARK_CANDIDATE_FIRST_REPORT: ${{ runner.temp }}/falryn-benchmark-reports/candidate-first.json
+          FALRYN_BENCHMARK_CANDIDATE_SECOND_REPORT: ${{ runner.temp }}/falryn-benchmark-reports/candidate-second.json
+          FALRYN_BENCHMARK_BASE_SECOND_REPORT: ${{ runner.temp }}/falryn-benchmark-reports/base-second.json
         run: bun run benchmark:compare
 
       - name: Upload benchmark reports
