@@ -124,6 +124,7 @@ jobs:
         run: bun run measure && echo "completed=1" >> "$GITHUB_OUTPUT"
 
       - name: Measure the base revision first
+        id: base_first_measurement
         continue-on-error: true
         working-directory: baseline
         env:
@@ -133,7 +134,10 @@ jobs:
           FALRYN_BENCHMARK_WARMUP_RUNS: ${{ steps.base_first_warmup.outputs.completed || 0 }}
         run: |
           mkdir -p "$RUNNER_TEMP/falryn-benchmark-reports"
-          bun run measure
+          bun run measure && echo "completed=1" >> "$GITHUB_OUTPUT"
+
+      - name: Move the base checkout outside reviewed test discovery
+        run: mv baseline "$RUNNER_TEMP/falryn-benchmark-baseline"
 
       - name: Warm the reviewed revision before its first report
         id: candidate_first_warmup
@@ -141,13 +145,14 @@ jobs:
         run: bun run measure && echo "completed=1" >> "$GITHUB_OUTPUT"
 
       - name: Measure the reviewed revision first
+        id: candidate_first_measurement
         continue-on-error: true
         env:
           FALRYN_MEASURE_REPORT: ${{ runner.temp }}/falryn-benchmark-reports/candidate-first.json
           FALRYN_BENCHMARK_REVISION: ${{ github.event.pull_request.head.sha }}
           FALRYN_BENCHMARK_TRIAL: candidate-first
           FALRYN_BENCHMARK_WARMUP_RUNS: ${{ steps.candidate_first_warmup.outputs.completed || 0 }}
-        run: bun run measure
+        run: bun run measure && echo "completed=1" >> "$GITHUB_OUTPUT"
 
       - name: Warm the reviewed revision before its second report
         id: candidate_second_warmup
@@ -155,29 +160,31 @@ jobs:
         run: bun run measure && echo "completed=1" >> "$GITHUB_OUTPUT"
 
       - name: Measure the reviewed revision second
+        id: candidate_second_measurement
         continue-on-error: true
         env:
           FALRYN_MEASURE_REPORT: ${{ runner.temp }}/falryn-benchmark-reports/candidate-second.json
           FALRYN_BENCHMARK_REVISION: ${{ github.event.pull_request.head.sha }}
           FALRYN_BENCHMARK_TRIAL: candidate-second
           FALRYN_BENCHMARK_WARMUP_RUNS: ${{ steps.candidate_second_warmup.outputs.completed || 0 }}
-        run: bun run measure
+        run: bun run measure && echo "completed=1" >> "$GITHUB_OUTPUT"
 
       - name: Warm the base revision before its second report
         id: base_second_warmup
         continue-on-error: true
-        working-directory: baseline
+        working-directory: ${{ runner.temp }}/falryn-benchmark-baseline
         run: bun run measure && echo "completed=1" >> "$GITHUB_OUTPUT"
 
       - name: Measure the base revision second
+        id: base_second_measurement
         continue-on-error: true
-        working-directory: baseline
+        working-directory: ${{ runner.temp }}/falryn-benchmark-baseline
         env:
           FALRYN_MEASURE_REPORT: ${{ runner.temp }}/falryn-benchmark-reports/base-second.json
           FALRYN_BENCHMARK_REVISION: ${{ github.event.pull_request.base.sha }}
           FALRYN_BENCHMARK_TRIAL: base-second
           FALRYN_BENCHMARK_WARMUP_RUNS: ${{ steps.base_second_warmup.outputs.completed || 0 }}
-        run: bun run measure
+        run: bun run measure && echo "completed=1" >> "$GITHUB_OUTPUT"
 
       - name: Compare the reports
         if: always()
@@ -186,6 +193,10 @@ jobs:
           FALRYN_BENCHMARK_CANDIDATE_FIRST_REPORT: ${{ runner.temp }}/falryn-benchmark-reports/candidate-first.json
           FALRYN_BENCHMARK_CANDIDATE_SECOND_REPORT: ${{ runner.temp }}/falryn-benchmark-reports/candidate-second.json
           FALRYN_BENCHMARK_BASE_SECOND_REPORT: ${{ runner.temp }}/falryn-benchmark-reports/base-second.json
+          FALRYN_BENCHMARK_BASE_FIRST_COMPLETED: ${{ steps.base_first_measurement.outputs.completed || 0 }}
+          FALRYN_BENCHMARK_CANDIDATE_FIRST_COMPLETED: ${{ steps.candidate_first_measurement.outputs.completed || 0 }}
+          FALRYN_BENCHMARK_CANDIDATE_SECOND_COMPLETED: ${{ steps.candidate_second_measurement.outputs.completed || 0 }}
+          FALRYN_BENCHMARK_BASE_SECOND_COMPLETED: ${{ steps.base_second_measurement.outputs.completed || 0 }}
         run: bun run benchmark:compare
 
       - name: Upload benchmark reports
