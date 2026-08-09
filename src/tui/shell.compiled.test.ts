@@ -33,6 +33,16 @@ import { EXIT_CODES } from "../cli/index.ts";
 /** Three levels up: this file is `src/tui/`, and the artifact is `dist/` beside `src/`. */
 const EXECUTABLE = join(dirname(dirname(dirname(import.meta.path))), "dist", "falryn");
 
+/** The one exact executable target qualified by the focused macOS smoke job. */
+const MACOS_ARM64_SMOKE_TARGET = "darwin-arm64";
+const selectedSmokeTarget = process.env.FALRYN_COMPILED_SMOKE_TARGET;
+
+if (selectedSmokeTarget !== undefined && selectedSmokeTarget !== MACOS_ARM64_SMOKE_TARGET) {
+  throw new Error(`unknown compiled smoke target: ${selectedSmokeTarget}`);
+}
+
+const requiresMacosArm64 = selectedSmokeTarget === MACOS_ARM64_SMOKE_TARGET;
+
 /** The size the pseudo-terminal reports, and what the shell must lay out against. */
 const COLUMNS = 100;
 const ROWS = 30;
@@ -147,6 +157,19 @@ const resizable =
 
 const runnable = built && probe !== null;
 probe?.close();
+
+if (requiresMacosArm64) {
+  test("requires a runnable macOS arm64 pseudo-terminal target", () => {
+    // The general suite records a host without this facility as unqualified.
+    // The selected CI target instead fails explicitly, including when its
+    // resize path would otherwise be skipped.
+    expect(built).toBe(true);
+    expect(process.platform).toBe("darwin");
+    expect(process.arch).toBe("arm64");
+    expect(runnable).toBe(true);
+    expect(resizable).toBe(true);
+  });
+}
 
 const live: { process: Bun.Subprocess; pty: Pty }[] = [];
 
