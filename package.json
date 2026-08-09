@@ -20,6 +20,7 @@
     "verify:repository": "bun run tools/repository-integrity.ts",
     "test": "bun test",
     "measure": "FALRYN_MEASURE=1 bun test src/data/measurement.test.ts",
+    "benchmark:compare": "bun run tools/benchmark-regression.ts",
     "build": "mkdir -p dist && cd dist && bun build ../src/main.ts --compile --outfile falryn",
     "build:macos-arm64": "mkdir -p dist && cd dist && bun build ../src/main.ts --compile --target=bun-darwin-arm64 --outfile falryn",
     "smoke:macos-arm64": "FALRYN_COMPILED_SMOKE_TARGET=darwin-arm64 bun test src/main.compiled.test.ts src/tui/shell.compiled.test.ts",

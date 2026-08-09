@@ -915,11 +915,26 @@ Five limitations belong with those numbers:
   inside SQLite's own busy handler, in C, where no counter is reachable. "Busy
   retries" is therefore recorded as busy wait and refusal rate; a retry counter
   would have been product behavior invented inside a measurement.
-- **There is no regression gate and no CI job.** These are one observation, not
-  a threshold. Thresholds, regression detection, and a performance job are the
-  benchmark harness, which [#28](https://github.com/yogeshprasad098/falryn/issues/28)
-  defers and none of whose children (#29, #30, #31, #32) owns. That gap has no
-  owner today and is recorded here rather than closed by inventing a sibling.
+- **A relative regression gate now owns the comparison boundary.**
+  [#415](https://github.com/yogeshprasad098/falryn/issues/415) adds a
+  pull-request-only `macos-15` arm64 job that builds and measures the reviewed
+  revision and exact PR base SHA on the same runner. With a fresh
+  `FALRYN_MEASURE_REPORT` path, the existing measurement suite atomically writes
+  its test-only report only after every real-owner measurement completed; an
+  unavailable compiled executable/pseudo-terminal, malformed destination,
+  failed measurement, or incomplete suite fails without a report. The comparator
+  accepts only matching schema, platform, architecture, Bun version, dataset
+  revision/state, and sample count, and gates migration time, transaction
+  latency, range-read latency, and startup to first draw. A selected metric is a
+  regression only when both p50 and p95 are at least 50% slower; one-sided,
+  missing, malformed, or incompatible data is a nonzero inconclusive result.
+  The two reports are temporary CI artifacts, never product/runtime/tracked
+  output. Database size, contention, throughput, cadence, memory, and shutdown
+  remain diagnostic observations rather than newly invented budgets. Because
+  the base predates report emission, CI overlays only this PR's test-only report
+  harness into its disposable checkout after building the base source and
+  executable; that harness still imports the base data and terminal owners and
+  cannot enter the already-built artifact.
 - **One platform.** macOS is the only qualified target; measuring on it
   qualifies no other, and a second platform is
   [#220](https://github.com/yogeshprasad098/falryn/issues/220).
