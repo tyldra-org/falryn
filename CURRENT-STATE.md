@@ -48,6 +48,18 @@ CLI, migrations, embedded OpenTUI assets, and pseudo-terminal paths ran. This
 is a development qualification, not product platform support, installation,
 signing, update, or release readiness.
 
+The offline repository-integrity gate introduced by
+[#32](https://github.com/yogeshprasad098/falryn/issues/32) runs from
+`bun run check` and the baseline CI job after the frozen Bun install. Its
+TypeScript tool records the admitted direct runtime and development dependencies
+with exact versions, SPDX license expressions, and canonical source
+repositories, then checks the manifest, lock integrity entries, installed
+package metadata, lifecycle hooks, and declared patches against that policy.
+It also declares `src/main.ts` through `bun run build` to `dist/falryn` as the
+sole current generated output, requiring that destination to remain ignored and
+untracked. This is an offline direct-admission boundary, not a transitive SBOM,
+registry or vulnerability scan, signing system, or legal-compliance claim.
+
 The domain contracts introduced by
 [#2](https://github.com/yogeshprasad098/falryn/issues/2) add `src/domain/` with
 one public entrypoint at `src/domain/index.ts`:
