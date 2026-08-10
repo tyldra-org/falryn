@@ -9,7 +9,7 @@
 import { appendFile, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
-export const BENCHMARK_REPORT_SCHEMA = "falryn.benchmark-report/v3";
+export const BENCHMARK_REPORT_SCHEMA = "falryn.benchmark-report/v4";
 
 export const BENCHMARK_METRIC_IDS = [
   "migration-time",
@@ -52,6 +52,10 @@ export const BENCHMARK_TRIALS = [
   "candidate-first",
   "candidate-second",
   "base-second",
+  "candidate-third",
+  "base-third",
+  "base-fourth",
+  "candidate-fourth",
 ] as const;
 
 export type BenchmarkTrial = (typeof BENCHMARK_TRIALS)[number];
@@ -500,9 +504,14 @@ export const BENCHMARK_GATE_REASONS = [
   "candidate-first-report-invalid",
   "candidate-second-report-invalid",
   "base-second-report-invalid",
+  "candidate-third-report-invalid",
+  "base-third-report-invalid",
+  "base-fourth-report-invalid",
+  "candidate-fourth-report-invalid",
   "trial-mismatch",
   "revision-mismatch",
   "warmup-incomplete",
+  "bracket-aggregation-invalid",
   "base-control-unstable",
   "candidate-control-unstable",
   "paired-comparison-inconclusive",
@@ -517,13 +526,17 @@ export type BenchmarkGateMeasurementCompletion = Readonly<{
   candidateFirst: boolean;
   candidateSecond: boolean;
   baseSecond: boolean;
+  candidateThird: boolean;
+  baseThird: boolean;
+  baseFourth: boolean;
+  candidateFourth: boolean;
 }>;
 
 type BenchmarkGateDetails = Readonly<{
   baseControl: BenchmarkComparison | null;
   candidateControl: BenchmarkComparison | null;
-  baseFirstCandidateFirst: BenchmarkComparison | null;
-  baseSecondCandidateSecond: BenchmarkComparison | null;
+  firstBalancedBracket: BenchmarkComparison | null;
+  secondBalancedBracket: BenchmarkComparison | null;
 }>;
 
 export type BenchmarkGateComparison =
@@ -542,14 +555,18 @@ export type BenchmarkGateReports = Readonly<{
   candidateFirst: unknown;
   candidateSecond: unknown;
   baseSecond: unknown;
+  candidateThird: unknown;
+  baseThird: unknown;
+  baseFourth: unknown;
+  candidateFourth: unknown;
 }>;
 
 function emptyGateDetails(): BenchmarkGateDetails {
   return {
     baseControl: null,
     candidateControl: null,
-    baseFirstCandidateFirst: null,
-    baseSecondCandidateSecond: null,
+    firstBalancedBracket: null,
+    secondBalancedBracket: null,
   };
 }
 
@@ -584,23 +601,61 @@ function compareControl(first: BenchmarkReport, second: BenchmarkReport): Benchm
   return forward.kind === "inconclusive" ? forward : reverse;
 }
 
-function isOneSidedDeterioration(comparison: BenchmarkComparison): boolean {
-  return comparison.kind === "inconclusive" && comparison.reason === "one-sided-deterioration";
-}
+function aggregateBracketReports(
+  first: BenchmarkReport,
+  second: BenchmarkReport,
+): BenchmarkReport | null {
+  if (
+    first.schemaVersion !== second.schemaVersion ||
+    first.schemaVersion !== BENCHMARK_REPORT_SCHEMA ||
+    first.run.revision !== second.run.revision ||
+    first.run.warmupRuns !== second.run.warmupRuns ||
+    first.environment.platform !== second.environment.platform ||
+    first.environment.architecture !== second.environment.architecture ||
+    first.environment.bunVersion !== second.environment.bunVersion
+  ) {
+    return null;
+  }
 
-function controlLacksComparableSignature(comparison: BenchmarkComparison): boolean {
-  return comparison.kind === "inconclusive" && !isOneSidedDeterioration(comparison);
+  const measurements: BenchmarkMeasurement[] = [];
+  for (const id of BENCHMARK_METRIC_IDS) {
+    const firstMeasurement = measurementById(first, id);
+    const secondMeasurement = measurementById(second, id);
+    if (
+      firstMeasurement === null ||
+      secondMeasurement === null ||
+      firstMeasurement.unit !== secondMeasurement.unit ||
+      firstMeasurement.datasetRevision !== secondMeasurement.datasetRevision ||
+      firstMeasurement.state !== secondMeasurement.state ||
+      firstMeasurement.warmupSamples !== secondMeasurement.warmupSamples ||
+      firstMeasurement.samples.length !== secondMeasurement.samples.length
+    ) {
+      return null;
+    }
+    measurements.push(
+      createBenchmarkMeasurement({
+        id,
+        datasetRevision: firstMeasurement.datasetRevision,
+        state: firstMeasurement.state,
+        warmupSamples: firstMeasurement.warmupSamples,
+        samples: [...firstMeasurement.samples, ...secondMeasurement.samples],
+      }),
+    );
+  }
+
+  return createBenchmarkReport(measurements, first.environment, {
+    revision: first.run.revision,
+    trial: "manual",
+    warmupRuns: first.run.warmupRuns,
+  });
 }
 
 /**
- * Compare two bracketing base/candidate pairs and retain same-revision
- * controls as diagnostics. A control can only describe host variation because
- * both reports name the same revision; it cannot identify a product
- * regression. An incompatible control still fails because it means the trial
- * signature changed. The source decision otherwise comes from the two
- * opposite-order base/candidate pairs: a two-sided regression must agree in
- * both, and a one-sided deterioration may pass only when the other order is
- * clean.
+ * Compare two fixed, mirrored measurement brackets. Each bracket pools one
+ * report from both relative orders for each revision, so the two same-revision
+ * controls compare like-for-like aggregates rather than a first report with a
+ * later report. The workflow always runs all eight reports; aggregation is a
+ * declared statistic, never a conditional retry or threshold bypass.
  */
 export function compareBenchmarkGate(reports: BenchmarkGateReports): BenchmarkGateComparison {
   const baseFirstResult = parseBenchmarkReport(reports.baseFirst);
@@ -619,24 +674,61 @@ export function compareBenchmarkGate(reports: BenchmarkGateReports): BenchmarkGa
   if (!baseSecondResult.ok) {
     return gateInconclusive("base-second-report-invalid", emptyGateDetails());
   }
+  const candidateThirdResult = parseBenchmarkReport(reports.candidateThird);
+  if (!candidateThirdResult.ok) {
+    return gateInconclusive("candidate-third-report-invalid", emptyGateDetails());
+  }
+  const baseThirdResult = parseBenchmarkReport(reports.baseThird);
+  if (!baseThirdResult.ok) {
+    return gateInconclusive("base-third-report-invalid", emptyGateDetails());
+  }
+  const baseFourthResult = parseBenchmarkReport(reports.baseFourth);
+  if (!baseFourthResult.ok) {
+    return gateInconclusive("base-fourth-report-invalid", emptyGateDetails());
+  }
+  const candidateFourthResult = parseBenchmarkReport(reports.candidateFourth);
+  if (!candidateFourthResult.ok) {
+    return gateInconclusive("candidate-fourth-report-invalid", emptyGateDetails());
+  }
 
   const baseFirst = baseFirstResult.value;
   const candidateFirst = candidateFirstResult.value;
   const candidateSecond = candidateSecondResult.value;
   const baseSecond = baseSecondResult.value;
-  const allReports = [baseFirst, candidateFirst, candidateSecond, baseSecond];
+  const candidateThird = candidateThirdResult.value;
+  const baseThird = baseThirdResult.value;
+  const baseFourth = baseFourthResult.value;
+  const candidateFourth = candidateFourthResult.value;
+  const allReports = [
+    baseFirst,
+    candidateFirst,
+    candidateSecond,
+    baseSecond,
+    candidateThird,
+    baseThird,
+    baseFourth,
+    candidateFourth,
+  ];
 
   if (
     baseFirst.run.trial !== "base-first" ||
     candidateFirst.run.trial !== "candidate-first" ||
     candidateSecond.run.trial !== "candidate-second" ||
-    baseSecond.run.trial !== "base-second"
+    baseSecond.run.trial !== "base-second" ||
+    candidateThird.run.trial !== "candidate-third" ||
+    baseThird.run.trial !== "base-third" ||
+    baseFourth.run.trial !== "base-fourth" ||
+    candidateFourth.run.trial !== "candidate-fourth"
   ) {
     return gateInconclusive("trial-mismatch", emptyGateDetails());
   }
   if (
     baseFirst.run.revision !== baseSecond.run.revision ||
+    baseFirst.run.revision !== baseThird.run.revision ||
+    baseFirst.run.revision !== baseFourth.run.revision ||
     candidateFirst.run.revision !== candidateSecond.run.revision ||
+    candidateFirst.run.revision !== candidateThird.run.revision ||
+    candidateFirst.run.revision !== candidateFourth.run.revision ||
     baseFirst.run.revision === candidateFirst.run.revision
   ) {
     return gateInconclusive("revision-mismatch", emptyGateDetails());
@@ -645,48 +737,47 @@ export function compareBenchmarkGate(reports: BenchmarkGateReports): BenchmarkGa
     return gateInconclusive("warmup-incomplete", emptyGateDetails());
   }
 
-  const baseControl = compareControl(baseFirst, baseSecond);
-  const candidateControl = compareControl(candidateFirst, candidateSecond);
-  const baseFirstCandidateFirst = compareBenchmarkReports(baseFirst, candidateFirst);
-  const baseSecondCandidateSecond = compareBenchmarkReports(baseSecond, candidateSecond);
+  const firstBase = aggregateBracketReports(baseFirst, baseSecond);
+  const firstCandidate = aggregateBracketReports(candidateFirst, candidateSecond);
+  const secondBase = aggregateBracketReports(baseThird, baseFourth);
+  const secondCandidate = aggregateBracketReports(candidateThird, candidateFourth);
+  if (
+    firstBase === null ||
+    firstCandidate === null ||
+    secondBase === null ||
+    secondCandidate === null
+  ) {
+    return gateInconclusive("bracket-aggregation-invalid", emptyGateDetails());
+  }
+
+  const baseControl = compareControl(firstBase, secondBase);
+  const candidateControl = compareControl(firstCandidate, secondCandidate);
+  const firstBalancedBracket = compareBenchmarkReports(firstBase, firstCandidate);
+  const secondBalancedBracket = compareBenchmarkReports(secondBase, secondCandidate);
   const details: BenchmarkGateDetails = {
     baseControl,
     candidateControl,
-    baseFirstCandidateFirst,
-    baseSecondCandidateSecond,
+    firstBalancedBracket,
+    secondBalancedBracket,
   };
 
-  if (controlLacksComparableSignature(baseControl)) {
+  if (baseControl.kind !== "pass") {
     return gateInconclusive("base-control-unstable", details);
   }
-  if (controlLacksComparableSignature(candidateControl)) {
+  if (candidateControl.kind !== "pass") {
     return gateInconclusive("candidate-control-unstable", details);
   }
   if (
-    (baseFirstCandidateFirst.kind === "inconclusive" &&
-      !isOneSidedDeterioration(baseFirstCandidateFirst)) ||
-    (baseSecondCandidateSecond.kind === "inconclusive" &&
-      !isOneSidedDeterioration(baseSecondCandidateSecond))
+    firstBalancedBracket.kind === "inconclusive" ||
+    secondBalancedBracket.kind === "inconclusive"
   ) {
     return gateInconclusive("paired-comparison-inconclusive", details);
   }
-  if (
-    baseFirstCandidateFirst.kind === "regression" ||
-    baseSecondCandidateSecond.kind === "regression"
-  ) {
-    if (
-      baseFirstCandidateFirst.kind !== "regression" ||
-      baseSecondCandidateSecond.kind !== "regression"
-    ) {
+  if (firstBalancedBracket.kind === "regression" || secondBalancedBracket.kind === "regression") {
+    if (firstBalancedBracket.kind !== "regression" || secondBalancedBracket.kind !== "regression") {
       return gateInconclusive("paired-verdict-disagreement", details);
     }
     return { kind: "regression", details };
-  }
-  if (
-    isOneSidedDeterioration(baseFirstCandidateFirst) &&
-    isOneSidedDeterioration(baseSecondCandidateSecond)
-  ) {
-    return gateInconclusive("paired-comparison-inconclusive", details);
   }
   return { kind: "pass", details };
 }
@@ -703,7 +794,11 @@ export function compareCompletedBenchmarkGate(
     !completion.baseFirst ||
     !completion.candidateFirst ||
     !completion.candidateSecond ||
-    !completion.baseSecond
+    !completion.baseSecond ||
+    !completion.candidateThird ||
+    !completion.baseThird ||
+    !completion.baseFourth ||
+    !completion.candidateFourth
   ) {
     return gateInconclusive("measurement-incomplete", emptyGateDetails());
   }
@@ -734,7 +829,7 @@ export function formatBenchmarkComparison(comparison: BenchmarkComparison): stri
   return [headline, ...formatMetricComparisons(comparison.metrics)].join("\n");
 }
 
-/** Bounded CI diagnostics for the controls and both relative-order comparisons. */
+/** Bounded CI diagnostics for the aggregate controls and both balanced brackets. */
 export function formatBenchmarkGateComparison(comparison: BenchmarkGateComparison): string {
   let headline: string;
   switch (comparison.kind) {
@@ -751,8 +846,8 @@ export function formatBenchmarkGateComparison(comparison: BenchmarkGateCompariso
   const namedDetails: readonly [string, BenchmarkComparison | null][] = [
     ["base control", comparison.details.baseControl],
     ["candidate control", comparison.details.candidateControl],
-    ["base-first → candidate-first", comparison.details.baseFirstCandidateFirst],
-    ["base-second → candidate-second", comparison.details.baseSecondCandidateSecond],
+    ["first balanced bracket", comparison.details.firstBalancedBracket],
+    ["second balanced bracket", comparison.details.secondBalancedBracket],
   ];
   return [
     headline,
@@ -856,19 +951,45 @@ async function readReport(path: string | undefined): Promise<unknown | null> {
 }
 
 async function compareFromEnvironment(): Promise<BenchmarkGateComparison> {
-  const [baseFirst, candidateFirst, candidateSecond, baseSecond] = await Promise.all([
+  const [
+    baseFirst,
+    candidateFirst,
+    candidateSecond,
+    baseSecond,
+    candidateThird,
+    baseThird,
+    baseFourth,
+    candidateFourth,
+  ] = await Promise.all([
     readReport(process.env.FALRYN_BENCHMARK_BASE_FIRST_REPORT),
     readReport(process.env.FALRYN_BENCHMARK_CANDIDATE_FIRST_REPORT),
     readReport(process.env.FALRYN_BENCHMARK_CANDIDATE_SECOND_REPORT),
     readReport(process.env.FALRYN_BENCHMARK_BASE_SECOND_REPORT),
+    readReport(process.env.FALRYN_BENCHMARK_CANDIDATE_THIRD_REPORT),
+    readReport(process.env.FALRYN_BENCHMARK_BASE_THIRD_REPORT),
+    readReport(process.env.FALRYN_BENCHMARK_BASE_FOURTH_REPORT),
+    readReport(process.env.FALRYN_BENCHMARK_CANDIDATE_FOURTH_REPORT),
   ]);
   return compareCompletedBenchmarkGate(
-    { baseFirst, candidateFirst, candidateSecond, baseSecond },
+    {
+      baseFirst,
+      candidateFirst,
+      candidateSecond,
+      baseSecond,
+      candidateThird,
+      baseThird,
+      baseFourth,
+      candidateFourth,
+    },
     {
       baseFirst: process.env.FALRYN_BENCHMARK_BASE_FIRST_COMPLETED === "1",
       candidateFirst: process.env.FALRYN_BENCHMARK_CANDIDATE_FIRST_COMPLETED === "1",
       candidateSecond: process.env.FALRYN_BENCHMARK_CANDIDATE_SECOND_COMPLETED === "1",
       baseSecond: process.env.FALRYN_BENCHMARK_BASE_SECOND_COMPLETED === "1",
+      candidateThird: process.env.FALRYN_BENCHMARK_CANDIDATE_THIRD_COMPLETED === "1",
+      baseThird: process.env.FALRYN_BENCHMARK_BASE_THIRD_COMPLETED === "1",
+      baseFourth: process.env.FALRYN_BENCHMARK_BASE_FOURTH_COMPLETED === "1",
+      candidateFourth: process.env.FALRYN_BENCHMARK_CANDIDATE_FOURTH_COMPLETED === "1",
     },
   );
 }

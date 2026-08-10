@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-
+import type { BenchmarkGateReports, BenchmarkTrial } from "./benchmark-regression.ts";
 import {
   BENCHMARK_METRIC_IDS,
   BENCHMARK_REPORT_SCHEMA,
@@ -44,9 +44,22 @@ function changedReport(
   return mutate(report());
 }
 
+const gateTrials = {
+  baseFirst: "base-first",
+  candidateFirst: "candidate-first",
+  candidateSecond: "candidate-second",
+  baseSecond: "base-second",
+  candidateThird: "candidate-third",
+  baseThird: "base-third",
+  baseFourth: "base-fourth",
+  candidateFourth: "candidate-fourth",
+} as const satisfies Record<string, BenchmarkTrial>;
+
+type GateReportKey = keyof typeof gateTrials;
+
 function gateReport(
   revision: string,
-  trial: "base-first" | "candidate-first" | "candidate-second" | "base-second",
+  trial: BenchmarkTrial,
   samples: readonly number[] = [10, 11, 12, 13, 14],
   warmupRuns = BENCHMARK_SETTLING_WARMUP_RUNS,
 ) {
@@ -62,6 +75,48 @@ function gateReport(
     { platform: "darwin", architecture: "arm64", bunVersion: "1.3.14" },
     { revision, trial, warmupRuns },
   );
+}
+
+function gateReports(
+  samples: Partial<Record<GateReportKey, readonly number[]>> = {},
+  warmupRuns: Partial<Record<GateReportKey, number>> = {},
+): BenchmarkGateReports {
+  const base = "base-sha";
+  const candidate = "candidate-sha";
+  const defaults = [10, 11, 12, 13, 14] as const;
+  const value = (key: GateReportKey) => samples[key] ?? defaults;
+  const warmup = (key: GateReportKey) => warmupRuns[key] ?? BENCHMARK_SETTLING_WARMUP_RUNS;
+
+  return {
+    baseFirst: gateReport(base, gateTrials.baseFirst, value("baseFirst"), warmup("baseFirst")),
+    candidateFirst: gateReport(
+      candidate,
+      gateTrials.candidateFirst,
+      value("candidateFirst"),
+      warmup("candidateFirst"),
+    ),
+    candidateSecond: gateReport(
+      candidate,
+      gateTrials.candidateSecond,
+      value("candidateSecond"),
+      warmup("candidateSecond"),
+    ),
+    baseSecond: gateReport(base, gateTrials.baseSecond, value("baseSecond"), warmup("baseSecond")),
+    candidateThird: gateReport(
+      candidate,
+      gateTrials.candidateThird,
+      value("candidateThird"),
+      warmup("candidateThird"),
+    ),
+    baseThird: gateReport(base, gateTrials.baseThird, value("baseThird"), warmup("baseThird")),
+    baseFourth: gateReport(base, gateTrials.baseFourth, value("baseFourth"), warmup("baseFourth")),
+    candidateFourth: gateReport(
+      candidate,
+      gateTrials.candidateFourth,
+      value("candidateFourth"),
+      warmup("candidateFourth"),
+    ),
+  };
 }
 
 describe("benchmark regression comparison", () => {
@@ -105,137 +160,107 @@ describe("benchmark regression comparison", () => {
     });
   });
 
-  test("passes when both bracketing orders clear the regression threshold", () => {
-    const comparison = compareBenchmarkGate({
-      baseFirst: gateReport("base-sha", "base-first"),
-      candidateFirst: gateReport("candidate-sha", "candidate-first"),
-      candidateSecond: gateReport("candidate-sha", "candidate-second"),
-      baseSecond: gateReport("base-sha", "base-second"),
-    });
+  test("passes two stable balanced brackets", () => {
+    const comparison = compareBenchmarkGate(gateReports());
 
     expect(comparison).toMatchObject({
       kind: "pass",
       details: {
         baseControl: { kind: "pass" },
         candidateControl: { kind: "pass" },
-        baseFirstCandidateFirst: { kind: "pass" },
-        baseSecondCandidateSecond: { kind: "pass" },
+        firstBalancedBracket: { kind: "pass" },
+        secondBalancedBracket: { kind: "pass" },
       },
     });
     expect(formatBenchmarkGateComparison(comparison)).toStartWith("benchmark gate: PASS");
   });
 
-  test("passes a no-difference bracket with sub-threshold order variation", () => {
-    const comparison = compareBenchmarkGate({
-      baseFirst: gateReport("base-sha", "base-first", [10, 11, 12, 13, 14]),
-      candidateFirst: gateReport("candidate-sha", "candidate-first", [11, 12, 13, 14, 15]),
-      candidateSecond: gateReport("candidate-sha", "candidate-second", [11, 12, 13, 14, 15]),
-      baseSecond: gateReport("base-sha", "base-second", [12, 13, 14, 15, 16]),
-    });
+  test("pools both relative orders before comparing the repeated controls", () => {
+    const comparison = compareBenchmarkGate(
+      gateReports({
+        baseSecond: [20, 21, 22, 23, 24],
+        candidateSecond: [20, 21, 22, 23, 24],
+        baseFourth: [20, 21, 22, 23, 24],
+        candidateFourth: [20, 21, 22, 23, 24],
+      }),
+    );
 
     expect(comparison).toMatchObject({
       kind: "pass",
       details: {
         baseControl: { kind: "pass" },
         candidateControl: { kind: "pass" },
-        baseFirstCandidateFirst: { kind: "pass" },
-        baseSecondCandidateSecond: { kind: "pass" },
+        firstBalancedBracket: { kind: "pass" },
+        secondBalancedBracket: { kind: "pass" },
       },
     });
   });
 
-  test("rejects a synthetic p50 and p95 regression in both relative orders", () => {
-    const comparison = compareBenchmarkGate({
-      baseFirst: gateReport("base-sha", "base-first"),
-      candidateFirst: gateReport("candidate-sha", "candidate-first", [15, 16, 18, 19, 21]),
-      candidateSecond: gateReport("candidate-sha", "candidate-second", [15, 16, 18, 19, 21]),
-      baseSecond: gateReport("base-sha", "base-second"),
-    });
+  test("rejects a synthetic p50 and p95 regression in both balanced brackets", () => {
+    const regression = [15, 16, 18, 19, 21];
+    const comparison = compareBenchmarkGate(
+      gateReports({
+        candidateFirst: regression,
+        candidateSecond: regression,
+        candidateThird: regression,
+        candidateFourth: regression,
+      }),
+    );
 
     expect(comparison).toMatchObject({
       kind: "regression",
       details: {
-        baseFirstCandidateFirst: { kind: "regression" },
-        baseSecondCandidateSecond: { kind: "regression" },
+        firstBalancedBracket: { kind: "regression" },
+        secondBalancedBracket: { kind: "regression" },
       },
     });
   });
 
-  test("retains an unstable equal-revision control when both bracketing pairs pass", () => {
-    const comparison = compareBenchmarkGate({
-      baseFirst: gateReport("base-sha", "base-first"),
-      candidateFirst: gateReport("candidate-sha", "candidate-first"),
-      candidateSecond: gateReport("candidate-sha", "candidate-second"),
-      baseSecond: gateReport("base-sha", "base-second", [20, 21, 22, 23, 24]),
-    });
-
-    expect(comparison).toMatchObject({
-      kind: "pass",
-      details: {
-        baseControl: { kind: "regression" },
-        baseFirstCandidateFirst: { kind: "pass" },
-        baseSecondCandidateSecond: { kind: "pass" },
-      },
-    });
-  });
-
-  test("fails inconclusively when controls lack a comparable signature", () => {
-    const candidateSecond = createBenchmarkReport(
-      gateReport("candidate-sha", "candidate-second").measurements,
-      { platform: "darwin", architecture: "arm64", bunVersion: "1.3.15" },
-      {
-        revision: "candidate-sha",
-        trial: "candidate-second",
-        warmupRuns: BENCHMARK_SETTLING_WARMUP_RUNS,
-      },
+  test("fails closed when an aggregated same-revision control regresses", () => {
+    const comparison = compareBenchmarkGate(
+      gateReports({
+        baseThird: [20, 21, 22, 23, 24],
+        baseFourth: [20, 21, 22, 23, 24],
+      }),
     );
-    const baseSecond = createBenchmarkReport(
-      gateReport("base-sha", "base-second").measurements,
-      { platform: "darwin", architecture: "arm64", bunVersion: "1.3.15" },
-      {
-        revision: "base-sha",
-        trial: "base-second",
-        warmupRuns: BENCHMARK_SETTLING_WARMUP_RUNS,
-      },
-    );
-    const comparison = compareBenchmarkGate({
-      baseFirst: gateReport("base-sha", "base-first"),
-      candidateFirst: gateReport("candidate-sha", "candidate-first"),
-      candidateSecond,
-      baseSecond,
-    });
 
     expect(comparison).toMatchObject({
       kind: "inconclusive",
       reason: "base-control-unstable",
-    });
-  });
-
-  test("records a one-sided control tail without treating it as a regression", () => {
-    const comparison = compareBenchmarkGate({
-      baseFirst: gateReport("base-sha", "base-first"),
-      candidateFirst: gateReport("candidate-sha", "candidate-first"),
-      candidateSecond: gateReport("candidate-sha", "candidate-second"),
-      baseSecond: gateReport("base-sha", "base-second", [10, 11, 12, 13, 22]),
-    });
-
-    expect(comparison).toMatchObject({
-      kind: "pass",
       details: {
-        baseControl: { kind: "inconclusive", reason: "one-sided-deterioration" },
-        baseFirstCandidateFirst: { kind: "pass" },
-        baseSecondCandidateSecond: { kind: "pass" },
+        baseControl: { kind: "regression" },
       },
     });
   });
 
-  test("fails inconclusively when the two relative-order verdicts disagree", () => {
-    const comparison = compareBenchmarkGate({
-      baseFirst: gateReport("base-sha", "base-first", [10, 10, 10, 10, 10]),
-      candidateFirst: gateReport("candidate-sha", "candidate-first", [15, 15, 15, 15, 15]),
-      candidateSecond: gateReport("candidate-sha", "candidate-second", [14, 14, 14, 14, 14]),
-      baseSecond: gateReport("base-sha", "base-second", [10, 10, 10, 10, 10]),
+  test("fails closed when an aggregated control has a one-sided deterioration", () => {
+    const comparison = compareBenchmarkGate(
+      gateReports({
+        baseThird: [10, 11, 12, 13, 22],
+        baseFourth: [10, 11, 12, 13, 22],
+      }),
+    );
+
+    expect(comparison).toMatchObject({
+      kind: "inconclusive",
+      reason: "base-control-unstable",
+      details: {
+        baseControl: { kind: "inconclusive", reason: "one-sided-deterioration" },
+      },
     });
+  });
+
+  test("fails inconclusively when the two balanced bracket verdicts disagree", () => {
+    const comparison = compareBenchmarkGate(
+      gateReports({
+        candidateFirst: [18, 18, 18, 21, 21],
+        candidateSecond: [18, 18, 18, 21, 21],
+        baseThird: [10, 10, 10, 10, 10],
+        baseFourth: [10, 10, 10, 10, 10],
+        candidateThird: [14.1, 14.1, 14.1, 14.1, 14.1],
+        candidateFourth: [14.1, 14.1, 14.1, 14.1, 14.1],
+      }),
+    );
 
     expect(comparison).toMatchObject({
       kind: "inconclusive",
@@ -243,33 +268,17 @@ describe("benchmark regression comparison", () => {
     });
   });
 
-  test("accepts a lone one-sided pair when the opposite order is clean", () => {
-    const comparison = compareBenchmarkGate({
-      baseFirst: gateReport("base-sha", "base-first"),
-      candidateFirst: gateReport("candidate-sha", "candidate-first", [10, 11, 18, 19, 19]),
-      candidateSecond: gateReport("candidate-sha", "candidate-second"),
-      baseSecond: gateReport("base-sha", "base-second"),
-    });
-
-    expect(comparison).toMatchObject({
-      kind: "pass",
-      details: {
-        baseFirstCandidateFirst: {
-          kind: "inconclusive",
-          reason: "one-sided-deterioration",
-        },
-        baseSecondCandidateSecond: { kind: "pass" },
-      },
-    });
-  });
-
-  test("fails inconclusively when both bracketing pairs are one-sided", () => {
-    const comparison = compareBenchmarkGate({
-      baseFirst: gateReport("base-sha", "base-first"),
-      candidateFirst: gateReport("candidate-sha", "candidate-first", [10, 11, 18, 19, 19]),
-      candidateSecond: gateReport("candidate-sha", "candidate-second", [10, 11, 18, 19, 19]),
-      baseSecond: gateReport("base-sha", "base-second"),
-    });
+  test("fails inconclusively on a one-sided balanced bracket result", () => {
+    const comparison = compareBenchmarkGate(
+      gateReports({
+        candidateFirst: [10, 11, 18, 19, 19],
+        candidateSecond: [10, 11, 18, 19, 19],
+        baseThird: [10.5, 10.5, 10.5, 10.5, 10.5],
+        baseFourth: [10.5, 10.5, 10.5, 10.5, 10.5],
+        candidateThird: [15, 15, 15, 15, 15],
+        candidateFourth: [15, 15, 15, 15, 15],
+      }),
+    );
 
     expect(comparison).toMatchObject({
       kind: "inconclusive",
@@ -278,12 +287,7 @@ describe("benchmark regression comparison", () => {
   });
 
   test("fails inconclusively when a trial lacks both settling warm-up runs", () => {
-    const comparison = compareBenchmarkGate({
-      baseFirst: gateReport("base-sha", "base-first"),
-      candidateFirst: gateReport("candidate-sha", "candidate-first"),
-      candidateSecond: gateReport("candidate-sha", "candidate-second", undefined, 1),
-      baseSecond: gateReport("base-sha", "base-second"),
-    });
+    const comparison = compareBenchmarkGate(gateReports({}, { candidateFourth: 1 }));
 
     expect(comparison).toEqual({
       kind: "inconclusive",
@@ -291,22 +295,23 @@ describe("benchmark regression comparison", () => {
       details: {
         baseControl: null,
         candidateControl: null,
-        baseFirstCandidateFirst: null,
-        baseSecondCandidateSecond: null,
+        firstBalancedBracket: null,
+        secondBalancedBracket: null,
       },
     });
   });
 
   test("fails inconclusively when a measurement command failed after writing a report", () => {
-    const comparison = compareCompletedBenchmarkGate(
-      {
-        baseFirst: gateReport("base-sha", "base-first"),
-        candidateFirst: gateReport("candidate-sha", "candidate-first"),
-        candidateSecond: gateReport("candidate-sha", "candidate-second"),
-        baseSecond: gateReport("base-sha", "base-second"),
-      },
-      { baseFirst: true, candidateFirst: true, candidateSecond: false, baseSecond: true },
-    );
+    const comparison = compareCompletedBenchmarkGate(gateReports(), {
+      baseFirst: true,
+      candidateFirst: true,
+      candidateSecond: true,
+      baseSecond: true,
+      candidateThird: true,
+      baseThird: true,
+      baseFourth: true,
+      candidateFourth: false,
+    });
 
     expect(comparison).toEqual({
       kind: "inconclusive",
@@ -314,8 +319,8 @@ describe("benchmark regression comparison", () => {
       details: {
         baseControl: null,
         candidateControl: null,
-        baseFirstCandidateFirst: null,
-        baseSecondCandidateSecond: null,
+        firstBalancedBracket: null,
+        secondBalancedBracket: null,
       },
     });
   });
@@ -351,7 +356,7 @@ describe("benchmark regression comparison", () => {
   test("rejects each comparison signature mismatch", () => {
     const base = report();
     const signatures = [
-      ["schema-mismatch", { ...report(), schemaVersion: "falryn.benchmark-report/v4" }],
+      ["schema-mismatch", { ...report(), schemaVersion: "falryn.benchmark-report/v5" }],
       [
         "platform-mismatch",
         createBenchmarkReport(report().measurements, {

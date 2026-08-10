@@ -198,6 +198,82 @@ jobs:
           FALRYN_BENCHMARK_WARMUP_RUNS: ${{ steps.base_second_warmup.outputs.completed || 0 }}
         run: bun run measure && echo "completed=1" >> "$GITHUB_OUTPUT"
 
+      - name: Warm the reviewed revision before its third report
+        id: candidate_third_warmup
+        continue-on-error: true
+        run: |
+          bun run measure
+          bun run measure
+          echo "completed=2" >> "$GITHUB_OUTPUT"
+
+      - name: Measure the reviewed revision third
+        id: candidate_third_measurement
+        continue-on-error: true
+        env:
+          FALRYN_MEASURE_REPORT: ${{ runner.temp }}/falryn-benchmark-reports/candidate-third.json
+          FALRYN_BENCHMARK_REVISION: ${{ github.event.pull_request.head.sha }}
+          FALRYN_BENCHMARK_TRIAL: candidate-third
+          FALRYN_BENCHMARK_WARMUP_RUNS: ${{ steps.candidate_third_warmup.outputs.completed || 0 }}
+        run: bun run measure && echo "completed=1" >> "$GITHUB_OUTPUT"
+
+      - name: Warm the base revision before its third report
+        id: base_third_warmup
+        continue-on-error: true
+        working-directory: ${{ runner.temp }}/falryn-benchmark-baseline
+        run: |
+          bun run measure
+          bun run measure
+          echo "completed=2" >> "$GITHUB_OUTPUT"
+
+      - name: Measure the base revision third
+        id: base_third_measurement
+        continue-on-error: true
+        working-directory: ${{ runner.temp }}/falryn-benchmark-baseline
+        env:
+          FALRYN_MEASURE_REPORT: ${{ runner.temp }}/falryn-benchmark-reports/base-third.json
+          FALRYN_BENCHMARK_REVISION: ${{ github.event.pull_request.base.sha }}
+          FALRYN_BENCHMARK_TRIAL: base-third
+          FALRYN_BENCHMARK_WARMUP_RUNS: ${{ steps.base_third_warmup.outputs.completed || 0 }}
+        run: bun run measure && echo "completed=1" >> "$GITHUB_OUTPUT"
+
+      - name: Warm the base revision before its fourth report
+        id: base_fourth_warmup
+        continue-on-error: true
+        working-directory: ${{ runner.temp }}/falryn-benchmark-baseline
+        run: |
+          bun run measure
+          bun run measure
+          echo "completed=2" >> "$GITHUB_OUTPUT"
+
+      - name: Measure the base revision fourth
+        id: base_fourth_measurement
+        continue-on-error: true
+        working-directory: ${{ runner.temp }}/falryn-benchmark-baseline
+        env:
+          FALRYN_MEASURE_REPORT: ${{ runner.temp }}/falryn-benchmark-reports/base-fourth.json
+          FALRYN_BENCHMARK_REVISION: ${{ github.event.pull_request.base.sha }}
+          FALRYN_BENCHMARK_TRIAL: base-fourth
+          FALRYN_BENCHMARK_WARMUP_RUNS: ${{ steps.base_fourth_warmup.outputs.completed || 0 }}
+        run: bun run measure && echo "completed=1" >> "$GITHUB_OUTPUT"
+
+      - name: Warm the reviewed revision before its fourth report
+        id: candidate_fourth_warmup
+        continue-on-error: true
+        run: |
+          bun run measure
+          bun run measure
+          echo "completed=2" >> "$GITHUB_OUTPUT"
+
+      - name: Measure the reviewed revision fourth
+        id: candidate_fourth_measurement
+        continue-on-error: true
+        env:
+          FALRYN_MEASURE_REPORT: ${{ runner.temp }}/falryn-benchmark-reports/candidate-fourth.json
+          FALRYN_BENCHMARK_REVISION: ${{ github.event.pull_request.head.sha }}
+          FALRYN_BENCHMARK_TRIAL: candidate-fourth
+          FALRYN_BENCHMARK_WARMUP_RUNS: ${{ steps.candidate_fourth_warmup.outputs.completed || 0 }}
+        run: bun run measure && echo "completed=1" >> "$GITHUB_OUTPUT"
+
       - name: Compare the reports
         if: always()
         env:
@@ -205,10 +281,18 @@ jobs:
           FALRYN_BENCHMARK_CANDIDATE_FIRST_REPORT: ${{ runner.temp }}/falryn-benchmark-reports/candidate-first.json
           FALRYN_BENCHMARK_CANDIDATE_SECOND_REPORT: ${{ runner.temp }}/falryn-benchmark-reports/candidate-second.json
           FALRYN_BENCHMARK_BASE_SECOND_REPORT: ${{ runner.temp }}/falryn-benchmark-reports/base-second.json
+          FALRYN_BENCHMARK_CANDIDATE_THIRD_REPORT: ${{ runner.temp }}/falryn-benchmark-reports/candidate-third.json
+          FALRYN_BENCHMARK_BASE_THIRD_REPORT: ${{ runner.temp }}/falryn-benchmark-reports/base-third.json
+          FALRYN_BENCHMARK_BASE_FOURTH_REPORT: ${{ runner.temp }}/falryn-benchmark-reports/base-fourth.json
+          FALRYN_BENCHMARK_CANDIDATE_FOURTH_REPORT: ${{ runner.temp }}/falryn-benchmark-reports/candidate-fourth.json
           FALRYN_BENCHMARK_BASE_FIRST_COMPLETED: ${{ steps.base_first_measurement.outputs.completed || 0 }}
           FALRYN_BENCHMARK_CANDIDATE_FIRST_COMPLETED: ${{ steps.candidate_first_measurement.outputs.completed || 0 }}
           FALRYN_BENCHMARK_CANDIDATE_SECOND_COMPLETED: ${{ steps.candidate_second_measurement.outputs.completed || 0 }}
           FALRYN_BENCHMARK_BASE_SECOND_COMPLETED: ${{ steps.base_second_measurement.outputs.completed || 0 }}
+          FALRYN_BENCHMARK_CANDIDATE_THIRD_COMPLETED: ${{ steps.candidate_third_measurement.outputs.completed || 0 }}
+          FALRYN_BENCHMARK_BASE_THIRD_COMPLETED: ${{ steps.base_third_measurement.outputs.completed || 0 }}
+          FALRYN_BENCHMARK_BASE_FOURTH_COMPLETED: ${{ steps.base_fourth_measurement.outputs.completed || 0 }}
+          FALRYN_BENCHMARK_CANDIDATE_FOURTH_COMPLETED: ${{ steps.candidate_fourth_measurement.outputs.completed || 0 }}
         run: bun run benchmark:compare
 
       - name: Upload benchmark reports
