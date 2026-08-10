@@ -933,15 +933,17 @@ Five limitations belong with those numbers:
   records its revision, ordered trial, completed workflow warm-up count, and
   per-metric same-process warm-up sample count. The comparator accepts only
   matching schema, platform, architecture, Bun version, dataset revision/state,
-  warm-up/sample count; it checks each same-revision control in both directions
-  and requires the two relative-order comparisons to agree. It gates migration
-  time, transaction latency, range-read latency, and startup to first draw. A
-  selected metric is a regression only when both p50 and p95 are at least 50%
-  slower. A same-revision control's one-sided tail shift is retained in the
-  report but is not a regression; a two-sided control regression, missing,
-  malformed, incompatible, incomplete-warm-up, or disagreeing data is a nonzero
-  inconclusive result, as is a one-sided base/candidate pair. The four reports
-  are temporary CI artifacts, never product/runtime/tracked output.
+  warm-up/sample count; it records each same-revision control in both directions
+  and compares the two relative orders. It gates migration time, transaction
+  latency, range-read latency, and startup to first draw. A selected metric is a
+  regression when both p50 and p95 are at least 50% slower; the gate rejects
+  only when both relative-order comparisons report one. Same-revision controls
+  remain diagnostic because they cannot identify a product regression, although
+  an incompatible control still fails closed; a one-sided base/candidate pair
+  may pass only when the opposite order is clean. Missing, malformed,
+  incompatible, incomplete-warm-up, two one-sided, or disagreeing data is a
+  nonzero inconclusive result. The four reports are temporary CI artifacts,
+  never product/runtime/tracked output.
   Database size, contention, throughput, cadence, memory, and shutdown remain
   diagnostic observations rather than newly invented budgets. Because the base
   predates report emission, CI overlays only this PR's test-only report harness

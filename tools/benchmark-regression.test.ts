@@ -104,7 +104,7 @@ describe("benchmark regression comparison", () => {
     });
   });
 
-  test("passes only when bracketing controls and both relative orders agree", () => {
+  test("passes when both bracketing orders clear the regression threshold", () => {
     const comparison = compareBenchmarkGate({
       baseFirst: gateReport("base-sha", "base-first"),
       candidateFirst: gateReport("candidate-sha", "candidate-first"),
@@ -160,7 +160,7 @@ describe("benchmark regression comparison", () => {
     });
   });
 
-  test("fails inconclusively when an equal-revision control is unstable", () => {
+  test("retains an unstable equal-revision control when both bracketing pairs pass", () => {
     const comparison = compareBenchmarkGate({
       baseFirst: gateReport("base-sha", "base-first"),
       candidateFirst: gateReport("candidate-sha", "candidate-first"),
@@ -168,7 +168,38 @@ describe("benchmark regression comparison", () => {
       baseSecond: gateReport("base-sha", "base-second", [20, 21, 22, 23, 24]),
     });
 
-    expect(comparison).toMatchObject({ kind: "inconclusive", reason: "base-control-unstable" });
+    expect(comparison).toMatchObject({
+      kind: "pass",
+      details: {
+        baseControl: { kind: "regression" },
+        baseFirstCandidateFirst: { kind: "pass" },
+        baseSecondCandidateSecond: { kind: "pass" },
+      },
+    });
+  });
+
+  test("fails inconclusively when controls lack a comparable signature", () => {
+    const candidateSecond = createBenchmarkReport(
+      gateReport("candidate-sha", "candidate-second").measurements,
+      { platform: "darwin", architecture: "arm64", bunVersion: "1.3.15" },
+      { revision: "candidate-sha", trial: "candidate-second", warmupRuns: 1 },
+    );
+    const baseSecond = createBenchmarkReport(
+      gateReport("base-sha", "base-second").measurements,
+      { platform: "darwin", architecture: "arm64", bunVersion: "1.3.15" },
+      { revision: "base-sha", trial: "base-second", warmupRuns: 1 },
+    );
+    const comparison = compareBenchmarkGate({
+      baseFirst: gateReport("base-sha", "base-first"),
+      candidateFirst: gateReport("candidate-sha", "candidate-first"),
+      candidateSecond,
+      baseSecond,
+    });
+
+    expect(comparison).toMatchObject({
+      kind: "inconclusive",
+      reason: "base-control-unstable",
+    });
   });
 
   test("records a one-sided control tail without treating it as a regression", () => {
@@ -200,6 +231,40 @@ describe("benchmark regression comparison", () => {
     expect(comparison).toMatchObject({
       kind: "inconclusive",
       reason: "paired-verdict-disagreement",
+    });
+  });
+
+  test("accepts a lone one-sided pair when the opposite order is clean", () => {
+    const comparison = compareBenchmarkGate({
+      baseFirst: gateReport("base-sha", "base-first"),
+      candidateFirst: gateReport("candidate-sha", "candidate-first", [10, 11, 18, 19, 19]),
+      candidateSecond: gateReport("candidate-sha", "candidate-second"),
+      baseSecond: gateReport("base-sha", "base-second"),
+    });
+
+    expect(comparison).toMatchObject({
+      kind: "pass",
+      details: {
+        baseFirstCandidateFirst: {
+          kind: "inconclusive",
+          reason: "one-sided-deterioration",
+        },
+        baseSecondCandidateSecond: { kind: "pass" },
+      },
+    });
+  });
+
+  test("fails inconclusively when both bracketing pairs are one-sided", () => {
+    const comparison = compareBenchmarkGate({
+      baseFirst: gateReport("base-sha", "base-first"),
+      candidateFirst: gateReport("candidate-sha", "candidate-first", [10, 11, 18, 19, 19]),
+      candidateSecond: gateReport("candidate-sha", "candidate-second", [10, 11, 18, 19, 19]),
+      baseSecond: gateReport("base-sha", "base-second"),
+    });
+
+    expect(comparison).toMatchObject({
+      kind: "inconclusive",
+      reason: "paired-comparison-inconclusive",
     });
   });
 
