@@ -296,7 +296,10 @@ const reportPath = configuredReportPath();
  */
 const COMPARISON_MIGRATION_SAMPLES = 101;
 const COMPARISON_STARTUP_SAMPLES = 21;
-const COMPARISON_RANGE_SAMPLES = 256;
+// Four 256-read reports left p95 exposed to a brief hosted-runner I/O burst.
+// This remains bounded but makes one short interruption less than five percent
+// of a comparative trial instead of letting it decide the tail statistic.
+const COMPARISON_RANGE_SAMPLES = 1_024;
 const MIGRATION_SAMPLES = reportPath === null ? 5 : COMPARISON_MIGRATION_SAMPLES;
 const RANGE_SAMPLES = reportPath === null ? 64 : COMPARISON_RANGE_SAMPLES;
 const MIGRATION_WARMUP_SAMPLES = reportPath === null ? 0 : 21;
