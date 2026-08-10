@@ -919,8 +919,9 @@ Five limitations belong with those numbers:
   [#415](https://github.com/yogeshprasad098/falryn/issues/415) and
   [#418](https://github.com/yogeshprasad098/falryn/issues/418) add a
   pull-request-only `macos-15` arm64 job that builds each exact revision and
-  immediately warms the same revision before every base-first, candidate-first,
-  candidate-second, and base-second report on one runner. The report profile
+  completes two fixed same-revision settling passes immediately before every
+  base-first, candidate-first, candidate-second, and base-second report on one
+  runner. The report profile
   collects 101 migrations, 250 transaction writes, 1,024 range reads, and 21
   compiled-startup samples. Before timing, it discards 21 migrations, 64 turns,
   and 1,024 range reads in that same Bun process, so its p95 is neither one
@@ -930,7 +931,7 @@ Five limitations belong with those numbers:
   its test-only report only after every real-owner measurement completed; an
   unavailable compiled executable/pseudo-terminal, malformed destination, failed
   measurement, or incomplete suite fails without a report. Each `v3` report
-  records its revision, ordered trial, completed workflow warm-up count, and
+  records its revision, ordered trial, completed workflow settling-pass count, and
   per-metric same-process warm-up sample count. The comparator accepts only
   matching schema, platform, architecture, Bun version, dataset revision/state,
   warm-up/sample count; it records each same-revision control in both directions
@@ -941,7 +942,7 @@ Five limitations belong with those numbers:
   remain diagnostic because they cannot identify a product regression, although
   an incompatible control still fails closed; a one-sided base/candidate pair
   may pass only when the opposite order is clean. Missing, malformed,
-  incompatible, incomplete-warm-up, two one-sided, or disagreeing data is a
+  incompatible, incomplete-settling, two one-sided, or disagreeing data is a
   nonzero inconclusive result. The four reports are temporary CI artifacts,
   never product/runtime/tracked output.
   Database size, contention, throughput, cadence, memory, and shutdown remain

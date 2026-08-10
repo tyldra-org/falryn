@@ -6,6 +6,7 @@ import { dirname, join } from "node:path";
 import {
   BENCHMARK_METRIC_IDS,
   BENCHMARK_REPORT_SCHEMA,
+  BENCHMARK_SETTLING_WARMUP_RUNS,
   compareBenchmarkGate,
   compareBenchmarkReports,
   compareCompletedBenchmarkGate,
@@ -47,7 +48,7 @@ function gateReport(
   revision: string,
   trial: "base-first" | "candidate-first" | "candidate-second" | "base-second",
   samples: readonly number[] = [10, 11, 12, 13, 14],
-  warmupRuns = 1,
+  warmupRuns = BENCHMARK_SETTLING_WARMUP_RUNS,
 ) {
   return createBenchmarkReport(
     BENCHMARK_METRIC_IDS.map((id) =>
@@ -182,12 +183,20 @@ describe("benchmark regression comparison", () => {
     const candidateSecond = createBenchmarkReport(
       gateReport("candidate-sha", "candidate-second").measurements,
       { platform: "darwin", architecture: "arm64", bunVersion: "1.3.15" },
-      { revision: "candidate-sha", trial: "candidate-second", warmupRuns: 1 },
+      {
+        revision: "candidate-sha",
+        trial: "candidate-second",
+        warmupRuns: BENCHMARK_SETTLING_WARMUP_RUNS,
+      },
     );
     const baseSecond = createBenchmarkReport(
       gateReport("base-sha", "base-second").measurements,
       { platform: "darwin", architecture: "arm64", bunVersion: "1.3.15" },
-      { revision: "base-sha", trial: "base-second", warmupRuns: 1 },
+      {
+        revision: "base-sha",
+        trial: "base-second",
+        warmupRuns: BENCHMARK_SETTLING_WARMUP_RUNS,
+      },
     );
     const comparison = compareBenchmarkGate({
       baseFirst: gateReport("base-sha", "base-first"),
@@ -268,11 +277,11 @@ describe("benchmark regression comparison", () => {
     });
   });
 
-  test("fails inconclusively when a trial did not receive a warm-up run", () => {
+  test("fails inconclusively when a trial lacks both settling warm-up runs", () => {
     const comparison = compareBenchmarkGate({
       baseFirst: gateReport("base-sha", "base-first"),
       candidateFirst: gateReport("candidate-sha", "candidate-first"),
-      candidateSecond: gateReport("candidate-sha", "candidate-second", undefined, 0),
+      candidateSecond: gateReport("candidate-sha", "candidate-second", undefined, 1),
       baseSecond: gateReport("base-sha", "base-second"),
     });
 
