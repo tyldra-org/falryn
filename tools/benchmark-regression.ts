@@ -578,10 +578,11 @@ function gateInconclusive(
 }
 
 /**
- * A control can show a one-sided tail shift without meeting this gate's
- * documented regression definition. Preserve that diagnostic, but reject only
- * an actual two-sided control regression or an incompatible control; the two
- * base/candidate pairs remain decisive and never normalize one-sided results.
+ * A same-revision control must be non-regressing in both directions under the
+ * documented p50-and-p95 rule. Preserve a one-sided tail shift in its metrics,
+ * but do not turn it into a new threshold: it is not a regression in either
+ * direction. An actual two-sided control regression or incompatible signature
+ * remains nonzero.
  */
 function compareControl(first: BenchmarkReport, second: BenchmarkReport): BenchmarkComparison {
   const forward = compareBenchmarkReports(first, second);
@@ -598,7 +599,9 @@ function compareControl(first: BenchmarkReport, second: BenchmarkReport): Benchm
   if (reverse.kind === "inconclusive" && reverse.reason !== "one-sided-deterioration") {
     return reverse;
   }
-  return forward.kind === "inconclusive" ? forward : reverse;
+  const diagnostic =
+    forward.kind === "inconclusive" ? forward : reverse.kind === "inconclusive" ? reverse : forward;
+  return { kind: "pass", metrics: diagnostic.metrics };
 }
 
 function aggregateBracketReports(

@@ -237,7 +237,7 @@ describe("benchmark regression comparison", () => {
     });
   });
 
-  test("fails closed when an aggregated control has a one-sided deterioration", () => {
+  test("retains a one-sided control tail while accepting non-regression", () => {
     const comparison = compareBenchmarkGate(
       gateReports({
         baseSecond: [10, 11, 12, 13, 22],
@@ -246,10 +246,31 @@ describe("benchmark regression comparison", () => {
     );
 
     expect(comparison).toMatchObject({
+      kind: "pass",
+      details: {
+        baseControl: {
+          kind: "pass",
+          metrics: expect.arrayContaining([
+            expect.objectContaining({ classification: "one-sided-deterioration" }),
+          ]),
+        },
+      },
+    });
+  });
+
+  test("fails closed when a same-revision control regresses in the reverse direction", () => {
+    const comparison = compareBenchmarkGate(
+      gateReports({
+        baseFirst: [20, 21, 22, 23, 24],
+        baseFourth: [20, 21, 22, 23, 24],
+      }),
+    );
+
+    expect(comparison).toMatchObject({
       kind: "inconclusive",
       reason: "base-control-unstable",
       details: {
-        baseControl: { kind: "inconclusive", reason: "one-sided-deterioration" },
+        baseControl: { kind: "regression" },
       },
     });
   });

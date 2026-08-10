@@ -920,9 +920,11 @@ Five limitations belong with those numbers:
   [#418](https://github.com/yogeshprasad098/falryn/issues/418) add a
   pull-request-only `macos-15` arm64 job that builds each exact revision and
   completes two fixed same-revision settling passes immediately before every
-  report in two mirrored, balanced brackets on one runner: base-first,
-  candidate-first, candidate-second, base-second, candidate-third, base-third,
-  base-fourth, and candidate-fourth. The report profile
+  report in two temporally symmetric brackets on one runner: base-first,
+  candidate-first, candidate-second, base-second, base-third, candidate-third,
+  candidate-fourth, and base-fourth. The outer bracket pools the first and last
+  report of each revision; the inner bracket pools the middle pair, so both
+  brackets have both relative orders and the same temporal centre. The report profile
   collects 101 migrations, 250 transaction writes, 1,024 range reads, and 21
   compiled-startup samples. Before timing, it discards 21 migrations, 64 turns,
   and 1,024 range reads in that same Bun process, so its p95 is neither one
@@ -938,13 +940,15 @@ Five limitations belong with those numbers:
   warm-up/sample count. For each bracket, it pools the two same-revision raw
   sample arrays that span both relative orders before calculating p50 and p95;
   the two pooled base aggregates and two pooled candidate aggregates are the
-  same-revision controls. Both controls must pass in both directions, and both
-  balanced base/candidate brackets must agree. It gates migration time,
-  transaction latency, range-read latency, and startup to first draw. A selected
-  metric is a regression when both p50 and p95 are at least 50% slower; the gate
-  rejects only when both balanced brackets report one. Any control regression,
-  one-sided deterioration, missing, malformed, incompatible,
-  incomplete-settling, or disagreeing data is a nonzero inconclusive result.
+  same-revision controls. Both controls must remain non-regressing in both
+  directions under the same p50-and-p95 rule, and both balanced base/candidate
+  brackets must agree. It gates migration time, transaction latency, range-read
+  latency, and startup to first draw. A selected metric is a regression when
+  both p50 and p95 are at least 50% slower; the gate rejects only when both
+  balanced brackets report one. A one-sided control tail remains a bounded
+  diagnostic; a two-sided control regression, one-sided bracket, missing,
+  malformed, incompatible, incomplete-settling, or disagreeing data is a
+  nonzero inconclusive result.
   The eight reports are temporary CI artifacts, never product/runtime/tracked
   output; pooling is a fixed, auditable statistic, not a conditional retry or
   threshold bypass.
