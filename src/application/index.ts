@@ -28,6 +28,7 @@ export {
   fromEventStoreError,
   fromIdentityError,
   fromParticipantReports,
+  fromRemovalRefusal,
   fromRendererFailure,
   fromSequenceError,
   fromSqliteStoreError,

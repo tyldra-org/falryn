@@ -49,7 +49,7 @@ import {
   truncateToWidth,
   wrapToWidth,
 } from "../domain/index.ts";
-import type { DoctorPayload, RunCommandResult } from "./commands.ts";
+import type { DataRemovalPayload, DoctorPayload, RunCommandResult } from "./commands.ts";
 import type {
   CommandEffect,
   CommandOmission,
@@ -641,11 +641,60 @@ function renderPayload(session: Session, result: RunCommandResult): RenderedPayl
       return renderConfigValidate(session, result.payload);
     case "config.path":
       return renderConfigPath(session, result.payload);
+    case "data.reset":
+    case "data.uninstall":
+      return renderDataRemoval(session, result.payload);
     case "doctor":
       return renderDoctor(session, result.payload);
     default:
       return assertNever(result, "unhandled command result");
   }
+}
+
+function renderDataRemoval(session: Session, payload: DataRemovalPayload | null): RenderedPayload {
+  if (payload === null) {
+    return { lines: ["No local-data plan is available."], diagnostics: [] };
+  }
+
+  const lines = [
+    paint(session, "plain", `Local data ${payload.plan.kind} plan`),
+    `  Plan identity  ${safe(payload.plan.planId)}`,
+    `  Total          ${payload.plan.totalBytes} bytes in ${payload.plan.totalItems} items (${payload.plan.completeness})`,
+    "  Classes",
+  ];
+  for (const entry of payload.plan.classes) {
+    const owner = entry.owner === null ? "unregistered" : safe(entry.owner);
+    lines.push(
+      `    ${safe(entry.ownershipClass)}  ${entry.action}  ${owner}  ${entry.byteCount} bytes  ${entry.itemCount} items`,
+    );
+    for (const path of entry.paths) {
+      // A removal preview must retain every exact path; an over-wide terminal
+      // line is more honest than a truncated path that looks executable.
+      lines.push(`      ${safe(path)}`);
+    }
+  }
+  lines.push(`  Out of scope  ${payload.plan.outOfScope.map(safe).join(", ")}`);
+
+  if (payload.execution !== null) {
+    lines.push(`  Execution     ${payload.confirmation}; ${payload.execution.completeness}`);
+    for (const path of payload.execution.deleted) {
+      lines.push(`    deleted  ${safe(path)}`);
+    }
+    for (const retained of payload.execution.retained) {
+      lines.push(`    retained ${safe(retained.reason)}  ${safe(retained.path)}`);
+    }
+    for (const failed of payload.execution.failed) {
+      lines.push(`    failed   ${safe(failed.code)}  ${safe(failed.path)}`);
+    }
+  }
+
+  const diagnostics =
+    payload.confirmation === "not-requested"
+      ? [
+          `Preview only. Re-run with --confirm ${safe(payload.plan.planId)} to apply this exact plan.`,
+        ]
+      : [];
+  return { lines, diagnostics };
 }
 
 /** Text from outside Falryn, rendered as data rather than as terminal control. */
@@ -1022,12 +1071,55 @@ function quietResultLines(result: RunCommandResult): readonly string[] {
       return result.payload === null
         ? []
         : result.payload.sources.map((source) => safe(source.path));
+    case "data.reset":
+    case "data.uninstall":
+      return quietDataLines(result.payload);
     case "config.validate":
     case "doctor":
       return [];
     default:
       return assertNever(result, "unhandled command result");
   }
+}
+
+function quietDataLines(payload: DataRemovalPayload | null): readonly string[] {
+  if (payload === null) {
+    return [];
+  }
+  const plan = payload.plan.classes.flatMap((entry) =>
+    entry.paths.length === 0
+      ? [
+          [
+            safe(payload.plan.planId),
+            safe(entry.ownershipClass),
+            entry.action,
+            String(entry.byteCount),
+            String(entry.itemCount),
+            "",
+          ].join("\t"),
+        ]
+      : entry.paths.map((path) =>
+          [
+            safe(payload.plan.planId),
+            safe(entry.ownershipClass),
+            entry.action,
+            String(entry.byteCount),
+            String(entry.itemCount),
+            safe(path),
+          ].join("\t"),
+        ),
+  );
+  if (payload.execution === null) {
+    return plan;
+  }
+  return [
+    ...plan,
+    ...payload.execution.deleted.map((path) => `deleted\t${safe(path)}`),
+    ...payload.execution.retained.map(
+      (entry) => `retained\t${safe(entry.reason)}\t${safe(entry.path)}`,
+    ),
+    ...payload.execution.failed.map((entry) => `failed\t${safe(entry.code)}\t${safe(entry.path)}`),
+  ];
 }
 
 /** What quiet mode still reports on stderr: the findings behind the verdict. */
@@ -1044,6 +1136,9 @@ function quietFindingLines(result: RunCommandResult): readonly string[] {
           ];
     case "doctor":
       return result.payload === null ? [] : doctorFindings(result.payload);
+    case "data.reset":
+    case "data.uninstall":
+      return [];
     case "config.show":
       // Quiet still reports a source that was skipped. `config show` prints the
       // values it has; stderr is where the reader is told those values are not

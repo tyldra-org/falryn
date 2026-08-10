@@ -1,5 +1,5 @@
 /**
- * The two commands v0.1 can honestly ship.
+ * The command surfaces v0.1 can honestly ship.
  *
  * `config` is first because the configuration area is fully implemented and its
  * precedence is already proven by #8 — so what this exercises is the CLI path,
@@ -18,6 +18,7 @@
 
 import {
   fromConfigurationIssues,
+  fromRemovalRefusal,
   fromUnknown,
   fromUnreadConfigurationSources,
 } from "../application/index.ts";
@@ -36,12 +37,15 @@ import {
   type LocalDataRoot,
   type LocalPath,
   type OwnershipClass,
+  type RemovalOutcome,
+  type RemovalPlan,
   type RootInspection,
   type RootViability,
   type SourceReport,
   type TerminalOutcome,
 } from "../domain/index.ts";
 import { openBunSqlite } from "../integrations/index.ts";
+import type { DataCommandArguments } from "./command-tree.ts";
 import type { GlobalOptions } from "./options.ts";
 import {
   COMMAND_RESULT_SCHEMA_FAMILY,
@@ -97,6 +101,113 @@ function resultFor<Command extends CommandId, Payload>(
  */
 function errorsFrom(error: FalrynError | null): readonly FalrynError[] {
   return error === null ? [] : [error];
+}
+
+/** What a data command planned, and whether its exact plan was then applied. */
+export type DataRemovalPayload = {
+  readonly plan: RemovalPlan;
+  readonly execution: RemovalOutcome | null;
+  readonly confirmation: "not-requested" | "applied" | "refused";
+};
+
+const MUTATION_NOT_OBSERVED: CommandEffect = { intent: "mutate", observed: "none" };
+
+type RemovalCommand = "data.reset" | "data.uninstall";
+
+async function runDataRemoval<Command extends RemovalCommand>(
+  command: Command,
+  services: ServiceProvider,
+  arguments_: DataCommandArguments,
+  signal?: AbortSignal,
+  onMutationStart?: () => void,
+): Promise<CommandResultOf<Command, DataRemovalPayload>> {
+  try {
+    const localData = services().removalData;
+    const plan =
+      command === "data.reset"
+        ? await localData.planReset({ classes: arguments_.classes }, signal)
+        : await localData.planUninstall(signal);
+
+    if (arguments_.confirmation === null) {
+      return resultFor(command, { plan, execution: null, confirmation: "not-requested" });
+    }
+
+    // The plan was derived in this invocation, after the user saw the prior
+    // preview. A changed root, count, or path makes its identity differ before
+    // the executor is allowed to start a deletion.
+    if (plan.planId !== arguments_.confirmation) {
+      return resultFor(
+        command,
+        { plan, execution: null, confirmation: "refused" },
+        [
+          fromRemovalRefusal(
+            { code: "plan-mismatch", expected: plan.planId, confirmed: arguments_.confirmation },
+            { operation: "apply removal plan" },
+          ),
+        ],
+        { kind: "failed", effect: "none" },
+        MUTATION_NOT_OBSERVED,
+      );
+    }
+    onMutationStart?.();
+    const executed = await localData.executeRemoval(
+      plan,
+      { planId: arguments_.confirmation },
+      signal,
+    );
+    if (!executed.ok) {
+      return resultFor(
+        command,
+        { plan, execution: null, confirmation: "refused" },
+        [fromRemovalRefusal(executed.error, { operation: "apply removal plan" })],
+        { kind: "failed", effect: "none" },
+        MUTATION_NOT_OBSERVED,
+      );
+    }
+
+    const outcome: TerminalOutcome | undefined =
+      executed.value.effect === "partial"
+        ? { kind: "failed", effect: "partial" as const }
+        : undefined;
+    return resultFor(
+      command,
+      { plan, execution: executed.value, confirmation: "applied" },
+      [],
+      outcome,
+      { intent: "mutate", observed: executed.value.effect },
+    );
+  } catch (error) {
+    return resultFor(
+      command,
+      null,
+      [fromUnknown(error, { operation: "manage local data" })],
+      undefined,
+      {
+        intent: arguments_.confirmation === null ? "none" : "mutate",
+        observed: "uncertain",
+      },
+    );
+  }
+}
+
+/** Plans or applies a selective local-data reset. */
+export function runDataReset(
+  services: ServiceProvider,
+  arguments_: DataCommandArguments,
+  signal?: AbortSignal,
+  onMutationStart?: () => void,
+): Promise<CommandResultOf<"data.reset", DataRemovalPayload>> {
+  return runDataRemoval("data.reset", services, arguments_, signal, onMutationStart);
+}
+
+/** Plans or applies the complete registered local-data uninstall. */
+export function runDataUninstall(
+  services: ServiceProvider,
+  arguments_: DataCommandArguments,
+  signal?: AbortSignal,
+  onMutationStart?: () => void,
+): Promise<CommandResultOf<"data.uninstall", DataRemovalPayload>> {
+  return runDataRemoval("data.uninstall", services, arguments_, signal, onMutationStart);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -433,12 +544,13 @@ async function storageFor(
 export function stoppedResult(
   command: Exclude<CommandId, "default" | "help" | "version">,
   outcome: TerminalOutcome,
+  intent: CommandEffect["intent"] = "none",
 ): RunCommandResult {
-  // What the scope observed, not what the command declared. Every v0.1 command
-  // intends nothing, and an invocation stopped after it had begun changing
-  // something still has to say that it may have — which is the fact the exit
-  // table reads before it reads the outcome.
-  const effect: CommandEffect = { intent: "none", observed: effectOf(outcome) };
+  // The caller supplies the command's declared intent; this records what the
+  // scope observed. A preview is still non-mutating when it is interrupted,
+  // while a confirmed removal that was interrupted must admit it may have
+  // changed data.
+  const effect: CommandEffect = { intent, observed: effectOf(outcome) };
 
   switch (command) {
     case "config.show":
@@ -453,6 +565,16 @@ export function stoppedResult(
       );
     case "config.path":
       return resultFor<"config.path", ConfigPathPayload>("config.path", null, [], outcome, effect);
+    case "data.reset":
+      return resultFor<"data.reset", DataRemovalPayload>("data.reset", null, [], outcome, effect);
+    case "data.uninstall":
+      return resultFor<"data.uninstall", DataRemovalPayload>(
+        "data.uninstall",
+        null,
+        [],
+        outcome,
+        effect,
+      );
     case "doctor":
       return resultFor<"doctor", DoctorPayload>("doctor", null, [], outcome, effect);
     default:
@@ -478,4 +600,6 @@ export type RunCommandResult =
   | Awaited<ReturnType<typeof runConfigShow>>
   | Awaited<ReturnType<typeof runConfigValidate>>
   | ReturnType<typeof runConfigPath>
+  | Awaited<ReturnType<typeof runDataReset>>
+  | Awaited<ReturnType<typeof runDataUninstall>>
   | Awaited<ReturnType<typeof runDoctor>>;

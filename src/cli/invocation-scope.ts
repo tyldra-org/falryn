@@ -174,7 +174,7 @@ export type GovernedRun<Value> =
 export async function runUnderScope<Value>(
   governance: InvocationGovernance,
   scope: ScopeHandle,
-  work: () => Promise<Value>,
+  work: (signal: AbortSignal) => Promise<Value>,
 ): Promise<GovernedRun<Value>> {
   // Ends the wait once the race is decided. Without it a run given
   // `--timeout 86400000` would hold a day-long timer after its work finished,
@@ -182,7 +182,7 @@ export async function runUnderScope<Value>(
   // by letting the loop drain, so anything still armed is a process that hangs.
   const decided = new AbortController();
 
-  const finished = work().then((value) => ({ kind: "finished", value }) as const);
+  const finished = work(scope.signal).then((value) => ({ kind: "finished", value }) as const);
   const stopped = untilScopeStops(governance, scope, decided.signal).then(
     () => ({ kind: "stopped" }) as const,
   );
