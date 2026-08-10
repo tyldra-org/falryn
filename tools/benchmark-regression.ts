@@ -487,6 +487,7 @@ export function compareBenchmarkReports(
 }
 
 export const BENCHMARK_GATE_REASONS = [
+  "measurement-incomplete",
   "base-first-report-invalid",
   "candidate-first-report-invalid",
   "candidate-second-report-invalid",
@@ -501,6 +502,14 @@ export const BENCHMARK_GATE_REASONS = [
 ] as const;
 
 export type BenchmarkGateReason = (typeof BENCHMARK_GATE_REASONS)[number];
+
+/** A report alone is insufficient: a failing test can still run its afterAll hook. */
+export type BenchmarkGateMeasurementCompletion = Readonly<{
+  baseFirst: boolean;
+  candidateFirst: boolean;
+  candidateSecond: boolean;
+  baseSecond: boolean;
+}>;
 
 type BenchmarkGateDetails = Readonly<{
   baseControl: BenchmarkComparison | null;
@@ -649,6 +658,25 @@ export function compareBenchmarkGate(reports: BenchmarkGateReports): BenchmarkGa
     return gateInconclusive("paired-verdict-disagreement", details);
   }
   return { kind: baseFirstCandidateFirst.kind, details };
+}
+
+/**
+ * Require every benchmark test command to exit successfully before its report
+ * can contribute to a passing gate.
+ */
+export function compareCompletedBenchmarkGate(
+  reports: BenchmarkGateReports,
+  completion: BenchmarkGateMeasurementCompletion,
+): BenchmarkGateComparison {
+  if (
+    !completion.baseFirst ||
+    !completion.candidateFirst ||
+    !completion.candidateSecond ||
+    !completion.baseSecond
+  ) {
+    return gateInconclusive("measurement-incomplete", emptyGateDetails());
+  }
+  return compareBenchmarkGate(reports);
 }
 
 function fixed(value: number): string {
@@ -803,7 +831,15 @@ async function compareFromEnvironment(): Promise<BenchmarkGateComparison> {
     readReport(process.env.FALRYN_BENCHMARK_CANDIDATE_SECOND_REPORT),
     readReport(process.env.FALRYN_BENCHMARK_BASE_SECOND_REPORT),
   ]);
-  return compareBenchmarkGate({ baseFirst, candidateFirst, candidateSecond, baseSecond });
+  return compareCompletedBenchmarkGate(
+    { baseFirst, candidateFirst, candidateSecond, baseSecond },
+    {
+      baseFirst: process.env.FALRYN_BENCHMARK_BASE_FIRST_COMPLETED === "1",
+      candidateFirst: process.env.FALRYN_BENCHMARK_CANDIDATE_FIRST_COMPLETED === "1",
+      candidateSecond: process.env.FALRYN_BENCHMARK_CANDIDATE_SECOND_COMPLETED === "1",
+      baseSecond: process.env.FALRYN_BENCHMARK_BASE_SECOND_COMPLETED === "1",
+    },
+  );
 }
 
 async function run(): Promise<void> {

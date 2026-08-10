@@ -8,6 +8,7 @@ import {
   BENCHMARK_REPORT_SCHEMA,
   compareBenchmarkGate,
   compareBenchmarkReports,
+  compareCompletedBenchmarkGate,
   createBenchmarkMeasurement,
   createBenchmarkReport,
   formatBenchmarkComparison,
@@ -213,6 +214,29 @@ describe("benchmark regression comparison", () => {
     expect(comparison).toEqual({
       kind: "inconclusive",
       reason: "warmup-incomplete",
+      details: {
+        baseControl: null,
+        candidateControl: null,
+        baseFirstCandidateFirst: null,
+        baseSecondCandidateSecond: null,
+      },
+    });
+  });
+
+  test("fails inconclusively when a measurement command failed after writing a report", () => {
+    const comparison = compareCompletedBenchmarkGate(
+      {
+        baseFirst: gateReport("base-sha", "base-first"),
+        candidateFirst: gateReport("candidate-sha", "candidate-first"),
+        candidateSecond: gateReport("candidate-sha", "candidate-second"),
+        baseSecond: gateReport("base-sha", "base-second"),
+      },
+      { baseFirst: true, candidateFirst: true, candidateSecond: false, baseSecond: true },
+    );
+
+    expect(comparison).toEqual({
+      kind: "inconclusive",
+      reason: "measurement-incomplete",
       details: {
         baseControl: null,
         candidateControl: null,
