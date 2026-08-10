@@ -33,7 +33,8 @@ import type { BlobError } from "./blob.ts";
 import { brandedString, timestampSchema } from "./branded-schema.ts";
 import type { CodecIssue } from "./codec-error.ts";
 import {
-  type Brand,
+  type ArtifactId,
+  type ContentDigest,
   type IdentifierCodec,
   type IdentityError,
   type IdentityErrorCode,
@@ -46,18 +47,7 @@ import { err, ok, type Result } from "./result.ts";
 import type { SqliteStoreError } from "./sqlite.ts";
 import type { Timestamp } from "./time.ts";
 
-/** An artifact's logical identity. Stable across deduplicated bytes. */
-export type ArtifactId = Brand<string, "ArtifactId">;
-
-/**
- * A digest over an artifact's exact bytes, prefixed with the function that
- * produced it.
- *
- * Content identity, not logical identity: two artifacts with distinct lineage
- * may share one digest, and the store deduplicates their bytes while keeping
- * both records.
- */
-export type ContentDigest = Brand<string, "ContentDigest">;
+export type { ArtifactId, ContentDigest } from "./identity.ts";
 
 /** The one digest function this build computes and verifies. */
 export const CONTENT_DIGEST_ALGORITHM = "sha-256";

@@ -28,6 +28,10 @@ export type SessionId = Brand<string, "SessionId">;
 export type TurnId = Brand<string, "TurnId">;
 export type ModelAttemptId = Brand<string, "ModelAttemptId">;
 export type InvocationId = Brand<string, "InvocationId">;
+/** An artifact's logical identity. Stable across deduplicated bytes. */
+export type ArtifactId = Brand<string, "ArtifactId">;
+/** A digest over one artifact's exact bytes, including its algorithm prefix. */
+export type ContentDigest = Brand<string, "ContentDigest">;
 export type CapabilityId = Brand<string, "CapabilityId">;
 export type EventId = Brand<string, "EventId">;
 export type TraceId = Brand<string, "TraceId">;
