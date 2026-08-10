@@ -651,11 +651,13 @@ function aggregateBracketReports(
 }
 
 /**
- * Compare two fixed, mirrored measurement brackets. Each bracket pools one
- * report from both relative orders for each revision, so the two same-revision
- * controls compare like-for-like aggregates rather than a first report with a
- * later report. The workflow always runs all eight reports; aggregation is a
- * declared statistic, never a conditional retry or threshold bypass.
+ * Compare two fixed, temporally symmetric measurement brackets. The outer
+ * bracket pools the first and last report of each revision; the inner bracket
+ * pools the middle pair. Both brackets therefore contain one base-before-
+ * candidate and one candidate-before-base ordering, and their base and
+ * candidate aggregates have the same temporal centre. The workflow always
+ * runs all eight reports; aggregation is a declared statistic, never a
+ * conditional retry or threshold bypass.
  */
 export function compareBenchmarkGate(reports: BenchmarkGateReports): BenchmarkGateComparison {
   const baseFirstResult = parseBenchmarkReport(reports.baseFirst);
@@ -737,10 +739,10 @@ export function compareBenchmarkGate(reports: BenchmarkGateReports): BenchmarkGa
     return gateInconclusive("warmup-incomplete", emptyGateDetails());
   }
 
-  const firstBase = aggregateBracketReports(baseFirst, baseSecond);
-  const firstCandidate = aggregateBracketReports(candidateFirst, candidateSecond);
-  const secondBase = aggregateBracketReports(baseThird, baseFourth);
-  const secondCandidate = aggregateBracketReports(candidateThird, candidateFourth);
+  const firstBase = aggregateBracketReports(baseFirst, baseFourth);
+  const firstCandidate = aggregateBracketReports(candidateFirst, candidateFourth);
+  const secondBase = aggregateBracketReports(baseSecond, baseThird);
+  const secondCandidate = aggregateBracketReports(candidateSecond, candidateThird);
   if (
     firstBase === null ||
     firstCandidate === null ||

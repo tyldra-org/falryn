@@ -175,13 +175,17 @@ describe("benchmark regression comparison", () => {
     expect(formatBenchmarkGateComparison(comparison)).toStartWith("benchmark gate: PASS");
   });
 
-  test("pools both relative orders before comparing the repeated controls", () => {
+  test("pools temporally symmetric outer and inner brackets", () => {
     const comparison = compareBenchmarkGate(
       gateReports({
-        baseSecond: [20, 21, 22, 23, 24],
-        candidateSecond: [20, 21, 22, 23, 24],
-        baseFourth: [20, 21, 22, 23, 24],
-        candidateFourth: [20, 21, 22, 23, 24],
+        baseFirst: [1, 1, 1, 1, 1],
+        candidateFirst: [2, 2, 2, 2, 2],
+        candidateSecond: [2, 2, 2, 2, 2],
+        baseSecond: [1, 1, 1, 1, 1],
+        baseThird: [9, 9, 9, 9, 9],
+        candidateThird: [8, 8, 8, 8, 8],
+        candidateFourth: [8, 8, 8, 8, 8],
+        baseFourth: [9, 9, 9, 9, 9],
       }),
     );
 
@@ -219,8 +223,8 @@ describe("benchmark regression comparison", () => {
   test("fails closed when an aggregated same-revision control regresses", () => {
     const comparison = compareBenchmarkGate(
       gateReports({
+        baseSecond: [20, 21, 22, 23, 24],
         baseThird: [20, 21, 22, 23, 24],
-        baseFourth: [20, 21, 22, 23, 24],
       }),
     );
 
@@ -236,8 +240,8 @@ describe("benchmark regression comparison", () => {
   test("fails closed when an aggregated control has a one-sided deterioration", () => {
     const comparison = compareBenchmarkGate(
       gateReports({
+        baseSecond: [10, 11, 12, 13, 22],
         baseThird: [10, 11, 12, 13, 22],
-        baseFourth: [10, 11, 12, 13, 22],
       }),
     );
 
@@ -253,12 +257,14 @@ describe("benchmark regression comparison", () => {
   test("fails inconclusively when the two balanced bracket verdicts disagree", () => {
     const comparison = compareBenchmarkGate(
       gateReports({
-        candidateFirst: [18, 18, 18, 21, 21],
-        candidateSecond: [18, 18, 18, 21, 21],
+        baseFirst: [10, 10, 10, 10, 10],
+        baseSecond: [10, 10, 10, 10, 10],
+        candidateFirst: [15, 15, 15, 15, 15],
+        candidateSecond: [14.1, 14.1, 14.1, 14.1, 14.1],
         baseThird: [10, 10, 10, 10, 10],
         baseFourth: [10, 10, 10, 10, 10],
         candidateThird: [14.1, 14.1, 14.1, 14.1, 14.1],
-        candidateFourth: [14.1, 14.1, 14.1, 14.1, 14.1],
+        candidateFourth: [15, 15, 15, 15, 15],
       }),
     );
 
@@ -271,12 +277,10 @@ describe("benchmark regression comparison", () => {
   test("fails inconclusively on a one-sided balanced bracket result", () => {
     const comparison = compareBenchmarkGate(
       gateReports({
-        candidateFirst: [10, 11, 18, 19, 19],
-        candidateSecond: [10, 11, 18, 19, 19],
-        baseThird: [10.5, 10.5, 10.5, 10.5, 10.5],
-        baseFourth: [10.5, 10.5, 10.5, 10.5, 10.5],
-        candidateThird: [15, 15, 15, 15, 15],
-        candidateFourth: [15, 15, 15, 15, 15],
+        baseFirst: [10, 10, 10, 10, 10],
+        candidateFirst: [10, 10, 10, 10, 20],
+        baseFourth: [10, 10, 10, 10, 10],
+        candidateFourth: [10, 10, 10, 10, 10],
       }),
     );
 
