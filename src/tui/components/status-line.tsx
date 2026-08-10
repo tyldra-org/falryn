@@ -37,7 +37,7 @@ export function StatusLine(props: StatusLineProps): ReactNode {
       <box flexDirection="row" gap={theme.spacing("tight")}>
         <StatusMark status={props.model.status} maxColumns={statusRoom} />
         {props.model.message === "" ? null : (
-          <Line color="mutedForeground" typography="muted" maxColumns={statusRoom}>
+          <Line color="mutedForeground" typography="muted" maxColumns={statusRoom} untrusted>
             {props.model.message}
           </Line>
         )}
