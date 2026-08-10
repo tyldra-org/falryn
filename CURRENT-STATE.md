@@ -921,9 +921,9 @@ Five limitations belong with those numbers:
   pull-request-only `macos-15` arm64 job that builds each exact revision and
   immediately warms the same revision before every base-first, candidate-first,
   candidate-second, and base-second report on one runner. The report profile
-  collects 101 migrations, 250 transaction writes, 256 range reads, and 21
+  collects 101 migrations, 250 transaction writes, 1,024 range reads, and 21
   compiled-startup samples. Before timing, it discards 21 migrations, 64 turns,
-  and 256 range reads in that same Bun process, so its p95 is neither one
+  and 1,024 range reads in that same Bun process, so its p95 is neither one
   cold-run maximum nor a precondition from another process; every ordered array
   and metric warm-up count stays in the artifact. With a fresh
   `FALRYN_MEASURE_REPORT` path, the existing measurement suite atomically writes
