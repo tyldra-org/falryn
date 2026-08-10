@@ -295,7 +295,7 @@ describe("benchmark regression comparison", () => {
     });
   });
 
-  test("fails inconclusively on a one-sided balanced bracket result", () => {
+  test("retains a one-sided balanced-bracket tail while accepting non-regression", () => {
     const comparison = compareBenchmarkGate(
       gateReports({
         baseFirst: [10, 10, 10, 10, 10],
@@ -306,8 +306,15 @@ describe("benchmark regression comparison", () => {
     );
 
     expect(comparison).toMatchObject({
-      kind: "inconclusive",
-      reason: "paired-comparison-inconclusive",
+      kind: "pass",
+      details: {
+        firstBalancedBracket: {
+          kind: "pass",
+          metrics: expect.arrayContaining([
+            expect.objectContaining({ classification: "one-sided-deterioration" }),
+          ]),
+        },
+      },
     });
   });
 

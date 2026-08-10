@@ -945,10 +945,10 @@ Five limitations belong with those numbers:
   brackets must agree. It gates migration time, transaction latency, range-read
   latency, and startup to first draw. A selected metric is a regression when
   both p50 and p95 are at least 50% slower; the gate rejects only when both
-  balanced brackets report one. A one-sided control tail remains a bounded
-  diagnostic; a two-sided control regression, one-sided bracket, missing,
-  malformed, incompatible, incomplete-settling, or disagreeing data is a
-  nonzero inconclusive result.
+  balanced brackets report one. A one-sided control or bracket tail remains a
+  bounded diagnostic; a two-sided control regression, missing, malformed,
+  incompatible, incomplete-settling, or disagreeing data is a nonzero
+  inconclusive result.
   The eight reports are temporary CI artifacts, never product/runtime/tracked
   output; pooling is a fixed, auditable statistic, not a conditional retry or
   threshold bypass.

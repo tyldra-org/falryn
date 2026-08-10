@@ -578,6 +578,17 @@ function gateInconclusive(
 }
 
 /**
+ * The gate defines a regression as both p50 and p95 crossing its documented
+ * threshold. Keep a single-tail change in the metric diagnostics without
+ * promoting it into a second, stricter gate threshold.
+ */
+function acceptNonRegression(comparison: BenchmarkComparison): BenchmarkComparison {
+  return comparison.kind === "inconclusive" && comparison.reason === "one-sided-deterioration"
+    ? { kind: "pass", metrics: comparison.metrics }
+    : comparison;
+}
+
+/**
  * A same-revision control must be non-regressing in both directions under the
  * documented p50-and-p95 rule. Preserve a one-sided tail shift in its metrics,
  * but do not turn it into a new threshold: it is not a regression in either
@@ -601,7 +612,7 @@ function compareControl(first: BenchmarkReport, second: BenchmarkReport): Benchm
   }
   const diagnostic =
     forward.kind === "inconclusive" ? forward : reverse.kind === "inconclusive" ? reverse : forward;
-  return { kind: "pass", metrics: diagnostic.metrics };
+  return acceptNonRegression(diagnostic);
 }
 
 function aggregateBracketReports(
@@ -757,8 +768,12 @@ export function compareBenchmarkGate(reports: BenchmarkGateReports): BenchmarkGa
 
   const baseControl = compareControl(firstBase, secondBase);
   const candidateControl = compareControl(firstCandidate, secondCandidate);
-  const firstBalancedBracket = compareBenchmarkReports(firstBase, firstCandidate);
-  const secondBalancedBracket = compareBenchmarkReports(secondBase, secondCandidate);
+  const firstBalancedBracket = acceptNonRegression(
+    compareBenchmarkReports(firstBase, firstCandidate),
+  );
+  const secondBalancedBracket = acceptNonRegression(
+    compareBenchmarkReports(secondBase, secondCandidate),
+  );
   const details: BenchmarkGateDetails = {
     baseControl,
     candidateControl,
