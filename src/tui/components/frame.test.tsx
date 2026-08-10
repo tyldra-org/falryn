@@ -719,13 +719,10 @@ describe("long unbroken content", () => {
  * renderer is asked for, and the two agreeing is an assumption until something
  * measures it.
  *
- * Measuring it found two things, both outside this file's ownership and both
- * filed rather than fixed here: the width disagreement recorded below
- * (https://github.com/yogeshprasad098/falryn/issues/377), and a status message
- * reaching the buffer with its control sequence intact where the header and the
- * transcript escape theirs
- * (https://github.com/yogeshprasad098/falryn/issues/378). The escaping the two
- * other surfaces do is asserted in this file and in `./transcript.test.tsx`.
+ * Measuring it found two corrections now asserted below: the joined-emoji width
+ * agreement in #377, and status messages escaping control text before their
+ * existing width truncation in #378. The latter uses `Line`'s established
+ * untrusted-text seam; OpenTUI owns the real renderer that confirms the result.
  */
 const REPERTOIRE = [
   { name: "ascii", text: "plain text" },
@@ -784,6 +781,37 @@ describe("text through a painted frame", () => {
         name,
         workspace: true,
       });
+    }
+  });
+
+  test("escapes a control sequence in a status message", async () => {
+    // This is the same rendered surface that previously preserved ESC verbatim.
+    // The escaped value, not merely the raw string, must be what reaches the
+    // real OpenTUI frame.
+    const message = "before\u001b[2Jafter";
+    const frame = await shell(saying(message), {}, { columns: 60, rows: 12 });
+    expect(frame).not.toContain("\u001b[2J");
+    expect(frame).toContain("before\\x1b[2Jafter");
+  });
+
+  test("keeps escaped status text within the minimum terminal", async () => {
+    // Escaping grows one control character into visible text. The status line
+    // must spend its existing width budget on that text rather than wrapping a
+    // new row or sending an escape sequence to the renderer.
+    const message =
+      "before\u001b[2Jafter while this status message is longer than a minimum terminal can show";
+    const frame = await shell(
+      saying(message),
+      {},
+      {
+        columns: MINIMUM_COLUMNS,
+        rows: MINIMUM_ROWS,
+      },
+    );
+    expect(frame).not.toContain("\u001b[2J");
+    expect(frame).toContain("\\x1b[2J");
+    for (const row of frame.split("\n")) {
+      expect(displayWidth(row)).toBeLessThanOrEqual(MINIMUM_COLUMNS);
     }
   });
 
