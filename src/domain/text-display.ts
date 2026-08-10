@@ -17,8 +17,10 @@
  *   to move the cursor, repaint the screen, or hide what follows it. Everything
  *   that renders a value someone else wrote passes it through here first.
  *
- * Nothing here knows about colour, terminals, or handles. It takes strings and
- * numbers and returns strings and numbers.
+ * Nothing here knows about colour, renderer handles, or layout state. It takes
+ * strings and numbers and returns strings and numbers. For joined emoji it uses
+ * Bun's width primitive, the same one the pinned OpenTUI renderer selects on
+ * Bun, so this arithmetic remains the answer the frame actually spends.
  */
 
 /**
@@ -81,6 +83,30 @@ function characterWidth(character: string): number {
     return 0;
   }
   return isWide(code) ? 2 : 1;
+}
+
+/**
+ * The cells one grapheme cluster occupies.
+ *
+ * Most clusters retain the explicit Falryn policy above, including its
+ * treatment of control text before sanitization. A zero-width-joiner cluster
+ * is different: its constituent emoji are one rendered glyph, so summing
+ * their code-point widths overestimates the cells the renderer consumes.
+ * OpenTUI 0.4.5 delegates that measurement to `Bun.stringWidth` on Bun; using
+ * the same primitive at this narrow seam keeps width, truncation, and wrapping
+ * aligned with the pinned renderer without importing presentation code into the
+ * domain or changing the policy for other text.
+ */
+function graphemeWidth(grapheme: string): number {
+  if (grapheme.includes("\u200d")) {
+    return Bun.stringWidth(grapheme);
+  }
+
+  let width = 0;
+  for (const character of grapheme) {
+    width += characterWidth(character);
+  }
+  return width;
 }
 
 /**
@@ -167,8 +193,8 @@ const WORD_SEGMENTER = new Intl.Segmenter(undefined, { granularity: "word" });
 /** How many terminal cells this text occupies. */
 export function displayWidth(text: string): number {
   let width = 0;
-  for (const character of text) {
-    width += characterWidth(character);
+  for (const grapheme of graphemes(text)) {
+    width += graphemeWidth(grapheme);
   }
   return width;
 }
@@ -229,12 +255,12 @@ export function truncateToWidth(text: string, width: number, ellipsis = ""): str
   const budget = limit - displayWidth(marker);
   let kept = "";
   let used = 0;
-  for (const character of text) {
-    const next = characterWidth(character);
+  for (const grapheme of graphemes(text)) {
+    const next = graphemeWidth(grapheme);
     if (used + next > budget) {
       break;
     }
-    kept += character;
+    kept += grapheme;
     used += next;
   }
   return kept + marker;
@@ -298,8 +324,8 @@ function splitToWidth(word: string, limit: number): readonly string[] {
   const pieces: string[] = [];
   let current = "";
   let used = 0;
-  for (const character of word) {
-    const next = characterWidth(character);
+  for (const grapheme of graphemes(word)) {
+    const next = graphemeWidth(grapheme);
     // A character wider than the whole line still gets its own piece rather
     // than being dropped or looped on.
     if (used > 0 && used + next > limit) {
@@ -307,7 +333,7 @@ function splitToWidth(word: string, limit: number): readonly string[] {
       current = "";
       used = 0;
     }
-    current += character;
+    current += grapheme;
     used += next;
   }
   pieces.push(current);
