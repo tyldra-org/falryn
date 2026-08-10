@@ -1860,10 +1860,10 @@ arithmetic in `src/domain/text-display.ts` was proved against strings; measuring
 it against a buffer found two things. #377 corrected zero-width-joiner emoji:
 `displayWidth`, truncation, and wrapping now keep the grapheme whole and measure
 it with Bun's renderer-equivalent width primitive, so `U+1F469 U+200D U+1F4BB`
-is two cells, as OpenTUI's painted three- and four-column frames prove. And a
-status message reaches the buffer with its control sequence intact, where the
-header and the transcript both escape theirs
-([#378](https://github.com/yogeshprasad098/falryn/issues/378)).
+is two cells, as OpenTUI's painted three- and four-column frames prove. #378
+made status messages use `Line`'s untrusted-text boundary too, so controls are
+escaped before their existing width truncation; painted normal and minimum-size
+frames prove the raw sequence never reaches the renderer.
 
 The frame no longer overlaps itself on a short terminal
 ([#368](https://github.com/yogeshprasad098/falryn/issues/368)). The overlay host
