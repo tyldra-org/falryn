@@ -24,7 +24,7 @@
  *   put both into every diagnostic.
  */
 
-import type { ArtifactId, ContentDigest } from "./artifact.ts";
+import type { ArtifactId, ContentDigest } from "./identity.ts";
 import { err, ok, type Result } from "./result.ts";
 
 /**
