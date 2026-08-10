@@ -13,15 +13,25 @@
  * to do with them.
  */
 
-import { createRuntimeRedactor } from "../application/index.ts";
+import { createRuntimeRedactor, DIAGNOSTICS_OWNERSHIP } from "../application/index.ts";
 import {
+  CONFIGURATION_OWNERSHIP,
   type ConfigurationLoader,
   createConfigurationLoader,
   createConfigurationRegistry,
   V0_1_CONFIGURATION_KEYS,
   V0_1_CROSS_FIELD_RULES,
 } from "../config/index.ts";
-import { createLocalDataService, FALLBACK_HOME, rootChild } from "../data/index.ts";
+import {
+  ARTIFACTS_OWNERSHIP,
+  CREDENTIAL_REFERENCE_OWNERSHIP,
+  createLocalDataService,
+  EXPORTS_OWNERSHIP,
+  FALLBACK_HOME,
+  rootChild,
+  SQLITE_STATE_OWNERSHIP,
+  TEMPORARY_INGEST_OWNERSHIP,
+} from "../data/index.ts";
 import {
   type ClockPort,
   type ConfigurationRegistryPort,
@@ -33,6 +43,7 @@ import {
   type LocalDataPlatform,
   type LocalPath,
   type LocalPathError,
+  type OwnershipRegistration,
   parseLocalPath,
   type Result,
   resolveLocalPath,
@@ -71,6 +82,8 @@ export type Services = {
    */
   readonly eventStore: EventStorePort;
   readonly localData: ReturnType<typeof createLocalDataService>;
+  /** A complete ownership view used only by the destructive data commands. */
+  readonly removalData: ReturnType<typeof createLocalDataService>;
   readonly registry: ConfigurationRegistryPort;
   readonly loader: ConfigurationLoader;
   readonly configurationRoot: LocalPath;
@@ -98,6 +111,17 @@ export type HostServiceOptions = {
   readonly currentDirectory?: LocalPath;
 };
 
+/** Every v0.1 owner whose local-data bytes can be named by the CLI surface. */
+const REMOVAL_OWNERSHIPS: readonly OwnershipRegistration[] = [
+  CONFIGURATION_OWNERSHIP,
+  CREDENTIAL_REFERENCE_OWNERSHIP,
+  SQLITE_STATE_OWNERSHIP,
+  ARTIFACTS_OWNERSHIP,
+  DIAGNOSTICS_OWNERSHIP,
+  TEMPORARY_INGEST_OWNERSHIP,
+  EXPORTS_OWNERSHIP,
+];
+
 export function createServiceProvider(
   options: GlobalOptions,
   overrides: HostServiceOptions = {},
@@ -121,6 +145,20 @@ export function createServiceProvider(
       platform: overrides.platform ?? hostPlatform(),
       home,
     });
+    const removalData = createLocalDataService({
+      fileSystem,
+      environment,
+      platform: overrides.platform ?? hostPlatform(),
+      home,
+    });
+    for (const ownership of REMOVAL_OWNERSHIPS) {
+      const registered = removalData.register(ownership);
+      if (!registered.ok) {
+        throw new Error(
+          `Built-in removal ownership registration failed: ${registered.error.code}.`,
+        );
+      }
+    }
 
     const registry = createConfigurationRegistry({
       declarations: V0_1_CONFIGURATION_KEYS,
@@ -135,6 +173,7 @@ export function createServiceProvider(
       clock,
       eventStore,
       localData,
+      removalData,
       registry,
       loader: createConfigurationLoader({
         registry,

@@ -38,6 +38,7 @@ import {
   NO_CORRELATION,
   type ParticipantReport,
   type RecoveryAction,
+  type RemovalRefusal,
   type RendererFailure,
   recoveryForEffect,
   type SafeCause,
@@ -690,6 +691,37 @@ export function fromRendererFailure(
     cause: { source: "renderer", code: failure.code, detail },
     ...context,
   });
+}
+
+/** A locally planned removal that could not be applied as requested. */
+export function fromRemovalRefusal(
+  refusal: RemovalRefusal,
+  context: ErrorContext = {},
+): FalrynError {
+  switch (refusal.code) {
+    case "plan-mismatch":
+      return build({
+        code: "data.removal.plan-mismatch",
+        category: "data",
+        message: "The removal plan changed; preview the current plan before confirming it.",
+        retryable: true,
+        effect: "none",
+        cause: { source: "local-data", code: refusal.code, detail: null },
+        ...context,
+      });
+    case "cancelled":
+      return build({
+        code: "cancellation.removal.cancelled",
+        category: "cancellation",
+        message: "The removal was cancelled before it started.",
+        retryable: true,
+        effect: "none",
+        cause: { source: "local-data", code: refusal.code, detail: null },
+        ...context,
+      });
+    default:
+      return assertNever(refusal, "unhandled removal refusal");
+  }
 }
 
 /**

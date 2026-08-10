@@ -316,6 +316,11 @@ export type RemovalKind = "reset" | "uninstall";
  */
 export type PlanId = Brand<string, "PlanId">;
 
+/** Whether untrusted text has the structural form of a removal-plan identity. */
+export function isPlanId(value: unknown): value is PlanId {
+  return typeof value === "string" && /^plan-(?:reset|uninstall)-[0-9a-f]{8}-[0-9]+$/.test(value);
+}
+
 export const PLANNED_ACTIONS = ["delete", "preserve", "out-of-scope"] as const;
 
 export type PlannedAction = (typeof PLANNED_ACTIONS)[number];

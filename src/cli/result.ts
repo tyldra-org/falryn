@@ -57,6 +57,8 @@ export const COMMAND_IDS = [
   "config.show",
   "config.validate",
   "config.path",
+  "data.reset",
+  "data.uninstall",
   "doctor",
   /** Help for the root or for a subcommand. */
   "help",
