@@ -121,7 +121,10 @@ jobs:
         id: base_first_warmup
         continue-on-error: true
         working-directory: baseline
-        run: bun run measure && echo "completed=1" >> "$GITHUB_OUTPUT"
+        run: |
+          bun run measure
+          bun run measure
+          echo "completed=2" >> "$GITHUB_OUTPUT"
 
       - name: Measure the base revision first
         id: base_first_measurement
@@ -142,7 +145,10 @@ jobs:
       - name: Warm the reviewed revision before its first report
         id: candidate_first_warmup
         continue-on-error: true
-        run: bun run measure && echo "completed=1" >> "$GITHUB_OUTPUT"
+        run: |
+          bun run measure
+          bun run measure
+          echo "completed=2" >> "$GITHUB_OUTPUT"
 
       - name: Measure the reviewed revision first
         id: candidate_first_measurement
@@ -157,7 +163,10 @@ jobs:
       - name: Warm the reviewed revision before its second report
         id: candidate_second_warmup
         continue-on-error: true
-        run: bun run measure && echo "completed=1" >> "$GITHUB_OUTPUT"
+        run: |
+          bun run measure
+          bun run measure
+          echo "completed=2" >> "$GITHUB_OUTPUT"
 
       - name: Measure the reviewed revision second
         id: candidate_second_measurement
@@ -173,7 +182,10 @@ jobs:
         id: base_second_warmup
         continue-on-error: true
         working-directory: ${{ runner.temp }}/falryn-benchmark-baseline
-        run: bun run measure && echo "completed=1" >> "$GITHUB_OUTPUT"
+        run: |
+          bun run measure
+          bun run measure
+          echo "completed=2" >> "$GITHUB_OUTPUT"
 
       - name: Measure the base revision second
         id: base_second_measurement
