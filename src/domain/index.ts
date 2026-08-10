@@ -478,6 +478,7 @@ export {
   DURABILITY_CLASSES,
   isLocalDataRoot,
   isOwnershipClass,
+  isPlanId,
   isRootUsable,
   LOCAL_DATA_PLATFORMS,
   LOCAL_DATA_ROOTS,

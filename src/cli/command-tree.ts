@@ -20,7 +20,14 @@
 import yargs from "yargs";
 
 import { isLegalProfileName } from "../config/index.ts";
-import { localPathTextError, MAX_LOCAL_PATH_LENGTH } from "../domain/index.ts";
+import {
+  isOwnershipClass,
+  isPlanId,
+  localPathTextError,
+  MAX_LOCAL_PATH_LENGTH,
+  type OwnershipClass,
+  type PlanId,
+} from "../domain/index.ts";
 import {
   COLOR_CHOICES,
   type ColorChoice,
@@ -43,6 +50,13 @@ export const SCRIPT_NAME = "falryn";
  */
 export type RunnableCommand = Exclude<CommandId, "help" | "version">;
 
+/** Command-specific inputs for one local-data removal command. */
+export type DataCommandArguments = {
+  readonly classes: readonly OwnershipClass[];
+  /** The exact plan identity supplied by the caller, or `null` for preview. */
+  readonly confirmation: PlanId | null;
+};
+
 /**
  * What parsing an argument vector produced.
  *
@@ -52,7 +66,12 @@ export type RunnableCommand = Exclude<CommandId, "help" | "version">;
  */
 export type Invocation =
   /** Run this command with these options. */
-  | { readonly kind: "run"; readonly command: RunnableCommand; readonly options: GlobalOptions }
+  | {
+      readonly kind: "run";
+      readonly command: RunnableCommand;
+      readonly options: GlobalOptions;
+      readonly data: DataCommandArguments | null;
+    }
   /** Show help. `topic` is `null` for the root, or the subcommand asked about. */
   | { readonly kind: "help"; readonly topic: string | null; readonly options: GlobalOptions }
   | { readonly kind: "version"; readonly options: GlobalOptions }
@@ -70,6 +89,8 @@ type RawArguments = {
   readonly _: readonly (string | number)[];
   /** Bound by name from `config <action>`; it never appears in `_`. */
   readonly action: string | undefined;
+  readonly class: readonly string[] | undefined;
+  readonly confirm: string | undefined;
   readonly format: string;
   readonly color: string;
   readonly quiet: boolean;
@@ -95,6 +116,7 @@ function build(argv: readonly string[], lenientPositionals = false): ReturnType<
   // lenient form exists for one reason: a help request must not be rejected
   // for omitting the very thing it is asking about.
   const configCommand = lenientPositionals ? "config [action]" : "config <action>";
+  const dataCommand = lenientPositionals ? "data [action]" : "data <action>";
   return (
     yargs([...argv])
       .scriptName(SCRIPT_NAME)
@@ -122,6 +144,23 @@ function build(argv: readonly string[], lenientPositionals = false): ReturnType<
           choices: ["show", "validate", "path"] as const,
           describe: "show the effective values, validate them, or print source paths",
         }),
+      )
+      .command(dataCommand, "Preview or remove Falryn-owned local data.", (group) =>
+        group
+          .positional("action", {
+            type: "string",
+            choices: ["reset", "uninstall"] as const,
+            describe: "selectively reset classes, or uninstall registered local data",
+          })
+          .option("class", {
+            type: "string",
+            array: true,
+            describe: "ownership class to include in a reset (repeatable)",
+          })
+          .option("confirm", {
+            type: "string",
+            describe: "execute only the exact removal plan identity previously previewed",
+          }),
       )
       .command("doctor", "Run bounded environment and storage diagnostics.", (group) => group)
       .option("format", {
@@ -238,7 +277,11 @@ export async function parseInvocation(argv: readonly string[]): Promise<Invocati
   if (command === null) {
     return { kind: "invalid", message: `Unknown command: ${positional.join(" ")}` };
   }
-  return { kind: "run", command, options };
+  const data = dataArgumentsFor(command, parsed);
+  if (typeof data === "string") {
+    return { kind: "invalid", message: data };
+  }
+  return { kind: "run", command, options, data };
 }
 
 /**
@@ -279,10 +322,14 @@ function isRawArguments(value: unknown): value is RawArguments {
   }
   const field = (key: PropertyKey): unknown => Reflect.get(value, key);
   const positional = field("_");
+  const classes = field("class");
   return (
     Array.isArray(positional) &&
     positional.every((item) => typeof item === "string" || typeof item === "number") &&
     optionalString(field("action")) &&
+    (classes === undefined ||
+      (Array.isArray(classes) && classes.every((item) => typeof item === "string"))) &&
+    optionalString(field("confirm")) &&
     typeof field("format") === "string" &&
     typeof field("color") === "string" &&
     typeof field("quiet") === "boolean" &&
@@ -325,7 +372,45 @@ function commandFrom(positional: readonly string[], action: string | null): Runn
         return null;
     }
   }
+  if (group === "data") {
+    switch (action) {
+      case "reset":
+        return "data.reset";
+      case "uninstall":
+        return "data.uninstall";
+      default:
+        return null;
+    }
+  }
   return null;
+}
+
+function dataArgumentsFor(
+  command: RunnableCommand,
+  parsed: RawArguments,
+): DataCommandArguments | null | string {
+  if (command !== "data.reset" && command !== "data.uninstall") {
+    return null;
+  }
+
+  const classes = parsed.class ?? [];
+  if (command === "data.reset" && classes.length === 0) {
+    return "Argument class is required for data reset; name at least one ownership class.";
+  }
+  if (command === "data.uninstall" && classes.length > 0) {
+    return "Argument class is only valid with data reset.";
+  }
+  const ownershipClasses: OwnershipClass[] = [];
+  for (const ownershipClass of classes) {
+    if (!isOwnershipClass(ownershipClass)) {
+      return "Argument class must name a declared Falryn ownership class.";
+    }
+    ownershipClasses.push(ownershipClass);
+  }
+  if (parsed.confirm !== undefined && !isPlanId(parsed.confirm)) {
+    return "Argument confirm must be a removal plan identity from a prior preview.";
+  }
+  return { classes: ownershipClasses, confirmation: parsed.confirm ?? null };
 }
 
 /**

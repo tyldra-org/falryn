@@ -1031,7 +1031,7 @@ product path through the table today, and it writes nothing to either handle.
 The command tree introduced by
 [#17](https://github.com/yogeshprasad098/falryn/issues/17) makes `falryn` a real
 executable. It adds the yargs tree, global options, dispatch, the
-`CommandResult` contract, a service factory, and the `config` and `doctor`
+`CommandResult` contract, a service factory, and the `config`, `data`, and `doctor`
 commands to `src/cli/`, plus a read-only `probeStorage` to `src/data/`.
 `src/main.ts` is now the CLI entry: it composes #20's streams, dispatches one
 invocation, and exits through #20's table.
@@ -1051,7 +1051,7 @@ Its verified behavior:
   and out-of-choice values; non-English locales changed and failed nothing.
   `@types/yargs` type-checks clean under `skipLibCheck: false` and
   `exactOptionalPropertyTypes`, so no accommodation was added;
-- **only `config` and `doctor` are declared.** Every other group named in
+- **only `config`, `data`, and `doctor` are declared.** Every other group named in
   `reference/CLI.md` is absent from the tree, asserted by a control, because
   parsing one would advertise it in `--help`;
 - **invalid usage never reaches application work.** Unknown flags, unknown
@@ -1145,9 +1145,9 @@ Its verified behavior:
   the terminal facts it was handed. A property check confirms it never changes
   the outcome kind or the effect certainty it was given.
 
-Only `config` and `doctor` produce results in v0.1, so the renderer is exercised
-against those two payloads plus fixtures covering the outcome, certainty, and
-failure matrix. It has not been proven against a rich command surface.
+`config`, `data`, and `doctor` produce results in v0.1, so the renderer is
+exercised against those payloads plus fixtures covering the outcome, certainty,
+and failure matrix. It has not been proven against a rich command surface.
 
 The machine projections introduced by
 [#19](https://github.com/yogeshprasad098/falryn/issues/19) complete the four
@@ -2284,7 +2284,7 @@ rather than `bun run check`, because `bun run check` does not build.
 
 ## Remaining implementation gaps
 
-The repository now provides end-user behavior for the `config` and `doctor`
+The repository now provides end-user behavior for the `config`, `data`, and `doctor`
 commands and a working v0.1 OpenTUI shell. The shell owns its renderer, frame,
 empty transcript surface, composer, activity rail, status line, overlays, input,
 and terminal restoration; it does not yet have a provider, agent loop,
@@ -2316,7 +2316,7 @@ session/turn producer, or live transcript producer. The remaining gaps are:
   there are enough real read paths to measure;
 - command, human, JSON, JSONL, or terminal rendering for the records described
   above. The shared `SessionView` shape exists so a renderer does not have to
-  restate it. The `config` and `doctor` commands already use all four headless
+  restate it. The `config`, `data`, and `doctor` commands already use all four headless
   projections, and the OpenTUI shell is delivered as a presentation surface;
   it has no live conversation to render until the producer path owned by
   [#33](https://github.com/yogeshprasad098/falryn/issues/33) and later work
@@ -2340,18 +2340,14 @@ session/turn producer, or live transcript producer. The remaining gaps are:
 - any composition of the configuration loader into a running program.
   `src/main.ts` constructs no loader, so no configuration file is read on a real
   run;
-- any composed use of the local-data service beyond storage. `src/main.ts`
-  resolves roots, registers `sqliteState`, and prepares the `state` root, so
-  that one directory is created on a real run. Retention reporting, removal
-  planning, guarded execution, and reconciliation exist and are tested, and
-  nothing calls them on a real run, so nothing is measured or removed. The
-  owners that will register the remaining ownership classes — memory,
-  extensions — do not exist, and each is reported as unregistered rather than
-  assumed absent;
-- the command surfaces that would show a reset or uninstall plan and collect its
-  confirmation. This area produces the plan and the typed outcome; rendering
-  them and asking is the CLI's;
-- headless product behavior beyond `config` and `doctor`, or live conversation
+- public local-data behavior beyond `data reset` and `data uninstall`.
+  Those command surfaces assemble a complete v0.1 ownership view, always
+  render a measured plan first, and only pass a re-derived plan to guarded
+  execution when `--confirm` repeats its exact identity. Retention reporting
+  and startup reconciliation still have no command surface. The owners that
+  will register the remaining ownership classes — memory, extensions — do not
+  exist, and each remains reported as unregistered rather than assumed absent;
+- headless product behavior beyond `config`, `data`, and `doctor`, or live conversation
   content in the OpenTUI application. The command tree, global options, help,
   version, process boundary, and all four output projections are real. The
   shell is delivered: it renders a workspace header, empty transcript surface,

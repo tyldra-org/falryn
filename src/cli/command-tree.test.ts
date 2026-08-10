@@ -34,6 +34,8 @@ describe("the declared tree", () => {
     expect(await commandOf("config", "show")).toBe("config.show");
     expect(await commandOf("config", "validate")).toBe("config.validate");
     expect(await commandOf("config", "path")).toBe("config.path");
+    expect(await commandOf("data", "reset", "--class", "logs")).toBe("data.reset");
+    expect(await commandOf("data", "uninstall")).toBe("data.uninstall");
   });
 
   test("declares no group whose capability does not exist", async () => {
@@ -45,6 +47,7 @@ describe("the declared tree", () => {
       expect(await commandOf(group)).toBe("invalid");
     }
     expect(await helpText(null)).not.toContain("provider");
+    expect(await helpText(null)).toContain("data <action>");
   });
 
   test("says in help what the bare invocation actually does", async () => {
@@ -73,6 +76,20 @@ describe("invalid usage", () => {
 
   test("refuses a group that needs a subcommand and was given none", async () => {
     expect(await invalidMessage("config")).toContain("Not enough non-option arguments");
+    expect(await invalidMessage("data")).toContain("Not enough non-option arguments");
+  });
+
+  test("requires an explicit, declared reset selection and a well-formed confirmation", async () => {
+    expect(await invalidMessage("data", "reset")).toContain("Argument class is required");
+    expect(await invalidMessage("data", "reset", "--class", "unknown")).toContain(
+      "Argument class must name",
+    );
+    expect(await invalidMessage("data", "uninstall", "--class", "logs")).toContain(
+      "only valid with data reset",
+    );
+    expect(await invalidMessage("data", "reset", "--class", "logs", "--confirm", "yes")).toContain(
+      "Argument confirm must be",
+    );
   });
 
   test("refuses a flag given the wrong kind of value", async () => {

@@ -42,6 +42,8 @@ import {
   runConfigPath,
   runConfigShow,
   runConfigValidate,
+  runDataReset,
+  runDataUninstall,
   runDoctor,
   stoppedResult,
 } from "./commands.ts";
@@ -174,7 +176,7 @@ async function runCommand(
   options: DispatchOptions,
 ): Promise<ExitCode> {
   const { streams } = options;
-  const { command, options: globals } = invocation;
+  const { command, data, options: globals } = invocation;
 
   if (command === "default") {
     return runDefault(globals, options);
@@ -184,7 +186,7 @@ async function runCommand(
   const services = (options.services ?? defaultProvider(options))(globals);
   const overrides = configurationOverridesFor(globals);
 
-  const result = await governed(command, services, overrides, globals, options);
+  const result = await governed(command, data, services, overrides, globals, options);
   emit(streams, await render(result, globals, streams, services));
   return resolveExitCode({
     outcome: result.outcome,
@@ -357,6 +359,7 @@ async function launchShell(
  */
 async function governed(
   command: Exclude<RunnableCommand, "default">,
+  data: Extract<Invocation, { kind: "run" }>["data"],
   services: ServiceProvider,
   overrides: Readonly<Record<string, string>>,
   globals: GlobalOptions,
@@ -365,17 +368,38 @@ async function governed(
   const governance = options.governance ?? createInvocationGovernance();
   const scope = openInvocationScope(governance, globals.timeoutMs);
   if (scope === null) {
-    return produce(command, services, overrides, globals);
+    return produce(command, data, services, overrides, globals);
   }
 
-  const run = await runUnderScope(governance, scope, () =>
-    produce(command, services, overrides, globals),
+  const run = await runUnderScope(governance, scope, (signal) =>
+    produce(command, data, services, overrides, globals, signal, () => {
+      // The executor has begun a destructive operation. If an interrupt wins
+      // the race from here, the scope must not report a retry-safe cancellation.
+      governance.scopes.recordEffect(scope.scopeId, "uncertain");
+    }),
   );
   // A stopped invocation still answers, in the format the caller asked for.
   // Emitting nothing would leave a reader waiting for a record that is not
   // coming, which is the failure the single-terminal-record contract exists to
   // prevent.
-  return run.kind === "finished" ? run.value : stoppedResult(command, run.outcome);
+  return run.kind === "finished"
+    ? run.value
+    : stoppedResult(command, run.outcome, stoppedCommandIntent(command, data));
+}
+
+/** The declared effect remains true even if the invocation stops mid-command. */
+function stoppedCommandIntent(
+  command: Exclude<RunnableCommand, "default">,
+  data: Extract<Invocation, { kind: "run" }>["data"],
+): "none" | "mutate" {
+  if (
+    (command === "data.reset" || command === "data.uninstall") &&
+    data !== null &&
+    data.confirmation !== null
+  ) {
+    return "mutate";
+  }
+  return "none";
 }
 
 /**
@@ -484,9 +508,12 @@ function defaultProvider(options: DispatchOptions): (globals: GlobalOptions) => 
 
 async function produce(
   command: Exclude<RunnableCommand, "default">,
+  data: Extract<Invocation, { kind: "run" }>["data"],
   services: ServiceProvider,
   overrides: Readonly<Record<string, string>>,
   globals: GlobalOptions,
+  signal?: AbortSignal,
+  onMutationStart?: () => void,
 ): Promise<RunCommandResult> {
   switch (command) {
     case "config.show":
@@ -495,6 +522,16 @@ async function produce(
       return runConfigValidate(services, overrides, globals);
     case "config.path":
       return runConfigPath(services, globals);
+    case "data.reset":
+      if (data === null) {
+        throw new Error("Missing parsed data reset arguments.");
+      }
+      return runDataReset(services, data, signal, onMutationStart);
+    case "data.uninstall":
+      if (data === null) {
+        throw new Error("Missing parsed data uninstall arguments.");
+      }
+      return runDataUninstall(services, data, signal, onMutationStart);
     case "doctor":
       return runDoctor(services);
     default:
