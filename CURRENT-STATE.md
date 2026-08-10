@@ -918,10 +918,11 @@ Five limitations belong with those numbers:
 - **A relative regression gate now owns the comparison boundary.**
   [#415](https://github.com/yogeshprasad098/falryn/issues/415) and
   [#418](https://github.com/yogeshprasad098/falryn/issues/418) add a
-  pull-request-only `macos-15` arm64 job that builds each exact revision and
-  completes two fixed same-revision settling passes immediately before every
-  report in two temporally symmetric brackets on one runner: base-first,
-  candidate-first, candidate-second, base-second, base-third, candidate-third,
+  manually dispatched `macos-15` arm64 job that compares the selected dispatch
+  ref against a required `benchmark_base_ref` (default `main`), builds each
+  exact revision, and completes two fixed same-revision settling passes
+  immediately before every report in two temporally symmetric brackets on one
+  runner: base-first, candidate-first, candidate-second, base-second, base-third, candidate-third,
   candidate-fourth, and base-fourth. The outer bracket pools the first and last
   report of each revision; the inner bracket pools the middle pair, so both
   brackets have both relative orders and the same temporal centre. The report profile
@@ -951,7 +952,8 @@ Five limitations belong with those numbers:
   inconclusive result.
   The eight reports are temporary CI artifacts, never product/runtime/tracked
   output; pooling is a fixed, auditable statistic, not a conditional retry or
-  threshold bypass.
+  threshold bypass. The benchmark is not scheduled for ordinary pull-request or
+  `main` push runs.
   Database size, contention, throughput, cadence, memory, and shutdown remain
   diagnostic observations rather than newly invented budgets. Because the base
   predates report emission, CI overlays only this PR's test-only report harness
