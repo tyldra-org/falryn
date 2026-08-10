@@ -56,6 +56,14 @@ export const BENCHMARK_TRIALS = [
 
 export type BenchmarkTrial = (typeof BENCHMARK_TRIALS)[number];
 
+/**
+ * A fixed same-revision settling period before every report prevents a first
+ * post-build measurement from becoming the comparison sample. This is a
+ * precondition, not a retry: either both unreported runs succeed or the gate
+ * fails closed.
+ */
+export const BENCHMARK_SETTLING_WARMUP_RUNS = 2;
+
 export type BenchmarkRun = Readonly<{
   revision: string;
   trial: BenchmarkTrial;
@@ -633,7 +641,7 @@ export function compareBenchmarkGate(reports: BenchmarkGateReports): BenchmarkGa
   ) {
     return gateInconclusive("revision-mismatch", emptyGateDetails());
   }
-  if (allReports.some((report) => report.run.warmupRuns < 1)) {
+  if (allReports.some((report) => report.run.warmupRuns < BENCHMARK_SETTLING_WARMUP_RUNS)) {
     return gateInconclusive("warmup-incomplete", emptyGateDetails());
   }
 
