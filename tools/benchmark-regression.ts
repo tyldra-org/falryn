@@ -576,17 +576,23 @@ function compareControl(first: BenchmarkReport, second: BenchmarkReport): Benchm
   return forward.kind === "inconclusive" ? forward : reverse;
 }
 
-function controlIsUnstable(comparison: BenchmarkComparison): boolean {
-  return (
-    comparison.kind === "regression" ||
-    (comparison.kind === "inconclusive" && comparison.reason !== "one-sided-deterioration")
-  );
+function isOneSidedDeterioration(comparison: BenchmarkComparison): boolean {
+  return comparison.kind === "inconclusive" && comparison.reason === "one-sided-deterioration";
+}
+
+function controlLacksComparableSignature(comparison: BenchmarkComparison): boolean {
+  return comparison.kind === "inconclusive" && !isOneSidedDeterioration(comparison);
 }
 
 /**
- * Compare two bracketing base/candidate pairs after validating both
- * same-revision controls. A result becomes a pass or regression only when the
- * independent pairs agree; any order-sensitive result remains nonzero.
+ * Compare two bracketing base/candidate pairs and retain same-revision
+ * controls as diagnostics. A control can only describe host variation because
+ * both reports name the same revision; it cannot identify a product
+ * regression. An incompatible control still fails because it means the trial
+ * signature changed. The source decision otherwise comes from the two
+ * opposite-order base/candidate pairs: a two-sided regression must agree in
+ * both, and a one-sided deterioration may pass only when the other order is
+ * clean.
  */
 export function compareBenchmarkGate(reports: BenchmarkGateReports): BenchmarkGateComparison {
   const baseFirstResult = parseBenchmarkReport(reports.baseFirst);
@@ -642,22 +648,39 @@ export function compareBenchmarkGate(reports: BenchmarkGateReports): BenchmarkGa
     baseSecondCandidateSecond,
   };
 
-  if (controlIsUnstable(baseControl)) {
+  if (controlLacksComparableSignature(baseControl)) {
     return gateInconclusive("base-control-unstable", details);
   }
-  if (controlIsUnstable(candidateControl)) {
+  if (controlLacksComparableSignature(candidateControl)) {
     return gateInconclusive("candidate-control-unstable", details);
   }
   if (
-    baseFirstCandidateFirst.kind === "inconclusive" ||
-    baseSecondCandidateSecond.kind === "inconclusive"
+    (baseFirstCandidateFirst.kind === "inconclusive" &&
+      !isOneSidedDeterioration(baseFirstCandidateFirst)) ||
+    (baseSecondCandidateSecond.kind === "inconclusive" &&
+      !isOneSidedDeterioration(baseSecondCandidateSecond))
   ) {
     return gateInconclusive("paired-comparison-inconclusive", details);
   }
-  if (baseFirstCandidateFirst.kind !== baseSecondCandidateSecond.kind) {
-    return gateInconclusive("paired-verdict-disagreement", details);
+  if (
+    baseFirstCandidateFirst.kind === "regression" ||
+    baseSecondCandidateSecond.kind === "regression"
+  ) {
+    if (
+      baseFirstCandidateFirst.kind !== "regression" ||
+      baseSecondCandidateSecond.kind !== "regression"
+    ) {
+      return gateInconclusive("paired-verdict-disagreement", details);
+    }
+    return { kind: "regression", details };
   }
-  return { kind: baseFirstCandidateFirst.kind, details };
+  if (
+    isOneSidedDeterioration(baseFirstCandidateFirst) &&
+    isOneSidedDeterioration(baseSecondCandidateSecond)
+  ) {
+    return gateInconclusive("paired-comparison-inconclusive", details);
+  }
+  return { kind: "pass", details };
 }
 
 /**
