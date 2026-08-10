@@ -17,6 +17,7 @@
  */
 
 import {
+  assertNever,
   blockingIssues,
   type CodecError,
   type ConfigurationIssue,
@@ -378,6 +379,8 @@ function configurationDetail(issue: ConfigurationIssue): string {
     case "unknown-key":
     case "invalid-schema-version":
       break;
+    default:
+      assertNever(issue, "unhandled configuration issue");
   }
   return facts.join(" ");
 }
