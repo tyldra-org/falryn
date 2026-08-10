@@ -80,6 +80,15 @@ describe("display width", () => {
     expect(displayWidth("🚀")).toBe(2);
   });
 
+  test("matches the renderer's width for a joined emoji", () => {
+    // The renderer paints this zero-width-joiner sequence as one two-cell
+    // glyph. Measuring each constituent emoji would claim four cells and
+    // truncate the text before the renderer needs to.
+    const womanTechnologist = "\u{1f469}\u200d\u{1f4bb}";
+    expect(graphemes(womanTechnologist)).toEqual([womanTechnologist]);
+    expect(displayWidth(womanTechnologist)).toBe(2);
+  });
+
   test("counts a combining mark as nothing", () => {
     // "e" plus U+0301 draws one cell, not two.
     expect(displayWidth("é")).toBe(1);
@@ -151,6 +160,13 @@ describe("truncating to a width", () => {
     expect(truncateToWidth("日本語です", 5, "…")).toBe("日本…");
   });
 
+  test("keeps a joined emoji intact when it exactly fits", () => {
+    const womanTechnologist = "\u{1f469}\u200d\u{1f4bb}";
+    const truncated = truncateToWidth(`A${womanTechnologist}B`, 3);
+    expect(truncated).toBe(`A${womanTechnologist}`);
+    expect(displayWidth(truncated)).toBe(3);
+  });
+
   test("drops a marker that does not itself fit", () => {
     expect(truncateToWidth("falryn", 2, "...")).toBe("fa");
   });
@@ -179,6 +195,11 @@ describe("wrapping to a width", () => {
     for (const line of wrapToWidth("日本語ですこんにちは", 6)) {
       expect(displayWidth(line)).toBeLessThanOrEqual(6);
     }
+  });
+
+  test("does not split a joined emoji across wrapped lines", () => {
+    const womanTechnologist = "\u{1f469}\u200d\u{1f4bb}";
+    expect(wrapToWidth(`A${womanTechnologist}B`, 3)).toEqual([`A${womanTechnologist}`, "B"]);
   });
 
   test("terminates on a width of one, zero, a negative, and a NaN", () => {

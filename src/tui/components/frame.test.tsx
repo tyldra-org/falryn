@@ -787,18 +787,26 @@ describe("text through a painted frame", () => {
     }
   });
 
-  test("agrees with the renderer about width, except on joined emoji", async () => {
-    // Recorded rather than asserted away. `displayWidth` counts each emoji in a
-    // zero-width-joiner sequence, so it calls `👩‍💻` four cells wide where the
-    // renderer draws it in two. The direction is the safe one — an
-    // overestimate truncates a character early and never overdraws — but it is
-    // a real disagreement between the arithmetic and the terminal, and it
-    // belongs to `src/domain/text-display.ts` rather than to this file.
-    //
-    // See https://github.com/yogeshprasad098/falryn/issues/377.
-    expect(displayWidth("\u{1f469}\u200d\u{1f4bb}")).toBe(4);
+  test("agrees with the renderer about a joined emoji's width", async () => {
+    // The real OpenTUI test renderer paints the joined emoji after `X` in a
+    // three-cell frame and admits the following `Y` only in a fourth cell. The
+    // domain's number is therefore tied to a painted buffer, not merely to a
+    // second string-arithmetic expectation.
+    const womanTechnologist = "\u{1f469}\u200d\u{1f4bb}";
+    using threeColumns = await mount(<text>{`X${womanTechnologist}Y`}</text>, {
+      shape: { columns: 3, rows: 1 },
+    });
+    expect(await threeColumns.frame()).toBe(`X${womanTechnologist}`);
+
+    using fourColumns = await mount(<text>{`X${womanTechnologist}Y`}</text>, {
+      shape: { columns: 4, rows: 1 },
+    });
+    expect(await fourColumns.frame()).toBe(`X${womanTechnologist}Y\n`);
+
+    expect(displayWidth(womanTechnologist)).toBe(2);
+    expect(displayWidth(`X${womanTechnologist}Y`)).toBe(4);
     expect(displayWidth("\u{1f600}")).toBe(2);
-    expect(graphemes("\u{1f469}\u200d\u{1f4bb}").length).toBe(1);
+    expect(graphemes(womanTechnologist)).toEqual([womanTechnologist]);
   });
 });
 

@@ -1857,13 +1857,12 @@ changing instead of always sleeping eighty milliseconds.
 
 Text is checked through a painted frame and not only against a string. The
 arithmetic in `src/domain/text-display.ts` was proved against strings; measuring
-it against a buffer found two things, both filed rather than fixed under a test
-issue. `displayWidth` counts each emoji in a zero-width-joiner sequence, so it
-calls `U+1F469 U+200D U+1F4BB` four cells wide where the renderer draws it in
-two ([#377](https://github.com/yogeshprasad098/falryn/issues/377)) — an
-overestimate, so it truncates early and cannot overdraw. And a status message
-reaches the buffer with its control sequence intact, where the header and the
-transcript both escape theirs
+it against a buffer found two things. #377 corrected zero-width-joiner emoji:
+`displayWidth`, truncation, and wrapping now keep the grapheme whole and measure
+it with Bun's renderer-equivalent width primitive, so `U+1F469 U+200D U+1F4BB`
+is two cells, as OpenTUI's painted three- and four-column frames prove. And a
+status message reaches the buffer with its control sequence intact, where the
+header and the transcript both escape theirs
 ([#378](https://github.com/yogeshprasad098/falryn/issues/378)).
 
 The frame no longer overlaps itself on a short terminal
