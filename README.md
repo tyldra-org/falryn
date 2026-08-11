@@ -1,109 +1,89 @@
-# Falryn
+<p align="center">
+  <img src="assets/branding/falryn-falcon-mark-navy-coral-clean.png" alt="Falryn falcon mark" width="220">
+</p>
 
-Falryn is a new local terminal coding agent built from scratch with Bun and
-TypeScript. It is neither a RavenCode migration nor a compatibility layer:
-Falryn owns its code, architecture, data, documentation, and release history.
+<h1 align="center">Falryn</h1>
 
-## Track Falryn
+<p align="center">
+  <strong>A local terminal coding agent, built from scratch with Bun, TypeScript, and OpenTUI.</strong>
+</p>
 
-- [Current state](CURRENT-STATE.md) — what is actually implemented and verified
-  in this repository, plus the current planning frontier.
-- [Falryn Roadmap](https://github.com/users/yogeshprasad098/projects/2) — live
-  milestones, parent outcomes, native subissues, status, priority, and linked
-  pull requests.
-- [Documentation map](https://github.com/yogeshprasad098/falryn-docs/blob/main/DOCUMENTATION-MAP.md)
-  — canonical product, architecture, subsystem, UI, guide, reference, and
-  operations owners.
-- [Falryn Docs](https://github.com/yogeshprasad098/falryn-docs) — the companion
-  documentation repository.
+<p align="center">
+  <a href="#start-here">Start here</a>
+  ·
+  <a href="#development">Development</a>
+  ·
+  <a href="#project-map">Project map</a>
+  ·
+  <a href="https://github.com/tyldra-org/falryn-docs">Documentation</a>
+  ·
+  <a href="https://github.com/users/yogeshprasad098/projects/2">Roadmap</a>
+</p>
 
-Design pages describe the target. GitHub owns planning and workflow state.
-[`CURRENT-STATE.md`](CURRENT-STATE.md), source, tests, and released artifacts
-establish what exists. These roles are linked but never interchangeable.
+---
 
-## Direction
+## A deliberate foundation for coding work
 
-- TypeScript and TSX product code; no Rust workspace or Cargo toolchain.
-- One Bun application process in normal interactive use.
-- A compiled Bun executable for each supported operating system and CPU target.
-- SQLite through Bun's built-in `bun:sqlite` module.
-- A small, issue-first GitHub Flow workflow.
+Falryn is an independent terminal coding agent. It is not a RavenCode migration,
+fork, or compatibility layer: its product, runtime, data model, and release
+history are its own.
 
-## Product scope
+The project is designed around a simple principle: an agent should make its
+work legible. Invocation, tool use, cancellation, recovery, and durable
+artifacts each have explicit, typed boundaries instead of being hidden inside a
+single opaque loop.
 
-Falryn is not a reduced CLI or a TUI rewrite. Its product ambition includes the
-complete capability set we explored with RavenCode: the unified agent runtime;
-provider streaming and tool calling;
-multi-layer tool routing and execution; workspace, file, search, Git, and LSP
-services; context selection and rendering; compression; Brief, Hush, Loom,
-Memory, and artifact handling; computer use; and both headless CLI and
-interactive OpenTUI experiences.
+| | |
+| --- | --- |
+| **Local by default** | One normal Bun process for interactive work; no Falryn-owned engine or IPC layer. |
+| **TypeScript end to end** | Bun, strict TypeScript, React, and OpenTUI—without a Rust workspace or Cargo toolchain. |
+| **Designed to recover** | Typed lifecycle, error, configuration, data, and scheduling foundations keep uncertainty visible rather than silently papering over it. |
 
-Each capability is designed and built directly in TypeScript. A tool call should
-pass through one explicit route—validation and lifecycle handling, a domain
-adapter, the relevant executor, then recorded output and artifacts—rather than
-letting providers or UI components reach files or external tools directly.
+## Start here
 
-Earlier RavenCode designs and archives are research references for useful
-flows, ideas, and edge cases; they are not Falryn source material or canonical
-specifications. Falryn chooses its own behavior in focused GitHub issues and
-protects important behavior with its own tests and fixtures.
+> [!NOTE]
+> Falryn is actively under construction. [`CURRENT-STATE.md`](CURRENT-STATE.md)
+> is the source of truth for what has been implemented and verified. Product
+> designs and roadmap issues describe the intended direction; they are not
+> release or availability claims.
 
-## Repositories
+```bash
+bun install
+bun run dev
+```
 
-- `falryn` contains the application and its tests.
-- `falryn-docs` contains user and developer documentation.
+For the complete command set and contributor workflow, see
+[`CONTRIBUTING.md`](CONTRIBUTING.md).
 
-The durable documentation entry point is
-[`falryn-docs/DOCUMENTATION-MAP.md`](https://github.com/yogeshprasad098/falryn-docs/blob/main/DOCUMENTATION-MAP.md).
-When both repositories are cloned as siblings, its usual local location from
-this repository is `../falryn-docs/DOCUMENTATION-MAP.md`; a checkout may live
-elsewhere, so agents resolve and report its actual clickable absolute path at
-runtime rather than committing one contributor's machine-specific location.
+## Development
 
-Before implementation, use that map and the selected issue's canonical links
-to read the affected documentation owners. Implement only the Ready issue
-within those contracts. If implementation requires a contract change, update
-the existing canonical owner in a linked `falryn-docs` pull request instead of
-silently diverging or creating a duplicate document.
+| Command | Purpose |
+| --- | --- |
+| `bun run check` | Run formatting, linting, type checking, repository-integrity checks, and tests. |
+| `bun run build` | Compile the standalone `falryn` executable into `dist/`. |
+| `bun run dev` | Run the TypeScript entry point locally. |
+| `bun test` | Run the Bun test suite. |
+| `bun run measure` | Run the opt-in persistence-resource measurement suite. |
 
-Workflow prompts stay repository-free: `Issue`, `Parent issue`, `PR`, and
-milestone targets resolve to this repository. A Falryn delivery PR includes its
-explicitly linked docs companion automatically for Verify and Merge. Use the
-short `Docs issue` or `Docs PR` qualifier only for docs-only work. Verify
-previews every exact final squash subject and any optional single
-issue-reference footer, the docs-first merge order, and safe local checkout
-synchronization before the explicit Merge prompt lands the unchanged bundle.
-Squash commits use the reviewed PR title and no body by default; detailed
-delivery information remains in the PR. After every required PR lands, Merge
-returns each available clean local checkout to its fetched default branch with
-a fast-forward-only update; unsafe checkouts are left untouched and reported,
-and branch deletion remains separately authorized.
+The pinned toolchain is Bun `1.3.14`, TypeScript `7.0.2`, Biome `2.5.6`, and
+OpenTUI `0.4.5`.
 
-The minimal Bun and TypeScript toolchain scaffold is present; product behavior
-has not been implemented yet. See [Current state](CURRENT-STATE.md) for the
-verified inventory and next planning action. Start meaningful work from a Ready
-GitHub issue and keep each pull request focused on that issue.
+## Project map
 
-## Development commands
+| Looking for | Start with |
+| --- | --- |
+| What is working right now? | [`CURRENT-STATE.md`](CURRENT-STATE.md) |
+| What is planned or in progress? | [Falryn Roadmap](https://github.com/users/yogeshprasad098/projects/2) |
+| Product, architecture, and user documentation | [`tyldra-org/falryn-docs`](https://github.com/tyldra-org/falryn-docs) |
+| Canonical documentation owner for a change | [Documentation map](https://github.com/tyldra-org/falryn-docs/blob/main/DOCUMENTATION-MAP.md) |
+| How to contribute | [`CONTRIBUTING.md`](CONTRIBUTING.md) |
 
-Install the pinned dependencies with `bun install`. The repository uses:
+The application and tests live here. The companion
+[`falryn-docs`](https://github.com/tyldra-org/falryn-docs) repository owns
+product, architecture, user-guide, and developer-reference documentation.
 
-- `bun run dev` to run the TypeScript entry point;
-- `bun run format` and `bun run lint` for Biome formatting and linting;
-- `bun run typecheck` for independent TypeScript checking;
-- `bun test` for the Bun test suite;
-- `bun run check` for the normal local quality suite;
-- `bun run measure` for the gated persistence resource measurement;
-- `bun run build` to compile `dist/falryn` as a standalone Bun executable; and
-- `bun run ci` to run the quality suite and compiled build together.
+## Contributing
 
-`bun run measure` is deliberately part of neither `bun run check` nor `bun run
-ci`. It measures transaction latency, busy wait and refusal rate, migration
-time, database size, artifact throughput, and range-read latency against the
-real owners, prints each number with the platform, dataset, cold/warm state,
-sample count, and spread that make it comparable, and asserts no timing
-threshold. Ungated it reports itself as skipped rather than silently absent.
-
-Bun owns transpilation, bundling, and executable compilation. Falryn does not
-carry an esbuild dependency.
+Small, focused changes are easiest to review and verify. Read
+[`CONTRIBUTING.md`](CONTRIBUTING.md), choose one ready and unblocked issue for
+meaningful work, and keep the change scoped to that outcome.
