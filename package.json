@@ -2,6 +2,7 @@
   "name": "falryn",
   "version": "0.0.0",
   "private": true,
+  "license": "Apache-2.0",
   "description": "A local terminal coding agent built with Bun and TypeScript.",
   "type": "module",
   "packageManager": "bun@1.3.14",
