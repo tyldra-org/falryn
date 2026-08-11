@@ -28,6 +28,21 @@ describe("the run mode", () => {
     // was copied to.
     expect(runModeFor("file:///$bunfs/root/falryn")).toBe("compiled");
     expect(runModeFor("file:///Users/someone/falryn/src/main.ts")).toBe("source");
+    // Windows mounts the same graph under a drive letter, because a file URL
+    // without one is invalid. These three are the exact values a compiled
+    // binary reported on a `windows-latest` runner. The URL form percent-encodes
+    // the `~`, and matching a literal one instead is what made the compiled
+    // Windows executable tell a user reading `--version` it was a source build.
+    expect(runModeFor("file:///B:/%7EBUN/root/falryn")).toBe("compiled");
+    expect(runModeFor("B:\\~BUN\\root\\falryn")).toBe("compiled");
+    expect(runModeFor("B:/~BUN/root/falryn")).toBe("compiled");
+    // A lowercase escape is equally valid percent-encoding, so the match cannot
+    // depend on which case the producer chose.
+    expect(runModeFor("file:///b:/%7ebun/root/falryn")).toBe("compiled");
+    expect(runModeFor("file:///C:/Users/someone/falryn/src/main.ts")).toBe("source");
+    // An undecodable escape is still an answer rather than a thrown build
+    // identity: a stray `%` is matched as it arrived.
+    expect(runModeFor("file:///C:/Users/some%one/falryn/src/main.ts")).toBe("source");
     // A checkout that happens to contain the literal name is still a source
     // run, because the marker is a path root rather than a substring anywhere.
     expect(runModeFor("file:///Users/someone/bunfs/src/main.ts")).toBe("source");

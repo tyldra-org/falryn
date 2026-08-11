@@ -5,7 +5,6 @@ on:
   push:
     branches:
       - main
-  workflow_dispatch:
 
 permissions:
   contents: read
@@ -15,17 +14,80 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  quality:
-    name: Quality, typecheck, build, and test
+  format:
+    name: Format
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 10
 
     steps:
       - name: Check out the reviewed revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Bun from package.json
-        uses: oven-sh/setup-bun@735343b667d3e6f658f44d0eca948eb6282f2b76 # v2.0.2
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: package.json
+
+      - name: Install locked dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Check formatting
+        run: bun run format:check
+
+  lint:
+    name: Lint and import organization
+    needs: format
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out the reviewed revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Bun from package.json
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: package.json
+
+      - name: Install locked dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Run Biome quality checks
+        run: bun run quality
+
+  typecheck:
+    name: TypeScript
+    needs: lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out the reviewed revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Bun from package.json
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: package.json
+
+      - name: Install locked dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Run the strict TypeScript check
+        run: bun run typecheck
+
+  dependency-integrity:
+    name: Dependency integrity
+    needs: typecheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out the reviewed revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Bun from package.json
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version-file: package.json
 
@@ -35,21 +97,69 @@ jobs:
       - name: Verify direct dependency and generated-output ownership
         run: bun run verify:repository
 
-      - name: Run Biome quality checks
-        run: bun run quality
+  dependency-audit:
+    name: Dependency advisory audit
+    needs: dependency-integrity
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
 
-      - name: Run the strict TypeScript check
-        run: bun run typecheck
+    steps:
+      - name: Check out the reviewed revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Build the standalone executable
-        run: bun run build
+      - name: Set up Bun from package.json
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: package.json
 
-      - name: Run the complete test suite
-        run: bun run test
+      - name: Install locked dependencies
+        run: bun install --frozen-lockfile
 
-  macos-arm64-compiled-smoke:
-    name: macOS arm64 compiled smoke
-    runs-on: macos-15
+      - name: Audit installed dependencies for known vulnerabilities
+        run: bun audit
+
+  platform-test:
+    name: Platform tests (${{ matrix.name }})
+    needs:
+      - typecheck
+      - dependency-integrity
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Ubuntu latest x64
+            runner: ubuntu-latest
+            command: bun run test
+          - name: macOS latest arm64
+            runner: macos-latest
+            command: bun run test
+          - name: Windows latest x64
+            runner: windows-latest
+            command: bun run test:platform-baseline
+
+    steps:
+      - name: Check out the reviewed revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Bun from package.json
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: package.json
+
+      - name: Install locked dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Run the platform test command
+        run: ${{ matrix.command }}
+
+  linux-compiled-smoke:
+    name: Linux compiled CLI smoke
+    needs:
+      - typecheck
+      - dependency-integrity
+    runs-on: ubuntu-latest
     timeout-minutes: 20
 
     steps:
@@ -57,7 +167,33 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Bun from package.json
-        uses: oven-sh/setup-bun@735343b667d3e6f658f44d0eca948eb6282f2b76 # v2.0.2
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: package.json
+
+      - name: Install locked dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build the standalone executable
+        run: bun run build
+
+      - name: Run the compiled CLI smoke suite
+        run: bun test src/main.compiled.test.ts
+
+  macos-arm64-compiled-smoke:
+    name: macOS arm64 compiled smoke
+    needs:
+      - typecheck
+      - dependency-integrity
+    runs-on: macos-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out the reviewed revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Bun from package.json
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version-file: package.json
 
@@ -70,151 +206,32 @@ jobs:
       - name: Run the macOS arm64 compiled smoke suites
         run: bun run smoke:macos-arm64
 
-  macos-arm64-benchmark-regression:
-    name: macOS arm64 benchmark regression
-    if: github.event_name == 'pull_request'
-    runs-on: macos-15
+  windows-x64-compiled-smoke:
+    name: Windows x64 compiled smoke
+    needs:
+      - typecheck
+      - dependency-integrity
+    runs-on: windows-latest
     timeout-minutes: 20
 
     steps:
       - name: Check out the reviewed revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
 
-      - name: Set up Bun for the reviewed revision
-        uses: oven-sh/setup-bun@735343b667d3e6f658f44d0eca948eb6282f2b76 # v2.0.2
+      - name: Set up Bun from package.json
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version-file: package.json
 
-      - name: Install the reviewed revision's locked dependencies
+      - name: Install locked dependencies
         run: bun install --frozen-lockfile
 
-      - name: Build the reviewed macOS arm64 executable
-        run: bun run build:macos-arm64
+      - name: Build the Windows x64 standalone executable
+        run: bun run build:windows-x64
 
-      - name: Check out the pull request base revision
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ github.event.pull_request.base.sha }}
-          path: baseline
-
-      - name: Set up Bun for the base revision
-        uses: oven-sh/setup-bun@735343b667d3e6f658f44d0eca948eb6282f2b76 # v2.0.2
-        with:
-          bun-version-file: baseline/package.json
-
-      - name: Install the base revision's locked dependencies
-        working-directory: baseline
-        run: bun install --frozen-lockfile
-
-      - name: Build the base macOS arm64 executable
-        working-directory: baseline
-        run: bun run build:macos-arm64
-
-      - name: Add the test-only report harness to the base checkout
-        run: |
-          cp src/data/measurement.test.ts baseline/src/data/measurement.test.ts
-          cp tools/benchmark-regression.ts baseline/tools/benchmark-regression.ts
-
-      - name: Warm the base revision before its first report
-        id: base_first_warmup
-        continue-on-error: true
-        working-directory: baseline
-        run: |
-          bun run measure
-          bun run measure
-          echo "completed=2" >> "$GITHUB_OUTPUT"
-
-      - name: Measure the base revision first
-        id: base_first_measurement
-        continue-on-error: true
-        working-directory: baseline
-        env:
-          FALRYN_MEASURE_REPORT: ${{ runner.temp }}/falryn-benchmark-reports/base-first.json
-          FALRYN_BENCHMARK_REVISION: ${{ github.event.pull_request.base.sha }}
-          FALRYN_BENCHMARK_TRIAL: base-first
-          FALRYN_BENCHMARK_WARMUP_RUNS: ${{ steps.base_first_warmup.outputs.completed || 0 }}
-        run: |
-          mkdir -p "$RUNNER_TEMP/falryn-benchmark-reports"
-          bun run measure && echo "completed=1" >> "$GITHUB_OUTPUT"
-
-      - name: Move the base checkout outside reviewed test discovery
-        run: mv baseline "$RUNNER_TEMP/falryn-benchmark-baseline"
-
-      - name: Warm the reviewed revision before its first report
-        id: candidate_first_warmup
-        continue-on-error: true
-        run: |
-          bun run measure
-          bun run measure
-          echo "completed=2" >> "$GITHUB_OUTPUT"
-
-      - name: Measure the reviewed revision first
-        id: candidate_first_measurement
-        continue-on-error: true
-        env:
-          FALRYN_MEASURE_REPORT: ${{ runner.temp }}/falryn-benchmark-reports/candidate-first.json
-          FALRYN_BENCHMARK_REVISION: ${{ github.event.pull_request.head.sha }}
-          FALRYN_BENCHMARK_TRIAL: candidate-first
-          FALRYN_BENCHMARK_WARMUP_RUNS: ${{ steps.candidate_first_warmup.outputs.completed || 0 }}
-        run: bun run measure && echo "completed=1" >> "$GITHUB_OUTPUT"
-
-      - name: Warm the reviewed revision before its second report
-        id: candidate_second_warmup
-        continue-on-error: true
-        run: |
-          bun run measure
-          bun run measure
-          echo "completed=2" >> "$GITHUB_OUTPUT"
-
-      - name: Measure the reviewed revision second
-        id: candidate_second_measurement
-        continue-on-error: true
-        env:
-          FALRYN_MEASURE_REPORT: ${{ runner.temp }}/falryn-benchmark-reports/candidate-second.json
-          FALRYN_BENCHMARK_REVISION: ${{ github.event.pull_request.head.sha }}
-          FALRYN_BENCHMARK_TRIAL: candidate-second
-          FALRYN_BENCHMARK_WARMUP_RUNS: ${{ steps.candidate_second_warmup.outputs.completed || 0 }}
-        run: bun run measure && echo "completed=1" >> "$GITHUB_OUTPUT"
-
-      - name: Warm the base revision before its second report
-        id: base_second_warmup
-        continue-on-error: true
-        working-directory: ${{ runner.temp }}/falryn-benchmark-baseline
-        run: |
-          bun run measure
-          bun run measure
-          echo "completed=2" >> "$GITHUB_OUTPUT"
-
-      - name: Measure the base revision second
-        id: base_second_measurement
-        continue-on-error: true
-        working-directory: ${{ runner.temp }}/falryn-benchmark-baseline
-        env:
-          FALRYN_MEASURE_REPORT: ${{ runner.temp }}/falryn-benchmark-reports/base-second.json
-          FALRYN_BENCHMARK_REVISION: ${{ github.event.pull_request.base.sha }}
-          FALRYN_BENCHMARK_TRIAL: base-second
-          FALRYN_BENCHMARK_WARMUP_RUNS: ${{ steps.base_second_warmup.outputs.completed || 0 }}
-        run: bun run measure && echo "completed=1" >> "$GITHUB_OUTPUT"
-
-      - name: Compare the reports
-        if: always()
-        env:
-          FALRYN_BENCHMARK_BASE_FIRST_REPORT: ${{ runner.temp }}/falryn-benchmark-reports/base-first.json
-          FALRYN_BENCHMARK_CANDIDATE_FIRST_REPORT: ${{ runner.temp }}/falryn-benchmark-reports/candidate-first.json
-          FALRYN_BENCHMARK_CANDIDATE_SECOND_REPORT: ${{ runner.temp }}/falryn-benchmark-reports/candidate-second.json
-          FALRYN_BENCHMARK_BASE_SECOND_REPORT: ${{ runner.temp }}/falryn-benchmark-reports/base-second.json
-          FALRYN_BENCHMARK_BASE_FIRST_COMPLETED: ${{ steps.base_first_measurement.outputs.completed || 0 }}
-          FALRYN_BENCHMARK_CANDIDATE_FIRST_COMPLETED: ${{ steps.candidate_first_measurement.outputs.completed || 0 }}
-          FALRYN_BENCHMARK_CANDIDATE_SECOND_COMPLETED: ${{ steps.candidate_second_measurement.outputs.completed || 0 }}
-          FALRYN_BENCHMARK_BASE_SECOND_COMPLETED: ${{ steps.base_second_measurement.outputs.completed || 0 }}
-        run: bun run benchmark:compare
-
-      - name: Upload benchmark reports
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: macos-arm64-benchmark-reports-${{ github.run_id }}
-          path: ${{ runner.temp }}/falryn-benchmark-reports
-          if-no-files-found: warn
+      # The CLI smoke only. The compiled terminal suite allocates a
+      # pseudo-terminal through libc's `openpty`, which Windows has no
+      # equivalent for, so it stays a POSIX qualification rather than being
+      # skipped here and mistaken for coverage.
+      - name: Run the Windows x64 compiled smoke suite
+        run: bun run smoke:windows-x64
