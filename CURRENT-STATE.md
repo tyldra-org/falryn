@@ -11,7 +11,7 @@ Last reconciled: **2026-08-09**
 | Question | Canonical owner |
 | --- | --- |
 | What should Falryn become? | [`falryn-docs`](https://github.com/tyldra-org/falryn-docs) and its [documentation map](https://github.com/tyldra-org/falryn-docs/blob/main/DOCUMENTATION-MAP.md) |
-| What is planned, active, blocked, or complete? | [Falryn Roadmap](https://github.com/users/yogeshprasad098/projects/2), milestones, parent issues, native subissues, and linked pull requests |
+| What is planned, active, blocked, or complete? | [Falryn Roadmap](https://github.com/orgs/tyldra-org/projects/1), milestones, parent issues, native subissues, and linked pull requests |
 | What is actually implemented now? | This file, checked against the current source, tests, manifests, and build |
 | What proves a change? | The owning issue, merged pull request, code, focused tests, and applicable compiled/platform checks |
 | What has shipped? | GitHub Releases and verified installation/support documentation |
@@ -2398,7 +2398,7 @@ Their implementation breakdown lives in GitHub Issues and the Project.
 
 ## Planning frontier
 
-- **Live roadmap:** [Falryn Roadmap](https://github.com/users/yogeshprasad098/projects/2)
+- **Live roadmap:** [Falryn Roadmap](https://github.com/orgs/tyldra-org/projects/1)
 - **Current release outcome:** [v0.1 Foundation issues](https://github.com/tyldra-org/falryn/issues?q=is%3Aissue%20is%3Aopen%20milestone%3A%22v0.1%20Foundation%22)
 - **First parent outcome:** [#1 Establish the unified runtime and lifecycle](https://github.com/tyldra-org/falryn/issues/1)
 - **Current parent outcome:** [#21 Deliver the OpenTUI application shell](https://github.com/tyldra-org/falryn/issues/21) remains in progress; its shell-delivery work is complete and its parent-level integrated acceptance remains. [#16 Deliver the CLI and headless foundation](https://github.com/tyldra-org/falryn/issues/16) is complete.

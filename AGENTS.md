@@ -205,7 +205,7 @@ them installed.
   It is the sole concise implementation-status owner. Update it only with
   behavior supported by current source and validation; do not copy roadmap
   checklists or design contracts into it.
-- Use the [Falryn Roadmap](https://github.com/users/yogeshprasad098/projects/2)
+- Use the [Falryn Roadmap](https://github.com/orgs/tyldra-org/projects/1)
   for live planning state and `falryn-docs/DOCUMENTATION-MAP.md` for canonical
   design ownership. An issue, Project field, or design target does not establish
   implementation truth.
