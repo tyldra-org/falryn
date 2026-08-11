@@ -32,14 +32,37 @@ export type RunMode = (typeof RUN_MODES)[number];
  * prefix is the one signal that does not depend on how the binary was named or
  * where it was copied.
  *
- * There is more than one because Bun names the root per host: `/$bunfs/`
- * everywhere except Windows, where a file URL is invalid without a drive
- * letter, so it mounts `B:/~BUN/` instead. Both separators are accepted because
- * the drive-letter form is what makes the Windows spelling host-specific in the
- * first place. Checking only the POSIX root is what made a compiled Windows
- * binary report itself as a source build.
+ * There is more than one because Bun names the root per host. Everywhere except
+ * Windows it is `/$bunfs/`. Windows needs a drive letter for a file URL to be
+ * valid at all, so it mounts `~BUN` on a `B:` drive, and the three properties
+ * that expose it disagree on spelling — observed from a compiled binary on a
+ * `windows-latest` runner:
+ *
+ * - `import.meta.url`  → `file:///B:/%7EBUN/root/falryn`
+ * - `import.meta.path` → `B:\~BUN\root\falryn`
+ * - `Bun.main`         → `B:/~BUN/root/falryn`
+ *
+ * The percent-escape is the detail that matters: a literal `~` never appears in
+ * the URL form, so matching one is what made a compiled Windows binary report
+ * itself as a source build. The input is decoded and case-folded first, and all
+ * three separators are then accepted, so any of these properties may be passed.
  */
-const COMPILED_MODULE_ROOTS = ["/$bunfs/", "B:/~BUN/", "B:\\~BUN\\"] as const;
+const COMPILED_MODULE_ROOTS = ["/$bunfs/", "b:/~bun/", "b:\\~bun\\"] as const;
+
+/**
+ * Percent-escapes resolved, case folded.
+ *
+ * A malformed escape makes `decodeURIComponent` throw, and a build identity is
+ * not worth crashing a run over, so an undecodable value is matched as it
+ * arrived rather than rethrown.
+ */
+function normalizeModuleReference(moduleUrl: string): string {
+  try {
+    return decodeURIComponent(moduleUrl).toLowerCase();
+  } catch {
+    return moduleUrl.toLowerCase();
+  }
+}
 
 export type BuildIdentity = {
   readonly version: string;
@@ -53,7 +76,8 @@ export type BuildIdentity = {
 
 /** How this module decides, exposed so a test can drive both branches. */
 export function runModeFor(moduleUrl: string): RunMode {
-  return COMPILED_MODULE_ROOTS.some((root) => moduleUrl.includes(root)) ? "compiled" : "source";
+  const reference = normalizeModuleReference(moduleUrl);
+  return COMPILED_MODULE_ROOTS.some((root) => reference.includes(root)) ? "compiled" : "source";
 }
 
 /** What this process is. */
