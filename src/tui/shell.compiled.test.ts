@@ -33,15 +33,33 @@ import { EXIT_CODES } from "../cli/index.ts";
 /** Three levels up: this file is `src/tui/`, and the artifact is `dist/` beside `src/`. */
 const EXECUTABLE = join(dirname(dirname(dirname(import.meta.path))), "dist", "falryn");
 
-/** The one exact executable target qualified by the focused macOS smoke job. */
-const MACOS_ARM64_SMOKE_TARGET = "darwin-arm64";
-const selectedSmokeTarget = process.env.FALRYN_COMPILED_SMOKE_TARGET;
+/**
+ * The compiled smoke targets, and which of them this file can qualify.
+ *
+ * A pseudo-terminal here comes from libc's `openpty`, so only the POSIX targets
+ * are qualifiable. `win32-x64` is a recognized target rather than an error —
+ * the Windows smoke job selects it and runs the CLI check alone — but it is not
+ * one this file asserts, so it must not turn a skipped terminal check into a
+ * passing terminal qualification.
+ */
+const SMOKE_TARGETS = ["darwin-arm64", "win32-x64"] as const;
+const PSEUDO_TERMINAL_SMOKE_TARGETS = ["darwin-arm64"] as const;
 
-if (selectedSmokeTarget !== undefined && selectedSmokeTarget !== MACOS_ARM64_SMOKE_TARGET) {
-  throw new Error(`unknown compiled smoke target: ${selectedSmokeTarget}`);
+type SmokeTarget = (typeof SMOKE_TARGETS)[number];
+
+function isSmokeTarget(value: string): value is SmokeTarget {
+  return SMOKE_TARGETS.some((target) => target === value);
 }
 
-const requiresMacosArm64 = selectedSmokeTarget === MACOS_ARM64_SMOKE_TARGET;
+const requestedSmokeTarget = process.env.FALRYN_COMPILED_SMOKE_TARGET;
+
+if (requestedSmokeTarget !== undefined && !isSmokeTarget(requestedSmokeTarget)) {
+  throw new Error(`unknown compiled smoke target: ${requestedSmokeTarget}`);
+}
+
+const requiresMacosArm64 =
+  requestedSmokeTarget !== undefined &&
+  PSEUDO_TERMINAL_SMOKE_TARGETS.some((target) => target === requestedSmokeTarget);
 
 /** The size the pseudo-terminal reports, and what the shell must lay out against. */
 const COLUMNS = 100;

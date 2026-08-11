@@ -13,6 +13,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFile } from "node:fs/promises";
 import { dirname } from "node:path";
+import { sourcePathFromGlob } from "./source-path-fixtures.ts";
 
 const SOURCE_ROOT = dirname(import.meta.path);
 
@@ -62,7 +63,7 @@ async function sourceFiles(): Promise<readonly string[]> {
   const glob = new Bun.Glob("**/*.{ts,tsx}");
   const files: string[] = [];
   for await (const entry of glob.scan({ cwd: SOURCE_ROOT })) {
-    files.push(entry);
+    files.push(sourcePathFromGlob(entry));
   }
   return files.sort();
 }

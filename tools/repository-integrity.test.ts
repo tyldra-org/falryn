@@ -46,7 +46,7 @@ function validInput(): RepositoryIntegrityInput {
         "@opentui/react@0.4.5": "patches/@opentui%2Freact@0.4.5.patch",
       },
       scripts: {
-        build: "mkdir -p dist && cd dist && bun build ../src/main.ts --compile --outfile falryn",
+        build: "bun build src/main.ts --compile --outfile dist/falryn",
       },
     },
     lockfile: { packages },

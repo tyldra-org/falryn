@@ -32,11 +32,13 @@ The implementation scaffold introduced by
 - one bootstrap smoke test in `src/main.test.ts`;
 - repository-owned quality, type-check, test, and compiled-build commands;
 - a repository-owned GitHub Actions workflow at `.github/workflows/ci.yml` that
-  triggers for pull requests, pushes to `main`, and manual dispatch, installs
+  triggers for pull requests and pushes to `main`, installs
   the manifest-selected Bun version with the frozen lockfile, runs separate
-  quality, type-check, build, and test gates on `ubuntu-latest`, and runs a
-  focused `macos-15` arm64 job that builds `bun-darwin-arm64` then executes the
-  compiled CLI and pseudo-terminal smoke suites; and
+  quality, type-check, build, and test gates on GitHub-hosted
+  `ubuntu-latest`, runs the macOS suites on `macos-latest`, and runs the Windows
+  source baseline and compiled CLI smoke on `windows-latest`;
+- a separate, manually dispatched `.github/workflows/benchmark.yml` that runs
+  the macOS arm64 benchmark comparison on `macos-latest`; and
 - a Bun standalone compilation target at `dist/falryn`.
 
 The workflow's first pull-request run in
@@ -918,10 +920,15 @@ Five limitations belong with those numbers:
 - **A relative regression gate now owns the comparison boundary.**
   [#415](https://github.com/yogeshprasad098/falryn/issues/415) and
   [#418](https://github.com/yogeshprasad098/falryn/issues/418) add a
-  pull-request-only `macos-15` arm64 job that builds each exact revision and
-  completes two fixed same-revision settling passes immediately before every
-  base-first, candidate-first, candidate-second, and base-second report on one
-  runner. The report profile
+  manually dispatched `.github/workflows/benchmark.yml` `macos-latest` arm64
+  job that compares
+  the selected dispatch ref against a required `benchmark_base_ref` (default
+  `main`), builds each exact revision, and completes two fixed same-revision settling passes
+  immediately before every report in two temporally symmetric brackets on one
+  runner: base-first, candidate-first, candidate-second, base-second, base-third, candidate-third,
+  candidate-fourth, and base-fourth. The outer bracket pools the first and last
+  report of each revision; the inner bracket pools the middle pair, so both
+  brackets have both relative orders and the same temporal centre. The report profile
   collects 101 migrations, 250 transaction writes, 1,024 range reads, and 21
   compiled-startup samples. Before timing, it discards 21 migrations, 64 turns,
   and 1,024 range reads in that same Bun process, so its p95 is neither one
@@ -930,21 +937,38 @@ Five limitations belong with those numbers:
   `FALRYN_MEASURE_REPORT` path, the existing measurement suite atomically writes
   its test-only report only after every real-owner measurement completed; an
   unavailable compiled executable/pseudo-terminal, malformed destination, failed
-  measurement, or incomplete suite fails without a report. Each `v3` report
+  measurement, or incomplete suite fails without a report. Each `v4` report
   records its revision, ordered trial, completed workflow settling-pass count, and
   per-metric same-process warm-up sample count. The comparator accepts only
   matching schema, platform, architecture, Bun version, dataset revision/state,
-  warm-up/sample count; it records each same-revision control in both directions
-  and compares the two relative orders. It gates migration time, transaction
-  latency, range-read latency, and startup to first draw. A selected metric is a
-  regression when both p50 and p95 are at least 50% slower; the gate rejects
-  only when both relative-order comparisons report one. Same-revision controls
-  remain diagnostic because they cannot identify a product regression, although
-  an incompatible control still fails closed; a one-sided base/candidate pair
-  may pass only when the opposite order is clean. Missing, malformed,
-  incompatible, incomplete-settling, two one-sided, or disagreeing data is a
-  nonzero inconclusive result. The four reports are temporary CI artifacts,
-  never product/runtime/tracked output.
+  warm-up/sample count. For each bracket, it pools the two same-revision raw
+  sample arrays that span both relative orders before calculating p50 and p95;
+  the two pooled base aggregates and two pooled candidate aggregates are the
+  same-revision controls. Both controls must remain non-regressing in both
+  directions under the same p50-and-p95 rule, and both balanced base/candidate
+  brackets must agree. It gates migration time, transaction latency, range-read
+  latency, and startup to first draw. A selected metric is a regression when
+  both p50 and p95 are at least 50% slower; the gate rejects only when both
+  balanced brackets report one. A one-sided control or bracket tail remains a
+  bounded diagnostic; a two-sided control regression, missing, malformed,
+  incompatible, incomplete-settling, or disagreeing data is a nonzero
+  inconclusive result.
+  The eight reports are temporary CI artifacts, never product/runtime/tracked
+  output; pooling is a fixed, auditable statistic, not a conditional retry or
+  threshold bypass. The benchmark is not scheduled for ordinary pull-request or
+  `main` push runs.
+  Ordinary CI exposes format, Biome quality, TypeScript, direct-dependency
+  integrity, and Bun advisory-audit jobs separately. GitHub-hosted
+  `ubuntu-latest` runs the full Linux source and compiled CLI suites;
+  `macos-latest` runs the full macOS suite, compiled CLI, and pseudo-terminal
+  suites; and `windows-latest` runs the Windows baseline for report-destination
+  safety, source ownership, bootstrap, build identity, and platform-root
+  behavior, plus a compiled CLI smoke against a `bun-windows-x64` executable
+  that must report `win32 x64` and compiled mode. It detects host-path, root,
+  and packaging differences only: it is not a shell, terminal, installer,
+  signing, or release qualification. The Windows jobs make no pseudo-terminal
+  claim, because that suite allocates a pseudo-terminal through libc's
+  `openpty` and stays a POSIX qualification.
   Database size, contention, throughput, cadence, memory, and shutdown remain
   diagnostic observations rather than newly invented budgets. Because the base
   predates report emission, CI overlays only this PR's test-only report harness
@@ -1904,8 +1928,11 @@ control that drops one terminal event. `src/tui/matrix-fixtures.ts` declares
 the machine-readable row owners, and the boundary test proves each named test
 still exists without claiming that the inventory itself ran those tests.
 
-The current compiled/pty qualification is scoped to macOS arm64. Linux,
-Windows, other operating systems and architectures, suspend/resume,
+The current compiled *pseudo-terminal* qualification is scoped to macOS arm64.
+The compiled *CLI* smoke now also runs on Linux x64 and Windows x64, where the
+Windows job builds a `bun-windows-x64` executable and asserts the identity it
+reports. Terminal behavior on Linux and Windows, other operating systems and
+architectures, suspend/resume,
 clipboard, RTL/mixed text, and multiplexer/remote sessions remain explicitly
 unqualified; the companion terminal document records the emulator metadata,
 interaction limitations, and manual-session boundary.
