@@ -4,7 +4,7 @@ This file is Falryn's sole concise implementation-status owner. It records what
 exists and has been verified in the `falryn` repository. It does not duplicate
 the product design or GitHub roadmap.
 
-Last reconciled: **2026-08-09**
+Last reconciled: **2026-08-11**
 
 ## Where to look
 
@@ -2401,8 +2401,10 @@ Their implementation breakdown lives in GitHub Issues and the Project.
 - **Live roadmap:** [Falryn Roadmap](https://github.com/orgs/tyldra-org/projects/1)
 - **Current release outcome:** [v0.1 Foundation issues](https://github.com/tyldra-org/falryn/issues?q=is%3Aissue%20is%3Aopen%20milestone%3A%22v0.1%20Foundation%22)
 - **First parent outcome:** [#1 Establish the unified runtime and lifecycle](https://github.com/tyldra-org/falryn/issues/1)
-- **Current parent outcome:** [#21 Deliver the OpenTUI application shell](https://github.com/tyldra-org/falryn/issues/21) remains in progress; its shell-delivery work is complete and its parent-level integrated acceptance remains. [#16 Deliver the CLI and headless foundation](https://github.com/tyldra-org/falryn/issues/16) is complete.
-- **Next planning action:** verify [#21](https://github.com/tyldra-org/falryn/issues/21). Its parent-level integrated acceptance is the current eligible action; GitHub and the live Roadmap remain authoritative for what follows.
+- **Completed shell parent:** [#21 Deliver the OpenTUI application shell](https://github.com/tyldra-org/falryn/issues/21) is closed and Done. [#16 Deliver the CLI and headless foundation](https://github.com/tyldra-org/falryn/issues/16) is complete.
+- **Active delivery:** [#433 Establish the public repository CI and governance baseline](https://github.com/tyldra-org/falryn/issues/433) via [PR #434](https://github.com/tyldra-org/falryn/pull/434) (companion [docs #80](https://github.com/tyldra-org/falryn-docs/pull/80)).
+- **Open v0.1 Foundation issues:** [#385](https://github.com/tyldra-org/falryn/issues/385), [#384](https://github.com/tyldra-org/falryn/issues/384), and [#381](https://github.com/tyldra-org/falryn/issues/381) — TUI defect and qualification work remaining on the milestone.
+- **Next planning action:** finish Verify/Merge for #433/#434 (docs-first), then pick the next Ready item among #385 / #384 / #381. GitHub and the live Roadmap remain authoritative for ordering.
 
 Which of #1's children are open, and which delivered the behavior recorded
 above, is read from
