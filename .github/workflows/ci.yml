@@ -93,42 +93,26 @@ jobs:
       - name: Audit installed dependencies for known vulnerabilities
         run: bun audit
 
-  platform:
-    name: Platform and compiled (${{ matrix.name }})
+  platform-test:
+    name: Platform tests (${{ matrix.name }})
     needs:
       - typecheck
       - dependency-integrity
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 30
+    timeout-minutes: 20
     strategy:
-      # One host's failure must not suppress another's result, and the source
-      # suite failing must not hide which platforms still build.
       fail-fast: false
       matrix:
         include:
           - name: Ubuntu latest x64
             runner: ubuntu-latest
-            test: bun run test
-            build: bun run build
-            # The CLI smoke only, matching the other non-macOS host: the
-            # compiled terminal suite is a darwin qualification.
-            smoke: bun test src/main.compiled.test.ts
+            command: bun run test
           - name: macOS latest arm64
             runner: macos-latest
-            test: bun run test
-            build: bun run build:macos-arm64
-            # The CLI smoke and the compiled terminal suite on a real
-            # pseudo-terminal. This is the only host that qualifies the shell.
-            smoke: bun run smoke:macos-arm64
+            command: bun run test
           - name: Windows latest x64
             runner: windows-latest
-            test: bun run test:platform-baseline
-            build: bun run build:windows-x64
-            # The CLI smoke only. The compiled terminal suite allocates a
-            # pseudo-terminal through libc's `openpty`, which Windows has no
-            # equivalent for, so it stays a POSIX qualification rather than
-            # being skipped here and mistaken for coverage.
-            smoke: bun run smoke:windows-x64
+            command: bun run test:platform-baseline
 
     steps:
       - name: Check out the reviewed revision
@@ -138,13 +122,74 @@ jobs:
         uses: ./.github/actions/setup-bun
 
       - name: Run the platform test command
-        run: ${{ matrix.test }}
+        run: ${{ matrix.command }}
+
+  linux-compiled-smoke:
+    name: Linux compiled CLI smoke
+    needs:
+      - typecheck
+      - dependency-integrity
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out the reviewed revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Bun and install dependencies
+        uses: ./.github/actions/setup-bun
 
       - name: Build the standalone executable
-        run: ${{ matrix.build }}
+        run: bun run build
 
-      - name: Run the compiled smoke suite
-        run: ${{ matrix.smoke }}
+      - name: Run the compiled CLI smoke suite
+        run: bun test src/main.compiled.test.ts
+
+  macos-arm64-compiled-smoke:
+    name: macOS arm64 compiled smoke
+    needs:
+      - typecheck
+      - dependency-integrity
+    runs-on: macos-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out the reviewed revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Bun and install dependencies
+        uses: ./.github/actions/setup-bun
+
+      - name: Build the macOS arm64 standalone executable
+        run: bun run build:macos-arm64
+
+      - name: Run the macOS arm64 compiled smoke suites
+        run: bun run smoke:macos-arm64
+
+  windows-x64-compiled-smoke:
+    name: Windows x64 compiled smoke
+    needs:
+      - typecheck
+      - dependency-integrity
+    runs-on: windows-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out the reviewed revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Bun and install dependencies
+        uses: ./.github/actions/setup-bun
+
+      - name: Build the Windows x64 standalone executable
+        run: bun run build:windows-x64
+
+      # The CLI smoke only. The compiled terminal suite allocates a
+      # pseudo-terminal through libc's `openpty`, which Windows has no
+      # equivalent for, so it stays a POSIX qualification rather than being
+      # skipped here and mistaken for coverage.
+      - name: Run the Windows x64 compiled smoke suite
+        run: bun run smoke:windows-x64
 
   benchmark:
     name: Benchmark regression (Ubuntu x64)

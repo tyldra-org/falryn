@@ -24,29 +24,32 @@ is **not a required status check**. Measurement on a shared runner varies, a
 required gate that fails on variance gets bypassed, and a bypassed gate is worse
 than an advisory one that is read.
 
-## Why the compiled smokes are not a separate file
+## Why the smoke jobs are not a separate file
 
-The compiled smokes are required pull-request gates that declare
+The three compiled smokes are required pull-request gates that declare
 `needs: [typecheck, dependency-integrity]`. GitHub cannot express `needs:`
 across workflow files, so splitting them would either drop that ordering —
 paying for a macOS runner to build a revision that does not typecheck — or
 require `workflow_call` plumbing for no gain.
 
-## Why the source suite and the compiled smoke share one job
+## Why the source suite and the compiled smoke stay separate jobs
 
-They are the same question asked of one host: does this revision work here, in
-source and as the artifact a user runs? Splitting them cost a second checkout
-and a second dependency install per platform to learn something the first job
-already had the workspace for.
+They were merged into one job per host once, to save a second checkout and
+install. The saving was about fifteen seconds of compute per platform, and it
+cost more than it returned.
 
-The trade is deliberate. The two phases no longer run in parallel, so a host
-takes as long as its suite plus its build plus its smoke rather than the longer
-of the first two. In exchange each platform is one row on a pull request instead
-of two, and a host that fails its source suite does not go on to spend a runner
-compiling the same revision.
+Running them in one job serialises two phases that were parallel, so a host
+takes its suite plus its build plus its smoke rather than the longer of the
+first two — measured at roughly a minute added to every run. It also collapses
+the distinction the smokes exist to draw: `Platform tests (macOS) ✅` beside
+`macOS arm64 compiled smoke ❌` says the source is fine and *bundling* broke,
+and one merged row cannot say that.
 
-What is *not* traded away is per-host independence: `fail-fast: false` still
-means one platform's failure never suppresses another's result.
+The deciding cost was stability. `shell.compiled.test.ts` drives a real
+pseudo-terminal and is timing-sensitive; running it after a full suite and a
+compile on the same runner failed once on a frame that had painted the overlay
+border but not its body, and passed on re-run. These are required checks with no
+bypass actors, so a check that flakes is a merge nobody can unblock.
 
 ## `ci.yml`
 
@@ -62,18 +65,11 @@ Everything after that fans out in parallel from `typecheck` and
 | `typecheck` | `ubuntu-latest` | `tsc --noEmit` under the strict configuration |
 | `dependency-integrity` | `ubuntu-latest` | direct-dependency admission and generated-output ownership |
 | `dependency-audit` | `ubuntu-latest` | `bun audit` against installed packages |
-| `platform` | all three | the source suite, the standalone build, and the compiled smoke, per host |
+| `platform-test` | all three | the source suite, per host |
+| `linux-compiled-smoke` | `ubuntu-latest` | the compiled CLI runs on Linux x64 |
+| `macos-arm64-compiled-smoke` | `macos-latest` | the compiled CLI **and** a real pseudo-terminal on darwin arm64 |
+| `windows-x64-compiled-smoke` | `windows-latest` | the compiled CLI runs on win32 x64 |
 | `benchmark` | `ubuntu-latest` | whether this change is slower than the base it targets — advisory, pull requests only |
-
-Each `platform` matrix entry runs three commands in order — `test`, `build`,
-`smoke` — and the matrix carries all three per host, because what each platform
-qualifies differs:
-
-| Host | Source suite | Compiled smoke |
-| --- | --- | --- |
-| `ubuntu-latest` | full | the CLI |
-| `macos-latest` | full | the CLI **and** a real pseudo-terminal |
-| `windows-latest` | portability baseline | the CLI |
 
 ### What each platform actually qualifies
 
