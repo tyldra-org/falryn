@@ -4,14 +4,14 @@ This file is Falryn's sole concise implementation-status owner. It records what
 exists and has been verified in the `falryn` repository. It does not duplicate
 the product design or GitHub roadmap.
 
-Last reconciled: **2026-08-09**
+Last reconciled: **2026-08-11**
 
 ## Where to look
 
 | Question | Canonical owner |
 | --- | --- |
-| What should Falryn become? | [`falryn-docs`](https://github.com/yogeshprasad098/falryn-docs) and its [documentation map](https://github.com/yogeshprasad098/falryn-docs/blob/main/DOCUMENTATION-MAP.md) |
-| What is planned, active, blocked, or complete? | [Falryn Roadmap](https://github.com/users/yogeshprasad098/projects/2), milestones, parent issues, native subissues, and linked pull requests |
+| What should Falryn become? | [`falryn-docs`](https://github.com/tyldra-org/falryn-docs) and its [documentation map](https://github.com/tyldra-org/falryn-docs/blob/main/DOCUMENTATION-MAP.md) |
+| What is planned, active, blocked, or complete? | [Falryn Roadmap](https://github.com/orgs/tyldra-org/projects/1), milestones, parent issues, native subissues, and linked pull requests |
 | What is actually implemented now? | This file, checked against the current source, tests, manifests, and build |
 | What proves a change? | The owning issue, merged pull request, code, focused tests, and applicable compiled/platform checks |
 | What has shipped? | GitHub Releases and verified installation/support documentation |
@@ -37,21 +37,22 @@ The implementation scaffold introduced by
   quality, type-check, build, and test gates on GitHub-hosted
   `ubuntu-latest`, runs the macOS suites on `macos-latest`, and runs the Windows
   source baseline and compiled CLI smoke on `windows-latest`;
-- a separate, manually dispatched `.github/workflows/benchmark.yml` that runs
-  the macOS arm64 benchmark comparison on `macos-latest`; and
+- an advisory `benchmark` job in that same workflow that runs the Ubuntu x64
+  benchmark comparison on `ubuntu-latest` for pull requests only, and is not a
+  required status check; and
 - a Bun standalone compilation target at `dist/falryn`.
 
 The workflow's first pull-request run in
-[#411](https://github.com/yogeshprasad098/falryn/pull/411) passed every gate on
+[#411](https://github.com/tyldra-org/falryn/pull/411) passed every gate on
 the baseline Linux runner. Both the baseline and macOS arm64 compiled-smoke
-jobs passed in [#412](https://github.com/yogeshprasad098/falryn/pull/412): the
+jobs passed in [#412](https://github.com/tyldra-org/falryn/pull/412): the
 selected executable reported `darwin`, `arm64`, and compiled mode while its
 CLI, migrations, embedded OpenTUI assets, and pseudo-terminal paths ran. This
 is a development qualification, not product platform support, installation,
 signing, update, or release readiness.
 
 The offline repository-integrity gate introduced by
-[#32](https://github.com/yogeshprasad098/falryn/issues/32) runs from
+[#32](https://github.com/tyldra-org/falryn/issues/32) runs from
 `bun run check` and the baseline CI job after the frozen Bun install. Its
 TypeScript tool records the admitted direct runtime and development dependencies
 with exact versions, SPDX license expressions, and canonical source
@@ -63,7 +64,7 @@ untracked. This is an offline direct-admission boundary, not a transitive SBOM,
 registry or vulnerability scan, signing system, or legal-compliance claim.
 
 The domain contracts introduced by
-[#2](https://github.com/yogeshprasad098/falryn/issues/2) add `src/domain/` with
+[#2](https://github.com/tyldra-org/falryn/issues/2) add `src/domain/` with
 one public entrypoint at `src/domain/index.ts`:
 
 - branded identities for workspace, session, turn, model attempt, invocation,
@@ -87,7 +88,7 @@ one public entrypoint at `src/domain/index.ts`:
 - a lossless mapping onto the persisted `StoredEvent` shape.
 
 The control-flow lifecycle introduced by
-[#4](https://github.com/yogeshprasad098/falryn/issues/4) adds `ClockPort`,
+[#4](https://github.com/tyldra-org/falryn/issues/4) adds `ClockPort`,
 `SignalPort`, the deadline model, the cancellation scope contracts, and the
 shutdown phase and participant contracts to `src/domain/`, plus two new source
 areas:
@@ -130,7 +131,7 @@ Its verified behavior:
   rather than truncating silently.
 
 The scheduling engine introduced by
-[#3](https://github.com/yogeshprasad098/falryn/issues/3) adds the work-unit,
+[#3](https://github.com/tyldra-org/falryn/issues/3) adds the work-unit,
 budget, queue, and scheduler contracts to `src/domain/`, and three engines to
 `src/application/`:
 
@@ -153,7 +154,7 @@ budget, queue, and scheduler contracts to `src/domain/`, and three engines to
   it hold the scheduler.
 
 The failure contract introduced by
-[#5](https://github.com/yogeshprasad098/falryn/issues/5) adds `FalrynError`,
+[#5](https://github.com/tyldra-org/falryn/issues/5) adds `FalrynError`,
 `SafeCause`, `CorrelationIds`, the recovery-action and exit-category
 vocabularies, the structured diagnostic event, and the retry-decision contract
 to `src/domain/`, and translation, redaction, the diagnostics collector, and the
@@ -187,7 +188,7 @@ Only the `configuration`, `authentication`, `data`, `cancellation`, and
 so later owners attach to it. No error code is stable.
 
 The configuration schema introduced by
-[#7](https://github.com/yogeshprasad098/falryn/issues/7) adds the configuration
+[#7](https://github.com/tyldra-org/falryn/issues/7) adds the configuration
 contract — value model, scope, source kind, sensitivity, declared merge
 behavior, credential-reference type, validation-issue union, and the registry
 port — to `src/domain/`, and a new source area at `src/config/` behind
@@ -234,7 +235,7 @@ Its verified behavior:
   import the application layer.
 
 The catalog is deliberately smaller than the mechanism. Only the `data` group
-consumed by [#10](https://github.com/yogeshprasad098/falryn/issues/10) — root
+consumed by [#10](https://github.com/tyldra-org/falryn/issues/10) — root
 overrides, retention classes, and quotas — and the `diagnostics` group consumed
 by #5's collector and debug window are declared. The other groups named in the
 configuration reference are owned elsewhere and are not invented here, on the
@@ -247,7 +248,7 @@ reference are proven against fixture registries rather than against an invented
 product key.
 
 The configuration load lifecycle introduced by
-[#8](https://github.com/yogeshprasad098/falryn/issues/8) adds the source,
+[#8](https://github.com/tyldra-org/falryn/issues/8) adds the source,
 provenance, and generation contracts to `src/domain/`, a bounded `readText` to
 `FileSystemPort`, and discovery, JSONC parsing, composition, diffing,
 classification, publishing, and the inspection projection to `src/config/`.
@@ -304,7 +305,7 @@ per-source reports, and diagnostics. #18 renders it for people; rendering it for
 machines is #19's.
 
 The credential contract introduced by
-[#9](https://github.com/yogeshprasad098/falryn/issues/9) adds `CredentialStorePort`,
+[#9](https://github.com/tyldra-org/falryn/issues/9) adds `CredentialStorePort`,
 `SecretResolverPort`, `CredentialReferenceStorePort`, the credential health and
 removal contracts, and a supervised `CommandRunnerPort` to `src/domain/`;
 reference resolution and two-part removal to `src/config/`; the secret resolver
@@ -348,7 +349,7 @@ Its verified behavior:
   identity re-derived from the reference's own content; and removing an
   environment-backed credential reports `partial`, because no process can unset
   a variable in the shell that exported it. Remote revocation is
-  [#35](https://github.com/yogeshprasad098/falryn/issues/35) and is neither
+  [#35](https://github.com/tyldra-org/falryn/issues/35) and is neither
   attempted nor implied;
 - **no native credential module enters the lockfile.** The keychain adapter is a
   narrow `Bun.spawn` leaf over `/usr/bin/security` with a structured argument
@@ -368,12 +369,12 @@ Its verified behavior:
   then discarded, so no field exists for it to come back in.
 - **this adapter is internal.** It is not a tool, is registered in no capability
   catalog, and does not pass through the tool boundary
-  [#47](https://github.com/yogeshprasad098/falryn/issues/47) will own. A
+  [#47](https://github.com/tyldra-org/falryn/issues/47) will own. A
   model-requested credential read is not a supported path.
 
 **macOS is the qualified keychain target.** Linux and Windows report
 `unsupported` with a stated reason and spawn nothing; qualifying them is
-[#220](https://github.com/yogeshprasad098/falryn/issues/220). The
+[#220](https://github.com/tyldra-org/falryn/issues/220). The
 environment-reference store works on every platform, so no host is left without
 a credential path.
 
@@ -389,7 +390,7 @@ Two limitations of this slice:
   halves; its production supplier arrives with the configuration writer.
 
 The local-data layout introduced by
-[#10](https://github.com/yogeshprasad098/falryn/issues/10) adds `FileSystemPort`,
+[#10](https://github.com/tyldra-org/falryn/issues/10) adds `FileSystemPort`,
 `EnvironmentPort`, and the local-data contracts — roots, ownership classes,
 durability, removal posture, retention report, removal plan and outcome — to
 `src/domain/`, a new source area at `src/data/` behind `src/data/index.ts`, and
@@ -456,7 +457,7 @@ unqualified: they resolve, and nothing claims they were verified on those
 targets.
 
 The wiring introduced by
-[#296](https://github.com/yogeshprasad098/falryn/issues/296) connects those
+[#296](https://github.com/tyldra-org/falryn/issues/296) connects those
 parts into one lifecycle. `src/application/runtime-lifecycle.ts` constructs the
 scheduler, shares one diagnostics collector across the scope tree, scheduler,
 and shutdown coordinator, and registers the scheduler's drain as a
@@ -470,7 +471,7 @@ work that named no scope, and reports it unfinished when it will not stop.
 
 A unit can outlive its scope, because settling is cooperative and a scope may
 complete while work under it is still stopping.
-[#299](https://github.com/yogeshprasad098/falryn/issues/299) makes that ordering
+[#299](https://github.com/tyldra-org/falryn/issues/299) makes that ordering
 observable rather than silent: the scheduler no longer discards the refusal, and
 `ScopeTree.recordLateEffect` folds the late effect into every surviving ancestor
 using the same upward fold a scope performs when it settles normally. The settled
@@ -499,14 +500,14 @@ together yet, because the loader is not composed into a running program either.
 The remaining seven kinds describe sessions, turns, model attempts, and
 capability invocations, and the runtime backbone still has none of those
 concepts — their first producers are
-[#33](https://github.com/yogeshprasad098/falryn/issues/33) for sessions and
+[#33](https://github.com/tyldra-org/falryn/issues/33) for sessions and
 turns and
-[#40](https://github.com/yogeshprasad098/falryn/issues/40) for model and
+[#40](https://github.com/tyldra-org/falryn/issues/40) for model and
 capability kinds. Inventing scope or scheduler event kinds to fill the gap would
 create events with no consumer.
 
 **Falryn has one database.**
-[#12](https://github.com/yogeshprasad098/falryn/issues/12) adds `SqliteConnectionPort`
+[#12](https://github.com/tyldra-org/falryn/issues/12) adds `SqliteConnectionPort`
 to `src/domain/`, its `bun:sqlite` adapter at `src/integrations/bun-sqlite.ts`,
 and the owner at `src/data/sqlite-store.ts` with its migration list beside it.
 The port is SQL-shaped rather than SDK-shaped: it runs a statement, reads rows,
@@ -566,7 +567,7 @@ ordering, failure, contention, and interruption independently of the production
 schema.
 
 The durable records introduced by
-[#13](https://github.com/yogeshprasad098/falryn/issues/13) add the production
+[#13](https://github.com/tyldra-org/falryn/issues/13) add the production
 schema and everything that reads and writes it:
 
 - migration `0001` is the first production step. It creates `sessions`, `turns`, `model_attempts`,
@@ -575,7 +576,7 @@ schema and everything that reads and writes it:
   takes no backup. There is no `workspaces` table: a session carries
   `workspace_id` as an identity column with no foreign key, because the
   workspace record is owned by
-  [#55](https://github.com/yogeshprasad098/falryn/issues/55) and
+  [#55](https://github.com/tyldra-org/falryn/issues/55) and
   `foreign_keys = ON` would otherwise block every session write;
 - `EventStorePort` has exactly one durable implementation, and
   `createInMemoryEventStore` remains a test double. The database is the ordering
@@ -621,7 +622,7 @@ schema and everything that reads and writes it:
   nothing still writing.
 
 The artifact foundation introduced by
-[#14](https://github.com/yogeshprasad098/falryn/issues/14) adds large and binary
+[#14](https://github.com/tyldra-org/falryn/issues/14) adds large and binary
 content, stored as bytes outside SQLite and described by a durable record:
 
 - migration `0002` creates `artifacts` as a `STRICT` table, so a real run now
@@ -682,18 +683,18 @@ content, stored as bytes outside SQLite and described by a durable record:
 
 Not yet present in this area: reachability garbage collection driven by session
 retention, pinning, and export dependency
-([#121](https://github.com/yogeshprasad098/falryn/issues/121)); startup recovery
+([#121](https://github.com/tyldra-org/falryn/issues/121)); startup recovery
 of interrupted writes and export foundations
-([#15](https://github.com/yogeshprasad098/falryn/issues/15)); corruption and
+([#15](https://github.com/tyldra-org/falryn/issues/15)); corruption and
 missing-blob detection
-([#120](https://github.com/yogeshprasad098/falryn/issues/120)); viewers and
+([#120](https://github.com/tyldra-org/falryn/issues/120)); viewers and
 rendered previews
-([#117](https://github.com/yogeshprasad098/falryn/issues/117)); and the complete
+([#117](https://github.com/tyldra-org/falryn/issues/117)); and the complete
 typed artifact API and provenance graph
-([#116](https://github.com/yogeshprasad098/falryn/issues/116)).
+([#116](https://github.com/tyldra-org/falryn/issues/116)).
 
 The startup recovery introduced by
-[#319](https://github.com/yogeshprasad098/falryn/issues/319) establishes what an
+[#319](https://github.com/tyldra-org/falryn/issues/319) establishes what an
 earlier run left behind, and never invents a completion:
 
 - migration `0003` creates a `STRICT` `runs` table and adds a nullable
@@ -755,7 +756,7 @@ guarantee to bytes and to simultaneous *startup*, which is covered; the general
 case is follow-up work rather than a hidden TODO.
 
 The export foundations introduced by
-[#320](https://github.com/yogeshprasad098/falryn/issues/320) turn a selection of
+[#320](https://github.com/tyldra-org/falryn/issues/320) turn a selection of
 durable local state into one portable, versioned, digest-verified package:
 
 - an export declares **its own schema version**, separate from the database's. A
@@ -814,11 +815,11 @@ And the export service is **not composed** into `src/main.ts` — only its
 ownership class is registered. Constructing a writer that no run can call would
 add a dead object rather than exercised behavior, so the honest statement is
 that nothing in a real run writes a package. Redaction, import, replay, and fork
-are owned by [#118](https://github.com/yogeshprasad098/falryn/issues/118) and
-[#119](https://github.com/yogeshprasad098/falryn/issues/119).
+are owned by [#118](https://github.com/tyldra-org/falryn/issues/118) and
+[#119](https://github.com/tyldra-org/falryn/issues/119).
 
 The seams closed by
-[#323](https://github.com/yogeshprasad098/falryn/issues/323) complete two of
+[#323](https://github.com/tyldra-org/falryn/issues/323) complete two of
 those foundations:
 
 - **an export names the schema families it carries.** The manifest's
@@ -848,7 +849,7 @@ those foundations:
   isolated state root, which is the only place the process umask applies.
 
 The test-only harness introduced by
-[#31](https://github.com/yogeshprasad098/falryn/issues/31) exercises the real
+[#31](https://github.com/tyldra-org/falryn/issues/31) exercises the real
 readers for `falryn.runtime-event`, `falryn.configuration`, and
 `falryn-export/1` against current, additive-future, required-future, and
 synthetic-secret malformed inputs. Its source-level negative control discovers
@@ -857,7 +858,7 @@ source, while test and fixture support remain available. The harness is not
 exported by a product entrypoint and makes no schema-contract or runtime claim.
 
 The integrated persistence walk added by
-[#325](https://github.com/yogeshprasad098/falryn/issues/325) demonstrates the
+[#325](https://github.com/tyldra-org/falryn/issues/325) demonstrates the
 whole chain at one source revision rather than leaving it inferred from the
 per-seam files. `src/data/integrated-persistence.test.ts` holds **one** test — it
 opens a fresh temporary state root, asserts the store created the database and
@@ -881,7 +882,7 @@ record inserts, reversing the event order, skipping the ingest, skipping the
 projection advance, or reopening a different root each turn the test red.
 
 The persistence resource measurement added by
-[#326](https://github.com/yogeshprasad098/falryn/issues/326) turns "resource
+[#326](https://github.com/tyldra-org/falryn/issues/326) turns "resource
 behavior is verified" into numbers. `src/data/measurement.test.ts` is gated
 behind `FALRYN_MEASURE=1`, runs from `bun run measure`, is part of neither `bun
 run check` nor `bun run ci`, asserts no timing threshold, and changes no
@@ -918,12 +919,11 @@ Five limitations belong with those numbers:
   retries" is therefore recorded as busy wait and refusal rate; a retry counter
   would have been product behavior invented inside a measurement.
 - **A relative regression gate now owns the comparison boundary.**
-  [#415](https://github.com/yogeshprasad098/falryn/issues/415) and
-  [#418](https://github.com/yogeshprasad098/falryn/issues/418) add a
-  manually dispatched `.github/workflows/benchmark.yml` `macos-latest` arm64
-  job that compares
-  the selected dispatch ref against a required `benchmark_base_ref` (default
-  `main`), builds each exact revision, and completes two fixed same-revision settling passes
+  [#415](https://github.com/tyldra-org/falryn/issues/415) and
+  [#418](https://github.com/tyldra-org/falryn/issues/418) add a
+  `ubuntu-latest` x64 `benchmark` job in `.github/workflows/ci.yml` that
+  compares a pull request against its own base commit, builds each exact
+  revision, and completes two fixed same-revision settling passes
   immediately before every report in two temporally symmetric brackets on one
   runner: base-first, candidate-first, candidate-second, base-second, base-third, candidate-third,
   candidate-fourth, and base-fourth. The outer bracket pools the first and last
@@ -977,7 +977,7 @@ Five limitations belong with those numbers:
   the already-built artifact.
 - **One platform.** macOS is the only qualified target; measuring on it
   qualifies no other, and a second platform is
-  [#220](https://github.com/yogeshprasad098/falryn/issues/220).
+  [#220](https://github.com/tyldra-org/falryn/issues/220).
 - **Nothing was tuned.** This issue measures. A number that turns out to be bad
   is a new issue, not a silent rewrite.
 - **Ungated, `bun test` reports five skipped tests from this module** rather than
@@ -987,7 +987,7 @@ Five limitations belong with those numbers:
   the point.
 
 The process boundary introduced by
-[#20](https://github.com/yogeshprasad098/falryn/issues/20) adds
+[#20](https://github.com/tyldra-org/falryn/issues/20) adds
 `OutputStreamPort`, `InputStreamPort`, and the terminal capability facts to
 `src/domain/terminal.ts`; the one Bun-backed handle adapter to
 `src/integrations/host-terminal.ts`; and a new `src/cli/` area, behind
@@ -1054,7 +1054,7 @@ compiled mode by `src/cli/process-boundary.test.ts`. `src/main.ts` is the only
 product path through the table today, and it writes nothing to either handle.
 
 The command tree introduced by
-[#17](https://github.com/yogeshprasad098/falryn/issues/17) makes `falryn` a real
+[#17](https://github.com/tyldra-org/falryn/issues/17) makes `falryn` a real
 executable. It adds the yargs tree, global options, dispatch, the
 `CommandResult` contract, a service factory, and the `config`, `data`, and `doctor`
 commands to `src/cli/`, plus a read-only `probeStorage` to `src/data/`.
@@ -1104,14 +1104,14 @@ Its verified behavior:
   event appended to an in-memory store, so inspecting settings never writes to
   a user's database. An unknown override key refuses the load rather than being
   ignored, and since
-  [#344](https://github.com/yogeshprasad098/falryn/issues/344) a source that
+  [#344](https://github.com/tyldra-org/falryn/issues/344) a source that
   exists and could not be read is reported rather than silently skipped, which
   is described below;
 - **`doctor` describes without creating.** It names each root and the database
   path, and reads the database with `create: false` — so asking whether one
   exists never creates it. A fresh root reports `absent`; after a bootstrap it
   reports the schema version it carries. Since
-  [#342](https://github.com/yogeshprasad098/falryn/issues/342) it also probes
+  [#342](https://github.com/tyldra-org/falryn/issues/342) it also probes
   each root's *viability*, which is described below;
 - **`--version` names the build**: version, Bun, platform, architecture, and
   whether the run is source or compiled, detected from the `$bunfs` module root
@@ -1122,7 +1122,7 @@ Its verified behavior:
   profile-name rule.
 
 The human and quiet projections introduced by
-[#18](https://github.com/yogeshprasad098/falryn/issues/18) render that result.
+[#18](https://github.com/tyldra-org/falryn/issues/18) render that result.
 They add `src/cli/render-human.ts` — one pure function from a `CommandResult`
 plus resolved terminal facts to text — `src/domain/text-display.ts` for display
 width, wrapping, shortening, and sanitization, and a `symbols` capability fact
@@ -1175,7 +1175,7 @@ exercised against those payloads plus fixtures covering the outcome, certainty,
 and failure matrix. It has not been proven against a rich command surface.
 
 The machine projections introduced by
-[#19](https://github.com/yogeshprasad098/falryn/issues/19) complete the four
+[#19](https://github.com/tyldra-org/falryn/issues/19) complete the four
 declared output contracts. They add `src/cli/schema.ts` — the `falryn.cli`
 schema family, its encoder, and its reader policy — plus `src/cli/render-json.ts`
 and `src/cli/render-jsonl.ts`, and expose the run's in-memory event store on
@@ -1223,7 +1223,7 @@ break a deployed consumer fails a test rather than a pipeline.
 Shell completion is deferred rather than hand-written.
 
 `doctor` reports whether each data root can actually hold data, which
-[#342](https://github.com/yogeshprasad098/falryn/issues/342) added after
+[#342](https://github.com/tyldra-org/falryn/issues/342) added after
 verifying #16's "unusable state root" scenario found it reporting a state root
 that was a regular file as healthy. It adds `inspectRoots` to `src/data/roots.ts`
 and to `LocalDataService`, and a `RootViability` vocabulary to
@@ -1273,7 +1273,7 @@ the family declares no compatibility promise yet.
 
 `config validate` and `config show` report a configuration source that exists
 and could not be read, which
-[#344](https://github.com/yogeshprasad098/falryn/issues/344) added after
+[#344](https://github.com/tyldra-org/falryn/issues/344) added after
 verifying #16's "unreadable configuration" scenario found `config validate`
 calling a configuration valid when the only file it had was at mode `000`. The
 loader is unchanged — it already recorded the outcome and skipped the source —
@@ -1323,7 +1323,7 @@ over a mode `000` file covers the boundary itself, and is skipped when the suite
 runs as root.
 
 An interrupt and `--timeout` reach the command that is running, which
-[#345](https://github.com/yogeshprasad098/falryn/issues/345) added after
+[#345](https://github.com/tyldra-org/falryn/issues/345) added after
 verifying #16's "SIGINT" and "deadline expiry" scenarios found `--timeout`
 parsed, range-checked, and then dropped, and `dispatch` taking no signal at all.
 It adds `src/cli/invocation-scope.ts` — the scope one invocation runs under —
@@ -1472,7 +1472,7 @@ printed a secret. `src/main.ts` composes no credential resolver, so nothing in t
 shipped bootstrap reaches a keychain.
 
 React and OpenTUI are pinned and their packaging is proven, delivered by
-[#22](https://github.com/yogeshprasad098/falryn/issues/22). `react` is `19.2.8`
+[#22](https://github.com/tyldra-org/falryn/issues/22). `react` is `19.2.8`
 and `@opentui/core`, `@opentui/react`, and `@opentui/keymap` are all `0.4.5` —
 one version across the three, because they are released together. The lockfile
 carries every platform's optional native package and resolves
@@ -1518,7 +1518,7 @@ so signal handling stays entirely with `src/cli/invocation-scope.ts`.
 not the renderer's.
 
 The interactive shell exists, delivered by
-[#23](https://github.com/yogeshprasad098/falryn/issues/23). `falryn` with no
+[#23](https://github.com/tyldra-org/falryn/issues/23). `falryn` with no
 arguments decides from observed facts whether this terminal can host it, owns
 exactly one renderer when it can, keeps the previous behavior when it cannot,
 and restores the terminal on every exit path.
@@ -1539,7 +1539,7 @@ to assert that, and `src/cli/dispatch-shell.test.ts` proves it behaviorally with
 a renderer factory that throws if anything calls it.
 
 **The interactive shell can be configured**
-([#390](https://github.com/yogeshprasad098/falryn/issues/390)). Until now it
+([#390](https://github.com/tyldra-org/falryn/issues/390)). Until now it
 could not: a run that opened the shell read no settings at all, so a key
 declared in `src/config/keys.ts` had no way to reach anything the interface
 does. `src/cli/shell-configuration.ts` is the path, and it runs *after* the
@@ -1577,7 +1577,7 @@ load falls through to appending the generation event, where an unwritable or
 full state root fails. This was first written claiming `rejected` was the only
 one reachable there, which gave the other two a sentence telling a user with a
 perfectly good settings file that it could not be loaded. Verification of
-[#395](https://github.com/yogeshprasad098/falryn/pull/395) found it.
+[#395](https://github.com/tyldra-org/falryn/pull/395) found it.
 
 What crosses into the shell is `ConfigurationValues` — values, not a service, so
 nothing in the interface can reach back for a key that was never resolved, and
@@ -1587,7 +1587,7 @@ profile a command passes, so `falryn --verbose` means one thing either way.
 
 Nothing reads a key yet. This is the path, not a setting, and the first
 interface key arrives with
-[#392](https://github.com/yogeshprasad098/falryn/issues/392).
+[#392](https://github.com/tyldra-org/falryn/issues/392).
 
 The capability record in `src/tui/capabilities.ts` extends the domain's facts
 and recomputes none of them: colour, character repertoire, TTY status, and size
@@ -1608,8 +1608,8 @@ stderr boundary, and mouse reporting is gated rather than left at OpenTUI's
 default of on.
 
 **The interface takes pointer input, and only where it is wanted**
-([#392](https://github.com/yogeshprasad098/falryn/issues/392),
-[#393](https://github.com/yogeshprasad098/falryn/issues/393)). OpenTUI's
+([#392](https://github.com/tyldra-org/falryn/issues/392),
+[#393](https://github.com/tyldra-org/falryn/issues/393)). OpenTUI's
 textarea owns primary-press focus and placement, collapsed selections, drag
 selection, and pointer auto-scroll. Falryn neither maps a terminal cell to text
 nor stores a second cursor, anchor, range, geometry, or drag model.
@@ -1649,7 +1649,7 @@ divergence it would have required, both went away with the capability that was
 never there.
 
 The shell reads exactly one key. `ShellRunRequest` carries the resolved values
-from [#390](https://github.com/yogeshprasad098/falryn/issues/390) and
+from [#390](https://github.com/tyldra-org/falryn/issues/390) and
 `src/tui/shell.tsx` projects one boolean out of them; `src/tui` imports nothing
 from `src/config`. Anything that is not `true` is off, absence included — a
 caller that composed no service graph resolved no configuration, and turning a
@@ -1681,7 +1681,7 @@ reports itself skipped rather than passed when `dist/falryn` is unbuilt or the
 platform has no `openpty`.
 
 The walk is driven a step at a time now
-([#375](https://github.com/yogeshprasad098/falryn/issues/375)), so both overlays
+([#375](https://github.com/tyldra-org/falryn/issues/375)), so both overlays
 are opened *and* closed, the composer is typed into and its submission answered,
 and the terminal is resized under the running shell. Each step returns the bytes
 it drew, because a pseudo-terminal's transcript is cumulative: "Help" stays in it
@@ -1732,7 +1732,7 @@ ships, which is the deliberate change #22's byte-identical result was measuring
 the absence of.
 
 The shell has a visual vocabulary and a frame, delivered by
-[#24](https://github.com/yogeshprasad098/falryn/issues/24).
+[#24](https://github.com/tyldra-org/falryn/issues/24).
 
 Themes are data. Four variants — dark, light, monochrome, high contrast — are
 authored at full colour depth in `src/tui/theme/palette.ts`, and every lower
@@ -1790,7 +1790,7 @@ short for a footer and one per override mode, and a control asserting that
 `capturesStdout` has a product caller at all.
 
 The shell is operable from the keyboard, delivered by
-[#26](https://github.com/yogeshprasad098/falryn/issues/26).
+[#26](https://github.com/tyldra-org/falryn/issues/26).
 
 **Before this, it could not be left.** A terminal in raw mode has `ISIG`
 disabled, so pressing Ctrl+C sends the byte `0x03` to stdin and raises no
@@ -1855,7 +1855,7 @@ Command+A remains OpenTUI's Super+A Select All binding when the terminal reports
 Super directly.
 
 A rendered check settles on what was painted rather than on a non-empty
-buffer ([#372](https://github.com/yogeshprasad098/falryn/issues/372)). A test
+buffer ([#372](https://github.com/tyldra-org/falryn/issues/372)). A test
 renderer's buffer before anything draws into it is `U+0A00` in every cell, not
 whitespace, so the old `frame.trim() !== ""` accepted it as a finished frame
 whenever a capture won the race against the first paint — about one full-suite
@@ -1866,7 +1866,7 @@ a painted buffer, the helper throws instead of handing back the last capture,
 and the negative-only check names something that must be present as well.
 
 Every rendered check now mounts through one harness
-([#374](https://github.com/yogeshprasad098/falryn/issues/374)). Nine test files
+([#374](https://github.com/tyldra-org/falryn/issues/374)). Nine test files
 each declared their own live-renderer list, teardown hook, mount, and settle;
 that is why #372's correction reached one of them and left the other eight
 settling by a fixed flush count. `src/tui/harness.tsx` owns all four, and
@@ -1891,7 +1891,7 @@ escaped before their existing width truncation; painted normal and minimum-size
 frames prove the raw sequence never reaches the renderer.
 
 The frame no longer overlaps itself on a short terminal
-([#368](https://github.com/yogeshprasad098/falryn/issues/368)). The overlay host
+([#368](https://github.com/tyldra-org/falryn/issues/368)). The overlay host
 sized its panel against a two-row reserve — the header and the status line — that
 was written before the composer sat between them, while the transcript sized
 itself with `primaryRows`, which does subtract the composer. The two regions
@@ -1917,7 +1917,7 @@ keymap, and against the shipped `dist/falryn` on a pseudo-terminal, where Ctrl+C
 now exits `0` with the terminal restored and `?` draws the command table.
 
 Terminal resource behavior and qualification are recorded by
-[#376](https://github.com/yogeshprasad098/falryn/issues/376). `bun run measure`
+[#376](https://github.com/tyldra-org/falryn/issues/376). `bun run measure`
 gates six measurements outside the ordinary fast checks: compiled startup to
 first draw and native render cadence, plus harness input latency under stream
 load, event-loop delay, long-transcript memory growth, and renderer shutdown.
@@ -1938,17 +1938,17 @@ unqualified; the companion terminal document records the emulator metadata,
 interaction limitations, and manual-session boundary.
 
 A transcript exists as a contract, delivered by
-[#354](https://github.com/yogeshprasad098/falryn/issues/354), and as a rendered
+[#354](https://github.com/tyldra-org/falryn/issues/354), and as a rendered
 surface over it, delivered by
-[#355](https://github.com/yogeshprasad098/falryn/issues/355).
+[#355](https://github.com/tyldra-org/falryn/issues/355).
 
 **Nothing produces a block yet.** The surface is real and the projection it
 renders is empty on every run, because no agent loop, provider, or tool runner
 emits an event that becomes one. The activity rail and the status line are a
 separate case and no longer share it: they are fed from the scope tree and the
 shutdown coordinator the invocation already composed
-([#358](https://github.com/yogeshprasad098/falryn/issues/358) built the
-projection, [#370](https://github.com/yogeshprasad098/falryn/issues/370)
+([#358](https://github.com/tyldra-org/falryn/issues/358) built the
+projection, [#370](https://github.com/tyldra-org/falryn/issues/370)
 connected it). What a user sees in the transcript today is its empty state,
 which names a command the build actually runs; every other behavior below is
 exercised against fixtures and a real renderer rather than against live output.
@@ -2081,7 +2081,7 @@ in-screen projection.
 
 The composer is a real control: it accepts multiline Unicode text, keeps a
 history, preserves a draft, and resolves every submission through one declared
-port ([#357](https://github.com/yogeshprasad098/falryn/issues/357)). The editing
+port ([#357](https://github.com/tyldra-org/falryn/issues/357)). The editing
 model, the history, and the state machine are plain data with a pure reducer, so
 graphemes, draft survival, and snapshot immutability are asserted without a
 terminal.
@@ -2097,7 +2097,7 @@ second one would be a second answer to what a character is.
 **A submission takes a frozen snapshot in the transition that starts it.** Later
 edits reach the next submission and never the one in flight. In this build every
 submission resolves `unavailable` through the port, with a reason naming
-[#33](https://github.com/yogeshprasad098/falryn/issues/33) and a repair route
+[#33](https://github.com/tyldra-org/falryn/issues/33) and a repair route
 that is a registered command id — and the draft is left exactly where the user
 left it. Discarding the input is the failure a composer exists to prevent, and a
 stub agent loop behind the button would be a second answer to what happens to a
@@ -2118,7 +2118,7 @@ bounded, and described rather than inserted, and there is no attachment control
 that accepts a file and drops it.
 
 **The composer is OpenTUI's `TextareaRenderable`**
-([#399](https://github.com/yogeshprasad098/falryn/issues/399)). The draft, the
+([#399](https://github.com/tyldra-org/falryn/issues/399)). The draft, the
 cursor, the selection, the scrolling, and every motion over them belong to the
 renderable, reached through the `<textarea>` element `@opentui/react` exposes.
 Falryn supplies the frame, the two chrome rows, and only its narrow product
@@ -2127,7 +2127,7 @@ policies.
 When its native selection is non-empty, the composer passes the resolved
 semantic `selection` background and `foreground` tokens to that renderable and
 the first fixed chrome row says `Selection active`
-([#397](https://github.com/yogeshprasad098/falryn/issues/397)). The range can
+([#397](https://github.com/tyldra-org/falryn/issues/397)). The range can
 span multiple drawn lines and the renderer retains its cursor at the selection
 focus. At no-colour depth Falryn omits those colour props and keeps the words,
 leaving OpenTUI to paint its fallback rather than inventing a grey. Rendered
@@ -2136,7 +2136,7 @@ styled spans and the cursor coordinate, cover an explicit multi-line range,
 monochrome, and collapse; the normal repository checks and compiled build pass
 for this change.
 
-[#393](https://github.com/yogeshprasad098/falryn/issues/393) adds native
+[#393](https://github.com/tyldra-org/falryn/issues/393) adds native
 double-press word selection and triple-press logical-line selection without
 adding a Falryn selection model. Its pure click-sequence policy receives only
 the invocation clock and terminal cell; the view performs the documented native
@@ -2219,7 +2219,7 @@ The accepted path is exercised by handing the runtime a port that accepts.
 
 The activity rail projects the semantic state the runtime actually owns, and the
 status line projects one health level from it
-([#358](https://github.com/yogeshprasad098/falryn/issues/358)). Both are pure
+([#358](https://github.com/tyldra-org/falryn/issues/358)). Both are pure
 data derived in `src/presentation/activity/`; the rail is the one persistent
 contextual surface a `wide` layout gets, and narrower layouts draw none rather
 than a squeezed one.
@@ -2269,7 +2269,7 @@ how many it is not showing. Live work is never evicted to make room for finished
 work.
 
 The shell reads the runtime it is running inside
-([#370](https://github.com/yogeshprasad098/falryn/issues/370)). Until then the
+([#370](https://github.com/tyldra-org/falryn/issues/370)). Until then the
 projection was correct, fixture-proved, and unreached: `reduceActivity` and
 `resubscribeActivity` had no product caller, the rail rendered the empty value,
 and the status line reported that no runtime was attached while the shell was
@@ -2327,7 +2327,7 @@ session/turn producer, or live transcript producer. The remaining gaps are:
   explicit call carrying the complete diff, classification, and publish path;
 - writing a credential *into* a store. The keychain adapter reads and deletes;
   nothing creates an entry, because the flow that would — interactive
-  authentication — is [#35](https://github.com/yogeshprasad098/falryn/issues/35).
+  authentication — is [#35](https://github.com/tyldra-org/falryn/issues/35).
   A credential is placed in the keychain by the user today;
 - any composition of the credential resolver. The stores, the resolver, and the
   host command runner exist and are tested, and `src/main.ts` constructs none of
@@ -2337,7 +2337,7 @@ session/turn producer, or live transcript producer. The remaining gaps are:
   tables, the typed repositories, the durable event store, and the projection
   cursor all exist and are composed, and nothing in a real run starts a session
   or opens a turn, because the agent loop that would is
-  [#33](https://github.com/yogeshprasad098/falryn/issues/33) and later. Also
+  [#33](https://github.com/tyldra-org/falryn/issues/33) and later. Also
   absent: usage accounting and provider routing on a model attempt, which arrive
   with the model path, and read-connection pooling, which stays undecided until
   there are enough real read paths to measure;
@@ -2346,10 +2346,10 @@ session/turn producer, or live transcript producer. The remaining gaps are:
   restate it. The `config`, `data`, and `doctor` commands already use all four headless
   projections, and the OpenTUI shell is delivered as a presentation surface;
   it has no live conversation to render until the producer path owned by
-  [#33](https://github.com/yogeshprasad098/falryn/issues/33) and later work
+  [#33](https://github.com/tyldra-org/falryn/issues/33) and later work
   exists. The CLI/headless foundation and shell delivery are owned by
-  [#16](https://github.com/yogeshprasad098/falryn/issues/16) and
-  [#21](https://github.com/yogeshprasad098/falryn/issues/21);
+  [#16](https://github.com/tyldra-org/falryn/issues/16) and
+  [#21](https://github.com/tyldra-org/falryn/issues/21);
 - a projection registry. One projection is maintained and its name is a closed
   union of one; a registry for a single member would be a framework built for
   one caller. Deterministic replay, fork, rewind, and reachability garbage
@@ -2359,11 +2359,11 @@ session/turn producer, or live transcript producer. The remaining gaps are:
   and nothing in a real run ingests bytes, because the tools and providers that
   would are later work. Also absent from this area: reachability garbage
   collection, export, import, replay, viewers, and the provenance graph, each
-  owned by [#15](https://github.com/yogeshprasad098/falryn/issues/15),
-  [#116](https://github.com/yogeshprasad098/falryn/issues/116),
-  [#117](https://github.com/yogeshprasad098/falryn/issues/117),
-  [#120](https://github.com/yogeshprasad098/falryn/issues/120), or
-  [#121](https://github.com/yogeshprasad098/falryn/issues/121);
+  owned by [#15](https://github.com/tyldra-org/falryn/issues/15),
+  [#116](https://github.com/tyldra-org/falryn/issues/116),
+  [#117](https://github.com/tyldra-org/falryn/issues/117),
+  [#120](https://github.com/tyldra-org/falryn/issues/120), or
+  [#121](https://github.com/tyldra-org/falryn/issues/121);
 - any composition of the configuration loader into a running program.
   `src/main.ts` constructs no loader, so no configuration file is read on a real
   run;
@@ -2398,16 +2398,18 @@ Their implementation breakdown lives in GitHub Issues and the Project.
 
 ## Planning frontier
 
-- **Live roadmap:** [Falryn Roadmap](https://github.com/users/yogeshprasad098/projects/2)
-- **Current release outcome:** [v0.1 Foundation issues](https://github.com/yogeshprasad098/falryn/issues?q=is%3Aissue%20is%3Aopen%20milestone%3A%22v0.1%20Foundation%22)
-- **First parent outcome:** [#1 Establish the unified runtime and lifecycle](https://github.com/yogeshprasad098/falryn/issues/1)
-- **Current parent outcome:** [#21 Deliver the OpenTUI application shell](https://github.com/yogeshprasad098/falryn/issues/21) remains in progress; its shell-delivery work is complete and its parent-level integrated acceptance remains. [#16 Deliver the CLI and headless foundation](https://github.com/yogeshprasad098/falryn/issues/16) is complete.
-- **Next planning action:** verify [#21](https://github.com/yogeshprasad098/falryn/issues/21). Its parent-level integrated acceptance is the current eligible action; GitHub and the live Roadmap remain authoritative for what follows.
+- **Live roadmap:** [Falryn Roadmap](https://github.com/orgs/tyldra-org/projects/1)
+- **Current release outcome:** [v0.1 Foundation issues](https://github.com/tyldra-org/falryn/issues?q=is%3Aissue%20is%3Aopen%20milestone%3A%22v0.1%20Foundation%22)
+- **First parent outcome:** [#1 Establish the unified runtime and lifecycle](https://github.com/tyldra-org/falryn/issues/1)
+- **Completed shell parent:** [#21 Deliver the OpenTUI application shell](https://github.com/tyldra-org/falryn/issues/21) is closed and Done. [#16 Deliver the CLI and headless foundation](https://github.com/tyldra-org/falryn/issues/16) is complete.
+- **Active delivery:** [#433 Establish the public repository CI and governance baseline](https://github.com/tyldra-org/falryn/issues/433) via [PR #434](https://github.com/tyldra-org/falryn/pull/434) (companion [docs #80](https://github.com/tyldra-org/falryn-docs/pull/80)).
+- **Open v0.1 Foundation issues:** [#385](https://github.com/tyldra-org/falryn/issues/385), [#384](https://github.com/tyldra-org/falryn/issues/384), and [#381](https://github.com/tyldra-org/falryn/issues/381) — TUI defect and qualification work remaining on the milestone.
+- **Next planning action:** finish Verify/Merge for #433/#434 (docs-first), then pick the next Ready item among #385 / #384 / #381. GitHub and the live Roadmap remain authoritative for ordering.
 
 Which of #1's children are open, and which delivered the behavior recorded
 above, is read from
-[#1](https://github.com/yogeshprasad098/falryn/issues/1) and the
-[v0.1 Foundation milestone](https://github.com/yogeshprasad098/falryn/milestone/1)
+[#1](https://github.com/tyldra-org/falryn/issues/1) and the
+[v0.1 Foundation milestone](https://github.com/tyldra-org/falryn/milestone/1)
 rather than copied here. GitHub renders that live; a hand-maintained list of it
 went stale three deliveries running, and the "Implemented and verified" section
 above already attributes each capability to the issue that delivered it.
