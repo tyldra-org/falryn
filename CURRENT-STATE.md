@@ -37,8 +37,9 @@ The implementation scaffold introduced by
   quality, type-check, build, and test gates on GitHub-hosted
   `ubuntu-latest`, runs the macOS suites on `macos-latest`, and runs the Windows
   source baseline and compiled CLI smoke on `windows-latest`;
-- a separate, manually dispatched `.github/workflows/benchmark.yml` that runs
-  the macOS arm64 benchmark comparison on `macos-latest`; and
+- an advisory `benchmark` job in that same workflow that runs the Ubuntu x64
+  benchmark comparison on `ubuntu-latest` for pull requests only, and is not a
+  required status check; and
 - a Bun standalone compilation target at `dist/falryn`.
 
 The workflow's first pull-request run in
@@ -920,10 +921,9 @@ Five limitations belong with those numbers:
 - **A relative regression gate now owns the comparison boundary.**
   [#415](https://github.com/tyldra-org/falryn/issues/415) and
   [#418](https://github.com/tyldra-org/falryn/issues/418) add a
-  manually dispatched `.github/workflows/benchmark.yml` `macos-latest` arm64
-  job that compares
-  the selected dispatch ref against a required `benchmark_base_ref` (default
-  `main`), builds each exact revision, and completes two fixed same-revision settling passes
+  `ubuntu-latest` x64 `benchmark` job in `.github/workflows/ci.yml` that
+  compares a pull request against its own base commit, builds each exact
+  revision, and completes two fixed same-revision settling passes
   immediately before every report in two temporally symmetric brackets on one
   runner: base-first, candidate-first, candidate-second, base-second, base-third, candidate-third,
   candidate-fourth, and base-fourth. The outer bracket pools the first and last
