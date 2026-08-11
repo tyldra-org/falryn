@@ -124,8 +124,8 @@ jobs:
       - name: Run the platform test command
         run: ${{ matrix.command }}
 
-  linux-compiled-smoke:
-    name: Linux compiled CLI smoke
+  ubuntu-x64-compiled-smoke:
+    name: Ubuntu x64 compiled smoke
     needs:
       - typecheck
       - dependency-integrity

@@ -66,7 +66,7 @@ Everything after that fans out in parallel from `typecheck` and
 | `dependency-integrity` | `ubuntu-latest` | direct-dependency admission and generated-output ownership |
 | `dependency-audit` | `ubuntu-latest` | `bun audit` against installed packages |
 | `platform-test` | all three | the source suite, per host |
-| `linux-compiled-smoke` | `ubuntu-latest` | the compiled CLI runs on Linux x64 |
+| `ubuntu-x64-compiled-smoke` | `ubuntu-latest` | the compiled CLI runs on Linux x64 |
 | `macos-arm64-compiled-smoke` | `macos-latest` | the compiled CLI **and** a real pseudo-terminal on darwin arm64 |
 | `windows-x64-compiled-smoke` | `windows-latest` | the compiled CLI runs on win32 x64 |
 | `benchmark` | `ubuntu-latest` | whether this change is slower than the base it targets — advisory, pull requests only |
