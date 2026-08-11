@@ -32,11 +32,13 @@ The implementation scaffold introduced by
 - one bootstrap smoke test in `src/main.test.ts`;
 - repository-owned quality, type-check, test, and compiled-build commands;
 - a repository-owned GitHub Actions workflow at `.github/workflows/ci.yml` that
-  triggers for pull requests, pushes to `main`, and manual dispatch, installs
+  triggers for pull requests and pushes to `main`, installs
   the manifest-selected Bun version with the frozen lockfile, runs separate
   quality, type-check, build, and test gates on GitHub-hosted
-  `ubuntu-latest`, runs the macOS suites and manual benchmark on
-  `macos-latest`, and runs the Windows source baseline on `windows-latest`; and
+  `ubuntu-latest`, runs the macOS suites on `macos-latest`, and runs the Windows
+  source baseline on `windows-latest`;
+- a separate, manually dispatched `.github/workflows/benchmark.yml` that runs
+  the macOS arm64 benchmark comparison on `macos-latest`; and
 - a Bun standalone compilation target at `dist/falryn`.
 
 The workflow's first pull-request run in
@@ -918,7 +920,8 @@ Five limitations belong with those numbers:
 - **A relative regression gate now owns the comparison boundary.**
   [#415](https://github.com/yogeshprasad098/falryn/issues/415) and
   [#418](https://github.com/yogeshprasad098/falryn/issues/418) add a
-  manually dispatched `macos-latest` arm64 job that compares
+  manually dispatched `.github/workflows/benchmark.yml` `macos-latest` arm64
+  job that compares
   the selected dispatch ref against a required `benchmark_base_ref` (default
   `main`), builds each exact revision, and completes two fixed same-revision settling passes
   immediately before every report in two temporally symmetric brackets on one
