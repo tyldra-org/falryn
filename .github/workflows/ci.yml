@@ -125,8 +125,8 @@ jobs:
       - name: Audit installed dependencies for known vulnerabilities
         run: bun audit
 
-  source-test:
-    name: Source tests (${{ matrix.name }})
+  platform-test:
+    name: Platform tests (${{ matrix.name }})
     needs:
       - typecheck
       - dependency-integrity
@@ -138,10 +138,13 @@ jobs:
         include:
           - name: Ubuntu
             os: ubuntu-latest
+            command: bun run test
           - name: macOS arm64
             os: macos-15
+            command: bun run test
           - name: Windows
             os: windows-latest
+            command: bun run test:platform-baseline
 
     steps:
       - name: Check out the reviewed revision
@@ -155,8 +158,8 @@ jobs:
       - name: Install locked dependencies
         run: bun install --frozen-lockfile
 
-      - name: Run the complete source test suite
-        run: bun run test
+      - name: Run the platform test command
+        run: ${{ matrix.command }}
 
   linux-compiled-smoke:
     name: Linux compiled CLI smoke

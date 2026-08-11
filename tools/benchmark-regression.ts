@@ -895,7 +895,9 @@ export async function validateBenchmarkReportDestination(destination: string): P
   const destinationWithinRepository = relative(repositoryRoot, resolve(destination));
   if (
     destinationWithinRepository === "" ||
-    (!destinationWithinRepository.startsWith(`..${sep}`) && destinationWithinRepository !== "..")
+    (!destinationWithinRepository.startsWith(`..${sep}`) &&
+      destinationWithinRepository !== ".." &&
+      !isAbsolute(destinationWithinRepository))
   ) {
     throw new Error("benchmark report destination must be outside the repository");
   }
