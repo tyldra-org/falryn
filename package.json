@@ -32,7 +32,7 @@
     "ci": "bun run quality && bun run typecheck && bun run verify:repository && bun run build && bun run test"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.5.6",
+    "@biomejs/biome": "2.5.7",
     "@types/bun": "1.3.14",
     "@types/react": "19.2.18",
     "@types/react-reconciler": "0.33.0",
@@ -40,12 +40,12 @@
     "typescript": "7.0.2"
   },
   "dependencies": {
-    "@opentui/core": "0.4.5",
-    "@opentui/keymap": "0.4.5",
-    "@opentui/react": "0.4.5",
+    "@opentui/core": "0.5.1",
+    "@opentui/keymap": "0.5.1",
+    "@opentui/react": "0.5.1",
     "jsonc-parser": "3.3.1",
     "react": "19.2.8",
-    "yargs": "18.0.0",
+    "yargs": "18.1.0",
     "zod": "4.4.3"
   },
   "patchedDependencies": {
