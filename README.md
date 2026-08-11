@@ -21,22 +21,46 @@
 
 ---
 
-Falryn keeps the agent, terminal, tools, and project context in one local Bun
-process. It is built around explicit boundaries: every file read, command run,
-and provider call passes through one recorded tool path, so the work is
-inspectable rather than incidental.
+Falryn is being built so that the agent, terminal, tools, and project context
+live in one local Bun process, with every file read, command run, and provider
+call passing through a single recorded tool path — work that is inspectable
+rather than incidental.
+
+> [!IMPORTANT]
+> **That describes the design, not today's binary.** Falryn is early. The
+> foundation below works and is tested on three platforms; the agent itself is
+> not built yet. Nothing here talks to a model provider.
+
+### What works today
+
+The CLI, its output contracts, and the local state layer underneath them:
+
+```bash
+falryn doctor --format json   # bounded environment and storage diagnostics
+falryn config show            # effective configuration across profile layers
+falryn data reset             # preview or remove Falryn-owned local data
+falryn                        # opens the interactive shell on a capable terminal
+```
+
+Every command emits `human`, `json`, `jsonl`, or `quiet` output against a
+versioned schema; results go to stdout and diagnostics to stderr, always.
+State is local SQLite with versioned migrations. There is an OpenTUI shell,
+credential storage with redaction, and a compiled single-file executable.
+
+### What is designed but not built
+
+The agent runtime, model providers, and the tool-call lifecycle. Workspace,
+search, Git, and LSP tools. Context management, compression, Brief, Hush, Loom,
+memory, artifacts, and computer use. These have written contracts in
+[Falryn Docs](https://github.com/tyldra-org/falryn-docs) and open issues; they
+have no implementation. Documentation here describes targets — treat
+[`CURRENT-STATE.md`](CURRENT-STATE.md) as the only record of what actually runs.
 
 > [!NOTE]
-> **Pre-release, and not yet open to contributions.** Falryn has published no
-> version. It runs from source, and `main` is the only supported revision.
-> [`CURRENT-STATE.md`](CURRENT-STATE.md) is the only inventory of what is
-> actually implemented — the documentation describes contracts, not shipped
-> behavior.
->
-> The foundation is still being built, so issues and pull requests are
-> restricted to collaborators for now. Reading, forking, and using the code are
-> not: Falryn is [Apache-2.0](LICENSE). Security reports are welcome today —
-> see [`SECURITY.md`](SECURITY.md). This opens up once the contracts settle.
+> Issues and pull requests are restricted to collaborators while the foundation
+> is built. Reading, forking, and using the code are not: Falryn is
+> [Apache-2.0](LICENSE). Security reports are welcome today — see
+> [`SECURITY.md`](SECURITY.md).
 
 ## Quickstart
 

@@ -17,10 +17,14 @@ worse than none.
 
 ## Required guidance and skills
 
+Three of these skills — `typescript-best-practices`, `opentui`, and
+`github-workflow` — are general-purpose and are supplied by the agent's own
+environment; this repository does not vendor third-party work it does not own.
+`falryn-delivery-loop` is Falryn-specific and is vendored in `.agents/skills/`.
+
 - Read the applicable global `CLAUDE.md` first, then read and apply this
   repository-level guidance before acting. Both instruction layers are required.
-- Load and follow the `typescript-best-practices` skill vendored in
-  `.agents/skills/` before creating,
+- Load and follow the `typescript-best-practices` skill before creating,
   editing, updating, moving, deleting, reviewing, debugging, or configuring any
   TypeScript, TSX, JavaScript, type declaration, TypeScript test, build script,
   or `tsconfig` behavior. This requirement applies to new features, bug fixes,
@@ -28,15 +32,15 @@ worse than none.
   work. Select and read the skill's relevant module, then apply its guidance for
   strict typing, contracts, module boundaries, dependency direction, async and
   error handling, tests, compiler configuration, and maintainability.
-- Load and follow the `opentui` skill vendored in `.agents/skills/` before
-  creating, editing, updating, moving, deleting, reviewing, debugging,
-  testing, configuring, or packaging any OpenTUI-related code or behavior.
-  This includes React TUI components, presentation adapters, renderer
-  lifecycle, screen modes, layout, styling, input, focus, keymaps, animation,
-  terminal compatibility, frame and interaction tests, native assets, and Bun
-  standalone packaging. Inspect the installed OpenTUI version and read the
-  skill-routed current upstream documentation for every affected API; use
-  documented components, explicit renderer cleanup, and focused tests.
+- Load and follow the `opentui` skill before creating, editing, updating,
+  moving, deleting, reviewing, debugging, testing, configuring, or packaging
+  any OpenTUI-related code or behavior. This includes React TUI components,
+  presentation adapters, renderer lifecycle, screen modes, layout, styling,
+  input, focus, keymaps, animation, terminal compatibility, frame and
+  interaction tests, native assets, and Bun standalone packaging. Inspect the
+  installed OpenTUI version and read the skill-routed current upstream
+  documentation for every affected API; use documented components, explicit
+  renderer cleanup, and focused tests.
 - Before creating, retaining, or refactoring terminal UI behavior, inventory
   the installed OpenTUI API and its current upstream documentation for the
   complete affected capability. Prefer documented components and renderables,
@@ -52,8 +56,7 @@ worse than none.
 - When a task touches OpenTUI TypeScript or TSX, both skills are mandatory:
   apply the relevant `typescript-best-practices` module and OpenTUI upstream
   guidance before changing code.
-- Load and follow the `github-workflow` skill vendored in
-  `.agents/skills/` before any Git or GitHub
+- Load and follow the `github-workflow` skill before any Git or GitHub
   work, including status inspection, branches, commits, pushes, pull requests,
   reviews, issues, milestones, Projects, merges, releases, rulesets, or
   multi-repository delivery. Apply its safety and verification rules together
