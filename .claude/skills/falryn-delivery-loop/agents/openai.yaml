@@ -1,4 +1,0 @@
-interface:
-  display_name: "Falryn Delivery Loop"
-  short_description: "Run single-agent Falryn delivery cycles."
-  default_prompt: "Use $falryn-delivery-loop for Deliver — Target: Issue #<number>."

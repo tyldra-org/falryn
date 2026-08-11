@@ -39,10 +39,6 @@ logs/
 .envrc
 !.envrc.example
 
-# Local agent settings
-.claude/settings.local.json
-.claude/*.local.*
-
 # Editors and IDEs
 .idea/
 .fleet/

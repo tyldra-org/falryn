@@ -77,12 +77,6 @@ jobs:
       - name: Verify direct dependency and generated-output ownership
         run: bun run verify:repository
 
-      - name: Verify the vendored skill trees match
-        run: bun run verify:skills
-
-      - name: Verify the agent instruction files match
-        run: bun run verify:instructions
-
   dependency-audit:
     name: Dependency advisory audit
     needs: dependency-integrity
