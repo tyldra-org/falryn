@@ -22,16 +22,37 @@ Practically, this means:
   using the code.
 
 This will change once the foundation is complete and the contracts are stable.
-The rest of this document is the workflow that will apply then, and is what the
-maintainer follows today.
+What a contribution will need then is below, and it is deliberately ordinary.
 
 ---
 
-The canonical issue lifecycle and the `Plan`, `Implement`, and `Verify` agent
-modes are defined in
-[`falryn-docs/DEVELOPMENT.md`](https://github.com/tyldra-org/falryn-docs/blob/main/DEVELOPMENT.md).
+## What is expected of a contribution
 
-## Workflow
+Ordinary GitHub practice, and nothing beyond it:
+
+1. an issue describing the change, so the intent is agreed before the work;
+2. a short-lived branch, named with a type prefix such as
+   `feat/123-chat-composer`;
+3. one focused pull request that says what it changes and how it was checked;
+4. `bun run check` passing locally, and CI green on the pull request.
+
+That is the whole requirement. Use whatever editor, agent, or process you like
+to get there — none of the tooling described below is imposed on you, and a
+pull request is never judged on how it was produced.
+
+## How the maintainer works
+
+The rest of this document describes the maintainer's own agent-assisted
+workflow. It is written down because it has to be precise for the tooling that
+executes it, not because a contributor has to adopt it. Read it if you are
+curious about why pull requests here look the way they do, or if you are
+working on this repository with an agent and want it to behave consistently.
+
+Some of it is not available to a contributor anyway: Project status
+transitions, merge ordering, and post-merge synchronisation all need write
+access to the repository.
+
+### Delivery lifecycle
 
 1. Use a GitHub issue for each meaningful feature, bug, refactor, or
    documentation outcome.
@@ -82,7 +103,7 @@ closing application delivery PR; a companion docs branch and PR are added only
 when canonical documentation changes. If a parent needs integration code,
 create an explicit integration subissue rather than a parent mega-PR.
 
-## Agent modes
+### Agent modes
 
 Ordinary prompts do not need repository names. `Issue`, `Parent issue`, `PR`,
 and milestone targets resolve to `falryn`; the delivery PR includes explicitly
@@ -113,7 +134,7 @@ when a checkout is available plus the repository-qualified path and GitHub
 link. Machine-specific absolute paths belong only in the report, never in
 committed documentation or GitHub planning records.
 
-## Documentation
+### Documentation
 
 User-facing or developer-facing documentation belongs in the companion
 `falryn-docs` repository. Before implementation, locate the affected canonical

@@ -3,6 +3,18 @@
 Falryn is a Bun and TypeScript terminal product built from scratch. Keep its
 source and tests small, explicit, and user-focused.
 
+## Who this file is for
+
+This configures an agent working in this repository on the maintainer's behalf.
+It is not a house style anyone else has to adopt. If you have forked Falryn, or
+you work with different tooling or no agent at all, ignore this file — nothing
+in it is a condition of contributing, and a change is judged on the change, not
+on how it was produced.
+
+What the rules below do bind is an agent that is following them: for that agent
+they are mandatory, because a workflow that is optional halfway through is
+worse than none.
+
 ## Required guidance and skills
 
 - Read the applicable global `CLAUDE.md` first, then read and apply this
