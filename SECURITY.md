@@ -7,6 +7,11 @@ Report suspected vulnerabilities privately through GitHub's
 for this repository. Do not open a public issue for a vulnerability: the issue
 tracker is world-readable, and a public report is a disclosure.
 
+This channel is open to everyone. Falryn is not otherwise accepting outside
+issues or pull requests while its foundation is being built — see
+[`CONTRIBUTING.md`](CONTRIBUTING.md) — but that restriction deliberately does
+not apply here. A vulnerability you cannot report is worse than one you can.
+
 Expect an acknowledgement within seven days. Falryn is maintained by one person,
 so a fix may take longer than an acknowledgement does; the advisory thread is
 where that timeline is agreed.

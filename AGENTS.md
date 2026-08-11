@@ -87,7 +87,7 @@ tests small, explicit, and user-focused.
 - Work from a Ready GitHub issue when the change is meaningful. Do not create
   phase, gate, evidence, or duplicate status-inventory documents.
 - Follow the canonical delivery workflow in
-  [`falryn-docs/DEVELOPMENT.md`](https://github.com/yogeshprasad098/falryn-docs/blob/main/DEVELOPMENT.md):
+  [`falryn-docs/DEVELOPMENT.md`](https://github.com/tyldra-org/falryn-docs/blob/main/DEVELOPMENT.md):
   one PR-sized standalone issue or native implementation subissue maps to one
   short-lived implementation branch and one delivery PR containing `Closes
   #<issue>`, plus a companion docs PR only when canonical documentation
@@ -146,7 +146,7 @@ tests small, explicit, and user-focused.
   ...`, `Deliver — Target: ...`, and `Next — Target: Falryn Roadmap` as
   mandatory mode selectors. Before acting, read the
   canonical contracts in
-  [`falryn-docs/DEVELOPMENT.md`](https://github.com/yogeshprasad098/falryn-docs/blob/main/DEVELOPMENT.md#recognized-prompt-forms),
+  [`falryn-docs/DEVELOPMENT.md`](https://github.com/tyldra-org/falryn-docs/blob/main/DEVELOPMENT.md#recognized-prompt-forms),
   resolve the exact GitHub target, and obey the selected mode's scope, allowed
   mutations, stop conditions, status transitions, validation, and final report.
   `Merge — Target: PR #N` is the separate manual delivery action after a fresh
@@ -156,7 +156,7 @@ tests small, explicit, and user-focused.
   report with one copy-ready `Suggested next prompt: ...` selected from current
   GitHub state.
   Follow the transition rules in
-  [`falryn-docs/DEVELOPMENT.md`](https://github.com/yogeshprasad098/falryn-docs/blob/main/DEVELOPMENT.md#suggesting-the-next-prompt).
+  [`falryn-docs/DEVELOPMENT.md`](https://github.com/tyldra-org/falryn-docs/blob/main/DEVELOPMENT.md#suggesting-the-next-prompt).
   Use exact repository object numbers or milestone titles, never placeholders.
   A suggestion helps the user choose the next action; it does not authorize the
   agent to run that action.
@@ -173,7 +173,7 @@ tests small, explicit, and user-focused.
   repository-qualified path with a canonical GitHub link when one exists.
   Resolve the physical path at report time; never commit a user-specific
   absolute path or copy one into an issue or pull request. Follow
-  [`falryn-docs/DEVELOPMENT.md`](https://github.com/yogeshprasad098/falryn-docs/blob/main/DEVELOPMENT.md#reporting-file-locations).
+  [`falryn-docs/DEVELOPMENT.md`](https://github.com/tyldra-org/falryn-docs/blob/main/DEVELOPMENT.md#reporting-file-locations).
 - Before planning, implementing, or reviewing behavior, use
   `falryn-docs/DOCUMENTATION-MAP.md` and the issue's canonical-design links to
   locate and read the exact documentation owners. Prefer the local

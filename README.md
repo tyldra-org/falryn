@@ -27,10 +27,16 @@ and provider call passes through one recorded tool path, so the work is
 inspectable rather than incidental.
 
 > [!NOTE]
-> Falryn is pre-release and has published no version. It runs from source, and
-> `main` is the only supported revision. [`CURRENT-STATE.md`](CURRENT-STATE.md)
-> is the only inventory of what is actually implemented — the documentation
-> describes contracts, not shipped behavior.
+> **Pre-release, and not yet open to contributions.** Falryn has published no
+> version. It runs from source, and `main` is the only supported revision.
+> [`CURRENT-STATE.md`](CURRENT-STATE.md) is the only inventory of what is
+> actually implemented — the documentation describes contracts, not shipped
+> behavior.
+>
+> The foundation is still being built, so issues and pull requests are
+> restricted to collaborators for now. Reading, forking, and using the code are
+> not: Falryn is [Apache-2.0](LICENSE). Security reports are welcome today —
+> see [`SECURITY.md`](SECURITY.md). This opens up once the contracts settle.
 
 ## Quickstart
 

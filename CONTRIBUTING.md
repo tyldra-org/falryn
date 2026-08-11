@@ -1,8 +1,35 @@
 # Contributing to Falryn
 
+## Falryn is not open to outside contributions yet
+
+Falryn is public so its source, decisions, and history can be read. It is not
+yet open for contribution: the foundational work is still being built, and the
+architecture is still moving underneath it. Accepting outside changes now would
+mean reviewing work against contracts that are days from changing, which wastes
+the contributor's time more than the maintainer's.
+
+Practically, this means:
+
+- **Issues and pull requests are restricted to collaborators.** GitHub refuses
+  them from anyone else, so opening one is not a review decision that went
+  against you — the repository declines it before it reaches a maintainer.
+- **Security reports are the exception, and they are welcome now.** Report them
+  privately through the process in [`SECURITY.md`](SECURITY.md); that channel
+  stays open.
+- **The license already permits use.** Falryn is
+  [Apache-2.0](LICENSE): fork it, read it, build it, and ship it inside your own
+  product without asking. Not accepting contributions is not a restriction on
+  using the code.
+
+This will change once the foundation is complete and the contracts are stable.
+The rest of this document is the workflow that will apply then, and is what the
+maintainer follows today.
+
+---
+
 The canonical issue lifecycle and the `Plan`, `Implement`, and `Verify` agent
 modes are defined in
-[`falryn-docs/DEVELOPMENT.md`](https://github.com/yogeshprasad098/falryn-docs/blob/main/DEVELOPMENT.md).
+[`falryn-docs/DEVELOPMENT.md`](https://github.com/tyldra-org/falryn-docs/blob/main/DEVELOPMENT.md).
 
 ## Workflow
 
@@ -91,7 +118,7 @@ committed documentation or GitHub planning records.
 User-facing or developer-facing documentation belongs in the companion
 `falryn-docs` repository. Before implementation, locate the affected canonical
 owner through
-[`falryn-docs/DOCUMENTATION-MAP.md`](https://github.com/yogeshprasad098/falryn-docs/blob/main/DOCUMENTATION-MAP.md)
+[`falryn-docs/DOCUMENTATION-MAP.md`](https://github.com/tyldra-org/falryn-docs/blob/main/DOCUMENTATION-MAP.md)
 and the issue's canonical links. Read the owner and classify its impact as
 `create`, `update`, `verify-unaffected`, or `not-applicable`.
 
