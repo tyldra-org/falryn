@@ -1,0 +1,4 @@
+interface:
+  display_name: "GitHub Workflow"
+  short_description: "Operate Git and GitHub safely end to end"
+  default_prompt: "Use $github-workflow to resolve context, execute this Git or GitHub task safely, and verify the resulting local and remote state."

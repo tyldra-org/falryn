@@ -1,17 +1,19 @@
 # Vendored agent skills
 
-Only `falryn-delivery-loop` lives here. It is Falryn-specific — it encodes this
-repository's delivery contract and exists nowhere else — so vendoring it is what
-makes `Deliver` and `Next` behave the same for anyone working on Falryn.
+These are the skills an agent is expected to load when working on Falryn.
+`CLAUDE.md` and `AGENTS.md` name them; vendoring them here is what makes those
+references resolve for anyone, rather than only on the maintainer's machine.
 
-The other skills `AGENTS.md` requires (`typescript-best-practices`, `opentui`,
-`github-workflow`) are **not** vendored. They are general-purpose and
-third-party, and copying them here would have meant redistributing work this
-repository does not own under its own licence, as well as making agent tooling
-larger than `src/`. An agent supplies them from its own environment.
+| Skill | Loaded before |
+| --- | --- |
+| `typescript-best-practices` | any TypeScript, TSX, test, build-script, or `tsconfig` change |
+| `opentui` | any terminal UI, renderer, layout, input, or packaging change |
+| `github-workflow` | any Git or GitHub change |
+| `falryn-delivery-loop` | a `Deliver` or `Next` prompt |
 
 `.claude/skills/` holds a byte-identical copy, because the two tools read
-different directories. `bun run verify:skills` fails if they diverge.
+different directories. `bun run verify:skills` fails if they diverge — keeping
+one and forgetting the other is the failure this repository expects to make.
 
 None of this is a requirement for a contributor. It configures an agent working
 here on the maintainer's behalf; see the "Who this file is for" note in

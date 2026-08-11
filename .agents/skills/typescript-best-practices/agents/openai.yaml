@@ -1,0 +1,4 @@
+interface:
+  display_name: "TypeScript Best Practices"
+  short_description: "Guide TypeScript, React, and Next.js work"
+  default_prompt: "Use $typescript-best-practices to choose and apply focused TypeScript engineering guidance."
