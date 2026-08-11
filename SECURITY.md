@@ -62,4 +62,3 @@ worth attacking:
 | A model provider's own service | Data you send a provider is governed by that provider's policies |
 | Configuration you control | Editing your own config or state is not an attack vector |
 | Findings needing prior local code execution | An attacker already running as you has no boundary left to cross |
-| `ravencode-references` | Research material, not a dependency of any Falryn build |

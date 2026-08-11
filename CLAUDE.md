@@ -1,8 +1,7 @@
 # Falryn agent guidance
 
-Falryn is a new Bun and TypeScript terminal product built from scratch. It is
-not a RavenCode migration, fork, or compatibility layer. Keep its source and
-tests small, explicit, and user-focused.
+Falryn is a Bun and TypeScript terminal product built from scratch. Keep its
+source and tests small, explicit, and user-focused.
 
 ## Required guidance and skills
 
@@ -73,15 +72,15 @@ tests small, explicit, and user-focused.
   an invocation, adapt it to a domain tool, execute it through a narrow
   boundary, then return typed output and artifacts. Do not let those layers
   access files or external tools directly.
-- Earlier RavenCode documents and archives are research references only. Agents
-  may inspect their source, tests, fixtures, and history to understand call
-  flow, algorithms, invariants, failures, performance choices, and edge cases.
-  Translate useful findings into language-independent Falryn contracts and
-  implement them for TypeScript/Bun. Archive repositories do not define Falryn
-  truth or become dependencies; exact source/text reuse requires explicit
-  provenance, license, attribution, changed-assumption, destination, and test
-  review. Record Falryn decisions in focused GitHub issues and protect adopted
-  behavior with Falryn-owned tests or fixtures.
+- Any external project consulted during design is a research reference only.
+  Agents may inspect its source, tests, fixtures, and history to understand
+  call flow, algorithms, invariants, failures, performance choices, and edge
+  cases. Translate useful findings into language-independent Falryn contracts
+  and implement them for TypeScript/Bun. A consulted repository never defines
+  Falryn truth and never becomes a dependency; exact source or text reuse
+  requires explicit provenance, license, attribution, changed-assumption,
+  destination, and test review. Record Falryn decisions in focused GitHub
+  issues and protect adopted behavior with Falryn-owned tests or fixtures.
 - Treat the companion `falryn-docs` repository as the home for user and
   developer documentation. Keep this repository's Markdown code-adjacent.
 - Work from a Ready GitHub issue when the change is meaningful. Do not create
@@ -151,7 +150,7 @@ tests small, explicit, and user-focused.
   mutations, stop conditions, status transitions, validation, and final report.
   `Merge — Target: PR #N` is the separate manual delivery action after a fresh
   Verify; Deliver follows its distinct composite contract. Do not interpret
-  RavenCode milestone or phase identifiers as Falryn targets.
+  another project's milestone or phase identifiers as Falryn targets.
 - End every Plan, Implement, Verify, Deliver, Next, merge, and release-related
   report with one copy-ready `Suggested next prompt: ...` selected from current
   GitHub state.
