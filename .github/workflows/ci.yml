@@ -23,13 +23,8 @@ jobs:
       - name: Check out the reviewed revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Set up Bun from package.json
-        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-        with:
-          bun-version-file: package.json
-
-      - name: Install locked dependencies
-        run: bun install --frozen-lockfile
+      - name: Set up Bun and install dependencies
+        uses: ./.github/actions/setup-bun
 
       - name: Check formatting
         run: bun run format:check
@@ -44,13 +39,8 @@ jobs:
       - name: Check out the reviewed revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Set up Bun from package.json
-        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-        with:
-          bun-version-file: package.json
-
-      - name: Install locked dependencies
-        run: bun install --frozen-lockfile
+      - name: Set up Bun and install dependencies
+        uses: ./.github/actions/setup-bun
 
       - name: Run Biome quality checks
         run: bun run quality
@@ -65,13 +55,8 @@ jobs:
       - name: Check out the reviewed revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Set up Bun from package.json
-        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-        with:
-          bun-version-file: package.json
-
-      - name: Install locked dependencies
-        run: bun install --frozen-lockfile
+      - name: Set up Bun and install dependencies
+        uses: ./.github/actions/setup-bun
 
       - name: Run the strict TypeScript check
         run: bun run typecheck
@@ -86,13 +71,8 @@ jobs:
       - name: Check out the reviewed revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Set up Bun from package.json
-        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-        with:
-          bun-version-file: package.json
-
-      - name: Install locked dependencies
-        run: bun install --frozen-lockfile
+      - name: Set up Bun and install dependencies
+        uses: ./.github/actions/setup-bun
 
       - name: Verify direct dependency and generated-output ownership
         run: bun run verify:repository
@@ -107,13 +87,8 @@ jobs:
       - name: Check out the reviewed revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Set up Bun from package.json
-        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-        with:
-          bun-version-file: package.json
-
-      - name: Install locked dependencies
-        run: bun install --frozen-lockfile
+      - name: Set up Bun and install dependencies
+        uses: ./.github/actions/setup-bun
 
       - name: Audit installed dependencies for known vulnerabilities
         run: bun audit
@@ -143,13 +118,8 @@ jobs:
       - name: Check out the reviewed revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Set up Bun from package.json
-        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-        with:
-          bun-version-file: package.json
-
-      - name: Install locked dependencies
-        run: bun install --frozen-lockfile
+      - name: Set up Bun and install dependencies
+        uses: ./.github/actions/setup-bun
 
       - name: Run the platform test command
         run: ${{ matrix.command }}
@@ -166,13 +136,8 @@ jobs:
       - name: Check out the reviewed revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Set up Bun from package.json
-        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-        with:
-          bun-version-file: package.json
-
-      - name: Install locked dependencies
-        run: bun install --frozen-lockfile
+      - name: Set up Bun and install dependencies
+        uses: ./.github/actions/setup-bun
 
       - name: Build the standalone executable
         run: bun run build
@@ -192,13 +157,8 @@ jobs:
       - name: Check out the reviewed revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Set up Bun from package.json
-        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-        with:
-          bun-version-file: package.json
-
-      - name: Install locked dependencies
-        run: bun install --frozen-lockfile
+      - name: Set up Bun and install dependencies
+        uses: ./.github/actions/setup-bun
 
       - name: Build the macOS arm64 standalone executable
         run: bun run build:macos-arm64
@@ -218,13 +178,8 @@ jobs:
       - name: Check out the reviewed revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Set up Bun from package.json
-        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-        with:
-          bun-version-file: package.json
-
-      - name: Install locked dependencies
-        run: bun install --frozen-lockfile
+      - name: Set up Bun and install dependencies
+        uses: ./.github/actions/setup-bun
 
       - name: Build the Windows x64 standalone executable
         run: bun run build:windows-x64

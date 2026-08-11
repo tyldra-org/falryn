@@ -1,0 +1,4 @@
+# Every path is owned by the maintainer. This is review routing made
+# explicit rather than implied by being the only organization member: it keeps
+# working unchanged on the day a second maintainer is added.
+*       @yogeshprasad098

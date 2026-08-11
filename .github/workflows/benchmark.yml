@@ -29,12 +29,7 @@ jobs:
           fetch-depth: 0
 
       - name: Set up Bun for the selected benchmark candidate
-        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-        with:
-          bun-version-file: package.json
-
-      - name: Install the selected benchmark candidate's locked dependencies
-        run: bun install --frozen-lockfile
+        uses: ./.github/actions/setup-bun
 
       - name: Build the selected macOS arm64 candidate executable
         run: bun run build:macos-arm64
@@ -57,13 +52,9 @@ jobs:
         run: test "$BENCHMARK_BASE_REVISION" != "$BENCHMARK_CANDIDATE_REVISION"
 
       - name: Set up Bun for the base revision
-        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        uses: ./.github/actions/setup-bun
         with:
-          bun-version-file: baseline/package.json
-
-      - name: Install the base revision's locked dependencies
-        working-directory: baseline
-        run: bun install --frozen-lockfile
+          working-directory: baseline
 
       - name: Build the base macOS arm64 executable
         working-directory: baseline

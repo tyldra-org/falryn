@@ -1,0 +1,44 @@
+# Falryn pins every action to a full commit SHA, which the organization
+# requires. A pinned SHA cannot go stale visibly: it keeps resolving long after
+# the release it names has been superseded, so an update has to be scheduled
+# rather than noticed.
+version: 2
+
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: ci
+    labels:
+      - "type: infrastructure"
+
+  # Also covers `.github/actions/setup-bun`: Dependabot treats a composite
+  # action as its own manifest, so the pin owned there is updated too.
+  - package-ecosystem: github-actions
+    directory: /.github/actions/setup-bun
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: ci
+    labels:
+      - "type: infrastructure"
+
+  - package-ecosystem: bun
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: chore
+    labels:
+      - "type: infrastructure"
+    # Direct dependencies are admitted deliberately by
+    # `bun run tools/repository-integrity.ts`, whose checked-in policy pins an
+    # exact version. A direct bump has to change that policy in the same pull
+    # request, so grouping them keeps one review rather than several that each
+    # fail the integrity gate on their own.
+    groups:
+      direct-dependencies:
+        patterns:
+          - "*"
