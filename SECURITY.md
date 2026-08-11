@@ -21,6 +21,25 @@ where that timeline is agreed.
 Falryn has not published a release. Until it does, only the current `main`
 branch receives fixes, and no earlier revision is supported.
 
+## Threat model
+
+Falryn is an agent that runs **locally, as you, with your privileges**. It is
+designed to read and write your files, hold your provider credentials, and
+execute external commands on your behalf. That is the product, not a flaw in it.
+
+**Falryn does not sandbox the agent.** The tool boundary exists so that every
+file read, command run, and provider call is validated, typed, and recorded —
+it is an auditability and correctness boundary, not a security isolation one. It
+is not designed to contain a model that has been persuaded to do something
+harmful, and it should not be relied on as though it were.
+
+If you need real isolation — because you are running untrusted input, an
+untrusted model, or an untrusted repository — run Falryn inside a container or a
+virtual machine. Nothing in Falryn substitutes for that.
+
+Stating this plainly is deliberate: a permission prompt that users believe is a
+sandbox is more dangerous than no prompt at all.
+
 ## What is in scope
 
 Falryn runs locally and holds credentials, reads and writes a user's files, and
@@ -37,8 +56,10 @@ worth attacking:
 
 ## What is not in scope
 
-- Vulnerabilities in a model provider's service rather than in Falryn's use of it.
-- A finding that requires an attacker to already have local code execution as
-  the user running Falryn.
-- The contents of `ravencode-references`, which is research material rather than
-  a dependency.
+| Category | Why |
+| --- | --- |
+| Sandbox escape | The tool boundary is not a sandbox — see the threat model above |
+| A model provider's own service | Data you send a provider is governed by that provider's policies |
+| Configuration you control | Editing your own config or state is not an attack vector |
+| Findings needing prior local code execution | An attacker already running as you has no boundary left to cross |
+| `ravencode-references` | Research material, not a dependency of any Falryn build |
