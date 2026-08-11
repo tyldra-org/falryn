@@ -34,10 +34,9 @@ The implementation scaffold introduced by
 - a repository-owned GitHub Actions workflow at `.github/workflows/ci.yml` that
   triggers for pull requests, pushes to `main`, and manual dispatch, installs
   the manifest-selected Bun version with the frozen lockfile, runs separate
-  quality, type-check, build, and test gates on Blacksmith's
-  `blacksmith-4vcpu-ubuntu-2404-arm`, runs the macOS suites and manual benchmark
-  on `blacksmith-6vcpu-macos-latest`, and runs the Windows source baseline on
-  `blacksmith-4vcpu-windows-2025`; and
+  quality, type-check, build, and test gates on GitHub-hosted
+  `ubuntu-latest`, runs the macOS suites and manual benchmark on
+  `macos-latest`, and runs the Windows source baseline on `windows-latest`; and
 - a Bun standalone compilation target at `dist/falryn`.
 
 The workflow's first pull-request run in
@@ -919,7 +918,7 @@ Five limitations belong with those numbers:
 - **A relative regression gate now owns the comparison boundary.**
   [#415](https://github.com/yogeshprasad098/falryn/issues/415) and
   [#418](https://github.com/yogeshprasad098/falryn/issues/418) add a
-  manually dispatched `blacksmith-6vcpu-macos-latest` arm64 job that compares
+  manually dispatched `macos-latest` arm64 job that compares
   the selected dispatch ref against a required `benchmark_base_ref` (default
   `main`), builds each exact revision, and completes two fixed same-revision settling passes
   immediately before every report in two temporally symmetric brackets on one
@@ -956,15 +955,14 @@ Five limitations belong with those numbers:
   threshold bypass. The benchmark is not scheduled for ordinary pull-request or
   `main` push runs.
   Ordinary CI exposes format, Biome quality, TypeScript, direct-dependency
-  integrity, and Bun advisory-audit jobs separately. Blacksmith's 4-vCPU Ubuntu
-  ARM runner runs the full Linux source and compiled CLI suites; its 6-vCPU
-  Apple-silicon macOS runner runs the full macOS suite, compiled CLI, and
-  pseudo-terminal suites; and its 4-vCPU Windows Server 2025 public-beta runner
-  runs the Windows baseline for report-destination safety, source ownership,
-  bootstrap, build identity, and platform-root behavior. It detects host-path
-  and root differences only: it is not a support, shell, terminal, installer,
-  signing, or release qualification. The Windows baseline makes no Docker or
-  pseudo-terminal claim.
+  integrity, and Bun advisory-audit jobs separately. GitHub-hosted
+  `ubuntu-latest` runs the full Linux source and compiled CLI suites;
+  `macos-latest` runs the full macOS suite, compiled CLI, and pseudo-terminal
+  suites; and `windows-latest` runs the Windows baseline for report-destination
+  safety, source ownership, bootstrap, build identity, and platform-root
+  behavior. It detects host-path and root differences only: it is not a support,
+  shell, terminal, installer, signing, or release qualification. The Windows
+  baseline makes no pseudo-terminal claim.
   Database size, contention, throughput, cadence, memory, and shutdown remain
   diagnostic observations rather than newly invented budgets. Because the base
   predates report emission, CI overlays only this PR's test-only report harness

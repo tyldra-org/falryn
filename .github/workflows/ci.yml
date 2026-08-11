@@ -23,7 +23,7 @@ concurrency:
 jobs:
   format:
     name: Format
-    runs-on: blacksmith-4vcpu-ubuntu-2404-arm
+    runs-on: ubuntu-latest
     timeout-minutes: 10
 
     steps:
@@ -44,7 +44,7 @@ jobs:
   lint:
     name: Lint and import organization
     needs: format
-    runs-on: blacksmith-4vcpu-ubuntu-2404-arm
+    runs-on: ubuntu-latest
     timeout-minutes: 10
 
     steps:
@@ -65,7 +65,7 @@ jobs:
   typecheck:
     name: TypeScript
     needs: lint
-    runs-on: blacksmith-4vcpu-ubuntu-2404-arm
+    runs-on: ubuntu-latest
     timeout-minutes: 10
 
     steps:
@@ -86,7 +86,7 @@ jobs:
   dependency-integrity:
     name: Dependency integrity
     needs: typecheck
-    runs-on: blacksmith-4vcpu-ubuntu-2404-arm
+    runs-on: ubuntu-latest
     timeout-minutes: 10
 
     steps:
@@ -107,7 +107,7 @@ jobs:
   dependency-audit:
     name: Dependency advisory audit
     needs: dependency-integrity
-    runs-on: blacksmith-4vcpu-ubuntu-2404-arm
+    runs-on: ubuntu-latest
     timeout-minutes: 10
 
     steps:
@@ -136,14 +136,14 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: Ubuntu 24.04 arm64
-            runner: blacksmith-4vcpu-ubuntu-2404-arm
+          - name: Ubuntu latest x64
+            runner: ubuntu-latest
             command: bun run test
           - name: macOS latest arm64
-            runner: blacksmith-6vcpu-macos-latest
+            runner: macos-latest
             command: bun run test
-          - name: Windows Server 2025 x64 (beta)
-            runner: blacksmith-4vcpu-windows-2025
+          - name: Windows latest x64
+            runner: windows-latest
             command: bun run test:platform-baseline
 
     steps:
@@ -166,7 +166,7 @@ jobs:
     needs:
       - typecheck
       - dependency-integrity
-    runs-on: blacksmith-4vcpu-ubuntu-2404-arm
+    runs-on: ubuntu-latest
     timeout-minutes: 20
 
     steps:
@@ -192,7 +192,7 @@ jobs:
     needs:
       - typecheck
       - dependency-integrity
-    runs-on: blacksmith-6vcpu-macos-latest
+    runs-on: macos-latest
     timeout-minutes: 20
 
     steps:
@@ -216,7 +216,7 @@ jobs:
   macos-arm64-benchmark-regression:
     name: macOS arm64 benchmark regression
     if: github.event_name == 'workflow_dispatch'
-    runs-on: blacksmith-6vcpu-macos-latest
+    runs-on: macos-latest
     timeout-minutes: 20
 
     steps:
