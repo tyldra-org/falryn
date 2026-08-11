@@ -13,6 +13,11 @@ node_modules/
 /blob-report/
 *.lcov
 *.tsbuildinfo
+# `bun build --compile` writes an intermediate beside its output and renames it
+# on success. An interrupted build leaves a ~60 MB file named for a content
+# hash: disposable, unreproducible, and one `git add -A` away from being
+# committed.
+*.bun-build
 
 # Caches and temporary work
 /.cache/
