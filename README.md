@@ -119,4 +119,11 @@ takes no direct pushes.
 
 ## License
 
-[Apache License 2.0](LICENSE).
+[Apache License 2.0](LICENSE) — Copyright 2026 Yogesh Prasad.
+
+The grant covers the Falryn software: `src/`, `tools/`, the build and CI
+configuration, and this repository's documentation. `.agents/skills/` and
+`.claude/skills/` hold development-time agent guidance that is not part of the
+software and is not present in the compiled executable; anything there
+originating from another project stays under its own licence. See
+[`NOTICE`](NOTICE).
