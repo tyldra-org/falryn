@@ -27,12 +27,19 @@ export const RUN_MODES = ["source", "compiled"] as const;
 export type RunMode = (typeof RUN_MODES)[number];
 
 /**
- * The virtual root `bun build --compile` mounts a standalone executable's
+ * The virtual roots `bun build --compile` mounts a standalone executable's
  * modules under. A source run resolves to a real `file://` path instead, so the
  * prefix is the one signal that does not depend on how the binary was named or
  * where it was copied.
+ *
+ * There is more than one because Bun names the root per host: `/$bunfs/`
+ * everywhere except Windows, where a file URL is invalid without a drive
+ * letter, so it mounts `B:/~BUN/` instead. Both separators are accepted because
+ * the drive-letter form is what makes the Windows spelling host-specific in the
+ * first place. Checking only the POSIX root is what made a compiled Windows
+ * binary report itself as a source build.
  */
-const COMPILED_MODULE_ROOT = "/$bunfs/";
+const COMPILED_MODULE_ROOTS = ["/$bunfs/", "B:/~BUN/", "B:\\~BUN\\"] as const;
 
 export type BuildIdentity = {
   readonly version: string;
@@ -46,7 +53,7 @@ export type BuildIdentity = {
 
 /** How this module decides, exposed so a test can drive both branches. */
 export function runModeFor(moduleUrl: string): RunMode {
-  return moduleUrl.includes(COMPILED_MODULE_ROOT) ? "compiled" : "source";
+  return COMPILED_MODULE_ROOTS.some((root) => moduleUrl.includes(root)) ? "compiled" : "source";
 }
 
 /** What this process is. */

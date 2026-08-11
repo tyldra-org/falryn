@@ -28,6 +28,12 @@ describe("the run mode", () => {
     // was copied to.
     expect(runModeFor("file:///$bunfs/root/falryn")).toBe("compiled");
     expect(runModeFor("file:///Users/someone/falryn/src/main.ts")).toBe("source");
+    // Windows mounts the same graph under a drive letter, because a file URL
+    // without one is invalid. Missing this is what made the compiled Windows
+    // executable report `source build` to a user reading `--version`.
+    expect(runModeFor("file:///B:/~BUN/root/falryn")).toBe("compiled");
+    expect(runModeFor("B:\\~BUN\\root\\falryn")).toBe("compiled");
+    expect(runModeFor("file:///C:/Users/someone/falryn/src/main.ts")).toBe("source");
     // A checkout that happens to contain the literal name is still a source
     // run, because the marker is a path root rather than a substring anywhere.
     expect(runModeFor("file:///Users/someone/bunfs/src/main.ts")).toBe("source");
