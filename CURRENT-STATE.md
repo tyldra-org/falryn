@@ -36,7 +36,7 @@ The implementation scaffold introduced by
   the manifest-selected Bun version with the frozen lockfile, runs separate
   quality, type-check, build, and test gates on GitHub-hosted
   `ubuntu-latest`, runs the macOS suites on `macos-latest`, and runs the Windows
-  source baseline on `windows-latest`;
+  source baseline and compiled CLI smoke on `windows-latest`;
 - a separate, manually dispatched `.github/workflows/benchmark.yml` that runs
   the macOS arm64 benchmark comparison on `macos-latest`; and
 - a Bun standalone compilation target at `dist/falryn`.
@@ -963,9 +963,12 @@ Five limitations belong with those numbers:
   `macos-latest` runs the full macOS suite, compiled CLI, and pseudo-terminal
   suites; and `windows-latest` runs the Windows baseline for report-destination
   safety, source ownership, bootstrap, build identity, and platform-root
-  behavior. It detects host-path and root differences only: it is not a support,
-  shell, terminal, installer, signing, or release qualification. The Windows
-  baseline makes no pseudo-terminal claim.
+  behavior, plus a compiled CLI smoke against a `bun-windows-x64` executable
+  that must report `win32 x64` and compiled mode. It detects host-path, root,
+  and packaging differences only: it is not a shell, terminal, installer,
+  signing, or release qualification. The Windows jobs make no pseudo-terminal
+  claim, because that suite allocates a pseudo-terminal through libc's
+  `openpty` and stays a POSIX qualification.
   Database size, contention, throughput, cadence, memory, and shutdown remain
   diagnostic observations rather than newly invented budgets. Because the base
   predates report emission, CI overlays only this PR's test-only report harness
@@ -1925,8 +1928,11 @@ control that drops one terminal event. `src/tui/matrix-fixtures.ts` declares
 the machine-readable row owners, and the boundary test proves each named test
 still exists without claiming that the inventory itself ran those tests.
 
-The current compiled/pty qualification is scoped to macOS arm64. Linux,
-Windows, other operating systems and architectures, suspend/resume,
+The current compiled *pseudo-terminal* qualification is scoped to macOS arm64.
+The compiled *CLI* smoke now also runs on Linux x64 and Windows x64, where the
+Windows job builds a `bun-windows-x64` executable and asserts the identity it
+reports. Terminal behavior on Linux and Windows, other operating systems and
+architectures, suspend/resume,
 clipboard, RTL/mixed text, and multiplexer/remote sessions remain explicitly
 unqualified; the companion terminal document records the emulator metadata,
 interaction limitations, and manual-session boundary.

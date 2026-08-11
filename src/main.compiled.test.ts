@@ -23,22 +23,51 @@ import { createStaticEnvironment, type LocalPath, localPath } from "./domain/ind
 import { openBunSqlite } from "./integrations/index.ts";
 import { main } from "./main.ts";
 
-const EXECUTABLE = join(dirname(dirname(import.meta.path)), "dist", "falryn");
+/**
+ * Windows names the compiled artifact `falryn.exe`; every other host names it
+ * `falryn`. Resolving that here rather than assuming the POSIX name is what
+ * keeps a Windows smoke job honest: a hard-coded `falryn` would find no file
+ * and report itself skipped, which is a green job proving nothing.
+ */
+const EXECUTABLE_NAME = process.platform === "win32" ? "falryn.exe" : "falryn";
+const EXECUTABLE = join(dirname(dirname(import.meta.path)), "dist", EXECUTABLE_NAME);
 
-/** The one exact executable target qualified by the focused macOS smoke job. */
-const MACOS_ARM64_SMOKE_TARGET = "darwin-arm64";
-const selectedSmokeTarget = process.env.FALRYN_COMPILED_SMOKE_TARGET;
+/**
+ * The exact executable targets a focused compiled smoke job can qualify.
+ *
+ * Each entry is the identity its own binary reports, so the assertion observes
+ * the executed target rather than trusting a runner label. `bun build --compile`
+ * writes `process.platform` and `process.arch` into the artifact, so a job that
+ * built for the wrong target fails here instead of passing quietly.
+ */
+const SMOKE_TARGETS = {
+  "darwin-arm64": "darwin arm64",
+  "win32-x64": "win32 x64",
+} as const;
 
-if (selectedSmokeTarget !== undefined && selectedSmokeTarget !== MACOS_ARM64_SMOKE_TARGET) {
-  throw new Error(`unknown compiled smoke target: ${selectedSmokeTarget}`);
+type SmokeTarget = keyof typeof SMOKE_TARGETS;
+
+function isSmokeTarget(value: string): value is SmokeTarget {
+  return Object.hasOwn(SMOKE_TARGETS, value);
 }
 
-const requiresMacosArm64 = selectedSmokeTarget === MACOS_ARM64_SMOKE_TARGET;
+const requestedSmokeTarget = process.env.FALRYN_COMPILED_SMOKE_TARGET;
+
+if (requestedSmokeTarget !== undefined && !isSmokeTarget(requestedSmokeTarget)) {
+  throw new Error(`unknown compiled smoke target: ${requestedSmokeTarget}`);
+}
+
+const selectedSmokeTarget: SmokeTarget | undefined = requestedSmokeTarget;
 
 /** The bootstrap fixture this file compiles itself. */
 const BOOTSTRAP_ENTRY = join(dirname(import.meta.path), "main-fixtures.ts");
 const bootstrapDirectory = await mkdtemp(join(tmpdir(), "falryn-bootstrap-"));
-const BOOTSTRAP_BINARY = join(bootstrapDirectory, "falryn-bootstrap-probe");
+// Same suffix rule as the shipped artifact: Bun's compiler writes `.exe` on
+// Windows, so the spawn below has to look for the name it actually wrote.
+const BOOTSTRAP_BINARY = join(
+  bootstrapDirectory,
+  process.platform === "win32" ? "falryn-bootstrap-probe.exe" : "falryn-bootstrap-probe",
+);
 
 const roots: string[] = [];
 
@@ -68,7 +97,7 @@ const built = await stat(EXECUTABLE)
   .then(() => true)
   .catch(() => false);
 
-if (requiresMacosArm64) {
+if (selectedSmokeTarget !== undefined) {
   test("requires the selected standalone executable to exist", () => {
     // The regular suite records a missing binary as skipped for source-only
     // development. The named target smoke must not turn that absence into a
@@ -148,11 +177,11 @@ describe.if(built)("the standalone executable", () => {
       // can only be observed here: a source run reports `source`.
       expect(finished.stdout).toContain("compiled build");
       expect(finished.stdout).toContain(`falryn ${FALRYN_VERSION}`);
-      if (requiresMacosArm64) {
+      if (selectedSmokeTarget !== undefined) {
         // `process.platform` and `process.arch` are compiled into this binary,
         // so this observes the executed target rather than trusting a runner
         // label or the test process's host values.
-        expect(finished.stdout).toContain("darwin arm64");
+        expect(finished.stdout).toContain(SMOKE_TARGETS[selectedSmokeTarget]);
       }
       expect(await readdir(root)).toEqual([]);
     },

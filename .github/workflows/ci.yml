@@ -205,3 +205,33 @@ jobs:
 
       - name: Run the macOS arm64 compiled smoke suites
         run: bun run smoke:macos-arm64
+
+  windows-x64-compiled-smoke:
+    name: Windows x64 compiled smoke
+    needs:
+      - typecheck
+      - dependency-integrity
+    runs-on: windows-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out the reviewed revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Bun from package.json
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: package.json
+
+      - name: Install locked dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build the Windows x64 standalone executable
+        run: bun run build:windows-x64
+
+      # The CLI smoke only. The compiled terminal suite allocates a
+      # pseudo-terminal through libc's `openpty`, which Windows has no
+      # equivalent for, so it stays a POSIX qualification rather than being
+      # skipped here and mistaken for coverage.
+      - name: Run the Windows x64 compiled smoke suite
+        run: bun run smoke:windows-x64

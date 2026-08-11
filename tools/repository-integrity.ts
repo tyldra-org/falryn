@@ -372,8 +372,10 @@ function checkGeneratedOutput(
     build === null ||
     !build.includes("bun build") ||
     !build.includes(GENERATED_EXECUTABLE.source) ||
-    !build.includes("dist") ||
-    !build.includes("--outfile falryn")
+    // The destination is named in one piece rather than as a `cd` plus a bare
+    // filename, so the build script stays runnable on a Windows shell that has
+    // no `mkdir -p`. Bun creates the missing directory itself.
+    !build.includes(`--outfile ${GENERATED_EXECUTABLE.destination}`)
   ) {
     add(issues, "generated-build-mismatch", GENERATED_EXECUTABLE.destination);
   }
