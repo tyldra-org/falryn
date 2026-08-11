@@ -229,6 +229,15 @@ jobs:
       - name: Build the Windows x64 standalone executable
         run: bun run build:windows-x64
 
+      # TEMPORARY diagnostic. Remove once the Windows compiled-mode signal is
+      # fixed: it reports what a standalone executable actually sees, because
+      # the module root is not observable from a macOS or Linux host.
+      - name: Diagnose the Windows compiled module root
+        run: |
+          echo "console.log(JSON.stringify({ url: import.meta.url, path: import.meta.path, main: Bun.main, exec: process.execPath }, null, 2))" > windows-root-probe.ts
+          bun build windows-root-probe.ts --compile --outfile dist/windows-root-probe
+          ./dist/windows-root-probe.exe
+
       # The CLI smoke only. The compiled terminal suite allocates a
       # pseudo-terminal through libc's `openpty`, which Windows has no
       # equivalent for, so it stays a POSIX qualification rather than being
