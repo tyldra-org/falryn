@@ -1,16 +1,17 @@
 # Vendored agent skills
 
-These are the skills an agent is expected to load when working on Falryn.
-`AGENTS.md` names them; vendoring them here is what makes those references
-resolve for anyone, rather than only on the maintainer's machine.
+Skills an agent should load when working on Falryn. `AGENTS.md` points here so
+references resolve for anyone with this checkout—not only the maintainer’s
+personal `~/.agents/skills`.
 
-| Skill | Loaded before |
+| Skill | Load before |
 | --- | --- |
-| `typescript-best-practices` | any TypeScript, TSX, test, build-script, or `tsconfig` change |
-| `opentui` | any terminal UI, renderer, layout, input, or packaging change |
-| `github-workflow` | any Git or GitHub change |
-| `falryn-delivery-loop` | a `Deliver` or `Next` prompt |
+| `typescript-best-practices` | TypeScript, TSX, JS, tests, build scripts, or `tsconfig` work |
+| `opentui` | Terminal UI, renderer, layout, input, keymaps, packaging |
+| `github-workflow` | Git or GitHub mutations and delivery process |
+| `gh-cli` | Exact `gh` subcommand / flag / JSON output recall |
+| `falryn-delivery-loop` | `Deliver — Target: …`, `Next — Target: Falryn Roadmap`, or “what next?” (maintainer delivery modes; optional for others) |
 
-None of this is a requirement for a contributor. It configures an agent working
-here on the maintainer's behalf; see the "Who this file is for" note in
-[`AGENTS.md`](../../AGENTS.md).
+`github-workflow` owns process and safety. `gh-cli` owns CLI syntax. Prefer both when composing non-trivial `gh` operations.
+
+None of this is a contributor requirement. It configures an agent working here on the maintainer’s behalf; see “Who this file is for” in [`AGENTS.md`](../../AGENTS.md).

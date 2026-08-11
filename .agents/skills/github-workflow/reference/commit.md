@@ -2,6 +2,8 @@
 
 Stage one logical unit, verify it, commit it. Subject rules in [conventions.md](conventions.md).
 
+Autocommit is **on by default** in the skill entrypoint—commit at clean boundaries unless the session has `autocommit off`.
+
 ## Boundaries
 
 Commit at clean logical boundaries:

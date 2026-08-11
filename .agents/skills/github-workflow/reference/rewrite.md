@@ -1,6 +1,6 @@
 # rewrite
 
-History surgery: amend, squash, reword, reorder, rebase, filter. Everything here rewrites SHAs. Back up first, verify by tree hash, and confirm before publishing.
+History surgery: amend, squash, reword, reorder, rebase, filter. Everything here rewrites SHAs. Back up first, verify by tree hash, and confirm before publishing (skill **Confirm before** + backup rules still apply).
 
 ## Commit messages during rewrites
 

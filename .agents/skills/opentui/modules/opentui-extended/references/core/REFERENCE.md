@@ -1,5 +1,7 @@
 # OpenTUI Core (@opentui/core)
 
+> Prefer upstream `docs/getting-started.mdx`, `docs/core-concepts/*.mdx` when this companion differs.
+
 The foundational library for building terminal user interfaces. Provides an imperative API with all primitives, giving you maximum control over rendering, state, and behavior.
 
 ## Overview
@@ -113,9 +115,9 @@ bun test                      # Run tests
 ## Runtime Requirements
 
 OpenTUI runs on **Bun (reference runtime)** and uses Zig for native builds.
-**Node.js 26.3.0** is also supported for the native renderer when launched with
+**Node.js 26.4.0+** is also supported for the native renderer when launched with
 `--experimental-ffi`; importing core/keymap without a native renderer works on
-Node without FFI. See [Gotchas](./gotchas.md) for the full Node.js notes.
+Node without FFI. See [Gotchas](./gotchas.md) and upstream `docs/getting-started.mdx`.
 
 ```bash
 # Package management

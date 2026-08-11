@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate github-workflow structure, routing, links, and agent metadata."""
+"""Validate github-workflow structure, routing, and Markdown links."""
 
 from __future__ import annotations
 
@@ -13,7 +13,8 @@ ROOT = Path(__file__).resolve().parents[1]
 SKILL = ROOT / "SKILL.md"
 LINK_RE = re.compile(r"\[[^\]]+\]\(([^)]+)\)")
 HEADING_RE = re.compile(r"^#{1,6}\s+(.+?)\s*$", re.MULTILINE)
-ALLOWED_ROOT_ENTRIES = {"SKILL.md", "agents", "reference", "scripts"}
+ALLOWED_ROOT_ENTRIES = {"SKILL.md", "reference", "scripts"}
+IGNORED_ROOT_ENTRIES = {".DS_Store", ".gitignore"}
 
 
 def slugify(heading: str) -> str:
@@ -36,7 +37,7 @@ def main() -> int:
         print(f"ERROR: missing {SKILL}")
         return 1
 
-    root_entries = {path.name for path in ROOT.iterdir()}
+    root_entries = {path.name for path in ROOT.iterdir()} - IGNORED_ROOT_ENTRIES
     unexpected = sorted(root_entries - ALLOWED_ROOT_ENTRIES)
     if unexpected:
         errors.append(f"unexpected root entries: {', '.join(unexpected)}")
@@ -103,12 +104,6 @@ def main() -> int:
             "references not linked directly from SKILL.md: "
             + ", ".join(path.name for path in unlinked)
         )
-
-    metadata = ROOT / "agents" / "openai.yaml"
-    if not metadata.is_file():
-        errors.append("missing agents/openai.yaml")
-    elif "$github-workflow" not in metadata.read_text(encoding="utf-8"):
-        errors.append("agents/openai.yaml default prompt must mention $github-workflow")
 
     if errors:
         for error in errors:

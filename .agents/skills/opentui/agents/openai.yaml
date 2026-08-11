@@ -1,4 +1,0 @@
-interface:
-  display_name: "OpenTUI"
-  short_description: "Build, test, and package OpenTUI apps"
-  default_prompt: "Use $opentui to build, test, or package an OpenTUI terminal application."

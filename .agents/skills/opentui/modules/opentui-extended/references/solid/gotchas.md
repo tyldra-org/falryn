@@ -2,9 +2,9 @@
 
 ## Critical
 
-### Never use `process.exit()` directly
+### Destroy the renderer before exiting
 
-**This is the most common mistake.** Using `process.exit()` leaves the terminal in a broken state (cursor hidden, raw mode, alternate screen).
+**Most common mistake:** bare `process.exit()` without `renderer.destroy()` leaves the terminal broken (cursor hidden, raw mode, alternate screen). See `docs/core-concepts/lifecycle.mdx`.
 
 ```tsx
 // WRONG - Terminal left in broken state

@@ -43,7 +43,7 @@ For **stacked PRs**, the base is the parent branch, and the description must say
 
 **Title** follows the same rules as a commit subject ([conventions.md](conventions.md#pr-titles)): `type(scope): summary`, imperative, ≤72 chars. For a squash-merge repo the title *becomes* the commit subject — it matters more, not less.
 
-**Body** is where prose is allowed. Structure:
+**Body** is where prose is allowed. Prefer the repository's PR template when present. Otherwise:
 
 ```markdown
 ## What

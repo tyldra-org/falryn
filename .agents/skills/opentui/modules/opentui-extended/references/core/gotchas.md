@@ -2,7 +2,7 @@
 
 ## Runtime Environment
 
-### Bun (reference runtime) or Node.js 26.3.0
+### Bun (reference runtime) or Node.js 26.4.0+
 
 Bun is the reference runtime and the smoothest path — prefer it for new projects:
 
@@ -13,17 +13,16 @@ bun run src/index.ts
 bun test
 ```
 
-**Node.js is now also supported**, with caveats:
+**Node.js is also supported**, with caveats:
 
 - Importing `@opentui/core` (and `@opentui/keymap`) works in Node.js **without
   FFI** as long as you don't create a native renderer.
 - Creating a **native renderer** (`createCliRenderer()`) requires FFI: **Node.js
-  26.3.0** launched with `--experimental-ffi` (and, under Node's permission
+  26.4.0+** launched with `--experimental-ffi` (and, under Node's permission
   model, `--allow-ffi` plus filesystem permissions). OpenTUI does not install
   Node for you.
-- The Node path is lower-level than Bun; the `packages/*/package.json` `engines`
-  fields and root README still list Bun only, but the docs site
-  (getting-started, keymap, solid pages) is the source of truth for Node support.
+- Prefer upstream `docs/getting-started.mdx` over package `engines` fields when
+  they disagree about Node support.
 
 ### Bun APIs to Use
 
@@ -41,9 +40,12 @@ import express from "express"
 
 > **Note**: OpenTUI itself uses `node:fs` internally for file I/O (for broader compatibility), but your application code should still prefer Bun APIs where available.
 
-### Avoid process.exit()
+### Avoid bare process.exit()
 
-**Never use `process.exit()` directly** - it prevents proper terminal cleanup and can leave the terminal in a broken state (alternate screen mode, raw input mode, etc.).
+**Always destroy the renderer before exiting.** Bare `process.exit()` without
+`renderer.destroy()` can leave the terminal broken (alternate screen, raw mode,
+hidden cursor). Prefer `exitOnCtrlC` / documented exit signals when possible.
+See upstream `docs/core-concepts/lifecycle.mdx`.
 
 ```typescript
 // WRONG - Terminal may be left in broken state
@@ -52,7 +54,7 @@ if (error) {
   process.exit(1)
 }
 
-// CORRECT - Use renderer.destroy() for cleanup
+// CORRECT - Destroy first; exit only if the host process must terminate
 if (error) {
   console.error("Fatal error")
   await renderer.destroy()

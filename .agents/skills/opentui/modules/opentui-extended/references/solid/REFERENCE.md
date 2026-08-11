@@ -1,5 +1,7 @@
 # OpenTUI Solid (@opentui/solid)
 
+> Prefer upstream `docs/bindings/solid.mdx` and `docs/components/*.mdx` when this companion differs.
+
 A SolidJS reconciler for building terminal user interfaces with fine-grained reactivity. Get optimal performance with Solid's signal-based approach.
 
 ## Overview

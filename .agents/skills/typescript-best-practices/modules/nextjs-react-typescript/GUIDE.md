@@ -1,52 +1,64 @@
 ---
 name: nextjs-react-typescript
-description: Expert in TypeScript, Node.js, Next.js App Router, React, Shadcn UI, Radix UI and Tailwind
+description: TypeScript conventions for Next.js App Router, React Server Components, Shadcn/Radix, and Tailwind. Use when building or refactoring Next.js apps, choosing client vs server components, or typing App Router data flows.
 ---
 
-# Next.js React TypeScript
+# Next.js + React + TypeScript
 
-You are an expert in TypeScript, Node.js, Next.js App Router, React, Shadcn UI, Radix UI and Tailwind.
+Conventions for App Router projects. Prefer the repo's existing UI stack; only introduce Shadcn/Radix/Tailwind/`nuqs` when already present or explicitly requested.
 
-## Code Style and Structure
+For React anti-pattern review → `modules/typescript-react-reviewer/GUIDE.md`.  
+For general TS idioms → `modules/typescript-best-practices/GUIDE.md`.
 
-- Write concise, technical TypeScript code with accurate examples
-- Employ functional and declarative programming patterns; steer clear of classes
-- Prioritize iteration and modularization over code duplication
-- Use descriptive variable names with auxiliary verbs (e.g., isLoading, hasError)
-- Organize files: exported component, subcomponents, helpers, static content, types
+## Structure & style
 
-## Naming Conventions
+- Concise TypeScript; functional components; named exports
+- Directories: `lowercase-with-dashes`
+- File order: exported component → subcomponents → helpers → types
+- Descriptive booleans: `isLoading`, `hasError`
+- Prefer `interface` for component props; unions via `type`
+- Avoid enums; use const objects / string unions
+- Prefer `function` declarations for top-level components/helpers
 
-- Use lowercase with dashes for directories (e.g., components/auth-wizard)
-- Favor named exports for components
+## TypeScript
 
-## TypeScript Usage
+- Type all exports; explicit props (`{ prop }: Props`), not `React.FC`
+- Validate external input (route params, searchParams, body) at boundaries
+- Colocate types with the feature; share only stable contracts
 
-- Use TypeScript for all code; prefer interfaces over types
-- Avoid enums; use maps instead
-- Use functional components with TypeScript interfaces
+## Server vs client
 
-## Syntax and Formatting
+- Default to Server Components
+- Add `'use client'` only for Web APIs, interactivity, or browser-only libs
+- Keep client leaves small; don't fetch in client just to use hooks
+- Wrap slow client trees in `<Suspense>` with a real fallback
+- `next/dynamic` for non-critical client bundles
 
-- Use the "function" keyword for pure functions
-- Avoid unnecessary curly braces in conditionals
-- Use declarative JSX
+## Data & URL state
 
-## UI and Styling
+- Follow current Next.js App Router data-fetching / caching guidance for the installed version
+- Prefer server-side data loading; pass serializable props to clients
+- If the project uses `nuqs`, keep URL state typed there instead of ad-hoc parsers
 
-- Leverage Shadcn UI, Radix, and Tailwind for components and styling
-- Implement responsive design with Tailwind CSS using a mobile-first approach
+## UI
 
-## Performance Optimization
+- Mobile-first Tailwind when the project already uses it
+- Compose Shadcn/Radix primitives; don't re-skin unless asked
+- Images: sized, lazy where appropriate, modern formats via `next/image`
 
-- Minimize 'use client', 'useEffect', and 'setState'; favor React Server Components
-- Wrap client components in Suspense with fallback
-- Use dynamic loading for non-critical components
-- Optimize images: use WebP format, include size data, implement lazy loading
+## Performance checklist
 
-## Key Conventions
+- [ ] Minimal `'use client'` surface
+- [ ] No unnecessary `useEffect` / mirrored server state
+- [ ] Suspense boundaries around heavy client islands
+- [ ] Images optimized
+- [ ] Bundle: avoid app-wide barrels
 
-- Use 'nuqs' for URL search parameter state management
-- Optimize Web Vitals (LCP, CLS, FID)
-- Limit 'use client' to Web API access in small components; avoid for data fetching or state management
-- Follow Next.js documentation for Data Fetching, Rendering, and Routing
+## Do / don't
+
+| Do | Don't |
+| --- | --- |
+| RSC by default | `'use client'` on layouts that don't need it |
+| Typed props + boundary validation | `any` for `params` / `searchParams` |
+| Named exports | Default-export soup in features |
+| Match existing stack | Add Shadcn/Radix/`nuqs` unprompted |

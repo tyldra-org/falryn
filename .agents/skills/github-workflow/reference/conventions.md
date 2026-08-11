@@ -2,7 +2,9 @@
 
 Message text and naming. Load before writing any commit subject, branch name, PR title, or tag.
 
-**Repo convention wins.** If `git log --pretty=%s -n 30` shows an established style, match it. Everything here is the default for when the repo has no opinion — matching the neighbors matters more than matching this document.
+**Repo convention wins.** If `git log --pretty=%s -n 30` shows an established style, match it. Defaults below apply only when the repo has no opinion.
+
+Repo templates (`commitlint`, `.gitmessage`, PR template) outrank this file.
 
 ## What makes a subject good
 

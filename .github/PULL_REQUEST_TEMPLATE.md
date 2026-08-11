@@ -38,6 +38,10 @@ Closes #
 
 ## Delivery checklist
 
+<!-- Maintainer / optional delivery-workflow checklist. Ordinary collaborator
+     PRs need Target, Scope, Validation, and Documentation; the items below are
+     not a contribution bar. -->
+
 - [ ] The target is one Ready, unblocked PR-sized issue.
 - [ ] The issue is assigned and **In Progress**.
 - [ ] Its parent is **In Progress** when this is the first required child to begin.

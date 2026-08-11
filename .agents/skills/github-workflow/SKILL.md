@@ -1,15 +1,17 @@
 ---
 name: github-workflow
-description: Comprehensive Git and GitHub operating workflow. Use whenever work touches repositories, commits, branches, worktrees, remotes, pull requests, reviews, issues, labels, milestones, native subissues and dependencies, GitHub Projects, Discussions, Actions, releases, repository administration, rulesets, security alerts, secrets and variables, Codespaces, packages, gists, search, organizations, authenticated REST/GraphQL automation, multi-repository delivery, or post-merge checkout synchronization through git or gh. Also use for recovery, history rewriting, audits, bulk roadmap maintenance, and any request that will end in a commit or outward-facing GitHub change. Provides safety, confirmation, idempotency, provenance, and verification rules; not for application-code quality review by itself.
+description: Operate Git and GitHub with recoverable history and explicit remote state. Use for commits, branches, sync, PRs, reviews, merges, CI, issues, Projects, Actions, security, releases, rewrites, recovery, multi-repo delivery, and repository admin.
 ---
 
-Operate Git and GitHub with clean, recoverable, auditable history and explicit remote state. Make every commit reviewable, every platform mutation target-specific, and every irreversible or socially consequential action deliberate.
+# GitHub Workflow
 
-## How to use this skill
+Clean, recoverable, auditable Git/GitHub work. Every commit reviewable; every platform mutation target-specific; every irreversible or outward-facing action deliberate.
 
-Four steps, in order. Steps 1 and 2 are cheap and always worth it; step 3 is where the actual procedure lives.
+## How to use
 
-### 1. Resolve context and read state
+Four steps. Steps 1–2 are cheap and always worth it; step 3 owns the procedure.
+
+### 1. Resolve context
 
 ```bash
 git status --short --branch
@@ -19,15 +21,14 @@ gh auth status
 gh repo view --json nameWithOwner,defaultBranchRef,url 2>/dev/null
 ```
 
-For local Git work, never act on an assumed branch, worktree, remote, or default branch. For GitHub-only work, a local checkout is optional: resolve the exact hostname, owner, repository, issue/PR/project number, and authenticated account instead.
+Never act on an assumed branch, worktree, remote, or default branch. For GitHub-only work, resolve hostname, owner, repo, object number, and authenticated account—local checkout optional.
 
-If Git errors with `not a git repository`, do not initialize one uninvited. Continue only when the task is explicitly remote-only and the repository is independently identified.
-
-If the tree is mid-rebase, mid-merge, or on a detached HEAD you didn't create, stop and report that before anything else. Acting inside a half-finished operation compounds it.
+- `not a git repository` → do not `git init` uninvited; continue only for explicit remote-only work with an independently identified repo.
+- Mid-rebase, mid-merge, or detached HEAD you didn't create → stop and report first.
 
 ### 2. Route to a reference
 
-Match the request to one command below and **read that reference before acting**. The reference owns the flow; skipping it produces plausible-looking git that misses the step that mattered.
+Match the request and **read that reference before acting**.
 
 | Request sounds like | Command | Reference |
 |---|---|---|
@@ -53,280 +54,206 @@ Match the request to one command below and **read that reference before acting**
 | "clean up these commits", "squash", "rebase" | `rewrite` | [rewrite.md](reference/rewrite.md) |
 | "cut a release", "tag it", "write release notes" | `release` | [release.md](reference/release.md) |
 
-Writing any commit subject, branch name, PR title, release tag, issue taxonomy, or roadmap hierarchy? Also read [conventions.md](reference/conventions.md); for issue hierarchy and Projects, the dedicated references control.
+Writing a subject, branch name, PR title, tag, issue taxonomy, or roadmap hierarchy → also [conventions.md](reference/conventions.md). Mixed workflows: load every needed reference in dependency order (e.g. `context` → `issues` → `projects`; `commit` → `sync` → `pr`).
 
-Read every reference needed for a mixed workflow, in dependency order. Example: creating milestone-backed subissues in a Project requires `context`, `issues`, then `projects`; publishing code requires `commit`, `sync`, then `pr`; landing a coordinated code-and-docs bundle requires `review`, `delivery`, then `merge`.
+Ask only when two routes imply different outcomes or authority. Vague destructive intent → resolve the desired outcome first. One-off status questions need no reference.
 
-Ask only when two routes imply materially different outcomes or authority. Do not ask merely because several references apply. When destructive intent is vague, resolve the desired outcome before choosing a command.
+### 3. Gather only what the task needs
 
-**When nothing fits** — a one-off query like `git status` or "what's on this branch" — just answer it. Not every git question needs a reference loaded.
-
-### 3. Gather only the context that task needs
-
-Reading convention costs tokens, so pay for it when it changes the answer:
-
-**Touching the remote or the default branch** — resolve which branch that actually is. Do not assume `main`:
+**Touching remote / default branch** — resolve it; do not assume `main`:
 
 ```bash
 git symbolic-ref refs/remotes/origin/HEAD --short 2>/dev/null \
   || git remote show origin | sed -n '/HEAD branch/s/.*: //p'
 ```
 
-**Writing a subject, branch name, or PR title** — the repo already answered how these should look:
+**Writing subjects / branch / PR titles** — match the repo:
 
 ```bash
-git log --pretty=%s -n 30      # subject style, types, scopes
-git branch -a                  # branch naming
-git log --graph --oneline -20  # merge topology
+git log --pretty=%s -n 30
+git branch -a
+git log --graph --oneline -20
 ```
 
-**Merging, branching, or releasing** — identify the workflow model, since the same advice is wrong in the others. See [Workflow models](#workflow-models).
+Also honor `CONTRIBUTING.md`, `AGENTS.md`, `commitlint.config.*`, `.gitmessage`, `.github/PULL_REQUEST_TEMPLATE.md` when present.
 
-Also check `CONTRIBUTING.md`, `AGENTS.md`, `commitlint.config.*`, `.gitmessage`, `.github/PULL_REQUEST_TEMPLATE.md`. A repo that states its rules outranks anything inferred.
+**Merging / branching / releasing** — detect the workflow model ([below](#workflow-models)).
 
-For GitHub objects, inspect before writing:
-
-```bash
-gh issue view <n> --repo <owner/repo> --json number,title,state,labels,milestone,parent,subIssues
-gh pr view <n> --repo <owner/repo> --json number,title,state,baseRefName,headRefName,statusCheckRollup
-gh project view <n> --owner <owner> --format json
-gh project field-list <n> --owner <owner> --format json
-```
-
-Use `--repo`, `--owner`, `--hostname`, issue/PR number, and project number explicitly in scripts and bulk work. Do not let current-directory inference select a write target.
+**GitHub objects** — inspect before write (`gh issue/pr/project view … --json …`). Use `--repo` / `--owner` / `--hostname` and explicit numbers in scripts; do not let cwd inference pick a write target.
 
 ### 4. Act, then report
 
-Follow the reference. Re-read the affected object after each write class, audit the final set, and describe what moved. A command returning exit zero proves only that GitHub accepted the request, not that relationships, fields, permissions, automation, or UI-visible state are correct.
+Follow the reference. Re-read after writes. Exit zero means GitHub accepted the request—not that relationships, fields, or UI state are correct.
 
-### Worked example
+## Ownership
 
-> **User:** "been hacking on this for a couple hours, can you get everything committed"
-
-1. `git status --short --branch` → four modified files across `src/auth/`, `src/billing/`, `README.md`, plus an untracked `.env`.
-2. Routes to `commit` → read `commit.md`.
-3. Task writes subjects → `git log --pretty=%s -n 30` shows `feat:`/`fix:` with no scopes. Match that. Read `conventions.md`.
-4. Follow `commit.md`: read the actual diffs → the changes are three unrelated things, so three commits, staged by explicit path. `.env` holds live credentials — **stop and flag it**, add to `.gitignore`, never stage it.
-5. Report: three commits with SHAs, the `.env` decision, and that no test runner exists so validation was skipped.
-
-The shape to notice: state first, one reference, convention only because subjects were being written, and the safety rule interrupting the happy path.
+| Concern | Home |
+|---|---|
+| Stage / commit / amend / stash | [commit.md](reference/commit.md) |
+| Subjects, branches, PR titles, tags | [conventions.md](reference/conventions.md) |
+| History rewrite, force-push lease | [rewrite.md](reference/rewrite.md) |
+| Multi-repo / stacked landing | [delivery.md](reference/delivery.md) |
+| Non-negotiable safety (this file) | sections below |
 
 ## Precedence
 
-**Safety rules never bend.** Everything else here is a default that loses to anything more specific:
+Safety rules never bend. Everything else loses to anything more specific:
 
-1. The user's explicit instruction, this session.
-2. Repo-local rules — `CONTRIBUTING.md`, `AGENTS.md`, `commitlint.config.*`, PR templates.
-3. The repo's observed convention — what `git log` and `git branch -a` actually show.
-4. The defaults in this skill.
+1. User's explicit instruction this session
+2. Repo-local rules (`CONTRIBUTING.md`, `AGENTS.md`, commitlint, PR templates)
+3. Observed repo convention (`git log`, `git branch -a`)
+4. Defaults in this skill
 
-When a lower layer conflicts with a higher one, the higher one wins silently — don't announce the override, just follow it. But no repo convention authorizes committing a secret or a bare `--force`.
+Follow higher layers silently. No convention authorizes committing a secret or bare `--force`.
 
 ## Safety rules
 
-Non-negotiable. These aren't preferences; each one prevents an unrecoverable or externally-visible mistake.
-
 ### Secrets
 
-Never stage or commit credentials, API keys, tokens, private keys, `.env` files, service-account JSON, or connection strings with embedded passwords. If a path could contain one, stop and ask — "already tracked" is not consent to add more.
+Never stage credentials, API keys, tokens, private keys, `.env`, service-account JSON, or connection strings with passwords. Ambiguous path → stop and ask. "Already tracked" is not consent to add more.
 
-If a secret is already committed, treat it as leaked. **Rotation comes first, history rewriting second** — see [reference/audit.md](reference/audit.md#secret-leak-response).
+Already committed → treat as leaked. **Rotate first**, rewrite second — [audit.md](reference/audit.md#secret-leak-response).
 
-Never read a token out of the environment or `.git-credentials` into a command line. Use `gh auth`.
-
-Never print secret values from Actions, Codespaces, Dependabot, environments, variables intended to be confidential, encrypted files, or credential helpers. Secret APIs are write-only by design; verify names and scopes, not values.
+Never read tokens from the environment or `.git-credentials` onto a command line. Use `gh auth`. Never print secret values from Actions, Codespaces, Dependabot, environments, or credential helpers.
 
 ### Confirm before
 
-Anything **irreversible** or **outward-facing** gets an explicit confirmation, with the concrete command shown:
+Show the concrete command and get explicit confirmation for:
 
-- force push, in any form
-- history rewrite: `filter-repo`, `filter-branch`, squash/reword of pushed commits
-- `reset --hard`, `clean -fdx`, `checkout .` / `restore` over uncommitted work
-- deleting a branch or tag, locally or remotely
-- moving or re-pushing an existing tag
-- publishing a release
-- submitting or approving a PR review, merging a PR
-- anything on a branch that isn't yours
-- deleting, transferring, archiving, changing visibility of, or renaming a repository
-- deleting Projects, issues, Discussions, releases, packages, Codespaces, workflow runs, caches, environments, secrets, variables, deploy keys, webhooks, rulesets, or organization resources
-- granting or escalating collaborator/team/app access; changing branch protection or bypass actors
-- publishing a package, advisory, Discussion announcement, Pages deployment, gist, or other public artifact
-- bulk-closing, bulk-moving, or bulk-retaxonomizing work where rollback is not exact
+- force push; history rewrite (`filter-repo` / `filter-branch` / squash-reword of pushed commits)
+- `reset --hard`, `clean -fdx`, restoring over uncommitted work
+- deleting branches/tags (local or remote); moving or re-pushing tags
+- publishing a release; submitting/approving a PR review; merging a PR
+- work on a branch that isn't yours
+- deleting/transferring/archiving/renaming a repo or changing visibility
+- deleting Projects, issues, Discussions, releases, packages, Codespaces, workflow runs, caches, environments, secrets, variables, deploy keys, webhooks, rulesets, or org resources
+- granting/escalating access; changing branch protection or bypass actors
+- publishing packages, advisories, Discussion announcements, Pages, gists, or other public artifacts
+- bulk close/move/retaxonomize where rollback is not exact
 
-Creating or editing ordinary issues, labels, milestones, project items, comments, draft PRs, workflow drafts, and metadata is authorized when the user asks for that workflow and the exact scope is clear. Show a preview first when the mutation is broad, cross-repository, public-facing, permission-changing, or difficult to reverse.
+Ordinary issues, labels, milestones, project items, comments, draft PRs, and metadata are authorized when the user asked and scope is clear. Preview first when the mutation is broad, cross-repo, public, permission-changing, or hard to reverse.
 
-Routine local work—committing, branching, stashing, fetching, and pushing your own branch—proceeds normally.
+Routine local work—commit (when autocommit is on or the user asked), branch, stash, fetch, push **your** branch—proceeds normally. See [Autocommit](#autocommit).
 
 ### Remote-write discipline
 
-- Resolve exact targets read-only before mutation.
-- Prefer dedicated `gh` commands; use `gh api` only when the CLI or connected GitHub tooling lacks the capability.
-- Treat IDs, cursors, field IDs, option IDs, node IDs, and installation IDs as opaque. Read and reuse them; never derive or invent them.
-- Make bulk operations repeat-safe using stable identity such as repository plus issue number, exact title within a constrained parent, or immutable node ID.
-- Separate create, relationship, field-update, and close/delete passes so a partial failure is observable and recoverable.
-- Capture before/after counts and exceptions. Never call a partial batch “complete.”
-- Respect rate limits and abuse controls; paginate, bound concurrency, and back off rather than retrying in a tight loop.
-- Do not use web UI automation when `gh`, a GitHub connector, REST, or GraphQL can make the operation explicit and auditable.
-- Bind state-sensitive writes to the exact state that was reviewed when the command supports it. For PR merges, prefer `--match-head-commit <verified-head-sha>`.
+- Resolve targets read-only before mutation.
+- Prefer dedicated `gh` commands; `gh api` only when CLI lacks the capability.
+- Treat IDs/cursors/node IDs as opaque—read and reuse; never invent.
+- Bulk ops: repeat-safe identity; separate create / relate / update / delete passes; report counts and exceptions; never call a partial batch complete.
+- Bound concurrency; back off on rate limits.
+- No web UI automation when `gh`/API can do it.
+- State-sensitive writes: bind to reviewed state (PR merge: `--match-head-commit <sha>`).
 
 ### Remote body and metadata safety
 
-Never pipe an unchecked transform directly into a mutating command such as `gh issue edit --body-file -` or `gh pr edit --body-file -`. A failed producer can still supply empty stdin and erase a valid body.
+Never pipe an unchecked transform into `gh issue/pr edit --body-file -` (empty stdin can wipe a body).
 
-For issue, PR, release, Discussion, or repository text:
+1. Retain the exact pre-image  
+2. Render the full proposed body  
+3. Validate producer exit, non-empty output, markers, target, diff  
+4. Write from a validated artifact  
+5. Re-read and compare  
 
-1. Read and retain the exact pre-image.
-2. Render the complete proposed body before any write.
-3. Validate producer exit status, non-empty output, required markers, target identity, and the intended diff.
-4. Write from a validated temporary file or in-memory artifact, not a live transformation pipeline.
-5. Re-read the object after mutation and compare it with the proposal.
-
-If a pipeline is unavoidable, enable pipeline-failure propagation and still materialize and validate its output before mutation. If verification finds damaged or empty metadata, restore the retained pre-image immediately when authorized and report both the failure and restoration.
+On damage: restore pre-image when authorized; report failure and restoration.
 
 ### Back up before destroying
 
-Before a history rewrite, force push, hard reset, or branch deletion that could drop commits:
+Before rewrite, force push, hard reset, or branch deletion that could drop commits:
 
 ```bash
 git branch backup/<what>-$(date +%Y-%m-%d)
-```
-
-Verify by **comparing tree hashes**, never by reading commit subjects — subjects survive rewrites that lose content:
-
-```bash
 git rev-parse 'backup/<what>^{tree}' '<newref>^{tree}'
 ```
 
-Keep the backup ref until the outcome is confirmed.
+Compare **tree hashes**, not subjects. Keep the backup until confirmed.
 
 ### Force push
 
-`--force-with-lease` pinned to the exact expected old SHA. Never bare `--force`; never bare `--force-with-lease` either — if anything ran `git fetch` in between, the lease checks a refreshed remote-tracking ref and passes when it should fail.
+Pinned lease only — details in [rewrite.md](reference/rewrite.md):
 
 ```bash
 git push --force-with-lease=<branch>:<expected-old-sha> origin <branch>
 ```
 
-Afterward: state that SHAs changed and that other clones need `git fetch && git reset --hard origin/<branch>` or a fresh clone.
+Never bare `--force` or bare `--force-with-lease`. Afterward: say SHAs changed; other clones need fetch + reset or a fresh clone.
 
 ### Stop, don't improvise
 
-Stop and report — no auto-resolve, no retry unchanged, no silent abort:
+Stop and report (no silent abort, no `--no-verify`, no unchanged retry):
 
-- a merge or rebase conflict
-- a failing pre-commit hook (never `--no-verify` past one)
-- a rejected push
-- a detached HEAD or dirty tree you didn't create
-- an authenticated host/account mismatch
-- missing scopes or insufficient repository/organization/project permission
-- ambiguous repository, project, environment, package, branch, or issue target
-- an API schema, preview, or CLI-version mismatch that changes the requested semantics
-- a bulk mutation whose observed counts diverge from the planned set
+- merge/rebase conflict; failing hook; rejected push
+- detached HEAD or dirty tree you didn't create
+- host/account mismatch; missing scopes/permissions
+- ambiguous repo/project/environment/package/branch/issue target
+- API/CLI semantic mismatch; bulk counts that diverge from plan
 
-For transient API failures, retry only failed idempotent reads or writes whose post-state can be checked. For implementation/CI failures that are yours to fix: **three attempts, then escalate**. Never make CI pass by skipping a test, loosening an assertion, or adding `continue-on-error`.
+Transient API: retry only failed idempotent ops whose post-state can be checked. Implementation/CI you own: **three attempts, then escalate**. Never green CI by skipping tests, loosening asserts, or `continue-on-error`.
 
 ### Multiple repositories
 
-When a change spans repos (service + schema, app + infra, code + docs), treat it as an explicit delivery bundle and follow [delivery.md](reference/delivery.md). Commit each repository separately with its own subject, declare owners and landing order, bind each PR to the reviewed head SHA, and name every repository touched in the summary.
-
-Cross-repository delivery is sequential, not atomic. Stop at the first failure, preserve the successful and pending states exactly, and report the partial result. Never call the bundle complete while one side is unmerged, unverified, or locally dirty.
-
-For cross-repository GitHub planning, keep each issue in the repository that owns the implementation or documentation. Use Projects for aggregate planning; do not move ownership into a central issue merely to obtain one board.
+Cross-repo change → [delivery.md](reference/delivery.md). Sequential, not atomic. Stop at first failure; report partial state. Keep issues in the owning repo; use Projects for aggregate planning.
 
 ## GitHub operating model
-
-Use the smallest durable object that owns the concern:
 
 | Object | Owns |
 |---|---|
 | Repository | Code, settings, permissions, automation, security boundary |
-| Milestone | Repository-scoped release or outcome |
+| Milestone | Repo-scoped release or outcome |
 | Parent issue | Cohesive independently understandable outcome |
 | Native subissue | Independently reviewable implementation slice |
-| Issue checklist | Steps below pull-request size |
-| Blocking relationship | Real dependency, not approximate ordering |
-| Pull request | Proposed code/document change and validation record |
-| Project | Cross-repository live planning, fields, views, prioritization |
-| Discussion | Open-ended community/team conversation, not committed work |
-| Release | Published version and immutable artifact narrative |
+| Issue checklist | Steps below PR size |
+| Blocking relationship | Real dependency |
+| Pull request | Proposed change + validation record |
+| Project | Cross-repo planning, fields, views |
+| Discussion | Open-ended conversation, not committed work |
+| Release | Published version + immutable artifact narrative |
 
-Do not duplicate native relationships as manually maintained checklists. Do not use labels as a second hierarchy when milestones, parent issues, subissues, dependencies, and Project fields already own the dimensions.
+Do not duplicate native relationships as manual checklists. Do not use labels as a second hierarchy when milestones, parents, subissues, dependencies, and Project fields already own the dimension.
 
 ## Command and output standards
 
-- Prefer `--json` plus `--jq` or `--template` over scraping human output.
-- Use `gh help <command>` or `<command> --help` before relying on recently added flags.
-- Specify `--repo HOST/OWNER/REPO` for nonlocal and scripted work.
-- Use `--limit` only when truncation is intended; otherwise paginate.
-- Use a validated temporary file or validated stdin artifact for multiline bodies and API payloads; avoid shell interpolation of Markdown, secrets, backticks, and `$()`.
-- Never connect an unchecked producer directly to a mutating `gh` command.
-- Keep user-controlled text out of shell fragments. Prefer argument arrays in scripts.
-- Inspect exit status and response content. GraphQL may return an HTTP success with an `errors` array.
-- Use current official GitHub CLI/manual/API documentation for unstable or unfamiliar commands.
+- Prefer `--json` + `--jq` / `--template` over scraping human output.
+- `gh help <command>` before unfamiliar flags.
+- `--repo HOST/OWNER/REPO` for nonlocal/scripted work.
+- Paginate unless truncation is intentional.
+- Validated temp file / stdin artifact for multiline bodies—no shell interpolation of Markdown, secrets, backticks, `$()`.
+- Never connect an unchecked producer to a mutating `gh` command.
+- Inspect exit status **and** body (GraphQL may 200 with `errors`).
 
 ## Commit and merge messages
 
-Use one subject line for every commit and merge result. Never create, preserve,
-copy, or infer a commit body. This applies to ordinary commits, amend/reword
-operations, squashes, rewritten history, and GitHub merges.
-
-Keep validation, risks, issue links, rationale, delivery details, and session
-narration in the issue or pull-request body. If a repository or platform
-requires a non-empty commit or merge body, stop and report the incompatibility;
-do not ask for, invent, or add one.
+One subject line only. Never create, preserve, copy, or infer a commit/merge body—ordinary commits, amend/reword, squash, rewrite, and GitHub merges. Details live in the issue or PR body. If the repo/platform requires a non-empty body, stop and report; do not invent one. Form: [conventions.md](reference/conventions.md).
 
 ## Autocommit
 
-Controls whether work gets committed as it completes, or only when asked. On by default: when a unit of work reaches a clean boundary ([reference/commit.md](reference/commit.md)), commit it rather than leaving a growing pile of unrelated changes in the tree — an uncommitted tree is the state most work gets lost from.
+**On by default.** When a unit of work reaches a clean boundary ([commit.md](reference/commit.md)), commit it rather than leaving unrelated changes piled in the tree.
 
-`autocommit off` — do not stage or commit on your own. When a boundary is reached, name it and suggest a subject in the summary instead, then move on. `git add` / `git commit` run only when asked.
+- `autocommit on` (default) — commit at clean boundaries; may stage in-scope generated output (docs, fixtures, lockfiles) with the change that produced them.
+- `autocommit off` — at a boundary, name it and suggest a subject; stage/commit only when asked.
 
-`autocommit on` — resume. Also covers staging generated output that's directly in scope for the work (regenerated docs, updated fixtures, rebuilt lockfiles), so those don't need approval one at a time.
-
-The setting applies to the current conversation only — it does not persist across sessions or follow you into another repo.
-
-Autocommit governs whether the agent may create a commit; it does not change
-the subject-only, no-body rule above. It never authorizes anything under
-**Confirm before**: a session with autocommit on still stops before a force
-push, a hard reset, or a branch deletion.
+Session-scoped only. Never authorizes **Confirm before** actions. Subject-only rule still applies.
 
 ## Workflow models
 
-Read this when merging, branching, or releasing — it decides branch base, merge strategy, and where hotfixes go. Skip it for a plain commit.
+Read when merging, branching, or releasing:
 
 | Model | Tell | Implications |
 |---|---|---|
-| **GitHub flow** | Short branches, PRs into one default branch, no release branches | Most common. Branch, PR, land; delete only when policy or an explicit instruction authorizes it |
-| **Trunk-based** | Commits directly on the default branch, feature flags, few branches | Small commits, no long-lived branches, CI is the gate |
-| **Git flow** | `develop` + `release/*` + `hotfix/*` branches | Features target `develop`, hotfixes branch from tags, releases merge to both |
-| **Release train** | Long-lived version or integration branches merged with `--no-ff`, visible as lanes in the graph | Never rebase or delete a lane branch; the topology is the record |
-| **Fork-based** | `origin` is your fork, `upstream` is the source | Never push to `upstream`; sync via `upstream/<default>` |
+| **GitHub flow** | Short branches → one default | Branch, PR, land |
+| **Trunk-based** | Direct default-branch commits, flags | Small commits; CI is the gate |
+| **Git flow** | `develop` + `release/*` + `hotfix/*` | Features → `develop`; hotfixes from tags |
+| **Release train** | Long-lived version lanes, `--no-ff` | Never rebase/delete lane branches |
+| **Fork-based** | `origin` fork, `upstream` source | Never push `upstream`; sync from it |
 
-Detect from `git branch -a`, `git log --graph`, and any `CONTRIBUTING.md`. If it stays ambiguous, ask once.
+Detect via `git branch -a`, `git log --graph`, `CONTRIBUTING.md`. If ambiguous, ask once.
 
 ## Reporting back
 
-Git work is invisible unless you describe it. The user cannot see your terminal, and "done" tells them nothing they can verify or undo.
+After ref moves: what moved with SHAs; what you skipped and why; undo path for anything destructive (backup ref or `git reset --hard <sha>`).
 
-After any operation that changed refs, state:
-
-- **What moved**, with SHAs: `feat/rate-limiter: a1b2c3d → e4f5a6b (3 commits)`.
-- **What you didn't do** and why — validation skipped, a file left unstaged, a second repo still dirty.
-- **How to undo it**, for anything destructive: the backup ref name, or the `git reset --hard <sha>` that reverses it.
-
-One or two lines. Not a transcript of the commands — the outcome and the escape hatch.
-
-After GitHub-platform mutations, report:
-
-- exact repository/project and object numbers or URLs;
-- created, updated, linked, closed, deleted, skipped, and failed counts;
-- relationships and fields verified after the write;
-- scopes, permissions, automation, or UI-only settings still requiring attention;
-- whether local repositories changed;
-- after a merge, each affected checkout's branch, upstream, cleanliness, and synchronization state;
-- branch deletion separately from merge and synchronization.
+After GitHub mutations: exact repo/project and object URLs/numbers; created/updated/linked/closed/deleted/skipped/failed counts; verified relationships/fields; remaining permission/UI gaps; whether local checkouts changed; after merge, each checkout's branch/upstream/cleanliness/sync; branch deletion separately from merge.
 
 ## Escalation
 
-When something falls outside these rules, say so in one sentence and stop. A wrong-but-permitted git operation on a shared branch costs more than a question.
+Outside these rules → one sentence and stop. A wrong permitted git op on a shared branch costs more than a question.

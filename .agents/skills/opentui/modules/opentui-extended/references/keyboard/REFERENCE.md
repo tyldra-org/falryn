@@ -1,5 +1,7 @@
 # Keyboard Input Handling
 
+> Prefer upstream `docs/core-concepts/keyboard.mdx` when this companion differs.
+
 How to handle keyboard input in OpenTUI applications.
 
 ## Overview

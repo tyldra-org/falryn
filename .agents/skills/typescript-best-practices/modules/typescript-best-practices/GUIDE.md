@@ -1,31 +1,30 @@
 ---
-name: typescript-best-practices
-description: Use when reading or writing TypeScript or JavaScript files (.ts, .tsx, .js, tsconfig.json).
+name: typescript-idioms
+description: Everyday TypeScript idioms—illegal states, Zod validation, const assertions, exhaustive switches. Use for routine .ts/.tsx/.js work when not optimizing tsc, designing advanced types, or doing React/Next reviews.
 ---
 
-# TypeScript Best Practices
+# TypeScript Idioms
 
-Follows type-first, functional, and error handling patterns from CLAUDE.md. This skill covers language-specific idioms only.
+Language idioms for day-to-day TypeScript. Prefer this guide first for ordinary implementation work.
 
-## Pair with React Best Practices
+For React review → `modules/typescript-react-reviewer/GUIDE.md`.  
+For Next.js App Router → `modules/nextjs-react-typescript/GUIDE.md`.  
+For compiler performance → `modules/typescript/GUIDE.md`.
 
-When working with React components (`.tsx`, `.jsx` files or `@react` imports), always load `react-best-practices` alongside this skill. This skill covers TypeScript fundamentals; React-specific patterns (effects, hooks, refs, component design) are in the dedicated React skill.
-
-## Make Illegal States Unrepresentable
-
-Use the type system to prevent invalid states at compile time.
+## Make illegal states unrepresentable
 
 **Discriminated unions for mutually exclusive states:**
+
 ```ts
 // Good: only valid combinations possible
 type RequestState<T> =
-  | { status: 'idle' }
-  | { status: 'loading' }
-  | { status: 'success'; data: T }
-  | { status: 'error'; error: Error };
+  | { status: "idle" }
+  | { status: "loading" }
+  | { status: "success"; data: T }
+  | { status: "error"; error: Error };
 
-// Bad: allows invalid combinations like { loading: true, error: Error }
-type RequestState<T> = {
+// Bad: allows { loading: true, error: Error }
+type RequestStateBad<T> = {
   loading: boolean;
   data?: T;
   error?: Error;
@@ -33,26 +32,31 @@ type RequestState<T> = {
 ```
 
 **Branded types for domain primitives:**
+
 ```ts
-type UserId = string & { readonly __brand: 'UserId' };
-type OrderId = string & { readonly __brand: 'OrderId' };
+type UserId = string & { readonly __brand: "UserId" };
+type OrderId = string & { readonly __brand: "OrderId" };
 
-// Compiler prevents passing OrderId where UserId expected
-function getUser(id: UserId): Promise<User> { /* ... */ }
-```
-
-**Const assertions for literal unions:**
-```ts
-const ROLES = ['admin', 'user', 'guest'] as const;
-type Role = typeof ROLES[number]; // 'admin' | 'user' | 'guest'
-
-// Array and type stay in sync automatically
-function isValidRole(role: string): role is Role {
-  return ROLES.includes(role as Role);
+function getUser(id: UserId): Promise<User> {
+  /* ... */
 }
 ```
 
-**Exhaustive switch with never check:**
+For deeper branding / type-guard patterns → `modules/typescript-pro/GUIDE.md`.
+
+**Const assertions for literal unions:**
+
+```ts
+const ROLES = ["admin", "user", "guest"] as const;
+type Role = (typeof ROLES)[number];
+
+function isValidRole(role: string): role is Role {
+  return (ROLES as readonly string[]).includes(role);
+}
+```
+
+**Exhaustive switch with `never`:**
+
 ```ts
 type Status = "active" | "inactive";
 
@@ -70,12 +74,12 @@ function processStatus(status: Status): string {
 }
 ```
 
-## Runtime Validation with Zod
+## Runtime validation with Zod
 
-- Define schemas as single source of truth; infer TypeScript types with `z.infer<>`. Avoid duplicating types and schemas.
-- Use `safeParse` for user input where failure is expected; use `parse` at trust boundaries where invalid data is a bug.
-- Compose schemas with `.extend()`, `.pick()`, `.omit()`, `.merge()` for DRY definitions.
-- Add `.transform()` for data normalization at parse time (trim strings, parse dates).
+- Schemas as single source of truth; types via `z.infer<>`.
+- `safeParse` for expected user-input failure; `parse` at trust boundaries.
+- Compose with `.extend()`, `.pick()`, `.omit()`, `.merge()`.
+- Normalize with `.transform()` at parse time.
 
 ```ts
 import { z } from "zod";
@@ -89,7 +93,6 @@ const UserSchema = z.object({
 
 type User = z.infer<typeof UserSchema>;
 
-// Strict parsing at trust boundaries — throws if API contract violated
 export async function fetchUser(id: string): Promise<User> {
   const response = await fetch(`/api/users/${id}`);
   if (!response.ok) {
@@ -98,7 +101,6 @@ export async function fetchUser(id: string): Promise<User> {
   return UserSchema.parse(await response.json());
 }
 
-// Caller handles both success and error from user input
 const result = UserSchema.safeParse(formData);
 if (!result.success) {
   setErrors(result.error.flatten().fieldErrors);
@@ -108,17 +110,16 @@ if (!result.success) {
 
 ## Optional: type-fest
 
-For advanced type utilities beyond TypeScript builtins, consider [type-fest](https://github.com/sindresorhus/type-fest):
+When builtins are insufficient, prefer [type-fest](https://github.com/sindresorhus/type-fest):
 
-- `Opaque<T, Token>` - cleaner branded types than manual `& { __brand }` pattern
-- `PartialDeep<T>` - recursive partial for nested objects
-- `ReadonlyDeep<T>` - recursive readonly for immutable data
-- `SetRequired<T, K>` / `SetOptional<T, K>` - targeted field modifications
-- `Simplify<T>` - flatten complex intersection types in IDE tooltips
+- `Opaque<T, Token>` — branded types
+- `PartialDeep<T>` / `ReadonlyDeep<T>` — recursive modifiers
+- `SetRequired<T, K>` / `SetOptional<T, K>` — targeted field changes
+- `Simplify<T>` — flatten intersections for IDE readability
 
 ```ts
-import type { Opaque, PartialDeep } from 'type-fest';
+import type { Opaque, PartialDeep } from "type-fest";
 
-type UserId = Opaque<string, 'UserId'>;
+type UserId = Opaque<string, "UserId">;
 type UserPatch = PartialDeep<User>;
 ```

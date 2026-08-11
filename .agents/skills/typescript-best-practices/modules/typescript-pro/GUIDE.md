@@ -1,147 +1,110 @@
 ---
 name: typescript-pro
-description: Implements advanced TypeScript type systems, creates custom type guards, utility types, and branded types, and configures tRPC for end-to-end type safety. Use when building TypeScript applications requiring advanced generics, conditional or mapped types, discriminated unions, monorepo setup, or full-stack type safety with tRPC.
-license: MIT
-metadata:
-  author: https://github.com/Jeffallan
-  version: "1.1.0"
-  domain: language
-  triggers: TypeScript, generics, type safety, conditional types, mapped types, tRPC, tsconfig, type guards, discriminated unions
-  role: specialist
-  scope: implementation
-  output-format: code
-  related-skills: fullstack-guardian, api-designer
+description: Implements branded types, type guards, custom utility types, and type-safe API patterns. Use when designing type-first APIs, narrowing at boundaries, or building reusable type utilities. For type-system tutorials use advanced-types; for tsc performance use compiler.
 ---
 
 # TypeScript Pro
 
-## Core Workflow
+Implementation-focused patterns. Load references only for the topic at hand.
 
-1. **Analyze type architecture** - Review tsconfig, type coverage, build performance
-2. **Design type-first APIs** - Create branded types, generics, utility types
-3. **Implement with type safety** - Write type guards, discriminated unions, conditional types; run `tsc --noEmit` to catch type errors before proceeding
-4. **Optimize build** - Configure project references, incremental compilation, tree shaking; re-run `tsc --noEmit` to confirm zero errors after changes
-5. **Test types** - Confirm type coverage with a tool like `type-coverage`; validate that all public APIs have explicit return types; iterate on steps 3–4 until all checks pass
+## Workflow
 
-## Reference Guide
+1. Inspect `tsconfig`, public exports, and type coverage of the touched surface.
+2. Design types before implementation (brands, unions, generics, utilities).
+3. Implement with guards / predicates; run the repo typecheck (`tsc --noEmit` or project script).
+4. Tighten config only if the project already uses those flags; re-typecheck.
+5. For libraries: explicit return types on exports; optional type tests.
 
-Load detailed guidance based on context:
+## References
 
-| Topic | Reference | Load When |
-|-------|-----------|-----------|
-| Advanced Types | `references/advanced-types.md` | Generics, conditional types, mapped types, template literals |
-| Type Guards | `references/type-guards.md` | Type narrowing, discriminated unions, assertion functions |
-| Utility Types | `references/utility-types.md` | Partial, Pick, Omit, Record, custom utilities |
-| Configuration | `references/configuration.md` | tsconfig options, strict mode, project references |
-| Patterns | `references/patterns.md` | Builder pattern, factory pattern, type-safe APIs |
+| Topic | File | Load when |
+| --- | --- | --- |
+| Advanced types | `references/advanced-types.md` | Generics, conditionals, mapped, template literals |
+| Type guards | `references/type-guards.md` | Narrowing, predicates, assertions, discriminants |
+| Utility types | `references/utility-types.md` | Builtin + custom utilities |
+| Configuration | `references/configuration.md` | Strict flags, project references, declarations |
+| Patterns | `references/patterns.md` | Builder, factory, type-safe APIs |
 
-## Code Examples
+Type-system tutorials with worked examples → `modules/typescript-advanced-types/GUIDE.md`.  
+Everyday idioms (Zod, exhaustive switch) → `modules/typescript-best-practices/GUIDE.md`.
 
-### Branded Types
-```typescript
-// Branded type for domain modeling
+## Quick patterns
+
+### Brand
+
+```ts
 type Brand<T, B extends string> = T & { readonly __brand: B };
-type UserId  = Brand<string, "UserId">;
+type UserId = Brand<string, "UserId">;
 type OrderId = Brand<number, "OrderId">;
 
-const toUserId  = (id: string): UserId  => id as UserId;
-const toOrderId = (id: number): OrderId => id as OrderId;
-
-// Usage — prevents accidental id mix-ups at compile time
-function getOrder(userId: UserId, orderId: OrderId) { /* ... */ }
+const toUserId = (id: string): UserId => id as UserId;
 ```
 
-### Discriminated Unions & Type Guards
-```typescript
-type LoadingState = { status: "loading" };
-type SuccessState = { status: "success"; data: string[] };
-type ErrorState   = { status: "error";   error: Error };
-type RequestState = LoadingState | SuccessState | ErrorState;
+### Discriminated union + guard
 
-// Type predicate guard
-function isSuccess(state: RequestState): state is SuccessState {
+```ts
+type RequestState =
+  | { status: "loading" }
+  | { status: "success"; data: string[] }
+  | { status: "error"; error: Error };
+
+function isSuccess(
+  state: RequestState
+): state is Extract<RequestState, { status: "success" }> {
   return state.status === "success";
 }
 
-// Exhaustive switch with discriminated union
-function renderState(state: RequestState): string {
+function render(state: RequestState): string {
   switch (state.status) {
-    case "loading": return "Loading…";
-    case "success": return state.data.join(", ");
-    case "error":   return state.error.message;
+    case "loading":
+      return "Loading…";
+    case "success":
+      return state.data.join(", ");
+    case "error":
+      return state.error.message;
     default: {
       const _exhaustive: never = state;
-      throw new Error(`Unhandled state: ${_exhaustive}`);
+      throw new Error(`Unhandled: ${_exhaustive}`);
     }
   }
 }
 ```
 
-### Custom Utility Types
-```typescript
-// Deep readonly — immutable nested objects
+### Useful utilities
+
+```ts
 type DeepReadonly<T> = {
   readonly [K in keyof T]: T[K] extends object ? DeepReadonly<T[K]> : T[K];
 };
 
-// Require exactly one of a set of keys
-type RequireExactlyOne<T, Keys extends keyof T = keyof T> =
-  Pick<T, Exclude<keyof T, Keys>> &
-  { [K in Keys]-?: Required<Pick<T, K>> & Partial<Record<Exclude<Keys, K>, never>> }[Keys];
-```
-
-### Recommended tsconfig.json
-```json
-{
-  "compilerOptions": {
-    "target": "ES2022",
-    "module": "NodeNext",
-    "moduleResolution": "NodeNext",
-    "strict": true,
-    "noUncheckedIndexedAccess": true,
-    "noImplicitOverride": true,
-    "exactOptionalPropertyTypes": true,
-    "isolatedModules": true,
-    "declaration": true,
-    "declarationMap": true,
-    "incremental": true,
-    "skipLibCheck": false
-  }
-}
+type RequireExactlyOne<T, Keys extends keyof T = keyof T> = Pick<
+  T,
+  Exclude<keyof T, Keys>
+> &
+  {
+    [K in Keys]-?: Required<Pick<T, K>> &
+      Partial<Record<Exclude<Keys, K>, never>>;
+  }[Keys];
 ```
 
 ## Constraints
 
-### MUST DO
-- Enable strict mode with all compiler flags
-- Use type-first API design
-- Implement branded types for domain modeling
-- Use `satisfies` operator for type validation
-- Create discriminated unions for state machines
-- Use `Annotated` pattern with type predicates
-- Generate declaration files for libraries
-- Optimize for type inference
+**Do**
 
-### MUST NOT DO
-- Use explicit `any` without justification
-- Skip type coverage for public APIs
-- Mix type-only and value imports
-- Disable strict null checks
-- Use `as` assertions without necessity
-- Ignore compiler performance warnings
-- Skip declaration file generation
-- Use enums (prefer const objects with `as const`)
+- Strict mode; justify any relaxation
+- Type-first public APIs; branded domain IDs where mix-ups are costly
+- `satisfies` when you need constraint + inference
+- Discriminated unions for state machines
+- Declaration emit for publishable packages
 
-## Output Templates
+**Don't**
 
-When implementing TypeScript features, provide:
-1. Type definitions (interfaces, types, generics)
-2. Implementation with type guards
-3. tsconfig configuration if needed
-4. Brief explanation of type design decisions
+- Bare `any` without a boundary + comment
+- Unnecessary `as` assertions
+- Disable strict null checks to silence errors
+- Prefer numeric `enum` over const objects / unions
+- Mix type-only and value imports carelessly (use `import type`)
 
-## Knowledge Reference
+## Output shape
 
-TypeScript 5.0+, generics, conditional types, mapped types, template literal types, discriminated unions, type guards, branded types, tRPC, project references, incremental compilation, declaration files, const assertions, satisfies operator
-
-[Documentation](https://jeffallan.github.io/claude-skills/skills/language/typescript-pro/)
+When implementing: (1) types, (2) guards/implementation, (3) tsconfig deltas only if needed, (4) one-sentence rationale for non-obvious type design.

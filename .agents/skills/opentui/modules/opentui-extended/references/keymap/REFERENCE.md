@@ -1,5 +1,7 @@
 # Keymap (@opentui/keymap)
 
+> Prefer upstream `docs/keymap/*.mdx` when this companion differs.
+
 A host-agnostic key binding, command, and sequence engine for both terminal
 (OpenTUI) and browser (DOM) hosts. It is a **separate package** from
 `@opentui/core`, shipped as `@opentui/keymap`, and is **pure JavaScript** — it

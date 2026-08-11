@@ -1,198 +1,134 @@
 ---
 name: typescript-react-reviewer
-description: "Expert code reviewer for TypeScript + React 19 applications. Use when reviewing React code, identifying anti-patterns, evaluating state management, or assessing code maintainability. Triggers: code review requests, PR reviews, React architecture evaluation, identifying code smells, TypeScript type safety checks, useEffect abuse detection, state management review."
+description: Review TypeScript + React code for correctness, hooks misuse, state bugs, and maintainability. Use for PR reviews, React 19 patterns, useEffect abuse, state management checks, or TypeScript safety in React components.
 ---
 
-# TypeScript + React 19 Code Review Expert
+# TypeScript + React Review
 
-Expert code reviewer with deep knowledge of React 19's new features, TypeScript best practices, state management patterns, and common anti-patterns.
+Defect-first review for React + TypeScript. Scan critical issues before style.
 
-## Review Priority Levels
+## Critical (block merge)
 
-### 🚫 Critical (Block Merge)
+| Issue | Why |
+| --- | --- |
+| `useEffect` for derived state | Extra render, sync bugs |
+| Missing effect cleanup | Leaks |
+| Direct state mutation | Silent stale UI |
+| Conditional hooks | Breaks Rules of Hooks |
+| `key={index}` on dynamic lists | State corruption on reorder |
+| Unjustified `any` | Safety bypass |
+| `useFormStatus` in same component as `<form>` | Always pending=false |
+| Promise created in render for `use()` | Infinite loop |
 
-These issues cause bugs, memory leaks, or architectural problems:
-
-| Issue | Why It's Critical |
-|-------|-------------------|
-| `useEffect` for derived state | Extra render cycle, sync bugs |
-| Missing cleanup in `useEffect` | Memory leaks |
-| Direct state mutation (`.push()`, `.splice()`) | Silent update failures |
-| Conditional hook calls | Breaks Rules of Hooks |
-| `key={index}` in dynamic lists | State corruption on reorder |
-| `any` type without justification | Type safety bypass |
-| `useFormStatus` in same component as `<form>` | Always returns false (React 19 bug) |
-| Promise created inside render with `use()` | Infinite loop |
-
-### ⚠️ High Priority
+## High priority
 
 | Issue | Impact |
-|-------|--------|
-| Incomplete dependency arrays | Stale closures, missing updates |
-| Props typed as `any` | Runtime errors |
-| Unjustified `useMemo`/`useCallback` | Unnecessary complexity |
-| Missing Error Boundaries | Poor error UX |
-| Controlled input initialized with `undefined` | React warning |
+| --- | --- |
+| Incomplete dependency arrays | Stale closures |
+| Props typed `any` | Runtime surprises |
+| Unjustified `useMemo` / `useCallback` | Noise (unless Compiler / measured) |
+| Missing Error Boundaries | Poor failure UX |
+| Controlled input from `undefined` | React warnings |
 
-### 📝 Architecture/Style
+## Architecture / style
 
-| Issue | Recommendation |
-|-------|----------------|
-| Component > 300 lines | Split into smaller components |
-| Prop drilling > 2-3 levels | Use composition or context |
-| State far from usage | Colocate state |
-| Custom hooks without `use` prefix | Follow naming convention |
+| Issue | Prefer |
+| --- | --- |
+| Component ≫ 300 lines | Split |
+| Prop drilling > 2–3 levels | Composition / context |
+| State far from usage | Colocate |
+| Custom hooks without `use` prefix | Rename |
 
-## Quick Detection Patterns
+## Quick detections
 
-### useEffect Abuse (Most Common Anti-Pattern)
+### Derived state / events in effects
 
-```typescript
-// ❌ WRONG: Derived state in useEffect
-const [firstName, setFirstName] = useState('');
-const [fullName, setFullName] = useState('');
-useEffect(() => {
-  setFullName(firstName + ' ' + lastName);
-}, [firstName, lastName]);
+```tsx
+// Bad
+useEffect(() => setFullName(firstName + " " + lastName), [firstName, lastName]);
+// Good
+const fullName = `${firstName} ${lastName}`;
 
-// ✅ CORRECT: Compute during render
-const fullName = firstName + ' ' + lastName;
+// Bad: notify in effect on cart flag
+// Good: notify in the click handler that mutates cart
 ```
 
-```typescript
-// ❌ WRONG: Event logic in useEffect
-useEffect(() => {
-  if (product.isInCart) showNotification('Added!');
-}, [product]);
+### React 19
 
-// ✅ CORRECT: Logic in event handler
-function handleAddToCart() {
-  addToCart(product);
-  showNotification('Added!');
-}
-```
-
-### React 19 Hook Mistakes
-
-```typescript
-// ❌ WRONG: useFormStatus in form component (always returns false)
-function Form() {
-  const { pending } = useFormStatus();
-  return <form action={submit}><button disabled={pending}>Send</button></form>;
-}
-
-// ✅ CORRECT: useFormStatus in child component
+```tsx
+// useFormStatus must be in a child of <form>
 function SubmitButton() {
   const { pending } = useFormStatus();
-  return <button type="submit" disabled={pending}>Send</button>;
-}
-function Form() {
-  return <form action={submit}><SubmitButton /></form>;
-}
-```
-
-```typescript
-// ❌ WRONG: Promise created in render (infinite loop)
-function Component() {
-  const data = use(fetch('/api/data')); // New promise every render!
+  return (
+    <button type="submit" disabled={pending}>
+      Send
+    </button>
+  );
 }
 
-// ✅ CORRECT: Promise from props or state
-function Component({ dataPromise }: { dataPromise: Promise<Data> }) {
+// use() needs a stable promise (props/state), not fetch() in render
+function View({ dataPromise }: { dataPromise: Promise<Data> }) {
   const data = use(dataPromise);
+  return <>{data.id}</>;
 }
 ```
 
-### State Mutation Detection
+### Mutations
 
-```typescript
-// ❌ WRONG: Mutations (no re-render)
+```ts
+// Bad
 items.push(newItem);
 setItems(items);
-
-arr[i] = newValue;
-setArr(arr);
-
-// ✅ CORRECT: Immutable updates
+// Good
 setItems([...items, newItem]);
-setArr(arr.map((x, idx) => idx === i ? newValue : x));
 ```
 
-### TypeScript Red Flags
+### TypeScript red flags
 
-```typescript
-// ❌ Red flags to catch
-const data: any = response;           // Unsafe any
-const items = arr[10];                // Missing undefined check
-const App: React.FC<Props> = () => {}; // Discouraged pattern
-
-// ✅ Preferred patterns
-const data: ResponseType = response;
-const items = arr[10]; // with noUncheckedIndexedAccess
-const App = ({ prop }: Props) => {};  // Explicit props
+```ts
+const data: any = response; // bad
+const App: React.FC<Props> = () => null; // avoid; prefer explicit props
+const App = ({ prop }: Props) => null; // good
 ```
 
-## Review Workflow
+Prefer `noUncheckedIndexedAccess` so `arr[i]` is `T | undefined`.
 
-1. **Scan for critical issues first** - Check for the patterns in "Critical (Block Merge)" section
-2. **Check React 19 usage** - See [react19-patterns.md](references/react19-patterns.md) for new API patterns
-3. **Evaluate state management** - Is state colocated? Server state vs client state separation?
-4. **Assess TypeScript safety** - Generic components, discriminated unions, strict config
-5. **Review for maintainability** - Component size, hook design, folder structure
+## Review workflow
 
-## Reference Documents
+1. Critical table patterns
+2. React 19 APIs — [react19-patterns.md](references/react19-patterns.md)
+3. Server vs client state separation
+4. TypeScript safety (generics, discriminants, strict config)
+5. Maintainability (size, hooks, structure) — [checklist.md](references/checklist.md)
 
-For detailed patterns and examples:
+## State defaults
 
-- **[react19-patterns.md](references/react19-patterns.md)** - React 19 new hooks (useActionState, useOptimistic, use), Server/Client Component boundaries
-- **[antipatterns.md](references/antipatterns.md)** - Comprehensive anti-pattern catalog with fixes
-- **[checklist.md](references/checklist.md)** - Full code review checklist for thorough reviews
+| Data | Prefer |
+| --- | --- |
+| Server/async | TanStack Query (don't mirror into `useState`) |
+| Simple global UI | Zustand (or existing store) |
+| Fine-grained atoms | Jotai (if already used) |
+| Local UI | `useState` / `useReducer` |
+| Forms | React 19 `useActionState` when applicable |
 
-## State Management Quick Guide
-
-| Data Type | Solution |
-|-----------|----------|
-| Server/async data | TanStack Query (never copy to local state) |
-| Simple global UI state | Zustand (~1KB, no Provider) |
-| Fine-grained derived state | Jotai (~2.4KB) |
-| Component-local state | useState/useReducer |
-| Form state | React 19 useActionState |
-
-### TanStack Query Anti-Pattern
-
-```typescript
-// ❌ NEVER copy server data to local state
-const { data } = useQuery({ queryKey: ['todos'], queryFn: fetchTodos });
-const [todos, setTodos] = useState([]);
-useEffect(() => setTodos(data), [data]);
-
-// ✅ Query IS the source of truth
-const { data: todos } = useQuery({ queryKey: ['todos'], queryFn: fetchTodos });
+```ts
+// Bad: copy query → local state
+// Good: const { data: todos } = useQuery(...)
 ```
 
-## TypeScript Config Recommendations
+## Immediate flags
 
-```json
-{
-  "compilerOptions": {
-    "strict": true,
-    "noUncheckedIndexedAccess": true,
-    "noImplicitReturns": true,
-    "exactOptionalPropertyTypes": true
-  }
-}
-```
+| Pattern | Fix |
+| --- | --- |
+| `eslint-disable react-hooks/exhaustive-deps` | Refactor |
+| Component defined inside component | Hoist |
+| `useState(undefined)` for text inputs | `""` |
+| App-level barrel `index.ts` | Direct imports |
 
-`noUncheckedIndexedAccess` is critical - it catches `arr[i]` returning undefined.
+## References
 
-## Immediate Red Flags
+- [react19-patterns.md](references/react19-patterns.md)
+- [antipatterns.md](references/antipatterns.md)
+- [checklist.md](references/checklist.md)
 
-When reviewing, flag these immediately:
-
-| Pattern | Problem | Fix |
-|---------|---------|-----|
-| `eslint-disable react-hooks/exhaustive-deps` | Hides stale closure bugs | Refactor logic |
-| Component defined inside component | Remounts every render | Move outside |
-| `useState(undefined)` for inputs | Uncontrolled warning | Use empty string |
-| `React.FC` with generics | Generic inference breaks | Use explicit props |
-| Barrel files (`index.ts`) in app code | Bundle bloat, circular deps | Direct imports |
+For Next.js App Router conventions → `modules/nextjs-react-typescript/GUIDE.md`.

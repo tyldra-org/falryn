@@ -48,9 +48,13 @@ executes it, not because a contributor has to adopt it. Read it if you are
 curious about why pull requests here look the way they do, or if you are
 working on this repository with an agent and want it to behave consistently.
 
-Some of it is not available to a contributor anyway: Project status
-transitions, merge ordering, and post-merge synchronisation all need write
-access to the repository.
+**Those agent modes are optional even for collaborators.** You never have to
+issue `Plan`, `Implement`, `Verify`, `Merge`, `Deliver`, or `Next` prompts.
+Issue → branch → focused PR → `bun run check` is enough. The modes are available
+if you want them; they are not part of the contribution bar above.
+
+Some of it is not available without write access anyway: Project status
+transitions, merge ordering, and post-merge synchronisation.
 
 ### Delivery lifecycle
 
@@ -105,6 +109,8 @@ create an explicit integration subissue rather than a parent mega-PR.
 
 ### Agent modes
 
+Optional maintainer prompts. Full contract:
+[`falryn-docs/DEVELOPMENT.md`](https://github.com/tyldra-org/falryn-docs/blob/main/DEVELOPMENT.md).
 Ordinary prompts do not need repository names. `Issue`, `Parent issue`, `PR`,
 and milestone targets resolve to `falryn`; the delivery PR includes explicitly
 linked docs companions automatically. Use `Docs issue` or `Docs PR` only for
