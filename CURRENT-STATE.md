@@ -954,6 +954,13 @@ Five limitations belong with those numbers:
   output; pooling is a fixed, auditable statistic, not a conditional retry or
   threshold bypass. The benchmark is not scheduled for ordinary pull-request or
   `main` push runs.
+  Ordinary CI exposes format, Biome quality, TypeScript, direct-dependency
+  integrity, and Bun advisory-audit jobs separately, then runs the source suite
+  on Ubuntu, macOS arm64, and Windows. That matrix detects source-level host
+  differences only: it is not a support, shell, terminal, installer, signing,
+  or release qualification. Linux separately builds and smokes the compiled CLI;
+  the pinned macOS arm64 job separately exercises the compiled CLI and
+  pseudo-terminal suites.
   Database size, contention, throughput, cadence, memory, and shutdown remain
   diagnostic observations rather than newly invented budgets. Because the base
   predates report emission, CI overlays only this PR's test-only report harness
