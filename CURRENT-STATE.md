@@ -2350,8 +2350,8 @@ Its verified behavior:
   domain modules from importing providers.
 
 No live vendor adapter, OAuth browser flow, remote HTTP discovery against a
-real network, model router, or agent-loop consumer is shipped. Those remain
-[#36](https://github.com/tyldra-org/falryn/issues/36)–[#39](https://github.com/tyldra-org/falryn/issues/39)
+real network, or agent-loop consumer is shipped. Those remain
+[#38](https://github.com/tyldra-org/falryn/issues/38)–[#39](https://github.com/tyldra-org/falryn/issues/39)
 and later authentication write/OAuth work.
 
 The provider authentication, profile configuration, and capability discovery
@@ -2389,6 +2389,26 @@ The stream normalization slice from
   finished/failed terminal.
 
 Live vendor stream parsers and agent-loop consumption remain later issues.
+
+The model roles, intent routing, compatibility, and fallback slice from
+[#37](https://github.com/tyldra-org/falryn/issues/37) extends `src/providers/`
+with:
+
+- `ModelPolicy` / `RoleRoute` types and Zod parse (`parseModelPolicy`), including
+  reasoning effort, budgets, ordered fallbacks, and vision/advisor/compact `use`
+  flags;
+- the design-table default intent → role map (`DEFAULT_INTENT_ROLE_MAP`);
+- `resolveModelRoute` / `resolveNextFallback`: explicit selection, intent-mapped
+  or role-policy primary routes, catalog capability filtering, and ordered
+  fallback with a visited-set non-recursion proof; and
+- a `RoutingReceipt` on every selection (role, intent, selection reason, required
+  capabilities, provider/model, reasoning, fallback position, budgets, catalog
+  generation/provenance).
+
+Vision/advisor/compact *use* policy execution beyond disable/`off`, live health
+scoring, and agent-loop consumption remain
+[#38](https://github.com/tyldra-org/falryn/issues/38)–[#39](https://github.com/tyldra-org/falryn/issues/39)
+and later.
 
 ## Remaining implementation gaps
 
@@ -2485,7 +2505,7 @@ Their implementation breakdown lives in GitHub Issues and the Project.
 - **First parent outcome:** [#1 Establish the unified runtime and lifecycle](https://github.com/tyldra-org/falryn/issues/1)
 - **Completed shell parent:** [#21 Deliver the OpenTUI application shell](https://github.com/tyldra-org/falryn/issues/21) is closed and Done. [#16 Deliver the CLI and headless foundation](https://github.com/tyldra-org/falryn/issues/16) is complete.
 - **Completed docs reconcile:** [falryn-docs#1](https://github.com/tyldra-org/falryn-docs/issues/1) (Reconcile v0.1 Foundation documentation) is closed and Done via children [#84](https://github.com/tyldra-org/falryn-docs/issues/84)–[#89](https://github.com/tyldra-org/falryn-docs/issues/89); integration landed in [falryn-docs#95](https://github.com/tyldra-org/falryn-docs/pull/95) (`64366c0`).
-- **Active delivery:** parent [#33 Integrate providers and model routing](https://github.com/tyldra-org/falryn/issues/33) (v0.2 Core Coding Agent). [#36](https://github.com/tyldra-org/falryn/issues/36) closed via [PR #453](https://github.com/tyldra-org/falryn/pull/453) (`0cf4f8e`); docs companion [falryn-docs#98](https://github.com/tyldra-org/falryn-docs/pull/98).
+- **Active delivery:** parent [#33 Integrate providers and model routing](https://github.com/tyldra-org/falryn/issues/33) (v0.2 Core Coding Agent). [#37](https://github.com/tyldra-org/falryn/issues/37) in progress (model roles, intent routing, compatibility, fallback).
 - **Open falryn v0.1 Foundation product issues:** none remaining.
 - **Next planning action:** continue #33 via [#37 Implement model roles, intent routing, compatibility, and fallback policy](https://github.com/tyldra-org/falryn/issues/37). GitHub remains authoritative for ordering.
 

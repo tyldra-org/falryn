@@ -1,9 +1,8 @@
 /**
  * Public generative model roles and internal work intents.
  *
- * Roles are configuration concepts, not separate agent protocols. Exact routing
- * policy belongs to later issues; this module only names the closed vocabulary
- * the ports and schemas accept.
+ * Roles are configuration concepts, not separate agent protocols. Intent → role
+ * mapping and fallback live in `policy.ts` / `routing.ts`.
  */
 
 export const MODEL_ROLES = [

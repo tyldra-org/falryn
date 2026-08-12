@@ -2,9 +2,10 @@
  * Provider ports and normalized boundary schemas.
  *
  * This source area owns provider-neutral requests, stream events, profiles,
- * authentication snapshots, capability discovery, and the adapter port. Vendor
- * SDKs stay in leaf adapters (none shipped yet). Domain, application, CLI, and
- * OpenTUI must not import SDK types through this surface.
+ * authentication snapshots, capability discovery, model policy / intent routing,
+ * and the adapter port. Vendor SDKs stay in leaf adapters (none shipped yet).
+ * Domain, application, CLI, and OpenTUI must not import SDK types through this
+ * surface.
  */
 
 export type { DiscoveryPolicy, ProviderAdapterKind } from "./adapter-kind.ts";
@@ -86,6 +87,33 @@ export type {
 } from "./messages.ts";
 export { isMessageRole, MESSAGE_ROLES } from "./messages.ts";
 export type {
+  AdvisorRoleRoute,
+  CompactRoleRoute,
+  FallbackTarget,
+  IntentRoleMap,
+  ModelPolicy,
+  ModelRoleRoutes,
+  ReasoningEffort,
+  RoleBudgets,
+  RoleRoute,
+  VisionRoleRoute,
+} from "./policy.ts";
+export {
+  DEFAULT_INTENT_ROLE_MAP,
+  isCompleteIntentMap,
+  isReasoningEffort,
+  isRoleDisabled,
+  REASONING_EFFORTS,
+  resolveIntentRole,
+  roleRouteFor,
+} from "./policy.ts";
+export type { ModelPolicyParseError } from "./policy-schema.ts";
+export {
+  assertDefaultIntentMapComplete,
+  modelPolicySchema,
+  parseModelPolicy,
+} from "./policy-schema.ts";
+export type {
   ProviderAdapterIdentity,
   ProviderAdapterPort,
   ProviderStreamOptions,
@@ -101,6 +129,20 @@ export { parseProviderProfile, providerProfileSchema } from "./profile-schema.ts
 export type { ModelRequest } from "./request.ts";
 export type { ModelRole, WorkIntent } from "./roles.ts";
 export { isModelRole, isWorkIntent, MODEL_ROLES, WORK_INTENTS } from "./roles.ts";
+export type {
+  ExplicitModelSelection,
+  ResolveRouteInput,
+  RoutedCatalogEntry,
+  RouteRequirement,
+  RouteSelectionReason,
+  RoutingOutcome,
+  RoutingReceipt,
+} from "./routing.ts";
+export {
+  modelMatchesRequirements,
+  resolveModelRoute,
+  resolveNextFallback,
+} from "./routing.ts";
 export {
   isSupportedProviderSchemaVersion,
   modelRequestSchema,
