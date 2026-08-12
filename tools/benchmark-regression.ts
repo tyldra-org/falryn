@@ -63,10 +63,10 @@ export type BenchmarkTrial = (typeof BENCHMARK_TRIALS)[number];
 /**
  * A fixed same-revision settling period before every report prevents a first
  * post-build measurement from becoming the comparison sample. This is a
- * precondition, not a retry: either both unreported runs succeed or the gate
- * fails closed.
+ * precondition, not a retry: either the required unreported run succeeds or the
+ * gate fails closed.
  */
-export const BENCHMARK_SETTLING_WARMUP_RUNS = 2;
+export const BENCHMARK_SETTLING_WARMUP_RUNS = 1;
 
 export type BenchmarkRun = Readonly<{
   revision: string;

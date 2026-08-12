@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Contributions are not open yet
+    url: https://github.com/tyldra-org/falryn/blob/main/CONTRIBUTING.md
+    about: Issues and pull requests are restricted to collaborators while the foundation is built. Read why, and what will be expected later.
+  - name: Report a security vulnerability
+    url: https://github.com/tyldra-org/falryn/security/advisories/new
+    about: Private vulnerability reporting stays open to everyone. Do not file a public issue for a security report.
+  - name: Falryn documentation
+    url: https://github.com/tyldra-org/falryn-docs
+    about: Product, architecture, and developer documentation live in the falryn-docs repository.
