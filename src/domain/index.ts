@@ -54,6 +54,25 @@ export {
   temporaryArtifactName,
 } from "./artifact.ts";
 export type {
+  AttemptAction,
+  AttemptClassification,
+  AttemptFact,
+  AttemptFailureCategory,
+  AttemptIdentity,
+  DecideAttemptActionInput,
+  RefusalFinishReason,
+  RefusalSource,
+} from "./attempt-policy.ts";
+export {
+  ATTEMPT_FAILURE_CATEGORIES,
+  classifyAttempt,
+  decideAttemptAction,
+  isAttemptFailureCategory,
+  isRefusalFinishReason,
+  REFUSAL_FINISH_REASONS,
+  terminalOutcomeForClassification,
+} from "./attempt-policy.ts";
+export type {
   BlobError,
   BlobErrorCode,
   BlobLocation,

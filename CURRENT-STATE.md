@@ -2511,6 +2511,25 @@ Validated by `src/domain/tool-pipeline.test.ts` and
 `src/application/tool-call-loop.test.ts` under `bun run check`, using
 deterministic catalog and runner doubles.
 
+The retry/fallback/refusal/partial/terminal slice from
+[#45](https://github.com/tyldra-org/falryn/issues/45) classifies attempt
+failures and settles turns with bounded retry and non-recursive fallback,
+without durable persist/replay:
+
+- `src/domain/attempt-policy.ts` — provider-neutral attempt facts, exhaustive
+  classification (`completed`, `refusal`, `partial`, `cancelled`, `timed-out`,
+  `uncertain`, `failed`, `may-retry-same`, `may-fallback`), action decisions
+  composed with `evaluateRetry`, and mapping onto turn-machine terminals;
+- `src/application/turn-attempt-policy.ts` — orchestrates visible attempt
+  identity, bounded same-route retry with backoff, `#37` `resolveNextFallback`
+  with a visited set (no route recursion), typed refusal/partial outcomes, and
+  turn recovery under a new generation between settled attempts; runners are
+  injected (`AttemptRunnerPort`) so stream/tool loops stay behind the seam.
+
+Validated by `src/domain/attempt-policy.test.ts` and
+`src/application/turn-attempt-policy.test.ts` under `bun run check`, using
+deterministic route catalogs and scripted attempt runners.
+
 ## Remaining implementation gaps
 
 The repository now provides end-user behavior for the `config`, `data`, and `doctor`
@@ -2588,7 +2607,7 @@ session/turn producer, or live transcript producer. The remaining gaps are:
   completion, and hidden or deprecated command policy beyond its declaration;
 - provider integration beyond the #34–#39 boundary (live vendor adapters,
   OAuth/write flows, network discovery against real endpoints), the remaining
-  agent-loop children (#45–#46), or product workspace/Git/shell tool adapters;
+  agent-loop child (#46), or product workspace/Git/shell tool adapters;
 - workspace, read, search, patch, shell, Git, LSP, DAP, browser, or computer-use
   capabilities;
 - context planning, Brief, Hush, Loom, compression, indexing, or memory;
@@ -2606,9 +2625,9 @@ Their implementation breakdown lives in GitHub Issues and the Project.
 - **First parent outcome:** [#1 Establish the unified runtime and lifecycle](https://github.com/tyldra-org/falryn/issues/1)
 - **Completed shell parent:** [#21 Deliver the OpenTUI application shell](https://github.com/tyldra-org/falryn/issues/21) is closed and Done. [#16 Deliver the CLI and headless foundation](https://github.com/tyldra-org/falryn/issues/16) is complete.
 - **Completed docs reconcile:** [falryn-docs#1](https://github.com/tyldra-org/falryn-docs/issues/1) (Reconcile v0.1 Foundation documentation) is closed and Done via children [#84](https://github.com/tyldra-org/falryn-docs/issues/84)–[#89](https://github.com/tyldra-org/falryn-docs/issues/89); integration landed in [falryn-docs#95](https://github.com/tyldra-org/falryn-docs/pull/95) (`64366c0`).
-- **Active delivery:** [#40 Implement the agent turn loop](https://github.com/tyldra-org/falryn/issues/40) is In Progress. Child [#41 Implement session and turn state machines with exhaustive outcomes](https://github.com/tyldra-org/falryn/issues/41) closed and Done via [PR #461](https://github.com/tyldra-org/falryn/pull/461) (`8c903a4`); docs companion [falryn-docs#102](https://github.com/tyldra-org/falryn-docs/pull/102) (`ccda31d`). Child [#42 Compose system prompts, instructions, tools, and context deterministically](https://github.com/tyldra-org/falryn/issues/42) closed and Done via [PR #463](https://github.com/tyldra-org/falryn/pull/463) (`795341d`); docs companion [falryn-docs#103](https://github.com/tyldra-org/falryn-docs/pull/103) (`63abcb6`). Child [#43 Consume provider streams with ordering and backpressure](https://github.com/tyldra-org/falryn/issues/43) closed and Done via [PR #465](https://github.com/tyldra-org/falryn/pull/465) (`727f3d5`); docs companion [falryn-docs#104](https://github.com/tyldra-org/falryn-docs/pull/104) (`100d7be`). Child [#44 Execute iterative tool calls with cancellation and bounded loops](https://github.com/tyldra-org/falryn/issues/44) closed and Done via [PR #467](https://github.com/tyldra-org/falryn/pull/467) (`bec765b`); docs companion [falryn-docs#105](https://github.com/tyldra-org/falryn-docs/pull/105) (`206e61d`).
+- **Active delivery:** [#40 Implement the agent turn loop](https://github.com/tyldra-org/falryn/issues/40) is In Progress. Child [#41 Implement session and turn state machines with exhaustive outcomes](https://github.com/tyldra-org/falryn/issues/41) closed and Done via [PR #461](https://github.com/tyldra-org/falryn/pull/461) (`8c903a4`); docs companion [falryn-docs#102](https://github.com/tyldra-org/falryn-docs/pull/102) (`ccda31d`). Child [#42 Compose system prompts, instructions, tools, and context deterministically](https://github.com/tyldra-org/falryn/issues/42) closed and Done via [PR #463](https://github.com/tyldra-org/falryn/pull/463) (`795341d`); docs companion [falryn-docs#103](https://github.com/tyldra-org/falryn-docs/pull/103) (`63abcb6`). Child [#43 Consume provider streams with ordering and backpressure](https://github.com/tyldra-org/falryn/issues/43) closed and Done via [PR #465](https://github.com/tyldra-org/falryn/pull/465) (`727f3d5`); docs companion [falryn-docs#104](https://github.com/tyldra-org/falryn-docs/pull/104) (`100d7be`). Child [#44 Execute iterative tool calls with cancellation and bounded loops](https://github.com/tyldra-org/falryn/issues/44) closed and Done via [PR #467](https://github.com/tyldra-org/falryn/pull/467) (`bec765b`); docs companion [falryn-docs#105](https://github.com/tyldra-org/falryn-docs/pull/105) (`206e61d`). Child [#45 Implement retry, fallback, refusal, partial, and terminal behavior](https://github.com/tyldra-org/falryn/issues/45) closed and Done via delivery PR (this change); docs companion lands first.
 - **Open falryn v0.1 Foundation product issues:** none remaining.
-- **Next planning action:** continue #40 via [#45 Implement retry, fallback, refusal, partial, and terminal behavior](https://github.com/tyldra-org/falryn/issues/45). GitHub remains authoritative for ordering.
+- **Next planning action:** continue #40 via [#46 Persist and replay turn events without repeating effects](https://github.com/tyldra-org/falryn/issues/46). GitHub remains authoritative for ordering.
 
 Which of #1's children are open, and which delivered the behavior recorded
 above, is read from
