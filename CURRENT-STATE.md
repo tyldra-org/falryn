@@ -2418,9 +2418,9 @@ Their implementation breakdown lives in GitHub Issues and the Project.
 - **Current release outcome:** [v0.1 Foundation issues](https://github.com/tyldra-org/falryn/issues?q=is%3Aissue%20is%3Aopen%20milestone%3A%22v0.1%20Foundation%22)
 - **First parent outcome:** [#1 Establish the unified runtime and lifecycle](https://github.com/tyldra-org/falryn/issues/1)
 - **Completed shell parent:** [#21 Deliver the OpenTUI application shell](https://github.com/tyldra-org/falryn/issues/21) is closed and Done. [#16 Deliver the CLI and headless foundation](https://github.com/tyldra-org/falryn/issues/16) is complete.
-- **Active delivery:** docs-only — parent [falryn-docs#1](https://github.com/tyldra-org/falryn-docs/issues/1) (Reconcile v0.1 Foundation documentation). Child [#84](https://github.com/tyldra-org/falryn-docs/issues/84) closed via [falryn-docs#90](https://github.com/tyldra-org/falryn-docs/pull/90); next child [#85](https://github.com/tyldra-org/falryn-docs/issues/85).
+- **Active delivery:** docs-only — parent [falryn-docs#1](https://github.com/tyldra-org/falryn-docs/issues/1) (Reconcile v0.1 Foundation documentation). Children [#84](https://github.com/tyldra-org/falryn-docs/issues/84)–[#87](https://github.com/tyldra-org/falryn-docs/issues/87) closed; next child [#88](https://github.com/tyldra-org/falryn-docs/issues/88).
 - **Open falryn v0.1 Foundation product issues:** none remaining on the application milestone for TUI defect work tracked here.
-- **Next planning action:** continue Docs #1 via [#85](https://github.com/tyldra-org/falryn-docs/issues/85), then remaining ordered children through [#89](https://github.com/tyldra-org/falryn-docs/issues/89). GitHub remains authoritative for ordering.
+- **Next planning action:** continue Docs #1 via [#88](https://github.com/tyldra-org/falryn-docs/issues/88), then [#89](https://github.com/tyldra-org/falryn-docs/issues/89). GitHub remains authoritative for ordering.
 
 Which of #1's children are open, and which delivered the behavior recorded
 above, is read from
