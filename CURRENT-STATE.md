@@ -2472,6 +2472,24 @@ persistence:
 Validated by `src/domain/prompt-composition.test.ts` and
 `src/application/prompt-composer.test.ts` under `bun run check`.
 
+The provider-stream consumption slice from
+[#43](https://github.com/tyldra-org/falryn/issues/43) adds the agent-loop
+consumer that pulls normalized provider streams with ordering and backpressure,
+without tool execution, retry/fallback, or durable turn-event persistence:
+
+- `src/application/provider-stream-consumer.ts` — consumes adapter events through
+  existing `normalizeProviderStream` / `ProviderStreamAssembler` (sequence
+  integrity from #36), admits them into a bounded queue that coalesces
+  display-only text/reasoning deltas and rejects semantic overflow (no unbounded
+  buffer), drives the turn coordinator from `assembling-context` /
+  `awaiting-model` into `handling-model-event`, and returns exhaustive typed
+  outcomes (`finished`, `failed`, `malformed`, `cancelled`, `timed-out`,
+  `partial`, `backpressure-rejected`, `turn-error`); tool proposals leave the
+  turn active at `handling-model-event` for #44.
+
+Validated by `src/application/provider-stream-consumer.test.ts` under
+`bun run check`, using the deterministic provider adapter fixtures.
+
 ## Remaining implementation gaps
 
 The repository now provides end-user behavior for the `config`, `data`, and `doctor`
@@ -2547,9 +2565,9 @@ session/turn producer, or live transcript producer. The remaining gaps are:
   submission resolves to `unavailable` and the transcript remains empty.
   Also absent: every command group whose capability does not exist, shell
   completion, and hidden or deprecated command policy beyond its declaration;
-- provider integration beyond the #34–#36 boundary (live vendor adapters,
-  OAuth/write flows, network discovery, model routing), the agent loop, or
-  unified tool execution;
+- provider integration beyond the #34–#39 boundary (live vendor adapters,
+  OAuth/write flows, network discovery against real endpoints), the remaining
+  agent-loop children (#44–#46), or unified tool execution;
 - workspace, read, search, patch, shell, Git, LSP, DAP, browser, or computer-use
   capabilities;
 - context planning, Brief, Hush, Loom, compression, indexing, or memory;
