@@ -11,7 +11,8 @@
  *
  * Tool execution after proposals leave this consumer is owned by
  * `tool-call-loop` (#44). Retry/fallback/refusal/partial settlement is owned by
- * `turn-attempt-policy` (#45). Does not persist events (#46). This module is the
+ * `turn-attempt-policy` (#45). Durable turn-event persistence is owned by
+ * `turn-event-journal` (#46). This module is the
  * intentional model-service seam: it may import the provider port and
  * stream-assembly surface.
  */

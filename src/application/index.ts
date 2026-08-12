@@ -163,3 +163,11 @@ export type {
   TurnCoordinatorResult,
 } from "./turn-coordinator.ts";
 export { createTurnCoordinator } from "./turn-coordinator.ts";
+export type {
+  PersistTurnEventsOutcome,
+  ReplayTurnEventsOutcome,
+  TurnEventJournal,
+  TurnEventJournalOptions,
+  TurnEventJournalPort,
+} from "./turn-event-journal.ts";
+export { createTurnEventJournal } from "./turn-event-journal.ts";

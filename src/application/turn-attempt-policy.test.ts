@@ -2,11 +2,13 @@ import { describe, expect, test } from "bun:test";
 
 import {
   configurationGeneration,
+  createInMemoryEventStore,
   createManualClock,
   duration,
   modelId,
   providerId,
   sessionId,
+  streamId,
   traceId,
   turnId,
   workspaceId,
@@ -23,6 +25,7 @@ import {
   createTurnAttemptPolicy,
 } from "./turn-attempt-policy.ts";
 import { createTurnCoordinator } from "./turn-coordinator.ts";
+import { createTurnEventJournal } from "./turn-event-journal.ts";
 
 const generation = configurationGeneration.from(0);
 const primary = providerId.from("primary");
@@ -540,5 +543,63 @@ describe("turn attempt policy", () => {
     clock.advance(duration(1));
     const outcome = await running;
     expect(outcome.kind === "cancelled" || outcome.kind === "exhausted").toBe(true);
+  });
+
+  test("records attempt facts through the journal without re-running on replay", async () => {
+    const { coordinator, turnId: id } = startTurn();
+    const clock = createManualClock();
+    const eventStore = createInMemoryEventStore();
+    const journal = createTurnEventJournal({
+      eventStore,
+      clock,
+      streamId: streamId.from("session:attempt-journal"),
+      correlation: {
+        workspaceId: workspaceId.from("workspace-1"),
+        sessionId: sessionId.from("session-1"),
+        traceId: traceId.from("trace-1"),
+        configurationGeneration: generation,
+      },
+    });
+
+    let runnerCalls = 0;
+    const policy = createTurnAttemptPolicy({
+      clock,
+      coordinator,
+      policy: samplePolicy(),
+      catalogs: catalogs(),
+      journal,
+      backoff: { baseDelayMs: 0, maxDelayMs: 0, jitterRatio: 0 },
+      runner: scriptedRunner([
+        () => {
+          runnerCalls += 1;
+          return {
+            fact: {
+              kind: "completed",
+              finishReason: "stop",
+              observedContent: true,
+              emittedToolProposal: false,
+            },
+            turn: null,
+          };
+        },
+      ]),
+    });
+
+    const outcome = await policy.run({
+      turnId: id,
+      configurationGeneration: generation,
+      signal: new AbortController().signal,
+      intent: "coding",
+    });
+    expect(outcome.kind).toBe("completed");
+    expect(runnerCalls).toBe(1);
+
+    const replayed = await journal.replayTurn(id);
+    expect(replayed.kind).toBe("rebuilt");
+    expect(runnerCalls).toBe(1);
+    if (replayed.kind === "rebuilt") {
+      expect(replayed.turns[0]!.outcome).toEqual({ kind: "completed" });
+      expect(replayed.turns[0]!.attempts).toHaveLength(1);
+    }
   });
 });
