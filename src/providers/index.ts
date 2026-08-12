@@ -59,7 +59,9 @@ export type {
 } from "./identity.ts";
 export { modelRequestId } from "./identity.ts";
 export {
+  MAX_ASSEMBLED_TEXT_LENGTH,
   MAX_FINISH_REASON_LENGTH,
+  MAX_IN_FLIGHT_TOOL_CALLS,
   MAX_MESSAGE_TEXT_LENGTH,
   MAX_PROVIDER_METADATA_ENTRIES,
   MAX_PROVIDER_METADATA_ENTRY_LENGTH,
@@ -122,6 +124,14 @@ export {
   isTerminalProviderEvent,
   PROVIDER_EVENT_KINDS,
 } from "./stream.ts";
+export type {
+  AssembledToolProposal,
+  StreamAssemblyDiagnostic,
+  StreamAssemblySnapshot,
+  StreamAssemblyStep,
+  StreamAssemblyTerminal,
+} from "./stream-assembly.ts";
+export { normalizeProviderStream, ProviderStreamAssembler } from "./stream-assembly.ts";
 export type { ProviderBoundaryParseError } from "./validate.ts";
 export {
   parseModelRequest,

@@ -2372,6 +2372,24 @@ slice from [#35](https://github.com/tyldra-org/falryn/issues/35) extends
 - `openProviderSession` as the public vertical entry that combines profile, auth,
   and discovery into one typed outcome.
 
+The stream normalization slice from
+[#36](https://github.com/tyldra-org/falryn/issues/36) adds
+`ProviderStreamAssembler` and `normalizeProviderStream` in `src/providers/`:
+
+- one-based sequence integrity and request/attempt identity checks;
+- fragmented text and reasoning assembly for model-facing continuation, with
+  declared size bounds;
+- tool-call delta assembly into validated JSON-object proposals;
+- usage aggregation that preserves provenance and leaves missing usage as
+  `null` rather than zero;
+- termination on duplicate terminals, incomplete tool calls, malformed tool
+  JSON, and missing terminal events, with structural diagnostics that never
+  echo payloads; and
+- an async normalizer that yields accepted events and returns an exhaustive
+  finished/failed terminal.
+
+Live vendor stream parsers and agent-loop consumption remain later issues.
+
 ## Remaining implementation gaps
 
 The repository now provides end-user behavior for the `config`, `data`, and `doctor`
@@ -2447,9 +2465,9 @@ session/turn producer, or live transcript producer. The remaining gaps are:
   submission resolves to `unavailable` and the transcript remains empty.
   Also absent: every command group whose capability does not exist, shell
   completion, and hidden or deprecated command policy beyond its declaration;
-- provider integration beyond the #34/#35 boundary (live vendor adapters,
-  OAuth/write flows, network discovery, streaming assembly, model routing), the
-  agent loop, or unified tool execution;
+- provider integration beyond the #34–#36 boundary (live vendor adapters,
+  OAuth/write flows, network discovery, model routing), the agent loop, or
+  unified tool execution;
 - workspace, read, search, patch, shell, Git, LSP, DAP, browser, or computer-use
   capabilities;
 - context planning, Brief, Hush, Loom, compression, indexing, or memory;
@@ -2467,9 +2485,9 @@ Their implementation breakdown lives in GitHub Issues and the Project.
 - **First parent outcome:** [#1 Establish the unified runtime and lifecycle](https://github.com/tyldra-org/falryn/issues/1)
 - **Completed shell parent:** [#21 Deliver the OpenTUI application shell](https://github.com/tyldra-org/falryn/issues/21) is closed and Done. [#16 Deliver the CLI and headless foundation](https://github.com/tyldra-org/falryn/issues/16) is complete.
 - **Completed docs reconcile:** [falryn-docs#1](https://github.com/tyldra-org/falryn-docs/issues/1) (Reconcile v0.1 Foundation documentation) is closed and Done via children [#84](https://github.com/tyldra-org/falryn-docs/issues/84)–[#89](https://github.com/tyldra-org/falryn-docs/issues/89); integration landed in [falryn-docs#95](https://github.com/tyldra-org/falryn-docs/pull/95) (`64366c0`).
-- **Active delivery:** parent [#33 Integrate providers and model routing](https://github.com/tyldra-org/falryn/issues/33) (v0.2 Core Coding Agent). [#35](https://github.com/tyldra-org/falryn/issues/35) closed via [PR #451](https://github.com/tyldra-org/falryn/pull/451) (`2a2a797`); docs companion [falryn-docs#97](https://github.com/tyldra-org/falryn-docs/pull/97).
+- **Active delivery:** parent [#33 Integrate providers and model routing](https://github.com/tyldra-org/falryn/issues/33) (v0.2 Core Coding Agent). [#36](https://github.com/tyldra-org/falryn/issues/36) in flight (stream normalization).
 - **Open falryn v0.1 Foundation product issues:** none remaining.
-- **Next planning action:** continue #33 via [#36 Normalize streaming text, reasoning, tools, usage, and terminal outcomes](https://github.com/tyldra-org/falryn/issues/36). GitHub remains authoritative for ordering.
+- **Next planning action:** after #36 lands, continue #33 via the next unblocked child (expected [#37](https://github.com/tyldra-org/falryn/issues/37)). GitHub remains authoritative for ordering.
 
 Which of #1's children are open, and which delivered the behavior recorded
 above, is read from
