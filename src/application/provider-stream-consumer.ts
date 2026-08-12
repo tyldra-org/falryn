@@ -9,7 +9,8 @@
  * facts (tool proposals, terminals, usage, start) never coalesce and reject
  * when the queue cannot admit them — there is no unbounded buffer path.
  *
- * Does not execute tools (#44), apply retry/fallback (#45), or persist events
+ * Tool execution after proposals leave this consumer is owned by
+ * `tool-call-loop` (#44). Does not apply retry/fallback (#45) or persist events
  * (#46). This module is the intentional model-service seam: it may import the
  * provider port and stream-assembly surface.
  */

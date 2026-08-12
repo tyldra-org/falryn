@@ -125,6 +125,22 @@ export type {
 } from "./shutdown-coordinator.ts";
 export { createShutdownCoordinator } from "./shutdown-coordinator.ts";
 export type {
+  ContinueModelContext,
+  ContinueModelResult,
+  RunToolCallLoopInput,
+  ToolCallLoop,
+  ToolCallLoopBound,
+  ToolCallLoopLimits,
+  ToolCallLoopOptions,
+  ToolCallLoopOutcome,
+  ToolRunnerPort,
+  ToolRunnerRequest,
+} from "./tool-call-loop.ts";
+export {
+  createToolCallLoop,
+  DEFAULT_TOOL_CALL_LOOP_LIMITS,
+} from "./tool-call-loop.ts";
+export type {
   StartTurnInput,
   TurnCommandInput,
   TurnCoordinator,
