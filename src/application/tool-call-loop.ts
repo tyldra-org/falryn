@@ -7,9 +7,10 @@
  * cycles back to the model. Providers, UI, and agents never touch files or
  * processes directly.
  *
- * Does not own retry/fallback/refusal policy (#45) or durable persist/replay
- * (#46). Product workspace/Git/shell tools are out of scope — callers inject a
- * deterministic runner for tests and later adapters.
+ * Retry/fallback/refusal/partial settlement is owned by `turn-attempt-policy`
+ * (#45). Does not own durable persist/replay (#46). Product workspace/Git/shell
+ * tools are out of scope — callers inject a deterministic runner for tests and
+ * later adapters.
  */
 
 import {

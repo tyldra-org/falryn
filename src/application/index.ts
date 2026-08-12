@@ -141,6 +141,21 @@ export {
   DEFAULT_TOOL_CALL_LOOP_LIMITS,
 } from "./tool-call-loop.ts";
 export type {
+  AttemptRecord,
+  AttemptRunnerPort,
+  AttemptRunnerRequest,
+  AttemptRunnerResult,
+  RunTurnAttemptPolicyInput,
+  TurnAttemptPolicy,
+  TurnAttemptPolicyOptions,
+  TurnAttemptPolicyOutcome,
+} from "./turn-attempt-policy.ts";
+export {
+  attemptCategoryForProviderFailure,
+  attemptFactFromProviderFailure,
+  createTurnAttemptPolicy,
+} from "./turn-attempt-policy.ts";
+export type {
   StartTurnInput,
   TurnCommandInput,
   TurnCoordinator,
