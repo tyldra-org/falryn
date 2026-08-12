@@ -1689,6 +1689,16 @@ resize repaints at the old size before re-laying out at the new one — so the
 assertion is on the frame the step settled on, found by splitting on the
 synchronized-update sequence.
 
+Compiled steps can also be fed through `@xterm/headless`
+([#384](https://github.com/tyldra-org/falryn/issues/384)) so an assertion can
+name the screen a terminal would show — which row a string landed on, and
+whether two exclusive region marks shared a cell — rather than only the bytes
+that were emitted. The emulator is a `devDependency` reached from
+`src/tui/emulated-screen-fixtures.ts` alone and held out of every shipping
+graph; a synthetic overlapping transcript fails the mixed-mark check, and the
+compiled walk asserts the empty shell's header, primary, and status landmarks
+do not share a row.
+
 Resizing goes through `stty`, which was measured rather than chosen: `ioctl` is
 variadic, and calling it through Bun's fixed-arity FFI segfaults the process on
 arm64, exactly as this file's own comment predicted. `stty` reaches
@@ -2400,9 +2410,13 @@ Their implementation breakdown lives in GitHub Issues and the Project.
 - **Current release outcome:** [v0.1 Foundation issues](https://github.com/tyldra-org/falryn/issues?q=is%3Aissue%20is%3Aopen%20milestone%3A%22v0.1%20Foundation%22)
 - **First parent outcome:** [#1 Establish the unified runtime and lifecycle](https://github.com/tyldra-org/falryn/issues/1)
 - **Completed shell parent:** [#21 Deliver the OpenTUI application shell](https://github.com/tyldra-org/falryn/issues/21) is closed and Done. [#16 Deliver the CLI and headless foundation](https://github.com/tyldra-org/falryn/issues/16) is complete.
-- **Active delivery:** [#433 Establish the public repository CI and governance baseline](https://github.com/tyldra-org/falryn/issues/433) via [PR #434](https://github.com/tyldra-org/falryn/pull/434) (companion [docs #80](https://github.com/tyldra-org/falryn-docs/pull/80)).
-- **Open v0.1 Foundation issues:** [#385](https://github.com/tyldra-org/falryn/issues/385), [#384](https://github.com/tyldra-org/falryn/issues/384), and [#381](https://github.com/tyldra-org/falryn/issues/381) — TUI defect and qualification work remaining on the milestone.
-- **Next planning action:** finish Verify/Merge for #433/#434 (docs-first), then pick the next Ready item among #385 / #384 / #381. GitHub and the live Roadmap remain authoritative for ordering.
+- **Active delivery:** [#384 Assert compiled frames through a headless terminal emulator](https://github.com/tyldra-org/falryn/issues/384).
+- **Open v0.1 Foundation issues:** [#385](https://github.com/tyldra-org/falryn/issues/385)
+  (blocked by #384), [#384](https://github.com/tyldra-org/falryn/issues/384), and
+  [#381](https://github.com/tyldra-org/falryn/issues/381) — TUI defect and
+  qualification work remaining on the milestone.
+- **Next planning action:** after #384 lands, pick among unblocked #385 and
+  #381. GitHub and the live Roadmap remain authoritative for ordering.
 
 Which of #1's children are open, and which delivered the behavior recorded
 above, is read from
