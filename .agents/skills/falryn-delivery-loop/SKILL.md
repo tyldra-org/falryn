@@ -22,7 +22,7 @@ On a Verify gap: return to Implementation, then a **new** Verification against t
 Continue only for a standalone PR-sized issue or native child (including standalone milestone defects with no parent).
 
 1. **Readiness** — hierarchy, contracts, blockers, docs impact, split need. No code. Plan only if unresolved; split into ordered native children only when boundaries are unambiguous; else `awaiting-input` with one question.
-2. **Implementation** — sole writer on the valid branch/PR bundle, or create the normal issue-linked branch + companions.
+2. **Implementation** — sole writer on the valid branch/PR bundle, or create the normal issue-linked branch + companions. When moving the issue (and, on a parent's first active child, the parent) to Project **In Progress**, also **assign** it to `yogeshprasad098` if unset — that is the maintainer pattern on historical Falryn issues (`DEVELOPMENT.md`: assign + In Progress before code). Do not invent other assignees.
 3. **Verification** — full bundle: acceptance, **required** checks, docs, merge readiness. Read-only. Mid-Verify polish pushes invalidate the prior Verify; re-Verify exact `headRefOid`s before merge.
 4. **Repair** — keep open valid PR; fresh branch after merged incomplete outcome; focused follow-up for a distinct outcome. ≤3 repair passes without a progress signal (changed source, diagnostic, dependency, or validation), then ask.
 5. **Merge** (authorized by this Deliver) — docs companions first, application last. Squash only; final subject = reviewed PR title; **no body** by default (at most one `Closes #N` / `Refs …` footer). Re-read heads, **required** checks, reviews, mergeability, method, companion order immediately before each merge; stop on any changed or failed precondition.
