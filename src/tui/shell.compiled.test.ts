@@ -460,6 +460,37 @@ describe.if(runnable)("the compiled shell on a real terminal", () => {
   );
 
   test(
+    "keeps the activity rail and status line on exclusive rows at the observed shape",
+    async () => {
+      // #385. The hand observation was 157×70 on Ghostty under the removed
+      // split-footer path. The alternate-screen shell is requalified here at
+      // that shape and the widths either side of it: exclusive landmarks must
+      // not share a row once the transcript has been through the emulator.
+      for (const columns of [140, 157, 170]) {
+        let step = "";
+        const run = await runOnPty(
+          [],
+          async (driver) => {
+            step = await driver.press([0x09]);
+            await driver.press([0x03]);
+          },
+          { columns, rows: 70 },
+        );
+        expect(run.exitCode).toBe(EXIT_CODES.COMPLETED);
+        const screen = await emulateScreen(settledFrame(step), { columns, rows: 70 });
+        expect(screen.rows).toHaveLength(70);
+        const mixed = rowsCarryingMarksFromMultipleGroups(screen.rows, [
+          ["Activity"],
+          ["Nothing has happened"],
+          ["No runtime is attached"],
+        ]);
+        expect({ columns, mixed }).toEqual({ columns, mixed: [] });
+      }
+    },
+    RUN_TIMEOUT_MS * 3,
+  );
+
+  test(
     "takes an interrupt through Falryn's own governance and exits 130",
     async () => {
       const run = await interrupted();

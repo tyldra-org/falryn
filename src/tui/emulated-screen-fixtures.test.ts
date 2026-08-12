@@ -27,10 +27,12 @@ describe("emulateScreen", () => {
   });
 
   test("reports a known overlap as overlapping", async () => {
-    // Both exclusive marks on one row. Built as a transcript rather than
-    // captured from a defect, so the check fails for the right reason even when
-    // the shipped frame is clean. The real #385 splice can erase whole words;
-    // the oracle's job here is to name a row that still carries both marks.
+    // #385 negative control. Built as a transcript rather than captured from a
+    // defect that the current alternate-screen empty shell no longer emits, so
+    // the check fails for the right reason even when the shipped frame is clean.
+    // The real splice erased whole words between `Activity · 2 running` and
+    // `Nothing is running.`; writing the status string partway across the
+    // heading leaves both exclusive marks on one row for the oracle to name.
     const overlapped = "\u001b[2J\u001b[HActivity · 2 running\u001b[1;20HNothing is running.";
     const screen = await emulateScreen(overlapped, SIZE);
     const mixed = rowsCarryingMarksFromMultipleGroups(screen.rows, REGIONS);
