@@ -42,6 +42,16 @@ Last required child → parent's integrated verification in-loop; close parent o
 
 Merge gates are the repository **ruleset required status checks** (and required review-thread rules). Advisory / non-required jobs (e.g. Benchmark regression when not in the ruleset) **must not** block Deliver merge unless the issue acceptance criteria or `DEVELOPMENT.md` explicitly require them. Failed or missing **required** checks always block.
 
+## CI and long waits
+
+While waiting for **required** checks between Verification and Merge (and for
+post-merge frontier reconcile PRs), run the wait/poll **in the background by
+default**. Do not hold the turn on multi-minute foreground sleeps. Report the
+PR(s) and head SHA(s) being watched, then continue other work or end the turn.
+When the watcher completes, re-read merge preconditions immediately before each
+authorized squash-merge. Procedure lives in `github-workflow` →
+[ci.md](../github-workflow/reference/ci.md) (background watch default).
+
 ## Next routing
 
 Read Project, issue graph, blockers, open bundles, review/check state, and `CURRENT-STATE.md`. Board position, creation order visuals, and recent updates are not priority.
