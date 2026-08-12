@@ -318,8 +318,8 @@ describe("benchmark regression comparison", () => {
     });
   });
 
-  test("fails inconclusively when a trial lacks both settling warm-up runs", () => {
-    const comparison = compareBenchmarkGate(gateReports({}, { candidateFourth: 1 }));
+  test("fails inconclusively when a trial lacks the required settling warm-up run", () => {
+    const comparison = compareBenchmarkGate(gateReports({}, { candidateFourth: 0 }));
 
     expect(comparison).toEqual({
       kind: "inconclusive",

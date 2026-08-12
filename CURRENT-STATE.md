@@ -36,10 +36,7 @@ The implementation scaffold introduced by
   the manifest-selected Bun version with the frozen lockfile, runs separate
   quality, type-check, build, and test gates on GitHub-hosted
   `ubuntu-latest`, runs the macOS suites on `macos-latest`, and runs the Windows
-  source baseline and compiled CLI smoke on `windows-latest`;
-- an advisory `benchmark` job in that same workflow that runs the Ubuntu x64
-  benchmark comparison on `ubuntu-latest` for pull requests only, and is not a
-  required status check; and
+  source baseline and compiled CLI smoke on `windows-latest`; and
 - a Bun standalone compilation target at `dist/falryn`.
 
 The workflow's first pull-request run in
@@ -918,17 +915,19 @@ Five limitations belong with those numbers:
   inside SQLite's own busy handler, in C, where no counter is reachable. "Busy
   retries" is therefore recorded as busy wait and refusal rate; a retry counter
   would have been product behavior invented inside a measurement.
-- **A relative regression gate now owns the comparison boundary.**
+- **A relative regression comparison is local-only.**
   [#415](https://github.com/tyldra-org/falryn/issues/415) and
-  [#418](https://github.com/tyldra-org/falryn/issues/418) add a
-  `ubuntu-latest` x64 `benchmark` job in `.github/workflows/ci.yml` that
-  compares a pull request against its own base commit, builds each exact
-  revision, and completes two fixed same-revision settling passes
-  immediately before every report in two temporally symmetric brackets on one
-  runner: base-first, candidate-first, candidate-second, base-second, base-third, candidate-third,
-  candidate-fourth, and base-fourth. The outer bracket pools the first and last
-  report of each revision; the inner bracket pools the middle pair, so both
-  brackets have both relative orders and the same temporal centre. The report profile
+  [#418](https://github.com/tyldra-org/falryn/issues/418) delivered the
+  measurement and compare tooling (`bun run measure`, `bun run benchmark:compare`,
+  and `tools/benchmark-regression.ts`). CI no longer runs that gate: shared-runner
+  variance made an advisory job expensive without earning a required check.
+  Locally, a comparison builds each exact revision, completes one fixed
+  same-revision settling pass immediately before every report in two temporally
+  symmetric brackets on one machine: base-first, candidate-first, candidate-second,
+  base-second, base-third, candidate-third, candidate-fourth, and base-fourth. The
+  outer bracket pools the first and last report of each revision; the inner
+  bracket pools the middle pair, so both brackets have both relative orders and
+  the same temporal centre. The report profile
   collects 101 migrations, 250 transaction writes, 1,024 range reads, and 21
   compiled-startup samples. Before timing, it discards 21 migrations, 64 turns,
   and 1,024 range reads in that same Bun process, so its p95 is neither one
@@ -938,7 +937,7 @@ Five limitations belong with those numbers:
   its test-only report only after every real-owner measurement completed; an
   unavailable compiled executable/pseudo-terminal, malformed destination, failed
   measurement, or incomplete suite fails without a report. Each `v4` report
-  records its revision, ordered trial, completed workflow settling-pass count, and
+  records its revision, ordered trial, completed settling-pass count, and
   per-metric same-process warm-up sample count. The comparator accepts only
   matching schema, platform, architecture, Bun version, dataset revision/state,
   warm-up/sample count. For each bracket, it pools the two same-revision raw
@@ -953,10 +952,9 @@ Five limitations belong with those numbers:
   bounded diagnostic; a two-sided control regression, missing, malformed,
   incompatible, incomplete-settling, or disagreeing data is a nonzero
   inconclusive result.
-  The eight reports are temporary CI artifacts, never product/runtime/tracked
+  The eight reports are temporary artifacts, never product/runtime/tracked
   output; pooling is a fixed, auditable statistic, not a conditional retry or
-  threshold bypass. The benchmark is not scheduled for ordinary pull-request or
-  `main` push runs.
+  threshold bypass.
   Ordinary CI exposes format, Biome quality, TypeScript, direct-dependency
   integrity, and Bun advisory-audit jobs separately. GitHub-hosted
   `ubuntu-latest` runs the full Linux source and compiled CLI suites;
