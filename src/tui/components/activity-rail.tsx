@@ -16,6 +16,11 @@
  * bounded how many settled entries it keeps. Live work is never dropped to make
  * room for finished work: an interface that hid a running operation to show a
  * completed one would hide the thing the rail exists to show.
+ *
+ * The empty state and the overflow notice are mutually exclusive with a
+ * dishonest pairing: saying "nothing is running" above "N more entries not
+ * shown" is the palette's old "Nothing matches" / "24 more" failure, and it is
+ * what let a short rail overdraw its neighbours on a real terminal (#385).
  */
 
 import type { ReactNode } from "react";
@@ -47,21 +52,25 @@ export function ActivityRail(props: ActivityRailProps): ReactNode {
   const settled = activityRows([...settledEntries(projection)].reverse());
   const all = [...live, ...settled];
 
-  // The notice takes a row only when there is something to say, and the budget
-  // is computed against that rather than reserved unconditionally — a rail that
-  // held a row back for a message it never shows wastes the one region a wide
-  // layout gets.
+  // Content rows after the heading. The notice takes a row only when at least
+  // one entry can sit beside it — reserving a notice row into a budget that
+  // already had nowhere for entries is how the empty state and the count used
+  // to land together and spill past the region.
   const room = Math.max(0, props.rows - HEADING_ROWS);
-  const overflowing = all.length > room || projection.droppedSettled > 0;
-  const shown = all.slice(0, overflowing ? Math.max(0, room - 1) : room);
+  const hasEntries = all.length > 0;
+  const needsNotice = all.length > room || projection.droppedSettled > 0;
+  const entryBudget = hasEntries && needsNotice && room >= 2 ? room - 1 : room;
+  const shown = all.slice(0, Math.max(0, entryBudget));
   const hidden = all.length - shown.length + projection.droppedSettled;
+  const showNotice = hidden > 0 && shown.length > 0 && shown.length < room;
+  const showEmpty = !hasEntries && room >= 1;
 
   return (
-    <box flexDirection="column" width={columns}>
+    <box flexDirection="column" width={columns} height={Math.max(0, props.rows)} overflow="hidden">
       <Line color="mutedForeground" typography="label" maxColumns={columns}>
         {`Activity ${frame.theme.symbols.separator} ${live.length} running`}
       </Line>
-      {shown.length === 0 ? (
+      {showEmpty ? (
         <Line color="mutedForeground" typography="muted" maxColumns={columns}>
           {/*
            * A statement about the runtime, not filler. Nothing produces work in
@@ -76,10 +85,11 @@ export function ActivityRail(props: ActivityRailProps): ReactNode {
           <StatusMark key={row.key} status={row.status} label={row.label} maxColumns={columns} />
         ))
       )}
-      {hidden > 0 ? (
+      {showNotice ? (
         <Line color="mutedForeground" typography="muted" maxColumns={columns}>
           {/* Never silent: a truncated list presented as a complete one is the
-              one thing a rail must not do. */}
+              one thing a rail must not do. Never alone: a count with no entry
+              beside it is how #385 drew the notice into a neighbour's row. */}
           {`${hidden} more ${hidden === 1 ? "entry" : "entries"} not shown`}
         </Line>
       ) : null}
