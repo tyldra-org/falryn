@@ -2505,9 +2505,9 @@ Their implementation breakdown lives in GitHub Issues and the Project.
 - **First parent outcome:** [#1 Establish the unified runtime and lifecycle](https://github.com/tyldra-org/falryn/issues/1)
 - **Completed shell parent:** [#21 Deliver the OpenTUI application shell](https://github.com/tyldra-org/falryn/issues/21) is closed and Done. [#16 Deliver the CLI and headless foundation](https://github.com/tyldra-org/falryn/issues/16) is complete.
 - **Completed docs reconcile:** [falryn-docs#1](https://github.com/tyldra-org/falryn-docs/issues/1) (Reconcile v0.1 Foundation documentation) is closed and Done via children [#84](https://github.com/tyldra-org/falryn-docs/issues/84)–[#89](https://github.com/tyldra-org/falryn-docs/issues/89); integration landed in [falryn-docs#95](https://github.com/tyldra-org/falryn-docs/pull/95) (`64366c0`).
-- **Active delivery:** parent [#33 Integrate providers and model routing](https://github.com/tyldra-org/falryn/issues/33) (v0.2 Core Coding Agent). [#37](https://github.com/tyldra-org/falryn/issues/37) in progress (model roles, intent routing, compatibility, fallback).
+- **Active delivery:** parent [#33 Integrate providers and model routing](https://github.com/tyldra-org/falryn/issues/33) (v0.2 Core Coding Agent). [#37](https://github.com/tyldra-org/falryn/issues/37) closed via [PR #455](https://github.com/tyldra-org/falryn/pull/455) (`1943729`); docs companion [falryn-docs#99](https://github.com/tyldra-org/falryn-docs/pull/99).
 - **Open falryn v0.1 Foundation product issues:** none remaining.
-- **Next planning action:** continue #33 via [#37 Implement model roles, intent routing, compatibility, and fallback policy](https://github.com/tyldra-org/falryn/issues/37). GitHub remains authoritative for ordering.
+- **Next planning action:** continue #33 via [#38 Support vision, thinking, fast-edit, read, and compression model roles](https://github.com/tyldra-org/falryn/issues/38). GitHub remains authoritative for ordering.
 
 Which of #1's children are open, and which delivered the behavior recorded
 above, is read from
