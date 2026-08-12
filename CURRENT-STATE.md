@@ -2349,8 +2349,28 @@ Its verified behavior:
 - boundary controls keep providers off CLI/TUI/SQLite/SDK imports and keep
   domain modules from importing providers.
 
-No live vendor adapter, authentication resolver, remote discovery, model router,
-or agent-loop consumer is shipped. Those remain [#35](https://github.com/tyldra-org/falryn/issues/35)–[#39](https://github.com/tyldra-org/falryn/issues/39).
+No live vendor adapter, OAuth browser flow, remote HTTP discovery against a
+real network, model router, or agent-loop consumer is shipped. Those remain
+[#36](https://github.com/tyldra-org/falryn/issues/36)–[#39](https://github.com/tyldra-org/falryn/issues/39)
+and later authentication write/OAuth work.
+
+The provider authentication, profile configuration, and capability discovery
+slice from [#35](https://github.com/tyldra-org/falryn/issues/35) extends
+`src/providers/` with:
+
+- immutable `ProviderProfile` values (adapter kind, endpoint, credential
+  reference, timeouts, enabled models, discovery policy) parsed by Zod, with
+  plaintext credentials refused without echoing secrets;
+- authentication snapshots (`unconfigured`, `resolving`, `ready`, and failure
+  states) established through the existing `SecretResolverPort` so secrets are
+  visible only inside the resolve callback and never retained on the snapshot;
+- local credential removal that reports remote provider revocation separately
+  (remote remains `not-attempted` until OAuth adapters exist);
+- static model capability catalogs from enabled models, plus an injectable
+  remote discovery port with provenance/expiry (deterministic double for tests,
+  no live vendor HTTP); and
+- `openProviderSession` as the public vertical entry that combines profile, auth,
+  and discovery into one typed outcome.
 
 ## Remaining implementation gaps
 
@@ -2427,9 +2447,9 @@ session/turn producer, or live transcript producer. The remaining gaps are:
   submission resolves to `unavailable` and the transcript remains empty.
   Also absent: every command group whose capability does not exist, shell
   completion, and hidden or deprecated command policy beyond its declaration;
-- provider integration beyond the #34 boundary (live adapters, authentication,
-  discovery, model routing, streaming assembly against real vendors), the agent
-  loop, or unified tool execution;
+- provider integration beyond the #34/#35 boundary (live vendor adapters,
+  OAuth/write flows, network discovery, streaming assembly, model routing), the
+  agent loop, or unified tool execution;
 - workspace, read, search, patch, shell, Git, LSP, DAP, browser, or computer-use
   capabilities;
 - context planning, Brief, Hush, Loom, compression, indexing, or memory;
@@ -2447,9 +2467,9 @@ Their implementation breakdown lives in GitHub Issues and the Project.
 - **First parent outcome:** [#1 Establish the unified runtime and lifecycle](https://github.com/tyldra-org/falryn/issues/1)
 - **Completed shell parent:** [#21 Deliver the OpenTUI application shell](https://github.com/tyldra-org/falryn/issues/21) is closed and Done. [#16 Deliver the CLI and headless foundation](https://github.com/tyldra-org/falryn/issues/16) is complete.
 - **Completed docs reconcile:** [falryn-docs#1](https://github.com/tyldra-org/falryn-docs/issues/1) (Reconcile v0.1 Foundation documentation) is closed and Done via children [#84](https://github.com/tyldra-org/falryn-docs/issues/84)–[#89](https://github.com/tyldra-org/falryn-docs/issues/89); integration landed in [falryn-docs#95](https://github.com/tyldra-org/falryn-docs/pull/95) (`64366c0`).
-- **Active delivery:** parent [#33 Integrate providers and model routing](https://github.com/tyldra-org/falryn/issues/33) (v0.2 Core Coding Agent). [#34](https://github.com/tyldra-org/falryn/issues/34) closed via [PR #449](https://github.com/tyldra-org/falryn/pull/449) (`31c406c`); docs companion [falryn-docs#96](https://github.com/tyldra-org/falryn-docs/pull/96).
+- **Active delivery:** parent [#33 Integrate providers and model routing](https://github.com/tyldra-org/falryn/issues/33) (v0.2 Core Coding Agent). [#35](https://github.com/tyldra-org/falryn/issues/35) in flight (provider auth, profile configuration, capability discovery).
 - **Open falryn v0.1 Foundation product issues:** none remaining.
-- **Next planning action:** continue #33 via [#35 Implement provider authentication, configuration, and capability discovery](https://github.com/tyldra-org/falryn/issues/35). GitHub remains authoritative for ordering.
+- **Next planning action:** after #35 lands, continue #33 via the next unblocked child (expected [#36](https://github.com/tyldra-org/falryn/issues/36)). GitHub remains authoritative for ordering.
 
 Which of #1's children are open, and which delivered the behavior recorded
 above, is read from
