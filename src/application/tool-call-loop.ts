@@ -8,9 +8,9 @@
  * processes directly.
  *
  * Retry/fallback/refusal/partial settlement is owned by `turn-attempt-policy`
- * (#45). Does not own durable persist/replay (#46). Product workspace/Git/shell
- * tools are out of scope — callers inject a deterministic runner for tests and
- * later adapters.
+ * (#45). Durable persist/replay of turn events is owned by
+ * `turn-event-journal` (#46). Product workspace/Git/shell tools are out of
+ * scope — callers inject a deterministic runner for tests and later adapters.
  */
 
 import {

@@ -874,6 +874,23 @@ export {
   TOOL_PIPELINE_SCHEMA_VERSION,
 } from "./tool-pipeline.ts";
 export type {
+  BuildTurnEventInput,
+  ReplayedAttempt,
+  ReplayedInvocation,
+  ReplayedTurn,
+  TurnEventReduction,
+  TurnLifecycleFact,
+  TurnReplayClassification,
+} from "./turn-events.ts";
+export {
+  buildTurnLifecycleEvent,
+  classifyTurnReplay,
+  eventIdForFact,
+  factIdentity,
+  idempotencyKeyForFact,
+  reduceTurnEvents,
+} from "./turn-events.ts";
+export type {
   ActiveTurnSnapshot,
   TerminalTurnSnapshot,
   TurnCommand,

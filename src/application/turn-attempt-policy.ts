@@ -6,8 +6,10 @@
  * {@link evaluateRetry}, and fallback reuses `#37` {@link resolveNextFallback}
  * with a visited set so routes never recurse.
  *
- * Does not persist turn events (#46) or talk to live vendor adapters. Callers
- * inject an {@link AttemptRunnerPort} (tests use deterministic doubles).
+ * Optional {@link TurnEventJournalPort} records attempt/turn facts through the
+ * existing event store (#46). Replay never re-enters this policy or its runner.
+ * Does not talk to live vendor adapters. Callers inject an
+ * {@link AttemptRunnerPort} (tests use deterministic doubles).
  */
 
 import {
@@ -30,7 +32,9 @@ import {
   type RetryBackoff,
   type RetryPolicy,
   type TerminalOutcome,
+  type TurnCorrelation,
   type TurnId,
+  type TurnLifecycleFact,
   type TurnSnapshot,
   terminalOutcomeForClassification,
 } from "../domain/index.ts";
@@ -46,6 +50,7 @@ import type {
 import { resolveModelRoute, resolveNextFallback } from "../providers/index.ts";
 import { awaitBackoff } from "./recovery.ts";
 import type { TurnCoordinator, TurnCoordinatorError } from "./turn-coordinator.ts";
+import type { TurnEventJournalPort } from "./turn-event-journal.ts";
 
 export type AttemptRunnerRequest = {
   readonly turnId: TurnId;
@@ -81,6 +86,11 @@ export type TurnAttemptPolicyOptions = {
   readonly jitter?: () => number;
   /** Allocates a branded attempt id. Defaults to `attempt-<n>`. */
   readonly allocateAttemptId?: (attemptNumber: number) => ModelAttemptId;
+  /**
+   * Optional durable journal (#46). When set, attempt/turn terminals are
+   * recorded as facts; replay never re-enters the runner.
+   */
+  readonly journal?: TurnEventJournalPort;
 };
 
 export type RunTurnAttemptPolicyInput = {
@@ -464,6 +474,47 @@ function mustTurn(coordinator: TurnCoordinator, turnId: TurnId): TurnSnapshot {
   return turn;
 }
 
+function correlationFor(snapshot: TurnSnapshot): TurnCorrelation {
+  return {
+    workspaceId: snapshot.workspaceId,
+    sessionId: snapshot.sessionId,
+    traceId: snapshot.traceId,
+    configurationGeneration: snapshot.configurationGeneration,
+    turnId: snapshot.turnId,
+  };
+}
+
+/** Maps an attempt classification onto the durable attempt terminal fact. */
+function outcomeForAttemptRecord(classification: AttemptClassification): TerminalOutcome {
+  switch (classification.kind) {
+    case "completed":
+      return { kind: "completed" };
+    case "may-retry-same":
+    case "may-fallback":
+      return { kind: "failed", effect: classification.effect };
+    case "refusal":
+    case "partial":
+    case "failed":
+    case "cancelled":
+    case "timed-out":
+    case "uncertain":
+      return terminalOutcomeForClassification(classification);
+    default:
+      return assertNever(classification, "unhandled attempt classification");
+  }
+}
+
+async function persistFacts(
+  journal: TurnEventJournalPort | undefined,
+  facts: readonly TurnLifecycleFact[],
+  signal: AbortSignal,
+): Promise<void> {
+  if (journal === undefined || facts.length === 0) {
+    return;
+  }
+  await journal.persist(facts, signal);
+}
+
 function settleFromClassification(
   coordinator: TurnCoordinator,
   turnId: TurnId,
@@ -588,12 +639,42 @@ export function createTurnAttemptPolicy(options: TurnAttemptPolicyOptions): Turn
         };
       }
 
+      const opened = options.coordinator.get(input.turnId);
+      if (opened !== null) {
+        await persistFacts(
+          options.journal,
+          [{ kind: "turn.started", correlation: correlationFor(opened) }],
+          input.signal,
+        );
+      }
+
       while (true) {
         if (input.signal.aborted) {
-          return settleFromClassification(options.coordinator, input.turnId, generation, attempts, {
-            kind: "cancelled",
-            effect: "none",
-          });
+          const cancelled = settleFromClassification(
+            options.coordinator,
+            input.turnId,
+            generation,
+            attempts,
+            {
+              kind: "cancelled",
+              effect: "none",
+            },
+          );
+          const settled = options.coordinator.get(input.turnId);
+          if (settled?.status === "terminal") {
+            await persistFacts(
+              options.journal,
+              [
+                {
+                  kind: "turn.completed",
+                  correlation: correlationFor(settled),
+                  outcome: settled.outcome,
+                },
+              ],
+              input.signal,
+            );
+          }
+          return cancelled;
         }
 
         const current = options.coordinator.get(input.turnId);
@@ -623,6 +704,21 @@ export function createTurnAttemptPolicy(options: TurnAttemptPolicyOptions): Turn
           providerKey: receipt.providerId,
           modelKey: receipt.modelId,
         };
+
+        const live = options.coordinator.get(input.turnId);
+        if (live !== null) {
+          await persistFacts(
+            options.journal,
+            [
+              {
+                kind: "model.attempt.started",
+                correlation: correlationFor(live),
+                modelAttemptId: identity.modelAttemptId,
+              },
+            ],
+            input.signal,
+          );
+        }
 
         const runnerResult = await options.runner.run({
           turnId: input.turnId,
@@ -684,9 +780,26 @@ export function createTurnAttemptPolicy(options: TurnAttemptPolicyOptions): Turn
           action,
         });
 
+        const attemptOutcome = outcomeForAttemptRecord(classification);
+        const afterAttempt = options.coordinator.get(input.turnId);
+        if (afterAttempt !== null) {
+          await persistFacts(
+            options.journal,
+            [
+              {
+                kind: "model.attempt.completed",
+                correlation: correlationFor(afterAttempt),
+                modelAttemptId: identity.modelAttemptId,
+                outcome: attemptOutcome,
+              },
+            ],
+            input.signal,
+          );
+        }
+
         switch (action.kind) {
-          case "settle":
-            return settleFromClassification(
+          case "settle": {
+            const settled = settleFromClassification(
               options.coordinator,
               input.turnId,
               generation,
@@ -694,6 +807,22 @@ export function createTurnAttemptPolicy(options: TurnAttemptPolicyOptions): Turn
               action.classification,
               runnerResult.turn,
             );
+            const terminal = options.coordinator.get(input.turnId);
+            if (terminal?.status === "terminal") {
+              await persistFacts(
+                options.journal,
+                [
+                  {
+                    kind: "turn.completed",
+                    correlation: correlationFor(terminal),
+                    outcome: terminal.outcome,
+                  },
+                ],
+                input.signal,
+              );
+            }
+            return settled;
+          }
           case "retry-same": {
             const waited = await awaitBackoff(
               options.clock,
@@ -701,13 +830,28 @@ export function createTurnAttemptPolicy(options: TurnAttemptPolicyOptions): Turn
               input.signal,
             );
             if (waited === "cancelled" || input.signal.aborted) {
-              return settleFromClassification(
+              const cancelled = settleFromClassification(
                 options.coordinator,
                 input.turnId,
                 generation,
                 attempts,
                 { kind: "cancelled", effect: "none" },
               );
+              const terminal = options.coordinator.get(input.turnId);
+              if (terminal?.status === "terminal") {
+                await persistFacts(
+                  options.journal,
+                  [
+                    {
+                      kind: "turn.completed",
+                      correlation: correlationFor(terminal),
+                      outcome: terminal.outcome,
+                    },
+                  ],
+                  input.signal,
+                );
+              }
+              return cancelled;
             }
             continue;
           }
