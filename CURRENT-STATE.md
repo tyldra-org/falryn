@@ -2455,6 +2455,23 @@ tool loops, retry/fallback policy, or durable turn-event persistence:
 - `src/application/session-runtime.ts` / `turn-coordinator.ts` as the public
   in-memory entry points.
 
+The deterministic prompt-composition slice from
+[#42](https://github.com/tyldra-org/falryn/issues/42) adds pure provider-neutral
+request assembly for the turn loop's `assembling-context` stage without live
+provider streaming, tool execution, retry/fallback, or durable turn-event
+persistence:
+
+- `src/domain/prompt-composition.ts` — fixed section-role precedence (product
+  invariants through Brief), structured tool definitions, stable ordering,
+  budget/exclusion receipt, exhaustive typed outcomes for missing/empty/
+  oversized/unavailable/budget-exceeded pieces, and a canonical form for
+  identity; and
+- `src/application/prompt-composer.ts` — digests that canonical form through an
+  injected `ContentHasherPort` and binds compose to a named turn identity.
+
+Validated by `src/domain/prompt-composition.test.ts` and
+`src/application/prompt-composer.test.ts` under `bun run check`.
+
 ## Remaining implementation gaps
 
 The repository now provides end-user behavior for the `config`, `data`, and `doctor`
@@ -2550,9 +2567,9 @@ Their implementation breakdown lives in GitHub Issues and the Project.
 - **First parent outcome:** [#1 Establish the unified runtime and lifecycle](https://github.com/tyldra-org/falryn/issues/1)
 - **Completed shell parent:** [#21 Deliver the OpenTUI application shell](https://github.com/tyldra-org/falryn/issues/21) is closed and Done. [#16 Deliver the CLI and headless foundation](https://github.com/tyldra-org/falryn/issues/16) is complete.
 - **Completed docs reconcile:** [falryn-docs#1](https://github.com/tyldra-org/falryn-docs/issues/1) (Reconcile v0.1 Foundation documentation) is closed and Done via children [#84](https://github.com/tyldra-org/falryn-docs/issues/84)–[#89](https://github.com/tyldra-org/falryn-docs/issues/89); integration landed in [falryn-docs#95](https://github.com/tyldra-org/falryn-docs/pull/95) (`64366c0`).
-- **Active delivery:** [#40 Implement the agent turn loop](https://github.com/tyldra-org/falryn/issues/40) is In Progress. First child [#41 Implement session and turn state machines with exhaustive outcomes](https://github.com/tyldra-org/falryn/issues/41) closed and Done via [PR #461](https://github.com/tyldra-org/falryn/pull/461) (`8c903a4`); docs companion [falryn-docs#102](https://github.com/tyldra-org/falryn-docs/pull/102) (`ccda31d`).
+- **Active delivery:** [#40 Implement the agent turn loop](https://github.com/tyldra-org/falryn/issues/40) is In Progress. Child [#41 Implement session and turn state machines with exhaustive outcomes](https://github.com/tyldra-org/falryn/issues/41) closed and Done via [PR #461](https://github.com/tyldra-org/falryn/pull/461) (`8c903a4`); docs companion [falryn-docs#102](https://github.com/tyldra-org/falryn-docs/pull/102) (`ccda31d`). Child [#42 Compose system prompts, instructions, tools, and context deterministically](https://github.com/tyldra-org/falryn/issues/42) is In Progress on this delivery.
 - **Open falryn v0.1 Foundation product issues:** none remaining.
-- **Next planning action:** continue #40 via [#42 Compose system prompts, instructions, tools, and context deterministically](https://github.com/tyldra-org/falryn/issues/42). GitHub remains authoritative for ordering.
+- **Next planning action:** after #42 lands, continue #40 via [#43 Consume provider streams with ordering and backpressure](https://github.com/tyldra-org/falryn/issues/43). GitHub remains authoritative for ordering.
 
 Which of #1's children are open, and which delivered the behavior recorded
 above, is read from

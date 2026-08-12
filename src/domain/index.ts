@@ -544,6 +544,36 @@ export {
   TERMINAL_OUTCOME_PROJECTION_GENERATION,
 } from "./projection.ts";
 export type {
+  ComposedPromptRequest,
+  ComposePromptError,
+  ComposePromptInput,
+  ComposePromptResult,
+  PromptCompositionBudgets,
+  PromptExclusion,
+  PromptExclusionReason,
+  PromptSectionInput,
+  PromptSectionRole,
+  PromptToolInput,
+  RenderedPromptSection,
+  RenderedPromptTool,
+} from "./prompt-composition.ts";
+export {
+  composePromptRequest,
+  DEFAULT_PROMPT_COMPOSITION_BUDGETS,
+  DEFAULT_PROMPT_MAX_SECTION_TOKENS,
+  DEFAULT_PROMPT_MAX_TOOL_DESCRIPTION_BYTES,
+  DEFAULT_PROMPT_MAX_TOTAL_TOKENS,
+  estimatePromptTokens,
+  isPromptExclusionReason,
+  isPromptSectionRole,
+  MAX_PROMPT_SECTION_INPUTS,
+  MAX_PROMPT_TOOL_INPUTS,
+  PROMPT_COMPOSITION_SCHEMA_VERSION,
+  PROMPT_EXCLUSION_REASONS,
+  PROMPT_SECTION_ROLES,
+  promptSectionRoleLabel,
+} from "./prompt-composition.ts";
+export type {
   ArtifactHandle,
   ArtifactSpillPort,
   EnqueueOutcome,
