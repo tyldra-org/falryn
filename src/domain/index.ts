@@ -849,6 +849,22 @@ export {
   timestampToEpochMilliseconds,
 } from "./time.ts";
 export type {
+  DispatchReadyInvocation,
+  HostPlatform,
+  RawToolInvocation,
+  ToolValidateError,
+  ValidateAndNormalizeOptions,
+  ValidateAndNormalizeResult,
+} from "./tool-invocation.ts";
+export {
+  describeToolValidateError,
+  isToolValidateErrorCode,
+  normalizeToolPathArgument,
+  TOOL_INVOCATION_SCHEMA_VERSION,
+  toBoundToolInvocation,
+  validateAndNormalizeInvocations,
+} from "./tool-invocation.ts";
+export type {
   BindToolProposalsOptions,
   BindToolProposalsResult,
   BoundToolInvocation,

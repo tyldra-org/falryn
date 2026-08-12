@@ -2566,9 +2566,23 @@ immutable catalog generation (parent [#47](https://github.com/tyldra-org/falryn/
   interactive` union from `work.ts`, declared on every manifest.
 
 Validated by `src/domain/tool-registry.test.ts` (including a bind-path seam
-into `bindToolProposals`) under `bun run check`. Validate/normalize dispatch,
-policy/confirmation, scheduling, typed results/artifacts, and lifecycle hooks
-remain later #47 children (#49–#53).
+into `bindToolProposals`) under `bun run check`.
+
+The validate-and-normalize-before-dispatch slice from
+[#49](https://github.com/tyldra-org/falryn/issues/49) takes raw tool proposals,
+validates them against the #48 registry manifests/schemas, and produces an
+immutable dispatch-ready form (parent [#47](https://github.com/tyldra-org/falryn/issues/47)):
+
+- `src/domain/tool-invocation.ts` — `validateAndNormalizeInvocations` fails
+  closed on unknown tools, malformed arguments/schema input, duplicate or
+  invalid call ids, queue bounds, unsupported platform/version, input byte
+  limits, and illegal path arguments; normalizes path-like fields; projects to
+  the #44 `BoundToolInvocation` shape via `toBoundToolInvocation` without
+  executing tools.
+
+Validated by `src/domain/tool-invocation.test.ts` (including a registry → bind
+seam) under `bun run check`. Policy/confirmation, scheduling, typed
+results/artifacts, and lifecycle hooks remain later #47 children (#50–#53).
 
 ## Remaining implementation gaps
 
