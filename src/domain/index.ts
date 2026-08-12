@@ -655,6 +655,25 @@ export {
   MAX_TRACKED_EVENTS_PER_STREAM,
 } from "./sequence.ts";
 export type {
+  SessionCommand,
+  SessionObservation,
+  SessionPhase,
+  SessionSnapshot,
+  SessionTransitionError,
+  SessionTransitionResult,
+} from "./session-lifecycle.ts";
+export {
+  applySessionTransition,
+  createSessionSnapshot,
+  isSessionPhase,
+  isSessionTerminalPhase,
+  legalSessionCommands,
+  SESSION_COMMANDS,
+  SESSION_LIFECYCLE_SCHEMA_VERSION,
+  SESSION_PHASES,
+  sessionPhaseLabel,
+} from "./session-lifecycle.ts";
+export type {
   ParticipantReport,
   ParticipantStatus,
   PhaseReport,
@@ -780,6 +799,26 @@ export {
   timestampFromEpochMilliseconds,
   timestampToEpochMilliseconds,
 } from "./time.ts";
+export type {
+  ActiveTurnSnapshot,
+  TerminalTurnSnapshot,
+  TurnCommand,
+  TurnObservation,
+  TurnPhase,
+  TurnSnapshot,
+  TurnTransitionError,
+  TurnTransitionResult,
+} from "./turn-machine.ts";
+export {
+  applyTurnTransition,
+  createTurnSnapshot,
+  isTurnPhase,
+  legalTurnCommands,
+  TURN_COMMANDS,
+  TURN_MACHINE_SCHEMA_VERSION,
+  TURN_PHASES,
+  turnPhaseLabel,
+} from "./turn-machine.ts";
 export type { WireParseResult } from "./wire.ts";
 export { parseWireEvent, toWireEvent } from "./wire.ts";
 export type {
