@@ -2418,9 +2418,9 @@ Their implementation breakdown lives in GitHub Issues and the Project.
 - **Current release outcome:** [v0.1 Foundation issues](https://github.com/tyldra-org/falryn/issues?q=is%3Aissue%20is%3Aopen%20milestone%3A%22v0.1%20Foundation%22)
 - **First parent outcome:** [#1 Establish the unified runtime and lifecycle](https://github.com/tyldra-org/falryn/issues/1)
 - **Completed shell parent:** [#21 Deliver the OpenTUI application shell](https://github.com/tyldra-org/falryn/issues/21) is closed and Done. [#16 Deliver the CLI and headless foundation](https://github.com/tyldra-org/falryn/issues/16) is complete.
-- **Active delivery:** none. [#381](https://github.com/tyldra-org/falryn/issues/381) landed via [PR #440](https://github.com/tyldra-org/falryn/pull/440).
-- **Open v0.1 Foundation issues:** [#385](https://github.com/tyldra-org/falryn/issues/385) — remaining TUI defect on the milestone.
-- **Next planning action:** deliver [#385](https://github.com/tyldra-org/falryn/issues/385). GitHub and the live Roadmap remain authoritative for ordering.
+- **Active delivery:** none. [#385](https://github.com/tyldra-org/falryn/issues/385) landed via [PR #443](https://github.com/tyldra-org/falryn/pull/443).
+- **Open v0.1 Foundation issues:** none remaining on the milestone for TUI defect work tracked here.
+- **Next planning action:** read the live Roadmap / milestone for the next eligible outcome after v0.1 TUI qualification. GitHub remains authoritative for ordering.
 
 Which of #1's children are open, and which delivered the behavior recorded
 above, is read from
