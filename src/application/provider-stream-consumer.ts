@@ -10,9 +10,10 @@
  * when the queue cannot admit them — there is no unbounded buffer path.
  *
  * Tool execution after proposals leave this consumer is owned by
- * `tool-call-loop` (#44). Does not apply retry/fallback (#45) or persist events
- * (#46). This module is the intentional model-service seam: it may import the
- * provider port and stream-assembly surface.
+ * `tool-call-loop` (#44). Retry/fallback/refusal/partial settlement is owned by
+ * `turn-attempt-policy` (#45). Does not persist events (#46). This module is the
+ * intentional model-service seam: it may import the provider port and
+ * stream-assembly surface.
  */
 
 import {
