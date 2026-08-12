@@ -2325,6 +2325,33 @@ outcome. That probe remains manual; the storage smoke check described above is
 the first automated compiled-executable check, and it runs under `bun run ci`
 rather than `bun run check`, because `bun run check` does not build.
 
+The provider boundary introduced by
+[#34](https://github.com/tyldra-org/falryn/issues/34) adds a new source area at
+`src/providers/` behind `src/providers/index.ts`. It owns the
+`falryn.provider-boundary` schema family (`schemaVersion` `1`): normalized
+model requests and messages, provider stream event kinds, failure vocabulary,
+public model roles / work intents, Zod parsers that report path/code only, and
+the `ProviderAdapterPort` surface. The area imports `src/domain` and Zod only.
+
+Its verified behavior:
+
+- a request carries branded `requestId` / `providerId` / `modelId`, bounded
+  messages and tool definitions, an output contract, budgets, and role metadata;
+  unknown keys and empty message lists are refused;
+- stream events are a closed discriminated union (`request-started`, text and
+  reasoning deltas, tool-call delta and proposal, usage, provider metadata,
+  finished, error) with one-based sequence and terminal detection;
+- usage provenance distinguishes provider-reported values, estimates, and
+  unknown — missing usage is not treated as zero;
+- diagnostic redaction replaces bearer tokens and api-key shaped text wholesale;
+- a deterministic in-memory adapter streams success, scripted failure, and
+  pre-aborted cancellation without network, credentials, or a vendor SDK; and
+- boundary controls keep providers off CLI/TUI/SQLite/SDK imports and keep
+  domain modules from importing providers.
+
+No live vendor adapter, authentication resolver, remote discovery, model router,
+or agent-loop consumer is shipped. Those remain [#35](https://github.com/tyldra-org/falryn/issues/35)–[#39](https://github.com/tyldra-org/falryn/issues/39).
+
 ## Remaining implementation gaps
 
 The repository now provides end-user behavior for the `config`, `data`, and `doctor`
@@ -2400,8 +2427,9 @@ session/turn producer, or live transcript producer. The remaining gaps are:
   submission resolves to `unavailable` and the transcript remains empty.
   Also absent: every command group whose capability does not exist, shell
   completion, and hidden or deprecated command policy beyond its declaration;
-- provider integration, model routing, the agent loop, or unified tool
-  execution;
+- provider integration beyond the #34 boundary (live adapters, authentication,
+  discovery, model routing, streaming assembly against real vendors), the agent
+  loop, or unified tool execution;
 - workspace, read, search, patch, shell, Git, LSP, DAP, browser, or computer-use
   capabilities;
 - context planning, Brief, Hush, Loom, compression, indexing, or memory;
@@ -2419,9 +2447,9 @@ Their implementation breakdown lives in GitHub Issues and the Project.
 - **First parent outcome:** [#1 Establish the unified runtime and lifecycle](https://github.com/tyldra-org/falryn/issues/1)
 - **Completed shell parent:** [#21 Deliver the OpenTUI application shell](https://github.com/tyldra-org/falryn/issues/21) is closed and Done. [#16 Deliver the CLI and headless foundation](https://github.com/tyldra-org/falryn/issues/16) is complete.
 - **Completed docs reconcile:** [falryn-docs#1](https://github.com/tyldra-org/falryn-docs/issues/1) (Reconcile v0.1 Foundation documentation) is closed and Done via children [#84](https://github.com/tyldra-org/falryn-docs/issues/84)–[#89](https://github.com/tyldra-org/falryn-docs/issues/89); integration landed in [falryn-docs#95](https://github.com/tyldra-org/falryn-docs/pull/95) (`64366c0`).
-- **Active delivery:** parent [#33 Integrate providers and model routing](https://github.com/tyldra-org/falryn/issues/33) (v0.2 Core Coding Agent). First child [#34](https://github.com/tyldra-org/falryn/issues/34).
+- **Active delivery:** parent [#33 Integrate providers and model routing](https://github.com/tyldra-org/falryn/issues/33) (v0.2 Core Coding Agent). [#34](https://github.com/tyldra-org/falryn/issues/34) in flight (provider ports and boundary schemas).
 - **Open falryn v0.1 Foundation product issues:** none remaining.
-- **Next planning action:** start [#33](https://github.com/tyldra-org/falryn/issues/33) via first child [#34](https://github.com/tyldra-org/falryn/issues/34). GitHub remains authoritative for ordering.
+- **Next planning action:** after #34 lands, continue #33 via the next unblocked child (expected [#35](https://github.com/tyldra-org/falryn/issues/35)). GitHub remains authoritative for ordering.
 
 Which of #1's children are open, and which delivered the behavior recorded
 above, is read from
