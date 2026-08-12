@@ -1,10 +1,62 @@
 # Contributing to Falryn
 
-The canonical issue lifecycle and the `Plan`, `Implement`, and `Verify` agent
-modes are defined in
-[`falryn-docs/DEVELOPMENT.md`](https://github.com/yogeshprasad098/falryn-docs/blob/main/DEVELOPMENT.md).
+## Falryn is not open to outside contributions yet
 
-## Workflow
+Falryn is public so its source, decisions, and history can be read. It is not
+yet open for contribution: the foundational work is still being built, and the
+architecture is still moving underneath it. Accepting outside changes now would
+mean reviewing work against contracts that are days from changing, which wastes
+the contributor's time more than the maintainer's.
+
+Practically, this means:
+
+- **Issues and pull requests are restricted to collaborators.** GitHub refuses
+  them from anyone else, so opening one is not a review decision that went
+  against you — the repository declines it before it reaches a maintainer.
+- **Security reports are the exception, and they are welcome now.** Report them
+  privately through the process in [`SECURITY.md`](SECURITY.md); that channel
+  stays open.
+- **The license already permits use.** Falryn is
+  [Apache-2.0](LICENSE): fork it, read it, build it, and ship it inside your own
+  product without asking. Not accepting contributions is not a restriction on
+  using the code.
+
+This will change once the foundation is complete and the contracts are stable.
+What a contribution will need then is below, and it is deliberately ordinary.
+
+---
+
+## What is expected of a contribution
+
+Ordinary GitHub practice, and nothing beyond it:
+
+1. an issue describing the change, so the intent is agreed before the work;
+2. a short-lived branch, named with a type prefix such as
+   `feat/123-chat-composer`;
+3. one focused pull request that says what it changes and how it was checked;
+4. `bun run check` passing locally, and CI green on the pull request.
+
+That is the whole requirement. Use whatever editor, agent, or process you like
+to get there — none of the tooling described below is imposed on you, and a
+pull request is never judged on how it was produced.
+
+## How the maintainer works
+
+The rest of this document describes the maintainer's own agent-assisted
+workflow. It is written down because it has to be precise for the tooling that
+executes it, not because a contributor has to adopt it. Read it if you are
+curious about why pull requests here look the way they do, or if you are
+working on this repository with an agent and want it to behave consistently.
+
+**Those agent modes are optional even for collaborators.** You never have to
+issue `Plan`, `Implement`, `Verify`, `Merge`, `Deliver`, or `Next` prompts.
+Issue → branch → focused PR → `bun run check` is enough. The modes are available
+if you want them; they are not part of the contribution bar above.
+
+Some of it is not available without write access anyway: Project status
+transitions, merge ordering, and post-merge synchronisation.
+
+### Delivery lifecycle
 
 1. Use a GitHub issue for each meaningful feature, bug, refactor, or
    documentation outcome.
@@ -55,8 +107,10 @@ closing application delivery PR; a companion docs branch and PR are added only
 when canonical documentation changes. If a parent needs integration code,
 create an explicit integration subissue rather than a parent mega-PR.
 
-## Agent modes
+### Agent modes
 
+Optional maintainer prompts. Full contract:
+[`falryn-docs/DEVELOPMENT.md`](https://github.com/tyldra-org/falryn-docs/blob/main/DEVELOPMENT.md).
 Ordinary prompts do not need repository names. `Issue`, `Parent issue`, `PR`,
 and milestone targets resolve to `falryn`; the delivery PR includes explicitly
 linked docs companions automatically. Use `Docs issue` or `Docs PR` only for
@@ -86,12 +140,12 @@ when a checkout is available plus the repository-qualified path and GitHub
 link. Machine-specific absolute paths belong only in the report, never in
 committed documentation or GitHub planning records.
 
-## Documentation
+### Documentation
 
 User-facing or developer-facing documentation belongs in the companion
 `falryn-docs` repository. Before implementation, locate the affected canonical
 owner through
-[`falryn-docs/DOCUMENTATION-MAP.md`](https://github.com/yogeshprasad098/falryn-docs/blob/main/DOCUMENTATION-MAP.md)
+[`falryn-docs/DOCUMENTATION-MAP.md`](https://github.com/tyldra-org/falryn-docs/blob/main/DOCUMENTATION-MAP.md)
 and the issue's canonical links. Read the owner and classify its impact as
 `create`, `update`, `verify-unaffected`, or `not-applicable`.
 
