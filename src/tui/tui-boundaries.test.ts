@@ -23,7 +23,13 @@ const REPOSITORY_ROOT = dirname(SOURCE_ROOT);
 const SELF = "tui-boundaries.test.ts";
 
 /** Test support is intentionally absent from the graph that `src/main.ts` ships. */
-const TEST_SUPPORT = ["harness.tsx", "matrix-fixtures.ts", "measurement-fixtures.ts"] as const;
+const TEST_SUPPORT = [
+  "harness.tsx",
+  "matrix-fixtures.ts",
+  "measurement-fixtures.ts",
+  // #384: headless emulator for compiled-frame assertions. Dev dependency only.
+  "emulated-screen-fixtures.ts",
+] as const;
 
 /** The pure entrypoint: decisions only, and nothing that loads a renderer. */
 const ENTRYPOINT = "index.ts";
