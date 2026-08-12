@@ -1722,7 +1722,10 @@ first version of the help check asserted that a closed overlay had not drawn
 reaching at thirty rows, so it appeared in neither the open state nor the closed
 one and the check passed against nothing. The panel's own title discriminates:
 pointed at the step that opened the overlay it fails, where the old predicate
-passes.
+passes. The compiled walk already uses that measured negative; the rendered
+interaction suite now does too
+([#381](https://github.com/tyldra-org/falryn/issues/381)), including the palette
+route's `"Commands"` mark.
 
 A row that could not run reports itself skipped and never as an empty passing
 check. With `dist/falryn` absent the file reports fourteen skips where it
@@ -2410,9 +2413,9 @@ Their implementation breakdown lives in GitHub Issues and the Project.
 - **Current release outcome:** [v0.1 Foundation issues](https://github.com/tyldra-org/falryn/issues?q=is%3Aissue%20is%3Aopen%20milestone%3A%22v0.1%20Foundation%22)
 - **First parent outcome:** [#1 Establish the unified runtime and lifecycle](https://github.com/tyldra-org/falryn/issues/1)
 - **Completed shell parent:** [#21 Deliver the OpenTUI application shell](https://github.com/tyldra-org/falryn/issues/21) is closed and Done. [#16 Deliver the CLI and headless foundation](https://github.com/tyldra-org/falryn/issues/16) is complete.
-- **Active delivery:** none. [#384](https://github.com/tyldra-org/falryn/issues/384) landed via [PR #438](https://github.com/tyldra-org/falryn/pull/438) (companion [docs #82](https://github.com/tyldra-org/falryn-docs/pull/82)).
-- **Open v0.1 Foundation issues:** [#381](https://github.com/tyldra-org/falryn/issues/381) and [#385](https://github.com/tyldra-org/falryn/issues/385) — remaining TUI defect and qualification work on the milestone. #385 is unblocked now that #384 is closed.
-- **Next planning action:** deliver the earliest unblocked open issue by creation order among the remaining v0.1 work (#381, then #385). GitHub and the live Roadmap remain authoritative for ordering.
+- **Active delivery:** [#381 Name a negative the frame actually draws when an overlay closes](https://github.com/tyldra-org/falryn/issues/381).
+- **Open v0.1 Foundation issues:** [#381](https://github.com/tyldra-org/falryn/issues/381) and [#385](https://github.com/tyldra-org/falryn/issues/385) — remaining TUI defect and qualification work on the milestone.
+- **Next planning action:** after #381 lands, deliver [#385](https://github.com/tyldra-org/falryn/issues/385). GitHub and the live Roadmap remain authoritative for ordering.
 
 Which of #1's children are open, and which delivered the behavior recorded
 above, is read from
