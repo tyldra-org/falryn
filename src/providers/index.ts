@@ -1,11 +1,31 @@
 /**
  * Provider ports and normalized boundary schemas.
  *
- * This source area owns provider-neutral requests, stream events, and the
- * adapter port. Vendor SDKs stay in leaf adapters (none shipped yet). Domain,
- * application, CLI, and OpenTUI must not import SDK types through this surface.
+ * This source area owns provider-neutral requests, stream events, profiles,
+ * authentication snapshots, capability discovery, and the adapter port. Vendor
+ * SDKs stay in leaf adapters (none shipped yet). Domain, application, CLI, and
+ * OpenTUI must not import SDK types through this surface.
  */
 
+export type { DiscoveryPolicy, ProviderAdapterKind } from "./adapter-kind.ts";
+export {
+  DISCOVERY_POLICIES,
+  isDiscoveryPolicy,
+  isProviderAdapterKind,
+  PROVIDER_ADAPTER_KINDS,
+} from "./adapter-kind.ts";
+export type {
+  ProviderAuthOutcome,
+  ProviderAuthSnapshot,
+  ProviderAuthState,
+  ProviderRevocationReport,
+} from "./auth.ts";
+export {
+  authStateForCredentialFailure,
+  isProviderAuthState,
+  PROVIDER_AUTH_STATES,
+} from "./auth.ts";
+export { establishProviderAuth, removeProviderCredential } from "./auth-service.ts";
 export type {
   DeterministicProviderOptions,
   DeterministicProviderScript,
@@ -14,6 +34,22 @@ export {
   createDeterministicProviderAdapter,
   deterministicEchoRequest,
 } from "./deterministic-adapter.ts";
+export type {
+  CatalogProvenance,
+  DiscoveryFailureKind,
+  DiscoveryOutcome,
+  ModelCapability,
+  ModelCatalog,
+  ModelDiscoveryPort,
+  ModelModality,
+  StaticDiscoveryOptions,
+} from "./discovery.ts";
+export {
+  createDeterministicRemoteDiscovery,
+  createStaticModelDiscovery,
+  discoverModelCatalog,
+  MODEL_MODALITIES,
+} from "./discovery.ts";
 export type { ProviderFailure, ProviderFailureKind } from "./errors.ts";
 export { isProviderFailureKind, PROVIDER_FAILURE_KINDS } from "./errors.ts";
 export type {
@@ -52,6 +88,14 @@ export type {
   ProviderAdapterPort,
   ProviderStreamOptions,
 } from "./port.ts";
+export type {
+  ProviderNetworkTimeouts,
+  ProviderProfile,
+  ProviderProfileId,
+} from "./profile.ts";
+export { profileCredentialConsumer } from "./profile.ts";
+export type { ProviderProfileParseError } from "./profile-schema.ts";
+export { parseProviderProfile, providerProfileSchema } from "./profile-schema.ts";
 export type { ModelRequest } from "./request.ts";
 export type { ModelRole, WorkIntent } from "./roles.ts";
 export { isModelRole, isWorkIntent, MODEL_ROLES, WORK_INTENTS } from "./roles.ts";
@@ -60,6 +104,13 @@ export {
   modelRequestSchema,
   normalizedProviderEventSchema,
 } from "./schemas.ts";
+export type {
+  OpenProviderSessionOptions,
+  OpenProviderSessionResult,
+  ProviderSession,
+  ProviderSessionPorts,
+} from "./session.ts";
+export { openProviderSession, revokeProviderSessionCredential } from "./session.ts";
 export type {
   NormalizedProviderEvent,
   ProviderEventKind,
