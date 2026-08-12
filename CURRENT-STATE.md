@@ -1697,7 +1697,9 @@ that were emitted. The emulator is a `devDependency` reached from
 `src/tui/emulated-screen-fixtures.ts` alone and held out of every shipping
 graph; a synthetic overlapping transcript fails the mixed-mark check, and the
 compiled walk asserts the empty shell's header, primary, and status landmarks
-do not share a row.
+do not share a row. The same walk also requalifies the activity rail against the
+status line at 157×70 and the widths either side of it
+([#385](https://github.com/tyldra-org/falryn/issues/385)).
 
 Resizing goes through `stty`, which was measured rather than chosen: `ioctl` is
 variadic, and calling it through Bun's fixed-arity FFI segfaults the process on
@@ -2233,7 +2235,10 @@ status line projects one health level from it
 ([#358](https://github.com/tyldra-org/falryn/issues/358)). Both are pure
 data derived in `src/presentation/activity/`; the rail is the one persistent
 contextual surface a `wide` layout gets, and narrower layouts draw none rather
-than a squeezed one.
+than a squeezed one. The rail is height-bounded and clips to the rows the layout
+reserved; its empty state and overflow notice cannot both appear for the same
+budget, and the notice is drawn only beside at least one counted entry
+([#385](https://github.com/tyldra-org/falryn/issues/385)).
 
 **Nothing declares a second vocabulary.** `ScopeStatus`, `TerminalOutcome`, and
 `EffectCertainty` are the runtime's and are used unchanged. Every outcome the
