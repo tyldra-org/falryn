@@ -53,6 +53,16 @@ export type {
 } from "./prompt-composer.ts";
 export { createPromptComposer } from "./prompt-composer.ts";
 export type {
+  ConsumeProviderStreamInput,
+  ProviderStreamConsumeOutcome,
+  ProviderStreamConsumer,
+  ProviderStreamConsumerOptions,
+} from "./provider-stream-consumer.ts";
+export {
+  createProviderStreamConsumer,
+  DEFAULT_PROVIDER_STREAM_QUEUE_LIMITS,
+} from "./provider-stream-consumer.ts";
+export type {
   BackoffOutcome,
   ObservationResult,
   RecoveryDescription,
