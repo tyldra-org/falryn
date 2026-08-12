@@ -127,13 +127,27 @@ export { profileCredentialConsumer } from "./profile.ts";
 export type { ProviderProfileParseError } from "./profile-schema.ts";
 export { parseProviderProfile, providerProfileSchema } from "./profile-schema.ts";
 export type { ModelRequest } from "./request.ts";
+export type {
+  ResolveSpecializedRoleInput,
+  RouteRequirement,
+  SpecializedRoleOutcome,
+} from "./role-support.ts";
+export {
+  capabilityHasImage,
+  defaultRequirementsForIntent,
+  intentPrefersReasoningEffort,
+  intentRequiresImage,
+  mergeRequirements,
+  primaryCapabilityForRole,
+  reasoningEffortForRoute,
+  resolveSpecializedRole,
+} from "./role-support.ts";
 export type { ModelRole, WorkIntent } from "./roles.ts";
 export { isModelRole, isWorkIntent, MODEL_ROLES, WORK_INTENTS } from "./roles.ts";
 export type {
   ExplicitModelSelection,
   ResolveRouteInput,
   RoutedCatalogEntry,
-  RouteRequirement,
   RouteSelectionReason,
   RoutingOutcome,
   RoutingReceipt,

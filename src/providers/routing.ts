@@ -8,7 +8,7 @@
 
 import type { Instant } from "../domain/clock.ts";
 import type { ModelId, ProviderId } from "../domain/identity.ts";
-import type { ModelCapability, ModelCatalog, ModelModality } from "./discovery.ts";
+import type { ModelCapability, ModelCatalog } from "./discovery.ts";
 import {
   isRoleDisabled,
   type ModelPolicy,
@@ -18,15 +18,16 @@ import {
   resolveIntentRole,
   roleRouteFor,
 } from "./policy.ts";
+import {
+  defaultRequirementsForIntent,
+  mergeRequirements,
+  primaryCapabilityForRole,
+  type RouteRequirement,
+  resolveSpecializedRole,
+} from "./role-support.ts";
 import type { ModelRole, WorkIntent } from "./roles.ts";
 
-export type RouteRequirement = {
-  readonly modalities?: readonly ModelModality[];
-  readonly tools?: boolean;
-  readonly streaming?: boolean;
-  readonly reasoning?: boolean;
-  readonly minContextTokens?: number;
-};
+export type { RouteRequirement } from "./role-support.ts";
 
 export type ExplicitModelSelection = {
   readonly providerId: ProviderId;
@@ -169,17 +170,21 @@ function buildCandidateList(
 
 /**
  * Resolve a provider/model for a work intent or explicit role, applying
- * compatibility filters and ordered fallback without revisiting routes.
+ * specialized role support, compatibility filters, and ordered fallback
+ * without revisiting routes.
  */
 export function resolveModelRoute(input: ResolveRouteInput): RoutingOutcome {
   const intent = input.intent ?? null;
-  const role =
-    input.role ?? (intent !== null ? resolveIntentRole(input.policy, intent) : "default");
-  const required = input.required ?? {};
   const visited = new Set(input.visited ?? []);
   const startPosition = input.fallbackPosition ?? 0;
 
   if (input.explicit !== undefined) {
+    const role =
+      input.role ?? (intent !== null ? resolveIntentRole(input.policy, intent) : "default");
+    const required = mergeRequirements(
+      intent !== null ? defaultRequirementsForIntent(intent) : {},
+      input.required ?? {},
+    );
     const found = findCapability(input.catalogs, input.explicit.providerId, input.explicit.modelId);
     if (found === undefined || !modelMatchesRequirements(found.capability, required)) {
       return {
@@ -217,6 +222,26 @@ export function resolveModelRoute(input: ResolveRouteInput): RoutingOutcome {
       },
     };
   }
+
+  const tentativeRole =
+    input.role ?? (intent !== null ? resolveIntentRole(input.policy, intent) : "default");
+  const primaryCapability = primaryCapabilityForRole(
+    input.policy,
+    tentativeRole === "vision" ? "default" : tentativeRole,
+    (providerId, modelId) => findCapability(input.catalogs, providerId, modelId)?.capability,
+  );
+
+  const specialized = resolveSpecializedRole({
+    policy: input.policy,
+    intent,
+    primaryCapability,
+    ...(input.role !== undefined ? { role: input.role } : {}),
+    ...(input.required !== undefined ? { required: input.required } : {}),
+  });
+  if (specialized.kind !== "resolved") {
+    return specialized;
+  }
+  const { role, required } = specialized;
 
   const route = roleRouteFor(input.policy, role);
   if (route === undefined) {

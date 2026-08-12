@@ -4,6 +4,12 @@ import { modelId, providerId } from "../domain/identity.ts";
 import type { ModelCatalog } from "./discovery.ts";
 import { DEFAULT_INTENT_ROLE_MAP, type ModelPolicy, resolveIntentRole } from "./policy.ts";
 import { parseModelPolicy } from "./policy-schema.ts";
+import {
+  defaultRequirementsForIntent,
+  intentPrefersReasoningEffort,
+  reasoningEffortForRoute,
+  resolveSpecializedRole,
+} from "./role-support.ts";
 import { WORK_INTENTS } from "./roles.ts";
 import {
   modelMatchesRequirements,
@@ -371,5 +377,235 @@ describe("resolveModelRoute", () => {
       role: "plan",
       intent: "planning",
     });
+  });
+});
+
+describe("specialized role support", () => {
+  test("defaultRequirementsForIntent covers fast-edit, read, and vision", () => {
+    expect(defaultRequirementsForIntent("fastEdit")).toEqual({
+      tools: true,
+      streaming: true,
+    });
+    expect(defaultRequirementsForIntent("read")).toEqual({ streaming: true });
+    expect(defaultRequirementsForIntent("visualUnderstanding")).toEqual({
+      modalities: ["image"],
+    });
+    expect(intentPrefersReasoningEffort("planning")).toBe(true);
+    expect(intentPrefersReasoningEffort("deepReview")).toBe(true);
+    expect(intentPrefersReasoningEffort("fastEdit")).toBe(false);
+  });
+
+  test("read and fastEdit map to fast with requirement defaults on the receipt", () => {
+    const read = resolveModelRoute({
+      policy: samplePolicy(),
+      catalogs: catalogs(),
+      intent: "read",
+    });
+    expect(read.kind).toBe("selected");
+    if (read.kind !== "selected") {
+      return;
+    }
+    expect(read.receipt.role).toBe("fast");
+    expect(read.receipt.modelId).toBe(fast);
+    expect(read.receipt.requiredCapabilities).toEqual({ streaming: true });
+    expect(read.receipt.reasoning).toBe("minimal");
+
+    const edit = resolveModelRoute({
+      policy: samplePolicy(),
+      catalogs: catalogs(),
+      intent: "fastEdit",
+    });
+    expect(edit.kind).toBe("selected");
+    if (edit.kind !== "selected") {
+      return;
+    }
+    expect(edit.receipt.role).toBe("fast");
+    expect(edit.receipt.requiredCapabilities).toEqual({ tools: true, streaming: true });
+  });
+
+  test("thinking roles surface ReasoningEffort on the receipt", () => {
+    const deepOutcome = resolveModelRoute({
+      policy: samplePolicy(),
+      catalogs: catalogs(),
+      intent: "deepReview",
+    });
+    expect(deepOutcome.kind).toBe("selected");
+    if (deepOutcome.kind !== "selected") {
+      return;
+    }
+    expect(deepOutcome.receipt.role).toBe("deep");
+    expect(deepOutcome.receipt.reasoning).toBe("deep");
+    expect(deepOutcome.receipt.requiredCapabilities.reasoning).toBe(true);
+    const deepRoute = samplePolicy().roles.deep;
+    expect(deepRoute).toBeDefined();
+    if (deepRoute === undefined) {
+      return;
+    }
+    expect(reasoningEffortForRoute(deepRoute)).toBe("deep");
+
+    const planOutcome = resolveModelRoute({
+      policy: samplePolicy(),
+      catalogs: catalogs(),
+      intent: "planning",
+    });
+    expect(planOutcome.kind).toBe("selected");
+    if (planOutcome.kind !== "selected") {
+      return;
+    }
+    expect(planOutcome.receipt.role).toBe("plan");
+    expect(planOutcome.receipt.reasoning).toBe("balanced");
+  });
+
+  test("vision use always selects vision for visualUnderstanding", () => {
+    const outcome = resolveModelRoute({
+      policy: samplePolicy({ visionUse: "always" }),
+      catalogs: catalogs(),
+      intent: "visualUnderstanding",
+    });
+    expect(outcome.kind).toBe("selected");
+    if (outcome.kind !== "selected") {
+      return;
+    }
+    expect(outcome.receipt.role).toBe("vision");
+    expect(outcome.receipt.modelId).toBe(vision);
+    expect(outcome.receipt.requiredCapabilities.modalities).toEqual(["image"]);
+  });
+
+  test("vision use fallback escalates coding when image modality is required", () => {
+    const outcome = resolveModelRoute({
+      policy: samplePolicy({ visionUse: "fallback" }),
+      catalogs: catalogs(),
+      intent: "coding",
+      required: { modalities: ["image"] },
+    });
+    expect(outcome.kind).toBe("selected");
+    if (outcome.kind !== "selected") {
+      return;
+    }
+    expect(outcome.receipt.role).toBe("vision");
+    expect(outcome.receipt.modelId).toBe(vision);
+  });
+
+  test("vision use fallback keeps default when image is not required", () => {
+    const outcome = resolveModelRoute({
+      policy: samplePolicy({ visionUse: "fallback" }),
+      catalogs: catalogs(),
+      intent: "coding",
+    });
+    expect(outcome.kind).toBe("selected");
+    if (outcome.kind !== "selected") {
+      return;
+    }
+    expect(outcome.receipt.role).toBe("default");
+    expect(outcome.receipt.modelId).toBe(deep);
+  });
+
+  test("vision unconfigured fails closed when image is required", () => {
+    const parsed = parseModelPolicy({
+      roles: {
+        default: { providerId: primary, modelId: deep },
+      },
+    });
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) {
+      return;
+    }
+    const outcome = resolveModelRoute({
+      policy: parsed.value,
+      catalogs: catalogs(),
+      intent: "coding",
+      required: { modalities: ["image"] },
+    });
+    expect(outcome).toEqual({
+      kind: "role-unconfigured",
+      role: "vision",
+      intent: "coding",
+    });
+  });
+
+  test("compact evaluated selects for compression and memory", () => {
+    for (const intent of ["compression", "memory"] as const) {
+      const outcome = resolveModelRoute({
+        policy: samplePolicy(),
+        catalogs: catalogs(),
+        intent,
+      });
+      expect(outcome.kind).toBe("selected");
+      if (outcome.kind !== "selected") {
+        return;
+      }
+      expect(outcome.receipt.role).toBe("compact");
+      expect(outcome.receipt.modelId).toBe(fast);
+    }
+  });
+
+  test("compact use off fails closed", () => {
+    const parsed = parseModelPolicy({
+      roles: {
+        default: { providerId: primary, modelId: deep },
+        compact: {
+          providerId: primary,
+          modelId: fast,
+          use: "off",
+        },
+      },
+    });
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) {
+      return;
+    }
+    const outcome = resolveModelRoute({
+      policy: parsed.value,
+      catalogs: catalogs(),
+      intent: "compression",
+    });
+    expect(outcome).toEqual({
+      kind: "role-disabled",
+      role: "compact",
+      intent: "compression",
+    });
+  });
+
+  test("resolveSpecializedRole demotes vision fallback without image need", () => {
+    const specialized = resolveSpecializedRole({
+      policy: samplePolicy({ visionUse: "fallback" }),
+      role: "vision",
+      required: {},
+      primaryCapability: {
+        modelId: deep,
+        modalities: ["text"],
+        tools: true,
+        streaming: true,
+        reasoning: true,
+        contextTokens: 128_000,
+        outputTokens: 16_000,
+      },
+    });
+    // primary lacks image → keep vision under fallback
+    expect(specialized.kind).toBe("resolved");
+    if (specialized.kind !== "resolved") {
+      return;
+    }
+    expect(specialized.role).toBe("vision");
+
+    const demoted = resolveSpecializedRole({
+      policy: samplePolicy({ visionUse: "fallback" }),
+      role: "vision",
+      required: {},
+      primaryCapability: {
+        modelId: vision,
+        modalities: ["text", "image"],
+        tools: true,
+        streaming: true,
+        reasoning: false,
+        contextTokens: 64_000,
+        outputTokens: 4_000,
+      },
+    });
+    expect(demoted.kind).toBe("resolved");
+    if (demoted.kind !== "resolved") {
+      return;
+    }
+    expect(demoted.role).toBe("default");
   });
 });
