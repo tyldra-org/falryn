@@ -830,6 +830,31 @@ export {
   timestampToEpochMilliseconds,
 } from "./time.ts";
 export type {
+  BindToolProposalsOptions,
+  BindToolProposalsResult,
+  BoundToolInvocation,
+  ToolBindError,
+  ToolCatalog,
+  ToolDescriptor,
+  ToolInvocationOutcome,
+  ToolInvocationRecord,
+  ToolProposal,
+} from "./tool-pipeline.ts";
+export {
+  bindToolProposals,
+  createToolCatalog,
+  DEFAULT_MAX_CONCURRENT_TOOLS,
+  DEFAULT_MAX_TOOL_CALLS_PER_ITERATION,
+  DEFAULT_MAX_TOOL_LOOP_ITERATIONS,
+  effectOfToolOutcome,
+  foldToolEffects,
+  isToolInvocationStatus,
+  MAX_CONCURRENT_TOOLS,
+  MAX_TOOL_CALLS_PER_ITERATION,
+  MAX_TOOL_LOOP_ITERATIONS,
+  TOOL_PIPELINE_SCHEMA_VERSION,
+} from "./tool-pipeline.ts";
+export type {
   ActiveTurnSnapshot,
   TerminalTurnSnapshot,
   TurnCommand,
