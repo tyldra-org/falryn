@@ -37,6 +37,7 @@
     "@types/react": "19.2.18",
     "@types/react-reconciler": "0.33.0",
     "@types/yargs": "17.0.35",
+    "@xterm/headless": "6.0.0",
     "typescript": "7.0.2"
   },
   "dependencies": {

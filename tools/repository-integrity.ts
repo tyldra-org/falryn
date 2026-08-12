@@ -78,6 +78,13 @@ export const DIRECT_DEPENDENCY_POLICY = [
     repository: "https://github.com/biomejs/biome",
   },
   {
+    name: "@xterm/headless",
+    group: "devDependencies",
+    version: "6.0.0",
+    license: "MIT",
+    repository: "https://github.com/xtermjs/xterm.js",
+  },
+  {
     name: "@types/bun",
     group: "devDependencies",
     version: "1.3.14",

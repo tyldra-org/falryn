@@ -29,6 +29,7 @@ import { closeSync, createReadStream, writeSync } from "node:fs";
 import { stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { EXIT_CODES } from "../cli/index.ts";
+import { emulateScreen, rowsCarryingMarksFromMultipleGroups } from "./emulated-screen-fixtures.ts";
 
 /** Three levels up: this file is `src/tui/`, and the artifact is `dist/` beside `src/`. */
 const EXECUTABLE = join(dirname(dirname(dirname(import.meta.path))), "dist", "falryn");
@@ -423,6 +424,37 @@ describe.if(runnable)("the compiled shell on a real terminal", () => {
       // proves the surface reached the compiled artifact at all.
       expect(run.transcript).toContain("Nothing has happened in this session yet");
       expect(run.transcript).not.toContain("Nothing is running yet");
+    },
+    RUN_TIMEOUT_MS,
+  );
+
+  test(
+    "draws each region into rows no other region has",
+    async () => {
+      // #384. Byte assertions cannot say which row a string landed on. The
+      // headless emulator can, and this is the invariant the in-memory height
+      // sweep already asserts — now against what the shipped artifact emitted.
+      let step = "";
+      const run = await runOnPty([], async (driver) => {
+        // A focus move redraws without changing the region ownership of any
+        // landmark, so the settled frame is the empty shell's ordinary layout.
+        step = await driver.press([0x09]);
+        await driver.press([0x03]);
+      });
+      expect(run.exitCode).toBe(EXIT_CODES.COMPLETED);
+      const screen = await emulateScreen(settledFrame(step), {
+        columns: COLUMNS,
+        rows: ROWS,
+      });
+      expect(screen.rows).toHaveLength(ROWS);
+      // Exclusive landmarks for the header, primary region, and status line at
+      // this size. A spliced row is the defect #385 records by hand.
+      const mixed = rowsCarryingMarksFromMultipleGroups(screen.rows, [
+        ["workspace"],
+        ["Nothing has happened"],
+        ["^C"],
+      ]);
+      expect(mixed).toEqual([]);
     },
     RUN_TIMEOUT_MS,
   );
