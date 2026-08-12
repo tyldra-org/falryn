@@ -130,10 +130,16 @@ describe("help", () => {
 
   test("closes on escape and gives the frame back", async () => {
     using shell = await open();
-    expect(await shell.press("?")).toContain("Help");
+    // #381. The negative must name something this frame actually drew while
+    // open. `"Close overlay"` is a real command title, but at this height the
+    // help list truncates before reaching it — so it is absent in both states
+    // and `not.toContain("Close overlay")` would pass if escape stopped closing
+    // overlays. The panel title discriminates: pointed at `opened` it fails.
+    const opened = await shell.press("?");
+    expect(opened).toContain("Help");
 
     const frame = await shell.pressEscape();
-    expect(frame).not.toContain("Close overlay");
+    expect(frame).not.toContain("Help");
     expect(frame).toContain("/work/falryn");
   });
 });
@@ -146,8 +152,13 @@ describe("the command palette", () => {
 
   test("closes on escape", async () => {
     using shell = await open();
-    await shell.press("p", { ctrl: true });
-    expect(await shell.pressEscape()).toContain("/work/falryn");
+    // `"Commands"` is measured present while the palette is open, so denying it
+    // after escape is a negative that can fail.
+    const opened = await shell.press("p", { ctrl: true });
+    expect(opened).toContain("Commands");
+    const closed = await shell.pressEscape();
+    expect(closed).not.toContain("Commands");
+    expect(closed).toContain("/work/falryn");
   });
 });
 
@@ -175,11 +186,16 @@ describe("the keyboard-only journey", () => {
     // the keyboard alone, in one sequence, against a real renderer.
     using shell = await open();
 
-    expect(await shell.press("?")).toContain("Help");
-    expect(await shell.pressEscape()).not.toContain("Close overlay");
-    expect(await shell.press("p", { ctrl: true })).toContain("Commands");
+    const helpOpen = await shell.press("?");
+    expect(helpOpen).toContain("Help");
+    // Same measured negative as the dedicated help close check — not the
+    // truncated command title that is absent while help is open.
+    expect(await shell.pressEscape()).not.toContain("Help");
 
-    await shell.pressEscape();
+    const paletteOpen = await shell.press("p", { ctrl: true });
+    expect(paletteOpen).toContain("Commands");
+    expect(await shell.pressEscape()).not.toContain("Commands");
+
     await shell.pressTab();
     await shell.pressTab({ shift: true });
 
