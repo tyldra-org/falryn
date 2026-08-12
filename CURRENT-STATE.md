@@ -2485,10 +2485,31 @@ without tool execution, retry/fallback, or durable turn-event persistence:
   `awaiting-model` into `handling-model-event`, and returns exhaustive typed
   outcomes (`finished`, `failed`, `malformed`, `cancelled`, `timed-out`,
   `partial`, `backpressure-rejected`, `turn-error`); tool proposals leave the
-  turn active at `handling-model-event` for #44.
+  turn active at `handling-model-event` for the tool-call loop.
 
 Validated by `src/application/provider-stream-consumer.test.ts` under
 `bun run check`, using the deterministic provider adapter fixtures.
+
+The iterative tool-call slice from
+[#44](https://github.com/tyldra-org/falryn/issues/44) executes validated tool
+proposals with cancellation and bounded loops, without retry/fallback policy or
+durable persist/replay:
+
+- `src/domain/tool-pipeline.ts` — provider-neutral proposals, immutable catalog
+  descriptors with effect class and Zod input schemas, bind/validate that fails
+  closed on unknown tools, malformed input, duplicates, and queue bounds, plus
+  exhaustive per-invocation outcomes and effect folding;
+- `src/application/tool-call-loop.ts` — drives the turn coordinator through
+  `executing-capability` (and optional `cycle-to-model` iterations), executes
+  only through a narrow `ToolRunnerPort`, aborts in-flight tools and awaits
+  cleanup before reporting, enforces max iterations / concurrency / per-iteration
+  queue bounds, and returns exhaustive typed loop outcomes (`completed`,
+  `cancelled`, `timed-out`, `failed`, `uncertain`, `denied`, `malformed`,
+  `unavailable`, `partial`, `bound-exceeded`, `turn-error`).
+
+Validated by `src/domain/tool-pipeline.test.ts` and
+`src/application/tool-call-loop.test.ts` under `bun run check`, using
+deterministic catalog and runner doubles.
 
 ## Remaining implementation gaps
 
@@ -2567,7 +2588,7 @@ session/turn producer, or live transcript producer. The remaining gaps are:
   completion, and hidden or deprecated command policy beyond its declaration;
 - provider integration beyond the #34–#39 boundary (live vendor adapters,
   OAuth/write flows, network discovery against real endpoints), the remaining
-  agent-loop children (#44–#46), or unified tool execution;
+  agent-loop children (#45–#46), or product workspace/Git/shell tool adapters;
 - workspace, read, search, patch, shell, Git, LSP, DAP, browser, or computer-use
   capabilities;
 - context planning, Brief, Hush, Loom, compression, indexing, or memory;
