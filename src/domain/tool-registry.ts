@@ -6,8 +6,8 @@
  * this boundary. Trusted adapters attach Zod input/output schemas when they
  * register. The resulting catalog feeds the #44 tool-pipeline bind path;
  * registry-backed validate/normalize before dispatch is `tool-invocation.ts`
- * (#49). Policy, scheduling, typed results, and hooks belong to later #47
- * children.
+ * (#49). Policy and focused confirmation are `tool-policy.ts` (#50).
+ * Scheduling, typed results, and hooks belong to later #47 children.
  */
 
 import { z } from "zod";
