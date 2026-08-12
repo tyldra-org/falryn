@@ -45,6 +45,14 @@ export type {
 } from "./interruption.ts";
 export { attachInterruptionPolicy, createInterruptionPolicy } from "./interruption.ts";
 export type {
+  DigestedPromptRequest,
+  PromptComposer,
+  PromptComposerError,
+  PromptComposerOptions,
+  PromptComposerResult,
+} from "./prompt-composer.ts";
+export { createPromptComposer } from "./prompt-composer.ts";
+export type {
   BackoffOutcome,
   ObservationResult,
   RecoveryDescription,
