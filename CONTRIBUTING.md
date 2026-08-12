@@ -13,6 +13,9 @@ Practically, this means:
 - **Issues and pull requests are restricted to collaborators.** GitHub refuses
   them from anyone else, so opening one is not a review decision that went
   against you — the repository declines it before it reaches a maintainer.
+  That repository interaction limit is time-bounded (currently through
+  2027-02-11); renew it, or replace it with an in-repo gate, before it expires
+  so the closed posture does not silently open.
 - **Security reports are the exception, and they are welcome now.** Report them
   privately through the process in [`SECURITY.md`](SECURITY.md); that channel
   stays open.
