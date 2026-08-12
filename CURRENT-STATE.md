@@ -2581,8 +2581,23 @@ immutable dispatch-ready form (parent [#47](https://github.com/tyldra-org/falryn
   executing tools.
 
 Validated by `src/domain/tool-invocation.test.ts` (including a registry → bind
-seam) under `bun run check`. Policy/confirmation, scheduling, typed
-results/artifacts, and lifecycle hooks remain later #47 children (#50–#53).
+seam) under `bun run check`.
+
+The policy / effect-classification / focused-confirmation slice from
+[#50](https://github.com/tyldra-org/falryn/issues/50) decides allow, deny, or
+require focused confirmation on each #49 dispatch-ready invocation before any
+schedule or execute stage (parent [#47](https://github.com/tyldra-org/falryn/issues/47)):
+
+- `src/domain/tool-policy.ts` — classifies the closed #44/#48 effect classes into
+  confirmation posture; `evaluateToolPolicy` fails closed on deny lists and
+  invalid effects; consequential classes (`mutation`, `external`, `interactive`)
+  require a confirmation id bound to capability + normalized input fingerprint;
+  `resolveFocusedConfirmation` / `authorizeToolInvocation` report observed
+  confirmation status separately from requested intent and never claim an
+  execution effect at this stage (`effect: "none"` until later runners run).
+
+Validated by `src/domain/tool-policy.test.ts` under `bun run check`. Scheduling,
+typed results/artifacts, and lifecycle hooks remain later #47 children (#51–#53).
 
 ## Remaining implementation gaps
 
@@ -2680,9 +2695,9 @@ Their implementation breakdown lives in GitHub Issues and the Project.
 - **Completed shell parent:** [#21 Deliver the OpenTUI application shell](https://github.com/tyldra-org/falryn/issues/21) is closed and Done. [#16 Deliver the CLI and headless foundation](https://github.com/tyldra-org/falryn/issues/16) is complete.
 - **Completed docs reconcile:** [falryn-docs#1](https://github.com/tyldra-org/falryn-docs/issues/1) (Reconcile v0.1 Foundation documentation) is closed and Done via children [#84](https://github.com/tyldra-org/falryn-docs/issues/84)–[#89](https://github.com/tyldra-org/falryn-docs/issues/89); integration landed in [falryn-docs#95](https://github.com/tyldra-org/falryn-docs/pull/95) (`64366c0`).
 - **Completed agent turn loop parent:** [#40 Implement the agent turn loop](https://github.com/tyldra-org/falryn/issues/40) is closed and Done. Child [#41 Implement session and turn state machines with exhaustive outcomes](https://github.com/tyldra-org/falryn/issues/41) closed and Done via [PR #461](https://github.com/tyldra-org/falryn/pull/461) (`8c903a4`); docs companion [falryn-docs#102](https://github.com/tyldra-org/falryn-docs/pull/102) (`ccda31d`). Child [#42 Compose system prompts, instructions, tools, and context deterministically](https://github.com/tyldra-org/falryn/issues/42) closed and Done via [PR #463](https://github.com/tyldra-org/falryn/pull/463) (`795341d`); docs companion [falryn-docs#103](https://github.com/tyldra-org/falryn-docs/pull/103) (`63abcb6`). Child [#43 Consume provider streams with ordering and backpressure](https://github.com/tyldra-org/falryn/issues/43) closed and Done via [PR #465](https://github.com/tyldra-org/falryn/pull/465) (`727f3d5`); docs companion [falryn-docs#104](https://github.com/tyldra-org/falryn-docs/pull/104) (`100d7be`). Child [#44 Execute iterative tool calls with cancellation and bounded loops](https://github.com/tyldra-org/falryn/issues/44) closed and Done via [PR #467](https://github.com/tyldra-org/falryn/pull/467) (`bec765b`); docs companion [falryn-docs#105](https://github.com/tyldra-org/falryn-docs/pull/105) (`206e61d`). Child [#45 Implement retry, fallback, refusal, partial, and terminal behavior](https://github.com/tyldra-org/falryn/issues/45) closed and Done via [PR #469](https://github.com/tyldra-org/falryn/pull/469) (`43c5d89`); docs companion [falryn-docs#106](https://github.com/tyldra-org/falryn-docs/pull/106) (`ee56f15`). Child [#46 Persist and replay turn events without repeating effects](https://github.com/tyldra-org/falryn/issues/46) closed and Done via [PR #471](https://github.com/tyldra-org/falryn/pull/471) (`ad05ff5`); docs companion [falryn-docs#107](https://github.com/tyldra-org/falryn-docs/pull/107) (`4f9c02d`). Parent integrated verification passed on `ad05ff5` (97 child-seam tests).
-- **Active tool registry parent:** [#47 Build the unified tool registry and execution pipeline](https://github.com/tyldra-org/falryn/issues/47) is In Progress. Child [#48 Define tool manifests, schemas, capabilities, effects, and stable identities](https://github.com/tyldra-org/falryn/issues/48) closed and Done via [PR #474](https://github.com/tyldra-org/falryn/pull/474) (`3a297ad`); docs companion [falryn-docs#108](https://github.com/tyldra-org/falryn-docs/pull/108) (`de8c753`). Child [#49 Validate and normalize every invocation before dispatch](https://github.com/tyldra-org/falryn/issues/49) closed and Done via [PR #476](https://github.com/tyldra-org/falryn/pull/476) (`0766b1d`); docs companion [falryn-docs#109](https://github.com/tyldra-org/falryn-docs/pull/109) (`2d2c0fa`). Remaining children [#50](https://github.com/tyldra-org/falryn/issues/50)–[#53](https://github.com/tyldra-org/falryn/issues/53) are open.
+- **Active tool registry parent:** [#47 Build the unified tool registry and execution pipeline](https://github.com/tyldra-org/falryn/issues/47) is In Progress. Child [#48 Define tool manifests, schemas, capabilities, effects, and stable identities](https://github.com/tyldra-org/falryn/issues/48) closed and Done via [PR #474](https://github.com/tyldra-org/falryn/pull/474) (`3a297ad`); docs companion [falryn-docs#108](https://github.com/tyldra-org/falryn-docs/pull/108) (`de8c753`). Child [#49 Validate and normalize every invocation before dispatch](https://github.com/tyldra-org/falryn/issues/49) closed and Done via [PR #476](https://github.com/tyldra-org/falryn/pull/476) (`0766b1d`); docs companion [falryn-docs#109](https://github.com/tyldra-org/falryn-docs/pull/109) (`2d2c0fa`). Child [#50 Implement policy, effect classification, and focused confirmation](https://github.com/tyldra-org/falryn/issues/50) closed and Done via delivery PRs recorded at merge. Remaining children [#51](https://github.com/tyldra-org/falryn/issues/51)–[#53](https://github.com/tyldra-org/falryn/issues/53) are open.
 - **Open falryn v0.1 Foundation product issues:** none remaining.
-- **Next planning action:** continue #47 via [#50 Implement policy, effect classification, and focused confirmation](https://github.com/tyldra-org/falryn/issues/50). GitHub remains authoritative for ordering.
+- **Next planning action:** continue #47 via [#51 Schedule, execute, cancel, time out, and join tool work](https://github.com/tyldra-org/falryn/issues/51). GitHub remains authoritative for ordering.
 
 Which of #1's children are open, and which delivered the behavior recorded
 above, is read from
