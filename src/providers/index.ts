@@ -28,8 +28,12 @@ export {
 } from "./auth.ts";
 export { establishProviderAuth, removeProviderCredential } from "./auth-service.ts";
 export type {
+  DeterministicAbortableScript,
+  DeterministicFailureScript,
   DeterministicProviderOptions,
   DeterministicProviderScript,
+  DeterministicTextScript,
+  DeterministicToolScript,
 } from "./deterministic-adapter.ts";
 export {
   createDeterministicProviderAdapter,
