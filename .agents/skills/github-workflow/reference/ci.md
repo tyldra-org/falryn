@@ -16,7 +16,26 @@ Without `gh`, ask the user for the run URL or the failing output. Do not constru
 
 ## While checks are running
 
-Do not poll in a tight loop. Check once, report state, and either wait for the user or do unrelated work. If the user asked you to watch it, poll at an interval matched to the job's real duration — a 10-minute build gets one check at ~5 minutes, not thirty checks at 20 seconds.
+**Default: watch in the background.** Do not block the conversation turn on
+multi-minute foreground `sleep` / poll loops for PR checks, Actions runs, or
+merge readiness.
+
+- Start a background watcher (Shell `block_until_ms: 0`, or an equivalent async
+  job) that logs progress to a file. When merge is already authorized (for
+  example by an active `Deliver` run), the watcher may squash-merge only after a
+  fresh re-read of head SHA, **required** checks, reviews, mergeability, and
+  method — never merge a changed head without that re-read.
+- Tell the user the PR URL, the head SHA being watched, and that the wait is
+  backgrounded. Keep useful work going, or end the turn so completion
+  notifications can fire.
+- Do not poll in a tight foreground loop. A one-shot `gh pr checks` / status
+  read is fine when you only need a snapshot.
+- Match any poll interval to real job duration (a ~10-minute build is not thirty
+  twenty-second polls).
+
+Block the turn on CI only when the user explicitly asks to wait in-chat, or when
+the very next step cannot proceed without the result and no background path
+exists.
 
 ## The bounded fix loop
 
