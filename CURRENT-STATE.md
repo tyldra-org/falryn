@@ -2350,9 +2350,8 @@ Its verified behavior:
   domain modules from importing providers.
 
 No live vendor adapter, OAuth browser flow, remote HTTP discovery against a
-real network, or agent-loop consumer is shipped. Those remain
-[#38](https://github.com/tyldra-org/falryn/issues/38)–[#39](https://github.com/tyldra-org/falryn/issues/39)
-and later authentication write/OAuth work.
+real network, or agent-loop consumer is shipped. Those remain later
+authentication write/OAuth and agent-loop work.
 
 The provider authentication, profile configuration, and capability discovery
 slice from [#35](https://github.com/tyldra-org/falryn/issues/35) extends
@@ -2418,8 +2417,28 @@ with:
 - `resolveModelRoute` applying those defaults before catalog compatibility.
 
 Live health/circuit scoring, cost pricing, vendor adapters, and agent-loop
-consumption remain later. [#39](https://github.com/tyldra-org/falryn/issues/39)
-covers provider contract fixtures, cancellation, and failure tests.
+consumption remain later.
+
+The provider contract / conformance slice from
+[#39](https://github.com/tyldra-org/falryn/issues/39) adds
+`src/providers/provider-conformance.test.ts` and extends the deterministic
+fixture adapter so the public `src/providers/index.ts` boundary is exercised
+without live vendor HTTP:
+
+- request translation and schema reject paths that never echo secrets;
+- classified `ProviderFailure` scripts (authentication, rate-limit, timeout,
+  invalid-request, provider-safety) with explicit retryability;
+- pre-start and mid-stream cancellation, plus timeout classification;
+- fragmented text/reasoning/tool JSON assembly through `normalizeProviderStream`,
+  finish reasons, and usage provenance that keeps missing usage as `null`
+  (never invented zeros);
+- missing-terminal adapter-defect handling;
+- discovery catalog provenance and modality fields via static/remote doubles;
+- routing receipts with ordered non-recursive fallback; and
+- diagnostic redaction for bearer/api-key shaped text.
+
+Opt-in live network tests stay out of `bun run check`. No new Bun compiled
+provider packaging was added; existing compiled probes cover other boundaries.
 
 ## Remaining implementation gaps
 
