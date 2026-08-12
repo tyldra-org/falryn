@@ -7,13 +7,57 @@
  */
 
 import { modelAttemptId, modelId, providerId } from "../domain/identity.ts";
+import type { ProviderFailure, ProviderFailureKind } from "./errors.ts";
 import { modelRequestId } from "./identity.ts";
 import type { ProviderAdapterPort } from "./port.ts";
 import type { ModelRequest } from "./request.ts";
-import type { NormalizedProviderEvent } from "./stream.ts";
+import type { NormalizedProviderEvent, UsageUnits } from "./stream.ts";
+
+export type DeterministicFailureScript = {
+  readonly kind: "error";
+  readonly failureKind: ProviderFailureKind;
+  readonly message: string;
+  readonly retryable: boolean;
+};
+
+export type DeterministicTextScript = {
+  readonly kind: "text";
+  readonly textFragments?: readonly string[];
+  readonly reasoningFragments?: readonly string[];
+  readonly text?: string;
+  readonly finishReason?: string;
+  readonly usage?: UsageUnits | null;
+  /** When true, omit the finished event so normalizers see a missing terminal. */
+  readonly omitTerminal?: boolean;
+};
+
+export type DeterministicToolScript = {
+  readonly kind: "tool";
+  readonly toolCallId: string;
+  readonly name: string;
+  readonly argumentFragments: readonly string[];
+  readonly finishReason?: string;
+  readonly usage?: UsageUnits | null;
+};
+
+/**
+ * Emit a short prefix, then honor abort (or hang until aborted) for mid-stream
+ * cancellation / timeout classification tests.
+ */
+export type DeterministicAbortableScript = {
+  readonly kind: "abortable";
+  readonly prefixText?: string;
+  readonly hangUntilAbort?: boolean;
+  /** Failure kind when the signal aborts after start (default cancellation). */
+  readonly abortFailureKind?: Extract<ProviderFailureKind, "cancellation" | "timeout">;
+};
 
 export type DeterministicProviderScript =
-  | { readonly kind: "text"; readonly text: string; readonly finishReason?: string }
+  | DeterministicTextScript
+  | DeterministicFailureScript
+  | DeterministicToolScript
+  | DeterministicAbortableScript
+  /** @deprecated Prefer `{ kind: "error", failureKind, message, retryable }`. */
   | { readonly kind: "error"; readonly message: string; readonly retryable?: boolean };
 
 export type DeterministicProviderOptions = {
@@ -21,6 +65,43 @@ export type DeterministicProviderOptions = {
   readonly displayName?: string;
   readonly script?: DeterministicProviderScript;
 };
+
+function isTypedFailureScript(
+  script: DeterministicProviderScript,
+): script is DeterministicFailureScript {
+  return script.kind === "error" && "failureKind" in script;
+}
+
+function failureFromScript(script: DeterministicProviderScript): ProviderFailure {
+  if (isTypedFailureScript(script)) {
+    return {
+      kind: script.failureKind,
+      retryable: script.retryable,
+      message: script.message,
+    };
+  }
+  if (script.kind === "error") {
+    return {
+      kind: "server-failure",
+      retryable: script.retryable ?? false,
+      message: script.message,
+    };
+  }
+  return {
+    kind: "adapter-defect",
+    retryable: false,
+    message: "deterministic adapter script is not an error script",
+  };
+}
+
+function waitForAbort(signal: AbortSignal): Promise<void> {
+  if (signal.aborted) {
+    return Promise.resolve();
+  }
+  return new Promise((resolve) => {
+    signal.addEventListener("abort", () => resolve(), { once: true });
+  });
+}
 
 export function createDeterministicProviderAdapter(
   options: DeterministicProviderOptions = {},
@@ -71,33 +152,131 @@ export function createDeterministicProviderAdapter(
           requestId: request.requestId,
           modelAttemptId: attempt,
           sequence: sequence++,
-          failure: {
-            kind: "server-failure",
-            retryable: script.retryable ?? false,
-            message: script.message,
-          },
+          failure: failureFromScript(script),
         };
         return;
       }
 
-      yield {
-        kind: "text-delta",
-        requestId: request.requestId,
-        modelAttemptId: attempt,
-        sequence: sequence++,
-        text: script.text,
-      };
-      yield {
-        kind: "usage",
-        requestId: request.requestId,
-        modelAttemptId: attempt,
-        sequence: sequence++,
-        usage: {
-          inputTokens: 1,
-          outputTokens: 1,
-          provenance: "estimate",
-        },
-      };
+      if (script.kind === "abortable") {
+        if (script.prefixText !== undefined && script.prefixText.length > 0) {
+          yield {
+            kind: "text-delta",
+            requestId: request.requestId,
+            modelAttemptId: attempt,
+            sequence: sequence++,
+            text: script.prefixText,
+          };
+        }
+        if (script.hangUntilAbort) {
+          await waitForAbort(streamOptions.signal);
+        }
+        if (streamOptions.signal.aborted) {
+          const abortKind = script.abortFailureKind ?? "cancellation";
+          yield {
+            kind: "error",
+            requestId: request.requestId,
+            modelAttemptId: attempt,
+            sequence: sequence++,
+            failure: {
+              kind: abortKind,
+              retryable: abortKind === "timeout",
+              message:
+                abortKind === "timeout"
+                  ? "request timed out during generation"
+                  : "request cancelled during generation",
+            },
+          };
+        }
+        return;
+      }
+
+      if (script.kind === "tool") {
+        for (const [index, fragment] of script.argumentFragments.entries()) {
+          yield {
+            kind: "tool-call-delta",
+            requestId: request.requestId,
+            modelAttemptId: attempt,
+            sequence: sequence++,
+            toolCallId: script.toolCallId,
+            name: index === 0 ? script.name : undefined,
+            argumentsFragment: fragment,
+          };
+        }
+        yield {
+          kind: "tool-proposal",
+          requestId: request.requestId,
+          modelAttemptId: attempt,
+          sequence: sequence++,
+          toolCallId: script.toolCallId,
+          name: script.name,
+          // Assembler prefers assembled fragments; placeholder must be valid JSON object.
+          argumentsJson: "{}",
+        };
+        if (script.usage !== undefined && script.usage !== null) {
+          yield {
+            kind: "usage",
+            requestId: request.requestId,
+            modelAttemptId: attempt,
+            sequence: sequence++,
+            usage: script.usage,
+          };
+        }
+        yield {
+          kind: "finished",
+          requestId: request.requestId,
+          modelAttemptId: attempt,
+          sequence: sequence++,
+          finishReason: script.finishReason ?? "tool-calls",
+        };
+        return;
+      }
+
+      // text script
+      const textParts =
+        script.textFragments ?? (script.text !== undefined ? [script.text] : ["ok"]);
+      for (const part of textParts) {
+        yield {
+          kind: "text-delta",
+          requestId: request.requestId,
+          modelAttemptId: attempt,
+          sequence: sequence++,
+          text: part,
+        };
+      }
+      for (const part of script.reasoningFragments ?? []) {
+        yield {
+          kind: "reasoning-delta",
+          requestId: request.requestId,
+          modelAttemptId: attempt,
+          sequence: sequence++,
+          text: part,
+        };
+      }
+      if (script.usage !== undefined && script.usage !== null) {
+        yield {
+          kind: "usage",
+          requestId: request.requestId,
+          modelAttemptId: attempt,
+          sequence: sequence++,
+          usage: script.usage,
+        };
+      } else if (script.usage === undefined) {
+        yield {
+          kind: "usage",
+          requestId: request.requestId,
+          modelAttemptId: attempt,
+          sequence: sequence++,
+          usage: {
+            inputTokens: 1,
+            outputTokens: 1,
+            provenance: "estimate",
+          },
+        };
+      }
+      // usage === null intentionally skips usage (null ≠ zero provenance proof)
+      if (script.omitTerminal) {
+        return;
+      }
       yield {
         kind: "finished",
         requestId: request.requestId,
