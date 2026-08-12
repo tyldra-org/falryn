@@ -4,25 +4,12 @@ One workflow.
 
 | Workflow | Question | Trigger |
 | --- | --- | --- |
-| [`ci.yml`](ci.yml) | Is this revision safe to merge, and is it slower? | every pull request, and every push to `main` |
+| [`ci.yml`](ci.yml) | Is this revision safe to merge? | every pull request, and every push to `main` |
 
-## Why the benchmark is no longer a separate file
-
-It was one workflow once, then two. The manual benchmark shared `ci.yml`'s
-concurrency group, so dispatching a benchmark cancelled a `main` validation that
-was still running, because that group sets `cancel-in-progress: true`.
-
-Separate files fixed that by giving each its own group. Removing the manual
-dispatch fixes it at the source: with no trigger of its own, the benchmark can
-only start as part of a pull-request run, and sharing that run's group is
-exactly what should happen — a new commit supersedes the measurement still
-running for the previous one.
-
-What kept the files apart was a trigger that no longer exists. What keeps the
-benchmark honest is unchanged, and does not depend on the file it lives in: it
-is **not a required status check**. Measurement on a shared runner varies, a
-required gate that fails on variance gets bypassed, and a bypassed gate is worse
-than an advisory one that is read.
+Relative performance comparison (`bun run measure` / `bun run benchmark:compare`)
+is **local-only**. It is not a CI job: shared-runner variance made an advisory
+gate expensive without earning a required check, and peers in this product class
+mostly skip CI perf gates.
 
 ## Why the smoke jobs are not a separate file
 
@@ -69,7 +56,6 @@ Everything after that fans out in parallel from `typecheck` and
 | `ubuntu-x64-compiled-smoke` | `ubuntu-latest` | the compiled CLI runs on Linux x64 |
 | `macos-arm64-compiled-smoke` | `macos-latest` | the compiled CLI **and** a real pseudo-terminal on darwin arm64 |
 | `windows-x64-compiled-smoke` | `windows-latest` | the compiled CLI runs on win32 x64 |
-| `benchmark` | `ubuntu-latest` | whether this change is slower than the base it targets — advisory, pull requests only |
 
 ### What each platform actually qualifies
 
@@ -92,44 +78,13 @@ embedded-module root is `/$bunfs/` on Unix but a percent-encoded `B:/%7EBUN/` on
 Windows. A smoke that resolved the wrong filename would have reported *skipped*
 and stayed green over it.
 
-### The `benchmark` job
+## Security scanning
 
-Every pull request measures itself against its own base commit, so the
-comparison is always this change against what it targets. A push to `main` has
-no base to compare against, which is why the job carries
-`if: github.event_name == 'pull_request'` — it is the only job here that needs
-two revisions rather than one.
-
-It resolves the base to a SHA and refuses an equal base/candidate pair before
-measuring anything, takes eight temporally symmetric reports, and compares p50
-and p95. There is no retry, no threshold bypass, and no manual allow-to-pass:
-a comparison that cannot be made fails inconclusively rather than passing.
-
-What makes the number trustworthy is the shape of the run: both revisions are
-built and measured inside one job on one runner, interleaved so that each
-occupies the same mean position in time. A drift that affects one side affects
-the other equally.
-
-It shares `needs: [typecheck, dependency-integrity]` with the platform matrix,
-because measuring a revision that does not typecheck buys nothing. It does not
-share the matrix's required status: see above.
-
-## Why the benchmark runs on Ubuntu
-
-The macOS concurrency limit is five jobs and does not rise with the plan, while
-the Linux limit is twenty. `ci.yml` already spends two macOS jobs per run on
-required checks, so measuring there competes with the gates that block merges.
-
-Three of the four metrics are SQLite and blob work that is identical across
-platforms. The fourth, `startup-to-first-draw`, needs a pseudo-terminal;
-`openpty` resolves through `libutil.so.1` on Linux and the fixture's own test
-passes on `ubuntu-latest`, so all four metrics are produced.
-
-The cost is stated plainly: the Linux terminal is *not qualified* in this
-repository's platform table, so `startup-to-first-draw` measured here describes
-a surface Falryn makes no claim about. It remains valid for detecting a
-regression between two revisions on one runner, and it is not evidence about
-what a macOS user experiences.
+CodeQL runs through GitHub **default setup** for this repository (not a
+workflow file under `.github/workflows/`). Required checks still list the
+`Analyze (…)` jobs from that setup. Do not add a parallel `codeql.yml` unless
+default setup is turned off — two scanners on the same languages would only
+duplicate queue time.
 
 ## `.github/actions/setup-bun`
 
@@ -139,6 +94,5 @@ resolved a different Bun version would produce a result the other jobs cannot be
 compared against — and so the action pin, dependency caching, and any
 per-platform install flag have exactly one place to change.
 
-Its `working-directory` input exists for the benchmark's base revision, which
-must select its own Bun version from its own manifest rather than inherit the
-candidate's.
+Its optional `working-directory` input installs into a subdirectory checkout
+when a job needs a second tree with its own manifest.

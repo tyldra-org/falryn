@@ -7,7 +7,6 @@ description: >-
   dependency set would report a result the other jobs cannot be compared with.
   Owning them here makes that one edit rather than nine, and gives a
   per-platform install flag somewhere to live.
-
 inputs:
   install:
     description: >-
@@ -17,10 +16,8 @@ inputs:
     default: "true"
   working-directory:
     description: >-
-      The checkout to read the manifest from and install into. The benchmark
-      comparison places a second revision in its own directory, and that
-      revision must select its own Bun version rather than inherit the
-      candidate's — otherwise the two sides are not comparable.
+      Optional checkout subdirectory to read the manifest from and install into
+      when a job uses a second tree with its own package.json.
     required: false
     default: "."
 
@@ -31,6 +28,24 @@ runs:
       uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
       with:
         bun-version-file: ${{ inputs.working-directory }}/package.json
+
+    - name: Hash the Bun lockfile
+      if: inputs.install == 'true'
+      id: bun_lock
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        # Composite actions cannot rely on hashFiles(); hash the lock in-tree.
+        echo "hash=$(git hash-object bun.lock)" >> "$GITHUB_OUTPUT"
+
+    - name: Cache Bun package downloads
+      if: inputs.install == 'true'
+      uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
+      with:
+        path: ~/.bun/install/cache
+        key: bun-${{ runner.os }}-${{ runner.arch }}-${{ steps.bun_lock.outputs.hash }}
+        restore-keys: |
+          bun-${{ runner.os }}-${{ runner.arch }}-
 
     - name: Install locked dependencies
       if: inputs.install == 'true'

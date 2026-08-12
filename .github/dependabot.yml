@@ -2,6 +2,10 @@
 # requires. A pinned SHA cannot go stale visibly: it keeps resolving long after
 # the release it names has been superseded, so an update has to be scheduled
 # rather than noticed.
+#
+# Bun / package ecosystems are intentionally omitted: direct dependency bumps
+# are admitted by `bun run tools/repository-integrity.ts` and stay manual (or
+# a later Dependabot entry) so noisy OpenTUI-style PRs do not land every week.
 version: 2
 
 updates:
@@ -24,21 +28,3 @@ updates:
       prefix: ci
     labels:
       - "type: infrastructure"
-
-  - package-ecosystem: bun
-    directory: /
-    schedule:
-      interval: weekly
-    commit-message:
-      prefix: chore
-    labels:
-      - "type: infrastructure"
-    # Direct dependencies are admitted deliberately by
-    # `bun run tools/repository-integrity.ts`, whose checked-in policy pins an
-    # exact version. A direct bump has to change that policy in the same pull
-    # request, so grouping them keeps one review rather than several that each
-    # fail the integrity gate on their own.
-    groups:
-      direct-dependencies:
-        patterns:
-          - "*"

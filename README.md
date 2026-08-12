@@ -114,7 +114,7 @@ takes no direct pushes.
 - [Current state](CURRENT-STATE.md) — verified implementation and planning frontier
 - [Falryn Docs](https://github.com/tyldra-org/falryn-docs) — product, architecture, and developer documentation
 - [Issues](https://github.com/tyldra-org/falryn/issues) — planned work and open defects
-- [Contributing](CONTRIBUTING.md) — how to help build Falryn
+- [Contributing](CONTRIBUTING.md) — outside contributions are not open yet; security reports are
 - [Security policy](SECURITY.md) — how to report a vulnerability privately
 
 ## License
