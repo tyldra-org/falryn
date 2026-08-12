@@ -38,3 +38,9 @@ export const MAX_PROVIDER_METADATA_ENTRY_LENGTH = 256;
 
 /** Maximum provider metadata entries on one event. */
 export const MAX_PROVIDER_METADATA_ENTRIES = 32;
+
+/** Maximum assembled text or reasoning for one attempt, in UTF-16 code units. */
+export const MAX_ASSEMBLED_TEXT_LENGTH = MAX_MESSAGE_TEXT_LENGTH;
+
+/** Maximum concurrent in-flight tool-call assemblies for one attempt. */
+export const MAX_IN_FLIGHT_TOOL_CALLS = 32;
