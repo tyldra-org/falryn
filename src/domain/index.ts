@@ -890,6 +890,31 @@ export {
   TOOL_PIPELINE_SCHEMA_VERSION,
 } from "./tool-pipeline.ts";
 export type {
+  ConfirmationPosture,
+  EffectClassification,
+  FocusedConfirmation,
+  FocusedConfirmationOutcome,
+  FocusedConfirmationRequest,
+  PolicyAuthorizedInvocation,
+  ToolPolicyDecision,
+  ToolPolicyDenyCode,
+  ToolPolicyDenyReason,
+  ToolPolicyProfile,
+} from "./tool-policy.ts";
+export {
+  authorizeToolInvocation,
+  canonicalizeJson,
+  classifyEffectForPolicy,
+  confirmationInputFingerprint,
+  createFocusedConfirmationRequest,
+  DEFAULT_TOOL_POLICY_PROFILE,
+  describeToolPolicyDenyReason,
+  evaluateToolPolicy,
+  isToolPolicyDenyCode,
+  resolveFocusedConfirmation,
+  TOOL_POLICY_SCHEMA_VERSION,
+} from "./tool-policy.ts";
+export type {
   ConcurrencyContract,
   PlatformConstraint,
   ProjectionContract,

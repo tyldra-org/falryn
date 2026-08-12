@@ -11,7 +11,8 @@
  * application tool-call loop (#44). Full manifests, stable identities, and the
  * capability registry live in `tool-registry.ts` (#48). Registry-backed
  * validate/normalize before dispatch lives in `tool-invocation.ts` (#49).
- * Policy, scheduling, typed results, and hooks belong to later #47 children.
+ * Policy and focused confirmation live in `tool-policy.ts` (#50). Scheduling,
+ * typed results, and hooks belong to later #47 children.
  */
 
 import type { ZodType } from "zod";

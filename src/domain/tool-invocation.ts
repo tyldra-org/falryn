@@ -4,8 +4,8 @@
  * Raw proposals resolve against the #48 capability registry, pass structural
  * and schema checks, respect manifest platform/version/byte limits, and become
  * an immutable dispatch-ready record. Reject outcomes are exhaustive and have
- * no effect. Policy, scheduling, execution, typed results, and hooks remain
- * later #47 children.
+ * no effect. Policy and focused confirmation live in `tool-policy.ts` (#50).
+ * Scheduling, execution, typed results, and hooks remain later #47 children.
  */
 
 import type { InvocationId } from "./identity.ts";
