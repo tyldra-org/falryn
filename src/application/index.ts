@@ -93,8 +93,24 @@ export type {
 } from "./scope-tree.ts";
 export { createScopeTree, MAX_LIVE_SCOPES, MAX_SCOPE_DEPTH } from "./scope-tree.ts";
 export type {
+  OpenSessionInput,
+  SessionCommandInput,
+  SessionRuntime,
+  SessionRuntimeError,
+  SessionRuntimeResult,
+} from "./session-runtime.ts";
+export { createSessionRuntime } from "./session-runtime.ts";
+export type {
   ShutdownCoordinator,
   ShutdownCoordinatorOptions,
   ShutdownOptions,
 } from "./shutdown-coordinator.ts";
 export { createShutdownCoordinator } from "./shutdown-coordinator.ts";
+export type {
+  StartTurnInput,
+  TurnCommandInput,
+  TurnCoordinator,
+  TurnCoordinatorError,
+  TurnCoordinatorResult,
+} from "./turn-coordinator.ts";
+export { createTurnCoordinator } from "./turn-coordinator.ts";
