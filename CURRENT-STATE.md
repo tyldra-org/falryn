@@ -2467,9 +2467,9 @@ Their implementation breakdown lives in GitHub Issues and the Project.
 - **First parent outcome:** [#1 Establish the unified runtime and lifecycle](https://github.com/tyldra-org/falryn/issues/1)
 - **Completed shell parent:** [#21 Deliver the OpenTUI application shell](https://github.com/tyldra-org/falryn/issues/21) is closed and Done. [#16 Deliver the CLI and headless foundation](https://github.com/tyldra-org/falryn/issues/16) is complete.
 - **Completed docs reconcile:** [falryn-docs#1](https://github.com/tyldra-org/falryn-docs/issues/1) (Reconcile v0.1 Foundation documentation) is closed and Done via children [#84](https://github.com/tyldra-org/falryn-docs/issues/84)–[#89](https://github.com/tyldra-org/falryn-docs/issues/89); integration landed in [falryn-docs#95](https://github.com/tyldra-org/falryn-docs/pull/95) (`64366c0`).
-- **Active delivery:** parent [#33 Integrate providers and model routing](https://github.com/tyldra-org/falryn/issues/33) (v0.2 Core Coding Agent). [#35](https://github.com/tyldra-org/falryn/issues/35) in flight (provider auth, profile configuration, capability discovery).
+- **Active delivery:** parent [#33 Integrate providers and model routing](https://github.com/tyldra-org/falryn/issues/33) (v0.2 Core Coding Agent). [#35](https://github.com/tyldra-org/falryn/issues/35) closed via [PR #451](https://github.com/tyldra-org/falryn/pull/451) (`2a2a797`); docs companion [falryn-docs#97](https://github.com/tyldra-org/falryn-docs/pull/97).
 - **Open falryn v0.1 Foundation product issues:** none remaining.
-- **Next planning action:** after #35 lands, continue #33 via the next unblocked child (expected [#36](https://github.com/tyldra-org/falryn/issues/36)). GitHub remains authoritative for ordering.
+- **Next planning action:** continue #33 via [#36 Normalize streaming text, reasoning, tools, usage, and terminal outcomes](https://github.com/tyldra-org/falryn/issues/36). GitHub remains authoritative for ordering.
 
 Which of #1's children are open, and which delivered the behavior recorded
 above, is read from
