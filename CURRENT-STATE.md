@@ -2550,6 +2550,26 @@ Validated by `src/domain/turn-events.test.ts`,
 `src/application/turn-event-journal.test.ts`, and the journal wiring case in
 `src/application/turn-attempt-policy.test.ts` under `bun run check`.
 
+The tool manifest and capability-registry slice from
+[#48](https://github.com/tyldra-org/falryn/issues/48) defines stable tool
+identities, manifests, schemas, capability kinds, and effect classes for one
+immutable catalog generation (parent [#47](https://github.com/tyldra-org/falryn/issues/47)):
+
+- `src/domain/tool-registry.ts` — `ToolIdentity` encode/decode into branded
+  `CapabilityId` (`source:namespace/name@version`), Zod validation of untrusted
+  `ToolManifestDocument` values (no rejected field values in errors), trusted
+  `ToolManifest` / `ToolRegistryEntry` construction with input and output Zod
+  schemas, and `createToolRegistry` that fails closed on duplicate catalog
+  names, duplicate capability ids, and non-builtin shadowing of builtins; the
+  registry exposes a `ToolCatalog` for the existing #44 bind path;
+- effect classes remain the closed `observation | mutation | external |
+  interactive` union from `work.ts`, declared on every manifest.
+
+Validated by `src/domain/tool-registry.test.ts` (including a bind-path seam
+into `bindToolProposals`) under `bun run check`. Validate/normalize dispatch,
+policy/confirmation, scheduling, typed results/artifacts, and lifecycle hooks
+remain later #47 children (#49–#53).
+
 ## Remaining implementation gaps
 
 The repository now provides end-user behavior for the `config`, `data`, and `doctor`
