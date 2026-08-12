@@ -2535,9 +2535,9 @@ Their implementation breakdown lives in GitHub Issues and the Project.
 - **First parent outcome:** [#1 Establish the unified runtime and lifecycle](https://github.com/tyldra-org/falryn/issues/1)
 - **Completed shell parent:** [#21 Deliver the OpenTUI application shell](https://github.com/tyldra-org/falryn/issues/21) is closed and Done. [#16 Deliver the CLI and headless foundation](https://github.com/tyldra-org/falryn/issues/16) is complete.
 - **Completed docs reconcile:** [falryn-docs#1](https://github.com/tyldra-org/falryn-docs/issues/1) (Reconcile v0.1 Foundation documentation) is closed and Done via children [#84](https://github.com/tyldra-org/falryn-docs/issues/84)–[#89](https://github.com/tyldra-org/falryn-docs/issues/89); integration landed in [falryn-docs#95](https://github.com/tyldra-org/falryn-docs/pull/95) (`64366c0`).
-- **Active delivery:** parent [#33 Integrate providers and model routing](https://github.com/tyldra-org/falryn/issues/33) (v0.2 Core Coding Agent). [#38](https://github.com/tyldra-org/falryn/issues/38) closed via [PR #457](https://github.com/tyldra-org/falryn/pull/457) (`c1f6cdf`); docs companion [falryn-docs#100](https://github.com/tyldra-org/falryn-docs/pull/100).
+- **Active delivery:** [#33 Integrate providers and model routing](https://github.com/tyldra-org/falryn/issues/33) closed and Done after last child [#39](https://github.com/tyldra-org/falryn/issues/39) via [PR #459](https://github.com/tyldra-org/falryn/pull/459) (`0f8d800`); docs companion [falryn-docs#101](https://github.com/tyldra-org/falryn-docs/pull/101) (`71b8869`). Next parent: [#40 Implement the agent turn loop](https://github.com/tyldra-org/falryn/issues/40) (v0.2 Core Coding Agent).
 - **Open falryn v0.1 Foundation product issues:** none remaining.
-- **Next planning action:** continue #33 via [#39 Add provider contract fixtures, cancellation, and failure tests](https://github.com/tyldra-org/falryn/issues/39). GitHub remains authoritative for ordering.
+- **Next planning action:** start #40 via [#41 Implement session and turn state machines with exhaustive outcomes](https://github.com/tyldra-org/falryn/issues/41). GitHub remains authoritative for ordering.
 
 Which of #1's children are open, and which delivered the behavior recorded
 above, is read from
