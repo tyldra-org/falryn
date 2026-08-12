@@ -553,9 +553,7 @@ describe.if(runnable)("the compiled shell on a real terminal", () => {
       // rather than by reading: `"Close overlay"` is a real command title, and
       // at this height the help list truncates before reaching it — so it is
       // drawn in neither state and a check naming it passes against nothing.
-      // `../components/interaction.test.tsx` still asserts that way, which is
-      // https://github.com/yogeshprasad098/falryn/issues/381 rather than this
-      // issue's to correct.
+      // The rendered interaction suite uses the same measured negative (#381).
       expect(closed).toContain("Nothing has happened in this session yet");
       expect(closed).not.toContain("Help");
       expectRestored(run);
