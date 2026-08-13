@@ -2692,10 +2692,27 @@ bounded concurrent batch inside that same root:
 - `src/application/workspace-read.ts` — `createWorkspaceReader` binds paths,
   follows in-root symlinks, refuses binary/oversized/non-files, and runs
   `readMany` with canonical dedupe, aggregate bytes, and bounded concurrency.
-  Artifact spill and specialized readers remain later children.
+  Artifact spill and remaining specialized readers remain later children.
 
 Validated by `src/domain/workspace-read.test.ts` and
 `src/application/workspace-read.test.ts` under `bun run check`.
+
+The symbol and changed-region reader slice from
+[#492](https://github.com/tyldra-org/falryn/issues/492) normalizes derived
+language evidence and verifies current source inside that same root:
+
+- `src/domain/language-read.ts` — bounded symbol/changed-region requests,
+  provider-neutral locations, document identity, backend generations,
+  confidence/fallback, diagnostics, dependencies, omissions, and typed
+  unsupported, unavailable, stale, malformed, cancelled, and capped outcomes;
+- `src/application/language-read.ts` — `createLanguageReader` keeps the backend
+  behind an injectable port, rebinds every returned path, and uses
+  `createWorkspaceReader` for exact symbol and changed-region source ranges.
+  Provider discovery, LSP lifecycle, Git/open-buffer adapters, and product
+  tool registration remain later work.
+
+Validated by `src/domain/language-read.test.ts` and
+`src/application/language-read.test.ts` under `bun run check`.
 
 ## Remaining implementation gaps
 
@@ -2776,7 +2793,8 @@ session/turn producer, or live transcript producer. The remaining gaps are:
   OAuth/write flows, network discovery against real endpoints), or product
   workspace/Git/shell tool adapters;
 - workspace reads, search, patch, shell, Git, LSP, DAP, browser, or computer-use
-  capabilities (path bind, list/stat/walk, and bounded file reads exist; product tools are not registered);
+  capabilities (path bind, list/stat/walk, bounded file reads, and normalized
+  symbol/changed-region reader contracts exist; product tools are not registered);
 - context planning, Brief, Hush, Loom, compression, indexing, or memory;
 - MCP, skills, plugin and other hook families, marketplace, agents, jobs, or workflows; or
 - an installer, updater, supported platform package, signed release, or support
