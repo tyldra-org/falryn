@@ -1,7 +1,7 @@
 /**
  * Workspace list, stat, and bounded walk contracts (#280).
  *
- * Listing is metadata only. File bytes, search, and patches remain later
+ * Listing is metadata only. File bytes are #56. Search and patches remain later
  * #54 children. Descent never follows a symlink.
  */
 
