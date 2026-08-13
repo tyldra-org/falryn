@@ -140,6 +140,14 @@ export {
   createToolCallLoop,
   DEFAULT_TOOL_CALL_LOOP_LIMITS,
 } from "./tool-call-loop.ts";
+export type {
+  PostHookRunResult,
+  PreHookRunResult,
+  RunToolHooksInput,
+  ToolHookRunner,
+  ToolHookRunnerOptions,
+} from "./tool-hook-runner.ts";
+export { createToolHookRunner } from "./tool-hook-runner.ts";
 export type { EnvelopeToolResultInput, ToolResultEnvelope } from "./tool-result-envelope.ts";
 export { envelopeToolResult } from "./tool-result-envelope.ts";
 export type {

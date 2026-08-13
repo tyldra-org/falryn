@@ -3,7 +3,8 @@
  *
  * Plans a batch in the domain, then runs it through {@link SchedulerPort} and
  * {@link ToolRunnerPort}. Providers, UI, and agents never execute tools.
- * Typed result envelopes are #52 (`tool-result-envelope.ts`). Hooks remain #53.
+ * Typed result envelopes are #52 (`tool-result-envelope.ts`). Lifecycle hook
+ * points are #53 (`tool-hook-runner.ts`).
  */
 
 import {

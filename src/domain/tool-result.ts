@@ -2,9 +2,9 @@
  * Typed tool results, uncertainty, diagnostics, and artifact handles (#52).
  *
  * Assembles a {@link CapabilityResult} after #51 execution. Providers, UI, and
- * agents never become the contract. Lifecycle hooks remain #53. Product
- * adapters and artifact-store ingest remain later owners — this module records
- * handles and commit facts only.
+ * agents never become the contract. Lifecycle hook points are `tool-hooks.ts`
+ * (#53). Product adapters and artifact-store ingest remain later owners — this
+ * module records handles and commit facts only.
  */
 
 import type { z } from "zod";

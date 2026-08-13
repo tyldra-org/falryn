@@ -6,7 +6,8 @@
  * an immutable dispatch-ready record. Reject outcomes are exhaustive and have
  * no effect. Policy and focused confirmation live in `tool-policy.ts` (#50).
  * Scheduling, execution, cancel, timeout, and join live in `tool-schedule.ts`
- * (#51). Typed results and hooks remain later #47 children.
+ * (#51). Typed results live in `tool-result.ts` (#52). Lifecycle hook points
+ * live in `tool-hooks.ts` (#53).
  */
 
 import type { InvocationId } from "./identity.ts";

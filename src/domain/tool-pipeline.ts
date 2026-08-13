@@ -13,7 +13,8 @@
  * validate/normalize before dispatch lives in `tool-invocation.ts` (#49).
  * Policy and focused confirmation live in `tool-policy.ts` (#50). Scheduling,
  * cancel, timeout, and join live in `tool-schedule.ts` (#51). Typed results
- * and hooks belong to later #47 children.
+ * live in `tool-result.ts` (#52). Lifecycle hook points live in `tool-hooks.ts`
+ * (#53).
  */
 
 import type { ZodType } from "zod";
