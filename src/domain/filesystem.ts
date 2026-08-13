@@ -240,7 +240,8 @@ export type FileSystemOperation =
   | "remove"
   | "real-path"
   | "probe-writable"
-  | "read-text";
+  | "read-text"
+  | "read-bytes";
 
 /**
  * A filesystem failure.
@@ -303,6 +304,18 @@ export type FileSystemPort = {
     maximumBytes: number,
     signal?: AbortSignal,
   ): Promise<Result<string, FileSystemError>>;
+
+  /**
+   * Reads one file as bytes, refusing anything past `maximumBytes`.
+   *
+   * The size check happens before the bytes are loaded so binary readers can
+   * apply the same workspace memory boundary as text readers.
+   */
+  readBytes(
+    path: LocalPath,
+    maximumBytes: number,
+    signal?: AbortSignal,
+  ): Promise<Result<Uint8Array, FileSystemError>>;
 };
 
 /** How an in-memory node is described to the test double. */
@@ -310,6 +323,8 @@ export type InMemoryNode = {
   readonly kind: FileKind;
   /** File content. `byteLength` is derived from it when both are absent. */
   readonly text?: string;
+  /** Binary file content. `byteLength` is derived from it when present. */
+  readonly bytes?: Uint8Array;
   readonly byteLength?: number;
   readonly mode?: number;
   /** For a symlink: the absolute path it points at. */
@@ -359,7 +374,12 @@ export function createInMemoryFileSystem(
   };
 
   const byteLengthOf = (node: InMemoryNode): number =>
-    node.byteLength ?? (node.text === undefined ? 0 : Buffer.byteLength(node.text, "utf8"));
+    node.byteLength ??
+    (node.bytes === undefined
+      ? node.text === undefined
+        ? 0
+        : Buffer.byteLength(node.text, "utf8")
+      : node.bytes.byteLength);
 
   const cancelled = (
     path: LocalPath,
@@ -504,6 +524,27 @@ export function createInMemoryFileSystem(
         return err({ kind: "filesystem", code: "oversized", path, operation: "read-text" });
       }
       return ok(node.text ?? "");
+    },
+
+    async readBytes(path, maximumBytes, signal) {
+      if (signal?.aborted === true) {
+        return cancelled(path, "read-bytes");
+      }
+      const node = nodes.get(path);
+      if (node === undefined) {
+        return err({ kind: "filesystem", code: "not-found", path, operation: "read-bytes" });
+      }
+      if (node.kind !== "file") {
+        return err({ kind: "filesystem", code: "not-a-directory", path, operation: "read-bytes" });
+      }
+      if (byteLengthOf(node) > maximumBytes) {
+        return err({ kind: "filesystem", code: "oversized", path, operation: "read-bytes" });
+      }
+      return ok(
+        node.bytes === undefined
+          ? Uint8Array.from(Buffer.from(node.text ?? "", "utf8"))
+          : new Uint8Array(node.bytes),
+      );
     },
   };
 }
