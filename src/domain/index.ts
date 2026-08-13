@@ -1095,3 +1095,5 @@ export {
   priorityRank,
   workUnitId,
 } from "./work.ts";
+export type { BoundWorkspacePath, WorkspacePathBindError } from "./workspace-path.ts";
+export { bindWorkspacePath, describeWorkspacePathBindError } from "./workspace-path.ts";
