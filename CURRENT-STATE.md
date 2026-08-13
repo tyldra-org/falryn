@@ -2729,9 +2729,28 @@ workspace text without claiming to be the complete document:
   outcomes.
 
 Provider parsing, semantic summarization, product tool registration, and
-notebook, PDF, image, artifact, and virtual-resource readers remain later
-children. Validated by `src/domain/compact-document-read.test.ts` and
+PDF, image, artifact, and virtual-resource readers remain later children.
+Validated by `src/domain/compact-document-read.test.ts` and
 `src/application/compact-document-read.test.ts` under `bun run check`.
+
+The notebook reader slice from
+[#494](https://github.com/tyldra-org/falryn/issues/494) parses bounded
+versioned `.ipynb` content without executing cells or treating stored output as
+fresh:
+
+- `src/domain/notebook-read.ts` — bounded all, index, stable-ID, and cell-range
+  requests; notebook format, cell, output, attachment, metadata, diagnostic,
+  omission, cancellation, and recovery contracts;
+- `src/application/notebook-read.ts` — `createNotebookReader` reads through the
+  injected `WorkspaceReader`, preserves notebook/cell/output coordinates,
+  execution counts, metadata, bounded MIME previews, attachments, and visible
+  malformed/unknown/widget/missing-ID diagnostics.
+
+Output and attachment budgets stop expansion while retaining completed cells.
+Kernel execution, artifact spill, mutation, product tool registration, and PDF,
+image, and virtual-resource readers remain later children. Validated by
+`src/domain/notebook-read.test.ts` and
+`src/application/notebook-read.test.ts` under `bun run check`.
 
 ## Remaining implementation gaps
 
@@ -2813,7 +2832,8 @@ session/turn producer, or live transcript producer. The remaining gaps are:
   workspace/Git/shell tool adapters;
 - workspace reads, search, patch, shell, Git, LSP, DAP, browser, or computer-use
   capabilities (path bind, list/stat/walk, bounded file reads, and normalized
-  symbol/changed-region reader contracts exist; product tools are not registered);
+  symbol/changed-region, compact-document, and notebook reader contracts exist;
+  product tools are not registered);
 - context planning, Brief, Hush, Loom, compression, indexing, or memory;
 - MCP, skills, plugin and other hook families, marketplace, agents, jobs, or workflows; or
 - an installer, updater, supported platform package, signed release, or support
