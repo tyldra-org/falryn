@@ -2655,6 +2655,21 @@ Validated by `src/domain/tool-hooks.test.ts`,
 `src/application/tool-hook-runner.test.ts`, and
 `src/application/tool-pipeline-seam.test.ts` under `bun run check`.
 
+The workspace path bind slice from
+[#55](https://github.com/tyldra-org/falryn/issues/55) keeps tool paths inside
+one explicit workspace root (parent
+[#54](https://github.com/tyldra-org/falryn/issues/54)):
+
+- `src/domain/workspace-path.ts` — `bindWorkspacePath` resolves workspace-relative
+  logical paths against a `LocalPath` root, refuses `..` escape, prefix tricks,
+  NUL, and unscoped absolute paths, and never echoes rejected text;
+- `src/application/workspace-path.ts` — `createWorkspacePathBinder` re-checks
+  `FileSystemPort.realPath` so a symlink cannot leave the root. Missing paths
+  keep the lexical bind. File bytes, listing, and search remain later children.
+
+Validated by `src/domain/workspace-path.test.ts` and
+`src/application/workspace-path.test.ts` under `bun run check`.
+
 ## Remaining implementation gaps
 
 The repository now provides end-user behavior for the `config`, `data`, and `doctor`
@@ -2733,8 +2748,8 @@ session/turn producer, or live transcript producer. The remaining gaps are:
 -   provider integration beyond the #34–#39 boundary (live vendor adapters,
   OAuth/write flows, network discovery against real endpoints), or product
   workspace/Git/shell tool adapters;
-- workspace, read, search, patch, shell, Git, LSP, DAP, browser, or computer-use
-  capabilities;
+- workspace reads, search, patch, shell, Git, LSP, DAP, browser, or computer-use
+  capabilities (path bind against a workspace root exists; product readers do not);
 - context planning, Brief, Hush, Loom, compression, indexing, or memory;
 - MCP, skills, plugin and other hook families, marketplace, agents, jobs, or workflows; or
 - an installer, updater, supported platform package, signed release, or support
