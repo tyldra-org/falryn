@@ -2728,8 +2728,8 @@ workspace text without claiming to be the complete document:
   cancellation, binary, oversized, missing, malformed, and budget-exhausted
   outcomes.
 
-Provider parsing, semantic summarization, product tool registration, and image,
-artifact, and virtual-resource readers remain later children.
+Provider parsing, semantic summarization, product tool registration, and
+derived-document interpretation remain later children.
 Validated by `src/domain/compact-document-read.test.ts` and
 `src/application/compact-document-read.test.ts` under `bun run check`.
 
@@ -2747,8 +2747,8 @@ fresh:
   malformed/unknown/widget/missing-ID diagnostics.
 
 Output and attachment budgets stop expansion while retaining completed cells.
-Kernel execution, artifact spill, mutation, product tool registration, image,
-and virtual-resource readers remain later children. Validated by
+Kernel execution, artifact spill, mutation, and product tool registration
+remain later children. Validated by
 `src/domain/notebook-read.test.ts` and
 `src/application/notebook-read.test.ts` under `bun run check`.
 
@@ -2771,6 +2771,35 @@ budgets remain visible as typed errors, diagnostics, partial results, or
 recovery ranges. Validated by `src/domain/pdf-read.test.ts`,
 `src/application/pdf-read.test.ts`, `src/application/workspace-read.test.ts`,
 and `src/integrations/host-filesystem.test.ts` under `bun run check`.
+
+The image, artifact, and virtual-resource reader slice from
+[#58](https://github.com/tyldra-org/falryn/issues/58) adds three explicit
+reader seams without registering product tools:
+
+- `src/domain/image-read.ts` and `src/application/image-read.ts` — bounded
+  image requests detect PNG, JPEG, GIF, WebP, BMP, and SVG from source bytes;
+  preserve media type, dimensions, orientation, color profile, animation,
+  loop behavior, and a `sha-256` digest; and return the original encoded visual
+  only when source, pixel, frame, metadata, and visual budgets permit it.
+  Unsafe SVG, malformed/unsupported formats, cancellation, and partial
+  metadata expansion remain visible.
+- `src/domain/artifact-read.ts` and `src/application/artifact-read.ts` —
+  metadata, bounded preview, and explicit exact-range modes use the injected
+  `ArtifactStorePort`, retaining artifact identity, digest, actual offsets,
+  returned lengths, and availability errors without touching SQL or blob paths.
+- `src/domain/virtual-resource-read.ts` and
+  `src/application/virtual-resource-read.ts` — stable non-path resource
+  identities use an injected adapter that declares freshness, retention,
+  digest, media type, size, and exact-byte availability. Metadata and bounded
+  range reads are separate, with identity drift, unavailable bytes, adapter
+  failure, overflow, and cancellation typed.
+
+Pixel decoding, OCR, downscaling/format conversion, derived-artifact
+materialization, mutation, provider adapters, and product tool registration
+remain outside this slice. Validated by
+`src/application/image-read.test.ts`,
+`src/application/artifact-read.test.ts`, and
+`src/application/virtual-resource-read.test.ts` under `bun run check`.
 
 ## Remaining implementation gaps
 
@@ -2852,8 +2881,8 @@ session/turn producer, or live transcript producer. The remaining gaps are:
   workspace/Git/shell tool adapters;
 - workspace reads, search, patch, shell, Git, LSP, DAP, browser, or computer-use
   capabilities (path bind, list/stat/walk, bounded file reads, and normalized
-  symbol/changed-region, compact-document, and notebook reader contracts exist;
-  product tools are not registered);
+  symbol/changed-region, compact-document, notebook, PDF, image, artifact, and
+  virtual-resource reader contracts exist; product tools are not registered);
 - context planning, Brief, Hush, Loom, compression, indexing, or memory;
 - MCP, skills, plugin and other hook families, marketplace, agents, jobs, or workflows; or
 - an installer, updater, supported platform package, signed release, or support
