@@ -2611,8 +2611,8 @@ policy-authorized invocations through the existing scheduler and a narrow
 - `src/application/tool-work-scheduler.ts` — `createToolWorkScheduler` executes
   only through `ToolRunnerPort`, serializes conflict keys, joins dependents,
   cancels and times out in-flight work, and reports exhaustive per-invocation
-  outcomes without claiming a completed mutation after abort. Lifecycle hooks
-  remain later #47 child #53.
+  outcomes without claiming a completed mutation after abort. Lifecycle hook
+  points are #53 (`tool-hooks.ts` / `tool-hook-runner.ts`).
 
 Validated by `src/domain/tool-schedule.test.ts` and
 `src/application/tool-work-scheduler.test.ts` under `bun run check`.
@@ -2630,11 +2630,30 @@ The typed result / uncertainty / diagnostics / artifact-handle slice from
   model view without replacing the canonical envelope;
 - `src/application/tool-result-envelope.ts` — `envelopeToolResult` applies the
   runtime `SensitiveValueRedactor` at that projection seam. Product adapters,
-  artifact-store ingest, TUI/CLI wiring, and lifecycle hooks remain later
-  owners (#53 and product-tool issues).
+  artifact-store ingest, and TUI/CLI wiring remain later owners.
 
 Validated by `src/domain/tool-result.test.ts` and
 `src/application/tool-result-envelope.test.ts` under `bun run check`.
+
+The lifecycle hook-point slice from
+[#53](https://github.com/tyldra-org/falryn/issues/53) exposes named
+capability-invocation points without execution bypasses (parent
+[#47](https://github.com/tyldra-org/falryn/issues/47)):
+
+- `src/domain/tool-hooks.ts` — built-in TypeScript registration only;
+  `before-capability-invocation` is fail-closed and `after-capability-invocation`
+  is fail-open; the immutable envelope carries ids, generations, deadline,
+  recursion/re-entry, and validated payload, never a runner or secrets;
+  transform key conflicts fail visibly; `ToolLifecycleFact` notifications do
+  not widen `EVENT_KINDS`;
+- `src/application/tool-hook-runner.ts` — runs ordered hooks against the clock
+  timeout budget. A pre deny/timeout/throw does not invoke `ToolRunnerPort`.
+  Post decisions cannot rewrite completed, failed, cancelled, timed-out, or
+  uncertain terminals.
+
+Validated by `src/domain/tool-hooks.test.ts`,
+`src/application/tool-hook-runner.test.ts`, and
+`src/application/tool-pipeline-seam.test.ts` under `bun run check`.
 
 ## Remaining implementation gaps
 

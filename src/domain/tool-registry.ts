@@ -8,7 +8,8 @@
  * registry-backed validate/normalize before dispatch is `tool-invocation.ts`
  * (#49). Policy and focused confirmation are `tool-policy.ts` (#50).
  * Scheduling, cancel, timeout, and join are `tool-schedule.ts` (#51).
- * Typed results and hooks belong to later #47 children.
+ * Typed results live in `tool-result.ts` (#52). Lifecycle hook points live in
+ * `tool-hooks.ts` (#53).
  */
 
 import { z } from "zod";
