@@ -5,7 +5,8 @@
  * effect class, decides allow / deny / require focused confirmation, and gates
  * consequential work on an explicit confirmation bound to normalized input.
  * Observed confirmation outcomes are reported separately from requested intent.
- * Fail closed. Does not schedule or execute tools (#51).
+ * Fail closed. Scheduling, execute, cancel, timeout, and join live in
+ * `tool-schedule.ts` / `application/tool-work-scheduler.ts` (#51).
  *
  * Effect classes remain the closed set from `work.ts` (#44 / #48); this module
  * extends that classification for confirmation posture rather than forking it.
