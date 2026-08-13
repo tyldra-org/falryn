@@ -192,5 +192,7 @@ export type {
   TurnEventJournalPort,
 } from "./turn-event-journal.ts";
 export { createTurnEventJournal } from "./turn-event-journal.ts";
+export type { WorkspaceListing } from "./workspace-listing.ts";
+export { createWorkspaceListing } from "./workspace-listing.ts";
 export type { WorkspacePathBinder, WorkspacePathProbeError } from "./workspace-path.ts";
 export { createWorkspacePathBinder } from "./workspace-path.ts";
