@@ -378,7 +378,7 @@ type NormalizeInputResult =
  * Normalize path-like string fields after schema validation.
  *
  * Collapses separators, drops empty/`.` segments, rejects NUL. Does not resolve
- * against a workspace root — that belongs to later product adapters.
+ * against a workspace root — that belongs to `workspace-path.ts` (#55).
  */
 function normalizeValidatedInput(input: Readonly<Record<string, unknown>>): NormalizeInputResult {
   const result: Record<string, unknown> = {};
