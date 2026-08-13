@@ -7,7 +7,8 @@
  * register. The resulting catalog feeds the #44 tool-pipeline bind path;
  * registry-backed validate/normalize before dispatch is `tool-invocation.ts`
  * (#49). Policy and focused confirmation are `tool-policy.ts` (#50).
- * Scheduling, typed results, and hooks belong to later #47 children.
+ * Scheduling, cancel, timeout, and join are `tool-schedule.ts` (#51).
+ * Typed results and hooks belong to later #47 children.
  */
 
 import { z } from "zod";

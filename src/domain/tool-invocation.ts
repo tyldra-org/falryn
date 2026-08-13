@@ -5,7 +5,8 @@
  * and schema checks, respect manifest platform/version/byte limits, and become
  * an immutable dispatch-ready record. Reject outcomes are exhaustive and have
  * no effect. Policy and focused confirmation live in `tool-policy.ts` (#50).
- * Scheduling, execution, typed results, and hooks remain later #47 children.
+ * Scheduling, execution, cancel, timeout, and join live in `tool-schedule.ts`
+ * (#51). Typed results and hooks remain later #47 children.
  */
 
 import type { InvocationId } from "./identity.ts";

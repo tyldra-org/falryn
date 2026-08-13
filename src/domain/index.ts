@@ -958,6 +958,24 @@ export {
   validateToolIdentity,
 } from "./tool-registry.ts";
 export type {
+  PlannedToolWork,
+  ToolJoinPolicy,
+  ToolScheduleError,
+  ToolScheduleItem,
+  ToolSchedulePlan,
+  ToolScheduleRequest,
+} from "./tool-schedule.ts";
+export {
+  describeToolScheduleError,
+  isToolJoinPolicy,
+  planToolSchedule,
+  TOOL_JOIN_POLICIES,
+  TOOL_SCHEDULE_SCHEMA_VERSION,
+  toolRecordFromSchedulingResult,
+  workUnitForAuthorized,
+  workUnitIdForInvocation,
+} from "./tool-schedule.ts";
+export type {
   BuildTurnEventInput,
   ReplayedAttempt,
   ReplayedInvocation,
