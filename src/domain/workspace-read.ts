@@ -1,8 +1,8 @@
 /**
  * Workspace one-file and multi-file read contracts (#56).
  *
- * Numbered text, ranges, and budgets only. Artifact spill, digests, and
- * specialized readers remain later #54 children.
+ * Numbered text, bounded binary bytes, ranges, and budgets only. Artifact spill,
+ * digests, and higher-level specialized readers remain later #54 children.
  */
 
 import type { FileKind } from "./filesystem.ts";
@@ -76,6 +76,13 @@ export type WorkspaceFileRead = {
   readonly range: WorkspaceReadRange | null;
   readonly lines: readonly NumberedLine[];
   readonly truncated: boolean;
+};
+
+export type WorkspaceBytesRead = {
+  readonly bound: BoundWorkspacePath;
+  readonly kind: FileKind;
+  readonly byteLength: number;
+  readonly bytes: Uint8Array;
 };
 
 export type WorkspaceReadTarget = {

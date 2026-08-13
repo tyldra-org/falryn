@@ -305,6 +305,18 @@ describe("reading text", () => {
   });
 });
 
+describe("reading bytes", () => {
+  test("preserves binary bytes without UTF-8 coercion", async () => {
+    await fs.writeFile(at("document.pdf"), Buffer.from([0x25, 0x50, 0x44, 0x46, 0x00, 0xff]));
+    const read = await fileSystem.readBytes(at("document.pdf"), 1_024);
+
+    expect(read.ok).toBe(true);
+    if (read.ok) {
+      expect([...read.value]).toEqual([0x25, 0x50, 0x44, 0x46, 0x00, 0xff]);
+    }
+  });
+});
+
 describe("cancellation", () => {
   test("every operation refuses an already-aborted signal", async () => {
     const controller = new AbortController();
@@ -319,6 +331,7 @@ describe("cancellation", () => {
       await fileSystem.realPath(root, signal),
       await fileSystem.probeWritable(root, signal),
       await fileSystem.readText(at("note.txt"), 1_024, signal),
+      await fileSystem.readBytes(at("note.txt"), 1_024, signal),
     ]) {
       expect(result.ok).toBe(false);
       if (!result.ok) {

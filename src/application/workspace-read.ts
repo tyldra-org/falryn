@@ -1,8 +1,9 @@
 /**
  * Workspace one-file and bounded multi-file reads (#56).
  *
- * Binds caller paths, then reads through {@link FileSystemPort.readText}.
- * Artifact spill and specialized readers remain later #54 children.
+ * Binds caller paths, then reads text or bounded bytes through
+ * {@link FileSystemPort}. Artifact spill and higher-level specialized readers
+ * remain later #54 children.
  */
 
 import {
@@ -18,6 +19,7 @@ import {
   MAX_READ_MANY_TARGETS,
   numberLines,
   readLimits,
+  type WorkspaceBytesRead,
   type WorkspaceFileRead,
   type WorkspaceReadError,
   type WorkspaceReadLimits,
@@ -36,6 +38,15 @@ export type WorkspaceReader = {
     signal?: AbortSignal,
   ): Promise<
     | { readonly ok: true; readonly value: WorkspaceFileRead }
+    | { readonly ok: false; readonly error: WorkspaceReadError }
+  >;
+  readBytes(
+    root: LocalPath,
+    value: unknown,
+    limits?: Partial<WorkspaceReadLimits>,
+    signal?: AbortSignal,
+  ): Promise<
+    | { readonly ok: true; readonly value: WorkspaceBytesRead }
     | { readonly ok: false; readonly error: WorkspaceReadError }
   >;
   readMany(
@@ -196,6 +207,60 @@ async function readBound(
   };
 }
 
+async function readBytesBound(
+  fileSystem: FileSystemPort,
+  bound: BoundWorkspacePath,
+  maximumBytes: number,
+  signal?: AbortSignal,
+): Promise<
+  | { readonly ok: true; readonly value: WorkspaceBytesRead }
+  | { readonly ok: false; readonly error: WorkspaceReadError }
+> {
+  if (isAborted(signal)) {
+    return { ok: false, error: { code: "cancelled" } };
+  }
+  const stated = await fileSystem.stat(bound.resolved, signal);
+  if (!stated.ok) {
+    return stated.error.code === "cancelled"
+      ? { ok: false, error: { code: "cancelled" } }
+      : { ok: false, error: { code: "filesystem", reason: stated.error.code } };
+  }
+  if (stated.value === null) {
+    return { ok: false, error: { code: "not-found" } };
+  }
+  if (stated.value.kind !== "file") {
+    return { ok: false, error: { code: "not-a-file" } };
+  }
+  if (stated.value.byteLength > maximumBytes) {
+    return { ok: false, error: { code: "oversized", byteLength: stated.value.byteLength } };
+  }
+  const bytes = await fileSystem.readBytes(bound.resolved, maximumBytes, signal);
+  if (!bytes.ok) {
+    if (bytes.error.code === "cancelled") {
+      return { ok: false, error: { code: "cancelled" } };
+    }
+    if (bytes.error.code === "not-found") {
+      return { ok: false, error: { code: "not-found" } };
+    }
+    if (bytes.error.code === "oversized") {
+      return { ok: false, error: { code: "oversized", byteLength: stated.value.byteLength } };
+    }
+    if (bytes.error.code === "not-a-directory") {
+      return { ok: false, error: { code: "not-a-file" } };
+    }
+    return { ok: false, error: { code: "filesystem", reason: bytes.error.code } };
+  }
+  return {
+    ok: true,
+    value: {
+      bound,
+      kind: stated.value.kind,
+      byteLength: stated.value.byteLength,
+      bytes: bytes.value,
+    },
+  };
+}
+
 export function createWorkspaceReader(fileSystem: FileSystemPort): WorkspaceReader {
   return {
     async read(root, value, range, limits, signal) {
@@ -204,6 +269,14 @@ export function createWorkspaceReader(fileSystem: FileSystemPort): WorkspaceRead
         return bound;
       }
       return readBound(fileSystem, bound.value, range, readLimits(limits).maxFileBytes, signal);
+    },
+
+    async readBytes(root, value, limits, signal) {
+      const bound = await bindReadPath(fileSystem, root, value, signal);
+      if (!bound.ok) {
+        return bound;
+      }
+      return readBytesBound(fileSystem, bound.value, readLimits(limits).maxFileBytes, signal);
     },
 
     async readMany(root, targets, limits, signal) {
