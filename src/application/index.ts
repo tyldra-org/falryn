@@ -44,6 +44,8 @@ export type {
   InterruptionState,
 } from "./interruption.ts";
 export { attachInterruptionPolicy, createInterruptionPolicy } from "./interruption.ts";
+export type { LanguageReader } from "./language-read.ts";
+export { createLanguageReader } from "./language-read.ts";
 export type {
   DigestedPromptRequest,
   PromptComposer,
