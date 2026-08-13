@@ -2688,11 +2688,11 @@ The workspace file-read slice from
 bounded concurrent batch inside that same root:
 
 - `src/domain/workspace-read.ts` — numbered lines, line/byte ranges, newline
-  facts, and read budgets;
+  facts, read budgets, and bounded binary-byte reads;
 - `src/application/workspace-read.ts` — `createWorkspaceReader` binds paths,
-  follows in-root symlinks, refuses binary/oversized/non-files, and runs
-  `readMany` with canonical dedupe, aggregate bytes, and bounded concurrency.
-  Artifact spill and remaining specialized readers remain later children.
+  follows in-root symlinks, provides text and binary-byte reads, refuses
+  oversized/non-files, and runs `readMany` with canonical dedupe, aggregate
+  bytes, and bounded concurrency. Artifact spill remains a later child.
 
 Validated by `src/domain/workspace-read.test.ts` and
 `src/application/workspace-read.test.ts` under `bun run check`.
@@ -2728,8 +2728,8 @@ workspace text without claiming to be the complete document:
   cancellation, binary, oversized, missing, malformed, and budget-exhausted
   outcomes.
 
-Provider parsing, semantic summarization, product tool registration, and
-PDF, image, artifact, and virtual-resource readers remain later children.
+Provider parsing, semantic summarization, product tool registration, and image,
+artifact, and virtual-resource readers remain later children.
 Validated by `src/domain/compact-document-read.test.ts` and
 `src/application/compact-document-read.test.ts` under `bun run check`.
 
@@ -2747,10 +2747,30 @@ fresh:
   malformed/unknown/widget/missing-ID diagnostics.
 
 Output and attachment budgets stop expansion while retaining completed cells.
-Kernel execution, artifact spill, mutation, product tool registration, and PDF,
-image, and virtual-resource readers remain later children. Validated by
+Kernel execution, artifact spill, mutation, product tool registration, image,
+and virtual-resource readers remain later children. Validated by
 `src/domain/notebook-read.test.ts` and
 `src/application/notebook-read.test.ts` under `bun run check`.
+
+The PDF reader slice from
+[#495](https://github.com/tyldra-org/falryn/issues/495) provides a bounded,
+page-aware projection over workspace PDF bytes:
+
+- `src/domain/pdf-read.ts` — explicit page-range and query-selection requests;
+  document digest, page count, selected/scanned pages, page/source coordinates,
+  extraction, confidence, OCR-required, block, diagnostic, omission, recovery,
+  cancellation, and resource-limit contracts;
+- `src/application/pdf-read.ts` — `createPdfReader` reads through the injected
+  binary-capable `WorkspaceReader`, parses bounded PDF page trees and content
+  streams, and keeps text, heuristic tables, links, annotations, and
+  embedded-image metadata distinct without invoking OCR or executing content.
+
+Encrypted and malformed documents refuse; unsupported filters, image-only pages,
+huge output, decompression-heavy content, cancellation, and page/output/object
+budgets remain visible as typed errors, diagnostics, partial results, or
+recovery ranges. Validated by `src/domain/pdf-read.test.ts`,
+`src/application/pdf-read.test.ts`, `src/application/workspace-read.test.ts`,
+and `src/integrations/host-filesystem.test.ts` under `bun run check`.
 
 ## Remaining implementation gaps
 

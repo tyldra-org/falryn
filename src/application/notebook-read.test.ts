@@ -165,6 +165,10 @@ describe("createNotebookReader", () => {
     }
     const stub: WorkspaceReader = {
       read: async () => source,
+      readBytes: async () => ({
+        ok: false,
+        error: { code: "binary" },
+      }),
       readMany: async () => ({ ok: true, value: { items: [] } }),
     };
     let checks = 0;

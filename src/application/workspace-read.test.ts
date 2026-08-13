@@ -14,6 +14,10 @@ function reader() {
       "/work/project/src/alias.ts": { kind: "symlink", target: "/work/project/src/a.ts" },
       "/work/project/out": { kind: "symlink", target: "/etc/passwd" },
       "/work/project/secret.bin": { kind: "file", text: "sk-live-SECRET\0" },
+      "/work/project/binary.pdf": {
+        kind: "file",
+        bytes: Uint8Array.from([37, 80, 68, 70, 0, 255]),
+      },
       "/work/project/huge.ts": { kind: "file", text: "0123456789abcdef" },
       "/etc/passwd": { kind: "file", text: "root" },
     },
@@ -83,6 +87,17 @@ describe("createWorkspaceReader", () => {
     const read = await workspace.read(root, "secret.bin");
     expect(read).toEqual({ ok: false, error: { code: "binary" } });
     expect(JSON.stringify(read)).not.toContain("sk-live-SECRET");
+  });
+
+  test("reads bounded binary bytes without coercing them to text", async () => {
+    const workspace = reader();
+    const read = await workspace.readBytes(root, "binary.pdf");
+    expect(read.ok).toBe(true);
+    if (!read.ok) {
+      throw new Error("expected binary read");
+    }
+    expect([...read.value.bytes]).toEqual([37, 80, 68, 70, 0, 255]);
+    expect(read.value.byteLength).toBe(6);
   });
 
   test("refuses an oversized file without returning bytes", async () => {

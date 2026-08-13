@@ -50,6 +50,8 @@ export type { LanguageReader } from "./language-read.ts";
 export { createLanguageReader } from "./language-read.ts";
 export type { NotebookReader } from "./notebook-read.ts";
 export { createNotebookReader } from "./notebook-read.ts";
+export type { PdfReader } from "./pdf-read.ts";
+export { createPdfReader } from "./pdf-read.ts";
 export type {
   DigestedPromptRequest,
   PromptComposer,

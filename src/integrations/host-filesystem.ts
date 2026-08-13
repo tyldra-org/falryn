@@ -274,5 +274,33 @@ export function createHostFileSystem(): FileSystemPort {
         return err(translate(thrown, path, "read-text"));
       }
     },
+
+    async readBytes(
+      path: LocalPath,
+      maximumBytes: number,
+      signal?: AbortSignal,
+    ): Promise<Result<Uint8Array, FileSystemError>> {
+      if (signal?.aborted === true) {
+        return cancelled(path, "read-bytes");
+      }
+      try {
+        const stats = await fs.stat(path);
+        if (!stats.isFile()) {
+          return err({
+            kind: "filesystem",
+            code: "not-a-directory",
+            path,
+            operation: "read-bytes",
+          });
+        }
+        if (stats.size > maximumBytes) {
+          return err({ kind: "filesystem", code: "oversized", path, operation: "read-bytes" });
+        }
+        const bytes = await fs.readFile(path);
+        return ok(new Uint8Array(bytes));
+      } catch (thrown: unknown) {
+        return err(translate(thrown, path, "read-bytes"));
+      }
+    },
   };
 }
