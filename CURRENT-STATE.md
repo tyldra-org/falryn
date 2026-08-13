@@ -2670,6 +2670,19 @@ one explicit workspace root (parent
 Validated by `src/domain/workspace-path.test.ts` and
 `src/application/workspace-path.test.ts` under `bun run check`.
 
+The workspace listing slice from
+[#280](https://github.com/tyldra-org/falryn/issues/280) stats, lists one
+directory, and walks a tree inside that same root:
+
+- `src/domain/workspace-listing.ts` — entry, limit, hidden-name, and truncation
+  contracts;
+- `src/application/workspace-listing.ts` — `createWorkspaceListing` binds the
+  caller path, uses `FileSystemPort.stat` / `list` without reading bytes, never
+  descends through a symlink, and stops on entry or depth budgets.
+
+Validated by `src/domain/workspace-listing.test.ts` and
+`src/application/workspace-listing.test.ts` under `bun run check`.
+
 ## Remaining implementation gaps
 
 The repository now provides end-user behavior for the `config`, `data`, and `doctor`
@@ -2749,7 +2762,7 @@ session/turn producer, or live transcript producer. The remaining gaps are:
   OAuth/write flows, network discovery against real endpoints), or product
   workspace/Git/shell tool adapters;
 - workspace reads, search, patch, shell, Git, LSP, DAP, browser, or computer-use
-  capabilities (path bind against a workspace root exists; product readers do not);
+  capabilities (path bind plus list/stat/walk exist; product readers do not);
 - context planning, Brief, Hush, Loom, compression, indexing, or memory;
 - MCP, skills, plugin and other hook families, marketplace, agents, jobs, or workflows; or
 - an installer, updater, supported platform package, signed release, or support

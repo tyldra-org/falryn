@@ -1095,5 +1095,26 @@ export {
   priorityRank,
   workUnitId,
 } from "./work.ts";
+export type {
+  WalkTruncation,
+  WorkspaceEntry,
+  WorkspaceEntryFailure,
+  WorkspaceListingError,
+  WorkspaceListingLimits,
+  WorkspaceListResult,
+  WorkspaceStatResult,
+  WorkspaceWalkResult,
+} from "./workspace-listing.ts";
+export {
+  compareWorkspaceEntries,
+  DEFAULT_LISTING_LIMITS,
+  DEFAULT_MAX_LIST_ENTRIES,
+  DEFAULT_MAX_WALK_DEPTH,
+  DEFAULT_MAX_WALK_ENTRIES,
+  describeWorkspaceListingError,
+  entryFromStat,
+  isHiddenLogical,
+  listingLimits,
+} from "./workspace-listing.ts";
 export type { BoundWorkspacePath, WorkspacePathBindError } from "./workspace-path.ts";
 export { bindWorkspacePath, describeWorkspacePathBindError } from "./workspace-path.ts";

@@ -3,7 +3,7 @@
  *
  * Lexical only: separators, dots, `..`, NUL, length, and root membership.
  * Symlink escape is an application probe over {@link FileSystemPort.realPath}.
- * File bytes, listing, search, and patches remain later #54 children.
+ * File bytes, search, and patches remain later #54 children. Listing is #280.
  */
 
 import {
