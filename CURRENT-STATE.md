@@ -2596,8 +2596,26 @@ schedule or execute stage (parent [#47](https://github.com/tyldra-org/falryn/iss
   confirmation status separately from requested intent and never claim an
   execution effect at this stage (`effect: "none"` until later runners run).
 
-Validated by `src/domain/tool-policy.test.ts` under `bun run check`. Scheduling,
-typed results/artifacts, and lifecycle hooks remain later #47 children (#51–#53).
+Validated by `src/domain/tool-policy.test.ts` under `bun run check`.
+
+The schedule / execute / cancel / timeout / join slice from
+[#51](https://github.com/tyldra-org/falryn/issues/51) runs
+policy-authorized invocations through the existing scheduler and a narrow
+`ToolRunnerPort` (parent [#47](https://github.com/tyldra-org/falryn/issues/47)):
+
+- `src/domain/tool-schedule.ts` — `planToolSchedule` fails closed on empty
+  batches, duplicates, unknown nested edges, cycles, and queue bounds, then
+  maps each `PolicyAuthorizedInvocation` onto a `WorkUnit` with declared
+  conflict keys, dependencies, and join policy (`all` | `fail-fast` |
+  `partial`);
+- `src/application/tool-work-scheduler.ts` — `createToolWorkScheduler` executes
+  only through `ToolRunnerPort`, serializes conflict keys, joins dependents,
+  cancels and times out in-flight work, and reports exhaustive per-invocation
+  outcomes without claiming a completed mutation after abort. Typed result
+  envelopes and lifecycle hooks remain later #47 children (#52–#53).
+
+Validated by `src/domain/tool-schedule.test.ts` and
+`src/application/tool-work-scheduler.test.ts` under `bun run check`.
 
 ## Remaining implementation gaps
 

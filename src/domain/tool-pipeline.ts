@@ -12,7 +12,8 @@
  * capability registry live in `tool-registry.ts` (#48). Registry-backed
  * validate/normalize before dispatch lives in `tool-invocation.ts` (#49).
  * Policy and focused confirmation live in `tool-policy.ts` (#50). Scheduling,
- * typed results, and hooks belong to later #47 children.
+ * cancel, timeout, and join live in `tool-schedule.ts` (#51). Typed results
+ * and hooks belong to later #47 children.
  */
 
 import type { ZodType } from "zod";

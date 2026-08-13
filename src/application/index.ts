@@ -141,6 +141,17 @@ export {
   DEFAULT_TOOL_CALL_LOOP_LIMITS,
 } from "./tool-call-loop.ts";
 export type {
+  RunToolWorkInput,
+  ToolWorkBatchOutcome,
+  ToolWorkScheduler,
+  ToolWorkSchedulerLimits,
+  ToolWorkSchedulerOptions,
+} from "./tool-work-scheduler.ts";
+export {
+  createToolWorkScheduler,
+  DEFAULT_TOOL_WORK_SCHEDULER_LIMITS,
+} from "./tool-work-scheduler.ts";
+export type {
   AttemptRecord,
   AttemptRunnerPort,
   AttemptRunnerRequest,
