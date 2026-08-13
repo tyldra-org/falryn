@@ -5,6 +5,8 @@
  * layer depends on `src/domain` and on nothing further out.
  */
 
+export type { ArtifactReader } from "./artifact-read.ts";
+export { createArtifactReader } from "./artifact-read.ts";
 export type {
   BoundedQueue,
   BoundedQueueOptions,
@@ -40,6 +42,8 @@ export {
   fromUnreadConfigurationSources,
   withContext,
 } from "./error-translation.ts";
+export type { ImageReader } from "./image-read.ts";
+export { createImageReader } from "./image-read.ts";
 export type {
   InterruptionDecision,
   InterruptionPolicy,
@@ -200,6 +204,8 @@ export type {
   TurnEventJournalPort,
 } from "./turn-event-journal.ts";
 export { createTurnEventJournal } from "./turn-event-journal.ts";
+export type { VirtualResourceReader } from "./virtual-resource-read.ts";
+export { createVirtualResourceReader } from "./virtual-resource-read.ts";
 export type { WorkspaceListing } from "./workspace-listing.ts";
 export { createWorkspaceListing } from "./workspace-listing.ts";
 export type { WorkspacePathBinder, WorkspacePathProbeError } from "./workspace-path.ts";
