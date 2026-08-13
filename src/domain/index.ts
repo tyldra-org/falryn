@@ -958,6 +958,22 @@ export {
   validateToolIdentity,
 } from "./tool-registry.ts";
 export type {
+  ArtifactRef,
+  AssembleCapabilityResultInput,
+  CapabilityResult,
+  CapabilityResultStatus,
+  ContainedProcessOutcome,
+  DiagnosticRef,
+  ModelToolResultView,
+  TimingBreakdown,
+  ToolResultProvenance,
+} from "./tool-result.ts";
+export {
+  assembleCapabilityResult,
+  projectCapabilityResult,
+  TOOL_RESULT_SCHEMA_VERSION,
+} from "./tool-result.ts";
+export type {
   PlannedToolWork,
   ToolJoinPolicy,
   ToolScheduleError,
