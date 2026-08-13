@@ -2611,11 +2611,30 @@ policy-authorized invocations through the existing scheduler and a narrow
 - `src/application/tool-work-scheduler.ts` — `createToolWorkScheduler` executes
   only through `ToolRunnerPort`, serializes conflict keys, joins dependents,
   cancels and times out in-flight work, and reports exhaustive per-invocation
-  outcomes without claiming a completed mutation after abort. Typed result
-  envelopes and lifecycle hooks remain later #47 children (#52–#53).
+  outcomes without claiming a completed mutation after abort. Lifecycle hooks
+  remain later #47 child #53.
 
 Validated by `src/domain/tool-schedule.test.ts` and
 `src/application/tool-work-scheduler.test.ts` under `bun run check`.
+
+The typed result / uncertainty / diagnostics / artifact-handle slice from
+[#52](https://github.com/tyldra-org/falryn/issues/52) assembles a
+`CapabilityResult` after that execution (parent
+[#47](https://github.com/tyldra-org/falryn/issues/47)):
+
+- `src/domain/tool-result.ts` — `assembleCapabilityResult` validates output
+  against the trusted result schema, requires committed required artifacts for
+  `completed`, stops a completion claim on persistence failure, keeps effect
+  status when capture overflows, and distinguishes a contained process exit
+  from tool-result status; `projectCapabilityResult` builds a bounded redacted
+  model view without replacing the canonical envelope;
+- `src/application/tool-result-envelope.ts` — `envelopeToolResult` applies the
+  runtime `SensitiveValueRedactor` at that projection seam. Product adapters,
+  artifact-store ingest, TUI/CLI wiring, and lifecycle hooks remain later
+  owners (#53 and product-tool issues).
+
+Validated by `src/domain/tool-result.test.ts` and
+`src/application/tool-result-envelope.test.ts` under `bun run check`.
 
 ## Remaining implementation gaps
 

@@ -5,7 +5,7 @@
  * graph (duplicates, unknown edges, cycles, queue bounds) and maps each item
  * onto a {@link WorkUnit} for the application scheduler. Execution is only
  * through a narrow runner; this module never calls tools. Typed result
- * envelopes and lifecycle hooks remain later #47 children (#52–#53).
+ * envelopes are #52 (`tool-result.ts`). Lifecycle hooks remain #53.
  */
 
 import type { Deadline } from "./deadline.ts";
