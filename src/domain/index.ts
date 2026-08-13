@@ -1118,3 +1118,31 @@ export {
 } from "./workspace-listing.ts";
 export type { BoundWorkspacePath, WorkspacePathBindError } from "./workspace-path.ts";
 export { bindWorkspacePath, describeWorkspacePathBindError } from "./workspace-path.ts";
+export type {
+  ByteRange,
+  LineRange,
+  NewlineStyle,
+  NumberedLine,
+  WorkspaceFileRead,
+  WorkspaceReadError,
+  WorkspaceReadLimits,
+  WorkspaceReadManyItem,
+  WorkspaceReadManyResult,
+  WorkspaceReadRange,
+  WorkspaceReadTarget,
+} from "./workspace-read.ts";
+export {
+  applyByteRange,
+  applyLineRange,
+  DEFAULT_MAX_AGGREGATE_READ_BYTES,
+  DEFAULT_MAX_FILE_BYTES,
+  DEFAULT_READ_CONCURRENCY,
+  DEFAULT_READ_LIMITS,
+  describeWorkspaceReadError,
+  detectNewline,
+  isBinaryText,
+  MAX_READ_MANY_TARGETS,
+  numberLines,
+  readLimits,
+  splitLines,
+} from "./workspace-read.ts";

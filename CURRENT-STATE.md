@@ -2665,7 +2665,7 @@ one explicit workspace root (parent
   NUL, and unscoped absolute paths, and never echoes rejected text;
 - `src/application/workspace-path.ts` — `createWorkspacePathBinder` re-checks
   `FileSystemPort.realPath` so a symlink cannot leave the root. Missing paths
-  keep the lexical bind. File bytes, listing, and search remain later children.
+  keep the lexical bind. Listing is #280. Search and patches remain later children.
 
 Validated by `src/domain/workspace-path.test.ts` and
 `src/application/workspace-path.test.ts` under `bun run check`.
@@ -2682,6 +2682,20 @@ directory, and walks a tree inside that same root:
 
 Validated by `src/domain/workspace-listing.test.ts` and
 `src/application/workspace-listing.test.ts` under `bun run check`.
+
+The workspace file-read slice from
+[#56](https://github.com/tyldra-org/falryn/issues/56) reads one file or a
+bounded concurrent batch inside that same root:
+
+- `src/domain/workspace-read.ts` — numbered lines, line/byte ranges, newline
+  facts, and read budgets;
+- `src/application/workspace-read.ts` — `createWorkspaceReader` binds paths,
+  follows in-root symlinks, refuses binary/oversized/non-files, and runs
+  `readMany` with canonical dedupe, aggregate bytes, and bounded concurrency.
+  Artifact spill and specialized readers remain later children.
+
+Validated by `src/domain/workspace-read.test.ts` and
+`src/application/workspace-read.test.ts` under `bun run check`.
 
 ## Remaining implementation gaps
 
@@ -2762,7 +2776,7 @@ session/turn producer, or live transcript producer. The remaining gaps are:
   OAuth/write flows, network discovery against real endpoints), or product
   workspace/Git/shell tool adapters;
 - workspace reads, search, patch, shell, Git, LSP, DAP, browser, or computer-use
-  capabilities (path bind plus list/stat/walk exist; product readers do not);
+  capabilities (path bind, list/stat/walk, and bounded file reads exist; product tools are not registered);
 - context planning, Brief, Hush, Loom, compression, indexing, or memory;
 - MCP, skills, plugin and other hook families, marketplace, agents, jobs, or workflows; or
 - an installer, updater, supported platform package, signed release, or support
