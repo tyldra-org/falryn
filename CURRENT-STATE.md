@@ -2714,6 +2714,25 @@ language evidence and verifies current source inside that same root:
 Validated by `src/domain/language-read.test.ts` and
 `src/application/language-read.test.ts` under `bun run check`.
 
+The compact document reader slice from
+[#493](https://github.com/tyldra-org/falryn/issues/493) projects bounded exact
+workspace text without claiming to be the complete document:
+
+- `src/domain/compact-document-read.ts` — validates outline, explicit range,
+  head/tail, and lexical relevant-span requests; classifies source, Markdown,
+  configuration, log, and generic text families; extracts deterministic
+  heading/symbol paths; and defines omission, budget, and recovery contracts;
+- `src/application/compact-document-read.ts` — `createCompactDocumentReader`
+  reads through the injected `WorkspaceReader`, preserves bound identity and
+  line ranges, applies output budgets, and returns typed empty, partial,
+  cancellation, binary, oversized, missing, malformed, and budget-exhausted
+  outcomes.
+
+Provider parsing, semantic summarization, product tool registration, and
+notebook, PDF, image, artifact, and virtual-resource readers remain later
+children. Validated by `src/domain/compact-document-read.test.ts` and
+`src/application/compact-document-read.test.ts` under `bun run check`.
+
 ## Remaining implementation gaps
 
 The repository now provides end-user behavior for the `config`, `data`, and `doctor`
