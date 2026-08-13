@@ -48,6 +48,8 @@ export type {
 export { attachInterruptionPolicy, createInterruptionPolicy } from "./interruption.ts";
 export type { LanguageReader } from "./language-read.ts";
 export { createLanguageReader } from "./language-read.ts";
+export type { NotebookReader } from "./notebook-read.ts";
+export { createNotebookReader } from "./notebook-read.ts";
 export type {
   DigestedPromptRequest,
   PromptComposer,
