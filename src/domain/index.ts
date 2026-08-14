@@ -883,15 +883,24 @@ export {
   pdfReadLimits,
 } from "./pdf-read.ts";
 export type {
+  BashCommandRequest,
+  CommandMode,
   CommandOutcome,
   CommandRequest,
   CommandRunnerPort,
+  DirectCommandRequest,
   StubCommandRunner,
 } from "./process.ts";
 export {
+  COMMAND_MODES,
+  commandMode,
   createStubCommandRunner,
+  isAbsoluteCommandPath,
   MAX_COMMAND_ARGUMENTS,
+  MAX_COMMAND_ENVIRONMENT_BYTES,
+  MAX_COMMAND_ENVIRONMENT_ENTRIES,
   MAX_COMMAND_OUTPUT_BYTES,
+  MAX_COMMAND_SCRIPT_BYTES,
 } from "./process.ts";
 export type {
   ProjectionCheckpointReport,

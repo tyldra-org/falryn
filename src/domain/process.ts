@@ -37,16 +37,49 @@ export const MAX_COMMAND_OUTPUT_BYTES = 64 * 1_024;
 /** Most arguments one command may carry. */
 export const MAX_COMMAND_ARGUMENTS = 32;
 
-export type CommandRequest = {
+/** Longest UTF-8 Bash script a non-PTY command may submit. */
+export const MAX_COMMAND_SCRIPT_BYTES = 64 * 1_024;
+
+/** Maximum number of environment entries supplied to one child. */
+export const MAX_COMMAND_ENVIRONMENT_ENTRIES = 64;
+
+/** Maximum UTF-8 bytes in one complete child environment. */
+export const MAX_COMMAND_ENVIRONMENT_BYTES = 32 * 1_024;
+
+export const COMMAND_MODES = ["argv", "bash"] as const;
+export type CommandMode = (typeof COMMAND_MODES)[number];
+
+type CommandRequestBase = {
   /** An absolute path. Never resolved through `PATH`. */
   readonly executable: string;
-  readonly argv: readonly string[];
   /** The complete child environment. Inheriting the parent's is not an option. */
   readonly environment: Readonly<Record<string, string>>;
+  /** An absolute working directory. Omitted when the caller does not need one. */
+  readonly cwd?: string | undefined;
   readonly timeoutMs: DurationMs;
   readonly maxOutputBytes: number;
   readonly signal?: AbortSignal | undefined;
 };
+
+/**
+ * A non-interactive command request.
+ *
+ * `mode` is optional for backwards compatibility with the credential and
+ * workspace adapters that predate Bash execution; an omitted mode means
+ * direct argv execution.
+ */
+export type DirectCommandRequest = CommandRequestBase & {
+  readonly mode?: "argv";
+  readonly argv: readonly string[];
+};
+
+/** A deliberate shell request. The command is never assembled from argv. */
+export type BashCommandRequest = CommandRequestBase & {
+  readonly mode: "bash";
+  readonly command: string;
+};
+
+export type CommandRequest = DirectCommandRequest | BashCommandRequest;
 
 export type CommandOutcome =
   | {
@@ -72,6 +105,24 @@ export type CommandOutcome =
 export type CommandRunnerPort = {
   run(request: CommandRequest): Promise<CommandOutcome>;
 };
+
+export function commandMode(request: CommandRequest): CommandMode {
+  return request.mode === "bash" ? "bash" : "argv";
+}
+
+/**
+ * Checks the path shape required by a host executable or working directory.
+ *
+ * This is lexical only. The host adapter owns existence and executable-bit
+ * checks, while workspace tools own binding a directory to a workspace root.
+ */
+export function isAbsoluteCommandPath(value: string): boolean {
+  return (
+    value.length > 0 &&
+    !value.includes("\0") &&
+    (value.startsWith("/") || /^[A-Za-z]:[\\/]/.test(value) || value.startsWith("\\\\"))
+  );
+}
 
 /**
  * A command runner that answers from a supplied function.
