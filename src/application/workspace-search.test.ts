@@ -33,7 +33,7 @@ function workspaceFs() {
 function searchHarness(outcome: CommandOutcome | ((argv: readonly string[]) => CommandOutcome)) {
   const fileSystem = workspaceFs();
   const commands = createStubCommandRunner((request) =>
-    typeof outcome === "function" ? outcome(request.argv) : outcome,
+    typeof outcome === "function" ? outcome(request.mode === "bash" ? [] : request.argv) : outcome,
   );
   return {
     fileSystem,
@@ -87,10 +87,14 @@ describe("createWorkspaceTextSearch", () => {
     expect(found.value.engine).toBe("typescript-fallback");
     expect(found.value.fallbackReason).toBe("spawn-failed");
     expect(commands.requests()).toHaveLength(1);
-    expect(commands.requests()[0]?.executable).toBe(rg);
-    expect(commands.requests()[0]?.environment).toEqual({});
-    expect(commands.requests()[0]?.argv).toContain("--no-config");
-    expect(commands.requests()[0]?.argv).toContain("--no-ignore");
+    const [request] = commands.requests();
+    expect(request?.executable).toBe(rg);
+    expect(request?.environment).toEqual({});
+    if (request === undefined || request.mode === "bash") {
+      throw new Error("expected a direct argv request");
+    }
+    expect(request.argv).toContain("--no-config");
+    expect(request.argv).toContain("--no-ignore");
   });
 
   test("parses ripgrep JSON matches without using the fallback", async () => {

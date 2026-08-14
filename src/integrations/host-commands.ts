@@ -25,15 +25,20 @@ import {
   type CommandRequest,
   type CommandRunnerPort,
   type DurationMs,
+  isAbsoluteCommandPath,
   MAX_COMMAND_ARGUMENTS,
+  MAX_COMMAND_ENVIRONMENT_BYTES,
+  MAX_COMMAND_ENVIRONMENT_ENTRIES,
   MAX_COMMAND_OUTPUT_BYTES,
+  MAX_COMMAND_SCRIPT_BYTES,
 } from "../domain/index.ts";
 
 export function createHostCommandRunner(): CommandRunnerPort {
   return {
     async run(request: CommandRequest): Promise<CommandOutcome> {
-      if (request.argv.length > MAX_COMMAND_ARGUMENTS) {
-        return { kind: "spawn-failed", code: "too-many-arguments" };
+      const invalid = invalidRequest(request);
+      if (invalid !== null) {
+        return invalid;
       }
       if (request.signal?.aborted === true) {
         return { kind: "cancelled" };
@@ -59,9 +64,12 @@ export function createHostCommandRunner(): CommandRunnerPort {
       request.signal?.addEventListener("abort", onAbort, { once: true });
 
       try {
-        // `argv` is a list, so no shell parses any of it. `env` is exactly what
-        // was supplied — Bun replaces rather than merges when it is given.
-        const child = Bun.spawn([request.executable, ...request.argv], {
+        // Direct mode passes a list, so no shell parses any argument. Bash mode
+        // passes one deliberate command string to the named interpreter. `env`
+        // is exactly what was supplied — Bun replaces rather than merges when
+        // it is given.
+        const child = Bun.spawn(spawnArgv(request), {
+          ...(request.cwd === undefined ? {} : { cwd: request.cwd }),
           env: request.environment,
           stdin: "ignore",
           stdout: "pipe",
@@ -107,6 +115,76 @@ export function createHostCommandRunner(): CommandRunnerPort {
 }
 
 type StopReason = "timed-out" | "cancelled" | "output-exceeded";
+
+function invalidRequest(request: CommandRequest): CommandOutcome | null {
+  if (!isAbsoluteCommandPath(request.executable)) {
+    return { kind: "spawn-failed", code: "invalid-executable" };
+  }
+  if (request.cwd !== undefined && !isAbsoluteCommandPath(request.cwd)) {
+    return { kind: "spawn-failed", code: "invalid-working-directory" };
+  }
+  if (!Number.isSafeInteger(request.timeoutMs) || request.timeoutMs < 0) {
+    return { kind: "spawn-failed", code: "invalid-timeout" };
+  }
+  if (!Number.isSafeInteger(request.maxOutputBytes) || request.maxOutputBytes < 0) {
+    return { kind: "spawn-failed", code: "invalid-output-limit" };
+  }
+
+  const environmentError = validateEnvironment(request.environment);
+  if (environmentError !== null) {
+    return { kind: "spawn-failed", code: environmentError };
+  }
+
+  if (request.mode === "bash") {
+    if (request.command.includes("\0")) {
+      return { kind: "spawn-failed", code: "invalid-command" };
+    }
+    const commandBytes = new TextEncoder().encode(request.command).byteLength;
+    return commandBytes > MAX_COMMAND_SCRIPT_BYTES
+      ? { kind: "spawn-failed", code: "command-too-large" }
+      : null;
+  }
+  if (request.argv.length > MAX_COMMAND_ARGUMENTS) {
+    return { kind: "spawn-failed", code: "too-many-arguments" };
+  }
+  if (request.argv.some((argument) => argument.includes("\0"))) {
+    return { kind: "spawn-failed", code: "invalid-argument" };
+  }
+  return null;
+}
+
+function validateEnvironment(
+  environment: Readonly<Record<string, string>>,
+): "invalid-environment" | "environment-too-large" | null {
+  if (typeof environment !== "object" || environment === null || Array.isArray(environment)) {
+    return "invalid-environment";
+  }
+
+  const entries = Object.entries(environment);
+  if (entries.length > MAX_COMMAND_ENVIRONMENT_ENTRIES) {
+    return "environment-too-large";
+  }
+
+  const encoder = new TextEncoder();
+  let bytes = 0;
+  for (const [name, value] of entries) {
+    if (name.includes("\0") || typeof value !== "string" || value.includes("\0")) {
+      return "invalid-environment";
+    }
+    bytes += encoder.encode(`${name}=${value}`).byteLength;
+    if (bytes > MAX_COMMAND_ENVIRONMENT_BYTES) {
+      return "environment-too-large";
+    }
+  }
+  return null;
+}
+
+function spawnArgv(request: CommandRequest): string[] {
+  if (request.mode === "bash") {
+    return [request.executable, "--noprofile", "--norc", "-c", request.command];
+  }
+  return [request.executable, ...request.argv];
+}
 
 /** The outcome a stop reason produces, or `null` when nothing stopped the run. */
 function stoppedOutcome(

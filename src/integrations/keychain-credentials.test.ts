@@ -12,6 +12,7 @@ import { describe, expect, test } from "bun:test";
 
 import {
   type CommandOutcome,
+  type CommandRequest,
   type CredentialReference,
   createManualClock,
   createStubCommandRunner,
@@ -30,12 +31,16 @@ function exited(exitCode: number, stdout = ""): CommandOutcome {
   return { kind: "exited", exitCode, stdout };
 }
 
+function argvOf(request: CommandRequest | undefined): readonly string[] | undefined {
+  return request === undefined || request.mode === "bash" ? undefined : request.argv;
+}
+
 function harness(
   outcome: CommandOutcome | ((argv: readonly string[]) => CommandOutcome),
   platform: LocalDataPlatform = "darwin",
 ) {
   const commands = createStubCommandRunner((request) =>
-    typeof outcome === "function" ? outcome(request.argv) : outcome,
+    typeof outcome === "function" ? outcome(request.mode === "bash" ? [] : request.argv) : outcome,
   );
   const store = createKeychainCredentialStore({
     commands,
@@ -62,7 +67,7 @@ describe("what the adapter asks the host to run", () => {
 
     const [request] = commands.requests();
     expect(request?.executable).toBe(SECURITY_EXECUTABLE);
-    expect(request?.argv).toEqual([
+    expect(argvOf(request)).toEqual([
       "find-generic-password",
       "-s",
       "falryn-example-provider",
@@ -96,7 +101,7 @@ describe("what the adapter asks the host to run", () => {
   test("omits the account argument when the reference names no account", async () => {
     const { commands, store } = harness(exited(0, "value\n"));
     await store.read(reference({ accountLabel: null }), (secret) => secret);
-    expect(commands.requests()[0]?.argv).toEqual([
+    expect(argvOf(commands.requests()[0])).toEqual([
       "find-generic-password",
       "-s",
       "falryn-example-provider",
@@ -233,7 +238,7 @@ describe("locators the adapter refuses to hand a subprocess", () => {
       (secret) => secret.length,
     );
     expect(resolution.kind).toBe("resolved");
-    expect(commands.requests()[0]?.argv).toContain("falryn; rm -rf /");
+    expect(argvOf(commands.requests()[0])).toContain("falryn; rm -rf /");
   });
 });
 
@@ -266,7 +271,7 @@ describe("deleting a stored secret", () => {
   test("uses the delete subcommand and reports removal", async () => {
     const { commands, store } = harness(exited(0));
     expect(await store.removeSecret(reference())).toEqual({ result: "removed", code: null });
-    expect(commands.requests()[0]?.argv).toEqual([
+    expect(argvOf(commands.requests()[0])).toEqual([
       "delete-generic-password",
       "-s",
       "falryn-example-provider",
