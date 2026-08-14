@@ -2,8 +2,8 @@
  * The filesystem port, and the path type it speaks in.
  *
  * The port is deliberately shallow: it stats, creates one directory, lists one
- * directory, removes one entry, resolves one link, and writes one file.
- * Recursion is not here.
+ * directory, removes one entry, resolves one link, writes one file, renames one
+ * entry, and copies one non-directory. Recursion is not here.
  *
  * That is the whole point. Every dangerous decision in local-data removal —
  * whether to descend, whether an entry escaped its root through a link, whether
@@ -240,6 +240,7 @@ export type FileSystemErrorCode =
   | "malformed-encoding"
   | "io-failure"
   | "unsupported"
+  | "cross-device"
   | "cancelled";
 
 export type FileSystemOperation =
@@ -252,7 +253,9 @@ export type FileSystemOperation =
   | "read-text"
   | "read-bytes"
   | "read-bytes-range"
-  | "write";
+  | "write"
+  | "rename"
+  | "copy";
 
 /**
  * A filesystem failure.
@@ -359,6 +362,32 @@ export type FileSystemPort = {
     bytes: Uint8Array,
     signal?: AbortSignal,
   ): Promise<Result<FileWriteReceipt, FileSystemError>>;
+
+  /**
+   * Renames one entry onto an absent destination on the same filesystem.
+   *
+   * A directory moves with its children as one rename. `cross-device` means
+   * the adapter could not rename across mount points; the caller may copy,
+   * verify, then remove. The destination must be absent. Final-symlink
+   * destinations are refused.
+   */
+  renameEntry(
+    from: LocalPath,
+    to: LocalPath,
+    signal?: AbortSignal,
+  ): Promise<Result<null, FileSystemError>>;
+
+  /**
+   * Copies one file or one symlink onto an absent destination.
+   *
+   * Directories are refused so recursion stays in the caller. A symlink is
+   * copied as a link; its target is not followed.
+   */
+  copyEntry(
+    from: LocalPath,
+    to: LocalPath,
+    signal?: AbortSignal,
+  ): Promise<Result<null, FileSystemError>>;
 };
 
 /** How an in-memory node is described to the test double. */
@@ -692,6 +721,89 @@ export function createInMemoryFileSystem(
         revision,
       });
       return ok({ byteLength: copy.byteLength, revision });
+    },
+
+    async renameEntry(from, to, signal) {
+      if (signal?.aborted === true) {
+        return cancelled(from, "rename");
+      }
+      const source = nodes.get(from);
+      if (source === undefined) {
+        return err({ kind: "filesystem", code: "not-found", path: from, operation: "rename" });
+      }
+      if (nodes.get(to) !== undefined) {
+        return err({ kind: "filesystem", code: "not-empty", path: to, operation: "rename" });
+      }
+      const parent = parentPath(to);
+      if (parent === null || nodes.get(parent)?.kind !== "directory") {
+        return err({ kind: "filesystem", code: "not-found", path: to, operation: "rename" });
+      }
+      if (!parentIsWritable(to)) {
+        return err({
+          kind: "filesystem",
+          code: "permission-denied",
+          path: to,
+          operation: "rename",
+        });
+      }
+      if (to === from || to.startsWith(`${from}/`)) {
+        return err({ kind: "filesystem", code: "io-failure", path: to, operation: "rename" });
+      }
+      const moving: Array<readonly [string, InMemoryNode]> = [];
+      for (const [path, node] of nodes) {
+        if (path === from || path.startsWith(`${from}/`)) {
+          moving.push([path, node]);
+        }
+      }
+      for (const [path, node] of moving) {
+        nodes.set(`${to}${path.slice(from.length)}`, node);
+      }
+      for (const [path] of moving) {
+        nodes.delete(path);
+      }
+      return ok(null);
+    },
+
+    async copyEntry(from, to, signal) {
+      if (signal?.aborted === true) {
+        return cancelled(from, "copy");
+      }
+      const source = nodes.get(from);
+      if (source === undefined) {
+        return err({ kind: "filesystem", code: "not-found", path: from, operation: "copy" });
+      }
+      if (source.kind === "directory") {
+        return err({
+          kind: "filesystem",
+          code: "not-a-directory",
+          path: from,
+          operation: "copy",
+        });
+      }
+      if (nodes.get(to) !== undefined) {
+        return err({ kind: "filesystem", code: "not-empty", path: to, operation: "copy" });
+      }
+      const parent = parentPath(to);
+      if (parent === null || nodes.get(parent)?.kind !== "directory") {
+        return err({ kind: "filesystem", code: "not-found", path: to, operation: "copy" });
+      }
+      if (!parentIsWritable(to)) {
+        return err({
+          kind: "filesystem",
+          code: "permission-denied",
+          path: to,
+          operation: "copy",
+        });
+      }
+      nodes.set(to, {
+        kind: source.kind,
+        ...(source.text === undefined ? {} : { text: source.text }),
+        ...(source.bytes === undefined ? {} : { bytes: new Uint8Array(source.bytes) }),
+        ...(source.mode === undefined ? {} : { mode: source.mode }),
+        ...(source.target === undefined ? {} : { target: source.target }),
+        revision: source.kind === "file" ? `copy:${byteLengthOf(source)}` : `copy-link`,
+      });
+      return ok(null);
     },
   };
 }

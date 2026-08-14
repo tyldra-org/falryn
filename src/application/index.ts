@@ -208,6 +208,8 @@ export type { VirtualResourceReader } from "./virtual-resource-read.ts";
 export { createVirtualResourceReader } from "./virtual-resource-read.ts";
 export type { WorkspaceListing } from "./workspace-listing.ts";
 export { createWorkspaceListing } from "./workspace-listing.ts";
+export type { WorkspaceMutator, WorkspaceMutatorOptions } from "./workspace-mutate.ts";
+export { createWorkspaceMutator } from "./workspace-mutate.ts";
 export type { WorkspacePathBinder, WorkspacePathProbeError } from "./workspace-path.ts";
 export { createWorkspacePathBinder } from "./workspace-path.ts";
 export type { WorkspaceReader, WorkspaceReaderOptions } from "./workspace-read.ts";
