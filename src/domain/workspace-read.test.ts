@@ -62,6 +62,17 @@ describe("workspace read helpers", () => {
     });
   });
 
+  test("refuses malformed UTF-8 and truncated UTF-16 instead of inserting replacement text", () => {
+    expect(decodeWorkspaceText(Uint8Array.from([0xc3, 0x28]))).toEqual({
+      ok: false,
+      error: "malformed-encoding",
+    });
+    expect(decodeWorkspaceText(Uint8Array.from([0xff, 0xfe, 0x61]))).toEqual({
+      ok: false,
+      error: "malformed-encoding",
+    });
+  });
+
   test("rejects malformed read limits", () => {
     expect(parseReadLimits({ maxConcurrency: 0 })).toEqual({
       ok: false,
@@ -82,6 +93,8 @@ describe("workspace read helpers", () => {
       }),
     ).toBe("malformed-limit:maxFileBytes:not-positive");
     expect(describeWorkspaceReadError({ code: "stale", attempts: 2 })).toBe("stale:2");
+    expect(describeWorkspaceReadError({ code: "malformed-encoding" })).toBe("malformed-encoding");
+    expect(describeWorkspaceReadError({ code: "cancelled" })).toBe("cancelled");
     expect(
       describeWorkspaceReadError({ code: "malformed", reason: "path-illegal-character" }),
     ).toBe("malformed:path-illegal-character");
