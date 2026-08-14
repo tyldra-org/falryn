@@ -475,9 +475,44 @@ Its verified behavior:
   failure. Host tests cover dual-stream capture, artifact spill, timeout, and
   invalid executables on POSIX.
 
-`bun run check` passed with 3,138 tests passing and 14 skipped; `bun run build`
-also passed. Platform-specific PTY and process-capture tests are skipped on
-Windows, while the compiled qualification suites remain owned by CI.
+The Hush command-output reduction foundation delivered by
+[#72](https://github.com/tyldra-org/falryn/issues/72) adds `src/domain/hush.ts`,
+exported through the existing domain entrypoint. It is a pure reduction over a
+finished `ProcessCaptureReport` plus the structured command that produced it:
+no spawn, kill, pipes, or host adapter. No product process tool, CLI, TUI, or
+model projection is registered.
+
+Its verified behavior:
+
+- **terminal facts are copied, not rewritten.** The result keeps executable/argv
+  or Bash command, cwd, exit code, signal, duration, stop kind, original byte
+  counts, truncation, encoding, and capture artifact handles. The child
+  environment is never copied into the projection;
+- **family and reducer are chosen from argv, not by executing output.** The
+  normalized executable basename and first subcommand or Bash token select a
+  family; output shape is only a fallback for unknown executables. Reducer ids
+  are at subcommand grain (`git.diff`, `git.status`, `files.rg`, `generic`,
+  `safe.passthrough`) and versioned `hush.v1`;
+- **specialized families project structure; unknown commands stay generic.**
+  `git.diff` keeps per-file `path: +N -M` stats and drops hunk bodies;
+  `git.status` groups porcelain paths by directory; search groups matches by
+  path; listing and summary families cap repetitive lines. An expected-family
+  miss uses generic reduction; reducer failure returns a raw bounded projection
+  plus expansion handles rather than dropping the command result;
+- **reductions are bounded and must not grow.** Reduced text defaults to 8 KiB
+  and is capped at 64 KiB. A specialized or generic projection is kept only
+  when it is smaller than the original inline bytes; otherwise Hush returns
+  exact passthrough. Expansion uses #71 inline capture and artifact handles,
+  not Loom;
+- **the boundary is tested in the domain.** Focused tests cover family
+  selection from argv versus output text, git.diff stats, git.status grouping,
+  rg path grouping with artifact expansion, expected-family miss, generic
+  fallback with stderr, binary omission, timed-out facts, listing caps with
+  important patterns, and passthrough fidelity.
+
+`bun run check` passed with 3,156 tests passing and 14 skipped.
+Platform-specific PTY and process-capture tests are skipped on Windows, while
+the compiled qualification suites remain owned by CI.
 
 **macOS is the qualified keychain target.** Linux and Windows report
 `unsupported` with a stated reason and spawn nothing; qualifying them is
@@ -3209,7 +3244,9 @@ session/turn producer, or live transcript producer. The remaining gaps are:
   expansion, the shared malformed/stale/binary/large-file/symlink/cancellation
   matrix, glob discovery, bounded text search, derived-index query, writes,
   mutate, and patch apply/rollback exist; product tools are not registered);
-- context planning, Brief, Hush, Loom, compression, index builders, or memory;
+- context planning, Brief, Hush product/CLI/TUI wiring, Loom, compression,
+  index builders, or memory (Hush domain reduction over captured process facts
+  exists; it is not yet admitted into context or product tools);
 - MCP, skills, plugin and other hook families, marketplace, agents, jobs, or workflows; or
 - an installer, updater, supported platform package, signed release, or support
   channel.
