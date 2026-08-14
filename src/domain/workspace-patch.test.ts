@@ -1,0 +1,191 @@
+import { describe, expect, test } from "bun:test";
+
+import {
+  applyPatchHunks,
+  computePatchPlanId,
+  DEFAULT_MAX_PATCH_TARGETS,
+  describeWorkspacePatchError,
+  HARD_MAX_PATCH_HUNKS,
+  hunkHeader,
+  joinPatchedLines,
+  parseWorkspacePatchPlan,
+} from "./workspace-patch.ts";
+
+describe("parseWorkspacePatchPlan", () => {
+  test("defaults to fail-before-effect and fills limits", () => {
+    const parsed = parseWorkspacePatchPlan({
+      targets: [
+        {
+          path: "src/a.ts",
+          hunks: [{ oldStart: 1, oldLines: ["one"], newLines: ["two"] }],
+        },
+      ],
+    });
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) {
+      throw new Error("expected plan");
+    }
+    expect(parsed.value.policy).toBe("fail-before-effect");
+    expect(parsed.value.limits.maxTargets).toBe(DEFAULT_MAX_PATCH_TARGETS);
+    expect(parsed.value.targets[0]?.hunks).toHaveLength(1);
+  });
+
+  test("rejects overlapping hunks, empty hunks, and secrets in malformed text", () => {
+    expect(
+      parseWorkspacePatchPlan({
+        targets: [
+          {
+            path: "a.ts",
+            hunks: [
+              { oldStart: 1, oldLines: ["a", "b"], newLines: ["x"] },
+              { oldStart: 2, oldLines: ["b"], newLines: ["y"] },
+            ],
+          },
+        ],
+      }),
+    ).toEqual({ ok: false, error: { code: "overlapping-hunks" } });
+    expect(
+      parseWorkspacePatchPlan({
+        targets: [{ path: "a.ts", hunks: [{ oldStart: 1, oldLines: [], newLines: [] }] }],
+      }),
+    ).toEqual({ ok: false, error: { code: "malformed-hunk" } });
+    const secret = parseWorkspacePatchPlan({
+      targets: [
+        {
+          path: "a.ts",
+          hunks: [{ oldStart: 1, oldLines: ["sk-live-SECRET\0"], newLines: ["x"] }],
+        },
+      ],
+    });
+    expect(secret).toEqual({ ok: false, error: { code: "malformed-text" } });
+    expect(JSON.stringify(secret)).not.toContain("sk-live-SECRET");
+  });
+
+  test("rejects malformed policy, plan ids, limits, and duplicate paths", () => {
+    expect(
+      parseWorkspacePatchPlan({
+        policy: "atomic",
+        targets: [{ path: "a.ts", hunks: [{ oldStart: 1, oldLines: ["a"], newLines: ["b"] }] }],
+      }),
+    ).toEqual({ ok: false, error: { code: "malformed-policy" } });
+    expect(
+      parseWorkspacePatchPlan({
+        expectedPlanId: "mutate-1",
+        targets: [{ path: "a.ts", hunks: [{ oldStart: 1, oldLines: ["a"], newLines: ["b"] }] }],
+      }),
+    ).toEqual({ ok: false, error: { code: "malformed-plan-id" } });
+    expect(
+      parseWorkspacePatchPlan({
+        maxHunks: HARD_MAX_PATCH_HUNKS + 1,
+        targets: [{ path: "a.ts", hunks: [{ oldStart: 1, oldLines: ["a"], newLines: ["b"] }] }],
+      }),
+    ).toEqual({
+      ok: false,
+      error: { code: "malformed-limit", field: "maxHunks", reason: "above-hard-maximum" },
+    });
+    expect(
+      parseWorkspacePatchPlan({
+        targets: [
+          { path: "src/a.ts", hunks: [{ oldStart: 1, oldLines: ["a"], newLines: ["b"] }] },
+          { path: "src/a.ts", hunks: [{ oldStart: 1, oldLines: ["a"], newLines: ["c"] }] },
+        ],
+      }),
+    ).toEqual({ ok: false, error: { code: "overlapping-targets", reason: "duplicate" } });
+  });
+});
+
+describe("applyPatchHunks", () => {
+  test("replaces, inserts, and deletes at exact lines", () => {
+    const replaced = applyPatchHunks(
+      ["a", "b", "c"],
+      [{ index: 0, oldStart: 2, oldLines: ["b"], newLines: ["B"] }],
+    );
+    expect(replaced.ok).toBe(true);
+    if (!replaced.ok) {
+      throw new Error("expected replace");
+    }
+    expect(replaced.value.lines).toEqual(["a", "B", "c"]);
+    expect(replaced.value.hunks[0]?.header).toBe(hunkHeader(2, 1, 2, 1));
+
+    const inserted = applyPatchHunks(
+      ["a", "c"],
+      [{ index: 0, oldStart: 2, oldLines: [], newLines: ["b"] }],
+    );
+    expect(inserted.ok && inserted.value.lines).toEqual(["a", "b", "c"]);
+
+    const deleted = applyPatchHunks(
+      ["a", "b", "c"],
+      [{ index: 0, oldStart: 2, oldLines: ["b"], newLines: [] }],
+    );
+    expect(deleted.ok && deleted.value.lines).toEqual(["a", "c"]);
+  });
+
+  test("refuses a mismatched hunk without relocating it", () => {
+    const result = applyPatchHunks(
+      ["a", "secret", "c"],
+      [{ index: 0, oldStart: 2, oldLines: ["b"], newLines: ["sk-live-NEW"] }],
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) {
+      throw new Error("expected conflict");
+    }
+    expect(result.error.code).toBe("conflict");
+    if (result.error.code === "conflict") {
+      expect(result.error.found).toEqual(["secret"]);
+    }
+    expect(JSON.stringify(result)).not.toContain("sk-live-NEW");
+  });
+
+  test("applies later hunks against original line numbers", () => {
+    const result = applyPatchHunks(
+      ["a", "b", "c", "d"],
+      [
+        { index: 0, oldStart: 1, oldLines: ["a"], newLines: ["A", "A2"] },
+        { index: 1, oldStart: 3, oldLines: ["c"], newLines: ["C"] },
+      ],
+    );
+    expect(result.ok && result.value.lines).toEqual(["A", "A2", "b", "C", "d"]);
+  });
+});
+
+describe("patch helpers", () => {
+  test("joins lines with the original newline and trailing newline", () => {
+    expect(joinPatchedLines(["a", "b"], "lf", true)).toBe("a\nb\n");
+    expect(joinPatchedLines(["a", "b"], "crlf", false)).toBe("a\r\nb");
+  });
+
+  test("builds a stable plan identity", () => {
+    const plan = parseWorkspacePatchPlan({
+      targets: [{ path: "a.ts", hunks: [{ oldStart: 1, oldLines: ["a"], newLines: ["b"] }] }],
+    });
+    expect(plan.ok).toBe(true);
+    if (!plan.ok) {
+      throw new Error("expected plan");
+    }
+    expect(computePatchPlanId(plan.value)).toBe(computePatchPlanId(plan.value));
+    expect(computePatchPlanId(plan.value).startsWith("patch-")).toBe(true);
+  });
+
+  test("describeWorkspacePatchError covers every declared code", () => {
+    expect(describeWorkspacePatchError({ code: "malformed", reason: "path-empty" })).toBe(
+      "malformed:path-empty",
+    );
+    expect(
+      describeWorkspacePatchError({
+        code: "conflict",
+        hunkIndex: 0,
+        lineStart: 1,
+        lineEnd: 2,
+        foundCount: 1,
+        found: ["x"],
+      }),
+    ).toBe("conflict:0");
+    expect(describeWorkspacePatchError({ code: "overlapping-targets", reason: "duplicate" })).toBe(
+      "overlapping-targets:duplicate",
+    );
+    expect(describeWorkspacePatchError({ code: "stale-plan" })).toBe("stale-plan");
+    expect(describeWorkspacePatchError({ code: "filesystem", reason: "io-failure" })).toBe(
+      "filesystem:io-failure",
+    );
+  });
+});
