@@ -29,10 +29,12 @@ import {
   type FileSystemErrorCode,
   type FileSystemOperation,
   type FileSystemPort,
+  type FileWriteReceipt,
   joinPath,
   type LocalPath,
   ok,
   type PathEntry,
+  parentPath,
   parseLocalPath,
   type Result,
 } from "../domain/index.ts";
@@ -51,6 +53,7 @@ const ERRNO_CODES: Readonly<Record<string, FileSystemErrorCode>> = {
   ENAMETOOLONG: "io-failure",
   ENOSYS: "unsupported",
   EFBIG: "oversized",
+  ENOSPC: "io-failure",
 };
 
 function errnoOf(thrown: unknown): string | null {
@@ -99,6 +102,10 @@ function cancelled(
   operation: FileSystemOperation,
 ): Result<never, FileSystemError> {
   return err({ kind: "filesystem", code: "cancelled", path, operation });
+}
+
+function isCancelled(signal?: AbortSignal): boolean {
+  return signal?.aborted === true;
 }
 
 export function createHostFileSystem(): FileSystemPort {
@@ -362,5 +369,118 @@ export function createHostFileSystem(): FileSystemPort {
         await handle?.close();
       }
     },
+
+    async writeBytes(
+      path: LocalPath,
+      bytes: Uint8Array,
+      signal?: AbortSignal,
+    ): Promise<Result<FileWriteReceipt, FileSystemError>> {
+      if (isCancelled(signal)) {
+        return cancelled(path, "write");
+      }
+      const parent = parentPath(path);
+      if (parent === null) {
+        return err({ kind: "filesystem", code: "not-found", path, operation: "write" });
+      }
+      const payload = new Uint8Array(bytes);
+      let tempPath: LocalPath | null = null;
+      let handle: FileHandle | null = null;
+      try {
+        const existing = await fs.lstat(path).catch((thrown: unknown) => {
+          if (errnoOf(thrown) === "ENOENT") {
+            return null;
+          }
+          throw thrown;
+        });
+        if (existing !== null && !existing.isFile()) {
+          return err({
+            kind: "filesystem",
+            code: "not-a-directory",
+            path,
+            operation: "write",
+          });
+        }
+        const parentStats = await fs.lstat(parent);
+        if (!parentStats.isDirectory()) {
+          return err({
+            kind: "filesystem",
+            code: "not-a-directory",
+            path,
+            operation: "write",
+          });
+        }
+        if (isCancelled(signal)) {
+          return cancelled(path, "write");
+        }
+        const opened = await openTemporaryWrite(parent);
+        tempPath = opened.path;
+        handle = opened.handle;
+        await handle.write(payload);
+        await handle.sync();
+        await handle.close();
+        handle = null;
+        if (process.platform !== "win32") {
+          await fs.chmod(tempPath, existing === null ? 0o644 : existing.mode & 0o777);
+        }
+        if (isCancelled(signal)) {
+          await fs.unlink(tempPath).catch(() => undefined);
+          tempPath = null;
+          return cancelled(path, "write");
+        }
+        await replaceWithRename(tempPath, path);
+        tempPath = null;
+        const written = await fs.lstat(path);
+        return ok({
+          byteLength: payload.byteLength,
+          revision: revisionOf(written),
+        });
+      } catch (thrown: unknown) {
+        return err(translate(thrown, path, "write"));
+      } finally {
+        await handle?.close().catch(() => undefined);
+        if (tempPath !== null) {
+          await fs.unlink(tempPath).catch(() => undefined);
+        }
+      }
+    },
   };
+}
+
+async function openTemporaryWrite(
+  directory: LocalPath,
+): Promise<{ readonly path: LocalPath; readonly handle: FileHandle }> {
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const name = `.falryn-write-${process.pid}-${Date.now()}-${attempt}.tmp`;
+    const joined = joinPath(directory, name);
+    if (!joined.ok) {
+      continue;
+    }
+    try {
+      const handle = await openFile(
+        joined.value,
+        fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_EXCL,
+        0o644,
+      );
+      return { path: joined.value, handle };
+    } catch (thrown: unknown) {
+      if (errnoOf(thrown) === "EEXIST") {
+        continue;
+      }
+      throw thrown;
+    }
+  }
+  throw Object.assign(new Error("temporary write name exhausted"), { code: "EEXIST" });
+}
+
+async function replaceWithRename(from: LocalPath, to: LocalPath): Promise<void> {
+  try {
+    await fs.rename(from, to);
+  } catch (thrown: unknown) {
+    const code = errnoOf(thrown);
+    if (code !== "EEXIST" && code !== "EPERM" && code !== "EACCES") {
+      throw thrown;
+    }
+    await fs.unlink(to);
+    await fs.rename(from, to);
+  }
 }
