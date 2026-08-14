@@ -2762,6 +2762,27 @@ Validated by `src/domain/workspace-retrieval.test.ts` and
 builders, watchers, Tree-sitter, SQLite FTS persistence, patches, and product
 search tools remain later work.
 
+The bounded full-file write and grouped mutation slice from
+[#281](https://github.com/tyldra-org/falryn/issues/281) creates or replaces
+UTF-8 files inside that same root (parent
+[#61](https://github.com/tyldra-org/falryn/issues/61)):
+
+- `src/domain/workspace-write.ts` — create/replace operations, newline policy,
+  digest and revision preconditions, overlap/case-collision detection,
+  fail-before-effect vs best-effort policy, per-target outcomes, and typed
+  malformed errors that never echo rejected text;
+- `src/application/workspace-write.ts` — `createWorkspaceWriter` binds paths,
+  refuses escaping symlinks and non-files, creates missing parents for
+  `create`, and writes through `FileSystemPort.writeBytes`. The host adapter
+  stages a sibling temporary file, fsyncs, and renames. Mid-apply IO failure
+  leaves already-applied targets in place; it does not claim rollback.
+
+Validated by `src/domain/workspace-write.test.ts`,
+`src/application/workspace-write.test.ts`, and
+`src/integrations/host-filesystem.test.ts` under `bun run check`. Move, copy,
+trash, remove, patch hunks, dedicated rollback, and product filesystem tools
+remain later work.
+
 The workspace file-read slice from
 [#56](https://github.com/tyldra-org/falryn/issues/56) reads one file or a
 bounded concurrent batch inside that same root:

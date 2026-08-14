@@ -324,6 +324,58 @@ describe("reading bytes", () => {
   });
 });
 
+describe("writing bytes", () => {
+  test("creates a file and replaces it with the same parent directory", async () => {
+    const created = await fileSystem.writeBytes(at("note.txt"), new TextEncoder().encode("hello"));
+    expect(created.ok).toBe(true);
+    if (!created.ok) {
+      throw new Error("expected create");
+    }
+    expect(created.value.byteLength).toBe(5);
+    expect((await fs.readFile(at("note.txt"))).toString()).toBe("hello");
+
+    const replaced = await fileSystem.writeBytes(at("note.txt"), new TextEncoder().encode("world"));
+    expect(replaced.ok).toBe(true);
+    if (!replaced.ok) {
+      throw new Error("expected replace");
+    }
+    expect(replaced.value.revision).not.toBe(created.value.revision);
+    expect((await fs.readFile(at("note.txt"))).toString()).toBe("world");
+  });
+
+  test("refuses a directory and a final symlink", async () => {
+    await fs.mkdir(at("adir"));
+    await fs.writeFile(at("target.txt"), "keep");
+    await fs.symlink(at("target.txt"), at("link.txt"));
+
+    const directory = await fileSystem.writeBytes(at("adir"), new TextEncoder().encode("x"));
+    expect(directory.ok).toBe(false);
+    if (!directory.ok) {
+      expect(directory.error.code).toBe("not-a-directory");
+      expect(directory.error.operation).toBe("write");
+    }
+
+    const linked = await fileSystem.writeBytes(at("link.txt"), new TextEncoder().encode("x"));
+    expect(linked.ok).toBe(false);
+    if (!linked.ok) {
+      expect(linked.error.code).toBe("not-a-directory");
+    }
+    expect((await fs.readFile(at("target.txt"))).toString()).toBe("keep");
+  });
+
+  test("reports a missing parent as not found", async () => {
+    const written = await fileSystem.writeBytes(
+      at("missing", "note.txt"),
+      new TextEncoder().encode("x"),
+    );
+    expect(written.ok).toBe(false);
+    if (!written.ok) {
+      expect(written.error.code).toBe("not-found");
+      expect(written.error.operation).toBe("write");
+    }
+  });
+});
+
 describe("cancellation", () => {
   test("every operation refuses an already-aborted signal", async () => {
     const controller = new AbortController();
@@ -339,6 +391,7 @@ describe("cancellation", () => {
       await fileSystem.probeWritable(root, signal),
       await fileSystem.readText(at("note.txt"), 1_024, signal),
       await fileSystem.readBytes(at("note.txt"), 1_024, signal),
+      await fileSystem.writeBytes(at("note.txt"), new Uint8Array([1]), signal),
     ]) {
       expect(result.ok).toBe(false);
       if (!result.ok) {
@@ -401,6 +454,33 @@ describe("the in-memory double agrees with the adapter", () => {
     expect(fromHost.ok).toBe(false);
     if (!fromDouble.ok && !fromHost.ok) {
       expect(fromDouble.error.code).toBe(fromHost.error.code);
+    }
+  });
+
+  test("both write a new file and refuse a missing parent", async () => {
+    const double = createInMemoryFileSystem({
+      nodes: { "/tmp": { kind: "directory" } },
+    });
+    const fromDouble = await double.writeBytes(
+      localPath("/tmp/note.txt"),
+      new TextEncoder().encode("hi"),
+    );
+    const fromHost = await fileSystem.writeBytes(at("note.txt"), new TextEncoder().encode("hi"));
+    expect(fromDouble.ok).toBe(true);
+    expect(fromHost.ok).toBe(true);
+
+    const missingDouble = await double.writeBytes(
+      localPath("/tmp/missing/note.txt"),
+      new TextEncoder().encode("x"),
+    );
+    const missingHost = await fileSystem.writeBytes(
+      at("missing", "note.txt"),
+      new TextEncoder().encode("x"),
+    );
+    expect(missingDouble.ok).toBe(false);
+    expect(missingHost.ok).toBe(false);
+    if (!missingDouble.ok && !missingHost.ok) {
+      expect(missingDouble.error.code).toBe(missingHost.error.code);
     }
   });
 });

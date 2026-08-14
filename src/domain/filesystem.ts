@@ -2,7 +2,8 @@
  * The filesystem port, and the path type it speaks in.
  *
  * The port is deliberately shallow: it stats, creates one directory, lists one
- * directory, removes one entry, and resolves one link. Recursion is not here.
+ * directory, removes one entry, resolves one link, and writes one file.
+ * Recursion is not here.
  *
  * That is the whole point. Every dangerous decision in local-data removal —
  * whether to descend, whether an entry escaped its root through a link, whether
@@ -250,7 +251,8 @@ export type FileSystemOperation =
   | "probe-writable"
   | "read-text"
   | "read-bytes"
-  | "read-bytes-range";
+  | "read-bytes-range"
+  | "write";
 
 /**
  * A filesystem failure.
@@ -267,6 +269,11 @@ export type FileSystemError = {
 };
 
 export type CreateDirectoryOutcome = "created" | "existed";
+
+export type FileWriteReceipt = {
+  readonly byteLength: number;
+  readonly revision: string;
+};
 
 export type FileSystemPort = {
   /** Describes one path without following a final symlink. `null` when missing. */
@@ -339,6 +346,19 @@ export type FileSystemPort = {
     maximumBytes: number,
     signal?: AbortSignal,
   ): Promise<Result<Uint8Array, FileSystemError>>;
+
+  /**
+   * Replaces one file's bytes atomically when the adapter can.
+   *
+   * The write is to a sibling temporary name, then renamed onto `path`.
+   * Cross-device and Windows replacement are not claimed as atomic. Directories
+   * and final symlinks are refused. Missing parents are `not-found`.
+   */
+  writeBytes(
+    path: LocalPath,
+    bytes: Uint8Array,
+    signal?: AbortSignal,
+  ): Promise<Result<FileWriteReceipt, FileSystemError>>;
 };
 
 /** How an in-memory node is described to the test double. */
@@ -381,6 +401,7 @@ export function createInMemoryFileSystem(
 } {
   const defaultMode = options.defaultMode ?? 0o700;
   const nodes = new Map<string, InMemoryNode>();
+  let writeGeneration = 0;
   for (const [path, node] of Object.entries(options.nodes ?? {})) {
     nodes.set(localPath(path), node);
   }
@@ -615,6 +636,62 @@ export function createInMemoryFileSystem(
         });
       }
       return ok(bytes.slice(offset, offset + maximumBytes));
+    },
+
+    async writeBytes(path, bytes, signal) {
+      if (signal?.aborted === true) {
+        return cancelled(path, "write");
+      }
+      const existing = nodes.get(path);
+      if (existing !== undefined && existing.kind !== "file") {
+        return err({
+          kind: "filesystem",
+          code: "not-a-directory",
+          path,
+          operation: "write",
+        });
+      }
+      const parent = parentPath(path);
+      if (parent === null) {
+        return err({ kind: "filesystem", code: "not-found", path, operation: "write" });
+      }
+      const parentNode = nodes.get(parent);
+      if (parentNode === undefined) {
+        return err({ kind: "filesystem", code: "not-found", path, operation: "write" });
+      }
+      if (parentNode.kind !== "directory") {
+        return err({
+          kind: "filesystem",
+          code: "not-a-directory",
+          path,
+          operation: "write",
+        });
+      }
+      if (!parentIsWritable(path)) {
+        return err({
+          kind: "filesystem",
+          code: "permission-denied",
+          path,
+          operation: "write",
+        });
+      }
+      const copy = new Uint8Array(bytes);
+      let text: string | undefined;
+      try {
+        text = new TextDecoder("utf-8", { fatal: true }).decode(copy);
+      } catch {
+        text = undefined;
+      }
+      writeGeneration += 1;
+      const revision = `write:${writeGeneration}:${copy.byteLength}`;
+      nodes.set(path, {
+        kind: "file",
+        bytes: copy,
+        ...(text === undefined ? {} : { text }),
+        ...(existing?.mode === undefined ? {} : { mode: existing.mode }),
+        revision,
+      });
+      return ok({ byteLength: copy.byteLength, revision });
     },
   };
 }
