@@ -65,6 +65,7 @@ function report(
     endedAt: instant(1_000 + (overrides.durationMs ?? 12)),
     durationMs: duration(overrides.durationMs ?? 12),
     stop: overrides.stop ?? { kind: "exited" },
+    killStage: "none",
     exit: { exitCode: overrides.exitCode === undefined ? 0 : overrides.exitCode, signal: null },
     stdout: {
       stream: "stdout",

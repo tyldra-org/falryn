@@ -1043,6 +1043,15 @@ export {
   validateManagedServiceRequest,
   validatePtySessionRequest,
 } from "./process-session.ts";
+export type { ProcessKillStage, ProcessTreeCertainty, ProcessTreeCleanup } from "./process-tree.ts";
+export {
+  DEFAULT_PROCESS_TREE_GRACE_MS,
+  MAX_PROCESS_TREE_GRACE_MS,
+  nextProcessTreeKill,
+  PROCESS_KILL_STAGES,
+  PROCESS_TREE_CERTAINTIES,
+  processTreeCleanupAfter,
+} from "./process-tree.ts";
 export type {
   ProjectionCheckpointReport,
   ProjectionCursor,
