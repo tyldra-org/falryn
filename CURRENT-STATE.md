@@ -369,6 +369,42 @@ Its verified behavior:
   [#47](https://github.com/tyldra-org/falryn/issues/47) will own. A
   model-requested credential read is not a supported path.
 
+The supervised command foundation delivered by
+[#69](https://github.com/tyldra-org/falryn/issues/69) extends the same
+`CommandRunnerPort` without turning it into a product process tool. Its
+implementation remains split by ownership: `src/domain/process.ts` owns the
+request modes, bounds, path-shape rule, and exhaustive outcomes;
+`src/integrations/host-commands.ts` is the only Bun `spawn` adapter; and
+`src/integrations/host-commands.test.ts` qualifies the real non-PTY boundary.
+
+Its verified behavior:
+
+- **direct argv is shell-free.** An omitted or explicit `mode: "argv"` request
+  passes an absolute executable and the exact argument vector as separate
+  process arguments. Shell metacharacters and variable references remain
+  literal argument text. Direct requests accept at most 32 arguments;
+- **Bash is deliberate, not inferred.** A `mode: "bash"` request names its
+  absolute Bash interpreter and carries one UTF-8-bounded command string. The
+  adapter invokes it with `--noprofile --norc -c`, so shell syntax exists only
+  when the request selected Bash and startup files cannot add hidden work;
+- **the child boundary is narrow and bounded.** An optional absolute `cwd`,
+  complete supplied environment, non-negative timeout, disabled stdin, and
+  output limit are validated before spawn. Script and captured stdout are
+  capped at 64 KiB; the environment is capped at 64 entries and 32 KiB. The
+  host checks existence and executability, while workspace capability owners
+  remain responsible for binding a directory to a workspace;
+- **terminal facts remain typed.** Successful and non-zero exits are
+  `exited` with the exact exit code and stdout. Excess output, timeout,
+  cancellation, invalid request shape, and spawn failure remain distinct
+  outcomes. Spawn failure codes never echo executable, cwd, arguments, command,
+  or environment values;
+- **stderr cannot block the child or cross the boundary.** The adapter drains
+  stderr to completion while retaining no text, so a noisy child does not
+  deadlock and tool or credential diagnostics cannot accidentally quote
+  sensitive command data. PTY, ordered stdout/stderr events, artifact spill,
+  process-tree escalation, Hush, confirmation, and product tool registration
+  remain later #68 children.
+
 **macOS is the qualified keychain target.** Linux and Windows report
 `unsupported` with a stated reason and spawn nothing; qualifying them is
 [#220](https://github.com/tyldra-org/falryn/issues/220). The

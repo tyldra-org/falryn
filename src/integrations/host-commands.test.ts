@@ -15,13 +15,19 @@
 
 import { describe, expect, test } from "bun:test";
 
-import { duration, MAX_COMMAND_ARGUMENTS, MAX_COMMAND_OUTPUT_BYTES } from "../domain/index.ts";
+import {
+  duration,
+  MAX_COMMAND_ARGUMENTS,
+  MAX_COMMAND_OUTPUT_BYTES,
+  MAX_COMMAND_SCRIPT_BYTES,
+} from "../domain/index.ts";
 import { createHostCommandRunner } from "./host-commands.ts";
 
 const runner = createHostCommandRunner();
 
 const ECHO = "/bin/echo";
 const ENV = "/usr/bin/env";
+const BASH = "/bin/bash";
 const SHELL = "/bin/sh";
 const SLEEP = "/bin/sleep";
 /** Writes without stopping, which is what an output bound has to survive. */
@@ -31,6 +37,7 @@ function request(overrides: {
   readonly executable: string;
   readonly argv?: readonly string[];
   readonly environment?: Readonly<Record<string, string>>;
+  readonly cwd?: string;
   readonly timeoutMs?: number;
   readonly maxOutputBytes?: number;
   readonly signal?: AbortSignal;
@@ -42,6 +49,27 @@ function request(overrides: {
     timeoutMs: duration(overrides.timeoutMs ?? 5_000),
     maxOutputBytes: overrides.maxOutputBytes ?? MAX_COMMAND_OUTPUT_BYTES,
     signal: overrides.signal,
+  };
+}
+
+function bashRequest(overrides: {
+  readonly command: string;
+  readonly executable?: string;
+  readonly environment?: Readonly<Record<string, string>>;
+  readonly cwd?: string;
+  readonly timeoutMs?: number;
+  readonly maxOutputBytes?: number;
+  readonly signal?: AbortSignal;
+}) {
+  return {
+    mode: "bash" as const,
+    executable: overrides.executable ?? BASH,
+    command: overrides.command,
+    environment: overrides.environment ?? {},
+    ...(overrides.cwd === undefined ? {} : { cwd: overrides.cwd }),
+    timeoutMs: duration(overrides.timeoutMs ?? 5_000),
+    maxOutputBytes: overrides.maxOutputBytes ?? MAX_COMMAND_OUTPUT_BYTES,
+    ...(overrides.signal === undefined ? {} : { signal: overrides.signal }),
   };
 }
 
@@ -62,6 +90,26 @@ describe("running a command", () => {
     // intact for every value, not only for zero.
     const outcome = await runner.run(request({ executable: SHELL, argv: ["-c", "exit 44"] }));
     expect(outcome.kind === "exited" && outcome.exitCode).toBe(44);
+  });
+
+  test("runs an intentional Bash script through the selected interpreter", async () => {
+    const outcome = await runner.run(
+      bashRequest({
+        command: `case "$-" in *i*) exit 91;; *) printf '%s\\n' "$FALRYN_BASH_VALUE";; esac`,
+        environment: { FALRYN_BASH_VALUE: "bash value" },
+      }),
+    );
+
+    expect(outcome).toEqual({ kind: "exited", exitCode: 0, stdout: "bash value\n" });
+  });
+
+  test("passes the requested working directory to either execution mode", async () => {
+    const cwd = process.cwd();
+    const direct = await runner.run(request({ executable: "/bin/pwd", cwd }));
+    const bash = await runner.run(bashRequest({ command: "pwd", cwd }));
+
+    expect(direct.kind === "exited" && direct.stdout).toBe(`${cwd}\n`);
+    expect(bash.kind === "exited" && bash.stdout).toBe(`${cwd}\n`);
   });
 });
 
@@ -114,6 +162,22 @@ describe("the argument vector is never parsed by a shell", () => {
       }),
     );
     expect(outcome).toEqual({ kind: "spawn-failed", code: "too-many-arguments" });
+  });
+});
+
+describe("request validation", () => {
+  test("refuses a relative executable without starting a process", async () => {
+    const outcome = await runner.run(request({ executable: "echo", argv: ["no"] }));
+
+    expect(outcome).toEqual({ kind: "spawn-failed", code: "invalid-executable" });
+  });
+
+  test("bounds Bash source before spawning", async () => {
+    const outcome = await runner.run(
+      bashRequest({ command: "x".repeat(MAX_COMMAND_SCRIPT_BYTES + 1) }),
+    );
+
+    expect(outcome).toEqual({ kind: "spawn-failed", code: "command-too-large" });
   });
 });
 
