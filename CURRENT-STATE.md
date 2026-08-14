@@ -66,7 +66,8 @@ one public entrypoint at `src/domain/index.ts`:
 
 - branded identities for workspace, session, turn, model attempt, invocation,
   capability, event, trace, stream, idempotency key, sequence, configuration
-  generation, PTY session, managed service, and service generation, each with a
+  generation, PTY session, managed service, service generation, and process
+  capture, each with a
   boundary parser that reports a code rather than the rejected value;
 - canonical UTC timestamps;
 - the closed semantic event union for eight declared kinds, with model and tool
@@ -401,8 +402,10 @@ Its verified behavior:
 - **stderr cannot block the child or cross the boundary.** The adapter drains
   stderr to completion while retaining no text, so a noisy child does not
   deadlock and tool or credential diagnostics cannot accidentally quote
-  sensitive command data. Artifact spill, process-tree escalation, Hush,
-  confirmation, and product tool registration remain later #68 children.
+  sensitive command data. Process-tree escalation, Hush, confirmation, and
+  product tool registration remain later #68 children. Ordered observation and
+  artifact spillover for non-credential commands are owned by
+  [#71](https://github.com/tyldra-org/falryn/issues/71).
 
 The PTY and managed-service foundation delivered by
 [#70](https://github.com/tyldra-org/falryn/issues/70) adds
@@ -432,16 +435,49 @@ Its verified behavior:
   capped at 32 and 16, inactive retained sessions at 128 and 64, writes and
   replay at 64 KiB, and readiness observation at 64 KiB. Managed shutdown
   escalates SIGTERM to SIGKILL and reports `shutdown-timeout` when cleanup
-  remains unconfirmed. No process-tree cleanup, persistence, artifact spill,
-  Hush reduction, CLI/TUI/model projection, or registry registration is implied;
+  remains unconfirmed. No process-tree cleanup, durable persistence, Hush
+  reduction, CLI/TUI/model projection, or registry registration is implied.
+  Artifact spillover for non-PTY observation is owned by
+  [#71](https://github.com/tyldra-org/falryn/issues/71);
 - **the boundary is tested against real processes.** Focused domain and host
   tests cover validation, PTY write/resize/reattach/termination behavior,
   readiness, serialized input, restart generations, idle shutdown, bounded
   replay, no-restart policy, and the repository's artifact-byte boundary.
 
-`bun run check` passed with 3,123 tests passing and 14 skipped; `bun run build`
-also passed. Platform-specific PTY tests are skipped on Windows, while the
-compiled qualification suites remain owned by CI.
+The process-output capture foundation delivered by
+[#71](https://github.com/tyldra-org/falryn/issues/71) adds
+`src/domain/process-capture.ts` and the Bun adapter
+`src/integrations/host-process-capture.ts`, exported through the existing
+domain and integrations entrypoints. It is the observation path for non-PTY
+commands: `CommandRunnerPort` remains credential-safe and still discards
+stderr. No product process tool is registered, and Hush does not run.
+
+Its verified behavior:
+
+- **stdout and stderr are ordered observations.** Copied chunks carry a merged
+  observation order and a per-stream order. The report keeps a bounded inline
+  preview, exact byte counts, UTF-8 or binary encoding, truncation, line-limit
+  facts, exit code, signal, duration, and the stop that ended the run
+  (`exited`, `timed-out`, `cancelled`, `capture-exceeded`, or `uncertain`);
+- **limits are declared and enforced.** Inline previews default to 64 KiB,
+  total capture and artifacts to 1 MiB (capped at 8 MiB), lines to 16 KiB, and
+  queued chunks to 64 KiB. Without an artifact store, exceeding inline, line,
+  queue, encoding, or total bounds stops the child as `capture-exceeded`;
+- **exact overflow spills through ArtifactStorePort.** Overflow and invalid
+  UTF-8 are ingested as `origin: capture` with copied bytes. A committed
+  artifact keeps the exact stream; ingest failure is `uncertain` with
+  `artifact-ingest-failed` rather than a successful truncated result;
+- **the credential runner is unchanged.** This port never becomes the
+  keychain/command path, never exposes a raw subprocess, and does not perform
+  Hush reduction, process-tree cleanup, or CLI/TUI/model projection;
+- **the boundary is tested against real processes.** Focused domain tests cover
+  validation, merged order, inline limits, spillover, invalid UTF-8, and ingest
+  failure. Host tests cover dual-stream capture, artifact spill, timeout, and
+  invalid executables on POSIX.
+
+`bun run check` passed with 3,138 tests passing and 14 skipped; `bun run build`
+also passed. Platform-specific PTY and process-capture tests are skipped on
+Windows, while the compiled qualification suites remain owned by CI.
 
 **macOS is the qualified keychain target.** Linux and Windows report
 `unsupported` with a stated reason and spawn nothing; qualifying them is
