@@ -15,6 +15,8 @@ export { createHostEnvironment, hostHome, hostPlatform } from "./host-environmen
 export { createHostFileSystem } from "./host-filesystem.ts";
 export type { HostPackageWriterOptions } from "./host-packages.ts";
 export { createHostPackageWriter, STAGED_SUFFIX } from "./host-packages.ts";
+export type { HostProcessCaptureOptions } from "./host-process-capture.ts";
+export { createHostProcessCapturePort } from "./host-process-capture.ts";
 export { createHostManagedServicePort, createHostPtySessionPort } from "./host-process-sessions.ts";
 export type { HostInputStreamOptions, HostOutputStreamOptions } from "./host-terminal.ts";
 export {
