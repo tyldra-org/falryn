@@ -18,6 +18,7 @@ import {
 export type WorkspacePathProbeError =
   | WorkspacePathBindError
   | { readonly code: "symlink-escape" }
+  | { readonly code: "cancelled" }
   | { readonly code: "filesystem"; readonly error: FileSystemError };
 
 export type WorkspacePathBinder = {
@@ -38,8 +39,14 @@ export function createWorkspacePathBinder(fileSystem: FileSystemPort): Workspace
       if (!lexical.ok) {
         return lexical;
       }
+      if (signal?.aborted === true) {
+        return { ok: false, error: { code: "cancelled" } };
+      }
       const real = await fileSystem.realPath(lexical.value.resolved, signal);
       if (!real.ok) {
+        if (real.error.code === "cancelled") {
+          return { ok: false, error: { code: "cancelled" } };
+        }
         if (real.error.code === "not-found") {
           return lexical;
         }
