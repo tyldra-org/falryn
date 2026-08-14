@@ -2666,7 +2666,7 @@ one explicit workspace root (parent
 - `src/application/workspace-path.ts` — `createWorkspacePathBinder` re-checks
   `FileSystemPort.realPath` so a symlink cannot leave the root. Missing paths
   keep the lexical bind. Listing is #280. Glob discovery is #62. Text search is
-  #63. Indexes and patches remain later #61 children.
+  #63. Index query is #64. Index builders and patches remain later #61 children.
 
 Validated by `src/domain/workspace-path.test.ts` and
 `src/application/workspace-path.test.ts` under `bun run check`.
@@ -2698,8 +2698,8 @@ include/exclude glob without reading file bytes (parent
 
 Validated by `src/domain/workspace-glob.test.ts` and
 `src/application/workspace-discovery.test.ts` under `bun run check`. Text
-search is #63. Indexes, patches, `read_many` glob expansion, and product search
-tools remain later children.
+search is #63. Index query is #64. Index builders, patches, `read_many` glob
+expansion, and product search tools remain later children.
 
 The bounded text-search slice from
 [#63](https://github.com/tyldra-org/falryn/issues/63) finds literal and regex
@@ -2717,9 +2717,28 @@ matches inside that same root (parent
   never follows a symlink. Engine and fallback reason are visible.
 
 Validated by `src/domain/workspace-search.test.ts` and
-`src/application/workspace-search.test.ts` under `bun run check`. Indexes,
-patches, ignore-file consumption, `read_many` glob expansion, and product
-search tools remain later children.
+`src/application/workspace-search.test.ts` under `bun run check`. Index query
+is #64. Index builders, patches, ignore-file consumption, `read_many` glob
+expansion, and product search tools remain later children.
+
+The bounded structural and derived-index query slice from
+[#64](https://github.com/tyldra-org/falryn/issues/64) queries one atomic index
+generation inside that same root (parent
+[#61](https://github.com/tyldra-org/falryn/issues/61)):
+
+- `src/domain/workspace-index.ts` — structural/lexical queries, glob filters,
+  lifecycle states, per-hit freshness, match budgets, and typed malformed
+  errors that never echo rejected text;
+- `src/application/workspace-index.ts` — `createWorkspaceIndexQuery` reads an
+  injectable `WorkspaceIndexPort` snapshot, binds every hit, and compares
+  `PathEntry.revision` so a stale index can guide discovery without being
+  presented as current evidence. Absent, building, corrupt, and unavailable
+  generations are typed errors. Descent never follows an escaping index path.
+
+Validated by `src/domain/workspace-index.test.ts` and
+`src/application/workspace-index.test.ts` under `bun run check`. Index
+builders, watchers, Tree-sitter, embeddings, SQLite FTS persistence, patches,
+and product search tools remain later work.
 
 The workspace file-read slice from
 [#56](https://github.com/tyldra-org/falryn/issues/56) reads one file or a
@@ -2972,9 +2991,9 @@ session/turn producer, or live transcript producer. The remaining gaps are:
 - workspace reads, search, patch, shell, Git, LSP, DAP, browser, or computer-use
   capabilities (path bind, list/stat/walk, bounded file reads, specialized
   readers, exact-source expansion, the shared malformed/stale/binary/
-  large-file/symlink/cancellation matrix, glob discovery, and bounded text
-  search exist; product tools are not registered);
-- context planning, Brief, Hush, Loom, compression, indexing, or memory;
+  large-file/symlink/cancellation matrix, glob discovery, bounded text
+  search, and derived-index query exist; product tools are not registered);
+- context planning, Brief, Hush, Loom, compression, index builders, or memory;
 - MCP, skills, plugin and other hook families, marketplace, agents, jobs, or workflows; or
 - an installer, updater, supported platform package, signed release, or support
   channel.
