@@ -402,8 +402,9 @@ Its verified behavior:
 - **stderr cannot block the child or cross the boundary.** The adapter drains
   stderr to completion while retaining no text, so a noisy child does not
   deadlock and tool or credential diagnostics cannot accidentally quote
-  sensitive command data. Process-tree escalation, Hush, confirmation, and
-  product tool registration remain later #68 children. Ordered observation and
+  sensitive command data. Hush, confirmation, and product tool registration
+  remain later #68 children. Process-tree stop for this runner is owned by
+  [#73](https://github.com/tyldra-org/falryn/issues/73). Ordered observation and
   artifact spillover for non-credential commands are owned by
   [#71](https://github.com/tyldra-org/falryn/issues/71).
 
@@ -435,9 +436,12 @@ Its verified behavior:
   capped at 32 and 16, inactive retained sessions at 128 and 64, writes and
   replay at 64 KiB, and readiness observation at 64 KiB. Managed shutdown
   escalates SIGTERM to SIGKILL and reports `shutdown-timeout` when cleanup
-  remains unconfirmed. No process-tree cleanup, durable persistence, Hush
-  reduction, CLI/TUI/model projection, or registry registration is implied.
-  Artifact spillover for non-PTY observation is owned by
+  remains unconfirmed. Durable persistence, product-tool registration, and
+  CLI/TUI/model projection are later work. Process-tree stop for PTY and
+  managed services is owned by [#73](https://github.com/tyldra-org/falryn/issues/73).
+  Hush reduction of captured facts is owned by
+  [#72](https://github.com/tyldra-org/falryn/issues/72). Artifact spillover for
+  non-PTY observation is owned by
   [#71](https://github.com/tyldra-org/falryn/issues/71);
 - **the boundary is tested against real processes.** Focused domain and host
   tests cover validation, PTY write/resize/reattach/termination behavior,
@@ -469,7 +473,9 @@ Its verified behavior:
   `artifact-ingest-failed` rather than a successful truncated result;
 - **the credential runner is unchanged.** This port never becomes the
   keychain/command path, never exposes a raw subprocess, and does not perform
-  Hush reduction, process-tree cleanup, or CLI/TUI/model projection;
+  Hush reduction or CLI/TUI/model projection. Kill-stage recording and
+  process-tree stop are owned by
+  [#73](https://github.com/tyldra-org/falryn/issues/73);
 - **the boundary is tested against real processes.** Focused domain tests cover
   validation, merged order, inline limits, spillover, invalid UTF-8, and ingest
   failure. Host tests cover dual-stream capture, artifact spill, timeout, and
@@ -510,7 +516,35 @@ Its verified behavior:
   fallback with stderr, binary omission, timed-out facts, listing caps with
   important patterns, and passthrough fidelity.
 
-`bun run check` passed with 3,156 tests passing and 14 skipped.
+The process-tree cancellation foundation delivered by
+[#73](https://github.com/tyldra-org/falryn/issues/73) adds
+`src/domain/process-tree.ts` and the Bun adapter
+`src/integrations/host-process-tree.ts`, wired through the command, capture,
+and session host adapters. POSIX children start in their own session so the
+leader PID is the process-group ID. Cancellation and deadlines signal that
+owned group, then the leader, then SIGKILL after a bounded grace. PTY spawn
+does not set `detached`, because a controlling terminal is required; group
+then leader signaling still applies. Windows has no process-group primitive
+here and is not claimed as qualified. No product process tool, CLI, TUI, or
+model projection is registered.
+
+Its verified behavior:
+
+- **stop targets the owned tree, not only the leader.** A grandchild that
+  survives SIGTERM to the leader PID is reaped by group escalation. Default
+  grace is 500 ms and is capped at 5 s. Falryn never signals PID 1 or itself;
+- **capture reports record kill stage.** `none`, `terminate`, `kill`, or
+  `unconfirmed` is copied onto `ProcessCaptureReport`. CommandOutcome kinds
+  stay `timed-out` / `cancelled` / `output-exceeded`. Unconfirmed descendants
+  are `uncertain` rather than a silent success;
+- **detachment stays explicit.** #70 attach/detach is unchanged; otherwise
+  shutdown owns cleanup. Pipes keep draining while the tree is stopped;
+- **the boundary is tested against real processes.** Domain tests cover stage
+  transitions. POSIX host tests spawn a HUP-ignoring grandchild, prove
+  leader-only SIGTERM leaves it running, then assert group escalation reaps
+  it. Capture timeout records `terminate` or `kill`.
+
+`bun run check` passed with 3,164 tests passing and 14 skipped.
 Platform-specific PTY and process-capture tests are skipped on Windows, while
 the compiled qualification suites remain owned by CI.
 

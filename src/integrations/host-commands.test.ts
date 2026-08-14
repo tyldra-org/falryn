@@ -239,6 +239,20 @@ describe("the deadline", () => {
     expect(elapsedMs).toBeLessThan(10_000);
   });
 
+  test("a shell waiting on a grandchild times out instead of running to completion", async () => {
+    const started = Bun.nanoseconds();
+    const outcome = await runner.run(
+      bashRequest({
+        command: 'trap "" HUP; /bin/sleep 30 & wait',
+        timeoutMs: 400,
+      }),
+    );
+    const elapsedMs = (Bun.nanoseconds() - started) / 1_000_000;
+
+    expect(outcome).toEqual({ kind: "timed-out", timeoutMs: duration(400) });
+    expect(elapsedMs).toBeLessThan(10_000);
+  });
+
   test("a command that finishes inside its deadline is not affected by it", async () => {
     const outcome = await runner.run(
       request({ executable: ECHO, argv: ["fast"], timeoutMs: 5_000 }),

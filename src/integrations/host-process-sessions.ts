@@ -52,6 +52,7 @@ import {
   validatePtySessionRequest,
 } from "../domain/index.ts";
 import { err, ok, type Result } from "../domain/result.ts";
+import { ownedTreeSpawnOptions, signalOwnedTree } from "./host-process-tree.ts";
 
 type HostSubprocess = Bun.Subprocess;
 type HostTerminal = NonNullable<HostSubprocess["terminal"]>;
@@ -70,6 +71,15 @@ type HostReadable = {
 };
 
 type ServiceStream = "stdout" | "stderr";
+
+function signalHostTree(child: HostSubprocess, signal: "SIGINT" | "SIGTERM" | "SIGKILL"): void {
+  if (typeof child.pid === "number") {
+    signalOwnedTree(child.pid, signal);
+    return;
+  }
+  child.kill(signal);
+}
+
 type PtyEventDetail = {
   [Kind in PtySessionEvent["kind"]]: Omit<
     Extract<PtySessionEvent, { readonly kind: Kind }>,
@@ -132,7 +142,7 @@ export function createHostPtySessionPort(): PtySessionPort {
         });
         const terminal = child.terminal;
         if (terminal === undefined) {
-          child.kill("SIGKILL");
+          signalHostTree(child, "SIGKILL");
           return err({ kind: "pty", code: "unsupported" });
         }
         session.attachProcess(child, terminal);
@@ -341,7 +351,7 @@ class HostPtySession {
       return err({ kind: "pty", code: "spawn-failed", detail: "missing-child" });
     }
     try {
-      child.kill(signal);
+      signalHostTree(child, signal);
       this.emit({ kind: "interrupted", signal: "SIGINT" });
       return ok({ signal, state: this.state });
     } catch (thrown) {
@@ -362,7 +372,7 @@ class HostPtySession {
       return err({ kind: "pty", code: "spawn-failed", detail: "missing-child" });
     }
     try {
-      child.kill(signal);
+      signalHostTree(child, signal);
       this.emit({ kind: "termination-requested", signal });
     } catch (thrown) {
       return err({ kind: "pty", code: "write-failed", detail: safeHostCode(thrown) });
@@ -373,7 +383,7 @@ class HostPtySession {
       return ok({ kind: "terminated", signal, exit: firstExit });
     }
     try {
-      child.kill("SIGKILL");
+      signalHostTree(child, "SIGKILL");
     } catch {
       this.state = "uncertain";
       this.closeTerminal();
@@ -677,6 +687,7 @@ class HostManagedService {
     try {
       const child = Bun.spawn([this.request.executable, ...this.request.argv], {
         ...(this.request.cwd === undefined ? {} : { cwd: this.request.cwd }),
+        ...ownedTreeSpawnOptions(),
         env: this.request.environment,
         stdin: "pipe",
         stdout: "pipe",
@@ -787,7 +798,7 @@ class HostManagedService {
     this.intent = intent;
     this.clearReadinessTimer();
     try {
-      this.child.kill("SIGTERM");
+      signalHostTree(this.child, "SIGTERM");
       void this.awaitFailureCleanup(this.generation, intent);
     } catch {
       this.finishUncertainFailure(this.generation);
@@ -808,7 +819,7 @@ class HostManagedService {
       return;
     }
     try {
-      child.kill("SIGKILL");
+      signalHostTree(child, "SIGKILL");
     } catch {
       this.finishUncertainFailure(generation);
       return;
@@ -920,7 +931,7 @@ class HostManagedService {
       // SIGTERM below remains the authoritative stop request.
     }
     try {
-      child.kill("SIGTERM");
+      signalHostTree(child, "SIGTERM");
     } catch {
       this.failShutdown(generation);
       return err({ kind: "managed-service", code: "shutdown-timeout" });
@@ -930,7 +941,7 @@ class HostManagedService {
       return ok({ kind: "stopped", reason, exit: firstExit });
     }
     try {
-      child.kill("SIGKILL");
+      signalHostTree(child, "SIGKILL");
     } catch {
       this.failShutdown(generation);
       return err({ kind: "managed-service", code: "shutdown-timeout" });

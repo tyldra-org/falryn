@@ -18,6 +18,7 @@ import {
 } from "../domain/index.ts";
 import { err, ok } from "../domain/result.ts";
 import { createHostProcessCapturePort } from "./host-process-capture.ts";
+import { processIsAlive } from "./host-process-tree.ts";
 
 const POSIX = process.platform !== "win32";
 const platformTest = POSIX ? test : test.skip;
@@ -147,6 +148,25 @@ describe("host process capture", () => {
       throw new Error("expected a capture report");
     }
     expect(captured.value.stop.kind).toBe("timed-out");
+    expect(["terminate", "kill"]).toContain(captured.value.killStage);
+  });
+
+  platformTest("reaps a grandchild and records the kill stage", async () => {
+    const port = createHostProcessCapturePort();
+    const captured = await port.run(
+      request('trap "" HUP; /bin/sh -c "trap \\"\\" HUP; exec /bin/sleep 30" & echo $!; wait', {
+        timeoutMs: duration(400),
+      }),
+    );
+    expect(captured.ok).toBe(true);
+    if (!captured.ok) {
+      throw new Error("expected a capture report");
+    }
+    expect(captured.value.stop.kind).toBe("timed-out");
+    expect(["terminate", "kill"]).toContain(captured.value.killStage);
+    const grandchildPid = Number.parseInt(captured.value.stdout.inlineText?.trim() ?? "", 10);
+    expect(Number.isSafeInteger(grandchildPid) && grandchildPid > 1).toBe(true);
+    expect(processIsAlive(grandchildPid)).toBe(false);
   });
 
   platformTest("rejects a relative executable without spawning", async () => {
