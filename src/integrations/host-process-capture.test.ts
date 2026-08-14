@@ -135,7 +135,13 @@ describe("host process capture", () => {
 
   platformTest("times out a child that does not exit", async () => {
     const port = createHostProcessCapturePort();
-    const captured = await port.run(request("sleep 5", { timeoutMs: duration(200) }));
+    const captured = await port.run({
+      executable: "/bin/sleep",
+      argv: ["5"],
+      environment: ENVIRONMENT,
+      timeoutMs: duration(200),
+      maxOutputBytes: MAX_COMMAND_OUTPUT_BYTES,
+    });
     expect(captured.ok).toBe(true);
     if (!captured.ok) {
       throw new Error("expected a capture report");

@@ -64,11 +64,17 @@ export function createHostProcessCapturePort(
       const controller = new AbortController();
       let ended: ProcessCaptureStop | null = null;
       let started = false;
+      let child: Bun.Subprocess | null = null;
 
       const stopFor = (reason: ProcessCaptureStop): void => {
         if (ended === null) {
           ended = reason;
           controller.abort();
+          try {
+            child?.kill("SIGTERM");
+          } catch {
+            // Abort remains the fallback stop.
+          }
         }
       };
 
@@ -81,7 +87,7 @@ export function createHostProcessCapturePort(
       request.signal?.addEventListener("abort", onAbort, { once: true });
 
       try {
-        const child = Bun.spawn(spawnArgv(request), {
+        const spawned = Bun.spawn(spawnArgv(request), {
           ...(request.cwd === undefined ? {} : { cwd: request.cwd }),
           env: request.environment,
           stdin: "ignore",
@@ -89,7 +95,15 @@ export function createHostProcessCapturePort(
           stderr: "pipe",
           signal: controller.signal,
         });
-        const pid = typeof child.pid === "number" ? child.pid : 0;
+        child = spawned;
+        if (ended !== null) {
+          try {
+            spawned.kill("SIGTERM");
+          } catch {
+            // Already stopping.
+          }
+        }
+        const pid = typeof spawned.pid === "number" ? spawned.pid : 0;
         await collector.start(pid, clock.now());
         started = true;
 
@@ -104,13 +118,13 @@ export function createHostProcessCapturePort(
         };
 
         await Promise.all([
-          readStream(child.stdout, "stdout", serialize, collector, stopFor),
-          readStream(child.stderr, "stderr", serialize, collector, stopFor),
+          readStream(spawned.stdout, "stdout", serialize, collector, stopFor),
+          readStream(spawned.stderr, "stderr", serialize, collector, stopFor),
         ]);
-        const exitCode = await child.exited;
+        const exitCode = await spawned.exited;
         return ok(
           await collector.finish(
-            { exitCode, signal: signalText(child.signalCode) },
+            { exitCode, signal: signalText(spawned.signalCode) },
             clock.now(),
             ended ?? { kind: "exited" },
           ),
