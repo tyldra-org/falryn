@@ -54,6 +54,7 @@ const ERRNO_CODES: Readonly<Record<string, FileSystemErrorCode>> = {
   ENOSYS: "unsupported",
   EFBIG: "oversized",
   ENOSPC: "io-failure",
+  EXDEV: "cross-device",
 };
 
 function errnoOf(thrown: unknown): string | null {
@@ -441,6 +442,91 @@ export function createHostFileSystem(): FileSystemPort {
         if (tempPath !== null) {
           await fs.unlink(tempPath).catch(() => undefined);
         }
+      }
+    },
+
+    async renameEntry(
+      from: LocalPath,
+      to: LocalPath,
+      signal?: AbortSignal,
+    ): Promise<Result<null, FileSystemError>> {
+      if (isCancelled(signal)) {
+        return cancelled(from, "rename");
+      }
+      try {
+        const destination = await fs.lstat(to).catch((thrown: unknown) => {
+          if (errnoOf(thrown) === "ENOENT") {
+            return null;
+          }
+          throw thrown;
+        });
+        if (destination !== null) {
+          return err({
+            kind: "filesystem",
+            code: "not-empty",
+            path: to,
+            operation: "rename",
+          });
+        }
+        await fs.rename(from, to);
+        return ok(null);
+      } catch (thrown: unknown) {
+        return err(translate(thrown, from, "rename"));
+      }
+    },
+
+    async copyEntry(
+      from: LocalPath,
+      to: LocalPath,
+      signal?: AbortSignal,
+    ): Promise<Result<null, FileSystemError>> {
+      if (isCancelled(signal)) {
+        return cancelled(from, "copy");
+      }
+      try {
+        const source = await fs.lstat(from);
+        if (source.isDirectory()) {
+          return err({
+            kind: "filesystem",
+            code: "not-a-directory",
+            path: from,
+            operation: "copy",
+          });
+        }
+        const destination = await fs.lstat(to).catch((thrown: unknown) => {
+          if (errnoOf(thrown) === "ENOENT") {
+            return null;
+          }
+          throw thrown;
+        });
+        if (destination !== null) {
+          return err({
+            kind: "filesystem",
+            code: "not-empty",
+            path: to,
+            operation: "copy",
+          });
+        }
+        if (source.isSymbolicLink()) {
+          const target = await fs.readlink(from);
+          await fs.symlink(target, to);
+          return ok(null);
+        }
+        if (!source.isFile()) {
+          return err({
+            kind: "filesystem",
+            code: "unsupported",
+            path: from,
+            operation: "copy",
+          });
+        }
+        await fs.copyFile(from, to, fsConstants.COPYFILE_EXCL);
+        if (process.platform !== "win32") {
+          await fs.chmod(to, source.mode & 0o777);
+        }
+        return ok(null);
+      } catch (thrown: unknown) {
+        return err(translate(thrown, from, "copy"));
       }
     },
   };

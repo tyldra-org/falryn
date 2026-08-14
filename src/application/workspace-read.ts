@@ -377,6 +377,7 @@ function mapFileSystemError(error: FileSystemError): { ok: false; error: Workspa
     case "not-empty":
     case "io-failure":
     case "unsupported":
+    case "cross-device":
       return { ok: false, error: { code: "filesystem", reason: error.code } };
     default:
       return assertNever(error.code, "unhandled filesystem error");

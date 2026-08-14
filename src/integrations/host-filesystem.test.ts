@@ -376,6 +376,51 @@ describe("writing bytes", () => {
   });
 });
 
+describe("renaming and copying one entry", () => {
+  test("renames a file and a directory with its children", async () => {
+    await fs.writeFile(at("note.txt"), "hello");
+    expect((await fileSystem.renameEntry(at("note.txt"), at("renamed.txt"))).ok).toBe(true);
+    expect(await fs.exists(at("note.txt"))).toBe(false);
+    expect((await fs.readFile(at("renamed.txt"))).toString()).toBe("hello");
+
+    await fs.mkdir(at("from"));
+    await fs.writeFile(at("from", "child.txt"), "x");
+    expect((await fileSystem.renameEntry(at("from"), at("to"))).ok).toBe(true);
+    expect(await fs.exists(at("from"))).toBe(false);
+    expect((await fs.readFile(at("to", "child.txt"))).toString()).toBe("x");
+  });
+
+  test("copies a file and a symlink as a link, and refuses a directory", async () => {
+    await fs.writeFile(at("note.txt"), "hello");
+    expect((await fileSystem.copyEntry(at("note.txt"), at("copy.txt"))).ok).toBe(true);
+    expect((await fs.readFile(at("note.txt"))).toString()).toBe("hello");
+    expect((await fs.readFile(at("copy.txt"))).toString()).toBe("hello");
+
+    await fs.symlink(at("note.txt"), at("link"));
+    expect((await fileSystem.copyEntry(at("link"), at("link2"))).ok).toBe(true);
+    expect((await fs.lstat(at("link2"))).isSymbolicLink()).toBe(true);
+    expect(await fs.readlink(at("link2"))).toBe(await fs.readlink(at("link")));
+
+    await fs.mkdir(at("adir"));
+    const directory = await fileSystem.copyEntry(at("adir"), at("bdir"));
+    expect(directory.ok).toBe(false);
+    if (!directory.ok) {
+      expect(directory.error.code).toBe("not-a-directory");
+    }
+  });
+
+  test("refuses to copy onto an existing destination", async () => {
+    await fs.writeFile(at("from.txt"), "a");
+    await fs.writeFile(at("to.txt"), "b");
+    const refused = await fileSystem.copyEntry(at("from.txt"), at("to.txt"));
+    expect(refused.ok).toBe(false);
+    if (!refused.ok) {
+      expect(refused.error.code).toBe("not-empty");
+    }
+    expect((await fs.readFile(at("to.txt"))).toString()).toBe("b");
+  });
+});
+
 describe("cancellation", () => {
   test("every operation refuses an already-aborted signal", async () => {
     const controller = new AbortController();
@@ -392,6 +437,8 @@ describe("cancellation", () => {
       await fileSystem.readText(at("note.txt"), 1_024, signal),
       await fileSystem.readBytes(at("note.txt"), 1_024, signal),
       await fileSystem.writeBytes(at("note.txt"), new Uint8Array([1]), signal),
+      await fileSystem.renameEntry(at("note.txt"), at("renamed.txt"), signal),
+      await fileSystem.copyEntry(at("note.txt"), at("copied.txt"), signal),
     ]) {
       expect(result.ok).toBe(false);
       if (!result.ok) {
@@ -481,6 +528,28 @@ describe("the in-memory double agrees with the adapter", () => {
     expect(missingHost.ok).toBe(false);
     if (!missingDouble.ok && !missingHost.ok) {
       expect(missingDouble.error.code).toBe(missingHost.error.code);
+    }
+  });
+
+  test("both refuse to rename onto an existing destination", async () => {
+    const double = createInMemoryFileSystem({
+      nodes: {
+        "/tmp": { kind: "directory" },
+        "/tmp/from.txt": { kind: "file", text: "a" },
+        "/tmp/to.txt": { kind: "file", text: "b" },
+      },
+    });
+    await fs.writeFile(at("from.txt"), "a");
+    await fs.writeFile(at("to.txt"), "b");
+    const fromDouble = await double.renameEntry(
+      localPath("/tmp/from.txt"),
+      localPath("/tmp/to.txt"),
+    );
+    const fromHost = await fileSystem.renameEntry(at("from.txt"), at("to.txt"));
+    expect(fromDouble.ok).toBe(false);
+    expect(fromHost.ok).toBe(false);
+    if (!fromDouble.ok && !fromHost.ok) {
+      expect(fromDouble.error.code).toBe(fromHost.error.code);
     }
   });
 });
