@@ -1591,6 +1591,39 @@ export {
   OVERWRITE_POLICIES,
   parseWorkspaceMutation,
 } from "./workspace-mutate.ts";
+export type {
+  ParsedPatchHunk,
+  ParsedPatchPlan,
+  ParsedPatchTarget,
+  PatchHunkApplyResult,
+  PatchHunkPreview,
+  PatchPolicy,
+  WorkspacePatchApplied,
+  WorkspacePatchError,
+  WorkspacePatchItem,
+  WorkspacePatchItemStatus,
+  WorkspacePatchLimitName,
+  WorkspacePatchLimits,
+  WorkspacePatchPreview,
+  WorkspacePatchRejected,
+  WorkspacePatchResult,
+} from "./workspace-patch.ts";
+export {
+  applyPatchHunks,
+  computePatchPlanId,
+  DEFAULT_MAX_PATCH_HUNK_LINES,
+  DEFAULT_MAX_PATCH_HUNKS,
+  DEFAULT_MAX_PATCH_TARGETS,
+  DEFAULT_PATCH_LIMITS,
+  describeWorkspacePatchError,
+  HARD_MAX_PATCH_HUNK_LINES,
+  HARD_MAX_PATCH_HUNKS,
+  HARD_MAX_PATCH_TARGETS,
+  hunkHeader,
+  joinPatchedLines,
+  MAX_CONFLICT_CONTEXT_LINES,
+  parseWorkspacePatchPlan,
+} from "./workspace-patch.ts";
 export type { BoundWorkspacePath, WorkspacePathBindError } from "./workspace-path.ts";
 export { bindWorkspacePath, describeWorkspacePathBindError } from "./workspace-path.ts";
 export type {

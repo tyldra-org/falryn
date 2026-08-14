@@ -210,6 +210,8 @@ export type { WorkspaceListing } from "./workspace-listing.ts";
 export { createWorkspaceListing } from "./workspace-listing.ts";
 export type { WorkspaceMutator, WorkspaceMutatorOptions } from "./workspace-mutate.ts";
 export { createWorkspaceMutator } from "./workspace-mutate.ts";
+export type { PatchPort, WorkspacePatcher, WorkspacePatcherOptions } from "./workspace-patch.ts";
+export { createWorkspacePatcher } from "./workspace-patch.ts";
 export type { WorkspacePathBinder, WorkspacePathProbeError } from "./workspace-path.ts";
 export { createWorkspacePathBinder } from "./workspace-path.ts";
 export type { WorkspaceReader, WorkspaceReaderOptions } from "./workspace-read.ts";

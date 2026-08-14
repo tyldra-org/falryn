@@ -4,7 +4,7 @@
  * Binds source and destination, previews affected paths, then renames on the
  * same filesystem or copies, verifies, and removes across devices. Recursion
  * uses {@link FileSystemPort.list}; the port never removes or copies a tree.
- * Patch hunks, rollback, and product tools remain later work.
+ * Dedicated rollback and product tools remain later work.
  */
 
 import {
