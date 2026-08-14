@@ -169,7 +169,15 @@ describe("createNotebookReader", () => {
         ok: false,
         error: { code: "binary" },
       }),
-      readMany: async () => ({ ok: true, value: { items: [] } }),
+      readMany: async () => ({
+        ok: true,
+        value: {
+          items: [],
+          aggregateBytes: 0,
+          completeness: "complete",
+          limitReached: false,
+        },
+      }),
     };
     let checks = 0;
     const signal = {
