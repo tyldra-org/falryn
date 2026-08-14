@@ -5,8 +5,8 @@
  * stdout and discards stderr. This port is the observation path Hush and later
  * process tools consume. It records both streams in merged observation order,
  * keeps a bounded inline preview, and spills exact overflow or invalid UTF-8
- * through ArtifactStorePort. It does not reduce output, register a product
- * tool, or own process-tree cleanup.
+ * through ArtifactStorePort. It does not reduce output or register a product
+ * tool. Host adapters own process-tree stop; this report records the kill stage.
  */
 
 import { type ArtifactId, type ArtifactStorePort, artifactId } from "./artifact.ts";
@@ -21,6 +21,7 @@ import {
   MAX_COMMAND_ENVIRONMENT_ENTRIES,
   MAX_COMMAND_SCRIPT_BYTES,
 } from "./process.ts";
+import type { ProcessKillStage } from "./process-tree.ts";
 import { assertNever, err, type Result } from "./result.ts";
 
 export type { ProcessCaptureId } from "./identity.ts";
@@ -145,6 +146,7 @@ export type ProcessCaptureReport = {
   readonly endedAt: Instant;
   readonly durationMs: DurationMs;
   readonly stop: ProcessCaptureStop;
+  readonly killStage: ProcessKillStage;
   readonly exit: ProcessCaptureExit;
   readonly stdout: ProcessStreamCapture;
   readonly stderr: ProcessStreamCapture;
@@ -206,6 +208,7 @@ export type ProcessCaptureCollector = {
     exit: ProcessCaptureExit,
     endedAt: Instant,
     stop: ProcessCaptureStop,
+    killStage?: ProcessKillStage,
   ): Promise<ProcessCaptureReport>;
 };
 
@@ -465,6 +468,7 @@ export function createProcessCaptureCollector(options: {
       exit: ProcessCaptureExit,
       endedAt: Instant,
       stop: ProcessCaptureStop,
+      killStage: ProcessKillStage = "none",
     ): Promise<ProcessCaptureReport> {
       const origin = startedAt ?? endedAt;
       let nextStop = stop;
@@ -495,6 +499,7 @@ export function createProcessCaptureCollector(options: {
         endedAt,
         durationMs: elapsedBetween(origin, endedAt),
         stop: nextStop,
+        killStage,
         exit,
         stdout,
         stderr,

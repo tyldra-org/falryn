@@ -21,12 +21,14 @@ import {
   type ProcessCaptureReport,
   type ProcessCaptureRequest,
   type ProcessCaptureStop,
+  type ProcessKillStage,
   type ProcessStreamName,
   processCaptureId,
   resolveProcessCaptureLimits,
   validateProcessCaptureRequest,
 } from "../domain/index.ts";
 import { err, ok, type Result } from "../domain/result.ts";
+import { escalateOwnedTree, ownedTreeSpawnOptions } from "./host-process-tree.ts";
 
 export type HostProcessCaptureOptions = {
   readonly artifacts?: ArtifactStorePort;
@@ -65,15 +67,14 @@ export function createHostProcessCapturePort(
       let ended: ProcessCaptureStop | null = null;
       let started = false;
       let child: Bun.Subprocess | null = null;
+      let treeStop: Promise<{ readonly stage: ProcessKillStage }> | null = null;
 
       const stopFor = (reason: ProcessCaptureStop): void => {
         if (ended === null) {
           ended = reason;
           controller.abort();
-          try {
-            child?.kill("SIGTERM");
-          } catch {
-            // Abort remains the fallback stop.
+          if (child !== null && typeof child.pid === "number") {
+            treeStop = escalateOwnedTree({ pid: child.pid, exited: child.exited });
           }
         }
       };
@@ -89,6 +90,7 @@ export function createHostProcessCapturePort(
       try {
         const spawned = Bun.spawn(spawnArgv(request), {
           ...(request.cwd === undefined ? {} : { cwd: request.cwd }),
+          ...ownedTreeSpawnOptions(),
           env: request.environment,
           stdin: "ignore",
           stdout: "pipe",
@@ -96,12 +98,8 @@ export function createHostProcessCapturePort(
           signal: controller.signal,
         });
         child = spawned;
-        if (ended !== null) {
-          try {
-            spawned.kill("SIGTERM");
-          } catch {
-            // Already stopping.
-          }
+        if (ended !== null && typeof spawned.pid === "number") {
+          treeStop = escalateOwnedTree({ pid: spawned.pid, exited: spawned.exited });
         }
         const pid = typeof spawned.pid === "number" ? spawned.pid : 0;
         await collector.start(pid, clock.now());
@@ -122,16 +120,26 @@ export function createHostProcessCapturePort(
           readStream(spawned.stderr, "stderr", serialize, collector, stopFor),
         ]);
         const exitCode = await spawned.exited;
+        const cleanup = treeStop === null ? null : await treeStop;
         return ok(
           await collector.finish(
             { exitCode, signal: signalText(spawned.signalCode) },
             clock.now(),
             ended ?? { kind: "exited" },
+            cleanup?.stage ?? "none",
           ),
         );
       } catch (thrown) {
         if (started && ended !== null) {
-          return ok(await collector.finish({ exitCode: null, signal: null }, clock.now(), ended));
+          const cleanup = treeStop === null ? null : await treeStop;
+          return ok(
+            await collector.finish(
+              { exitCode: null, signal: null },
+              clock.now(),
+              ended,
+              cleanup?.stage ?? "none",
+            ),
+          );
         }
         return err({
           kind: "process-capture",

@@ -18,6 +18,12 @@ export { createHostPackageWriter, STAGED_SUFFIX } from "./host-packages.ts";
 export type { HostProcessCaptureOptions } from "./host-process-capture.ts";
 export { createHostProcessCapturePort } from "./host-process-capture.ts";
 export { createHostManagedServicePort, createHostPtySessionPort } from "./host-process-sessions.ts";
+export {
+  escalateOwnedTree,
+  ownedTreeSpawnOptions,
+  processIsAlive,
+  signalOwnedTree,
+} from "./host-process-tree.ts";
 export type { HostInputStreamOptions, HostOutputStreamOptions } from "./host-terminal.ts";
 export {
   createHostInputStream,

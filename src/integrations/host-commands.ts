@@ -18,6 +18,9 @@
  * reached. Merely stopping the read would leave the child blocked on a full
  * pipe until its deadline expired, and the caller would then be told the
  * command was slow when in fact it was too loud.
+ *
+ * Deadline and abort escalate against the owned process group, not only the
+ * leader PID, so a grandchild does not outlive a confirmed stop.
  */
 
 import {
@@ -32,6 +35,7 @@ import {
   MAX_COMMAND_OUTPUT_BYTES,
   MAX_COMMAND_SCRIPT_BYTES,
 } from "../domain/index.ts";
+import { escalateOwnedTree, ownedTreeSpawnOptions } from "./host-process-tree.ts";
 
 export function createHostCommandRunner(): CommandRunnerPort {
   return {
@@ -47,11 +51,16 @@ export function createHostCommandRunner(): CommandRunnerPort {
       const maxOutputBytes = Math.min(request.maxOutputBytes, MAX_COMMAND_OUTPUT_BYTES);
       const controller = new AbortController();
       let ended: StopReason | null = null;
+      let child: ReturnType<typeof Bun.spawn> | null = null;
+      let treeStop: Promise<unknown> | null = null;
 
       const stopFor = (reason: StopReason): void => {
         if (ended === null) {
           ended = reason;
           controller.abort();
+          if (child !== null && typeof child.pid === "number") {
+            treeStop = escalateOwnedTree({ pid: child.pid, exited: child.exited });
+          }
         }
       };
 
@@ -68,25 +77,33 @@ export function createHostCommandRunner(): CommandRunnerPort {
         // passes one deliberate command string to the named interpreter. `env`
         // is exactly what was supplied — Bun replaces rather than merges when
         // it is given.
-        const child = Bun.spawn(spawnArgv(request), {
+        const spawned = Bun.spawn(spawnArgv(request), {
           ...(request.cwd === undefined ? {} : { cwd: request.cwd }),
+          ...ownedTreeSpawnOptions(),
           env: request.environment,
           stdin: "ignore",
           stdout: "pipe",
           stderr: "pipe",
           signal: controller.signal,
         });
+        child = spawned;
+        if (ended !== null && typeof spawned.pid === "number") {
+          treeStop = escalateOwnedTree({ pid: spawned.pid, exited: spawned.exited });
+        }
 
         const [stdoutBytes] = await Promise.all([
           // One byte past the bound, so exceeding it is detectable rather than
           // indistinguishable from filling it exactly.
-          readBounded(child.stdout, maxOutputBytes + 1, () => {
+          readBounded(spawned.stdout, maxOutputBytes + 1, () => {
             stopFor("output-exceeded");
           }),
           // Drained and dropped. An undrained pipe fills and stalls the child.
-          drain(child.stderr),
+          drain(spawned.stderr),
         ]);
-        const exitCode = await child.exited;
+        const exitCode = await spawned.exited;
+        if (treeStop !== null) {
+          await treeStop;
+        }
 
         const stopped = stoppedOutcome(ended, request.timeoutMs, maxOutputBytes);
         if (stopped !== null) {

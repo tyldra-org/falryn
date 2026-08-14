@@ -133,6 +133,7 @@ describe("ordered capture and spillover", () => {
       kind: "exited",
     });
 
+    expect(report.killStage).toBe("none");
     expect(report.durationMs).toBe(duration(40));
     expect(report.stdout.inlineText).toBe("out-done");
     expect(report.stderr.inlineText).toBe("err-");
