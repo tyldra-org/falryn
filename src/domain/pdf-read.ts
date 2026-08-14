@@ -467,6 +467,10 @@ export function describePdfReadError(error: PdfReadError): string {
       return `malformed-request:${error.field}`;
     case "malformed-limits":
       return `malformed-limits:${error.field}`;
+    case "malformed-limit":
+      return `malformed-limit:${error.field}:${error.reason}`;
+    case "stale":
+      return `stale:${error.attempts}`;
     case "not-pdf":
       return "not-pdf";
     case "malformed-header":

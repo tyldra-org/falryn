@@ -315,6 +315,13 @@ describe("reading bytes", () => {
       expect([...read.value]).toEqual([0x25, 0x50, 0x44, 0x46, 0x00, 0xff]);
     }
   });
+
+  test("returns only the requested bounded range", async () => {
+    await fs.writeFile(at("range.bin"), Buffer.from([1, 2, 3, 4, 5]));
+    const read = await fileSystem.readBytesRange(at("range.bin"), 2, 10);
+
+    expect(read).toEqual({ ok: true, value: Uint8Array.from([3, 4, 5]) });
+  });
 });
 
 describe("cancellation", () => {

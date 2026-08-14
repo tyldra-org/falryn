@@ -220,6 +220,13 @@ export type PathEntry = {
   readonly byteLength: number;
   /** POSIX permission bits, or `null` where the platform reports none. */
   readonly mode: number | null;
+  /**
+   * Adapter-owned revision captured with the stat.
+   *
+   * It is opaque to the domain and is compared before and after a read. A
+   * caller must not infer time, inode, or platform semantics from its value.
+   */
+  readonly revision: string;
 };
 
 export type FileSystemErrorCode =
@@ -227,6 +234,7 @@ export type FileSystemErrorCode =
   | "not-a-directory"
   | "permission-denied"
   | "not-empty"
+  | "range-out-of-bounds"
   | "oversized"
   | "malformed-encoding"
   | "io-failure"
@@ -241,7 +249,8 @@ export type FileSystemOperation =
   | "real-path"
   | "probe-writable"
   | "read-text"
-  | "read-bytes";
+  | "read-bytes"
+  | "read-bytes-range";
 
 /**
  * A filesystem failure.
@@ -316,6 +325,20 @@ export type FileSystemPort = {
     maximumBytes: number,
     signal?: AbortSignal,
   ): Promise<Result<Uint8Array, FileSystemError>>;
+
+  /**
+   * Reads at most `maximumBytes` from a file offset.
+   *
+   * The adapter returns the bytes actually available at the tail. This is the
+   * bounded primitive used to preserve a large source without loading it all
+   * into the reader's inline result.
+   */
+  readBytesRange(
+    path: LocalPath,
+    offset: number,
+    maximumBytes: number,
+    signal?: AbortSignal,
+  ): Promise<Result<Uint8Array, FileSystemError>>;
 };
 
 /** How an in-memory node is described to the test double. */
@@ -329,6 +352,8 @@ export type InMemoryNode = {
   readonly mode?: number;
   /** For a symlink: the absolute path it points at. */
   readonly target?: string;
+  /** Test-only revision override for stale-read scenarios. */
+  readonly revision?: string;
   /** Paths whose writes this double refuses, for permission tests. */
   readonly writable?: boolean;
 };
@@ -370,6 +395,7 @@ export function createInMemoryFileSystem(
       kind: node.kind,
       byteLength: node.kind === "file" ? byteLengthOf(node) : 0,
       mode: node.mode ?? defaultMode,
+      revision: node.revision ?? `${node.kind}:${byteLengthOf(node)}`,
     };
   };
 
@@ -545,6 +571,50 @@ export function createInMemoryFileSystem(
           ? Uint8Array.from(Buffer.from(node.text ?? "", "utf8"))
           : new Uint8Array(node.bytes),
       );
+    },
+
+    async readBytesRange(path, offset, maximumBytes, signal) {
+      if (signal?.aborted === true) {
+        return cancelled(path, "read-bytes-range");
+      }
+      if (
+        !Number.isSafeInteger(offset) ||
+        offset < 0 ||
+        !Number.isSafeInteger(maximumBytes) ||
+        maximumBytes < 0
+      ) {
+        return err({
+          kind: "filesystem",
+          code: "range-out-of-bounds",
+          path,
+          operation: "read-bytes-range",
+        });
+      }
+      const node = nodes.get(path);
+      if (node === undefined) {
+        return err({ kind: "filesystem", code: "not-found", path, operation: "read-bytes-range" });
+      }
+      if (node.kind !== "file") {
+        return err({
+          kind: "filesystem",
+          code: "not-a-directory",
+          path,
+          operation: "read-bytes-range",
+        });
+      }
+      const bytes =
+        node.bytes === undefined
+          ? Uint8Array.from(Buffer.from(node.text ?? "", "utf8"))
+          : new Uint8Array(node.bytes);
+      if (offset > bytes.byteLength) {
+        return err({
+          kind: "filesystem",
+          code: "range-out-of-bounds",
+          path,
+          operation: "read-bytes-range",
+        });
+      }
+      return ok(bytes.slice(offset, offset + maximumBytes));
     },
   };
 }

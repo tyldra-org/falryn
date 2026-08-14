@@ -93,6 +93,8 @@ function mapSourceReadError(error: WorkspaceReadError): LanguageReadError {
       return { code: "source", reason: error.code };
     case "cancelled":
       return { code: "cancelled" };
+    case "malformed-limit":
+    case "stale":
     case "too-many-targets":
     case "filesystem":
       return { code: "source", reason: "filesystem" };

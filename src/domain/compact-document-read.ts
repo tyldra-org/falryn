@@ -646,6 +646,10 @@ export function describeCompactDocumentReadError(error: CompactDocumentReadError
       return "cancelled";
     case "too-many-targets":
       return "too-many-targets";
+    case "malformed-limit":
+      return `malformed-limit:${error.field}:${error.reason}`;
+    case "stale":
+      return `stale:${error.attempts}`;
     case "filesystem":
       return `filesystem:${error.reason}`;
     case "malformed-request":

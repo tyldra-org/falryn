@@ -210,5 +210,5 @@ export type { WorkspaceListing } from "./workspace-listing.ts";
 export { createWorkspaceListing } from "./workspace-listing.ts";
 export type { WorkspacePathBinder, WorkspacePathProbeError } from "./workspace-path.ts";
 export { createWorkspacePathBinder } from "./workspace-path.ts";
-export type { WorkspaceReader } from "./workspace-read.ts";
+export type { WorkspaceReader, WorkspaceReaderOptions } from "./workspace-read.ts";
 export { createWorkspaceReader } from "./workspace-read.ts";

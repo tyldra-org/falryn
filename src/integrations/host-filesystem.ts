@@ -18,6 +18,8 @@
  */
 
 import { type Dirent, promises as fs, constants as fsConstants, type Stats } from "node:fs";
+import type { FileHandle } from "node:fs/promises";
+import { open as openFile } from "node:fs/promises";
 
 import {
   type CreateDirectoryOutcome,
@@ -87,6 +89,11 @@ function modeOf(stats: Stats): number | null {
   return process.platform === "win32" ? null : stats.mode & 0o777;
 }
 
+/** A comparable, adapter-owned identity for one stat snapshot. */
+function revisionOf(stats: Stats): string {
+  return `${stats.ino}:${stats.size}:${stats.mtimeMs}:${stats.ctimeMs}`;
+}
+
 function cancelled(
   path: LocalPath,
   operation: FileSystemOperation,
@@ -110,6 +117,7 @@ export function createHostFileSystem(): FileSystemPort {
           kind: kindOf(stats),
           byteLength: stats.isFile() ? stats.size : 0,
           mode: modeOf(stats),
+          revision: revisionOf(stats),
         });
       } catch (thrown: unknown) {
         // Missing is an answer, not a failure: every caller here asks "is this
@@ -163,17 +171,17 @@ export function createHostFileSystem(): FileSystemPort {
           const kind = kindOf(dirent);
           let byteLength = 0;
           let mode: number | null = null;
-          if (kind === "file" || kind === "directory") {
-            try {
-              const stats = await fs.lstat(child.value);
-              byteLength = stats.isFile() ? stats.size : 0;
-              mode = modeOf(stats);
-            } catch {
-              // Vanished between readdir and lstat. It is still an entry that
-              // was there; reporting it with zero bytes beats dropping it.
-            }
+          let revision = `${kind}:unknown`;
+          try {
+            const stats = await fs.lstat(child.value);
+            byteLength = stats.isFile() ? stats.size : 0;
+            mode = modeOf(stats);
+            revision = revisionOf(stats);
+          } catch {
+            // Vanished between readdir and lstat. It is still an entry that
+            // was there; reporting it with zero bytes beats dropping it.
           }
-          entries.push({ path: child.value, kind, byteLength, mode });
+          entries.push({ path: child.value, kind, byteLength, mode, revision });
         }
         return ok(entries);
       } catch (thrown: unknown) {
@@ -300,6 +308,58 @@ export function createHostFileSystem(): FileSystemPort {
         return ok(new Uint8Array(bytes));
       } catch (thrown: unknown) {
         return err(translate(thrown, path, "read-bytes"));
+      }
+    },
+
+    async readBytesRange(
+      path: LocalPath,
+      offset: number,
+      maximumBytes: number,
+      signal?: AbortSignal,
+    ): Promise<Result<Uint8Array, FileSystemError>> {
+      if (signal?.aborted === true) {
+        return cancelled(path, "read-bytes-range");
+      }
+      if (
+        !Number.isSafeInteger(offset) ||
+        offset < 0 ||
+        !Number.isSafeInteger(maximumBytes) ||
+        maximumBytes < 0
+      ) {
+        return err({
+          kind: "filesystem",
+          code: "range-out-of-bounds",
+          path,
+          operation: "read-bytes-range",
+        });
+      }
+      let handle: FileHandle | null = null;
+      try {
+        const stats = await fs.stat(path);
+        if (!stats.isFile()) {
+          return err({
+            kind: "filesystem",
+            code: "not-a-directory",
+            path,
+            operation: "read-bytes-range",
+          });
+        }
+        if (offset > stats.size) {
+          return err({
+            kind: "filesystem",
+            code: "range-out-of-bounds",
+            path,
+            operation: "read-bytes-range",
+          });
+        }
+        handle = await openFile(path, fsConstants.O_RDONLY);
+        const buffer = new Uint8Array(maximumBytes);
+        const result = await handle.read(buffer, 0, maximumBytes, offset);
+        return ok(buffer.subarray(0, result.bytesRead));
+      } catch (thrown: unknown) {
+        return err(translate(thrown, path, "read-bytes-range"));
+      } finally {
+        await handle?.close();
       }
     },
   };
