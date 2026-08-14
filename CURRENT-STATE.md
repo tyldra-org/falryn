@@ -2665,7 +2665,8 @@ one explicit workspace root (parent
   NUL, and unscoped absolute paths, and never echoes rejected text;
 - `src/application/workspace-path.ts` — `createWorkspacePathBinder` re-checks
   `FileSystemPort.realPath` so a symlink cannot leave the root. Missing paths
-  keep the lexical bind. Listing is #280. Search and patches remain later children.
+  keep the lexical bind. Listing is #280. Glob discovery is #62. Content search
+  and patches remain later #61 children.
 
 Validated by `src/domain/workspace-path.test.ts` and
 `src/application/workspace-path.test.ts` under `bun run check`.
@@ -2682,6 +2683,23 @@ directory, and walks a tree inside that same root:
 
 Validated by `src/domain/workspace-listing.test.ts` and
 `src/application/workspace-listing.test.ts` under `bun run check`.
+
+The bounded path and glob discovery slice from
+[#62](https://github.com/tyldra-org/falryn/issues/62) finds workspace paths by
+include/exclude glob without reading file bytes (parent
+[#61](https://github.com/tyldra-org/falryn/issues/61)):
+
+- `src/domain/workspace-glob.ts` — gitignore/ripgrep-shaped glob compile and
+  match, hidden/kind/exclude filters, match/walk/depth limits, and typed
+  malformed glob/limit errors that never echo rejected text;
+- `src/application/workspace-discovery.ts` — `createWorkspaceDiscovery` binds
+  the start path, reuses `createWorkspaceListing.walk`, never descends through
+  a symlink, and truncates with `match-limit`, `entry-limit`, or `depth-limit`.
+
+Validated by `src/domain/workspace-glob.test.ts` and
+`src/application/workspace-discovery.test.ts` under `bun run check`. Content
+search, `rg`, indexes, patches, `read_many` glob expansion, and product search
+tools remain later children.
 
 The workspace file-read slice from
 [#56](https://github.com/tyldra-org/falryn/issues/56) reads one file or a
