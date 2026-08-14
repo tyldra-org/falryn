@@ -2736,9 +2736,31 @@ generation inside that same root (parent
   generations are typed errors. Descent never follows an escaping index path.
 
 Validated by `src/domain/workspace-index.test.ts` and
-`src/application/workspace-index.test.ts` under `bun run check`. Index
-builders, watchers, Tree-sitter, embeddings, SQLite FTS persistence, patches,
-and product search tools remain later work.
+`src/application/workspace-index.test.ts` under `bun run check`. Semantic
+retrieval is #65. Index builders, watchers, Tree-sitter, SQLite FTS
+persistence, patches, and product search tools remain later work.
+
+The bounded semantic retrieval and context-pack search slice from
+[#65](https://github.com/tyldra-org/falryn/issues/65) ranks index records
+inside that same root (parent
+[#61](https://github.com/tyldra-org/falryn/issues/61)):
+
+- `src/domain/workspace-retrieval.ts` — lexical/structural/semantic scores,
+  hybrid fusion that keeps those scores separate, privacy destinations,
+  diversity, bounded context-pack assembly, and typed malformed errors that
+  never echo rejected text;
+- `src/application/workspace-retrieval.ts` — `createWorkspaceRetrieval` reads
+  the #64 index generation, optionally scores an injectable `EmbeddingPort`
+  plus embedding corpus, falls back to deterministic lower tiers when
+  embeddings are unavailable, destination-denied, mismatched, or below
+  baseline, and freshness-tags hits like #64. Remote embedding requires
+  opt-in. Live providers, vector persistence, the context planner, and product
+  tools remain later work.
+
+Validated by `src/domain/workspace-retrieval.test.ts` and
+`src/application/workspace-retrieval.test.ts` under `bun run check`. Index
+builders, watchers, Tree-sitter, SQLite FTS persistence, patches, and product
+search tools remain later work.
 
 The workspace file-read slice from
 [#56](https://github.com/tyldra-org/falryn/issues/56) reads one file or a
