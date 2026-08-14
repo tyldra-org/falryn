@@ -65,9 +65,9 @@ The domain contracts introduced by
 one public entrypoint at `src/domain/index.ts`:
 
 - branded identities for workspace, session, turn, model attempt, invocation,
-  capability, event, trace, stream, idempotency key, sequence, and
-  configuration generation, each with a boundary parser that reports a code
-  rather than the rejected value;
+  capability, event, trace, stream, idempotency key, sequence, configuration
+  generation, PTY session, managed service, and service generation, each with a
+  boundary parser that reports a code rather than the rejected value;
 - canonical UTC timestamps;
 - the closed semantic event union for eight declared kinds, with model and tool
   events carrying their additional identity, and a payload-free diagnostic
@@ -93,8 +93,8 @@ areas:
 - `src/application/` — the cancellation scope tree, nested immutable runtime
   contexts, the interruption escalation policy, the shutdown coordinator, and
   the lifecycle that composes them, behind `src/application/index.ts`;
-- `src/integrations/` — the Bun process-signal adapter behind `SignalPort`, and
-  nothing else, behind `src/integrations/index.ts`.
+- `src/integrations/` — Bun host adapters behind their domain ports, including
+  the process-signal adapter, behind `src/integrations/index.ts`.
 
 Its verified behavior:
 
@@ -401,9 +401,47 @@ Its verified behavior:
 - **stderr cannot block the child or cross the boundary.** The adapter drains
   stderr to completion while retaining no text, so a noisy child does not
   deadlock and tool or credential diagnostics cannot accidentally quote
-  sensitive command data. PTY, ordered stdout/stderr events, artifact spill,
-  process-tree escalation, Hush, confirmation, and product tool registration
-  remain later #68 children.
+  sensitive command data. Artifact spill, process-tree escalation, Hush,
+  confirmation, and product tool registration remain later #68 children.
+
+The PTY and managed-service foundation delivered by
+[#70](https://github.com/tyldra-org/falryn/issues/70) adds
+`src/domain/process-session.ts` and the Bun adapter
+`src/integrations/host-process-sessions.ts`, both exported through the existing
+domain and integrations entrypoints. It remains an internal capability boundary:
+no provider, UI, or model path receives a Bun subprocess or terminal handle, and
+no product process tool is registered yet.
+
+Its verified behavior:
+
+- **PTY requests are explicit and bounded.** An absolute executable, exact argv,
+  supplied environment, optional absolute cwd, dimensions, terminal name,
+  UTF-8 encoding, and replay budget are validated before allocation. The host
+  adapter supports copied input/output bytes, attach/detach, bounded replay,
+  resize, SIGINT, termination escalation, EOF, ordered lifecycle events, exit
+  facts, and an `uncertain` state when termination cannot be confirmed;
+- **managed services have typed lifecycle policy.** Readiness is immediate or
+  an output marker on a declared stream, idle shutdown is disabled or bounded,
+  restart windows are bounded, and input is serialized through a pipe. stdout
+  and stderr are drained separately into bounded per-generation replay windows;
+- **generations prevent stale effects.** A crash either starts a new branded
+  service generation or reports `no-restart-policy` /
+  `restart-budget-exhausted`; sends and stops carrying an old generation fail
+  as `stale-generation`;
+- **resource and cleanup limits are visible.** Active PTYs and services are
+  capped at 32 and 16, inactive retained sessions at 128 and 64, writes and
+  replay at 64 KiB, and readiness observation at 64 KiB. Managed shutdown
+  escalates SIGTERM to SIGKILL and reports `shutdown-timeout` when cleanup
+  remains unconfirmed. No process-tree cleanup, persistence, artifact spill,
+  Hush reduction, CLI/TUI/model projection, or registry registration is implied;
+- **the boundary is tested against real processes.** Focused domain and host
+  tests cover validation, PTY write/resize/reattach/termination behavior,
+  readiness, serialized input, restart generations, idle shutdown, bounded
+  replay, no-restart policy, and the repository's artifact-byte boundary.
+
+`bun run check` passed with 3,123 tests passing and 14 skipped; `bun run build`
+also passed. Platform-specific PTY tests are skipped on Windows, while the
+compiled qualification suites remain owned by CI.
 
 **macOS is the qualified keychain target.** Linux and Windows report
 `unsupported` with a stated reason and spawn nothing; qualifying them is
