@@ -1574,3 +1574,32 @@ export {
   readLimits,
   splitLines,
 } from "./workspace-read.ts";
+export type {
+  CompiledSearchQuery,
+  ParsedWorkspaceSearch,
+  SearchTruncation,
+  WorkspaceSearchEngine,
+  WorkspaceSearchError,
+  WorkspaceSearchFallbackReason,
+  WorkspaceSearchKind,
+  WorkspaceSearchLimitName,
+  WorkspaceSearchLimits,
+  WorkspaceSearchMatch,
+  WorkspaceSearchResult,
+} from "./workspace-search.ts";
+export {
+  compareSearchMatches,
+  compileSearchQuery,
+  DEFAULT_MAX_SEARCH_MATCHES,
+  DEFAULT_SEARCH_FILE_BYTES,
+  DEFAULT_SEARCH_LIMITS,
+  DEFAULT_SEARCH_TIMEOUT_MS,
+  describeWorkspaceSearchError,
+  excerptLine,
+  findMatchColumn,
+  HARD_MAX_SEARCH_MATCHES,
+  MAX_SEARCH_CONTEXT,
+  MAX_SEARCH_LINE_EXCERPT,
+  MAX_SEARCH_QUERY_LENGTH,
+  parseWorkspaceSearchRequest,
+} from "./workspace-search.ts";

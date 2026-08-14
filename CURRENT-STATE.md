@@ -2665,8 +2665,8 @@ one explicit workspace root (parent
   NUL, and unscoped absolute paths, and never echoes rejected text;
 - `src/application/workspace-path.ts` — `createWorkspacePathBinder` re-checks
   `FileSystemPort.realPath` so a symlink cannot leave the root. Missing paths
-  keep the lexical bind. Listing is #280. Glob discovery is #62. Content search
-  and patches remain later #61 children.
+  keep the lexical bind. Listing is #280. Glob discovery is #62. Text search is
+  #63. Indexes and patches remain later #61 children.
 
 Validated by `src/domain/workspace-path.test.ts` and
 `src/application/workspace-path.test.ts` under `bun run check`.
@@ -2697,9 +2697,29 @@ include/exclude glob without reading file bytes (parent
   a symlink, and truncates with `match-limit`, `entry-limit`, or `depth-limit`.
 
 Validated by `src/domain/workspace-glob.test.ts` and
-`src/application/workspace-discovery.test.ts` under `bun run check`. Content
-search, `rg`, indexes, patches, `read_many` glob expansion, and product search
+`src/application/workspace-discovery.test.ts` under `bun run check`. Text
+search is #63. Indexes, patches, `read_many` glob expansion, and product search
 tools remain later children.
+
+The bounded text-search slice from
+[#63](https://github.com/tyldra-org/falryn/issues/63) finds literal and regex
+matches inside that same root (parent
+[#61](https://github.com/tyldra-org/falryn/issues/61)):
+
+- `src/domain/workspace-search.ts` — query compile, glob filters, match/walk/
+  depth/output budgets, 1-based line/column hits, and typed malformed errors
+  that never echo rejected text;
+- `src/application/workspace-search.ts` — `createWorkspaceTextSearch` prefers
+  supervised `rg` through `CommandRunnerPort` when an absolute executable is
+  supplied (`--no-config`, `--no-ignore`, empty environment, no `PATH`). Spawn
+  failure or an omitted executable uses a TypeScript walk+read fallback that
+  never invokes `rg`. Hidden and binary files are off unless requested. Descent
+  never follows a symlink. Engine and fallback reason are visible.
+
+Validated by `src/domain/workspace-search.test.ts` and
+`src/application/workspace-search.test.ts` under `bun run check`. Indexes,
+patches, ignore-file consumption, `read_many` glob expansion, and product
+search tools remain later children.
 
 The workspace file-read slice from
 [#56](https://github.com/tyldra-org/falryn/issues/56) reads one file or a
@@ -2951,8 +2971,9 @@ session/turn producer, or live transcript producer. The remaining gaps are:
   workspace/Git/shell tool adapters;
 - workspace reads, search, patch, shell, Git, LSP, DAP, browser, or computer-use
   capabilities (path bind, list/stat/walk, bounded file reads, specialized
-  readers, exact-source expansion, and the shared malformed/stale/binary/
-  large-file/symlink/cancellation matrix exist; product tools are not registered);
+  readers, exact-source expansion, the shared malformed/stale/binary/
+  large-file/symlink/cancellation matrix, glob discovery, and bounded text
+  search exist; product tools are not registered);
 - context planning, Brief, Hush, Loom, compression, indexing, or memory;
 - MCP, skills, plugin and other hook families, marketplace, agents, jobs, or workflows; or
 - an installer, updater, supported platform package, signed release, or support
