@@ -2,8 +2,9 @@
  * Workspace patch hunk preview, conflict, and apply (#66).
  *
  * Binds paths, validates exact preimages, then writes staged files through
- * {@link FileSystemPort.writeBytes}. Hunks are never relocated. Rollback,
- * Git revisions, and product tools remain later work.
+ * {@link FileSystemPort.writeBytes}. Hunks are never relocated. Mid-apply IO
+ * failure best-effort restores captured preimages. Changed-region reads use
+ * exact workspace bytes. Git revisions and product tools remain later work.
  */
 
 import { createHash } from "node:crypto";
@@ -23,16 +24,25 @@ import {
   joinPatchedLines,
   type LineRange,
   type LocalPath,
+  linesForChangedRegion,
+  NOT_ATTEMPTED_PATCH_ROLLBACK,
+  type ParsedPatchChangedRegionRead,
   type ParsedPatchPlan,
   type ParsedPatchTarget,
   type PatchHunkPreview,
+  parsePatchChangedRegionRead,
   parseWorkspacePatchPlan,
   splitLines,
+  summarizePatchRollback,
+  type WorkspacePatchChangedRegion,
+  type WorkspacePatchChangedRegionRead,
   type WorkspacePatchError,
   type WorkspacePatchItem,
   type WorkspacePatchPreview,
   type WorkspacePatchRejected,
   type WorkspacePatchResult,
+  type WorkspacePatchRollback,
+  type WorkspacePatchRolledBack,
 } from "../domain/index.ts";
 
 export type WorkspacePatcher = {
@@ -50,6 +60,14 @@ export type WorkspacePatcher = {
     signal?: AbortSignal,
   ): Promise<
     | { readonly ok: true; readonly value: WorkspacePatchResult }
+    | { readonly ok: false; readonly error: WorkspacePatchError }
+  >;
+  readChangedRegions(
+    root: LocalPath,
+    request: unknown,
+    signal?: AbortSignal,
+  ): Promise<
+    | { readonly ok: true; readonly value: WorkspacePatchChangedRegionRead }
     | { readonly ok: false; readonly error: WorkspacePatchError }
   >;
 };
@@ -133,6 +151,7 @@ type StagedTarget = {
   readonly target: ParsedPatchTarget;
   readonly bound: BoundWorkspacePath;
   readonly bytes: Uint8Array;
+  readonly originalBytes: Uint8Array;
   readonly regions: readonly LineRange[];
   readonly hunks: readonly PatchHunkPreview[];
 };
@@ -210,9 +229,86 @@ async function stageTarget(
       target,
       bound: bound.value,
       bytes,
+      originalBytes: raw.value,
       regions: applied.value.regions,
       hunks: applied.value.hunks,
     },
+  };
+}
+
+type AppliedWrite = {
+  readonly staged: StagedTarget;
+  readonly digest: ReturnType<typeof digestOf>;
+};
+
+async function restoreApplied(
+  fileSystem: FileSystemPort,
+  applied: readonly AppliedWrite[],
+  maxFileBytes: number,
+  signal?: AbortSignal,
+): Promise<{
+  readonly rollback: WorkspacePatchRollback;
+  readonly restored: ReadonlyMap<number, WorkspacePatchRolledBack>;
+}> {
+  const restored: WorkspacePatchRolledBack[] = [];
+  const failed: Array<WorkspacePatchRollback["failed"][number]> = [];
+  for (const write of [...applied].reverse()) {
+    if (isAborted(signal)) {
+      failed.push({
+        index: write.staged.target.index,
+        error: { code: "rollback-failed", reason: "cancelled" },
+      });
+      continue;
+    }
+    const current = await fileSystem.readBytes(write.staged.bound.resolved, maxFileBytes, signal);
+    if (!current.ok) {
+      failed.push({
+        index: write.staged.target.index,
+        error: {
+          code: "rollback-failed",
+          reason: current.error.code === "cancelled" ? "cancelled" : "io-failure",
+        },
+      });
+      continue;
+    }
+    if (digestOf(current.value) !== write.digest) {
+      failed.push({
+        index: write.staged.target.index,
+        error: { code: "rollback-failed", reason: "concurrent-change" },
+      });
+      continue;
+    }
+    const written = await fileSystem.writeBytes(
+      write.staged.bound.resolved,
+      write.staged.originalBytes,
+      signal,
+    );
+    if (!written.ok) {
+      failed.push({
+        index: write.staged.target.index,
+        error: {
+          code: "rollback-failed",
+          reason: written.error.code === "cancelled" ? "cancelled" : "io-failure",
+        },
+      });
+      continue;
+    }
+    restored.push({
+      index: write.staged.target.index,
+      status: "rolled-back",
+      bound: write.staged.bound,
+      digest: digestOf(write.staged.originalBytes),
+      revision: written.value.revision,
+      byteLength: written.value.byteLength,
+    });
+  }
+  return {
+    rollback: summarizePatchRollback(
+      true,
+      restored.map((item) => item.index),
+      failed,
+    ),
+    restored: new Map(restored.map((item) => [item.index, item])),
   };
 }
 
@@ -332,10 +428,13 @@ export function createWorkspacePatcher(options: WorkspacePatcherOptions): Worksp
               }
               return item;
             }),
+            rollback: NOT_ATTEMPTED_PATCH_ROLLBACK,
           },
         };
       }
       const items: WorkspacePatchItem[] = [];
+      const appliedWrites: AppliedWrite[] = [];
+      let rollback = NOT_ATTEMPTED_PATCH_ROLLBACK;
       for (const [index, item] of staged.staged.entries()) {
         if (!("bytes" in item)) {
           items.push(item);
@@ -380,13 +479,33 @@ export function createWorkspacePatcher(options: WorkspacePatcherOptions): Worksp
                   : remaining,
               ),
           );
+          if (appliedWrites.length > 0) {
+            const restored = await restoreApplied(
+              fileSystem,
+              appliedWrites,
+              parsed.value.limits.maxFileBytes,
+              signal,
+            );
+            rollback = restored.rollback;
+            for (const [itemIndex, current] of items.entries()) {
+              if (current.status !== "applied") {
+                continue;
+              }
+              const rolled = restored.restored.get(current.index);
+              if (rolled !== undefined) {
+                items[itemIndex] = rolled;
+              }
+            }
+          }
           break;
         }
+        const digest = digestOf(item.bytes);
+        appliedWrites.push({ staged: item, digest });
         items.push({
           index: item.target.index,
           status: "applied",
           bound: item.bound,
-          digest: digestOf(item.bytes),
+          digest,
           revision: written.value.revision,
           byteLength: written.value.byteLength,
           changedRegions: item.regions,
@@ -394,8 +513,80 @@ export function createWorkspacePatcher(options: WorkspacePatcherOptions): Worksp
       }
       return {
         ok: true,
-        value: { planId: staged.planId, policy: parsed.value.policy, items },
+        value: { planId: staged.planId, policy: parsed.value.policy, items, rollback },
       };
+    },
+
+    async readChangedRegions(root, request, signal) {
+      const parsed = parsePatchChangedRegionRead(request);
+      if (!parsed.ok) {
+        return parsed;
+      }
+      return readPatchChangedRegions(fileSystem, root, parsed.value, signal);
+    },
+  };
+}
+
+async function readPatchChangedRegions(
+  fileSystem: FileSystemPort,
+  root: LocalPath,
+  request: ParsedPatchChangedRegionRead,
+  signal?: AbortSignal,
+): Promise<
+  | { readonly ok: true; readonly value: WorkspacePatchChangedRegionRead }
+  | { readonly ok: false; readonly error: WorkspacePatchError }
+> {
+  const bound = await bindExistingFile(fileSystem, root, request.path, signal);
+  if (!bound.ok) {
+    return bound;
+  }
+  if (isAborted(signal)) {
+    return { ok: false, error: { code: "cancelled" } };
+  }
+  const stated = await fileSystem.stat(bound.value.resolved, signal);
+  if (!stated.ok) {
+    return { ok: false, error: fromFilesystem(stated.error) };
+  }
+  if (stated.value === null) {
+    return { ok: false, error: { code: "not-found" } };
+  }
+  if (stated.value.kind !== "file") {
+    return { ok: false, error: { code: "not-a-file" } };
+  }
+  if (request.expectedRevision !== null && stated.value.revision !== request.expectedRevision) {
+    return { ok: false, error: { code: "revision-mismatch" } };
+  }
+  const raw = await fileSystem.readBytes(bound.value.resolved, request.maxFileBytes, signal);
+  if (!raw.ok) {
+    return { ok: false, error: fromFilesystem(raw.error) };
+  }
+  const digest = digestOf(raw.value);
+  if (request.expectedDigest !== null && digest !== request.expectedDigest) {
+    return { ok: false, error: { code: "digest-mismatch" } };
+  }
+  const decoded = decodeWorkspaceText(raw.value);
+  if (!decoded.ok) {
+    return { ok: false, error: { code: "unsupported" } };
+  }
+  if (isBinaryText(decoded.value.text) || detectNewline(decoded.value.text) === "mixed") {
+    return { ok: false, error: { code: "unsupported" } };
+  }
+  const regions: WorkspacePatchChangedRegion[] = [];
+  for (const range of request.regions) {
+    const lines = linesForChangedRegion(decoded.value.text, range);
+    if (!lines.ok) {
+      return lines;
+    }
+    regions.push({ range, lines: lines.value.lines, truncated: lines.value.truncated });
+  }
+  return {
+    ok: true,
+    value: {
+      path: request.path,
+      bound: bound.value,
+      digest,
+      revision: stated.value.revision,
+      regions,
     },
   };
 }
