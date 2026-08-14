@@ -2,8 +2,8 @@
  * Full-file writes and grouped multi-file mutation contracts (#281).
  *
  * Create requires absence; replace requires a file. Grouped plans declare
- * all-or-nothing or best-effort policy. Move/copy/trash, patch hunks, rollback,
- * and product tools remain later #61 children.
+ * all-or-nothing or best-effort policy. Dedicated rollback and product tools
+ * remain later #61 children.
  */
 
 import { type ContentDigest, contentDigest } from "./artifact.ts";

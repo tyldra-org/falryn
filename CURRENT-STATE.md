@@ -2759,8 +2759,8 @@ inside that same root (parent
 
 Validated by `src/domain/workspace-retrieval.test.ts` and
 `src/application/workspace-retrieval.test.ts` under `bun run check`. Index
-builders, watchers, Tree-sitter, SQLite FTS persistence, patches, and product
-search tools remain later work.
+builders, watchers, Tree-sitter, SQLite FTS persistence, dedicated patch
+rollback, and product search tools remain later work.
 
 The bounded full-file write and grouped mutation slice from
 [#281](https://github.com/tyldra-org/falryn/issues/281) creates or replaces
@@ -2779,8 +2779,8 @@ UTF-8 files inside that same root (parent
 
 Validated by `src/domain/workspace-write.test.ts`,
 `src/application/workspace-write.test.ts`, and
-`src/integrations/host-filesystem.test.ts` under `bun run check`. Patch hunks,
-dedicated rollback, and product filesystem tools remain later work.
+`src/integrations/host-filesystem.test.ts` under `bun run check`. Dedicated
+rollback and product filesystem tools remain later work.
 
 The bounded move, copy, trash, and remove slice from
 [#282](https://github.com/tyldra-org/falryn/issues/282) mutates paths inside
@@ -2802,8 +2802,33 @@ that same root (parent [#61](https://github.com/tyldra-org/falryn/issues/61)):
 
 Validated by `src/domain/workspace-mutate.test.ts`,
 `src/application/workspace-mutate.test.ts`, and
-`src/integrations/host-filesystem.test.ts` under `bun run check`. Patch hunks,
-dedicated rollback, and product filesystem tools remain later work.
+`src/integrations/host-filesystem.test.ts` under `bun run check`. Dedicated
+rollback and product filesystem tools remain later work.
+
+The bounded patch hunk preview and apply slice from
+[#66](https://github.com/tyldra-org/falryn/issues/66) edits existing files
+inside that same root (parent
+[#61](https://github.com/tyldra-org/falryn/issues/61)):
+
+- `src/domain/workspace-patch.ts` — structured hunks (`path`, 1-based
+  `oldStart`, exact `oldLines`/`newLines`), digest and filesystem-revision
+  preconditions, exact-range-text matching that never relocates a hunk,
+  preview plan identity, overlapping-hunk refusal, existing-file newline
+  preservation, and typed malformed/conflict errors that never echo rejected
+  patch text;
+- `src/application/workspace-patch.ts` — `createWorkspacePatcher` (`PatchPort`)
+  binds existing files, refuses escaping dests and non-files, previews
+  per-hunk ready/conflict headers, and writes staged bytes through
+  `FileSystemPort.writeBytes`. Apply revalidates `expectedPlanId`. Grouped
+  plans use `fail-before-effect` (default) or `best-effort`. A conflict
+  preserves the current file and returns a bounded current-line excerpt.
+  Cancellation keeps already-applied targets. Mid-apply IO failure reports
+  partial and unscheduled remaining outcomes and does not claim rollback.
+
+Validated by `src/domain/workspace-patch.test.ts` and
+`src/application/workspace-patch.test.ts` under `bun run check`. Dedicated
+rollback, changed-region reads, Git revisions, and product filesystem tools
+remain later work.
 
 The workspace file-read slice from
 [#56](https://github.com/tyldra-org/falryn/issues/56) reads one file or a
