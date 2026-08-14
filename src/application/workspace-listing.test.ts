@@ -148,5 +148,21 @@ describe("createWorkspaceListing", () => {
       ok: false,
       error: { code: "cancelled" },
     });
+    expect(await workspace.walk(root, ".", undefined, signal)).toEqual({
+      ok: false,
+      error: { code: "cancelled" },
+    });
+  });
+
+  test("refuses a malformed path without echoing secrets", async () => {
+    const { listing: workspace } = listing();
+    const secret = "sk-live-SECRET";
+    const stated = await workspace.stat(root, `src/${secret}\0/etc/passwd`);
+    expect(stated.ok).toBe(false);
+    if (stated.ok) {
+      throw new Error("expected malformed path");
+    }
+    expect(stated.error.code).toBe("malformed");
+    expect(JSON.stringify(stated)).not.toContain(secret);
   });
 });

@@ -29,6 +29,14 @@ describe("createWorkspacePathBinder", () => {
     expect(bound).toEqual({ ok: false, error: { code: "symlink-escape" } });
   });
 
+  test("honors cancellation before probing the real path", async () => {
+    const binder = createWorkspacePathBinder(createInMemoryFileSystem());
+    expect(await binder.bind(root, "src/a.ts", AbortSignal.abort())).toEqual({
+      ok: false,
+      error: { code: "cancelled" },
+    });
+  });
+
   test("does not invoke a runner or read file bytes", async () => {
     const fs = createInMemoryFileSystem({
       nodes: {
