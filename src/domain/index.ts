@@ -484,6 +484,32 @@ export {
   resolveLocalPath,
 } from "./filesystem.ts";
 export type {
+  HushCommandIdentity,
+  HushError,
+  HushExpansion,
+  HushFamily,
+  HushFidelity,
+  HushOmission,
+  HushOmissionKind,
+  HushPort,
+  HushRequest,
+  HushResult,
+  HushStrategy,
+} from "./hush.ts";
+export {
+  classifyFamily,
+  classifyReducerId,
+  createHushPort,
+  DEFAULT_HUSH_REDUCED_BYTES,
+  HUSH_FAMILIES,
+  HUSH_FIDELITIES,
+  HUSH_REDUCER_VERSION,
+  HUSH_STRATEGIES,
+  MAX_HUSH_REDUCED_BYTES,
+  reduceHush,
+  validateHushRequest,
+} from "./hush.ts";
+export type {
   CapabilityId,
   ConfigurationGeneration,
   EventId,
