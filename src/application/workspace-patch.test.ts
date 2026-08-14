@@ -241,9 +241,156 @@ describe("createWorkspacePatcher", () => {
       throw new Error("expected partial apply");
     }
     expect(result.value.items.map((item) => item.status)).toEqual(["applied", "cancelled"]);
+    expect(result.value.rollback).toEqual({ status: "not-attempted", restored: [], failed: [] });
     const first = await fileSystem.readText(localPath("/work/project/src/a.ts"), 1_024);
     const second = await fileSystem.readText(localPath("/work/project/src/b.ts"), 1_024);
     expect(first).toEqual({ ok: true, value: "ONE\ntwo\nthree\n" });
     expect(second).toEqual({ ok: true, value: "alpha\n" });
+  });
+
+  test("rolls back an earlier apply when a later write fails", async () => {
+    const { fileSystem } = patcher();
+    const failing = {
+      ...fileSystem,
+      writeBytes: async (
+        path: Parameters<typeof fileSystem.writeBytes>[0],
+        bytes: Uint8Array,
+        signal?: AbortSignal,
+      ) => {
+        if (String(path).endsWith("/src/b.ts")) {
+          return {
+            ok: false as const,
+            error: {
+              kind: "filesystem" as const,
+              code: "io-failure" as const,
+              path,
+              operation: "write" as const,
+            },
+          };
+        }
+        return fileSystem.writeBytes(path, bytes, signal);
+      },
+    };
+    const result = await createWorkspacePatcher({ fileSystem: failing }).apply(root, {
+      policy: "best-effort",
+      targets: [
+        {
+          path: "src/a.ts",
+          hunks: [{ oldStart: 1, oldLines: ["one"], newLines: ["ONE"] }],
+        },
+        {
+          path: "src/b.ts",
+          hunks: [{ oldStart: 1, oldLines: ["alpha"], newLines: ["BETA"] }],
+        },
+      ],
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      throw new Error("expected rollback");
+    }
+    expect(result.value.items.map((item) => item.status)).toEqual(["rolled-back", "failed"]);
+    expect(result.value.rollback.status).toBe("complete");
+    const restored = await fileSystem.readText(localPath("/work/project/src/a.ts"), 1_024);
+    expect(restored).toEqual({ ok: true, value: "one\ntwo\nthree\n" });
+  });
+
+  test("does not overwrite a concurrent change during rollback", async () => {
+    const { fileSystem } = patcher();
+    const racing = {
+      ...fileSystem,
+      writeBytes: async (
+        path: Parameters<typeof fileSystem.writeBytes>[0],
+        bytes: Uint8Array,
+        signal?: AbortSignal,
+      ) => {
+        if (String(path).endsWith("/src/b.ts")) {
+          await fileSystem.writeBytes(
+            localPath("/work/project/src/a.ts"),
+            new TextEncoder().encode("clobbered\n"),
+            signal,
+          );
+          return {
+            ok: false as const,
+            error: {
+              kind: "filesystem" as const,
+              code: "io-failure" as const,
+              path,
+              operation: "write" as const,
+            },
+          };
+        }
+        return fileSystem.writeBytes(path, bytes, signal);
+      },
+    };
+    const result = await createWorkspacePatcher({ fileSystem: racing }).apply(root, {
+      policy: "best-effort",
+      targets: [
+        {
+          path: "src/a.ts",
+          hunks: [{ oldStart: 1, oldLines: ["one"], newLines: ["ONE"] }],
+        },
+        {
+          path: "src/b.ts",
+          hunks: [{ oldStart: 1, oldLines: ["alpha"], newLines: ["BETA"] }],
+        },
+      ],
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      throw new Error("expected concurrent rollback failure");
+    }
+    expect(result.value.items[0]?.status).toBe("applied");
+    expect(result.value.rollback).toMatchObject({
+      status: "failed",
+      failed: [{ index: 0, error: { code: "rollback-failed", reason: "concurrent-change" } }],
+    });
+    const current = await fileSystem.readText(localPath("/work/project/src/a.ts"), 1_024);
+    expect(current).toEqual({ ok: true, value: "clobbered\n" });
+  });
+
+  test("reads applied changed regions and refuses mixed newlines", async () => {
+    const { workspace } = patcher();
+    const applied = await workspace.apply(root, {
+      targets: [
+        {
+          path: "src/a.ts",
+          hunks: [{ oldStart: 2, oldLines: ["two"], newLines: ["TWO"] }],
+        },
+      ],
+    });
+    expect(applied.ok).toBe(true);
+    if (!applied.ok || applied.value.items[0]?.status !== "applied") {
+      throw new Error("expected applied hunk");
+    }
+    const read = await workspace.readChangedRegions(root, {
+      path: "src/a.ts",
+      regions: applied.value.items[0].changedRegions,
+    });
+    expect(read.ok).toBe(true);
+    if (!read.ok) {
+      throw new Error("expected changed-region read");
+    }
+    expect(read.value.regions[0]).toEqual({
+      range: { start: 2, end: 3 },
+      lines: [{ number: 2, text: "TWO" }],
+      truncated: false,
+    });
+
+    const mixed = patcher({
+      "/work/project/src/mix.txt": { kind: "file", text: "a\r\nb\n" },
+    });
+    expect(
+      await mixed.workspace.apply(root, {
+        targets: [
+          {
+            path: "src/mix.txt",
+            hunks: [{ oldStart: 1, oldLines: ["a"], newLines: ["A"] }],
+          },
+        ],
+      }),
+    ).toMatchObject({
+      ok: true,
+      value: { items: [{ status: "failed", error: { code: "unsupported" } }] },
+    });
   });
 });

@@ -2,8 +2,8 @@
  * Workspace move, copy, trash, and remove contracts (#282).
  *
  * Recursion and cross-device copy-verify-remove live in application. The port
- * only renames one entry or copies one non-directory. Dedicated rollback and
- * product tools remain later #61 children.
+ * only renames one entry or copies one non-directory. Undo of those
+ * operations and product tools remain later.
  */
 
 import type { LocalPath } from "./filesystem.ts";
