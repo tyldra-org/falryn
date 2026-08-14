@@ -37,6 +37,8 @@ export type EventId = Brand<string, "EventId">;
 export type TraceId = Brand<string, "TraceId">;
 export type StreamId = Brand<string, "StreamId">;
 export type ScopeId = Brand<string, "ScopeId">;
+export type PtySessionId = Brand<string, "PtySessionId">;
+export type ManagedServiceId = Brand<string, "ManagedServiceId">;
 export type IdempotencyKey = Brand<string, "IdempotencyKey">;
 /** Which provider a model attempt was routed to, such as an API vendor. */
 export type ProviderId = Brand<string, "ProviderId">;
@@ -44,6 +46,7 @@ export type ProviderId = Brand<string, "ProviderId">;
 export type ModelId = Brand<string, "ModelId">;
 
 export type ConfigurationGeneration = Brand<number, "ConfigurationGeneration">;
+export type ServiceGeneration = Brand<number, "ServiceGeneration">;
 export type Sequence = Brand<number, "Sequence">;
 
 /** First legal sequence number in any stream. Sequences are one-based. */
@@ -131,6 +134,8 @@ export const eventId = createIdentifierCodec<EventId>("eventId");
 export const traceId = createIdentifierCodec<TraceId>("traceId");
 export const streamId = createIdentifierCodec<StreamId>("streamId");
 export const scopeId = createIdentifierCodec<ScopeId>("scopeId");
+export const ptySessionId = createIdentifierCodec<PtySessionId>("ptySessionId");
+export const managedServiceId = createIdentifierCodec<ManagedServiceId>("managedServiceId");
 export const idempotencyKey = createIdentifierCodec<IdempotencyKey>("idempotencyKey");
 export const providerId = createIdentifierCodec<ProviderId>("providerId");
 export const modelId = createIdentifierCodec<ModelId>("modelId");
@@ -173,8 +178,18 @@ export const configurationGeneration = createIntegerCodec<ConfigurationGeneratio
   "configurationGeneration",
   FIRST_CONFIGURATION_GENERATION,
 );
+export const FIRST_SERVICE_GENERATION = 1 as ServiceGeneration;
+export const serviceGeneration = createIntegerCodec<ServiceGeneration>(
+  "serviceGeneration",
+  FIRST_SERVICE_GENERATION,
+);
 
 /** Returns the sequence that must follow `current` in the same stream. */
 export function nextSequence(current: Sequence): Sequence {
   return (current + 1) as Sequence;
+}
+
+/** Returns the process generation that must follow `current`. */
+export function nextServiceGeneration(current: ServiceGeneration): ServiceGeneration {
+  return (current + 1) as ServiceGeneration;
 }
