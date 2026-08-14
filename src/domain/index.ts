@@ -1563,6 +1563,34 @@ export {
   isHiddenLogical,
   listingLimits,
 } from "./workspace-listing.ts";
+export type {
+  MutationAffectedEntry,
+  MutationTransport,
+  OverwritePolicy,
+  ParsedWorkspaceMutation,
+  WorkspaceMutationError,
+  WorkspaceMutationItem,
+  WorkspaceMutationItemStatus,
+  WorkspaceMutationLimitName,
+  WorkspaceMutationLimits,
+  WorkspaceMutationOperation,
+  WorkspaceMutationPreview,
+  WorkspaceMutationResult,
+} from "./workspace-mutate.ts";
+export {
+  computeMutationPlanId,
+  DEFAULT_MAX_MUTATION_DEPTH,
+  DEFAULT_MAX_MUTATION_ENTRIES,
+  DEFAULT_MUTATION_LIMITS,
+  describeWorkspaceMutationError,
+  destinationInsideSource,
+  HARD_MAX_MUTATION_DEPTH,
+  HARD_MAX_MUTATION_ENTRIES,
+  MUTATION_OPERATIONS,
+  MUTATION_TRANSPORTS,
+  OVERWRITE_POLICIES,
+  parseWorkspaceMutation,
+} from "./workspace-mutate.ts";
 export type { BoundWorkspacePath, WorkspacePathBindError } from "./workspace-path.ts";
 export { bindWorkspacePath, describeWorkspacePathBindError } from "./workspace-path.ts";
 export type {

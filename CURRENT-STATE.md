@@ -2779,9 +2779,31 @@ UTF-8 files inside that same root (parent
 
 Validated by `src/domain/workspace-write.test.ts`,
 `src/application/workspace-write.test.ts`, and
-`src/integrations/host-filesystem.test.ts` under `bun run check`. Move, copy,
-trash, remove, patch hunks, dedicated rollback, and product filesystem tools
-remain later work.
+`src/integrations/host-filesystem.test.ts` under `bun run check`. Patch hunks,
+dedicated rollback, and product filesystem tools remain later work.
+
+The bounded move, copy, trash, and remove slice from
+[#282](https://github.com/tyldra-org/falryn/issues/282) mutates paths inside
+that same root (parent [#61](https://github.com/tyldra-org/falryn/issues/61)):
+
+- `src/domain/workspace-mutate.ts` — move/copy/remove/trash operations,
+  overwrite `error`/`replace`/`merge`, recursive-tree limits, preview plan
+  identity, per-entry outcomes, and typed malformed errors that never echo
+  rejected text;
+- `src/application/workspace-mutate.ts` — `createWorkspaceMutator` binds
+  source and destination, refuses escaping dest symlinks and into-self moves,
+  previews the exact affected paths, and applies through
+  `FileSystemPort.renameEntry` or copy-verify-remove on `cross-device`. Trash
+  is a move into an explicit in-workspace directory; there is no OS Recycle
+  Bin adapter. Recursion stays in application; the port still has no
+  `removeRecursive`. Cancellation keeps already-applied effects. Mid-apply IO
+  failure reports partial and unscheduled remaining outcomes and does not
+  claim rollback.
+
+Validated by `src/domain/workspace-mutate.test.ts`,
+`src/application/workspace-mutate.test.ts`, and
+`src/integrations/host-filesystem.test.ts` under `bun run check`. Patch hunks,
+dedicated rollback, and product filesystem tools remain later work.
 
 The workspace file-read slice from
 [#56](https://github.com/tyldra-org/falryn/issues/56) reads one file or a
