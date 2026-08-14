@@ -1592,6 +1592,7 @@ export {
   parseWorkspaceMutation,
 } from "./workspace-mutate.ts";
 export type {
+  ParsedPatchChangedRegionRead,
   ParsedPatchHunk,
   ParsedPatchPlan,
   ParsedPatchTarget,
@@ -1599,6 +1600,8 @@ export type {
   PatchHunkPreview,
   PatchPolicy,
   WorkspacePatchApplied,
+  WorkspacePatchChangedRegion,
+  WorkspacePatchChangedRegionRead,
   WorkspacePatchError,
   WorkspacePatchItem,
   WorkspacePatchItemStatus,
@@ -1607,6 +1610,9 @@ export type {
   WorkspacePatchPreview,
   WorkspacePatchRejected,
   WorkspacePatchResult,
+  WorkspacePatchRollback,
+  WorkspacePatchRollbackReason,
+  WorkspacePatchRolledBack,
 } from "./workspace-patch.ts";
 export {
   applyPatchHunks,
@@ -1621,8 +1627,13 @@ export {
   HARD_MAX_PATCH_TARGETS,
   hunkHeader,
   joinPatchedLines,
+  linesForChangedRegion,
+  MAX_CHANGED_REGION_LINES,
   MAX_CONFLICT_CONTEXT_LINES,
+  NOT_ATTEMPTED_PATCH_ROLLBACK,
+  parsePatchChangedRegionRead,
   parseWorkspacePatchPlan,
+  summarizePatchRollback,
 } from "./workspace-patch.ts";
 export type { BoundWorkspacePath, WorkspacePathBindError } from "./workspace-path.ts";
 export { bindWorkspacePath, describeWorkspacePathBindError } from "./workspace-path.ts";

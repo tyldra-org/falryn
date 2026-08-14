@@ -2,8 +2,7 @@
  * Full-file writes and grouped multi-file mutation (#281).
  *
  * Binds caller paths, checks create/replace preconditions, then writes through
- * {@link FileSystemPort.writeBytes}. Dedicated rollback and product tools
- * remain later work.
+ * {@link FileSystemPort.writeBytes}. Product tools remain later work.
  */
 
 import { createHash } from "node:crypto";

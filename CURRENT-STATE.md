@@ -2759,8 +2759,8 @@ inside that same root (parent
 
 Validated by `src/domain/workspace-retrieval.test.ts` and
 `src/application/workspace-retrieval.test.ts` under `bun run check`. Index
-builders, watchers, Tree-sitter, SQLite FTS persistence, dedicated patch
-rollback, and product search tools remain later work.
+builders, watchers, Tree-sitter, SQLite FTS persistence, and product search
+tools remain later work.
 
 The bounded full-file write and grouped mutation slice from
 [#281](https://github.com/tyldra-org/falryn/issues/281) creates or replaces
@@ -2779,8 +2779,8 @@ UTF-8 files inside that same root (parent
 
 Validated by `src/domain/workspace-write.test.ts`,
 `src/application/workspace-write.test.ts`, and
-`src/integrations/host-filesystem.test.ts` under `bun run check`. Dedicated
-rollback and product filesystem tools remain later work.
+`src/integrations/host-filesystem.test.ts` under `bun run check`. Product
+filesystem tools remain later work.
 
 The bounded move, copy, trash, and remove slice from
 [#282](https://github.com/tyldra-org/falryn/issues/282) mutates paths inside
@@ -2802,8 +2802,8 @@ that same root (parent [#61](https://github.com/tyldra-org/falryn/issues/61)):
 
 Validated by `src/domain/workspace-mutate.test.ts`,
 `src/application/workspace-mutate.test.ts`, and
-`src/integrations/host-filesystem.test.ts` under `bun run check`. Dedicated
-rollback and product filesystem tools remain later work.
+`src/integrations/host-filesystem.test.ts` under `bun run check`. Undo of
+move/copy/trash/remove and product filesystem tools remain later work.
 
 The bounded patch hunk preview and apply slice from
 [#66](https://github.com/tyldra-org/falryn/issues/66) edits existing files
@@ -2822,13 +2822,29 @@ inside that same root (parent
   `FileSystemPort.writeBytes`. Apply revalidates `expectedPlanId`. Grouped
   plans use `fail-before-effect` (default) or `best-effort`. A conflict
   preserves the current file and returns a bounded current-line excerpt.
-  Cancellation keeps already-applied targets. Mid-apply IO failure reports
-  partial and unscheduled remaining outcomes and does not claim rollback.
+  Cancellation keeps already-applied targets.
 
 Validated by `src/domain/workspace-patch.test.ts` and
-`src/application/workspace-patch.test.ts` under `bun run check`. Dedicated
-rollback, changed-region reads, Git revisions, and product filesystem tools
-remain later work.
+`src/application/workspace-patch.test.ts` under `bun run check`. Git revisions
+and product filesystem tools remain later work.
+
+The bounded patch rollback, changed-region read, and safety-test slice from
+[#67](https://github.com/tyldra-org/falryn/issues/67) continues that same root
+(parent [#61](https://github.com/tyldra-org/falryn/issues/61)):
+
+- `src/domain/workspace-patch.ts` — best-effort rollback status
+  (`not-attempted` / `complete` / `partial` / `failed`), `rolled-back` items,
+  `rollback-failed` reasons (`concurrent-change` / `io-failure` / `cancelled`),
+  and half-open changed-region reads that never dump whole files;
+- `src/application/workspace-patch.ts` — mid-apply IO failure restores
+  captured preimages in reverse only when the current digest still matches the
+  applied file. Cancellation keeps already-applied targets and does not roll
+  them back. `readChangedRegions` rebinds the path and reads exact workspace
+  bytes. Rollback is never claimed as guaranteed.
+
+Validated by `src/domain/workspace-patch.test.ts` and
+`src/application/workspace-patch.test.ts` under `bun run check`. Git revisions,
+undo of move/copy/trash/remove, and product filesystem tools remain later work.
 
 The workspace file-read slice from
 [#56](https://github.com/tyldra-org/falryn/issues/56) reads one file or a
@@ -2992,7 +3008,7 @@ without registering product tools:
   large-file, stale, and cancellation outcomes hold against a real temporary
   directory through `createHostFileSystem`.
 
-Search, `rg` fallback, patch rollback, and product tool registration remain
+Search, `rg` fallback, and product tool registration remain
 outside this slice. Validated by
 `src/application/workspace-reading-failure.test.ts`,
 `src/application/workspace-reading-host.test.ts`,

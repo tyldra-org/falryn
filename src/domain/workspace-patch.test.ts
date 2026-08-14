@@ -8,7 +8,11 @@ import {
   HARD_MAX_PATCH_HUNKS,
   hunkHeader,
   joinPatchedLines,
+  linesForChangedRegion,
+  NOT_ATTEMPTED_PATCH_ROLLBACK,
+  parsePatchChangedRegionRead,
   parseWorkspacePatchPlan,
+  summarizePatchRollback,
 } from "./workspace-patch.ts";
 
 describe("parseWorkspacePatchPlan", () => {
@@ -184,8 +188,43 @@ describe("patch helpers", () => {
       "overlapping-targets:duplicate",
     );
     expect(describeWorkspacePatchError({ code: "stale-plan" })).toBe("stale-plan");
+    expect(describeWorkspacePatchError({ code: "malformed-range" })).toBe("malformed-range");
+    expect(
+      describeWorkspacePatchError({ code: "rollback-failed", reason: "concurrent-change" }),
+    ).toBe("rollback-failed:concurrent-change");
     expect(describeWorkspacePatchError({ code: "filesystem", reason: "io-failure" })).toBe(
       "filesystem:io-failure",
     );
+  });
+
+  test("parses changed-region reads and maps half-open ranges", () => {
+    expect(parsePatchChangedRegionRead({ path: "a.ts" })).toEqual({
+      ok: false,
+      error: { code: "malformed-range" },
+    });
+    const parsed = parsePatchChangedRegionRead({
+      path: "src/a.ts",
+      regions: [{ start: 2, end: 3 }],
+    });
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) {
+      throw new Error("expected regions");
+    }
+    expect(parsed.value.regions).toEqual([{ start: 2, end: 3 }]);
+    const lines = linesForChangedRegion("one\nTWO\nthree\n", { start: 2, end: 3 });
+    expect(lines).toEqual({
+      ok: true,
+      value: { lines: [{ number: 2, text: "TWO" }], truncated: false },
+    });
+    expect(linesForChangedRegion("one\n", { start: 2, end: 2 })).toEqual({
+      ok: true,
+      value: { lines: [], truncated: false },
+    });
+    expect(summarizePatchRollback(false, [], [])).toEqual(NOT_ATTEMPTED_PATCH_ROLLBACK);
+    expect(summarizePatchRollback(true, [0], [])).toEqual({
+      status: "complete",
+      restored: [0],
+      failed: [],
+    });
   });
 });

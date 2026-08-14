@@ -2,14 +2,14 @@
  * Workspace patch hunk preview, conflict, and apply contracts (#66).
  *
  * Hunks match exact preimage text at an explicit line. They are never moved to
- * similar text. Rollback, changed-region reads, Git revisions, and product
- * tools remain later #61 children.
+ * similar text. Best-effort rollback and changed-region reads are this slice.
+ * Git revisions and product tools remain later #61 children.
  */
 
 import { type ContentDigest, contentDigest } from "./artifact.ts";
 import { assertNever, err, ok, type Result } from "./result.ts";
 import type { BoundWorkspacePath, WorkspacePathBindError } from "./workspace-path.ts";
-import type { LineRange } from "./workspace-read.ts";
+import { applyLineRange, type LineRange, type NumberedLine } from "./workspace-read.ts";
 import {
   DEFAULT_MAX_WRITE_AGGREGATE_BYTES,
   DEFAULT_MAX_WRITE_BYTES,
@@ -30,6 +30,7 @@ export const HARD_MAX_PATCH_TARGETS = HARD_MAX_WRITE_TARGETS;
 export const HARD_MAX_PATCH_HUNKS = 128;
 export const HARD_MAX_PATCH_HUNK_LINES = 2_048;
 export const MAX_CONFLICT_CONTEXT_LINES = 16;
+export const MAX_CHANGED_REGION_LINES = 256;
 
 export type PatchPolicy = WorkspaceWritePolicy;
 
@@ -75,6 +76,11 @@ export type WorkspacePatchError =
   | { readonly code: "oversized"; readonly byteLength: number }
   | { readonly code: "aggregate-limit" }
   | { readonly code: "plan-refused" }
+  | { readonly code: "malformed-range" }
+  | {
+      readonly code: "rollback-failed";
+      readonly reason: WorkspacePatchRollbackReason;
+    }
   | { readonly code: "filesystem"; readonly reason: string };
 
 export type WorkspacePatchLimits = {
@@ -135,7 +141,12 @@ export type WorkspacePatchPreview = {
   }[];
 };
 
-export type WorkspacePatchItemStatus = "applied" | "failed" | "unscheduled" | "cancelled";
+export type WorkspacePatchItemStatus =
+  | "applied"
+  | "rolled-back"
+  | "failed"
+  | "unscheduled"
+  | "cancelled";
 
 export type WorkspacePatchApplied = {
   readonly index: number;
@@ -147,20 +158,72 @@ export type WorkspacePatchApplied = {
   readonly changedRegions: readonly LineRange[];
 };
 
+export type WorkspacePatchRolledBack = {
+  readonly index: number;
+  readonly status: "rolled-back";
+  readonly bound: BoundWorkspacePath;
+  readonly digest: ContentDigest;
+  readonly revision: string;
+  readonly byteLength: number;
+};
+
 export type WorkspacePatchRejected = {
   readonly index: number;
-  readonly status: Exclude<WorkspacePatchItemStatus, "applied">;
+  readonly status: Exclude<WorkspacePatchItemStatus, "applied" | "rolled-back">;
   readonly requested: string;
   readonly resolved: BoundWorkspacePath["resolved"] | null;
   readonly error: WorkspacePatchError;
 };
 
-export type WorkspacePatchItem = WorkspacePatchApplied | WorkspacePatchRejected;
+export type WorkspacePatchItem =
+  | WorkspacePatchApplied
+  | WorkspacePatchRolledBack
+  | WorkspacePatchRejected;
+
+export type WorkspacePatchRollbackReason = "concurrent-change" | "io-failure" | "cancelled";
+
+export type WorkspacePatchRollback = {
+  readonly status: "not-attempted" | "complete" | "partial" | "failed";
+  readonly restored: readonly number[];
+  readonly failed: readonly {
+    readonly index: number;
+    readonly error: Extract<WorkspacePatchError, { readonly code: "rollback-failed" }>;
+  }[];
+};
+
+export const NOT_ATTEMPTED_PATCH_ROLLBACK: WorkspacePatchRollback = {
+  status: "not-attempted",
+  restored: [],
+  failed: [],
+};
 
 export type WorkspacePatchResult = {
   readonly planId: string;
   readonly policy: PatchPolicy;
   readonly items: readonly WorkspacePatchItem[];
+  readonly rollback: WorkspacePatchRollback;
+};
+
+export type ParsedPatchChangedRegionRead = {
+  readonly path: string;
+  readonly expectedDigest: ContentDigest | null;
+  readonly expectedRevision: string | null;
+  readonly maxFileBytes: number;
+  readonly regions: readonly LineRange[];
+};
+
+export type WorkspacePatchChangedRegion = {
+  readonly range: LineRange;
+  readonly lines: readonly NumberedLine[];
+  readonly truncated: boolean;
+};
+
+export type WorkspacePatchChangedRegionRead = {
+  readonly path: string;
+  readonly bound: BoundWorkspacePath;
+  readonly digest: ContentDigest;
+  readonly revision: string;
+  readonly regions: readonly WorkspacePatchChangedRegion[];
 };
 
 const HARD_LIMITS: Readonly<Record<WorkspacePatchLimitName, number>> = {
@@ -581,6 +644,132 @@ export function parseWorkspacePatchPlan(
   return ok({ policy, expectedPlanId, limits, targets });
 }
 
+export function summarizePatchRollback(
+  attempted: boolean,
+  restored: readonly number[],
+  failed: readonly WorkspacePatchRollback["failed"][number][],
+): WorkspacePatchRollback {
+  if (!attempted) {
+    return NOT_ATTEMPTED_PATCH_ROLLBACK;
+  }
+  if (failed.length === 0) {
+    return { status: "complete", restored, failed: [] };
+  }
+  if (restored.length === 0) {
+    return { status: "failed", restored: [], failed };
+  }
+  return { status: "partial", restored, failed };
+}
+
+export function linesForChangedRegion(
+  text: string,
+  range: LineRange,
+): Result<
+  { readonly lines: readonly NumberedLine[]; readonly truncated: boolean },
+  WorkspacePatchError
+> {
+  if (
+    !Number.isInteger(range.start) ||
+    !Number.isInteger(range.end) ||
+    range.start < 1 ||
+    range.end < range.start
+  ) {
+    return err({ code: "malformed-range" });
+  }
+  if (range.end === range.start) {
+    return ok({ lines: [], truncated: false });
+  }
+  const sliced = applyLineRange(text, { start: range.start, end: range.end - 1 });
+  if ("error" in sliced) {
+    return err({ code: "malformed-range" });
+  }
+  if (sliced.lines.length <= MAX_CHANGED_REGION_LINES) {
+    return ok({ lines: sliced.lines, truncated: false });
+  }
+  return ok({
+    lines: sliced.lines.slice(0, MAX_CHANGED_REGION_LINES),
+    truncated: true,
+  });
+}
+
+function parseLineRange(value: unknown): Result<LineRange, WorkspacePatchError> {
+  if (!isRecord(value)) {
+    return err({ code: "malformed-range" });
+  }
+  if (
+    typeof value.start !== "number" ||
+    typeof value.end !== "number" ||
+    !Number.isSafeInteger(value.start) ||
+    !Number.isSafeInteger(value.end) ||
+    value.start < 1 ||
+    value.end < value.start
+  ) {
+    return err({ code: "malformed-range" });
+  }
+  return ok({ start: value.start, end: value.end });
+}
+
+export function parsePatchChangedRegionRead(
+  value: unknown,
+): Result<ParsedPatchChangedRegionRead, WorkspacePatchError> {
+  if (!isRecord(value)) {
+    return err({ code: "malformed-plan" });
+  }
+  const path = parsePath(value.path);
+  if (!path.ok) {
+    return path;
+  }
+  const maxFileBytes = parseLimit(
+    value.maxFileBytes,
+    "maxFileBytes",
+    DEFAULT_PATCH_LIMITS.maxFileBytes,
+  );
+  if (!maxFileBytes.ok) {
+    return maxFileBytes;
+  }
+  if (!Array.isArray(value.regions) || value.regions.length === 0) {
+    return err({ code: "malformed-range" });
+  }
+  if (value.regions.length > HARD_MAX_PATCH_HUNKS) {
+    return err({ code: "malformed-limit", field: "maxHunks", reason: "above-hard-maximum" });
+  }
+  const regions: LineRange[] = [];
+  for (const region of value.regions) {
+    const parsed = parseLineRange(region);
+    if (!parsed.ok) {
+      return parsed;
+    }
+    regions.push(parsed.value);
+  }
+  let expectedDigest: ContentDigest | null = null;
+  if (value.expectedDigest !== undefined) {
+    const parsed = contentDigest.parse(value.expectedDigest);
+    if (!parsed.ok) {
+      return err({ code: "malformed-digest" });
+    }
+    expectedDigest = parsed.value;
+  }
+  let expectedRevision: string | null = null;
+  if (value.expectedRevision !== undefined) {
+    if (
+      typeof value.expectedRevision !== "string" ||
+      value.expectedRevision.length === 0 ||
+      value.expectedRevision.length > MAX_WRITE_REVISION_LENGTH ||
+      value.expectedRevision.includes("\0")
+    ) {
+      return err({ code: "malformed-revision" });
+    }
+    expectedRevision = value.expectedRevision;
+  }
+  return ok({
+    path: path.value,
+    expectedDigest,
+    expectedRevision,
+    maxFileBytes: maxFileBytes.value,
+    regions,
+  });
+}
+
 export function describeWorkspacePatchError(error: WorkspacePatchError): string {
   switch (error.code) {
     case "malformed":
@@ -633,6 +822,10 @@ export function describeWorkspacePatchError(error: WorkspacePatchError): string 
       return "aggregate-limit";
     case "plan-refused":
       return "plan-refused";
+    case "malformed-range":
+      return "malformed-range";
+    case "rollback-failed":
+      return `rollback-failed:${error.reason}`;
     case "filesystem":
       return `filesystem:${error.reason}`;
     default:
