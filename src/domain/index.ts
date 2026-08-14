@@ -1478,6 +1478,34 @@ export {
   workUnitId,
 } from "./work.ts";
 export type {
+  CompiledGlob,
+  DiscoveryTruncation,
+  GlobPatternErrorReason,
+  ParsedWorkspaceDiscovery,
+  WorkspaceDiscoveryError,
+  WorkspaceDiscoveryKind,
+  WorkspaceDiscoveryLimitName,
+  WorkspaceDiscoveryLimits,
+  WorkspaceDiscoveryResult,
+} from "./workspace-glob.ts";
+export {
+  compileGlobPattern,
+  compileGlobPatterns,
+  DEFAULT_DISCOVERY_LIMITS,
+  DEFAULT_MAX_DISCOVERY_MATCHES,
+  describeWorkspaceDiscoveryError,
+  globMatchesAny,
+  HARD_MAX_DISCOVERY_MATCHES,
+  HARD_MAX_WALK_DEPTH,
+  HARD_MAX_WALK_ENTRIES,
+  isExcludedByGlobs,
+  kindAdmitted,
+  MAX_GLOB_PATTERN_LENGTH,
+  MAX_GLOB_PATTERNS,
+  matchGlob,
+  parseWorkspaceDiscoveryRequest,
+} from "./workspace-glob.ts";
+export type {
   WalkTruncation,
   WorkspaceEntry,
   WorkspaceEntryFailure,
