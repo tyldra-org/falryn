@@ -3121,7 +3121,7 @@ admitted evidence contract (parent
   `ContextPack` remains a retrieval-pack input, not this type.
 
 Validated by `src/domain/context-evidence.test.ts` under `bun run check`.
-Pack composition, expansion/cache, the planner, and product
+Pack composition exists for #85. Expansion/cache, the planner, and product
 context tools remain later children of #81.
 
 The context budget slice from
@@ -3139,8 +3139,8 @@ and tool-framing tokens before filling admitted evidence (parent
 - estimated tokens are never mixed with provider-reported counts.
 
 Validated by `src/domain/context-budget.test.ts` under `bun run check`.
-Pack composition, expansion/cache, the planner, and product context
-tools remain later children of #81.
+Pack composition exists for #85. Expansion/cache, the planner, and product
+context tools remain later children of #81.
 
 The context ranking slice from
 [#84](https://github.com/tyldra-org/falryn/issues/84) scores admitted evidence
@@ -3154,12 +3154,33 @@ and returns a stable ordered selection (parent
 - query matching uses origin only. Explanations list contributing signals and
   never echo origin or payload text. Selected order is the caller order for
   `#83` budget fill;
-- pack composition, expansion/cache, the planner, and product context tools
-  remain later children of #81.
+- pack composition exists for #85. Expansion/cache, the planner, and product
+  context tools remain later children of #81.
 
 Validated by `src/domain/context-rank.test.ts` under `bun run check`.
-Pack composition, expansion/cache, the planner, and product context tools
-remain later children of #81.
+Expansion/cache, the planner, and product context tools remain later
+children of #81.
+
+The context pack composition slice from
+[#85](https://github.com/tyldra-org/falryn/issues/85) ranks, budgets, then
+emits a bounded planner pack with citations and uncertainty (parent
+[#81](https://github.com/tyldra-org/falryn/issues/81)):
+
+- `src/domain/context-compose.ts` — `composeContextPack` assigns `primary` to
+  the first included item and `support` to later items. Citations record id,
+  origin, source kind, freshness, original fidelity, and exact-source or
+  expansion handles. Uncertainty is a closed set (`stale`, `inferred`,
+  `untrusted`, `extractive`, `lossy`, `narrowed`, `insufficient`);
+- support inline text over the excerpt bound is truncated on a UTF-8 boundary
+  and never claims exact-source. Primary payloads and artifact payloads are
+  not rewritten. `#65` `ContextPack` remains a retrieval-pack input;
+- rank and budget omissions are forwarded without echoing origin or payload.
+  Expansion/cache, the planner, and product context tools remain later
+  children of #81.
+
+Validated by `src/domain/context-compose.test.ts` under `bun run check`.
+Expansion/cache, the planner, and product context tools remain later
+children of #81.
 
 The bounded full-file write and grouped mutation slice from
 [#281](https://github.com/tyldra-org/falryn/issues/281) creates or replaces
@@ -3506,7 +3527,8 @@ session/turn producer, or live transcript producer. The remaining gaps are:
 - context planning, Brief, Hush product/CLI/TUI wiring, Loom, compression,
   index builders, or memory (evidence-candidate admission exists for #82;
   context token/byte/item/latency/sensitivity budgets exist for #83; ranking
-  and selection exist for #84; Hush domain reduction over captured process
+  and selection exist for #84; pack composition with citations and
+  uncertainty exists for #85; Hush domain reduction over captured process
   facts exists; none of these is wired into the planner or product tools);
 - MCP, skills, plugin and other hook families, marketplace, agents, jobs, or workflows; or
 - an installer, updater, supported platform package, signed release, or support
