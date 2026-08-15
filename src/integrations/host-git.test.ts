@@ -472,3 +472,168 @@ describe("host git branch and worktree mutations", () => {
     }
   });
 });
+
+describe("host git checkpoints and restore", () => {
+  gitTest("creates lists and restores a dirty tracked worktree", async () => {
+    const root = await committedRepo();
+    const git = port();
+    await writeFile(join(root, "README.md"), "dirty\n", "utf8");
+    const created = await git.createCheckpoint({
+      gitExecutable: GIT,
+      startPath: root,
+      sessionId: "session-1",
+      timeoutMs: duration(5_000),
+    });
+    expect(created.ok).toBe(true);
+    if (!created.ok) {
+      return;
+    }
+    expect(created.value.checkpoint.sessionId).toBe("session-1");
+    expect(created.value.checkpoint.excludedUntracked).toBe(0);
+    await writeFile(join(root, "README.md"), "later\n", "utf8");
+    const planned = await git.planRestore({
+      gitExecutable: GIT,
+      startPath: root,
+      checkpointId: created.value.checkpoint.id,
+      timeoutMs: duration(5_000),
+    });
+    expect(planned.ok).toBe(true);
+    if (planned.ok) {
+      expect(planned.value.worktreePaths).toContain("README.md");
+    }
+    const restored = await git.restoreCheckpoint({
+      gitExecutable: GIT,
+      startPath: root,
+      checkpointId: created.value.checkpoint.id,
+      timeoutMs: duration(5_000),
+    });
+    expect(restored.ok).toBe(true);
+    if (restored.ok) {
+      expect(restored.value.restoredWorktree).toContain("README.md");
+    }
+    expect(await Bun.file(join(root, "README.md")).text()).toBe("dirty\n");
+    const listed = await git.listCheckpoints({
+      gitExecutable: GIT,
+      startPath: root,
+      timeoutMs: duration(5_000),
+    });
+    expect(listed.ok).toBe(true);
+    if (listed.ok && listed.value.checkpoints.state !== "unavailable") {
+      expect(
+        listed.value.checkpoints.value.some((item) => item.id === created.value.checkpoint.id),
+      ).toBe(true);
+    }
+  });
+
+  gitTest("keeps unlisted untracked files out of restore", async () => {
+    const root = await committedRepo();
+    await writeFile(join(root, "scratch.txt"), "tmp\n", "utf8");
+    await writeFile(join(root, "keep.txt"), "keep\n", "utf8");
+    const git = port();
+    const created = await git.createCheckpoint({
+      gitExecutable: GIT,
+      startPath: root,
+      includeUntracked: ["keep.txt"],
+      timeoutMs: duration(5_000),
+    });
+    expect(created.ok).toBe(true);
+    if (!created.ok) {
+      return;
+    }
+    expect(created.value.checkpoint.excludedUntracked).toBe(1);
+    expect(created.value.checkpoint.includedUntracked).toEqual([
+      expect.objectContaining({ path: "keep.txt" }),
+    ]);
+    await rm(join(root, "keep.txt"));
+    await writeFile(join(root, "scratch.txt"), "changed\n", "utf8");
+    const restored = await git.restoreCheckpoint({
+      gitExecutable: GIT,
+      startPath: root,
+      checkpointId: created.value.checkpoint.id,
+      timeoutMs: duration(5_000),
+    });
+    expect(restored.ok).toBe(true);
+    expect(await Bun.file(join(root, "keep.txt")).text()).toBe("keep\n");
+    expect(await Bun.file(join(root, "scratch.txt")).text()).toBe("changed\n");
+  });
+
+  gitTest("refuses an untracked collision and a moved HEAD", async () => {
+    const root = await committedRepo();
+    await writeFile(join(root, "keep.txt"), "keep\n", "utf8");
+    const git = port();
+    const created = await git.createCheckpoint({
+      gitExecutable: GIT,
+      startPath: root,
+      includeUntracked: ["keep.txt"],
+      timeoutMs: duration(5_000),
+    });
+    expect(created.ok).toBe(true);
+    if (!created.ok) {
+      return;
+    }
+    await writeFile(join(root, "keep.txt"), "collision\n", "utf8");
+    const collision = await git.planRestore({
+      gitExecutable: GIT,
+      startPath: root,
+      checkpointId: created.value.checkpoint.id,
+      timeoutMs: duration(5_000),
+    });
+    expect(collision.ok).toBe(false);
+    if (!collision.ok) {
+      expect(collision.error).toEqual({ code: "restore-ambiguous", reason: "untracked-collision" });
+    }
+    await writeFile(join(root, "keep.txt"), "keep\n", "utf8");
+    await writeFile(join(root, "README.md"), "moved\n", "utf8");
+    await runGitOk(root, ["commit", "-am", "Move head"]);
+    const moved = await git.planRestore({
+      gitExecutable: GIT,
+      startPath: root,
+      checkpointId: created.value.checkpoint.id,
+      timeoutMs: duration(5_000),
+    });
+    expect(moved.ok).toBe(false);
+    if (!moved.ok) {
+      expect(moved.error).toEqual({ code: "restore-ambiguous", reason: "head-moved" });
+    }
+  });
+
+  gitTest("refuses checkpoint create during a merge and cancelled restore", async () => {
+    const root = await committedRepo();
+    await runGitOk(root, ["checkout", "-b", "other"]);
+    await writeFile(join(root, "README.md"), "other\n", "utf8");
+    await runGitOk(root, ["commit", "-am", "Other"]);
+    await runGitOk(root, ["checkout", "main"]);
+    await writeFile(join(root, "README.md"), "mainline\n", "utf8");
+    await runGitOk(root, ["commit", "-am", "Mainline"]);
+    const mergeCode = await runGit(root, [
+      "-c",
+      "merge.ff=false",
+      "merge",
+      "--no-ff",
+      "--no-commit",
+      "other",
+    ]);
+    expect(mergeCode).not.toBe(0);
+    const git = port();
+    const created = await git.createCheckpoint({
+      gitExecutable: GIT,
+      startPath: root,
+      timeoutMs: duration(5_000),
+    });
+    expect(created.ok).toBe(false);
+    if (!created.ok) {
+      expect(created.error.code).toBe("operation-in-progress");
+    }
+    const cancelled = await git.restoreCheckpoint({
+      gitExecutable: GIT,
+      startPath: root,
+      checkpointId: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      timeoutMs: duration(5_000),
+      signal: AbortSignal.abort(),
+    });
+    expect(cancelled.ok).toBe(false);
+    if (!cancelled.ok) {
+      expect(cancelled.error.code).toBe("cancelled");
+    }
+  });
+});

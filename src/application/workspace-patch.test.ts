@@ -479,6 +479,18 @@ function fakeGit(
     async removeWorktree() {
       return { ok: false, error: { code: "failed", reason: "unused" } };
     },
+    async createCheckpoint() {
+      return { ok: false, error: { code: "failed", reason: "unused" } };
+    },
+    async listCheckpoints() {
+      return { ok: false, error: { code: "failed", reason: "unused" } };
+    },
+    async planRestore() {
+      return { ok: false, error: { code: "failed", reason: "unused" } };
+    },
+    async restoreCheckpoint() {
+      return { ok: false, error: { code: "failed", reason: "unused" } };
+    },
   };
 }
 
