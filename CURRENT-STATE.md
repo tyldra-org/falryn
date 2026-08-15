@@ -544,7 +544,30 @@ Its verified behavior:
   leader-only SIGTERM leaves it running, then assert group escalation reaps
   it. Capture timeout records `terminate` or `kill`.
 
-`bun run check` passed with 3,164 tests passing and 14 skipped.
+The process quoting, platform, truncation, and interruption fixture matrix
+delivered by [#74](https://github.com/tyldra-org/falryn/issues/74) adds
+`src/integrations/host-process-fixtures.test.ts` over the existing #69–#73
+ports. It does not register a product process tool or change spawn/kill policy.
+
+Its verified behavior:
+
+- **quoting is mode-explicit.** Direct argv keeps metacharacters as one literal
+  argument; Bash mode parses a deliberate command string. The same hostile text
+  is not a shell line unless `mode: "bash"` selected the interpreter;
+- **platform limits are named.** `ownedTreeSpawnOptions().detached` is true
+  only off `win32`. Windows skips `/bin` and process-group fixtures and is not
+  claimed as a job-object host;
+- **truncation is a typed outcome.** Command overflow is `output-exceeded`,
+  not returned truncated text. Capture without an artifact store stops as
+  `capture-exceeded` with a truncated inline prefix and no artifact;
+- **interruption stays distinct from timeout.** Abort before spawn and abort
+  during a run are `cancelled`; a deadline is `timed-out`. Disabled stdin
+  makes `cat` exit instead of hanging. Capture abort records `cancelled` and a
+  kill stage. PTY SIGINT can end a session;
+- **capture does not inherit undeclared environment.** Large dual streams keep
+  both sides and a merged observation order.
+
+`bun run check` passed with 3,179 tests passing and 14 skipped.
 Platform-specific PTY and process-capture tests are skipped on Windows, while
 the compiled qualification suites remain owned by CI.
 
