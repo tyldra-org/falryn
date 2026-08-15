@@ -1,15 +1,15 @@
 /**
- * Git observation, safe branch/worktree, checkpoint, and commit-plan contracts
- * (#76/#78/#79/#80).
+ * Git observation, safe branch/worktree, checkpoint, commit-plan, and
+ * stage/commit/sync contracts (#76/#78/#79/#80/#283).
  *
  * Discovery, status, diff, log, and blame are typed snapshots. Branch create,
- * switch, and delete plus worktree add/list/remove are the only history-safe
- * mutations. Checkpoints snapshot index/worktree trees under
- * `refs/falryn/checkpoints/` and restore only after a preview. `planCommits`
- * returns grouping advice and never stages or commits. The host adapter runs
- * `git` through ProcessCapturePort. This module never stages or commits on the
- * user index, fetches, force-updates, stashes, or rewrites history, and it does
- * not register a product tool.
+ * switch, and delete plus worktree add/list/remove are history-safe mutations.
+ * Checkpoints snapshot index/worktree trees under `refs/falryn/checkpoints/`
+ * and restore only after a preview. `planCommits` returns grouping advice.
+ * Stage, unstage, commit, fetch, pull, push, and sync mutate only through
+ * explicit `GitPort` methods and never force-update, rebase, stash, or rewrite
+ * history. The host adapter runs `git` through ProcessCapturePort. This module
+ * does not register a product tool.
  */
 
 import { type DurationMs, duration, type Instant } from "./clock.ts";
@@ -43,6 +43,9 @@ export const COMMIT_PLAN_SOURCE = "git-status-log" as const;
 export const MAX_COMMIT_PLAN_GROUPS = 16;
 export const COMMIT_CHANGE_STATES = ["staged", "unstaged", "untracked"] as const;
 export type CommitChangeState = (typeof COMMIT_CHANGE_STATES)[number];
+export const DEFAULT_GIT_REMOTE_NAME = "origin";
+export const MAX_GIT_STAGE_PATHS = 256;
+export const MAX_GIT_COMMIT_SUBJECT_LENGTH = 72;
 
 export const GIT_OBSERVATION_ENVIRONMENT: Readonly<Record<string, string>> = {
   GIT_TERMINAL_PROMPT: "0",
@@ -55,6 +58,13 @@ export const GIT_INVOCATION_PREFIX = [
   "--literal-pathspecs",
   "-c",
   "core.hooksPath=/dev/null",
+  "-c",
+  "advice.detachedHead=false",
+] as const;
+
+export const GIT_USER_HOOK_INVOCATION_PREFIX = [
+  "--no-pager",
+  "--literal-pathspecs",
   "-c",
   "advice.detachedHead=false",
 ] as const;
@@ -100,6 +110,15 @@ export type GitError =
   | { readonly code: "head-mismatch" }
   | { readonly code: "checkpoint-missing" }
   | { readonly code: "restore-ambiguous"; readonly reason: string }
+  | { readonly code: "secret-path"; readonly path: string }
+  | { readonly code: "empty-index" }
+  | { readonly code: "no-upstream" }
+  | { readonly code: "non-fast-forward" }
+  | { readonly code: "rejected"; readonly reason: string }
+  | { readonly code: "authentication" }
+  | { readonly code: "hook-failed"; readonly reason: string }
+  | { readonly code: "signing-failed"; readonly reason: string }
+  | { readonly code: "diverged" }
   | { readonly code: "failed"; readonly reason: string };
 
 export type GitRequestBase = {
@@ -228,6 +247,49 @@ export type CommitPlan = {
 export type GitCommitPlanSnapshot = {
   readonly identity: GitIdentity;
   readonly plan: CommitPlan;
+};
+
+export type GitStageRequest = GitExpectedHeadRequest & {
+  readonly paths: readonly string[];
+};
+
+export type GitUnstageRequest = GitStageRequest;
+
+export type GitCommitRequest = GitExpectedHeadRequest & {
+  readonly subject: string;
+};
+
+export type GitRemoteMutationRequest = GitExpectedHeadRequest & {
+  readonly remote?: string | undefined;
+};
+
+export type GitFetchRequest = GitRemoteMutationRequest;
+export type GitPullRequest = GitRemoteMutationRequest;
+export type GitPushRequest = GitRemoteMutationRequest;
+export type GitSyncRequest = GitRemoteMutationRequest;
+
+export type GitIndexMutation = {
+  readonly identity: GitIdentity;
+  readonly paths: readonly string[];
+};
+
+export type GitCommitResult = {
+  readonly identity: GitIdentity;
+  readonly oid: string;
+  readonly subject: string;
+};
+
+export type GitRemoteResult = {
+  readonly identity: GitIdentity;
+  readonly remote: string;
+};
+
+export type GitSyncResult = {
+  readonly identity: GitIdentity;
+  readonly remote: string;
+  readonly fetched: boolean;
+  readonly fastForwarded: boolean;
+  readonly pushed: boolean;
 };
 
 export type GitIdentity = {
@@ -404,6 +466,13 @@ export type GitPort = {
     request: GitRestoreCheckpointRequest,
   ): Promise<Result<GitRestoreResult, GitError>>;
   planCommits(request: GitPlanCommitsRequest): Promise<Result<GitCommitPlanSnapshot, GitError>>;
+  stage(request: GitStageRequest): Promise<Result<GitIndexMutation, GitError>>;
+  unstage(request: GitUnstageRequest): Promise<Result<GitIndexMutation, GitError>>;
+  commit(request: GitCommitRequest): Promise<Result<GitCommitResult, GitError>>;
+  fetch(request: GitFetchRequest): Promise<Result<GitRemoteResult, GitError>>;
+  pull(request: GitPullRequest): Promise<Result<GitRemoteResult, GitError>>;
+  push(request: GitPushRequest): Promise<Result<GitRemoteResult, GitError>>;
+  sync(request: GitSyncRequest): Promise<Result<GitSyncResult, GitError>>;
 };
 
 export type ParsedGitRequest = {
@@ -415,6 +484,10 @@ export type ParsedGitRequest = {
 
 export function gitArgv(subcommand: readonly string[]): readonly string[] {
   return [...GIT_INVOCATION_PREFIX, ...subcommand];
+}
+
+export function gitUserHookArgv(subcommand: readonly string[]): readonly string[] {
+  return [...GIT_USER_HOOK_INVOCATION_PREFIX, ...subcommand];
 }
 
 export function redactGitRemoteUrl(url: string): string {
@@ -588,6 +661,114 @@ export function validateGitRelPath(path: string): Result<string, GitError> {
     return err({ code: "invalid-request", reason: "path" });
   }
   return ok(path);
+}
+
+export function isSecretPath(path: string): boolean {
+  const base = gitBasename(path).toLowerCase();
+  const lower = path.toLowerCase();
+  if (base === ".env" || base.startsWith(".env.")) {
+    return true;
+  }
+  if (base === "credentials" || base === "credentials.json") {
+    return true;
+  }
+  if (base === "id_rsa" || base === "id_ed25519" || base.endsWith(".pem")) {
+    return true;
+  }
+  if (lower.includes("secret") || lower.includes("password")) {
+    return true;
+  }
+  return lower.includes("/.env");
+}
+
+export function validateGitPathspecs(
+  paths: readonly string[] | undefined,
+): Result<readonly string[], GitError> {
+  if (paths === undefined || paths.length === 0) {
+    return err({ code: "invalid-request", reason: "paths" });
+  }
+  if (paths.length > MAX_GIT_STAGE_PATHS) {
+    return err({ code: "invalid-request", reason: "paths" });
+  }
+  const unique = new Set<string>();
+  const validated: string[] = [];
+  for (const path of paths) {
+    const parsed = validateGitRelPath(path);
+    if (!parsed.ok) {
+      return parsed;
+    }
+    if (unique.has(parsed.value)) {
+      return err({ code: "invalid-request", reason: "paths" });
+    }
+    unique.add(parsed.value);
+    validated.push(parsed.value);
+  }
+  return ok(validated);
+}
+
+export function validateGitStagePaths(
+  paths: readonly string[] | undefined,
+): Result<readonly string[], GitError> {
+  const parsed = validateGitPathspecs(paths);
+  if (!parsed.ok) {
+    return parsed;
+  }
+  for (const path of parsed.value) {
+    if (isSecretPath(path)) {
+      return err({ code: "secret-path", path });
+    }
+  }
+  return parsed;
+}
+
+export function validateGitCommitSubject(subject: string): Result<string, GitError> {
+  const trimmed = subject.trim();
+  if (
+    trimmed.length === 0 ||
+    trimmed.length > MAX_GIT_COMMIT_SUBJECT_LENGTH ||
+    trimmed.includes("\0") ||
+    trimmed.includes("\n") ||
+    trimmed.includes("\r") ||
+    /#\d/.test(trimmed) ||
+    /\bv?\d+\.\d+/.test(trimmed)
+  ) {
+    return err({ code: "invalid-request", reason: "subject" });
+  }
+  return ok(trimmed);
+}
+
+export function validateGitRemoteName(remote: string | undefined): Result<string, GitError> {
+  const name = remote ?? DEFAULT_GIT_REMOTE_NAME;
+  const parsed = validateGitRefName(name);
+  if (!parsed.ok) {
+    return err({ code: "invalid-request", reason: "remote" });
+  }
+  return ok(parsed.value);
+}
+
+export function indexHasStagedChanges(entries: readonly GitStatusEntry[]): boolean {
+  return entries.some(isStagedEntry);
+}
+
+export function stagedSecretPath(entries: readonly GitStatusEntry[]): string | null {
+  for (const entry of entries) {
+    if (isStagedEntry(entry) && isSecretPath(entry.path)) {
+      return entry.path;
+    }
+  }
+  return null;
+}
+
+function isStagedEntry(entry: GitStatusEntry): boolean {
+  if (entry.kind === "untracked" || entry.kind === "ignored") {
+    return false;
+  }
+  return entry.indexStatus !== "." && entry.indexStatus !== " " && entry.indexStatus !== "?";
+}
+
+function gitBasename(path: string): string {
+  const parts = path.split("/");
+  return parts[parts.length - 1] ?? path;
 }
 
 export function validateGitCheckpointReference(
@@ -831,6 +1012,49 @@ export function classifyGitStderr(exitCode: number, stderr: string): GitError {
   }
   if (text.includes("main working tree")) {
     return { code: "invalid-request", reason: "main-worktree" };
+  }
+  if (
+    text.includes("authentication failed") ||
+    text.includes("could not read username") ||
+    text.includes("terminal prompts disabled") ||
+    text.includes("permission denied (publickey)") ||
+    text.includes("could not read password")
+  ) {
+    return { code: "authentication" };
+  }
+  if (
+    text.includes("hook declined") ||
+    text.includes("hook failed") ||
+    (text.includes("pre-commit") && text.includes("fail"))
+  ) {
+    return { code: "hook-failed", reason: `exit-${exitCode}` };
+  }
+  if (
+    text.includes("gpg failed") ||
+    text.includes("signing failed") ||
+    text.includes("secret key not available")
+  ) {
+    return { code: "signing-failed", reason: `exit-${exitCode}` };
+  }
+  if (
+    text.includes("non-fast-forward") ||
+    text.includes("not possible to fast-forward") ||
+    text.includes("cannot fast-forward")
+  ) {
+    return { code: "non-fast-forward" };
+  }
+  if (text.includes("nothing to commit")) {
+    return { code: "empty-index" };
+  }
+  if (
+    text.includes("no upstream") ||
+    text.includes("no tracking information") ||
+    text.includes("has no upstream branch")
+  ) {
+    return { code: "no-upstream" };
+  }
+  if (text.includes("[rejected]") || text.includes("failed to push")) {
+    return { code: "rejected", reason: `exit-${exitCode}` };
   }
   if (
     text.includes("bad object") ||

@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { instant } from "./clock.ts";
-import { isSecretPath, planGitCommits } from "./commit-plan.ts";
+import { planGitCommits } from "./commit-plan.ts";
 import { localPath } from "./filesystem.ts";
-import type { GitIdentity, GitStatusEntry } from "./git.ts";
+import { type GitIdentity, type GitStatusEntry, isSecretPath } from "./git.ts";
 
 function identity(headState: "branch" | "detached" = "branch"): GitIdentity {
   return {

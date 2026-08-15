@@ -494,6 +494,27 @@ function fakeGit(
     async planCommits() {
       return { ok: false, error: { code: "failed", reason: "unused" } };
     },
+    async stage() {
+      return { ok: false, error: { code: "failed", reason: "unused" } };
+    },
+    async unstage() {
+      return { ok: false, error: { code: "failed", reason: "unused" } };
+    },
+    async commit() {
+      return { ok: false, error: { code: "failed", reason: "unused" } };
+    },
+    async fetch() {
+      return { ok: false, error: { code: "failed", reason: "unused" } };
+    },
+    async pull() {
+      return { ok: false, error: { code: "failed", reason: "unused" } };
+    },
+    async push() {
+      return { ok: false, error: { code: "failed", reason: "unused" } };
+    },
+    async sync() {
+      return { ok: false, error: { code: "failed", reason: "unused" } };
+    },
   };
 }
 
