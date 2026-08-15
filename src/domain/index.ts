@@ -157,6 +157,7 @@ export {
 } from "./clock.ts";
 export { decodeRuntimeEvent, encodedByteLength, encodeRuntimeEvent } from "./codec.ts";
 export type { CodecError, CodecIssue } from "./codec-error.ts";
+export { isSecretPath, planGitCommits } from "./commit-plan.ts";
 export type {
   CompactDocumentBudget,
   CompactDocumentDocument,
@@ -484,6 +485,13 @@ export {
   resolveLocalPath,
 } from "./filesystem.ts";
 export type {
+  CommitChangeState,
+  CommitChangeUnit,
+  CommitGroup,
+  CommitPlan,
+  CommitPlanProvenance,
+  CommitPlanValidation,
+  CommitUnassigned,
   GitBlameLine,
   GitBlameRequest,
   GitBlameSnapshot,
@@ -494,6 +502,7 @@ export type {
   GitCheckpointRecord,
   GitCheckpointSnapshot,
   GitCheckpointUntracked,
+  GitCommitPlanSnapshot,
   GitCreateBranchRequest,
   GitCreateCheckpointRequest,
   GitCreateWorktreeRequest,
@@ -513,6 +522,7 @@ export type {
   GitLogRequest,
   GitLogSnapshot,
   GitOperationState,
+  GitPlanCommitsRequest,
   GitPort,
   GitRemote,
   GitRemoveWorktreeRequest,
@@ -531,6 +541,9 @@ export type {
   ParsedGitRequest,
 } from "./git.ts";
 export {
+  COMMIT_CHANGE_STATES,
+  COMMIT_PLAN_SOURCE,
+  COMMIT_PLAN_VERSION,
   classifyGitStderr,
   DEFAULT_GIT_BLAME_LINES,
   DEFAULT_GIT_CHECKPOINTS,
@@ -554,6 +567,7 @@ export {
   gitCheckpointRef,
   gitFailureFromCapture,
   gitFailureFromStop,
+  MAX_COMMIT_PLAN_GROUPS,
   MAX_GIT_BLAME_LINES,
   MAX_GIT_CHECKPOINT_REFERENCE_LENGTH,
   MAX_GIT_CHECKPOINT_UNTRACKED,

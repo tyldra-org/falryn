@@ -491,6 +491,9 @@ function fakeGit(
     async restoreCheckpoint() {
       return { ok: false, error: { code: "failed", reason: "unused" } };
     },
+    async planCommits() {
+      return { ok: false, error: { code: "failed", reason: "unused" } };
+    },
   };
 }
 

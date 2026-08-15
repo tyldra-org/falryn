@@ -637,3 +637,100 @@ describe("host git checkpoints and restore", () => {
     }
   });
 });
+
+describe("host git commit planning", () => {
+  gitTest("groups a source file with its test and does not mutate git", async () => {
+    const root = await committedRepo();
+    await mkdir(join(root, "src"), { recursive: true });
+    await writeFile(join(root, "src", "foo.ts"), "export const foo = 1;\n", "utf8");
+    await writeFile(join(root, "src", "foo.test.ts"), "test('foo', () => {});\n", "utf8");
+    const git = port();
+    const planned = await git.planCommits({
+      gitExecutable: GIT,
+      startPath: root,
+      timeoutMs: duration(5_000),
+    });
+    expect(planned.ok).toBe(true);
+    if (!planned.ok) {
+      return;
+    }
+    expect(planned.value.plan.groups).toEqual([
+      expect.objectContaining({
+        paths: ["src/foo.ts", "src/foo.test.ts"],
+        reason: "source-and-test",
+      }),
+    ]);
+    expect(planned.value.plan.provenance.model).toBeNull();
+    const status = await git.status({
+      gitExecutable: GIT,
+      startPath: root,
+      timeoutMs: duration(5_000),
+    });
+    expect(status.ok).toBe(true);
+    if (status.ok && status.value.identity.head.state === "observed") {
+      expect(status.value.identity.head.value).toBe(
+        planned.value.identity.head.state === "observed" ? planned.value.identity.head.value : "",
+      );
+    }
+    if (status.ok && status.value.entries.state !== "unavailable") {
+      const paths = status.value.entries.value.map((entry) => entry.path);
+      expect(paths).toContain("src/foo.ts");
+      expect(paths).toContain("src/foo.test.ts");
+      expect(status.value.entries.value.every((entry) => entry.kind === "untracked")).toBe(true);
+    }
+  });
+
+  gitTest("leaves a secret path unassigned and refuses planning during a merge", async () => {
+    const root = await committedRepo();
+    await writeFile(join(root, ".env"), "TOKEN=1\n", "utf8");
+    const git = port();
+    const planned = await git.planCommits({
+      gitExecutable: GIT,
+      startPath: root,
+      timeoutMs: duration(5_000),
+    });
+    expect(planned.ok).toBe(true);
+    if (planned.ok) {
+      expect(planned.value.plan.unassigned).toEqual([{ path: ".env", reason: "secret-path" }]);
+    }
+    await runGitOk(root, ["checkout", "-b", "other"]);
+    await writeFile(join(root, "README.md"), "other\n", "utf8");
+    await runGitOk(root, ["commit", "-am", "Other"]);
+    await runGitOk(root, ["checkout", "main"]);
+    await writeFile(join(root, "README.md"), "mainline\n", "utf8");
+    await runGitOk(root, ["commit", "-am", "Mainline"]);
+    const mergeCode = await runGit(root, [
+      "-c",
+      "merge.ff=false",
+      "merge",
+      "--no-ff",
+      "--no-commit",
+      "other",
+    ]);
+    expect(mergeCode).not.toBe(0);
+    const refused = await git.planCommits({
+      gitExecutable: GIT,
+      startPath: root,
+      timeoutMs: duration(5_000),
+    });
+    expect(refused.ok).toBe(false);
+    if (!refused.ok) {
+      expect(refused.error.code).toBe("operation-in-progress");
+    }
+  });
+
+  gitTest("reports cancelled planning when the signal is already aborted", async () => {
+    const root = await committedRepo();
+    const git = port();
+    const cancelled = await git.planCommits({
+      gitExecutable: GIT,
+      startPath: root,
+      timeoutMs: duration(5_000),
+      signal: AbortSignal.abort(),
+    });
+    expect(cancelled.ok).toBe(false);
+    if (!cancelled.ok) {
+      expect(cancelled.error.code).toBe("cancelled");
+    }
+  });
+});
