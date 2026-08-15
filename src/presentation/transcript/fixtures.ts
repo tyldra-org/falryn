@@ -37,7 +37,7 @@ import {
   turnId,
 } from "../../domain/index.ts";
 import type { BlockAnchor, TranscriptBlock, TranscriptBlockKind } from "./blocks.ts";
-import { TRANSCRIPT_BLOCK_KINDS } from "./blocks.ts";
+import { TRANSCRIPT_BLOCK_KINDS, UNKNOWN_TRANSCRIPT_BLOCK_KIND } from "./blocks.ts";
 import { bound, complete, omitted, redacted } from "./disclosure.ts";
 import { TRANSCRIPT_PROJECTION_GENERATION } from "./generation.ts";
 
@@ -237,7 +237,9 @@ export function everyBlockKind(): readonly TranscriptBlock[] {
 
 /** The kinds the corpus above covers, for a control that compares it to the union. */
 export function coveredKinds(): readonly TranscriptBlockKind[] {
-  return everyBlockKind().map((block) => block.kind);
+  return everyBlockKind().flatMap((block) =>
+    block.kind === UNKNOWN_TRANSCRIPT_BLOCK_KIND ? [] : [block.kind],
+  );
 }
 
 /** Every kind the union declares, for the same control. */

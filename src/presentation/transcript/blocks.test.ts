@@ -12,6 +12,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { admitTranscriptRecord } from "./admit.ts";
 import type { TranscriptBlock } from "./blocks.ts";
 import {
   BLOCK_SENSITIVITIES,
@@ -21,8 +22,15 @@ import {
   expansionRoutesFor,
   outcomeOf,
   TRANSCRIPT_BLOCK_KINDS,
+  UNKNOWN_TRANSCRIPT_BLOCK_KIND,
 } from "./blocks.ts";
-import { ALL_KINDS, coveredKinds, everyBlockKind, FIXTURE_INVOCATION } from "./fixtures.ts";
+import {
+  ALL_KINDS,
+  coveredKinds,
+  everyBlockKind,
+  FIXTURE_AT,
+  FIXTURE_INVOCATION,
+} from "./fixtures.ts";
 
 const CORPUS = everyBlockKind();
 
@@ -43,6 +51,8 @@ describe("the declared kinds", () => {
 
   test("are all distinct", () => {
     expect(new Set(TRANSCRIPT_BLOCK_KINDS).size).toBe(TRANSCRIPT_BLOCK_KINDS.length);
+    expect(TRANSCRIPT_BLOCK_KINDS).toHaveLength(16);
+    expect(TRANSCRIPT_BLOCK_KINDS).not.toContain(UNKNOWN_TRANSCRIPT_BLOCK_KIND);
   });
 
   test("each have words of their own", () => {
@@ -252,5 +262,23 @@ describe("the fixture corpus", () => {
         }).toEqual({ kind: block.kind, leaks: false });
       }
     }
+  });
+});
+
+describe("an unknown fallback", () => {
+  test("never infers an outcome and never uses a known-kind description", () => {
+    const result = admitTranscriptRecord({
+      kind: "future-widget",
+      order: 3,
+      occurredAt: FIXTURE_AT,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    expect(outcomeOf(result.value)).toBe(null);
+    expect(describeBlock(result.value)).toBe("Unrecognized block");
+    expect(boundedTextsOf(result.value)).toContain(result.value.summary);
+    expect(expansionRoutesFor(result.value)).toEqual([]);
   });
 });
