@@ -3121,8 +3121,8 @@ admitted evidence contract (parent
   `ContextPack` remains a retrieval-pack input, not this type.
 
 Validated by `src/domain/context-evidence.test.ts` under `bun run check`.
-Pack composition exists for #85. Expansion/cache, the planner, and product
-context tools remain later children of #81.
+Pack composition exists for #85. Expansion/cache exists for #86. The planner
+and product context tools remain later children of #81.
 
 The context budget slice from
 [#83](https://github.com/tyldra-org/falryn/issues/83) reserves provider output
@@ -3139,8 +3139,8 @@ and tool-framing tokens before filling admitted evidence (parent
 - estimated tokens are never mixed with provider-reported counts.
 
 Validated by `src/domain/context-budget.test.ts` under `bun run check`.
-Pack composition exists for #85. Expansion/cache, the planner, and product
-context tools remain later children of #81.
+Pack composition exists for #85. Expansion/cache exists for #86. The planner
+and product context tools remain later children of #81.
 
 The context ranking slice from
 [#84](https://github.com/tyldra-org/falryn/issues/84) scores admitted evidence
@@ -3154,12 +3154,11 @@ and returns a stable ordered selection (parent
 - query matching uses origin only. Explanations list contributing signals and
   never echo origin or payload text. Selected order is the caller order for
   `#83` budget fill;
-- pack composition exists for #85. Expansion/cache, the planner, and product
-  context tools remain later children of #81.
+- pack composition exists for #85. Expansion/cache exists for #86. The planner
+  and product context tools remain later children of #81.
 
 Validated by `src/domain/context-rank.test.ts` under `bun run check`.
-Expansion/cache, the planner, and product context tools remain later
-children of #81.
+The planner and product context tools remain later children of #81.
 
 The context pack composition slice from
 [#85](https://github.com/tyldra-org/falryn/issues/85) ranks, budgets, then
@@ -3175,12 +3174,32 @@ emits a bounded planner pack with citations and uncertainty (parent
   and never claims exact-source. Primary payloads and artifact payloads are
   not rewritten. `#65` `ContextPack` remains a retrieval-pack input;
 - rank and budget omissions are forwarded without echoing origin or payload.
-  Expansion/cache, the planner, and product context tools remain later
-  children of #81.
+  Expansion/cache exists for #86. The planner and product context tools remain
+  later children of #81.
 
 Validated by `src/domain/context-compose.test.ts` under `bun run check`.
-Expansion/cache, the planner, and product context tools remain later
-children of #81.
+The planner and product context tools remain later children of #81.
+
+The context expansion and cache slice from
+[#86](https://github.com/tyldra-org/falryn/issues/86) verifies exact-source or
+expansion handles, reuses keyed projections, and invalidates on digest,
+generation, strategy, configuration, destination, or lost-artifact changes
+(parent [#81](https://github.com/tyldra-org/falryn/issues/81)):
+
+- `src/domain/context-expand.ts` — `expandContextEvidence` hashes supplied
+  bytes through `ContentHasherPort`. A complete verified retrieve is
+  `exact-source`; a bounded range is `bounded-excerpt` and never claims
+  exact-source. Stale freshness stays `stale`. Restricted content is refused
+  and never cached;
+- cache keys include digest, generation, strategy version `expand.v1`,
+  configuration, destination, offset, length, and max bytes. Digest mismatch
+  and quarantined artifacts refuse as `checksum`; missing or reserved bytes
+  refuse as `unavailable`. Errors never echo payload;
+- Loom manifests, workspace-file expansion (#59), the planner, and product
+  context tools remain later or separate children of #81.
+
+Validated by `src/domain/context-expand.test.ts` under `bun run check`.
+The planner and product context tools remain later children of #81.
 
 The bounded full-file write and grouped mutation slice from
 [#281](https://github.com/tyldra-org/falryn/issues/281) creates or replaces
@@ -3528,7 +3547,8 @@ session/turn producer, or live transcript producer. The remaining gaps are:
   index builders, or memory (evidence-candidate admission exists for #82;
   context token/byte/item/latency/sensitivity budgets exist for #83; ranking
   and selection exist for #84; pack composition with citations and
-  uncertainty exists for #85; Hush domain reduction over captured process
+  uncertainty exists for #85; expansion, cache reuse, invalidation, and
+  exact retrieval exist for #86; Hush domain reduction over captured process
   facts exists; none of these is wired into the planner or product tools);
 - MCP, skills, plugin and other hook families, marketplace, agents, jobs, or workflows; or
 - an installer, updater, supported platform package, signed release, or support
