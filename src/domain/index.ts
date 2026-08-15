@@ -356,6 +356,28 @@ export {
   MAX_EVIDENCE_RETRIEVAL_COST,
 } from "./context-evidence.ts";
 export type {
+  ContextRankError,
+  ContextRankErrorCode,
+  ContextRankedItem,
+  ContextRankInput,
+  ContextRankOmission,
+  ContextRankOmissionReason,
+  ContextRankPlan,
+  ContextRankSignal,
+} from "./context-rank.ts";
+export {
+  CONTEXT_RANK_OMISSION_REASONS,
+  CONTEXT_RANK_SIGNALS,
+  DEFAULT_CONTEXT_MAX_PER_ORIGIN,
+  DEFAULT_CONTEXT_MAX_SELECTED,
+  describeContextRankError,
+  HARD_CONTEXT_MAX_PER_ORIGIN,
+  HARD_CONTEXT_MAX_SELECTED,
+  MAX_CONTEXT_RANK_EXPLANATION,
+  MAX_CONTEXT_RANK_QUERY_LENGTH,
+  rankAndSelectContext,
+} from "./context-rank.ts";
+export type {
   CredentialFailure,
   CredentialHealth,
   CredentialHealthState,
