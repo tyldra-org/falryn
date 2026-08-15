@@ -1,10 +1,11 @@
 /**
- * Read-only Git observation contracts (#76).
+ * Git observation and safe branch/worktree contracts (#76/#78).
  *
- * Discovery, status, diff, log, and blame live here as typed snapshots. The
- * host adapter runs `git` through ProcessCapturePort. This module never
- * stages, commits, fetches, or rewrites history, and it does not register a
- * product tool.
+ * Discovery, status, diff, log, and blame are typed snapshots. Branch create,
+ * switch, and delete plus worktree add/list/remove are the only mutations.
+ * The host adapter runs `git` through ProcessCapturePort. This module never
+ * stages, commits, fetches, force-updates, or rewrites history, and it does
+ * not register a product tool.
  */
 
 import { type DurationMs, duration, type Instant } from "./clock.ts";
@@ -24,6 +25,9 @@ export const MAX_GIT_LOG_COMMITS = 128;
 export const DEFAULT_GIT_BLAME_LINES = 512;
 export const MAX_GIT_BLAME_LINES = 4_096;
 export const MAX_GIT_REMOTE_URL_LENGTH = 512;
+export const DEFAULT_GIT_WORKTREES = 32;
+export const MAX_GIT_WORKTREES = 64;
+export const MAX_GIT_REF_NAME_LENGTH = 255;
 
 export const GIT_OBSERVATION_ENVIRONMENT: Readonly<Record<string, string>> = {
   GIT_TERMINAL_PROMPT: "0",
@@ -73,6 +77,12 @@ export type GitError =
   | { readonly code: "timed-out" }
   | { readonly code: "output-exceeded" }
   | { readonly code: "spawn-failed"; readonly reason: string }
+  | { readonly code: "operation-in-progress"; readonly operation: GitOperationState }
+  | { readonly code: "dirty-worktree" }
+  | { readonly code: "already-exists"; readonly reason: string }
+  | { readonly code: "checked-out" }
+  | { readonly code: "not-merged" }
+  | { readonly code: "head-mismatch" }
   | { readonly code: "failed"; readonly reason: string };
 
 export type GitRequestBase = {
@@ -104,6 +114,38 @@ export type GitBlameRequest = GitRequestBase & {
   readonly path: string;
   readonly revision?: string | undefined;
   readonly maxLines?: number | undefined;
+};
+
+export type GitExpectedHeadRequest = GitRequestBase & {
+  readonly expectedHead?: string | undefined;
+};
+
+export type GitCreateBranchRequest = GitExpectedHeadRequest & {
+  readonly name: string;
+  readonly startPoint?: string | undefined;
+};
+
+export type GitSwitchBranchRequest = GitExpectedHeadRequest & {
+  readonly name: string;
+};
+
+export type GitDeleteBranchRequest = GitExpectedHeadRequest & {
+  readonly name: string;
+};
+
+export type GitListWorktreesRequest = GitRequestBase & {
+  readonly maxEntries?: number | undefined;
+};
+
+export type GitCreateWorktreeRequest = GitExpectedHeadRequest & {
+  readonly path: string;
+  readonly startPoint?: string | undefined;
+  readonly branch?: string | undefined;
+  readonly detached?: boolean | undefined;
+};
+
+export type GitRemoveWorktreeRequest = GitExpectedHeadRequest & {
+  readonly path: string;
 };
 
 export type GitIdentity = {
@@ -175,12 +217,57 @@ export type GitBlameSnapshot = {
   readonly lines: GitField<readonly GitBlameLine[]>;
 };
 
+export const GIT_BRANCH_MUTATION_KINDS = [
+  "create-branch",
+  "switch-branch",
+  "delete-branch",
+] as const;
+export type GitBranchMutationKind = (typeof GIT_BRANCH_MUTATION_KINDS)[number];
+
+export type GitBranchMutation = {
+  readonly identity: GitIdentity;
+  readonly kind: GitBranchMutationKind;
+  readonly name: string;
+  readonly previousRef: string | null;
+  readonly currentRef: string | null;
+};
+
+export type GitWorktreeRecord = {
+  readonly path: string;
+  readonly head: GitField<string>;
+  readonly branch: GitField<string>;
+  readonly detached: boolean;
+  readonly locked: boolean;
+  readonly prunable: boolean;
+};
+
+export type GitWorktreeList = {
+  readonly identity: GitIdentity;
+  readonly worktrees: GitField<readonly GitWorktreeRecord[]>;
+};
+
+export const GIT_WORKTREE_MUTATION_KINDS = ["create-worktree", "remove-worktree"] as const;
+export type GitWorktreeMutationKind = (typeof GIT_WORKTREE_MUTATION_KINDS)[number];
+
+export type GitWorktreeMutation = {
+  readonly identity: GitIdentity;
+  readonly kind: GitWorktreeMutationKind;
+  readonly path: string;
+  readonly worktree: GitWorktreeRecord | null;
+};
+
 export type GitPort = {
   discover(request: GitDiscoverRequest): Promise<Result<GitIdentity, GitError>>;
   status(request: GitStatusRequest): Promise<Result<GitStatusSnapshot, GitError>>;
   diff(request: GitDiffRequest): Promise<Result<GitDiffSnapshot, GitError>>;
   log(request: GitLogRequest): Promise<Result<GitLogSnapshot, GitError>>;
   blame(request: GitBlameRequest): Promise<Result<GitBlameSnapshot, GitError>>;
+  listWorktrees(request: GitListWorktreesRequest): Promise<Result<GitWorktreeList, GitError>>;
+  createBranch(request: GitCreateBranchRequest): Promise<Result<GitBranchMutation, GitError>>;
+  switchBranch(request: GitSwitchBranchRequest): Promise<Result<GitBranchMutation, GitError>>;
+  deleteBranch(request: GitDeleteBranchRequest): Promise<Result<GitBranchMutation, GitError>>;
+  createWorktree(request: GitCreateWorktreeRequest): Promise<Result<GitWorktreeMutation, GitError>>;
+  removeWorktree(request: GitRemoveWorktreeRequest): Promise<Result<GitWorktreeMutation, GitError>>;
 };
 
 export type ParsedGitRequest = {
@@ -291,6 +378,87 @@ export function validateGitBlameRequest(
   return ok({ path, revision, maxLines: lines });
 }
 
+export function validateGitRefName(name: string): Result<string, GitError> {
+  if (
+    name.length === 0 ||
+    name.length > MAX_GIT_REF_NAME_LENGTH ||
+    name === "HEAD" ||
+    name.startsWith("-") ||
+    name.startsWith("/") ||
+    name.endsWith("/") ||
+    name.endsWith(".lock") ||
+    name.includes("\0") ||
+    name.includes("..") ||
+    name.includes("//") ||
+    name.includes("@{") ||
+    name.includes("\\") ||
+    /[\s~^:?*[\]]/.test(name)
+  ) {
+    return err({ code: "invalid-request", reason: "ref-name" });
+  }
+  return ok(name);
+}
+
+export function validateGitRevision(revision: string): Result<string, GitError> {
+  if (
+    revision.length === 0 ||
+    revision.length > MAX_GIT_REF_NAME_LENGTH ||
+    revision.includes("\0")
+  ) {
+    return err({ code: "invalid-request", reason: "revision" });
+  }
+  if (revision.startsWith("-")) {
+    return err({ code: "invalid-request", reason: "revision" });
+  }
+  return ok(revision);
+}
+
+export function validateGitWorktreeLimits(
+  maxEntries: number | undefined,
+): Result<number, GitError> {
+  const value = maxEntries ?? DEFAULT_GIT_WORKTREES;
+  if (!Number.isSafeInteger(value) || value < 1 || value > MAX_GIT_WORKTREES) {
+    return err({ code: "invalid-request", reason: "max-entries" });
+  }
+  return ok(value);
+}
+
+export function refuseUnsafeGitIdentity(
+  identity: GitIdentity,
+  expectedHead: string | undefined,
+): GitError | null {
+  if (identity.operation !== "clean") {
+    return { code: "operation-in-progress", operation: identity.operation };
+  }
+  if (expectedHead === undefined) {
+    return null;
+  }
+  if (identity.head.state !== "observed" || identity.head.value !== expectedHead) {
+    return { code: "head-mismatch" };
+  }
+  return null;
+}
+
+export function worktreeHasBlockingChanges(entries: GitField<readonly GitStatusEntry[]>): boolean {
+  switch (entries.state) {
+    case "unavailable":
+      return true;
+    case "observed":
+    case "truncated":
+      return entries.value.some(
+        (entry) =>
+          entry.kind === "ordinary" ||
+          entry.kind === "rename" ||
+          entry.kind === "unmerged" ||
+          entry.kind === "untracked",
+      );
+    default: {
+      const _exhaustive: never = entries;
+      return assertNever(_exhaustive, "unhandled status field");
+    }
+  }
+}
+
 export function gitFailureFromCapture(report: ProcessCaptureReport): GitError | null {
   const fromStop = gitFailureFromStop(report.stop);
   if (fromStop !== null) {
@@ -333,6 +501,30 @@ export function classifyGitStderr(exitCode: number, stderr: string): GitError {
   }
   if (text.includes("not a git repository") || text.includes("not a git dir")) {
     return { code: "not-a-repository" };
+  }
+  if (
+    text.includes("already checked out") ||
+    text.includes("checked out at") ||
+    text.includes("already used by worktree")
+  ) {
+    return { code: "checked-out" };
+  }
+  if (text.includes("not fully merged") || text.includes("is not merged")) {
+    return { code: "not-merged" };
+  }
+  if (
+    text.includes("local changes") ||
+    text.includes("would be overwritten") ||
+    text.includes("modified or untracked") ||
+    text.includes("contains modified")
+  ) {
+    return { code: "dirty-worktree" };
+  }
+  if (text.includes("already exists") || text.includes("a branch named")) {
+    return { code: "already-exists", reason: "name" };
+  }
+  if (text.includes("main working tree")) {
+    return { code: "invalid-request", reason: "main-worktree" };
   }
   if (exitCode === 128) {
     return { code: "not-a-repository" };
@@ -541,6 +733,87 @@ export function parseRevParsePaths(stdout: string): {
     commonDir: emptyToNull(lines[2]),
     superproject: emptyToNull(lines[3]),
   };
+}
+
+export function parseGitWorktrees(
+  stdout: string,
+  maxEntries: number,
+): GitField<readonly GitWorktreeRecord[]> {
+  const records = stdout.split("\0");
+  const worktrees: GitWorktreeRecord[] = [];
+  let current: {
+    path?: string;
+    head?: GitField<string>;
+    branch?: GitField<string>;
+    detached?: boolean;
+    locked?: boolean;
+    prunable?: boolean;
+  } = {};
+
+  const flush = (): void => {
+    if (current.path === undefined) {
+      current = {};
+      return;
+    }
+    worktrees.push({
+      path: current.path,
+      head: current.head ?? { state: "unavailable", reason: "missing-head" },
+      branch: current.branch ?? { state: "unavailable", reason: "detached" },
+      detached: current.detached === true,
+      locked: current.locked === true,
+      prunable: current.prunable === true,
+    });
+    current = {};
+  };
+
+  for (const record of records) {
+    if (record.length === 0) {
+      flush();
+      continue;
+    }
+    if (record.startsWith("worktree ")) {
+      flush();
+      current = { path: record.slice("worktree ".length) };
+      continue;
+    }
+    if (record.startsWith("HEAD ")) {
+      current.head = { state: "observed", value: record.slice("HEAD ".length) };
+      continue;
+    }
+    if (record.startsWith("branch ")) {
+      const ref = record.slice("branch ".length);
+      current.branch = {
+        state: "observed",
+        value: ref.startsWith("refs/heads/") ? ref.slice("refs/heads/".length) : ref,
+      };
+      current.detached = false;
+      continue;
+    }
+    if (record === "detached") {
+      current.detached = true;
+      current.branch = { state: "unavailable", reason: "detached" };
+      continue;
+    }
+    if (record === "bare") {
+      current.detached = false;
+      continue;
+    }
+    if (record === "locked" || record.startsWith("locked ")) {
+      current.locked = true;
+      continue;
+    }
+    if (record === "prunable" || record.startsWith("prunable ")) {
+      current.prunable = true;
+    }
+  }
+  flush();
+
+  const omitted = Math.max(0, worktrees.length - maxEntries);
+  const kept = omitted > 0 ? worktrees.slice(0, maxEntries) : worktrees;
+  if (omitted > 0) {
+    return { state: "truncated", value: kept, omitted };
+  }
+  return { state: "observed", value: kept };
 }
 
 function emptyToNull(value: string | undefined): string | null {

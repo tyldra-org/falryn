@@ -4,6 +4,8 @@
 
 import { describe, expect, test } from "bun:test";
 
+import { instant } from "./clock.ts";
+import { localPath } from "./filesystem.ts";
 import {
   classifyGitStderr,
   GIT_INVOCATION_PREFIX,
@@ -13,9 +15,12 @@ import {
   parseGitLog,
   parseGitRemotes,
   parseGitVersion,
+  parseGitWorktrees,
   parseStatusPorcelainV2,
   redactGitRemoteUrl,
+  refuseUnsafeGitIdentity,
   validateGitBlameRequest,
+  validateGitRefName,
   validateGitRequest,
 } from "./git.ts";
 
@@ -84,6 +89,27 @@ describe("stderr classification", () => {
     ).toEqual({
       code: "lock-contention",
     });
+    expect(classifyGitStderr(128, "fatal: a branch named 'topic' already exists")).toEqual({
+      code: "already-exists",
+      reason: "name",
+    });
+    expect(classifyGitStderr(128, "fatal: 'main' is already checked out at '/tmp/repo'")).toEqual({
+      code: "checked-out",
+    });
+    expect(
+      classifyGitStderr(128, "fatal: 'main' is already used by worktree at '/tmp/repo'"),
+    ).toEqual({
+      code: "checked-out",
+    });
+    expect(classifyGitStderr(1, "error: the branch 'topic' is not fully merged.")).toEqual({
+      code: "not-merged",
+    });
+    expect(
+      classifyGitStderr(
+        1,
+        "error: Your local changes to the following files would be overwritten by checkout:",
+      ),
+    ).toEqual({ code: "dirty-worktree" });
   });
 });
 
@@ -189,6 +215,78 @@ describe("porcelain parsing", () => {
     if (remotes.state === "observed") {
       expect(remotes.value).toEqual([
         { name: "origin", url: "https://[redacted]@example.com/repo.git" },
+      ]);
+    }
+  });
+});
+
+describe("git ref and worktree contracts", () => {
+  test("refuses a ref name that looks like an option", () => {
+    const parsed = validateGitRefName("-topic");
+    expect(parsed.ok).toBe(false);
+    if (!parsed.ok) {
+      expect(parsed.error).toEqual({ code: "invalid-request", reason: "ref-name" });
+    }
+  });
+
+  test("refuses mutation while a merge is in progress", () => {
+    const identity = {
+      worktreeRoot: localPath("/work/project"),
+      gitDir: ".git",
+      commonDir: ".git",
+      head: { state: "observed" as const, value: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
+      headState: "branch" as const,
+      branch: { state: "observed" as const, value: "main" },
+      upstream: { state: "unavailable" as const, reason: "none" },
+      ahead: { state: "unavailable" as const, reason: "none" },
+      behind: { state: "unavailable" as const, reason: "none" },
+      operation: "merge" as const,
+      superproject: { state: "unavailable" as const, reason: "no-superproject" },
+      sparseCheckout: { state: "observed" as const, value: false },
+      gitVersion: { state: "observed" as const, value: "2.45.0" },
+      remotes: { state: "observed" as const, value: [] },
+      observedAt: instant(0),
+    };
+    expect(refuseUnsafeGitIdentity(identity, undefined)).toEqual({
+      code: "operation-in-progress",
+      operation: "merge",
+    });
+  });
+
+  test("parses porcelain worktree records including detached and locked trees", () => {
+    const stdout = [
+      "worktree /repo",
+      "HEAD aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "branch refs/heads/main",
+      "",
+      "worktree /repo-detached",
+      "HEAD bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "detached",
+      "locked reason",
+      "prunable gone",
+      "",
+      "",
+    ].join("\0");
+    const parsed = parseGitWorktrees(stdout, 8);
+    expect(parsed.state).toBe("observed");
+    if (parsed.state === "observed") {
+      expect(parsed.value).toEqual([
+        {
+          path: "/repo",
+          head: { state: "observed", value: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
+          branch: { state: "observed", value: "main" },
+          detached: false,
+          locked: false,
+          prunable: false,
+        },
+        {
+          path: "/repo-detached",
+          head: { state: "observed", value: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" },
+          branch: { state: "unavailable", reason: "detached" },
+          detached: true,
+          locked: true,
+          prunable: true,
+        },
       ]);
     }
   });

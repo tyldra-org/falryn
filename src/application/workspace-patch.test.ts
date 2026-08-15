@@ -461,6 +461,24 @@ function fakeGit(
     async blame() {
       return { ok: false, error: { code: "failed", reason: "unused" } };
     },
+    async listWorktrees() {
+      return { ok: false, error: { code: "failed", reason: "unused" } };
+    },
+    async createBranch() {
+      return { ok: false, error: { code: "failed", reason: "unused" } };
+    },
+    async switchBranch() {
+      return { ok: false, error: { code: "failed", reason: "unused" } };
+    },
+    async deleteBranch() {
+      return { ok: false, error: { code: "failed", reason: "unused" } };
+    },
+    async createWorktree() {
+      return { ok: false, error: { code: "failed", reason: "unused" } };
+    },
+    async removeWorktree() {
+      return { ok: false, error: { code: "failed", reason: "unused" } };
+    },
   };
 }
 
