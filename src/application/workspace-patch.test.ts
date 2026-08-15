@@ -1,7 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 
-import { createInMemoryFileSystem, type InMemoryNode, localPath } from "../domain/index.ts";
+import {
+  createInMemoryFileSystem,
+  type GitPort,
+  type InMemoryNode,
+  instant,
+  localPath,
+} from "../domain/index.ts";
 import { createWorkspacePatcher } from "./workspace-patch.ts";
 
 const root = localPath("/work/project");
@@ -392,5 +398,176 @@ describe("createWorkspacePatcher", () => {
       ok: true,
       value: { items: [{ status: "failed", error: { code: "unsupported" } }] },
     });
+  });
+});
+
+const HEAD = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+
+function gitSnapshot(
+  entries: Array<{
+    path: string;
+    kind: "ordinary" | "unmerged" | "untracked" | "rename" | "ignored";
+  }>,
+  operation: "clean" | "merge" | "rebase" | "cherry-pick" | "revert" | "bisect" = "clean",
+  head = HEAD,
+) {
+  return {
+    identity: {
+      worktreeRoot: localPath("/work/project"),
+      gitDir: ".git",
+      commonDir: ".git",
+      head: { state: "observed" as const, value: head },
+      headState: "branch" as const,
+      branch: { state: "observed" as const, value: "main" },
+      upstream: { state: "unavailable" as const, reason: "none" },
+      ahead: { state: "unavailable" as const, reason: "none" },
+      behind: { state: "unavailable" as const, reason: "none" },
+      operation,
+      superproject: { state: "unavailable" as const, reason: "no-superproject" },
+      sparseCheckout: { state: "observed" as const, value: false },
+      gitVersion: { state: "observed" as const, value: "2.45.0" },
+      remotes: { state: "observed" as const, value: [] },
+      observedAt: instant(0),
+    },
+    entries: {
+      state: "observed" as const,
+      value: entries.map((entry) => ({
+        kind: entry.kind,
+        path: entry.path,
+        originalPath: null,
+        indexStatus: ".",
+        worktreeStatus: "M",
+      })),
+    },
+  };
+}
+
+function fakeGit(
+  status: Awaited<ReturnType<GitPort["status"]>> | (() => Awaited<ReturnType<GitPort["status"]>>),
+): GitPort {
+  return {
+    async discover() {
+      return { ok: false, error: { code: "failed", reason: "unused" } };
+    },
+    async status() {
+      return typeof status === "function" ? status() : status;
+    },
+    async diff() {
+      return { ok: false, error: { code: "failed", reason: "unused" } };
+    },
+    async log() {
+      return { ok: false, error: { code: "failed", reason: "unused" } };
+    },
+    async blame() {
+      return { ok: false, error: { code: "failed", reason: "unused" } };
+    },
+  };
+}
+
+describe("patch git awareness", () => {
+  const hunk = { oldStart: 2, oldLines: ["two"], newLines: ["TWO"] };
+
+  test("keeps git absent when no port is wired or the workspace is not a repository", async () => {
+    const { workspace } = patcher();
+    const preview = await workspace.preview(root, {
+      targets: [{ path: "src/a.ts", hunks: [hunk] }],
+    });
+    expect(preview.ok).toBe(true);
+    if (preview.ok) {
+      expect(preview.value.git).toEqual({ state: "absent" });
+    }
+    const missing = createWorkspacePatcher({
+      fileSystem: patcher().fileSystem,
+      git: {
+        port: fakeGit({ ok: false, error: { code: "not-a-repository" } }),
+        gitExecutable: "/usr/bin/git",
+      },
+    });
+    const absent = await missing.preview(root, {
+      targets: [{ path: "src/a.ts", hunks: [hunk] }],
+    });
+    expect(absent.ok).toBe(true);
+    if (absent.ok) {
+      expect(absent.value.git.state).toBe("absent");
+    }
+  });
+
+  test("applies a dirty overlapping file and names it", async () => {
+    const { fileSystem } = patcher();
+    const workspace = createWorkspacePatcher({
+      fileSystem,
+      git: {
+        port: fakeGit({ ok: true, value: gitSnapshot([{ path: "src/a.ts", kind: "ordinary" }]) }),
+        gitExecutable: "/usr/bin/git",
+      },
+    });
+    const applied = await workspace.apply(root, {
+      targets: [{ path: "src/a.ts", hunks: [hunk] }],
+    });
+    expect(applied.ok).toBe(true);
+    if (applied.ok) {
+      expect(applied.value.git).toMatchObject({
+        state: "observed",
+        operation: "clean",
+        dirtyTargets: ["src/a.ts"],
+      });
+      expect(applied.value.items[0]?.status).toBe("applied");
+    }
+  });
+
+  test("refuses merge operations, HEAD mismatch, and a repo that vanishes before apply", async () => {
+    const { fileSystem } = patcher();
+    const merging = createWorkspacePatcher({
+      fileSystem,
+      git: {
+        port: fakeGit({ ok: true, value: gitSnapshot([], "merge") }),
+        gitExecutable: "/usr/bin/git",
+      },
+    });
+    const mergePreview = await merging.preview(root, {
+      targets: [{ path: "src/a.ts", hunks: [hunk] }],
+    });
+    expect(mergePreview.ok).toBe(false);
+    if (!mergePreview.ok) {
+      expect(mergePreview.error).toEqual({ code: "git-operation", operation: "merge" });
+    }
+
+    const stale = createWorkspacePatcher({
+      fileSystem,
+      git: {
+        port: fakeGit({ ok: true, value: gitSnapshot([]) }),
+        gitExecutable: "/usr/bin/git",
+      },
+    });
+    const mismatched = await stale.preview(root, {
+      targets: [{ path: "src/a.ts", hunks: [hunk] }],
+      expectedGitHead: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    });
+    expect(mismatched.ok).toBe(false);
+    if (!mismatched.ok) {
+      expect(mismatched.error).toEqual({ code: "git-head-mismatch" });
+    }
+
+    let calls = 0;
+    const vanishing = createWorkspacePatcher({
+      fileSystem,
+      git: {
+        port: fakeGit(() => {
+          calls += 1;
+          if (calls === 1) {
+            return { ok: true, value: gitSnapshot([]) };
+          }
+          return { ok: false, error: { code: "not-a-repository" } };
+        }),
+        gitExecutable: "/usr/bin/git",
+      },
+    });
+    const vanished = await vanishing.apply(root, {
+      targets: [{ path: "src/a.ts", hunks: [hunk] }],
+    });
+    expect(vanished.ok).toBe(false);
+    if (!vanished.ok) {
+      expect(vanished.error).toEqual({ code: "git-unavailable", reason: "failed" });
+    }
   });
 });
