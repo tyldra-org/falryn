@@ -11,7 +11,9 @@ import {
   formatGitCheckpointMessage,
   GIT_INVOCATION_PREFIX,
   GIT_OBSERVATION_ENVIRONMENT,
+  GIT_USER_HOOK_INVOCATION_PREFIX,
   gitArgv,
+  gitUserHookArgv,
   parseGitBlame,
   parseGitCheckpointMessage,
   parseGitCheckpointRefs,
@@ -23,10 +25,12 @@ import {
   redactGitRemoteUrl,
   refuseUnsafeGitIdentity,
   validateGitBlameRequest,
+  validateGitCommitSubject,
   validateGitIncludeUntracked,
   validateGitRefName,
   validateGitRelPath,
   validateGitRequest,
+  validateGitStagePaths,
 } from "./git.ts";
 
 describe("git request validation", () => {
@@ -65,6 +69,18 @@ describe("git argv", () => {
   test("prefixes every invocation so hooks cannot run", () => {
     expect(gitArgv(["status"])).toEqual([...GIT_INVOCATION_PREFIX, "status"]);
     expect(GIT_OBSERVATION_ENVIRONMENT.GIT_TERMINAL_PROMPT).toBe("0");
+  });
+
+  test("omits hooksPath when user hooks must be able to fail", () => {
+    expect(gitUserHookArgv(["commit", "-m", "feat: add"])).toEqual([
+      ...GIT_USER_HOOK_INVOCATION_PREFIX,
+      "commit",
+      "-m",
+      "feat: add",
+    ]);
+    expect(
+      gitUserHookArgv(["commit", "-m", "feat: add"]).includes("core.hooksPath=/dev/null"),
+    ).toBe(false);
   });
 });
 
@@ -339,5 +355,42 @@ describe("checkpoint metadata", () => {
     expect(path.ok).toBe(false);
     const included = validateGitIncludeUntracked(["scratch.txt", "scratch.txt"]);
     expect(included.ok).toBe(false);
+  });
+});
+
+describe("git stage and commit contracts", () => {
+  test("refuses secret paths, empty pathspecs, and invented subject tokens", () => {
+    expect(validateGitStagePaths([".env"]).ok).toBe(false);
+    expect(validateGitStagePaths(["."]).ok).toBe(false);
+    expect(validateGitStagePaths(["-A"]).ok).toBe(false);
+    expect(validateGitStagePaths([])).toEqual({
+      ok: false,
+      error: { code: "invalid-request", reason: "paths" },
+    });
+    const staged = validateGitStagePaths(["src/foo.ts"]);
+    expect(staged.ok).toBe(true);
+    expect(validateGitCommitSubject("feat: add foo").ok).toBe(true);
+    expect(validateGitCommitSubject("feat: close #12").ok).toBe(false);
+    expect(validateGitCommitSubject("feat: bump 1.2.3").ok).toBe(false);
+  });
+
+  test("classifies authentication, hook, signing, and non-fast-forward stderr", () => {
+    expect(
+      classifyGitStderr(128, "fatal: could not read Username for 'https://example.com'"),
+    ).toEqual({ code: "authentication" });
+    expect(classifyGitStderr(1, "pre-commit hook failed")).toEqual({
+      code: "hook-failed",
+      reason: "exit-1",
+    });
+    expect(classifyGitStderr(1, "error: gpg failed to sign the data")).toEqual({
+      code: "signing-failed",
+      reason: "exit-1",
+    });
+    expect(classifyGitStderr(1, "! [rejected] main -> main (non-fast-forward)")).toEqual({
+      code: "non-fast-forward",
+    });
+    expect(classifyGitStderr(1, "nothing to commit, working tree clean")).toEqual({
+      code: "empty-index",
+    });
   });
 });

@@ -13,6 +13,7 @@ import {
   type CommitPlan,
   type GitIdentity,
   type GitStatusEntry,
+  isSecretPath,
   MAX_COMMIT_PLAN_GROUPS,
 } from "./git.ts";
 
@@ -82,24 +83,6 @@ export function planGitCommits(input: {
       truncated,
     },
   };
-}
-
-export function isSecretPath(path: string): boolean {
-  const base = basename(path).toLowerCase();
-  const lower = path.toLowerCase();
-  if (base === ".env" || base.startsWith(".env.")) {
-    return true;
-  }
-  if (base === "credentials" || base === "credentials.json") {
-    return true;
-  }
-  if (base === "id_rsa" || base === "id_ed25519" || base.endsWith(".pem")) {
-    return true;
-  }
-  if (lower.includes("secret") || lower.includes("password")) {
-    return true;
-  }
-  return lower.includes("/.env");
 }
 
 function toChangeUnit(entry: GitStatusEntry): CommitChangeUnit {

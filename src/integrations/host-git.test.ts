@@ -79,6 +79,25 @@ async function committedRepo(): Promise<string> {
   return root;
 }
 
+async function cloneFrom(remote: string): Promise<string> {
+  const parent = await scratch();
+  const dest = join(parent, "repo");
+  await runGitOk(parent, ["clone", remote, dest]);
+  await runGitOk(dest, ["config", "user.name", "Falryn Test"]);
+  await runGitOk(dest, ["config", "user.email", "test@example.com"]);
+  await runGitOk(dest, ["config", "commit.gpgsign", "false"]);
+  return dest;
+}
+
+async function repoWithOrigin(): Promise<{ root: string; remote: string }> {
+  const remote = await scratch();
+  await runGitOk(remote, ["init", "--bare", "-b", "main"]);
+  const root = await committedRepo();
+  await runGitOk(root, ["remote", "add", "origin", remote]);
+  await runGitOk(root, ["push", "-u", "origin", "main"]);
+  return { root, remote };
+}
+
 function port() {
   return createHostGitPort({ capture: createHostProcessCapturePort() });
 }
@@ -725,6 +744,322 @@ describe("host git commit planning", () => {
     const cancelled = await git.planCommits({
       gitExecutable: GIT,
       startPath: root,
+      timeoutMs: duration(5_000),
+      signal: AbortSignal.abort(),
+    });
+    expect(cancelled.ok).toBe(false);
+    if (!cancelled.ok) {
+      expect(cancelled.error.code).toBe("cancelled");
+    }
+  });
+});
+
+describe("host git stage commit and sync", () => {
+  gitTest("stages an explicit path, unstages it, and commits a subject", async () => {
+    const root = await committedRepo();
+    await mkdir(join(root, "src"), { recursive: true });
+    await writeFile(join(root, "src", "foo.ts"), "export const foo = 1;\n", "utf8");
+    const git = port();
+    const staged = await git.stage({
+      gitExecutable: GIT,
+      startPath: root,
+      paths: ["src/foo.ts"],
+      timeoutMs: duration(5_000),
+    });
+    expect(staged.ok).toBe(true);
+    if (!staged.ok) {
+      return;
+    }
+    expect(staged.value.paths).toEqual(["src/foo.ts"]);
+    const unstaged = await git.unstage({
+      gitExecutable: GIT,
+      startPath: root,
+      paths: ["src/foo.ts"],
+      timeoutMs: duration(5_000),
+    });
+    expect(unstaged.ok).toBe(true);
+    const restaged = await git.stage({
+      gitExecutable: GIT,
+      startPath: root,
+      paths: ["src/foo.ts"],
+      timeoutMs: duration(5_000),
+    });
+    expect(restaged.ok).toBe(true);
+    const committed = await git.commit({
+      gitExecutable: GIT,
+      startPath: root,
+      subject: "feat: add foo",
+      timeoutMs: duration(5_000),
+    });
+    expect(committed.ok).toBe(true);
+    if (committed.ok) {
+      expect(committed.value.subject).toBe("feat: add foo");
+      expect(committed.value.oid).toHaveLength(40);
+    }
+  });
+
+  gitTest("refuses secret paths, missing pathspecs, and an empty index", async () => {
+    const root = await committedRepo();
+    await writeFile(join(root, ".env"), "TOKEN=1\n", "utf8");
+    const git = port();
+    const secret = await git.stage({
+      gitExecutable: GIT,
+      startPath: root,
+      paths: [".env"],
+      timeoutMs: duration(5_000),
+    });
+    expect(secret.ok).toBe(false);
+    if (!secret.ok) {
+      expect(secret.error).toEqual({ code: "secret-path", path: ".env" });
+    }
+    const missing = await git.stage({
+      gitExecutable: GIT,
+      startPath: root,
+      paths: [],
+      timeoutMs: duration(5_000),
+    });
+    expect(missing.ok).toBe(false);
+    if (!missing.ok) {
+      expect(missing.error).toEqual({ code: "invalid-request", reason: "paths" });
+    }
+    const empty = await git.commit({
+      gitExecutable: GIT,
+      startPath: root,
+      subject: "feat: empty",
+      timeoutMs: duration(5_000),
+    });
+    expect(empty.ok).toBe(false);
+    if (!empty.ok) {
+      expect(empty.error.code).toBe("empty-index");
+    }
+    await runGitOk(root, ["add", "--", ".env"]);
+    const unstaged = await git.unstage({
+      gitExecutable: GIT,
+      startPath: root,
+      paths: [".env"],
+      timeoutMs: duration(5_000),
+    });
+    expect(unstaged.ok).toBe(true);
+    await runGitOk(root, ["add", "--", ".env"]);
+    const blocked = await git.commit({
+      gitExecutable: GIT,
+      startPath: root,
+      subject: "feat: secret",
+      timeoutMs: duration(5_000),
+    });
+    expect(blocked.ok).toBe(false);
+    if (!blocked.ok) {
+      expect(blocked.error).toEqual({ code: "secret-path", path: ".env" });
+    }
+  });
+
+  gitTest("reports hook-failed when pre-commit exits non-zero", async () => {
+    const root = await committedRepo();
+    await writeFile(
+      join(root, ".git", "hooks", "pre-commit"),
+      "#!/bin/sh\necho pre-commit hook failed >&2\nexit 1\n",
+      { encoding: "utf8", mode: 0o755 },
+    );
+    await writeFile(join(root, "note.txt"), "note\n", "utf8");
+    const git = port();
+    const staged = await git.stage({
+      gitExecutable: GIT,
+      startPath: root,
+      paths: ["note.txt"],
+      timeoutMs: duration(5_000),
+    });
+    expect(staged.ok).toBe(true);
+    const committed = await git.commit({
+      gitExecutable: GIT,
+      startPath: root,
+      subject: "feat: note",
+      timeoutMs: duration(5_000),
+    });
+    expect(committed.ok).toBe(false);
+    if (!committed.ok) {
+      expect(committed.error.code).toBe("hook-failed");
+    }
+  });
+
+  gitTest("fetches, fast-forward pulls, and pushes without force flags", async () => {
+    const { remote } = await repoWithOrigin();
+    const local = await cloneFrom(remote);
+    const other = await cloneFrom(remote);
+    const lagging = await cloneFrom(remote);
+    await writeFile(join(other, "from-other.txt"), "other\n", "utf8");
+    await runGitOk(other, ["add", "from-other.txt"]);
+    await runGitOk(other, ["commit", "-m", "Add other"]);
+    await runGitOk(other, ["push", "origin", "main"]);
+    const git = port();
+    const fastForward = await git.sync({
+      gitExecutable: GIT,
+      startPath: lagging,
+      timeoutMs: duration(5_000),
+    });
+    expect(fastForward.ok).toBe(true);
+    if (fastForward.ok) {
+      expect(fastForward.value.fetched).toBe(true);
+      expect(fastForward.value.fastForwarded).toBe(true);
+      expect(fastForward.value.pushed).toBe(false);
+    }
+    const fetched = await git.fetch({
+      gitExecutable: GIT,
+      startPath: local,
+      timeoutMs: duration(5_000),
+    });
+    expect(fetched.ok).toBe(true);
+    if (fetched.ok) {
+      expect(fetched.value.remote).toBe("origin");
+      expect(
+        fetched.value.identity.behind.state === "observed"
+          ? fetched.value.identity.behind.value
+          : 0,
+      ).toBeGreaterThan(0);
+    }
+    const pulled = await git.pull({
+      gitExecutable: GIT,
+      startPath: local,
+      timeoutMs: duration(5_000),
+    });
+    expect(pulled.ok).toBe(true);
+    await writeFile(join(local, "from-local.txt"), "local\n", "utf8");
+    const staged = await git.stage({
+      gitExecutable: GIT,
+      startPath: local,
+      paths: ["from-local.txt"],
+      timeoutMs: duration(5_000),
+    });
+    expect(staged.ok).toBe(true);
+    const committed = await git.commit({
+      gitExecutable: GIT,
+      startPath: local,
+      subject: "feat: local",
+      timeoutMs: duration(5_000),
+    });
+    expect(committed.ok).toBe(true);
+    const pushed = await git.push({
+      gitExecutable: GIT,
+      startPath: local,
+      timeoutMs: duration(5_000),
+    });
+    expect(pushed.ok).toBe(true);
+    await writeFile(join(local, "from-sync.txt"), "sync\n", "utf8");
+    const restaged = await git.stage({
+      gitExecutable: GIT,
+      startPath: local,
+      paths: ["from-sync.txt"],
+      timeoutMs: duration(5_000),
+    });
+    expect(restaged.ok).toBe(true);
+    const more = await git.commit({
+      gitExecutable: GIT,
+      startPath: local,
+      subject: "feat: sync ahead",
+      timeoutMs: duration(5_000),
+    });
+    expect(more.ok).toBe(true);
+    const published = await git.sync({
+      gitExecutable: GIT,
+      startPath: local,
+      timeoutMs: duration(5_000),
+    });
+    expect(published.ok).toBe(true);
+    if (published.ok) {
+      expect(published.value.fetched).toBe(true);
+      expect(published.value.fastForwarded).toBe(false);
+      expect(published.value.pushed).toBe(true);
+    }
+    const synced = await git.sync({
+      gitExecutable: GIT,
+      startPath: local,
+      timeoutMs: duration(5_000),
+    });
+    expect(synced.ok).toBe(true);
+    if (synced.ok) {
+      expect(synced.value.fetched).toBe(true);
+      expect(synced.value.fastForwarded).toBe(false);
+      expect(synced.value.pushed).toBe(false);
+    }
+  });
+
+  gitTest("refuses a dirty pull, a missing upstream, and a diverged sync", async () => {
+    const { root, remote } = await repoWithOrigin();
+    await writeFile(join(root, "dirty.txt"), "dirty\n", "utf8");
+    const git = port();
+    const dirty = await git.pull({
+      gitExecutable: GIT,
+      startPath: root,
+      timeoutMs: duration(5_000),
+    });
+    expect(dirty.ok).toBe(false);
+    if (!dirty.ok) {
+      expect(dirty.error.code).toBe("dirty-worktree");
+    }
+    const isolated = await committedRepo();
+    const missing = await git.pull({
+      gitExecutable: GIT,
+      startPath: isolated,
+      timeoutMs: duration(5_000),
+    });
+    expect(missing.ok).toBe(false);
+    if (!missing.ok) {
+      expect(missing.error.code).toBe("no-upstream");
+    }
+    const left = await cloneFrom(remote);
+    const right = await cloneFrom(remote);
+    await writeFile(join(left, "left.txt"), "left\n", "utf8");
+    await runGitOk(left, ["add", "left.txt"]);
+    await runGitOk(left, ["commit", "-m", "Add left"]);
+    await runGitOk(left, ["push", "origin", "main"]);
+    await writeFile(join(right, "right.txt"), "right\n", "utf8");
+    await runGitOk(right, ["add", "right.txt"]);
+    await runGitOk(right, ["commit", "-m", "Add right"]);
+    const diverged = await git.sync({
+      gitExecutable: GIT,
+      startPath: right,
+      timeoutMs: duration(5_000),
+    });
+    expect(diverged.ok).toBe(false);
+    if (!diverged.ok) {
+      expect(diverged.error.code).toBe("diverged");
+    }
+  });
+
+  gitTest("refuses mutation during a merge and cancelled stage", async () => {
+    const root = await committedRepo();
+    await runGitOk(root, ["checkout", "-b", "other"]);
+    await writeFile(join(root, "README.md"), "other\n", "utf8");
+    await runGitOk(root, ["commit", "-am", "Other"]);
+    await runGitOk(root, ["checkout", "main"]);
+    await writeFile(join(root, "README.md"), "mainline\n", "utf8");
+    await runGitOk(root, ["commit", "-am", "Mainline"]);
+    const mergeCode = await runGit(root, [
+      "-c",
+      "merge.ff=false",
+      "merge",
+      "--no-ff",
+      "--no-commit",
+      "other",
+    ]);
+    expect(mergeCode).not.toBe(0);
+    await writeFile(join(root, "extra.txt"), "extra\n", "utf8");
+    const git = port();
+    const refused = await git.stage({
+      gitExecutable: GIT,
+      startPath: root,
+      paths: ["extra.txt"],
+      timeoutMs: duration(5_000),
+    });
+    expect(refused.ok).toBe(false);
+    if (!refused.ok) {
+      expect(refused.error.code).toBe("operation-in-progress");
+    }
+    const clean = await committedRepo();
+    await writeFile(join(clean, "extra.txt"), "extra\n", "utf8");
+    const cancelled = await git.stage({
+      gitExecutable: GIT,
+      startPath: clean,
+      paths: ["extra.txt"],
       timeoutMs: duration(5_000),
       signal: AbortSignal.abort(),
     });
