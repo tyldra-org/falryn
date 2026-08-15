@@ -593,7 +593,7 @@ Its verified behavior:
 - **the child environment is supplied.** `GIT_TERMINAL_PROMPT=0` and
   `core.hooksPath=/dev/null`. Failures distinguish `not-a-repository`,
   `unsafe-ownership`, `lock-contention`, `cancelled`, `timed-out`, and spawn
-  failure. Stage/commit/push/worktree mutation remain later #75 children.
+  failure. Stage/commit/push remain later #75 children.
 
 The patch Git-awareness slice from
 [#77](https://github.com/tyldra-org/falryn/issues/77) lets `PatchPort` consume
@@ -617,10 +617,32 @@ workspace root:
   entries.
 
 Validated by `src/domain/workspace-patch.test.ts` and
-`src/application/workspace-patch.test.ts`. Product Git/patch tools, stage,
-commit, and worktree mutation remain later #75 children.
+`src/application/workspace-patch.test.ts`. Product Git/patch tools, stage, and
+commit remain later #75 children.
 
-`bun run check` passed with 3,205 tests passing and 14 skipped.
+The safe branch and worktree slice from
+[#78](https://github.com/tyldra-org/falryn/issues/78) extends `GitPort` with
+create/switch/delete branch and worktree add/list/remove. Mutations recheck
+identity first. `--force`, `-D`, stash, and discard-changes are never passed.
+
+Its verified behavior:
+
+- **in-progress Git operations refuse mutation.** Merge, rebase, cherry-pick,
+  revert, and bisect are `operation-in-progress`. Optional `expectedHead`
+  mismatch is `head-mismatch`;
+- **switch and delete stay recoverable.** `git switch` never discards local
+  changes. `git branch --delete` never uses `-D`; unmerged names are
+  `not-merged`. The current branch is `checked-out`;
+- **worktrees are listed and scoped.** Porcelain records path, HEAD, branch or
+  detached, locked, and prunable. Add never uses `--force`. A branch already
+  checked out elsewhere is `checked-out`. Remove refuses dirty/untracked
+  content and the main worktree.
+
+Validated by `src/domain/git.test.ts` and `src/integrations/host-git.test.ts`.
+Product Git tools, stage, commit, fetch/push, checkpoints, and worktree
+owner-task persistence remain later #75 children.
+
+`bun run check` passed with 3,214 tests passing and 14 skipped.
 Platform-specific PTY and process-capture tests are skipped on Windows, while
 the compiled qualification suites remain owned by CI.
 

@@ -269,3 +269,206 @@ describe("host git observation", () => {
     }
   });
 });
+
+describe("host git branch and worktree mutations", () => {
+  gitTest("creates switches and deletes a merged branch without force flags", async () => {
+    const root = await committedRepo();
+    const git = port();
+    const created = await git.createBranch({
+      gitExecutable: GIT,
+      startPath: root,
+      name: "topic",
+      timeoutMs: duration(5_000),
+    });
+    expect(created.ok).toBe(true);
+    if (created.ok) {
+      expect(created.value.kind).toBe("create-branch");
+      expect(created.value.name).toBe("topic");
+    }
+    const switched = await git.switchBranch({
+      gitExecutable: GIT,
+      startPath: root,
+      name: "topic",
+      timeoutMs: duration(5_000),
+    });
+    expect(switched.ok).toBe(true);
+    if (switched.ok) {
+      expect(switched.value.identity.branch).toEqual({ state: "observed", value: "topic" });
+      expect(switched.value.previousRef).toBe("main");
+    }
+    const back = await git.switchBranch({
+      gitExecutable: GIT,
+      startPath: root,
+      name: "main",
+      timeoutMs: duration(5_000),
+    });
+    expect(back.ok).toBe(true);
+    const deleted = await git.deleteBranch({
+      gitExecutable: GIT,
+      startPath: root,
+      name: "topic",
+      timeoutMs: duration(5_000),
+    });
+    expect(deleted.ok).toBe(true);
+    if (deleted.ok) {
+      expect(deleted.value.currentRef).toBeNull();
+    }
+  });
+
+  gitTest("refuses a dirty switch and an unmerged delete", async () => {
+    const root = await committedRepo();
+    await runGitOk(root, ["checkout", "-b", "topic"]);
+    await writeFile(join(root, "README.md"), "topic\n", "utf8");
+    await runGitOk(root, ["commit", "-am", "Topic"]);
+    await runGitOk(root, ["checkout", "main"]);
+    await writeFile(join(root, "README.md"), "dirty\n", "utf8");
+    const git = port();
+    const switched = await git.switchBranch({
+      gitExecutable: GIT,
+      startPath: root,
+      name: "topic",
+      timeoutMs: duration(5_000),
+    });
+    expect(switched.ok).toBe(false);
+    if (!switched.ok) {
+      expect(switched.error.code).toBe("dirty-worktree");
+    }
+    await runGitOk(root, ["checkout", "--", "README.md"]);
+    await runGitOk(root, ["checkout", "-b", "divergent"]);
+    await writeFile(join(root, "README.md"), "divergent\n", "utf8");
+    await runGitOk(root, ["commit", "-am", "Divergent"]);
+    await runGitOk(root, ["checkout", "main"]);
+    const deleted = await git.deleteBranch({
+      gitExecutable: GIT,
+      startPath: root,
+      name: "divergent",
+      timeoutMs: duration(5_000),
+    });
+    expect(deleted.ok).toBe(false);
+    if (!deleted.ok) {
+      expect(deleted.error.code).toBe("not-merged");
+    }
+  });
+
+  gitTest("adds lists and removes a clean linked worktree", async () => {
+    const root = await committedRepo();
+    const linked = await scratch();
+    await rm(linked, { recursive: true, force: true });
+    const git = port();
+    const created = await git.createWorktree({
+      gitExecutable: GIT,
+      startPath: root,
+      path: linked,
+      branch: "work",
+      timeoutMs: duration(5_000),
+    });
+    expect(created.ok).toBe(true);
+    if (created.ok) {
+      expect(created.value.kind).toBe("create-worktree");
+      expect(created.value.worktree?.branch).toEqual({ state: "observed", value: "work" });
+    }
+    const listed = await git.listWorktrees({
+      gitExecutable: GIT,
+      startPath: root,
+      timeoutMs: duration(5_000),
+    });
+    expect(listed.ok).toBe(true);
+    if (listed.ok && listed.value.worktrees.state !== "unavailable") {
+      expect(listed.value.worktrees.value.length).toBeGreaterThanOrEqual(2);
+    }
+    const removed = await git.removeWorktree({
+      gitExecutable: GIT,
+      startPath: root,
+      path: linked,
+      timeoutMs: duration(5_000),
+    });
+    expect(removed.ok).toBe(true);
+    if (removed.ok) {
+      expect(removed.value.worktree).toBeNull();
+    }
+  });
+
+  gitTest("refuses to remove a dirty worktree or the main worktree", async () => {
+    const root = await committedRepo();
+    const linked = await scratch();
+    await rm(linked, { recursive: true, force: true });
+    const git = port();
+    const created = await git.createWorktree({
+      gitExecutable: GIT,
+      startPath: root,
+      path: linked,
+      branch: "dirty-tree",
+      timeoutMs: duration(5_000),
+    });
+    expect(created.ok).toBe(true);
+    await writeFile(join(linked, "scratch.txt"), "tmp\n", "utf8");
+    const removed = await git.removeWorktree({
+      gitExecutable: GIT,
+      startPath: root,
+      path: linked,
+      timeoutMs: duration(5_000),
+    });
+    expect(removed.ok).toBe(false);
+    if (!removed.ok) {
+      expect(removed.error.code).toBe("dirty-worktree");
+    }
+    const main = await git.removeWorktree({
+      gitExecutable: GIT,
+      startPath: root,
+      path: root,
+      timeoutMs: duration(5_000),
+    });
+    expect(main.ok).toBe(false);
+    if (!main.ok) {
+      expect(main.error.code).toBe("invalid-request");
+    }
+  });
+
+  gitTest("refuses a second checkout of a branch already used by a worktree", async () => {
+    const root = await committedRepo();
+    const linked = await scratch();
+    await rm(linked, { recursive: true, force: true });
+    const git = port();
+    const created = await git.createWorktree({
+      gitExecutable: GIT,
+      startPath: root,
+      path: linked,
+      startPoint: "main",
+      timeoutMs: duration(5_000),
+    });
+    expect(created.ok).toBe(false);
+    if (!created.ok) {
+      expect(created.error.code).toBe("checked-out");
+    }
+  });
+
+  gitTest("refuses branch mutation during a merge", async () => {
+    const root = await committedRepo();
+    await runGitOk(root, ["checkout", "-b", "other"]);
+    await writeFile(join(root, "README.md"), "other\n", "utf8");
+    await runGitOk(root, ["commit", "-am", "Other"]);
+    await runGitOk(root, ["checkout", "main"]);
+    await writeFile(join(root, "README.md"), "mainline\n", "utf8");
+    await runGitOk(root, ["commit", "-am", "Mainline"]);
+    const mergeCode = await runGit(root, [
+      "-c",
+      "merge.ff=false",
+      "merge",
+      "--no-ff",
+      "--no-commit",
+      "other",
+    ]);
+    expect(mergeCode).not.toBe(0);
+    const git = port();
+    const created = await git.createBranch({
+      gitExecutable: GIT,
+      startPath: root,
+      name: "after-merge",
+      timeoutMs: duration(5_000),
+    });
+    expect(created.ok).toBe(false);
+    if (!created.ok) {
+      expect(created.error.code).toBe("operation-in-progress");
+    }
+  });
+});

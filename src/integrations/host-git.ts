@@ -1,9 +1,10 @@
 /**
- * Host Git observation adapter (#76).
+ * Host Git observation and safe branch/worktree adapter (#76/#78).
  *
  * Runs `git` through ProcessCapturePort with a complete supplied environment
  * and a structured argv. Stderr is classified into typed failures and then
- * dropped. This adapter never stages, commits, or rewrites history.
+ * dropped. This adapter never stages, commits, force-updates, or rewrites
+ * history.
  */
 
 import {
@@ -13,6 +14,10 @@ import {
   GIT_OBSERVATION_ENVIRONMENT,
   type GitBlameRequest,
   type GitBlameSnapshot,
+  type GitBranchMutation,
+  type GitCreateBranchRequest,
+  type GitCreateWorktreeRequest,
+  type GitDeleteBranchRequest,
   type GitDiffRequest,
   type GitDiffScope,
   type GitDiffSnapshot,
@@ -20,19 +25,26 @@ import {
   type GitError,
   type GitField,
   type GitIdentity,
+  type GitListWorktreesRequest,
   type GitLogRequest,
   type GitLogSnapshot,
   type GitOperationState,
   type GitPort,
   type GitRemote,
+  type GitRemoveWorktreeRequest,
   type GitStatusEntry,
   type GitStatusRequest,
   type GitStatusSnapshot,
+  type GitSwitchBranchRequest,
+  type GitWorktreeList,
+  type GitWorktreeMutation,
+  type GitWorktreeRecord,
   gitArgv,
   gitFailureFromCapture,
   gitFailureFromStop,
   type LocalPath,
   MAX_COMMAND_OUTPUT_BYTES,
+  MAX_GIT_WORKTREES,
   type ProcessCapturePort,
   type ProcessCaptureReport,
   type ProcessCaptureRequest,
@@ -40,14 +52,20 @@ import {
   parseGitLog,
   parseGitRemotes,
   parseGitVersion,
+  parseGitWorktrees,
   parseLocalPath,
   parseRevParsePaths,
   parseStatusPorcelainV2,
+  refuseUnsafeGitIdentity,
   validateGitBlameRequest,
   validateGitDiffLimits,
   validateGitLogLimits,
+  validateGitRefName,
   validateGitRequest,
+  validateGitRevision,
   validateGitStatusLimits,
+  validateGitWorktreeLimits,
+  worktreeHasBlockingChanges,
 } from "../domain/index.ts";
 import { err, ok, type Result } from "../domain/result.ts";
 
@@ -413,6 +431,276 @@ export function createHostGitPort(options: HostGitOptions): GitPort {
         lines: parseGitBlame(report.value.stdout.inlineText ?? "", limits.value.maxLines),
       } satisfies GitBlameSnapshot);
     },
+
+    async listWorktrees(request: GitListWorktreesRequest) {
+      const parsed = validateGitRequest(request);
+      if (!parsed.ok) {
+        return parsed;
+      }
+      const limits = validateGitWorktreeLimits(request.maxEntries);
+      if (!limits.ok) {
+        return limits;
+      }
+      const identity = await loadIdentity(
+        parsed.value.gitExecutable,
+        parsed.value.startPath,
+        parsed.value.timeoutMs,
+        parsed.value.signal,
+      );
+      if (!identity.ok) {
+        return identity;
+      }
+      const report = await runGit(
+        parsed.value.gitExecutable,
+        identity.value.worktreeRoot,
+        ["worktree", "list", "--porcelain", "-z"],
+        parsed.value.timeoutMs,
+        parsed.value.signal,
+        MAX_COMMAND_OUTPUT_BYTES,
+      );
+      if (!report.ok) {
+        return report;
+      }
+      return ok({
+        identity: identity.value,
+        worktrees: parseGitWorktrees(report.value.stdout.inlineText ?? "", limits.value),
+      } satisfies GitWorktreeList);
+    },
+
+    async createBranch(request: GitCreateBranchRequest) {
+      const prepared = await prepareMutation(request, loadIdentity);
+      if (!prepared.ok) {
+        return prepared;
+      }
+      const mutation = prepared.value;
+      const name = validateGitRefName(request.name);
+      if (!name.ok) {
+        return name;
+      }
+      const start =
+        request.startPoint === undefined
+          ? mutation.identity.head.state === "observed"
+            ? ok(mutation.identity.head.value)
+            : err({ code: "invalid-request" as const, reason: "unborn" })
+          : validateGitRevision(request.startPoint);
+      if (!start.ok) {
+        return start;
+      }
+      const report = await runGit(
+        mutation.gitExecutable,
+        mutation.identity.worktreeRoot,
+        ["branch", "--", name.value, start.value],
+        mutation.timeoutMs,
+        mutation.signal,
+        4_096,
+      );
+      if (!report.ok) {
+        return report;
+      }
+      const identity = await reloadIdentity(mutation);
+      if (!identity.ok) {
+        return identity;
+      }
+      return ok({
+        identity: identity.value,
+        kind: "create-branch",
+        name: name.value,
+        previousRef: null,
+        currentRef: start.value,
+      } satisfies GitBranchMutation);
+    },
+
+    async switchBranch(request: GitSwitchBranchRequest) {
+      const prepared = await prepareMutation(request, loadIdentity);
+      if (!prepared.ok) {
+        return prepared;
+      }
+      const mutation = prepared.value;
+      const name = validateGitRefName(request.name);
+      if (!name.ok) {
+        return name;
+      }
+      const previous =
+        mutation.identity.branch.state === "observed" ? mutation.identity.branch.value : null;
+      const report = await runGit(
+        mutation.gitExecutable,
+        mutation.identity.worktreeRoot,
+        ["switch", "--", name.value],
+        mutation.timeoutMs,
+        mutation.signal,
+        4_096,
+      );
+      if (!report.ok) {
+        return report;
+      }
+      const identity = await reloadIdentity(mutation);
+      if (!identity.ok) {
+        return identity;
+      }
+      return ok({
+        identity: identity.value,
+        kind: "switch-branch",
+        name: name.value,
+        previousRef: previous,
+        currentRef: name.value,
+      } satisfies GitBranchMutation);
+    },
+
+    async deleteBranch(request: GitDeleteBranchRequest) {
+      const prepared = await prepareMutation(request, loadIdentity);
+      if (!prepared.ok) {
+        return prepared;
+      }
+      const mutation = prepared.value;
+      const name = validateGitRefName(request.name);
+      if (!name.ok) {
+        return name;
+      }
+      if (
+        mutation.identity.branch.state === "observed" &&
+        mutation.identity.branch.value === name.value
+      ) {
+        return err({ code: "checked-out" });
+      }
+      const report = await runGit(
+        mutation.gitExecutable,
+        mutation.identity.worktreeRoot,
+        ["branch", "--delete", "--", name.value],
+        mutation.timeoutMs,
+        mutation.signal,
+        4_096,
+      );
+      if (!report.ok) {
+        return report;
+      }
+      const identity = await reloadIdentity(mutation);
+      if (!identity.ok) {
+        return identity;
+      }
+      return ok({
+        identity: identity.value,
+        kind: "delete-branch",
+        name: name.value,
+        previousRef: name.value,
+        currentRef: null,
+      } satisfies GitBranchMutation);
+    },
+
+    async createWorktree(request: GitCreateWorktreeRequest) {
+      const prepared = await prepareMutation(request, loadIdentity);
+      if (!prepared.ok) {
+        return prepared;
+      }
+      const mutation = prepared.value;
+      if (request.branch !== undefined && request.detached === true) {
+        return err({ code: "invalid-request", reason: "worktree-mode" });
+      }
+      const path = parseLocalPath(request.path);
+      if (!path.ok) {
+        return err({ code: "invalid-request", reason: path.error.code });
+      }
+      const start =
+        request.startPoint === undefined
+          ? mutation.identity.head.state === "observed"
+            ? ok(mutation.identity.head.value)
+            : err({ code: "invalid-request" as const, reason: "unborn" })
+          : validateGitRevision(request.startPoint);
+      if (!start.ok) {
+        return start;
+      }
+      const branch =
+        request.branch === undefined ? ok(undefined) : validateGitRefName(request.branch);
+      if (!branch.ok) {
+        return branch;
+      }
+      const subcommand =
+        request.detached === true
+          ? ["worktree", "add", "--detach", path.value, start.value]
+          : branch.value === undefined
+            ? ["worktree", "add", path.value, start.value]
+            : ["worktree", "add", "-b", branch.value, path.value, start.value];
+      const report = await runGit(
+        mutation.gitExecutable,
+        mutation.identity.worktreeRoot,
+        subcommand,
+        mutation.timeoutMs,
+        mutation.signal,
+        4_096,
+      );
+      if (!report.ok) {
+        return report;
+      }
+      const identity = await reloadIdentity(mutation);
+      if (!identity.ok) {
+        return identity;
+      }
+      const listed = await listWorktreeAt(
+        mutation.gitExecutable,
+        mutation.identity.worktreeRoot,
+        path.value,
+        mutation.timeoutMs,
+        mutation.signal,
+        runGit,
+      );
+      if (!listed.ok) {
+        return listed;
+      }
+      return ok({
+        identity: identity.value,
+        kind: "create-worktree",
+        path: path.value,
+        worktree: listed.value,
+      } satisfies GitWorktreeMutation);
+    },
+
+    async removeWorktree(request: GitRemoveWorktreeRequest) {
+      const prepared = await prepareMutation(request, loadIdentity);
+      if (!prepared.ok) {
+        return prepared;
+      }
+      const mutation = prepared.value;
+      const path = parseLocalPath(request.path);
+      if (!path.ok) {
+        return err({ code: "invalid-request", reason: path.error.code });
+      }
+      if (sameWorktreePath(mutation.identity.worktreeRoot, path.value)) {
+        return err({ code: "invalid-request", reason: "main-worktree" });
+      }
+      const targetStatus = await statusAt(
+        mutation.gitExecutable,
+        path.value,
+        mutation.timeoutMs,
+        mutation.signal,
+        runGit,
+      );
+      if (!targetStatus.ok) {
+        return targetStatus;
+      }
+      if (worktreeHasBlockingChanges(targetStatus.value)) {
+        return err({ code: "dirty-worktree" });
+      }
+      const report = await runGit(
+        mutation.gitExecutable,
+        mutation.identity.worktreeRoot,
+        ["worktree", "remove", path.value],
+        mutation.timeoutMs,
+        mutation.signal,
+        4_096,
+      );
+      if (!report.ok) {
+        return report;
+      }
+      const identity = await reloadIdentity(mutation);
+      if (!identity.ok) {
+        return identity;
+      }
+      return ok({
+        identity: identity.value,
+        kind: "remove-worktree",
+        path: path.value,
+        worktree: null,
+      } satisfies GitWorktreeMutation);
+    },
   };
 }
 
@@ -444,6 +732,125 @@ function captureErrorToGit(code: string): GitError {
       }
       return { code: "failed", reason: code };
   }
+}
+
+type IdentityLoader = (
+  gitExecutable: string,
+  startPath: string,
+  timeoutMs: DurationMs,
+  signal: AbortSignal | undefined,
+) => Promise<Result<GitIdentity, GitError>>;
+
+type PreparedMutation = {
+  readonly gitExecutable: string;
+  readonly startPath: string;
+  readonly timeoutMs: DurationMs;
+  readonly signal: AbortSignal | undefined;
+  readonly identity: GitIdentity;
+  readonly loadIdentity: IdentityLoader;
+};
+
+async function prepareMutation(
+  request: {
+    readonly gitExecutable: string;
+    readonly startPath: string;
+    readonly timeoutMs?: DurationMs | undefined;
+    readonly signal?: AbortSignal | undefined;
+    readonly expectedHead?: string | undefined;
+  },
+  loadIdentity: IdentityLoader,
+): Promise<Result<PreparedMutation, GitError>> {
+  const parsed = validateGitRequest(request);
+  if (!parsed.ok) {
+    return parsed;
+  }
+  const identity = await loadIdentity(
+    parsed.value.gitExecutable,
+    parsed.value.startPath,
+    parsed.value.timeoutMs,
+    parsed.value.signal,
+  );
+  if (!identity.ok) {
+    return identity;
+  }
+  const refused = refuseUnsafeGitIdentity(identity.value, request.expectedHead);
+  if (refused !== null) {
+    return err(refused);
+  }
+  return ok({
+    gitExecutable: parsed.value.gitExecutable,
+    startPath: parsed.value.startPath,
+    timeoutMs: parsed.value.timeoutMs,
+    signal: parsed.value.signal,
+    identity: identity.value,
+    loadIdentity,
+  });
+}
+
+async function reloadIdentity(prepared: PreparedMutation): Promise<Result<GitIdentity, GitError>> {
+  return prepared.loadIdentity(
+    prepared.gitExecutable,
+    prepared.startPath,
+    prepared.timeoutMs,
+    prepared.signal,
+  );
+}
+
+async function listWorktreeAt(
+  gitExecutable: string,
+  cwd: string,
+  path: string,
+  timeoutMs: DurationMs,
+  signal: AbortSignal | undefined,
+  runGit: GitRunner,
+): Promise<Result<GitWorktreeRecord, GitError>> {
+  const report = await runGit(
+    gitExecutable,
+    cwd,
+    ["worktree", "list", "--porcelain", "-z"],
+    timeoutMs,
+    signal,
+    MAX_COMMAND_OUTPUT_BYTES,
+  );
+  if (!report.ok) {
+    return report;
+  }
+  const listed = parseGitWorktrees(report.value.stdout.inlineText ?? "", MAX_GIT_WORKTREES);
+  if (listed.state === "unavailable") {
+    return err({ code: "failed", reason: "worktrees-unavailable" });
+  }
+  const found = listed.value.find((worktree) => sameWorktreePath(worktree.path, path));
+  if (found === undefined) {
+    return err({ code: "failed", reason: "worktree-missing" });
+  }
+  return ok(found);
+}
+
+async function statusAt(
+  gitExecutable: string,
+  cwd: string,
+  timeoutMs: DurationMs,
+  signal: AbortSignal | undefined,
+  runGit: GitRunner,
+): Promise<Result<GitStatusSnapshot["entries"], GitError>> {
+  const report = await runGit(
+    gitExecutable,
+    cwd,
+    ["status", "--porcelain=v2", "--branch", "-z", "--untracked-files=all"],
+    timeoutMs,
+    signal,
+    MAX_COMMAND_OUTPUT_BYTES,
+  );
+  if (!report.ok) {
+    return report;
+  }
+  return ok(parseStatusPorcelainV2(report.value.stdout.inlineText ?? "", 1_024).entries);
+}
+
+function sameWorktreePath(left: string, right: string): boolean {
+  const normalize = (value: string): string =>
+    value.replace(/\/+$/, "").replace(/^\/private\//, "/");
+  return normalize(left) === normalize(right);
 }
 
 function remoteField(
