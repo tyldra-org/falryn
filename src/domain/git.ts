@@ -1,11 +1,13 @@
 /**
- * Git observation and safe branch/worktree contracts (#76/#78).
+ * Git observation, safe branch/worktree, and checkpoint contracts (#76/#78/#79).
  *
  * Discovery, status, diff, log, and blame are typed snapshots. Branch create,
- * switch, and delete plus worktree add/list/remove are the only mutations.
- * The host adapter runs `git` through ProcessCapturePort. This module never
- * stages, commits, fetches, force-updates, or rewrites history, and it does
- * not register a product tool.
+ * switch, and delete plus worktree add/list/remove are the only history-safe
+ * mutations. Checkpoints snapshot index/worktree trees under
+ * `refs/falryn/checkpoints/` and restore only after a preview. The host
+ * adapter runs `git` through ProcessCapturePort. This module never stages or
+ * commits on the user index, fetches, force-updates, stashes, or rewrites
+ * history, and it does not register a product tool.
  */
 
 import { type DurationMs, duration, type Instant } from "./clock.ts";
@@ -28,6 +30,12 @@ export const MAX_GIT_REMOTE_URL_LENGTH = 512;
 export const DEFAULT_GIT_WORKTREES = 32;
 export const MAX_GIT_WORKTREES = 64;
 export const MAX_GIT_REF_NAME_LENGTH = 255;
+export const GIT_CHECKPOINT_REF_PREFIX = "refs/falryn/checkpoints/";
+export const GIT_CHECKPOINT_VERSION = 1;
+export const DEFAULT_GIT_CHECKPOINTS = 32;
+export const MAX_GIT_CHECKPOINTS = 64;
+export const MAX_GIT_CHECKPOINT_UNTRACKED = 32;
+export const MAX_GIT_CHECKPOINT_REFERENCE_LENGTH = 128;
 
 export const GIT_OBSERVATION_ENVIRONMENT: Readonly<Record<string, string>> = {
   GIT_TERMINAL_PROMPT: "0",
@@ -83,6 +91,8 @@ export type GitError =
   | { readonly code: "checked-out" }
   | { readonly code: "not-merged" }
   | { readonly code: "head-mismatch" }
+  | { readonly code: "checkpoint-missing" }
+  | { readonly code: "restore-ambiguous"; readonly reason: string }
   | { readonly code: "failed"; readonly reason: string };
 
 export type GitRequestBase = {
@@ -146,6 +156,20 @@ export type GitCreateWorktreeRequest = GitExpectedHeadRequest & {
 
 export type GitRemoveWorktreeRequest = GitExpectedHeadRequest & {
   readonly path: string;
+};
+
+export type GitCreateCheckpointRequest = GitExpectedHeadRequest & {
+  readonly includeUntracked?: readonly string[] | undefined;
+  readonly sessionId?: string | undefined;
+  readonly turnId?: string | undefined;
+};
+
+export type GitListCheckpointsRequest = GitRequestBase & {
+  readonly maxEntries?: number | undefined;
+};
+
+export type GitRestoreCheckpointRequest = GitExpectedHeadRequest & {
+  readonly checkpointId: string;
 };
 
 export type GitIdentity = {
@@ -256,6 +280,51 @@ export type GitWorktreeMutation = {
   readonly worktree: GitWorktreeRecord | null;
 };
 
+export type GitCheckpointUntracked = {
+  readonly path: string;
+  readonly blob: string;
+};
+
+export type GitCheckpointRecord = {
+  readonly id: string;
+  readonly head: string;
+  readonly headState: GitHeadState;
+  readonly branch: string | null;
+  readonly indexTree: string;
+  readonly worktreeTree: string;
+  readonly includedUntracked: readonly GitCheckpointUntracked[];
+  readonly excludedUntracked: number;
+  readonly truncated: boolean;
+  readonly sessionId: string | null;
+  readonly turnId: string | null;
+};
+
+export type GitCheckpointSnapshot = {
+  readonly identity: GitIdentity;
+  readonly checkpoint: GitCheckpointRecord;
+};
+
+export type GitCheckpointList = {
+  readonly identity: GitIdentity;
+  readonly checkpoints: GitField<readonly GitCheckpointRecord[]>;
+};
+
+export type GitRestorePlan = {
+  readonly identity: GitIdentity;
+  readonly checkpoint: GitCheckpointRecord;
+  readonly indexChanged: boolean;
+  readonly worktreePaths: readonly string[];
+  readonly untrackedRestores: readonly string[];
+};
+
+export type GitRestoreResult = {
+  readonly identity: GitIdentity;
+  readonly checkpoint: GitCheckpointRecord;
+  readonly restoredIndex: boolean;
+  readonly restoredWorktree: readonly string[];
+  readonly restoredUntracked: readonly string[];
+};
+
 export type GitPort = {
   discover(request: GitDiscoverRequest): Promise<Result<GitIdentity, GitError>>;
   status(request: GitStatusRequest): Promise<Result<GitStatusSnapshot, GitError>>;
@@ -268,6 +337,14 @@ export type GitPort = {
   deleteBranch(request: GitDeleteBranchRequest): Promise<Result<GitBranchMutation, GitError>>;
   createWorktree(request: GitCreateWorktreeRequest): Promise<Result<GitWorktreeMutation, GitError>>;
   removeWorktree(request: GitRemoveWorktreeRequest): Promise<Result<GitWorktreeMutation, GitError>>;
+  createCheckpoint(
+    request: GitCreateCheckpointRequest,
+  ): Promise<Result<GitCheckpointSnapshot, GitError>>;
+  listCheckpoints(request: GitListCheckpointsRequest): Promise<Result<GitCheckpointList, GitError>>;
+  planRestore(request: GitRestoreCheckpointRequest): Promise<Result<GitRestorePlan, GitError>>;
+  restoreCheckpoint(
+    request: GitRestoreCheckpointRequest,
+  ): Promise<Result<GitRestoreResult, GitError>>;
 };
 
 export type ParsedGitRequest = {
@@ -423,6 +500,176 @@ export function validateGitWorktreeLimits(
   return ok(value);
 }
 
+export function validateGitCheckpointLimits(
+  maxEntries: number | undefined,
+): Result<number, GitError> {
+  const value = maxEntries ?? DEFAULT_GIT_CHECKPOINTS;
+  if (!Number.isSafeInteger(value) || value < 1 || value > MAX_GIT_CHECKPOINTS) {
+    return err({ code: "invalid-request", reason: "max-entries" });
+  }
+  return ok(value);
+}
+
+export function validateGitOid(value: string): Result<string, GitError> {
+  if (!/^[0-9a-f]{40}$/.test(value)) {
+    return err({ code: "invalid-request", reason: "oid" });
+  }
+  return ok(value);
+}
+
+export function validateGitRelPath(path: string): Result<string, GitError> {
+  if (
+    path.length === 0 ||
+    path.includes("\0") ||
+    path.startsWith("-") ||
+    path.startsWith("/") ||
+    path.includes("\\") ||
+    path.split("/").some((part) => part.length === 0 || part === "." || part === "..")
+  ) {
+    return err({ code: "invalid-request", reason: "path" });
+  }
+  return ok(path);
+}
+
+export function validateGitCheckpointReference(
+  value: string | undefined,
+): Result<string | null, GitError> {
+  if (value === undefined) {
+    return ok(null);
+  }
+  if (value.length === 0 || value.length > MAX_GIT_CHECKPOINT_REFERENCE_LENGTH) {
+    return err({ code: "invalid-request", reason: "checkpoint-reference" });
+  }
+  if (value.includes("\0")) {
+    return err({ code: "invalid-request", reason: "checkpoint-reference" });
+  }
+  return ok(value);
+}
+
+export function validateGitIncludeUntracked(
+  paths: readonly string[] | undefined,
+): Result<readonly string[], GitError> {
+  if (paths === undefined) {
+    return ok([]);
+  }
+  if (paths.length > MAX_GIT_CHECKPOINT_UNTRACKED) {
+    return err({ code: "invalid-request", reason: "include-untracked" });
+  }
+  const unique = new Set<string>();
+  const validated: string[] = [];
+  for (const path of paths) {
+    const parsed = validateGitRelPath(path);
+    if (!parsed.ok) {
+      return parsed;
+    }
+    if (unique.has(parsed.value)) {
+      return err({ code: "invalid-request", reason: "include-untracked" });
+    }
+    unique.add(parsed.value);
+    validated.push(parsed.value);
+  }
+  return ok(validated);
+}
+
+export function gitCheckpointRef(id: string): string {
+  return `${GIT_CHECKPOINT_REF_PREFIX}${id}`;
+}
+
+export function formatGitCheckpointMessage(record: Omit<GitCheckpointRecord, "id">): string {
+  return `falryn-checkpoint v${GIT_CHECKPOINT_VERSION}\n${JSON.stringify({
+    version: GIT_CHECKPOINT_VERSION,
+    head: record.head,
+    headState: record.headState,
+    branch: record.branch,
+    indexTree: record.indexTree,
+    worktreeTree: record.worktreeTree,
+    includedUntracked: record.includedUntracked,
+    excludedUntracked: record.excludedUntracked,
+    truncated: record.truncated,
+    sessionId: record.sessionId,
+    turnId: record.turnId,
+  })}`;
+}
+
+export function parseGitCheckpointMessage(
+  id: string,
+  message: string,
+): Result<GitCheckpointRecord, GitError> {
+  const trimmed = message.replace(/\n+$/, "");
+  const prefix = `falryn-checkpoint v${GIT_CHECKPOINT_VERSION}\n`;
+  if (!trimmed.startsWith(prefix)) {
+    return err({ code: "failed", reason: "checkpoint-unparsed" });
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(trimmed.slice(prefix.length));
+  } catch {
+    return err({ code: "failed", reason: "checkpoint-unparsed" });
+  }
+  if (parsed === null || typeof parsed !== "object") {
+    return err({ code: "failed", reason: "checkpoint-unparsed" });
+  }
+  const body = parsed as Record<string, unknown>;
+  if (body.version !== GIT_CHECKPOINT_VERSION) {
+    return err({ code: "failed", reason: "checkpoint-unparsed" });
+  }
+  const head = asOid(body.head);
+  const indexTree = asOid(body.indexTree);
+  const worktreeTree = asOid(body.worktreeTree);
+  const headState = asHeadState(body.headState);
+  if (head === null || indexTree === null || worktreeTree === null || headState === null) {
+    return err({ code: "failed", reason: "checkpoint-unparsed" });
+  }
+  if (body.branch !== null && typeof body.branch !== "string") {
+    return err({ code: "failed", reason: "checkpoint-unparsed" });
+  }
+  if (typeof body.excludedUntracked !== "number" || !Number.isSafeInteger(body.excludedUntracked)) {
+    return err({ code: "failed", reason: "checkpoint-unparsed" });
+  }
+  if (typeof body.truncated !== "boolean") {
+    return err({ code: "failed", reason: "checkpoint-unparsed" });
+  }
+  const included = asIncludedUntracked(body.includedUntracked);
+  if (included === null) {
+    return err({ code: "failed", reason: "checkpoint-unparsed" });
+  }
+  if (body.sessionId !== null && typeof body.sessionId !== "string") {
+    return err({ code: "failed", reason: "checkpoint-unparsed" });
+  }
+  if (body.turnId !== null && typeof body.turnId !== "string") {
+    return err({ code: "failed", reason: "checkpoint-unparsed" });
+  }
+  return ok({
+    id,
+    head,
+    headState,
+    branch: body.branch,
+    indexTree,
+    worktreeTree,
+    includedUntracked: included,
+    excludedUntracked: body.excludedUntracked,
+    truncated: body.truncated,
+    sessionId: body.sessionId,
+    turnId: body.turnId,
+  });
+}
+
+export function parseGitCheckpointRefs(
+  stdout: string,
+  maxEntries: number,
+): GitField<readonly string[]> {
+  const ids = stdout
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => /^[0-9a-f]{40}$/.test(line));
+  const omitted = Math.max(0, ids.length - maxEntries);
+  const kept = omitted > 0 ? ids.slice(0, maxEntries) : ids;
+  if (omitted > 0) {
+    return { state: "truncated", value: kept, omitted };
+  }
+  return { state: "observed", value: kept };
+}
+
 export function refuseUnsafeGitIdentity(
   identity: GitIdentity,
   expectedHead: string | undefined,
@@ -525,6 +772,14 @@ export function classifyGitStderr(exitCode: number, stderr: string): GitError {
   }
   if (text.includes("main working tree")) {
     return { code: "invalid-request", reason: "main-worktree" };
+  }
+  if (
+    text.includes("bad object") ||
+    text.includes("unknown revision") ||
+    text.includes("needed a single revision") ||
+    text.includes("not a valid object")
+  ) {
+    return { code: "checkpoint-missing" };
   }
   if (exitCode === 128) {
     return { code: "not-a-repository" };
@@ -814,6 +1069,38 @@ export function parseGitWorktrees(
     return { state: "truncated", value: kept, omitted };
   }
   return { state: "observed", value: kept };
+}
+
+function asOid(value: unknown): string | null {
+  return typeof value === "string" && /^[0-9a-f]{40}$/.test(value) ? value : null;
+}
+
+function asHeadState(value: unknown): GitHeadState | null {
+  if (value === "branch" || value === "detached" || value === "unborn") {
+    return value;
+  }
+  return null;
+}
+
+function asIncludedUntracked(value: unknown): readonly GitCheckpointUntracked[] | null {
+  if (!Array.isArray(value)) {
+    return null;
+  }
+  const included: GitCheckpointUntracked[] = [];
+  for (const entry of value) {
+    if (entry === null || typeof entry !== "object") {
+      return null;
+    }
+    const record = entry as Record<string, unknown>;
+    if (typeof record.path !== "string" || typeof record.blob !== "string") {
+      return null;
+    }
+    if (!/^[0-9a-f]{40}$/.test(record.blob)) {
+      return null;
+    }
+    included.push({ path: record.path, blob: record.blob });
+  }
+  return included;
 }
 
 function emptyToNull(value: string | undefined): string | null {

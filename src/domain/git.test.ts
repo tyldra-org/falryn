@@ -8,10 +8,13 @@ import { instant } from "./clock.ts";
 import { localPath } from "./filesystem.ts";
 import {
   classifyGitStderr,
+  formatGitCheckpointMessage,
   GIT_INVOCATION_PREFIX,
   GIT_OBSERVATION_ENVIRONMENT,
   gitArgv,
   parseGitBlame,
+  parseGitCheckpointMessage,
+  parseGitCheckpointRefs,
   parseGitLog,
   parseGitRemotes,
   parseGitVersion,
@@ -20,7 +23,9 @@ import {
   redactGitRemoteUrl,
   refuseUnsafeGitIdentity,
   validateGitBlameRequest,
+  validateGitIncludeUntracked,
   validateGitRefName,
+  validateGitRelPath,
   validateGitRequest,
 } from "./git.ts";
 
@@ -103,6 +108,9 @@ describe("stderr classification", () => {
     });
     expect(classifyGitStderr(1, "error: the branch 'topic' is not fully merged.")).toEqual({
       code: "not-merged",
+    });
+    expect(classifyGitStderr(128, "fatal: Needed a single revision")).toEqual({
+      code: "checkpoint-missing",
     });
     expect(
       classifyGitStderr(
@@ -289,5 +297,41 @@ describe("git ref and worktree contracts", () => {
         },
       ]);
     }
+  });
+});
+
+describe("checkpoint metadata", () => {
+  const oid = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+  const payload = {
+    head: oid,
+    headState: "branch" as const,
+    branch: "main",
+    indexTree: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    worktreeTree: "cccccccccccccccccccccccccccccccccccccccc",
+    includedUntracked: [{ path: "scratch.txt", blob: "dddddddddddddddddddddddddddddddddddddddd" }],
+    excludedUntracked: 2,
+    truncated: false,
+    sessionId: "session-1",
+    turnId: null,
+  };
+
+  test("round-trips a checkpoint message", () => {
+    const parsed = parseGitCheckpointMessage(oid, formatGitCheckpointMessage(payload));
+    expect(parsed.ok).toBe(true);
+    if (parsed.ok) {
+      expect(parsed.value).toEqual({ id: oid, ...payload });
+    }
+  });
+
+  test("lists checkpoint oids and refuses a dotted include path", () => {
+    const listed = parseGitCheckpointRefs(`${oid}\n${"b".repeat(40)}\n`, 8);
+    expect(listed.state).toBe("observed");
+    if (listed.state === "observed") {
+      expect(listed.value).toEqual([oid, "b".repeat(40)]);
+    }
+    const path = validateGitRelPath("../secret");
+    expect(path.ok).toBe(false);
+    const included = validateGitIncludeUntracked(["scratch.txt", "scratch.txt"]);
+    expect(included.ok).toBe(false);
   });
 });
