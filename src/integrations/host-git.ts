@@ -1,5 +1,6 @@
 /**
- * Host Git observation, safe branch/worktree, and checkpoint adapter (#76/#78/#79).
+ * Host Git observation, safe branch/worktree, checkpoint, and commit-plan
+ * adapter (#76/#78/#79/#80).
  *
  * Runs `git` through ProcessCapturePort with a complete supplied environment
  * and a structured argv. Stderr is classified into typed failures and then
@@ -14,6 +15,7 @@ import { isAbsolute, join } from "node:path";
 import {
   type ClockPort,
   createSystemClock,
+  DEFAULT_GIT_LOG_COMMITS,
   type DurationMs,
   formatGitCheckpointMessage,
   GIT_CHECKPOINT_REF_PREFIX,
@@ -24,6 +26,7 @@ import {
   type GitCheckpointList,
   type GitCheckpointRecord,
   type GitCheckpointSnapshot,
+  type GitCommitPlanSnapshot,
   type GitCreateBranchRequest,
   type GitCreateCheckpointRequest,
   type GitCreateWorktreeRequest,
@@ -40,6 +43,7 @@ import {
   type GitLogRequest,
   type GitLogSnapshot,
   type GitOperationState,
+  type GitPlanCommitsRequest,
   type GitPort,
   type GitRemote,
   type GitRemoveWorktreeRequest,
@@ -73,6 +77,7 @@ import {
   parseLocalPath,
   parseRevParsePaths,
   parseStatusPorcelainV2,
+  planGitCommits,
   refuseUnsafeGitIdentity,
   validateGitBlameRequest,
   validateGitCheckpointLimits,
@@ -901,6 +906,58 @@ export function createHostGitPort(options: HostGitOptions): GitPort {
         restoredWorktree: plan.worktreePaths,
         restoredUntracked: plan.untrackedRestores,
       } satisfies GitRestoreResult);
+    },
+
+    async planCommits(request: GitPlanCommitsRequest) {
+      const prepared = await prepareMutation(request, loadIdentity);
+      if (!prepared.ok) {
+        return prepared;
+      }
+      const mutation = prepared.value;
+      const status = await statusAt(
+        mutation.gitExecutable,
+        mutation.identity.worktreeRoot,
+        mutation.timeoutMs,
+        mutation.signal,
+        runGit,
+      );
+      if (!status.ok) {
+        return status;
+      }
+      if (status.value.state === "unavailable") {
+        return err({ code: "failed", reason: "status-unavailable" });
+      }
+      const logged = await runGit(
+        mutation.gitExecutable,
+        mutation.identity.worktreeRoot,
+        ["log", "--no-color", `--max-count=${DEFAULT_GIT_LOG_COMMITS}`, `--format=${LOG_FORMAT}`],
+        mutation.timeoutMs,
+        mutation.signal,
+        MAX_COMMAND_OUTPUT_BYTES,
+      );
+      let subjects: readonly string[] = [];
+      if (!logged.ok) {
+        if (logged.error.code === "cancelled" || logged.error.code === "timed-out") {
+          return logged;
+        }
+        if (mutation.identity.headState !== "unborn") {
+          return logged;
+        }
+      } else {
+        const parsed = parseGitLog(logged.value.stdout.inlineText ?? "", DEFAULT_GIT_LOG_COMMITS);
+        if (parsed.state !== "unavailable") {
+          subjects = parsed.value.map((commit) => commit.subject);
+        }
+      }
+      return ok({
+        identity: mutation.identity,
+        plan: planGitCommits({
+          identity: mutation.identity,
+          entries: status.value.value,
+          truncated: status.value.state === "truncated",
+          subjects,
+        }),
+      } satisfies GitCommitPlanSnapshot);
     },
   };
 }

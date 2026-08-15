@@ -259,6 +259,12 @@ describe("git ref and worktree contracts", () => {
       code: "operation-in-progress",
       operation: "merge",
     });
+    expect(
+      refuseUnsafeGitIdentity(
+        { ...identity, operation: "clean" },
+        "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      ),
+    ).toEqual({ code: "head-mismatch" });
   });
 
   test("parses porcelain worktree records including detached and locked trees", () => {

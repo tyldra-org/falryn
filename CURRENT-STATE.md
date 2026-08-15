@@ -665,7 +665,27 @@ Validated by `src/domain/git.test.ts` and `src/integrations/host-git.test.ts`.
 Product Git tools, stage, commit, fetch/push, and worktree owner-task
 persistence remain later #75 children.
 
-`bun run check` passed with 3,220 tests passing and 14 skipped.
+The commit-planning slice from
+[#80](https://github.com/tyldra-org/falryn/issues/80) inventories Git status
+and recent subjects, then returns cohesive groups, drafted messages, a
+validation summary, and provenance. It never stages or commits.
+
+Its verified behavior:
+
+- **planning is advice.** `planCommits` pairs source with tests, lockfiles with
+  `package.json`, and same-directory leftovers. Ignored files are omitted.
+  Unmerged and secret-looking paths stay unassigned;
+- **provenance names the baseline.** Planner version, `git-status-log` source,
+  `model: null`, HEAD, and truncation are recorded. In-progress operations are
+  `operation-in-progress`;
+- **the worktree is unchanged.** Planning does not `git add`, `git commit`,
+  stash, or force-update.
+
+Validated by `src/domain/commit-plan.test.ts` and
+`src/integrations/host-git.test.ts`. Product Git tools, stage, commit,
+fetch/push, and worktree owner-task persistence remain later #75 children.
+
+`bun run check` passed with 3,231 tests passing and 14 skipped.
 Platform-specific PTY and process-capture tests are skipped on Windows, while
 the compiled qualification suites remain owned by CI.
 
