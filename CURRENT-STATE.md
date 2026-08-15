@@ -568,7 +568,34 @@ Its verified behavior:
 - **capture does not inherit undeclared environment.** Large dual streams keep
   both sides and a merged observation order.
 
-`bun run check` passed with 3,179 tests passing and 14 skipped.
+The read-only Git observation foundation delivered by
+[#76](https://github.com/tyldra-org/falryn/issues/76) adds `src/domain/git.ts`
+and the host adapter `src/integrations/host-git.ts`. It discovers a repository
+from an absolute start path and observes status, diff, log, and blame. Git runs
+through `ProcessCapturePort` with a supplied environment and structured argv.
+No product Git tool is registered, and the port cannot stage, commit, fetch,
+or rewrite history.
+
+Its verified behavior:
+
+- **discovery records identity.** Worktree root, Git dir, common dir, HEAD or
+  unborn/detached state, branch, upstream, ahead/behind, superproject,
+  sparse-checkout, Git version, remotes, and an observation timestamp. Nested
+  start paths resolve to the containing worktree; a nested repository is
+  discovered from its own root;
+- **status is porcelain v2.** Index, worktree, untracked, optional ignored, and
+  unmerged/conflict entries. Merge/rebase/cherry-pick/revert/bisect is named
+  when Git reports the corresponding ref. Fields are `observed`, `unavailable`,
+  or `truncated`;
+- **diff, log, and blame are bounded observations.** Truncation is a typed
+  fact. Remote URLs drop embedded credentials. An already-aborted request
+  starts no git process;
+- **the child environment is supplied.** `GIT_TERMINAL_PROMPT=0` and
+  `core.hooksPath=/dev/null`. Failures distinguish `not-a-repository`,
+  `unsafe-ownership`, `lock-contention`, `cancelled`, `timed-out`, and spawn
+  failure. Stage/commit/push/worktree mutation remain later #75 children.
+
+`bun run check` passed with 3,199 tests passing and 14 skipped.
 Platform-specific PTY and process-capture tests are skipped on Windows, while
 the compiled qualification suites remain owned by CI.
 
@@ -3297,13 +3324,14 @@ session/turn producer, or live transcript producer. The remaining gaps are:
 -   provider integration beyond the #34–#39 boundary (live vendor adapters,
   OAuth/write flows, network discovery against real endpoints), or product
   workspace/Git/shell tool adapters;
-- workspace Git, LSP, DAP, browser, or computer-use capabilities (path bind,
-  list/stat/walk, bounded file reads, specialized readers, exact-source
+- workspace Git mutation, LSP, DAP, browser, or computer-use capabilities (path
+  bind, list/stat/walk, bounded file reads, specialized readers, exact-source
   expansion, the shared malformed/stale/binary/large-file/symlink/cancellation
   matrix, glob discovery, bounded text search, derived-index query, writes,
   mutate, patch apply/rollback, supervised argv/Bash, PTY and managed
-  services, process capture, Hush reduction, and process-tree cancellation
-  exist; product tools are not registered);
+  services, process capture, Hush reduction, process-tree cancellation, and
+  read-only Git status/diff/log/blame/discovery exist; product tools are not
+  registered, and Git cannot stage, commit, or rewrite history);
 - context planning, Brief, Hush product/CLI/TUI wiring, Loom, compression,
   index builders, or memory (Hush domain reduction over captured process facts
   exists; it is not yet admitted into context or product tools);

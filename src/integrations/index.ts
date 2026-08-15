@@ -13,6 +13,8 @@ export { createHostBlobStore } from "./host-blobs.ts";
 export { createHostCommandRunner } from "./host-commands.ts";
 export { createHostEnvironment, hostHome, hostPlatform } from "./host-environment.ts";
 export { createHostFileSystem } from "./host-filesystem.ts";
+export type { HostGitOptions } from "./host-git.ts";
+export { createHostGitPort } from "./host-git.ts";
 export type { HostPackageWriterOptions } from "./host-packages.ts";
 export { createHostPackageWriter, STAGED_SUFFIX } from "./host-packages.ts";
 export type { HostProcessCaptureOptions } from "./host-process-capture.ts";
