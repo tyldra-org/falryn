@@ -3,6 +3,7 @@ import { describe, expect, test } from "bun:test";
 import {
   configurationGeneration,
   eventId,
+  evidenceId,
   FIRST_CONFIGURATION_GENERATION,
   FIRST_SEQUENCE,
   nextSequence,
@@ -67,6 +68,7 @@ describe("identifier parsing", () => {
 
   test("from throws on invalid input", () => {
     expect(() => turnId.from("")).toThrow("invalid turnId");
+    expect(() => evidenceId.from("")).toThrow("invalid evidenceId");
   });
 });
 
