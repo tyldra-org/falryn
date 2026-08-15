@@ -33,7 +33,7 @@
  */
 
 import type { Timestamp } from "../../domain/index.ts";
-import { timestampToEpochMilliseconds } from "../../domain/index.ts";
+import { assertNever, timestampToEpochMilliseconds } from "../../domain/index.ts";
 import type {
   BoundedText,
   Disclosure,
@@ -444,6 +444,10 @@ function contentOf(block: TranscriptBlock): readonly LabelledContent[] {
       return [{ label: "diagnostic", content: block.note }];
     case "artifact":
       return [];
+    case "unknown":
+      return [{ label: "kind", content: block.observedKind }];
+    default:
+      return assertNever(block, "unhandled block kind");
   }
 }
 

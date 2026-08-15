@@ -2318,6 +2318,12 @@ fixtures only, because no agent loop, provider, tool runner, or process boundary
 emits them. A test asserts the count of five, so a sixth producer cannot appear
 without this file being wrong.
 
+An unrecognized kind is never mapped onto one of those sixteen.
+[#250](https://github.com/tyldra-org/falryn/issues/250) admits it as a typed
+`unknown` fallback: Falryn-owned summary, bounded observed kind, no copied
+payload, and no inferred outcome. `unknown` is not a seventeenth semantic
+producer kind.
+
 Every block the reducer produces is `ordinary`: the runtime's events carry no
 payload, so nothing sensitive or secret reaches it. The `sensitive` and `secret`
 classes are constructed by fixtures — for the same reason as the eleven

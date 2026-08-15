@@ -44,6 +44,17 @@ export {
   settledEntries,
 } from "./activity/index.ts";
 export type {
+  TranscriptBlockAdmissionError,
+  TranscriptBlockAdmissionErrorCode,
+  TranscriptRecordInput,
+} from "./transcript/admit.ts";
+export {
+  admitTranscriptRecord,
+  describeTranscriptBlockAdmissionError,
+  MAX_OBSERVED_KIND_CHARS,
+  TRANSCRIPT_BLOCK_ADMISSION_ERROR_CODES,
+} from "./transcript/admit.ts";
+export type {
   ArtifactBlock,
   BlockAnchor,
   BlockSensitivity,
@@ -66,7 +77,9 @@ export type {
   ToolResultBlock,
   TranscriptBlock,
   TranscriptBlockKind,
+  TranscriptRenderableKind,
   TurnOutcomeBlock,
+  UnknownBlock,
   UserInputBlock,
 } from "./transcript/blocks.ts";
 export {
@@ -78,9 +91,11 @@ export {
   describeBlock,
   expansionRoutesFor,
   FILE_CHANGES,
+  isTranscriptBlockKind,
   outcomeOf,
   REPOSITORY_ACTIVITIES,
   TRANSCRIPT_BLOCK_KINDS,
+  UNKNOWN_TRANSCRIPT_BLOCK_KIND,
 } from "./transcript/blocks.ts";
 export type { CoalescedTranscript } from "./transcript/coalesce.ts";
 export { applyRevision, coalesce, EMPTY_TRANSCRIPT } from "./transcript/coalesce.ts";
