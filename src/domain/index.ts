@@ -403,6 +403,21 @@ export {
   MAX_CONTEXT_EXPAND_KEY_FIELD,
 } from "./context-expand.ts";
 export type {
+  ContextBatchStatus,
+  ContextConflict,
+  ContextConflictReason,
+  ContextInspectError,
+  ContextInspectErrorCode,
+  ContextInspectReport,
+} from "./context-inspect.ts";
+export {
+  CONTEXT_BATCH_STATUSES,
+  CONTEXT_CONFLICT_REASONS,
+  DEFAULT_LONG_SESSION_CONVERSATION_ITEMS,
+  describeContextInspectError,
+  inspectContextEvidence,
+} from "./context-inspect.ts";
+export type {
   ContextRankError,
   ContextRankErrorCode,
   ContextRankedItem,

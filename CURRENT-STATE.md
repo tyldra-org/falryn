@@ -3201,6 +3201,28 @@ generation, strategy, configuration, destination, or lost-artifact changes
 Validated by `src/domain/context-expand.test.ts` under `bun run check`.
 The planner and product context tools remain later children of #81.
 
+The context scenario inspection slice from
+[#87](https://github.com/tyldra-org/falryn/issues/87) classifies admitted
+evidence for large-repository overflow, long-session conversation pressure,
+stale labels, and conflicting same-origin items (parent
+[#81](https://github.com/tyldra-org/falryn/issues/81)):
+
+- `src/domain/context-inspect.ts` — `inspectContextEvidence` reports
+  digest-mismatch or freshness-mismatch conflicts by branded id, lists stale
+  ids, marks a full `MAX_EVIDENCE_BATCH` as `at-limit`, and flags
+  `longSession` at 16 conversation items. Oversized batches refuse without
+  dropping items. Reports never echo origin or payload and never merge
+  conflicting facts or rewrite stale to live;
+- child-seam scenarios in `src/domain/context-engine.test.ts` run admit,
+  inspect, rank, budget, compose, and expand together. Rank-limit omissions
+  are the continuation for a partial ranking;
+- Loom manifests, the planner, and product context tools remain later or
+  separate children of #81.
+
+Validated by `src/domain/context-inspect.test.ts` and
+`src/domain/context-engine.test.ts` under `bun run check`.
+The planner and product context tools remain later children of #81.
+
 The bounded full-file write and grouped mutation slice from
 [#281](https://github.com/tyldra-org/falryn/issues/281) creates or replaces
 UTF-8 files inside that same root (parent
@@ -3548,8 +3570,10 @@ session/turn producer, or live transcript producer. The remaining gaps are:
   context token/byte/item/latency/sensitivity budgets exist for #83; ranking
   and selection exist for #84; pack composition with citations and
   uncertainty exists for #85; expansion, cache reuse, invalidation, and
-  exact retrieval exist for #86; Hush domain reduction over captured process
-  facts exists; none of these is wired into the planner or product tools);
+  exact retrieval exist for #86; large-repository, long-session, stale, and
+  conflicting-evidence inspection exists for #87; Hush domain reduction over
+  captured process facts exists; none of these is wired into the planner or
+  product tools);
 - MCP, skills, plugin and other hook families, marketplace, agents, jobs, or workflows; or
 - an installer, updater, supported platform package, signed release, or support
   channel.
