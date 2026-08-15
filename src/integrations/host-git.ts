@@ -1,11 +1,10 @@
 /**
- * Host Git observation, safe branch/worktree, checkpoint, and commit-plan
- * adapter (#76/#78/#79/#80).
+ * Host Git observation, safe branch/worktree, checkpoint, commit-plan, and
+ * stage/commit/sync adapter (#76/#78/#79/#80/#283).
  *
  * Runs `git` through ProcessCapturePort with a complete supplied environment
  * and a structured argv. Stderr is classified into typed failures and then
- * dropped. This adapter never stages or commits on the user index, force-updates,
- * stashes, or rewrites history.
+ * dropped. Force-update, rebase, stash, and history rewrite are never used.
  */
 
 import { mkdtemp, rm } from "node:fs/promises";
@@ -27,6 +26,8 @@ import {
   type GitCheckpointRecord,
   type GitCheckpointSnapshot,
   type GitCommitPlanSnapshot,
+  type GitCommitRequest,
+  type GitCommitResult,
   type GitCreateBranchRequest,
   type GitCreateCheckpointRequest,
   type GitCreateWorktreeRequest,
@@ -36,8 +37,10 @@ import {
   type GitDiffSnapshot,
   type GitDiscoverRequest,
   type GitError,
+  type GitFetchRequest,
   type GitField,
   type GitIdentity,
+  type GitIndexMutation,
   type GitListCheckpointsRequest,
   type GitListWorktreesRequest,
   type GitLogRequest,
@@ -45,15 +48,22 @@ import {
   type GitOperationState,
   type GitPlanCommitsRequest,
   type GitPort,
+  type GitPullRequest,
+  type GitPushRequest,
   type GitRemote,
+  type GitRemoteResult,
   type GitRemoveWorktreeRequest,
   type GitRestoreCheckpointRequest,
   type GitRestorePlan,
   type GitRestoreResult,
+  type GitStageRequest,
   type GitStatusEntry,
   type GitStatusRequest,
   type GitStatusSnapshot,
   type GitSwitchBranchRequest,
+  type GitSyncRequest,
+  type GitSyncResult,
+  type GitUnstageRequest,
   type GitWorktreeList,
   type GitWorktreeMutation,
   type GitWorktreeRecord,
@@ -61,6 +71,8 @@ import {
   gitCheckpointRef,
   gitFailureFromCapture,
   gitFailureFromStop,
+  gitUserHookArgv,
+  indexHasStagedChanges,
   type LocalPath,
   MAX_COMMAND_OUTPUT_BYTES,
   MAX_GIT_WORKTREES,
@@ -79,16 +91,21 @@ import {
   parseStatusPorcelainV2,
   planGitCommits,
   refuseUnsafeGitIdentity,
+  stagedSecretPath,
   validateGitBlameRequest,
   validateGitCheckpointLimits,
   validateGitCheckpointReference,
+  validateGitCommitSubject,
   validateGitDiffLimits,
   validateGitIncludeUntracked,
   validateGitLogLimits,
   validateGitOid,
+  validateGitPathspecs,
   validateGitRefName,
+  validateGitRemoteName,
   validateGitRequest,
   validateGitRevision,
+  validateGitStagePaths,
   validateGitStatusLimits,
   validateGitWorktreeLimits,
   worktreeHasBlockingChanges,
@@ -150,6 +167,51 @@ export function createHostGitPort(options: HostGitOptions): GitPort {
 
   const runGit: GitRunner = async (...args) => {
     const probed = await probeGit(...args);
+    if (!probed.ok) {
+      return probed;
+    }
+    const failed = gitFailureFromCapture(probed.value);
+    if (failed !== null) {
+      return err(failed);
+    }
+    return probed;
+  };
+
+  const probeGitWithUserHooks: GitRunner = async (
+    executable,
+    cwd,
+    subcommand,
+    timeoutMs,
+    signal,
+    maxOutputBytes,
+    extraEnv,
+  ) => {
+    const request: ProcessCaptureRequest = {
+      executable,
+      argv: gitUserHookArgv(subcommand),
+      environment:
+        extraEnv === undefined
+          ? GIT_OBSERVATION_ENVIRONMENT
+          : { ...GIT_OBSERVATION_ENVIRONMENT, ...extraEnv },
+      cwd,
+      timeoutMs,
+      maxOutputBytes,
+      maxInlineBytes: maxOutputBytes,
+      ...(signal === undefined ? {} : { signal }),
+    };
+    const captured = await options.capture.run(request);
+    if (!captured.ok) {
+      return err(captureErrorToGit(captured.error.code));
+    }
+    const stopped = gitFailureFromStop(captured.value.stop);
+    if (stopped !== null) {
+      return err(stopped);
+    }
+    return ok(captured.value);
+  };
+
+  const runGitWithUserHooks: GitRunner = async (...args) => {
+    const probed = await probeGitWithUserHooks(...args);
     if (!probed.ok) {
       return probed;
     }
@@ -959,6 +1021,326 @@ export function createHostGitPort(options: HostGitOptions): GitPort {
         }),
       } satisfies GitCommitPlanSnapshot);
     },
+
+    async stage(request: GitStageRequest) {
+      const paths = validateGitStagePaths(request.paths);
+      if (!paths.ok) {
+        return paths;
+      }
+      const prepared = await prepareMutation(request, loadIdentity);
+      if (!prepared.ok) {
+        return prepared;
+      }
+      const mutation = prepared.value;
+      const added = await runGit(
+        mutation.gitExecutable,
+        mutation.identity.worktreeRoot,
+        ["add", "--", ...paths.value],
+        mutation.timeoutMs,
+        mutation.signal,
+        MAX_COMMAND_OUTPUT_BYTES,
+      );
+      if (!added.ok) {
+        return added;
+      }
+      const identity = await reloadIdentity(mutation);
+      if (!identity.ok) {
+        return identity;
+      }
+      return ok({ identity: identity.value, paths: paths.value } satisfies GitIndexMutation);
+    },
+
+    async unstage(request: GitUnstageRequest) {
+      const paths = validateGitPathspecs(request.paths);
+      if (!paths.ok) {
+        return paths;
+      }
+      const prepared = await prepareMutation(request, loadIdentity);
+      if (!prepared.ok) {
+        return prepared;
+      }
+      const mutation = prepared.value;
+      const restored = await runGit(
+        mutation.gitExecutable,
+        mutation.identity.worktreeRoot,
+        ["restore", "--staged", "--", ...paths.value],
+        mutation.timeoutMs,
+        mutation.signal,
+        MAX_COMMAND_OUTPUT_BYTES,
+      );
+      if (!restored.ok) {
+        return restored;
+      }
+      const identity = await reloadIdentity(mutation);
+      if (!identity.ok) {
+        return identity;
+      }
+      return ok({ identity: identity.value, paths: paths.value } satisfies GitIndexMutation);
+    },
+
+    async commit(request: GitCommitRequest) {
+      const subject = validateGitCommitSubject(request.subject);
+      if (!subject.ok) {
+        return subject;
+      }
+      const prepared = await prepareMutation(request, loadIdentity);
+      if (!prepared.ok) {
+        return prepared;
+      }
+      const mutation = prepared.value;
+      const status = await statusAt(
+        mutation.gitExecutable,
+        mutation.identity.worktreeRoot,
+        mutation.timeoutMs,
+        mutation.signal,
+        runGit,
+      );
+      if (!status.ok) {
+        return status;
+      }
+      if (status.value.state === "unavailable") {
+        return err({ code: "failed", reason: "status-unavailable" });
+      }
+      const secret = stagedSecretPath(status.value.value);
+      if (secret !== null) {
+        return err({ code: "secret-path", path: secret });
+      }
+      if (!indexHasStagedChanges(status.value.value)) {
+        return err({ code: "empty-index" });
+      }
+      const committed = await runGitWithUserHooks(
+        mutation.gitExecutable,
+        mutation.identity.worktreeRoot,
+        ["commit", "-m", subject.value],
+        mutation.timeoutMs,
+        mutation.signal,
+        MAX_COMMAND_OUTPUT_BYTES,
+      );
+      if (!committed.ok) {
+        return committed;
+      }
+      const identity = await reloadIdentity(mutation);
+      if (!identity.ok) {
+        return identity;
+      }
+      if (identity.value.head.state !== "observed") {
+        return err({ code: "failed", reason: "commit-head-unobserved" });
+      }
+      return ok({
+        identity: identity.value,
+        oid: identity.value.head.value,
+        subject: subject.value,
+      } satisfies GitCommitResult);
+    },
+
+    async fetch(request: GitFetchRequest) {
+      const remote = validateGitRemoteName(request.remote);
+      if (!remote.ok) {
+        return remote;
+      }
+      const prepared = await prepareMutation(request, loadIdentity);
+      if (!prepared.ok) {
+        return prepared;
+      }
+      const mutation = prepared.value;
+      const fetched = await runGit(
+        mutation.gitExecutable,
+        mutation.identity.worktreeRoot,
+        ["fetch", "--", remote.value],
+        mutation.timeoutMs,
+        mutation.signal,
+        MAX_COMMAND_OUTPUT_BYTES,
+      );
+      if (!fetched.ok) {
+        return fetched;
+      }
+      const identity = await reloadIdentity(mutation);
+      if (!identity.ok) {
+        return identity;
+      }
+      return ok({ identity: identity.value, remote: remote.value } satisfies GitRemoteResult);
+    },
+
+    async pull(request: GitPullRequest) {
+      const remote = validateGitRemoteName(request.remote);
+      if (!remote.ok) {
+        return remote;
+      }
+      const prepared = await prepareMutation(request, loadIdentity);
+      if (!prepared.ok) {
+        return prepared;
+      }
+      const mutation = prepared.value;
+      if (mutation.identity.upstream.state !== "observed") {
+        return err({ code: "no-upstream" });
+      }
+      const status = await statusAt(
+        mutation.gitExecutable,
+        mutation.identity.worktreeRoot,
+        mutation.timeoutMs,
+        mutation.signal,
+        runGit,
+      );
+      if (!status.ok) {
+        return status;
+      }
+      if (worktreeHasBlockingChanges(status.value)) {
+        return err({ code: "dirty-worktree" });
+      }
+      const fetched = await runGit(
+        mutation.gitExecutable,
+        mutation.identity.worktreeRoot,
+        ["fetch", "--", remote.value],
+        mutation.timeoutMs,
+        mutation.signal,
+        MAX_COMMAND_OUTPUT_BYTES,
+      );
+      if (!fetched.ok) {
+        return fetched;
+      }
+      const merged = await runGitWithUserHooks(
+        mutation.gitExecutable,
+        mutation.identity.worktreeRoot,
+        ["merge", "--ff-only", "@{u}"],
+        mutation.timeoutMs,
+        mutation.signal,
+        MAX_COMMAND_OUTPUT_BYTES,
+      );
+      if (!merged.ok) {
+        return merged;
+      }
+      const identity = await reloadIdentity(mutation);
+      if (!identity.ok) {
+        return identity;
+      }
+      return ok({ identity: identity.value, remote: remote.value } satisfies GitRemoteResult);
+    },
+
+    async push(request: GitPushRequest) {
+      const remote = validateGitRemoteName(request.remote);
+      if (!remote.ok) {
+        return remote;
+      }
+      const prepared = await prepareMutation(request, loadIdentity);
+      if (!prepared.ok) {
+        return prepared;
+      }
+      const mutation = prepared.value;
+      if (mutation.identity.branch.state !== "observed") {
+        return err({ code: "invalid-request", reason: "detached" });
+      }
+      const pushed = await runGitWithUserHooks(
+        mutation.gitExecutable,
+        mutation.identity.worktreeRoot,
+        ["push", "--", remote.value, mutation.identity.branch.value],
+        mutation.timeoutMs,
+        mutation.signal,
+        MAX_COMMAND_OUTPUT_BYTES,
+      );
+      if (!pushed.ok) {
+        return pushed;
+      }
+      const identity = await reloadIdentity(mutation);
+      if (!identity.ok) {
+        return identity;
+      }
+      return ok({ identity: identity.value, remote: remote.value } satisfies GitRemoteResult);
+    },
+
+    async sync(request: GitSyncRequest) {
+      const remote = validateGitRemoteName(request.remote);
+      if (!remote.ok) {
+        return remote;
+      }
+      const prepared = await prepareMutation(request, loadIdentity);
+      if (!prepared.ok) {
+        return prepared;
+      }
+      const mutation = prepared.value;
+      if (mutation.identity.upstream.state !== "observed") {
+        return err({ code: "no-upstream" });
+      }
+      const fetched = await runGit(
+        mutation.gitExecutable,
+        mutation.identity.worktreeRoot,
+        ["fetch", "--", remote.value],
+        mutation.timeoutMs,
+        mutation.signal,
+        MAX_COMMAND_OUTPUT_BYTES,
+      );
+      if (!fetched.ok) {
+        return fetched;
+      }
+      const afterFetch = await reloadIdentity(mutation);
+      if (!afterFetch.ok) {
+        return afterFetch;
+      }
+      const ahead = fieldNumber(afterFetch.value.ahead);
+      const behind = fieldNumber(afterFetch.value.behind);
+      if (ahead === null || behind === null) {
+        return err({ code: "no-upstream" });
+      }
+      if (ahead > 0 && behind > 0) {
+        return err({ code: "diverged" });
+      }
+      let fastForwarded = false;
+      if (behind > 0) {
+        const status = await statusAt(
+          mutation.gitExecutable,
+          afterFetch.value.worktreeRoot,
+          mutation.timeoutMs,
+          mutation.signal,
+          runGit,
+        );
+        if (!status.ok) {
+          return status;
+        }
+        if (worktreeHasBlockingChanges(status.value)) {
+          return err({ code: "dirty-worktree" });
+        }
+        const merged = await runGitWithUserHooks(
+          mutation.gitExecutable,
+          afterFetch.value.worktreeRoot,
+          ["merge", "--ff-only", "@{u}"],
+          mutation.timeoutMs,
+          mutation.signal,
+          MAX_COMMAND_OUTPUT_BYTES,
+        );
+        if (!merged.ok) {
+          return merged;
+        }
+        fastForwarded = true;
+      }
+      let pushed = false;
+      if (ahead > 0) {
+        if (afterFetch.value.branch.state !== "observed") {
+          return err({ code: "invalid-request", reason: "detached" });
+        }
+        const published = await runGitWithUserHooks(
+          mutation.gitExecutable,
+          afterFetch.value.worktreeRoot,
+          ["push", "--", remote.value, afterFetch.value.branch.value],
+          mutation.timeoutMs,
+          mutation.signal,
+          MAX_COMMAND_OUTPUT_BYTES,
+        );
+        if (!published.ok) {
+          return published;
+        }
+        pushed = true;
+      }
+      const identity = await reloadIdentity({ ...mutation, identity: afterFetch.value });
+      if (!identity.ok) {
+        return identity;
+      }
+      return ok({
+        identity: identity.value,
+        remote: remote.value,
+        fetched: true,
+        fastForwarded,
+        pushed,
+      } satisfies GitSyncResult);
+    },
   };
 }
 
@@ -1548,6 +1930,10 @@ function sparseField(report: Result<ProcessCaptureReport, GitError>): GitField<b
     return { state: "observed", value: false };
   }
   return { state: "observed", value: report.value.stdout.inlineText?.trim() === "true" };
+}
+
+function fieldNumber(field: GitField<number>): number | null {
+  return field.state === "observed" ? field.value : null;
 }
 
 async function detectOperation(

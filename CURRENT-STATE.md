@@ -617,8 +617,8 @@ workspace root:
   entries.
 
 Validated by `src/domain/workspace-patch.test.ts` and
-`src/application/workspace-patch.test.ts`. Product Git/patch tools, stage, and
-commit remain later #75 children.
+`src/application/workspace-patch.test.ts`. Product Git/patch tools remain
+later.
 
 The safe branch and worktree slice from
 [#78](https://github.com/tyldra-org/falryn/issues/78) extends `GitPort` with
@@ -639,8 +639,7 @@ Its verified behavior:
   content and the main worktree.
 
 Validated by `src/domain/git.test.ts` and `src/integrations/host-git.test.ts`.
-Product Git tools, stage, commit, fetch/push, and worktree owner-task
-persistence remain later #75 children.
+Product Git tools and worktree owner-task persistence remain later.
 
 The checkpoint slice from
 [#79](https://github.com/tyldra-org/falryn/issues/79) records index and tracked
@@ -662,8 +661,7 @@ Its verified behavior:
   content is refused.
 
 Validated by `src/domain/git.test.ts` and `src/integrations/host-git.test.ts`.
-Product Git tools, stage, commit, fetch/push, and worktree owner-task
-persistence remain later #75 children.
+Product Git tools and worktree owner-task persistence remain later.
 
 The commit-planning slice from
 [#80](https://github.com/tyldra-org/falryn/issues/80) inventories Git status
@@ -682,10 +680,33 @@ Its verified behavior:
   stash, or force-update.
 
 Validated by `src/domain/commit-plan.test.ts` and
-`src/integrations/host-git.test.ts`. Product Git tools, stage, commit,
-fetch/push, and worktree owner-task persistence remain later #75 children.
+`src/integrations/host-git.test.ts`. Product Git tools remain later.
 
-`bun run check` passed with 3,231 tests passing and 14 skipped.
+The stage, commit, and sync slice from
+[#283](https://github.com/tyldra-org/falryn/issues/283) mutates Git only
+through explicit `GitPort` methods. Pathspecs are required. Secret-looking
+paths are not staged. Pull and sync fast-forward only. Force, rebase, stash,
+amend, and hook bypass are never passed.
+
+Its verified behavior:
+
+- **stage and unstage take explicit paths.** `git add -- <paths>` never uses
+  `-A` or `.`. Secret-looking paths are `secret-path`. Unstage may restore a
+  secret path from the index with `git restore --staged`;
+- **commit is subject-only.** Empty index is `empty-index`. A staged secret
+  path is `secret-path`. Subjects cannot invent `#N` or version tokens. User
+  hooks run; hook failure is `hook-failed`. Signing stays repo-configured;
+- **fetch, pull, push, and sync stay recoverable.** Fetch never prunes or
+  force-updates. Pull refuses missing upstream and dirty/unmerged trees, then
+  `merge --ff-only`. Push names the current branch and never force-updates.
+  Sync fetches, fast-forwards when behind and clean, pushes when ahead, and
+  reports `diverged` when both. Detached HEAD is `invalid-request`. Credential
+  failure is `authentication`.
+
+Validated by `src/domain/git.test.ts` and `src/integrations/host-git.test.ts`.
+Product Git tools, autocommit, and executing a commit plan remain later.
+
+`bun run check` passed with 3,240 tests passing and 14 skipped.
 Platform-specific PTY and process-capture tests are skipped on Windows, while
 the compiled qualification suites remain owned by CI.
 
