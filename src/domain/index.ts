@@ -322,6 +322,29 @@ export {
   parseContextBudgetProfile,
 } from "./context-budget.ts";
 export type {
+  ComposedContextPack,
+  ComposedContextPackItem,
+  ContextComposeError,
+  ContextComposeErrorCode,
+  ContextComposeInput,
+  ContextPackCitation,
+  ContextPackOmission,
+  ContextPackOmissionReason,
+  ContextPackOmissionStage,
+  ContextPackRole,
+  ContextPackUncertainty,
+} from "./context-compose.ts";
+export {
+  CONTEXT_PACK_EXCERPT_BYTES_PER_TOKEN,
+  CONTEXT_PACK_OMISSION_STAGES,
+  CONTEXT_PACK_ROLES,
+  CONTEXT_PACK_UNCERTAINTIES,
+  composeContextPack,
+  DEFAULT_SUPPORT_EXCERPT_BYTES,
+  describeContextComposeError,
+  HARD_SUPPORT_EXCERPT_BYTES,
+} from "./context-compose.ts";
+export type {
   AdmitEvidenceOptions,
   EvidenceAdmissionError,
   EvidenceAdmissionErrorCode,
