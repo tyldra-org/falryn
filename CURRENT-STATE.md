@@ -639,10 +639,33 @@ Its verified behavior:
   content and the main worktree.
 
 Validated by `src/domain/git.test.ts` and `src/integrations/host-git.test.ts`.
-Product Git tools, stage, commit, fetch/push, checkpoints, and worktree
-owner-task persistence remain later #75 children.
+Product Git tools, stage, commit, fetch/push, and worktree owner-task
+persistence remain later #75 children.
 
-`bun run check` passed with 3,214 tests passing and 14 skipped.
+The checkpoint slice from
+[#79](https://github.com/tyldra-org/falryn/issues/79) records index and tracked
+worktree trees plus optional included untracked blobs under
+`refs/falryn/checkpoints/`. Restore previews first and stops when HEAD moved,
+the snapshot is truncated, or an included untracked path collides.
+
+Its verified behavior:
+
+- **create and list stay off the user index.** Snapshots use a temporary index
+  plus `hash-object`/`commit-tree`/`update-ref`. Unlisted untracked files are
+  counted as excluded and are not restored;
+- **restore is previewed.** `planRestore` names index and worktree changes.
+  HEAD movement, truncated snapshots, and untracked collisions are
+  `restore-ambiguous`. In-progress operations remain `operation-in-progress`;
+- **rollback never force-cleans.** Restore uses `git read-tree` and
+  `git restore --worktree` without `--force`, `reset --hard`, `clean`, or
+  stash. Missing included untracked files are recreated; existing different
+  content is refused.
+
+Validated by `src/domain/git.test.ts` and `src/integrations/host-git.test.ts`.
+Product Git tools, stage, commit, fetch/push, and worktree owner-task
+persistence remain later #75 children.
+
+`bun run check` passed with 3,220 tests passing and 14 skipped.
 Platform-specific PTY and process-capture tests are skipped on Windows, while
 the compiled qualification suites remain owned by CI.
 
