@@ -379,6 +379,30 @@ export {
   MAX_EVIDENCE_RETRIEVAL_COST,
 } from "./context-evidence.ts";
 export type {
+  ContextExpandArtifactSource,
+  ContextExpandCache,
+  ContextExpandCacheKey,
+  ContextExpandCacheStatus,
+  ContextExpandError,
+  ContextExpandErrorCode,
+  ContextExpandInlineSource,
+  ContextExpandInput,
+  ContextExpandInvalidation,
+  ContextExpandResult,
+  ContextExpandSource,
+} from "./context-expand.ts";
+export {
+  createContextExpandCache,
+  DEFAULT_CONTEXT_EXPAND_CACHE_ENTRIES,
+  DEFAULT_CONTEXT_EXPAND_MAX_BYTES,
+  DEFAULT_CONTEXT_EXPAND_STRATEGY,
+  describeContextExpandError,
+  expandContextEvidence,
+  HARD_CONTEXT_EXPAND_CACHE_ENTRIES,
+  HARD_CONTEXT_EXPAND_MAX_BYTES,
+  MAX_CONTEXT_EXPAND_KEY_FIELD,
+} from "./context-expand.ts";
+export type {
   ContextRankError,
   ContextRankErrorCode,
   ContextRankedItem,
