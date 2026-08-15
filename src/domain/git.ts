@@ -1,13 +1,15 @@
 /**
- * Git observation, safe branch/worktree, and checkpoint contracts (#76/#78/#79).
+ * Git observation, safe branch/worktree, checkpoint, and commit-plan contracts
+ * (#76/#78/#79/#80).
  *
  * Discovery, status, diff, log, and blame are typed snapshots. Branch create,
  * switch, and delete plus worktree add/list/remove are the only history-safe
  * mutations. Checkpoints snapshot index/worktree trees under
- * `refs/falryn/checkpoints/` and restore only after a preview. The host
- * adapter runs `git` through ProcessCapturePort. This module never stages or
- * commits on the user index, fetches, force-updates, stashes, or rewrites
- * history, and it does not register a product tool.
+ * `refs/falryn/checkpoints/` and restore only after a preview. `planCommits`
+ * returns grouping advice and never stages or commits. The host adapter runs
+ * `git` through ProcessCapturePort. This module never stages or commits on the
+ * user index, fetches, force-updates, stashes, or rewrites history, and it does
+ * not register a product tool.
  */
 
 import { type DurationMs, duration, type Instant } from "./clock.ts";
@@ -36,6 +38,11 @@ export const DEFAULT_GIT_CHECKPOINTS = 32;
 export const MAX_GIT_CHECKPOINTS = 64;
 export const MAX_GIT_CHECKPOINT_UNTRACKED = 32;
 export const MAX_GIT_CHECKPOINT_REFERENCE_LENGTH = 128;
+export const COMMIT_PLAN_VERSION = 1;
+export const COMMIT_PLAN_SOURCE = "git-status-log" as const;
+export const MAX_COMMIT_PLAN_GROUPS = 16;
+export const COMMIT_CHANGE_STATES = ["staged", "unstaged", "untracked"] as const;
+export type CommitChangeState = (typeof COMMIT_CHANGE_STATES)[number];
 
 export const GIT_OBSERVATION_ENVIRONMENT: Readonly<Record<string, string>> = {
   GIT_TERMINAL_PROMPT: "0",
@@ -170,6 +177,57 @@ export type GitListCheckpointsRequest = GitRequestBase & {
 
 export type GitRestoreCheckpointRequest = GitExpectedHeadRequest & {
   readonly checkpointId: string;
+};
+
+export type GitPlanCommitsRequest = GitExpectedHeadRequest;
+
+export type CommitChangeUnit = {
+  readonly path: string;
+  readonly originalPath: string | null;
+  readonly kind: GitChangeKind;
+  readonly states: readonly CommitChangeState[];
+};
+
+export type CommitGroup = {
+  readonly id: string;
+  readonly paths: readonly string[];
+  readonly reason: string;
+  readonly subject: string;
+};
+
+export type CommitUnassigned = {
+  readonly path: string;
+  readonly reason: string;
+};
+
+export type CommitPlanValidation = {
+  readonly groupCount: number;
+  readonly unassignedCount: number;
+  readonly conflictCount: number;
+  readonly secretPathCount: number;
+  readonly truncated: boolean;
+  readonly detached: boolean;
+};
+
+export type CommitPlanProvenance = {
+  readonly version: number;
+  readonly source: typeof COMMIT_PLAN_SOURCE;
+  readonly model: null;
+  readonly head: string | null;
+  readonly truncated: boolean;
+};
+
+export type CommitPlan = {
+  readonly inventory: readonly CommitChangeUnit[];
+  readonly groups: readonly CommitGroup[];
+  readonly unassigned: readonly CommitUnassigned[];
+  readonly validation: CommitPlanValidation;
+  readonly provenance: CommitPlanProvenance;
+};
+
+export type GitCommitPlanSnapshot = {
+  readonly identity: GitIdentity;
+  readonly plan: CommitPlan;
 };
 
 export type GitIdentity = {
@@ -345,6 +403,7 @@ export type GitPort = {
   restoreCheckpoint(
     request: GitRestoreCheckpointRequest,
   ): Promise<Result<GitRestoreResult, GitError>>;
+  planCommits(request: GitPlanCommitsRequest): Promise<Result<GitCommitPlanSnapshot, GitError>>;
 };
 
 export type ParsedGitRequest = {
