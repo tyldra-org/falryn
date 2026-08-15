@@ -3122,7 +3122,7 @@ admitted evidence contract (parent
 
 Validated by `src/domain/context-evidence.test.ts` under `bun run check`.
 Pack composition exists for #85. Expansion/cache exists for #86. The planner
-and product context tools remain later children of #81.
+and product context tools remain later work.
 
 The context budget slice from
 [#83](https://github.com/tyldra-org/falryn/issues/83) reserves provider output
@@ -3140,7 +3140,7 @@ and tool-framing tokens before filling admitted evidence (parent
 
 Validated by `src/domain/context-budget.test.ts` under `bun run check`.
 Pack composition exists for #85. Expansion/cache exists for #86. The planner
-and product context tools remain later children of #81.
+and product context tools remain later work.
 
 The context ranking slice from
 [#84](https://github.com/tyldra-org/falryn/issues/84) scores admitted evidence
@@ -3155,10 +3155,10 @@ and returns a stable ordered selection (parent
   never echo origin or payload text. Selected order is the caller order for
   `#83` budget fill;
 - pack composition exists for #85. Expansion/cache exists for #86. The planner
-  and product context tools remain later children of #81.
+  and product context tools remain later work.
 
 Validated by `src/domain/context-rank.test.ts` under `bun run check`.
-The planner and product context tools remain later children of #81.
+The planner and product context tools remain later work.
 
 The context pack composition slice from
 [#85](https://github.com/tyldra-org/falryn/issues/85) ranks, budgets, then
@@ -3175,10 +3175,10 @@ emits a bounded planner pack with citations and uncertainty (parent
   not rewritten. `#65` `ContextPack` remains a retrieval-pack input;
 - rank and budget omissions are forwarded without echoing origin or payload.
   Expansion/cache exists for #86. The planner and product context tools remain
-  later children of #81.
+  later work.
 
 Validated by `src/domain/context-compose.test.ts` under `bun run check`.
-The planner and product context tools remain later children of #81.
+The planner and product context tools remain later work.
 
 The context expansion and cache slice from
 [#86](https://github.com/tyldra-org/falryn/issues/86) verifies exact-source or
@@ -3196,10 +3196,10 @@ generation, strategy, configuration, destination, or lost-artifact changes
   and quarantined artifacts refuse as `checksum`; missing or reserved bytes
   refuse as `unavailable`. Errors never echo payload;
 - Loom manifests, workspace-file expansion (#59), the planner, and product
-  context tools remain later or separate children of #81.
+  context tools remain later work.
 
 Validated by `src/domain/context-expand.test.ts` under `bun run check`.
-The planner and product context tools remain later children of #81.
+The planner and product context tools remain later work.
 
 The context scenario inspection slice from
 [#87](https://github.com/tyldra-org/falryn/issues/87) classifies admitted
@@ -3216,12 +3216,11 @@ stale labels, and conflicting same-origin items (parent
 - child-seam scenarios in `src/domain/context-engine.test.ts` run admit,
   inspect, rank, budget, compose, and expand together. Rank-limit omissions
   are the continuation for a partial ranking;
-- Loom manifests, the planner, and product context tools remain later or
-  separate children of #81.
+- Loom manifests, the planner, and product context tools remain later work.
 
 Validated by `src/domain/context-inspect.test.ts` and
 `src/domain/context-engine.test.ts` under `bun run check`.
-The planner and product context tools remain later children of #81.
+The planner and product context tools remain later work.
 
 The bounded full-file write and grouped mutation slice from
 [#281](https://github.com/tyldra-org/falryn/issues/281) creates or replaces
@@ -3595,8 +3594,8 @@ Their implementation breakdown lives in GitHub Issues and the Project.
 - **Completed shell, PTY, process, and Hush parent:** [#68 Deliver shell, PTY, process, and Hush foundations](https://github.com/tyldra-org/falryn/issues/68) is closed and Done. Child [#69 Implement supervised direct-argv and Bash command execution](https://github.com/tyldra-org/falryn/issues/69) closed and Done via [PR #527](https://github.com/tyldra-org/falryn/pull/527) (`943fbbaf`); companion docs [falryn-docs#132](https://github.com/tyldra-org/falryn-docs/pull/132) (`8df4510`). Child [#70 Implement PTY sessions and long-lived managed process services](https://github.com/tyldra-org/falryn/issues/70) closed and Done via [PR #529](https://github.com/tyldra-org/falryn/pull/529) (`afe53d2b`); companion docs [falryn-docs#133](https://github.com/tyldra-org/falryn-docs/pull/133) (`0b273fba`). Child [#71 Capture ordered output, exits, limits, and artifact spillover](https://github.com/tyldra-org/falryn/issues/71) closed and Done via [PR #531](https://github.com/tyldra-org/falryn/pull/531) (`ac905090`); companion docs [falryn-docs#134](https://github.com/tyldra-org/falryn-docs/pull/134) (`7d7c0a0a`). Child [#72 Implement Hush command-output reducers over exact process facts](https://github.com/tyldra-org/falryn/issues/72) closed and Done via [PR #533](https://github.com/tyldra-org/falryn/pull/533) (`7514dc7e`); companion docs [falryn-docs#135](https://github.com/tyldra-org/falryn-docs/pull/135) (`4a146f66`). Child [#73 Implement process-tree cancellation, deadlines, and cleanup](https://github.com/tyldra-org/falryn/issues/73) closed and Done via [PR #535](https://github.com/tyldra-org/falryn/pull/535) (`b28f1ce8`); companion docs [falryn-docs#136](https://github.com/tyldra-org/falryn-docs/pull/136) (`1a98c9e4`). Child [#74 Add shell quoting, platform, truncation, and interruption fixtures](https://github.com/tyldra-org/falryn/issues/74) closed and Done via [PR #537](https://github.com/tyldra-org/falryn/pull/537) (`8ea3a3ff`); companion docs [falryn-docs#137](https://github.com/tyldra-org/falryn-docs/pull/137) (`ca064620`). Parent integrated verification passed on `8ea3a3ff` (175 child-seam tests; `bun run check` 3,179 passed, 14 skipped).
 - **Open falryn v0.1 Foundation product issues:** none remaining.
 - **Completed Git, worktree, and checkpoint parent:** [#75 Deliver Git, worktree, and checkpoint tools](https://github.com/tyldra-org/falryn/issues/75) is closed and Done. Child [#76 Implement Git status, diff, log, blame, and repository discovery](https://github.com/tyldra-org/falryn/issues/76) closed and Done via [PR #539](https://github.com/tyldra-org/falryn/pull/539) (`9c19c52a`); companion docs [falryn-docs#138](https://github.com/tyldra-org/falryn-docs/pull/138) (`403d7de0`). Child [#77 Integrate patches with dirty-tree and conflict awareness](https://github.com/tyldra-org/falryn/issues/77) closed and Done via [PR #541](https://github.com/tyldra-org/falryn/pull/541) (`241bfa9d`); companion docs [falryn-docs#139](https://github.com/tyldra-org/falryn-docs/pull/139) (`efa93f53`). Child [#78 Implement safe branch and worktree operations](https://github.com/tyldra-org/falryn/issues/78) closed and Done via [PR #543](https://github.com/tyldra-org/falryn/pull/543) (`3b44dde4`); companion docs [falryn-docs#140](https://github.com/tyldra-org/falryn-docs/pull/140) (`d238cc01`). Child [#79 Implement checkpoints, restore plans, and recoverable rollback](https://github.com/tyldra-org/falryn/issues/79) closed and Done via [PR #545](https://github.com/tyldra-org/falryn/pull/545) (`7d772b67`); companion docs [falryn-docs#141](https://github.com/tyldra-org/falryn-docs/pull/141) (`1f287efe`). Child [#80 Implement commit planning, validation summaries, and provenance](https://github.com/tyldra-org/falryn/issues/80) closed and Done via [PR #547](https://github.com/tyldra-org/falryn/pull/547) (`a7262555`); companion docs [falryn-docs#142](https://github.com/tyldra-org/falryn-docs/pull/142) (`2295d87d`). Child [#283 Implement Git stage, commit, fetch, pull, push, and sync](https://github.com/tyldra-org/falryn/issues/283) closed and Done via [PR #549](https://github.com/tyldra-org/falryn/pull/549) (`8ba0c17d`); companion docs [falryn-docs#143](https://github.com/tyldra-org/falryn-docs/pull/143) (`28a7a158`). Parent integrated verification passed on `8ba0c17d` (67 child-seam tests; `bun run check` 3,240 passed, 14 skipped).
-- **In-progress context engine parent:** [#81 Implement the context engine and context packs](https://github.com/tyldra-org/falryn/issues/81) is open and In Progress. Child [#82 Define evidence candidates, provenance, freshness, and exact-source handles](https://github.com/tyldra-org/falryn/issues/82) closed and Done via [PR #551](https://github.com/tyldra-org/falryn/pull/551) (`1347f91`); companion docs [falryn-docs#144](https://github.com/tyldra-org/falryn-docs/pull/144) (`82ef73b`). Child [#83 Implement token, byte, item, latency, and sensitivity budgets](https://github.com/tyldra-org/falryn/issues/83) closed and Done via [PR #553](https://github.com/tyldra-org/falryn/pull/553) (`8aa155a`); companion docs [falryn-docs#145](https://github.com/tyldra-org/falryn-docs/pull/145) (`a272394`). Child [#84 Rank and select context across tools, index, memory, and conversation](https://github.com/tyldra-org/falryn/issues/84) closed and Done via [PR #555](https://github.com/tyldra-org/falryn/pull/555) (`1ae2f8e`); companion docs [falryn-docs#146](https://github.com/tyldra-org/falryn-docs/pull/146) (`77e1137`). Child [#85 Compose deterministic context packs with citations and uncertainty](https://github.com/tyldra-org/falryn/issues/85) closed and Done via [PR #557](https://github.com/tyldra-org/falryn/pull/557) (`c6eac94`); companion docs [falryn-docs#147](https://github.com/tyldra-org/falryn-docs/pull/147) (`23393f2`). Child [#86 Implement expansion, cache reuse, invalidation, and exact retrieval](https://github.com/tyldra-org/falryn/issues/86) closed and Done via [PR #559](https://github.com/tyldra-org/falryn/pull/559) (`7e4ea9d`); companion docs [falryn-docs#148](https://github.com/tyldra-org/falryn-docs/pull/148) (`86a87d3`). Remaining children: [#87 Add large-repository, long-session, stale, and conflicting-evidence scenarios](https://github.com/tyldra-org/falryn/issues/87).
-- **Next planning action:** continue via [#81 Implement the context engine and context packs](https://github.com/tyldra-org/falryn/issues/81) first remaining child [#87 Add large-repository, long-session, stale, and conflicting-evidence scenarios](https://github.com/tyldra-org/falryn/issues/87). GitHub remains authoritative for ordering.
+- **Completed context engine parent:** [#81 Implement the context engine and context packs](https://github.com/tyldra-org/falryn/issues/81) is closed and Done. Child [#82 Define evidence candidates, provenance, freshness, and exact-source handles](https://github.com/tyldra-org/falryn/issues/82) closed and Done via [PR #551](https://github.com/tyldra-org/falryn/pull/551) (`1347f91`); companion docs [falryn-docs#144](https://github.com/tyldra-org/falryn-docs/pull/144) (`82ef73b`). Child [#83 Implement token, byte, item, latency, and sensitivity budgets](https://github.com/tyldra-org/falryn/issues/83) closed and Done via [PR #553](https://github.com/tyldra-org/falryn/pull/553) (`8aa155a`); companion docs [falryn-docs#145](https://github.com/tyldra-org/falryn-docs/pull/145) (`a272394`). Child [#84 Rank and select context across tools, index, memory, and conversation](https://github.com/tyldra-org/falryn/issues/84) closed and Done via [PR #555](https://github.com/tyldra-org/falryn/pull/555) (`1ae2f8e`); companion docs [falryn-docs#146](https://github.com/tyldra-org/falryn-docs/pull/146) (`77e1137`). Child [#85 Compose deterministic context packs with citations and uncertainty](https://github.com/tyldra-org/falryn/issues/85) closed and Done via [PR #557](https://github.com/tyldra-org/falryn/pull/557) (`c6eac94`); companion docs [falryn-docs#147](https://github.com/tyldra-org/falryn-docs/pull/147) (`23393f2`). Child [#86 Implement expansion, cache reuse, invalidation, and exact retrieval](https://github.com/tyldra-org/falryn/issues/86) closed and Done via [PR #559](https://github.com/tyldra-org/falryn/pull/559) (`7e4ea9d`); companion docs [falryn-docs#148](https://github.com/tyldra-org/falryn-docs/pull/148) (`86a87d3`). Child [#87 Add large-repository, long-session, stale, and conflicting-evidence scenarios](https://github.com/tyldra-org/falryn/issues/87) closed and Done via [PR #561](https://github.com/tyldra-org/falryn/pull/561) (`4eb3fd7`); companion docs [falryn-docs#149](https://github.com/tyldra-org/falryn-docs/pull/149) (`75bde89`). Parent integrated verification passed on `4eb3fd7` (76 child-seam tests; `bun run check` 3,316 passed, 14 skipped).
+- **Next planning action:** continue via [#249 Deliver the daily coding TUI experience](https://github.com/tyldra-org/falryn/issues/249) first remaining child [#250 Implement typed transcript blocks and safe unknown-block fallback](https://github.com/tyldra-org/falryn/issues/250). GitHub remains authoritative for ordering.
 
 Which of #1's children are open, and which delivered the behavior recorded
 above, is read from
