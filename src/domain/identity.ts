@@ -34,6 +34,8 @@ export type ArtifactId = Brand<string, "ArtifactId">;
 export type ContentDigest = Brand<string, "ContentDigest">;
 export type CapabilityId = Brand<string, "CapabilityId">;
 export type EventId = Brand<string, "EventId">;
+/** One admitted context-engine evidence candidate. */
+export type EvidenceId = Brand<string, "EvidenceId">;
 export type TraceId = Brand<string, "TraceId">;
 export type StreamId = Brand<string, "StreamId">;
 export type ScopeId = Brand<string, "ScopeId">;
@@ -132,6 +134,7 @@ export const modelAttemptId = createIdentifierCodec<ModelAttemptId>("modelAttemp
 export const invocationId = createIdentifierCodec<InvocationId>("invocationId");
 export const capabilityId = createIdentifierCodec<CapabilityId>("capabilityId");
 export const eventId = createIdentifierCodec<EventId>("eventId");
+export const evidenceId = createIdentifierCodec<EvidenceId>("evidenceId");
 export const traceId = createIdentifierCodec<TraceId>("traceId");
 export const streamId = createIdentifierCodec<StreamId>("streamId");
 export const scopeId = createIdentifierCodec<ScopeId>("scopeId");
