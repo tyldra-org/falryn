@@ -3121,8 +3121,26 @@ admitted evidence contract (parent
   `ContextPack` remains a retrieval-pack input, not this type.
 
 Validated by `src/domain/context-evidence.test.ts` under `bun run check`.
-Budgets, ranking, pack composition, expansion/cache, the planner, and product
+Ranking, pack composition, expansion/cache, the planner, and product
 context tools remain later children of #81.
+
+The context budget slice from
+[#83](https://github.com/tyldra-org/falryn/issues/83) reserves provider output
+and tool-framing tokens before filling admitted evidence (parent
+[#81](https://github.com/tyldra-org/falryn/issues/81)):
+
+- `src/domain/context-budget.ts` — total token/byte/item/latency caps, per-item
+  and per-source-class limits, model/support/local destinations, and
+  insufficient-context recoveries;
+- output and tool framing are reserved first. Under pressure, duplicates are
+  removed, expansion-bearing items are deferred, and extractive/lossy
+  projections are dropped before overflow is omitted. Excerpts are not
+  rewritten. Restricted and destination-ineligible items never enter the fill;
+- estimated tokens are never mixed with provider-reported counts.
+
+Validated by `src/domain/context-budget.test.ts` under `bun run check`.
+Ranking, pack composition, expansion/cache, the planner, and product context
+tools remain later children of #81.
 
 The bounded full-file write and grouped mutation slice from
 [#281](https://github.com/tyldra-org/falryn/issues/281) creates or replaces
@@ -3467,9 +3485,10 @@ session/turn producer, or live transcript producer. The remaining gaps are:
   Git observation plus stage/commit/sync exist; product tools are not
   registered, and Git cannot rebase, force-update, or rewrite history);
 - context planning, Brief, Hush product/CLI/TUI wiring, Loom, compression,
-  index builders, or memory (evidence-candidate admission exists for #82; Hush
-  domain reduction over captured process facts exists; neither is wired into
-  the planner or product tools);
+  index builders, or memory (evidence-candidate admission exists for #82;
+  context token/byte/item/latency/sensitivity budgets exist for #83; Hush
+  domain reduction over captured process facts exists; none of these is wired
+  into the planner or product tools);
 - MCP, skills, plugin and other hook families, marketplace, agents, jobs, or workflows; or
 - an installer, updater, supported platform package, signed release, or support
   channel.
