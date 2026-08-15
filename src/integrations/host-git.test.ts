@@ -29,7 +29,15 @@ async function scratch(): Promise<string> {
   return root;
 }
 
-async function runGit(cwd: string, args: readonly string[]): Promise<void> {
+const GIT_FIXTURE_ENV = {
+  GIT_TERMINAL_PROMPT: "0",
+  GIT_AUTHOR_NAME: "Falryn Test",
+  GIT_AUTHOR_EMAIL: "test@example.com",
+  GIT_COMMITTER_NAME: "Falryn Test",
+  GIT_COMMITTER_EMAIL: "test@example.com",
+};
+
+async function runGit(cwd: string, args: readonly string[]): Promise<number> {
   if (locatedGit === null) {
     throw new Error("git is required for this fixture");
   }
@@ -37,13 +45,20 @@ async function runGit(cwd: string, args: readonly string[]): Promise<void> {
     cwd,
     stdout: "pipe",
     stderr: "pipe",
-    env: {
-      GIT_TERMINAL_PROMPT: "0",
-      GIT_AUTHOR_NAME: "Falryn Test",
-      GIT_AUTHOR_EMAIL: "test@example.com",
-      GIT_COMMITTER_NAME: "Falryn Test",
-      GIT_COMMITTER_EMAIL: "test@example.com",
-    },
+    env: GIT_FIXTURE_ENV,
+  });
+  return await child.exited;
+}
+
+async function runGitOk(cwd: string, args: readonly string[]): Promise<void> {
+  if (locatedGit === null) {
+    throw new Error("git is required for this fixture");
+  }
+  const child = Bun.spawn([GIT, ...args], {
+    cwd,
+    stdout: "pipe",
+    stderr: "pipe",
+    env: GIT_FIXTURE_ENV,
   });
   const code = await child.exited;
   if (code !== 0) {
@@ -54,10 +69,13 @@ async function runGit(cwd: string, args: readonly string[]): Promise<void> {
 
 async function committedRepo(): Promise<string> {
   const root = await scratch();
-  await runGit(root, ["init", "-b", "main"]);
+  await runGitOk(root, ["init", "-b", "main"]);
+  await runGitOk(root, ["config", "user.name", "Falryn Test"]);
+  await runGitOk(root, ["config", "user.email", "test@example.com"]);
+  await runGitOk(root, ["config", "commit.gpgsign", "false"]);
   await writeFile(join(root, "README.md"), "hello\n", "utf8");
-  await runGit(root, ["add", "README.md"]);
-  await runGit(root, ["commit", "-m", "Add readme"]);
+  await runGitOk(root, ["add", "README.md"]);
+  await runGitOk(root, ["commit", "-m", "Add readme"]);
   return root;
 }
 
@@ -124,18 +142,21 @@ describe("host git observation", () => {
 
   gitTest("status sees a conflict as unmerged", async () => {
     const root = await committedRepo();
-    await runGit(root, ["checkout", "-b", "other"]);
+    await runGitOk(root, ["checkout", "-b", "other"]);
     await writeFile(join(root, "README.md"), "other\n", "utf8");
-    await runGit(root, ["commit", "-am", "Other"]);
-    await runGit(root, ["checkout", "main"]);
+    await runGitOk(root, ["commit", "-am", "Other"]);
+    await runGitOk(root, ["checkout", "main"]);
     await writeFile(join(root, "README.md"), "mainline\n", "utf8");
-    await runGit(root, ["commit", "-am", "Mainline"]);
-    const merge = Bun.spawn([GIT, "merge", "other"], {
-      cwd: root,
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    await merge.exited;
+    await runGitOk(root, ["commit", "-am", "Mainline"]);
+    const mergeCode = await runGit(root, [
+      "-c",
+      "merge.ff=false",
+      "merge",
+      "--no-ff",
+      "--no-commit",
+      "other",
+    ]);
+    expect(mergeCode).not.toBe(0);
     const git = port();
     const status = await git.status({
       gitExecutable: GIT,
@@ -213,10 +234,10 @@ describe("host git observation", () => {
     const outer = await committedRepo();
     const inner = join(outer, "vendor", "lib");
     await mkdir(inner, { recursive: true });
-    await runGit(inner, ["init", "-b", "vendored"]);
+    await runGitOk(inner, ["init", "-b", "vendored"]);
     await writeFile(join(inner, "lib.txt"), "nested\n", "utf8");
-    await runGit(inner, ["add", "lib.txt"]);
-    await runGit(inner, ["commit", "-m", "Vendored"]);
+    await runGitOk(inner, ["add", "lib.txt"]);
+    await runGitOk(inner, ["commit", "-m", "Vendored"]);
     const git = port();
     const discovered = await git.discover({
       gitExecutable: GIT,
@@ -232,7 +253,7 @@ describe("host git observation", () => {
 
   gitTest("redacts credentials in observed remotes", async () => {
     const root = await committedRepo();
-    await runGit(root, ["remote", "add", "origin", "https://user:hunter2@example.com/repo.git"]);
+    await runGitOk(root, ["remote", "add", "origin", "https://user:hunter2@example.com/repo.git"]);
     const git = port();
     const discovered = await git.discover({
       gitExecutable: GIT,

@@ -25,6 +25,7 @@ import {
   type GitOperationState,
   type GitPort,
   type GitRemote,
+  type GitStatusEntry,
   type GitStatusRequest,
   type GitStatusSnapshot,
   gitArgv,
@@ -193,7 +194,7 @@ export function createHostGitPort(options: HostGitOptions): GitPort {
       upstream: branch.upstream,
       ahead: branch.ahead,
       behind: branch.behind,
-      operation,
+      operation: resolveOperation(operation, branch.entries),
       superproject:
         parsedPaths.superproject === null
           ? { state: "unavailable", reason: "no-superproject" }
@@ -482,7 +483,7 @@ async function detectOperation(
     const probed = await probeGit(
       gitExecutable,
       cwd,
-      ["rev-parse", "-q", "--verify", candidate.ref],
+      ["rev-parse", "--revs-only", "--verify", "--quiet", candidate.ref],
       timeoutMs,
       signal,
       256,
@@ -492,4 +493,24 @@ async function detectOperation(
     }
   }
   return "clean";
+}
+
+function resolveOperation(
+  probed: GitOperationState,
+  entries: GitField<readonly GitStatusEntry[]>,
+): GitOperationState {
+  if (probed !== "clean") {
+    return probed;
+  }
+  switch (entries.state) {
+    case "unavailable":
+      return "clean";
+    case "observed":
+    case "truncated":
+      return entries.value.some((entry) => entry.kind === "unmerged") ? "merge" : "clean";
+    default: {
+      const _exhaustive: never = entries;
+      return _exhaustive;
+    }
+  }
 }
