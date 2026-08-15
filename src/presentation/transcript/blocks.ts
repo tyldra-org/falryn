@@ -29,7 +29,9 @@
  * below cannot be emitted by anything this build contains, because no agent
  * loop, provider, or tool runner exists yet. They are declared and exercised by
  * fixtures rather than omitted, so the reducer is total on the day #33 starts
- * producing them instead of growing a case at a time under a deadline.
+ * producing them instead of growing a case at a time under a deadline. An
+ * unrecognized kind is a different case: it is never added here and never mapped
+ * onto one of these sixteen. `./admit.ts` turns it into a typed fallback.
  *
  * Nothing here renders, holds a stream, or names a colour.
  */
@@ -52,9 +54,10 @@ import { routeOf } from "./disclosure.ts";
 /**
  * The block kinds the canonical transcript contract names.
  *
- * A closed union. An unknown kind is a defect rather than a row to render
- * generically — a transcript that can display something it cannot describe is
- * a log again.
+ * A closed semantic union. An unrecognized kind is not a seventeenth producer
+ * here and is not mapped onto one of these sixteen — that would make something
+ * Falryn does not understand look like a notice or a diagnostic. The fallback
+ * lives beside this list, not in it; see {@link UNKNOWN_TRANSCRIPT_BLOCK_KIND}.
  */
 export const TRANSCRIPT_BLOCK_KINDS = [
   "user-input",
@@ -76,6 +79,20 @@ export const TRANSCRIPT_BLOCK_KINDS = [
 ] as const;
 
 export type TranscriptBlockKind = (typeof TRANSCRIPT_BLOCK_KINDS)[number];
+
+/**
+ * The fallback kind for a record this build cannot describe.
+ *
+ * Not a member of {@link TRANSCRIPT_BLOCK_KINDS}. Producers never emit it;
+ * `./admit.ts` is the only path that constructs one.
+ */
+export const UNKNOWN_TRANSCRIPT_BLOCK_KIND = "unknown";
+
+export type TranscriptRenderableKind = TranscriptBlockKind | typeof UNKNOWN_TRANSCRIPT_BLOCK_KIND;
+
+export function isTranscriptBlockKind(kind: string): kind is TranscriptBlockKind {
+  return (TRANSCRIPT_BLOCK_KINDS as readonly string[]).includes(kind);
+}
 
 /** Who produced the content, which is not the same as who it is about. */
 export const BLOCK_SOURCES = ["user", "model", "tool", "process", "runtime"] as const;
@@ -166,7 +183,7 @@ type BlockSpine = {
   readonly renderGeneration: number;
 };
 
-type Block<Kind extends TranscriptBlockKind, Detail> = BlockSpine & {
+type Block<Kind extends TranscriptRenderableKind, Detail> = BlockSpine & {
   readonly kind: Kind;
 } & Detail;
 
@@ -283,6 +300,20 @@ export type ArtifactBlock = Block<
   }
 >;
 
+/**
+ * A record whose kind this build does not declare.
+ *
+ * The summary is Falryn-owned. The observed kind is bounded and may appear only
+ * as expansion content. Extra payload fields are dropped rather than copied —
+ * copying them would turn the fallback into a log line again.
+ */
+export type UnknownBlock = Block<
+  "unknown",
+  {
+    readonly observedKind: BoundedText;
+  }
+>;
+
 export type TranscriptBlock =
   | UserInputBlock
   | ModelTextBlock
@@ -299,7 +330,8 @@ export type TranscriptBlock =
   | TurnOutcomeBlock
   | NoticeBlock
   | DiagnosticBlock
-  | ArtifactBlock;
+  | ArtifactBlock
+  | UnknownBlock;
 
 /**
  * The outcome a block reports, or `null` when it reports none.
@@ -330,6 +362,7 @@ export function outcomeOf(block: TranscriptBlock): TerminalOutcome | null {
     case "task-progress":
     case "notice":
     case "artifact":
+    case "unknown":
       return null;
     default:
       return assertNever(block, "unhandled block kind");
@@ -373,6 +406,8 @@ export function boundedTextsOf(block: TranscriptBlock): readonly BoundedText[] {
       return [block.summary, block.note];
     case "artifact":
       return [block.summary];
+    case "unknown":
+      return [block.summary, block.observedKind];
     default:
       return assertNever(block, "unhandled block kind");
   }
@@ -445,6 +480,8 @@ export function describeBlock(block: TranscriptBlock): string {
       return "Diagnostic";
     case "artifact":
       return "Artifact";
+    case "unknown":
+      return "Unrecognized block";
     default:
       return assertNever(block, "unhandled block kind");
   }

@@ -15,6 +15,7 @@
 
 import { describe, expect, test } from "bun:test";
 import {
+  admitTranscriptRecord,
   bound,
   complete,
   EMPTY_PROJECTION,
@@ -388,5 +389,26 @@ describe("an overlay over the transcript", () => {
     const after = await shell.frame();
     expect(after).toContain(`entry ${anchored}`);
     expect(after).toContain("later entries below");
+  });
+});
+
+describe("an unknown fallback", () => {
+  test("names the gap without copying payload onto the frame", async () => {
+    const SECRET = "sk-live-SECRET-MUST-NOT-ESCAPE";
+    const result = admitTranscriptRecord({
+      kind: "future-widget",
+      order: 0,
+      occurredAt: FIXTURE_AT,
+      text: SECRET,
+      summary: SECRET,
+    });
+    if (!result.ok) {
+      throw new Error(`expected admission, got ${result.error.code}`);
+    }
+    using shell = await open(projectionOf([result.value]));
+    const frame = await shell.frame();
+    expect(frame).toContain("Unrecognized block");
+    expect(frame).not.toContain(SECRET);
+    expect(frame).not.toContain("Notice");
   });
 });

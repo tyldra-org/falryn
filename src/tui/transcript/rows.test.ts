@@ -11,8 +11,14 @@
 import { describe, expect, test } from "bun:test";
 import { timestampFromEpochMilliseconds } from "../../domain/index.ts";
 import type { ExpansionRoute, TranscriptBlock } from "../../presentation/index.ts";
-import { blockKey, complete, omitted, redacted } from "../../presentation/index.ts";
-import { everyBlockKind } from "../../presentation/transcript/fixtures.ts";
+import {
+  admitTranscriptRecord,
+  blockKey,
+  complete,
+  omitted,
+  redacted,
+} from "../../presentation/index.ts";
+import { everyBlockKind, FIXTURE_AT } from "../../presentation/transcript/fixtures.ts";
 import { SYMBOL_SETS } from "../theme/symbols.ts";
 import {
   collapsedRows,
@@ -401,5 +407,47 @@ describe("relative time", () => {
   test("says nothing rather than reporting a negative age", () => {
     const future = timestampFromEpochMilliseconds(Date.UTC(2026, 7, 1, 12, 5, 0));
     expect(relativeTime(future, base)).toBe(null);
+  });
+});
+
+describe("an unknown fallback", () => {
+  const SECRET = "sk-live-SECRET-MUST-NOT-ESCAPE";
+
+  function unknownBlock(kind = "future-widget"): TranscriptBlock {
+    const result = admitTranscriptRecord({
+      kind,
+      order: 0,
+      occurredAt: FIXTURE_AT,
+      text: SECRET,
+      summary: SECRET,
+    });
+    if (!result.ok) {
+      throw new Error(`expected admission, got ${result.error.code}`);
+    }
+    return result.value;
+  }
+
+  test("collapses to one or two rows regardless of width", () => {
+    const block = unknownBlock();
+    expect(collapsedRows(block)).toBeLessThanOrEqual(2);
+    for (const columns of [24, 80, 400]) {
+      expect(build(block, { columns }).length).toBe(collapsedRows(block));
+    }
+  });
+
+  test("does not infer success and does not copy payload into collapsed rows", () => {
+    const block = unknownBlock();
+    expect(statusOfBlock(block)).toBe("informational");
+    const collapsed = textOf(build(block));
+    expect(collapsed).toContain("Unrecognized block");
+    expect(collapsed).not.toContain(SECRET);
+    expect(collapsed).not.toContain("Notice");
+  });
+
+  test("may show the observed kind only as labelled expansion content", () => {
+    const rows = build(unknownBlock(), { expanded: true });
+    expect(textOf(rows)).toContain("kind");
+    expect(textOf(rows)).toContain("future-widget");
+    expect(textOf(rows)).not.toContain(SECRET);
   });
 });
