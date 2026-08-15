@@ -595,7 +595,32 @@ Its verified behavior:
   `unsafe-ownership`, `lock-contention`, `cancelled`, `timed-out`, and spawn
   failure. Stage/commit/push/worktree mutation remain later #75 children.
 
-`bun run check` passed with 3,199 tests passing and 14 skipped.
+The patch Git-awareness slice from
+[#77](https://github.com/tyldra-org/falryn/issues/77) lets `PatchPort` consume
+that observation. When `GitPort` is omitted, preview and apply keep `git`
+`absent` and behave as #66/#67. When wired, they observe status from the
+workspace root:
+
+- **a missing repository is not a patch failure.** `not-a-repository` stays
+  `absent`;
+- **in-progress operations refuse the plan.** `merge`, `rebase`,
+  `cherry-pick`, `revert`, and `bisect` are `git-operation`. Unmerged paths
+  are `git-conflict`. The current file is preserved;
+- **dirty overlapping targets are named, not refused.** Ordinary, rename, and
+  untracked paths on a clean operation are listed in `dirtyTargets` and may
+  still apply;
+- **HEAD can be a plan precondition.** `expectedGitHead` is the Git oid, not
+  filesystem `PathEntry.revision`. Mismatch is `git-head-mismatch`. Apply
+  rechecks immediately before writes; a repository that vanishes after the
+  first look is `git-unavailable`;
+- **truncated status fails closed** when a target is not in the observed
+  entries.
+
+Validated by `src/domain/workspace-patch.test.ts` and
+`src/application/workspace-patch.test.ts`. Product Git/patch tools, stage,
+commit, and worktree mutation remain later #75 children.
+
+`bun run check` passed with 3,205 tests passing and 14 skipped.
 Platform-specific PTY and process-capture tests are skipped on Windows, while
 the compiled qualification suites remain owned by CI.
 
@@ -3055,8 +3080,9 @@ inside that same root (parent
   Cancellation keeps already-applied targets.
 
 Validated by `src/domain/workspace-patch.test.ts` and
-`src/application/workspace-patch.test.ts` under `bun run check`. Git revisions
-and product filesystem tools remain later work.
+`src/application/workspace-patch.test.ts` under `bun run check`. Git-aware
+dirty-tree and conflict preconditions are verified for #77. Product filesystem
+tools remain later work.
 
 The bounded patch rollback, changed-region read, and safety-test slice from
 [#67](https://github.com/tyldra-org/falryn/issues/67) continues that same root
@@ -3073,8 +3099,9 @@ The bounded patch rollback, changed-region read, and safety-test slice from
   bytes. Rollback is never claimed as guaranteed.
 
 Validated by `src/domain/workspace-patch.test.ts` and
-`src/application/workspace-patch.test.ts` under `bun run check`. Git revisions,
-undo of move/copy/trash/remove, and product filesystem tools remain later work.
+`src/application/workspace-patch.test.ts` under `bun run check`. Git-aware
+dirty-tree and conflict preconditions are verified for #77. Undo of
+move/copy/trash/remove and product filesystem tools remain later work.
 
 The workspace file-read slice from
 [#56](https://github.com/tyldra-org/falryn/issues/56) reads one file or a

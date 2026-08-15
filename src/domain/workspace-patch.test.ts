@@ -1,10 +1,15 @@
 import { describe, expect, test } from "bun:test";
 
+import { instant } from "./clock.ts";
+import { localPath } from "./filesystem.ts";
+import type { GitIdentity, GitStatusEntry, GitStatusSnapshot } from "./git.ts";
 import {
   applyPatchHunks,
+  assessPatchGitStatus,
   computePatchPlanId,
   DEFAULT_MAX_PATCH_TARGETS,
   describeWorkspacePatchError,
+  gitPathForPatchTarget,
   HARD_MAX_PATCH_HUNKS,
   hunkHeader,
   joinPatchedLines,
@@ -30,6 +35,7 @@ describe("parseWorkspacePatchPlan", () => {
       throw new Error("expected plan");
     }
     expect(parsed.value.policy).toBe("fail-before-effect");
+    expect(parsed.value.expectedGitHead).toBeNull();
     expect(parsed.value.limits.maxTargets).toBe(DEFAULT_MAX_PATCH_TARGETS);
     expect(parsed.value.targets[0]?.hunks).toHaveLength(1);
   });
@@ -195,6 +201,14 @@ describe("patch helpers", () => {
     expect(describeWorkspacePatchError({ code: "filesystem", reason: "io-failure" })).toBe(
       "filesystem:io-failure",
     );
+    expect(describeWorkspacePatchError({ code: "git-conflict" })).toBe("git-conflict");
+    expect(describeWorkspacePatchError({ code: "git-head-mismatch" })).toBe("git-head-mismatch");
+    expect(describeWorkspacePatchError({ code: "git-operation", operation: "merge" })).toBe(
+      "git-operation:merge",
+    );
+    expect(describeWorkspacePatchError({ code: "git-unavailable", reason: "truncated" })).toBe(
+      "git-unavailable:truncated",
+    );
   });
 
   test("parses changed-region reads and maps half-open ranges", () => {
@@ -226,5 +240,107 @@ describe("patch helpers", () => {
       restored: [0],
       failed: [],
     });
+  });
+});
+
+const HEAD = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+
+function gitIdentity(operation: GitIdentity["operation"] = "clean"): GitIdentity {
+  return {
+    worktreeRoot: localPath("/work/project"),
+    gitDir: ".git",
+    commonDir: ".git",
+    head: { state: "observed", value: HEAD },
+    headState: "branch",
+    branch: { state: "observed", value: "main" },
+    upstream: { state: "unavailable", reason: "none" },
+    ahead: { state: "unavailable", reason: "none" },
+    behind: { state: "unavailable", reason: "none" },
+    operation,
+    superproject: { state: "unavailable", reason: "no-superproject" },
+    sparseCheckout: { state: "observed", value: false },
+    gitVersion: { state: "observed", value: "2.45.0" },
+    remotes: { state: "observed", value: [] },
+    observedAt: instant(0),
+  };
+}
+
+function entry(path: string, kind: GitStatusEntry["kind"]): GitStatusEntry {
+  return { kind, path, originalPath: null, indexStatus: ".", worktreeStatus: "M" };
+}
+
+function snapshot(
+  entries: readonly GitStatusEntry[],
+  operation: GitIdentity["operation"] = "clean",
+): GitStatusSnapshot {
+  return {
+    identity: gitIdentity(operation),
+    entries: { state: "observed", value: entries },
+  };
+}
+
+describe("patch git observation", () => {
+  test("maps a nested workspace path onto the worktree", () => {
+    expect(gitPathForPatchTarget("/repo", "/repo/pkg", "src/a.ts")).toBe("pkg/src/a.ts");
+    expect(gitPathForPatchTarget("/private/var/repo", "/var/repo", "a.ts")).toBe("a.ts");
+  });
+
+  test("allows a dirty target when the repository operation is clean", () => {
+    const assessed = assessPatchGitStatus(
+      snapshot([entry("src/a.ts", "ordinary")]),
+      "/work/project",
+      ["src/a.ts"],
+      HEAD,
+    );
+    expect(assessed.ok).toBe(true);
+    if (assessed.ok) {
+      expect(assessed.value.dirtyTargets).toEqual(["src/a.ts"]);
+    }
+  });
+
+  test("refuses a merge, an unmerged path, a HEAD mismatch, and truncated unknown paths", () => {
+    const merging = assessPatchGitStatus(
+      snapshot([], "merge"),
+      "/work/project",
+      ["src/a.ts"],
+      null,
+    );
+    expect(merging.ok).toBe(false);
+    if (!merging.ok) {
+      expect(merging.error).toEqual({ code: "git-operation", operation: "merge" });
+    }
+    const unmerged = assessPatchGitStatus(
+      snapshot([entry("src/a.ts", "unmerged")]),
+      "/work/project",
+      ["src/a.ts"],
+      null,
+    );
+    expect(unmerged.ok).toBe(false);
+    if (!unmerged.ok) {
+      expect(unmerged.error).toEqual({ code: "git-conflict" });
+    }
+    const staleHead = assessPatchGitStatus(
+      snapshot([]),
+      "/work/project",
+      ["src/a.ts"],
+      "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    );
+    expect(staleHead.ok).toBe(false);
+    if (!staleHead.ok) {
+      expect(staleHead.error).toEqual({ code: "git-head-mismatch" });
+    }
+    const truncated = assessPatchGitStatus(
+      {
+        identity: gitIdentity(),
+        entries: { state: "truncated", value: [entry("other.ts", "ordinary")], omitted: 1 },
+      },
+      "/work/project",
+      ["src/a.ts"],
+      null,
+    );
+    expect(truncated.ok).toBe(false);
+    if (!truncated.ok) {
+      expect(truncated.error).toEqual({ code: "git-unavailable", reason: "truncated" });
+    }
   });
 });

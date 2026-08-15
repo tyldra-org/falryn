@@ -3,10 +3,12 @@
  *
  * Hunks match exact preimage text at an explicit line. They are never moved to
  * similar text. Best-effort rollback and changed-region reads are this slice.
- * Git revisions and product tools remain later #61 children.
+ * Optional Git observation refuses in-progress operations and unmerged paths.
+ * Product tools remain later work.
  */
 
 import { type ContentDigest, contentDigest } from "./artifact.ts";
+import type { GitField, GitOperationState, GitStatusEntry, GitStatusSnapshot } from "./git.ts";
 import { assertNever, err, ok, type Result } from "./result.ts";
 import type { BoundWorkspacePath, WorkspacePathBindError } from "./workspace-path.ts";
 import { applyLineRange, type LineRange, type NumberedLine } from "./workspace-read.ts";
@@ -81,7 +83,35 @@ export type WorkspacePatchError =
       readonly code: "rollback-failed";
       readonly reason: WorkspacePatchRollbackReason;
     }
-  | { readonly code: "filesystem"; readonly reason: string };
+  | { readonly code: "filesystem"; readonly reason: string }
+  | { readonly code: "git-conflict" }
+  | { readonly code: "git-head-mismatch" }
+  | {
+      readonly code: "git-operation";
+      readonly operation: Exclude<GitOperationState, "clean">;
+    }
+  | { readonly code: "git-unavailable"; readonly reason: string };
+
+export const PATCH_GIT_UNAVAILABLE_REASONS = [
+  "unsafe-ownership",
+  "lock-contention",
+  "timed-out",
+  "output-exceeded",
+  "spawn-failed",
+  "failed",
+  "invalid-request",
+  "truncated",
+] as const;
+export type PatchGitUnavailableReason = (typeof PATCH_GIT_UNAVAILABLE_REASONS)[number];
+
+export type PatchGitObservation =
+  | { readonly state: "absent" }
+  | {
+      readonly state: "observed";
+      readonly operation: GitOperationState;
+      readonly head: GitField<string>;
+      readonly dirtyTargets: readonly string[];
+    };
 
 export type WorkspacePatchLimits = {
   readonly maxTargets: number;
@@ -117,6 +147,7 @@ export type ParsedPatchTarget = {
 export type ParsedPatchPlan = {
   readonly policy: PatchPolicy;
   readonly expectedPlanId: string | null;
+  readonly expectedGitHead: string | null;
   readonly limits: WorkspacePatchLimits;
   readonly targets: readonly ParsedPatchTarget[];
 };
@@ -134,6 +165,7 @@ export type PatchHunkPreview = {
 export type WorkspacePatchPreview = {
   readonly planId: string;
   readonly policy: PatchPolicy;
+  readonly git: PatchGitObservation;
   readonly targets: readonly {
     readonly index: number;
     readonly path: string;
@@ -200,6 +232,7 @@ export const NOT_ATTEMPTED_PATCH_ROLLBACK: WorkspacePatchRollback = {
 export type WorkspacePatchResult = {
   readonly planId: string;
   readonly policy: PatchPolicy;
+  readonly git: PatchGitObservation;
   readonly items: readonly WorkspacePatchItem[];
   readonly rollback: WorkspacePatchRollback;
 };
@@ -413,6 +446,99 @@ function logicalKey(path: string): string {
   return path.replace(/\\/g, "/").replace(/^\.\//, "").replace(/\/+$/, "");
 }
 
+function stripPrivatePrefix(path: string): string {
+  return path.startsWith("/private/") ? path.slice("/private".length) : path;
+}
+
+export function gitPathForPatchTarget(
+  worktreeRoot: string,
+  workspaceRoot: string,
+  patchPath: string,
+): string {
+  const worktree = stripPrivatePrefix(worktreeRoot.replace(/\/+$/, ""));
+  const workspace = stripPrivatePrefix(workspaceRoot.replace(/\/+$/, ""));
+  const logical = logicalKey(patchPath);
+  if (workspace === worktree) {
+    return logical;
+  }
+  if (workspace.startsWith(`${worktree}/`)) {
+    return logicalKey(`${workspace.slice(worktree.length + 1)}/${logical}`);
+  }
+  return logical;
+}
+
+function isDirtyGitKind(kind: GitStatusEntry["kind"]): boolean {
+  switch (kind) {
+    case "ordinary":
+    case "rename":
+    case "untracked":
+      return true;
+    case "unmerged":
+    case "ignored":
+      return false;
+    default: {
+      const _exhaustive: never = kind;
+      return _exhaustive;
+    }
+  }
+}
+
+export function assessPatchGitStatus(
+  snapshot: GitStatusSnapshot,
+  workspaceRoot: string,
+  targetPaths: readonly string[],
+  expectedGitHead: string | null,
+): Result<Extract<PatchGitObservation, { readonly state: "observed" }>, WorkspacePatchError> {
+  if (expectedGitHead !== null) {
+    if (
+      snapshot.identity.head.state !== "observed" ||
+      snapshot.identity.head.value !== expectedGitHead
+    ) {
+      return err({ code: "git-head-mismatch" });
+    }
+  }
+  if (snapshot.identity.operation !== "clean") {
+    return err({ code: "git-operation", operation: snapshot.identity.operation });
+  }
+  switch (snapshot.entries.state) {
+    case "unavailable":
+      return err({ code: "git-unavailable", reason: snapshot.entries.reason });
+    case "observed":
+    case "truncated": {
+      const mapped = new Map(
+        snapshot.entries.value.map((entry) => [logicalKey(entry.path), entry]),
+      );
+      const dirtyTargets: string[] = [];
+      for (const path of targetPaths) {
+        const gitPath = gitPathForPatchTarget(snapshot.identity.worktreeRoot, workspaceRoot, path);
+        const entry = mapped.get(logicalKey(gitPath));
+        if (entry === undefined) {
+          if (snapshot.entries.state === "truncated") {
+            return err({ code: "git-unavailable", reason: "truncated" });
+          }
+          continue;
+        }
+        if (entry.kind === "unmerged") {
+          return err({ code: "git-conflict" });
+        }
+        if (isDirtyGitKind(entry.kind)) {
+          dirtyTargets.push(path);
+        }
+      }
+      return ok({
+        state: "observed",
+        operation: snapshot.identity.operation,
+        head: snapshot.identity.head,
+        dirtyTargets,
+      });
+    }
+    default: {
+      const _exhaustive: never = snapshot.entries;
+      return _exhaustive;
+    }
+  }
+}
+
 function detectOverlap(paths: readonly string[]): WorkspaceWriteOverlapReason | null {
   const seen = new Map<string, string>();
   for (const path of paths) {
@@ -432,6 +558,7 @@ function detectOverlap(paths: readonly string[]): WorkspaceWriteOverlapReason | 
 export function computePatchPlanId(plan: ParsedPatchPlan): string {
   const canonical = [
     plan.policy,
+    plan.expectedGitHead ?? "",
     ...plan.targets.flatMap((target) => [
       target.path,
       target.expectedDigest ?? "",
@@ -641,7 +768,19 @@ export function parseWorkspacePatchPlan(
   if (overlap !== null) {
     return err({ code: "overlapping-targets", reason: overlap });
   }
-  return ok({ policy, expectedPlanId, limits, targets });
+  let expectedGitHead: string | null = null;
+  if (value.expectedGitHead !== undefined) {
+    if (
+      typeof value.expectedGitHead !== "string" ||
+      value.expectedGitHead.length === 0 ||
+      value.expectedGitHead.length > MAX_WRITE_REVISION_LENGTH ||
+      value.expectedGitHead.includes("\0")
+    ) {
+      return err({ code: "malformed-revision" });
+    }
+    expectedGitHead = value.expectedGitHead;
+  }
+  return ok({ policy, expectedPlanId, expectedGitHead, limits, targets });
 }
 
 export function summarizePatchRollback(
@@ -828,6 +967,14 @@ export function describeWorkspacePatchError(error: WorkspacePatchError): string 
       return `rollback-failed:${error.reason}`;
     case "filesystem":
       return `filesystem:${error.reason}`;
+    case "git-conflict":
+      return "git-conflict";
+    case "git-head-mismatch":
+      return "git-head-mismatch";
+    case "git-operation":
+      return `git-operation:${error.operation}`;
+    case "git-unavailable":
+      return `git-unavailable:${error.reason}`;
     default:
       return assertNever(error, "unhandled workspace patch error");
   }

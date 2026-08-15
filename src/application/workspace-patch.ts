@@ -1,24 +1,30 @@
 /**
- * Workspace patch hunk preview, conflict, and apply (#66).
+ * Workspace patch hunk preview, conflict, and apply (#66/#67/#77).
  *
  * Binds paths, validates exact preimages, then writes staged files through
  * {@link FileSystemPort.writeBytes}. Hunks are never relocated. Mid-apply IO
  * failure best-effort restores captured preimages. Changed-region reads use
- * exact workspace bytes. Git revisions and product tools remain later work.
+ * exact workspace bytes. Optional Git observation refuses in-progress
+ * operations and unmerged paths. Product tools remain later work.
  */
 
 import { createHash } from "node:crypto";
 
 import {
   applyPatchHunks,
+  assessPatchGitStatus,
   type BoundWorkspacePath,
   bindWorkspacePath,
   computePatchPlanId,
   contentDigest,
+  type DurationMs,
   decodeWorkspaceText,
   detectNewline,
+  err,
   type FileSystemError,
   type FileSystemPort,
+  type GitError,
+  type GitPort,
   isBinaryText,
   isInside,
   joinPatchedLines,
@@ -26,12 +32,16 @@ import {
   type LocalPath,
   linesForChangedRegion,
   NOT_ATTEMPTED_PATCH_ROLLBACK,
+  ok,
+  PATCH_GIT_UNAVAILABLE_REASONS,
   type ParsedPatchChangedRegionRead,
   type ParsedPatchPlan,
   type ParsedPatchTarget,
+  type PatchGitObservation,
   type PatchHunkPreview,
   parsePatchChangedRegionRead,
   parseWorkspacePatchPlan,
+  type Result,
   splitLines,
   summarizePatchRollback,
   type WorkspacePatchChangedRegion,
@@ -74,6 +84,11 @@ export type WorkspacePatcher = {
 
 export type WorkspacePatcherOptions = {
   readonly fileSystem: FileSystemPort;
+  readonly git?: {
+    readonly port: GitPort;
+    readonly gitExecutable: string;
+    readonly timeoutMs?: DurationMs;
+  };
 };
 
 /** Application seam described as `PatchPort` in architecture docs. */
@@ -104,6 +119,45 @@ function fromFilesystem(error: FileSystemError): WorkspacePatchError {
     default:
       return { code: "filesystem", reason: error.code };
   }
+}
+
+function fromGitFailure(error: GitError): WorkspacePatchError {
+  if (error.code === "cancelled") {
+    return { code: "cancelled" };
+  }
+  const reason = (PATCH_GIT_UNAVAILABLE_REASONS as readonly string[]).includes(error.code)
+    ? error.code
+    : "failed";
+  return { code: "git-unavailable", reason };
+}
+
+async function observePatchGit(
+  git: WorkspacePatcherOptions["git"],
+  root: LocalPath,
+  plan: ParsedPatchPlan,
+  signal: AbortSignal | undefined,
+): Promise<Result<PatchGitObservation, WorkspacePatchError>> {
+  if (git === undefined) {
+    return ok({ state: "absent" });
+  }
+  const status = await git.port.status({
+    gitExecutable: git.gitExecutable,
+    startPath: root,
+    ...(git.timeoutMs === undefined ? {} : { timeoutMs: git.timeoutMs }),
+    ...(signal === undefined ? {} : { signal }),
+  });
+  if (!status.ok) {
+    if (status.error.code === "not-a-repository") {
+      return ok({ state: "absent" });
+    }
+    return err(fromGitFailure(status.error));
+  }
+  return assessPatchGitStatus(
+    status.value,
+    root,
+    plan.targets.map((target) => target.path),
+    plan.expectedGitHead,
+  );
 }
 
 function rejected(
@@ -313,7 +367,7 @@ async function restoreApplied(
 }
 
 export function createWorkspacePatcher(options: WorkspacePatcherOptions): WorkspacePatcher {
-  const { fileSystem } = options;
+  const { fileSystem, git } = options;
 
   async function stagePlan(
     root: LocalPath,
@@ -363,6 +417,10 @@ export function createWorkspacePatcher(options: WorkspacePatcherOptions): Worksp
       if (!parsed.ok) {
         return parsed;
       }
+      const observed = await observePatchGit(git, root, parsed.value, signal);
+      if (!observed.ok) {
+        return observed;
+      }
       const staged = await stagePlan(root, parsed.value, signal);
       if (!staged.ok) {
         return staged;
@@ -394,7 +452,12 @@ export function createWorkspacePatcher(options: WorkspacePatcherOptions): Worksp
       });
       return {
         ok: true,
-        value: { planId: staged.planId, policy: parsed.value.policy, targets },
+        value: {
+          planId: staged.planId,
+          policy: parsed.value.policy,
+          git: observed.value,
+          targets,
+        },
       };
     },
 
@@ -403,9 +466,20 @@ export function createWorkspacePatcher(options: WorkspacePatcherOptions): Worksp
       if (!parsed.ok) {
         return parsed;
       }
+      const observed = await observePatchGit(git, root, parsed.value, signal);
+      if (!observed.ok) {
+        return observed;
+      }
       const staged = await stagePlan(root, parsed.value, signal);
       if (!staged.ok) {
         return staged;
+      }
+      const fresh = await observePatchGit(git, root, parsed.value, signal);
+      if (!fresh.ok) {
+        return fresh;
+      }
+      if (observed.value.state === "observed" && fresh.value.state === "absent") {
+        return { ok: false, error: { code: "git-unavailable", reason: "failed" } };
       }
       if (parsed.value.expectedPlanId !== null && parsed.value.expectedPlanId !== staged.planId) {
         return { ok: false, error: { code: "stale-plan" } };
@@ -417,6 +491,7 @@ export function createWorkspacePatcher(options: WorkspacePatcherOptions): Worksp
           value: {
             planId: staged.planId,
             policy: parsed.value.policy,
+            git: fresh.value,
             items: staged.staged.map((item, index) => {
               if ("bytes" in item) {
                 return rejected(
@@ -513,7 +588,13 @@ export function createWorkspacePatcher(options: WorkspacePatcherOptions): Worksp
       }
       return {
         ok: true,
-        value: { planId: staged.planId, policy: parsed.value.policy, items, rollback },
+        value: {
+          planId: staged.planId,
+          policy: parsed.value.policy,
+          git: fresh.value,
+          items,
+          rollback,
+        },
       };
     },
 
