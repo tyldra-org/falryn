@@ -72,9 +72,9 @@ describe("control overlays", () => {
       <ShellApp theme={THEME} model={MODEL} onExit={() => {}} controls={CATALOG} />,
     );
     await runCommand(shell, "session.switch");
-    await shell.frame("Sessions");
-    shell.setup.mockInput.pressEnter();
-    const frame = await shell.frame("coding");
+    await shell.frame("workspace falryn");
+    const frame = await shell.pressEnter();
+    expect(frame).not.toContain("Esc closes this");
     expect(frame).toContain("coding");
     expect(frame).not.toContain("no session yet");
   });
