@@ -38,6 +38,14 @@ Suggested next prompt: Deliver — Target: Issue #<exact child>
 
 Last required child → parent's integrated verification in-loop; close parent only when it passes; else one integration child + its Deliver prompt. After a passing parent, run Next and report; do not start the next parent/standalone in the same run.
 
+## Deliver — Parent chain #N
+
+Same scheduler as Parent issue, different stop. After each child's complete cycle, continue to the next ordered unblocked incomplete sibling in this run. Still one child, one delivery PR (plus companions), serial; never a parent branch or mega-PR.
+
+Stop the chain on awaiting-input, a failed merge precondition, or three repair passes without progress. Report the exact child plus the matching resume prompt (`Deliver — Target: Issue #<child>`).
+
+Last required child → parent's integrated verification in-loop, same as Parent issue. After a passing parent, run Next and report; do not start the next unrelated parent/standalone. Next never auto-emits `Parent chain`; that selector is user-initiated. `Docs parent chain #N` is the same loop on `falryn-docs`.
+
 ## Required vs advisory checks
 
 Merge gates are the repository **ruleset required status checks** (and required review-thread rules). Advisory / non-required jobs (e.g. Benchmark regression when not in the ruleset) **must not** block Deliver merge unless the issue acceptance criteria or `DEVELOPMENT.md` explicitly require them. Failed or missing **required** checks always block.
@@ -59,7 +67,7 @@ Read Project, issue graph, blockers, open bundles, review/check state, and `CURR
 1. Validated **Planning frontier** + `DEVELOPMENT.md` next-prompt table → resolve target/state only; do not echo manual Plan/Implement/Verify/Merge in autonomous reports. If frontier conflicts with live GitHub, name the mismatch and follow live state.
 2. Resume that bundle/parent chain; name stage (planning / implementation / verification / merge preconditions / awaiting input). Unrelated **In Progress** items do not outrank the frontier.
 3. Else: Priority P0→P3 when set, then earliest eligible native child or root by stable issue creation order.
-4. Emit `Deliver — Target: Issue #N` or `Deliver — Target: Parent issue #N` for every eligible Falryn issue/parent. Todo/Ready/mid-delivery is not a reason to emit a manual mode.
+4. Emit `Deliver — Target: Issue #N` or `Deliver — Target: Parent issue #N` for every eligible Falryn issue/parent. Todo/Ready/mid-delivery is not a reason to emit a manual mode. Do not auto-emit `Parent chain`; that selector is user-initiated.
 5. Manual prompt only outside Deliver coverage (docs-only, PR/milestone audit, authorized release). Blocked by product/external prerequisite → `Suggested next prompt: none`.
 
 After a completed parent or standalone, same procedure but do not resume the just-completed target.
