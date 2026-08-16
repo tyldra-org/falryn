@@ -63,6 +63,18 @@ export const MAX_LIVE_SCOPES = 10_000;
  */
 export const MAX_RETAINED_TERMINAL_SCOPES = 1_000;
 
+/**
+ * Ancestor-chain tombstones kept after a settled scope is evicted.
+ *
+ * Eviction refuses a node with retained children, not a node with live scheduled
+ * units, so a scope can leave the tree while work still bound to it is stopping.
+ * The tombstone is only that scope's id and the ancestor ids captured at
+ * eviction — enough for a late effect to fold upward, not enough to restore the
+ * node. The cap matches the retained-terminal window: a late effect that arrives
+ * after this many further evictions is unattributable again.
+ */
+export const MAX_EVICTED_TOMBSTONES = MAX_RETAINED_TERMINAL_SCOPES;
+
 /** Lifecycle events retained for diagnostics. Older ones are dropped and counted. */
 export const MAX_RETAINED_SCOPE_EVENTS = 10_000;
 
@@ -155,8 +167,10 @@ export type ScopeTree = {
    * A scope that is still live simply records the effect, so a caller racing
    * the settle does not have to check the state first.
    *
-   * `unknown-scope` means the scope was evicted before the effect arrived.
-   * Nothing is left to attribute it to; only the caller's diagnostic records it.
+   * `unknown-scope` means the scope is gone and its eviction tombstone has also
+   * been trimmed. Nothing is left to attribute it to; only the caller's
+   * diagnostic records it. A still-held tombstone folds the effect into every
+   * surviving ancestor without restoring the evicted node.
    */
   recordLateEffect(scopeId: ScopeId, effect: EffectCertainty): Result<LateEffectRecord, ScopeError>;
 
@@ -265,6 +279,9 @@ export function createScopeTree(options: ScopeTreeOptions): ScopeTree {
   const events: ScopeEvent[] = [];
   /** Settled scopes still retained, oldest first. */
   const retained: ScopeId[] = [];
+  /** Evicted scopes still attributable, oldest first. */
+  const tombstones = new Map<ScopeId, readonly ScopeId[]>();
+  const tombstoneOrder: ScopeId[] = [];
   let listeners: ((event: ScopeEvent) => void)[] = [];
   let order = 0;
   let liveCount = 0;
@@ -409,11 +426,15 @@ export function createScopeTree(options: ScopeTreeOptions): ScopeTree {
    *
    * A scope is only evictable once nothing under it is still retained, so
    * eviction never orphans a live child or a descendant a caller can still read.
+   * Scheduled units are not children; a still-stopping unit does not block
+   * eviction. The ancestor chain is captured first so a later effect can still
+   * fold upward through a tombstone.
    */
   const evict = (node: ScopeNode): boolean => {
     if (node.children.some((child) => nodes.has(child))) {
       return false;
     }
+    const ancestorIds = ancestorIdsOf(node);
     const parent = node.parentId === null ? undefined : nodes.get(node.parentId);
     if (parent !== undefined) {
       const index = parent.children.indexOf(node.scopeId);
@@ -422,7 +443,30 @@ export function createScopeTree(options: ScopeTreeOptions): ScopeTree {
       }
     }
     nodes.delete(node.scopeId);
+    rememberTombstone(node.scopeId, ancestorIds);
     return true;
+  };
+
+  const forgetTombstone = (scopeId: ScopeId): void => {
+    if (!tombstones.delete(scopeId)) {
+      return;
+    }
+    const index = tombstoneOrder.indexOf(scopeId);
+    if (index >= 0) {
+      tombstoneOrder.splice(index, 1);
+    }
+  };
+
+  const rememberTombstone = (scopeId: ScopeId, ancestorIds: readonly ScopeId[]): void => {
+    forgetTombstone(scopeId);
+    tombstones.set(scopeId, ancestorIds);
+    tombstoneOrder.push(scopeId);
+    while (tombstoneOrder.length > MAX_EVICTED_TOMBSTONES) {
+      const oldest = tombstoneOrder.shift();
+      if (oldest !== undefined) {
+        tombstones.delete(oldest);
+      }
+    }
   };
 
   const trimRetained = (): void => {
@@ -448,7 +492,7 @@ export function createScopeTree(options: ScopeTreeOptions): ScopeTree {
    * would re-propagate the child's effect past it. While both remain in the
    * retention window `subtreeEffectOf` still walks them and hides the gap; once
    * both are evicted the ancestor reports `none` for work nobody observed
-   * finishing.
+   * finishing — unless a tombstone still names that ancestor.
    *
    * `worstEffect` is an idempotent maximum, so reaching an ancestor that the
    * bottom-up ordering would have reached transitively costs nothing. The walk
@@ -457,16 +501,34 @@ export function createScopeTree(options: ScopeTreeOptions): ScopeTree {
    * This folds *effect reporting* upward. Cancellation still propagates
    * downward only; the two travel in opposite directions by design.
    */
-  const foldIntoAncestors = (node: ScopeNode, effect: EffectCertainty): ScopeId[] => {
-    const reached: ScopeId[] = [];
+  const ancestorIdsOf = (node: ScopeNode): ScopeId[] => {
+    const ids: ScopeId[] = [];
     let ancestor = node.parentId === null ? undefined : nodes.get(node.parentId);
     while (ancestor !== undefined) {
+      ids.push(ancestor.scopeId);
+      ancestor = ancestor.parentId === null ? undefined : nodes.get(ancestor.parentId);
+    }
+    return ids;
+  };
+
+  const foldIntoAncestorIds = (
+    ancestorIds: readonly ScopeId[],
+    effect: EffectCertainty,
+  ): ScopeId[] => {
+    const reached: ScopeId[] = [];
+    for (const ancestorId of ancestorIds) {
+      const ancestor = nodes.get(ancestorId);
+      if (ancestor === undefined) {
+        continue;
+      }
       ancestor.settledDescendantEffect = worstEffect(ancestor.settledDescendantEffect, effect);
       reached.push(ancestor.scopeId);
-      ancestor = ancestor.parentId === null ? undefined : nodes.get(ancestor.parentId);
     }
     return reached;
   };
+
+  const foldIntoAncestors = (node: ScopeNode, effect: EffectCertainty): ScopeId[] =>
+    foldIntoAncestorIds(ancestorIdsOf(node), effect);
 
   const settle = (node: ScopeNode, outcome: TerminalOutcome, at: Instant): ScopeEvent => {
     const reason = node.state.status === "cancelling" ? node.state.reason : null;
@@ -540,6 +602,7 @@ export function createScopeTree(options: ScopeTreeOptions): ScopeTree {
       if (nodes.has(childId)) {
         return err({ code: "duplicate-scope", scopeId: childId });
       }
+      forgetTombstone(childId);
 
       const controller = new AbortController();
       const node: ScopeNode = {
@@ -614,19 +677,32 @@ export function createScopeTree(options: ScopeTreeOptions): ScopeTree {
     },
 
     recordLateEffect(id: ScopeId, effect: EffectCertainty): Result<LateEffectRecord, ScopeError> {
-      const found = requireNode(id);
-      if (!found.ok) {
-        return found;
+      const node = nodes.get(id);
+      if (node !== undefined) {
+        if (node.state.status !== "terminal") {
+          applyEffect(node, effect);
+          return ok({ scopeId: id, effect, late: false, foldedInto: [] });
+        }
+        // The scope's own frozen effect and outcome stay as they settled. Only
+        // the ancestors, which are still accountable for what happened beneath
+        // them, take the update.
+        return ok({
+          scopeId: id,
+          effect,
+          late: true,
+          foldedInto: foldIntoAncestors(node, effect),
+        });
       }
-      const node = found.value;
-      if (node.state.status !== "terminal") {
-        applyEffect(node, effect);
-        return ok({ scopeId: id, effect, late: false, foldedInto: [] });
+      const ancestorIds = tombstones.get(id);
+      if (ancestorIds === undefined) {
+        return err({ code: "unknown-scope", scopeId: id });
       }
-      // The scope's own frozen effect and outcome stay as they settled. Only
-      // the ancestors, which are still accountable for what happened beneath
-      // them, take the update.
-      return ok({ scopeId: id, effect, late: true, foldedInto: foldIntoAncestors(node, effect) });
+      return ok({
+        scopeId: id,
+        effect,
+        late: true,
+        foldedInto: foldIntoAncestorIds(ancestorIds, effect),
+      });
     },
 
     complete(id: ScopeId): Result<TerminalOutcome, ScopeError> {

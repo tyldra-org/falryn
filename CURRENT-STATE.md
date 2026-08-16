@@ -124,9 +124,11 @@ Its verified behavior:
 - resource bounds count live scopes only, so completed work never exhausts the
   budget. Settled scopes are evicted beyond a retention window after their
   effect is folded into every ancestor — so an evicted descendant's uncertainty
-  stays visible from above whatever order the scopes settled in — and the
-  lifecycle event log is bounded with the number of dropped events reported
-  rather than truncating silently.
+  stays visible from above whatever order the scopes settled in. A bounded
+  ancestor-chain tombstone remains after eviction so a late effect can still
+  fold upward, capped at the same 1,000 as retained terminals. The lifecycle
+  event log is bounded with the number of dropped events reported rather than
+  truncating silently.
 
 The scheduling engine introduced by
 [#3](https://github.com/tyldra-org/falryn/issues/3) adds the work-unit,
@@ -817,19 +819,23 @@ using the same upward fold a scope performs when it settles normally. The settle
 scope's own terminal outcome is never rewritten, and the scheduler warns —
 naming the unit, the scope, and the effect — whenever a late effect demands
 inspection.
+[#305](https://github.com/tyldra-org/falryn/issues/305) extends that fold past
+eviction: the tree keeps a bounded ancestor-chain tombstone
+(`MAX_EVICTED_TOMBSTONES`, the same 1,000 as the retained-terminal window) so a
+unit that terminates after its scope was evicted still updates surviving
+ancestors' `subtreeEffect` and `requiresInspection`. Eviction policy is
+unchanged — live scheduled units do not block eviction — and the settled scope's
+own node is not restored.
 
-Two limitations of that wiring:
+Two remaining limitations of that wiring:
 
 - the drain polls every 10 ms through `ClockPort` rather than waiting on a
   quiescence signal, because the scheduler reports a running count and publishes
   no such signal. The poll is bounded and deterministic under a manual clock and
   carries no correctness risk; and
-- a late effect whose scope was already evicted is reported but not attributed.
-  Eviction refuses a scope with live scope *children*, and scheduled units are
-  not children, so a settled scope with a still-running unit is evictable. The
-  diagnostic still names the unit and the effect; there is no ancestor chain left
-  to fold into. Changing that would change the eviction policy, which #299's
-  non-goals excluded.
+- a late effect whose eviction tombstone has also been trimmed is reported but
+  not attributed. The diagnostic still names the unit and the effect; there is
+  no ancestor chain left to fold into.
 
 **One `RuntimeEvent` kind now has a production producer.** The configuration
 loader appends `configuration.generation.changed` whenever it publishes a
