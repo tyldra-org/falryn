@@ -10,6 +10,8 @@
 
 export type { DrawableLine } from "./lines.ts";
 export { drawableLine, drawableLines } from "./lines.ts";
+export type { BlockDescriptor, HeightBatch, HeightKind, HeightRecord } from "./measure.ts";
+export { EMPTY_HEIGHT_BATCH, reconcileHeights } from "./measure.ts";
 export { commandForRoute, describeRouteWith } from "./routes.ts";
 export type { DisclosureNotice, RowsRequest, TranscriptRow } from "./rows.ts";
 export {
@@ -27,15 +29,25 @@ export {
   neighbourKey,
   transcriptSurfaceReducer,
 } from "./surface.ts";
-export type { BlockSpan, TranscriptAnchor, TranscriptWindow, WindowRequest } from "./window.ts";
+export type {
+  BlockSpan,
+  SpanIndex,
+  TranscriptAnchor,
+  TranscriptWindow,
+  WindowRequest,
+} from "./window.ts";
 export {
   anchorAt,
+  anchorOn,
   anchorRevealing,
   DEFAULT_OVERSCAN,
   LATEST,
   scrolledBy,
+  spanIndexOf,
   startRowOf,
   topRowOf,
+  topRowOn,
   totalRowsOf,
   windowFor,
+  windowOn,
 } from "./window.ts";
