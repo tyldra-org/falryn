@@ -132,7 +132,7 @@ function OptionList(props: {
       options={options}
       height={props.rows}
       width={props.columns}
-      focused={false}
+      focused={props.onSelect !== undefined}
       showScrollIndicator
       showDescription={props.rows >= 2}
       selectedIndex={selectedIndex}
