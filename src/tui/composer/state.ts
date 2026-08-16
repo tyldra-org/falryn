@@ -22,7 +22,7 @@
  * Pure. No renderer, no clock, no storage.
  */
 
-import { classifyPaste, describePaste, type PasteClassification } from "../paste.ts";
+import { classifyPaste, describePaste, noticeOfPaste, type PasteNotice } from "../paste.ts";
 import {
   EMPTY_HISTORY,
   type InputHistory,
@@ -78,12 +78,12 @@ export type ComposerState = {
   /**
    * The last paste that was not inlined, or `null`.
    *
-   * Held so the notice can describe it. The content is deliberately not held:
-   * including a large paste is a decision this build does not offer, and keeping
-   * megabytes against a decision nobody can make would be memory spent on a
-   * capability that does not exist. See `./features.ts`.
+   * A notice, never the clipboard body. Including a large paste is a decision
+   * this build does not offer, and keeping megabytes against a decision nobody
+   * can make would be memory spent on a capability that does not exist. See
+   * `./features.ts`.
    */
-  readonly lastPaste: PasteClassification | null;
+  readonly lastPaste: PasteNotice | null;
 };
 
 export const INITIAL_COMPOSER_STATE: ComposerState = {
@@ -135,11 +135,12 @@ export function composerReducer(state: ComposerState, action: ComposerAction): C
 
     case "paste": {
       const classification = classifyPaste(action.text);
+      const lastPaste = noticeOfPaste(classification);
       if (classification.verdict !== "inline") {
         // Reported, not inserted. A preview needs a decision this build does not
         // offer, and a refusal is a refusal — quietly inserting either would be
         // the flood the classification exists to prevent.
-        return { ...state, lastPaste: classification };
+        return { ...state, lastPaste };
       }
       // The text itself is inserted by the view, into the renderable that owns
       // the buffer. What is recorded here is that a paste happened and what it
@@ -147,7 +148,7 @@ export function composerReducer(state: ComposerState, action: ComposerAction): C
       return {
         ...state,
         phase: state.phase === "recalling" ? "editing" : state.phase,
-        lastPaste: classification,
+        lastPaste,
       };
     }
 
