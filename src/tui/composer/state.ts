@@ -22,6 +22,16 @@
  * Pure. No renderer, no clock, no storage.
  */
 
+import {
+  type AttachmentDescriptor,
+  describeAttachments,
+  describeBlockingReason,
+  isBlockingAttachment,
+  moveAttachment,
+  parseMentions,
+  removeAttachment,
+  upsertAttachment,
+} from "../../domain/index.ts";
 import { classifyPaste, describePaste, noticeOfPaste, type PasteNotice } from "../paste.ts";
 import {
   EMPTY_HISTORY,
@@ -78,12 +88,15 @@ export type ComposerState = {
   /**
    * The last paste that was not inlined, or `null`.
    *
-   * A notice, never the clipboard body. Including a large paste is a decision
-   * this build does not offer, and keeping megabytes against a decision nobody
-   * can make would be memory spent on a capability that does not exist. See
-   * `./features.ts`.
+   * A notice, never the clipboard body. The body of a preview paste is held
+   * beside this machine — on the payload port — so include does not re-read
+   * the clipboard and chrome never sees the bytes.
    */
   readonly lastPaste: PasteNotice | null;
+  /** Handles only. Never paste, file, or artifact bytes. */
+  readonly attachments: readonly AttachmentDescriptor[];
+  /** Monotonic identity source for attachments this session. */
+  readonly attachmentSeq: number;
 };
 
 export const INITIAL_COMPOSER_STATE: ComposerState = {
@@ -94,6 +107,8 @@ export const INITIAL_COMPOSER_STATE: ComposerState = {
   lastOutcome: null,
   submissions: 0,
   lastPaste: null,
+  attachments: [],
+  attachmentSeq: 0,
 };
 
 export type ComposerAction =
@@ -109,13 +124,29 @@ export type ComposerAction =
   | { readonly kind: "paste"; readonly text: string }
   | { readonly kind: "history-previous" }
   | { readonly kind: "history-next" }
-  /** Takes the snapshot and enters `sending`. Refused when there is nothing to send. */
-  | { readonly kind: "submit" }
+  /**
+   * Takes the snapshot and enters `sending`. Refused when there is nothing to send.
+   * `attachments` is the TOCTOU-resolved list from the application seam; omitted
+   * in pure reducer tests that already hold ready handles.
+   */
+  | { readonly kind: "submit"; readonly attachments?: readonly AttachmentDescriptor[] }
   /** The port answered. The draft is kept or cleared according to the outcome. */
   | { readonly kind: "resolve"; readonly outcome: SubmissionOutcome }
   | { readonly kind: "cancel" }
   | { readonly kind: "disable" }
-  | { readonly kind: "enable" };
+  | { readonly kind: "enable" }
+  /** Include a held-out paste as an attachment handle. Bytes stay on the payload port. */
+  | { readonly kind: "include-paste"; readonly attachment: AttachmentDescriptor }
+  | { readonly kind: "exclude-paste" }
+  | { readonly kind: "attach"; readonly attachment: AttachmentDescriptor }
+  | { readonly kind: "remove-attachment"; readonly id?: string }
+  | {
+      readonly kind: "move-attachment";
+      readonly id: string;
+      readonly direction: "earlier" | "later";
+    }
+  /** Replace the attachment list after a probe refresh. */
+  | { readonly kind: "attachments"; readonly attachments: readonly AttachmentDescriptor[] };
 
 export function composerReducer(state: ComposerState, action: ComposerAction): ComposerState {
   switch (action.kind) {
@@ -137,9 +168,8 @@ export function composerReducer(state: ComposerState, action: ComposerAction): C
       const classification = classifyPaste(action.text);
       const lastPaste = noticeOfPaste(classification);
       if (classification.verdict !== "inline") {
-        // Reported, not inserted. A preview needs a decision this build does not
-        // offer, and a refusal is a refusal — quietly inserting either would be
-        // the flood the classification exists to prevent.
+        // Reported, not inserted. Include is a separate action that records a
+        // handle; a refusal is a refusal.
         return { ...state, lastPaste };
       }
       // The text itself is inserted by the view, into the renderable that owns
@@ -180,15 +210,58 @@ export function composerReducer(state: ComposerState, action: ComposerAction): C
     }
 
     case "submit": {
-      if (state.phase === "disabled" || state.text.trim() === "") {
+      if (state.phase === "disabled") {
         return state;
       }
+      const attachments = action.attachments ?? state.attachments;
+      if (state.text.trim() === "" && attachments.length === 0) {
+        return state;
+      }
+      const mentions = parseMentions(state.text);
+      const unresolved = mentions.filter((mention) => {
+        switch (mention.kind) {
+          case "unsupported":
+            return true;
+          case "file":
+            return !attachments.some(
+              (item) => item.kind === "file" && item.identity === mention.identity,
+            );
+          case "paste":
+          case "artifact":
+            return !attachments.some(
+              (item) => item.identity === mention.identity || item.id === mention.identity,
+            );
+          default: {
+            const exhaustive: never = mention.kind;
+            return exhaustive;
+          }
+        }
+      });
       const sequence = state.submissions + 1;
+      const snapshot = snapshotOf(state.text, sequence, attachments, mentions);
+      if (unresolved.length > 0 || attachments.some(isBlockingAttachment)) {
+        const reason =
+          unresolved[0]?.kind === "unsupported"
+            ? `${unresolved[0].identity} is unsupported`
+            : unresolved.length > 0
+              ? `${unresolved[0]?.identity ?? "a mention"} is unresolved`
+              : describeBlockingReason(attachments);
+        return {
+          ...state,
+          attachments,
+          lastOutcome: {
+            kind: "unavailable",
+            snapshot,
+            reason,
+            owner: "#278",
+            route: "composer.removeAttachment",
+          },
+        };
+      }
       return {
         ...state,
-        // Frozen here, from the text as it is now. Nothing after this transition
-        // can reach it.
-        inFlight: snapshotOf(state.text, sequence),
+        attachments,
+        inFlight: snapshot,
         submissions: sequence,
         phase: "sending",
       };
@@ -212,6 +285,7 @@ export function composerReducer(state: ComposerState, action: ComposerAction): C
         // criterion: a submission that resolved `unavailable` leaves the text
         // exactly where the user left it.
         text: accepted ? "" : state.text,
+        attachments: accepted ? [] : state.attachments,
       };
     }
 
@@ -223,6 +297,59 @@ export function composerReducer(state: ComposerState, action: ComposerAction): C
 
     case "enable":
       return state.phase === "disabled" ? { ...state, phase: "editing" } : state;
+
+    case "include-paste": {
+      const seq = state.attachmentSeq + 1;
+      const attachment = { ...action.attachment, id: action.attachment.id || `att-${seq}` };
+      return {
+        ...state,
+        lastPaste: null,
+        lastOutcome: null,
+        attachments: upsertAttachment(state.attachments, attachment),
+        attachmentSeq: seq,
+      };
+    }
+
+    case "exclude-paste":
+      return state.lastPaste === null ? state : { ...state, lastPaste: null };
+
+    case "attach": {
+      const seq = state.attachmentSeq + 1;
+      const attachment = {
+        ...action.attachment,
+        id: action.attachment.id.length > 0 ? action.attachment.id : `att-${seq}`,
+      };
+      return {
+        ...state,
+        attachments: upsertAttachment(state.attachments, attachment),
+        attachmentSeq: seq,
+      };
+    }
+
+    case "remove-attachment": {
+      if (state.attachments.length === 0) {
+        return state;
+      }
+      const id = action.id ?? state.attachments[state.attachments.length - 1]?.id;
+      if (id === undefined) {
+        return state;
+      }
+      const attachments = removeAttachment(state.attachments, id);
+      return attachments === state.attachments ? state : { ...state, attachments };
+    }
+
+    case "move-attachment": {
+      const attachments = moveAttachment(state.attachments, action.id, action.direction);
+      return attachments === state.attachments ? state : { ...state, attachments };
+    }
+
+    case "attachments":
+      return { ...state, attachments: action.attachments };
+
+    default: {
+      const exhaustive: never = action;
+      return exhaustive;
+    }
   }
 }
 
@@ -236,6 +363,9 @@ export function composerReducer(state: ComposerState, action: ComposerAction): C
 export function composerNotice(state: ComposerState): string | null {
   if (state.lastPaste !== null && state.lastPaste.verdict !== "inline") {
     return describePaste(state.lastPaste);
+  }
+  if (state.attachments.length > 0) {
+    return describeAttachments(state.attachments);
   }
   return null;
 }

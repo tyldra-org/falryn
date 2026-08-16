@@ -26,6 +26,7 @@ import { createDefaultOpenTuiKeymap } from "@opentui/keymap/opentui";
 import { KeymapProvider, useActiveKeys, useKeymap } from "@opentui/keymap/react";
 import { useRenderer } from "@opentui/react";
 import { type ReactNode, useMemo } from "react";
+import type { FileAttachmentProbe } from "../../application/index.ts";
 import type { Instant } from "../../domain/index.ts";
 import type {
   ActivityProjection,
@@ -89,6 +90,8 @@ export type ShellAppProps = {
    * rather than as nothing wrong.
    */
   readonly shutdown?: ShutdownState;
+  /** Resolves `@path` mentions and file attachments. Absent when no workspace is bound. */
+  readonly fileProbe?: FileAttachmentProbe | null;
 };
 
 /**
@@ -119,7 +122,11 @@ export function ShellApp(props: ShellAppProps): ReactNode {
   const projection = props.transcript ?? EMPTY_PROJECTION;
   const transcriptKeys = useMemo(() => keysOf(projection.blocks), [projection.blocks]);
 
-  const runtime = useShellRuntime({ onExit: props.onExit, transcriptKeys });
+  const runtime = useShellRuntime({
+    onExit: props.onExit,
+    transcriptKeys,
+    ...(props.fileProbe === undefined ? {} : { fileProbe: props.fileProbe }),
+  });
   const activityProjection = props.activity ?? EMPTY_ACTIVITY;
   const shutdown = props.shutdown ?? null;
   const activity: ActivityModel = useMemo(

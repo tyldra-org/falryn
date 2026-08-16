@@ -85,6 +85,10 @@ export type CommandState = {
    * question for whether its keys should win.
    */
   readonly hasComposer: boolean;
+  /** A held-out preview paste can be included as an attachment. */
+  readonly hasHeldPaste: boolean;
+  /** At least one attachment handle is on the composer. */
+  readonly hasAttachments: boolean;
   /**
    * Whether a transcript is mounted with something in it.
    *
@@ -104,6 +108,8 @@ export type CommandState = {
 export const EMPTY_COMMAND_STATE: CommandState = {
   overlayOpen: false,
   hasComposer: false,
+  hasHeldPaste: false,
+  hasAttachments: false,
   hasTranscript: false,
   hasScrollableContent: false,
   hasConfirmation: false,
@@ -394,6 +400,56 @@ export const SHELL_COMMANDS: readonly ShellCommand[] = [
     keywords: ["history", "next"],
     availability: (state) =>
       state.hasComposer ? AVAILABLE : unavailable("the composer is not focused"),
+  },
+  {
+    id: "composer.includePaste",
+    title: "Include the held paste",
+    description: "Attach the last large paste without inserting it into the draft.",
+    context: "composer",
+    defaultBinding: null,
+    keywords: ["include", "paste", "attach"],
+    availability: (state) =>
+      state.hasHeldPaste ? AVAILABLE : unavailable("there is no held-out paste to include"),
+  },
+  {
+    id: "composer.excludePaste",
+    title: "Discard the held paste",
+    description: "Drop the last large paste without attaching it.",
+    context: "composer",
+    defaultBinding: null,
+    keywords: ["exclude", "paste", "discard"],
+    availability: (state) =>
+      state.hasHeldPaste ? AVAILABLE : unavailable("there is no held-out paste to discard"),
+  },
+  {
+    id: "composer.removeAttachment",
+    title: "Remove the last attachment",
+    description: "Detach the last attached paste or file.",
+    context: "composer",
+    defaultBinding: null,
+    keywords: ["attachment", "remove", "detach"],
+    availability: (state) =>
+      state.hasAttachments ? AVAILABLE : unavailable("there is no attachment to remove"),
+  },
+  {
+    id: "composer.moveAttachmentEarlier",
+    title: "Move attachment earlier",
+    description: "Move the last attachment one place earlier.",
+    context: "composer",
+    defaultBinding: null,
+    keywords: ["attachment", "reorder"],
+    availability: (state) =>
+      state.hasAttachments ? AVAILABLE : unavailable("there is no attachment to reorder"),
+  },
+  {
+    id: "composer.moveAttachmentLater",
+    title: "Move attachment later",
+    description: "Move the last attachment one place later.",
+    context: "composer",
+    defaultBinding: null,
+    keywords: ["attachment", "reorder"],
+    availability: (state) =>
+      state.hasAttachments ? AVAILABLE : unavailable("there is no attachment to reorder"),
   },
   {
     id: "confirmation.accept",
