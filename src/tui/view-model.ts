@@ -122,8 +122,8 @@ export type HelpSection = {
  * Which overlay is open.
  *
  * A closed union rather than a stack of arbitrary nodes: an overlay is a route,
- * and routes are named. #26 binds keys to these; nothing opens one today, which
- * is why `none` is what the shell supplies.
+ * and routes are named. Closing replaces the route, so a dismissed search or
+ * inspection has nowhere to linger.
  */
 export type OverlayRoute =
   | { readonly kind: "none" }
@@ -142,7 +142,14 @@ export type OverlayRoute =
    * filter commands; keeping a second editor state here would duplicate the
    * built-in control.
    */
-  | { readonly kind: "palette"; readonly query: string };
+  | { readonly kind: "palette"; readonly query: string }
+  /**
+   * Inspection of a selected transcript block.
+   *
+   * The key is the block's identity. Closing replaces the route, so there is
+   * nowhere for a stale inspection to outlive the entry it named.
+   */
+  | { readonly kind: "inspect"; readonly key: string };
 
 export type ShellModel = {
   readonly header: WorkspaceHeaderModel;

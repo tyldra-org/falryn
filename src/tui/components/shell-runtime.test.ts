@@ -9,6 +9,8 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { blockKey } from "../../presentation/index.ts";
+import { everyBlockKind } from "../../presentation/transcript/fixtures.ts";
 import { EMPTY_COMMAND_STATE } from "../commands.ts";
 import { isContained } from "../focus.ts";
 import {
@@ -42,6 +44,29 @@ describe("the resting state", () => {
   test("reports a command state with nothing behind it", () => {
     expect(commandStateFor(INITIAL_SHELL_STATE)).toEqual(EMPTY_COMMAND_STATE);
   });
+
+  test("reports inspectable selection from the selected block", () => {
+    const processExit = everyBlockKind().find((block) => block.kind === "process-exit");
+    if (processExit === undefined) {
+      throw new Error("the corpus no longer has a process-exit block");
+    }
+    const key = blockKey(processExit.anchor);
+    const state = run([{ kind: "transcript", action: { kind: "reconcile", keys: [key] } }]);
+    const inspectable = commandStateFor(state, [processExit]);
+    expect(inspectable.hasInspectableSelection).toBe(true);
+    expect(inspectable.hasDiagnosticSelection).toBe(true);
+    expect(commandStateFor(state).hasInspectableSelection).toBe(false);
+
+    const notice = everyBlockKind().find((block) => block.kind === "notice");
+    if (notice === undefined) {
+      throw new Error("the corpus no longer has a notice block");
+    }
+    const noticeState = run([
+      { kind: "transcript", action: { kind: "reconcile", keys: [blockKey(notice.anchor)] } },
+    ]);
+    expect(commandStateFor(noticeState, [notice]).hasInspectableSelection).toBe(false);
+    expect(commandStateFor(noticeState, [notice]).hasDiagnosticSelection).toBe(false);
+  });
 });
 
 describe("opening an overlay", () => {
@@ -61,13 +86,18 @@ describe("opening an overlay", () => {
   test("names a region for each route", () => {
     expect(overlayRegions({ kind: "help" })[0]?.id).toBe("overlay.help");
     expect(overlayRegions({ kind: "palette", query: "" })[0]?.id).toBe("overlay.palette");
+    expect(overlayRegions({ kind: "inspect", key: "process-exit" })[0]?.id).toBe("overlay.inspect");
     // With no overlay the frame's own regions are what is reachable.
     expect(overlayRegions({ kind: "none" })).toEqual(FRAME_REGIONS);
   });
 
   test("gives every region a label", () => {
     // A focus indicator that is not colour-only needs words.
-    for (const route of [{ kind: "help" } as const, { kind: "palette", query: "" } as const]) {
+    for (const route of [
+      { kind: "help" } as const,
+      { kind: "palette", query: "" } as const,
+      { kind: "inspect", key: "process-exit" } as const,
+    ]) {
       for (const region of overlayRegions(route)) {
         expect({ id: region.id, labelled: region.label.length > 0 }).toEqual({
           id: region.id,

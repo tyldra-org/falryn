@@ -64,7 +64,18 @@ describe("a route whose command cannot run", () => {
 
   test("names the diagnostics route's own reason rather than a shared one", () => {
     const described = describeRouteWith(rows(), "transcript.show-diagnostics");
-    expect(described).toContain("no diagnostics view yet");
+    expect(described).toContain("no inspectable diagnostics");
+  });
+
+  test("offers the command name when diagnostics can run and have no key", () => {
+    const described = describeRouteWith(
+      commandRows(
+        { ...EMPTY_COMMAND_STATE, hasTranscript: true, hasDiagnosticSelection: true },
+        new Set(["transcript.showDiagnostics"]),
+      ),
+      "transcript.show-diagnostics",
+    );
+    expect(described).toBe("Run Show the diagnostics.");
   });
 });
 

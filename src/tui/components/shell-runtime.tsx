@@ -12,6 +12,7 @@ import {
   MAX_EVIDENCE_INLINE_BYTES,
   parseMentions,
 } from "../../domain/index.ts";
+import type { TranscriptBlock } from "../../presentation/index.ts";
 import { type CommandState, commandById } from "../commands.ts";
 import {
   type ComposerAction,
@@ -63,19 +64,24 @@ export type ShellRuntime = {
 export type ShellRuntimeOptions = {
   readonly onExit: () => void;
   readonly transcriptKeys: readonly string[];
+  readonly transcriptBlocks?: readonly TranscriptBlock[];
   readonly submission?: SubmissionPort;
   readonly fileProbe?: FileAttachmentProbe | null;
 };
 
 const encoder = new TextEncoder();
+const NO_BLOCKS: readonly TranscriptBlock[] = [];
 
 export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
   const [state, dispatch] = useReducer(shellReducer, INITIAL_SHELL_STATE);
-  const commandState = useMemo(() => commandStateFor(state), [state]);
+  const blocks = options.transcriptBlocks ?? NO_BLOCKS;
+  const commandState = useMemo(() => commandStateFor(state, blocks), [state, blocks]);
   const geometry = useRef<TranscriptGeometry>(EMPTY_GEOMETRY);
   const gate = useRenderGate();
   const stateRef = useRef(state);
   stateRef.current = state;
+  const blocksRef = useRef(blocks);
+  blocksRef.current = blocks;
   const heldPaste = useRef<{
     readonly text: string;
     readonly characters: number;
@@ -147,7 +153,9 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
         return false;
       }
 
-      const availability = command.availability(commandStateFor(stateRef.current));
+      const availability = command.availability(
+        commandStateFor(stateRef.current, blocksRef.current),
+      );
       if (availability.kind === "unavailable") {
         dispatch({
           kind: "notice",

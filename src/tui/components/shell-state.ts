@@ -1,3 +1,4 @@
+import { blockKey, type TranscriptBlock } from "../../presentation/index.ts";
 import {
   COMMAND_CONTEXTS,
   type CommandContext,
@@ -23,7 +24,9 @@ import {
 } from "../focus.ts";
 import { isContextActive } from "../keymap.ts";
 import {
+  hasDiagnostics,
   INITIAL_TRANSCRIPT_STATE,
+  inspectBlock,
   type TranscriptSurfaceAction,
   type TranscriptSurfaceState,
   transcriptSurfaceReducer,
@@ -46,8 +49,14 @@ export function overlayRegions(route: OverlayRoute): readonly FocusRegion[] {
       return [{ id: "overlay.help", label: "help" }];
     case "palette":
       return [{ id: "overlay.palette", label: "command palette" }];
+    case "inspect":
+      return [{ id: "overlay.inspect", label: "inspector" }];
     case "none":
       return FRAME_REGIONS;
+    default: {
+      const exhaustive: never = route;
+      return exhaustive;
+    }
   }
 }
 
@@ -142,7 +151,11 @@ export function shellReducer(state: ShellState, action: ShellAction): ShellState
   }
 }
 
-export function commandStateFor(state: ShellState): CommandState {
+export function commandStateFor(
+  state: ShellState,
+  blocks: readonly TranscriptBlock[] = [],
+): CommandState {
+  const selected = selectedBlock(state.transcript.selected, blocks);
   return {
     ...EMPTY_COMMAND_STATE,
     overlayOpen: state.overlay.kind !== "none",
@@ -155,7 +168,19 @@ export function commandStateFor(state: ShellState): CommandState {
     hasEnhancement: state.composer.enhancement !== null,
     hasReadyEnhancement: state.composer.enhancement?.status === "ready",
     hasEnhancementFeedback: state.composer.lastEnhancement !== null,
+    hasInspectableSelection: selected !== null && inspectBlock(selected) !== null,
+    hasDiagnosticSelection: selected !== null && hasDiagnostics(selected),
   };
+}
+
+function selectedBlock(
+  key: string | null,
+  blocks: readonly TranscriptBlock[],
+): TranscriptBlock | null {
+  if (key === null) {
+    return null;
+  }
+  return blocks.find((block) => blockKey(block.anchor) === key) ?? null;
 }
 
 export function activeContexts(state: ShellState): readonly CommandContext[] {

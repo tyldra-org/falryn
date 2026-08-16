@@ -177,6 +177,20 @@ describe("what this build can actually do", () => {
     expect(commandById("overlay.close")?.availability(EMPTY_COMMAND_STATE).kind).toBe(
       "unavailable",
     );
+    expect(
+      commandById("transcript.inspect")?.availability({
+        ...EMPTY_COMMAND_STATE,
+        hasInspectableSelection: true,
+      }).kind,
+    ).toBe("available");
+    expect(
+      commandById("transcript.showDiagnostics")?.availability({
+        ...EMPTY_COMMAND_STATE,
+        hasDiagnosticSelection: true,
+      }).kind,
+    ).toBe("available");
+    expect(commandById("transcript.inspect")?.defaultBinding).toBe(null);
+    expect(commandById("transcript.showDiagnostics")?.defaultBinding).toBe(null);
   });
 
   test("declares no command for a concept that does not exist", () => {
