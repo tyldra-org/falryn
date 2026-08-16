@@ -91,6 +91,17 @@ export function runAvailableCommand(
         action: { kind: "toggle-expansion", key: transcript.selected },
       });
       return true;
+    case "transcript.inspect":
+    case "transcript.showDiagnostics":
+      if (transcript.selected === null) {
+        dispatch({ kind: "notice", message: "There is no entry to inspect." });
+        return false;
+      }
+      dispatch({
+        kind: "open-overlay",
+        route: { kind: "inspect", key: transcript.selected },
+      });
+      return true;
     case "composer.submit":
       dispatch({ kind: "composer", action: { kind: "submit" } });
       return true;

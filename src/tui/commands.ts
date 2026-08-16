@@ -97,6 +97,10 @@ export type CommandState = {
   readonly hasReadyEnhancement: boolean;
   /** An enhancement notice (empty/unchanged/unavailable) is showing. */
   readonly hasEnhancementFeedback: boolean;
+  /** The selected transcript block is a tool, process, reasoning, or error entry. */
+  readonly hasInspectableSelection: boolean;
+  /** The selected inspectable block carries a non-completed outcome. */
+  readonly hasDiagnosticSelection: boolean;
   /**
    * Whether a transcript is mounted with something in it.
    *
@@ -122,6 +126,8 @@ export const EMPTY_COMMAND_STATE: CommandState = {
   hasEnhancement: false,
   hasReadyEnhancement: false,
   hasEnhancementFeedback: false,
+  hasInspectableSelection: false,
+  hasDiagnosticSelection: false,
   hasTranscript: false,
   hasScrollableContent: false,
   hasConfirmation: false,
@@ -303,6 +309,18 @@ export const SHELL_COMMANDS: readonly ShellCommand[] = [
       state.hasTranscript ? AVAILABLE : unavailable("there is no transcript yet"),
   },
   {
+    id: "transcript.inspect",
+    title: "Inspect the selected entry",
+    description: "Inspect a tool, process, reasoning, or error block without submitting.",
+    context: "transcript",
+    defaultBinding: null,
+    keywords: ["inspect", "detail", "tool", "process", "reasoning", "error"],
+    availability: (state) =>
+      state.hasInspectableSelection
+        ? AVAILABLE
+        : unavailable("this entry has no tool, process, reasoning, or error inspection"),
+  },
+  {
     id: "transcript.selectPrevious",
     title: "Select the previous entry",
     description: "Move the transcript selection one entry towards the start.",
@@ -356,7 +374,10 @@ export const SHELL_COMMANDS: readonly ShellCommand[] = [
     context: "transcript",
     defaultBinding: null,
     keywords: ["diagnostics", "failure", "why"],
-    availability: () => unavailable("there is no diagnostics view yet"),
+    availability: (state) =>
+      state.hasDiagnosticSelection
+        ? AVAILABLE
+        : unavailable("this entry has no inspectable diagnostics"),
   },
   {
     id: "composer.submit",

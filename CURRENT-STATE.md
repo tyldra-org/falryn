@@ -2423,11 +2423,17 @@ time by the surface rather than trusted to have been withheld upstream, and its
 summary is still drawn, because a withheld block is not an invisible one.
 
 Every expansion route the projection can return now resolves to a registered
-command, and a control walks the union to prove it. Two of those commands —
-opening an artifact and showing diagnostics — are registered as unavailable with
-their own reasons, because no artifact viewer or diagnostics view exists; the
-surface says so instead of offering a key. Searching the transcript is
-unavailable for the same reason and was not delivered here.
+command, and a control walks the union to prove it. Opening an artifact stays
+unavailable with its own reason, because no artifact viewer exists.
+[#254](https://github.com/tyldra-org/falryn/issues/254) makes showing
+diagnostics the same overlay as `transcript.inspect` when the selected block is
+a tool, process, reasoning, or error entry and carries a non-completed outcome.
+The inspector is a view over facts the block already carries: it does not infer
+success from output text, does not occupy the wide layout's activity rail, and
+does not persist after close. A secret block stays inspectable — summary and
+kind visible, payload withheld. Fixture kinds without a live producer remain
+inspectable from the shared corpus. Searching the transcript is still
+unavailable and was not delivered here.
 
 One latent defect surfaced and was fixed: every binding declared as `enter` was
 never dispatched, because the key parser's canonical name is `return`, so a layer
@@ -2441,7 +2447,9 @@ cannot be rendered from a stale copy. Boundary controls assert all of this,
 including that the surface re-derives no part of the block model it is given.
 
 What is **not** delivered by the surface: no dashboard, artifact viewer, or diff
-viewer. Duration is reported as a block's age relative
+viewer, and no inspection of user-input, model-text, file-change, repository,
+task-progress, notice, artifact, unknown, or outcome-only kinds. Duration is
+reported as a block's age relative
 to the transcript's newest block rather than as an elapsed time, because a block
 carries one timestamp that a revision replaces — the start of a tool call is not
 in the projection, and reporting one would be a number the surface invented.

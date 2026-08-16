@@ -372,6 +372,57 @@ describe("resize", () => {
   });
 });
 
+describe("inspection", () => {
+  function ofKind(kind: TranscriptBlock["kind"]): TranscriptBlock {
+    const block = everyBlockKind().find((candidate) => candidate.kind === kind);
+    if (block === undefined) {
+      throw new Error(`the corpus no longer has a ${kind} block`);
+    }
+    return block;
+  }
+
+  test("opens an overlay over a failed process without inferring success", async () => {
+    using shell = await open(projectionOf([ofKind("process-exit")]));
+    await shell.press("p", { ctrl: true });
+    await shell.type("transcript.inspect");
+    shell.setup.mockInput.pressEnter();
+
+    const frame = await shell.frame();
+    expect(frame).toContain("Process exited");
+    expect(frame).toContain("Build failed");
+    expect(frame).toContain("exit  1");
+    expect(frame).toContain("failed (partial effect)");
+    expect(frame).not.toContain("Not sent");
+
+    await named(shell, "escape");
+    const restored = await shell.frame();
+    expect(restored).toContain("Build failed");
+    expect(restored).toContain("selected");
+    expect(restored).not.toContain("failed (partial effect)");
+    expect(restored).not.toContain("Esc closes this");
+  });
+
+  test("shows diagnostics through the same overlay", async () => {
+    using shell = await open(projectionOf([ofKind("process-exit")]));
+    await shell.press("p", { ctrl: true });
+    await shell.type("transcript.showDiagnostics");
+    shell.setup.mockInput.pressEnter();
+
+    const frame = await shell.frame();
+    expect(frame).toContain("Process exited");
+    expect(frame).toContain("failed (partial effect)");
+  });
+
+  test("refuses a notice that has no inspection", async () => {
+    using shell = await open(history(3), { columns: 100, rows: 30 });
+    await shell.press("p", { ctrl: true });
+    await shell.type("transcript.inspect");
+    shell.setup.mockInput.pressEnter();
+
+    expect(await shell.frame()).toContain("no tool, process, reasoning, or error inspection");
+  });
+});
+
 describe("an overlay over the transcript", () => {
   test("does not disturb the anchor or the expansion underneath it", async () => {
     // The preservation contract. An overlay is a route, and opening one is not a

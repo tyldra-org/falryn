@@ -39,11 +39,13 @@ import {
 } from "../layout.ts";
 import { createTextCache } from "../text-cache.ts";
 import { resolveTheme, type ThemeRequest } from "../theme/index.ts";
+import { inspectionFor } from "../transcript/index.ts";
 import type { TranscriptGeometry } from "../transcript-model.ts";
-import type { CommandEntry, ShellModel } from "../view-model.ts";
+import type { CommandEntry, OverlayRoute, ShellModel } from "../view-model.ts";
 import { ActivityRail } from "./activity-rail.tsx";
 import { ComposerView } from "./composer.tsx";
 import { type Frame, FrameProvider } from "./context.tsx";
+import { Inspector } from "./inspector.tsx";
 import { OverlayHost } from "./overlay.tsx";
 import { CommandPalette, HelpOverlay } from "./overlay-routes.tsx";
 import { Line } from "./primitives.tsx";
@@ -204,26 +206,10 @@ function ShellFrame(props: {
           ) : (
             <OverlayHost
               route={model.overlay}
-              title={model.overlay.kind === "help" ? "Help" : "Commands"}
+              title={overlayTitle(model.overlay, model)}
               dismissHint="Esc closes this"
             >
-              {(rows) =>
-                model.overlay.kind === "help" ? (
-                  <HelpOverlay sections={model.help} commands={props.commandRows} rows={rows} />
-                ) : (
-                  <CommandPalette
-                    commands={model.commands}
-                    query={model.overlay.kind === "palette" ? model.overlay.query : ""}
-                    rows={rows}
-                    {...(props.onPaletteQuery === undefined
-                      ? {}
-                      : { onQuery: props.onPaletteQuery })}
-                    {...(props.onPaletteSelect === undefined
-                      ? {}
-                      : { onSelect: props.onPaletteSelect })}
-                  />
-                )
-              }
+              {(rows) => overlayBody(model, props, rows)}
             </OverlayHost>
           )}
         </box>
@@ -280,4 +266,60 @@ export function MinimumSizeNotice(props: MinimumSizeNoticeProps): ReactNode {
       </Line>
     </box>
   );
+}
+
+function overlayTitle(route: OverlayRoute, model: ShellModel): string {
+  switch (route.kind) {
+    case "none":
+      return "";
+    case "help":
+      return "Help";
+    case "palette":
+      return "Commands";
+    case "inspect":
+      return inspectionFor(model.transcript.projection.blocks, route.key)?.title ?? "Inspect";
+    default: {
+      const exhaustive: never = route;
+      return exhaustive;
+    }
+  }
+}
+
+function overlayBody(
+  model: ShellModel,
+  props: {
+    readonly commandRows?: readonly CommandEntry[];
+    readonly onPaletteQuery?: (query: string) => void;
+    readonly onPaletteSelect?: (id: string) => void;
+  },
+  rows: number,
+): ReactNode {
+  const overlay = model.overlay;
+  switch (overlay.kind) {
+    case "none":
+      return null;
+    case "help":
+      return <HelpOverlay sections={model.help} commands={props.commandRows ?? []} rows={rows} />;
+    case "palette":
+      return (
+        <CommandPalette
+          commands={model.commands}
+          query={overlay.query}
+          rows={rows}
+          {...(props.onPaletteQuery === undefined ? {} : { onQuery: props.onPaletteQuery })}
+          {...(props.onPaletteSelect === undefined ? {} : { onSelect: props.onPaletteSelect })}
+        />
+      );
+    case "inspect":
+      return (
+        <Inspector
+          inspection={inspectionFor(model.transcript.projection.blocks, overlay.key)}
+          rows={rows}
+        />
+      );
+    default: {
+      const exhaustive: never = overlay;
+      return exhaustive;
+    }
+  }
 }
