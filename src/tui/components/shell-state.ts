@@ -151,6 +151,10 @@ export function commandStateFor(state: ShellState): CommandState {
     hasComposer: state.focus.focused === COMPOSER_REGION,
     hasHeldPaste: state.composer.lastPaste?.verdict === "preview",
     hasAttachments: state.composer.attachments.length > 0,
+    hasDraft: state.composer.text.trim().length > 0,
+    hasEnhancement: state.composer.enhancement !== null,
+    hasReadyEnhancement: state.composer.enhancement?.status === "ready",
+    hasEnhancementFeedback: state.composer.lastEnhancement !== null,
   };
 }
 

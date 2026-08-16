@@ -299,3 +299,75 @@ describe("attachments", () => {
     expect(sending.inFlight?.mentions[0]?.identity).toBe("readme.md");
   });
 });
+
+describe("enhancement", () => {
+  test("holds a proposal and does not submit", () => {
+    const drafted = drafting("  hello  \n");
+    const proposed = apply(drafted, {
+      kind: "enhance",
+      outcome: {
+        kind: "proposal",
+        original: drafted.text,
+        proposed: "hello",
+        explanation: "trimmed trailing spaces, and trimmed edges",
+        revision: drafted.draftRevision,
+      },
+    });
+    expect(proposed.phase).toBe("editing");
+    expect(proposed.inFlight).toBeNull();
+    expect(proposed.text).toBe(drafted.text);
+    expect(proposed.enhancement?.status).toBe("ready");
+    expect(composerNotice(proposed)).toContain("Accept or reject");
+  });
+
+  test("accept replaces the draft and reject leaves it", () => {
+    const drafted = drafting("  hello  \n");
+    const proposed = apply(drafted, {
+      kind: "enhance",
+      outcome: {
+        kind: "proposal",
+        original: drafted.text,
+        proposed: "hello",
+        explanation: "trimmed edges",
+        revision: drafted.draftRevision,
+      },
+    });
+    const accepted = apply(proposed, { kind: "accept-enhancement" });
+    expect(accepted.text).toBe("hello");
+    expect(accepted.enhancement).toBeNull();
+    expect(accepted.inFlight).toBeNull();
+
+    const rejected = apply(proposed, { kind: "reject-enhancement" });
+    expect(rejected.text).toBe(drafted.text);
+    expect(rejected.enhancement).toBeNull();
+  });
+
+  test("typing marks a proposal stale and blocks accept", () => {
+    const drafted = drafting("  hello  \n");
+    const proposed = apply(drafted, {
+      kind: "enhance",
+      outcome: {
+        kind: "proposal",
+        original: drafted.text,
+        proposed: "hello",
+        explanation: "trimmed edges",
+        revision: drafted.draftRevision,
+      },
+    });
+    const typed = apply(proposed, { kind: "draft", text: "  hello  \n and more" });
+    expect(typed.enhancement?.status).toBe("stale");
+    const after = apply(typed, { kind: "accept-enhancement" });
+    expect(after.text).toBe("  hello  \n and more");
+    expect(after.enhancement?.status).toBe("stale");
+  });
+
+  test("enhance never becomes a submit", () => {
+    const after = apply(drafting("ask"), {
+      kind: "enhance",
+      outcome: { kind: "unchanged", revision: 1 },
+    });
+    expect(after.phase).toBe("editing");
+    expect(after.inFlight).toBeNull();
+    expect(composerNotice(after)).toContain("Already clear");
+  });
+});

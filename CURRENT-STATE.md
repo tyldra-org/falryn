@@ -2497,7 +2497,11 @@ stays on a session payload port so include does not re-read the clipboard.
 submit marks changed, stale, or inaccessible files. Unresolved or blocking
 attachments refuse send with a repair route. Command completion, suggestion
 popups, and a retained artifact catalog remain declared with the reason each
-producer is missing. [#253](https://github.com/tyldra-org/falryn/issues/253)
+producer is missing. Explicit prompt enhancement is a palette command
+([#279](https://github.com/tyldra-org/falryn/issues/279)): local normalization
+returns an editable proposal bound to the draft revision, accept is the only
+replacement, and a model path is `unavailable` until a provider exists. It
+never submits. [#253](https://github.com/tyldra-org/falryn/issues/253)
 keeps held-out paste as a notice-sized record: preview and refused pastes do
 not retain the clipboard body on composer state, the two chrome rows do not
 claim to be showing lines they cannot draw, and secret-shaped held-out paste is

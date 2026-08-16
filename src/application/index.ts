@@ -76,6 +76,7 @@ export type {
   PromptComposerResult,
 } from "./prompt-composer.ts";
 export { createPromptComposer } from "./prompt-composer.ts";
+export { ENHANCEMENT_MODEL_OWNER, enhancePrompt } from "./prompt-enhancement.ts";
 export type {
   ConsumeProviderStreamInput,
   ProviderStreamConsumeOutcome,
