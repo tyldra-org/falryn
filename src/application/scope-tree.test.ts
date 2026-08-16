@@ -12,6 +12,7 @@ import {
 } from "../domain/index.ts";
 import {
   createScopeTree,
+  MAX_EVICTED_TOMBSTONES,
   MAX_LIVE_SCOPES,
   MAX_RETAINED_SCOPE_EVENTS,
   MAX_RETAINED_TERMINAL_SCOPES,
@@ -618,6 +619,16 @@ function evictRetained(tree: ScopeTree, root: ScopeId): void {
   }
 }
 
+/**
+ * Drops eviction tombstones by settling past both the retention window and the
+ * tombstone cap. The second pass is enough because `MAX_EVICTED_TOMBSTONES`
+ * matches `MAX_RETAINED_TERMINAL_SCOPES`.
+ */
+function forgetEvicted(tree: ScopeTree, root: ScopeId): void {
+  evictRetained(tree, root);
+  evictRetained(tree, root);
+}
+
 describe("effect folding survives any settle ordering", () => {
   test.each([
     ["child first", false],
@@ -841,18 +852,117 @@ describe("an effect that arrives after its scope settled", () => {
     expect(tree.events().length).toBe(before);
   });
 
-  test("reports an evicted scope as unknown rather than throwing", () => {
+  test("folds into a surviving ancestor after the scope was evicted", () => {
+    const { tree } = makeTree();
+    const root = tree.root().scopeId;
+    const session = derive(tree, root, "session-1", "session");
+    const turn = derive(tree, session, "turn-1");
+    tree.complete(turn);
+    evictRetained(tree, root);
+
+    expect(tree.report(turn)).toBeNull();
+    const record = tree.recordLateEffect(turn, "uncertain");
+    expect(record.ok).toBe(true);
+    if (!record.ok) {
+      return;
+    }
+    expect(record.value).toEqual({
+      scopeId: turn,
+      effect: "uncertain",
+      late: true,
+      foldedInto: [session, root],
+    });
+
+    const report = tree.report(session);
+    expect(report?.subtreeEffect).toBe("uncertain");
+    expect(report?.requiresInspection).toBe(true);
+  });
+
+  test("folds past an ancestor that was also evicted", () => {
+    const { tree } = makeTree();
+    const root = tree.root().scopeId;
+    const session = derive(tree, root, "session-1", "session");
+    const turn = derive(tree, session, "turn-1");
+    tree.complete(turn);
+    tree.complete(session);
+    evictRetained(tree, root);
+
+    expect(tree.report(turn)).toBeNull();
+    expect(tree.report(session)).toBeNull();
+    const record = tree.recordLateEffect(turn, "uncertain");
+    expect(record.ok).toBe(true);
+    if (record.ok) {
+      expect(record.value.foldedInto).toEqual([root]);
+    }
+    expect(tree.report(root)?.subtreeEffect).toBe("uncertain");
+    expect(tree.report(root)?.requiresInspection).toBe(true);
+  });
+
+  test("reaches nested ancestors after the child node is gone", () => {
+    const { tree } = makeTree();
+    const root = tree.root().scopeId;
+    const session = derive(tree, root, "session-1", "session");
+    const turn = derive(tree, session, "turn-1");
+    const invocation = derive(tree, turn, "invocation-1", "invocation");
+    tree.complete(invocation);
+    evictRetained(tree, root);
+
+    tree.recordLateEffect(invocation, "uncertain");
+
+    for (const ancestor of [turn, session, root]) {
+      const report = tree.report(ancestor);
+      expect(report?.subtreeEffect).toBe("uncertain");
+      expect(report?.requiresInspection).toBe(true);
+    }
+  });
+
+  test("a second late effect on the same evicted scope still folds", () => {
+    const { tree } = makeTree();
+    const root = tree.root().scopeId;
+    const session = derive(tree, root, "session-1", "session");
+    const turn = derive(tree, session, "turn-1");
+    tree.complete(turn);
+    evictRetained(tree, root);
+
+    tree.recordLateEffect(turn, "completed");
+    expect(tree.report(session)?.requiresInspection).toBe(false);
+
+    tree.recordLateEffect(turn, "uncertain");
+    expect(tree.report(session)?.subtreeEffect).toBe("uncertain");
+    expect(tree.report(session)?.requiresInspection).toBe(true);
+  });
+
+  test("a completed effect after eviction does not claim inspection", () => {
+    const { tree } = makeTree();
+    const root = tree.root().scopeId;
+    const session = derive(tree, root, "session-1", "session");
+    const turn = derive(tree, session, "turn-1");
+    tree.complete(turn);
+    evictRetained(tree, root);
+
+    tree.recordLateEffect(turn, "completed");
+
+    const report = tree.report(session);
+    expect(report?.subtreeEffect).toBe("completed");
+    expect(report?.requiresInspection).toBe(false);
+  });
+
+  test("reports an evicted scope as unknown after its tombstone is trimmed", () => {
     const { tree } = makeTree();
     const root = tree.root().scopeId;
     const turn = derive(tree, root, "turn-1");
     tree.complete(turn);
-    evictRetained(tree, root);
+    forgetEvicted(tree, root);
 
     const record = tree.recordLateEffect(turn, "uncertain");
     expect(record.ok).toBe(false);
     if (!record.ok) {
       expect(record.error).toEqual({ code: "unknown-scope", scopeId: turn });
     }
+  });
+
+  test("the tombstone window is the same size as the retained-terminal window", () => {
+    expect(MAX_EVICTED_TOMBSTONES).toBe(MAX_RETAINED_TERMINAL_SCOPES);
   });
 
   test("a settled root has no ancestor left to carry the effect", () => {

@@ -926,6 +926,12 @@ describe("a unit that outlives its scope", () => {
     }
   }
 
+  /** Drops eviction tombstones by settling past both retention and tombstone caps. */
+  function forgetEvicted(scopes: ScopeTree, root: ScopeId): void {
+    evictRetained(scopes, root);
+    evictRetained(scopes, root);
+  }
+
   const lateEffects = (diagnostics: DiagnosticsCollector) =>
     diagnostics.events().filter((event) => event.code === "scheduler.unit.late-effect");
 
@@ -1019,14 +1025,38 @@ describe("a unit that outlives its scope", () => {
     });
   });
 
-  test("reports an evicted scope as unattributable rather than throwing", async () => {
+  test("attributes an uncertain effect after the scope was evicted", async () => {
+    const harness = scopedHarness();
+    const root = harness.scopes.root().scopeId;
+    const session = derive(harness.scopes, root, "session-1", "session");
+    const turn = derive(harness.scopes, session, "turn-1", "turn");
+
+    await settleScopeMidFlight(harness, turn, (scope) => {
+      harness.scopes.complete(scope);
+      evictRetained(harness.scopes, root);
+    });
+
+    expect(harness.scopes.report(turn)).toBeNull();
+    expect(harness.scopes.report(session)?.requiresInspection).toBe(true);
+    const [warning] = lateEffects(harness.diagnostics);
+    expect(warning?.level).toBe("warn");
+    expect(warning?.metadata).toMatchObject({
+      unit: "outliving",
+      scope: turn,
+      effect: "uncertain",
+      refusal: "scope-already-terminal",
+      attributed: session,
+    });
+  });
+
+  test("reports an evicted scope as unattributable after its tombstone is trimmed", async () => {
     const harness = scopedHarness();
     const root = harness.scopes.root().scopeId;
     const turn = derive(harness.scopes, root, "turn-1", "turn");
 
     await settleScopeMidFlight(harness, turn, (scope) => {
       harness.scopes.complete(scope);
-      evictRetained(harness.scopes, root);
+      forgetEvicted(harness.scopes, root);
     });
 
     const [warning] = lateEffects(harness.diagnostics);
