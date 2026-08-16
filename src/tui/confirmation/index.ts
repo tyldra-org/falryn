@@ -1,0 +1,25 @@
+export type {
+  ConfirmationChoice,
+  ConfirmationChoiceId,
+  ConfirmationDecision,
+  ConfirmationPrompt,
+  ConfirmationScope,
+  ConfirmationSecret,
+  ConfirmationView,
+  SecretEdit,
+} from "./prompt.ts";
+export {
+  applySecretEdit,
+  CONFIRMATION_ALTERNATIVES,
+  CONFIRMATION_SCOPES,
+  confirmationIsStale,
+  confirmationView,
+  formatConfirmationTarget,
+  labelledChoices,
+  maskSecret,
+  promptFromPolicy,
+  reasonForEffect,
+  resolvedConfirmationKey,
+  secretGraphemeCount,
+  WITHHELD_TARGET,
+} from "./prompt.ts";
