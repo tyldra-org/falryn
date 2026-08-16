@@ -12,6 +12,7 @@ import { describe, expect, test } from "bun:test";
 import { blockKey } from "../../presentation/index.ts";
 import { everyBlockKind } from "../../presentation/transcript/fixtures.ts";
 import { EMPTY_COMMAND_STATE } from "../commands.ts";
+import { CONFIRMATION_ALTERNATIVES, type ConfirmationPrompt } from "../confirmation/index.ts";
 import { isContained } from "../focus.ts";
 import {
   activeContexts,
@@ -87,6 +88,7 @@ describe("opening an overlay", () => {
     expect(overlayRegions({ kind: "help" })[0]?.id).toBe("overlay.help");
     expect(overlayRegions({ kind: "palette", query: "" })[0]?.id).toBe("overlay.palette");
     expect(overlayRegions({ kind: "inspect", key: "process-exit" })[0]?.id).toBe("overlay.inspect");
+    expect(overlayRegions({ kind: "confirm", id: "conf-1" })[0]?.id).toBe("overlay.confirm");
     // With no overlay the frame's own regions are what is reachable.
     expect(overlayRegions({ kind: "none" })).toEqual(FRAME_REGIONS);
   });
@@ -97,6 +99,7 @@ describe("opening an overlay", () => {
       { kind: "help" } as const,
       { kind: "palette", query: "" } as const,
       { kind: "inspect", key: "process-exit" } as const,
+      { kind: "confirm", id: "conf-1" } as const,
     ]) {
       for (const region of overlayRegions(route)) {
         expect({ id: region.id, labelled: region.label.length > 0 }).toEqual({
@@ -210,5 +213,89 @@ describe("exiting", () => {
     // The reducer sets a flag; the caller ends the session. A state machine
     // that tore down a renderer would be a second owner of the exit.
     expect(run([{ kind: "exit" }]).exiting).toBe(true);
+  });
+});
+
+const WRITE: ConfirmationPrompt = {
+  id: "conf-write",
+  title: "Write file",
+  operation: "write_file",
+  target: "path=src/app.ts",
+  reason: "This would change files or other local state.",
+  effect: "mutation",
+  alternatives: CONFIRMATION_ALTERNATIVES,
+  scope: "once",
+  fingerprint: "fp-write",
+  secret: null,
+};
+
+describe("a focused confirmation", () => {
+  test("opens as an overlay and activates the confirmation context", () => {
+    const state = run([{ kind: "offer-confirmation", prompt: WRITE }]);
+    expect(state.overlay).toEqual({ kind: "confirm", id: "conf-write" });
+    expect(state.focus.order.map((region) => region.id)).toEqual(["overlay.confirm"]);
+    expect(activeContexts(state)).toEqual(["global", "overlay", "confirmation"]);
+    expect(commandStateFor(state).hasConfirmation).toBe(true);
+  });
+
+  test("keeps the pending identity when the palette opens over it", () => {
+    const state = run([
+      { kind: "offer-confirmation", prompt: WRITE },
+      { kind: "open-overlay", route: { kind: "palette", query: "" } },
+    ]);
+    expect(state.overlay.kind).toBe("palette");
+    expect(state.boundConfirmation?.id).toBe("conf-write");
+    expect(commandStateFor(state).hasConfirmation).toBe(true);
+    expect(activeContexts(state)).toEqual(["global", "overlay", "confirmation"]);
+  });
+
+  test("restores the sheet when that palette closes", () => {
+    const state = run([
+      { kind: "offer-confirmation", prompt: WRITE },
+      { kind: "open-overlay", route: { kind: "palette", query: "" } },
+      { kind: "close-overlay" },
+    ]);
+    expect(state.overlay).toEqual({ kind: "confirm", id: "conf-write" });
+    expect(state.notice).toBe(null);
+  });
+
+  test("closing the sheet refuses rather than accepting", () => {
+    const state = run([{ kind: "offer-confirmation", prompt: WRITE }, { kind: "close-overlay" }]);
+    expect(state.overlay).toEqual({ kind: "none" });
+    expect(state.boundConfirmation).toBe(null);
+    expect(state.notice).toBe("Declined.");
+  });
+
+  test("marks a changed fingerprint stale without swapping the bound question", () => {
+    const next = { ...WRITE, fingerprint: "fp-write-2" };
+    const state = run([
+      { kind: "offer-confirmation", prompt: WRITE },
+      { kind: "offer-confirmation", prompt: next },
+    ]);
+    expect(state.boundConfirmation?.fingerprint).toBe("fp-write");
+    expect(state.pendingConfirmation?.fingerprint).toBe("fp-write-2");
+    expect(commandStateFor(state).confirmationStale).toBe(true);
+    expect(commandStateFor(state).hasConfirmation).toBe(true);
+  });
+
+  test("accept records the bound id and does not keep the prompt", () => {
+    const state = run([
+      { kind: "offer-confirmation", prompt: WRITE },
+      { kind: "resolve-confirmation", decision: "accepted" },
+    ]);
+    expect(state.overlay).toEqual({ kind: "none" });
+    expect(state.notice).toBe("Accepted.");
+    expect(state.boundConfirmation).toBe(null);
+    expect(state.resolvedConfirmationKey).toBe("conf-write:fp-write");
+  });
+
+  test("does not re-offer a prompt that was already decided", () => {
+    const state = run([
+      { kind: "offer-confirmation", prompt: WRITE },
+      { kind: "resolve-confirmation", decision: "refused" },
+      { kind: "offer-confirmation", prompt: WRITE },
+    ]);
+    expect(state.overlay).toEqual({ kind: "none" });
+    expect(state.boundConfirmation).toBe(null);
   });
 });

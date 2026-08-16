@@ -12,6 +12,11 @@ import {
   INITIAL_COMPOSER_STATE,
 } from "../composer/index.ts";
 import {
+  type ConfirmationPrompt,
+  confirmationIsStale,
+  resolvedConfirmationKey,
+} from "../confirmation/index.ts";
+import {
   containFocus,
   createFocusModel,
   type FocusModel,
@@ -51,6 +56,8 @@ export function overlayRegions(route: OverlayRoute): readonly FocusRegion[] {
       return [{ id: "overlay.palette", label: "command palette" }];
     case "inspect":
       return [{ id: "overlay.inspect", label: "inspector" }];
+    case "confirm":
+      return [{ id: "overlay.confirm", label: "confirmation" }];
     case "none":
       return FRAME_REGIONS;
     default: {
@@ -75,6 +82,13 @@ export type ShellState = {
   readonly transcript: TranscriptSurfaceState;
   readonly transcriptFacts: TranscriptFacts;
   readonly composer: ComposerState;
+  /** Live prompt from the application port. */
+  readonly pendingConfirmation: ConfirmationPrompt | null;
+  /** What the sheet is bound to. Stale when this and pending disagree. */
+  readonly boundConfirmation: ConfirmationPrompt | null;
+  readonly secretGraphemes: number;
+  /** Last decided identity, so the same prompt is not re-offered. */
+  readonly resolvedConfirmationKey: string | null;
 };
 
 export type ShellAction =
@@ -89,6 +103,10 @@ export type ShellAction =
   | { readonly kind: "transcript-facts"; readonly facts: TranscriptFacts }
   | { readonly kind: "composer"; readonly action: ComposerAction }
   | { readonly kind: "palette-query"; readonly query: string }
+  | { readonly kind: "offer-confirmation"; readonly prompt: ConfirmationPrompt }
+  | { readonly kind: "withdraw-confirmation" }
+  | { readonly kind: "resolve-confirmation"; readonly decision: "accepted" | "refused" }
+  | { readonly kind: "secret-mask"; readonly graphemes: number }
   | { readonly kind: "exit" };
 
 export const INITIAL_SHELL_STATE: ShellState = {
@@ -99,7 +117,45 @@ export const INITIAL_SHELL_STATE: ShellState = {
   transcript: INITIAL_TRANSCRIPT_STATE,
   transcriptFacts: NO_TRANSCRIPT,
   composer: INITIAL_COMPOSER_STATE,
+  pendingConfirmation: null,
+  boundConfirmation: null,
+  secretGraphemes: 0,
+  resolvedConfirmationKey: null,
 };
+
+function confirmRoute(prompt: ConfirmationPrompt): OverlayRoute {
+  return { kind: "confirm", id: prompt.id };
+}
+
+function noticeFor(decision: "accepted" | "refused"): string {
+  switch (decision) {
+    case "accepted":
+      return "Accepted.";
+    case "refused":
+      return "Declined.";
+    default: {
+      const exhaustive: never = decision;
+      return exhaustive;
+    }
+  }
+}
+
+function clearConfirmation(state: ShellState, notice: string | null): ShellState {
+  const resolved =
+    state.boundConfirmation === null
+      ? state.resolvedConfirmationKey
+      : resolvedConfirmationKey(state.boundConfirmation);
+  return {
+    ...state,
+    overlay: { kind: "none" },
+    focus: releaseFocus(state.focus, FRAME_REGIONS),
+    notice,
+    pendingConfirmation: null,
+    boundConfirmation: null,
+    secretGraphemes: 0,
+    resolvedConfirmationKey: resolved,
+  };
+}
 
 /** Pure owner of shell, focus, transcript-reader, and composer transitions. */
 export function shellReducer(state: ShellState, action: ShellAction): ShellState {
@@ -112,14 +168,19 @@ export function shellReducer(state: ShellState, action: ShellAction): ShellState
         notice: null,
       };
     case "close-overlay":
-      return state.overlay.kind === "none"
-        ? state
-        : {
-            ...state,
-            overlay: { kind: "none" },
-            focus: releaseFocus(state.focus, FRAME_REGIONS),
-            notice: null,
-          };
+      if (state.overlay.kind === "none") {
+        return state;
+      }
+      if (state.overlay.kind !== "confirm" && state.boundConfirmation !== null) {
+        const route = confirmRoute(state.boundConfirmation);
+        return {
+          ...state,
+          overlay: route,
+          focus: containFocus(state.focus, overlayRegions(route)),
+          notice: null,
+        };
+      }
+      return clearConfirmation(state, state.overlay.kind === "confirm" ? "Declined." : null);
     case "focus-next":
       return { ...state, focus: focusNext(state.focus) };
     case "focus-previous":
@@ -146,8 +207,61 @@ export function shellReducer(state: ShellState, action: ShellAction): ShellState
         state.transcriptFacts.scrollable === action.facts.scrollable
         ? state
         : { ...state, transcriptFacts: action.facts };
+    case "offer-confirmation": {
+      if (state.resolvedConfirmationKey === resolvedConfirmationKey(action.prompt)) {
+        return state;
+      }
+      const keepBound =
+        state.boundConfirmation !== null &&
+        state.overlay.kind === "confirm" &&
+        confirmationIsStale(state.boundConfirmation, action.prompt);
+      if (keepBound) {
+        return { ...state, pendingConfirmation: action.prompt };
+      }
+      const steal =
+        state.overlay.kind === "none" ||
+        state.overlay.kind === "confirm" ||
+        state.boundConfirmation === null;
+      if (!steal) {
+        return {
+          ...state,
+          pendingConfirmation: action.prompt,
+          boundConfirmation: action.prompt,
+        };
+      }
+      const route = confirmRoute(action.prompt);
+      return {
+        ...state,
+        pendingConfirmation: action.prompt,
+        boundConfirmation: action.prompt,
+        overlay: route,
+        focus: containFocus(state.focus, overlayRegions(route)),
+        notice: null,
+      };
+    }
+    case "withdraw-confirmation":
+      if (state.pendingConfirmation === null && state.boundConfirmation === null) {
+        return state;
+      }
+      return {
+        ...clearConfirmation(state, null),
+        resolvedConfirmationKey: state.resolvedConfirmationKey,
+      };
+    case "resolve-confirmation":
+      if (state.boundConfirmation === null && state.pendingConfirmation === null) {
+        return state;
+      }
+      return clearConfirmation(state, noticeFor(action.decision));
+    case "secret-mask":
+      return state.secretGraphemes === action.graphemes
+        ? state
+        : { ...state, secretGraphemes: action.graphemes };
     case "exit":
       return { ...state, exiting: true };
+    default: {
+      const exhaustive: never = action;
+      return exhaustive;
+    }
   }
 }
 
@@ -156,6 +270,8 @@ export function commandStateFor(
   blocks: readonly TranscriptBlock[] = [],
 ): CommandState {
   const selected = selectedBlock(state.transcript.selected, blocks);
+  const bound = state.boundConfirmation;
+  const stale = bound !== null && confirmationIsStale(bound, state.pendingConfirmation);
   return {
     ...EMPTY_COMMAND_STATE,
     overlayOpen: state.overlay.kind !== "none",
@@ -170,6 +286,10 @@ export function commandStateFor(
     hasEnhancementFeedback: state.composer.lastEnhancement !== null,
     hasInspectableSelection: selected !== null && inspectBlock(selected) !== null,
     hasDiagnosticSelection: selected !== null && hasDiagnostics(selected),
+    hasConfirmation: bound !== null || state.pendingConfirmation !== null,
+    confirmationStale: stale,
+    confirmationNeedsSecret:
+      bound !== null && !stale && bound.secret !== null && state.secretGraphemes === 0,
   };
 }
 
@@ -185,6 +305,11 @@ function selectedBlock(
 
 export function activeContexts(state: ShellState): readonly CommandContext[] {
   const commandState = commandStateFor(state);
+  if (commandState.hasConfirmation) {
+    return commandState.overlayOpen
+      ? ["global", "overlay", "confirmation"]
+      : ["global", "confirmation"];
+  }
   if (commandState.overlayOpen) {
     return ["global", "overlay"];
   }

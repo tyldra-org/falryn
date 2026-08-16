@@ -20,6 +20,14 @@ import {
   UNAVAILABLE_SUBMISSION,
 } from "../composer/index.ts";
 import { createMemoryAttachmentPayloads } from "../composer/payload.ts";
+import {
+  applySecretEdit,
+  type ConfirmationDecision,
+  type ConfirmationPrompt,
+  confirmationIsStale,
+  type SecretEdit,
+  secretGraphemeCount,
+} from "../confirmation/index.ts";
 import type { FocusRegion } from "../focus.ts";
 import { classifyPaste, looksSecret } from "../paste.ts";
 import { totalRowsOf } from "../transcript/index.ts";
@@ -59,6 +67,8 @@ export type ShellRuntime = {
   composer(action: ComposerAction): void;
   focusComposer(): void;
   paletteQuery(query: string): void;
+  confirm(choice: "accept" | "deny"): boolean;
+  editSecret(edit: SecretEdit): void;
 };
 
 export type ShellRuntimeOptions = {
@@ -67,6 +77,9 @@ export type ShellRuntimeOptions = {
   readonly transcriptBlocks?: readonly TranscriptBlock[];
   readonly submission?: SubmissionPort;
   readonly fileProbe?: FileAttachmentProbe | null;
+  readonly confirmation?: ConfirmationPrompt | null;
+  readonly onConfirmation?: (decision: ConfirmationDecision) => void;
+  readonly onSecretSubmit?: (secret: string) => void;
 };
 
 const encoder = new TextEncoder();
@@ -89,6 +102,58 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
   } | null>(null);
   const payloads = useRef(createMemoryAttachmentPayloads());
   const fileProbe = options.fileProbe ?? null;
+  const secretRef = useRef("");
+  const onConfirmation = options.onConfirmation;
+  const onSecretSubmit = options.onSecretSubmit;
+
+  const editSecret = useCallback((edit: SecretEdit): void => {
+    secretRef.current = applySecretEdit(secretRef.current, edit);
+    dispatch({ kind: "secret-mask", graphemes: secretGraphemeCount(secretRef.current) });
+  }, []);
+
+  const confirm = useCallback(
+    (choice: "accept" | "deny"): boolean => {
+      const current = stateRef.current;
+      const bound = current.boundConfirmation;
+      const pending = current.pendingConfirmation;
+      if (bound === null && pending === null) {
+        return false;
+      }
+      if (choice === "deny") {
+        const id = bound?.id ?? pending?.id ?? "";
+        secretRef.current = "";
+        dispatch({ kind: "resolve-confirmation", decision: "refused" });
+        onConfirmation?.({ status: "refused", id });
+        return true;
+      }
+      if (bound === null || confirmationIsStale(bound, pending)) {
+        dispatch({
+          kind: "notice",
+          message: "Accept is unavailable: this confirmation is no longer valid.",
+        });
+        return false;
+      }
+      if (bound.secret !== null && secretRef.current === "") {
+        dispatch({
+          kind: "notice",
+          message: "Accept is unavailable: the secret field is empty.",
+        });
+        return false;
+      }
+      if (bound.secret !== null) {
+        onSecretSubmit?.(secretRef.current);
+      }
+      secretRef.current = "";
+      dispatch({ kind: "resolve-confirmation", decision: "accepted" });
+      onConfirmation?.({
+        status: "accepted",
+        id: bound.id,
+        fingerprint: bound.fingerprint,
+      });
+      return true;
+    },
+    [onConfirmation, onSecretSubmit],
+  );
 
   const reportTranscriptGeometry = useCallback((next: TranscriptGeometry): void => {
     geometry.current = next;
@@ -165,6 +230,16 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
       }
 
       switch (id) {
+        case "confirmation.accept":
+          return confirm("accept");
+        case "confirmation.deny":
+          return confirm("deny");
+        case "overlay.close":
+          if (stateRef.current.overlay.kind === "confirm") {
+            return confirm("deny");
+          }
+          dispatch({ kind: "close-overlay" });
+          return true;
         case "composer.submit":
           submitComposer();
           return true;
@@ -238,7 +313,7 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
         keys: options.transcriptKeys,
       });
     },
-    [options.onExit, options.transcriptKeys, gate, includeHeldPaste, submitComposer],
+    [options.onExit, options.transcriptKeys, gate, includeHeldPaste, submitComposer, confirm],
   );
 
   const reseat = useCallback((regions: readonly FocusRegion[]): void => {
@@ -288,6 +363,15 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
     dispatch({ kind: "transcript", action: { kind: "reconcile", keys: transcriptKeys } });
   }, [transcriptKeys]);
 
+  const confirmation = options.confirmation ?? null;
+  useEffect(() => {
+    if (confirmation === null) {
+      dispatch({ kind: "withdraw-confirmation" });
+      return;
+    }
+    dispatch({ kind: "offer-confirmation", prompt: confirmation });
+  }, [confirmation]);
+
   const port = options.submission ?? UNAVAILABLE_SUBMISSION;
   const inFlight = state.composer.inFlight;
   useEffect(() => {
@@ -305,5 +389,7 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
     composer,
     focusComposer,
     paletteQuery,
+    confirm,
+    editSecret,
   };
 }

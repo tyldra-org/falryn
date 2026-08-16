@@ -149,7 +149,15 @@ export type OverlayRoute =
    * The key is the block's identity. Closing replaces the route, so there is
    * nowhere for a stale inspection to outlive the entry it named.
    */
-  | { readonly kind: "inspect"; readonly key: string };
+  | { readonly kind: "inspect"; readonly key: string }
+  /**
+   * A focused confirmation over one immutable intent.
+   *
+   * The id is the bound confirmation's identity. Closing this route refuses;
+   * a nested help or palette keeps the pending prompt and restores this route
+   * when they close.
+   */
+  | { readonly kind: "confirm"; readonly id: string };
 
 export type ShellModel = {
   readonly header: WorkspaceHeaderModel;
