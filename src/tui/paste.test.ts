@@ -15,6 +15,7 @@ import {
   INLINE_PASTE_LIMIT,
   looksSecret,
   MAX_PASTE_BYTES,
+  noticeOfPaste,
   PASTE_VERDICTS,
   PREVIEW_LINES,
   previewWidth,
@@ -123,10 +124,18 @@ describe("what the user is told", () => {
       classifyPaste("x".repeat(INLINE_PASTE_LIMIT + 1)),
       classifyPaste("a\u0000b"),
     ];
-    expect(samples.map((sample) => sample.verdict).sort()).toEqual([...PASTE_VERDICTS].sort());
+    expect(samples.map((sample) => noticeOfPaste(sample).verdict).sort()).toEqual(
+      [...PASTE_VERDICTS].sort(),
+    );
     for (const sample of samples) {
-      expect(describePaste(sample).length).toBeGreaterThan(0);
+      expect(describePaste(noticeOfPaste(sample)).length).toBeGreaterThan(0);
     }
+    expect(
+      describePaste(noticeOfPaste(classifyPaste("x".repeat(INLINE_PASTE_LIMIT + 1)))),
+    ).toContain("not inserted");
+    expect(
+      describePaste(noticeOfPaste(classifyPaste("x".repeat(INLINE_PASTE_LIMIT + 1)))),
+    ).not.toContain("showing");
   });
 });
 
@@ -141,5 +150,15 @@ describe("content that looks like a credential", () => {
 
   test("does not change the verdict", () => {
     expect(classifyPaste("password=hunter2").verdict).toBe("inline");
+  });
+
+  test("marks a preview rather than refusing it", () => {
+    const classified = classifyPaste(`export API_KEY=abc123\n${"x".repeat(INLINE_PASTE_LIMIT)}`);
+    expect(classified.verdict).toBe("preview");
+    const notice = noticeOfPaste(classified);
+    expect(notice.verdict === "preview" && notice.secret).toBe(true);
+    expect(describePaste(notice)).toContain("Looks like a credential");
+    expect("text" in notice).toBe(false);
+    expect("preview" in notice).toBe(false);
   });
 });
