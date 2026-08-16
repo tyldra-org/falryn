@@ -30,6 +30,11 @@ import type { Instant } from "../../domain/index.ts";
 import type { ComposerAction } from "../composer/index.ts";
 import type { ConfirmationChoiceId, ConfirmationView, SecretEdit } from "../confirmation/index.ts";
 import {
+  CONTROL_PANEL_TITLES,
+  type ControlCatalog,
+  EMPTY_CONTROL_CATALOG,
+} from "../controls/index.ts";
+import {
   composerRows,
   hasContextPanel,
   type LayoutDecision,
@@ -47,6 +52,7 @@ import { ActivityRail } from "./activity-rail.tsx";
 import { ComposerView } from "./composer.tsx";
 import { ConfirmationSheet } from "./confirmation.tsx";
 import { type Frame, FrameProvider } from "./context.tsx";
+import { ControlSheet } from "./controls.tsx";
 import { Inspector } from "./inspector.tsx";
 import { OverlayHost } from "./overlay.tsx";
 import { CommandPalette, HelpOverlay } from "./overlay-routes.tsx";
@@ -101,6 +107,10 @@ export type AppShellProps = {
   readonly confirmation?: ConfirmationView | null;
   readonly onConfirmationChoice?: (id: ConfirmationChoiceId) => void;
   readonly onSecretEdit?: (edit: SecretEdit) => void;
+  readonly controls?: ControlCatalog;
+  readonly selectedSessionId?: string | null;
+  readonly selectedModelId?: string | null;
+  readonly onControlSelect?: (id: string) => void;
 };
 
 export function AppShell(props: AppShellProps): ReactNode {
@@ -171,6 +181,16 @@ export function AppShell(props: AppShellProps): ReactNode {
             ? {}
             : { onConfirmationChoice: props.onConfirmationChoice })}
           {...(props.onSecretEdit === undefined ? {} : { onSecretEdit: props.onSecretEdit })}
+          {...(props.controls === undefined ? {} : { controls: props.controls })}
+          {...(props.selectedSessionId === undefined
+            ? {}
+            : { selectedSessionId: props.selectedSessionId })}
+          {...(props.selectedModelId === undefined
+            ? {}
+            : { selectedModelId: props.selectedModelId })}
+          {...(props.onControlSelect === undefined
+            ? {}
+            : { onControlSelect: props.onControlSelect })}
         />
       )}
     </FrameProvider>
@@ -192,6 +212,10 @@ function ShellFrame(props: {
   readonly confirmation?: ConfirmationView | null;
   readonly onConfirmationChoice?: (id: ConfirmationChoiceId) => void;
   readonly onSecretEdit?: (edit: SecretEdit) => void;
+  readonly controls?: ControlCatalog;
+  readonly selectedSessionId?: string | null;
+  readonly selectedModelId?: string | null;
+  readonly onControlSelect?: (id: string) => void;
 }): ReactNode {
   const { model } = props;
   // Bounded rather than stretched. A `wide` terminal has room for a contextual
@@ -299,6 +323,8 @@ function overlayTitle(
       return inspectionFor(model.transcript.projection.blocks, route.key)?.title ?? "Inspect";
     case "confirm":
       return confirmation?.prompt.title ?? "Confirm";
+    case "controls":
+      return CONTROL_PANEL_TITLES[route.panel];
     default: {
       const exhaustive: never = route;
       return exhaustive;
@@ -315,6 +341,10 @@ function overlayBody(
     readonly confirmation?: ConfirmationView | null;
     readonly onConfirmationChoice?: (id: ConfirmationChoiceId) => void;
     readonly onSecretEdit?: (edit: SecretEdit) => void;
+    readonly controls?: ControlCatalog;
+    readonly selectedSessionId?: string | null;
+    readonly selectedModelId?: string | null;
+    readonly onControlSelect?: (id: string) => void;
   },
   rows: number,
 ): ReactNode {
@@ -350,6 +380,22 @@ function overlayBody(
             ? {}
             : { onChoice: props.onConfirmationChoice })}
           {...(props.onSecretEdit === undefined ? {} : { onSecretEdit: props.onSecretEdit })}
+        />
+      );
+    case "controls":
+      return (
+        <ControlSheet
+          catalog={props.controls ?? EMPTY_CONTROL_CATALOG}
+          panel={overlay.panel}
+          selectedId={
+            overlay.panel === "session"
+              ? (props.selectedSessionId ?? null)
+              : overlay.panel === "model"
+                ? (props.selectedModelId ?? null)
+                : null
+          }
+          rows={rows}
+          {...(props.onControlSelect === undefined ? {} : { onSelect: props.onControlSelect })}
         />
       );
     default: {
