@@ -150,6 +150,11 @@ export type Rendered = Disposable & {
   pressEscape(modifiers?: Modifiers): Promise<string>;
   pressTab(modifiers?: Modifiers): Promise<string>;
   pressBackspace(): Promise<string>;
+  /**
+   * Enter, capturing the pre-key frame so settle cannot return an overlay that
+   * was already on screen.
+   */
+  pressEnter(): Promise<string>;
   type(text: string): Promise<string>;
   paste(text: string): Promise<string>;
   resize(columns: number, rows: number): Promise<string>;
@@ -201,6 +206,13 @@ export async function mount(node: ReactNode, options: MountOptions = {}): Promis
     async pressBackspace() {
       setup.mockInput.pressBackspace();
       return await frame();
+    },
+    async pressEnter() {
+      // Same capture-before-emit as Escape: a quiet overlay frame would
+      // otherwise satisfy settle while React is still committing the selection.
+      const previous = setup.captureCharFrame();
+      setup.mockInput.pressEnter();
+      return await settle(setup, shape, undefined, previous);
     },
     async type(text) {
       for (const character of text) {
