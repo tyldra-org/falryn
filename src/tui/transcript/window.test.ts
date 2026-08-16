@@ -15,10 +15,12 @@ import {
   DEFAULT_OVERSCAN,
   LATEST,
   scrolledBy,
+  spanIndexOf,
   startRowOf,
   topRowOf,
   totalRowsOf,
   windowFor,
+  windowOn,
 } from "./window.ts";
 
 /** A history of uniform blocks, which makes every expected row easy to state. */
@@ -240,6 +242,20 @@ describe("row arithmetic", () => {
     expect(startRowOf(spans(4, 3), 0)).toBe(0);
     expect(startRowOf(spans(4, 3), 2)).toBe(6);
     expect(startRowOf(spans(4, 3), 99)).toBe(12);
+  });
+
+  test("indexes prefix sums so a later block is not a walk from the start", () => {
+    const index = spanIndexOf(spans(100, 3));
+    expect(index.prefix[40]).toBe(120);
+    expect(index.total).toBe(300);
+    expect(index.byKey.get("b40")).toBe(40);
+    expect(windowOn(index, 10, { kind: "pinned", key: "b40", rowOffset: 1 })).toEqual(
+      windowFor({
+        spans: spans(100, 3),
+        rows: 10,
+        anchor: { kind: "pinned", key: "b40", rowOffset: 1 },
+      }),
+    );
   });
 
   test("ignores a negative height rather than subtracting it", () => {

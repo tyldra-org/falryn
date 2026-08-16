@@ -2379,7 +2379,12 @@ on the shipped `dist/falryn` over a pseudo-terminal.
 **A collapsed block's height does not depend on the width.** The collapsed form
 is at most two rows, each truncated rather than wrapped, so placing the window
 over a long history is a sum over numbers instead of a wrap of every block's
-text. Only blocks the reader has expanded are measured by wrapping, through the
+text. [#251](https://github.com/tyldra-org/falryn/issues/251) keeps those sums
+in a prefix-sum index, so the visible range is a binary search rather than a
+walk, and `reconcileHeights` rematerializes only a changed suffix: a 10_000-block
+append or last-block revision examines the new or changed heights, not the
+unchanged prefix. Off-window collapsed blocks stay counted, not built into rows.
+Only blocks the reader has expanded are measured by wrapping, through the
 bounded text cache that #24 delivered and nothing had used until now. A rendered
 check mounts ten thousand blocks into a 24-row terminal and asserts the number of
 renderables in the tree stays under two hundred and within four of the same frame
