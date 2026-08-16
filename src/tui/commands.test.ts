@@ -215,6 +215,18 @@ describe("what this build can actually do", () => {
     expect(commandById("confirmation.deny")?.defaultBinding).toBe(null);
   });
 
+  test("declares session, model, context, and resource controls", () => {
+    expect(commandById("session.switch")?.defaultBinding).toBe(null);
+    expect(commandById("model.select")?.defaultBinding).toBe(null);
+    expect(commandById("context.show")?.defaultBinding).toBe(null);
+    expect(commandById("resource.show")?.defaultBinding).toBe(null);
+    expect(commandById("session.new")?.availability(EMPTY_COMMAND_STATE)).toEqual({
+      kind: "unavailable",
+      reason: "no session producer yet",
+    });
+    expect(commandById("session.switch")?.availability(EMPTY_COMMAND_STATE).kind).toBe("available");
+  });
+
   test("declares no command for a concept that does not exist", () => {
     // Omitted rather than listed as unavailable. There is no task anywhere in
     // the build, so a `task.inspect` row would be inventing a domain.

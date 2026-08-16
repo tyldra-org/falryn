@@ -44,6 +44,7 @@ import {
   type ConfirmationPrompt,
   confirmationView,
 } from "../confirmation/index.ts";
+import { type ControlCatalog, EMPTY_CONTROL_CATALOG, projectHeader } from "../controls/index.ts";
 import {
   activeCommandIds,
   commandRows,
@@ -107,6 +108,13 @@ export type ShellAppProps = {
   readonly confirmation?: ConfirmationPrompt | null;
   readonly onConfirmation?: (decision: ConfirmationDecision) => void;
   readonly onSecretSubmit?: (secret: string) => void;
+  /**
+   * Session, model, context, and resource facts.
+   *
+   * Fixture-driven in this build: nothing produces a live session or model
+   * catalog yet. Selection is a process-local cursor over these lists.
+   */
+  readonly controls?: ControlCatalog;
 };
 
 /**
@@ -218,8 +226,13 @@ function ResolvedShell(
     commands: rows,
     emptyStateCommand: "app.help",
   };
+  const catalog = props.controls ?? EMPTY_CONTROL_CATALOG;
   const model: ShellModel = {
     ...props.model,
+    header: projectHeader(props.model.header, catalog, {
+      sessionId: props.runtime.state.selectedSessionId,
+      modelId: props.runtime.state.selectedModelId,
+    }),
     transcript,
     composer,
     activity: props.activityModel,
@@ -269,6 +282,18 @@ function ResolvedShell(
         props.runtime.confirm(id);
       }}
       onSecretEdit={props.runtime.editSecret}
+      controls={catalog}
+      selectedSessionId={props.runtime.state.selectedSessionId}
+      selectedModelId={props.runtime.state.selectedModelId}
+      onControlSelect={(id) => {
+        const overlay = props.runtime.state.overlay;
+        if (overlay.kind !== "controls") {
+          return;
+        }
+        if (overlay.panel === "session" || overlay.panel === "model") {
+          props.runtime.selectControl(overlay.panel, id);
+        }
+      }}
     />
   );
 }

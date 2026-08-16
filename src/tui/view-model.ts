@@ -157,7 +157,19 @@ export type OverlayRoute =
    * a nested help or palette keeps the pending prompt and restores this route
    * when they close.
    */
-  | { readonly kind: "confirm"; readonly id: string };
+  | { readonly kind: "confirm"; readonly id: string }
+  /**
+   * Session, model, context, or resource controls.
+   *
+   * The panel is which catalog is showing. Closing replaces the route, so a
+   * dismissed picker has nowhere to linger. A nested help or palette over a
+   * pending confirmation still restores that confirmation; this route is the
+   * same class of transient overlay.
+   */
+  | {
+      readonly kind: "controls";
+      readonly panel: "session" | "model" | "context" | "resource";
+    };
 
 export type ShellModel = {
   readonly header: WorkspaceHeaderModel;

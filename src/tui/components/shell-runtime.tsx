@@ -69,6 +69,7 @@ export type ShellRuntime = {
   paletteQuery(query: string): void;
   confirm(choice: "accept" | "deny"): boolean;
   editSecret(edit: SecretEdit): void;
+  selectControl(field: "session" | "model", id: string): void;
 };
 
 export type ShellRuntimeOptions = {
@@ -380,6 +381,10 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
     }
   }, [inFlight, port]);
 
+  const selectControl = useCallback((field: "session" | "model", id: string): void => {
+    dispatch({ kind: "select-control", field, id });
+  }, []);
+
   return {
     state,
     commandState,
@@ -391,5 +396,6 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
     paletteQuery,
     confirm,
     editSecret,
+    selectControl,
   };
 }

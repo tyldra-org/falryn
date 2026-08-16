@@ -89,6 +89,7 @@ describe("opening an overlay", () => {
     expect(overlayRegions({ kind: "palette", query: "" })[0]?.id).toBe("overlay.palette");
     expect(overlayRegions({ kind: "inspect", key: "process-exit" })[0]?.id).toBe("overlay.inspect");
     expect(overlayRegions({ kind: "confirm", id: "conf-1" })[0]?.id).toBe("overlay.confirm");
+    expect(overlayRegions({ kind: "controls", panel: "session" })[0]?.id).toBe("overlay.controls");
     // With no overlay the frame's own regions are what is reachable.
     expect(overlayRegions({ kind: "none" })).toEqual(FRAME_REGIONS);
   });
@@ -100,6 +101,7 @@ describe("opening an overlay", () => {
       { kind: "palette", query: "" } as const,
       { kind: "inspect", key: "process-exit" } as const,
       { kind: "confirm", id: "conf-1" } as const,
+      { kind: "controls", panel: "session" } as const,
     ]) {
       for (const region of overlayRegions(route)) {
         expect({ id: region.id, labelled: region.label.length > 0 }).toEqual({
@@ -297,5 +299,27 @@ describe("a focused confirmation", () => {
     ]);
     expect(state.overlay).toEqual({ kind: "none" });
     expect(state.boundConfirmation).toBe(null);
+  });
+});
+
+describe("session and model selection", () => {
+  test("records a process-local cursor and closes the overlay", () => {
+    const state = run([
+      { kind: "open-overlay", route: { kind: "controls", panel: "session" } },
+      { kind: "select-control", field: "session", id: "s1" },
+    ]);
+    expect(state.selectedSessionId).toBe("s1");
+    expect(state.overlay).toEqual({ kind: "none" });
+  });
+
+  test("restores a pending confirmation instead of accepting it", () => {
+    const state = run([
+      { kind: "offer-confirmation", prompt: WRITE },
+      { kind: "open-overlay", route: { kind: "controls", panel: "model" } },
+      { kind: "select-control", field: "model", id: "m1" },
+    ]);
+    expect(state.selectedModelId).toBe("m1");
+    expect(state.overlay).toEqual({ kind: "confirm", id: "conf-write" });
+    expect(state.boundConfirmation?.id).toBe("conf-write");
   });
 });
