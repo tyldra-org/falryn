@@ -64,6 +64,11 @@ export type {
 export { attachInterruptionPolicy, createInterruptionPolicy } from "./interruption.ts";
 export type { LanguageReader } from "./language-read.ts";
 export { createLanguageReader } from "./language-read.ts";
+export type { LanguageServerListener, LanguageServerSupervisor } from "./language-server.ts";
+export {
+  createLanguageServerSupervisor,
+  describeLanguageServerFailure,
+} from "./language-server.ts";
 export type { NotebookReader } from "./notebook-read.ts";
 export { createNotebookReader } from "./notebook-read.ts";
 export type { PdfReader } from "./pdf-read.ts";

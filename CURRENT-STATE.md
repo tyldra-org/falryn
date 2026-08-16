@@ -4,7 +4,7 @@ This file is Falryn's sole concise implementation-status owner. It records what
 exists and has been verified in the `falryn` repository. It does not duplicate
 the product design or GitHub roadmap.
 
-Last reconciled: **2026-08-15**
+Last reconciled: **2026-08-16**
 
 ## Where to look
 
@@ -3434,11 +3434,33 @@ language evidence and verifies current source inside that same root:
 - `src/application/language-read.ts` — `createLanguageReader` keeps the backend
   behind an injectable port, rebinds every returned path, and uses
   `createWorkspaceReader` for exact symbol and changed-region source ranges.
-  Provider discovery, LSP lifecycle, Git/open-buffer adapters, and product
-  tool registration remain later work.
+  Provider discovery, Git/open-buffer adapters, and product tool registration
+  remain later work. Language-server process lifecycle is #89 below.
 
 Validated by `src/domain/language-read.test.ts` and
 `src/application/language-read.test.ts` under `bun run check`.
+
+The language-server lifecycle slice from
+[#89](https://github.com/tyldra-org/falryn/issues/89) supervises stdio LSP
+processes through the managed-service port:
+
+- `src/domain/language-server.ts` — lifecycle states, initialize/shutdown
+  contracts, Falryn-owned Content-Length JSON-RPC framing, limits, and typed
+  failure reasons (missing executable, spawn failure, initialize failure,
+  malformed transport/response, timeout, crash, restart exhaustion, shutdown
+  timeout, cancellation, capacity, stale generation);
+- `src/application/language-server.ts` — `createLanguageServerSupervisor`
+  starts a managed `lsp` service with immediate readiness, completes
+  `initialize` / `initialized`, exposes negotiated capabilities, and performs
+  `shutdown` / `exit` plus managed stop. Document sync, feature requests,
+  edits-as-patches, and indexes remain later children of #88. Official
+  `vscode-jsonrpc` packages remain selected-with-probe and are not in the
+  lockfile yet.
+
+Validated by `src/domain/language-server.test.ts`,
+`src/application/language-server.test.ts`, and
+`src/application/language-server.host.test.ts` (real Bun stdio fixture) under
+`bun run check`.
 
 The compact document reader slice from
 [#493](https://github.com/tyldra-org/falryn/issues/493) projects bounded exact
@@ -3656,14 +3678,16 @@ session/turn producer, or live transcript producer. The remaining gaps are:
 -   provider integration beyond the #34–#39 boundary (live vendor adapters,
   OAuth/write flows, network discovery against real endpoints), or product
   workspace/Git/shell tool adapters;
-- LSP, DAP, browser, or computer-use capabilities (path
-  bind, list/stat/walk, bounded file reads, specialized readers, exact-source
-  expansion, the shared malformed/stale/binary/large-file/symlink/cancellation
-  matrix, glob discovery, bounded text search, derived-index query, writes,
-  mutate, patch apply/rollback, supervised argv/Bash, PTY and managed
-  services, process capture, Hush reduction, process-tree cancellation, and
-  Git observation plus stage/commit/sync exist; product tools are not
-  registered, and Git cannot rebase, force-update, or rewrite history);
+- LSP feature requests, document sync, DAP, browser, or computer-use
+  capabilities (language-server supervision, JSON-RPC framing, initialize, and
+  shutdown exist for #89; path bind, list/stat/walk, bounded file reads,
+  specialized readers, exact-source expansion, the shared
+  malformed/stale/binary/large-file/symlink/cancellation matrix, glob
+  discovery, bounded text search, derived-index query, writes, mutate, patch
+  apply/rollback, supervised argv/Bash, PTY and managed services, process
+  capture, Hush reduction, process-tree cancellation, and Git observation plus
+  stage/commit/sync exist; product tools are not registered, and Git cannot
+  rebase, force-update, or rewrite history);
 - context planning, Brief, Hush product/CLI/TUI wiring, Loom, compression,
   index builders, or memory (evidence-candidate admission exists for #82;
   context token/byte/item/latency/sensitivity budgets exist for #83; ranking
