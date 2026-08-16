@@ -21,25 +21,28 @@
  * ## Why measurement is cheap
  *
  * A collapsed block's height does not depend on the width — see
- * `collapsedRows`. So placing the window over a very long history is a sum over
- * numbers rather than a wrap of every block's text, and only the blocks the
- * reader has opened are measured by wrapping. Those go through the frame's
- * bounded text cache, which is what makes a resize a re-slice rather than a
- * re-measure of the whole session.
+ * `collapsedRows`. Heights live in a prefix-sum index, so placing the window is
+ * a binary search rather than a walk, and `reconcileHeights` rematerializes only
+ * a changed suffix. Off-window collapsed blocks are counted, not built into
+ * rows. Expanded wrapping still goes through the frame's bounded text cache.
  */
 
-import { type ReactNode, useEffect } from "react";
-import { blockKey } from "../../presentation/index.ts";
+import { type ReactNode, useEffect, useRef } from "react";
+import { blockKey, boundedTextsOf } from "../../presentation/index.ts";
 import { primaryColumns, primaryRows } from "../layout.ts";
 import {
-  type BlockSpan,
+  type BlockDescriptor,
   collapsedRows,
   describeRouteWith,
+  EMPTY_HEIGHT_BATCH,
+  type HeightBatch,
+  reconcileHeights,
   rowsForBlock,
+  spanIndexOf,
   type TranscriptAnchor,
   type TranscriptRow,
   type TranscriptWindow,
-  windowFor,
+  windowOn,
 } from "../transcript/index.ts";
 import type { TranscriptGeometry, TranscriptModel } from "../transcript-model.ts";
 import { useFrame, useLayoutClass } from "./context.tsx";
@@ -65,13 +68,13 @@ export function TranscriptView(props: TranscriptViewProps): ReactNode {
 
   const columns = primaryColumns(frame.viewport, layoutClass);
   const region = primaryRows(frame.viewport, frame.composerRows);
-  const measured = measure(props.model, columns, frame.cache.wrap, frame.theme.symbols);
-  const view = place(measured.spans, region, props.model.surface.anchor);
+  const measured = useMeasured(props.model, columns, frame);
+  const view = place(measured.index, region, props.model.surface.anchor);
 
   // Reported after the render that produced it, so a command always acts on the
   // geometry the reader is looking at rather than on the previous frame's.
   const report = props.onGeometry;
-  const spans = measured.spans;
+  const spans = measured.index.spans;
   const contentRows = view.contentRows;
   useEffect(() => {
     report?.({ spans, rows: contentRows });
@@ -169,50 +172,70 @@ function UnseenNotice(props: {
 }
 
 type Measured = {
-  readonly spans: readonly BlockSpan[];
-  /** Rows per block, for the blocks that were materialized. Keyed by block key. */
-  readonly rowsFor: (key: string) => readonly TranscriptRow[];
+  readonly index: ReturnType<typeof spanIndexOf>;
+  readonly batch: HeightBatch;
 };
 
-/**
- * Heights for every block, and rows for the ones that need them.
- *
- * Collapsed blocks are counted rather than built, which is what keeps this a sum
- * over a large history instead of a wrap of it. Expanded blocks are built here
- * because their height is only knowable from their wrapped content, and the
- * result is kept so the window does not build them a second time.
- */
-function measure(
+function useMeasured(
   model: TranscriptModel,
   columns: number,
-  wrap: (text: string, width: number) => readonly string[],
-  symbols: Parameters<typeof rowsForBlock>[0]["symbols"],
+  frame: ReturnType<typeof useFrame>,
 ): Measured {
-  const built = new Map<string, readonly TranscriptRow[]>();
-  const spans: BlockSpan[] = [];
-  const newest = model.projection.blocks.at(-1)?.occurredAt ?? null;
+  const batchRef = useRef<HeightBatch>(EMPTY_HEIGHT_BATCH);
+  const indexRef = useRef(spanIndexOf([]));
+  const descriptors = descriptorsOf(model, columns);
+  const batch = reconcileHeights(batchRef.current, descriptors, (index) =>
+    materializeBlock(model, columns, frame, index),
+  );
+  batchRef.current = batch;
+  if (batch.kind !== "reuse") {
+    indexRef.current = spanIndexOf(
+      batch.records.map((record) => ({ key: record.key, rows: record.rows })),
+    );
+  }
+  return { index: indexRef.current, batch };
+}
 
-  for (const block of model.projection.blocks) {
+function descriptorsOf(model: TranscriptModel, columns: number): readonly BlockDescriptor[] {
+  return model.projection.blocks.map((block) => {
     const key = blockKey(block.anchor);
     if (!model.surface.expanded.has(key)) {
-      spans.push({ key, rows: collapsedRows(block) });
-      continue;
+      return { key, stamp: `c:${collapsedRows(block)}` };
     }
-    const rows = rowsForBlock({
-      block,
-      expanded: true,
-      selected: model.surface.selected === key,
-      columns,
-      symbols,
-      wrap,
-      describeRoute: (route) => describeRouteWith(model.commands, route),
-      relativeTo: newest,
-    });
-    built.set(key, rows);
-    spans.push({ key, rows: rows.length });
-  }
+    const fingerprint = boundedTextsOf(block)
+      .map((text) => `${text.disclosure.kind}:${text.text}`)
+      .join("\n");
+    const selected = model.surface.selected === key ? "s" : "n";
+    return { key, stamp: `x:${columns}:${selected}:${fingerprint}` };
+  });
+}
 
-  return { spans, rowsFor: (key) => built.get(key) ?? [] };
+function materializeBlock(
+  model: TranscriptModel,
+  columns: number,
+  frame: ReturnType<typeof useFrame>,
+  index: number,
+): { readonly rows: number; readonly built: readonly TranscriptRow[] | null } {
+  const block = model.projection.blocks[index];
+  if (block === undefined) {
+    return { rows: 0, built: null };
+  }
+  const key = blockKey(block.anchor);
+  if (!model.surface.expanded.has(key)) {
+    return { rows: collapsedRows(block), built: null };
+  }
+  const newest = model.projection.blocks.at(-1)?.occurredAt ?? null;
+  const rows = rowsForBlock({
+    block,
+    expanded: true,
+    selected: model.surface.selected === key,
+    columns,
+    symbols: frame.theme.symbols,
+    wrap: frame.cache.wrap,
+    describeRoute: (route) => describeRouteWith(model.commands, route),
+    relativeTo: newest,
+  });
+  return { rows: rows.length, built: rows };
 }
 
 /**
@@ -225,16 +248,16 @@ function measure(
  * a transcript covers its own newest line.
  */
 function place(
-  spans: readonly BlockSpan[],
+  index: ReturnType<typeof spanIndexOf>,
   region: number,
   anchor: TranscriptAnchor,
 ): { readonly window: TranscriptWindow; readonly contentRows: number } {
-  const provisional = windowFor({ spans, rows: region, anchor });
+  const provisional = windowOn(index, region, anchor);
   if (provisional.atLatest) {
     return { window: provisional, contentRows: region };
   }
   const contentRows = Math.max(0, region - 1);
-  return { window: windowFor({ spans, rows: contentRows, anchor }), contentRows };
+  return { window: windowOn(index, contentRows, anchor), contentRows };
 }
 
 /** The rows the window actually shows, sliced from the mounted range. */
@@ -247,14 +270,19 @@ function visibleRows(
 ): readonly TranscriptRow[] {
   const newest = model.projection.blocks.at(-1)?.occurredAt ?? null;
   const mounted: TranscriptRow[] = [];
+  const records = measured.batch.records;
 
-  for (const block of model.projection.blocks.slice(view.firstIndex, view.lastIndex)) {
-    const key = blockKey(block.anchor);
-    const already = measured.rowsFor(key);
-    if (already.length > 0) {
-      mounted.push(...already);
+  for (let index = view.firstIndex; index < view.lastIndex; index += 1) {
+    const block = model.projection.blocks[index];
+    const record = records[index];
+    if (block === undefined) {
       continue;
     }
+    if (record?.built !== undefined && record.built !== null && record.built.length > 0) {
+      mounted.push(...record.built);
+      continue;
+    }
+    const key = blockKey(block.anchor);
     mounted.push(
       ...rowsForBlock({
         block,

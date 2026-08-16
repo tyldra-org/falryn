@@ -15,6 +15,11 @@
  * rather than a comparison of scroll offsets against a threshold, and it is why
  * arriving activity cannot steal a reader's place mid-sentence.
  *
+ * **Placing the window does not walk the history.** Heights live in a prefix-sum
+ * index, so the visible range is a binary search over those sums. Measuring
+ * every collapsed block is still a cheap stamp; wrapping and row materialization
+ * stay on the changed suffix and the mounted window.
+ *
  * **A pin survives a resize and an overlay.** The pin names a *block*, not a row
  * index and not a pixel offset, so re-wrapping the content it is pinned to
  * changes how tall that block is without changing which block the reader is
@@ -32,6 +37,31 @@ export type BlockSpan = {
   readonly key: string;
   readonly rows: number;
 };
+
+/**
+ * Prefix sums over block heights, so placing a window does not walk the history.
+ *
+ * `prefix[i]` is the row at which span `i` starts. `prefix[length]` is the total.
+ * `byKey` records the first index of each key, matching `findIndex`.
+ */
+export type SpanIndex = {
+  readonly spans: readonly BlockSpan[];
+  readonly prefix: readonly number[];
+  readonly byKey: ReadonlyMap<string, number>;
+  readonly total: number;
+};
+
+export function spanIndexOf(spans: readonly BlockSpan[]): SpanIndex {
+  const prefix: number[] = [0];
+  const byKey = new Map<string, number>();
+  for (const [index, span] of spans.entries()) {
+    if (!byKey.has(span.key)) {
+      byKey.set(span.key, index);
+    }
+    prefix.push((prefix[index] ?? 0) + Math.max(0, span.rows));
+  }
+  return { spans, prefix, byKey, total: prefix[prefix.length - 1] ?? 0 };
+}
 
 /**
  * Where the window sits.
@@ -87,43 +117,49 @@ export type TranscriptWindow = {
  * content that no longer exists.
  */
 export function topRowOf(request: WindowRequest): number {
-  const { anchor } = request;
-  const total = totalRowsOf(request.spans);
-  const rows = usableRows(request.rows);
-  const furthest = Math.max(0, total - rows);
-  if (anchor.kind === "latest") {
-    return furthest;
-  }
-  const index = request.spans.findIndex((span) => span.key === anchor.key);
-  if (index === -1) {
-    return furthest;
-  }
-  return clamp(startRowOf(request.spans, index) + anchor.rowOffset, 0, furthest);
+  return topRowOn(spanIndexOf(request.spans), request.rows, request.anchor);
 }
 
 /** The window a request resolves to. */
 export function windowFor(request: WindowRequest): TranscriptWindow {
-  const rows = usableRows(request.rows);
-  const overscan = Math.max(0, request.overscan ?? DEFAULT_OVERSCAN);
-  const total = totalRowsOf(request.spans);
-  const top = topRowOf(request);
-  const bottom = top + rows;
+  return windowOn(spanIndexOf(request.spans), request.rows, request.anchor, request.overscan);
+}
 
-  let firstVisible = request.spans.length;
-  let lastVisible = -1;
-  let cursor = 0;
-  for (const [index, span] of request.spans.entries()) {
-    const end = cursor + span.rows;
-    // A zero-row block cannot be visible and must not extend the range: it would
-    // make the first and last visible index disagree about an empty span.
-    if (span.rows > 0 && end > top && cursor < bottom) {
-      firstVisible = Math.min(firstVisible, index);
-      lastVisible = index;
-    }
-    cursor = end;
+/** `topRowOf` when the caller already holds an index. */
+export function topRowOn(index: SpanIndex, rows: number, anchor: TranscriptAnchor): number {
+  const budget = usableRows(rows);
+  const furthest = Math.max(0, index.total - budget);
+  if (anchor.kind === "latest") {
+    return furthest;
   }
+  const at = index.byKey.get(anchor.key);
+  if (at === undefined) {
+    return furthest;
+  }
+  return clamp((index.prefix[at] ?? 0) + anchor.rowOffset, 0, furthest);
+}
 
-  if (lastVisible === -1) {
+/** `windowFor` when the caller already holds an index. */
+export function windowOn(
+  index: SpanIndex,
+  rows: number,
+  anchor: TranscriptAnchor,
+  overscan = DEFAULT_OVERSCAN,
+): TranscriptWindow {
+  const budget = usableRows(rows);
+  const extra = Math.max(0, overscan);
+  const top = topRowOn(index, budget, anchor);
+  const bottom = top + budget;
+  const firstVisible = firstEndingAfter(index, top);
+  const lastVisible = lastStartingBefore(index, bottom);
+
+  if (
+    firstVisible >= index.spans.length ||
+    lastVisible < 0 ||
+    firstVisible > lastVisible ||
+    !overlaps(index, firstVisible, top, bottom) ||
+    !overlaps(index, lastVisible, top, bottom)
+  ) {
     return {
       firstIndex: 0,
       lastIndex: 0,
@@ -131,23 +167,20 @@ export function windowFor(request: WindowRequest): TranscriptWindow {
       visibleRows: 0,
       atLatest: true,
       unseenBlocks: 0,
-      totalRows: total,
+      totalRows: index.total,
     };
   }
 
-  const firstIndex = Math.max(0, firstVisible - overscan);
-  const lastIndex = Math.min(request.spans.length, lastVisible + 1 + overscan);
+  const firstIndex = Math.max(0, firstVisible - extra);
+  const lastIndex = Math.min(index.spans.length, lastVisible + 1 + extra);
   return {
     firstIndex,
     lastIndex,
-    // Measured from the first *mounted* block, because that is where the
-    // caller's row list begins. Slicing from the first visible block instead
-    // would silently drop the overscan it just mounted.
-    skippedRows: top - startRowOf(request.spans, firstIndex),
-    visibleRows: Math.min(rows, total - top),
-    atLatest: top >= Math.max(0, total - rows),
-    unseenBlocks: request.spans.length - (lastVisible + 1),
-    totalRows: total,
+    skippedRows: top - (index.prefix[firstIndex] ?? 0),
+    visibleRows: Math.min(budget, index.total - top),
+    atLatest: top >= Math.max(0, index.total - budget),
+    unseenBlocks: index.spans.length - (lastVisible + 1),
+    totalRows: index.total,
   };
 }
 
@@ -164,23 +197,24 @@ export function scrolledBy(request: WindowRequest, delta: number): TranscriptAnc
 
 /** The anchor for an absolute top row. */
 export function anchorAt(request: WindowRequest, row: number): TranscriptAnchor {
-  const total = totalRowsOf(request.spans);
-  const rows = usableRows(request.rows);
-  const furthest = Math.max(0, total - rows);
+  return anchorOn(spanIndexOf(request.spans), request.rows, row);
+}
+
+/** `anchorAt` when the caller already holds an index. */
+export function anchorOn(index: SpanIndex, rows: number, row: number): TranscriptAnchor {
+  const budget = usableRows(rows);
+  const furthest = Math.max(0, index.total - budget);
   const top = clamp(row, 0, furthest);
   if (top >= furthest) {
     return LATEST;
   }
-
-  let cursor = 0;
-  for (const span of request.spans) {
-    const end = cursor + span.rows;
-    if (span.rows > 0 && top < end) {
-      return { kind: "pinned", key: span.key, rowOffset: top - cursor };
-    }
-    cursor = end;
+  const at = firstEndingAfter(index, top);
+  const span = index.spans[at];
+  const start = index.prefix[at];
+  if (span === undefined || start === undefined || span.rows <= 0) {
+    return LATEST;
   }
-  return LATEST;
+  return { kind: "pinned", key: span.key, rowOffset: top - start };
 }
 
 /**
@@ -194,19 +228,20 @@ export function anchorAt(request: WindowRequest, row: number): TranscriptAnchor 
  * prevent.
  */
 export function anchorRevealing(request: WindowRequest, key: string): TranscriptAnchor {
-  const index = request.spans.findIndex((span) => span.key === key);
-  if (index === -1) {
+  const index = spanIndexOf(request.spans);
+  const at = index.byKey.get(key);
+  if (at === undefined) {
     return request.anchor;
   }
-  const rows = usableRows(request.rows);
-  const start = startRowOf(request.spans, index);
-  const end = start + (request.spans[index]?.rows ?? 0);
-  const top = topRowOf(request);
+  const budget = usableRows(request.rows);
+  const start = index.prefix[at] ?? 0;
+  const end = start + (index.spans[at]?.rows ?? 0);
+  const top = topRowOn(index, budget, request.anchor);
 
-  if (start >= top && end <= top + rows) {
+  if (start >= top && end <= top + budget) {
     return request.anchor;
   }
-  return anchorAt(request, start < top ? start : end - rows);
+  return anchorOn(index, budget, start < top ? start : end - budget);
 }
 
 /** Total rows the whole transcript would occupy. */
@@ -243,4 +278,45 @@ function usableRows(value: number): number {
 
 function clamp(value: number, low: number, high: number): number {
   return Math.min(Math.max(value, low), high);
+}
+
+/** Smallest span whose exclusive end is after `row`. */
+function firstEndingAfter(index: SpanIndex, row: number): number {
+  const count = index.spans.length;
+  let low = 0;
+  let high = count;
+  while (low < high) {
+    const mid = (low + high) >> 1;
+    if ((index.prefix[mid + 1] ?? 0) > row) {
+      high = mid;
+    } else {
+      low = mid + 1;
+    }
+  }
+  return low;
+}
+
+/** Largest span whose start is before `row`. */
+function lastStartingBefore(index: SpanIndex, row: number): number {
+  const count = index.spans.length;
+  let low = 0;
+  let high = count;
+  while (low < high) {
+    const mid = (low + high) >> 1;
+    if ((index.prefix[mid] ?? 0) < row) {
+      low = mid + 1;
+    } else {
+      high = mid;
+    }
+  }
+  return low - 1;
+}
+
+function overlaps(index: SpanIndex, at: number, top: number, bottom: number): boolean {
+  const span = index.spans[at];
+  const start = index.prefix[at] ?? 0;
+  if (span === undefined || span.rows <= 0) {
+    return false;
+  }
+  return start + span.rows > top && start < bottom;
 }
