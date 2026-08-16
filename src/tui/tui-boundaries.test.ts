@@ -911,6 +911,7 @@ describe("the rendered test harness", () => {
       "components/frame.test.tsx",
       "components/interaction.test.tsx",
       "components/palette.test.tsx",
+      "components/render-gate.test.tsx",
       "components/shell-error-boundary.test.tsx",
       "components/transcript.test.tsx",
       // The harness's own checks, which are what prove it cleans up.

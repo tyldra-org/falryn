@@ -34,16 +34,23 @@
  * Nothing here draws, and nothing here can restart anything.
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ScopeTree, ShutdownCoordinator } from "../application/index.ts";
 import type { ScopeEvent } from "../domain/index.ts";
-import type { ActivityCursor, ActivityProjection, ShutdownState } from "../presentation/index.ts";
+import type {
+  ActivityCursor,
+  ActivityEntry,
+  ActivityProjection,
+  ShutdownState,
+} from "../presentation/index.ts";
 import {
   EMPTY_ACTIVITY,
   initialActivityCursor,
   reduceActivity,
   resubscribeActivity,
 } from "../presentation/index.ts";
+import { IMMEDIATE_GATE, type RenderGate } from "./components/render-gate.tsx";
+import type { RenderKind } from "./render-schedule.ts";
 
 export type RuntimeFeed = {
   /** Every scope event so far, in order. The reducer skips what it has applied. */
@@ -126,6 +133,11 @@ export const NO_RUNTIME_PROJECTION: RuntimeProjection = {
  * nothing new arrived costs ten comparisons rather than ten rebuilds, and the
  * reducer returns the same projection object when nothing applied — which stops
  * the frame re-rendering as well.
+ *
+ * Publishing is a separate question from folding. The fold always runs; a
+ * render gate may hold a stream snapshot until cadence or until input/semantic
+ * facts flush it. The default gate publishes immediately, so existing frame
+ * tests do not wait on cadence.
  */
 export function useRuntimeProjection(
   feed?: RuntimeFeed,
@@ -139,22 +151,96 @@ export function useRuntimeProjection(
    * than spliced into output this build would not produce.
    */
   resumeFrom: ActivityCursor = initialActivityCursor(),
+  gate: RenderGate = IMMEDIATE_GATE,
 ): RuntimeProjection {
-  const [projection, setProjection] = useState<RuntimeProjection>(() => resumed(feed, resumeFrom));
+  const held = useRef<RuntimeProjection>(resumed(feed, resumeFrom));
+  const [projection, setProjection] = useState<RuntimeProjection>(() => held.current);
 
   useEffect(() => {
+    const unsubscribeDue = gate.onDue(() => {
+      setProjection(held.current);
+    });
+
+    const publish = (next: RuntimeProjection, kind: RenderKind): void => {
+      held.current = next;
+      if (gate.note(kind)) {
+        setProjection(held.current);
+      }
+    };
+
     if (feed === undefined) {
-      setProjection(NO_RUNTIME_PROJECTION);
-      return;
+      publish(NO_RUNTIME_PROJECTION, "semantic");
+      return unsubscribeDue;
     }
     // Read before subscribing, not after: an event that arrived between the
     // first read and this effect is already in `events()`, and reading second is
     // how a subscriber misses exactly the events it was created to catch.
-    setProjection((previous) => folded(feed, previous));
-    return feed.subscribe(() => setProjection((previous) => folded(feed, previous)));
-  }, [feed]);
+    const first = folded(feed, held.current);
+    if (first !== held.current) {
+      publish(first, activityRenderKind(held.current, first));
+    } else if (held.current.activity.entries.length > 0 || held.current.shutdown !== null) {
+      // The first paint already came from `useState`'s initializer, which reads
+      // the feed before this effect can subscribe. Mark that snapshot published
+      // so a later stream burst holds instead of looking like the first paint.
+      gate.note("stream");
+    }
+    const unsubscribeFeed = feed.subscribe(() => {
+      const previous = held.current;
+      const next = folded(feed, previous);
+      if (next === previous) {
+        return;
+      }
+      publish(next, activityRenderKind(previous, next));
+    });
+    return () => {
+      unsubscribeFeed();
+      unsubscribeDue();
+    };
+  }, [feed, gate]);
 
   return projection;
+}
+
+/**
+ * Stream vs semantic for an activity fold.
+ *
+ * A new or changed terminal outcome, a newly cancelling lifecycle, or a
+ * shutdown change must paint now — those are facts the user is acting on, not
+ * display-only motion. Opening or revising live work is the burst that may wait.
+ */
+export function activityRenderKind(
+  previous: RuntimeProjection,
+  next: RuntimeProjection,
+): RenderKind {
+  if (!sameShutdown(previous.shutdown, next.shutdown)) {
+    return "semantic";
+  }
+  if (gainedTerminalOrCancel(previous.activity, next.activity)) {
+    return "semantic";
+  }
+  return "stream";
+}
+
+function gainedTerminalOrCancel(previous: ActivityProjection, next: ActivityProjection): boolean {
+  const before = new Map(previous.entries.map((entry) => [entry.key, entry]));
+  for (const entry of next.entries) {
+    const prior = before.get(entry.key);
+    if (becameCancelling(prior, entry) || outcomeChanged(prior, entry)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function becameCancelling(prior: ActivityEntry | undefined, entry: ActivityEntry): boolean {
+  return entry.lifecycle === "cancelling" && prior?.lifecycle !== "cancelling";
+}
+
+function outcomeChanged(prior: ActivityEntry | undefined, entry: ActivityEntry): boolean {
+  if (entry.outcome === null) {
+    return false;
+  }
+  return prior?.outcome?.kind !== entry.outcome.kind;
 }
 
 /** The first read of a subscription: resume from the cursor, or rebuild past it. */
