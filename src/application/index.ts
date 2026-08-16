@@ -17,6 +17,18 @@ export type { BudgetLedger } from "./budget-ledger.ts";
 export { createBudgetLedger, MAX_BUDGET_DEPTH } from "./budget-ledger.ts";
 export type { CompactDocumentReader } from "./compact-document-read.ts";
 export { createCompactDocumentReader } from "./compact-document-read.ts";
+export type {
+  ComposerContextRequest,
+  ComposerContextResolution,
+  FileAttachmentProbe,
+} from "./composer-context.ts";
+export {
+  admitComposerContext,
+  createFileAttachmentProbe,
+  digestBytes,
+  refreshAttachments,
+  resolveComposerAttachments,
+} from "./composer-context.ts";
 export type { SecretResolverOptions } from "./credential-resolver.ts";
 export { createSecretResolver } from "./credential-resolver.ts";
 export type { DiagnosticsCollector, EmitOutcome, EmitRequest } from "./diagnostics-collector.ts";

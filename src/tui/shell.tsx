@@ -28,6 +28,7 @@
 import { createRoot, type Root } from "@opentui/react";
 import type { ReactNode } from "react";
 import {
+  type FileAttachmentProbe,
   fromRendererFailure,
   type ScopeTree,
   type ShutdownCoordinator,
@@ -115,6 +116,8 @@ export type ShellRunRequest = {
    * as nothing attached rather than as nothing happening.
    */
   readonly scopes?: ScopeTree;
+  /** Resolves `@path` mentions. Optional because tests and no-workspace runs have none. */
+  readonly fileProbe?: FileAttachmentProbe | null;
   /** Supplied by tests, so a shell run needs no terminal and no native library. */
   readonly createRenderer?: RendererFactory;
 };
@@ -291,6 +294,7 @@ async function frameFor(session: RendererSession, request: ShellRunRequest, onEx
       onExit={onExit}
       clock={request.clock}
       {...(feed === undefined ? {} : { feed })}
+      {...(request.fileProbe === undefined ? {} : { fileProbe: request.fileProbe })}
     />
   );
 }
@@ -310,6 +314,7 @@ function LiveShell(props: {
   readonly onExit: () => void;
   readonly clock: ClockPort;
   readonly feed?: RuntimeFeed;
+  readonly fileProbe?: FileAttachmentProbe | null;
 }): ReactNode {
   return (
     <RenderGateProvider clock={props.clock}>
@@ -319,6 +324,7 @@ function LiveShell(props: {
         onExit={props.onExit}
         now={props.clock.now}
         {...(props.feed === undefined ? {} : { feed: props.feed })}
+        {...(props.fileProbe === undefined ? {} : { fileProbe: props.fileProbe })}
       />
     </RenderGateProvider>
   );
@@ -330,6 +336,7 @@ function ProjectedShell(props: {
   readonly onExit: () => void;
   readonly now: ClockPort["now"];
   readonly feed?: RuntimeFeed;
+  readonly fileProbe?: FileAttachmentProbe | null;
 }): ReactNode {
   const gate = useRenderGate();
   const runtime = useRuntimeProjection(props.feed, initialActivityCursor(), gate);
@@ -341,6 +348,7 @@ function ProjectedShell(props: {
       now={props.now}
       activity={runtime.activity}
       {...(runtime.shutdown === null ? {} : { shutdown: runtime.shutdown })}
+      {...(props.fileProbe === undefined ? {} : { fileProbe: props.fileProbe })}
     />
   );
 }

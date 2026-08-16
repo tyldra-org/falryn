@@ -2488,12 +2488,17 @@ mode is forgetting something harmless rather than keeping something dangerous. A
 recall sets the current text aside and returns it on the way back, so pressing up
 is reversible.
 
-Attachments, artifact references, command completion, suggestion, and including a
-large paste are declared with the reason each is missing and reported in one line
-under the composer. None of them is half-built: a large paste is classified,
-bounded, and described rather than inserted, and there is no attachment control
-that accepts a file and drops it. [#253](https://github.com/tyldra-org/falryn/issues/253)
-keeps that description as a notice-sized record: preview and refused pastes do
+Attachments, including a large paste, and explicit `@` mentions are real
+([#278](https://github.com/tyldra-org/falryn/issues/278)). Composer state holds
+typed handles — kind, identity, status, counts, digest — never paste or file
+bytes. A held-out preview paste can be included from the palette; the body
+stays on a session payload port so include does not re-read the clipboard.
+`@path` tokens resolve through the workspace path binder; TOCTOU re-stat at
+submit marks changed, stale, or inaccessible files. Unresolved or blocking
+attachments refuse send with a repair route. Command completion, suggestion
+popups, and a retained artifact catalog remain declared with the reason each
+producer is missing. [#253](https://github.com/tyldra-org/falryn/issues/253)
+keeps held-out paste as a notice-sized record: preview and refused pastes do
 not retain the clipboard body on composer state, the two chrome rows do not
 claim to be showing lines they cannot draw, and secret-shaped held-out paste is
 marked rather than refused. Mounted backspace removes a combining cluster, a

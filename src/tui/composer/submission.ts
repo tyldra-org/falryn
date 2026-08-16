@@ -24,6 +24,8 @@
  * issue implements, and the one implementation here is the honest refusal.
  */
 
+import type { AttachmentDescriptor, MentionSpan } from "../../domain/index.ts";
+
 /**
  * The text of one submission, as it was when it was sent.
  *
@@ -36,10 +38,17 @@ export type ComposerSnapshot = {
   readonly text: string;
   /** Monotonic within a session, starting at 1. Identity, not a measurement. */
   readonly sequence: number;
+  readonly attachments: readonly AttachmentDescriptor[];
+  readonly mentions: readonly MentionSpan[];
 };
 
-export function snapshotOf(text: string, sequence: number): ComposerSnapshot {
-  return Object.freeze({ text, sequence });
+export function snapshotOf(
+  text: string,
+  sequence: number,
+  attachments: readonly AttachmentDescriptor[] = [],
+  mentions: readonly MentionSpan[] = [],
+): ComposerSnapshot {
+  return Object.freeze({ text, sequence, attachments, mentions });
 }
 
 export const SUBMISSION_OUTCOMES = ["accepted", "unavailable"] as const;

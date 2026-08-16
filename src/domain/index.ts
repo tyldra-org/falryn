@@ -283,6 +283,29 @@ export {
   UNREAD_SOURCE_OUTCOMES,
 } from "./configuration-source.ts";
 export type {
+  AttachmentDescriptor,
+  AttachmentKind,
+  AttachmentStatus,
+  MentionKind,
+  MentionSpan,
+} from "./context-attachment.ts";
+export {
+  ATTACHMENT_KINDS,
+  ATTACHMENT_STATUSES,
+  attachmentKey,
+  BLOCKING_ATTACHMENT_STATUSES,
+  blockingAttachments,
+  describeAttachmentStatus,
+  describeAttachments,
+  describeBlockingReason,
+  isBlockingAttachment,
+  MENTION_KINDS,
+  moveAttachment,
+  parseMentions,
+  removeAttachment,
+  upsertAttachment,
+} from "./context-attachment.ts";
+export type {
   ContextBudgetCharge,
   ContextBudgetDestination,
   ContextBudgetError,
