@@ -63,6 +63,57 @@ export type PasteClassification =
   | { readonly verdict: "refused"; readonly refusal: PasteRefusal; readonly detail: string };
 
 /**
+ * What the composer keeps about a paste: a notice, never the clipboard body.
+ *
+ * Preview classifications carry the full text so an include path can attach it
+ * later. That payload must not sit on composer state — including a large paste
+ * is #278, and holding megabytes against a decision nobody can make is memory
+ * spent on a capability that does not exist.
+ */
+export type PasteNotice =
+  | { readonly verdict: "inline"; readonly characters: number; readonly secret: boolean }
+  | {
+      readonly verdict: "preview";
+      readonly characters: number;
+      readonly lines: number;
+      readonly secret: boolean;
+    }
+  | {
+      readonly verdict: "refused";
+      readonly refusal: PasteRefusal;
+      readonly detail: string;
+    };
+
+/** Strip a classification down to what two chrome rows can honestly say. */
+export function noticeOfPaste(classification: PasteClassification): PasteNotice {
+  switch (classification.verdict) {
+    case "inline":
+      return {
+        verdict: "inline",
+        characters: classification.characters,
+        secret: looksSecret(classification.text),
+      };
+    case "preview":
+      return {
+        verdict: "preview",
+        characters: classification.characters,
+        lines: classification.lines,
+        secret: looksSecret(classification.text),
+      };
+    case "refused":
+      return {
+        verdict: "refused",
+        refusal: classification.refusal,
+        detail: classification.detail,
+      };
+    default: {
+      const exhaustive: never = classification;
+      return exhaustive;
+    }
+  }
+}
+
+/**
  * Whether these bytes look like something other than text.
  *
  * A NUL is the signal every tool uses for this, and for the same reason: it
@@ -82,9 +133,10 @@ function looksBinary(text: string): boolean {
  * Text that reads like a credential.
  *
  * Deliberately a weak signal used for a weak response: it does not refuse the
- * paste and does not redact it. It marks the preview so the interface can warn
- * before the text is committed somewhere durable. A strong classifier here would
- * be a second redaction rule, and `src/application/redaction.ts` owns that one.
+ * paste and does not redact it. Preview notices carry the mark so the chrome
+ * can warn before the text is committed somewhere durable. A strong classifier
+ * here would be a second redaction rule, and `src/application/redaction.ts`
+ * owns that one.
  */
 const SECRET_SHAPED =
   /\b(api[_-]?key|secret|token|password|passwd|bearer|private[_-]?key|BEGIN [A-Z ]*PRIVATE KEY)\b/i;
@@ -151,14 +203,20 @@ export function classifyPaste(text: string): PasteClassification {
  * monochrome terminal — which is where someone is most likely to be pasting a
  * log they cannot otherwise read.
  */
-export function describePaste(classification: PasteClassification): string {
-  switch (classification.verdict) {
+export function describePaste(notice: PasteNotice): string {
+  switch (notice.verdict) {
     case "inline":
-      return `Pasted ${classification.characters} characters.`;
-    case "preview":
-      return `Pasted ${classification.characters} characters over ${classification.lines} lines; showing the first ${PREVIEW_LINES}.`;
+      return `Pasted ${notice.characters} characters.`;
+    case "preview": {
+      const held = `Pasted ${notice.characters} characters over ${notice.lines} lines; not inserted.`;
+      return notice.secret ? `${held} Looks like a credential.` : held;
+    }
     case "refused":
-      return `Paste refused: ${classification.detail}.`;
+      return `Paste refused: ${notice.detail}.`;
+    default: {
+      const exhaustive: never = notice;
+      return exhaustive;
+    }
   }
 }
 

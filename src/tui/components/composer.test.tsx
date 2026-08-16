@@ -413,6 +413,26 @@ describe("typing", () => {
     expect(frame).not.toContain("\u00e9");
   });
 
+  test("deletes a combining cluster, a flag, and a joined emoji as one character each", async () => {
+    // The three shapes a code-point cursor splits: a combining mark, a
+    // regional-indicator pair, and a ZWJ sequence. Each is one user-perceived
+    // character; Falryn does not keep a second editor — OpenTUI must delete the
+    // whole cluster, and this is the product check that it does.
+    const clusters = ["e\u0301", "\u{1F1EF}\u{1F1F5}", "\u{1F468}\u200D\u{1F469}\u200D\u{1F467}"];
+    for (const cluster of clusters) {
+      using shell = await open();
+      await shell.focusComposer();
+      await shell.type("ok");
+      await shell.paste(cluster);
+      expect(await shell.frame()).toContain(cluster);
+
+      await shell.pressBackspace();
+      const frame = await shell.frame();
+      expect(frame).toContain("ok");
+      expect(frame).not.toContain(cluster);
+    }
+  });
+
   test("still leaves both ways out bound", async () => {
     // The rule withholds bare characters only, so every modified and named
     // binding keeps working while typing — including the two commands that may
@@ -685,6 +705,8 @@ describe("a paste", () => {
     await shell.focusComposer();
     await shell.paste("x".repeat(INLINE_PASTE_LIMIT + 1));
     expect(await shell.frame()).toContain(`Pasted ${INLINE_PASTE_LIMIT + 1} characters`);
+    expect(await shell.frame()).toContain("not inserted");
+    expect(await shell.frame()).not.toContain("showing");
 
     // The composer still works afterwards.
     await shell.type("still typing");

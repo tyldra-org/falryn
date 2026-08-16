@@ -176,7 +176,17 @@ describe("paste", () => {
     const large = "x".repeat(INLINE_PASTE_LIMIT + 1);
     const after = apply(drafting("draft"), { kind: "paste", text: large });
     expect(after.text).toBe("draft");
-    expect(composerNotice(after)).toContain("Pasted");
+    expect(composerNotice(after)).toContain("not inserted");
+    expect(after.lastPaste?.verdict).toBe("preview");
+    expect(after.lastPaste !== null && "text" in after.lastPaste).toBe(false);
+    expect(after.lastPaste !== null && "preview" in after.lastPaste).toBe(false);
+  });
+
+  test("marks a secret-shaped preview without inserting it", () => {
+    const large = `export API_KEY=abc123\n${"x".repeat(INLINE_PASTE_LIMIT)}`;
+    const after = apply(drafting("draft"), { kind: "paste", text: large });
+    expect(after.text).toBe("draft");
+    expect(composerNotice(after)).toContain("Looks like a credential");
   });
 
   test("reports a refusal instead of inserting it", () => {

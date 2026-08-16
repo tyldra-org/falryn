@@ -2492,7 +2492,13 @@ Attachments, artifact references, command completion, suggestion, and including 
 large paste are declared with the reason each is missing and reported in one line
 under the composer. None of them is half-built: a large paste is classified,
 bounded, and described rather than inserted, and there is no attachment control
-that accepts a file and drops it.
+that accepts a file and drops it. [#253](https://github.com/tyldra-org/falryn/issues/253)
+keeps that description as a notice-sized record: preview and refused pastes do
+not retain the clipboard body on composer state, the two chrome rows do not
+claim to be showing lines they cannot draw, and secret-shaped held-out paste is
+marked rather than refused. Mounted backspace removes a combining cluster, a
+regional-indicator flag, and a ZWJ sequence as one character each — OpenTUI
+owns that motion; Falryn does not keep a second grapheme editor.
 
 **The composer is OpenTUI's `TextareaRenderable`**
 ([#399](https://github.com/tyldra-org/falryn/issues/399)). The draft, the
@@ -2568,7 +2574,8 @@ that one fails.
 **Non-inline pastes are visible.** The composer classifies a paste before the
 renderable sees it. Preview-sized and refused input stays out of the buffer and
 the second status row explains what happened, so a missing payload cannot look
-like a frozen terminal.
+like a frozen terminal. The notice says the paste was not inserted; it does not
+claim the chrome is showing a preview the two reserved rows cannot hold.
 
 **Text editing belongs to OpenTUI.** The React `<textarea>` owns the buffer,
 cursor, selection, wrapping, scrolling, and text motion. Falryn extends
