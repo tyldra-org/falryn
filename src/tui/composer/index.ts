@@ -30,7 +30,7 @@ export {
 } from "./history.ts";
 export type { AttachmentPayloadPort } from "./payload.ts";
 export { createMemoryAttachmentPayloads } from "./payload.ts";
-export type { ComposerAction, ComposerPhase, ComposerState } from "./state.ts";
+export type { ComposerAction, ComposerEnhancement, ComposerPhase, ComposerState } from "./state.ts";
 export {
   COMPOSER_PHASES,
   composerNotice,

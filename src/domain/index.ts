@@ -1426,6 +1426,20 @@ export {
   promptSectionRoleLabel,
 } from "./prompt-composition.ts";
 export type {
+  EnhancementOutcome,
+  EnhancementOutcomeKind,
+  EnhancementPath,
+  EnhancementRequest,
+  NormalizedPromptDraft,
+} from "./prompt-enhancement.ts";
+export {
+  describeEnhancement,
+  ENHANCEMENT_OUTCOME_KINDS,
+  ENHANCEMENT_PATHS,
+  explainNormalization,
+  normalizePromptDraft,
+} from "./prompt-enhancement.ts";
+export type {
   ArtifactHandle,
   ArtifactSpillPort,
   EnqueueOutcome,

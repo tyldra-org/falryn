@@ -726,3 +726,24 @@ describe("a paste", () => {
     expect(frame).not.toContain("xxxxxxxxxx");
   });
 });
+
+describe("enhancement", () => {
+  test("proposes a cleaner draft from the palette without submitting", async () => {
+    using shell = await open();
+    await shell.focusComposer();
+    await shell.type("  hello  ");
+    await shell.press("p", { ctrl: true });
+    await shell.type("enhance");
+    shell.setup.mockInput.pressEnter();
+    expect(await shell.frame()).toContain("Proposal ready");
+    expect(await shell.frame()).toContain("  hello  ");
+
+    await shell.press("p", { ctrl: true });
+    await shell.type("accept enhancement");
+    shell.setup.mockInput.pressEnter();
+    const frame = await shell.frame();
+    expect(frame).toContain("hello");
+    expect(frame).not.toContain("Proposal ready");
+    expect(frame).not.toContain("Not sent");
+  });
+});

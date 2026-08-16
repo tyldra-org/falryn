@@ -26,6 +26,8 @@ import {
   type AttachmentDescriptor,
   describeAttachments,
   describeBlockingReason,
+  describeEnhancement,
+  type EnhancementOutcome,
   isBlockingAttachment,
   moveAttachment,
   parseMentions,
@@ -97,6 +99,20 @@ export type ComposerState = {
   readonly attachments: readonly AttachmentDescriptor[];
   /** Monotonic identity source for attachments this session. */
   readonly attachmentSeq: number;
+  /** Increments on every draft text change. Enhancement binds this generation. */
+  readonly draftRevision: number;
+  /** A waiting proposal, or `null`. Never applied until accept. */
+  readonly enhancement: ComposerEnhancement | null;
+  /** Last enhance outcome that was not a held proposal. */
+  readonly lastEnhancement: EnhancementOutcome | null;
+};
+
+export type ComposerEnhancement = {
+  readonly original: string;
+  readonly proposed: string;
+  readonly explanation: string;
+  readonly draftRevision: number;
+  readonly status: "ready" | "stale";
 };
 
 export const INITIAL_COMPOSER_STATE: ComposerState = {
@@ -109,6 +125,9 @@ export const INITIAL_COMPOSER_STATE: ComposerState = {
   lastPaste: null,
   attachments: [],
   attachmentSeq: 0,
+  draftRevision: 0,
+  enhancement: null,
+  lastEnhancement: null,
 };
 
 export type ComposerAction =
@@ -146,7 +165,11 @@ export type ComposerAction =
       readonly direction: "earlier" | "later";
     }
   /** Replace the attachment list after a probe refresh. */
-  | { readonly kind: "attachments"; readonly attachments: readonly AttachmentDescriptor[] };
+  | { readonly kind: "attachments"; readonly attachments: readonly AttachmentDescriptor[] }
+  /** Apply a port outcome. Never submits. */
+  | { readonly kind: "enhance"; readonly outcome: EnhancementOutcome }
+  | { readonly kind: "accept-enhancement" }
+  | { readonly kind: "reject-enhancement" };
 
 export function composerReducer(state: ComposerState, action: ComposerAction): ComposerState {
   switch (action.kind) {
@@ -154,13 +177,16 @@ export function composerReducer(state: ComposerState, action: ComposerAction): C
       if (action.text === state.text) {
         return state;
       }
+      const draftRevision = state.draftRevision + 1;
       // Typing ends a recall. The reader has made the entry theirs, and leaving
       // the phase at `recalling` would keep saying they are browsing history
       // while they write something new.
       return {
         ...state,
         text: action.text,
+        draftRevision,
         phase: state.phase === "recalling" ? "editing" : state.phase,
+        enhancement: staleEnhancement(state.enhancement, draftRevision),
       };
     }
 
@@ -187,11 +213,14 @@ export function composerReducer(state: ComposerState, action: ComposerAction): C
       if (recall.text === null) {
         return state;
       }
+      const draftRevision = state.draftRevision + 1;
       return {
         ...state,
         history: recall.history,
         text: recall.text,
+        draftRevision,
         phase: "recalling",
+        enhancement: staleEnhancement(state.enhancement, draftRevision),
       };
     }
 
@@ -200,12 +229,15 @@ export function composerReducer(state: ComposerState, action: ComposerAction): C
       if (recall.text === null) {
         return state;
       }
+      const draftRevision = state.draftRevision + 1;
       return {
         ...state,
         history: recall.history,
         text: recall.text,
+        draftRevision,
         // Walking off the end returns to the draft, which is editing again.
         phase: recall.history.recalled === null ? "editing" : "recalling",
+        enhancement: staleEnhancement(state.enhancement, draftRevision),
       };
     }
 
@@ -264,6 +296,8 @@ export function composerReducer(state: ComposerState, action: ComposerAction): C
         inFlight: snapshot,
         submissions: sequence,
         phase: "sending",
+        enhancement: null,
+        lastEnhancement: null,
       };
     }
 
@@ -286,6 +320,9 @@ export function composerReducer(state: ComposerState, action: ComposerAction): C
         // exactly where the user left it.
         text: accepted ? "" : state.text,
         attachments: accepted ? [] : state.attachments,
+        enhancement: accepted ? null : state.enhancement,
+        lastEnhancement: accepted ? null : state.lastEnhancement,
+        draftRevision: accepted ? state.draftRevision + 1 : state.draftRevision,
       };
     }
 
@@ -346,6 +383,41 @@ export function composerReducer(state: ComposerState, action: ComposerAction): C
     case "attachments":
       return { ...state, attachments: action.attachments };
 
+    case "enhance":
+      return applyEnhancementOutcome(state, action.outcome);
+
+    case "accept-enhancement": {
+      const held = state.enhancement;
+      if (held === null) {
+        return state;
+      }
+      if (held.status !== "ready" || held.draftRevision !== state.draftRevision) {
+        return {
+          ...state,
+          enhancement: held.status === "stale" ? held : { ...held, status: "stale" },
+          lastEnhancement: {
+            kind: "stale",
+            revision: state.draftRevision,
+          },
+        };
+      }
+      const draftRevision = state.draftRevision + 1;
+      return {
+        ...state,
+        text: held.proposed,
+        draftRevision,
+        enhancement: null,
+        lastEnhancement: null,
+        lastOutcome: null,
+        lastPaste: null,
+      };
+    }
+
+    case "reject-enhancement":
+      return state.enhancement === null && state.lastEnhancement === null
+        ? state
+        : { ...state, enhancement: null, lastEnhancement: null };
+
     default: {
       const exhaustive: never = action;
       return exhaustive;
@@ -364,8 +436,75 @@ export function composerNotice(state: ComposerState): string | null {
   if (state.lastPaste !== null && state.lastPaste.verdict !== "inline") {
     return describePaste(state.lastPaste);
   }
+  if (state.enhancement !== null) {
+    return describeEnhancement(
+      state.enhancement.status === "stale"
+        ? { kind: "stale", revision: state.enhancement.draftRevision }
+        : {
+            kind: "proposal",
+            original: state.enhancement.original,
+            proposed: state.enhancement.proposed,
+            explanation: state.enhancement.explanation,
+            revision: state.enhancement.draftRevision,
+          },
+    );
+  }
+  if (state.lastEnhancement !== null) {
+    return describeEnhancement(state.lastEnhancement);
+  }
   if (state.attachments.length > 0) {
     return describeAttachments(state.attachments);
   }
   return null;
+}
+
+function staleEnhancement(
+  enhancement: ComposerEnhancement | null,
+  draftRevision: number,
+): ComposerEnhancement | null {
+  if (enhancement === null || enhancement.draftRevision === draftRevision) {
+    return enhancement;
+  }
+  return { ...enhancement, status: "stale" };
+}
+
+function applyEnhancementOutcome(state: ComposerState, outcome: EnhancementOutcome): ComposerState {
+  switch (outcome.kind) {
+    case "proposal":
+      if (outcome.revision !== state.draftRevision) {
+        return {
+          ...state,
+          lastOutcome: null,
+          lastEnhancement: { kind: "stale", revision: state.draftRevision },
+          enhancement: null,
+        };
+      }
+      return {
+        ...state,
+        lastOutcome: null,
+        lastEnhancement: null,
+        enhancement: {
+          original: outcome.original,
+          proposed: outcome.proposed,
+          explanation: outcome.explanation,
+          draftRevision: outcome.revision,
+          status: "ready",
+        },
+      };
+    case "unchanged":
+    case "empty":
+    case "unavailable":
+    case "cancelled":
+    case "stale":
+      return {
+        ...state,
+        lastOutcome: null,
+        enhancement: null,
+        lastEnhancement: outcome,
+      };
+    default: {
+      const exhaustive: never = outcome;
+      return exhaustive;
+    }
+  }
 }

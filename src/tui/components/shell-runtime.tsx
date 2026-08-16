@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useReducer, useRef } from "react";
 import {
   admitComposerContext,
   digestBytes,
+  enhancePrompt,
   type FileAttachmentProbe,
 } from "../../application/index.ts";
 import {
@@ -198,6 +199,26 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
           dispatch({ kind: "close-overlay" });
           return true;
         }
+        case "composer.enhancePrompt": {
+          const current = stateRef.current.composer;
+          const outcome = enhancePrompt({
+            text: current.text,
+            revision: current.draftRevision,
+            path: "local",
+            attachments: current.attachments.map((item) => item.identity),
+          });
+          dispatch({ kind: "composer", action: { kind: "enhance", outcome } });
+          dispatch({ kind: "close-overlay" });
+          return true;
+        }
+        case "composer.acceptEnhancement":
+          dispatch({ kind: "composer", action: { kind: "accept-enhancement" } });
+          dispatch({ kind: "close-overlay" });
+          return true;
+        case "composer.rejectEnhancement":
+          dispatch({ kind: "composer", action: { kind: "reject-enhancement" } });
+          dispatch({ kind: "close-overlay" });
+          return true;
         default:
           break;
       }

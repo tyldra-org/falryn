@@ -89,6 +89,14 @@ export type CommandState = {
   readonly hasHeldPaste: boolean;
   /** At least one attachment handle is on the composer. */
   readonly hasAttachments: boolean;
+  /** The composer draft has non-whitespace text. */
+  readonly hasDraft: boolean;
+  /** A proposal is waiting (ready or stale). */
+  readonly hasEnhancement: boolean;
+  /** A ready proposal can be accepted. */
+  readonly hasReadyEnhancement: boolean;
+  /** An enhancement notice (empty/unchanged/unavailable) is showing. */
+  readonly hasEnhancementFeedback: boolean;
   /**
    * Whether a transcript is mounted with something in it.
    *
@@ -110,6 +118,10 @@ export const EMPTY_COMMAND_STATE: CommandState = {
   hasComposer: false,
   hasHeldPaste: false,
   hasAttachments: false,
+  hasDraft: false,
+  hasEnhancement: false,
+  hasReadyEnhancement: false,
+  hasEnhancementFeedback: false,
   hasTranscript: false,
   hasScrollableContent: false,
   hasConfirmation: false,
@@ -450,6 +462,39 @@ export const SHELL_COMMANDS: readonly ShellCommand[] = [
     keywords: ["attachment", "reorder"],
     availability: (state) =>
       state.hasAttachments ? AVAILABLE : unavailable("there is no attachment to reorder"),
+  },
+  {
+    id: "composer.enhancePrompt",
+    title: "Enhance the draft",
+    description: "Propose a clearer draft without submitting it.",
+    context: "composer",
+    defaultBinding: null,
+    keywords: ["enhance", "improve", "rewrite", "clarify"],
+    availability: () => AVAILABLE,
+  },
+  {
+    id: "composer.acceptEnhancement",
+    title: "Accept enhancement",
+    description: "Replace the draft with the proposed text. Does not submit.",
+    context: "composer",
+    defaultBinding: null,
+    keywords: ["accept", "apply", "proposal"],
+    availability: (state) =>
+      state.hasReadyEnhancement
+        ? AVAILABLE
+        : unavailable("there is no ready enhancement to accept"),
+  },
+  {
+    id: "composer.rejectEnhancement",
+    title: "Reject enhancement",
+    description: "Drop the proposal and keep the current draft.",
+    context: "composer",
+    defaultBinding: null,
+    keywords: ["reject", "discard", "proposal"],
+    availability: (state) =>
+      state.hasEnhancement || state.hasEnhancementFeedback
+        ? AVAILABLE
+        : unavailable("there is no enhancement to reject"),
   },
   {
     id: "confirmation.accept",
