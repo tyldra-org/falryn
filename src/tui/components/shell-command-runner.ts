@@ -113,6 +113,24 @@ export function runAvailableCommand(
     case "composer.historyNext":
       dispatch({ kind: "composer", action: { kind: "history-next" } });
       return true;
+    case "session.switch":
+      dispatch({ kind: "open-overlay", route: { kind: "controls", panel: "session" } });
+      return true;
+    case "model.select":
+      dispatch({ kind: "open-overlay", route: { kind: "controls", panel: "model" } });
+      return true;
+    case "context.show":
+      dispatch({ kind: "open-overlay", route: { kind: "controls", panel: "context" } });
+      return true;
+    case "resource.show":
+      dispatch({ kind: "open-overlay", route: { kind: "controls", panel: "resource" } });
+      return true;
+    case "session.new":
+      dispatch({
+        kind: "notice",
+        message: "New session has no effect in this build.",
+      });
+      return false;
     default:
       dispatch({
         kind: "notice",

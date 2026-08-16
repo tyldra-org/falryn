@@ -555,6 +555,51 @@ export const SHELL_COMMANDS: readonly ShellCommand[] = [
     availability: (state) =>
       state.hasConfirmation ? AVAILABLE : unavailable("nothing is waiting for confirmation"),
   },
+  {
+    id: "session.switch",
+    title: "Switch session",
+    description: "Choose among sessions the application has supplied.",
+    context: "global",
+    defaultBinding: null,
+    keywords: ["session", "switch", "resume"],
+    availability: () => AVAILABLE,
+  },
+  {
+    id: "session.new",
+    title: "New session",
+    description: "Start a durable session for this workspace.",
+    context: "global",
+    defaultBinding: null,
+    keywords: ["session", "new", "create"],
+    availability: () => unavailable("no session producer yet"),
+  },
+  {
+    id: "model.select",
+    title: "Select model",
+    description: "Choose among models the application has supplied.",
+    context: "global",
+    defaultBinding: null,
+    keywords: ["model", "provider", "route"],
+    availability: () => AVAILABLE,
+  },
+  {
+    id: "context.show",
+    title: "Show context",
+    description: "Inspect token, byte, and item budget facts.",
+    context: "global",
+    defaultBinding: null,
+    keywords: ["context", "budget", "tokens"],
+    availability: () => AVAILABLE,
+  },
+  {
+    id: "resource.show",
+    title: "Show resources",
+    description: "Inspect runtime resource facts.",
+    context: "global",
+    defaultBinding: null,
+    keywords: ["resource", "memory", "usage"],
+    availability: () => AVAILABLE,
+  },
 ];
 
 /** A command by ID, or `undefined`. Lookup is by identity and never by title. */

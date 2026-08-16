@@ -58,6 +58,8 @@ export function overlayRegions(route: OverlayRoute): readonly FocusRegion[] {
       return [{ id: "overlay.inspect", label: "inspector" }];
     case "confirm":
       return [{ id: "overlay.confirm", label: "confirmation" }];
+    case "controls":
+      return [{ id: "overlay.controls", label: "controls" }];
     case "none":
       return FRAME_REGIONS;
     default: {
@@ -89,6 +91,8 @@ export type ShellState = {
   readonly secretGraphemes: number;
   /** Last decided identity, so the same prompt is not re-offered. */
   readonly resolvedConfirmationKey: string | null;
+  readonly selectedSessionId: string | null;
+  readonly selectedModelId: string | null;
 };
 
 export type ShellAction =
@@ -107,6 +111,7 @@ export type ShellAction =
   | { readonly kind: "withdraw-confirmation" }
   | { readonly kind: "resolve-confirmation"; readonly decision: "accepted" | "refused" }
   | { readonly kind: "secret-mask"; readonly graphemes: number }
+  | { readonly kind: "select-control"; readonly field: "session" | "model"; readonly id: string }
   | { readonly kind: "exit" };
 
 export const INITIAL_SHELL_STATE: ShellState = {
@@ -121,6 +126,8 @@ export const INITIAL_SHELL_STATE: ShellState = {
   boundConfirmation: null,
   secretGraphemes: 0,
   resolvedConfirmationKey: null,
+  selectedSessionId: null,
+  selectedModelId: null,
 };
 
 function confirmRoute(prompt: ConfirmationPrompt): OverlayRoute {
@@ -256,6 +263,15 @@ export function shellReducer(state: ShellState, action: ShellAction): ShellState
       return state.secretGraphemes === action.graphemes
         ? state
         : { ...state, secretGraphemes: action.graphemes };
+    case "select-control": {
+      const selected =
+        action.field === "session"
+          ? { ...state, selectedSessionId: action.id }
+          : { ...state, selectedModelId: action.id };
+      return selected.overlay.kind === "none"
+        ? selected
+        : shellReducer(selected, { kind: "close-overlay" });
+    }
     case "exit":
       return { ...state, exiting: true };
     default: {

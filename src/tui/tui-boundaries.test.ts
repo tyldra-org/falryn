@@ -54,6 +54,9 @@ const RENDERER_OWNERS = [
   // no password echo, so the sheet subscribes to keys and pastes itself rather
   // than routing every character through the registry.
   "components/confirmation.tsx",
+  // Session and model pickers subscribe to OpenTUI Select. Context and resource
+  // panels do not; they share the module because they are one overlay route.
+  "components/controls.tsx",
   // The root measures the viewport through the renderer's own hooks. Nothing
   // below it does: every component reads the frame from context instead, which
   // is what keeps the measurement in one place.
@@ -913,6 +916,7 @@ describe("the rendered test harness", () => {
       "components/composer-keys.test.tsx",
       "components/composer.test.tsx",
       "components/confirmation.test.tsx",
+      "components/controls.test.tsx",
       "components/frame.test.tsx",
       "components/interaction.test.tsx",
       "components/palette.test.tsx",

@@ -2644,6 +2644,26 @@ captured and masked, never forwarded to the composer. Empty secret cannot
 accept. Nothing produces a live confirmation or credential write in a real
 session yet; the port is fixture-driven, like inspection before a live turn.
 
+### Context, model, session, and resource controls
+
+[#256](https://github.com/tyldra-org/falryn/issues/256) adds a focused overlay
+for session, model, context, and resource facts. The sheet is a named overlay
+route on every layout class — it is not the wide layout's activity rail — and
+it projects catalogs the application port supplies. Session and model panels
+list those options; Return records a process-local cursor and updates the
+header. Context and resource panels list labelled facts (token/byte/item
+budgets; scopes/memory/usage). Empty lists name the gap. A cursor whose id has
+vanished is an error, not a reused label.
+
+`session.switch`, `model.select`, `context.show`, and `resource.show` are
+palette commands with no default key. `session.new` is listed and unavailable
+(`no session producer yet`): creating a durable session is
+[#33](https://github.com/tyldra-org/falryn/issues/33). Escape closes the sheet
+and restores a pending confirmation rather than accepting it. Nothing is
+written to SQLite and no provider is called. A real interactive run still
+passes an empty catalog; fixtures drive the lists, like inspection and
+confirmation before a live turn.
+
 ### Activity, status, and projection recovery
 
 The activity rail projects the semantic state the runtime actually owns, and the
