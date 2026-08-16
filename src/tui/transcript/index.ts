@@ -8,6 +8,16 @@
  * asserted without one.
  */
 
+export type { BlockInspection, InspectionFact, InspectionFamily } from "./inspect.ts";
+export {
+  describeTerminalOutcome,
+  hasDiagnostics,
+  INSPECTABLE_KINDS,
+  inspectBlock,
+  inspectionFor,
+  isInspectableKind,
+  sliceInspection,
+} from "./inspect.ts";
 export type { DrawableLine } from "./lines.ts";
 export { drawableLine, drawableLines } from "./lines.ts";
 export type { BlockDescriptor, HeightBatch, HeightKind, HeightRecord } from "./measure.ts";

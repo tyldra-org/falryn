@@ -1,5 +1,5 @@
 /**
- * The two overlay routes.
+ * Help and the command palette.
  *
  * Both render the same rows from the same registry, and the difference is what
  * they are for: help explains, the palette dispatches. Neither maintains a table

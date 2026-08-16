@@ -125,6 +125,7 @@ export function ShellApp(props: ShellAppProps): ReactNode {
   const runtime = useShellRuntime({
     onExit: props.onExit,
     transcriptKeys,
+    transcriptBlocks: projection.blocks,
     ...(props.fileProbe === undefined ? {} : { fileProbe: props.fileProbe }),
   });
   const activityProjection = props.activity ?? EMPTY_ACTIVITY;
