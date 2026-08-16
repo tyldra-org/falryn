@@ -50,6 +50,10 @@ const RENDERER_OWNERS = [
   // Overlay motion is registered with OpenTUI's timeline hook rather than a
   // parallel timer implementation.
   "components/overlay.tsx",
+  // Labelled confirmation keys and masked secret capture. Installed Input has
+  // no password echo, so the sheet subscribes to keys and pastes itself rather
+  // than routing every character through the registry.
+  "components/confirmation.tsx",
   // The root measures the viewport through the renderer's own hooks. Nothing
   // below it does: every component reads the frame from context instead, which
   // is what keeps the measurement in one place.
@@ -908,6 +912,7 @@ describe("the rendered test harness", () => {
       "components/activity-rail.test.tsx",
       "components/composer-keys.test.tsx",
       "components/composer.test.tsx",
+      "components/confirmation.test.tsx",
       "components/frame.test.tsx",
       "components/interaction.test.tsx",
       "components/palette.test.tsx",

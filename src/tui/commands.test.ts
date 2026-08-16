@@ -191,6 +191,28 @@ describe("what this build can actually do", () => {
     ).toBe("available");
     expect(commandById("transcript.inspect")?.defaultBinding).toBe(null);
     expect(commandById("transcript.showDiagnostics")?.defaultBinding).toBe(null);
+    expect(
+      commandById("confirmation.accept")?.availability({
+        ...EMPTY_COMMAND_STATE,
+        hasConfirmation: true,
+      }).kind,
+    ).toBe("available");
+    expect(
+      commandById("confirmation.accept")?.availability({
+        ...EMPTY_COMMAND_STATE,
+        hasConfirmation: true,
+        confirmationStale: true,
+      }).kind,
+    ).toBe("unavailable");
+    expect(
+      commandById("confirmation.accept")?.availability({
+        ...EMPTY_COMMAND_STATE,
+        hasConfirmation: true,
+        confirmationNeedsSecret: true,
+      }).kind,
+    ).toBe("unavailable");
+    expect(commandById("confirmation.accept")?.defaultBinding).toBe(null);
+    expect(commandById("confirmation.deny")?.defaultBinding).toBe(null);
   });
 
   test("declares no command for a concept that does not exist", () => {

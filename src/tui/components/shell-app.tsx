@@ -40,6 +40,11 @@ import { searchCommands } from "../commands.ts";
 import { COMPOSER_FEATURES } from "../composer/index.ts";
 import type { ComposerModel } from "../composer-model.ts";
 import {
+  type ConfirmationDecision,
+  type ConfirmationPrompt,
+  confirmationView,
+} from "../confirmation/index.ts";
+import {
   activeCommandIds,
   commandRows,
   describeRefusal,
@@ -92,6 +97,16 @@ export type ShellAppProps = {
   readonly shutdown?: ShutdownState;
   /** Resolves `@path` mentions and file attachments. Absent when no workspace is bound. */
   readonly fileProbe?: FileAttachmentProbe | null;
+  /**
+   * A confirmation the application is waiting on.
+   *
+   * Fixture-driven in this build: nothing produces one from a live tool yet.
+   * Identity is the prompt's id and fingerprint; a changed fingerprint is a
+   * new decision, not a reused approval.
+   */
+  readonly confirmation?: ConfirmationPrompt | null;
+  readonly onConfirmation?: (decision: ConfirmationDecision) => void;
+  readonly onSecretSubmit?: (secret: string) => void;
 };
 
 /**
@@ -127,6 +142,9 @@ export function ShellApp(props: ShellAppProps): ReactNode {
     transcriptKeys,
     transcriptBlocks: projection.blocks,
     ...(props.fileProbe === undefined ? {} : { fileProbe: props.fileProbe }),
+    ...(props.confirmation === undefined ? {} : { confirmation: props.confirmation }),
+    ...(props.onConfirmation === undefined ? {} : { onConfirmation: props.onConfirmation }),
+    ...(props.onSecretSubmit === undefined ? {} : { onSecretSubmit: props.onSecretSubmit }),
   });
   const activityProjection = props.activity ?? EMPTY_ACTIVITY;
   const shutdown = props.shutdown ?? null;
@@ -159,7 +177,9 @@ export function ShellApp(props: ShellAppProps): ReactNode {
         // mark into the search rather than opening help over it.
         typing={
           runtime.state.focus.focused === COMPOSER_REGION ||
-          runtime.state.overlay.kind === "palette"
+          runtime.state.overlay.kind === "palette" ||
+          (runtime.state.overlay.kind === "confirm" &&
+            runtime.state.boundConfirmation?.secret !== null)
         }
       />
       <ShellErrorBoundary>
@@ -235,6 +255,20 @@ function ResolvedShell(
       onPaletteSelect={(id) => {
         keymap.runCommand(id);
       }}
+      confirmation={
+        props.runtime.state.overlay.kind === "confirm" &&
+        props.runtime.state.boundConfirmation !== null
+          ? confirmationView(
+              props.runtime.state.boundConfirmation,
+              props.runtime.state.pendingConfirmation,
+              props.runtime.state.secretGraphemes,
+            )
+          : null
+      }
+      onConfirmationChoice={(id) => {
+        props.runtime.confirm(id);
+      }}
+      onSecretEdit={props.runtime.editSecret}
     />
   );
 }

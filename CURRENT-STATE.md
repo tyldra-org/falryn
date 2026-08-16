@@ -2616,6 +2616,34 @@ defect this delivery hit and fixed rather than a hypothetical.
 Nothing can answer a prompt, so no submission is ever accepted in a real session.
 The accepted path is exercised by handing the runtime a port that accepts.
 
+### Confirmations and sensitive input
+
+[#255](https://github.com/tyldra-org/falryn/issues/255) adds a focused
+confirmation overlay and a protected secret field. The sheet is a named overlay
+route on every layout class — it is not the wide layout's activity rail — and
+it projects one immutable intent: operation, exact target, why confirmation is
+needed, expected effect, alternatives (cancel, plus preview/narrow/export named
+as unavailable), once-only scope, and expiry. Domain policy already binds a
+confirmation id to capability + normalized input
+([#50](https://github.com/tyldra-org/falryn/issues/50)); the TUI records
+accept, refuse, or stale against that identity and does not execute tools.
+
+`confirmation.accept` and `confirmation.deny` stay unbound in the registry. The
+sheet binds labelled keys to *this* confirmation (`y`/`n` when there is no
+secret field; Return to accept while a secret field is capturing). Palette
+dispatch still works while a prompt is pending. Escape on the sheet refuses.
+Opening help or the palette keeps the pending identity; Escape there restores
+the sheet rather than accepting. A changed fingerprint leaves the bound
+question on screen and makes accept unavailable.
+
+Secret prompts use a dedicated masked control because installed OpenTUI Input
+has no password echo. The value lives in a process ref — not in the overlay
+route, composer draft or history, transcript, notices, or clipboard. The frame
+draws a bullet (or ASCII asterisk) per grapheme. Paste into the field is
+captured and masked, never forwarded to the composer. Empty secret cannot
+accept. Nothing produces a live confirmation or credential write in a real
+session yet; the port is fixture-driven, like inspection before a live turn.
+
 ### Activity, status, and projection recovery
 
 The activity rail projects the semantic state the runtime actually owns, and the

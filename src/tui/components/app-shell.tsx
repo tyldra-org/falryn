@@ -28,6 +28,7 @@ import { useRenderer, useTerminalDimensions } from "@opentui/react";
 import { type ReactNode, useMemo, useRef } from "react";
 import type { Instant } from "../../domain/index.ts";
 import type { ComposerAction } from "../composer/index.ts";
+import type { ConfirmationChoiceId, ConfirmationView, SecretEdit } from "../confirmation/index.ts";
 import {
   composerRows,
   hasContextPanel,
@@ -44,6 +45,7 @@ import type { TranscriptGeometry } from "../transcript-model.ts";
 import type { CommandEntry, OverlayRoute, ShellModel } from "../view-model.ts";
 import { ActivityRail } from "./activity-rail.tsx";
 import { ComposerView } from "./composer.tsx";
+import { ConfirmationSheet } from "./confirmation.tsx";
 import { type Frame, FrameProvider } from "./context.tsx";
 import { Inspector } from "./inspector.tsx";
 import { OverlayHost } from "./overlay.tsx";
@@ -96,6 +98,9 @@ export type AppShellProps = {
   readonly onPaletteQuery?: (query: string) => void;
   /** Runs the selected palette command by stable id. */
   readonly onPaletteSelect?: (id: string) => void;
+  readonly confirmation?: ConfirmationView | null;
+  readonly onConfirmationChoice?: (id: ConfirmationChoiceId) => void;
+  readonly onSecretEdit?: (edit: SecretEdit) => void;
 };
 
 export function AppShell(props: AppShellProps): ReactNode {
@@ -161,6 +166,11 @@ export function AppShell(props: AppShellProps): ReactNode {
           {...(props.onPaletteSelect === undefined
             ? {}
             : { onPaletteSelect: props.onPaletteSelect })}
+          {...(props.confirmation === undefined ? {} : { confirmation: props.confirmation })}
+          {...(props.onConfirmationChoice === undefined
+            ? {}
+            : { onConfirmationChoice: props.onConfirmationChoice })}
+          {...(props.onSecretEdit === undefined ? {} : { onSecretEdit: props.onSecretEdit })}
         />
       )}
     </FrameProvider>
@@ -179,6 +189,9 @@ function ShellFrame(props: {
   readonly onComposerFocus?: () => void;
   readonly onPaletteQuery?: (query: string) => void;
   readonly onPaletteSelect?: (id: string) => void;
+  readonly confirmation?: ConfirmationView | null;
+  readonly onConfirmationChoice?: (id: ConfirmationChoiceId) => void;
+  readonly onSecretEdit?: (edit: SecretEdit) => void;
 }): ReactNode {
   const { model } = props;
   // Bounded rather than stretched. A `wide` terminal has room for a contextual
@@ -206,8 +219,10 @@ function ShellFrame(props: {
           ) : (
             <OverlayHost
               route={model.overlay}
-              title={overlayTitle(model.overlay, model)}
-              dismissHint="Esc closes this"
+              title={overlayTitle(model.overlay, model, props.confirmation ?? null)}
+              dismissHint={
+                model.overlay.kind === "confirm" ? "Esc declines this" : "Esc closes this"
+              }
             >
               {(rows) => overlayBody(model, props, rows)}
             </OverlayHost>
@@ -268,7 +283,11 @@ export function MinimumSizeNotice(props: MinimumSizeNoticeProps): ReactNode {
   );
 }
 
-function overlayTitle(route: OverlayRoute, model: ShellModel): string {
+function overlayTitle(
+  route: OverlayRoute,
+  model: ShellModel,
+  confirmation: ConfirmationView | null,
+): string {
   switch (route.kind) {
     case "none":
       return "";
@@ -278,6 +297,8 @@ function overlayTitle(route: OverlayRoute, model: ShellModel): string {
       return "Commands";
     case "inspect":
       return inspectionFor(model.transcript.projection.blocks, route.key)?.title ?? "Inspect";
+    case "confirm":
+      return confirmation?.prompt.title ?? "Confirm";
     default: {
       const exhaustive: never = route;
       return exhaustive;
@@ -291,6 +312,9 @@ function overlayBody(
     readonly commandRows?: readonly CommandEntry[];
     readonly onPaletteQuery?: (query: string) => void;
     readonly onPaletteSelect?: (id: string) => void;
+    readonly confirmation?: ConfirmationView | null;
+    readonly onConfirmationChoice?: (id: ConfirmationChoiceId) => void;
+    readonly onSecretEdit?: (edit: SecretEdit) => void;
   },
   rows: number,
 ): ReactNode {
@@ -315,6 +339,17 @@ function overlayBody(
         <Inspector
           inspection={inspectionFor(model.transcript.projection.blocks, overlay.key)}
           rows={rows}
+        />
+      );
+    case "confirm":
+      return (
+        <ConfirmationSheet
+          confirmation={props.confirmation ?? null}
+          rows={rows}
+          {...(props.onConfirmationChoice === undefined
+            ? {}
+            : { onChoice: props.onConfirmationChoice })}
+          {...(props.onSecretEdit === undefined ? {} : { onSecretEdit: props.onSecretEdit })}
         />
       );
     default: {

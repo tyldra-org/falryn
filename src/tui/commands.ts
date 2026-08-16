@@ -68,10 +68,9 @@ function unavailable(reason: string): CommandAvailability {
  * What the shell can currently do, as the registry sees it.
  *
  * Deliberately a set of capability facts rather than the view model: a command's
- * availability must not depend on what is drawn, only on what exists. Every
- * field here is `false` in this build except `overlayOpen` and the two the
- * transcript surface now answers, and each of the rest is a seam a later issue
- * fills.
+ * availability must not depend on what is drawn, only on what exists. Overlay,
+ * composer, transcript, and confirmation facts are live; the rest stay false
+ * until a later issue fills them.
  */
 export type CommandState = {
   readonly overlayOpen: boolean;
@@ -112,6 +111,10 @@ export type CommandState = {
   /** Whether the mounted content is taller than the region drawing it. */
   readonly hasScrollableContent: boolean;
   readonly hasConfirmation: boolean;
+  /** The bound prompt no longer matches the live identity. */
+  readonly confirmationStale: boolean;
+  /** A secret field is showing and still empty. */
+  readonly confirmationNeedsSecret: boolean;
   /** Whether any cancellable work is in flight. Nothing runs work yet. */
   readonly hasRunningWork: boolean;
 };
@@ -131,6 +134,8 @@ export const EMPTY_COMMAND_STATE: CommandState = {
   hasTranscript: false,
   hasScrollableContent: false,
   hasConfirmation: false,
+  confirmationStale: false,
+  confirmationNeedsSecret: false,
   hasRunningWork: false,
 };
 
@@ -527,8 +532,18 @@ export const SHELL_COMMANDS: readonly ShellCommand[] = [
     // confirmation binds its own keys to its own labelled choices.
     defaultBinding: null,
     keywords: ["yes", "confirm", "ok"],
-    availability: (state) =>
-      state.hasConfirmation ? AVAILABLE : unavailable("nothing is waiting for confirmation"),
+    availability: (state) => {
+      if (!state.hasConfirmation) {
+        return unavailable("nothing is waiting for confirmation");
+      }
+      if (state.confirmationStale) {
+        return unavailable("this confirmation is no longer valid");
+      }
+      if (state.confirmationNeedsSecret) {
+        return unavailable("the secret field is empty");
+      }
+      return AVAILABLE;
+    },
   },
   {
     id: "confirmation.deny",
