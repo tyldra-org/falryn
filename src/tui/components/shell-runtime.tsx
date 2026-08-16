@@ -10,6 +10,7 @@ import {
 import type { FocusRegion } from "../focus.ts";
 import { totalRowsOf } from "../transcript/index.ts";
 import { EMPTY_GEOMETRY, type TranscriptGeometry } from "../transcript-model.ts";
+import { useRenderGate } from "./render-gate.tsx";
 import { runAvailableCommand } from "./shell-command-runner.ts";
 import {
   COMPOSER_REGION,
@@ -56,6 +57,7 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
   const [state, dispatch] = useReducer(shellReducer, INITIAL_SHELL_STATE);
   const commandState = useMemo(() => commandStateFor(state), [state]);
   const geometry = useRef<TranscriptGeometry>(EMPTY_GEOMETRY);
+  const gate = useRenderGate();
 
   const reportTranscriptGeometry = useCallback((next: TranscriptGeometry): void => {
     geometry.current = next;
@@ -67,6 +69,7 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
 
   const run = useCallback(
     (id: string): boolean => {
+      gate.note("input");
       const command = commandById(id);
       if (command === undefined) {
         dispatch({ kind: "notice", message: `No command named ${id}.` });
@@ -89,24 +92,33 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
         keys: options.transcriptKeys,
       });
     },
-    [state, options.onExit, options.transcriptKeys],
+    [state, options.onExit, options.transcriptKeys, gate],
   );
 
   const reseat = useCallback((regions: readonly FocusRegion[]): void => {
     dispatch({ kind: "reseat", regions });
   }, []);
 
-  const composer = useCallback((action: ComposerAction): void => {
-    dispatch({ kind: "composer", action });
-  }, []);
+  const composer = useCallback(
+    (action: ComposerAction): void => {
+      gate.note("input");
+      dispatch({ kind: "composer", action });
+    },
+    [gate],
+  );
 
   const focusComposer = useCallback((): void => {
+    gate.note("input");
     dispatch({ kind: "focus-region", id: COMPOSER_REGION });
-  }, []);
+  }, [gate]);
 
-  const paletteQuery = useCallback((query: string): void => {
-    dispatch({ kind: "palette-query", query });
-  }, []);
+  const paletteQuery = useCallback(
+    (query: string): void => {
+      gate.note("input");
+      dispatch({ kind: "palette-query", query });
+    },
+    [gate],
+  );
 
   const { transcriptKeys } = options;
   useEffect(() => {

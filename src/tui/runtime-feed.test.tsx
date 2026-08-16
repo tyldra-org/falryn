@@ -16,16 +16,26 @@
 import { describe, expect, test } from "bun:test";
 import type { ReactNode } from "react";
 import type { ScopeEvent } from "../domain/index.ts";
+import { createManualClock } from "../domain/index.ts";
 import { scopeEvent } from "../presentation/activity/fixtures.ts";
 import {
   ACTIVITY_PROJECTION_GENERATION,
   type ActivityCursor,
   describeActivity,
+  EMPTY_ACTIVITY,
   initialActivityCursor,
+  reduceActivity,
   type ShutdownState,
 } from "../presentation/index.ts";
+import { RenderGateProvider, useRenderGate } from "./components/render-gate.tsx";
 import { mount, type Rendered } from "./harness.tsx";
-import { type RuntimeFeed, useRuntimeProjection } from "./runtime-feed.ts";
+import { STREAM_PUBLISH_CADENCE } from "./render-schedule.ts";
+import {
+  activityRenderKind,
+  type RuntimeFeed,
+  type RuntimeProjection,
+  useRuntimeProjection,
+} from "./runtime-feed.ts";
 
 /**
  * One scope's lifecycle, as the tree would emit it.
@@ -40,6 +50,10 @@ function opened(order: number, scope: string): ScopeEvent {
 
 function completed(order: number, scope: string): ScopeEvent {
   return scopeEvent({ order, kind: "scope.terminal", scope, outcome: { kind: "completed" } });
+}
+
+function cancelling(order: number, scope: string): ScopeEvent {
+  return scopeEvent({ order, kind: "scope.cancellation.requested", scope });
 }
 
 /** A feed a test drives by hand. */
@@ -86,7 +100,12 @@ function Probe(props: { readonly feed?: RuntimeFeed; readonly resumeFrom?: Activ
   // One call site with the default spelled out, rather than a conditional pair.
   // Two calls behind a ternary are two hooks in a component that renders one of
   // them, which is the rule React cannot recover from when the branch changes.
-  const runtime = useRuntimeProjection(props.feed, props.resumeFrom ?? initialActivityCursor());
+  const gate = useRenderGate();
+  const runtime = useRuntimeProjection(
+    props.feed,
+    props.resumeFrom ?? initialActivityCursor(),
+    gate,
+  );
   return (
     <box flexDirection="column">
       <text>{`shutdown:${runtime.shutdown === null ? "none" : runtime.shutdown.level}`}</text>
@@ -210,5 +229,93 @@ describe("the shell's view of its runtime", () => {
     // listener was released" is a fact about leaving the scope rather than
     // about a later tick that may or may not have run.
     expect(source.subscriberCount()).toBe(0);
+  });
+});
+
+function runtimeOf(
+  events: readonly ScopeEvent[],
+  shutdown: ShutdownState | null = null,
+): RuntimeProjection {
+  return { activity: reduceActivity(EMPTY_ACTIVITY, events), shutdown };
+}
+
+describe("activityRenderKind", () => {
+  test("treats opening more live work as a stream update", () => {
+    expect(
+      activityRenderKind(
+        runtimeOf([opened(1, "one")]),
+        runtimeOf([opened(1, "one"), opened(2, "two")]),
+      ),
+    ).toBe("stream");
+  });
+
+  test("treats a new terminal outcome as semantic", () => {
+    expect(
+      activityRenderKind(
+        runtimeOf([opened(1, "one")]),
+        runtimeOf([opened(1, "one"), completed(2, "one")]),
+      ),
+    ).toBe("semantic");
+  });
+
+  test("treats a newly cancelling lifecycle as semantic", () => {
+    expect(
+      activityRenderKind(
+        runtimeOf([opened(1, "one")]),
+        runtimeOf([opened(1, "one"), cancelling(2, "one")]),
+      ),
+    ).toBe("semantic");
+  });
+
+  test("treats a shutdown change as semantic", () => {
+    expect(
+      activityRenderKind(runtimeOf([]), runtimeOf([], { shuttingDown: true, level: "graceful" })),
+    ).toBe("semantic");
+  });
+});
+
+describe("a gated runtime projection", () => {
+  test("holds a burst of openings until cadence, then shows every entry", async () => {
+    const clock = createManualClock();
+    const source = fakeFeed();
+    using view = await probe(
+      <RenderGateProvider clock={clock}>
+        <Probe feed={source.feed} />
+      </RenderGateProvider>,
+    );
+
+    source.emit(opened(1, "one"));
+    expect((await rowsOf(view)).some((line) => line.includes("scope:scope-one"))).toBe(true);
+
+    source.emit(opened(2, "two"), opened(3, "three"));
+    const held = await rowsOf(view);
+    expect(held.some((line) => line.includes("scope:scope-two"))).toBe(false);
+    expect(held.some((line) => line.includes("scope:scope-three"))).toBe(false);
+
+    await clock.advance(STREAM_PUBLISH_CADENCE);
+    const flushed = await rowsOf(view);
+    expect(flushed.some((line) => line.includes("scope:scope-two"))).toBe(true);
+    expect(flushed.some((line) => line.includes("scope:scope-three"))).toBe(true);
+  });
+
+  test("flushes a held burst as soon as a terminal outcome arrives", async () => {
+    const clock = createManualClock();
+    const source = fakeFeed();
+    using view = await probe(
+      <RenderGateProvider clock={clock}>
+        <Probe feed={source.feed} />
+      </RenderGateProvider>,
+    );
+    await rowsOf(view);
+
+    source.emit(opened(1, "one"));
+    source.emit(opened(2, "two"));
+    expect((await rowsOf(view)).some((line) => line.includes("scope:scope-two"))).toBe(false);
+
+    source.emit(completed(3, "two"));
+    const flushed = await rowsOf(view);
+    expect(flushed.some((line) => line.includes("scope:scope-two"))).toBe(true);
+    expect(flushed.some((line) => line.includes("invocation completed"))).toBe(true);
+    expect(clock.pendingWaitCount()).toBe(0);
   });
 });

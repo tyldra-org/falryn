@@ -219,6 +219,7 @@ describe("what the shell drew", () => {
           reads += 1;
           return clock.now();
         },
+        waitUntil: (at, signal) => clock.waitUntil(at, signal),
       },
       configuration: { "interface.pointer.enabled": true },
     });
@@ -227,8 +228,12 @@ describe("what the shell drew", () => {
     }
 
     const textarea = composerTextarea(setup);
+    const before = reads;
     await setup.mockMouse.click(textarea.x + 1, textarea.y, MouseButton.LEFT, { delayMs: 0 });
-    expect(reads).toBe(1);
+    // The render gate also reads `now()` when it timestamps a publish. The
+    // click must still increment the same counter, or pointer recognition has
+    // found a second clock.
+    expect(reads).toBeGreaterThan(before);
 
     stop.abort();
     expect(await run).toEqual({ kind: "stopped" });

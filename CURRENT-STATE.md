@@ -2392,6 +2392,17 @@ over a hundred blocks — OpenTUI's own `ScrollBox` is deliberately not used,
 because its viewport culling skips render calls while still mounting a renderable
 per item.
 
+**Stream paints wait; input does not.** Folding still runs on every event.
+[#252](https://github.com/tyldra-org/falryn/issues/252) adds a publish gate
+between that fold and a React commit: display-only activity updates share a
+one-frame cadence, while a command, a composer edit, a palette query, a newly
+cancelling lifecycle, a shutdown change, or a new terminal outcome publishes
+immediately and takes any held stream snapshot with it. Time comes from the
+invocation `ClockPort`, not from `Date.now` or a second `requestAnimationFrame`.
+A burst of openings paints fewer times than events; swallowing a terminal
+outcome still fails the mounted oracle. The live shell still does not feed
+`reduceTranscript` — that remains later.
+
 **A reader who scrolls away is not pulled back.** The anchor is a closed union of
 two states — following the latest, or pinned to a named block at a row offset
 inside it — so arriving blocks move the content under a following anchor and
