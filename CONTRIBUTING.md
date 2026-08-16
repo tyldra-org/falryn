@@ -114,10 +114,10 @@ create an explicit integration subissue rather than a parent mega-PR.
 
 Optional maintainer prompts. Full contract:
 [`falryn-docs/DEVELOPMENT.md`](https://github.com/tyldra-org/falryn-docs/blob/main/DEVELOPMENT.md).
-Ordinary prompts do not need repository names. `Issue`, `Parent issue`, `PR`,
-and milestone targets resolve to `falryn`; the delivery PR includes explicitly
-linked docs companions automatically. Use `Docs issue` or `Docs PR` only for
-docs-only work.
+Ordinary prompts do not need repository names. `Issue`, `Parent issue`,
+`Parent chain`, `PR`, and milestone targets resolve to `falryn`; the delivery
+PR includes explicitly linked docs companions automatically. Use `Docs issue`,
+`Docs parent issue`, `Docs parent chain`, or `Docs PR` only for docs-only work.
 
 - `Plan — Target: Issue #N` refines GitHub planning and keeps the issue
   **Todo**; it does not create product code, a branch, or a pull request.
