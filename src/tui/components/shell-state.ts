@@ -149,6 +149,8 @@ export function commandStateFor(state: ShellState): CommandState {
     hasTranscript: state.transcriptFacts.blocks > 0,
     hasScrollableContent: state.transcriptFacts.scrollable,
     hasComposer: state.focus.focused === COMPOSER_REGION,
+    hasHeldPaste: state.composer.lastPaste?.verdict === "preview",
+    hasAttachments: state.composer.attachments.length > 0,
   };
 }
 

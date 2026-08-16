@@ -12,6 +12,7 @@
  * writes what comes back to the handle that owns it.
  */
 
+import { createFileAttachmentProbe } from "../application/index.ts";
 import {
   assertNever,
   type EnvironmentPort,
@@ -264,9 +265,15 @@ async function launchShell(
   // before the renderer, because the diagnostic handle is an ordinary terminal
   // until one is up; after that it is not, which is why the unrecognized-override
   // notice is written where it is.
+  const services = options.services ?? defaultProvider(options);
   const configuration = await resolveShellConfiguration(globals, {
     streams,
-    services: options.services ?? defaultProvider(options),
+    services,
+  });
+  const graph = services(globals)();
+  const fileProbe = createFileAttachmentProbe({
+    fileSystem: graph.fileSystem,
+    workspace: graph.workspaceRoot,
   });
 
   // Aborts when the shell is done, so a run given a long `--timeout` does not
@@ -296,6 +303,7 @@ async function launchShell(
       // anything. Before #370 nothing supplied this, so the interface reported
       // that no runtime was attached while running inside one.
       scopes: governance.scopes,
+      ...(fileProbe === null ? {} : { fileProbe }),
       ...(governance.shutdown === undefined ? {} : { shutdown: governance.shutdown }),
       ...(options.createRenderer === undefined ? {} : { createRenderer: options.createRenderer }),
     });

@@ -690,7 +690,7 @@ describe("a paste", () => {
   test("never reaches the buffer when it is too large", async () => {
     // The flood the classification exists to prevent, and the reason the
     // handler runs ahead of the renderable: the renderable would have inserted
-    // it. Including it needs the attachment path that does not exist.
+    // it. Include is a palette command that records a handle, not the body.
     using shell = await open();
     await shell.focusComposer();
     await shell.paste("x".repeat(INLINE_PASTE_LIMIT + 1));
@@ -711,5 +711,18 @@ describe("a paste", () => {
     // The composer still works afterwards.
     await shell.type("still typing");
     expect(await shell.frame()).toContain("still typing");
+  });
+
+  test("includes a held-out paste as an attachment handle", async () => {
+    using shell = await open();
+    await shell.focusComposer();
+    await shell.paste("x".repeat(INLINE_PASTE_LIMIT + 1));
+    await shell.press("p", { ctrl: true });
+    await shell.type("include");
+    shell.setup.mockInput.pressEnter();
+    const frame = await shell.frame();
+    expect(frame).toContain("Attached:");
+    expect(frame).toContain("paste:att-1");
+    expect(frame).not.toContain("xxxxxxxxxx");
   });
 });

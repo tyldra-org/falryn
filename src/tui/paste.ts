@@ -66,9 +66,8 @@ export type PasteClassification =
  * What the composer keeps about a paste: a notice, never the clipboard body.
  *
  * Preview classifications carry the full text so an include path can attach it
- * later. That payload must not sit on composer state — including a large paste
- * is #278, and holding megabytes against a decision nobody can make is memory
- * spent on a capability that does not exist.
+ * later. That payload is held beside composer state on the payload port (#278),
+ * never on `lastPaste`.
  */
 export type PasteNotice =
   | { readonly verdict: "inline"; readonly characters: number; readonly secret: boolean }

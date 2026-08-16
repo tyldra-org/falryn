@@ -16,7 +16,7 @@ import {
   composerReducer,
   INITIAL_COMPOSER_STATE,
 } from "./state.ts";
-import { type SubmissionOutcome, UNAVAILABLE_SUBMISSION } from "./submission.ts";
+import { type SubmissionOutcome, snapshotOf, UNAVAILABLE_SUBMISSION } from "./submission.ts";
 
 function apply(state: ComposerState, ...actions: readonly ComposerAction[]): ComposerState {
   return actions.reduce(composerReducer, state);
@@ -129,7 +129,7 @@ describe("a submission something takes", () => {
     const idle = drafting("draft");
     const stray: SubmissionOutcome = {
       kind: "accepted",
-      snapshot: { text: "elsewhere", sequence: 9 },
+      snapshot: snapshotOf("elsewhere", 9),
     };
     expect(apply(idle, { kind: "resolve", outcome: stray })).toBe(idle);
   });
@@ -170,9 +170,8 @@ describe("paste", () => {
   });
 
   test("reports a large one instead of inserting it", () => {
-    // The flood the classification exists to prevent. Including it needs the
-    // attachment path that does not exist, so it is described rather than
-    // quietly committed to the editor.
+    // The flood the classification exists to prevent. Including it is a separate
+    // action that records a handle; the notice never keeps the body.
     const large = "x".repeat(INLINE_PASTE_LIMIT + 1);
     const after = apply(drafting("draft"), { kind: "paste", text: large });
     expect(after.text).toBe("draft");
@@ -218,5 +217,85 @@ describe("phases", () => {
     expect(cancelled.phase).toBe("cancelled");
     expect(cancelled.inFlight).toBeNull();
     expect(cancelled.text).toBe("ask");
+  });
+});
+
+describe("attachments", () => {
+  const paste = {
+    id: "att-1",
+    kind: "paste" as const,
+    identity: "paste:att-1",
+    status: "ready" as const,
+    byteLength: 12,
+    characters: 12,
+    lines: 1,
+    digest: `sha-256:${"a".repeat(64)}`,
+    revision: null,
+    mediaType: "text/plain",
+    secret: false,
+  };
+
+  test("include records a handle and never a payload field", () => {
+    const after = apply(drafting("draft"), { kind: "include-paste", attachment: paste });
+    expect(after.attachments).toEqual([paste]);
+    expect(after.lastPaste).toBeNull();
+    expect(JSON.stringify(after.attachments)).not.toContain("held-out");
+    expect(composerNotice(after)).toContain("paste:att-1");
+  });
+
+  test("blocks submit when a mention cannot be resolved", () => {
+    const after = apply(drafting("see @mcp:res"), { kind: "submit" });
+    expect(after.phase).toBe("editing");
+    expect(after.inFlight).toBeNull();
+    expect(after.lastOutcome?.kind).toBe("unavailable");
+    expect(after.lastOutcome?.kind === "unavailable" && after.lastOutcome.reason).toContain(
+      "unsupported",
+    );
+    expect(after.lastOutcome?.kind === "unavailable" && after.lastOutcome.route).toBe(
+      "composer.removeAttachment",
+    );
+    expect(after.text).toBe("see @mcp:res");
+  });
+
+  test("blocks submit when an attachment is not ready", () => {
+    const blocked = apply(drafting("send this"), {
+      kind: "include-paste",
+      attachment: { ...paste, status: "oversized" },
+    });
+    const after = apply(blocked, { kind: "submit" });
+    expect(after.phase).toBe("editing");
+    expect(after.inFlight).toBeNull();
+    expect(after.lastOutcome?.kind === "unavailable" && after.lastOutcome.reason).toContain(
+      "oversized",
+    );
+  });
+
+  test("snapshots handles and mentions when everything is ready", () => {
+    const ready = apply(drafting("see @paste:att-1"), { kind: "include-paste", attachment: paste });
+    const sending = apply(ready, { kind: "submit" });
+    expect(sending.phase).toBe("sending");
+    expect(sending.inFlight?.attachments).toEqual([paste]);
+    expect(sending.inFlight?.mentions[0]?.identity).toBe("paste:att-1");
+    expect(Object.isFrozen(sending.inFlight)).toBe(true);
+  });
+
+  test("takes resolved file mentions from the submit action in one step", () => {
+    const file = {
+      id: "file-readme-md",
+      kind: "file" as const,
+      identity: "readme.md",
+      status: "ready" as const,
+      byteLength: 4,
+      characters: null,
+      lines: null,
+      digest: `sha-256:${"b".repeat(64)}`,
+      revision: "1",
+      mediaType: "text/plain",
+      secret: false,
+    };
+    const sending = apply(drafting("see @readme.md"), { kind: "submit", attachments: [file] });
+    expect(sending.phase).toBe("sending");
+    expect(sending.attachments).toEqual([file]);
+    expect(sending.inFlight?.mentions[0]?.identity).toBe("readme.md");
   });
 });
