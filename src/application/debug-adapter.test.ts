@@ -19,7 +19,17 @@ import {
   serviceGeneration,
 } from "../domain/index.ts";
 import { err, ok, type Result } from "../domain/result.ts";
-import { createDebugAdapterSupervisor } from "./debug-adapter.ts";
+import {
+  createDebugAdapterSupervisor,
+  type DebugAdapterSupervisorOptions,
+} from "./debug-adapter.ts";
+
+function createSupervisor(port: ManagedServicePort, options?: DebugAdapterSupervisorOptions) {
+  return createDebugAdapterSupervisor(port, {
+    confirmationPolicy: "auto-allow",
+    ...options,
+  });
+}
 
 type ProtocolHandler = (message: DapMessage, pushStdout: (bytes: Uint8Array) => void) => void;
 
@@ -518,7 +528,7 @@ describe("createDebugAdapterSupervisor", () => {
   test("initializes over DAP framing and reaches ready", async () => {
     const events: DebugAdapterEvent["kind"][] = [];
     const port = new FakeManagedServicePort(compliantDapHandler);
-    const supervisor = createDebugAdapterSupervisor(port);
+    const supervisor = createSupervisor(port);
     const attached = supervisor.attach(startRequest.serviceId, (event) => {
       events.push(event.kind);
     });
@@ -565,7 +575,7 @@ describe("createDebugAdapterSupervisor", () => {
         );
       }
     });
-    const supervisor = createDebugAdapterSupervisor(port);
+    const supervisor = createSupervisor(port);
     const started = await supervisor.start(startRequest);
     expect(started.ok).toBe(false);
     if (started.ok) {
@@ -576,7 +586,7 @@ describe("createDebugAdapterSupervisor", () => {
 
   test("returns unsupported when adapter rejects a ready-state command", async () => {
     const port = new FakeManagedServicePort(compliantDapHandler);
-    const supervisor = createDebugAdapterSupervisor(port);
+    const supervisor = createSupervisor(port);
     const started = await supervisor.start(startRequest);
     expect(started.ok).toBe(true);
     if (!started.ok) {
@@ -642,7 +652,7 @@ describe("createDebugAdapterSupervisor", () => {
         adapterSeq += 1;
       }
     });
-    const supervisor = createDebugAdapterSupervisor(port);
+    const supervisor = createSupervisor(port);
     const started = await supervisor.start(startRequest);
     expect(started.ok).toBe(true);
     if (!started.ok) {
@@ -664,7 +674,7 @@ describe("createDebugAdapterSupervisor", () => {
     const port = new FakeManagedServicePort((message, pushStdout) => {
       sessionCapableHandler(message, pushStdout, seq);
     });
-    const supervisor = createDebugAdapterSupervisor(port);
+    const supervisor = createSupervisor(port);
     const started = await supervisor.start(startRequest);
     expect(started.ok).toBe(true);
     if (!started.ok) {
@@ -765,7 +775,7 @@ describe("createDebugAdapterSupervisor", () => {
         seq.value += 1;
       }
     });
-    const supervisor = createDebugAdapterSupervisor(port);
+    const supervisor = createSupervisor(port);
     const started = await supervisor.start(startRequest);
     expect(started.ok).toBe(true);
     if (!started.ok) {
@@ -883,7 +893,7 @@ describe("createDebugAdapterSupervisor", () => {
     const port = new FakeManagedServicePort((message, pushStdout) => {
       sessionCapableHandler(message, pushStdout, seq);
     });
-    const supervisor = createDebugAdapterSupervisor(port);
+    const supervisor = createSupervisor(port);
     const started = await supervisor.start(startRequest);
     expect(started.ok).toBe(true);
     if (!started.ok) {
@@ -969,7 +979,7 @@ describe("createDebugAdapterSupervisor", () => {
       }
       sessionCapableHandler(message, pushStdout, seq);
     });
-    const supervisor = createDebugAdapterSupervisor(port);
+    const supervisor = createSupervisor(port);
     const started = await supervisor.start({
       ...startRequest,
       limits: {
@@ -1004,6 +1014,185 @@ describe("createDebugAdapterSupervisor", () => {
       adapterAcknowledged: false,
       processStopped: true,
       detachUncertain: true,
+    });
+  });
+
+  test("requires confirmation for consequential actions and captures session artifacts", async () => {
+    const seq = { value: 1 };
+    const stored = new Map<string, Uint8Array>();
+    const artifacts = {
+      stored,
+      async ingest(request: {
+        readonly artifactId: { toString(): string } | string;
+        readonly declaredByteLength: number;
+        readonly content: AsyncIterable<Uint8Array>;
+        readonly sensitivity: string;
+      }) {
+        const chunks: Uint8Array[] = [];
+        for await (const chunk of request.content) {
+          chunks.push(chunk);
+        }
+        const bytes = new Uint8Array(chunks.reduce((n, c) => n + c.byteLength, 0));
+        let offset = 0;
+        for (const chunk of chunks) {
+          bytes.set(chunk, offset);
+          offset += chunk.byteLength;
+        }
+        stored.set(String(request.artifactId), bytes);
+        return {
+          ok: true as const,
+          value: {
+            record: {
+              artifactId: request.artifactId,
+              sensitivity: request.sensitivity,
+              byteLength: bytes.byteLength,
+            },
+            deduplicated: false,
+            cancelledAfterCommit: false,
+          },
+        };
+      },
+      get() {
+        return { ok: true as const, value: null };
+      },
+      findByDigest() {
+        return { ok: true as const, value: [] };
+      },
+      listByInvocation() {
+        return { ok: true as const, value: [] };
+      },
+      async readRange() {
+        return {
+          ok: false as const,
+          error: { kind: "artifact" as const, code: "not-found" as const, artifactId: "x" },
+        };
+      },
+      async preview() {
+        return {
+          ok: false as const,
+          error: { kind: "artifact" as const, code: "not-found" as const, artifactId: "x" },
+        };
+      },
+      async sweep() {
+        return {
+          examined: 0,
+          deleted: 0,
+          retained: [],
+          failed: 0,
+          completeness: "complete" as const,
+          effect: "none" as const,
+        };
+      },
+    };
+    const port = new FakeManagedServicePort((message, pushStdout) => {
+      sessionCapableHandler(message, pushStdout, seq);
+    });
+    const supervisor = createSupervisor(port, {
+      confirmationPolicy: "require",
+      artifacts: artifacts as never,
+    });
+    const started = await supervisor.start(startRequest);
+    expect(started.ok).toBe(true);
+    if (!started.ok) {
+      return;
+    }
+    await supervisor.launch(startRequest.serviceId, started.value.generation, {
+      configuration: { program: "/tmp/app.ts" },
+    });
+
+    const unconfirmed = await supervisor.evaluate(
+      startRequest.serviceId,
+      started.value.generation,
+      { expression: "x = 1", stoppedGeneration: 1, context: "repl" },
+    );
+    expect(unconfirmed.ok).toBe(false);
+    if (unconfirmed.ok) {
+      return;
+    }
+    expect(unconfirmed.error.code).toBe("confirmation-required");
+
+    const prepared = supervisor.prepareConfirmation(
+      startRequest.serviceId,
+      started.value.generation,
+      "evaluate-repl",
+      { expression: "x = 1", context: "repl" },
+    );
+    expect(prepared.ok).toBe(true);
+    if (!prepared.ok) {
+      return;
+    }
+    const confirmed = await supervisor.evaluate(startRequest.serviceId, started.value.generation, {
+      expression: "x = 1",
+      stoppedGeneration: 1,
+      context: "repl",
+      confirmation: { status: "accepted", confirmationId: prepared.value.confirmationId },
+    });
+    expect(confirmed.ok).toBe(true);
+
+    const refused = await supervisor.terminate(startRequest.serviceId, started.value.generation, {
+      confirmation: { status: "refused", confirmationId: "nope" },
+    });
+    expect(refused).toEqual({
+      ok: false,
+      error: { kind: "debug-adapter", code: "confirmation-refused" },
+    });
+
+    // Emit a sensitive output then capture.
+    const launchAgainDenied = await supervisor.launch(
+      startRequest.serviceId,
+      started.value.generation,
+      { configuration: { program: "/tmp/app.ts" } },
+    );
+    expect(launchAgainDenied.ok).toBe(false);
+
+    const capture = await supervisor.captureSessionArtifact(
+      startRequest.serviceId,
+      started.value.generation,
+    );
+    expect(capture.ok).toBe(true);
+    if (!capture.ok) {
+      return;
+    }
+    expect(capture.value.committed).toBe(true);
+    expect(capture.value.mediaType).toBe("application/json");
+    const body = new TextDecoder().decode(stored.get(String(capture.value.artifactId)));
+    expect(body).toContain('"kind":"debug-session-artifact"');
+    expect(body).not.toContain("hunter2");
+  });
+
+  test("fault paths: cancel mid-request and missing artifact store", async () => {
+    const seq = { value: 1 };
+    const port = new FakeManagedServicePort((message, pushStdout) => {
+      sessionCapableHandler(message, pushStdout, seq);
+    });
+    const supervisor = createSupervisor(port);
+    const started = await supervisor.start(startRequest);
+    expect(started.ok).toBe(true);
+    if (!started.ok) {
+      return;
+    }
+
+    const missingArtifacts = await supervisor.captureSessionArtifact(
+      startRequest.serviceId,
+      started.value.generation,
+    );
+    expect(missingArtifacts).toEqual({
+      ok: false,
+      error: { kind: "debug-adapter", code: "artifact-unavailable" },
+    });
+
+    const controller = new AbortController();
+    controller.abort();
+    const cancelled = await supervisor.request(
+      startRequest.serviceId,
+      started.value.generation,
+      "threads",
+      {},
+      controller.signal,
+    );
+    expect(cancelled).toEqual({
+      ok: false,
+      error: { kind: "debug-adapter", code: "cancelled" },
     });
   });
 });
