@@ -1064,6 +1064,37 @@ export {
   parseLanguageServerInitializeResult,
   validateLanguageServerStartRequest,
 } from "./language-server.ts";
+export type {
+  LanguageServerChangeDocumentRequest,
+  LanguageServerCloseDocumentRequest,
+  LanguageServerContentChange,
+  LanguageServerOpenDocument,
+  LanguageServerOpenDocumentRequest,
+  LanguageServerRegisteredCapability,
+  LanguageServerSaveDocumentRequest,
+  LanguageServerSyncError,
+  LanguageServerSyncValidationReason,
+  LanguageServerWorkspaceFolder,
+  LanguageServerWorkspaceFoldersChange,
+} from "./language-server-sync.ts";
+export {
+  applyContentChanges,
+  MAX_LANGUAGE_SERVER_CONTENT_CHANGES,
+  MAX_LANGUAGE_SERVER_DOCUMENT_BYTES,
+  MAX_LANGUAGE_SERVER_DOCUMENT_URI_LENGTH,
+  MAX_LANGUAGE_SERVER_LANGUAGE_ID_LENGTH,
+  MAX_LANGUAGE_SERVER_OPEN_DOCUMENTS,
+  MAX_LANGUAGE_SERVER_REGISTERED_CAPABILITIES,
+  MAX_LANGUAGE_SERVER_WORKSPACE_FOLDERS,
+  mergeWorkspaceFolders,
+  parseRegisterCapabilityParams,
+  parseUnregisterCapabilityParams,
+  validateChangeDocumentRequest,
+  validateDocumentUri,
+  validateOpenDocumentRequest,
+  validateWorkspaceFolder,
+  validateWorkspaceFoldersChange,
+} from "./language-server-sync.ts";
 export {
   MAX_EVENT_BYTES,
   MAX_IDENTIFIER_LENGTH,
