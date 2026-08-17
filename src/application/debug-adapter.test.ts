@@ -402,6 +402,37 @@ function sessionCapableHandler(
     adapterSeq.value += 1;
     return;
   }
+  if (message.command === "terminate") {
+    reply({
+      seq: adapterSeq.value,
+      type: "response",
+      request_seq: message.seq,
+      success: true,
+      command: "terminate",
+      body: {},
+    });
+    adapterSeq.value += 1;
+    reply({
+      seq: adapterSeq.value,
+      type: "event",
+      event: "terminated",
+      body: {},
+    });
+    adapterSeq.value += 1;
+    return;
+  }
+  if (message.command === "cancel") {
+    reply({
+      seq: adapterSeq.value,
+      type: "response",
+      request_seq: message.seq,
+      success: true,
+      command: "cancel",
+      body: {},
+    });
+    adapterSeq.value += 1;
+    return;
+  }
   reply({
     seq: adapterSeq.value,
     type: "response",
@@ -844,6 +875,135 @@ describe("createDebugAdapterSupervisor", () => {
     expect(stale).toEqual({
       ok: false,
       error: { kind: "debug-adapter", code: "stale-stopped-generation" },
+    });
+  });
+
+  test("terminates the target, cancels requests, and cleans up disconnect", async () => {
+    const seq = { value: 1 };
+    const port = new FakeManagedServicePort((message, pushStdout) => {
+      sessionCapableHandler(message, pushStdout, seq);
+    });
+    const supervisor = createDebugAdapterSupervisor(port);
+    const started = await supervisor.start(startRequest);
+    expect(started.ok).toBe(true);
+    if (!started.ok) {
+      return;
+    }
+
+    const launched = await supervisor.launch(startRequest.serviceId, started.value.generation, {
+      configuration: { program: "/tmp/app.ts" },
+    });
+    expect(launched.ok).toBe(true);
+    if (!launched.ok) {
+      return;
+    }
+
+    const cancelled = await supervisor.cancel(startRequest.serviceId, started.value.generation, {
+      requestId: 1,
+    });
+    expect(cancelled.ok).toBe(true);
+
+    const invalidCancel = await supervisor.cancel(
+      startRequest.serviceId,
+      started.value.generation,
+      {},
+    );
+    expect(invalidCancel).toEqual({
+      ok: false,
+      error: { kind: "debug-adapter", code: "invalid-request", reason: "invalid-cancel" },
+    });
+
+    const terminated = await supervisor.terminate(
+      startRequest.serviceId,
+      started.value.generation,
+      {},
+    );
+    expect(terminated.ok).toBe(true);
+    if (!terminated.ok) {
+      return;
+    }
+    expect(terminated.value.session.targetState).toBe("exited");
+    expect(terminated.value.session.targetExit).toEqual({
+      kind: "terminated",
+      exitCode: null,
+    });
+
+    const afterExit = await supervisor.threads(startRequest.serviceId, started.value.generation);
+    expect(afterExit).toEqual({
+      ok: false,
+      error: { kind: "debug-adapter", code: "target-exited" },
+    });
+
+    const disconnected = await supervisor.disconnect(
+      startRequest.serviceId,
+      started.value.generation,
+      { terminateDebuggee: true },
+    );
+    expect(disconnected.ok).toBe(true);
+    if (!disconnected.ok) {
+      return;
+    }
+    expect(disconnected.value.state).toBe("stopped");
+    expect(disconnected.value.session.lastDisconnect).toEqual({
+      restart: false,
+      terminateDebuggee: true,
+      adapterAcknowledged: true,
+      processStopped: true,
+      detachUncertain: false,
+    });
+
+    const again = await supervisor.disconnect(startRequest.serviceId, started.value.generation);
+    expect(again.ok).toBe(true);
+    if (!again.ok) {
+      return;
+    }
+    expect(again.value.state).toBe("stopped");
+  });
+
+  test("marks detach uncertain when disconnect is not acknowledged", async () => {
+    const seq = { value: 1 };
+    const port = new FakeManagedServicePort((message, pushStdout) => {
+      if (message.type === "request" && message.command === "disconnect") {
+        // Swallow disconnect — no response — so detach cannot be confirmed.
+        return;
+      }
+      sessionCapableHandler(message, pushStdout, seq);
+    });
+    const supervisor = createDebugAdapterSupervisor(port);
+    const started = await supervisor.start({
+      ...startRequest,
+      limits: {
+        initializeTimeoutMs: 2_000,
+        disconnectTimeoutMs: 50,
+        maxRestarts: 0,
+      },
+    });
+    expect(started.ok).toBe(true);
+    if (!started.ok) {
+      return;
+    }
+
+    const launched = await supervisor.launch(startRequest.serviceId, started.value.generation, {
+      configuration: { program: "/tmp/app.ts" },
+    });
+    expect(launched.ok).toBe(true);
+
+    const detached = await supervisor.disconnect(startRequest.serviceId, started.value.generation, {
+      terminateDebuggee: false,
+    });
+    expect(detached.ok).toBe(false);
+    if (detached.ok) {
+      return;
+    }
+    expect(detached.error).toEqual({ kind: "debug-adapter", code: "detach-uncertain" });
+    const snapshot = supervisor.snapshot(startRequest.serviceId);
+    expect(snapshot?.state).toBe("stopped");
+    expect(snapshot?.session.lastDisconnect).toEqual({
+      restart: false,
+      terminateDebuggee: false,
+      adapterAcknowledged: false,
+      processStopped: true,
+      detachUncertain: true,
     });
   });
 });
