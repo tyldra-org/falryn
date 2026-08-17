@@ -224,6 +224,11 @@ export type {
 export { createTurnEventJournal } from "./turn-event-journal.ts";
 export type { VirtualResourceReader } from "./virtual-resource-read.ts";
 export { createVirtualResourceReader } from "./virtual-resource-read.ts";
+export type {
+  WorkspaceIndexBuilder,
+  WorkspaceIndexBuilderOptions,
+} from "./workspace-index-build.ts";
+export { createWorkspaceIndexBuilder } from "./workspace-index-build.ts";
 export type { WorkspaceListing } from "./workspace-listing.ts";
 export { createWorkspaceListing } from "./workspace-listing.ts";
 export type { WorkspaceMutator, WorkspaceMutatorOptions } from "./workspace-mutate.ts";
