@@ -1,13 +1,18 @@
 /**
- * Debug-adapter supervisor (#96–#99).
+ * Debug-adapter supervisor (#96–#100).
  *
  * Starts a managed process, speaks DAP over its stdio pipes, completes
  * initialize + initialized, then owns launch/attach, breakpoints, threads,
  * stacks, scopes, variables, evaluation, output projections, terminate,
- * cancel, and disconnect/process cleanup. Artifact capture remains #100.
+ * cancel, disconnect/process cleanup, focused confirmation for consequential
+ * actions, and bounded session artifact capture.
  */
 
 import {
+  type ArtifactStorePort,
+  buildDebugConfirmationRequest,
+  buildDebugSessionArtifactDocument,
+  bytesAsChunks,
   createDapFrameDecoder,
   type DapMessage,
   type DapResponse,
@@ -22,6 +27,9 @@ import {
   type DebugAdapterState,
   type DebugAttachRequest,
   type DebugCancelRequest,
+  type DebugConfirmation,
+  type DebugConfirmationKind,
+  type DebugConfirmationRequest,
   type DebugDisconnectOutcome,
   type DebugDisconnectRequest,
   type DebugEvaluateRequest,
@@ -29,6 +37,7 @@ import {
   type DebugLaunchRequest,
   type DebugOutputEvent,
   type DebugScope,
+  type DebugSessionArtifactRef,
   type DebugSessionSnapshot,
   type DebugSetBreakpointsRequest,
   type DebugSetBreakpointsResult,
@@ -39,9 +48,11 @@ import {
   type DebugThread,
   type DebugVariableProjection,
   debugAdapterLimits,
+  debugSessionArtifactId,
   duration,
   emptyDebugSessionSnapshot,
   encodeDapFrame,
+  encodeDebugSessionArtifact,
   MAX_DEBUG_BREAKPOINT_SOURCES,
   MAX_DEBUG_OUTPUT_EVENTS,
   type ManagedServiceError,
@@ -61,6 +72,7 @@ import {
   projectEvaluateForModel,
   projectOutputForModel,
   projectVariableForModel,
+  resolveDebugConfirmation,
   type ServiceGeneration,
   validateCancelRequest,
   validateDebugAdapterStartRequest,
@@ -74,22 +86,43 @@ import { err, ok, type Result } from "../domain/result.ts";
 
 export type DebugAdapterListener = (event: DebugAdapterEvent) => void;
 
+export type DebugAdapterSupervisorOptions = {
+  readonly confirmationPolicy?: "require" | "auto-allow" | undefined;
+  readonly artifacts?: ArtifactStorePort | null | undefined;
+};
+
+type DebugConfirmationOption = {
+  readonly confirmation?: DebugConfirmation | undefined;
+};
+
 export type DebugAdapterSupervisor = {
   start(
     request: DebugAdapterStartRequest,
     signal?: AbortSignal,
   ): Promise<Result<DebugAdapterSnapshot, DebugAdapterError>>;
+  prepareConfirmation(
+    serviceId: ManagedServiceId,
+    generation: ServiceGeneration,
+    kind: DebugConfirmationKind,
+    normalizedInput: Readonly<Record<string, unknown>>,
+  ): Result<DebugConfirmationRequest, DebugAdapterError>;
+  captureSessionArtifact(
+    serviceId: ManagedServiceId,
+    generation: ServiceGeneration,
+    signal?: AbortSignal,
+  ): Promise<Result<DebugSessionArtifactRef, DebugAdapterError>>;
   disconnect(
     serviceId: ManagedServiceId,
     generation: ServiceGeneration,
-    options?: DebugDisconnectRequest & {
-      readonly signal?: AbortSignal | undefined;
-    },
+    options?: DebugDisconnectRequest &
+      DebugConfirmationOption & {
+        readonly signal?: AbortSignal | undefined;
+      },
   ): Promise<Result<DebugAdapterSnapshot, DebugAdapterError>>;
   terminate(
     serviceId: ManagedServiceId,
     generation: ServiceGeneration,
-    request?: DebugTerminateRequest,
+    request?: DebugTerminateRequest & DebugConfirmationOption,
     signal?: AbortSignal,
   ): Promise<Result<DebugAdapterSnapshot, DebugAdapterError>>;
   cancel(
@@ -158,7 +191,7 @@ export type DebugAdapterSupervisor = {
   evaluate(
     serviceId: ManagedServiceId,
     generation: ServiceGeneration,
-    request: DebugEvaluateRequest,
+    request: DebugEvaluateRequest & DebugConfirmationOption,
     signal?: AbortSignal,
   ): Promise<Result<DebugEvaluateResult, DebugAdapterError>>;
   request(
@@ -198,6 +231,7 @@ type LiveAdapter = {
     lastDisconnect: DebugDisconnectOutcome | null;
     nextStoppedGeneration: number;
     nextBreakpointRevision: number;
+    nextArtifactSequence: number;
   };
   readonly decoder: ReturnType<typeof createDapFrameDecoder>;
   readonly listeners: Set<DebugAdapterListener>;
@@ -266,8 +300,11 @@ function sessionSnapshotOf(adapter: LiveAdapter): DebugSessionSnapshot {
 
 export function createDebugAdapterSupervisor(
   managedServices: ManagedServicePort,
+  options: DebugAdapterSupervisorOptions = {},
 ): DebugAdapterSupervisor {
   const adapters = new Map<ManagedServiceId, LiveAdapter>();
+  const confirmationPolicy = options.confirmationPolicy ?? "require";
+  const artifacts = options.artifacts ?? null;
 
   type DebugAdapterEventDetail = {
     [Kind in DebugAdapterEvent["kind"]]: Omit<
@@ -353,6 +390,23 @@ export function createDebugAdapterSupervisor(
     adapter.session.lastDisconnect = empty.lastDisconnect;
     adapter.session.nextStoppedGeneration = 1;
     adapter.session.nextBreakpointRevision = 1;
+    adapter.session.nextArtifactSequence = 1;
+  }
+
+  function requireConfirmation(
+    kind: DebugConfirmationKind,
+    normalizedInput: Readonly<Record<string, unknown>>,
+    confirmation: DebugConfirmation | undefined,
+  ): Result<void, DebugAdapterError> {
+    if (confirmationPolicy === "auto-allow") {
+      return ok(undefined);
+    }
+    const request = buildDebugConfirmationRequest(kind, normalizedInput);
+    return resolveDebugConfirmation({
+      request,
+      current: request,
+      confirmation,
+    });
   }
 
   function cancelPending(
@@ -720,6 +774,7 @@ export function createDebugAdapterSupervisor(
           lastDisconnect: null,
           nextStoppedGeneration: 1,
           nextBreakpointRevision: 1,
+          nextArtifactSequence: 1,
         },
         decoder: createDapFrameDecoder(limitsResult.value.maxFrameBytes),
         listeners: new Set(),
@@ -784,6 +839,66 @@ export function createDebugAdapterSupervisor(
       return ok(snapshotOf(adapter));
     },
 
+    prepareConfirmation(serviceId, generation, kind, normalizedInput) {
+      const ready = requireReady(serviceId, generation);
+      if (!ready.ok) {
+        return ready;
+      }
+      return ok(buildDebugConfirmationRequest(kind, normalizedInput));
+    },
+
+    async captureSessionArtifact(serviceId, generation, signal) {
+      const ready = requireReady(serviceId, generation);
+      if (!ready.ok) {
+        return ready;
+      }
+      if (artifacts === null) {
+        return err({ kind: "debug-adapter", code: "artifact-unavailable" });
+      }
+      const adapter = ready.value;
+      const sequence = adapter.session.nextArtifactSequence;
+      adapter.session.nextArtifactSequence += 1;
+      const document = buildDebugSessionArtifactDocument({
+        serviceId: String(adapter.request.serviceId),
+        generation: Number(adapter.generation),
+        adapterState: adapter.state,
+        session: sessionSnapshotOf(adapter),
+        capturedAt: new Date().toISOString(),
+      });
+      const encoded = encodeDebugSessionArtifact(document);
+      if (!encoded.ok) {
+        return encoded;
+      }
+      const id = debugSessionArtifactId(
+        String(adapter.request.serviceId),
+        Number(adapter.generation),
+        sequence,
+      );
+      const ingested = await artifacts.ingest(
+        {
+          artifactId: id,
+          mediaType: "application/json",
+          encoding: "identity",
+          sensitivity: encoded.value.sensitivity,
+          origin: "capture",
+          invocationId: null,
+          declaredByteLength: encoded.value.bytes.byteLength,
+          content: bytesAsChunks(encoded.value.bytes),
+        },
+        signal,
+      );
+      if (!ingested.ok) {
+        return err({ kind: "debug-adapter", code: "artifact-failed" });
+      }
+      return ok({
+        artifactId: id,
+        byteLength: encoded.value.bytes.byteLength,
+        mediaType: "application/json",
+        sensitivity: encoded.value.sensitivity,
+        committed: true,
+      });
+    },
+
     async disconnect(serviceId, generation, options) {
       const adapter = adapters.get(serviceId);
       if (adapter === undefined) {
@@ -812,6 +927,16 @@ export function createDebugAdapterSupervisor(
 
       const restart = options?.restart === true;
       const terminateDebuggee = options?.terminateDebuggee !== false;
+      if (terminateDebuggee) {
+        const confirmed = requireConfirmation(
+          "disconnect-terminate",
+          { restart, terminateDebuggee: true },
+          options?.confirmation,
+        );
+        if (!confirmed.ok) {
+          return confirmed;
+        }
+      }
       const wasCommunicating =
         adapter.state === "ready" ||
         adapter.state === "degraded" ||
@@ -889,6 +1014,14 @@ export function createDebugAdapterSupervisor(
       const invalidTerminate = validateTerminateRequest(request);
       if (invalidTerminate !== null) {
         return err(invalidTerminate);
+      }
+      const confirmed = requireConfirmation(
+        "terminate",
+        { restart: request.restart === true },
+        request.confirmation,
+      );
+      if (!confirmed.ok) {
+        return confirmed;
       }
       const adapter = ready.value;
       if (adapter.session.mode === "none") {
@@ -1232,6 +1365,20 @@ export function createDebugAdapterSupervisor(
       }
       const adapter = stopped.value;
       const context = request.context ?? "watch";
+      if (context === "repl") {
+        const confirmed = requireConfirmation(
+          "evaluate-repl",
+          {
+            expression: request.expression,
+            context,
+            ...(request.frameId === undefined ? {} : { frameId: request.frameId }),
+          },
+          request.confirmation,
+        );
+        if (!confirmed.ok) {
+          return confirmed;
+        }
+      }
       const response = await sendRequest(
         adapter,
         "evaluate",

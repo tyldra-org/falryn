@@ -12,7 +12,9 @@ const BUN = process.execPath;
 
 describe("debug-adapter host integration", () => {
   platformTest("initializes and disconnects a real stdio fixture process", async () => {
-    const supervisor = createDebugAdapterSupervisor(createHostManagedServicePort());
+    const supervisor = createDebugAdapterSupervisor(createHostManagedServicePort(), {
+      confirmationPolicy: "auto-allow",
+    });
     const serviceId = managedServiceId.from("dap:fixture");
     const started = await supervisor.start({
       serviceId,
