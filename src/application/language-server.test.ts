@@ -350,4 +350,137 @@ describe("language-server supervisor", () => {
     }
     expect(started.error).toEqual({ kind: "language-server", code: "initialization-failure" });
   });
+
+  test("opens, changes, saves, and closes documents with monotonic versions", async () => {
+    const seen: string[] = [];
+    const port = new FakeManagedServicePort((message, pushStdout) => {
+      compliantLspHandler(message, pushStdout);
+      if ("method" in message) {
+        seen.push(message.method);
+      }
+    });
+    const supervisor = createLanguageServerSupervisor(port);
+    const request = startRequest("lsp:docs");
+    const started = await supervisor.start(request);
+    expect(started.ok).toBe(true);
+    if (!started.ok) {
+      return;
+    }
+    const generation = started.value.generation;
+    const events: LanguageServerEvent[] = [];
+    supervisor.attach(request.serviceId, (event) => events.push(event));
+
+    const opened = await supervisor.openDocument(request.serviceId, generation, {
+      uri: "file:///tmp/demo/a.ts",
+      languageId: "typescript",
+      text: " cons x = 1;\n",
+    });
+    expect(opened.ok).toBe(true);
+    if (!opened.ok) {
+      return;
+    }
+    expect(opened.value.openDocuments).toEqual([
+      { uri: "file:///tmp/demo/a.ts", languageId: "typescript", version: 1 },
+    ]);
+
+    const stale = await supervisor.changeDocument(request.serviceId, generation, {
+      uri: "file:///tmp/demo/a.ts",
+      version: 3,
+      contentChanges: [{ kind: "full", text: "const x = 2;\n" }],
+    });
+    expect(stale).toEqual({
+      ok: false,
+      error: { kind: "language-server", code: "stale-document" },
+    });
+
+    const changed = await supervisor.changeDocument(request.serviceId, generation, {
+      uri: "file:///tmp/demo/a.ts",
+      version: 2,
+      contentChanges: [{ kind: "full", text: "const x = 2;\n" }],
+    });
+    expect(changed.ok).toBe(true);
+    if (!changed.ok) {
+      return;
+    }
+    expect(changed.value.openDocuments[0]?.version).toBe(2);
+
+    const saved = await supervisor.saveDocument(request.serviceId, generation, {
+      uri: "file:///tmp/demo/a.ts",
+    });
+    expect(saved.ok).toBe(true);
+
+    const closed = await supervisor.closeDocument(request.serviceId, generation, {
+      uri: "file:///tmp/demo/a.ts",
+    });
+    expect(closed.ok).toBe(true);
+    if (!closed.ok) {
+      return;
+    }
+    expect(closed.value.openDocuments).toEqual([]);
+    expect(seen).toContain("textDocument/didOpen");
+    expect(seen).toContain("textDocument/didChange");
+    expect(seen).toContain("textDocument/didSave");
+    expect(seen).toContain("textDocument/didClose");
+    expect(events.some((event) => event.kind === "document-opened")).toBe(true);
+    expect(events.some((event) => event.kind === "document-changed")).toBe(true);
+    expect(events.some((event) => event.kind === "document-closed")).toBe(true);
+
+    await supervisor.shutdown(request.serviceId, generation);
+  });
+
+  test("updates workspace folders and accepts dynamic capability registration", async () => {
+    const port = new FakeManagedServicePort((message, pushStdout) => {
+      compliantLspHandler(message, pushStdout);
+      if ("method" in message && "id" in message && message.method === "initialized") {
+        // no-op
+      }
+      if ("method" in message && message.method === "initialized") {
+        pushStdout(
+          encodeJsonRpcFrame({
+            jsonrpc: "2.0",
+            id: 100,
+            method: "client/registerCapability",
+            params: {
+              registrations: [
+                { id: "diag-1", method: "textDocument/diagnostic", registerOptions: null },
+              ],
+            },
+          }),
+        );
+      }
+    });
+    const supervisor = createLanguageServerSupervisor(port);
+    const request = startRequest("lsp:folders");
+    const started = await supervisor.start(request);
+    expect(started.ok).toBe(true);
+    if (!started.ok) {
+      return;
+    }
+
+    // Allow the registerCapability request to be processed.
+    await new Promise<void>((resolve) => setTimeout(resolve, 10));
+    const afterRegister = supervisor.snapshot(request.serviceId);
+    expect(afterRegister?.registeredCapabilities).toEqual([
+      { id: "diag-1", method: "textDocument/diagnostic" },
+    ]);
+
+    const folders = await supervisor.changeWorkspaceFolders(
+      request.serviceId,
+      started.value.generation,
+      {
+        added: [{ uri: "file:///tmp/other", name: "other" }],
+        removed: [],
+      },
+    );
+    expect(folders.ok).toBe(true);
+    if (!folders.ok) {
+      return;
+    }
+    expect(folders.value.workspaceFolders).toEqual([
+      { uri: "file:///tmp/demo", name: "demo" },
+      { uri: "file:///tmp/other", name: "other" },
+    ]);
+
+    await supervisor.shutdown(request.serviceId, started.value.generation);
+  });
 });
