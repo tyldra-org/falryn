@@ -10,6 +10,7 @@
  */
 
 import { z } from "zod";
+import type { DebugConfirmationRequest } from "./debug-adapter-capture.ts";
 import type { DebugSessionSnapshot, DebugStoppedInfo } from "./debug-adapter-session.ts";
 import type { ConfigurationGeneration, ManagedServiceId, ServiceGeneration } from "./identity.ts";
 import { assertNever, err, ok, type Result } from "./result.ts";
@@ -52,6 +53,11 @@ export const DEBUG_ADAPTER_FAILURE_REASONS = [
   "target-exited",
   "detach-uncertain",
   "already-disconnecting",
+  "confirmation-refused",
+  "confirmation-mismatch",
+  "confirmation-stale",
+  "artifact-unavailable",
+  "artifact-failed",
 ] as const;
 export type DebugAdapterFailureReason = (typeof DEBUG_ADAPTER_FAILURE_REASONS)[number];
 
@@ -185,6 +191,11 @@ export type DebugAdapterSnapshot = {
 export type DebugAdapterError =
   | { readonly kind: "debug-adapter"; readonly code: DebugAdapterFailureReason }
   | DebugAdapterLimitsError
+  | {
+      readonly kind: "debug-adapter";
+      readonly code: "confirmation-required";
+      readonly confirmation: DebugConfirmationRequest;
+    }
   | {
       readonly kind: "debug-adapter";
       readonly code: "invalid-request";
@@ -571,6 +582,16 @@ export function describeDebugAdapterFailure(reason: DebugAdapterFailureReason): 
       return "debug adapter detach could not be confirmed";
     case "already-disconnecting":
       return "debug adapter is already disconnecting";
+    case "confirmation-refused":
+      return "debug adapter confirmation was refused";
+    case "confirmation-mismatch":
+      return "debug adapter confirmation does not match the request";
+    case "confirmation-stale":
+      return "debug adapter confirmation is stale";
+    case "artifact-unavailable":
+      return "debug adapter artifact store is unavailable";
+    case "artifact-failed":
+      return "debug adapter artifact capture failed";
     default:
       return assertNever(reason, "unhandled debug adapter failure");
   }

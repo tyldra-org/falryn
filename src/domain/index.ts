@@ -544,6 +544,25 @@ export {
   validateDebugAdapterStartRequest,
 } from "./debug-adapter.ts";
 export type {
+  DebugCaptureError,
+  DebugConfirmation,
+  DebugConfirmationKind,
+  DebugConfirmationRequest,
+  DebugSessionArtifactDocument,
+  DebugSessionArtifactRef,
+} from "./debug-adapter-capture.ts";
+export {
+  buildDebugConfirmationRequest,
+  buildDebugSessionArtifactDocument,
+  bytesAsChunks,
+  DEBUG_CONFIRMATION_KINDS,
+  debugConfirmationFingerprint,
+  debugSessionArtifactId,
+  encodeDebugSessionArtifact,
+  MAX_DEBUG_SESSION_ARTIFACT_BYTES,
+  resolveDebugConfirmation,
+} from "./debug-adapter-capture.ts";
+export type {
   DebugAttachRequest,
   DebugBreakpoint,
   DebugCancelRequest,
