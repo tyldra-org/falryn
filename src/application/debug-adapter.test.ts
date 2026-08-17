@@ -206,11 +206,168 @@ class FakeManagedServicePort implements ManagedServicePort {
   }
 }
 
+function sessionCapableHandler(
+  message: DapMessage,
+  pushStdout: (bytes: Uint8Array) => void,
+  adapterSeq: { value: number },
+): void {
+  const reply = (response: DapMessage): void => {
+    pushStdout(encodeDapFrame(response));
+  };
+  if (message.type === "event") {
+    return;
+  }
+  if (message.type !== "request") {
+    return;
+  }
+  if (message.command === "initialize") {
+    reply({
+      seq: adapterSeq.value,
+      type: "response",
+      request_seq: message.seq,
+      success: true,
+      command: "initialize",
+      body: { supportsConfigurationDoneRequest: true },
+    });
+    adapterSeq.value += 1;
+    return;
+  }
+  if (message.command === "setBreakpoints") {
+    const args = message.arguments as { breakpoints?: { line: number }[] };
+    reply({
+      seq: adapterSeq.value,
+      type: "response",
+      request_seq: message.seq,
+      success: true,
+      command: "setBreakpoints",
+      body: {
+        breakpoints: (args.breakpoints ?? []).map((breakpoint, index) => ({
+          id: index + 1,
+          verified: true,
+          line: breakpoint.line,
+        })),
+      },
+    });
+    adapterSeq.value += 1;
+    return;
+  }
+  if (message.command === "configurationDone") {
+    reply({
+      seq: adapterSeq.value,
+      type: "response",
+      request_seq: message.seq,
+      success: true,
+      command: "configurationDone",
+      body: {},
+    });
+    adapterSeq.value += 1;
+    return;
+  }
+  if (message.command === "launch" || message.command === "attach") {
+    reply({
+      seq: adapterSeq.value,
+      type: "response",
+      request_seq: message.seq,
+      success: true,
+      command: message.command,
+      body: {},
+    });
+    adapterSeq.value += 1;
+    // Simulate a stop after launch/attach.
+    reply({
+      seq: adapterSeq.value,
+      type: "event",
+      event: "stopped",
+      body: { reason: "breakpoint", threadId: 1, allThreadsStopped: true },
+    });
+    adapterSeq.value += 1;
+    return;
+  }
+  if (message.command === "threads") {
+    reply({
+      seq: adapterSeq.value,
+      type: "response",
+      request_seq: message.seq,
+      success: true,
+      command: "threads",
+      body: { threads: [{ id: 1, name: "main" }] },
+    });
+    adapterSeq.value += 1;
+    return;
+  }
+  if (message.command === "stackTrace") {
+    reply({
+      seq: adapterSeq.value,
+      type: "response",
+      request_seq: message.seq,
+      success: true,
+      command: "stackTrace",
+      body: {
+        stackFrames: [
+          {
+            id: 10,
+            name: "entry",
+            line: 4,
+            column: 1,
+            source: { path: "/tmp/app.ts" },
+          },
+        ],
+      },
+    });
+    adapterSeq.value += 1;
+    return;
+  }
+  if (message.command === "continue") {
+    reply({
+      seq: adapterSeq.value,
+      type: "response",
+      request_seq: message.seq,
+      success: true,
+      command: "continue",
+      body: { allThreadsContinued: true },
+    });
+    adapterSeq.value += 1;
+    reply({
+      seq: adapterSeq.value,
+      type: "event",
+      event: "continued",
+      body: { threadId: 1 },
+    });
+    adapterSeq.value += 1;
+    return;
+  }
+  if (message.command === "disconnect") {
+    reply({
+      seq: adapterSeq.value,
+      type: "response",
+      request_seq: message.seq,
+      success: true,
+      command: "disconnect",
+      body: {},
+    });
+    adapterSeq.value += 1;
+    return;
+  }
+  reply({
+    seq: adapterSeq.value,
+    type: "response",
+    request_seq: message.seq,
+    success: false,
+    command: message.command,
+    message: "not supported",
+  });
+  adapterSeq.value += 1;
+}
+
 function compliantDapHandler(message: DapMessage, pushStdout: (bytes: Uint8Array) => void): void {
+  const seq = { value: 1 };
+  if (message.type === "event") {
+    return;
+  }
   if (message.type === "request" && message.command === "initialize") {
     pushStdout(
       encodeDapFrame({
-        seq: 1,
+        seq: seq.value,
         type: "response",
         request_seq: message.seq,
         success: true,
@@ -220,13 +377,10 @@ function compliantDapHandler(message: DapMessage, pushStdout: (bytes: Uint8Array
     );
     return;
   }
-  if (message.type === "event" && message.event === "initialized") {
-    return;
-  }
   if (message.type === "request" && message.command === "disconnect") {
     pushStdout(
       encodeDapFrame({
-        seq: 2,
+        seq: seq.value,
         type: "response",
         request_seq: message.seq,
         success: true,
@@ -239,7 +393,7 @@ function compliantDapHandler(message: DapMessage, pushStdout: (bytes: Uint8Array
   if (message.type === "request") {
     pushStdout(
       encodeDapFrame({
-        seq: 99,
+        seq: seq.value,
         type: "response",
         request_seq: message.seq,
         success: false,
@@ -418,5 +572,95 @@ describe("createDebugAdapterSupervisor", () => {
       ok: true,
       value: { threads: [{ id: 1, name: "main" }] },
     });
+  });
+
+  test("sets breakpoints, launches, reads stack, and rejects stale stopped generation", async () => {
+    const seq = { value: 1 };
+    const port = new FakeManagedServicePort((message, pushStdout) => {
+      sessionCapableHandler(message, pushStdout, seq);
+    });
+    const supervisor = createDebugAdapterSupervisor(port);
+    const started = await supervisor.start(startRequest);
+    expect(started.ok).toBe(true);
+    if (!started.ok) {
+      return;
+    }
+    expect(started.value.session.mode).toBe("none");
+
+    const breakpoints = await supervisor.setBreakpoints(
+      startRequest.serviceId,
+      started.value.generation,
+      { sourcePath: "/tmp/app.ts", breakpoints: [{ line: 4 }] },
+    );
+    expect(breakpoints.ok).toBe(true);
+    if (!breakpoints.ok) {
+      return;
+    }
+    expect(breakpoints.value.revision).toBe(1);
+    expect(breakpoints.value.breakpoints[0]?.verified).toBe(true);
+
+    const configured = await supervisor.configurationDone(
+      startRequest.serviceId,
+      started.value.generation,
+    );
+    expect(configured.ok).toBe(true);
+
+    const launched = await supervisor.launch(startRequest.serviceId, started.value.generation, {
+      configuration: { program: "/tmp/app.ts" },
+    });
+    expect(launched.ok).toBe(true);
+    if (!launched.ok) {
+      return;
+    }
+    expect(launched.value.session.mode).toBe("launch");
+    expect(launched.value.session.targetState).toBe("stopped");
+    expect(launched.value.session.stopped?.generation).toBe(1);
+
+    const again = await supervisor.launch(startRequest.serviceId, started.value.generation, {
+      configuration: { program: "/tmp/app.ts" },
+    });
+    expect(again.ok).toBe(false);
+    if (again.ok) {
+      return;
+    }
+    expect(again.error).toEqual({ kind: "debug-adapter", code: "already-launched" });
+
+    const threadList = await supervisor.threads(startRequest.serviceId, started.value.generation);
+    expect(threadList).toEqual({
+      ok: true,
+      value: [{ id: 1, name: "main" }],
+    });
+
+    const frames = await supervisor.stackTrace(startRequest.serviceId, started.value.generation, {
+      threadId: 1,
+      stoppedGeneration: 1,
+    });
+    expect(frames.ok).toBe(true);
+    if (!frames.ok) {
+      return;
+    }
+    expect(frames.value[0]?.name).toBe("entry");
+
+    const stale = await supervisor.stackTrace(startRequest.serviceId, started.value.generation, {
+      threadId: 1,
+      stoppedGeneration: 99,
+    });
+    expect(stale.ok).toBe(false);
+    if (stale.ok) {
+      return;
+    }
+    expect(stale.error).toEqual({ kind: "debug-adapter", code: "stale-stopped-generation" });
+
+    const continued = await supervisor.continueExecution(
+      startRequest.serviceId,
+      started.value.generation,
+      { threadId: 1, stoppedGeneration: 1 },
+    );
+    expect(continued.ok).toBe(true);
+    if (!continued.ok) {
+      return;
+    }
+    expect(continued.value.session.targetState).toBe("running");
+    expect(continued.value.session.stopped).toBeNull();
   });
 });
