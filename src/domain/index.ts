@@ -2163,6 +2163,7 @@ export type {
   WorkspaceIndexPort,
   WorkspaceIndexQueryResult,
   WorkspaceIndexRecord,
+  WorkspaceIndexWritePort,
 } from "./workspace-index.ts";
 export {
   compareIndexHits,
@@ -2185,6 +2186,23 @@ export {
   parseWorkspaceIndexQuery,
   recordMatchesQuery,
 } from "./workspace-index.ts";
+export type {
+  WorkspaceIndexBuildError,
+  WorkspaceIndexBuildLimits,
+  WorkspaceIndexBuildReport,
+  WorkspaceIndexBuildRequest,
+  WorkspaceIndexBuildSource,
+} from "./workspace-index-build.ts";
+export {
+  buildIndexGeneration,
+  DEFAULT_INDEX_BUILD_LIMITS,
+  extractIndexRecordsFromText,
+  MAX_INDEX_BUILD_FILE_BYTES,
+  MAX_INDEX_BUILD_FILES,
+  MAX_INDEX_BUILD_RECORDS,
+  validateIndexBuildLimits,
+  WORKSPACE_INDEX_SCHEMA,
+} from "./workspace-index-build.ts";
 export type {
   WalkTruncation,
   WorkspaceEntry,

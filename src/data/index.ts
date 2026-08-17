@@ -135,3 +135,12 @@ export {
 } from "./sqlite-store.ts";
 export type { StorageProbe, StorageProbeOptions } from "./storage-probe.ts";
 export { probeStorage } from "./storage-probe.ts";
+export {
+  WORKSPACE_INDEX_GENERATIONS_TABLE,
+  WORKSPACE_INDEX_MIGRATION_0001,
+  WORKSPACE_INDEX_MIGRATIONS,
+  WORKSPACE_INDEX_RECORDS_TABLE,
+  WORKSPACE_INDEX_SCHEMA_VERSION,
+} from "./workspace-index-schema.ts";
+export type { WorkspaceIndexStore, WorkspaceIndexStoreOptions } from "./workspace-index-store.ts";
+export { openWorkspaceIndexStore } from "./workspace-index-store.ts";
