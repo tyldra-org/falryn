@@ -1,9 +1,10 @@
 /**
- * Debug-adapter supervisor (#96–#97).
+ * Debug-adapter supervisor (#96–#98).
  *
  * Starts a managed process, speaks DAP over its stdio pipes, completes
- * initialize + initialized, then owns launch/attach, breakpoints, threads, and
- * stack frames bound to a stopped generation. Scopes/variables remain #98.
+ * initialize + initialized, then owns launch/attach, breakpoints, threads,
+ * stacks, scopes, variables, evaluation, and bounded output projections.
+ * Artifact capture remains #100.
  */
 
 import {
@@ -20,29 +21,43 @@ import {
   type DebugAdapterStartRequest,
   type DebugAdapterState,
   type DebugAttachRequest,
+  type DebugEvaluateRequest,
+  type DebugEvaluateResult,
   type DebugLaunchRequest,
+  type DebugOutputEvent,
+  type DebugScope,
   type DebugSessionSnapshot,
   type DebugSetBreakpointsRequest,
   type DebugSetBreakpointsResult,
   type DebugStackFrame,
   type DebugStoppedInfo,
   type DebugThread,
+  type DebugVariableProjection,
   debugAdapterLimits,
   duration,
   emptyDebugSessionSnapshot,
   encodeDapFrame,
   MAX_DEBUG_BREAKPOINT_SOURCES,
+  MAX_DEBUG_OUTPUT_EVENTS,
   type ManagedServiceError,
   type ManagedServiceEvent,
   type ManagedServiceId,
   type ManagedServicePort,
   parseBreakpointsResponse,
   parseDebugAdapterInitializeResult,
+  parseEvaluateResponse,
+  parseOutputEventBody,
+  parseScopesResponse,
   parseStackTraceResponse,
   parseStoppedEventBody,
   parseThreadsResponse,
+  parseVariablesResponse,
+  projectEvaluateForModel,
+  projectOutputForModel,
+  projectVariableForModel,
   type ServiceGeneration,
   validateDebugAdapterStartRequest,
+  validateEvaluateRequest,
   validateLaunchOrAttachConfiguration,
   validateSetBreakpointsRequest,
 } from "../domain/index.ts";
@@ -109,6 +124,24 @@ export type DebugAdapterSupervisor = {
     request: { readonly threadId: number; readonly stoppedGeneration: number },
     signal?: AbortSignal,
   ): Promise<Result<DebugAdapterSnapshot, DebugAdapterError>>;
+  scopes(
+    serviceId: ManagedServiceId,
+    generation: ServiceGeneration,
+    request: { readonly frameId: number; readonly stoppedGeneration: number },
+    signal?: AbortSignal,
+  ): Promise<Result<readonly DebugScope[], DebugAdapterError>>;
+  variables(
+    serviceId: ManagedServiceId,
+    generation: ServiceGeneration,
+    request: { readonly variablesReference: number; readonly stoppedGeneration: number },
+    signal?: AbortSignal,
+  ): Promise<Result<readonly DebugVariableProjection[], DebugAdapterError>>;
+  evaluate(
+    serviceId: ManagedServiceId,
+    generation: ServiceGeneration,
+    request: DebugEvaluateRequest,
+    signal?: AbortSignal,
+  ): Promise<Result<DebugEvaluateResult, DebugAdapterError>>;
   request(
     serviceId: ManagedServiceId,
     generation: ServiceGeneration,
@@ -141,6 +174,7 @@ type LiveAdapter = {
     stopped: DebugStoppedInfo | null;
     readonly breakpointRevisions: Map<string, number>;
     threads: DebugThread[];
+    recentOutputs: DebugOutputEvent[];
     nextStoppedGeneration: number;
     nextBreakpointRevision: number;
   };
@@ -203,6 +237,7 @@ function sessionSnapshotOf(adapter: LiveAdapter): DebugSessionSnapshot {
     stopped: adapter.session.stopped,
     breakpointRevisions: revisions,
     threads: [...adapter.session.threads],
+    recentOutputs: [...adapter.session.recentOutputs],
   };
 }
 
@@ -290,8 +325,28 @@ export function createDebugAdapterSupervisor(
     adapter.session.stopped = empty.stopped;
     adapter.session.breakpointRevisions.clear();
     adapter.session.threads = [];
+    adapter.session.recentOutputs = [];
     adapter.session.nextStoppedGeneration = 1;
     adapter.session.nextBreakpointRevision = 1;
+  }
+
+  function requireStopped(
+    adapter: LiveAdapter,
+    stoppedGeneration: number,
+  ): Result<LiveAdapter, DebugAdapterError> {
+    if (adapter.session.mode === "none") {
+      return err({ kind: "debug-adapter", code: "not-launched" });
+    }
+    if (adapter.session.targetState === "exited") {
+      return err({ kind: "debug-adapter", code: "target-exited" });
+    }
+    if (adapter.session.targetState !== "stopped" || adapter.session.stopped === null) {
+      return err({ kind: "debug-adapter", code: "not-ready" });
+    }
+    if (adapter.session.stopped.generation !== stoppedGeneration) {
+      return err({ kind: "debug-adapter", code: "stale-stopped-generation" });
+    }
+    return ok(adapter);
   }
 
   async function sendRequest(
@@ -416,6 +471,21 @@ export function createDebugAdapterSupervisor(
       return;
     }
     if (event === "thread") {
+      emitSession(adapter);
+      return;
+    }
+    if (event === "output") {
+      const parsed = parseOutputEventBody(body);
+      if (!parsed.ok) {
+        return;
+      }
+      adapter.session.recentOutputs.push(projectOutputForModel(parsed.value));
+      if (adapter.session.recentOutputs.length > MAX_DEBUG_OUTPUT_EVENTS) {
+        adapter.session.recentOutputs.splice(
+          0,
+          adapter.session.recentOutputs.length - MAX_DEBUG_OUTPUT_EVENTS,
+        );
+      }
       emitSession(adapter);
     }
   }
@@ -604,6 +674,7 @@ export function createDebugAdapterSupervisor(
           stopped: null,
           breakpointRevisions: new Map(),
           threads: [],
+          recentOutputs: [],
           nextStoppedGeneration: 1,
           nextBreakpointRevision: 1,
         },
@@ -847,19 +918,11 @@ export function createDebugAdapterSupervisor(
       if (!ready.ok) {
         return ready;
       }
-      const adapter = ready.value;
-      if (adapter.session.mode === "none") {
-        return err({ kind: "debug-adapter", code: "not-launched" });
+      const stopped = requireStopped(ready.value, request.stoppedGeneration);
+      if (!stopped.ok) {
+        return stopped;
       }
-      if (adapter.session.targetState === "exited") {
-        return err({ kind: "debug-adapter", code: "target-exited" });
-      }
-      if (adapter.session.targetState !== "stopped" || adapter.session.stopped === null) {
-        return err({ kind: "debug-adapter", code: "not-ready" });
-      }
-      if (adapter.session.stopped.generation !== request.stoppedGeneration) {
-        return err({ kind: "debug-adapter", code: "stale-stopped-generation" });
-      }
+      const adapter = stopped.value;
       if (
         typeof request.threadId !== "number" ||
         !Number.isSafeInteger(request.threadId) ||
@@ -892,16 +955,11 @@ export function createDebugAdapterSupervisor(
       if (!ready.ok) {
         return ready;
       }
-      const adapter = ready.value;
-      if (adapter.session.mode === "none") {
-        return err({ kind: "debug-adapter", code: "not-launched" });
+      const stopped = requireStopped(ready.value, request.stoppedGeneration);
+      if (!stopped.ok) {
+        return stopped;
       }
-      if (adapter.session.stopped === null || adapter.session.targetState !== "stopped") {
-        return err({ kind: "debug-adapter", code: "not-ready" });
-      }
-      if (adapter.session.stopped.generation !== request.stoppedGeneration) {
-        return err({ kind: "debug-adapter", code: "stale-stopped-generation" });
-      }
+      const adapter = stopped.value;
       const response = await sendRequest(
         adapter,
         "continue",
@@ -919,6 +977,115 @@ export function createDebugAdapterSupervisor(
       adapter.session.targetState = "running";
       emitSession(adapter);
       return ok(snapshotOf(adapter));
+    },
+
+    async scopes(serviceId, generation, request, signal) {
+      const ready = requireReady(serviceId, generation);
+      if (!ready.ok) {
+        return ready;
+      }
+      const stopped = requireStopped(ready.value, request.stoppedGeneration);
+      if (!stopped.ok) {
+        return stopped;
+      }
+      const adapter = stopped.value;
+      if (
+        typeof request.frameId !== "number" ||
+        !Number.isSafeInteger(request.frameId) ||
+        request.frameId < 0
+      ) {
+        return err({ kind: "debug-adapter", code: "invalid-request", reason: "invalid-frame" });
+      }
+      const response = await sendRequest(
+        adapter,
+        "scopes",
+        { frameId: request.frameId },
+        adapter.limits.requestTimeoutMs,
+        signal,
+      );
+      if (!response.ok) {
+        return response;
+      }
+      if (!response.value.success) {
+        return err({ kind: "debug-adapter", code: "unsupported" });
+      }
+      return parseScopesResponse(response.value.body ?? {});
+    },
+
+    async variables(serviceId, generation, request, signal) {
+      const ready = requireReady(serviceId, generation);
+      if (!ready.ok) {
+        return ready;
+      }
+      const stopped = requireStopped(ready.value, request.stoppedGeneration);
+      if (!stopped.ok) {
+        return stopped;
+      }
+      const adapter = stopped.value;
+      if (
+        typeof request.variablesReference !== "number" ||
+        !Number.isSafeInteger(request.variablesReference) ||
+        request.variablesReference < 1
+      ) {
+        return err({ kind: "debug-adapter", code: "invalid-request", reason: "invalid-variable" });
+      }
+      const response = await sendRequest(
+        adapter,
+        "variables",
+        { variablesReference: request.variablesReference },
+        adapter.limits.requestTimeoutMs,
+        signal,
+      );
+      if (!response.ok) {
+        return response;
+      }
+      if (!response.value.success) {
+        return err({ kind: "debug-adapter", code: "unsupported" });
+      }
+      const parsed = parseVariablesResponse(response.value.body ?? {});
+      if (!parsed.ok) {
+        return parsed;
+      }
+      return ok(parsed.value.map(projectVariableForModel));
+    },
+
+    async evaluate(serviceId, generation, request, signal) {
+      const ready = requireReady(serviceId, generation);
+      if (!ready.ok) {
+        return ready;
+      }
+      const invalidEval = validateEvaluateRequest(request);
+      if (invalidEval !== null) {
+        return err(invalidEval);
+      }
+      const stopped = requireStopped(ready.value, request.stoppedGeneration);
+      if (!stopped.ok) {
+        return stopped;
+      }
+      const adapter = stopped.value;
+      const context = request.context ?? "watch";
+      const response = await sendRequest(
+        adapter,
+        "evaluate",
+        {
+          expression: request.expression,
+          context,
+          ...(request.frameId === undefined ? {} : { frameId: request.frameId }),
+        },
+        adapter.limits.requestTimeoutMs,
+        signal,
+      );
+      if (!response.ok) {
+        return response;
+      }
+      if (!response.value.success) {
+        return err({ kind: "debug-adapter", code: "unsupported" });
+      }
+      const parsed = parseEvaluateResponse(response.value.body ?? {}, context);
+      if (!parsed.ok) {
+        return parsed;
+      }
+      return ok(projectEvaluateForModel(parsed.value));
     },
 
     async request(serviceId, generation, command, args, signal) {
