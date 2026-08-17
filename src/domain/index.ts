@@ -544,6 +544,33 @@ export {
   validateDebugAdapterStartRequest,
 } from "./debug-adapter.ts";
 export type {
+  DebugAttachRequest,
+  DebugBreakpoint,
+  DebugLaunchRequest,
+  DebugSessionMode,
+  DebugSessionSnapshot,
+  DebugSetBreakpointsRequest,
+  DebugSetBreakpointsResult,
+  DebugSourceBreakpoint,
+  DebugStackFrame,
+  DebugStoppedInfo,
+  DebugTargetState,
+  DebugThread,
+} from "./debug-adapter-session.ts";
+export {
+  emptyDebugSessionSnapshot,
+  MAX_DEBUG_BREAKPOINT_SOURCES,
+  MAX_DEBUG_BREAKPOINTS_PER_SOURCE,
+  MAX_DEBUG_STACK_FRAMES,
+  MAX_DEBUG_THREADS,
+  parseBreakpointsResponse,
+  parseStackTraceResponse,
+  parseStoppedEventBody,
+  parseThreadsResponse,
+  validateLaunchOrAttachConfiguration,
+  validateSetBreakpointsRequest,
+} from "./debug-adapter-session.ts";
+export type {
   DiagnosticEvent,
   DiagnosticLevel,
   DiagnosticSubsystem,

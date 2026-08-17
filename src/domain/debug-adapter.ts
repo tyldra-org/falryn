@@ -3,11 +3,12 @@
  *
  * Falryn owns adapter identity, the lifecycle state machine, initialize and
  * disconnect results, and Content-Length DAP framing. Process handles stay
- * behind ManagedServicePort. Launch/attach/breakpoints remain #97; scopes and
+ * behind ManagedServicePort. Launch/attach/breakpoints are #97; scopes and
  * variables remain #98; artifact capture remains #100.
  */
 
 import { z } from "zod";
+import type { DebugSessionSnapshot, DebugStoppedInfo } from "./debug-adapter-session.ts";
 import type { ConfigurationGeneration, ManagedServiceId, ServiceGeneration } from "./identity.ts";
 import { assertNever, err, ok, type Result } from "./result.ts";
 
@@ -43,6 +44,10 @@ export const DEBUG_ADAPTER_FAILURE_REASONS = [
   "stale-generation",
   "unsupported",
   "not-ready",
+  "not-launched",
+  "already-launched",
+  "stale-stopped-generation",
+  "target-exited",
 ] as const;
 export type DebugAdapterFailureReason = (typeof DEBUG_ADAPTER_FAILURE_REASONS)[number];
 
@@ -170,6 +175,7 @@ export type DebugAdapterSnapshot = {
   readonly restartCount: number;
   readonly capabilities: DebugAdapterCapabilities | null;
   readonly failureReason: DebugAdapterFailureReason | null;
+  readonly session: DebugSessionSnapshot;
 };
 
 export type DebugAdapterError =
@@ -184,7 +190,14 @@ export type DebugAdapterError =
         | "invalid-executable"
         | "invalid-initialize"
         | "invalid-command"
-        | "invalid-capabilities";
+        | "invalid-capabilities"
+        | "invalid-source"
+        | "invalid-breakpoint"
+        | "too-many-breakpoints"
+        | "invalid-configuration"
+        | "invalid-thread"
+        | "invalid-frame"
+        | "invalid-stack";
     }
   | {
       readonly kind: "debug-adapter";
@@ -227,6 +240,14 @@ export type DebugAdapterEvent =
       readonly kind: "dap-event";
       readonly event: string;
       readonly body: unknown;
+    })
+  | (DebugAdapterEventBase & {
+      readonly kind: "session";
+      readonly session: DebugSessionSnapshot;
+    })
+  | (DebugAdapterEventBase & {
+      readonly kind: "target-stopped";
+      readonly stopped: DebugStoppedInfo;
     })
   | (DebugAdapterEventBase & { readonly kind: "stopped" });
 
@@ -530,6 +551,14 @@ export function describeDebugAdapterFailure(reason: DebugAdapterFailureReason): 
       return "debug adapter command is unsupported";
     case "not-ready":
       return "debug adapter is not ready";
+    case "not-launched":
+      return "debug target has not been launched or attached";
+    case "already-launched":
+      return "debug target is already launched or attached";
+    case "stale-stopped-generation":
+      return "stopped generation is stale";
+    case "target-exited":
+      return "debug target has exited";
     default:
       return assertNever(reason, "unhandled debug adapter failure");
   }
