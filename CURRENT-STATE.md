@@ -3487,10 +3487,24 @@ The language-server feature-request slice from
 - `src/application/language-server.ts` — `hover`, `definition`, `references`,
   `documentSymbols`, `completion`, and `diagnostics` over open documents;
   method-not-found maps to `unsupported`; diagnostics notifications are stored
-  and emitted. Code-action/rename/format edits remain #92; indexes remain #93.
+  and emitted. Indexes remain #93.
 
 Validated by `src/domain/language-server-features.test.ts` and the feature
 cases in `src/application/language-server.test.ts` under `bun run check`.
+
+The language-server edits-as-patches slice from
+[#92](https://github.com/tyldra-org/falryn/issues/92) extends that supervisor:
+
+- `src/domain/language-server-edits.ts` — WorkspaceEdit/TextEdit parsing,
+  format/rename/codeAction request validation, URI→workspace path mapping, and
+  conversion into `ParsedPatchPlan` targets with stale-version and overlap
+  rejection; code-action commands are deferred;
+- `src/application/language-server.ts` — `formatDocument`, `rename`, and
+  `codeActions` request the matching LSP methods and return patch plans without
+  applying them or executing commands. Indexes remain #93.
+
+Validated by `src/domain/language-server-edits.test.ts` and the edit cases in
+`src/application/language-server.test.ts` under `bun run check`.
 
 The compact document reader slice from
 [#493](https://github.com/tyldra-org/falryn/issues/493) projects bounded exact
@@ -3708,10 +3722,11 @@ session/turn producer, or live transcript producer. The remaining gaps are:
 -   provider integration beyond the #34–#39 boundary (live vendor adapters,
   OAuth/write flows, network discovery against real endpoints), or product
   workspace/Git/shell tool adapters;
-- LSP edits-as-patches, indexes, DAP, browser, or computer-use capabilities
+- LSP indexes, DAP, browser, or computer-use capabilities
   (language-server supervision, JSON-RPC framing, initialize/shutdown,
-  document/workspace/capability sync, and diagnostics/hover/definition/
-  references/symbols/completion exist for #89–#91; path bind, list/stat/
+  document/workspace/capability sync, diagnostics/hover/definition/
+  references/symbols/completion, and format/rename/code-action → patch plans
+  exist for #89–#92; path bind, list/stat/
   walk, bounded file reads, specialized readers, exact-source expansion, the
   shared malformed/stale/binary/large-file/symlink/cancellation matrix, glob
   discovery, bounded text search, derived-index query, writes, mutate, patch
@@ -3753,8 +3768,8 @@ Their implementation breakdown lives in GitHub Issues and the Project.
 - **Completed daily coding TUI parent:** [#249 Deliver the daily coding TUI experience](https://github.com/tyldra-org/falryn/issues/249) is closed and Done. Child [#250 Implement typed transcript blocks and safe unknown-block fallback](https://github.com/tyldra-org/falryn/issues/250) closed and Done via [PR #563](https://github.com/tyldra-org/falryn/pull/563) (`cae315b`); companion docs [falryn-docs#150](https://github.com/tyldra-org/falryn-docs/pull/150) (`0b83a7c`). Child [#251 Implement windowed transcript projection and stable scroll anchors](https://github.com/tyldra-org/falryn/issues/251) closed and Done via [PR #565](https://github.com/tyldra-org/falryn/pull/565) (`53acb21`); companion docs [falryn-docs#151](https://github.com/tyldra-org/falryn-docs/pull/151) (`5990e36`). Child [#252 Implement streaming coalescing with input-priority rendering](https://github.com/tyldra-org/falryn/issues/252) closed and Done via [PR #567](https://github.com/tyldra-org/falryn/pull/567) (`50e343f`); companion docs [falryn-docs#152](https://github.com/tyldra-org/falryn-docs/pull/152) (`167dfa3`). Child [#253 Implement grapheme-aware multiline composer, paste, history, and drafts](https://github.com/tyldra-org/falryn/issues/253) closed and Done via [PR #569](https://github.com/tyldra-org/falryn/pull/569) (`2bd965e`); companion docs [falryn-docs#153](https://github.com/tyldra-org/falryn-docs/pull/153) (`2b87ff0`). Child [#278 Implement typed attachments and context-resource mentions](https://github.com/tyldra-org/falryn/issues/278) closed and Done via [PR #571](https://github.com/tyldra-org/falryn/pull/571) (`275904d`); companion docs [falryn-docs#154](https://github.com/tyldra-org/falryn-docs/pull/154) (`a872022`). Child [#279 Implement editable prompt enhancement without implicit submission](https://github.com/tyldra-org/falryn/issues/279) closed and Done via [PR #573](https://github.com/tyldra-org/falryn/pull/573) (`bc933cd`); companion docs [falryn-docs#155](https://github.com/tyldra-org/falryn-docs/pull/155) (`2bf7fae`). Child [#254 Implement tool, process, reasoning, and error block inspection](https://github.com/tyldra-org/falryn/issues/254) closed and Done via [PR #575](https://github.com/tyldra-org/falryn/pull/575) (`ab39a87`); companion docs [falryn-docs#156](https://github.com/tyldra-org/falryn-docs/pull/156) (`a2fae28`). Child [#255 Implement focused confirmations and protected sensitive input](https://github.com/tyldra-org/falryn/issues/255) closed and Done via [PR #577](https://github.com/tyldra-org/falryn/pull/577) (`97a4767`); companion docs [falryn-docs#157](https://github.com/tyldra-org/falryn-docs/pull/157) (`7fca35f`). Child [#256 Implement context, model, session, and resource controls](https://github.com/tyldra-org/falryn/issues/256) closed and Done via [PR #579](https://github.com/tyldra-org/falryn/pull/579) (`c8f5cbc`); companion docs [falryn-docs#158](https://github.com/tyldra-org/falryn-docs/pull/158) (`db40de9`). Parent integrated verification passed on `c8f5cbc` (`bun run check` 3,444 passed, 14 skipped).
 - **Completed late-effect eviction attribution:** [#305 Attribute a late effect whose scope was already evicted](https://github.com/tyldra-org/falryn/issues/305) closed and Done via [PR #581](https://github.com/tyldra-org/falryn/pull/581) (`128ce73`); companion docs [falryn-docs#159](https://github.com/tyldra-org/falryn-docs/pull/159) (`31902e6`).
 - **Open falryn v0.2 Core Coding Agent product issues:** none remaining.
-- **Active language intelligence parent:** [#88 Deliver language intelligence and derived indexing](https://github.com/tyldra-org/falryn/issues/88) is **In Progress**. Child [#89 Implement language-server supervision, transport, initialization, and shutdown](https://github.com/tyldra-org/falryn/issues/89) closed and Done via [PR #584](https://github.com/tyldra-org/falryn/pull/584) (`7ba7ae4`); companion docs [falryn-docs#173](https://github.com/tyldra-org/falryn-docs/pull/173) (`1ef289d`). Child [#90 Synchronize workspaces, documents, versions, and dynamic capabilities](https://github.com/tyldra-org/falryn/issues/90) closed and Done via [PR #586](https://github.com/tyldra-org/falryn/pull/586) (`8bffb76`); companion docs [falryn-docs#174](https://github.com/tyldra-org/falryn-docs/pull/174) (`6993dde`). Child [#91 Implement diagnostics, hover, definition, references, symbols, and completion](https://github.com/tyldra-org/falryn/issues/91) is verified in tree on this branch pending merge.
-- **Next planning action:** continue via [#92 Convert code actions, rename, format, and workspace edits into patches](https://github.com/tyldra-org/falryn/issues/92). GitHub remains authoritative for ordering.
+- **Active language intelligence parent:** [#88 Deliver language intelligence and derived indexing](https://github.com/tyldra-org/falryn/issues/88) is **In Progress**. Child [#89 Implement language-server supervision, transport, initialization, and shutdown](https://github.com/tyldra-org/falryn/issues/89) closed and Done via [PR #584](https://github.com/tyldra-org/falryn/pull/584) (`7ba7ae4`); companion docs [falryn-docs#173](https://github.com/tyldra-org/falryn-docs/pull/173) (`1ef289d`). Child [#90 Synchronize workspaces, documents, versions, and dynamic capabilities](https://github.com/tyldra-org/falryn/issues/90) closed and Done via [PR #586](https://github.com/tyldra-org/falryn/pull/586) (`8bffb76`); companion docs [falryn-docs#174](https://github.com/tyldra-org/falryn-docs/pull/174) (`6993dde`). Child [#91 Implement diagnostics, hover, definition, references, symbols, and completion](https://github.com/tyldra-org/falryn/issues/91) closed and Done via [PR #588](https://github.com/tyldra-org/falryn/pull/588) (`0f7c049`); companion docs [falryn-docs#175](https://github.com/tyldra-org/falryn-docs/pull/175) (`9036319`). Child [#92 Convert code actions, rename, format, and workspace edits into patches](https://github.com/tyldra-org/falryn/issues/92) is verified in tree on this branch pending merge.
+- **Next planning action:** continue via [#93 Build rebuildable SQLite lexical and symbol indexes](https://github.com/tyldra-org/falryn/issues/93). GitHub remains authoritative for ordering.
 
 Which of #1's children are open, and which delivered the behavior recorded
 above, is read from
