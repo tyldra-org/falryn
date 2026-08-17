@@ -5,13 +5,17 @@ import {
   parseOutputEventBody,
   parseScopesResponse,
   parseStackTraceResponse,
+  parseTargetExitEvent,
   parseThreadsResponse,
   parseVariablesResponse,
   projectEvaluateForModel,
   projectVariableForModel,
   REDACTED_VALUE,
+  validateCancelRequest,
+  validateDisconnectRequest,
   validateEvaluateRequest,
   validateSetBreakpointsRequest,
+  validateTerminateRequest,
 } from "./debug-adapter-session.ts";
 
 describe("debug-adapter session contracts", () => {
@@ -157,5 +161,20 @@ describe("debug-adapter session contracts", () => {
       ok: true,
       value: { category: "stdout", sensitive: true, redacted: false },
     });
+  });
+
+  test("parses target exits and validates terminate/cancel/disconnect requests", () => {
+    expect(parseTargetExitEvent("exited", { exitCode: 7 })).toEqual({
+      ok: true,
+      value: { kind: "exited", exitCode: 7 },
+    });
+    expect(parseTargetExitEvent("terminated", {})).toEqual({
+      ok: true,
+      value: { kind: "terminated", exitCode: null },
+    });
+    expect(validateDisconnectRequest({ terminateDebuggee: false, restart: true })).toBeNull();
+    expect(validateTerminateRequest({ restart: false })).toBeNull();
+    expect(validateCancelRequest({ requestId: 3 })).toBeNull();
+    expect(validateCancelRequest({})).toMatchObject({ reason: "invalid-cancel" });
   });
 });

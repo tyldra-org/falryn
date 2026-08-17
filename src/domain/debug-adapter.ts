@@ -4,7 +4,8 @@
  * Falryn owns adapter identity, the lifecycle state machine, initialize and
  * disconnect results, and Content-Length DAP framing. Process handles stay
  * behind ManagedServicePort. Launch/attach/breakpoints are #97; scopes,
- * variables, evaluation, and output projections are #98; artifact capture
+ * variables, evaluation, and output projections are #98; termination,
+ * disconnect, cancellation, and process cleanup are #99; artifact capture
  * remains #100.
  */
 
@@ -49,6 +50,8 @@ export const DEBUG_ADAPTER_FAILURE_REASONS = [
   "already-launched",
   "stale-stopped-generation",
   "target-exited",
+  "detach-uncertain",
+  "already-disconnecting",
 ] as const;
 export type DebugAdapterFailureReason = (typeof DEBUG_ADAPTER_FAILURE_REASONS)[number];
 
@@ -201,7 +204,8 @@ export type DebugAdapterError =
         | "invalid-stack"
         | "invalid-variable"
         | "invalid-expression"
-        | "invalid-evaluate-context";
+        | "invalid-evaluate-context"
+        | "invalid-cancel";
     }
   | {
       readonly kind: "debug-adapter";
@@ -563,6 +567,10 @@ export function describeDebugAdapterFailure(reason: DebugAdapterFailureReason): 
       return "stopped generation is stale";
     case "target-exited":
       return "debug target has exited";
+    case "detach-uncertain":
+      return "debug adapter detach could not be confirmed";
+    case "already-disconnecting":
+      return "debug adapter is already disconnecting";
     default:
       return assertNever(reason, "unhandled debug adapter failure");
   }

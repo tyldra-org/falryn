@@ -3,7 +3,8 @@
  *
  * Launch/attach ownership, versioned breakpoints, threads, and stack frames
  * bound to a stopped generation. Scopes, variables, evaluation, and output
- * projections are #98; artifact capture remains #100.
+ * projections are #98. Termination, disconnect, cancellation, and process
+ * cleanup are #99; artifact capture remains #100.
  */
 
 import { err, ok, type Result } from "./result.ts";
@@ -48,7 +49,8 @@ export type DebugSessionError =
         | "invalid-stack"
         | "invalid-variable"
         | "invalid-expression"
-        | "invalid-evaluate-context";
+        | "invalid-evaluate-context"
+        | "invalid-cancel";
     };
 
 export type DebugSourceBreakpoint = {
@@ -160,6 +162,33 @@ export type DebugOutputEvent = {
   readonly redacted: boolean;
 };
 
+export type DebugTargetExit = {
+  readonly kind: "exited" | "terminated";
+  readonly exitCode: number | null;
+};
+
+export type DebugDisconnectRequest = {
+  readonly restart?: boolean | undefined;
+  readonly terminateDebuggee?: boolean | undefined;
+};
+
+export type DebugDisconnectOutcome = {
+  readonly restart: boolean;
+  readonly terminateDebuggee: boolean;
+  readonly adapterAcknowledged: boolean;
+  readonly processStopped: boolean;
+  readonly detachUncertain: boolean;
+};
+
+export type DebugTerminateRequest = {
+  readonly restart?: boolean | undefined;
+};
+
+export type DebugCancelRequest = {
+  readonly requestId?: number | undefined;
+  readonly progressId?: string | undefined;
+};
+
 export type DebugSessionSnapshot = {
   readonly mode: DebugSessionMode;
   readonly targetState: DebugTargetState;
@@ -168,6 +197,8 @@ export type DebugSessionSnapshot = {
   readonly breakpointRevisions: Readonly<Record<string, number>>;
   readonly threads: readonly DebugThread[];
   readonly recentOutputs: readonly DebugOutputEvent[];
+  readonly targetExit: DebugTargetExit | null;
+  readonly lastDisconnect: DebugDisconnectOutcome | null;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -185,7 +216,8 @@ function invalid(
     | "invalid-stack"
     | "invalid-variable"
     | "invalid-expression"
-    | "invalid-evaluate-context",
+    | "invalid-evaluate-context"
+    | "invalid-cancel",
 ): DebugSessionError {
   return { kind: "debug-adapter", code: "invalid-request", reason };
 }
@@ -571,6 +603,63 @@ export function parseOutputEventBody(body: unknown): Result<DebugOutputEvent, De
   });
 }
 
+export function parseTargetExitEvent(
+  event: "exited" | "terminated",
+  body: unknown,
+): Result<DebugTargetExit, DebugSessionError> {
+  if (event === "terminated") {
+    return ok({ kind: "terminated", exitCode: null });
+  }
+  if (!isRecord(body)) {
+    return err({ kind: "debug-adapter", code: "malformed-response" });
+  }
+  const exitCode =
+    typeof body.exitCode === "number" && Number.isSafeInteger(body.exitCode) ? body.exitCode : null;
+  return ok({ kind: "exited", exitCode });
+}
+
+export function validateDisconnectRequest(
+  request: DebugDisconnectRequest,
+): DebugSessionError | null {
+  if (request.restart !== undefined && typeof request.restart !== "boolean") {
+    return invalid("invalid-configuration");
+  }
+  if (request.terminateDebuggee !== undefined && typeof request.terminateDebuggee !== "boolean") {
+    return invalid("invalid-configuration");
+  }
+  return null;
+}
+
+export function validateTerminateRequest(request: DebugTerminateRequest): DebugSessionError | null {
+  if (request.restart !== undefined && typeof request.restart !== "boolean") {
+    return invalid("invalid-configuration");
+  }
+  return null;
+}
+
+export function validateCancelRequest(request: DebugCancelRequest): DebugSessionError | null {
+  const hasRequestId = request.requestId !== undefined;
+  const hasProgressId = request.progressId !== undefined;
+  if (!hasRequestId && !hasProgressId) {
+    return invalid("invalid-cancel");
+  }
+  if (
+    hasRequestId &&
+    (typeof request.requestId !== "number" ||
+      !Number.isSafeInteger(request.requestId) ||
+      request.requestId < 1)
+  ) {
+    return invalid("invalid-cancel");
+  }
+  if (
+    hasProgressId &&
+    (typeof request.progressId !== "string" || request.progressId.length === 0)
+  ) {
+    return invalid("invalid-cancel");
+  }
+  return null;
+}
+
 export function emptyDebugSessionSnapshot(): DebugSessionSnapshot {
   return {
     mode: "none",
@@ -580,5 +669,7 @@ export function emptyDebugSessionSnapshot(): DebugSessionSnapshot {
     breakpointRevisions: {},
     threads: [],
     recentOutputs: [],
+    targetExit: null,
+    lastDisconnect: null,
   };
 }
