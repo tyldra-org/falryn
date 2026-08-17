@@ -1,9 +1,9 @@
 /**
- * Debug-adapter supervisor (#96).
+ * Debug-adapter supervisor (#96–#97).
  *
  * Starts a managed process, speaks DAP over its stdio pipes, completes
- * initialize + initialized, exposes request/response transport, and disconnects
- * cleanly. Launch/attach/breakpoints remain #97.
+ * initialize + initialized, then owns launch/attach, breakpoints, threads, and
+ * stack frames bound to a stopped generation. Scopes/variables remain #98.
  */
 
 import {
@@ -19,16 +19,32 @@ import {
   type DebugAdapterSnapshot,
   type DebugAdapterStartRequest,
   type DebugAdapterState,
+  type DebugAttachRequest,
+  type DebugLaunchRequest,
+  type DebugSessionSnapshot,
+  type DebugSetBreakpointsRequest,
+  type DebugSetBreakpointsResult,
+  type DebugStackFrame,
+  type DebugStoppedInfo,
+  type DebugThread,
   debugAdapterLimits,
   duration,
+  emptyDebugSessionSnapshot,
   encodeDapFrame,
+  MAX_DEBUG_BREAKPOINT_SOURCES,
   type ManagedServiceError,
   type ManagedServiceEvent,
   type ManagedServiceId,
   type ManagedServicePort,
+  parseBreakpointsResponse,
   parseDebugAdapterInitializeResult,
+  parseStackTraceResponse,
+  parseStoppedEventBody,
+  parseThreadsResponse,
   type ServiceGeneration,
   validateDebugAdapterStartRequest,
+  validateLaunchOrAttachConfiguration,
+  validateSetBreakpointsRequest,
 } from "../domain/index.ts";
 import { err, ok, type Result } from "../domain/result.ts";
 
@@ -47,6 +63,51 @@ export type DebugAdapterSupervisor = {
       readonly terminateDebuggee?: boolean | undefined;
       readonly signal?: AbortSignal | undefined;
     },
+  ): Promise<Result<DebugAdapterSnapshot, DebugAdapterError>>;
+  setBreakpoints(
+    serviceId: ManagedServiceId,
+    generation: ServiceGeneration,
+    request: DebugSetBreakpointsRequest,
+    signal?: AbortSignal,
+  ): Promise<Result<DebugSetBreakpointsResult, DebugAdapterError>>;
+  configurationDone(
+    serviceId: ManagedServiceId,
+    generation: ServiceGeneration,
+    signal?: AbortSignal,
+  ): Promise<Result<DebugAdapterSnapshot, DebugAdapterError>>;
+  launch(
+    serviceId: ManagedServiceId,
+    generation: ServiceGeneration,
+    request: DebugLaunchRequest,
+    signal?: AbortSignal,
+  ): Promise<Result<DebugAdapterSnapshot, DebugAdapterError>>;
+  attachTarget(
+    serviceId: ManagedServiceId,
+    generation: ServiceGeneration,
+    request: DebugAttachRequest,
+    signal?: AbortSignal,
+  ): Promise<Result<DebugAdapterSnapshot, DebugAdapterError>>;
+  threads(
+    serviceId: ManagedServiceId,
+    generation: ServiceGeneration,
+    signal?: AbortSignal,
+  ): Promise<Result<readonly DebugThread[], DebugAdapterError>>;
+  stackTrace(
+    serviceId: ManagedServiceId,
+    generation: ServiceGeneration,
+    request: {
+      readonly threadId: number;
+      readonly stoppedGeneration: number;
+      readonly startFrame?: number | undefined;
+      readonly levels?: number | undefined;
+    },
+    signal?: AbortSignal,
+  ): Promise<Result<readonly DebugStackFrame[], DebugAdapterError>>;
+  continueExecution(
+    serviceId: ManagedServiceId,
+    generation: ServiceGeneration,
+    request: { readonly threadId: number; readonly stoppedGeneration: number },
+    signal?: AbortSignal,
   ): Promise<Result<DebugAdapterSnapshot, DebugAdapterError>>;
   request(
     serviceId: ManagedServiceId,
@@ -73,6 +134,16 @@ type LiveAdapter = {
   failureReason: DebugAdapterFailureReason | null;
   order: number;
   nextSeq: number;
+  session: {
+    mode: DebugSessionSnapshot["mode"];
+    targetState: DebugSessionSnapshot["targetState"];
+    configurationDone: boolean;
+    stopped: DebugStoppedInfo | null;
+    readonly breakpointRevisions: Map<string, number>;
+    threads: DebugThread[];
+    nextStoppedGeneration: number;
+    nextBreakpointRevision: number;
+  };
   readonly decoder: ReturnType<typeof createDapFrameDecoder>;
   readonly listeners: Set<DebugAdapterListener>;
   detachManaged: (() => void) | null;
@@ -120,6 +191,21 @@ function mapManagedStartError(error: ManagedServiceError): DebugAdapterError {
   }
 }
 
+function sessionSnapshotOf(adapter: LiveAdapter): DebugSessionSnapshot {
+  const revisions: Record<string, number> = {};
+  for (const [path, revision] of adapter.session.breakpointRevisions) {
+    revisions[path] = revision;
+  }
+  return {
+    mode: adapter.session.mode,
+    targetState: adapter.session.targetState,
+    configurationDone: adapter.session.configurationDone,
+    stopped: adapter.session.stopped,
+    breakpointRevisions: revisions,
+    threads: [...adapter.session.threads],
+  };
+}
+
 export function createDebugAdapterSupervisor(
   managedServices: ManagedServicePort,
 ): DebugAdapterSupervisor {
@@ -154,6 +240,10 @@ export function createDebugAdapterSupervisor(
     emit(adapter, { kind: "state", state });
   }
 
+  function emitSession(adapter: LiveAdapter): void {
+    emit(adapter, { kind: "session", session: sessionSnapshotOf(adapter) });
+  }
+
   function snapshotOf(adapter: LiveAdapter): DebugAdapterSnapshot {
     return {
       serviceId: adapter.request.serviceId,
@@ -164,6 +254,7 @@ export function createDebugAdapterSupervisor(
       restartCount: adapter.restartCount,
       capabilities: adapter.capabilities,
       failureReason: adapter.failureReason,
+      session: sessionSnapshotOf(adapter),
     };
   }
 
@@ -189,6 +280,18 @@ export function createDebugAdapterSupervisor(
       return err({ kind: "debug-adapter", code: "not-ready" });
     }
     return ok(adapter);
+  }
+
+  function resetSession(adapter: LiveAdapter): void {
+    const empty = emptyDebugSessionSnapshot();
+    adapter.session.mode = empty.mode;
+    adapter.session.targetState = empty.targetState;
+    adapter.session.configurationDone = empty.configurationDone;
+    adapter.session.stopped = empty.stopped;
+    adapter.session.breakpointRevisions.clear();
+    adapter.session.threads = [];
+    adapter.session.nextStoppedGeneration = 1;
+    adapter.session.nextBreakpointRevision = 1;
   }
 
   async function sendRequest(
@@ -284,6 +387,39 @@ export function createDebugAdapterSupervisor(
     return ok(undefined);
   }
 
+  function handleDapEvent(adapter: LiveAdapter, event: string, body: unknown): void {
+    if (event === "stopped") {
+      const generation = adapter.session.nextStoppedGeneration;
+      adapter.session.nextStoppedGeneration += 1;
+      const parsed = parseStoppedEventBody(body, generation);
+      if (!parsed.ok) {
+        return;
+      }
+      adapter.session.stopped = parsed.value;
+      adapter.session.targetState = "stopped";
+      emit(adapter, { kind: "target-stopped", stopped: parsed.value });
+      emitSession(adapter);
+      return;
+    }
+    if (event === "continued") {
+      adapter.session.stopped = null;
+      if (adapter.session.targetState === "stopped") {
+        adapter.session.targetState = "running";
+      }
+      emitSession(adapter);
+      return;
+    }
+    if (event === "exited" || event === "terminated") {
+      adapter.session.targetState = "exited";
+      adapter.session.stopped = null;
+      emitSession(adapter);
+      return;
+    }
+    if (event === "thread") {
+      emitSession(adapter);
+    }
+  }
+
   function handleMessage(adapter: LiveAdapter, message: DapMessage): void {
     if (message.type === "response") {
       const pending = adapter.pending.get(message.request_seq);
@@ -301,9 +437,8 @@ export function createDebugAdapterSupervisor(
         event: message.event,
         body: message.body ?? null,
       });
-      return;
+      handleDapEvent(adapter, message.event, message.body ?? null);
     }
-    // Adapter→client requests (e.g. runInTerminal) are deferred to later slices.
   }
 
   function onManagedEvent(adapter: LiveAdapter, event: ManagedServiceEvent): void {
@@ -318,6 +453,7 @@ export function createDebugAdapterSupervisor(
           adapter.generation = event.generation;
           adapter.restartCount += 1;
           adapter.decoder.reset();
+          resetSession(adapter);
           setState(adapter, "restarting");
         }
         return;
@@ -370,6 +506,49 @@ export function createDebugAdapterSupervisor(
     }
   }
 
+  async function startTarget(
+    adapter: LiveAdapter,
+    mode: "launch" | "attach",
+    command: "launch" | "attach",
+    configuration: Readonly<Record<string, unknown>>,
+    noDebug: boolean | undefined,
+    signal: AbortSignal | undefined,
+  ): Promise<Result<DebugAdapterSnapshot, DebugAdapterError>> {
+    if (adapter.session.mode !== "none") {
+      return err({ kind: "debug-adapter", code: "already-launched" });
+    }
+    if (adapter.session.targetState === "exited") {
+      return err({ kind: "debug-adapter", code: "target-exited" });
+    }
+    const invalidConfig = validateLaunchOrAttachConfiguration(configuration);
+    if (invalidConfig !== null) {
+      return err(invalidConfig);
+    }
+    const args =
+      command === "launch"
+        ? { ...configuration, ...(noDebug === undefined ? {} : { noDebug }) }
+        : configuration;
+    const response = await sendRequest(
+      adapter,
+      command,
+      args,
+      adapter.limits.requestTimeoutMs,
+      signal,
+    );
+    if (!response.ok) {
+      return response;
+    }
+    if (!response.value.success) {
+      return err({ kind: "debug-adapter", code: "unsupported" });
+    }
+    adapter.session.mode = mode;
+    if (adapter.session.targetState !== "stopped") {
+      adapter.session.targetState = "running";
+    }
+    emitSession(adapter);
+    return ok(snapshotOf(adapter));
+  }
+
   return {
     async start(request, signal) {
       const invalid = validateDebugAdapterStartRequest(request);
@@ -418,6 +597,16 @@ export function createDebugAdapterSupervisor(
         failureReason: null,
         order: 0,
         nextSeq: 1,
+        session: {
+          mode: "none",
+          targetState: "idle",
+          configurationDone: false,
+          stopped: null,
+          breakpointRevisions: new Map(),
+          threads: [],
+          nextStoppedGeneration: 1,
+          nextBreakpointRevision: 1,
+        },
         decoder: createDapFrameDecoder(limitsResult.value.maxFrameBytes),
         listeners: new Set(),
         detachManaged: null,
@@ -488,7 +677,7 @@ export function createDebugAdapterSupervisor(
       }
       const adapter = ready.value;
       setState(adapter, "disconnecting");
-      const disconnected = await sendRequest(
+      await sendRequest(
         adapter,
         "disconnect",
         {
@@ -498,9 +687,6 @@ export function createDebugAdapterSupervisor(
         adapter.limits.disconnectTimeoutMs,
         options?.signal,
       );
-      if (!disconnected.ok && disconnected.error.code !== "request-timeout") {
-        // Still stop the process so adapters cannot linger.
-      }
       const stopped = await managedServices.stop(serviceId, generation);
       if (!stopped.ok) {
         return err(mapManagedStartError(stopped.error));
@@ -511,8 +697,227 @@ export function createDebugAdapterSupervisor(
         clearTimeout(pending.timer);
       }
       adapter.pending.clear();
+      resetSession(adapter);
       setState(adapter, "stopped");
       emit(adapter, { kind: "stopped" });
+      return ok(snapshotOf(adapter));
+    },
+
+    async setBreakpoints(serviceId, generation, request, signal) {
+      const ready = requireReady(serviceId, generation);
+      if (!ready.ok) {
+        return ready;
+      }
+      const invalidBp = validateSetBreakpointsRequest(request);
+      if (invalidBp !== null) {
+        return err(invalidBp);
+      }
+      const adapter = ready.value;
+      if (
+        !adapter.session.breakpointRevisions.has(request.sourcePath) &&
+        adapter.session.breakpointRevisions.size >= MAX_DEBUG_BREAKPOINT_SOURCES
+      ) {
+        return err({ kind: "debug-adapter", code: "capacity-exceeded" });
+      }
+      const response = await sendRequest(
+        adapter,
+        "setBreakpoints",
+        {
+          source: { path: request.sourcePath },
+          breakpoints: request.breakpoints.map((breakpoint) => ({
+            line: breakpoint.line,
+            ...(breakpoint.column === undefined ? {} : { column: breakpoint.column }),
+            ...(breakpoint.condition === undefined ? {} : { condition: breakpoint.condition }),
+            ...(breakpoint.hitCondition === undefined
+              ? {}
+              : { hitCondition: breakpoint.hitCondition }),
+            ...(breakpoint.logMessage === undefined ? {} : { logMessage: breakpoint.logMessage }),
+          })),
+          ...(request.sourceModified === undefined
+            ? {}
+            : { sourceModified: request.sourceModified }),
+        },
+        adapter.limits.requestTimeoutMs,
+        signal,
+      );
+      if (!response.ok) {
+        return response;
+      }
+      if (!response.value.success) {
+        return err({ kind: "debug-adapter", code: "unsupported" });
+      }
+      const revision = adapter.session.nextBreakpointRevision;
+      adapter.session.nextBreakpointRevision += 1;
+      const parsed = parseBreakpointsResponse(
+        request.sourcePath,
+        revision,
+        response.value.body ?? {},
+      );
+      if (!parsed.ok) {
+        return parsed;
+      }
+      adapter.session.breakpointRevisions.set(request.sourcePath, revision);
+      emitSession(adapter);
+      return parsed;
+    },
+
+    async configurationDone(serviceId, generation, signal) {
+      const ready = requireReady(serviceId, generation);
+      if (!ready.ok) {
+        return ready;
+      }
+      const adapter = ready.value;
+      const response = await sendRequest(
+        adapter,
+        "configurationDone",
+        {},
+        adapter.limits.requestTimeoutMs,
+        signal,
+      );
+      if (!response.ok) {
+        return response;
+      }
+      if (!response.value.success) {
+        return err({ kind: "debug-adapter", code: "unsupported" });
+      }
+      adapter.session.configurationDone = true;
+      emitSession(adapter);
+      return ok(snapshotOf(adapter));
+    },
+
+    async launch(serviceId, generation, request, signal) {
+      const ready = requireReady(serviceId, generation);
+      if (!ready.ok) {
+        return ready;
+      }
+      return startTarget(
+        ready.value,
+        "launch",
+        "launch",
+        request.configuration,
+        request.noDebug,
+        signal,
+      );
+    },
+
+    async attachTarget(serviceId, generation, request, signal) {
+      const ready = requireReady(serviceId, generation);
+      if (!ready.ok) {
+        return ready;
+      }
+      return startTarget(ready.value, "attach", "attach", request.configuration, undefined, signal);
+    },
+
+    async threads(serviceId, generation, signal) {
+      const ready = requireReady(serviceId, generation);
+      if (!ready.ok) {
+        return ready;
+      }
+      const adapter = ready.value;
+      if (adapter.session.mode === "none") {
+        return err({ kind: "debug-adapter", code: "not-launched" });
+      }
+      if (adapter.session.targetState === "exited") {
+        return err({ kind: "debug-adapter", code: "target-exited" });
+      }
+      const response = await sendRequest(
+        adapter,
+        "threads",
+        {},
+        adapter.limits.requestTimeoutMs,
+        signal,
+      );
+      if (!response.ok) {
+        return response;
+      }
+      if (!response.value.success) {
+        return err({ kind: "debug-adapter", code: "unsupported" });
+      }
+      const parsed = parseThreadsResponse(response.value.body ?? {});
+      if (!parsed.ok) {
+        return parsed;
+      }
+      adapter.session.threads = [...parsed.value];
+      emitSession(adapter);
+      return parsed;
+    },
+
+    async stackTrace(serviceId, generation, request, signal) {
+      const ready = requireReady(serviceId, generation);
+      if (!ready.ok) {
+        return ready;
+      }
+      const adapter = ready.value;
+      if (adapter.session.mode === "none") {
+        return err({ kind: "debug-adapter", code: "not-launched" });
+      }
+      if (adapter.session.targetState === "exited") {
+        return err({ kind: "debug-adapter", code: "target-exited" });
+      }
+      if (adapter.session.targetState !== "stopped" || adapter.session.stopped === null) {
+        return err({ kind: "debug-adapter", code: "not-ready" });
+      }
+      if (adapter.session.stopped.generation !== request.stoppedGeneration) {
+        return err({ kind: "debug-adapter", code: "stale-stopped-generation" });
+      }
+      if (
+        typeof request.threadId !== "number" ||
+        !Number.isSafeInteger(request.threadId) ||
+        request.threadId < 1
+      ) {
+        return err({ kind: "debug-adapter", code: "invalid-request", reason: "invalid-thread" });
+      }
+      const response = await sendRequest(
+        adapter,
+        "stackTrace",
+        {
+          threadId: request.threadId,
+          ...(request.startFrame === undefined ? {} : { startFrame: request.startFrame }),
+          ...(request.levels === undefined ? {} : { levels: request.levels }),
+        },
+        adapter.limits.requestTimeoutMs,
+        signal,
+      );
+      if (!response.ok) {
+        return response;
+      }
+      if (!response.value.success) {
+        return err({ kind: "debug-adapter", code: "unsupported" });
+      }
+      return parseStackTraceResponse(response.value.body ?? {});
+    },
+
+    async continueExecution(serviceId, generation, request, signal) {
+      const ready = requireReady(serviceId, generation);
+      if (!ready.ok) {
+        return ready;
+      }
+      const adapter = ready.value;
+      if (adapter.session.mode === "none") {
+        return err({ kind: "debug-adapter", code: "not-launched" });
+      }
+      if (adapter.session.stopped === null || adapter.session.targetState !== "stopped") {
+        return err({ kind: "debug-adapter", code: "not-ready" });
+      }
+      if (adapter.session.stopped.generation !== request.stoppedGeneration) {
+        return err({ kind: "debug-adapter", code: "stale-stopped-generation" });
+      }
+      const response = await sendRequest(
+        adapter,
+        "continue",
+        { threadId: request.threadId },
+        adapter.limits.requestTimeoutMs,
+        signal,
+      );
+      if (!response.ok) {
+        return response;
+      }
+      if (!response.value.success) {
+        return err({ kind: "debug-adapter", code: "unsupported" });
+      }
+      adapter.session.stopped = null;
+      adapter.session.targetState = "running";
+      emitSession(adapter);
       return ok(snapshotOf(adapter));
     },
 
