@@ -483,4 +483,252 @@ describe("language-server supervisor", () => {
 
     await supervisor.shutdown(request.serviceId, started.value.generation);
   });
+
+  test("admits hover, definition, references, symbols, completion, and diagnostics", async () => {
+    const port = new FakeManagedServicePort((message, pushStdout) => {
+      compliantLspHandler(message, pushStdout);
+      if (!("method" in message) || !("id" in message)) {
+        return;
+      }
+      if (message.method === "textDocument/hover") {
+        pushStdout(
+          encodeJsonRpcFrame({
+            jsonrpc: "2.0",
+            id: message.id,
+            result: { contents: { kind: "plaintext", value: "const x: number" } },
+          }),
+        );
+        return;
+      }
+      if (message.method === "textDocument/definition") {
+        pushStdout(
+          encodeJsonRpcFrame({
+            jsonrpc: "2.0",
+            id: message.id,
+            result: {
+              uri: "file:///tmp/demo/a.ts",
+              range: { start: { line: 0, character: 6 }, end: { line: 0, character: 7 } },
+            },
+          }),
+        );
+        return;
+      }
+      if (message.method === "textDocument/references") {
+        pushStdout(
+          encodeJsonRpcFrame({
+            jsonrpc: "2.0",
+            id: message.id,
+            result: [
+              {
+                uri: "file:///tmp/demo/a.ts",
+                range: { start: { line: 0, character: 6 }, end: { line: 0, character: 7 } },
+              },
+            ],
+          }),
+        );
+        return;
+      }
+      if (message.method === "textDocument/documentSymbol") {
+        pushStdout(
+          encodeJsonRpcFrame({
+            jsonrpc: "2.0",
+            id: message.id,
+            result: [
+              {
+                name: "x",
+                kind: 13,
+                location: {
+                  uri: "file:///tmp/demo/a.ts",
+                  range: { start: { line: 0, character: 6 }, end: { line: 0, character: 7 } },
+                },
+              },
+            ],
+          }),
+        );
+        return;
+      }
+      if (message.method === "textDocument/completion") {
+        pushStdout(
+          encodeJsonRpcFrame({
+            jsonrpc: "2.0",
+            id: message.id,
+            result: { isIncomplete: false, items: [{ label: "x", kind: 6 }] },
+          }),
+        );
+      }
+    });
+    const supervisor = createLanguageServerSupervisor(port);
+    const request = startRequest("lsp:features");
+    const started = await supervisor.start(request);
+    expect(started.ok).toBe(true);
+    if (!started.ok) {
+      return;
+    }
+    const generation = started.value.generation;
+    const events: LanguageServerEvent[] = [];
+    supervisor.attach(request.serviceId, (event) => events.push(event));
+
+    const opened = await supervisor.openDocument(request.serviceId, generation, {
+      uri: "file:///tmp/demo/a.ts",
+      languageId: "typescript",
+      text: "const x = 1;\n",
+    });
+    expect(opened.ok).toBe(true);
+
+    const position = { line: 0, character: 6 };
+    const hovered = await supervisor.hover(request.serviceId, generation, {
+      uri: "file:///tmp/demo/a.ts",
+      position,
+    });
+    expect(hovered).toEqual({
+      ok: true,
+      value: { contents: { kind: "plaintext", value: "const x: number" } },
+    });
+
+    const defined = await supervisor.definition(request.serviceId, generation, {
+      uri: "file:///tmp/demo/a.ts",
+      position,
+    });
+    expect(defined.ok).toBe(true);
+    if (defined.ok) {
+      expect(defined.value).toHaveLength(1);
+    }
+
+    const refs = await supervisor.references(request.serviceId, generation, {
+      uri: "file:///tmp/demo/a.ts",
+      position,
+      includeDeclaration: true,
+    });
+    expect(refs.ok).toBe(true);
+
+    const symbols = await supervisor.documentSymbols(request.serviceId, generation, {
+      uri: "file:///tmp/demo/a.ts",
+    });
+    expect(symbols).toEqual({
+      ok: true,
+      value: {
+        kind: "information",
+        symbols: [
+          {
+            name: "x",
+            kind: 13,
+            location: {
+              uri: "file:///tmp/demo/a.ts",
+              range: { start: { line: 0, character: 6 }, end: { line: 0, character: 7 } },
+            },
+          },
+        ],
+      },
+    });
+
+    const completed = await supervisor.completion(request.serviceId, generation, {
+      uri: "file:///tmp/demo/a.ts",
+      position,
+    });
+    expect(completed).toEqual({
+      ok: true,
+      value: { isIncomplete: false, items: [{ label: "x", kind: 6 }] },
+    });
+
+    const notOpen = await supervisor.hover(request.serviceId, generation, {
+      uri: "file:///tmp/demo/missing.ts",
+      position,
+    });
+    expect(notOpen).toEqual({
+      ok: false,
+      error: { kind: "language-server", code: "document-not-open" },
+    });
+
+    await supervisor.shutdown(request.serviceId, generation);
+  });
+
+  test("observes publishDiagnostics notifications", async () => {
+    const port = new FakeManagedServicePort((message, pushStdout) => {
+      compliantLspHandler(message, pushStdout);
+      if ("method" in message && message.method === "textDocument/didOpen") {
+        pushStdout(
+          encodeJsonRpcFrame({
+            jsonrpc: "2.0",
+            method: "textDocument/publishDiagnostics",
+            params: {
+              uri: "file:///tmp/demo/a.ts",
+              version: 1,
+              diagnostics: [
+                {
+                  range: { start: { line: 0, character: 0 }, end: { line: 0, character: 5 } },
+                  message: "unused",
+                  severity: 2,
+                },
+              ],
+            },
+          }),
+        );
+      }
+    });
+    const supervisor = createLanguageServerSupervisor(port);
+    const request = startRequest("lsp:diagnostics");
+    const started = await supervisor.start(request);
+    expect(started.ok).toBe(true);
+    if (!started.ok) {
+      return;
+    }
+    const events: LanguageServerEvent[] = [];
+    supervisor.attach(request.serviceId, (event) => events.push(event));
+
+    const opened = await supervisor.openDocument(request.serviceId, started.value.generation, {
+      uri: "file:///tmp/demo/a.ts",
+      languageId: "typescript",
+      text: "const x = 1;\n",
+    });
+    expect(opened.ok).toBe(true);
+
+    await new Promise<void>((resolve) => setTimeout(resolve, 10));
+    const stored = supervisor.diagnostics(request.serviceId, "file:///tmp/demo/a.ts");
+    expect(stored?.diagnostics).toEqual([
+      {
+        range: { start: { line: 0, character: 0 }, end: { line: 0, character: 5 } },
+        message: "unused",
+        severity: 2,
+      },
+    ]);
+    expect(events.some((event) => event.kind === "diagnostics")).toBe(true);
+
+    await supervisor.shutdown(request.serviceId, started.value.generation);
+  });
+
+  test("maps method-not-found feature responses to unsupported", async () => {
+    const port = new FakeManagedServicePort((message, pushStdout) => {
+      compliantLspHandler(message, pushStdout);
+      if ("method" in message && "id" in message && message.method === "textDocument/hover") {
+        pushStdout(
+          encodeJsonRpcFrame({
+            jsonrpc: "2.0",
+            id: message.id,
+            error: { code: -32_601, message: "Method not found" },
+          }),
+        );
+      }
+    });
+    const supervisor = createLanguageServerSupervisor(port);
+    const request = startRequest("lsp:unsupported");
+    const started = await supervisor.start(request);
+    expect(started.ok).toBe(true);
+    if (!started.ok) {
+      return;
+    }
+    await supervisor.openDocument(request.serviceId, started.value.generation, {
+      uri: "file:///tmp/demo/a.ts",
+      languageId: "typescript",
+      text: "const x = 1;\n",
+    });
+    const hovered = await supervisor.hover(request.serviceId, started.value.generation, {
+      uri: "file:///tmp/demo/a.ts",
+      position: { line: 0, character: 0 },
+    });
+    expect(hovered).toEqual({
+      ok: false,
+      error: { kind: "language-server", code: "unsupported" },
+    });
+    await supervisor.shutdown(request.serviceId, started.value.generation);
+  });
 });
