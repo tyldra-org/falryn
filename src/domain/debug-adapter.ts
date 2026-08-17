@@ -3,8 +3,9 @@
  *
  * Falryn owns adapter identity, the lifecycle state machine, initialize and
  * disconnect results, and Content-Length DAP framing. Process handles stay
- * behind ManagedServicePort. Launch/attach/breakpoints are #97; scopes and
- * variables remain #98; artifact capture remains #100.
+ * behind ManagedServicePort. Launch/attach/breakpoints are #97; scopes,
+ * variables, evaluation, and output projections are #98; artifact capture
+ * remains #100.
  */
 
 import { z } from "zod";
@@ -197,7 +198,10 @@ export type DebugAdapterError =
         | "invalid-configuration"
         | "invalid-thread"
         | "invalid-frame"
-        | "invalid-stack";
+        | "invalid-stack"
+        | "invalid-variable"
+        | "invalid-expression"
+        | "invalid-evaluate-context";
     }
   | {
       readonly kind: "debug-adapter";

@@ -3561,10 +3561,24 @@ versioned breakpoints, threads, and stack frames:
   and stack/thread parsing, stopped-generation contracts;
 - `src/application/debug-adapter.ts` — `setBreakpoints`, `configurationDone`,
   `launch` / `attachTarget`, `threads`, `stackTrace`, and `continueExecution`
-  with stale-generation rejection. Scopes/variables remain #98.
+  with stale-generation rejection.
 
 Validated by `src/domain/debug-adapter-session.test.ts` and the session cases
 in `src/application/debug-adapter.test.ts` under `bun run check`.
+
+The debug scopes/variables/evaluation slice from
+[#98](https://github.com/tyldra-org/falryn/issues/98) owns stopped-generation
+scopes, redacted variable and evaluate projections, mutation-aware evaluate
+contexts, and bounded DAP output capture:
+
+- `src/domain/debug-adapter-session.ts` — scope/variable/evaluate/output
+  parsers, sensitivity heuristics, and model/support redaction helpers;
+- `src/application/debug-adapter.ts` — `scopes`, `variables`, `evaluate`, and
+  `recentOutputs` on the session snapshot. Termination polish remains #99;
+  artifact capture remains #100.
+
+Validated by the #98 cases in `src/domain/debug-adapter-session.test.ts` and
+`src/application/debug-adapter.test.ts` under `bun run check`.
 
 The compact document reader slice from
 [#493](https://github.com/tyldra-org/falryn/issues/493) projects bounded exact
@@ -3827,8 +3841,8 @@ Their implementation breakdown lives in GitHub Issues and the Project.
 - **Completed late-effect eviction attribution:** [#305 Attribute a late effect whose scope was already evicted](https://github.com/tyldra-org/falryn/issues/305) closed and Done via [PR #581](https://github.com/tyldra-org/falryn/pull/581) (`128ce73`); companion docs [falryn-docs#159](https://github.com/tyldra-org/falryn-docs/pull/159) (`31902e6`).
 - **Open falryn v0.2 Core Coding Agent product issues:** none remaining.
 - **Completed language intelligence parent:** [#88 Deliver language intelligence and derived indexing](https://github.com/tyldra-org/falryn/issues/88) is closed and Done. Child [#89 Implement language-server supervision, transport, initialization, and shutdown](https://github.com/tyldra-org/falryn/issues/89) closed and Done via [PR #584](https://github.com/tyldra-org/falryn/pull/584) (`7ba7ae4`); companion docs [falryn-docs#173](https://github.com/tyldra-org/falryn-docs/pull/173) (`1ef289d`). Child [#90 Synchronize workspaces, documents, versions, and dynamic capabilities](https://github.com/tyldra-org/falryn/issues/90) closed and Done via [PR #586](https://github.com/tyldra-org/falryn/pull/586) (`8bffb76`); companion docs [falryn-docs#174](https://github.com/tyldra-org/falryn-docs/pull/174) (`6993dde`). Child [#91 Implement diagnostics, hover, definition, references, symbols, and completion](https://github.com/tyldra-org/falryn/issues/91) closed and Done via [PR #588](https://github.com/tyldra-org/falryn/pull/588) (`0f7c049`); companion docs [falryn-docs#175](https://github.com/tyldra-org/falryn-docs/pull/175) (`9036319`). Child [#92 Convert code actions, rename, format, and workspace edits into patches](https://github.com/tyldra-org/falryn/issues/92) closed and Done via [PR #589](https://github.com/tyldra-org/falryn/pull/589) (`6eff081`); companion docs [falryn-docs#176](https://github.com/tyldra-org/falryn-docs/pull/176) (`0591061`). Child [#93 Build rebuildable SQLite lexical and symbol indexes](https://github.com/tyldra-org/falryn/issues/93) closed and Done via [PR #590](https://github.com/tyldra-org/falryn/pull/590) (`3baefca`); companion docs [falryn-docs#177](https://github.com/tyldra-org/falryn-docs/pull/177) (`8454260`). Child [#94 Qualify optional embeddings and structural parsing only when justified](https://github.com/tyldra-org/falryn/issues/94) closed and Done via [PR #591](https://github.com/tyldra-org/falryn/pull/591) (`e703340`); companion docs [falryn-docs#178](https://github.com/tyldra-org/falryn-docs/pull/178) (`789054b`). Parent integrated verification passed on `e703340` (69 child-seam tests).
-- **Active debugging parent:** [#95 Deliver debugging through DAP](https://github.com/tyldra-org/falryn/issues/95) is **In Progress**. Child [#96 Implement debug-adapter supervision and request-response transport](https://github.com/tyldra-org/falryn/issues/96) closed and Done via [PR #593](https://github.com/tyldra-org/falryn/pull/593) (`1ea7f60`); companion docs [falryn-docs#179](https://github.com/tyldra-org/falryn-docs/pull/179) (`0b09a59`). Child [#97 Implement launch, attach, breakpoint, thread, and stack lifecycles](https://github.com/tyldra-org/falryn/issues/97) closed and Done via [PR #595](https://github.com/tyldra-org/falryn/pull/595) (`93eefa0`); companion docs [falryn-docs#180](https://github.com/tyldra-org/falryn-docs/pull/180) (`a1ad36b`).
-- **Next planning action:** continue via [#98 Implement scopes, variables, evaluation, and output projections](https://github.com/tyldra-org/falryn/issues/98). GitHub remains authoritative for ordering.
+- **Active debugging parent:** [#95 Deliver debugging through DAP](https://github.com/tyldra-org/falryn/issues/95) is **In Progress**. Child [#96 Implement debug-adapter supervision and request-response transport](https://github.com/tyldra-org/falryn/issues/96) closed and Done via [PR #593](https://github.com/tyldra-org/falryn/pull/593) (`1ea7f60`); companion docs [falryn-docs#179](https://github.com/tyldra-org/falryn-docs/pull/179) (`0b09a59`). Child [#97 Implement launch, attach, breakpoint, thread, and stack lifecycles](https://github.com/tyldra-org/falryn/issues/97) closed and Done via [PR #595](https://github.com/tyldra-org/falryn/pull/595) (`93eefa0`); companion docs [falryn-docs#180](https://github.com/tyldra-org/falryn-docs/pull/180) (`a1ad36b`). Child [#98 Implement scopes, variables, evaluation, and output projections](https://github.com/tyldra-org/falryn/issues/98) is pending merge on this delivery bundle.
+- **Next planning action:** after #98 lands, continue via [#99 Implement termination, disconnect, and session cleanup](https://github.com/tyldra-org/falryn/issues/99). GitHub remains authoritative for ordering.
 
 Which of #1's children are open, and which delivered the behavior recorded
 above, is read from
