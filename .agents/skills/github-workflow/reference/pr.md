@@ -4,16 +4,19 @@ Open, update, and land pull requests. A PR is outward-facing — show the title 
 
 ## Host selection (read first)
 
-Check `git remote get-url origin`:
+Check `git remote get-url origin` and `origin repo view -R org/name` (mirror status):
 
-| `origin` remote host | Open / view / checks / merge PR | Issues, Projects, Actions, ruleset admin |
+| Setup | Push / pull | Open / view / checks / merge PR |
 | --- | --- | --- |
-| **`origin.cursor.com`** (Origin-primary) | **`origin pr …`** with `-R` or inferred namespace — see [origin-cli](~/.agents/skills/origin-cli/reference/pr.md) | **`gh …`** on `tyldra-org/*` (or `--repo`) |
-| **`github.com`** (GitHub-primary) | **`gh pr …`** (below) | **`gh …`** |
+| **`origin.cursor.com` + mirror inbound** (e.g. `ecl1pse/falryn` → `tyldra-org/falryn`) | **`git push origin`** | **`gh pr …`** on `tyldra-org/*` — **`origin pr create` fails** |
+| **`origin.cursor.com` + native / detached Origin repo** | **`git push origin`** | **`origin pr …`** |
+| **`github.com` remote primary** | **`git push origin`** | **`gh pr …`** |
 
-**Do not** open a GitHub-only PR with `gh pr create` when the checkout pushes to Origin unless the user explicitly asked for GitHub-only. A `gh`-created PR may **not** appear as an Origin change (`origin pr view` 404).
+Issues, Projects, Actions, ruleset admin on GitHub: always **`gh`** on `tyldra-org/*`.
 
-Process and safety (subjects, confirmations, squash body rules) stay in **github-workflow** regardless of host. Syntax is **origin-cli** or **gh-cli**.
+**Do not** assume Origin-primary git remote implies Origin PRs. Inbound mirrors sync code through Origin but PRs live on GitHub.
+
+Process and safety (subjects, confirmations, squash body rules) stay in **github-workflow**. Syntax: **gh-cli** or **origin-cli** per host column above.
 
 ## Tooling
 

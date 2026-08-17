@@ -29,7 +29,8 @@ This skill owns **procedure and safety**, not CLI cheat sheets.
 - **`git remote origin`** — your default remote *name* (often `origin.cursor.com` or `github.com`). Not the Origin CLI. Not this skill's "fork `origin`".
 - **`gh pr …`** — GitHub pull requests on **github.com** (CI, public visibility, full rulesets).
 - **`origin pr …`** — Cursor **changes** on **origin.cursor.com** (sync to GitHub when mirrored).
-- **Mirrored repos** — GitHub stays source of truth for CI, public access, and status-check rulesets; Origin holds a copy + agent UI. When **`git remote origin` is `origin.cursor.com`**, use **`origin pr`** for create/view/checks/merge ([merge.md](reference/merge.md#merge-when-origin-is-the-default-remote)); use **`gh`** for issues, Projects, Actions admin, and explicit `tyldra-org/*` API reads.
+- **Mirrored repos (inbound)** — `git remote origin` may be `origin.cursor.com`, but **`origin pr` is unavailable** (`mirrorStatus: inbound`). Push via Origin; **open/merge PRs with `gh`** on `tyldra-org/*`. CI and rulesets stay on GitHub.
+- **Native / detached Origin repos** — use **`origin pr`** for create/view/checks/merge ([merge.md](reference/merge.md#merge-on-native-origin-repos)).
 
 **Load order:** `github-workflow` → then `gh-cli` and/or `origin-cli` for syntax. If both hosts apply, say which command targets which host in the report.
 
