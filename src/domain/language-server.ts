@@ -42,6 +42,10 @@ export const LANGUAGE_SERVER_FAILURE_REASONS = [
   "not-found",
   "stale-generation",
   "unsupported",
+  "not-ready",
+  "document-not-open",
+  "document-already-open",
+  "stale-document",
 ] as const;
 export type LanguageServerFailureReason = (typeof LANGUAGE_SERVER_FAILURE_REASONS)[number];
 
@@ -170,6 +174,16 @@ export type LanguageServerSnapshot = {
   readonly capabilities: Readonly<Record<string, unknown>> | null;
   readonly serverInfo: LanguageServerClientInfo | null;
   readonly failureReason: LanguageServerFailureReason | null;
+  readonly openDocuments: readonly {
+    readonly uri: string;
+    readonly languageId: string;
+    readonly version: number;
+  }[];
+  readonly workspaceFolders: readonly { readonly uri: string; readonly name: string }[];
+  readonly registeredCapabilities: readonly {
+    readonly id: string;
+    readonly method: string;
+  }[];
 };
 
 export type LanguageServerError =
@@ -183,7 +197,17 @@ export type LanguageServerError =
         | "invalid-workspace-root"
         | "invalid-executable"
         | "invalid-root-uri"
-        | "invalid-capabilities";
+        | "invalid-capabilities"
+        | "invalid-uri"
+        | "invalid-language-id"
+        | "invalid-version"
+        | "invalid-text"
+        | "text-too-large"
+        | "too-many-changes"
+        | "invalid-change"
+        | "invalid-folder"
+        | "too-many-folders"
+        | "invalid-capability";
     }
   | {
       readonly kind: "language-server";
@@ -227,6 +251,32 @@ export type LanguageServerEvent =
       readonly kind: "notification";
       readonly method: string;
       readonly params: unknown;
+    })
+  | (LanguageServerEventBase & {
+      readonly kind: "document-opened";
+      readonly uri: string;
+      readonly languageId: string;
+      readonly version: number;
+    })
+  | (LanguageServerEventBase & {
+      readonly kind: "document-changed";
+      readonly uri: string;
+      readonly version: number;
+    })
+  | (LanguageServerEventBase & { readonly kind: "document-saved"; readonly uri: string })
+  | (LanguageServerEventBase & { readonly kind: "document-closed"; readonly uri: string })
+  | (LanguageServerEventBase & {
+      readonly kind: "workspace-folders-changed";
+      readonly folders: readonly { readonly uri: string; readonly name: string }[];
+    })
+  | (LanguageServerEventBase & {
+      readonly kind: "capability-registered";
+      readonly id: string;
+      readonly method: string;
+    })
+  | (LanguageServerEventBase & {
+      readonly kind: "capability-unregistered";
+      readonly id: string;
     })
   | (LanguageServerEventBase & { readonly kind: "stopped" });
 
@@ -583,6 +633,14 @@ export function describeLanguageServerFailure(reason: LanguageServerFailureReaso
       return "language server generation is stale";
     case "unsupported":
       return "language server capability is unsupported";
+    case "not-ready":
+      return "language server is not ready for document synchronization";
+    case "document-not-open":
+      return "language server document is not open";
+    case "document-already-open":
+      return "language server document is already open";
+    case "stale-document":
+      return "language server document version is stale";
     default:
       return assertNever(reason, "unhandled language-server failure");
   }
