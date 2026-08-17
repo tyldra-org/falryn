@@ -2,15 +2,37 @@
 
 Open, update, and land pull requests. A PR is outward-facing — show the title and body before it goes out.
 
+## Host selection (read first)
+
+Check `git remote get-url origin` and `origin repo view -R org/name` (mirror status):
+
+| Setup | Push / pull | Open / view / checks / merge PR |
+| --- | --- | --- |
+| **`origin.cursor.com` + mirror inbound** (e.g. `ecl1pse/falryn` → `tyldra-org/falryn`) | **`git push origin`** | **`gh pr …`** on `tyldra-org/*` — **`origin pr create` fails** |
+| **`origin.cursor.com` + native / detached Origin repo** | **`git push origin`** | **`origin pr …`** |
+| **`github.com` remote primary** | **`git push origin`** | **`gh pr …`** |
+
+Issues, Projects, Actions, ruleset admin on GitHub: always **`gh`** on `tyldra-org/*`.
+
+**Do not** assume Origin-primary git remote implies Origin PRs. Inbound mirrors sync code through Origin but PRs live on GitHub.
+
+Process and safety (subjects, confirmations, squash body rules) stay in **github-workflow**. Syntax: **gh-cli** or **origin-cli** per host column above.
+
 ## Tooling
 
-Prefer `gh`:
+When the host is GitHub, prefer `gh`:
 
 ```bash
 gh auth status
 ```
 
-If `gh` is unavailable or unauthenticated, say so and ask whether to install/authenticate. Do **not** fall back to raw `curl` with a token pulled from the environment or `.git-credentials` — that path reads secrets into the transcript and into shell history. The user runs `gh auth login` themselves.
+When the host is Origin, prefer `origin`:
+
+```bash
+origin auth status
+```
+
+If the chosen CLI is unavailable or unauthenticated, say so and ask whether to install/authenticate. Do **not** fall back to raw `curl` with a token pulled from the environment or `.git-credentials` — that path reads secrets into the transcript and into shell history. The user runs `gh auth login` or `origin auth login` themselves.
 
 ## Before opening
 
