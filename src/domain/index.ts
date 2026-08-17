@@ -1065,6 +1065,33 @@ export {
   validateLanguageServerStartRequest,
 } from "./language-server.ts";
 export type {
+  LanguageServerCodeAction,
+  LanguageServerCodeActionCommand,
+  LanguageServerCodeActionResult,
+  LanguageServerCodeActionsRequest,
+  LanguageServerEditToPatchResult,
+  LanguageServerEditValidationReason,
+  LanguageServerFormatRequest,
+  LanguageServerRenameRequest,
+  LanguageServerTextDocumentEdit,
+  LanguageServerTextEdit,
+  LanguageServerWorkspaceEdit,
+} from "./language-server-edits.ts";
+export {
+  codeActionToPatchPlan,
+  fileUriToWorkspaceRelativePath,
+  MAX_LANGUAGE_SERVER_CODE_ACTIONS,
+  MAX_LANGUAGE_SERVER_EDIT_URIS,
+  MAX_LANGUAGE_SERVER_TEXT_EDITS,
+  parseCodeActionResult,
+  parseTextEditArray,
+  parseWorkspaceEdit,
+  validateCodeActionsRequest,
+  validateFormatRequest,
+  validateRenameRequest,
+  workspaceEditToPatchPlan,
+} from "./language-server-edits.ts";
+export type {
   LanguageServerCompletionItem,
   LanguageServerCompletionList,
   LanguageServerDiagnostic,

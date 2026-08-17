@@ -1,14 +1,17 @@
 /**
- * Language-server supervisor (#89 lifecycle + #90 sync + #91 features).
+ * Language-server supervisor (#89–#92).
  *
  * Starts a managed process, speaks JSON-RPC over its stdio pipes, completes
  * initialize, synchronizes documents, admits feature requests, observes
- * diagnostics, and performs shutdown/exit. Edits-as-patches remain #92.
+ * diagnostics, converts format/rename/code-action edits into previewable patch
+ * plans, and performs shutdown/exit. Indexes remain #93.
  */
 
 import {
   applyContentChanges,
+  codeActionToPatchPlan,
   createJsonRpcFrameDecoder,
+  DEFAULT_PATCH_LIMITS,
   describeLanguageServerFailure,
   duration,
   encodeJsonRpcFrame,
@@ -18,11 +21,15 @@ import {
   type LanguageServerChangeDocumentRequest,
   type LanguageServerClientInfo,
   type LanguageServerCloseDocumentRequest,
+  type LanguageServerCodeActionResult,
+  type LanguageServerCodeActionsRequest,
   type LanguageServerCompletionList,
   type LanguageServerDocumentSymbolsRequest,
+  type LanguageServerEditToPatchResult,
   type LanguageServerError,
   type LanguageServerEvent,
   type LanguageServerFailureReason,
+  type LanguageServerFormatRequest,
   type LanguageServerHover,
   type LanguageServerLimits,
   type LanguageServerLocation,
@@ -32,6 +39,7 @@ import {
   type LanguageServerPublishDiagnostics,
   type LanguageServerReferencesRequest,
   type LanguageServerRegisteredCapability,
+  type LanguageServerRenameRequest,
   type LanguageServerSaveDocumentRequest,
   type LanguageServerSnapshot,
   type LanguageServerStartRequest,
@@ -48,6 +56,7 @@ import {
   type ManagedServiceId,
   type ManagedServicePort,
   mergeWorkspaceFolders,
+  parseCodeActionResult,
   parseCompletionResult,
   parseDefinitionResult,
   parseDocumentSymbolsResult,
@@ -56,14 +65,20 @@ import {
   parsePublishDiagnostics,
   parseReferencesResult,
   parseRegisterCapabilityParams,
+  parseTextEditArray,
   parseUnregisterCapabilityParams,
+  parseWorkspaceEdit,
   type ServiceGeneration,
   validateChangeDocumentRequest,
+  validateCodeActionsRequest,
   validateDocumentUri,
+  validateFormatRequest,
   validateLanguageServerStartRequest,
   validateOpenDocumentRequest,
+  validateRenameRequest,
   validateTextDocumentPosition,
   validateWorkspaceFoldersChange,
+  workspaceEditToPatchPlan,
 } from "../domain/index.ts";
 import { err, ok, type Result } from "../domain/result.ts";
 
@@ -139,6 +154,32 @@ export type LanguageServerSupervisor = {
     request: LanguageServerTextDocumentPosition,
     signal?: AbortSignal,
   ): Promise<Result<LanguageServerCompletionList, LanguageServerError>>;
+  formatDocument(
+    serviceId: ManagedServiceId,
+    generation: ServiceGeneration,
+    request: LanguageServerFormatRequest,
+    signal?: AbortSignal,
+  ): Promise<Result<LanguageServerEditToPatchResult, LanguageServerError>>;
+  rename(
+    serviceId: ManagedServiceId,
+    generation: ServiceGeneration,
+    request: LanguageServerRenameRequest,
+    signal?: AbortSignal,
+  ): Promise<Result<LanguageServerEditToPatchResult, LanguageServerError>>;
+  codeActions(
+    serviceId: ManagedServiceId,
+    generation: ServiceGeneration,
+    request: LanguageServerCodeActionsRequest,
+    signal?: AbortSignal,
+  ): Promise<
+    Result<
+      {
+        readonly result: LanguageServerCodeActionResult;
+        readonly patches: readonly LanguageServerEditToPatchResult[];
+      },
+      LanguageServerError
+    >
+  >;
   diagnostics(serviceId: ManagedServiceId, uri: string): LanguageServerPublishDiagnostics | null;
   snapshot(serviceId: ManagedServiceId): LanguageServerSnapshot | null;
   attach(
@@ -295,6 +336,33 @@ export function createLanguageServerSupervisor(
       return err({ kind: "language-server", code: "not-ready" });
     }
     return ok(server);
+  }
+
+  function mapEditFailure(
+    code:
+      | "document-not-open"
+      | "stale-document"
+      | "capacity-exceeded"
+      | "invalid-uri"
+      | "invalid-position"
+      | "invalid-range"
+      | "invalid-edit"
+      | "invalid-workspace-edit"
+      | "invalid-code-action"
+      | "invalid-rename"
+      | "result-too-large"
+      | "unsupported-resource-operation"
+      | "overlapping-edits"
+      | "path-outside-workspace",
+  ): LanguageServerError {
+    if (code === "document-not-open" || code === "stale-document" || code === "capacity-exceeded") {
+      return { kind: "language-server", code };
+    }
+    return { kind: "language-server", code: "invalid-request", reason: code };
+  }
+
+  function workspaceFolderUris(server: LiveServer): readonly string[] {
+    return server.workspaceFolders.map((folder) => folder.uri);
   }
 
   async function sendRequest(
@@ -1051,6 +1119,176 @@ export function createLanguageServerSupervisor(
         return err({ kind: "language-server", code: "invalid-request", reason: parsed.error });
       }
       return ok(parsed.value);
+    },
+
+    async formatDocument(serviceId, generation, request, signal) {
+      const ready = requireReady(serviceId, generation);
+      if (!ready.ok) {
+        return ready;
+      }
+      const invalid = validateFormatRequest(request);
+      if (invalid !== null) {
+        return err({ kind: "language-server", code: "invalid-request", reason: invalid });
+      }
+      if (!ready.value.openDocuments.has(request.uri)) {
+        return err({ kind: "language-server", code: "document-not-open" });
+      }
+      const raw = await sendRequest(
+        ready.value,
+        "textDocument/formatting",
+        {
+          textDocument: { uri: request.uri },
+          options: {
+            tabSize: request.tabSize ?? 2,
+            insertSpaces: request.insertSpaces ?? true,
+          },
+        },
+        ready.value.limits.requestTimeoutMs,
+        signal,
+      );
+      if (!raw.ok) {
+        return raw;
+      }
+      const edits = parseTextEditArray(raw.value);
+      if (!edits.ok) {
+        return err({ kind: "language-server", code: "invalid-request", reason: edits.error });
+      }
+      const open = ready.value.openDocuments.get(request.uri);
+      if (open === undefined) {
+        return err({ kind: "language-server", code: "document-not-open" });
+      }
+      const converted = workspaceEditToPatchPlan(
+        {
+          documentEdits: [
+            {
+              textDocument: { uri: request.uri, version: open.version },
+              edits: edits.value,
+            },
+          ],
+        },
+        ready.value.openDocuments,
+        workspaceFolderUris(ready.value),
+      );
+      if (!converted.ok) {
+        return err(mapEditFailure(converted.error));
+      }
+      return ok(converted.value);
+    },
+
+    async rename(serviceId, generation, request, signal) {
+      const ready = requireReady(serviceId, generation);
+      if (!ready.ok) {
+        return ready;
+      }
+      const invalid = validateRenameRequest(request);
+      if (invalid !== null) {
+        return err({ kind: "language-server", code: "invalid-request", reason: invalid });
+      }
+      if (!ready.value.openDocuments.has(request.uri)) {
+        return err({ kind: "language-server", code: "document-not-open" });
+      }
+      const raw = await sendRequest(
+        ready.value,
+        "textDocument/rename",
+        {
+          textDocument: { uri: request.uri },
+          position: request.position,
+          newName: request.newName,
+        },
+        ready.value.limits.requestTimeoutMs,
+        signal,
+      );
+      if (!raw.ok) {
+        return raw;
+      }
+      const parsed = parseWorkspaceEdit(raw.value);
+      if (!parsed.ok) {
+        return err({ kind: "language-server", code: "invalid-request", reason: parsed.error });
+      }
+      if (parsed.value === null) {
+        return ok({
+          plan: {
+            policy: "fail-before-effect",
+            expectedPlanId: null,
+            expectedGitHead: null,
+            limits: DEFAULT_PATCH_LIMITS,
+            targets: [],
+          },
+          deferredCommands: [],
+        });
+      }
+      const converted = workspaceEditToPatchPlan(
+        parsed.value,
+        ready.value.openDocuments,
+        workspaceFolderUris(ready.value),
+      );
+      if (!converted.ok) {
+        return err(mapEditFailure(converted.error));
+      }
+      return ok(converted.value);
+    },
+
+    async codeActions(serviceId, generation, request, signal) {
+      const ready = requireReady(serviceId, generation);
+      if (!ready.ok) {
+        return ready;
+      }
+      const invalid = validateCodeActionsRequest(request);
+      if (invalid !== null) {
+        return err({ kind: "language-server", code: "invalid-request", reason: invalid });
+      }
+      if (!ready.value.openDocuments.has(request.uri)) {
+        return err({ kind: "language-server", code: "document-not-open" });
+      }
+      const raw = await sendRequest(
+        ready.value,
+        "textDocument/codeAction",
+        {
+          textDocument: { uri: request.uri },
+          range: request.range,
+          context: {
+            diagnostics: [],
+            ...(request.only === undefined ? {} : { only: request.only }),
+          },
+        },
+        ready.value.limits.requestTimeoutMs,
+        signal,
+      );
+      if (!raw.ok) {
+        return raw;
+      }
+      const parsed = parseCodeActionResult(raw.value);
+      if (!parsed.ok) {
+        return err({ kind: "language-server", code: "invalid-request", reason: parsed.error });
+      }
+      if (parsed.value.kind === "commands") {
+        return ok({
+          result: parsed.value,
+          patches: parsed.value.commands.map((command) => ({
+            plan: {
+              policy: "fail-before-effect" as const,
+              expectedPlanId: null,
+              expectedGitHead: null,
+              limits: DEFAULT_PATCH_LIMITS,
+              targets: [],
+            },
+            deferredCommands: [command],
+          })),
+        });
+      }
+      const patches: LanguageServerEditToPatchResult[] = [];
+      for (const action of parsed.value.actions) {
+        const converted = codeActionToPatchPlan(
+          action,
+          ready.value.openDocuments,
+          workspaceFolderUris(ready.value),
+        );
+        if (!converted.ok) {
+          return err(mapEditFailure(converted.error));
+        }
+        patches.push(converted.value);
+      }
+      return ok({ result: parsed.value, patches });
     },
 
     diagnostics(serviceId, uri) {
