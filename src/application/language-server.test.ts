@@ -731,4 +731,130 @@ describe("language-server supervisor", () => {
     });
     await supervisor.shutdown(request.serviceId, started.value.generation);
   });
+
+  test("converts format, rename, and code-action edits into patch plans", async () => {
+    const port = new FakeManagedServicePort((message, pushStdout) => {
+      compliantLspHandler(message, pushStdout);
+      if (!("method" in message) || !("id" in message)) {
+        return;
+      }
+      if (message.method === "textDocument/formatting") {
+        pushStdout(
+          encodeJsonRpcFrame({
+            jsonrpc: "2.0",
+            id: message.id,
+            result: [
+              {
+                range: { start: { line: 0, character: 0 }, end: { line: 0, character: 12 } },
+                newText: "const x = 1;\n",
+              },
+            ],
+          }),
+        );
+        return;
+      }
+      if (message.method === "textDocument/rename") {
+        pushStdout(
+          encodeJsonRpcFrame({
+            jsonrpc: "2.0",
+            id: message.id,
+            result: {
+              documentChanges: [
+                {
+                  textDocument: { uri: "file:///tmp/demo/a.ts", version: 1 },
+                  edits: [
+                    {
+                      range: { start: { line: 0, character: 6 }, end: { line: 0, character: 7 } },
+                      newText: "y",
+                    },
+                  ],
+                },
+              ],
+            },
+          }),
+        );
+        return;
+      }
+      if (message.method === "textDocument/codeAction") {
+        pushStdout(
+          encodeJsonRpcFrame({
+            jsonrpc: "2.0",
+            id: message.id,
+            result: [
+              {
+                title: "Fix",
+                kind: "quickfix",
+                edit: {
+                  changes: {
+                    "file:///tmp/demo/a.ts": [
+                      {
+                        range: { start: { line: 0, character: 0 }, end: { line: 0, character: 5 } },
+                        newText: "let",
+                      },
+                    ],
+                  },
+                },
+                command: { title: "refresh", command: "typescript.restartTsServer" },
+              },
+            ],
+          }),
+        );
+      }
+    });
+    const supervisor = createLanguageServerSupervisor(port);
+    const request = startRequest("lsp:edits");
+    const started = await supervisor.start(request);
+    expect(started.ok).toBe(true);
+    if (!started.ok) {
+      return;
+    }
+    const generation = started.value.generation;
+    await supervisor.openDocument(request.serviceId, generation, {
+      uri: "file:///tmp/demo/a.ts",
+      languageId: "typescript",
+      text: "const x = 1;\n",
+    });
+
+    const formatted = await supervisor.formatDocument(request.serviceId, generation, {
+      uri: "file:///tmp/demo/a.ts",
+    });
+    expect(formatted.ok).toBe(true);
+    if (formatted.ok) {
+      expect(formatted.value.plan.targets[0]?.path).toBe("a.ts");
+      expect(formatted.value.deferredCommands).toEqual([]);
+    }
+
+    const renamed = await supervisor.rename(request.serviceId, generation, {
+      uri: "file:///tmp/demo/a.ts",
+      position: { line: 0, character: 6 },
+      newName: "y",
+    });
+    expect(renamed.ok).toBe(true);
+    if (renamed.ok) {
+      expect(renamed.value.plan.targets[0]?.hunks[0]?.newLines).toEqual(["const y = 1;"]);
+    }
+
+    const stale = await supervisor.rename(request.serviceId, generation, {
+      uri: "file:///tmp/demo/a.ts",
+      position: { line: 0, character: 6 },
+      newName: "z",
+    });
+    // Server still returns version 1; after open version is 1 so still ok unless we bump.
+    expect(stale.ok).toBe(true);
+
+    const actions = await supervisor.codeActions(request.serviceId, generation, {
+      uri: "file:///tmp/demo/a.ts",
+      range: { start: { line: 0, character: 0 }, end: { line: 0, character: 5 } },
+    });
+    expect(actions.ok).toBe(true);
+    if (actions.ok) {
+      expect(actions.value.patches).toHaveLength(1);
+      expect(actions.value.patches[0]?.deferredCommands).toEqual([
+        { title: "refresh", command: "typescript.restartTsServer" },
+      ]);
+      expect(actions.value.patches[0]?.plan.targets[0]?.hunks[0]?.newLines).toEqual(["let x = 1;"]);
+    }
+
+    await supervisor.shutdown(request.serviceId, generation);
+  });
 });

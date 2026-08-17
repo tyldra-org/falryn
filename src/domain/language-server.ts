@@ -214,7 +214,14 @@ export type LanguageServerError =
         | "invalid-location"
         | "invalid-symbol"
         | "invalid-completion"
-        | "result-too-large";
+        | "result-too-large"
+        | "invalid-edit"
+        | "invalid-workspace-edit"
+        | "invalid-code-action"
+        | "invalid-rename"
+        | "unsupported-resource-operation"
+        | "overlapping-edits"
+        | "path-outside-workspace";
     }
   | {
       readonly kind: "language-server";
