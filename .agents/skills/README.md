@@ -12,6 +12,11 @@ personal `~/.agents/skills`.
 | `gh-cli` | Exact `gh` subcommand / flag / JSON output recall |
 | `falryn-delivery-loop` | `Deliver — Target: …`, `Next — Target: Falryn Roadmap`, or “what next?” (maintainer delivery modes; optional for others) |
 
-`github-workflow` owns process and safety. `gh-cli` owns CLI syntax. Prefer both when composing non-trivial `gh` operations.
+`github-workflow` owns process and safety. `gh-cli` owns **GitHub `gh` syntax only**.
+`origin-cli` (global at `~/.agents/skills/origin-cli/`) owns **Cursor `origin` syntax only**.
+Load **github-workflow** first for any mutating git/GitHub work; add **gh-cli** or
+**origin-cli** when you need flag/RPC recall — never substitute one CLI for the other.
+
+**Global only (not vendored here):** `origin-cli` — Origin CLI syntax, ruleset sync, GitHub mirror setup. Install/login repair: Cursor built-in `origin` skill.
 
 None of this is a contributor requirement. It configures an agent working here on the maintainer’s behalf; see “Who this file is for” in [`AGENTS.md`](../../AGENTS.md).
