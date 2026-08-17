@@ -1,10 +1,10 @@
 /**
- * Debug-adapter supervisor (#96–#98).
+ * Debug-adapter supervisor (#96–#99).
  *
  * Starts a managed process, speaks DAP over its stdio pipes, completes
  * initialize + initialized, then owns launch/attach, breakpoints, threads,
- * stacks, scopes, variables, evaluation, and bounded output projections.
- * Artifact capture remains #100.
+ * stacks, scopes, variables, evaluation, output projections, terminate,
+ * cancel, and disconnect/process cleanup. Artifact capture remains #100.
  */
 
 import {
@@ -21,6 +21,9 @@ import {
   type DebugAdapterStartRequest,
   type DebugAdapterState,
   type DebugAttachRequest,
+  type DebugCancelRequest,
+  type DebugDisconnectOutcome,
+  type DebugDisconnectRequest,
   type DebugEvaluateRequest,
   type DebugEvaluateResult,
   type DebugLaunchRequest,
@@ -31,6 +34,8 @@ import {
   type DebugSetBreakpointsResult,
   type DebugStackFrame,
   type DebugStoppedInfo,
+  type DebugTargetExit,
+  type DebugTerminateRequest,
   type DebugThread,
   type DebugVariableProjection,
   debugAdapterLimits,
@@ -50,16 +55,20 @@ import {
   parseScopesResponse,
   parseStackTraceResponse,
   parseStoppedEventBody,
+  parseTargetExitEvent,
   parseThreadsResponse,
   parseVariablesResponse,
   projectEvaluateForModel,
   projectOutputForModel,
   projectVariableForModel,
   type ServiceGeneration,
+  validateCancelRequest,
   validateDebugAdapterStartRequest,
+  validateDisconnectRequest,
   validateEvaluateRequest,
   validateLaunchOrAttachConfiguration,
   validateSetBreakpointsRequest,
+  validateTerminateRequest,
 } from "../domain/index.ts";
 import { err, ok, type Result } from "../domain/result.ts";
 
@@ -73,11 +82,21 @@ export type DebugAdapterSupervisor = {
   disconnect(
     serviceId: ManagedServiceId,
     generation: ServiceGeneration,
-    options?: {
-      readonly restart?: boolean | undefined;
-      readonly terminateDebuggee?: boolean | undefined;
+    options?: DebugDisconnectRequest & {
       readonly signal?: AbortSignal | undefined;
     },
+  ): Promise<Result<DebugAdapterSnapshot, DebugAdapterError>>;
+  terminate(
+    serviceId: ManagedServiceId,
+    generation: ServiceGeneration,
+    request?: DebugTerminateRequest,
+    signal?: AbortSignal,
+  ): Promise<Result<DebugAdapterSnapshot, DebugAdapterError>>;
+  cancel(
+    serviceId: ManagedServiceId,
+    generation: ServiceGeneration,
+    request: DebugCancelRequest,
+    signal?: AbortSignal,
   ): Promise<Result<DebugAdapterSnapshot, DebugAdapterError>>;
   setBreakpoints(
     serviceId: ManagedServiceId,
@@ -175,6 +194,8 @@ type LiveAdapter = {
     readonly breakpointRevisions: Map<string, number>;
     threads: DebugThread[];
     recentOutputs: DebugOutputEvent[];
+    targetExit: DebugTargetExit | null;
+    lastDisconnect: DebugDisconnectOutcome | null;
     nextStoppedGeneration: number;
     nextBreakpointRevision: number;
   };
@@ -184,7 +205,7 @@ type LiveAdapter = {
   readonly pending: Map<
     number,
     {
-      readonly resolve: (response: DapResponse) => void;
+      readonly settle: (result: Result<DapResponse, DebugAdapterError>) => void;
       readonly timer: ReturnType<typeof setTimeout>;
     }
   >;
@@ -238,6 +259,8 @@ function sessionSnapshotOf(adapter: LiveAdapter): DebugSessionSnapshot {
     breakpointRevisions: revisions,
     threads: [...adapter.session.threads],
     recentOutputs: [...adapter.session.recentOutputs],
+    targetExit: adapter.session.targetExit,
+    lastDisconnect: adapter.session.lastDisconnect,
   };
 }
 
@@ -326,8 +349,21 @@ export function createDebugAdapterSupervisor(
     adapter.session.breakpointRevisions.clear();
     adapter.session.threads = [];
     adapter.session.recentOutputs = [];
+    adapter.session.targetExit = empty.targetExit;
+    adapter.session.lastDisconnect = empty.lastDisconnect;
     adapter.session.nextStoppedGeneration = 1;
     adapter.session.nextBreakpointRevision = 1;
+  }
+
+  function cancelPending(
+    adapter: LiveAdapter,
+    reason: DebugAdapterError = { kind: "debug-adapter", code: "cancelled" },
+  ): void {
+    for (const pending of adapter.pending.values()) {
+      clearTimeout(pending.timer);
+      pending.settle(err(reason));
+    }
+    adapter.pending.clear();
   }
 
   function requireStopped(
@@ -378,7 +414,7 @@ export function createDebugAdapterSupervisor(
         );
       }, timeoutMs);
       adapter.pending.set(seq, {
-        resolve: (message) => resolve(ok(message)),
+        settle: resolve,
         timer,
       });
     });
@@ -465,6 +501,11 @@ export function createDebugAdapterSupervisor(
       return;
     }
     if (event === "exited" || event === "terminated") {
+      const parsed = parseTargetExitEvent(event, body);
+      if (!parsed.ok) {
+        return;
+      }
+      adapter.session.targetExit = parsed.value;
       adapter.session.targetState = "exited";
       adapter.session.stopped = null;
       emitSession(adapter);
@@ -498,7 +539,7 @@ export function createDebugAdapterSupervisor(
       }
       clearTimeout(pending.timer);
       adapter.pending.delete(message.request_seq);
-      pending.resolve(message);
+      pending.settle(ok(message));
       return;
     }
     if (message.type === "event") {
@@ -675,6 +716,8 @@ export function createDebugAdapterSupervisor(
           breakpointRevisions: new Map(),
           threads: [],
           recentOutputs: [],
+          targetExit: null,
+          lastDisconnect: null,
           nextStoppedGeneration: 1,
           nextBreakpointRevision: 1,
         },
@@ -742,35 +785,160 @@ export function createDebugAdapterSupervisor(
     },
 
     async disconnect(serviceId, generation, options) {
+      const adapter = adapters.get(serviceId);
+      if (adapter === undefined) {
+        return err({ kind: "debug-adapter", code: "not-found" });
+      }
+      if (adapter.generation !== generation) {
+        return err({ kind: "debug-adapter", code: "stale-generation" });
+      }
+      if (adapter.state === "stopped") {
+        return ok(snapshotOf(adapter));
+      }
+      if (adapter.state === "disconnecting") {
+        return err({ kind: "debug-adapter", code: "already-disconnecting" });
+      }
+
+      const disconnectRequest: DebugDisconnectRequest = {
+        ...(options?.restart === undefined ? {} : { restart: options.restart }),
+        ...(options?.terminateDebuggee === undefined
+          ? {}
+          : { terminateDebuggee: options.terminateDebuggee }),
+      };
+      const invalidDisconnect = validateDisconnectRequest(disconnectRequest);
+      if (invalidDisconnect !== null) {
+        return err(invalidDisconnect);
+      }
+
+      const restart = options?.restart === true;
+      const terminateDebuggee = options?.terminateDebuggee !== false;
+      const wasCommunicating =
+        adapter.state === "ready" ||
+        adapter.state === "degraded" ||
+        adapter.state === "initializing";
+
+      setState(adapter, "disconnecting");
+
+      let adapterAcknowledged = false;
+      let detachUncertain = false;
+      if (wasCommunicating) {
+        const response = await sendRequest(
+          adapter,
+          "disconnect",
+          { restart, terminateDebuggee },
+          adapter.limits.disconnectTimeoutMs,
+          options?.signal,
+        );
+        if (response.ok && response.value.success) {
+          adapterAcknowledged = true;
+        } else if (!terminateDebuggee) {
+          // Detach without a confirmed adapter ack leaves debuggee ownership uncertain.
+          detachUncertain = true;
+        }
+      }
+
+      cancelPending(adapter);
+
+      const stopped = await managedServices.stop(serviceId, generation, "shutdown");
+      let processStopped = false;
+      if (!stopped.ok) {
+        if (stopped.error.code === "shutdown-timeout") {
+          adapter.session.lastDisconnect = {
+            restart,
+            terminateDebuggee,
+            adapterAcknowledged,
+            processStopped: false,
+            detachUncertain: true,
+          };
+          fail(adapter, "disconnect-timeout");
+          return err({ kind: "debug-adapter", code: "disconnect-timeout" });
+        }
+        if (stopped.error.code !== "not-found" && stopped.error.code !== "stale-generation") {
+          return err(mapManagedStartError(stopped.error));
+        }
+        processStopped = stopped.error.code === "not-found";
+      } else {
+        processStopped = true;
+      }
+
+      adapter.detachManaged?.();
+      adapter.detachManaged = null;
+      const lastDisconnect: DebugDisconnectOutcome = {
+        restart,
+        terminateDebuggee,
+        adapterAcknowledged,
+        processStopped,
+        detachUncertain,
+      };
+      resetSession(adapter);
+      adapter.session.lastDisconnect = lastDisconnect;
+      setState(adapter, "stopped");
+      emit(adapter, { kind: "stopped" });
+
+      if (detachUncertain) {
+        return err({ kind: "debug-adapter", code: "detach-uncertain" });
+      }
+      return ok(snapshotOf(adapter));
+    },
+
+    async terminate(serviceId, generation, request = {}, signal) {
       const ready = requireReady(serviceId, generation);
       if (!ready.ok) {
         return ready;
       }
+      const invalidTerminate = validateTerminateRequest(request);
+      if (invalidTerminate !== null) {
+        return err(invalidTerminate);
+      }
       const adapter = ready.value;
-      setState(adapter, "disconnecting");
-      await sendRequest(
+      if (adapter.session.mode === "none") {
+        return err({ kind: "debug-adapter", code: "not-launched" });
+      }
+      if (adapter.session.targetState === "exited") {
+        return err({ kind: "debug-adapter", code: "target-exited" });
+      }
+      const response = await sendRequest(
         adapter,
-        "disconnect",
-        {
-          restart: options?.restart === true,
-          terminateDebuggee: options?.terminateDebuggee !== false,
-        },
-        adapter.limits.disconnectTimeoutMs,
-        options?.signal,
+        "terminate",
+        { restart: request.restart === true },
+        adapter.limits.requestTimeoutMs,
+        signal,
       );
-      const stopped = await managedServices.stop(serviceId, generation);
-      if (!stopped.ok) {
-        return err(mapManagedStartError(stopped.error));
+      if (!response.ok) {
+        return response;
       }
-      adapter.detachManaged?.();
-      adapter.detachManaged = null;
-      for (const pending of adapter.pending.values()) {
-        clearTimeout(pending.timer);
+      if (!response.value.success) {
+        return err({ kind: "debug-adapter", code: "unsupported" });
       }
-      adapter.pending.clear();
-      resetSession(adapter);
-      setState(adapter, "stopped");
-      emit(adapter, { kind: "stopped" });
+      return ok(snapshotOf(adapter));
+    },
+
+    async cancel(serviceId, generation, request, signal) {
+      const ready = requireReady(serviceId, generation);
+      if (!ready.ok) {
+        return ready;
+      }
+      const invalidCancel = validateCancelRequest(request);
+      if (invalidCancel !== null) {
+        return err(invalidCancel);
+      }
+      const adapter = ready.value;
+      const response = await sendRequest(
+        adapter,
+        "cancel",
+        {
+          ...(request.requestId === undefined ? {} : { requestId: request.requestId }),
+          ...(request.progressId === undefined ? {} : { progressId: request.progressId }),
+        },
+        adapter.limits.requestTimeoutMs,
+        signal,
+      );
+      if (!response.ok) {
+        return response;
+      }
+      if (!response.value.success) {
+        return err({ kind: "debug-adapter", code: "unsupported" });
+      }
       return ok(snapshotOf(adapter));
     },
 
