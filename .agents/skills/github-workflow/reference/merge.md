@@ -14,7 +14,41 @@ Integration merges and the topology they produce.
 
 **The repo already has an answer.** Inspect repository settings and rules, contribution guidance, recent merged PRs, and `git log --graph --oneline -30`. Do not infer the method from history alone when GitHub enforces or queues a different method.
 
+## Merge when Origin is the default remote
+
+When `git remote origin` points at **`origin.cursor.com`**, land with **`origin pr merge`**, not `gh pr merge`. Load **origin-cli** for flags; this section owns procedure.
+
+Before merge, resolve and show:
+
+- `-R org/name` (e.g. `ecl1pse/falryn`);
+- change number, base/head branches;
+- checks / mergeability;
+- squash-only expectation;
+- squash subject (= PR title; **no merge commit body**).
+
+```bash
+origin auth status
+origin pr view <n> -R org/name --checks --json number,title,status
+origin pr checks <n> -R org/name
+```
+
+Require checks green. Do not use `--auto` unless separately authorized.
+
+```bash
+origin pr merge <n> -R org/name --squash
+```
+
+Re-read after merge: `origin pr view <n> -R org/name --json number,title,status` → merged.
+
+On **mirrored** repos, merge syncs to GitHub. Optional cross-check: `gh pr view … --repo tyldra-org/<repo> --json state,mergedAt` (GitHub PR number may differ from Origin change number).
+
+**Never** delete the head branch unless separately authorized.
+
+**Anti-pattern:** `gh pr create` + `gh pr merge --squash --delete-branch` on an Origin-primary checkout without explicit user request — the change may not exist on Origin (`origin pr view` 404).
+
 ## Merge a GitHub pull request
+
+Use this section when the PR host is **github.com** (GitHub-primary remote, or explicit `gh` / `tyldra-org/*` work).
 
 Immediately before confirmation, resolve and show:
 
