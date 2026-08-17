@@ -933,6 +933,20 @@ export {
   parseImageReadRequest,
 } from "./image-read.ts";
 export type {
+  EmbeddingsQualificationInput,
+  OptionalIntelligenceCapability,
+  QualificationDecision,
+  QualificationSkipReason,
+  StructuralParsingQualificationInput,
+} from "./language-intelligence-qualify.ts";
+export {
+  qualificationUses,
+  qualifyEmbeddings,
+  qualifyStructuralParsing,
+  STRUCTURAL_PARSE_LANGUAGES,
+  STRUCTURAL_PARSE_MIN_FILE_BYTES,
+} from "./language-intelligence-qualify.ts";
+export type {
   LanguageBackendChangedPayload,
   LanguageBackendChangedRegion,
   LanguageBackendChangedRegionsOutcome,
@@ -2187,6 +2201,7 @@ export {
   recordMatchesQuery,
 } from "./workspace-index.ts";
 export type {
+  StructuralParserPort,
   WorkspaceIndexBuildError,
   WorkspaceIndexBuildLimits,
   WorkspaceIndexBuildReport,
@@ -2197,9 +2212,13 @@ export {
   buildIndexGeneration,
   DEFAULT_INDEX_BUILD_LIMITS,
   extractIndexRecordsFromText,
+  indexRecordKinds,
+  languageIdFromLogical,
   MAX_INDEX_BUILD_FILE_BYTES,
   MAX_INDEX_BUILD_FILES,
   MAX_INDEX_BUILD_RECORDS,
+  mergeLexicalWithStructuralSymbols,
+  resolveSourceLanguageId,
   validateIndexBuildLimits,
   WORKSPACE_INDEX_SCHEMA,
 } from "./workspace-index-build.ts";

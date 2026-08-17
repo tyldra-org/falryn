@@ -3,7 +3,8 @@
  *
  * Extractors turn file text into index records. Builders inventory sources,
  * replace one atomic generation, and expose it through WorkspaceIndexPort.
- * Watchers, Tree-sitter, embeddings, and product tools remain later work.
+ * Optional structural parsers run only when {@link qualifyStructuralParsing}
+ * admits them (#94). Watchers and live embedding providers remain later work.
  */
 
 import { err, ok, type Result } from "./result.ts";
@@ -38,6 +39,13 @@ export type WorkspaceIndexBuildSource = {
   readonly logical: string;
   readonly text: string;
   readonly revision: string;
+  /** Optional language id for structural-parse qualification (#94). */
+  readonly languageId?: string | null | undefined;
+  /**
+   * Pre-admitted structural symbol records when qualification said use.
+   * Callers obtain these from {@link StructuralParserPort} after qualify.
+   */
+  readonly structuralSymbols?: readonly WorkspaceIndexRecord[] | undefined;
 };
 
 export type WorkspaceIndexBuildRequest = {
@@ -51,6 +59,8 @@ export type WorkspaceIndexBuildReport = {
   readonly recordCount: number;
   readonly omittedFiles: number;
   readonly omittedRecords: number;
+  readonly structuralParsingUsed: number;
+  readonly structuralParsingSkipped: number;
 };
 
 export type WorkspaceIndexBuildError =
@@ -58,7 +68,48 @@ export type WorkspaceIndexBuildError =
   | { readonly code: "malformed-source" }
   | { readonly code: "capacity-exceeded"; readonly field: "files" | "records" | "file-bytes" }
   | { readonly code: "build-cancelled" }
-  | { readonly code: "persist-failed"; readonly reason: string };
+  | { readonly code: "persist-failed"; readonly reason: string }
+  | { readonly code: "structural-parse-failed"; readonly reason: string };
+
+/**
+ * Optional Tree-sitter-class symbol extractor. Application admits calls only
+ * after {@link qualifyStructuralParsing} returns use.
+ */
+export type StructuralParserPort = {
+  parseSymbols(
+    source: WorkspaceIndexBuildSource,
+    signal?: AbortSignal,
+  ): Promise<Result<readonly WorkspaceIndexRecord[], WorkspaceIndexBuildError>>;
+};
+
+const EXTENSION_LANGUAGE: ReadonlyMap<string, string> = new Map([
+  [".ts", "typescript"],
+  [".tsx", "tsx"],
+  [".js", "javascript"],
+  [".jsx", "jsx"],
+  [".mjs", "javascript"],
+  [".cjs", "javascript"],
+  [".py", "python"],
+  [".go", "go"],
+  [".rs", "rust"],
+  [".java", "java"],
+  [".c", "c"],
+  [".h", "c"],
+  [".cc", "cpp"],
+  [".cpp", "cpp"],
+  [".cxx", "cpp"],
+  [".cs", "csharp"],
+]);
+
+export function languageIdFromLogical(logical: string): string | null {
+  const slash = logical.lastIndexOf("/");
+  const base = slash >= 0 ? logical.slice(slash + 1) : logical;
+  const dot = base.lastIndexOf(".");
+  if (dot < 0) {
+    return null;
+  }
+  return EXTENSION_LANGUAGE.get(base.slice(dot).toLowerCase()) ?? null;
+}
 
 const SYMBOL_PATTERN =
   /\b(?:export\s+)?(?:async\s+)?(?:function|class|const|let|var|type|interface|enum)\s+([A-Za-z_][A-Za-z0-9_]*)/g;
@@ -171,6 +222,27 @@ export function extractIndexRecordsFromText(
   return records;
 }
 
+/**
+ * Prefer admitted structural symbols over regex symbols; keep headings/chunks.
+ */
+export function mergeLexicalWithStructuralSymbols(
+  lexical: readonly WorkspaceIndexRecord[],
+  structuralSymbols: readonly WorkspaceIndexRecord[],
+): readonly WorkspaceIndexRecord[] {
+  if (structuralSymbols.length === 0) {
+    return lexical;
+  }
+  const nonSymbols = lexical.filter((record) => record.kind !== "symbol");
+  return [...structuralSymbols, ...nonSymbols];
+}
+
+export function resolveSourceLanguageId(source: WorkspaceIndexBuildSource): string | null {
+  if (source.languageId !== undefined && source.languageId !== null) {
+    return source.languageId;
+  }
+  return languageIdFromLogical(source.logical);
+}
+
 export function buildIndexGeneration(
   request: WorkspaceIndexBuildRequest,
   generationId: string,
@@ -191,6 +263,8 @@ export function buildIndexGeneration(
   const records: WorkspaceIndexRecord[] = [];
   let omittedFiles = 0;
   let omittedRecords = 0;
+  let structuralParsingUsed = 0;
+  let structuralParsingSkipped = 0;
 
   for (const source of request.sources) {
     if (
@@ -207,7 +281,19 @@ export function buildIndexGeneration(
       omittedFiles += 1;
       continue;
     }
-    const extracted = extractIndexRecordsFromText(source);
+    const lexical = extractIndexRecordsFromText(source);
+    const structuralSymbols = source.structuralSymbols ?? [];
+    // Application qualifies before calling an expensive parser. Attached
+    // structuralSymbols mean the caller already admitted this path (#94).
+    const useStructural = structuralSymbols.length > 0;
+    if (useStructural) {
+      structuralParsingUsed += 1;
+    } else {
+      structuralParsingSkipped += 1;
+    }
+    const extracted = useStructural
+      ? mergeLexicalWithStructuralSymbols(lexical, structuralSymbols)
+      : lexical;
     for (const record of extracted) {
       if (records.length >= limits.value.maxRecords) {
         omittedRecords += 1;
@@ -230,6 +316,8 @@ export function buildIndexGeneration(
     recordCount: records.length,
     omittedFiles,
     omittedRecords,
+    structuralParsingUsed,
+    structuralParsingSkipped,
   });
 }
 

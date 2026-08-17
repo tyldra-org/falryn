@@ -7,6 +7,13 @@
  */
 
 import type { LocalPath } from "./filesystem.ts";
+import {
+  EMBEDDING_DESTINATIONS,
+  type EmbeddingDestination,
+  qualificationUses,
+  qualifyEmbeddings,
+  SEMANTIC_BASELINE,
+} from "./language-intelligence-qualify.ts";
 import { assertNever, err, ok, type Result } from "./result.ts";
 import {
   type CompiledGlob,
@@ -24,6 +31,9 @@ import type {
 import { excerptIndexText } from "./workspace-index.ts";
 import type { WorkspaceListingError } from "./workspace-listing.ts";
 
+export type { EmbeddingDestination };
+export { EMBEDDING_DESTINATIONS, SEMANTIC_BASELINE };
+
 export const MAX_RETRIEVAL_QUERY_LENGTH = 256;
 export const DEFAULT_MAX_RETRIEVAL_MATCHES = 20;
 export const HARD_MAX_RETRIEVAL_MATCHES = 100;
@@ -32,14 +42,10 @@ export const HARD_MAX_PACK_ITEMS = 32;
 export const DEFAULT_MAX_PACK_TOKENS = 2_048;
 export const HARD_MAX_PACK_TOKENS = 8_192;
 export const MAX_RETRIEVAL_GLOBS = 8;
-export const SEMANTIC_BASELINE = 0.2;
 export const RRF_K = 60;
 export const DIVERSITY_LINE_GAP = 8;
 export const MAX_HITS_PER_PATH = 2;
 export const TOKENS_PER_EXCERPT_CHAR = 4;
-
-export const EMBEDDING_DESTINATIONS = ["local", "remote"] as const;
-export type EmbeddingDestination = (typeof EMBEDDING_DESTINATIONS)[number];
 
 export const EMBEDDING_NORMALIZATIONS = ["none", "l2"] as const;
 export type EmbeddingNormalization = (typeof EMBEDDING_NORMALIZATIONS)[number];
@@ -432,15 +438,25 @@ export function scoreIndexRecords(
     }
   }
 
-  const useSemantic = queryVector !== null && maxSemantic >= SEMANTIC_BASELINE;
+  const useSemanticDecision = qualifyEmbeddings({
+    available: queryVector !== null,
+    destination: "local",
+    allowRemote: true,
+    maxSimilarity: queryVector === null ? null : maxSemantic,
+    lexicalHitCount: lexicalRanks.length,
+    structuralHitCount: structuralRanks.length,
+  });
+  const useSemantic = qualificationUses(useSemanticDecision);
   const attempt =
     queryVector === null
       ? "skipped"
       : dimensionMismatch && semanticRanks.length === 0
         ? "dimension-mismatch"
-        : useSemantic
-          ? "used"
-          : "below-baseline";
+        : useSemanticDecision.decision === "skip" && useSemanticDecision.reason === "below-baseline"
+          ? "below-baseline"
+          : useSemantic
+            ? "used"
+            : "below-baseline";
 
   const rankMap = (rows: readonly { readonly key: string; readonly score: number }[]) => {
     const sorted = [...rows].sort((left, right) => right.score - left.score);
