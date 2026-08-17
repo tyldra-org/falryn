@@ -1,9 +1,9 @@
 /**
- * Debug-adapter session lifecycles (#97).
+ * Debug-adapter session lifecycles (#97–#98).
  *
  * Launch/attach ownership, versioned breakpoints, threads, and stack frames
- * bound to a stopped generation. Scopes/variables remain #98; artifact capture
- * remains #100.
+ * bound to a stopped generation. Scopes, variables, evaluation, and output
+ * projections are #98; artifact capture remains #100.
  */
 
 import { err, ok, type Result } from "./result.ts";
@@ -21,6 +21,16 @@ export const MAX_DEBUG_STACK_FRAMES = 512;
 export const MAX_DEBUG_SOURCE_PATH_LENGTH = 4_096;
 export const MAX_DEBUG_THREAD_NAME_LENGTH = 256;
 export const MAX_DEBUG_FRAME_NAME_LENGTH = 512;
+export const MAX_DEBUG_SCOPES = 64;
+export const MAX_DEBUG_VARIABLES = 512;
+export const MAX_DEBUG_VARIABLE_NAME_LENGTH = 256;
+export const MAX_DEBUG_VARIABLE_VALUE_LENGTH = 4_096;
+export const MAX_DEBUG_EVALUATE_EXPRESSION_LENGTH = 4_096;
+export const MAX_DEBUG_OUTPUT_EVENTS = 64;
+export const MAX_DEBUG_OUTPUT_TEXT_LENGTH = 4_096;
+export const DEBUG_EVALUATE_CONTEXTS = ["watch", "repl", "hover", "clipboard"] as const;
+export type DebugEvaluateContext = (typeof DEBUG_EVALUATE_CONTEXTS)[number];
+export const REDACTED_VALUE = "[redacted]";
 
 export type DebugSessionError =
   | { readonly kind: "debug-adapter"; readonly code: "malformed-response" }
@@ -35,7 +45,10 @@ export type DebugSessionError =
         | "invalid-configuration"
         | "invalid-thread"
         | "invalid-frame"
-        | "invalid-stack";
+        | "invalid-stack"
+        | "invalid-variable"
+        | "invalid-expression"
+        | "invalid-evaluate-context";
     };
 
 export type DebugSourceBreakpoint = {
@@ -95,6 +108,58 @@ export type DebugStoppedInfo = {
   readonly allThreadsStopped: boolean;
 };
 
+export type DebugScope = {
+  readonly name: string;
+  readonly variablesReference: number;
+  readonly expensive: boolean;
+  readonly namedVariables: number | null;
+  readonly indexedVariables: number | null;
+};
+
+export type DebugVariable = {
+  readonly name: string;
+  readonly value: string;
+  readonly type: string | null;
+  readonly variablesReference: number;
+  readonly sensitive: boolean;
+};
+
+/** Model/support projection: sensitive values are redacted. */
+export type DebugVariableProjection = {
+  readonly name: string;
+  readonly value: string;
+  readonly type: string | null;
+  readonly variablesReference: number;
+  readonly sensitive: boolean;
+  readonly redacted: boolean;
+};
+
+export type DebugEvaluateRequest = {
+  readonly expression: string;
+  readonly stoppedGeneration: number;
+  readonly frameId?: number | undefined;
+  readonly context?: DebugEvaluateContext | undefined;
+};
+
+export type DebugEvaluateResult = {
+  readonly result: string;
+  readonly type: string | null;
+  readonly variablesReference: number;
+  readonly context: DebugEvaluateContext;
+  readonly mayMutate: boolean;
+  readonly sensitive: boolean;
+  readonly redacted: boolean;
+};
+
+export type DebugOutputCategory = "console" | "stdout" | "stderr" | "telemetry" | "important";
+
+export type DebugOutputEvent = {
+  readonly category: DebugOutputCategory;
+  readonly output: string;
+  readonly sensitive: boolean;
+  readonly redacted: boolean;
+};
+
 export type DebugSessionSnapshot = {
   readonly mode: DebugSessionMode;
   readonly targetState: DebugTargetState;
@@ -102,6 +167,7 @@ export type DebugSessionSnapshot = {
   readonly stopped: DebugStoppedInfo | null;
   readonly breakpointRevisions: Readonly<Record<string, number>>;
   readonly threads: readonly DebugThread[];
+  readonly recentOutputs: readonly DebugOutputEvent[];
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -116,7 +182,10 @@ function invalid(
     | "invalid-configuration"
     | "invalid-thread"
     | "invalid-frame"
-    | "invalid-stack",
+    | "invalid-stack"
+    | "invalid-variable"
+    | "invalid-expression"
+    | "invalid-evaluate-context",
 ): DebugSessionError {
   return { kind: "debug-adapter", code: "invalid-request", reason };
 }
@@ -297,6 +366,211 @@ export function parseStoppedEventBody(
   });
 }
 
+const SENSITIVE_NAME_PATTERN =
+  /password|passwd|secret|token|credential|api[_-]?key|authorization|private[_-]?key/i;
+
+export function variableNameLooksSensitive(name: string): boolean {
+  return SENSITIVE_NAME_PATTERN.test(name);
+}
+
+export function evaluateMayMutate(context: DebugEvaluateContext): boolean {
+  return context === "repl";
+}
+
+export function projectVariableForModel(variable: DebugVariable): DebugVariableProjection {
+  const sensitive = variable.sensitive || variableNameLooksSensitive(variable.name);
+  return {
+    name: variable.name,
+    value: sensitive ? REDACTED_VALUE : variable.value,
+    type: variable.type,
+    variablesReference: variable.variablesReference,
+    sensitive,
+    redacted: sensitive,
+  };
+}
+
+export function projectEvaluateForModel(result: DebugEvaluateResult): DebugEvaluateResult {
+  if (!result.sensitive) {
+    return result;
+  }
+  return {
+    ...result,
+    result: REDACTED_VALUE,
+    redacted: true,
+  };
+}
+
+export function projectOutputForModel(event: DebugOutputEvent): DebugOutputEvent {
+  if (!event.sensitive) {
+    return event;
+  }
+  return {
+    ...event,
+    output: REDACTED_VALUE,
+    redacted: true,
+  };
+}
+
+export function validateEvaluateRequest(request: DebugEvaluateRequest): DebugSessionError | null {
+  if (
+    typeof request.expression !== "string" ||
+    request.expression.length === 0 ||
+    request.expression.length > MAX_DEBUG_EVALUATE_EXPRESSION_LENGTH
+  ) {
+    return invalid("invalid-expression");
+  }
+  if (
+    typeof request.stoppedGeneration !== "number" ||
+    !Number.isSafeInteger(request.stoppedGeneration) ||
+    request.stoppedGeneration < 1
+  ) {
+    return invalid("invalid-frame");
+  }
+  if (
+    request.frameId !== undefined &&
+    (typeof request.frameId !== "number" ||
+      !Number.isSafeInteger(request.frameId) ||
+      request.frameId < 0)
+  ) {
+    return invalid("invalid-frame");
+  }
+  if (
+    request.context !== undefined &&
+    !(DEBUG_EVALUATE_CONTEXTS as readonly string[]).includes(request.context)
+  ) {
+    return invalid("invalid-evaluate-context");
+  }
+  return null;
+}
+
+function clipText(value: string, max: number): string {
+  return value.length <= max ? value : value.slice(0, max);
+}
+
+export function parseScopesResponse(
+  body: unknown,
+): Result<readonly DebugScope[], DebugSessionError> {
+  if (!isRecord(body) || !Array.isArray(body.scopes)) {
+    return err({ kind: "debug-adapter", code: "malformed-response" });
+  }
+  if (body.scopes.length > MAX_DEBUG_SCOPES) {
+    return err({ kind: "debug-adapter", code: "capacity-exceeded" });
+  }
+  const scopes: DebugScope[] = [];
+  for (const item of body.scopes) {
+    if (
+      !isRecord(item) ||
+      typeof item.name !== "string" ||
+      item.name.length === 0 ||
+      typeof item.variablesReference !== "number" ||
+      !Number.isSafeInteger(item.variablesReference) ||
+      item.variablesReference < 0
+    ) {
+      return err({ kind: "debug-adapter", code: "malformed-response" });
+    }
+    scopes.push({
+      name: item.name,
+      variablesReference: item.variablesReference,
+      expensive: item.expensive === true,
+      namedVariables:
+        typeof item.namedVariables === "number" && Number.isSafeInteger(item.namedVariables)
+          ? item.namedVariables
+          : null,
+      indexedVariables:
+        typeof item.indexedVariables === "number" && Number.isSafeInteger(item.indexedVariables)
+          ? item.indexedVariables
+          : null,
+    });
+  }
+  return ok(scopes);
+}
+
+export function parseVariablesResponse(
+  body: unknown,
+): Result<readonly DebugVariable[], DebugSessionError> {
+  if (!isRecord(body) || !Array.isArray(body.variables)) {
+    return err({ kind: "debug-adapter", code: "malformed-response" });
+  }
+  if (body.variables.length > MAX_DEBUG_VARIABLES) {
+    return err({ kind: "debug-adapter", code: "capacity-exceeded" });
+  }
+  const variables: DebugVariable[] = [];
+  for (const item of body.variables) {
+    if (
+      !isRecord(item) ||
+      typeof item.name !== "string" ||
+      item.name.length === 0 ||
+      item.name.length > MAX_DEBUG_VARIABLE_NAME_LENGTH ||
+      typeof item.value !== "string" ||
+      typeof item.variablesReference !== "number" ||
+      !Number.isSafeInteger(item.variablesReference) ||
+      item.variablesReference < 0
+    ) {
+      return err({ kind: "debug-adapter", code: "malformed-response" });
+    }
+    const name = item.name;
+    variables.push({
+      name,
+      value: clipText(item.value, MAX_DEBUG_VARIABLE_VALUE_LENGTH),
+      type: typeof item.type === "string" ? item.type : null,
+      variablesReference: item.variablesReference,
+      sensitive: variableNameLooksSensitive(name),
+    });
+  }
+  return ok(variables);
+}
+
+export function parseEvaluateResponse(
+  body: unknown,
+  context: DebugEvaluateContext,
+): Result<DebugEvaluateResult, DebugSessionError> {
+  if (!isRecord(body) || typeof body.result !== "string") {
+    return err({ kind: "debug-adapter", code: "malformed-response" });
+  }
+  const variablesReference =
+    typeof body.variablesReference === "number" && Number.isSafeInteger(body.variablesReference)
+      ? body.variablesReference
+      : 0;
+  if (variablesReference < 0) {
+    return err({ kind: "debug-adapter", code: "malformed-response" });
+  }
+  const resultText = clipText(body.result, MAX_DEBUG_VARIABLE_VALUE_LENGTH);
+  const sensitive =
+    variableNameLooksSensitive(resultText) || /bearer\s+[a-z0-9._-]+/i.test(resultText);
+  return ok({
+    result: resultText,
+    type: typeof body.type === "string" ? body.type : null,
+    variablesReference,
+    context,
+    mayMutate: evaluateMayMutate(context),
+    sensitive,
+    redacted: false,
+  });
+}
+
+export function parseOutputEventBody(body: unknown): Result<DebugOutputEvent, DebugSessionError> {
+  if (!isRecord(body) || typeof body.output !== "string") {
+    return err({ kind: "debug-adapter", code: "malformed-response" });
+  }
+  const categoryRaw = typeof body.category === "string" ? body.category : "console";
+  const category: DebugOutputCategory =
+    categoryRaw === "stdout" ||
+    categoryRaw === "stderr" ||
+    categoryRaw === "telemetry" ||
+    categoryRaw === "important"
+      ? categoryRaw
+      : "console";
+  const output = clipText(body.output, MAX_DEBUG_OUTPUT_TEXT_LENGTH);
+  const sensitive =
+    variableNameLooksSensitive(output) || /api[_-]?key|password|secret|token/i.test(output);
+  return ok({
+    category,
+    output,
+    sensitive,
+    redacted: false,
+  });
+}
+
 export function emptyDebugSessionSnapshot(): DebugSessionSnapshot {
   return {
     mode: "none",
@@ -305,5 +579,6 @@ export function emptyDebugSessionSnapshot(): DebugSessionSnapshot {
     stopped: null,
     breakpointRevisions: {},
     threads: [],
+    recentOutputs: [],
   };
 }

@@ -336,6 +336,60 @@ function sessionCapableHandler(
     adapterSeq.value += 1;
     return;
   }
+  if (message.command === "scopes") {
+    reply({
+      seq: adapterSeq.value,
+      type: "response",
+      request_seq: message.seq,
+      success: true,
+      command: "scopes",
+      body: {
+        scopes: [{ name: "Locals", variablesReference: 100, expensive: false }],
+      },
+    });
+    adapterSeq.value += 1;
+    return;
+  }
+  if (message.command === "variables") {
+    reply({
+      seq: adapterSeq.value,
+      type: "response",
+      request_seq: message.seq,
+      success: true,
+      command: "variables",
+      body: {
+        variables: [
+          { name: "count", value: "3", type: "number", variablesReference: 0 },
+          { name: "password", value: "hunter2", type: "string", variablesReference: 0 },
+        ],
+      },
+    });
+    adapterSeq.value += 1;
+    return;
+  }
+  if (message.command === "evaluate") {
+    const args =
+      message.arguments !== null &&
+      typeof message.arguments === "object" &&
+      !Array.isArray(message.arguments)
+        ? (message.arguments as Record<string, unknown>)
+        : {};
+    const expression = typeof args.expression === "string" ? args.expression : "";
+    reply({
+      seq: adapterSeq.value,
+      type: "response",
+      request_seq: message.seq,
+      success: true,
+      command: "evaluate",
+      body: {
+        result: expression === "secret" ? "Bearer tok.xyz" : `eval(${expression})`,
+        type: "string",
+        variablesReference: 0,
+      },
+    });
+    adapterSeq.value += 1;
+    return;
+  }
   if (message.command === "disconnect") {
     reply({
       seq: adapterSeq.value,
@@ -662,5 +716,134 @@ describe("createDebugAdapterSupervisor", () => {
     }
     expect(continued.value.session.targetState).toBe("running");
     expect(continued.value.session.stopped).toBeNull();
+  });
+
+  test("reads scopes and variables, evaluates with mutation flag, and redacts outputs", async () => {
+    const seq = { value: 1 };
+    const port = new FakeManagedServicePort((message, pushStdout) => {
+      sessionCapableHandler(message, pushStdout, seq);
+      if (message.type === "request" && message.command === "launch") {
+        pushStdout(
+          encodeDapFrame({
+            seq: seq.value,
+            type: "event",
+            event: "output",
+            body: { category: "stdout", output: "token=abc123" },
+          }),
+        );
+        seq.value += 1;
+      }
+    });
+    const supervisor = createDebugAdapterSupervisor(port);
+    const started = await supervisor.start(startRequest);
+    expect(started.ok).toBe(true);
+    if (!started.ok) {
+      return;
+    }
+
+    const launched = await supervisor.launch(startRequest.serviceId, started.value.generation, {
+      configuration: { program: "/tmp/app.ts" },
+    });
+    expect(launched.ok).toBe(true);
+    if (!launched.ok) {
+      return;
+    }
+    expect(launched.value.session.recentOutputs).toEqual([
+      {
+        category: "stdout",
+        output: "[redacted]",
+        sensitive: true,
+        redacted: true,
+      },
+    ]);
+
+    const scopes = await supervisor.scopes(startRequest.serviceId, started.value.generation, {
+      frameId: 10,
+      stoppedGeneration: 1,
+    });
+    expect(scopes).toEqual({
+      ok: true,
+      value: [
+        {
+          name: "Locals",
+          variablesReference: 100,
+          expensive: false,
+          namedVariables: null,
+          indexedVariables: null,
+        },
+      ],
+    });
+
+    const variables = await supervisor.variables(startRequest.serviceId, started.value.generation, {
+      variablesReference: 100,
+      stoppedGeneration: 1,
+    });
+    expect(variables.ok).toBe(true);
+    if (!variables.ok) {
+      return;
+    }
+    expect(variables.value).toEqual([
+      {
+        name: "count",
+        value: "3",
+        type: "number",
+        variablesReference: 0,
+        sensitive: false,
+        redacted: false,
+      },
+      {
+        name: "password",
+        value: "[redacted]",
+        type: "string",
+        variablesReference: 0,
+        sensitive: true,
+        redacted: true,
+      },
+    ]);
+
+    const watch = await supervisor.evaluate(startRequest.serviceId, started.value.generation, {
+      expression: "count + 1",
+      stoppedGeneration: 1,
+      context: "watch",
+      frameId: 10,
+    });
+    expect(watch.ok).toBe(true);
+    if (!watch.ok) {
+      return;
+    }
+    expect(watch.value.mayMutate).toBe(false);
+    expect(watch.value.result).toBe("eval(count + 1)");
+
+    const secret = await supervisor.evaluate(startRequest.serviceId, started.value.generation, {
+      expression: "secret",
+      stoppedGeneration: 1,
+      context: "hover",
+    });
+    expect(secret.ok).toBe(true);
+    if (!secret.ok) {
+      return;
+    }
+    expect(secret.value.result).toBe("[redacted]");
+    expect(secret.value.redacted).toBe(true);
+
+    const repl = await supervisor.evaluate(startRequest.serviceId, started.value.generation, {
+      expression: "x = 1",
+      stoppedGeneration: 1,
+      context: "repl",
+    });
+    expect(repl.ok).toBe(true);
+    if (!repl.ok) {
+      return;
+    }
+    expect(repl.value.mayMutate).toBe(true);
+
+    const stale = await supervisor.scopes(startRequest.serviceId, started.value.generation, {
+      frameId: 10,
+      stoppedGeneration: 99,
+    });
+    expect(stale).toEqual({
+      ok: false,
+      error: { kind: "debug-adapter", code: "stale-stopped-generation" },
+    });
   });
 });
