@@ -1,10 +1,9 @@
 /**
- * Language-server supervisor (#89 lifecycle + #90 document sync).
+ * Language-server supervisor (#89 lifecycle + #90 sync + #91 features).
  *
  * Starts a managed process, speaks JSON-RPC over its stdio pipes, completes
- * initialize, synchronizes documents/workspace folders/dynamic capabilities,
- * and performs shutdown/exit. Feature requests and edits-as-patches remain
- * later children of #88.
+ * initialize, synchronizes documents, admits feature requests, observes
+ * diagnostics, and performs shutdown/exit. Edits-as-patches remain #92.
  */
 
 import {
@@ -19,17 +18,26 @@ import {
   type LanguageServerChangeDocumentRequest,
   type LanguageServerClientInfo,
   type LanguageServerCloseDocumentRequest,
+  type LanguageServerCompletionList,
+  type LanguageServerDocumentSymbolsRequest,
   type LanguageServerError,
   type LanguageServerEvent,
   type LanguageServerFailureReason,
+  type LanguageServerHover,
   type LanguageServerLimits,
+  type LanguageServerLocation,
+  type LanguageServerLocationLink,
   type LanguageServerOpenDocument,
   type LanguageServerOpenDocumentRequest,
+  type LanguageServerPublishDiagnostics,
+  type LanguageServerReferencesRequest,
   type LanguageServerRegisteredCapability,
   type LanguageServerSaveDocumentRequest,
   type LanguageServerSnapshot,
   type LanguageServerStartRequest,
   type LanguageServerState,
+  type LanguageServerSymbols,
+  type LanguageServerTextDocumentPosition,
   type LanguageServerWorkspaceFolder,
   type LanguageServerWorkspaceFoldersChange,
   languageServerLimits,
@@ -40,7 +48,13 @@ import {
   type ManagedServiceId,
   type ManagedServicePort,
   mergeWorkspaceFolders,
+  parseCompletionResult,
+  parseDefinitionResult,
+  parseDocumentSymbolsResult,
+  parseHover,
   parseLanguageServerInitializeResult,
+  parsePublishDiagnostics,
+  parseReferencesResult,
   parseRegisterCapabilityParams,
   parseUnregisterCapabilityParams,
   type ServiceGeneration,
@@ -48,6 +62,7 @@ import {
   validateDocumentUri,
   validateLanguageServerStartRequest,
   validateOpenDocumentRequest,
+  validateTextDocumentPosition,
   validateWorkspaceFoldersChange,
 } from "../domain/index.ts";
 import { err, ok, type Result } from "../domain/result.ts";
@@ -89,6 +104,42 @@ export type LanguageServerSupervisor = {
     generation: ServiceGeneration,
     change: LanguageServerWorkspaceFoldersChange,
   ): Promise<Result<LanguageServerSnapshot, LanguageServerError>>;
+  hover(
+    serviceId: ManagedServiceId,
+    generation: ServiceGeneration,
+    request: LanguageServerTextDocumentPosition,
+    signal?: AbortSignal,
+  ): Promise<Result<LanguageServerHover | null, LanguageServerError>>;
+  definition(
+    serviceId: ManagedServiceId,
+    generation: ServiceGeneration,
+    request: LanguageServerTextDocumentPosition,
+    signal?: AbortSignal,
+  ): Promise<
+    Result<
+      readonly LanguageServerLocation[] | readonly LanguageServerLocationLink[],
+      LanguageServerError
+    >
+  >;
+  references(
+    serviceId: ManagedServiceId,
+    generation: ServiceGeneration,
+    request: LanguageServerReferencesRequest,
+    signal?: AbortSignal,
+  ): Promise<Result<readonly LanguageServerLocation[], LanguageServerError>>;
+  documentSymbols(
+    serviceId: ManagedServiceId,
+    generation: ServiceGeneration,
+    request: LanguageServerDocumentSymbolsRequest,
+    signal?: AbortSignal,
+  ): Promise<Result<LanguageServerSymbols, LanguageServerError>>;
+  completion(
+    serviceId: ManagedServiceId,
+    generation: ServiceGeneration,
+    request: LanguageServerTextDocumentPosition,
+    signal?: AbortSignal,
+  ): Promise<Result<LanguageServerCompletionList, LanguageServerError>>;
+  diagnostics(serviceId: ManagedServiceId, uri: string): LanguageServerPublishDiagnostics | null;
   snapshot(serviceId: ManagedServiceId): LanguageServerSnapshot | null;
   attach(
     serviceId: ManagedServiceId,
@@ -122,6 +173,7 @@ type LiveServer = {
   readonly openDocuments: Map<string, LanguageServerOpenDocument>;
   workspaceFolders: LanguageServerWorkspaceFolder[];
   readonly registeredCapabilities: Map<string, LanguageServerRegisteredCapability>;
+  readonly diagnosticsByUri: Map<string, LanguageServerPublishDiagnostics>;
 };
 
 function pendingKey(id: JsonRpcId): string {
@@ -271,12 +323,22 @@ export function createLanguageServerSupervisor(
       server.pending.set(pendingKey(id), {
         resolve: (message) => {
           if ("error" in message) {
-            resolve(
-              err({
-                kind: "language-server",
-                code: method === "initialize" ? "initialization-failure" : "malformed-response",
-              }),
-            );
+            const errorCode =
+              typeof message.error === "object" &&
+              message.error !== null &&
+              "code" in message.error &&
+              typeof (message.error as { readonly code: unknown }).code === "number"
+                ? (message.error as { readonly code: number }).code
+                : null;
+            if (method === "initialize") {
+              resolve(err({ kind: "language-server", code: "initialization-failure" }));
+              return;
+            }
+            if (errorCode === -32_601) {
+              resolve(err({ kind: "language-server", code: "unsupported" }));
+              return;
+            }
+            resolve(err({ kind: "language-server", code: "malformed-response" }));
             return;
           }
           if (!("result" in message)) {
@@ -413,6 +475,25 @@ export function createLanguageServerSupervisor(
       return;
     }
     if ("method" in message && !("id" in message)) {
+      if (message.method === "textDocument/publishDiagnostics") {
+        const parsed = parsePublishDiagnostics(message.params);
+        if (!parsed.ok) {
+          emit(server, {
+            kind: "notification",
+            method: message.method,
+            params: message.params ?? null,
+          });
+          return;
+        }
+        server.diagnosticsByUri.set(parsed.value.uri, parsed.value);
+        emit(server, {
+          kind: "diagnostics",
+          uri: parsed.value.uri,
+          version: parsed.value.version,
+          diagnostics: parsed.value.diagnostics,
+        });
+        return;
+      }
       emit(server, {
         kind: "notification",
         method: message.method,
@@ -445,6 +526,7 @@ export function createLanguageServerSupervisor(
           server.decoder.reset();
           server.openDocuments.clear();
           server.registeredCapabilities.clear();
+          server.diagnosticsByUri.clear();
           setState(server, "restarting");
         }
         return;
@@ -554,6 +636,7 @@ export function createLanguageServerSupervisor(
         openDocuments: new Map(),
         workspaceFolders: [...initialFolders],
         registeredCapabilities: new Map(),
+        diagnosticsByUri: new Map(),
       };
       servers.set(request.serviceId, server);
       setState(server, "starting");
@@ -666,6 +749,7 @@ export function createLanguageServerSupervisor(
       server.pending.clear();
       server.openDocuments.clear();
       server.registeredCapabilities.clear();
+      server.diagnosticsByUri.clear();
       server.detachManaged?.();
       server.detachManaged = null;
       setState(server, "stopped");
@@ -806,8 +890,175 @@ export function createLanguageServerSupervisor(
         return notified;
       }
       server.openDocuments.delete(request.uri);
+      server.diagnosticsByUri.delete(request.uri);
       emit(server, { kind: "document-closed", uri: request.uri });
       return ok(snapshotOf(server));
+    },
+
+    async hover(serviceId, generation, request, signal) {
+      const ready = requireReady(serviceId, generation);
+      if (!ready.ok) {
+        return ready;
+      }
+      const invalid = validateTextDocumentPosition(request);
+      if (invalid !== null) {
+        return err({ kind: "language-server", code: "invalid-request", reason: invalid });
+      }
+      if (!ready.value.openDocuments.has(request.uri)) {
+        return err({ kind: "language-server", code: "document-not-open" });
+      }
+      const raw = await sendRequest(
+        ready.value,
+        "textDocument/hover",
+        {
+          textDocument: { uri: request.uri },
+          position: request.position,
+        },
+        ready.value.limits.requestTimeoutMs,
+        signal,
+      );
+      if (!raw.ok) {
+        return raw;
+      }
+      const parsed = parseHover(raw.value);
+      if (!parsed.ok) {
+        return err({ kind: "language-server", code: "invalid-request", reason: parsed.error });
+      }
+      return ok(parsed.value);
+    },
+
+    async definition(serviceId, generation, request, signal) {
+      const ready = requireReady(serviceId, generation);
+      if (!ready.ok) {
+        return ready;
+      }
+      const invalid = validateTextDocumentPosition(request);
+      if (invalid !== null) {
+        return err({ kind: "language-server", code: "invalid-request", reason: invalid });
+      }
+      if (!ready.value.openDocuments.has(request.uri)) {
+        return err({ kind: "language-server", code: "document-not-open" });
+      }
+      const raw = await sendRequest(
+        ready.value,
+        "textDocument/definition",
+        {
+          textDocument: { uri: request.uri },
+          position: request.position,
+        },
+        ready.value.limits.requestTimeoutMs,
+        signal,
+      );
+      if (!raw.ok) {
+        return raw;
+      }
+      const parsed = parseDefinitionResult(raw.value);
+      if (!parsed.ok) {
+        return err({ kind: "language-server", code: "invalid-request", reason: parsed.error });
+      }
+      return ok(parsed.value);
+    },
+
+    async references(serviceId, generation, request, signal) {
+      const ready = requireReady(serviceId, generation);
+      if (!ready.ok) {
+        return ready;
+      }
+      const invalid = validateTextDocumentPosition(request);
+      if (invalid !== null) {
+        return err({ kind: "language-server", code: "invalid-request", reason: invalid });
+      }
+      if (!ready.value.openDocuments.has(request.uri)) {
+        return err({ kind: "language-server", code: "document-not-open" });
+      }
+      const raw = await sendRequest(
+        ready.value,
+        "textDocument/references",
+        {
+          textDocument: { uri: request.uri },
+          position: request.position,
+          context: { includeDeclaration: request.includeDeclaration },
+        },
+        ready.value.limits.requestTimeoutMs,
+        signal,
+      );
+      if (!raw.ok) {
+        return raw;
+      }
+      const parsed = parseReferencesResult(raw.value);
+      if (!parsed.ok) {
+        return err({ kind: "language-server", code: "invalid-request", reason: parsed.error });
+      }
+      return ok(parsed.value);
+    },
+
+    async documentSymbols(serviceId, generation, request, signal) {
+      const ready = requireReady(serviceId, generation);
+      if (!ready.ok) {
+        return ready;
+      }
+      const uriInvalid = validateDocumentUri(request.uri);
+      if (uriInvalid !== null) {
+        return err({ kind: "language-server", code: "invalid-request", reason: uriInvalid });
+      }
+      if (!ready.value.openDocuments.has(request.uri)) {
+        return err({ kind: "language-server", code: "document-not-open" });
+      }
+      const raw = await sendRequest(
+        ready.value,
+        "textDocument/documentSymbol",
+        { textDocument: { uri: request.uri } },
+        ready.value.limits.requestTimeoutMs,
+        signal,
+      );
+      if (!raw.ok) {
+        return raw;
+      }
+      const parsed = parseDocumentSymbolsResult(raw.value);
+      if (!parsed.ok) {
+        return err({ kind: "language-server", code: "invalid-request", reason: parsed.error });
+      }
+      return ok(parsed.value);
+    },
+
+    async completion(serviceId, generation, request, signal) {
+      const ready = requireReady(serviceId, generation);
+      if (!ready.ok) {
+        return ready;
+      }
+      const invalid = validateTextDocumentPosition(request);
+      if (invalid !== null) {
+        return err({ kind: "language-server", code: "invalid-request", reason: invalid });
+      }
+      if (!ready.value.openDocuments.has(request.uri)) {
+        return err({ kind: "language-server", code: "document-not-open" });
+      }
+      const raw = await sendRequest(
+        ready.value,
+        "textDocument/completion",
+        {
+          textDocument: { uri: request.uri },
+          position: request.position,
+        },
+        ready.value.limits.requestTimeoutMs,
+        signal,
+      );
+      if (!raw.ok) {
+        return raw;
+      }
+      const parsed = parseCompletionResult(raw.value);
+      if (!parsed.ok) {
+        return err({ kind: "language-server", code: "invalid-request", reason: parsed.error });
+      }
+      return ok(parsed.value);
+    },
+
+    diagnostics(serviceId, uri) {
+      const server = servers.get(serviceId);
+      if (server === undefined) {
+        return null;
+      }
+      return server.diagnosticsByUri.get(uri) ?? null;
     },
 
     async changeWorkspaceFolders(serviceId, generation, change) {

@@ -3,8 +3,7 @@
  *
  * Falryn owns server identity, the lifecycle state machine, initialize and
  * shutdown results, and JSON-RPC framing. Process handles stay behind
- * ManagedServicePort; document sync and language requests belong to later
- * children of #88.
+ * ManagedServicePort. Feature requests are #91; edits-as-patches remain #92.
  */
 
 import { z } from "zod";
@@ -207,7 +206,15 @@ export type LanguageServerError =
         | "invalid-change"
         | "invalid-folder"
         | "too-many-folders"
-        | "invalid-capability";
+        | "invalid-capability"
+        | "invalid-position"
+        | "invalid-range"
+        | "invalid-diagnostic"
+        | "invalid-hover"
+        | "invalid-location"
+        | "invalid-symbol"
+        | "invalid-completion"
+        | "result-too-large";
     }
   | {
       readonly kind: "language-server";
@@ -277,6 +284,22 @@ export type LanguageServerEvent =
   | (LanguageServerEventBase & {
       readonly kind: "capability-unregistered";
       readonly id: string;
+    })
+  | (LanguageServerEventBase & {
+      readonly kind: "diagnostics";
+      readonly uri: string;
+      readonly version: number | null;
+      readonly diagnostics: readonly {
+        readonly range: {
+          readonly start: { readonly line: number; readonly character: number };
+          readonly end: { readonly line: number; readonly character: number };
+        };
+        readonly message: string;
+        readonly severity?: 1 | 2 | 3 | 4 | undefined;
+        readonly code?: string | number | undefined;
+        readonly source?: string | undefined;
+        readonly tags?: readonly number[] | undefined;
+      }[];
     })
   | (LanguageServerEventBase & { readonly kind: "stopped" });
 
