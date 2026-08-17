@@ -54,7 +54,11 @@ contracts apply only when that agent is given one of those mode prompts.
 
 ## Required skills
 
-Load from `.agents/skills/` (see the README there for the full table):
+Load from `.agents/skills/` (see the README there for the full table). **`origin-cli`**
+is global only: `~/.agents/skills/origin-cli/SKILL.md` (not vendored in this repo).
+
+**Skill split:** **github-workflow** = process/safety; **gh-cli** = `gh` syntax only;
+**origin-cli** = `origin` syntax only (global). Load workflow first for mutations; add CLI skills for flags.
 
 | When | Skill |
 | --- | --- |
@@ -63,6 +67,7 @@ Load from `.agents/skills/` (see the README there for the full table):
 | OpenTUI TypeScript/TSX | **Both** `typescript-best-practices` and `opentui` |
 | Any Git/GitHub change (branch, commit, PR, issue, Project, merge, release, …) | `github-workflow` |
 | Exact `gh` flags / JSON / subcommand recall | `gh-cli` (process still follows `github-workflow`) |
+| Origin CLI syntax, mirror setup, ruleset sync, or `origin pr` / `origin repo` flags | `origin-cli` at `~/.agents/skills/origin-cli/` (install/login repair: Cursor built-in `origin` skill) |
 | `Deliver — Target: …`, `Next — Target: Falryn Roadmap`, or “what should I implement next?” | `falryn-delivery-loop` — maintainer delivery modes only; does not replace technical/GitHub skills; not required of other contributors |
 
 ### OpenTUI ownership

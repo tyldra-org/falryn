@@ -1,13 +1,33 @@
 ---
 name: gh-cli
-description: GitHub CLI (gh) command reference for repos, issues, PRs, Actions, projects, releases, gists, codespaces, orgs, search, api, secrets, and extensions. Use when composing or debugging gh commands, flags, JSON/--jq output, or auth/config via the CLI.
+description: >-
+  GitHub CLI (`gh`) **syntax only** — subcommands, flags, `--json`/`--jq`, and
+  `gh api` paths for github.com. Use for composing or debugging `gh` commands.
+  Does **not** decide commit/merge safety or delivery order (github-workflow) and
+  does **not** cover the Cursor `origin` CLI (origin-cli).
 ---
 
-# GitHub CLI (gh)
+# GitHub CLI (`gh`)
 
-Command-line reference for `gh`. Prefer this skill for **flag/syntax recall**; use `github-workflow` for commit/PR/merge safety, confirmation gates, and delivery procedure.
+Command-line reference for **`gh`** against **GitHub (github.com)**.
+
+**Not in scope:** `git` commands, Cursor **`origin`** CLI, or whether an operation is safe — see [Skill boundaries](#skill-boundaries).
 
 Preserved from [github/awesome-copilot `gh-cli`](https://www.skills.sh/github/awesome-copilot/gh-cli) (commit `8395dce`) after upstream removal. Verify flags with `gh <cmd> --help` / `gh --version` when behavior may have changed.
+
+## Skill boundaries
+
+| Question | Load |
+| --- | --- |
+| "What flags for `gh pr create`?" | **gh-cli** (this) |
+| "Should I merge / open PR / force push?" | **github-workflow** |
+| "`origin pr merge` vs `gh pr merge`?" | **origin-cli** for `origin …`; **gh-cli** for `gh …` |
+| "Sync rulesets to Origin" | **origin-cli** (+ **gh-cli** to *read* GitHub rulesets) |
+| "Install Origin / login to origin.cursor.com" | Cursor built-in **`origin`** skill |
+
+**This skill does not replace `github-workflow`.** Workflow owns confirmations, delivery order, and git history safety. When both apply: follow **github-workflow** for process; use this skill for exact `gh` spelling.
+
+**Never use `gh` for Origin forge operations.** Origin has its own CLI (`origin …`) documented in **origin-cli**.
 
 ## Rules
 
@@ -63,11 +83,13 @@ gh api graphql -f query='query { viewer { login } }'
 
 Repo override without cwd inference: `--repo OWNER/REPO` or `GH_REPO=OWNER/REPO`.
 
-## Relationship to github-workflow
+## Relationship to other skills
 
-| Concern | Skill |
+| Skill | Role |
 | --- | --- |
-| How to run `gh …` safely with history/delivery rules | `github-workflow` |
-| Exact subcommands, flags, examples | **this skill** |
+| **github-workflow** | Process, safety, confirmations, delivery — load **first** for GitHub mutations |
+| **gh-cli** (this) | `gh` flag/syntax only |
+| **origin-cli** | `origin` flag/syntax + Origin RPC — not `gh` |
+| **`origin`** (Cursor built-in) | Install/login repair for Origin CLI only |
 
-When both apply: follow `github-workflow` for process; use these references for CLI syntax.
+Do not duplicate workflow rules here. Do not document `origin pr` here — that is **origin-cli**.
