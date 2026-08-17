@@ -31,6 +31,11 @@ export {
 } from "./composer-context.ts";
 export type { SecretResolverOptions } from "./credential-resolver.ts";
 export { createSecretResolver } from "./credential-resolver.ts";
+export type { DebugAdapterListener, DebugAdapterSupervisor } from "./debug-adapter.ts";
+export {
+  createDebugAdapterSupervisor,
+  describeDebugAdapterFailure,
+} from "./debug-adapter.ts";
 export type { DiagnosticsCollector, EmitOutcome, EmitRequest } from "./diagnostics-collector.ts";
 export { createDiagnosticsCollector, DIAGNOSTICS_OWNERSHIP } from "./diagnostics-collector.ts";
 export type { ErrorContext } from "./error-translation.ts";
