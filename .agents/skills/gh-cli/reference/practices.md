@@ -1,13 +1,14 @@
 # Practices & help
 
-> Extracted from github/awesome-copilot `gh-cli` (commit 8395dce). Prefer `gh <cmd> --help` when flags may have changed.
+> Prefer `gh <cmd> --help` when flags may have changed. Process/safety: **github-workflow**. Cursor forge: **origin-cli** (not this skill).
 
 ### Best Practices
 
-1. **Authentication**: Use environment variables for automation
+1. **Authentication**: For automation, use `gh auth` — never print `gh auth token` or `GH_TOKEN` in chat.
 
    ```bash
-   export GH_TOKEN=$(gh auth token)
+   # Local scripts only; do not echo token
+   : "${GH_TOKEN:?set in env}"
    ```
 
 2. **Default Repository**: Set default to avoid repetition
@@ -49,6 +50,14 @@ gh help environment
 gh help exit-codes
 gh help accessibility
 ```
+
+### Skill split reminder
+
+| Need | Skill |
+| --- | --- |
+| `gh pr merge --squash` flags | **gh-cli** (this tree) |
+| Whether to merge | **github-workflow** |
+| `origin pr merge --squash` | **origin-cli** |
 
 ### References
 

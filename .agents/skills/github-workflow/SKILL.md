@@ -1,11 +1,37 @@
 ---
 name: github-workflow
-description: Operate Git and GitHub with recoverable history and explicit remote state. Use for commits, branches, sync, PRs, reviews, merges, CI, issues, Projects, Actions, security, releases, rewrites, recovery, multi-repo delivery, and repository admin.
+description: >-
+  Git and GitHub **process and safety**: when to commit, branch, push, open/merge
+  PRs, delivery order, confirmations, recovery, issues, Projects, CI, releases,
+  and repo admin. Does **not** teach gh or origin CLI flag syntax — pair with
+  gh-cli and/or origin-cli for command recall.
 ---
 
 # GitHub Workflow
 
 Clean, recoverable, auditable Git/GitHub work. Every commit reviewable; every platform mutation target-specific; every irreversible or outward-facing action deliberate.
+
+## Skill boundaries (read first)
+
+This skill owns **procedure and safety**, not CLI cheat sheets.
+
+| | **github-workflow** (this) | **gh-cli** | **origin-cli** |
+| --- | --- | --- | --- |
+| **Answers** | Should we? In what order? Confirm? | How do I spell `gh …`? | How do I spell `origin …`? |
+| **Tool** | `git` + `gh` (as part of workflows) | `gh` only → **github.com** | `origin` only → **origin.cursor.com** |
+| **Owns** | Commit policy, merge gates, delivery, recovery, issue/PR *process*, GitHub admin *procedure* | Flags, subcommands, `--json`/`--jq`, `gh api` paths | Flags, `-R`, Origin RPC, mirror/ruleset *syntax* |
+| **Does not own** | Exact `gh`/`origin` flags | Whether to merge; git history rules | GitHub issues/Actions; `git` porcelain |
+| **Load when** | Any mutating git/GitHub work | Need `gh` flag/JSON recall | Need `origin` flag/RPC recall |
+| **Typical pair** | Always first for GitHub mutations | + **gh-cli** for non-trivial `gh` | + **origin-cli** when also touching Cursor forge |
+
+**Disambiguation**
+
+- **`git remote origin`** — your default remote *name* (often `origin.cursor.com` or `github.com`). Not the Origin CLI. Not this skill's "fork `origin`".
+- **`gh pr …`** — GitHub pull requests on **github.com** (CI, public visibility, full rulesets).
+- **`origin pr …`** — Cursor **changes** on **origin.cursor.com** (sync to GitHub when mirrored).
+- **Mirrored repos** — GitHub stays source of truth for CI, public access, and status-check rulesets; Origin holds a copy + agent UI. Use **github-workflow** for landing on GitHub; **origin-cli** to align Origin merge rules.
+
+**Load order:** `github-workflow` → then `gh-cli` and/or `origin-cli` for syntax. If both hosts apply, say which command targets which host in the report.
 
 ## How to use
 
@@ -244,7 +270,7 @@ Read when merging, branching, or releasing:
 | **Trunk-based** | Direct default-branch commits, flags | Small commits; CI is the gate |
 | **Git flow** | `develop` + `release/*` + `hotfix/*` | Features → `develop`; hotfixes from tags |
 | **Release train** | Long-lived version lanes, `--no-ff` | Never rebase/delete lane branches |
-| **Fork-based** | `origin` fork, `upstream` source | Never push `upstream`; sync from it |
+| **Fork-based** | `origin` fork remote, `upstream` canonical | Never push `upstream`; sync from it (`origin` here = **git remote name**, not Cursor Origin) |
 
 Detect via `git branch -a`, `git log --graph`, `CONTRIBUTING.md`. If ambiguous, ask once.
 
