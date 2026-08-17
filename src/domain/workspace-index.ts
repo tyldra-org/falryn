@@ -127,6 +127,17 @@ export type WorkspaceIndexPort = {
   >;
 };
 
+/** Persist a full generation replacement for rebuildable indexes (#93). */
+export type WorkspaceIndexWritePort = {
+  rebuild(
+    generation: WorkspaceIndexGeneration,
+    signal?: AbortSignal,
+  ): Promise<
+    | { readonly ok: true; readonly value: WorkspaceIndexGeneration }
+    | { readonly ok: false; readonly error: WorkspaceIndexError }
+  >;
+};
+
 export const DEFAULT_INDEX_LIMITS = {
   maxMatches: DEFAULT_MAX_INDEX_MATCHES,
   includeHidden: false,
