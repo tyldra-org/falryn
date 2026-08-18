@@ -2,9 +2,10 @@
 name: github-workflow
 description: >-
   Git and GitHub **process and safety**: when to commit, branch, push, open/merge
-  PRs, delivery order, confirmations, recovery, issues, Projects, CI, releases,
-  and repo admin. Does **not** teach gh or origin CLI flag syntax — pair with
-  gh-cli and/or origin-cli for command recall.
+  PRs, delivery, confirmations, recovery, issues, Projects, CI (background watch;
+  do not block the chat turn on `--watch` / sleep loops), releases, and repo
+  admin. Does **not** teach gh or origin CLI flag syntax — pair with gh-cli
+  and/or origin-cli.
 ---
 
 # GitHub Workflow
@@ -66,7 +67,7 @@ Match the request and **read that reference before acting**.
 | "open a PR", "get this reviewed", "ship it" | `pr` | [pr.md](reference/pr.md) |
 | "look at PR #N", "is this safe to merge" | `review` | [review.md](reference/review.md) |
 | "coordinate these PRs/repos", "land docs then code", "delivery bundle" | `delivery` | [delivery.md](reference/delivery.md) |
-| "CI is red", "why is the build failing" | `ci` | [ci.md](reference/ci.md) |
+| "CI is red", "why is the build failing", "wait for checks" | `ci` | [ci.md](reference/ci.md) |
 | "authenticate gh", "which repo/account/host is this" | `context` | [context-and-auth.md](reference/context-and-auth.md) |
 | "create/update/triage issues, labels, milestones, subissues, dependencies" | `issues` | [issues.md](reference/issues.md) |
 | "build or maintain a roadmap/project/board/fields/views" | `projects` | [projects.md](reference/projects.md) |
