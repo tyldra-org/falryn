@@ -1555,6 +1555,16 @@ export {
   MEMORY_SOURCE_KINDS,
 } from "./memory-admission.ts";
 export type {
+  MemoryExport,
+  MemoryExportInput,
+  MemoryTelemetryProjection,
+} from "./memory-isolation.ts";
+export {
+  MEMORY_ISOLATION_VERSION,
+  projectMemoryExport,
+  projectMemoryTelemetry,
+} from "./memory-isolation.ts";
+export type {
   LatencyBucket,
   ObservationClass,
   ObservationOutcome,
