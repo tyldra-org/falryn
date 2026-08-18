@@ -3605,6 +3605,27 @@ for consequential DAP actions and bounded session artifact capture:
 Validated by `src/domain/debug-adapter-capture.test.ts` and the #100 cases in
 `src/application/debug-adapter.test.ts` under `bun run check`.
 
+The Brief response-style slice from
+[#102](https://github.com/tyldra-org/falryn/issues/102) projects verbosity policy
+immediately before inference without choosing evidence, summarizing files, or
+compressing incoming context:
+
+- `src/domain/brief.ts` — user/session/interface/default precedence, auto
+  verbosity that records the selected level, a strict byte cap, Zod validation
+  at the untrusted policy boundary, refusal of task evidence and hidden tool
+  calls, refusal of secret-shaped guidance, required-fact preservation at every
+  verbosity, concise/expanded snapshots of the same semantic outcome, and a
+  receipt for policy source, dimensions, size, placement, and provider-cap
+  modification; custom guidance that would overflow is omitted rather than
+  dropping required facts; and
+- `src/application/brief.ts` — redacts style notes, binds projection to a turn
+  identity, and maps the result onto the prompt-composition `brief` section.
+
+Product CLI/TUI Brief controls, Hush/Loom wiring, and learned compact-model
+lanes remain later #101 children.
+Validated by `src/domain/brief.test.ts` and `src/application/brief.test.ts`
+under `bun run check`.
+
 The compact document reader slice from
 [#493](https://github.com/tyldra-org/falryn/issues/493) projects bounded exact
 workspace text without claiming to be the complete document:
@@ -3831,8 +3852,9 @@ session/turn producer, or live transcript producer. The remaining gaps are:
   capture, Hush reduction, process-tree cancellation, and Git observation plus
   stage/commit/sync exist; product tools are not registered, and Git cannot
   rebase, force-update, or rewrite history);
-- context planning, Brief, Hush product/CLI/TUI wiring, Loom, compression,
-  index builders, or memory (evidence-candidate admission exists for #82;
+- context planning, Hush product/CLI/TUI wiring, Loom, compression,
+  index builders, or memory (Brief domain projection exists for #102;
+  evidence-candidate admission exists for #82;
   context token/byte/item/latency/sensitivity budgets exist for #83; ranking
   and selection exist for #84; pack composition with citations and
   uncertainty exists for #85; expansion, cache reuse, invalidation, and
