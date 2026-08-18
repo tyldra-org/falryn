@@ -5,7 +5,8 @@
  * projects a verified member as a full retrieve, range, head/tail, or search
  * hits. A group is exact-recoverable only when every required member is
  * available and verifies. Restricted content is refused and never cached.
- * Structural reducers, compact-model summaries, and product tools stay later.
+ * Structural reducers exist for #105. Compact-model and history checkpoints
+ * exist for #106. Product tools stay later.
  */
 
 import { z } from "zod";

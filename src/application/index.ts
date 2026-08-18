@@ -24,6 +24,15 @@ export { createBudgetLedger, MAX_BUDGET_DEPTH } from "./budget-ledger.ts";
 export type { CompactDocumentReader } from "./compact-document-read.ts";
 export { createCompactDocumentReader } from "./compact-document-read.ts";
 export type {
+  CompactLaneError,
+  CompactLaneRequest,
+  CompactLanes,
+  HistoryLaneRequest,
+  OverflowLaneRequest,
+  WindowPreviewRequest,
+} from "./compact-lanes.ts";
+export { compactToEvidence, createCompactLanes } from "./compact-lanes.ts";
+export type {
   ComposerContextRequest,
   ComposerContextResolution,
   FileAttachmentProbe,

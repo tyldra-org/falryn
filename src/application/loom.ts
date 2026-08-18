@@ -4,7 +4,7 @@
  * Ingests member bytes through ArtifactStorePort, commits a reversible
  * manifest only when every required member is stored, then retrieves a
  * verified projection. Redacted text never claims exact source. Does not
- * register product tools or implement structural/lossy compact-model lanes.
+ * register product tools or implement compact-model / history checkpoint lanes.
  */
 
 import { createHash } from "node:crypto";
