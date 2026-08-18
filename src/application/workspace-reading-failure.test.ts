@@ -14,6 +14,7 @@ import {
   artifactId,
   contentDigest,
   createInMemoryFileSystem,
+  err,
   type FileSystemPort,
   localPath,
   MAX_READ_MANY_TARGETS,
@@ -99,6 +100,7 @@ function expansionStore(captured: { bytes: Uint8Array | null }): ArtifactStorePo
       });
     },
     get: () => ok(null),
+    verifyIntegrity: async (id) => err({ kind: "artifact", code: "not-found", artifactId: id }),
     findByDigest: () => ok([]),
     listByInvocation: () => ok([]),
     readRange: async () => ({

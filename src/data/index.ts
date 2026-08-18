@@ -12,6 +12,13 @@
  * artifact bytes and no export format.
  */
 
+export type { ArtifactProvenanceRepository } from "./artifact-provenance-repository.ts";
+export { createArtifactProvenanceRepository } from "./artifact-provenance-repository.ts";
+export {
+  ARTIFACT_PROVENANCE_SCHEMA_VERSION,
+  ARTIFACT_TRANSFORMATIONS_TABLE,
+  MIGRATION_0004,
+} from "./artifact-provenance-schema.ts";
 export { createArtifactRepository } from "./artifact-repository.ts";
 export {
   ARTIFACT_SCHEMA_VERSION,

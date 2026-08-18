@@ -118,7 +118,8 @@ const SELECT_SESSIONS_IN_RANGE = `SELECT session_id AS sessionId FROM ${SESSIONS
  * The join is the reachability rule for v0.1: an artifact belongs to an export
  * because an invocation inside a selected session produced it. An artifact no
  * invocation claims is not reachable from any session, so no selection carries
- * it — which is the correct answer until the provenance graph exists.
+ * it — invocation reachability remains the export rule until versioned
+ * bundles walk the provenance graph (#118).
  */
 const SELECT_SESSION_ARTIFACTS = `SELECT DISTINCT
     a.artifact_id AS artifactId, a.digest AS digest, a.byte_length AS byteLength,

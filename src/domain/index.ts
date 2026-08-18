@@ -54,6 +54,27 @@ export {
   temporaryArtifactName,
 } from "./artifact.ts";
 export type {
+  ArtifactApi,
+  ArtifactApiError,
+  ArtifactIntegrityReport,
+  ArtifactLineage,
+  ArtifactLinkRequest,
+  ArtifactProvenanceEdge,
+  ArtifactProvenanceError,
+  ArtifactProvenancePort,
+  ArtifactTransformation,
+} from "./artifact-api.ts";
+export {
+  ARTIFACT_API_VERSION,
+  ARTIFACT_TRANSFORMATIONS,
+  createArtifactApi,
+  isArtifactTransformation,
+  MAX_ARTIFACT_LINEAGE_DEPTH,
+  MAX_ARTIFACT_PARENTS,
+  parseArtifactProvenanceEdge,
+  walkArtifactLineage,
+} from "./artifact-api.ts";
+export type {
   ArtifactRead,
   ArtifactReadError,
   ArtifactReadLimitError,

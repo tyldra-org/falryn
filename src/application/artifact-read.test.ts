@@ -33,6 +33,7 @@ function store(overrides: Partial<ArtifactStorePort> = {}): ArtifactStorePort {
       throw new Error("not used");
     },
     get: () => ok(record),
+    verifyIntegrity: async () => ok(true),
     findByDigest: () => ok([record]),
     listByInvocation: () => ok([record]),
     readRange: async (artifact, offset, length) =>

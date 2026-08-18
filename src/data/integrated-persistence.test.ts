@@ -43,6 +43,8 @@ import {
   turnRecord,
 } from "../domain/fixtures.ts";
 import {
+  ARTIFACT_API_VERSION,
+  type ArtifactProvenancePort,
   type ArtifactRepositoryPort,
   type ArtifactStorePort,
   artifactId,
@@ -60,8 +62,10 @@ import {
   type SqliteStorePort,
   sequence,
   TERMINAL_OUTCOME_PROJECTION_GENERATION,
+  type Timestamp,
 } from "../domain/index.ts";
 import { createHostBlobStore, createSha256Hasher } from "../integrations/index.ts";
+import { createArtifactProvenanceRepository } from "./artifact-provenance-repository.ts";
 import { createArtifactRepository } from "./artifact-repository.ts";
 import { createArtifactStore, type DurableArtifactStore } from "./artifact-store.ts";
 import { createSqliteEventStore } from "./event-store.ts";
@@ -79,7 +83,9 @@ import { PRODUCT_SCHEMA_VERSION, PRODUCTION_MIGRATIONS } from "./sqlite-migratio
 afterEach(removeTemporaryRoots);
 
 const ARTIFACT = artifactId.from("artifact-integrated");
+const CHILD = artifactId.from("artifact-integrated-child");
 const CONTENT = new TextEncoder().encode("the bytes one invocation produced");
+const DERIVED = new TextEncoder().encode("bytes derived from that invocation");
 
 /**
  * Everything one process composes over one open database.
@@ -94,6 +100,7 @@ type Process = {
   readonly events: EventStorePort;
   readonly artifacts: DurableArtifactStore;
   readonly artifactRecords: ArtifactRepositoryPort;
+  readonly provenance: ArtifactProvenancePort;
   readonly projections: ProjectionRunner;
 };
 
@@ -126,6 +133,7 @@ async function open(root: LocalPath, id: string): Promise<Process> {
     repositories: createRecordRepositories(store),
     events,
     artifactRecords,
+    provenance: createArtifactProvenanceRepository(store),
     artifacts: createArtifactStore({
       repository: artifactRecords,
       blobs: blobStoreIn(root),
@@ -207,6 +215,28 @@ test("walks a fresh installation through every durable seam and reads it back af
   const digest = ingested.ok ? ingested.value.record.digest : null;
   expect(digest).not.toBeNull();
 
+  const derived = await first.artifacts.ingest({
+    artifactId: CHILD,
+    mediaType: "text/plain",
+    encoding: "identity",
+    sensitivity: "user-content",
+    origin: "tool-output",
+    invocationId: invocationRecord().invocationId,
+    declaredByteLength: DERIVED.byteLength,
+    content: (async function* () {
+      yield DERIVED;
+    })(),
+  });
+  expect(derived.ok && derived.value.record.availability).toBe("available");
+  const linked = first.provenance.insert({
+    schemaVersion: ARTIFACT_API_VERSION,
+    childArtifactId: CHILD,
+    parentArtifactId: ARTIFACT,
+    transformation: "derived-from",
+    createdAt: "2026-07-31T12:00:00.000Z" as Timestamp,
+  });
+  expect(linked.ok).toBe(true);
+
   // ── It advances a projection cursor ───────────────────────────────────────
   const advanced = await first.projections.advance(sessionRecord().streamId);
   expect(advanced.ok && advanced.value).toMatchObject({
@@ -276,6 +306,19 @@ test("walks a fresh installation through every durable seam and reads it back af
   const range = await stored.readRange(ARTIFACT, 0, CONTENT.byteLength);
   expect(range.ok && range.value.bytes).toEqual(CONTENT);
   expect(range.ok && range.value.endOfArtifact).toBe(true);
+
+  const lineage = second.provenance.listParents(CHILD);
+  expect(lineage.ok && lineage.value).toEqual([
+    {
+      schemaVersion: ARTIFACT_API_VERSION,
+      childArtifactId: CHILD,
+      parentArtifactId: ARTIFACT,
+      transformation: "derived-from",
+      createdAt: "2026-07-31T12:00:00.000Z" as Timestamp,
+    },
+  ]);
+  const intact = await second.artifacts.verifyIntegrity(ARTIFACT);
+  expect(intact.ok && intact.value).toBe(true);
 
   // The cursor, and the state it claims to describe. Asserted against the
   // events actually committed rather than merely as non-null.

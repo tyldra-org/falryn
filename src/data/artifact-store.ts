@@ -501,6 +501,25 @@ export function createArtifactStore(options: ArtifactStoreOptions): DurableArtif
     },
 
     get: (id) => repository.get(id),
+
+    async verifyIntegrity(id, signal) {
+      if (aborted(signal)) {
+        return err({ kind: "artifact", code: "cancelled", artifactId: id });
+      }
+      const found = repository.get(id);
+      if (!found.ok) {
+        return found;
+      }
+      const record = found.value;
+      if (record === null) {
+        return err({ kind: "artifact", code: "not-found", artifactId: id });
+      }
+      if (record.availability !== "available") {
+        return ok(false);
+      }
+      return verify(record.digest, record.byteLength, signal);
+    },
+
     findByDigest: (digest, limit) => repository.findByDigest(digest, limit),
     listByInvocation: (id, limit) => repository.listByInvocation(id, limit),
 
