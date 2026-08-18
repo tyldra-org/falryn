@@ -3,8 +3,7 @@
  * lanes (#106).
  *
  * Redacts secret-shaped projections and never lets a redacted compact-model
- * result claim exact source. Does not register product tools or run fidelity
- * eval (#107).
+ * result claim exact source. Does not register product tools.
  */
 
 import { createHash } from "node:crypto";

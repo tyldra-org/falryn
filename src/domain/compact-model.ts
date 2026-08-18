@@ -4,7 +4,7 @@
  * Learned extraction or synthesis through the `compact` role. The model is
  * optional: `off`, unavailable, malformed, or no-savings outcomes fall back to
  * passthrough without a second model call. Model projections never claim
- * exact-source. Product tools and fidelity eval remain later.
+ * exact-source. Product tools remain later.
  */
 
 import { z } from "zod";
