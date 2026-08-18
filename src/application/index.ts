@@ -91,6 +91,17 @@ export {
   createLanguageServerSupervisor,
   describeLanguageServerFailure,
 } from "./language-server.ts";
+export type {
+  LoomEvidenceRequest,
+  LoomIngestMember,
+  LoomIngestRequest,
+  LoomIngestResult,
+  LoomPort,
+  LoomPortError,
+  LoomPortOptions,
+  LoomRetrieveRequest,
+} from "./loom.ts";
+export { createLoomPort, loomProjectionToEvidence } from "./loom.ts";
 export type { NotebookReader } from "./notebook-read.ts";
 export { createNotebookReader } from "./notebook-read.ts";
 export type { PdfReader } from "./pdf-read.ts";

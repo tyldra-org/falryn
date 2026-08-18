@@ -42,6 +42,8 @@ export type ScopeId = Brand<string, "ScopeId">;
 export type ProcessCaptureId = Brand<string, "ProcessCaptureId">;
 export type PtySessionId = Brand<string, "PtySessionId">;
 export type ManagedServiceId = Brand<string, "ManagedServiceId">;
+/** One Loom compress-cache-retrieve manifest grouping exact artifacts. */
+export type LoomManifestId = Brand<string, "LoomManifestId">;
 export type IdempotencyKey = Brand<string, "IdempotencyKey">;
 /** Which provider a model attempt was routed to, such as an API vendor. */
 export type ProviderId = Brand<string, "ProviderId">;
@@ -141,6 +143,7 @@ export const scopeId = createIdentifierCodec<ScopeId>("scopeId");
 export const processCaptureId = createIdentifierCodec<ProcessCaptureId>("processCaptureId");
 export const ptySessionId = createIdentifierCodec<PtySessionId>("ptySessionId");
 export const managedServiceId = createIdentifierCodec<ManagedServiceId>("managedServiceId");
+export const loomManifestId = createIdentifierCodec<LoomManifestId>("loomManifestId");
 export const idempotencyKey = createIdentifierCodec<IdempotencyKey>("idempotencyKey");
 export const providerId = createIdentifierCodec<ProviderId>("providerId");
 export const modelId = createIdentifierCodec<ModelId>("modelId");
