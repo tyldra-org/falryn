@@ -15,8 +15,8 @@ mostly skip CI perf gates.
 
 The three compiled smokes are required pull-request gates that declare
 `needs: [typecheck, dependency-integrity]`. GitHub cannot express `needs:`
-across workflow files, so splitting them would either drop that ordering —
-paying for a macOS runner to build a revision that does not typecheck — or
+across workflow files, so splitting them would either drop that ordering
+(paying for a macOS runner to build a revision that does not typecheck) or
 require `workflow_call` plumbing for no gain.
 
 ## Why the source suite and the compiled smoke stay separate jobs
@@ -27,7 +27,7 @@ cost more than it returned.
 
 Running them in one job serialises two phases that were parallel, so a host
 takes its suite plus its build plus its smoke rather than the longer of the
-first two — measured at roughly a minute added to every run. It also collapses
+first two, measured at roughly a minute added to every run. It also collapses
 the distinction the smokes exist to draw: `Platform tests (macOS) ✅` beside
 `macOS arm64 compiled smoke ❌` says the source is fine and *bundling* broke,
 and one merged row cannot say that.
@@ -73,7 +73,7 @@ The matrix is deliberately asymmetric, and the asymmetry is the point.
 
 A compiled smoke fails rather than skips when its executable is missing. That
 distinction is load-bearing: the Windows job caught a real defect on its first
-run — the compiled binary reported itself as a `source build`, because the
+run. The compiled binary reported itself as a `source build`, because the
 embedded-module root is `/$bunfs/` on Unix but a percent-encoded `B:/%7EBUN/` on
 Windows. A smoke that resolved the wrong filename would have reported *skipped*
 and stayed green over it.
@@ -83,15 +83,15 @@ and stayed green over it.
 CodeQL runs through GitHub **default setup** for this repository (not a
 workflow file under `.github/workflows/`). Required checks still list the
 `Analyze (…)` jobs from that setup. Do not add a parallel `codeql.yml` unless
-default setup is turned off — two scanners on the same languages would only
+default setup is turned off. Two scanners on the same languages would only
 duplicate queue time.
 
 ## `.github/actions/setup-bun`
 
 Every job needs the same Bun runtime and the same frozen dependency set. The
-composite action owns those steps so they cannot drift apart — a job that
+composite action owns those steps so they cannot drift apart. A job that
 resolved a different Bun version would produce a result the other jobs cannot be
-compared against — and so the action pin, dependency caching, and any
+compared against. The action pin, dependency caching, and any
 per-platform install flag have exactly one place to change.
 
 Its optional `working-directory` input installs into a subdirectory checkout

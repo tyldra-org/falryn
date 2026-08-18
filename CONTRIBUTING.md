@@ -3,21 +3,21 @@
 ## Falryn is not open to outside contributions yet
 
 Falryn is public so its source, decisions, and history can be read. It is not
-yet open for contribution: the foundational work is still being built, and the
-architecture is still moving underneath it. Accepting outside changes now would
-mean reviewing work against contracts that are days from changing, which wastes
-the contributor's time more than the maintainer's.
+yet open for contribution. The foundation is still being built, and the
+architecture is still moving. Accepting outside changes now would mean reviewing
+work against contracts that are days from changing, which wastes the
+contributor's time more than the maintainer's.
 
 Practically, this means:
 
 - **Issues and pull requests are restricted to collaborators.** GitHub refuses
   them from anyone else, so opening one is not a review decision that went
-  against you — the repository declines it before it reaches a maintainer.
+  against you. The repository declines it before it reaches a maintainer.
   That repository interaction limit is time-bounded (currently through
-  2027-02-11); renew it, or replace it with an in-repo gate, before it expires
+  2027-02-11). Renew it, or replace it with an in-repo gate, before it expires
   so the closed posture does not silently open.
 - **Security reports are the exception, and they are welcome now.** Report them
-  privately through the process in [`SECURITY.md`](SECURITY.md); that channel
+  privately through the process in [`SECURITY.md`](SECURITY.md). That channel
   stays open.
 - **The license already permits use.** Falryn is
   [Apache-2.0](LICENSE): fork it, read it, build it, and ship it inside your own
@@ -40,7 +40,7 @@ Ordinary GitHub practice, and nothing beyond it:
 4. `bun run check` passing locally, and CI green on the pull request.
 
 That is the whole requirement. Use whatever editor, agent, or process you like
-to get there — none of the tooling described below is imposed on you, and a
+to get there. None of the tooling described below is imposed on you, and a
 pull request is never judged on how it was produced.
 
 ## How the maintainer works
@@ -51,10 +51,10 @@ executes it, not because a contributor has to adopt it. Read it if you are
 curious about why pull requests here look the way they do, or if you are
 working on this repository with an agent and want it to behave consistently.
 
-**Those agent modes are optional even for collaborators.** You never have to
+Those agent modes are optional even for collaborators. You never have to
 issue `Plan`, `Implement`, `Verify`, `Merge`, `Deliver`, or `Next` prompts.
 Issue → branch → focused PR → `bun run check` is enough. The modes are available
-if you want them; they are not part of the contribution bar above.
+if you want them. They are not part of the contribution bar above.
 
 Some of it is not available without write access anyway: Project status
 transitions, merge ordering, and post-merge synchronisation.
@@ -65,7 +65,7 @@ transitions, merge ordering, and post-merge synchronisation.
    documentation outcome.
 2. Plan the issue while its Project status remains **Todo**. An issue is
    **Ready** when its scope, non-goals, acceptance criteria, dependencies,
-   validation, and documentation impact are resolved; Ready is a planning
+   validation, and documentation impact are resolved. Ready is a planning
    condition, not a separate Project status.
 3. For implementation, assign one Ready, unblocked PR-sized issue, set it
    **In Progress**, set its parent **In Progress** when this is the first
@@ -79,14 +79,14 @@ transitions, merge ordering, and post-merge synchronisation.
    exact final squash subject and whether its optional single issue-reference
    footer is omitted or present for every PR, and safe post-merge
    synchronization of each available local checkout. Squash commits are
-   subject-only by default; detailed validation, risks, documentation impact,
+   subject-only by default. Detailed validation, risks, documentation impact,
    companion links, and delivery context remain in the PR body.
 6. After the explicit Merge prompt confirms an unchanged preview, squash-merge
    required docs companions first and the Falryn delivery PR last.
 7. Re-read GitHub after merge. Verify every required PR is merged, its
    PR-sized issue is closed, and its Project status is **Done**. Leave a parent
    issue open and **In Progress** until all required children and its integrated
-   acceptance criteria pass; then verify, close, and mark the parent **Done**.
+   acceptance criteria pass. Then verify, close, and mark the parent **Done**.
 8. After the complete bundle has landed, return every available clean local
    checkout to its repository's fetched default branch with a fast-forward-only
    update. Verify the resulting branch, SHA, and clean state. Leave dirty,
@@ -106,7 +106,7 @@ not reuse a squash-merged branch for post-merge corrections.
 Use an issue checklist for small steps. Create sub-issues only when a child
 item needs its own branch and pull request. Keep the hierarchy to one level.
 One PR-sized standalone issue or subissue normally maps to one branch and one
-closing application delivery PR; a companion docs branch and PR are added only
+closing application delivery PR. A companion docs branch and PR are added only
 when canonical documentation changes. If a parent needs integration code,
 create an explicit integration subissue rather than a parent mega-PR.
 
@@ -115,12 +115,12 @@ create an explicit integration subissue rather than a parent mega-PR.
 Optional maintainer prompts. Full contract:
 [`falryn-docs/DEVELOPMENT.md`](https://github.com/tyldra-org/falryn-docs/blob/main/DEVELOPMENT.md).
 Ordinary prompts do not need repository names. `Issue`, `Parent issue`,
-`Parent chain`, `PR`, and milestone targets resolve to `falryn`; the delivery
+`Parent chain`, `PR`, and milestone targets resolve to `falryn`. The delivery
 PR includes explicitly linked docs companions automatically. Use `Docs issue`,
 `Docs parent issue`, `Docs parent chain`, or `Docs PR` only for docs-only work.
 
 - `Plan — Target: Issue #N` refines GitHub planning and keeps the issue
-  **Todo**; it does not create product code, a branch, or a pull request.
+  **Todo**. It does not create product code, a branch, or a pull request.
 - `Implement — Target: Issue #N` accepts one Ready, unblocked PR-sized issue,
   moves it to **In Progress**, and produces its branch and closing pull request.
 - `Verify — Target: ...` audits the named pull request, issue, parent, or
@@ -157,12 +157,12 @@ create a second architecture, roadmap, or implementation-status owner. If the
 implementation changes a contract, update the existing owner in a companion
 documentation pull request, give both pull requests the same Falryn delivery
 owner, cross-link them, and land both before calling the behavior complete. The
-docs PR references the Falryn issue; the application delivery PR closes it.
+docs PR references the Falryn issue. The application delivery PR closes it.
 When no documentation changes, name the owners checked and explain why they
 remain unaffected.
 
 When both repositories are checked out as siblings, the local documentation
-root is normally `../falryn-docs`; otherwise use its actual checkout location.
+root is normally `../falryn-docs`. Otherwise use its actual checkout location.
 Agent reports provide the resolved clickable absolute path plus the
 repository-qualified path and GitHub link. Never persist a contributor-specific
 absolute path in source, documentation, issues, or pull requests.
@@ -177,5 +177,5 @@ Use `bun run format` and `bun run lint:fix` for local automatic fixes.
 ## Keep it simple
 
 Do not add roadmaps, phases, gates, evidence records, or duplicate status
-documents. The GitHub Project tracks work; the code and its checks show what
+documents. The GitHub Project tracks work. The code and its checks show what
 works.

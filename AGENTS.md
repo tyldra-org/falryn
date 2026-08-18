@@ -5,21 +5,21 @@ explicit, and user-focused.
 
 ## Who this file is for
 
-This configures an agent working in this repository on the maintainer’s behalf.
+This configures an agent working in this repository on the maintainer's behalf.
 It is not a house style for forks or for humans contributing without an agent.
-If you are not that agent, ignore this file—changes are judged on substance,
+If you are not that agent, ignore this file. Changes are judged on substance,
 not on how they were produced.
 
-**Delivery modes are optional for everyone else.** Prompts like
+Delivery modes are optional for everyone else. Prompts like
 `Plan — Target: …`, `Implement — Target: …`, `Verify — Target: …`,
 `Merge — Target: …`, `Deliver — Target: …`, and `Next — Target: Falryn Roadmap`
-are the maintainer’s agent workflow. Contributors are not required to use them.
+are the maintainer's agent workflow. Contributors are not required to use them.
 Anyone who wants that workflow may follow
 [`falryn-docs/DEVELOPMENT.md`](https://github.com/tyldra-org/falryn-docs/blob/main/DEVELOPMENT.md)
-and the vendored skills; ordinary PRs that never use those prompts remain welcome.
+and the vendored skills. Ordinary PRs that never use those prompts remain welcome.
 
 For an agent that the maintainer has pointed at this file, the stack, skill
-gates, OpenTUI ownership, and validation rules below are **mandatory**. Mode
+gates, OpenTUI ownership, and validation rules below are mandatory. Mode
 contracts apply only when that agent is given one of those mode prompts.
 
 ## Before acting
@@ -27,10 +27,10 @@ contracts apply only when that agent is given one of those mode prompts.
 1. Read any applicable personal/global agent guidance, then this file.
 2. Load skills from [`.agents/skills/`](.agents/skills/README.md) as gated below.
    They are vendored here so they resolve for every checkout.
-3. This repo is **GitHub-only**: `tyldra-org/falryn`. `git remote origin` is
-   github.com. Do not add `origin.cursor.com` remotes or load **`origin-cli`**
+3. This repo is GitHub-only: `tyldra-org/falryn`. `git remote origin` is
+   github.com. Do not add `origin.cursor.com` remotes or load `origin-cli`
    for Falryn work. Companion docs: `tyldra-org/falryn-docs`.
-4. Skill guidance never overrides Falryn architecture, a Ready issue’s scope, or
+4. Skill guidance never overrides Falryn architecture, a Ready issue's scope, or
    repository-owned validation.
 
 ## Stack (non-negotiable)
@@ -52,25 +52,25 @@ contracts apply only when that agent is given one of those mode prompts.
 - External projects are research references only. Translate findings into
   Falryn contracts; never treat a consulted repo as truth or a dependency.
   Exact reuse needs provenance, license, attribution, and test review.
-- User/developer docs live in companion `falryn-docs`. Keep this repo’s Markdown
+- User/developer docs live in companion `falryn-docs`. Keep this repo's Markdown
   code-adjacent.
 
 ## Required skills
 
 Load from `.agents/skills/` (see the README there for the full table).
 
-**Skill split:** **git-workflow** = `git` porcelain/safety; **gh-cli** = GitHub `gh` (syntax + process).
-Falryn does not use Cursor Origin. The global **`origin-cli`** skill remains installed
-for other checkouts; do not load it here.
+Skill split: `git-workflow` is `git` porcelain and safety. `gh-cli` is GitHub `gh`
+(syntax and process). Falryn does not use Cursor Origin. The global `origin-cli`
+skill remains installed for other checkouts; do not load it here.
 
 | When | Skill |
 | --- | --- |
-| Creating/editing/reviewing/debugging/configuring TS, TSX, JS, tests, build scripts, or `tsconfig` | `typescript-best-practices` — pick **one** primary module from its router |
-| Creating/editing/reviewing/testing/packaging OpenTUI or TUI behavior | `opentui` — prefer installed OpenTUI APIs and upstream docs over Falryn reimplementations |
-| OpenTUI TypeScript/TSX | **Both** `typescript-best-practices` and `opentui` |
-| Any mutating git work (branch, commit, rebase, push, recover, …) | `git-workflow` |
+| Creating/editing/reviewing/debugging/configuring TS, TSX, JS, tests, build scripts, or `tsconfig` | `typescript-best-practices`. Pick one primary module from its router |
+| Creating/editing/reviewing/testing/packaging OpenTUI or TUI behavior | `opentui`. Prefer installed OpenTUI APIs and upstream docs over Falryn reimplementations |
+| OpenTUI TypeScript/TSX | Both `typescript-best-practices` and `opentui` |
+| Any mutating git work (branch, commit, rebase, push, recover) | `git-workflow` |
 | GitHub issues, PRs, Actions, Projects, merge, `gh` flags | `gh-cli` |
-| `Deliver — Target: …`, `Next — Target: Falryn Roadmap`, or “what should I implement next?” | `falryn-delivery-loop` — maintainer delivery modes only; does not replace technical/GitHub skills; not required of other contributors |
+| `Deliver — Target: …`, `Next — Target: Falryn Roadmap`, or "what should I implement next?" | `falryn-loop`. Maintainer delivery modes only. Does not replace technical/GitHub skills. Not required of other contributors |
 
 ### OpenTUI ownership
 
@@ -79,7 +79,7 @@ capability before inventing UI. Prefer documented components, actions/bindings,
 layout, focus, selection, scrolling, keyboard/paste/mouse, styling, animation,
 renderer lifecycle, screen modes, terminal capability handling, and test
 utilities. Keep Falryn-owned UI only for product policy, domain state, or a seam
-OpenTUI cannot provide—and record that boundary in code-adjacent docs or tests.
+OpenTUI cannot provide, and record that boundary in code-adjacent docs or tests.
 Map every custom TUI behavior to a built-in or a documented exception. Do not
 duplicate framework behavior merely to control it.
 
@@ -91,8 +91,8 @@ and file-location reporting:
 
 [`falryn-docs/DEVELOPMENT.md`](https://github.com/tyldra-org/falryn-docs/blob/main/DEVELOPMENT.md)
 
-**Only when** the user issues one of those mode prompts: read the linked
-sections first, then obey that mode’s scope, mutations, stop conditions, status
+Only when the user issues one of those mode prompts: read the linked
+sections first, then obey that mode's scope, mutations, stop conditions, status
 transitions, validation, and final report. Do not invent a parallel contract.
 Do not force this workflow onto a contributor who is not using those prompts.
 
@@ -113,7 +113,7 @@ Falryn-specific reminders (for agents in this workflow):
 - Live planning: [Falryn Roadmap](https://github.com/orgs/tyldra-org/projects/1).
   Design ownership: `falryn-docs/DOCUMENTATION-MAP.md`. Implementation truth:
   `CURRENT-STATE.md` (update only from current source + validation).
-- Before planning/implementing/reviewing, read the issue’s canonical-design
+- Before planning/implementing/reviewing, read the issue's canonical-design
   links via `DOCUMENTATION-MAP.md`. Record doc impact as `create` / `update` /
   `verify-unaffected` / `not-applicable`. Stop on missing or conflicting
   contracts.
