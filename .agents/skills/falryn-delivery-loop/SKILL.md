@@ -21,7 +21,7 @@ On a Verify gap: return to Implementation, then a **new** Verification against t
 
 Continue only for a standalone PR-sized issue or native child (including standalone milestone defects with no parent).
 
-1. **Readiness** — hierarchy, contracts, blockers, docs impact, split need. No code. Plan only if unresolved; split into ordered native children only when boundaries are unambiguous; else `awaiting-input` with one question.
+1. **Readiness** — hierarchy, contracts, blockers, docs impact, split need. Close any earlier open delivery PR on the same parent chain before implementing this target. No code. Plan only if unresolved; split into ordered native children only when boundaries are unambiguous; else `awaiting-input` with one question.
 2. **Implementation** — sole writer on the valid branch/PR bundle, or create the normal issue-linked branch + companions.
 3. **Verification** — full bundle: acceptance, **required** checks, docs, merge readiness. Read-only. Mid-Verify polish pushes invalidate the prior Verify; re-Verify exact `headRefOid`s before merge.
 4. **Repair** — keep open valid PR; fresh branch after merged incomplete outcome; focused follow-up for a distinct outcome. ≤3 repair passes without a progress signal (changed source, diagnostic, dependency, or validation), then ask.
@@ -65,7 +65,7 @@ authorized squash-merge. Procedure lives in `gh-cli` →
 Read Project, issue graph, blockers, open bundles, review/check state, and `CURRENT-STATE.md`. Board position, creation order visuals, and recent updates are not priority.
 
 1. Validated **Planning frontier** + `DEVELOPMENT.md` next-prompt table → resolve target/state only; do not echo manual Plan/Implement/Verify/Merge in autonomous reports. If frontier conflicts with live GitHub, name the mismatch and follow live state.
-2. Resume that bundle/parent chain; name stage (planning / implementation / verification / merge preconditions / awaiting input). Unrelated **In Progress** items do not outrank the frontier.
+2. Resume that bundle/parent chain when implementation is still incomplete. A pushed PR waiting only on CI, merge, or reconcile is leftover work, not the Next target. Name it in the report and pick the next frontier item. Unrelated **In Progress** items do not outrank the frontier.
 3. Else: Priority P0→P3 when set, then earliest eligible native child or root by stable issue creation order.
 4. Emit `Deliver — Target: Issue #N` or `Deliver — Target: Parent issue #N` for every eligible Falryn issue/parent. Todo/Ready/mid-delivery is not a reason to emit a manual mode. Do not auto-emit `Parent chain`; that selector is user-initiated.
 5. Manual prompt only outside Deliver coverage (docs-only, PR/milestone audit, authorized release). Blocked by product/external prerequisite → `Suggested next prompt: none`.
