@@ -8,12 +8,14 @@ import {
   EXPORT_SCHEMA_FAMILIES,
   EXPORT_SCHEMA_VERSION,
   type ExportManifest,
+  type ExportRedaction,
   exportName,
   isCompatible,
   MAX_EXPORT_NAME_LENGTH,
   MINIMUM_COMPATIBLE_EXPORT_SCHEMA_VERSION,
   parseExportManifest,
   RECORDS_MEMBER,
+  redactExportValue,
   selectedSessions,
   summarize,
 } from "./export.ts";
@@ -250,5 +252,79 @@ describe("the declared vocabularies", () => {
     // Imported rather than restated: a second literal in the export path is a
     // copy that can drift from the one `limits.ts` owns.
     expect(EXPORT_SCHEMA_FAMILIES).toEqual([RUNTIME_EVENT_SCHEMA_FAMILY]);
+  });
+});
+
+describe("record redaction", () => {
+  const redactor = {
+    placeholder: "[redacted]",
+    redactText(text: string): string {
+      return text.replaceAll("hunter2", "[redacted]");
+    },
+    isSecretName(key: string): boolean {
+      return /api[_-]?key/i.test(key);
+    },
+  };
+
+  test("replaces secret-shaped text and records the path, never the original", () => {
+    const redactions: ExportRedaction[] = [];
+    const walked = redactExportValue(
+      { entity: "session", record: { title: "apiKey=hunter2" } },
+      redactor,
+      redactions,
+    );
+
+    expect(walked.ok && walked.value).toEqual({
+      entity: "session",
+      record: { title: "apiKey=[redacted]" },
+    });
+    expect(redactions).toEqual([{ path: "$.record.title", kind: "replaced" }]);
+    expect(JSON.stringify(redactions)).not.toContain("hunter2");
+  });
+
+  test("replaces a secret-named field wholesale", () => {
+    const redactions: ExportRedaction[] = [];
+    const walked = redactExportValue({ apiKey: { nested: "hunter2" } }, redactor, redactions);
+
+    expect(walked.ok && walked.value).toEqual({ apiKey: "[redacted]" });
+    expect(redactions).toEqual([{ path: "$.apiKey", kind: "replaced" }]);
+  });
+
+  test("leaves ordinary text untouched and records nothing", () => {
+    const redactions: ExportRedaction[] = [];
+    const walked = redactExportValue({ title: "plain" }, redactor, redactions);
+
+    expect(walked.ok && walked.value).toEqual({ title: "plain" });
+    expect(redactions).toEqual([]);
+  });
+});
+
+describe("manifest redactions and configuration", () => {
+  test("defaults missing lists to empty so a v1 package without them still parses", () => {
+    const parsed = parseExportManifest(manifest());
+    expect(parsed.ok && parsed.value.redactions).toEqual([]);
+    expect(parsed.ok && parsed.value.configuration).toEqual([]);
+  });
+
+  test("round-trips declared replacements and configuration metadata", () => {
+    const parsed = parseExportManifest(
+      manifest({
+        redactions: [{ path: "$.record.title", kind: "replaced" }],
+        configuration: [{ key: "data.exports.maxBytes", source: "defaults", value: "2147483648" }],
+      }),
+    );
+    expect(parsed.ok && parsed.value.redactions).toEqual([
+      { path: "$.record.title", kind: "replaced" },
+    ]);
+    expect(parsed.ok && parsed.value.configuration).toEqual([
+      { key: "data.exports.maxBytes", source: "defaults", value: "2147483648" },
+    ]);
+  });
+
+  test("is refused when a redaction kind is invented", () => {
+    const parsed = parseExportManifest(
+      manifest({ redactions: [{ path: "$.record.title", kind: "omitted" }] }),
+    );
+    expect(parsed.ok).toBe(false);
   });
 });

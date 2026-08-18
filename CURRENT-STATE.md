@@ -1152,7 +1152,9 @@ durable local state into one portable, versioned, digest-verified package:
   selection cannot opt back into content the vocabulary #14 decided says stays.
   Credentials are not excluded by a rule but by reachability: nothing in the
   export path names the credential vocabulary at all, and a negative control
-  asserts that absence;
+  asserts that absence. Secret-shaped text that does reach a record is rewritten
+  before the package is written; the manifest names the path and never the
+  original bytes;
 - the writer streams: free space and the ceiling are checked first, artifact
   bytes are copied in chunks and **re-hashed as they go**, and a digest that
   changed between inventory and write is reported rather than written around.
@@ -1175,9 +1177,25 @@ records through the repositories and artifacts through the artifact store.
 And the export service is **not composed** into `src/main.ts` — only its
 ownership class is registered. Constructing a writer that no run can call would
 add a dead object rather than exercised behavior, so the honest statement is
-that nothing in a real run writes a package. Redaction, import, replay, and fork
-are owned by [#118](https://github.com/tyldra-org/falryn/issues/118) and
-[#119](https://github.com/tyldra-org/falryn/issues/119).
+that nothing in a real run writes a package.
+
+[#118](https://github.com/tyldra-org/falryn/issues/118) closes three remaining
+package claims without importing anything:
+
+- **records are redacted as they are written.** The writer walks each JSON line
+  through the domain redaction port, replaces secret-shaped text and
+  secret-named fields, and records each replacement as a path. The original
+  bytes never appear on that list. A package cannot be written without a
+  redactor;
+- **the manifest carries those replacements and an already-redacted
+  configuration snapshot.** Both fields are additive on `falryn-export/1`: a
+  package written before them still parses, with empty lists. The export path
+  never reads a config file;
+- **reachability walks the provenance graph** from invocation-reachable seeds
+  so a derived child with no selected-session invocation is still in the
+  bundle, subject to the same sensitivity and availability omit rules.
+
+Import, replay, and fork remain [#119](https://github.com/tyldra-org/falryn/issues/119).
 
 The seams closed by
 [#323](https://github.com/tyldra-org/falryn/issues/323) complete two of
@@ -4054,9 +4072,8 @@ session/turn producer, or live transcript producer. The remaining gaps are:
   adapter, and the `finalize-artifacts` participant all exist and are composed,
   and nothing in a real run ingests bytes, because the tools and providers that
   would are later work. Also absent from this area: reachability garbage
-  collection, export, import, and replay, each
+  collection, import, and replay, each
   owned by [#15](https://github.com/tyldra-org/falryn/issues/15),
-  [#118](https://github.com/tyldra-org/falryn/issues/118),
   [#119](https://github.com/tyldra-org/falryn/issues/119),
   [#120](https://github.com/tyldra-org/falryn/issues/120), or
   [#121](https://github.com/tyldra-org/falryn/issues/121);

@@ -3,7 +3,7 @@
  * reader must satisfy to open one.
  *
  * An export is the one Falryn artifact that outlives the machine that made it,
- * so it is the one place where a version number is not a formality. Seven rules
+ * so it is the one place where a version number is not a formality. Eight rules
  * the types carry rather than document:
  *
  * - **A package carries its own schema version, separate from the database's.**
@@ -23,6 +23,11 @@
  * - **An omission is a declared fact.** Content that could not be included is
  *   named with a reason. A package that silently lacks something is a package
  *   nobody can audit.
+ * - **A redaction is a declared replacement.** A secret that reached a record
+ *   is rewritten before the package is written, and the manifest names the
+ *   path, never the original bytes. Configuration metadata on the package is
+ *   an already-redacted snapshot the writer was given; the export path never
+ *   reads a config file.
  * - **Some content is never exportable, whatever the selection asks for.**
  *   Credentials are unreachable, and `restricted` artifacts are refused by the
  *   sensitivity vocabulary that declared them.
@@ -39,6 +44,7 @@ import { artifactId, contentDigest } from "./artifact.ts";
 import type { BlobError } from "./blob.ts";
 import { brandedString, timestampSchema } from "./branded-schema.ts";
 import type { CodecIssue } from "./codec-error.ts";
+import type { SensitiveValueRedactor } from "./configuration.ts";
 import type { IdentifierCodec, IdentityError, IdentityErrorCode, SessionId } from "./identity.ts";
 import { RUNTIME_EVENT_SCHEMA_FAMILY } from "./limits.ts";
 import type { ExportName, PackageError } from "./package.ts";
@@ -203,6 +209,50 @@ export type ExportOmission = {
   readonly reason: ExportOmissionReason;
 };
 
+/**
+ * How a carried field was rewritten.
+ *
+ * Names a path, never the original bytes: a manifest that repeated a secret
+ * as "what we removed" would still be a leak.
+ */
+export const EXPORT_REDACTION_KINDS = ["replaced"] as const;
+export type ExportRedactionKind = (typeof EXPORT_REDACTION_KINDS)[number];
+
+export type ExportRedaction = {
+  readonly path: string;
+  readonly kind: ExportRedactionKind;
+};
+
+/** Longest redaction list a manifest may declare. */
+export const MAX_EXPORT_REDACTIONS = 10_000;
+
+/** Deepest JSON walk redaction will enter. */
+export const MAX_EXPORT_REDACTION_DEPTH = 16;
+
+/** Longest configuration snapshot a package may carry. */
+export const MAX_EXPORT_CONFIGURATION_ENTRIES = 256;
+
+/** Longest configuration key stored on a package. */
+export const MAX_EXPORT_CONFIGURATION_KEY = 128;
+
+/** Longest already-redacted configuration value stored on a package. */
+export const MAX_EXPORT_CONFIGURATION_VALUE = 256;
+
+/** Longest JSON path a redaction record may name. */
+export const MAX_EXPORT_REDACTION_PATH = 256;
+
+/**
+ * One effective configuration fact, already redacted.
+ *
+ * The export path never reads a config file. The caller supplies this
+ * snapshot so a package can say which non-secret settings produced it.
+ */
+export type ExportConfigurationEntry = {
+  readonly key: string;
+  readonly source: string;
+  readonly value: string;
+};
+
 export const EXPORT_MEMBER_KINDS = ["records", "artifact"] as const;
 
 export type ExportMemberKind = (typeof EXPORT_MEMBER_KINDS)[number];
@@ -304,6 +354,8 @@ export type ExportManifest = {
   readonly counts: ExportCounts;
   readonly members: readonly ExportMember[];
   readonly omissions: readonly ExportOmission[];
+  readonly redactions: readonly ExportRedaction[];
+  readonly configuration: readonly ExportConfigurationEntry[];
 };
 
 /** Which bound a request exceeded. */
@@ -314,6 +366,8 @@ export const EXPORT_BOUNDS = [
   "members",
   "package-bytes",
   "manifest-bytes",
+  "redactions",
+  "configuration-entries",
 ] as const;
 
 export type ExportBound = (typeof EXPORT_BOUNDS)[number];
@@ -460,6 +514,25 @@ const manifestSchema = z.object({
       }),
     )
     .max(MAX_EXPORTED_ARTIFACTS),
+  redactions: z
+    .array(
+      z.object({
+        path: z.string().min(1).max(MAX_EXPORT_REDACTION_PATH),
+        kind: z.literal(EXPORT_REDACTION_KINDS),
+      }),
+    )
+    .max(MAX_EXPORT_REDACTIONS)
+    .default([]),
+  configuration: z
+    .array(
+      z.object({
+        key: z.string().min(1).max(MAX_EXPORT_CONFIGURATION_KEY),
+        source: z.string().min(1).max(MAX_EXPORT_CONFIGURATION_KEY),
+        value: z.string().max(MAX_EXPORT_CONFIGURATION_VALUE),
+      }),
+    )
+    .max(MAX_EXPORT_CONFIGURATION_ENTRIES)
+    .default([]),
 });
 
 /**
@@ -500,4 +573,127 @@ export function selectedSessions(selection: ExportSelection): readonly SessionId
 
 export function summarize(selection: ExportSelection, sessions: number): ExportSelectionSummary {
   return { kind: selection.kind, sessions, includesSensitive: selection.includeSensitive };
+}
+
+function childPath(path: string, segment: string): string {
+  const next = path === "$" ? `$.${segment}` : `${path}.${segment}`;
+  return next.length <= MAX_EXPORT_REDACTION_PATH ? next : next.slice(0, MAX_EXPORT_REDACTION_PATH);
+}
+
+function recordRedaction(redactions: ExportRedaction[], path: string): Result<null, ExportError> {
+  if (redactions.length >= MAX_EXPORT_REDACTIONS) {
+    return err({
+      kind: "export",
+      code: "oversize",
+      bound: "redactions",
+      requested: redactions.length + 1,
+      maximum: MAX_EXPORT_REDACTIONS,
+    });
+  }
+  redactions.push({ path, kind: "replaced" });
+  return ok(null);
+}
+
+function walkExportValue(
+  value: unknown,
+  path: string,
+  depth: number,
+  redactor: SensitiveValueRedactor,
+  redactions: ExportRedaction[],
+): Result<unknown, ExportError> {
+  if (typeof value === "string") {
+    const rewritten = redactor.redactText(value);
+    if (rewritten === value) {
+      return ok(value);
+    }
+    const recorded = recordRedaction(redactions, path);
+    return recorded.ok ? ok(rewritten) : recorded;
+  }
+  if (value === null || typeof value === "number" || typeof value === "boolean") {
+    return ok(value);
+  }
+  if (Array.isArray(value)) {
+    const next: unknown[] = [];
+    for (let index = 0; index < value.length; index += 1) {
+      const item = value[index];
+      if (depth >= MAX_EXPORT_REDACTION_DEPTH) {
+        if (typeof item === "string") {
+          const walked = walkExportValue(
+            item,
+            childPath(path, String(index)),
+            depth,
+            redactor,
+            redactions,
+          );
+          if (!walked.ok) {
+            return walked;
+          }
+          next.push(walked.value);
+        } else {
+          next.push(item);
+        }
+        continue;
+      }
+      const walked = walkExportValue(
+        item,
+        childPath(path, String(index)),
+        depth + 1,
+        redactor,
+        redactions,
+      );
+      if (!walked.ok) {
+        return walked;
+      }
+      next.push(walked.value);
+    }
+    return ok(next);
+  }
+  if (typeof value !== "object") {
+    return ok(value);
+  }
+  const next: Record<string, unknown> = {};
+  for (const [key, nested] of Object.entries(value)) {
+    const nestedPath = childPath(path, key);
+    if (redactor.isSecretName(key)) {
+      const recorded = recordRedaction(redactions, nestedPath);
+      if (!recorded.ok) {
+        return recorded;
+      }
+      next[key] = redactor.placeholder;
+      continue;
+    }
+    if (depth >= MAX_EXPORT_REDACTION_DEPTH) {
+      if (typeof nested === "string") {
+        const walked = walkExportValue(nested, nestedPath, depth, redactor, redactions);
+        if (!walked.ok) {
+          return walked;
+        }
+        next[key] = walked.value;
+      } else {
+        next[key] = nested;
+      }
+      continue;
+    }
+    const walked = walkExportValue(nested, nestedPath, depth + 1, redactor, redactions);
+    if (!walked.ok) {
+      return walked;
+    }
+    next[key] = walked.value;
+  }
+  return ok(next);
+}
+
+/**
+ * Rewrites secrets in a record that is about to be written into a package.
+ *
+ * The original value is never mutated. Each replacement is recorded as a path
+ * and a kind; the original bytes do not appear on the redaction list.
+ */
+export function redactExportValue(
+  value: unknown,
+  redactor: SensitiveValueRedactor,
+  redactions: ExportRedaction[],
+  path = "$",
+): Result<unknown, ExportError> {
+  return walkExportValue(value, path, 0, redactor, redactions);
 }

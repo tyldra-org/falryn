@@ -9,8 +9,10 @@
  */
 
 import { afterEach, describe, expect, test } from "bun:test";
+import { createRuntimeRedactor, REDACTED } from "../application/index.ts";
 import { sessionStarted } from "../domain/fixtures.ts";
 import {
+  ARTIFACT_API_VERSION,
   type ArtifactSensitivity,
   artifactId,
   createInMemoryBlobStore,
@@ -35,9 +37,11 @@ import {
   type SessionId,
   type SqliteStorePort,
   sessionId,
+  type Timestamp,
   turnId,
 } from "../domain/index.ts";
 import { createSha256Hasher } from "../integrations/index.ts";
+import { createArtifactProvenanceRepository } from "./artifact-provenance-repository.ts";
 import { createArtifactRepository } from "./artifact-repository.ts";
 import { createArtifactStore } from "./artifact-store.ts";
 import { createSqliteEventStore } from "./event-store.ts";
@@ -70,8 +74,15 @@ type Harness = {
   readonly repositories: RecordRepositories;
   readonly events: EventStorePort;
   readonly options: ExportOptions;
-  /** Ingests one artifact and links it to the staged invocation. */
-  ingest(id: string, sensitivity: ArtifactSensitivity): Promise<void>;
+  /** Ingests one artifact and optionally links it to the staged invocation. */
+  ingest(
+    id: string,
+    sensitivity: ArtifactSensitivity,
+    extras?: {
+      readonly invocationId?: string | null;
+      readonly content?: Uint8Array;
+    },
+  ): Promise<void>;
 };
 
 async function harness(
@@ -118,21 +129,29 @@ async function harness(
       hasher: createSha256Hasher(),
       clock,
       buildIdentity: "falryn/test",
+      redactor: createRuntimeRedactor(),
       ...(overrides.maxPackageBytes === undefined
         ? {}
         : { maxPackageBytes: overrides.maxPackageBytes }),
     },
-    async ingest(id: string, sensitivity: ArtifactSensitivity): Promise<void> {
+    async ingest(id, sensitivity, extras = {}): Promise<void> {
+      const bytes = extras.content ?? CONTENT;
+      const invocation =
+        extras.invocationId === undefined
+          ? invocationId.from("inv-1")
+          : extras.invocationId === null
+            ? null
+            : invocationId.from(extras.invocationId);
       const ingested = await artifacts.ingest({
         artifactId: artifactId.from(id),
         mediaType: "text/plain",
         encoding: "identity",
         sensitivity,
         origin: "tool-output",
-        invocationId: invocationId.from("inv-1"),
-        declaredByteLength: CONTENT.byteLength,
+        invocationId: invocation,
+        declaredByteLength: bytes.byteLength,
         content: (async function* () {
-          yield CONTENT;
+          yield bytes;
         })(),
       });
       if (!ingested.ok) {
@@ -143,12 +162,16 @@ async function harness(
 }
 
 /** A session with one turn and one invocation, through the repositories. */
-function stageSession(repositories: RecordRepositories, id: SessionId = SESSION): void {
+function stageSession(
+  repositories: RecordRepositories,
+  id: SessionId = SESSION,
+  title: string | null = null,
+): void {
   const inserted = repositories.sessions.insert({
     sessionId: id,
     workspaceId: "w" as never,
     streamId: `stream-${id}` as never,
-    title: null,
+    title,
     configurationGeneration: 0 as never,
     startedAt: "2026-07-31T12:00:00.000Z" as never,
     closedAt: null,
@@ -354,6 +377,34 @@ describe("resolving a selection", () => {
     expect(errorOf(inventory)).toMatchObject({ code: "oversize", bound: "package-bytes" });
     await built.store.close();
   });
+
+  test("carries a provenance-linked child that no selected-session invocation produced", async () => {
+    const built = await harness();
+    stageSession(built.repositories);
+    await built.ingest("parent", "user-content");
+    await built.ingest("child", "user-content", {
+      invocationId: null,
+      content: new TextEncoder().encode("derived child bytes"),
+    });
+    const linked = createArtifactProvenanceRepository(built.store).insert({
+      schemaVersion: ARTIFACT_API_VERSION,
+      childArtifactId: artifactId.from("child"),
+      parentArtifactId: artifactId.from("parent"),
+      transformation: "derived-from",
+      createdAt: "2026-07-31T12:00:05.000Z" as Timestamp,
+    });
+    if (!linked.ok) {
+      throw new Error(`expected a provenance edge: ${linked.error.code}`);
+    }
+
+    const inventory = await inventoryOf(built);
+
+    expect(inventory.artifacts.map((entry) => entry.artifactId).sort()).toEqual([
+      "child" as never,
+      "parent" as never,
+    ]);
+    await built.store.close();
+  });
 });
 
 describe("the events member", () => {
@@ -398,6 +449,34 @@ describe("what a package may never carry", () => {
     expect(inventory.artifacts).toEqual([]);
     expect(inventory.omissions).toEqual([
       { artifactId: "a1" as never, reason: "restricted-sensitivity" },
+    ]);
+    await built.store.close();
+  });
+
+  test("omits a restricted provenance child even when the parent is carried", async () => {
+    const built = await harness();
+    stageSession(built.repositories);
+    await built.ingest("parent", "user-content");
+    await built.ingest("child", "restricted", {
+      invocationId: null,
+      content: new TextEncoder().encode("restricted derived bytes"),
+    });
+    const linked = createArtifactProvenanceRepository(built.store).insert({
+      schemaVersion: ARTIFACT_API_VERSION,
+      childArtifactId: artifactId.from("child"),
+      parentArtifactId: artifactId.from("parent"),
+      transformation: "derived-from",
+      createdAt: "2026-07-31T12:00:05.000Z" as Timestamp,
+    });
+    if (!linked.ok) {
+      throw new Error(`expected a provenance edge: ${linked.error.code}`);
+    }
+
+    const inventory = await inventoryOf(built);
+
+    expect(inventory.artifacts.map((entry) => entry.artifactId)).toEqual(["parent" as never]);
+    expect(inventory.omissions).toEqual([
+      { artifactId: "child" as never, reason: "restricted-sensitivity" },
     ]);
     await built.store.close();
   });
@@ -499,6 +578,45 @@ describe("writing a package", () => {
     expect(written.ok && written.value.manifest.omissions).toEqual([
       { artifactId: "a1" as never, reason: "restricted-sensitivity" },
     ]);
+    await built.store.close();
+  });
+
+  test("rewrites secret-shaped record text and names the path, never the original", async () => {
+    const built = await harness();
+    stageSession(built.repositories, SESSION, "apiKey=hunter2");
+    const inventory = await inventoryOf(built);
+
+    const written = await writePackage(built.options, NAME, SESSIONS_SELECTION, inventory);
+
+    const decoded = new TextDecoder().decode(built.packages.bytesOf(NAME) as Uint8Array);
+    expect(written.ok && written.value.manifest.redactions).toEqual([
+      { path: "$.record.title", kind: "replaced" },
+    ]);
+    expect(decoded).toContain(`apiKey=${REDACTED}`);
+    expect(decoded).not.toContain("hunter2");
+    await built.store.close();
+  });
+
+  test("declares the already-redacted configuration snapshot it was given", async () => {
+    const built = await harness();
+    stageSession(built.repositories);
+    const inventory = await inventoryOf(built);
+    const options: ExportOptions = {
+      ...built.options,
+      configuration: [
+        { key: "data.exports.maxBytes", source: "defaults", value: "2147483648" },
+        { key: "apiKey", source: "user", value: "hunter2" },
+      ],
+    };
+
+    const written = await writePackage(options, NAME, SESSIONS_SELECTION, inventory);
+
+    expect(written.ok && written.value.manifest.configuration).toEqual([
+      { key: "data.exports.maxBytes", source: "defaults", value: "2147483648" },
+      { key: "apiKey", source: "user", value: REDACTED },
+    ]);
+    const decoded = new TextDecoder().decode(built.packages.bytesOf(NAME) as Uint8Array);
+    expect(decoded).not.toContain("hunter2");
     await built.store.close();
   });
 

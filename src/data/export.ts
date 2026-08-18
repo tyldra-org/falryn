@@ -8,7 +8,7 @@
  *                  → write the manifest trailer → atomic finalize
  * ```
  *
- * Six rules the implementation carries rather than documents:
+ * Seven rules the implementation carries rather than documents:
  *
  * - **Nothing is written until the inventory is bounded.** Counts, artifact
  *   bytes, and free space are all checked first, so a selection too large is an
@@ -20,6 +20,10 @@
  * - **An omission is written down.** An artifact the selection reached and the
  *   package could not carry appears in the manifest with a reason. Silence
  *   would make the package unauditable.
+ * - **A redaction is written down.** Secrets in records are replaced before
+ *   they reach the package, and the manifest names each path. The original
+ *   bytes never appear on that list. Configuration metadata is an
+ *   already-redacted snapshot the caller supplied.
  * - **`restricted` never leaves, whatever the selection says.** The sensitivity
  *   vocabulary decides that, not a flag, and a selection cannot opt back in.
  * - **Bytes are re-hashed as they are copied.** A digest that changed between
@@ -30,6 +34,8 @@
  */
 
 import {
+  type ArtifactApiError,
+  type ArtifactId,
   artifactMemberName,
   type BlobStorePort,
   type ClockPort,
@@ -43,6 +49,7 @@ import {
   EXPORT_SCHEMA_VERSION,
   type ExportArtifactEntry,
   type ExportBound,
+  type ExportConfigurationEntry,
   type ExportCounts,
   type ExportError,
   type ExportInventory,
@@ -51,12 +58,17 @@ import {
   type ExportMemberCheck,
   type ExportName,
   type ExportOmission,
+  type ExportRedaction,
   type ExportResult,
   type ExportSchemaFamilyDeclaration,
   type ExportSelection,
   type ExportVerification,
   err,
   isCompatible,
+  MAX_ARTIFACT_LINEAGE_DEPTH,
+  MAX_EXPORT_CONFIGURATION_ENTRIES,
+  MAX_EXPORT_CONFIGURATION_KEY,
+  MAX_EXPORT_CONFIGURATION_VALUE,
   MAX_EXPORT_MEMBERS,
   MAX_EXPORTED_ARTIFACTS,
   MAX_EXPORTED_EVENTS,
@@ -76,6 +88,8 @@ import {
   RUNTIME_EVENT_SCHEMA_FAMILY,
   RUNTIME_EVENT_SCHEMA_VERSION,
   type RuntimeEvent,
+  redactExportValue,
+  type SensitiveValueRedactor,
   type Sequence,
   type SessionId,
   type SqliteRow,
@@ -86,7 +100,9 @@ import {
   summarize,
   type Timestamp,
   timestampFromEpochMilliseconds,
+  walkArtifactLineage,
 } from "../domain/index.ts";
+import { createArtifactProvenanceRepository } from "./artifact-provenance-repository.ts";
 import { ARTIFACTS_TABLE } from "./artifact-schema.ts";
 import { SESSIONS_TABLE } from "./schema.ts";
 
@@ -115,11 +131,11 @@ const SELECT_SESSIONS_IN_RANGE = `SELECT session_id AS sessionId FROM ${SESSIONS
 /**
  * Artifacts reachable from a session, through the invocations its turns made.
  *
- * The join is the reachability rule for v0.1: an artifact belongs to an export
- * because an invocation inside a selected session produced it. An artifact no
- * invocation claims is not reachable from any session, so no selection carries
- * it — invocation reachability remains the export rule until versioned
- * bundles walk the provenance graph (#118).
+ * The join is the first reachability rule: an artifact belongs to an export
+ * because an invocation inside a selected session produced it. Versioned
+ * bundles then walk the provenance graph from those seeds so a derived child
+ * with no selected-session invocation is still in the package, subject to the
+ * same sensitivity and availability omit rules.
  */
 const SELECT_SESSION_ARTIFACTS = `SELECT DISTINCT
     a.artifact_id AS artifactId, a.digest AS digest, a.byte_length AS byteLength,
@@ -131,6 +147,12 @@ const SELECT_SESSION_ARTIFACTS = `SELECT DISTINCT
   ORDER BY a.created_at, a.artifact_id
   LIMIT $limit`;
 
+const SELECT_ARTIFACT_BY_ID = `SELECT
+    a.artifact_id AS artifactId, a.digest AS digest, a.byte_length AS byteLength,
+    a.sensitivity AS sensitivity, a.availability AS availability
+  FROM ${ARTIFACTS_TABLE} a
+  WHERE a.artifact_id = $artifactId`;
+
 export type ExportOptions = {
   readonly store: SqliteStorePort;
   readonly repositories: RecordRepositories;
@@ -141,6 +163,15 @@ export type ExportOptions = {
   readonly clock: ClockPort;
   /** The build that writes the manifest's `createdBy`. */
   readonly buildIdentity: string;
+  /**
+   * Required so a package cannot be written without walking secrets.
+   *
+   * The runtime redactor lives in the application layer; this path depends
+   * on the domain port only.
+   */
+  readonly redactor: SensitiveValueRedactor;
+  /** Already-redacted configuration facts to declare on the package. */
+  readonly configuration?: readonly ExportConfigurationEntry[];
   readonly maxPackageBytes?: number;
 };
 
@@ -201,6 +232,7 @@ export async function resolveInventory(
   } = { ...EMPTY_COUNTS, sessions: sessions.value.length };
   const artifacts: ExportArtifactEntry[] = [];
   const carried = new Set<ContentDigest>();
+  const decided = new Set<string>();
   const omissions: ExportOmission[] = [];
   let artifactBytes = 0;
 
@@ -229,28 +261,28 @@ export async function resolveInventory(
       return err(reachable.error);
     }
     for (const candidate of reachable.value) {
-      const decision = decide(candidate, selection.includeSensitive);
-      if (decision !== null) {
-        omissions.push({ artifactId: candidate.artifactId, reason: decision });
-        continue;
-      }
-      if (carried.has(candidate.digest)) {
-        // Exact bytes are carried once. Two records sharing a digest is the
-        // deduplication the artifact store already performs, and a package
-        // repeating those bytes would be larger for no reason.
-        counts.artifacts += 1;
-        continue;
-      }
-      carried.add(candidate.digest);
-      artifacts.push({
-        artifactId: candidate.artifactId,
-        digest: candidate.digest,
-        byteLength: candidate.byteLength,
-      });
-      artifactBytes += candidate.byteLength;
-      counts.artifacts += 1;
+      artifactBytes += includeOrOmit(
+        candidate,
+        selection.includeSensitive,
+        carried,
+        decided,
+        artifacts,
+        omissions,
+        counts,
+      );
     }
   }
+
+  const expanded = expandProvenance(options, decided, selection.includeSensitive, {
+    artifacts,
+    carried,
+    omissions,
+    counts,
+  });
+  if (!expanded.ok) {
+    return err(expanded.error);
+  }
+  artifactBytes += expanded.value;
 
   if (artifacts.length > MAX_EXPORTED_ARTIFACTS) {
     return err(oversize("artifacts", artifacts.length, MAX_EXPORTED_ARTIFACTS));
@@ -276,6 +308,13 @@ export async function resolveInventory(
 type ReachableArtifact = ExportArtifactEntry & {
   readonly sensitivity: string;
   readonly availability: string;
+};
+
+type InventoryBuckets = {
+  readonly artifacts: ExportArtifactEntry[];
+  readonly carried: Set<ContentDigest>;
+  readonly omissions: ExportOmission[];
+  readonly counts: { -readonly [Key in keyof ExportCounts]: ExportCounts[Key] };
 };
 
 /**
@@ -337,6 +376,143 @@ function resolveSessions(
     }
   }
   return ok(sessions);
+}
+
+function includeOrOmit(
+  candidate: ReachableArtifact,
+  includeSensitive: boolean,
+  carried: Set<ContentDigest>,
+  decided: Set<string>,
+  artifacts: ExportArtifactEntry[],
+  omissions: ExportOmission[],
+  counts: { -readonly [Key in keyof ExportCounts]: ExportCounts[Key] },
+): number {
+  if (decided.has(candidate.artifactId)) {
+    return 0;
+  }
+  decided.add(candidate.artifactId);
+  const decision = decide(candidate, includeSensitive);
+  if (decision !== null) {
+    omissions.push({ artifactId: candidate.artifactId, reason: decision });
+    return 0;
+  }
+  if (carried.has(candidate.digest)) {
+    // Exact bytes are carried once. Two records sharing a digest is the
+    // deduplication the artifact store already performs, and a package
+    // repeating those bytes would be larger for no reason.
+    counts.artifacts += 1;
+    return 0;
+  }
+  carried.add(candidate.digest);
+  artifacts.push({
+    artifactId: candidate.artifactId,
+    digest: candidate.digest,
+    byteLength: candidate.byteLength,
+  });
+  counts.artifacts += 1;
+  return candidate.byteLength;
+}
+
+function fromProvenance(error: ArtifactApiError): ExportError {
+  if (
+    error.kind === "artifact" &&
+    error.code === "storage" &&
+    error.failure.medium === "metadata"
+  ) {
+    return storageError(error.failure.error);
+  }
+  return storageError({
+    kind: "sqlite-store",
+    code: "statement-rejected",
+    operation: "read",
+    effect: "none",
+    cause: {
+      kind: "sqlite",
+      code: "io-failure",
+      operation: "read",
+      driverCode: null,
+      detail: null,
+    },
+  });
+}
+
+/**
+ * Walks parents and children of every invocation-reachable artifact.
+ *
+ * A derived child with no selected-session invocation is still in the bundle
+ * when an ancestor or descendant was reached, subject to the same omit rules.
+ */
+function expandProvenance(
+  options: ExportOptions,
+  decided: Set<string>,
+  includeSensitive: boolean,
+  buckets: InventoryBuckets,
+): Result<number, ExportError> {
+  const provenance = createArtifactProvenanceRepository(options.store);
+  const related = new Set<ArtifactId>();
+  for (const seed of decided) {
+    const id = seed as ArtifactId;
+    const parents = walkArtifactLineage(
+      id,
+      (from) => provenance.listParents(from),
+      (edge) => edge.parentArtifactId,
+      MAX_ARTIFACT_LINEAGE_DEPTH,
+    );
+    if (!parents.ok) {
+      return err(fromProvenance(parents.error));
+    }
+    const children = walkArtifactLineage(
+      id,
+      (from) => provenance.listChildren(from),
+      (edge) => edge.childArtifactId,
+      MAX_ARTIFACT_LINEAGE_DEPTH,
+    );
+    if (!children.ok) {
+      return err(fromProvenance(children.error));
+    }
+    for (const edge of parents.value) {
+      related.add(edge.parentArtifactId);
+    }
+    for (const edge of children.value) {
+      related.add(edge.childArtifactId);
+    }
+  }
+
+  let addedBytes = 0;
+  for (const id of related) {
+    if (decided.has(id)) {
+      continue;
+    }
+    const candidate = readArtifactById(options, id);
+    if (!candidate.ok) {
+      return err(candidate.error);
+    }
+    if (candidate.value === null) {
+      continue;
+    }
+    addedBytes += includeOrOmit(
+      candidate.value,
+      includeSensitive,
+      buckets.carried,
+      decided,
+      buckets.artifacts,
+      buckets.omissions,
+      buckets.counts,
+    );
+  }
+  return ok(addedBytes);
+}
+
+function readArtifactById(
+  options: ExportOptions,
+  id: ArtifactId,
+): Result<ReachableArtifact | null, ExportError> {
+  const rows = options.store.read(SELECT_ARTIFACT_BY_ID, { artifactId: id });
+  if (!rows.ok) {
+    return err(storageError(rows.error));
+  }
+  const row = rows.value[0];
+  return ok(row === undefined ? null : parseReachable(row));
 }
 
 /**
@@ -614,6 +790,11 @@ export async function writePackage(
     });
   }
 
+  const configuration = boundConfiguration(options.configuration ?? [], options.redactor);
+  if (!configuration.ok) {
+    return err(configuration.error);
+  }
+
   const begun = await options.packages.begin(name, signal);
   if (!begun.ok) {
     return err({ kind: "export", code: "package", error: begun.error });
@@ -636,7 +817,7 @@ export async function writePackage(
   if (!records.ok) {
     return await abandon(records.error);
   }
-  members.push(records.value);
+  members.push(records.value.member);
 
   for (const entry of inventory.artifacts) {
     if (aborted(signal)) {
@@ -660,6 +841,8 @@ export async function writePackage(
     counts: inventory.counts,
     members,
     omissions: inventory.omissions,
+    redactions: records.value.redactions,
+    configuration: configuration.value,
   };
 
   const trailer = encoder.encode(`${JSON.stringify(manifest)}\n`);
@@ -736,7 +919,8 @@ async function writeHeader(
  * Streams every record the selection reached, one JSON object per line.
  *
  * Generated as it is written and hashed as it is generated, so the manifest can
- * declare its digest without the member ever existing twice.
+ * declare its digest without the member ever existing twice. Secrets are
+ * rewritten before a line is encoded; the original record is not mutated.
  */
 async function writeRecords(
   options: ExportOptions,
@@ -744,8 +928,9 @@ async function writeRecords(
   inventory: ExportInventory,
   budget: PackageBudget,
   signal: AbortSignal | undefined,
-): Promise<Result<ExportMember, ExportError>> {
+): Promise<Result<{ member: ExportMember; redactions: readonly ExportRedaction[] }, ExportError>> {
   const sink = createSink(options, name, budget, signal);
+  const redactions: ExportRedaction[] = [];
 
   for (const id of inventory.sessionIds) {
     if (aborted(signal)) {
@@ -758,7 +943,12 @@ async function writeRecords(
     if (session.value === null) {
       return err({ kind: "export", code: "not-found", sessionId: id });
     }
-    const wrote = await sink.write(line({ entity: "session", record: session.value }));
+    const wrote = await writeRedacted(
+      options,
+      sink,
+      { entity: "session", record: session.value },
+      redactions,
+    );
     if (!wrote.ok) {
       return err(wrote.error);
     }
@@ -768,11 +958,16 @@ async function writeRecords(
       return err(fromRecordError(turns.error));
     }
     for (const turn of turns.value) {
-      const wroteTurn = await sink.write(line({ entity: "turn", record: turn }));
+      const wroteTurn = await writeRedacted(
+        options,
+        sink,
+        { entity: "turn", record: turn },
+        redactions,
+      );
       if (!wroteTurn.ok) {
         return err(wroteTurn.error);
       }
-      const children = await writeTurnChildren(options, sink, turn.turnId);
+      const children = await writeTurnChildren(options, sink, turn.turnId, redactions);
       if (!children.ok) {
         return err(children.error);
       }
@@ -781,7 +976,7 @@ async function writeRecords(
     const events = await eachEvent(
       options,
       id,
-      (event) => sink.write(line({ entity: "event", record: event })),
+      (event) => writeRedacted(options, sink, { entity: "event", record: event }, redactions),
       signal,
     );
     if (!events.ok) {
@@ -791,24 +986,46 @@ async function writeRecords(
 
   const finished = sink.finish();
   return ok({
-    name: RECORDS_MEMBER,
-    kind: "records",
-    byteLength: finished.byteLength,
-    digest: finished.digest,
+    member: {
+      name: RECORDS_MEMBER,
+      kind: "records",
+      byteLength: finished.byteLength,
+      digest: finished.digest,
+    },
+    redactions,
   });
+}
+
+async function writeRedacted(
+  options: ExportOptions,
+  sink: MemberSink,
+  value: unknown,
+  redactions: ExportRedaction[],
+): Promise<Result<null, ExportError>> {
+  const walked = redactExportValue(value, options.redactor, redactions);
+  if (!walked.ok) {
+    return walked;
+  }
+  return sink.write(line(walked.value));
 }
 
 async function writeTurnChildren(
   options: ExportOptions,
   sink: MemberSink,
   turnId: Parameters<RecordRepositories["modelAttempts"]["listByParent"]>[0],
+  redactions: ExportRedaction[],
 ): Promise<Result<null, ExportError>> {
   const attempts = options.repositories.modelAttempts.listByParent(turnId, MAX_RECORD_LIST_LIMIT);
   if (!attempts.ok) {
     return err(fromRecordError(attempts.error));
   }
   for (const attempt of attempts.value) {
-    const wrote = await sink.write(line({ entity: "model-attempt", record: attempt }));
+    const wrote = await writeRedacted(
+      options,
+      sink,
+      { entity: "model-attempt", record: attempt },
+      redactions,
+    );
     if (!wrote.ok) {
       return err(wrote.error);
     }
@@ -819,12 +1036,47 @@ async function writeTurnChildren(
     return err(fromRecordError(invocations.error));
   }
   for (const invocation of invocations.value) {
-    const wrote = await sink.write(line({ entity: "invocation", record: invocation }));
+    const wrote = await writeRedacted(
+      options,
+      sink,
+      { entity: "invocation", record: invocation },
+      redactions,
+    );
     if (!wrote.ok) {
       return err(wrote.error);
     }
   }
   return ok(null);
+}
+
+function boundConfiguration(
+  entries: readonly ExportConfigurationEntry[],
+  redactor: SensitiveValueRedactor,
+): Result<readonly ExportConfigurationEntry[], ExportError> {
+  if (entries.length > MAX_EXPORT_CONFIGURATION_ENTRIES) {
+    return err(oversize("configuration-entries", entries.length, MAX_EXPORT_CONFIGURATION_ENTRIES));
+  }
+  const next: ExportConfigurationEntry[] = [];
+  for (const entry of entries) {
+    if (entry.key.length < 1 || entry.key.length > MAX_EXPORT_CONFIGURATION_KEY) {
+      return err(oversize("configuration-entries", entry.key.length, MAX_EXPORT_CONFIGURATION_KEY));
+    }
+    if (entry.source.length < 1 || entry.source.length > MAX_EXPORT_CONFIGURATION_KEY) {
+      return err(
+        oversize("configuration-entries", entry.source.length, MAX_EXPORT_CONFIGURATION_KEY),
+      );
+    }
+    if (entry.value.length > MAX_EXPORT_CONFIGURATION_VALUE) {
+      return err(
+        oversize("configuration-entries", entry.value.length, MAX_EXPORT_CONFIGURATION_VALUE),
+      );
+    }
+    const value = redactor.isSecretName(entry.key)
+      ? redactor.placeholder
+      : redactor.redactText(entry.value, MAX_EXPORT_CONFIGURATION_VALUE);
+    next.push({ key: entry.key, source: entry.source, value });
+  }
+  return ok(next);
 }
 
 function line(value: unknown): Uint8Array {
