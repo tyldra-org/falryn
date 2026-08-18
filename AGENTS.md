@@ -27,7 +27,9 @@ contracts apply only when that agent is given one of those mode prompts.
 1. Read any applicable personal/global agent guidance, then this file.
 2. Load skills from [`.agents/skills/`](.agents/skills/README.md) as gated below.
    They are vendored here so they resolve for every checkout.
-3. Skill guidance never overrides Falryn architecture, a Ready issue’s scope, or
+3. For Origin/GitHub slugs, remotes, and ruleset tier choices on **this repo**, read
+   [`.agents/ORIGIN-LAYOUT.md`](.agents/ORIGIN-LAYOUT.md) after loading global **`origin-cli`** / **`github-workflow`**.
+4. Skill guidance never overrides Falryn architecture, a Ready issue’s scope, or
    repository-owned validation.
 
 ## Stack (non-negotiable)
@@ -67,7 +69,7 @@ is global only: `~/.agents/skills/origin-cli/SKILL.md` (not vendored in this rep
 | OpenTUI TypeScript/TSX | **Both** `typescript-best-practices` and `opentui` |
 | Any Git/GitHub change (branch, commit, PR, issue, Project, merge, release, …) | `github-workflow` |
 | Exact `gh` flags / JSON / subcommand recall | `gh-cli` (process still follows `github-workflow`) |
-| Origin CLI syntax, mirror setup, Origin ruleset tiers (Tier 2 active, Tier 3 disabled), or `origin pr` / `origin repo` flags | `origin-cli` at `~/.agents/skills/origin-cli/` (install/login repair: Cursor built-in `origin` skill) |
+| Origin CLI syntax, mirror setup, or `origin pr` / `origin repo` flags | `origin-cli` at `~/.agents/skills/origin-cli/` — then [`.agents/ORIGIN-LAYOUT.md`](../.agents/ORIGIN-LAYOUT.md) for Falryn slugs/remotes/tiers (install/login repair: Cursor built-in `origin` skill) |
 | `Deliver — Target: …`, `Next — Target: Falryn Roadmap`, or “what should I implement next?” | `falryn-delivery-loop` — maintainer delivery modes only; does not replace technical/GitHub skills; not required of other contributors |
 
 ### OpenTUI ownership
