@@ -1019,12 +1019,25 @@ content, stored as bytes outside SQLite and described by a durable record:
   and still reports `uncertain`;
 - `finalize-artifacts` does real work. It stops accepting ingest, awaits what is
   in flight, and discards the temporary bytes *this run* allocated and
-  abandoned — safe precisely because this run knows it abandoned them; and
+  abandoned — safe precisely because this run knows it abandoned them;
 - a sweep marks, rechecks, and then deletes bytes this store wrote that no
   record references, in that order, because a record can commit between the
   first answer and the deletion. Quarantined bytes with a record are kept for
   inspection, another run's in-flight bytes are reported and left alone, and
-  deleted, retained, and failed stay three separate counts.
+  deleted, retained, and failed stay three separate counts;
+- migration `0004` creates a `STRICT` `artifact_transformations` table of parent
+  transformations beside `artifacts`, so a real run now ends at schema version
+  4. The typed artifact API describes a record with its lineage, links
+  `derived-from` / `extracted-from` / `copied-from` edges without rewriting a
+  committed one, walks ancestors and descendants within a depth bound, and
+  reports integrity as an observation. A later digest change answers `intact:
+  false` and leaves availability `available`; ingest and recovery still
+  quarantine on a mismatch; and
+- an integrity report never names a path, digest, or byte. The graph refuses a
+  self-parent, a missing or unavailable end, a cycle, a duplicate edge, and more
+  than eight parents on one child. Retention, viewers, export, replay, and crash
+  recovery remain later children of
+  [#115](https://github.com/tyldra-org/falryn/issues/115).
 
 Not yet present in this area: reachability garbage collection driven by session
 retention, pinning, and export dependency
@@ -1032,11 +1045,9 @@ retention, pinning, and export dependency
 of interrupted writes and export foundations
 ([#15](https://github.com/tyldra-org/falryn/issues/15)); corruption and
 missing-blob detection
-([#120](https://github.com/tyldra-org/falryn/issues/120)); viewers and
+([#120](https://github.com/tyldra-org/falryn/issues/120)); and viewers and
 rendered previews
-([#117](https://github.com/tyldra-org/falryn/issues/117)); and the complete
-typed artifact API and provenance graph
-([#116](https://github.com/tyldra-org/falryn/issues/116)).
+([#117](https://github.com/tyldra-org/falryn/issues/117)).
 
 The startup recovery introduced by
 [#319](https://github.com/tyldra-org/falryn/issues/319) establishes what an
@@ -1044,7 +1055,7 @@ earlier run left behind, and never invents a completion:
 
 - migration `0003` creates a `STRICT` `runs` table and adds a nullable
   `artifacts.run_id`, **stamped by the artifact repository on every reserve**,
-  so a real run now ends at schema version 3. A run inserts
+  so after `0003` a database is at schema version 3. A run inserts
   its row at startup and stamps a clean end during shutdown, so **a row with no
   end time is the durable trace of a run that did not close**. The added column
   is nullable by necessity — `ALTER TABLE ... ADD COLUMN` can only add one whose
@@ -1254,6 +1265,11 @@ rows of which 1,000 are events — plus 8 MiB artifacts and 64 KiB range reads.
 | range-read latency | `readRange` over the host blob adapter | warm | 64 samples of 64 KiB at unaligned offsets; median 0.058 ms, p95 0.080 ms, max 0.437 ms |
 
 Five limitations belong with those numbers:
+
+- **Those migration samples predate schema version 4.** They measured a fresh
+  open through migrations `0001`–`0003`. The current product set also applies
+  `0004` (the provenance graph). The numbers stay as observed; they are not
+  restated as version 4.
 
 - **Falryn performs no application-level retry.** `src/data/sqlite-store.ts`
   reports `busy` and returns. `evaluateRetry` and `DEFAULT_RETRY_BACKOFF` in
@@ -4032,9 +4048,8 @@ session/turn producer, or live transcript producer. The remaining gaps are:
   adapter, and the `finalize-artifacts` participant all exist and are composed,
   and nothing in a real run ingests bytes, because the tools and providers that
   would are later work. Also absent from this area: reachability garbage
-  collection, export, import, replay, viewers, and the provenance graph, each
+  collection, export, import, replay, and viewers, each
   owned by [#15](https://github.com/tyldra-org/falryn/issues/15),
-  [#116](https://github.com/tyldra-org/falryn/issues/116),
   [#117](https://github.com/tyldra-org/falryn/issues/117),
   [#120](https://github.com/tyldra-org/falryn/issues/120), or
   [#121](https://github.com/tyldra-org/falryn/issues/121);

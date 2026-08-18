@@ -297,6 +297,23 @@ describe("a digest that does not match", () => {
     await database.close();
   });
 
+  test("reports a later digest change without quarantining", async () => {
+    const { store, blobs, database } = await harness();
+    const ingested = await store.ingest(request());
+    expect(ingested.ok).toBe(true);
+    const digest = ingested.ok ? ingested.value.record.digest : ("" as ContentDigest);
+
+    const intact = await store.verifyIntegrity(artifactId.from("a1"));
+    expect(intact.ok && intact.value).toBe(true);
+
+    blobs.put({ scope: "content", digest }, new Uint8Array([9]));
+    const changed = await store.verifyIntegrity(artifactId.from("a1"));
+    expect(changed.ok && changed.value).toBe(false);
+    const record = store.get(artifactId.from("a1"));
+    expect(record.ok && record.value?.availability).toBe("available");
+    await database.close();
+  });
+
   test("carries no digest, path, or byte in the failure it reports", async () => {
     const { store, database } = await harness({ hasher: lyingVerification() });
 

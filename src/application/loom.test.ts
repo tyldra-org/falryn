@@ -72,6 +72,7 @@ function createMemoryArtifacts(): ArtifactStorePort & {
     get(id) {
       return records.get(id) ?? ok(null);
     },
+    verifyIntegrity: async () => ok(true),
     findByDigest: () => ok([]),
     listByInvocation: () => ok([]),
     async readRange(id, offset, length) {

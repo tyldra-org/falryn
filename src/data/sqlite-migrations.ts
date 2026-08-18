@@ -6,12 +6,14 @@
  * gap, a repeat, or a version out of order is defective, and finding out
  * halfway through applying it means finding out on a user's only copy.
  *
- * The production list holds three steps: migration `0001`, which creates the
+ * The production list holds four steps: migration `0001`, which creates the
  * session, turn, model-attempt, invocation, event, and projection-cursor
- * tables, migration `0002`, which creates the artifact metadata table, and
- * migration `0003`, which creates run identity. Their SQL lives in
- * `schema.ts`, `artifact-schema.ts`, and `run-schema.ts` beside this list, so
- * this module stays the rules a set must satisfy and those stay the schema.
+ * tables, migration `0002`, which creates the artifact metadata table,
+ * migration `0003`, which creates run identity, and migration `0004`, which
+ * creates the artifact provenance graph. Their SQL lives in `schema.ts`,
+ * `artifact-schema.ts`, `run-schema.ts`, and `artifact-provenance-schema.ts`
+ * beside this list, so this module stays the rules a set must satisfy and
+ * those stay the schema.
  *
  * The aggregate view of what the set produces — every product table and the
  * version a fully migrated database reports — lives here rather than in either
@@ -28,6 +30,7 @@ import {
   ok,
   type Result,
 } from "../domain/index.ts";
+import { ARTIFACT_TRANSFORMATIONS_TABLE, MIGRATION_0004 } from "./artifact-provenance-schema.ts";
 import { ARTIFACTS_TABLE, MIGRATION_0002 } from "./artifact-schema.ts";
 import { MIGRATION_0003, RUNS_TABLE } from "./run-schema.ts";
 import { MIGRATION_0001, RECORD_TABLES } from "./schema.ts";
@@ -44,10 +47,16 @@ export const PRODUCTION_MIGRATIONS: readonly Migration[] = [
   MIGRATION_0001,
   MIGRATION_0002,
   MIGRATION_0003,
+  MIGRATION_0004,
 ];
 
 /** Every product table the registered set creates, in creation order. */
-export const PRODUCT_TABLES: readonly string[] = [...RECORD_TABLES, ARTIFACTS_TABLE, RUNS_TABLE];
+export const PRODUCT_TABLES: readonly string[] = [
+  ...RECORD_TABLES,
+  ARTIFACTS_TABLE,
+  RUNS_TABLE,
+  ARTIFACT_TRANSFORMATIONS_TABLE,
+];
 
 function issue(
   code: MigrationSetErrorCode,
