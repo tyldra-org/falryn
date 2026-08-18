@@ -1035,8 +1035,11 @@ content, stored as bytes outside SQLite and described by a durable record:
   quarantine on a mismatch; and
 - an integrity report never names a path, digest, or byte. The graph refuses a
   self-parent, a missing or unavailable end, a cycle, a duplicate edge, and more
-  than eight parents on one child. Retention, viewers, export, replay, and crash
-  recovery remain later children of
+  than eight parents on one child. Viewers expand `gzip` under decoded-byte and
+  ratio ceilings, select code, diff, document, media, or diagnostic from media
+  type and origin, and report complete, truncated, transformed, stale, missing,
+  quarantined, or redacted. Export, replay, and crash recovery remain later
+  children of
   [#115](https://github.com/tyldra-org/falryn/issues/115).
 
 Not yet present in this area: reachability garbage collection driven by session
@@ -1045,9 +1048,11 @@ retention, pinning, and export dependency
 of interrupted writes and export foundations
 ([#15](https://github.com/tyldra-org/falryn/issues/15)); corruption and
 missing-blob detection
-([#120](https://github.com/tyldra-org/falryn/issues/120)); and viewers and
-rendered previews
-([#117](https://github.com/tyldra-org/falryn/issues/117)).
+([#120](https://github.com/tyldra-org/falryn/issues/120)). The typed artifact
+viewer is in `falryn/src/domain/artifact-view.ts` and
+`falryn/src/application/artifact-view.ts`; the transcript overlay that would
+mount it is still later
+([#264](https://github.com/tyldra-org/falryn/issues/264)).
 
 The startup recovery introduced by
 [#319](https://github.com/tyldra-org/falryn/issues/319) establishes what an
@@ -2446,7 +2451,8 @@ summary is still drawn, because a withheld block is not an invisible one.
 
 Every expansion route the projection can return now resolves to a registered
 command, and a control walks the union to prove it. Opening an artifact stays
-unavailable with its own reason, because no artifact viewer exists.
+unavailable with its own reason: the typed viewer exists, but this surface does
+not mount it yet.
 [#254](https://github.com/tyldra-org/falryn/issues/254) makes showing
 diagnostics the same overlay as `transcript.inspect` when the selected block is
 a tool, process, reasoning, or error entry and carries a non-completed outcome.
@@ -2468,7 +2474,7 @@ content is read from the projection every time it is drawn, so a revised block
 cannot be rendered from a stale copy. Boundary controls assert all of this,
 including that the surface re-derives no part of the block model it is given.
 
-What is **not** delivered by the surface: no dashboard, artifact viewer, or diff
+What is **not** delivered by the surface: no dashboard, mounted artifact overlay, or diff
 viewer, and no inspection of user-input, model-text, file-change, repository,
 task-progress, notice, artifact, unknown, or outcome-only kinds. Duration is
 reported as a block's age relative
@@ -4048,9 +4054,10 @@ session/turn producer, or live transcript producer. The remaining gaps are:
   adapter, and the `finalize-artifacts` participant all exist and are composed,
   and nothing in a real run ingests bytes, because the tools and providers that
   would are later work. Also absent from this area: reachability garbage
-  collection, export, import, replay, and viewers, each
+  collection, export, import, and replay, each
   owned by [#15](https://github.com/tyldra-org/falryn/issues/15),
-  [#117](https://github.com/tyldra-org/falryn/issues/117),
+  [#118](https://github.com/tyldra-org/falryn/issues/118),
+  [#119](https://github.com/tyldra-org/falryn/issues/119),
   [#120](https://github.com/tyldra-org/falryn/issues/120), or
   [#121](https://github.com/tyldra-org/falryn/issues/121);
 - any composition of the configuration loader into a running program.

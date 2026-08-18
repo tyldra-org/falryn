@@ -35,6 +35,7 @@
 import { afterEach, expect, test } from "bun:test";
 import { join } from "node:path";
 
+import { createArtifactViewer } from "../application/artifact-view.ts";
 import {
   everyEventKind,
   invocationRecord,
@@ -319,6 +320,17 @@ test("walks a fresh installation through every durable seam and reads it back af
   ]);
   const intact = await second.artifacts.verifyIntegrity(ARTIFACT);
   expect(intact.ok && intact.value).toBe(true);
+
+  const viewed = await createArtifactViewer(second.artifacts).view({
+    artifactId: ARTIFACT,
+  });
+  expect(viewed.ok && viewed.value.status).toBe("complete");
+  expect(viewed.ok && viewed.value.kind).toBe("document");
+  expect(viewed.ok && viewed.value.body).toMatchObject({
+    kind: "document",
+    family: "text",
+    text: "the bytes one invocation produced",
+  });
 
   // The cursor, and the state it claims to describe. Asserted against the
   // events actually committed rather than merely as non-null.
