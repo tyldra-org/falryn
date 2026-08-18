@@ -295,6 +295,33 @@ export {
   reduceCompact,
 } from "./compact-model.ts";
 export type {
+  CompressionEvalError,
+  CompressionEvalErrorCode,
+  CompressionEvalInput,
+  CompressionEvalLane,
+  CompressionEvalResult,
+  CompressionEvalRun,
+  CompressionEvalRunInput,
+  CompressionFidelityVerdict,
+  CompressionLatencyVerdict,
+  CompressionRecoveryKind,
+  CompressionTokenKind,
+} from "./compression-eval.ts";
+export {
+  COMPRESSION_EVAL_LANES,
+  COMPRESSION_EVAL_VERSION,
+  COMPRESSION_FIDELITY_VERDICTS,
+  COMPRESSION_LATENCY_VERDICTS,
+  COMPRESSION_RECOVERY_KINDS,
+  COMPRESSION_TOKEN_KINDS,
+  DEFAULT_EVAL_LATENCY_BUDGET_MS,
+  describeCompressionEvalError,
+  evaluateCompression,
+  evaluateCompressionRun,
+  HARD_EVAL_LATENCY_BUDGET_MS,
+  MAX_EVAL_OBSERVATIONS,
+} from "./compression-eval.ts";
+export type {
   ConfigurationAlias,
   ConfigurationDeprecation,
   ConfigurationIssue,

@@ -44,6 +44,16 @@ export {
   refreshAttachments,
   resolveComposerAttachments,
 } from "./composer-context.ts";
+export type {
+  CompressionEvalPort,
+  CompressionEvalPortError,
+} from "./compression-eval.ts";
+export {
+  createCompressionEvaluator,
+  observationFromCompact,
+  observationFromHistoryCheckpoint,
+  observationFromStructural,
+} from "./compression-eval.ts";
 export type { SecretResolverOptions } from "./credential-resolver.ts";
 export { createSecretResolver } from "./credential-resolver.ts";
 export type { DebugAdapterListener, DebugAdapterSupervisor } from "./debug-adapter.ts";
