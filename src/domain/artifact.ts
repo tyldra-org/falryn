@@ -521,6 +521,12 @@ export type ArtifactStorePort = {
 
   get(id: ArtifactId): Result<ArtifactRecord | null, ArtifactError>;
 
+  /**
+   * Re-reads finalized bytes and reports whether they still hash to the
+   * recorded digest. Does not quarantine, mark missing, or rewrite the record.
+   */
+  verifyIntegrity(id: ArtifactId, signal?: AbortSignal): Promise<Result<boolean, ArtifactError>>;
+
   /** Every record sharing exact bytes. Distinct lineage, one digest. */
   findByDigest(
     digest: ContentDigest,

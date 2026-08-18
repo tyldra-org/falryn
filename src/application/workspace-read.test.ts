@@ -5,6 +5,7 @@ import {
   artifactId,
   contentDigest,
   createInMemoryFileSystem,
+  err,
   localPath,
   ok,
   timestampFromEpochMilliseconds,
@@ -69,6 +70,7 @@ function expansionStore(captured: { bytes: Uint8Array | null }): ArtifactStorePo
       });
     },
     get: () => ok(null),
+    verifyIntegrity: async (id) => err({ kind: "artifact", code: "not-found", artifactId: id }),
     findByDigest: () => ok([]),
     listByInvocation: () => ok([]),
     readRange: async () => ({

@@ -15,6 +15,7 @@ import {
   type LocalPath,
   TERMINAL_OUTCOME_KINDS,
 } from "../domain/index.ts";
+import { ARTIFACT_PROVENANCE_SCHEMA_VERSION } from "./artifact-provenance-schema.ts";
 import { ARTIFACT_SCHEMA_VERSION } from "./artifact-schema.ts";
 import {
   temporaryRoot as makeTemporaryRoot,
@@ -71,6 +72,7 @@ describe("a fresh database", () => {
       RECORD_SCHEMA_VERSION,
       ARTIFACT_SCHEMA_VERSION,
       RUN_SCHEMA_VERSION,
+      ARTIFACT_PROVENANCE_SCHEMA_VERSION,
     ]);
     // Nothing to lose: a database at version 0 holds no product row.
     expect(store.report.backupPath).toBeNull();
@@ -103,6 +105,7 @@ describe("a fresh database", () => {
     // Implicit indexes behind UNIQUE and PRIMARY KEY are excluded by
     // `sql IS NOT NULL`; what is listed here is what was declared on purpose.
     expect(indexes.ok && indexes.value.map((row) => row.name)).toEqual([
+      "artifact_transformations_by_parent",
       "artifacts_by_digest",
       "artifacts_by_invocation",
       "artifacts_reserved",

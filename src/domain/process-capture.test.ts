@@ -72,6 +72,7 @@ function createMemoryArtifacts(
       });
     },
     get: () => ok(null),
+    verifyIntegrity: async (id) => err({ kind: "artifact", code: "not-found", artifactId: id }),
     findByDigest: () => ok([]),
     listByInvocation: () => ok([]),
     readRange: async () =>

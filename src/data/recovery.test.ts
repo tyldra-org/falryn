@@ -41,6 +41,7 @@ import {
   probeCrashSignals,
   recoverInterruptedWork,
 } from "./recovery.ts";
+import { PRODUCT_SCHEMA_VERSION } from "./sqlite-migrations.ts";
 
 afterEach(removeTemporaryRoots);
 
@@ -649,7 +650,7 @@ describe("the run row", () => {
     const run = beginRun({ store, clock, runId: THIS_RUN });
 
     expect(run.ok && run.value.record.endedAt).toBeNull();
-    expect(run.ok && run.value.record.schemaVersion).toBe(3);
+    expect(run.ok && run.value.record.schemaVersion).toBe(PRODUCT_SCHEMA_VERSION);
     const rows = store.read("SELECT ended_at AS endedAt FROM runs WHERE run_id = $id", {
       id: THIS_RUN,
     });

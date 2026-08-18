@@ -3,6 +3,7 @@ import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { EXIT_CODES } from "./cli/index.ts";
+import { PRODUCT_SCHEMA_VERSION } from "./data/index.ts";
 import {
   createStaticEnvironment,
   DEFAULT_PHASE_GRACE_MS,
@@ -61,10 +62,11 @@ describe("application bootstrap", () => {
       localPath(`${options.root}/falryn.sqlite`),
     );
     expect(report.storage.ok && report.storage.value.created).toBe(true);
-    // The production set is migrations 0001 through 0003, so a clean run ends
-    // at version 3 with the record, artifact, and run schemas in place.
-    expect(report.storage.ok && report.storage.value.schemaVersion).toBe(3);
-    expect(report.storage.ok && report.storage.value.appliedThisRun).toEqual([1, 2, 3]);
+    // The production set is migrations 0001 through 0004, so a clean run ends
+    // at the current schema with the record, artifact, run, and provenance
+    // tables in place.
+    expect(report.storage.ok && report.storage.value.schemaVersion).toBe(PRODUCT_SCHEMA_VERSION);
+    expect(report.storage.ok && report.storage.value.appliedThisRun).toEqual([1, 2, 3, 4]);
   });
 
   test("registers the persistence phases in the order they have to run", async () => {

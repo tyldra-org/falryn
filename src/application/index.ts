@@ -5,6 +5,8 @@
  * layer depends on `src/domain` and on nothing further out.
  */
 
+export type { DurableArtifactApi } from "./artifact-api.ts";
+export { createDurableArtifactApi } from "./artifact-api.ts";
 export type { ArtifactReader } from "./artifact-read.ts";
 export { createArtifactReader } from "./artifact-read.ts";
 export type {
