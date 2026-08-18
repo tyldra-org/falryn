@@ -28,10 +28,10 @@ gh run cancel RUN_ID --repo OWNER/REPO
 Dispatch only after validating the ref and typed inputs. A workflow may deploy, publish, rotate infrastructure, or delete resources; inspect YAML and environment protection first.
 
 Do not run `gh run watch` in the chat turn. Long waits follow [ci.md](ci.md):
-background watcher, one-shot snapshot only, foreground wait only if the user
-asks to wait in-chat. Do not rerun unchanged failures more than once unless the
-user explicitly wants a flake investigation. Canceling another person's or
-production run requires confirmation.
+background `gh run watch`, snapshot `gh run view`, foreground wait only if
+the user asks to wait in-chat. Do not rerun unchanged failures more than
+once unless the user explicitly wants a flake investigation. Canceling
+another person's or production run requires confirmation.
 
 ## Artifacts, caches, and logs
 
