@@ -121,6 +121,8 @@ export type {
   LoomRetrieveRequest,
 } from "./loom.ts";
 export { createLoomPort, loomProjectionToEvidence } from "./loom.ts";
+export type { MemoryRecords } from "./memory-record.ts";
+export { createMemoryRecords } from "./memory-record.ts";
 export type { NotebookReader } from "./notebook-read.ts";
 export { createNotebookReader } from "./notebook-read.ts";
 export type { PdfReader } from "./pdf-read.ts";
