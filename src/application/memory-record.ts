@@ -25,6 +25,7 @@ function memoryError(code: MemoryError["code"], field: string | null): MemoryErr
 export type MemoryRecords = {
   define(input: MemoryRecordInput, signal?: AbortSignal): Result<MemoryRecord, MemoryError>;
   get(id: unknown): Result<MemoryRecord, MemoryError>;
+  list(): readonly MemoryRecord[];
 };
 
 export function createMemoryRecords(): MemoryRecords {
@@ -61,6 +62,9 @@ export function createMemoryRecords(): MemoryRecords {
         return err(memoryError("unavailable", "memoryId"));
       }
       return ok(record);
+    },
+    list() {
+      return [...records.values()];
     },
   };
 }
