@@ -3621,7 +3621,7 @@ compressing incoming context:
 - `src/application/brief.ts` — redacts style notes, binds projection to a turn
   identity, and maps the result onto the prompt-composition `brief` section.
 
-Product CLI/TUI Brief controls, Loom wiring, and learned compact-model
+Product CLI/TUI Brief controls, Loom product wiring, and learned compact-model
 lanes remain later #101 children.
 Validated by `src/domain/brief.test.ts` and `src/application/brief.test.ts`
 under `bun run check`.
@@ -3640,6 +3640,29 @@ registering product tools or creating Loom manifests:
   exact source.
 
 Validated by `src/application/hush.test.ts` under `bun run check`.
+
+The Loom compress-cache-retrieve slice from
+[#104](https://github.com/tyldra-org/falryn/issues/104) commits reversible
+segment manifests and retrieves verified members without registering product
+tools or implementing structural or compact-model lanes:
+
+- `src/domain/loom.ts` — `commitLoomManifest` records artifact members with
+  digests, protected facts, summaries, and atomic-group recovery;
+  `retrieveLoomProjection` verifies digest, scope, retention, and bytes, then
+  projects exact, range, head/tail, or search-hits views. Full untruncated
+  retrieval is `exact-source`; ranges and omitted head/tail are
+  `bounded-excerpt`; search hits are `deterministic-transform`. Restricted
+  content is refused and never cached. Cache keys include digest, generation,
+  strategy version `loom.v1`, configuration, destination, projection kind, and
+  bounds.
+- `src/application/loom.ts` — `createLoomPort` ingests members through
+  `ArtifactStorePort` and commits a handle only when every required ingest
+  succeeds; retrieve loads stored bytes, redacts secret-shaped text, and never
+  lets a redacted projection claim exact source. Foreign-scope sharing is
+  denied. Manifests are in-memory for this slice.
+
+Validated by `src/domain/loom.test.ts` and `src/application/loom.test.ts`
+under `bun run check`.
 
 The compact document reader slice from
 [#493](https://github.com/tyldra-org/falryn/issues/493) projects bounded exact
@@ -3867,7 +3890,7 @@ session/turn producer, or live transcript producer. The remaining gaps are:
   capture, Hush reduction, process-tree cancellation, and Git observation plus
   stage/commit/sync exist; product tools are not registered, and Git cannot
   rebase, force-update, or rewrite history);
-- context planning, Hush product/CLI/TUI wiring, Loom, compression,
+- context planning, Hush product/CLI/TUI wiring, Loom product wiring, compression,
   index builders, or memory (Brief domain projection exists for #102;
   evidence-candidate admission exists for #82;
   context token/byte/item/latency/sensitivity budgets exist for #83; ranking
@@ -3876,7 +3899,8 @@ session/turn producer, or live transcript producer. The remaining gaps are:
   exact retrieval exist for #86; large-repository, long-session, stale, and
   conflicting-evidence inspection exists for #87; Hush domain reduction over
   captured process facts exists for #72; Hush observation across shell, Git,
-  test, search, and process output exists for #103; none of these is wired
+  test, search, and process output exists for #103; Loom compress-cache-retrieve
+  manifests and exact retrieval exist for #104; none of these is wired
   into the planner or product tools);
 - MCP, skills, plugin and other hook families, marketplace, agents, jobs, or workflows; or
 - an installer, updater, supported platform package, signed release, or support
