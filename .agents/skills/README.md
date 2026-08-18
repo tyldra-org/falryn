@@ -17,6 +17,6 @@ personal `~/.agents/skills`.
 Load **github-workflow** first for any mutating git/GitHub work; add **gh-cli** or
 **origin-cli** when you need flag/RPC recall — never substitute one CLI for the other.
 
-**Global only (not vendored here):** `origin-cli` — Origin CLI syntax, light Origin rulesets (default), optional GitHub parity sync, mirror setup. Install/login repair: Cursor built-in `origin` skill.
+**Global only (not vendored here):** `origin-cli` — Origin CLI syntax, ruleset tiers (Tier 2 active, Tier 3 gated), mirror setup. Install/login repair: Cursor built-in `origin` skill.
 
 None of this is a contributor requirement. It configures an agent working here on the maintainer’s behalf; see “Who this file is for” in [`AGENTS.md`](../../AGENTS.md).
