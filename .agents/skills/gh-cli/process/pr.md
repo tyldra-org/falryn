@@ -12,9 +12,9 @@ Check `git remote get-url origin` and `origin repo view -R org/name` (mirror sta
 | **`origin.cursor.com` + native / detached Origin repo** | **`git push origin`** | **`origin pr …`** |
 | **`github.com` remote primary** | **`git push origin`** | **`gh pr …`** |
 
-Issues, Projects, Actions, ruleset admin on GitHub: always **`gh`** on the GitHub org/repo from the project overlay (or `gh repo view` / remote `github`).
+Issues, Projects, Actions, ruleset admin on GitHub: always **`gh`** on the GitHub org/repo from `git remote get-url origin` / `gh repo view` (or a project overlay if present).
 
-**Do not** assume Origin-primary git remote implies Origin PRs. Inbound mirrors sync code through Origin but PRs live on GitHub. Resolve `{github-org}/{repo}` from the repo overlay, `git remote get-url github`, or `origin repo view`.
+**Do not** assume Origin-primary git remote implies Origin PRs. Inbound mirrors sync code through Origin but PRs live on GitHub.
 
 Push/sync is **git-workflow**. Native Origin PRs are **origin-cli**. This file is GitHub PR process; flag syntax is [reference/pr.md](../reference/pr.md).
 

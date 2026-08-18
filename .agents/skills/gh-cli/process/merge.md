@@ -14,7 +14,7 @@ When `git remote origin` is **`origin.cursor.com`** but **`mirrorStatus: inbound
 - **Push:** `git push origin` (**git-workflow**)
 - **PRs:** **`gh pr create/view/checks/merge`** on the GitHub source repo — `origin pr create` fails
 
-Use slugs from the project overlay (e.g. `.agents/ORIGIN-LAYOUT.md`) or `git remote get-url github`.
+Use slugs from the project `AGENTS.md` if it names them, else `git remote get-url origin` / `gh repo view`.
 
 **Anti-pattern:** `gh pr merge --squash --delete-branch` without `--match-head-commit`, `--subject`, and `--body ""`.
 
