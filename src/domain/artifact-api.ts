@@ -6,8 +6,8 @@
  * parent transformations, an integrity answer that never mutates, and
  * lifecycle transitions that cannot rewrite a committed edge.
  *
- * Viewers, export bundles, replay, crash recovery, and retention remain
- * later children of #115.
+ * Viewers now own encoding expansion. Export bundles, replay, crash recovery,
+ * and retention remain later children of #115.
  */
 
 import { z } from "zod";

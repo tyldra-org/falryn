@@ -55,8 +55,8 @@ describe("every expansion route", () => {
 
 describe("a route whose command cannot run", () => {
   test("says why instead of offering a key", () => {
-    // There is no artifact viewer in this build. Offering a key for one would be
-    // the promise this whole mechanism exists to avoid.
+    // The typed viewer exists. This surface does not mount it, so offering a
+    // key would still be the promise this whole mechanism exists to avoid.
     const described = describeRouteWith(rows(), "transcript.open-artifact");
     expect(described).toContain("unavailable");
     expect(described).toContain("no artifact viewer yet");

@@ -366,8 +366,8 @@ export const SHELL_COMMANDS: readonly ShellCommand[] = [
     context: "transcript",
     // No default key. The command exists because `transcript.open-artifact` is a
     // route the projection can return, and a route with no command is an offer
-    // nothing honours — but a key for a viewer that does not exist would be a
-    // second, worse promise.
+    // nothing honours. The typed viewer exists; this surface does not mount it,
+    // so a key here would still be a promise the overlay cannot keep.
     defaultBinding: null,
     keywords: ["artifact", "open", "export"],
     availability: () => unavailable("there is no artifact viewer yet"),

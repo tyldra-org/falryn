@@ -9,6 +9,8 @@ export type { DurableArtifactApi } from "./artifact-api.ts";
 export { createDurableArtifactApi } from "./artifact-api.ts";
 export type { ArtifactReader } from "./artifact-read.ts";
 export { createArtifactReader } from "./artifact-read.ts";
+export type { ArtifactViewer } from "./artifact-view.ts";
+export { createArtifactViewer } from "./artifact-view.ts";
 export type {
   BoundedQueue,
   BoundedQueueOptions,
