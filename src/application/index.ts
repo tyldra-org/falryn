@@ -13,6 +13,12 @@ export type {
   EnqueueRequest,
 } from "./bounded-queue.ts";
 export { createBoundedQueue } from "./bounded-queue.ts";
+export type {
+  BriefComposer,
+  BriefComposerError,
+  BriefComposerResult,
+} from "./brief.ts";
+export { briefSection, createBriefComposer } from "./brief.ts";
 export type { BudgetLedger } from "./budget-ledger.ts";
 export { createBudgetLedger, MAX_BUDGET_DEPTH } from "./budget-ledger.ts";
 export type { CompactDocumentReader } from "./compact-document-read.ts";
