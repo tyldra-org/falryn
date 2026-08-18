@@ -48,6 +48,10 @@ export type LoomManifestId = Brand<string, "LoomManifestId">;
 export type HistoryCheckpointId = Brand<string, "HistoryCheckpointId">;
 /** One durable memory record. Corrections create a new id; the old record is not rewritten. */
 export type MemoryId = Brand<string, "MemoryId">;
+/** One bounded operational observation. Aggregates only; never a durable fact. */
+export type ObservationId = Brand<string, "ObservationId">;
+/** One reviewable operational recommendation. Never auto-applied. */
+export type RecommendationId = Brand<string, "RecommendationId">;
 export type IdempotencyKey = Brand<string, "IdempotencyKey">;
 /** Which provider a model attempt was routed to, such as an API vendor. */
 export type ProviderId = Brand<string, "ProviderId">;
@@ -151,6 +155,8 @@ export const loomManifestId = createIdentifierCodec<LoomManifestId>("loomManifes
 export const historyCheckpointId =
   createIdentifierCodec<HistoryCheckpointId>("historyCheckpointId");
 export const memoryId = createIdentifierCodec<MemoryId>("memoryId");
+export const observationId = createIdentifierCodec<ObservationId>("observationId");
+export const recommendationId = createIdentifierCodec<RecommendationId>("recommendationId");
 export const idempotencyKey = createIdentifierCodec<IdempotencyKey>("idempotencyKey");
 export const providerId = createIdentifierCodec<ProviderId>("providerId");
 export const modelId = createIdentifierCodec<ModelId>("modelId");
