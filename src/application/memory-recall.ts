@@ -28,7 +28,7 @@ export type MemoryRecallPort = {
 };
 
 export function createMemoryRecall(
-  records: MemoryRecords = createMemoryRecords(),
+  records: Pick<MemoryRecords, "list"> = createMemoryRecords(),
 ): MemoryRecallPort {
   return {
     recall(input, signal) {

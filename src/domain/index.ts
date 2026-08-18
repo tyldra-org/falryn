@@ -1551,6 +1551,24 @@ export {
   MEMORY_SOURCE_KINDS,
 } from "./memory-admission.ts";
 export type {
+  MemoryCorrectionInput,
+  MemoryDeletion,
+  MemoryDeletionInput,
+  MemoryExpiryInput,
+  MemoryRetainedHandle,
+  MemoryRetainedKind,
+} from "./memory-lifecycle.ts";
+export {
+  MAX_MEMORY_RETAINED,
+  MAX_MEMORY_RETAINED_LOCATOR_BYTES,
+  MEMORY_LIFECYCLE_VERSION,
+  MEMORY_RETAINED_KINDS,
+  planMemoryCorrection,
+  planMemoryDeletion,
+  planMemoryExpiry,
+  projectExpiredRecord,
+} from "./memory-lifecycle.ts";
+export type {
   MemoryContradiction,
   MemoryRecallHit,
   MemoryRecallInput,
