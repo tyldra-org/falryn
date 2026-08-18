@@ -2007,6 +2007,24 @@ export {
 export type { StoredEvent } from "./stored-event.ts";
 export { fromStoredEvent, toStoredEvent } from "./stored-event.ts";
 export type {
+  StructuralError,
+  StructuralFamily,
+  StructuralFidelity,
+  StructuralOmission,
+  StructuralRange,
+  StructuralReduceInput,
+  StructuralReduceResult,
+} from "./structural-reduce.ts";
+export {
+  DEFAULT_STRUCTURAL_MAX_BYTES,
+  describeStructuralError,
+  HARD_STRUCTURAL_MAX_BYTES,
+  reduceStructural,
+  STRUCTURAL_FAMILIES,
+  STRUCTURAL_FIDELITIES,
+  STRUCTURAL_REDUCER_VERSION,
+} from "./structural-reduce.ts";
+export type {
   ColorLevel,
   FlushReport,
   FlushStatus,

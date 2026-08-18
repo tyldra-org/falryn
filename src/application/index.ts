@@ -188,6 +188,13 @@ export type {
 } from "./shutdown-coordinator.ts";
 export { createShutdownCoordinator } from "./shutdown-coordinator.ts";
 export type {
+  StructuralEvidenceRequest,
+  StructuralPortError,
+  StructuralReduceRequest,
+  StructuralReducer,
+} from "./structural-reduce.ts";
+export { createStructuralReducer, structuralToEvidence } from "./structural-reduce.ts";
+export type {
   ContinueModelContext,
   ContinueModelResult,
   RunToolCallLoopInput,
