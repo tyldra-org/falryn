@@ -1541,6 +1541,16 @@ export {
   retrieveLoomProjection,
 } from "./loom.ts";
 export type {
+  MemoryAdmissionContextInput,
+  MemoryAdmissionResult,
+  MemorySourceKind,
+} from "./memory-admission.ts";
+export {
+  admitMemoryCandidate,
+  MEMORY_ADMISSION_VERSION,
+  MEMORY_SOURCE_KINDS,
+} from "./memory-admission.ts";
+export type {
   MemoryError,
   MemoryErrorCode,
   MemoryKind,
@@ -1566,6 +1576,7 @@ export {
   MEMORY_RECORD_VERSION,
   MEMORY_SCOPE_KINDS,
   MEMORY_SENSITIVITIES,
+  memoryScopeWorkspaceId,
 } from "./memory-record.ts";
 export type {
   NormalizedNotebookReadRequest,

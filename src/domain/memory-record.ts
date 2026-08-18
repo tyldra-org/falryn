@@ -75,6 +75,23 @@ export type MemoryScope =
     }
   | { readonly kind: "provider" | "collection"; readonly locator: string };
 
+export function memoryScopeWorkspaceId(scope: MemoryScope): WorkspaceId | null {
+  switch (scope.kind) {
+    case "user":
+    case "provider":
+    case "collection":
+      return null;
+    case "workspace":
+    case "repository":
+    case "branch":
+    case "worktree":
+    case "agent":
+      return scope.workspaceId;
+    default:
+      return assertNever(scope, "unhandled memory scope");
+  }
+}
+
 export type MemoryProvenance = {
   readonly origin: MemoryOrigin;
   readonly locator: string;
@@ -107,7 +124,8 @@ export type MemoryErrorCode =
   | "empty"
   | "cancelled"
   | "conflict"
-  | "stale";
+  | "stale"
+  | "denied";
 
 export type MemoryError = {
   readonly kind: "memory";
@@ -216,6 +234,8 @@ export function describeMemoryError(error: MemoryError): string {
       return `conflict ${field}`;
     case "stale":
       return `stale ${field}`;
+    case "denied":
+      return `denied ${field}`;
     default:
       return assertNever(error.code, "unhandled memory error");
   }
