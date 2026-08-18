@@ -7,8 +7,11 @@ Watch checks, diagnose failures, fix within a bounded loop.
 ```bash
 gh pr checks <n>
 gh run list --branch <branch> --limit 5
+gh run view <run-id> --json status,conclusion,url,headSha
 gh run view <run-id> --log-failed
 ```
+
+`gh run view` is a one-shot snapshot. It does not wait for the run.
 
 `--log-failed` over `--log`: the full log is mostly noise and the failing step is what matters.
 
@@ -17,27 +20,32 @@ Without `gh`, ask the user for the run URL or the failing output. Do not constru
 ## While checks are running
 
 **Always watch in the background.** Do not block the conversation turn on
-multi-minute `sleep`, poll loops, or `gh pr checks --watch` / `gh run watch`.
-Foreground `--watch` also hits the Shell ~180s cap and gets backgrounded anyway.
+multi-minute waits.
 
-1. One snapshot is fine: `gh pr checks <n>` (or `gh run list`) when you only
-   need current state.
-2. Start a **background** watcher (Shell `block_until_ms: 0`, or equivalent)
-   that logs progress. Do not `--watch` in the chat turn.
-3. Tell the user the PR URL, the head SHA being watched, and that the wait is
-   backgrounded. Keep useful work going, or **end the turn** so a completion
-   ping can fire.
-4. If merge is already authorized (user said land/merge, or an active `Deliver`
-   run): when the watcher finishes, **re-read** head SHA, **required** checks,
-   reviews, mergeability, and method, then merge per [merge.md](merge.md).
-   Never merge a changed head without that re-read. Do not hold the turn
-   “because merge is next.”
-5. Match any later poll interval to real job duration (a ~10-minute build is
-   not thirty twenty-second polls).
+`gh run view` and `gh pr checks` (without `--watch`) are snapshots. The
+native waiter for a workflow run is:
+
+```bash
+gh run watch RUN_ID --repo OWNER/REPO --exit-status
+```
+
+Prefer that over a custom poll loop. `gh pr checks --watch` waits on
+PR-attached checks; for a GitHub Actions run, use `gh run watch`.
+
+1. One snapshot is fine when you only need current state.
+2. Start `gh run watch` in the background. Do not wait in the chat turn.
+3. Tell the user the PR or run URL and the head SHA being watched. Keep
+   useful work going, or end the turn so the wait can complete.
+4. If merge is already authorized: when the watcher finishes, **re-read**
+   head SHA, **required** checks, reviews, mergeability, and method, then
+   merge per [merge.md](merge.md). Never merge a changed head without that
+   re-read. Do not hold the turn “because merge is next.”
+5. If you must poll, match the interval to real job duration. Prefer
+   `gh run watch` over polling.
 
 **Foreground wait only** when the user explicitly says to wait in-chat
 (e.g. “wait here until green”). “Land this PR” / “merge when green” is **not**
-that — use the background watcher, then merge after the re-read.
+that — use background `gh run watch`, then merge after the re-read.
 
 ## The bounded fix loop
 

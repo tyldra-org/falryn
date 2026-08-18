@@ -37,6 +37,9 @@ gh run view 123456789 --web
 # Watch run in real-time
 gh run watch 123456789
 
+# Watch until complete, then exit 0/1
+gh run watch 123456789 --exit-status
+
 # Watch with interval
 gh run watch 123456789 --interval 5
 

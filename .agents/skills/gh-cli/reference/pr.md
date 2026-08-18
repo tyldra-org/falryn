@@ -231,6 +231,8 @@ gh pr ready 123
 
 ### Pull Request Checks
 
+Waiting on a workflow run is `gh run watch` — see [ci.md](../process/ci.md).
+
 ```bash
 # View PR checks
 gh pr checks 123
