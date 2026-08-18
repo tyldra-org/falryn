@@ -3621,8 +3621,7 @@ compressing incoming context:
 - `src/application/brief.ts` — redacts style notes, binds projection to a turn
   identity, and maps the result onto the prompt-composition `brief` section.
 
-Product CLI/TUI Brief controls, Loom product wiring, and learned compact-model
-lanes remain later #101 children.
+Product CLI/TUI Brief controls and Loom product wiring remain later #101 children.
 Validated by `src/domain/brief.test.ts` and `src/application/brief.test.ts`
 under `bun run check`.
 
@@ -3644,7 +3643,7 @@ Validated by `src/application/hush.test.ts` under `bun run check`.
 The Loom compress-cache-retrieve slice from
 [#104](https://github.com/tyldra-org/falryn/issues/104) commits reversible
 segment manifests and retrieves verified members without registering product
-tools or implementing structural or compact-model lanes:
+tools or implementing product compact-model wiring:
 
 - `src/domain/loom.ts` — `commitLoomManifest` records artifact members with
   digests, protected facts, summaries, and atomic-group recovery;
@@ -3666,8 +3665,7 @@ under `bun run check`.
 
 The structural lossless reducer slice from
 [#105](https://github.com/tyldra-org/falryn/issues/105) projects files, diffs,
-diagnostics, and tool results without registering product tools or compact-model
-lanes:
+diagnostics, and tool results without registering product tools:
 
 - `src/domain/structural-reduce.ts` — `reduceStructural` classifies `file`,
   `diff`, `diagnostic`, and `tool` families at version `structural.v1`. JSON
@@ -3687,6 +3685,37 @@ lanes:
 
 Validated by `src/domain/structural-reduce.test.ts` and
 `src/application/structural-reduce.test.ts` under `bun run check`.
+
+The optional compact-model and history checkpoint slice from
+[#106](https://github.com/tyldra-org/falryn/issues/106) adds learned compression
+and conversation checkpoints without registering product tools or running
+fidelity eval:
+
+- `src/domain/compact-model.ts` — `reduceCompact` at version `compact.v1`.
+  Evaluated compact-model projections are `extractive-summary` or
+  `lossy-synthesis` and never claim exact-source. `off`, unavailable,
+  malformed, timed-out, rate-limited, disconnected, refused, empty, oversized,
+  or no-savings outcomes fall back to passthrough once; fallback never calls
+  the model again. Cancellation and restricted input fail closed. Complete
+  passthrough of original bytes is `exact-source`; truncated passthrough is
+  `deterministic-transform`.
+- `src/domain/history-checkpoint.ts` — `checkpointHistory` records a new
+  `HistoryCheckpointId`. Required items (commitments, decisions, unresolved
+  questions, task state, tool outcomes, citations, artifacts, uncertainty,
+  corrections, skill instruction bodies) stay verbatim. Foldable turn prose may
+  use the compact-model lane. The original event identities are listed and the
+  event log is not rewritten. Retained sources keep expansion links.
+  `retryAfterOverflow` compact-retries once on `prompt-too-long` and fails
+  closed on a second consecutive overflow. `previewCompactForSmallerWindow`
+  requires a strictly smaller destination window.
+- `src/application/compact-lanes.ts` — redacts secret-shaped text and never
+  lets a redacted compact-model projection claim exact-source.
+  `compactToEvidence` admits passthrough as `exact-source` and model
+  projections with an expansion handle.
+
+Validated by `src/domain/compact-model.test.ts`,
+`src/domain/history-checkpoint.test.ts`, and
+`src/application/compact-lanes.test.ts` under `bun run check`.
 
 The compact document reader slice from
 [#493](https://github.com/tyldra-org/falryn/issues/493) projects bounded exact
@@ -3925,7 +3954,8 @@ session/turn producer, or live transcript producer. The remaining gaps are:
   captured process facts exists for #72; Hush observation across shell, Git,
   test, search, and process output exists for #103; Loom compress-cache-retrieve
   manifests and exact retrieval exist for #104; structural lossless reducers for
-  files, diffs, diagnostics, and tools exist for #105; none of these is wired
+  files, diffs, diagnostics, and tools exist for #105; optional compact-model
+  and history checkpoint lanes exist for #106; none of these is wired
   into the planner or product tools);
 - MCP, skills, plugin and other hook families, marketplace, agents, jobs, or workflows; or
 - an installer, updater, supported platform package, signed release, or support
@@ -3954,5 +3984,5 @@ Their implementation breakdown lives in GitHub Issues and the Project.
 - **Open falryn v0.2 Core Coding Agent product issues:** none remaining.
 - **Completed language intelligence parent:** [#88 Deliver language intelligence and derived indexing](https://github.com/tyldra-org/falryn/issues/88) is closed and Done. Child [#89 Implement language-server supervision, transport, initialization, and shutdown](https://github.com/tyldra-org/falryn/issues/89) closed and Done via [PR #584](https://github.com/tyldra-org/falryn/pull/584) (`7ba7ae4`); companion docs [falryn-docs#173](https://github.com/tyldra-org/falryn-docs/pull/173) (`1ef289d`). Child [#90 Synchronize workspaces, documents, versions, and dynamic capabilities](https://github.com/tyldra-org/falryn/issues/90) closed and Done via [PR #586](https://github.com/tyldra-org/falryn/pull/586) (`8bffb76`); companion docs [falryn-docs#174](https://github.com/tyldra-org/falryn-docs/pull/174) (`6993dde`). Child [#91 Implement diagnostics, hover, definition, references, symbols, and completion](https://github.com/tyldra-org/falryn/issues/91) closed and Done via [PR #588](https://github.com/tyldra-org/falryn/pull/588) (`0f7c049`); companion docs [falryn-docs#175](https://github.com/tyldra-org/falryn-docs/pull/175) (`9036319`). Child [#92 Convert code actions, rename, format, and workspace edits into patches](https://github.com/tyldra-org/falryn/issues/92) closed and Done via [PR #589](https://github.com/tyldra-org/falryn/pull/589) (`6eff081`); companion docs [falryn-docs#176](https://github.com/tyldra-org/falryn-docs/pull/176) (`0591061`). Child [#93 Build rebuildable SQLite lexical and symbol indexes](https://github.com/tyldra-org/falryn/issues/93) closed and Done via [PR #590](https://github.com/tyldra-org/falryn/pull/590) (`3baefca`); companion docs [falryn-docs#177](https://github.com/tyldra-org/falryn-docs/pull/177) (`8454260`). Child [#94 Qualify optional embeddings and structural parsing only when justified](https://github.com/tyldra-org/falryn/issues/94) closed and Done via [PR #591](https://github.com/tyldra-org/falryn/pull/591) (`e703340`); companion docs [falryn-docs#178](https://github.com/tyldra-org/falryn-docs/pull/178) (`789054b`). Parent integrated verification passed on `e703340` (69 child-seam tests).
 - **Completed debugging parent:** [#95 Deliver debugging through DAP](https://github.com/tyldra-org/falryn/issues/95) is closed and Done. Child [#96 Implement debug-adapter supervision and request-response transport](https://github.com/tyldra-org/falryn/issues/96) closed and Done via [PR #593](https://github.com/tyldra-org/falryn/pull/593) (`1ea7f60`); companion docs [falryn-docs#179](https://github.com/tyldra-org/falryn-docs/pull/179) (`0b09a59`). Child [#97 Implement launch, attach, breakpoint, thread, and stack lifecycles](https://github.com/tyldra-org/falryn/issues/97) closed and Done via [PR #595](https://github.com/tyldra-org/falryn/pull/595) (`93eefa0`); companion docs [falryn-docs#180](https://github.com/tyldra-org/falryn-docs/pull/180) (`a1ad36b`). Child [#98 Implement scopes, variables, evaluation, and output projections](https://github.com/tyldra-org/falryn/issues/98) closed and Done via [PR #597](https://github.com/tyldra-org/falryn/pull/597) (`cdc379f`); companion docs [falryn-docs#181](https://github.com/tyldra-org/falryn-docs/pull/181) (`aaa6de9`). Child [#99 Implement termination, disconnect, cancellation, and process cleanup](https://github.com/tyldra-org/falryn/issues/99) closed and Done via [PR #599](https://github.com/tyldra-org/falryn/pull/599) (`7dab069`); companion docs [falryn-docs#182](https://github.com/tyldra-org/falryn-docs/pull/182) (`ceb8758`). Child [#100 Capture debug artifacts and add confirmation and fault tests](https://github.com/tyldra-org/falryn/issues/100) closed and Done via [PR #601](https://github.com/tyldra-org/falryn/pull/601) (`3d41e39`); companion docs [falryn-docs#183](https://github.com/tyldra-org/falryn-docs/pull/183) (`b5fd615`). Parent integrated verification passed on `3d41e39` (20 child-seam tests).
-- **Active Brief, Hush, Loom parent:** [#101 Implement Brief, Hush, Loom, and compression](https://github.com/tyldra-org/falryn/issues/101) is open and In Progress. Child [#102 Implement Brief as response-style projection without evidence loss](https://github.com/tyldra-org/falryn/issues/102) closed and Done via [PR #632](https://github.com/tyldra-org/falryn/pull/632) (`8b669b3`); companion docs [falryn-docs#193](https://github.com/tyldra-org/falryn-docs/pull/193) (`3828da9`). Child [#103 Integrate Hush across shell, Git, tests, search, and process output](https://github.com/tyldra-org/falryn/issues/103) closed and Done via [PR #634](https://github.com/tyldra-org/falryn/pull/634) (`1ca4435`); companion docs [falryn-docs#194](https://github.com/tyldra-org/falryn-docs/pull/194) (`7fbdd07`). Child [#104 Implement Loom compress-cache-retrieve manifests and exact retrieval](https://github.com/tyldra-org/falryn/issues/104) closed and Done via [PR #636](https://github.com/tyldra-org/falryn/pull/636) (`20595b7`); companion docs [falryn-docs#195](https://github.com/tyldra-org/falryn-docs/pull/195) (`af87619`). Child [#105 Implement structural reducers for files, diffs, diagnostics, and tools](https://github.com/tyldra-org/falryn/issues/105) is delivered in tree. Remaining children [#106](https://github.com/tyldra-org/falryn/issues/106)–[#107](https://github.com/tyldra-org/falryn/issues/107).
-- **Next planning action:** continue via [#101 Implement Brief, Hush, Loom, and compression](https://github.com/tyldra-org/falryn/issues/101), next child [#106 Implement optional compact-model and history checkpoint lanes](https://github.com/tyldra-org/falryn/issues/106). GitHub remains authoritative for ordering.
+- **Active Brief, Hush, Loom parent:** [#101 Implement Brief, Hush, Loom, and compression](https://github.com/tyldra-org/falryn/issues/101) is open and In Progress. Child [#102 Implement Brief as response-style projection without evidence loss](https://github.com/tyldra-org/falryn/issues/102) closed and Done via [PR #632](https://github.com/tyldra-org/falryn/pull/632) (`8b669b3`); companion docs [falryn-docs#193](https://github.com/tyldra-org/falryn-docs/pull/193) (`3828da9`). Child [#103 Integrate Hush across shell, Git, tests, search, and process output](https://github.com/tyldra-org/falryn/issues/103) closed and Done via [PR #634](https://github.com/tyldra-org/falryn/pull/634) (`1ca4435`); companion docs [falryn-docs#194](https://github.com/tyldra-org/falryn-docs/pull/194) (`7fbdd07`). Child [#104 Implement Loom compress-cache-retrieve manifests and exact retrieval](https://github.com/tyldra-org/falryn/issues/104) closed and Done via [PR #636](https://github.com/tyldra-org/falryn/pull/636) (`20595b7`); companion docs [falryn-docs#195](https://github.com/tyldra-org/falryn-docs/pull/195) (`af87619`). Child [#105 Implement structural reducers for files, diffs, diagnostics, and tools](https://github.com/tyldra-org/falryn/issues/105) closed and Done via [PR #638](https://github.com/tyldra-org/falryn/pull/638) (`20523ec`); companion docs [falryn-docs#196](https://github.com/tyldra-org/falryn-docs/pull/196) (`ffa223a`). Child [#106 Implement optional compact-model and history checkpoint lanes](https://github.com/tyldra-org/falryn/issues/106) is delivered in this change. Remaining child [#107](https://github.com/tyldra-org/falryn/issues/107).
+- **Next planning action:** continue via [#101 Implement Brief, Hush, Loom, and compression](https://github.com/tyldra-org/falryn/issues/101), next child [#107 Evaluate fidelity, reversibility, latency, and token savings](https://github.com/tyldra-org/falryn/issues/107). GitHub remains authoritative for ordering.

@@ -269,6 +269,32 @@ export {
   parseCompactDocumentReadRequest,
 } from "./compact-document-read.ts";
 export type {
+  CompactError,
+  CompactFallbackReason,
+  CompactModelFailure,
+  CompactModelFailureCode,
+  CompactModelKind,
+  CompactModelPort,
+  CompactModelRequest,
+  CompactModelSuccess,
+  CompactReduceInput,
+  CompactReduceResult,
+  CompactStrategy,
+  CompactUse,
+} from "./compact-model.ts";
+export {
+  COMPACT_FALLBACK_REASONS,
+  COMPACT_MODEL_KINDS,
+  COMPACT_MODEL_VERSION,
+  COMPACT_STRATEGIES,
+  COMPACT_USES,
+  DEFAULT_COMPACT_MAX_BYTES,
+  describeCompactError,
+  HARD_COMPACT_MAX_BYTES,
+  MAX_COMPACT_QUESTION_BYTES,
+  reduceCompact,
+} from "./compact-model.ts";
+export type {
   ConfigurationAlias,
   ConfigurationDeprecation,
   ConfigurationIssue,
@@ -974,6 +1000,34 @@ export {
   worktreeHasBlockingChanges,
 } from "./git.ts";
 export type {
+  HistoryCheckpoint,
+  HistoryCheckpointInput,
+  HistoryExpansion,
+  HistoryFoldableKind,
+  HistoryItemInput,
+  HistoryItemKind,
+  HistoryPreservedItem,
+  HistoryRequiredKind,
+  OverflowReason,
+  OverflowRetry,
+  OverflowRetryInput,
+  WindowPreviewInput,
+} from "./history-checkpoint.ts";
+export {
+  checkpointHistory,
+  describeHistoryItemKind,
+  HISTORY_CHECKPOINT_VERSION,
+  HISTORY_FOLDABLE_KINDS,
+  HISTORY_ITEM_KINDS,
+  HISTORY_REQUIRED_KINDS,
+  MAX_HISTORY_ITEM_BYTES,
+  MAX_HISTORY_ITEMS,
+  MAX_SKILL_INSTRUCTION_BYTES,
+  OVERFLOW_REASONS,
+  previewCompactForSmallerWindow,
+  retryAfterOverflow,
+} from "./history-checkpoint.ts";
+export type {
   HushCommandIdentity,
   HushError,
   HushExpansion,
@@ -1004,6 +1058,7 @@ export type {
   ConfigurationGeneration,
   EventId,
   EvidenceId,
+  HistoryCheckpointId,
   IdempotencyKey,
   IdentifierCodec,
   IdentityError,
@@ -1035,6 +1090,7 @@ export {
   FIRST_CONFIGURATION_GENERATION,
   FIRST_SEQUENCE,
   FIRST_SERVICE_GENERATION,
+  historyCheckpointId,
   idempotencyKey,
   invocationId,
   loomManifestId,
