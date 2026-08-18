@@ -123,6 +123,8 @@ export type {
 export { createLoomPort, loomProjectionToEvidence } from "./loom.ts";
 export type { MemoryAdmissionPort } from "./memory-admission.ts";
 export { createMemoryAdmission } from "./memory-admission.ts";
+export type { OperationalLearning } from "./memory-learning.ts";
+export { createOperationalLearning } from "./memory-learning.ts";
 export type { MemoryLifecycle } from "./memory-lifecycle.ts";
 export { createMemoryLifecycle } from "./memory-lifecycle.ts";
 export type { MemoryRecallPort } from "./memory-recall.ts";
