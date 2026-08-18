@@ -22,10 +22,12 @@ Before merge: `origin pr view <n> --checks`, `origin pr checks <n>`, require gre
 
 ## Inbound mirrored repos (Origin git remote, GitHub PRs)
 
-When `git remote origin` is **`origin.cursor.com`** but **`mirrorStatus: inbound`** (Falryn today: `ecl1pse/*` → `tyldra-org/*`):
+When `git remote origin` is **`origin.cursor.com`** but **`mirrorStatus: inbound`**:
 
-- **Push:** `git push origin` (passes through to GitHub).
-- **PRs:** **`gh pr create/view/checks/merge`** on **`tyldra-org/<repo>`** — not `origin pr` (`origin pr create` errors).
+- **Push:** `git push origin` (passes through to GitHub when mirrored).
+- **PRs:** **`gh pr create/view/checks/merge`** on the **GitHub source repo** — not `origin pr` (`origin pr create` errors).
+
+Use slugs from the project overlay (e.g. `.agents/ORIGIN-LAYOUT.md`) or `git remote get-url github`.
 
 Follow [Merge a GitHub pull request](#merge-a-github-pull-request) below on the GitHub side.
 

@@ -8,13 +8,13 @@ Check `git remote get-url origin` and `origin repo view -R org/name` (mirror sta
 
 | Setup | Push / pull | Open / view / checks / merge PR |
 | --- | --- | --- |
-| **`origin.cursor.com` + mirror inbound** (e.g. `ecl1pse/falryn` → `tyldra-org/falryn`) | **`git push origin`** | **`gh pr …`** on `tyldra-org/*` — **`origin pr create` fails** |
+| **`origin.cursor.com` + mirror inbound** (`{origin-ns}/{repo}` → `{github-org}/{repo}`) | **`git push origin`** | **`gh pr …`** on GitHub source repo — **`origin pr create` fails** |
 | **`origin.cursor.com` + native / detached Origin repo** | **`git push origin`** | **`origin pr …`** |
 | **`github.com` remote primary** | **`git push origin`** | **`gh pr …`** |
 
-Issues, Projects, Actions, ruleset admin on GitHub: always **`gh`** on `tyldra-org/*`.
+Issues, Projects, Actions, ruleset admin on GitHub: always **`gh`** on the GitHub org/repo from the project overlay (or `gh repo view` / remote `github`).
 
-**Do not** assume Origin-primary git remote implies Origin PRs. Inbound mirrors sync code through Origin but PRs live on GitHub.
+**Do not** assume Origin-primary git remote implies Origin PRs. Inbound mirrors sync code through Origin but PRs live on GitHub. Resolve `{github-org}/{repo}` from the repo overlay, `git remote get-url github`, or `origin repo view`.
 
 Process and safety (subjects, confirmations, squash body rules) stay in **github-workflow**. Syntax: **gh-cli** or **origin-cli** per host column above.
 
