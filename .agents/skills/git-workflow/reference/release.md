@@ -1,6 +1,6 @@
 # release
 
-Semver, tag, changelog, publish. Pushing a tag and publishing a release are outward-facing and effectively permanent — confirm each.
+Semver, annotated tags, changelog. Pushing a tag is outward-facing and effectively permanent — confirm it. GitHub Releases are **gh-cli** `process/release.md`.
 
 ## Version from repository policy and changes
 
@@ -25,7 +25,7 @@ Read the repository's release configuration, previous versions, and user-visible
 ## Pre-flight
 
 - On the default branch (or the release branch), current with origin, clean tree.
-- CI green on the exact commit being tagged — not on the branch, on the commit: `gh run list --commit $(git rev-parse HEAD)`.
+- The commit being tagged is the one you intend to ship. If CI is the gate, confirm it on that commit via **gh-cli** before tagging.
 - Version files updated and committed (`package.json`, `Cargo.toml`, `pyproject.toml`, `__version__`). The tag and the manifest must agree; a mismatch is a support ticket six months later.
 - Lockfile regenerated if the version is in it.
 
@@ -76,26 +76,13 @@ Rules:
 - Link the issue or PR.
 - Past tense or noun phrases here — the imperative-mood rule is for commit subjects, not for prose users read.
 
-## GitHub release
-
-```bash
-gh release create v1.4.0 --title "v1.4.0" --notes-file CHANGELOG-v1.4.0.md
-gh release create v1.4.0 --generate-notes       # draft to edit, not to publish as-is
-gh release create v1.4.0 --prerelease           # rc / beta
-gh release upload v1.4.0 <artifact>
-```
-
-`--generate-notes` produces a PR list. Useful as a starting draft; not a changelog. Edit before publishing.
-
-Publishing a release is outward-facing — show the notes to the user and get approval before it goes out.
-
 ## Hotfix on a released version
 
 Branch from the affected release tag or maintained release branch, not automatically from the default branch:
 
 ```bash
 git switch -c fix/PROJ-500-token-expiry v1.4.0
-# fix, test, commit, open and land the required PR
+# fix, test, commit; land through the repo's PR host (gh-cli / origin-cli)
 # tag the resulting release commit only after it is reviewed and accepted
 ```
 

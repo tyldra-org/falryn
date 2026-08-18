@@ -16,7 +16,7 @@ Issues, Projects, Actions, ruleset admin on GitHub: always **`gh`** on the GitHu
 
 **Do not** assume Origin-primary git remote implies Origin PRs. Inbound mirrors sync code through Origin but PRs live on GitHub. Resolve `{github-org}/{repo}` from the repo overlay, `git remote get-url github`, or `origin repo view`.
 
-Process and safety (subjects, confirmations, squash body rules) stay in **github-workflow**. Syntax: **gh-cli** or **origin-cli** per host column above.
+Push/sync is **git-workflow**. Native Origin PRs are **origin-cli**. This file is GitHub PR process; flag syntax is [reference/pr.md](../reference/pr.md).
 
 ## Tooling
 
@@ -47,7 +47,7 @@ Three dots, not two. `git diff A..B` shows the difference between two tips inclu
 Check:
 
 - Branch is pushed and current with the base.
-- Every commit is one the user would want in the permanent record. If the branch has `checkpoint` or fixup commits, offer to clean them up first ([rewrite.md](rewrite.md)) — it's their call.
+- Every commit is one the user would want in the permanent record. If the branch has `checkpoint` or fixup commits, offer to clean them up first ([rewrite.md](../../git-workflow/reference/rewrite.md)) — it's their call.
 - No secrets in the diff. Re-check; the pre-commit scan may have missed a file added later.
 - CI config exists and will actually run on this base.
 
@@ -63,7 +63,7 @@ For **stacked PRs**, the base is the parent branch, and the description must say
 
 ## Title and body
 
-**Title** follows the same rules as a commit subject ([conventions.md](conventions.md#pr-titles)): `type(scope): summary`, imperative, ≤72 chars. For a squash-merge repo the title *becomes* the commit subject — it matters more, not less.
+**Title** follows the same rules as a commit subject ([conventions.md](../../git-workflow/reference/conventions.md)): `type(scope): summary`, imperative, ≤72 chars. For a squash-merge repo the title *becomes* the commit subject — it matters more, not less.
 
 **Body** is where prose is allowed. Prefer the repository's PR template when present. Otherwise:
 

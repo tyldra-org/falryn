@@ -45,7 +45,7 @@ git merge --ff-only origin/<default>
 
 If the default branch does not exist locally, create it as a tracking branch only after confirming the remote ref. If it is divergent, dirty, detached, conflicted, or checked out in another worktree, stop and report it. Do not stash, reset, rebase, force, discard changes, or resolve conflicts merely to switch branches after a merge.
 
-Verify the final branch, upstream, SHA, and cleanliness. Branch deletion is a separate destructive action. For several repositories, follow [delivery.md](delivery.md#synchronize-local-checkouts).
+Verify the final branch, upstream, SHA, and cleanliness. Branch deletion is a separate destructive action. For several repositories after GitHub landing, follow [delivery.md](../../gh-cli/process/delivery.md#synchronize-local-checkouts).
 
 ## Rebasing a feature branch
 

@@ -41,7 +41,7 @@ du -sh .git
 
 A `.git` much larger than the checkout means history carries something the working tree doesn't. Candidates for Git LFS or for removal from history.
 
-Committed binaries are permanent by default — every clone downloads every version forever. Catch them in review ([review.md](review.md)), not in an audit six months later.
+Committed binaries are permanent by default — every clone downloads every version forever. Catch them before commit ([commit.md](commit.md)), not in an audit six months later.
 
 ## Ignore rules
 
@@ -92,4 +92,4 @@ Watch for: a `user.email` that leaks a personal address into a work repo (or vic
 
 ## Health summary
 
-Report as findings, severity-ordered, same format as [review.md](review.md). Do not fix anything during an audit — an audit that edits is a refactor with no review.
+Report as findings, severity-ordered. Do not fix anything during an audit — an audit that edits is a refactor with no review.
