@@ -1,32 +1,32 @@
 ---
 name: git-workflow
 description: >-
-  Git process and safety: commit, branch, fetch/push/rebase, local merge, rewrite,
-  recover, bisect, tags, autocommit. Use when mutating a local git repo. Does
-  **not** cover GitHub (`gh-cli`) or Cursor Origin (`origin-cli`).
+  Git process and safety: commit, branch, fetch/push/rebase, local merge,
+  rewrite, recover, bisect, tags, autocommit. Use when mutating a local git
+  repo. Does not cover GitHub (gh-cli) or Cursor Origin (origin-cli).
 ---
 
-# Git Workflow
+# Git workflow
 
-Clean, recoverable, auditable **git** work. Every commit reviewable; every history rewrite deliberate.
+Git porcelain and git history safety. Every commit should be reviewable. Every history rewrite should be deliberate.
 
-## Skill boundaries (read first)
+## Skill boundaries
 
-This skill owns **git porcelain and git history safety**. It does not own GitHub or Origin.
+This skill owns `git`. It does not own GitHub or Origin.
 
-| | **git-workflow** (this) | **gh-cli** | **origin-cli** |
+| | git-workflow (this) | gh-cli | origin-cli |
 | --- | --- | --- | --- |
-| **Answers** | How do we commit, branch, sync, rewrite, recover? | How do we use `gh` on **github.com**? | How do we use `origin` on **origin.cursor.com**? |
-| **Tool** | `git` | `gh` | `origin` |
-| **Owns** | Stage, commit, branch, fetch/push/rebase, local merge, rewrite, recover, bisect, tags, autocommit | GitHub issues, PRs, Actions, Projects, `gh` flags | Origin PRs, mirrors, ruleset RPC, `origin` flags |
-| **Does not own** | `gh` or `origin` commands; GitHub/Origin objects | `git` porcelain; Origin CLI | `git` porcelain; GitHub `gh` |
-| **Load when** | Any mutating git work | GitHub platform work | Origin CLI / forge work |
+| Answers | How do we commit, branch, sync, rewrite, recover? | How do we use `gh` on github.com? | How do we use `origin` on origin.cursor.com? |
+| Tool | `git` | `gh` | `origin` |
+| Owns | Stage, commit, branch, fetch/push/rebase, local merge, rewrite, recover, bisect, tags, autocommit | GitHub issues, PRs, Actions, Projects, `gh` flags | Origin PRs, mirrors, ruleset RPC, `origin` flags |
+| Does not own | `gh` or `origin` commands; GitHub/Origin objects | `git` porcelain; Origin CLI | `git` porcelain; GitHub `gh` |
+| Load when | Any mutating git work | GitHub platform work | Origin CLI / forge work |
 
-**`git remote origin`** is a remote *name* (often `origin.cursor.com` or `github.com`). It is not the Origin CLI.
+`git remote origin` is a remote name, often `origin.cursor.com` or `github.com`. It is not the Origin CLI.
 
-Opening or merging a **pull request** is not git — load **gh-cli** (github.com, including inbound mirrors) or **origin-cli** (native/detached Origin).
+Opening or merging a pull request is not git. Load `gh-cli` for github.com (including inbound mirrors) or `origin-cli` for native or detached Origin.
 
-**Load order:** `git-workflow` whenever git history changes. Add **gh-cli** or **origin-cli** when the host is GitHub or Origin. If both hosts apply, say which command targets which host.
+Load `git-workflow` whenever git history changes. Add `gh-cli` or `origin-cli` when the host is GitHub or Origin. If both hosts apply, say which command targets which host.
 
 ## How to use
 
@@ -58,20 +58,20 @@ Never act on an assumed branch, worktree, remote, or default branch.
 | "tag it", "cut a git tag" | `release` | [release.md](reference/release.md) |
 | commit subject, branch name, tag name | `conventions` | [conventions.md](reference/conventions.md) |
 
-GitHub PR / issue / Actions / merge-on-GitHub → **gh-cli**. Origin PR / ruleset → **origin-cli**.
+GitHub PR / issue / Actions / merge-on-GitHub → `gh-cli`. Origin PR / ruleset → `origin-cli`.
 
 Ask only when two routes imply different outcomes or authority. Vague destructive intent → resolve the desired outcome first. One-off `status` / `log` / `diff` / `show` / `blame` needs no skill.
 
 ### 3. Gather only what the task needs
 
-**Touching remote / default branch** — resolve it; do not assume `main`:
+**Touching remote / default branch.** Resolve it. Do not assume `main`:
 
 ```bash
 git symbolic-ref refs/remotes/origin/HEAD --short 2>/dev/null \
   || git remote show origin | sed -n '/HEAD branch/s/.*: //p'
 ```
 
-**Writing subjects / branch names** — match the repo:
+**Writing subjects / branch names.** Match the repo:
 
 ```bash
 git log --pretty=%s -n 30
@@ -81,7 +81,7 @@ git log --graph --oneline -20
 
 Honor `CONTRIBUTING.md`, `AGENTS.md`, `commitlint.config.*`, `.gitmessage` when present.
 
-**Merging / branching / tagging** — detect the workflow model ([below](#workflow-models)).
+**Merging / branching / tagging.** Detect the workflow model ([below](#workflow-models)).
 
 ### 4. Act, then report
 
@@ -113,7 +113,7 @@ Follow higher layers silently. No convention authorizes committing a secret or b
 
 Never stage credentials, API keys, tokens, private keys, `.env`, service-account JSON, or connection strings with passwords. Ambiguous path → stop and ask. "Already tracked" is not consent to add more.
 
-Already committed → treat as leaked. **Rotate first**, rewrite second — [audit.md](reference/audit.md#secret-leak-response).
+Already committed → treat as leaked. Rotate first, rewrite second. [audit.md](reference/audit.md#secret-leak-response).
 
 Never read tokens from the environment or `.git-credentials` onto a command line.
 
@@ -126,9 +126,9 @@ Show the concrete command and get explicit confirmation for:
 - deleting branches/tags (local or remote); moving or re-pushing tags
 - work on a branch that isn't yours
 
-Routine local work—commit (when autocommit is on or the user asked), branch, stash, fetch, push **your** branch—proceeds normally. See [Autocommit](#autocommit).
+Routine local work proceeds normally: commit (when autocommit is on or the user asked), branch, stash, fetch, push **your** branch. See [Autocommit](#autocommit).
 
-GitHub/Origin confirmations (merge a PR, publish a release, delete a repo) live in **gh-cli** / **origin-cli**.
+GitHub/Origin confirmations (merge a PR, publish a release, delete a repo) live in `gh-cli` / `origin-cli`.
 
 ### Back up before destroying
 
@@ -139,11 +139,11 @@ git branch backup/<what>-$(date +%Y-%m-%d)
 git rev-parse 'backup/<what>^{tree}' '<newref>^{tree}'
 ```
 
-Compare **tree hashes**, not subjects. Keep the backup until confirmed.
+Compare tree hashes, not subjects. Keep the backup until confirmed.
 
 ### Force push
 
-Pinned lease only — details in [rewrite.md](reference/rewrite.md):
+Pinned lease only. Details in [rewrite.md](reference/rewrite.md):
 
 ```bash
 git push --force-with-lease=<branch>:<expected-old-sha> origin <branch>
@@ -153,7 +153,7 @@ Never bare `--force` or bare `--force-with-lease`. Afterward: say SHAs changed; 
 
 ### Stop, don't improvise
 
-Stop and report (no silent abort, no `--no-verify`, no unchanged retry):
+Stop and report. No silent abort, no `--no-verify`, no unchanged retry:
 
 - merge/rebase conflict; failing hook; rejected push
 - detached HEAD or dirty tree you didn't create
@@ -161,16 +161,16 @@ Stop and report (no silent abort, no `--no-verify`, no unchanged retry):
 
 ## Commit and merge messages
 
-One subject line only. Never create, preserve, copy, or infer a commit/merge body—ordinary commits, amend/reword, squash, rewrite, and merge commits. If the repo requires a non-empty body, stop and report; do not invent one. Form: [conventions.md](reference/conventions.md).
+One subject line only. Never create, preserve, copy, or infer a commit/merge body. That covers ordinary commits, amend/reword, squash, rewrite, and merge commits. If the repo requires a non-empty body, stop and report. Do not invent one. Form: [conventions.md](reference/conventions.md).
 
 ## Autocommit
 
-**On by default.** When a unit of work reaches a clean boundary ([commit.md](reference/commit.md)), commit it rather than leaving unrelated changes piled in the tree.
+On by default. When a unit of work reaches a clean boundary ([commit.md](reference/commit.md)), commit it rather than leaving unrelated changes piled in the tree.
 
-- `autocommit on` (default) — commit at clean boundaries; may stage in-scope generated output (docs, fixtures, lockfiles) with the change that produced them.
-- `autocommit off` — at a boundary, name it and suggest a subject; stage/commit only when asked.
+- `autocommit on` (default). Commit at clean boundaries. May stage in-scope generated output (docs, fixtures, lockfiles) with the change that produced them.
+- `autocommit off`. At a boundary, name it and suggest a subject. Stage/commit only when asked.
 
-Session-scoped only. Never authorizes **Confirm before** actions. Subject-only rule still applies.
+Session-scoped only. Never authorizes Confirm before actions. Subject-only rule still applies.
 
 ## Workflow models
 
@@ -178,11 +178,11 @@ Read when merging, branching, or tagging:
 
 | Model | Tell | Implications |
 |---|---|---|
-| **GitHub flow** | Short branches → one default | Branch, PR (via **gh-cli** / **origin-cli**), land |
-| **Trunk-based** | Direct default-branch commits, flags | Small commits |
-| **Git flow** | `develop` + `release/*` + `hotfix/*` | Features → `develop`; hotfixes from tags |
-| **Release train** | Long-lived version lanes, `--no-ff` | Never rebase/delete lane branches |
-| **Fork-based** | `origin` fork remote, `upstream` canonical | Never push `upstream`; sync from it (`origin` here = **git remote name**) |
+| GitHub flow | Short branches → one default | Branch, PR (via `gh-cli` / `origin-cli`), land |
+| Trunk-based | Direct default-branch commits, flags | Small commits |
+| Git flow | `develop` + `release/*` + `hotfix/*` | Features → `develop`; hotfixes from tags |
+| Release train | Long-lived version lanes, `--no-ff` | Never rebase/delete lane branches |
+| Fork-based | `origin` fork remote, `upstream` canonical | Never push `upstream`; sync from it (`origin` here = git remote name) |
 
 Detect via `git branch -a`, `git log --graph`, `CONTRIBUTING.md`. If ambiguous, ask once.
 

@@ -8,8 +8,8 @@ for this repository. Do not open a public issue for a vulnerability: the issue
 tracker is world-readable, and a public report is a disclosure.
 
 This channel is open to everyone. Falryn is not otherwise accepting outside
-issues or pull requests while its foundation is being built — see
-[`CONTRIBUTING.md`](CONTRIBUTING.md) — but that restriction deliberately does
+issues or pull requests while its foundation is being built. See
+[`CONTRIBUTING.md`](CONTRIBUTING.md). That restriction deliberately does
 not apply here. A vulnerability you cannot report is worse than one you can.
 
 Expect an acknowledgement within seven days. Falryn is maintained by one person,
@@ -28,13 +28,13 @@ designed to read and write your files, hold your provider credentials, and
 execute external commands on your behalf. That is the product, not a flaw in it.
 
 **Falryn does not sandbox the agent.** The tool boundary exists so that every
-file read, command run, and provider call is validated, typed, and recorded —
-it is an auditability and correctness boundary, not a security isolation one. It
+file read, command run, and provider call is validated, typed, and recorded.
+It is an auditability and correctness boundary, not a security isolation one. It
 is not designed to contain a model that has been persuaded to do something
 harmful, and it should not be relied on as though it were.
 
-If you need real isolation — because you are running untrusted input, an
-untrusted model, or an untrusted repository — run Falryn inside a container or a
+If you need real isolation because you are running untrusted input, an
+untrusted model, or an untrusted repository, run Falryn inside a container or a
 virtual machine. Nothing in Falryn substitutes for that.
 
 Stating this plainly is deliberate: a permission prompt that users believe is a
@@ -58,7 +58,7 @@ worth attacking:
 
 | Category | Why |
 | --- | --- |
-| Sandbox escape | The tool boundary is not a sandbox — see the threat model above |
+| Sandbox escape | The tool boundary is not a sandbox. See the threat model above |
 | A model provider's own service | Data you send a provider is governed by that provider's policies |
 | Configuration you control | Editing your own config or state is not an attack vector |
 | Findings needing prior local code execution | An attacker already running as you has no boundary left to cross |
