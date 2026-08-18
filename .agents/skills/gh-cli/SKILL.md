@@ -97,6 +97,7 @@ gh repo view --json nameWithOwner,defaultBranchRef,url
 gh issue list --repo OWNER/REPO --limit 20 --json number,title,state
 gh pr create --base <default> --title "type(scope): summary" --body-file /tmp/pr.md
 gh pr checks <n>
+gh run watch RUN_ID --repo OWNER/REPO --exit-status
 gh run list --limit 10
 gh api graphql -f query='query { viewer { login } }'
 ```
