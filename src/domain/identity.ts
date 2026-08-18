@@ -46,6 +46,8 @@ export type ManagedServiceId = Brand<string, "ManagedServiceId">;
 export type LoomManifestId = Brand<string, "LoomManifestId">;
 /** One conversation-history compaction checkpoint. The event log is not rewritten. */
 export type HistoryCheckpointId = Brand<string, "HistoryCheckpointId">;
+/** One durable memory record. Corrections create a new id; the old record is not rewritten. */
+export type MemoryId = Brand<string, "MemoryId">;
 export type IdempotencyKey = Brand<string, "IdempotencyKey">;
 /** Which provider a model attempt was routed to, such as an API vendor. */
 export type ProviderId = Brand<string, "ProviderId">;
@@ -148,6 +150,7 @@ export const managedServiceId = createIdentifierCodec<ManagedServiceId>("managed
 export const loomManifestId = createIdentifierCodec<LoomManifestId>("loomManifestId");
 export const historyCheckpointId =
   createIdentifierCodec<HistoryCheckpointId>("historyCheckpointId");
+export const memoryId = createIdentifierCodec<MemoryId>("memoryId");
 export const idempotencyKey = createIdentifierCodec<IdempotencyKey>("idempotencyKey");
 export const providerId = createIdentifierCodec<ProviderId>("providerId");
 export const modelId = createIdentifierCodec<ModelId>("modelId");
