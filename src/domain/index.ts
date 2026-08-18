@@ -1551,6 +1551,25 @@ export {
   MEMORY_SOURCE_KINDS,
 } from "./memory-admission.ts";
 export type {
+  MemoryContradiction,
+  MemoryRecallHit,
+  MemoryRecallInput,
+  MemoryRecallOmission,
+  MemoryRecallOmissionReason,
+  MemoryRecallResult,
+  MemoryRecallSignal,
+} from "./memory-recall.ts";
+export {
+  DEFAULT_MEMORY_RECALL_MAX,
+  describeMemoryRecallOmission,
+  HARD_MEMORY_RECALL_MAX,
+  MAX_MEMORY_RECALL_QUERY_BYTES,
+  MEMORY_RECALL_OMISSION_REASONS,
+  MEMORY_RECALL_SIGNALS,
+  MEMORY_RECALL_VERSION,
+  recallMemory,
+} from "./memory-recall.ts";
+export type {
   MemoryError,
   MemoryErrorCode,
   MemoryKind,
