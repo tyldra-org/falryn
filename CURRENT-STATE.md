@@ -3621,10 +3621,25 @@ compressing incoming context:
 - `src/application/brief.ts` — redacts style notes, binds projection to a turn
   identity, and maps the result onto the prompt-composition `brief` section.
 
-Product CLI/TUI Brief controls, Hush/Loom wiring, and learned compact-model
+Product CLI/TUI Brief controls, Loom wiring, and learned compact-model
 lanes remain later #101 children.
 Validated by `src/domain/brief.test.ts` and `src/application/brief.test.ts`
 under `bun run check`.
+
+The Hush observation slice from
+[#103](https://github.com/tyldra-org/falryn/issues/103) integrates command-family
+reduction across shell, Git, test, search, and generic process origins without
+registering product tools or creating Loom manifests:
+
+- `src/application/hush.ts` — `createHushIntegrator` captures through the
+  injected process-capture port or reduces an already-finished report; origin
+  tags select expected families; the capture report is returned unchanged
+  beside the Hush projection; model/evidence text is redacted; exact
+  passthrough may be admitted as `exact-source`, while reductions and redacted
+  text are `deterministic-transform` with an expansion handle and never claim
+  exact source.
+
+Validated by `src/application/hush.test.ts` under `bun run check`.
 
 The compact document reader slice from
 [#493](https://github.com/tyldra-org/falryn/issues/493) projects bounded exact
@@ -3860,8 +3875,9 @@ session/turn producer, or live transcript producer. The remaining gaps are:
   uncertainty exists for #85; expansion, cache reuse, invalidation, and
   exact retrieval exist for #86; large-repository, long-session, stale, and
   conflicting-evidence inspection exists for #87; Hush domain reduction over
-  captured process facts exists; none of these is wired into the planner or
-  product tools);
+  captured process facts exists for #72; Hush observation across shell, Git,
+  test, search, and process output exists for #103; none of these is wired
+  into the planner or product tools);
 - MCP, skills, plugin and other hook families, marketplace, agents, jobs, or workflows; or
 - an installer, updater, supported platform package, signed release, or support
   channel.

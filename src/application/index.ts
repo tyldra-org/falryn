@@ -65,6 +65,17 @@ export {
   fromUnreadConfigurationSources,
   withContext,
 } from "./error-translation.ts";
+export type {
+  HushEvidenceRequest,
+  HushIntegrator,
+  HushIntegratorOptions,
+  HushObservation,
+  HushObservationError,
+  HushObserveRequest,
+  HushOrigin,
+  HushReduceRequest,
+} from "./hush.ts";
+export { createHushIntegrator, expectedFamiliesForOrigin, HUSH_ORIGINS } from "./hush.ts";
 export type { ImageReader } from "./image-read.ts";
 export { createImageReader } from "./image-read.ts";
 export type {
