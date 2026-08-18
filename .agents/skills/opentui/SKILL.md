@@ -1,19 +1,22 @@
 ---
 name: opentui
-description: Build, configure, test, debug, and package terminal UIs with OpenTUI Core, React, or Solid. Use for TUI components, layout, input, keymaps, animations, audio, plugins, SSH, QR, Three.js, and Bun standalone executables.
+description: >-
+  Build, configure, test, debug, and package terminal UIs with OpenTUI Core,
+  React, or Solid. Use for TUI components, layout, input, keymaps, animations,
+  audio, plugins, SSH, QR, Three.js, and Bun standalone executables.
 ---
 
 # OpenTUI
 
-Upstream `docs/**/*.mdx` is the source of truth. `modules/opentui-extended/` is a companion for framework choice, patterns, and gotchas—not a second skill.
+Upstream `docs/**/*.mdx` is the source of truth. `modules/opentui-extended/` is a companion for framework choice, patterns, and gotchas. It is not a second skill.
 
 ## Rules
 
 1. Inspect the installed OpenTUI version and the project's existing Core / React / Solid setup before choosing APIs.
-2. Start with **one** upstream doc from the routing table. Load only narrower docs needed for the task.
-3. Use `modules/opentui-extended/GUIDE.md` for framework selection, patterns, configuration, or troubleshooting—then only its relevant references.
+2. Start with one upstream doc from the routing table. Load only narrower docs needed for the task.
+3. Use `modules/opentui-extended/GUIDE.md` for framework selection, patterns, configuration, or troubleshooting, then only its relevant references.
 4. When the companion guide and upstream MDX disagree, prefer the MDX.
-5. Shut down with the documented renderer cleanup (`renderer.destroy()` / framework teardown)—not bare `process.exit()` from UI code. Cover interaction changes with focused tests.
+5. Shut down with the documented renderer cleanup (`renderer.destroy()` / framework teardown). Do not `process.exit()` from UI code. Cover interaction changes with focused tests.
 
 ## Routing
 
@@ -47,12 +50,12 @@ Upstream `docs/**/*.mdx` is the source of truth. `modules/opentui-extended/` is 
 
 ## Common pairings
 
-- New React TUI → `getting-started` + `bindings/react` (+ extended GUIDE if choosing framework)
+- New React TUI → `getting-started` + `bindings/react` (plus extended GUIDE if choosing framework)
 - Layout bug → `layout.mdx`, then extended `layout/patterns.md` if needed
 - Input / focus → `keyboard.mdx`, then `keymap/overview.mdx` for layered bindings
 - Flaky snapshots → `testing.mdx`, then extended `testing/REFERENCE.md` if stuck
 - Plugin slot work → `plugins/slots.mdx`, then Core/React/Solid plugin guide
 
-## Scaffolding note
+## Create a project
 
-Prefer `bun create tui` / `bunx create-tui@latest`. For agents, pass `-t core|react|solid` (non-interactive). Put CLI options **before** the project name: `bunx create-tui -t react my-app`.
+Prefer `bun create tui` / `bunx create-tui@latest`. For agents, pass `-t core|react|solid` (non-interactive). Put CLI options before the project name: `bunx create-tui -t react my-app`.

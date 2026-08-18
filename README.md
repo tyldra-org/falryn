@@ -21,14 +21,13 @@
 
 ---
 
-Falryn is being built so that the agent, terminal, tools, and project context
-live in one local Bun process, with every file read, command run, and provider
-call passing through a single recorded tool path — work that is inspectable
-rather than incidental.
+Falryn is being built so the agent, terminal, tools, and project context live in
+one local Bun process. Every file read, command run, and provider call goes
+through a single recorded tool path. The work is inspectable, not incidental.
 
 > [!IMPORTANT]
 > **That describes the design, not today's binary.** Falryn is early. The
-> foundation below works and is tested on three platforms; the agent itself is
+> foundation below works and is tested on three platforms. The agent itself is
 > not built yet. Nothing here talks to a model provider.
 
 ### What works today
@@ -43,7 +42,7 @@ falryn                        # opens the interactive shell on a capable termina
 ```
 
 Every command emits `human`, `json`, `jsonl`, or `quiet` output against a
-versioned schema; results go to stdout and diagnostics to stderr, always.
+versioned schema. Results go to stdout and diagnostics to stderr, always.
 State is local SQLite with versioned migrations. There is an OpenTUI shell,
 credential storage with redaction, and a compiled single-file executable.
 
@@ -52,14 +51,14 @@ credential storage with redaction, and a compiled single-file executable.
 The agent runtime, model providers, and the tool-call lifecycle. Workspace,
 search, Git, and LSP tools. Context management, compression, Brief, Hush, Loom,
 memory, artifacts, and computer use. These have written contracts in
-[Falryn Docs](https://github.com/tyldra-org/falryn-docs) and open issues; they
-have no implementation. Documentation here describes targets — treat
+[Falryn Docs](https://github.com/tyldra-org/falryn-docs) and open issues. They
+have no implementation. Documentation here describes targets. Treat
 [`CURRENT-STATE.md`](CURRENT-STATE.md) as the only record of what actually runs.
 
 > [!NOTE]
 > Issues and pull requests are restricted to collaborators while the foundation
-> is built. Reading, forking, and using the code are not: Falryn is
-> [Apache-2.0](LICENSE). Security reports are welcome today — see
+> is built. Reading, forking, and using the code are not. Falryn is
+> [Apache-2.0](LICENSE). Security reports are welcome today. See
 > [`SECURITY.md`](SECURITY.md).
 
 ## Quickstart
@@ -91,7 +90,7 @@ same depth, and the difference is deliberate:
 
 The terminal check allocates a pseudo-terminal through libc's `openpty`, which
 Windows has no equivalent for. Where the table says *not qualified*, no claim is
-being made — the behavior is untested, not known-good.
+being made. The behavior is untested, not known-good.
 See [`.github/workflows/README.md`](.github/workflows/README.md) for what each
 CI job establishes.
 
@@ -103,27 +102,27 @@ bun run build     # compile the standalone executable into dist/
 ```
 
 Falryn is built with Bun, TypeScript, React, and OpenTUI, and runs as one
-ordinary Bun process — no Falryn-owned engine, IPC layer, or Rust toolchain.
+ordinary Bun process. No Falryn-owned engine, IPC layer, or Rust toolchain.
 Persistence is local `bun:sqlite` with versioned migrations.
 
-Every change lands through a pull request with all CI checks passing; `main`
+Every change lands through a pull request with all CI checks passing. `main`
 takes no direct pushes.
 
 ## Project
 
-- [Current state](CURRENT-STATE.md) — verified implementation and planning frontier
-- [Falryn Docs](https://github.com/tyldra-org/falryn-docs) — product, architecture, and developer documentation
-- [Issues](https://github.com/tyldra-org/falryn/issues) — planned work and open defects
-- [Contributing](CONTRIBUTING.md) — outside contributions are not open yet; security reports are
-- [Security policy](SECURITY.md) — how to report a vulnerability privately
+- [Current state](CURRENT-STATE.md). Verified implementation and planning frontier
+- [Falryn Docs](https://github.com/tyldra-org/falryn-docs). Product, architecture, and developer documentation
+- [Issues](https://github.com/tyldra-org/falryn/issues). Planned work and open defects
+- [Contributing](CONTRIBUTING.md). Outside contributions are not open yet. Security reports are
+- [Security policy](SECURITY.md). How to report a vulnerability privately
 
 ## License
 
-[Apache License 2.0](LICENSE) — Copyright 2026 Yogesh Prasad.
+[Apache License 2.0](LICENSE). Copyright 2026 Yogesh Prasad.
 
 The grant covers the Falryn software: `src/`, `tools/`, the build and CI
 configuration, and this repository's documentation. `.agents/skills/` holds
 development-time agent guidance that is not part of the
-software and is not present in the compiled executable; anything there
+software and is not present in the compiled executable. Anything there
 originating from another project stays under its own licence. See
 [`NOTICE`](NOTICE).
