@@ -3,7 +3,7 @@
  *
  * Projects files, diffs, diagnostics, and tool results through the domain
  * reducer, then redacts secret-shaped text. Redacted projections never claim
- * exact source. Does not register product tools or compact-model lanes.
+ * exact source. Does not register product tools or compact-model product wiring.
  */
 
 import { createHash } from "node:crypto";

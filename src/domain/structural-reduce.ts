@@ -4,8 +4,8 @@
  * Projects JSON, configuration, unified diffs, diagnostic lists, and tool
  * results into a bounded view that keeps meaning and source ranges. Reductions
  * never claim exact-source. If the projection is not smaller than the original
- * bytes, the original is passed through. Compact-model summaries and product
- * tools remain later.
+ * bytes, the original is passed through. Compact-model and history checkpoint
+ * lanes are #106. Product tools remain later.
  */
 
 import { z } from "zod";

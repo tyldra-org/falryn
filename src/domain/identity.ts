@@ -44,6 +44,8 @@ export type PtySessionId = Brand<string, "PtySessionId">;
 export type ManagedServiceId = Brand<string, "ManagedServiceId">;
 /** One Loom compress-cache-retrieve manifest grouping exact artifacts. */
 export type LoomManifestId = Brand<string, "LoomManifestId">;
+/** One conversation-history compaction checkpoint. The event log is not rewritten. */
+export type HistoryCheckpointId = Brand<string, "HistoryCheckpointId">;
 export type IdempotencyKey = Brand<string, "IdempotencyKey">;
 /** Which provider a model attempt was routed to, such as an API vendor. */
 export type ProviderId = Brand<string, "ProviderId">;
@@ -144,6 +146,8 @@ export const processCaptureId = createIdentifierCodec<ProcessCaptureId>("process
 export const ptySessionId = createIdentifierCodec<PtySessionId>("ptySessionId");
 export const managedServiceId = createIdentifierCodec<ManagedServiceId>("managedServiceId");
 export const loomManifestId = createIdentifierCodec<LoomManifestId>("loomManifestId");
+export const historyCheckpointId =
+  createIdentifierCodec<HistoryCheckpointId>("historyCheckpointId");
 export const idempotencyKey = createIdentifierCodec<IdempotencyKey>("idempotencyKey");
 export const providerId = createIdentifierCodec<ProviderId>("providerId");
 export const modelId = createIdentifierCodec<ModelId>("modelId");
