@@ -123,6 +123,8 @@ export type {
 export { createLoomPort, loomProjectionToEvidence } from "./loom.ts";
 export type { MemoryAdmissionPort } from "./memory-admission.ts";
 export { createMemoryAdmission } from "./memory-admission.ts";
+export type { MemoryRecallPort } from "./memory-recall.ts";
+export { createMemoryRecall } from "./memory-recall.ts";
 export type { MemoryRecords } from "./memory-record.ts";
 export { createMemoryRecords } from "./memory-record.ts";
 export type { NotebookReader } from "./notebook-read.ts";
