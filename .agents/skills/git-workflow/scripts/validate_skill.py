@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate github-workflow structure, routing, and Markdown links."""
+"""Validate git-workflow structure, routing, and Markdown links."""
 
 from __future__ import annotations
 
@@ -56,8 +56,8 @@ def main() -> int:
             errors.append(
                 "SKILL.md frontmatter must contain only name and description"
             )
-        if "name: github-workflow" not in frontmatter:
-            errors.append("SKILL.md name must be github-workflow")
+        if "name: git-workflow" not in frontmatter:
+            errors.append("SKILL.md name must be git-workflow")
 
     markdown_files = [SKILL, *sorted((ROOT / "reference").glob("*.md"))]
     linked_references: set[Path] = set()
@@ -111,7 +111,7 @@ def main() -> int:
         return 1
 
     print(
-        "github-workflow validation passed: "
+        "git-workflow validation passed: "
         f"{len(reference_files)} references, {len(markdown_files)} Markdown files"
     )
     return 0

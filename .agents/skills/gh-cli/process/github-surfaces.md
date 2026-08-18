@@ -77,7 +77,7 @@ gh ssh-key list
 gh gpg-key list
 ```
 
-Adding or deleting account keys changes authentication/signing trust. Verify fingerprints locally, never upload private keys, and confirm removals. For signing policy and local Git configuration, also read [audit.md](audit.md).
+Adding or deleting account keys changes authentication/signing trust. Verify fingerprints locally, never upload private keys, and confirm removals. For signing policy and local Git configuration, also read [audit.md](../../git-workflow/reference/audit.md).
 
 ## Extensions and aliases
 

@@ -14,7 +14,7 @@ Cover:
 - artifact attestations, signing, provenance, and SBOMs;
 - organization and repository security settings.
 
-Use [audit.md](audit.md) for local secret/history/size hygiene and [actions.md](actions.md) for workflow security.
+Use [audit.md](../../git-workflow/reference/audit.md) for local secret/history/size hygiene and [actions.md](actions.md) for workflow security.
 
 ## Read before write
 

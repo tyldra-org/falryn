@@ -28,7 +28,7 @@ contracts apply only when that agent is given one of those mode prompts.
 2. Load skills from [`.agents/skills/`](.agents/skills/README.md) as gated below.
    They are vendored here so they resolve for every checkout.
 3. For Origin/GitHub slugs, remotes, and ruleset tier choices on **this repo**, read
-   [`.agents/ORIGIN-LAYOUT.md`](.agents/ORIGIN-LAYOUT.md) after loading global **`origin-cli`** / **`github-workflow`**.
+   [`.agents/ORIGIN-LAYOUT.md`](.agents/ORIGIN-LAYOUT.md) after loading **`git-workflow`**, **`gh-cli`**, and global **`origin-cli`**.
 4. Skill guidance never overrides Falryn architecture, a Ready issue’s scope, or
    repository-owned validation.
 
@@ -59,16 +59,16 @@ contracts apply only when that agent is given one of those mode prompts.
 Load from `.agents/skills/` (see the README there for the full table). **`origin-cli`**
 is global only: `~/.agents/skills/origin-cli/SKILL.md` (not vendored in this repo).
 
-**Skill split:** **github-workflow** = process/safety; **gh-cli** = `gh` syntax only;
-**origin-cli** = `origin` syntax only (global). Load workflow first for mutations; add CLI skills for flags.
+**Skill split:** **git-workflow** = `git` porcelain/safety; **gh-cli** = GitHub `gh` (syntax + process);
+**origin-cli** = Cursor `origin` (syntax + process, global). Load the skill that matches the host.
 
 | When | Skill |
 | --- | --- |
 | Creating/editing/reviewing/debugging/configuring TS, TSX, JS, tests, build scripts, or `tsconfig` | `typescript-best-practices` — pick **one** primary module from its router |
 | Creating/editing/reviewing/testing/packaging OpenTUI or TUI behavior | `opentui` — prefer installed OpenTUI APIs and upstream docs over Falryn reimplementations |
 | OpenTUI TypeScript/TSX | **Both** `typescript-best-practices` and `opentui` |
-| Any Git/GitHub change (branch, commit, PR, issue, Project, merge, release, …) | `github-workflow` |
-| Exact `gh` flags / JSON / subcommand recall | `gh-cli` (process still follows `github-workflow`) |
+| Any mutating git work (branch, commit, rebase, push, recover, …) | `git-workflow` |
+| GitHub issues, PRs, Actions, Projects, merge, `gh` flags | `gh-cli` |
 | Origin CLI syntax, mirror setup, or `origin pr` / `origin repo` flags | `origin-cli` at `~/.agents/skills/origin-cli/` — then [`.agents/ORIGIN-LAYOUT.md`](../.agents/ORIGIN-LAYOUT.md) for Falryn slugs/remotes/tiers (install/login repair: Cursor built-in `origin` skill) |
 | `Deliver — Target: …`, `Next — Target: Falryn Roadmap`, or “what should I implement next?” | `falryn-delivery-loop` — maintainer delivery modes only; does not replace technical/GitHub skills; not required of other contributors |
 

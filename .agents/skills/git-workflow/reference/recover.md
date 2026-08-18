@@ -100,10 +100,10 @@ git reset --hard ORIG_HEAD          # if it completed — protected, back up fir
 
 ### "I force-pushed over someone's work"
 
-Their commits still exist on any machine that has them, and in the remote's reflog if the host exposes it (GitHub does not, generally). Recovery path:
+Their commits still exist on any machine that has them, and in the remote's reflog if the host exposes it (many forges do not). Recovery path:
 
 1. Ask whoever pushed to run `git reflog` locally — they almost certainly still have it.
-2. Check open PRs — GitHub retains force-pushed commits in the PR timeline and they remain fetchable by SHA: `git fetch origin <sha>`.
+2. Check open pull requests on the host — some forges retain force-pushed commits in the PR timeline and they remain fetchable by SHA: `git fetch origin <sha>`.
 3. Check CI logs for the SHA, then `git fetch origin <sha>`.
 
 Report the incident plainly. Don't quietly re-push and hope.

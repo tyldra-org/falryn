@@ -1,6 +1,6 @@
 # Conventions
 
-Message text and naming. Load before writing any commit subject, branch name, PR title, or tag.
+Message text and naming. Load before writing any commit subject, branch name, or tag. Pull-request titles live in **gh-cli** `process/pr.md`.
 
 **Repo convention wins.** If `git log --pretty=%s -n 30` shows an established style, match it. Defaults below apply only when the repo has no opinion.
 
@@ -176,19 +176,11 @@ A branch name is chosen by the contributor or automation creating it; GitHub iss
 Rules:
 
 - Lowercase, kebab-case, ASCII. No spaces, no `~^:?*[\`, no trailing `.lock`, no `..`.
-- Short: 3–5 words after the prefix. The PR title carries the detail.
+- Short: 3–5 words after the prefix. The pull-request title (host skill) carries the detail.
 - Include the ticket ID when the project uses one: `fix/PROJ-412-null-session-token`.
 - One branch, one logical change. If it needs "and" in the name, it's two branches.
 
 **Long-lived branches** (`main`, `master`, `develop`, `release/*`, and any integration branch the repo already runs) are exempt from the prefix rule — they follow whatever the repo established, which is usually older than the convention.
-
-## PR titles
-
-Same shape and same length limit as a commit subject.
-
-In a **squash-merge repo the PR title becomes the permanent commit subject** — it matters more there, not less. Detect which kind of repo you're in with `git log --graph --oneline -20`: strictly linear with one commit per PR means squash.
-
-When a PR contains several distinct changes, title it after the primary intent and let the description carry the rest. If there is no primary intent, it should probably be two PRs — say so. Description template is in [pr.md](pr.md).
 
 ## Tags
 
@@ -198,4 +190,4 @@ When a PR contains several distinct changes, title it after the primary intent a
 
 `Merge branch '<branch>'` — the git default, administrative, no body. No conventional type: a merge isn't a change, it's a join, and typing it `feat:` corrupts changelog generation.
 
-For GitHub squash merges the PR title is the semantic subject instead. GitHub's `Merge pull request #123 from ...` line is metadata, not a title worth editing. See [merge.md](merge.md).
+Squash-merge on GitHub uses the PR title as the subject — **gh-cli** `process/merge.md`.
