@@ -16,26 +16,28 @@ Without `gh`, ask the user for the run URL or the failing output. Do not constru
 
 ## While checks are running
 
-**Default: watch in the background.** Do not block the conversation turn on
-multi-minute foreground `sleep` / poll loops for PR checks, Actions runs, or
-merge readiness.
+**Always watch in the background.** Do not block the conversation turn on
+multi-minute `sleep`, poll loops, or `gh pr checks --watch` / `gh run watch`.
+Foreground `--watch` also hits the Shell ~180s cap and gets backgrounded anyway.
 
-- Start a background watcher (Shell `block_until_ms: 0`, or an equivalent async
-  job) that logs progress to a file. When merge is already authorized (for
-  example by an active `Deliver` run), the watcher may squash-merge only after a
-  fresh re-read of head SHA, **required** checks, reviews, mergeability, and
-  method — never merge a changed head without that re-read.
-- Tell the user the PR URL, the head SHA being watched, and that the wait is
-  backgrounded. Keep useful work going, or end the turn so completion
-  notifications can fire.
-- Do not poll in a tight foreground loop. A one-shot `gh pr checks` / status
-  read is fine when you only need a snapshot.
-- Match any poll interval to real job duration (a ~10-minute build is not thirty
-  twenty-second polls).
+1. One snapshot is fine: `gh pr checks <n>` (or `gh run list`) when you only
+   need current state.
+2. Start a **background** watcher (Shell `block_until_ms: 0`, or equivalent)
+   that logs progress. Do not `--watch` in the chat turn.
+3. Tell the user the PR URL, the head SHA being watched, and that the wait is
+   backgrounded. Keep useful work going, or **end the turn** so a completion
+   ping can fire.
+4. If merge is already authorized (user said land/merge, or an active `Deliver`
+   run): when the watcher finishes, **re-read** head SHA, **required** checks,
+   reviews, mergeability, and method, then merge per [merge.md](merge.md).
+   Never merge a changed head without that re-read. Do not hold the turn
+   “because merge is next.”
+5. Match any later poll interval to real job duration (a ~10-minute build is
+   not thirty twenty-second polls).
 
-Block the turn on CI only when the user explicitly asks to wait in-chat, or when
-the very next step cannot proceed without the result and no background path
-exists.
+**Foreground wait only** when the user explicitly says to wait in-chat
+(e.g. “wait here until green”). “Land this PR” / “merge when green” is **not**
+that — use the background watcher, then merge after the re-read.
 
 ## The bounded fix loop
 
