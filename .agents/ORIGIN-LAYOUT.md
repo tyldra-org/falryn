@@ -1,6 +1,6 @@
 # Falryn Origin + GitHub layout
 
-Repo-local overlay for global skills **`origin-cli`**, **`github-workflow`**, and **`gh-cli`**. Those skills stay generic; this file holds **Falryn-specific** slugs, remotes, and policy choices.
+Repo-local overlay for global skills **`origin-cli`**, **`git-workflow`**, and **`gh-cli`**. Those skills stay generic; this file holds **Falryn-specific** slugs, remotes, and policy choices.
 
 ## Repos
 

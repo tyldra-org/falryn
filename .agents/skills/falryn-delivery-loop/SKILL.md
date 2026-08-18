@@ -5,7 +5,7 @@ description: "Drive one Falryn standalone issue or native child through a single
 
 # Falryn Delivery Loop
 
-**Maintainer-optional.** Load for `Deliver` / `Next` (or “what should I implement next?”). Do not impose this loop on ordinary contributor PRs or casual checkouts. Canonical contract: `falryn-docs/DEVELOPMENT.md` (Deliver / Next / merge / Project choreography). Also load `github-workflow` (and `gh-cli` when composing non-trivial `gh`). Contract wins on conflict.
+**Maintainer-optional.** Load for `Deliver` / `Next` (or “what should I implement next?”). Do not impose this loop on ordinary contributor PRs or casual checkouts. Canonical contract: `falryn-docs/DEVELOPMENT.md` (Deliver / Next / merge / Project choreography). Also load `git-workflow` for git mutations and `gh-cli` for GitHub PRs/checks. Contract wins on conflict.
 
 **Sync:** Edit `~/.agents/skills/falryn-delivery-loop/SKILL.md`, then copy identically to `falryn/.agents/skills/falryn-delivery-loop/SKILL.md`.
 
@@ -57,8 +57,8 @@ post-merge frontier reconcile PRs), run the wait/poll **in the background by
 default**. Do not hold the turn on multi-minute foreground sleeps. Report the
 PR(s) and head SHA(s) being watched, then continue other work or end the turn.
 When the watcher completes, re-read merge preconditions immediately before each
-authorized squash-merge. Procedure lives in `github-workflow` →
-[ci.md](../github-workflow/reference/ci.md) (background watch default).
+authorized squash-merge. Procedure lives in `gh-cli` →
+[ci.md](../gh-cli/process/ci.md) (background watch default).
 
 ## Next routing
 
