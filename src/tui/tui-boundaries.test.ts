@@ -66,11 +66,10 @@ const RENDERER_OWNERS = [
   // owns and a dispatcher it does not.
   "components/shell-app.tsx",
   "components/keymap-bridge.tsx",
-  // Artifact overlay renderers (#265 code, #266 diff, #267 document/media).
+  // Artifact overlay renderers (#265 code, #266 diff). Document and media viewers
+  // use scrollbox through JSX intrinsics only; they are mounted from app-shell.
   "viewer/code-viewer.tsx",
   "viewer/diff-viewer.tsx",
-  "viewer/document-viewer.tsx",
-  "viewer/media-viewer.tsx",
 ];
 
 /** The one module allowed to author a colour. */
