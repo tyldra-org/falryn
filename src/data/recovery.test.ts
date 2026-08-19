@@ -145,6 +145,30 @@ function insertReserved(
   );
 }
 
+function insertAvailable(
+  store: SqliteStorePort,
+  options: {
+    readonly artifactId: string;
+    readonly digest: ContentDigest;
+    readonly byteLength: number;
+  },
+): void {
+  store.write((statements) =>
+    statements.run(
+      `INSERT INTO artifacts (artifact_id, digest, media_type, encoding, byte_length,
+         sensitivity, origin, invocation_id, created_at, finalized_at, availability, run_id)
+       VALUES ($artifactId, $digest, 'text/plain', 'identity', $byteLength,
+         'user-content', 'tool-output', NULL, $createdAt, $createdAt, 'available', NULL)`,
+      {
+        artifactId: options.artifactId,
+        digest: options.digest,
+        byteLength: options.byteLength,
+        createdAt: iso(-30_000),
+      },
+    ),
+  );
+}
+
 function availabilityOf(store: SqliteStorePort, id: string): string | null {
   const rows = store.read(
     "SELECT availability AS availability FROM artifacts WHERE artifact_id = $id",
@@ -153,6 +177,15 @@ function availabilityOf(store: SqliteStorePort, id: string): string | null {
     },
   );
   const value = rows.ok ? rows.value[0]?.availability : undefined;
+  return typeof value === "string" ? value : null;
+}
+
+function finalizedAtOf(store: SqliteStorePort, id: string): string | null {
+  const rows = store.read(
+    "SELECT finalized_at AS finalizedAt FROM artifacts WHERE artifact_id = $id",
+    { id },
+  );
+  const value = rows.ok ? rows.value[0]?.finalizedAt : undefined;
   return typeof value === "string" ? value : null;
 }
 
@@ -330,6 +363,63 @@ describe("an artifact an earlier run left reserved", () => {
     expect(availabilityOf(store, "a1")).toBe("reserved");
     expect(report.completeness).toBe("partial");
     expect(artifactCount(report, "left-for-inspection")).toBe(1);
+    await store.close();
+  });
+});
+
+describe("an artifact that was already available", () => {
+  test("stays available when its bytes still verify", async () => {
+    const { store, blobs, recover } = await harness();
+    insertAvailable(store, {
+      artifactId: "a1",
+      digest: DIGEST,
+      byteLength: BYTES.byteLength,
+    });
+    blobs.put({ scope: "content", digest: DIGEST }, BYTES);
+
+    const report = await recover();
+
+    expect(availabilityOf(store, "a1")).toBe("available");
+    expect(report.artifactsExamined).toBe(1);
+    expect(report.artifacts).toEqual([]);
+    expect(report.effect).toBe("none");
+    await store.close();
+  });
+
+  test("becomes quarantined when its bytes no longer verify", async () => {
+    const { store, blobs, recover } = await harness();
+    insertAvailable(store, {
+      artifactId: "a1",
+      digest: DIGEST,
+      byteLength: BYTES.byteLength,
+    });
+    blobs.put(
+      { scope: "content", digest: DIGEST },
+      new TextEncoder().encode("something else!!!!!"),
+    );
+
+    const report = await recover();
+
+    expect(availabilityOf(store, "a1")).toBe("quarantined");
+    expect(artifactCount(report, "quarantined")).toBe(1);
+    expect(blobs.locations().map((location) => location.scope)).toEqual(["quarantine"]);
+    expect(finalizedAtOf(store, "a1")).toBe(iso(-30_000));
+    await store.close();
+  });
+
+  test("becomes missing when its bytes are gone", async () => {
+    const { store, recover } = await harness();
+    insertAvailable(store, {
+      artifactId: "a1",
+      digest: DIGEST,
+      byteLength: BYTES.byteLength,
+    });
+
+    const report = await recover();
+
+    expect(availabilityOf(store, "a1")).toBe("missing");
+    expect(artifactCount(report, "missing")).toBe(1);
+    expect(finalizedAtOf(store, "a1")).toBe(iso(-30_000));
     await store.close();
   });
 });
@@ -584,7 +674,9 @@ describe("a second pass", () => {
     const second = await recover();
 
     expect(second.markedUncertain).toBe(0);
-    expect(second.artifactsExamined).toBe(0);
+    // The first pass finalized a1, so the second re-verifies those bytes and
+    // finds nothing to repair.
+    expect(second.artifactsExamined).toBe(1);
     expect(second.artifacts).toEqual([]);
     expect(second.failed).toBe(0);
     expect(second.effect).toBe("none");
