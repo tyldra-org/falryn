@@ -3,6 +3,8 @@ import {
   blockOffersOpenArtifact,
   blockSelectsCodeViewer,
   blockSelectsDiffViewer,
+  blockSelectsDocumentViewer,
+  blockSelectsMediaViewer,
   primaryArtifactId,
 } from "./artifact-open.ts";
 import { everyBlockKind } from "./fixtures.ts";
@@ -27,6 +29,28 @@ describe("artifact open helpers", () => {
     const diffBlock = { ...artifact, mediaType: "text/x-diff" };
     expect(blockSelectsDiffViewer(diffBlock)).toBe(true);
     expect(blockSelectsCodeViewer(diffBlock)).toBe(false);
+  });
+
+  test("selects document for markdown artifacts", () => {
+    const artifact = everyBlockKind().find((block) => block.kind === "artifact");
+    if (artifact === undefined || artifact.kind !== "artifact") {
+      throw new Error("the corpus no longer has an artifact block");
+    }
+    const markdownBlock = { ...artifact, mediaType: "text/markdown" };
+    expect(blockSelectsDocumentViewer(markdownBlock)).toBe(true);
+    expect(blockSelectsCodeViewer(markdownBlock)).toBe(false);
+  });
+
+  test("selects media summary for image and pdf artifacts", () => {
+    const artifact = everyBlockKind().find((block) => block.kind === "artifact");
+    if (artifact === undefined || artifact.kind !== "artifact") {
+      throw new Error("the corpus no longer has an artifact block");
+    }
+    expect(blockSelectsMediaViewer({ ...artifact, mediaType: "image/png" })).toBe(true);
+    expect(blockSelectsMediaViewer({ ...artifact, mediaType: "application/pdf" })).toBe(true);
+    expect(
+      blockSelectsMediaViewer({ ...artifact, mediaType: "application/vnd.jupyter.notebook+json" }),
+    ).toBe(true);
   });
 
   test("refuses non-artifact blocks", () => {

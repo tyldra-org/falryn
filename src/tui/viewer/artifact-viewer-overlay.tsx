@@ -1,22 +1,29 @@
 /**
- * Loads an artifact view and mounts code or diff presentation.
+ * Loads an artifact view and mounts code, diff, document, or media presentation.
  */
 
 import { type ReactNode, useEffect, useState } from "react";
 import type { ArtifactViewer } from "../../application/index.ts";
 import type { ArtifactView } from "../../domain/index.ts";
+import type { ArtifactPresentation } from "../../presentation/transcript/artifact-open.ts";
 import {
   type CodeViewModel,
   codeViewFrom,
   type DiffViewModel,
+  type DocumentViewModel,
   diffViewFrom,
+  documentViewFrom,
+  type MediaViewModel,
+  mediaViewFrom,
 } from "../../presentation/viewer/index.ts";
 import { CodeViewer } from "./code-viewer.tsx";
 import { DiffViewer } from "./diff-viewer.tsx";
+import { DocumentViewer } from "./document-viewer.tsx";
+import { MediaViewer } from "./media-viewer.tsx";
 
 export type ArtifactViewerOverlayProps = {
   readonly artifactId: string;
-  readonly presentation: "code" | "diff";
+  readonly presentation: ArtifactPresentation;
   readonly layout: "unified" | "split";
   readonly hunkIndex: number;
   readonly viewer: ArtifactViewer;
@@ -51,73 +58,84 @@ export function ArtifactViewerOverlay(props: ArtifactViewerOverlayProps): ReactN
   }, [props.artifactId, props.viewer]);
 
   if (state.kind === "loading") {
-    return props.presentation === "diff" ? (
-      <DiffViewer
-        model={null}
-        loading
-        error={null}
-        rows={props.rows}
-        layout={props.layout}
-        hunkIndex={props.hunkIndex}
-      />
-    ) : (
-      <CodeViewer model={null} loading error={null} rows={props.rows} />
-    );
+    return renderPresentation(props, { kind: "loading" });
   }
 
   if (state.kind === "error") {
-    return props.presentation === "diff" ? (
-      <DiffViewer
-        model={null}
-        loading={false}
-        error={state.message}
-        rows={props.rows}
-        layout={props.layout}
-        hunkIndex={props.hunkIndex}
-      />
-    ) : (
-      <CodeViewer model={null} loading={false} error={state.message} rows={props.rows} />
-    );
+    return renderPresentation(props, { kind: "error", message: state.message });
   }
 
-  if (props.presentation === "diff") {
-    const model = diffViewFrom(state.view);
-    if (model === null) {
+  return renderPresentation(props, { kind: "ready", view: state.view });
+}
+
+type RenderInput =
+  | { readonly kind: "loading" }
+  | { readonly kind: "error"; readonly message: string }
+  | { readonly kind: "ready"; readonly view: ArtifactView };
+
+function renderPresentation(props: ArtifactViewerOverlayProps, input: RenderInput): ReactNode {
+  const loading = input.kind === "loading";
+  const error = input.kind === "error" ? input.message : null;
+  const view = input.kind === "ready" ? input.view : null;
+
+  switch (props.presentation) {
+    case "diff": {
+      const model = view === null ? null : diffViewFrom(view);
+      const wrongKind =
+        view !== null && model === null
+          ? `This artifact is a ${view.kind} viewer; diff was expected.`
+          : null;
       return (
         <DiffViewer
-          model={null}
-          loading={false}
-          error={`This artifact is a ${state.view.kind} viewer; diff was expected.`}
+          model={model}
+          loading={loading}
+          error={error ?? wrongKind}
           rows={props.rows}
           layout={props.layout}
           hunkIndex={props.hunkIndex}
         />
       );
     }
-    return (
-      <DiffViewer
-        model={model}
-        loading={false}
-        error={null}
-        rows={props.rows}
-        layout={props.layout}
-        hunkIndex={props.hunkIndex}
-      />
-    );
+    case "document": {
+      const model = view === null ? null : documentViewFrom(view);
+      const wrongKind =
+        view !== null && model === null
+          ? `This artifact is a ${view.kind} viewer; document was expected.`
+          : null;
+      return (
+        <DocumentViewer
+          model={model}
+          loading={loading}
+          error={error ?? wrongKind}
+          rows={props.rows}
+        />
+      );
+    }
+    case "media": {
+      const model = view === null ? null : mediaViewFrom(view);
+      const wrongKind =
+        view !== null && model === null
+          ? `This artifact is a ${view.kind} viewer; media summary was expected.`
+          : null;
+      return (
+        <MediaViewer model={model} loading={loading} error={error ?? wrongKind} rows={props.rows} />
+      );
+    }
+    case "code": {
+      const model = view === null ? null : codeViewFrom(view);
+      const wrongKind =
+        view !== null && model === null
+          ? `This artifact is a ${view.kind} viewer; code was expected.`
+          : null;
+      return (
+        <CodeViewer model={model} loading={loading} error={error ?? wrongKind} rows={props.rows} />
+      );
+    }
+    default: {
+      const exhaustive: never = props.presentation;
+      return exhaustive;
+    }
   }
-
-  const model = codeViewFrom(state.view);
-  if (model === null) {
-    return (
-      <CodeViewer
-        model={null}
-        loading={false}
-        error={`This artifact is a ${state.view.kind} viewer; code was expected.`}
-        rows={props.rows}
-      />
-    );
-  }
-  return <CodeViewer model={model} loading={false} error={null} rows={props.rows} />;
 }
 
 function describeViewError(error: unknown): string {
@@ -150,4 +168,4 @@ export function ArtifactCodeOverlay(props: ArtifactCodeOverlayProps): ReactNode 
   );
 }
 
-export type { CodeViewModel, DiffViewModel };
+export type { CodeViewModel, DiffViewModel, DocumentViewModel, MediaViewModel };

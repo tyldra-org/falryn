@@ -32,13 +32,25 @@ export function blockSelectsDiffViewer(block: TranscriptBlock): boolean {
   return artifactPresentationFor(block) === "diff";
 }
 
-/** Code or diff artifacts that `transcript.openArtifact` can mount. */
-export function artifactPresentationFor(block: TranscriptBlock): "code" | "diff" | null {
+/** Whether the block's declared media type selects a document viewer. */
+export function blockSelectsDocumentViewer(block: TranscriptBlock): boolean {
+  return artifactPresentationFor(block) === "document";
+}
+
+/** Whether the block's declared media type selects a media summary viewer. */
+export function blockSelectsMediaViewer(block: TranscriptBlock): boolean {
+  return artifactPresentationFor(block) === "media";
+}
+
+export type ArtifactPresentation = "code" | "diff" | "document" | "media";
+
+/** Artifacts that `transcript.openArtifact` can mount in the overlay. */
+export function artifactPresentationFor(block: TranscriptBlock): ArtifactPresentation | null {
   if (block.kind !== "artifact") {
     return null;
   }
   const kind = selectArtifactViewKind(block.mediaType, artifactOriginFor(block.source));
-  if (kind === "code" || kind === "diff") {
+  if (kind === "code" || kind === "diff" || kind === "document" || kind === "media") {
     return kind;
   }
   return null;

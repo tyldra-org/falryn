@@ -117,7 +117,7 @@ export type CommandState = {
   readonly confirmationNeedsSecret: boolean;
   /** Whether any cancellable work is in flight. Nothing runs work yet. */
   readonly hasRunningWork: boolean;
-  /** Whether the selected entry's artifact opens as a code or diff viewer. */
+  /** Whether the selected entry's artifact opens in an artifact viewer overlay. */
   readonly hasOpenableArtifact: boolean;
   /** A diff artifact overlay is open. */
   readonly hasDiffArtifactOverlay: boolean;
@@ -381,7 +381,7 @@ export const SHELL_COMMANDS: readonly ShellCommand[] = [
     availability: (state) =>
       state.hasOpenableArtifact
         ? AVAILABLE
-        : unavailable("there is no code or diff artifact to open for this entry"),
+        : unavailable("there is no openable artifact to view for this entry"),
   },
   {
     id: "artifact.toggleDiffLayout",
