@@ -49,7 +49,7 @@ import { resolveTheme, type ThemeRequest } from "../theme/index.ts";
 import { inspectionFor } from "../transcript/index.ts";
 import type { TranscriptGeometry } from "../transcript-model.ts";
 import type { CommandEntry, OverlayRoute, ShellModel } from "../view-model.ts";
-import { ArtifactCodeOverlay } from "../viewer/artifact-code-overlay.tsx";
+import { ArtifactViewerOverlay } from "../viewer/artifact-viewer-overlay.tsx";
 import { ActivityRail } from "./activity-rail.tsx";
 import { ComposerView } from "./composer.tsx";
 import { ConfirmationSheet } from "./confirmation.tsx";
@@ -331,7 +331,7 @@ function overlayTitle(
     case "controls":
       return CONTROL_PANEL_TITLES[route.panel];
     case "artifact":
-      return "Source";
+      return route.presentation === "diff" ? "Diff" : "Source";
     default: {
       const exhaustive: never = route;
       return exhaustive;
@@ -415,8 +415,11 @@ function overlayBody(
         );
       }
       return (
-        <ArtifactCodeOverlay
+        <ArtifactViewerOverlay
           artifactId={overlay.artifactId}
+          presentation={overlay.presentation}
+          layout={overlay.layout}
+          hunkIndex={overlay.hunkIndex}
           viewer={props.artifactViewer}
           rows={rows}
         />

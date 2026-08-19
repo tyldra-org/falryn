@@ -40,6 +40,45 @@ export function createMapArtifactViewer(
   };
 }
 
+/** A complete diff artifact view for fixture-driven shell tests. */
+export function fixtureDiffArtifactView(input: {
+  readonly id: string;
+  readonly text: string;
+  readonly status?: ArtifactView["status"];
+  readonly hunkCount?: number;
+}): ArtifactView {
+  const id = artifactId.from(input.id);
+  return {
+    schemaVersion: ARTIFACT_VIEW_VERSION,
+    artifactId: id,
+    record: {
+      artifactId: id,
+      digest: FIXTURE_DIGEST as ArtifactView["record"]["digest"],
+      mediaType: "text/x-diff",
+      origin: "tool-output",
+      encoding: "identity",
+      byteLength: new TextEncoder().encode(input.text).byteLength,
+      sensitivity: "user-content",
+      invocationId: null,
+      createdAt: timestampFromEpochMilliseconds(0),
+      finalizedAt: timestampFromEpochMilliseconds(1),
+      availability: "available",
+    },
+    kind: "diff",
+    status: input.status ?? "complete",
+    transformed: false,
+    sourceByteLength: new TextEncoder().encode(input.text).byteLength,
+    decodedByteLength: new TextEncoder().encode(input.text).byteLength,
+    viewByteLength: new TextEncoder().encode(input.text).byteLength,
+    body: {
+      kind: "diff",
+      mode: "unified",
+      hunkCount: input.hunkCount ?? input.text.split("@@").length - 1,
+      text: input.text,
+    },
+  };
+}
+
 /** A complete code artifact view for fixture-driven shell tests. */
 export function fixtureCodeArtifactView(input: {
   readonly id: string;
