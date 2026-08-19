@@ -2259,6 +2259,21 @@ export {
   parseExportRecordLine,
 } from "./session-replay.ts";
 export type {
+  SessionReplayControlError,
+  SessionReplayControlErrorCode,
+  SessionReplayControlInput,
+  SessionReplayControlProvenance,
+  SessionReplayControlState,
+  SessionReplayControlStatus,
+} from "./session-replay-control.ts";
+export {
+  controlSessionReplay,
+  describeSessionReplayControlError,
+  SESSION_REPLAY_CONTROL_SOURCE,
+  SESSION_REPLAY_CONTROL_STATUSES,
+  SESSION_REPLAY_CONTROL_VERSION,
+} from "./session-replay-control.ts";
+export type {
   SessionResumeError,
   SessionResumeErrorCode,
   SessionResumeInput,
