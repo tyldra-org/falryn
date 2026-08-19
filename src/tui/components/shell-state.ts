@@ -1,7 +1,7 @@
 import { blockKey, type TranscriptBlock } from "../../presentation/index.ts";
 import {
+  artifactPresentationFor,
   blockOffersOpenArtifact,
-  blockSelectsCodeViewer,
   primaryArtifactId,
 } from "../../presentation/transcript/artifact-open.ts";
 import {
@@ -66,7 +66,7 @@ export function overlayRegions(route: OverlayRoute): readonly FocusRegion[] {
     case "controls":
       return [{ id: "overlay.controls", label: "controls" }];
     case "artifact":
-      return [{ id: "overlay.artifact", label: "code viewer" }];
+      return [{ id: "overlay.artifact", label: "artifact viewer" }];
     case "none":
       return FRAME_REGIONS;
     default: {
@@ -119,6 +119,9 @@ export type ShellAction =
   | { readonly kind: "resolve-confirmation"; readonly decision: "accepted" | "refused" }
   | { readonly kind: "secret-mask"; readonly graphemes: number }
   | { readonly kind: "select-control"; readonly field: "session" | "model"; readonly id: string }
+  | { readonly kind: "artifact-toggle-layout" }
+  | { readonly kind: "artifact-next-hunk" }
+  | { readonly kind: "artifact-previous-hunk" }
   | { readonly kind: "exit" };
 
 export const INITIAL_SHELL_STATE: ShellState = {
@@ -279,6 +282,33 @@ export function shellReducer(state: ShellState, action: ShellAction): ShellState
         ? selected
         : shellReducer(selected, { kind: "close-overlay" });
     }
+    case "artifact-toggle-layout":
+      if (state.overlay.kind !== "artifact" || state.overlay.presentation !== "diff") {
+        return state;
+      }
+      return {
+        ...state,
+        overlay: {
+          ...state.overlay,
+          layout: state.overlay.layout === "unified" ? "split" : "unified",
+        },
+      };
+    case "artifact-next-hunk":
+      if (state.overlay.kind !== "artifact" || state.overlay.presentation !== "diff") {
+        return state;
+      }
+      return {
+        ...state,
+        overlay: { ...state.overlay, hunkIndex: state.overlay.hunkIndex + 1 },
+      };
+    case "artifact-previous-hunk":
+      if (state.overlay.kind !== "artifact" || state.overlay.presentation !== "diff") {
+        return state;
+      }
+      return {
+        ...state,
+        overlay: { ...state.overlay, hunkIndex: Math.max(0, state.overlay.hunkIndex - 1) },
+      };
     case "exit":
       return { ...state, exiting: true };
     default: {
@@ -313,15 +343,21 @@ export function commandStateFor(
     confirmationStale: stale,
     confirmationNeedsSecret:
       bound !== null && !stale && bound.secret !== null && state.secretGraphemes === 0,
-    hasOpenableCodeArtifact: openableCodeArtifact(selected),
+    hasOpenableArtifact: openableArtifact(selected),
+    hasDiffArtifactOverlay:
+      state.overlay.kind === "artifact" && state.overlay.presentation === "diff",
+    diffArtifactHunkIndex:
+      state.overlay.kind === "artifact" && state.overlay.presentation === "diff"
+        ? state.overlay.hunkIndex
+        : 0,
   };
 }
 
-function openableCodeArtifact(block: TranscriptBlock | null): boolean {
+function openableArtifact(block: TranscriptBlock | null): boolean {
   if (block === null || !blockOffersOpenArtifact(block)) {
     return false;
   }
-  if (!blockSelectsCodeViewer(block)) {
+  if (artifactPresentationFor(block) === null) {
     return false;
   }
   return primaryArtifactId(block) !== null;

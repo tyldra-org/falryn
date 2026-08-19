@@ -1,5 +1,6 @@
 import { blockKey, type TranscriptBlock } from "../../presentation/index.ts";
 import {
+  artifactPresentationFor,
   blockOffersOpenArtifact,
   primaryArtifactId,
 } from "../../presentation/transcript/artifact-open.ts";
@@ -14,6 +15,7 @@ import {
   type TranscriptSurfaceState,
 } from "../transcript/index.ts";
 import type { TranscriptGeometry } from "../transcript-model.ts";
+import { artifactOverlayRoute } from "../view-model.ts";
 import type { ShellAction } from "./shell-state.ts";
 
 export type TranscriptCommandContext = {
@@ -123,12 +125,26 @@ export function runAvailableCommand(
         dispatch({ kind: "notice", message: "This entry has no artifact to open." });
         return false;
       }
+      const presentation = artifactPresentationFor(selectedBlock);
+      if (presentation === null) {
+        dispatch({ kind: "notice", message: "This artifact has no viewer in this build." });
+        return false;
+      }
       dispatch({
         kind: "open-overlay",
-        route: { kind: "artifact", artifactId },
+        route: artifactOverlayRoute(artifactId, presentation),
       });
       return true;
     }
+    case "artifact.toggleDiffLayout":
+      dispatch({ kind: "artifact-toggle-layout" });
+      return true;
+    case "artifact.nextHunk":
+      dispatch({ kind: "artifact-next-hunk" });
+      return true;
+    case "artifact.previousHunk":
+      dispatch({ kind: "artifact-previous-hunk" });
+      return true;
     case "composer.submit":
       dispatch({ kind: "composer", action: { kind: "submit" } });
       return true;

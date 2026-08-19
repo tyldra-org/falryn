@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   blockOffersOpenArtifact,
   blockSelectsCodeViewer,
+  blockSelectsDiffViewer,
   primaryArtifactId,
 } from "./artifact-open.ts";
 import { everyBlockKind } from "./fixtures.ts";
@@ -16,6 +17,16 @@ describe("artifact open helpers", () => {
     expect(blockOffersOpenArtifact(artifact)).toBe(true);
     expect(blockSelectsCodeViewer(artifact)).toBe(true);
     expect(primaryArtifactId(artifact)).not.toBe(null);
+  });
+
+  test("selects diff for x-diff media types", () => {
+    const artifact = everyBlockKind().find((block) => block.kind === "artifact");
+    if (artifact === undefined || artifact.kind !== "artifact") {
+      throw new Error("the corpus no longer has an artifact block");
+    }
+    const diffBlock = { ...artifact, mediaType: "text/x-diff" };
+    expect(blockSelectsDiffViewer(diffBlock)).toBe(true);
+    expect(blockSelectsCodeViewer(diffBlock)).toBe(false);
   });
 
   test("refuses non-artifact blocks", () => {

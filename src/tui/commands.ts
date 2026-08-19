@@ -117,8 +117,12 @@ export type CommandState = {
   readonly confirmationNeedsSecret: boolean;
   /** Whether any cancellable work is in flight. Nothing runs work yet. */
   readonly hasRunningWork: boolean;
-  /** Whether the selected entry's artifact opens as a code viewer in this build. */
-  readonly hasOpenableCodeArtifact: boolean;
+  /** Whether the selected entry's artifact opens as a code or diff viewer. */
+  readonly hasOpenableArtifact: boolean;
+  /** A diff artifact overlay is open. */
+  readonly hasDiffArtifactOverlay: boolean;
+  /** Current hunk index when a diff overlay is open. */
+  readonly diffArtifactHunkIndex: number;
 };
 
 /** The state of a shell with nothing behind it, which is every run today. */
@@ -139,7 +143,9 @@ export const EMPTY_COMMAND_STATE: CommandState = {
   confirmationStale: false,
   confirmationNeedsSecret: false,
   hasRunningWork: false,
-  hasOpenableCodeArtifact: false,
+  hasOpenableArtifact: false,
+  hasDiffArtifactOverlay: false,
+  diffArtifactHunkIndex: 0,
 };
 
 export type ShellCommand = {
@@ -373,9 +379,39 @@ export const SHELL_COMMANDS: readonly ShellCommand[] = [
     defaultBinding: null,
     keywords: ["artifact", "open", "export"],
     availability: (state) =>
-      state.hasOpenableCodeArtifact
+      state.hasOpenableArtifact
         ? AVAILABLE
-        : unavailable("there is no code artifact to open for this entry"),
+        : unavailable("there is no code or diff artifact to open for this entry"),
+  },
+  {
+    id: "artifact.toggleDiffLayout",
+    title: "Toggle diff layout",
+    description: "Switch the diff viewer between unified and split layout.",
+    context: "overlay",
+    defaultBinding: "v",
+    keywords: ["diff", "split", "unified", "layout"],
+    availability: (state) =>
+      state.hasDiffArtifactOverlay ? AVAILABLE : unavailable("no diff viewer is open"),
+  },
+  {
+    id: "artifact.nextHunk",
+    title: "Next diff hunk",
+    description: "Move to the next hunk in the diff viewer.",
+    context: "overlay",
+    defaultBinding: "]",
+    keywords: ["diff", "hunk", "next"],
+    availability: (state) =>
+      state.hasDiffArtifactOverlay ? AVAILABLE : unavailable("no diff viewer is open"),
+  },
+  {
+    id: "artifact.previousHunk",
+    title: "Previous diff hunk",
+    description: "Move to the previous hunk in the diff viewer.",
+    context: "overlay",
+    defaultBinding: "[",
+    keywords: ["diff", "hunk", "previous"],
+    availability: (state) =>
+      state.hasDiffArtifactOverlay ? AVAILABLE : unavailable("no diff viewer is open"),
   },
   {
     id: "transcript.showDiagnostics",

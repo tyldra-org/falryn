@@ -24,10 +24,24 @@ export function blockOffersOpenArtifact(block: TranscriptBlock): boolean {
 
 /** Whether the block's declared media type selects a code viewer. */
 export function blockSelectsCodeViewer(block: TranscriptBlock): boolean {
+  return artifactPresentationFor(block) === "code";
+}
+
+/** Whether the block's declared media type selects a diff viewer. */
+export function blockSelectsDiffViewer(block: TranscriptBlock): boolean {
+  return artifactPresentationFor(block) === "diff";
+}
+
+/** Code or diff artifacts that `transcript.openArtifact` can mount. */
+export function artifactPresentationFor(block: TranscriptBlock): "code" | "diff" | null {
   if (block.kind !== "artifact") {
-    return false;
+    return null;
   }
-  return selectArtifactViewKind(block.mediaType, artifactOriginFor(block.source)) === "code";
+  const kind = selectArtifactViewKind(block.mediaType, artifactOriginFor(block.source));
+  if (kind === "code" || kind === "diff") {
+    return kind;
+  }
+  return null;
 }
 
 export function artifactOriginFor(source: BlockSource): ArtifactOrigin {
