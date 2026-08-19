@@ -20,7 +20,9 @@
  *   and verify make a record `available`; present and not verifying makes it
  *   `quarantined` and moves the bytes aside rather than deleting them; absent
  *   makes it `missing` — the state #14 declared and deliberately left
- *   uninferred.
+ *   uninferred. The same decision applies to a row that was already
+ *   `available`: a later disappearance or corruption is still inferred from
+ *   the bytes, never from the row.
  * - **Mark, recheck, then act.** Anything removed is re-read immediately before
  *   the removal, because a record can commit between the decision and the
  *   deletion.
@@ -110,6 +112,15 @@ const SELECT_ARTIFACT_RUN = `SELECT run_id AS runId, availability AS availabilit
 const MOVE_ARTIFACT = `UPDATE ${ARTIFACTS_TABLE}
   SET availability = $availability, finalized_at = $finalizedAt
   WHERE artifact_id = $artifactId AND availability = 'reserved'`;
+
+const SELECT_AVAILABLE = `SELECT artifact_id AS artifactId, digest AS digest,
+  byte_length AS byteLength, run_id AS runId
+  FROM ${ARTIFACTS_TABLE} WHERE availability = 'available'
+  ORDER BY created_at, artifact_id LIMIT $limit`;
+
+const MOVE_FINALIZED = `UPDATE ${ARTIFACTS_TABLE}
+  SET availability = $availability
+  WHERE artifact_id = $artifactId AND availability = 'available'`;
 
 /** How a non-terminal record of each entity is found and completed. */
 const NON_TERMINAL: readonly {
@@ -330,6 +341,7 @@ export async function recoverInterruptedWork(
   const quiet = noOtherRunOpen(known, options.runId) && windowElapsed(options, known);
 
   completeInterruptedRecords(options, tally, signal);
+  await verifyFinalizedArtifacts(options, tally, signal);
   await resolveReservedArtifacts(options, known, quiet, tally, signal);
   await collectTemporaryBlobs(options, known, quiet, tally, signal);
 
@@ -565,6 +577,100 @@ async function resolveReservedArtifacts(
   }
 }
 
+/**
+ * Re-verifies artifacts that already claimed to be available.
+ *
+ * A reserved row is an ingest that never finished. An available row is a
+ * claim that the bytes were there and hashed. Disks still lose files, and a
+ * later writer can still overwrite content-addressed bytes. The same digest
+ * decision applies; the original finalized time is kept, because this pass
+ * did not finish the ingest.
+ */
+async function verifyFinalizedArtifacts(
+  options: RecoveryOptions,
+  tally: Tally,
+  signal: AbortSignal | undefined,
+): Promise<void> {
+  const rows = options.store.read(SELECT_AVAILABLE, { limit: MAX_RECOVERED_ARTIFACTS });
+  if (!rows.ok) {
+    tally.completeness = "partial";
+    tally.failed += 1;
+    return;
+  }
+  if (rows.value.length >= MAX_RECOVERED_ARTIFACTS) {
+    tally.completeness = "partial";
+  }
+
+  for (const row of rows.value) {
+    if (signal?.aborted === true) {
+      tally.completeness = "partial";
+      return;
+    }
+    const artifact = parseReserved(row);
+    if (artifact === null) {
+      tally.completeness = "partial";
+      tally.failed += 1;
+      continue;
+    }
+    tally.artifactsExamined += 1;
+    if (tally.verifiedBytes + artifact.byteLength > MAX_RECOVERY_VERIFIED_BYTES) {
+      tally.completeness = "partial";
+      record(tally.artifacts, "left-for-inspection");
+      continue;
+    }
+    await verifyOneFinalized(options, artifact, tally, signal);
+  }
+}
+
+async function verifyOneFinalized(
+  options: RecoveryOptions,
+  artifact: ReservedArtifact,
+  tally: Tally,
+  signal: AbortSignal | undefined,
+): Promise<void> {
+  const { blobs, hasher } = options;
+  const content: BlobLocation = { scope: "content", digest: artifact.digest };
+
+  const present = await blobs.byteLength(content, signal);
+  if (!present.ok) {
+    tally.failed += 1;
+    record(tally.artifacts, "left-for-inspection");
+    return;
+  }
+
+  if (present.value === null) {
+    moveFinalized(options, artifact.artifactId, "missing", tally);
+    return;
+  }
+
+  tally.verifiedBytes += artifact.byteLength;
+  const verified = await verifyStoredBytes(
+    { blobs, hasher, digest: artifact.digest, byteLength: artifact.byteLength },
+    signal,
+  );
+  if (!verified.ok) {
+    tally.failed += 1;
+    record(tally.artifacts, "left-for-inspection");
+    return;
+  }
+
+  if (verified.value) {
+    return;
+  }
+
+  const setAside = await blobs.finalize(
+    content,
+    { scope: "quarantine", digest: artifact.digest },
+    signal,
+  );
+  if (!setAside.ok) {
+    tally.failed += 1;
+    record(tally.artifacts, "left-for-inspection");
+    return;
+  }
+  moveFinalized(options, artifact.artifactId, "quarantined", tally);
+}
+
 async function resolveOne(
   options: RecoveryOptions,
   reserved: ReservedArtifact,
@@ -642,6 +748,24 @@ function move(
   const written = options.store.write(
     (statements) =>
       statements.run(MOVE_ARTIFACT, { artifactId: id, availability, finalizedAt }).changes,
+  );
+  if (!written.ok || written.value.value === 0) {
+    tally.failed += 1;
+    record(tally.artifacts, "left-for-inspection");
+    return;
+  }
+  record(tally.artifacts, availability);
+}
+
+/** Moves a previously available row without rewriting when it was finalized. */
+function moveFinalized(
+  options: RecoveryOptions,
+  id: ArtifactId,
+  availability: Extract<ArtifactRecoveryOutcome, "quarantined" | "missing">,
+  tally: Tally,
+): void {
+  const written = options.store.write(
+    (statements) => statements.run(MOVE_FINALIZED, { artifactId: id, availability }).changes,
   );
   if (!written.ok || written.value.value === 0) {
     tally.failed += 1;
