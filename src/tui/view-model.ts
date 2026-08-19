@@ -169,7 +169,14 @@ export type OverlayRoute =
   | {
       readonly kind: "controls";
       readonly panel: "session" | "model" | "context" | "resource";
-    };
+    }
+  /**
+   * A syntax-highlighted code artifact.
+   *
+   * The id is the artifact being viewed. Closing replaces the route, so a
+   * dismissed viewer has nowhere to linger.
+   */
+  | { readonly kind: "artifact"; readonly artifactId: string };
 
 export type ShellModel = {
   readonly header: WorkspaceHeaderModel;

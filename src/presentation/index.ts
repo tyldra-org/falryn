@@ -54,6 +54,12 @@ export {
   MAX_OBSERVED_KIND_CHARS,
   TRANSCRIPT_BLOCK_ADMISSION_ERROR_CODES,
 } from "./transcript/admit.ts";
+export {
+  artifactOriginFor,
+  blockOffersOpenArtifact,
+  blockSelectsCodeViewer,
+  primaryArtifactId,
+} from "./transcript/artifact-open.ts";
 export type {
   ArtifactBlock,
   BlockAnchor,
@@ -128,3 +134,5 @@ export {
 } from "./transcript/generation.ts";
 export type { TranscriptProjection } from "./transcript/reducer.ts";
 export { blockFor, EMPTY_PROJECTION, reduceTranscript } from "./transcript/reducer.ts";
+export type { CodeViewModel } from "./viewer/index.ts";
+export { codeViewFrom } from "./viewer/index.ts";

@@ -1,5 +1,10 @@
 import { blockKey, type TranscriptBlock } from "../../presentation/index.ts";
 import {
+  blockOffersOpenArtifact,
+  blockSelectsCodeViewer,
+  primaryArtifactId,
+} from "../../presentation/transcript/artifact-open.ts";
+import {
   COMMAND_CONTEXTS,
   type CommandContext,
   type CommandState,
@@ -60,6 +65,8 @@ export function overlayRegions(route: OverlayRoute): readonly FocusRegion[] {
       return [{ id: "overlay.confirm", label: "confirmation" }];
     case "controls":
       return [{ id: "overlay.controls", label: "controls" }];
+    case "artifact":
+      return [{ id: "overlay.artifact", label: "code viewer" }];
     case "none":
       return FRAME_REGIONS;
     default: {
@@ -306,7 +313,18 @@ export function commandStateFor(
     confirmationStale: stale,
     confirmationNeedsSecret:
       bound !== null && !stale && bound.secret !== null && state.secretGraphemes === 0,
+    hasOpenableCodeArtifact: openableCodeArtifact(selected),
   };
+}
+
+function openableCodeArtifact(block: TranscriptBlock | null): boolean {
+  if (block === null || !blockOffersOpenArtifact(block)) {
+    return false;
+  }
+  if (!blockSelectsCodeViewer(block)) {
+    return false;
+  }
+  return primaryArtifactId(block) !== null;
 }
 
 function selectedBlock(

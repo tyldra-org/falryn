@@ -117,6 +117,8 @@ export type CommandState = {
   readonly confirmationNeedsSecret: boolean;
   /** Whether any cancellable work is in flight. Nothing runs work yet. */
   readonly hasRunningWork: boolean;
+  /** Whether the selected entry's artifact opens as a code viewer in this build. */
+  readonly hasOpenableCodeArtifact: boolean;
 };
 
 /** The state of a shell with nothing behind it, which is every run today. */
@@ -137,6 +139,7 @@ export const EMPTY_COMMAND_STATE: CommandState = {
   confirmationStale: false,
   confirmationNeedsSecret: false,
   hasRunningWork: false,
+  hasOpenableCodeArtifact: false,
 };
 
 export type ShellCommand = {
@@ -366,11 +369,13 @@ export const SHELL_COMMANDS: readonly ShellCommand[] = [
     context: "transcript",
     // No default key. The command exists because `transcript.open-artifact` is a
     // route the projection can return, and a route with no command is an offer
-    // nothing honours. The typed viewer exists; this surface does not mount it,
-    // so a key here would still be a promise the overlay cannot keep.
+    // nothing honours. Code artifacts mount in the overlay when selected.
     defaultBinding: null,
     keywords: ["artifact", "open", "export"],
-    availability: () => unavailable("there is no artifact viewer yet"),
+    availability: (state) =>
+      state.hasOpenableCodeArtifact
+        ? AVAILABLE
+        : unavailable("there is no code artifact to open for this entry"),
   },
   {
     id: "transcript.showDiagnostics",

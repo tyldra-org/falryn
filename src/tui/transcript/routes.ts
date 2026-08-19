@@ -33,10 +33,9 @@ export function commandForRoute(route: ExpansionRoute): string {
  * One sentence offering a route, in the terms a reader can act on.
  *
  * The key when there is one, the command's name when there is not, and the
- * reason when the command exists but cannot run. That third case is the one
- * that matters: an artifact viewer does not exist in this build, so a block
- * clipped from an artifact must say "opening artifacts is unavailable: no
- * artifact viewer yet" rather than offering a key that would do nothing.
+ * reason when the command exists but cannot run. When a code artifact is
+ * selected but no viewer is attached, the overlay says so rather than offering
+ * a key that would open an empty surface.
  */
 export function describeRouteWith(rows: readonly CommandEntry[], route: ExpansionRoute): string {
   const id = commandForRoute(route);
