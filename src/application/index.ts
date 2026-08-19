@@ -210,6 +210,8 @@ export type {
 export { createScopeTree, MAX_LIVE_SCOPES, MAX_SCOPE_DEPTH } from "./scope-tree.ts";
 export type { QueryWorkspaceSessionsInput } from "./session-catalog.ts";
 export { editWorkspaceSessionCatalog, queryWorkspaceSessions } from "./session-catalog.ts";
+export type { WorkspaceBinding } from "./session-isolation.ts";
+export { isolateWorkspaceSessions } from "./session-isolation.ts";
 export type { ControlWorkspaceSessionReplayInput } from "./session-replay-control.ts";
 export { controlWorkspaceSessionReplay } from "./session-replay-control.ts";
 export type { ResumeWorkspaceSessionInput } from "./session-resume.ts";
