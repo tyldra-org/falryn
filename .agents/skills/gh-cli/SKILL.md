@@ -184,6 +184,6 @@ After GitHub mutations: exact repo/project and object URLs/numbers; created/upda
 | **origin-cli** | `origin` syntax + Origin process — not `gh` |
 | **`origin`** (Cursor built-in) | Install/login repair for Origin CLI only |
 
-Project-specific delivery orchestration (selectors, stop rules, repo docs) lives in that project's loop skill — for example **falryn-loop** for Falryn. This skill supplies the generic GitHub and Project mechanics those loops call.
+Project-specific delivery orchestration (selectors, stop rules, repo docs) lives in that project's loop skill. This skill supplies the generic GitHub and Project mechanics those loops call. Repositories may **vendor** this skill under `.agents/skills/` so every checkout gets the same guidance without a global install.
 
 Do not document `origin pr` here — that is **origin-cli**. Do not document `git commit` / rebase / force-push here — that is **git-workflow**.

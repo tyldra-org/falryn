@@ -26,7 +26,9 @@ contracts apply only when that agent is given one of those mode prompts.
 
 1. Read any applicable personal/global agent guidance, then this file.
 2. Load skills from [`.agents/skills/`](.agents/skills/README.md) as gated below.
-   They are vendored here so they resolve for every checkout.
+   **Prefer the vendored copy in this repo** — it is what every checkout gets,
+   including contributors without `~/.agents/skills`. Universal skills here stay
+   project-agnostic; Falryn-specific delivery lives in `falryn-loop` only.
 3. This repo is GitHub-only: `tyldra-org/falryn`. `git remote origin` is
    github.com. Do not add `origin.cursor.com` remotes or load `origin-cli`
    for Falryn work. Companion docs: `tyldra-org/falryn-docs`.
@@ -58,6 +60,10 @@ contracts apply only when that agent is given one of those mode prompts.
 ## Required skills
 
 Load from `.agents/skills/` (see the README there for the full table).
+
+**Vendored skills (every checkout):** universal (`git-workflow`, `gh-cli`), stack
+(`typescript-best-practices`, `opentui`), and project loop (`falryn-loop`). Repo
+copy wins over personal `~/.agents/skills/`. Details: [`.agents/skills/README.md`](.agents/skills/README.md).
 
 Skill split: `git-workflow` is `git` porcelain and safety. `gh-cli` is GitHub `gh`
 (syntax and process). Falryn does not use Cursor Origin. The global `origin-cli`

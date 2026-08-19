@@ -16,7 +16,7 @@ Canonical contract: `falryn-docs/DEVELOPMENT.md` (Deliver, Next, merge, Project 
 
 Generic GitHub lifecycle (assign, **In Progress** / **Done**, post-merge reconcile, serial vs single-child patterns): **gh-cli** → [issue-lifecycle.md](../gh-cli/process/issue-lifecycle.md). Local default-branch sync after merge: **git-workflow** → [delivery-checkout.md](../git-workflow/reference/delivery-checkout.md).
 
-**Sync.** Edit `~/.agents/skills/falryn-loop/SKILL.md`, then copy it to `falryn/.agents/skills/falryn-loop/SKILL.md`.
+**Distribution.** The copy under `falryn/.agents/skills/falryn-loop/` is what contributors receive — commit skill changes here. Maintainers who also keep `~/.agents/skills/falryn-loop/` can sync with `.agents/skills/sync-from-global.sh` (reverse: copy repo → global after editing in-repo).
 
 ## Single controller
 

@@ -30,6 +30,8 @@ After GitHub merges land: `gh-cli` → [issue-lifecycle.md](../gh-cli/process/is
 
 Load `git-workflow` whenever git history changes. Add `gh-cli` or `origin-cli` when the host is GitHub or Origin. If both hosts apply, say which command targets which host.
 
+Repositories may vendor this skill under `.agents/skills/` for checkout-local resolution; skill content stays host-agnostic.
+
 ## How to use
 
 ### 1. Resolve context
