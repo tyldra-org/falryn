@@ -72,9 +72,10 @@ gh pr merge <n> --repo <owner/repo> --match-head-commit <reviewed-head-sha> \
 Never use `--body-file` for a commit or merge result.
 
 Require checks and reviews to complete before invoking the merge by default.
-Wait for green via [ci.md](ci.md): background
-`gh run watch RUN_ID --exit-status`, not a foreground wait. Re-read head
-SHA and required checks immediately before merge.
+Wait for green via [ci.md](ci.md): **foreground** `gh run watch` during
+**Deliver** / **Parent chain** (same run through merge and next child);
+background watch for ordinary work. Re-read head SHA and required checks
+immediately before merge.
 On a branch governed by a merge queue, `gh pr merge` can enable deferred or
 automatic landing even without an explicit `--auto` flag. Treat that as
 auto-merge: explain that the command will queue or defer the PR and obtain

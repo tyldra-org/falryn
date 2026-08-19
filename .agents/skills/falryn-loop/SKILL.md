@@ -73,6 +73,10 @@ Every remaining native child, serial. Same [Child cycle](#child-cycle-every-falr
 
 Do **not** end the turn after merge, opened PR, CI start, or a status report while **#264-style** siblings remain and the host did not cut the turn.
 
+Do **not** stop because the next sibling looks large, needs extra planning, or would make a long message. After reconcile, **start step 1** for that sibling immediately — readiness, then branch, then code.
+
+Do **not** write deferrals such as “continuing in the next step”, “unless you want to pause”, or “say the word to continue”. Those are Parent-issue handoffs, not Parent chain.
+
 Do **not** emit `Deliver — Target: Issue #<next sibling>` mid-chain (Parent-issue handoff form).
 
 `Suggested next prompt: Deliver — Target: Parent chain #N` is **only** for host-ended CI/merge/reconcile mid-child.
