@@ -2261,6 +2261,30 @@ export {
   sessionPhaseLabel,
 } from "./session-lifecycle.ts";
 export type {
+  SessionRecoveryBackupPlan,
+  SessionRecoveryConfirmation,
+  SessionRecoveryConfirmationRequest,
+  SessionRecoveryDiagnosticsPlan,
+  SessionRecoveryError,
+  SessionRecoveryErrorCode,
+  SessionRecoveryExportPlan,
+  SessionRecoveryImportPlan,
+  SessionRecoveryInput,
+  SessionRecoveryInspectBackupPlan,
+  SessionRecoveryKind,
+  SessionRecoveryPlan,
+  SessionRecoveryProvenance,
+  SessionRecoveryRestorePlan,
+} from "./session-recovery.ts";
+export {
+  describeSessionRecoveryError,
+  planSessionRecovery,
+  SESSION_RECOVERY_KINDS,
+  SESSION_RECOVERY_SOURCE,
+  SESSION_RECOVERY_VERSION,
+  sessionRecoveryConfirmationRequest,
+} from "./session-recovery.ts";
+export type {
   ExportRecordEntity,
   ExportRecordLine,
   ImportError,
