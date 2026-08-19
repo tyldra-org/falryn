@@ -12,7 +12,10 @@ agent without a personal `~/.agents/skills` install — resolves the same guidan
 | **Stack** | `typescript-best-practices`, `opentui` | Tool/framework guidance | Vendored in repo |
 | **Project loop** | `falryn-loop` | Falryn selectors; delegates to universal | Vendored in repo |
 
-**Content rules:** universal skills never import Falryn product names. `falryn-loop` owns Falryn delivery selectors and **delegates** git/GitHub mechanics to the universal tier — it does not duplicate them.
+**Content rules:** universal skills never import product or repo names. A
+**project loop** skill (for example `falryn-loop`) owns that repo's delivery
+selectors, forbidden stops, and any CI-wait overrides — and **delegates** git/GitHub
+mechanics to the universal tier without duplicating them.
 
 **Distribution rule:** what lives under `.agents/skills/` in git is what users get.
 Edit here (or sync into here before merge) when changing skills contributors should see.
