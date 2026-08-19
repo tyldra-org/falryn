@@ -1038,17 +1038,13 @@ content, stored as bytes outside SQLite and described by a durable record:
   than eight parents on one child. Viewers expand `gzip` under decoded-byte and
   ratio ceilings, select code, diff, document, media, or diagnostic from media
   type and origin, and report complete, truncated, transformed, stale, missing,
-  quarantined, or redacted. Export, replay, and crash recovery remain later
-  children of
-  [#115](https://github.com/tyldra-org/falryn/issues/115).
+  quarantined, or redacted. Backup, restore, retention, and support diagnostics
+  remain [#121](https://github.com/tyldra-org/falryn/issues/121).
 
 Not yet present in this area: reachability garbage collection driven by session
-retention, pinning, and export dependency
-([#121](https://github.com/tyldra-org/falryn/issues/121)); startup recovery
-of interrupted writes and export foundations
-([#15](https://github.com/tyldra-org/falryn/issues/15)); corruption and
-missing-blob detection
-([#120](https://github.com/tyldra-org/falryn/issues/120)). The typed artifact
+retention, pinning, and export dependency, plus backup, restore, and support
+diagnostics
+([#121](https://github.com/tyldra-org/falryn/issues/121)). The typed artifact
 viewer is in `falryn/src/domain/artifact-view.ts` and
 `falryn/src/application/artifact-view.ts`; the transcript overlay that would
 mount it is still later
@@ -1115,6 +1111,23 @@ this by run attribution; records are not, because attributing them needs a
 column on four more tables. The issue's own design scopes the concurrency
 guarantee to bytes and to simultaneous *startup*, which is covered; the general
 case is follow-up work rather than a hidden TODO.
+
+[#120](https://github.com/tyldra-org/falryn/issues/120) extends that pass to
+artifacts that already claimed to be available, and records the open-path
+refusal for schema drift:
+
+- **a finalized artifact is re-hashed from its stored bytes.** Intact stays
+  `available` and is not counted as a repair. Bytes that no longer hash become
+  `quarantined` and are moved aside. Bytes that are gone become `missing`. The
+  original finalized time is kept, because this pass did not finish an ingest;
+- **a database recorded newer than this build is refused at open.**
+  `schema-too-new` names both versions, does not downgrade, and does not delete
+  the file. Applied SQL that no longer matches this build is
+  `checksum-mismatch`. Both already lived on the store; this issue is the
+  recovery claim that they are the schema-drift answers.
+
+Low disk space, stale workspace identity, backup, restore, and retention remain
+[#121](https://github.com/tyldra-org/falryn/issues/121).
 
 The export foundations introduced by
 [#320](https://github.com/tyldra-org/falryn/issues/320) turn a selection of
@@ -1210,9 +1223,9 @@ and fork without composing them into a command:
   Copying an event tree for rewind remains
   [#257](https://github.com/tyldra-org/falryn/issues/257);
 
-Neither import nor replay is composed into `src/main.ts`. Crash recovery,
-schema drift, and missing-blob repair remain
-[#120](https://github.com/tyldra-org/falryn/issues/120).
+Neither import nor replay is composed into `src/main.ts`. Backup, restore,
+retention, and support diagnostics remain
+[#121](https://github.com/tyldra-org/falryn/issues/121).
 
 The seams closed by
 [#323](https://github.com/tyldra-org/falryn/issues/323) complete two of
@@ -4092,9 +4105,8 @@ session/turn producer, or live transcript producer. The remaining gaps are:
   adapter, and the `finalize-artifacts` participant all exist and are composed,
   and nothing in a real run ingests bytes, because the tools and providers that
   would are later work. Also absent from this area: reachability garbage
-  collection, crash recovery, and backup/restore, each
-  owned by [#15](https://github.com/tyldra-org/falryn/issues/15),
-  [#120](https://github.com/tyldra-org/falryn/issues/120), or
+  collection, backup, restore, and support diagnostics, each
+  owned by [#15](https://github.com/tyldra-org/falryn/issues/15) or
   [#121](https://github.com/tyldra-org/falryn/issues/121);
 - any composition of the configuration loader into a running program.
   `src/main.ts` constructs no loader, so no configuration file is read on a real

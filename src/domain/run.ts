@@ -68,7 +68,7 @@ export const NO_CRASH_SIGNALS: CrashSignals = {
   sharedMemoryPresent: false,
 };
 
-/** What recovery concluded about one artifact left in the reserved state. */
+/** What recovery concluded about one artifact the pass examined. */
 export const ARTIFACT_RECOVERY_OUTCOMES = [
   /** The bytes were there and verified. The record is now readable. */
   "available",
