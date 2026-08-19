@@ -101,6 +101,8 @@ Use built-in Project workflows for deterministic state transitions such as auto-
 
 Before enabling automation, test a narrow example and check for loops, cross-repository scope, archived-item behavior, and whether manual states will be overwritten.
 
+**Automation is not completion proof.** After merge or close, verify issue state, Project fields, and parent rollups per [issue-lifecycle.md](issue-lifecycle.md). Repair explicitly when the visible board is wrong.
+
 ## Audit
 
 Verify:

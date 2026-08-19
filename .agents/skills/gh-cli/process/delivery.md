@@ -65,20 +65,11 @@ After all merges complete, audit the bundle as one unit:
 - release notes, changelogs, and documentation describe the landed state;
 - no repository still presents the bundle as pending.
 
+Per-issue Project status, assignees, and parent/child rollups: [issue-lifecycle.md](issue-lifecycle.md). Automation may update fields on close; always verify and repair.
+
 ## Synchronize local checkouts
 
-Local cleanup happens only after remote delivery succeeds. For each checkout:
-
-1. Inspect branch, upstream, worktree status, and in-progress Git operations.
-2. Resolve the remote default branch and fetch it.
-3. Continue only for a clean, attached checkout with no merge, rebase, cherry-pick, revert, or bisect in progress.
-4. Verify the local default branch can fast-forward to the remote default, or create its tracking branch if it does not exist locally.
-5. Switch to the default branch and fast-forward only.
-6. Re-read branch, upstream, SHA, and worktree status.
-
-Leave dirty, detached, conflicted, divergent, missing, or worktree-locked checkouts untouched and report them. Never stash, reset, rebase, force, discard changes, resolve conflicts, or delete a branch merely to make post-merge cleanup look complete.
-
-Branch deletion is a separate destructive action. A successful merge or synchronized checkout does not authorize deleting local or remote branches.
+Local cleanup happens only after remote delivery succeeds. For each checkout, follow **git-workflow** → [delivery-checkout.md](../../git-workflow/reference/delivery-checkout.md).
 
 ## Report
 

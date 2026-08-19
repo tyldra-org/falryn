@@ -110,6 +110,9 @@ Falryn-specific reminders (for agents in this workflow):
 - End Plan/Implement/Verify/Deliver/Next/merge/release reports with one
   copy-ready `Suggested next prompt: ...` from current GitHub state (exact
   numbers/titles; never placeholders). A suggestion does not authorize action.
+  **Exception:** an in-flight `Deliver — Target: Parent chain #N` with
+  remaining siblings must not end with a resume prompt — continue the next
+  child in the same run (`falryn-loop` wins).
 - Live planning: [Falryn Roadmap](https://github.com/orgs/tyldra-org/projects/1).
   Design ownership: `falryn-docs/DOCUMENTATION-MAP.md`. Implementation truth:
   `CURRENT-STATE.md` (update only from current source + validation).
