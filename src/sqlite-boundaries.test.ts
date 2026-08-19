@@ -394,6 +394,24 @@ describe("an export package", () => {
   });
 });
 
+describe("session import and replay", () => {
+  const REPLAY = "data/session-replay.ts";
+
+  test("never names a command runner, provider, or network", async () => {
+    const source = await readSource(REPLAY);
+    expect(source).not.toMatch(
+      /\b(CommandRunnerPort|ProviderPort|Bun\.spawn|child_process|fetch\()\b/,
+    );
+  });
+
+  test("can never reach a credential", async () => {
+    const credentials =
+      /\b(CredentialStorePort|SecretResolverPort|CredentialReference|SecretRequest)\b/;
+    expect(credentials.test(await readSource(REPLAY))).toBe(false);
+    expect(credentials.test(await readSource("domain/session-replay.ts"))).toBe(false);
+  });
+});
+
 describe("the product tables", () => {
   test("are named only by the area that owns their SQL", async () => {
     // Snake-cased identifiers only. `sessions` and `turns` are also ordinary
