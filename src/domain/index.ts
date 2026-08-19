@@ -2259,6 +2259,20 @@ export {
   parseExportRecordLine,
 } from "./session-replay.ts";
 export type {
+  SessionResumeError,
+  SessionResumeErrorCode,
+  SessionResumeInput,
+  SessionResumeKind,
+  SessionResumePlan,
+  SessionResumeProvenance,
+} from "./session-resume.ts";
+export {
+  describeSessionResumeError,
+  planSessionResume,
+  SESSION_RESUME_SOURCE,
+  SESSION_RESUME_VERSION,
+} from "./session-resume.ts";
+export type {
   ParticipantReport,
   ParticipantStatus,
   PhaseReport,
