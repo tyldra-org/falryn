@@ -35,6 +35,8 @@ Continue only for a standalone PR-sized issue or native child, including standal
 5. **Merge.** Authorized by this Deliver. Docs companions first, application last. Squash only. Final subject is the reviewed PR title. No body by default. At most one `Closes #N` / `Refs …` footer. Re-read heads, required checks, reviews, mergeability, method, and companion order immediately before each merge. Stop on any changed or failed precondition.
 6. **Reconcile.** Issue and Project status, docs truth, `CURRENT-STATE.md` Planning frontier when the live frontier changed. Fast-forward both local mains when clean and safe. Then Next (standalone) or parent-chain continuation (native child). Do not jump to an unrelated Project item before the parent chain is reconciled.
 
+A child's cycle is complete only after docs-first merge, application merge, and issue/Project reconcile. Opening PRs or starting CI is not a completed cycle and is not a reason to emit a next prompt.
+
 ## Deliver — Parent issue #N
 
 Never a parent branch or mega-PR. Select the first ordered unblocked incomplete child. Run that child's full cycle. Stop if siblings remain:
@@ -43,13 +45,23 @@ Never a parent branch or mega-PR. Select the first ordered unblocked incomplete 
 Suggested next prompt: Deliver — Target: Issue #<exact child>
 ```
 
+Do not emit that sibling prompt while the current child's CI, merge, or reconcile is still unfinished. Resume the same `Parent issue #N` until that child has landed.
+
 Last required child: run the parent's integrated verification in-loop. Close the parent only when it passes. Otherwise one integration child and its Deliver prompt. After a passing parent, run Next and report. Do not start the next parent or standalone in the same run.
 
 ## Deliver — Parent chain #N
 
 Same scheduler as Parent issue, different stop. After each child's complete cycle, continue to the next ordered unblocked incomplete sibling in this run. Still one child, one delivery PR (plus companions), serial. Never a parent branch or mega-PR.
 
-Stop the chain on awaiting-input, a failed merge precondition, or three repair passes without progress. Report the exact child plus the matching resume prompt (`Deliver — Target: Issue #<child>`).
+Do not emit `Deliver — Target: Issue #<next sibling>` during an in-flight chain. That form is the Parent-issue one-child stop, not a chain continuation.
+
+Stop the chain on awaiting-input, a failed merge precondition, or three repair passes without progress. Report the exact child plus `Deliver — Target: Issue #<child>`. CI wait is none of those stops.
+
+If the host ends the turn during CI or merge, report the PR(s) and head SHA(s) and resume the same chain:
+
+```text
+Suggested next prompt: Deliver — Target: Parent chain #<same parent>
+```
 
 Last required child: parent's integrated verification in-loop, same as Parent issue. After a passing parent, run Next and report. Do not start the next unrelated parent or standalone. Next never auto-emits `Parent chain`. That selector is user-initiated. `Docs parent chain #N` is the same loop on `falryn-docs`.
 
@@ -59,14 +71,16 @@ Merge gates are the repository ruleset required status checks, and required revi
 
 ## CI and long waits
 
-While waiting for required checks between Verification and Merge, and for post-merge frontier reconcile PRs, run the wait in the background by default. Do not hold the turn on multi-minute foreground sleeps. Report the PR(s) and head SHA(s) being watched, then continue other work or end the turn. When the watcher completes, re-read merge preconditions immediately before each authorized squash-merge. Procedure lives in `gh-cli` → [ci.md](../gh-cli/process/ci.md).
+Background `gh run watch`. Do not foreground-poll. That wait is not a Deliver stop, not a completed child, and not permission to emit Next or a next-sibling prompt.
+
+Keep useful in-scope work going (the other companion PR, local parent-seam tests, merge-precondition notes). If the host ends the turn, report the PR(s) and head SHA(s) and resume the **same** Deliver target. When the watcher completes, re-read merge preconditions and continue merge → reconcile → chain continuation. Procedure lives in `gh-cli` → [ci.md](../gh-cli/process/ci.md).
 
 ## Next routing
 
 Read Project, issue graph, blockers, open bundles, review/check state, and `CURRENT-STATE.md`. Board position, creation-order visuals, and recent updates are not priority.
 
 1. Validated Planning frontier plus `DEVELOPMENT.md` next-prompt table. Resolve target and state only. Do not echo manual Plan/Implement/Verify/Merge in autonomous reports. If the frontier conflicts with live GitHub, name the mismatch and follow live state.
-2. Resume that bundle or parent chain when implementation is still incomplete. A pushed PR waiting only on CI, merge, or reconcile is leftover work, not the Next target. Name it in the report and pick the next frontier item. Unrelated In Progress items do not outrank the frontier.
+2. Resume that bundle or parent chain when implementation, CI, merge, or reconcile is still unfinished. An in-flight delivery PR is the current target, not leftover to skip. Unrelated In Progress items do not outrank the frontier.
 3. Else: Priority P0→P3 when set, then earliest eligible native child or root by stable issue creation order.
 4. Emit `Deliver — Target: Issue #N` or `Deliver — Target: Parent issue #N` for every eligible Falryn issue or parent. Todo/Ready/mid-delivery is not a reason to emit a manual mode. Do not auto-emit `Parent chain`.
 5. Manual prompt only outside Deliver coverage (docs-only, PR/milestone audit, authorized release). Blocked by product or external prerequisite → `Suggested next prompt: none`.
@@ -82,7 +96,8 @@ Deliver / Next suggest only:
 ```text
 Suggested next prompt: Deliver — Target: Issue #<exact issue>
 Suggested next prompt: Deliver — Target: Parent issue #<exact parent>
+Suggested next prompt: Deliver — Target: Parent chain #<exact parent>
 Suggested next prompt: none
 ```
 
-`none` names the exact prerequisite. Next includes the observed active or blocked state that led to the choice.
+`Parent chain` is resume-only for an in-flight chain (host-ended CI/merge). Next never emits it. `none` names the exact prerequisite. Next includes the observed active or blocked state that led to the choice.
