@@ -36,6 +36,8 @@ import {
   createMapArtifactViewer,
   fixtureCodeArtifactView,
   fixtureDiffArtifactView,
+  fixtureDocumentArtifactView,
+  fixtureMediaArtifactView,
 } from "../viewer/fixtures.ts";
 import { ShellApp } from "./shell-app.tsx";
 
@@ -515,6 +517,72 @@ describe("the code artifact viewer", () => {
 
     await shell.type("v");
     expect(await shell.frame()).toContain("split");
+  });
+
+  test("opens a markdown document and restores the transcript on close", async () => {
+    const DOCUMENT = "# Release notes\n\nShipped viewers.";
+    const markdownBlock = {
+      ...artifactBlock(),
+      mediaType: "text/markdown",
+      summary: complete("Captured the notes."),
+    };
+    const viewer = createMapArtifactViewer({
+      [FIXTURE_ARTIFACT]: fixtureDocumentArtifactView({
+        id: "artifact-fixture",
+        text: DOCUMENT,
+      }),
+    });
+
+    using shell = await open(
+      projectionOf([markdownBlock]),
+      { columns: 100, rows: 30 },
+      { artifactViewer: viewer },
+    );
+    await shell.press("p", { ctrl: true });
+    await shell.type("transcript.openArtifact");
+    shell.setup.mockInput.pressEnter();
+
+    const opened = await shell.frame();
+    expect(opened).toContain("Document");
+    expect(opened).toContain("markdown · document");
+    expect(opened).toContain("Release notes");
+
+    await named(shell, "escape");
+    const restored = await shell.frame();
+    expect(restored).toContain("Captured the notes.");
+    expect(restored).not.toContain("Document");
+  });
+
+  test("opens a media summary for pdf and notebook artifacts", async () => {
+    for (const mediaType of ["application/pdf", "application/vnd.jupyter.notebook+json"] as const) {
+      const mediaBlock = {
+        ...artifactBlock(),
+        mediaType,
+        summary: complete("Captured the attachment."),
+      };
+      const viewer = createMapArtifactViewer({
+        [FIXTURE_ARTIFACT]: fixtureMediaArtifactView({
+          id: "artifact-fixture",
+          format: mediaType,
+          storedByteLength: 4096,
+          hexPreview: "25 50 44 46",
+        }),
+      });
+
+      using shell = await open(
+        projectionOf([mediaBlock]),
+        { columns: 100, rows: 30 },
+        { artifactViewer: viewer },
+      );
+      await shell.press("p", { ctrl: true });
+      await shell.type("transcript.openArtifact");
+      shell.setup.mockInput.pressEnter();
+
+      const opened = await shell.frame();
+      expect(opened).toContain("Media");
+      expect(opened).toContain(`${mediaType} · summary · 4096 bytes`);
+      expect(opened).toContain("25 50 44 46");
+    }
   });
 });
 

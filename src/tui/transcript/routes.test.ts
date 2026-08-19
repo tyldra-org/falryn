@@ -59,7 +59,7 @@ describe("a route whose command cannot run", () => {
     // key would still be the promise this whole mechanism exists to avoid.
     const described = describeRouteWith(rows(), "transcript.open-artifact");
     expect(described).toContain("unavailable");
-    expect(described).toContain("no code or diff artifact to open");
+    expect(described).toContain("no openable artifact");
   });
 
   test("names the diagnostics route's own reason rather than a shared one", () => {
