@@ -2226,6 +2226,22 @@ export {
   SESSION_CATALOG_VERSION,
 } from "./session-catalog.ts";
 export type {
+  IsolatedSession,
+  SessionIsolation,
+  SessionIsolationError,
+  SessionIsolationErrorCode,
+  SessionIsolationInput,
+  SessionIsolationProvenance,
+  SessionIsolationWarning,
+} from "./session-isolation.ts";
+export {
+  describeSessionIsolationError,
+  inspectSessionIsolation,
+  SESSION_ISOLATION_SOURCE,
+  SESSION_ISOLATION_VERSION,
+  SESSION_ISOLATION_WARNINGS,
+} from "./session-isolation.ts";
+export type {
   SessionCommand,
   SessionObservation,
   SessionPhase,
