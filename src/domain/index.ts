@@ -2205,6 +2205,27 @@ export {
   MAX_TRACKED_EVENTS_PER_STREAM,
 } from "./sequence.ts";
 export type {
+  SessionCatalog,
+  SessionCatalogEdit,
+  SessionCatalogEditInput,
+  SessionCatalogEntry,
+  SessionCatalogError,
+  SessionCatalogErrorCode,
+  SessionCatalogFilter,
+  SessionCatalogProvenance,
+  SessionCatalogQueryInput,
+} from "./session-catalog.ts";
+export {
+  describeSessionCatalogError,
+  editSessionCatalog,
+  MAX_SESSION_CATALOG,
+  MAX_SESSION_SEARCH_BYTES,
+  querySessionCatalog,
+  SESSION_CATALOG_FILTERS,
+  SESSION_CATALOG_SOURCE,
+  SESSION_CATALOG_VERSION,
+} from "./session-catalog.ts";
+export type {
   SessionCommand,
   SessionObservation,
   SessionPhase,
