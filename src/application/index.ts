@@ -229,6 +229,7 @@ export type {
   StructuralReducer,
 } from "./structural-reduce.ts";
 export { createStructuralReducer, structuralToEvidence } from "./structural-reduce.ts";
+export { adviseOutcome } from "./task-advisor.ts";
 export type { PlanOutcomeCommitsInput } from "./task-commit-plan.ts";
 export { planOutcomeCommits } from "./task-commit-plan.ts";
 export { decomposeOutcome } from "./task-decompose.ts";
