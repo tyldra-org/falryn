@@ -65,7 +65,8 @@ Two common orchestration patterns. A project-specific loop names its selectors; 
 - failed merge preconditions;
 - exhausted repair budget defined by the project loop.
 
-CI wait is not a stop. Background-watch and continue.
+CI wait is not a stop. When a project-specific delivery skill is loaded, follow
+its serial-chain and CI-wait rules; otherwise background-watch per [ci.md](ci.md).
 
 While a serial chain is in flight, reports should state explicit progress, for example:
 

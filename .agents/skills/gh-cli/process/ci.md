@@ -49,6 +49,10 @@ PR-attached checks; for a GitHub Actions run, use `gh run watch`.
 (e.g. “wait here until green”). “Land this PR” / “merge when green” is **not**
 that — use background `gh run watch`, then merge after the re-read.
 
+A **project-specific delivery skill** (when loaded) may override this section
+for authorized merge runs. That skill wins on conflict; this file stays
+repo-agnostic.
+
 ## The bounded fix loop
 
 **Three attempts, then escalate.** Non-negotiable.

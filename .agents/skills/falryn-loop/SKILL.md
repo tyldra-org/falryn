@@ -73,6 +73,10 @@ Every remaining native child, serial. Same [Child cycle](#child-cycle-every-falr
 
 Do **not** end the turn after merge, opened PR, CI start, or a status report while **#264-style** siblings remain and the host did not cut the turn.
 
+Do **not** stop because the next sibling looks large, needs extra planning, or would make a long message. After reconcile, **start step 1** for that sibling immediately — readiness, then branch, then code.
+
+Do **not** write deferrals such as “continuing in the next step”, “unless you want to pause”, or “say the word to continue”. Those are Parent-issue handoffs, not Parent chain.
+
 Do **not** emit `Deliver — Target: Issue #<next sibling>` mid-chain (Parent-issue handoff form).
 
 `Suggested next prompt: Deliver — Target: Parent chain #N` is **only** for host-ended CI/merge/reconcile mid-child.
@@ -97,7 +101,21 @@ Merge gates: repository ruleset **required** status checks and required review-t
 
 ## CI and long waits
 
-Background `gh run watch` per **gh-cli** → [ci.md](../gh-cli/process/ci.md). Not a Deliver stop. If the host ends the turn, report PR URL(s), head SHA(s), and [chain progress](#chain-progress-include-in-reports); resume the same Deliver target.
+**Precedence:** this section overrides generic **gh-cli** [ci.md](../gh-cli/process/ci.md)
+background-watch defaults for Falryn **Deliver** runs only. Universal skills stay
+repo-agnostic.
+
+**Parent chain and Deliver:** CI is **not** a stop. Do **not** end the turn, write a status report, or emit a resume prompt while required checks are still running and the host has not cut the turn.
+
+**Foreground wait** in Deliver runs. Background `gh run watch` does not reliably resume the same agent turn when it finishes — if the host does not ping back, **run `gh run watch` in the foreground** and stay in the Deliver until green, failure, or a fix loop.
+
+```bash
+gh run watch RUN_ID --repo tyldra-org/falryn --exit-status
+```
+
+After green: re-read PR head SHA and required checks, then merge in the **same run** per step 6, reconcile per step 7, and continue the next sibling when Parent chain applies. Only use background watch when the **host ends the turn**; then report PR URL(s), head SHA(s), and [chain progress](#chain-progress-include-in-reports).
+
+On CI failure: bounded repair per **gh-cli** [ci.md](../gh-cli/process/ci.md); do not treat “CI started” as completion.
 
 ## Next routing
 
