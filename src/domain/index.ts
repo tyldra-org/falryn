@@ -2367,6 +2367,26 @@ export {
   TASK_JOIN_POLICIES,
 } from "./task-graph.ts";
 export type {
+  TaskValidationAdvice,
+  TaskValidationError,
+  TaskValidationErrorCode,
+  TaskValidationInput,
+  TaskValidationKind,
+  TaskValidationProvenance,
+  TaskValidationRecommendation,
+} from "./task-validation.ts";
+export {
+  describeTaskValidationError,
+  MAX_CRITERIA_PER_TASK,
+  MAX_CRITERION_BYTES,
+  MAX_VALIDATION_RECOMMENDATIONS,
+  MAX_VALIDATION_TASKS,
+  recommendTaskValidation,
+  TASK_VALIDATION_KINDS,
+  TASK_VALIDATION_SOURCE,
+  TASK_VALIDATION_VERSION,
+} from "./task-validation.ts";
+export type {
   ColorLevel,
   FlushReport,
   FlushStatus,
