@@ -68,6 +68,16 @@ describe("the resting state", () => {
     expect(commandStateFor(noticeState, [notice]).hasInspectableSelection).toBe(false);
     expect(commandStateFor(noticeState, [notice]).hasDiagnosticSelection).toBe(false);
   });
+
+  test("reports an openable code artifact for a selected typescript block", () => {
+    const artifact = everyBlockKind().find((block) => block.kind === "artifact");
+    if (artifact === undefined) {
+      throw new Error("the corpus no longer has an artifact block");
+    }
+    const key = blockKey(artifact.anchor);
+    const state = run([{ kind: "transcript", action: { kind: "reconcile", keys: [key] } }]);
+    expect(commandStateFor(state, [artifact]).hasOpenableCodeArtifact).toBe(true);
+  });
 });
 
 describe("opening an overlay", () => {
@@ -90,6 +100,9 @@ describe("opening an overlay", () => {
     expect(overlayRegions({ kind: "inspect", key: "process-exit" })[0]?.id).toBe("overlay.inspect");
     expect(overlayRegions({ kind: "confirm", id: "conf-1" })[0]?.id).toBe("overlay.confirm");
     expect(overlayRegions({ kind: "controls", panel: "session" })[0]?.id).toBe("overlay.controls");
+    expect(overlayRegions({ kind: "artifact", artifactId: "art-1" })[0]?.id).toBe(
+      "overlay.artifact",
+    );
     // With no overlay the frame's own regions are what is reachable.
     expect(overlayRegions({ kind: "none" })).toEqual(FRAME_REGIONS);
   });

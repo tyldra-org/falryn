@@ -1043,10 +1043,13 @@ content, stored as bytes outside SQLite and described by a durable record:
   ([#121](https://github.com/tyldra-org/falryn/issues/121)).
 
 Not yet present in this area: reachability garbage collection driven by session
-retention, pinning, and export dependency. The typed artifact
-viewer is in `falryn/src/domain/artifact-view.ts` and
-`falryn/src/application/artifact-view.ts`; the transcript overlay that would
-mount it is still later
+retention, pinning, and export dependency. The typed artifact viewer is in
+`falryn/src/domain/artifact-view.ts` and
+`falryn/src/application/artifact-view.ts`. The transcript mounts a
+syntax-highlighted code overlay for selected code artifacts when an
+`ArtifactViewer` port is attached
+([#265](https://github.com/tyldra-org/falryn/issues/265)); diff, document,
+media, and diagnostic overlays remain
 ([#264](https://github.com/tyldra-org/falryn/issues/264)).
 
 The startup recovery introduced by
@@ -2620,9 +2623,10 @@ time by the surface rather than trusted to have been withheld upstream, and its
 summary is still drawn, because a withheld block is not an invisible one.
 
 Every expansion route the projection can return now resolves to a registered
-command, and a control walks the union to prove it. Opening an artifact stays
-unavailable with its own reason: the typed viewer exists, but this surface does
-not mount it yet.
+command, and a control walks the union to prove it. Opening a code artifact runs
+`transcript.openArtifact` when the selected block's media type selects code and
+an `ArtifactViewer` is attached; other artifact kinds stay unavailable until
+their overlays land ([#264](https://github.com/tyldra-org/falryn/issues/264)).
 [#254](https://github.com/tyldra-org/falryn/issues/254) makes showing
 diagnostics the same overlay as `transcript.inspect` when the selected block is
 a tool, process, reasoning, or error entry and carries a non-completed outcome.
@@ -2644,8 +2648,9 @@ content is read from the projection every time it is drawn, so a revised block
 cannot be rendered from a stale copy. Boundary controls assert all of this,
 including that the surface re-derives no part of the block model it is given.
 
-What is **not** delivered by the surface: no dashboard, mounted artifact overlay, or diff
-viewer, and no inspection of user-input, model-text, file-change, repository,
+What is **not** delivered by the surface: no dashboard, diff, document, media, or
+diagnostic artifact overlays, and no inspection of user-input, model-text,
+file-change, repository,
 task-progress, notice, artifact, unknown, or outcome-only kinds. Duration is
 reported as a block's age relative
 to the transcript's newest block rather than as an elapsed time, because a block

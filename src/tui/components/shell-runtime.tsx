@@ -312,6 +312,7 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
         anchor: stateRef.current.transcript.anchor,
         selected: stateRef.current.transcript.selected,
         keys: options.transcriptKeys,
+        blocks: blocksRef.current,
       });
     },
     [options.onExit, options.transcriptKeys, gate, includeHeldPaste, submitComposer, confirm],

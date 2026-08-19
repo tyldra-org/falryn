@@ -229,7 +229,7 @@ export function everyBlockKind(): readonly TranscriptBlock[] {
       summary: complete("Captured the build log."),
       artifactIds: [FIXTURE_ARTIFACT],
       artifactId: FIXTURE_ARTIFACT,
-      mediaType: "text/plain",
+      mediaType: "text/typescript",
       availability: "available",
     },
   ];
