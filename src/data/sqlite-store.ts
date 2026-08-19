@@ -458,7 +458,10 @@ async function migrate(
     }
   }
 
-  const pending = migrations.filter((migration) => migration.version > recordedVersion);
+  const pending =
+    options.applyMigrations === false
+      ? []
+      : migrations.filter((migration) => migration.version > recordedVersion);
   if (pending.length === 0) {
     return ok({ applied, appliedThisRun: [], backupPath: null });
   }
@@ -626,6 +629,17 @@ function createStore(connection: SqliteConnectionPort, report: SqliteOpenReport)
     close(): Promise<SqliteCloseReport> {
       closing ??= runCloseSequence(connection);
       return closing;
+    },
+
+    backupInto(path: LocalPath, signal?: AbortSignal): Result<null, SqliteStoreError> {
+      if (closing !== null) {
+        return err(storeError({ code: "closed", operation: "backup", effect: "none" }));
+      }
+      if (isAborted(signal)) {
+        return err(storeError({ code: "cancelled", operation: "backup", effect: "none" }));
+      }
+      const copied = connection.backupInto(path);
+      return copied.ok ? ok(null) : err(storeErrorForFailure(copied.error, "backup"));
     },
 
     isClosed: () => closing !== null,

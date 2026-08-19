@@ -33,6 +33,13 @@ export {
   VERIFICATION_CHUNK_BYTES,
   verifyStoredBytes,
 } from "./artifact-store.ts";
+export type { BackupOptions } from "./backup.ts";
+export {
+  collectLocalDiagnostics,
+  createUserBackup,
+  inspectUserBackup,
+  restoreUserBackup,
+} from "./backup.ts";
 export type { DurableEventStore, StreamHead } from "./event-store.ts";
 export {
   createEventStoreShutdownParticipant,

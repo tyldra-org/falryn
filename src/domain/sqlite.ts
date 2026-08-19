@@ -466,6 +466,14 @@ export type SqliteStorePort = {
   /** Runs the close sequence. Idempotent; a second call reports the first result. */
   close(signal?: AbortSignal): Promise<SqliteCloseReport>;
 
+  /**
+   * Copies the whole database to a path that must not already exist.
+   *
+   * `VACUUM INTO` rather than a serialize-to-memory copy. The adapter leaves
+   * the copy owner-only. An existing target is refused rather than overwritten.
+   */
+  backupInto(path: LocalPath, signal?: AbortSignal): Result<null, SqliteStoreError>;
+
   isClosed(): boolean;
 };
 
@@ -479,4 +487,10 @@ export type SqliteStoreOptions = {
   readonly busyTimeoutMs?: number;
   /** Whether a missing database may be created. */
   readonly create?: boolean;
+  /**
+   * Whether pending migrations run after the recorded version is read.
+   *
+   * Inspecting a backup must not upgrade it. Default true.
+   */
+  readonly applyMigrations?: boolean;
 };

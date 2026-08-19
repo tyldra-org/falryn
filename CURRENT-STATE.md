@@ -1038,13 +1038,12 @@ content, stored as bytes outside SQLite and described by a durable record:
   than eight parents on one child. Viewers expand `gzip` under decoded-byte and
   ratio ceilings, select code, diff, document, media, or diagnostic from media
   type and origin, and report complete, truncated, transformed, stale, missing,
-  quarantined, or redacted. Backup, restore, retention, and support diagnostics
-  remain [#121](https://github.com/tyldra-org/falryn/issues/121).
+  quarantined, or redacted. Named user backup, inspect, restore, and local
+  diagnostics exist as data-layer operations
+  ([#121](https://github.com/tyldra-org/falryn/issues/121)).
 
 Not yet present in this area: reachability garbage collection driven by session
-retention, pinning, and export dependency, plus backup, restore, and support
-diagnostics
-([#121](https://github.com/tyldra-org/falryn/issues/121)). The typed artifact
+retention, pinning, and export dependency. The typed artifact
 viewer is in `falryn/src/domain/artifact-view.ts` and
 `falryn/src/application/artifact-view.ts`; the transcript overlay that would
 mount it is still later
@@ -1126,8 +1125,9 @@ refusal for schema drift:
   `checksum-mismatch`. Both already lived on the store; this issue is the
   recovery claim that they are the schema-drift answers.
 
-Low disk space, stale workspace identity, backup, restore, and retention remain
-[#121](https://github.com/tyldra-org/falryn/issues/121).
+Low disk space and stale workspace identity remain later work. Retention
+reporting and artifact-store sweep already exist; reachability garbage
+collection across sessions, pins, and exports does not.
 
 The export foundations introduced by
 [#320](https://github.com/tyldra-org/falryn/issues/320) turn a selection of
@@ -1223,9 +1223,28 @@ and fork without composing them into a command:
   Copying an event tree for rewind remains
   [#257](https://github.com/tyldra-org/falryn/issues/257);
 
-Neither import nor replay is composed into `src/main.ts`. Backup, restore,
-retention, and support diagnostics remain
-[#121](https://github.com/tyldra-org/falryn/issues/121).
+Neither import nor replay is composed into `src/main.ts`.
+
+[#121](https://github.com/tyldra-org/falryn/issues/121) adds a named user
+backup of the live database without composing a command:
+
+- **a named copy is taken with `VACUUM INTO`.** The file is
+  `falryn-user-backup-<name>.sqlite`, distinct from a migration backup. An
+  existing target is refused rather than overwritten. The adapter leaves the
+  copy owner-only;
+- **inspecting a backup never upgrades it.** The store can open with
+  `applyMigrations: false`, report the recorded schema version, and close.
+  `schema-too-new` and `checksum-mismatch` still refuse the file;
+- **restore requires the live store to be closed.** The live file is renamed
+  aside to `falryn.sqlite.previous` rather than deleted, then the backup is
+  copied onto the live path. A previous file that is already there is refused.
+  Artifact bytes are not part of this copy;
+- **local diagnostics are facts about this machine.** Schema version, crash
+  signals, and an optional artifact sweep. They are not a support bundle and
+  they are not transmitted.
+
+Neither backup, inspect, restore, nor local diagnostics is composed into
+`src/main.ts`. There is still no support bundle.
 
 The seams closed by
 [#323](https://github.com/tyldra-org/falryn/issues/323) complete two of
@@ -4105,17 +4124,19 @@ session/turn producer, or live transcript producer. The remaining gaps are:
   adapter, and the `finalize-artifacts` participant all exist and are composed,
   and nothing in a real run ingests bytes, because the tools and providers that
   would are later work. Also absent from this area: reachability garbage
-  collection, backup, restore, and support diagnostics, each
-  owned by [#15](https://github.com/tyldra-org/falryn/issues/15) or
-  [#121](https://github.com/tyldra-org/falryn/issues/121);
+  collection. Named user backup, inspect, restore, and local diagnostics exist
+  as data-layer operations
+  ([#121](https://github.com/tyldra-org/falryn/issues/121)) and are not composed
+  into a command. There is no support bundle;
 - any composition of the configuration loader into a running program.
   `src/main.ts` constructs no loader, so no configuration file is read on a real
   run;
 - public local-data behavior beyond `data reset` and `data uninstall`.
   Those command surfaces assemble a complete v0.1 ownership view, always
   render a measured plan first, and only pass a re-derived plan to guarded
-  execution when `--confirm` repeats its exact identity. Retention reporting
-  and startup reconciliation still have no command surface. The owners that
+  execution when `--confirm` repeats its exact identity. Retention reporting,
+  startup reconciliation, user backup, restore, and local diagnostics still
+  have no command surface. The owners that
   will register the remaining ownership classes — memory, extensions — do not
   exist, and each remains reported as unregistered rather than assumed absent;
 - headless product behavior beyond `config`, `data`, and `doctor`, or live conversation

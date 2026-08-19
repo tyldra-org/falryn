@@ -148,6 +148,16 @@ describe("a fresh database", () => {
     await store.close();
   });
 
+  test("copies itself with VACUUM INTO to a path that is not already there", async () => {
+    const root = await temporaryRoot();
+    const store = await openOrThrow(root, ONE_TABLE);
+    const target = localPath(`${root}/copy.sqlite`);
+
+    expect(store.backupInto(target).ok).toBe(true);
+    expect(store.backupInto(target).ok).toBe(false);
+    await store.close();
+  });
+
   test("closes at schema version zero when the build declares no migration", async () => {
     // The v0.1 production path exactly: a database, a bookkeeping table, an
     // integrity check, and nothing else.
@@ -637,6 +647,8 @@ describe("a closed store", () => {
 
     expect(!read.ok && read.error.code).toBe("closed");
     expect(!written.ok && written.error.code).toBe("closed");
+    const copied = store.backupInto(localPath(`${root}/copy.sqlite`));
+    expect(!copied.ok && copied.error.code).toBe("closed");
   });
 
   test("closes once, however many times it is asked", async () => {
