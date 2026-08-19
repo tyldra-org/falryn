@@ -52,6 +52,10 @@ export type MemoryId = Brand<string, "MemoryId">;
 export type ObservationId = Brand<string, "ObservationId">;
 /** One reviewable operational recommendation. Never auto-applied. */
 export type RecommendationId = Brand<string, "RecommendationId">;
+/** A user-stated outcome to be decomposed into bounded tasks. */
+export type OutcomeId = Brand<string, "OutcomeId">;
+/** One bounded task produced from a user outcome. Advice only; never an execution. */
+export type TaskId = Brand<string, "TaskId">;
 export type IdempotencyKey = Brand<string, "IdempotencyKey">;
 /** Which provider a model attempt was routed to, such as an API vendor. */
 export type ProviderId = Brand<string, "ProviderId">;
@@ -157,6 +161,8 @@ export const historyCheckpointId =
 export const memoryId = createIdentifierCodec<MemoryId>("memoryId");
 export const observationId = createIdentifierCodec<ObservationId>("observationId");
 export const recommendationId = createIdentifierCodec<RecommendationId>("recommendationId");
+export const outcomeId = createIdentifierCodec<OutcomeId>("outcomeId");
+export const taskId = createIdentifierCodec<TaskId>("taskId");
 export const idempotencyKey = createIdentifierCodec<IdempotencyKey>("idempotencyKey");
 export const providerId = createIdentifierCodec<ProviderId>("providerId");
 export const modelId = createIdentifierCodec<ModelId>("modelId");

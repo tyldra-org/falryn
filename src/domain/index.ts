@@ -1181,6 +1181,7 @@ export type {
   ModelAttemptId,
   ModelId,
   ObservationId,
+  OutcomeId,
   ProcessCaptureId,
   ProviderId,
   PtySessionId,
@@ -1191,6 +1192,7 @@ export type {
   ServiceGeneration,
   SessionId,
   StreamId,
+  TaskId,
   TraceId,
   TurnId,
   WorkspaceId,
@@ -1214,6 +1216,7 @@ export {
   nextSequence,
   nextServiceGeneration,
   observationId,
+  outcomeId,
   processCaptureId,
   providerId,
   ptySessionId,
@@ -1224,6 +1227,7 @@ export {
   serviceGeneration,
   sessionId,
   streamId,
+  taskId,
   traceId,
   turnId,
   workspaceId,
@@ -2317,6 +2321,25 @@ export {
   STRUCTURAL_FIDELITIES,
   STRUCTURAL_REDUCER_VERSION,
 } from "./structural-reduce.ts";
+export type {
+  BoundedTask,
+  TaskDecomposeError,
+  TaskDecomposeErrorCode,
+  TaskDecomposeInput,
+  TaskDecomposeProvenance,
+  TaskDecomposition,
+} from "./task-decompose.ts";
+export {
+  decomposeUserOutcome,
+  describeTaskDecomposeError,
+  MAX_BOUNDED_TASKS,
+  MAX_GOAL_BYTES,
+  MAX_GOALS,
+  MAX_NON_GOALS,
+  MAX_OUTCOME_STATEMENT_BYTES,
+  TASK_DECOMPOSE_SOURCE,
+  TASK_DECOMPOSE_VERSION,
+} from "./task-decompose.ts";
 export type {
   ColorLevel,
   FlushReport,
