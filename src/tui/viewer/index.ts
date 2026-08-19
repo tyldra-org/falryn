@@ -1,7 +1,7 @@
 export {
   ArtifactCodeOverlay,
-  ArtifactViewerOverlay,
   type ArtifactCodeOverlayProps,
+  ArtifactViewerOverlay,
   type ArtifactViewerOverlayProps,
 } from "./artifact-viewer-overlay.tsx";
 export { CodeViewer, filetypeFor } from "./code-viewer.tsx";
