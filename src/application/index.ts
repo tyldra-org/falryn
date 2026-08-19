@@ -212,6 +212,8 @@ export type { QueryWorkspaceSessionsInput } from "./session-catalog.ts";
 export { editWorkspaceSessionCatalog, queryWorkspaceSessions } from "./session-catalog.ts";
 export type { WorkspaceBinding } from "./session-isolation.ts";
 export { isolateWorkspaceSessions } from "./session-isolation.ts";
+export type { PlanWorkspaceSessionRecoveryInput } from "./session-recovery.ts";
+export { planWorkspaceSessionRecovery } from "./session-recovery.ts";
 export type { ControlWorkspaceSessionReplayInput } from "./session-replay-control.ts";
 export { controlWorkspaceSessionReplay } from "./session-replay-control.ts";
 export type { ResumeWorkspaceSessionInput } from "./session-resume.ts";
