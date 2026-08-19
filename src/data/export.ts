@@ -80,6 +80,7 @@ import {
   MINIMUM_COMPATIBLE_EXPORT_SCHEMA_VERSION,
   ok,
   type PackageWriterPort,
+  parseArtifactRecord,
   parseExportManifest,
   RECORDS_MEMBER,
   type RecordError,
@@ -152,6 +153,14 @@ const SELECT_ARTIFACT_BY_ID = `SELECT
     a.sensitivity AS sensitivity, a.availability AS availability
   FROM ${ARTIFACTS_TABLE} a
   WHERE a.artifact_id = $artifactId`;
+
+const SELECT_ARTIFACT_RECORD = `SELECT
+    artifact_id AS artifactId, digest AS digest, media_type AS mediaType,
+    encoding AS encoding, byte_length AS byteLength, sensitivity AS sensitivity,
+    origin AS origin, invocation_id AS invocationId, created_at AS createdAt,
+    finalized_at AS finalizedAt, availability AS availability
+  FROM ${ARTIFACTS_TABLE}
+  WHERE artifact_id = $artifactId`;
 
 export type ExportOptions = {
   readonly store: SqliteStorePort;
@@ -981,6 +990,33 @@ async function writeRecords(
     );
     if (!events.ok) {
       return err(events.error);
+    }
+  }
+
+  for (const entry of inventory.artifacts) {
+    if (aborted(signal)) {
+      return err(cancelled);
+    }
+    const rows = options.store.read(SELECT_ARTIFACT_RECORD, { artifactId: entry.artifactId });
+    if (!rows.ok) {
+      return err(storageError(rows.error));
+    }
+    const row = rows.value[0];
+    if (row === undefined) {
+      continue;
+    }
+    const parsed = parseArtifactRecord(row);
+    if (!parsed.ok) {
+      continue;
+    }
+    const wroteArtifact = await writeRedacted(
+      options,
+      sink,
+      { entity: "artifact", record: parsed.value },
+      redactions,
+    );
+    if (!wroteArtifact.ok) {
+      return err(wroteArtifact.error);
     }
   }
 

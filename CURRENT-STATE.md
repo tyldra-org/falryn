@@ -1195,7 +1195,24 @@ package claims without importing anything:
   so a derived child with no selected-session invocation is still in the
   bundle, subject to the same sensitivity and availability omit rules.
 
-Import, replay, and fork remain [#119](https://github.com/tyldra-org/falryn/issues/119).
+[#119](https://github.com/tyldra-org/falryn/issues/119) closes import, replay,
+and fork without composing them into a command:
+
+- **a verified package can be imported** into a destination database. Member
+  hashes are checked first. Declared identities are preserved; a colliding
+  session is refused rather than merged by title. Artifact records travel in
+  `records.jsonl` and their bytes are ingested through the artifact store;
+- **replay rebuilds turns and artifact records from the imported stream.** It
+  does not name a command runner, a provider, or a network. Inherited evidence
+  stays historical;
+- **a fork inserts a new session under new identities** and a fresh
+  configuration generation. The original stream is not truncated or rewritten.
+  Copying an event tree for rewind remains
+  [#257](https://github.com/tyldra-org/falryn/issues/257);
+
+Neither import nor replay is composed into `src/main.ts`. Crash recovery,
+schema drift, and missing-blob repair remain
+[#120](https://github.com/tyldra-org/falryn/issues/120).
 
 The seams closed by
 [#323](https://github.com/tyldra-org/falryn/issues/323) complete two of
@@ -4066,15 +4083,17 @@ session/turn producer, or live transcript producer. The remaining gaps are:
   [#21](https://github.com/tyldra-org/falryn/issues/21);
 - a projection registry. One projection is maintained and its name is a closed
   union of one; a registry for a single member would be a framework built for
-  one caller. Deterministic replay, fork, rewind, and reachability garbage
-  collection over these rows are each owned elsewhere and none is implemented;
+  one caller. Import and effect-free replay of these rows exist as data-layer
+  operations ([#119](https://github.com/tyldra-org/falryn/issues/119)); they are
+  not composed into a command. User-facing rewind and reachability garbage
+  collection remain [#257](https://github.com/tyldra-org/falryn/issues/257) and
+  [#15](https://github.com/tyldra-org/falryn/issues/15);
 - any *producer* of an artifact. The table, the repository, the store, the blob
   adapter, and the `finalize-artifacts` participant all exist and are composed,
   and nothing in a real run ingests bytes, because the tools and providers that
   would are later work. Also absent from this area: reachability garbage
-  collection, import, and replay, each
+  collection, crash recovery, and backup/restore, each
   owned by [#15](https://github.com/tyldra-org/falryn/issues/15),
-  [#119](https://github.com/tyldra-org/falryn/issues/119),
   [#120](https://github.com/tyldra-org/falryn/issues/120), or
   [#121](https://github.com/tyldra-org/falryn/issues/121);
 - any composition of the configuration loader into a running program.

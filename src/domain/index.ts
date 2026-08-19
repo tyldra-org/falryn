@@ -2211,6 +2211,20 @@ export {
   sessionPhaseLabel,
 } from "./session-lifecycle.ts";
 export type {
+  ExportRecordEntity,
+  ExportRecordLine,
+  ImportError,
+  ImportIdentityPolicy,
+  ImportResult,
+  SessionFork,
+  SessionReplay,
+} from "./session-replay.ts";
+export {
+  EXPORT_RECORD_ENTITIES,
+  IMPORT_IDENTITY_POLICIES,
+  parseExportRecordLine,
+} from "./session-replay.ts";
+export type {
   ParticipantReport,
   ParticipantStatus,
   PhaseReport,
