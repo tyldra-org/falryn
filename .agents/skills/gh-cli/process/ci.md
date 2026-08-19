@@ -33,13 +33,15 @@ Prefer that over a custom poll loop. `gh pr checks --watch` waits on
 PR-attached checks; for a GitHub Actions run, use `gh run watch`.
 
 1. One snapshot is fine when you only need current state.
-2. Start `gh run watch` in the background. Do not wait in the chat turn.
+2. Start `gh run watch` in the background. Do not foreground-poll.
 3. Tell the user the PR or run URL and the head SHA being watched. Keep
-   useful work going, or end the turn so the wait can complete.
+   in-scope work going. Ending the host turn does not finish the GitHub
+   work and is not permission to start a different PR or issue.
 4. If merge is already authorized: when the watcher finishes, **re-read**
    head SHA, **required** checks, reviews, mergeability, and method, then
    merge per [merge.md](merge.md). Never merge a changed head without that
-   re-read. Do not hold the turn “because merge is next.”
+   re-read. Resume the same PR. Do not switch to unrelated work because
+   merge is what comes next.
 5. If you must poll, match the interval to real job duration. Prefer
    `gh run watch` over polling.
 
