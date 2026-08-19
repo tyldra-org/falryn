@@ -2273,6 +2273,21 @@ export {
   SESSION_RESUME_VERSION,
 } from "./session-resume.ts";
 export type {
+  SessionRewindError,
+  SessionRewindErrorCode,
+  SessionRewindInput,
+  SessionRewindKind,
+  SessionRewindPlan,
+  SessionRewindProvenance,
+} from "./session-rewind.ts";
+export {
+  describeSessionRewindError,
+  planSessionRewind,
+  SESSION_REWIND_KINDS,
+  SESSION_REWIND_SOURCE,
+  SESSION_REWIND_VERSION,
+} from "./session-rewind.ts";
+export type {
   ParticipantReport,
   ParticipantStatus,
   PhaseReport,
