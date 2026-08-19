@@ -171,12 +171,32 @@ export type OverlayRoute =
       readonly panel: "session" | "model" | "context" | "resource";
     }
   /**
-   * A syntax-highlighted code artifact.
+   * A code or diff artifact viewer.
    *
-   * The id is the artifact being viewed. Closing replaces the route, so a
-   * dismissed viewer has nowhere to linger.
+   * The id is the artifact being viewed. Layout and hunk index apply to diff
+   * presentation only. Closing replaces the route, so a dismissed viewer has
+   * nowhere to linger.
    */
-  | { readonly kind: "artifact"; readonly artifactId: string };
+  | {
+      readonly kind: "artifact";
+      readonly artifactId: string;
+      readonly presentation: "code" | "diff";
+      readonly layout: "unified" | "split";
+      readonly hunkIndex: number;
+    };
+
+export function artifactOverlayRoute(
+  artifactId: string,
+  presentation: "code" | "diff",
+): Extract<OverlayRoute, { readonly kind: "artifact" }> {
+  return {
+    kind: "artifact",
+    artifactId,
+    presentation,
+    layout: "unified",
+    hunkIndex: 0,
+  };
+}
 
 export type ShellModel = {
   readonly header: WorkspaceHeaderModel;

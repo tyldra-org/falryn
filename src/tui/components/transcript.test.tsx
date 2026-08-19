@@ -32,7 +32,11 @@ import {
 import { mount, type Rendered, type TerminalShape } from "../harness.tsx";
 import type { ThemeRequest } from "../theme/index.ts";
 import { known, type ShellModel, unavailable } from "../view-model.ts";
-import { createMapArtifactViewer, fixtureCodeArtifactView } from "../viewer/fixtures.ts";
+import {
+  createMapArtifactViewer,
+  fixtureCodeArtifactView,
+  fixtureDiffArtifactView,
+} from "../viewer/fixtures.ts";
 import { ShellApp } from "./shell-app.tsx";
 
 const THEME: ThemeRequest = {
@@ -475,6 +479,42 @@ describe("the code artifact viewer", () => {
     const restored = await shell.frame();
     expect(restored).toContain("Captured the build log");
     expect(restored).not.toContain("Source");
+  });
+
+  test("opens a unified diff with hunk navigation and split toggle", async () => {
+    const DIFF =
+      "diff --git a/x b/x\n--- a/x\n+++ b/x\n@@ -1,1 +1,1 @@\n-a\n+A\n@@ -3,1 +3,1 @@\n-b\n+B\n";
+    const diffBlock = {
+      ...artifactBlock(),
+      mediaType: "text/x-diff",
+      summary: complete("Captured the patch."),
+    };
+    const viewer = createMapArtifactViewer({
+      [FIXTURE_ARTIFACT]: fixtureDiffArtifactView({
+        id: "artifact-fixture",
+        text: DIFF,
+        hunkCount: 2,
+      }),
+    });
+
+    using shell = await open(
+      projectionOf([diffBlock]),
+      { columns: 100, rows: 30 },
+      { artifactViewer: viewer },
+    );
+    await shell.press("p", { ctrl: true });
+    await shell.type("transcript.openArtifact");
+    shell.setup.mockInput.pressEnter();
+
+    const opened = await shell.frame();
+    expect(opened).toContain("Diff");
+    expect(opened).toContain("Hunk 1 of 2");
+
+    await shell.type("]");
+    expect(await shell.frame()).toContain("Hunk 2 of 2");
+
+    await shell.type("v");
+    expect(await shell.frame()).toContain("split");
   });
 });
 

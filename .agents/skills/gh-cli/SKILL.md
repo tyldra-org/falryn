@@ -47,6 +47,7 @@ Preserved syntax notes from [github/awesome-copilot `gh-cli`](https://www.skills
 | "look at PR #N", "is this safe to merge" | [process/review.md](process/review.md) |
 | "merge this GitHub PR", "land this PR" | [process/merge.md](process/merge.md) |
 | "coordinate these PRs/repos", "land docs then code" | [process/delivery.md](process/delivery.md) |
+| "assign issue", "move card to In Progress/Done", "reconcile board after merge" | [process/issue-lifecycle.md](process/issue-lifecycle.md) |
 | "CI is red", "why is the build failing", "wait for checks" | [process/ci.md](process/ci.md) |
 | "authenticate gh", "which repo/account/host is this" | [process/context-and-auth.md](process/context-and-auth.md) |
 | "create/update/triage issues, labels, milestones, subissues" | [process/issues.md](process/issues.md) |
@@ -182,5 +183,7 @@ After GitHub mutations: exact repo/project and object URLs/numbers; created/upda
 | **gh-cli** (this) | `gh` syntax + GitHub process |
 | **origin-cli** | `origin` syntax + Origin process — not `gh` |
 | **`origin`** (Cursor built-in) | Install/login repair for Origin CLI only |
+
+Project-specific delivery orchestration (selectors, stop rules, repo docs) lives in that project's loop skill. This skill supplies the generic GitHub and Project mechanics those loops call. Repositories may **vendor** this skill under `.agents/skills/` so every checkout gets the same guidance without a global install.
 
 Do not document `origin pr` here — that is **origin-cli**. Do not document `git commit` / rebase / force-push here — that is **git-workflow**.

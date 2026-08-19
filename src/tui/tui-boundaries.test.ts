@@ -66,8 +66,9 @@ const RENDERER_OWNERS = [
   // owns and a dispatcher it does not.
   "components/shell-app.tsx",
   "components/keymap-bridge.tsx",
-  // Syntax highlighting for the code artifact overlay (#265).
+  // Syntax highlighting for artifact overlays (#265 code, #266 diff).
   "viewer/code-viewer.tsx",
+  "viewer/diff-viewer.tsx",
 ];
 
 /** The one module allowed to author a colour. */

@@ -26,7 +26,11 @@ This skill owns `git`. It does not own GitHub or Origin.
 
 Opening or merging a pull request is not git. Load `gh-cli` for github.com (including inbound mirrors) or `origin-cli` for native or detached Origin.
 
+After GitHub merges land: `gh-cli` → [issue-lifecycle.md](../gh-cli/process/issue-lifecycle.md) for issue/Project reconcile; then [delivery-checkout.md](reference/delivery-checkout.md) for local default-branch sync.
+
 Load `git-workflow` whenever git history changes. Add `gh-cli` or `origin-cli` when the host is GitHub or Origin. If both hosts apply, say which command targets which host.
+
+Repositories may vendor this skill under `.agents/skills/` for checkout-local resolution; skill content stays host-agnostic.
 
 ## How to use
 
@@ -50,6 +54,7 @@ Never act on an assumed branch, worktree, remote, or default branch.
 | "commit this", "save this", "check it in" | `commit` | [commit.md](reference/commit.md) |
 | "start a branch", "switch to", "delete that branch" | `branch` | [branch.md](reference/branch.md) |
 | "catch up with main", "push this", "I'm behind" | `sync` | [sync.md](reference/sync.md) |
+| "sync local main after PR merged", "fast-forward after delivery" | `delivery-checkout` | [delivery-checkout.md](reference/delivery-checkout.md) |
 | "merge these branches locally" | `merge` | [merge.md](reference/merge.md) |
 | "clean up these commits", "squash", "rebase" | `rewrite` | [rewrite.md](reference/rewrite.md) |
 | "I lost my work", "undo that", "get it back" | `recover` | [recover.md](reference/recover.md) |
@@ -94,6 +99,7 @@ Follow the reference. Re-read after writes.
 | Stage / commit / amend / stash | [commit.md](reference/commit.md) |
 | Subjects, branches, tags | [conventions.md](reference/conventions.md) |
 | History rewrite, force-push lease | [rewrite.md](reference/rewrite.md) |
+| Post-merge default-branch sync | [delivery-checkout.md](reference/delivery-checkout.md) |
 | Non-negotiable git safety (this file) | sections below |
 
 ## Precedence

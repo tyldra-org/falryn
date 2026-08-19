@@ -115,7 +115,7 @@ describe("help", () => {
     // The transcript's commands are unavailable for their own reason, and it is
     // a different sentence rather than a shared "unavailable".
     expect(frame).toContain("there is no transcript yet");
-    expect(frame).toContain("there is no code artifact to open for this entry");
+    expect(frame).toContain("there is no code or diff artifact to open for this entry");
   });
 
   test("scrolls long help through OpenTUI's focused scrollbox", async () => {
