@@ -233,6 +233,7 @@ export type { PlanOutcomeCommitsInput } from "./task-commit-plan.ts";
 export { planOutcomeCommits } from "./task-commit-plan.ts";
 export { decomposeOutcome } from "./task-decompose.ts";
 export { planOutcomeTaskGraph } from "./task-graph.ts";
+export { projectOutcomeProgress } from "./task-progress.ts";
 export { recommendOutcomeValidation } from "./task-validation.ts";
 export type {
   ContinueModelContext,

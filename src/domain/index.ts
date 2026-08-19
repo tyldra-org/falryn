@@ -2382,6 +2382,32 @@ export {
   TASK_JOIN_POLICIES,
 } from "./task-graph.ts";
 export type {
+  TaskObservation,
+  TaskObservationStatus,
+  TaskProgressAction,
+  TaskProgressActionKind,
+  TaskProgressError,
+  TaskProgressErrorCode,
+  TaskProgressInput,
+  TaskProgressNode,
+  TaskProgressOverall,
+  TaskProgressProjection,
+  TaskProgressProvenance,
+  TaskProgressState,
+} from "./task-progress.ts";
+export {
+  describeTaskProgressError,
+  MAX_PROGRESS_NOTE_BYTES,
+  MAX_PROGRESS_OBSERVATIONS,
+  projectTaskProgress,
+  TASK_OBSERVATION_STATUSES,
+  TASK_PROGRESS_ACTION_KINDS,
+  TASK_PROGRESS_OVERALL,
+  TASK_PROGRESS_SOURCE,
+  TASK_PROGRESS_STATES,
+  TASK_PROGRESS_VERSION,
+} from "./task-progress.ts";
+export type {
   TaskValidationAdvice,
   TaskValidationError,
   TaskValidationErrorCode,
