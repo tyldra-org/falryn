@@ -24,10 +24,15 @@ import {
   type TranscriptBlock,
   type TranscriptProjection,
 } from "../../presentation/index.ts";
-import { everyBlockKind, FIXTURE_AT } from "../../presentation/transcript/fixtures.ts";
+import {
+  everyBlockKind,
+  FIXTURE_ARTIFACT,
+  FIXTURE_AT,
+} from "../../presentation/transcript/fixtures.ts";
 import { mount, type Rendered, type TerminalShape } from "../harness.tsx";
 import type { ThemeRequest } from "../theme/index.ts";
 import { known, type ShellModel, unavailable } from "../view-model.ts";
+import { createMapArtifactViewer, fixtureCodeArtifactView } from "../viewer/fixtures.ts";
 import { ShellApp } from "./shell-app.tsx";
 
 const THEME: ThemeRequest = {
@@ -93,9 +98,18 @@ type NamedKey = keyof typeof SEQUENCES | "escape";
 async function open(
   transcript: TranscriptProjection,
   shape: TerminalShape = { columns: 100, rows: 24 },
+  options: {
+    readonly artifactViewer?: Parameters<typeof ShellApp>[0]["artifactViewer"];
+  } = {},
 ): Promise<Rendered> {
   const shell = await mount(
-    <ShellApp theme={THEME} model={MODEL} onExit={() => {}} transcript={transcript} />,
+    <ShellApp
+      theme={THEME}
+      model={MODEL}
+      onExit={() => {}}
+      transcript={transcript}
+      {...(options.artifactViewer === undefined ? {} : { artifactViewer: options.artifactViewer })}
+    />,
     { shape },
   );
   await shell.frame();
@@ -420,6 +434,47 @@ describe("inspection", () => {
     shell.setup.mockInput.pressEnter();
 
     expect(await shell.frame()).toContain("no tool, process, reasoning, or error inspection");
+  });
+});
+
+describe("the code artifact viewer", () => {
+  const SOURCE = "export const answer = 42;\n";
+
+  function artifactBlock(): TranscriptBlock {
+    const block = everyBlockKind().find((candidate) => candidate.kind === "artifact");
+    if (block === undefined || block.kind !== "artifact") {
+      throw new Error("the corpus no longer has an artifact block");
+    }
+    return block;
+  }
+
+  test("opens syntax-highlighted source and restores the transcript on close", async () => {
+    const viewer = createMapArtifactViewer({
+      [FIXTURE_ARTIFACT]: fixtureCodeArtifactView({
+        id: "artifact-fixture",
+        text: SOURCE,
+      }),
+    });
+
+    using shell = await open(
+      projectionOf([artifactBlock()]),
+      { columns: 100, rows: 30 },
+      {
+        artifactViewer: viewer,
+      },
+    );
+    await shell.press("p", { ctrl: true });
+    await shell.type("transcript.openArtifact");
+    shell.setup.mockInput.pressEnter();
+
+    const opened = await shell.frame();
+    expect(opened).toContain("Source");
+    expect(opened).toContain("export const answer");
+
+    await named(shell, "escape");
+    const restored = await shell.frame();
+    expect(restored).toContain("Captured the build log");
+    expect(restored).not.toContain("Source");
   });
 });
 

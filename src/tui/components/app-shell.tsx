@@ -26,6 +26,7 @@
 
 import { useRenderer, useTerminalDimensions } from "@opentui/react";
 import { type ReactNode, useMemo, useRef } from "react";
+import type { ArtifactViewer } from "../../application/index.ts";
 import type { Instant } from "../../domain/index.ts";
 import type { ComposerAction } from "../composer/index.ts";
 import type { ConfirmationChoiceId, ConfirmationView, SecretEdit } from "../confirmation/index.ts";
@@ -48,6 +49,7 @@ import { resolveTheme, type ThemeRequest } from "../theme/index.ts";
 import { inspectionFor } from "../transcript/index.ts";
 import type { TranscriptGeometry } from "../transcript-model.ts";
 import type { CommandEntry, OverlayRoute, ShellModel } from "../view-model.ts";
+import { ArtifactCodeOverlay } from "../viewer/artifact-code-overlay.tsx";
 import { ActivityRail } from "./activity-rail.tsx";
 import { ComposerView } from "./composer.tsx";
 import { ConfirmationSheet } from "./confirmation.tsx";
@@ -111,6 +113,8 @@ export type AppShellProps = {
   readonly selectedSessionId?: string | null;
   readonly selectedModelId?: string | null;
   readonly onControlSelect?: (id: string) => void;
+  /** Loads artifact views for the code viewer overlay. Absent in static frames. */
+  readonly artifactViewer?: ArtifactViewer;
 };
 
 export function AppShell(props: AppShellProps): ReactNode {
@@ -191,6 +195,7 @@ export function AppShell(props: AppShellProps): ReactNode {
           {...(props.onControlSelect === undefined
             ? {}
             : { onControlSelect: props.onControlSelect })}
+          {...(props.artifactViewer === undefined ? {} : { artifactViewer: props.artifactViewer })}
         />
       )}
     </FrameProvider>
@@ -325,6 +330,8 @@ function overlayTitle(
       return confirmation?.prompt.title ?? "Confirm";
     case "controls":
       return CONTROL_PANEL_TITLES[route.panel];
+    case "artifact":
+      return "Source";
     default: {
       const exhaustive: never = route;
       return exhaustive;
@@ -345,6 +352,7 @@ function overlayBody(
     readonly selectedSessionId?: string | null;
     readonly selectedModelId?: string | null;
     readonly onControlSelect?: (id: string) => void;
+    readonly artifactViewer?: ArtifactViewer;
   },
   rows: number,
 ): ReactNode {
@@ -396,6 +404,21 @@ function overlayBody(
           }
           rows={rows}
           {...(props.onControlSelect === undefined ? {} : { onSelect: props.onControlSelect })}
+        />
+      );
+    case "artifact":
+      if (props.artifactViewer === undefined) {
+        return (
+          <Line color="error" typography="body" maxColumns={Math.max(8, rows)}>
+            No artifact viewer is attached to this shell.
+          </Line>
+        );
+      }
+      return (
+        <ArtifactCodeOverlay
+          artifactId={overlay.artifactId}
+          viewer={props.artifactViewer}
+          rows={rows}
         />
       );
     default: {

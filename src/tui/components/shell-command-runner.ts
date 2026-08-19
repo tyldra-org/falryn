@@ -1,3 +1,8 @@
+import { blockKey, type TranscriptBlock } from "../../presentation/index.ts";
+import {
+  blockOffersOpenArtifact,
+  primaryArtifactId,
+} from "../../presentation/transcript/artifact-open.ts";
 import type { ShellCommand } from "../commands.ts";
 import {
   anchorAt,
@@ -16,6 +21,7 @@ export type TranscriptCommandContext = {
   readonly anchor: TranscriptSurfaceState["anchor"];
   readonly selected: string | null;
   readonly keys: readonly string[];
+  readonly blocks: readonly TranscriptBlock[];
 };
 
 /** Executes a registry command that has already passed its availability check. */
@@ -102,6 +108,27 @@ export function runAvailableCommand(
         route: { kind: "inspect", key: transcript.selected },
       });
       return true;
+    case "transcript.openArtifact": {
+      if (transcript.selected === null) {
+        dispatch({ kind: "notice", message: "There is no entry to open." });
+        return false;
+      }
+      const selectedBlock = findSelectedBlock(transcript);
+      if (selectedBlock === null || !blockOffersOpenArtifact(selectedBlock)) {
+        dispatch({ kind: "notice", message: "This entry has no artifact to open." });
+        return false;
+      }
+      const artifactId = primaryArtifactId(selectedBlock);
+      if (artifactId === null) {
+        dispatch({ kind: "notice", message: "This entry has no artifact to open." });
+        return false;
+      }
+      dispatch({
+        kind: "open-overlay",
+        route: { kind: "artifact", artifactId },
+      });
+      return true;
+    }
     case "composer.submit":
       dispatch({ kind: "composer", action: { kind: "submit" } });
       return true;
@@ -138,4 +165,11 @@ export function runAvailableCommand(
       });
       return false;
   }
+}
+
+function findSelectedBlock(transcript: TranscriptCommandContext): TranscriptBlock | null {
+  if (transcript.selected === null) {
+    return null;
+  }
+  return transcript.blocks.find((block) => blockKey(block.anchor) === transcript.selected) ?? null;
 }

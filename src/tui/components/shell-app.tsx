@@ -26,7 +26,7 @@ import { createDefaultOpenTuiKeymap } from "@opentui/keymap/opentui";
 import { KeymapProvider, useActiveKeys, useKeymap } from "@opentui/keymap/react";
 import { useRenderer } from "@opentui/react";
 import { type ReactNode, useMemo } from "react";
-import type { FileAttachmentProbe } from "../../application/index.ts";
+import type { ArtifactViewer, FileAttachmentProbe } from "../../application/index.ts";
 import type { Instant } from "../../domain/index.ts";
 import type {
   ActivityProjection,
@@ -115,6 +115,8 @@ export type ShellAppProps = {
    * catalog yet. Selection is a process-local cursor over these lists.
    */
   readonly controls?: ControlCatalog;
+  /** Loads artifact views for the code viewer overlay. Absent in static frames. */
+  readonly artifactViewer?: ArtifactViewer;
 };
 
 /**
@@ -294,6 +296,7 @@ function ResolvedShell(
           props.runtime.selectControl(overlay.panel, id);
         }
       }}
+      {...(props.artifactViewer === undefined ? {} : { artifactViewer: props.artifactViewer })}
     />
   );
 }
