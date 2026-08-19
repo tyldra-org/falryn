@@ -2322,6 +2322,21 @@ export {
   STRUCTURAL_REDUCER_VERSION,
 } from "./structural-reduce.ts";
 export type {
+  TaskCommitAdvice,
+  TaskCommitPlanError,
+  TaskCommitPlanErrorCode,
+  TaskCommitPlanInput,
+  TaskCommitPlanProvenance,
+} from "./task-commit-plan.ts";
+export {
+  describeTaskCommitPlanError,
+  MAX_COMMIT_SCOPE_PATH_BYTES,
+  MAX_COMMIT_SCOPE_PATHS,
+  planTaskCommits,
+  TASK_COMMIT_PLAN_SOURCE,
+  TASK_COMMIT_PLAN_VERSION,
+} from "./task-commit-plan.ts";
+export type {
   BoundedTask,
   TaskDecomposeError,
   TaskDecomposeErrorCode,
