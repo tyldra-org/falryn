@@ -212,6 +212,8 @@ export type { QueryWorkspaceSessionsInput } from "./session-catalog.ts";
 export { editWorkspaceSessionCatalog, queryWorkspaceSessions } from "./session-catalog.ts";
 export type { ResumeWorkspaceSessionInput } from "./session-resume.ts";
 export { resumeWorkspaceSession } from "./session-resume.ts";
+export type { RewindWorkspaceSessionInput } from "./session-rewind.ts";
+export { rewindWorkspaceSession } from "./session-rewind.ts";
 export type {
   OpenSessionInput,
   SessionCommandInput,
