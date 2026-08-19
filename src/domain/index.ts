@@ -158,6 +158,15 @@ export {
   terminalOutcomeForClassification,
 } from "./attempt-policy.ts";
 export type {
+  BackupError,
+  BackupInspection,
+  BackupName,
+  LocalDiagnostics,
+  RestoreResult,
+  UserBackup,
+} from "./backup.ts";
+export { backupName, MAX_BACKUP_NAME_LENGTH, userBackupFileName } from "./backup.ts";
+export type {
   BlobError,
   BlobErrorCode,
   BlobLocation,
