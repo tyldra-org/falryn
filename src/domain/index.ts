@@ -2322,6 +2322,28 @@ export {
   STRUCTURAL_REDUCER_VERSION,
 } from "./structural-reduce.ts";
 export type {
+  TaskAdvisorAdvice,
+  TaskAdvisorError,
+  TaskAdvisorErrorCode,
+  TaskAdvisorFinding,
+  TaskAdvisorInput,
+  TaskAdvisorMode,
+  TaskAdvisorProposal,
+  TaskAdvisorProvenance,
+} from "./task-advisor.ts";
+export {
+  adviseTask,
+  describeTaskAdvisorError,
+  MAX_ADVISOR_EVIDENCE,
+  MAX_ADVISOR_PROPOSALS,
+  MAX_ADVISOR_QUESTION_BYTES,
+  MAX_ADVISOR_RUBRIC,
+  MAX_ADVISOR_TEXT_BYTES,
+  TASK_ADVISOR_MODES,
+  TASK_ADVISOR_SOURCE,
+  TASK_ADVISOR_VERSION,
+} from "./task-advisor.ts";
+export type {
   TaskCommitAdvice,
   TaskCommitPlanError,
   TaskCommitPlanErrorCode,
