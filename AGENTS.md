@@ -126,9 +126,9 @@ Falryn-specific reminders (for agents in this workflow):
   links via `DOCUMENTATION-MAP.md`. Record doc impact as `create` / `update` /
   `verify-unaffected` / `not-applicable`. Stop on missing or conflicting
   contracts.
-- Maintainer Parent chain Deliver: `.cursor/rules/parent-chain-deliver.mdc`
-  (standing merge authorization, foreground CI, no mid-chain stops). User
-  resumes a host-cut turn with `/loop Deliver — Target: Parent chain #N`.
+- Maintainer Parent chain Deliver: load **`falryn-loop`** (vendored). Resume a
+  host-cut turn with `/loop Deliver — Target: Parent chain #N` — not a per-child
+  handoff prompt.
 
 ## Validation
 
