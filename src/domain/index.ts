@@ -2341,6 +2341,32 @@ export {
   TASK_DECOMPOSE_VERSION,
 } from "./task-decompose.ts";
 export type {
+  TaskCompletionCriterion,
+  TaskGraph,
+  TaskGraphBlocker,
+  TaskGraphError,
+  TaskGraphErrorCode,
+  TaskGraphInput,
+  TaskGraphNode,
+  TaskGraphProvenance,
+  TaskGraphReadiness,
+  TaskJoinPolicy,
+} from "./task-graph.ts";
+export {
+  describeTaskGraphError,
+  isTaskJoinPolicy,
+  MAX_GRAPH_BLOCKERS,
+  MAX_GRAPH_CRITERIA,
+  MAX_GRAPH_EDGES,
+  MAX_GRAPH_TASKS,
+  MAX_GRAPH_TEXT_BYTES,
+  planTaskGraph,
+  TASK_GRAPH_READINESS,
+  TASK_GRAPH_SOURCE,
+  TASK_GRAPH_VERSION,
+  TASK_JOIN_POLICIES,
+} from "./task-graph.ts";
+export type {
   ColorLevel,
   FlushReport,
   FlushStatus,
