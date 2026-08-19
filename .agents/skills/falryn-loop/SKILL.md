@@ -101,17 +101,21 @@ Merge gates: repository ruleset **required** status checks and required review-t
 
 ## CI and long waits
 
+**Precedence:** this section overrides generic **gh-cli** [ci.md](../gh-cli/process/ci.md)
+background-watch defaults for Falryn **Deliver** runs only. Universal skills stay
+repo-agnostic.
+
 **Parent chain and Deliver:** CI is **not** a stop. Do **not** end the turn, write a status report, or emit a resume prompt while required checks are still running and the host has not cut the turn.
 
-**Prefer foreground wait** in Deliver runs. Background `gh run watch` does not reliably resume the same agent turn when it finishes — if the host does not ping back, **run `gh run watch` in the foreground** and stay in the Deliver until green, failure, or a fix loop.
+**Foreground wait** in Deliver runs. Background `gh run watch` does not reliably resume the same agent turn when it finishes — if the host does not ping back, **run `gh run watch` in the foreground** and stay in the Deliver until green, failure, or a fix loop.
 
 ```bash
 gh run watch RUN_ID --repo tyldra-org/falryn --exit-status
 ```
 
-After green: re-read PR head SHA and required checks, then merge in the **same run** per step 6. Only use background watch when the host explicitly ends the turn; then report PR URL(s), head SHA(s), and [chain progress](#chain-progress-include-in-reports).
+After green: re-read PR head SHA and required checks, then merge in the **same run** per step 6, reconcile per step 7, and continue the next sibling when Parent chain applies. Only use background watch when the **host ends the turn**; then report PR URL(s), head SHA(s), and [chain progress](#chain-progress-include-in-reports).
 
-Details: **gh-cli** → [ci.md](../gh-cli/process/ci.md#deliver-and-serial-chain-runs).
+On CI failure: bounded repair per **gh-cli** [ci.md](../gh-cli/process/ci.md); do not treat “CI started” as completion.
 
 ## Next routing
 

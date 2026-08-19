@@ -65,7 +65,8 @@ Two common orchestration patterns. A project-specific loop names its selectors; 
 - failed merge preconditions;
 - exhausted repair budget defined by the project loop.
 
-CI wait is not a stop. In **Deliver** / **Parent chain** runs, **foreground**-watch required checks, merge, reconcile, and continue the next sibling in the **same run** (see **falryn-loop** and **gh-cli** [ci.md](ci.md#deliver-and-serial-chain-runs)).
+CI wait is not a stop. When a project-specific delivery skill is loaded, follow
+its serial-chain and CI-wait rules; otherwise background-watch per [ci.md](ci.md).
 
 While a serial chain is in flight, reports should state explicit progress, for example:
 

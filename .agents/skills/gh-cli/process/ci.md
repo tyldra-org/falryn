@@ -19,9 +19,8 @@ Without `gh`, ask the user for the run URL or the failing output. Do not constru
 
 ## While checks are running
 
-Default for ordinary work: watch in the background so the turn stays free for
-other tasks. **Exception:** project delivery loops (for example **falryn-loop**
-`Deliver` / `Parent chain`) — see [Deliver and serial chain runs](#deliver-and-serial-chain-runs).
+**Always watch in the background.** Do not block the conversation turn on
+multi-minute waits.
 
 `gh run view` and `gh pr checks` (without `--watch`) are snapshots. The
 native waiter for a workflow run is:
@@ -34,15 +33,10 @@ Prefer that over a custom poll loop. `gh pr checks --watch` waits on
 PR-attached checks; for a GitHub Actions run, use `gh run watch`.
 
 1. One snapshot is fine when you only need current state.
-2. **Background (default):** start `gh run watch` in the background. Tell the
-   user the PR or run URL and head SHA. Keep in-scope work going if the host
-   allows. When the watcher finishes, re-read head SHA and required checks
-   before merge.
-3. **Foreground (Deliver / Parent chain):** when merge is already authorized
-   and CI is the only blocker, run `gh run watch` **in the foreground** and
-   stay in the same delivery run. Do not end the turn hoping a background
-   task will ping back — many hosts will not. After green, merge immediately
-   after the re-read.
+2. Start `gh run watch` in the background. Do not foreground-poll.
+3. Tell the user the PR or run URL and the head SHA being watched. Keep
+   in-scope work going. Ending the host turn does not finish the GitHub
+   work and is not permission to start a different PR or issue.
 4. If merge is already authorized: when the watcher finishes, **re-read**
    head SHA, **required** checks, reviews, mergeability, and method, then
    merge per [merge.md](merge.md). Never merge a changed head without that
@@ -51,26 +45,13 @@ PR-attached checks; for a GitHub Actions run, use `gh run watch`.
 5. If you must poll, match the interval to real job duration. Prefer
    `gh run watch` over polling.
 
-**Foreground wait** when the user explicitly says to wait in-chat, or when a
-project loop skill authorizes Deliver and CI is blocking merge. “Land this PR” /
-“merge when green” inside **Deliver — Target: …** means foreground-wait then
-merge in the same run — not end the turn after starting background watch.
+**Foreground wait only** when the user explicitly says to wait in-chat
+(e.g. “wait here until green”). “Land this PR” / “merge when green” is **not**
+that — use background `gh run watch`, then merge after the re-read.
 
-## Deliver and serial chain runs
-
-When a project delivery loop has authorized merge and opened PRs:
-
-1. Snapshot `gh pr checks` / `gh run view`.
-2. If anything required is pending, **foreground** `gh run watch` (or
-   `gh pr checks --watch` when that matches the PR gate) until pass or fail.
-3. On pass: re-read head SHA, merge per [delivery.md](delivery.md) order,
-   reconcile per [issue-lifecycle.md](issue-lifecycle.md), continue the next
-   child in the same run when the loop says so.
-4. On fail: enter the bounded fix loop below; do not treat “CI started” as
-   completion.
-
-Background watch remains valid when the **host ends the turn** — report state
-and the same Deliver target for resume.
+A **project-specific delivery skill** (when loaded) may override this section
+for authorized merge runs. That skill wins on conflict; this file stays
+repo-agnostic.
 
 ## The bounded fix loop
 
