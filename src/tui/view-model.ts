@@ -171,7 +171,7 @@ export type OverlayRoute =
       readonly panel: "session" | "model" | "context" | "resource";
     }
   /**
-   * A code or diff artifact viewer.
+   * An artifact viewer overlay.
    *
    * The id is the artifact being viewed. Layout and hunk index apply to diff
    * presentation only. Closing replaces the route, so a dismissed viewer has
@@ -180,14 +180,14 @@ export type OverlayRoute =
   | {
       readonly kind: "artifact";
       readonly artifactId: string;
-      readonly presentation: "code" | "diff";
+      readonly presentation: "code" | "diff" | "document" | "media";
       readonly layout: "unified" | "split";
       readonly hunkIndex: number;
     };
 
 export function artifactOverlayRoute(
   artifactId: string,
-  presentation: "code" | "diff",
+  presentation: "code" | "diff" | "document" | "media",
 ): Extract<OverlayRoute, { readonly kind: "artifact" }> {
   return {
     kind: "artifact",

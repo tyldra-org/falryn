@@ -2,3 +2,7 @@ export type { CodeViewModel } from "./code-view.ts";
 export { codeViewFrom } from "./code-view.ts";
 export type { DiffViewModel } from "./diff-view.ts";
 export { diffTextForHunk, diffViewFrom, hunkCountOfDiffText } from "./diff-view.ts";
+export type { DocumentViewModel } from "./document-view.ts";
+export { documentViewFrom } from "./document-view.ts";
+export type { MediaViewModel } from "./media-view.ts";
+export { mediaViewFrom } from "./media-view.ts";

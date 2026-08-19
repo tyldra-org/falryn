@@ -331,7 +331,20 @@ function overlayTitle(
     case "controls":
       return CONTROL_PANEL_TITLES[route.panel];
     case "artifact":
-      return route.presentation === "diff" ? "Diff" : "Source";
+      switch (route.presentation) {
+        case "diff":
+          return "Diff";
+        case "document":
+          return "Document";
+        case "media":
+          return "Media";
+        case "code":
+          return "Source";
+        default: {
+          const exhaustive: never = route.presentation;
+          return exhaustive;
+        }
+      }
     default: {
       const exhaustive: never = route;
       return exhaustive;

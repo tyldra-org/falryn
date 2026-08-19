@@ -1,7 +1,7 @@
 /**
  * Test and fixture artifact views keyed by id.
  *
- * Not product surface. Lets rendered tests open a code viewer without SQLite.
+ * Not product surface. Lets rendered tests open artifact viewers without SQLite.
  */
 
 import type { ArtifactViewer } from "../../application/index.ts";
@@ -114,6 +114,91 @@ export function fixtureCodeArtifactView(input: {
       language: input.language ?? "typescript",
       lineCount: input.text.split("\n").length,
       text: input.text,
+    },
+  };
+}
+
+/** A complete document artifact view for fixture-driven shell tests. */
+export function fixtureDocumentArtifactView(input: {
+  readonly id: string;
+  readonly family?: "markdown" | "html" | "log" | "text";
+  readonly text: string;
+  readonly status?: ArtifactView["status"];
+}): ArtifactView {
+  const id = artifactId.from(input.id);
+  const family = input.family ?? "markdown";
+  const mediaType =
+    family === "markdown" ? "text/markdown" : family === "html" ? "text/html" : "text/plain";
+  return {
+    schemaVersion: ARTIFACT_VIEW_VERSION,
+    artifactId: id,
+    record: {
+      artifactId: id,
+      digest: FIXTURE_DIGEST as ArtifactView["record"]["digest"],
+      mediaType,
+      origin: "tool-output",
+      encoding: "identity",
+      byteLength: new TextEncoder().encode(input.text).byteLength,
+      sensitivity: "user-content",
+      invocationId: null,
+      createdAt: timestampFromEpochMilliseconds(0),
+      finalizedAt: timestampFromEpochMilliseconds(1),
+      availability: "available",
+    },
+    kind: "document",
+    status: input.status ?? "complete",
+    transformed: false,
+    sourceByteLength: new TextEncoder().encode(input.text).byteLength,
+    decodedByteLength: new TextEncoder().encode(input.text).byteLength,
+    viewByteLength: new TextEncoder().encode(input.text).byteLength,
+    body: {
+      kind: "document",
+      family,
+      text: input.text,
+    },
+  };
+}
+
+/** A complete media summary artifact view for fixture-driven shell tests. */
+export function fixtureMediaArtifactView(input: {
+  readonly id: string;
+  readonly format?: string;
+  readonly storedByteLength?: number;
+  readonly hexPreview?: string;
+  readonly status?: ArtifactView["status"];
+}): ArtifactView {
+  const id = artifactId.from(input.id);
+  const format = input.format ?? "image/png";
+  const storedByteLength = input.storedByteLength ?? 8;
+  const hexPreview = input.hexPreview ?? "89 50 4e 47 0d 0a 1a 0a";
+  return {
+    schemaVersion: ARTIFACT_VIEW_VERSION,
+    artifactId: id,
+    record: {
+      artifactId: id,
+      digest: FIXTURE_DIGEST as ArtifactView["record"]["digest"],
+      mediaType: format,
+      origin: "tool-output",
+      encoding: "identity",
+      byteLength: storedByteLength,
+      sensitivity: "user-content",
+      invocationId: null,
+      createdAt: timestampFromEpochMilliseconds(0),
+      finalizedAt: timestampFromEpochMilliseconds(1),
+      availability: "available",
+    },
+    kind: "media",
+    status: input.status ?? "complete",
+    transformed: false,
+    sourceByteLength: storedByteLength,
+    decodedByteLength: storedByteLength,
+    viewByteLength: storedByteLength,
+    body: {
+      kind: "media",
+      format,
+      visual: "summary",
+      storedByteLength,
+      hexPreview,
     },
   };
 }
