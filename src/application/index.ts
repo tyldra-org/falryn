@@ -230,6 +230,7 @@ export type {
 } from "./structural-reduce.ts";
 export { createStructuralReducer, structuralToEvidence } from "./structural-reduce.ts";
 export { decomposeOutcome } from "./task-decompose.ts";
+export { planOutcomeTaskGraph } from "./task-graph.ts";
 export type {
   ContinueModelContext,
   ContinueModelResult,
