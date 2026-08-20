@@ -147,6 +147,50 @@ describe("runCoding", () => {
     expect(result.payload?.stage).toBe("hosted");
     expect(result.errors).toEqual([]);
   });
+
+  test("attaches the OpenAI-compatible adapter when an env credential resolves (#710)", async () => {
+    const home = await mkdtemp(join(tmpdir(), "falryn-run-cred-"));
+    homes.push(home);
+    const state = join(home, "state");
+    const config = join(home, "config");
+    const primary = join(home, "primary");
+    for (const directory of [home, state, config, primary]) {
+      await mkdir(directory, { recursive: true });
+      await chmod(directory, 0o700);
+    }
+    const seeded = {
+      home,
+      primary,
+      environment: createStaticEnvironment({
+        FALRYN_STATE_DIR: state,
+        FALRYN_CONFIG_DIR: config,
+        FALRYN_OPENAI_API_KEY: "sk-test-not-a-real-key",
+      }),
+    };
+    const services = (globals: GlobalOptions) =>
+      createServiceProvider(globals, {
+        home: localPath(seeded.home),
+        platform: "darwin",
+        environment: seeded.environment,
+        currentDirectory: localPath(seeded.primary),
+      });
+    const streams = createRecordingCliStreams({ stdin: null });
+    const result = await runCoding(
+      services(globalsFor(seeded)),
+      { promptParts: ["with", "key"] },
+      {
+        input: streams.input,
+        identities: {
+          sessionId: "session-run-cred",
+          turnId: "turn-run-cred",
+          traceId: "trace-run-cred",
+        },
+      },
+    );
+    expect(result.outcome.kind).toBe("completed");
+    expect(result.payload?.stage).toBe("hosted");
+    expect(result.errors).toEqual([]);
+  });
 });
 
 describe("falryn run through dispatch", () => {

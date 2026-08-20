@@ -15,13 +15,14 @@
  * composition defect that does not survive `bun build --compile` fails a check
  * instead of a user's first run.
  *
- * Live producers (#706), composer submission (#707), and vendor adapters (#709)
- * attach through the typed seams; this bootstrap does not write a synthetic
- * turn into a user's database.
+ * Live producers (#706), composer submission (#707), vendor adapters (#709),
+ * and credential resolver composition (#710) attach through the typed seams;
+ * this bootstrap does not write a synthetic turn into a user's database.
  */
 
 import {
   composeProductAgentRuntime,
+  composeProductCredentials,
   createRuntimeLifecycle,
   fromSqliteStoreError,
   fromUnknown,
@@ -80,6 +81,7 @@ import {
 } from "./domain/index.ts";
 import {
   createHostBlobStore,
+  createHostCommandRunner,
   createHostEnvironment,
   createHostFileSystem,
   createProcessSignalPort,
@@ -240,6 +242,15 @@ export async function main(options: BootstrapOptions = {}): Promise<BootstrapRep
     // attach later — this path does not write a synthetic turn into a user's
     // database.
     const eventStore = createSqliteEventStore(opened.value);
+    const productCredentials = composeProductCredentials({
+      clock: systemClock,
+      commands: createHostCommandRunner(),
+      platform: options.platform ?? hostPlatform(),
+      environment,
+    });
+    // Retain the resolver for the lifetime of open storage so live adapters
+    // resolve secrets through stores rather than ad-hoc env reads (#710).
+    void productCredentials.resolver;
     const productAgent = composeProductAgentRuntime({
       eventStore,
       clock: systemClock,

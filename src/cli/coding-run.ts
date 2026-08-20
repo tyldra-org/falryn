@@ -11,9 +11,12 @@
 import {
   adoptForeignError,
   composeProductAgentRuntime,
+  composeProductCredentials,
   fromUnknown,
+  resolveProviderApiKey,
 } from "../application/index.ts";
 import {
+  type CredentialReference,
   configurationGeneration,
   type FalrynError,
   type InputStreamPort,
@@ -25,6 +28,8 @@ import {
   turnId as turnIdCodec,
   workspaceId as workspaceIdCodec,
 } from "../domain/index.ts";
+import { createHostCommandRunner, hostPlatform } from "../integrations/index.ts";
+import { createOpenAiCompatibleAdapter } from "../providers/openai-compatible-adapter.ts";
 import type { ProviderAdapterPort } from "../providers/port.ts";
 import {
   COMMAND_RESULT_SCHEMA_FAMILY,
@@ -39,6 +44,13 @@ import { describeWorkspaceResolveError } from "./workspace-resolution.ts";
 export const CODING_RUN_COMMAND = "run" as const;
 export const CODING_RUN_OWNER = "#708";
 
+/** Default environment credential for OpenAI-compatible live runs (#710). */
+export const DEFAULT_OPENAI_CREDENTIAL_REFERENCE: CredentialReference = {
+  storeKind: "environment",
+  locator: "FALRYN_OPENAI_API_KEY",
+  consumer: "provider:openai",
+  accountLabel: null,
+};
 /** Parsed prompt fragments after `falryn run` (may be empty when stdin supplies text). */
 export type CodingRunArguments = {
   readonly promptParts: readonly string[];
@@ -75,10 +87,15 @@ export type CodingRunOptions = {
     readonly workspaceId?: string;
   };
   /**
-   * Optional live or deterministic adapter. Absent means fail closed after the
-   * turn is hosted (#709 attaches vendors).
+   * Optional live or deterministic adapter. When omitted, the product credential
+   * resolver attempts `FALRYN_OPENAI_API_KEY` and attaches an OpenAI-compatible
+   * adapter when present (#710). Absent credentials fail closed after hosting.
    */
   readonly providerAdapter?: ProviderAdapterPort | null;
+  /** Override the default OpenAI environment credential reference. */
+  readonly credentialReference?: CredentialReference;
+  /** OpenAI-compatible base URL when composing from credentials. */
+  readonly openaiBaseUrl?: string;
 };
 
 /**
@@ -207,6 +224,26 @@ export async function runCoding(
   const traceId = traceIdCodec.from(ids.traceId);
   const generation = configurationGeneration.from(0);
 
+  let providerAdapter = options.providerAdapter;
+  if (providerAdapter === undefined) {
+    const credentials = composeProductCredentials({
+      clock: graph.clock,
+      commands: createHostCommandRunner(),
+      platform: hostPlatform(),
+      environment: graph.environment,
+    });
+    const reference = options.credentialReference ?? DEFAULT_OPENAI_CREDENTIAL_REFERENCE;
+    const apiKey = await resolveProviderApiKey(credentials.resolver, reference, options.signal);
+    if (apiKey !== null) {
+      const baseUrl = options.openaiBaseUrl ?? "https://api.openai.com/v1";
+      providerAdapter = createOpenAiCompatibleAdapter({
+        profileId: "openai",
+        baseUrl,
+        resolveApiKey: async () => apiKey,
+      });
+    }
+  }
+
   const composed = composeProductAgentRuntime({
     eventStore: graph.eventStore,
     clock: graph.clock,
@@ -217,7 +254,7 @@ export async function runCoding(
       traceId,
       configurationGeneration: generation,
     },
-    ...(options.providerAdapter !== undefined ? { providerAdapter: options.providerAdapter } : {}),
+    ...(providerAdapter !== undefined && providerAdapter !== null ? { providerAdapter } : {}),
   });
   if (!composed.ok) {
     return codingResult(
