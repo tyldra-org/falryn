@@ -42,7 +42,12 @@ export function blockSelectsMediaViewer(block: TranscriptBlock): boolean {
   return artifactPresentationFor(block) === "media";
 }
 
-export type ArtifactPresentation = "code" | "diff" | "document" | "media";
+/** Whether the block's declared media type or origin selects a diagnostic viewer. */
+export function blockSelectsDiagnosticViewer(block: TranscriptBlock): boolean {
+  return artifactPresentationFor(block) === "diagnostic";
+}
+
+export type ArtifactPresentation = "code" | "diff" | "document" | "media" | "diagnostic";
 
 /** Artifacts that `transcript.openArtifact` can mount in the overlay. */
 export function artifactPresentationFor(block: TranscriptBlock): ArtifactPresentation | null {
@@ -50,7 +55,13 @@ export function artifactPresentationFor(block: TranscriptBlock): ArtifactPresent
     return null;
   }
   const kind = selectArtifactViewKind(block.mediaType, artifactOriginFor(block.source));
-  if (kind === "code" || kind === "diff" || kind === "document" || kind === "media") {
+  if (
+    kind === "code" ||
+    kind === "diff" ||
+    kind === "document" ||
+    kind === "media" ||
+    kind === "diagnostic"
+  ) {
     return kind;
   }
   return null;

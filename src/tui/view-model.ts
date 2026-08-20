@@ -180,7 +180,7 @@ export type OverlayRoute =
   | {
       readonly kind: "artifact";
       readonly artifactId: string;
-      readonly presentation: "code" | "diff" | "document" | "media";
+      readonly presentation: "code" | "diff" | "document" | "media" | "diagnostic";
       readonly layout: "unified" | "split";
       readonly hunkIndex: number;
     }
@@ -210,7 +210,7 @@ export function changesOverlayRoute(): Extract<OverlayRoute, { readonly kind: "c
 
 export function artifactOverlayRoute(
   artifactId: string,
-  presentation: "code" | "diff" | "document" | "media",
+  presentation: "code" | "diff" | "document" | "media" | "diagnostic",
 ): Extract<OverlayRoute, { readonly kind: "artifact" }> {
   return {
     kind: "artifact",

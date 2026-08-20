@@ -202,3 +202,48 @@ export function fixtureMediaArtifactView(input: {
     },
   };
 }
+
+/** A complete diagnostic artifact view for fixture-driven shell tests. */
+export function fixtureDiagnosticArtifactView(input: {
+  readonly id: string;
+  readonly text?: string;
+  readonly level?: string | null;
+  readonly code?: string | null;
+  readonly subsystem?: string | null;
+  readonly parsed?: boolean;
+  readonly status?: ArtifactView["status"];
+}): ArtifactView {
+  const id = artifactId.from(input.id);
+  const text = input.text ?? '{"level":"error","code":"provider-unreachable"}';
+  return {
+    schemaVersion: ARTIFACT_VIEW_VERSION,
+    artifactId: id,
+    record: {
+      artifactId: id,
+      digest: FIXTURE_DIGEST as ArtifactView["record"]["digest"],
+      mediaType: "application/vnd.falryn.diagnostic+json",
+      origin: "diagnostic",
+      encoding: "identity",
+      byteLength: new TextEncoder().encode(text).byteLength,
+      sensitivity: "user-content",
+      invocationId: null,
+      createdAt: timestampFromEpochMilliseconds(0),
+      finalizedAt: timestampFromEpochMilliseconds(1),
+      availability: "available",
+    },
+    kind: "diagnostic",
+    status: input.status ?? "complete",
+    transformed: false,
+    sourceByteLength: new TextEncoder().encode(text).byteLength,
+    decodedByteLength: new TextEncoder().encode(text).byteLength,
+    viewByteLength: new TextEncoder().encode(text).byteLength,
+    body: {
+      kind: "diagnostic",
+      parsed: input.parsed ?? true,
+      level: input.level === undefined ? "error" : input.level,
+      code: input.code === undefined ? "provider-unreachable" : input.code,
+      subsystem: input.subsystem === undefined ? "provider" : input.subsystem,
+      text,
+    },
+  };
+}
