@@ -1187,6 +1187,7 @@ export type {
   ConfigurationGeneration,
   EventId,
   EvidenceId,
+  FollowUpId,
   HistoryCheckpointId,
   IdempotencyKey,
   IdentifierCodec,
@@ -1225,6 +1226,7 @@ export {
   FIRST_CONFIGURATION_GENERATION,
   FIRST_SEQUENCE,
   FIRST_SERVICE_GENERATION,
+  followUpId,
   historyCheckpointId,
   idempotencyKey,
   invocationId,
@@ -1555,6 +1557,8 @@ export {
 } from "./language-server-workspace.ts";
 export {
   MAX_EVENT_BYTES,
+  MAX_FOLLOW_UP_QUEUE_ENTRIES,
+  MAX_FOLLOW_UP_QUEUE_TEXT_UNITS,
   MAX_IDENTIFIER_LENGTH,
   MAX_STREAM_READ_LIMIT,
   RUNTIME_EVENT_MINIMUM_SCHEMA_VERSION,
@@ -1775,6 +1779,32 @@ export {
   MEMORY_SENSITIVITIES,
   memoryScopeWorkspaceId,
 } from "./memory-record.ts";
+export type {
+  ActiveTurnTarget,
+  FollowUpEntry,
+  FollowUpQueue,
+  MidTurnClassification,
+  MidTurnClassifyError,
+  MidTurnClassifyOk,
+  MidTurnIntent,
+  MidTurnRequestSnapshot,
+  MidTurnSemanticEvent,
+  MidTurnSessionView,
+} from "./mid-turn-input.ts";
+export {
+  applyFollowUpAsSteer,
+  classifyMidTurnInput,
+  describeMidTurnClassifyError,
+  dropFollowUp,
+  emptyFollowUpQueue,
+  enqueueFollowUp,
+  followUpQueueTextUnits,
+  MID_TURN_CLASSIFICATIONS,
+  MID_TURN_INTENTS,
+  promoteFollowUp,
+  refuseSecondInFlightTurn,
+  takeHeadFollowUpForNextTurn,
+} from "./mid-turn-input.ts";
 export type {
   NormalizedNotebookReadRequest,
   NotebookAttachment,

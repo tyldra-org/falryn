@@ -163,6 +163,8 @@ export type { MemoryRecallPort } from "./memory-recall.ts";
 export { createMemoryRecall } from "./memory-recall.ts";
 export type { MemoryRecords } from "./memory-record.ts";
 export { createMemoryRecords } from "./memory-record.ts";
+export type { MidTurnInputService, MidTurnInputServiceOptions } from "./mid-turn-input.ts";
+export { createMidTurnInputService, describeMidTurnClassifyError } from "./mid-turn-input.ts";
 export type { NotebookReader } from "./notebook-read.ts";
 export { createNotebookReader } from "./notebook-read.ts";
 export type { PdfReader } from "./pdf-read.ts";

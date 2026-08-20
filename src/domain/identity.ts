@@ -50,6 +50,8 @@ export type LoomManifestId = Brand<string, "LoomManifestId">;
 export type HistoryCheckpointId = Brand<string, "HistoryCheckpointId">;
 /** One durable memory record. Corrections create a new id; the old record is not rewritten. */
 export type MemoryId = Brand<string, "MemoryId">;
+/** One queued follow-up user request on a session (#611). */
+export type FollowUpId = Brand<string, "FollowUpId">;
 /** One bounded operational observation. Aggregates only; never a durable fact. */
 export type ObservationId = Brand<string, "ObservationId">;
 /** One reviewable operational recommendation. Never auto-applied. */
@@ -162,6 +164,7 @@ export const loomManifestId = createIdentifierCodec<LoomManifestId>("loomManifes
 export const historyCheckpointId =
   createIdentifierCodec<HistoryCheckpointId>("historyCheckpointId");
 export const memoryId = createIdentifierCodec<MemoryId>("memoryId");
+export const followUpId = createIdentifierCodec<FollowUpId>("followUpId");
 export const observationId = createIdentifierCodec<ObservationId>("observationId");
 export const recommendationId = createIdentifierCodec<RecommendationId>("recommendationId");
 export const outcomeId = createIdentifierCodec<OutcomeId>("outcomeId");

@@ -3155,6 +3155,20 @@ tool loops, retry/fallback policy, or durable turn-event persistence:
 - `src/application/session-runtime.ts` / `turn-coordinator.ts` as the public
   in-memory entry points.
 
+The mid-turn steer / follow-up / interrupt classification slice from
+[#611](https://github.com/tyldra-org/falryn/issues/611) (parent
+[#610](https://github.com/tyldra-org/falryn/issues/610)) extends that machine
+without reopening #40:
+
+- `src/domain/mid-turn-input.ts` — exhaustive steer / follow-up / interrupt
+  classification, follow-up FIFO with entry and text ceilings, promote / drop /
+  apply-as-steer / start-head helpers, and semantic mid-turn events;
+- `src/application/mid-turn-input.ts` — session-scoped service over the turn
+  coordinator and interruption policy; refuses a second in-flight turn.
+
+Validated by `src/domain/mid-turn-input.test.ts` and
+`src/application/mid-turn-input.test.ts` under `bun run check`.
+
 The deterministic prompt-composition slice from
 [#42](https://github.com/tyldra-org/falryn/issues/42) adds pure provider-neutral
 request assembly for the turn loop's `assembling-context` stage without live

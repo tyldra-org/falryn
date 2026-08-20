@@ -31,3 +31,16 @@ export const MAX_IDENTIFIER_LENGTH = 128;
 
 /** Maximum number of events one `EventStorePort.readFrom` call may return. */
 export const MAX_STREAM_READ_LIMIT = 1000;
+
+/**
+ * Maximum queued follow-up entries on one session (#611).
+ *
+ * Overflow refuses the new entry without mutating the existing queue.
+ */
+export const MAX_FOLLOW_UP_QUEUE_ENTRIES = 8;
+
+/**
+ * Maximum total UTF-16 code units across all queued follow-up request texts
+ * on one session (#611).
+ */
+export const MAX_FOLLOW_UP_QUEUE_TEXT_UNITS = 64 * 1024;
