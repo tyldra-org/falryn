@@ -37,6 +37,7 @@ const DEFAULTS: GlobalOptions = {
   verbose: false,
   nonInteractive: false,
   workspace: null,
+  addDirs: [],
   profile: null,
   timeoutMs: null,
   help: false,

@@ -59,6 +59,9 @@ import type {
   RunCommandResult,
   SessionListPayload,
   SessionShowPayload,
+  WorkspaceListPayload,
+  WorkspaceSavePayload,
+  WorkspaceSetPayload,
 } from "./commands.ts";
 import type {
   CommandEffect,
@@ -668,6 +671,13 @@ function renderPayload(session: Session, result: RunCommandResult): RenderedPayl
       return renderArtifactShow(session, result.payload);
     case "artifact.get":
       return renderArtifactGet(session, result.payload);
+    case "workspace.list":
+      return renderWorkspaceList(session, result.payload);
+    case "workspace.show":
+    case "workspace.load":
+      return renderWorkspaceSet(session, result.payload, result.command);
+    case "workspace.save":
+      return renderWorkspaceSave(session, result.payload);
     default:
       return assertNever(result, "unhandled command result");
   }
@@ -817,6 +827,67 @@ function renderArtifactGet(session: Session, payload: ArtifactGetPayload | null)
       payload.destination === "stdout"
         ? ["Artifact bytes were written to stdout; this summary is on stderr."]
         : [],
+  };
+}
+
+function renderWorkspaceList(
+  session: Session,
+  payload: WorkspaceListPayload | null,
+): RenderedPayload {
+  if (payload === null) {
+    return { lines: ["No workspace layouts are available."], diagnostics: [] };
+  }
+  if (payload.layouts.length === 0) {
+    return { lines: ["No saved workspace layouts."], diagnostics: [] };
+  }
+  return {
+    lines: [
+      paint(session, "plain", "Workspace layouts"),
+      ...payload.layouts.map((entry) => `  ${safe(entry.name)}  roots=${entry.rootCount}`),
+    ],
+    diagnostics: [],
+  };
+}
+
+function renderWorkspaceSet(
+  session: Session,
+  payload: WorkspaceSetPayload | null,
+  command: "workspace.show" | "workspace.load",
+): RenderedPayload {
+  if (payload === null) {
+    return { lines: ["No workspace set is available."], diagnostics: [] };
+  }
+  const title = command === "workspace.load" ? "Workspace loaded" : "Workspace set";
+  const source =
+    payload.layoutName === null ? payload.source : `${payload.source}:${payload.layoutName}`;
+  return {
+    lines: [
+      paint(session, "plain", title),
+      `  Source       ${safe(source)}`,
+      ...payload.roots.map(
+        (root) => `  ${safe(root.rootId)}  ${safe(root.name)}  ${safe(root.path)}`,
+      ),
+    ],
+    diagnostics: [],
+  };
+}
+
+function renderWorkspaceSave(
+  session: Session,
+  payload: WorkspaceSavePayload | null,
+): RenderedPayload {
+  if (payload === null) {
+    return { lines: ["No workspace layout was saved."], diagnostics: [] };
+  }
+  return {
+    lines: [
+      paint(session, "plain", "Workspace layout saved"),
+      `  Name         ${safe(payload.name)}`,
+      ...payload.roots.map(
+        (root) => `  ${safe(root.rootId)}  ${safe(root.name)}  ${safe(root.path)}`,
+      ),
+    ],
+    diagnostics: [],
   };
 }
 
@@ -1271,6 +1342,26 @@ function quietResultLines(result: RunCommandResult): readonly string[] {
               String(result.payload.bytesWritten),
             ].join("\t"),
           ];
+    case "workspace.list":
+      return result.payload === null
+        ? []
+        : result.payload.layouts.map((entry) => `${safe(entry.name)}\t${entry.rootCount}`);
+    case "workspace.show":
+    case "workspace.load":
+      return result.payload === null
+        ? []
+        : result.payload.roots.map(
+            (root) => `${safe(root.rootId)}\t${safe(root.name)}\t${safe(root.path)}`,
+          );
+    case "workspace.save":
+      return result.payload === null
+        ? []
+        : [
+            safe(result.payload.name),
+            ...result.payload.roots.map(
+              (root) => `${safe(root.rootId)}\t${safe(root.name)}\t${safe(root.path)}`,
+            ),
+          ];
     default:
       return assertNever(result, "unhandled command result");
   }
@@ -1371,6 +1462,14 @@ function quietFindingLines(result: RunCommandResult): readonly string[] {
         : [`omitted ${result.payload.omitted} artifacts`];
     case "artifact.show":
     case "artifact.get":
+      return [];
+    case "workspace.list":
+      return result.payload === null || result.payload.omitted === 0
+        ? []
+        : [`omitted ${result.payload.omitted} layouts`];
+    case "workspace.show":
+    case "workspace.load":
+    case "workspace.save":
       return [];
     default:
       return assertNever(result, "unhandled command result");

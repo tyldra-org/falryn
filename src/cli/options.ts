@@ -58,8 +58,10 @@ export type GlobalOptions = {
   readonly quiet: boolean;
   readonly verbose: boolean;
   readonly nonInteractive: boolean;
-  /** An explicit workspace root, or `null` to use the current directory. */
+  /** An explicit workspace root or saved layout name, or `null` for cwd. */
   readonly workspace: string | null;
+  /** Extra roots for this invocation only (`--add-dir`, repeatable). */
+  readonly addDirs: readonly string[];
   /** A configuration profile name, or `null` for none. */
   readonly profile: string | null;
   /** A total deadline in milliseconds, or `null` for none. */

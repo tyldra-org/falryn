@@ -44,7 +44,10 @@ const GLOBALS: GlobalOptions = {
   timeoutMs: null,
   verbose: false,
   workspace: null,
-} as GlobalOptions;
+  addDirs: [],
+  help: false,
+  version: false,
+};
 
 function provider(
   fileSystem: FileSystemPort,
