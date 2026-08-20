@@ -549,7 +549,7 @@ describe("submitting", () => {
 
     const frame = await shell.frame();
     expect(frame).toContain("Not sent");
-    expect(frame).toContain("#33");
+    expect(frame).toContain("#707");
     expect(frame).toContain("ask something");
   });
 });
