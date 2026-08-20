@@ -42,6 +42,9 @@ const RENDERER_OWNERS = [
   // so the control receives raw input rather than routing every character
   // through the registry.
   "components/composer.tsx",
+  // Expanded transcript body selection (#622). OpenTUI owns the native range;
+  // Falryn reads it at include/copy time rather than storing a second model.
+  "components/transcript-body.tsx",
   // The palette's search field. #364: a search field is a focused text control,
   // and routing every character through the command registry would put a
   // dispatch between a keystroke and the character it produces. Help shares this

@@ -3,9 +3,12 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { digestBytes } from "../../application/index.ts";
 import { blockKey } from "../../presentation/index.ts";
 import { everyBlockKind } from "../../presentation/transcript/fixtures.ts";
 import { includeTranscriptInDraft } from "./include.ts";
+
+const encoder = new TextEncoder();
 
 const CORPUS = everyBlockKind();
 
@@ -111,5 +114,27 @@ describe("includeTranscriptInDraft", () => {
       return;
     }
     expect(result.reason).toBe("There is no entry to include.");
+  });
+
+  test("includes a native range with a range digest identity", () => {
+    const block = ofKind("user-input");
+    const key = blockKey(block.anchor);
+    const ranged = "the port";
+    const result = includeTranscriptInDraft({
+      selected: key,
+      expanded: new Set([key]),
+      blocks: [block],
+      attachments: [],
+      nextId: "att-7",
+      nativeRange: { start: 7, end: 15 },
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    expect(new TextDecoder().decode(result.bytes)).toBe(ranged);
+    expect(result.attachment.identity).toBe(
+      `transcript:${key}:${digestBytes(encoder.encode(ranged))}`,
+    );
   });
 });

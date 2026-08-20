@@ -40,6 +40,8 @@ export const EMPTY_TRANSCRIPT_MODEL: TranscriptModel = {
   surface: INITIAL_TRANSCRIPT_STATE,
   commands: [],
   emptyStateCommand: "app.help",
+  focused: false,
+  selectableBody: null,
 };
 
 /**

@@ -28,13 +28,14 @@
  */
 
 import { type ReactNode, useEffect, useRef } from "react";
-import { blockKey, boundedTextsOf } from "../../presentation/index.ts";
+import { blockKey, boundedTextsOf, type TranscriptBlock } from "../../presentation/index.ts";
 import { primaryColumns, primaryRows } from "../layout.ts";
 import {
   type BlockDescriptor,
   collapsedRows,
   describeRouteWith,
   EMPTY_HEIGHT_BATCH,
+  EXPANSION_INDENT,
   type HeightBatch,
   reconcileHeights,
   rowsForBlock,
@@ -44,9 +45,11 @@ import {
   type TranscriptWindow,
   windowOn,
 } from "../transcript/index.ts";
+import { contentLineCount, entriesForVisibleRows } from "../transcript/render-rows.ts";
 import type { TranscriptGeometry, TranscriptModel } from "../transcript-model.ts";
 import { useFrame, useLayoutClass } from "./context.tsx";
 import { Line, StatusMark } from "./primitives.tsx";
+import { TranscriptBodyField } from "./transcript-body.tsx";
 
 export type TranscriptViewProps = {
   readonly model: TranscriptModel;
@@ -85,12 +88,34 @@ export function TranscriptView(props: TranscriptViewProps): ReactNode {
   }
 
   const rows = visibleRows(props.model, measured, view.window, columns, frame);
+  const built = builtRowsFor(props.model, measured, blocks);
+  const selectable =
+    props.model.selectableBody === null || built === null
+      ? null
+      : {
+          ...props.model.selectableBody,
+          contentLines: contentLineCount(built, props.model.selectableBody.key),
+        };
+  const entries = entriesForVisibleRows(rows, selectable, props.model.focused);
+  const onBodyRenderable = props.model.onBodyRenderable;
 
   return (
     <box flexDirection="column" flexGrow={1}>
-      {rows.map((row) => (
-        <Row key={row.key} row={row} maxColumns={columns} />
-      ))}
+      {entries.map((entry) =>
+        entry.kind === "body" ? (
+          <box key={entry.key} paddingLeft={EXPANSION_INDENT * 2}>
+            <TranscriptBodyField
+              text={entry.text}
+              height={entry.height}
+              width={Math.max(1, columns - EXPANSION_INDENT * 2)}
+              focused={entry.focused}
+              {...(onBodyRenderable === undefined ? {} : { onRenderable: onBodyRenderable })}
+            />
+          </box>
+        ) : (
+          <Row key={entry.row.key} row={entry.row} maxColumns={columns} />
+        ),
+      )}
       <UnseenNotice model={props.model} window={view.window} maxColumns={columns} />
     </box>
   );
@@ -298,4 +323,20 @@ function visibleRows(
   }
 
   return mounted.slice(view.skippedRows, view.skippedRows + view.visibleRows);
+}
+
+function builtRowsFor(
+  model: TranscriptModel,
+  measured: Measured,
+  blocks: readonly TranscriptBlock[],
+): readonly TranscriptRow[] | null {
+  const selected = model.selectableBody?.key;
+  if (selected === undefined) {
+    return null;
+  }
+  const index = blocks.findIndex((block) => blockKey(block.anchor) === selected);
+  if (index < 0) {
+    return null;
+  }
+  return measured.batch.records[index]?.built ?? null;
 }
