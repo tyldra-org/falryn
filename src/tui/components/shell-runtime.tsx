@@ -18,8 +18,10 @@ import type { CopyTextPort, CopyTextResult } from "../clipboard.ts";
 import { type CommandState, commandById } from "../commands.ts";
 import {
   type ComposerAction,
+  parseComposerSlash,
   type SubmissionPort,
   UNAVAILABLE_SUBMISSION,
+  workspacePanelForSlashCommand,
 } from "../composer/index.ts";
 import { createMemoryAttachmentPayloads } from "../composer/payload.ts";
 import {
@@ -40,7 +42,11 @@ import {
 } from "../transcript/index.ts";
 import { EMPTY_GEOMETRY, type TranscriptGeometry } from "../transcript-model.ts";
 import type { WorkspaceController, WorkspaceSetView } from "../workspace/index.ts";
-import { EMPTY_WORKSPACE_SET } from "../workspace/index.ts";
+import {
+  describeWorkspaceControllerError,
+  EMPTY_WORKSPACE_SET,
+  workspaceOverlayRoute,
+} from "../workspace/index.ts";
 import { useRenderGate } from "./render-gate.tsx";
 import { runAvailableCommand } from "./shell-command-runner.ts";
 import {
@@ -316,8 +322,74 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
   }, [copyPort, reportCopy]);
 
   const submitComposer = useCallback((): void => {
+    const current = stateRef.current.composer;
+    const slash = parseComposerSlash(current.text);
+    if (slash !== null) {
+      if (slash.kind === "unresolved") {
+        dispatch({ kind: "notice", message: slash.reason });
+        return;
+      }
+
+      const command = commandById(slash.commandId);
+      if (command === undefined) {
+        dispatch({ kind: "notice", message: `No command named ${slash.commandId}.` });
+        return;
+      }
+      const availability = command.availability(
+        commandStateFor(stateRef.current, blocksRef.current),
+      );
+      if (availability.kind === "unavailable") {
+        dispatch({
+          kind: "notice",
+          message: `${command.title} is unavailable: ${availability.reason}.`,
+        });
+        return;
+      }
+
+      if (slash.commandId === "workspace.load" && slash.argument !== null) {
+        const layoutName = slash.argument;
+        const controller = options.workspaceController ?? null;
+        if (controller === null) {
+          dispatch({
+            kind: "notice",
+            message: `${command.title} is unavailable: no workspace set yet.`,
+          });
+          return;
+        }
+        void (async () => {
+          const result = await controller.load(layoutName);
+          if (!result.ok) {
+            dispatch({
+              kind: "notice",
+              message: describeWorkspaceControllerError(result.error),
+            });
+            return;
+          }
+          dispatch({ kind: "workspace-set", workspace: result.value });
+          dispatch({
+            kind: "notice",
+            message: `Loaded layout “${layoutName.trim()}”.`,
+          });
+          dispatch({ kind: "composer", action: { kind: "draft", text: "" } });
+        })();
+        return;
+      }
+
+      const panel = workspacePanelForSlashCommand(slash.commandId);
+      if (panel === null) {
+        dispatch({ kind: "notice", message: `No workspace panel for ${slash.commandId}.` });
+        return;
+      }
+      const draft = panel === "add" || panel === "save" ? (slash.argument ?? "") : "";
+      dispatch({
+        kind: "open-overlay",
+        route: workspaceOverlayRoute(panel, draft),
+      });
+      dispatch({ kind: "composer", action: { kind: "draft", text: "" } });
+      return;
+    }
+
     void (async () => {
-      const current = stateRef.current.composer;
       const resolved = await admitComposerContext(
         {
           attachments: current.attachments,
@@ -331,7 +403,7 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
         action: { kind: "submit", attachments: resolved.attachments },
       });
     })();
-  }, [fileProbe]);
+  }, [fileProbe, options.workspaceController]);
 
   const run = useCallback(
     (id: string): boolean => {

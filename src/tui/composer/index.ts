@@ -30,6 +30,17 @@ export {
 } from "./history.ts";
 export type { AttachmentPayloadPort } from "./payload.ts";
 export { createMemoryAttachmentPayloads } from "./payload.ts";
+export type {
+  ComposerSlashAlias,
+  ParsedComposerSlash,
+  SlashArgumentKind,
+} from "./slash.ts";
+export {
+  parseComposerSlash,
+  SLASH_ARGUMENT_KINDS,
+  WORKSPACE_SLASH_ALIASES,
+  workspacePanelForSlashCommand,
+} from "./slash.ts";
 export type { ComposerAction, ComposerEnhancement, ComposerPhase, ComposerState } from "./state.ts";
 export {
   COMPOSER_PHASES,

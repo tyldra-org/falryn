@@ -141,4 +141,49 @@ describe("workspace overlays", () => {
     expect(frame).toContain("Add workspace root");
     expect(frame).toContain("Path to add");
   });
+
+  test("dispatches /workspace show from the composer onto the same overlay", async () => {
+    const controller = controllerWithTwoRoots();
+    using shell = await mount(
+      <ShellApp
+        theme={THEME}
+        model={MODEL}
+        onExit={() => {}}
+        workspaceController={controller}
+        workspace={controller.initial}
+      />,
+    );
+    await shell.frame();
+    await shell.press("\t");
+    await shell.press("\t");
+    await shell.type("/workspace show");
+    expect(await shell.frame("/workspace show")).toContain("/workspace show");
+    await shell.press("\r");
+    const frame = await shell.frame("Workspace set");
+    expect(frame).toContain("Workspace set");
+    expect(frame).toContain("falryn (primary)");
+    expect(frame).toContain("/work/falryn");
+  });
+
+  test("prefills /workspace add with the path argument", async () => {
+    const controller = controllerWithTwoRoots();
+    using shell = await mount(
+      <ShellApp
+        theme={THEME}
+        model={MODEL}
+        onExit={() => {}}
+        workspaceController={controller}
+        workspace={controller.initial}
+      />,
+    );
+    await shell.frame();
+    await shell.press("\t");
+    await shell.press("\t");
+    await shell.type("/workspace add /work/extra");
+    expect(await shell.frame("/workspace add")).toContain("/workspace add");
+    await shell.press("\r");
+    const frame = await shell.frame("Add workspace root");
+    expect(frame).toContain("Add workspace root");
+    expect(frame).toContain("/work/extra");
+  });
 });
