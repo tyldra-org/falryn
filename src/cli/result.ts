@@ -63,6 +63,9 @@ export const COMMAND_IDS = [
   "export",
   "session.list",
   "session.show",
+  "artifact.list",
+  "artifact.show",
+  "artifact.get",
   /** Help for the root or for a subcommand. */
   "help",
   "version",

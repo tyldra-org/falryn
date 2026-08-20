@@ -50,6 +50,9 @@ import {
   wrapToWidth,
 } from "../domain/index.ts";
 import type {
+  ArtifactGetPayload,
+  ArtifactListPayload,
+  ArtifactShowPayload,
   DataRemovalPayload,
   DoctorPayload,
   ExportCommandPayload,
@@ -659,6 +662,12 @@ function renderPayload(session: Session, result: RunCommandResult): RenderedPayl
       return renderSessionList(session, result.payload);
     case "session.show":
       return renderSessionShow(session, result.payload);
+    case "artifact.list":
+      return renderArtifactList(session, result.payload);
+    case "artifact.show":
+      return renderArtifactShow(session, result.payload);
+    case "artifact.get":
+      return renderArtifactGet(session, result.payload);
     default:
       return assertNever(result, "unhandled command result");
   }
@@ -741,6 +750,73 @@ function renderSessionShow(session: Session, payload: SessionShowPayload | null)
       `  Closed       ${entry.closedAt === null ? "(open)" : safe(entry.closedAt)}`,
     ],
     diagnostics: [],
+  };
+}
+
+function renderArtifactList(
+  session: Session,
+  payload: ArtifactListPayload | null,
+): RenderedPayload {
+  if (payload === null) {
+    return { lines: ["No artifact catalog is available."], diagnostics: [] };
+  }
+  if (payload.artifacts.length === 0) {
+    return { lines: ["No artifacts."], diagnostics: [] };
+  }
+  const lines = [
+    paint(session, "plain", "Artifacts"),
+    ...payload.artifacts.map(
+      (entry) =>
+        `  ${safe(entry.artifactId)}  ${safe(entry.availability)}  ${safe(entry.mediaType)}  ${entry.byteLength} bytes`,
+    ),
+  ];
+  return { lines, diagnostics: [] };
+}
+
+function renderArtifactShow(
+  session: Session,
+  payload: ArtifactShowPayload | null,
+): RenderedPayload {
+  if (payload === null) {
+    return { lines: ["No artifact is available."], diagnostics: [] };
+  }
+  const record = payload.lineage.record;
+  return {
+    lines: [
+      paint(session, "plain", "Artifact"),
+      `  Identity     ${safe(record.artifactId)}`,
+      `  Media type   ${safe(record.mediaType)}`,
+      `  Bytes        ${record.byteLength}`,
+      `  Availability ${safe(record.availability)}`,
+      `  Sensitivity  ${safe(record.sensitivity)}`,
+      `  Parents      ${payload.lineage.parents.length}`,
+      `  Children     ${payload.lineage.children.length}`,
+    ],
+    diagnostics: [],
+  };
+}
+
+function renderArtifactGet(session: Session, payload: ArtifactGetPayload | null): RenderedPayload {
+  if (payload === null) {
+    return { lines: ["No artifact retrieval is available."], diagnostics: [] };
+  }
+  const destination =
+    payload.destination === "stdout"
+      ? "stdout"
+      : payload.path === null
+        ? "file"
+        : safe(payload.path);
+  return {
+    lines: [
+      paint(session, "plain", "Artifact retrieved"),
+      `  Identity     ${safe(payload.artifactId)}`,
+      `  Destination  ${destination}`,
+      `  Bytes        ${payload.bytesWritten}`,
+    ],
+    diagnostics:
+      payload.destination === "stdout"
+        ? ["Artifact bytes were written to stdout; this summary is on stderr."]
+        : [],
   };
 }
 
@@ -1178,6 +1254,23 @@ function quietResultLines(result: RunCommandResult): readonly string[] {
         : result.payload.sessions.map((entry) => safe(entry.sessionId));
     case "session.show":
       return result.payload === null ? [] : [safe(result.payload.session.sessionId)];
+    case "artifact.list":
+      return result.payload === null
+        ? []
+        : result.payload.artifacts.map((entry) => safe(entry.artifactId));
+    case "artifact.show":
+      return result.payload === null ? [] : [safe(result.payload.lineage.record.artifactId)];
+    case "artifact.get":
+      return result.payload === null
+        ? []
+        : [
+            [
+              safe(result.payload.artifactId),
+              result.payload.destination,
+              result.payload.path === null ? "" : safe(result.payload.path),
+              String(result.payload.bytesWritten),
+            ].join("\t"),
+          ];
     default:
       return assertNever(result, "unhandled command result");
   }
@@ -1271,6 +1364,13 @@ function quietFindingLines(result: RunCommandResult): readonly string[] {
         ? []
         : [`omitted ${result.payload.omitted} sessions`];
     case "session.show":
+      return [];
+    case "artifact.list":
+      return result.payload === null || result.payload.omitted === 0
+        ? []
+        : [`omitted ${result.payload.omitted} artifacts`];
+    case "artifact.show":
+    case "artifact.get":
       return [];
     default:
       return assertNever(result, "unhandled command result");

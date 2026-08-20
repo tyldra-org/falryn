@@ -17,6 +17,9 @@
  */
 
 import {
+  type ArtifactCatalogError,
+  type ArtifactError,
+  type ArtifactReadError,
   assertNever,
   blockingIssues,
   type CodecError,
@@ -980,6 +983,119 @@ export function fromSessionIsolationError(
     effect: "none",
     recovery: ["inspect-state"],
     cause: { source: "session-isolation", code: error.code, detail: error.field },
+    ...context,
+  });
+}
+
+/** A bounded artifact catalog refusal. */
+export function fromArtifactCatalogError(
+  error: ArtifactCatalogError,
+  context: ErrorContext = {},
+): FalrynError {
+  if (error.code === "cancelled") {
+    return build({
+      code: "cancellation.artifact-catalog.cancelled",
+      category: "cancellation",
+      message: "The artifact catalog operation was cancelled.",
+      retryable: true,
+      effect: "none",
+      cause: { source: "artifact-catalog", code: error.code, detail: error.field },
+      ...context,
+    });
+  }
+  return build({
+    code: `data.artifact-catalog.${error.code}`,
+    category: "data",
+    message:
+      error.code === "invalid-limit"
+        ? "The artifact list limit is outside the supported range."
+        : "The artifact catalog could not be read.",
+    retryable: false,
+    effect: "none",
+    recovery: ["inspect-state"],
+    cause: { source: "artifact-catalog", code: error.code, detail: error.field },
+    ...context,
+  });
+}
+
+/** An artifact store or metadata refusal. */
+export function fromArtifactError(error: ArtifactError, context: ErrorContext = {}): FalrynError {
+  if (error.code === "cancelled") {
+    return build({
+      code: "cancellation.artifact.cancelled",
+      category: "cancellation",
+      message: "The artifact operation was cancelled.",
+      retryable: true,
+      effect: "none",
+      cause: { source: "artifact", code: error.code, detail: String(error.artifactId) },
+      ...context,
+    });
+  }
+  const artifactId = "artifactId" in error ? String(error.artifactId) : null;
+  const message =
+    error.code === "not-found"
+      ? "The requested artifact was not found."
+      : `The artifact could not be read (${error.code}).`;
+  return build({
+    code: `data.artifact.${error.code}`,
+    category: "data",
+    message,
+    retryable: error.code === "storage",
+    effect: "none",
+    recovery: error.code === "not-found" ? ["inspect-state"] : recoveryForEffect("none"),
+    cause: { source: "artifact", code: error.code, detail: artifactId },
+    ...context,
+  });
+}
+
+/** A bounded artifact read refusal. */
+export function fromArtifactReadError(
+  error: ArtifactReadError,
+  context: ErrorContext = {},
+): FalrynError {
+  if (!("kind" in error) && error.code === "cancelled") {
+    return build({
+      code: "cancellation.artifact-read.cancelled",
+      category: "cancellation",
+      message: "The artifact read was cancelled.",
+      retryable: true,
+      effect: "none",
+      cause: { source: "artifact-read", code: error.code, detail: null },
+      ...context,
+    });
+  }
+  if ("kind" in error && error.kind === "artifact") {
+    return fromArtifactError(error, context);
+  }
+  if ("code" in error && error.code === "malformed-request") {
+    return build({
+      code: "data.artifact-read.malformed-request",
+      category: "data",
+      message: "The artifact read request was invalid.",
+      retryable: false,
+      effect: "none",
+      cause: { source: "artifact-read", code: error.code, detail: error.field },
+      ...context,
+    });
+  }
+  if ("code" in error && error.code === "malformed-limits") {
+    return build({
+      code: "data.artifact-read.malformed-limits",
+      category: "data",
+      message: "The artifact read limits were invalid.",
+      retryable: false,
+      effect: "none",
+      cause: { source: "artifact-read", code: error.code, detail: error.field },
+      ...context,
+    });
+  }
+  return build({
+    code: "data.artifact-read.invalid",
+    category: "data",
+    message: "The artifact read request was invalid.",
+    retryable: false,
+    effect: "none",
+    cause: { source: "artifact-read", code: "invalid", detail: null },
     ...context,
   });
 }

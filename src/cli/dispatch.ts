@@ -44,6 +44,9 @@ import {
 } from "./command-tree.ts";
 import {
   type RunCommandResult,
+  runArtifactGet,
+  runArtifactList,
+  runArtifactShow,
   runConfigPath,
   runConfigShow,
   runConfigValidate,
@@ -184,7 +187,7 @@ async function runCommand(
   options: DispatchOptions,
 ): Promise<ExitCode> {
   const { streams } = options;
-  const { command, data, exportArgs, sessionArgs, options: globals } = invocation;
+  const { command, data, exportArgs, sessionArgs, artifactArgs, options: globals } = invocation;
 
   if (command === "default") {
     return runDefault(globals, options);
@@ -199,12 +202,22 @@ async function runCommand(
     data,
     exportArgs,
     sessionArgs,
+    artifactArgs,
     services,
     overrides,
     globals,
     options,
   );
-  emit(streams, await render(result, globals, streams, services));
+  const rendered = await render(result, globals, streams, services);
+  if (
+    result.command === "artifact.get" &&
+    "stdoutDelivery" in result &&
+    result.stdoutDelivery?.kind === "stdout-bytes"
+  ) {
+    emit(streams, { result: [], diagnostics: rendered.diagnostics });
+  } else {
+    emit(streams, rendered);
+  }
   return resolveExitCode({
     outcome: result.outcome,
     error: result.errors[0] ?? null,
@@ -396,6 +409,7 @@ async function governed(
   data: Extract<Invocation, { kind: "run" }>["data"],
   exportArgs: Extract<Invocation, { kind: "run" }>["exportArgs"],
   sessionArgs: Extract<Invocation, { kind: "run" }>["sessionArgs"],
+  artifactArgs: Extract<Invocation, { kind: "run" }>["artifactArgs"],
   services: ServiceProvider,
   overrides: Readonly<Record<string, string>>,
   globals: GlobalOptions,
@@ -404,15 +418,37 @@ async function governed(
   const governance = options.governance ?? createInvocationGovernance();
   const scope = openInvocationScope(governance, globals.timeoutMs);
   if (scope === null) {
-    return produce(command, data, exportArgs, sessionArgs, services, overrides, globals);
+    return produce(
+      command,
+      data,
+      exportArgs,
+      sessionArgs,
+      artifactArgs,
+      services,
+      overrides,
+      globals,
+      options,
+    );
   }
 
   const run = await runUnderScope(governance, scope, (signal) =>
-    produce(command, data, exportArgs, sessionArgs, services, overrides, globals, signal, () => {
-      // The executor has begun a destructive operation. If an interrupt wins
-      // the race from here, the scope must not report a retry-safe cancellation.
-      governance.scopes.recordEffect(scope.scopeId, "uncertain");
-    }),
+    produce(
+      command,
+      data,
+      exportArgs,
+      sessionArgs,
+      artifactArgs,
+      services,
+      overrides,
+      globals,
+      options,
+      signal,
+      () => {
+        // The executor has begun a destructive operation. If an interrupt wins
+        // the race from here, the scope must not report a retry-safe cancellation.
+        governance.scopes.recordEffect(scope.scopeId, "uncertain");
+      },
+    ),
   );
   // A stopped invocation still answers, in the format the caller asked for.
   // Emitting nothing would leave a reader waiting for a record that is not
@@ -551,9 +587,11 @@ async function produce(
   data: Extract<Invocation, { kind: "run" }>["data"],
   exportArgs: Extract<Invocation, { kind: "run" }>["exportArgs"],
   sessionArgs: Extract<Invocation, { kind: "run" }>["sessionArgs"],
+  artifactArgs: Extract<Invocation, { kind: "run" }>["artifactArgs"],
   services: ServiceProvider,
   overrides: Readonly<Record<string, string>>,
   globals: GlobalOptions,
+  options: DispatchOptions,
   signal?: AbortSignal,
   onMutationStart?: () => void,
 ): Promise<RunCommandResult> {
@@ -591,6 +629,29 @@ async function produce(
         throw new Error("Missing parsed session show arguments.");
       }
       return runSessionShow(services, sessionArgs, signal);
+    case "artifact.list":
+      if (artifactArgs === null || artifactArgs.action !== "list") {
+        throw new Error("Missing parsed artifact list arguments.");
+      }
+      return runArtifactList(services, artifactArgs, signal);
+    case "artifact.show":
+      if (artifactArgs === null || artifactArgs.action !== "show") {
+        throw new Error("Missing parsed artifact show arguments.");
+      }
+      return runArtifactShow(services, artifactArgs, signal);
+    case "artifact.get":
+      if (artifactArgs === null || artifactArgs.action !== "get") {
+        throw new Error("Missing parsed artifact get arguments.");
+      }
+      return runArtifactGet(
+        services,
+        artifactArgs,
+        {
+          resultStream: options.streams.result,
+          stdoutIsTty: options.streams.capabilities.stdout.isTty,
+        },
+        signal,
+      );
     default:
       // `default`, `help`, and `version` are answered before this is reached,
       // so a new command reaching here without a branch fails to compile.

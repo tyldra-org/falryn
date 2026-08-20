@@ -75,6 +75,20 @@ export {
   walkArtifactLineage,
 } from "./artifact-api.ts";
 export type {
+  ArtifactCatalog,
+  ArtifactCatalogEntry,
+  ArtifactCatalogError,
+  ArtifactCatalogErrorCode,
+} from "./artifact-catalog.ts";
+export {
+  ARTIFACT_CATALOG_VERSION,
+  DEFAULT_ARTIFACT_LIST_LIMIT,
+  describeArtifactCatalogError,
+  entryFromRecord,
+  MAX_ARTIFACT_CATALOG,
+  queryArtifactCatalog,
+} from "./artifact-catalog.ts";
+export type {
   ArtifactRead,
   ArtifactReadError,
   ArtifactReadLimitError,
