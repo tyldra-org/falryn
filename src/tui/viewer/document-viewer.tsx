@@ -6,6 +6,7 @@
  */
 
 import type { ReactNode } from "react";
+import { wrapToWidthWindow } from "../../domain/index.ts";
 import type { DocumentViewModel } from "../../presentation/viewer/index.ts";
 import { useFrame } from "../components/context.tsx";
 import { Line } from "../components/primitives.tsx";
@@ -20,7 +21,7 @@ export type DocumentViewerProps = {
 };
 
 export function DocumentViewer(props: DocumentViewerProps): ReactNode {
-  const { terminal, cache } = useFrame();
+  const { terminal } = useFrame();
   const width = Math.max(8, terminal.columns - PANEL_CHROME_COLUMNS);
 
   if (props.loading) {
@@ -50,7 +51,10 @@ export function DocumentViewer(props: DocumentViewerProps): ReactNode {
   const { model } = props;
   const chromeRows = (model.statusNote === null ? 0 : 1) + 1;
   const contentHeight = Math.max(1, props.rows - chromeRows);
-  const lines = model.withheld ? [] : cache.wrap(model.text, width);
+  const windowed = model.withheld
+    ? { lines: [] as const, truncated: false }
+    : wrapToWidthWindow(model.text, width, contentHeight);
+  const lines = windowed.lines;
 
   return (
     <box flexDirection="column" height={props.rows}>
@@ -60,23 +64,21 @@ export function DocumentViewer(props: DocumentViewerProps): ReactNode {
         </Line>
       )}
       <Line color="mutedForeground" typography="muted" maxColumns={width}>
-        {`${model.family} · document`}
+        {`${model.family} · document${windowed.truncated ? " · windowed" : ""}`}
       </Line>
       {model.withheld ? (
         <Line color="mutedForeground" typography="muted" maxColumns={width}>
           Document withheld.
         </Line>
       ) : (
-        <scrollbox focused height={contentHeight} width={width}>
-          <box flexDirection="column">
-            {lines.map((line, index) => (
-              // biome-ignore lint/suspicious/noArrayIndexKey: wrapped document lines are positional slices.
-              <Line key={index} color="foreground" typography="body" maxColumns={width}>
-                {line}
-              </Line>
-            ))}
-          </box>
-        </scrollbox>
+        <box flexDirection="column" height={contentHeight}>
+          {lines.map((line, index) => (
+            // biome-ignore lint/suspicious/noArrayIndexKey: wrapped document lines are positional slices.
+            <Line key={index} color="foreground" typography="body" maxColumns={width}>
+              {line}
+            </Line>
+          ))}
+        </box>
       )}
     </box>
   );
