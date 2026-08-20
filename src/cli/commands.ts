@@ -14,10 +14,16 @@ import {
   createRuntimeRedactor,
   fromConfigurationIssues,
   fromExportError,
+  fromRecordError,
   fromRemovalRefusal,
+  fromSessionCatalogError,
+  fromSessionIsolationError,
   fromSqliteStoreError,
   fromUnknown,
   fromUnreadConfigurationSources,
+  inspectWorkspaceSession,
+  isolateWorkspaceSessions,
+  queryWorkspaceSessions,
 } from "../application/index.ts";
 import { CONFIGURATION_FILE_NAME, inspectGeneration, PROFILE_DIRECTORY } from "../config/index.ts";
 import {
@@ -52,12 +58,18 @@ import {
   LOCAL_DATA_ROOTS,
   type LocalDataRoot,
   type LocalPath,
+  MAX_SESSION_CATALOG,
   type OwnershipClass,
+  type RecordError,
   type RemovalOutcome,
   type RemovalPlan,
   type RootInspection,
   type RootStatus,
   type RootViability,
+  type SessionCatalogEntry,
+  type SessionCatalogError,
+  type SessionIsolationError,
+  type SessionIsolationWarning,
   type SourceReport,
   type TerminalOutcome,
 } from "../domain/index.ts";
@@ -67,7 +79,11 @@ import {
   createSha256Hasher,
   openBunSqlite,
 } from "../integrations/index.ts";
-import type { DataCommandArguments, ExportCommandArguments } from "./command-tree.ts";
+import type {
+  DataCommandArguments,
+  ExportCommandArguments,
+  SessionCommandArguments,
+} from "./command-tree.ts";
 import type { GlobalOptions } from "./options.ts";
 import {
   COMMAND_RESULT_SCHEMA_FAMILY,
@@ -75,6 +91,8 @@ import {
   type CommandEffect,
   type CommandId,
   type CommandResultOf,
+  type CommandTruncation,
+  type CommandWarning,
   READ_ONLY_EFFECT,
 } from "./result.ts";
 import type { ServiceProvider } from "./services.ts";
@@ -811,6 +829,312 @@ function exportRootReady(status: RootStatus): boolean {
 }
 
 /* -------------------------------------------------------------------------- */
+/* session                                                                     */
+/* -------------------------------------------------------------------------- */
+
+export type SessionListPayload = {
+  readonly workspaceId: string;
+  readonly filter: string;
+  readonly search: string | null;
+  readonly sessions: readonly SessionCatalogEntry[];
+  readonly omitted: number;
+  readonly warnings: readonly SessionIsolationWarning[];
+};
+
+export type SessionShowPayload = {
+  readonly workspaceId: string;
+  readonly session: SessionCatalogEntry;
+  readonly warnings: readonly SessionIsolationWarning[];
+};
+
+export async function runSessionList(
+  services: ServiceProvider,
+  arguments_: Extract<SessionCommandArguments, { action: "list" }>,
+  signal?: AbortSignal,
+): Promise<CommandResultOf<"session.list", SessionListPayload>> {
+  try {
+    return await sessionListThroughStore(services, arguments_, signal);
+  } catch (error) {
+    return resultFor<"session.list", SessionListPayload>("session.list", null, [
+      fromUnknown(error, { operation: "list sessions" }),
+    ]);
+  }
+}
+
+export async function runSessionShow(
+  services: ServiceProvider,
+  arguments_: Extract<SessionCommandArguments, { action: "show" }>,
+  signal?: AbortSignal,
+): Promise<CommandResultOf<"session.show", SessionShowPayload>> {
+  try {
+    return await sessionShowThroughStore(services, arguments_, signal);
+  } catch (error) {
+    return resultFor<"session.show", SessionShowPayload>("session.show", null, [
+      fromUnknown(error, { operation: "show session" }),
+    ]);
+  }
+}
+
+async function sessionListThroughStore(
+  services: ServiceProvider,
+  arguments_: Extract<SessionCommandArguments, { action: "list" }>,
+  signal: AbortSignal | undefined,
+): Promise<CommandResultOf<"session.list", SessionListPayload>> {
+  const opened = await openSessionStore(services, signal);
+  if (!opened.ok) {
+    return resultFor<"session.list", SessionListPayload>("session.list", null, opened.errors);
+  }
+  if (opened.kind === "absent") {
+    return resultFor("session.list", {
+      workspaceId: arguments_.workspaceId,
+      filter: arguments_.filter,
+      search: arguments_.search ?? null,
+      sessions: [],
+      omitted: 0,
+      warnings: [],
+    });
+  }
+
+  try {
+    const sessions = createRecordRepositories(opened.store).sessions;
+    const isolated = isolateWorkspaceSessions(
+      sessions,
+      {
+        bound: {
+          workspaceId: arguments_.workspaceId,
+          root: services().workspaceRoot ?? null,
+          gitIdentity: null,
+        },
+      },
+      signal,
+    );
+    if (!isolated.ok) {
+      return sessionListFailure(isolated.error);
+    }
+    const catalog = queryWorkspaceSessions(
+      sessions,
+      {
+        workspaceId: arguments_.workspaceId,
+        filter: arguments_.filter,
+        ...(arguments_.search === undefined ? {} : { search: arguments_.search }),
+        limit: arguments_.limit,
+      },
+      signal,
+    );
+    if (!catalog.ok) {
+      return sessionListFailure(catalog.error);
+    }
+    const total = catalog.value.sessions.length + catalog.value.omitted;
+    const truncation: CommandTruncation[] =
+      catalog.value.omitted === 0
+        ? []
+        : [
+            {
+              of: "sessions",
+              shown: catalog.value.sessions.length,
+              total,
+              expansion:
+                arguments_.limit >= MAX_SESSION_CATALOG ? null : sessionListExpansion(arguments_),
+            },
+          ];
+    return {
+      ...resultFor("session.list", {
+        workspaceId: arguments_.workspaceId,
+        filter: catalog.value.filter,
+        search: catalog.value.search,
+        sessions: catalog.value.sessions,
+        omitted: catalog.value.omitted,
+        warnings: isolated.value.warnings,
+      }),
+      warnings: isolationWarnings(isolated.value.warnings),
+      truncation,
+      correlation: {
+        workspaceId: arguments_.workspaceId,
+        sessionId: null,
+        turnId: null,
+        traceId: null,
+        scopeId: null,
+        invocationId: null,
+        capabilityId: null,
+        eventId: null,
+      },
+    };
+  } finally {
+    await opened.store.close();
+  }
+}
+
+async function sessionShowThroughStore(
+  services: ServiceProvider,
+  arguments_: Extract<SessionCommandArguments, { action: "show" }>,
+  signal: AbortSignal | undefined,
+): Promise<CommandResultOf<"session.show", SessionShowPayload>> {
+  const opened = await openSessionStore(services, signal);
+  if (!opened.ok) {
+    return resultFor<"session.show", SessionShowPayload>("session.show", null, opened.errors);
+  }
+  if (opened.kind === "absent") {
+    return sessionShowFailure({ kind: "session-catalog", code: "not-found", field: "sessionId" });
+  }
+
+  try {
+    const inspected = inspectWorkspaceSession(
+      createRecordRepositories(opened.store).sessions,
+      {
+        workspaceId: arguments_.workspaceId,
+        sessionId: arguments_.sessionId,
+        root: services().workspaceRoot ?? null,
+        gitIdentity: null,
+      },
+      signal,
+    );
+    if (!inspected.ok) {
+      return sessionShowFailure(inspected.error);
+    }
+    return {
+      ...resultFor("session.show", {
+        workspaceId: arguments_.workspaceId,
+        session: inspected.value.entry,
+        warnings: inspected.value.warnings,
+      }),
+      warnings: isolationWarnings(inspected.value.warnings),
+      correlation: {
+        workspaceId: arguments_.workspaceId,
+        sessionId: arguments_.sessionId,
+        turnId: null,
+        traceId: null,
+        scopeId: null,
+        invocationId: null,
+        capabilityId: null,
+        eventId: null,
+      },
+    };
+  } finally {
+    await opened.store.close();
+  }
+}
+
+function sessionListExpansion(
+  arguments_: Extract<SessionCommandArguments, { action: "list" }>,
+): string {
+  const parts = [`falryn session list --limit ${MAX_SESSION_CATALOG}`];
+  if (arguments_.filter !== "all") {
+    parts.push(`--filter ${arguments_.filter}`);
+  }
+  if (arguments_.workspaceId !== "cli") {
+    parts.push(`--workspace-id ${arguments_.workspaceId}`);
+  }
+  return parts.join(" ");
+}
+
+function isolationWarnings(warnings: readonly SessionIsolationWarning[]): CommandWarning[] {
+  return warnings.map((code) => ({
+    code,
+    message:
+      code === "stale-root"
+        ? "The bound workspace root no longer matches what this session last observed."
+        : "The bound Git identity no longer matches what this session last observed.",
+  }));
+}
+
+function sessionListFailure(
+  error: SessionCatalogError | SessionIsolationError | RecordError,
+): CommandResultOf<"session.list", SessionListPayload> {
+  return resultFor<"session.list", SessionListPayload>("session.list", null, [
+    translateSessionBoundary(error),
+  ]);
+}
+
+function sessionShowFailure(
+  error: SessionCatalogError | SessionIsolationError | RecordError,
+): CommandResultOf<"session.show", SessionShowPayload> {
+  return resultFor<"session.show", SessionShowPayload>("session.show", null, [
+    translateSessionBoundary(error),
+  ]);
+}
+
+function translateSessionBoundary(
+  error: SessionCatalogError | SessionIsolationError | RecordError,
+): FalrynError {
+  if (error.kind === "record") {
+    return fromRecordError(error, { operation: "read sessions" });
+  }
+  if (error.kind === "session-isolation") {
+    return fromSessionIsolationError(error, { operation: "isolate sessions" });
+  }
+  return fromSessionCatalogError(error, { operation: "read session catalog" });
+}
+
+type SessionStore = Extract<Awaited<ReturnType<typeof openSqliteStore>>, { ok: true }>["value"];
+
+type OpenedSessionStore =
+  | { readonly ok: true; readonly kind: "absent" }
+  | { readonly ok: true; readonly kind: "open"; readonly store: SessionStore }
+  | { readonly ok: false; readonly errors: readonly FalrynError[] };
+
+async function openSessionStore(
+  services: ServiceProvider,
+  signal: AbortSignal | undefined,
+): Promise<OpenedSessionStore> {
+  const { localData, clock } = services();
+  const inspections = await localData.inspectRoots();
+  const state = inspections.find((inspection) => inspection.root === "state");
+  if (state !== undefined && blocksLocalData(state)) {
+    return {
+      ok: false,
+      errors: [
+        fromUnknown(new Error("the state root is unusable"), { operation: "inspect state root" }),
+      ],
+    };
+  }
+  const stateRoot = rootChild(localData.layout, "state");
+  const databasePath = stateRoot === null ? null : sqliteDatabasePath(stateRoot);
+  if (stateRoot === null || databasePath === null) {
+    return {
+      ok: false,
+      errors: [
+        fromUnknown(new Error("a state root could not be resolved"), {
+          operation: "resolve session store",
+        }),
+      ],
+    };
+  }
+  const probe = await probeStorage({ open: openBunSqlite, databasePath });
+  if (probe.kind === "absent") {
+    return { ok: true, kind: "absent" };
+  }
+  if (probe.kind !== "present") {
+    return {
+      ok: false,
+      errors: [
+        fromUnknown(new Error("the local database could not be read"), {
+          operation: "probe session store",
+        }),
+      ],
+    };
+  }
+  const opened = await openSqliteStore(
+    {
+      open: openBunSqlite,
+      clock,
+      databasePath,
+      backupDirectory: stateRoot,
+      migrations: PRODUCTION_MIGRATIONS,
+      busyTimeoutMs: DEFAULT_BUSY_TIMEOUT_MS,
+      create: false,
+    },
+    signal,
+  );
+  if (!opened.ok) {
+    return {
+      ok: false,
+      errors: [fromSqliteStoreError(opened.error, { operation: "open local database" })],
+    };
+  }
+  return { ok: true, kind: "open", store: opened.value };
+}
+
+/* -------------------------------------------------------------------------- */
 /* A command that did not finish                                               */
 /* -------------------------------------------------------------------------- */
 
@@ -863,6 +1187,22 @@ export function stoppedResult(
       return resultFor<"doctor", DoctorPayload>("doctor", null, [], outcome, effect);
     case "export":
       return resultFor<"export", ExportCommandPayload>("export", null, [], outcome, effect);
+    case "session.list":
+      return resultFor<"session.list", SessionListPayload>(
+        "session.list",
+        null,
+        [],
+        outcome,
+        effect,
+      );
+    case "session.show":
+      return resultFor<"session.show", SessionShowPayload>(
+        "session.show",
+        null,
+        [],
+        outcome,
+        effect,
+      );
     default:
       // A command added without a branch fails to compile here rather than
       // reporting a stopped run under someone else's command identity.
@@ -889,4 +1229,6 @@ export type RunCommandResult =
   | Awaited<ReturnType<typeof runDataReset>>
   | Awaited<ReturnType<typeof runDataUninstall>>
   | Awaited<ReturnType<typeof runDoctor>>
-  | Awaited<ReturnType<typeof runExport>>;
+  | Awaited<ReturnType<typeof runExport>>
+  | Awaited<ReturnType<typeof runSessionList>>
+  | Awaited<ReturnType<typeof runSessionShow>>;

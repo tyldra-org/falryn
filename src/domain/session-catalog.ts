@@ -17,6 +17,8 @@ export const SESSION_CATALOG_VERSION = "session-catalog.v1";
 export const SESSION_CATALOG_SOURCE = "deterministic-session-records";
 export const MAX_SESSION_CATALOG = 256;
 export const MAX_SESSION_SEARCH_BYTES = 256;
+/** Default rows a list surface shows before declaring an expansion. */
+export const DEFAULT_SESSION_LIST_LIMIT = 32;
 
 export const SESSION_CATALOG_FILTERS = ["all", "open", "closed", "pinned"] as const;
 export type SessionCatalogFilter = (typeof SESSION_CATALOG_FILTERS)[number];

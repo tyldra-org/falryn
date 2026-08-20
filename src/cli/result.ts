@@ -61,6 +61,8 @@ export const COMMAND_IDS = [
   "data.uninstall",
   "doctor",
   "export",
+  "session.list",
+  "session.show",
   /** Help for the root or for a subcommand. */
   "help",
   "version",

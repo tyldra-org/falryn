@@ -21,6 +21,7 @@ import yargs from "yargs";
 
 import { isLegalProfileName } from "../config/index.ts";
 import {
+  DEFAULT_SESSION_LIST_LIMIT,
   type ExportName,
   type ExportSelection,
   exportName,
@@ -28,11 +29,16 @@ import {
   isPlanId,
   localPathTextError,
   MAX_LOCAL_PATH_LENGTH,
+  MAX_SESSION_CATALOG,
   type OwnershipClass,
   type PlanId,
   parseTimestamp,
+  SESSION_CATALOG_FILTERS,
+  type SessionCatalogFilter,
   type SessionId,
   sessionId,
+  type WorkspaceId,
+  workspaceId,
 } from "../domain/index.ts";
 import {
   COLOR_CHOICES,
@@ -70,6 +76,21 @@ export type ExportCommandArguments = {
   readonly name: ExportName | null;
 };
 
+/** Command-specific inputs for `falryn session`. */
+export type SessionCommandArguments =
+  | {
+      readonly action: "list";
+      readonly workspaceId: WorkspaceId;
+      readonly filter: SessionCatalogFilter;
+      readonly search: string | undefined;
+      readonly limit: number;
+    }
+  | {
+      readonly action: "show";
+      readonly workspaceId: WorkspaceId;
+      readonly sessionId: SessionId;
+    };
+
 /**
  * What parsing an argument vector produced.
  *
@@ -85,6 +106,7 @@ export type Invocation =
       readonly options: GlobalOptions;
       readonly data: DataCommandArguments | null;
       readonly exportArgs: ExportCommandArguments | null;
+      readonly sessionArgs: SessionCommandArguments | null;
     }
   /** Show help. `topic` is `null` for the root, or the subcommand asked about. */
   | { readonly kind: "help"; readonly topic: string | null; readonly options: GlobalOptions }
@@ -111,6 +133,11 @@ type RawArguments = {
   readonly name: string | undefined;
   readonly write: boolean | undefined;
   readonly "include-sensitive": boolean | undefined;
+  readonly id: string | undefined;
+  readonly filter: string | undefined;
+  readonly search: string | undefined;
+  readonly limit: number | undefined;
+  readonly "workspace-id": string | undefined;
   readonly format: string;
   readonly color: string;
   readonly quiet: boolean;
@@ -137,6 +164,7 @@ function build(argv: readonly string[], lenientPositionals = false): ReturnType<
   // for omitting the very thing it is asking about.
   const configCommand = lenientPositionals ? "config [action]" : "config <action>";
   const dataCommand = lenientPositionals ? "data [action]" : "data <action>";
+  const sessionCommand = lenientPositionals ? "session [action] [id]" : "session <action> [id]";
   return (
     yargs([...argv])
       .scriptName(SCRIPT_NAME)
@@ -211,6 +239,36 @@ function build(argv: readonly string[], lenientPositionals = false): ReturnType<
             type: "boolean",
             default: false,
             describe: "write the bundle; omit this flag to preview only",
+          }),
+      )
+      .command(sessionCommand, "List or inspect stored sessions.", (group) =>
+        group
+          .positional("action", {
+            type: "string",
+            choices: ["list", "show"] as const,
+            describe: "list matching sessions, or show one identity",
+          })
+          .positional("id", {
+            type: "string",
+            describe: "session identity (required with show)",
+          })
+          .option("filter", {
+            type: "string",
+            choices: SESSION_CATALOG_FILTERS,
+            default: "all" satisfies SessionCatalogFilter,
+            describe: "catalog filter (list only)",
+          })
+          .option("search", {
+            type: "string",
+            describe: "title search (list only)",
+          })
+          .option("limit", {
+            type: "number",
+            describe: `maximum listed sessions (default ${DEFAULT_SESSION_LIST_LIMIT}, max ${MAX_SESSION_CATALOG})`,
+          })
+          .option("workspace-id", {
+            type: "string",
+            describe: "bound workspace identity (default: cli)",
           }),
       )
       .option("format", {
@@ -335,7 +393,11 @@ export async function parseInvocation(argv: readonly string[]): Promise<Invocati
   if (typeof exportArgs === "string") {
     return { kind: "invalid", message: exportArgs };
   }
-  return { kind: "run", command, options, data, exportArgs };
+  const sessionArgs = sessionArgumentsFor(command, parsed);
+  if (typeof sessionArgs === "string") {
+    return { kind: "invalid", message: sessionArgs };
+  }
+  return { kind: "run", command, options, data, exportArgs, sessionArgs };
 }
 
 /**
@@ -392,6 +454,11 @@ function isRawArguments(value: unknown): value is RawArguments {
     optionalString(field("name")) &&
     optionalBoolean(field("write")) &&
     optionalBoolean(field("include-sensitive")) &&
+    optionalString(field("id")) &&
+    optionalString(field("filter")) &&
+    optionalString(field("search")) &&
+    (field("limit") === undefined || typeof field("limit") === "number") &&
+    optionalString(field("workspace-id")) &&
     typeof field("format") === "string" &&
     typeof field("color") === "string" &&
     typeof field("quiet") === "boolean" &&
@@ -447,6 +514,16 @@ function commandFrom(positional: readonly string[], action: string | null): Runn
         return "data.reset";
       case "uninstall":
         return "data.uninstall";
+      default:
+        return null;
+    }
+  }
+  if (group === "session") {
+    switch (action) {
+      case "list":
+        return "session.list";
+      case "show":
+        return "session.show";
       default:
         return null;
     }
@@ -553,6 +630,60 @@ function exportArgumentsFor(
     },
     write,
     name,
+  };
+}
+
+function sessionArgumentsFor(
+  command: RunnableCommand,
+  parsed: RawArguments,
+): SessionCommandArguments | null | string {
+  if (command !== "session.list" && command !== "session.show") {
+    return null;
+  }
+
+  const bound = parsed["workspace-id"] ?? "cli";
+  const parsedWorkspace = workspaceId.parse(bound);
+  if (!parsedWorkspace.ok) {
+    return "Argument workspace-id must be a workspace identity.";
+  }
+
+  if (command === "session.show") {
+    if (parsed.filter !== undefined && parsed.filter !== "all") {
+      return "Argument filter is only valid with session list.";
+    }
+    if (parsed.search !== undefined) {
+      return "Argument search is only valid with session list.";
+    }
+    if (parsed.limit !== undefined) {
+      return "Argument limit is only valid with session list.";
+    }
+    if (parsed.id === undefined) {
+      return "Argument id is required for session show.";
+    }
+    const parsedId = sessionId.parse(parsed.id);
+    if (!parsedId.ok) {
+      return "Argument id must be a session identity.";
+    }
+    return { action: "show", workspaceId: parsedWorkspace.value, sessionId: parsedId.value };
+  }
+
+  if (parsed.id !== undefined) {
+    return "Argument id is only valid with session show.";
+  }
+  const filter = parsed.filter ?? "all";
+  if (!(SESSION_CATALOG_FILTERS as readonly string[]).includes(filter)) {
+    return "Argument filter must be one of: all, open, closed, pinned.";
+  }
+  const limit = parsed.limit ?? DEFAULT_SESSION_LIST_LIMIT;
+  if (!Number.isInteger(limit) || limit < 1 || limit > MAX_SESSION_CATALOG) {
+    return `Argument limit must be a whole number from 1 to ${MAX_SESSION_CATALOG}.`;
+  }
+  return {
+    action: "list",
+    workspaceId: parsedWorkspace.value,
+    filter: filter as SessionCatalogFilter,
+    search: parsed.search,
+    limit,
   };
 }
 

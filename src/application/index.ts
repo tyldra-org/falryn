@@ -80,9 +80,12 @@ export {
   fromExportError,
   fromIdentityError,
   fromParticipantReports,
+  fromRecordError,
   fromRemovalRefusal,
   fromRendererFailure,
   fromSequenceError,
+  fromSessionCatalogError,
+  fromSessionIsolationError,
   fromSqliteStoreError,
   fromTimestampError,
   fromUnknown,
@@ -216,8 +219,17 @@ export type {
   ScopeTreeOptions,
 } from "./scope-tree.ts";
 export { createScopeTree, MAX_LIVE_SCOPES, MAX_SCOPE_DEPTH } from "./scope-tree.ts";
-export type { QueryWorkspaceSessionsInput } from "./session-catalog.ts";
-export { editWorkspaceSessionCatalog, queryWorkspaceSessions } from "./session-catalog.ts";
+export type {
+  InspectedWorkspaceSession,
+  InspectWorkspaceSessionError,
+  InspectWorkspaceSessionInput,
+  QueryWorkspaceSessionsInput,
+} from "./session-catalog.ts";
+export {
+  editWorkspaceSessionCatalog,
+  inspectWorkspaceSession,
+  queryWorkspaceSessions,
+} from "./session-catalog.ts";
 export type { WorkspaceBinding } from "./session-isolation.ts";
 export { isolateWorkspaceSessions } from "./session-isolation.ts";
 export type { PlanWorkspaceSessionRecoveryInput } from "./session-recovery.ts";
