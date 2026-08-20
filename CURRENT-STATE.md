@@ -2715,10 +2715,15 @@ is reversible.
 
 Attachments, including a large paste, and explicit `@` mentions are real
 ([#278](https://github.com/tyldra-org/falryn/issues/278)). Composer state holds
-typed handles — kind, identity, status, counts, digest — never paste or file
-bytes. A held-out preview paste can be included from the palette; the body
-stays on a session payload port so include does not re-read the clipboard.
-`@path` tokens resolve through the workspace path binder; TOCTOU re-stat at
+typed handles — kind, identity, status, counts, digest — never paste, file, or
+transcript-span bytes. A held-out preview paste can be included from the palette;
+the body stays on a session payload port so include does not re-read the
+clipboard. Transcript-span handles use kind `transcript` with identity
+`transcript:<blockKey>` (plus a range digest when a native range was used), the
+same payload port, digest, and already-included dedup as paste
+([#620](https://github.com/tyldra-org/falryn/issues/620)); include and copy
+commands that produce those handles remain later children of #619. `@path`
+tokens resolve through the workspace path binder; TOCTOU re-stat at
 submit marks changed, stale, or inaccessible files. Unresolved or blocking
 attachments refuse send with a repair route. Command completion, suggestion
 popups, and a retained artifact catalog remain declared with the reason each

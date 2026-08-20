@@ -260,6 +260,7 @@ export function composerReducer(state: ComposerState, action: ComposerAction): C
             );
           case "paste":
           case "artifact":
+          case "transcript":
             return !attachments.some(
               (item) => item.identity === mention.identity || item.id === mention.identity,
             );

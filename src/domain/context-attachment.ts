@@ -1,17 +1,19 @@
 /**
- * Composer attachment handles and `@` mention tokens (#278).
+ * Composer attachment handles and `@` mention tokens (#278, #620).
  *
  * These are identities, not content. A descriptor names a paste, a workspace
- * file, or a session artifact and says whether it is ready to send. Bytes live
- * behind a payload port or on disk; chrome, composer state, and the submission
- * snapshot never carry a body.
+ * file, a session artifact, or a transcript span and says whether it is ready
+ * to send. Bytes live behind a payload port or on disk; chrome, composer state,
+ * and the submission snapshot never carry a body.
  *
  * Parsing mentions is lexical: an `@` token in the draft is a reference the
  * submit path must resolve, not a search popup. Kinds this build cannot resolve
- * stay `unsupported` rather than guessing.
+ * stay `unsupported` rather than guessing. Transcript spans are included as
+ * chips (#619); `@transcript:` tokens are recognized so they are not probed as
+ * files.
  */
 
-export const ATTACHMENT_KINDS = ["paste", "file", "artifact"] as const;
+export const ATTACHMENT_KINDS = ["paste", "file", "artifact", "transcript"] as const;
 export type AttachmentKind = (typeof ATTACHMENT_KINDS)[number];
 
 export const ATTACHMENT_STATUSES = [
@@ -53,7 +55,7 @@ export type AttachmentDescriptor = {
   readonly secret: boolean;
 };
 
-export const MENTION_KINDS = ["file", "paste", "artifact", "unsupported"] as const;
+export const MENTION_KINDS = ["file", "paste", "artifact", "transcript", "unsupported"] as const;
 export type MentionKind = (typeof MENTION_KINDS)[number];
 
 export type MentionSpan = {
@@ -112,11 +114,43 @@ function mentionKindOf(identity: string): MentionKind {
   if (identity.startsWith("artifact:")) {
     return "artifact";
   }
+  if (identity.startsWith("transcript:")) {
+    return "transcript";
+  }
   return "file";
+}
+
+/**
+ * Stable identity for a transcript pick.
+ *
+ * Block key alone for a whole-block or expanded-region include. When a native
+ * range was used, the range digest is appended so two ranges of the same block
+ * are distinct chips and a re-include of the same range dedups.
+ */
+export function transcriptAttachmentIdentity(
+  blockKey: string,
+  rangeDigest: string | null = null,
+): string {
+  if (rangeDigest === null || rangeDigest.length === 0) {
+    return `transcript:${blockKey}`;
+  }
+  return `transcript:${blockKey}:${rangeDigest}`;
+}
+
+/** Visible reason when upsert would replace an identical identity. */
+export function alreadyIncludedAttachmentReason(identity: string): string {
+  return `${identity} is already included`;
 }
 
 export function attachmentKey(attachment: AttachmentDescriptor): string {
   return `${attachment.kind}:${attachment.identity}`;
+}
+
+export function findAttachmentByIdentity(
+  attachments: readonly AttachmentDescriptor[],
+  identity: string,
+): AttachmentDescriptor | null {
+  return attachments.find((item) => item.identity === identity) ?? null;
 }
 
 export function isBlockingAttachment(attachment: AttachmentDescriptor): boolean {
@@ -143,6 +177,49 @@ export function upsertAttachment(
     return [...attachments, incoming];
   }
   return attachments.map((item, itemIndex) => (itemIndex === index ? incoming : item));
+}
+
+export type IncludeTranscriptAttachmentResult =
+  | {
+      readonly ok: true;
+      readonly attachment: AttachmentDescriptor;
+      readonly attachments: readonly AttachmentDescriptor[];
+    }
+  | {
+      readonly ok: false;
+      readonly reason: string;
+      readonly attachments: readonly AttachmentDescriptor[];
+    };
+
+/**
+ * Add a transcript handle without a second chip for the same identity.
+ *
+ * Unlike `upsertAttachment`, a duplicate leaves the list unchanged and returns
+ * the visible already-included reason (#620).
+ */
+export function includeTranscriptAttachment(
+  attachments: readonly AttachmentDescriptor[],
+  incoming: AttachmentDescriptor,
+): IncludeTranscriptAttachmentResult {
+  if (incoming.kind !== "transcript") {
+    return {
+      ok: false,
+      reason: `${incoming.identity} is not a transcript attachment`,
+      attachments,
+    };
+  }
+  if (findAttachmentByIdentity(attachments, incoming.identity) !== null) {
+    return {
+      ok: false,
+      reason: alreadyIncludedAttachmentReason(incoming.identity),
+      attachments,
+    };
+  }
+  return {
+    ok: true,
+    attachment: incoming,
+    attachments: upsertAttachment(attachments, incoming),
+  };
 }
 
 export function removeAttachment(

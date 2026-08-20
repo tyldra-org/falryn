@@ -7,6 +7,7 @@ import { createInMemoryFileSystem, localPath, MAX_EVIDENCE_INLINE_BYTES } from "
 import {
   admitComposerContext,
   createFileAttachmentProbe,
+  createTranscriptAttachment,
   digestBytes,
 } from "./composer-context.ts";
 
@@ -191,5 +192,69 @@ describe("admitComposerContext", () => {
     }
     const second = await later.inspect("a.ts", first);
     expect(second.status).toBe("changed");
+  });
+});
+
+describe("createTranscriptAttachment", () => {
+  test("builds a ready handle with identity, digest, and line facts", () => {
+    const text = "line one\nline two\n";
+    const attachment = createTranscriptAttachment({
+      id: "att-1",
+      blockKey: "msg-9",
+      text,
+      secret: false,
+    });
+    expect(attachment).toMatchObject({
+      id: "att-1",
+      kind: "transcript",
+      identity: "transcript:msg-9",
+      status: "ready",
+      byteLength: encoder.encode(text).byteLength,
+      characters: text.length,
+      lines: 3,
+      digest: digestBytes(encoder.encode(text)),
+      revision: null,
+      mediaType: "text/plain",
+      secret: false,
+    });
+  });
+
+  test("appends a range digest and marks oversized spans", () => {
+    const text = "x".repeat(MAX_EVIDENCE_INLINE_BYTES + 1);
+    const attachment = createTranscriptAttachment({
+      id: "att-2",
+      blockKey: "msg-9",
+      rangeDigest: "range-1",
+      text,
+      secret: true,
+    });
+    expect(attachment.identity).toBe("transcript:msg-9:range-1");
+    expect(attachment.status).toBe("oversized");
+    expect(attachment.secret).toBe(true);
+    expect(attachment.digest).toBe(digestBytes(encoder.encode(text)));
+  });
+
+  test("admits a transcript payload through the session port like paste", async () => {
+    const text = "picked tool output";
+    const attachment = createTranscriptAttachment({
+      id: "att-tx",
+      blockKey: "tool-3",
+      text,
+      secret: false,
+    });
+    const result = await admitComposerContext(
+      {
+        attachments: [attachment],
+        mentions: [],
+        payloads: payloads([["att-tx", encoder.encode(text)]]),
+      },
+      null,
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    expect(result.candidates).toHaveLength(1);
+    expect(result.candidates[0]?.origin).toBe("transcript:tool-3");
   });
 });

@@ -1,9 +1,9 @@
 /**
  * Session-scoped attachment bytes, addressed by id.
  *
- * Composer state holds descriptors. This map holds the paste bodies those
- * descriptors name, so include does not re-read a clipboard that may have
- * changed and chrome never sees a payload.
+ * Composer state holds descriptors. This map holds paste and transcript bodies
+ * those descriptors name, so include does not re-read a clipboard that may have
+ * changed and chrome never sees a payload (#278, #620).
  */
 
 export type AttachmentPayloadPort = {

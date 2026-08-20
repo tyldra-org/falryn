@@ -461,23 +461,28 @@ export type {
   AttachmentDescriptor,
   AttachmentKind,
   AttachmentStatus,
+  IncludeTranscriptAttachmentResult,
   MentionKind,
   MentionSpan,
 } from "./context-attachment.ts";
 export {
   ATTACHMENT_KINDS,
   ATTACHMENT_STATUSES,
+  alreadyIncludedAttachmentReason,
   attachmentKey,
   BLOCKING_ATTACHMENT_STATUSES,
   blockingAttachments,
   describeAttachmentStatus,
   describeAttachments,
   describeBlockingReason,
+  findAttachmentByIdentity,
+  includeTranscriptAttachment,
   isBlockingAttachment,
   MENTION_KINDS,
   moveAttachment,
   parseMentions,
   removeAttachment,
+  transcriptAttachmentIdentity,
   upsertAttachment,
 } from "./context-attachment.ts";
 export type {
