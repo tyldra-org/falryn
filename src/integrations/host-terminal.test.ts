@@ -9,7 +9,7 @@
  * of the facts it reports.
  */
 
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 
 import {
   createStaticEnvironment,
@@ -17,7 +17,12 @@ import {
   MAX_STDIN_BYTES,
   terminalCapabilities,
 } from "../domain/index.ts";
-import { createHostInputStream, createHostOutputStream, observeHandles } from "./host-terminal.ts";
+import {
+  createHostInputStream,
+  createHostOutputStream,
+  observeHandles,
+  plainPrintLabeledCopy,
+} from "./host-terminal.ts";
 
 describe("the input stream", () => {
   test("declares the encoding and bound it reads to", () => {
@@ -99,5 +104,23 @@ describe("observed handles", () => {
 
     expect(capabilities.stdout.color).toBe("none");
     expect(capabilities.stderr.color).toBe("none");
+  });
+});
+
+describe("plainPrintLabeledCopy", () => {
+  const originalWrite = process.stderr.write.bind(process.stderr);
+
+  afterEach(() => {
+    process.stderr.write = originalWrite;
+  });
+
+  test("writes a labelled block to stderr", () => {
+    let written = "";
+    process.stderr.write = ((chunk: string | Uint8Array) => {
+      written += typeof chunk === "string" ? chunk : new TextDecoder().decode(chunk);
+      return true;
+    }) as typeof process.stderr.write;
+    expect(plainPrintLabeledCopy("copied body")).toBe(true);
+    expect(written).toBe("[falryn copy]\ncopied body\n");
   });
 });

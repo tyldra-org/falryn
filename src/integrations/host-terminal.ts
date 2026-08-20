@@ -280,3 +280,13 @@ function handleFacts(handle: NodeJS.WriteStream): HandleFacts {
     rows: isTty ? terminalSize(handle.rows) : null,
   };
 }
+
+/** Plain-print fallback for transcript copy when OSC 52 is unavailable (#623). */
+export function plainPrintLabeledCopy(text: string): boolean {
+  try {
+    process.stderr.write(`[falryn copy]\n${text}\n`);
+    return true;
+  } catch {
+    return false;
+  }
+}
