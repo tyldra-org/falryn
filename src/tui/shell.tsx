@@ -66,6 +66,8 @@ import { type RuntimeFeed, runtimeFeed, useRuntimeProjection } from "./runtime-f
 import { shellModel } from "./shell-model.ts";
 import { createTerminalShutdownParticipant } from "./shutdown.ts";
 import { selectVariant, type ThemeRequest } from "./theme/index.ts";
+import type { TranscriptFeed } from "./transcript-feed.ts";
+import { useTranscriptProjection } from "./transcript-feed.ts";
 import type { WorkspaceController, WorkspaceSetView } from "./workspace/index.ts";
 
 export type ShellRunRequest = {
@@ -119,6 +121,11 @@ export type ShellRunRequest = {
    * as nothing attached rather than as nothing happening.
    */
   readonly scopes?: ScopeTree;
+  /**
+   * Live session/turn transcript event feed (#706). Optional until a caller
+   * attaches the product producer; absent keeps the empty transcript honest.
+   */
+  readonly transcriptFeed?: TranscriptFeed;
   /** Resolves `@path` mentions. Optional because tests and no-workspace runs have none. */
   readonly fileProbe?: FileAttachmentProbe | null;
   /** Git changes dashboard. Optional when no workspace or git executable is available. */
@@ -285,14 +292,10 @@ async function frameFor(session: RendererSession, request: ShellRunRequest, onEx
     ...model
   } = shellModel(options);
 
-  // No transcript is supplied because nothing produces one: there is no agent
-  // loop, provider, or tool runner in this build. The surface renders its empty
-  // state, which names a command that runs — the placeholder line that used to
-  // sit here named nothing and was the filler #355 removed.
-  //
-  // Activity is different, and that difference is #370: the runtime this shell
-  // is running inside does exist, so the rail is fed from it rather than left
-  // empty. `undefined` when the caller composed no scope tree.
+  // Transcript is empty unless a caller attaches the #706 producer feed.
+  // Activity is different (#370): the runtime this shell is running inside does
+  // exist, so the rail is fed from it rather than left empty. `undefined` when
+  // the caller composed no scope tree.
   const feed = runtimeFeed({ scopes: request.scopes, shutdown: request.shutdown });
 
   return (
@@ -302,6 +305,7 @@ async function frameFor(session: RendererSession, request: ShellRunRequest, onEx
       onExit={onExit}
       clock={request.clock}
       {...(feed === undefined ? {} : { feed })}
+      {...(request.transcriptFeed === undefined ? {} : { transcriptFeed: request.transcriptFeed })}
       {...(request.fileProbe === undefined ? {} : { fileProbe: request.fileProbe })}
       {...(request.gitDashboard === undefined ? {} : { gitDashboard: request.gitDashboard })}
       {...(request.workspaceController === undefined
@@ -327,6 +331,7 @@ function LiveShell(props: {
   readonly onExit: () => void;
   readonly clock: ClockPort;
   readonly feed?: RuntimeFeed;
+  readonly transcriptFeed?: TranscriptFeed;
   readonly fileProbe?: FileAttachmentProbe | null;
   readonly gitDashboard?: GitDashboard;
   readonly workspaceController?: WorkspaceController;
@@ -340,6 +345,7 @@ function LiveShell(props: {
         onExit={props.onExit}
         now={props.clock.now}
         {...(props.feed === undefined ? {} : { feed: props.feed })}
+        {...(props.transcriptFeed === undefined ? {} : { transcriptFeed: props.transcriptFeed })}
         {...(props.fileProbe === undefined ? {} : { fileProbe: props.fileProbe })}
         {...(props.gitDashboard === undefined ? {} : { gitDashboard: props.gitDashboard })}
         {...(props.workspaceController === undefined
@@ -357,6 +363,7 @@ function ProjectedShell(props: {
   readonly onExit: () => void;
   readonly now: ClockPort["now"];
   readonly feed?: RuntimeFeed;
+  readonly transcriptFeed?: TranscriptFeed;
   readonly fileProbe?: FileAttachmentProbe | null;
   readonly gitDashboard?: GitDashboard;
   readonly workspaceController?: WorkspaceController;
@@ -364,6 +371,7 @@ function ProjectedShell(props: {
 }): ReactNode {
   const gate = useRenderGate();
   const runtime = useRuntimeProjection(props.feed, initialActivityCursor(), gate);
+  const transcript = useTranscriptProjection(props.transcriptFeed, gate);
   return (
     <ShellApp
       theme={props.theme}
@@ -371,6 +379,7 @@ function ProjectedShell(props: {
       onExit={props.onExit}
       now={props.now}
       activity={runtime.activity}
+      transcript={transcript}
       {...(runtime.shutdown === null ? {} : { shutdown: runtime.shutdown })}
       {...(props.fileProbe === undefined ? {} : { fileProbe: props.fileProbe })}
       {...(props.gitDashboard === undefined ? {} : { gitDashboard: props.gitDashboard })}

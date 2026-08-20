@@ -1,10 +1,9 @@
 /**
  * Product bootstrap composition for the live coding agent host (#705).
  *
- * Composes the verified session runtime, turn coordinator, and durable turn
- * journal into one fail-closed product graph. Leaves typed attachment points
- * for live providers, registered tools, attempt runners, and later TUI /
- * headless producers (#706) and composer submission (#707).
+ * Composes the verified session runtime, turn coordinator, durable turn
+ * journal, and live session/turn/transcript producer into one fail-closed
+ * product graph. Leaves typed attachment points for composer submission (#707).
  *
  * Does not register builtin tools (#700), Hush/Loom product policy (#701), or
  * live vendor HTTP/OAuth adapters (#709).
@@ -27,6 +26,8 @@ import {
 import type { ProviderAdapterPort } from "../providers/port.ts";
 import type { SessionRuntime } from "./session-runtime.ts";
 import { createSessionRuntime } from "./session-runtime.ts";
+import type { SessionTurnTranscriptProducer } from "./session-turn-transcript-producer.ts";
+import { createSessionTurnTranscriptProducer } from "./session-turn-transcript-producer.ts";
 import type { ToolRunnerPort } from "./tool-call-loop.ts";
 import type { AttemptRunnerPort } from "./turn-attempt-policy.ts";
 import type { StartTurnInput, TurnCoordinator, TurnCoordinatorError } from "./turn-coordinator.ts";
@@ -69,10 +70,10 @@ export type ProductAgentRuntimeComposeResult =
 
 export type ProductAgentAttachmentPoints = {
   /**
-   * Slot for OpenTUI / headless session-turn-transcript producers (#706).
-   * Null until a sibling attaches a producer.
+   * Live session/turn/transcript producer (#706). Always composed with the
+   * product runtime so OpenTUI and headless can fold the same event stream.
    */
-  readonly turnProducer: null;
+  readonly turnProducer: SessionTurnTranscriptProducer;
   /**
    * Slot for composer submission wiring (#707). Null until the composer
    * replaces UNAVAILABLE_SUBMISSION.
@@ -175,6 +176,14 @@ export function composeProductAgentRuntime(
     streamId: ports.streamId,
     correlation: ports.correlation,
   });
+  const turnProducer = createSessionTurnTranscriptProducer({
+    eventStore: ports.eventStore,
+    journal,
+    sessionRuntime,
+    turnCoordinator,
+    streamId: ports.streamId,
+    correlation: ports.correlation,
+  });
 
   const runtime: ProductAgentRuntime = {
     sessionRuntime,
@@ -184,7 +193,7 @@ export function composeProductAgentRuntime(
     toolRunner,
     providerAdapter,
     attemptRunner,
-    attachments: { turnProducer: null, submission: null },
+    attachments: { turnProducer, submission: null },
     streamId: ports.streamId,
     correlation: ports.correlation,
     requireToolRunner() {

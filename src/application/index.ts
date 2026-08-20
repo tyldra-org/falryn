@@ -277,6 +277,17 @@ export type {
 } from "./session-runtime.ts";
 export { createSessionRuntime } from "./session-runtime.ts";
 export type {
+  ProducerError,
+  ProducerModelAttemptInput,
+  ProducerResult,
+  ProducerSessionInput,
+  ProducerToolInvocationInput,
+  ProducerTurnInput,
+  SessionTurnTranscriptProducer,
+  SessionTurnTranscriptProducerOptions,
+} from "./session-turn-transcript-producer.ts";
+export { createSessionTurnTranscriptProducer } from "./session-turn-transcript-producer.ts";
+export type {
   ShutdownCoordinator,
   ShutdownCoordinatorOptions,
   ShutdownOptions,
