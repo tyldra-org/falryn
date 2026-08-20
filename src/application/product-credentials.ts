@@ -25,6 +25,14 @@ import {
 import { createSecretResolver } from "./credential-resolver.ts";
 import type { DiagnosticsCollector } from "./diagnostics-collector.ts";
 
+/** Default environment credential for OpenAI-compatible live runs (#710/#752). */
+export const DEFAULT_OPENAI_CREDENTIAL_REFERENCE: CredentialReference = {
+  storeKind: "environment",
+  locator: "FALRYN_OPENAI_API_KEY",
+  consumer: "provider:openai",
+  accountLabel: null,
+};
+
 export type ProductCredentialPorts = {
   readonly clock: ClockPort;
   readonly commands: CommandRunnerPort;

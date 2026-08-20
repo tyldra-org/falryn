@@ -638,10 +638,12 @@ describe.if(runnable)("the compiled shell on a real terminal", () => {
       });
       expect(run.exitCode).toBe(EXIT_CODES.COMPLETED);
       expect(typed).toContain("hello");
-      // Submission has no consumer until a product port is attached (#707) and
-      // says so. Silently discarding what was typed is the failure.
-      expect(submitted).toContain("Not sent");
-      expect(submitted).toContain("#707");
+      // Product submission (#752) accepts the draft through the live producer.
+      // Silently discarding what was typed, or keeping the permanent unavailable
+      // stub, is the failure.
+      expect(submitted).toContain("Sent.");
+      expect(submitted).not.toContain("Not sent");
+      expect(submitted).not.toContain("#707");
       expectRestored(run);
     },
     RUN_TIMEOUT_MS,
