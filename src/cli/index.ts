@@ -59,6 +59,19 @@ export {
   runUnderScope,
   untilScopeStops,
 } from "./invocation-scope.ts";
+export type {
+  MidTurnClassifyArguments,
+  MidTurnClassifyPayload,
+  MidTurnClassifyResult,
+} from "./mid-turn.ts";
+export {
+  classifyAndRenderJsonl,
+  createHeadlessMidTurnService,
+  MID_TURN_CLASSIFY_COMMAND,
+  projectMidTurnEventsToJsonl,
+  resolveMidTurnIntent,
+  runMidTurnClassify,
+} from "./mid-turn.ts";
 export type { ColorChoice, GlobalOptions, OutputFormat } from "./options.ts";
 export {
   allowsColor,

@@ -1805,6 +1805,11 @@ export {
   refuseSecondInFlightTurn,
   takeHeadFollowUpForNextTurn,
 } from "./mid-turn-input.ts";
+export {
+  followUpQueueOrder,
+  followUpQueueOrderFromEntries,
+  toWireMidTurnEvent,
+} from "./mid-turn-wire.ts";
 export type {
   NormalizedNotebookReadRequest,
   NotebookAttachment,
