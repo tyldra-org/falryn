@@ -3,9 +3,10 @@
  *
  * Attachments and including a large paste are real as of #278: handles on
  * composer state, a payload port for paste bodies, and `@` mentions that
- * resolve against attached identities and explicit paths. What remains missing
- * still has no producer — there is no argument schema to complete, and no
- * workspace index, provider registry, or session store to suggest from.
+ * resolve against attached identities and explicit paths. Workspace slash
+ * aliases of palette ids are real as of #609 (`./slash.ts`), but they are
+ * submit-time dispatch — not a completion popup. What remains missing still
+ * has no producer for general command completion or suggestions.
  *
  * So those gaps stay listed here with the reason, and the composer reports
  * them. A completion popup that never has anything to offer is worse than not
@@ -36,7 +37,8 @@ export const COMPOSER_FEATURES: readonly ComposerFeature[] = [
   {
     id: "composer.completion",
     title: "Command completion",
-    reason: "commands are reachable from the palette, and no argument schema exists to complete",
+    reason:
+      "/workspace slash aliases dispatch palette ids on submit; there is still no completion popup",
   },
   {
     id: "composer.suggestions",

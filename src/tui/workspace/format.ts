@@ -70,10 +70,13 @@ export const WORKSPACE_PANEL_TITLES: Readonly<Record<WorkspacePanel, string>> = 
   load: "Load workspace layout",
 };
 
-export function workspaceOverlayRoute(panel: WorkspacePanel): {
+export function workspaceOverlayRoute(
+  panel: WorkspacePanel,
+  draft = "",
+): {
   readonly kind: "workspace";
   readonly panel: WorkspacePanel;
   readonly draft: string;
 } {
-  return { kind: "workspace", panel, draft: "" };
+  return { kind: "workspace", panel, draft };
 }
