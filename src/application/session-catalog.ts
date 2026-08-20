@@ -11,15 +11,21 @@ import {
   MAX_SESSION_CATALOG,
   ok,
   querySessionCatalog,
+  type RecordError,
   type Result,
   type SessionCatalog,
   type SessionCatalogEdit,
+  type SessionCatalogEntry,
   type SessionCatalogError,
   type SessionCatalogFilter,
+  type SessionId,
+  type SessionIsolationError,
+  type SessionIsolationWarning,
   type SessionRepositoryPort,
   type WorkspaceId,
 } from "../domain/index.ts";
-import { containsRedactableSecret } from "./redaction.ts";
+import { containsRedactableSecret, redactText } from "./redaction.ts";
+import { isolateWorkspaceSessions } from "./session-isolation.ts";
 
 function catalogError(
   code: SessionCatalogError["code"],
@@ -40,7 +46,27 @@ export type QueryWorkspaceSessionsInput = {
   readonly filter?: SessionCatalogFilter;
   readonly search?: string;
   readonly pinnedIds?: readonly string[];
+  /** How many matched rows to keep. Defaults to the catalog maximum. */
+  readonly limit?: number;
 };
+
+export type InspectWorkspaceSessionInput = {
+  readonly workspaceId: WorkspaceId;
+  readonly sessionId: SessionId;
+  readonly pinnedIds?: readonly string[];
+  readonly root?: string | null;
+  readonly gitIdentity?: string | null;
+};
+
+export type InspectedWorkspaceSession = {
+  readonly entry: SessionCatalogEntry;
+  readonly warnings: readonly SessionIsolationWarning[];
+};
+
+export type InspectWorkspaceSessionError =
+  | SessionCatalogError
+  | SessionIsolationError
+  | RecordError;
 
 export function queryWorkspaceSessions(
   sessions: SessionRepositoryPort,
@@ -56,11 +82,11 @@ export function queryWorkspaceSessions(
     return err(catalogError("malformed", "sessions"));
   }
   const pinned = new Set(input.pinnedIds ?? []);
-  return querySessionCatalog(
+  const catalog = querySessionCatalog(
     {
       sessions: listed.value.map((record) => ({
         sessionId: record.sessionId,
-        title: record.title,
+        title: record.title === null ? null : redactText(record.title),
         pinned: pinned.has(record.sessionId),
         startedAt: record.startedAt,
         closedAt: record.closedAt,
@@ -70,6 +96,68 @@ export function queryWorkspaceSessions(
     },
     signal,
   );
+  if (!catalog.ok) {
+    return catalog;
+  }
+  const limit = input.limit ?? MAX_SESSION_CATALOG;
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > MAX_SESSION_CATALOG) {
+    return err(catalogError("oversized", "limit"));
+  }
+  if (catalog.value.sessions.length <= limit) {
+    return catalog;
+  }
+  return ok({
+    ...catalog.value,
+    sessions: catalog.value.sessions.slice(0, limit),
+    omitted: catalog.value.omitted + (catalog.value.sessions.length - limit),
+  });
+}
+
+/**
+ * Loads one session in the bound workspace. Isolation decides membership;
+ * a foreign or absent id is `not-found`, never an empty success payload.
+ */
+export function inspectWorkspaceSession(
+  sessions: SessionRepositoryPort,
+  input: InspectWorkspaceSessionInput,
+  signal?: AbortSignal,
+): Result<InspectedWorkspaceSession, InspectWorkspaceSessionError> {
+  const isolated = isolateWorkspaceSessions(
+    sessions,
+    {
+      bound: {
+        workspaceId: input.workspaceId,
+        root: input.root ?? null,
+        gitIdentity: input.gitIdentity ?? null,
+      },
+    },
+    signal,
+  );
+  if (!isolated.ok) {
+    return isolated;
+  }
+  const loaded = sessions.get(input.sessionId);
+  if (!loaded.ok) {
+    return loaded;
+  }
+  if (
+    loaded.value === null ||
+    !isolated.value.sessions.some((entry) => entry.sessionId === input.sessionId)
+  ) {
+    return err(catalogError("not-found", "sessionId"));
+  }
+  const record = loaded.value;
+  const pinned = new Set(input.pinnedIds ?? []);
+  return ok({
+    entry: {
+      sessionId: record.sessionId,
+      title: record.title === null ? null : redactText(record.title),
+      pinned: pinned.has(record.sessionId),
+      startedAt: record.startedAt,
+      closedAt: record.closedAt,
+    },
+    warnings: isolated.value.warnings,
+  });
 }
 
 export function editWorkspaceSessionCatalog(

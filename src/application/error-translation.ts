@@ -38,12 +38,15 @@ import {
   MAX_RELATED_ERRORS,
   NO_CORRELATION,
   type ParticipantReport,
+  type RecordError,
   type RecoveryAction,
   type RemovalRefusal,
   type RendererFailure,
   recoveryForEffect,
   type SafeCause,
   type SequenceError,
+  type SessionCatalogError,
+  type SessionIsolationError,
   type SourceOutcome,
   type SourceReport,
   type SqliteFailure,
@@ -859,6 +862,126 @@ export function fromExportError(error: ExportError, context: ErrorContext = {}):
     default:
       return assertNever(error, "unhandled export error");
   }
+}
+
+/** A typed record repository refusal. */
+export function fromRecordError(error: RecordError, context: ErrorContext = {}): FalrynError {
+  switch (error.code) {
+    case "storage":
+      return fromSqliteStoreError(error.error, context);
+    case "malformed-row":
+      return build({
+        code: "data.record.malformed-row",
+        category: "data",
+        message: "A stored session record could not be read.",
+        retryable: false,
+        effect: "none",
+        recovery: ["inspect-state"],
+        cause: {
+          source: "record",
+          code: error.code,
+          detail: `${error.entity} ${error.issues.map((issue) => `${issue.path || "<root>"}:${issue.code}`).join(",")}`,
+        },
+        ...context,
+      });
+    case "not-found":
+      return build({
+        code: "data.record.not-found",
+        category: "data",
+        message: "The requested session was not found.",
+        retryable: false,
+        effect: "none",
+        cause: { source: "record", code: error.code, detail: error.identity },
+        ...context,
+      });
+    case "already-exists":
+      return build({
+        code: "data.record.already-exists",
+        category: "data",
+        message: "A session with that identity already exists.",
+        retryable: false,
+        effect: "none",
+        cause: { source: "record", code: error.code, detail: error.identity },
+        ...context,
+      });
+    case "invalid-list-limit":
+      return build({
+        code: "data.record.invalid-list-limit",
+        category: "data",
+        message: "The session list requested more rows than this build will return.",
+        retryable: false,
+        effect: "none",
+        cause: {
+          source: "record",
+          code: error.code,
+          detail: `requested=${error.requestedLimit} maximum=${error.maximumLimit}`,
+        },
+        ...context,
+      });
+    default:
+      return assertNever(error, "unhandled record error");
+  }
+}
+
+/** A session catalog refusal. */
+export function fromSessionCatalogError(
+  error: SessionCatalogError,
+  context: ErrorContext = {},
+): FalrynError {
+  if (error.code === "cancelled") {
+    return build({
+      code: "cancellation.session-catalog.cancelled",
+      category: "cancellation",
+      message: "The session catalog operation was cancelled.",
+      retryable: true,
+      effect: "none",
+      cause: { source: "session-catalog", code: error.code, detail: error.field },
+      ...context,
+    });
+  }
+  return build({
+    code: `data.session-catalog.${error.code}`,
+    category: "data",
+    message:
+      error.code === "not-found"
+        ? "The requested session was not found in the bound workspace."
+        : error.code === "secret"
+          ? "The session catalog refused secret-shaped input."
+          : `The session catalog could not be read (${error.code}).`,
+    retryable: false,
+    effect: "none",
+    recovery: error.code === "not-found" ? ["inspect-state"] : recoveryForEffect("none"),
+    cause: { source: "session-catalog", code: error.code, detail: error.field },
+    ...context,
+  });
+}
+
+/** A workspace isolation refusal. */
+export function fromSessionIsolationError(
+  error: SessionIsolationError,
+  context: ErrorContext = {},
+): FalrynError {
+  if (error.code === "cancelled") {
+    return build({
+      code: "cancellation.session-isolation.cancelled",
+      category: "cancellation",
+      message: "Session isolation was cancelled.",
+      retryable: true,
+      effect: "none",
+      cause: { source: "session-isolation", code: error.code, detail: error.field },
+      ...context,
+    });
+  }
+  return build({
+    code: `data.session-isolation.${error.code}`,
+    category: "data",
+    message: "Workspace isolation could not be established.",
+    retryable: false,
+    effect: "none",
+    recovery: ["inspect-state"],
+    cause: { source: "session-isolation", code: error.code, detail: error.field },
+    ...context,
+  });
 }
 
 /** A locally planned removal that could not be applied as requested. */

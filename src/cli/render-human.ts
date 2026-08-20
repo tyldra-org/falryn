@@ -54,6 +54,8 @@ import type {
   DoctorPayload,
   ExportCommandPayload,
   RunCommandResult,
+  SessionListPayload,
+  SessionShowPayload,
 } from "./commands.ts";
 import type {
   CommandEffect,
@@ -653,6 +655,10 @@ function renderPayload(session: Session, result: RunCommandResult): RenderedPayl
       return renderDoctor(session, result.payload);
     case "export":
       return renderExport(session, result.payload);
+    case "session.list":
+      return renderSessionList(session, result.payload);
+    case "session.show":
+      return renderSessionShow(session, result.payload);
     default:
       return assertNever(result, "unhandled command result");
   }
@@ -697,6 +703,45 @@ function renderExport(session: Session, payload: ExportCommandPayload | null): R
       ? ["Preview only. Re-run with --write --name <name> to create this package."]
       : [];
   return { lines, diagnostics };
+}
+
+function renderSessionList(session: Session, payload: SessionListPayload | null): RenderedPayload {
+  if (payload === null) {
+    return { lines: ["No session catalog is available."], diagnostics: [] };
+  }
+  if (payload.sessions.length === 0) {
+    return { lines: ["No sessions."], diagnostics: [] };
+  }
+  const lines = [
+    paint(session, "plain", `Sessions (${payload.filter})`),
+    ...payload.sessions.map((entry) => {
+      const title = entry.title === null ? "(untitled)" : safe(entry.title);
+      const pin = entry.pinned ? "  pinned" : "";
+      const closed = entry.closedAt === null ? "open" : "closed";
+      return `  ${safe(entry.sessionId)}  ${closed}${pin}  ${title}`;
+    }),
+  ];
+  return { lines, diagnostics: [] };
+}
+
+function renderSessionShow(session: Session, payload: SessionShowPayload | null): RenderedPayload {
+  if (payload === null) {
+    return { lines: ["No session is available."], diagnostics: [] };
+  }
+  const entry = payload.session;
+  const title = entry.title === null ? "(untitled)" : safe(entry.title);
+  return {
+    lines: [
+      paint(session, "plain", "Session"),
+      `  Identity     ${safe(entry.sessionId)}`,
+      `  Workspace    ${safe(payload.workspaceId)}`,
+      `  Title        ${title}`,
+      `  Pinned       ${entry.pinned ? "yes" : "no"}`,
+      `  Started      ${safe(entry.startedAt)}`,
+      `  Closed       ${entry.closedAt === null ? "(open)" : safe(entry.closedAt)}`,
+    ],
+    diagnostics: [],
+  };
 }
 
 function renderDataRemoval(session: Session, payload: DataRemovalPayload | null): RenderedPayload {
@@ -1127,6 +1172,12 @@ function quietResultLines(result: RunCommandResult): readonly string[] {
       return [];
     case "export":
       return quietExportLines(result.payload);
+    case "session.list":
+      return result.payload === null
+        ? []
+        : result.payload.sessions.map((entry) => safe(entry.sessionId));
+    case "session.show":
+      return result.payload === null ? [] : [safe(result.payload.session.sessionId)];
     default:
       return assertNever(result, "unhandled command result");
   }
@@ -1214,6 +1265,12 @@ function quietFindingLines(result: RunCommandResult): readonly string[] {
     case "config.path":
       return [];
     case "export":
+      return [];
+    case "session.list":
+      return result.payload === null || result.payload.omitted === 0
+        ? []
+        : [`omitted ${result.payload.omitted} sessions`];
+    case "session.show":
       return [];
     default:
       return assertNever(result, "unhandled command result");

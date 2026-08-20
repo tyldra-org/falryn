@@ -2221,6 +2221,7 @@ export type {
   SessionCatalogQueryInput,
 } from "./session-catalog.ts";
 export {
+  DEFAULT_SESSION_LIST_LIMIT,
   describeSessionCatalogError,
   editSessionCatalog,
   MAX_SESSION_CATALOG,

@@ -1274,14 +1274,14 @@ history:
   supplied with the query. Rename and pin edit the snapshot. A name that is
   not in the catalog is `not-found`. Provenance is
   `deterministic-session-records` with `model: null`.
-- `src/application/session-catalog.ts` — `queryWorkspaceSessions` reads
-  `SessionRepositoryPort.listByParent`, overlays pin ids, and refuses
-  secret-shaped search or title text.
+-   `src/application/session-catalog.ts` — `queryWorkspaceSessions` reads
+  `SessionRepositoryPort.listByParent`, overlays pin ids, redacts secret-shaped
+  titles, and refuses secret-shaped search text. `inspectWorkspaceSession`
+  loads one identity through isolation.
 
 Validated by `src/domain/session-catalog.test.ts` and
-`src/application/session-catalog.test.ts` under `bun run check`. There is no
-command or OpenTUI overlay. Durable retention-GC pins, rewind, and
-the `falryn session` command remain later.
+`src/application/session-catalog.test.ts` under `bun run check`. The
+`falryn session` command is #339. Durable retention-GC pins remain later.
 
 The session resume slice from
 [#259](https://github.com/tyldra-org/falryn/issues/259) continues the same
@@ -1345,8 +1345,8 @@ stale:
   `SessionRepositoryPort.listByParent` for the bound workspace.
 
 Validated by `src/domain/session-isolation.test.ts` and
-`src/application/session-isolation.test.ts` under `bun run check`. There is no
-command or OpenTUI overlay. Export/import/recovery interactions remain #263.
+`src/application/session-isolation.test.ts` under `bun run check`. The
+`falryn session` command uses this isolation; it does not re-decide membership.
 
 The session recovery slice from
 [#263](https://github.com/tyldra-org/falryn/issues/263) plans export, import,
@@ -1363,8 +1363,8 @@ backup, inspect, restore, and diagnostics interactions without writing bytes:
 
 Validated by `src/domain/session-recovery.test.ts`,
 `src/application/session-recovery.test.ts`, and parent integrated
-`src/domain/session-navigation.test.ts` under `bun run check`. There is no
-command or OpenTUI overlay. Session command entry remains #339.
+`src/domain/session-navigation.test.ts` under `bun run check`. The session
+command surface is #339.
 
 The seams closed by
 [#323](https://github.com/tyldra-org/falryn/issues/323) complete two of
@@ -1611,7 +1611,7 @@ The command tree introduced by
 [#17](https://github.com/tyldra-org/falryn/issues/17) makes `falryn` a real
 executable. It adds the yargs tree, global options, dispatch, the
 `CommandResult` contract, a service factory, and the `config`, `data`, `doctor`,
-and `export` commands to `src/cli/`, plus a read-only `probeStorage` to `src/data/`.
+`export`, and `session` commands to `src/cli/`, plus a read-only `probeStorage` to `src/data/`.
 `src/main.ts` is now the CLI entry: it composes #20's streams, dispatches one
 invocation, and exits through #20's table.
 
@@ -1630,7 +1630,7 @@ Its verified behavior:
   and out-of-choice values; non-English locales changed and failed nothing.
   `@types/yargs` type-checks clean under `skipLibCheck: false` and
   `exactOptionalPropertyTypes`, so no accommodation was added;
-- **only `config`, `data`, `doctor`, and `export` are declared.** Every other
+- **only `config`, `data`, `doctor`, `export`, and `session` are declared.** Every other
   group named in `reference/CLI.md` is absent from the tree, asserted by a
   control, because parsing one would advertise it in `--help`;
 - **invalid usage never reaches application work.** Unknown flags, unknown
@@ -1724,7 +1724,7 @@ Its verified behavior:
   the terminal facts it was handed. A property check confirms it never changes
   the outcome kind or the effect certainty it was given.
 
-`config`, `data`, `doctor`, and `export` produce results in this build, so the
+`config`, `data`, `doctor`, `export`, and `session` produce results in this build, so the
 renderer is exercised against those payloads plus fixtures covering the outcome,
 certainty, and failure matrix. It has not been proven against a rich command
 surface.
@@ -1967,7 +1967,7 @@ bun run ci       PASS  (quality, tsc --noEmit, build, then bun test)
 ```
 
 The compiled file is now a runnable CLI rather than a bootstrap: `dist/falryn`
-answers `--help`, `--version`, `config`, `data`, `doctor`, and `export`, and
+answers `--help`, `--version`, `config`, `data`, `doctor`, `export`, and `session`, and
 reports its own compiled mode.
 
 `bun run measure`, the gated persistence resource measurement, was last
@@ -4318,7 +4318,7 @@ Qualified model-assisted drafting remains later and is not this slice.
 ## Remaining implementation gaps
 
 The repository now provides end-user behavior for the `config`, `data`, `doctor`,
-and `export` commands and a working v0.1 OpenTUI shell. The shell owns its
+`export`, and `session` commands and a working v0.1 OpenTUI shell. The shell owns its
 renderer, frame,
 empty transcript surface, composer, activity rail, status line, overlays, input,
 and terminal restoration; it does not yet have a provider, agent loop,
@@ -4350,7 +4350,7 @@ session/turn producer, or live transcript producer. The remaining gaps are:
   there are enough real read paths to measure;
 - command, human, JSON, JSONL, or terminal rendering for the records described
   above. The shared `SessionView` shape exists so a renderer does not have to
-  restate it. The `config`, `data`, `doctor`, and `export` commands already use
+  restate it. The `config`, `data`, `doctor`, `export`, and `session` commands already use
   all four headless
   projections, and the OpenTUI shell is delivered as a presentation surface;
   it has no live conversation to render until the producer path owned by
@@ -4393,8 +4393,8 @@ session/turn producer, or live transcript producer. The remaining gaps are:
   have no command surface. The owners that
   will register the remaining ownership classes — memory, extensions — do not
   exist, and each remains reported as unregistered rather than assumed absent;
-- headless product behavior beyond `config`, `data`, `doctor`, and `export`, or
-  live conversation
+- headless product behavior beyond `config`, `data`, `doctor`, `export`, and
+  `session`, or live conversation
   content in the OpenTUI application. The command tree, global options, help,
   version, process boundary, and all four output projections are real. The
   shell is delivered: it renders a workspace header, empty transcript surface,

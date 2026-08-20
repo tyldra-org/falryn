@@ -37,19 +37,22 @@ describe("the declared tree", () => {
     expect(await commandOf("data", "reset", "--class", "logs")).toBe("data.reset");
     expect(await commandOf("data", "uninstall")).toBe("data.uninstall");
     expect(await commandOf("export", "--session", "s1")).toBe("export");
+    expect(await commandOf("session", "list")).toBe("session.list");
+    expect(await commandOf("session", "show", "s1")).toBe("session.show");
   });
 
   test("declares no group whose capability does not exist", async () => {
     // Each of these is named in `reference/CLI.md` as a planned group. A tree
     // that parsed them would advertise them in `--help` and promise behavior
     // nothing implements.
-    const undeclared = ["run", "provider", "session", "tool", "extension", "artifact"];
+    const undeclared = ["run", "provider", "tool", "extension", "artifact"];
     for (const group of undeclared) {
       expect(await commandOf(group)).toBe("invalid");
     }
     expect(await helpText(null)).not.toContain("provider");
     expect(await helpText(null)).toContain("data <action>");
     expect(await helpText(null)).toContain("export");
+    expect(await helpText(null)).toContain("session");
   });
 
   test("says in help what the bare invocation actually does", async () => {
@@ -75,6 +78,7 @@ describe("invalid usage", () => {
     // A group that takes no subcommand rejects one rather than ignoring it.
     expect(await invalidMessage("doctor", "extra")).toContain("Unknown argument: extra");
     expect(await invalidMessage("export", "extra")).toContain("Unknown argument: extra");
+    expect(await invalidMessage("session")).toContain("Not enough non-option arguments");
   });
 
   test("refuses a group that needs a subcommand and was given none", async () => {

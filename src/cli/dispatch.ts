@@ -51,6 +51,8 @@ import {
   runDataUninstall,
   runDoctor,
   runExport,
+  runSessionList,
+  runSessionShow,
   stoppedResult,
 } from "./commands.ts";
 import { EXIT_CODES, type ExitCode, resolveExitCode } from "./exit.ts";
@@ -182,7 +184,7 @@ async function runCommand(
   options: DispatchOptions,
 ): Promise<ExitCode> {
   const { streams } = options;
-  const { command, data, exportArgs, options: globals } = invocation;
+  const { command, data, exportArgs, sessionArgs, options: globals } = invocation;
 
   if (command === "default") {
     return runDefault(globals, options);
@@ -192,7 +194,16 @@ async function runCommand(
   const services = (options.services ?? defaultProvider(options))(globals);
   const overrides = configurationOverridesFor(globals);
 
-  const result = await governed(command, data, exportArgs, services, overrides, globals, options);
+  const result = await governed(
+    command,
+    data,
+    exportArgs,
+    sessionArgs,
+    services,
+    overrides,
+    globals,
+    options,
+  );
   emit(streams, await render(result, globals, streams, services));
   return resolveExitCode({
     outcome: result.outcome,
@@ -384,6 +395,7 @@ async function governed(
   command: Exclude<RunnableCommand, "default">,
   data: Extract<Invocation, { kind: "run" }>["data"],
   exportArgs: Extract<Invocation, { kind: "run" }>["exportArgs"],
+  sessionArgs: Extract<Invocation, { kind: "run" }>["sessionArgs"],
   services: ServiceProvider,
   overrides: Readonly<Record<string, string>>,
   globals: GlobalOptions,
@@ -392,11 +404,11 @@ async function governed(
   const governance = options.governance ?? createInvocationGovernance();
   const scope = openInvocationScope(governance, globals.timeoutMs);
   if (scope === null) {
-    return produce(command, data, exportArgs, services, overrides, globals);
+    return produce(command, data, exportArgs, sessionArgs, services, overrides, globals);
   }
 
   const run = await runUnderScope(governance, scope, (signal) =>
-    produce(command, data, exportArgs, services, overrides, globals, signal, () => {
+    produce(command, data, exportArgs, sessionArgs, services, overrides, globals, signal, () => {
       // The executor has begun a destructive operation. If an interrupt wins
       // the race from here, the scope must not report a retry-safe cancellation.
       governance.scopes.recordEffect(scope.scopeId, "uncertain");
@@ -538,6 +550,7 @@ async function produce(
   command: Exclude<RunnableCommand, "default">,
   data: Extract<Invocation, { kind: "run" }>["data"],
   exportArgs: Extract<Invocation, { kind: "run" }>["exportArgs"],
+  sessionArgs: Extract<Invocation, { kind: "run" }>["sessionArgs"],
   services: ServiceProvider,
   overrides: Readonly<Record<string, string>>,
   globals: GlobalOptions,
@@ -568,6 +581,16 @@ async function produce(
         throw new Error("Missing parsed export arguments.");
       }
       return runExport(services, exportArgs, signal, onMutationStart);
+    case "session.list":
+      if (sessionArgs === null || sessionArgs.action !== "list") {
+        throw new Error("Missing parsed session list arguments.");
+      }
+      return runSessionList(services, sessionArgs, signal);
+    case "session.show":
+      if (sessionArgs === null || sessionArgs.action !== "show") {
+        throw new Error("Missing parsed session show arguments.");
+      }
+      return runSessionShow(services, sessionArgs, signal);
     default:
       // `default`, `help`, and `version` are answered before this is reached,
       // so a new command reaching here without a branch fails to compile.

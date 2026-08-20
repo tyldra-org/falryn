@@ -19,6 +19,8 @@ export type {
   DoctorPayload,
   ExportCommandPayload,
   RunCommandResult,
+  SessionListPayload,
+  SessionShowPayload,
 } from "./commands.ts";
 export {
   runConfigPath,
@@ -26,6 +28,8 @@ export {
   runConfigValidate,
   runDoctor,
   runExport,
+  runSessionList,
+  runSessionShow,
   stoppedResult,
 } from "./commands.ts";
 export type { DispatchOptions } from "./dispatch.ts";
