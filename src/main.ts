@@ -6,17 +6,26 @@
  * foundation: the resolved roots, the ownership registry, and the one SQLite
  * connection with its migrations applied.
  *
- * There is no product work to run yet, so the bootstrap opens storage and shuts
- * down immediately. Doing it here is the point: the composed lifecycle, the real
- * process-signal adapter, the real filesystem adapter, and the real `bun:sqlite`
- * adapter are all exercised by the compiled executable rather than only in
- * source mode, so a migration that does not survive `bun build --compile` fails
- * a check instead of a user's first run.
+ * There is no interactive product work to run yet, so the bootstrap opens
+ * storage, composes the product agent runtime graph (#705), and shuts down
+ * immediately. Doing it here is the point: the composed lifecycle, the real
+ * process-signal adapter, the real filesystem adapter, the real `bun:sqlite`
+ * adapter, and the fail-closed agent host seams are all exercised by the
+ * compiled executable rather than only in source mode, so a migration or
+ * composition defect that does not survive `bun build --compile` fails a check
+ * instead of a user's first run.
  *
- * Product composition will be added through focused, issue-backed changes.
+ * Live producers (#706), composer submission (#707), and vendor adapters (#709)
+ * attach through the typed seams; this bootstrap does not write a synthetic
+ * turn into a user's database.
  */
 
-import { createRuntimeLifecycle, fromSqliteStoreError, fromUnknown } from "./application/index.ts";
+import {
+  composeProductAgentRuntime,
+  createRuntimeLifecycle,
+  fromSqliteStoreError,
+  fromUnknown,
+} from "./application/index.ts";
 import {
   createHostCliStreams,
   createHostGovernance,
@@ -49,6 +58,7 @@ import {
   usableRoots,
 } from "./data/index.ts";
 import {
+  configurationGeneration,
   createSystemClock,
   DEFAULT_BUSY_TIMEOUT_MS,
   type EnvironmentPort,
@@ -62,7 +72,11 @@ import {
   runId,
   type ShutdownReport,
   type SqliteOpenReport,
+  sessionId,
+  streamId,
   type TerminalOutcome,
+  traceId,
+  workspaceId,
 } from "./domain/index.ts";
 import {
   createHostBlobStore,
@@ -220,11 +234,36 @@ export async function main(options: BootstrapOptions = {}): Promise<BootstrapRep
     }
 
     // The durable event store and its projection runner, composed over the one
-    // open database. There is no producer yet — the agent loop that starts a
-    // session and records a turn is a later change — so this build exercises
-    // the schema rather than writing a synthetic session into a user's
+    // open database. The product agent runtime (#705) is composed here so the
+    // turn coordinator, journal, and attachment seams fail closed when required
+    // ports are missing. Producers (#706) and composer submission (#707) still
+    // attach later — this path does not write a synthetic turn into a user's
     // database.
     const eventStore = createSqliteEventStore(opened.value);
+    const productAgent = composeProductAgentRuntime({
+      eventStore,
+      clock: systemClock,
+      streamId: streamId.from("session:bootstrap-idle"),
+      correlation: {
+        workspaceId: workspaceId.from("workspace-bootstrap-idle"),
+        sessionId: sessionId.from("session-bootstrap-idle"),
+        traceId: traceId.from("trace-bootstrap-idle"),
+        configurationGeneration: configurationGeneration.from(0),
+      },
+    });
+    if (!productAgent.ok) {
+      return err(
+        fromUnknown(
+          new Error(`product agent runtime composition failed: ${productAgent.error.code}`),
+          {
+            operation: "compose product agent runtime",
+          },
+        ),
+      );
+    }
+    // Retain the composed graph for the lifetime of open storage so seams stay
+    // reachable for later producers without inventing a turn on bootstrap.
+    void productAgent.value;
     const projections = createProjectionRunner({
       store: opened.value,
       events: eventStore,

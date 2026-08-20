@@ -170,6 +170,17 @@ export { createNotebookReader } from "./notebook-read.ts";
 export type { PdfReader } from "./pdf-read.ts";
 export { createPdfReader } from "./pdf-read.ts";
 export type {
+  HostTurnOutcome,
+  ProductAgentAttachmentPoints,
+  ProductAgentPortResult,
+  ProductAgentRuntime,
+  ProductAgentRuntimeComposeResult,
+  ProductAgentRuntimeError,
+  ProductAgentRuntimePorts,
+  ProductAgentSessionIds,
+} from "./product-agent-runtime.ts";
+export { composeProductAgentRuntime } from "./product-agent-runtime.ts";
+export type {
   DigestedPromptRequest,
   PromptComposer,
   PromptComposerError,
