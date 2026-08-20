@@ -36,6 +36,7 @@ import { known, type ShellModel, unavailable } from "../view-model.ts";
 import {
   createMapArtifactViewer,
   fixtureCodeArtifactView,
+  fixtureDiagnosticArtifactView,
   fixtureDiffArtifactView,
   fixtureDocumentArtifactView,
   fixtureMediaArtifactView,
@@ -586,6 +587,39 @@ describe("the code artifact viewer", () => {
       expect(opened).toContain(`${mediaType} · summary · 4096 bytes`);
       expect(opened).toContain("25 50 44 46");
     }
+  });
+
+  test("opens a diagnostic inspector for Falryn diagnostic artifacts", async () => {
+    const diagnosticBlock = {
+      ...artifactBlock(),
+      mediaType: "application/vnd.falryn.diagnostic+json",
+      summary: complete("Captured the health dump."),
+    };
+    const viewer = createMapArtifactViewer({
+      [FIXTURE_ARTIFACT]: fixtureDiagnosticArtifactView({
+        id: "artifact-fixture",
+        text: '{"level":"error","code":"provider-unreachable"}',
+      }),
+    });
+
+    using shell = await open(
+      projectionOf([diagnosticBlock]),
+      { columns: 100, rows: 30 },
+      { artifactViewer: viewer },
+    );
+    await shell.press("p", { ctrl: true });
+    await shell.type("transcript.openArtifact");
+    shell.setup.mockInput.pressEnter();
+
+    const opened = await shell.frame();
+    expect(opened).toContain("Diagnostic");
+    expect(opened).toContain("error · provider · parsed · provider-unreachable");
+    expect(opened).toContain("provider-unreachable");
+
+    await named(shell, "escape");
+    const restored = await shell.frame();
+    expect(restored).toContain("Captured the health dump.");
+    expect(restored).not.toContain("Diagnostic");
   });
 });
 
