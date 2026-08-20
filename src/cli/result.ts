@@ -167,6 +167,12 @@ export type CommandResult<Payload> = {
   readonly warnings: readonly CommandWarning[];
   readonly omissions: readonly CommandOmission[];
   readonly truncation: readonly CommandTruncation[];
+  /**
+   * Handles for content the command produced but did not inline.
+   *
+   * Empty when none. Machine projections copy this onto `CliResultRecord.artifacts`.
+   */
+  readonly artifacts: readonly { readonly artifactId: string }[];
   readonly correlation: CorrelationIds;
 };
 

@@ -133,13 +133,28 @@ export type CliResultRecord = CliRecordEnvelope & {
   /**
    * Handles for content too large to inline.
    *
-   * Always empty in this build: no command produces an artifact yet, and the
-   * CLI reaches no artifact store. The field is declared now so a consumer's
-   * parser does not change shape when one does.
+   * Empty when the command produced none. Populated from the command result's
+   * artifact list so a consumer's parser does not change shape when a command
+   * starts producing them.
    */
-  readonly artifacts: readonly unknown[];
+  readonly artifacts: readonly CliArtifactHandle[];
   readonly correlation: unknown;
 };
+
+/** A wire-form handle a consumer can resolve through `falryn artifact get`. */
+export type CliArtifactHandle = {
+  readonly artifactId: string;
+};
+
+/**
+ * Why an over-bound result's artifact could not be written.
+ *
+ * Absent (`null`) when no write was attempted — non-over-bound encode failures
+ * have nothing to store — or when the write succeeded.
+ */
+export const CLI_ARTIFACT_ERROR_CODES = ["store-unavailable", "store-failed"] as const;
+
+export type CliArtifactErrorCode = (typeof CLI_ARTIFACT_ERROR_CODES)[number];
 
 /**
  * The terminal record for a run that could not emit its result.
@@ -154,7 +169,12 @@ export type CliRefusalRecord = CliRecordEnvelope & {
   readonly code: CliEncodeErrorCode;
   readonly outcome: unknown;
   /** The handle holding the full result, or `null` when none could be made. */
-  readonly artifact: unknown;
+  readonly artifact: CliArtifactHandle | null;
+  /**
+   * Why `artifact` is null after an attempted over-bound spill, or `null` when
+   * no spill was attempted or the spill succeeded.
+   */
+  readonly artifactError: CliArtifactErrorCode | null;
   readonly observedBytes: number | null;
   readonly maximumBytes: number;
 };
@@ -214,6 +234,7 @@ export type CliResultBody = {
   readonly omissions: readonly unknown[];
   readonly truncation: readonly unknown[];
   readonly correlation: unknown;
+  readonly artifacts?: readonly CliArtifactHandle[];
 };
 
 /** One command's complete answer as the terminal record. */
@@ -234,28 +255,29 @@ export function cliResultRecord(
     warnings: body.warnings,
     omissions: body.omissions,
     truncation: body.truncation,
-    artifacts: [],
+    artifacts: body.artifacts ?? [],
     correlation: body.correlation,
   };
 }
+
+export type CliRefusalArtifact = {
+  readonly artifact: CliArtifactHandle | null;
+  readonly artifactError: CliArtifactErrorCode | null;
+};
 
 /**
  * The terminal record for a result that could not be emitted.
  *
  * It carries nothing that came from the result it replaces — a code, an
- * outcome, and two numbers — so encoding it cannot fail for the reason the
- * result did.
- *
- * `artifact` is `null` in this build. No command produces an artifact and the
- * CLI reaches no artifact store, so there is nowhere to put the full result;
- * inventing a handle that resolves to nothing would be worse than saying none
- * exists.
+ * outcome, two numbers, and optionally a handle to where the full result was
+ * spilled — so encoding it cannot fail for the reason the result did.
  */
 export function cliRefusalRecord(
   command: string,
   order: Sequence,
   occurredAt: Timestamp,
   error: CliEncodeError,
+  spill: CliRefusalArtifact = { artifact: null, artifactError: null },
 ): CliRefusalRecord {
   return {
     ...envelopeFor("refusal", command, order, occurredAt),
@@ -266,7 +288,8 @@ export function cliRefusalRecord(
     // answer. A consumer that cannot read the result cannot know its effect,
     // and `uncertain` is the outcome that says exactly that.
     outcome: { kind: "uncertain", effect: "uncertain" },
-    artifact: null,
+    artifact: spill.artifact,
+    artifactError: spill.artifactError,
     observedBytes: error.observedBytes,
     maximumBytes: MAX_CLI_RECORD_BYTES,
   };
@@ -294,6 +317,12 @@ export type CliEncodeError = {
   /** Where in the record it was found. Structural only, never the value. */
   readonly path: string;
   readonly observedBytes: number | null;
+  /**
+   * The canonical JSON text when the record encoded but exceeded the byte
+   * bound. Absent for every other encode failure — there is nothing durable to
+   * spill when the value has no JSON form.
+   */
+  readonly encodedText: string | null;
 };
 
 export type CliEncodeResult =
@@ -382,7 +411,7 @@ type CanonicalResult =
   | { readonly ok: false; readonly error: CliEncodeError };
 
 function refuse(code: CliEncodeErrorCode, path: string): CanonicalResult {
-  return { ok: false, error: { code, path, observedBytes: null } };
+  return { ok: false, error: { code, path, observedBytes: null, encodedText: null } };
 }
 
 /** Whether this text holds a surrogate with no partner, which UTF-8 cannot carry. */
@@ -426,7 +455,12 @@ export function encodeCliRecord(record: CliRecord): CliEncodeResult {
   if (byteLength > MAX_CLI_RECORD_BYTES) {
     return {
       ok: false,
-      error: { code: "record-too-large", path: "", observedBytes: byteLength },
+      error: {
+        code: "record-too-large",
+        path: "",
+        observedBytes: byteLength,
+        encodedText: text,
+      },
     };
   }
   return { ok: true, text };
@@ -474,7 +508,7 @@ const cliRecordSchema = z.discriminatedUnion("kind", [
     warnings: z.array(z.unknown()),
     omissions: z.array(z.unknown()),
     truncation: z.array(z.unknown()),
-    artifacts: z.array(z.unknown()),
+    artifacts: z.array(z.object({ artifactId: z.string().min(1) })),
     correlation: z.unknown(),
   }),
   z.object({
@@ -483,7 +517,8 @@ const cliRecordSchema = z.discriminatedUnion("kind", [
     terminal: z.literal(true),
     code: z.literal(CLI_ENCODE_ERROR_CODES),
     outcome: terminalOutcomeSchema,
-    artifact: z.unknown(),
+    artifact: z.object({ artifactId: z.string().min(1) }).nullable(),
+    artifactError: z.literal(CLI_ARTIFACT_ERROR_CODES).nullable().optional().default(null),
     observedBytes: z.number().nullable(),
     maximumBytes: z.number(),
   }),

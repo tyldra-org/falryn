@@ -44,8 +44,8 @@ export type JsonlRenderRequest = MachineRenderRequest & {
   readonly events: readonly RuntimeEvent[];
 };
 
-export function renderJsonl(request: JsonlRenderRequest): RenderedRecords {
-  const { result, occurredAt, events } = request;
+export async function renderJsonl(request: JsonlRenderRequest): Promise<RenderedRecords> {
+  const { result, occurredAt, events, storeOverBound } = request;
   const lines: string[] = [];
   const skipped: string[] = [];
 
@@ -65,10 +65,11 @@ export function renderJsonl(request: JsonlRenderRequest): RenderedRecords {
     skipped.push(`${event.kind}: ${encoded.error.code}`);
   }
 
-  const terminal = emitTerminal(
+  const terminal = await emitTerminal(
     cliResultRecord(result.command, order, occurredAt, resultBodyOf(result)),
     result.command,
     occurredAt,
+    storeOverBound,
   );
 
   const notices = [

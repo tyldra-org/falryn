@@ -42,7 +42,6 @@ import {
   type FlushReport,
   joinPath,
   type LocalPath,
-  MAX_STREAM_WRITE_BYTES,
   type OutputStreamPort,
   ok,
   type PathEntry,
@@ -575,9 +574,10 @@ export function createHostFileOutputStream(path: LocalPath): OutputStreamPort {
 
   return {
     write(bytes: Uint8Array): StreamWrite {
-      if (bytes.byteLength > MAX_STREAM_WRITE_BYTES) {
-        return { status: "too-large", accepted: 0, pending };
-      }
+      // A file destination is not a pipe: the stream-write bound exists so a
+      // single stdout write stays within what the host stream adapter accepts.
+      // Applying it here would refuse the exact over-bound spills `artifact get`
+      // is meant to retrieve.
       if (closedCode !== null) {
         return { status: "closed", accepted: 0, pending };
       }

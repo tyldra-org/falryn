@@ -41,6 +41,7 @@ function resultRecord(payload: unknown = { ok: true }) {
     warnings: [],
     omissions: [],
     truncation: [],
+    artifacts: [],
     correlation: { workspaceId: null },
   });
 }
@@ -158,6 +159,7 @@ describe("encoding", () => {
       code: "record-too-large",
       path: "",
       observedBytes: 9_000_000,
+      encodedText: null,
     });
     const encoded = encodeCliRecord(refusal);
     expect(encoded.ok).toBe(true);
@@ -166,12 +168,78 @@ describe("encoding", () => {
       terminal: true,
       code: "record-too-large",
       artifact: null,
+      artifactError: null,
       outcome: { kind: "uncertain", effect: "uncertain" },
+    });
+  });
+
+  test("keeps a spilled handle on the refusal without growing past the bound", () => {
+    const refusal = cliRefusalRecord(
+      "doctor",
+      FIRST_SEQUENCE,
+      AT,
+      {
+        code: "record-too-large",
+        path: "",
+        observedBytes: 9_000_000,
+        encodedText: null,
+      },
+      { artifact: { artifactId: "cli-refusal-1" }, artifactError: null },
+    );
+    const encoded = encodeCliRecord(refusal);
+    expect(encoded.ok).toBe(true);
+    expect(encoded.ok ? JSON.parse(encoded.text) : {}).toMatchObject({
+      artifact: { artifactId: "cli-refusal-1" },
+      artifactError: null,
+    });
+  });
+
+  test("names why a spill failed without losing the encode code", () => {
+    const refusal = cliRefusalRecord(
+      "doctor",
+      FIRST_SEQUENCE,
+      AT,
+      {
+        code: "record-too-large",
+        path: "",
+        observedBytes: 9_000_000,
+        encodedText: null,
+      },
+      { artifact: null, artifactError: "store-failed" },
+    );
+    const encoded = encodeCliRecord(refusal);
+    expect(encoded.ok).toBe(true);
+    expect(encoded.ok ? JSON.parse(encoded.text) : {}).toMatchObject({
+      code: "record-too-large",
+      artifact: null,
+      artifactError: "store-failed",
     });
   });
 });
 
 describe("reading", () => {
+  test("accepts a pre-spill refusal that omitted artifactError", () => {
+    const verdict = readCliRecord({
+      schemaFamily: CLI_SCHEMA_FAMILY,
+      schemaVersion: CLI_SCHEMA_VERSION,
+      minimumReaderSchemaVersion: CLI_MINIMUM_SCHEMA_VERSION,
+      kind: "refusal",
+      terminal: true,
+      command: "doctor",
+      sequence: 1,
+      occurredAt: AT,
+      code: "record-too-large",
+      outcome: { kind: "uncertain", effect: "uncertain" },
+      artifact: null,
+      observedBytes: 2_000_000,
+      maximumBytes: MAX_CLI_RECORD_BYTES,
+    });
+    expect(verdict.kind).toBe("accepted");
+    if (verdict.kind === "accepted" && verdict.record.kind === "refusal") {
+      expect(verdict.record.artifactError).toBeNull();
+    }
+  });
+
   test("accepts a record this build wrote", () => {
     const verdict = readCliRecord(roundTrip(resultRecord()));
     expect(verdict.kind).toBe("accepted");
@@ -363,6 +431,7 @@ function resultBody() {
     warnings: [],
     omissions: [],
     truncation: [],
+    artifacts: [],
     correlation: {},
   };
 }
