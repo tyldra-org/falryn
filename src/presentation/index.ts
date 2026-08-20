@@ -147,10 +147,15 @@ export {
   resumable,
   TRANSCRIPT_PROJECTION_GENERATION,
 } from "./transcript/generation.ts";
-export type { NativeTranscriptRange, TranscriptIncludePick } from "./transcript/picks.ts";
+export type {
+  NativeTranscriptRange,
+  TranscriptIdentityPick,
+  TranscriptIncludePick,
+} from "./transcript/picks.ts";
 export {
   includeBodiesOf,
   nativeRangeText,
+  pickTranscriptCopyIdentity,
   pickTranscriptIncludeBody,
   resolveTranscriptPick,
 } from "./transcript/picks.ts";

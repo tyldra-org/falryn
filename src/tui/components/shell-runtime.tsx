@@ -14,6 +14,7 @@ import {
   parseMentions,
 } from "../../domain/index.ts";
 import type { TranscriptBlock } from "../../presentation/index.ts";
+import type { CopyTextPort, CopyTextResult } from "../clipboard.ts";
 import { type CommandState, commandById } from "../commands.ts";
 import {
   type ComposerAction,
@@ -31,7 +32,12 @@ import {
 } from "../confirmation/index.ts";
 import type { FocusRegion } from "../focus.ts";
 import { classifyPaste, looksSecret } from "../paste.ts";
-import { includeTranscriptInDraft, totalRowsOf } from "../transcript/index.ts";
+import {
+  copyTranscriptBody,
+  copyTranscriptIdentity,
+  includeTranscriptInDraft,
+  totalRowsOf,
+} from "../transcript/index.ts";
 import { EMPTY_GEOMETRY, type TranscriptGeometry } from "../transcript-model.ts";
 import { useRenderGate } from "./render-gate.tsx";
 import { runAvailableCommand } from "./shell-command-runner.ts";
@@ -86,6 +92,7 @@ export type ShellRuntimeOptions = {
   readonly confirmation?: ConfirmationPrompt | null;
   readonly onConfirmation?: (decision: ConfirmationDecision) => void;
   readonly onSecretSubmit?: (secret: string) => void;
+  readonly copyPort?: CopyTextPort;
 };
 
 const encoder = new TextEncoder();
@@ -112,6 +119,7 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
   const secretRef = useRef("");
   const onConfirmation = options.onConfirmation;
   const onSecretSubmit = options.onSecretSubmit;
+  const copyPort = options.copyPort ?? null;
 
   const editSecret = useCallback((edit: SecretEdit): void => {
     secretRef.current = applySecretEdit(secretRef.current, edit);
@@ -231,6 +239,60 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
     return true;
   }, []);
 
+  const digestRange = useCallback((text: string): string => {
+    return digestBytes(encoder.encode(text));
+  }, []);
+
+  const reportCopy = useCallback((result: CopyTextResult): boolean => {
+    if (!result.ok) {
+      dispatch({ kind: "notice", message: result.reason });
+      dispatch({ kind: "focus-region", id: TRANSCRIPT_REGION });
+      return false;
+    }
+    const message =
+      result.delivery === "clipboard"
+        ? "Copied to the clipboard."
+        : "Clipboard unavailable; copied to plain output.";
+    dispatch({ kind: "notice", message });
+    dispatch({ kind: "focus-region", id: TRANSCRIPT_REGION });
+    return true;
+  }, []);
+
+  const copyTranscriptPick = useCallback((): boolean => {
+    if (copyPort === null) {
+      dispatch({ kind: "notice", message: "Copy is unavailable in this frame." });
+      return false;
+    }
+    const current = stateRef.current;
+    const selection = transcriptBody.current?.getSelection() ?? null;
+    const nativeRange = selection !== null && selection.start !== selection.end ? selection : null;
+    return reportCopy(
+      copyTranscriptBody({
+        selected: current.transcript.selected,
+        expanded: current.transcript.expanded,
+        blocks: blocksRef.current,
+        nativeRange,
+        port: copyPort,
+        digestRange,
+      }),
+    );
+  }, [copyPort, digestRange, reportCopy]);
+
+  const copyTranscriptIdentityPick = useCallback((): boolean => {
+    if (copyPort === null) {
+      dispatch({ kind: "notice", message: "Copy is unavailable in this frame." });
+      return false;
+    }
+    const current = stateRef.current;
+    return reportCopy(
+      copyTranscriptIdentity({
+        selected: current.transcript.selected,
+        blocks: blocksRef.current,
+        port: copyPort,
+      }),
+    );
+  }, [copyPort, reportCopy]);
+
   const submitComposer = useCallback((): void => {
     void (async () => {
       const current = stateRef.current.composer;
@@ -292,6 +354,10 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
         }
         case "transcript.includeInDraft":
           return includeTranscriptPick();
+        case "transcript.copy":
+          return copyTranscriptPick();
+        case "transcript.copyIdentity":
+          return copyTranscriptIdentityPick();
         case "composer.excludePaste":
           heldPaste.current = null;
           dispatch({ kind: "composer", action: { kind: "exclude-paste" } });
@@ -362,6 +428,8 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
       gate,
       includeHeldPaste,
       includeTranscriptPick,
+      copyTranscriptPick,
+      copyTranscriptIdentityPick,
       submitComposer,
       confirm,
     ],

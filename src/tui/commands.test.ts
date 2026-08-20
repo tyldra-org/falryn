@@ -199,6 +199,20 @@ describe("what this build can actually do", () => {
     ).toBe("available");
     expect(commandById("transcript.includeInDraft")?.defaultBinding).toBe(null);
     expect(
+      commandById("transcript.copy")?.availability({
+        ...EMPTY_COMMAND_STATE,
+        hasTranscript: true,
+      }).kind,
+    ).toBe("available");
+    expect(
+      commandById("transcript.copyIdentity")?.availability({
+        ...EMPTY_COMMAND_STATE,
+        hasTranscript: true,
+      }).kind,
+    ).toBe("available");
+    expect(commandById("transcript.copy")?.defaultBinding).toBe(null);
+    expect(commandById("transcript.copyIdentity")?.defaultBinding).toBe(null);
+    expect(
       commandById("changes.nextTab")?.availability({
         ...EMPTY_COMMAND_STATE,
         overlayOpen: true,
