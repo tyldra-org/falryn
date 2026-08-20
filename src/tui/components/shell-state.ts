@@ -52,6 +52,7 @@ export const FRAME_REGIONS: readonly FocusRegion[] = [
 ];
 
 export const COMPOSER_REGION = "frame.composer";
+export const TRANSCRIPT_REGION = "frame.primary";
 
 export function overlayRegions(route: OverlayRoute): readonly FocusRegion[] {
   switch (route.kind) {
