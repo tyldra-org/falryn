@@ -26,7 +26,12 @@ import { createDefaultOpenTuiKeymap } from "@opentui/keymap/opentui";
 import { KeymapProvider, useActiveKeys, useKeymap } from "@opentui/keymap/react";
 import { useRenderer } from "@opentui/react";
 import { type ReactNode, useMemo } from "react";
-import type { ArtifactViewer, FileAttachmentProbe, GitDashboard } from "../../application/index.ts";
+import type {
+  ArtifactViewer,
+  FileAttachmentProbe,
+  GitDashboard,
+  MidTurnInputService,
+} from "../../application/index.ts";
 import type { Instant } from "../../domain/index.ts";
 import type {
   ActivityProjection,
@@ -144,6 +149,8 @@ export type ShellAppProps = {
   /** Application-backed workspace-set mutations (#607). */
   readonly workspaceController?: WorkspaceController;
   readonly workspace?: WorkspaceSetView;
+  /** Mid-turn classification while a turn is in flight (#612). */
+  readonly midTurn?: MidTurnInputService;
 };
 
 /**
@@ -195,6 +202,7 @@ export function ShellApp(props: ShellAppProps): ReactNode {
     ...(props.workspaceController === undefined
       ? {}
       : { workspaceController: props.workspaceController }),
+    ...(props.midTurn === undefined ? {} : { midTurn: props.midTurn }),
   });
   const activityProjection = props.activity ?? EMPTY_ACTIVITY;
   const shutdown = props.shutdown ?? null;

@@ -546,13 +546,42 @@ export const SHELL_COMMANDS: readonly ShellCommand[] = [
   {
     id: "composer.submit",
     title: "Submit",
-    description: "Send what is in the composer.",
+    description:
+      "Send what is in the composer. While a turn is active, this queues a follow-up by default.",
     context: "composer",
     // The parser's canonical name. See `transcript.expand`.
     defaultBinding: "return",
-    keywords: ["send", "run", "ask"],
+    keywords: ["send", "run", "ask", "follow-up"],
     availability: (state) =>
       state.hasComposer ? AVAILABLE : unavailable("the composer is not focused"),
+  },
+  {
+    id: "composer.submitAsSteer",
+    title: "Submit as steer",
+    description: "Attach this draft to the in-flight attempt without starting a second turn.",
+    context: "composer",
+    defaultBinding: null,
+    keywords: ["steer", "correct", "mid-turn"],
+    availability: (state) =>
+      !state.hasComposer
+        ? unavailable("the composer is not focused")
+        : state.hasRunningWork
+          ? AVAILABLE
+          : unavailable("no turn is in flight to steer"),
+  },
+  {
+    id: "composer.submitAsFollowUp",
+    title: "Submit as follow-up",
+    description: "Queue this draft as the next turn after the current one finishes.",
+    context: "composer",
+    defaultBinding: null,
+    keywords: ["follow-up", "queue", "mid-turn"],
+    availability: (state) =>
+      !state.hasComposer
+        ? unavailable("the composer is not focused")
+        : state.hasRunningWork
+          ? AVAILABLE
+          : unavailable("no turn is in flight to queue against"),
   },
   {
     id: "composer.newline",

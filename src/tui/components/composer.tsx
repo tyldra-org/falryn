@@ -60,7 +60,7 @@ import type {
 } from "@opentui/core";
 import { defaultTextareaKeyBindings, MouseButton } from "@opentui/core";
 import { usePaste, useSelectionHandler } from "@opentui/react";
-import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
+import { type ReactNode, useCallback, useLayoutEffect, useRef, useState } from "react";
 import type { Instant } from "../../domain/index.ts";
 import {
   type ClickSequence,
@@ -148,7 +148,10 @@ export function ComposerView(props: ComposerViewProps): ReactNode {
   // Guarded on the text actually differing, because `setText` moves the cursor
   // to the end: applying it on every render would drag the cursor there after
   // each keystroke, which is the same class of defect as placing it by hand.
-  useEffect(() => {
+  //
+  // `useLayoutEffect` so a mid-turn clear reaches the renderable before paint
+  // and before a stale `onContentChange` echo can restore the buffer.
+  useLayoutEffect(() => {
     const renderable = draft.current;
     if (renderable !== null && renderable.plainText !== model.state.text) {
       renderable.setText(model.state.text);

@@ -266,6 +266,43 @@ describe("what this build can actually do", () => {
     expect(commandById("session.switch")?.availability(EMPTY_COMMAND_STATE).kind).toBe("available");
   });
 
+  test("declares mid-turn submit commands only while work is running", () => {
+    expect(commandById("composer.submitAsSteer")?.defaultBinding).toBe(null);
+    expect(commandById("composer.submitAsFollowUp")?.defaultBinding).toBe(null);
+    expect(
+      commandById("composer.submitAsSteer")?.availability({
+        ...EMPTY_COMMAND_STATE,
+        hasComposer: true,
+      }),
+    ).toEqual({ kind: "unavailable", reason: "no turn is in flight to steer" });
+    expect(
+      commandById("composer.submitAsFollowUp")?.availability({
+        ...EMPTY_COMMAND_STATE,
+        hasComposer: true,
+      }),
+    ).toEqual({ kind: "unavailable", reason: "no turn is in flight to queue against" });
+    expect(
+      commandById("composer.submitAsSteer")?.availability({
+        ...EMPTY_COMMAND_STATE,
+        hasComposer: true,
+        hasRunningWork: true,
+      }).kind,
+    ).toBe("available");
+    expect(
+      commandById("composer.submitAsFollowUp")?.availability({
+        ...EMPTY_COMMAND_STATE,
+        hasComposer: true,
+        hasRunningWork: true,
+      }).kind,
+    ).toBe("available");
+    expect(
+      commandById("app.cancel")?.availability({
+        ...EMPTY_COMMAND_STATE,
+        hasRunningWork: true,
+      }).kind,
+    ).toBe("available");
+  });
+
   test("declares workspace-set commands with no default key", () => {
     for (const id of [
       "workspace.addRoot",

@@ -368,6 +368,12 @@ describe("workspace set", () => {
     expect(isContained(state.focus)).toBe(true);
   });
 
+  test("tracks running work for mid-turn cancel availability", () => {
+    expect(commandStateFor(INITIAL_SHELL_STATE).hasRunningWork).toBe(false);
+    const running = run([{ kind: "running-work", running: true }]);
+    expect(commandStateFor(running).hasRunningWork).toBe(true);
+  });
+
   test("reports workspace capability from the bound set", () => {
     const withRoots = run([
       {

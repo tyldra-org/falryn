@@ -7,6 +7,7 @@ import {
   digestBytes,
   enhancePrompt,
   type FileAttachmentProbe,
+  type MidTurnInputService,
 } from "../../application/index.ts";
 import {
   type AttachmentDescriptor,
@@ -33,6 +34,7 @@ import {
   secretGraphemeCount,
 } from "../confirmation/index.ts";
 import type { FocusRegion } from "../focus.ts";
+import { requestFromComposer, submitWhileActive } from "../mid-turn.ts";
 import { classifyPaste, looksSecret } from "../paste.ts";
 import {
   copyTranscriptBody,
@@ -108,6 +110,8 @@ export type ShellRuntimeOptions = {
   /** Bound workspace set when the launch path attached one. */
   readonly workspace?: WorkspaceSetView;
   readonly workspaceController?: WorkspaceController | null;
+  /** When set, submit-while-active classifies through #611. */
+  readonly midTurn?: MidTurnInputService | null;
 };
 
 const encoder = new TextEncoder();
@@ -141,6 +145,12 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
     readonly characters: number;
     readonly lines: number;
   } | null>(null);
+  /**
+   * After a mid-turn clear, the textarea can echo its still-uncleared buffer
+   * through `onContentChange` in the same turn. Absorb non-empty drafts until
+   * the model `setText("")` effect has had a chance to run.
+   */
+  const absorbDraftEcho = useRef(false);
   const payloads = useRef(createMemoryAttachmentPayloads());
   const transcriptBody = useRef<TextareaRenderable | null>(null);
   const fileProbe = options.fileProbe ?? null;
@@ -321,6 +331,41 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
     );
   }, [copyPort, reportCopy]);
 
+  const submitMidTurn = useCallback(
+    (intent: "steer" | "follow-up" | "interrupt"): boolean => {
+      const midTurn = options.midTurn ?? null;
+      if (midTurn === null) {
+        dispatch({ kind: "notice", message: "No mid-turn runtime is attached." });
+        return false;
+      }
+      const current = stateRef.current.composer;
+      const result = submitWhileActive(
+        midTurn,
+        intent,
+        requestFromComposer(
+          current.text,
+          current.attachments.map((item) => item.id),
+        ),
+      );
+      dispatch({ kind: "notice", message: result.notice });
+      dispatch({
+        kind: "running-work",
+        running: midTurn.view().active !== null,
+      });
+      if (result.ok && result.clearDraft) {
+        absorbDraftEcho.current = true;
+        dispatch({ kind: "composer", action: { kind: "draft", text: "" } });
+        // Cleared after paint — a microtask runs before the textarea sync and
+        // is too early to unblock; a stale content-change would restore the draft.
+        setTimeout(() => {
+          absorbDraftEcho.current = false;
+        }, 0);
+      }
+      return result.ok;
+    },
+    [options.midTurn],
+  );
+
   const submitComposer = useCallback((): void => {
     const current = stateRef.current.composer;
     const slash = parseComposerSlash(current.text);
@@ -389,6 +434,13 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
       return;
     }
 
+    const midTurn = options.midTurn ?? null;
+    if (midTurn !== null && midTurn.view().active !== null) {
+      // Documented default while a turn is active: queue a follow-up.
+      submitMidTurn("follow-up");
+      return;
+    }
+
     void (async () => {
       const resolved = await admitComposerContext(
         {
@@ -403,7 +455,7 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
         action: { kind: "submit", attachments: resolved.attachments },
       });
     })();
-  }, [fileProbe, options.workspaceController]);
+  }, [fileProbe, options.midTurn, options.workspaceController, submitMidTurn]);
 
   const run = useCallback(
     (id: string): boolean => {
@@ -439,6 +491,10 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
         case "composer.submit":
           submitComposer();
           return true;
+        case "composer.submitAsSteer":
+          return submitMidTurn("steer");
+        case "composer.submitAsFollowUp":
+          return submitMidTurn("follow-up");
         case "composer.includePaste": {
           const included = includeHeldPaste();
           if (included) {
@@ -504,6 +560,13 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
           dispatch({ kind: "composer", action: { kind: "reject-enhancement" } });
           dispatch({ kind: "close-overlay" });
           return true;
+        case "app.cancel": {
+          const midTurn = options.midTurn ?? null;
+          if (midTurn !== null && midTurn.view().active !== null) {
+            return submitMidTurn("interrupt");
+          }
+          break;
+        }
         default:
           break;
       }
@@ -519,12 +582,14 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
     [
       options.onExit,
       options.transcriptKeys,
+      options.midTurn,
       gate,
       includeHeldPaste,
       includeTranscriptPick,
       copyTranscriptPick,
       copyTranscriptIdentityPick,
       submitComposer,
+      submitMidTurn,
       confirm,
     ],
   );
@@ -551,6 +616,9 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
       }
       if (action.kind === "submit") {
         submitComposer();
+        return;
+      }
+      if (action.kind === "draft" && absorbDraftEcho.current && action.text !== "") {
         return;
       }
       dispatch({ kind: "composer", action });
@@ -592,6 +660,14 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
       dispatch({ kind: "composer", action: { kind: "resolve", outcome: port.submit(inFlight) } });
     }
   }, [inFlight, port]);
+
+  const midTurn = options.midTurn ?? null;
+  useEffect(() => {
+    dispatch({
+      kind: "running-work",
+      running: midTurn !== null && midTurn.view().active !== null,
+    });
+  }, [midTurn]);
 
   const selectControl = useCallback((field: "session" | "model", id: string): void => {
     dispatch({ kind: "select-control", field, id });
