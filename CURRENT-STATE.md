@@ -1059,7 +1059,10 @@ that port after a restore plan, and the TUI never spawns git
 ([#268](https://github.com/tyldra-org/falryn/issues/268)). Diagnostic artifact
 overlays show parsed level, code, and subsystem plus the bounded body without
 running recovery
-([#269](https://github.com/tyldra-org/falryn/issues/269)). Remaining dashboard
+([#269](https://github.com/tyldra-org/falryn/issues/269)). Document, diagnostic,
+and media overlays wrap only a terminal-bounded window of lines rather than
+mounting the full body
+([#270](https://github.com/tyldra-org/falryn/issues/270)). Remaining dashboard
 viewer work stays with
 ([#264](https://github.com/tyldra-org/falryn/issues/264)).
 

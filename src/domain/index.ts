@@ -2607,6 +2607,7 @@ export {
   truncateToWidth,
   wordStarts,
   wrapToWidth,
+  wrapToWidthWindow,
 } from "./text-display.ts";
 export type { Timestamp, TimestampError } from "./time.ts";
 export {

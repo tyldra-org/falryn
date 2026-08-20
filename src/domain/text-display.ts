@@ -282,15 +282,55 @@ export function wrapToWidth(text: string, width: number): readonly string[] {
   const limit = Math.max(1, boundedWidth(width));
   const lines: string[] = [];
   for (const paragraph of text.split("\n")) {
-    lines.push(...wrapParagraph(paragraph, limit));
+    lines.push(...wrapParagraph(paragraph, limit).lines);
   }
   return lines;
 }
 
-function wrapParagraph(paragraph: string, limit: number): readonly string[] {
+/**
+ * Wraps only until a row budget is filled.
+ *
+ * Full wrap of a huge artifact would still be linear in the stored body. Viewers
+ * that mount a window call this so wrapping and renderables stay bounded by the
+ * terminal, not by the artifact.
+ */
+export function wrapToWidthWindow(
+  text: string,
+  width: number,
+  maxLines: number,
+): { readonly lines: readonly string[]; readonly truncated: boolean } {
+  const limit = Math.max(1, boundedWidth(width));
+  const budget = Math.max(0, Math.floor(maxLines));
+  if (budget === 0) {
+    return { lines: [], truncated: text.length > 0 };
+  }
+  const lines: string[] = [];
+  const paragraphs = text.split("\n");
+  for (let index = 0; index < paragraphs.length; index += 1) {
+    const remaining = budget - lines.length;
+    const wrapped = wrapParagraph(paragraphs[index] ?? "", limit, remaining);
+    lines.push(...wrapped.lines);
+    if (wrapped.truncated) {
+      return { lines, truncated: true };
+    }
+    if (lines.length >= budget && index < paragraphs.length - 1) {
+      return { lines, truncated: true };
+    }
+  }
+  return { lines, truncated: false };
+}
+
+function wrapParagraph(
+  paragraph: string,
+  limit: number,
+  remaining: number = Number.POSITIVE_INFINITY,
+): { readonly lines: readonly string[]; readonly truncated: boolean } {
+  if (remaining <= 0) {
+    return { lines: [], truncated: paragraph.length > 0 };
+  }
   const words = paragraph.split(" ").filter((word) => word.length > 0);
   if (words.length === 0) {
-    return [""];
+    return { lines: [""], truncated: false };
   }
 
   const lines: string[] = [];
@@ -304,19 +344,26 @@ function wrapParagraph(paragraph: string, limit: number): readonly string[] {
     if (current !== "") {
       lines.push(current);
       current = "";
+      if (lines.length >= remaining) {
+        return { lines, truncated: true };
+      }
     }
-    // The word did not fit beside anything. If it does not fit alone either it
-    // is split by width, which is the only break available.
     const pieces = splitToWidth(word, limit);
     for (const piece of pieces.slice(0, -1)) {
       lines.push(piece);
+      if (lines.length >= remaining) {
+        return { lines, truncated: true };
+      }
     }
     current = pieces[pieces.length - 1] ?? "";
   }
   if (current !== "") {
+    if (lines.length >= remaining) {
+      return { lines, truncated: true };
+    }
     lines.push(current);
   }
-  return lines;
+  return { lines, truncated: false };
 }
 
 /** One word cut into pieces no wider than a limit. Always returns at least one. */

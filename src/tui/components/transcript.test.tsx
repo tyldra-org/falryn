@@ -557,6 +557,37 @@ describe("the code artifact viewer", () => {
     expect(restored).not.toContain("Document");
   });
 
+  test("windows a large document overlay instead of mounting every line", async () => {
+    const tail = "UNIQUE-TAIL-LINE-SHOULD-NOT-MOUNT";
+    const DOCUMENT = `${Array.from({ length: 400 }, (_, index) => `doc-line-${index}`).join("\n")}\n${tail}`;
+    const markdownBlock = {
+      ...artifactBlock(),
+      mediaType: "text/markdown",
+      summary: complete("Captured the notes."),
+    };
+    const viewer = createMapArtifactViewer({
+      [FIXTURE_ARTIFACT]: fixtureDocumentArtifactView({
+        id: "artifact-fixture",
+        text: DOCUMENT,
+      }),
+    });
+
+    using shell = await open(
+      projectionOf([markdownBlock]),
+      { columns: 80, rows: 16 },
+      { artifactViewer: viewer },
+    );
+    await shell.press("p", { ctrl: true });
+    await shell.type("transcript.openArtifact");
+    shell.setup.mockInput.pressEnter();
+
+    const opened = await shell.frame();
+    expect(opened).toContain("Document");
+    expect(opened).toContain("windowed");
+    expect(opened).toContain("doc-line-0");
+    expect(opened).not.toContain(tail);
+  });
+
   test("opens a media summary for pdf and notebook artifacts", async () => {
     for (const mediaType of ["application/pdf", "application/vnd.jupyter.notebook+json"] as const) {
       const mediaBlock = {
