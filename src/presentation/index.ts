@@ -147,6 +147,8 @@ export {
   resumable,
   TRANSCRIPT_PROJECTION_GENERATION,
 } from "./transcript/generation.ts";
+export type { TranscriptIncludePick } from "./transcript/picks.ts";
+export { includeBodiesOf, pickTranscriptIncludeBody } from "./transcript/picks.ts";
 export type { TranscriptProjection } from "./transcript/reducer.ts";
 export { blockFor, EMPTY_PROJECTION, reduceTranscript } from "./transcript/reducer.ts";
 export type { CodeViewModel } from "./viewer/index.ts";

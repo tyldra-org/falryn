@@ -2721,8 +2721,13 @@ the body stays on a session payload port so include does not re-read the
 clipboard. Transcript-span handles use kind `transcript` with identity
 `transcript:<blockKey>` (plus a range digest when a native range was used), the
 same payload port, digest, and already-included dedup as paste
-([#620](https://github.com/tyldra-org/falryn/issues/620)); include and copy
-commands that produce those handles remain later children of #619. `@path`
+([#620](https://github.com/tyldra-org/falryn/issues/620)).
+`transcript.includeInDraft` attaches the selected block body, or the expanded
+disclosed region when that block is expanded, as a transcript chip and leaves
+focus on the transcript ([#621](https://github.com/tyldra-org/falryn/issues/621)).
+Secret and redacted entries refuse; a truncated prefix is not included as the
+complete source; chrome and path-only headers are not the body. Native range
+picks and copy commands remain later children of #619. `@path`
 tokens resolve through the workspace path binder; TOCTOU re-stat at
 submit marks changed, stale, or inaccessible files. Unresolved or blocking
 attachments refuse send with a repair route. Command completion, suggestion

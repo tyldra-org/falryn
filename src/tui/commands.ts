@@ -329,6 +329,16 @@ export const SHELL_COMMANDS: readonly ShellCommand[] = [
       state.hasTranscript ? AVAILABLE : unavailable("there is no transcript yet"),
   },
   {
+    id: "transcript.includeInDraft",
+    title: "Include in draft",
+    description: "Attach the selected transcript pick to the composer draft.",
+    context: "transcript",
+    defaultBinding: null,
+    keywords: ["include", "attach", "pick", "draft", "chip"],
+    availability: (state) =>
+      state.hasTranscript ? AVAILABLE : unavailable("there is no transcript yet"),
+  },
+  {
     id: "transcript.inspect",
     title: "Inspect the selected entry",
     description: "Inspect a tool, process, reasoning, or error block without submitting.",
