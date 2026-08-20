@@ -588,7 +588,9 @@ export function workspaceEditToPatchPlan(
     }
     const hunk: ParsedPatchHunk = {
       index: 0,
+      hunkId: null,
       oldStart: 1,
+      addressDigest: null,
       oldLines,
       newLines,
     };
