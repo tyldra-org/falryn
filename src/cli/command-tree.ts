@@ -14,7 +14,7 @@
  * owns, and every exit status comes from #20's table.
  *
  * Only groups whose capability exists are declared. A tree advertising
- * `run` or `provider` in `--help` would promise behavior nothing implements.
+ * `provider` in `--help` would promise behavior nothing implements.
  */
 
 import yargs from "yargs";
@@ -47,6 +47,7 @@ import {
   type WorkspaceId,
   workspaceId,
 } from "../domain/index.ts";
+import type { CodingRunArguments } from "./coding-run.ts";
 import {
   COLOR_CHOICES,
   type ColorChoice,
@@ -151,6 +152,7 @@ export type Invocation =
       readonly sessionArgs: SessionCommandArguments | null;
       readonly artifactArgs: ArtifactCommandArguments | null;
       readonly workspaceArgs: WorkspaceCommandArguments | null;
+      readonly runArgs: CodingRunArguments | null;
     }
   /** Show help. `topic` is `null` for the root, or the subcommand asked about. */
   | { readonly kind: "help"; readonly topic: string | null; readonly options: GlobalOptions }
@@ -185,6 +187,7 @@ type RawArguments = {
   readonly output: string | undefined;
   readonly force: boolean | undefined;
   readonly "add-dir": readonly string[] | undefined;
+  readonly prompt: readonly string[] | undefined;
   readonly format: string;
   readonly color: string;
   readonly quiet: boolean;
@@ -262,6 +265,15 @@ function build(argv: readonly string[], lenientPositionals = false): ReturnType<
           }),
       )
       .command("doctor", "Run bounded environment and storage diagnostics.", (group) => group)
+      .command(
+        "run [prompt..]",
+        "Execute a coding task headlessly with text or structured output.",
+        (group) =>
+          group.positional("prompt", {
+            type: "string",
+            describe: "task text; omit to read UTF-8 from stdin (never prompts)",
+          }),
+      )
       .command("export", "Preview or write a versioned export bundle.", (group) =>
         group
           .option("session", {
@@ -506,6 +518,7 @@ export async function parseInvocation(argv: readonly string[]): Promise<Invocati
   if (typeof workspaceArgs === "string") {
     return { kind: "invalid", message: workspaceArgs };
   }
+  const runArgs = runArgumentsFor(command, parsed);
   return {
     kind: "run",
     command,
@@ -515,6 +528,7 @@ export async function parseInvocation(argv: readonly string[]): Promise<Invocati
     sessionArgs,
     artifactArgs,
     workspaceArgs,
+    runArgs,
   };
 }
 
@@ -582,6 +596,9 @@ function isRawArguments(value: unknown): value is RawArguments {
     (field("add-dir") === undefined ||
       (Array.isArray(field("add-dir")) &&
         (field("add-dir") as unknown[]).every((item) => typeof item === "string"))) &&
+    (field("prompt") === undefined ||
+      (Array.isArray(field("prompt")) &&
+        (field("prompt") as unknown[]).every((item) => typeof item === "string"))) &&
     typeof field("format") === "string" &&
     typeof field("color") === "string" &&
     typeof field("quiet") === "boolean" &&
@@ -615,6 +632,10 @@ function commandFrom(positional: readonly string[], action: string | null): Runn
   }
   if (group === "doctor") {
     return action === null ? "doctor" : null;
+  }
+  if (group === "run") {
+    // Remaining positionals are the prompt; there is no nested action.
+    return "run";
   }
   if (group === "export") {
     return action === null ? "export" : null;
@@ -678,6 +699,17 @@ function commandFrom(positional: readonly string[], action: string | null): Runn
     }
   }
   return null;
+}
+
+function runArgumentsFor(
+  command: RunnableCommand,
+  parsed: RawArguments,
+): CodingRunArguments | null {
+  if (command !== "run") {
+    return null;
+  }
+  // yargs puts `run [prompt..]` into `prompt`, not into `_`.
+  return { promptParts: parsed.prompt ?? [] };
 }
 
 function dataArgumentsFor(

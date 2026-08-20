@@ -43,13 +43,14 @@ describe("the declared tree", () => {
     expect(await commandOf("workspace", "show")).toBe("workspace.show");
     expect(await commandOf("workspace", "save", "app")).toBe("workspace.save");
     expect(await commandOf("workspace", "load", "app")).toBe("workspace.load");
+    expect(await commandOf("run", "fix", "the", "bug")).toBe("run");
   });
 
   test("declares no group whose capability does not exist", async () => {
     // Each of these is named in `reference/CLI.md` as a planned group. A tree
     // that parsed them would advertise them in `--help` and promise behavior
     // nothing implements.
-    const undeclared = ["run", "provider", "tool", "extension"];
+    const undeclared = ["provider", "tool", "extension"];
     for (const group of undeclared) {
       expect(await commandOf(group)).toBe("invalid");
     }
@@ -58,6 +59,7 @@ describe("the declared tree", () => {
     expect(await helpText(null)).toContain("export");
     expect(await helpText(null)).toContain("session");
     expect(await helpText(null)).toContain("workspace");
+    expect(await helpText(null)).toContain("run");
   });
 
   test("says in help what the bare invocation actually does", async () => {

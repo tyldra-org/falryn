@@ -53,6 +53,7 @@ import type {
   ArtifactGetPayload,
   ArtifactListPayload,
   ArtifactShowPayload,
+  CodingRunPayload,
   DataRemovalPayload,
   DoctorPayload,
   ExportCommandPayload,
@@ -678,9 +679,27 @@ function renderPayload(session: Session, result: RunCommandResult): RenderedPayl
       return renderWorkspaceSet(session, result.payload, result.command);
     case "workspace.save":
       return renderWorkspaceSave(session, result.payload);
+    case "run":
+      return renderCodingRun(session, result.payload);
     default:
       return assertNever(result, "unhandled command result");
   }
+}
+
+function renderCodingRun(session: Session, payload: CodingRunPayload | null): RenderedPayload {
+  if (payload === null) {
+    return { lines: ["No coding run result is available."], diagnostics: [] };
+  }
+  const lines = [
+    paint(session, "plain", "Coding run"),
+    `  Prompt       ${safe(payload.prompt === "" ? "(none)" : payload.prompt)}`,
+    `  Stage        ${safe(payload.stage)}`,
+    `  Session      ${safe(payload.sessionId === "" ? "(none)" : payload.sessionId)}`,
+    `  Turn         ${safe(payload.turnId === null ? "(none)" : payload.turnId)}`,
+    `  Workspace    ${safe(payload.workspaceId === "" ? "(none)" : payload.workspaceId)}`,
+    `  Events       ${payload.eventCount}`,
+  ];
+  return { lines, diagnostics: [] };
 }
 
 function renderExport(session: Session, payload: ExportCommandPayload | null): RenderedPayload {
@@ -1362,6 +1381,17 @@ function quietResultLines(result: RunCommandResult): readonly string[] {
               (root) => `${safe(root.rootId)}\t${safe(root.name)}\t${safe(root.path)}`,
             ),
           ];
+    case "run":
+      return result.payload === null
+        ? []
+        : [
+            [
+              safe(result.payload.stage),
+              safe(result.payload.sessionId === "" ? "-" : result.payload.sessionId),
+              result.payload.turnId === null ? "-" : safe(result.payload.turnId),
+              String(result.payload.eventCount),
+            ].join("\t"),
+          ];
     default:
       return assertNever(result, "unhandled command result");
   }
@@ -1470,6 +1500,7 @@ function quietFindingLines(result: RunCommandResult): readonly string[] {
     case "workspace.show":
     case "workspace.load":
     case "workspace.save":
+    case "run":
       return [];
     default:
       return assertNever(result, "unhandled command result");
