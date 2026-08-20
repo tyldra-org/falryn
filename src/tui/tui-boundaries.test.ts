@@ -929,6 +929,7 @@ describe("the rendered test harness", () => {
       "components/controls.test.tsx",
       "components/frame.test.tsx",
       "components/interaction.test.tsx",
+      "components/live-composer-mid-turn.test.tsx",
       "components/palette.test.tsx",
       "components/render-gate.test.tsx",
       "components/shell-error-boundary.test.tsx",
