@@ -21,6 +21,9 @@ import yargs from "yargs";
 
 import { isLegalProfileName } from "../config/index.ts";
 import {
+  type ArtifactId,
+  artifactId,
+  DEFAULT_ARTIFACT_LIST_LIMIT,
   DEFAULT_SESSION_LIST_LIMIT,
   type ExportName,
   type ExportSelection,
@@ -28,6 +31,7 @@ import {
   isOwnershipClass,
   isPlanId,
   localPathTextError,
+  MAX_ARTIFACT_CATALOG,
   MAX_LOCAL_PATH_LENGTH,
   MAX_SESSION_CATALOG,
   type OwnershipClass,
@@ -76,6 +80,22 @@ export type ExportCommandArguments = {
   readonly name: ExportName | null;
 };
 
+/** Command-specific inputs for `falryn artifact`. */
+export type ArtifactCommandArguments =
+  | {
+      readonly action: "list";
+      readonly limit: number;
+    }
+  | {
+      readonly action: "show";
+      readonly artifactId: ArtifactId;
+    }
+  | {
+      readonly action: "get";
+      readonly artifactId: ArtifactId;
+      readonly outputPath: string | null;
+    };
+
 /** Command-specific inputs for `falryn session`. */
 export type SessionCommandArguments =
   | {
@@ -107,6 +127,7 @@ export type Invocation =
       readonly data: DataCommandArguments | null;
       readonly exportArgs: ExportCommandArguments | null;
       readonly sessionArgs: SessionCommandArguments | null;
+      readonly artifactArgs: ArtifactCommandArguments | null;
     }
   /** Show help. `topic` is `null` for the root, or the subcommand asked about. */
   | { readonly kind: "help"; readonly topic: string | null; readonly options: GlobalOptions }
@@ -138,6 +159,7 @@ type RawArguments = {
   readonly search: string | undefined;
   readonly limit: number | undefined;
   readonly "workspace-id": string | undefined;
+  readonly output: string | undefined;
   readonly format: string;
   readonly color: string;
   readonly quiet: boolean;
@@ -165,6 +187,7 @@ function build(argv: readonly string[], lenientPositionals = false): ReturnType<
   const configCommand = lenientPositionals ? "config [action]" : "config <action>";
   const dataCommand = lenientPositionals ? "data [action]" : "data <action>";
   const sessionCommand = lenientPositionals ? "session [action] [id]" : "session <action> [id]";
+  const artifactCommand = lenientPositionals ? "artifact [action] [id]" : "artifact <action> [id]";
   return (
     yargs([...argv])
       .scriptName(SCRIPT_NAME)
@@ -269,6 +292,26 @@ function build(argv: readonly string[], lenientPositionals = false): ReturnType<
           .option("workspace-id", {
             type: "string",
             describe: "bound workspace identity (default: cli)",
+          }),
+      )
+      .command(artifactCommand, "List, inspect, or retrieve stored artifacts.", (group) =>
+        group
+          .positional("action", {
+            type: "string",
+            choices: ["list", "show", "get"] as const,
+            describe: "list matching artifacts, show metadata, or retrieve bytes",
+          })
+          .positional("id", {
+            type: "string",
+            describe: "artifact identity (required with show and get)",
+          })
+          .option("limit", {
+            type: "number",
+            describe: `maximum listed artifacts (default ${DEFAULT_ARTIFACT_LIST_LIMIT}, max ${MAX_ARTIFACT_CATALOG})`,
+          })
+          .option("output", {
+            type: "string",
+            describe: "destination path for get (default: stdout when not a terminal)",
           }),
       )
       .option("format", {
@@ -397,7 +440,11 @@ export async function parseInvocation(argv: readonly string[]): Promise<Invocati
   if (typeof sessionArgs === "string") {
     return { kind: "invalid", message: sessionArgs };
   }
-  return { kind: "run", command, options, data, exportArgs, sessionArgs };
+  const artifactArgs = artifactArgumentsFor(command, parsed);
+  if (typeof artifactArgs === "string") {
+    return { kind: "invalid", message: artifactArgs };
+  }
+  return { kind: "run", command, options, data, exportArgs, sessionArgs, artifactArgs };
 }
 
 /**
@@ -459,6 +506,7 @@ function isRawArguments(value: unknown): value is RawArguments {
     optionalString(field("search")) &&
     (field("limit") === undefined || typeof field("limit") === "number") &&
     optionalString(field("workspace-id")) &&
+    optionalString(field("output")) &&
     typeof field("format") === "string" &&
     typeof field("color") === "string" &&
     typeof field("quiet") === "boolean" &&
@@ -524,6 +572,18 @@ function commandFrom(positional: readonly string[], action: string | null): Runn
         return "session.list";
       case "show":
         return "session.show";
+      default:
+        return null;
+    }
+  }
+  if (group === "artifact") {
+    switch (action) {
+      case "list":
+        return "artifact.list";
+      case "show":
+        return "artifact.show";
+      case "get":
+        return "artifact.get";
       default:
         return null;
     }
@@ -685,6 +745,67 @@ function sessionArgumentsFor(
     search: parsed.search,
     limit,
   };
+}
+
+function artifactArgumentsFor(
+  command: RunnableCommand,
+  parsed: RawArguments,
+): ArtifactCommandArguments | null | string {
+  if (command !== "artifact.list" && command !== "artifact.show" && command !== "artifact.get") {
+    return null;
+  }
+
+  if (command === "artifact.list") {
+    if (parsed.id !== undefined) {
+      return "Argument id is only valid with artifact show or get.";
+    }
+    if (parsed.output !== undefined) {
+      return "Argument output is only valid with artifact get.";
+    }
+    const limit = parsed.limit ?? DEFAULT_ARTIFACT_LIST_LIMIT;
+    if (!Number.isInteger(limit) || limit < 1 || limit > MAX_ARTIFACT_CATALOG) {
+      return `Argument limit must be a whole number from 1 to ${MAX_ARTIFACT_CATALOG}.`;
+    }
+    return { action: "list", limit };
+  }
+
+  if (parsed.limit !== undefined) {
+    return "Argument limit is only valid with artifact list.";
+  }
+
+  if (parsed.id === undefined) {
+    return "Argument id is required for artifact show and get.";
+  }
+  const parsedId = artifactId.parse(parsed.id);
+  if (!parsedId.ok) {
+    return "Argument id must be an artifact identity.";
+  }
+
+  if (command === "artifact.show") {
+    if (parsed.output !== undefined) {
+      return "Argument output is only valid with artifact get.";
+    }
+    return { action: "show", artifactId: parsedId.value };
+  }
+
+  const outputPath = parsed.output ?? null;
+  if (outputPath !== null) {
+    const pathIssue = outputPathIssue(outputPath);
+    if (pathIssue !== null) {
+      return pathIssue;
+    }
+  }
+  return { action: "get", artifactId: parsedId.value, outputPath };
+}
+
+function outputPathIssue(value: string): string | null {
+  const error = localPathTextError(value);
+  if (error === null) {
+    return null;
+  }
+  return error.code === "path-too-long"
+    ? `Argument output: a destination path cannot exceed ${MAX_LOCAL_PATH_LENGTH} characters.`
+    : "Argument output: the path contains a character that cannot appear in one.";
 }
 
 /**

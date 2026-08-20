@@ -7,6 +7,7 @@
 
 export type { DurableArtifactApi } from "./artifact-api.ts";
 export { createDurableArtifactApi } from "./artifact-api.ts";
+export { type QueryStoredArtifactsInput, queryStoredArtifacts } from "./artifact-catalog.ts";
 export type { ArtifactReader } from "./artifact-read.ts";
 export { createArtifactReader } from "./artifact-read.ts";
 export type { ArtifactViewer } from "./artifact-view.ts";
@@ -72,6 +73,9 @@ export type { ErrorContext } from "./error-translation.ts";
 export {
   adoptForeignError,
   aggregate,
+  fromArtifactCatalogError,
+  fromArtifactError,
+  fromArtifactReadError,
   fromCodecError,
   fromConfigurationIssue,
   fromConfigurationIssues,

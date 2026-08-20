@@ -45,7 +45,7 @@ describe("the declared tree", () => {
     // Each of these is named in `reference/CLI.md` as a planned group. A tree
     // that parsed them would advertise them in `--help` and promise behavior
     // nothing implements.
-    const undeclared = ["run", "provider", "tool", "extension", "artifact"];
+    const undeclared = ["run", "provider", "tool", "extension"];
     for (const group of undeclared) {
       expect(await commandOf(group)).toBe("invalid");
     }

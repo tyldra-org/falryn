@@ -71,6 +71,9 @@ const SELECT_BY_DIGEST = `SELECT ${SELECT_LIST} FROM ${ARTIFACTS_TABLE}
 const SELECT_BY_INVOCATION = `SELECT ${SELECT_LIST} FROM ${ARTIFACTS_TABLE}
   WHERE invocation_id = $invocationId ORDER BY created_at, artifact_id LIMIT $limit`;
 
+const SELECT_ALL = `SELECT ${SELECT_LIST} FROM ${ARTIFACTS_TABLE}
+  ORDER BY created_at DESC, artifact_id ASC LIMIT $limit`;
+
 /**
  * The one statement either transition runs.
  *
@@ -246,6 +249,8 @@ export function createArtifactRepository(
 
     listByInvocation: (id, limit) =>
       list(SELECT_BY_INVOCATION, { invocationId: id, limit }, limit, null),
+
+    list: (limit) => list(SELECT_ALL, { limit }, limit, null),
 
     referencedDigests(
       digests: readonly ContentDigest[],

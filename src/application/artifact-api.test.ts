@@ -37,6 +37,7 @@ function ports(record: ArtifactRecord) {
       get: () => ok(record),
       findByDigest: () => ok([]),
       listByInvocation: () => ok([]),
+      list: () => ok([]),
       referencedDigests: () => ok(new Set<ContentDigest>()),
     },
     provenance: {

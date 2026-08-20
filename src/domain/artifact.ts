@@ -395,6 +395,9 @@ export type ArtifactRepositoryPort = {
     limit: number,
   ): Result<readonly ArtifactRecord[], ArtifactError>;
 
+  /** Stored artifacts in stable newest-first order, bounded by {@link MAX_ARTIFACT_LIST_LIMIT}. */
+  list(limit: number): Result<readonly ArtifactRecord[], ArtifactError>;
+
   /**
    * Which of these digests a record still references.
    *
