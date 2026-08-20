@@ -44,6 +44,7 @@ import {
 } from "../../presentation/index.ts";
 import { statusOfHealth } from "../activity/index.ts";
 import type { ActivityModel } from "../activity-model.ts";
+import type { CopyTextPort } from "../clipboard.ts";
 import { searchCommands } from "../commands.ts";
 import { COMPOSER_FEATURES } from "../composer/index.ts";
 import type { ComposerModel } from "../composer-model.ts";
@@ -122,6 +123,8 @@ export type ShellAppProps = {
   readonly confirmation?: ConfirmationPrompt | null;
   readonly onConfirmation?: (decision: ConfirmationDecision) => void;
   readonly onSecretSubmit?: (secret: string) => void;
+  /** Plain-print fallback when clipboard copy is unavailable (#623). */
+  readonly copyPlainPrint?: (text: string) => boolean;
   /**
    * Session, model, context, and resource facts.
    *
@@ -163,10 +166,19 @@ export function ShellApp(props: ShellAppProps): ReactNode {
   const projection = props.transcript ?? EMPTY_PROJECTION;
   const transcriptKeys = useMemo(() => keysOf(projection.blocks), [projection.blocks]);
 
+  const copyPort = useMemo(
+    (): CopyTextPort => ({
+      tryClipboard: (text) => renderer.copyToClipboardOSC52(text),
+      plainPrint: props.copyPlainPrint ?? (() => false),
+    }),
+    [renderer, props.copyPlainPrint],
+  );
+
   const runtime = useShellRuntime({
     onExit: props.onExit,
     transcriptKeys,
     transcriptBlocks: projection.blocks,
+    copyPort,
     ...(props.fileProbe === undefined ? {} : { fileProbe: props.fileProbe }),
     ...(props.confirmation === undefined ? {} : { confirmation: props.confirmation }),
     ...(props.onConfirmation === undefined ? {} : { onConfirmation: props.onConfirmation }),

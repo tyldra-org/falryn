@@ -46,6 +46,7 @@ import type {
   EnvironmentPort,
   FalrynError,
 } from "../domain/index.ts";
+import { plainPrintLabeledCopy } from "../integrations/host-terminal.ts";
 import { initialActivityCursor } from "../presentation/index.ts";
 import {
   prefersConservativeSymbols,
@@ -357,6 +358,7 @@ function ProjectedShell(props: {
       {...(runtime.shutdown === null ? {} : { shutdown: runtime.shutdown })}
       {...(props.fileProbe === undefined ? {} : { fileProbe: props.fileProbe })}
       {...(props.gitDashboard === undefined ? {} : { gitDashboard: props.gitDashboard })}
+      copyPlainPrint={plainPrintLabeledCopy}
     />
   );
 }

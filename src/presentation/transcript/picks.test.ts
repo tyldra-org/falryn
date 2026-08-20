@@ -6,7 +6,12 @@ import { describe, expect, test } from "bun:test";
 import { blockKey } from "./blocks.ts";
 import { bound, complete, omitted } from "./disclosure.ts";
 import { everyBlockKind } from "./fixtures.ts";
-import { includeBodiesOf, pickTranscriptIncludeBody, resolveTranscriptPick } from "./picks.ts";
+import {
+  includeBodiesOf,
+  pickTranscriptCopyIdentity,
+  pickTranscriptIncludeBody,
+  resolveTranscriptPick,
+} from "./picks.ts";
 
 const CORPUS = everyBlockKind();
 
@@ -138,5 +143,52 @@ describe("resolveTranscriptPick", () => {
     }
     expect(pick.text).toBe("Rename the port and update every caller.");
     expect(pick.rangeDigest).toBeNull();
+  });
+});
+
+describe("pickTranscriptCopyIdentity", () => {
+  test("returns a file path, not the detail body", () => {
+    const block = ofKind("file-change");
+    expect(pickTranscriptCopyIdentity(block)).toEqual({
+      ok: true,
+      text: "src/domain/port.ts",
+    });
+  });
+
+  test("returns a tool capability line", () => {
+    const block = ofKind("tool-result");
+    if (block.kind !== "tool-result") {
+      throw new Error("expected tool-result");
+    }
+    expect(pickTranscriptCopyIdentity(block)).toEqual({
+      ok: true,
+      text: block.capability,
+    });
+  });
+
+  test("returns an artifact id", () => {
+    const block = ofKind("artifact");
+    if (block.kind !== "artifact") {
+      throw new Error("expected artifact");
+    }
+    expect(pickTranscriptCopyIdentity(block)).toEqual({
+      ok: true,
+      text: block.artifactId,
+    });
+  });
+
+  test("refuses secret entries", () => {
+    const block = ofKind("tool-request");
+    expect(pickTranscriptCopyIdentity(block)).toEqual({
+      ok: false,
+      reason: "This entry is secret and cannot be copied.",
+    });
+  });
+
+  test("refuses entries without a copyable identity", () => {
+    expect(pickTranscriptCopyIdentity(ofKind("user-input"))).toEqual({
+      ok: false,
+      reason: "This entry has no copyable identity.",
+    });
   });
 });

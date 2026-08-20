@@ -162,6 +162,61 @@ export function nativeRangeText(body: string, range: NativeTranscriptRange): str
   return body.slice(start, end);
 }
 
+export type TranscriptIdentityPick =
+  | {
+      readonly ok: true;
+      readonly text: string;
+    }
+  | {
+      readonly ok: false;
+      readonly reason: string;
+    };
+
+/**
+ * Identifier for `transcript.copyIdentity`: path or command line only, never
+ * the body. Secret entries refuse rather than leaking withheld text.
+ */
+export function pickTranscriptCopyIdentity(block: TranscriptBlock): TranscriptIdentityPick {
+  if (block.sensitivity === "secret") {
+    return { ok: false, reason: "This entry is secret and cannot be copied." };
+  }
+  switch (block.kind) {
+    case "file-change":
+      return identityFromBounded(block.path, "path");
+    case "tool-request":
+    case "tool-result":
+      return block.capability === ""
+        ? { ok: false, reason: "This entry has no copyable identity." }
+        : { ok: true, text: block.capability };
+    case "artifact":
+      return { ok: true, text: block.artifactId };
+    default:
+      return { ok: false, reason: "This entry has no copyable identity." };
+  }
+}
+
+function identityFromBounded(content: BoundedText, label: string): TranscriptIdentityPick {
+  switch (content.disclosure.kind) {
+    case "complete":
+      return content.text === ""
+        ? { ok: false, reason: "This entry has no copyable identity." }
+        : { ok: true, text: content.text };
+    case "redacted":
+      return { ok: false, reason: "This entry is withheld and cannot be copied." };
+    case "omitted":
+      return { ok: false, reason: "This entry was not collected and cannot be copied." };
+    case "truncated":
+      return {
+        ok: false,
+        reason: `This entry's ${label} is truncated and cannot be copied as complete.`,
+      };
+    default: {
+      const exhaustive: never = content.disclosure;
+      return exhaustive;
+    }
+  }
+}
+
 function refuseIncomplete(content: BoundedText, expanded: boolean): string | null {
   switch (content.disclosure.kind) {
     case "complete":

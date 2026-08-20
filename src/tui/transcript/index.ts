@@ -8,6 +8,8 @@
  * asserted without one.
  */
 
+export type { TranscriptCopyRequest } from "./copy.ts";
+export { copyTranscriptBody, copyTranscriptIdentity } from "./copy.ts";
 export type {
   TranscriptIncludeDraftRequest,
   TranscriptIncludeDraftResult,

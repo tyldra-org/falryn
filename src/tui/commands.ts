@@ -339,6 +339,26 @@ export const SHELL_COMMANDS: readonly ShellCommand[] = [
       state.hasTranscript ? AVAILABLE : unavailable("there is no transcript yet"),
   },
   {
+    id: "transcript.copy",
+    title: "Copy pick body",
+    description: "Copy the selected transcript pick body to the clipboard.",
+    context: "transcript",
+    defaultBinding: null,
+    keywords: ["copy", "clipboard", "pick", "body"],
+    availability: (state) =>
+      state.hasTranscript ? AVAILABLE : unavailable("there is no transcript yet"),
+  },
+  {
+    id: "transcript.copyIdentity",
+    title: "Copy pick identity",
+    description: "Copy the selected entry's path or command line, not its body.",
+    context: "transcript",
+    defaultBinding: null,
+    keywords: ["copy", "clipboard", "path", "command", "identity"],
+    availability: (state) =>
+      state.hasTranscript ? AVAILABLE : unavailable("there is no transcript yet"),
+  },
+  {
     id: "transcript.inspect",
     title: "Inspect the selected entry",
     description: "Inspect a tool, process, reasoning, or error block without submitting.",

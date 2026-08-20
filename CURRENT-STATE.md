@@ -2731,7 +2731,11 @@ expanded block with one includeable body, OpenTUI owns native range selection
 through a read-only `TextareaRenderable`; a non-empty range wins over the whole
 expanded region or block for `transcript.includeInDraft`, with identity
 `transcript:<blockKey>:<rangeDigest>` ([#622](https://github.com/tyldra-org/falryn/issues/622)).
-Copy commands remain a later child of #619. `@path`
+`transcript.copy` and `transcript.copyIdentity` share the same pick rules:
+body copy uses the clipboard with plain-print fallback; identity copy returns
+path, command line, or artifact id only ([#623](https://github.com/tyldra-org/falryn/issues/623)).
+Copy failure reports without clearing native selection; focus stays on the
+transcript. `@path`
 tokens resolve through the workspace path binder; TOCTOU re-stat at
 submit marks changed, stale, or inaccessible files. Unresolved or blocking
 attachments refuse send with a repair route. Command completion, suggestion
