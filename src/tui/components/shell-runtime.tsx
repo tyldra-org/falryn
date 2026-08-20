@@ -1,5 +1,6 @@
 /** React lifecycle around the shell's pure state and command boundaries. */
 
+import type { TextareaRenderable } from "@opentui/core";
 import { useCallback, useEffect, useMemo, useReducer, useRef } from "react";
 import {
   admitComposerContext,
@@ -66,6 +67,7 @@ export type ShellRuntime = {
   run(id: string): boolean;
   reseat(regions: readonly FocusRegion[]): void;
   reportTranscriptGeometry(geometry: TranscriptGeometry): void;
+  registerTranscriptBody(renderable: TextareaRenderable | null): void;
   composer(action: ComposerAction): void;
   focusComposer(): void;
   paletteQuery(query: string): void;
@@ -105,6 +107,7 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
     readonly lines: number;
   } | null>(null);
   const payloads = useRef(createMemoryAttachmentPayloads());
+  const transcriptBody = useRef<TextareaRenderable | null>(null);
   const fileProbe = options.fileProbe ?? null;
   const secretRef = useRef("");
   const onConfirmation = options.onConfirmation;
@@ -195,14 +198,21 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
     return true;
   }, []);
 
+  const registerTranscriptBody = useCallback((renderable: TextareaRenderable | null): void => {
+    transcriptBody.current = renderable;
+  }, []);
+
   const includeTranscriptPick = useCallback((): boolean => {
     const current = stateRef.current;
+    const selection = transcriptBody.current?.getSelection() ?? null;
+    const nativeRange = selection !== null && selection.start !== selection.end ? selection : null;
     const result = includeTranscriptInDraft({
       selected: current.transcript.selected,
       expanded: current.transcript.expanded,
       blocks: blocksRef.current,
       attachments: current.composer.attachments,
       nextId: `att-${current.composer.attachmentSeq + 1}`,
+      nativeRange,
     });
     if (!result.ok) {
       dispatch({ kind: "notice", message: result.reason });
@@ -435,6 +445,7 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
     run,
     reseat,
     reportTranscriptGeometry,
+    registerTranscriptBody,
     composer,
     focusComposer,
     paletteQuery,

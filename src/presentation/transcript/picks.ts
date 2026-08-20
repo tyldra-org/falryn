@@ -11,11 +11,17 @@ import { assertNever } from "../../domain/index.ts";
 import { blockKey, type TranscriptBlock } from "./blocks.ts";
 import type { BoundedText } from "./disclosure.ts";
 
+export type NativeTranscriptRange = {
+  readonly start: number;
+  readonly end: number;
+};
+
 export type TranscriptIncludePick =
   | {
       readonly ok: true;
       readonly blockKey: string;
       readonly text: string;
+      readonly rangeDigest: string | null;
     }
   | {
       readonly ok: false;
@@ -104,7 +110,56 @@ export function pickTranscriptIncludeBody(
     return { ok: false, reason: "This entry has no includeable body." };
   }
 
-  return { ok: true, blockKey: blockKey(block.anchor), text: parts.join("\n") };
+  return {
+    ok: true,
+    blockKey: blockKey(block.anchor),
+    text: parts.join("\n"),
+    rangeDigest: null,
+  };
+}
+
+/**
+ * One pick for include and copy (#619).
+ *
+ * Non-empty native range wins; otherwise expanded disclosed region; otherwise
+ * the selected block body. Falryn does not store a second range model.
+ */
+export function resolveTranscriptPick(
+  block: TranscriptBlock,
+  expanded: boolean,
+  nativeRange: NativeTranscriptRange | null,
+  digestRange: (text: string) => string,
+): TranscriptIncludePick {
+  const base = pickTranscriptIncludeBody(block, expanded);
+  if (!base.ok) {
+    return base;
+  }
+  if (nativeRange === null) {
+    return base;
+  }
+  const ranged = nativeRangeText(base.text, nativeRange);
+  if (ranged === null) {
+    return base;
+  }
+  return {
+    ok: true,
+    blockKey: base.blockKey,
+    text: ranged,
+    rangeDigest: digestRange(ranged),
+  };
+}
+
+/** Selected substring when the native range is non-empty; otherwise null. */
+export function nativeRangeText(body: string, range: NativeTranscriptRange): string | null {
+  if (range.start === range.end) {
+    return null;
+  }
+  const start = Math.min(range.start, range.end);
+  const end = Math.max(range.start, range.end);
+  if (start >= body.length) {
+    return null;
+  }
+  return body.slice(start, end);
 }
 
 function refuseIncomplete(content: BoundedText, expanded: boolean): string | null {

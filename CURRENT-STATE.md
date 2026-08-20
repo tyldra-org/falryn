@@ -2726,8 +2726,12 @@ same payload port, digest, and already-included dedup as paste
 disclosed region when that block is expanded, as a transcript chip and leaves
 focus on the transcript ([#621](https://github.com/tyldra-org/falryn/issues/621)).
 Secret and redacted entries refuse; a truncated prefix is not included as the
-complete source; chrome and path-only headers are not the body. Native range
-picks and copy commands remain later children of #619. `@path`
+complete source; chrome and path-only headers are not the body. On a focused
+expanded block with one includeable body, OpenTUI owns native range selection
+through a read-only `TextareaRenderable`; a non-empty range wins over the whole
+expanded region or block for `transcript.includeInDraft`, with identity
+`transcript:<blockKey>:<rangeDigest>` ([#622](https://github.com/tyldra-org/falryn/issues/622)).
+Copy commands remain a later child of #619. `@path`
 tokens resolve through the workspace path binder; TOCTOU re-stat at
 submit marks changed, stale, or inaccessible files. Unresolved or blocking
 attachments refuse send with a repair route. Command completion, suggestion

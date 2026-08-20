@@ -38,6 +38,20 @@ export type TranscriptModel = {
    * A hard-coded sentence would keep promising a key after the binding moved.
    */
   readonly emptyStateCommand: string;
+  /** Whether the transcript region holds focus. */
+  readonly focused: boolean;
+  /**
+   * When set, the selected expanded block's disclosed body may collapse into one
+   * OpenTUI textarea for native range picks (#622).
+   */
+  readonly selectableBody: {
+    readonly key: string;
+    readonly text: string;
+  } | null;
+  /** Registers the active body textarea for include/copy commands. */
+  readonly onBodyRenderable?: (
+    renderable: import("@opentui/core").TextareaRenderable | null,
+  ) => void;
 };
 
 /**

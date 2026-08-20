@@ -31,9 +31,17 @@ import type { Instant } from "../../domain/index.ts";
 import type {
   ActivityProjection,
   ShutdownState,
+  TranscriptBlock,
   TranscriptProjection,
 } from "../../presentation/index.ts";
-import { EMPTY_ACTIVITY, EMPTY_PROJECTION, projectHealth } from "../../presentation/index.ts";
+import {
+  blockKey,
+  EMPTY_ACTIVITY,
+  EMPTY_PROJECTION,
+  includeBodiesOf,
+  pickTranscriptIncludeBody,
+  projectHealth,
+} from "../../presentation/index.ts";
 import { statusOfHealth } from "../activity/index.ts";
 import type { ActivityModel } from "../activity-model.ts";
 import { searchCommands } from "../commands.ts";
@@ -59,7 +67,13 @@ import type { ShellModel } from "../view-model.ts";
 import { AppShell } from "./app-shell.tsx";
 import { KeymapBridge } from "./keymap-bridge.tsx";
 import { ShellErrorBoundary } from "./shell-error-boundary.tsx";
-import { activeContexts, COMPOSER_REGION, useShellRuntime } from "./shell-runtime.tsx";
+import {
+  activeContexts,
+  COMPOSER_REGION,
+  type ShellState,
+  TRANSCRIPT_REGION,
+  useShellRuntime,
+} from "./shell-runtime.tsx";
 
 export type ShellAppProps = {
   /** Everything that does not change with interaction: the header, the help prose. */
@@ -229,6 +243,12 @@ function ResolvedShell(
     surface: props.runtime.state.transcript,
     commands: rows,
     emptyStateCommand: "app.help",
+    focused: props.runtime.state.focus.focused === TRANSCRIPT_REGION,
+    selectableBody: selectableBodyOf(
+      props.runtime.state,
+      props.projection.blocks.map((entry) => entry),
+    ),
+    onBodyRenderable: props.runtime.registerTranscriptBody,
   };
   const catalog = props.controls ?? EMPTY_CONTROL_CATALOG;
   const model: ShellModel = {
@@ -359,4 +379,26 @@ export function paletteRows(
 ) {
   const matching = new Set(searchCommands(query).map((command) => command.id));
   return rows.filter((row) => matching.has(row.id));
+}
+
+function selectableBodyOf(
+  state: ShellState,
+  blocks: readonly TranscriptBlock[],
+): TranscriptModel["selectableBody"] {
+  const key = state.transcript.selected;
+  if (key === null || !state.transcript.expanded.has(key)) {
+    return null;
+  }
+  if (state.focus.focused !== TRANSCRIPT_REGION) {
+    return null;
+  }
+  const block = blocks.find((item) => blockKey(item.anchor) === key);
+  if (block === undefined || includeBodiesOf(block).length !== 1) {
+    return null;
+  }
+  const pick = pickTranscriptIncludeBody(block, true);
+  if (!pick.ok) {
+    return null;
+  }
+  return { key, text: pick.text };
 }

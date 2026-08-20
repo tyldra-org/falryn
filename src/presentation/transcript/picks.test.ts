@@ -6,7 +6,7 @@ import { describe, expect, test } from "bun:test";
 import { blockKey } from "./blocks.ts";
 import { bound, complete, omitted } from "./disclosure.ts";
 import { everyBlockKind } from "./fixtures.ts";
-import { includeBodiesOf, pickTranscriptIncludeBody } from "./picks.ts";
+import { includeBodiesOf, pickTranscriptIncludeBody, resolveTranscriptPick } from "./picks.ts";
 
 const CORPUS = everyBlockKind();
 
@@ -25,6 +25,7 @@ describe("pickTranscriptIncludeBody", () => {
       ok: true,
       blockKey: blockKey(block.anchor),
       text: "Rename the port and update every caller.",
+      rangeDigest: null,
     });
     expect(includeBodiesOf(block).map((item) => item.label)).toEqual(["message"]);
   });
@@ -35,6 +36,7 @@ describe("pickTranscriptIncludeBody", () => {
       ok: true,
       blockKey: blockKey(block.anchor),
       text: "compiling 3 modules",
+      rangeDigest: null,
     });
   });
 
@@ -77,6 +79,7 @@ describe("pickTranscriptIncludeBody", () => {
       ok: true,
       blockKey: blockKey(block.anchor),
       text: "2 insertions, 2 deletions",
+      rangeDigest: null,
     });
   });
 
@@ -108,7 +111,32 @@ describe("pickTranscriptIncludeBody", () => {
       ok: true,
       blockKey: blockKey(block.anchor),
       text: "short enough",
+      rangeDigest: null,
     });
     expect(bound("abc", { bytes: 64, lines: 8 }).disclosure.kind).toBe("complete");
+  });
+});
+
+describe("resolveTranscriptPick", () => {
+  test("prefers a non-empty native range over the whole block", () => {
+    const block = ofKind("user-input");
+    const pick = resolveTranscriptPick(block, true, { start: 7, end: 11 }, () => "range-digest");
+    expect(pick).toEqual({
+      ok: true,
+      blockKey: blockKey(block.anchor),
+      text: "the ",
+      rangeDigest: "range-digest",
+    });
+  });
+
+  test("falls back when the native range is empty", () => {
+    const block = ofKind("user-input");
+    const pick = resolveTranscriptPick(block, false, { start: 3, end: 3 }, () => "unused");
+    expect(pick.ok).toBe(true);
+    if (!pick.ok) {
+      return;
+    }
+    expect(pick.text).toBe("Rename the port and update every caller.");
+    expect(pick.rangeDigest).toBeNull();
   });
 });
