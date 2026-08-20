@@ -108,6 +108,8 @@ export type ShellState = {
   readonly selectedModelId: string | null;
   /** Bound workspace roots for this session, or empty when none are attached. */
   readonly workspace: WorkspaceSetView;
+  /** True while a mid-turn in-flight attempt is attached (#612). */
+  readonly runningWork: boolean;
 };
 
 export type ShellAction =
@@ -124,6 +126,7 @@ export type ShellAction =
   | { readonly kind: "palette-query"; readonly query: string }
   | { readonly kind: "workspace-draft"; readonly draft: string }
   | { readonly kind: "workspace-set"; readonly workspace: WorkspaceSetView }
+  | { readonly kind: "running-work"; readonly running: boolean }
   | { readonly kind: "offer-confirmation"; readonly prompt: ConfirmationPrompt }
   | { readonly kind: "withdraw-confirmation" }
   | { readonly kind: "resolve-confirmation"; readonly decision: "accepted" | "refused" }
@@ -153,6 +156,7 @@ export const INITIAL_SHELL_STATE: ShellState = {
   selectedSessionId: null,
   selectedModelId: null,
   workspace: EMPTY_WORKSPACE_SET,
+  runningWork: false,
 };
 
 function confirmRoute(prompt: ConfirmationPrompt): OverlayRoute {
@@ -242,6 +246,10 @@ export function shellReducer(state: ShellState, action: ShellAction): ShellState
       return state.workspace === action.workspace
         ? state
         : { ...state, workspace: action.workspace };
+    case "running-work":
+      return state.runningWork === action.running
+        ? state
+        : { ...state, runningWork: action.running };
     case "composer": {
       const composer = composerReducer(state.composer, action.action);
       return composer === state.composer ? state : { ...state, composer };
@@ -428,6 +436,7 @@ export function commandStateFor(
     changesTab: state.overlay.kind === "changes" ? state.overlay.tab : null,
     hasWorkspaceSet: state.workspace.roots.length > 0,
     hasRemovableWorkspaceRoot: state.workspace.roots.length > 1,
+    hasRunningWork: state.runningWork,
   };
 }
 
