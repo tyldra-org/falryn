@@ -71,6 +71,34 @@ const BOOTSTRAP_BINARY = join(
 
 const roots: string[] = [];
 
+/**
+ * Windows can keep a freshly spawned `--compile` binary locked for a short
+ * window after exit (AV / loader). A single `rm` then fails the whole smoke
+ * job with EBUSY even though every assertion passed — so teardown retries
+ * only those transient lock codes.
+ */
+async function removeTempTree(path: string): Promise<void> {
+  const attempts = process.platform === "win32" ? 12 : 1;
+  let lastError: unknown;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      await rm(path, { recursive: true, force: true });
+      return;
+    } catch (error) {
+      lastError = error;
+      const code =
+        error !== null && typeof error === "object" && "code" in error
+          ? String((error as { code?: unknown }).code)
+          : undefined;
+      if (code !== "EBUSY" && code !== "EPERM" && code !== "ENOTEMPTY") {
+        throw error;
+      }
+      await Bun.sleep(50 * (attempt + 1));
+    }
+  }
+  throw lastError;
+}
+
 async function temporaryRoot(): Promise<LocalPath> {
   const created = await mkdtemp(join(tmpdir(), "falryn-compiled-"));
   roots.push(created);
@@ -81,14 +109,14 @@ afterAll(async () => {
   // Bun's compiler has disposable intermediates as well as the fixture binary,
   // so one unique directory owns and removes both rather than leaving files in
   // the checkout that ran the test.
-  await rm(bootstrapDirectory, { recursive: true, force: true });
+  await removeTempTree(bootstrapDirectory);
 });
 
 afterEach(async () => {
   while (roots.length > 0) {
     const root = roots.pop();
     if (root !== undefined) {
-      await rm(root, { recursive: true, force: true });
+      await removeTempTree(root);
     }
   }
 });
