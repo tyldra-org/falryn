@@ -3009,6 +3009,33 @@ export {
   WORKSPACE_INDEX_SCHEMA,
 } from "./workspace-index-build.ts";
 export type {
+  WorkspaceLayout,
+  WorkspaceLayoutCatalog,
+  WorkspaceLayoutCatalogEntry,
+  WorkspaceLayoutCatalogError,
+  WorkspaceLayoutDocumentError,
+  WorkspaceLayoutName,
+  WorkspaceLayoutRoot,
+} from "./workspace-layout.ts";
+export {
+  DEFAULT_WORKSPACE_LAYOUT_LIST_LIMIT,
+  describeWorkspaceLayoutDocumentError,
+  isLegalWorkspaceLayoutName,
+  layoutNameFromFileName,
+  MAX_WORKSPACE_LAYOUT_CATALOG,
+  MAX_WORKSPACE_LAYOUT_NAME_LENGTH,
+  parseWorkspaceLayoutDocument,
+  queryWorkspaceLayoutCatalog,
+  serializeWorkspaceLayout,
+  WORKSPACE_LAYOUT_DIRECTORY,
+  WORKSPACE_LAYOUT_EXTENSION,
+  WORKSPACE_LAYOUT_VERSION,
+  workspaceLayoutFileName,
+  workspaceLayoutFromSet,
+  workspaceLayoutName,
+  workspaceSetFromLayout,
+} from "./workspace-layout.ts";
+export type {
   WalkTruncation,
   WorkspaceEntry,
   WorkspaceEntryFailure,
