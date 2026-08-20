@@ -65,6 +65,11 @@ import type { ThemeRequest } from "../theme/index.ts";
 import { keysOf } from "../transcript/index.ts";
 import type { TranscriptModel } from "../transcript-model.ts";
 import type { ShellModel } from "../view-model.ts";
+import {
+  projectWorkspaceHeader,
+  type WorkspaceController,
+  type WorkspaceSetView,
+} from "../workspace/index.ts";
 import { AppShell } from "./app-shell.tsx";
 import { KeymapBridge } from "./keymap-bridge.tsx";
 import { ShellErrorBoundary } from "./shell-error-boundary.tsx";
@@ -136,6 +141,9 @@ export type ShellAppProps = {
   readonly artifactViewer?: ArtifactViewer;
   /** Git changes dashboard. Absent in static frames and tests that do not need it. */
   readonly gitDashboard?: GitDashboard;
+  /** Application-backed workspace-set mutations (#607). */
+  readonly workspaceController?: WorkspaceController;
+  readonly workspace?: WorkspaceSetView;
 };
 
 /**
@@ -183,6 +191,10 @@ export function ShellApp(props: ShellAppProps): ReactNode {
     ...(props.confirmation === undefined ? {} : { confirmation: props.confirmation }),
     ...(props.onConfirmation === undefined ? {} : { onConfirmation: props.onConfirmation }),
     ...(props.onSecretSubmit === undefined ? {} : { onSecretSubmit: props.onSecretSubmit }),
+    ...(props.workspace === undefined ? {} : { workspace: props.workspace }),
+    ...(props.workspaceController === undefined
+      ? {}
+      : { workspaceController: props.workspaceController }),
   });
   const activityProjection = props.activity ?? EMPTY_ACTIVITY;
   const shutdown = props.shutdown ?? null;
@@ -216,6 +228,8 @@ export function ShellApp(props: ShellAppProps): ReactNode {
         typing={
           runtime.state.focus.focused === COMPOSER_REGION ||
           runtime.state.overlay.kind === "palette" ||
+          (runtime.state.overlay.kind === "workspace" &&
+            (runtime.state.overlay.panel === "add" || runtime.state.overlay.panel === "save")) ||
           (runtime.state.overlay.kind === "confirm" &&
             runtime.state.boundConfirmation?.secret !== null)
         }
@@ -265,10 +279,13 @@ function ResolvedShell(
   const catalog = props.controls ?? EMPTY_CONTROL_CATALOG;
   const model: ShellModel = {
     ...props.model,
-    header: projectHeader(props.model.header, catalog, {
-      sessionId: props.runtime.state.selectedSessionId,
-      modelId: props.runtime.state.selectedModelId,
-    }),
+    header: projectWorkspaceHeader(
+      projectHeader(props.model.header, catalog, {
+        sessionId: props.runtime.state.selectedSessionId,
+        modelId: props.runtime.state.selectedModelId,
+      }),
+      props.runtime.commandState.hasWorkspaceSet ? props.runtime.state.workspace : null,
+    ),
     transcript,
     composer,
     activity: props.activityModel,
@@ -333,6 +350,14 @@ function ResolvedShell(
       {...(props.artifactViewer === undefined ? {} : { artifactViewer: props.artifactViewer })}
       {...(props.gitDashboard === undefined ? {} : { gitDashboard: props.gitDashboard })}
       onChangesSettled={props.runtime.settleChanges}
+      {...(props.workspaceController === undefined
+        ? {}
+        : { workspaceController: props.workspaceController })}
+      workspace={props.runtime.state.workspace}
+      onWorkspaceDraft={props.runtime.workspaceDraft}
+      onWorkspaceReplace={props.runtime.replaceWorkspace}
+      onWorkspaceNotice={props.runtime.workspaceNotice}
+      onWorkspaceClose={props.runtime.closeOverlay}
     />
   );
 }

@@ -39,6 +39,8 @@ import {
   totalRowsOf,
 } from "../transcript/index.ts";
 import { EMPTY_GEOMETRY, type TranscriptGeometry } from "../transcript-model.ts";
+import type { WorkspaceController, WorkspaceSetView } from "../workspace/index.ts";
+import { EMPTY_WORKSPACE_SET } from "../workspace/index.ts";
 import { useRenderGate } from "./render-gate.tsx";
 import { runAvailableCommand } from "./shell-command-runner.ts";
 import {
@@ -81,6 +83,10 @@ export type ShellRuntime = {
   editSecret(edit: SecretEdit): void;
   selectControl(field: "session" | "model", id: string): void;
   settleChanges(notice: string): void;
+  workspaceDraft(draft: string): void;
+  replaceWorkspace(set: WorkspaceSetView, notice: string): void;
+  workspaceNotice(message: string): void;
+  closeOverlay(): void;
 };
 
 export type ShellRuntimeOptions = {
@@ -93,15 +99,31 @@ export type ShellRuntimeOptions = {
   readonly onConfirmation?: (decision: ConfirmationDecision) => void;
   readonly onSecretSubmit?: (secret: string) => void;
   readonly copyPort?: CopyTextPort;
+  /** Bound workspace set when the launch path attached one. */
+  readonly workspace?: WorkspaceSetView;
+  readonly workspaceController?: WorkspaceController | null;
 };
 
 const encoder = new TextEncoder();
 const NO_BLOCKS: readonly TranscriptBlock[] = [];
 
 export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
-  const [state, dispatch] = useReducer(shellReducer, INITIAL_SHELL_STATE);
+  const [state, dispatch] = useReducer(shellReducer, INITIAL_SHELL_STATE, (base) => ({
+    ...base,
+    workspace: options.workspace ?? EMPTY_WORKSPACE_SET,
+  }));
   const blocks = options.transcriptBlocks ?? NO_BLOCKS;
-  const commandState = useMemo(() => commandStateFor(state, blocks), [state, blocks]);
+  const commandState = useMemo(() => {
+    const base = commandStateFor(state, blocks);
+    if (options.workspaceController == null) {
+      return {
+        ...base,
+        hasWorkspaceSet: false,
+        hasRemovableWorkspaceRoot: false,
+      };
+    }
+    return base;
+  }, [state, blocks, options.workspaceController]);
   const geometry = useRef<TranscriptGeometry>(EMPTY_GEOMETRY);
   const gate = useRenderGate();
   const stateRef = useRef(state);
@@ -507,6 +529,27 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
     dispatch({ kind: "changes-settled", notice });
   }, []);
 
+  const workspaceDraft = useCallback(
+    (draft: string): void => {
+      gate.note("input");
+      dispatch({ kind: "workspace-draft", draft });
+    },
+    [gate],
+  );
+
+  const replaceWorkspace = useCallback((set: WorkspaceSetView, notice: string): void => {
+    dispatch({ kind: "workspace-set", workspace: set });
+    dispatch({ kind: "notice", message: notice });
+  }, []);
+
+  const workspaceNotice = useCallback((message: string): void => {
+    dispatch({ kind: "notice", message });
+  }, []);
+
+  const closeOverlay = useCallback((): void => {
+    dispatch({ kind: "close-overlay" });
+  }, []);
+
   return {
     state,
     commandState,
@@ -521,5 +564,9 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
     editSecret,
     selectControl,
     settleChanges,
+    workspaceDraft,
+    replaceWorkspace,
+    workspaceNotice,
+    closeOverlay,
   };
 }

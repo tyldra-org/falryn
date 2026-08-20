@@ -171,6 +171,17 @@ export type OverlayRoute =
       readonly panel: "session" | "model" | "context" | "resource";
     }
   /**
+   * Workspace-set inspect and mutate overlays (#607).
+   *
+   * `draft` holds typed path or layout-name text for add/save. Closing replaces
+   * the route, so a half-typed path does not linger.
+   */
+  | {
+      readonly kind: "workspace";
+      readonly panel: "show" | "add" | "remove" | "save" | "load";
+      readonly draft: string;
+    }
+  /**
    * An artifact viewer overlay.
    *
    * The id is the artifact being viewed. Layout and hunk index apply to diff

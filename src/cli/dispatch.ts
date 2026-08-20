@@ -17,6 +17,7 @@ import {
   assertNever,
   type EnvironmentPort,
   MAX_STREAM_READ_LIMIT,
+  parseLocalPath,
   type RuntimeEvent,
   streamId,
   type Timestamp,
@@ -336,6 +337,25 @@ async function launchShell(
     void untilScopeStops(governance, scope, finished.signal).then(() => stopped.abort());
   }
 
+  const resolvedWorkspace = await graph.ensureWorkspaceSet(stopped.signal);
+
+  // Workspace controller is OpenTUI-free but lives under `tui/`, so it loads on
+  // the same dynamic seam the launch boundary requires for the shell.
+  const { createWorkspaceController } = await import("../tui/workspace/index.ts");
+  const workspaceController =
+    resolvedWorkspace.ok === true
+      ? createWorkspaceController({
+          fileSystem: graph.fileSystem,
+          configurationRoot: graph.configurationRoot,
+          currentDirectory: (() => {
+            const cwd = parseLocalPath(process.cwd());
+            return cwd.ok ? cwd.value : null;
+          })(),
+          initial: resolvedWorkspace.value.set,
+        })
+      : undefined;
+  const workspace = workspaceController?.initial;
+
   // Loaded here and nowhere earlier: this is the first line of the whole
   // invocation that requires OpenTUI to exist.
   const { runShell } = await import("../tui/shell.tsx");
@@ -357,6 +377,8 @@ async function launchShell(
       scopes: governance.scopes,
       ...(fileProbe === null ? {} : { fileProbe }),
       ...(gitDashboard === undefined ? {} : { gitDashboard }),
+      ...(workspaceController === undefined ? {} : { workspaceController }),
+      ...(workspace === undefined ? {} : { workspace }),
       ...(governance.shutdown === undefined ? {} : { shutdown: governance.shutdown }),
       ...(options.createRenderer === undefined ? {} : { createRenderer: options.createRenderer }),
     });
