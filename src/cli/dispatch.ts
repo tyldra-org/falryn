@@ -72,6 +72,7 @@ import {
   type GlobalOptions,
   resolveColor,
 } from "./options.ts";
+import { createOverBoundArtifactWriter } from "./refusal-artifact.ts";
 import { renderHuman, renderQuiet } from "./render-human.ts";
 import { type RenderedRecords, renderJson } from "./render-json.ts";
 import { renderJsonl } from "./render-jsonl.ts";
@@ -511,12 +512,17 @@ async function render(
     case "quiet":
       return asRecords(renderQuiet(result));
     case "json":
-      return renderJson({ result, occurredAt: nowFor(services) });
+      return renderJson({
+        result,
+        occurredAt: nowFor(services),
+        storeOverBound: createOverBoundArtifactWriter(services),
+      });
     case "jsonl":
       return renderJsonl({
         result,
         occurredAt: nowFor(services),
         events: await lifecycleEvents(services),
+        storeOverBound: createOverBoundArtifactWriter(services),
       });
     default:
       return assertNever(globals.format, "unhandled output format");

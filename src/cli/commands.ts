@@ -76,8 +76,9 @@ import {
   type LocalPath,
   localPath,
   MAX_ARTIFACT_CATALOG,
-  MAX_ARTIFACT_RANGE_BYTES,
+  MAX_ARTIFACT_READ_RANGE_BYTES,
   MAX_SESSION_CATALOG,
+  MAX_STREAM_WRITE_BYTES,
   type OutputStreamPort,
   type OwnershipClass,
   type RecordError,
@@ -145,6 +146,7 @@ function resultFor<Command extends CommandId, Payload>(
     warnings: [],
     omissions: [],
     truncation: [],
+    artifacts: [],
     correlation: {
       workspaceId: null,
       sessionId: null,
@@ -1368,9 +1370,15 @@ async function streamArtifactToPort(
         error: { kind: "artifact", code: "cancelled", artifactId: record.artifactId },
       };
     }
-    const length = Math.min(MAX_ARTIFACT_RANGE_BYTES, record.byteLength - offset);
+    const length = Math.min(MAX_ARTIFACT_READ_RANGE_BYTES, record.byteLength - offset);
     const read = await reader.read(
-      { artifactId: record.artifactId, mode: "range", offset, length },
+      {
+        artifactId: record.artifactId,
+        mode: "range",
+        offset,
+        length,
+        limits: { maxRangeBytes: MAX_ARTIFACT_READ_RANGE_BYTES },
+      },
       signal,
     );
     if (!read.ok) {
@@ -1383,12 +1391,20 @@ async function streamArtifactToPort(
         error: { kind: "artifact", code: "not-found", artifactId: record.artifactId },
       };
     }
-    const write = stream.write(bytes);
-    if (write.status === "closed") {
-      return {
-        ok: false,
-        error: { kind: "artifact", code: "cancelled", artifactId: record.artifactId },
-      };
+    let writtenOffset = 0;
+    while (writtenOffset < bytes.byteLength) {
+      const slice = bytes.subarray(
+        writtenOffset,
+        Math.min(writtenOffset + MAX_STREAM_WRITE_BYTES, bytes.byteLength),
+      );
+      const write = stream.write(slice);
+      if (write.status === "closed" || write.status === "too-large") {
+        return {
+          ok: false,
+          error: { kind: "artifact", code: "cancelled", artifactId: record.artifactId },
+        };
+      }
+      writtenOffset += slice.byteLength;
     }
     total += bytes.byteLength;
     offset += bytes.byteLength;

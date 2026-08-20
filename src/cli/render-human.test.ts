@@ -96,8 +96,9 @@ function resultOf<Command extends RunCommandResult["command"]>(
     warnings: overrides.warnings ?? [],
     omissions: overrides.omissions ?? [],
     truncation: overrides.truncation ?? [],
+    artifacts: [],
     correlation: NO_CORRELATION,
-  } as Extract<RunCommandResult, { readonly command: Command }>;
+  } as unknown as Extract<RunCommandResult, { readonly command: Command }>;
 }
 
 function inspectedValue(

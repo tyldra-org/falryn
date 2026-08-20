@@ -62,6 +62,7 @@ export {
   OUTPUT_FORMATS,
   resolveColor,
 } from "./options.ts";
+export { createOverBoundArtifactWriter } from "./refusal-artifact.ts";
 export type { HumanRenderRequest, RenderedText } from "./render-human.ts";
 export {
   DEFAULT_DISPLAY_COLUMNS,
@@ -70,7 +71,11 @@ export {
   renderPlainText,
   renderQuiet,
 } from "./render-human.ts";
-export type { MachineRenderRequest, RenderedRecords } from "./render-json.ts";
+export type {
+  MachineRenderRequest,
+  OverBoundArtifactWriter,
+  RenderedRecords,
+} from "./render-json.ts";
 export { renderJson } from "./render-json.ts";
 export type { JsonlRenderRequest } from "./render-jsonl.ts";
 export { renderJsonl } from "./render-jsonl.ts";
@@ -95,6 +100,8 @@ export {
   succeeded,
 } from "./result.ts";
 export type {
+  CliArtifactErrorCode,
+  CliArtifactHandle,
   CliEncodeError,
   CliEncodeErrorCode,
   CliEncodeResult,
@@ -104,12 +111,14 @@ export type {
   CliRecord,
   CliRecordEnvelope,
   CliRecordKind,
+  CliRefusalArtifact,
   CliRefusalRecord,
   CliResultBody,
   CliResultRecord,
   CliStreamReading,
 } from "./schema.ts";
 export {
+  CLI_ARTIFACT_ERROR_CODES,
   CLI_ENCODE_ERROR_CODES,
   CLI_MINIMUM_SCHEMA_VERSION,
   CLI_RECORD_KINDS,

@@ -2,9 +2,9 @@
  * The JSON projection: one bounded terminal record.
  *
  * A pure function from a `CommandResult` and the time it finished to the single
- * line stdout carries. It holds no stream and no clock — the time is handed in,
- * for the same reason #18's renderer is handed the terminal facts rather than
- * deriving them.
+ * line stdout carries — until an over-bound result needs the artifact store.
+ * Spilling the full result is the only side effect, and it is optional: a
+ * caller that cannot reach a store still gets a terminal refusal.
  *
  * Two rules it enforces rather than documents:
  *
@@ -20,8 +20,11 @@
 import { FIRST_SEQUENCE, type Timestamp } from "../domain/index.ts";
 import type { RunCommandResult } from "./commands.ts";
 import {
+  type CliArtifactErrorCode,
+  type CliArtifactHandle,
   type CliEncodeError,
   type CliRecord,
+  type CliRefusalArtifact,
   type CliResultBody,
   cliRefusalRecord,
   cliResultRecord,
@@ -41,10 +44,30 @@ export type RenderedRecords = {
   readonly diagnostics: string;
 };
 
+/**
+ * Where an over-bound result's bytes are written, when a store is reachable.
+ *
+ * Returns a handle the consumer can resolve through `falryn artifact get`, or a
+ * code naming why the spill failed. The refusal still emits either way.
+ */
+export type OverBoundArtifactWriter = (input: {
+  readonly bytes: Uint8Array;
+}) => Promise<
+  | { readonly ok: true; readonly artifact: CliArtifactHandle }
+  | { readonly ok: false; readonly code: CliArtifactErrorCode }
+>;
+
 export type MachineRenderRequest = {
   readonly result: RunCommandResult;
   /** When the run finished. Supplied by the caller, so this stays pure. */
   readonly occurredAt: Timestamp;
+  /**
+   * Spills an over-bound result into the artifact store.
+   *
+   * Absent in pure tests: the refusal still emits with `artifact: null` and no
+   * `artifactError`, because no spill was attempted.
+   */
+  readonly storeOverBound?: OverBoundArtifactWriter;
 };
 
 /** The body of a terminal record, taken from the result without reshaping it. */
@@ -57,15 +80,16 @@ export function resultBodyOf(result: RunCommandResult): CliResultBody {
     warnings: result.warnings,
     omissions: result.omissions,
     truncation: result.truncation,
+    artifacts: result.artifacts,
     correlation: result.correlation,
   };
 }
 
 /** One versioned, bounded, deterministic object. */
-export function renderJson(request: MachineRenderRequest): RenderedRecords {
-  const { result, occurredAt } = request;
+export async function renderJson(request: MachineRenderRequest): Promise<RenderedRecords> {
+  const { result, occurredAt, storeOverBound } = request;
   const record = cliResultRecord(result.command, FIRST_SEQUENCE, occurredAt, resultBodyOf(result));
-  return emitTerminal(record, result.command, occurredAt);
+  return emitTerminal(record, result.command, occurredAt, storeOverBound);
 }
 
 /**
@@ -74,27 +98,37 @@ export function renderJson(request: MachineRenderRequest): RenderedRecords {
  * Shared with the JSON Lines projection: both end in exactly one terminal
  * record, and both have to answer the same way when the result will not encode.
  */
-export function emitTerminal(
+export async function emitTerminal(
   record: CliRecord,
   command: string,
   occurredAt: Timestamp,
-): RenderedRecords {
+  storeOverBound?: OverBoundArtifactWriter,
+): Promise<RenderedRecords> {
   const encoded = encodeCliRecord(record);
   if (encoded.ok) {
     return { result: [encoded.text], diagnostics: "" };
   }
-  return refusalFor(record, command, occurredAt, encoded.error);
+  return refusalFor(record, command, occurredAt, encoded.error, storeOverBound);
 }
 
-function refusalFor(
+async function refusalFor(
   original: CliRecord,
   command: string,
   occurredAt: Timestamp,
   error: CliEncodeError,
-): RenderedRecords {
-  const refusal = cliRefusalRecord(command, original.sequence, occurredAt, error);
+  storeOverBound: OverBoundArtifactWriter | undefined,
+): Promise<RenderedRecords> {
+  const spill = await spillOverBound(error, storeOverBound);
+  const refusal = cliRefusalRecord(command, original.sequence, occurredAt, error, spill);
   const encoded = encodeCliRecord(refusal);
-  const notice = `The result could not be emitted: ${error.code}${error.path === "" ? "" : ` at ${error.path}`}.`;
+  const notice = [
+    `The result could not be emitted: ${error.code}${error.path === "" ? "" : ` at ${error.path}`}.`,
+    spill.artifactError === null
+      ? null
+      : `The full result could not be stored (${spill.artifactError}).`,
+  ]
+    .filter((line): line is string => line !== null)
+    .join(" ");
 
   // The refusal carries nothing that came from the result, so this branch is
   // unreachable in practice. It is written rather than asserted because the
@@ -103,4 +137,21 @@ function refusalFor(
   return encoded.ok
     ? { result: [encoded.text], diagnostics: notice }
     : { result: [], diagnostics: `${notice} The refusal record could not be emitted either.` };
+}
+
+async function spillOverBound(
+  error: CliEncodeError,
+  storeOverBound: OverBoundArtifactWriter | undefined,
+): Promise<CliRefusalArtifact> {
+  if (error.code !== "record-too-large" || error.encodedText === null) {
+    return { artifact: null, artifactError: null };
+  }
+  if (storeOverBound === undefined) {
+    return { artifact: null, artifactError: null };
+  }
+  const bytes = new TextEncoder().encode(error.encodedText);
+  const written = await storeOverBound({ bytes });
+  return written.ok
+    ? { artifact: written.artifact, artifactError: null }
+    : { artifact: null, artifactError: written.code };
 }

@@ -88,12 +88,13 @@ function resultOf(payload: unknown, overrides: ResultOverrides = {}): RunCommand
     warnings: [],
     omissions: [],
     truncation: [],
+    artifacts: [],
     correlation: NO_CORRELATION,
   } as unknown as RunCommandResult;
 }
 
-function parsedJson(payload: unknown, overrides: ResultOverrides = {}) {
-  const rendered = renderJson({ result: resultOf(payload, overrides), occurredAt: AT });
+async function parsedJson(payload: unknown, overrides: ResultOverrides = {}) {
+  const rendered = await renderJson({ result: resultOf(payload, overrides), occurredAt: AT });
   expect(rendered.result).toHaveLength(1);
   return JSON.parse(rendered.result[0] ?? "");
 }
@@ -121,11 +122,11 @@ const EVENT: RuntimeEvent = {
 /* -------------------------------------------------------------------------- */
 
 describe("JSON", () => {
-  test("emits exactly one terminal record", () => {
-    const rendered = renderJson({ result: resultOf({ ok: true }), occurredAt: AT });
+  test("emits exactly one terminal record", async () => {
+    const rendered = await renderJson({ result: resultOf({ ok: true }), occurredAt: AT });
     expect(rendered.result).toHaveLength(1);
     expect(rendered.diagnostics).toBe("");
-    expect(parsedJson({ ok: true })).toMatchObject({
+    expect(await parsedJson({ ok: true })).toMatchObject({
       schemaFamily: CLI_SCHEMA_FAMILY,
       kind: "result",
       terminal: true,
@@ -134,15 +135,15 @@ describe("JSON", () => {
     });
   });
 
-  test("carries the result's facts without reshaping them", () => {
-    const record = parsedJson({ roots: ["state"] });
+  test("carries the result's facts without reshaping them", async () => {
+    const record = await parsedJson({ roots: ["state"] });
     expect(record.payload).toEqual({ roots: ["state"] });
     expect(record.effect).toEqual({ intent: "none", observed: "none" });
     expect(record.errors).toEqual([]);
     expect(record.artifacts).toEqual([]);
   });
 
-  test("renders every outcome kind and every effect certainty", () => {
+  test("renders every outcome kind and every effect certainty", async () => {
     const certainties: readonly EffectCertainty[] = ["none", "completed", "partial", "uncertain"];
     const seen = new Set<string>();
 
@@ -155,7 +156,7 @@ describe("JSON", () => {
               ? { kind, effect: "uncertain" }
               : { kind, effect }
         ) as TerminalOutcome;
-        const record = parsedJson(null, { outcome });
+        const record = await parsedJson(null, { outcome });
         expect(record.outcome).toEqual(outcome);
         seen.add(JSON.stringify(record.outcome));
       }
@@ -165,8 +166,8 @@ describe("JSON", () => {
     expect(seen.size).toBe(1 + 3 * certainties.length + 1);
   });
 
-  test("refuses an over-bound result with a terminal record, not a trimmed one", () => {
-    const rendered = renderJson({
+  test("refuses an over-bound result with a terminal record, not a trimmed one", async () => {
+    const rendered = await renderJson({
       result: resultOf({ blob: "x".repeat(MAX_CLI_RECORD_BYTES) }),
       occurredAt: AT,
     });
@@ -178,6 +179,7 @@ describe("JSON", () => {
       terminal: true,
       code: "record-too-large",
       artifact: null,
+      artifactError: null,
       maximumBytes: MAX_CLI_RECORD_BYTES,
     });
     // Nothing of the result survived into it, so a consumer cannot mistake the
@@ -186,8 +188,50 @@ describe("JSON", () => {
     expect(rendered.diagnostics).toContain("record-too-large");
   });
 
-  test("still ends the run when a value cannot be encoded", () => {
-    const rendered = renderJson({ result: resultOf({ text: "a\ud800b" }), occurredAt: AT });
+  test("spills an over-bound result and carries its handle on the refusal", async () => {
+    const rendered = await renderJson({
+      result: resultOf({ blob: "x".repeat(MAX_CLI_RECORD_BYTES) }),
+      occurredAt: AT,
+      storeOverBound: async () => ({ ok: true, artifact: { artifactId: "cli-refusal-1" } }),
+    });
+    const record = JSON.parse(rendered.result[0] ?? "");
+    expect(record).toMatchObject({
+      kind: "refusal",
+      code: "record-too-large",
+      artifact: { artifactId: "cli-refusal-1" },
+      artifactError: null,
+    });
+    expect(rendered.result[0]).not.toContain("blob");
+  });
+
+  test("still refuses when the store cannot take the spill", async () => {
+    const rendered = await renderJson({
+      result: resultOf({ blob: "x".repeat(MAX_CLI_RECORD_BYTES) }),
+      occurredAt: AT,
+      storeOverBound: async () => ({ ok: false, code: "store-unavailable" }),
+    });
+    const record = JSON.parse(rendered.result[0] ?? "");
+    expect(record).toMatchObject({
+      kind: "refusal",
+      code: "record-too-large",
+      artifact: null,
+      artifactError: "store-unavailable",
+    });
+    expect(rendered.diagnostics).toContain("store-unavailable");
+  });
+
+  test("copies command-produced artifact handles onto the result record", async () => {
+    const result = {
+      ...resultOf({ ok: true }),
+      artifacts: [{ artifactId: "produced-1" }],
+    } as RunCommandResult;
+    const rendered = await renderJson({ result, occurredAt: AT });
+    const record = JSON.parse(rendered.result[0] ?? "");
+    expect(record.artifacts).toEqual([{ artifactId: "produced-1" }]);
+  });
+
+  test("still ends the run when a value cannot be encoded", async () => {
+    const rendered = await renderJson({ result: resultOf({ text: "a\ud800b" }), occurredAt: AT });
     const record = JSON.parse(rendered.result[0] ?? "");
     expect(record.terminal).toBe(true);
     expect(record.code).toBe("unencodable-text");
@@ -199,8 +243,8 @@ describe("JSON", () => {
 /* -------------------------------------------------------------------------- */
 
 describe("JSON Lines", () => {
-  test("ends in exactly one terminal record", () => {
-    const rendered = renderJsonl({
+  test("ends in exactly one terminal record", async () => {
+    const rendered = await renderJsonl({
       result: resultOf({ ok: true }),
       occurredAt: AT,
       events: [EVENT, EVENT],
@@ -213,16 +257,16 @@ describe("JSON Lines", () => {
     expect(reading.records[reading.records.length - 1]?.terminal).toBe(true);
   });
 
-  test("is a complete stream with no events at all", () => {
+  test("is a complete stream with no events at all", async () => {
     const reading = readCliStream(
-      renderJsonl({ result: resultOf(null), occurredAt: AT, events: [] }).result,
+      (await renderJsonl({ result: resultOf(null), occurredAt: AT, events: [] })).result,
     );
     expect(reading.records).toHaveLength(1);
     expect(reading.terminal?.kind).toBe("result");
   });
 
-  test("numbers records monotonically with no gap", () => {
-    const rendered = renderJsonl({
+  test("numbers records monotonically with no gap", async () => {
+    const rendered = await renderJsonl({
       result: resultOf(null),
       occurredAt: AT,
       events: [EVENT, EVENT, EVENT],
@@ -232,8 +276,8 @@ describe("JSON Lines", () => {
     expect(reading.gaps).toEqual([]);
   });
 
-  test("projects the runtime's own event vocabulary rather than a second one", () => {
-    const rendered = renderJsonl({ result: resultOf(null), occurredAt: AT, events: [EVENT] });
+  test("projects the runtime's own event vocabulary rather than a second one", async () => {
+    const rendered = await renderJsonl({ result: resultOf(null), occurredAt: AT, events: [EVENT] });
     const record = JSON.parse(rendered.result[0] ?? "");
     expect(record.kind).toBe("event");
     expect(record.terminal).toBe(false);
@@ -245,8 +289,8 @@ describe("JSON Lines", () => {
     });
   });
 
-  test("emits its terminal record even when the result will not encode", () => {
-    const rendered = renderJsonl({
+  test("emits its terminal record even when the result will not encode", async () => {
+    const rendered = await renderJsonl({
       result: resultOf({ blob: "x".repeat(MAX_CLI_RECORD_BYTES) }),
       occurredAt: AT,
       events: [EVENT],
@@ -256,9 +300,13 @@ describe("JSON Lines", () => {
     expect(reading.gaps).toEqual([]);
   });
 
-  test("is byte-identical for equal inputs", () => {
-    const one = renderJsonl({ result: resultOf({ a: 1, b: 2 }), occurredAt: AT, events: [EVENT] });
-    const other = renderJsonl({
+  test("is byte-identical for equal inputs", async () => {
+    const one = await renderJsonl({
+      result: resultOf({ a: 1, b: 2 }),
+      occurredAt: AT,
+      events: [EVENT],
+    });
+    const other = await renderJsonl({
       result: resultOf({ b: 2, a: 1 }),
       occurredAt: AT,
       events: [EVENT],
@@ -272,8 +320,8 @@ describe("JSON Lines", () => {
 /* -------------------------------------------------------------------------- */
 
 describe("machine output", () => {
-  test("is valid JSON on every line", () => {
-    const rendered = renderJsonl({
+  test("is valid JSON on every line", async () => {
+    const rendered = await renderJsonl({
       result: resultOf({ text: "value" }),
       occurredAt: AT,
       events: [EVENT],
@@ -283,14 +331,16 @@ describe("machine output", () => {
     }
   });
 
-  test("holds no escape sequence, even when the result carried one", () => {
+  test("holds no escape sequence, even when the result carried one", async () => {
     // A configuration value carrying ANSI reaches the record as data. What must
     // not happen is the *format* emitting one.
-    const record = parsedJson({ text: `${ESCAPE}[31mred${ESCAPE}[0m` });
-    const line = renderJson({
-      result: resultOf({ text: `${ESCAPE}[31mred` }),
-      occurredAt: AT,
-    }).result[0];
+    const record = await parsedJson({ text: `${ESCAPE}[31mred${ESCAPE}[0m` });
+    const line = (
+      await renderJson({
+        result: resultOf({ text: `${ESCAPE}[31mred` }),
+        occurredAt: AT,
+      })
+    ).result[0];
 
     expect(record.payload.text).toContain("[31m");
     // JSON escapes it as \u001b, so the raw byte never appears on the wire.
