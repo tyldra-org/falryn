@@ -638,10 +638,10 @@ describe.if(runnable)("the compiled shell on a real terminal", () => {
       });
       expect(run.exitCode).toBe(EXIT_CODES.COMPLETED);
       expect(typed).toContain("hello");
-      // Submission has no consumer in v0.1 and says so, with the issue that
-      // will give it one. Silently discarding what was typed is the failure.
+      // Submission has no consumer until a product port is attached (#707) and
+      // says so. Silently discarding what was typed is the failure.
       expect(submitted).toContain("Not sent");
-      expect(submitted).toContain("#33");
+      expect(submitted).toContain("#707");
       expectRestored(run);
     },
     RUN_TIMEOUT_MS,

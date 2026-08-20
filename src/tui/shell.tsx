@@ -56,6 +56,7 @@ import {
 import { POINTER_KEY, type ShellCapabilities } from "./capabilities.ts";
 import { RenderGateProvider, useRenderGate } from "./components/render-gate.tsx";
 import { ShellApp } from "./components/shell-app.tsx";
+import type { SubmissionPort } from "./composer/submission.ts";
 import {
   nothingToRestore,
   openRendererSession,
@@ -126,6 +127,8 @@ export type ShellRunRequest = {
    * attaches the product producer; absent keeps the empty transcript honest.
    */
   readonly transcriptFeed?: TranscriptFeed;
+  /** Product agent submission port (#707). Absent keeps UNAVAILABLE_SUBMISSION. */
+  readonly submission?: SubmissionPort;
   /** Resolves `@path` mentions. Optional because tests and no-workspace runs have none. */
   readonly fileProbe?: FileAttachmentProbe | null;
   /** Git changes dashboard. Optional when no workspace or git executable is available. */
@@ -306,6 +309,7 @@ async function frameFor(session: RendererSession, request: ShellRunRequest, onEx
       clock={request.clock}
       {...(feed === undefined ? {} : { feed })}
       {...(request.transcriptFeed === undefined ? {} : { transcriptFeed: request.transcriptFeed })}
+      {...(request.submission === undefined ? {} : { submission: request.submission })}
       {...(request.fileProbe === undefined ? {} : { fileProbe: request.fileProbe })}
       {...(request.gitDashboard === undefined ? {} : { gitDashboard: request.gitDashboard })}
       {...(request.workspaceController === undefined
@@ -332,6 +336,7 @@ function LiveShell(props: {
   readonly clock: ClockPort;
   readonly feed?: RuntimeFeed;
   readonly transcriptFeed?: TranscriptFeed;
+  readonly submission?: SubmissionPort;
   readonly fileProbe?: FileAttachmentProbe | null;
   readonly gitDashboard?: GitDashboard;
   readonly workspaceController?: WorkspaceController;
@@ -346,6 +351,7 @@ function LiveShell(props: {
         now={props.clock.now}
         {...(props.feed === undefined ? {} : { feed: props.feed })}
         {...(props.transcriptFeed === undefined ? {} : { transcriptFeed: props.transcriptFeed })}
+        {...(props.submission === undefined ? {} : { submission: props.submission })}
         {...(props.fileProbe === undefined ? {} : { fileProbe: props.fileProbe })}
         {...(props.gitDashboard === undefined ? {} : { gitDashboard: props.gitDashboard })}
         {...(props.workspaceController === undefined
@@ -364,6 +370,7 @@ function ProjectedShell(props: {
   readonly now: ClockPort["now"];
   readonly feed?: RuntimeFeed;
   readonly transcriptFeed?: TranscriptFeed;
+  readonly submission?: SubmissionPort;
   readonly fileProbe?: FileAttachmentProbe | null;
   readonly gitDashboard?: GitDashboard;
   readonly workspaceController?: WorkspaceController;
@@ -381,6 +388,7 @@ function ProjectedShell(props: {
       activity={runtime.activity}
       transcript={transcript}
       {...(runtime.shutdown === null ? {} : { shutdown: runtime.shutdown })}
+      {...(props.submission === undefined ? {} : { submission: props.submission })}
       {...(props.fileProbe === undefined ? {} : { fileProbe: props.fileProbe })}
       {...(props.gitDashboard === undefined ? {} : { gitDashboard: props.gitDashboard })}
       {...(props.workspaceController === undefined

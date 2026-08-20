@@ -1,11 +1,11 @@
 /**
  * What happens when someone presses send, and what they are told.
  *
- * Nothing in this build can answer a prompt: there is no provider, no model
- * routing, and no agent loop. The question this module settles is what an
- * interface should do about that, and the answer it implements is that a
- * submission *resolves* — through a declared port, to a typed outcome, naming
- * the issue that will make it work and a route the user can take now.
+ * Nothing in this build can answer a prompt until a product submission port is
+ * attached (#707). The question this module settles is what an interface should
+ * do about that, and the answer it implements is that a submission *resolves*
+ * — through a declared port, to a typed outcome, naming the issue that will
+ * make it work and a route the user can take now.
  *
  * The alternatives were both worse. Discarding the input silently is the failure
  * a composer exists to prevent. Growing a stub agent loop behind the button
@@ -90,14 +90,14 @@ export type SubmissionOutcome =
  * while holding the user's text.
  */
 export type SubmissionPort = {
-  submit(snapshot: ComposerSnapshot): SubmissionOutcome;
+  submit(snapshot: ComposerSnapshot): SubmissionOutcome | Promise<SubmissionOutcome>;
 };
 
-/** The issue that will make a submission do something. */
-export const SUBMISSION_OWNER = "#33";
+/** The issue that owns making a submission do something. */
+export const SUBMISSION_OWNER = "#707";
 
 /**
- * The port this build declares.
+ * The port this build declares when no product producer is attached.
  *
  * Named for what it is. A port called `defaultSubmissionPort` would read as a
  * thing that works, and the whole point is that a reader of this tree can see in
@@ -108,7 +108,7 @@ export const UNAVAILABLE_SUBMISSION: SubmissionPort = {
     return {
       kind: "unavailable",
       snapshot,
-      reason: `no provider is configured, so nothing can answer a prompt yet (${SUBMISSION_OWNER})`,
+      reason: `no agent submission port is attached, so nothing can answer a prompt yet (${SUBMISSION_OWNER})`,
       owner: SUBMISSION_OWNER,
       // The palette is the honest route: it is the one surface that lists every
       // command with its availability, so a user sent there finds out what this

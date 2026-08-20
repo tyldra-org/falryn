@@ -656,9 +656,18 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
   const port = options.submission ?? UNAVAILABLE_SUBMISSION;
   const inFlight = state.composer.inFlight;
   useEffect(() => {
-    if (inFlight !== null) {
-      dispatch({ kind: "composer", action: { kind: "resolve", outcome: port.submit(inFlight) } });
+    if (inFlight === null) {
+      return;
     }
+    let cancelled = false;
+    void Promise.resolve(port.submit(inFlight)).then((outcome) => {
+      if (!cancelled) {
+        dispatch({ kind: "composer", action: { kind: "resolve", outcome } });
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [inFlight, port]);
 
   const midTurn = options.midTurn ?? null;

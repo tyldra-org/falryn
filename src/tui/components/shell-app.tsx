@@ -51,7 +51,7 @@ import { statusOfHealth } from "../activity/index.ts";
 import type { ActivityModel } from "../activity-model.ts";
 import type { CopyTextPort } from "../clipboard.ts";
 import { searchCommands } from "../commands.ts";
-import { COMPOSER_FEATURES } from "../composer/index.ts";
+import { COMPOSER_FEATURES, type SubmissionPort } from "../composer/index.ts";
 import type { ComposerModel } from "../composer-model.ts";
 import {
   type ConfirmationDecision,
@@ -151,6 +151,8 @@ export type ShellAppProps = {
   readonly workspace?: WorkspaceSetView;
   /** Mid-turn classification while a turn is in flight (#612). */
   readonly midTurn?: MidTurnInputService;
+  /** Product agent submission port (#707). Absent keeps UNAVAILABLE_SUBMISSION. */
+  readonly submission?: SubmissionPort;
 };
 
 /**
@@ -203,6 +205,7 @@ export function ShellApp(props: ShellAppProps): ReactNode {
       ? {}
       : { workspaceController: props.workspaceController }),
     ...(props.midTurn === undefined ? {} : { midTurn: props.midTurn }),
+    ...(props.submission === undefined ? {} : { submission: props.submission }),
   });
   const activityProjection = props.activity ?? EMPTY_ACTIVITY;
   const shutdown = props.shutdown ?? null;

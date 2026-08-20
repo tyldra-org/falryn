@@ -33,9 +33,13 @@ function submitted(state: ComposerState): ComposerState {
   if (sending.inFlight === null) {
     return sending;
   }
+  const outcome = UNAVAILABLE_SUBMISSION.submit(sending.inFlight);
+  if (outcome instanceof Promise) {
+    throw new Error("UNAVAILABLE_SUBMISSION must resolve synchronously in unit tests");
+  }
   return apply(sending, {
     kind: "resolve",
-    outcome: UNAVAILABLE_SUBMISSION.submit(sending.inFlight),
+    outcome,
   });
 }
 
@@ -89,8 +93,8 @@ describe("a submission nothing can take", () => {
     if (outcome?.kind !== "unavailable") {
       throw new Error("the build's port stopped refusing");
     }
-    expect(outcome.owner).toBe("#33");
-    expect(outcome.reason).toContain("no provider is configured");
+    expect(outcome.owner).toBe("#707");
+    expect(outcome.reason).toContain("no agent submission port is attached");
     expect(outcome.route).toBe("app.commandPalette");
   });
 
