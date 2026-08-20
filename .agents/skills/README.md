@@ -53,6 +53,10 @@ users, run from this directory:
 ./sync-from-global.sh --dry-run
 ```
 
+**Warning:** if your global `gh-cli` or `git-workflow` contains project-specific
+text, do not sync those skills into the repo — edit universal skills in-repo
+instead. Only `falryn-loop` should name Falryn or Parent chain behavior.
+
 Or edit directly in `.agents/skills/` and commit — **the repo copy is canonical
 for users.**
 
