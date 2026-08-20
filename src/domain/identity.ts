@@ -22,6 +22,8 @@ declare const brand: unique symbol;
 export type Brand<Value, Name extends string> = Value & { readonly [brand]: Name };
 
 export type WorkspaceId = Brand<string, "WorkspaceId">;
+/** One bound root inside a multi-root workspace set (#604). */
+export type WorkspaceRootId = Brand<string, "WorkspaceRootId">;
 /** One execution of the Falryn process, from start to clean end. */
 export type RunId = Brand<string, "RunId">;
 export type SessionId = Brand<string, "SessionId">;
@@ -141,6 +143,7 @@ function createIdentifierCodec<Id extends string>(identity: string): IdentifierC
 }
 
 export const workspaceId = createIdentifierCodec<WorkspaceId>("workspaceId");
+export const workspaceRootId = createIdentifierCodec<WorkspaceRootId>("workspaceRootId");
 export const runId = createIdentifierCodec<RunId>("runId");
 export const sessionId = createIdentifierCodec<SessionId>("sessionId");
 export const turnId = createIdentifierCodec<TurnId>("turnId");

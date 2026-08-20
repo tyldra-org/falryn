@@ -357,5 +357,12 @@ export type { WorkspacePathBinder, WorkspacePathProbeError } from "./workspace-p
 export { createWorkspacePathBinder } from "./workspace-path.ts";
 export type { WorkspaceReader, WorkspaceReaderOptions } from "./workspace-read.ts";
 export { createWorkspaceReader } from "./workspace-read.ts";
+export type {
+  WorkspaceSetBinder,
+  WorkspaceSetProbeError,
+  WorkspaceSetResolveError,
+  WorkspaceSetRootInput,
+} from "./workspace-set.ts";
+export { createWorkspaceSetBinder, resolveWorkspaceSet } from "./workspace-set.ts";
 export type { WorkspaceWriter, WorkspaceWriterOptions } from "./workspace-write.ts";
 export { createWorkspaceWriter } from "./workspace-write.ts";
