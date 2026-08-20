@@ -266,6 +266,41 @@ describe("what this build can actually do", () => {
     expect(commandById("session.switch")?.availability(EMPTY_COMMAND_STATE).kind).toBe("available");
   });
 
+  test("declares workspace-set commands with no default key", () => {
+    for (const id of [
+      "workspace.addRoot",
+      "workspace.removeRoot",
+      "workspace.save",
+      "workspace.load",
+      "workspace.show",
+    ] as const) {
+      expect(commandById(id)?.defaultBinding).toBe(null);
+      expect(commandById(id)?.availability(EMPTY_COMMAND_STATE)).toEqual({
+        kind: "unavailable",
+        reason: "no workspace set yet",
+      });
+    }
+    expect(
+      commandById("workspace.addRoot")?.availability({
+        ...EMPTY_COMMAND_STATE,
+        hasWorkspaceSet: true,
+      }).kind,
+    ).toBe("available");
+    expect(
+      commandById("workspace.removeRoot")?.availability({
+        ...EMPTY_COMMAND_STATE,
+        hasWorkspaceSet: true,
+      }),
+    ).toEqual({ kind: "unavailable", reason: "only the primary root is bound" });
+    expect(
+      commandById("workspace.removeRoot")?.availability({
+        ...EMPTY_COMMAND_STATE,
+        hasWorkspaceSet: true,
+        hasRemovableWorkspaceRoot: true,
+      }).kind,
+    ).toBe("available");
+  });
+
   test("declares no command for a concept that does not exist", () => {
     // Omitted rather than listed as unavailable. There is no task anywhere in
     // the build, so a `task.inspect` row would be inventing a domain.

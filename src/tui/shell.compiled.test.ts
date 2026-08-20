@@ -532,8 +532,9 @@ describe.if(runnable)("the compiled shell on a real terminal", () => {
       // Content, not merely the absence of the failure. At eight rows the class
       // is compact, so the header's labels are gone and the value is what
       // survives — asserting on "workspace" here would fail for the right
-      // behavior.
-      expect(run.transcript).toContain("current directory");
+      // behavior. Launch binds the cwd as the primary root, so the header
+      // projects that root's display name rather than the pre-set placeholder.
+      expect(run.transcript).toContain("falryn");
     },
     RUN_TIMEOUT_MS,
   );
@@ -744,7 +745,7 @@ describe.if(runnable)("the compiled shell on a real terminal", () => {
       // The frame it settled on, not the transition: a resize repaints at the
       // old size before re-laying out at the new one, so the step carries both.
       expect(settledFrame(narrow)).not.toContain("workspace");
-      expect(settledFrame(narrow)).toContain("current direct");
+      expect(settledFrame(narrow)).toContain("falryn");
       // And back: the arrangement follows the terminal rather than latching.
       expect(settledFrame(wide)).toContain("workspace");
       expectRestored(run);

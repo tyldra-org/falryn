@@ -51,6 +51,7 @@ import { inspectionFor } from "../transcript/index.ts";
 import type { TranscriptGeometry } from "../transcript-model.ts";
 import type { CommandEntry, OverlayRoute, ShellModel } from "../view-model.ts";
 import { ArtifactViewerOverlay } from "../viewer/artifact-viewer-overlay.tsx";
+import type { WorkspaceController, WorkspaceSetView } from "../workspace/index.ts";
 import { ActivityRail } from "./activity-rail.tsx";
 import { ComposerView } from "./composer.tsx";
 import { ConfirmationSheet } from "./confirmation.tsx";
@@ -63,6 +64,7 @@ import { Line } from "./primitives.tsx";
 import { StatusLine } from "./status-line.tsx";
 import { TranscriptView } from "./transcript.tsx";
 import { WorkspaceHeader } from "./workspace-header.tsx";
+import { WorkspaceSheet, workspacePanelTitle } from "./workspace-sheet.tsx";
 
 export type AppShellProps = {
   readonly model: ShellModel;
@@ -119,6 +121,13 @@ export type AppShellProps = {
   /** Observes Git status, worktrees, and checkpoints. Absent in static frames. */
   readonly gitDashboard?: GitDashboard;
   readonly onChangesSettled?: (notice: string) => void;
+  /** Application-backed workspace-set mutations. Absent when no set is attached. */
+  readonly workspaceController?: WorkspaceController;
+  readonly workspace?: WorkspaceSetView;
+  readonly onWorkspaceDraft?: (draft: string) => void;
+  readonly onWorkspaceReplace?: (set: WorkspaceSetView, notice: string) => void;
+  readonly onWorkspaceNotice?: (message: string) => void;
+  readonly onWorkspaceClose?: () => void;
 };
 
 export function AppShell(props: AppShellProps): ReactNode {
@@ -204,6 +213,22 @@ export function AppShell(props: AppShellProps): ReactNode {
           {...(props.onChangesSettled === undefined
             ? {}
             : { onChangesSettled: props.onChangesSettled })}
+          {...(props.workspaceController === undefined
+            ? {}
+            : { workspaceController: props.workspaceController })}
+          {...(props.workspace === undefined ? {} : { workspace: props.workspace })}
+          {...(props.onWorkspaceDraft === undefined
+            ? {}
+            : { onWorkspaceDraft: props.onWorkspaceDraft })}
+          {...(props.onWorkspaceReplace === undefined
+            ? {}
+            : { onWorkspaceReplace: props.onWorkspaceReplace })}
+          {...(props.onWorkspaceNotice === undefined
+            ? {}
+            : { onWorkspaceNotice: props.onWorkspaceNotice })}
+          {...(props.onWorkspaceClose === undefined
+            ? {}
+            : { onWorkspaceClose: props.onWorkspaceClose })}
         />
       )}
     </FrameProvider>
@@ -232,6 +257,12 @@ function ShellFrame(props: {
   readonly artifactViewer?: ArtifactViewer;
   readonly gitDashboard?: GitDashboard;
   readonly onChangesSettled?: (notice: string) => void;
+  readonly workspaceController?: WorkspaceController;
+  readonly workspace?: WorkspaceSetView;
+  readonly onWorkspaceDraft?: (draft: string) => void;
+  readonly onWorkspaceReplace?: (set: WorkspaceSetView, notice: string) => void;
+  readonly onWorkspaceNotice?: (message: string) => void;
+  readonly onWorkspaceClose?: () => void;
 }): ReactNode {
   const { model } = props;
   // Bounded rather than stretched. A `wide` terminal has room for a contextual
@@ -341,6 +372,8 @@ function overlayTitle(
       return confirmation?.prompt.title ?? "Confirm";
     case "controls":
       return CONTROL_PANEL_TITLES[route.panel];
+    case "workspace":
+      return workspacePanelTitle(route.panel);
     case "artifact":
       switch (route.presentation) {
         case "diff":
@@ -383,6 +416,12 @@ function overlayBody(
     readonly artifactViewer?: ArtifactViewer;
     readonly gitDashboard?: GitDashboard;
     readonly onChangesSettled?: (notice: string) => void;
+    readonly workspaceController?: WorkspaceController;
+    readonly workspace?: WorkspaceSetView;
+    readonly onWorkspaceDraft?: (draft: string) => void;
+    readonly onWorkspaceReplace?: (set: WorkspaceSetView, notice: string) => void;
+    readonly onWorkspaceNotice?: (message: string) => void;
+    readonly onWorkspaceClose?: () => void;
   },
   rows: number,
 ): ReactNode {
@@ -434,6 +473,29 @@ function overlayBody(
           }
           rows={rows}
           {...(props.onControlSelect === undefined ? {} : { onSelect: props.onControlSelect })}
+        />
+      );
+    case "workspace":
+      if (props.workspaceController === undefined) {
+        return (
+          <Line color="error" typography="body" maxColumns={Math.max(8, rows)}>
+            No workspace set is attached to this shell.
+          </Line>
+        );
+      }
+      return (
+        <WorkspaceSheet
+          panel={overlay.panel}
+          draft={overlay.draft}
+          workspace={props.workspace ?? { roots: [] }}
+          controller={props.workspaceController}
+          rows={rows}
+          {...(props.onWorkspaceDraft === undefined ? {} : { onDraft: props.onWorkspaceDraft })}
+          {...(props.onWorkspaceReplace === undefined
+            ? {}
+            : { onWorkspace: props.onWorkspaceReplace })}
+          {...(props.onWorkspaceNotice === undefined ? {} : { onNotice: props.onWorkspaceNotice })}
+          {...(props.onWorkspaceClose === undefined ? {} : { onClose: props.onWorkspaceClose })}
         />
       );
     case "artifact":

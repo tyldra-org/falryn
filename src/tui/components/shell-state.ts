@@ -42,6 +42,7 @@ import {
   transcriptSurfaceReducer,
 } from "../transcript/index.ts";
 import type { OverlayRoute } from "../view-model.ts";
+import { EMPTY_WORKSPACE_SET, type WorkspaceSetView } from "../workspace/index.ts";
 
 /** The frame's focusable regions, in reading order. */
 export const FRAME_REGIONS: readonly FocusRegion[] = [
@@ -66,6 +67,8 @@ export function overlayRegions(route: OverlayRoute): readonly FocusRegion[] {
       return [{ id: "overlay.confirm", label: "confirmation" }];
     case "controls":
       return [{ id: "overlay.controls", label: "controls" }];
+    case "workspace":
+      return [{ id: "overlay.workspace", label: "workspace set" }];
     case "artifact":
       return [{ id: "overlay.artifact", label: "artifact viewer" }];
     case "changes":
@@ -103,6 +106,8 @@ export type ShellState = {
   readonly resolvedConfirmationKey: string | null;
   readonly selectedSessionId: string | null;
   readonly selectedModelId: string | null;
+  /** Bound workspace roots for this session, or empty when none are attached. */
+  readonly workspace: WorkspaceSetView;
 };
 
 export type ShellAction =
@@ -117,6 +122,8 @@ export type ShellAction =
   | { readonly kind: "transcript-facts"; readonly facts: TranscriptFacts }
   | { readonly kind: "composer"; readonly action: ComposerAction }
   | { readonly kind: "palette-query"; readonly query: string }
+  | { readonly kind: "workspace-draft"; readonly draft: string }
+  | { readonly kind: "workspace-set"; readonly workspace: WorkspaceSetView }
   | { readonly kind: "offer-confirmation"; readonly prompt: ConfirmationPrompt }
   | { readonly kind: "withdraw-confirmation" }
   | { readonly kind: "resolve-confirmation"; readonly decision: "accepted" | "refused" }
@@ -145,6 +152,7 @@ export const INITIAL_SHELL_STATE: ShellState = {
   resolvedConfirmationKey: null,
   selectedSessionId: null,
   selectedModelId: null,
+  workspace: EMPTY_WORKSPACE_SET,
 };
 
 function confirmRoute(prompt: ConfirmationPrompt): OverlayRoute {
@@ -222,6 +230,18 @@ export function shellReducer(state: ShellState, action: ShellAction): ShellState
         return state;
       }
       return { ...state, overlay: { kind: "palette", query: action.query } };
+    case "workspace-draft":
+      if (state.overlay.kind !== "workspace" || action.draft === state.overlay.draft) {
+        return state;
+      }
+      return {
+        ...state,
+        overlay: { ...state.overlay, draft: action.draft },
+      };
+    case "workspace-set":
+      return state.workspace === action.workspace
+        ? state
+        : { ...state, workspace: action.workspace };
     case "composer": {
       const composer = composerReducer(state.composer, action.action);
       return composer === state.composer ? state : { ...state, composer };
@@ -406,6 +426,8 @@ export function commandStateFor(
         : 0,
     hasChangesOverlay: state.overlay.kind === "changes",
     changesTab: state.overlay.kind === "changes" ? state.overlay.tab : null,
+    hasWorkspaceSet: state.workspace.roots.length > 0,
+    hasRemovableWorkspaceRoot: state.workspace.roots.length > 1,
   };
 }
 

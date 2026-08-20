@@ -100,6 +100,9 @@ describe("opening an overlay", () => {
     expect(overlayRegions({ kind: "inspect", key: "process-exit" })[0]?.id).toBe("overlay.inspect");
     expect(overlayRegions({ kind: "confirm", id: "conf-1" })[0]?.id).toBe("overlay.confirm");
     expect(overlayRegions({ kind: "controls", panel: "session" })[0]?.id).toBe("overlay.controls");
+    expect(overlayRegions({ kind: "workspace", panel: "show", draft: "" })[0]?.id).toBe(
+      "overlay.workspace",
+    );
     expect(
       overlayRegions({
         kind: "artifact",
@@ -349,5 +352,36 @@ describe("session and model selection", () => {
     expect(state.selectedModelId).toBe("m1");
     expect(state.overlay).toEqual({ kind: "confirm", id: "conf-write" });
     expect(state.boundConfirmation?.id).toBe("conf-write");
+  });
+});
+
+describe("workspace set", () => {
+  test("opens workspace overlays and tracks draft text", () => {
+    const state = run([
+      {
+        kind: "open-overlay",
+        route: { kind: "workspace", panel: "add", draft: "" },
+      },
+      { kind: "workspace-draft", draft: "/tmp/extra" },
+    ]);
+    expect(state.overlay).toEqual({ kind: "workspace", panel: "add", draft: "/tmp/extra" });
+    expect(isContained(state.focus)).toBe(true);
+  });
+
+  test("reports workspace capability from the bound set", () => {
+    const withRoots = run([
+      {
+        kind: "workspace-set",
+        workspace: {
+          roots: [
+            { rootId: "root-1", name: "falryn", path: "/work/falryn" },
+            { rootId: "root-2", name: "docs", path: "/work/docs" },
+          ],
+        },
+      },
+    ]);
+    expect(commandStateFor(withRoots).hasWorkspaceSet).toBe(true);
+    expect(commandStateFor(withRoots).hasRemovableWorkspaceRoot).toBe(true);
+    expect(commandStateFor(INITIAL_SHELL_STATE).hasWorkspaceSet).toBe(false);
   });
 });

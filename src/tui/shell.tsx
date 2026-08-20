@@ -66,6 +66,7 @@ import { type RuntimeFeed, runtimeFeed, useRuntimeProjection } from "./runtime-f
 import { shellModel } from "./shell-model.ts";
 import { createTerminalShutdownParticipant } from "./shutdown.ts";
 import { selectVariant, type ThemeRequest } from "./theme/index.ts";
+import type { WorkspaceController, WorkspaceSetView } from "./workspace/index.ts";
 
 export type ShellRunRequest = {
   readonly streams: CliStreams;
@@ -122,6 +123,9 @@ export type ShellRunRequest = {
   readonly fileProbe?: FileAttachmentProbe | null;
   /** Git changes dashboard. Optional when no workspace or git executable is available. */
   readonly gitDashboard?: GitDashboard;
+  /** Workspace-set controller and initial roots for header and palette commands. */
+  readonly workspaceController?: WorkspaceController;
+  readonly workspace?: WorkspaceSetView;
   /** Supplied by tests, so a shell run needs no terminal and no native library. */
   readonly createRenderer?: RendererFactory;
 };
@@ -300,6 +304,10 @@ async function frameFor(session: RendererSession, request: ShellRunRequest, onEx
       {...(feed === undefined ? {} : { feed })}
       {...(request.fileProbe === undefined ? {} : { fileProbe: request.fileProbe })}
       {...(request.gitDashboard === undefined ? {} : { gitDashboard: request.gitDashboard })}
+      {...(request.workspaceController === undefined
+        ? {}
+        : { workspaceController: request.workspaceController })}
+      {...(request.workspace === undefined ? {} : { workspace: request.workspace })}
     />
   );
 }
@@ -321,6 +329,8 @@ function LiveShell(props: {
   readonly feed?: RuntimeFeed;
   readonly fileProbe?: FileAttachmentProbe | null;
   readonly gitDashboard?: GitDashboard;
+  readonly workspaceController?: WorkspaceController;
+  readonly workspace?: WorkspaceSetView;
 }): ReactNode {
   return (
     <RenderGateProvider clock={props.clock}>
@@ -332,6 +342,10 @@ function LiveShell(props: {
         {...(props.feed === undefined ? {} : { feed: props.feed })}
         {...(props.fileProbe === undefined ? {} : { fileProbe: props.fileProbe })}
         {...(props.gitDashboard === undefined ? {} : { gitDashboard: props.gitDashboard })}
+        {...(props.workspaceController === undefined
+          ? {}
+          : { workspaceController: props.workspaceController })}
+        {...(props.workspace === undefined ? {} : { workspace: props.workspace })}
       />
     </RenderGateProvider>
   );
@@ -345,6 +359,8 @@ function ProjectedShell(props: {
   readonly feed?: RuntimeFeed;
   readonly fileProbe?: FileAttachmentProbe | null;
   readonly gitDashboard?: GitDashboard;
+  readonly workspaceController?: WorkspaceController;
+  readonly workspace?: WorkspaceSetView;
 }): ReactNode {
   const gate = useRenderGate();
   const runtime = useRuntimeProjection(props.feed, initialActivityCursor(), gate);
@@ -358,6 +374,10 @@ function ProjectedShell(props: {
       {...(runtime.shutdown === null ? {} : { shutdown: runtime.shutdown })}
       {...(props.fileProbe === undefined ? {} : { fileProbe: props.fileProbe })}
       {...(props.gitDashboard === undefined ? {} : { gitDashboard: props.gitDashboard })}
+      {...(props.workspaceController === undefined
+        ? {}
+        : { workspaceController: props.workspaceController })}
+      {...(props.workspace === undefined ? {} : { workspace: props.workspace })}
       copyPlainPrint={plainPrintLabeledCopy}
     />
   );

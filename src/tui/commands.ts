@@ -127,6 +127,15 @@ export type CommandState = {
   readonly hasChangesOverlay: boolean;
   /** The dashboard's current tab. */
   readonly changesTab: "files" | "worktrees" | "checkpoints" | null;
+  /**
+   * Whether a workspace-set controller is attached and has at least one root.
+   *
+   * Absent a set, the palette still lists workspace commands with a reason
+   * rather than hiding them.
+   */
+  readonly hasWorkspaceSet: boolean;
+  /** More than one root is bound, so remove is meaningful. */
+  readonly hasRemovableWorkspaceRoot: boolean;
 };
 
 /** The state of a shell with nothing behind it, which is every run today. */
@@ -152,6 +161,8 @@ export const EMPTY_COMMAND_STATE: CommandState = {
   diffArtifactHunkIndex: 0,
   hasChangesOverlay: false,
   changesTab: null,
+  hasWorkspaceSet: false,
+  hasRemovableWorkspaceRoot: false,
 };
 
 export type ShellCommand = {
@@ -747,6 +758,60 @@ export const SHELL_COMMANDS: readonly ShellCommand[] = [
     defaultBinding: null,
     keywords: ["resource", "memory", "usage"],
     availability: () => AVAILABLE,
+  },
+  {
+    id: "workspace.addRoot",
+    title: "Add workspace root",
+    description: "Append another named root to this session’s workspace set.",
+    context: "global",
+    defaultBinding: null,
+    keywords: ["workspace", "add", "root", "directory"],
+    availability: (state) =>
+      state.hasWorkspaceSet ? AVAILABLE : unavailable("no workspace set yet"),
+  },
+  {
+    id: "workspace.removeRoot",
+    title: "Remove workspace root",
+    description: "Drop an additional root from this session’s workspace set.",
+    context: "global",
+    defaultBinding: null,
+    keywords: ["workspace", "remove", "root"],
+    availability: (state) =>
+      state.hasRemovableWorkspaceRoot
+        ? AVAILABLE
+        : state.hasWorkspaceSet
+          ? unavailable("only the primary root is bound")
+          : unavailable("no workspace set yet"),
+  },
+  {
+    id: "workspace.save",
+    title: "Save workspace layout",
+    description: "Persist the current root set under a layout name.",
+    context: "global",
+    defaultBinding: null,
+    keywords: ["workspace", "save", "layout"],
+    availability: (state) =>
+      state.hasWorkspaceSet ? AVAILABLE : unavailable("no workspace set yet"),
+  },
+  {
+    id: "workspace.load",
+    title: "Load workspace layout",
+    description: "Replace this session’s root set from a saved layout.",
+    context: "global",
+    defaultBinding: null,
+    keywords: ["workspace", "load", "layout"],
+    availability: (state) =>
+      state.hasWorkspaceSet ? AVAILABLE : unavailable("no workspace set yet"),
+  },
+  {
+    id: "workspace.show",
+    title: "Show workspace set",
+    description: "List every bound root id, name, and path.",
+    context: "global",
+    defaultBinding: null,
+    keywords: ["workspace", "show", "roots"],
+    availability: (state) =>
+      state.hasWorkspaceSet ? AVAILABLE : unavailable("no workspace set yet"),
   },
 ];
 

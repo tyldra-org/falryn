@@ -16,6 +16,7 @@ import {
 } from "../transcript/index.ts";
 import type { TranscriptGeometry } from "../transcript-model.ts";
 import { artifactOverlayRoute, changesOverlayRoute } from "../view-model.ts";
+import { workspaceOverlayRoute } from "../workspace/index.ts";
 import type { ShellAction } from "./shell-state.ts";
 
 export type TranscriptCommandContext = {
@@ -188,6 +189,21 @@ export function runAvailableCommand(
       return true;
     case "resource.show":
       dispatch({ kind: "open-overlay", route: { kind: "controls", panel: "resource" } });
+      return true;
+    case "workspace.addRoot":
+      dispatch({ kind: "open-overlay", route: workspaceOverlayRoute("add") });
+      return true;
+    case "workspace.removeRoot":
+      dispatch({ kind: "open-overlay", route: workspaceOverlayRoute("remove") });
+      return true;
+    case "workspace.save":
+      dispatch({ kind: "open-overlay", route: workspaceOverlayRoute("save") });
+      return true;
+    case "workspace.load":
+      dispatch({ kind: "open-overlay", route: workspaceOverlayRoute("load") });
+      return true;
+    case "workspace.show":
+      dispatch({ kind: "open-overlay", route: workspaceOverlayRoute("show") });
       return true;
     case "session.new":
       dispatch({

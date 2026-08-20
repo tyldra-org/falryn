@@ -60,6 +60,8 @@ const RENDERER_OWNERS = [
   // Session and model pickers subscribe to OpenTUI Select. Context and resource
   // panels do not; they share the module because they are one overlay route.
   "components/controls.tsx",
+  // Workspace-set overlays (#607): Input for add/save, Select for remove/load.
+  "components/workspace-sheet.tsx",
   // The root measures the viewport through the renderer's own hooks. Nothing
   // below it does: every component reads the frame from context instead, which
   // is what keeps the measurement in one place.
@@ -931,6 +933,7 @@ describe("the rendered test harness", () => {
       "components/render-gate.test.tsx",
       "components/shell-error-boundary.test.tsx",
       "components/transcript.test.tsx",
+      "components/workspace-sheet.test.tsx",
       // The harness's own checks, which are what prove it cleans up.
       "harness.test.tsx",
       "runtime-feed.test.tsx",
