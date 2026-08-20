@@ -114,7 +114,7 @@ describe("help", () => {
     const frame = await shell.press("?");
     expect(frame).toContain("there is no transcript yet");
     expect(frame).toContain("there is no openable artifact to view for this entry");
-    expect(frame).toContain("no Git dashboard is open");
+    expect(frame).toContain("no diff viewer is open");
   });
 
   test("scrolls long help through OpenTUI's focused scrollbox", async () => {

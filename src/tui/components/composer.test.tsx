@@ -718,7 +718,7 @@ describe("a paste", () => {
     await shell.focusComposer();
     await shell.paste("x".repeat(INLINE_PASTE_LIMIT + 1));
     await shell.press("p", { ctrl: true });
-    await shell.type("include");
+    await shell.type("includePaste");
     shell.setup.mockInput.pressEnter();
     const frame = await shell.frame();
     expect(frame).toContain("Attached:");

@@ -192,6 +192,13 @@ describe("what this build can actually do", () => {
     expect(commandById("transcript.inspect")?.defaultBinding).toBe(null);
     expect(commandById("transcript.showDiagnostics")?.defaultBinding).toBe(null);
     expect(
+      commandById("transcript.includeInDraft")?.availability({
+        ...EMPTY_COMMAND_STATE,
+        hasTranscript: true,
+      }).kind,
+    ).toBe("available");
+    expect(commandById("transcript.includeInDraft")?.defaultBinding).toBe(null);
+    expect(
       commandById("changes.nextTab")?.availability({
         ...EMPTY_COMMAND_STATE,
         overlayOpen: true,

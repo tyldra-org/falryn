@@ -30,7 +30,7 @@ import {
 } from "../confirmation/index.ts";
 import type { FocusRegion } from "../focus.ts";
 import { classifyPaste, looksSecret } from "../paste.ts";
-import { totalRowsOf } from "../transcript/index.ts";
+import { includeTranscriptInDraft, totalRowsOf } from "../transcript/index.ts";
 import { EMPTY_GEOMETRY, type TranscriptGeometry } from "../transcript-model.ts";
 import { useRenderGate } from "./render-gate.tsx";
 import { runAvailableCommand } from "./shell-command-runner.ts";
@@ -40,6 +40,7 @@ import {
   INITIAL_SHELL_STATE,
   type ShellState,
   shellReducer,
+  TRANSCRIPT_REGION,
 } from "./shell-state.ts";
 
 export type {
@@ -56,6 +57,7 @@ export {
   NO_TRANSCRIPT,
   overlayRegions,
   shellReducer,
+  TRANSCRIPT_REGION,
 } from "./shell-state.ts";
 
 export type ShellRuntime = {
@@ -193,6 +195,32 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
     return true;
   }, []);
 
+  const includeTranscriptPick = useCallback((): boolean => {
+    const current = stateRef.current;
+    const result = includeTranscriptInDraft({
+      selected: current.transcript.selected,
+      expanded: current.transcript.expanded,
+      blocks: blocksRef.current,
+      attachments: current.composer.attachments,
+      nextId: `att-${current.composer.attachmentSeq + 1}`,
+    });
+    if (!result.ok) {
+      dispatch({ kind: "notice", message: result.reason });
+      if (current.overlay.kind === "palette") {
+        dispatch({ kind: "close-overlay" });
+      }
+      dispatch({ kind: "focus-region", id: TRANSCRIPT_REGION });
+      return false;
+    }
+    payloads.current.put(result.attachment.id, result.bytes);
+    dispatch({ kind: "composer", action: { kind: "attach", attachment: result.attachment } });
+    if (current.overlay.kind === "palette") {
+      dispatch({ kind: "close-overlay" });
+    }
+    dispatch({ kind: "focus-region", id: TRANSCRIPT_REGION });
+    return true;
+  }, []);
+
   const submitComposer = useCallback((): void => {
     void (async () => {
       const current = stateRef.current.composer;
@@ -252,6 +280,8 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
           }
           return included;
         }
+        case "transcript.includeInDraft":
+          return includeTranscriptPick();
         case "composer.excludePaste":
           heldPaste.current = null;
           dispatch({ kind: "composer", action: { kind: "exclude-paste" } });
@@ -316,7 +346,15 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
         blocks: blocksRef.current,
       });
     },
-    [options.onExit, options.transcriptKeys, gate, includeHeldPaste, submitComposer, confirm],
+    [
+      options.onExit,
+      options.transcriptKeys,
+      gate,
+      includeHeldPaste,
+      includeTranscriptPick,
+      submitComposer,
+      confirm,
+    ],
   );
 
   const reseat = useCallback((regions: readonly FocusRegion[]): void => {

@@ -8,6 +8,11 @@
  * asserted without one.
  */
 
+export type {
+  TranscriptIncludeDraftRequest,
+  TranscriptIncludeDraftResult,
+} from "./include.ts";
+export { includeTranscriptInDraft } from "./include.ts";
 export type { BlockInspection, InspectionFact, InspectionFamily } from "./inspect.ts";
 export {
   describeTerminalOutcome,
