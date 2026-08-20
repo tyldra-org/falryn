@@ -107,6 +107,7 @@ import {
   createSha256Hasher,
   openBunSqlite,
 } from "../integrations/index.ts";
+import type { CodingRunPayload, runCoding } from "./coding-run.ts";
 import type {
   ArtifactCommandArguments,
   DataCommandArguments,
@@ -131,6 +132,8 @@ import {
   describeWorkspaceResolveError,
   type WorkspaceResolveError,
 } from "./workspace-resolution.ts";
+
+export { type CodingRunArguments, type CodingRunPayload, runCoding } from "./coding-run.ts";
 
 /** A finished result with the fields every command shares already filled in. */
 function resultFor<Command extends CommandId, Payload>(
@@ -2054,6 +2057,8 @@ export function stoppedResult(
         outcome,
         effect,
       );
+    case "run":
+      return resultFor<"run", CodingRunPayload>("run", null, [], outcome, effect);
     default:
       // A command added without a branch fails to compile here rather than
       // reporting a stopped run under someone else's command identity.
@@ -2089,4 +2094,5 @@ export type RunCommandResult =
   | Awaited<ReturnType<typeof runWorkspaceList>>
   | Awaited<ReturnType<typeof runWorkspaceShow>>
   | Awaited<ReturnType<typeof runWorkspaceSave>>
-  | Awaited<ReturnType<typeof runWorkspaceLoad>>;
+  | Awaited<ReturnType<typeof runWorkspaceLoad>>
+  | Awaited<ReturnType<typeof runCoding>>;

@@ -48,6 +48,7 @@ import {
   runArtifactGet,
   runArtifactList,
   runArtifactShow,
+  runCoding,
   runConfigPath,
   runConfigShow,
   runConfigValidate,
@@ -200,6 +201,7 @@ async function runCommand(
     sessionArgs,
     artifactArgs,
     workspaceArgs,
+    runArgs,
     options: globals,
   } = invocation;
 
@@ -218,6 +220,7 @@ async function runCommand(
     sessionArgs,
     artifactArgs,
     workspaceArgs,
+    runArgs,
     services,
     overrides,
     globals,
@@ -447,6 +450,7 @@ async function governed(
   sessionArgs: Extract<Invocation, { kind: "run" }>["sessionArgs"],
   artifactArgs: Extract<Invocation, { kind: "run" }>["artifactArgs"],
   workspaceArgs: Extract<Invocation, { kind: "run" }>["workspaceArgs"],
+  runArgs: Extract<Invocation, { kind: "run" }>["runArgs"],
   services: ServiceProvider,
   overrides: Readonly<Record<string, string>>,
   globals: GlobalOptions,
@@ -462,6 +466,7 @@ async function governed(
       sessionArgs,
       artifactArgs,
       workspaceArgs,
+      runArgs,
       services,
       overrides,
       globals,
@@ -477,6 +482,7 @@ async function governed(
       sessionArgs,
       artifactArgs,
       workspaceArgs,
+      runArgs,
       services,
       overrides,
       globals,
@@ -636,6 +642,7 @@ async function produce(
   sessionArgs: Extract<Invocation, { kind: "run" }>["sessionArgs"],
   artifactArgs: Extract<Invocation, { kind: "run" }>["artifactArgs"],
   workspaceArgs: Extract<Invocation, { kind: "run" }>["workspaceArgs"],
+  runArgs: Extract<Invocation, { kind: "run" }>["runArgs"],
   services: ServiceProvider,
   overrides: Readonly<Record<string, string>>,
   globals: GlobalOptions,
@@ -718,6 +725,14 @@ async function produce(
         throw new Error("Missing parsed workspace load arguments.");
       }
       return runWorkspaceLoad(services, workspaceArgs, signal);
+    case "run":
+      if (runArgs === null) {
+        throw new Error("Missing parsed coding run arguments.");
+      }
+      return runCoding(services, runArgs, {
+        input: options.streams.input,
+        ...(signal === undefined ? {} : { signal }),
+      });
     default:
       // `default`, `help`, and `version` are answered before this is reached,
       // so a new command reaching here without a branch fails to compile.
