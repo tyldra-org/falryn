@@ -77,7 +77,9 @@ describe("composeProductAgentRuntime", () => {
     expect(runtime.toolRunner).toBeNull();
     expect(runtime.providerAdapter).toBeNull();
     expect(runtime.attemptRunner).toBeNull();
-    expect(runtime.attachments).toEqual({ turnProducer: null, submission: null });
+    expect(runtime.attachments.turnProducer).not.toBeNull();
+    expect(runtime.attachments.submission).toBeNull();
+    expect(runtime.attachments.turnProducer.streamId).toBe(streamId.from("session:product-1"));
     expect(runtime.requireToolRunner()).toEqual({
       ok: false,
       error: { code: "tool-runner-required" },
