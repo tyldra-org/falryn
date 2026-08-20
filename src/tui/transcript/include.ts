@@ -5,11 +5,12 @@
  * identity is already-included, not a second chip.
  */
 
-import { createTranscriptAttachment } from "../../application/index.ts";
+import { createTranscriptAttachment, digestBytes } from "../../application/index.ts";
 import { type AttachmentDescriptor, includeTranscriptAttachment } from "../../domain/index.ts";
 import {
   blockKey,
-  pickTranscriptIncludeBody,
+  type NativeTranscriptRange,
+  resolveTranscriptPick,
   type TranscriptBlock,
 } from "../../presentation/index.ts";
 import { looksSecret } from "../paste.ts";
@@ -20,6 +21,7 @@ export type TranscriptIncludeDraftRequest = {
   readonly blocks: readonly TranscriptBlock[];
   readonly attachments: readonly AttachmentDescriptor[];
   readonly nextId: string;
+  readonly nativeRange?: NativeTranscriptRange | null;
 };
 
 export type TranscriptIncludeDraftResult =
@@ -37,6 +39,10 @@ export type TranscriptIncludeDraftResult =
 
 const encoder = new TextEncoder();
 
+function digestRange(text: string): string {
+  return digestBytes(encoder.encode(text));
+}
+
 export function includeTranscriptInDraft(
   request: TranscriptIncludeDraftRequest,
 ): TranscriptIncludeDraftResult {
@@ -48,7 +54,12 @@ export function includeTranscriptInDraft(
     return fail(request.attachments, "There is no entry to include.");
   }
 
-  const pick = pickTranscriptIncludeBody(block, request.expanded.has(request.selected));
+  const pick = resolveTranscriptPick(
+    block,
+    request.expanded.has(request.selected),
+    request.nativeRange ?? null,
+    digestRange,
+  );
   if (!pick.ok) {
     return fail(request.attachments, pick.reason);
   }
@@ -56,6 +67,7 @@ export function includeTranscriptInDraft(
   const attachment = createTranscriptAttachment({
     id: request.nextId,
     blockKey: pick.blockKey,
+    rangeDigest: pick.rangeDigest,
     text: pick.text,
     secret: looksSecret(pick.text),
   });
