@@ -9,9 +9,17 @@
 import { z } from "zod";
 
 import { brandedString } from "./branded-schema.ts";
-import { type SessionId, sessionId, type WorkspaceId, workspaceId } from "./identity.ts";
+import {
+  type SessionId,
+  sessionId,
+  type WorkspaceId,
+  workspaceId,
+  workspaceRootId,
+} from "./identity.ts";
 import { assertNever, err, ok, type Result } from "./result.ts";
 import { MAX_SESSION_CATALOG } from "./session-catalog.ts";
+import type { WorkspaceSet } from "./workspace-set.ts";
+import { primaryWorkspaceRoot } from "./workspace-set.ts";
 
 export const SESSION_ISOLATION_VERSION = "session-isolation.v1";
 export const SESSION_ISOLATION_SOURCE = "deterministic-workspace-binding";
@@ -52,13 +60,64 @@ export type SessionIsolationInput = {
   readonly sessions?: unknown;
 };
 
+/** One resolved root carried on session workspace identity (#604). */
+export type WorkspaceRootBinding = {
+  readonly rootId: string;
+  readonly path: string;
+};
+
+const rootBindingSchema = z
+  .object({
+    rootId: brandedString(workspaceRootId),
+    path: z.string().min(1),
+  })
+  .strict();
+
 const bindingSchema = z
   .object({
     workspaceId: brandedString(workspaceId),
     root: z.string().nullable(),
     gitIdentity: z.string().nullable(),
+    /** Optional multi-root set; when present, stale-root compares the full set. */
+    roots: z.array(rootBindingSchema).optional(),
   })
   .strict();
+
+function rootsFingerprint(
+  roots: readonly { readonly rootId: string; readonly path: string }[] | undefined,
+): string | null {
+  if (roots === undefined) {
+    return null;
+  }
+  return roots.map((root) => `${root.rootId}\0${root.path}`).join("\n");
+}
+
+/**
+ * Builds a session workspace binding from a resolved set (#604).
+ *
+ * `root` stays the primary path so single-root isolation callers keep working.
+ */
+export function workspaceBindingFromSet(
+  workspaceIdValue: WorkspaceId,
+  set: WorkspaceSet,
+  gitIdentity: string | null,
+): {
+  readonly workspaceId: WorkspaceId;
+  readonly root: string;
+  readonly gitIdentity: string | null;
+  readonly roots: readonly WorkspaceRootBinding[];
+} {
+  const primary = primaryWorkspaceRoot(set);
+  return {
+    workspaceId: workspaceIdValue,
+    root: primary.path as string,
+    gitIdentity,
+    roots: set.roots.map((root) => ({
+      rootId: root.rootId as string,
+      path: root.path as string,
+    })),
+  };
+}
 
 const sessionSchema = z
   .object({
@@ -135,7 +194,9 @@ export function inspectSessionIsolation(
     sessions.push(parsed.data);
   }
   const warnings: SessionIsolationWarning[] = [];
-  if (seen.root !== bound.data.root) {
+  const boundRoots = rootsFingerprint(bound.data.roots);
+  const seenRoots = rootsFingerprint(seen.roots);
+  if (seen.root !== bound.data.root || boundRoots !== seenRoots) {
     warnings.push("stale-root");
   }
   if (seen.gitIdentity !== bound.data.gitIdentity) {

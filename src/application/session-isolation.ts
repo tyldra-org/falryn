@@ -27,6 +27,11 @@ export type WorkspaceBinding = {
   readonly workspaceId: WorkspaceId;
   readonly root: string | null;
   readonly gitIdentity: string | null;
+  /** Optional resolved multi-root set (#604). Primary remains `root`. */
+  readonly roots?: readonly {
+    readonly rootId: string;
+    readonly path: string;
+  }[];
 };
 
 export function isolateWorkspaceSessions(

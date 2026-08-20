@@ -9,7 +9,9 @@ import {
   inspectSessionIsolation,
   SESSION_ISOLATION_SOURCE,
   SESSION_ISOLATION_VERSION,
+  workspaceBindingFromSet,
 } from "./session-isolation.ts";
+import { createWorkspaceSet } from "./workspace-set.ts";
 
 const bound = {
   workspaceId: "workspace-bound",
@@ -62,6 +64,53 @@ describe("inspectSessionIsolation", () => {
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.value.warnings).toEqual(["stale-git"]);
+    }
+  });
+
+  test("warns when a bound multi-root set has gone stale", () => {
+    const withRoots = {
+      ...bound,
+      roots: [
+        { rootId: "root-a", path: "/repo" },
+        { rootId: "root-b", path: "/docs" },
+      ],
+    };
+    const result = inspectSessionIsolation({
+      bound: withRoots,
+      observed: {
+        ...withRoots,
+        roots: [
+          { rootId: "root-a", path: "/repo" },
+          { rootId: "root-b", path: "/other-docs" },
+        ],
+      },
+      sessions: [],
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.warnings).toEqual(["stale-root"]);
+    }
+  });
+
+  test("builds a session binding from a workspace set", () => {
+    const set = createWorkspaceSet([
+      { rootId: "root-a", name: "falryn", path: "/work/falryn" },
+      { rootId: "root-b", name: "docs", path: "/work/docs" },
+    ]);
+    expect(set.ok).toBe(true);
+    if (!set.ok) {
+      throw new Error("expected set");
+    }
+    const binding = workspaceBindingFromSet(workspaceId.from("workspace-bound"), set.value, null);
+    expect(binding.root).toBe("/work/falryn");
+    expect(binding.roots).toEqual([
+      { rootId: "root-a", path: "/work/falryn" },
+      { rootId: "root-b", path: "/work/docs" },
+    ]);
+    const isolated = inspectSessionIsolation({ bound: binding, sessions: [] });
+    expect(isolated.ok).toBe(true);
+    if (isolated.ok) {
+      expect(isolated.value.warnings).toEqual([]);
     }
   });
 

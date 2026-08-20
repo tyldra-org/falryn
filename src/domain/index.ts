@@ -1215,6 +1215,7 @@ export type {
   TraceId,
   TurnId,
   WorkspaceId,
+  WorkspaceRootId,
 } from "./identity.ts";
 export {
   capabilityId,
@@ -1250,6 +1251,7 @@ export {
   traceId,
   turnId,
   workspaceId,
+  workspaceRootId,
 } from "./identity.ts";
 export type {
   ImageColorProfile,
@@ -2253,6 +2255,7 @@ export type {
   SessionIsolationInput,
   SessionIsolationProvenance,
   SessionIsolationWarning,
+  WorkspaceRootBinding,
 } from "./session-isolation.ts";
 export {
   describeSessionIsolationError,
@@ -2260,6 +2263,7 @@ export {
   SESSION_ISOLATION_SOURCE,
   SESSION_ISOLATION_VERSION,
   SESSION_ISOLATION_WARNINGS,
+  workspaceBindingFromSet,
 } from "./session-isolation.ts";
 export type {
   SessionCommand,
@@ -3244,6 +3248,23 @@ export {
   MAX_SEARCH_QUERY_LENGTH,
   parseWorkspaceSearchRequest,
 } from "./workspace-search.ts";
+export type {
+  BindWorkspaceSetPathOptions,
+  BoundWorkspaceSetPath,
+  WorkspaceRootEntry,
+  WorkspaceSet,
+  WorkspaceSetBindError,
+  WorkspaceSetError,
+} from "./workspace-set.ts";
+export {
+  bindWorkspaceSetPath,
+  createWorkspaceSet,
+  describeWorkspaceSetBindError,
+  describeWorkspaceSetError,
+  isLegalWorkspaceRootName,
+  MAX_WORKSPACE_ROOT_NAME_LENGTH,
+  primaryWorkspaceRoot,
+} from "./workspace-set.ts";
 export type {
   ParsedWorkspaceWritePlan,
   ParsedWorkspaceWriteTarget,
