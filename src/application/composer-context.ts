@@ -22,6 +22,7 @@ import {
   MAX_EVIDENCE_INLINE_BYTES,
   type MentionSpan,
   parseLocalPath,
+  transcriptAttachmentIdentity,
 } from "../domain/index.ts";
 import {
   createWorkspacePathBinder,
@@ -62,6 +63,37 @@ export function digestBytes(bytes: Uint8Array): ContentDigest {
   const hash = createHash("sha256");
   hash.update(bytes);
   return contentDigest.from(`${CONTENT_DIGEST_ALGORITHM}:${hash.digest("hex")}`);
+}
+
+/**
+ * Build a transcript-span attachment handle (#620).
+ *
+ * Callers put `encoder.encode(text)` on the session payload port under
+ * `options.id` before dispatch. This factory never stores bytes.
+ */
+export function createTranscriptAttachment(options: {
+  readonly id: string;
+  readonly blockKey: string;
+  readonly rangeDigest?: string | null;
+  readonly text: string;
+  readonly secret: boolean;
+}): AttachmentDescriptor {
+  const bytes = encoder.encode(options.text);
+  const oversized = bytes.byteLength > MAX_EVIDENCE_INLINE_BYTES;
+  const lines = options.text.length === 0 ? 0 : options.text.split(/\r\n|\r|\n/).length;
+  return {
+    id: options.id,
+    kind: "transcript",
+    identity: transcriptAttachmentIdentity(options.blockKey, options.rangeDigest ?? null),
+    status: oversized ? "oversized" : "ready",
+    byteLength: bytes.byteLength,
+    characters: options.text.length,
+    lines,
+    digest: digestBytes(bytes),
+    revision: null,
+    mediaType: "text/plain",
+    secret: options.secret,
+  };
 }
 
 export function createFileAttachmentProbe(options: {

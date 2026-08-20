@@ -44,6 +44,7 @@ export type {
 export {
   admitComposerContext,
   createFileAttachmentProbe,
+  createTranscriptAttachment,
   digestBytes,
   refreshAttachments,
   resolveComposerAttachments,
