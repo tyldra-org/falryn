@@ -75,8 +75,10 @@ export type ProductAgentAttachmentPoints = {
    */
   readonly turnProducer: SessionTurnTranscriptProducer;
   /**
-   * Slot for composer submission wiring (#707). Null until the composer
-   * replaces UNAVAILABLE_SUBMISSION.
+   * Composer {@link SubmissionPort} is owned by the TUI layer (#707). Callers
+   * build it with `createProductSubmissionPort({ producer })` and pass it into
+   * `runShell` / `ShellApp`. Remains null here so application does not depend
+   * on OpenTUI types.
    */
   readonly submission: null;
 };

@@ -30,6 +30,11 @@ export {
 } from "./history.ts";
 export type { AttachmentPayloadPort } from "./payload.ts";
 export { createMemoryAttachmentPayloads } from "./payload.ts";
+export type { ProductSubmissionPortOptions } from "./product-submission.ts";
+export {
+  createProductSubmissionPort,
+  PRODUCT_SUBMISSION_OWNER,
+} from "./product-submission.ts";
 export type {
   ComposerSlashAlias,
   ParsedComposerSlash,
