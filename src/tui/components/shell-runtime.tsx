@@ -70,6 +70,7 @@ export type ShellRuntime = {
   confirm(choice: "accept" | "deny"): boolean;
   editSecret(edit: SecretEdit): void;
   selectControl(field: "session" | "model", id: string): void;
+  settleChanges(notice: string): void;
 };
 
 export type ShellRuntimeOptions = {
@@ -386,6 +387,10 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
     dispatch({ kind: "select-control", field, id });
   }, []);
 
+  const settleChanges = useCallback((notice: string): void => {
+    dispatch({ kind: "changes-settled", notice });
+  }, []);
+
   return {
     state,
     commandState,
@@ -398,5 +403,6 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
     confirm,
     editSecret,
     selectControl,
+    settleChanges,
   };
 }

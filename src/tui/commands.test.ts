@@ -192,6 +192,24 @@ describe("what this build can actually do", () => {
     expect(commandById("transcript.inspect")?.defaultBinding).toBe(null);
     expect(commandById("transcript.showDiagnostics")?.defaultBinding).toBe(null);
     expect(
+      commandById("changes.nextTab")?.availability({
+        ...EMPTY_COMMAND_STATE,
+        overlayOpen: true,
+        hasChangesOverlay: true,
+      }).kind,
+    ).toBe("available");
+    expect(commandById("changes.restoreCheckpoint")?.availability(EMPTY_COMMAND_STATE).kind).toBe(
+      "unavailable",
+    );
+    expect(
+      commandById("changes.restoreCheckpoint")?.availability({
+        ...EMPTY_COMMAND_STATE,
+        overlayOpen: true,
+        hasChangesOverlay: true,
+        changesTab: "checkpoints",
+      }).kind,
+    ).toBe("available");
+    expect(
       commandById("confirmation.accept")?.availability({
         ...EMPTY_COMMAND_STATE,
         hasConfirmation: true,

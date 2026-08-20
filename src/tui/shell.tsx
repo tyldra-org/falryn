@@ -30,6 +30,7 @@ import type { ReactNode } from "react";
 import {
   type FileAttachmentProbe,
   fromRendererFailure,
+  type GitDashboard,
   type ScopeTree,
   type ShutdownCoordinator,
 } from "../application/index.ts";
@@ -118,6 +119,8 @@ export type ShellRunRequest = {
   readonly scopes?: ScopeTree;
   /** Resolves `@path` mentions. Optional because tests and no-workspace runs have none. */
   readonly fileProbe?: FileAttachmentProbe | null;
+  /** Git changes dashboard. Optional when no workspace or git executable is available. */
+  readonly gitDashboard?: GitDashboard;
   /** Supplied by tests, so a shell run needs no terminal and no native library. */
   readonly createRenderer?: RendererFactory;
 };
@@ -295,6 +298,7 @@ async function frameFor(session: RendererSession, request: ShellRunRequest, onEx
       clock={request.clock}
       {...(feed === undefined ? {} : { feed })}
       {...(request.fileProbe === undefined ? {} : { fileProbe: request.fileProbe })}
+      {...(request.gitDashboard === undefined ? {} : { gitDashboard: request.gitDashboard })}
     />
   );
 }
@@ -315,6 +319,7 @@ function LiveShell(props: {
   readonly clock: ClockPort;
   readonly feed?: RuntimeFeed;
   readonly fileProbe?: FileAttachmentProbe | null;
+  readonly gitDashboard?: GitDashboard;
 }): ReactNode {
   return (
     <RenderGateProvider clock={props.clock}>
@@ -325,6 +330,7 @@ function LiveShell(props: {
         now={props.clock.now}
         {...(props.feed === undefined ? {} : { feed: props.feed })}
         {...(props.fileProbe === undefined ? {} : { fileProbe: props.fileProbe })}
+        {...(props.gitDashboard === undefined ? {} : { gitDashboard: props.gitDashboard })}
       />
     </RenderGateProvider>
   );
@@ -337,6 +343,7 @@ function ProjectedShell(props: {
   readonly now: ClockPort["now"];
   readonly feed?: RuntimeFeed;
   readonly fileProbe?: FileAttachmentProbe | null;
+  readonly gitDashboard?: GitDashboard;
 }): ReactNode {
   const gate = useRenderGate();
   const runtime = useRuntimeProjection(props.feed, initialActivityCursor(), gate);
@@ -349,6 +356,7 @@ function ProjectedShell(props: {
       activity={runtime.activity}
       {...(runtime.shutdown === null ? {} : { shutdown: runtime.shutdown })}
       {...(props.fileProbe === undefined ? {} : { fileProbe: props.fileProbe })}
+      {...(props.gitDashboard === undefined ? {} : { gitDashboard: props.gitDashboard })}
     />
   );
 }
