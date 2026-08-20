@@ -2,9 +2,11 @@ import { describe, expect, test } from "bun:test";
 import {
   configurationGeneration,
   createJsonRpcFrameDecoder,
+  createWorkspaceSet,
   encodeJsonRpcFrame,
   type JsonRpcMessage,
   type LanguageServerEvent,
+  localPath,
   type ManagedServiceAttachment,
   type ManagedServiceError,
   type ManagedServiceEvent,
@@ -17,9 +19,14 @@ import {
   managedServiceId,
   type ServiceGeneration,
   serviceGeneration,
+  workspaceRootId,
 } from "../domain/index.ts";
 import { err, ok, type Result } from "../domain/result.ts";
 import { createLanguageServerSupervisor } from "./language-server.ts";
+import {
+  syncLanguageServerFoldersFromWorkspaceSet,
+  workspaceFolderSyncSnapshot,
+} from "./language-server-workspace.ts";
 
 type ProtocolHandler = (message: JsonRpcMessage, pushStdout: (bytes: Uint8Array) => void) => void;
 
@@ -480,6 +487,83 @@ describe("language-server supervisor", () => {
       { uri: "file:///tmp/demo", name: "demo" },
       { uri: "file:///tmp/other", name: "other" },
     ]);
+
+    await supervisor.shutdown(request.serviceId, started.value.generation);
+  });
+
+  test("syncs product workspace-set folders through changeWorkspaceFolders", async () => {
+    const seen: string[] = [];
+    const port = new FakeManagedServicePort((message, pushStdout) => {
+      compliantLspHandler(message, pushStdout);
+      if ("method" in message) {
+        seen.push(message.method);
+      }
+    });
+    const supervisor = createLanguageServerSupervisor(port);
+    const request = startRequest("lsp:product-folders");
+    const started = await supervisor.start(request);
+    expect(started.ok).toBe(true);
+    if (!started.ok) {
+      return;
+    }
+
+    const previousSet = createWorkspaceSet([
+      {
+        rootId: workspaceRootId.from("root-a"),
+        name: "demo",
+        path: localPath("/tmp/demo"),
+      },
+    ]);
+    const nextSet = createWorkspaceSet([
+      {
+        rootId: workspaceRootId.from("root-a"),
+        name: "demo",
+        path: localPath("/tmp/demo"),
+      },
+      {
+        rootId: workspaceRootId.from("root-b"),
+        name: "docs",
+        path: localPath("/tmp/docs"),
+      },
+    ]);
+    expect(previousSet.ok && nextSet.ok).toBe(true);
+    if (!previousSet.ok || !nextSet.ok) {
+      return;
+    }
+
+    const synced = await syncLanguageServerFoldersFromWorkspaceSet({
+      supervisor,
+      serviceId: request.serviceId,
+      generation: started.value.generation,
+      previous: workspaceFolderSyncSnapshot(previousSet.value, configurationGeneration.from(1)),
+      next: workspaceFolderSyncSnapshot(nextSet.value, configurationGeneration.from(1)),
+    });
+    expect(synced.ok).toBe(true);
+    if (!synced.ok) {
+      return;
+    }
+    expect(synced.value.notified).toBe(true);
+    expect(synced.value.snapshot?.workspaceFolders).toEqual([
+      { uri: "file:///tmp/demo", name: "demo" },
+      { uri: "file:///tmp/docs", name: "docs" },
+    ]);
+    expect(seen).toContain("workspace/didChangeWorkspaceFolders");
+
+    const unchanged = await syncLanguageServerFoldersFromWorkspaceSet({
+      supervisor,
+      serviceId: request.serviceId,
+      generation: started.value.generation,
+      previous: synced.value.synced,
+      next: synced.value.synced,
+    });
+    expect(unchanged).toEqual({
+      ok: true,
+      value: {
+        snapshot: null,
+        synced: synced.value.synced,
+        notified: false,
+      },
+    });
 
     await supervisor.shutdown(request.serviceId, started.value.generation);
   });

@@ -130,6 +130,17 @@ export {
   describeLanguageServerFailure,
 } from "./language-server.ts";
 export type {
+  SyncLanguageServerFoldersError,
+  SyncLanguageServerFoldersRequest,
+  SyncLanguageServerFoldersResult,
+} from "./language-server-workspace.ts";
+export {
+  describeLanguageServerWorkspaceMapError,
+  initializeFoldersFromWorkspaceSet,
+  syncLanguageServerFoldersFromWorkspaceSet,
+  workspaceFolderSyncSnapshot,
+} from "./language-server-workspace.ts";
+export type {
   LoomEvidenceRequest,
   LoomIngestMember,
   LoomIngestRequest,

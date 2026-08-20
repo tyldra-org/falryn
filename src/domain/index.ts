@@ -1537,6 +1537,22 @@ export {
   validateWorkspaceFolder,
   validateWorkspaceFoldersChange,
 } from "./language-server-sync.ts";
+export type {
+  LanguageServerWorkspaceMapError,
+  ProductLanguageServerFolder,
+  WorkspaceFolderSyncSnapshot,
+} from "./language-server-workspace.ts";
+export {
+  documentUriUnderRoot,
+  fileUriToAbsolutePath,
+  languageServerFoldersFromWorkspaceSet,
+  localPathToFileUri,
+  productFolderFromRoot,
+  productFoldersFromWorkspaceSet,
+  rootIdForDocumentUri,
+  shouldSyncLanguageServerFolders,
+  workspaceSetFolderChange,
+} from "./language-server-workspace.ts";
 export {
   MAX_EVENT_BYTES,
   MAX_IDENTIFIER_LENGTH,
