@@ -11,9 +11,11 @@
  */
 
 import {
+  adoptForeignError,
   createArtifactReader,
   createDurableArtifactApi,
   createRuntimeRedactor,
+  createWorkspaceLayoutStore,
   fromArtifactCatalogError,
   fromArtifactError,
   fromArtifactReadError,
@@ -30,6 +32,7 @@ import {
   isolateWorkspaceSessions,
   queryStoredArtifacts,
   queryWorkspaceSessions,
+  type WorkspaceLayoutStoreError,
 } from "../application/index.ts";
 import { CONFIGURATION_FILE_NAME, inspectGeneration, PROFILE_DIRECTORY } from "../config/index.ts";
 import {
@@ -79,6 +82,7 @@ import {
   MAX_ARTIFACT_READ_RANGE_BYTES,
   MAX_SESSION_CATALOG,
   MAX_STREAM_WRITE_BYTES,
+  MAX_WORKSPACE_LAYOUT_CATALOG,
   type OutputStreamPort,
   type OwnershipClass,
   type RecordError,
@@ -108,6 +112,7 @@ import type {
   DataCommandArguments,
   ExportCommandArguments,
   SessionCommandArguments,
+  WorkspaceCommandArguments,
 } from "./command-tree.ts";
 import type { GlobalOptions } from "./options.ts";
 import {
@@ -122,6 +127,10 @@ import {
 } from "./result.ts";
 import type { ServiceProvider } from "./services.ts";
 import { FALRYN_VERSION } from "./version.ts";
+import {
+  describeWorkspaceResolveError,
+  type WorkspaceResolveError,
+} from "./workspace-resolution.ts";
 
 /** A finished result with the fields every command shares already filled in. */
 function resultFor<Command extends CommandId, Payload>(
@@ -325,7 +334,14 @@ export async function runConfigShow(
   services: ServiceProvider,
   overrides: Readonly<Record<string, string>>,
   options: GlobalOptions,
+  signal?: AbortSignal,
 ): Promise<CommandResultOf<"config.show", ConfigShowPayload>> {
+  const workspace = await services().ensureWorkspaceSet(signal);
+  if (!workspace.ok) {
+    return resultFor<"config.show", ConfigShowPayload>("config.show", null, [
+      workspaceResolveError(workspace.error),
+    ]);
+  }
   const { loader, registry, configurationRoot, workspaceRoot } = services();
   const outcome = await loader.load({
     configurationRoot,
@@ -368,7 +384,14 @@ export async function runConfigValidate(
   services: ServiceProvider,
   overrides: Readonly<Record<string, string>>,
   options: GlobalOptions,
+  signal?: AbortSignal,
 ): Promise<CommandResultOf<"config.validate", ConfigValidatePayload>> {
+  const workspace = await services().ensureWorkspaceSet(signal);
+  if (!workspace.ok) {
+    return resultFor<"config.validate", ConfigValidatePayload>("config.validate", null, [
+      workspaceResolveError(workspace.error),
+    ]);
+  }
   const { loader, configurationRoot, workspaceRoot } = services();
   const outcome = await loader.load({
     configurationRoot,
@@ -415,12 +438,20 @@ export async function runConfigValidate(
  *
  * Deliberately not a load: a reader asking *where* settings come from is
  * usually asking because a load already went wrong, and answering that question
- * must not depend on the load succeeding.
+ * must not depend on the load succeeding. It does resolve `--workspace` so a
+ * saved layout name still names the project file under the primary root.
  */
-export function runConfigPath(
+export async function runConfigPath(
   services: ServiceProvider,
   options: GlobalOptions,
-): CommandResultOf<"config.path", ConfigPathPayload> {
+  signal?: AbortSignal,
+): Promise<CommandResultOf<"config.path", ConfigPathPayload>> {
+  const workspace = await services().ensureWorkspaceSet(signal);
+  if (!workspace.ok) {
+    return resultFor<"config.path", ConfigPathPayload>("config.path", null, [
+      workspaceResolveError(workspace.error),
+    ]);
+  }
   const { configurationRoot, workspaceRoot } = services();
   const sources: { kind: string; path: string }[] = [];
 
@@ -923,6 +954,12 @@ async function sessionListThroughStore(
 
   try {
     const sessions = createRecordRepositories(opened.store).sessions;
+    const workspace = await services().ensureWorkspaceSet(signal);
+    if (!workspace.ok) {
+      return resultFor<"session.list", SessionListPayload>("session.list", null, [
+        workspaceResolveError(workspace.error),
+      ]);
+    }
     const isolated = isolateWorkspaceSessions(
       sessions,
       {
@@ -1004,6 +1041,12 @@ async function sessionShowThroughStore(
   }
 
   try {
+    const workspace = await services().ensureWorkspaceSet(signal);
+    if (!workspace.ok) {
+      return resultFor<"session.show", SessionShowPayload>("session.show", null, [
+        workspaceResolveError(workspace.error),
+      ]);
+    }
     const inspected = inspectWorkspaceSession(
       createRecordRepositories(opened.store).sessions,
       {
@@ -1457,6 +1500,269 @@ function artifactGetFailure(
   ]);
 }
 
+/* -------------------------------------------------------------------------- */
+/* workspace                                                                   */
+/* -------------------------------------------------------------------------- */
+
+export type WorkspaceRootPayload = {
+  readonly rootId: string;
+  readonly name: string;
+  readonly path: string;
+};
+
+export type WorkspaceSetPayload = {
+  readonly roots: readonly WorkspaceRootPayload[];
+  readonly source: "cwd" | "path" | "layout";
+  readonly layoutName: string | null;
+};
+
+export type WorkspaceListPayload = {
+  readonly layouts: readonly { readonly name: string; readonly rootCount: number }[];
+  readonly omitted: number;
+};
+
+export type WorkspaceSavePayload = {
+  readonly name: string;
+  readonly roots: readonly WorkspaceRootPayload[];
+};
+
+function rootsFromSet(set: {
+  readonly roots: readonly {
+    readonly rootId: { readonly toString?: () => string } | string;
+    readonly name: string;
+    readonly path: string;
+  }[];
+}): readonly WorkspaceRootPayload[] {
+  return set.roots.map((root) => ({
+    rootId: String(root.rootId),
+    name: root.name,
+    path: String(root.path),
+  }));
+}
+
+export async function runWorkspaceList(
+  services: ServiceProvider,
+  arguments_: Extract<WorkspaceCommandArguments, { action: "list" }>,
+  signal?: AbortSignal,
+): Promise<CommandResultOf<"workspace.list", WorkspaceListPayload>> {
+  try {
+    const { fileSystem, configurationRoot } = services();
+    const store = createWorkspaceLayoutStore(fileSystem, configurationRoot);
+    const catalog = await store.list({
+      limit: arguments_.limit,
+      ...(signal === undefined ? {} : { signal }),
+    });
+    if (!catalog.ok) {
+      return workspaceListFailure(catalog.error);
+    }
+    const total = catalog.value.layouts.length + catalog.value.omitted;
+    const truncation: CommandTruncation[] =
+      catalog.value.omitted === 0
+        ? []
+        : [
+            {
+              of: "layouts",
+              shown: catalog.value.layouts.length,
+              total,
+              expansion:
+                arguments_.limit >= MAX_WORKSPACE_LAYOUT_CATALOG
+                  ? null
+                  : (catalog.value.expansion ??
+                    `workspace list --limit ${MAX_WORKSPACE_LAYOUT_CATALOG}`),
+            },
+          ];
+    return {
+      ...resultFor("workspace.list", {
+        layouts: catalog.value.layouts.map((entry) => ({
+          name: String(entry.name),
+          rootCount: entry.rootCount,
+        })),
+        omitted: catalog.value.omitted,
+      }),
+      truncation,
+    };
+  } catch (error) {
+    return resultFor<"workspace.list", WorkspaceListPayload>("workspace.list", null, [
+      fromUnknown(error, { operation: "list workspace layouts" }),
+    ]);
+  }
+}
+
+export async function runWorkspaceShow(
+  services: ServiceProvider,
+  signal?: AbortSignal,
+): Promise<CommandResultOf<"workspace.show", WorkspaceSetPayload>> {
+  try {
+    const resolved = await services().ensureWorkspaceSet(signal);
+    if (!resolved.ok) {
+      return workspaceResolveFailure("workspace.show", resolved.error);
+    }
+    return resultFor("workspace.show", {
+      roots: rootsFromSet(resolved.value.set),
+      source: resolved.value.source,
+      layoutName: resolved.value.layoutName,
+    });
+  } catch (error) {
+    return resultFor<"workspace.show", WorkspaceSetPayload>("workspace.show", null, [
+      fromUnknown(error, { operation: "show workspace set" }),
+    ]);
+  }
+}
+
+export async function runWorkspaceSave(
+  services: ServiceProvider,
+  arguments_: Extract<WorkspaceCommandArguments, { action: "save" }>,
+  signal?: AbortSignal,
+): Promise<CommandResultOf<"workspace.save", WorkspaceSavePayload>> {
+  try {
+    const resolved = await services().ensureWorkspaceSet(signal);
+    if (!resolved.ok) {
+      return workspaceResolveFailure("workspace.save", resolved.error);
+    }
+    const { fileSystem, configurationRoot } = services();
+    const store = createWorkspaceLayoutStore(fileSystem, configurationRoot);
+    const saved = await store.save(arguments_.name, resolved.value.set, {
+      force: arguments_.force,
+      ...(signal === undefined ? {} : { signal }),
+    });
+    if (!saved.ok) {
+      return workspaceSaveFailure(saved.error);
+    }
+    return resultFor(
+      "workspace.save",
+      {
+        name: String(saved.value.name),
+        roots: rootsFromSet(resolved.value.set),
+      },
+      [],
+      undefined,
+      WRITE_COMPLETED_EFFECT,
+    );
+  } catch (error) {
+    return resultFor<"workspace.save", WorkspaceSavePayload>("workspace.save", null, [
+      fromUnknown(error, { operation: "save workspace layout" }),
+    ]);
+  }
+}
+
+export async function runWorkspaceLoad(
+  services: ServiceProvider,
+  arguments_: Extract<WorkspaceCommandArguments, { action: "load" }>,
+  signal?: AbortSignal,
+): Promise<CommandResultOf<"workspace.load", WorkspaceSetPayload>> {
+  try {
+    const resolved = await services().replaceWorkspaceFromLayout(arguments_.name, signal);
+    if (!resolved.ok) {
+      return workspaceResolveFailure("workspace.load", resolved.error);
+    }
+    return resultFor("workspace.load", {
+      roots: rootsFromSet(resolved.value.set),
+      source: resolved.value.source,
+      layoutName: resolved.value.layoutName,
+    });
+  } catch (error) {
+    return resultFor<"workspace.load", WorkspaceSetPayload>("workspace.load", null, [
+      fromUnknown(error, { operation: "load workspace layout" }),
+    ]);
+  }
+}
+
+function workspaceResolveFailure(
+  command: "workspace.show",
+  error: WorkspaceResolveError,
+): CommandResultOf<"workspace.show", WorkspaceSetPayload>;
+function workspaceResolveFailure(
+  command: "workspace.load",
+  error: WorkspaceResolveError,
+): CommandResultOf<"workspace.load", WorkspaceSetPayload>;
+function workspaceResolveFailure(
+  command: "workspace.save",
+  error: WorkspaceResolveError,
+): CommandResultOf<"workspace.save", WorkspaceSavePayload>;
+function workspaceResolveFailure(
+  command: "workspace.show" | "workspace.load" | "workspace.save",
+  error: WorkspaceResolveError,
+):
+  | CommandResultOf<"workspace.show", WorkspaceSetPayload>
+  | CommandResultOf<"workspace.load", WorkspaceSetPayload>
+  | CommandResultOf<"workspace.save", WorkspaceSavePayload> {
+  return resultFor(command, null, [workspaceResolveError(error)]);
+}
+
+function workspaceResolveError(error: WorkspaceResolveError): FalrynError {
+  return adoptForeignError(
+    {
+      code: `workspace.resolve.${error.code}`,
+      category: "workspace",
+      message: describeWorkspaceResolveError(error),
+    },
+    { operation: "resolve workspace" },
+  );
+}
+
+function workspaceListFailure(
+  error: WorkspaceLayoutStoreError,
+): CommandResultOf<"workspace.list", WorkspaceListPayload> {
+  return resultFor<"workspace.list", WorkspaceListPayload>("workspace.list", null, [
+    workspaceLayoutStoreError(error, "list workspace layouts"),
+  ]);
+}
+
+function workspaceSaveFailure(
+  error: WorkspaceLayoutStoreError,
+): CommandResultOf<"workspace.save", WorkspaceSavePayload> {
+  return resultFor<"workspace.save", WorkspaceSavePayload>("workspace.save", null, [
+    workspaceLayoutStoreError(error, "save workspace layout"),
+  ]);
+}
+
+function workspaceLayoutStoreError(
+  error: WorkspaceLayoutStoreError,
+  operation: string,
+): FalrynError {
+  return adoptForeignError(
+    {
+      code: `workspace.layout.${error.code}`,
+      category: "workspace",
+      message: describeWorkspaceLayoutStoreError(error),
+    },
+    { operation },
+  );
+}
+
+function describeWorkspaceLayoutStoreError(error: WorkspaceLayoutStoreError): string {
+  switch (error.code) {
+    case "cancelled":
+      return "Workspace layout work was cancelled.";
+    case "invalid-name":
+      return "Argument name must be a legal layout name (same rule as --profile).";
+    case "document":
+      return `Saved layout document refused (${error.error.code}).`;
+    case "set":
+      return `Workspace set refused (${error.error.code}).`;
+    case "not-found":
+      return "No saved layout matches that name.";
+    case "exists":
+      return "A saved layout with that name already exists; pass --force to overwrite.";
+    case "unusable-roots":
+      return `Saved layout has unusable roots: ${error.unusable
+        .map((entry) => `${entry.reason}:${entry.path}`)
+        .join(", ")}.`;
+    case "malformed-file":
+      return "Saved layout file is malformed.";
+    case "filesystem":
+      return `Filesystem refused the layout operation (${error.error.code}).`;
+    case "invalid-limit":
+      return "Argument limit is outside the allowed range.";
+    case "path":
+      return "A layout path could not be formed under the configuration root.";
+    default: {
+      const _exhaustive: never = error;
+      return _exhaustive;
+    }
+  }
+}
+
 type ArtifactStore = Extract<Awaited<ReturnType<typeof openSqliteStore>>, { ok: true }>["value"];
 
 type OpenedArtifactStore =
@@ -1716,6 +2022,38 @@ export function stoppedResult(
         outcome,
         effect,
       );
+    case "workspace.list":
+      return resultFor<"workspace.list", WorkspaceListPayload>(
+        "workspace.list",
+        null,
+        [],
+        outcome,
+        effect,
+      );
+    case "workspace.show":
+      return resultFor<"workspace.show", WorkspaceSetPayload>(
+        "workspace.show",
+        null,
+        [],
+        outcome,
+        effect,
+      );
+    case "workspace.save":
+      return resultFor<"workspace.save", WorkspaceSavePayload>(
+        "workspace.save",
+        null,
+        [],
+        outcome,
+        effect,
+      );
+    case "workspace.load":
+      return resultFor<"workspace.load", WorkspaceSetPayload>(
+        "workspace.load",
+        null,
+        [],
+        outcome,
+        effect,
+      );
     default:
       // A command added without a branch fails to compile here rather than
       // reporting a stopped run under someone else's command identity.
@@ -1738,7 +2076,7 @@ export function stoppedResult(
 export type RunCommandResult =
   | Awaited<ReturnType<typeof runConfigShow>>
   | Awaited<ReturnType<typeof runConfigValidate>>
-  | ReturnType<typeof runConfigPath>
+  | Awaited<ReturnType<typeof runConfigPath>>
   | Awaited<ReturnType<typeof runDataReset>>
   | Awaited<ReturnType<typeof runDataUninstall>>
   | Awaited<ReturnType<typeof runDoctor>>
@@ -1747,4 +2085,8 @@ export type RunCommandResult =
   | Awaited<ReturnType<typeof runSessionShow>>
   | Awaited<ReturnType<typeof runArtifactList>>
   | Awaited<ReturnType<typeof runArtifactShow>>
-  | Awaited<ReturnType<typeof runArtifactGet>>;
+  | Awaited<ReturnType<typeof runArtifactGet>>
+  | Awaited<ReturnType<typeof runWorkspaceList>>
+  | Awaited<ReturnType<typeof runWorkspaceShow>>
+  | Awaited<ReturnType<typeof runWorkspaceSave>>
+  | Awaited<ReturnType<typeof runWorkspaceLoad>>;

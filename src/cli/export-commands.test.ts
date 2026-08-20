@@ -262,6 +262,7 @@ describe("export command behavior", () => {
       verbose: false,
       nonInteractive: false,
       workspace: null,
+      addDirs: [],
       profile: null,
       timeoutMs: null,
       help: false,

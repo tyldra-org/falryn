@@ -66,6 +66,10 @@ export const COMMAND_IDS = [
   "artifact.list",
   "artifact.show",
   "artifact.get",
+  "workspace.list",
+  "workspace.show",
+  "workspace.save",
+  "workspace.load",
   /** Help for the root or for a subcommand. */
   "help",
   "version",

@@ -25,15 +25,18 @@ import {
   artifactId,
   DEFAULT_ARTIFACT_LIST_LIMIT,
   DEFAULT_SESSION_LIST_LIMIT,
+  DEFAULT_WORKSPACE_LAYOUT_LIST_LIMIT,
   type ExportName,
   type ExportSelection,
   exportName,
+  isLegalWorkspaceLayoutName,
   isOwnershipClass,
   isPlanId,
   localPathTextError,
   MAX_ARTIFACT_CATALOG,
   MAX_LOCAL_PATH_LENGTH,
   MAX_SESSION_CATALOG,
+  MAX_WORKSPACE_LAYOUT_CATALOG,
   type OwnershipClass,
   type PlanId,
   parseTimestamp,
@@ -111,6 +114,25 @@ export type SessionCommandArguments =
       readonly sessionId: SessionId;
     };
 
+/** Command-specific inputs for `falryn workspace`. */
+export type WorkspaceCommandArguments =
+  | {
+      readonly action: "list";
+      readonly limit: number;
+    }
+  | {
+      readonly action: "show";
+    }
+  | {
+      readonly action: "save";
+      readonly name: string;
+      readonly force: boolean;
+    }
+  | {
+      readonly action: "load";
+      readonly name: string;
+    };
+
 /**
  * What parsing an argument vector produced.
  *
@@ -128,6 +150,7 @@ export type Invocation =
       readonly exportArgs: ExportCommandArguments | null;
       readonly sessionArgs: SessionCommandArguments | null;
       readonly artifactArgs: ArtifactCommandArguments | null;
+      readonly workspaceArgs: WorkspaceCommandArguments | null;
     }
   /** Show help. `topic` is `null` for the root, or the subcommand asked about. */
   | { readonly kind: "help"; readonly topic: string | null; readonly options: GlobalOptions }
@@ -160,6 +183,8 @@ type RawArguments = {
   readonly limit: number | undefined;
   readonly "workspace-id": string | undefined;
   readonly output: string | undefined;
+  readonly force: boolean | undefined;
+  readonly "add-dir": readonly string[] | undefined;
   readonly format: string;
   readonly color: string;
   readonly quiet: boolean;
@@ -188,6 +213,9 @@ function build(argv: readonly string[], lenientPositionals = false): ReturnType<
   const dataCommand = lenientPositionals ? "data [action]" : "data <action>";
   const sessionCommand = lenientPositionals ? "session [action] [id]" : "session <action> [id]";
   const artifactCommand = lenientPositionals ? "artifact [action] [id]" : "artifact <action> [id]";
+  const workspaceCommand = lenientPositionals
+    ? "workspace [action] [name]"
+    : "workspace <action> [name]";
   return (
     yargs([...argv])
       .scriptName(SCRIPT_NAME)
@@ -314,6 +342,30 @@ function build(argv: readonly string[], lenientPositionals = false): ReturnType<
             describe: "destination path for get (default: stdout when not a terminal)",
           }),
       )
+      .command(
+        workspaceCommand,
+        "List, show, save, or load multi-root workspace layouts.",
+        (group) =>
+          group
+            .positional("action", {
+              type: "string",
+              choices: ["list", "show", "save", "load"] as const,
+              describe: "list saved layouts, show the current set, save, or load",
+            })
+            .positional("name", {
+              type: "string",
+              describe: "layout name (required with save and load)",
+            })
+            .option("limit", {
+              type: "number",
+              describe: `maximum listed layouts (default ${DEFAULT_WORKSPACE_LAYOUT_LIST_LIMIT}, max ${MAX_WORKSPACE_LAYOUT_CATALOG})`,
+            })
+            .option("force", {
+              type: "boolean",
+              default: false,
+              describe: "overwrite an existing saved layout (save only)",
+            }),
+      )
       .option("format", {
         type: "string",
         choices: OUTPUT_FORMATS,
@@ -350,7 +402,13 @@ function build(argv: readonly string[], lenientPositionals = false): ReturnType<
       })
       .option("workspace", {
         type: "string",
-        describe: "Workspace root to operate on (default: current directory)",
+        describe: "Workspace directory or saved layout name (default: current directory)",
+      })
+      .option("add-dir", {
+        type: "string",
+        array: true,
+        nargs: 1,
+        describe: "Extra workspace root for this invocation (repeatable)",
       })
       .option("profile", {
         type: "string",
@@ -444,7 +502,20 @@ export async function parseInvocation(argv: readonly string[]): Promise<Invocati
   if (typeof artifactArgs === "string") {
     return { kind: "invalid", message: artifactArgs };
   }
-  return { kind: "run", command, options, data, exportArgs, sessionArgs, artifactArgs };
+  const workspaceArgs = workspaceArgumentsFor(command, parsed);
+  if (typeof workspaceArgs === "string") {
+    return { kind: "invalid", message: workspaceArgs };
+  }
+  return {
+    kind: "run",
+    command,
+    options,
+    data,
+    exportArgs,
+    sessionArgs,
+    artifactArgs,
+    workspaceArgs,
+  };
 }
 
 /**
@@ -507,6 +578,10 @@ function isRawArguments(value: unknown): value is RawArguments {
     (field("limit") === undefined || typeof field("limit") === "number") &&
     optionalString(field("workspace-id")) &&
     optionalString(field("output")) &&
+    optionalBoolean(field("force")) &&
+    (field("add-dir") === undefined ||
+      (Array.isArray(field("add-dir")) &&
+        (field("add-dir") as unknown[]).every((item) => typeof item === "string"))) &&
     typeof field("format") === "string" &&
     typeof field("color") === "string" &&
     typeof field("quiet") === "boolean" &&
@@ -584,6 +659,20 @@ function commandFrom(positional: readonly string[], action: string | null): Runn
         return "artifact.show";
       case "get":
         return "artifact.get";
+      default:
+        return null;
+    }
+  }
+  if (group === "workspace") {
+    switch (action) {
+      case "list":
+        return "workspace.list";
+      case "show":
+        return "workspace.show";
+      case "save":
+        return "workspace.save";
+      case "load":
+        return "workspace.load";
       default:
         return null;
     }
@@ -798,6 +887,66 @@ function artifactArgumentsFor(
   return { action: "get", artifactId: parsedId.value, outputPath };
 }
 
+function workspaceArgumentsFor(
+  command: RunnableCommand,
+  parsed: RawArguments,
+): WorkspaceCommandArguments | null | string {
+  if (
+    command !== "workspace.list" &&
+    command !== "workspace.show" &&
+    command !== "workspace.save" &&
+    command !== "workspace.load"
+  ) {
+    return null;
+  }
+
+  if (command === "workspace.list") {
+    if (parsed.name !== undefined) {
+      return "Argument name is only valid with workspace save or load.";
+    }
+    if (parsed.force === true) {
+      return "Argument force is only valid with workspace save.";
+    }
+    const limit = parsed.limit ?? DEFAULT_WORKSPACE_LAYOUT_LIST_LIMIT;
+    if (!Number.isInteger(limit) || limit < 1 || limit > MAX_WORKSPACE_LAYOUT_CATALOG) {
+      return `Argument limit must be a whole number from 1 to ${MAX_WORKSPACE_LAYOUT_CATALOG}.`;
+    }
+    return { action: "list", limit };
+  }
+
+  if (command === "workspace.show") {
+    if (parsed.name !== undefined) {
+      return "Argument name is only valid with workspace save or load.";
+    }
+    if (parsed.limit !== undefined) {
+      return "Argument limit is only valid with workspace list.";
+    }
+    if (parsed.force === true) {
+      return "Argument force is only valid with workspace save.";
+    }
+    return { action: "show" };
+  }
+
+  if (parsed.limit !== undefined) {
+    return "Argument limit is only valid with workspace list.";
+  }
+  if (parsed.name === undefined) {
+    return "Argument name is required for workspace save and load.";
+  }
+  if (!isLegalWorkspaceLayoutName(parsed.name)) {
+    return "Argument name must be a legal layout name (same rule as --profile).";
+  }
+
+  if (command === "workspace.save") {
+    return { action: "save", name: parsed.name, force: parsed.force === true };
+  }
+
+  if (parsed.force === true) {
+    return "Argument force is only valid with workspace save.";
+  }
+  return { action: "load", name: parsed.name };
+}
+
 function outputPathIssue(value: string): string | null {
   const error = localPathTextError(value);
   if (error === null) {
@@ -836,6 +985,12 @@ function conflictIn(parsed: RawArguments): string | null {
       return issue;
     }
   }
+  for (const addDir of parsed["add-dir"] ?? []) {
+    const issue = addDirIssue(addDir);
+    if (issue !== null) {
+      return issue;
+    }
+  }
   if (parsed.timeout !== undefined) {
     if (!Number.isInteger(parsed.timeout) || parsed.timeout <= 0) {
       return `Argument timeout: "${parsed.timeout}" must be a positive whole number of milliseconds.`;
@@ -848,18 +1003,18 @@ function conflictIn(parsed: RawArguments): string | null {
 }
 
 /**
- * Why a `--workspace` could never name a directory, or `null` when it can.
+ * Why a `--workspace` could never name a directory or layout, or `null` when it can.
  *
  * Relative is not a reason: `--workspace ./site` resolves against the current
- * directory in `src/cli/services.ts`. What is refused here is text no
- * resolution can rescue — and it is refused rather than resolved to "no
- * workspace", because a run that silently drops the project configuration layer
- * answers a different question than the one asked, which is the same reason a
- * mistyped key in a file is reported instead of ignored.
+ * directory in `src/cli/services.ts`. Layout names use the same character class
+ * as profiles and never contain path separators.
  */
 function workspaceIssue(value: string): string | null {
   if (value.trim() === "") {
     return "Argument workspace: a workspace root cannot be empty.";
+  }
+  if (isLegalWorkspaceLayoutName(value)) {
+    return null;
   }
   const error = localPathTextError(value);
   if (error === null) {
@@ -872,6 +1027,19 @@ function workspaceIssue(value: string): string | null {
     : "Argument workspace: the path contains a character that cannot appear in one.";
 }
 
+function addDirIssue(value: string): string | null {
+  if (value.trim() === "") {
+    return "Argument add-dir: a workspace root cannot be empty.";
+  }
+  const error = localPathTextError(value);
+  if (error === null) {
+    return null;
+  }
+  return error.code === "path-too-long"
+    ? `Argument add-dir: a workspace root cannot exceed ${MAX_LOCAL_PATH_LENGTH} characters.`
+    : "Argument add-dir: the path contains a character that cannot appear in one.";
+}
+
 function optionsFrom(parsed: RawArguments): GlobalOptions {
   return {
     // Both are constrained by `choices`, so yargs has already refused anything
@@ -882,6 +1050,7 @@ function optionsFrom(parsed: RawArguments): GlobalOptions {
     verbose: parsed.verbose,
     nonInteractive: parsed["non-interactive"],
     workspace: parsed.workspace ?? null,
+    addDirs: parsed["add-dir"] ?? [],
     profile: parsed.profile ?? null,
     timeoutMs: parsed.timeout ?? null,
     help: parsed.help,

@@ -59,7 +59,11 @@ function heldFileSystem(): {
   readonly held: Promise<void>;
   release(): void;
 } {
-  const base = createInMemoryFileSystem();
+  const base = createInMemoryFileSystem({
+    nodes: {
+      "/workspace": { kind: "directory" },
+    },
+  });
   let announce: () => void = () => {};
   const held = new Promise<void>((resolve) => {
     announce = resolve;
@@ -79,6 +83,10 @@ function heldFileSystem(): {
     release: () => letGo(),
     fileSystem: {
       ...base,
+      async realPath(path, signal) {
+        await hold();
+        return base.realPath(path, signal);
+      },
       async stat(path, signal) {
         await hold();
         return base.stat(path, signal);
@@ -122,6 +130,7 @@ async function stoppedRun(
       platform: "darwin",
       environment: createStaticEnvironment({ FALRYN_STATE_DIR: home }),
       fileSystem: held.fileSystem,
+      currentDirectory: localPath("/workspace"),
     });
 
   const running = dispatch({

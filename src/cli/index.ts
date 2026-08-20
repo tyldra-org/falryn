@@ -21,6 +21,9 @@ export type {
   RunCommandResult,
   SessionListPayload,
   SessionShowPayload,
+  WorkspaceListPayload,
+  WorkspaceSavePayload,
+  WorkspaceSetPayload,
 } from "./commands.ts";
 export {
   runConfigPath,
@@ -30,6 +33,10 @@ export {
   runExport,
   runSessionList,
   runSessionShow,
+  runWorkspaceList,
+  runWorkspaceLoad,
+  runWorkspaceSave,
+  runWorkspaceShow,
   stoppedResult,
 } from "./commands.ts";
 export type { DispatchOptions } from "./dispatch.ts";

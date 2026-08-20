@@ -39,6 +39,10 @@ describe("the declared tree", () => {
     expect(await commandOf("export", "--session", "s1")).toBe("export");
     expect(await commandOf("session", "list")).toBe("session.list");
     expect(await commandOf("session", "show", "s1")).toBe("session.show");
+    expect(await commandOf("workspace", "list")).toBe("workspace.list");
+    expect(await commandOf("workspace", "show")).toBe("workspace.show");
+    expect(await commandOf("workspace", "save", "app")).toBe("workspace.save");
+    expect(await commandOf("workspace", "load", "app")).toBe("workspace.load");
   });
 
   test("declares no group whose capability does not exist", async () => {
@@ -53,6 +57,7 @@ describe("the declared tree", () => {
     expect(await helpText(null)).toContain("data <action>");
     expect(await helpText(null)).toContain("export");
     expect(await helpText(null)).toContain("session");
+    expect(await helpText(null)).toContain("workspace");
   });
 
   test("says in help what the bare invocation actually does", async () => {
@@ -168,6 +173,7 @@ describe("global options", () => {
       verbose: false,
       nonInteractive: false,
       workspace: null,
+      addDirs: [],
       profile: null,
       timeoutMs: null,
       help: false,

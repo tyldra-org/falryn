@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { realpathSync } from "node:fs";
 import { chmod, mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -34,6 +35,7 @@ const DEFAULTS: GlobalOptions = {
   verbose: false,
   nonInteractive: false,
   workspace: null,
+  addDirs: [],
   profile: null,
   timeoutMs: null,
   help: false,
@@ -75,7 +77,16 @@ async function isolated(options: Partial<GlobalOptions> = {}, currentDirectory?:
  * use, so nothing here re-derives where a source lives.
  */
 function doubled(options: Partial<GlobalOptions> = {}) {
-  const fileSystem = createInMemoryFileSystem();
+  const fileSystem = createInMemoryFileSystem({
+    nodes: {
+      "/workspace": { kind: "directory" },
+      "/home/tester": { kind: "directory" },
+      "/home/tester/Library": { kind: "directory" },
+      "/home/tester/Library/Application Support": { kind: "directory" },
+      "/home/tester/Library/Application Support/Falryn": { kind: "directory" },
+      "/home/tester/Library/Application Support/Falryn/config": { kind: "directory" },
+    },
+  });
   const globals = { ...DEFAULTS, ...options };
   const services = providerOver(fileSystem, globals);
   return {
@@ -205,43 +216,56 @@ describe("config show", () => {
 
 describe("workspace resolution", () => {
   test("resolves a relative --workspace against the current directory", async () => {
-    const { services, globals } = await isolated({ workspace: "./site" }, "/tmp/falryn-cwd");
+    const cwd = await mkdtemp(join(tmpdir(), "falryn-cwd-"));
+    roots.push(cwd);
+    const site = join(cwd, "site");
+    await mkdir(site);
+    const { services, globals } = await isolated({ workspace: "./site" }, cwd);
 
     // The ordinary way to write the flag. Discarding it would take the project
     // layer out of every load while reporting success.
-    const sources = runConfigPath(services, globals).payload?.sources ?? [];
+    const sources = (await runConfigPath(services, globals)).payload?.sources ?? [];
     expect(sources.find((source) => source.kind === "project-file")?.path).toBe(
-      `/tmp/falryn-cwd/site/${CONFIGURATION_FILE_NAME}`,
+      `${realpathSync(site)}/${CONFIGURATION_FILE_NAME}`,
     );
   });
 
   test("resolves a --workspace that climbs out of the current directory", async () => {
-    const { services, globals } = await isolated({ workspace: "../sibling" }, "/tmp/falryn-cwd");
+    const parent = await mkdtemp(join(tmpdir(), "falryn-parent-"));
+    roots.push(parent);
+    const cwd = join(parent, "cwd");
+    const sibling = join(parent, "sibling");
+    await mkdir(cwd);
+    await mkdir(sibling);
+    const { services, globals } = await isolated({ workspace: "../sibling" }, cwd);
 
-    const sources = runConfigPath(services, globals).payload?.sources ?? [];
+    const sources = (await runConfigPath(services, globals)).payload?.sources ?? [];
     expect(sources.find((source) => source.kind === "project-file")?.path).toBe(
-      `/tmp/sibling/${CONFIGURATION_FILE_NAME}`,
+      `${realpathSync(sibling)}/${CONFIGURATION_FILE_NAME}`,
     );
   });
 
   test("leaves an absolute --workspace alone", async () => {
-    const { services, globals } = await isolated(
-      { workspace: "/tmp/falryn-explicit" },
-      "/tmp/other",
-    );
+    const explicit = await mkdtemp(join(tmpdir(), "falryn-explicit-"));
+    roots.push(explicit);
+    const other = await mkdtemp(join(tmpdir(), "falryn-other-"));
+    roots.push(other);
+    const { services, globals } = await isolated({ workspace: explicit }, other);
 
-    const sources = runConfigPath(services, globals).payload?.sources ?? [];
+    const sources = (await runConfigPath(services, globals)).payload?.sources ?? [];
     expect(sources.find((source) => source.kind === "project-file")?.path).toBe(
-      `/tmp/falryn-explicit/${CONFIGURATION_FILE_NAME}`,
+      `${realpathSync(explicit)}/${CONFIGURATION_FILE_NAME}`,
     );
   });
 
   test("falls back to the current directory when no workspace was given", async () => {
-    const { services, globals } = await isolated({}, "/tmp/falryn-cwd");
+    const cwd = await mkdtemp(join(tmpdir(), "falryn-cwd-"));
+    roots.push(cwd);
+    const { services, globals } = await isolated({}, cwd);
 
-    const sources = runConfigPath(services, globals).payload?.sources ?? [];
+    const sources = (await runConfigPath(services, globals)).payload?.sources ?? [];
     expect(sources.find((source) => source.kind === "project-file")?.path).toBe(
-      `/tmp/falryn-cwd/${CONFIGURATION_FILE_NAME}`,
+      `${realpathSync(cwd)}/${CONFIGURATION_FILE_NAME}`,
     );
   });
 });
@@ -411,7 +435,7 @@ describe("config show over a source it could not read", () => {
 describe("config path", () => {
   test("names its sources without reading any of them", async () => {
     const { services, globals } = await isolated();
-    const result = runConfigPath(services, globals);
+    const result = await runConfigPath(services, globals);
 
     expect(result.outcome).toEqual({ kind: "completed" });
     const kinds = result.payload?.sources.map((source) => source.kind) ?? [];
@@ -425,11 +449,12 @@ describe("config path", () => {
   test("names the profile source only when one was selected", async () => {
     const without = await isolated();
     expect(
-      runConfigPath(without.services, without.globals).payload?.sources.map((s) => s.kind),
+      (await runConfigPath(without.services, without.globals)).payload?.sources.map((s) => s.kind),
     ).not.toContain("profile");
 
     const withProfile = await isolated({ profile: "work" });
-    const sources = runConfigPath(withProfile.services, withProfile.globals).payload?.sources ?? [];
+    const sources =
+      (await runConfigPath(withProfile.services, withProfile.globals)).payload?.sources ?? [];
     expect(sources.some((source) => source.kind === "profile")).toBe(true);
     expect(sources.find((source) => source.kind === "profile")?.path).toContain("work.jsonc");
   });

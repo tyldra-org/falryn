@@ -56,6 +56,10 @@ import {
   runExport,
   runSessionList,
   runSessionShow,
+  runWorkspaceList,
+  runWorkspaceLoad,
+  runWorkspaceSave,
+  runWorkspaceShow,
   stoppedResult,
 } from "./commands.ts";
 import { EXIT_CODES, type ExitCode, resolveExitCode } from "./exit.ts";
@@ -188,7 +192,15 @@ async function runCommand(
   options: DispatchOptions,
 ): Promise<ExitCode> {
   const { streams } = options;
-  const { command, data, exportArgs, sessionArgs, artifactArgs, options: globals } = invocation;
+  const {
+    command,
+    data,
+    exportArgs,
+    sessionArgs,
+    artifactArgs,
+    workspaceArgs,
+    options: globals,
+  } = invocation;
 
   if (command === "default") {
     return runDefault(globals, options);
@@ -204,6 +216,7 @@ async function runCommand(
     exportArgs,
     sessionArgs,
     artifactArgs,
+    workspaceArgs,
     services,
     overrides,
     globals,
@@ -411,6 +424,7 @@ async function governed(
   exportArgs: Extract<Invocation, { kind: "run" }>["exportArgs"],
   sessionArgs: Extract<Invocation, { kind: "run" }>["sessionArgs"],
   artifactArgs: Extract<Invocation, { kind: "run" }>["artifactArgs"],
+  workspaceArgs: Extract<Invocation, { kind: "run" }>["workspaceArgs"],
   services: ServiceProvider,
   overrides: Readonly<Record<string, string>>,
   globals: GlobalOptions,
@@ -425,6 +439,7 @@ async function governed(
       exportArgs,
       sessionArgs,
       artifactArgs,
+      workspaceArgs,
       services,
       overrides,
       globals,
@@ -439,6 +454,7 @@ async function governed(
       exportArgs,
       sessionArgs,
       artifactArgs,
+      workspaceArgs,
       services,
       overrides,
       globals,
@@ -474,6 +490,9 @@ function stoppedCommandIntent(
     return "mutate";
   }
   if (command === "export" && exportArgs !== null && exportArgs.write) {
+    return "mutate";
+  }
+  if (command === "workspace.save") {
     return "mutate";
   }
   return "none";
@@ -594,6 +613,7 @@ async function produce(
   exportArgs: Extract<Invocation, { kind: "run" }>["exportArgs"],
   sessionArgs: Extract<Invocation, { kind: "run" }>["sessionArgs"],
   artifactArgs: Extract<Invocation, { kind: "run" }>["artifactArgs"],
+  workspaceArgs: Extract<Invocation, { kind: "run" }>["workspaceArgs"],
   services: ServiceProvider,
   overrides: Readonly<Record<string, string>>,
   globals: GlobalOptions,
@@ -603,11 +623,11 @@ async function produce(
 ): Promise<RunCommandResult> {
   switch (command) {
     case "config.show":
-      return runConfigShow(services, overrides, globals);
+      return runConfigShow(services, overrides, globals, signal);
     case "config.validate":
-      return runConfigValidate(services, overrides, globals);
+      return runConfigValidate(services, overrides, globals, signal);
     case "config.path":
-      return runConfigPath(services, globals);
+      return runConfigPath(services, globals, signal);
     case "data.reset":
       if (data === null) {
         throw new Error("Missing parsed data reset arguments.");
@@ -658,6 +678,24 @@ async function produce(
         },
         signal,
       );
+    case "workspace.list":
+      if (workspaceArgs === null || workspaceArgs.action !== "list") {
+        throw new Error("Missing parsed workspace list arguments.");
+      }
+      return runWorkspaceList(services, workspaceArgs, signal);
+    case "workspace.show":
+      return runWorkspaceShow(services, signal);
+    case "workspace.save":
+      if (workspaceArgs === null || workspaceArgs.action !== "save") {
+        throw new Error("Missing parsed workspace save arguments.");
+      }
+      onMutationStart?.();
+      return runWorkspaceSave(services, workspaceArgs, signal);
+    case "workspace.load":
+      if (workspaceArgs === null || workspaceArgs.action !== "load") {
+        throw new Error("Missing parsed workspace load arguments.");
+      }
+      return runWorkspaceLoad(services, workspaceArgs, signal);
     default:
       // `default`, `help`, and `version` are answered before this is reached,
       // so a new command reaching here without a branch fails to compile.

@@ -50,6 +50,7 @@ import {
   sessionId,
   streamId,
   traceId,
+  type WorkspaceSet,
   workspaceId,
 } from "../domain/index.ts";
 import {
@@ -59,6 +60,12 @@ import {
   hostPlatform,
 } from "../integrations/index.ts";
 import type { GlobalOptions } from "./options.ts";
+import {
+  describeWorkspaceResolveError,
+  type ResolvedCliWorkspace,
+  resolveCliWorkspace,
+  type WorkspaceResolveError,
+} from "./workspace-resolution.ts";
 
 /**
  * The stream every event this process appends belongs to.
@@ -87,8 +94,34 @@ export type Services = {
   readonly registry: ConfigurationRegistryPort;
   readonly loader: ConfigurationLoader;
   readonly configurationRoot: LocalPath;
-  /** The explicit `--workspace`, or the current directory. */
+  /**
+   * Primary workspace root after {@link Services.ensureWorkspaceSet}, or a
+   * lexical path guess before that. Config project discovery uses the primary.
+   */
   readonly workspaceRoot: LocalPath | null;
+  /** Full multi-root set after {@link Services.ensureWorkspaceSet}, else null. */
+  readonly workspaceSet: WorkspaceSet | null;
+  /**
+   * Resolves `--workspace` / `--add-dir` once per provider. Layout names and
+   * directory checks need the filesystem, so help never calls this.
+   */
+  readonly ensureWorkspaceSet: (
+    signal?: AbortSignal,
+  ) => Promise<
+    | { readonly ok: true; readonly value: ResolvedCliWorkspace }
+    | { readonly ok: false; readonly error: WorkspaceResolveError }
+  >;
+  /**
+   * Replaces this invocation’s set from a saved layout name (plus any
+   * `--add-dir`), used by `falryn workspace load`.
+   */
+  readonly replaceWorkspaceFromLayout: (
+    name: string,
+    signal?: AbortSignal,
+  ) => Promise<
+    | { readonly ok: true; readonly value: ResolvedCliWorkspace }
+    | { readonly ok: false; readonly error: WorkspaceResolveError }
+  >;
 };
 
 /**
@@ -167,6 +200,15 @@ export function createServiceProvider(
     });
 
     const eventStore = createInMemoryEventStore();
+    const configurationRoot = rootChild(localData.layout, "configuration") ?? home;
+    const currentDirectory = overrides.currentDirectory ?? currentDirectoryPath();
+    let workspaceRoot = workspaceRootFrom(options, currentDirectory);
+    let workspaceSet: WorkspaceSet | null = null;
+    let resolved:
+      | { readonly ok: true; readonly value: ResolvedCliWorkspace }
+      | { readonly ok: false; readonly error: WorkspaceResolveError }
+      | null = null;
+
     const services: Services = {
       fileSystem,
       environment,
@@ -198,8 +240,48 @@ export function createServiceProvider(
         },
         streamId: streamId.from(CLI_EVENT_STREAM),
       }),
-      configurationRoot: rootChild(localData.layout, "configuration") ?? home,
-      workspaceRoot: workspaceRootFrom(options, overrides),
+      configurationRoot,
+      get workspaceRoot() {
+        return workspaceRoot;
+      },
+      get workspaceSet() {
+        return workspaceSet;
+      },
+      async ensureWorkspaceSet(signal) {
+        if (resolved !== null) {
+          return resolved;
+        }
+        const next = await resolveCliWorkspace({
+          fileSystem,
+          configurationRoot,
+          currentDirectory,
+          workspace: options.workspace,
+          addDirs: options.addDirs,
+          ...(signal === undefined ? {} : { signal }),
+        });
+        resolved = next;
+        if (next.ok) {
+          workspaceRoot = next.value.primary;
+          workspaceSet = next.value.set;
+        }
+        return next;
+      },
+      async replaceWorkspaceFromLayout(name, signal) {
+        const next = await resolveCliWorkspace({
+          fileSystem,
+          configurationRoot,
+          currentDirectory,
+          workspace: name,
+          addDirs: options.addDirs,
+          ...(signal === undefined ? {} : { signal }),
+        });
+        resolved = next;
+        if (next.ok) {
+          workspaceRoot = next.value.primary;
+          workspaceSet = next.value.set;
+        }
+        return next;
+      },
     };
     built = services;
     return services;
@@ -207,36 +289,27 @@ export function createServiceProvider(
 }
 
 /**
- * The workspace this invocation operates on.
+ * The workspace this invocation operates on (lexical primary guess).
  *
  * An explicit `--workspace` wins; otherwise the current directory. A relative
- * `--workspace` resolves against that same current directory, because that is
- * what a person typing `--workspace ./site` means and refusing it outright
- * would have made the ordinary form of the flag unusable. This is not a second
- * resolution rule: the domain owns both the resolution and the normalization,
- * and Git-aware discovery still belongs with the workspace capability in v0.2.
+ * `--workspace` resolves against that same current directory. Layout names are
+ * resolved later by {@link Services.ensureWorkspaceSet}.
  */
-function workspaceRootFrom(
-  options: GlobalOptions,
-  overrides: HostServiceOptions,
-): LocalPath | null {
-  const current = overrides.currentDirectory ?? currentDirectory();
+function workspaceRootFrom(options: GlobalOptions, current: LocalPath | null): LocalPath | null {
   if (options.workspace === null) {
     return current;
   }
-  // Text that can never name a path is refused at parse time and exits 2, so
-  // reaching `null` here means the process itself has no nameable current
-  // directory to resolve against. The command reports the missing layer in its
-  // result rather than failing to construct.
   return current === null
     ? valueOrNull(parseLocalPath(options.workspace))
     : valueOrNull(resolveLocalPath(current, options.workspace));
 }
 
-function currentDirectory(): LocalPath | null {
+function currentDirectoryPath(): LocalPath | null {
   return valueOrNull(parseLocalPath(process.cwd()));
 }
 
 function valueOrNull(parsed: Result<LocalPath, LocalPathError>): LocalPath | null {
   return parsed.ok ? parsed.value : null;
 }
+
+export { describeWorkspaceResolveError };
