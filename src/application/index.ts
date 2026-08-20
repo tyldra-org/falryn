@@ -181,6 +181,14 @@ export type {
 } from "./product-agent-runtime.ts";
 export { composeProductAgentRuntime } from "./product-agent-runtime.ts";
 export type {
+  ProductCredentialBundle,
+  ProductCredentialPorts,
+} from "./product-credentials.ts";
+export {
+  composeProductCredentials,
+  resolveProviderApiKey,
+} from "./product-credentials.ts";
+export type {
   DigestedPromptRequest,
   PromptComposer,
   PromptComposerError,
