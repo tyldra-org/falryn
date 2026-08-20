@@ -9,6 +9,7 @@ import {
   computePatchPlanId,
   DEFAULT_MAX_PATCH_TARGETS,
   describeWorkspacePatchError,
+  digestOfPatchOldLines,
   gitPathForPatchTarget,
   HARD_MAX_PATCH_HUNKS,
   hunkHeader,
@@ -21,6 +22,26 @@ import {
 } from "./workspace-patch.ts";
 
 describe("parseWorkspacePatchPlan", () => {
+  test("accepts a digest-addressed hunk without oldStart (#614)", () => {
+    const digest = digestOfPatchOldLines(["two"]);
+    const parsed = parseWorkspacePatchPlan({
+      targets: [
+        {
+          path: "a.ts",
+          hunks: [{ addressDigest: digest, oldLines: ["two"], newLines: ["TWO"], id: "h1" }],
+        },
+      ],
+    });
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) {
+      return;
+    }
+    expect(parsed.value.targets[0]?.hunks[0]).toMatchObject({
+      hunkId: "h1",
+      oldStart: null,
+      addressDigest: digest,
+    });
+  });
   test("defaults to fail-before-effect and fills limits", () => {
     const parsed = parseWorkspacePatchPlan({
       targets: [
@@ -108,7 +129,16 @@ describe("applyPatchHunks", () => {
   test("replaces, inserts, and deletes at exact lines", () => {
     const replaced = applyPatchHunks(
       ["a", "b", "c"],
-      [{ index: 0, oldStart: 2, oldLines: ["b"], newLines: ["B"] }],
+      [
+        {
+          index: 0,
+          hunkId: null,
+          oldStart: 2,
+          addressDigest: null,
+          oldLines: ["b"],
+          newLines: ["B"],
+        },
+      ],
     );
     expect(replaced.ok).toBe(true);
     if (!replaced.ok) {
@@ -119,13 +149,13 @@ describe("applyPatchHunks", () => {
 
     const inserted = applyPatchHunks(
       ["a", "c"],
-      [{ index: 0, oldStart: 2, oldLines: [], newLines: ["b"] }],
+      [{ index: 0, hunkId: null, oldStart: 2, addressDigest: null, oldLines: [], newLines: ["b"] }],
     );
     expect(inserted.ok && inserted.value.lines).toEqual(["a", "b", "c"]);
 
     const deleted = applyPatchHunks(
       ["a", "b", "c"],
-      [{ index: 0, oldStart: 2, oldLines: ["b"], newLines: [] }],
+      [{ index: 0, hunkId: null, oldStart: 2, addressDigest: null, oldLines: ["b"], newLines: [] }],
     );
     expect(deleted.ok && deleted.value.lines).toEqual(["a", "c"]);
   });
@@ -133,7 +163,16 @@ describe("applyPatchHunks", () => {
   test("refuses a mismatched hunk without relocating it", () => {
     const result = applyPatchHunks(
       ["a", "secret", "c"],
-      [{ index: 0, oldStart: 2, oldLines: ["b"], newLines: ["sk-live-NEW"] }],
+      [
+        {
+          index: 0,
+          hunkId: null,
+          oldStart: 2,
+          addressDigest: null,
+          oldLines: ["b"],
+          newLines: ["sk-live-NEW"],
+        },
+      ],
     );
     expect(result.ok).toBe(false);
     if (result.ok) {
@@ -150,11 +189,88 @@ describe("applyPatchHunks", () => {
     const result = applyPatchHunks(
       ["a", "b", "c", "d"],
       [
-        { index: 0, oldStart: 1, oldLines: ["a"], newLines: ["A", "A2"] },
-        { index: 1, oldStart: 3, oldLines: ["c"], newLines: ["C"] },
+        {
+          index: 0,
+          hunkId: null,
+          oldStart: 1,
+          addressDigest: null,
+          oldLines: ["a"],
+          newLines: ["A", "A2"],
+        },
+        {
+          index: 1,
+          hunkId: null,
+          oldStart: 3,
+          addressDigest: null,
+          oldLines: ["c"],
+          newLines: ["C"],
+        },
       ],
     );
     expect(result.ok && result.value.lines).toEqual(["A", "A2", "b", "C", "d"]);
+  });
+
+  test("applies a hunk addressed only by sha-256 of oldLines (#614)", () => {
+    const oldLines = ["b"];
+    const addressDigest = digestOfPatchOldLines(oldLines);
+    const result = applyPatchHunks(
+      ["a", "b", "c"],
+      [
+        {
+          index: 0,
+          hunkId: "hunk-mid",
+          oldStart: null,
+          addressDigest,
+          oldLines,
+          newLines: ["B"],
+        },
+      ],
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      throw new Error("expected digest address");
+    }
+    expect(result.value.lines).toEqual(["a", "B", "c"]);
+    expect(result.value.hunks[0]?.oldStart).toBe(2);
+  });
+
+  test("conflicts when digest address is ambiguous or wrong (#614)", () => {
+    const digest = digestOfPatchOldLines(["x"]);
+    const ambiguous = applyPatchHunks(
+      ["x", "y", "x"],
+      [
+        {
+          index: 0,
+          hunkId: null,
+          oldStart: null,
+          addressDigest: digest,
+          oldLines: ["x"],
+          newLines: ["X"],
+        },
+      ],
+    );
+    expect(ambiguous.ok).toBe(false);
+    if (!ambiguous.ok) {
+      expect(ambiguous.error.code).toBe("conflict");
+    }
+
+    const mismatched = applyPatchHunks(
+      ["a", "b", "c"],
+      [
+        {
+          index: 0,
+          hunkId: null,
+          oldStart: 2,
+          addressDigest: digestOfPatchOldLines(["nope"]),
+          oldLines: ["b"],
+          newLines: ["B"],
+        },
+      ],
+    );
+    expect(mismatched.ok).toBe(false);
+    if (!mismatched.ok) {
+      expect(mismatched.error.code).toBe("conflict");
+    }
   });
 });
 

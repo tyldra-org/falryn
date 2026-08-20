@@ -3169,6 +3169,7 @@ export {
   DEFAULT_MAX_PATCH_TARGETS,
   DEFAULT_PATCH_LIMITS,
   describeWorkspacePatchError,
+  digestOfPatchOldLines,
   gitPathForPatchTarget,
   HARD_MAX_PATCH_HUNK_LINES,
   HARD_MAX_PATCH_HUNKS,
@@ -3182,6 +3183,7 @@ export {
   PATCH_GIT_UNAVAILABLE_REASONS,
   parsePatchChangedRegionRead,
   parseWorkspacePatchPlan,
+  resolvePatchHunkAddresses,
   summarizePatchRollback,
 } from "./workspace-patch.ts";
 export type { BoundWorkspacePath, WorkspacePathBindError } from "./workspace-path.ts";

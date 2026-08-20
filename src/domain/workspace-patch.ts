@@ -1,12 +1,14 @@
 /**
- * Workspace patch hunk preview, conflict, and apply contracts (#66).
+ * Workspace patch hunk preview, conflict, and apply contracts (#66 / #614).
  *
- * Hunks match exact preimage text at an explicit line. They are never moved to
+ * Hunks match exact preimage text at an explicit line, or at a line resolved
+ * from a `sha-256:` address of that preimage (#614). They are never moved to
  * similar text. Best-effort rollback and changed-region reads are this slice.
  * Optional Git observation refuses in-progress operations and unmerged paths.
  * Product tools remain later work.
  */
 
+import { createHash } from "node:crypto";
 import { type ContentDigest, contentDigest } from "./artifact.ts";
 import type { GitField, GitOperationState, GitStatusEntry, GitStatusSnapshot } from "./git.ts";
 import { assertNever, err, ok, type Result } from "./result.ts";
@@ -131,7 +133,19 @@ export const DEFAULT_PATCH_LIMITS: WorkspacePatchLimits = {
 
 export type ParsedPatchHunk = {
   readonly index: number;
-  readonly oldStart: number;
+  /** Stable plan hunk identity when the caller named one (#614). */
+  readonly hunkId: string | null;
+  /**
+   * 1-based old start when known. Null when the caller addressed by digest and
+   * resolution against file lines is still required (#614).
+   */
+  readonly oldStart: number | null;
+  /**
+   * Optional `sha-256:` digest of the exact `oldLines` preimage. When set with
+   * `oldStart`, the lines at that start must hash to this value. When set
+   * without `oldStart`, the unique occurrence of `oldLines` supplies the start.
+   */
+  readonly addressDigest: ContentDigest | null;
   readonly oldLines: readonly string[];
   readonly newLines: readonly string[];
 };
@@ -326,6 +340,9 @@ function parseLineList(value: unknown): Result<readonly string[], WorkspacePatch
 }
 
 function hunksOverlap(left: ParsedPatchHunk, right: ParsedPatchHunk): boolean {
+  if (left.oldStart === null || right.oldStart === null) {
+    return false;
+  }
   const leftInsert = left.oldLines.length === 0;
   const rightInsert = right.oldLines.length === 0;
   const leftEnd = leftInsert ? left.oldStart : left.oldStart + left.oldLines.length;
@@ -342,19 +359,19 @@ function hunksOverlap(left: ParsedPatchHunk, right: ParsedPatchHunk): boolean {
   return left.oldStart < rightEnd && right.oldStart < leftEnd;
 }
 
+/** Digest of the exact old-line preimage (LF-joined), for hash-anchored address. */
+export function digestOfPatchOldLines(oldLines: readonly string[]): ContentDigest {
+  const hash = createHash("sha256");
+  hash.update(Buffer.from(oldLines.join("\n"), "utf8"));
+  return contentDigest.from(`sha-256:${hash.digest("hex")}`);
+}
+
 function parseHunk(
   value: unknown,
   index: number,
   maxHunkLines: number,
 ): Result<ParsedPatchHunk, WorkspacePatchError> {
   if (!isRecord(value)) {
-    return err({ code: "malformed-hunk" });
-  }
-  if (
-    typeof value.oldStart !== "number" ||
-    !Number.isSafeInteger(value.oldStart) ||
-    value.oldStart < 1
-  ) {
     return err({ code: "malformed-hunk" });
   }
   const oldLines = parseLineList(value.oldLines);
@@ -371,9 +388,50 @@ function parseHunk(
   if (oldLines.value.length > maxHunkLines || newLines.value.length > maxHunkLines) {
     return err({ code: "malformed-limit", field: "maxHunkLines", reason: "above-hard-maximum" });
   }
+
+  let hunkId: string | null = null;
+  if (value.id !== undefined || value.hunkId !== undefined) {
+    const raw = value.id ?? value.hunkId;
+    if (typeof raw !== "string" || raw.length === 0 || raw.length > 128 || raw.includes("\0")) {
+      return err({ code: "malformed-hunk" });
+    }
+    hunkId = raw;
+  }
+
+  let addressDigest: ContentDigest | null = null;
+  if (value.addressDigest !== undefined) {
+    const parsed = contentDigest.parse(value.addressDigest);
+    if (!parsed.ok) {
+      return err({ code: "malformed-digest" });
+    }
+    addressDigest = parsed.value;
+  }
+
+  let oldStart: number | null = null;
+  if (value.oldStart !== undefined) {
+    if (
+      typeof value.oldStart !== "number" ||
+      !Number.isSafeInteger(value.oldStart) ||
+      value.oldStart < 1
+    ) {
+      return err({ code: "malformed-hunk" });
+    }
+    oldStart = value.oldStart;
+  }
+
+  if (oldStart === null && addressDigest === null) {
+    return err({ code: "malformed-hunk" });
+  }
+  if (oldStart === null && oldLines.value.length === 0) {
+    // Inserts need an explicit line; a digest of empty preimage is ambiguous.
+    return err({ code: "malformed-hunk" });
+  }
+
   return ok({
     index,
-    oldStart: value.oldStart,
+    hunkId,
+    oldStart,
+    addressDigest,
     oldLines: oldLines.value,
     newLines: newLines.value,
   });
@@ -405,11 +463,29 @@ function parseTarget(
     }
     hunks.push(parsed.value);
   }
-  const ordered = [...hunks].sort((left, right) => left.oldStart - right.oldStart);
+  const ordered = [...hunks].sort((left, right) => {
+    if (left.oldStart === null && right.oldStart === null) {
+      return left.index - right.index;
+    }
+    if (left.oldStart === null) {
+      return 1;
+    }
+    if (right.oldStart === null) {
+      return -1;
+    }
+    return left.oldStart - right.oldStart;
+  });
   for (let indexHunk = 1; indexHunk < ordered.length; indexHunk += 1) {
     const previous = ordered[indexHunk - 1];
     const current = ordered[indexHunk];
-    if (previous === undefined || current === undefined || hunksOverlap(previous, current)) {
+    if (previous === undefined || current === undefined) {
+      return err({ code: "overlapping-hunks" });
+    }
+    if (
+      previous.oldStart !== null &&
+      current.oldStart !== null &&
+      hunksOverlap(previous, current)
+    ) {
       return err({ code: "overlapping-hunks" });
     }
   }
@@ -564,7 +640,9 @@ export function computePatchPlanId(plan: ParsedPatchPlan): string {
       target.expectedDigest ?? "",
       target.expectedRevision ?? "",
       ...target.hunks.flatMap((hunk) => [
+        hunk.hunkId ?? "",
         String(hunk.oldStart),
+        hunk.addressDigest ?? "",
         ...hunk.oldLines,
         "+",
         ...hunk.newLines,
@@ -630,40 +708,49 @@ export function applyPatchHunks(
   lines: readonly string[],
   hunks: readonly ParsedPatchHunk[],
 ): Result<PatchHunkApplyResult, WorkspacePatchError> {
+  const resolved = resolvePatchHunkAddresses(lines, hunks);
+  if (!resolved.ok) {
+    return resolved;
+  }
+  const concrete = resolved.value;
   const previews: PatchHunkPreview[] = [];
   const regions: LineRange[] = [];
   let delta = 0;
-  for (const hunk of hunks) {
+  for (const hunk of concrete) {
     const oldCount = hunk.oldLines.length;
     const newCount = hunk.newLines.length;
-    const newStart = hunk.oldStart + delta;
-    const startIndex = hunk.oldStart - 1;
+    const start = hunk.oldStart;
+    if (start === null) {
+      return err({ code: "malformed-hunk" });
+    }
+    const newStart = start + delta;
+    const startIndex = start - 1;
     if (oldCount === 0) {
       if (startIndex < 0 || startIndex > lines.length) {
         return err({
           code: "conflict",
           hunkIndex: hunk.index,
-          ...conflictContext(lines, hunk.oldStart, 1),
+          ...conflictContext(lines, start, 1),
         });
       }
     } else if (startIndex < 0 || startIndex + oldCount > lines.length) {
       return err({
         code: "conflict",
         hunkIndex: hunk.index,
-        ...conflictContext(lines, hunk.oldStart, oldCount),
+        ...conflictContext(lines, start, oldCount),
       });
     } else if (!linesEqual(lines.slice(startIndex, startIndex + oldCount), hunk.oldLines)) {
       return err({
         code: "conflict",
         hunkIndex: hunk.index,
-        ...conflictContext(lines, hunk.oldStart, oldCount),
+        ...conflictContext(lines, start, oldCount),
       });
     }
     previews.push({
       index: hunk.index,
       status: "ready",
-      header: hunkHeader(hunk.oldStart, oldCount, newStart, newCount),
-      oldStart: hunk.oldStart,
+      header: hunkHeader(start, oldCount, newStart, newCount),
+      oldStart: start,
       oldCount,
       newStart,
       newCount,
@@ -672,10 +759,97 @@ export function applyPatchHunks(
     delta += newCount - oldCount;
   }
   const next = [...lines];
-  for (const hunk of [...hunks].reverse()) {
+  for (const hunk of [...concrete].reverse()) {
+    if (hunk.oldStart === null) {
+      return err({ code: "malformed-hunk" });
+    }
     next.splice(hunk.oldStart - 1, hunk.oldLines.length, ...hunk.newLines);
   }
   return ok({ lines: next, regions, hunks: previews });
+}
+
+/**
+ * Resolve hash-anchored or id-carried hunks to concrete `oldStart` values (#614).
+ *
+ * Digest mismatch or a non-unique preimage match is a conflict — never a fuzzy
+ * relocate.
+ */
+export function resolvePatchHunkAddresses(
+  lines: readonly string[],
+  hunks: readonly ParsedPatchHunk[],
+): Result<readonly ParsedPatchHunk[], WorkspacePatchError> {
+  const resolved: ParsedPatchHunk[] = [];
+  for (const hunk of hunks) {
+    if (hunk.addressDigest != null) {
+      const expected = digestOfPatchOldLines(hunk.oldLines);
+      if (expected !== hunk.addressDigest) {
+        // Caller named a digest that does not match the oldLines they sent.
+        return err({
+          code: "conflict",
+          hunkIndex: hunk.index,
+          ...conflictContext(lines, hunk.oldStart ?? 1, Math.max(1, hunk.oldLines.length)),
+        });
+      }
+    }
+
+    if (hunk.oldStart !== null && hunk.oldStart !== undefined) {
+      if (hunk.addressDigest != null && hunk.oldLines.length > 0) {
+        const startIndex = hunk.oldStart - 1;
+        if (startIndex < 0 || startIndex + hunk.oldLines.length > lines.length) {
+          return err({
+            code: "conflict",
+            hunkIndex: hunk.index,
+            ...conflictContext(lines, hunk.oldStart, hunk.oldLines.length),
+          });
+        }
+        const slice = lines.slice(startIndex, startIndex + hunk.oldLines.length);
+        if (digestOfPatchOldLines(slice) !== hunk.addressDigest) {
+          return err({
+            code: "conflict",
+            hunkIndex: hunk.index,
+            ...conflictContext(lines, hunk.oldStart, hunk.oldLines.length),
+          });
+        }
+      }
+      resolved.push(hunk);
+      continue;
+    }
+
+    // Digest-only address: unique exact occurrence of oldLines.
+    const matches: number[] = [];
+    const needle = hunk.oldLines;
+    for (let start = 0; start + needle.length <= lines.length; start += 1) {
+      if (linesEqual(lines.slice(start, start + needle.length), needle)) {
+        matches.push(start + 1);
+      }
+    }
+    if (matches.length !== 1) {
+      return err({
+        code: "conflict",
+        hunkIndex: hunk.index,
+        ...conflictContext(lines, matches[0] ?? 1, Math.max(1, needle.length)),
+      });
+    }
+    resolved.push({ ...hunk, oldStart: matches[0] ?? null });
+  }
+
+  const ordered = [...resolved].sort((left, right) => {
+    const leftStart = left.oldStart ?? Number.MAX_SAFE_INTEGER;
+    const rightStart = right.oldStart ?? Number.MAX_SAFE_INTEGER;
+    return leftStart - rightStart;
+  });
+  for (let indexHunk = 1; indexHunk < ordered.length; indexHunk += 1) {
+    const previous = ordered[indexHunk - 1];
+    const current = ordered[indexHunk];
+    if (
+      previous === undefined ||
+      current === undefined ||
+      (previous.oldStart !== null && current.oldStart !== null && hunksOverlap(previous, current))
+    ) {
+      return err({ code: "overlapping-hunks" });
+    }
+  }
+  return ok(resolved);
 }
 
 export function joinPatchedLines(
