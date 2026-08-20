@@ -1,5 +1,6 @@
 /**
- * Loads an artifact view and mounts code, diff, document, or media presentation.
+ * Loads an artifact view and mounts code, diff, document, media, or diagnostic
+ * presentation.
  */
 
 import { type ReactNode, useEffect, useState } from "react";
@@ -9,14 +10,17 @@ import type { ArtifactPresentation } from "../../presentation/transcript/artifac
 import {
   type CodeViewModel,
   codeViewFrom,
+  type DiagnosticViewModel,
   type DiffViewModel,
   type DocumentViewModel,
+  diagnosticViewFrom,
   diffViewFrom,
   documentViewFrom,
   type MediaViewModel,
   mediaViewFrom,
 } from "../../presentation/viewer/index.ts";
 import { CodeViewer } from "./code-viewer.tsx";
+import { DiagnosticViewer } from "./diagnostic-viewer.tsx";
 import { DiffViewer } from "./diff-viewer.tsx";
 import { DocumentViewer } from "./document-viewer.tsx";
 import { MediaViewer } from "./media-viewer.tsx";
@@ -121,6 +125,21 @@ function renderPresentation(props: ArtifactViewerOverlayProps, input: RenderInpu
         <MediaViewer model={model} loading={loading} error={error ?? wrongKind} rows={props.rows} />
       );
     }
+    case "diagnostic": {
+      const model = view === null ? null : diagnosticViewFrom(view);
+      const wrongKind =
+        view !== null && model === null
+          ? `This artifact is a ${view.kind} viewer; diagnostic was expected.`
+          : null;
+      return (
+        <DiagnosticViewer
+          model={model}
+          loading={loading}
+          error={error ?? wrongKind}
+          rows={props.rows}
+        />
+      );
+    }
     case "code": {
       const model = view === null ? null : codeViewFrom(view);
       const wrongKind =
@@ -168,4 +187,10 @@ export function ArtifactCodeOverlay(props: ArtifactCodeOverlayProps): ReactNode 
   );
 }
 
-export type { CodeViewModel, DiffViewModel, DocumentViewModel, MediaViewModel };
+export type {
+  CodeViewModel,
+  DiagnosticViewModel,
+  DiffViewModel,
+  DocumentViewModel,
+  MediaViewModel,
+};

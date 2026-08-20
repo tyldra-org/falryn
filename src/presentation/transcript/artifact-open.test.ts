@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   blockOffersOpenArtifact,
   blockSelectsCodeViewer,
+  blockSelectsDiagnosticViewer,
   blockSelectsDiffViewer,
   blockSelectsDocumentViewer,
   blockSelectsMediaViewer,
@@ -51,6 +52,25 @@ describe("artifact open helpers", () => {
     expect(
       blockSelectsMediaViewer({ ...artifact, mediaType: "application/vnd.jupyter.notebook+json" }),
     ).toBe(true);
+  });
+
+  test("selects diagnostic for SARIF and Falryn diagnostic types", () => {
+    const artifact = everyBlockKind().find((block) => block.kind === "artifact");
+    if (artifact === undefined || artifact.kind !== "artifact") {
+      throw new Error("the corpus no longer has an artifact block");
+    }
+    expect(blockSelectsDiagnosticViewer({ ...artifact, mediaType: "application/sarif+json" })).toBe(
+      true,
+    );
+    expect(
+      blockSelectsDiagnosticViewer({
+        ...artifact,
+        mediaType: "application/vnd.falryn.diagnostic+json",
+      }),
+    ).toBe(true);
+    expect(blockSelectsCodeViewer({ ...artifact, mediaType: "application/sarif+json" })).toBe(
+      false,
+    );
   });
 
   test("refuses non-artifact blocks", () => {

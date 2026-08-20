@@ -349,6 +349,8 @@ function overlayTitle(
           return "Document";
         case "media":
           return "Media";
+        case "diagnostic":
+          return "Diagnostic";
         case "code":
           return "Source";
         default: {

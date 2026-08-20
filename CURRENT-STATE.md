@@ -1056,8 +1056,11 @@ text) and media-summary overlays
 dashboard overlay (`ctrl+g`) lists grouped status, worktrees, and checkpoints
 through `GitDashboard` / `GitPort`; checkpoint create and restore go through
 that port after a restore plan, and the TUI never spawns git
-([#268](https://github.com/tyldra-org/falryn/issues/268)). Diagnostic overlays
-remain
+([#268](https://github.com/tyldra-org/falryn/issues/268)). Diagnostic artifact
+overlays show parsed level, code, and subsystem plus the bounded body without
+running recovery
+([#269](https://github.com/tyldra-org/falryn/issues/269)). Remaining dashboard
+viewer work stays with
 ([#264](https://github.com/tyldra-org/falryn/issues/264)).
 
 The startup recovery introduced by
