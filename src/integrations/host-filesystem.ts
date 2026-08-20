@@ -17,7 +17,16 @@
  *   passing it through would put both into every diagnostic.
  */
 
-import { type Dirent, promises as fs, constants as fsConstants, type Stats } from "node:fs";
+import {
+  closeSync,
+  type Dirent,
+  promises as fs,
+  constants as fsConstants,
+  fsyncSync,
+  openSync,
+  type Stats,
+  writeSync,
+} from "node:fs";
 import type { FileHandle } from "node:fs/promises";
 import { open as openFile } from "node:fs/promises";
 
@@ -30,13 +39,17 @@ import {
   type FileSystemOperation,
   type FileSystemPort,
   type FileWriteReceipt,
+  type FlushReport,
   joinPath,
   type LocalPath,
+  MAX_STREAM_WRITE_BYTES,
+  type OutputStreamPort,
   ok,
   type PathEntry,
   parentPath,
   parseLocalPath,
   type Result,
+  type StreamWrite,
 } from "../domain/index.ts";
 
 /** errno spellings this adapter recognizes. Anything else is `io-failure`. */
@@ -527,6 +540,90 @@ export function createHostFileSystem(): FileSystemPort {
         return ok(null);
       } catch (thrown: unknown) {
         return err(translate(thrown, from, "copy"));
+      }
+    },
+  };
+}
+
+/**
+ * An `OutputStreamPort` that delivers bytes to one file on the host.
+ *
+ * Used when artifact retrieval names a destination rather than stdout. Lives here
+ * rather than in the CLI so byte delivery stays in an adapter module.
+ */
+export function createHostFileOutputStream(path: LocalPath): OutputStreamPort {
+  let handle: number | null = null;
+  let closedCode: string | null = null;
+  let pending = 0;
+
+  const openHandle = (): number => {
+    if (handle !== null) {
+      return handle;
+    }
+    try {
+      handle = openSync(
+        path,
+        fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_TRUNC,
+        0o644,
+      );
+      return handle;
+    } catch (thrown: unknown) {
+      closedCode = errnoOf(thrown) ?? "unknown";
+      throw thrown;
+    }
+  };
+
+  return {
+    write(bytes: Uint8Array): StreamWrite {
+      if (bytes.byteLength > MAX_STREAM_WRITE_BYTES) {
+        return { status: "too-large", accepted: 0, pending };
+      }
+      if (closedCode !== null) {
+        return { status: "closed", accepted: 0, pending };
+      }
+      try {
+        const written = writeSync(openHandle(), bytes);
+        pending += written;
+        return { status: "accepted", accepted: written, pending };
+      } catch (thrown: unknown) {
+        closedCode = errnoOf(thrown) ?? "unknown";
+        return { status: "closed", accepted: 0, pending };
+      }
+    },
+
+    async flush(): Promise<FlushReport> {
+      if (closedCode !== null) {
+        const unflushed = pending;
+        pending = 0;
+        return { status: "closed", flushed: 0, pending: unflushed, detail: closedCode };
+      }
+      if (handle !== null) {
+        try {
+          fsyncSync(handle);
+        } catch (thrown: unknown) {
+          closedCode = errnoOf(thrown) ?? "unknown";
+          const unflushed = pending;
+          pending = 0;
+          return { status: "closed", flushed: 0, pending: unflushed, detail: closedCode };
+        }
+      }
+      const flushed = pending;
+      pending = 0;
+      return { status: "flushed", flushed, pending: 0, detail: null };
+    },
+
+    isClosed(): boolean {
+      return closedCode !== null;
+    },
+
+    dispose(): void {
+      if (handle !== null) {
+        try {
+          closeSync(handle);
+        } catch {
+          // The handle is gone either way; a close failure is not recoverable here.
+        }
+        handle = null;
       }
     },
   };

@@ -12,7 +12,7 @@ export type { HostBlobStoreOptions } from "./host-blobs.ts";
 export { createHostBlobStore } from "./host-blobs.ts";
 export { createHostCommandRunner } from "./host-commands.ts";
 export { createHostEnvironment, hostHome, hostPlatform } from "./host-environment.ts";
-export { createHostFileSystem } from "./host-filesystem.ts";
+export { createHostFileOutputStream, createHostFileSystem } from "./host-filesystem.ts";
 export type { HostGitOptions } from "./host-git.ts";
 export { createHostGitPort } from "./host-git.ts";
 export type { HostPackageWriterOptions } from "./host-packages.ts";

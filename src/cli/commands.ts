@@ -74,6 +74,7 @@ import {
   LOCAL_DATA_ROOTS,
   type LocalDataRoot,
   type LocalPath,
+  localPath,
   MAX_ARTIFACT_CATALOG,
   MAX_ARTIFACT_RANGE_BYTES,
   MAX_SESSION_CATALOG,
@@ -96,6 +97,7 @@ import {
 } from "../domain/index.ts";
 import {
   createHostBlobStore,
+  createHostFileOutputStream,
   createHostPackageWriter,
   createSha256Hasher,
   openBunSqlite,
@@ -1293,7 +1295,12 @@ async function artifactGetThroughStore(
     const written =
       arguments_.outputPath === null
         ? await streamArtifactToPort(opened.reader, record, options.resultStream, signal)
-        : await streamArtifactToFile(opened.reader, record, arguments_.outputPath, signal);
+        : await streamArtifactToDestination(
+            opened.reader,
+            record,
+            localPath(arguments_.outputPath),
+            signal,
+          );
     if (!written.ok) {
       return artifactGetFailure(written.error);
     }
@@ -1319,6 +1326,31 @@ function refusalForRetrieval(record: ArtifactRecord): ArtifactError | null {
     return { kind: "artifact", code: "not-found", artifactId: record.artifactId };
   }
   return null;
+}
+
+async function streamArtifactToDestination(
+  reader: ReturnType<typeof createArtifactReader>,
+  record: ArtifactRecord,
+  path: LocalPath,
+  signal: AbortSignal | undefined,
+): Promise<Result<number, ArtifactError | ArtifactReadError>> {
+  const stream = createHostFileOutputStream(path);
+  try {
+    const written = await streamArtifactToPort(reader, record, stream, signal);
+    if (!written.ok) {
+      return written;
+    }
+    const flushed = await stream.flush();
+    if (flushed.status !== "flushed") {
+      return {
+        ok: false,
+        error: { kind: "artifact", code: "cancelled", artifactId: record.artifactId },
+      };
+    }
+    return written;
+  } finally {
+    stream.dispose();
+  }
 }
 
 async function streamArtifactToPort(
@@ -1362,49 +1394,6 @@ async function streamArtifactToPort(
     offset += bytes.byteLength;
   }
   return { ok: true, value: total };
-}
-
-async function streamArtifactToFile(
-  reader: ReturnType<typeof createArtifactReader>,
-  record: ArtifactRecord,
-  path: string,
-  signal: AbortSignal | undefined,
-): Promise<Result<number, ArtifactError | ArtifactReadError>> {
-  const { open } = await import("node:fs/promises");
-  const handle = await open(path, "w");
-  try {
-    let offset = 0;
-    let total = 0;
-    while (offset < record.byteLength) {
-      if (signal?.aborted === true) {
-        return {
-          ok: false,
-          error: { kind: "artifact", code: "cancelled", artifactId: record.artifactId },
-        };
-      }
-      const length = Math.min(MAX_ARTIFACT_RANGE_BYTES, record.byteLength - offset);
-      const read = await reader.read(
-        { artifactId: record.artifactId, mode: "range", offset, length },
-        signal,
-      );
-      if (!read.ok) {
-        return read;
-      }
-      const bytes = read.value.range?.bytes;
-      if (bytes === undefined || bytes === null) {
-        return {
-          ok: false,
-          error: { kind: "artifact", code: "not-found", artifactId: record.artifactId },
-        };
-      }
-      await handle.write(bytes);
-      total += bytes.byteLength;
-      offset += bytes.byteLength;
-    }
-    return { ok: true, value: total };
-  } finally {
-    await handle.close();
-  }
 }
 
 function artifactListExpansion(): string {
