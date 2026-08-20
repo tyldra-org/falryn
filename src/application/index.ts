@@ -77,6 +77,7 @@ export {
   fromConfigurationIssues,
   fromCredentialFailure,
   fromEventStoreError,
+  fromExportError,
   fromIdentityError,
   fromParticipantReports,
   fromRemovalRefusal,

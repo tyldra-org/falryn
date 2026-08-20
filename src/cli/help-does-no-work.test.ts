@@ -56,6 +56,7 @@ describe("help and version", () => {
       ["--version"],
       ["config", "--help"],
       ["doctor", "--help"],
+      ["export", "--help"],
       ["config", "show", "--help"],
       // Invalid usage is refused before any work too, which is the same rule
       // stated from the other side: nothing is constructed to reject a flag.

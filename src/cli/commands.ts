@@ -1,36 +1,52 @@
 /**
- * The command surfaces v0.1 can honestly ship.
+ * The command surfaces this build can honestly ship.
  *
- * `config` is first because the configuration area is fully implemented and its
- * precedence is already proven by #8 — so what this exercises is the CLI path,
- * not new service behavior. `doctor` reports what the local-data and storage
- * areas already know.
+ * `config` inspects without publishing a durable generation. `doctor` describes
+ * roots without creating them. `data` previews a removal and mutates only when
+ * the exact plan identity is confirmed. `export` previews a selection by default
+ * and writes a package only with `--write`.
  *
- * Both are read-only, and that is a contract rather than a habit:
- * `reference/CLI.md` requires diagnostics not to mutate, so `doctor` describes
- * roots without creating them and `config` inspects without publishing a
- * durable generation. Both declare `READ_ONLY_EFFECT`, which is what makes the
- * claim checkable in the result rather than only in this comment.
- *
- * Neither renders anything. Each returns a `CommandResult` and #18/#19 turn it
- * into text.
+ * None of them render anything. Each returns a `CommandResult` and #18/#19 turn
+ * it into text.
  */
 
 import {
+  createRuntimeRedactor,
   fromConfigurationIssues,
+  fromExportError,
   fromRemovalRefusal,
+  fromSqliteStoreError,
   fromUnknown,
   fromUnreadConfigurationSources,
 } from "../application/index.ts";
 import { CONFIGURATION_FILE_NAME, inspectGeneration, PROFILE_DIRECTORY } from "../config/index.ts";
-import { probeStorage, rootChild, type StorageProbe, sqliteDatabasePath } from "../data/index.ts";
+import {
+  createRecordRepositories,
+  createSqliteEventStore,
+  openSqliteStore,
+  PRODUCTION_MIGRATIONS,
+  probeStorage,
+  resolveInventory,
+  rootChild,
+  type StorageProbe,
+  sqliteDatabasePath,
+  writePackage,
+} from "../data/index.ts";
 import {
   assertNever,
   blocksLocalData,
   type ConfigurationInspection,
   type ConfigurationIssue,
+  createInMemoryPackageWriter,
+  DEFAULT_BUSY_TIMEOUT_MS,
+  type ExportCounts,
+  type ExportInventory,
+  type ExportOmission,
+  type ExportRedaction,
+  type ExportSelectionSummary,
   effectOf,
   type FalrynError,
+  isRootUsable,
   isUnreadSource,
   joinPath,
   LOCAL_DATA_ROOTS,
@@ -40,12 +56,18 @@ import {
   type RemovalOutcome,
   type RemovalPlan,
   type RootInspection,
+  type RootStatus,
   type RootViability,
   type SourceReport,
   type TerminalOutcome,
 } from "../domain/index.ts";
-import { openBunSqlite } from "../integrations/index.ts";
-import type { DataCommandArguments } from "./command-tree.ts";
+import {
+  createHostBlobStore,
+  createHostPackageWriter,
+  createSha256Hasher,
+  openBunSqlite,
+} from "../integrations/index.ts";
+import type { DataCommandArguments, ExportCommandArguments } from "./command-tree.ts";
 import type { GlobalOptions } from "./options.ts";
 import {
   COMMAND_RESULT_SCHEMA_FAMILY,
@@ -56,6 +78,7 @@ import {
   READ_ONLY_EFFECT,
 } from "./result.ts";
 import type { ServiceProvider } from "./services.ts";
+import { FALRYN_VERSION } from "./version.ts";
 
 /** A finished result with the fields every command shares already filled in. */
 function resultFor<Command extends CommandId, Payload>(
@@ -527,6 +550,267 @@ async function storageFor(
 }
 
 /* -------------------------------------------------------------------------- */
+/* export                                                                      */
+/* -------------------------------------------------------------------------- */
+
+const WRITE_COMPLETED_EFFECT: CommandEffect = { intent: "mutate", observed: "completed" };
+
+/** What `falryn export` reports: inventory facts and, on write, a bundle handle. */
+export type ExportCommandPayload = {
+  readonly mode: "preview" | "written";
+  readonly selection: ExportSelectionSummary;
+  readonly counts: ExportCounts;
+  readonly sessionIds: readonly string[];
+  readonly artifactBytes: number;
+  readonly omissions: readonly ExportOmission[];
+  readonly redactions: readonly ExportRedaction[];
+  readonly bundle: {
+    readonly name: string;
+    readonly path: string;
+    readonly byteLength: number;
+    readonly cancelledAfterFinalize: boolean;
+  } | null;
+};
+
+/**
+ * Preview or write a versioned export package through the owning data pipeline.
+ *
+ * Selection, bounding, redaction, and package layout stay in `src/data/export.ts`.
+ * This command opens storage, asks that pipeline, and returns a handle rather
+ * than inlining records.
+ */
+export async function runExport(
+  services: ServiceProvider,
+  arguments_: ExportCommandArguments,
+  signal?: AbortSignal,
+  onMutationStart?: () => void,
+): Promise<CommandResultOf<"export", ExportCommandPayload>> {
+  try {
+    return await exportThroughStore(services, arguments_, signal, onMutationStart);
+  } catch (error) {
+    return resultFor<"export", ExportCommandPayload>(
+      "export",
+      null,
+      [fromUnknown(error, { operation: "export" })],
+      undefined,
+      arguments_.write ? MUTATION_NOT_OBSERVED : READ_ONLY_EFFECT,
+    );
+  }
+}
+
+async function exportThroughStore(
+  services: ServiceProvider,
+  arguments_: ExportCommandArguments,
+  signal: AbortSignal | undefined,
+  onMutationStart: (() => void) | undefined,
+): Promise<CommandResultOf<"export", ExportCommandPayload>> {
+  const { localData, clock } = services();
+  const rootsToPrepare = arguments_.write
+    ? (["state", "artifacts", "exports", "temporaryIngest"] as const)
+    : (["state", "artifacts", "temporaryIngest"] as const);
+  const statuses = await localData.prepareRoots([...rootsToPrepare], signal);
+  for (const root of rootsToPrepare) {
+    const status = statuses.find((candidate) => candidate.root === root);
+    if (status === undefined || !exportRootReady(status)) {
+      return resultFor<"export", ExportCommandPayload>(
+        "export",
+        null,
+        [
+          fromUnknown(new Error(`the ${root} root is unusable: ${status?.code ?? "unresolved"}`), {
+            operation: `prepare ${root} root`,
+          }),
+        ],
+        undefined,
+        arguments_.write ? MUTATION_NOT_OBSERVED : READ_ONLY_EFFECT,
+      );
+    }
+  }
+
+  const stateRoot = rootChild(localData.layout, "state");
+  const artifactsRoot = rootChild(localData.layout, "artifacts");
+  const temporaryRoot = rootChild(localData.layout, "temporaryIngest");
+  const exportsRoot = rootChild(localData.layout, "exports");
+  const databasePath = stateRoot === null ? null : sqliteDatabasePath(stateRoot);
+  if (
+    stateRoot === null ||
+    databasePath === null ||
+    artifactsRoot === null ||
+    temporaryRoot === null ||
+    (arguments_.write && exportsRoot === null)
+  ) {
+    return resultFor<"export", ExportCommandPayload>(
+      "export",
+      null,
+      [
+        fromUnknown(new Error("an export root could not be resolved"), {
+          operation: "resolve export roots",
+        }),
+      ],
+      undefined,
+      arguments_.write ? MUTATION_NOT_OBSERVED : READ_ONLY_EFFECT,
+    );
+  }
+
+  const opened = await openSqliteStore({
+    open: openBunSqlite,
+    clock,
+    databasePath,
+    backupDirectory: stateRoot,
+    migrations: PRODUCTION_MIGRATIONS,
+    busyTimeoutMs: DEFAULT_BUSY_TIMEOUT_MS,
+  });
+  if (!opened.ok) {
+    return resultFor<"export", ExportCommandPayload>(
+      "export",
+      null,
+      [fromSqliteStoreError(opened.error, { operation: "open local database" })],
+      undefined,
+      arguments_.write ? MUTATION_NOT_OBSERVED : READ_ONLY_EFFECT,
+    );
+  }
+
+  try {
+    const packages = arguments_.write
+      ? createHostPackageWriter({ exportsRoot: exportsRoot as LocalPath })
+      : createInMemoryPackageWriter();
+    const options = {
+      store: opened.value,
+      repositories: createRecordRepositories(opened.value),
+      events: createSqliteEventStore(opened.value),
+      blobs: createHostBlobStore({ artifactsRoot, temporaryRoot }),
+      packages,
+      hasher: createSha256Hasher(),
+      clock,
+      buildIdentity: `falryn/${FALRYN_VERSION}`,
+      redactor: createRuntimeRedactor(),
+    };
+
+    const inventory = await resolveInventory(options, arguments_.selection, signal);
+    if (!inventory.ok) {
+      return exportFailure(arguments_, inventory.error);
+    }
+
+    if (!arguments_.write) {
+      return resultFor(
+        "export",
+        payloadFromInventory("preview", arguments_.selection, inventory.value, null),
+      );
+    }
+
+    const name = arguments_.name;
+    if (name === null) {
+      return resultFor<"export", ExportCommandPayload>(
+        "export",
+        null,
+        [
+          fromUnknown(new Error("export write is missing a package name"), {
+            operation: "write export",
+          }),
+        ],
+        undefined,
+        MUTATION_NOT_OBSERVED,
+      );
+    }
+
+    onMutationStart?.();
+    const written = await writePackage(
+      options,
+      name,
+      arguments_.selection,
+      inventory.value,
+      signal,
+    );
+    if (!written.ok) {
+      return exportFailure(arguments_, written.error, MUTATION_NOT_OBSERVED);
+    }
+
+    const dest = joinPath(exportsRoot as LocalPath, name);
+    const bundle = {
+      name,
+      path: dest.ok ? dest.value : name,
+      byteLength: written.value.byteLength,
+      cancelledAfterFinalize: written.value.cancelledAfterFinalize,
+    };
+    const payload = payloadFromInventory(
+      "written",
+      arguments_.selection,
+      inventory.value,
+      bundle,
+      written.value.manifest.redactions,
+    );
+    if (written.value.cancelledAfterFinalize) {
+      return resultFor(
+        "export",
+        payload,
+        [],
+        { kind: "cancelled", effect: "completed" },
+        WRITE_COMPLETED_EFFECT,
+      );
+    }
+    return resultFor("export", payload, [], undefined, WRITE_COMPLETED_EFFECT);
+  } finally {
+    await opened.value.close(signal);
+  }
+}
+
+function exportFailure(
+  arguments_: ExportCommandArguments,
+  error: Parameters<typeof fromExportError>[0],
+  effect?: CommandEffect,
+): CommandResultOf<"export", ExportCommandPayload> {
+  const translated = fromExportError(error, { operation: "export" });
+  const cancelled = translated.category === "cancellation";
+  return resultFor(
+    "export",
+    null,
+    [translated],
+    cancelled ? { kind: "cancelled", effect: "none" } : { kind: "failed", effect: "none" },
+    effect ?? (arguments_.write ? MUTATION_NOT_OBSERVED : READ_ONLY_EFFECT),
+  );
+}
+
+function payloadFromInventory(
+  mode: "preview" | "written",
+  selection: ExportCommandArguments["selection"],
+  inventory: ExportInventory,
+  bundle: ExportCommandPayload["bundle"],
+  redactions: readonly ExportRedaction[] = [],
+): ExportCommandPayload {
+  return {
+    mode,
+    selection: summaryOf(selection, inventory),
+    counts: inventory.counts,
+    sessionIds: inventory.sessionIds.map((id) => id),
+    artifactBytes: inventory.artifactBytes,
+    omissions: inventory.omissions,
+    redactions,
+    bundle,
+  };
+}
+
+function summaryOf(
+  selection: ExportCommandArguments["selection"],
+  inventory: ExportInventory,
+): ExportSelectionSummary {
+  return {
+    kind: selection.kind,
+    sessions: inventory.sessionIds.length,
+    includesSensitive: selection.includeSensitive,
+  };
+}
+
+/**
+ * Whether export may use a prepared root.
+ *
+ * `insecure-permissions` is still a writable directory: doctor reports it as
+ * ready-with-a-warning, and refusing export there would block ordinary host
+ * umasks for a diagnostic that does not stop the write.
+ */
+function exportRootReady(status: RootStatus): boolean {
+  return isRootUsable(status) || status.code === "insecure-permissions";
+}
+
+/* -------------------------------------------------------------------------- */
 /* A command that did not finish                                               */
 /* -------------------------------------------------------------------------- */
 
@@ -577,6 +861,8 @@ export function stoppedResult(
       );
     case "doctor":
       return resultFor<"doctor", DoctorPayload>("doctor", null, [], outcome, effect);
+    case "export":
+      return resultFor<"export", ExportCommandPayload>("export", null, [], outcome, effect);
     default:
       // A command added without a branch fails to compile here rather than
       // reporting a stopped run under someone else's command identity.
@@ -602,4 +888,5 @@ export type RunCommandResult =
   | ReturnType<typeof runConfigPath>
   | Awaited<ReturnType<typeof runDataReset>>
   | Awaited<ReturnType<typeof runDataUninstall>>
-  | Awaited<ReturnType<typeof runDoctor>>;
+  | Awaited<ReturnType<typeof runDoctor>>
+  | Awaited<ReturnType<typeof runExport>>;
