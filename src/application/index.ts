@@ -89,6 +89,12 @@ export {
   withContext,
 } from "./error-translation.ts";
 export type {
+  GitDashboard,
+  GitDashboardOptions,
+  GitDashboardSnapshot,
+} from "./git-dashboard.ts";
+export { createGitDashboard, describeGitError } from "./git-dashboard.ts";
+export type {
   HushEvidenceRequest,
   HushIntegrator,
   HushIntegratorOptions,

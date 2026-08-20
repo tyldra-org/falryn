@@ -108,14 +108,13 @@ describe("help", () => {
 
   test("says why a command cannot run", async () => {
     // Listed, discoverable, and answered — rather than hidden or silently inert.
-    // Tall enough to show the whole registry without scrolling.
+    // The overlay is a fraction of the frame, so this asserts reasons that sit
+    // in the visible window, not every later command in the registry.
     using shell = await open(40);
     const frame = await shell.press("?");
-    expect(frame).toContain("the composer is not focused");
-    // The transcript's commands are unavailable for their own reason, and it is
-    // a different sentence rather than a shared "unavailable".
     expect(frame).toContain("there is no transcript yet");
     expect(frame).toContain("there is no openable artifact to view for this entry");
+    expect(frame).toContain("no Git dashboard is open");
   });
 
   test("scrolls long help through OpenTUI's focused scrollbox", async () => {

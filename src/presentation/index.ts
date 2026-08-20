@@ -44,6 +44,21 @@ export {
   settledEntries,
 } from "./activity/index.ts";
 export type {
+  ChangeBucket,
+  ChangeRow,
+  ChangesDashboardInput,
+  ChangesDashboardModel,
+  ChangesTab,
+  CheckpointRow,
+  WorktreeRow,
+} from "./git/dashboard.ts";
+export {
+  CHANGE_BUCKETS,
+  CHANGES_TABS,
+  changesDashboardFrom,
+  rowsForTab,
+} from "./git/dashboard.ts";
+export type {
   TranscriptBlockAdmissionError,
   TranscriptBlockAdmissionErrorCode,
   TranscriptRecordInput,

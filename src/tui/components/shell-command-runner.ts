@@ -15,7 +15,7 @@ import {
   type TranscriptSurfaceState,
 } from "../transcript/index.ts";
 import type { TranscriptGeometry } from "../transcript-model.ts";
-import { artifactOverlayRoute } from "../view-model.ts";
+import { artifactOverlayRoute, changesOverlayRoute } from "../view-model.ts";
 import type { ShellAction } from "./shell-state.ts";
 
 export type TranscriptCommandContext = {
@@ -144,6 +144,27 @@ export function runAvailableCommand(
       return true;
     case "artifact.previousHunk":
       dispatch({ kind: "artifact-previous-hunk" });
+      return true;
+    case "changes.open":
+      dispatch({ kind: "open-overlay", route: changesOverlayRoute() });
+      return true;
+    case "changes.nextTab":
+      dispatch({ kind: "changes-tab", delta: 1 });
+      return true;
+    case "changes.previousTab":
+      dispatch({ kind: "changes-tab", delta: -1 });
+      return true;
+    case "changes.nextEntry":
+      dispatch({ kind: "changes-cursor", delta: 1 });
+      return true;
+    case "changes.previousEntry":
+      dispatch({ kind: "changes-cursor", delta: -1 });
+      return true;
+    case "changes.createCheckpoint":
+      dispatch({ kind: "changes-pending", pending: "create-checkpoint" });
+      return true;
+    case "changes.restoreCheckpoint":
+      dispatch({ kind: "changes-pending", pending: "restore" });
       return true;
     case "composer.submit":
       dispatch({ kind: "composer", action: { kind: "submit" } });

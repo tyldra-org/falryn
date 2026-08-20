@@ -26,7 +26,7 @@
 
 import { useRenderer, useTerminalDimensions } from "@opentui/react";
 import { type ReactNode, useMemo, useRef } from "react";
-import type { ArtifactViewer } from "../../application/index.ts";
+import type { ArtifactViewer, GitDashboard } from "../../application/index.ts";
 import type { Instant } from "../../domain/index.ts";
 import type { ComposerAction } from "../composer/index.ts";
 import type { ConfirmationChoiceId, ConfirmationView, SecretEdit } from "../confirmation/index.ts";
@@ -35,6 +35,7 @@ import {
   type ControlCatalog,
   EMPTY_CONTROL_CATALOG,
 } from "../controls/index.ts";
+import { GitDashboardOverlay } from "../git/dashboard-overlay.tsx";
 import {
   composerRows,
   hasContextPanel,
@@ -115,6 +116,9 @@ export type AppShellProps = {
   readonly onControlSelect?: (id: string) => void;
   /** Loads artifact views for the code viewer overlay. Absent in static frames. */
   readonly artifactViewer?: ArtifactViewer;
+  /** Observes Git status, worktrees, and checkpoints. Absent in static frames. */
+  readonly gitDashboard?: GitDashboard;
+  readonly onChangesSettled?: (notice: string) => void;
 };
 
 export function AppShell(props: AppShellProps): ReactNode {
@@ -196,6 +200,10 @@ export function AppShell(props: AppShellProps): ReactNode {
             ? {}
             : { onControlSelect: props.onControlSelect })}
           {...(props.artifactViewer === undefined ? {} : { artifactViewer: props.artifactViewer })}
+          {...(props.gitDashboard === undefined ? {} : { gitDashboard: props.gitDashboard })}
+          {...(props.onChangesSettled === undefined
+            ? {}
+            : { onChangesSettled: props.onChangesSettled })}
         />
       )}
     </FrameProvider>
@@ -221,6 +229,9 @@ function ShellFrame(props: {
   readonly selectedSessionId?: string | null;
   readonly selectedModelId?: string | null;
   readonly onControlSelect?: (id: string) => void;
+  readonly artifactViewer?: ArtifactViewer;
+  readonly gitDashboard?: GitDashboard;
+  readonly onChangesSettled?: (notice: string) => void;
 }): ReactNode {
   const { model } = props;
   // Bounded rather than stretched. A `wide` terminal has room for a contextual
@@ -345,6 +356,8 @@ function overlayTitle(
           return exhaustive;
         }
       }
+    case "changes":
+      return "Changes";
     default: {
       const exhaustive: never = route;
       return exhaustive;
@@ -366,6 +379,8 @@ function overlayBody(
     readonly selectedModelId?: string | null;
     readonly onControlSelect?: (id: string) => void;
     readonly artifactViewer?: ArtifactViewer;
+    readonly gitDashboard?: GitDashboard;
+    readonly onChangesSettled?: (notice: string) => void;
   },
   rows: number,
 ): ReactNode {
@@ -435,6 +450,25 @@ function overlayBody(
           hunkIndex={overlay.hunkIndex}
           viewer={props.artifactViewer}
           rows={rows}
+        />
+      );
+    case "changes":
+      if (props.gitDashboard === undefined) {
+        return (
+          <Line color="error" typography="body" maxColumns={Math.max(8, rows)}>
+            No Git dashboard is attached to this shell.
+          </Line>
+        );
+      }
+      return (
+        <GitDashboardOverlay
+          key={overlay.generation}
+          dashboard={props.gitDashboard}
+          tab={overlay.tab}
+          cursor={overlay.cursor}
+          pending={overlay.pending}
+          rows={rows}
+          onSettled={props.onChangesSettled ?? (() => {})}
         />
       );
     default: {

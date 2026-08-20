@@ -67,6 +67,8 @@ export function overlayRegions(route: OverlayRoute): readonly FocusRegion[] {
       return [{ id: "overlay.controls", label: "controls" }];
     case "artifact":
       return [{ id: "overlay.artifact", label: "artifact viewer" }];
+    case "changes":
+      return [{ id: "overlay.changes", label: "changes dashboard" }];
     case "none":
       return FRAME_REGIONS;
     default: {
@@ -122,6 +124,10 @@ export type ShellAction =
   | { readonly kind: "artifact-toggle-layout" }
   | { readonly kind: "artifact-next-hunk" }
   | { readonly kind: "artifact-previous-hunk" }
+  | { readonly kind: "changes-tab"; readonly delta: 1 | -1 }
+  | { readonly kind: "changes-cursor"; readonly delta: 1 | -1 }
+  | { readonly kind: "changes-pending"; readonly pending: "create-checkpoint" | "restore" }
+  | { readonly kind: "changes-settled"; readonly notice: string }
   | { readonly kind: "exit" };
 
 export const INITIAL_SHELL_STATE: ShellState = {
@@ -309,6 +315,53 @@ export function shellReducer(state: ShellState, action: ShellAction): ShellState
         ...state,
         overlay: { ...state.overlay, hunkIndex: Math.max(0, state.overlay.hunkIndex - 1) },
       };
+    case "changes-tab": {
+      if (state.overlay.kind !== "changes") {
+        return state;
+      }
+      const tabs = ["files", "worktrees", "checkpoints"] as const;
+      const index = tabs.indexOf(state.overlay.tab);
+      const next = tabs[(index + action.delta + tabs.length) % tabs.length];
+      if (next === undefined) {
+        return state;
+      }
+      return {
+        ...state,
+        overlay: { ...state.overlay, tab: next, cursor: 0, pending: "none" },
+      };
+    }
+    case "changes-cursor":
+      if (state.overlay.kind !== "changes") {
+        return state;
+      }
+      return {
+        ...state,
+        overlay: {
+          ...state.overlay,
+          cursor: Math.max(0, state.overlay.cursor + action.delta),
+        },
+      };
+    case "changes-pending":
+      if (state.overlay.kind !== "changes" || state.overlay.pending !== "none") {
+        return state;
+      }
+      return {
+        ...state,
+        overlay: { ...state.overlay, pending: action.pending },
+      };
+    case "changes-settled":
+      if (state.overlay.kind !== "changes") {
+        return state;
+      }
+      return {
+        ...state,
+        notice: action.notice,
+        overlay: {
+          ...state.overlay,
+          pending: "none",
+          generation: state.overlay.generation + 1,
+        },
+      };
     case "exit":
       return { ...state, exiting: true };
     default: {
@@ -350,6 +403,8 @@ export function commandStateFor(
       state.overlay.kind === "artifact" && state.overlay.presentation === "diff"
         ? state.overlay.hunkIndex
         : 0,
+    hasChangesOverlay: state.overlay.kind === "changes",
+    changesTab: state.overlay.kind === "changes" ? state.overlay.tab : null,
   };
 }
 

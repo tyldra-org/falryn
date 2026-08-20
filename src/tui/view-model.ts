@@ -183,7 +183,30 @@ export type OverlayRoute =
       readonly presentation: "code" | "diff" | "document" | "media";
       readonly layout: "unified" | "split";
       readonly hunkIndex: number;
+    }
+  /**
+   * Git changes, worktrees, and checkpoints (#268).
+   *
+   * Tab and cursor are the reader's place. Pending names a checkpoint action
+   * the overlay should run through the application port. Generation reloads.
+   */
+  | {
+      readonly kind: "changes";
+      readonly tab: "files" | "worktrees" | "checkpoints";
+      readonly cursor: number;
+      readonly pending: "none" | "create-checkpoint" | "restore";
+      readonly generation: number;
     };
+
+export function changesOverlayRoute(): Extract<OverlayRoute, { readonly kind: "changes" }> {
+  return {
+    kind: "changes",
+    tab: "files",
+    cursor: 0,
+    pending: "none",
+    generation: 0,
+  };
+}
 
 export function artifactOverlayRoute(
   artifactId: string,

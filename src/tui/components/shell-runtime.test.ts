@@ -109,6 +109,15 @@ describe("opening an overlay", () => {
         hunkIndex: 0,
       })[0]?.id,
     ).toBe("overlay.artifact");
+    expect(
+      overlayRegions({
+        kind: "changes",
+        tab: "files",
+        cursor: 0,
+        pending: "none",
+        generation: 0,
+      })[0]?.id,
+    ).toBe("overlay.changes");
     // With no overlay the frame's own regions are what is reachable.
     expect(overlayRegions({ kind: "none" })).toEqual(FRAME_REGIONS);
   });

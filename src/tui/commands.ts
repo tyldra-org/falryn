@@ -123,6 +123,10 @@ export type CommandState = {
   readonly hasDiffArtifactOverlay: boolean;
   /** Current hunk index when a diff overlay is open. */
   readonly diffArtifactHunkIndex: number;
+  /** Git changes dashboard overlay is open. */
+  readonly hasChangesOverlay: boolean;
+  /** The dashboard's current tab. */
+  readonly changesTab: "files" | "worktrees" | "checkpoints" | null;
 };
 
 /** The state of a shell with nothing behind it, which is every run today. */
@@ -146,6 +150,8 @@ export const EMPTY_COMMAND_STATE: CommandState = {
   hasOpenableArtifact: false,
   hasDiffArtifactOverlay: false,
   diffArtifactHunkIndex: 0,
+  hasChangesOverlay: false,
+  changesTab: null,
 };
 
 export type ShellCommand = {
@@ -412,6 +418,77 @@ export const SHELL_COMMANDS: readonly ShellCommand[] = [
     keywords: ["diff", "hunk", "previous"],
     availability: (state) =>
       state.hasDiffArtifactOverlay ? AVAILABLE : unavailable("no diff viewer is open"),
+  },
+  {
+    id: "changes.open",
+    title: "Open Git dashboard",
+    description: "Show changes, worktrees, and checkpoints for this workspace.",
+    context: "global",
+    defaultBinding: "ctrl+g",
+    keywords: ["git", "changes", "diff", "worktree", "checkpoint", "status"],
+    availability: () => AVAILABLE,
+  },
+  {
+    id: "changes.nextTab",
+    title: "Next Git dashboard tab",
+    description: "Cycle files, worktrees, and checkpoints.",
+    context: "overlay",
+    defaultBinding: "t",
+    keywords: ["git", "tab", "worktree", "checkpoint"],
+    availability: (state) =>
+      state.hasChangesOverlay ? AVAILABLE : unavailable("no Git dashboard is open"),
+  },
+  {
+    id: "changes.previousTab",
+    title: "Previous Git dashboard tab",
+    description: "Cycle files, worktrees, and checkpoints backwards.",
+    context: "overlay",
+    defaultBinding: "shift+t",
+    keywords: ["git", "tab"],
+    availability: (state) =>
+      state.hasChangesOverlay ? AVAILABLE : unavailable("no Git dashboard is open"),
+  },
+  {
+    id: "changes.nextEntry",
+    title: "Next Git dashboard row",
+    description: "Move the cursor down in the Git dashboard.",
+    context: "overlay",
+    defaultBinding: "j",
+    keywords: ["git", "next"],
+    availability: (state) =>
+      state.hasChangesOverlay ? AVAILABLE : unavailable("no Git dashboard is open"),
+  },
+  {
+    id: "changes.previousEntry",
+    title: "Previous Git dashboard row",
+    description: "Move the cursor up in the Git dashboard.",
+    context: "overlay",
+    defaultBinding: "k",
+    keywords: ["git", "previous"],
+    availability: (state) =>
+      state.hasChangesOverlay ? AVAILABLE : unavailable("no Git dashboard is open"),
+  },
+  {
+    id: "changes.createCheckpoint",
+    title: "Create a checkpoint",
+    description: "Snapshot the current Git index and worktree.",
+    context: "overlay",
+    defaultBinding: "c",
+    keywords: ["git", "checkpoint", "save"],
+    availability: (state) =>
+      state.hasChangesOverlay ? AVAILABLE : unavailable("no Git dashboard is open"),
+  },
+  {
+    id: "changes.restoreCheckpoint",
+    title: "Restore the selected checkpoint",
+    description: "Restore the checkpoint under the cursor after a restore plan.",
+    context: "overlay",
+    defaultBinding: "r",
+    keywords: ["git", "checkpoint", "restore"],
+    availability: (state) =>
+      state.hasChangesOverlay && state.changesTab === "checkpoints"
+        ? AVAILABLE
+        : unavailable("select a checkpoint first"),
   },
   {
     id: "transcript.showDiagnostics",
