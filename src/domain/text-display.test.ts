@@ -16,6 +16,7 @@ import {
   sanitizeTerminalText,
   truncateToWidth,
   wrapToWidth,
+  wrapToWidthWindow,
 } from "./text-display.ts";
 
 /**
@@ -223,5 +224,14 @@ describe("wrapping to a width", () => {
   test("loses no text", () => {
     const text = "the quick brown fox jumps over the lazy dog";
     expect(wrapToWidth(text, 12).join(" ")).toBe(text);
+  });
+
+  test("fills a row budget without wrapping the rest of a long body", () => {
+    const text = Array.from({ length: 10_000 }, (_, index) => `line-${index}`).join("\n");
+    const window = wrapToWidthWindow(text, 40, 24);
+    expect(window.lines).toHaveLength(24);
+    expect(window.lines[0]).toBe("line-0");
+    expect(window.lines[23]).toBe("line-23");
+    expect(window.truncated).toBe(true);
   });
 });

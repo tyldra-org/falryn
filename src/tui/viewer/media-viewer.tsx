@@ -5,6 +5,7 @@
  */
 
 import type { ReactNode } from "react";
+import { wrapToWidthWindow } from "../../domain/index.ts";
 import type { MediaViewModel } from "../../presentation/viewer/index.ts";
 import { useFrame } from "../components/context.tsx";
 import { Line } from "../components/primitives.tsx";
@@ -19,7 +20,7 @@ export type MediaViewerProps = {
 };
 
 export function MediaViewer(props: MediaViewerProps): ReactNode {
-  const { terminal, cache } = useFrame();
+  const { terminal } = useFrame();
   const width = Math.max(8, terminal.columns - PANEL_CHROME_COLUMNS);
 
   if (props.loading) {
@@ -49,7 +50,10 @@ export function MediaViewer(props: MediaViewerProps): ReactNode {
   const { model } = props;
   const chromeRows = (model.statusNote === null ? 0 : 1) + 1;
   const contentHeight = Math.max(1, props.rows - chromeRows);
-  const hexLines = model.withheld ? [] : cache.wrap(model.hexPreview, width);
+  const windowed = model.withheld
+    ? { lines: [] as const, truncated: false }
+    : wrapToWidthWindow(model.hexPreview, width, contentHeight);
+  const hexLines = windowed.lines;
 
   return (
     <box flexDirection="column" height={props.rows}>
@@ -59,23 +63,21 @@ export function MediaViewer(props: MediaViewerProps): ReactNode {
         </Line>
       )}
       <Line color="mutedForeground" typography="muted" maxColumns={width}>
-        {`${model.format} · summary · ${model.storedByteLength} bytes`}
+        {`${model.format} · summary · ${model.storedByteLength} bytes${windowed.truncated ? " · windowed" : ""}`}
       </Line>
       {model.withheld ? (
         <Line color="mutedForeground" typography="muted" maxColumns={width}>
           Media summary withheld.
         </Line>
       ) : (
-        <scrollbox focused height={contentHeight} width={width}>
-          <box flexDirection="column">
-            {hexLines.map((line, index) => (
-              // biome-ignore lint/suspicious/noArrayIndexKey: wrapped hex lines are positional slices.
-              <Line key={index} color="foreground" typography="code" maxColumns={width}>
-                {line}
-              </Line>
-            ))}
-          </box>
-        </scrollbox>
+        <box flexDirection="column" height={contentHeight}>
+          {hexLines.map((line, index) => (
+            // biome-ignore lint/suspicious/noArrayIndexKey: wrapped hex lines are positional slices.
+            <Line key={index} color="foreground" typography="code" maxColumns={width}>
+              {line}
+            </Line>
+          ))}
+        </box>
       )}
     </box>
   );
