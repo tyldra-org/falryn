@@ -38,4 +38,9 @@ export {
   KEYCHAIN_EXIT_STATUSES,
   SECURITY_EXECUTABLE,
 } from "./keychain-credentials.ts";
+export type {
+  CredentialWriteResult,
+  WriteKeychainCredentialOptions,
+} from "./keychain-write.ts";
+export { writeKeychainCredential } from "./keychain-write.ts";
 export { createProcessSignalPort, observedPlatformSignals } from "./process-signals.ts";

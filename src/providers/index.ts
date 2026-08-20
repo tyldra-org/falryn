@@ -3,9 +3,9 @@
  *
  * This source area owns provider-neutral requests, stream events, profiles,
  * authentication snapshots, capability discovery, model policy / intent routing,
- * and the adapter port. Vendor SDKs stay in leaf adapters (none shipped yet).
- * Domain, application, CLI, and OpenTUI must not import SDK types through this
- * surface.
+ * and the adapter port. Vendor leaf adapters: deterministic fixture and
+ * OpenAI-compatible HTTP (`createOpenAiCompatibleAdapter`). Domain, application,
+ * CLI, and OpenTUI must not import SDK types through this surface.
  */
 
 export type { DiscoveryPolicy, ProviderAdapterKind } from "./adapter-kind.ts";
@@ -90,6 +90,11 @@ export type {
   TextMessagePart,
 } from "./messages.ts";
 export { isMessageRole, MESSAGE_ROLES } from "./messages.ts";
+export type {
+  OpenAiCompatibleAdapterOptions,
+  OpenAiCompatibleFetch,
+} from "./openai-compatible-adapter.ts";
+export { createOpenAiCompatibleAdapter } from "./openai-compatible-adapter.ts";
 export type {
   AdvisorRoleRoute,
   CompactRoleRoute,
