@@ -50,6 +50,7 @@ import {
   runDataReset,
   runDataUninstall,
   runDoctor,
+  runExport,
   stoppedResult,
 } from "./commands.ts";
 import { EXIT_CODES, type ExitCode, resolveExitCode } from "./exit.ts";
@@ -181,7 +182,7 @@ async function runCommand(
   options: DispatchOptions,
 ): Promise<ExitCode> {
   const { streams } = options;
-  const { command, data, options: globals } = invocation;
+  const { command, data, exportArgs, options: globals } = invocation;
 
   if (command === "default") {
     return runDefault(globals, options);
@@ -191,7 +192,7 @@ async function runCommand(
   const services = (options.services ?? defaultProvider(options))(globals);
   const overrides = configurationOverridesFor(globals);
 
-  const result = await governed(command, data, services, overrides, globals, options);
+  const result = await governed(command, data, exportArgs, services, overrides, globals, options);
   emit(streams, await render(result, globals, streams, services));
   return resolveExitCode({
     outcome: result.outcome,
@@ -382,6 +383,7 @@ async function launchShell(
 async function governed(
   command: Exclude<RunnableCommand, "default">,
   data: Extract<Invocation, { kind: "run" }>["data"],
+  exportArgs: Extract<Invocation, { kind: "run" }>["exportArgs"],
   services: ServiceProvider,
   overrides: Readonly<Record<string, string>>,
   globals: GlobalOptions,
@@ -390,11 +392,11 @@ async function governed(
   const governance = options.governance ?? createInvocationGovernance();
   const scope = openInvocationScope(governance, globals.timeoutMs);
   if (scope === null) {
-    return produce(command, data, services, overrides, globals);
+    return produce(command, data, exportArgs, services, overrides, globals);
   }
 
   const run = await runUnderScope(governance, scope, (signal) =>
-    produce(command, data, services, overrides, globals, signal, () => {
+    produce(command, data, exportArgs, services, overrides, globals, signal, () => {
       // The executor has begun a destructive operation. If an interrupt wins
       // the race from here, the scope must not report a retry-safe cancellation.
       governance.scopes.recordEffect(scope.scopeId, "uncertain");
@@ -406,19 +408,23 @@ async function governed(
   // prevent.
   return run.kind === "finished"
     ? run.value
-    : stoppedResult(command, run.outcome, stoppedCommandIntent(command, data));
+    : stoppedResult(command, run.outcome, stoppedCommandIntent(command, data, exportArgs));
 }
 
 /** The declared effect remains true even if the invocation stops mid-command. */
 function stoppedCommandIntent(
   command: Exclude<RunnableCommand, "default">,
   data: Extract<Invocation, { kind: "run" }>["data"],
+  exportArgs: Extract<Invocation, { kind: "run" }>["exportArgs"],
 ): "none" | "mutate" {
   if (
     (command === "data.reset" || command === "data.uninstall") &&
     data !== null &&
     data.confirmation !== null
   ) {
+    return "mutate";
+  }
+  if (command === "export" && exportArgs !== null && exportArgs.write) {
     return "mutate";
   }
   return "none";
@@ -531,6 +537,7 @@ function defaultProvider(options: DispatchOptions): (globals: GlobalOptions) => 
 async function produce(
   command: Exclude<RunnableCommand, "default">,
   data: Extract<Invocation, { kind: "run" }>["data"],
+  exportArgs: Extract<Invocation, { kind: "run" }>["exportArgs"],
   services: ServiceProvider,
   overrides: Readonly<Record<string, string>>,
   globals: GlobalOptions,
@@ -556,6 +563,11 @@ async function produce(
       return runDataUninstall(services, data, signal, onMutationStart);
     case "doctor":
       return runDoctor(services);
+    case "export":
+      if (exportArgs === null) {
+        throw new Error("Missing parsed export arguments.");
+      }
+      return runExport(services, exportArgs, signal, onMutationStart);
     default:
       // `default`, `help`, and `version` are answered before this is reached,
       // so a new command reaching here without a branch fails to compile.

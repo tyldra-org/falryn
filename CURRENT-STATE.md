@@ -1610,8 +1610,8 @@ product path through the table today, and it writes nothing to either handle.
 The command tree introduced by
 [#17](https://github.com/tyldra-org/falryn/issues/17) makes `falryn` a real
 executable. It adds the yargs tree, global options, dispatch, the
-`CommandResult` contract, a service factory, and the `config`, `data`, and `doctor`
-commands to `src/cli/`, plus a read-only `probeStorage` to `src/data/`.
+`CommandResult` contract, a service factory, and the `config`, `data`, `doctor`,
+and `export` commands to `src/cli/`, plus a read-only `probeStorage` to `src/data/`.
 `src/main.ts` is now the CLI entry: it composes #20's streams, dispatches one
 invocation, and exits through #20's table.
 
@@ -1630,9 +1630,9 @@ Its verified behavior:
   and out-of-choice values; non-English locales changed and failed nothing.
   `@types/yargs` type-checks clean under `skipLibCheck: false` and
   `exactOptionalPropertyTypes`, so no accommodation was added;
-- **only `config`, `data`, and `doctor` are declared.** Every other group named in
-  `reference/CLI.md` is absent from the tree, asserted by a control, because
-  parsing one would advertise it in `--help`;
+- **only `config`, `data`, `doctor`, and `export` are declared.** Every other
+  group named in `reference/CLI.md` is absent from the tree, asserted by a
+  control, because parsing one would advertise it in `--help`;
 - **invalid usage never reaches application work.** Unknown flags, unknown
   commands and subcommands, wrong-typed values, out-of-range timeouts, an
   illegal profile name, a workspace root no resolution could rescue, and every
@@ -1724,9 +1724,10 @@ Its verified behavior:
   the terminal facts it was handed. A property check confirms it never changes
   the outcome kind or the effect certainty it was given.
 
-`config`, `data`, and `doctor` produce results in v0.1, so the renderer is
-exercised against those payloads plus fixtures covering the outcome, certainty,
-and failure matrix. It has not been proven against a rich command surface.
+`config`, `data`, `doctor`, and `export` produce results in this build, so the
+renderer is exercised against those payloads plus fixtures covering the outcome,
+certainty, and failure matrix. It has not been proven against a rich command
+surface.
 
 The machine projections introduced by
 [#19](https://github.com/tyldra-org/falryn/issues/19) complete the four
@@ -1966,8 +1967,8 @@ bun run ci       PASS  (quality, tsc --noEmit, build, then bun test)
 ```
 
 The compiled file is now a runnable CLI rather than a bootstrap: `dist/falryn`
-answers `--help`, `--version`, `config`, and `doctor`, and reports its own
-compiled mode.
+answers `--help`, `--version`, `config`, `data`, `doctor`, and `export`, and
+reports its own compiled mode.
 
 `bun run measure`, the gated persistence resource measurement, was last
 observed passing on macOS on 2026-08-01 and is unaffected by the process
@@ -4316,8 +4317,9 @@ Qualified model-assisted drafting remains later and is not this slice.
 
 ## Remaining implementation gaps
 
-The repository now provides end-user behavior for the `config`, `data`, and `doctor`
-commands and a working v0.1 OpenTUI shell. The shell owns its renderer, frame,
+The repository now provides end-user behavior for the `config`, `data`, `doctor`,
+and `export` commands and a working v0.1 OpenTUI shell. The shell owns its
+renderer, frame,
 empty transcript surface, composer, activity rail, status line, overlays, input,
 and terminal restoration; it does not yet have a provider, agent loop,
 session/turn producer, or live transcript producer. The remaining gaps are:
@@ -4348,7 +4350,8 @@ session/turn producer, or live transcript producer. The remaining gaps are:
   there are enough real read paths to measure;
 - command, human, JSON, JSONL, or terminal rendering for the records described
   above. The shared `SessionView` shape exists so a renderer does not have to
-  restate it. The `config`, `data`, and `doctor` commands already use all four headless
+  restate it. The `config`, `data`, `doctor`, and `export` commands already use
+  all four headless
   projections, and the OpenTUI shell is delivered as a presentation surface;
   it has no live conversation to render until the producer path owned by
   [#33](https://github.com/tyldra-org/falryn/issues/33) and later work
@@ -4390,7 +4393,8 @@ session/turn producer, or live transcript producer. The remaining gaps are:
   have no command surface. The owners that
   will register the remaining ownership classes — memory, extensions — do not
   exist, and each remains reported as unregistered rather than assumed absent;
-- headless product behavior beyond `config`, `data`, and `doctor`, or live conversation
+- headless product behavior beyond `config`, `data`, `doctor`, and `export`, or
+  live conversation
   content in the OpenTUI application. The command tree, global options, help,
   version, process boundary, and all four output projections are real. The
   shell is delivered: it renders a workspace header, empty transcript surface,

@@ -28,6 +28,7 @@ import {
   type ErrorCategory,
   type EventStoreError,
   type ExitCategory,
+  type ExportError,
   type FalrynError,
   type IdentityError,
   isErrorCategory,
@@ -691,6 +692,173 @@ export function fromRendererFailure(
     cause: { source: "renderer", code: failure.code, detail },
     ...context,
   });
+}
+
+/** A locally planned removal that could not be applied as requested. */
+/**
+ * Folds an export-pipeline failure into the runtime contract.
+ *
+ * Nested store, package, and blob failures keep their existing translators.
+ * Selection and bound failures never carry record text or secret values: the
+ * bound name and the counts are enough to refuse without describing contents.
+ */
+export function fromExportError(error: ExportError, context: ErrorContext = {}): FalrynError {
+  switch (error.code) {
+    case "storage":
+      return fromSqliteStoreError(error.error, context);
+    case "package": {
+      const cancelled = error.error.code === "cancelled";
+      return build({
+        code: cancelled
+          ? "cancellation.export.package.cancelled"
+          : `data.export.package.${error.error.code}`,
+        category: cancelled ? "cancellation" : "data",
+        message: cancelled
+          ? "The export package operation was cancelled."
+          : `The export package could not be written (${error.error.code}).`,
+        retryable: cancelled,
+        effect: "none",
+        cause: {
+          source: "export",
+          code: error.error.code,
+          detail: error.error.operation,
+        },
+        ...context,
+      });
+    }
+    case "bytes": {
+      const cancelled = error.error.code === "cancelled";
+      return build({
+        code: cancelled
+          ? "cancellation.export.bytes.cancelled"
+          : `data.export.bytes.${error.error.code}`,
+        category: cancelled ? "cancellation" : "data",
+        message: cancelled
+          ? "Reading artifact bytes for export was cancelled."
+          : `Export could not read artifact bytes (${error.error.code}).`,
+        retryable: cancelled,
+        effect: "none",
+        cause: {
+          source: "export",
+          code: error.error.code,
+          detail: error.error.operation,
+        },
+        ...context,
+      });
+    }
+    case "not-found":
+      return build({
+        code: "data.export.not-found",
+        category: "data",
+        message: "A selected session was not found.",
+        retryable: false,
+        effect: "none",
+        cause: { source: "export", code: error.code, detail: null },
+        ...context,
+      });
+    case "empty-selection":
+      return build({
+        code: "data.export.empty-selection",
+        category: "data",
+        message: "The export selection matched no sessions.",
+        retryable: false,
+        effect: "none",
+        cause: { source: "export", code: error.code, detail: null },
+        ...context,
+      });
+    case "oversize":
+      return build({
+        code: "data.export.oversize",
+        category: "data",
+        message: `The export selection exceeds the ${error.bound} bound.`,
+        retryable: false,
+        effect: "none",
+        cause: {
+          source: "export",
+          code: error.code,
+          detail: `${error.bound}:${error.requested}:${error.maximum}`,
+        },
+        ...context,
+      });
+    case "digest-mismatch":
+      return build({
+        code: "data.export.digest-mismatch",
+        category: "data",
+        message: "An artifact's bytes changed between inventory and write.",
+        retryable: true,
+        effect: "none",
+        cause: { source: "export", code: error.code, detail: null },
+        ...context,
+      });
+    case "insufficient-space":
+      return build({
+        code: "data.export.insufficient-space",
+        category: "data",
+        message: "There is not enough free space to write the export package.",
+        retryable: true,
+        effect: "none",
+        cause: {
+          source: "export",
+          code: error.code,
+          detail: `${error.requiredBytes}:${error.availableBytes}`,
+        },
+        ...context,
+      });
+    case "malformed-manifest":
+      return build({
+        code: "data.export.malformed-manifest",
+        category: "data",
+        message: "The export manifest could not be encoded.",
+        retryable: false,
+        effect: "none",
+        cause: {
+          source: "export",
+          code: error.code,
+          detail: error.issues.map((issue) => `${issue.path || "<root>"}:${issue.code}`).join(", "),
+        },
+        ...context,
+      });
+    case "incompatible-version":
+      return build({
+        code: "data.export.incompatible-version",
+        category: "data",
+        message: "The export package schema is not compatible with this build.",
+        retryable: false,
+        effect: "none",
+        cause: {
+          source: "export",
+          code: error.code,
+          detail: `${error.packageSchemaVersion}:${error.packageRequiresAtLeast}:${error.readerSchemaVersion}`,
+        },
+        ...context,
+      });
+    case "truncated-package":
+      return build({
+        code: "data.export.truncated-package",
+        category: "data",
+        message: "The export package is shorter than its declared length.",
+        retryable: false,
+        effect: "none",
+        cause: {
+          source: "export",
+          code: error.code,
+          detail: `${error.expectedBytes}:${error.observedBytes}`,
+        },
+        ...context,
+      });
+    case "cancelled":
+      return build({
+        code: "cancellation.export.cancelled",
+        category: "cancellation",
+        message: "The export was cancelled before it finished.",
+        retryable: true,
+        effect: "none",
+        cause: { source: "export", code: error.code, detail: null },
+        ...context,
+      });
+    default:
+      return assertNever(error, "unhandled export error");
+  }
 }
 
 /** A locally planned removal that could not be applied as requested. */

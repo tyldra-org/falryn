@@ -17,6 +17,7 @@ export type {
   ConfigShowPayload,
   ConfigValidatePayload,
   DoctorPayload,
+  ExportCommandPayload,
   RunCommandResult,
 } from "./commands.ts";
 export {
@@ -24,6 +25,7 @@ export {
   runConfigShow,
   runConfigValidate,
   runDoctor,
+  runExport,
   stoppedResult,
 } from "./commands.ts";
 export type { DispatchOptions } from "./dispatch.ts";

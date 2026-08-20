@@ -36,6 +36,7 @@ describe("the declared tree", () => {
     expect(await commandOf("config", "path")).toBe("config.path");
     expect(await commandOf("data", "reset", "--class", "logs")).toBe("data.reset");
     expect(await commandOf("data", "uninstall")).toBe("data.uninstall");
+    expect(await commandOf("export", "--session", "s1")).toBe("export");
   });
 
   test("declares no group whose capability does not exist", async () => {
@@ -48,6 +49,7 @@ describe("the declared tree", () => {
     }
     expect(await helpText(null)).not.toContain("provider");
     expect(await helpText(null)).toContain("data <action>");
+    expect(await helpText(null)).toContain("export");
   });
 
   test("says in help what the bare invocation actually does", async () => {
@@ -72,6 +74,7 @@ describe("invalid usage", () => {
     expect(await invalidMessage("config", "bogus")).toContain("Invalid values");
     // A group that takes no subcommand rejects one rather than ignoring it.
     expect(await invalidMessage("doctor", "extra")).toContain("Unknown argument: extra");
+    expect(await invalidMessage("export", "extra")).toContain("Unknown argument: extra");
   });
 
   test("refuses a group that needs a subcommand and was given none", async () => {

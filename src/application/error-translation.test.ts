@@ -7,6 +7,7 @@ import {
   configurationKeyPath,
   ERROR_CATEGORIES,
   type EventStoreError,
+  type ExportError,
   type FalrynError,
   flattenErrors,
   isSafeToRetryWithoutInspection,
@@ -33,6 +34,7 @@ import {
   fromConfigurationIssues,
   fromCredentialFailure,
   fromEventStoreError,
+  fromExportError,
   fromIdentityError,
   fromParticipantReports,
   fromSequenceError,
@@ -91,6 +93,26 @@ describe("boundary translation", () => {
   test("a timestamp rejection carries no detail at all", () => {
     const error = fromTimestampError({ kind: "timestamp", code: "timestamp-not-canonical-utc" });
     expect(error.cause?.detail).toBeNull();
+  });
+
+  test("an oversize export names the bound, never the records", () => {
+    const error = fromExportError({
+      kind: "export",
+      code: "oversize",
+      bound: "package-bytes",
+      requested: 99,
+      maximum: 10,
+    } satisfies ExportError);
+    expect(error.code).toBe("data.export.oversize");
+    expect(error.message).toContain("package-bytes");
+    expect(error.cause?.detail).toBe("package-bytes:99:10");
+  });
+
+  test("a cancelled export is a cancellation", () => {
+    const error = fromExportError({ kind: "export", code: "cancelled" });
+    expect(error.category).toBe("cancellation");
+    expect(error.exitCategory).toBe("cancelled");
+    expect(error.retryable).toBe(true);
   });
 
   test.each<[SequenceError["code"], boolean]>([

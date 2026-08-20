@@ -49,7 +49,12 @@ import {
   truncateToWidth,
   wrapToWidth,
 } from "../domain/index.ts";
-import type { DataRemovalPayload, DoctorPayload, RunCommandResult } from "./commands.ts";
+import type {
+  DataRemovalPayload,
+  DoctorPayload,
+  ExportCommandPayload,
+  RunCommandResult,
+} from "./commands.ts";
 import type {
   CommandEffect,
   CommandOmission,
@@ -646,9 +651,52 @@ function renderPayload(session: Session, result: RunCommandResult): RenderedPayl
       return renderDataRemoval(session, result.payload);
     case "doctor":
       return renderDoctor(session, result.payload);
+    case "export":
+      return renderExport(session, result.payload);
     default:
       return assertNever(result, "unhandled command result");
   }
+}
+
+function renderExport(session: Session, payload: ExportCommandPayload | null): RenderedPayload {
+  if (payload === null) {
+    return { lines: ["No export inventory is available."], diagnostics: [] };
+  }
+
+  const lines = [
+    paint(session, "plain", payload.mode === "preview" ? "Export preview" : "Export written"),
+    `  Selection     ${safe(payload.selection.kind)}  ${payload.selection.sessions} sessions` +
+      (payload.selection.includesSensitive ? "  includes-sensitive" : ""),
+    `  Sessions      ${payload.sessionIds.map(safe).join(", ") || "(none)"}`,
+    `  Counts        sessions=${payload.counts.sessions} turns=${payload.counts.turns} events=${payload.counts.events} artifacts=${payload.counts.artifacts}`,
+    `  Artifact bytes ${payload.artifactBytes}`,
+  ];
+  if (payload.omissions.length > 0) {
+    lines.push("  Omissions");
+    for (const omission of payload.omissions) {
+      lines.push(`    ${safe(omission.artifactId)}  ${safe(omission.reason)}`);
+    }
+  }
+  if (payload.redactions.length > 0) {
+    lines.push("  Redactions");
+    for (const redaction of payload.redactions) {
+      lines.push(`    ${safe(redaction.path)}  ${safe(redaction.kind)}`);
+    }
+  }
+  if (payload.bundle !== null) {
+    lines.push(`  Bundle        ${safe(payload.bundle.name)}`);
+    lines.push(`  Path          ${safe(payload.bundle.path)}`);
+    lines.push(`  Bytes         ${payload.bundle.byteLength}`);
+    if (payload.bundle.cancelledAfterFinalize) {
+      lines.push("  Note          cancelled after the package was published");
+    }
+  }
+
+  const diagnostics =
+    payload.mode === "preview"
+      ? ["Preview only. Re-run with --write --name <name> to create this package."]
+      : [];
+  return { lines, diagnostics };
 }
 
 function renderDataRemoval(session: Session, payload: DataRemovalPayload | null): RenderedPayload {
@@ -1077,9 +1125,28 @@ function quietResultLines(result: RunCommandResult): readonly string[] {
     case "config.validate":
     case "doctor":
       return [];
+    case "export":
+      return quietExportLines(result.payload);
     default:
       return assertNever(result, "unhandled command result");
   }
+}
+
+function quietExportLines(payload: ExportCommandPayload | null): readonly string[] {
+  if (payload === null) {
+    return [];
+  }
+  if (payload.bundle !== null) {
+    return [
+      [
+        payload.mode,
+        safe(payload.bundle.name),
+        safe(payload.bundle.path),
+        String(payload.bundle.byteLength),
+      ].join("\t"),
+    ];
+  }
+  return payload.sessionIds.map((id) => safe(id));
 }
 
 function quietDataLines(payload: DataRemovalPayload | null): readonly string[] {
@@ -1145,6 +1212,8 @@ function quietFindingLines(result: RunCommandResult): readonly string[] {
       // the whole of what they wrote.
       return result.payload === null ? [] : unreadSourceFindings(result.payload.inspection.sources);
     case "config.path":
+      return [];
+    case "export":
       return [];
     default:
       return assertNever(result, "unhandled command result");

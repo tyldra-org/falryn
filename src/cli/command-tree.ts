@@ -13,7 +13,7 @@
  * The result is that every byte this CLI emits goes through the streams #20
  * owns, and every exit status comes from #20's table.
  *
- * Only groups whose capability exists in v0.1 are declared. A tree advertising
+ * Only groups whose capability exists are declared. A tree advertising
  * `run` or `provider` in `--help` would promise behavior nothing implements.
  */
 
@@ -21,12 +21,18 @@ import yargs from "yargs";
 
 import { isLegalProfileName } from "../config/index.ts";
 import {
+  type ExportName,
+  type ExportSelection,
+  exportName,
   isOwnershipClass,
   isPlanId,
   localPathTextError,
   MAX_LOCAL_PATH_LENGTH,
   type OwnershipClass,
   type PlanId,
+  parseTimestamp,
+  type SessionId,
+  sessionId,
 } from "../domain/index.ts";
 import {
   COLOR_CHOICES,
@@ -57,6 +63,13 @@ export type DataCommandArguments = {
   readonly confirmation: PlanId | null;
 };
 
+/** Command-specific inputs for `falryn export`. */
+export type ExportCommandArguments = {
+  readonly selection: ExportSelection;
+  readonly write: boolean;
+  readonly name: ExportName | null;
+};
+
 /**
  * What parsing an argument vector produced.
  *
@@ -71,6 +84,7 @@ export type Invocation =
       readonly command: RunnableCommand;
       readonly options: GlobalOptions;
       readonly data: DataCommandArguments | null;
+      readonly exportArgs: ExportCommandArguments | null;
     }
   /** Show help. `topic` is `null` for the root, or the subcommand asked about. */
   | { readonly kind: "help"; readonly topic: string | null; readonly options: GlobalOptions }
@@ -91,6 +105,12 @@ type RawArguments = {
   readonly action: string | undefined;
   readonly class: readonly string[] | undefined;
   readonly confirm: string | undefined;
+  readonly session: readonly string[] | undefined;
+  readonly after: string | undefined;
+  readonly before: string | undefined;
+  readonly name: string | undefined;
+  readonly write: boolean | undefined;
+  readonly "include-sensitive": boolean | undefined;
   readonly format: string;
   readonly color: string;
   readonly quiet: boolean;
@@ -163,6 +183,36 @@ function build(argv: readonly string[], lenientPositionals = false): ReturnType<
           }),
       )
       .command("doctor", "Run bounded environment and storage diagnostics.", (group) => group)
+      .command("export", "Preview or write a versioned export bundle.", (group) =>
+        group
+          .option("session", {
+            type: "string",
+            array: true,
+            describe: "session identity to include (repeatable)",
+          })
+          .option("after", {
+            type: "string",
+            describe: "include sessions started at or after this canonical UTC timestamp",
+          })
+          .option("before", {
+            type: "string",
+            describe: "include sessions started at or before this canonical UTC timestamp",
+          })
+          .option("include-sensitive", {
+            type: "boolean",
+            default: false,
+            describe: "include sensitive artifacts; restricted artifacts are never exported",
+          })
+          .option("name", {
+            type: "string",
+            describe: "file-safe name of the package to write (required with --write)",
+          })
+          .option("write", {
+            type: "boolean",
+            default: false,
+            describe: "write the bundle; omit this flag to preview only",
+          }),
+      )
       .option("format", {
         type: "string",
         choices: OUTPUT_FORMATS,
@@ -281,7 +331,11 @@ export async function parseInvocation(argv: readonly string[]): Promise<Invocati
   if (typeof data === "string") {
     return { kind: "invalid", message: data };
   }
-  return { kind: "run", command, options, data };
+  const exportArgs = exportArgumentsFor(command, parsed);
+  if (typeof exportArgs === "string") {
+    return { kind: "invalid", message: exportArgs };
+  }
+  return { kind: "run", command, options, data, exportArgs };
 }
 
 /**
@@ -323,6 +377,7 @@ function isRawArguments(value: unknown): value is RawArguments {
   const field = (key: PropertyKey): unknown => Reflect.get(value, key);
   const positional = field("_");
   const classes = field("class");
+  const sessions = field("session");
   return (
     Array.isArray(positional) &&
     positional.every((item) => typeof item === "string" || typeof item === "number") &&
@@ -330,6 +385,13 @@ function isRawArguments(value: unknown): value is RawArguments {
     (classes === undefined ||
       (Array.isArray(classes) && classes.every((item) => typeof item === "string"))) &&
     optionalString(field("confirm")) &&
+    (sessions === undefined ||
+      (Array.isArray(sessions) && sessions.every((item) => typeof item === "string"))) &&
+    optionalString(field("after")) &&
+    optionalString(field("before")) &&
+    optionalString(field("name")) &&
+    optionalBoolean(field("write")) &&
+    optionalBoolean(field("include-sensitive")) &&
     typeof field("format") === "string" &&
     typeof field("color") === "string" &&
     typeof field("quiet") === "boolean" &&
@@ -348,6 +410,10 @@ function optionalString(value: unknown): value is string | undefined {
   return value === undefined || typeof value === "string";
 }
 
+function optionalBoolean(value: unknown): value is boolean | undefined {
+  return value === undefined || typeof value === "boolean";
+}
+
 /** The command a positional vector names, or `null` when it names none. */
 function commandFrom(positional: readonly string[], action: string | null): RunnableCommand | null {
   const [group] = positional;
@@ -359,6 +425,9 @@ function commandFrom(positional: readonly string[], action: string | null): Runn
   }
   if (group === "doctor") {
     return action === null ? "doctor" : null;
+  }
+  if (group === "export") {
+    return action === null ? "export" : null;
   }
   if (group === "config") {
     switch (action) {
@@ -411,6 +480,80 @@ function dataArgumentsFor(
     return "Argument confirm must be a removal plan identity from a prior preview.";
   }
   return { classes: ownershipClasses, confirmation: parsed.confirm ?? null };
+}
+
+function exportArgumentsFor(
+  command: RunnableCommand,
+  parsed: RawArguments,
+): ExportCommandArguments | null | string {
+  if (command !== "export") {
+    return null;
+  }
+
+  const sessionValues = parsed.session ?? [];
+  const hasSessions = sessionValues.length > 0;
+  const hasRange = parsed.after !== undefined || parsed.before !== undefined;
+  if (hasSessions && hasRange) {
+    return "Arguments session and after/before are mutually exclusive: choose session identities or a time range.";
+  }
+  if (!hasSessions && !hasRange) {
+    return "Export requires --session, or a --after/--before range.";
+  }
+
+  const write = parsed.write === true;
+  if (write && parsed.name === undefined) {
+    return "Argument name is required with --write.";
+  }
+  if (!write && parsed.name !== undefined) {
+    return "Argument name is only valid with --write.";
+  }
+
+  let name: ExportName | null = null;
+  if (parsed.name !== undefined) {
+    const parsedName = exportName.parse(parsed.name);
+    if (!parsedName.ok) {
+      return "Argument name must be a file-safe export package name.";
+    }
+    name = parsedName.value;
+  }
+
+  const includeSensitive = parsed["include-sensitive"] === true;
+
+  if (hasSessions) {
+    const sessionIds: SessionId[] = [];
+    for (const value of sessionValues) {
+      const parsedId = sessionId.parse(value);
+      if (!parsedId.ok) {
+        return "Argument session must be a session identity.";
+      }
+      sessionIds.push(parsedId.value);
+    }
+    return {
+      selection: { kind: "sessions", sessionIds, includeSensitive },
+      write,
+      name,
+    };
+  }
+
+  const startedAfter = parsed.after === undefined ? null : parseTimestamp(parsed.after);
+  if (startedAfter !== null && !startedAfter.ok) {
+    return "Argument after must be a canonical UTC timestamp (YYYY-MM-DDTHH:MM:SS.sssZ).";
+  }
+  const startedBefore = parsed.before === undefined ? null : parseTimestamp(parsed.before);
+  if (startedBefore !== null && !startedBefore.ok) {
+    return "Argument before must be a canonical UTC timestamp (YYYY-MM-DDTHH:MM:SS.sssZ).";
+  }
+
+  return {
+    selection: {
+      kind: "range",
+      startedAfter: startedAfter === null ? null : startedAfter.value,
+      startedBefore: startedBefore === null ? null : startedBefore.value,
+      includeSensitive,
+    },
+    write,
+    name,
+  };
 }
 
 /**
