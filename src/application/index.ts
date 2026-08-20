@@ -347,6 +347,12 @@ export type {
   WorkspaceIndexBuilderOptions,
 } from "./workspace-index-build.ts";
 export { createWorkspaceIndexBuilder } from "./workspace-index-build.ts";
+export type {
+  WorkspaceLayoutStore,
+  WorkspaceLayoutStoreError,
+  WorkspaceLayoutUnusableRoot,
+} from "./workspace-layout.ts";
+export { createWorkspaceLayoutStore } from "./workspace-layout.ts";
 export type { WorkspaceListing } from "./workspace-listing.ts";
 export { createWorkspaceListing } from "./workspace-listing.ts";
 export type { WorkspaceMutator, WorkspaceMutatorOptions } from "./workspace-mutate.ts";
