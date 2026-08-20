@@ -26,7 +26,7 @@ import { createDefaultOpenTuiKeymap } from "@opentui/keymap/opentui";
 import { KeymapProvider, useActiveKeys, useKeymap } from "@opentui/keymap/react";
 import { useRenderer } from "@opentui/react";
 import { type ReactNode, useMemo } from "react";
-import type { ArtifactViewer, FileAttachmentProbe } from "../../application/index.ts";
+import type { ArtifactViewer, FileAttachmentProbe, GitDashboard } from "../../application/index.ts";
 import type { Instant } from "../../domain/index.ts";
 import type {
   ActivityProjection,
@@ -117,6 +117,8 @@ export type ShellAppProps = {
   readonly controls?: ControlCatalog;
   /** Loads artifact views for the code viewer overlay. Absent in static frames. */
   readonly artifactViewer?: ArtifactViewer;
+  /** Git changes dashboard. Absent in static frames and tests that do not need it. */
+  readonly gitDashboard?: GitDashboard;
 };
 
 /**
@@ -297,6 +299,8 @@ function ResolvedShell(
         }
       }}
       {...(props.artifactViewer === undefined ? {} : { artifactViewer: props.artifactViewer })}
+      {...(props.gitDashboard === undefined ? {} : { gitDashboard: props.gitDashboard })}
+      onChangesSettled={props.runtime.settleChanges}
     />
   );
 }

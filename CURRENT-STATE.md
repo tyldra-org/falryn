@@ -1048,8 +1048,16 @@ retention, pinning, and export dependency. The typed artifact viewer is in
 `falryn/src/application/artifact-view.ts`. The transcript mounts a
 syntax-highlighted code overlay for selected code artifacts when an
 `ArtifactViewer` port is attached
-([#265](https://github.com/tyldra-org/falryn/issues/265)); diff, document,
-media, and diagnostic overlays remain
+([#265](https://github.com/tyldra-org/falryn/issues/265)); a `<diff>` overlay
+with hunk navigation and unified/split layout
+([#266](https://github.com/tyldra-org/falryn/issues/266)); document (wrapped
+text) and media-summary overlays
+([#267](https://github.com/tyldra-org/falryn/issues/267)). The Git changes
+dashboard overlay (`ctrl+g`) lists grouped status, worktrees, and checkpoints
+through `GitDashboard` / `GitPort`; checkpoint create and restore go through
+that port after a restore plan, and the TUI never spawns git
+([#268](https://github.com/tyldra-org/falryn/issues/268)). Diagnostic overlays
+remain
 ([#264](https://github.com/tyldra-org/falryn/issues/264)).
 
 The startup recovery introduced by

@@ -29,6 +29,7 @@ import {
   FIXTURE_ARTIFACT,
   FIXTURE_AT,
 } from "../../presentation/transcript/fixtures.ts";
+import { createFixedGitDashboard, fixtureCheckpoint, fixtureGitIdentity } from "../git/fixtures.ts";
 import { mount, type Rendered, type TerminalShape } from "../harness.tsx";
 import type { ThemeRequest } from "../theme/index.ts";
 import { known, type ShellModel, unavailable } from "../view-model.ts";
@@ -106,6 +107,7 @@ async function open(
   shape: TerminalShape = { columns: 100, rows: 24 },
   options: {
     readonly artifactViewer?: Parameters<typeof ShellApp>[0]["artifactViewer"];
+    readonly gitDashboard?: Parameters<typeof ShellApp>[0]["gitDashboard"];
   } = {},
 ): Promise<Rendered> {
   const shell = await mount(
@@ -115,6 +117,7 @@ async function open(
       onExit={() => {}}
       transcript={transcript}
       {...(options.artifactViewer === undefined ? {} : { artifactViewer: options.artifactViewer })}
+      {...(options.gitDashboard === undefined ? {} : { gitDashboard: options.gitDashboard })}
     />,
     { shape },
   );
@@ -583,6 +586,69 @@ describe("the code artifact viewer", () => {
       expect(opened).toContain(`${mediaType} · summary · 4096 bytes`);
       expect(opened).toContain("25 50 44 46");
     }
+  });
+});
+
+describe("the Git changes dashboard", () => {
+  test("opens status groups, cycles tabs, and creates a checkpoint", async () => {
+    let created = 0;
+    const dashboard = createFixedGitDashboard(
+      {
+        identity: fixtureGitIdentity(),
+        entries: [
+          {
+            kind: "ordinary",
+            path: "src/tui/git/dashboard-overlay.tsx",
+            originalPath: null,
+            indexStatus: ".",
+            worktreeStatus: "M",
+          },
+        ],
+        entriesNote: null,
+        worktrees: [
+          {
+            path: "/work/falryn",
+            head: { state: "observed", value: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
+            branch: { state: "observed", value: "feat/268-git-dashboard" },
+            detached: false,
+            locked: false,
+            prunable: false,
+          },
+        ],
+        worktreesNote: null,
+        checkpoints: [fixtureCheckpoint()],
+        checkpointsNote: null,
+      },
+      {
+        onCreate: () => {
+          created += 1;
+        },
+      },
+    );
+
+    using shell = await open(history(3), { columns: 100, rows: 30 }, { gitDashboard: dashboard });
+    await shell.press("g", { ctrl: true });
+    let opened = await shell.frame();
+    for (let i = 0; i < 8 && opened.includes("Loading Git dashboard"); i += 1) {
+      opened = await shell.frame();
+    }
+    expect(opened).toContain("Changes");
+    expect(opened).toContain("unstaged src/tui/git/dashboard-overlay.tsx");
+
+    await shell.type("t");
+    expect(await shell.frame()).toContain("feat/268-git-dashboard /work/falryn");
+
+    await shell.type("t");
+    const checkpoints = await shell.frame();
+    expect(checkpoints).toContain("bbbbbbbbbbbb");
+
+    await shell.type("c");
+    let afterCreate = await shell.frame();
+    for (let i = 0; i < 8 && created === 0; i += 1) {
+      afterCreate = await shell.frame();
+    }
+    expect(created).toBe(1);
+    expect(afterCreate).toContain("Checkpoint eeeeeeeeeeee created.");
   });
 });
 

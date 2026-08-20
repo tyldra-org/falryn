@@ -12,7 +12,7 @@
  * writes what comes back to the handle that owns it.
  */
 
-import { createFileAttachmentProbe } from "../application/index.ts";
+import { createFileAttachmentProbe, createGitDashboard } from "../application/index.ts";
 import {
   assertNever,
   type EnvironmentPort,
@@ -22,7 +22,11 @@ import {
   type Timestamp,
   timestampFromEpochMilliseconds,
 } from "../domain/index.ts";
-import { createHostEnvironment } from "../integrations/index.ts";
+import {
+  createHostEnvironment,
+  createHostGitPort,
+  createHostProcessCapturePort,
+} from "../integrations/index.ts";
 import {
   decideLaunch,
   nonLaunchNotice,
@@ -275,6 +279,15 @@ async function launchShell(
     fileSystem: graph.fileSystem,
     workspace: graph.workspaceRoot,
   });
+  const gitExecutable = Bun.which("git");
+  const gitDashboard =
+    gitExecutable === null || graph.workspaceRoot === null
+      ? undefined
+      : createGitDashboard({
+          git: createHostGitPort({ capture: createHostProcessCapturePort() }),
+          gitExecutable,
+          startPath: graph.workspaceRoot,
+        });
 
   // Aborts when the shell is done, so a run given a long `--timeout` does not
   // leave a timer armed over a process with nothing left to govern.
@@ -304,6 +317,7 @@ async function launchShell(
       // that no runtime was attached while running inside one.
       scopes: governance.scopes,
       ...(fileProbe === null ? {} : { fileProbe }),
+      ...(gitDashboard === undefined ? {} : { gitDashboard }),
       ...(governance.shutdown === undefined ? {} : { shutdown: governance.shutdown }),
       ...(options.createRenderer === undefined ? {} : { createRenderer: options.createRenderer }),
     });
