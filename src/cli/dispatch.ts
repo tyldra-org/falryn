@@ -364,6 +364,7 @@ async function launchShell(
     eventStore: graph.eventStore,
     clock: graph.clock,
     environment,
+    fileSystem: graph.fileSystem,
     workspaceSet: resolvedWorkspace.ok === true ? resolvedWorkspace.value.set : null,
     signal: stopped.signal,
   });

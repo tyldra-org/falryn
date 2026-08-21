@@ -12,6 +12,7 @@ import {
   adoptForeignError,
   composeProductAgentRuntime,
   composeProductCredentials,
+  composeProductWorkspaceTools,
   DEFAULT_OPENAI_CREDENTIAL_REFERENCE,
   fromUnknown,
   resolveProviderApiKey,
@@ -239,6 +240,13 @@ export async function runCoding(
     }
   }
 
+  const workspaceTools = composeProductWorkspaceTools({
+    generation,
+    fileSystem: graph.fileSystem,
+    commands: createHostCommandRunner(),
+    workspaceRoot: primaryWorkspaceRoot(workspace.value.set).path,
+  });
+
   const composed = composeProductAgentRuntime({
     eventStore: graph.eventStore,
     clock: graph.clock,
@@ -250,6 +258,8 @@ export async function runCoding(
       configurationGeneration: generation,
     },
     ...(providerAdapter !== undefined && providerAdapter !== null ? { providerAdapter } : {}),
+    toolCatalog: workspaceTools.catalog,
+    toolRunner: workspaceTools.runner,
   });
   if (!composed.ok) {
     return codingResult(

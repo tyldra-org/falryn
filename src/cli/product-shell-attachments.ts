@@ -1,15 +1,15 @@
 /**
- * Default TUI product attachments (#752).
+ * Default TUI product attachments (#752 / #711).
  *
- * Composes the product agent runtime, credentials, and OpenAI-compatible
- * adapter (when a key resolves) so `launchShell` can pass a real submission
- * port and transcript feed into `runShell` instead of the permanent
- * unavailable stub.
+ * Composes the product agent runtime, credentials, OpenAI-compatible adapter
+ * (when a key resolves), and workspace product tools (#711) so `launchShell`
+ * can pass a real submission port and transcript feed into `runShell`.
  */
 
 import {
   composeProductAgentRuntime,
   composeProductCredentials,
+  composeProductWorkspaceTools,
   DEFAULT_OPENAI_CREDENTIAL_REFERENCE,
   resolveProviderApiKey,
 } from "../application/index.ts";
@@ -18,6 +18,7 @@ import {
   configurationGeneration,
   type EnvironmentPort,
   type EventStorePort,
+  type FileSystemPort,
   type LocalDataPlatform,
   primaryWorkspaceRoot,
   sessionId as sessionIdCodec,
@@ -37,6 +38,7 @@ export type ProductShellAttachmentPorts = {
   readonly eventStore: EventStorePort;
   readonly clock: ClockPort;
   readonly environment: EnvironmentPort;
+  readonly fileSystem: FileSystemPort;
   readonly workspaceSet: WorkspaceSet | null;
   readonly signal?: AbortSignal;
   readonly platform?: LocalDataPlatform;
@@ -64,11 +66,12 @@ export async function composeProductShellAttachments(
   const sessionId = sessionIdCodec.from(`session-shell-${now}`);
   const traceId = traceIdCodec.from(`trace-shell-${now}`);
   const generation = configurationGeneration.from(0);
+  const commands = ports.commands ?? createHostCommandRunner();
 
   let providerAdapter: ProviderAdapterPort | undefined;
   const credentials = composeProductCredentials({
     clock: ports.clock,
-    commands: ports.commands ?? createHostCommandRunner(),
+    commands,
     platform: ports.platform ?? hostPlatform(),
     environment: ports.environment,
   });
@@ -85,6 +88,16 @@ export async function composeProductShellAttachments(
     });
   }
 
+  const workspaceTools =
+    ports.workspaceSet === null
+      ? null
+      : composeProductWorkspaceTools({
+          generation,
+          fileSystem: ports.fileSystem,
+          commands,
+          workspaceRoot: primaryWorkspaceRoot(ports.workspaceSet).path,
+        });
+
   const composed = composeProductAgentRuntime({
     eventStore: ports.eventStore,
     clock: ports.clock,
@@ -96,6 +109,9 @@ export async function composeProductShellAttachments(
       configurationGeneration: generation,
     },
     ...(providerAdapter === undefined ? {} : { providerAdapter }),
+    ...(workspaceTools === null
+      ? {}
+      : { toolCatalog: workspaceTools.catalog, toolRunner: workspaceTools.runner }),
   });
   if (!composed.ok) {
     return null;

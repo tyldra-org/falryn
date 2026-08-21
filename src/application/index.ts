@@ -190,6 +190,14 @@ export {
   resolveProviderApiKey,
 } from "./product-credentials.ts";
 export type {
+  ProductWorkspaceToolPorts,
+  ProductWorkspaceTools,
+} from "./product-tools-workspace.ts";
+export {
+  composeProductWorkspaceTools,
+  PRODUCT_WORKSPACE_TOOLS_OWNER,
+} from "./product-tools-workspace.ts";
+export type {
   DigestedPromptRequest,
   PromptComposer,
   PromptComposerError,
