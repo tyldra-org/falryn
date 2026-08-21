@@ -13,8 +13,11 @@ import {
   composeProductAgentRuntime,
   composeProductCredentials,
   composeProductGitTools,
+  composeProductLanguageTools,
   composeProductProcessTools,
   composeProductWorkspaceTools,
+  createDebugAdapterSupervisor,
+  createLanguageServerSupervisor,
   DEFAULT_OPENAI_CREDENTIAL_REFERENCE,
   fromUnknown,
   mergeProductToolBundles,
@@ -36,6 +39,7 @@ import {
 import {
   createHostCommandRunner,
   createHostGitPort,
+  createHostManagedServicePort,
   createHostProcessCapturePort,
   hostPlatform,
 } from "../integrations/index.ts";
@@ -268,10 +272,17 @@ export async function runCoding(
     gitExecutable: "/usr/bin/git",
     startPath: String(primaryWorkspaceRoot(workspace.value.set).path),
   });
+  const managedServices = createHostManagedServicePort();
+  const languageTools = composeProductLanguageTools({
+    generation,
+    languageServers: createLanguageServerSupervisor(managedServices),
+    debugAdapters: createDebugAdapterSupervisor(managedServices),
+  });
   const productTools = mergeProductToolBundles(generation, [
     workspaceTools,
     processTools,
     gitTools,
+    languageTools,
   ]);
 
   const composed = composeProductAgentRuntime({

@@ -197,6 +197,14 @@ export {
   composeProductGitTools,
   PRODUCT_GIT_TOOLS_OWNER,
 } from "./product-tools-git.ts";
+export type {
+  ProductLanguageToolPorts,
+  ProductLanguageTools,
+} from "./product-tools-language.ts";
+export {
+  composeProductLanguageTools,
+  PRODUCT_LANGUAGE_TOOLS_OWNER,
+} from "./product-tools-language.ts";
 export type { ProductToolBundle } from "./product-tools-merge.ts";
 export { mergeProductToolBundles } from "./product-tools-merge.ts";
 export type {
