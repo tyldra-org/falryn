@@ -41,21 +41,14 @@ function validInput(): RepositoryIntegrityInput {
     manifest: {
       dependencies,
       devDependencies,
-      patchedDependencies: {
-        "@opentui/core@0.5.6": "patches/@opentui%2Fcore@0.5.6.patch",
-        "@opentui/react@0.5.6": "patches/@opentui%2Freact@0.5.6.patch",
-      },
+      patchedDependencies: {},
       scripts: {
         build: "bun build src/main.ts --compile --outfile dist/falryn",
       },
     },
     lockfile: { packages },
     installedPackages,
-    sourcePaths: new Set([
-      "src/main.ts",
-      "patches/@opentui%2Fcore@0.5.6.patch",
-      "patches/@opentui%2Freact@0.5.6.patch",
-    ]),
+    sourcePaths: new Set(["src/main.ts"]),
     gitignore: "/dist/\n",
     trackedPaths: [],
   };

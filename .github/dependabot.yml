@@ -10,7 +10,6 @@
 #
 # Landing a bump still needs a human when Falryn policy applies:
 # - update `DIRECT_DEPENDENCY_POLICY` in `tools/repository-integrity.ts`
-# - regenerate `patches/` when an OpenTUI pin moves
 #
 # Bun itself (`packageManager` / `engines.bun`) is not a package Dependabot
 # updates; bump that pin when adopting a new Bun runtime.

@@ -1656,8 +1656,8 @@ Its verified behavior:
   built on yargs. A standalone executable produced identical help to source
   mode, produced version output, and reported unknown flags, unknown commands,
   and out-of-choice values; non-English locales changed and failed nothing.
-  `@types/yargs` type-checks clean under `skipLibCheck: false` and
-  `exactOptionalPropertyTypes`, so no accommodation was added;
+  `@types/yargs` type-checks clean under `exactOptionalPropertyTypes`, so no
+  accommodation was added;
 - **only `config`, `data`, `doctor`, `export`, and `session` are declared.** Every other
   group named in `reference/CLI.md` is absent from the tree, asserted by a
   control, because parsing one would advertise it in `--help`;
@@ -2066,19 +2066,13 @@ need `bun install --os="*" --cpu="*"` and, on Linux, `process.env.OPENTUI_LIBC`
 defined at build time so only one libc branch is embedded.
 
 `tsconfig.json` gained `jsxImportSource: "@opentui/react"` and nothing else.
-`skipLibCheck` is still `false`, `exactOptionalPropertyTypes` and
-`noUncheckedIndexedAccess` are still on, and `lib` is still `["ESNext"]` — the
+`skipLibCheck` is `true` (same as Bun’s suggested base and the OpenTUI apps in
+the research references — opencode, kilocode), while `exactOptionalPropertyTypes`
+and `noUncheckedIndexedAccess` stay on, and `lib` stays `["ESNext"]` — the
 OpenTUI React documentation recommends adding `DOM`, and it is not required;
 adding it would have put browser globals in scope for every module in `src/`.
-Two upstream declaration files do not type-check under `skipLibCheck: false`,
-and both are accommodated by a type-only Bun patch in `patches/` rather than by
-loosening a compiler option: `@opentui/core` narrows `emit` in a way its base
-`EventEmitter` does not permit, and `@opentui/react` extends
-`React.JSX.IntrinsicElements` while redeclaring `a`, `span`, `input`, and the
-other names it shares with the DOM. The second patch drops the DOM intrinsics
-from the JSX namespace entirely, so `<div>` in a terminal application is now a
-type error rather than an accepted element. Both patches are pinned to `0.5.6`
-and fail loudly on an upgrade, which is when they should be retried.
+Earlier type-only Bun patches for OpenTUI declaration quirks were dropped with
+that `skipLibCheck` change; dependency `.d.ts` files are no longer type-checked.
 
 Bun is pinned at `1.4.0` (`packageManager` / `engines.bun`). CI installs that
 same version through `.github/actions/setup-bun` reading the manifest — there is

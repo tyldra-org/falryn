@@ -103,9 +103,8 @@ Dependabot (`.github/dependabot.yml`) keeps GitHub Actions SHAs current weekly
 and opens Bun package version-update PRs for **every** direct dependency in
 `package.json` (production and development, including packages added later —
 no Dependabot.yml edit required). Groups only batch those updates into fewer
-PRs. Landing still needs a human to refresh `tools/repository-integrity.ts`
-and, when OpenTUI moves, the type-only `patches/` files. Dependabot does not
-bump the Bun runtime pin.
+PRs. Landing still needs a human to refresh `tools/repository-integrity.ts`.
+Dependabot does not bump the Bun runtime pin.
 
 Its optional `working-directory` input installs into a subdirectory checkout
 when a job needs a second tree with its own manifest.
