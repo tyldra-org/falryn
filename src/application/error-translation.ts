@@ -21,6 +21,7 @@ import {
   type ArtifactError,
   type ArtifactReadError,
   assertNever,
+  type BackupError,
   blockingIssues,
   type CodecError,
   type ConfigurationIssue,
@@ -944,6 +945,68 @@ export function fromImportError(error: ImportError, context: ErrorContext = {}):
       return fromEventStoreError(error.error, context);
     default:
       return assertNever(error, "unhandled import error");
+  }
+}
+
+/** A user backup, inspect, restore, or local diagnostics refusal. */
+export function fromBackupError(error: BackupError, context: ErrorContext = {}): FalrynError {
+  switch (error.code) {
+    case "cancelled":
+      return build({
+        code: "cancellation.data.backup.cancelled",
+        category: "cancellation",
+        message: "The backup operation was cancelled.",
+        retryable: true,
+        effect: "none",
+        cause: { source: "backup", code: error.code, detail: null },
+        ...context,
+      });
+    case "store":
+      return fromSqliteStoreError(error.error, context);
+    case "identity":
+      return fromIdentityError(error.error, context);
+    case "filesystem":
+      return build({
+        code: `data.backup.filesystem.${error.error.code}`,
+        category: "data",
+        message: "The backup could not access local storage.",
+        retryable: false,
+        effect: "none",
+        cause: { source: "filesystem", code: error.error.code, detail: null },
+        ...context,
+      });
+    case "path":
+      return build({
+        code: `data.backup.path.${error.error.code}`,
+        category: "data",
+        message: "A backup path could not be resolved safely.",
+        retryable: false,
+        effect: "none",
+        cause: { source: "local-path", code: error.error.code, detail: null },
+        ...context,
+      });
+    case "live-store-open":
+      return build({
+        code: "data.backup.live-store-open",
+        category: "data",
+        message: "Restore requires the live database to be closed.",
+        retryable: false,
+        effect: "none",
+        cause: { source: "backup", code: error.code, detail: null },
+        ...context,
+      });
+    case "not-found":
+      return build({
+        code: "data.backup.not-found",
+        category: "data",
+        message: "The named backup was not found.",
+        retryable: false,
+        effect: "none",
+        cause: { source: "backup", code: error.code, detail: null },
+        ...context,
+      });
+    default:
+      return assertNever(error, "unhandled backup error");
   }
 }
 

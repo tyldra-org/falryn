@@ -115,6 +115,12 @@ import type {
   SessionCommandArguments,
   WorkspaceCommandArguments,
 } from "./command-tree.ts";
+import type {
+  DataBackupPayload,
+  DataDiagnosticsPayload,
+  DataInspectPayload,
+  DataRestorePayload,
+} from "./data-backup-commands.ts";
 import type { runImport, runReplay } from "./import-replay-commands.ts";
 import type { GlobalOptions } from "./options.ts";
 import {
@@ -1987,6 +1993,14 @@ export function stoppedResult(
         outcome,
         effect,
       );
+    case "data.backup":
+      return resultFor("data.backup", null, [], outcome, effect);
+    case "data.restore":
+      return resultFor("data.restore", null, [], outcome, effect);
+    case "data.inspect":
+      return resultFor("data.inspect", null, [], outcome, effect);
+    case "data.diagnostics":
+      return resultFor("data.diagnostics", null, [], outcome, effect);
     case "doctor":
       return resultFor<"doctor", DoctorPayload>("doctor", null, [], outcome, effect);
     case "export":
@@ -2100,8 +2114,12 @@ export type RunCommandResult =
   | Awaited<ReturnType<typeof runConfigShow>>
   | Awaited<ReturnType<typeof runConfigValidate>>
   | Awaited<ReturnType<typeof runConfigPath>>
-  | Awaited<ReturnType<typeof runDataReset>>
-  | Awaited<ReturnType<typeof runDataUninstall>>
+  | CommandResultOf<"data.reset", DataRemovalPayload>
+  | CommandResultOf<"data.uninstall", DataRemovalPayload>
+  | CommandResultOf<"data.backup", DataBackupPayload>
+  | CommandResultOf<"data.restore", DataRestorePayload>
+  | CommandResultOf<"data.inspect", DataInspectPayload>
+  | CommandResultOf<"data.diagnostics", DataDiagnosticsPayload>
   | Awaited<ReturnType<typeof runDoctor>>
   | Awaited<ReturnType<typeof runExport>>
   | Awaited<ReturnType<typeof runImport>>

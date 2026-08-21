@@ -23,6 +23,8 @@ import { isLegalProfileName } from "../config/index.ts";
 import {
   type ArtifactId,
   artifactId,
+  type BackupName,
+  backupName,
   DEFAULT_ARTIFACT_LIST_LIMIT,
   DEFAULT_SESSION_LIST_LIMIT,
   DEFAULT_WORKSPACE_LAYOUT_LIST_LIMIT,
@@ -79,6 +81,18 @@ export type DataCommandArguments = {
   /** The exact plan identity supplied by the caller, or `null` for preview. */
   readonly confirmation: PlanId | null;
 };
+
+/** Command-specific inputs for backup, restore, inspect, and local diagnostics. */
+export type DataLifecycleArguments =
+  | { readonly action: "backup"; readonly name: BackupName }
+  | {
+      readonly action: "restore";
+      readonly name: BackupName;
+      /** The backup name from a prior preview, or `null` to preview only. */
+      readonly confirmation: BackupName | null;
+    }
+  | { readonly action: "inspect"; readonly name: BackupName }
+  | { readonly action: "diagnostics" };
 
 /** Command-specific inputs for `falryn export`. */
 export type ExportCommandArguments = {
@@ -197,6 +211,7 @@ export type Invocation =
       readonly command: RunnableCommand;
       readonly options: GlobalOptions;
       readonly data: DataCommandArguments | null;
+      readonly dataLifecycleArgs: DataLifecycleArguments | null;
       readonly exportArgs: ExportCommandArguments | null;
       readonly importArgs: ImportCommandArguments | null;
       readonly replayArgs: ReplayCommandArguments | null;
@@ -272,7 +287,7 @@ function build(argv: readonly string[], lenientPositionals = false): ReturnType<
   // lenient form exists for one reason: a help request must not be rejected
   // for omitting the very thing it is asking about.
   const configCommand = lenientPositionals ? "config [action]" : "config <action>";
-  const dataCommand = lenientPositionals ? "data [action]" : "data <action>";
+  const dataCommand = lenientPositionals ? "data [action] [name]" : "data <action> [name]";
   const sessionCommand = lenientPositionals ? "session [action] [id]" : "session <action> [id]";
   const artifactCommand = lenientPositionals ? "artifact [action] [id]" : "artifact <action> [id]";
   const workspaceCommand = lenientPositionals
@@ -306,22 +321,38 @@ function build(argv: readonly string[], lenientPositionals = false): ReturnType<
           describe: "show the effective values, validate them, or print source paths",
         }),
       )
-      .command(dataCommand, "Preview or remove Falryn-owned local data.", (group) =>
-        group
-          .positional("action", {
-            type: "string",
-            choices: ["reset", "uninstall"] as const,
-            describe: "selectively reset classes, or uninstall registered local data",
-          })
-          .option("class", {
-            type: "string",
-            array: true,
-            describe: "ownership class to include in a reset (repeatable)",
-          })
-          .option("confirm", {
-            type: "string",
-            describe: "execute only the exact removal plan identity previously previewed",
-          }),
+      .command(
+        dataCommand,
+        "Preview, back up, inspect, or remove Falryn-owned local data.",
+        (group) =>
+          group
+            .positional("action", {
+              type: "string",
+              choices: [
+                "reset",
+                "uninstall",
+                "backup",
+                "restore",
+                "inspect",
+                "diagnostics",
+              ] as const,
+              describe:
+                "reset or uninstall classes, or back up, restore, inspect, or diagnose local SQLite state",
+            })
+            .positional("name", {
+              type: "string",
+              describe: "backup name (required for backup, restore, and inspect)",
+            })
+            .option("class", {
+              type: "string",
+              array: true,
+              describe: "ownership class to include in a reset (repeatable)",
+            })
+            .option("confirm", {
+              type: "string",
+              describe:
+                "execute a reset plan identity from a prior preview, or confirm a restore with the backup name",
+            }),
       )
       .command("doctor", "Run bounded environment and storage diagnostics.", (group) => group)
       .command(
@@ -618,6 +649,10 @@ export async function parseInvocation(argv: readonly string[]): Promise<Invocati
   if (typeof data === "string") {
     return { kind: "invalid", message: data };
   }
+  const dataLifecycleArgs = dataLifecycleArgumentsFor(command, parsed);
+  if (typeof dataLifecycleArgs === "string") {
+    return { kind: "invalid", message: dataLifecycleArgs };
+  }
   const exportArgs = exportArgumentsFor(command, parsed);
   if (typeof exportArgs === "string") {
     return { kind: "invalid", message: exportArgs };
@@ -648,6 +683,7 @@ export async function parseInvocation(argv: readonly string[]): Promise<Invocati
     command,
     options,
     data,
+    dataLifecycleArgs,
     exportArgs,
     importArgs,
     replayArgs,
@@ -798,6 +834,14 @@ function commandFrom(positional: readonly string[], action: string | null): Runn
         return "data.reset";
       case "uninstall":
         return "data.uninstall";
+      case "backup":
+        return "data.backup";
+      case "restore":
+        return "data.restore";
+      case "inspect":
+        return "data.inspect";
+      case "diagnostics":
+        return "data.diagnostics";
       default:
         return null;
     }
@@ -875,6 +919,10 @@ function dataArgumentsFor(
     return null;
   }
 
+  if (parsed.name !== undefined) {
+    return "Argument name is only valid with data backup, restore, or inspect.";
+  }
+
   const classes = parsed.class ?? [];
   if (command === "data.reset" && classes.length === 0) {
     return "Argument class is required for data reset; name at least one ownership class.";
@@ -893,6 +941,66 @@ function dataArgumentsFor(
     return "Argument confirm must be a removal plan identity from a prior preview.";
   }
   return { classes: ownershipClasses, confirmation: parsed.confirm ?? null };
+}
+
+function dataLifecycleArgumentsFor(
+  command: RunnableCommand,
+  parsed: RawArguments,
+): DataLifecycleArguments | null | string {
+  if (
+    command !== "data.backup" &&
+    command !== "data.restore" &&
+    command !== "data.inspect" &&
+    command !== "data.diagnostics"
+  ) {
+    return null;
+  }
+
+  if ((parsed.class?.length ?? 0) > 0) {
+    return "Argument class is only valid with data reset.";
+  }
+
+  if (command === "data.diagnostics") {
+    if (parsed.name !== undefined) {
+      return "Argument name is only valid with data backup, restore, or inspect.";
+    }
+    if (parsed.confirm !== undefined) {
+      return "Argument confirm is only valid with data reset or restore.";
+    }
+    return { action: "diagnostics" };
+  }
+
+  if (parsed.name === undefined) {
+    return "Argument name is required for data backup, restore, and inspect.";
+  }
+  const parsedName = backupName.parse(parsed.name);
+  if (!parsedName.ok) {
+    return "Argument name must be a file-safe backup name.";
+  }
+
+  if (command === "data.backup") {
+    if (parsed.confirm !== undefined) {
+      return "Argument confirm is only valid with data reset or restore.";
+    }
+    return { action: "backup", name: parsedName.value };
+  }
+
+  if (command === "data.inspect") {
+    if (parsed.confirm !== undefined) {
+      return "Argument confirm is only valid with data reset or restore.";
+    }
+    return { action: "inspect", name: parsedName.value };
+  }
+
+  let confirmation: BackupName | null = null;
+  if (parsed.confirm !== undefined) {
+    const parsedConfirm = backupName.parse(parsed.confirm);
+    if (!parsedConfirm.ok) {
+      return "Argument confirm must be the backup name from a prior restore preview.";
+    }
+    confirmation = parsedConfirm.value;
+  }
+  return { action: "restore", name: parsedName.value, confirmation };
 }
 
 function exportArgumentsFor(
