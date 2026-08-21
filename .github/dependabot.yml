@@ -3,11 +3,14 @@
 # the release it names has been superseded, so an update has to be scheduled
 # rather than noticed.
 #
-# Bun package updates are enabled via `package-ecosystem: bun`. Direct
-# dependency bumps still have to pass `bun run tools/repository-integrity.ts`
-# (update `DIRECT_DEPENDENCY_POLICY` in that file with the PR). OpenTUI bumps
-# also need the type-only patches under `patches/` regenerated for the new
-# version — Dependabot cannot do that step.
+# Bun package updates (`package-ecosystem: bun`) watch `package.json` +
+# `bun.lock`. Every direct dependency listed there — present or added later —
+# is eligible; new packages do not need a Dependabot.yml edit. Groups only
+# control how many PRs open, not which packages are eligible.
+#
+# Landing a bump still needs a human when Falryn policy applies:
+# - update `DIRECT_DEPENDENCY_POLICY` in `tools/repository-integrity.ts`
+# - regenerate `patches/` when an OpenTUI pin moves
 #
 # Bun itself (`packageManager` / `engines.bun`) is not a package Dependabot
 # updates; bump that pin when adopting a new Bun runtime.
@@ -39,19 +42,20 @@ updates:
     schedule:
       interval: weekly
       day: monday
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 10
     commit-message:
       prefix: build
       include: scope
     labels:
       - "type: infrastructure"
+    # One PR for production pins, one for dev pins. Everything in
+    # package.json is included; the "*" patterns are intentional.
     groups:
-      opentui:
-        patterns:
-          - "@opentui/*"
-      production-deps:
+      production-dependencies:
         dependency-type: production
-        exclude-patterns:
-          - "@opentui/*"
-      development-deps:
+        patterns:
+          - "*"
+      development-dependencies:
         dependency-type: development
+        patterns:
+          - "*"
