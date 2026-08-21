@@ -64,6 +64,7 @@ import {
   type OutputFormat,
 } from "./options.ts";
 import type { CommandId } from "./result.ts";
+import { type TaskCommandArguments, taskArgumentsFor } from "./task-intelligence-parse.ts";
 
 /** The name the tree reports itself as, whatever the executable is called. */
 export const SCRIPT_NAME = "falryn";
@@ -205,6 +206,8 @@ export type WorkspaceCommandArguments =
       readonly name: string;
     };
 
+export type { TaskCommandArguments };
+
 /**
  * What parsing an argument vector produced.
  *
@@ -227,6 +230,7 @@ export type Invocation =
       readonly artifactArgs: ArtifactCommandArguments | null;
       readonly workspaceArgs: WorkspaceCommandArguments | null;
       readonly runArgs: CodingRunArguments | null;
+      readonly taskArgs: TaskCommandArguments | null;
     }
   /** Show help. `topic` is `null` for the root, or the subcommand asked about. */
   | { readonly kind: "help"; readonly topic: string | null; readonly options: GlobalOptions }
@@ -271,6 +275,17 @@ type RawArguments = {
   readonly "add-dir": readonly string[] | undefined;
   readonly prompt: readonly string[] | undefined;
   readonly brief: string | undefined;
+  readonly statement: string | undefined;
+  readonly "outcome-id": string | undefined;
+  readonly goal: readonly string[] | undefined;
+  readonly "non-goal": readonly string[] | undefined;
+  readonly proposed: readonly string[] | undefined;
+  readonly task: readonly string[] | undefined;
+  readonly depends: readonly string[] | undefined;
+  readonly observe: readonly string[] | undefined;
+  readonly blocker: readonly string[] | undefined;
+  readonly criterion: readonly string[] | undefined;
+  readonly input: string | undefined;
   readonly format: string;
   readonly color: string;
   readonly quiet: boolean;
@@ -302,6 +317,7 @@ function build(argv: readonly string[], lenientPositionals = false): ReturnType<
   const workspaceCommand = lenientPositionals
     ? "workspace [action] [name]"
     : "workspace <action> [name]";
+  const taskCommand = lenientPositionals ? "task [action]" : "task <action>";
   return (
     yargs([...argv])
       .scriptName(SCRIPT_NAME)
@@ -433,6 +449,69 @@ function build(argv: readonly string[], lenientPositionals = false): ReturnType<
             type: "string",
             describe: "session identity to rebuild (not `session replay`, which is cursor control)",
           }),
+      )
+      .command(
+        taskCommand,
+        "Decompose outcomes, recommend validation, or project task progress.",
+        (group) =>
+          group
+            .positional("action", {
+              type: "string",
+              choices: ["decompose", "validate", "progress"] as const,
+              describe: "decompose, validate, or progress",
+            })
+            .option("statement", {
+              type: "string",
+              describe: "declared outcome statement (decompose)",
+            })
+            .option("outcome-id", {
+              type: "string",
+              describe: "outcome identity (default cli-outcome)",
+            })
+            .option("goal", {
+              type: "string",
+              array: true,
+              describe: "declared goal (decompose; repeatable)",
+            })
+            .option("non-goal", {
+              type: "string",
+              array: true,
+              describe: "declared non-goal (decompose; repeatable)",
+            })
+            .option("proposed", {
+              type: "string",
+              array: true,
+              describe: "proposed taskId:objective split (decompose; repeatable)",
+            })
+            .option("task", {
+              type: "string",
+              array: true,
+              describe: "task id or taskId:criterion pair (validate/progress; repeatable)",
+            })
+            .option("depends", {
+              type: "string",
+              array: true,
+              describe: "predecessor:successor edge (progress; repeatable)",
+            })
+            .option("observe", {
+              type: "string",
+              array: true,
+              describe: "taskId:status[:note] observation (progress; repeatable)",
+            })
+            .option("blocker", {
+              type: "string",
+              array: true,
+              describe: "taskId:reason external blocker (progress; repeatable)",
+            })
+            .option("criterion", {
+              type: "string",
+              array: true,
+              describe: "taskId:criterion completion criterion (progress; repeatable)",
+            })
+            .option("input", {
+              type: "string",
+              describe: "bounded JSON input file as an alternate to explicit flags",
+            }),
       )
       .command(
         sessionCommand,
@@ -694,6 +773,20 @@ export async function parseInvocation(argv: readonly string[]): Promise<Invocati
     return { kind: "invalid", message: workspaceArgs };
   }
   const runArgs = runArgumentsFor(command, parsed);
+  const taskArgs =
+    command === "task.decompose" || command === "task.validate" || command === "task.progress"
+      ? await taskArgumentsFor(
+          command === "task.decompose"
+            ? "decompose"
+            : command === "task.validate"
+              ? "validate"
+              : "progress",
+          parsed,
+        )
+      : null;
+  if (typeof taskArgs === "string") {
+    return { kind: "invalid", message: taskArgs };
+  }
   return {
     kind: "run",
     command,
@@ -707,6 +800,7 @@ export async function parseInvocation(argv: readonly string[]): Promise<Invocati
     artifactArgs,
     workspaceArgs,
     runArgs,
+    taskArgs,
   };
 }
 
@@ -785,6 +879,33 @@ function isRawArguments(value: unknown): value is RawArguments {
       (Array.isArray(field("prompt")) &&
         (field("prompt") as unknown[]).every((item) => typeof item === "string"))) &&
     optionalString(field("brief")) &&
+    optionalString(field("statement")) &&
+    optionalString(field("outcome-id")) &&
+    (field("goal") === undefined ||
+      (Array.isArray(field("goal")) &&
+        (field("goal") as unknown[]).every((item) => typeof item === "string"))) &&
+    (field("non-goal") === undefined ||
+      (Array.isArray(field("non-goal")) &&
+        (field("non-goal") as unknown[]).every((item) => typeof item === "string"))) &&
+    (field("proposed") === undefined ||
+      (Array.isArray(field("proposed")) &&
+        (field("proposed") as unknown[]).every((item) => typeof item === "string"))) &&
+    (field("task") === undefined ||
+      (Array.isArray(field("task")) &&
+        (field("task") as unknown[]).every((item) => typeof item === "string"))) &&
+    (field("depends") === undefined ||
+      (Array.isArray(field("depends")) &&
+        (field("depends") as unknown[]).every((item) => typeof item === "string"))) &&
+    (field("observe") === undefined ||
+      (Array.isArray(field("observe")) &&
+        (field("observe") as unknown[]).every((item) => typeof item === "string"))) &&
+    (field("blocker") === undefined ||
+      (Array.isArray(field("blocker")) &&
+        (field("blocker") as unknown[]).every((item) => typeof item === "string"))) &&
+    (field("criterion") === undefined ||
+      (Array.isArray(field("criterion")) &&
+        (field("criterion") as unknown[]).every((item) => typeof item === "string"))) &&
+    optionalString(field("input")) &&
     typeof field("format") === "string" &&
     typeof field("color") === "string" &&
     typeof field("quiet") === "boolean" &&
@@ -831,6 +952,18 @@ function commandFrom(positional: readonly string[], action: string | null): Runn
   }
   if (group === "replay") {
     return action === null ? "replay" : null;
+  }
+  if (group === "task") {
+    switch (action) {
+      case "decompose":
+        return "task.decompose";
+      case "validate":
+        return "task.validate";
+      case "progress":
+        return "task.progress";
+      default:
+        return null;
+    }
   }
   if (group === "config") {
     switch (action) {

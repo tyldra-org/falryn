@@ -100,6 +100,8 @@ export type ShellRuntime = {
   sessionNavDraft(draft: string): void;
   sessionNavSession(sessionId: string): void;
   sessionNavNotice(message: string): void;
+  taskIntelligenceDraft(draft: string): void;
+  taskIntelligenceNotice(message: string): void;
   closeOverlay(): void;
 };
 
@@ -798,6 +800,18 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
     dispatch({ kind: "notice", message });
   }, []);
 
+  const taskIntelligenceDraft = useCallback(
+    (draft: string): void => {
+      gate.note("input");
+      dispatch({ kind: "task-intelligence-draft", draft });
+    },
+    [gate],
+  );
+
+  const taskIntelligenceNotice = useCallback((message: string): void => {
+    dispatch({ kind: "notice", message });
+  }, []);
+
   const closeOverlay = useCallback((): void => {
     dispatch({ kind: "close-overlay" });
   }, []);
@@ -822,6 +836,8 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
     sessionNavDraft,
     sessionNavSession,
     sessionNavNotice,
+    taskIntelligenceDraft,
+    taskIntelligenceNotice,
     closeOverlay,
   };
 }

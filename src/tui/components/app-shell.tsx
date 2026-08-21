@@ -47,6 +47,7 @@ import {
 } from "../layout.ts";
 import type { SessionNavigationController } from "../session-nav/index.ts";
 import { SessionNavSheet, sessionNavPanelTitle } from "../session-nav/sheet.tsx";
+import { TaskIntelligenceSheet, taskIntelligencePanelTitle } from "../task-intelligence/index.ts";
 import { createTextCache } from "../text-cache.ts";
 import { resolveTheme, type ThemeRequest } from "../theme/index.ts";
 import { inspectionFor } from "../transcript/index.ts";
@@ -136,6 +137,9 @@ export type AppShellProps = {
   readonly onSessionNavSession?: (sessionId: string) => void;
   readonly onSessionNavNotice?: (message: string) => void;
   readonly onSessionNavClose?: () => void;
+  readonly onTaskIntelligenceDraft?: (draft: string) => void;
+  readonly onTaskIntelligenceNotice?: (message: string) => void;
+  readonly onTaskIntelligenceClose?: () => void;
 };
 
 export function AppShell(props: AppShellProps): ReactNode {
@@ -252,6 +256,15 @@ export function AppShell(props: AppShellProps): ReactNode {
           {...(props.onSessionNavClose === undefined
             ? {}
             : { onSessionNavClose: props.onSessionNavClose })}
+          {...(props.onTaskIntelligenceDraft === undefined
+            ? {}
+            : { onTaskIntelligenceDraft: props.onTaskIntelligenceDraft })}
+          {...(props.onTaskIntelligenceNotice === undefined
+            ? {}
+            : { onTaskIntelligenceNotice: props.onTaskIntelligenceNotice })}
+          {...(props.onTaskIntelligenceClose === undefined
+            ? {}
+            : { onTaskIntelligenceClose: props.onTaskIntelligenceClose })}
         />
       )}
     </FrameProvider>
@@ -291,6 +304,9 @@ function ShellFrame(props: {
   readonly onSessionNavSession?: (sessionId: string) => void;
   readonly onSessionNavNotice?: (message: string) => void;
   readonly onSessionNavClose?: () => void;
+  readonly onTaskIntelligenceDraft?: (draft: string) => void;
+  readonly onTaskIntelligenceNotice?: (message: string) => void;
+  readonly onTaskIntelligenceClose?: () => void;
 }): ReactNode {
   const { model } = props;
   // Bounded rather than stretched. A `wide` terminal has room for a contextual
@@ -404,6 +420,8 @@ function overlayTitle(
       return workspacePanelTitle(route.panel);
     case "session-nav":
       return sessionNavPanelTitle(route.panel);
+    case "task-intelligence":
+      return taskIntelligencePanelTitle(route.panel);
     case "artifact":
       switch (route.presentation) {
         case "diff":
@@ -457,6 +475,9 @@ function overlayBody(
     readonly onSessionNavSession?: (sessionId: string) => void;
     readonly onSessionNavNotice?: (message: string) => void;
     readonly onSessionNavClose?: () => void;
+    readonly onTaskIntelligenceDraft?: (draft: string) => void;
+    readonly onTaskIntelligenceNotice?: (message: string) => void;
+    readonly onTaskIntelligenceClose?: () => void;
   },
   rows: number,
 ): ReactNode {
@@ -556,6 +577,23 @@ function overlayBody(
             ? {}
             : { onNotice: props.onSessionNavNotice })}
           {...(props.onSessionNavClose === undefined ? {} : { onClose: props.onSessionNavClose })}
+        />
+      );
+    case "task-intelligence":
+      return (
+        <TaskIntelligenceSheet
+          panel={overlay.panel}
+          draft={overlay.draft}
+          rows={rows}
+          {...(props.onTaskIntelligenceDraft === undefined
+            ? {}
+            : { onDraft: props.onTaskIntelligenceDraft })}
+          {...(props.onTaskIntelligenceNotice === undefined
+            ? {}
+            : { onNotice: props.onTaskIntelligenceNotice })}
+          {...(props.onTaskIntelligenceClose === undefined
+            ? {}
+            : { onClose: props.onTaskIntelligenceClose })}
         />
       );
     case "artifact":

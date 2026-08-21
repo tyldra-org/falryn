@@ -6,6 +6,7 @@ import {
 } from "../../presentation/transcript/artifact-open.ts";
 import type { ShellCommand } from "../commands.ts";
 import { sessionNavOverlayRoute } from "../session-nav/index.ts";
+import { taskIntelligenceOverlayRoute } from "../task-intelligence/index.ts";
 import {
   anchorAt,
   anchorRevealing,
@@ -217,6 +218,15 @@ export function runAvailableCommand(
       return true;
     case "session.replay":
       dispatch({ kind: "open-overlay", route: sessionNavOverlayRoute("replay") });
+      return true;
+    case "task.decompose":
+      dispatch({ kind: "open-overlay", route: taskIntelligenceOverlayRoute("decompose") });
+      return true;
+    case "task.validate":
+      dispatch({ kind: "open-overlay", route: taskIntelligenceOverlayRoute("validate") });
+      return true;
+    case "task.progress":
+      dispatch({ kind: "open-overlay", route: taskIntelligenceOverlayRoute("progress") });
       return true;
     case "session.new":
       dispatch({

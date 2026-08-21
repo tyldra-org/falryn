@@ -112,6 +112,11 @@ import {
   writeDiagnosticLine,
   writeResultLine,
 } from "./streams.ts";
+import {
+  runTaskDecompose,
+  runTaskProgress,
+  runTaskValidate,
+} from "./task-intelligence-commands.ts";
 import { versionText } from "./version.ts";
 
 export type DispatchOptions = {
@@ -222,6 +227,7 @@ async function runCommand(
     artifactArgs,
     workspaceArgs,
     runArgs,
+    taskArgs,
     options: globals,
   } = invocation;
 
@@ -244,6 +250,7 @@ async function runCommand(
     artifactArgs,
     workspaceArgs,
     runArgs,
+    taskArgs,
     services,
     overrides,
     globals,
@@ -508,6 +515,7 @@ async function governed(
   artifactArgs: Extract<Invocation, { kind: "run" }>["artifactArgs"],
   workspaceArgs: Extract<Invocation, { kind: "run" }>["workspaceArgs"],
   runArgs: Extract<Invocation, { kind: "run" }>["runArgs"],
+  taskArgs: Extract<Invocation, { kind: "run" }>["taskArgs"],
   services: ServiceProvider,
   overrides: Readonly<Record<string, string>>,
   globals: GlobalOptions,
@@ -527,6 +535,7 @@ async function governed(
       artifactArgs,
       workspaceArgs,
       runArgs,
+      taskArgs,
       services,
       overrides,
       globals,
@@ -546,6 +555,7 @@ async function governed(
       artifactArgs,
       workspaceArgs,
       runArgs,
+      taskArgs,
       services,
       overrides,
       globals,
@@ -737,6 +747,7 @@ async function produce(
   artifactArgs: Extract<Invocation, { kind: "run" }>["artifactArgs"],
   workspaceArgs: Extract<Invocation, { kind: "run" }>["workspaceArgs"],
   runArgs: Extract<Invocation, { kind: "run" }>["runArgs"],
+  taskArgs: Extract<Invocation, { kind: "run" }>["taskArgs"],
   services: ServiceProvider,
   overrides: Readonly<Record<string, string>>,
   globals: GlobalOptions,
@@ -808,6 +819,21 @@ async function produce(
         throw new Error("Missing parsed replay arguments.");
       }
       return runReplay(services, replayArgs, signal);
+    case "task.decompose":
+      if (taskArgs === null || taskArgs.action !== "decompose") {
+        throw new Error("Missing parsed task decompose arguments.");
+      }
+      return runTaskDecompose(taskArgs, signal);
+    case "task.validate":
+      if (taskArgs === null || taskArgs.action !== "validate") {
+        throw new Error("Missing parsed task validate arguments.");
+      }
+      return runTaskValidate(taskArgs, signal);
+    case "task.progress":
+      if (taskArgs === null || taskArgs.action !== "progress") {
+        throw new Error("Missing parsed task progress arguments.");
+      }
+      return runTaskProgress(taskArgs, signal);
     case "session.list":
       if (sessionArgs === null || sessionArgs.action !== "list") {
         throw new Error("Missing parsed session list arguments.");

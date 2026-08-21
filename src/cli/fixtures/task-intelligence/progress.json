@@ -1,0 +1,6 @@
+{
+  "outcomeId": "fixture-outcome",
+  "tasks": ["t1", "t2"],
+  "dependencies": [{ "predecessor": "t1", "successor": "t2" }],
+  "observations": [{ "taskId": "t1", "status": "completed" }]
+}

@@ -238,6 +238,33 @@ export const SHELL_COMMANDS: readonly ShellCommand[] = [
     availability: () => AVAILABLE,
   },
   {
+    id: "task.decompose",
+    title: "Decompose outcome",
+    description: "Turn a declared outcome into bounded tasks.",
+    context: "global",
+    defaultBinding: null,
+    keywords: ["task", "decompose", "goals", "outcome"],
+    availability: () => AVAILABLE,
+  },
+  {
+    id: "task.validate",
+    title: "Validation advice",
+    description: "Recommend focused validation from declared criteria.",
+    context: "global",
+    defaultBinding: null,
+    keywords: ["task", "validate", "criteria", "advice"],
+    availability: () => AVAILABLE,
+  },
+  {
+    id: "task.progress",
+    title: "Task progress",
+    description: "Project next actions from a task graph and observations.",
+    context: "global",
+    defaultBinding: null,
+    keywords: ["task", "progress", "next", "actions"],
+    availability: () => AVAILABLE,
+  },
+  {
     id: "brief.set",
     title: "Set Brief verbosity",
     description:

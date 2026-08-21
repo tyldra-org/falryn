@@ -71,6 +71,8 @@ export function overlayRegions(route: OverlayRoute): readonly FocusRegion[] {
       return [{ id: "overlay.workspace", label: "workspace set" }];
     case "session-nav":
       return [{ id: "overlay.session-nav", label: "session navigation" }];
+    case "task-intelligence":
+      return [{ id: "overlay.task-intelligence", label: "task intelligence" }];
     case "artifact":
       return [{ id: "overlay.artifact", label: "artifact viewer" }];
     case "changes":
@@ -129,6 +131,7 @@ export type ShellAction =
   | { readonly kind: "workspace-draft"; readonly draft: string }
   | { readonly kind: "session-nav-draft"; readonly draft: string }
   | { readonly kind: "session-nav-session"; readonly sessionId: string }
+  | { readonly kind: "task-intelligence-draft"; readonly draft: string }
   | { readonly kind: "workspace-set"; readonly workspace: WorkspaceSetView }
   | { readonly kind: "running-work"; readonly running: boolean }
   | { readonly kind: "offer-confirmation"; readonly prompt: ConfirmationPrompt }
@@ -261,6 +264,14 @@ export function shellReducer(state: ShellState, action: ShellAction): ShellState
       return {
         ...state,
         overlay: { ...state.overlay, sessionId: action.sessionId },
+      };
+    case "task-intelligence-draft":
+      if (state.overlay.kind !== "task-intelligence" || action.draft === state.overlay.draft) {
+        return state;
+      }
+      return {
+        ...state,
+        overlay: { ...state.overlay, draft: action.draft },
       };
     case "workspace-set":
       return state.workspace === action.workspace

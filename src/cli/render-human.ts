@@ -84,6 +84,11 @@ import type {
   SessionReplayPayload,
   SessionResumePayload,
 } from "./session-navigation.ts";
+import type {
+  TaskDecomposePayload,
+  TaskProgressPayload,
+  TaskValidatePayload,
+} from "./task-intelligence-commands.ts";
 
 /**
  * The layout width used when the handle reported none.
@@ -691,6 +696,12 @@ function renderPayload(session: Session, result: RunCommandResult): RenderedPayl
       return renderImport(session, result.payload);
     case "replay":
       return renderReplay(session, result.payload);
+    case "task.decompose":
+      return renderTaskDecompose(session, result.payload);
+    case "task.validate":
+      return renderTaskValidate(session, result.payload);
+    case "task.progress":
+      return renderTaskProgress(session, result.payload);
     case "session.list":
       return renderSessionList(session, result.payload);
     case "session.show":
@@ -1215,6 +1226,81 @@ function renderDataGc(session: Session, payload: DataGcPayload | null): Rendered
   };
 }
 
+function renderTaskDecompose(
+  session: Session,
+  payload: TaskDecomposePayload | null,
+): RenderedPayload {
+  if (payload === null) {
+    return { lines: ["No task decomposition is available."], diagnostics: [] };
+  }
+  const lines = [
+    paint(session, "plain", "Task decomposition"),
+    `  Outcome   ${safe(payload.decomposition.outcomeId)}`,
+    `  Statement ${safe(payload.decomposition.statement)}`,
+    "  Tasks",
+  ];
+  for (const task of payload.decomposition.tasks) {
+    lines.push(`    ${safe(task.taskId)}  ${safe(task.objective)}`);
+  }
+  if (payload.decomposition.omittedGoals.length > 0) {
+    lines.push(`  Omitted goals  ${payload.decomposition.omittedGoals.map(safe).join(", ")}`);
+  }
+  return {
+    lines,
+    diagnostics: ["Advice only. This command does not execute work or mutate state."],
+  };
+}
+
+function renderTaskValidate(
+  session: Session,
+  payload: TaskValidatePayload | null,
+): RenderedPayload {
+  if (payload === null) {
+    return { lines: ["No validation advice is available."], diagnostics: [] };
+  }
+  const lines = [
+    paint(session, "plain", "Validation advice"),
+    `  Outcome   ${safe(payload.advice.outcomeId)}`,
+    "  Recommendations",
+  ];
+  for (const recommendation of payload.advice.recommendations) {
+    lines.push(
+      `    ${safe(recommendation.taskId)}  ${safe(recommendation.kind)}  ${safe(recommendation.statement)}`,
+    );
+  }
+  if (payload.advice.omittedTasks.length > 0) {
+    lines.push(
+      `  Omitted tasks  ${payload.advice.omittedTasks.map((task) => safe(task)).join(", ")}`,
+    );
+  }
+  return {
+    lines,
+    diagnostics: ["Advice only. This command does not run tests or mark work complete."],
+  };
+}
+
+function renderTaskProgress(
+  session: Session,
+  payload: TaskProgressPayload | null,
+): RenderedPayload {
+  if (payload === null) {
+    return { lines: ["No progress projection is available."], diagnostics: [] };
+  }
+  const lines = [
+    paint(session, "plain", "Task progress"),
+    `  Outcome  ${safe(payload.projection.outcomeId)}`,
+    `  Overall  ${safe(payload.projection.overall)}`,
+    "  Next actions",
+  ];
+  for (const action of payload.projection.nextActions) {
+    lines.push(`    ${safe(action.kind)}  ${safe(action.taskId)}  ${safe(action.statement)}`);
+  }
+  return {
+    lines,
+    diagnostics: ["Advice only. This command does not execute work or mark tasks complete."],
+  };
+}
+
 function renderDataRemoval(session: Session, payload: DataRemovalPayload | null): RenderedPayload {
   if (payload === null) {
     return { lines: ["No local-data plan is available."], diagnostics: [] };
@@ -1659,6 +1745,12 @@ function quietResultLines(result: RunCommandResult): readonly string[] {
       return quietImportLines(result.payload);
     case "replay":
       return quietReplayLines(result.payload);
+    case "task.decompose":
+      return quietTaskDecomposeLines(result.payload);
+    case "task.validate":
+      return quietTaskValidateLines(result.payload);
+    case "task.progress":
+      return quietTaskProgressLines(result.payload);
     case "session.list":
       return result.payload === null
         ? []
@@ -1771,6 +1863,35 @@ function quietReplayLines(payload: ReplayCommandPayload | null): readonly string
       payload.truncated ? "truncated" : "complete",
     ].join("\t"),
   ];
+}
+
+function quietTaskDecomposeLines(payload: TaskDecomposePayload | null): readonly string[] {
+  if (payload === null) {
+    return [];
+  }
+  return payload.decomposition.tasks.map((task) =>
+    [safe(task.taskId), safe(task.objective), safe(task.goal)].join("\t"),
+  );
+}
+
+function quietTaskValidateLines(payload: TaskValidatePayload | null): readonly string[] {
+  if (payload === null) {
+    return [];
+  }
+  return payload.advice.recommendations.map((recommendation) =>
+    [safe(recommendation.taskId), safe(recommendation.kind), safe(recommendation.statement)].join(
+      "\t",
+    ),
+  );
+}
+
+function quietTaskProgressLines(payload: TaskProgressPayload | null): readonly string[] {
+  if (payload === null) {
+    return [];
+  }
+  return payload.projection.nextActions.map((action) =>
+    [safe(payload.projection.overall), safe(action.kind), safe(action.taskId)].join("\t"),
+  );
 }
 
 function quietDataLines(payload: DataRemovalPayload | null): readonly string[] {
@@ -1928,6 +2049,9 @@ function quietFindingLines(result: RunCommandResult): readonly string[] {
       return [];
     case "import":
     case "replay":
+    case "task.decompose":
+    case "task.validate":
+    case "task.progress":
       return [];
     case "session.list":
       return result.payload === null || result.payload.omitted === 0
