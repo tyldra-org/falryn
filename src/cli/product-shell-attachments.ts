@@ -11,8 +11,11 @@ import {
   composeProductAgentRuntime,
   composeProductCredentials,
   composeProductGitTools,
+  composeProductLanguageTools,
   composeProductProcessTools,
   composeProductWorkspaceTools,
+  createDebugAdapterSupervisor,
+  createLanguageServerSupervisor,
   DEFAULT_OPENAI_CREDENTIAL_REFERENCE,
   mergeProductToolBundles,
   resolveProviderApiKey,
@@ -34,6 +37,7 @@ import {
 import {
   createHostCommandRunner,
   createHostGitPort,
+  createHostManagedServicePort,
   createHostProcessCapturePort,
   hostPlatform,
 } from "../integrations/index.ts";
@@ -126,10 +130,24 @@ export async function composeProductShellAttachments(
           gitExecutable: "/usr/bin/git",
           startPath: String(primaryWorkspaceRoot(ports.workspaceSet).path),
         });
-  const productTools =
-    workspaceTools === null || processTools === null || gitTools === null
+  const managedServices = createHostManagedServicePort();
+  const languageTools =
+    ports.workspaceSet === null
       ? null
-      : mergeProductToolBundles(generation, [workspaceTools, processTools, gitTools]);
+      : composeProductLanguageTools({
+          generation,
+          languageServers: createLanguageServerSupervisor(managedServices),
+          debugAdapters: createDebugAdapterSupervisor(managedServices),
+        });
+  const productTools =
+    workspaceTools === null || processTools === null || gitTools === null || languageTools === null
+      ? null
+      : mergeProductToolBundles(generation, [
+          workspaceTools,
+          processTools,
+          gitTools,
+          languageTools,
+        ]);
 
   const composed = composeProductAgentRuntime({
     eventStore: ports.eventStore,
