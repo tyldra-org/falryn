@@ -10,12 +10,14 @@
 
 import {
   adoptForeignError,
+  CONTEXT_PLANNER_OWNER,
   composeProductAgentRuntime,
   composeProductCredentials,
   composeProductGitTools,
   composeProductLanguageTools,
   composeProductProcessTools,
   composeProductWorkspaceTools,
+  createContextPlanner,
   createDebugAdapterSupervisor,
   createLanguageServerSupervisor,
   DEFAULT_OPENAI_CREDENTIAL_REFERENCE,
@@ -77,6 +79,10 @@ export type CodingRunPayload = {
     | "hosted"
     | "provider-required";
   readonly eventCount: number;
+  /** Evidence items admitted by the live context planner (#715), when composed. */
+  readonly contextPackItems?: number;
+  /** Whether the live prompt composition included a planner-built evidence path. */
+  readonly contextPlannerOwner?: string;
 };
 
 export type CodingRunResult = CommandResultOf<typeof CODING_RUN_COMMAND, CodingRunPayload>;
@@ -381,6 +387,40 @@ export async function runCoding(
     );
   }
 
+  const planned = createContextPlanner().composeTurn({
+    turnId,
+    sessionId,
+    workspaceId,
+    configurationGeneration: generation,
+    task: resolved.prompt,
+    candidates: [],
+  });
+  if (!planned.ok) {
+    return codingResult(
+      {
+        prompt: resolved.prompt,
+        sessionId: ids.sessionId,
+        turnId: ids.turnId,
+        workspaceId: String(workspaceId),
+        stage: "compose-failed",
+        eventCount: producer.events().length,
+        contextPlannerOwner: CONTEXT_PLANNER_OWNER,
+      },
+      [
+        adoptForeignError(
+          {
+            code: "context.planner-failed",
+            category: "internal",
+            message: `live context planner could not compose (${"code" in planned.error ? planned.error.code : "failed"})`,
+          },
+          { operation: "compose live turn context" },
+        ),
+      ],
+    );
+  }
+  const contextPackItems = planned.value.plan.pack.items.length;
+  const contextPlannerOwner = CONTEXT_PLANNER_OWNER;
+
   const provider = composed.value.requireProviderAdapter();
   if (!provider.ok) {
     const outcome: TerminalOutcome = { kind: "failed", effect: "none" };
@@ -401,6 +441,8 @@ export async function runCoding(
           workspaceId: String(workspaceId),
           stage: "provider-required",
           eventCount: producer.events().length,
+          contextPackItems,
+          contextPlannerOwner,
         },
         [
           adoptForeignError(
@@ -424,6 +466,8 @@ export async function runCoding(
         workspaceId: String(workspaceId),
         stage: "provider-required",
         eventCount: producer.events().length,
+        contextPackItems,
+        contextPlannerOwner,
       },
       [
         adoptForeignError(
@@ -460,6 +504,8 @@ export async function runCoding(
         workspaceId: String(workspaceId),
         stage: "hosted",
         eventCount: producer.events().length,
+        contextPackItems,
+        contextPlannerOwner,
       },
       [
         fromUnknown(new Error(`turn could not complete (${completed.error.code})`), {
@@ -477,6 +523,8 @@ export async function runCoding(
       workspaceId: String(workspaceId),
       stage: "hosted",
       eventCount: producer.events().length,
+      contextPackItems,
+      contextPlannerOwner,
     },
     [],
     hostedOutcome,

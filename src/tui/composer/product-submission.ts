@@ -1,15 +1,18 @@
 /**
- * Product composer submission port (#707).
+ * Product composer submission port (#707 / #715).
  *
  * Maps a composer snapshot onto the live session/turn producer: ensure a
- * session is ready, start a turn, and return accepted — or fail closed with a
- * precise unavailable reason. Lives in the TUI layer because {@link SubmissionPort}
- * is owned here; the producer itself lives in application.
+ * session is ready, compose a planner-backed prompt, start a turn, and return
+ * accepted — or fail closed with a precise unavailable reason. Lives in the
+ * TUI layer because {@link SubmissionPort} is owned here; the producer itself
+ * lives in application.
  *
  * Mid-turn steer policy remains #610–#613. Headless `falryn run` is #708.
- * Live vendor adapters are #709.
+ * Live vendor adapters are #709. Attachment evidence packing deepens later
+ * under #701 siblings.
  */
 
+import { CONTEXT_PLANNER_OWNER, createContextPlanner } from "../../application/index.ts";
 import type { SessionTurnTranscriptProducer } from "../../application/session-turn-transcript-producer.ts";
 import {
   type ConfigurationGeneration,
@@ -50,6 +53,7 @@ export function createProductSubmissionPort(options: ProductSubmissionPortOption
       sequence += 1;
       return turnId.from(`turn-submit-${sequence}`);
     });
+  const planner = createContextPlanner();
 
   return {
     async submit(snapshot: ComposerSnapshot): Promise<SubmissionOutcome> {
@@ -72,8 +76,24 @@ export function createProductSubmissionPort(options: ProductSubmissionPortOption
         sessionStarted = true;
       }
 
+      const id = nextTurnId();
+      const planned = planner.composeTurn({
+        turnId: id,
+        sessionId: options.sessionId,
+        workspaceId: options.workspaceId,
+        configurationGeneration: options.configurationGeneration,
+        task: snapshot.text,
+        candidates: [],
+      });
+      if (!planned.ok) {
+        return unavailable(
+          snapshot,
+          `context planner could not compose (${"code" in planned.error ? planned.error.code : "failed"}; ${CONTEXT_PLANNER_OWNER})`,
+        );
+      }
+
       const startedTurn = await options.producer.startTurn({
-        turnId: nextTurnId(),
+        turnId: id,
         sessionId: options.sessionId,
         workspaceId: options.workspaceId,
         traceId: options.traceId,

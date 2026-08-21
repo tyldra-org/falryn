@@ -60,6 +60,14 @@ export {
   observationFromHistoryCheckpoint,
   observationFromStructural,
 } from "./compression-eval.ts";
+export type {
+  ContextPlanner,
+  ContextPlannerComposeInput,
+  ContextPlannerComposeResult,
+  ContextPlannerError,
+  ContextPlannerPlan,
+} from "./context-planner.ts";
+export { CONTEXT_PLANNER_OWNER, createContextPlanner } from "./context-planner.ts";
 export type { SecretResolverOptions } from "./credential-resolver.ts";
 export { createSecretResolver } from "./credential-resolver.ts";
 export type { DebugAdapterListener, DebugAdapterSupervisor } from "./debug-adapter.ts";
