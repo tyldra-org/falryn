@@ -4,7 +4,7 @@ This file is Falryn's sole concise implementation-status owner. It records what
 exists and has been verified in the `falryn` repository. It does not duplicate
 the product design or GitHub roadmap.
 
-Last reconciled: **2026-08-20** (#712 process product tools on the v0.35 frontier)
+Last reconciled: **2026-08-20** (#713 Git product tools on the v0.35 frontier)
 
 ## Where to look
 

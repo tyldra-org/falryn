@@ -12,6 +12,7 @@ import {
   adoptForeignError,
   composeProductAgentRuntime,
   composeProductCredentials,
+  composeProductGitTools,
   composeProductProcessTools,
   composeProductWorkspaceTools,
   DEFAULT_OPENAI_CREDENTIAL_REFERENCE,
@@ -34,6 +35,7 @@ import {
 } from "../domain/index.ts";
 import {
   createHostCommandRunner,
+  createHostGitPort,
   createHostProcessCapturePort,
   hostPlatform,
 } from "../integrations/index.ts";
@@ -257,7 +259,20 @@ export async function runCoding(
     capture: createHostProcessCapturePort({ clock: graph.clock }),
     workspaceCwd: String(primaryWorkspaceRoot(workspace.value.set).path),
   });
-  const productTools = mergeProductToolBundles(generation, [workspaceTools, processTools]);
+  const gitTools = composeProductGitTools({
+    generation,
+    git: createHostGitPort({
+      capture: createHostProcessCapturePort({ clock: graph.clock }),
+      clock: graph.clock,
+    }),
+    gitExecutable: "/usr/bin/git",
+    startPath: String(primaryWorkspaceRoot(workspace.value.set).path),
+  });
+  const productTools = mergeProductToolBundles(generation, [
+    workspaceTools,
+    processTools,
+    gitTools,
+  ]);
 
   const composed = composeProductAgentRuntime({
     eventStore: graph.eventStore,
