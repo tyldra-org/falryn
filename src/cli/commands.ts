@@ -34,7 +34,13 @@ import {
   queryWorkspaceSessions,
   type WorkspaceLayoutStoreError,
 } from "../application/index.ts";
-import { CONFIGURATION_FILE_NAME, inspectGeneration, PROFILE_DIRECTORY } from "../config/index.ts";
+import {
+  CONFIGURATION_FILE_NAME,
+  type ConfigurationFileScope,
+  inspectGeneration,
+  PROFILE_DIRECTORY,
+  writeConfigurationKey,
+} from "../config/index.ts";
 import {
   createArtifactProvenanceRepository,
   createArtifactRepository,
@@ -110,6 +116,7 @@ import {
 import type { CodingRunPayload, runCoding } from "./coding-run.ts";
 import type {
   ArtifactCommandArguments,
+  ConfigSetArguments,
   DataCommandArguments,
   ExportCommandArguments,
   SessionCommandArguments,
@@ -495,6 +502,149 @@ export async function runConfigPath(
   }
 
   return resultFor("config.path", { sources });
+}
+
+export type ConfigSetPayload = {
+  readonly path: string;
+  readonly revision: string;
+  readonly byteLength: number;
+  readonly scope: ConfigurationFileScope;
+  readonly keyPath: string;
+};
+
+/**
+ * Validates and writes one declared key to a scoped configuration file.
+ *
+ * The value is coerced through the same bridge the CLI override layer uses, and
+ * the candidate document is validated before any byte is written.
+ */
+export async function runConfigSet(
+  services: ServiceProvider,
+  arguments_: ConfigSetArguments,
+  options: GlobalOptions,
+  signal?: AbortSignal,
+  onMutationStart?: () => void,
+): Promise<CommandResultOf<"config.set", ConfigSetPayload>> {
+  const workspace = await services().ensureWorkspaceSet(signal);
+  if (!workspace.ok) {
+    return resultFor<"config.set", ConfigSetPayload>("config.set", null, [
+      workspaceResolveError(workspace.error),
+    ]);
+  }
+  const { registry, fileSystem, configurationRoot, workspaceRoot } = services();
+  onMutationStart?.();
+  const outcome = await writeConfigurationKey(
+    registry,
+    fileSystem,
+    {
+      configurationRoot,
+      workspaceRoot,
+      profile: options.profile,
+      scope: arguments_.scope,
+      keyPath: arguments_.keyPath,
+      rawValue: arguments_.rawValue,
+      expectedRevision: arguments_.expectedRevision,
+    },
+    signal,
+  );
+
+  switch (outcome.kind) {
+    case "written":
+      return resultFor(
+        "config.set",
+        {
+          path: String(outcome.path),
+          revision: outcome.revision,
+          byteLength: outcome.byteLength,
+          scope: arguments_.scope,
+          keyPath: arguments_.keyPath,
+        },
+        [],
+        undefined,
+        WRITE_COMPLETED_EFFECT,
+      );
+    case "rejected":
+      return resultFor(
+        "config.set",
+        null,
+        errorsFrom(fromConfigurationIssues(outcome.issues, { operation: "write configuration" })),
+        undefined,
+        MUTATION_NOT_OBSERVED,
+      );
+    case "stale-write":
+      return resultFor(
+        "config.set",
+        null,
+        [
+          adoptForeignError(
+            {
+              code: "configuration.stale-write",
+              category: "configuration",
+              message: "The configuration file changed before the write could be applied.",
+            },
+            { operation: "write configuration" },
+          ),
+        ],
+        undefined,
+        MUTATION_NOT_OBSERVED,
+      );
+    case "workspace-required":
+      return resultFor(
+        "config.set",
+        null,
+        [
+          adoptForeignError(
+            {
+              code: "configuration.workspace-required",
+              category: "configuration",
+              message: "Project configuration requires a workspace.",
+            },
+            { operation: "write configuration" },
+          ),
+        ],
+        undefined,
+        MUTATION_NOT_OBSERVED,
+      );
+    case "profile-required":
+      return resultFor(
+        "config.set",
+        null,
+        [
+          adoptForeignError(
+            {
+              code: "configuration.profile-required",
+              category: "configuration",
+              message: "Profile configuration requires --profile.",
+            },
+            { operation: "write configuration" },
+          ),
+        ],
+        undefined,
+        MUTATION_NOT_OBSERVED,
+      );
+    case "filesystem":
+      return resultFor(
+        "config.set",
+        null,
+        [
+          fromUnknown(new Error(`could not write configuration (${outcome.code})`), {
+            operation: "write configuration",
+          }),
+        ],
+        undefined,
+        MUTATION_NOT_OBSERVED,
+      );
+    case "cancelled":
+      return stoppedResult(
+        "config.set",
+        { kind: "cancelled", effect: "none" },
+        "mutate",
+      ) as CommandResultOf<"config.set", ConfigSetPayload>;
+    default:
+      return resultFor("config.set", null, [
+        fromUnknown(new Error("configuration write failed"), { operation: "write configuration" }),
+      ]);
+  }
 }
 
 /* -------------------------------------------------------------------------- */
@@ -1990,6 +2140,8 @@ export function stoppedResult(
       );
     case "config.path":
       return resultFor<"config.path", ConfigPathPayload>("config.path", null, [], outcome, effect);
+    case "config.set":
+      return resultFor<"config.set", ConfigSetPayload>("config.set", null, [], outcome, effect);
     case "data.reset":
       return resultFor<"data.reset", DataRemovalPayload>("data.reset", null, [], outcome, effect);
     case "data.uninstall":
@@ -2133,6 +2285,7 @@ export type RunCommandResult =
   | Awaited<ReturnType<typeof runConfigShow>>
   | Awaited<ReturnType<typeof runConfigValidate>>
   | Awaited<ReturnType<typeof runConfigPath>>
+  | Awaited<ReturnType<typeof runConfigSet>>
   | CommandResultOf<"data.reset", DataRemovalPayload>
   | CommandResultOf<"data.uninstall", DataRemovalPayload>
   | CommandResultOf<"data.backup", DataBackupPayload>

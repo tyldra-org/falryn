@@ -216,6 +216,14 @@ export type WorkspaceCommandArguments =
       readonly name: string;
     };
 
+/** Command-specific inputs for `falryn config set`. */
+export type ConfigSetArguments = {
+  readonly keyPath: string;
+  readonly rawValue: string;
+  readonly scope: "user" | "project" | "profile";
+  readonly expectedRevision: string | null;
+};
+
 export type { TaskCommandArguments };
 
 /**
@@ -239,6 +247,7 @@ export type Invocation =
       readonly sessionArgs: SessionCommandArguments | null;
       readonly artifactArgs: ArtifactCommandArguments | null;
       readonly workspaceArgs: WorkspaceCommandArguments | null;
+      readonly configSetArgs: ConfigSetArguments | null;
       readonly runArgs: CodingRunArguments | null;
       readonly taskArgs: TaskCommandArguments | null;
       readonly commitPlanArgs: TaskCommitPlanArguments | null;
@@ -286,6 +295,10 @@ type RawArguments = {
   readonly "add-dir": readonly string[] | undefined;
   readonly prompt: readonly string[] | undefined;
   readonly brief: string | undefined;
+  readonly key: string | undefined;
+  readonly value: string | undefined;
+  readonly revision: string | undefined;
+  readonly "file-scope": string | undefined;
   readonly statement: string | undefined;
   readonly "outcome-id": string | undefined;
   readonly "task-id": string | undefined;
@@ -324,7 +337,9 @@ function build(argv: readonly string[], lenientPositionals = false): ReturnType<
   // `config <action>` demands its subcommand; `config [action]` does not. The
   // lenient form exists for one reason: a help request must not be rejected
   // for omitting the very thing it is asking about.
-  const configCommand = lenientPositionals ? "config [action]" : "config <action>";
+  const configCommand = lenientPositionals
+    ? "config [action] [key] [value]"
+    : "config <action> [key] [value]";
   const dataCommand = lenientPositionals ? "data [action] [name]" : "data <action> [name]";
   const sessionCommand = lenientPositionals ? "session [action] [id]" : "session <action> [id]";
   const artifactCommand = lenientPositionals ? "artifact [action] [id]" : "artifact <action> [id]";
@@ -354,11 +369,29 @@ function build(argv: readonly string[], lenientPositionals = false): ReturnType<
           "reason on any run that cannot host one.",
       )
       .command(configCommand, "Inspect and validate effective configuration.", (group) =>
-        group.positional("action", {
-          type: "string",
-          choices: ["show", "validate", "path"] as const,
-          describe: "show the effective values, validate them, or print source paths",
-        }),
+        group
+          .positional("action", {
+            type: "string",
+            choices: ["show", "validate", "path", "set"] as const,
+            describe: "show the effective values, validate them, print source paths, or set a key",
+          })
+          .positional("key", {
+            type: "string",
+            describe: "configuration key path (set only)",
+          })
+          .positional("value", {
+            type: "string",
+            describe: "value to write (set only)",
+          })
+          .option("file-scope", {
+            type: "string",
+            choices: ["user", "project", "profile"] as const,
+            describe: "which configuration file to write (set only; default user)",
+          })
+          .option("revision", {
+            type: "string",
+            describe: "expected file revision before write (set only)",
+          }),
       )
       .command(
         dataCommand,
@@ -803,6 +836,10 @@ export async function parseInvocation(argv: readonly string[]): Promise<Invocati
   if (typeof workspaceArgs === "string") {
     return { kind: "invalid", message: workspaceArgs };
   }
+  const configSetArgs = configSetArgumentsFor(command, parsed);
+  if (typeof configSetArgs === "string") {
+    return { kind: "invalid", message: configSetArgs };
+  }
   const runArgs = runArgumentsFor(command, parsed);
   let taskArgs: TaskCommandArguments | null = null;
   if (command === "task.decompose" || command === "task.validate" || command === "task.progress") {
@@ -842,6 +879,7 @@ export async function parseInvocation(argv: readonly string[]): Promise<Invocati
     sessionArgs,
     artifactArgs,
     workspaceArgs,
+    configSetArgs,
     runArgs,
     taskArgs,
     commitPlanArgs,
@@ -1040,6 +1078,8 @@ function commandFrom(positional: readonly string[], action: string | null): Runn
         return "config.validate";
       case "path":
         return "config.path";
+      case "set":
+        return "config.set";
       default:
         return null;
     }
@@ -1111,6 +1151,40 @@ function commandFrom(positional: readonly string[], action: string | null): Runn
     }
   }
   return null;
+}
+
+function configSetArgumentsFor(
+  command: RunnableCommand,
+  parsed: RawArguments,
+): ConfigSetArguments | null | string {
+  if (command !== "config.set") {
+    return null;
+  }
+  if (parsed.key === undefined || parsed.value === undefined) {
+    return "Arguments key and value are required for config set.";
+  }
+  if (parsed.name !== undefined) {
+    return "Argument name is only valid with data backup, restore, inspect, or workspace save/load.";
+  }
+  if (parsed.limit !== undefined) {
+    return "Argument limit is only valid with workspace list.";
+  }
+  if (parsed.force === true) {
+    return "Argument force is only valid with workspace save.";
+  }
+  const scope = parsed["file-scope"] ?? "user";
+  if (scope !== "user" && scope !== "project" && scope !== "profile") {
+    return `Argument file-scope: "${scope}" is not valid.`;
+  }
+  if (parsed.revision !== undefined && parsed.revision.length === 0) {
+    return "Argument revision must not be empty.";
+  }
+  return {
+    keyPath: parsed.key,
+    rawValue: parsed.value,
+    scope,
+    expectedRevision: parsed.revision ?? null,
+  };
 }
 
 function runArgumentsFor(

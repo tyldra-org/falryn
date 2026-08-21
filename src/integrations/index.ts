@@ -11,6 +11,11 @@ export { createEnvironmentCredentialStore } from "./environment-credentials.ts";
 export type { HostBlobStoreOptions } from "./host-blobs.ts";
 export { createHostBlobStore } from "./host-blobs.ts";
 export { createHostCommandRunner } from "./host-commands.ts";
+export {
+  createHostFileChangeSubscriber,
+  createManualFileChangeSubscriber,
+  type HostFileChangeSubscriber,
+} from "./host-configuration-watch.ts";
 export { createHostEnvironment, hostHome, hostPlatform } from "./host-environment.ts";
 export { createHostFileOutputStream, createHostFileSystem } from "./host-filesystem.ts";
 export type { HostGitOptions } from "./host-git.ts";
