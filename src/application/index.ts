@@ -186,6 +186,7 @@ export type {
 } from "./product-credentials.ts";
 export {
   composeProductCredentials,
+  DEFAULT_OPENAI_CREDENTIAL_REFERENCE,
   resolveProviderApiKey,
 } from "./product-credentials.ts";
 export type {

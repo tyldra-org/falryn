@@ -12,6 +12,7 @@ import {
   adoptForeignError,
   composeProductAgentRuntime,
   composeProductCredentials,
+  DEFAULT_OPENAI_CREDENTIAL_REFERENCE,
   fromUnknown,
   resolveProviderApiKey,
 } from "../application/index.ts";
@@ -44,13 +45,7 @@ import { describeWorkspaceResolveError } from "./workspace-resolution.ts";
 export const CODING_RUN_COMMAND = "run" as const;
 export const CODING_RUN_OWNER = "#708";
 
-/** Default environment credential for OpenAI-compatible live runs (#710). */
-export const DEFAULT_OPENAI_CREDENTIAL_REFERENCE: CredentialReference = {
-  storeKind: "environment",
-  locator: "FALRYN_OPENAI_API_KEY",
-  consumer: "provider:openai",
-  accountLabel: null,
-};
+export { DEFAULT_OPENAI_CREDENTIAL_REFERENCE };
 /** Parsed prompt fragments after `falryn run` (may be empty when stdin supplies text). */
 export type CodingRunArguments = {
   readonly promptParts: readonly string[];

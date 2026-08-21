@@ -78,6 +78,7 @@ import {
   type GlobalOptions,
   resolveColor,
 } from "./options.ts";
+import { composeProductShellAttachments } from "./product-shell-attachments.ts";
 import { createOverBoundArtifactWriter } from "./refusal-artifact.ts";
 import { renderHuman, renderQuiet } from "./render-human.ts";
 import { type RenderedRecords, renderJson } from "./render-json.ts";
@@ -359,6 +360,14 @@ async function launchShell(
       : undefined;
   const workspace = workspaceController?.initial;
 
+  const productAttachments = await composeProductShellAttachments({
+    eventStore: graph.eventStore,
+    clock: graph.clock,
+    environment,
+    workspaceSet: resolvedWorkspace.ok === true ? resolvedWorkspace.value.set : null,
+    signal: stopped.signal,
+  });
+
   // Loaded here and nowhere earlier: this is the first line of the whole
   // invocation that requires OpenTUI to exist.
   const { runShell } = await import("../tui/shell.tsx");
@@ -384,6 +393,12 @@ async function launchShell(
       ...(workspace === undefined ? {} : { workspace }),
       ...(governance.shutdown === undefined ? {} : { shutdown: governance.shutdown }),
       ...(options.createRenderer === undefined ? {} : { createRenderer: options.createRenderer }),
+      ...(productAttachments === null
+        ? {}
+        : {
+            submission: productAttachments.submission,
+            transcriptFeed: productAttachments.transcriptFeed,
+          }),
     });
   } finally {
     finished.abort();
