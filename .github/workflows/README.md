@@ -94,5 +94,10 @@ resolved a different Bun version would produce a result the other jobs cannot be
 compared against. The action pin, dependency caching, and any
 per-platform install flag have exactly one place to change.
 
+Bun itself is not hardcoded in the workflows: `oven-sh/setup-bun` reads
+`package.json` via `bun-version-file` (`packageManager` / `engines.bun`). Bumping
+those fields is what moves CI onto a new Bun; every job that uses the composite
+action follows automatically.
+
 Its optional `working-directory` input installs into a subdirectory checkout
 when a job needs a second tree with its own manifest.

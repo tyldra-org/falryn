@@ -121,9 +121,26 @@ type ResolvedBlob = {
   readonly directory: LocalPath;
 };
 
-export function createHostBlobStore(options: HostBlobStoreOptions): BlobStorePort {
+export type HostBlobStore = BlobStorePort & {
+  /**
+   * Closes every open temporary handle without deleting files.
+   *
+   * Bun 1.4+ treats an unclosed `FileHandle` collected by GC as an error.
+   * Call this from test teardown (or any abort path that abandons in-flight
+   * bytes) so a store that still holds `wx` handles cannot trip the suite.
+   */
+  readonly releaseOpenHandles: () => Promise<void>;
+};
+
+export function createHostBlobStore(options: HostBlobStoreOptions): HostBlobStore {
   /** Open temporary handles, so a chunk write does not reopen the file. */
   const handles = new Map<string, FileHandle>();
+
+  const releaseOpenHandles = async (): Promise<void> => {
+    const open = [...handles.values()];
+    handles.clear();
+    await Promise.all(open.map((handle) => handle.close().catch(() => undefined)));
+  };
 
   const hexOf = (digest: string): string => digest.slice(DIGEST_PREFIX.length);
 
@@ -180,6 +197,8 @@ export function createHostBlobStore(options: HostBlobStoreOptions): BlobStorePor
   };
 
   return {
+    releaseOpenHandles,
+
     async allocate(location: BlobLocation, signal?: AbortSignal): Promise<Result<null, BlobError>> {
       if (signal?.aborted === true) {
         return cancelled("allocate", location.scope);

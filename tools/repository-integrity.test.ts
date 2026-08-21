@@ -42,8 +42,8 @@ function validInput(): RepositoryIntegrityInput {
       dependencies,
       devDependencies,
       patchedDependencies: {
-        "@opentui/core@0.4.5": "patches/@opentui%2Fcore@0.4.5.patch",
-        "@opentui/react@0.4.5": "patches/@opentui%2Freact@0.4.5.patch",
+        "@opentui/core@0.5.6": "patches/@opentui%2Fcore@0.5.6.patch",
+        "@opentui/react@0.5.6": "patches/@opentui%2Freact@0.5.6.patch",
       },
       scripts: {
         build: "bun build src/main.ts --compile --outfile dist/falryn",
@@ -53,8 +53,8 @@ function validInput(): RepositoryIntegrityInput {
     installedPackages,
     sourcePaths: new Set([
       "src/main.ts",
-      "patches/@opentui%2Fcore@0.4.5.patch",
-      "patches/@opentui%2Freact@0.4.5.patch",
+      "patches/@opentui%2Fcore@0.5.6.patch",
+      "patches/@opentui%2Freact@0.5.6.patch",
     ]),
     gitignore: "/dist/\n",
     trackedPaths: [],
@@ -116,7 +116,7 @@ describe("repository integrity", () => {
     const input = validInput();
     const manifest = input.manifest as { patchedDependencies: Record<string, string> };
     manifest.patchedDependencies["unreviewed-package@1.0.0"] = "patches/unreviewed.patch";
-    manifest.patchedDependencies["@opentui/react@0.4.5"] = "../outside.patch";
+    manifest.patchedDependencies["@opentui/react@0.5.6"] = "../outside.patch";
 
     expect(codes(input)).toEqual(
       expect.arrayContaining(["patch-unapproved", "patch-path-invalid", "patch-missing"]),

@@ -8,7 +8,7 @@
 export { classifySqliteError, openBunSqlite } from "./bun-sqlite.ts";
 export { createSha256Hasher } from "./content-digest.ts";
 export { createEnvironmentCredentialStore } from "./environment-credentials.ts";
-export type { HostBlobStoreOptions } from "./host-blobs.ts";
+export type { HostBlobStore, HostBlobStoreOptions } from "./host-blobs.ts";
 export { createHostBlobStore } from "./host-blobs.ts";
 export type { HostCommandRunnerOptions } from "./host-commands.ts";
 export { createHostCommandRunner } from "./host-commands.ts";
@@ -27,7 +27,7 @@ export {
   type OwnedProcessRegistry,
   type OwnedProcessRegistryBundle,
 } from "./host-owned-process-registry.ts";
-export type { HostPackageWriterOptions } from "./host-packages.ts";
+export type { HostPackageWriter, HostPackageWriterOptions } from "./host-packages.ts";
 export { createHostPackageWriter, STAGED_SUFFIX } from "./host-packages.ts";
 export type { HostProcessCaptureOptions } from "./host-process-capture.ts";
 export { createHostProcessCapturePort } from "./host-process-capture.ts";

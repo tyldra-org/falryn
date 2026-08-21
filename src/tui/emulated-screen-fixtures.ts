@@ -18,7 +18,7 @@
  *   emulator duplicates the pseudo-terminal this repository already has.
  * - **Bun / compiled / platform.** Dev dependency only. Reached from this module
  *   alone; `src/tui/tui-boundaries.test.ts` holds it out of every shipping
- *   graph. Loads cleanly under Bun 1.3.14 (verified by the companion check).
+ *   graph. Loads cleanly under Bun 1.4.0 (verified by the companion check).
  * - **License / maintenance / transitive cost.** MIT; repository
  *   https://github.com/xtermjs/xterm.js; no runtime dependencies.
  * - **Research provenance.** Pattern observed in oh-my-pi / qwen-code test and
