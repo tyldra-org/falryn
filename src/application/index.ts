@@ -189,6 +189,14 @@ export {
   DEFAULT_OPENAI_CREDENTIAL_REFERENCE,
   resolveProviderApiKey,
 } from "./product-credentials.ts";
+export type {
+  ProductGitToolPorts,
+  ProductGitTools,
+} from "./product-tools-git.ts";
+export {
+  composeProductGitTools,
+  PRODUCT_GIT_TOOLS_OWNER,
+} from "./product-tools-git.ts";
 export type { ProductToolBundle } from "./product-tools-merge.ts";
 export { mergeProductToolBundles } from "./product-tools-merge.ts";
 export type {

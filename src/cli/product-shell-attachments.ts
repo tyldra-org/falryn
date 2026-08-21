@@ -10,6 +10,7 @@
 import {
   composeProductAgentRuntime,
   composeProductCredentials,
+  composeProductGitTools,
   composeProductProcessTools,
   composeProductWorkspaceTools,
   DEFAULT_OPENAI_CREDENTIAL_REFERENCE,
@@ -32,6 +33,7 @@ import {
 } from "../domain/index.ts";
 import {
   createHostCommandRunner,
+  createHostGitPort,
   createHostProcessCapturePort,
   hostPlatform,
 } from "../integrations/index.ts";
@@ -112,10 +114,22 @@ export async function composeProductShellAttachments(
           capture: createHostProcessCapturePort({ clock: ports.clock }),
           workspaceCwd: String(primaryWorkspaceRoot(ports.workspaceSet).path),
         });
-  const productTools =
-    workspaceTools === null || processTools === null
+  const gitTools =
+    ports.workspaceSet === null
       ? null
-      : mergeProductToolBundles(generation, [workspaceTools, processTools]);
+      : composeProductGitTools({
+          generation,
+          git: createHostGitPort({
+            capture: createHostProcessCapturePort({ clock: ports.clock }),
+            clock: ports.clock,
+          }),
+          gitExecutable: "/usr/bin/git",
+          startPath: String(primaryWorkspaceRoot(ports.workspaceSet).path),
+        });
+  const productTools =
+    workspaceTools === null || processTools === null || gitTools === null
+      ? null
+      : mergeProductToolBundles(generation, [workspaceTools, processTools, gitTools]);
 
   const composed = composeProductAgentRuntime({
     eventStore: ports.eventStore,
