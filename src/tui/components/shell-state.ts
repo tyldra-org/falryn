@@ -69,6 +69,8 @@ export function overlayRegions(route: OverlayRoute): readonly FocusRegion[] {
       return [{ id: "overlay.controls", label: "controls" }];
     case "workspace":
       return [{ id: "overlay.workspace", label: "workspace set" }];
+    case "session-nav":
+      return [{ id: "overlay.session-nav", label: "session navigation" }];
     case "artifact":
       return [{ id: "overlay.artifact", label: "artifact viewer" }];
     case "changes":
@@ -125,6 +127,8 @@ export type ShellAction =
   | { readonly kind: "composer"; readonly action: ComposerAction }
   | { readonly kind: "palette-query"; readonly query: string }
   | { readonly kind: "workspace-draft"; readonly draft: string }
+  | { readonly kind: "session-nav-draft"; readonly draft: string }
+  | { readonly kind: "session-nav-session"; readonly sessionId: string }
   | { readonly kind: "workspace-set"; readonly workspace: WorkspaceSetView }
   | { readonly kind: "running-work"; readonly running: boolean }
   | { readonly kind: "offer-confirmation"; readonly prompt: ConfirmationPrompt }
@@ -241,6 +245,22 @@ export function shellReducer(state: ShellState, action: ShellAction): ShellState
       return {
         ...state,
         overlay: { ...state.overlay, draft: action.draft },
+      };
+    case "session-nav-draft":
+      if (state.overlay.kind !== "session-nav" || action.draft === state.overlay.draft) {
+        return state;
+      }
+      return {
+        ...state,
+        overlay: { ...state.overlay, draft: action.draft },
+      };
+    case "session-nav-session":
+      if (state.overlay.kind !== "session-nav" || action.sessionId === state.overlay.sessionId) {
+        return state;
+      }
+      return {
+        ...state,
+        overlay: { ...state.overlay, sessionId: action.sessionId },
       };
     case "workspace-set":
       return state.workspace === action.workspace
@@ -436,6 +456,7 @@ export function commandStateFor(
     changesTab: state.overlay.kind === "changes" ? state.overlay.tab : null,
     hasWorkspaceSet: state.workspace.roots.length > 0,
     hasRemovableWorkspaceRoot: state.workspace.roots.length > 1,
+    hasSessionNavigation: false,
     hasRunningWork: state.runningWork,
   };
 }

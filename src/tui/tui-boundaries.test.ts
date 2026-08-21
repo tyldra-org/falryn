@@ -62,6 +62,8 @@ const RENDERER_OWNERS = [
   "components/controls.tsx",
   // Workspace-set overlays (#607): Input for add/save, Select for remove/load.
   "components/workspace-sheet.tsx",
+  // Session navigation overlays (#722): Select for sessions/replay, Input for rewind.
+  "session-nav/sheet.tsx",
   // The root measures the viewport through the renderer's own hooks. Nothing
   // below it does: every component reads the frame from context instead, which
   // is what keeps the measurement in one place.
@@ -932,6 +934,7 @@ describe("the rendered test harness", () => {
       "components/live-composer-mid-turn.test.tsx",
       "components/palette.test.tsx",
       "components/render-gate.test.tsx",
+      "components/session-nav-sheet.test.tsx",
       "components/shell-error-boundary.test.tsx",
       "components/transcript.test.tsx",
       "components/workspace-sheet.test.tsx",

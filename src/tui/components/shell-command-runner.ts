@@ -5,6 +5,7 @@ import {
   primaryArtifactId,
 } from "../../presentation/transcript/artifact-open.ts";
 import type { ShellCommand } from "../commands.ts";
+import { sessionNavOverlayRoute } from "../session-nav/index.ts";
 import {
   anchorAt,
   anchorRevealing,
@@ -204,6 +205,18 @@ export function runAvailableCommand(
       return true;
     case "workspace.show":
       dispatch({ kind: "open-overlay", route: workspaceOverlayRoute("show") });
+      return true;
+    case "session.resume":
+      dispatch({ kind: "open-overlay", route: sessionNavOverlayRoute("resume") });
+      return true;
+    case "session.fork":
+      dispatch({ kind: "open-overlay", route: sessionNavOverlayRoute("fork") });
+      return true;
+    case "session.rewind":
+      dispatch({ kind: "open-overlay", route: sessionNavOverlayRoute("rewind") });
+      return true;
+    case "session.replay":
+      dispatch({ kind: "open-overlay", route: sessionNavOverlayRoute("replay") });
       return true;
     case "session.new":
       dispatch({

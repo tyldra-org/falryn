@@ -136,6 +136,8 @@ export type CommandState = {
   readonly hasWorkspaceSet: boolean;
   /** More than one root is bound, so remove is meaningful. */
   readonly hasRemovableWorkspaceRoot: boolean;
+  /** Session navigation ports are attached and the local store is reachable. */
+  readonly hasSessionNavigation: boolean;
 };
 
 /** The state of a shell with nothing behind it, which is every run today. */
@@ -163,6 +165,7 @@ export const EMPTY_COMMAND_STATE: CommandState = {
   changesTab: null,
   hasWorkspaceSet: false,
   hasRemovableWorkspaceRoot: false,
+  hasSessionNavigation: false,
 };
 
 export type ShellCommand = {
@@ -851,6 +854,46 @@ export const SHELL_COMMANDS: readonly ShellCommand[] = [
     keywords: ["workspace", "show", "roots"],
     availability: (state) =>
       state.hasWorkspaceSet ? AVAILABLE : unavailable("no workspace set yet"),
+  },
+  {
+    id: "session.resume",
+    title: "Resume session",
+    description: "Continue a session from its durable cursor without forking.",
+    context: "global",
+    defaultBinding: null,
+    keywords: ["session", "resume", "continue", "cursor"],
+    availability: (state) =>
+      state.hasSessionNavigation ? AVAILABLE : unavailable("no session store yet"),
+  },
+  {
+    id: "session.fork",
+    title: "Fork session",
+    description: "Copy a session into new identities without rewriting the source.",
+    context: "global",
+    defaultBinding: null,
+    keywords: ["session", "fork", "branch", "copy"],
+    availability: (state) =>
+      state.hasSessionNavigation ? AVAILABLE : unavailable("no session store yet"),
+  },
+  {
+    id: "session.rewind",
+    title: "Rewind session",
+    description: "Fork a session as new history ending at a chosen turn.",
+    context: "global",
+    defaultBinding: null,
+    keywords: ["session", "rewind", "turn", "history"],
+    availability: (state) =>
+      state.hasSessionNavigation ? AVAILABLE : unavailable("no session store yet"),
+  },
+  {
+    id: "session.replay",
+    title: "Replay session",
+    description: "Move a replay cursor over recorded events without repeating effects.",
+    context: "global",
+    defaultBinding: null,
+    keywords: ["session", "replay", "cursor", "effect-free"],
+    availability: (state) =>
+      state.hasSessionNavigation ? AVAILABLE : unavailable("no session store yet"),
   },
 ];
 

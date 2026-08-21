@@ -45,6 +45,8 @@ import {
   selectLayout,
   type Viewport,
 } from "../layout.ts";
+import type { SessionNavigationController } from "../session-nav/index.ts";
+import { SessionNavSheet, sessionNavPanelTitle } from "../session-nav/sheet.tsx";
 import { createTextCache } from "../text-cache.ts";
 import { resolveTheme, type ThemeRequest } from "../theme/index.ts";
 import { inspectionFor } from "../transcript/index.ts";
@@ -128,6 +130,12 @@ export type AppShellProps = {
   readonly onWorkspaceReplace?: (set: WorkspaceSetView, notice: string) => void;
   readonly onWorkspaceNotice?: (message: string) => void;
   readonly onWorkspaceClose?: () => void;
+  /** Application-backed session navigation (#722). Absent when no store is attached. */
+  readonly sessionNavigationController?: SessionNavigationController;
+  readonly onSessionNavDraft?: (draft: string) => void;
+  readonly onSessionNavSession?: (sessionId: string) => void;
+  readonly onSessionNavNotice?: (message: string) => void;
+  readonly onSessionNavClose?: () => void;
 };
 
 export function AppShell(props: AppShellProps): ReactNode {
@@ -229,6 +237,21 @@ export function AppShell(props: AppShellProps): ReactNode {
           {...(props.onWorkspaceClose === undefined
             ? {}
             : { onWorkspaceClose: props.onWorkspaceClose })}
+          {...(props.sessionNavigationController === undefined
+            ? {}
+            : { sessionNavigationController: props.sessionNavigationController })}
+          {...(props.onSessionNavDraft === undefined
+            ? {}
+            : { onSessionNavDraft: props.onSessionNavDraft })}
+          {...(props.onSessionNavSession === undefined
+            ? {}
+            : { onSessionNavSession: props.onSessionNavSession })}
+          {...(props.onSessionNavNotice === undefined
+            ? {}
+            : { onSessionNavNotice: props.onSessionNavNotice })}
+          {...(props.onSessionNavClose === undefined
+            ? {}
+            : { onSessionNavClose: props.onSessionNavClose })}
         />
       )}
     </FrameProvider>
@@ -263,6 +286,11 @@ function ShellFrame(props: {
   readonly onWorkspaceReplace?: (set: WorkspaceSetView, notice: string) => void;
   readonly onWorkspaceNotice?: (message: string) => void;
   readonly onWorkspaceClose?: () => void;
+  readonly sessionNavigationController?: SessionNavigationController;
+  readonly onSessionNavDraft?: (draft: string) => void;
+  readonly onSessionNavSession?: (sessionId: string) => void;
+  readonly onSessionNavNotice?: (message: string) => void;
+  readonly onSessionNavClose?: () => void;
 }): ReactNode {
   const { model } = props;
   // Bounded rather than stretched. A `wide` terminal has room for a contextual
@@ -374,6 +402,8 @@ function overlayTitle(
       return CONTROL_PANEL_TITLES[route.panel];
     case "workspace":
       return workspacePanelTitle(route.panel);
+    case "session-nav":
+      return sessionNavPanelTitle(route.panel);
     case "artifact":
       switch (route.presentation) {
         case "diff":
@@ -422,6 +452,11 @@ function overlayBody(
     readonly onWorkspaceReplace?: (set: WorkspaceSetView, notice: string) => void;
     readonly onWorkspaceNotice?: (message: string) => void;
     readonly onWorkspaceClose?: () => void;
+    readonly sessionNavigationController?: SessionNavigationController;
+    readonly onSessionNavDraft?: (draft: string) => void;
+    readonly onSessionNavSession?: (sessionId: string) => void;
+    readonly onSessionNavNotice?: (message: string) => void;
+    readonly onSessionNavClose?: () => void;
   },
   rows: number,
 ): ReactNode {
@@ -496,6 +531,31 @@ function overlayBody(
             : { onWorkspace: props.onWorkspaceReplace })}
           {...(props.onWorkspaceNotice === undefined ? {} : { onNotice: props.onWorkspaceNotice })}
           {...(props.onWorkspaceClose === undefined ? {} : { onClose: props.onWorkspaceClose })}
+        />
+      );
+    case "session-nav":
+      if (props.sessionNavigationController === undefined) {
+        return (
+          <Line color="error" typography="body" maxColumns={Math.max(8, rows)}>
+            No session store is attached to this shell.
+          </Line>
+        );
+      }
+      return (
+        <SessionNavSheet
+          panel={overlay.panel}
+          sessionId={overlay.sessionId}
+          draft={overlay.draft}
+          controller={props.sessionNavigationController}
+          rows={rows}
+          {...(props.onSessionNavDraft === undefined ? {} : { onDraft: props.onSessionNavDraft })}
+          {...(props.onSessionNavSession === undefined
+            ? {}
+            : { onSession: props.onSessionNavSession })}
+          {...(props.onSessionNavNotice === undefined
+            ? {}
+            : { onNotice: props.onSessionNavNotice })}
+          {...(props.onSessionNavClose === undefined ? {} : { onClose: props.onSessionNavClose })}
         />
       );
     case "artifact":

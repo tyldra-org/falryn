@@ -18,10 +18,12 @@ import {
   type EnvironmentPort,
   MAX_STREAM_READ_LIMIT,
   parseLocalPath,
+  primaryWorkspaceRoot,
   type RuntimeEvent,
   streamId,
   type Timestamp,
   timestampFromEpochMilliseconds,
+  workspaceId as workspaceIdCodec,
 } from "../domain/index.ts";
 import {
   createHostEnvironment,
@@ -64,6 +66,7 @@ import {
   runWorkspaceShow,
   stoppedResult,
 } from "./commands.ts";
+import { composeSessionNavigationController } from "./compose-session-navigation-controller.ts";
 import { EXIT_CODES, type ExitCode, resolveExitCode } from "./exit.ts";
 import {
   createInvocationGovernance,
@@ -365,6 +368,16 @@ async function launchShell(
       : undefined;
   const workspace = workspaceController?.initial;
 
+  const sessionNavigationWorkspaceId =
+    resolvedWorkspace.ok === true
+      ? workspaceIdCodec.from(primaryWorkspaceRoot(resolvedWorkspace.value.set).rootId)
+      : workspaceIdCodec.from("workspace-unbound");
+  const sessionNavigationBundle = await composeSessionNavigationController(
+    services(globals),
+    sessionNavigationWorkspaceId,
+    stopped.signal,
+  );
+
   const productAttachments = await composeProductShellAttachments({
     eventStore: graph.eventStore,
     clock: graph.clock,
@@ -397,6 +410,9 @@ async function launchShell(
       ...(gitDashboard === undefined ? {} : { gitDashboard }),
       ...(workspaceController === undefined ? {} : { workspaceController }),
       ...(workspace === undefined ? {} : { workspace }),
+      ...(sessionNavigationBundle === undefined
+        ? {}
+        : { sessionNavigationController: sessionNavigationBundle.controller }),
       ...(governance.shutdown === undefined ? {} : { shutdown: governance.shutdown }),
       ...(options.createRenderer === undefined ? {} : { createRenderer: options.createRenderer }),
       ...(productAttachments === null
@@ -408,6 +424,9 @@ async function launchShell(
     });
   } finally {
     finished.abort();
+    if (sessionNavigationBundle !== undefined) {
+      await sessionNavigationBundle.close(stopped.signal);
+    }
   }
 
   if (run.kind === "failed") {

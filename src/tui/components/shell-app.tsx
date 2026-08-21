@@ -66,6 +66,7 @@ import {
   type KeymapPlan,
   planKeymap,
 } from "../keymap.ts";
+import type { SessionNavigationController } from "../session-nav/index.ts";
 import type { ThemeRequest } from "../theme/index.ts";
 import { keysOf } from "../transcript/index.ts";
 import type { TranscriptModel } from "../transcript-model.ts";
@@ -149,6 +150,8 @@ export type ShellAppProps = {
   /** Application-backed workspace-set mutations (#607). */
   readonly workspaceController?: WorkspaceController;
   readonly workspace?: WorkspaceSetView;
+  /** Application-backed session navigation (#722). */
+  readonly sessionNavigationController?: SessionNavigationController;
   /** Mid-turn classification while a turn is in flight (#612). */
   readonly midTurn?: MidTurnInputService;
   /** Product agent submission port (#707). Absent keeps UNAVAILABLE_SUBMISSION. */
@@ -204,6 +207,9 @@ export function ShellApp(props: ShellAppProps): ReactNode {
     ...(props.workspaceController === undefined
       ? {}
       : { workspaceController: props.workspaceController }),
+    ...(props.sessionNavigationController === undefined
+      ? {}
+      : { sessionNavigationController: props.sessionNavigationController }),
     ...(props.midTurn === undefined ? {} : { midTurn: props.midTurn }),
     ...(props.submission === undefined ? {} : { submission: props.submission }),
   });
@@ -241,6 +247,8 @@ export function ShellApp(props: ShellAppProps): ReactNode {
           runtime.state.overlay.kind === "palette" ||
           (runtime.state.overlay.kind === "workspace" &&
             (runtime.state.overlay.panel === "add" || runtime.state.overlay.panel === "save")) ||
+          (runtime.state.overlay.kind === "session-nav" &&
+            runtime.state.overlay.panel === "rewind") ||
           (runtime.state.overlay.kind === "confirm" &&
             runtime.state.boundConfirmation?.secret !== null)
         }
@@ -369,6 +377,13 @@ function ResolvedShell(
       onWorkspaceReplace={props.runtime.replaceWorkspace}
       onWorkspaceNotice={props.runtime.workspaceNotice}
       onWorkspaceClose={props.runtime.closeOverlay}
+      {...(props.sessionNavigationController === undefined
+        ? {}
+        : { sessionNavigationController: props.sessionNavigationController })}
+      onSessionNavDraft={props.runtime.sessionNavDraft}
+      onSessionNavSession={props.runtime.sessionNavSession}
+      onSessionNavNotice={props.runtime.sessionNavNotice}
+      onSessionNavClose={props.runtime.closeOverlay}
     />
   );
 }
