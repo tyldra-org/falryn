@@ -72,6 +72,7 @@ export const COMMAND_IDS = [
   "task.decompose",
   "task.validate",
   "task.progress",
+  "task.commit-plan",
   "session.list",
   "session.show",
   "session.resume",

@@ -67,6 +67,10 @@ import {
 } from "./options.ts";
 import type { CommandId } from "./result.ts";
 import {
+  type TaskCommitPlanArguments,
+  taskCommitPlanArgumentsFor,
+} from "./task-commit-plan-commands.ts";
+import {
   MAX_TASK_INPUT_FILE_BYTES,
   type TaskCommandArguments,
   taskArgumentsFor,
@@ -237,6 +241,7 @@ export type Invocation =
       readonly workspaceArgs: WorkspaceCommandArguments | null;
       readonly runArgs: CodingRunArguments | null;
       readonly taskArgs: TaskCommandArguments | null;
+      readonly commitPlanArgs: TaskCommitPlanArguments | null;
     }
   /** Show help. `topic` is `null` for the root, or the subcommand asked about. */
   | { readonly kind: "help"; readonly topic: string | null; readonly options: GlobalOptions }
@@ -283,6 +288,9 @@ type RawArguments = {
   readonly brief: string | undefined;
   readonly statement: string | undefined;
   readonly "outcome-id": string | undefined;
+  readonly "task-id": string | undefined;
+  readonly scope: readonly string[] | undefined;
+  readonly cwd: string | undefined;
   readonly goal: readonly string[] | undefined;
   readonly "non-goal": readonly string[] | undefined;
   readonly proposed: readonly string[] | undefined;
@@ -458,13 +466,13 @@ function build(argv: readonly string[], lenientPositionals = false): ReturnType<
       )
       .command(
         taskCommand,
-        "Decompose outcomes, recommend validation, or project task progress.",
+        "Decompose outcomes, recommend validation, project progress, or plan commits.",
         (group) =>
           group
             .positional("action", {
               type: "string",
-              choices: ["decompose", "validate", "progress"] as const,
-              describe: "decompose, validate, or progress",
+              choices: ["decompose", "validate", "progress", "commit-plan"] as const,
+              describe: "decompose, validate, progress, or commit-plan",
             })
             .option("statement", {
               type: "string",
@@ -473,6 +481,23 @@ function build(argv: readonly string[], lenientPositionals = false): ReturnType<
             .option("outcome-id", {
               type: "string",
               describe: "outcome identity (default cli-outcome)",
+            })
+            .option("task-id", {
+              type: "string",
+              describe: "optional task identity (commit-plan)",
+            })
+            .option("scope", {
+              type: "string",
+              array: true,
+              describe: "optional path scope for commit-plan (repeatable)",
+            })
+            .option("cwd", {
+              type: "string",
+              describe: "repository start path for commit-plan (default cwd)",
+            })
+            .option("confirm", {
+              type: "string",
+              describe: "exact plan-commit-… token to apply a commit plan",
             })
             .option("goal", {
               type: "string",
@@ -801,6 +826,10 @@ export async function parseInvocation(argv: readonly string[]): Promise<Invocati
     }
     taskArgs = built;
   }
+  const commitPlanArgs = command === "task.commit-plan" ? taskCommitPlanArgumentsFor(parsed) : null;
+  if (typeof commitPlanArgs === "string") {
+    return { kind: "invalid", message: commitPlanArgs };
+  }
   return {
     kind: "run",
     command,
@@ -815,6 +844,7 @@ export async function parseInvocation(argv: readonly string[]): Promise<Invocati
     workspaceArgs,
     runArgs,
     taskArgs,
+    commitPlanArgs,
   };
 }
 
@@ -911,6 +941,11 @@ function isRawArguments(value: unknown): value is RawArguments {
     optionalString(field("brief")) &&
     optionalString(field("statement")) &&
     optionalString(field("outcome-id")) &&
+    optionalString(field("task-id")) &&
+    (field("scope") === undefined ||
+      (Array.isArray(field("scope")) &&
+        (field("scope") as unknown[]).every((item) => typeof item === "string"))) &&
+    optionalString(field("cwd")) &&
     (field("goal") === undefined ||
       (Array.isArray(field("goal")) &&
         (field("goal") as unknown[]).every((item) => typeof item === "string"))) &&
@@ -991,6 +1026,8 @@ function commandFrom(positional: readonly string[], action: string | null): Runn
         return "task.validate";
       case "progress":
         return "task.progress";
+      case "commit-plan":
+        return "task.commit-plan";
       default:
         return null;
     }

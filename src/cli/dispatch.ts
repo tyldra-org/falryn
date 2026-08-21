@@ -112,6 +112,7 @@ import {
   writeDiagnosticLine,
   writeResultLine,
 } from "./streams.ts";
+import { runTaskCommitPlan } from "./task-commit-plan-commands.ts";
 import {
   runTaskDecompose,
   runTaskProgress,
@@ -228,6 +229,7 @@ async function runCommand(
     workspaceArgs,
     runArgs,
     taskArgs,
+    commitPlanArgs,
     options: globals,
   } = invocation;
 
@@ -251,6 +253,7 @@ async function runCommand(
     workspaceArgs,
     runArgs,
     taskArgs,
+    commitPlanArgs,
     services,
     overrides,
     globals,
@@ -516,6 +519,7 @@ async function governed(
   workspaceArgs: Extract<Invocation, { kind: "run" }>["workspaceArgs"],
   runArgs: Extract<Invocation, { kind: "run" }>["runArgs"],
   taskArgs: Extract<Invocation, { kind: "run" }>["taskArgs"],
+  commitPlanArgs: Extract<Invocation, { kind: "run" }>["commitPlanArgs"],
   services: ServiceProvider,
   overrides: Readonly<Record<string, string>>,
   globals: GlobalOptions,
@@ -536,6 +540,7 @@ async function governed(
       workspaceArgs,
       runArgs,
       taskArgs,
+      commitPlanArgs,
       services,
       overrides,
       globals,
@@ -556,6 +561,7 @@ async function governed(
       workspaceArgs,
       runArgs,
       taskArgs,
+      commitPlanArgs,
       services,
       overrides,
       globals,
@@ -748,6 +754,7 @@ async function produce(
   workspaceArgs: Extract<Invocation, { kind: "run" }>["workspaceArgs"],
   runArgs: Extract<Invocation, { kind: "run" }>["runArgs"],
   taskArgs: Extract<Invocation, { kind: "run" }>["taskArgs"],
+  commitPlanArgs: Extract<Invocation, { kind: "run" }>["commitPlanArgs"],
   services: ServiceProvider,
   overrides: Readonly<Record<string, string>>,
   globals: GlobalOptions,
@@ -834,6 +841,11 @@ async function produce(
         throw new Error("Missing parsed task progress arguments.");
       }
       return runTaskProgress(taskArgs, signal);
+    case "task.commit-plan":
+      if (commitPlanArgs === null) {
+        throw new Error("Missing parsed task commit-plan arguments.");
+      }
+      return runTaskCommitPlan(commitPlanArgs, signal);
     case "session.list":
       if (sessionArgs === null || sessionArgs.action !== "list") {
         throw new Error("Missing parsed session list arguments.");

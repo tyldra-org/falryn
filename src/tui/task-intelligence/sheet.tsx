@@ -1,9 +1,10 @@
 /**
- * Task-intelligence overlay sheets (#726).
+ * Task-intelligence overlay sheets (#726 / #727).
  *
  * Collects line-oriented draft text, runs the same application ports as the
- * CLI, and reports a short notice. The sheet never executes work or mutates
- * state.
+ * CLI, and reports a short notice. Decompose/validate/progress never mutate.
+ * Commit-plan may stage and commit only when the draft carries the exact
+ * confirm token for the refreshed plan.
  */
 
 import { useKeyboard } from "@opentui/react";
@@ -13,6 +14,11 @@ import {
   projectOutcomeProgress,
   recommendOutcomeValidation,
 } from "../../application/index.ts";
+import {
+  runTaskCommitPlan,
+  summarizeTaskCommitPlan,
+  taskCommitPlanArgumentsFor,
+} from "../../cli/task-commit-plan-commands.ts";
 import {
   summarizeTaskDecomposition,
   summarizeTaskProgress,
@@ -68,20 +74,24 @@ export function TaskIntelligenceSheet(props: TaskIntelligenceSheetProps): ReactN
         value={props.draft}
         focused={props.onDraft !== undefined}
         width={columns}
-        placeholder="key=value lines; Enter runs advice"
+        placeholder="key=value lines; Enter runs"
         onInput={(value) => props.onDraft?.(value)}
-        onSubmit={() => submitDraft(props)}
+        onSubmit={() => {
+          void submitDraft(props);
+        }}
       />
       {props.rows > 1 ? (
         <Line color="mutedForeground" typography="muted" maxColumns={columns}>
-          {`Advice only. Enter runs the same ports as falryn task ${props.panel}.`}
+          {props.panel === "commit-plan"
+            ? "Preview by default. confirm=plan-commit-… applies the refreshed plan."
+            : `Advice only. Enter runs the same ports as falryn task ${props.panel}.`}
         </Line>
       ) : null}
     </box>
   );
 }
 
-function submitDraft(props: TaskIntelligenceSheetProps): void {
+async function submitDraft(props: TaskIntelligenceSheetProps): Promise<void> {
   switch (props.panel) {
     case "decompose": {
       const parsed = decomposeArgumentsFromDraft(props.draft);
@@ -128,5 +138,84 @@ function submitDraft(props: TaskIntelligenceSheetProps): void {
       props.onClose?.();
       return;
     }
+    case "commit-plan": {
+      const fields = draftFields(props.draft);
+      const args = taskCommitPlanArgumentsFor({
+        "outcome-id": fields.outcomeId,
+        "task-id": fields.taskId,
+        scope: fields.scope,
+        cwd: fields.cwd,
+        confirm: fields.confirm,
+      });
+      if (typeof args === "string") {
+        props.onNotice?.(args);
+        return;
+      }
+      const result = await runTaskCommitPlan(args);
+      if (result.payload === null) {
+        const first = result.errors[0];
+        props.onNotice?.(first === undefined ? "Commit plan failed." : String(first));
+        return;
+      }
+      props.onNotice?.(summarizeTaskCommitPlan(result.payload));
+      props.onClose?.();
+    }
   }
+}
+
+function draftFields(draft: string): {
+  readonly outcomeId?: string;
+  readonly taskId?: string;
+  readonly scope?: readonly string[];
+  readonly cwd?: string;
+  readonly confirm?: string;
+} {
+  const scope: string[] = [];
+  let outcomeId: string | undefined;
+  let taskId: string | undefined;
+  let cwd: string | undefined;
+  let confirm: string | undefined;
+  for (const raw of draft.split("\n")) {
+    const line = raw.trim();
+    if (line.length === 0 || line.startsWith("#")) {
+      continue;
+    }
+    const index = line.indexOf("=");
+    if (index <= 0) {
+      continue;
+    }
+    const key = line.slice(0, index).trim();
+    const value = line.slice(index + 1).trim();
+    if (value.length === 0) {
+      continue;
+    }
+    switch (key) {
+      case "outcomeId":
+      case "outcome-id":
+        outcomeId = value;
+        break;
+      case "taskId":
+      case "task-id":
+        taskId = value;
+        break;
+      case "scope":
+        scope.push(value);
+        break;
+      case "cwd":
+        cwd = value;
+        break;
+      case "confirm":
+        confirm = value;
+        break;
+      default:
+        break;
+    }
+  }
+  return {
+    ...(outcomeId === undefined ? {} : { outcomeId }),
+    ...(taskId === undefined ? {} : { taskId }),
+    ...(scope.length === 0 ? {} : { scope }),
+    ...(cwd === undefined ? {} : { cwd }),
+    ...(confirm === undefined ? {} : { confirm }),
+  };
 }

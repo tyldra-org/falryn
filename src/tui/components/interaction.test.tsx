@@ -122,10 +122,10 @@ describe("help", () => {
     const opening = await shell.press("?");
     expect(opening).toContain("Help");
     // Task-intelligence advice sits at the end of the registry; End must reach it.
-    expect(opening).not.toContain("Validation advice");
+    expect(opening).not.toContain("Commit plan");
 
     await shell.press("\u001b[F");
-    expect(await shell.frame()).toContain("Validation advice");
+    expect(await shell.frame()).toContain("Commit plan");
   });
 
   test("closes on escape and gives the frame back", async () => {

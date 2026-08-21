@@ -574,9 +574,9 @@ describe.if(runnable)("the compiled shell on a real terminal", () => {
       expect(run.exitCode).toBe(EXIT_CODES.COMPLETED);
       expect(opened).toContain("Help");
       expect(opened).toContain("Ctrl+C ends the session");
-      // End reaches the task-intelligence block (#726). Prefer titles that fit
-      // one PTY cell row intact — the final row may truncate mid-word.
-      expect(scrolled).toContain("Decompose outcome");
+      // End reaches the task-intelligence block (#726 / #727). Prefer titles
+      // that fit one PTY cell row intact — the final row may truncate mid-word.
+      expect(scrolled).toContain("Commit plan");
       expect(scrolled).toContain("Validation advice");
       // And closing gives the primary view back. Asserted on what the *step*
       // drew, because the transcript keeps every byte the overlay ever wrote.

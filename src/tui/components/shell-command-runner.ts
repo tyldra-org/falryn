@@ -228,6 +228,9 @@ export function runAvailableCommand(
     case "task.progress":
       dispatch({ kind: "open-overlay", route: taskIntelligenceOverlayRoute("progress") });
       return true;
+    case "task.commit-plan":
+      dispatch({ kind: "open-overlay", route: taskIntelligenceOverlayRoute("commit-plan") });
+      return true;
     case "session.new":
       dispatch({
         kind: "notice",

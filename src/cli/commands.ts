@@ -140,6 +140,7 @@ import type {
   runSessionReplay,
   runSessionResume,
 } from "./session-navigation.ts";
+import type { TaskCommitPlanPayload } from "./task-commit-plan-commands.ts";
 import type {
   runTaskDecompose,
   runTaskProgress,
@@ -2025,6 +2026,8 @@ export function stoppedResult(
       return resultFor("task.validate", null, [], outcome, effect);
     case "task.progress":
       return resultFor("task.progress", null, [], outcome, effect);
+    case "task.commit-plan":
+      return resultFor("task.commit-plan", null, [], outcome, effect);
     case "session.list":
       return resultFor<"session.list", SessionListPayload>(
         "session.list",
@@ -2145,6 +2148,7 @@ export type RunCommandResult =
   | Awaited<ReturnType<typeof runTaskDecompose>>
   | Awaited<ReturnType<typeof runTaskValidate>>
   | Awaited<ReturnType<typeof runTaskProgress>>
+  | CommandResultOf<"task.commit-plan", TaskCommitPlanPayload>
   | Awaited<ReturnType<typeof runSessionList>>
   | Awaited<ReturnType<typeof runSessionShow>>
   | Awaited<ReturnType<typeof runSessionResume>>

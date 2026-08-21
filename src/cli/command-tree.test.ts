@@ -52,6 +52,7 @@ describe("the declared tree", () => {
       "task.validate",
     );
     expect(await commandOf("task", "progress", "--task", "t1")).toBe("task.progress");
+    expect(await commandOf("task", "commit-plan")).toBe("task.commit-plan");
     expect(await commandOf("session", "list")).toBe("session.list");
     expect(await commandOf("session", "show", "s1")).toBe("session.show");
     expect(await commandOf("session", "resume", "s1")).toBe("session.resume");

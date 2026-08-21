@@ -1,16 +1,22 @@
 /**
- * Task-intelligence overlay routes and panel titles (#726).
+ * Task-intelligence overlay routes and panel titles (#726 / #727).
  */
 
 import type { OverlayRoute } from "../view-model.ts";
 
-export const TASK_INTELLIGENCE_PANELS = ["decompose", "validate", "progress"] as const;
+export const TASK_INTELLIGENCE_PANELS = [
+  "decompose",
+  "validate",
+  "progress",
+  "commit-plan",
+] as const;
 export type TaskIntelligencePanel = (typeof TASK_INTELLIGENCE_PANELS)[number];
 
 export const TASK_INTELLIGENCE_PANEL_TITLES: Readonly<Record<TaskIntelligencePanel, string>> = {
   decompose: "Decompose outcome",
   validate: "Validation advice",
   progress: "Task progress",
+  "commit-plan": "Commit plan",
 };
 
 export const TASK_INTELLIGENCE_DRAFTS: Readonly<Record<TaskIntelligencePanel, string>> = {
@@ -29,6 +35,11 @@ export const TASK_INTELLIGENCE_DRAFTS: Readonly<Record<TaskIntelligencePanel, st
     "task=t2",
     "depends=t1:t2",
     "observe=t1:completed",
+  ].join("\n"),
+  "commit-plan": [
+    "# cwd= start path; confirm=plan-commit-… applies the refreshed plan",
+    "cwd=.",
+    "# confirm=",
   ].join("\n"),
 };
 
@@ -50,6 +61,8 @@ export function taskIntelligencePanelForCommand(id: string): TaskIntelligencePan
       return "validate";
     case "task.progress":
       return "progress";
+    case "task.commit-plan":
+      return "commit-plan";
     default:
       return null;
   }

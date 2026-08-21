@@ -201,7 +201,7 @@ export type OverlayRoute =
    */
   | {
       readonly kind: "task-intelligence";
-      readonly panel: "decompose" | "validate" | "progress";
+      readonly panel: "decompose" | "validate" | "progress" | "commit-plan";
       readonly draft: string;
     }
   /**
