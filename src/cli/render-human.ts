@@ -64,6 +64,7 @@ import type {
   WorkspaceSavePayload,
   WorkspaceSetPayload,
 } from "./commands.ts";
+import type { ImportCommandPayload, ReplayCommandPayload } from "./import-replay-commands.ts";
 import type {
   CommandEffect,
   CommandOmission,
@@ -667,6 +668,10 @@ function renderPayload(session: Session, result: RunCommandResult): RenderedPayl
       return renderDoctor(session, result.payload);
     case "export":
       return renderExport(session, result.payload);
+    case "import":
+      return renderImport(session, result.payload);
+    case "replay":
+      return renderReplay(session, result.payload);
     case "session.list":
       return renderSessionList(session, result.payload);
     case "session.show":
@@ -753,6 +758,41 @@ function renderExport(session: Session, payload: ExportCommandPayload | null): R
       ? ["Preview only. Re-run with --write --name <name> to create this package."]
       : [];
   return { lines, diagnostics };
+}
+
+function renderImport(session: Session, payload: ImportCommandPayload | null): RenderedPayload {
+  if (payload === null) {
+    return { lines: ["No import result is available."], diagnostics: [] };
+  }
+  return {
+    lines: [
+      paint(session, "plain", "Import completed"),
+      `  Package      ${safe(payload.name)}`,
+      `  Sessions     ${payload.sessionIds.map(safe).join(", ") || "(none)"}`,
+      `  Events       ${payload.events}`,
+      `  Artifacts    ${payload.artifacts}`,
+    ],
+    diagnostics: [],
+  };
+}
+
+function renderReplay(session: Session, payload: ReplayCommandPayload | null): RenderedPayload {
+  if (payload === null) {
+    return { lines: ["No replay rebuild is available."], diagnostics: [] };
+  }
+  return {
+    lines: [
+      paint(session, "plain", "Replay rebuild (effect-free)"),
+      `  Identity     ${safe(payload.sessionId)}`,
+      `  Stream       ${safe(payload.streamId)}`,
+      `  Turns        ${payload.turnCount}`,
+      `  Artifacts    ${payload.artifactCount}`,
+      ...(payload.truncated ? ["  Note         truncated; widen the read bound to see more"] : []),
+    ],
+    diagnostics: [
+      "Rebuilds from stored facts only. For cursor control over recorded events, use `falryn session replay`.",
+    ],
+  };
 }
 
 function renderSessionList(session: Session, payload: SessionListPayload | null): RenderedPayload {
@@ -1414,6 +1454,10 @@ function quietResultLines(result: RunCommandResult): readonly string[] {
       return [];
     case "export":
       return quietExportLines(result.payload);
+    case "import":
+      return quietImportLines(result.payload);
+    case "replay":
+      return quietReplayLines(result.payload);
     case "session.list":
       return result.payload === null
         ? []
@@ -1499,6 +1543,35 @@ function quietExportLines(payload: ExportCommandPayload | null): readonly string
   return payload.sessionIds.map((id) => safe(id));
 }
 
+function quietImportLines(payload: ImportCommandPayload | null): readonly string[] {
+  if (payload === null) {
+    return [];
+  }
+  return [
+    [
+      safe(payload.name),
+      payload.sessionIds.map(safe).join(","),
+      String(payload.events),
+      String(payload.artifacts),
+    ].join("\t"),
+  ];
+}
+
+function quietReplayLines(payload: ReplayCommandPayload | null): readonly string[] {
+  if (payload === null) {
+    return [];
+  }
+  return [
+    [
+      safe(payload.sessionId),
+      safe(payload.streamId),
+      String(payload.turnCount),
+      String(payload.artifactCount),
+      payload.truncated ? "truncated" : "complete",
+    ].join("\t"),
+  ];
+}
+
 function quietDataLines(payload: DataRemovalPayload | null): readonly string[] {
   if (payload === null) {
     return [];
@@ -1564,6 +1637,9 @@ function quietFindingLines(result: RunCommandResult): readonly string[] {
     case "config.path":
       return [];
     case "export":
+      return [];
+    case "import":
+    case "replay":
       return [];
     case "session.list":
       return result.payload === null || result.payload.omitted === 0

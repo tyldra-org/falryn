@@ -91,6 +91,7 @@ export {
   fromEventStoreError,
   fromExportError,
   fromIdentityError,
+  fromImportError,
   fromParticipantReports,
   fromRecordError,
   fromRemovalRefusal,

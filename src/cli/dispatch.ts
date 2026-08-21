@@ -68,6 +68,7 @@ import {
 } from "./commands.ts";
 import { composeSessionNavigationController } from "./compose-session-navigation-controller.ts";
 import { EXIT_CODES, type ExitCode, resolveExitCode } from "./exit.ts";
+import { runImport, runReplay } from "./import-replay-commands.ts";
 import {
   createInvocationGovernance,
   type InvocationGovernance,
@@ -207,6 +208,8 @@ async function runCommand(
     command,
     data,
     exportArgs,
+    importArgs,
+    replayArgs,
     sessionArgs,
     artifactArgs,
     workspaceArgs,
@@ -226,6 +229,8 @@ async function runCommand(
     command,
     data,
     exportArgs,
+    importArgs,
+    replayArgs,
     sessionArgs,
     artifactArgs,
     workspaceArgs,
@@ -487,6 +492,8 @@ async function governed(
   command: Exclude<RunnableCommand, "default">,
   data: Extract<Invocation, { kind: "run" }>["data"],
   exportArgs: Extract<Invocation, { kind: "run" }>["exportArgs"],
+  importArgs: Extract<Invocation, { kind: "run" }>["importArgs"],
+  replayArgs: Extract<Invocation, { kind: "run" }>["replayArgs"],
   sessionArgs: Extract<Invocation, { kind: "run" }>["sessionArgs"],
   artifactArgs: Extract<Invocation, { kind: "run" }>["artifactArgs"],
   workspaceArgs: Extract<Invocation, { kind: "run" }>["workspaceArgs"],
@@ -503,6 +510,8 @@ async function governed(
       command,
       data,
       exportArgs,
+      importArgs,
+      replayArgs,
       sessionArgs,
       artifactArgs,
       workspaceArgs,
@@ -519,6 +528,8 @@ async function governed(
       command,
       data,
       exportArgs,
+      importArgs,
+      replayArgs,
       sessionArgs,
       artifactArgs,
       workspaceArgs,
@@ -541,7 +552,11 @@ async function governed(
   // prevent.
   return run.kind === "finished"
     ? run.value
-    : stoppedResult(command, run.outcome, stoppedCommandIntent(command, data, exportArgs));
+    : stoppedResult(
+        command,
+        run.outcome,
+        stoppedCommandIntent(command, data, exportArgs, importArgs),
+      );
 }
 
 /** The declared effect remains true even if the invocation stops mid-command. */
@@ -549,6 +564,7 @@ function stoppedCommandIntent(
   command: Exclude<RunnableCommand, "default">,
   data: Extract<Invocation, { kind: "run" }>["data"],
   exportArgs: Extract<Invocation, { kind: "run" }>["exportArgs"],
+  importArgs: Extract<Invocation, { kind: "run" }>["importArgs"],
 ): "none" | "mutate" {
   if (
     (command === "data.reset" || command === "data.uninstall") &&
@@ -558,6 +574,9 @@ function stoppedCommandIntent(
     return "mutate";
   }
   if (command === "export" && exportArgs !== null && exportArgs.write) {
+    return "mutate";
+  }
+  if (command === "import" && importArgs !== null) {
     return "mutate";
   }
   if (command === "workspace.save") {
@@ -679,6 +698,8 @@ async function produce(
   command: Exclude<RunnableCommand, "default">,
   data: Extract<Invocation, { kind: "run" }>["data"],
   exportArgs: Extract<Invocation, { kind: "run" }>["exportArgs"],
+  importArgs: Extract<Invocation, { kind: "run" }>["importArgs"],
+  replayArgs: Extract<Invocation, { kind: "run" }>["replayArgs"],
   sessionArgs: Extract<Invocation, { kind: "run" }>["sessionArgs"],
   artifactArgs: Extract<Invocation, { kind: "run" }>["artifactArgs"],
   workspaceArgs: Extract<Invocation, { kind: "run" }>["workspaceArgs"],
@@ -714,6 +735,16 @@ async function produce(
         throw new Error("Missing parsed export arguments.");
       }
       return runExport(services, exportArgs, signal, onMutationStart);
+    case "import":
+      if (importArgs === null) {
+        throw new Error("Missing parsed import arguments.");
+      }
+      return runImport(services, importArgs, signal, onMutationStart);
+    case "replay":
+      if (replayArgs === null) {
+        throw new Error("Missing parsed replay arguments.");
+      }
+      return runReplay(services, replayArgs, signal);
     case "session.list":
       if (sessionArgs === null || sessionArgs.action !== "list") {
         throw new Error("Missing parsed session list arguments.");

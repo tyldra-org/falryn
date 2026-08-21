@@ -36,6 +36,7 @@ import {
   fromEventStoreError,
   fromExportError,
   fromIdentityError,
+  fromImportError,
   fromParticipantReports,
   fromSequenceError,
   fromSqliteStoreError,
@@ -113,6 +114,12 @@ describe("boundary translation", () => {
     expect(error.category).toBe("cancellation");
     expect(error.exitCategory).toBe("cancelled");
     expect(error.retryable).toBe(true);
+  });
+
+  test("an unverified import package fails closed", () => {
+    const error = fromImportError({ kind: "import", code: "unverified-package" });
+    expect(error.code).toBe("data.import.unverified-package");
+    expect(error.retryable).toBe(false);
   });
 
   test.each<[SequenceError["code"], boolean]>([
