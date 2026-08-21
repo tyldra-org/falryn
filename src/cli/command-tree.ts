@@ -43,7 +43,10 @@ import {
   SESSION_CATALOG_FILTERS,
   type SessionCatalogFilter,
   type SessionId,
+  type StreamId,
   sessionId,
+  streamId,
+  TERMINAL_OUTCOME_PROJECTION_GENERATION,
   type WorkspaceId,
   workspaceId,
 } from "../domain/index.ts";
@@ -100,6 +103,10 @@ export type ArtifactCommandArguments =
       readonly outputPath: string | null;
     };
 
+/** Replay control verbs accepted by `falryn session replay`. */
+export const SESSION_REPLAY_ACTIONS = ["play", "pause", "step", "seek"] as const;
+export type SessionReplayAction = (typeof SESSION_REPLAY_ACTIONS)[number];
+
 /** Command-specific inputs for `falryn session`. */
 export type SessionCommandArguments =
   | {
@@ -113,6 +120,38 @@ export type SessionCommandArguments =
       readonly action: "show";
       readonly workspaceId: WorkspaceId;
       readonly sessionId: SessionId;
+    }
+  | {
+      readonly action: "resume";
+      readonly workspaceId: WorkspaceId;
+      readonly sessionId: SessionId;
+      readonly afterSequence: number | null;
+      readonly schemaGeneration: number;
+    }
+  | {
+      readonly action: "fork";
+      readonly workspaceId: WorkspaceId;
+      readonly sessionId: SessionId;
+      readonly newSessionId: SessionId | undefined;
+      readonly newStreamId: StreamId | undefined;
+    }
+  | {
+      readonly action: "rewind";
+      readonly workspaceId: WorkspaceId;
+      readonly sessionId: SessionId;
+      readonly atTurnId: string;
+      readonly newSessionId: SessionId | undefined;
+      readonly newStreamId: StreamId | undefined;
+    }
+  | {
+      readonly action: "replay";
+      readonly workspaceId: WorkspaceId;
+      readonly sessionId: SessionId;
+      readonly replayCommand:
+        | { readonly kind: "play" }
+        | { readonly kind: "pause" }
+        | { readonly kind: "step" }
+        | { readonly kind: "seek"; readonly sequence: number };
     };
 
 /** Command-specific inputs for `falryn workspace`. */
@@ -184,6 +223,13 @@ type RawArguments = {
   readonly search: string | undefined;
   readonly limit: number | undefined;
   readonly "workspace-id": string | undefined;
+  readonly "after-sequence": number | undefined;
+  readonly "schema-generation": number | undefined;
+  readonly "at-turn": string | undefined;
+  readonly "new-session-id": string | undefined;
+  readonly "new-stream-id": string | undefined;
+  readonly "replay-action": string | undefined;
+  readonly "seek-sequence": number | undefined;
   readonly output: string | undefined;
   readonly force: boolean | undefined;
   readonly "add-dir": readonly string[] | undefined;
@@ -311,35 +357,68 @@ function build(argv: readonly string[], lenientPositionals = false): ReturnType<
             describe: "write the bundle; omit this flag to preview only",
           }),
       )
-      .command(sessionCommand, "List or inspect stored sessions.", (group) =>
-        group
-          .positional("action", {
-            type: "string",
-            choices: ["list", "show"] as const,
-            describe: "list matching sessions, or show one identity",
-          })
-          .positional("id", {
-            type: "string",
-            describe: "session identity (required with show)",
-          })
-          .option("filter", {
-            type: "string",
-            choices: SESSION_CATALOG_FILTERS,
-            default: "all" satisfies SessionCatalogFilter,
-            describe: "catalog filter (list only)",
-          })
-          .option("search", {
-            type: "string",
-            describe: "title search (list only)",
-          })
-          .option("limit", {
-            type: "number",
-            describe: `maximum listed sessions (default ${DEFAULT_SESSION_LIST_LIMIT}, max ${MAX_SESSION_CATALOG})`,
-          })
-          .option("workspace-id", {
-            type: "string",
-            describe: "bound workspace identity (default: cli)",
-          }),
+      .command(
+        sessionCommand,
+        "List, inspect, resume, fork, rewind, or replay sessions.",
+        (group) =>
+          group
+            .positional("action", {
+              type: "string",
+              choices: ["list", "show", "resume", "fork", "rewind", "replay"] as const,
+              describe: "list, show, resume, fork, rewind, or replay a session",
+            })
+            .positional("id", {
+              type: "string",
+              describe: "session identity (required except list)",
+            })
+            .option("filter", {
+              type: "string",
+              choices: SESSION_CATALOG_FILTERS,
+              default: "all" satisfies SessionCatalogFilter,
+              describe: "catalog filter (list only)",
+            })
+            .option("search", {
+              type: "string",
+              describe: "title search (list only)",
+            })
+            .option("limit", {
+              type: "number",
+              describe: `maximum listed sessions (default ${DEFAULT_SESSION_LIST_LIMIT}, max ${MAX_SESSION_CATALOG})`,
+            })
+            .option("workspace-id", {
+              type: "string",
+              describe: "bound workspace identity (default: cli)",
+            })
+            .option("after-sequence", {
+              type: "number",
+              describe: "resume cursor after this sequence (resume only)",
+            })
+            .option("schema-generation", {
+              type: "number",
+              describe: "resume cursor schema generation (resume only; default 1)",
+            })
+            .option("at-turn", {
+              type: "string",
+              describe: "turn identity to rewind to (rewind only)",
+            })
+            .option("new-session-id", {
+              type: "string",
+              describe: "identity for the forked session (fork/rewind)",
+            })
+            .option("new-stream-id", {
+              type: "string",
+              describe: "stream identity for the forked session (fork/rewind)",
+            })
+            .option("replay-action", {
+              type: "string",
+              choices: SESSION_REPLAY_ACTIONS,
+              default: "play" satisfies SessionReplayAction,
+              describe: "replay control verb (replay only)",
+            })
+            .option("seek-sequence", {
+              type: "number",
+              describe: "sequence to seek to (replay --replay-action seek)",
+            }),
       )
       .command(artifactCommand, "List, inspect, or retrieve stored artifacts.", (group) =>
         group
@@ -598,6 +677,13 @@ function isRawArguments(value: unknown): value is RawArguments {
     optionalString(field("search")) &&
     (field("limit") === undefined || typeof field("limit") === "number") &&
     optionalString(field("workspace-id")) &&
+    (field("after-sequence") === undefined || typeof field("after-sequence") === "number") &&
+    (field("schema-generation") === undefined || typeof field("schema-generation") === "number") &&
+    optionalString(field("at-turn")) &&
+    optionalString(field("new-session-id")) &&
+    optionalString(field("new-stream-id")) &&
+    optionalString(field("replay-action")) &&
+    (field("seek-sequence") === undefined || typeof field("seek-sequence") === "number") &&
     optionalString(field("output")) &&
     optionalBoolean(field("force")) &&
     (field("add-dir") === undefined ||
@@ -676,6 +762,14 @@ function commandFrom(positional: readonly string[], action: string | null): Runn
         return "session.list";
       case "show":
         return "session.show";
+      case "resume":
+        return "session.resume";
+      case "fork":
+        return "session.fork";
+      case "rewind":
+        return "session.rewind";
+      case "replay":
+        return "session.replay";
       default:
         return null;
     }
@@ -833,7 +927,14 @@ function sessionArgumentsFor(
   command: RunnableCommand,
   parsed: RawArguments,
 ): SessionCommandArguments | null | string {
-  if (command !== "session.list" && command !== "session.show") {
+  if (
+    command !== "session.list" &&
+    command !== "session.show" &&
+    command !== "session.resume" &&
+    command !== "session.fork" &&
+    command !== "session.rewind" &&
+    command !== "session.replay"
+  ) {
     return null;
   }
 
@@ -843,43 +944,128 @@ function sessionArgumentsFor(
     return "Argument workspace-id must be a workspace identity.";
   }
 
+  const listOnly =
+    (parsed.filter !== undefined && parsed.filter !== "all") ||
+    parsed.search !== undefined ||
+    parsed.limit !== undefined;
+  if (command !== "session.list" && listOnly) {
+    return "Arguments filter, search, and limit are only valid with session list.";
+  }
+
+  if (command === "session.list") {
+    if (parsed.id !== undefined) {
+      return "Argument id is only valid with session show, resume, fork, rewind, or replay.";
+    }
+    const filter = parsed.filter ?? "all";
+    if (!(SESSION_CATALOG_FILTERS as readonly string[]).includes(filter)) {
+      return "Argument filter must be one of: all, open, closed, pinned.";
+    }
+    const limit = parsed.limit ?? DEFAULT_SESSION_LIST_LIMIT;
+    if (!Number.isInteger(limit) || limit < 1 || limit > MAX_SESSION_CATALOG) {
+      return `Argument limit must be a whole number from 1 to ${MAX_SESSION_CATALOG}.`;
+    }
+    return {
+      action: "list",
+      workspaceId: parsedWorkspace.value,
+      filter: filter as SessionCatalogFilter,
+      search: parsed.search,
+      limit,
+    };
+  }
+
+  if (parsed.id === undefined) {
+    return `Argument id is required for session ${command.slice("session.".length)}.`;
+  }
+  const parsedId = sessionId.parse(parsed.id);
+  if (!parsedId.ok) {
+    return "Argument id must be a session identity.";
+  }
+
   if (command === "session.show") {
-    if (parsed.filter !== undefined && parsed.filter !== "all") {
-      return "Argument filter is only valid with session list.";
-    }
-    if (parsed.search !== undefined) {
-      return "Argument search is only valid with session list.";
-    }
-    if (parsed.limit !== undefined) {
-      return "Argument limit is only valid with session list.";
-    }
-    if (parsed.id === undefined) {
-      return "Argument id is required for session show.";
-    }
-    const parsedId = sessionId.parse(parsed.id);
-    if (!parsedId.ok) {
-      return "Argument id must be a session identity.";
-    }
     return { action: "show", workspaceId: parsedWorkspace.value, sessionId: parsedId.value };
   }
 
-  if (parsed.id !== undefined) {
-    return "Argument id is only valid with session show.";
+  if (command === "session.resume") {
+    const afterSequence = parsed["after-sequence"] ?? null;
+    if (afterSequence !== null && (!Number.isInteger(afterSequence) || afterSequence < 0)) {
+      return "Argument after-sequence must be a whole number >= 0.";
+    }
+    const schemaGeneration = parsed["schema-generation"] ?? TERMINAL_OUTCOME_PROJECTION_GENERATION;
+    if (!Number.isInteger(schemaGeneration) || schemaGeneration < 1) {
+      return "Argument schema-generation must be a whole number >= 1.";
+    }
+    return {
+      action: "resume",
+      workspaceId: parsedWorkspace.value,
+      sessionId: parsedId.value,
+      afterSequence,
+      schemaGeneration,
+    };
   }
-  const filter = parsed.filter ?? "all";
-  if (!(SESSION_CATALOG_FILTERS as readonly string[]).includes(filter)) {
-    return "Argument filter must be one of: all, open, closed, pinned.";
+
+  if (command === "session.fork" || command === "session.rewind") {
+    let newSessionId: SessionId | undefined;
+    if (parsed["new-session-id"] !== undefined) {
+      const parsedNew = sessionId.parse(parsed["new-session-id"]);
+      if (!parsedNew.ok) {
+        return "Argument new-session-id must be a session identity.";
+      }
+      newSessionId = parsedNew.value;
+    }
+    let newStreamId: StreamId | undefined;
+    if (parsed["new-stream-id"] !== undefined) {
+      const parsedStream = streamId.parse(parsed["new-stream-id"]);
+      if (!parsedStream.ok) {
+        return "Argument new-stream-id must be a stream identity.";
+      }
+      newStreamId = parsedStream.value;
+    }
+    if (command === "session.fork") {
+      if (parsed["at-turn"] !== undefined) {
+        return "Argument at-turn is only valid with session rewind.";
+      }
+      return {
+        action: "fork",
+        workspaceId: parsedWorkspace.value,
+        sessionId: parsedId.value,
+        newSessionId,
+        newStreamId,
+      };
+    }
+    if (parsed["at-turn"] === undefined || parsed["at-turn"].length === 0) {
+      return "Argument at-turn is required for session rewind.";
+    }
+    return {
+      action: "rewind",
+      workspaceId: parsedWorkspace.value,
+      sessionId: parsedId.value,
+      atTurnId: parsed["at-turn"],
+      newSessionId,
+      newStreamId,
+    };
   }
-  const limit = parsed.limit ?? DEFAULT_SESSION_LIST_LIMIT;
-  if (!Number.isInteger(limit) || limit < 1 || limit > MAX_SESSION_CATALOG) {
-    return `Argument limit must be a whole number from 1 to ${MAX_SESSION_CATALOG}.`;
+
+  const replayAction = parsed["replay-action"] ?? "play";
+  if (!(SESSION_REPLAY_ACTIONS as readonly string[]).includes(replayAction)) {
+    return "Argument replay-action must be one of: play, pause, step, seek.";
+  }
+  if (replayAction === "seek") {
+    const seekSequence = parsed["seek-sequence"];
+    if (seekSequence === undefined || !Number.isInteger(seekSequence) || seekSequence < 0) {
+      return "Argument seek-sequence is required for replay --replay-action seek.";
+    }
+    return {
+      action: "replay",
+      workspaceId: parsedWorkspace.value,
+      sessionId: parsedId.value,
+      replayCommand: { kind: "seek", sequence: seekSequence },
+    };
   }
   return {
-    action: "list",
+    action: "replay",
     workspaceId: parsedWorkspace.value,
-    filter: filter as SessionCatalogFilter,
-    search: parsed.search,
-    limit,
+    sessionId: parsedId.value,
+    replayCommand: { kind: replayAction as Exclude<SessionReplayAction, "seek"> },
   };
 }
 

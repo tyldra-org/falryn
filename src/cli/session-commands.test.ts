@@ -12,13 +12,17 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { REDACTED } from "../application/index.ts";
+import { createSqliteEventStore } from "../data/event-store.ts";
 import { openProductStoreOrThrow, removeTemporaryRoots } from "../data/fixtures.ts";
 import { createRecordRepositories } from "../data/repositories.ts";
+import { sessionStarted } from "../domain/fixtures.ts";
 import {
   createStaticEnvironment,
   localPath,
   type SessionId,
   sessionId,
+  streamId,
+  turnId,
   workspaceId,
 } from "../domain/index.ts";
 import { parseInvocation } from "./command-tree.ts";
@@ -48,6 +52,7 @@ async function seededHome(options: {
   readonly includeForeign?: boolean;
   readonly corrupt?: boolean;
   readonly futureSchema?: boolean;
+  readonly withTurnAndEvents?: boolean;
 }): Promise<{
   readonly home: string;
   readonly state: string;
@@ -83,7 +88,7 @@ async function seededHome(options: {
     const inserted = repositories.sessions.insert({
       sessionId: index === 0 ? KEEP : sessionId.from(`s${index}`),
       workspaceId: BOUND,
-      streamId: `stream-${index}` as never,
+      streamId: streamId.from(`stream-${index}`),
       title,
       configurationGeneration: 0 as never,
       startedAt: `2026-07-31T12:00:${String(index).padStart(2, "0")}.000Z` as never,
@@ -94,11 +99,34 @@ async function seededHome(options: {
       throw new Error("expected the session to insert");
     }
   }
+  if (options.withTurnAndEvents === true) {
+    const turn = repositories.turns.insert({
+      turnId: turnId.from("turn-1"),
+      sessionId: KEEP,
+      parentTurnId: null,
+      startedAt: "2026-07-31T12:00:00.000Z" as never,
+      completedAt: null,
+      outcome: null,
+    });
+    if (!turn.ok) {
+      throw new Error("expected the turn to insert");
+    }
+    const events = createSqliteEventStore(store);
+    const started = sessionStarted(1);
+    const withStream = {
+      ...started,
+      streamId: streamId.from("stream-0"),
+    };
+    const appended = await events.append(withStream);
+    if (!appended.ok) {
+      throw new Error("expected the event to append");
+    }
+  }
   if (options.includeForeign === true) {
     const inserted = repositories.sessions.insert({
       sessionId: FOREIGN,
       workspaceId: workspaceId.from("other-ws"),
-      streamId: "stream-foreign" as never,
+      streamId: streamId.from("stream-foreign"),
       title: "Foreign",
       configurationGeneration: 0 as never,
       startedAt: "2026-07-31T12:00:59.000Z" as never,
@@ -182,8 +210,37 @@ describe("session command parsing", () => {
     }
   });
 
+  test("routes resume, fork, rewind, and replay", async () => {
+    const resumed = await parseInvocation(["session", "resume", "keep"]);
+    expect(resumed.kind).toBe("run");
+    if (resumed.kind === "run") {
+      expect(resumed.command).toBe("session.resume");
+    }
+    const forked = await parseInvocation(["session", "fork", "keep"]);
+    expect(forked.kind).toBe("run");
+    if (forked.kind === "run") {
+      expect(forked.command).toBe("session.fork");
+    }
+    const rewound = await parseInvocation(["session", "rewind", "keep", "--at-turn", "turn-1"]);
+    expect(rewound.kind).toBe("run");
+    if (rewound.kind === "run") {
+      expect(rewound.command).toBe("session.rewind");
+      expect(rewound.sessionArgs).toMatchObject({ action: "rewind", atTurnId: "turn-1" });
+    }
+    const replayed = await parseInvocation(["session", "replay", "keep"]);
+    expect(replayed.kind).toBe("run");
+    if (replayed.kind === "run") {
+      expect(replayed.command).toBe("session.replay");
+    }
+  });
+
   test("requires an identity for show", async () => {
     const missing = await parseInvocation(["session", "show"]);
+    expect(missing.kind).toBe("invalid");
+  });
+
+  test("requires at-turn for rewind", async () => {
+    const missing = await parseInvocation(["session", "rewind", "keep"]);
     expect(missing.kind).toBe("invalid");
   });
 });
@@ -266,5 +323,59 @@ describe("session command behavior", () => {
     const shown = await run(["session", "show", "missing"], seeded);
     expect(shown.code).not.toBe(EXIT_CODES.COMPLETED);
     expect(shown.out).not.toContain("Identity");
+  });
+
+  test("resumes, forks, rewinds, and replays without repeating effects", async () => {
+    const seeded = await seededHome({ withTurnAndEvents: true });
+    const resumed = await run(["session", "resume", "keep"], seeded);
+    expect(resumed.code).toBe(EXIT_CODES.COMPLETED);
+    expect(resumed.out).toContain("Session resume");
+    expect(resumed.out).toContain("keep");
+
+    const forked = await run(
+      [
+        "session",
+        "fork",
+        "keep",
+        "--new-session-id",
+        "forked-keep",
+        "--new-stream-id",
+        "stream-forked-keep",
+      ],
+      seeded,
+    );
+    expect(forked.code).toBe(EXIT_CODES.COMPLETED);
+    expect(forked.out).toContain("Session fork");
+    expect(forked.out).toContain("forked-keep");
+
+    const rewound = await run(
+      [
+        "session",
+        "rewind",
+        "keep",
+        "--at-turn",
+        "turn-1",
+        "--new-session-id",
+        "rewound-keep",
+        "--new-stream-id",
+        "stream-rewound-keep",
+      ],
+      seeded,
+    );
+    expect(rewound.code).toBe(EXIT_CODES.COMPLETED);
+    expect(rewound.out).toContain("Session rewind");
+    expect(rewound.out).toContain("turn-1");
+
+    const replayed = await run(["session", "replay", "keep"], seeded);
+    expect(replayed.code).toBe(EXIT_CODES.COMPLETED);
+    expect(replayed.out).toContain("effect-free");
+    expect(replayed.out).toContain("playing");
+  });
+
+  test("fails closed when resume targets a missing session", async () => {
+    const seeded = await seededHome({});
+    const resumed = await run(["session", "resume", "missing"], seeded);
+    expect(resumed.code).not.toBe(EXIT_CODES.COMPLETED);
+    expect(resumed.err.length).toBeGreaterThan(0);
   });
 });

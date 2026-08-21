@@ -127,6 +127,11 @@ import {
   READ_ONLY_EFFECT,
 } from "./result.ts";
 import type { ServiceProvider } from "./services.ts";
+import type {
+  runSessionForkOrRewind,
+  runSessionReplay,
+  runSessionResume,
+} from "./session-navigation.ts";
 import { FALRYN_VERSION } from "./version.ts";
 import {
   describeWorkspaceResolveError,
@@ -2001,6 +2006,14 @@ export function stoppedResult(
         outcome,
         effect,
       );
+    case "session.resume":
+      return resultFor("session.resume", null, [], outcome, effect);
+    case "session.fork":
+      return resultFor("session.fork", null, [], outcome, effect);
+    case "session.rewind":
+      return resultFor("session.rewind", null, [], outcome, effect);
+    case "session.replay":
+      return resultFor("session.replay", null, [], outcome, effect);
     case "artifact.list":
       return resultFor<"artifact.list", ArtifactListPayload>(
         "artifact.list",
@@ -2088,6 +2101,9 @@ export type RunCommandResult =
   | Awaited<ReturnType<typeof runExport>>
   | Awaited<ReturnType<typeof runSessionList>>
   | Awaited<ReturnType<typeof runSessionShow>>
+  | Awaited<ReturnType<typeof runSessionResume>>
+  | Awaited<ReturnType<typeof runSessionForkOrRewind>>
+  | Awaited<ReturnType<typeof runSessionReplay>>
   | Awaited<ReturnType<typeof runArtifactList>>
   | Awaited<ReturnType<typeof runArtifactShow>>
   | Awaited<ReturnType<typeof runArtifactGet>>
