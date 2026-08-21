@@ -25,9 +25,9 @@ results recorded here.
 The implementation scaffold introduced by
 `503ab52545a70d4cadb3265cb356feea95d31a2f` contains:
 
-- a private Bun package pinned to Bun `1.3.14`;
+- a private Bun package pinned to Bun `1.4.0`;
 - strict TypeScript `7.0.2` configuration;
-- Biome `2.5.6` formatting and linting configuration;
+- Biome `2.5.9` formatting and linting configuration;
 - a single TypeScript bootstrap in `src/main.ts`;
 - one bootstrap smoke test in `src/main.test.ts`;
 - repository-owned quality, type-check, test, and compiled-build commands;
@@ -1656,8 +1656,8 @@ Its verified behavior:
   built on yargs. A standalone executable produced identical help to source
   mode, produced version output, and reported unknown flags, unknown commands,
   and out-of-choice values; non-English locales changed and failed nothing.
-  `@types/yargs` type-checks clean under `skipLibCheck: false` and
-  `exactOptionalPropertyTypes`, so no accommodation was added;
+  `@types/yargs` type-checks clean under `exactOptionalPropertyTypes`, so no
+  accommodation was added;
 - **only `config`, `data`, `doctor`, `export`, and `session` are declared.** Every other
   group named in `reference/CLI.md` is absent from the tree, asserted by a
   control, because parsing one would advertise it in `--help`;
@@ -2058,7 +2058,7 @@ graph before attaching the OpenAI-compatible adapter.
 
 React and OpenTUI are pinned and their packaging is proven, delivered by
 [#22](https://github.com/tyldra-org/falryn/issues/22). `react` is `19.2.8`
-and `@opentui/core`, `@opentui/react`, and `@opentui/keymap` are all `0.4.5` —
+and `@opentui/core`, `@opentui/react`, and `@opentui/keymap` are all `0.5.6` —
 one version across the three, because they are released together. The lockfile
 carries every platform's optional native package and resolves
 `@opentui/core-darwin-arm64` for this host; a multi-target release build will
@@ -2066,19 +2066,21 @@ need `bun install --os="*" --cpu="*"` and, on Linux, `process.env.OPENTUI_LIBC`
 defined at build time so only one libc branch is embedded.
 
 `tsconfig.json` gained `jsxImportSource: "@opentui/react"` and nothing else.
-`skipLibCheck` is still `false`, `exactOptionalPropertyTypes` and
-`noUncheckedIndexedAccess` are still on, and `lib` is still `["ESNext"]` — the
+`skipLibCheck` is `true` (same as Bun’s suggested base and the OpenTUI apps in
+the research references — opencode, kilocode), while `exactOptionalPropertyTypes`
+and `noUncheckedIndexedAccess` stay on, and `lib` stays `["ESNext"]` — the
 OpenTUI React documentation recommends adding `DOM`, and it is not required;
 adding it would have put browser globals in scope for every module in `src/`.
-Two upstream declaration files do not type-check under `skipLibCheck: false`,
-and both are accommodated by a type-only Bun patch in `patches/` rather than by
-loosening a compiler option: `@opentui/core` narrows `emit` in a way its base
-`EventEmitter` does not permit, and `@opentui/react` extends
-`React.JSX.IntrinsicElements` while redeclaring `a`, `span`, `input`, and the
-other names it shares with the DOM. The second patch drops the DOM intrinsics
-from the JSX namespace entirely, so `<div>` in a terminal application is now a
-type error rather than an accepted element. Both patches are pinned to `0.4.5`
-and fail loudly on an upgrade, which is when they should be retried.
+Earlier type-only Bun patches for OpenTUI declaration quirks were dropped with
+that `skipLibCheck` change; dependency `.d.ts` files are no longer type-checked.
+
+Bun is pinned at `1.4.0` (`packageManager` / `engines.bun`). CI installs that
+same version through `.github/actions/setup-bun` reading the manifest — there is
+no separate Actions Bun pin to bump. Bun 1.4 treats an unclosed `fs.promises`
+`FileHandle` collected by GC as `ERR_INVALID_STATE` (Node DEP0137 end-of-life).
+The host blob and package adapters therefore expose `releaseOpenHandles` for
+teardown, and tests that leave in-flight `wx` handles must release them before
+the store is discarded.
 
 The packaging probe passed, and was run before anything was built on OpenTUI. A
 `bun build --compile` artifact created a real `CliRenderer`, mounted a React

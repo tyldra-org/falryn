@@ -92,7 +92,7 @@ function characterWidth(character: string): number {
  * treatment of control text before sanitization. A zero-width-joiner cluster
  * is different: its constituent emoji are one rendered glyph, so summing
  * their code-point widths overestimates the cells the renderer consumes.
- * OpenTUI 0.4.5 delegates that measurement to `Bun.stringWidth` on Bun; using
+ * OpenTUI 0.5.6 delegates that measurement to `Bun.stringWidth` on Bun; using
  * the same primitive at this narrow seam keeps width, truncation, and wrapping
  * aligned with the pinned renderer without importing presentation code into the
  * domain or changing the policy for other text.

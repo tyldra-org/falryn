@@ -91,8 +91,25 @@ export type HostPackageWriterOptions = {
   readonly exportsRoot: LocalPath;
 };
 
-export function createHostPackageWriter(options: HostPackageWriterOptions): PackageWriterPort {
+export type HostPackageWriter = PackageWriterPort & {
+  /**
+   * Closes every open staged handle without deleting files.
+   *
+   * Bun 1.4+ treats an unclosed `FileHandle` collected by GC as an error.
+   * Call this from test teardown so abandoned `begin` paths cannot trip the
+   * suite when the writer is discarded.
+   */
+  readonly releaseOpenHandles: () => Promise<void>;
+};
+
+export function createHostPackageWriter(options: HostPackageWriterOptions): HostPackageWriter {
   const handles = new Map<string, FileHandle>();
+
+  const releaseOpenHandles = async (): Promise<void> => {
+    const open = [...handles.values()];
+    handles.clear();
+    await Promise.all(open.map((handle) => handle.close().catch(() => undefined)));
+  };
 
   const pathFor = (name: ExportName, staged: boolean): LocalPath | null => {
     const joined = joinPath(options.exportsRoot, staged ? `${name}${STAGED_SUFFIX}` : name);
@@ -106,6 +123,8 @@ export function createHostPackageWriter(options: HostPackageWriterOptions): Pack
     err(failure("io-failure", operation));
 
   return {
+    releaseOpenHandles,
+
     async begin(name: ExportName, signal?: AbortSignal): Promise<Result<null, PackageError>> {
       if (signal?.aborted === true) {
         return cancelled("begin");

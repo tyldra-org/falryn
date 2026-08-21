@@ -14,18 +14,24 @@ import { join } from "node:path";
 
 import {
   artifactId,
-  type BlobStorePort,
   CONTENT_DIGEST_ALGORITHM,
   contentDigest,
   type LocalPath,
   localPath,
 } from "../domain/index.ts";
 import { createSha256Hasher } from "./content-digest.ts";
-import { createHostBlobStore } from "./host-blobs.ts";
+import { createHostBlobStore, type HostBlobStore } from "./host-blobs.ts";
 
 const roots: string[] = [];
+const stores: HostBlobStore[] = [];
 
 afterEach(async () => {
+  while (stores.length > 0) {
+    const store = stores.pop();
+    if (store !== undefined) {
+      await store.releaseOpenHandles();
+    }
+  }
   while (roots.length > 0) {
     const root = roots.pop();
     if (root !== undefined) {
@@ -45,11 +51,13 @@ const OTHER = contentDigest.from(`${CONTENT_DIGEST_ALGORITHM}:${"cd".repeat(32)}
 const ID = artifactId.from("capture-1");
 const BYTES = new TextEncoder().encode("half a loaf");
 
-async function store(): Promise<{ blobs: BlobStorePort; artifacts: LocalPath; temp: LocalPath }> {
+async function store(): Promise<{ blobs: HostBlobStore; artifacts: LocalPath; temp: LocalPath }> {
   const artifacts = await temporaryRoot();
   const temp = await temporaryRoot();
+  const blobs = createHostBlobStore({ artifactsRoot: artifacts, temporaryRoot: temp });
+  stores.push(blobs);
   return {
-    blobs: createHostBlobStore({ artifactsRoot: artifacts, temporaryRoot: temp }),
+    blobs,
     artifacts,
     temp,
   };
@@ -160,7 +168,7 @@ describe("finalizing", () => {
 });
 
 describe("reading", () => {
-  async function stored(): Promise<BlobStorePort> {
+  async function stored(): Promise<HostBlobStore> {
     const { blobs } = await store();
     const location = { scope: "temporary", artifactId: ID } as const;
     await blobs.allocate(location);

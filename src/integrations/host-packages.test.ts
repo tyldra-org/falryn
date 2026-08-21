@@ -11,12 +11,19 @@ import { mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { exportName, type LocalPath, localPath, type PackageWriterPort } from "../domain/index.ts";
-import { createHostPackageWriter, STAGED_SUFFIX } from "./host-packages.ts";
+import { exportName, type LocalPath, localPath } from "../domain/index.ts";
+import { createHostPackageWriter, type HostPackageWriter, STAGED_SUFFIX } from "./host-packages.ts";
 
 const roots: string[] = [];
+const writers: HostPackageWriter[] = [];
 
 afterEach(async () => {
+  while (writers.length > 0) {
+    const packages = writers.pop();
+    if (packages !== undefined) {
+      await packages.releaseOpenHandles();
+    }
+  }
   while (roots.length > 0) {
     const root = roots.pop();
     if (root !== undefined) {
@@ -34,9 +41,11 @@ async function temporaryRoot(): Promise<LocalPath> {
 const NAME = exportName.from("export-1");
 const BYTES = new TextEncoder().encode("a whole package");
 
-async function writer(): Promise<{ packages: PackageWriterPort; root: LocalPath }> {
+async function writer(): Promise<{ packages: HostPackageWriter; root: LocalPath }> {
   const root = await temporaryRoot();
-  return { packages: createHostPackageWriter({ exportsRoot: root }), root };
+  const packages = createHostPackageWriter({ exportsRoot: root });
+  writers.push(packages);
+  return { packages, root };
 }
 
 describe("staging", () => {
@@ -145,7 +154,7 @@ describe("discarding", () => {
 });
 
 describe("reading a published package", () => {
-  async function published(): Promise<PackageWriterPort> {
+  async function published(): Promise<HostPackageWriter> {
     const { packages } = await writer();
     await packages.begin(NAME);
     await packages.write(NAME, BYTES);

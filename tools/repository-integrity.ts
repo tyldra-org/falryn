@@ -24,21 +24,21 @@ export const DIRECT_DEPENDENCY_POLICY = [
   {
     name: "@opentui/core",
     group: "dependencies",
-    version: "0.4.5",
+    version: "0.5.6",
     license: "MIT",
     repository: "https://github.com/anomalyco/opentui",
   },
   {
     name: "@opentui/keymap",
     group: "dependencies",
-    version: "0.4.5",
+    version: "0.5.6",
     license: "MIT",
     repository: "https://github.com/anomalyco/opentui",
   },
   {
     name: "@opentui/react",
     group: "dependencies",
-    version: "0.4.5",
+    version: "0.5.6",
     license: "MIT",
     repository: "https://github.com/anomalyco/opentui",
   },
@@ -59,7 +59,7 @@ export const DIRECT_DEPENDENCY_POLICY = [
   {
     name: "yargs",
     group: "dependencies",
-    version: "18.0.0",
+    version: "18.1.0",
     license: "MIT",
     repository: "https://github.com/yargs/yargs",
   },
@@ -73,7 +73,7 @@ export const DIRECT_DEPENDENCY_POLICY = [
   {
     name: "@biomejs/biome",
     group: "devDependencies",
-    version: "2.5.6",
+    version: "2.5.9",
     license: "MIT OR Apache-2.0",
     repository: "https://github.com/biomejs/biome",
   },
@@ -87,7 +87,7 @@ export const DIRECT_DEPENDENCY_POLICY = [
   {
     name: "@types/bun",
     group: "devDependencies",
-    version: "1.3.14",
+    version: "1.4.0",
     license: "MIT",
     repository: "https://github.com/DefinitelyTyped/DefinitelyTyped",
   },

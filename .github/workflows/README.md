@@ -94,5 +94,17 @@ resolved a different Bun version would produce a result the other jobs cannot be
 compared against. The action pin, dependency caching, and any
 per-platform install flag have exactly one place to change.
 
+Bun itself is not hardcoded in the workflows: `oven-sh/setup-bun` reads
+`package.json` via `bun-version-file` (`packageManager` / `engines.bun`). Bumping
+those fields is what moves CI onto a new Bun; every job that uses the composite
+action follows automatically.
+
+Dependabot (`.github/dependabot.yml`) keeps GitHub Actions SHAs current weekly
+and opens Bun package version-update PRs for **every** direct dependency in
+`package.json` (production and development, including packages added later —
+no Dependabot.yml edit required). Groups only batch those updates into fewer
+PRs. Landing still needs a human to refresh `tools/repository-integrity.ts`.
+Dependabot does not bump the Bun runtime pin.
+
 Its optional `working-directory` input installs into a subdirectory checkout
 when a job needs a second tree with its own manifest.
