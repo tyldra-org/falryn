@@ -39,6 +39,12 @@ describe("the declared tree", () => {
     expect(await commandOf("export", "--session", "s1")).toBe("export");
     expect(await commandOf("session", "list")).toBe("session.list");
     expect(await commandOf("session", "show", "s1")).toBe("session.show");
+    expect(await commandOf("session", "resume", "s1")).toBe("session.resume");
+    expect(await commandOf("session", "fork", "s1")).toBe("session.fork");
+    expect(await commandOf("session", "rewind", "s1", "--at-turn", "turn-1")).toBe(
+      "session.rewind",
+    );
+    expect(await commandOf("session", "replay", "s1")).toBe("session.replay");
     expect(await commandOf("workspace", "list")).toBe("workspace.list");
     expect(await commandOf("workspace", "show")).toBe("workspace.show");
     expect(await commandOf("workspace", "save", "app")).toBe("workspace.save");

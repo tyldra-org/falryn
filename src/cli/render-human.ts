@@ -71,6 +71,11 @@ import type {
   CommandWarning,
 } from "./result.ts";
 import { MAX_WARNINGS } from "./result.ts";
+import type {
+  SessionForkPayload,
+  SessionReplayPayload,
+  SessionResumePayload,
+} from "./session-navigation.ts";
 
 /**
  * The layout width used when the handle reported none.
@@ -666,6 +671,13 @@ function renderPayload(session: Session, result: RunCommandResult): RenderedPayl
       return renderSessionList(session, result.payload);
     case "session.show":
       return renderSessionShow(session, result.payload);
+    case "session.resume":
+      return renderSessionResume(session, result.payload);
+    case "session.fork":
+    case "session.rewind":
+      return renderSessionFork(session, result.payload, result.command);
+    case "session.replay":
+      return renderSessionReplay(session, result.payload);
     case "artifact.list":
       return renderArtifactList(session, result.payload);
     case "artifact.show":
@@ -777,6 +789,70 @@ function renderSessionShow(session: Session, payload: SessionShowPayload | null)
       `  Pinned       ${entry.pinned ? "yes" : "no"}`,
       `  Started      ${safe(entry.startedAt)}`,
       `  Closed       ${entry.closedAt === null ? "(open)" : safe(entry.closedAt)}`,
+    ],
+    diagnostics: [],
+  };
+}
+
+function renderSessionResume(
+  session: Session,
+  payload: SessionResumePayload | null,
+): RenderedPayload {
+  if (payload === null) {
+    return { lines: ["No session resume plan is available."], diagnostics: [] };
+  }
+  return {
+    lines: [
+      paint(session, "plain", "Session resume"),
+      `  Identity     ${safe(payload.sessionId)}`,
+      `  Workspace    ${safe(payload.workspaceId)}`,
+      `  Stream       ${safe(payload.streamId)}`,
+      `  After        ${payload.afterSequence === null ? "(start)" : String(payload.afterSequence)}`,
+      `  Pending      ${payload.pending}`,
+    ],
+    diagnostics: [],
+  };
+}
+
+function renderSessionFork(
+  session: Session,
+  payload: SessionForkPayload | null,
+  command: "session.fork" | "session.rewind",
+): RenderedPayload {
+  if (payload === null) {
+    return {
+      lines: [`No session ${command === "session.fork" ? "fork" : "rewind"} is available.`],
+      diagnostics: [],
+    };
+  }
+  return {
+    lines: [
+      paint(session, "plain", command === "session.fork" ? "Session fork" : "Session rewind"),
+      `  Source       ${safe(payload.sourceSessionId)}`,
+      `  New session  ${safe(payload.sessionId)}`,
+      `  Stream       ${safe(payload.streamId)}`,
+      `  Workspace    ${safe(payload.workspaceId)}`,
+      ...(payload.atTurnId === null ? [] : [`  At turn      ${safe(payload.atTurnId)}`]),
+    ],
+    diagnostics: [],
+  };
+}
+
+function renderSessionReplay(
+  session: Session,
+  payload: SessionReplayPayload | null,
+): RenderedPayload {
+  if (payload === null) {
+    return { lines: ["No session replay state is available."], diagnostics: [] };
+  }
+  return {
+    lines: [
+      paint(session, "plain", "Session replay (effect-free)"),
+      `  Identity     ${safe(payload.sessionId)}`,
+      `  Workspace    ${safe(payload.workspaceId)}`,
+      `  Status       ${safe(payload.status)}`,
+      `  At sequence  ${payload.atSequence === null ? "(none)" : String(payload.atSequence)}`,
+      `  Applied      ${payload.applied}`,
     ],
     diagnostics: [],
   };
@@ -1344,6 +1420,15 @@ function quietResultLines(result: RunCommandResult): readonly string[] {
         : result.payload.sessions.map((entry) => safe(entry.sessionId));
     case "session.show":
       return result.payload === null ? [] : [safe(result.payload.session.sessionId)];
+    case "session.resume":
+      return result.payload === null ? [] : [safe(result.payload.sessionId)];
+    case "session.fork":
+    case "session.rewind":
+      return result.payload === null ? [] : [safe(result.payload.sessionId)];
+    case "session.replay":
+      return result.payload === null
+        ? []
+        : [`${safe(result.payload.sessionId)} ${safe(result.payload.status)}`];
     case "artifact.list":
       return result.payload === null
         ? []
@@ -1485,6 +1570,10 @@ function quietFindingLines(result: RunCommandResult): readonly string[] {
         ? []
         : [`omitted ${result.payload.omitted} sessions`];
     case "session.show":
+    case "session.resume":
+    case "session.fork":
+    case "session.rewind":
+    case "session.replay":
       return [];
     case "artifact.list":
       return result.payload === null || result.payload.omitted === 0

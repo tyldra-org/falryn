@@ -89,6 +89,11 @@ import {
   type HostServiceOptions,
   type ServiceProvider,
 } from "./services.ts";
+import {
+  runSessionForkOrRewind,
+  runSessionReplay,
+  runSessionResume,
+} from "./session-navigation.ts";
 import { resolveShellConfiguration } from "./shell-configuration.ts";
 import {
   type CliStreams,
@@ -700,6 +705,26 @@ async function produce(
         throw new Error("Missing parsed session show arguments.");
       }
       return runSessionShow(services, sessionArgs, signal);
+    case "session.resume":
+      if (sessionArgs === null || sessionArgs.action !== "resume") {
+        throw new Error("Missing parsed session resume arguments.");
+      }
+      return runSessionResume(services, sessionArgs, signal);
+    case "session.fork":
+      if (sessionArgs === null || sessionArgs.action !== "fork") {
+        throw new Error("Missing parsed session fork arguments.");
+      }
+      return runSessionForkOrRewind(services, sessionArgs, signal);
+    case "session.rewind":
+      if (sessionArgs === null || sessionArgs.action !== "rewind") {
+        throw new Error("Missing parsed session rewind arguments.");
+      }
+      return runSessionForkOrRewind(services, sessionArgs, signal);
+    case "session.replay":
+      if (sessionArgs === null || sessionArgs.action !== "replay") {
+        throw new Error("Missing parsed session replay arguments.");
+      }
+      return runSessionReplay(services, sessionArgs, signal);
     case "artifact.list":
       if (artifactArgs === null || artifactArgs.action !== "list") {
         throw new Error("Missing parsed artifact list arguments.");
