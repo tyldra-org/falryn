@@ -42,10 +42,15 @@
 import { fromConfigurationIssues } from "../application/index.ts";
 import {
   assertNever,
+  type ConfigurationGeneration,
   type ConfigurationLoadOutcome,
   type ConfigurationValues,
 } from "../domain/index.ts";
-import { configurationOverridesFor, type GlobalOptions } from "./options.ts";
+import type { GlobalOptions } from "./options.ts";
+import {
+  loadProductConfiguration,
+  productConfigurationLoadRequest,
+} from "./product-configuration.ts";
 import type { ServiceProvider } from "./services.ts";
 import { type CliStreams, writeDiagnosticLine } from "./streams.ts";
 
@@ -61,32 +66,38 @@ export type ShellConfigurationRequest = {
   readonly services: (options: GlobalOptions) => ServiceProvider;
 };
 
+export type ShellBootstrapConfiguration = {
+  readonly values: ConfigurationValues;
+  readonly generation: ConfigurationGeneration;
+};
+
+/**
+ * Resolves settings and the configuration generation product bootstrap should
+ * correlate on, reporting anything that made the load unusable.
+ */
+export async function resolveShellBootstrapConfiguration(
+  globals: GlobalOptions,
+  request: ShellConfigurationRequest,
+): Promise<ShellBootstrapConfiguration> {
+  const { streams } = request;
+  const graph = request.services(globals)();
+  const loaded = await loadProductConfiguration(graph, productConfigurationLoadRequest(globals));
+
+  if (loaded.outcome.kind === "published" || loaded.outcome.kind === "unchanged") {
+    return { values: loaded.values, generation: loaded.generation };
+  }
+
+  writeDiagnosticLine(streams, whyDefaults(loaded.outcome));
+  return { values: loaded.values, generation: loaded.generation };
+}
+
 /** Resolves this run's settings, reporting anything that made them unusable. */
 export async function resolveShellConfiguration(
   globals: GlobalOptions,
   request: ShellConfigurationRequest,
 ): Promise<ConfigurationValues> {
-  const { streams } = request;
-  // Constructing the graph is cheap — roots resolved, a registry and a loader
-  // built, a layout computed from paths. Every filesystem read happens inside
-  // `load`. So the property being protected is not "construct nothing", it is
-  // construct nothing on a run that declined to launch, and the caller holds
-  // that by never reaching this.
-  const { loader, registry, configurationRoot, workspaceRoot } = request.services(globals)();
-
-  const outcome = await loader.load({
-    configurationRoot,
-    workspaceRoot,
-    profile: globals.profile,
-    overrides: configurationOverridesFor(globals),
-  });
-
-  if (outcome.kind === "published" || outcome.kind === "unchanged") {
-    return outcome.record.values;
-  }
-
-  writeDiagnosticLine(streams, whyDefaults(outcome));
-  return registry.defaults();
+  const bootstrap = await resolveShellBootstrapConfiguration(globals, request);
+  return bootstrap.values;
 }
 
 /** What every answer ends with, because the user's next question is what is in effect. */

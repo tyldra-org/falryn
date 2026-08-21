@@ -34,7 +34,6 @@ import {
 import {
   type BriefVerbosityMode,
   type CredentialReference,
-  configurationGeneration,
   type FalrynError,
   type InputStreamPort,
   ok,
@@ -57,6 +56,11 @@ import {
 } from "../integrations/index.ts";
 import { createOpenAiCompatibleAdapter } from "../providers/openai-compatible-adapter.ts";
 import type { ProviderAdapterPort } from "../providers/port.ts";
+import type { GlobalOptions } from "./options.ts";
+import {
+  loadProductConfiguration,
+  productConfigurationLoadRequest,
+} from "./product-configuration.ts";
 import {
   COMMAND_RESULT_SCHEMA_FAMILY,
   COMMAND_RESULT_SCHEMA_VERSION,
@@ -128,6 +132,11 @@ export type CodingRunOptions = {
   readonly credentialReference?: CredentialReference;
   /** OpenAI-compatible base URL when composing from credentials. */
   readonly openaiBaseUrl?: string;
+  /**
+   * Invocation globals for configuration load (#728). Production supplies
+   * profile and CLI overrides; tests may omit for an empty load request.
+   */
+  readonly globals?: GlobalOptions;
 };
 
 /**
@@ -254,7 +263,12 @@ export async function runCoding(
   const sessionId = sessionIdCodec.from(ids.sessionId);
   const turnId = turnIdCodec.from(ids.turnId);
   const traceId = traceIdCodec.from(ids.traceId);
-  const generation = configurationGeneration.from(0);
+  const configRequest =
+    options.globals === undefined
+      ? { profile: null, overrides: {} }
+      : productConfigurationLoadRequest(options.globals);
+  const configuration = await loadProductConfiguration(graph, configRequest, options.signal);
+  const generation = configuration.generation;
 
   const indexStore: WorkspaceIndexWritePort & {
     readonly last: { current: WorkspaceIndexGeneration | null };

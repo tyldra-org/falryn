@@ -23,7 +23,7 @@ import {
 } from "../application/index.ts";
 import {
   type ClockPort,
-  configurationGeneration,
+  type ConfigurationGeneration,
   type EnvironmentPort,
   type EventStorePort,
   type FileSystemPort,
@@ -54,6 +54,8 @@ export type ProductShellAttachmentPorts = {
   readonly environment: EnvironmentPort;
   readonly fileSystem: FileSystemPort;
   readonly workspaceSet: WorkspaceSet | null;
+  /** From the loader after a durable load (#728); not hardcoded generation zero. */
+  readonly configurationGeneration: ConfigurationGeneration;
   readonly signal?: AbortSignal;
   readonly platform?: LocalDataPlatform;
   readonly commands?: ReturnType<typeof createHostCommandRunner>;
@@ -79,7 +81,7 @@ export async function composeProductShellAttachments(
   );
   const sessionId = sessionIdCodec.from(`session-shell-${now}`);
   const traceId = traceIdCodec.from(`trace-shell-${now}`);
-  const generation = configurationGeneration.from(0);
+  const generation = ports.configurationGeneration;
   const commands = ports.commands ?? createHostCommandRunner();
 
   let providerAdapter: ProviderAdapterPort | undefined;
