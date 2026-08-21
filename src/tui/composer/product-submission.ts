@@ -1,18 +1,17 @@
 /**
- * Product composer submission port (#707 / #715).
+ * Product composer submission port (#707 / #715 / #717).
  *
  * Maps a composer snapshot onto the live session/turn producer: ensure a
- * session is ready, compose a planner-backed prompt, start a turn, and return
- * accepted — or fail closed with a precise unavailable reason. Lives in the
- * TUI layer because {@link SubmissionPort} is owned here; the producer itself
- * lives in application.
- *
- * Mid-turn steer policy remains #610–#613. Headless `falryn run` is #708.
- * Live vendor adapters are #709. Attachment evidence packing deepens later
- * under #701 siblings.
+ * session is ready, compose a Brief + planner-backed prompt, start a turn,
+ * and return accepted — or fail closed with a precise unavailable reason.
  */
 
-import { CONTEXT_PLANNER_OWNER, createContextPlanner } from "../../application/index.ts";
+import {
+  CONTEXT_PLANNER_OWNER,
+  composeProductBriefControls,
+  createContextPlanner,
+  type ProductBriefControls,
+} from "../../application/index.ts";
 import type { SessionTurnTranscriptProducer } from "../../application/session-turn-transcript-producer.ts";
 import {
   type ConfigurationGeneration,
@@ -39,12 +38,20 @@ export type ProductSubmissionPortOptions = {
    * the process is shutting down). Defaults to true.
    */
   readonly isAccepting?: () => boolean;
+  /** Shared Brief controls for TUI/session (#717). */
+  readonly brief?: ProductBriefControls;
+};
+
+export type ProductSubmissionPort = SubmissionPort & {
+  readonly brief: ProductBriefControls;
 };
 
 /**
  * Build a submission port that starts a real turn through the product producer.
  */
-export function createProductSubmissionPort(options: ProductSubmissionPortOptions): SubmissionPort {
+export function createProductSubmissionPort(
+  options: ProductSubmissionPortOptions,
+): ProductSubmissionPort {
   let sequence = 0;
   let sessionStarted = false;
   const nextTurnId =
@@ -54,8 +61,10 @@ export function createProductSubmissionPort(options: ProductSubmissionPortOption
       return turnId.from(`turn-submit-${sequence}`);
     });
   const planner = createContextPlanner();
+  const brief = options.brief ?? composeProductBriefControls();
 
   return {
+    brief,
     async submit(snapshot: ComposerSnapshot): Promise<SubmissionOutcome> {
       if (snapshot.text.trim() === "") {
         return unavailable(snapshot, "the composer is empty");
@@ -77,6 +86,11 @@ export function createProductSubmissionPort(options: ProductSubmissionPortOption
       }
 
       const id = nextTurnId();
+      const briefed = brief.projectForTurn({
+        turnId: id,
+        sessionId: options.sessionId,
+        configurationGeneration: options.configurationGeneration,
+      });
       const planned = planner.composeTurn({
         turnId: id,
         sessionId: options.sessionId,
@@ -84,6 +98,7 @@ export function createProductSubmissionPort(options: ProductSubmissionPortOption
         configurationGeneration: options.configurationGeneration,
         task: snapshot.text,
         candidates: [],
+        otherSections: briefed.ok ? [briefed.value.section] : [],
       });
       if (!planned.ok) {
         return unavailable(

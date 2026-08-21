@@ -188,6 +188,12 @@ export type {
   ProductAgentSessionIds,
 } from "./product-agent-runtime.ts";
 export { composeProductAgentRuntime } from "./product-agent-runtime.ts";
+export type { ProductBriefControls, ProductBriefControlsOptions } from "./product-brief.ts";
+export {
+  composeProductBriefControls,
+  describeBriefVerbosityModes,
+  PRODUCT_BRIEF_OWNER,
+} from "./product-brief.ts";
 export type {
   ProductCredentialBundle,
   ProductCredentialPorts,

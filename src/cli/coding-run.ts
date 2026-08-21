@@ -12,6 +12,7 @@ import {
   adoptForeignError,
   CONTEXT_PLANNER_OWNER,
   composeProductAgentRuntime,
+  composeProductBriefControls,
   composeProductCredentials,
   composeProductGitTools,
   composeProductIndexLifecycle,
@@ -24,10 +25,12 @@ import {
   DEFAULT_OPENAI_CREDENTIAL_REFERENCE,
   fromUnknown,
   mergeProductToolBundles,
+  PRODUCT_BRIEF_OWNER,
   PRODUCT_INDEX_LIFECYCLE_OWNER,
   resolveProviderApiKey,
 } from "../application/index.ts";
 import {
+  type BriefVerbosityMode,
   type CredentialReference,
   configurationGeneration,
   type FalrynError,
@@ -69,6 +72,8 @@ export { DEFAULT_OPENAI_CREDENTIAL_REFERENCE };
 /** Parsed prompt fragments after `falryn run` (may be empty when stdin supplies text). */
 export type CodingRunArguments = {
   readonly promptParts: readonly string[];
+  /** Brief verbosity for live prompt composition (#717). */
+  readonly brief?: BriefVerbosityMode;
 };
 
 export type CodingRunPayload = {
@@ -91,6 +96,9 @@ export type CodingRunPayload = {
   /** Product index lifecycle freshness (#716). */
   readonly indexFreshness?: string;
   readonly indexOwner?: string;
+  /** Selected Brief verbosity on the live turn (#717). */
+  readonly briefVerbosity?: string;
+  readonly briefOwner?: string;
 };
 
 export type CodingRunResult = CommandResultOf<typeof CODING_RUN_COMMAND, CodingRunPayload>;
@@ -423,6 +431,17 @@ export async function runCoding(
     configurationGeneration: generation,
     task: resolved.prompt,
     candidates: [],
+    otherSections: (() => {
+      const briefControls = composeProductBriefControls({
+        initialVerbosity: arguments_.brief ?? "balanced",
+      });
+      const briefed = briefControls.projectForTurn({
+        turnId,
+        sessionId,
+        configurationGeneration: generation,
+      });
+      return briefed.ok ? [briefed.value.section] : [];
+    })(),
   });
   if (!planned.ok) {
     return codingResult(
@@ -434,6 +453,10 @@ export async function runCoding(
         stage: "compose-failed",
         eventCount: producer.events().length,
         contextPlannerOwner: CONTEXT_PLANNER_OWNER,
+        indexFreshness,
+        indexOwner,
+        briefVerbosity: arguments_.brief ?? "balanced",
+        briefOwner: PRODUCT_BRIEF_OWNER,
       },
       [
         adoptForeignError(
@@ -449,6 +472,8 @@ export async function runCoding(
   }
   const contextPackItems = planned.value.plan.pack.items.length;
   const contextPlannerOwner = CONTEXT_PLANNER_OWNER;
+  const briefVerbosity = arguments_.brief ?? "balanced";
+  const briefOwner = PRODUCT_BRIEF_OWNER;
 
   const provider = composed.value.requireProviderAdapter();
   if (!provider.ok) {
@@ -474,6 +499,8 @@ export async function runCoding(
           contextPlannerOwner,
           indexFreshness,
           indexOwner,
+          briefVerbosity,
+          briefOwner,
         },
         [
           adoptForeignError(
@@ -501,6 +528,8 @@ export async function runCoding(
         contextPlannerOwner,
         indexFreshness,
         indexOwner,
+        briefVerbosity,
+        briefOwner,
       },
       [
         adoptForeignError(
@@ -541,6 +570,8 @@ export async function runCoding(
         contextPlannerOwner,
         indexFreshness,
         indexOwner,
+        briefVerbosity,
+        briefOwner,
       },
       [
         fromUnknown(new Error(`turn could not complete (${completed.error.code})`), {
@@ -562,6 +593,8 @@ export async function runCoding(
       contextPlannerOwner,
       indexFreshness,
       indexOwner,
+      briefVerbosity,
+      briefOwner,
     },
     [],
     hostedOutcome,
