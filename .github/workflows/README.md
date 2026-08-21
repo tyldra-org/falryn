@@ -99,5 +99,12 @@ Bun itself is not hardcoded in the workflows: `oven-sh/setup-bun` reads
 those fields is what moves CI onto a new Bun; every job that uses the composite
 action follows automatically.
 
+Dependabot (`.github/dependabot.yml`) keeps GitHub Actions SHAs current weekly
+and opens Bun package version-update PRs (grouped: OpenTUI, other production,
+development). Those PRs still need a human to refresh
+`tools/repository-integrity.ts` and, for OpenTUI, the type-only `patches/`
+files before `bun run verify:repository` will pass. Dependabot does not bump
+the Bun runtime pin.
+
 Its optional `working-directory` input installs into a subdirectory checkout
 when a job needs a second tree with its own manifest.

@@ -3,9 +3,14 @@
 # the release it names has been superseded, so an update has to be scheduled
 # rather than noticed.
 #
-# Bun / package ecosystems are intentionally omitted: direct dependency bumps
-# are admitted by `bun run tools/repository-integrity.ts` and stay manual (or
-# a later Dependabot entry) so noisy OpenTUI-style PRs do not land every week.
+# Bun package updates are enabled via `package-ecosystem: bun`. Direct
+# dependency bumps still have to pass `bun run tools/repository-integrity.ts`
+# (update `DIRECT_DEPENDENCY_POLICY` in that file with the PR). OpenTUI bumps
+# also need the type-only patches under `patches/` regenerated for the new
+# version — Dependabot cannot do that step.
+#
+# Bun itself (`packageManager` / `engines.bun`) is not a package Dependabot
+# updates; bump that pin when adopting a new Bun runtime.
 version: 2
 
 updates:
@@ -28,3 +33,25 @@ updates:
       prefix: ci
     labels:
       - "type: infrastructure"
+
+  - package-ecosystem: bun
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: build
+      include: scope
+    labels:
+      - "type: infrastructure"
+    groups:
+      opentui:
+        patterns:
+          - "@opentui/*"
+      production-deps:
+        dependency-type: production
+        exclude-patterns:
+          - "@opentui/*"
+      development-deps:
+        dependency-type: development
