@@ -574,10 +574,10 @@ describe.if(runnable)("the compiled shell on a real terminal", () => {
       expect(run.exitCode).toBe(EXIT_CODES.COMPLETED);
       expect(opened).toContain("Help");
       expect(opened).toContain("Ctrl+C ends the session");
-      // The focused OpenTUI scrollbox reaches the registry's final command and
-      // keeps its unavailability reason visible rather than truncating it away.
-      expect(scrolled).toContain("Decline");
-      expect(scrolled).toContain("nothing is waiting for confirmation");
+      // The focused OpenTUI scrollbox reaches the registry's final command
+      // (task-intelligence advice, #726) rather than truncating it away.
+      expect(scrolled).toContain("Task progress");
+      expect(scrolled).toContain("Decompose outcome");
       // And closing gives the primary view back. Asserted on what the *step*
       // drew, because the transcript keeps every byte the overlay ever wrote.
       //
