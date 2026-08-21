@@ -41,6 +41,7 @@ import {
   createHostManagedServicePort,
   createHostProcessCapturePort,
   hostPlatform,
+  type OwnedProcessRegistry,
 } from "../integrations/index.ts";
 import { createOpenAiCompatibleAdapter } from "../providers/openai-compatible-adapter.ts";
 import type { ProviderAdapterPort } from "../providers/port.ts";
@@ -59,6 +60,7 @@ export type ProductShellAttachmentPorts = {
   readonly signal?: AbortSignal;
   readonly platform?: LocalDataPlatform;
   readonly commands?: ReturnType<typeof createHostCommandRunner>;
+  readonly ownedProcesses?: OwnedProcessRegistry;
 };
 
 export type ProductShellAttachments = {
@@ -82,7 +84,11 @@ export async function composeProductShellAttachments(
   const sessionId = sessionIdCodec.from(`session-shell-${now}`);
   const traceId = traceIdCodec.from(`trace-shell-${now}`);
   const generation = ports.configurationGeneration;
-  const commands = ports.commands ?? createHostCommandRunner();
+  const commands =
+    ports.commands ??
+    createHostCommandRunner(
+      ports.ownedProcesses === undefined ? {} : { ownedProcesses: ports.ownedProcesses },
+    );
 
   let providerAdapter: ProviderAdapterPort | undefined;
   const credentials = composeProductCredentials({
@@ -118,7 +124,10 @@ export async function composeProductShellAttachments(
       ? null
       : composeProductProcessTools({
           generation,
-          capture: createHostProcessCapturePort({ clock: ports.clock }),
+          capture: createHostProcessCapturePort({
+            clock: ports.clock,
+            ...(ports.ownedProcesses === undefined ? {} : { ownedProcesses: ports.ownedProcesses }),
+          }),
           workspaceCwd: String(primaryWorkspaceRoot(ports.workspaceSet).path),
         });
   const gitTools =
@@ -127,13 +136,20 @@ export async function composeProductShellAttachments(
       : composeProductGitTools({
           generation,
           git: createHostGitPort({
-            capture: createHostProcessCapturePort({ clock: ports.clock }),
+            capture: createHostProcessCapturePort({
+              clock: ports.clock,
+              ...(ports.ownedProcesses === undefined
+                ? {}
+                : { ownedProcesses: ports.ownedProcesses }),
+            }),
             clock: ports.clock,
           }),
           gitExecutable: "/usr/bin/git",
           startPath: String(primaryWorkspaceRoot(ports.workspaceSet).path),
         });
-  const managedServices = createHostManagedServicePort();
+  const managedServices = createHostManagedServicePort(
+    ports.ownedProcesses === undefined ? {} : { ownedProcesses: ports.ownedProcesses },
+  );
   const languageTools =
     ports.workspaceSet === null
       ? null

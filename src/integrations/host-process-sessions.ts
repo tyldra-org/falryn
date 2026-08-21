@@ -52,6 +52,7 @@ import {
   validatePtySessionRequest,
 } from "../domain/index.ts";
 import { err, ok, type Result } from "../domain/result.ts";
+import type { OwnedProcessRegistry } from "./host-owned-process-registry.ts";
 import { ownedTreeSpawnOptions, signalOwnedTree } from "./host-process-tree.ts";
 
 type HostSubprocess = Bun.Subprocess;
@@ -101,7 +102,12 @@ type StopIntent =
 type FailureIntent = Extract<StopIntent, { readonly kind: "failure" }>;
 type RestartFailureReason = "no-restart-policy" | "restart-budget-exhausted";
 
-export function createHostPtySessionPort(): PtySessionPort {
+export type HostPtySessionPortOptions = {
+  readonly ownedProcesses?: OwnedProcessRegistry;
+};
+
+export function createHostPtySessionPort(options: HostPtySessionPortOptions = {}): PtySessionPort {
+  const ownedProcesses = options.ownedProcesses;
   const sessions = new Map<PtySessionId, HostPtySession>();
   let nextId = 1;
 
@@ -146,6 +152,9 @@ export function createHostPtySessionPort(): PtySessionPort {
           return err({ kind: "pty", code: "unsupported" });
         }
         session.attachProcess(child, terminal);
+        if (typeof child.pid === "number") {
+          ownedProcesses?.adopt(child.pid, child.exited);
+        }
         sessions.set(sessionId, session);
         session.announceOpened();
         void session.watchExit();
@@ -438,7 +447,14 @@ class HostPtySession {
   }
 }
 
-export function createHostManagedServicePort(): ManagedServicePort {
+export type HostManagedServicePortOptions = {
+  readonly ownedProcesses?: OwnedProcessRegistry;
+};
+
+export function createHostManagedServicePort(
+  options: HostManagedServicePortOptions = {},
+): ManagedServicePort {
+  const ownedProcesses = options.ownedProcesses;
   const services = new Map<ManagedServiceId, HostManagedService>();
 
   return {
@@ -473,7 +489,7 @@ export function createHostManagedServicePort(): ManagedServicePort {
           maximum: MAX_RETAINED_MANAGED_SERVICES,
         });
       }
-      const service = new HostManagedService(request);
+      const service = new HostManagedService(request, ownedProcesses);
       services.set(request.serviceId, service);
       return service.start();
     },
@@ -518,7 +534,6 @@ export function createHostManagedServicePort(): ManagedServicePort {
 
 class HostManagedService {
   private readonly listeners = new Set<ManagedServiceListener>();
-  private readonly request: ManagedServiceRequest;
   private generation: ServiceGeneration | null = null;
   private state: ManagedServiceSnapshot["state"] = "stopped";
   private child: HostSubprocess | null = null;
@@ -540,8 +555,13 @@ class HostManagedService {
   private exitPromise: Promise<ManagedServiceExit> | null = null;
   private writeChain: Promise<void> = Promise.resolve();
 
-  constructor(request: ManagedServiceRequest) {
-    this.request = request;
+  private readonly ownedProcesses: OwnedProcessRegistry | undefined;
+
+  constructor(
+    private readonly request: ManagedServiceRequest,
+    ownedProcesses?: OwnedProcessRegistry,
+  ) {
+    this.ownedProcesses = ownedProcesses;
   }
 
   isActive(): boolean {
@@ -694,6 +714,9 @@ class HostManagedService {
         stderr: "pipe",
       });
       this.child = child;
+      if (typeof child.pid === "number") {
+        this.ownedProcesses?.adopt(child.pid, child.exited);
+      }
       this.stdin = fileSink(child.stdin);
       this.emit({ kind: "started", pid: child.pid, generation });
       if (previousGeneration !== null) {

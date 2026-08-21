@@ -84,6 +84,7 @@ import {
   createHostCommandRunner,
   createHostEnvironment,
   createHostFileSystem,
+  createOwnedProcessRegistry,
   createProcessSignalPort,
   createSha256Hasher,
   hostHome,
@@ -122,10 +123,12 @@ export type BootstrapReport = {
 
 export async function main(options: BootstrapOptions = {}): Promise<BootstrapReport> {
   const clock = createSystemClock();
+  const ownedProcesses = createOwnedProcessRegistry();
   const lifecycle = createRuntimeLifecycle({
     clock,
     signals: createProcessSignalPort(),
   });
+  lifecycle.shutdown.register(ownedProcesses.shutdownParticipant);
 
   const environment = options.environment ?? createHostEnvironment();
   const fileSystem = createHostFileSystem();
@@ -244,7 +247,7 @@ export async function main(options: BootstrapOptions = {}): Promise<BootstrapRep
     const eventStore = createSqliteEventStore(opened.value);
     const productCredentials = composeProductCredentials({
       clock: systemClock,
-      commands: createHostCommandRunner(),
+      commands: createHostCommandRunner({ ownedProcesses: ownedProcesses.registry }),
       platform: options.platform ?? hostPlatform(),
       environment,
     });

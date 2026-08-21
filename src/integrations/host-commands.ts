@@ -35,9 +35,15 @@ import {
   MAX_COMMAND_OUTPUT_BYTES,
   MAX_COMMAND_SCRIPT_BYTES,
 } from "../domain/index.ts";
+import type { OwnedProcessRegistry } from "./host-owned-process-registry.ts";
 import { escalateOwnedTree, ownedTreeSpawnOptions } from "./host-process-tree.ts";
 
-export function createHostCommandRunner(): CommandRunnerPort {
+export type HostCommandRunnerOptions = {
+  readonly ownedProcesses?: OwnedProcessRegistry;
+};
+
+export function createHostCommandRunner(options: HostCommandRunnerOptions = {}): CommandRunnerPort {
+  const ownedProcesses = options.ownedProcesses;
   return {
     async run(request: CommandRequest): Promise<CommandOutcome> {
       const invalid = invalidRequest(request);
@@ -87,6 +93,9 @@ export function createHostCommandRunner(): CommandRunnerPort {
           signal: controller.signal,
         });
         child = spawned;
+        if (typeof spawned.pid === "number") {
+          ownedProcesses?.adopt(spawned.pid, spawned.exited);
+        }
         if (ended !== null && typeof spawned.pid === "number") {
           treeStop = escalateOwnedTree({ pid: spawned.pid, exited: spawned.exited });
         }

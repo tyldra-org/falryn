@@ -35,7 +35,11 @@ import {
   type ScopeId,
   type TerminalOutcome,
 } from "../domain/index.ts";
-import { createProcessSignalPort } from "../integrations/index.ts";
+import {
+  createOwnedProcessRegistry,
+  createProcessSignalPort,
+  type OwnedProcessRegistry,
+} from "../integrations/index.ts";
 
 /**
  * What governs one invocation.
@@ -59,6 +63,13 @@ export type InvocationGovernance = {
    * terminal back on it.
    */
   readonly shutdown?: ShutdownCoordinator;
+  /**
+   * Adopts owned subprocess trees for the `terminate-children` shutdown phase.
+   *
+   * Absent when no composed runtime registered the participant — the same cases
+   * where `shutdown` is absent.
+   */
+  readonly ownedProcesses?: OwnedProcessRegistry;
   /**
    * The scope the invocation is derived under. The tree's root when absent.
    */
@@ -110,7 +121,9 @@ export type HostGovernance = {
  */
 export function createHostGovernance(scopeId?: ScopeId): HostGovernance {
   const clock = createSystemClock();
+  const ownedProcesses = createOwnedProcessRegistry();
   const lifecycle = createRuntimeLifecycle({ clock, signals: createProcessSignalPort() });
+  lifecycle.shutdown.register(ownedProcesses.shutdownParticipant);
   return {
     governance: {
       clock,
@@ -119,6 +132,7 @@ export function createHostGovernance(scopeId?: ScopeId): HostGovernance {
       // it is registering with the sequence an interrupt actually starts —
       // rather than with a second one nothing would ever run.
       shutdown: lifecycle.shutdown,
+      ownedProcesses: ownedProcesses.registry,
       ...(scopeId === undefined ? {} : { scopeId }),
     },
     dispose: () => lifecycle.dispose(),
