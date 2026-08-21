@@ -12,6 +12,7 @@ import {
   composeProductCredentials,
   composeProductGitTools,
   composeProductLanguageTools,
+  composeProductMemoryTools,
   composeProductProcessTools,
   composeProductWorkspaceTools,
   createDebugAdapterSupervisor,
@@ -139,14 +140,21 @@ export async function composeProductShellAttachments(
           languageServers: createLanguageServerSupervisor(managedServices),
           debugAdapters: createDebugAdapterSupervisor(managedServices),
         });
+  const memoryTools =
+    ports.workspaceSet === null ? null : composeProductMemoryTools({ generation });
   const productTools =
-    workspaceTools === null || processTools === null || gitTools === null || languageTools === null
+    workspaceTools === null ||
+    processTools === null ||
+    gitTools === null ||
+    languageTools === null ||
+    memoryTools === null
       ? null
       : mergeProductToolBundles(generation, [
           workspaceTools,
           processTools,
           gitTools,
           languageTools,
+          memoryTools,
         ]);
 
   const composed = composeProductAgentRuntime({
