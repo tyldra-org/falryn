@@ -17,6 +17,8 @@ import {
   composeProductGitTools,
   composeProductIndexLifecycle,
   composeProductLanguageTools,
+  composeProductMemoryTools,
+  composeProductMemoryTurn,
   composeProductProcessTools,
   composeProductWorkspaceTools,
   createContextPlanner,
@@ -321,11 +323,13 @@ export async function runCoding(
     languageServers: createLanguageServerSupervisor(managedServices),
     debugAdapters: createDebugAdapterSupervisor(managedServices),
   });
+  const memoryTools = composeProductMemoryTools({ generation });
   const productTools = mergeProductToolBundles(generation, [
     workspaceTools,
     processTools,
     gitTools,
     languageTools,
+    memoryTools,
   ]);
 
   const composed = composeProductAgentRuntime({
@@ -440,7 +444,23 @@ export async function runCoding(
         sessionId,
         configurationGeneration: generation,
       });
-      return briefed.ok ? [briefed.value.section] : [];
+      const memoryTurn = composeProductMemoryTurn({
+        admission: memoryTools.admission,
+        recall: memoryTools.recall,
+      }).endTurn({
+        turnId,
+        sessionId,
+        workspaceId,
+        task: resolved.prompt,
+      });
+      const sections = [];
+      if (briefed.ok) {
+        sections.push(briefed.value.section);
+      }
+      if (memoryTurn.ok && memoryTurn.value.memorySection !== null) {
+        sections.push(memoryTurn.value.memorySection);
+      }
+      return sections;
     })(),
   });
   if (!planned.ok) {

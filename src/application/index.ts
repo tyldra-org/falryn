@@ -224,6 +224,12 @@ export type {
 } from "./product-loom.ts";
 export { composeProductLoomContext, PRODUCT_LOOM_OWNER } from "./product-loom.ts";
 export type {
+  ProductMemoryTurn,
+  ProductMemoryTurnPorts,
+  ProductMemoryTurnResult,
+} from "./product-memory-turn.ts";
+export { composeProductMemoryTurn } from "./product-memory-turn.ts";
+export type {
   ProductGitToolPorts,
   ProductGitTools,
 } from "./product-tools-git.ts";
@@ -239,6 +245,14 @@ export {
   composeProductLanguageTools,
   PRODUCT_LANGUAGE_TOOLS_OWNER,
 } from "./product-tools-language.ts";
+export type {
+  ProductMemoryToolPorts,
+  ProductMemoryTools,
+} from "./product-tools-memory.ts";
+export {
+  composeProductMemoryTools,
+  PRODUCT_MEMORY_TOOLS_OWNER,
+} from "./product-tools-memory.ts";
 export type { ProductToolBundle } from "./product-tools-merge.ts";
 export { mergeProductToolBundles } from "./product-tools-merge.ts";
 export type {
