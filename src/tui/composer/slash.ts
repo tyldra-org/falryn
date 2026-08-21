@@ -48,6 +48,11 @@ export const WORKSPACE_SLASH_ALIASES: readonly ComposerSlashAlias[] = [
     commandId: "workspace.show",
     argument: "none",
   },
+  {
+    forms: ["/brief"],
+    commandId: "brief.set",
+    argument: "layout-name",
+  },
 ];
 
 export type ParsedComposerSlash =

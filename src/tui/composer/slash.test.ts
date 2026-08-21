@@ -87,6 +87,10 @@ describe("parseComposerSlash", () => {
     for (const alias of WORKSPACE_SLASH_ALIASES) {
       expect(["none", "path", "layout-name"]).toContain(alias.argument);
       expect(commandById(alias.commandId)?.id).toBe(alias.commandId);
+      if (alias.commandId === "brief.set") {
+        expect(workspacePanelForSlashCommand(alias.commandId)).toBeNull();
+        continue;
+      }
       expect(workspacePanelForSlashCommand(alias.commandId)).not.toBeNull();
     }
   });

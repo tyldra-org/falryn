@@ -188,6 +188,7 @@ type RawArguments = {
   readonly force: boolean | undefined;
   readonly "add-dir": readonly string[] | undefined;
   readonly prompt: readonly string[] | undefined;
+  readonly brief: string | undefined;
   readonly format: string;
   readonly color: string;
   readonly quiet: boolean;
@@ -269,10 +270,16 @@ function build(argv: readonly string[], lenientPositionals = false): ReturnType<
         "run [prompt..]",
         "Execute a coding task headlessly with text or structured output.",
         (group) =>
-          group.positional("prompt", {
-            type: "string",
-            describe: "task text; omit to read UTF-8 from stdin (never prompts)",
-          }),
+          group
+            .positional("prompt", {
+              type: "string",
+              describe: "task text; omit to read UTF-8 from stdin (never prompts)",
+            })
+            .option("brief", {
+              type: "string",
+              choices: ["compact", "balanced", "detailed", "auto"] as const,
+              describe: "Brief response-style verbosity for the live turn (#717)",
+            }),
       )
       .command("export", "Preview or write a versioned export bundle.", (group) =>
         group
@@ -599,6 +606,7 @@ function isRawArguments(value: unknown): value is RawArguments {
     (field("prompt") === undefined ||
       (Array.isArray(field("prompt")) &&
         (field("prompt") as unknown[]).every((item) => typeof item === "string"))) &&
+    optionalString(field("brief")) &&
     typeof field("format") === "string" &&
     typeof field("color") === "string" &&
     typeof field("quiet") === "boolean" &&
@@ -709,6 +717,13 @@ function runArgumentsFor(
     return null;
   }
   // yargs puts `run [prompt..]` into `prompt`, not into `_`.
+  const brief = parsed.brief;
+  if (brief !== undefined) {
+    return {
+      promptParts: parsed.prompt ?? [],
+      brief: brief as "compact" | "balanced" | "detailed" | "auto",
+    };
+  }
   return { promptParts: parsed.prompt ?? [] };
 }
 

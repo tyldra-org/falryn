@@ -8,9 +8,11 @@ import {
   enhancePrompt,
   type FileAttachmentProbe,
   type MidTurnInputService,
+  type ProductBriefControls,
 } from "../../application/index.ts";
 import {
   type AttachmentDescriptor,
+  isBriefVerbosityMode,
   MAX_EVIDENCE_INLINE_BYTES,
   parseMentions,
 } from "../../domain/index.ts";
@@ -112,6 +114,8 @@ export type ShellRuntimeOptions = {
   readonly workspaceController?: WorkspaceController | null;
   /** When set, submit-while-active classifies through #611. */
   readonly midTurn?: MidTurnInputService | null;
+  /** Product Brief controls for `/brief` (#717). */
+  readonly brief?: ProductBriefControls | null;
 };
 
 const encoder = new TextEncoder();
@@ -420,6 +424,50 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
         return;
       }
 
+      if (slash.commandId === "brief.set") {
+        const submissionBrief =
+          options.submission !== undefined &&
+          options.submission !== null &&
+          "brief" in options.submission
+            ? (options.submission as { brief: ProductBriefControls }).brief
+            : null;
+        const brief = options.brief ?? submissionBrief;
+        if (brief === null) {
+          dispatch({
+            kind: "notice",
+            message: "Brief controls are not attached to this shell.",
+          });
+          return;
+        }
+        const mode = slash.argument?.trim() ?? "";
+        if (mode === "") {
+          dispatch({
+            kind: "notice",
+            message: `Brief verbosity is ${brief.getVerbosity()} (use /brief compact|balanced|detailed|auto).`,
+          });
+          dispatch({ kind: "composer", action: { kind: "draft", text: "" } });
+          return;
+        }
+        if (!isBriefVerbosityMode(mode)) {
+          dispatch({
+            kind: "notice",
+            message: `Unsupported Brief verbosity “${mode}”. Use compact|balanced|detailed|auto.`,
+          });
+          return;
+        }
+        const set = brief.setVerbosity(mode);
+        if (!set.ok) {
+          dispatch({ kind: "notice", message: `Could not set Brief verbosity to ${mode}.` });
+          return;
+        }
+        dispatch({
+          kind: "notice",
+          message: `Brief verbosity set to ${set.value}.`,
+        });
+        dispatch({ kind: "composer", action: { kind: "draft", text: "" } });
+        return;
+      }
+
       const panel = workspacePanelForSlashCommand(slash.commandId);
       if (panel === null) {
         dispatch({ kind: "notice", message: `No workspace panel for ${slash.commandId}.` });
@@ -455,7 +503,14 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
         action: { kind: "submit", attachments: resolved.attachments },
       });
     })();
-  }, [fileProbe, options.midTurn, options.workspaceController, submitMidTurn]);
+  }, [
+    fileProbe,
+    options.brief,
+    options.midTurn,
+    options.submission,
+    options.workspaceController,
+    submitMidTurn,
+  ]);
 
   const run = useCallback(
     (id: string): boolean => {
