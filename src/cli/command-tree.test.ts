@@ -67,6 +67,7 @@ describe("the declared tree", () => {
     expect(await commandOf("workspace", "save", "app")).toBe("workspace.save");
     expect(await commandOf("workspace", "load", "app")).toBe("workspace.load");
     expect(await commandOf("run", "fix", "the", "bug")).toBe("run");
+    expect(await commandOf("completion", "bash")).toBe("completion");
   });
 
   test("declares no group whose capability does not exist", async () => {

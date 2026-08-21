@@ -87,6 +87,8 @@ export const COMMAND_IDS = [
   "workspace.show",
   "workspace.save",
   "workspace.load",
+  /** Shell completion install script (#731). */
+  "completion",
   /** Headless coding entry (#708). */
   "run",
   /** Help for the root or for a subcommand. */

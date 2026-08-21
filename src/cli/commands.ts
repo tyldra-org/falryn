@@ -2262,6 +2262,8 @@ export function stoppedResult(
       );
     case "run":
       return resultFor<"run", CodingRunPayload>("run", null, [], outcome, effect);
+    case "completion":
+      throw new Error("completion is handled before services are constructed.");
     default:
       // A command added without a branch fails to compile here rather than
       // reporting a stopped run under someone else's command identity.

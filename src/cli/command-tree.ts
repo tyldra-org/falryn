@@ -224,6 +224,11 @@ export type ConfigSetArguments = {
   readonly expectedRevision: string | null;
 };
 
+/** Command-specific inputs for `falryn completion`. */
+export type CompletionCommandArguments = {
+  readonly shell: "bash" | "zsh" | "fish";
+};
+
 export type { TaskCommandArguments };
 
 /**
@@ -248,6 +253,7 @@ export type Invocation =
       readonly artifactArgs: ArtifactCommandArguments | null;
       readonly workspaceArgs: WorkspaceCommandArguments | null;
       readonly configSetArgs: ConfigSetArguments | null;
+      readonly completionArgs: CompletionCommandArguments | null;
       readonly runArgs: CodingRunArguments | null;
       readonly taskArgs: TaskCommandArguments | null;
       readonly commitPlanArgs: TaskCommitPlanArguments | null;
@@ -298,6 +304,7 @@ type RawArguments = {
   readonly key: string | undefined;
   readonly value: string | undefined;
   readonly revision: string | undefined;
+  readonly shell: string | undefined;
   readonly "file-scope": string | undefined;
   readonly statement: string | undefined;
   readonly "outcome-id": string | undefined;
@@ -684,6 +691,13 @@ function build(argv: readonly string[], lenientPositionals = false): ReturnType<
               describe: "overwrite an existing saved layout (save only)",
             }),
       )
+      .command("completion <shell>", "Print a shell completion script for installation.", (group) =>
+        group.positional("shell", {
+          type: "string",
+          choices: ["bash", "zsh", "fish"] as const,
+          describe: "target shell (bash, zsh, or fish)",
+        }),
+      )
       .option("format", {
         type: "string",
         choices: OUTPUT_FORMATS,
@@ -800,7 +814,7 @@ export async function parseInvocation(argv: readonly string[]): Promise<Invocati
     return { kind: "version", options };
   }
 
-  const command = commandFrom(positional, parsed.action ?? null);
+  const command = commandFrom(positional, parsed.action ?? null, parsed.shell);
   if (command === null) {
     return { kind: "invalid", message: `Unknown command: ${positional.join(" ")}` };
   }
@@ -839,6 +853,10 @@ export async function parseInvocation(argv: readonly string[]): Promise<Invocati
   const configSetArgs = configSetArgumentsFor(command, parsed);
   if (typeof configSetArgs === "string") {
     return { kind: "invalid", message: configSetArgs };
+  }
+  const completionArgs = completionArgumentsFor(command, parsed);
+  if (typeof completionArgs === "string") {
+    return { kind: "invalid", message: completionArgs };
   }
   const runArgs = runArgumentsFor(command, parsed);
   let taskArgs: TaskCommandArguments | null = null;
@@ -880,6 +898,7 @@ export async function parseInvocation(argv: readonly string[]): Promise<Invocati
     artifactArgs,
     workspaceArgs,
     configSetArgs,
+    completionArgs,
     runArgs,
     taskArgs,
     commitPlanArgs,
@@ -1032,7 +1051,11 @@ function optionalBoolean(value: unknown): value is boolean | undefined {
 }
 
 /** The command a positional vector names, or `null` when it names none. */
-function commandFrom(positional: readonly string[], action: string | null): RunnableCommand | null {
+function commandFrom(
+  positional: readonly string[],
+  action: string | null,
+  shell: string | undefined,
+): RunnableCommand | null {
   const [group] = positional;
   if (group === undefined) {
     // The no-argument invocation. `src/cli/dispatch.ts` decides from observed
@@ -1042,6 +1065,15 @@ function commandFrom(positional: readonly string[], action: string | null): Runn
   }
   if (group === "doctor") {
     return action === null ? "doctor" : null;
+  }
+  if (group === "completion") {
+    if (action !== null) {
+      return null;
+    }
+    if (shell === "bash" || shell === "zsh" || shell === "fish") {
+      return "completion";
+    }
+    return null;
   }
   if (group === "run") {
     // Remaining positionals are the prompt; there is no nested action.
@@ -1151,6 +1183,25 @@ function commandFrom(positional: readonly string[], action: string | null): Runn
     }
   }
   return null;
+}
+
+function completionArgumentsFor(
+  command: RunnableCommand,
+  parsed: RawArguments,
+): CompletionCommandArguments | null | string {
+  if (command !== "completion") {
+    return null;
+  }
+  if (parsed.shell === undefined) {
+    return "Argument shell is required for completion; choose bash, zsh, or fish.";
+  }
+  if (parsed.shell !== "bash" && parsed.shell !== "zsh" && parsed.shell !== "fish") {
+    return `Argument shell: "${parsed.shell}" is not valid.`;
+  }
+  if (parsed.name !== undefined) {
+    return "Argument name is only valid with data backup, restore, inspect, or workspace save/load.";
+  }
+  return { shell: parsed.shell };
 }
 
 function configSetArgumentsFor(
