@@ -34,6 +34,7 @@ import {
   type ExportError,
   type FalrynError,
   type IdentityError,
+  type ImportError,
   isErrorCategory,
   isUnreadSource,
   MAX_CAUSE_DETAIL_LENGTH,
@@ -864,6 +865,85 @@ export function fromExportError(error: ExportError, context: ErrorContext = {}):
       });
     default:
       return assertNever(error, "unhandled export error");
+  }
+}
+
+/**
+ * Folds an import or effect-free replay failure into the runtime contract.
+ *
+ * Verification and manifest failures fail closed before any partial apply.
+ * Nested export, record, artifact, and event failures keep their translators.
+ */
+export function fromImportError(error: ImportError, context: ErrorContext = {}): FalrynError {
+  switch (error.code) {
+    case "unverified-package":
+      return build({
+        code: "data.import.unverified-package",
+        category: "data",
+        message: "The export package failed verification and was not imported.",
+        retryable: false,
+        effect: "none",
+        cause: { source: "import", code: error.code, detail: null },
+        ...context,
+      });
+    case "malformed-record":
+      return build({
+        code: "data.import.malformed-record",
+        category: "data",
+        message: "The export records member could not be parsed.",
+        retryable: false,
+        effect: "none",
+        cause: {
+          source: "import",
+          code: error.code,
+          detail: error.issues.map((issue) => `${issue.path || "<root>"}:${issue.code}`).join(", "),
+        },
+        ...context,
+      });
+    case "identity-collision":
+      return build({
+        code: "data.import.identity-collision",
+        category: "data",
+        message: "The export package declares an identity that already exists locally.",
+        retryable: false,
+        effect: "none",
+        cause: {
+          source: "import",
+          code: error.code,
+          detail: `${error.entity}:${error.identity}`,
+        },
+        ...context,
+      });
+    case "empty-package":
+      return build({
+        code: "data.import.empty-package",
+        category: "data",
+        message: "The export package contains no importable sessions.",
+        retryable: false,
+        effect: "none",
+        cause: { source: "import", code: error.code, detail: null },
+        ...context,
+      });
+    case "cancelled":
+      return build({
+        code: "cancellation.import.cancelled",
+        category: "cancellation",
+        message: "The import was cancelled before it finished.",
+        retryable: true,
+        effect: "none",
+        cause: { source: "import", code: error.code, detail: null },
+        ...context,
+      });
+    case "export":
+      return fromExportError(error.error, context);
+    case "record":
+      return fromRecordError(error.error, context);
+    case "artifact":
+      return fromArtifactError(error.error, context);
+    case "events":
+      return fromEventStoreError(error.error, context);
+    default:
+      return assertNever(error, "unhandled import error");
   }
 }
 

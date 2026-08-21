@@ -115,6 +115,7 @@ import type {
   SessionCommandArguments,
   WorkspaceCommandArguments,
 } from "./command-tree.ts";
+import type { runImport, runReplay } from "./import-replay-commands.ts";
 import type { GlobalOptions } from "./options.ts";
 import {
   COMMAND_RESULT_SCHEMA_FAMILY,
@@ -1990,6 +1991,10 @@ export function stoppedResult(
       return resultFor<"doctor", DoctorPayload>("doctor", null, [], outcome, effect);
     case "export":
       return resultFor<"export", ExportCommandPayload>("export", null, [], outcome, effect);
+    case "import":
+      return resultFor("import", null, [], outcome, effect);
+    case "replay":
+      return resultFor("replay", null, [], outcome, effect);
     case "session.list":
       return resultFor<"session.list", SessionListPayload>(
         "session.list",
@@ -2099,6 +2104,8 @@ export type RunCommandResult =
   | Awaited<ReturnType<typeof runDataUninstall>>
   | Awaited<ReturnType<typeof runDoctor>>
   | Awaited<ReturnType<typeof runExport>>
+  | Awaited<ReturnType<typeof runImport>>
+  | Awaited<ReturnType<typeof runReplay>>
   | Awaited<ReturnType<typeof runSessionList>>
   | Awaited<ReturnType<typeof runSessionShow>>
   | Awaited<ReturnType<typeof runSessionResume>>

@@ -37,6 +37,8 @@ describe("the declared tree", () => {
     expect(await commandOf("data", "reset", "--class", "logs")).toBe("data.reset");
     expect(await commandOf("data", "uninstall")).toBe("data.uninstall");
     expect(await commandOf("export", "--session", "s1")).toBe("export");
+    expect(await commandOf("import", "bundle-1")).toBe("import");
+    expect(await commandOf("replay", "s1")).toBe("replay");
     expect(await commandOf("session", "list")).toBe("session.list");
     expect(await commandOf("session", "show", "s1")).toBe("session.show");
     expect(await commandOf("session", "resume", "s1")).toBe("session.resume");

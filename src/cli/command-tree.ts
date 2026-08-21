@@ -87,6 +87,16 @@ export type ExportCommandArguments = {
   readonly name: ExportName | null;
 };
 
+/** Command-specific inputs for `falryn import`. */
+export type ImportCommandArguments = {
+  readonly name: ExportName;
+};
+
+/** Command-specific inputs for `falryn replay`. */
+export type ReplayCommandArguments = {
+  readonly sessionId: SessionId;
+};
+
 /** Command-specific inputs for `falryn artifact`. */
 export type ArtifactCommandArguments =
   | {
@@ -188,6 +198,8 @@ export type Invocation =
       readonly options: GlobalOptions;
       readonly data: DataCommandArguments | null;
       readonly exportArgs: ExportCommandArguments | null;
+      readonly importArgs: ImportCommandArguments | null;
+      readonly replayArgs: ReplayCommandArguments | null;
       readonly sessionArgs: SessionCommandArguments | null;
       readonly artifactArgs: ArtifactCommandArguments | null;
       readonly workspaceArgs: WorkspaceCommandArguments | null;
@@ -355,6 +367,24 @@ function build(argv: readonly string[], lenientPositionals = false): ReturnType<
             type: "boolean",
             default: false,
             describe: "write the bundle; omit this flag to preview only",
+          }),
+      )
+      .command(
+        "import <name>",
+        "Import a verified export package from the exports root.",
+        (group) =>
+          group.positional("name", {
+            type: "string",
+            describe: "file-safe export package name under the exports root",
+          }),
+      )
+      .command(
+        "replay <id>",
+        "Rebuild a session from stored facts without repeating effects.",
+        (group) =>
+          group.positional("id", {
+            type: "string",
+            describe: "session identity to rebuild (not `session replay`, which is cursor control)",
           }),
       )
       .command(
@@ -592,6 +622,14 @@ export async function parseInvocation(argv: readonly string[]): Promise<Invocati
   if (typeof exportArgs === "string") {
     return { kind: "invalid", message: exportArgs };
   }
+  const importArgs = importArgumentsFor(command, parsed);
+  if (typeof importArgs === "string") {
+    return { kind: "invalid", message: importArgs };
+  }
+  const replayArgs = replayArgumentsFor(command, parsed);
+  if (typeof replayArgs === "string") {
+    return { kind: "invalid", message: replayArgs };
+  }
   const sessionArgs = sessionArgumentsFor(command, parsed);
   if (typeof sessionArgs === "string") {
     return { kind: "invalid", message: sessionArgs };
@@ -611,6 +649,8 @@ export async function parseInvocation(argv: readonly string[]): Promise<Invocati
     options,
     data,
     exportArgs,
+    importArgs,
+    replayArgs,
     sessionArgs,
     artifactArgs,
     workspaceArgs,
@@ -733,6 +773,12 @@ function commandFrom(positional: readonly string[], action: string | null): Runn
   }
   if (group === "export") {
     return action === null ? "export" : null;
+  }
+  if (group === "import") {
+    return action === null ? "import" : null;
+  }
+  if (group === "replay") {
+    return action === null ? "replay" : null;
   }
   if (group === "config") {
     switch (action) {
@@ -921,6 +967,52 @@ function exportArgumentsFor(
     write,
     name,
   };
+}
+
+function importArgumentsFor(
+  command: RunnableCommand,
+  parsed: RawArguments,
+): ImportCommandArguments | null | string {
+  if (command !== "import") {
+    return null;
+  }
+  if (
+    (parsed.session !== undefined && parsed.session.length > 0) ||
+    parsed.after !== undefined ||
+    parsed.before !== undefined ||
+    parsed.write === true ||
+    parsed["include-sensitive"] === true
+  ) {
+    return "Import accepts only a package name.";
+  }
+  if (parsed.name === undefined) {
+    return "Import requires a package name.";
+  }
+  const parsedName = exportName.parse(parsed.name);
+  if (!parsedName.ok) {
+    return "Argument name must be a file-safe export package name.";
+  }
+  return { name: parsedName.value };
+}
+
+function replayArgumentsFor(
+  command: RunnableCommand,
+  parsed: RawArguments,
+): ReplayCommandArguments | null | string {
+  if (command !== "replay") {
+    return null;
+  }
+  if (parsed.id === undefined) {
+    return "Argument id is required for replay.";
+  }
+  const parsedId = sessionId.parse(parsed.id);
+  if (!parsedId.ok) {
+    return "Argument id must be a session identity.";
+  }
+  if (parsed["replay-action"] !== undefined && parsed["replay-action"] !== "play") {
+    return "Replay does not accept replay control flags; use `falryn session replay` instead.";
+  }
+  return { sessionId: parsedId.value };
 }
 
 function sessionArgumentsFor(

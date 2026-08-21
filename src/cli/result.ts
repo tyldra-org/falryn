@@ -61,6 +61,8 @@ export const COMMAND_IDS = [
   "data.uninstall",
   "doctor",
   "export",
+  "import",
+  "replay",
   "session.list",
   "session.show",
   "session.resume",
