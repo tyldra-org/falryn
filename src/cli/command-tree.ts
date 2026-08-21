@@ -43,6 +43,7 @@ import {
   MAX_WORKSPACE_LAYOUT_CATALOG,
   type OwnershipClass,
   type PlanId,
+  parseLocalPath,
   parseTimestamp,
   SESSION_CATALOG_FILTERS,
   type SessionCatalogFilter,
@@ -54,6 +55,7 @@ import {
   type WorkspaceId,
   workspaceId,
 } from "../domain/index.ts";
+import { createHostFileSystem } from "../integrations/index.ts";
 import type { CodingRunArguments } from "./coding-run.ts";
 import {
   COLOR_CHOICES,
@@ -64,7 +66,11 @@ import {
   type OutputFormat,
 } from "./options.ts";
 import type { CommandId } from "./result.ts";
-import { type TaskCommandArguments, taskArgumentsFor } from "./task-intelligence-parse.ts";
+import {
+  MAX_TASK_INPUT_FILE_BYTES,
+  type TaskCommandArguments,
+  taskArgumentsFor,
+} from "./task-intelligence-parse.ts";
 
 /** The name the tree reports itself as, whatever the executable is called. */
 export const SCRIPT_NAME = "falryn";
@@ -773,19 +779,27 @@ export async function parseInvocation(argv: readonly string[]): Promise<Invocati
     return { kind: "invalid", message: workspaceArgs };
   }
   const runArgs = runArgumentsFor(command, parsed);
-  const taskArgs =
-    command === "task.decompose" || command === "task.validate" || command === "task.progress"
-      ? await taskArgumentsFor(
-          command === "task.decompose"
-            ? "decompose"
-            : command === "task.validate"
-              ? "validate"
-              : "progress",
-          parsed,
-        )
-      : null;
-  if (typeof taskArgs === "string") {
-    return { kind: "invalid", message: taskArgs };
+  let taskArgs: TaskCommandArguments | null = null;
+  if (command === "task.decompose" || command === "task.validate" || command === "task.progress") {
+    const action =
+      command === "task.decompose"
+        ? "decompose"
+        : command === "task.validate"
+          ? "validate"
+          : "progress";
+    let inputText: string | null = null;
+    if (parsed.input !== undefined) {
+      const loaded = await loadTaskInputFile(parsed.input);
+      if (!loaded.ok) {
+        return { kind: "invalid", message: loaded.error };
+      }
+      inputText = loaded.value;
+    }
+    const built = taskArgumentsFor(action, parsed, inputText);
+    if (typeof built === "string") {
+      return { kind: "invalid", message: built };
+    }
+    taskArgs = built;
   }
   return {
     kind: "run",
@@ -802,6 +816,22 @@ export async function parseInvocation(argv: readonly string[]): Promise<Invocati
     runArgs,
     taskArgs,
   };
+}
+
+async function loadTaskInputFile(
+  pathText: string,
+): Promise<
+  { readonly ok: true; readonly value: string } | { readonly ok: false; readonly error: string }
+> {
+  const parsed = parseLocalPath(pathText);
+  if (!parsed.ok) {
+    return { ok: false, error: "Argument input must be a local path." };
+  }
+  const read = await createHostFileSystem().readText(parsed.value, MAX_TASK_INPUT_FILE_BYTES);
+  if (!read.ok) {
+    return { ok: false, error: "Argument input must name a readable JSON file." };
+  }
+  return { ok: true, value: read.value };
 }
 
 /**

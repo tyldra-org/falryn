@@ -1,11 +1,10 @@
 /**
  * Parse bounded CLI and overlay text into task-intelligence port inputs (#726).
  *
- * Explicit flags are preferred. A bounded `--input` JSON file is an alternate
- * path when the declared shape is too large for flags alone.
+ * Explicit flags are preferred. A bounded `--input` JSON blob is an alternate
+ * path when the declared shape is too large for flags alone. Callers load the
+ * file through `FileSystemPort` — this module never imports `node:fs`.
  */
-
-import { readFile } from "node:fs/promises";
 
 import type {
   TaskDecomposeInput,
@@ -13,7 +12,7 @@ import type {
   TaskValidationInput,
 } from "../domain/index.ts";
 
-const MAX_INPUT_FILE_BYTES = 64 * 1_024;
+export const MAX_TASK_INPUT_FILE_BYTES = 64 * 1_024;
 
 export type TaskDecomposeArguments = {
   readonly outcomeId: string;
@@ -124,18 +123,12 @@ function parseObservation(
   return { taskId: first.head, status: second.head, note: second.tail };
 }
 
-async function readBoundedInput(path: string): Promise<unknown | string> {
-  let bytes: Uint8Array;
-  try {
-    bytes = new Uint8Array(await readFile(path));
-  } catch {
-    return "Argument input must name a readable JSON file.";
-  }
-  if (bytes.byteLength > MAX_INPUT_FILE_BYTES) {
+function parseBoundedInputJson(text: string): unknown | string {
+  if (new TextEncoder().encode(text).byteLength > MAX_TASK_INPUT_FILE_BYTES) {
     return "Argument input exceeds the bounded task-intelligence file size.";
   }
   try {
-    return JSON.parse(new TextDecoder().decode(bytes)) as unknown;
+    return JSON.parse(text) as unknown;
   } catch {
     return "Argument input must contain valid JSON.";
   }
@@ -148,13 +141,23 @@ function mergeRecord(
   return { ...base, ...overlay };
 }
 
-export async function taskArgumentsFor(
+/**
+ * Build task command arguments from CLI options.
+ *
+ * When `--input` names a file, pass its UTF-8 text as `inputText` after loading
+ * it through `FileSystemPort` (never `node:fs` from this module).
+ */
+export function taskArgumentsFor(
   action: "decompose" | "validate" | "progress",
   parsed: RawTaskOptions,
-): Promise<TaskCommandArguments | string> {
-  const inputFile = parsed.input === undefined ? null : await readBoundedInput(parsed.input);
+  inputText: string | null = null,
+): TaskCommandArguments | string {
+  const inputFile = inputText === null ? null : parseBoundedInputJson(inputText);
   if (typeof inputFile === "string") {
     return inputFile;
+  }
+  if (parsed.input !== undefined && inputText === null) {
+    return "Argument input requires a loaded file body.";
   }
 
   switch (action) {

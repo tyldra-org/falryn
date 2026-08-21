@@ -3,6 +3,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { parseInvocation } from "./command-tree.ts";
@@ -33,8 +34,8 @@ describe("task intelligence commands", () => {
     );
   });
 
-  test("decomposes declared goals from explicit flags", async () => {
-    const args = await taskArgumentsFor("decompose", {
+  test("decomposes declared goals from explicit flags", () => {
+    const args = taskArgumentsFor("decompose", {
       statement: "Ship a bounded export.",
       goal: ["Write the export package"],
       "non-goal": ["Execute Git"],
@@ -49,9 +50,8 @@ describe("task intelligence commands", () => {
   });
 
   test("loads bounded decompose input from JSON", async () => {
-    const args = await taskArgumentsFor("decompose", {
-      input: join(FIXTURES, "decompose.json"),
-    });
+    const text = await readFile(join(FIXTURES, "decompose.json"), "utf8");
+    const args = taskArgumentsFor("decompose", { input: join(FIXTURES, "decompose.json") }, text);
     expect(typeof args).not.toBe("string");
     if (typeof args === "string" || args.action !== "decompose") {
       return;
@@ -60,8 +60,8 @@ describe("task intelligence commands", () => {
     expect(result.payload?.decomposition.tasks).toHaveLength(2);
   });
 
-  test("recommends validation advice for declared criteria", async () => {
-    const args = await taskArgumentsFor("validate", {
+  test("recommends validation advice for declared criteria", () => {
+    const args = taskArgumentsFor("validate", {
       task: ["t1:Restore succeeds from the package"],
     });
     expect(typeof args).not.toBe("string");
@@ -72,8 +72,8 @@ describe("task intelligence commands", () => {
     expect(result.payload?.advice.recommendations).toHaveLength(2);
   });
 
-  test("projects progress from explicit observations", async () => {
-    const args = await taskArgumentsFor("progress", {
+  test("projects progress from explicit observations", () => {
+    const args = taskArgumentsFor("progress", {
       task: ["t1", "t2"],
       depends: ["t1:t2"],
       observe: ["t1:completed"],
@@ -87,8 +87,8 @@ describe("task intelligence commands", () => {
     expect(result.payload?.projection.nextActions).toHaveLength(1);
   });
 
-  test("refuses secret-shaped criteria without echoing them", async () => {
-    const args = await taskArgumentsFor("validate", {
+  test("refuses secret-shaped criteria without echoing them", () => {
+    const args = taskArgumentsFor("validate", {
       task: ["t1:token sk-live-SECRET must remain"],
     });
     expect(typeof args).not.toBe("string");

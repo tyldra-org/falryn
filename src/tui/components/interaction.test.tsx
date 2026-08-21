@@ -121,11 +121,11 @@ describe("help", () => {
     using shell = await open(14);
     const opening = await shell.press("?");
     expect(opening).toContain("Help");
-    // Workspace commands sit at the end of the registry; End must reach them.
-    expect(opening).not.toContain("Show workspace set");
+    // Task-intelligence advice sits at the end of the registry; End must reach it.
+    expect(opening).not.toContain("Task progress");
 
     await shell.press("\u001b[F");
-    expect(await shell.frame()).toContain("Show workspace set");
+    expect(await shell.frame()).toContain("Task progress");
   });
 
   test("closes on escape and gives the frame back", async () => {
