@@ -130,6 +130,31 @@ describe("planOutcomeCommits", () => {
     }
   });
 
+  test("maps a clean tree to an empty reviewable plan", async () => {
+    const gitIdentity = identity();
+    const git = fakeGit(async () => ({
+      ok: true,
+      value: {
+        identity: gitIdentity,
+        plan: planGitCommits({
+          identity: gitIdentity,
+          entries: [],
+          truncated: false,
+          subjects: [],
+        }),
+      },
+    }));
+    const result = await planOutcomeCommits(git, {
+      outcomeId: "outcome-1",
+      gitExecutable: "/usr/bin/git",
+      startPath: "/repo",
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.plan.groups).toEqual([]);
+    }
+  });
+
   test("maps in-progress git state to unavailable advice", async () => {
     const git = fakeGit(async () => ({
       ok: false,
