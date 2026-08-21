@@ -97,6 +97,12 @@ describe("composeProductProcessTools", () => {
     }
     expect(processOutcome.output.origin).toBe("process");
     expect(typeof processOutcome.output.projection).toBe("string");
+    const harness = processOutcome.output.harness as {
+      owner: string;
+      recovery: { captureId: string };
+    };
+    expect(harness.owner).toBe("#718");
+    expect(harness.recovery.captureId).toBe("cap-1");
     expect(processOutcome.output.capture).toBeDefined();
 
     const shellOutcome = await tools.runner.execute({

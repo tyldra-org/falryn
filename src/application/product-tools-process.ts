@@ -28,6 +28,7 @@ import {
   type ToolManifestDocument,
 } from "../domain/index.ts";
 import { createHushIntegrator } from "./hush.ts";
+import { projectHushForHarness } from "./product-hush-projection.ts";
 import type { ToolRunnerPort, ToolRunnerRequest } from "./tool-call-loop.ts";
 
 export const PRODUCT_PROCESS_TOOLS_OWNER = "#712";
@@ -244,6 +245,7 @@ export function composeProductProcessTools(ports: ProductProcessToolPorts): Prod
           return completed({
             origin: observed.value.origin,
             projection: observed.value.projection,
+            harness: projectHushForHarness(observed.value),
             hush: observed.value.hush,
             capture: {
               stop: observed.value.capture.stop,
@@ -301,6 +303,7 @@ export function composeProductProcessTools(ports: ProductProcessToolPorts): Prod
           return completed({
             origin: observed.value.origin,
             projection: observed.value.projection,
+            harness: projectHushForHarness(observed.value),
             hush: observed.value.hush,
             capture: {
               stop: observed.value.capture.stop,
