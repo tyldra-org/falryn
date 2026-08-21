@@ -12,9 +12,11 @@ import {
   adoptForeignError,
   composeProductAgentRuntime,
   composeProductCredentials,
+  composeProductProcessTools,
   composeProductWorkspaceTools,
   DEFAULT_OPENAI_CREDENTIAL_REFERENCE,
   fromUnknown,
+  mergeProductToolBundles,
   resolveProviderApiKey,
 } from "../application/index.ts";
 import {
@@ -30,7 +32,11 @@ import {
   turnId as turnIdCodec,
   workspaceId as workspaceIdCodec,
 } from "../domain/index.ts";
-import { createHostCommandRunner, hostPlatform } from "../integrations/index.ts";
+import {
+  createHostCommandRunner,
+  createHostProcessCapturePort,
+  hostPlatform,
+} from "../integrations/index.ts";
 import { createOpenAiCompatibleAdapter } from "../providers/openai-compatible-adapter.ts";
 import type { ProviderAdapterPort } from "../providers/port.ts";
 import {
@@ -246,6 +252,12 @@ export async function runCoding(
     commands: createHostCommandRunner(),
     workspaceRoot: primaryWorkspaceRoot(workspace.value.set).path,
   });
+  const processTools = composeProductProcessTools({
+    generation,
+    capture: createHostProcessCapturePort({ clock: graph.clock }),
+    workspaceCwd: String(primaryWorkspaceRoot(workspace.value.set).path),
+  });
+  const productTools = mergeProductToolBundles(generation, [workspaceTools, processTools]);
 
   const composed = composeProductAgentRuntime({
     eventStore: graph.eventStore,
@@ -258,8 +270,8 @@ export async function runCoding(
       configurationGeneration: generation,
     },
     ...(providerAdapter !== undefined && providerAdapter !== null ? { providerAdapter } : {}),
-    toolCatalog: workspaceTools.catalog,
-    toolRunner: workspaceTools.runner,
+    toolCatalog: productTools.catalog,
+    toolRunner: productTools.runner,
   });
   if (!composed.ok) {
     return codingResult(

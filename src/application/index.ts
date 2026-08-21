@@ -189,6 +189,16 @@ export {
   DEFAULT_OPENAI_CREDENTIAL_REFERENCE,
   resolveProviderApiKey,
 } from "./product-credentials.ts";
+export type { ProductToolBundle } from "./product-tools-merge.ts";
+export { mergeProductToolBundles } from "./product-tools-merge.ts";
+export type {
+  ProductProcessToolPorts,
+  ProductProcessTools,
+} from "./product-tools-process.ts";
+export {
+  composeProductProcessTools,
+  PRODUCT_PROCESS_TOOLS_OWNER,
+} from "./product-tools-process.ts";
 export type {
   ProductWorkspaceToolPorts,
   ProductWorkspaceTools,

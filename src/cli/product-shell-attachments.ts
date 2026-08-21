@@ -1,16 +1,19 @@
 /**
- * Default TUI product attachments (#752 / #711).
+ * Default TUI product attachments (#752 / #711 / #712).
  *
  * Composes the product agent runtime, credentials, OpenAI-compatible adapter
- * (when a key resolves), and workspace product tools (#711) so `launchShell`
- * can pass a real submission port and transcript feed into `runShell`.
+ * (when a key resolves), and product tools (#711 workspace + #712 process) so
+ * `launchShell` can pass a real submission port and transcript feed into
+ * `runShell`.
  */
 
 import {
   composeProductAgentRuntime,
   composeProductCredentials,
+  composeProductProcessTools,
   composeProductWorkspaceTools,
   DEFAULT_OPENAI_CREDENTIAL_REFERENCE,
+  mergeProductToolBundles,
   resolveProviderApiKey,
 } from "../application/index.ts";
 import {
@@ -27,7 +30,11 @@ import {
   type WorkspaceSet,
   workspaceId as workspaceIdCodec,
 } from "../domain/index.ts";
-import { createHostCommandRunner, hostPlatform } from "../integrations/index.ts";
+import {
+  createHostCommandRunner,
+  createHostProcessCapturePort,
+  hostPlatform,
+} from "../integrations/index.ts";
 import { createOpenAiCompatibleAdapter } from "../providers/openai-compatible-adapter.ts";
 import type { ProviderAdapterPort } from "../providers/port.ts";
 import { createProductSubmissionPort, type SubmissionPort } from "../tui/composer/index.ts";
@@ -97,6 +104,18 @@ export async function composeProductShellAttachments(
           commands,
           workspaceRoot: primaryWorkspaceRoot(ports.workspaceSet).path,
         });
+  const processTools =
+    ports.workspaceSet === null
+      ? null
+      : composeProductProcessTools({
+          generation,
+          capture: createHostProcessCapturePort({ clock: ports.clock }),
+          workspaceCwd: String(primaryWorkspaceRoot(ports.workspaceSet).path),
+        });
+  const productTools =
+    workspaceTools === null || processTools === null
+      ? null
+      : mergeProductToolBundles(generation, [workspaceTools, processTools]);
 
   const composed = composeProductAgentRuntime({
     eventStore: ports.eventStore,
@@ -109,9 +128,9 @@ export async function composeProductShellAttachments(
       configurationGeneration: generation,
     },
     ...(providerAdapter === undefined ? {} : { providerAdapter }),
-    ...(workspaceTools === null
+    ...(productTools === null
       ? {}
-      : { toolCatalog: workspaceTools.catalog, toolRunner: workspaceTools.runner }),
+      : { toolCatalog: productTools.catalog, toolRunner: productTools.runner }),
   });
   if (!composed.ok) {
     return null;
