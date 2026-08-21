@@ -4,17 +4,23 @@
  */
 
 import { afterEach, describe, expect, test } from "bun:test";
-import { chmod, mkdir, mkdtemp, rm } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { createStaticEnvironment, localPath } from "../domain/index.ts";
+import { CONFIGURATION_FILE_NAME } from "../config/index.ts";
+import {
+  configurationGeneration,
+  createStaticEnvironment,
+  localPath,
+  streamId,
+} from "../domain/index.ts";
 import { createDeterministicProviderAdapter } from "../providers/index.ts";
 import { resolveCodingPrompt, runCoding } from "./coding-run.ts";
 import { parseInvocation } from "./command-tree.ts";
 import { dispatch } from "./dispatch.ts";
 import type { GlobalOptions } from "./options.ts";
-import { createServiceProvider } from "./services.ts";
+import { CLI_EVENT_STREAM, createServiceProvider } from "./services.ts";
 import { createRecordingCliStreams } from "./streams.ts";
 
 const homes: string[] = [];
@@ -109,6 +115,7 @@ describe("runCoding", () => {
       { promptParts: ["add", "tests"] },
       {
         input: streams.input,
+        globals: globalsFor(seeded),
         identities: {
           sessionId: "session-run-test",
           turnId: "turn-run-test",
@@ -135,6 +142,7 @@ describe("runCoding", () => {
       { promptParts: ["hello"] },
       {
         input: streams.input,
+        globals: globalsFor(seeded),
         providerAdapter: createDeterministicProviderAdapter(),
         identities: {
           sessionId: "session-run-hosted",
@@ -180,6 +188,7 @@ describe("runCoding", () => {
       { promptParts: ["with", "key"] },
       {
         input: streams.input,
+        globals: globalsFor(seeded),
         identities: {
           sessionId: "session-run-cred",
           turnId: "turn-run-cred",
@@ -190,6 +199,45 @@ describe("runCoding", () => {
     expect(result.outcome.kind).toBe("completed");
     expect(result.payload?.stage).toBe("hosted");
     expect(result.errors).toEqual([]);
+  });
+
+  test("loads configuration through the loader before hosting (#728)", async () => {
+    const seeded = await seededHome();
+    const services = providerFor(seeded)(globalsFor(seeded));
+    const graph = services();
+    const configFile = join(String(graph.configurationRoot), CONFIGURATION_FILE_NAME);
+    await writeFile(
+      configFile,
+      JSON.stringify({ schemaVersion: 1, diagnostics: { level: "warn" } }),
+      "utf8",
+    );
+    const streams = createRecordingCliStreams({ stdin: null });
+    await runCoding(
+      services,
+      { promptParts: ["observe loader"] },
+      {
+        input: streams.input,
+        globals: globalsFor(seeded),
+        identities: {
+          sessionId: "session-run-config",
+          turnId: "turn-run-config",
+          traceId: "trace-run-config",
+        },
+      },
+    );
+    expect(graph.loader.current()?.generation).toBe(configurationGeneration.from(0));
+    expect(graph.loader.current()?.values["diagnostics.level"]).toBe("warn");
+    const read = await graph.eventStore.readFrom(
+      { streamId: streamId.from(CLI_EVENT_STREAM), afterSequence: null },
+      20,
+    );
+    expect(read.ok).toBe(true);
+    if (!read.ok) {
+      return;
+    }
+    expect(read.value.some((event) => event.kind === "configuration.generation.changed")).toBe(
+      true,
+    );
   });
 });
 

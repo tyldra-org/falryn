@@ -105,7 +105,7 @@ import {
   runSessionReplay,
   runSessionResume,
 } from "./session-navigation.ts";
-import { resolveShellConfiguration } from "./shell-configuration.ts";
+import { resolveShellBootstrapConfiguration } from "./shell-configuration.ts";
 import {
   type CliStreams,
   outcomeAfterFlush,
@@ -346,10 +346,12 @@ async function launchShell(
   // until one is up; after that it is not, which is why the unrecognized-override
   // notice is written where it is.
   const services = options.services ?? defaultProvider(options);
-  const configuration = await resolveShellConfiguration(globals, {
+  const bootstrap = await resolveShellBootstrapConfiguration(globals, {
     streams,
     services,
   });
+  const configuration = bootstrap.values;
+  const configurationGeneration = bootstrap.generation;
   const graph = services(globals)();
   const fileProbe = createFileAttachmentProbe({
     fileSystem: graph.fileSystem,
@@ -408,6 +410,7 @@ async function launchShell(
     environment,
     fileSystem: graph.fileSystem,
     workspaceSet: resolvedWorkspace.ok === true ? resolvedWorkspace.value.set : null,
+    configurationGeneration,
     signal: stopped.signal,
   });
 
@@ -923,6 +926,7 @@ async function produce(
       }
       return runCoding(services, runArgs, {
         input: options.streams.input,
+        globals,
         ...(signal === undefined ? {} : { signal }),
       });
     default:
