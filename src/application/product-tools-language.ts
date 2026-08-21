@@ -97,9 +97,7 @@ function errorCode(error: { readonly code?: string; readonly kind?: string }): s
   return "failed";
 }
 
-function parseSession(
-  input: Readonly<Record<string, unknown>>,
-):
+function parseSession(input: Readonly<Record<string, unknown>>):
   | {
       readonly ok: true;
       readonly serviceId: ManagedServiceId;
