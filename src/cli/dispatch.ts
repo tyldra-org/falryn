@@ -67,6 +67,12 @@ import {
   stoppedResult,
 } from "./commands.ts";
 import { composeSessionNavigationController } from "./compose-session-navigation-controller.ts";
+import {
+  runDataBackup,
+  runDataDiagnostics,
+  runDataInspect,
+  runDataRestore,
+} from "./data-backup-commands.ts";
 import { EXIT_CODES, type ExitCode, resolveExitCode } from "./exit.ts";
 import { runImport, runReplay } from "./import-replay-commands.ts";
 import {
@@ -207,6 +213,7 @@ async function runCommand(
   const {
     command,
     data,
+    dataLifecycleArgs,
     exportArgs,
     importArgs,
     replayArgs,
@@ -228,6 +235,7 @@ async function runCommand(
   const result = await governed(
     command,
     data,
+    dataLifecycleArgs,
     exportArgs,
     importArgs,
     replayArgs,
@@ -491,6 +499,7 @@ async function launchShell(
 async function governed(
   command: Exclude<RunnableCommand, "default">,
   data: Extract<Invocation, { kind: "run" }>["data"],
+  dataLifecycleArgs: Extract<Invocation, { kind: "run" }>["dataLifecycleArgs"],
   exportArgs: Extract<Invocation, { kind: "run" }>["exportArgs"],
   importArgs: Extract<Invocation, { kind: "run" }>["importArgs"],
   replayArgs: Extract<Invocation, { kind: "run" }>["replayArgs"],
@@ -509,6 +518,7 @@ async function governed(
     return produce(
       command,
       data,
+      dataLifecycleArgs,
       exportArgs,
       importArgs,
       replayArgs,
@@ -527,6 +537,7 @@ async function governed(
     produce(
       command,
       data,
+      dataLifecycleArgs,
       exportArgs,
       importArgs,
       replayArgs,
@@ -555,7 +566,7 @@ async function governed(
     : stoppedResult(
         command,
         run.outcome,
-        stoppedCommandIntent(command, data, exportArgs, importArgs),
+        stoppedCommandIntent(command, data, dataLifecycleArgs, exportArgs, importArgs),
       );
 }
 
@@ -563,6 +574,7 @@ async function governed(
 function stoppedCommandIntent(
   command: Exclude<RunnableCommand, "default">,
   data: Extract<Invocation, { kind: "run" }>["data"],
+  dataLifecycleArgs: Extract<Invocation, { kind: "run" }>["dataLifecycleArgs"],
   exportArgs: Extract<Invocation, { kind: "run" }>["exportArgs"],
   importArgs: Extract<Invocation, { kind: "run" }>["importArgs"],
 ): "none" | "mutate" {
@@ -571,6 +583,17 @@ function stoppedCommandIntent(
     data !== null &&
     data.confirmation !== null
   ) {
+    return "mutate";
+  }
+  if (
+    command === "data.restore" &&
+    dataLifecycleArgs !== null &&
+    dataLifecycleArgs.action === "restore" &&
+    dataLifecycleArgs.confirmation !== null
+  ) {
+    return "mutate";
+  }
+  if (command === "data.backup") {
     return "mutate";
   }
   if (command === "export" && exportArgs !== null && exportArgs.write) {
@@ -697,6 +720,7 @@ function defaultProvider(options: DispatchOptions): (globals: GlobalOptions) => 
 async function produce(
   command: Exclude<RunnableCommand, "default">,
   data: Extract<Invocation, { kind: "run" }>["data"],
+  dataLifecycleArgs: Extract<Invocation, { kind: "run" }>["dataLifecycleArgs"],
   exportArgs: Extract<Invocation, { kind: "run" }>["exportArgs"],
   importArgs: Extract<Invocation, { kind: "run" }>["importArgs"],
   replayArgs: Extract<Invocation, { kind: "run" }>["replayArgs"],
@@ -728,6 +752,26 @@ async function produce(
         throw new Error("Missing parsed data uninstall arguments.");
       }
       return runDataUninstall(services, data, signal, onMutationStart);
+    case "data.backup":
+      if (dataLifecycleArgs === null || dataLifecycleArgs.action !== "backup") {
+        throw new Error("Missing parsed data backup arguments.");
+      }
+      return runDataBackup(services, dataLifecycleArgs, signal, onMutationStart);
+    case "data.restore":
+      if (dataLifecycleArgs === null || dataLifecycleArgs.action !== "restore") {
+        throw new Error("Missing parsed data restore arguments.");
+      }
+      return runDataRestore(services, dataLifecycleArgs, signal, onMutationStart);
+    case "data.inspect":
+      if (dataLifecycleArgs === null || dataLifecycleArgs.action !== "inspect") {
+        throw new Error("Missing parsed data inspect arguments.");
+      }
+      return runDataInspect(services, dataLifecycleArgs, signal);
+    case "data.diagnostics":
+      if (dataLifecycleArgs === null || dataLifecycleArgs.action !== "diagnostics") {
+        throw new Error("Missing parsed data diagnostics arguments.");
+      }
+      return runDataDiagnostics(services, signal);
     case "doctor":
       return runDoctor(services);
     case "export":

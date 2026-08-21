@@ -29,6 +29,7 @@ import {
 import {
   adoptForeignError,
   aggregate,
+  fromBackupError,
   fromCodecError,
   fromConfigurationIssue,
   fromConfigurationIssues,
@@ -114,6 +115,13 @@ describe("boundary translation", () => {
     expect(error.category).toBe("cancellation");
     expect(error.exitCategory).toBe("cancelled");
     expect(error.retryable).toBe(true);
+  });
+
+  test("a missing backup is a data refusal", () => {
+    const error = fromBackupError({ kind: "backup", code: "not-found" });
+    expect(error.code).toBe("data.backup.not-found");
+    expect(error.category).toBe("data");
+    expect(error.retryable).toBe(false);
   });
 
   test("an unverified import package fails closed", () => {

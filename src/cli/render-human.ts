@@ -64,6 +64,12 @@ import type {
   WorkspaceSavePayload,
   WorkspaceSetPayload,
 } from "./commands.ts";
+import type {
+  DataBackupPayload,
+  DataDiagnosticsPayload,
+  DataInspectPayload,
+  DataRestorePayload,
+} from "./data-backup-commands.ts";
 import type { ImportCommandPayload, ReplayCommandPayload } from "./import-replay-commands.ts";
 import type {
   CommandEffect,
@@ -664,6 +670,14 @@ function renderPayload(session: Session, result: RunCommandResult): RenderedPayl
     case "data.reset":
     case "data.uninstall":
       return renderDataRemoval(session, result.payload);
+    case "data.backup":
+      return renderDataBackup(session, result.payload);
+    case "data.restore":
+      return renderDataRestore(session, result.payload);
+    case "data.inspect":
+      return renderDataInspect(session, result.payload);
+    case "data.diagnostics":
+      return renderDataDiagnostics(session, result.payload);
     case "doctor":
       return renderDoctor(session, result.payload);
     case "export":
@@ -1023,6 +1037,95 @@ function renderWorkspaceSave(
       ),
     ],
     diagnostics: [],
+  };
+}
+
+function renderDataBackup(session: Session, payload: DataBackupPayload | null): RenderedPayload {
+  if (payload === null) {
+    return { lines: ["No backup result is available."], diagnostics: [] };
+  }
+  return {
+    lines: [
+      paint(session, "plain", "Backup written"),
+      `  Name            ${safe(payload.name)}`,
+      `  File            ${safe(payload.fileName)}`,
+      `  Schema version  ${payload.schemaVersion}`,
+    ],
+    diagnostics: [],
+  };
+}
+
+function renderDataInspect(session: Session, payload: DataInspectPayload | null): RenderedPayload {
+  if (payload === null) {
+    return { lines: ["No backup inspection is available."], diagnostics: [] };
+  }
+  return {
+    lines: [
+      paint(session, "plain", "Backup inspection"),
+      `  Name            ${safe(payload.name)}`,
+      `  File            ${safe(payload.fileName)}`,
+      `  Schema version  ${payload.schemaVersion}`,
+      `  Bytes           ${payload.byteLength}`,
+    ],
+    diagnostics: [
+      "Inspecting a backup never upgrades it. For environment and root viability, use `falryn doctor`.",
+    ],
+  };
+}
+
+function renderDataRestore(session: Session, payload: DataRestorePayload | null): RenderedPayload {
+  if (payload === null) {
+    return { lines: ["No restore result is available."], diagnostics: [] };
+  }
+  const lines = [
+    paint(
+      session,
+      "plain",
+      payload.confirmation === "applied" ? "Restore completed" : "Restore preview",
+    ),
+    `  Name            ${safe(payload.name)}`,
+    `  File            ${safe(payload.fileName)}`,
+    `  Schema version  ${payload.schemaVersion}`,
+    `  Confirmation    ${payload.confirmation}`,
+  ];
+  const diagnostics =
+    payload.confirmation === "not-requested"
+      ? [
+          `Preview only. Re-run with --confirm ${safe(payload.name)} to replace the live database.`,
+          "Restore renames the live database to falryn.sqlite.previous when a previous file is not already there.",
+          "For environment and root viability, use `falryn doctor`.",
+        ]
+      : ["Local database facts only. For environment and root viability, use `falryn doctor`."];
+  return { lines, diagnostics };
+}
+
+function renderDataDiagnostics(
+  session: Session,
+  payload: DataDiagnosticsPayload | null,
+): RenderedPayload {
+  if (payload === null) {
+    return { lines: ["No local diagnostics are available."], diagnostics: [] };
+  }
+  const lines = [
+    paint(session, "plain", "Local data diagnostics"),
+    `  Schema version  ${payload.schemaVersion}`,
+    `  WAL present     ${payload.crashSignals.writeAheadLogPresent ? "yes" : "no"}`,
+    `  SHM present     ${payload.crashSignals.sharedMemoryPresent ? "yes" : "no"}`,
+  ];
+  if (payload.sweep !== null) {
+    lines.push(
+      `  Sweep examined  ${payload.sweep.examined}`,
+      `  Sweep deleted   ${payload.sweep.deleted}`,
+      `  Sweep failed    ${payload.sweep.failed}`,
+      `  Sweep complete  ${safe(payload.sweep.completeness)}`,
+    );
+  }
+  return {
+    lines,
+    diagnostics: [
+      "Facts about the open database on this machine. Not a support bundle and not sent anywhere.",
+      "For roots, permissions, and storage viability without opening data, use `falryn doctor`.",
+    ],
   };
 }
 
@@ -1449,6 +1552,14 @@ function quietResultLines(result: RunCommandResult): readonly string[] {
     case "data.reset":
     case "data.uninstall":
       return quietDataLines(result.payload);
+    case "data.backup":
+      return quietDataBackupLines(result.payload);
+    case "data.restore":
+      return quietDataRestoreLines(result.payload);
+    case "data.inspect":
+      return quietDataInspectLines(result.payload);
+    case "data.diagnostics":
+      return quietDataDiagnosticsLines(result.payload);
     case "config.validate":
     case "doctor":
       return [];
@@ -1612,6 +1723,55 @@ function quietDataLines(payload: DataRemovalPayload | null): readonly string[] {
   ];
 }
 
+function quietDataBackupLines(payload: DataBackupPayload | null): readonly string[] {
+  if (payload === null) {
+    return [];
+  }
+  return [[safe(payload.name), safe(payload.fileName), String(payload.schemaVersion)].join("\t")];
+}
+
+function quietDataInspectLines(payload: DataInspectPayload | null): readonly string[] {
+  if (payload === null) {
+    return [];
+  }
+  return [
+    [
+      safe(payload.name),
+      safe(payload.fileName),
+      String(payload.schemaVersion),
+      String(payload.byteLength),
+    ].join("\t"),
+  ];
+}
+
+function quietDataRestoreLines(payload: DataRestorePayload | null): readonly string[] {
+  if (payload === null) {
+    return [];
+  }
+  return [
+    [
+      safe(payload.name),
+      safe(payload.fileName),
+      String(payload.schemaVersion),
+      payload.confirmation,
+    ].join("\t"),
+  ];
+}
+
+function quietDataDiagnosticsLines(payload: DataDiagnosticsPayload | null): readonly string[] {
+  if (payload === null) {
+    return [];
+  }
+  return [
+    [
+      String(payload.schemaVersion),
+      payload.crashSignals.writeAheadLogPresent ? "wal" : "",
+      payload.crashSignals.sharedMemoryPresent ? "shm" : "",
+      payload.sweep === null ? "" : String(payload.sweep.examined),
+    ].join("\t"),
+  ];
+}
+
 /** What quiet mode still reports on stderr: the findings behind the verdict. */
 function quietFindingLines(result: RunCommandResult): readonly string[] {
   switch (result.command) {
@@ -1628,6 +1788,11 @@ function quietFindingLines(result: RunCommandResult): readonly string[] {
       return result.payload === null ? [] : doctorFindings(result.payload);
     case "data.reset":
     case "data.uninstall":
+      return [];
+    case "data.backup":
+    case "data.restore":
+    case "data.inspect":
+    case "data.diagnostics":
       return [];
     case "config.show":
       // Quiet still reports a source that was skipped. `config show` prints the

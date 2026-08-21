@@ -84,6 +84,7 @@ export {
   fromArtifactCatalogError,
   fromArtifactError,
   fromArtifactReadError,
+  fromBackupError,
   fromCodecError,
   fromConfigurationIssue,
   fromConfigurationIssues,
