@@ -203,6 +203,11 @@ export {
   DEFAULT_OPENAI_CREDENTIAL_REFERENCE,
   resolveProviderApiKey,
 } from "./product-credentials.ts";
+export type { ProductHushHarnessProjection } from "./product-hush-projection.ts";
+export {
+  PRODUCT_HUSH_PROJECTION_OWNER,
+  projectHushForHarness,
+} from "./product-hush-projection.ts";
 export type {
   ProductIndexLifecycle,
   ProductIndexLifecyclePorts,
@@ -212,6 +217,12 @@ export {
   composeProductIndexLifecycle,
   PRODUCT_INDEX_LIFECYCLE_OWNER,
 } from "./product-index-lifecycle.ts";
+export type {
+  ProductLoomContext,
+  ProductLoomContextPorts,
+  ProductLoomRecoveryHandle,
+} from "./product-loom.ts";
+export { composeProductLoomContext, PRODUCT_LOOM_OWNER } from "./product-loom.ts";
 export type {
   ProductGitToolPorts,
   ProductGitTools,
