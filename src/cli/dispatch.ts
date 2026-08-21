@@ -416,6 +416,9 @@ async function launchShell(
     workspaceSet: resolvedWorkspace.ok === true ? resolvedWorkspace.value.set : null,
     configurationGeneration,
     signal: stopped.signal,
+    ...(governance.ownedProcesses === undefined
+      ? {}
+      : { ownedProcesses: governance.ownedProcesses }),
   });
 
   const configurationReload = startConfigurationReloadWatcher(graph, globals, {
@@ -951,6 +954,9 @@ async function produce(
         globals,
         reloadDiagnostics: options.streams,
         ...(signal === undefined ? {} : { signal }),
+        ...(options.governance?.ownedProcesses === undefined
+          ? {}
+          : { ownedProcesses: options.governance.ownedProcesses }),
       });
     default:
       // `default`, `help`, and `version` are answered before this is reached,

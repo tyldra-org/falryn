@@ -53,6 +53,7 @@ import {
   createHostManagedServicePort,
   createHostProcessCapturePort,
   hostPlatform,
+  type OwnedProcessRegistry,
 } from "../integrations/index.ts";
 import { createOpenAiCompatibleAdapter } from "../providers/openai-compatible-adapter.ts";
 import type { ProviderAdapterPort } from "../providers/port.ts";
@@ -141,6 +142,8 @@ export type CodingRunOptions = {
   readonly globals?: GlobalOptions;
   /** Diagnostic handle for live configuration reload notices. */
   readonly reloadDiagnostics?: CliStreams;
+  /** Adopts owned subprocess trees for shutdown (#730). */
+  readonly ownedProcesses?: OwnedProcessRegistry;
 };
 
 /**
@@ -305,12 +308,18 @@ export async function runCoding(
     await indexLifecycle.rebuild(options.signal);
     const indexFreshness = indexLifecycle.status().freshness;
     const indexOwner = PRODUCT_INDEX_LIFECYCLE_OWNER;
+    const ownedProcessOptions =
+      options.ownedProcesses === undefined ? {} : { ownedProcesses: options.ownedProcesses };
+    const captureOptions = {
+      clock: graph.clock,
+      ...ownedProcessOptions,
+    };
 
     let providerAdapter = options.providerAdapter;
     if (providerAdapter === undefined) {
       const credentials = composeProductCredentials({
         clock: graph.clock,
-        commands: createHostCommandRunner(),
+        commands: createHostCommandRunner(ownedProcessOptions),
         platform: hostPlatform(),
         environment: graph.environment,
       });
@@ -329,24 +338,24 @@ export async function runCoding(
     const workspaceTools = composeProductWorkspaceTools({
       generation,
       fileSystem: graph.fileSystem,
-      commands: createHostCommandRunner(),
+      commands: createHostCommandRunner(ownedProcessOptions),
       workspaceRoot: primaryWorkspaceRoot(workspace.value.set).path,
     });
     const processTools = composeProductProcessTools({
       generation,
-      capture: createHostProcessCapturePort({ clock: graph.clock }),
+      capture: createHostProcessCapturePort(captureOptions),
       workspaceCwd: String(primaryWorkspaceRoot(workspace.value.set).path),
     });
     const gitTools = composeProductGitTools({
       generation,
       git: createHostGitPort({
-        capture: createHostProcessCapturePort({ clock: graph.clock }),
+        capture: createHostProcessCapturePort(captureOptions),
         clock: graph.clock,
       }),
       gitExecutable: "/usr/bin/git",
       startPath: String(primaryWorkspaceRoot(workspace.value.set).path),
     });
-    const managedServices = createHostManagedServicePort();
+    const managedServices = createHostManagedServicePort(ownedProcessOptions);
     const languageTools = composeProductLanguageTools({
       generation,
       languageServers: createLanguageServerSupervisor(managedServices),

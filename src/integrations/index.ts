@@ -10,6 +10,7 @@ export { createSha256Hasher } from "./content-digest.ts";
 export { createEnvironmentCredentialStore } from "./environment-credentials.ts";
 export type { HostBlobStoreOptions } from "./host-blobs.ts";
 export { createHostBlobStore } from "./host-blobs.ts";
+export type { HostCommandRunnerOptions } from "./host-commands.ts";
 export { createHostCommandRunner } from "./host-commands.ts";
 export {
   createHostFileChangeSubscriber,
@@ -20,10 +21,20 @@ export { createHostEnvironment, hostHome, hostPlatform } from "./host-environmen
 export { createHostFileOutputStream, createHostFileSystem } from "./host-filesystem.ts";
 export type { HostGitOptions } from "./host-git.ts";
 export { createHostGitPort } from "./host-git.ts";
+export {
+  createOwnedProcessRegistry,
+  OWNED_PROCESS_SHUTDOWN_PARTICIPANT,
+  type OwnedProcessRegistry,
+  type OwnedProcessRegistryBundle,
+} from "./host-owned-process-registry.ts";
 export type { HostPackageWriterOptions } from "./host-packages.ts";
 export { createHostPackageWriter, STAGED_SUFFIX } from "./host-packages.ts";
 export type { HostProcessCaptureOptions } from "./host-process-capture.ts";
 export { createHostProcessCapturePort } from "./host-process-capture.ts";
+export type {
+  HostManagedServicePortOptions,
+  HostPtySessionPortOptions,
+} from "./host-process-sessions.ts";
 export { createHostManagedServicePort, createHostPtySessionPort } from "./host-process-sessions.ts";
 export {
   escalateOwnedTree,

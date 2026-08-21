@@ -28,11 +28,13 @@ import {
   validateProcessCaptureRequest,
 } from "../domain/index.ts";
 import { err, ok, type Result } from "../domain/result.ts";
+import type { OwnedProcessRegistry } from "./host-owned-process-registry.ts";
 import { escalateOwnedTree, ownedTreeSpawnOptions } from "./host-process-tree.ts";
 
 export type HostProcessCaptureOptions = {
   readonly artifacts?: ArtifactStorePort;
   readonly clock?: ClockPort;
+  readonly ownedProcesses?: OwnedProcessRegistry;
 };
 
 export function createHostProcessCapturePort(
@@ -40,6 +42,7 @@ export function createHostProcessCapturePort(
 ): ProcessCapturePort {
   const clock = options.clock ?? createSystemClock();
   const artifacts = options.artifacts ?? null;
+  const ownedProcesses = options.ownedProcesses;
   let nextId = 1;
 
   return {
@@ -98,6 +101,9 @@ export function createHostProcessCapturePort(
           signal: controller.signal,
         });
         child = spawned;
+        if (typeof spawned.pid === "number") {
+          ownedProcesses?.adopt(spawned.pid, spawned.exited);
+        }
         if (ended !== null && typeof spawned.pid === "number") {
           treeStop = escalateOwnedTree({ pid: spawned.pid, exited: spawned.exited });
         }
