@@ -12,17 +12,23 @@ import { createHash } from "node:crypto";
 
 import {
   assertNever,
+  COMMIT_PLAN_VERSION,
   type DurationMs,
   err,
   type GitCommitResult,
   type GitError,
   type GitPort,
   ok,
+  outcomeId,
   planTaskCommits,
   type Result,
+  TASK_COMMIT_PLAN_SOURCE,
+  TASK_COMMIT_PLAN_VERSION,
   type TaskCommitAdvice,
   type TaskCommitPlanError,
   type TaskCommitPlanInput,
+  type TaskId,
+  taskId,
 } from "../domain/index.ts";
 import { containsRedactableSecret } from "./redaction.ts";
 
@@ -125,7 +131,39 @@ export async function planOutcomeCommits(
     subjects: input.subjects,
     model: input.model,
   };
-  return planTaskCommits(domainInput, signal);
+  const composed = planTaskCommits(domainInput, signal);
+  if (
+    !composed.ok &&
+    composed.error.code === "empty" &&
+    composed.error.field === "plan.inventory"
+  ) {
+    // Clean tree: product surfaces still return a reviewable empty plan (#727).
+    const parsedOutcome = outcomeId.parse(input.outcomeId);
+    if (!parsedOutcome.ok) {
+      return err(commitPlanError("malformed", "outcomeId"));
+    }
+    let linkedTask: TaskId | null = null;
+    if (input.taskId !== undefined) {
+      const parsedTask = taskId.parse(input.taskId);
+      if (!parsedTask.ok) {
+        return err(commitPlanError("malformed", "taskId"));
+      }
+      linkedTask = parsedTask.value;
+    }
+    return ok({
+      outcomeId: parsedOutcome.value,
+      taskId: linkedTask,
+      plan: snapshot.value.plan,
+      omittedPaths: [],
+      provenance: {
+        version: TASK_COMMIT_PLAN_VERSION,
+        source: TASK_COMMIT_PLAN_SOURCE,
+        model: null,
+        plannerVersion: COMMIT_PLAN_VERSION,
+      },
+    });
+  }
+  return composed;
 }
 
 export type ExecuteOutcomeCommitPlanInput = PlanOutcomeCommitsInput & {
