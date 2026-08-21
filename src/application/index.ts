@@ -394,8 +394,16 @@ export type {
 } from "./structural-reduce.ts";
 export { createStructuralReducer, structuralToEvidence } from "./structural-reduce.ts";
 export { adviseOutcome } from "./task-advisor.ts";
-export type { PlanOutcomeCommitsInput } from "./task-commit-plan.ts";
-export { planOutcomeCommits } from "./task-commit-plan.ts";
+export type {
+  ExecuteOutcomeCommitPlanInput,
+  ExecuteOutcomeCommitPlanResult,
+  PlanOutcomeCommitsInput,
+} from "./task-commit-plan.ts";
+export {
+  commitPlanConfirmToken,
+  executeOutcomeCommitPlan,
+  planOutcomeCommits,
+} from "./task-commit-plan.ts";
 export { decomposeOutcome } from "./task-decompose.ts";
 export { planOutcomeTaskGraph } from "./task-graph.ts";
 export { projectOutcomeProgress } from "./task-progress.ts";

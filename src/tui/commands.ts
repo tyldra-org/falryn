@@ -927,6 +927,15 @@ export const SHELL_COMMANDS: readonly ShellCommand[] = [
     keywords: ["task", "progress", "next", "actions"],
     availability: () => AVAILABLE,
   },
+  {
+    id: "task.commit-plan",
+    title: "Commit plan",
+    description: "Preview or confirm a commit plan from actual changes.",
+    context: "global",
+    defaultBinding: null,
+    keywords: ["task", "commit", "plan", "git"],
+    availability: () => AVAILABLE,
+  },
 ];
 
 /** A command by ID, or `undefined`. Lookup is by identity and never by title. */

@@ -84,6 +84,7 @@ import type {
   SessionReplayPayload,
   SessionResumePayload,
 } from "./session-navigation.ts";
+import type { TaskCommitPlanPayload } from "./task-commit-plan-commands.ts";
 import type {
   TaskDecomposePayload,
   TaskProgressPayload,
@@ -702,6 +703,8 @@ function renderPayload(session: Session, result: RunCommandResult): RenderedPayl
       return renderTaskValidate(session, result.payload);
     case "task.progress":
       return renderTaskProgress(session, result.payload);
+    case "task.commit-plan":
+      return renderTaskCommitPlan(session, result.payload);
     case "session.list":
       return renderSessionList(session, result.payload);
     case "session.show":
@@ -1301,6 +1304,49 @@ function renderTaskProgress(
   };
 }
 
+function renderTaskCommitPlan(
+  session: Session,
+  payload: TaskCommitPlanPayload | null,
+): RenderedPayload {
+  if (payload === null) {
+    return { lines: ["No commit plan is available."], diagnostics: [] };
+  }
+  const lines = [
+    paint(session, "plain", "Commit plan"),
+    `  Outcome       ${safe(payload.advice.outcomeId)}`,
+    `  Confirmation  ${safe(payload.confirmation)}`,
+    `  Confirm token ${safe(payload.confirmToken)}`,
+    "  Groups",
+  ];
+  for (const group of payload.advice.plan.groups) {
+    lines.push(`    ${safe(group.id)}  ${safe(group.subject)}`);
+    for (const path of group.paths) {
+      lines.push(`      ${safe(path)}`);
+    }
+  }
+  if (payload.advice.plan.unassigned.length > 0) {
+    lines.push("  Unassigned");
+    for (const item of payload.advice.plan.unassigned) {
+      lines.push(`    ${safe(item.path)}  ${safe(item.reason)}`);
+    }
+  }
+  if (payload.commits.length > 0) {
+    lines.push("  Commits");
+    for (const commit of payload.commits) {
+      lines.push(`    ${safe(commit.oid.slice(0, 12))}  ${safe(commit.subject)}`);
+    }
+  }
+  const diagnostics =
+    payload.confirmation === "not-requested"
+      ? [
+          `Preview only. Re-run with --confirm ${safe(payload.confirmToken)} to apply this exact plan.`,
+        ]
+      : payload.confirmation === "refused"
+        ? ["Confirmation refused. No Git mutation ran."]
+        : ["Applied through Git stage+commit with expectedHead checks."];
+  return { lines, diagnostics };
+}
+
 function renderDataRemoval(session: Session, payload: DataRemovalPayload | null): RenderedPayload {
   if (payload === null) {
     return { lines: ["No local-data plan is available."], diagnostics: [] };
@@ -1751,6 +1797,8 @@ function quietResultLines(result: RunCommandResult): readonly string[] {
       return quietTaskValidateLines(result.payload);
     case "task.progress":
       return quietTaskProgressLines(result.payload);
+    case "task.commit-plan":
+      return quietTaskCommitPlanLines(result.payload);
     case "session.list":
       return result.payload === null
         ? []
@@ -1892,6 +1940,20 @@ function quietTaskProgressLines(payload: TaskProgressPayload | null): readonly s
   return payload.projection.nextActions.map((action) =>
     [safe(payload.projection.overall), safe(action.kind), safe(action.taskId)].join("\t"),
   );
+}
+
+function quietTaskCommitPlanLines(payload: TaskCommitPlanPayload | null): readonly string[] {
+  if (payload === null) {
+    return [];
+  }
+  return [
+    [
+      safe(payload.confirmation),
+      safe(payload.confirmToken),
+      String(payload.advice.plan.groups.length),
+      String(payload.commits.length),
+    ].join("\t"),
+  ];
 }
 
 function quietDataLines(payload: DataRemovalPayload | null): readonly string[] {
@@ -2052,6 +2114,7 @@ function quietFindingLines(result: RunCommandResult): readonly string[] {
     case "task.decompose":
     case "task.validate":
     case "task.progress":
+    case "task.commit-plan":
       return [];
     case "session.list":
       return result.payload === null || result.payload.omitted === 0

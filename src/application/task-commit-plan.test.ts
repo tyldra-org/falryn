@@ -11,7 +11,11 @@ import {
   localPath,
   planGitCommits,
 } from "../domain/index.ts";
-import { planOutcomeCommits } from "./task-commit-plan.ts";
+import {
+  commitPlanConfirmToken,
+  executeOutcomeCommitPlan,
+  planOutcomeCommits,
+} from "./task-commit-plan.ts";
 
 function identity(): GitIdentity {
   return {
@@ -143,6 +147,148 @@ describe("planOutcomeCommits", () => {
         code: "unavailable",
         field: "git",
       });
+    }
+  });
+});
+
+describe("executeOutcomeCommitPlan", () => {
+  test("previews without staging when confirmation is omitted", async () => {
+    const gitIdentity = identity();
+    let staged = false;
+    const git = fakeGit(
+      async () => ({
+        ok: true,
+        value: {
+          identity: gitIdentity,
+          plan: planGitCommits({
+            identity: gitIdentity,
+            entries: [entry("src/foo.ts")],
+            truncated: false,
+            subjects: ["feat: ship"],
+          }),
+        },
+      }),
+      {
+        stage: async () => {
+          staged = true;
+          return unused();
+        },
+      },
+    );
+    const result = await executeOutcomeCommitPlan(git, {
+      outcomeId: "outcome-1",
+      gitExecutable: "/usr/bin/git",
+      startPath: "/repo",
+      confirmation: null,
+    });
+    expect(result.ok).toBe(true);
+    expect(staged).toBe(false);
+    if (result.ok) {
+      expect(result.value.confirmation).toBe("not-requested");
+      expect(result.value.confirmToken).toBe(commitPlanConfirmToken(result.value.advice));
+      expect(result.value.confirmToken.startsWith("plan-commit-")).toBe(true);
+    }
+  });
+
+  test("refuses a mismatched confirm token without mutating", async () => {
+    const gitIdentity = identity();
+    let staged = false;
+    const git = fakeGit(
+      async () => ({
+        ok: true,
+        value: {
+          identity: gitIdentity,
+          plan: planGitCommits({
+            identity: gitIdentity,
+            entries: [entry("src/foo.ts")],
+            truncated: false,
+            subjects: ["feat: ship"],
+          }),
+        },
+      }),
+      {
+        stage: async () => {
+          staged = true;
+          return unused();
+        },
+      },
+    );
+    const result = await executeOutcomeCommitPlan(git, {
+      outcomeId: "outcome-1",
+      gitExecutable: "/usr/bin/git",
+      startPath: "/repo",
+      confirmation: "plan-commit-deadbeefdead",
+    });
+    expect(result.ok).toBe(true);
+    expect(staged).toBe(false);
+    if (result.ok) {
+      expect(result.value.confirmation).toBe("refused");
+      expect(result.value.commits).toEqual([]);
+    }
+  });
+
+  test("stages and commits each group when the confirm token matches", async () => {
+    const gitIdentity = identity();
+    const plan = planGitCommits({
+      identity: gitIdentity,
+      entries: [entry("src/foo.ts")],
+      truncated: false,
+      subjects: ["feat: ship"],
+    });
+    const planned = await planOutcomeCommits(
+      fakeGit(async () => ({ ok: true, value: { identity: gitIdentity, plan } })),
+      {
+        outcomeId: "outcome-1",
+        gitExecutable: "/usr/bin/git",
+        startPath: "/repo",
+      },
+    );
+    expect(planned.ok).toBe(true);
+    if (!planned.ok) {
+      return;
+    }
+    const previewAdvice = planned.value;
+    const token = commitPlanConfirmToken(previewAdvice);
+    const stagedPaths: string[][] = [];
+    const subjects: string[] = [];
+    const git = fakeGit(async () => ({ ok: true, value: { identity: gitIdentity, plan } }), {
+      stage: async (request) => {
+        stagedPaths.push([...request.paths]);
+        return {
+          ok: true,
+          value: { identity: gitIdentity, paths: request.paths },
+        };
+      },
+      commit: async (request) => {
+        subjects.push(request.subject);
+        return {
+          ok: true,
+          value: {
+            identity: {
+              ...gitIdentity,
+              head: {
+                state: "observed" as const,
+                value: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              },
+            },
+            oid: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            subject: request.subject,
+          },
+        };
+      },
+    });
+    const result = await executeOutcomeCommitPlan(git, {
+      outcomeId: "outcome-1",
+      gitExecutable: "/usr/bin/git",
+      startPath: "/repo",
+      confirmation: token,
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.confirmation).toBe("applied");
+      expect(stagedPaths).toEqual([[...previewAdvice.plan.groups[0]!.paths]]);
+      expect(subjects).toEqual([previewAdvice.plan.groups[0]!.subject]);
+      expect(result.value.commits).toHaveLength(1);
     }
   });
 });

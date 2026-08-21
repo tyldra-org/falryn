@@ -17,6 +17,7 @@ describe("taskIntelligencePanelForCommand", () => {
     expect(taskIntelligencePanelForCommand("task.decompose")).toBe("decompose");
     expect(taskIntelligencePanelForCommand("task.validate")).toBe("validate");
     expect(taskIntelligencePanelForCommand("task.progress")).toBe("progress");
+    expect(taskIntelligencePanelForCommand("task.commit-plan")).toBe("commit-plan");
     expect(taskIntelligencePanelForCommand("app.help")).toBeNull();
   });
 });
