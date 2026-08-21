@@ -222,16 +222,6 @@ export const SHELL_COMMANDS: readonly ShellCommand[] = [
     availability: () => AVAILABLE,
   },
   {
-    id: "brief.set",
-    title: "Set Brief verbosity",
-    description:
-      "Set response-style Brief verbosity (compact|balanced|detailed|auto) for upcoming turns.",
-    context: "global",
-    defaultBinding: null,
-    keywords: ["brief", "verbosity", "compact", "style"],
-    availability: () => AVAILABLE,
-  },
-  {
     id: "app.exit",
     title: "Exit",
     description: "Close the shell and restore the terminal.",
@@ -242,6 +232,16 @@ export const SHELL_COMMANDS: readonly ShellCommand[] = [
     // which is exactly what it had before this command existed.
     defaultBinding: "ctrl+c",
     keywords: ["quit", "close", "leave"],
+    availability: () => AVAILABLE,
+  },
+  {
+    id: "brief.set",
+    title: "Set Brief verbosity",
+    description:
+      "Set response-style Brief verbosity (compact|balanced|detailed|auto) for upcoming turns.",
+    context: "global",
+    defaultBinding: null,
+    keywords: ["brief", "verbosity", "compact", "style"],
     availability: () => AVAILABLE,
   },
   {

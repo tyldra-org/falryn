@@ -63,7 +63,7 @@ export function createProductSubmissionPort(
   const planner = createContextPlanner();
   const brief = options.brief ?? composeProductBriefControls();
 
-  const port: ProductSubmissionPort = {
+  return {
     brief,
     async submit(snapshot: ComposerSnapshot): Promise<SubmissionOutcome> {
       if (snapshot.text.trim() === "") {
@@ -121,7 +121,6 @@ export function createProductSubmissionPort(
       return { kind: "accepted", snapshot };
     },
   };
-  return port;
 }
 
 function unavailable(snapshot: ComposerSnapshot, reason: string): SubmissionOutcome {
