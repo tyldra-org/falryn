@@ -25,7 +25,6 @@ import {
   DEFAULT_BUSY_TIMEOUT_MS,
   type FalrynError,
   type Sequence,
-  type SqliteStorePort,
   sessionId,
   streamId,
   type TerminalOutcome,
@@ -45,6 +44,8 @@ import type { ServiceProvider } from "./services.ts";
 export const SESSION_NAVIGATION_OWNER = "#721";
 
 const WRITE_COMPLETED_EFFECT: CommandEffect = { intent: "mutate", observed: "completed" };
+
+type SessionStore = Extract<Awaited<ReturnType<typeof openSqliteStore>>, { ok: true }>["value"];
 
 export type SessionResumePayload = {
   readonly owner: typeof SESSION_NAVIGATION_OWNER;
@@ -77,7 +78,7 @@ export type SessionReplayPayload = {
 
 type Opened =
   | { readonly ok: true; readonly kind: "absent" }
-  | { readonly ok: true; readonly kind: "open"; readonly store: SqliteStorePort }
+  | { readonly ok: true; readonly kind: "open"; readonly store: SessionStore }
   | { readonly ok: false; readonly errors: readonly FalrynError[] };
 
 function resultFor<Command extends CommandId, Payload>(
