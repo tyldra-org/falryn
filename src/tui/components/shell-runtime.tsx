@@ -38,6 +38,7 @@ import {
 import type { FocusRegion } from "../focus.ts";
 import { requestFromComposer, submitWhileActive } from "../mid-turn.ts";
 import { classifyPaste, looksSecret } from "../paste.ts";
+import type { SessionNavigationController } from "../session-nav/index.ts";
 import {
   copyTranscriptBody,
   copyTranscriptIdentity,
@@ -96,6 +97,9 @@ export type ShellRuntime = {
   workspaceDraft(draft: string): void;
   replaceWorkspace(set: WorkspaceSetView, notice: string): void;
   workspaceNotice(message: string): void;
+  sessionNavDraft(draft: string): void;
+  sessionNavSession(sessionId: string): void;
+  sessionNavNotice(message: string): void;
   closeOverlay(): void;
 };
 
@@ -112,6 +116,8 @@ export type ShellRuntimeOptions = {
   /** Bound workspace set when the launch path attached one. */
   readonly workspace?: WorkspaceSetView;
   readonly workspaceController?: WorkspaceController | null;
+  /** Session navigation ports when the launch path attached a local store. */
+  readonly sessionNavigationController?: SessionNavigationController | null;
   /** When set, submit-while-active classifies through #611. */
   readonly midTurn?: MidTurnInputService | null;
   /** Product Brief controls for `/brief` (#717). */
@@ -121,23 +127,45 @@ export type ShellRuntimeOptions = {
 const encoder = new TextEncoder();
 const NO_BLOCKS: readonly TranscriptBlock[] = [];
 
+function resolveCommandState(
+  state: ShellState,
+  blocks: readonly TranscriptBlock[],
+  ports: {
+    readonly workspaceController?: WorkspaceController | null;
+    readonly sessionNavigationController?: SessionNavigationController | null;
+  },
+): CommandState {
+  const base = commandStateFor(state, blocks);
+  let next = base;
+  if (ports.workspaceController == null) {
+    next = {
+      ...next,
+      hasWorkspaceSet: false,
+      hasRemovableWorkspaceRoot: false,
+    };
+  }
+  if (ports.sessionNavigationController != null) {
+    next = { ...next, hasSessionNavigation: true };
+  }
+  return next;
+}
+
 export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
   const [state, dispatch] = useReducer(shellReducer, INITIAL_SHELL_STATE, (base) => ({
     ...base,
     workspace: options.workspace ?? EMPTY_WORKSPACE_SET,
   }));
   const blocks = options.transcriptBlocks ?? NO_BLOCKS;
-  const commandState = useMemo(() => {
-    const base = commandStateFor(state, blocks);
-    if (options.workspaceController == null) {
-      return {
-        ...base,
-        hasWorkspaceSet: false,
-        hasRemovableWorkspaceRoot: false,
-      };
-    }
-    return base;
-  }, [state, blocks, options.workspaceController]);
+  const commandState = useMemo(
+    () =>
+      resolveCommandState(state, blocks, {
+        workspaceController: options.workspaceController ?? null,
+        sessionNavigationController: options.sessionNavigationController ?? null,
+      }),
+    [state, blocks, options.workspaceController, options.sessionNavigationController],
+  );
+  const commandStateRef = useRef(commandState);
+  commandStateRef.current = commandState;
   const geometry = useRef<TranscriptGeometry>(EMPTY_GEOMETRY);
   const gate = useRenderGate();
   const stateRef = useRef(state);
@@ -384,9 +412,7 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
         dispatch({ kind: "notice", message: `No command named ${slash.commandId}.` });
         return;
       }
-      const availability = command.availability(
-        commandStateFor(stateRef.current, blocksRef.current),
-      );
+      const availability = command.availability(commandStateRef.current);
       if (availability.kind === "unavailable") {
         dispatch({
           kind: "notice",
@@ -521,9 +547,7 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
         return false;
       }
 
-      const availability = command.availability(
-        commandStateFor(stateRef.current, blocksRef.current),
-      );
+      const availability = command.availability(commandStateRef.current);
       if (availability.kind === "unavailable") {
         dispatch({
           kind: "notice",
@@ -758,6 +782,22 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
     dispatch({ kind: "notice", message });
   }, []);
 
+  const sessionNavDraft = useCallback(
+    (draft: string): void => {
+      gate.note("input");
+      dispatch({ kind: "session-nav-draft", draft });
+    },
+    [gate],
+  );
+
+  const sessionNavSession = useCallback((sessionId: string): void => {
+    dispatch({ kind: "session-nav-session", sessionId });
+  }, []);
+
+  const sessionNavNotice = useCallback((message: string): void => {
+    dispatch({ kind: "notice", message });
+  }, []);
+
   const closeOverlay = useCallback((): void => {
     dispatch({ kind: "close-overlay" });
   }, []);
@@ -779,6 +819,9 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
     workspaceDraft,
     replaceWorkspace,
     workspaceNotice,
+    sessionNavDraft,
+    sessionNavSession,
+    sessionNavNotice,
     closeOverlay,
   };
 }

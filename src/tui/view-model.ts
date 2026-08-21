@@ -182,6 +182,18 @@ export type OverlayRoute =
       readonly draft: string;
     }
   /**
+   * Session resume, fork, rewind, and replay overlays (#722).
+   *
+   * `sessionId` is the chosen source session. `draft` holds rewind `--at-turn`
+   * text. Closing replaces the route, so a half-typed turn id does not linger.
+   */
+  | {
+      readonly kind: "session-nav";
+      readonly panel: "resume" | "fork" | "rewind" | "replay";
+      readonly sessionId: string | null;
+      readonly draft: string;
+    }
+  /**
    * An artifact viewer overlay.
    *
    * The id is the artifact being viewed. Layout and hunk index apply to diff

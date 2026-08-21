@@ -64,6 +64,7 @@ import {
   type RendererSession,
 } from "./renderer-session.ts";
 import { type RuntimeFeed, runtimeFeed, useRuntimeProjection } from "./runtime-feed.ts";
+import type { SessionNavigationController } from "./session-nav/index.ts";
 import { shellModel } from "./shell-model.ts";
 import { createTerminalShutdownParticipant } from "./shutdown.ts";
 import { selectVariant, type ThemeRequest } from "./theme/index.ts";
@@ -136,6 +137,8 @@ export type ShellRunRequest = {
   /** Workspace-set controller and initial roots for header and palette commands. */
   readonly workspaceController?: WorkspaceController;
   readonly workspace?: WorkspaceSetView;
+  /** Session resume/fork/rewind/replay when a local store is attached (#722). */
+  readonly sessionNavigationController?: SessionNavigationController;
   /** Supplied by tests, so a shell run needs no terminal and no native library. */
   readonly createRenderer?: RendererFactory;
 };
@@ -316,6 +319,9 @@ async function frameFor(session: RendererSession, request: ShellRunRequest, onEx
         ? {}
         : { workspaceController: request.workspaceController })}
       {...(request.workspace === undefined ? {} : { workspace: request.workspace })}
+      {...(request.sessionNavigationController === undefined
+        ? {}
+        : { sessionNavigationController: request.sessionNavigationController })}
     />
   );
 }
@@ -341,6 +347,7 @@ function LiveShell(props: {
   readonly gitDashboard?: GitDashboard;
   readonly workspaceController?: WorkspaceController;
   readonly workspace?: WorkspaceSetView;
+  readonly sessionNavigationController?: SessionNavigationController;
 }): ReactNode {
   return (
     <RenderGateProvider clock={props.clock}>
@@ -358,6 +365,9 @@ function LiveShell(props: {
           ? {}
           : { workspaceController: props.workspaceController })}
         {...(props.workspace === undefined ? {} : { workspace: props.workspace })}
+        {...(props.sessionNavigationController === undefined
+          ? {}
+          : { sessionNavigationController: props.sessionNavigationController })}
       />
     </RenderGateProvider>
   );
@@ -375,6 +385,7 @@ function ProjectedShell(props: {
   readonly gitDashboard?: GitDashboard;
   readonly workspaceController?: WorkspaceController;
   readonly workspace?: WorkspaceSetView;
+  readonly sessionNavigationController?: SessionNavigationController;
 }): ReactNode {
   const gate = useRenderGate();
   const runtime = useRuntimeProjection(props.feed, initialActivityCursor(), gate);
