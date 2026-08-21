@@ -6,6 +6,7 @@ import { describe, expect, test } from "bun:test";
 
 import {
   createInMemoryEventStore,
+  createInMemoryFileSystem,
   createStaticEnvironment,
   createSystemClock,
 } from "../domain/index.ts";
@@ -18,6 +19,7 @@ describe("composeProductShellAttachments", () => {
       eventStore: createInMemoryEventStore(),
       clock: createSystemClock(),
       environment: createStaticEnvironment({}),
+      fileSystem: createInMemoryFileSystem({ nodes: {} }),
       workspaceSet: null,
     });
     expect(attachments).not.toBeNull();
@@ -34,6 +36,7 @@ describe("composeProductShellAttachments", () => {
       eventStore: createInMemoryEventStore(),
       clock: createSystemClock(),
       environment: createStaticEnvironment({}),
+      fileSystem: createInMemoryFileSystem({ nodes: {} }),
       workspaceSet: null,
     });
     expect(attachments).not.toBeNull();
