@@ -14,6 +14,7 @@ import {
   composeProductAgentRuntime,
   composeProductCredentials,
   composeProductGitTools,
+  composeProductIndexLifecycle,
   composeProductLanguageTools,
   composeProductProcessTools,
   composeProductWorkspaceTools,
@@ -23,6 +24,7 @@ import {
   DEFAULT_OPENAI_CREDENTIAL_REFERENCE,
   fromUnknown,
   mergeProductToolBundles,
+  PRODUCT_INDEX_LIFECYCLE_OWNER,
   resolveProviderApiKey,
 } from "../application/index.ts";
 import {
@@ -30,12 +32,15 @@ import {
   configurationGeneration,
   type FalrynError,
   type InputStreamPort,
+  ok,
   primaryWorkspaceRoot,
   sessionId as sessionIdCodec,
   streamId,
   type TerminalOutcome,
   traceId as traceIdCodec,
   turnId as turnIdCodec,
+  type WorkspaceIndexGeneration,
+  type WorkspaceIndexWritePort,
   workspaceId as workspaceIdCodec,
 } from "../domain/index.ts";
 import {
@@ -83,6 +88,9 @@ export type CodingRunPayload = {
   readonly contextPackItems?: number;
   /** Whether the live prompt composition included a planner-built evidence path. */
   readonly contextPlannerOwner?: string;
+  /** Product index lifecycle freshness (#716). */
+  readonly indexFreshness?: string;
+  readonly indexOwner?: string;
 };
 
 export type CodingRunResult = CommandResultOf<typeof CODING_RUN_COMMAND, CodingRunPayload>;
@@ -237,6 +245,27 @@ export async function runCoding(
   const turnId = turnIdCodec.from(ids.turnId);
   const traceId = traceIdCodec.from(ids.traceId);
   const generation = configurationGeneration.from(0);
+
+  const indexStore: WorkspaceIndexWritePort & {
+    readonly last: { current: WorkspaceIndexGeneration | null };
+  } = {
+    last: { current: null },
+    async rebuild(nextGeneration, signal) {
+      if (signal?.aborted === true) {
+        return { ok: false, error: { code: "cancelled" } };
+      }
+      indexStore.last.current = nextGeneration;
+      return ok(nextGeneration);
+    },
+  };
+  const indexLifecycle = composeProductIndexLifecycle({
+    fileSystem: graph.fileSystem,
+    workspaceRoot: primaryWorkspaceRoot(workspace.value.set).path,
+    index: indexStore,
+  });
+  await indexLifecycle.rebuild(options.signal);
+  const indexFreshness = indexLifecycle.status().freshness;
+  const indexOwner = PRODUCT_INDEX_LIFECYCLE_OWNER;
 
   let providerAdapter = options.providerAdapter;
   if (providerAdapter === undefined) {
@@ -443,6 +472,8 @@ export async function runCoding(
           eventCount: producer.events().length,
           contextPackItems,
           contextPlannerOwner,
+          indexFreshness,
+          indexOwner,
         },
         [
           adoptForeignError(
@@ -468,6 +499,8 @@ export async function runCoding(
         eventCount: producer.events().length,
         contextPackItems,
         contextPlannerOwner,
+        indexFreshness,
+        indexOwner,
       },
       [
         adoptForeignError(
@@ -506,6 +539,8 @@ export async function runCoding(
         eventCount: producer.events().length,
         contextPackItems,
         contextPlannerOwner,
+        indexFreshness,
+        indexOwner,
       },
       [
         fromUnknown(new Error(`turn could not complete (${completed.error.code})`), {
@@ -525,6 +560,8 @@ export async function runCoding(
       eventCount: producer.events().length,
       contextPackItems,
       contextPlannerOwner,
+      indexFreshness,
+      indexOwner,
     },
     [],
     hostedOutcome,
