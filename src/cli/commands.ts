@@ -140,6 +140,11 @@ import type {
   runSessionReplay,
   runSessionResume,
 } from "./session-navigation.ts";
+import type {
+  runTaskDecompose,
+  runTaskProgress,
+  runTaskValidate,
+} from "./task-intelligence-commands.ts";
 import { FALRYN_VERSION } from "./version.ts";
 import {
   describeWorkspaceResolveError,
@@ -2014,6 +2019,12 @@ export function stoppedResult(
       return resultFor("import", null, [], outcome, effect);
     case "replay":
       return resultFor("replay", null, [], outcome, effect);
+    case "task.decompose":
+      return resultFor("task.decompose", null, [], outcome, effect);
+    case "task.validate":
+      return resultFor("task.validate", null, [], outcome, effect);
+    case "task.progress":
+      return resultFor("task.progress", null, [], outcome, effect);
     case "session.list":
       return resultFor<"session.list", SessionListPayload>(
         "session.list",
@@ -2131,6 +2142,9 @@ export type RunCommandResult =
   | Awaited<ReturnType<typeof runExport>>
   | Awaited<ReturnType<typeof runImport>>
   | Awaited<ReturnType<typeof runReplay>>
+  | Awaited<ReturnType<typeof runTaskDecompose>>
+  | Awaited<ReturnType<typeof runTaskValidate>>
+  | Awaited<ReturnType<typeof runTaskProgress>>
   | Awaited<ReturnType<typeof runSessionList>>
   | Awaited<ReturnType<typeof runSessionShow>>
   | Awaited<ReturnType<typeof runSessionResume>>

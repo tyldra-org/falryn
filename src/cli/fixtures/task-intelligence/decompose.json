@@ -1,0 +1,6 @@
+{
+  "outcomeId": "fixture-outcome",
+  "statement": "Ship a bounded export and a matching restore.",
+  "goals": ["Write the export package", "Restore from a verified package"],
+  "nonGoals": ["Execute Git"]
+}

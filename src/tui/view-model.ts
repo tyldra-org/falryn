@@ -194,6 +194,17 @@ export type OverlayRoute =
       readonly draft: string;
     }
   /**
+   * Task decomposition, validation advice, and progress overlays (#726).
+   *
+   * `draft` holds line-oriented key=value text. Closing replaces the route, so
+   * a half-typed draft does not linger.
+   */
+  | {
+      readonly kind: "task-intelligence";
+      readonly panel: "decompose" | "validate" | "progress";
+      readonly draft: string;
+    }
+  /**
    * An artifact viewer overlay.
    *
    * The id is the artifact being viewed. Layout and hunk index apply to diff

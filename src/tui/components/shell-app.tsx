@@ -384,6 +384,9 @@ function ResolvedShell(
       onSessionNavSession={props.runtime.sessionNavSession}
       onSessionNavNotice={props.runtime.sessionNavNotice}
       onSessionNavClose={props.runtime.closeOverlay}
+      onTaskIntelligenceDraft={props.runtime.taskIntelligenceDraft}
+      onTaskIntelligenceNotice={props.runtime.taskIntelligenceNotice}
+      onTaskIntelligenceClose={props.runtime.closeOverlay}
     />
   );
 }

@@ -45,6 +45,13 @@ describe("the declared tree", () => {
     expect(await commandOf("export", "--session", "s1")).toBe("export");
     expect(await commandOf("import", "bundle-1")).toBe("import");
     expect(await commandOf("replay", "s1")).toBe("replay");
+    expect(await commandOf("task", "decompose", "--statement", "Ship", "--goal", "Write")).toBe(
+      "task.decompose",
+    );
+    expect(await commandOf("task", "validate", "--task", "t1:Restore succeeds")).toBe(
+      "task.validate",
+    );
+    expect(await commandOf("task", "progress", "--task", "t1")).toBe("task.progress");
     expect(await commandOf("session", "list")).toBe("session.list");
     expect(await commandOf("session", "show", "s1")).toBe("session.show");
     expect(await commandOf("session", "resume", "s1")).toBe("session.resume");

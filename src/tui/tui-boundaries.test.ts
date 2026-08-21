@@ -64,6 +64,8 @@ const RENDERER_OWNERS = [
   "components/workspace-sheet.tsx",
   // Session navigation overlays (#722): Select for sessions/replay, Input for rewind.
   "session-nav/sheet.tsx",
+  // Task intelligence overlays (#726): Input draft → application advice ports.
+  "task-intelligence/sheet.tsx",
   // The root measures the viewport through the renderer's own hooks. Nothing
   // below it does: every component reads the frame from context instead, which
   // is what keeps the measurement in one place.

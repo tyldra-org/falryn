@@ -895,6 +895,38 @@ export const SHELL_COMMANDS: readonly ShellCommand[] = [
     availability: (state) =>
       state.hasSessionNavigation ? AVAILABLE : unavailable("no session store yet"),
   },
+  // Unbound task-intelligence advice (#726). Kept after Exit and after the
+  // primary help entries so viewport help still shows earlier unavailable
+  // reasons; palette “two downs → Exit” stays intact because these have no
+  // default binding and sit after Exit in registration order only for Exit’s
+  // neighbors among *available* bound commands.
+  {
+    id: "task.decompose",
+    title: "Decompose outcome",
+    description: "Turn a declared outcome into bounded tasks.",
+    context: "global",
+    defaultBinding: null,
+    keywords: ["task", "decompose", "goals", "outcome"],
+    availability: () => AVAILABLE,
+  },
+  {
+    id: "task.validate",
+    title: "Validation advice",
+    description: "Recommend focused validation from declared criteria.",
+    context: "global",
+    defaultBinding: null,
+    keywords: ["task", "validate", "criteria", "advice"],
+    availability: () => AVAILABLE,
+  },
+  {
+    id: "task.progress",
+    title: "Task progress",
+    description: "Project next actions from a task graph and observations.",
+    context: "global",
+    defaultBinding: null,
+    keywords: ["task", "progress", "next", "actions"],
+    availability: () => AVAILABLE,
+  },
 ];
 
 /** A command by ID, or `undefined`. Lookup is by identity and never by title. */

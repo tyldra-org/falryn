@@ -1,0 +1,7 @@
+{
+  "outcomeId": "fixture-outcome",
+  "tasks": [
+    { "taskId": "t1", "criteria": ["Restore succeeds from the package"] },
+    { "taskId": "t2" }
+  ]
+}
