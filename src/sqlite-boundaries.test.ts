@@ -430,6 +430,24 @@ describe("user backup", () => {
   });
 });
 
+describe("reachability garbage collection", () => {
+  const GC = "data/reachability-gc.ts";
+
+  test("never names a command runner, provider, or network", async () => {
+    const source = await readSource(GC);
+    expect(source).not.toMatch(
+      /\b(CommandRunnerPort|ProviderPort|Bun\.spawn|child_process|fetch\()\b/,
+    );
+  });
+
+  test("can never reach a credential", async () => {
+    const credentials =
+      /\b(CredentialStorePort|SecretResolverPort|CredentialReference|SecretRequest)\b/;
+    expect(credentials.test(await readSource(GC))).toBe(false);
+    expect(credentials.test(await readSource("domain/reachability-gc.ts"))).toBe(false);
+  });
+});
+
 describe("the product tables", () => {
   test("are named only by the area that owns their SQL", async () => {
     // Snake-cased identifiers only. `sessions` and `turns` are also ordinary

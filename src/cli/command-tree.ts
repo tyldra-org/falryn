@@ -31,6 +31,8 @@ import {
   type ExportName,
   type ExportSelection,
   exportName,
+  type GcPlanId,
+  isGcPlanId,
   isLegalWorkspaceLayoutName,
   isOwnershipClass,
   isPlanId,
@@ -92,7 +94,13 @@ export type DataLifecycleArguments =
       readonly confirmation: BackupName | null;
     }
   | { readonly action: "inspect"; readonly name: BackupName }
-  | { readonly action: "diagnostics" };
+  | { readonly action: "diagnostics" }
+  | { readonly action: "retention" }
+  | {
+      readonly action: "gc";
+      readonly confirmation: GcPlanId | null;
+      readonly pinnedSessions: readonly string[];
+    };
 
 /** Command-specific inputs for `falryn export`. */
 export type ExportCommandArguments = {
@@ -239,6 +247,7 @@ type RawArguments = {
   readonly action: string | undefined;
   readonly class: readonly string[] | undefined;
   readonly confirm: string | undefined;
+  readonly "pinned-session": readonly string[] | undefined;
   readonly session: readonly string[] | undefined;
   readonly after: string | undefined;
   readonly before: string | undefined;
@@ -335,9 +344,11 @@ function build(argv: readonly string[], lenientPositionals = false): ReturnType<
                 "restore",
                 "inspect",
                 "diagnostics",
+                "retention",
+                "gc",
               ] as const,
               describe:
-                "reset or uninstall classes, or back up, restore, inspect, or diagnose local SQLite state",
+                "reset or uninstall classes, back up or restore SQLite, diagnose, report retention, or GC unreachable data",
             })
             .positional("name", {
               type: "string",
@@ -348,10 +359,15 @@ function build(argv: readonly string[], lenientPositionals = false): ReturnType<
               array: true,
               describe: "ownership class to include in a reset (repeatable)",
             })
+            .option("pinned-session", {
+              type: "string",
+              array: true,
+              describe: "session identity treated as pinned for reachability GC (repeatable)",
+            })
             .option("confirm", {
               type: "string",
               describe:
-                "execute a reset plan identity from a prior preview, or confirm a restore with the backup name",
+                "execute a reset or GC plan identity from a prior preview, or confirm a restore with the backup name",
             }),
       )
       .command("doctor", "Run bounded environment and storage diagnostics.", (group) => group)
@@ -842,6 +858,10 @@ function commandFrom(positional: readonly string[], action: string | null): Runn
         return "data.inspect";
       case "diagnostics":
         return "data.diagnostics";
+      case "retention":
+        return "data.retention";
+      case "gc":
+        return "data.gc";
       default:
         return null;
     }
@@ -951,7 +971,9 @@ function dataLifecycleArgumentsFor(
     command !== "data.backup" &&
     command !== "data.restore" &&
     command !== "data.inspect" &&
-    command !== "data.diagnostics"
+    command !== "data.diagnostics" &&
+    command !== "data.retention" &&
+    command !== "data.gc"
   ) {
     return null;
   }
@@ -960,12 +982,47 @@ function dataLifecycleArgumentsFor(
     return "Argument class is only valid with data reset.";
   }
 
+  if (command === "data.retention") {
+    if (parsed.name !== undefined) {
+      return "Argument name is only valid with data backup, restore, or inspect.";
+    }
+    if (parsed.confirm !== undefined) {
+      return "Argument confirm is only valid with data reset, restore, or gc.";
+    }
+    if ((parsed["pinned-session"]?.length ?? 0) > 0) {
+      return "Argument pinned-session is only valid with data gc.";
+    }
+    return { action: "retention" };
+  }
+
+  if (command === "data.gc") {
+    if (parsed.name !== undefined) {
+      return "Argument name is only valid with data backup, restore, or inspect.";
+    }
+    let confirmation: GcPlanId | null = null;
+    if (parsed.confirm !== undefined) {
+      if (!isGcPlanId(parsed.confirm)) {
+        return "Argument confirm must be a garbage-collection plan identity from a prior preview.";
+      }
+      confirmation = parsed.confirm;
+    }
+    return {
+      action: "gc",
+      confirmation,
+      pinnedSessions: parsed["pinned-session"] ?? [],
+    };
+  }
+
+  if ((parsed["pinned-session"]?.length ?? 0) > 0) {
+    return "Argument pinned-session is only valid with data gc.";
+  }
+
   if (command === "data.diagnostics") {
     if (parsed.name !== undefined) {
       return "Argument name is only valid with data backup, restore, or inspect.";
     }
     if (parsed.confirm !== undefined) {
-      return "Argument confirm is only valid with data reset or restore.";
+      return "Argument confirm is only valid with data reset, restore, or gc.";
     }
     return { action: "diagnostics" };
   }

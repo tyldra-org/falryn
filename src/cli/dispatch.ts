@@ -73,6 +73,7 @@ import {
   runDataInspect,
   runDataRestore,
 } from "./data-backup-commands.ts";
+import { runDataGc, runDataRetention } from "./data-retention-gc-commands.ts";
 import { EXIT_CODES, type ExitCode, resolveExitCode } from "./exit.ts";
 import { runImport, runReplay } from "./import-replay-commands.ts";
 import {
@@ -593,6 +594,14 @@ function stoppedCommandIntent(
   ) {
     return "mutate";
   }
+  if (
+    command === "data.gc" &&
+    dataLifecycleArgs !== null &&
+    dataLifecycleArgs.action === "gc" &&
+    dataLifecycleArgs.confirmation !== null
+  ) {
+    return "mutate";
+  }
   if (command === "data.backup") {
     return "mutate";
   }
@@ -772,6 +781,16 @@ async function produce(
         throw new Error("Missing parsed data diagnostics arguments.");
       }
       return runDataDiagnostics(services, signal);
+    case "data.retention":
+      if (dataLifecycleArgs === null || dataLifecycleArgs.action !== "retention") {
+        throw new Error("Missing parsed data retention arguments.");
+      }
+      return runDataRetention(services, signal);
+    case "data.gc":
+      if (dataLifecycleArgs === null || dataLifecycleArgs.action !== "gc") {
+        throw new Error("Missing parsed data gc arguments.");
+      }
+      return runDataGc(services, dataLifecycleArgs, signal, onMutationStart);
     case "doctor":
       return runDoctor(services);
     case "export":

@@ -70,6 +70,16 @@ export {
   createProjectionShutdownParticipant,
   PROJECTION_PARTICIPANT_NAME,
 } from "./projections.ts";
+export type { ReachabilityGcInputs, ReachabilityGcOptions } from "./reachability-gc.ts";
+export {
+  computeGcPlanId,
+  executeReachabilityGc,
+  MAX_GC_EXAMINED_ARTIFACTS,
+  MAX_GC_EXAMINED_SESSIONS,
+  MAX_GC_EXPORT_PACKAGES,
+  parseExportDirectoryEntry,
+  planReachabilityGc,
+} from "./reachability-gc.ts";
 export { MAX_RECONCILED_ENTRIES, reconcileTemporaryIngest } from "./reconciliation.ts";
 export type { BeginRunOptions, RecoveryOptions, RunSession } from "./recovery.ts";
 export {

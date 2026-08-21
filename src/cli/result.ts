@@ -63,6 +63,8 @@ export const COMMAND_IDS = [
   "data.restore",
   "data.inspect",
   "data.diagnostics",
+  "data.retention",
+  "data.gc",
   "doctor",
   "export",
   "import",
