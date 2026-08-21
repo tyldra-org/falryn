@@ -674,6 +674,8 @@ function renderPayload(session: Session, result: RunCommandResult): RenderedPayl
       return renderConfigValidate(session, result.payload);
     case "config.path":
       return renderConfigPath(session, result.payload);
+    case "config.set":
+      return renderConfigSet(session, result.payload);
     case "data.reset":
     case "data.uninstall":
       return renderDataRemoval(session, result.payload);
@@ -1483,6 +1485,21 @@ function renderConfigPath(
   return { lines, diagnostics };
 }
 
+function renderConfigSet(
+  _session: Session,
+  payload: Extract<RunCommandResult, { command: "config.set" }>["payload"],
+): RenderedPayload {
+  if (payload === null) {
+    return { lines: ["Configuration was not written."], diagnostics: [] };
+  }
+  return {
+    lines: [
+      `Wrote ${safe(payload.keyPath)} to ${safe(payload.path)} (${payload.byteLength} bytes, revision ${safe(payload.revision)}).`,
+    ],
+    diagnostics: [],
+  };
+}
+
 function renderConfigValidate(
   session: Session,
   payload: Extract<RunCommandResult, { command: "config.validate" }>["payload"],
@@ -1767,6 +1784,10 @@ function quietResultLines(result: RunCommandResult): readonly string[] {
       return result.payload === null
         ? []
         : result.payload.sources.map((source) => safe(source.path));
+    case "config.set":
+      return result.payload === null
+        ? []
+        : [`${result.payload.keyPath}=${safe(result.payload.path)}`];
     case "data.reset":
     case "data.uninstall":
       return quietDataLines(result.payload);
@@ -2106,6 +2127,8 @@ function quietFindingLines(result: RunCommandResult): readonly string[] {
       // the whole of what they wrote.
       return result.payload === null ? [] : unreadSourceFindings(result.payload.inspection.sources);
     case "config.path":
+      return [];
+    case "config.set":
       return [];
     case "export":
       return [];

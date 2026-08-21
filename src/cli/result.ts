@@ -57,6 +57,7 @@ export const COMMAND_IDS = [
   "config.show",
   "config.validate",
   "config.path",
+  "config.set",
   "data.reset",
   "data.uninstall",
   "data.backup",

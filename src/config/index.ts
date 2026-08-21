@@ -39,6 +39,12 @@ export {
   pathOverrideKey,
 } from "./declaration.ts";
 export {
+  assignConfigurationValue,
+  createEmptyConfigurationDocument,
+  parseConfigurationDocument,
+  serializeConfigurationDocument,
+} from "./document.ts";
+export {
   diffGenerations,
   nextGeneration,
   strongestApplicationClass,
@@ -71,6 +77,12 @@ export type {
   ConfigurationRegistryOptions,
 } from "./registry.ts";
 export { createConfigurationRegistry, foldDeclaredValue } from "./registry.ts";
+export type {
+  ConfigurationReloadWatcher,
+  ConfigurationReloadWatcherOptions,
+  FileChangeSubscriber,
+} from "./reload-watcher.ts";
+export { createConfigurationReloadWatcher } from "./reload-watcher.ts";
 export type { SchemaVersionPolicy, SchemaVersionVerdict } from "./schema-family.ts";
 export {
   CONFIGURATION_MINIMUM_SCHEMA_VERSION,
@@ -93,3 +105,13 @@ export {
   readSource,
   sourceLabel,
 } from "./sources.ts";
+export type {
+  ConfigurationFileScope,
+  ConfigurationWriteOutcome,
+  ConfigurationWriteRequest,
+} from "./writer.ts";
+export {
+  configurationSourcePaths,
+  resolveConfigurationFilePath,
+  writeConfigurationKey,
+} from "./writer.ts";

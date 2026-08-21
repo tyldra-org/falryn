@@ -52,6 +52,7 @@ import {
   runArtifactShow,
   runCoding,
   runConfigPath,
+  runConfigSet,
   runConfigShow,
   runConfigValidate,
   runDataReset,
@@ -67,6 +68,7 @@ import {
   stoppedResult,
 } from "./commands.ts";
 import { composeSessionNavigationController } from "./compose-session-navigation-controller.ts";
+import { startConfigurationReloadWatcher } from "./configuration-reload.ts";
 import {
   runDataBackup,
   runDataDiagnostics,
@@ -227,6 +229,7 @@ async function runCommand(
     sessionArgs,
     artifactArgs,
     workspaceArgs,
+    configSetArgs,
     runArgs,
     taskArgs,
     commitPlanArgs,
@@ -251,6 +254,7 @@ async function runCommand(
     sessionArgs,
     artifactArgs,
     workspaceArgs,
+    configSetArgs,
     runArgs,
     taskArgs,
     commitPlanArgs,
@@ -414,6 +418,11 @@ async function launchShell(
     signal: stopped.signal,
   });
 
+  const configurationReload = startConfigurationReloadWatcher(graph, globals, {
+    streams,
+    signal: stopped.signal,
+  });
+
   // Loaded here and nowhere earlier: this is the first line of the whole
   // invocation that requires OpenTUI to exist.
   const { runShell } = await import("../tui/shell.tsx");
@@ -450,6 +459,7 @@ async function launchShell(
           }),
     });
   } finally {
+    configurationReload.dispose();
     finished.abort();
     if (sessionNavigationBundle !== undefined) {
       await sessionNavigationBundle.close(stopped.signal);
@@ -520,6 +530,7 @@ async function governed(
   sessionArgs: Extract<Invocation, { kind: "run" }>["sessionArgs"],
   artifactArgs: Extract<Invocation, { kind: "run" }>["artifactArgs"],
   workspaceArgs: Extract<Invocation, { kind: "run" }>["workspaceArgs"],
+  configSetArgs: Extract<Invocation, { kind: "run" }>["configSetArgs"],
   runArgs: Extract<Invocation, { kind: "run" }>["runArgs"],
   taskArgs: Extract<Invocation, { kind: "run" }>["taskArgs"],
   commitPlanArgs: Extract<Invocation, { kind: "run" }>["commitPlanArgs"],
@@ -541,6 +552,7 @@ async function governed(
       sessionArgs,
       artifactArgs,
       workspaceArgs,
+      configSetArgs,
       runArgs,
       taskArgs,
       commitPlanArgs,
@@ -562,6 +574,7 @@ async function governed(
       sessionArgs,
       artifactArgs,
       workspaceArgs,
+      configSetArgs,
       runArgs,
       taskArgs,
       commitPlanArgs,
@@ -631,6 +644,9 @@ function stoppedCommandIntent(
     return "mutate";
   }
   if (command === "workspace.save") {
+    return "mutate";
+  }
+  if (command === "config.set") {
     return "mutate";
   }
   return "none";
@@ -755,6 +771,7 @@ async function produce(
   sessionArgs: Extract<Invocation, { kind: "run" }>["sessionArgs"],
   artifactArgs: Extract<Invocation, { kind: "run" }>["artifactArgs"],
   workspaceArgs: Extract<Invocation, { kind: "run" }>["workspaceArgs"],
+  configSetArgs: Extract<Invocation, { kind: "run" }>["configSetArgs"],
   runArgs: Extract<Invocation, { kind: "run" }>["runArgs"],
   taskArgs: Extract<Invocation, { kind: "run" }>["taskArgs"],
   commitPlanArgs: Extract<Invocation, { kind: "run" }>["commitPlanArgs"],
@@ -772,6 +789,11 @@ async function produce(
       return runConfigValidate(services, overrides, globals, signal);
     case "config.path":
       return runConfigPath(services, globals, signal);
+    case "config.set":
+      if (configSetArgs === null) {
+        throw new Error("Missing parsed config set arguments.");
+      }
+      return runConfigSet(services, configSetArgs, globals, signal, onMutationStart);
     case "data.reset":
       if (data === null) {
         throw new Error("Missing parsed data reset arguments.");
@@ -927,6 +949,7 @@ async function produce(
       return runCoding(services, runArgs, {
         input: options.streams.input,
         globals,
+        reloadDiagnostics: options.streams,
         ...(signal === undefined ? {} : { signal }),
       });
     default:
