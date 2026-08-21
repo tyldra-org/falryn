@@ -198,6 +198,15 @@ export {
   resolveProviderApiKey,
 } from "./product-credentials.ts";
 export type {
+  ProductIndexLifecycle,
+  ProductIndexLifecyclePorts,
+  ProductIndexLifecycleStatus,
+} from "./product-index-lifecycle.ts";
+export {
+  composeProductIndexLifecycle,
+  PRODUCT_INDEX_LIFECYCLE_OWNER,
+} from "./product-index-lifecycle.ts";
+export type {
   ProductGitToolPorts,
   ProductGitTools,
 } from "./product-tools-git.ts";
