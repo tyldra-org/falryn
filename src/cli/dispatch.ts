@@ -107,6 +107,12 @@ import {
   runSessionReplay,
   runSessionResume,
 } from "./session-navigation.ts";
+import {
+  completionInstallScript,
+  completionRequestArgs,
+  getCompletionCandidates,
+  isCompletionRequest,
+} from "./shell-completion.ts";
 import { resolveShellBootstrapConfiguration } from "./shell-configuration.ts";
 import {
   type CliStreams,
@@ -169,6 +175,21 @@ export type DispatchOptions = {
  */
 export async function dispatch(options: DispatchOptions): Promise<ExitCode> {
   const { streams } = options;
+
+  if (isCompletionRequest(options.argv)) {
+    for (const candidate of getCompletionCandidates(completionRequestArgs(options.argv))) {
+      writeResultLine(streams, candidate);
+    }
+    const flush = await streams.flush();
+    if (!flush.complete && !flush.readerLeft) {
+      return resolveExitCode({
+        outcome: outcomeAfterFlush({ kind: "completed" }, flush),
+        error: null,
+      });
+    }
+    return EXIT_CODES.COMPLETED;
+  }
+
   const invocation = await parseInvocation(options.argv);
 
   const code = await run(invocation, options);
@@ -230,6 +251,7 @@ async function runCommand(
     artifactArgs,
     workspaceArgs,
     configSetArgs,
+    completionArgs,
     runArgs,
     taskArgs,
     commitPlanArgs,
@@ -238,6 +260,11 @@ async function runCommand(
 
   if (command === "default") {
     return runDefault(globals, options);
+  }
+
+  if (command === "completion" && completionArgs !== null) {
+    writeResultLine(streams, completionInstallScript(completionArgs.shell));
+    return EXIT_CODES.COMPLETED;
   }
 
   // Built here and not before: every path above returns without a service.
@@ -958,6 +985,8 @@ async function produce(
           ? {}
           : { ownedProcesses: options.governance.ownedProcesses }),
       });
+    case "completion":
+      throw new Error("completion is handled before services are constructed.");
     default:
       // `default`, `help`, and `version` are answered before this is reached,
       // so a new command reaching here without a branch fails to compile.

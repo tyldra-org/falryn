@@ -62,6 +62,8 @@ describe("help and version", () => {
       ["workspace", "--help"],
       ["workspace", "list", "--help"],
       ["config", "show", "--help"],
+      ["completion", "bash"],
+      ["--get-yargs-completions", "doctor"],
       // Invalid usage is refused before any work too, which is the same rule
       // stated from the other side: nothing is constructed to reject a flag.
       ["--nope"],
