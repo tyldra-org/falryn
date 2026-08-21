@@ -70,6 +70,7 @@ import type {
   DataInspectPayload,
   DataRestorePayload,
 } from "./data-backup-commands.ts";
+import type { DataGcPayload, DataRetentionPayload } from "./data-retention-gc-commands.ts";
 import type { ImportCommandPayload, ReplayCommandPayload } from "./import-replay-commands.ts";
 import type {
   CommandEffect,
@@ -678,6 +679,10 @@ function renderPayload(session: Session, result: RunCommandResult): RenderedPayl
       return renderDataInspect(session, result.payload);
     case "data.diagnostics":
       return renderDataDiagnostics(session, result.payload);
+    case "data.retention":
+      return renderDataRetention(session, result.payload);
+    case "data.gc":
+      return renderDataGc(session, result.payload);
     case "doctor":
       return renderDoctor(session, result.payload);
     case "export":
@@ -1129,6 +1134,87 @@ function renderDataDiagnostics(
   };
 }
 
+function renderDataRetention(
+  session: Session,
+  payload: DataRetentionPayload | null,
+): RenderedPayload {
+  if (payload === null) {
+    return { lines: ["No retention report is available."], diagnostics: [] };
+  }
+  const lines = [
+    paint(session, "plain", "Local data retention"),
+    `  Total bytes     ${payload.report.totalBytes}`,
+    `  Total items     ${payload.report.totalItems}`,
+    `  Total pressure  ${safe(payload.report.totalPressure)}`,
+    "  Classes",
+  ];
+  for (const usage of payload.report.classes) {
+    const pressure = payload.report.pressure.find(
+      (entry) => entry.ownershipClass === usage.ownershipClass,
+    );
+    lines.push(
+      `    ${safe(usage.ownershipClass)}  ${usage.byteCount} bytes  ${usage.itemCount} items  bytes=${safe(pressure?.bytes ?? "unmeasured")}  items=${safe(pressure?.items ?? "unmeasured")}  (${usage.completeness})`,
+    );
+  }
+  if (payload.report.unregistered.length > 0) {
+    lines.push(`  Unregistered    ${payload.report.unregistered.map(safe).join(", ")}`);
+  }
+  return {
+    lines,
+    diagnostics: [
+      "Reporting only. Nothing here deletes bytes. Reachability garbage collection is `falryn data gc`.",
+    ],
+  };
+}
+
+function renderDataGc(session: Session, payload: DataGcPayload | null): RenderedPayload {
+  if (payload === null) {
+    return { lines: ["No reachability garbage-collection plan is available."], diagnostics: [] };
+  }
+  const lines = [
+    paint(session, "plain", "Reachability garbage collection"),
+    `  Plan identity   ${safe(payload.plan.planId)}`,
+    `  Examined        ${payload.plan.examinedSessions} sessions, ${payload.plan.examinedArtifacts} artifacts (${payload.plan.completeness})`,
+    `  Candidates      ${payload.plan.candidateSessions} sessions, ${payload.plan.candidateArtifacts} artifacts, ${payload.plan.candidateBytes} bytes`,
+    `  Confirmation    ${safe(payload.confirmation)}`,
+  ];
+  if (payload.confirmation === "applied") {
+    lines.push(
+      `  Deleted         ${payload.deletedSessions ?? 0} sessions, ${payload.deletedArtifacts ?? 0} artifacts, ${payload.deletedBytes ?? 0} bytes`,
+      `  Failed          ${payload.failed ?? 0}`,
+    );
+  }
+  if (payload.plan.candidates.length > 0) {
+    lines.push("  Candidate list");
+    for (const candidate of payload.plan.candidates.slice(0, 16)) {
+      lines.push(
+        `    ${safe(candidate.kind)}  ${safe(candidate.identity)}  ${candidate.byteCount} bytes`,
+      );
+    }
+    if (payload.plan.candidates.length > 16) {
+      lines.push(`    … ${payload.plan.candidates.length - 16} more`);
+    }
+  }
+  if (payload.plan.omissions.length > 0) {
+    lines.push("  Omissions");
+    for (const omission of payload.plan.omissions.slice(0, 8)) {
+      lines.push(
+        `    ${safe(omission.kind)}  ${safe(omission.identity)}  ${safe(omission.reason)}`,
+      );
+    }
+  }
+  return {
+    lines,
+    diagnostics:
+      payload.confirmation === "not-requested"
+        ? [
+            "Preview only. Re-run with `--confirm <plan-id>` to apply this exact plan.",
+            "Pin retained sessions with `--pinned-session <id>` when they are not already open or export seeds.",
+          ]
+        : [],
+  };
+}
+
 function renderDataRemoval(session: Session, payload: DataRemovalPayload | null): RenderedPayload {
   if (payload === null) {
     return { lines: ["No local-data plan is available."], diagnostics: [] };
@@ -1560,6 +1646,10 @@ function quietResultLines(result: RunCommandResult): readonly string[] {
       return quietDataInspectLines(result.payload);
     case "data.diagnostics":
       return quietDataDiagnosticsLines(result.payload);
+    case "data.retention":
+      return quietDataRetentionLines(result.payload);
+    case "data.gc":
+      return quietDataGcLines(result.payload);
     case "config.validate":
     case "doctor":
       return [];
@@ -1772,6 +1862,37 @@ function quietDataDiagnosticsLines(payload: DataDiagnosticsPayload | null): read
   ];
 }
 
+function quietDataRetentionLines(payload: DataRetentionPayload | null): readonly string[] {
+  if (payload === null) {
+    return [];
+  }
+  return payload.report.classes.map((usage) =>
+    [
+      safe(usage.ownershipClass),
+      String(usage.byteCount),
+      String(usage.itemCount),
+      usage.completeness,
+    ].join("\t"),
+  );
+}
+
+function quietDataGcLines(payload: DataGcPayload | null): readonly string[] {
+  if (payload === null) {
+    return [];
+  }
+  const header = [
+    safe(payload.plan.planId),
+    String(payload.plan.candidateSessions),
+    String(payload.plan.candidateArtifacts),
+    String(payload.plan.candidateBytes),
+    payload.confirmation,
+  ].join("\t");
+  const rows = payload.plan.candidates.map((candidate) =>
+    [candidate.kind, safe(candidate.identity), String(candidate.byteCount)].join("\t"),
+  );
+  return [header, ...rows];
+}
+
 /** What quiet mode still reports on stderr: the findings behind the verdict. */
 function quietFindingLines(result: RunCommandResult): readonly string[] {
   switch (result.command) {
@@ -1793,6 +1914,8 @@ function quietFindingLines(result: RunCommandResult): readonly string[] {
     case "data.restore":
     case "data.inspect":
     case "data.diagnostics":
+    case "data.retention":
+    case "data.gc":
       return [];
     case "config.show":
       // Quiet still reports a source that was skipped. `config show` prints the

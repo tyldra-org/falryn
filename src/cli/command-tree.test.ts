@@ -40,6 +40,8 @@ describe("the declared tree", () => {
     expect(await commandOf("data", "restore", "daily")).toBe("data.restore");
     expect(await commandOf("data", "inspect", "daily")).toBe("data.inspect");
     expect(await commandOf("data", "diagnostics")).toBe("data.diagnostics");
+    expect(await commandOf("data", "retention")).toBe("data.retention");
+    expect(await commandOf("data", "gc")).toBe("data.gc");
     expect(await commandOf("export", "--session", "s1")).toBe("export");
     expect(await commandOf("import", "bundle-1")).toBe("import");
     expect(await commandOf("replay", "s1")).toBe("replay");

@@ -2178,6 +2178,20 @@ export type {
 } from "./queue.ts";
 export { OVERFLOW_POLICIES } from "./queue.ts";
 export type {
+  GcCandidate,
+  GcCandidateKind,
+  GcConfirmation,
+  GcOmission,
+  GcOutcome,
+  GcPlan,
+  GcPlanId,
+  GcRefusal,
+  GcRetainedCount,
+  GcRetentionReason,
+  ReachabilityGcError,
+} from "./reachability-gc.ts";
+export { GC_CANDIDATE_KINDS, GC_RETENTION_REASONS, isGcPlanId } from "./reachability-gc.ts";
+export type {
   InvocationRecord,
   InvocationRepositoryPort,
   ModelAttemptRecord,

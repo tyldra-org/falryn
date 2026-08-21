@@ -121,6 +121,7 @@ import type {
   DataInspectPayload,
   DataRestorePayload,
 } from "./data-backup-commands.ts";
+import type { DataGcPayload, DataRetentionPayload } from "./data-retention-gc-commands.ts";
 import type { runImport, runReplay } from "./import-replay-commands.ts";
 import type { GlobalOptions } from "./options.ts";
 import {
@@ -2001,6 +2002,10 @@ export function stoppedResult(
       return resultFor("data.inspect", null, [], outcome, effect);
     case "data.diagnostics":
       return resultFor("data.diagnostics", null, [], outcome, effect);
+    case "data.retention":
+      return resultFor("data.retention", null, [], outcome, effect);
+    case "data.gc":
+      return resultFor("data.gc", null, [], outcome, effect);
     case "doctor":
       return resultFor<"doctor", DoctorPayload>("doctor", null, [], outcome, effect);
     case "export":
@@ -2120,6 +2125,8 @@ export type RunCommandResult =
   | CommandResultOf<"data.restore", DataRestorePayload>
   | CommandResultOf<"data.inspect", DataInspectPayload>
   | CommandResultOf<"data.diagnostics", DataDiagnosticsPayload>
+  | CommandResultOf<"data.retention", DataRetentionPayload>
+  | CommandResultOf<"data.gc", DataGcPayload>
   | Awaited<ReturnType<typeof runDoctor>>
   | Awaited<ReturnType<typeof runExport>>
   | Awaited<ReturnType<typeof runImport>>
