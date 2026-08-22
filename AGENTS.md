@@ -50,4 +50,3 @@ must remain portable and must not acquire Falryn product strategy.
 - Add focused validation with the behavior it protects.
 - Treat automatically delivered diagnostics after an edit as actionable.
 - Never bypass a failing hook.
-

@@ -23,4 +23,3 @@ for released behavior—not on an editor, agent, or workflow choice.
 
 [CONTRIBUTOR-READINESS.md](CONTRIBUTOR-READINESS.md) records the safeguards
 already prepared for that transition.
-
