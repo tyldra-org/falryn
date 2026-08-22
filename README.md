@@ -114,6 +114,8 @@ takes no direct pushes.
 - [Falryn Docs](https://github.com/tyldra-org/falryn-docs). Product, architecture, and developer documentation
 - [Issues](https://github.com/tyldra-org/falryn/issues). Planned work and open defects
 - [Contributing](CONTRIBUTING.md). Outside contributions are not open yet. Security reports are
+- [Contributor readiness](CONTRIBUTOR-READINESS.md). The safeguards and single
+  future access change for opening external contributions
 - [Security policy](SECURITY.md). How to report a vulnerability privately
 
 ## License

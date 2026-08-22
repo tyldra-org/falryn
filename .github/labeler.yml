@@ -1,0 +1,39 @@
+"area: runtime":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "src/application/**"
+          - "src/config/**"
+          - "src/domain/**"
+          - "src/main.ts"
+
+"area: cli":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "src/cli/**"
+
+"area: data":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "src/data/**"
+
+"area: providers":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "src/providers/**"
+
+"area: tools":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "src/integrations/**"
+          - "tools/**"
+
+"area: tui":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "src/presentation/**"
+          - "src/tui/**"
+
+"area: docs":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "**/*.md"

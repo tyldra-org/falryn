@@ -4,6 +4,16 @@ Closes #
 
 <!-- Use Refs # instead when this PR does not fully resolve the issue. -->
 
+<!-- Every non-Dependabot PR links its owning issue. Automation checks this
+     field and the required sections below. -->
+
+## Change class
+
+- [ ] Feature or bug fix
+- [ ] Documentation
+- [ ] Infrastructure or dependency update
+- [ ] Breaking change (also apply the `breaking-change` label)
+
 ## Delivery identity
 
 - Delivery owner:
@@ -38,9 +48,9 @@ Closes #
 
 ## Delivery checklist
 
-<!-- Maintainer / optional delivery-workflow checklist. Ordinary collaborator
-     PRs need Target, Scope, Validation, and Documentation; the items below are
-     not a contribution bar. -->
+<!-- The optional maintainer modes add delivery orchestration. Every PR still
+     needs Target, Scope, Validation, and Documentation. Automation applies one
+     `size: *` label from changed lines; split an XL PR when practical. -->
 
 - [ ] The target is one Ready, unblocked PR-sized issue.
 - [ ] The issue is assigned and **In Progress**.

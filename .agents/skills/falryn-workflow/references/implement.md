@@ -8,8 +8,10 @@ Read the Implement section of the canonical Development contract before acting.
 - Re-read the issue, parent, blockers, design owners, source, state,
   repository guidance, and required skills. Stop as **Not Ready** rather than
   silently planning while coding.
-- Assign the issue and set it **In Progress** before code. Set the parent
-  **In Progress** when this is its first active child.
+- Confirm the authenticated GitHub account is the issue's sole assignee, then
+  set it **In Progress** before code. Set the parent **In Progress** when this
+  is its first active child. Stop and route to the owner when the account does
+  not match.
 - Continue a valid open delivery branch and PR after a failed Verify; otherwise
   branch from the current default branch using the repository convention.
 - Implement the complete scoped outcome, focused tests, the recorded

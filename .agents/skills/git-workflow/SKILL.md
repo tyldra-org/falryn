@@ -62,8 +62,12 @@ Never act on an assumed branch, worktree, remote, or default branch.
 | "any secrets in here", "why is the repo so big" | `audit` | [audit.md](reference/audit.md) |
 | "tag it", "cut a git tag" | `release` | [release.md](reference/release.md) |
 | commit subject, branch name, tag name | `conventions` | [conventions.md](reference/conventions.md) |
+| "review my local diff", "what could this branch break" | `change-review` | This skill supplies any needed Git context; `change-review` owns the assessment |
 
-GitHub PR / issue / Actions / merge-on-GitHub → `gh-cli`. Other hosting-platform operations need their approved workflow.
+GitHub PR / issue / Actions / merge-on-GitHub → `gh-cli`. Cross-cutting review
+reasoning belongs to `change-review`; this skill owns only Git context and any
+later commit or branch mutation. Other hosting-platform operations need their
+approved workflow.
 
 Ask only when two routes imply different outcomes or authority. Vague destructive intent → resolve the desired outcome first. One-off `status` / `log` / `diff` / `show` / `blame` needs no skill.
 

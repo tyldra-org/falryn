@@ -1,17 +1,24 @@
 # Reporting
 
-Every maintainer-mode report states the resolved target, GitHub/Project changes,
-validation actually performed, and unresolved blockers or limitations. Finish
-with one exact, copy-ready line:
+Every maintainer-mode and read-only project-orientation report states the
+resolved target or observed frontier, GitHub/Project changes (or that none were
+made), validation actually performed, and unresolved blockers or limitations.
+Finish with one exact, copy-ready line:
 
 ~~~text
 Suggested next prompt: Implement — Target: Issue #42
 ~~~
 
-Choose it only after re-reading the current hierarchy, dependencies, Project
-state, PR/check state, documentation, and CURRENT-STATE.md. Use exact numbers
-or titles—never placeholders. A suggested prompt is navigation, not
-authorization.
+Choose it only after re-reading the current authenticated identity, hierarchy,
+dependencies, Project state, PR/check state, documentation, and
+CURRENT-STATE.md. Use exact numbers or titles—never placeholders. If another
+account owns the selected issue, name that account and route work to it instead
+of suggesting an implementation prompt to the current account. A suggested
+prompt is navigation, not authorization.
+
+A Review report additionally inventories every added, modified, deleted, and
+renamed file; separates findings from cleared risks; and states whether its key
+blast-radius safety fact was proven by observed evidence or remains unproven.
 
 Deliver and Next may suggest only:
 

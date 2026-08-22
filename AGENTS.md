@@ -11,7 +11,7 @@ If you are not that agent, ignore this file. Changes are judged on substance,
 not on how they were produced.
 
 Delivery modes are optional for everyone else. Prompts like
-`Plan — Target: …`, `Implement — Target: …`, `Verify — Target: …`,
+`Plan — Target: …`, `Implement — Target: …`, `Review — Target: PR #…`, `Verify — Target: …`,
 `Merge — Target: …`, `Deliver — Target: …`, and `Next — Target: Falryn Roadmap`
 are the maintainer's agent workflow. Contributors are not required to use them.
 Anyone who wants that workflow may follow
@@ -21,6 +21,12 @@ and the vendored skills. Ordinary PRs that never use those prompts remain welcom
 For an agent that the maintainer has pointed at this file, the stack, skill
 gates, OpenTUI ownership, and validation rules below are mandatory. Mode
 contracts apply only when that agent is given one of those mode prompts.
+
+In this checkout, a greeting, project walkthrough, status question, or
+"what next?" request is a read-only Falryn routing interaction. Load
+`falryn-workflow`, refresh the live state required by its Next guide, and end
+with one exact `Suggested next prompt`. It never authorizes or performs a state
+change by itself.
 
 ## Before acting
 
@@ -75,7 +81,8 @@ Skill split: `git-workflow` is `git` porcelain and safety. `gh-cli` is GitHub `g
 | OpenTUI TypeScript/TSX | Both `typescript-best-practices` and `opentui` |
 | Any mutating git work (branch, commit, rebase, push, recover) | `git-workflow` |
 | GitHub issues, PRs, Actions, Projects, merge, `gh` flags | `gh-cli` |
-| `Plan`, `Implement`, `Verify`, `Merge`, `Deliver`, or `Next` maintainer prompts (including "what should I implement next?") | `falryn-workflow`. Maintainer modes only. Does not replace technical/GitHub skills. Not required of other contributors |
+| Reviewing a local diff, branch, or pull request for changed files, correctness, design, or blast radius | `change-review`; also load `gh-cli` for GitHub PR state and the relevant stack skill |
+| `Plan`, `Implement`, `Review`, `Verify`, `Merge`, `Deliver`, or `Next` maintainer prompts; a Falryn greeting, walkthrough, status, or "what should I implement next?" request | `falryn-workflow`. It owns routing, not technical/GitHub mechanics. Modes remain optional for other contributors |
 
 ### OpenTUI ownership
 
@@ -91,21 +98,30 @@ documented exception. Do not duplicate framework behavior merely to control it.
 
 ## Delivery and planning (maintainer workflow; optional for others)
 
-Canonical contract for the optional mode prompts (Plan / Implement / Verify /
-Deliver / Merge / Next), merge order, correction rules, next-prompt suggestions,
+Canonical contract for the optional mode prompts (Plan / Implement / Review /
+Verify / Deliver / Merge / Next), merge order, correction rules, next-prompt suggestions,
 and file-location reporting:
 
 [`falryn-docs/DEVELOPMENT.md`](https://github.com/tyldra-org/falryn-docs/blob/main/DEVELOPMENT.md)
 
-Only when the user issues one of those mode prompts: read the linked
-sections first, then obey that mode's scope, mutations, stop conditions, status
-transitions, validation, and final report. Do not invent a parallel contract.
-Do not force this workflow onto a contributor who is not using those prompts.
+When the user issues one of those mode prompts: read the linked sections first,
+then obey that mode's scope, mutations, stop conditions, status transitions,
+validation, and final report. For a greeting or other project orientation
+request, use only its read-only Next routing. Do not invent a parallel contract
+or force the optional modes onto a contributor who is not using them.
+
+[Issue governance](https://github.com/tyldra-org/falryn-docs/blob/main/ISSUE-GOVERNANCE.md)
+is required for every Falryn work issue, whether or not an agent mode is used:
+Roadmap membership, exactly one assignee, one Project status, a work-type label,
+an area label, and a native parent or explicit Standalone relationship.
 
 Falryn-specific reminders (for agents in this workflow):
 
 - Meaningful work starts from a Ready GitHub issue. No phase/gate/evidence or
   duplicate status-inventory docs.
+- Only the authenticated account that is the issue's sole assignee may start
+  `Implement` or `Deliver`. Other accounts may Plan, Verify, or route the work,
+  but must not take over its implementation implicitly.
 - One PR-sized standalone issue or native child → one short-lived branch → one
   Falryn delivery PR with `Closes #<issue>`, plus a docs companion PR only when
   canonical docs change. Docs-first merge; Falryn PR last.
@@ -113,9 +129,10 @@ Falryn-specific reminders (for agents in this workflow):
   agent-name prefix (`codex/`, etc.).
 - Ordinary prompts resolve to this `falryn` repo. Use `Docs issue` / `Docs PR`
   for docs-only work. Never substitute same-numbered objects across repos.
-- End Plan/Implement/Verify/Deliver/Next/merge/release reports with one
-  copy-ready `Suggested next prompt: ...` from current GitHub state (exact
-  numbers/titles; never placeholders). A suggestion does not authorize action.
+- End Plan/Implement/Review/Verify/Deliver/Next/merge/release reports and read-only
+  project-greeting/orientation responses with one copy-ready `Suggested next
+  prompt: ...` from current GitHub state (exact numbers/titles; never
+  placeholders). A suggestion does not authorize action.
   **Exception:** an in-flight `Deliver — Target: Parent chain #N` with
   remaining siblings must not end with a resume prompt — continue the next
   child in the same run (`falryn-workflow` wins).

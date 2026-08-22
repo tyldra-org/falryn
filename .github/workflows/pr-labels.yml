@@ -1,0 +1,73 @@
+name: Pull request labels
+
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize]
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  area:
+    name: Apply area labels
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # This workflow never checks out or executes pull-request code. The
+      # target event is used only so fork pull requests can receive labels.
+      - name: Apply changed-file area labels
+        uses: actions/labeler@b8dd2d9be0f68b860e7dae5dae7d772984eacd6d # v6
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          configuration-path: .github/labeler.yml
+
+  size:
+    name: Apply size label
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # Like the area job, this uses API metadata only and never checks out the
+      # untrusted head from a fork.
+      - name: Classify changed lines
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const issue_number = context.payload.pull_request.number;
+            const files = await github.paginate(github.rest.pulls.listFiles, {
+              owner,
+              repo,
+              pull_number: issue_number,
+              per_page: 100,
+            });
+            const isTestFile = (filename) => /(^|\/)(?:__tests__|test|tests)\/|\.(?:test|spec|integration|browser)\.[^/]+$/i.test(filename);
+            const totalChangedLines = files.reduce(
+              (total, file) => total + file.additions + file.deletions,
+              0,
+            );
+            const nonTestChangedLines = files
+              .filter((file) => !isTestFile(file.filename))
+              .reduce((total, file) => total + file.additions + file.deletions, 0);
+            const changedLines = nonTestChangedLines === 0
+              ? totalChangedLines
+              : nonTestChangedLines;
+            const size = changedLines < 50 ? "size: XS"
+              : changedLines < 200 ? "size: S"
+              : changedLines < 500 ? "size: M"
+              : changedLines < 1000 ? "size: L"
+              : "size: XL";
+            const { data: existing } = await github.rest.issues.listLabelsOnIssue({
+              owner,
+              repo,
+              issue_number,
+            });
+            const labels = existing
+              .map((label) => label.name)
+              .filter((label) => !label.startsWith("size: "));
+            labels.push(size);
+            await github.rest.issues.setLabels({ owner, repo, issue_number, labels });
+            core.info(
+              `PR #${issue_number}: ${nonTestChangedLines} non-test changed lines, ${totalChangedLines - nonTestChangedLines} test changed lines, ${changedLines} effective lines -> ${size}`,
+            );

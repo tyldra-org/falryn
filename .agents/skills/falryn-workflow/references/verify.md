@@ -4,6 +4,11 @@ Read the Verify section of the canonical Development contract before acting.
 Verification is a fresh, read-only audit; do not silently repair missing
 behavior or broaden scope.
 
+Review is complementary, not a synonym: use [Review](review.md) when the user
+asks for an exact file/diff inventory, code-review findings, and blast-radius
+assessment. Verify establishes delivery readiness against the issue and
+complete bundle.
+
 Choose the scope the target names:
 
 - **Delivery PR:** audit the Falryn PR and every explicit companion docs issue

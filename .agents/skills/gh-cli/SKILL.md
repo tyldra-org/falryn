@@ -39,6 +39,7 @@ Preserved syntax notes from [github/awesome-copilot `gh-cli`](https://www.skills
 |---|---|
 | "open a PR", "get this reviewed", "ship it" | [process/pr.md](process/pr.md) |
 | "look at PR #N", "is this safe to merge" | [process/review.md](process/review.md) |
+| "walk me through this PR", "what files changed", "what could this PR break" | `change-review` plus [process/review.md](process/review.md) |
 | "merge this GitHub PR", "land this PR" | [process/merge.md](process/merge.md) |
 | "coordinate these PRs/repos", "land docs then code" | [process/delivery.md](process/delivery.md) |
 | "assign issue", "move card to In Progress/Done", "reconcile board after merge" | [process/issue-lifecycle.md](process/issue-lifecycle.md) |

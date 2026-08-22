@@ -26,6 +26,8 @@ Practically, this means:
 
 This will change once the foundation is complete and the contracts are stable.
 What a contribution will need then is below, and it is deliberately ordinary.
+[CONTRIBUTOR-READINESS.md](CONTRIBUTOR-READINESS.md) records the safeguards
+already in place and the one future access change that opens this path.
 
 ---
 
@@ -43,6 +45,10 @@ That is the whole requirement. Use whatever editor, agent, or process you like
 to get there. None of the tooling described below is imposed on you, and a
 pull request is never judged on how it was produced.
 
+Automation applies the matching `area:*`, one `size: *`, and one `vouch: *`
+label to each pull request. Labels make triage and review visible; they never
+replace evidence, a human review, or the required CI checks.
+
 ## How the maintainer works
 
 The rest of this document describes the maintainer's own agent-assisted
@@ -52,7 +58,7 @@ curious about why pull requests here look the way they do, or if you are
 working on this repository with an agent and want it to behave consistently.
 
 Those agent modes are optional even for collaborators. You never have to
-issue `Plan`, `Implement`, `Verify`, `Merge`, `Deliver`, or `Next` prompts.
+issue `Plan`, `Implement`, `Review`, `Verify`, `Merge`, `Deliver`, or `Next` prompts.
 Issue → branch → focused PR → `bun run check` is enough. The modes are available
 if you want them. They are not part of the contribution bar above.
 
@@ -61,15 +67,27 @@ transitions, merge ordering, and post-merge synchronisation.
 
 ### Delivery lifecycle
 
+#### Required issue tracking
+
+Every Falryn work issue follows the
+[issue-governance policy](https://github.com/tyldra-org/falryn-docs/blob/main/ISSUE-GOVERNANCE.md),
+even when contributors do not use the optional agent modes: it belongs on the
+Falryn Roadmap, has exactly one assignee, a **Todo**, **In Progress**, or
+**Done** status, one work-type label (`bug` or `type:*`), at least one
+`area:*` label, and a native parent or an explicit Standalone relationship.
+Parents use GitHub's native **Sub-issues progress** field; do not recreate that
+progress with labels or checklists.
+
 1. Use a GitHub issue for each meaningful feature, bug, refactor, or
    documentation outcome.
 2. Plan the issue while its Project status remains **Todo**. An issue is
    **Ready** when its scope, non-goals, acceptance criteria, dependencies,
    validation, and documentation impact are resolved. Ready is a planning
    condition, not a separate Project status.
-3. For implementation, assign one Ready, unblocked PR-sized issue, set it
-   **In Progress**, set its parent **In Progress** when this is the first
-   required child to begin, and create a short-lived branch such as
+3. For implementation, the authenticated GitHub account must be that Ready,
+   unblocked PR-sized issue's sole assignee. Set it **In Progress**, set its
+   parent **In Progress** when this is the first required child to begin, and
+   create a short-lived branch such as
    `feat/123-chat-composer`. Do not add an agent-name prefix.
 4. Open one focused Falryn delivery PR and include `Closes #123` only when it
    fully resolves the issue. Record the checks actually run. When canonical
@@ -123,6 +141,9 @@ PR includes explicitly linked docs companions automatically. Use `Docs issue`,
   **Todo**. It does not create product code, a branch, or a pull request.
 - `Implement — Target: Issue #N` accepts one Ready, unblocked PR-sized issue,
   moves it to **In Progress**, and produces its branch and closing pull request.
+- `Review — Target: PR #N` is a read-only review of the exact revision: complete
+  file inventory, changed behavior, code findings, blast-radius risks, and
+  observed validation. It never comments, approves, merges, or changes state.
 - `Verify — Target: ...` audits the named pull request, issue, parent, or
   milestone against GitHub state, source, checks, documentation, and
   `CURRENT-STATE.md`, and previews any post-merge local-checkout
@@ -135,8 +156,9 @@ PR includes explicitly linked docs companions automatically. Use `Docs issue`,
   docs-only equivalent. Neither form deletes branches implicitly.
 
 Every result ends with one exact, copy-ready `Suggested next prompt` based on
-the refreshed GitHub state. The suggestion is guidance, not authorization to
-perform the next action.
+the refreshed GitHub state. In a Falryn checkout, the same read-only routing
+applies to a greeting, project walkthrough, or status question. The suggestion
+is guidance, not authorization to perform the next action.
 
 When a report points to a repository file, it includes a clickable local path
 when a checkout is available plus the repository-qualified path and GitHub

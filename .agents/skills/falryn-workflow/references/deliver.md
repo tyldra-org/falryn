@@ -6,16 +6,18 @@ Deliver section of the canonical Development contract first.
 
 For a standalone issue or native child:
 
-1. Resolve readiness. Plan only when readiness is genuinely unresolved; split
+1. Confirm the authenticated GitHub account is the target's sole assignee.
+   Stop and route to the owner when it is not; do not take over the delivery.
+2. Resolve readiness. Plan only when readiness is genuinely unresolved; split
    only when the existing contract makes boundaries unambiguous.
-2. Run implementation, then a new read-only Verify against the current head.
-3. If Verify finds a gap, use [Corrections](corrections.md), then Verify the
+3. Run implementation, then a new read-only Verify against the current head.
+4. If Verify finds a gap, use [Corrections](corrections.md), then Verify the
    changed head again. A repair pass must show observable progress; after three
    non-progressing passes, stop and ask for a changed strategy.
-4. After a fresh passing Verify, merge the complete bundle docs-first and the
+5. After a fresh passing Verify, merge the complete bundle docs-first and the
    application last. Reconcile GitHub, the Project, docs, state, and safe local
    checkouts before treating the child as complete.
-5. A completed standalone runs Next routing and reports the next target without
+6. A completed standalone runs Next routing and reports the next target without
    starting it. A directly delivered child continues its parent order or runs
    parent integration when it was last.
 

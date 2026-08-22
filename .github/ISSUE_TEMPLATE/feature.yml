@@ -1,0 +1,94 @@
+name: Feature
+description: Propose one user-visible capability or meaningful improvement.
+title: "feat: "
+labels:
+  - "type: feature"
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for proposing an improvement. Before implementation, a triager
+        adds the issue to the Falryn Roadmap, assigns one owner, sets Status to
+        Todo, applies an area label, and records a native parent or Standalone
+        relationship. See CONTRIBUTING.md for the required workflow.
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+      description: What user outcome should change?
+      placeholder: As a …, I can …, so that …
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope and non-goals
+      description: State what is included and deliberately excluded.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: List observable behavior, edge cases, and limits.
+      placeholder: |
+        - [ ]
+    validations:
+      required: true
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Dependencies and blockers
+      description: Link exact blocking issues, or write None.
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Primary area
+      description: A triager applies the matching `area:*` label.
+      options:
+        - Runtime and application
+        - CLI and headless use
+        - Providers and models
+        - Terminal UI
+        - Language intelligence
+        - Tools and execution
+        - Context and compression
+        - Data, persistence, and artifacts
+        - Memory
+        - Agents and workflows
+        - Extensions and marketplace
+        - Web and browser
+        - Performance
+        - Release and compatibility
+        - Security and privacy
+        - Documentation
+    validations:
+      required: true
+  - type: dropdown
+    id: relationship
+    attributes:
+      label: Planning relationship
+      description: Choose Standalone or link the native parent in the next field.
+      options:
+        - Standalone
+        - Native child of an existing parent
+        - Parent outcome with PR-sized children to be planned
+    validations:
+      required: true
+  - type: input
+    id: parent
+    attributes:
+      label: Native parent issue
+      description: Required when this is a child; otherwise write Standalone.
+      placeholder: "#123 or Standalone"
+    validations:
+      required: true
+  - type: textarea
+    id: validation
+    attributes:
+      label: Validation and documentation impact
+      description: Name focused checks and canonical Falryn Docs owner(s).
+    validations:
+      required: true

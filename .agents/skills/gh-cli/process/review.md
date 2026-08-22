@@ -6,12 +6,15 @@ Review a PR, branch, or diff. Read-only by default — reviewing never edits the
 
 ```bash
 gh pr view <n> --repo <owner/repo> \
-  --json number,url,baseRefName,headRefName,headRefOid,mergeStateStatus
+  --json number,url,baseRefName,headRefName,baseRefOid,headRefOid,mergeStateStatus,author,body,commits,files,statusCheckRollup
+gh pr diff <n> --name-only
 gh pr diff <n>
 gh pr checks <n>
 ```
 
-Record `headRefOid` with the review. A later head SHA is a new revision and must not inherit the old review silently.
+Record `baseRefOid` and `headRefOid` with the review. Inventory every added,
+modified, deleted, and renamed file before evaluating findings. A later head
+SHA is a new revision and must not inherit the old review silently.
 
 Or locally, for a branch:
 
@@ -21,7 +24,12 @@ git diff origin/<default-branch>...<branch>       # three dots
 git log origin/<default-branch>..<branch> --oneline
 ```
 
-For a large PR, check out the branch (or a worktree) and read it in context. A diff hides what the surrounding code does, and most real defects are contextual.
+Read source in context, but do not check out or execute an untrusted PR head in
+a maintainer environment merely to review it. API and diff inspection are safe
+first steps; use observed CI as execution evidence. If the user explicitly
+authorizes an isolated execution environment, resolve the exact head SHA again
+before running a focused reproduction. A diff hides what the surrounding code
+does, and most real defects are contextual.
 
 ## Read in this order
 
@@ -35,7 +43,8 @@ For a cross-repository or dependent-PR delivery, review the complete companion s
 
 ## What to report
 
-Order by severity. For each finding:
+Start with the exact revision and a concise grouped file inventory. Then order
+findings by severity. For each finding:
 
 ```
 path:line — <what is wrong>. <what happens as a result>. <the fix>.
@@ -48,7 +57,9 @@ Severity:
 - **Consider** — design opinion, naming, structure. Say it once; do not litigate.
 - **Nit** — skip unless it changes meaning. Formatting the linter didn't catch is noise.
 
-**No praise padding.** No "great work overall!". No summary that restates the diff. If there are no findings, say there are no findings.
+**No praise padding.** No "great work overall!". Do not restate hunks as a
+changelog beyond the necessary changed-file inventory and behavior summary. If
+there are no findings, say there are no findings.
 
 ## Git-specific review checks
 

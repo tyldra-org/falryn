@@ -13,6 +13,10 @@ docs-first merge → application merge → GitHub/Project/local-checkout
 reconcile. An opened PR, started CI, green job, or closed issue is not a
 completed child.
 
+Before selecting a child, confirm the authenticated GitHub account is its sole
+assignee. A child owned by another account is a real stop: name the owner and
+route that exact child to it. Do not skip an ordered child or take it over.
+
 For a Parent chain:
 
 - Start the next child immediately after reconciliation. Do not end after a

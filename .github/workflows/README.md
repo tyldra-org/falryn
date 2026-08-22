@@ -1,10 +1,21 @@
 # Workflows
 
-One workflow.
+Five workflows.
 
 | Workflow | Question | Trigger |
 | --- | --- | --- |
 | [`ci.yml`](ci.yml) | Is this revision safe to merge? | every pull request, and every push to `main` |
+| [`pr-metadata.yml`](pr-metadata.yml) | Does a contributor PR retain its issue link and required review context? | pull-request updates |
+| [`pr-labels.yml`](pr-labels.yml) | Which product area and review size apply? | pull-request updates, including forks without code checkout |
+| [`pr-vouch.yml`](pr-vouch.yml) | Is the author a collaborator, maintainer-vouched, unvouched, or blocked? | pull-request updates, `/recheck-vouch`, and trust-list changes |
+| [`issue-governance.yml`](issue-governance.yml) | Is live issue ownership, labeling, Roadmap membership, and Status complete? | issue metadata or state changes |
+
+`pr-metadata.yml` is a required `main` check. `pr-labels.yml` receives a
+write-scoped token only to mutate labels and never checks out or executes an
+untrusted pull-request head. `pr-vouch.yml` uses the committed
+[VOUCHED.td](../VOUCHED.td) trust list, classifies authors, and never grants
+merge permission. `issue-governance.yml` comments on missing machine-checkable
+metadata; it deliberately does not invent an owner, status, or hierarchy.
 
 Relative performance comparison (`bun run measure` / `bun run benchmark:compare`)
 is **local-only**. It is not a CI job: shared-runner variance made an advisory
