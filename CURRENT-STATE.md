@@ -40,6 +40,6 @@ interactive product platforms.
 ## Documentation boundary
 
 This page and the root repository materials document source-verified behavior.
-The local `docs/` directory contains private working documentation and is not
-committed. Future plans, detailed architecture, and delivery sequencing are not
-published here.
+Internal product documentation is maintained separately in a private repository.
+Future plans, detailed architecture, and delivery sequencing are not published
+here.

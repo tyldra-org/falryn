@@ -60,7 +60,3 @@ logs/
 .LSOverride
 Thumbs.db
 Desktop.ini
-
-# Local-only product and engineering documentation. This directory is not
-# committed; publish only concise, verified material in tracked root documents.
-/docs/
