@@ -126,11 +126,12 @@ Falryn-specific reminders (for agents in this workflow):
   links via `DOCUMENTATION-MAP.md`. Record doc impact as `create` / `update` /
   `verify-unaffected` / `not-applicable`. Stop on missing or conflicting
   contracts.
-- Maintainer Parent chain Deliver: load **`falryn-loop`** (vendored). Resume a
-  host-cut turn with the current harness's supported entrypoint:
-  `/loop Deliver — Target: Parent chain #N` or
-  `/goal Deliver — Target: Parent chain #N`. When both are available, either
-  is valid; never use a per-child handoff prompt.
+- Maintainer Parent chain Deliver: load **`falryn-loop`** (vendored). In
+  Codex, enter Goal mode with `/goal`, then send
+  `Deliver — Target: Parent chain #N` as the goal prompt; do not present that
+  pair as one inline command. In another harness, use its actual `/loop`
+  mode-entry syntax and provide the Parent-chain target only as that harness
+  supports it. Never use a per-child handoff prompt.
 
 ## Validation
 

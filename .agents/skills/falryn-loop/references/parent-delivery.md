@@ -24,8 +24,12 @@ For a Parent chain:
   Parent chain #264: #265 Done → #266 in progress → #267–#270 pending
   ~~~
 
-- /loop and /goal are equivalent host entrypoints for the same controller. Use
-  whichever the harness supports; neither authorizes parallel phase agents or
+- /loop and /goal lead to the same controller, but their host syntaxes differ.
+  In Codex, /goal enters Goal mode first; send Deliver — Target: Parent chain
+  #N as the goal prompt after that mode is active. Never present /goal Deliver
+  — Target: Parent chain #N as Codex syntax. In another harness, follow its
+  actual /loop mode-entry syntax; an inline target is valid only when that
+  harness supports it. Neither entrypoint authorizes parallel phase agents or
   writers.
 - Keep the controller active while required CI resolves. If the host cuts the
   turn during CI, merge, or reconciliation, report the PR URLs, head SHAs,
