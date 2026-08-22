@@ -1,0 +1,65 @@
+name: Issue governance
+
+on:
+  issues:
+    types: [opened, edited, reopened, closed, assigned, unassigned, labeled, unlabeled]
+
+concurrency:
+  group: issue-governance-${{ github.event.issue.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  validate:
+    name: Check live issue metadata
+    if: github.actor != 'github-actions[bot]' && github.event.issue.user.login != 'yogeshprasad098'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Report missing ownership or Roadmap metadata
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const issue = context.payload.issue;
+            const errors = [];
+            const labels = issue.labels.map((label) => label.name);
+            const workTypes = labels.filter((label) => label === "bug" || label.startsWith("type:"));
+
+            if (issue.assignees.length !== 1) {
+              errors.push("assign exactly one GitHub owner");
+            }
+            if (workTypes.length !== 1) {
+              errors.push("apply exactly one work-type label (`bug` or `type:*`)");
+            }
+            if (!labels.some((label) => label.startsWith("area:"))) {
+              errors.push("apply at least one `area:*` label");
+            }
+
+            const marker = "<!-- falryn-issue-governance -->";
+            const { data: comments } = await github.rest.issues.listComments({
+              owner,
+              repo,
+              issue_number: issue.number,
+              per_page: 100,
+            });
+            const existing = comments.find(
+              (comment) => comment.user.type === "Bot" && comment.body.includes(marker),
+            );
+
+            if (errors.length === 0) {
+              if (existing) {
+                await github.rest.issues.deleteComment({ owner, repo, comment_id: existing.id });
+              }
+              return;
+            }
+
+            const body = `${marker}\nIssue metadata needs triage before this work is Ready:\n\n${errors.map((error) => `- [ ] ${error}`).join("\n")}\n\nSee the [triage contract](https://github.com/tyldra-org/falryn/blob/main/CONTRIBUTOR-READINESS.md#triage-contract).`;
+            if (existing) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number: issue.number, body });
+            }

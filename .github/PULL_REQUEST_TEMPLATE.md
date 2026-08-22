@@ -4,10 +4,19 @@ Closes #
 
 <!-- Use Refs # instead when this PR does not fully resolve the issue. -->
 
+<!-- Every non-Dependabot PR links its owning issue. Automation checks this
+     field and the required sections below. -->
+
+## Change class
+
+- [ ] Feature or bug fix
+- [ ] Documentation
+- [ ] Infrastructure or dependency update
+- [ ] Breaking change (also apply the `breaking-change` label)
+
 ## Delivery identity
 
 - Delivery owner:
-- Companion docs PR or not applicable:
 
 ## Scope
 
@@ -24,13 +33,10 @@ Closes #
 ## Documentation
 
 - [ ] `CURRENT-STATE.md` reflects only behavior supported by this change.
-- [ ] Affected canonical owners were located through `falryn-docs/DOCUMENTATION-MAP.md` or the issue's canonical links.
-- [ ] Each relevant owner is classified as `create`, `update`, `verify-unaffected`, or `not-applicable`, with a reason.
-- [ ] The implementation stays within the Ready issue and canonical contracts; any contract change is explained and linked.
-- [ ] The existing canonical owner was updated instead of creating a duplicate contract, roadmap, or implementation inventory.
-- [ ] Not user-facing, or the related `falryn-docs` pull request is cross-linked for coordinated landing.
-- [ ] Any companion docs PR references this delivery owner and links back to this delivery PR.
-- [ ] Repository-qualified paths and GitHub links are shareable; no contributor-specific local path is persisted.
+- [ ] Affected public documentation owners were updated or verified unaffected.
+- [ ] Public claims are source-verified; no roadmap, unannounced capability, private research, or internal design was added.
+- [ ] Existing public documentation was updated instead of creating a duplicate owner.
+- [ ] Repository-qualified paths and GitHub links are shareable; no private or contributor-specific local path is persisted.
 
 ## Risk and limitations
 
@@ -38,9 +44,9 @@ Closes #
 
 ## Delivery checklist
 
-<!-- Maintainer / optional delivery-workflow checklist. Ordinary collaborator
-     PRs need Target, Scope, Validation, and Documentation; the items below are
-     not a contribution bar. -->
+<!-- The optional maintainer modes add delivery orchestration. Every PR still
+     needs Target, Scope, Validation, and Documentation. Automation applies one
+     `size: *` label from changed lines; split an XL PR when practical. -->
 
 - [ ] The target is one Ready, unblocked PR-sized issue.
 - [ ] The issue is assigned and **In Progress**.
@@ -49,6 +55,6 @@ Closes #
 - [ ] Any parent remains open and **In Progress** for integrated verification.
 - [ ] The PR title is a clean conventional subject suitable for squash merge.
 - [ ] The squash commit is subject-only by default; any body is limited to one useful short issue-reference footer.
-- [ ] Validation, risks, documentation impact, companion links, delivery details, and incremental messages remain in this PR rather than the squash commit.
-- [ ] Verify includes every required companion and previews docs-first/application-last merge order.
+- [ ] Validation, risks, documentation impact, delivery details, and incremental messages remain in this PR rather than the squash commit.
+- [ ] Verify records documentation impact and confirms public docs contain only source-verified behavior.
 - [ ] Verify identifies available local checkouts and previews safe post-merge default-branch synchronization.

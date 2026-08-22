@@ -7,7 +7,6 @@
  */
 
 import type { SelectOption, SelectRenderable } from "@opentui/core";
-import { useKeyboard } from "@opentui/react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { displayWidth } from "../../domain/index.ts";
 import { type FactValue, statusOfFact } from "../view-model.ts";
@@ -22,6 +21,7 @@ import {
 } from "../workspace/index.ts";
 import { useFrame } from "./context.tsx";
 import { Line, StatusMark } from "./primitives.tsx";
+import { useSelectNavigation } from "./select-navigation.ts";
 
 const PANEL_CHROME_COLUMNS = 4;
 
@@ -300,22 +300,7 @@ function OptionList(props: {
   const mutedColor = theme.color("mutedForeground");
   const selectionColor = theme.color("selection");
 
-  useKeyboard((key) => {
-    const list = results.current;
-    if (list === null || options.length === 0) {
-      return;
-    }
-    if (key.name === "up") {
-      key.preventDefault();
-      list.moveUp();
-    } else if (key.name === "down") {
-      key.preventDefault();
-      list.moveDown();
-    } else if (key.name === "return") {
-      key.preventDefault();
-      list.selectCurrent();
-    }
-  });
+  useSelectNavigation(results, options.length);
 
   if (options.length === 0) {
     return (

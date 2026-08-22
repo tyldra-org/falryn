@@ -6,10 +6,10 @@
  */
 
 import type { SelectOption, SelectRenderable } from "@opentui/core";
-import { useKeyboard } from "@opentui/react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { useFrame } from "../components/context.tsx";
 import { Line } from "../components/primitives.tsx";
+import { useSelectNavigation } from "../components/select-navigation.ts";
 import {
   describeSessionNavigationControllerError,
   noticeForFork,
@@ -338,22 +338,7 @@ function OptionList(props: {
   const mutedColor = theme.color("mutedForeground");
   const selectionColor = theme.color("selection");
 
-  useKeyboard((key) => {
-    const list = results.current;
-    if (list === null || options.length === 0) {
-      return;
-    }
-    if (key.name === "up") {
-      key.preventDefault();
-      list.moveUp();
-    } else if (key.name === "down") {
-      key.preventDefault();
-      list.moveDown();
-    } else if (key.name === "return") {
-      key.preventDefault();
-      list.selectCurrent();
-    }
-  });
+  useSelectNavigation(results, options.length);
 
   if (options.length === 0) {
     return (

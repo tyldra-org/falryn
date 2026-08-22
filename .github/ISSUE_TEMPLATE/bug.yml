@@ -1,0 +1,81 @@
+name: Bug report
+description: Report behavior that differs from the expected result.
+title: "fix: "
+labels:
+  - "bug"
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please do not disclose vulnerabilities here; use the private security
+        reporting path in SECURITY.md. A triager adds each valid issue to the
+        Falryn Roadmap, assigns one owner, sets Status to Todo, applies an area
+        label, and records a native parent or Standalone relationship.
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: Include commands, input, or a small fixture where safe.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Falryn revision, OS, terminal, runtime, provider, and relevant configuration.
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Primary area
+      description: A triager applies the matching `area:*` label.
+      options:
+        - Runtime and application
+        - CLI and headless use
+        - Providers and models
+        - Terminal UI
+        - Language intelligence
+        - Tools and execution
+        - Context and compression
+        - Data, persistence, and artifacts
+        - Memory
+        - Agents and workflows
+        - Extensions and marketplace
+        - Web and browser
+        - Performance
+        - Release and compatibility
+        - Security and privacy
+        - Documentation
+    validations:
+      required: true
+  - type: dropdown
+    id: relationship
+    attributes:
+      label: Planning relationship
+      description: Choose Standalone or link the native parent in the next field.
+      options:
+        - Standalone
+        - Native child of an existing parent
+    validations:
+      required: true
+  - type: input
+    id: parent
+    attributes:
+      label: Native parent issue
+      description: Required when this is a child; otherwise write Standalone.
+      placeholder: "#123 or Standalone"
+    validations:
+      required: true

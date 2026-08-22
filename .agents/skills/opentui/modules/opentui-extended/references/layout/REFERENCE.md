@@ -1,6 +1,6 @@
 # OpenTUI Layout System
 
-> Prefer upstream `docs/core-concepts/layout.mdx` when this companion differs.
+> Prefer matching vendored `docs/core-concepts/layout.mdx` when this companion differs.
 
 OpenTUI uses the Yoga layout engine, providing CSS Flexbox-like capabilities for positioning and sizing components in the terminal.
 

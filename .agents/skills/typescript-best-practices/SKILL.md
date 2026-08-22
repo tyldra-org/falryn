@@ -18,6 +18,11 @@ Router for focused TypeScript guidance. Modules below are bundled resources, not
 3. Add a second guide only for a distinct cross-cutting concern. Prefer the more specific guide on overlap.
 4. Validate with the repo's typecheck, test, lint, and build commands. Do not invent tooling.
 5. Do not load every module.
+6. For a review, choose the guide from the changed runtime surface, then check
+   the real behavior beyond a passing typecheck: boundary validation, illegal
+   states, async/error paths, ownership, resource cleanup, public contracts,
+   and focused tests. Use `change-review` for the cross-cutting diff and
+   blast-radius report.
 
 ## Routing
 
@@ -30,6 +35,7 @@ Router for focused TypeScript guidance. Modules below are bundled resources, not
 | Migrations, monorepos, diagnostics, tooling strategy | `modules/typescript-expert/GUIDE.md` |
 | JSDoc, TypeDoc, ADRs, API docs | `modules/typescript-docs/GUIDE.md` |
 | React + TypeScript review, hooks, state, anti-patterns | `modules/typescript-react-reviewer/GUIDE.md` |
+| General TypeScript/TSX change review | `modules/typescript/GUIDE.md`, then the changed surface's focused guide |
 | Next.js App Router, RSC, Shadcn/Radix/Tailwind + TS | `modules/nextjs-react-typescript/GUIDE.md` |
 | Scaffolds, tsconfig presets, architecture templates | `modules/typescript-toolkit/GUIDE.md` |
 

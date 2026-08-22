@@ -1,64 +1,54 @@
 # Vendored agent skills
 
-Skills shipped **in this repository** so every checkout — contributor, fork, or
-agent without a personal `~/.agents/skills` install — resolves the same guidance.
-`AGENTS.md` points here first.
+Skills shipped in this repository so every checkout — contributor, fork, or
+agent without a personal `~/.agents/skills` install — resolves the same portable
+guidance. `AGENTS.md` points here first.
 
 ## Tiers
 
 | Tier | Skills | Content | Where users get them |
 | --- | --- | --- | --- |
-| **Universal** | `git-workflow`, `gh-cli` | No project names; reusable on any repo | Vendored in `falryn/.agents/skills/` |
-| **Stack** | `typescript-best-practices`, `opentui` | Tool/framework guidance | Vendored in repo |
-| **Project loop** | `falryn-loop` | Falryn selectors; delegates to universal | Vendored in repo |
+| **Universal** | `git-workflow`, `gh-cli`, `change-review` | No product or repo names; reusable in any repository | Vendored in `falryn/.agents/skills/` |
+| **Stack** | `typescript-best-practices`, `opentui` | TypeScript and terminal-UI guidance | Vendored in this repository |
 
-**Content rules:** universal skills never import product or repo names. A
-**project loop** skill (for example `falryn-loop`) owns that repo's delivery
-selectors, forbidden stops, and any CI-wait overrides — and **delegates** git/GitHub
-mechanics to the universal tier without duplicating them.
+Universal skills must not mention Falryn, its organization, or local process.
+Stack skills may describe their technology, but must remain useful outside this
+repository. Repository-local rules belong in `AGENTS.md` and contributor
+documentation, not in a distributed skill.
 
-**Distribution rule:** what lives under `.agents/skills/` in git is what users get.
-Edit here (or sync into here before merge) when changing skills contributors should see.
-
-**Precedence in a Falryn checkout:** repo vendored skills → this repo's `AGENTS.md`
-→ personal/global agent guidance. Do not rely on `~/.agents/skills` being installed.
+**Precedence in this checkout:** system and user instructions → repository-local
+`AGENTS.md` / `CONTRIBUTING.md` → relevant vendored skill → personal or global
+guidance as a fallback. Do not rely on `~/.agents/skills` being installed.
 
 ## Load gates
 
 | Skill | Load before |
 | --- | --- |
 | `typescript-best-practices` | TypeScript, TSX, JS, tests, build scripts, or `tsconfig` work |
-| `opentui` | Terminal UI, renderer, layout, input, keymaps, packaging |
-| `git-workflow` | Mutating git work (commit, branch, rebase, push, recover) |
-| `gh-cli` | GitHub `gh`: issues, PRs, Actions, Projects, merge, flags |
-| `falryn-loop` | `Deliver — Target: …`, `Next — Target: Falryn Roadmap`, or "what next?" (maintainer delivery modes; optional for others) |
+| `opentui` | Terminal UI, renderer, layout, input, keymaps, or packaging work |
+| `git-workflow` | Mutating git work: commit, branch, rebase, push, or recovery |
+| `gh-cli` | GitHub `gh`: issues, pull requests, Actions, Projects, merge, or flags |
+| `change-review` | Reviewing a local diff, branch, or pull request; pair with `gh-cli` for GitHub state and a stack skill for changed code |
 
-`git-workflow` owns git. `gh-cli` owns GitHub. Never substitute one CLI for
-another. `git remote origin` is a remote name, not a product.
+`git-workflow` owns git. `gh-cli` owns GitHub. `change-review` owns
+evidence-backed review reasoning. Never substitute one CLI for another.
 
-Falryn is GitHub-only (`tyldra-org/falryn`). Do not add Cursor Origin remotes.
-`origin-cli` is not vendored here.
-
-Optional global-only: `find-docs` (library API lookup) may live in personal
-`~/.agents/skills/` until vendored. Prefer vendoring when a skill becomes part
-of the default contributor path.
+Optional global-only: `find-docs` may remain in personal `~/.agents/skills/`
+until it becomes part of the default contributor path.
 
 ## Maintainer sync
 
-When you maintain the same skill in personal `~/.agents/skills/` and ship it to
-users, run from this directory:
+When maintaining a portable skill in personal `~/.agents/skills/` and shipping
+it to users, run from this directory:
 
 ```bash
-./sync-from-global.sh          # pull universal + stack + falryn-loop from ~/.agents/skills
-./sync-from-global.sh --dry-run
+./sync-from-global.sh          # preview content changes (ignores Finder metadata)
+# Review the itemized diff, then apply it deliberately:
+./sync-from-global.sh --apply
 ```
 
-**Warning:** if your global `gh-cli` or `git-workflow` contains project-specific
-text, do not sync those skills into the repo — edit universal skills in-repo
-instead. Only `falryn-loop` should name Falryn or Parent chain behavior.
+`--apply` uses `rsync --delete`; review the preview before applying it. If a
+global skill contains project-specific text, do not sync it into this directory.
+Edit portable skills here instead.
 
-Or edit directly in `.agents/skills/` and commit — **the repo copy is canonical
-for users.**
-
-Delivery modes and `falryn-loop` are optional for contributors; see "Who this
-file is for" in [`AGENTS.md`](../../AGENTS.md).
+The committed copy is canonical for people using this repository.

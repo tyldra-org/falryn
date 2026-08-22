@@ -1,17 +1,19 @@
 ---
 name: opentui-extended
-description: Companion guide for OpenTUI framework selection, patterns, configuration, and gotchas. Use after the skill router when choosing Core vs React vs Solid, or when troubleshooting. Prefer sibling docs/**/*.mdx on API conflicts.
+description: Companion guide for OpenTUI framework selection, patterns, configuration, and gotchas. Use after the skill router when choosing Core vs React vs Solid, or when troubleshooting. Prefer matching sibling vendored docs/**/*.mdx on API conflicts; consult upstream only for a mismatch or planned upgrade.
 ---
 
 # OpenTUI Extended
 
-Companion to upstream `docs/**/*.mdx`. Decision trees and pattern refs live here; API details live upstream.
+Companion to the matching vendored `docs/**/*.mdx`. Decision trees and pattern
+refs live here; API details live in those docs. Consult upstream only to
+investigate a mismatch or planned upgrade.
 
 Paths below are relative to this file's directory (`modules/opentui-extended/`).
 
 ## Critical rules
 
-1. Prefer `bun create tui` / `bunx create-tui@latest` for new apps. Agents: always `-t core|react|solid` (non-interactive). Options before the directory name: `bunx create-tui -t react my-app`.
+1. Before scaffolding, verify the current creator command and accepted flags for the selected OpenTUI version. For non-interactive creation, choose the intended Core, React, or Solid template explicitly; do not assume a `@latest` generator matches the installed version.
 2. Call `renderer.destroy()` (or framework teardown) on exit. Do not bare-`process.exit()` without destroying the renderer. See `docs/core-concepts/lifecycle.mdx`.
 3. In React/Solid, style text with nested modifier elements—not style props. See `references/components/text-display.md` and `docs/components/text.mdx`.
 4. Bun is the reference runtime. Native `createCliRenderer()` in Node needs Node **26.4.0+** with `--experimental-ffi` (and `--allow-ffi` under the permission model). Portable imports (`@opentui/keymap`, non-renderer `@opentui/core`) do not need FFI.
@@ -28,7 +30,7 @@ Paths below are relative to this file's directory (`modules/opentui-extended/`).
 
 Cross-cutting entrypoints: `references/layout|components|keyboard|keymap|animation|testing/REFERENCE.md`.
 
-**Reading order:** framework `REFERENCE.md` → task files above → upstream MDX for the exact API.
+**Reading order:** framework `REFERENCE.md` → task files above → matching vendored MDX for the exact API. Consult upstream only to investigate a mismatch or planned upgrade.
 
 ## Framework choice
 
@@ -60,7 +62,7 @@ Testing? → testing/REFERENCE.md  (+ docs/core-concepts/testing.mdx)
 
 ## Platform capabilities
 
-| Capability | Companion | Upstream |
+| Capability | Companion | Matching vendored docs |
 | --- | --- | --- |
 | Audio | `references/core/api.md` | `docs/core-concepts/audio.mdx` |
 | Notifications | `references/core/api.md` | `docs/core-concepts/notifications.mdx` |

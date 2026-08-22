@@ -8,15 +8,21 @@ description: >-
 
 # OpenTUI
 
-Upstream `docs/**/*.mdx` is the source of truth. `modules/opentui-extended/` is a companion for framework choice, patterns, and gotchas. It is not a second skill.
+The installed OpenTUI version and its matching vendored `docs/**/*.mdx` are the
+API source of truth. `modules/opentui-extended/` is a companion for framework
+choice, patterns, and gotchas. It is not a second skill.
 
 ## Rules
 
 1. Inspect the installed OpenTUI version and the project's existing Core / React / Solid setup before choosing APIs.
-2. Start with one upstream doc from the routing table. Load only narrower docs needed for the task.
+2. Start with one matching vendored doc from the routing table. Load only narrower docs needed for the task.
 3. Use `modules/opentui-extended/GUIDE.md` for framework selection, patterns, configuration, or troubleshooting, then only its relevant references.
-4. When the companion guide and upstream MDX disagree, prefer the MDX.
+4. When the companion guide and matching MDX disagree, prefer the MDX. If either conflicts with the installed version, consult upstream only to investigate a mismatch or planned upgrade before changing code.
 5. Shut down with the documented renderer cleanup (`renderer.destroy()` / framework teardown). Do not `process.exit()` from UI code. Cover interaction changes with focused tests.
+6. For an OpenTUI review, read the exact changed diff and matching installed docs,
+   then assess renderer lifecycle, focus and input routing, resize/layout,
+   accessibility of state and errors, cleanup, and test-renderer coverage. Use
+   `change-review` for the cross-cutting changed-file and blast-radius report.
 
 ## Routing
 
@@ -34,6 +40,7 @@ Upstream `docs/**/*.mdx` is the source of truth. `modules/opentui-extended/` is 
 | Framework choice, patterns, gotchas | `modules/opentui-extended/GUIDE.md` |
 | Animation | `modules/opentui-extended/references/animation/REFERENCE.md` |
 | Test renderer, snapshots, frames | `docs/core-concepts/testing.mdx` |
+| Review an OpenTUI change | `docs/core-concepts/renderer.mdx`, `keyboard.mdx`, `layout.mdx`, and `testing.mdx` as applicable |
 | Audio / notifications | `docs/core-concepts/audio.mdx`, `docs/core-concepts/notifications.mdx` |
 | Plugins | `docs/plugins/slots.mdx` → `docs/plugins/core.mdx` / `react.mdx` / `solid.mdx` |
 | SSH, QR, Three.js, packaging, env | `docs/reference/ssh.mdx`, `qr-encoder.mdx`, `three.mdx`, `standalone-executables.mdx`, `env-vars.mdx` |
@@ -58,4 +65,7 @@ Upstream `docs/**/*.mdx` is the source of truth. `modules/opentui-extended/` is 
 
 ## Create a project
 
-Prefer `bun create tui` / `bunx create-tui@latest`. For agents, pass `-t core|react|solid` (non-interactive). Put CLI options before the project name: `bunx create-tui -t react my-app`.
+Before scaffolding, verify the current creator command and accepted flags for the
+selected OpenTUI version. For non-interactive creation, select the intended
+Core, React, or Solid template explicitly; do not assume a `@latest` generator
+matches the project's installed version.

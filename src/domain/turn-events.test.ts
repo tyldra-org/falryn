@@ -119,7 +119,11 @@ describe("reduceTurnEvents", () => {
     const reduction = reduceTurnEvents(events);
     expect(reduction.sessionStarted).toBe(true);
     expect(reduction.turns).toHaveLength(1);
-    const turn = reduction.turns[0]!;
+    const [turn] = reduction.turns;
+    expect(turn).toBeDefined();
+    if (turn === undefined) {
+      throw new Error("expected one reduced turn");
+    }
     expect(turn.turnId).toBe(turnCorrelation.turnId);
     expect(turn.outcome).toEqual({ kind: "completed" });
     expect(turn.attempts).toEqual([

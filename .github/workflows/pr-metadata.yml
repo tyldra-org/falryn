@@ -1,0 +1,48 @@
+name: Pull request metadata
+
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  validate:
+    name: Validate contribution metadata
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check issue link and review context
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        with:
+          script: |
+            const pullRequest = context.payload.pull_request;
+            const author = pullRequest.user.login;
+            if (author === "dependabot[bot]" || author === "yogeshprasad098") return;
+
+            const body = pullRequest.body ?? "";
+            const missing = [];
+            const conventionalTitle = /^(?:build|chore|ci|docs|feat|fix|perf|refactor|revert|test)(?:\([A-Za-z0-9._/-]+\))?!?: .+$/;
+            if (!conventionalTitle.test(pullRequest.title)) {
+              missing.push("a conventional PR title such as `feat(tui): add search` or `fix: preserve exit status`");
+            }
+            const issueReference = /\b(?:closes?|fix(?:es|ed)?|resolves?|refs?)\s+(?:[\w.-]+\/[\w.-]+)?#\d+/i;
+            if (!issueReference.test(body)) {
+              missing.push("an issue reference such as `Closes #123` or `Refs #123`");
+            }
+
+            for (const heading of [
+              "## Target and outcome",
+              "## Scope",
+              "## Validation",
+              "## Documentation",
+              "## Risk and limitations",
+            ]) {
+              if (!body.includes(heading)) missing.push(`the ${heading} section`);
+            }
+
+            if (missing.length > 0) {
+              core.setFailed(`Update the pull request template: ${missing.join(", ")}.`);
+            }

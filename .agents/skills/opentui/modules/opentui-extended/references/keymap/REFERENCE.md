@@ -1,6 +1,6 @@
 # Keymap (@opentui/keymap)
 
-> Prefer upstream `docs/keymap/*.mdx` when this companion differs.
+> Prefer matching vendored `docs/keymap/*.mdx` when this companion differs.
 
 A host-agnostic key binding, command, and sequence engine for both terminal
 (OpenTUI) and browser (DOM) hosts. It is a **separate package** from

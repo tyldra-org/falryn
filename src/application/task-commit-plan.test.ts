@@ -308,11 +308,16 @@ describe("executeOutcomeCommitPlan", () => {
       startPath: "/repo",
       confirmation: token,
     });
+    const [plannedGroup] = previewAdvice.plan.groups;
+    expect(plannedGroup).toBeDefined();
+    if (plannedGroup === undefined) {
+      throw new Error("expected the preview plan to contain one commit group");
+    }
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.value.confirmation).toBe("applied");
-      expect(stagedPaths).toEqual([[...previewAdvice.plan.groups[0]!.paths]]);
-      expect(subjects).toEqual([previewAdvice.plan.groups[0]!.subject]);
+      expect(stagedPaths).toEqual([[...plannedGroup.paths]]);
+      expect(subjects).toEqual([plannedGroup.subject]);
       expect(result.value.commits).toHaveLength(1);
     }
   });

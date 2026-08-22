@@ -1,20 +1,10 @@
 # merge
 
-Land a GitHub pull request. Local `git merge` is **git-workflow**. Native Origin PRs are **origin-cli**.
+Land a GitHub pull request. Local `git merge` is **git-workflow**.
 
 ## Host
 
-| Setup | Merge with |
-| --- | --- |
-| github.com primary, or Origin **inbound** mirror | **`gh pr merge`** on the GitHub source repo |
-| native / detached Origin | **`origin pr merge`** — **origin-cli** |
-
-When `git remote origin` is **`origin.cursor.com`** but **`mirrorStatus: inbound`**:
-
-- **Push:** `git push origin` (**git-workflow**)
-- **PRs:** **`gh pr create/view/checks/merge`** on the GitHub source repo — `origin pr create` fails
-
-Use slugs from the project `AGENTS.md` if it names them, else `git remote get-url origin` / `gh repo view`.
+Use **`gh pr merge`** on the GitHub repository. Resolve the repository with the project `AGENTS.md` or `gh repo view`.
 
 **Anti-pattern:** `gh pr merge --squash --delete-branch` without `--match-head-commit`, `--subject`, and `--body ""`.
 

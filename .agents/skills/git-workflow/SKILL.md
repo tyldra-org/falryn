@@ -3,7 +3,7 @@ name: git-workflow
 description: >-
   Git process and safety: commit, branch, fetch/push/rebase, local merge,
   rewrite, recover, bisect, tags, autocommit. Use when mutating a local git
-  repo. Does not cover GitHub (gh-cli) or Cursor Origin (origin-cli).
+  repo. Does not cover GitHub platform work (gh-cli) or other forge workflows.
 ---
 
 # Git workflow
@@ -12,23 +12,23 @@ Git porcelain and git history safety. Every commit should be reviewable. Every h
 
 ## Skill boundaries
 
-This skill owns `git`. It does not own GitHub or Origin.
+This skill owns `git`. It does not own hosting-platform workflows.
 
-| | git-workflow (this) | gh-cli | origin-cli |
-| --- | --- | --- | --- |
-| Answers | How do we commit, branch, sync, rewrite, recover? | How do we use `gh` on github.com? | How do we use `origin` on origin.cursor.com? |
-| Tool | `git` | `gh` | `origin` |
-| Owns | Stage, commit, branch, fetch/push/rebase, local merge, rewrite, recover, bisect, tags, autocommit | GitHub issues, PRs, Actions, Projects, `gh` flags | Origin PRs, mirrors, ruleset RPC, `origin` flags |
-| Does not own | `gh` or `origin` commands; GitHub/Origin objects | `git` porcelain; Origin CLI | `git` porcelain; GitHub `gh` |
-| Load when | Any mutating git work | GitHub platform work | Origin CLI / forge work |
+| | git-workflow (this) | gh-cli |
+| --- | --- | --- |
+| Answers | How do we commit, branch, sync, rewrite, recover? | How do we use `gh` on github.com? |
+| Tool | `git` | `gh` |
+| Owns | Stage, commit, branch, fetch/push/rebase, local merge, rewrite, recover, bisect, tags, autocommit | GitHub issues, PRs, Actions, Projects, `gh` flags |
+| Does not own | `gh` commands; GitHub objects | `git` porcelain |
+| Load when | Any mutating git work | GitHub platform work |
 
-`git remote origin` is a remote name, often `origin.cursor.com` or `github.com`. It is not the Origin CLI.
+`git remote origin` is a conventional remote name. It does not identify a hosting platform.
 
-Opening or merging a pull request is not git. Load `gh-cli` for github.com (including inbound mirrors) or `origin-cli` for native or detached Origin.
+Opening or merging a pull request is not git. Load `gh-cli` for GitHub; use the approved integration for another hosting platform.
 
 After GitHub merges land: `gh-cli` → [issue-lifecycle.md](../gh-cli/process/issue-lifecycle.md) for issue/Project reconcile; then [delivery-checkout.md](reference/delivery-checkout.md) for local default-branch sync.
 
-Load `git-workflow` whenever git history changes. Add `gh-cli` or `origin-cli` when the host is GitHub or Origin. If both hosts apply, say which command targets which host.
+Load `git-workflow` whenever git history changes. Add `gh-cli` when the host is GitHub.
 
 Repositories may vendor this skill under `.agents/skills/` for checkout-local resolution; skill content stays host-agnostic.
 
@@ -62,8 +62,12 @@ Never act on an assumed branch, worktree, remote, or default branch.
 | "any secrets in here", "why is the repo so big" | `audit` | [audit.md](reference/audit.md) |
 | "tag it", "cut a git tag" | `release` | [release.md](reference/release.md) |
 | commit subject, branch name, tag name | `conventions` | [conventions.md](reference/conventions.md) |
+| "review my local diff", "what could this branch break" | `change-review` | This skill supplies any needed Git context; `change-review` owns the assessment |
 
-GitHub PR / issue / Actions / merge-on-GitHub → `gh-cli`. Origin PR / ruleset → `origin-cli`.
+GitHub PR / issue / Actions / merge-on-GitHub → `gh-cli`. Cross-cutting review
+reasoning belongs to `change-review`; this skill owns only Git context and any
+later commit or branch mutation. Other hosting-platform operations need their
+approved workflow.
 
 Ask only when two routes imply different outcomes or authority. Vague destructive intent → resolve the desired outcome first. One-off `status` / `log` / `diff` / `show` / `blame` needs no skill.
 
@@ -134,7 +138,7 @@ Show the concrete command and get explicit confirmation for:
 
 Routine local work proceeds normally: commit (when autocommit is on or the user asked), branch, stash, fetch, push **your** branch. See [Autocommit](#autocommit).
 
-GitHub/Origin confirmations (merge a PR, publish a release, delete a repo) live in `gh-cli` / `origin-cli`.
+Hosting-platform confirmations (merge a PR, publish a release, delete a repo) live in that platform's approved workflow.
 
 ### Back up before destroying
 
@@ -184,7 +188,7 @@ Read when merging, branching, or tagging:
 
 | Model | Tell | Implications |
 |---|---|---|
-| GitHub flow | Short branches → one default | Branch, PR (via `gh-cli` / `origin-cli`), land |
+| GitHub flow | Short branches → one default | Branch, PR via `gh-cli`, land |
 | Trunk-based | Direct default-branch commits, flags | Small commits |
 | Git flow | `develop` + `release/*` + `hotfix/*` | Features → `develop`; hotfixes from tags |
 | Release train | Long-lived version lanes, `--no-ff` | Never rebase/delete lane branches |

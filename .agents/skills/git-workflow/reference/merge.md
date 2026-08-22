@@ -1,6 +1,6 @@
 # merge
 
-Local integration merges and the topology they produce. Landing a **pull request** is not this file — **gh-cli** `process/merge.md` (github.com) or **origin-cli** `reference/pr.md` (native Origin).
+Local integration merges and the topology they produce. Landing a **GitHub pull request** is not this file — use **gh-cli** `process/merge.md`.
 
 ## Merge strategy by intent
 
