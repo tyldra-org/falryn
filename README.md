@@ -7,7 +7,6 @@ A local terminal coding agent for deliberate, inspectable work.
 
 Falryn is pre-release and currently runs from source. It keeps command output,
 local state, and terminal interaction in one Bun process. Read the
-[public user guide](docs/README.md) for source use and the
 [public current state](CURRENT-STATE.md) for verified capabilities.
 
 ## Quick start
@@ -28,13 +27,11 @@ bun run build
 
 ## Project
 
-- [User guide](docs/README.md)
 - [Current state](CURRENT-STATE.md)
 - [Security policy](SECURITY.md)
 - [Contributing](CONTRIBUTING.md)
 - [License](LICENSE)
 
 Falryn is [Apache-2.0](LICENSE). The license covers the repository's source,
-tests, build configuration, and public documentation under docs/. See
-[NOTICE](NOTICE) for attribution information.
-
+tests, build configuration, and other tracked documentation. See [NOTICE](NOTICE)
+for attribution information.

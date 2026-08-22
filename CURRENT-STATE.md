@@ -37,9 +37,9 @@ The interactive terminal path is qualified on macOS arm64. Linux and Windows
 receive source and compiled CLI checks, but are not presented as fully qualified
 interactive product platforms.
 
-## Public documentation boundary
+## Documentation boundary
 
-The [user guide](docs/README.md) documents released or source-verified behavior.
-Future plans, detailed internal architecture, and delivery sequencing are not
+This page and the root repository materials document source-verified behavior.
+The local `docs/` directory contains private working documentation and is not
+committed. Future plans, detailed architecture, and delivery sequencing are not
 published here.
-
