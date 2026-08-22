@@ -60,3 +60,7 @@ logs/
 .LSOverride
 Thumbs.db
 Desktop.ini
+
+# Local-only product and engineering documentation. Move only verified,
+# shipped behavior into docs/ before committing it.
+/docs/internal/
