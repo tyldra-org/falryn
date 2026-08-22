@@ -125,7 +125,7 @@ export function createTurnEventJournal(options: TurnEventJournalOptions): TurnEv
   const maxEvents = options.maxEvents ?? MAX_STREAM_READ_LIMIT;
 
   function aborted(signal?: AbortSignal): boolean {
-    return signal !== undefined && signal.aborted;
+    return signal?.aborted === true;
   }
 
   type ClassifiedStream =

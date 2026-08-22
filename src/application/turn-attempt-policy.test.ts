@@ -598,8 +598,14 @@ describe("turn attempt policy", () => {
     expect(replayed.kind).toBe("rebuilt");
     expect(runnerCalls).toBe(1);
     if (replayed.kind === "rebuilt") {
-      expect(replayed.turns[0]!.outcome).toEqual({ kind: "completed" });
-      expect(replayed.turns[0]!.attempts).toHaveLength(1);
+      expect(replayed.turns).toHaveLength(1);
+      const [turn] = replayed.turns;
+      expect(turn).toBeDefined();
+      if (turn === undefined) {
+        throw new Error("expected one replayed turn");
+      }
+      expect(turn.outcome).toEqual({ kind: "completed" });
+      expect(turn.attempts).toHaveLength(1);
     }
   });
 });

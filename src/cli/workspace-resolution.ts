@@ -116,7 +116,7 @@ function resolveCandidate(
 }
 
 function isCancelled(signal: AbortSignal | undefined): boolean {
-  return signal !== undefined && signal.aborted;
+  return signal?.aborted === true;
 }
 
 /**

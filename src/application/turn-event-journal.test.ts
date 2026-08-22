@@ -161,9 +161,19 @@ describe("turn event journal replay", () => {
       return;
     }
     expect(replayed.turns).toHaveLength(1);
-    expect(replayed.turns[0]!.outcome).toEqual({ kind: "completed" });
-    expect(replayed.turns[0]!.invocations).toHaveLength(1);
-    expect(replayed.turns[0]!.attempts[0]!.outcome).toEqual({ kind: "completed" });
+    const [turn] = replayed.turns;
+    expect(turn).toBeDefined();
+    if (turn === undefined) {
+      throw new Error("expected one replayed turn");
+    }
+    expect(turn.outcome).toEqual({ kind: "completed" });
+    expect(turn.invocations).toHaveLength(1);
+    const [replayedAttempt] = turn.attempts;
+    expect(replayedAttempt).toBeDefined();
+    if (replayedAttempt === undefined) {
+      throw new Error("expected one replayed attempt");
+    }
+    expect(replayedAttempt.outcome).toEqual({ kind: "completed" });
   });
 
   test("reports empty and missing turns", async () => {
