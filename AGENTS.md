@@ -28,7 +28,8 @@ contracts apply only when that agent is given one of those mode prompts.
 2. Load skills from [`.agents/skills/`](.agents/skills/README.md) as gated below.
    **Prefer the vendored copy in this repo** — it is what every checkout gets,
    including contributors without `~/.agents/skills`. Universal skills here stay
-   project-agnostic; Falryn-specific delivery lives in `falryn-loop` only.
+   project-agnostic; Falryn-specific maintainer workflow lives in
+   `falryn-loop` only.
 3. This repo is GitHub-only: `tyldra-org/falryn`. `git remote origin` is
    github.com. Companion docs: `tyldra-org/falryn-docs`.
 4. Skill guidance never overrides Falryn architecture, a Ready issue's scope, or
@@ -74,7 +75,7 @@ Skill split: `git-workflow` is `git` porcelain and safety. `gh-cli` is GitHub `g
 | OpenTUI TypeScript/TSX | Both `typescript-best-practices` and `opentui` |
 | Any mutating git work (branch, commit, rebase, push, recover) | `git-workflow` |
 | GitHub issues, PRs, Actions, Projects, merge, `gh` flags | `gh-cli` |
-| `Deliver — Target: …`, `Next — Target: Falryn Roadmap`, or "what should I implement next?" | `falryn-loop`. Maintainer delivery modes only. Does not replace technical/GitHub skills. Not required of other contributors |
+| `Plan`, `Implement`, `Verify`, `Merge`, `Deliver`, or `Next` maintainer prompts (including "what should I implement next?") | `falryn-loop`. Maintainer modes only. Does not replace technical/GitHub skills. Not required of other contributors |
 
 ### OpenTUI ownership
 

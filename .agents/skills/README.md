@@ -10,12 +10,13 @@ agent without a personal `~/.agents/skills` install — resolves the same guidan
 | --- | --- | --- | --- |
 | **Universal** | `git-workflow`, `gh-cli` | No project names; reusable on any repo | Vendored in `falryn/.agents/skills/` |
 | **Stack** | `typescript-best-practices`, `opentui` | Tool/framework guidance | Vendored in repo |
-| **Project loop** | `falryn-loop` | Falryn selectors; delegates to universal | Vendored in repo |
+| **Project workflow** | `falryn-loop` | Falryn maintainer modes; delegates to universal | Vendored in repo |
 
 **Content rules:** universal skills never import product or repo names. A
-**project loop** skill (for example `falryn-loop`) owns that repo's delivery
-selectors, forbidden stops, and any CI-wait overrides — and **delegates** git/GitHub
-mechanics to the universal tier without duplicating them.
+**project workflow** skill (for example `falryn-loop`) owns that repo's
+maintainer-mode selectors, delivery stop conditions, and any CI-wait overrides
+— and **delegates** git/GitHub mechanics to the universal tier without
+duplicating them.
 
 **Distribution rule:** what lives under `.agents/skills/` in git is what users get.
 Edit here (or sync into here before merge) when changing skills contributors should see.
@@ -34,7 +35,7 @@ Do not rely on `~/.agents/skills` being installed.
 | `opentui` | Terminal UI, renderer, layout, input, keymaps, packaging |
 | `git-workflow` | Mutating git work (commit, branch, rebase, push, recover) |
 | `gh-cli` | GitHub `gh`: issues, PRs, Actions, Projects, merge, flags |
-| `falryn-loop` | `Deliver — Target: …`, `Next — Target: Falryn Roadmap`, or "what next?" (maintainer delivery modes; optional for others) |
+| `falryn-loop` | `Plan`, `Implement`, `Verify`, `Merge`, `Deliver`, or `Next` maintainer prompts, including "what next?" (optional for others) |
 
 `git-workflow` owns git. `gh-cli` owns GitHub. Never substitute one CLI for
 another. `git remote origin` is a remote name, not a product.

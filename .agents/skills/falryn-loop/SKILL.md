@@ -1,158 +1,83 @@
 ---
 name: falryn-loop
 description: >-
-  Ship one Falryn standalone issue or native child: readiness, implement,
-  verify, authorized docs-first merge, reconcile, Next. Also route Next from
-  the Planning frontier. Use for Deliver — Target: ..., Next — Target: Falryn
-  Roadmap, "what next?", or a full delivery cycle. Maintainer delivery modes
-  only.
+  Run Falryn's optional maintainer workflow: Plan, Implement, Verify, Merge,
+  Deliver, or Next for Falryn and Falryn Docs. Use when a prompt names one of
+  those modes and a target, or asks what to implement next. Not for ordinary
+  contributor pull requests.
 ---
 
-# Falryn loop
+# Falryn maintainer workflow
 
-Maintainer-optional. Load for `Deliver` / `Next`, or "what should I implement next?" Do not impose this on ordinary contributor PRs.
+Use this skill only for the optional maintainer modes. It coordinates the
+Falryn-specific contract; it does not replace the technical, Git, or GitHub
+skills required by the work.
 
-Canonical contract: `falryn-docs/DEVELOPMENT.md` (Deliver, Next, merge, Project choreography). Load **git-workflow** for git mutations and **gh-cli** for GitHub PRs, Projects, and checks. The contract wins on conflict.
+The canonical contract is
+[falryn-docs/DEVELOPMENT.md](https://github.com/tyldra-org/falryn-docs/blob/main/DEVELOPMENT.md).
+Read the relevant mode there first, preferably from a current local
+falryn-docs checkout. If it conflicts with this skill, the contract wins.
 
-Generic GitHub lifecycle (assign, **In Progress** / **Done**, post-merge reconcile, serial vs single-child patterns): **gh-cli** → [issue-lifecycle.md](../gh-cli/process/issue-lifecycle.md). Local default-branch sync after merge: **git-workflow** → [delivery-checkout.md](../git-workflow/reference/delivery-checkout.md).
+## Before acting
 
-**Distribution.** The copy under `falryn/.agents/skills/falryn-loop/` is what contributors receive — commit skill changes here. Maintainers who also keep `~/.agents/skills/falryn-loop/` can sync with `.agents/skills/sync-from-global.sh` (reverse: copy repo → global after editing in-repo).
+1. Resolve the target in the correct repository. Unqualified Issues, Parents,
+   PRs, and milestones are Falryn; only targets prefixed with Docs are Falryn
+   Docs. Never substitute a same-numbered object from the other repo.
+2. Read the target, its native hierarchy, blockers, canonical design owners
+   from DOCUMENTATION-MAP.md, current source, and CURRENT-STATE.md. Stop on a
+   missing or conflicting product contract.
+3. Load the supporting skills required by the work: gh-cli for GitHub state,
+   PRs, checks, and merges; git-workflow for Git operations; and the relevant
+   stack skill before code changes.
 
-## Single controller
+## Select one mode
 
-One controller owns the target and delivery bundle. Run readiness, implementation, and verification serially in the same agent. Do not create planner, implementer, verifier, or other phase subagents for a Deliver run. A host's `/loop` or `/goal` directive is only an entrypoint for that same controller; it does not authorize a second controller or parallel delivery work.
+Read only the guide for the requested mode, plus any guide it explicitly
+links. These guides complement the canonical contract rather than copying it.
 
-Host-imposed async forking of this same controller (Cursor Multitask) is allowed if phases stay serial and there is still only one writer on the issue checkout. It does not authorize parallel Deliver phases or phase specialists.
+| Prompt | Read |
+| --- | --- |
+| Plan — Target: ... | [Plan](references/plan.md) |
+| Implement — Target: ... | [Implement](references/implement.md) |
+| Verify — Target: ... | [Verify](references/verify.md) |
+| Merge — Target: ... | [Merge](references/merge.md) |
+| Deliver — Target: Issue #N | [Deliver](references/deliver.md) |
+| Deliver — Target: Parent issue #N or Parent chain #N | [Deliver](references/deliver.md) and [Parent delivery](references/parent-delivery.md) |
+| Next — Target: Falryn Roadmap or “what should I implement next?” | [Next](references/next.md) |
+| A Verify gap or incomplete, closed, or merged PR | [Corrections](references/corrections.md) |
 
-On a Verify gap: return to Implementation, then a new Verification against the changed head. Manual Plan / Implement / Verify / Merge remain separate workflows.
+The same routing applies to Docs issue, Docs parent issue, Docs parent chain,
+and Docs PR targets. Docs-only work has no Falryn application delivery owner.
 
-## Falryn Deliver selectors
+## Shared invariants
 
-| Selector | Scope per run | When the run may end |
-| --- | --- | --- |
-| `Deliver — Target: Issue #N` | One issue | After that issue's full cycle + reconcile |
-| `Deliver — Target: Parent issue #N` | **First** eligible native child only | After one child lands; emit `Deliver — Target: Issue #<next sibling>` |
-| `Deliver — Target: Parent chain #N` | **Every** remaining native child, serial | After **all** children + parent integrated verification, or a real stop (below) |
+- Manual Plan, Implement, Verify, and Merge remain separate user-directed
+  modes. A Verify result or a suggested prompt never authorizes Merge.
+- Deliver is the sole composite mode. One controller owns its target and runs
+  readiness, implementation, verification, repair, and authorized delivery
+  serially. Do not create phase or goal-wrapper agents.
+- One PR-sized native child or standalone issue gets one focused branch and
+  delivery PR. A parent is an outcome tracker, never a branch or mega-PR.
+- Classify documentation impact before planning or implementation as create,
+  update, verify-unaffected, or not-applicable. Canonical documentation changes
+  use a linked companion docs PR and land first.
+- Re-read live GitHub state before every state-changing decision. Issues,
+  Project fields, automation, and a green CI run never substitute for observed
+  source, documentation, and validation.
 
-Maps to generic patterns in **gh-cli** → [issue-lifecycle.md](../gh-cli/process/issue-lifecycle.md): **single-child handoff** vs **serial chain**.
+## Reports
 
-**Common mistake:** treating `Parent chain` like `Parent issue` — merging one child, writing a status report, and stopping.
+Report the resolved target, state changes, validation, and any blocker or
+limitation. Finish with one exact, copy-ready Suggested next prompt line. It is
+navigation, never permission to start another mode.
 
-## Child cycle (every Falryn Deliver target)
+Read [Reporting](references/reporting.md) when choosing that line or naming
+files. A running Parent chain with remaining siblings is the exception: keep
+working in the same run instead of ending with a resume prompt.
 
-1. **Readiness.** Hierarchy, contracts, blockers, docs impact (`DOCUMENTATION-MAP.md`), split need. Close any earlier open delivery PR on the same parent chain before implementing this target. No code. Plan only if unresolved. Split into ordered native children only when boundaries are unambiguous. Otherwise `awaiting-input` with one question.
-2. **Implement start (before first commit).** **gh-cli** → [issue-lifecycle.md](../gh-cli/process/issue-lifecycle.md#work-start-before-the-first-commit). Falryn Roadmap Project (`tyldra-org`, project `1`). Assign owner; **In Progress** on the target; parent **In Progress** when first active child.
-3. **Implementation.** Sole writer on `feat|fix|docs|refactor|test|chore/<issue>-purpose` from current default. Companion docs PR when canonical docs change (`falryn-docs`, `Refs tyldra-org/falryn#<issue>`).
-4. **Verification.** `bun run check`; packaging changes also `bun run build`. Read-only audit of acceptance, required checks, docs, merge readiness. Re-Verify exact `headRefOid`s before merge.
-5. **Repair.** Keep an open valid PR. Fresh branch after merged incomplete outcome. After 3 repair passes without progress, ask.
-6. **Merge.** Authorized by this Deliver. **gh-cli** → [delivery.md](../gh-cli/process/delivery.md): docs companions first, Falryn application last. Squash; subject-only merge commit; at most one `Closes #N` / `Refs …` footer on the app PR.
-7. **Reconcile (mandatory; merge is not enough).** **gh-cli** → [issue-lifecycle.md](../gh-cli/process/issue-lifecycle.md#work-landed-after-merge) for closed child **Done**, parent **In Progress**, next sibling **In Progress**. Update `falryn/CURRENT-STATE.md` when the planning frontier changed. **git-workflow** → [delivery-checkout.md](../git-workflow/reference/delivery-checkout.md) for `falryn` and `falryn-docs` checkouts.
-8. **Continue or finish.** Standalone → Next. Parent issue → stop with next-child prompt. Parent chain → **immediately** start the next sibling's step 1 in the **same run**.
+## Distribution
 
-A child's cycle is complete only after docs-first merge, application merge, **and** GitHub/Project reconcile. Green CI or a closed issue alone is **not** completion.
-
-## Deliver — Issue #N
-
-One Ready, unblocked PR-sized issue or native child. Follow [Child cycle](#child-cycle-every-falryn-deliver-target). After step 8, run Next.
-
-## Deliver — Parent issue #N
-
-Never a parent branch or mega-PR. First ordered unblocked incomplete native child only. Full [Child cycle](#child-cycle-every-falryn-deliver-target). **Stop** if siblings remain:
-
-```text
-Suggested next prompt: Deliver — Target: Issue #<exact next sibling>
-```
-
-Last child: parent integrated verification in-loop; close parent only when it passes. Then Next.
-
-## Deliver — Parent chain #N
-
-Every remaining native child, serial. Same [Child cycle](#child-cycle-every-falryn-deliver-target) per child. After step 7, **continue in the same run** — generic **serial chain** rules in **gh-cli** → [issue-lifecycle.md](../gh-cli/process/issue-lifecycle.md#single-slice-vs-serial-multi-child-delivery).
-
-### Falryn-specific forbidden stops
-
-Do **not** end the turn after merge, opened PR, CI start, or a status report while **#264-style** siblings remain and the host did not cut the turn.
-
-Do **not** stop because the next sibling looks large, needs extra planning, or would make a long message. After reconcile, **start step 1** for that sibling immediately — readiness, then branch, then code.
-
-Do **not** write deferrals such as “continuing in the next step”, “unless you want to pause”, or “say the word to continue”. Those are Parent-issue handoffs, not Parent chain.
-
-Do **not** emit `Deliver — Target: Issue #<next sibling>` mid-chain (Parent-issue handoff form).
-
-`Suggested next prompt: Deliver — Target: Parent chain #N` is **only** for host-ended CI/merge/reconcile mid-child.
-
-### Host entrypoints for a Parent chain
-
-The `Deliver — Target: Parent chain #N` selector owns the chain behavior;
-`/loop` and `/goal` are equivalent host entrypoints, not separate delivery
-modes. Start or resume a chain with whichever directive the current harness
-supports:
-
-```text
-/loop Deliver — Target: Parent chain #N
-/goal Deliver — Target: Parent chain #N
-```
-
-When both are available, either is valid. Keep the exact `Parent chain` target
-when resuming; do not turn it into a per-child `Issue #N` handoff.
-
-### Chain progress (include in reports)
-
-```text
-Parent chain #264: #265 Done → #266 in progress → #267–#270 pending
-```
-
-Last child: parent integrated verification; close parent when it passes. Then Next. Next never auto-emits `Parent chain`. `Docs parent chain #N` is the same loop on `falryn-docs`.
-
-## AGENTS.md report rule
-
-`AGENTS.md` asks for `Suggested next prompt` at end of Deliver reports. That applies when the run **actually ends** (standalone, Parent issue after one child, completed Parent chain, or real stop / host cut).
-
-While `Parent chain #N` has incomplete siblings and the host has not cut the turn, **do not** end with a resume prompt — **continue the next child**.
-
-## Required vs advisory checks
-
-Merge gates: repository ruleset **required** status checks and required review-thread rules. Advisory jobs (e.g. Benchmark regression when not required) do not block unless issue acceptance or `DEVELOPMENT.md` says so.
-
-## CI and long waits
-
-**Precedence:** this section overrides generic **gh-cli** [ci.md](../gh-cli/process/ci.md)
-background-watch defaults for Falryn **Deliver** runs only. Universal skills stay
-repo-agnostic.
-
-**Parent chain and Deliver:** CI is **not** a stop. Do **not** end the turn, write a status report, or emit a resume prompt while required checks are still running and the host has not cut the turn.
-
-**Foreground wait** in Deliver runs. Background `gh run watch` does not reliably resume the same agent turn when it finishes — if the host does not ping back, **run `gh run watch` in the foreground** and stay in the Deliver until green, failure, or a fix loop.
-
-```bash
-gh run watch RUN_ID --repo tyldra-org/falryn --exit-status
-```
-
-After green: re-read PR head SHA and required checks, then merge in the **same run** per step 6, reconcile per step 7, and continue the next sibling when Parent chain applies. Only use background watch when the **host ends the turn**; then report PR URL(s), head SHA(s), and [chain progress](#chain-progress-include-in-reports).
-
-On CI failure: bounded repair per **gh-cli** [ci.md](../gh-cli/process/ci.md); do not treat “CI started” as completion.
-
-## Next routing
-
-Read Falryn Roadmap Project, issue graph, blockers, open bundles, checks, and `falryn/CURRENT-STATE.md`. Frontier conflicts → follow live GitHub and name the mismatch.
-
-1. Validated Planning frontier + `DEVELOPMENT.md` next-prompt table.
-2. Resume in-flight bundle or parent chain before unrelated items.
-3. Else P0→P3, then earliest eligible native child/root by creation order.
-4. Emit `Deliver — Target: Issue #N` or `Deliver — Target: Parent issue #N`. Do not auto-emit `Parent chain`.
-5. Blocked → `Suggested next prompt: none` with the prerequisite named.
-
-## Awaiting input and reports
-
-Ask only for unresolved product choice, conflicting contract, unclear split, external dependency, or exhausted repair budget.
-
-Deliver / Next suggest only:
-
-```text
-Suggested next prompt: Deliver — Target: Issue #<exact issue>
-Suggested next prompt: Deliver — Target: Parent issue #<exact parent>
-Suggested next prompt: Deliver — Target: Parent chain #<exact parent>
-Suggested next prompt: none
-```
-
-`Parent chain` in suggestions is resume-only (host-ended mid-chain). Next never emits it.
+The vendored copy under falryn/.agents/skills/falryn-loop/ is the
+contributor-facing source. Keep it aligned with the personal
+~/.agents/skills/falryn-loop/ copy, but do not make universal skills
+Falryn-specific.
