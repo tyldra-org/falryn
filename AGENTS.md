@@ -70,7 +70,7 @@ Skill split: `git-workflow` is `git` porcelain and safety. `gh-cli` is GitHub `g
 | When | Skill |
 | --- | --- |
 | Creating/editing/reviewing/debugging/configuring TS, TSX, JS, tests, build scripts, or `tsconfig` | `typescript-best-practices`. Pick one primary module from its router |
-| Creating/editing/reviewing/testing/packaging OpenTUI or TUI behavior | `opentui`. Prefer installed OpenTUI APIs and upstream docs over Falryn reimplementations |
+| Creating/editing/reviewing/testing/packaging OpenTUI or TUI behavior | `opentui`. Prefer the pinned installed OpenTUI APIs and matching vendored docs; consult upstream only for a mismatch or planned upgrade |
 | OpenTUI TypeScript/TSX | Both `typescript-best-practices` and `opentui` |
 | Any mutating git work (branch, commit, rebase, push, recover) | `git-workflow` |
 | GitHub issues, PRs, Actions, Projects, merge, `gh` flags | `gh-cli` |
@@ -78,14 +78,15 @@ Skill split: `git-workflow` is `git` porcelain and safety. `gh-cli` is GitHub `g
 
 ### OpenTUI ownership
 
-Inventory the installed OpenTUI API and current upstream docs for every affected
-capability before inventing UI. Prefer documented components, actions/bindings,
-layout, focus, selection, scrolling, keyboard/paste/mouse, styling, animation,
-renderer lifecycle, screen modes, terminal capability handling, and test
-utilities. Keep Falryn-owned UI only for product policy, domain state, or a seam
-OpenTUI cannot provide, and record that boundary in code-adjacent docs or tests.
-Map every custom TUI behavior to a built-in or a documented exception. Do not
-duplicate framework behavior merely to control it.
+Inventory the pinned installed OpenTUI version and matching vendored docs for
+every affected capability before inventing UI. Consult upstream only to
+investigate a mismatch or planned upgrade. Prefer documented components,
+actions/bindings, layout, focus, selection, scrolling, keyboard/paste/mouse,
+styling, animation, renderer lifecycle, screen modes, terminal capability
+handling, and test utilities. Keep Falryn-owned UI only for product policy,
+domain state, or a seam OpenTUI cannot provide, and record that boundary in
+code-adjacent docs or tests. Map every custom TUI behavior to a built-in or a
+documented exception. Do not duplicate framework behavior merely to control it.
 
 ## Delivery and planning (maintainer workflow; optional for others)
 

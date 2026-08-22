@@ -1,6 +1,6 @@
 # Testing OpenTUI Applications
 
-> Prefer upstream `docs/core-concepts/testing.mdx` when this companion differs.
+> Prefer matching vendored `docs/core-concepts/testing.mdx` when this companion differs.
 
 How to test terminal user interfaces built with OpenTUI.
 

@@ -52,13 +52,15 @@ When you maintain the same skill in personal `~/.agents/skills/` and ship it to
 users, run from this directory:
 
 ```bash
-./sync-from-global.sh          # pull universal + stack + falryn-loop from ~/.agents/skills
-./sync-from-global.sh --dry-run
+./sync-from-global.sh          # preview content changes (ignores Finder metadata)
+# review the itemized diff, then apply it deliberately:
+./sync-from-global.sh --apply
 ```
 
-**Warning:** if your global `gh-cli` or `git-workflow` contains project-specific
-text, do not sync those skills into the repo — edit universal skills in-repo
-instead. Only `falryn-loop` should name Falryn or Parent chain behavior.
+**Warning:** `--apply` uses `rsync --delete`; review the preview before applying
+it. If your global `gh-cli` or `git-workflow` contains project-specific text,
+do not sync those skills into the repo — edit universal skills in-repo instead.
+Only `falryn-loop` should name Falryn or Parent chain behavior.
 
 Or edit directly in `.agents/skills/` and commit — **the repo copy is canonical
 for users.**

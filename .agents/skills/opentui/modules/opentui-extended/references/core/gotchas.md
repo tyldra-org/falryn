@@ -21,7 +21,7 @@ bun test
   26.4.0+** launched with `--experimental-ffi` (and, under Node's permission
   model, `--allow-ffi` plus filesystem permissions). OpenTUI does not install
   Node for you.
-- Prefer upstream `docs/getting-started.mdx` over package `engines` fields when
+- Prefer matching vendored `docs/getting-started.mdx` over package `engines` fields when
   they disagree about Node support.
 
 ### Bun APIs to Use
@@ -45,7 +45,7 @@ import express from "express"
 **Always destroy the renderer before exiting.** Bare `process.exit()` without
 `renderer.destroy()` can leave the terminal broken (alternate screen, raw mode,
 hidden cursor). Prefer `exitOnCtrlC` / documented exit signals when possible.
-See upstream `docs/core-concepts/lifecycle.mdx`.
+See matching vendored `docs/core-concepts/lifecycle.mdx`.
 
 ```typescript
 // WRONG - Terminal may be left in broken state

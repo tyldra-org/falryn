@@ -1,6 +1,6 @@
 # OpenTUI React (@opentui/react)
 
-> Prefer upstream `docs/bindings/react.mdx` and `docs/components/*.mdx` when this companion differs.
+> Prefer matching vendored `docs/bindings/react.mdx` and `docs/components/*.mdx` when this companion differs.
 
 A React reconciler for building terminal user interfaces with familiar React patterns. Write TUIs using JSX, hooks, and component composition.
 

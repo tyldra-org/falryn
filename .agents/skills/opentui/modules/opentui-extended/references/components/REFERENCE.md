@@ -1,6 +1,6 @@
 # OpenTUI Components
 
-> Prefer upstream `docs/components/<name>.mdx` for exact APIs. Use this file to choose a category or compare Core vs JSX names.
+> Prefer matching vendored `docs/components/<name>.mdx` for exact APIs. Use this file to choose a category or compare Core vs JSX names.
 
 Reference for all OpenTUI components, organized by category. Components are available in all three frameworks (Core, React, Solid) with slight API differences.
 

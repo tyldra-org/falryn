@@ -17,7 +17,7 @@ choice, patterns, and gotchas. It is not a second skill.
 1. Inspect the installed OpenTUI version and the project's existing Core / React / Solid setup before choosing APIs.
 2. Start with one matching vendored doc from the routing table. Load only narrower docs needed for the task.
 3. Use `modules/opentui-extended/GUIDE.md` for framework selection, patterns, configuration, or troubleshooting, then only its relevant references.
-4. When the companion guide and matching MDX disagree, prefer the MDX. If either conflicts with the installed version, verify the versioned API before changing code.
+4. When the companion guide and matching MDX disagree, prefer the MDX. If either conflicts with the installed version, consult upstream only to investigate a mismatch or planned upgrade before changing code.
 5. Shut down with the documented renderer cleanup (`renderer.destroy()` / framework teardown). Do not `process.exit()` from UI code. Cover interaction changes with focused tests.
 
 ## Routing

@@ -5,14 +5,17 @@ set -euo pipefail
 SRC="${SKILLS_SRC:-$HOME/.agents/skills}"
 DST="$(cd "$(dirname "$0")" && pwd)"
 SKILLS=(gh-cli git-workflow typescript-best-practices opentui falryn-loop)
-DRY_RUN=0
+APPLY=0
 
 for arg in "$@"; do
   case "$arg" in
-    --dry-run) DRY_RUN=1 ;;
+    --apply) APPLY=1 ;;
+    --dry-run) ;;
     -h|--help)
-      echo "Usage: $0 [--dry-run]"
+      echo "Usage: $0 [--apply]"
       echo "  SKILLS_SRC overrides source (default: ~/.agents/skills)"
+      echo "  Default: preview changes only; --apply performs the sync."
+      echo "  --dry-run is accepted but redundant because preview is the default."
       exit 0
       ;;
     *)
@@ -27,9 +30,10 @@ if [[ ! -d "$SRC" ]]; then
   exit 1
 fi
 
-RSYNC=(rsync -a --delete)
-if [[ "$DRY_RUN" -eq 1 ]]; then
-  RSYNC+=(--dry-run --itemize-changes)
+RSYNC=(rsync -a --no-times --checksum --delete --exclude=.DS_Store --itemize-changes)
+if [[ "$APPLY" -eq 0 ]]; then
+  RSYNC+=(--dry-run)
+  echo "preview only; review the itemized changes, then rerun with --apply"
 fi
 
 for skill in "${SKILLS[@]}"; do
@@ -38,7 +42,14 @@ for skill in "${SKILLS[@]}"; do
     continue
   fi
   echo "sync: $skill"
-  "${RSYNC[@]}" "$SRC/$skill/" "$DST/$skill/"
+  # With --no-times, rsync emits .f..T.... placeholders for checksum-equal
+  # files. Hide only those timestamp-only records so review output shows real
+  # transfers and deletions.
+  "${RSYNC[@]}" "$SRC/$skill/" "$DST/$skill/" | sed -E '/^\.[fd]\.\.T\.\.\.\./d'
 done
 
-echo "done → $DST"
+if [[ "$APPLY" -eq 1 ]]; then
+  echo "synced → $DST"
+else
+  echo "preview complete → $DST"
+fi

@@ -1,6 +1,6 @@
 # Animation System
 
-> Companion patterns for timelines and easing. Confirm APIs against the installed OpenTUI version and upstream docs when available.
+> Companion patterns for timelines and easing. Confirm APIs against the pinned installed OpenTUI version and matching vendored docs; consult upstream only to investigate a mismatch or planned upgrade.
 
 OpenTUI provides a timeline-based animation system for smooth property transitions.
 
