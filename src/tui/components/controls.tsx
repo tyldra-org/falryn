@@ -7,7 +7,6 @@
  */
 
 import type { SelectOption, SelectRenderable } from "@opentui/core";
-import { useKeyboard } from "@opentui/react";
 import { type ReactNode, useMemo, useRef } from "react";
 import { displayWidth } from "../../domain/index.ts";
 import {
@@ -22,6 +21,7 @@ import {
 import { type FactValue, statusOfFact } from "../view-model.ts";
 import { useFrame } from "./context.tsx";
 import { Line, StatusMark } from "./primitives.tsx";
+import { useSelectNavigation } from "./select-navigation.ts";
 
 /** Cells the overlay panel's border and padding take from its content. */
 const PANEL_CHROME_COLUMNS = 4;
@@ -95,22 +95,7 @@ function OptionList(props: {
   const mutedColor = theme.color("mutedForeground");
   const selectionColor = theme.color("selection");
 
-  useKeyboard((key) => {
-    const list = results.current;
-    if (list === null || options.length === 0 || props.onSelect === undefined) {
-      return;
-    }
-    if (key.name === "up") {
-      key.preventDefault();
-      list.moveUp();
-    } else if (key.name === "down") {
-      key.preventDefault();
-      list.moveDown();
-    } else if (key.name === "return") {
-      key.preventDefault();
-      list.selectCurrent();
-    }
-  });
+  useSelectNavigation(results, options.length, { enabled: props.onSelect !== undefined });
 
   if (options.length === 0) {
     return (

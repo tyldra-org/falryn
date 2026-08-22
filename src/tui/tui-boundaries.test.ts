@@ -45,11 +45,6 @@ const RENDERER_OWNERS = [
   // Expanded transcript body selection (#622). OpenTUI owns the native range;
   // Falryn reads it at include/copy time rather than storing a second model.
   "components/transcript-body.tsx",
-  // The palette's search field. #364: a search field is a focused text control,
-  // and routing every character through the command registry would put a
-  // dispatch between a keystroke and the character it produces. Help shares this
-  // module and subscribes to nothing.
-  "components/overlay-routes.tsx",
   // Overlay motion is registered with OpenTUI's timeline hook rather than a
   // parallel timer implementation.
   "components/overlay.tsx",
@@ -57,13 +52,9 @@ const RENDERER_OWNERS = [
   // no password echo, so the sheet subscribes to keys and pastes itself rather
   // than routing every character through the registry.
   "components/confirmation.tsx",
-  // Session and model pickers subscribe to OpenTUI Select. Context and resource
-  // panels do not; they share the module because they are one overlay route.
-  "components/controls.tsx",
-  // Workspace-set overlays (#607): Input for add/save, Select for remove/load.
-  "components/workspace-sheet.tsx",
-  // Session navigation overlays (#722): Select for sessions/replay, Input for rewind.
-  "session-nav/sheet.tsx",
+  // Select navigation is a renderer-owned hook shared by the palette and the
+  // application pickers. Its inputs remain local renderable behaviour.
+  "components/select-navigation.ts",
   // Task intelligence overlays (#726): Input draft → application advice ports.
   "task-intelligence/sheet.tsx",
   // The root measures the viewport through the renderer's own hooks. Nothing

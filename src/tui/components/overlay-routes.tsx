@@ -22,11 +22,11 @@
  */
 
 import type { SelectOption, SelectRenderable } from "@opentui/core";
-import { useKeyboard } from "@opentui/react";
 import { type ReactNode, useMemo, useRef } from "react";
 import type { CommandEntry, HelpSection } from "../view-model.ts";
 import { useFrame } from "./context.tsx";
 import { Line } from "./primitives.tsx";
+import { useSelectNavigation } from "./select-navigation.ts";
 
 /** Cells the overlay panel's own border and padding take from its content. */
 const PANEL_CHROME_COLUMNS = 4;
@@ -103,19 +103,7 @@ export function CommandPalette(props: CommandPaletteProps): ReactNode {
   const mutedColor = theme.color("mutedForeground");
   const selectionColor = theme.color("selection");
 
-  useKeyboard((key) => {
-    const list = results.current;
-    if (list === null || options.length === 0) {
-      return;
-    }
-    if (key.name === "up") {
-      key.preventDefault();
-      list.moveUp();
-    } else if (key.name === "down") {
-      key.preventDefault();
-      list.moveDown();
-    }
-  });
+  useSelectNavigation(results, options.length, { selectOnReturn: false });
 
   const select = (option: SelectOption | null): void => {
     if (option !== null && typeof option.value === "string") {
