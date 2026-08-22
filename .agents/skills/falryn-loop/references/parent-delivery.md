@@ -28,9 +28,9 @@ For a Parent chain:
   In Codex, either set the objective directly with
   `/goal Deliver — Target: Parent chain #N` or, when the Desktop UI has
   already entered Goal mode, send `Deliver — Target: Parent chain #N` as that
-  goal's objective. In another harness, follow its actual `/loop` mode-entry
-  syntax; an inline target is valid only when that harness supports it. Neither
-  entrypoint authorizes parallel phase agents or writers.
+  goal's objective. In another harness, use either its supported `/goal` or
+  `/loop` mode-entry syntax; an inline target is valid only when that harness
+  supports it. Neither entrypoint authorizes parallel phase agents or writers.
 - Keep the controller active while required CI resolves. If the host cuts the
   turn during CI, merge, or reconciliation, report the PR URLs, head SHAs,
   progress, and Deliver — Target: Parent chain #<same parent> as the resume

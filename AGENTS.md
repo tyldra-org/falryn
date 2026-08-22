@@ -130,9 +130,9 @@ Falryn-specific reminders (for agents in this workflow):
   Codex, the supported direct form is
   `/goal Deliver — Target: Parent chain #N`. If the Desktop UI has already
   entered Goal mode, send `Deliver — Target: Parent chain #N` as the goal
-  objective instead. In another harness, use its actual `/loop` mode-entry
-  syntax and provide the Parent-chain target only as that harness supports it.
-  Never use a per-child handoff prompt.
+  objective instead. In another harness, use either its supported `/goal` or
+  `/loop` mode-entry syntax and provide the Parent-chain target only as that
+  harness supports it. Never use a per-child handoff prompt.
 
 ## Validation
 
