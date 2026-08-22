@@ -30,8 +30,7 @@ contracts apply only when that agent is given one of those mode prompts.
    including contributors without `~/.agents/skills`. Universal skills here stay
    project-agnostic; Falryn-specific delivery lives in `falryn-loop` only.
 3. This repo is GitHub-only: `tyldra-org/falryn`. `git remote origin` is
-   github.com. Do not add `origin.cursor.com` remotes or load `origin-cli`
-   for Falryn work. Companion docs: `tyldra-org/falryn-docs`.
+   github.com. Companion docs: `tyldra-org/falryn-docs`.
 4. Skill guidance never overrides Falryn architecture, a Ready issue's scope, or
    repository-owned validation.
 
@@ -66,8 +65,7 @@ Load from `.agents/skills/` (see the README there for the full table).
 copy wins over personal `~/.agents/skills/`. Details: [`.agents/skills/README.md`](.agents/skills/README.md).
 
 Skill split: `git-workflow` is `git` porcelain and safety. `gh-cli` is GitHub `gh`
-(syntax and process). Falryn does not use Cursor Origin. The global `origin-cli`
-skill remains installed for other checkouts; do not load it here.
+(syntax and process).
 
 | When | Skill |
 | --- | --- |
@@ -127,8 +125,10 @@ Falryn-specific reminders (for agents in this workflow):
   `verify-unaffected` / `not-applicable`. Stop on missing or conflicting
   contracts.
 - Maintainer Parent chain Deliver: load **`falryn-loop`** (vendored). Resume a
-  host-cut turn with `/loop Deliver — Target: Parent chain #N` — not a per-child
-  handoff prompt.
+  host-cut turn with the current harness's supported entrypoint:
+  `/loop Deliver — Target: Parent chain #N` or
+  `/goal Deliver — Target: Parent chain #N`. When both are available, either
+  is valid; never use a per-child handoff prompt.
 
 ## Validation
 

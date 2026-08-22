@@ -82,7 +82,7 @@ Branch from the affected release tag or maintained release branch, not automatic
 
 ```bash
 git switch -c fix/PROJ-500-token-expiry v1.4.0
-# fix, test, commit; land through the repo's PR host (gh-cli / origin-cli)
+# fix, test, commit; land through the repository's approved PR workflow
 # tag the resulting release commit only after it is reviewed and accepted
 ```
 

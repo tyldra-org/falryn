@@ -20,8 +20,11 @@ mechanics to the universal tier without duplicating them.
 **Distribution rule:** what lives under `.agents/skills/` in git is what users get.
 Edit here (or sync into here before merge) when changing skills contributors should see.
 
-**Precedence in a Falryn checkout:** repo vendored skills → this repo's `AGENTS.md`
-→ personal/global agent guidance. Do not rely on `~/.agents/skills` being installed.
+**Precedence in a Falryn checkout:** higher-priority instructions → repo-local
+`AGENTS.md` / `CONTRIBUTING.md` → the relevant vendored skill → personal/global
+guidance as a fallback. Repo guidance may narrow a portable skill; a vendored
+skill wins over a personal/global copy only when the higher layers are silent.
+Do not rely on `~/.agents/skills` being installed.
 
 ## Load gates
 
@@ -36,8 +39,8 @@ Edit here (or sync into here before merge) when changing skills contributors sho
 `git-workflow` owns git. `gh-cli` owns GitHub. Never substitute one CLI for
 another. `git remote origin` is a remote name, not a product.
 
-Falryn is GitHub-only (`tyldra-org/falryn`). Do not add Cursor Origin remotes.
-`origin-cli` is not vendored here.
+Falryn is GitHub-only (`tyldra-org/falryn`). No other forge workflow is
+vendored here.
 
 Optional global-only: `find-docs` (library API lookup) may live in personal
 `~/.agents/skills/` until vendored. Prefer vendoring when a skill becomes part

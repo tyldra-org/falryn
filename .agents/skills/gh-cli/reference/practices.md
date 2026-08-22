@@ -1,6 +1,6 @@
 # Practices & help
 
-> Prefer `gh <cmd> --help` when flags may have changed. Git porcelain: **git-workflow**. Cursor forge: **origin-cli** (not this skill).
+> Prefer `gh <cmd> --help` when flags may have changed. Git porcelain: **git-workflow**.
 
 ### Best Practices
 
@@ -58,7 +58,6 @@ gh help accessibility
 | `gh pr merge --squash` flags | **gh-cli** [reference/pr.md](pr.md) |
 | Merge a GitHub PR (should we / confirm) | **gh-cli** [process/merge.md](../process/merge.md) |
 | Local git merge / rebase / force-push | **git-workflow** |
-| `origin pr merge --squash` | **origin-cli** |
 
 ### References
 

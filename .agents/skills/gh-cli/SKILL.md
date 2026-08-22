@@ -3,14 +3,14 @@ name: gh-cli
 description: >-
   GitHub CLI (`gh`) for github.com — command syntax and GitHub process (issues,
   PRs, Actions, Projects, checks, merge, admin). Use when working on GitHub.
-  Does **not** cover git porcelain (git-workflow) or Cursor Origin (origin-cli).
+  Does **not** cover git porcelain (git-workflow) or other forge workflows.
 ---
 
 # GitHub CLI (`gh`)
 
 Command-line reference and **GitHub process** for **github.com**.
 
-**Not in scope:** `git` porcelain (**git-workflow**), Cursor **`origin`** CLI (**origin-cli**).
+**Not in scope:** `git` porcelain (**git-workflow**) or non-GitHub forge workflows.
 
 Preserved syntax notes from [github/awesome-copilot `gh-cli`](https://www.skills.sh/github/awesome-copilot/gh-cli) (commit `8395dce`). Verify flags with `gh <cmd> --help` / `gh --version` when behavior may have changed.
 
@@ -21,13 +21,7 @@ Preserved syntax notes from [github/awesome-copilot `gh-cli`](https://www.skills
 | "What flags for `gh pr create`?" | **gh-cli** (this) — [reference/pr.md](reference/pr.md) |
 | "Open / review / merge a GitHub PR?" | **gh-cli** (this) — [process/pr.md](process/pr.md), [process/merge.md](process/merge.md) |
 | "Commit / branch / rebase / force-push?" | **git-workflow** |
-| "`origin pr merge` vs `gh pr merge`?" | **origin-cli** for `origin …`; **gh-cli** for `gh …` |
-| "Sync rulesets to Origin" | **origin-cli** (+ this skill to *read* GitHub rulesets) |
-| "Install Origin / login to origin.cursor.com" | Cursor built-in **`origin`** skill |
-
-**Never use `gh` for Origin forge operations.** Origin has its own CLI (`origin …`) documented in **origin-cli**.
-
-**Inbound mirrors:** `git remote origin` may be `origin.cursor.com` while PRs still live on GitHub. Push with git (**git-workflow**); open/merge PRs with **`gh`** on the GitHub source repo. `origin pr create` fails. See [process/pr.md](process/pr.md#host-selection-read-first).
+| "Use a non-GitHub forge?" | Use that platform's approved workflow |
 
 ## Rules
 
@@ -181,9 +175,7 @@ After GitHub mutations: exact repo/project and object URLs/numbers; created/upda
 | --- | --- |
 | **git-workflow** | Git porcelain and git history safety |
 | **gh-cli** (this) | `gh` syntax + GitHub process |
-| **origin-cli** | `origin` syntax + Origin process — not `gh` |
-| **`origin`** (Cursor built-in) | Install/login repair for Origin CLI only |
 
 Project-specific delivery orchestration (selectors, stop rules, repo docs) lives in that project's loop skill. This skill supplies the generic GitHub and Project mechanics those loops call. Repositories may **vendor** this skill under `.agents/skills/` so every checkout gets the same guidance without a global install.
 
-Do not document `origin pr` here — that is **origin-cli**. Do not document `git commit` / rebase / force-push here — that is **git-workflow**.
+Do not document `git commit` / rebase / force-push here — that is **git-workflow**.

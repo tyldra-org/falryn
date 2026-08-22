@@ -20,7 +20,7 @@ Generic GitHub lifecycle (assign, **In Progress** / **Done**, post-merge reconci
 
 ## Single controller
 
-One controller owns the target and delivery bundle. Run readiness, implementation, and verification serially in the same agent. Do not create planner, implementer, verifier, or goal-wrapper subagents for a Deliver run.
+One controller owns the target and delivery bundle. Run readiness, implementation, and verification serially in the same agent. Do not create planner, implementer, verifier, or other phase subagents for a Deliver run. A host's `/loop` or `/goal` directive is only an entrypoint for that same controller; it does not authorize a second controller or parallel delivery work.
 
 Host-imposed async forking of this same controller (Cursor Multitask) is allowed if phases stay serial and there is still only one writer on the issue checkout. It does not authorize parallel Deliver phases or phase specialists.
 
@@ -80,6 +80,21 @@ Do **not** write deferrals such as “continuing in the next step”, “unless 
 Do **not** emit `Deliver — Target: Issue #<next sibling>` mid-chain (Parent-issue handoff form).
 
 `Suggested next prompt: Deliver — Target: Parent chain #N` is **only** for host-ended CI/merge/reconcile mid-child.
+
+### Host entrypoints for a Parent chain
+
+The `Deliver — Target: Parent chain #N` selector owns the chain behavior;
+`/loop` and `/goal` are equivalent host entrypoints, not separate delivery
+modes. Start or resume a chain with whichever directive the current harness
+supports:
+
+```text
+/loop Deliver — Target: Parent chain #N
+/goal Deliver — Target: Parent chain #N
+```
+
+When both are available, either is valid. Keep the exact `Parent chain` target
+when resuming; do not turn it into a per-child `Issue #N` handoff.
 
 ### Chain progress (include in reports)
 

@@ -2,21 +2,9 @@
 
 Open, update, and land pull requests. A PR is outward-facing — show the title and body before it goes out.
 
-## Host selection (read first)
+## GitHub context (read first)
 
-Check `git remote get-url origin` and `origin repo view -R org/name` (mirror status):
-
-| Setup | Push / pull | Open / view / checks / merge PR |
-| --- | --- | --- |
-| **`origin.cursor.com` + mirror inbound** (`{origin-ns}/{repo}` → `{github-org}/{repo}`) | **`git push origin`** | **`gh pr …`** on GitHub source repo — **`origin pr create` fails** |
-| **`origin.cursor.com` + native / detached Origin repo** | **`git push origin`** | **`origin pr …`** |
-| **`github.com` remote primary** | **`git push origin`** | **`gh pr …`** |
-
-Issues, Projects, Actions, ruleset admin on GitHub: always **`gh`** on the GitHub org/repo from `git remote get-url origin` / `gh repo view` (or a project overlay if present).
-
-**Do not** assume Origin-primary git remote implies Origin PRs. Inbound mirrors sync code through Origin but PRs live on GitHub.
-
-Push/sync is **git-workflow**. Native Origin PRs are **origin-cli**. This file is GitHub PR process; flag syntax is [reference/pr.md](../reference/pr.md).
+This file is the GitHub PR process. Resolve the GitHub repository with the project `AGENTS.md` or `gh repo view`; push and sync remain **git-workflow**. If the repository is not hosted on GitHub, this skill does not apply.
 
 ## Tooling
 
@@ -26,13 +14,7 @@ When the host is GitHub, prefer `gh`:
 gh auth status
 ```
 
-When the host is Origin, prefer `origin`:
-
-```bash
-origin auth status
-```
-
-If the chosen CLI is unavailable or unauthenticated, say so and ask whether to install/authenticate. Do **not** fall back to raw `curl` with a token pulled from the environment or `.git-credentials` — that path reads secrets into the transcript and into shell history. The user runs `gh auth login` or `origin auth login` themselves.
+If `gh` is unavailable or unauthenticated, say so and ask whether the user wants to install or authenticate it. Do **not** fall back to raw `curl` with a token pulled from the environment or `.git-credentials` — that path reads secrets into the transcript and into shell history. The user runs `gh auth login` themselves.
 
 ## Before opening
 
