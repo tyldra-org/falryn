@@ -29,7 +29,7 @@ contracts apply only when that agent is given one of those mode prompts.
    **Prefer the vendored copy in this repo** — it is what every checkout gets,
    including contributors without `~/.agents/skills`. Universal skills here stay
    project-agnostic; Falryn-specific maintainer workflow lives in
-   `falryn-loop` only.
+   `falryn-workflow` only.
 3. This repo is GitHub-only: `tyldra-org/falryn`. `git remote origin` is
    github.com. Companion docs: `tyldra-org/falryn-docs`.
 4. Skill guidance never overrides Falryn architecture, a Ready issue's scope, or
@@ -62,7 +62,7 @@ contracts apply only when that agent is given one of those mode prompts.
 Load from `.agents/skills/` (see the README there for the full table).
 
 **Vendored skills (every checkout):** universal (`git-workflow`, `gh-cli`), stack
-(`typescript-best-practices`, `opentui`), and project loop (`falryn-loop`). Repo
+(`typescript-best-practices`, `opentui`), and project workflow (`falryn-workflow`). Repo
 copy wins over personal `~/.agents/skills/`. Details: [`.agents/skills/README.md`](.agents/skills/README.md).
 
 Skill split: `git-workflow` is `git` porcelain and safety. `gh-cli` is GitHub `gh`
@@ -75,7 +75,7 @@ Skill split: `git-workflow` is `git` porcelain and safety. `gh-cli` is GitHub `g
 | OpenTUI TypeScript/TSX | Both `typescript-best-practices` and `opentui` |
 | Any mutating git work (branch, commit, rebase, push, recover) | `git-workflow` |
 | GitHub issues, PRs, Actions, Projects, merge, `gh` flags | `gh-cli` |
-| `Plan`, `Implement`, `Verify`, `Merge`, `Deliver`, or `Next` maintainer prompts (including "what should I implement next?") | `falryn-loop`. Maintainer modes only. Does not replace technical/GitHub skills. Not required of other contributors |
+| `Plan`, `Implement`, `Verify`, `Merge`, `Deliver`, or `Next` maintainer prompts (including "what should I implement next?") | `falryn-workflow`. Maintainer modes only. Does not replace technical/GitHub skills. Not required of other contributors |
 
 ### OpenTUI ownership
 
@@ -118,7 +118,7 @@ Falryn-specific reminders (for agents in this workflow):
   numbers/titles; never placeholders). A suggestion does not authorize action.
   **Exception:** an in-flight `Deliver — Target: Parent chain #N` with
   remaining siblings must not end with a resume prompt — continue the next
-  child in the same run (`falryn-loop` wins).
+  child in the same run (`falryn-workflow` wins).
 - Live planning: [Falryn Roadmap](https://github.com/orgs/tyldra-org/projects/1).
   Design ownership: `falryn-docs/DOCUMENTATION-MAP.md`. Implementation truth:
   `CURRENT-STATE.md` (update only from current source + validation).
@@ -126,7 +126,7 @@ Falryn-specific reminders (for agents in this workflow):
   links via `DOCUMENTATION-MAP.md`. Record doc impact as `create` / `update` /
   `verify-unaffected` / `not-applicable`. Stop on missing or conflicting
   contracts.
-- Maintainer Parent chain Deliver: load **`falryn-loop`** (vendored). In
+- Maintainer Parent chain Deliver: load **`falryn-workflow`** (vendored). In
   Codex, the supported direct form is
   `/goal Deliver — Target: Parent chain #N`. If the Desktop UI has already
   entered Goal mode, send `Deliver — Target: Parent chain #N` as the goal

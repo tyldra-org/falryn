@@ -10,10 +10,10 @@ agent without a personal `~/.agents/skills` install — resolves the same guidan
 | --- | --- | --- | --- |
 | **Universal** | `git-workflow`, `gh-cli` | No project names; reusable on any repo | Vendored in `falryn/.agents/skills/` |
 | **Stack** | `typescript-best-practices`, `opentui` | Tool/framework guidance | Vendored in repo |
-| **Project workflow** | `falryn-loop` | Falryn maintainer modes; delegates to universal | Vendored in repo |
+| **Project workflow** | `falryn-workflow` | Falryn maintainer modes; delegates to universal | Vendored in repo |
 
 **Content rules:** universal skills never import product or repo names. A
-**project workflow** skill (for example `falryn-loop`) owns that repo's
+**project workflow** skill (for example `falryn-workflow`) owns that repo's
 maintainer-mode selectors, delivery stop conditions, and any CI-wait overrides
 — and **delegates** git/GitHub mechanics to the universal tier without
 duplicating them.
@@ -35,7 +35,7 @@ Do not rely on `~/.agents/skills` being installed.
 | `opentui` | Terminal UI, renderer, layout, input, keymaps, packaging |
 | `git-workflow` | Mutating git work (commit, branch, rebase, push, recover) |
 | `gh-cli` | GitHub `gh`: issues, PRs, Actions, Projects, merge, flags |
-| `falryn-loop` | `Plan`, `Implement`, `Verify`, `Merge`, `Deliver`, or `Next` maintainer prompts, including "what next?" (optional for others) |
+| `falryn-workflow` | `Plan`, `Implement`, `Verify`, `Merge`, `Deliver`, or `Next` maintainer prompts, including "what next?" (optional for others) |
 
 `git-workflow` owns git. `gh-cli` owns GitHub. Never substitute one CLI for
 another. `git remote origin` is a remote name, not a product.
@@ -61,10 +61,10 @@ users, run from this directory:
 **Warning:** `--apply` uses `rsync --delete`; review the preview before applying
 it. If your global `gh-cli` or `git-workflow` contains project-specific text,
 do not sync those skills into the repo — edit universal skills in-repo instead.
-Only `falryn-loop` should name Falryn or Parent chain behavior.
+Only `falryn-workflow` should name Falryn or Parent chain behavior.
 
 Or edit directly in `.agents/skills/` and commit — **the repo copy is canonical
 for users.**
 
-Delivery modes and `falryn-loop` are optional for contributors; see "Who this
+Delivery modes and `falryn-workflow` are optional for contributors; see "Who this
 file is for" in [`AGENTS.md`](../../AGENTS.md).

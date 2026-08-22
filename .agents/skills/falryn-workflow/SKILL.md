@@ -1,5 +1,5 @@
 ---
-name: falryn-loop
+name: falryn-workflow
 description: >-
   Run Falryn's optional maintainer workflow: Plan, Implement, Verify, Merge,
   Deliver, or Next for Falryn and Falryn Docs. Use when a prompt names one of
@@ -7,7 +7,7 @@ description: >-
   contributor pull requests.
 ---
 
-# Falryn maintainer workflow
+# Falryn workflow
 
 Use this skill only for the optional maintainer modes. It coordinates the
 Falryn-specific contract; it does not replace the technical, Git, or GitHub
@@ -77,7 +77,7 @@ working in the same run instead of ending with a resume prompt.
 
 ## Distribution
 
-The vendored copy under falryn/.agents/skills/falryn-loop/ is the
+The vendored copy under falryn/.agents/skills/falryn-workflow/ is the
 contributor-facing source. Keep it aligned with the personal
-~/.agents/skills/falryn-loop/ copy, but do not make universal skills
+~/.agents/skills/falryn-workflow/ copy, but do not make universal skills
 Falryn-specific.

@@ -4,7 +4,7 @@ set -euo pipefail
 
 SRC="${SKILLS_SRC:-$HOME/.agents/skills}"
 DST="$(cd "$(dirname "$0")" && pwd)"
-SKILLS=(gh-cli git-workflow typescript-best-practices opentui falryn-loop)
+SKILLS=(gh-cli git-workflow typescript-best-practices opentui falryn-workflow)
 APPLY=0
 
 for arg in "$@"; do
