@@ -26,13 +26,28 @@ maintainer can review independently, an organization administrator enables the
 already documented one-approval and CODEOWNERS-review requirements in the same
 branch-protection rule.
 
+## Enforcement scope
+
+Repository rulesets and contribution-policy checks apply to every contributor
+except the repository owner's exact GitHub account. That includes organization
+members, collaborators, maintainers, and future external contributors. The
+owner is the only `always` bypass actor on main, release branches, and release
+tags; granting repository admin access to someone else does not grant the same
+exception.
+
+The owner exception preserves emergency and solo-maintenance access. Size, area,
+and trust labels may still be applied as informational metadata, but they do not
+block the owner.
+
 ## Triage contract
 
 Every valid report is triaged into the Falryn Roadmap with exactly one owner,
 one Status, one work-type label, at least one area label, and either a native
 parent or explicit Standalone relationship. The `Issue governance` workflow
-reminds maintainers of missing machine-checkable metadata; it never invents an
-assignee, status, label, or hierarchy.
+reminds maintainers about repository-owned assignee and label metadata; it never
+invents them. Because a repository-scoped `GITHUB_TOKEN` cannot read the private
+organization Project, Roadmap membership, Status, and hierarchy are verified by
+private Project automation and maintainer or agent audits.
 
 Pull requests link an issue, explain scope, validation, documentation impact,
 and risk. Automation applies changed-file area labels, exactly one `size: *`

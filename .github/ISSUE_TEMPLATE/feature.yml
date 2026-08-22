@@ -89,6 +89,6 @@ body:
     id: validation
     attributes:
       label: Validation and documentation impact
-      description: Name focused checks and canonical Falryn Docs owner(s).
+      description: Name focused checks and any affected public documentation.
     validations:
       required: true

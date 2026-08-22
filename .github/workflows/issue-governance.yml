@@ -4,15 +4,18 @@ on:
   issues:
     types: [opened, edited, reopened, closed, assigned, unassigned, labeled, unlabeled]
 
+concurrency:
+  group: issue-governance-${{ github.event.issue.number }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
   issues: write
-  repository-projects: read
 
 jobs:
   validate:
     name: Check live issue metadata
-    if: github.actor != 'github-actions[bot]'
+    if: github.actor != 'github-actions[bot]' && github.event.issue.user.login != 'yogeshprasad098'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -36,37 +39,6 @@ jobs:
               errors.push("apply at least one `area:*` label");
             }
 
-            const result = await github.graphql(
-              `query($owner: String!, $repo: String!, $number: Int!) {
-                repository(owner: $owner, name: $repo) {
-                  issue(number: $number) {
-                    projectItems(first: 20) {
-                      nodes {
-                        project { number title }
-                        fieldValueByName(name: "Status") {
-                          ... on ProjectV2ItemFieldSingleSelectValue { name }
-                        }
-                      }
-                    }
-                  }
-                }
-              }`,
-              { owner, repo, number: issue.number },
-            );
-            const roadmap = result.repository.issue.projectItems.nodes.find(
-              (item) => item.project.number === 1 && item.project.title === "Falryn Roadmap",
-            );
-            const status = roadmap?.fieldValueByName?.name;
-            if (!roadmap) {
-              errors.push("add the issue to the Falryn Roadmap");
-            } else if (!['Todo', 'In Progress', 'Done'].includes(status)) {
-              errors.push("set Roadmap Status to Todo, In Progress, or Done");
-            } else if (issue.state === 'closed' && status !== 'Done') {
-              errors.push("set a closed issue's Roadmap Status to Done");
-            } else if (issue.state === 'open' && status === 'Done') {
-              errors.push("reconcile an open issue from Done to Todo or In Progress");
-            }
-
             const marker = "<!-- falryn-issue-governance -->";
             const { data: comments } = await github.rest.issues.listComments({
               owner,
@@ -85,7 +57,7 @@ jobs:
               return;
             }
 
-            const body = `${marker}\nIssue metadata needs triage before this work is Ready:\n\n${errors.map((error) => `- [ ] ${error}`).join("\n")}\n\nSee [issue governance](https://github.com/tyldra-org/falryn/blob/main/CONTRIBUTING.md#required-issue-tracking).`;
+            const body = `${marker}\nIssue metadata needs triage before this work is Ready:\n\n${errors.map((error) => `- [ ] ${error}`).join("\n")}\n\nSee the [triage contract](https://github.com/tyldra-org/falryn/blob/main/CONTRIBUTOR-READINESS.md#triage-contract).`;
             if (existing) {
               await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
             } else {

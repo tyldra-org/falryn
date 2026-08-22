@@ -4,6 +4,10 @@ on:
   pull_request_target:
     types: [opened, reopened, synchronize]
 
+concurrency:
+  group: pr-labels-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
   issues: write
@@ -63,11 +67,19 @@ jobs:
               repo,
               issue_number,
             });
-            const labels = existing
+            const obsolete = existing
               .map((label) => label.name)
-              .filter((label) => !label.startsWith("size: "));
-            labels.push(size);
-            await github.rest.issues.setLabels({ owner, repo, issue_number, labels });
+              .filter((label) => label.startsWith("size: ") && label !== size);
+            for (const name of obsolete) {
+              try {
+                await github.rest.issues.removeLabel({ owner, repo, issue_number, name });
+              } catch (error) {
+                if (error.status !== 404) throw error;
+              }
+            }
+            if (!existing.some((label) => label.name === size)) {
+              await github.rest.issues.addLabels({ owner, repo, issue_number, labels: [size] });
+            }
             core.info(
               `PR #${issue_number}: ${nonTestChangedLines} non-test changed lines, ${totalChangedLines - nonTestChangedLines} test changed lines, ${changedLines} effective lines -> ${size}`,
             );
