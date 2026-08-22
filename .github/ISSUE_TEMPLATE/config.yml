@@ -6,6 +6,3 @@ contact_links:
   - name: Report a security vulnerability
     url: https://github.com/tyldra-org/falryn/security/advisories/new
     about: Private vulnerability reporting stays open to everyone. Do not file a public issue for a security report.
-  - name: Falryn documentation
-    url: https://github.com/tyldra-org/falryn-docs
-    about: Product, architecture, and developer documentation live in the falryn-docs repository.
