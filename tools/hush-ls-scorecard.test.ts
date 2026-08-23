@@ -15,7 +15,7 @@ describe("Hush ls scorecard", () => {
     expect(estimateTokens("λ")).toBe(1);
   });
 
-  test("requires Hush to be strictly smaller and recoverable", () => {
+  test("allows a tie but refuses more tokens or information loss", () => {
     const pass = scoreHushLs({
       id: "pass",
       argv: ["-la"],
@@ -23,7 +23,9 @@ describe("Hush ls scorecard", () => {
       rtk: "b".repeat(80),
       hush: "h".repeat(40),
       fidelity: "deterministic-reduction",
-      omissionRecords: 1,
+      omissionRecords: 0,
+      retainsEveryEntry: true,
+      truncated: false,
       recoverable: true,
     });
     const tie = scoreHushLs({
@@ -33,10 +35,22 @@ describe("Hush ls scorecard", () => {
       rtk: pass.rtk.text,
       hush: pass.rtk.text,
     });
-    expect(pass.beatsRtk).toBe(true);
-    expect(tie.beatsRtk).toBe(false);
+    const overBudget = scoreHushLs({
+      ...pass,
+      id: "over-budget",
+      raw: pass.raw.text,
+      rtk: pass.rtk.text,
+      hush: `${pass.rtk.text}x`,
+    });
+    expect(pass.withinRtkBudget).toBe(true);
+    expect(tie.withinRtkBudget).toBe(true);
+    expect(overBudget.withinRtkBudget).toBe(false);
     expect(passesHushLsScorecard([pass])).toBe(true);
-    expect(passesHushLsScorecard([tie])).toBe(false);
+    expect(passesHushLsScorecard([tie])).toBe(true);
+    expect(passesHushLsScorecard([overBudget])).toBe(false);
+    expect(passesHushLsScorecard([{ ...pass, retainsEveryEntry: false }])).toBe(false);
+    expect(passesHushLsScorecard([{ ...pass, omissionRecords: 1 }])).toBe(false);
+    expect(passesHushLsScorecard([{ ...pass, truncated: true }])).toBe(false);
     expect(passesHushLsScorecard([{ ...pass, fidelity: "raw-fallback" }])).toBe(false);
   });
 
@@ -48,19 +62,23 @@ describe("Hush ls scorecard", () => {
       rtk: "b".repeat(80),
       hush: "h".repeat(40),
       fidelity: "deterministic-reduction",
-      omissionRecords: 1,
+      omissionRecords: 0,
+      retainsEveryEntry: true,
+      truncated: false,
       recoverable: true,
     });
     const formatted = formatHushLsScorecard({
       corpusVersion: HUSH_LS_CORPUS_VERSION,
-      hushVersion: "hush.v1",
+      hushVersion: "hush.v2",
       rtkVersion: "rtk 0.45.0",
       estimator: "ceil(utf8-bytes/4)",
       scores: [score],
       passes: true,
     });
-    expect(formatted).toContain("Hush hush.v1 vs rtk 0.45.0");
+    expect(formatted).toContain("Hush hush.v2 vs rtk 0.45.0");
     expect(formatted).toContain("recursive");
+    expect(formatted).toContain("TOTAL");
+    expect(formatted).toContain("all");
     expect(formatted).toContain("scorecard: PASS");
   });
 });

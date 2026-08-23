@@ -19,20 +19,54 @@ import {
   reduceHush,
 } from "../src/domain/index.ts";
 
-export const HUSH_LS_CORPUS_VERSION = "hush-ls.v1";
+export const HUSH_LS_CORPUS_VERSION = "hush-ls.v2";
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
+const FLAT_MODULE_NAMES = Array.from(
+  { length: 96 },
+  (_, index) => `module-${String(index).padStart(3, "0")}.ts`,
+);
+const FLAT_VISIBLE_NAMES = [
+  "README.md",
+  "comma,name.csv",
+  "file with spaces.txt",
+  ...FLAT_MODULE_NAMES,
+  "package.json",
+  "unicode-λ.txt",
+] as const;
+const FLAT_ALL_NAMES = [".hidden-config", ...FLAT_VISIBLE_NAMES] as const;
+const NESTED_ENTRY_NAMES = Array.from(
+  { length: 32 },
+  (_, index) => `entry-${String(index).padStart(2, "0")}.ts`,
+);
+const NESTED_ALL_NAMES = [
+  "assets",
+  "docs",
+  "src",
+  "tests",
+  "components",
+  "manifest.json",
+  "guide.md",
+  ...NESTED_ENTRY_NAMES,
+] as const;
+const NESTED_TOP_LEVEL_NAMES = ["assets", "docs", "src", "tests"] as const;
+
 const CORPUS_CASES = [
-  { id: "one-per-line", argv: ["-1", "flat"] },
-  { id: "long-all", argv: ["-la", "flat"] },
-  { id: "long-human", argv: ["-lah", "flat"] },
-  { id: "recursive", argv: ["-R", "nested"] },
-  { id: "multi-path", argv: ["-la", "flat", "nested"] },
-  { id: "columns", argv: ["-C", "flat"] },
-  { id: "comma-separated", argv: ["-m", "flat"] },
-  { id: "inode-blocks", argv: ["-is", "flat"] },
+  { id: "one-per-line", argv: ["-1", "flat"], expectedEntries: FLAT_VISIBLE_NAMES },
+  { id: "long-all", argv: ["-la", "flat"], expectedEntries: FLAT_ALL_NAMES },
+  { id: "long-human", argv: ["-lah", "flat"], expectedEntries: FLAT_ALL_NAMES },
+  { id: "long-empty", argv: ["-la", "empty"], expectedEntries: [] },
+  { id: "recursive", argv: ["-R", "nested"], expectedEntries: NESTED_ALL_NAMES },
+  {
+    id: "multi-path",
+    argv: ["-la", "flat", "nested"],
+    expectedEntries: [...FLAT_ALL_NAMES, ...NESTED_TOP_LEVEL_NAMES],
+  },
+  { id: "columns", argv: ["-C", "flat"], expectedEntries: FLAT_VISIBLE_NAMES },
+  { id: "comma-separated", argv: ["-m", "flat"], expectedEntries: FLAT_VISIBLE_NAMES },
+  { id: "inode-blocks", argv: ["-is", "flat"], expectedEntries: FLAT_VISIBLE_NAMES },
 ] as const;
 
 type CommandRun = Readonly<{
@@ -55,8 +89,10 @@ export type HushLsScore = Readonly<{
   hush: HushLsMeasurement;
   fidelity: "exact" | "deterministic-reduction" | "raw-fallback";
   omissionRecords: number;
+  retainsEveryEntry: boolean;
+  truncated: boolean;
   recoverable: boolean;
-  beatsRtk: boolean;
+  withinRtkBudget: boolean;
 }>;
 
 export type HushLsScorecard = Readonly<{
@@ -88,6 +124,8 @@ export function scoreHushLs(input: {
   readonly hush: string;
   readonly fidelity: HushLsScore["fidelity"];
   readonly omissionRecords: number;
+  readonly retainsEveryEntry: boolean;
+  readonly truncated: boolean;
   readonly recoverable: boolean;
 }): HushLsScore {
   const raw = measureText(input.raw);
@@ -101,8 +139,10 @@ export function scoreHushLs(input: {
     hush,
     fidelity: input.fidelity,
     omissionRecords: input.omissionRecords,
+    retainsEveryEntry: input.retainsEveryEntry,
+    truncated: input.truncated,
     recoverable: input.recoverable,
-    beatsRtk: hush.estimatedTokens < rtk.estimatedTokens,
+    withinRtkBudget: hush.bytes <= rtk.bytes && hush.estimatedTokens <= rtk.estimatedTokens,
   };
 }
 
@@ -112,22 +152,37 @@ export function passesHushLsScorecard(scores: readonly HushLsScore[]): boolean {
 
 function passesHushLsScore(score: HushLsScore): boolean {
   return (
-    score.beatsRtk &&
-    score.fidelity === "deterministic-reduction" &&
-    score.omissionRecords > 0 &&
+    score.withinRtkBudget &&
+    score.fidelity !== "raw-fallback" &&
+    score.omissionRecords === 0 &&
+    score.retainsEveryEntry &&
+    !score.truncated &&
     score.recoverable
   );
 }
 
 export function formatHushLsScorecard(scorecard: HushLsScorecard): string {
-  const headings = ["case", "raw", "rtk", "hush", "delta", "result"] as const;
+  const headings = ["case", "raw", "rtk", "hush", "delta", "coverage", "result"] as const;
   const rows = scorecard.scores.map((score) => [
     score.id,
     formatMeasurement(score.raw),
     formatMeasurement(score.rtk),
     formatMeasurement(score.hush),
     `${score.rtk.estimatedTokens - score.hush.estimatedTokens}t`,
+    completeCoverage(score) ? "all" : "loss",
     passesHushLsScore(score) ? "PASS" : "FAIL",
+  ]);
+  const totalRaw = totalMeasurement(scorecard.scores, "raw");
+  const totalRtk = totalMeasurement(scorecard.scores, "rtk");
+  const totalHush = totalMeasurement(scorecard.scores, "hush");
+  rows.push([
+    "TOTAL",
+    formatMeasurement(totalRaw),
+    formatMeasurement(totalRtk),
+    formatMeasurement(totalHush),
+    `${totalRtk.estimatedTokens - totalHush.estimatedTokens}t`,
+    scorecard.scores.every(completeCoverage) ? "all" : "loss",
+    scorecard.passes ? "PASS" : "FAIL",
   ]);
   const widths = headings.map((heading, index) =>
     Math.max(heading.length, ...rows.map((row) => row[index]?.length ?? 0)),
@@ -148,22 +203,36 @@ function formatMeasurement(measurement: HushLsMeasurement): string {
   return `${measurement.bytes}B/${measurement.estimatedTokens}t`;
 }
 
+function completeCoverage(score: HushLsScore): boolean {
+  return score.retainsEveryEntry && score.omissionRecords === 0 && !score.truncated;
+}
+
+function totalMeasurement(
+  scores: readonly HushLsScore[],
+  lane: "raw" | "rtk" | "hush",
+): HushLsMeasurement {
+  return {
+    bytes: scores.reduce((total, score) => total + score[lane].bytes, 0),
+    estimatedTokens: scores.reduce((total, score) => total + score[lane].estimatedTokens, 0),
+    text: "",
+  };
+}
+
 async function createCorpus(root: string): Promise<void> {
   const flat = join(root, "flat");
   const nested = join(root, "nested");
+  const empty = join(root, "empty");
   await Promise.all([
     mkdir(flat, { recursive: true }),
+    mkdir(empty, { recursive: true }),
     mkdir(join(nested, "src", "components"), { recursive: true }),
     mkdir(join(nested, "tests"), { recursive: true }),
     mkdir(join(nested, "docs"), { recursive: true }),
     mkdir(join(nested, "assets"), { recursive: true }),
   ]);
 
-  const flatWrites = Array.from({ length: 96 }, (_, index) =>
-    writeFile(
-      join(flat, `module-${String(index).padStart(3, "0")}.ts`),
-      `export const value${index} = ${index};\n`,
-    ),
+  const flatWrites = FLAT_MODULE_NAMES.map((name, index) =>
+    writeFile(join(flat, name), `export const value${index} = ${index};\n`),
   );
   const namedFiles = [
     [".hidden-config", "hidden\n"],
@@ -174,12 +243,9 @@ async function createCorpus(root: string): Promise<void> {
     ["unicode-λ.txt", "unicode\n"],
   ] as const;
   const namedWrites = namedFiles.map(([name, content]) => writeFile(join(flat, name), content));
-  const nestedWrites = Array.from({ length: 32 }, (_, index) => {
+  const nestedWrites = NESTED_ENTRY_NAMES.map((name, index) => {
     const parent = index % 2 === 0 ? join(nested, "src", "components") : join(nested, "tests");
-    return writeFile(
-      join(parent, `entry-${String(index).padStart(2, "0")}.ts`),
-      `export const entry${index} = true;\n`,
-    );
+    return writeFile(join(parent, name), `export const entry${index} = true;\n`);
   });
   await Promise.all([
     ...flatWrites,
@@ -288,6 +354,10 @@ async function createScorecard(): Promise<HushLsScorecard> {
           hush: reduced.value.reducedText,
           fidelity: reduced.value.fidelity,
           omissionRecords: reduced.value.omissions.length,
+          retainsEveryEntry: fixture.expectedEntries.every((entry) =>
+            reduced.value.reducedText.includes(entry),
+          ),
+          truncated: reduced.value.truncated,
           recoverable:
             reduced.value.expansion.stdoutInline &&
             reduced.value.exit.exitCode === raw.exitCode &&

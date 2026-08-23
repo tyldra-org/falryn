@@ -67,6 +67,7 @@ export function reduceHush(request: HushRequest): Result<HushResult, HushError> 
   let strategy: HushStrategy = requested;
   let fallbackReason: HushResult["fallbackReason"] = null;
   let projection: HushStreamProjection;
+  let projectionMaxBytes = maxBytes;
   let selectedReducerId = reducerId;
 
   if (requested === "passthrough") {
@@ -90,10 +91,14 @@ export function reduceHush(request: HushRequest): Result<HushResult, HushError> 
     projection = genericProjection(request.capture, maxBytes, patterns);
   } else {
     try {
+      projectionMaxBytes =
+        classification.projection === "ls" && request.maxReducedBytes === undefined
+          ? MAX_HUSH_REDUCED_BYTES
+          : maxBytes;
       projection = specializedProjection(
         classification.projection,
         request.capture,
-        maxBytes,
+        projectionMaxBytes,
         patterns,
       );
     } catch {
@@ -108,7 +113,7 @@ export function reduceHush(request: HushRequest): Result<HushResult, HushError> 
   if (strategy !== "passthrough" && reducedBytes >= originalBytes && originalBytes > 0) {
     strategy = "passthrough";
     selectedReducerId = "safe.passthrough";
-    projection = passthroughProjection(request.capture, maxBytes, patterns);
+    projection = passthroughProjection(request.capture, projectionMaxBytes, patterns);
   }
 
   const truncated =

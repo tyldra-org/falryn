@@ -12,7 +12,8 @@ import {
   gitMutationProjection,
   gitStatusProjection,
 } from "./git.ts";
-import { listingProjection, lsProjection } from "./listing.ts";
+import { listingProjection } from "./listing.ts";
+import { lsProjection } from "./ls/projection.ts";
 import { semanticProjection } from "./semantic.ts";
 
 export function fidelityFor(

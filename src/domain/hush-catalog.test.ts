@@ -183,7 +183,7 @@ describe("Hush RTK command catalog", () => {
     expect(reduced.value.omissions.length).toBeGreaterThan(0);
   });
 
-  test("runs every catalog policy as a specialized recoverable reducer", () => {
+  test("runs every catalog policy as a non-generic recoverable projection", () => {
     const capture = longReport();
     for (const entry of HUSH_COMMAND_CATALOG) {
       const example = entry.examples[0];
@@ -195,10 +195,20 @@ describe("Hush RTK command catalog", () => {
       if (!reduced.ok) {
         continue;
       }
-      expect(reduced.value.reducerId, example).toBe(entry.reducerId);
-      expect(reduced.value.strategy, example).toBe("specialized");
+      const exactLsPassthrough =
+        entry.reducerId === "files.ls" && reduced.value.reducerId === "safe.passthrough";
+      expect(reduced.value.reducerId === entry.reducerId || exactLsPassthrough, example).toBe(true);
+      expect(
+        reduced.value.strategy === "specialized" ||
+          (exactLsPassthrough && reduced.value.strategy === "passthrough"),
+        example,
+      ).toBe(true);
       expect(reduced.value.fallbackReason, example).toBeNull();
-      expect(reduced.value.omissions.length, example).toBeGreaterThan(0);
+      if (exactLsPassthrough) {
+        expect(reduced.value.omissions, example).toEqual([]);
+      } else {
+        expect(reduced.value.omissions.length, example).toBeGreaterThan(0);
+      }
       expect(reduced.value.expansion.stdoutArtifact, example).toBe(
         artifactId.from("catalog.stdout"),
       );

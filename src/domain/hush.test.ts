@@ -10,6 +10,7 @@ import {
   classifyFamily,
   classifyReducerId,
   createHushPort,
+  DEFAULT_HUSH_REDUCED_BYTES,
   HUSH_REDUCER_VERSION,
   MAX_COMMAND_OUTPUT_BYTES,
   MAX_HUSH_REDUCED_BYTES,
@@ -364,7 +365,7 @@ describe("hush reduction", () => {
     expect(reduced.value.exit.exitCode).toBeNull();
   });
 
-  test("keeps an important pattern when listing output is capped", () => {
+  test("keeps every entry when an important pattern is requested", () => {
     const lines = Array.from({ length: 40 }, (_, index) => `file-${index}.ts`).join("\n");
     const reduced = reduceHush({
       command: argv("/bin/ls"),
@@ -377,9 +378,10 @@ describe("hush reduction", () => {
     }
     expect(reduced.value.family).toBe("listing");
     expect(reduced.value.reducedText).toContain("keep-me.ts");
+    expect(reduced.value.omissions).toEqual([]);
   });
 
-  test("samples arbitrary ls option output with a truthful omission count", () => {
+  test("compacts long ls metadata without dropping an entry", () => {
     const lines = Array.from(
       { length: 80 },
       (_, index) =>
@@ -394,17 +396,19 @@ describe("hush reduction", () => {
       throw new Error("expected a hush result");
     }
     expect(reduced.value.reducerId).toBe("files.ls");
-    const omission = reduced.value.omissions.find(
-      (value) => value.kind === "capped-lines" && value.stream === "stdout",
-    );
-    expect(omission?.count).toBeGreaterThanOrEqual(70);
-    expect(reduced.value.reducedText).toStartWith(`ls: 80 lines, ${omission?.count} omitted\n`);
-    expect(reduced.value.reducedText).toContain("module-00.ts");
-    expect(reduced.value.reducedText).toContain("module-79.ts");
-    for (const line of reduced.value.reducedText.split("\n").slice(1)) {
-      expect(lines).toContain(line);
+    expect(reduced.value.reducedText).toStartWith("files 644 (80):\n");
+    for (let index = 0; index < 80; index += 1) {
+      expect(reduced.value.reducedText).toContain(
+        `module-${String(index).padStart(2, "0")}.ts 128B`,
+      );
     }
-    expect(encoder.encode(reduced.value.reducedText).byteLength).toBeLessThanOrEqual(384);
+    expect(reduced.value.reducedText).not.toContain("user  staff");
+    expect(reduced.value.reducedText).not.toContain("Aug 23 12:00");
+    expect(reduced.value.omissions).toEqual([]);
+    expect(reduced.value.truncated).toBe(false);
+    expect(encoder.encode(reduced.value.reducedText).byteLength).toBeLessThan(
+      encoder.encode(lines.join("\n")).byteLength,
+    );
     expect(reduced.value.expansion.stdoutArtifact).toEqual(artifactId.from("cap-1.stdout"));
   });
 
@@ -422,7 +426,7 @@ describe("hush reduction", () => {
     expect(reduced.value.reducedText).toBe("README.md\npackage.json\n");
   });
 
-  test("keeps recursive ls section anchors across a long capture", () => {
+  test("keeps recursive ls output exact instead of sampling sections", () => {
     const lines = Array.from({ length: 60 }, (_, index) => `file-${index}.ts`);
     lines[0] = "workspace:";
     lines[20] = "workspace/src:";
@@ -438,9 +442,11 @@ describe("hush reduction", () => {
     expect(reduced.value.reducedText).toContain("workspace:");
     expect(reduced.value.reducedText).toContain("workspace/src:");
     expect(reduced.value.reducedText).toContain("workspace/tests:");
+    expect(reduced.value.reducedText).toBe(`${lines.join("\n")}\n`);
+    expect(reduced.value.omissions).toEqual([]);
   });
 
-  test("bounds single-line ls formats without interpreting filenames", () => {
+  test("keeps efficient single-line ls formats exact", () => {
     const line = Array.from({ length: 120 }, (_, index) => `file ${index}.ts`).join(", ");
     const reduced = reduceHush({
       command: argv("/bin/ls", ["-m", "workspace"]),
@@ -450,12 +456,34 @@ describe("hush reduction", () => {
     if (!reduced.ok) {
       throw new Error("expected a hush result");
     }
-    expect(reduced.value.reducerId).toBe("files.ls");
-    expect(reduced.value.omissions.some((omission) => omission.kind === "capped-bytes")).toBe(true);
-    expect(encoder.encode(reduced.value.reducedText).byteLength).toBeLessThanOrEqual(384);
+    expect(reduced.value.reducerId).toBe("safe.passthrough");
+    expect(reduced.value.strategy).toBe("passthrough");
+    expect(reduced.value.fidelity).toBe("exact");
+    expect(reduced.value.reducedText).toBe(`${line}\n`);
+    expect(reduced.value.omissions).toEqual([]);
   });
 
-  test("does not apply the ls sampler to other listing-family reducers", () => {
+  test("does not impose the generic default byte cap on ls", () => {
+    const output = `${Array.from(
+      { length: 1_000 },
+      (_, index) => `long-filename-${String(index).padStart(4, "0")}.ts`,
+    ).join("\n")}\n`;
+    expect(encoder.encode(output).byteLength).toBeGreaterThan(DEFAULT_HUSH_REDUCED_BYTES);
+
+    const reduced = reduceHush({
+      command: argv("/bin/ls", ["-1", "workspace"]),
+      capture: report(output),
+    });
+    expect(reduced.ok).toBe(true);
+    if (!reduced.ok) {
+      throw new Error("expected a hush result");
+    }
+    expect(reduced.value.reducedText).toBe(output);
+    expect(reduced.value.omissions).toEqual([]);
+    expect(reduced.value.truncated).toBe(false);
+  });
+
+  test("does not apply the ls projection to other listing-family reducers", () => {
     const lines = Array.from({ length: 40 }, (_, index) => `file-${index}.ts`).join("\n");
     const reduced = reduceHush({
       command: argv("/usr/bin/tree", ["workspace"]),
