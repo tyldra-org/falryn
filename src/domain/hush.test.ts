@@ -370,6 +370,98 @@ describe("hush reduction", () => {
     expect(reduced.value.reducedText).toContain("keep-me.ts");
   });
 
+  test("samples arbitrary ls option output with a truthful omission count", () => {
+    const lines = Array.from(
+      { length: 80 },
+      (_, index) =>
+        `-rw-r--r--  1 user  staff  128 Aug 23 12:00 module-${String(index).padStart(2, "0")}.ts`,
+    );
+    const reduced = reduceHush({
+      command: argv("/bin/ls", ["-lahiF", "workspace"]),
+      capture: report(`${lines.join("\n")}\n`, { artifact: true }),
+    });
+    expect(reduced.ok).toBe(true);
+    if (!reduced.ok) {
+      throw new Error("expected a hush result");
+    }
+    expect(reduced.value.reducerId).toBe("files.ls");
+    const omission = reduced.value.omissions.find(
+      (value) => value.kind === "capped-lines" && value.stream === "stdout",
+    );
+    expect(omission?.count).toBeGreaterThanOrEqual(70);
+    expect(reduced.value.reducedText).toStartWith(`ls: 80 lines, ${omission?.count} omitted\n`);
+    expect(reduced.value.reducedText).toContain("module-00.ts");
+    expect(reduced.value.reducedText).toContain("module-79.ts");
+    for (const line of reduced.value.reducedText.split("\n").slice(1)) {
+      expect(lines).toContain(line);
+    }
+    expect(encoder.encode(reduced.value.reducedText).byteLength).toBeLessThanOrEqual(384);
+    expect(reduced.value.expansion.stdoutArtifact).toEqual(artifactId.from("cap-1.stdout"));
+  });
+
+  test("passes through a small ls result exactly", () => {
+    const reduced = reduceHush({
+      command: argv("/bin/ls", ["-1", "workspace"]),
+      capture: report("README.md\npackage.json\n"),
+    });
+    expect(reduced.ok).toBe(true);
+    if (!reduced.ok) {
+      throw new Error("expected a hush result");
+    }
+    expect(reduced.value.strategy).toBe("passthrough");
+    expect(reduced.value.fidelity).toBe("exact");
+    expect(reduced.value.reducedText).toBe("README.md\npackage.json\n");
+  });
+
+  test("keeps recursive ls section anchors across a long capture", () => {
+    const lines = Array.from({ length: 60 }, (_, index) => `file-${index}.ts`);
+    lines[0] = "workspace:";
+    lines[20] = "workspace/src:";
+    lines[40] = "workspace/tests:";
+    const reduced = reduceHush({
+      command: argv("/bin/ls", ["-R", "workspace"]),
+      capture: report(`${lines.join("\n")}\n`),
+    });
+    expect(reduced.ok).toBe(true);
+    if (!reduced.ok) {
+      throw new Error("expected a hush result");
+    }
+    expect(reduced.value.reducedText).toContain("workspace:");
+    expect(reduced.value.reducedText).toContain("workspace/src:");
+    expect(reduced.value.reducedText).toContain("workspace/tests:");
+  });
+
+  test("bounds single-line ls formats without interpreting filenames", () => {
+    const line = Array.from({ length: 120 }, (_, index) => `file ${index}.ts`).join(", ");
+    const reduced = reduceHush({
+      command: argv("/bin/ls", ["-m", "workspace"]),
+      capture: report(`${line}\n`),
+    });
+    expect(reduced.ok).toBe(true);
+    if (!reduced.ok) {
+      throw new Error("expected a hush result");
+    }
+    expect(reduced.value.reducerId).toBe("files.ls");
+    expect(reduced.value.omissions.some((omission) => omission.kind === "capped-bytes")).toBe(true);
+    expect(encoder.encode(reduced.value.reducedText).byteLength).toBeLessThanOrEqual(384);
+  });
+
+  test("does not apply the ls sampler to other listing-family reducers", () => {
+    const lines = Array.from({ length: 40 }, (_, index) => `file-${index}.ts`).join("\n");
+    const reduced = reduceHush({
+      command: argv("/usr/bin/tree", ["workspace"]),
+      capture: report(`${lines}\n`),
+    });
+    expect(reduced.ok).toBe(true);
+    if (!reduced.ok) {
+      throw new Error("expected a hush result");
+    }
+    expect(reduced.value.reducerId).toBe("files.tree");
+    expect(reduced.value.reducedText).not.toStartWith("ls:");
+    expect(reduced.value.reducedText).toContain("file-31.ts");
+    expect(reduced.value.reducedText).not.toContain("file-32.ts");
+  });
+
   test("createHushPort exposes the same reduce function", () => {
     const port = createHushPort();
     const reduced = port.reduce({
