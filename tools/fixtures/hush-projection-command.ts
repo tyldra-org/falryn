@@ -93,7 +93,7 @@ if (executable === "curl") {
   process.stdout.write(`${output}\n`);
 } else if (executable === "git" && gitSubcommand(args) === "push") {
   process.stderr.write(`${output}\n`);
-} else {
+} else if (output.length > 0) {
   process.stdout.write(`${output}\n`);
 }
 
@@ -150,6 +150,9 @@ function gitOutput(argv: readonly string[]): string {
         "?? tools/hush-projection-scorecard.ts",
       ].join("\n");
     case "diff":
+      if (argv.includes("--cached") && argv.includes("--shortstat")) {
+        return "3 files changed, 10 insertions(+), 2 deletions(-)";
+      }
       return [
         "diff --git a/src/a.ts b/src/a.ts",
         "index 1111111..2222222 100644",
@@ -168,13 +171,31 @@ function gitOutput(argv: readonly string[]): string {
         "",
         "    Preserve complete context",
       ].join("\n");
-    default:
+    case "add":
+      return "";
+    case "commit":
+      return [
+        "[feature 2222222] Preserve complete context",
+        " 3 files changed, 10 insertions(+), 2 deletions(-)",
+      ].join("\n");
+    case "push":
       return [
         "Enumerating objects: 3, done.",
         "Writing objects: 100% (3/3), done.",
         "To github.com:yogeshprasad098/falryn.git",
         "   1111111..2222222  feature -> feature",
       ].join("\n");
+    case "pull":
+      return [
+        "Updating 1111111..2222222",
+        "Fast-forward",
+        " src/a.ts | 8 +++++---",
+        " src/b.ts | 2 ++",
+        " src/c.ts | 2 --",
+        " 3 files changed, 10 insertions(+), 2 deletions(-)",
+      ].join("\n");
+    default:
+      return "";
   }
 }
 

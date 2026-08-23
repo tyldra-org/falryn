@@ -17,7 +17,7 @@ import {
 import { HUSH_RTK_BASELINE } from "./hush-command-coverage.ts";
 import { type HushLsMeasurement, measureText } from "./hush-ls-scorecard.ts";
 
-export const HUSH_PROJECTION_CORPUS_VERSION = "hush-projections.v2";
+export const HUSH_PROJECTION_CORPUS_VERSION = "hush-projections.v3";
 
 type ProjectionCase = Readonly<{
   id: string;
@@ -99,12 +99,40 @@ export const HUSH_PROJECTION_CASES = [
     requiredMarkers: ["1111111", "Preserve complete context"],
   },
   {
-    id: "git-mutation",
+    id: "git-add",
+    projection: "git-mutation",
+    executable: "git",
+    argv: ["add", "."],
+    rtkArgv: ["git", "add", "."],
+    requiredMarkers: ["ok"],
+    forbiddenMarkers: ["file changed", "insertion", "deletion"],
+  },
+  {
+    id: "git-commit",
+    projection: "git-mutation",
+    executable: "git",
+    argv: ["commit", "-m", "Preserve complete context"],
+    rtkArgv: ["git", "commit", "-m", "Preserve complete context"],
+    requiredMarkers: ["ok", "2222222"],
+    forbiddenMarkers: ["file changed", "insertion", "deletion"],
+  },
+  {
+    id: "git-push",
     projection: "git-mutation",
     executable: "git",
     argv: ["push"],
     rtkArgv: ["git", "push"],
-    requiredMarkers: ["feature", "1111111", "2222222"],
+    requiredMarkers: ["github.com:yogeshprasad098/falryn.git", "feature", "1111111", "2222222"],
+    forbiddenMarkers: ["Enumerating objects", "Writing objects"],
+  },
+  {
+    id: "git-pull",
+    projection: "git-mutation",
+    executable: "git",
+    argv: ["pull", "--ff-only"],
+    rtkArgv: ["git", "pull", "--ff-only"],
+    requiredMarkers: ["ok", "3 files", "+10", "-2"],
+    forbiddenMarkers: ["Fast-forward", "src/a.ts", "src/b.ts", "src/c.ts"],
   },
   {
     id: "forge-gh",
@@ -357,9 +385,9 @@ async function createListingCorpus(root: string): Promise<void> {
 }
 
 export function formatHushProjectionScorecard(scorecard: HushProjectionScorecard): string {
-  const headings = ["projection", "raw", "rtk", "hush", "delta", "context", "result"];
+  const headings = ["case", "raw", "rtk", "hush", "delta", "context", "result"];
   const rows = scorecard.scores.map((score) => [
-    score.projection,
+    score.id,
     formatMeasurement(score.raw),
     formatMeasurement(score.rtk),
     formatMeasurement(score.hush),

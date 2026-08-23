@@ -1,43 +1,29 @@
-import type {
-  ProcessCaptureReport,
-  ProcessStreamCapture,
-  ProcessStreamName,
-} from "../../../process-capture.ts";
-import { binaryOmission, boundText, joinStreams, matchesPattern } from "../../bounds.ts";
+import type { ProcessCaptureReport } from "../../../process-capture.ts";
 import type { HushStreamProjection } from "../../contracts.ts";
-
-const GIT_PROGRESS = /^\s*(?:Enumerating|Counting|Compressing|Writing|Total) objects?\b/iu;
+import { gitSubcommand, gitSubcommandArguments } from "../../git-command.ts";
+import { gitAddProjection } from "./mutation/add.ts";
+import { gitCommitProjection } from "./mutation/commit.ts";
+import { gitPullProjection } from "./mutation/pull.ts";
+import { gitPushProjection } from "./mutation/push.ts";
+import { gitMutationFallbackProjection } from "./mutation/shared.ts";
 
 export function gitMutationProjection(
   capture: ProcessCaptureReport,
   maxBytes: number,
   patterns: readonly string[],
+  commandTokens: readonly string[],
 ): HushStreamProjection {
-  return joinStreams(
-    projectMutationStream("stdout", capture.stdout, maxBytes, patterns),
-    projectMutationStream("stderr", capture.stderr, maxBytes, patterns),
-    maxBytes,
-  );
-}
-
-function projectMutationStream(
-  stream: ProcessStreamName,
-  capture: ProcessStreamCapture,
-  maxBytes: number,
-  patterns: readonly string[],
-): HushStreamProjection {
-  const source = capture.inlineText;
-  if (source === null || capture.encoding === "binary") {
-    return binaryOmission(stream, capture);
+  const args = gitSubcommandArguments(commandTokens);
+  switch (gitSubcommand(commandTokens)) {
+    case "add":
+      return gitAddProjection(capture, maxBytes, patterns, args);
+    case "commit":
+      return gitCommitProjection(capture, maxBytes, patterns, args);
+    case "pull":
+      return gitPullProjection(capture, maxBytes, patterns, args);
+    case "push":
+      return gitPushProjection(capture, maxBytes, patterns, args);
+    default:
+      return gitMutationFallbackProjection(capture, maxBytes, patterns);
   }
-  const trailingNewline = source.endsWith("\n");
-  const lines = source.split("\n");
-  if (trailingNewline) {
-    lines.pop();
-  }
-  const filtered = lines.filter(
-    (line) => matchesPattern(line, patterns) || !GIT_PROGRESS.test(line),
-  );
-  const text = `${filtered.join("\n")}${trailingNewline ? "\n" : ""}`;
-  return boundText(text, stream, maxBytes);
 }

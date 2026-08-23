@@ -649,7 +649,82 @@ describe("hush reduction", () => {
     expect(reduced.value.omissions).toEqual([]);
   });
 
-  test("removes Git push progress from stderr but retains its destination and ref", () => {
+  test("reports a successful Git add without inventing staged counts", () => {
+    const reduced = reduceHush({
+      command: argv("/usr/bin/git", ["add", "."]),
+      capture: report(""),
+    });
+    expect(reduced.ok).toBe(true);
+    if (!reduced.ok) {
+      throw new Error("expected a hush result");
+    }
+    expect(reduced.value.reducerId).toBe("git.mutation");
+    expect(reduced.value.reducedText).toBe("ok");
+    expect(reduced.value.omissions).toEqual([]);
+  });
+
+  test("keeps Git add dry-run paths because no staging occurred", () => {
+    const output = "add 'src/a.ts'\nadd 'src/b.ts'\n";
+    const reduced = reduceHush({
+      command: argv("/usr/bin/git", ["add", "--dry-run", "."]),
+      capture: report(output),
+    });
+    expect(reduced.ok).toBe(true);
+    if (!reduced.ok) {
+      throw new Error("expected a hush result");
+    }
+    expect(reduced.value.reducedText).toBe(output);
+    expect(reduced.value.omissions).toEqual([]);
+  });
+
+  test("reports a successful Git commit with its durable identity", () => {
+    const stdout = [
+      "[feature/736 7654321] preserve complete context",
+      " 3 files changed, 10 insertions(+), 2 deletions(-)",
+    ].join("\n");
+    const reduced = reduceHush({
+      command: argv("/usr/bin/git", ["-C", "workspace", "commit", "-m", "change"]),
+      capture: report(`${stdout}\n`),
+    });
+    expect(reduced.ok).toBe(true);
+    if (!reduced.ok) {
+      throw new Error("expected a hush result");
+    }
+    expect(reduced.value.reducerId).toBe("git.mutation");
+    expect(reduced.value.reducedText).toBe("ok 7654321");
+    expect(reduced.value.omissions).toEqual([]);
+  });
+
+  test("retains Git commit failures instead of calling them ok", () => {
+    const stdout = "On branch main\nnothing to commit, working tree clean\n";
+    const reduced = reduceHush({
+      command: argv("/usr/bin/git", ["commit", "-m", "change"]),
+      capture: report(stdout, { exitCode: 1 }),
+    });
+    expect(reduced.ok).toBe(true);
+    if (!reduced.ok) {
+      throw new Error("expected a hush result");
+    }
+    expect(reduced.value.reducedText).toBe(stdout);
+    expect(reduced.value.exit.exitCode).toBe(1);
+    expect(reduced.value.omissions).toEqual([]);
+  });
+
+  test("keeps Git commit dry-run status because no commit occurred", () => {
+    const stdout = "On branch main\nChanges to be committed:\n  new file: src/a.ts\n";
+    const reduced = reduceHush({
+      command: argv("/usr/bin/git", ["commit", "--dry-run"]),
+      capture: report(stdout),
+    });
+    expect(reduced.ok).toBe(true);
+    if (!reduced.ok) {
+      throw new Error("expected a hush result");
+    }
+    expect(reduced.value.reducedText).toBe(stdout);
+    expect(reduced.value.omissions).toEqual([]);
+  });
+
+  test("removes Git push progress while retaining its destination, ref, and range", () => {
     const stderr = [
       "Enumerating objects: 3, done.",
       "Writing objects: 100% (3/3), done.",
@@ -665,10 +740,147 @@ describe("hush reduction", () => {
       throw new Error("expected a hush result");
     }
     expect(reduced.value.reducerId).toBe("git.mutation");
-    expect(reduced.value.reducedText).not.toContain("Enumerating objects");
-    expect(reduced.value.reducedText).not.toContain("Writing objects");
-    expect(reduced.value.reducedText).toContain("github.com:yogeshprasad098/falryn.git");
-    expect(reduced.value.reducedText).toContain("1111111..2222222  feature -> feature");
+    expect(reduced.value.reducedText).toBe(
+      "push github.com:yogeshprasad098/falryn.git\nfeature 1111111..2222222",
+    );
+    expect(reduced.value.omissions).toEqual([]);
+  });
+
+  test("retains every Git push ref without a fixed ref-count cap", () => {
+    const refs = Array.from(
+      { length: 120 },
+      (_, index) =>
+        `   ${index.toString(16).padStart(7, "0")}..${(index + 1)
+          .toString(16)
+          .padStart(7, "0")}  feature-${index} -> feature-${index}`,
+    );
+    const reduced = reduceHush({
+      command: argv("/usr/bin/git", ["push", "--all"]),
+      capture: report("", {
+        stderr: `To github.com:tyldra-org/falryn.git\n${refs.join("\n")}\n`,
+      }),
+    });
+    expect(reduced.ok).toBe(true);
+    if (!reduced.ok) {
+      throw new Error("expected a hush result");
+    }
+    expect(reduced.value.reducedText).toContain("feature-0 0000000..0000001");
+    expect(reduced.value.reducedText).toContain("feature-119 0000077..0000078");
+    expect(reduced.value.reducedText).not.toContain("omitted");
+    expect(reduced.value.truncated).toBe(false);
+    expect(reduced.value.omissions).toEqual([]);
+  });
+
+  test("summarizes an up-to-date Git push without redundant lines", () => {
+    const reduced = reduceHush({
+      command: argv("/usr/bin/git", ["push"]),
+      capture: report("", { stderr: "Everything up-to-date\n" }),
+    });
+    expect(reduced.ok).toBe(true);
+    if (!reduced.ok) {
+      throw new Error("expected a hush result");
+    }
+    expect(reduced.value.reducedText).toBe("ok up-to-date");
+    expect(reduced.value.omissions).toEqual([]);
+  });
+
+  test("keeps Git push dry-run refs because nothing was pushed", () => {
+    const stderr = [
+      "To github.com:tyldra-org/falryn.git",
+      "   1111111..2222222  feature -> feature",
+      "",
+    ].join("\n");
+    const reduced = reduceHush({
+      command: argv("/usr/bin/git", ["push", "--dry-run"]),
+      capture: report("", { stderr }),
+    });
+    expect(reduced.ok).toBe(true);
+    if (!reduced.ok) {
+      throw new Error("expected a hush result");
+    }
+    expect(reduced.value.reducedText).toBe(`stderr:\n${stderr}`);
+    expect(reduced.value.omissions).toEqual([]);
+  });
+
+  test("keeps Git push warnings beside an up-to-date result", () => {
+    const reduced = reduceHush({
+      command: argv("/usr/bin/git", ["push"]),
+      capture: report("", {
+        stderr: "warning: redirecting to a canonical remote\nEverything up-to-date\n",
+      }),
+    });
+    expect(reduced.ok).toBe(true);
+    if (!reduced.ok) {
+      throw new Error("expected a hush result");
+    }
+    expect(reduced.value.reducedText).toBe(
+      "ok up-to-date\nwarning: redirecting to a canonical remote",
+    );
+    expect(reduced.value.omissions).toEqual([]);
+  });
+
+  test("reports a successful Git pull with complete shortstat facts", () => {
+    const stdout = [
+      "Updating 1111111..2222222",
+      "Fast-forward",
+      " src/a.ts | 8 +++++---",
+      " src/b.ts | 2 ++",
+      " src/c.ts | 2 --",
+      " 3 files changed, 10 insertions(+), 2 deletions(-)",
+    ].join("\n");
+    const reduced = reduceHush({
+      command: argv("/usr/bin/git", ["pull", "--ff-only"]),
+      capture: report(`${stdout}\n`),
+    });
+    expect(reduced.ok).toBe(true);
+    if (!reduced.ok) {
+      throw new Error("expected a hush result");
+    }
+    expect(reduced.value.reducerId).toBe("git.mutation");
+    expect(reduced.value.reducedText).toBe("ok 3 files +10 -2");
+    expect(reduced.value.omissions).toEqual([]);
+  });
+
+  test("summarizes an up-to-date Git pull without duplicated wording", () => {
+    const reduced = reduceHush({
+      command: argv("/usr/bin/git", ["pull"]),
+      capture: report("Already up to date.\n"),
+    });
+    expect(reduced.ok).toBe(true);
+    if (!reduced.ok) {
+      throw new Error("expected a hush result");
+    }
+    expect(reduced.value.reducedText).toBe("ok up-to-date");
+    expect(reduced.value.omissions).toEqual([]);
+  });
+
+  test("keeps Git pull dry-run fetch facts because nothing was integrated", () => {
+    const stdout = "From github.com:tyldra-org/falryn\n * branch main -> FETCH_HEAD\n";
+    const reduced = reduceHush({
+      command: argv("/usr/bin/git", ["pull", "--dry-run"]),
+      capture: report(stdout),
+    });
+    expect(reduced.ok).toBe(true);
+    if (!reduced.ok) {
+      throw new Error("expected a hush result");
+    }
+    expect(reduced.value.reducedText).toBe(stdout);
+    expect(reduced.value.omissions).toEqual([]);
+  });
+
+  test("retains Git pull failures and their conflict context", () => {
+    const stderr = "CONFLICT (content): Merge conflict in src/a.ts\nAutomatic merge failed.\n";
+    const reduced = reduceHush({
+      command: argv("/usr/bin/git", ["pull"]),
+      capture: report("", { stderr, exitCode: 1 }),
+    });
+    expect(reduced.ok).toBe(true);
+    if (!reduced.ok) {
+      throw new Error("expected a hush result");
+    }
+    expect(reduced.value.reducedText).toContain("CONFLICT (content)");
+    expect(reduced.value.reducedText).toContain("Automatic merge failed.");
+    expect(reduced.value.exit.exitCode).toBe(1);
     expect(reduced.value.omissions).toEqual([]);
   });
 
