@@ -15,6 +15,7 @@ import {
 import { listingProjection } from "./listing.ts";
 import { lsProjection } from "./ls/projection.ts";
 import { semanticProjection } from "./semantic.ts";
+import { treeProjection } from "./tree/projection.ts";
 
 export function fidelityFor(
   requested: HushStrategy,
@@ -41,10 +42,13 @@ export function specializedProjection(
   capture: ProcessCaptureReport,
   maxBytes: number,
   patterns: readonly string[],
+  commandTokens: readonly string[],
 ): HushStreamProjection {
   switch (projection) {
     case "ls":
       return lsProjection(capture, maxBytes, patterns);
+    case "tree":
+      return treeProjection(capture, maxBytes, patterns, commandTokens);
     case "listing":
       return listingProjection(capture, maxBytes, patterns);
     case "read":

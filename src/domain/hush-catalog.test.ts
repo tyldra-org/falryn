@@ -195,16 +195,19 @@ describe("Hush RTK command catalog", () => {
       if (!reduced.ok) {
         continue;
       }
-      const exactLsPassthrough =
-        entry.reducerId === "files.ls" && reduced.value.reducerId === "safe.passthrough";
-      expect(reduced.value.reducerId === entry.reducerId || exactLsPassthrough, example).toBe(true);
+      const exactListingPassthrough =
+        (entry.reducerId === "files.ls" || entry.reducerId === "files.tree") &&
+        reduced.value.reducerId === "safe.passthrough";
+      expect(reduced.value.reducerId === entry.reducerId || exactListingPassthrough, example).toBe(
+        true,
+      );
       expect(
         reduced.value.strategy === "specialized" ||
-          (exactLsPassthrough && reduced.value.strategy === "passthrough"),
+          (exactListingPassthrough && reduced.value.strategy === "passthrough"),
         example,
       ).toBe(true);
       expect(reduced.value.fallbackReason, example).toBeNull();
-      if (exactLsPassthrough) {
+      if (exactListingPassthrough) {
         expect(reduced.value.omissions, example).toEqual([]);
       } else {
         expect(reduced.value.omissions.length, example).toBeGreaterThan(0);

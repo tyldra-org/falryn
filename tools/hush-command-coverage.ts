@@ -27,7 +27,7 @@ export type HushCommandCoverageScorecard = {
   readonly projectionKinds: number;
   readonly failures: readonly HushCommandCoverageFailure[];
   readonly routingComplete: boolean;
-  readonly parityProvenReducers: readonly ["files.ls"];
+  readonly parityProvenReducers: readonly ["files.ls", "files.tree"];
 };
 
 export function createHushCommandCoverageScorecard(): HushCommandCoverageScorecard {
@@ -76,7 +76,7 @@ export function createHushCommandCoverageScorecard(): HushCommandCoverageScoreca
     projectionKinds: projections.size,
     failures,
     routingComplete: failures.length === 0,
-    parityProvenReducers: ["files.ls"],
+    parityProvenReducers: ["files.ls", "files.tree"],
   };
 }
 

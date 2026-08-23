@@ -4,6 +4,7 @@ import type { HushFamily } from "../contracts.ts";
 
 export const HUSH_PROJECTION_KINDS = [
   "ls",
+  "tree",
   "listing",
   "read",
   "search",

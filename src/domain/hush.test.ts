@@ -483,20 +483,46 @@ describe("hush reduction", () => {
     expect(reduced.value.truncated).toBe(false);
   });
 
-  test("does not apply the ls projection to other listing-family reducers", () => {
-    const lines = Array.from({ length: 40 }, (_, index) => `file-${index}.ts`).join("\n");
+  test("preserves complete tree structure instead of applying the generic line cap", () => {
+    const lines = Array.from({ length: 40 }, (_, index) => `|-- file-${index}.ts`);
+    const output = ["workspace", ...lines, "", "0 directories, 40 files", ""].join("\n");
     const reduced = reduceHush({
       command: argv("/usr/bin/tree", ["workspace"]),
-      capture: report(`${lines}\n`),
+      capture: report(output),
     });
     expect(reduced.ok).toBe(true);
     if (!reduced.ok) {
       throw new Error("expected a hush result");
     }
     expect(reduced.value.reducerId).toBe("files.tree");
-    expect(reduced.value.reducedText).not.toStartWith("ls:");
-    expect(reduced.value.reducedText).toContain("file-31.ts");
-    expect(reduced.value.reducedText).not.toContain("file-32.ts");
+    expect(reduced.value.reducedText).toContain("file-39.ts");
+    expect(reduced.value.reducedText).not.toContain("directories");
+    expect(reduced.value.omissions).toEqual([]);
+    expect(reduced.value.truncated).toBe(false);
+  });
+
+  test("does not impose the generic default byte cap on tree", () => {
+    const lines = Array.from(
+      { length: 1_000 },
+      (_, index) => `|-- long-tree-entry-${String(index).padStart(4, "0")}.ts`,
+    );
+    const output = ["workspace", ...lines, "", "0 directories, 1000 files", ""].join("\n");
+    expect(encoder.encode(output).byteLength).toBeGreaterThan(DEFAULT_HUSH_REDUCED_BYTES);
+
+    const reduced = reduceHush({
+      command: argv("/usr/bin/tree", ["workspace"]),
+      capture: report(output),
+    });
+    expect(reduced.ok).toBe(true);
+    if (!reduced.ok) {
+      throw new Error("expected a hush result");
+    }
+    expect(reduced.value.reducedText).toContain("long-tree-entry-0999.ts");
+    expect(reduced.value.omissions).toEqual([]);
+    expect(reduced.value.truncated).toBe(false);
+    expect(encoder.encode(reduced.value.reducedText).byteLength).toBeGreaterThan(
+      DEFAULT_HUSH_REDUCED_BYTES,
+    );
   });
 
   test("createHushPort exposes the same reduce function", () => {

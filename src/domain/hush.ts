@@ -92,7 +92,8 @@ export function reduceHush(request: HushRequest): Result<HushResult, HushError> 
   } else {
     try {
       projectionMaxBytes =
-        classification.projection === "ls" && request.maxReducedBytes === undefined
+        (classification.projection === "ls" || classification.projection === "tree") &&
+        request.maxReducedBytes === undefined
           ? MAX_HUSH_REDUCED_BYTES
           : maxBytes;
       projection = specializedProjection(
@@ -100,6 +101,7 @@ export function reduceHush(request: HushRequest): Result<HushResult, HushError> 
         request.capture,
         projectionMaxBytes,
         patterns,
+        classification.tokens,
       );
     } catch {
       strategy = "generic";

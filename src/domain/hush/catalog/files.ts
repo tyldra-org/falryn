@@ -13,7 +13,7 @@ export const FILE_COMMANDS = [
   {
     reducerId: "files.tree",
     family: "listing",
-    projection: "listing",
+    projection: "tree",
     executables: ["tree"],
     examples: ["tree", "tree -L 3"],
   },
