@@ -145,6 +145,15 @@ describe("hush family selection", () => {
     expect(classifyFamily(argv("/usr/bin/bun", ["test", "src"]), report(""))).toBe("test");
   });
 
+  test("keeps established command families independent from projection policy", () => {
+    expect(classifyFamily(argv("/usr/bin/docker", ["logs", "app"]), report(""))).toBe("container");
+    expect(classifyFamily(argv("/usr/bin/kubectl", ["logs", "app"]), report(""))).toBe(
+      "kubernetes",
+    );
+    expect(classifyFamily(argv("/usr/bin/tail", ["-n", "20", "app.log"]), report(""))).toBe("log");
+    expect(classifyFamily(argv("/usr/bin/make", ["build"]), report(""))).toBe("build");
+  });
+
   test("selects search from rg output shape only when the executable is unknown", () => {
     expect(classifyFamily(argv("/usr/local/bin/tool"), report("src/hush.ts:12:reduceHush"))).toBe(
       "search",

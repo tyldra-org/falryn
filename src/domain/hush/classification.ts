@@ -1,41 +1,78 @@
-/** Command identity and reducer selection for Hush. */
+/** Command identity and catalog-backed reducer selection for Hush. */
 
 import type { CommandRequest } from "../process.ts";
 import { commandMode } from "../process.ts";
 import type { ProcessCaptureReport, ProcessStreamCapture } from "../process-capture.ts";
 import { assertNever } from "../result.ts";
+import {
+  type HushCommandClassification,
+  type HushCommandPolicy,
+  matchHushCommand,
+  SHELL_COMPOUND_POLICY,
+} from "./catalog/index.ts";
+import { commandShape, normalizeCommandTokens } from "./command-shape.ts";
 import type { HushCommandIdentity, HushFamily } from "./contracts.ts";
 
+const GENERIC_POLICY: HushCommandPolicy = {
+  family: "generic",
+  reducerId: "generic",
+  projection: "operation",
+};
+const OUTPUT_SEARCH_POLICY: HushCommandPolicy = {
+  family: "search",
+  reducerId: "files.search",
+  projection: "search",
+};
+const OUTPUT_GIT_POLICY: HushCommandPolicy = {
+  family: "git",
+  reducerId: "git.log",
+  projection: "git-log",
+};
+const OUTPUT_DIFF_POLICY: HushCommandPolicy = {
+  family: "git",
+  reducerId: "git.diff",
+  projection: "git-diff",
+};
+
+export function classifyCommand(
+  command: CommandRequest,
+  capture: ProcessCaptureReport,
+): HushCommandClassification {
+  const shape = commandShape(command);
+  if (shape.compound) {
+    return { ...SHELL_COMPOUND_POLICY, ...shape, matched: true };
+  }
+  const matched = matchHushCommand(shape.tokens);
+  if (matched !== null) {
+    return { ...matched, ...shape, matched: true };
+  }
+  const outputPolicy = policyFromOutputShape(capture.stdout);
+  if (outputPolicy === null) {
+    return { ...GENERIC_POLICY, ...shape, matched: false };
+  }
+  return { ...outputPolicy, ...shape, matched: true };
+}
+
+export function classifyFamily(command: CommandRequest, capture: ProcessCaptureReport): HushFamily {
+  return classifyCommand(command, capture).family;
+}
+
 export function classifyReducerId(tokens: readonly string[], family: HushFamily): string {
-  const executable = tokens[0] ?? "";
-  const subcommand = tokens[1] ?? "";
+  const normalized = normalizeCommandTokens(tokens);
+  const matched = matchHushCommand(normalized);
+  if (matched !== null) {
+    return matched.reducerId;
+  }
+  const executable = normalized[0] ?? "";
   switch (family) {
     case "git":
-      switch (subcommand) {
-        case "diff":
-          return "git.diff";
-        case "log":
-          return "git.log";
-        case "show":
-          return "git.show";
-        default:
-          return "git.status";
-      }
+      return "git.status";
     case "github":
-      return subcommand === "view" || tokens[2] === "view" ? "gh.view" : "gh.list";
+      return normalized.includes("view") ? "gh.view" : "gh.list";
     case "search":
       return executable === "rg" || executable === "ripgrep" ? "files.rg" : "files.grep";
     case "listing":
-      switch (executable) {
-        case "ls":
-          return "files.ls";
-        case "tree":
-          return "files.tree";
-        case "find":
-          return "files.find";
-        default:
-          return "files.read";
-      }
+      return "files.read";
     case "test":
       return "test.summary";
     case "lint":
@@ -55,15 +92,6 @@ export function classifyReducerId(tokens: readonly string[], family: HushFamily)
     default:
       return assertNever(family, "unhandled hush family");
   }
-}
-
-export function classifyFamily(command: CommandRequest, capture: ProcessCaptureReport): HushFamily {
-  const tokens = commandTokens(command);
-  const fromCommand = familyFromTokens(tokens);
-  if (fromCommand !== "generic") {
-    return fromCommand;
-  }
-  return familyFromOutputShape(capture.stdout) ?? "generic";
 }
 
 export function commandIdentity(command: CommandRequest): HushCommandIdentity {
@@ -86,137 +114,23 @@ export function commandIdentity(command: CommandRequest): HushCommandIdentity {
 }
 
 export function commandTokens(command: CommandRequest): readonly string[] {
-  if (command.mode === "bash") {
-    return tokenize(command.command);
-  }
-  return [baseName(command.executable), ...command.argv];
+  return commandShape(command).tokens;
 }
 
-function tokenize(command: string): string[] {
-  const tokens: string[] = [];
-  for (const token of command.trim().split(/\s+/)) {
-    if (token.length === 0 || token.includes("=")) {
-      continue;
-    }
-    tokens.push(token);
-  }
-  return tokens.map((token) => baseName(token));
-}
-
-function baseName(path: string): string {
-  const parts = path.split(/[/\\]/);
-  const last = parts[parts.length - 1] ?? path;
-  return last.toLowerCase();
-}
-
-function familyFromTokens(tokens: readonly string[]): HushFamily {
-  const executable = tokens[0] ?? "";
-  const rest = tokens.slice(1);
-  switch (executable) {
-    case "git":
-      return "git";
-    case "gh":
-      return "github";
-    case "docker":
-    case "podman":
-      return "container";
-    case "kubectl":
-      return "kubernetes";
-    case "aws":
-    case "gcloud":
-    case "az":
-      return "cloud";
-    case "npm":
-    case "pnpm":
-    case "yarn":
-      return "package";
-    case "bun":
-      return bunFamily(rest);
-    case "cargo":
-      return cargoFamily(rest);
-    case "jest":
-    case "vitest":
-    case "mocha":
-    case "pytest":
-      return "test";
-    case "biome":
-    case "eslint":
-    case "ruff":
-    case "clippy":
-      return "lint";
-    case "tsc":
-    case "mypy":
-      return "typecheck";
-    case "make":
-      return "build";
-    case "jq":
-    case "sqlite3":
-    case "psql":
-      return "data";
-    case "tail":
-    case "journalctl":
-      return "log";
-    case "curl":
-    case "wget":
-      return "http";
-    case "rg":
-    case "grep":
-    case "ag":
-      return "search";
-    case "ls":
-    case "tree":
-    case "find":
-    case "cat":
-    case "bat":
-      return "listing";
-    case "sh":
-    case "bash":
-      return familyFromTokens(rest);
-    default:
-      return "generic";
-  }
-}
-
-function bunFamily(rest: readonly string[]): HushFamily {
-  if (rest[0] === "test") {
-    return "test";
-  }
-  if (rest[0] === "run" && rest[1] === "build") {
-    return "build";
-  }
-  if (rest[0] === "run" && (rest[1] === "check" || rest[1] === "lint")) {
-    return "lint";
-  }
-  if (rest[0] === "run" && rest[1] === "typecheck") {
-    return "typecheck";
-  }
-  return "package";
-}
-
-function cargoFamily(rest: readonly string[]): HushFamily {
-  if (rest[0] === "test") {
-    return "test";
-  }
-  if (rest[0] === "build") {
-    return "build";
-  }
-  if (rest[0] === "clippy") {
-    return "lint";
-  }
-  return "build";
-}
-
-function familyFromOutputShape(stdout: ProcessStreamCapture): HushFamily | null {
+function policyFromOutputShape(stdout: ProcessStreamCapture): HushCommandPolicy | null {
   const text = stdout.inlineText;
   if (text === null || text.length === 0) {
     return null;
   }
   const first = text.split("\n", 1)[0] ?? "";
   if (/^[^:\n]+:\d+[::]/.test(first)) {
-    return "search";
+    return OUTPUT_SEARCH_POLICY;
   }
-  if (first.startsWith("diff --git ") || first.startsWith("commit ")) {
-    return "git";
+  if (first.startsWith("diff --git ")) {
+    return OUTPUT_DIFF_POLICY;
+  }
+  if (first.startsWith("commit ")) {
+    return OUTPUT_GIT_POLICY;
   }
   return null;
 }

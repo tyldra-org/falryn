@@ -7,12 +7,7 @@
  */
 
 import { genericProjection, passthroughProjection, rawFallbackProjection } from "./hush/bounds.ts";
-import {
-  classifyFamily,
-  classifyReducerId,
-  commandIdentity,
-  commandTokens,
-} from "./hush/classification.ts";
+import { classifyCommand, commandIdentity } from "./hush/classification.ts";
 import {
   DEFAULT_HUSH_REDUCED_BYTES,
   HUSH_REDUCER_VERSION,
@@ -61,9 +56,9 @@ export function reduceHush(request: HushRequest): Result<HushResult, HushError> 
   }
   const maxBytes = request.maxReducedBytes ?? DEFAULT_HUSH_REDUCED_BYTES;
   const command = commandIdentity(request.command);
-  const tokens = commandTokens(request.command);
-  const family = classifyFamily(request.command, request.capture);
-  const reducerId = classifyReducerId(tokens, family);
+  const classification = classifyCommand(request.command, request.capture);
+  const family = classification.family;
+  const reducerId = classification.reducerId;
   const requested = request.strategy ?? "specialized";
   const patterns = request.importantPatterns ?? [];
   const originalBytes =
@@ -79,12 +74,12 @@ export function reduceHush(request: HushRequest): Result<HushResult, HushError> 
     projection = passthroughProjection(request.capture, maxBytes, patterns);
   } else if (
     requested === "generic" ||
-    family === "generic" ||
+    !classification.matched ||
     (request.expectedFamilies !== undefined && !request.expectedFamilies.includes(family))
   ) {
     strategy = "generic";
     selectedReducerId = "generic";
-    if (family === "generic") {
+    if (!classification.matched) {
       fallbackReason = "unknown-family";
     } else if (
       request.expectedFamilies !== undefined &&
@@ -95,7 +90,12 @@ export function reduceHush(request: HushRequest): Result<HushResult, HushError> 
     projection = genericProjection(request.capture, maxBytes, patterns);
   } else {
     try {
-      projection = specializedProjection(family, reducerId, request.capture, maxBytes, patterns);
+      projection = specializedProjection(
+        classification.projection,
+        request.capture,
+        maxBytes,
+        patterns,
+      );
     } catch {
       strategy = "generic";
       selectedReducerId = "generic";

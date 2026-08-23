@@ -9,6 +9,23 @@ import {
   matchesPattern,
 } from "../bounds.ts";
 import type { HushStreamProjection } from "../contracts.ts";
+import { semanticProjection } from "./semantic.ts";
+
+export function gitLogProjection(
+  capture: ProcessCaptureReport,
+  maxBytes: number,
+  patterns: readonly string[],
+): HushStreamProjection {
+  return semanticProjection("operation", capture, maxBytes, patterns);
+}
+
+export function gitMutationProjection(
+  capture: ProcessCaptureReport,
+  maxBytes: number,
+  patterns: readonly string[],
+): HushStreamProjection {
+  return semanticProjection("operation", capture, maxBytes, patterns);
+}
 
 export function gitDiffProjection(
   capture: ProcessCaptureReport,
