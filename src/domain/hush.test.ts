@@ -381,6 +381,198 @@ describe("hush reduction", () => {
     expect(reduced.value.omissions).toEqual([]);
   });
 
+  test("projects the JSON helper as a complete key/type structure without values", () => {
+    const manyFields = Object.fromEntries(
+      Array.from({ length: 480 }, (_, index) => [
+        `field-${index.toString().padStart(3, "0")}`,
+        `private-${index}-`.repeat(6),
+      ]),
+    );
+    const document = {
+      serviceName: "falryn-private-value".repeat(8),
+      enabled: true,
+      targets: [
+        { os: "darwin-private", arch: "arm64-private" },
+        { os: "linux-private", arch: "x64-private" },
+      ],
+      metadata: { owner: "owner-private", nested: { marker: "deep-private" } },
+      ports: [3000, 3001, 3002],
+      manyFields,
+    };
+    const reduced = reduceHush({
+      command: argv("/usr/bin/json", ["config.json"]),
+      capture: report(`${JSON.stringify(document, null, 2)}\n`),
+    });
+    expect(reduced.ok).toBe(true);
+    if (!reduced.ok) {
+      throw new Error("expected a hush result");
+    }
+    expect(reduced.value.reducerId).toBe("data.json");
+    expect(reduced.value.reducedText).toContain("serviceName string");
+    expect(reduced.value.reducedText).toContain("enabled boolean");
+    expect(reduced.value.reducedText).toContain("targets[2]:");
+    expect(reduced.value.reducedText).toContain("arch string");
+    expect(reduced.value.reducedText).toContain("ports integer[3]");
+    expect(reduced.value.reducedText).toContain("field-000 string");
+    expect(reduced.value.reducedText).toContain("field-479 string");
+    expect(reduced.value.reducedText).not.toContain("falryn-private-value");
+    expect(reduced.value.reducedText).not.toContain("darwin-private");
+    expect(reduced.value.reducedText).not.toContain("3000");
+    expect(reduced.value.omissions).toEqual([]);
+    expect(reduced.value.truncated).toBe(false);
+    expect(encoder.encode(reduced.value.reducedText).byteLength).toBeGreaterThan(
+      DEFAULT_HUSH_REDUCED_BYTES,
+    );
+  });
+
+  test("keeps every curl JSON value while stripping only the transfer meter", () => {
+    const body = {
+      status: "ok",
+      requestId: "req-736",
+      result: { reducers: 81, complete: true },
+    };
+    const progress = [
+      "  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current",
+      "                                 Dload  Upload   Total   Spent    Left  Speed",
+      "100   102  100   102    0     0   1020      0 --:--:-- --:--:-- --:--:--  1020",
+    ].join("\n");
+    const reduced = reduceHush({
+      command: argv("/usr/bin/curl", ["https://example.test/status"]),
+      capture: report(`${JSON.stringify(body, null, 2)}\n`, { stderr: `${progress}\n` }),
+    });
+    expect(reduced.ok).toBe(true);
+    if (!reduced.ok) {
+      throw new Error("expected a hush result");
+    }
+    expect(reduced.value.reducerId).toBe("network.curl");
+    expect(JSON.parse(reduced.value.reducedText)).toEqual(body);
+    expect(reduced.value.reducedText).not.toContain("% Total");
+    expect(reduced.value.reducedText).not.toContain("1020");
+    expect(reduced.value.omissions).toEqual([]);
+  });
+
+  test("retains long curl text beyond the generic budget without line sampling", () => {
+    const lines = Array.from(
+      { length: 600 },
+      (_, index) => `response-row-${index.toString().padStart(3, "0")} complete server context`,
+    );
+    const reduced = reduceHush({
+      command: argv("/usr/bin/curl", ["https://example.test/long"]),
+      capture: report(`${lines.join("\n")}\n`, {
+        stderr: "  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current\n",
+      }),
+    });
+    expect(reduced.ok).toBe(true);
+    if (!reduced.ok) {
+      throw new Error("expected a hush result");
+    }
+    expect(reduced.value.reducedText).toContain(lines[0] ?? "missing-first");
+    expect(reduced.value.reducedText).toContain(lines.at(-1) ?? "missing-last");
+    expect(reduced.value.reducedText).not.toContain("% Total");
+    expect(encoder.encode(reduced.value.reducedText).byteLength).toBeGreaterThan(
+      DEFAULT_HUSH_REDUCED_BYTES,
+    );
+    expect(reduced.value.omissions).toEqual([]);
+    expect(reduced.value.truncated).toBe(false);
+  });
+
+  test("summarizes a wget download without losing its result facts", () => {
+    const stderr = [
+      "--2026-08-23 12:00:00--  https://example.test/releases/falryn.tar.gz",
+      "Resolving example.test... 192.0.2.80",
+      "Connecting to example.test|192.0.2.80|:443... connected.",
+      "HTTP request sent, awaiting response... 200 OK",
+      "Length: 1536 (1.5K) [application/gzip]",
+      "Saving to: 'falryn.tar.gz'",
+      "     0K .                                                     100% 1.50M=0.001s",
+      "2026-08-23 12:00:00 (1.50 MB/s) - 'falryn.tar.gz' saved [1536/1536]",
+    ].join("\n");
+    const reduced = reduceHush({
+      command: argv("/usr/bin/wget", ["https://example.test/releases/falryn.tar.gz"]),
+      capture: report("", { stderr: `${stderr}\n` }),
+    });
+    expect(reduced.ok).toBe(true);
+    if (!reduced.ok) {
+      throw new Error("expected a hush result");
+    }
+    expect(reduced.value.reducerId).toBe("network.wget");
+    expect(reduced.value.reducedText).toBe(
+      "200 example.test/releases/falryn.tar.gz -> falryn.tar.gz 1.5KB",
+    );
+    expect(reduced.value.omissions).toEqual([]);
+  });
+
+  test("retains every wget stdout line instead of applying RTK's line sample", () => {
+    const lines = Array.from({ length: 40 }, (_, index) => `body-line-${index}`);
+    const reduced = reduceHush({
+      command: argv("/usr/bin/wget", ["-O", "-", "https://example.test/data.txt"]),
+      capture: report(`${lines.join("\n")}\n`, {
+        stderr: "     0K .......... 100% 1.50M=0.001s\n",
+      }),
+    });
+    expect(reduced.ok).toBe(true);
+    if (!reduced.ok) {
+      throw new Error("expected a hush result");
+    }
+    expect(reduced.value.reducedText).toContain(lines[0] ?? "missing-first");
+    expect(reduced.value.reducedText).toContain(lines.at(-1) ?? "missing-last");
+    expect(reduced.value.reducedText).not.toContain("100%");
+    expect(reduced.value.omissions).toEqual([]);
+    expect(reduced.value.truncated).toBe(false);
+  });
+
+  test("retains wget failures while removing only their transfer meter", () => {
+    const reduced = reduceHush({
+      command: argv("/usr/bin/wget", ["https://example.test/missing"]),
+      capture: report("", {
+        stderr: [
+          "HTTP request sent, awaiting response... 404 Not Found",
+          "     0K .......... 100% 1.50M=0.001s",
+          "ERROR 404: Not Found.",
+          "",
+        ].join("\n"),
+        exitCode: 8,
+      }),
+    });
+    expect(reduced.ok).toBe(true);
+    if (!reduced.ok) {
+      throw new Error("expected a hush result");
+    }
+    expect(reduced.value.reducedText).toContain("404 Not Found");
+    expect(reduced.value.reducedText).toContain("ERROR 404: Not Found.");
+    expect(reduced.value.reducedText).not.toContain("100%");
+    expect(reduced.value.exit.exitCode).toBe(8);
+    expect(reduced.value.omissions).toEqual([]);
+  });
+
+  test("keeps a wget redirect chain instead of collapsing multiple responses", () => {
+    const reduced = reduceHush({
+      command: argv("/usr/bin/wget", ["https://example.test/latest"]),
+      capture: report("", {
+        stderr: [
+          "HTTP request sent, awaiting response... 302 Found",
+          "Location: https://cdn.example.test/falryn.tar.gz [following]",
+          "HTTP request sent, awaiting response... 200 OK",
+          "Length: 1536 (1.5K) [application/gzip]",
+          "Saving to: 'falryn.tar.gz'",
+          "     0K .......... 100% 1.50M=0.001s",
+          "",
+        ].join("\n"),
+      }),
+    });
+    expect(reduced.ok).toBe(true);
+    if (!reduced.ok) {
+      throw new Error("expected a hush result");
+    }
+    expect(reduced.value.reducedText).toContain("302 Found");
+    expect(reduced.value.reducedText).toContain(
+      "Location: https://cdn.example.test/falryn.tar.gz [following]",
+    );
+    expect(reduced.value.reducedText).toContain("200 OK");
+    expect(reduced.value.reducedText).not.toContain("100%");
+    expect(reduced.value.omissions).toEqual([]);
+  });
+
   test("makes find paths relative without sampling any entry", () => {
     const paths = ["corpus/docs/README.md", "corpus/src/main.ts", "corpus/src/domain/hush.ts"];
     const reduced = reduceHush({

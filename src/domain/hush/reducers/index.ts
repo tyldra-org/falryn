@@ -10,6 +10,9 @@ import {
   gitMutationProjection,
   gitStatusProjection,
 } from "./git/index.ts";
+import { curlProjection } from "./http/curl.ts";
+import { wgetProjection } from "./http/wget.ts";
+import { jsonProjection } from "./json/projection.ts";
 import { listingProjection } from "./listing.ts";
 import { lsProjection } from "./ls/projection.ts";
 import { searchProjection } from "./search/projection.ts";
@@ -54,6 +57,8 @@ export function specializedProjection(
       return listingProjection(capture, maxBytes, patterns, commandTokens);
     case "read":
       return semanticProjection("read", capture, maxBytes, patterns);
+    case "json":
+      return jsonProjection(capture, maxBytes, patterns);
     case "search":
       return searchProjection(capture, maxBytes, patterns);
     case "git-status":
@@ -78,6 +83,10 @@ export function specializedProjection(
       return tableProjection(capture, maxBytes, patterns);
     case "log":
       return semanticProjection("log", capture, maxBytes, patterns);
+    case "curl":
+      return curlProjection(capture, maxBytes, patterns);
+    case "wget":
+      return wgetProjection(capture, maxBytes, patterns, commandTokens);
     case "network":
       return semanticProjection("network", capture, maxBytes, patterns);
     case "operation":

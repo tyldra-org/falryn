@@ -165,6 +165,26 @@ describe("Hush RTK command catalog", () => {
 
   test("does not claim unwired RTK helper commands as Hush support", () => {
     expect(policyFor("smart src/main.ts")).toBeNull();
+    expect(policyFor("deps .")).toBeNull();
+    expect(policyFor("env -f AWS")).toBeNull();
+    expect(policyFor("log app.log")).toBeNull();
+    expect(policyFor("summary make")).toBeNull();
+    expect(policyFor("proxy make")).toBeNull();
+  });
+
+  test("routes only the requested data helpers through dedicated projections", () => {
+    expect(policyFor("json config.json")).toMatchObject({
+      reducerId: "data.json",
+      projection: "json",
+    });
+    expect(policyFor("curl https://example.com")).toMatchObject({
+      reducerId: "network.curl",
+      projection: "curl",
+    });
+    expect(policyFor("wget https://example.com/file")).toMatchObject({
+      reducerId: "network.wget",
+      projection: "wget",
+    });
   });
 
   test("routes compound shell commands through an explicit Hush policy", () => {

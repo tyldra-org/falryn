@@ -1,13 +1,20 @@
 #!/usr/bin/env bun
 
+import { readFileSync, writeFileSync } from "node:fs";
 import { basename } from "node:path";
 
 const executable = basename(Bun.argv[1] ?? "");
 const args = Bun.argv.slice(2);
 
+if (executable === "wget") {
+  runWgetFixture(args);
+  process.exit(0);
+}
+
 const outputs: Readonly<Record<string, () => string>> = {
   find: () => ["./src/main.ts", "./src/domain/hush.ts", "./docs/README.md"].join("\n"),
   cat: () => ["# Falryn", "", "Do more with less context.", "Keep every useful fact."].join("\n"),
+  json: () => readFileSync(args[0] ?? "config.json", "utf8").trimEnd(),
   rg: () =>
     [
       "src/a.ts:10:first marker",
@@ -47,11 +54,12 @@ const outputs: Readonly<Record<string, () => string>> = {
       {
         status: "ok",
         requestId: "req-736",
-        result: { reducers: 80, complete: true },
+        result: { reducers: 81, complete: true },
       },
       null,
       2,
     ),
+  ssh: () => ["connected example.test", "remote command: ok"].join("\n"),
   terraform: () =>
     [
       "Terraform will perform the following actions:",
@@ -76,10 +84,59 @@ if (output === undefined) {
   process.stderr.write(`unsupported projection fixture executable: ${executable}\n`);
   process.exit(2);
 }
-if (executable === "git" && gitSubcommand(args) === "push") {
+if (executable === "curl") {
+  process.stderr.write(
+    "  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current\n" +
+      "                                 Dload  Upload   Total   Spent    Left  Speed\n" +
+      "100   102  100   102    0     0   1020      0 --:--:-- --:--:-- --:--:--  1020\n",
+  );
+  process.stdout.write(`${output}\n`);
+} else if (executable === "git" && gitSubcommand(args) === "push") {
   process.stderr.write(`${output}\n`);
 } else {
   process.stdout.write(`${output}\n`);
+}
+
+function runWgetFixture(argv: readonly string[]): void {
+  const url = argv.find((argument) => /^https?:\/\//u.test(argument));
+  if (url === undefined) {
+    process.stderr.write("wget: missing URL\n");
+    process.exit(2);
+  }
+  const destination = wgetDestination(argv, url);
+  if (destination !== "-") {
+    writeFileSync(destination, "x".repeat(1_536));
+  }
+  process.stderr.write(
+    [
+      `--2026-08-23 12:00:00--  ${url}`,
+      "Resolving example.test... 192.0.2.80",
+      "Connecting to example.test|192.0.2.80|:443... connected.",
+      "HTTP request sent, awaiting response... 200 OK",
+      "Length: 1536 (1.5K) [application/gzip]",
+      `Saving to: '${destination}'`,
+      "",
+      "     0K .                                                     100% 1.50M=0.001s",
+      "",
+      `2026-08-23 12:00:00 (1.50 MB/s) - '${destination}' saved [1536/1536]`,
+      "",
+    ].join("\n"),
+  );
+}
+
+function wgetDestination(argv: readonly string[], url: string): string {
+  for (let index = 0; index < argv.length; index += 1) {
+    const argument = argv[index] ?? "";
+    if ((argument === "-O" || argument === "--output-document") && argv[index + 1] !== undefined) {
+      return argv[index + 1] ?? "index.html";
+    }
+    const inline = argument.match(/^(?:-O|--output-document=)(.+)$/u)?.[1];
+    if (inline !== undefined) {
+      return inline;
+    }
+  }
+  const path = url.split(/[?#]/u, 1)[0] ?? url;
+  return path.split("/").at(-1) || "index.html";
 }
 
 function gitOutput(argv: readonly string[]): string {

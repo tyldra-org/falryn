@@ -17,7 +17,7 @@ import {
 import { HUSH_RTK_BASELINE } from "./hush-command-coverage.ts";
 import { type HushLsMeasurement, measureText } from "./hush-ls-scorecard.ts";
 
-export const HUSH_PROJECTION_CORPUS_VERSION = "hush-projections.v1";
+export const HUSH_PROJECTION_CORPUS_VERSION = "hush-projections.v2";
 
 type ProjectionCase = Readonly<{
   id: string;
@@ -26,6 +26,7 @@ type ProjectionCase = Readonly<{
   argv: readonly string[];
   rtkArgv: readonly string[];
   requiredMarkers: readonly string[];
+  forbiddenMarkers?: readonly string[];
 }>;
 
 export const HUSH_PROJECTION_CASES = [
@@ -44,6 +45,21 @@ export const HUSH_PROJECTION_CASES = [
     argv: ["fixture.txt"],
     rtkArgv: ["read", "fixture.txt"],
     requiredMarkers: ["# Falryn", "Do more with less context.", "Keep every useful fact."],
+  },
+  {
+    id: "json-structure",
+    projection: "json",
+    executable: "json",
+    argv: ["config.json"],
+    rtkArgv: ["json", "--keys-only", "config.json"],
+    requiredMarkers: ["serviceName", "enabled", "targets", "arch", "os", "metadata", "ports"],
+    forbiddenMarkers: [
+      "falryn-private-value",
+      "darwin-private",
+      "arm64-private",
+      "owner-private",
+      "3000",
+    ],
   },
   {
     id: "search-rg",
@@ -147,12 +163,30 @@ export const HUSH_PROJECTION_CASES = [
     requiredMarkers: ["service started", "req-736", "req-784"],
   },
   {
-    id: "network-curl",
-    projection: "network",
+    id: "curl-json",
+    projection: "curl",
     executable: "curl",
     argv: ["https://example.test/status"],
     rtkArgv: ["curl", "https://example.test/status"],
-    requiredMarkers: ["req-736", "reducers", "80", "complete", "true"],
+    requiredMarkers: ["req-736", "reducers", "81", "complete", "true"],
+    forbiddenMarkers: ["% Total", "Dload", "1020"],
+  },
+  {
+    id: "wget-download",
+    projection: "wget",
+    executable: "wget",
+    argv: ["https://example.test/releases/falryn.tar.gz"],
+    rtkArgv: ["wget", "https://example.test/releases/falryn.tar.gz"],
+    requiredMarkers: ["200", "example.test/releases/falryn.tar.gz", "falryn.tar.gz", "1.5KB"],
+    forbiddenMarkers: ["Resolving", "Connecting", "100%", "saved ["],
+  },
+  {
+    id: "network-ssh",
+    projection: "network",
+    executable: "ssh",
+    argv: ["example.test", "echo", "connected"],
+    rtkArgv: ["ssh", "example.test", "echo", "connected"],
+    requiredMarkers: ["connected", "example.test", "remote command: ok"],
   },
   {
     id: "operation-terraform",
@@ -182,6 +216,7 @@ export type HushProjectionScore = Readonly<{
   hush: HushLsMeasurement;
   withinRtkBudget: boolean;
   retainsRequiredContext: boolean;
+  excludesKnownNoise: boolean;
   noArbitraryCap: boolean;
   recognized: boolean;
   result: "PASS" | "FAIL";
@@ -209,13 +244,31 @@ async function createScorecard(): Promise<HushProjectionScorecard> {
       join(root, "fixture.txt"),
       "# Falryn\n\nDo more with less context.\nKeep every useful fact.\n",
     );
+    await writeFile(
+      join(root, "config.json"),
+      `${JSON.stringify(
+        {
+          serviceName: "falryn-private-value",
+          enabled: true,
+          targets: [
+            { os: "darwin-private", arch: "arm64-private" },
+            { os: "linux-private", arch: "x64-private" },
+          ],
+          metadata: { owner: "owner-private", nested: { marker: "deep-private" } },
+          ports: [3000, 3001, 3002],
+        },
+        null,
+        2,
+      )}\n`,
+    );
     const versionRun = runCommand([rtk, "--version"], root, fixtureBin);
     if (versionRun.exitCode !== 0) {
       throw new Error(`rtk --version failed: ${versionRun.stderr.trim()}`);
     }
 
     const scores: HushProjectionScore[] = [];
-    for (const [index, fixture] of HUSH_PROJECTION_CASES.entries()) {
+    const cases: readonly ProjectionCase[] = HUSH_PROJECTION_CASES;
+    for (const [index, fixture] of cases.entries()) {
       const executable =
         fixture.executable === "find"
           ? (Bun.which("find") ?? join(fixtureBin, fixture.executable))
@@ -250,12 +303,20 @@ async function createScorecard(): Promise<HushProjectionScorecard> {
       const retainsRequiredContext = fixture.requiredMarkers.every((marker) =>
         reduced.value.reducedText.includes(marker),
       );
+      const excludesKnownNoise = (fixture.forbiddenMarkers ?? []).every(
+        (marker) => !reduced.value.reducedText.includes(marker),
+      );
       const noArbitraryCap =
         !reduced.value.truncated &&
         !reduced.value.omissions.some((omission) => omission.kind === "capped-bytes");
       const recognized =
         matchHushCommand([fixture.executable, ...fixture.argv])?.projection === fixture.projection;
-      const passes = withinRtkBudget && retainsRequiredContext && noArbitraryCap && recognized;
+      const passes =
+        withinRtkBudget &&
+        retainsRequiredContext &&
+        excludesKnownNoise &&
+        noArbitraryCap &&
+        recognized;
       scores.push({
         id: fixture.id,
         projection: fixture.projection,
@@ -264,6 +325,7 @@ async function createScorecard(): Promise<HushProjectionScorecard> {
         hush: hushMeasurement,
         withinRtkBudget,
         retainsRequiredContext,
+        excludesKnownNoise,
         noArbitraryCap,
         recognized,
         result: passes ? "PASS" : "FAIL",
@@ -302,7 +364,9 @@ export function formatHushProjectionScorecard(scorecard: HushProjectionScorecard
     formatMeasurement(score.rtk),
     formatMeasurement(score.hush),
     `${score.rtk.estimatedTokens - score.hush.estimatedTokens}t`,
-    score.retainsRequiredContext && score.noArbitraryCap ? "all" : "loss",
+    score.retainsRequiredContext && score.excludesKnownNoise && score.noArbitraryCap
+      ? "all"
+      : "loss",
     score.result,
   ]);
   const widths = headings.map((heading, index) =>

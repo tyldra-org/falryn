@@ -64,7 +64,7 @@ describe("Hush tree scorecard", () => {
     });
     const formatted = formatHushTreeScorecard({
       corpusVersion: HUSH_TREE_CORPUS_VERSION,
-      hushVersion: "hush.v4",
+      hushVersion: "hush.v5",
       rtkVersion: "rtk 0.45.0",
       rtkCommit: "b34be37caf3796b69a50952a28e60e32b5daad43",
       estimator: "ceil(utf8-bytes/4)",
@@ -72,7 +72,7 @@ describe("Hush tree scorecard", () => {
       passes: true,
     });
 
-    expect(formatted).toContain("Hush hush.v4 vs rtk 0.45.0");
+    expect(formatted).toContain("Hush hush.v5 vs rtk 0.45.0");
     expect(formatted).toContain("TOTAL");
     expect(formatted).toContain("all");
     expect(formatted).toContain("scorecard: PASS");

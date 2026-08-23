@@ -26,16 +26,19 @@ describe("Hush command coverage scorecard", () => {
     expect(scorecard.projectionKinds).toBeGreaterThan(10);
     expect(scorecard.failures).toEqual([]);
     expect(scorecard.routingComplete).toBe(true);
-    expect(scorecard.parityProvenProjections).toHaveLength(19);
+    expect(scorecard.parityProvenProjections).toHaveLength(22);
     expect(scorecard.parityProvenReducers).toHaveLength(scorecard.catalogEntries);
     expect(scorecard.parityProvenReducers).toContain("files.ls");
     expect(scorecard.parityProvenReducers).toContain("files.tree");
     expect(scorecard.parityProvenReducers).toContain("data.command");
+    expect(scorecard.parityProvenReducers).toContain("data.json");
+    expect(scorecard.parityProvenReducers).toContain("network.curl");
+    expect(scorecard.parityProvenReducers).toContain("network.wget");
   });
 
   test("reports routing separately from token parity", () => {
     const formatted = formatHushCommandCoverageScorecard(createHushCommandCoverageScorecard());
     expect(formatted).toContain("routing: PASS");
-    expect(formatted).toContain("token/context parity proven: 80 reducers across 19 projections");
+    expect(formatted).toContain("token/context parity proven: 81 reducers across 22 projections");
   });
 });

@@ -134,11 +134,18 @@ export const OPERATION_COMMANDS = [
     examples: ["psql -c 'select 1'", "jq . package.json", "sqlite3 db.sqlite '.tables'"],
   },
   {
-    reducerId: "network.http",
+    reducerId: "network.curl",
     family: "http",
-    projection: "network",
-    executables: ["curl", "wget"],
-    examples: ["curl https://example.com", "wget https://example.com/file"],
+    projection: "curl",
+    executables: ["curl"],
+    examples: ["curl https://example.com"],
+  },
+  {
+    reducerId: "network.wget",
+    family: "http",
+    projection: "wget",
+    executables: ["wget"],
+    examples: ["wget https://example.com/file"],
   },
   {
     reducerId: "network.command",
