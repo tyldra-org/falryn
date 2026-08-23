@@ -46,7 +46,7 @@ import {
   workspaceId,
 } from "./identity.ts";
 import {
-  createLoomCache,
+  createLoomCacheStore,
   DEFAULT_LOOM_CACHE_ENTRIES,
   HARD_LOOM_CACHE_ENTRIES,
 } from "./loom/cache.ts";
@@ -65,7 +65,7 @@ import { timestampToEpochMilliseconds } from "./time.ts";
 export const DEFAULT_LOOM_STRATEGY = "loom.v1";
 export const DEFAULT_LOOM_PROJECTION_MAX_BYTES = MAX_EVIDENCE_INLINE_BYTES;
 export const HARD_LOOM_PROJECTION_MAX_BYTES = MAX_EVIDENCE_INLINE_BYTES;
-export { createLoomCache, DEFAULT_LOOM_CACHE_ENTRIES, HARD_LOOM_CACHE_ENTRIES };
+export { DEFAULT_LOOM_CACHE_ENTRIES, HARD_LOOM_CACHE_ENTRIES };
 export const MAX_LOOM_KEY_FIELD = 128;
 export const MAX_LOOM_MEMBERS = 16;
 export const MAX_LOOM_PROTECTED_FACTS = 8;
@@ -263,6 +263,10 @@ export type LoomCache = {
   invalidate(filter: LoomInvalidation): number;
   get size(): number;
 };
+
+export function createLoomCache(maxEntries = DEFAULT_LOOM_CACHE_ENTRIES): LoomCache {
+  return createLoomCacheStore<LoomCacheKey, LoomProjectionResult>(maxEntries);
+}
 
 const MEDIA_TYPE = /^[!-~]+\/[!-~]+$/;
 

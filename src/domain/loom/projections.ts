@@ -2,9 +2,40 @@
 
 import type { ArtifactEncoding, ContentDigest } from "../artifact.ts";
 import type { ContentHasherPort } from "../blob.ts";
-import type { LoomError, LoomMember, LoomOmission, LoomSearchHit } from "../loom.ts";
 import type { Result } from "../result.ts";
 import { err, ok } from "../result.ts";
+
+type LoomProjectionErrorCode =
+  | "malformed"
+  | "unsupported"
+  | "oversized"
+  | "unavailable"
+  | "checksum"
+  | "secret"
+  | "denied"
+  | "expired"
+  | "empty";
+
+type LoomProjectionError = {
+  readonly kind: "loom";
+  readonly code: LoomProjectionErrorCode;
+  readonly field: string | null;
+};
+
+type LoomRecoverableMember = {
+  readonly required: boolean;
+  readonly availability: string;
+};
+
+type LoomProjectionOmission =
+  | { readonly kind: "bytes"; readonly count: number }
+  | { readonly kind: "hits-capped"; readonly count: number };
+
+type LoomProjectionSearchHit = {
+  readonly offset: number;
+  readonly byteLength: number;
+  readonly text: string;
+};
 
 export type LoomByteProjection = {
   readonly text: string;
@@ -22,14 +53,14 @@ export function hashLoomBytes(hasher: ContentHasherPort, bytes: Uint8Array): Con
   return hash.digest();
 }
 
-export function loomGroupRecoverable(members: readonly LoomMember[]): boolean {
+export function loomGroupRecoverable(members: readonly LoomRecoverableMember[]): boolean {
   return members.every((member) => !member.required || member.availability === "available");
 }
 
 export function projectLoomExact(
   bytes: Uint8Array,
   maxBytes: number,
-): Result<LoomByteProjection, LoomError> {
+): Result<LoomByteProjection, LoomProjectionError> {
   if (bytes.byteLength > maxBytes) {
     return err(loomError("oversized", "source"));
   }
@@ -46,7 +77,7 @@ export function projectLoomRange(
   offsetInput: number | undefined,
   lengthInput: number | undefined,
   maxBytes: number,
-): Result<LoomByteProjection, LoomError> {
+): Result<LoomByteProjection, LoomProjectionError> {
   const offset = offsetInput ?? 0;
   if (!Number.isSafeInteger(offset) || offset < 0 || offset > bytes.byteLength) {
     return err(loomError("malformed", "offset"));
@@ -79,7 +110,10 @@ export function projectLoomHeadTail(
   headBytes: number,
   tailBytes: number,
   maxBytes: number,
-): Result<LoomByteProjection & { readonly omissions: readonly LoomOmission[] }, LoomError> {
+): Result<
+  LoomByteProjection & { readonly omissions: readonly LoomProjectionOmission[] },
+  LoomProjectionError
+> {
   if (headBytes + tailBytes > maxBytes) {
     return err(loomError("oversized", "projection"));
   }
@@ -114,16 +148,16 @@ export function projectLoomSearchHits(
   maxBytes: number,
 ): Result<
   LoomByteProjection & {
-    readonly omissions: readonly LoomOmission[];
-    readonly hits: readonly LoomSearchHit[];
+    readonly omissions: readonly LoomProjectionOmission[];
+    readonly hits: readonly LoomProjectionSearchHit[];
   },
-  LoomError
+  LoomProjectionError
 > {
   if (encoding !== "identity") {
     return err(loomError("unsupported", "encoding"));
   }
   const text = decoder.decode(bytes);
-  const hits: LoomSearchHit[] = [];
+  const hits: LoomProjectionSearchHit[] = [];
   let from = 0;
   let capped = 0;
   while (from < text.length) {
@@ -155,7 +189,8 @@ export function projectLoomSearchHits(
   if (encoder.encode(rendered).byteLength > maxBytes) {
     return err(loomError("oversized", "projection"));
   }
-  const omissions: LoomOmission[] = capped > 0 ? [{ kind: "hits-capped", count: capped }] : [];
+  const omissions: LoomProjectionOmission[] =
+    capped > 0 ? [{ kind: "hits-capped", count: capped }] : [];
   return ok({
     text: rendered,
     offset: hits[0]?.offset ?? 0,
@@ -166,7 +201,7 @@ export function projectLoomSearchHits(
   });
 }
 
-function loomError(code: LoomError["code"], field: string | null): LoomError {
+function loomError(code: LoomProjectionErrorCode, field: string | null): LoomProjectionError {
   return { kind: "loom", code, field };
 }
 

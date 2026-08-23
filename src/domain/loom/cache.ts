@@ -1,21 +1,54 @@
 /** Bounded LRU projection cache and invalidation policy for Loom. */
 
-import type { ArtifactId } from "../artifact.ts";
+import type { ArtifactId, ContentDigest } from "../artifact.ts";
+import type { ContextBudgetDestination } from "../context-budget.ts";
 import { MAX_EVIDENCE_BATCH } from "../context-evidence.ts";
-import type { LoomCache, LoomCacheKey, LoomInvalidation, LoomProjectionResult } from "../loom.ts";
 
 export const DEFAULT_LOOM_CACHE_ENTRIES = 32;
 export const HARD_LOOM_CACHE_ENTRIES = MAX_EVIDENCE_BATCH;
 
-type StoredEntry = {
-  readonly key: LoomCacheKey;
-  readonly value: LoomProjectionResult;
+export type LoomCacheKeyShape = {
+  readonly digest: ContentDigest;
+  readonly generation: string;
+  readonly strategyVersion: string;
+  readonly configuration: string;
+  readonly destination: ContextBudgetDestination;
+  readonly projection: string;
+  readonly member: ArtifactId;
+  readonly boundA: number;
+  readonly boundB: number;
+  readonly maxBytes: number;
+  readonly query: string;
+};
+
+export type LoomInvalidationShape = {
+  readonly digest?: ContentDigest;
+  readonly generation?: string;
+  readonly strategyVersion?: string;
+  readonly configuration?: string;
+  readonly destination?: ContextBudgetDestination;
+  readonly artifactId?: ArtifactId;
+  readonly all?: boolean;
+};
+
+export type ProjectionCache<Key extends LoomCacheKeyShape, Value> = {
+  get(key: Key): Value | null;
+  put(key: Key, value: Value): void;
+  invalidate(filter: LoomInvalidationShape): number;
+  get size(): number;
+};
+
+type StoredEntry<Key, Value> = {
+  readonly key: Key;
+  readonly value: Value;
   readonly artifactId: ArtifactId;
 };
 
-export function createLoomCache(maxEntries: number = DEFAULT_LOOM_CACHE_ENTRIES): LoomCache {
+export function createLoomCacheStore<Key extends LoomCacheKeyShape, Value>(
+  maxEntries: number = DEFAULT_LOOM_CACHE_ENTRIES,
+): ProjectionCache<Key, Value> {
   const limit = Math.min(Math.max(1, maxEntries), HARD_LOOM_CACHE_ENTRIES);
-  const entries = new Map<string, StoredEntry>();
+  const entries = new Map<string, StoredEntry<Key, Value>>();
 
   return {
     get(key) {
@@ -56,7 +89,7 @@ export function createLoomCache(maxEntries: number = DEFAULT_LOOM_CACHE_ENTRIES)
   };
 }
 
-function serializeKey(key: LoomCacheKey): string {
+function serializeKey(key: LoomCacheKeyShape): string {
   return [
     key.digest,
     key.generation,
@@ -72,7 +105,10 @@ function serializeKey(key: LoomCacheKey): string {
   ].join("\0");
 }
 
-function matchesFilter(entry: StoredEntry, filter: LoomInvalidation): boolean {
+function matchesFilter<Key extends LoomCacheKeyShape, Value>(
+  entry: StoredEntry<Key, Value>,
+  filter: LoomInvalidationShape,
+): boolean {
   if (filter.all === true) {
     return true;
   }
