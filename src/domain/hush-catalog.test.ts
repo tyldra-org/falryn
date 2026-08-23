@@ -163,6 +163,10 @@ describe("Hush RTK command catalog", () => {
     expect(commandShape(bash("git status && cargo test")).compound).toBe(true);
   });
 
+  test("does not claim unwired RTK helper commands as Hush support", () => {
+    expect(policyFor("smart src/main.ts")).toBeNull();
+  });
+
   test("routes compound shell commands through an explicit Hush policy", () => {
     const reduced = reduceHush({
       command: bash("git status && cargo test"),

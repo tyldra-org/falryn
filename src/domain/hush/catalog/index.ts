@@ -1,4 +1,4 @@
-/** Exhaustive Hush command-policy catalog for the pinned RTK developer surface. */
+/** Hush policies covering the pinned RTK host-executable baseline. */
 
 import type { HushCatalogEntry, HushCommandPolicy } from "./contracts.ts";
 import { FILE_COMMANDS } from "./files.ts";

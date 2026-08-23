@@ -67,13 +67,6 @@ export const FILE_COMMANDS = [
     examples: ["wc -l src/main.ts"],
   },
   {
-    reducerId: "files.smart",
-    family: "listing",
-    projection: "read",
-    executables: ["smart"],
-    examples: ["smart src/main.ts"],
-  },
-  {
     reducerId: "transform.structured",
     family: "data",
     projection: "structured",
