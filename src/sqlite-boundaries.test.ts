@@ -332,6 +332,12 @@ describe("startup recovery", () => {
 
 describe("an export package", () => {
   const EXPORT = "data/export.ts";
+  const EXPORT_MODULES = [
+    EXPORT,
+    "data/export/inventory.ts",
+    "data/export/package.ts",
+    "data/export/shared.ts",
+  ] as const;
   /** The one module allowed to write one. */
   const PACKAGE_ADAPTER = "integrations/host-packages.ts";
 
@@ -357,7 +363,7 @@ describe("an export package", () => {
   test("is reached by name, never by path", async () => {
     // A package is named and the adapter decides where that lands, so no path
     // type reaches the service that decides what goes into one.
-    const source = await readSource(EXPORT);
+    const source = (await Promise.all(EXPORT_MODULES.map(readSource))).join("\n");
     expect(source).not.toMatch(/\b(LocalPath|joinPath|localPath)\b/);
     expect(await readSource("domain/package.ts")).not.toMatch(/\bLocalPath\b/);
   });
@@ -368,13 +374,18 @@ describe("an export package", () => {
     // route one into a package.
     const credentials =
       /\b(CredentialStorePort|SecretResolverPort|CredentialReference|SecretRequest)\b/;
-    for (const file of [EXPORT, "domain/export.ts", "domain/package.ts", PACKAGE_ADAPTER]) {
+    for (const file of [
+      ...EXPORT_MODULES,
+      "domain/export.ts",
+      "domain/package.ts",
+      PACKAGE_ADAPTER,
+    ]) {
       expect(credentials.test(await readSource(file))).toBe(false);
     }
   });
 
   test("refuses restricted artifacts by vocabulary rather than by flag", async () => {
-    const source = await readSource(EXPORT);
+    const source = await readSource("data/export/inventory.ts");
     // The check exists, and it is made before the sensitivity opt-in is
     // consulted, so a selection cannot opt back into content the label says
     // never leaves the machine.
@@ -389,7 +400,7 @@ describe("an export package", () => {
   });
 
   test("performs no external effect beyond its own destination", async () => {
-    const source = await readSource(EXPORT);
+    const source = (await Promise.all(EXPORT_MODULES.map(readSource))).join("\n");
     expect(source).not.toMatch(/\b(CommandRunnerPort|Bun\.spawn|child_process|fetch\()\b/);
   });
 });
