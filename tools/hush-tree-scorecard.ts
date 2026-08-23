@@ -3,7 +3,7 @@
 import { chmod, copyFile, mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-
+import { treeEntryFacts } from "../src/domain/hush/reducers/tree/format.ts";
 import {
   duration,
   HUSH_REDUCER_VERSION,
@@ -15,7 +15,7 @@ import {
 } from "../src/domain/index.ts";
 import { HUSH_RTK_BASELINE } from "./hush-command-coverage.ts";
 
-export const HUSH_TREE_CORPUS_VERSION = "hush-tree.v1";
+export const HUSH_TREE_CORPUS_VERSION = "hush-tree.v2";
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
@@ -27,6 +27,7 @@ const CORPUS_CASES = [
   { id: "caller-ignore", argv: ["-I", "vendor", "-L", "4"] },
   { id: "full-path", argv: ["-f", "-L", "5"] },
   { id: "permissions", argv: ["-p", "-L", "5"] },
+  { id: "classify", argv: ["-F", "-L", "5"] },
   { id: "ascii", argv: ["--charset", "ASCII", "-L", "5"] },
   { id: "no-report", argv: ["--noreport"] },
   { id: "empty", argv: ["empty"] },
@@ -52,7 +53,7 @@ export type HushTreeScore = Readonly<{
   hush: HushTreeMeasurement;
   fidelity: "exact" | "deterministic-reduction" | "raw-fallback";
   omissionRecords: number;
-  sameContent: boolean;
+  sameInformation: boolean;
   truncated: boolean;
   recoverable: boolean;
   withinRtkBudget: boolean;
@@ -94,6 +95,9 @@ export function scoreHushTree(input: {
   const raw = measureTreeText(input.raw);
   const rtk = measureTreeText(input.rtk);
   const hush = measureTreeText(input.hush);
+  const parseOptions = { directoriesOnly: input.argv.includes("-d") };
+  const rtkFacts = treeEntryFacts(rtk.text, parseOptions);
+  const hushFacts = treeEntryFacts(hush.text, parseOptions);
   return {
     id: input.id,
     argv: input.argv,
@@ -102,7 +106,7 @@ export function scoreHushTree(input: {
     hush,
     fidelity: input.fidelity,
     omissionRecords: input.omissionRecords,
-    sameContent: hush.text === rtk.text,
+    sameInformation: rtkFacts !== null && hushFacts !== null && arraysEqual(rtkFacts, hushFacts),
     truncated: input.truncated,
     recoverable: input.recoverable,
     withinRtkBudget: hush.bytes <= rtk.bytes && hush.estimatedTokens <= rtk.estimatedTokens,
@@ -114,14 +118,14 @@ export function passesHushTreeScorecard(scores: readonly HushTreeScore[]): boole
 }
 
 export function formatHushTreeScorecard(scorecard: HushTreeScorecard): string {
-  const headings = ["case", "raw", "rtk", "hush", "delta", "content", "result"] as const;
+  const headings = ["case", "raw", "rtk", "hush", "delta", "info", "result"] as const;
   const rows = scorecard.scores.map((score) => [
     score.id,
     formatMeasurement(score.raw),
     formatMeasurement(score.rtk),
     formatMeasurement(score.hush),
     `${score.rtk.estimatedTokens - score.hush.estimatedTokens}t`,
-    score.sameContent ? "same" : "diff",
+    score.sameInformation ? "all" : "loss",
     passesHushTreeScore(score) ? "PASS" : "FAIL",
   ]);
   const totalRaw = totalMeasurement(scorecard.scores, "raw");
@@ -133,7 +137,7 @@ export function formatHushTreeScorecard(scorecard: HushTreeScorecard): string {
     formatMeasurement(totalRtk),
     formatMeasurement(totalHush),
     `${totalRtk.estimatedTokens - totalHush.estimatedTokens}t`,
-    scorecard.scores.every((score) => score.sameContent) ? "same" : "diff",
+    scorecard.scores.every((score) => score.sameInformation) ? "all" : "loss",
     scorecard.passes ? "PASS" : "FAIL",
   ]);
   const widths = headings.map((heading, index) =>
@@ -154,12 +158,16 @@ export function formatHushTreeScorecard(scorecard: HushTreeScorecard): string {
 function passesHushTreeScore(score: HushTreeScore): boolean {
   return (
     score.withinRtkBudget &&
-    score.sameContent &&
+    score.sameInformation &&
     score.fidelity !== "raw-fallback" &&
     score.omissionRecords === 0 &&
     !score.truncated &&
     score.recoverable
   );
+}
+
+function arraysEqual(left: readonly string[], right: readonly string[]): boolean {
+  return left.length === right.length && left.every((value, index) => value === right[index]);
 }
 
 function formatMeasurement(measurement: HushTreeMeasurement): string {

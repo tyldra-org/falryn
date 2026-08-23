@@ -97,6 +97,7 @@ const showAll = args.some((arg) => arg === "-a" || arg === "--all");
 const directoriesOnly = args.includes("-d");
 const fullPath = args.includes("-f");
 const permissions = args.includes("-p");
+const classify = args.includes("-F");
 const ascii = args.some(
   (arg, index) => arg === "--charset=ASCII" || (arg === "--charset" && args[index + 1] === "ASCII"),
 );
@@ -124,10 +125,12 @@ function renderChildren(node: FixtureNode, prefix: string, path: string, depth: 
     const last = index === children.length - 1;
     const childPath = `${path}/${child.name}`;
     const displayedName = fullPath ? childPath : child.name;
+    const classifiedName =
+      classify && child.children !== null ? `${displayedName}/` : displayedName;
     const metadata = permissions
       ? `[${child.children === null ? "-rw-r--r--" : "drwxr-xr-x"}]  `
       : "";
-    lines.push(`${prefix}${connectorFor(last)}${metadata}${displayedName}`);
+    lines.push(`${prefix}${connectorFor(last)}${metadata}${classifiedName}`);
     if (child.children === null) {
       files += 1;
     } else {

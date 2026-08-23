@@ -31,6 +31,7 @@ function projectTreeStdout(
     return binaryOmission(stream, stdout);
   }
   const projected = compactTreeOutput(stdout.inlineText, {
+    directoriesOnly: commandTokens.slice(1).includes("-d"),
     pruneNoise: patterns.length === 0 && shouldPruneDefaultTreeNoise(commandTokens),
   });
   return boundText(projected, stream, maxBytes);

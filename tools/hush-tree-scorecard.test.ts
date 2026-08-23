@@ -20,18 +20,28 @@ describe("Hush tree scorecard", () => {
       id: "pass",
       argv: [],
       raw: "raw tree\nsummary\n",
-      rtk: "tree\n",
-      hush: "tree\n",
+      rtk: ["tree", "└── src", "    ├── a", "    └── b", ""].join("\n"),
+      hush: ["tree/", "./:", "  src/", "src/:", "  a", "  b", ""].join("\n"),
       fidelity: "deterministic-reduction",
       omissionRecords: 0,
       truncated: false,
       recoverable: true,
     });
-    const larger = scoreHushTree({ ...pass, raw: pass.raw.text, rtk: "tree\n", hush: "tree+x\n" });
-    const different = scoreHushTree({ ...pass, raw: pass.raw.text, rtk: "tree\n", hush: "free\n" });
+    const larger = scoreHushTree({
+      ...pass,
+      raw: pass.raw.text,
+      rtk: pass.rtk.text,
+      hush: `${pass.hush.text}extra\n`,
+    });
+    const different = scoreHushTree({
+      ...pass,
+      raw: pass.raw.text,
+      rtk: pass.rtk.text,
+      hush: "free\n",
+    });
 
     expect(pass.withinRtkBudget).toBe(true);
-    expect(pass.sameContent).toBe(true);
+    expect(pass.sameInformation).toBe(true);
     expect(passesHushTreeScorecard([pass])).toBe(true);
     expect(passesHushTreeScorecard([larger])).toBe(false);
     expect(passesHushTreeScorecard([different])).toBe(false);
@@ -64,7 +74,7 @@ describe("Hush tree scorecard", () => {
 
     expect(formatted).toContain("Hush hush.v3 vs rtk 0.45.0");
     expect(formatted).toContain("TOTAL");
-    expect(formatted).toContain("same");
+    expect(formatted).toContain("all");
     expect(formatted).toContain("scorecard: PASS");
   });
 });
