@@ -239,12 +239,14 @@ describe("createHushIntegrator", () => {
     expect(reduced.value.capture.stdout.inlineText).toBe(gitDiff);
     expect(reduced.value.hush.family).toBe("git");
     expect(reduced.value.hush.reducerId).toBe("git.diff");
-    expect(reduced.value.hush.reducedText).toContain("src/hush.ts: +3 -2");
-    expect(reduced.value.hush.reducedText).not.toContain("@@");
+    expect(reduced.value.hush.reducedText).toContain("src/hush.ts:");
+    expect(reduced.value.hush.reducedText).toContain("@@ -1,4 +1,5 @@");
+    expect(reduced.value.hush.reducedText).toContain("-also");
+    expect(reduced.value.hush.reducedText).toContain("+newest");
     expect(reduced.value.projection).toBe(reduced.value.hush.reducedText);
   });
 
-  test("shell listings keep important paths after the listing cap", () => {
+  test("shell listings keep every path without a listing cap", () => {
     const lines = Array.from({ length: 40 }, (_, index) => `file-${index}.ts`).join("\n");
     const captured = report(`${lines}\nkeep-me.ts\n`);
     const integrator = createHushIntegrator();
@@ -260,6 +262,8 @@ describe("createHushIntegrator", () => {
     }
     expect(reduced.value.hush.family).toBe("listing");
     expect(reduced.value.projection).toContain("keep-me.ts");
+    expect(reduced.value.projection).toContain("file-39.ts");
+    expect(reduced.value.hush.omissions).toEqual([]);
     expect(reduced.value.hush.command.mode).toBe("bash");
     expect(reduced.value.hush.command.command).toBe("ls");
   });
@@ -295,8 +299,10 @@ describe("createHushIntegrator", () => {
     }
     expect(reduced.value.hush.family).toBe("search");
     expect(reduced.value.hush.reducerId).toBe("files.rg");
-    expect(reduced.value.projection).toContain("src/a.ts:8:eight");
-    expect(reduced.value.projection).not.toContain("src/a.ts:9:nine");
+    expect(reduced.value.projection).toContain("src/a.ts:");
+    expect(reduced.value.projection).toContain("  8 eight");
+    expect(reduced.value.projection).toContain("  9 nine");
+    expect(reduced.value.hush.omissions).toEqual([]);
     expect(reduced.value.hush.expansion.stdoutArtifact).toEqual(artifactId.from("cap-1.stdout"));
     expect(reduced.value.capture.stdout.artifact?.artifactId).toEqual(
       artifactId.from("cap-1.stdout"),
@@ -469,11 +475,13 @@ describe("createHushIntegrator", () => {
     }
     expect(transformed.value.fidelity).toBe("deterministic-transform");
     expect(transformed.value.exactSource).toBeNull();
-    expect(transformed.value.lineage).toEqual(["hush.v3", "git.diff"]);
+    expect(transformed.value.lineage).toEqual(["hush.v4", "git.diff"]);
     expect(transformed.value.expansion).not.toBeNull();
     expect(transformed.value.payload.kind).toBe("inline");
     if (transformed.value.payload.kind === "inline") {
-      expect(transformed.value.payload.text).not.toContain("@@");
+      expect(transformed.value.payload.text).toContain("@@");
+      expect(transformed.value.payload.text).toContain("-old");
+      expect(transformed.value.payload.text).toContain("+new");
     }
   });
 

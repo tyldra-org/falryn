@@ -14,7 +14,7 @@ export function treeProjection(
 ): HushStreamProjection {
   return joinStreams(
     projectTreeStdout("stdout", capture, maxBytes, patterns, commandTokens),
-    boundStream("stderr", capture.stderr, Math.min(maxBytes, 4_096), patterns, true),
+    boundStream("stderr", capture.stderr, maxBytes, patterns, true),
     maxBytes,
   );
 }

@@ -13,7 +13,7 @@ import type {
 } from "../process-capture.ts";
 import type { Result } from "../result.ts";
 
-export const HUSH_REDUCER_VERSION = "hush.v3";
+export const HUSH_REDUCER_VERSION = "hush.v4";
 
 /** Longest reduced projection Hush may emit. */
 export const MAX_HUSH_REDUCED_BYTES = 64 * 1_024;
@@ -53,12 +53,7 @@ export type HushCommandIdentity = {
   readonly cwd: string | null;
 };
 
-export type HushOmissionKind =
-  | "capped-lines"
-  | "capped-bytes"
-  | "duplicate-run"
-  | "binary-stream"
-  | "reducer-failure";
+export type HushOmissionKind = "capped-bytes" | "binary-stream" | "reducer-failure";
 
 export type HushOmission = {
   readonly kind: HushOmissionKind;

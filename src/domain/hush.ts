@@ -92,10 +92,7 @@ export function reduceHush(request: HushRequest): Result<HushResult, HushError> 
   } else {
     try {
       projectionMaxBytes =
-        (classification.projection === "ls" || classification.projection === "tree") &&
-        request.maxReducedBytes === undefined
-          ? MAX_HUSH_REDUCED_BYTES
-          : maxBytes;
+        request.maxReducedBytes === undefined ? MAX_HUSH_REDUCED_BYTES : maxBytes;
       projection = specializedProjection(
         classification.projection,
         request.capture,
@@ -114,16 +111,13 @@ export function reduceHush(request: HushRequest): Result<HushResult, HushError> 
   const reducedBytes = new TextEncoder().encode(projection.text).byteLength;
   if (strategy !== "passthrough" && reducedBytes >= originalBytes && originalBytes > 0) {
     strategy = "passthrough";
-    selectedReducerId = "safe.passthrough";
     projection = passthroughProjection(request.capture, projectionMaxBytes, patterns);
   }
 
   const truncated =
     request.capture.stdout.truncated ||
     request.capture.stderr.truncated ||
-    projection.omissions.some(
-      (omission) => omission.kind === "capped-bytes" || omission.kind === "capped-lines",
-    );
+    projection.omissions.some((omission) => omission.kind === "capped-bytes");
 
   return ok({
     captureId: request.capture.captureId,

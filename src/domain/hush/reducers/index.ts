@@ -2,19 +2,20 @@
 
 import type { ProcessCaptureReport } from "../../process-capture.ts";
 import { assertNever } from "../../result.ts";
-import { boundStream, groupLines, joinStreams } from "../bounds.ts";
 import type { HushProjectionKind } from "../catalog/index.ts";
 import type { HushFidelity, HushResult, HushStrategy, HushStreamProjection } from "../contracts.ts";
 import {
   gitDiffProjection,
-  gitGroupKey,
   gitLogProjection,
   gitMutationProjection,
   gitStatusProjection,
-} from "./git.ts";
+} from "./git/index.ts";
 import { listingProjection } from "./listing.ts";
 import { lsProjection } from "./ls/projection.ts";
+import { searchProjection } from "./search/projection.ts";
 import { semanticProjection } from "./semantic.ts";
+import { structuredProjection } from "./structured/projection.ts";
+import { tableProjection } from "./table/projection.ts";
 import { treeProjection } from "./tree/projection.ts";
 
 export function fidelityFor(
@@ -50,7 +51,7 @@ export function specializedProjection(
     case "tree":
       return treeProjection(capture, maxBytes, patterns, commandTokens);
     case "listing":
-      return listingProjection(capture, maxBytes, patterns);
+      return listingProjection(capture, maxBytes, patterns, commandTokens);
     case "read":
       return semanticProjection("read", capture, maxBytes, patterns);
     case "search":
@@ -64,7 +65,7 @@ export function specializedProjection(
     case "git-mutation":
       return gitMutationProjection(capture, maxBytes, patterns);
     case "forge":
-      return groupLinesProjection(capture, maxBytes, patterns, gitGroupKey, 12);
+      return tableProjection(capture, maxBytes, patterns);
     case "test":
       return semanticProjection("test", capture, maxBytes, patterns);
     case "diagnostic":
@@ -74,7 +75,7 @@ export function specializedProjection(
     case "package":
       return semanticProjection("package", capture, maxBytes, patterns);
     case "table":
-      return semanticProjection("table", capture, maxBytes, patterns);
+      return tableProjection(capture, maxBytes, patterns);
     case "log":
       return semanticProjection("log", capture, maxBytes, patterns);
     case "network":
@@ -82,39 +83,8 @@ export function specializedProjection(
     case "operation":
       return semanticProjection("operation", capture, maxBytes, patterns);
     case "structured":
-      return semanticProjection("structured", capture, maxBytes, patterns);
+      return structuredProjection(capture, maxBytes, patterns, commandTokens);
     default:
       return assertNever(projection, "unhandled Hush projection");
   }
-}
-
-function searchProjection(
-  capture: ProcessCaptureReport,
-  maxBytes: number,
-  patterns: readonly string[],
-): HushStreamProjection {
-  return joinStreams(
-    groupLines("stdout", capture.stdout, maxBytes, patterns, searchGroupKey, 8),
-    boundStream("stderr", capture.stderr, Math.min(maxBytes, 4_096), patterns, true),
-    maxBytes,
-  );
-}
-
-function groupLinesProjection(
-  capture: ProcessCaptureReport,
-  maxBytes: number,
-  patterns: readonly string[],
-  keyFor: (line: string) => string,
-  perGroup: number,
-): HushStreamProjection {
-  return joinStreams(
-    groupLines("stdout", capture.stdout, maxBytes, patterns, keyFor, perGroup),
-    boundStream("stderr", capture.stderr, Math.min(maxBytes, 4_096), patterns, true),
-    maxBytes,
-  );
-}
-
-function searchGroupKey(line: string): string {
-  const match = /^([^:]+):/.exec(line);
-  return match?.[1] ?? "search";
 }

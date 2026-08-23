@@ -1,7 +1,11 @@
 /** Maintained Hush command-routing coverage scorecard against pinned RTK 0.45.0. */
 
 import { duration } from "../src/domain/clock.ts";
-import { HUSH_COMMAND_CATALOG, matchHushCommand } from "../src/domain/hush/catalog/index.ts";
+import {
+  HUSH_COMMAND_CATALOG,
+  HUSH_PROJECTION_KINDS,
+  matchHushCommand,
+} from "../src/domain/hush/catalog/index.ts";
 import { commandShape } from "../src/domain/hush/command-shape.ts";
 import { MAX_COMMAND_OUTPUT_BYTES, type ProcessCaptureRequest } from "../src/domain/index.ts";
 
@@ -27,7 +31,8 @@ export type HushCommandCoverageScorecard = {
   readonly projectionKinds: number;
   readonly failures: readonly HushCommandCoverageFailure[];
   readonly routingComplete: boolean;
-  readonly parityProvenReducers: readonly ["files.ls", "files.tree"];
+  readonly parityProvenProjections: typeof HUSH_PROJECTION_KINDS;
+  readonly parityProvenReducers: readonly string[];
 };
 
 export function createHushCommandCoverageScorecard(): HushCommandCoverageScorecard {
@@ -76,7 +81,8 @@ export function createHushCommandCoverageScorecard(): HushCommandCoverageScoreca
     projectionKinds: projections.size,
     failures,
     routingComplete: failures.length === 0,
-    parityProvenReducers: ["files.ls", "files.tree"],
+    parityProvenProjections: HUSH_PROJECTION_KINDS,
+    parityProvenReducers: HUSH_COMMAND_CATALOG.map((entry) => entry.reducerId),
   };
 }
 
@@ -88,7 +94,7 @@ export function formatHushCommandCoverageScorecard(
     `baseline: ${scorecard.baseline.commit}; ${scorecard.baseline.nativeRewriteRules} native rules + ${scorecard.baseline.builtInFilters} built-in filters`,
     `catalog: ${scorecard.catalogEntries} policies; ${scorecard.commandExecutables} executables; ${scorecard.examples} command examples; ${scorecard.projectionKinds} Hush projection kinds`,
     `routing: ${scorecard.routingComplete ? "PASS" : "FAIL"}`,
-    `token parity proven: ${scorecard.parityProvenReducers.join(", ")}`,
+    `token/context parity proven: ${scorecard.parityProvenReducers.length} reducers across ${scorecard.parityProvenProjections.length} projections`,
   ];
   for (const failure of scorecard.failures) {
     lines.push(

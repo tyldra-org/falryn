@@ -178,9 +178,10 @@ describe("Hush RTK command catalog", () => {
       return;
     }
     expect(reduced.value.reducerId).toBe("shell.compound");
-    expect(reduced.value.strategy).toBe("specialized");
+    expect(reduced.value.strategy).toBe("passthrough");
     expect(reduced.value.fallbackReason).toBeNull();
-    expect(reduced.value.omissions.length).toBeGreaterThan(0);
+    expect(reduced.value.omissions).toEqual([]);
+    expect(reduced.value.truncated).toBe(false);
   });
 
   test("runs every catalog policy as a non-generic recoverable projection", () => {
@@ -195,23 +196,14 @@ describe("Hush RTK command catalog", () => {
       if (!reduced.ok) {
         continue;
       }
-      const exactListingPassthrough =
-        (entry.reducerId === "files.ls" || entry.reducerId === "files.tree") &&
-        reduced.value.reducerId === "safe.passthrough";
-      expect(reduced.value.reducerId === entry.reducerId || exactListingPassthrough, example).toBe(
-        true,
-      );
-      expect(
-        reduced.value.strategy === "specialized" ||
-          (exactListingPassthrough && reduced.value.strategy === "passthrough"),
-        example,
-      ).toBe(true);
+      expect(reduced.value.reducerId, example).toBe(entry.reducerId);
+      expect(["specialized", "passthrough"], example).toContain(reduced.value.strategy);
       expect(reduced.value.fallbackReason, example).toBeNull();
-      if (exactListingPassthrough) {
-        expect(reduced.value.omissions, example).toEqual([]);
-      } else {
-        expect(reduced.value.omissions.length, example).toBeGreaterThan(0);
-      }
+      expect(
+        reduced.value.omissions.some((omission) => omission.kind === "capped-bytes"),
+        example,
+      ).toBe(false);
+      expect(reduced.value.truncated, example).toBe(false);
       expect(reduced.value.expansion.stdoutArtifact, example).toBe(
         artifactId.from("catalog.stdout"),
       );

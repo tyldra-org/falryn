@@ -13,6 +13,7 @@ export type {
   HushCommandPolicy,
   HushProjectionKind,
 } from "./contracts.ts";
+export { HUSH_PROJECTION_KINDS } from "./contracts.ts";
 
 export const HUSH_COMMAND_CATALOG = [
   ...FILE_COMMANDS,

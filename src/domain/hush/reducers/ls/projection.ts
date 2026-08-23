@@ -13,7 +13,7 @@ export function lsProjection(
 ): HushStreamProjection {
   return joinStreams(
     projectLsStdout("stdout", capture, maxBytes, patterns),
-    boundStream("stderr", capture.stderr, Math.min(maxBytes, 4_096), patterns, true),
+    boundStream("stderr", capture.stderr, maxBytes, patterns, true),
     maxBytes,
   );
 }
