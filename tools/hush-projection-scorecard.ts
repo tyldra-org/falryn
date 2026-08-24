@@ -3,6 +3,7 @@
 import { chmod, copyFile, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { prepareHushCaptureRequest } from "../src/application/hush-capture-command.ts";
 import type { HushProjectionKind } from "../src/domain/hush/catalog/index.ts";
 import { matchHushCommand } from "../src/domain/hush/catalog/index.ts";
 import {
@@ -17,7 +18,7 @@ import {
 import { HUSH_RTK_BASELINE } from "./hush-command-coverage.ts";
 import { type HushLsMeasurement, measureText } from "./hush-ls-scorecard.ts";
 
-export const HUSH_PROJECTION_CORPUS_VERSION = "hush-projections.v3";
+export const HUSH_PROJECTION_CORPUS_VERSION = "hush-projections.v4";
 
 type ProjectionCase = Readonly<{
   id: string;
@@ -135,12 +136,49 @@ export const HUSH_PROJECTION_CASES = [
     forbiddenMarkers: ["Fast-forward", "src/a.ts", "src/b.ts", "src/c.ts"],
   },
   {
-    id: "forge-gh",
+    id: "gh-pr-list",
+    projection: "forge",
+    executable: "gh",
+    argv: ["pr", "list"],
+    rtkArgv: ["gh", "pr", "list"],
+    requiredMarkers: ["#128", "#736", "#784", "Do more with less context", "@yogeshprasad098"],
+    forbiddenMarkers: ['"number"', "Pull Requests"],
+  },
+  {
+    id: "gh-pr-view",
+    projection: "forge",
+    executable: "gh",
+    argv: ["pr", "view", "784"],
+    rtkArgv: ["gh", "pr", "view", "784"],
+    requiredMarkers: [
+      "#784",
+      "Complete Hush projections",
+      "@yogeshprasad098",
+      "mergeable",
+      "checks 2/3 passed, 1 failed",
+      "https://github.com/tyldra-org/falryn/pull/784",
+      "Preserve every useful PR fact.",
+      "No list truncation",
+    ],
+    forbiddenMarkers: ['"statusCheckRollup"', "???"],
+  },
+  {
+    id: "gh-issue-list",
     projection: "forge",
     executable: "gh",
     argv: ["issue", "list"],
     rtkArgv: ["gh", "issue", "list"],
-    requiredMarkers: ["128", "736", "784", "Do more with less context"],
+    requiredMarkers: ["#128", "#736", "#784", "Do more with less context"],
+    forbiddenMarkers: ['"labels"', "Issues\n"],
+  },
+  {
+    id: "gh-run-list",
+    projection: "forge",
+    executable: "gh",
+    argv: ["run", "list"],
+    rtkArgv: ["gh", "run", "list"],
+    requiredMarkers: ["ok 32601 CI", "fail 32602 CodeQL", "run 32603 Platform tests"],
+    forbiddenMarkers: ['"databaseId"', "Workflow Runs"],
   },
   {
     id: "test-pytest",
@@ -301,7 +339,19 @@ async function createScorecard(): Promise<HushProjectionScorecard> {
         fixture.executable === "find"
           ? (Bun.which("find") ?? join(fixtureBin, fixture.executable))
           : join(fixtureBin, fixture.executable);
-      const raw = runCommand([executable, ...fixture.argv], root, fixtureBin);
+      const command = {
+        executable,
+        argv: fixture.argv,
+        environment: {},
+        cwd: root,
+        timeoutMs: duration(10_000),
+        maxOutputBytes: MAX_COMMAND_OUTPUT_BYTES,
+      } as const;
+      const prepared = prepareHushCaptureRequest(command);
+      if (prepared.mode === "bash") {
+        throw new Error(`${fixture.id} unexpectedly prepared as Bash`);
+      }
+      const raw = runCommand([prepared.executable, ...prepared.argv], root, fixtureBin);
       const baseline = runCommand([rtk, ...fixture.rtkArgv], root, fixtureBin);
       if (raw.exitCode !== 0 || baseline.exitCode !== 0) {
         throw new Error(
@@ -309,14 +359,7 @@ async function createScorecard(): Promise<HushProjectionScorecard> {
         );
       }
       const reduced = reduceHush({
-        command: {
-          executable,
-          argv: fixture.argv,
-          environment: {},
-          cwd: root,
-          timeoutMs: duration(10_000),
-          maxOutputBytes: MAX_COMMAND_OUTPUT_BYTES,
-        },
+        command,
         capture: capture(`hush-projection-${index}`, raw),
       });
       if (!reduced.ok) {

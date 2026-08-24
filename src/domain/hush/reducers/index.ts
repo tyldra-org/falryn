@@ -4,6 +4,7 @@ import type { ProcessCaptureReport } from "../../process-capture.ts";
 import { assertNever } from "../../result.ts";
 import type { HushProjectionKind } from "../catalog/index.ts";
 import type { HushFidelity, HushResult, HushStrategy, HushStreamProjection } from "../contracts.ts";
+import { forgeProjection } from "./forge/projection.ts";
 import {
   gitDiffProjection,
   gitLogProjection,
@@ -70,7 +71,7 @@ export function specializedProjection(
     case "git-mutation":
       return gitMutationProjection(capture, maxBytes, patterns, commandTokens);
     case "forge":
-      return tableProjection(capture, maxBytes, patterns);
+      return forgeProjection(capture, maxBytes, patterns, commandTokens);
     case "test":
       return semanticProjection("test", capture, maxBytes, patterns);
     case "diagnostic":

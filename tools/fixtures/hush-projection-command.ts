@@ -23,12 +23,7 @@ const outputs: Readonly<Record<string, () => string>> = {
       "src/b.ts:7:fourth marker",
     ].join("\n"),
   git: () => gitOutput(args),
-  gh: () =>
-    [
-      "128\tOPEN\tContext engine groundwork\tpriority:P1",
-      "736\tOPEN\tDo more with less context\tpriority:P0",
-      "784\tOPEN\tComplete Hush projections\tpriority:P0",
-    ].join("\n"),
+  gh: () => ghOutput(args),
   pytest: () =>
     [
       "tests/test_hush.py::test_complete PASSED",
@@ -201,6 +196,159 @@ function gitOutput(argv: readonly string[]): string {
 
 function gitSubcommand(argv: readonly string[]): string {
   return argv.find((argument) => !argument.startsWith("-")) ?? "";
+}
+
+function ghOutput(argv: readonly string[]): string {
+  const command = `${argv[0] ?? ""} ${argv[1] ?? ""}`;
+  const json = argv.includes("--json");
+  switch (command) {
+    case "pr list": {
+      const prs = [
+        {
+          number: 128,
+          title: "Context engine groundwork",
+          state: "OPEN",
+          author: { login: "falryn-dev" },
+          headRefName: "feat/context-engine",
+          updatedAt: "2026-08-23T12:00:00Z",
+        },
+        {
+          number: 736,
+          title: "Do more with less context",
+          state: "OPEN",
+          author: { login: "yogeshprasad098" },
+          headRefName: "perf/736-context-optimization",
+          updatedAt: "2026-08-23T12:01:00Z",
+        },
+        {
+          number: 784,
+          title: "Complete Hush projections",
+          state: "OPEN",
+          author: { login: "yogeshprasad098" },
+          headRefName: "perf/736-context-optimization",
+          updatedAt: "2026-08-23T12:02:00Z",
+        },
+      ];
+      return json
+        ? JSON.stringify(prs)
+        : prs
+            .map(
+              (pr) => `${pr.number}\t${pr.title}\t${pr.headRefName}\t${pr.state}\t${pr.updatedAt}`,
+            )
+            .join("\n");
+    }
+    case "pr view": {
+      const pr = {
+        number: 784,
+        title: "Complete Hush projections",
+        state: "OPEN",
+        author: { login: "yogeshprasad098" },
+        body: "## Outcome\n\nPreserve every useful PR fact.\n\n- No list truncation\n- Hush-native output",
+        url: "https://github.com/tyldra-org/falryn/pull/784",
+        mergeable: "MERGEABLE",
+        reviews: [{ state: "APPROVED" }],
+        statusCheckRollup: [
+          { name: "TypeScript", status: "COMPLETED", conclusion: "SUCCESS" },
+          { name: "Tests", status: "COMPLETED", conclusion: "SUCCESS" },
+          { name: "CodeQL", status: "COMPLETED", conclusion: "FAILURE" },
+        ],
+        labels: [{ name: "area: context" }],
+        assignees: [{ login: "yogeshprasad098" }],
+        headRefName: "perf/736-context-optimization",
+        baseRefName: "main",
+        additions: 120,
+        deletions: 24,
+      };
+      return json
+        ? JSON.stringify(pr)
+        : [
+            `title:\t${pr.title}`,
+            `state:\t${pr.state}`,
+            "author:\tyogeshprasad098 (Yogesh Prasad)",
+            "labels:\tarea: context",
+            "assignees:\tyogeshprasad098",
+            `number:\t${pr.number}`,
+            `url:\t${pr.url}`,
+            `additions:\t${pr.additions}`,
+            `deletions:\t${pr.deletions}`,
+            "--",
+            pr.body,
+          ].join("\n");
+    }
+    case "issue list": {
+      const issues = [
+        {
+          number: 128,
+          title: "Context engine groundwork",
+          state: "OPEN",
+          labels: [{ name: "priority:P1" }],
+          updatedAt: "2026-08-23T12:00:00Z",
+        },
+        {
+          number: 736,
+          title: "Do more with less context",
+          state: "OPEN",
+          labels: [{ name: "priority:P0" }],
+          updatedAt: "2026-08-23T12:01:00Z",
+        },
+        {
+          number: 784,
+          title: "Complete Hush projections",
+          state: "OPEN",
+          labels: [{ name: "priority:P0" }],
+          updatedAt: "2026-08-23T12:02:00Z",
+        },
+      ];
+      return json
+        ? JSON.stringify(issues)
+        : issues
+            .map(
+              (issue) =>
+                `${issue.number}\t${issue.state}\t${issue.title}\t${issue.labels
+                  .map((label) => label.name)
+                  .join(", ")}\t${issue.updatedAt}`,
+            )
+            .join("\n");
+    }
+    case "run list": {
+      const runs = [
+        {
+          databaseId: 32601,
+          name: "CI",
+          workflowName: "CI",
+          status: "completed",
+          conclusion: "success",
+          createdAt: "2026-08-23T12:00:00Z",
+        },
+        {
+          databaseId: 32602,
+          name: "CodeQL",
+          workflowName: "CodeQL",
+          status: "completed",
+          conclusion: "failure",
+          createdAt: "2026-08-23T12:01:00Z",
+        },
+        {
+          databaseId: 32603,
+          name: "Platform tests",
+          workflowName: "Platform tests",
+          status: "in_progress",
+          conclusion: "",
+          createdAt: "2026-08-23T12:02:00Z",
+        },
+      ];
+      return json
+        ? JSON.stringify(runs)
+        : runs
+            .map(
+              (run) =>
+                `${run.status}\t${run.conclusion}\tHush projection validation\t${run.workflowName}\tperf/736-context-optimization\tpull_request\t${run.databaseId}\t1m\t${run.createdAt}`,
+            )
+            .join("\n");
+    }
+    default:
+      return "";
+  }
 }
 
 function dockerOutput(argv: readonly string[]): string {

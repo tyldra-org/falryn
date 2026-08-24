@@ -136,4 +136,76 @@ describe("composeProductProcessTools", () => {
     });
     expect(pty.status).toBe("unavailable");
   });
+
+  test("enriches supported GitHub reads while retaining the user's command identity", async () => {
+    const requests: ProcessCaptureRequest[] = [];
+    const stdout = JSON.stringify({
+      number: 784,
+      title: "Complete Hush projections",
+      state: "OPEN",
+      author: { login: "yogeshprasad098" },
+      body: "Preserve every useful PR fact.",
+      url: "https://github.com/tyldra-org/falryn/pull/784",
+      mergeable: "MERGEABLE",
+      statusCheckRollup: [
+        { status: "COMPLETED", conclusion: "SUCCESS" },
+        { status: "COMPLETED", conclusion: "FAILURE" },
+      ],
+    });
+    const capture: ProcessCapturePort = {
+      async run(request) {
+        requests.push(request);
+        return {
+          ok: true,
+          value: {
+            ...report(request),
+            stdout: stream("stdout", stdout),
+          },
+        };
+      },
+    };
+    const tools = composeProductProcessTools({
+      generation: configurationGeneration.from(0),
+      capture,
+      workspaceCwd: "/work",
+    });
+
+    const outcome = await tools.runner.execute({
+      invocationId: invocationId.from("inv-gh-view"),
+      toolCallId: "call-gh-view",
+      toolName: "run_process",
+      capabilityId: capabilityId.from("builtin:workspace/run_process@1"),
+      version: 1,
+      effect: "mutation",
+      input: {
+        executable: "/opt/homebrew/bin/gh",
+        argv: ["pr", "view", "784"],
+        environment: { PATH: "/opt/homebrew/bin:/usr/bin" },
+      },
+      signal: new AbortController().signal,
+    });
+    expect(outcome.status).toBe("completed");
+    if (outcome.status !== "completed") {
+      return;
+    }
+    expect(requests).toHaveLength(1);
+    expect(requests[0]).toMatchObject({
+      argv: [
+        "pr",
+        "view",
+        "784",
+        "--json",
+        "number,title,state,author,body,url,mergeable,statusCheckRollup",
+      ],
+    });
+    expect(outcome.output.projection).toContain("checks 1/2 passed, 1 failed");
+    expect(outcome.output.projection).toContain("Preserve every useful PR fact.");
+    expect(outcome.output.hush).toMatchObject({
+      reducerId: "forge.github",
+      command: {
+        executable: "/opt/homebrew/bin/gh",
+        argv: ["pr", "view", "784"],
+      },
+    });
+  });
 });

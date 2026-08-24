@@ -65,6 +65,7 @@ export const VERSION_CONTROL_COMMANDS = [
     executables: ["gh"],
     examples: [
       "gh pr list",
+      "gh pr view 42",
       "gh issue list",
       "gh run list",
       "gh repo view",
