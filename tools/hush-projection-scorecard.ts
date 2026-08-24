@@ -18,7 +18,7 @@ import {
 import { HUSH_RTK_BASELINE } from "./hush-command-coverage.ts";
 import { type HushLsMeasurement, measureText } from "./hush-ls-scorecard.ts";
 
-export const HUSH_PROJECTION_CORPUS_VERSION = "hush-projections.v7";
+export const HUSH_PROJECTION_CORPUS_VERSION = "hush-projections.v8";
 
 export const HUSH_FIND_LISTING_PATHS = [
   "bounds.ts",
@@ -118,7 +118,7 @@ type ProjectionCase = Readonly<{
   argv: readonly string[];
   rtkArgv?: readonly string[];
   shellCommand?: string;
-  baseline?: "raw" | "rewrite";
+  baseline?: "raw" | "rewrite" | "rtk-log";
   acceptedExitCodes?: readonly number[];
   requiredMarkers: readonly string[];
   forbiddenMarkers?: readonly string[];
@@ -384,6 +384,23 @@ export const HUSH_PROJECTION_CASES = [
     argv: ["logs", "falryn-dev"],
     rtkArgv: ["docker", "logs", "falryn-dev"],
     requiredMarkers: ["service started", "req-736", "req-784"],
+  },
+  {
+    id: "log-journalctl",
+    projection: "log",
+    executable: "journalctl",
+    argv: ["-u", "falryn", "-n", "20"],
+    baseline: "rtk-log",
+    requiredMarkers: [
+      "Aug 24 10:00 falryn-host falryn[736]",
+      "00 [I] session started session=demo",
+      "01 [I] context engine ready reducers=82",
+      "02 [I] waiting for provider ×3",
+      "03 [W] reducer fallback command=unknown",
+      "04 [E] capture unavailable id=cap-42",
+      "05 [I] request complete tokens=219",
+    ],
+    forbiddenMarkers: ["Log Summary", "omitted", "…"],
   },
   {
     id: "curl-json",
@@ -702,13 +719,21 @@ function runBaseline(
     }
     return runCommand([executable, "-c", rewritten.stdout.trim()], cwd, fixtureBin);
   }
+  if (fixture.baseline === "rtk-log") {
+    return runCommand([rtk, "log"], cwd, fixtureBin, raw.stdout);
+  }
   if (fixture.rtkArgv === undefined) {
     throw new Error(`${fixture.id} requires RTK argv`);
   }
   return runCommand([rtk, ...fixture.rtkArgv], cwd, fixtureBin);
 }
 
-function runCommand(command: readonly string[], cwd: string, fixtureBin: string): CommandRun {
+function runCommand(
+  command: readonly string[],
+  cwd: string,
+  fixtureBin: string,
+  stdin?: string,
+): CommandRun {
   const result = Bun.spawnSync([...command], {
     cwd,
     env: {
@@ -719,6 +744,7 @@ function runCommand(command: readonly string[], cwd: string, fixtureBin: string)
       ...(process.env.HOME === undefined ? {} : { HOME: process.env.HOME }),
       ...(process.env.TMPDIR === undefined ? {} : { TMPDIR: process.env.TMPDIR }),
     },
+    stdin: stdin === undefined ? undefined : new TextEncoder().encode(stdin),
     stdout: "pipe",
     stderr: "pipe",
   });

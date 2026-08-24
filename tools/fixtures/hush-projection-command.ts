@@ -52,6 +52,17 @@ const outputs: Readonly<Record<string, () => string>> = {
       "found 0 vulnerabilities",
     ].join("\n"),
   docker: () => dockerOutput(args),
+  journalctl: () =>
+    [
+      "Aug 24 10:00:00 falryn-host falryn[736]: INFO session started session=demo",
+      "Aug 24 10:00:01 falryn-host falryn[736]: INFO context engine ready reducers=82",
+      "Aug 24 10:00:02 falryn-host falryn[736]: INFO waiting for provider",
+      "Aug 24 10:00:02 falryn-host falryn[736]: INFO waiting for provider",
+      "Aug 24 10:00:02 falryn-host falryn[736]: INFO waiting for provider",
+      "Aug 24 10:00:03 falryn-host falryn[736]: WARN reducer fallback command=unknown",
+      "Aug 24 10:00:04 falryn-host falryn[736]: ERROR capture unavailable id=cap-42",
+      "Aug 24 10:00:05 falryn-host falryn[736]: INFO request complete tokens=219",
+    ].join("\n"),
   curl: () =>
     JSON.stringify(
       {

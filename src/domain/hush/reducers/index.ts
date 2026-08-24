@@ -16,6 +16,7 @@ import { curlProjection } from "./http/curl.ts";
 import { wgetProjection } from "./http/wget.ts";
 import { jsonProjection } from "./json/projection.ts";
 import { listingProjection } from "./listing.ts";
+import { logProjection } from "./log/projection.ts";
 import { lsProjection } from "./ls/projection.ts";
 import { searchProjection } from "./search/projection.ts";
 import { semanticProjection } from "./semantic.ts";
@@ -90,7 +91,7 @@ export function specializedProjection(
     case "table":
       return tableProjection(capture, maxBytes, patterns);
     case "log":
-      return semanticProjection("log", capture, maxBytes, patterns);
+      return logProjection(capture, maxBytes, patterns);
     case "curl":
       return curlProjection(capture, maxBytes, patterns);
     case "wget":

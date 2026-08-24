@@ -36,13 +36,13 @@ export function semanticProjection(
   patterns: readonly string[],
 ): HushStreamProjection {
   return joinStreams(
-    projectStream(kind, "stdout", capture.stdout, maxBytes, patterns),
-    projectStream(kind, "stderr", capture.stderr, maxBytes, patterns),
+    semanticStreamProjection(kind, "stdout", capture.stdout, maxBytes, patterns),
+    semanticStreamProjection(kind, "stderr", capture.stderr, maxBytes, patterns),
     maxBytes,
   );
 }
 
-function projectStream(
+export function semanticStreamProjection(
   kind: SemanticProjectionKind,
   stream: ProcessStreamName,
   capture: ProcessStreamCapture,

@@ -395,6 +395,56 @@ describe("hush reduction", () => {
     expect(reduced.value.omissions).toEqual([]);
   });
 
+  test("journalctl shares stable fields while retaining every event fact", () => {
+    const output = [
+      "Aug 24 10:00:00 falryn-host falryn[736]: INFO session started session=demo",
+      "Aug 24 10:00:01 falryn-host falryn[736]: INFO context engine ready reducers=82",
+      "Aug 24 10:00:02 falryn-host falryn[736]: INFO waiting for provider",
+      "Aug 24 10:00:02 falryn-host falryn[736]: INFO waiting for provider",
+      "Aug 24 10:00:02 falryn-host falryn[736]: INFO waiting for provider",
+      "Aug 24 10:00:03 falryn-host falryn[736]: WARN reducer fallback command=unknown",
+      "Aug 24 10:00:04 falryn-host falryn[736]: ERROR capture unavailable id=cap-42",
+      "Aug 24 10:00:05 falryn-host falryn[736]: INFO request complete tokens=219",
+      "",
+    ].join("\n");
+    const reduced = reduceHush({
+      command: argv("/usr/bin/journalctl", ["-u", "falryn", "-n", "20"]),
+      capture: report(output),
+    });
+    expect(reduced.ok).toBe(true);
+    if (!reduced.ok) {
+      throw new Error("expected a hush result");
+    }
+    expect(reduced.value.reducerId).toBe("transform.log");
+    expect(reduced.value.strategy).toBe("specialized");
+    expect(reduced.value.reducedText).toContain("Aug 24 10:00 falryn-host falryn[736]");
+    expect(reduced.value.reducedText).toContain("00 [I] session started session=demo");
+    expect(reduced.value.reducedText).toContain("02 [I] waiting for provider ×3");
+    expect(reduced.value.reducedText).toContain("03 [W] reducer fallback command=unknown");
+    expect(reduced.value.reducedText).toContain("04 [E] capture unavailable id=cap-42");
+    expect(reduced.value.reducedText).toContain("05 [I] request complete tokens=219");
+    expect(reduced.value.truncated).toBe(false);
+    expect(reduced.value.omissions).toEqual([]);
+    expect(encoder.encode(reduced.value.reducedText).byteLength).toBeLessThan(
+      encoder.encode(output).byteLength,
+    );
+  });
+
+  test("journal log projection keeps an unrecognized tail exact", () => {
+    const output = "function example() {\n  return 736;\n}\n";
+    const reduced = reduceHush({
+      command: argv("/usr/bin/tail", ["-n", "3", "src/example.ts"]),
+      capture: report(output),
+    });
+    expect(reduced.ok).toBe(true);
+    if (!reduced.ok) {
+      throw new Error("expected a hush result");
+    }
+    expect(reduced.value.reducerId).toBe("files.tail");
+    expect(reduced.value.reducedText).toBe(output);
+    expect(reduced.value.omissions).toEqual([]);
+  });
+
   test("minifies structured JSON without changing its values", () => {
     const document = {
       account: "falryn",

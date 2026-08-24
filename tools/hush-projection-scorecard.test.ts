@@ -8,7 +8,7 @@ import {
 
 describe("Hush projection scorecard corpus", () => {
   test("keeps each supported Git mutation as a separate RTK comparison", () => {
-    expect(HUSH_PROJECTION_CORPUS_VERSION).toBe("hush-projections.v7");
+    expect(HUSH_PROJECTION_CORPUS_VERSION).toBe("hush-projections.v8");
     expect(
       HUSH_PROJECTION_CASES.filter((entry) => entry.projection === "git-mutation").map(
         (entry) => entry.id,
@@ -36,6 +36,15 @@ describe("Hush projection scorecard corpus", () => {
     expect(
       HUSH_PROJECTION_CASES.filter((entry) => entry.executable === "gh").map((entry) => entry.id),
     ).toEqual(["gh-pr-list", "gh-pr-view", "gh-issue-list", "gh-run-list"]);
+  });
+
+  test("compares journalctl with RTK log while requiring every event fact", () => {
+    const logs = HUSH_PROJECTION_CASES.filter((entry) => entry.projection === "log");
+    expect(logs.map((entry) => entry.id)).toEqual(["log-docker", "log-journalctl"]);
+    const journal = HUSH_PROJECTION_CASES.find((entry) => entry.id === "log-journalctl");
+    expect(journal?.baseline).toBe("rtk-log");
+    expect(journal?.requiredMarkers).toHaveLength(7);
+    expect(journal?.forbiddenMarkers).toContain("omitted");
   });
 
   test("covers ripgrep, sed, pipelines, and and-chains independently", () => {
