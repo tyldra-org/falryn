@@ -1,18 +1,27 @@
 import { describe, expect, test } from "bun:test";
 
 import {
+  HUSH_FIND_LISTING_PATHS,
   HUSH_PROJECTION_CASES,
   HUSH_PROJECTION_CORPUS_VERSION,
 } from "./hush-projection-scorecard.ts";
 
 describe("Hush projection scorecard corpus", () => {
   test("keeps each supported Git mutation as a separate RTK comparison", () => {
-    expect(HUSH_PROJECTION_CORPUS_VERSION).toBe("hush-projections.v5");
+    expect(HUSH_PROJECTION_CORPUS_VERSION).toBe("hush-projections.v6");
     expect(
       HUSH_PROJECTION_CASES.filter((entry) => entry.projection === "git-mutation").map(
         (entry) => entry.id,
       ),
     ).toEqual(["git-add", "git-commit", "git-push", "git-pull"]);
+  });
+
+  test("locks the large find listing that exposed RTK path omission", () => {
+    const listing = HUSH_PROJECTION_CASES[0];
+    expect(listing.id).toBe("listing-find");
+    expect(HUSH_FIND_LISTING_PATHS).toHaveLength(67);
+    expect(listing.requiredMarkers).toHaveLength(18);
+    expect(listing.forbiddenMarkers).toContain("+17 more");
   });
 
   test("keeps each supported GitHub read as a separate RTK comparison", () => {

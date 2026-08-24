@@ -2,7 +2,7 @@
 
 import { chmod, copyFile, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { prepareHushCaptureRequest } from "../src/application/hush-capture-command.ts";
 import type { HushProjectionKind } from "../src/domain/hush/catalog/index.ts";
 import { classifyCommand } from "../src/domain/hush/classification.ts";
@@ -18,7 +18,98 @@ import {
 import { HUSH_RTK_BASELINE } from "./hush-command-coverage.ts";
 import { type HushLsMeasurement, measureText } from "./hush-ls-scorecard.ts";
 
-export const HUSH_PROJECTION_CORPUS_VERSION = "hush-projections.v5";
+export const HUSH_PROJECTION_CORPUS_VERSION = "hush-projections.v6";
+
+export const HUSH_FIND_LISTING_PATHS = [
+  "bounds.ts",
+  "catalog/contracts.ts",
+  "catalog/files.ts",
+  "catalog/index.ts",
+  "catalog/javascript.ts",
+  "catalog/languages.ts",
+  "catalog/operations.ts",
+  "catalog/version-control.ts",
+  "classification.ts",
+  "command-shape.ts",
+  "contracts.ts",
+  "git-command.test.ts",
+  "git-command.ts",
+  "github-command.ts",
+  "reducers/compound/projection.test.ts",
+  "reducers/compound/projection.ts",
+  "reducers/forge/github/format.test.ts",
+  "reducers/forge/github/issue-list.ts",
+  "reducers/forge/github/json.ts",
+  "reducers/forge/github/pr-list.ts",
+  "reducers/forge/github/pr-view.ts",
+  "reducers/forge/github/projection.ts",
+  "reducers/forge/github/run-list.ts",
+  "reducers/forge/projection.test.ts",
+  "reducers/forge/projection.ts",
+  "reducers/git/diff.ts",
+  "reducers/git/index.ts",
+  "reducers/git/mutation.ts",
+  "reducers/git/mutation/add.ts",
+  "reducers/git/mutation/commit.ts",
+  "reducers/git/mutation/pull.ts",
+  "reducers/git/mutation/push.ts",
+  "reducers/git/mutation/shared.ts",
+  "reducers/git/paths.ts",
+  "reducers/git/status.ts",
+  "reducers/http/curl.ts",
+  "reducers/http/progress.ts",
+  "reducers/http/wget.ts",
+  "reducers/index.ts",
+  "reducers/json/format.test.ts",
+  "reducers/json/format.ts",
+  "reducers/json/projection.ts",
+  "reducers/listing.ts",
+  "reducers/listing/format.test.ts",
+  "reducers/listing/format.ts",
+  "reducers/lossless-text.ts",
+  "reducers/ls/block-format.ts",
+  "reducers/ls/format.test.ts",
+  "reducers/ls/long-format.ts",
+  "reducers/ls/projection.ts",
+  "reducers/search/format.test.ts",
+  "reducers/search/format.ts",
+  "reducers/search/projection.ts",
+  "reducers/semantic.ts",
+  "reducers/structured/projection.ts",
+  "reducers/table/format.ts",
+  "reducers/table/projection.ts",
+  "reducers/transform/projection.ts",
+  "reducers/tree/format.test.ts",
+  "reducers/tree/format.ts",
+  "reducers/tree/parser.ts",
+  "reducers/tree/policy.ts",
+  "reducers/tree/projection.ts",
+  "reducers/tree/render.ts",
+  "shell-command.test.ts",
+  "shell-command.ts",
+  "text-format.ts",
+] as const;
+
+const HUSH_FIND_LISTING_MARKERS = [
+  "67 files (*.ts)",
+  "./ bounds classification command-shape contracts git-command git-command.test github-command shell-command shell-command.test text-format",
+  "catalog/ contracts files index javascript languages operations version-control",
+  "reducers/ index listing lossless-text semantic",
+  " compound/ projection projection.test",
+  " forge/ projection projection.test",
+  "  github/ format.test issue-list json pr-list pr-view projection run-list",
+  " git/ diff index mutation paths status",
+  "  mutation/ add commit pull push shared",
+  " http/ curl progress wget",
+  " json/ format format.test projection",
+  " listing/ format format.test",
+  " ls/ block-format format.test long-format projection",
+  " search/ format format.test projection",
+  " structured/ projection",
+  " table/ format projection",
+  " transform/ projection",
+  " tree/ format format.test parser policy projection render",
+] as const;
 
 type ProjectionCase = Readonly<{
   id: string;
@@ -37,9 +128,10 @@ export const HUSH_PROJECTION_CASES = [
     id: "listing-find",
     projection: "listing",
     executable: "find",
-    argv: ["corpus", "-type", "f"],
-    rtkArgv: ["find", "corpus", "-type", "f"],
-    requiredMarkers: ["src/main.ts", "src/domain/hush.ts", "docs/README.md"],
+    argv: ["corpus/src/domain/hush", "-type", "f"],
+    rtkArgv: ["find", "corpus/src/domain/hush", "-type", "f"],
+    requiredMarkers: HUSH_FIND_LISTING_MARKERS,
+    forbiddenMarkers: ["+17 more", "omitted", "…"],
   },
   {
     id: "read-cat",
@@ -472,15 +564,13 @@ async function createScorecard(): Promise<HushProjectionScorecard> {
 }
 
 async function createListingCorpus(root: string): Promise<void> {
-  await Promise.all([
-    mkdir(join(root, "corpus", "src", "domain"), { recursive: true }),
-    mkdir(join(root, "corpus", "docs"), { recursive: true }),
-  ]);
-  await Promise.all([
-    writeFile(join(root, "corpus", "src", "main.ts"), "export {};\n"),
-    writeFile(join(root, "corpus", "src", "domain", "hush.ts"), "export {};\n"),
-    writeFile(join(root, "corpus", "docs", "README.md"), "# Corpus\n"),
-  ]);
+  await Promise.all(
+    HUSH_FIND_LISTING_PATHS.map(async (path) => {
+      const target = join(root, "corpus", "src", "domain", "hush", path);
+      await mkdir(dirname(target), { recursive: true });
+      await writeFile(target, "export {};\n");
+    }),
+  );
 }
 
 export function formatHushProjectionScorecard(scorecard: HushProjectionScorecard): string {
