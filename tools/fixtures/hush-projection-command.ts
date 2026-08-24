@@ -363,13 +363,20 @@ function gitOutput(argv: readonly string[]): string {
         "+export const reducer = 'git.diff';",
       ].join("\n");
     case "log":
-      return [
-        "commit 1111111111111111111111111111111111111111",
-        "Author: Falryn <falryn@example.com>",
-        "Date:   Sat Aug 23 12:00:00 2026 -0700",
-        "",
-        "    Preserve complete context",
-      ].join("\n");
+      return argv.some((argument) => argument.startsWith("--pretty=format:%h "))
+        ? rtkGitLogOutput()
+        : nativeGitLogOutput();
+    case "show":
+      if (argv.includes("--no-patch")) {
+        return "1111111 Preserve complete context (1 day ago) <Falryn>";
+      }
+      if (argv.includes("--stat") && argv.includes("--pretty=format:")) {
+        return gitDiffStatOutput();
+      }
+      if (argv.includes("--pretty=format:")) {
+        return completeGitDiffOutput();
+      }
+      return `${nativeGitLogOutput().split("\n\ncommit ", 1)[0] ?? ""}\n\n${completeGitDiffOutput()}`;
     case "add":
       return "";
     case "commit":
@@ -396,6 +403,74 @@ function gitOutput(argv: readonly string[]): string {
     default:
       return "";
   }
+}
+
+function nativeGitLogOutput(): string {
+  return [
+    "commit 1111111111111111111111111111111111111111",
+    "Author: Falryn <falryn@example.com>",
+    "Date:   Sat Aug 23 12:00:00 2026 -0700",
+    "",
+    "    Preserve complete context",
+    "",
+    "    Keep every requested commit.",
+    "",
+    "commit 2222222222222222222222222222222222222222",
+    "Author: Context Agent <context@example.com>",
+    "Date:   Mon Aug 24 06:34:25 2026 -0700",
+    "",
+    "    Keep every message fact",
+    "",
+    "commit 3333333333333333333333333333333333333333",
+    "Author: Review Agent <review@example.com>",
+    "Date:   Mon Aug 24 07:00:00 2026 -0700",
+    "",
+    "    Keep the final commit",
+  ].join("\n");
+}
+
+function rtkGitLogOutput(): string {
+  return [
+    "1111111 Preserve complete context (1 day ago) <Falryn>",
+    "Keep every requested commit.",
+    "---END---",
+    "2222222 Keep every message fact (2 hours ago) <Context Agent>",
+    "---END---",
+    "3333333 Keep the final commit (1 hour ago) <Review Agent>",
+    "---END---",
+  ].join("\n");
+}
+
+function completeGitDiffOutput(): string {
+  return [
+    "diff --git a/src/a.ts b/src/a.ts",
+    "index 1111111..2222222 100644",
+    "--- a/src/a.ts",
+    "+++ b/src/a.ts",
+    "@@ -1,4 +1,5 @@ export function configure() {",
+    " export function configure() {",
+    "-  const mode = 'sample';",
+    "+  const mode = 'complete';",
+    "   const marker = 736;",
+    "+  const exact = true;",
+    "   return mode;",
+    "diff --git a/src/new.ts b/src/new.ts",
+    "new file mode 100644",
+    "index 0000000..3333333",
+    "--- /dev/null",
+    "+++ b/src/new.ts",
+    "@@ -0,0 +1,2 @@",
+    "+export const complete = true;",
+    "+export const reducer = 'git.show';",
+  ].join("\n");
+}
+
+function gitDiffStatOutput(): string {
+  return [
+    " src/a.ts   | 3 ++-",
+    " src/new.ts | 2 ++",
+    " 2 files changed, 4 insertions(+), 1 deletion(-)",
+  ].join("\n");
 }
 
 function gitSubcommand(argv: readonly string[]): string {

@@ -251,6 +251,134 @@ describe("hush reduction", () => {
     expect(reduced.value.reducerId).toBe("safe.passthrough");
   });
 
+  test("git log keeps every requested commit and message fact in compact native form", () => {
+    const output = [
+      "commit 1111111111111111111111111111111111111111",
+      "Author: Falryn <falryn@example.com>",
+      "Date:   Sat Aug 23 12:00:00 2026 -0700",
+      "",
+      "    Preserve complete context",
+      "",
+      "    Keep the full body.",
+      "",
+      "commit 2222222222222222222222222222222222222222",
+      "Author: Context Agent <context@example.com>",
+      "Date:   Mon Aug 24 06:34:25 2026 -0700",
+      "",
+      "    Keep the final commit",
+      "",
+    ].join("\n");
+    const reduced = reduceHush({
+      command: argv("/usr/bin/git", ["log", "-2"]),
+      capture: report(output, { artifact: true }),
+    });
+    expect(reduced.ok).toBe(true);
+    if (!reduced.ok) {
+      throw new Error("expected a Hush result");
+    }
+    expect(reduced.value.reducerId).toBe("git.log");
+    expect(reduced.value.strategy).toBe("specialized");
+    expect(reduced.value.reducedText).toBe(
+      [
+        "11111111 2026-08-23 Falryn | Preserve complete context",
+        "",
+        "  Keep the full body.",
+        "22222222 2026-08-24 Context Agent | Keep the final commit",
+        "",
+      ].join("\n"),
+    );
+    expect(reduced.value.omissions).toEqual([]);
+    expect(reduced.value.expansion.stdoutArtifact).toEqual(artifactId.from("cap-1.stdout"));
+  });
+
+  test("git show compacts metadata and keeps every validated patch line", () => {
+    const output = [
+      "commit 1111111111111111111111111111111111111111",
+      "Author: Falryn <falryn@example.com>",
+      "Date:   Sat Aug 23 12:00:00 2026 -0700",
+      "",
+      "    Preserve complete context",
+      "",
+      "diff --git a/src/a.ts b/src/a.ts",
+      "index 1111111..2222222 100644",
+      "--- a/src/a.ts",
+      "+++ b/src/a.ts",
+      "@@ -1,3 +1,4 @@ project",
+      " export function project() {",
+      "-  return 'sample';",
+      "+  const complete = true;",
+      "+  return complete ? 'hush' : 'sample';",
+      " }",
+      "",
+    ].join("\n");
+    const reduced = reduceHush({
+      command: argv("/usr/bin/git", ["show", "HEAD", "--", "src/a.ts"]),
+      capture: report(output),
+    });
+    expect(reduced.ok).toBe(true);
+    if (!reduced.ok) {
+      throw new Error("expected a Hush result");
+    }
+    expect(reduced.value.reducerId).toBe("git.log");
+    expect(reduced.value.reducedText).toContain(
+      "11111111 2026-08-23 Falryn | Preserve complete context\nsrc/a.ts:",
+    );
+    expect(reduced.value.reducedText).toContain("1111111..2222222 100644");
+    expect(reduced.value.reducedText).toContain("@@ -1,3 +1,4 @@ project");
+    expect(reduced.value.reducedText).toContain(" export function project() {");
+    expect(reduced.value.reducedText).toContain("+  const complete = true;");
+    expect(reduced.value.reducedText).not.toContain("--- a/src/a.ts");
+    expect(reduced.value.reducedText).not.toContain("+++ b/src/a.ts");
+    expect(reduced.value.omissions).toEqual([]);
+  });
+
+  test("git log and show keep custom, failed, partial, and caller-pattern output exact", () => {
+    const output = [
+      "commit 1111111111111111111111111111111111111111",
+      "Author: Falryn <falryn@example.com>",
+      "Date:   Sat Aug 23 12:00:00 2026 -0700",
+      "",
+      "    Preserve complete context",
+      "",
+    ].join("\n");
+    const cases = [
+      {
+        command: argv("git", ["log", "-1", "--format=fuller"]),
+        capture: report(output),
+        patterns: [] as readonly string[],
+      },
+      {
+        command: argv("git", ["log", "-1"]),
+        capture: report(output, { exitCode: 128, stderr: "fatal: bad revision\n" }),
+        patterns: [] as readonly string[],
+      },
+      {
+        command: argv("git", ["show", "HEAD"]),
+        capture: report(output, { truncated: true }),
+        patterns: [] as readonly string[],
+      },
+      {
+        command: argv("git", ["log", "-1"]),
+        capture: report(output),
+        patterns: ["Preserve complete context"],
+      },
+    ];
+
+    for (const fixture of cases) {
+      const reduced = reduceHush({
+        command: fixture.command,
+        capture: fixture.capture,
+        importantPatterns: fixture.patterns,
+      });
+      expect(reduced.ok).toBe(true);
+      if (!reduced.ok) {
+        throw new Error("expected a Hush result");
+      }
+      expect(reduced.value.reducedText).toContain(output);
+      expect(reduced.value.reducedText).not.toContain("11111111 2026-08-23 Falryn |");
+    }
+  });
+
   test("git diff removes only validated duplicate paths while retaining every hunk line", () => {
     const diff = [
       "diff --git a/src/hush.ts b/src/hush.ts",
@@ -283,7 +411,7 @@ describe("hush reduction", () => {
     expect(reduced.value.reducerId).toBe("git.diff");
     expect(reduced.value.reducedText).toContain("src/hush.ts:");
     expect(reduced.value.reducedText).toContain("src/other.ts:");
-    expect(reduced.value.reducedText).toContain("index 1111111..2222222 100644");
+    expect(reduced.value.reducedText).toContain("1111111..2222222 100644");
     expect(reduced.value.reducedText).toContain("@@ -1,3 +1,4 @@ reduceHush");
     expect(reduced.value.reducedText).toContain(" export function reduceHush() {");
     expect(reduced.value.reducedText).toContain("-also");

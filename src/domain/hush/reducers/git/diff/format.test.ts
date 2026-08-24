@@ -30,7 +30,7 @@ describe("Git unified diff format", () => {
     expect(formatGitUnifiedDiff(COMPLETE_DIFF)).toBe(
       [
         "src/a.ts:",
-        "index 1111111..2222222 100644",
+        "1111111..2222222 100644",
         "@@ -1,4 +1,5 @@ export function configure() {",
         " export function configure() {",
         "-  const mode = 'sample';",
@@ -40,8 +40,8 @@ describe("Git unified diff format", () => {
         "   return mode;",
         "",
         "src/new.ts:",
-        "new file mode 100644",
-        "index 0000000..3333333",
+        "new 100644",
+        "0000000..3333333",
         "@@ -0,0 +1,2 @@",
         "+export const complete = true;",
         "+export const reducer = 'git.diff';",

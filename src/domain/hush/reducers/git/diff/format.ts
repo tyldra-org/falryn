@@ -134,9 +134,24 @@ function formatFileSection(
   }
 
   if (hunks === 0) {
-    return !hasPatchHeaders && hasSemanticMetadata(metadata) ? metadata : null;
+    return !hasPatchHeaders && hasSemanticMetadata(metadata)
+      ? metadata.map(formatMetadataLine)
+      : null;
   }
-  return hasPatchHeaders ? [...metadata, ...body] : null;
+  return hasPatchHeaders ? [...metadata.map(formatMetadataLine), ...body] : null;
+}
+
+function formatMetadataLine(line: string): string {
+  if (INDEX_LINE.test(line)) {
+    return line.slice("index ".length);
+  }
+  if (line.startsWith("new file mode ")) {
+    return `new ${line.slice("new file mode ".length)}`;
+  }
+  if (line.startsWith("deleted file mode ")) {
+    return `deleted ${line.slice("deleted file mode ".length)}`;
+  }
+  return line;
 }
 
 function isMetadataLine(line: string, paths: GitDiffPaths): boolean {

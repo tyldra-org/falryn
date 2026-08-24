@@ -18,7 +18,7 @@ import {
 import { HUSH_RTK_BASELINE } from "./hush-command-coverage.ts";
 import { type HushLsMeasurement, measureText } from "./hush-ls-scorecard.ts";
 
-export const HUSH_PROJECTION_CORPUS_VERSION = "hush-projections.v14";
+export const HUSH_PROJECTION_CORPUS_VERSION = "hush-projections.v15";
 
 export const HUSH_FIND_LISTING_PATHS = [
   "bounds.ts",
@@ -352,7 +352,7 @@ export const HUSH_PROJECTION_CASES = [
     rtkArgv: ["git", "diff"],
     requiredMarkers: [
       "src/a.ts:",
-      "index 1111111..2222222 100644",
+      "1111111..2222222 100644",
       "@@ -1,4 +1,5 @@ export function configure()",
       " export function configure()",
       "mode = 'sample'",
@@ -361,8 +361,8 @@ export const HUSH_PROJECTION_CASES = [
       "const exact = true",
       "return mode",
       "src/new.ts:",
-      "new file mode 100644",
-      "index 0000000..3333333",
+      "new 100644",
+      "0000000..3333333",
       "export const complete = true",
       "reducer = 'git.diff'",
     ],
@@ -429,9 +429,41 @@ export const HUSH_PROJECTION_CASES = [
     id: "git-log",
     projection: "git-log",
     executable: "git",
-    argv: ["log", "-1"],
-    rtkArgv: ["git", "log", "-1"],
-    requiredMarkers: ["1111111", "Preserve complete context"],
+    argv: ["log", "-3"],
+    rtkArgv: ["git", "log", "-3"],
+    requiredMarkers: [
+      "11111111 2026-08-23 Falryn | Preserve complete context",
+      "Keep every requested commit.",
+      "22222222 2026-08-24 Context Agent | Keep every message fact",
+      "33333333 2026-08-24 Review Agent | Keep the final commit",
+    ],
+    forbiddenMarkers: ["Author:", "Date:", "commit 1111111", "omitted", "…"],
+  },
+  {
+    id: "git-show",
+    projection: "git-log",
+    executable: "git",
+    argv: ["show", "HEAD", "--", "src/a.ts", "src/new.ts"],
+    rtkArgv: ["git", "show", "HEAD", "--", "src/a.ts", "src/new.ts"],
+    requiredMarkers: [
+      "11111111 2026-08-23 Falryn | Preserve complete context",
+      "Keep every requested commit.",
+      "src/a.ts:",
+      "1111111..2222222 100644",
+      "@@ -1,4 +1,5 @@ export function configure()",
+      " export function configure()",
+      "mode = 'sample'",
+      "mode = 'complete'",
+      "const marker = 736",
+      "const exact = true",
+      "return mode",
+      "src/new.ts:",
+      "new 100644",
+      "0000000..3333333",
+      "export const complete = true",
+      "export const reducer = 'git.show'",
+    ],
+    forbiddenMarkers: ["Author:", "Date:", "--- a/", "+++ b/", "omitted", "…"],
   },
   {
     id: "git-add",

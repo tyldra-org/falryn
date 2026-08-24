@@ -7,6 +7,7 @@ import { describe, expect, test } from "bun:test";
 import {
   artifactId,
   duration,
+  HUSH_REDUCER_VERSION,
   instant,
   MAX_COMMAND_OUTPUT_BYTES,
   MAX_HUSH_REDUCED_BYTES,
@@ -479,7 +480,7 @@ describe("createHushIntegrator", () => {
     }
     expect(transformed.value.fidelity).toBe("deterministic-transform");
     expect(transformed.value.exactSource).toBeNull();
-    expect(transformed.value.lineage).toEqual(["hush.v16", "git.diff"]);
+    expect(transformed.value.lineage).toEqual([HUSH_REDUCER_VERSION, "git.diff"]);
     expect(transformed.value.expansion).not.toBeNull();
     expect(transformed.value.payload.kind).toBe("inline");
     if (transformed.value.payload.kind === "inline") {

@@ -8,7 +8,7 @@ import {
 
 describe("Hush projection scorecard corpus", () => {
   test("keeps each supported Git mutation as a separate RTK comparison", () => {
-    expect(HUSH_PROJECTION_CORPUS_VERSION).toBe("hush-projections.v14");
+    expect(HUSH_PROJECTION_CORPUS_VERSION).toBe("hush-projections.v15");
     expect(
       HUSH_PROJECTION_CASES.filter((entry) => entry.projection === "git-mutation").map(
         (entry) => entry.id,
@@ -36,6 +36,21 @@ describe("Hush projection scorecard corpus", () => {
     const external = HUSH_PROJECTION_CASES.find((entry) => entry.id === "external-diff");
     expect(external?.acceptedExitCodes).toEqual([1]);
     expect(external?.forbiddenMarkers).toContain("omitted");
+  });
+
+  test("compares uncapped Git log and complete Git show projections independently", () => {
+    const history = HUSH_PROJECTION_CASES.filter((entry) => entry.projection === "git-log");
+    expect(history.map((entry) => entry.id)).toEqual(["git-log", "git-show"]);
+    const log = HUSH_PROJECTION_CASES.find((entry) => entry.id === "git-log");
+    expect(log?.argv).toContain("-3");
+    expect(log?.requiredMarkers).toContain(
+      "33333333 2026-08-24 Review Agent | Keep the final commit",
+    );
+    expect(log?.forbiddenMarkers).toContain("omitted");
+    const show = HUSH_PROJECTION_CASES.find((entry) => entry.id === "git-show");
+    expect(show?.requiredMarkers).toHaveLength(16);
+    expect(show?.requiredMarkers).toContain("export const reducer = 'git.show'");
+    expect(show?.forbiddenMarkers).toContain("--- a/");
   });
 
   test("locks the large find listing that exposed RTK path omission", () => {
