@@ -18,7 +18,7 @@ import {
 import { HUSH_RTK_BASELINE } from "./hush-command-coverage.ts";
 import { type HushLsMeasurement, measureText } from "./hush-ls-scorecard.ts";
 
-export const HUSH_PROJECTION_CORPUS_VERSION = "hush-projections.v9";
+export const HUSH_PROJECTION_CORPUS_VERSION = "hush-projections.v11";
 
 export const HUSH_FIND_LISTING_PATHS = [
   "bounds.ts",
@@ -156,6 +156,33 @@ export const HUSH_PROJECTION_CASES = [
       "owner-private",
       "3000",
     ],
+  },
+  {
+    id: "data-psql-table",
+    projection: "structured",
+    executable: "psql",
+    argv: ["-c", "select id, task, status, token_savings from work_items order by id"],
+    rtkArgv: ["psql", "-c", "select id, task, status, token_savings from work_items order by id"],
+    requiredMarkers: [
+      "id\ttask\tstatus\ttoken_savings",
+      "1\tOptimize nested JSON\tdone\t32",
+      "2\tPreserve database rows\tactive\t0",
+      "3\tVerify model context\tpending\t18",
+    ],
+    forbiddenMarkers: ["----+", "(3 rows)", "omitted", "…"],
+  },
+  {
+    id: "data-psql-expanded",
+    projection: "structured",
+    executable: "psql",
+    argv: ["-x", "-c", "select id, task, status from work_items order by id"],
+    rtkArgv: ["psql", "-x", "-c", "select id, task, status from work_items order by id"],
+    requiredMarkers: [
+      "record\tid\ttask\tstatus",
+      "1\t101\tInvestigate latency\tactive",
+      "2\t102\tVerify recovery\tdone",
+    ],
+    forbiddenMarkers: ["-[ RECORD", "(2 rows)", "omitted", "…"],
   },
   {
     id: "search-rg",

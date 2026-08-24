@@ -502,6 +502,65 @@ describe("hush reduction", () => {
     expect(reduced.value.omissions).toEqual([]);
   });
 
+  test("psql retains every cell while removing validated table presentation", () => {
+    const output = [
+      " id | task                   | status  | token_savings",
+      "----+------------------------+---------+--------------",
+      "  1 | Optimize nested JSON   | done    |            32",
+      "  2 | Preserve database rows | active  |             0",
+      "  3 | Verify model context   | pending |            18",
+      "(3 rows)",
+      "",
+    ].join("\n");
+    const reduced = reduceHush({
+      command: argv("/opt/homebrew/bin/psql", ["-c", "select * from work_items"]),
+      capture: report(output),
+    });
+    expect(reduced.ok).toBe(true);
+    if (!reduced.ok) {
+      throw new Error("expected a hush result");
+    }
+    expect(reduced.value.reducerId).toBe("data.command");
+    expect(reduced.value.strategy).toBe("specialized");
+    expect(reduced.value.reducedText).toBe(
+      [
+        "id\ttask\tstatus\ttoken_savings",
+        "1\tOptimize nested JSON\tdone\t32",
+        "2\tPreserve database rows\tactive\t0",
+        "3\tVerify model context\tpending\t18",
+        "",
+      ].join("\n"),
+    );
+    expect(reduced.value.truncated).toBe(false);
+    expect(reduced.value.omissions).toEqual([]);
+  });
+
+  test("psql keeps failures and malformed result shapes exact", () => {
+    const malformed = " id | task\n----+-----\n  1 | one\n(2 rows)\n";
+    const malformedResult = reduceHush({
+      command: argv("psql", ["-c", "select * from work_items"]),
+      capture: report(malformed),
+    });
+    expect(malformedResult.ok).toBe(true);
+    if (!malformedResult.ok) {
+      throw new Error("expected a hush result");
+    }
+    expect(malformedResult.value.reducedText).toBe(malformed);
+    expect(malformedResult.value.strategy).toBe("passthrough");
+
+    const failure = "psql: error: connection to server failed\n";
+    const failedResult = reduceHush({
+      command: argv("psql", ["-c", "select 1"]),
+      capture: report("", { stderr: failure, exitCode: 2 }),
+    });
+    expect(failedResult.ok).toBe(true);
+    if (!failedResult.ok) {
+      throw new Error("expected a hush result");
+    }
+    expect(failedResult.value.reducedText).toBe(`stderr:\n${failure}`);
+    expect(failedResult.value.omissions).toEqual([]);
+  });
+
   test("minifies structured JSON without changing its values", () => {
     const document = {
       account: "falryn",

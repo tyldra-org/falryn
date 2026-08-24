@@ -8,7 +8,7 @@ import {
 
 describe("Hush projection scorecard corpus", () => {
   test("keeps each supported Git mutation as a separate RTK comparison", () => {
-    expect(HUSH_PROJECTION_CORPUS_VERSION).toBe("hush-projections.v9");
+    expect(HUSH_PROJECTION_CORPUS_VERSION).toBe("hush-projections.v11");
     expect(
       HUSH_PROJECTION_CASES.filter((entry) => entry.projection === "git-mutation").map(
         (entry) => entry.id,
@@ -52,6 +52,14 @@ describe("Hush projection scorecard corpus", () => {
     expect(counts.map((entry) => entry.id)).toEqual(["count-wc-single", "count-wc-multi"]);
     expect(counts.every((entry) => entry.requiredMarkers.length >= 3)).toBe(true);
     expect(counts.every((entry) => entry.forbiddenMarkers?.includes("omitted"))).toBe(true);
+  });
+
+  test("compares complete PostgreSQL tables through the pinned RTK reducer", () => {
+    const psql = HUSH_PROJECTION_CASES.filter((entry) => entry.executable === "psql");
+    expect(psql.map((entry) => entry.id)).toEqual(["data-psql-table", "data-psql-expanded"]);
+    expect(psql.every((entry) => entry.projection === "structured")).toBe(true);
+    expect(psql.every((entry) => entry.rtkArgv?.[0] === "psql")).toBe(true);
+    expect(psql.every((entry) => entry.forbiddenMarkers?.includes("omitted"))).toBe(true);
   });
 
   test("covers ripgrep, sed, pipelines, and and-chains independently", () => {

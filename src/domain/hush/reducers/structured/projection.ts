@@ -2,6 +2,7 @@ import type { ProcessCaptureReport } from "../../../process-capture.ts";
 import { boundStream, boundText, joinStreams } from "../../bounds.ts";
 import type { HushStreamProjection } from "../../contracts.ts";
 import { semanticProjection } from "../semantic.ts";
+import { psqlProjection } from "./psql/projection.ts";
 
 export function structuredProjection(
   capture: ProcessCaptureReport,
@@ -10,6 +11,9 @@ export function structuredProjection(
   commandTokens: readonly string[],
 ): HushStreamProjection {
   const executable = commandTokens[0]?.split(/[\\/]/u).at(-1);
+  if (executable === "psql") {
+    return psqlProjection(capture, maxBytes, patterns);
+  }
   const identity =
     executable === "aws" && patterns.length === 0 && capture.stdout.inlineText !== null
       ? formatAwsIdentity(capture.stdout.inlineText)

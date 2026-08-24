@@ -53,6 +53,7 @@ const outputs: Readonly<Record<string, () => string>> = {
     ].join("\n"),
   docker: () => dockerOutput(args),
   wc: () => wcOutput(args),
+  psql: () => psqlOutput(args),
   journalctl: () =>
     [
       "Aug 24 10:00:00 falryn-host falryn[736]: INFO session started session=demo",
@@ -118,6 +119,30 @@ function wcOutput(argv: readonly string[]): string {
     ].join("\n");
   }
   throw new Error(`unsupported wc fixture arguments: ${argv.join(" ")}`);
+}
+
+function psqlOutput(argv: readonly string[]): string {
+  if (argv.includes("-x") || argv.includes("--expanded")) {
+    return [
+      "-[ RECORD 1 ]----------------",
+      "id     | 101",
+      "task   | Investigate latency",
+      "status | active",
+      "-[ RECORD 2 ]----------------",
+      "id     | 102",
+      "task   | Verify recovery",
+      "status | done",
+      "(2 rows)",
+    ].join("\n");
+  }
+  return [
+    " id | task                   | status  | token_savings",
+    "----+------------------------+---------+--------------",
+    "  1 | Optimize nested JSON   | done    |            32",
+    "  2 | Preserve database rows | active  |             0",
+    "  3 | Verify model context   | pending |            18",
+    "(3 rows)",
+  ].join("\n");
 }
 
 function runSedFixture(argv: readonly string[]): void {
