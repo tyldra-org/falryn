@@ -328,15 +328,39 @@ function gitOutput(argv: readonly string[]): string {
       if (argv.includes("--cached") && argv.includes("--shortstat")) {
         return "3 files changed, 10 insertions(+), 2 deletions(-)";
       }
+      if (argv.includes("--stat")) {
+        return [
+          " src/a.ts   | 3 ++-",
+          " src/new.ts | 2 ++",
+          " 2 files changed, 4 insertions(+), 1 deletion(-)",
+        ].join("\n");
+      }
+      if (argv.includes("--name-status")) {
+        return ["M\tsrc/a.ts", "A\tsrc/new.ts"].join("\n");
+      }
+      if (argv.includes("src/large.ts")) {
+        return largeGitDiffOutput();
+      }
       return [
         "diff --git a/src/a.ts b/src/a.ts",
         "index 1111111..2222222 100644",
         "--- a/src/a.ts",
         "+++ b/src/a.ts",
-        "@@ -1,2 +1,2 @@",
-        "-const mode = 'sample';",
-        "+const mode = 'complete';",
-        " export const marker = 736;",
+        "@@ -1,4 +1,5 @@ export function configure() {",
+        " export function configure() {",
+        "-  const mode = 'sample';",
+        "+  const mode = 'complete';",
+        "   const marker = 736;",
+        "+  const exact = true;",
+        "   return mode;",
+        "diff --git a/src/new.ts b/src/new.ts",
+        "new file mode 100644",
+        "index 0000000..3333333",
+        "--- /dev/null",
+        "+++ b/src/new.ts",
+        "@@ -0,0 +1,2 @@",
+        "+export const complete = true;",
+        "+export const reducer = 'git.diff';",
       ].join("\n");
     case "log":
       return [
@@ -376,6 +400,22 @@ function gitOutput(argv: readonly string[]): string {
 
 function gitSubcommand(argv: readonly string[]): string {
   return argv.find((argument) => !argument.startsWith("-")) ?? "";
+}
+
+function largeGitDiffOutput(): string {
+  const removed = Array.from({ length: 80 }, (_, index) => `-before-${index + 1}`);
+  const added = Array.from({ length: 80 }, (_, index) => `+after-${index + 1}`);
+  return [
+    "diff --git a/src/large.ts b/src/large.ts",
+    "index 1111111..2222222 100644",
+    "--- a/src/large.ts",
+    "+++ b/src/large.ts",
+    "@@ -1,82 +1,82 @@ complete section",
+    " context-before",
+    ...removed,
+    ...added,
+    " context-after",
+  ].join("\n");
 }
 
 function ghOutput(argv: readonly string[]): string {

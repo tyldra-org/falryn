@@ -8,7 +8,7 @@ import {
 
 describe("Hush projection scorecard corpus", () => {
   test("keeps each supported Git mutation as a separate RTK comparison", () => {
-    expect(HUSH_PROJECTION_CORPUS_VERSION).toBe("hush-projections.v13");
+    expect(HUSH_PROJECTION_CORPUS_VERSION).toBe("hush-projections.v14");
     expect(
       HUSH_PROJECTION_CASES.filter((entry) => entry.projection === "git-mutation").map(
         (entry) => entry.id,
@@ -18,7 +18,21 @@ describe("Hush projection scorecard corpus", () => {
 
   test("compares Git and external unified diffs independently", () => {
     const diffs = HUSH_PROJECTION_CASES.filter((entry) => entry.projection === "git-diff");
-    expect(diffs.map((entry) => entry.id)).toEqual(["git-diff", "external-diff"]);
+    expect(diffs.map((entry) => entry.id)).toEqual([
+      "git-diff",
+      "git-diff-stat",
+      "git-diff-name-status",
+      "git-diff-large-complete",
+      "external-diff",
+    ]);
+    const git = HUSH_PROJECTION_CASES.find((entry) => entry.id === "git-diff");
+    expect(git?.requiredMarkers).toHaveLength(14);
+    expect(git?.forbiddenMarkers).toContain("--- a/");
+    expect(git?.forbiddenMarkers).toContain("omitted");
+    const large = HUSH_PROJECTION_CASES.find((entry) => entry.id === "git-diff-large-complete");
+    expect(large?.rtkArgv).toContain("--no-compact");
+    expect(large?.requiredMarkers).toContain("-before-80");
+    expect(large?.requiredMarkers).toContain("+after-80");
     const external = HUSH_PROJECTION_CASES.find((entry) => entry.id === "external-diff");
     expect(external?.acceptedExitCodes).toEqual([1]);
     expect(external?.forbiddenMarkers).toContain("omitted");

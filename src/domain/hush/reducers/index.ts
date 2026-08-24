@@ -74,7 +74,7 @@ export function specializedProjection(
     case "git-status":
       return gitStatusProjection(capture, maxBytes, patterns);
     case "git-diff":
-      return gitDiffProjection(capture, maxBytes, patterns);
+      return gitDiffProjection(capture, maxBytes, patterns, commandTokens);
     case "git-log":
       return gitLogProjection(capture, maxBytes, patterns);
     case "git-mutation":

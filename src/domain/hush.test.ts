@@ -251,18 +251,21 @@ describe("hush reduction", () => {
     expect(reduced.value.reducerId).toBe("safe.passthrough");
   });
 
-  test("git diff compacts file headers while retaining every hunk line", () => {
+  test("git diff removes only validated duplicate paths while retaining every hunk line", () => {
     const diff = [
       "diff --git a/src/hush.ts b/src/hush.ts",
+      "index 1111111..2222222 100644",
       "--- a/src/hush.ts",
       "+++ b/src/hush.ts",
-      "@@ -1,4 +1,5 @@",
+      "@@ -1,3 +1,4 @@ reduceHush",
+      " export function reduceHush() {",
       "-old",
       "-also",
       "+new",
       "+newer",
       "+newest",
       "diff --git a/src/other.ts b/src/other.ts",
+      "index 3333333..4444444 100644",
       "--- a/src/other.ts",
       "+++ b/src/other.ts",
       "@@ -1 +1 @@",
@@ -280,13 +283,51 @@ describe("hush reduction", () => {
     expect(reduced.value.reducerId).toBe("git.diff");
     expect(reduced.value.reducedText).toContain("src/hush.ts:");
     expect(reduced.value.reducedText).toContain("src/other.ts:");
-    expect(reduced.value.reducedText).toContain("@@ -1,4 +1,5 @@");
+    expect(reduced.value.reducedText).toContain("index 1111111..2222222 100644");
+    expect(reduced.value.reducedText).toContain("@@ -1,3 +1,4 @@ reduceHush");
+    expect(reduced.value.reducedText).toContain(" export function reduceHush() {");
     expect(reduced.value.reducedText).toContain("-also");
     expect(reduced.value.reducedText).toContain("+newest");
+    expect(reduced.value.reducedText).not.toContain("--- a/src/hush.ts");
+    expect(reduced.value.reducedText).not.toContain("+++ b/src/hush.ts");
     expect(reduced.value.omissions).toEqual([]);
     expect(new TextEncoder().encode(reduced.value.reducedText).byteLength).toBeLessThan(
       new TextEncoder().encode(diff).byteLength,
     );
+  });
+
+  test("git diff keeps failed, partial, and caller-pattern captures exact", () => {
+    const diff = [
+      "diff --git a/src/a.ts b/src/a.ts",
+      "index 1111111..2222222 100644",
+      "--- a/src/a.ts",
+      "+++ b/src/a.ts",
+      "@@ -1 +1 @@",
+      "-old",
+      "+new",
+    ].join("\n");
+    const cases = [
+      {
+        capture: report(diff, { exitCode: 128, stderr: "fatal: bad revision\n" }),
+        patterns: [] as readonly string[],
+      },
+      { capture: report(diff, { truncated: true }), patterns: [] as readonly string[] },
+      { capture: report(diff), patterns: ["+new"] },
+    ];
+
+    for (const fixture of cases) {
+      const reduced = reduceHush({
+        command: argv("/usr/bin/git", ["diff"]),
+        capture: fixture.capture,
+        importantPatterns: fixture.patterns,
+      });
+      expect(reduced.ok).toBe(true);
+      if (!reduced.ok) {
+        throw new Error("expected a git diff Hush result");
+      }
+      expect(reduced.value.reducedText).toContain(diff);
+      expect(reduced.value.reducedText).not.toContain("src/a.ts:\nindex");
+    }
   });
 
   test("external diff removes only validated context while retaining every changed line", () => {

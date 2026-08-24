@@ -119,15 +119,18 @@ function capturePort(
 
 const gitDiff = [
   "diff --git a/src/hush.ts b/src/hush.ts",
+  "index 1111111..2222222 100644",
   "--- a/src/hush.ts",
   "+++ b/src/hush.ts",
-  "@@ -1,4 +1,5 @@",
+  "@@ -1,3 +1,4 @@ reduceHush",
+  " export function reduceHush() {",
   "-old",
   "-also",
   "+new",
   "+newer",
   "+newest",
   "diff --git a/src/other.ts b/src/other.ts",
+  "index 3333333..4444444 100644",
   "--- a/src/other.ts",
   "+++ b/src/other.ts",
   "@@ -1 +1 @@",
@@ -240,7 +243,8 @@ describe("createHushIntegrator", () => {
     expect(reduced.value.hush.family).toBe("git");
     expect(reduced.value.hush.reducerId).toBe("git.diff");
     expect(reduced.value.hush.reducedText).toContain("src/hush.ts:");
-    expect(reduced.value.hush.reducedText).toContain("@@ -1,4 +1,5 @@");
+    expect(reduced.value.hush.reducedText).toContain("@@ -1,3 +1,4 @@ reduceHush");
+    expect(reduced.value.hush.reducedText).toContain(" export function reduceHush() {");
     expect(reduced.value.hush.reducedText).toContain("-also");
     expect(reduced.value.hush.reducedText).toContain("+newest");
     expect(reduced.value.projection).toBe(reduced.value.hush.reducedText);
@@ -475,7 +479,7 @@ describe("createHushIntegrator", () => {
     }
     expect(transformed.value.fidelity).toBe("deterministic-transform");
     expect(transformed.value.exactSource).toBeNull();
-    expect(transformed.value.lineage).toEqual(["hush.v15", "git.diff"]);
+    expect(transformed.value.lineage).toEqual(["hush.v16", "git.diff"]);
     expect(transformed.value.expansion).not.toBeNull();
     expect(transformed.value.payload.kind).toBe("inline");
     if (transformed.value.payload.kind === "inline") {

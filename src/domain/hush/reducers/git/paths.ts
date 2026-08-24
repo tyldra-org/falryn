@@ -1,4 +1,11 @@
-export function pathFromDiffGit(rest: string): string | null {
+export type GitDiffPaths = Readonly<{
+  before: string;
+  after: string;
+  beforeHeader: string;
+  afterHeader: string;
+}>;
+
+export function pathsFromDiffGit(rest: string): GitDiffPaths | null {
   if (rest.includes('"')) {
     return null;
   }
@@ -8,9 +15,20 @@ export function pathFromDiffGit(rest: string): string | null {
   if (left === undefined || right === undefined || parts.length !== 2) {
     return null;
   }
-  const from = stripDiffPrefix(left);
-  const to = stripDiffPrefix(right);
-  return from === to ? from : `${from} → ${to}`;
+  return {
+    before: stripDiffPrefix(left),
+    after: stripDiffPrefix(right),
+    beforeHeader: left,
+    afterHeader: right,
+  };
+}
+
+export function pathFromDiffGit(rest: string): string | null {
+  const paths = pathsFromDiffGit(rest);
+  if (paths === null) {
+    return null;
+  }
+  return paths.before === paths.after ? paths.before : `${paths.before} → ${paths.after}`;
 }
 
 function stripDiffPrefix(value: string): string {

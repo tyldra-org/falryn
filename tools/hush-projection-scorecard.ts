@@ -18,7 +18,7 @@ import {
 import { HUSH_RTK_BASELINE } from "./hush-command-coverage.ts";
 import { type HushLsMeasurement, measureText } from "./hush-ls-scorecard.ts";
 
-export const HUSH_PROJECTION_CORPUS_VERSION = "hush-projections.v13";
+export const HUSH_PROJECTION_CORPUS_VERSION = "hush-projections.v14";
 
 export const HUSH_FIND_LISTING_PATHS = [
   "bounds.ts",
@@ -350,7 +350,63 @@ export const HUSH_PROJECTION_CASES = [
     executable: "git",
     argv: ["diff"],
     rtkArgv: ["git", "diff"],
-    requiredMarkers: ["src/a.ts", "mode = 'sample'", "mode = 'complete'", "marker = 736"],
+    requiredMarkers: [
+      "src/a.ts:",
+      "index 1111111..2222222 100644",
+      "@@ -1,4 +1,5 @@ export function configure()",
+      " export function configure()",
+      "mode = 'sample'",
+      "mode = 'complete'",
+      "marker = 736",
+      "const exact = true",
+      "return mode",
+      "src/new.ts:",
+      "new file mode 100644",
+      "index 0000000..3333333",
+      "export const complete = true",
+      "reducer = 'git.diff'",
+    ],
+    forbiddenMarkers: ["--- a/", "+++ b/", "omitted", "…"],
+  },
+  {
+    id: "git-diff-stat",
+    projection: "git-diff",
+    executable: "git",
+    argv: ["diff", "--stat"],
+    rtkArgv: ["git", "diff", "--stat"],
+    requiredMarkers: [
+      "src/a.ts   | 3 ++-",
+      "src/new.ts | 2 ++",
+      "2 files changed, 4 insertions(+), 1 deletion(-)",
+    ],
+    forbiddenMarkers: ["omitted", "…"],
+  },
+  {
+    id: "git-diff-name-status",
+    projection: "git-diff",
+    executable: "git",
+    argv: ["diff", "--name-status"],
+    rtkArgv: ["git", "diff", "--name-status"],
+    requiredMarkers: ["M\tsrc/a.ts", "A\tsrc/new.ts"],
+    forbiddenMarkers: ["omitted", "…"],
+  },
+  {
+    id: "git-diff-large-complete",
+    projection: "git-diff",
+    executable: "git",
+    argv: ["diff", "--", "src/large.ts"],
+    rtkArgv: ["git", "diff", "--no-compact", "--", "src/large.ts"],
+    requiredMarkers: [
+      "src/large.ts:",
+      "@@ -1,82 +1,82 @@ complete section",
+      " context-before",
+      "-before-1",
+      "-before-80",
+      "+after-1",
+      "+after-80",
+      " context-after",
+    ],
+    forbiddenMarkers: ["more changes truncated", "lines truncated", "omitted", "…"],
   },
   {
     id: "external-diff",
