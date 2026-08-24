@@ -891,6 +891,124 @@ describe("hush reduction", () => {
     expect(reduced.value.omissions).toEqual([]);
   });
 
+  test("compacts complete system command results without dropping decision facts", () => {
+    const cases = [
+      {
+        executable: "df",
+        argv: ["-h", "."],
+        output: [
+          "Filesystem      Size    Used   Avail Capacity iused ifree %iused  Mounted on",
+          "/dev/disk3s5   460Gi   147Gi   290Gi    34%    1.7M  3.0G    0%   /System/Volumes/Data",
+          "",
+        ].join("\n"),
+        markers: ["filesystem\tsize\tused", "/System/Volumes/Data"],
+      },
+      {
+        executable: "du",
+        argv: ["-sh", "."],
+        output: "319M\t.\n",
+        markers: ["319M\t."],
+      },
+      {
+        executable: "ps",
+        argv: ["-p", "49114", "-o", "pid,ppid,state,comm"],
+        output: "  PID  PPID STAT COMM\n49114 41183 Ss   bun\n",
+        markers: ["PID\tPPID\tSTAT\tCOMM", "49114\t41183\tSs\tbun"],
+      },
+      {
+        executable: "stat",
+        argv: ["-x", "package.json"],
+        output: [
+          '  File: "package.json"',
+          "  Size: 2527         FileType: Regular File",
+          "  Mode: (0644/-rw-r--r--)         Uid: (  501/yogeshprasad)  Gid: (   20/   staff)",
+          "Device: 1,15   Inode: 32125206    Links: 1",
+          "Access: Mon Aug 24 01:55:42 2026",
+          "Modify: Sun Aug 23 05:26:48 2026",
+          "Change: Sun Aug 23 05:26:48 2026",
+          " Birth: Fri Aug 21 19:55:14 2026",
+          "",
+        ].join("\n"),
+        markers: ["dev=1,15 inode=32125206 links=1", "birth=Fri Aug 21 19:55:14"],
+      },
+      {
+        executable: "systemctl",
+        argv: ["status", "falryn"],
+        output: [
+          "● falryn.service - Falryn agent",
+          "     Loaded: loaded (/etc/systemd/system/falryn.service; enabled; preset: enabled)",
+          "     Active: active (running) since Mon 2026-08-24 10:00:00 PDT; 2h 30min ago",
+          "   Main PID: 736 (falryn)",
+          "      Tasks: 8 (limit: 1024)",
+          "     Memory: 42.0M",
+          "        CPU: 1.234s",
+          "     CGroup: /system.slice/falryn.service",
+          "             └─736 /usr/local/bin/falryn",
+          "",
+        ].join("\n"),
+        markers: ["Active: active (running)", "Main PID: 736", "└─736 /usr/local/bin/falryn"],
+      },
+    ] as const;
+
+    for (const fixture of cases) {
+      const reduced = reduceHush({
+        command: argv(`/usr/bin/${fixture.executable}`, fixture.argv),
+        capture: report(fixture.output),
+      });
+      expect(reduced.ok).toBe(true);
+      if (!reduced.ok) {
+        throw new Error(`expected a ${fixture.executable} Hush result`);
+      }
+      expect(reduced.value.reducerId).toBe("system.table");
+      expect(reduced.value.omissions).toEqual([]);
+      expect(reduced.value.truncated).toBe(false);
+      expect(new TextEncoder().encode(reduced.value.reducedText).byteLength).toBeLessThanOrEqual(
+        new TextEncoder().encode(fixture.output).byteLength,
+      );
+      for (const marker of fixture.markers) {
+        expect(reduced.value.reducedText).toContain(marker);
+      }
+    }
+  });
+
+  test("keeps failed, ambiguous, and caller-pattern system output exact", () => {
+    const ambiguous = "STARTED PID\nMon Aug 24 10:00:00 736\n";
+    const ps = reduceHush({
+      command: argv("/bin/ps", ["-o", "lstart,pid"]),
+      capture: report(ambiguous),
+    });
+    expect(ps.ok).toBe(true);
+    if (!ps.ok) {
+      throw new Error("expected a ps Hush result");
+    }
+    expect(ps.value.reducedText).toBe(ambiguous);
+    expect(ps.value.strategy).toBe("passthrough");
+
+    const failure = "stat: missing: stat: No such file or directory\n";
+    const stat = reduceHush({
+      command: argv("/usr/bin/stat", ["missing"]),
+      capture: report("", { stderr: failure, exitCode: 1 }),
+    });
+    expect(stat.ok).toBe(true);
+    if (!stat.ok) {
+      throw new Error("expected a stat Hush result");
+    }
+    expect(stat.value.reducedText).toBe(`stderr:\n${failure}`);
+    expect(stat.value.omissions).toEqual([]);
+
+    const df = "Filesystem Size Used Avail Use% Mounted on\n/dev/sda1 100G 40G 60G 40% /\n";
+    const patterned = reduceHush({
+      command: argv("/bin/df", ["-h", "."]),
+      capture: report(df),
+      importantPatterns: ["/dev/sda1"],
+    });
+    expect(patterned.ok).toBe(true);
+    if (!patterned.ok) {
+      throw new Error("expected a df Hush result");
+    }
+    expect(patterned.value.reducedText).toBe(df);
+  });
+
   test("renders AWS caller identity in a compact model-readable form", () => {
     const identity = {
       Account: "123456789012",

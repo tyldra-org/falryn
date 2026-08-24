@@ -90,7 +90,7 @@ export function specializedProjection(
     case "package":
       return semanticProjection("package", capture, maxBytes, patterns);
     case "table":
-      return tableProjection(capture, maxBytes, patterns);
+      return tableProjection(capture, maxBytes, patterns, commandTokens);
     case "count":
       return countProjection(capture, maxBytes, patterns, commandTokens);
     case "log":

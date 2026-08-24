@@ -8,7 +8,7 @@ import {
 
 describe("Hush projection scorecard corpus", () => {
   test("keeps each supported Git mutation as a separate RTK comparison", () => {
-    expect(HUSH_PROJECTION_CORPUS_VERSION).toBe("hush-projections.v12");
+    expect(HUSH_PROJECTION_CORPUS_VERSION).toBe("hush-projections.v13");
     expect(
       HUSH_PROJECTION_CASES.filter((entry) => entry.projection === "git-mutation").map(
         (entry) => entry.id,
@@ -72,6 +72,30 @@ describe("Hush projection scorecard corpus", () => {
     expect(sqlite.every((entry) => entry.projection === "structured")).toBe(true);
     expect(sqlite.every((entry) => entry.rtkArgv?.[0] === "sqlite3")).toBe(true);
     expect(sqlite.every((entry) => entry.forbiddenMarkers?.includes("omitted"))).toBe(true);
+  });
+
+  test("compares every supported system table command without accepting missing facts", () => {
+    const system = HUSH_PROJECTION_CASES.filter((entry) =>
+      ["df", "du", "ps", "stat", "systemctl"].includes(entry.executable),
+    );
+    expect(system.map((entry) => entry.id)).toEqual([
+      "system-df",
+      "system-du",
+      "system-ps",
+      "system-stat",
+      "system-systemctl",
+    ]);
+    expect(system.every((entry) => entry.projection === "table")).toBe(true);
+    expect(
+      system.every((entry) => "rtkArgv" in entry && entry.rtkArgv[0] === entry.executable),
+    ).toBe(true);
+    expect(
+      system.every(
+        (entry) =>
+          "forbiddenMarkers" in entry &&
+          (entry.forbiddenMarkers as readonly string[]).includes("omitted"),
+      ),
+    ).toBe(true);
   });
 
   test("covers ripgrep, sed, pipelines, and and-chains independently", () => {

@@ -55,6 +55,36 @@ const outputs: Readonly<Record<string, () => string>> = {
   wc: () => wcOutput(args),
   psql: () => psqlOutput(args),
   sqlite3: () => sqliteOutput(args),
+  df: () =>
+    [
+      "Filesystem      Size    Used   Avail Capacity iused ifree %iused  Mounted on",
+      "/dev/disk3s5   460Gi   147Gi   290Gi    34%    1.7M  3.0G    0%   /System/Volumes/Data",
+    ].join("\n"),
+  du: () => "319M\t.",
+  ps: () => ["  PID  PPID STAT COMM", "49114 41183 Ss   bun"].join("\n"),
+  stat: () =>
+    [
+      '  File: "package.json"',
+      "  Size: 2527         FileType: Regular File",
+      "  Mode: (0644/-rw-r--r--)         Uid: (  501/yogeshprasad)  Gid: (   20/   staff)",
+      "Device: 1,15   Inode: 32125206    Links: 1",
+      "Access: Mon Aug 24 01:55:42 2026",
+      "Modify: Sun Aug 23 05:26:48 2026",
+      "Change: Sun Aug 23 05:26:48 2026",
+      " Birth: Fri Aug 21 19:55:14 2026",
+    ].join("\n"),
+  systemctl: () =>
+    [
+      "● falryn.service - Falryn agent",
+      "     Loaded: loaded (/etc/systemd/system/falryn.service; enabled; preset: enabled)",
+      "     Active: active (running) since Mon 2026-08-24 10:00:00 PDT; 2h 30min ago",
+      "   Main PID: 736 (falryn)",
+      "      Tasks: 8 (limit: 1024)",
+      "     Memory: 42.0M",
+      "        CPU: 1.234s",
+      "     CGroup: /system.slice/falryn.service",
+      "             └─736 /usr/local/bin/falryn",
+    ].join("\n"),
   journalctl: () =>
     [
       "Aug 24 10:00:00 falryn-host falryn[736]: INFO session started session=demo",
