@@ -160,7 +160,14 @@ describe("Hush RTK command catalog", () => {
     expect(policyFor("npm exec tsc -- --noEmit")?.reducerId).toBe("js.typecheck");
     expect(policyFor("python -m pytest")?.reducerId).toBe("python.test");
     expect(policyFor("bundle exec rspec")?.reducerId).toBe("ruby.test");
-    expect(commandShape(bash("git status && cargo test")).compound).toBe(true);
+    expect(commandShape(bash("git status && cargo test"))).toMatchObject({
+      compound: true,
+      operators: ["and"],
+      commands: [
+        ["git", "status"],
+        ["cargo", "test"],
+      ],
+    });
   });
 
   test("does not claim unwired RTK helper commands as Hush support", () => {
@@ -184,6 +191,17 @@ describe("Hush RTK command catalog", () => {
     expect(policyFor("wget https://example.com/file")).toMatchObject({
       reducerId: "network.wget",
       projection: "wget",
+    });
+  });
+
+  test("routes sed through a dedicated lossless transform projection", () => {
+    expect(policyFor("ripgrep marker src")).toMatchObject({
+      reducerId: "files.rg",
+      projection: "search",
+    });
+    expect(policyFor("sed -n '1,40p' src/main.ts")).toMatchObject({
+      reducerId: "transform.sed",
+      projection: "transform",
     });
   });
 

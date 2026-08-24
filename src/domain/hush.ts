@@ -99,6 +99,7 @@ export function reduceHush(request: HushRequest): Result<HushResult, HushError> 
         projectionMaxBytes,
         patterns,
         classification.tokens,
+        classification.commands,
       );
     } catch {
       strategy = "generic";

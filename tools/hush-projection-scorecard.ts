@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { prepareHushCaptureRequest } from "../src/application/hush-capture-command.ts";
 import type { HushProjectionKind } from "../src/domain/hush/catalog/index.ts";
-import { matchHushCommand } from "../src/domain/hush/catalog/index.ts";
+import { classifyCommand } from "../src/domain/hush/classification.ts";
 import {
   duration,
   HUSH_REDUCER_VERSION,
@@ -18,14 +18,16 @@ import {
 import { HUSH_RTK_BASELINE } from "./hush-command-coverage.ts";
 import { type HushLsMeasurement, measureText } from "./hush-ls-scorecard.ts";
 
-export const HUSH_PROJECTION_CORPUS_VERSION = "hush-projections.v4";
+export const HUSH_PROJECTION_CORPUS_VERSION = "hush-projections.v5";
 
 type ProjectionCase = Readonly<{
   id: string;
   projection: HushProjectionKind;
   executable: string;
   argv: readonly string[];
-  rtkArgv: readonly string[];
+  rtkArgv?: readonly string[];
+  shellCommand?: string;
+  baseline?: "raw" | "rewrite";
   requiredMarkers: readonly string[];
   forbiddenMarkers?: readonly string[];
 }>;
@@ -69,6 +71,51 @@ export const HUSH_PROJECTION_CASES = [
     argv: ["marker", "."],
     rtkArgv: ["rg", "marker", "."],
     requiredMarkers: ["first marker", "second marker", "third marker", "fourth marker"],
+  },
+  {
+    id: "transform-sed",
+    projection: "transform",
+    executable: "sed",
+    argv: ["-n", "1,3p", "fixture.txt"],
+    baseline: "raw",
+    requiredMarkers: ["# Falryn", "Do more with less context."],
+  },
+  {
+    id: "compound-rg-sed-pipe",
+    projection: "compound",
+    executable: "bash",
+    argv: [],
+    shellCommand: "rg marker . | sed -n '1,3p'",
+    baseline: "rewrite",
+    requiredMarkers: ["first marker", "second marker", "third marker"],
+    forbiddenMarkers: ["fourth marker", "omitted", "…"],
+  },
+  {
+    id: "compound-pipe-rg",
+    projection: "compound",
+    executable: "bash",
+    argv: [],
+    shellCommand: "cat fixture.txt | rg marker",
+    baseline: "rewrite",
+    requiredMarkers: ["first marker", "second marker", "third marker", "fourth marker"],
+    forbiddenMarkers: ["omitted", "…"],
+  },
+  {
+    id: "compound-rg-and-sed",
+    projection: "compound",
+    executable: "bash",
+    argv: [],
+    shellCommand: "rg marker . && sed -n '1,3p' fixture.txt",
+    baseline: "rewrite",
+    requiredMarkers: [
+      "first marker",
+      "second marker",
+      "third marker",
+      "fourth marker",
+      "# Falryn",
+      "Do more with less context.",
+    ],
+    forbiddenMarkers: ["omitted", "…"],
   },
   {
     id: "git-status",
@@ -335,24 +382,32 @@ async function createScorecard(): Promise<HushProjectionScorecard> {
     const scores: HushProjectionScore[] = [];
     const cases: readonly ProjectionCase[] = HUSH_PROJECTION_CASES;
     for (const [index, fixture] of cases.entries()) {
-      const executable =
-        fixture.executable === "find"
-          ? (Bun.which("find") ?? join(fixtureBin, fixture.executable))
-          : join(fixtureBin, fixture.executable);
-      const command = {
-        executable,
-        argv: fixture.argv,
-        environment: {},
-        cwd: root,
-        timeoutMs: duration(10_000),
-        maxOutputBytes: MAX_COMMAND_OUTPUT_BYTES,
-      } as const;
+      const executable = projectionExecutable(fixture, fixtureBin);
+      const command =
+        fixture.shellCommand === undefined
+          ? ({
+              executable,
+              argv: fixture.argv,
+              environment: {},
+              cwd: root,
+              timeoutMs: duration(10_000),
+              maxOutputBytes: MAX_COMMAND_OUTPUT_BYTES,
+            } as const)
+          : ({
+              mode: "bash",
+              executable,
+              command: fixture.shellCommand,
+              environment: {},
+              cwd: root,
+              timeoutMs: duration(10_000),
+              maxOutputBytes: MAX_COMMAND_OUTPUT_BYTES,
+            } as const);
       const prepared = prepareHushCaptureRequest(command);
-      if (prepared.mode === "bash") {
-        throw new Error(`${fixture.id} unexpectedly prepared as Bash`);
-      }
-      const raw = runCommand([prepared.executable, ...prepared.argv], root, fixtureBin);
-      const baseline = runCommand([rtk, ...fixture.rtkArgv], root, fixtureBin);
+      const raw =
+        prepared.mode === "bash"
+          ? runCommand([prepared.executable, "-c", prepared.command], root, fixtureBin)
+          : runCommand([prepared.executable, ...prepared.argv], root, fixtureBin);
+      const baseline = runBaseline(fixture, raw, rtk, executable, root, fixtureBin);
       if (raw.exitCode !== 0 || baseline.exitCode !== 0) {
         throw new Error(
           `${fixture.id} failed: raw=${raw.exitCode} rtk=${baseline.exitCode}\n${raw.stderr}${baseline.stderr}`,
@@ -381,7 +436,8 @@ async function createScorecard(): Promise<HushProjectionScorecard> {
         !reduced.value.truncated &&
         !reduced.value.omissions.some((omission) => omission.kind === "capped-bytes");
       const recognized =
-        matchHushCommand([fixture.executable, ...fixture.argv])?.projection === fixture.projection;
+        classifyCommand(command, capture(`classify-${index}`, raw)).projection ===
+        fixture.projection;
       const passes =
         withinRtkBudget &&
         retainsRequiredContext &&
@@ -460,15 +516,61 @@ async function createFixtureCommands(root: string): Promise<string> {
   await mkdir(bin, { recursive: true });
   const source = join(import.meta.dir, "fixtures", "hush-projection-command.ts");
   await Promise.all(
-    [...new Set(HUSH_PROJECTION_CASES.map((fixture) => fixture.executable))].map(
-      async (executable) => {
+    [...new Set(HUSH_PROJECTION_CASES.map((fixture) => fixture.executable))]
+      .filter((executable) => executable !== "bash")
+      .map(async (executable) => {
         const target = join(bin, executable);
         await copyFile(source, target);
         await chmod(target, 0o755);
-      },
-    ),
+      }),
   );
   return bin;
+}
+
+function projectionExecutable(fixture: ProjectionCase, fixtureBin: string): string {
+  if (fixture.shellCommand !== undefined) {
+    const bash = Bun.which("bash");
+    if (bash === null) {
+      throw new Error(`${fixture.id} requires bash`);
+    }
+    return bash;
+  }
+  return fixture.executable === "find"
+    ? (Bun.which("find") ?? join(fixtureBin, fixture.executable))
+    : join(fixtureBin, fixture.executable);
+}
+
+function runBaseline(
+  fixture: ProjectionCase,
+  raw: CommandRun,
+  rtk: string,
+  executable: string,
+  cwd: string,
+  fixtureBin: string,
+): CommandRun {
+  if (fixture.baseline === "raw") {
+    return raw;
+  }
+  if (fixture.baseline === "rewrite") {
+    const source = fixture.shellCommand;
+    if (source === undefined) {
+      throw new Error(`${fixture.id} rewrite baseline requires a shell command`);
+    }
+    const rewritten = runCommand([rtk, "rewrite", source], cwd, fixtureBin);
+    if (rewritten.exitCode === 1) {
+      return runCommand([executable, "-c", source], cwd, fixtureBin);
+    }
+    if (![0, 3].includes(rewritten.exitCode) || rewritten.stdout.trim().length === 0) {
+      throw new Error(
+        `${fixture.id} RTK rewrite failed: exit=${rewritten.exitCode} stdout=${JSON.stringify(rewritten.stdout)} stderr=${JSON.stringify(rewritten.stderr)}`,
+      );
+    }
+    return runCommand([executable, "-c", rewritten.stdout.trim()], cwd, fixtureBin);
+  }
+  if (fixture.rtkArgv === undefined) {
+    throw new Error(`${fixture.id} requires RTK argv`);
+  }
+  return runCommand([rtk, ...fixture.rtkArgv], cwd, fixtureBin);
 }
 
 function runCommand(command: readonly string[], cwd: string, fixtureBin: string): CommandRun {

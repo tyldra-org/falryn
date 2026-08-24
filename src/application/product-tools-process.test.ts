@@ -137,6 +137,63 @@ describe("composeProductProcessTools", () => {
     expect(pty.status).toBe("unavailable");
   });
 
+  test("projects compound shell searches without losing returned matches", async () => {
+    const command = "rg marker src | sed -n '1,3p'";
+    const stdout = [
+      "src/a.ts:10:first marker",
+      "src/a.ts:20:second marker",
+      "src/b.ts:7:third marker",
+      "",
+    ].join("\n");
+    const capture: ProcessCapturePort = {
+      async run(request) {
+        return {
+          ok: true,
+          value: {
+            ...report(request),
+            stdout: stream("stdout", stdout),
+          },
+        };
+      },
+    };
+    const tools = composeProductProcessTools({
+      generation: configurationGeneration.from(0),
+      capture,
+      workspaceCwd: "/work",
+    });
+
+    const outcome = await tools.runner.execute({
+      invocationId: invocationId.from("inv-compound-search"),
+      toolCallId: "call-compound-search",
+      toolName: "run_shell",
+      capabilityId: capabilityId.from("builtin:workspace/run_shell@1"),
+      version: 1,
+      effect: "mutation",
+      input: {
+        command,
+        environment: { PATH: "/usr/bin" },
+      },
+      signal: new AbortController().signal,
+    });
+    expect(outcome.status).toBe("completed");
+    if (outcome.status !== "completed") {
+      return;
+    }
+    expect(outcome.output.projection).toBe(
+      "src/a.ts:\n  10 first marker\n  20 second marker\nsrc/b.ts:\n  7 third marker\n",
+    );
+    expect(outcome.output.hush).toMatchObject({
+      reducerId: "shell.compound",
+      command: {
+        mode: "bash",
+        executable: "/bin/bash",
+        command,
+      },
+      truncated: false,
+      omissions: [],
+    });
+  });
+
   test("enriches supported GitHub reads while retaining the user's command identity", async () => {
     const requests: ProcessCaptureRequest[] = [];
     const stdout = JSON.stringify({

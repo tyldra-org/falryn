@@ -1,5 +1,6 @@
 /** Typed command catalog contracts for Hush reducer selection. */
 
+import type { HushCommandShape } from "../command-shape.ts";
 import type { HushFamily } from "../contracts.ts";
 
 export const HUSH_PROJECTION_KINDS = [
@@ -9,6 +10,8 @@ export const HUSH_PROJECTION_KINDS = [
   "read",
   "json",
   "search",
+  "transform",
+  "compound",
   "git-status",
   "git-diff",
   "git-log",
@@ -41,8 +44,7 @@ export type HushCatalogEntry = HushCommandPolicy & {
   readonly matches?: ((tokens: readonly string[]) => boolean) | undefined;
 };
 
-export type HushCommandClassification = HushCommandPolicy & {
-  readonly tokens: readonly string[];
-  readonly compound: boolean;
-  readonly matched: boolean;
-};
+export type HushCommandClassification = HushCommandPolicy &
+  HushCommandShape & {
+    readonly matched: boolean;
+  };

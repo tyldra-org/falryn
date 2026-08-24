@@ -4,6 +4,7 @@ import type { ProcessCaptureReport } from "../../process-capture.ts";
 import { assertNever } from "../../result.ts";
 import type { HushProjectionKind } from "../catalog/index.ts";
 import type { HushFidelity, HushResult, HushStrategy, HushStreamProjection } from "../contracts.ts";
+import { compoundProjection } from "./compound/projection.ts";
 import { forgeProjection } from "./forge/projection.ts";
 import {
   gitDiffProjection,
@@ -20,6 +21,7 @@ import { searchProjection } from "./search/projection.ts";
 import { semanticProjection } from "./semantic.ts";
 import { structuredProjection } from "./structured/projection.ts";
 import { tableProjection } from "./table/projection.ts";
+import { transformProjection } from "./transform/projection.ts";
 import { treeProjection } from "./tree/projection.ts";
 
 export function fidelityFor(
@@ -48,6 +50,7 @@ export function specializedProjection(
   maxBytes: number,
   patterns: readonly string[],
   commandTokens: readonly string[],
+  commandSegments: readonly (readonly string[])[],
 ): HushStreamProjection {
   switch (projection) {
     case "ls":
@@ -62,6 +65,10 @@ export function specializedProjection(
       return jsonProjection(capture, maxBytes, patterns);
     case "search":
       return searchProjection(capture, maxBytes, patterns);
+    case "transform":
+      return transformProjection(capture, maxBytes, patterns);
+    case "compound":
+      return compoundProjection(capture, maxBytes, patterns, commandSegments);
     case "git-status":
       return gitStatusProjection(capture, maxBytes, patterns);
     case "git-diff":

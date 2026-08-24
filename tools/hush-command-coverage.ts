@@ -38,10 +38,8 @@ export type HushCommandCoverageScorecard = {
 export function createHushCommandCoverageScorecard(): HushCommandCoverageScorecard {
   const failures: HushCommandCoverageFailure[] = [];
   const executables = new Set<string>();
-  const projections = new Set<string>();
   let examples = 0;
   for (const entry of HUSH_COMMAND_CATALOG) {
-    projections.add(entry.projection);
     for (const executable of entry.executables) {
       executables.add(executable);
     }
@@ -78,7 +76,7 @@ export function createHushCommandCoverageScorecard(): HushCommandCoverageScoreca
     catalogEntries: HUSH_COMMAND_CATALOG.length,
     commandExecutables: executables.size,
     examples,
-    projectionKinds: projections.size,
+    projectionKinds: HUSH_PROJECTION_KINDS.length,
     failures,
     routingComplete: failures.length === 0,
     parityProvenProjections: HUSH_PROJECTION_KINDS,

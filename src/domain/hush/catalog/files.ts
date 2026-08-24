@@ -53,6 +53,13 @@ export const FILE_COMMANDS = [
     examples: ["grep -R TODO src"],
   },
   {
+    reducerId: "transform.sed",
+    family: "data",
+    projection: "transform",
+    executables: ["sed"],
+    examples: ["sed -n '1,40p' src/main.ts"],
+  },
+  {
     reducerId: "files.diff",
     family: "listing",
     projection: "git-diff",

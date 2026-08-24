@@ -10,6 +10,10 @@ if (executable === "wget") {
   runWgetFixture(args);
   process.exit(0);
 }
+if (executable === "sed") {
+  runSedFixture(args);
+  process.exit(0);
+}
 
 const outputs: Readonly<Record<string, () => string>> = {
   find: () => ["./src/main.ts", "./src/domain/hush.ts", "./docs/README.md"].join("\n"),
@@ -78,6 +82,37 @@ const output = outputs[executable]?.();
 if (output === undefined) {
   process.stderr.write(`unsupported projection fixture executable: ${executable}\n`);
   process.exit(2);
+}
+
+function runSedFixture(argv: readonly string[]): void {
+  const printOnly = argv.includes("-n");
+  const operands = argv.filter((argument) => argument !== "-n");
+  const program = operands[0];
+  const path = operands[1];
+  if (program === undefined) {
+    process.stderr.write("sed: missing command\n");
+    process.exit(2);
+  }
+  const source = path === undefined ? readFileSync(0, "utf8") : readFileSync(path, "utf8");
+  if (!printOnly) {
+    process.stdout.write(source);
+    return;
+  }
+  const range = /^(\d+)(?:,(\d+))?p$/u.exec(program);
+  if (range === null) {
+    process.stderr.write(`sed: unsupported fixture command: ${program}\n`);
+    process.exit(2);
+  }
+  const start = Number.parseInt(range[1] ?? "1", 10);
+  const end = Number.parseInt(range[2] ?? range[1] ?? "1", 10);
+  const lines = source.split("\n");
+  if (source.endsWith("\n")) {
+    lines.pop();
+  }
+  const selected = lines.slice(Math.max(0, start - 1), end).join("\n");
+  if (selected.length > 0) {
+    process.stdout.write(`${selected}\n`);
+  }
 }
 if (executable === "curl") {
   process.stderr.write(

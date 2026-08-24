@@ -28,7 +28,7 @@ const CATALOG_BY_EXECUTABLE = commandIndex(HUSH_COMMAND_CATALOG);
 export const SHELL_COMPOUND_POLICY: HushCommandPolicy = {
   family: "generic",
   reducerId: "shell.compound",
-  projection: "operation",
+  projection: "compound",
 };
 
 export function matchHushCommand(tokens: readonly string[]): HushCommandPolicy | null {

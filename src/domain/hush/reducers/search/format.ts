@@ -17,16 +17,39 @@ export function formatSearchMatches(text: string): string | null {
     return text;
   }
 
-  const matches = lines.map(parseSearchMatch);
-  if (matches.some((match) => match === null)) {
-    return null;
+  const formatted: string[] = [];
+  for (let index = 0; index < lines.length; ) {
+    if (parseSearchMatch(lines[index] ?? "") === null) {
+      formatted.push(lines[index] ?? "");
+      index += 1;
+      continue;
+    }
+
+    let end = index + 1;
+    while (end < lines.length && parseSearchMatch(lines[end] ?? "") !== null) {
+      end += 1;
+    }
+    const sourceBlock = lines.slice(index, end);
+    const formattedBlock = formatSearchBlock(sourceBlock);
+    formatted.push(
+      ...(encodedBytes(formattedBlock.join("\n")) < encodedBytes(sourceBlock.join("\n"))
+        ? formattedBlock
+        : sourceBlock),
+    );
+    index = end;
   }
 
+  const result = `${formatted.join("\n")}${trailingNewline ? "\n" : ""}`;
+  return encodedBytes(result) < encodedBytes(text) ? result : null;
+}
+
+function formatSearchBlock(lines: readonly string[]): readonly string[] {
   const formatted: string[] = [];
   let currentPath: string | null = null;
-  for (const match of matches) {
+  for (const line of lines) {
+    const match = parseSearchMatch(line);
     if (match === null) {
-      return null;
+      return lines;
     }
     if (match.path !== currentPath) {
       formatted.push(`${match.path}:`);
@@ -35,9 +58,7 @@ export function formatSearchMatches(text: string): string | null {
     const location = match.column === null ? match.line : `${match.line}:${match.column}`;
     formatted.push(`  ${location} ${match.content}`);
   }
-
-  const result = `${formatted.join("\n")}${trailingNewline ? "\n" : ""}`;
-  return encodedBytes(result) < encodedBytes(text) ? result : null;
+  return formatted;
 }
 
 function parseSearchMatch(line: string): SearchMatch | null {

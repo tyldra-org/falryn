@@ -1,10 +1,14 @@
 /** Safe command-shape normalization for Hush classification. */
 
 import type { CommandRequest } from "../process.ts";
+import { type HushShellOperator, parseShellCommand } from "./shell-command.ts";
 
 export type HushCommandShape = {
   readonly tokens: readonly string[];
+  readonly commands: readonly (readonly string[])[];
+  readonly operators: readonly HushShellOperator[];
   readonly compound: boolean;
+  readonly opaque: boolean;
 };
 
 const ENVIRONMENT_ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=/;
@@ -37,15 +41,23 @@ const SCRIPT_ALIASES = new Map<string, string>([
 
 export function commandShape(command: CommandRequest): HushCommandShape {
   if (command.mode === "bash") {
-    const parsed = tokenizeFirstCommand(command.command);
+    const parsed = parseShellCommand(command.command);
+    const commands = parsed.commands.map(normalizeCommandTokens);
     return {
-      tokens: normalizeCommandTokens(parsed.tokens),
-      compound: parsed.compound,
+      tokens: commands[0] ?? [],
+      commands,
+      operators: parsed.operators,
+      compound: parsed.operators.length > 0 || parsed.opaque,
+      opaque: parsed.opaque,
     };
   }
+  const tokens = normalizeCommandTokens([baseName(command.executable), ...command.argv]);
   return {
-    tokens: normalizeCommandTokens([baseName(command.executable), ...command.argv]),
+    tokens,
+    commands: [tokens],
+    operators: [],
     compound: false,
+    opaque: false,
   };
 }
 
@@ -160,69 +172,6 @@ function unwrapCommand(tokens: readonly string[]): readonly string[] {
     }
   }
   return tokens;
-}
-
-function tokenizeFirstCommand(command: string): HushCommandShape {
-  const tokens: string[] = [];
-  let current = "";
-  let quote: "single" | "double" | null = null;
-  let compound = false;
-  let index = 0;
-  const push = (): void => {
-    if (current.length > 0) {
-      tokens.push(current);
-      current = "";
-    }
-  };
-  while (index < command.length) {
-    const character = command[index] ?? "";
-    if (character === "\\" && quote !== "single") {
-      const next = command[index + 1];
-      if (next !== undefined) {
-        current += next;
-        index += 2;
-        continue;
-      }
-    }
-    if (character === "'" && quote !== "double") {
-      quote = quote === "single" ? null : "single";
-      index += 1;
-      continue;
-    }
-    if (character === '"' && quote !== "single") {
-      quote = quote === "double" ? null : "double";
-      index += 1;
-      continue;
-    }
-    if (quote === null && (character === "|" || character === "&" || character === ";")) {
-      push();
-      compound = true;
-      break;
-    }
-    if (quote === null && (character === "\n" || character === "\r")) {
-      push();
-      if (command.slice(index).trim().length > 0) {
-        compound = true;
-      }
-      break;
-    }
-    if (quote === null && (character === ">" || character === "<")) {
-      push();
-      break;
-    }
-    if (quote === null && /\s/.test(character)) {
-      push();
-      index += 1;
-      continue;
-    }
-    if (quote === null && character === "#" && current.length === 0) {
-      break;
-    }
-    current += character;
-    index += 1;
-  }
-  push();
-  return { tokens, compound };
 }
 
 function baseName(path: string): string {
