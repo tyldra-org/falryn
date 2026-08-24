@@ -475,7 +475,7 @@ describe("createHushIntegrator", () => {
     }
     expect(transformed.value.fidelity).toBe("deterministic-transform");
     expect(transformed.value.exactSource).toBeNull();
-    expect(transformed.value.lineage).toEqual(["hush.v9", "git.diff"]);
+    expect(transformed.value.lineage).toEqual(["hush.v10", "git.diff"]);
     expect(transformed.value.expansion).not.toBeNull();
     expect(transformed.value.payload.kind).toBe("inline");
     if (transformed.value.payload.kind === "inline") {

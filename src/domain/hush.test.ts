@@ -289,6 +289,39 @@ describe("hush reduction", () => {
     );
   });
 
+  test("external diff removes only validated context while retaining every changed line", () => {
+    const diff = [
+      "--- before.ts\t2026-08-23 06:16:58",
+      "+++ after.ts\t2026-08-23 06:16:58",
+      "@@ -1,3 +1,3 @@",
+      " export function mode() {",
+      '-  return "sample";',
+      '+  return "complete";',
+      " }",
+    ].join("\n");
+    const reduced = reduceHush({
+      command: argv("/usr/bin/diff", ["-u", "before.ts", "after.ts"]),
+      capture: report(diff, { exitCode: 1 }),
+    });
+    expect(reduced.ok).toBe(true);
+    if (!reduced.ok) {
+      throw new Error("expected a hush result");
+    }
+    expect(reduced.value.reducerId).toBe("files.diff");
+    expect(reduced.value.strategy).toBe("specialized");
+    expect(reduced.value.fidelity).toBe("deterministic-reduction");
+    expect(reduced.value.reducedText).toBe(
+      [
+        "before.ts -> after.ts",
+        "@@ -1,3 +1,3 @@",
+        '-  return "sample";',
+        '+  return "complete";',
+      ].join("\n"),
+    );
+    expect(reduced.value.omissions).toEqual([]);
+    expect(reduced.value.exit.exitCode).toBe(1);
+  });
+
   test("git status compacts the branch marker and keeps every porcelain path", () => {
     const lines = [
       "## main",

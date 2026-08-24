@@ -14,6 +14,10 @@ if (executable === "sed") {
   runSedFixture(args);
   process.exit(0);
 }
+if (executable === "diff") {
+  runDiffFixture(args);
+  process.exit(1);
+}
 
 const outputs: Readonly<Record<string, () => string>> = {
   find: () => ["./src/main.ts", "./src/domain/hush.ts", "./docs/README.md"].join("\n"),
@@ -113,6 +117,29 @@ function runSedFixture(argv: readonly string[]): void {
   if (selected.length > 0) {
     process.stdout.write(`${selected}\n`);
   }
+}
+
+function runDiffFixture(argv: readonly string[]): void {
+  if (argv.join("\0") !== ["-u", "diff-before.ts", "diff-after.ts"].join("\0")) {
+    process.stderr.write(`diff: unsupported fixture arguments: ${argv.join(" ")}\n`);
+    process.exit(2);
+  }
+  process.stdout.write(
+    [
+      "--- diff-before.ts\t2026-08-23 06:16:58",
+      "+++ diff-after.ts\t2026-08-23 06:16:58",
+      "@@ -1,5 +1,6 @@",
+      " export function project() {",
+      '-  const mode = "sample";',
+      '+  const mode = "complete";',
+      "   const marker = 736;",
+      "+  const exact = true;",
+      "-  return mode;",
+      '+  return exact ? mode : "sample";',
+      " }",
+      "",
+    ].join("\n"),
+  );
 }
 if (executable === "curl") {
   process.stderr.write(

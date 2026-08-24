@@ -2,6 +2,7 @@ import type { ProcessCaptureReport } from "../../../process-capture.ts";
 import { boundStream, boundText, genericProjection, joinStreams } from "../../bounds.ts";
 import type { HushStreamProjection } from "../../contracts.ts";
 import { shortestText } from "../../text-format.ts";
+import { formatExternalUnifiedDiff } from "../diff/format.ts";
 import { pathFromDiffGit } from "./paths.ts";
 
 export function gitDiffProjection(
@@ -14,7 +15,7 @@ export function gitDiffProjection(
     return genericProjection(capture, maxBytes, patterns);
   }
 
-  const formatted = formatUnifiedDiff(source);
+  const formatted = formatUnifiedDiff(source) ?? formatExternalUnifiedDiff(source);
   const stdout = boundText(shortestText(source, formatted ?? source), "stdout", maxBytes);
   return joinStreams(
     stdout,

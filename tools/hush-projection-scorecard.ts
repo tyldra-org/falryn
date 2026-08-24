@@ -18,7 +18,7 @@ import {
 import { HUSH_RTK_BASELINE } from "./hush-command-coverage.ts";
 import { type HushLsMeasurement, measureText } from "./hush-ls-scorecard.ts";
 
-export const HUSH_PROJECTION_CORPUS_VERSION = "hush-projections.v6";
+export const HUSH_PROJECTION_CORPUS_VERSION = "hush-projections.v7";
 
 export const HUSH_FIND_LISTING_PATHS = [
   "bounds.ts",
@@ -119,6 +119,7 @@ type ProjectionCase = Readonly<{
   rtkArgv?: readonly string[];
   shellCommand?: string;
   baseline?: "raw" | "rewrite";
+  acceptedExitCodes?: readonly number[];
   requiredMarkers: readonly string[];
   forbiddenMarkers?: readonly string[];
 }>;
@@ -229,6 +230,23 @@ export const HUSH_PROJECTION_CASES = [
     argv: ["diff"],
     rtkArgv: ["git", "diff"],
     requiredMarkers: ["src/a.ts", "mode = 'sample'", "mode = 'complete'", "marker = 736"],
+  },
+  {
+    id: "external-diff",
+    projection: "git-diff",
+    executable: "diff",
+    argv: ["-u", "diff-before.ts", "diff-after.ts"],
+    rtkArgv: ["diff", "diff-before.ts", "diff-after.ts"],
+    acceptedExitCodes: [1],
+    requiredMarkers: [
+      "diff-before.ts -> diff-after.ts",
+      "@@ -1,5 +1,6 @@",
+      'const mode = "sample"',
+      'const mode = "complete"',
+      "const exact = true",
+      'return exact ? mode : "sample"',
+    ],
+    forbiddenMarkers: ["2026-08-23", "unchanged", "omitted", "…"],
   },
   {
     id: "git-log",
@@ -466,6 +484,29 @@ async function createScorecard(): Promise<HushProjectionScorecard> {
         2,
       )}\n`,
     );
+    await writeFile(
+      join(root, "diff-before.ts"),
+      [
+        "export function project() {",
+        '  const mode = "sample";',
+        "  const marker = 736;",
+        "  return mode;",
+        "}",
+        "",
+      ].join("\n"),
+    );
+    await writeFile(
+      join(root, "diff-after.ts"),
+      [
+        "export function project() {",
+        '  const mode = "complete";',
+        "  const marker = 736;",
+        "  const exact = true;",
+        '  return exact ? mode : "sample";',
+        "}",
+        "",
+      ].join("\n"),
+    );
     const versionRun = runCommand([rtk, "--version"], root, fixtureBin);
     if (versionRun.exitCode !== 0) {
       throw new Error(`rtk --version failed: ${versionRun.stderr.trim()}`);
@@ -500,7 +541,11 @@ async function createScorecard(): Promise<HushProjectionScorecard> {
           ? runCommand([prepared.executable, "-c", prepared.command], root, fixtureBin)
           : runCommand([prepared.executable, ...prepared.argv], root, fixtureBin);
       const baseline = runBaseline(fixture, raw, rtk, executable, root, fixtureBin);
-      if (raw.exitCode !== 0 || baseline.exitCode !== 0) {
+      const acceptedExitCodes = fixture.acceptedExitCodes ?? [0];
+      if (
+        !acceptedExitCodes.includes(raw.exitCode) ||
+        !acceptedExitCodes.includes(baseline.exitCode)
+      ) {
         throw new Error(
           `${fixture.id} failed: raw=${raw.exitCode} rtk=${baseline.exitCode}\n${raw.stderr}${baseline.stderr}`,
         );

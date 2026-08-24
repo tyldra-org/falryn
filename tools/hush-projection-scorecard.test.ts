@@ -8,12 +8,20 @@ import {
 
 describe("Hush projection scorecard corpus", () => {
   test("keeps each supported Git mutation as a separate RTK comparison", () => {
-    expect(HUSH_PROJECTION_CORPUS_VERSION).toBe("hush-projections.v6");
+    expect(HUSH_PROJECTION_CORPUS_VERSION).toBe("hush-projections.v7");
     expect(
       HUSH_PROJECTION_CASES.filter((entry) => entry.projection === "git-mutation").map(
         (entry) => entry.id,
       ),
     ).toEqual(["git-add", "git-commit", "git-push", "git-pull"]);
+  });
+
+  test("compares Git and external unified diffs independently", () => {
+    const diffs = HUSH_PROJECTION_CASES.filter((entry) => entry.projection === "git-diff");
+    expect(diffs.map((entry) => entry.id)).toEqual(["git-diff", "external-diff"]);
+    const external = HUSH_PROJECTION_CASES.find((entry) => entry.id === "external-diff");
+    expect(external?.acceptedExitCodes).toEqual([1]);
+    expect(external?.forbiddenMarkers).toContain("omitted");
   });
 
   test("locks the large find listing that exposed RTK path omission", () => {
