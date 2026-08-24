@@ -54,6 +54,7 @@ const outputs: Readonly<Record<string, () => string>> = {
   docker: () => dockerOutput(args),
   wc: () => wcOutput(args),
   psql: () => psqlOutput(args),
+  sqlite3: () => sqliteOutput(args),
   journalctl: () =>
     [
       "Aug 24 10:00:00 falryn-host falryn[736]: INFO session started session=demo",
@@ -142,6 +143,36 @@ function psqlOutput(argv: readonly string[]): string {
     "  2 | Preserve database rows | active  |             0",
     "  3 | Verify model context   | pending |            18",
     "(3 rows)",
+  ].join("\n");
+}
+
+function sqliteOutput(argv: readonly string[]): string {
+  if (argv.includes("-line")) {
+    return [
+      "    id = 1",
+      "  task = Optimize JSON",
+      "status = done",
+      "",
+      "    id = 2",
+      "  task = Preserve rows",
+      "status = active",
+    ].join("\n");
+  }
+  if (argv.includes("-box")) {
+    return [
+      "┌────┬───────────────┬────────┐",
+      "│ id │     task      │ status │",
+      "├────┼───────────────┼────────┤",
+      "│ 1  │ Optimize JSON │ done   │",
+      "│ 2  │ Preserve rows │ active │",
+      "└────┴───────────────┴────────┘",
+    ].join("\n");
+  }
+  return [
+    "id  task           status",
+    "--  -------------  ------",
+    "1   Optimize JSON  done  ",
+    "2   Preserve rows  active",
   ].join("\n");
 }
 

@@ -3,6 +3,7 @@ import { boundStream, boundText, joinStreams } from "../../bounds.ts";
 import type { HushStreamProjection } from "../../contracts.ts";
 import { semanticProjection } from "../semantic.ts";
 import { psqlProjection } from "./psql/projection.ts";
+import { sqliteProjection } from "./sqlite/projection.ts";
 
 export function structuredProjection(
   capture: ProcessCaptureReport,
@@ -13,6 +14,9 @@ export function structuredProjection(
   const executable = commandTokens[0]?.split(/[\\/]/u).at(-1);
   if (executable === "psql") {
     return psqlProjection(capture, maxBytes, patterns);
+  }
+  if (executable === "sqlite3") {
+    return sqliteProjection(capture, maxBytes, patterns);
   }
   const identity =
     executable === "aws" && patterns.length === 0 && capture.stdout.inlineText !== null

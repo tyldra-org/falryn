@@ -18,7 +18,7 @@ import {
 import { HUSH_RTK_BASELINE } from "./hush-command-coverage.ts";
 import { type HushLsMeasurement, measureText } from "./hush-ls-scorecard.ts";
 
-export const HUSH_PROJECTION_CORPUS_VERSION = "hush-projections.v11";
+export const HUSH_PROJECTION_CORPUS_VERSION = "hush-projections.v12";
 
 export const HUSH_FIND_LISTING_PATHS = [
   "bounds.ts",
@@ -183,6 +183,43 @@ export const HUSH_PROJECTION_CASES = [
       "2\t102\tVerify recovery\tdone",
     ],
     forbiddenMarkers: ["-[ RECORD", "(2 rows)", "omitted", "…"],
+  },
+  {
+    id: "data-sqlite-column",
+    projection: "structured",
+    executable: "sqlite3",
+    argv: ["-header", "-column", ":memory:", "select id, task, status from work_items"],
+    rtkArgv: [
+      "sqlite3",
+      "-header",
+      "-column",
+      ":memory:",
+      "select id, task, status from work_items",
+    ],
+    requiredMarkers: ["id\ttask\tstatus", "1\tOptimize JSON\tdone", "2\tPreserve rows\tactive"],
+    forbiddenMarkers: ["-------------", "omitted", "…"],
+  },
+  {
+    id: "data-sqlite-box",
+    projection: "structured",
+    executable: "sqlite3",
+    argv: ["-header", "-box", ":memory:", "select id, task, status from work_items"],
+    rtkArgv: ["sqlite3", "-header", "-box", ":memory:", "select id, task, status from work_items"],
+    requiredMarkers: ["id\ttask\tstatus", "1\tOptimize JSON\tdone", "2\tPreserve rows\tactive"],
+    forbiddenMarkers: ["┌", "│", "└", "omitted", "…"],
+  },
+  {
+    id: "data-sqlite-line",
+    projection: "structured",
+    executable: "sqlite3",
+    argv: ["-line", ":memory:", "select id, task, status from work_items"],
+    rtkArgv: ["sqlite3", "-line", ":memory:", "select id, task, status from work_items"],
+    requiredMarkers: [
+      "record\tid\ttask\tstatus",
+      "1\t1\tOptimize JSON\tdone",
+      "2\t2\tPreserve rows\tactive",
+    ],
+    forbiddenMarkers: [" = ", "omitted", "…"],
   },
   {
     id: "search-rg",

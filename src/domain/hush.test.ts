@@ -561,6 +561,89 @@ describe("hush reduction", () => {
     expect(failedResult.value.omissions).toEqual([]);
   });
 
+  test("sqlite3 retains every cell while removing validated table presentation", () => {
+    const output = [
+      "id  task           status",
+      "--  -------------  ------",
+      "1   Optimize JSON  done  ",
+      "2   Preserve rows  active",
+      "",
+    ].join("\n");
+    const reduced = reduceHush({
+      command: argv("/usr/bin/sqlite3", ["-header", "-column", ":memory:", "select 1"]),
+      capture: report(output),
+    });
+    expect(reduced.ok).toBe(true);
+    if (!reduced.ok) {
+      throw new Error("expected a hush result");
+    }
+    expect(reduced.value.reducerId).toBe("data.command");
+    expect(reduced.value.strategy).toBe("specialized");
+    expect(reduced.value.reducedText).toBe(
+      "id\ttask\tstatus\n1\tOptimize JSON\tdone\n2\tPreserve rows\tactive\n",
+    );
+    expect(reduced.value.truncated).toBe(false);
+    expect(reduced.value.omissions).toEqual([]);
+  });
+
+  test("sqlite3 keeps compact modes, malformed shapes, and failures exact", () => {
+    const list = "id|task\n1|Optimize JSON\n";
+    const listed = reduceHush({
+      command: argv("sqlite3", ["-header", "-list", ":memory:", "select 1"]),
+      capture: report(list),
+    });
+    expect(listed.ok).toBe(true);
+    if (!listed.ok) {
+      throw new Error("expected a hush result");
+    }
+    expect(listed.value.reducedText).toBe(list);
+
+    const malformed = "id  task\n--  ----\n1   one\n2 unexpected\n";
+    const malformedResult = reduceHush({
+      command: argv("sqlite3", ["-header", "-column", ":memory:", "select 1"]),
+      capture: report(malformed),
+    });
+    expect(malformedResult.ok).toBe(true);
+    if (!malformedResult.ok) {
+      throw new Error("expected a hush result");
+    }
+    expect(malformedResult.value.reducedText).toBe(malformed);
+    expect(malformedResult.value.strategy).toBe("passthrough");
+
+    const failure = "Error: in prepare, no such table: missing\n";
+    const failed = reduceHush({
+      command: argv("sqlite3", [":memory:", "select * from missing"]),
+      capture: report("", { stderr: failure, exitCode: 1 }),
+    });
+    expect(failed.ok).toBe(true);
+    if (!failed.ok) {
+      throw new Error("expected a hush result");
+    }
+    expect(failed.value.reducedText).toBe(`stderr:\n${failure}`);
+    expect(failed.value.omissions).toEqual([]);
+  });
+
+  test("sqlite3 keeps requested-pattern output exact instead of presentation-compacting it", () => {
+    const output = [
+      "id  task           status",
+      "--  -------------  ------",
+      "1   Optimize JSON  done  ",
+      "2   Preserve rows  active",
+      "",
+    ].join("\n");
+    const reduced = reduceHush({
+      command: argv("sqlite3", ["-header", "-column", ":memory:", "select 1"]),
+      capture: report(output),
+      importantPatterns: ["active"],
+    });
+    expect(reduced.ok).toBe(true);
+    if (!reduced.ok) {
+      throw new Error("expected a hush result");
+    }
+    expect(reduced.value.reducedText).toBe(output);
+    expect(reduced.value.strategy).toBe("passthrough");
+  });
+
   test("minifies structured JSON without changing its values", () => {
     const document = {
       account: "falryn",

@@ -8,7 +8,7 @@ import {
 
 describe("Hush projection scorecard corpus", () => {
   test("keeps each supported Git mutation as a separate RTK comparison", () => {
-    expect(HUSH_PROJECTION_CORPUS_VERSION).toBe("hush-projections.v11");
+    expect(HUSH_PROJECTION_CORPUS_VERSION).toBe("hush-projections.v12");
     expect(
       HUSH_PROJECTION_CASES.filter((entry) => entry.projection === "git-mutation").map(
         (entry) => entry.id,
@@ -60,6 +60,18 @@ describe("Hush projection scorecard corpus", () => {
     expect(psql.every((entry) => entry.projection === "structured")).toBe(true);
     expect(psql.every((entry) => entry.rtkArgv?.[0] === "psql")).toBe(true);
     expect(psql.every((entry) => entry.forbiddenMarkers?.includes("omitted"))).toBe(true);
+  });
+
+  test("compares SQLite human display modes through RTK passthrough", () => {
+    const sqlite = HUSH_PROJECTION_CASES.filter((entry) => entry.executable === "sqlite3");
+    expect(sqlite.map((entry) => entry.id)).toEqual([
+      "data-sqlite-column",
+      "data-sqlite-box",
+      "data-sqlite-line",
+    ]);
+    expect(sqlite.every((entry) => entry.projection === "structured")).toBe(true);
+    expect(sqlite.every((entry) => entry.rtkArgv?.[0] === "sqlite3")).toBe(true);
+    expect(sqlite.every((entry) => entry.forbiddenMarkers?.includes("omitted"))).toBe(true);
   });
 
   test("covers ripgrep, sed, pipelines, and and-chains independently", () => {
