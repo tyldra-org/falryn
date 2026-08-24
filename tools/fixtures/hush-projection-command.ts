@@ -52,6 +52,7 @@ const outputs: Readonly<Record<string, () => string>> = {
       "found 0 vulnerabilities",
     ].join("\n"),
   docker: () => dockerOutput(args),
+  wc: () => wcOutput(args),
   journalctl: () =>
     [
       "Aug 24 10:00:00 falryn-host falryn[736]: INFO session started session=demo",
@@ -97,6 +98,26 @@ const output = outputs[executable]?.();
 if (output === undefined) {
   process.stderr.write(`unsupported projection fixture executable: ${executable}\n`);
   process.exit(2);
+}
+
+function wcOutput(argv: readonly string[]): string {
+  const signature = argv.join("\0");
+  if (signature === ["-l", "-w", "-c", "src/domain/hush/reducers/log/format.ts"].join("\0")) {
+    return "     127     384    3268 src/domain/hush/reducers/log/format.ts";
+  }
+  if (
+    signature ===
+    ["src/domain/hush/reducers/log/format.ts", "src/domain/hush/reducers/log/projection.ts"].join(
+      "\0",
+    )
+  ) {
+    return [
+      "     127     384    3268 src/domain/hush/reducers/log/format.ts",
+      "      32     131    1251 src/domain/hush/reducers/log/projection.ts",
+      "     159     515    4519 total",
+    ].join("\n");
+  }
+  throw new Error(`unsupported wc fixture arguments: ${argv.join(" ")}`);
 }
 
 function runSedFixture(argv: readonly string[]): void {

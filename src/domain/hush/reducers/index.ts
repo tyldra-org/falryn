@@ -5,6 +5,7 @@ import { assertNever } from "../../result.ts";
 import type { HushProjectionKind } from "../catalog/index.ts";
 import type { HushFidelity, HushResult, HushStrategy, HushStreamProjection } from "../contracts.ts";
 import { compoundProjection } from "./compound/projection.ts";
+import { countProjection } from "./count/projection.ts";
 import { forgeProjection } from "./forge/projection.ts";
 import {
   gitDiffProjection,
@@ -90,6 +91,8 @@ export function specializedProjection(
       return semanticProjection("package", capture, maxBytes, patterns);
     case "table":
       return tableProjection(capture, maxBytes, patterns);
+    case "count":
+      return countProjection(capture, maxBytes, patterns, commandTokens);
     case "log":
       return logProjection(capture, maxBytes, patterns);
     case "curl":

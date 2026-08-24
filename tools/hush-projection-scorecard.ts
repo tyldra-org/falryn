@@ -18,7 +18,7 @@ import {
 import { HUSH_RTK_BASELINE } from "./hush-command-coverage.ts";
 import { type HushLsMeasurement, measureText } from "./hush-ls-scorecard.ts";
 
-export const HUSH_PROJECTION_CORPUS_VERSION = "hush-projections.v8";
+export const HUSH_PROJECTION_CORPUS_VERSION = "hush-projections.v9";
 
 export const HUSH_FIND_LISTING_PATHS = [
   "bounds.ts",
@@ -376,6 +376,32 @@ export const HUSH_PROJECTION_CASES = [
     argv: ["ps"],
     rtkArgv: ["docker", "ps"],
     requiredMarkers: ["abc123", "falryn-dev", "def456", "falryn-db"],
+  },
+  {
+    id: "count-wc-single",
+    projection: "count",
+    executable: "wc",
+    argv: ["-l", "-w", "-c", "src/domain/hush/reducers/log/format.ts"],
+    rtkArgv: ["wc", "-l", "-w", "-c", "src/domain/hush/reducers/log/format.ts"],
+    requiredMarkers: ["127", "384", "3268"],
+    forbiddenMarkers: ["src/domain", "omitted", "…"],
+  },
+  {
+    id: "count-wc-multi",
+    projection: "count",
+    executable: "wc",
+    argv: ["src/domain/hush/reducers/log/format.ts", "src/domain/hush/reducers/log/projection.ts"],
+    rtkArgv: [
+      "wc",
+      "src/domain/hush/reducers/log/format.ts",
+      "src/domain/hush/reducers/log/projection.ts",
+    ],
+    requiredMarkers: [
+      "127L 384W 3268B format.ts",
+      "32L 131W 1251B projection.ts",
+      "Σ 159L 515W 4519B",
+    ],
+    forbiddenMarkers: ["src/domain", "omitted", "…"],
   },
   {
     id: "log-docker",

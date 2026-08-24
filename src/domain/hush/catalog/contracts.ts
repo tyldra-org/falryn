@@ -22,6 +22,7 @@ export const HUSH_PROJECTION_KINDS = [
   "build",
   "package",
   "table",
+  "count",
   "log",
   "curl",
   "wget",

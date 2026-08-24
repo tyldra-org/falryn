@@ -69,7 +69,7 @@ export const FILE_COMMANDS = [
   {
     reducerId: "files.count",
     family: "data",
-    projection: "table",
+    projection: "count",
     executables: ["wc"],
     examples: ["wc -l src/main.ts"],
   },

@@ -445,6 +445,63 @@ describe("hush reduction", () => {
     expect(reduced.value.omissions).toEqual([]);
   });
 
+  test("wc removes only redundant single-file presentation", () => {
+    const output = "     127     384    3268 src/domain/hush/reducers/log/format.ts\n";
+    const reduced = reduceHush({
+      command: argv("/usr/bin/wc", ["-l", "-w", "-c", "src/domain/hush/reducers/log/format.ts"]),
+      capture: report(output),
+    });
+    expect(reduced.ok).toBe(true);
+    if (!reduced.ok) {
+      throw new Error("expected a hush result");
+    }
+    expect(reduced.value.reducerId).toBe("files.count");
+    expect(reduced.value.strategy).toBe("specialized");
+    expect(reduced.value.reducedText).toBe("127 384 3268\n");
+    expect(reduced.value.truncated).toBe(false);
+    expect(reduced.value.omissions).toEqual([]);
+  });
+
+  test("wc retains every multi-file count and exact total", () => {
+    const output = [
+      "     127     384    3268 src/domain/hush/reducers/log/format.ts",
+      "      32     131    1251 src/domain/hush/reducers/log/projection.ts",
+      "     159     515    4519 total",
+      "",
+    ].join("\n");
+    const reduced = reduceHush({
+      command: argv("/usr/bin/wc", [
+        "src/domain/hush/reducers/log/format.ts",
+        "src/domain/hush/reducers/log/projection.ts",
+      ]),
+      capture: report(output),
+    });
+    expect(reduced.ok).toBe(true);
+    if (!reduced.ok) {
+      throw new Error("expected a hush result");
+    }
+    expect(reduced.value.reducedText).toBe(
+      ["127L 384W 3268B format.ts", "32L 131W 1251B projection.ts", "Σ 159L 515W 4519B", ""].join(
+        "\n",
+      ),
+    );
+    expect(reduced.value.omissions).toEqual([]);
+  });
+
+  test("wc keeps failures exact instead of inventing counts", () => {
+    const output = "wc: missing.ts: open: No such file or directory\n";
+    const reduced = reduceHush({
+      command: argv("/usr/bin/wc", ["-l", "missing.ts"]),
+      capture: report("", { stderr: output, exitCode: 1 }),
+    });
+    expect(reduced.ok).toBe(true);
+    if (!reduced.ok) {
+      throw new Error("expected a hush result");
+    }
+    expect(reduced.value.reducedText).toBe(`stderr:\n${output}`);
+    expect(reduced.value.omissions).toEqual([]);
+  });
+
   test("minifies structured JSON without changing its values", () => {
     const document = {
       account: "falryn",

@@ -8,7 +8,7 @@ import {
 
 describe("Hush projection scorecard corpus", () => {
   test("keeps each supported Git mutation as a separate RTK comparison", () => {
-    expect(HUSH_PROJECTION_CORPUS_VERSION).toBe("hush-projections.v8");
+    expect(HUSH_PROJECTION_CORPUS_VERSION).toBe("hush-projections.v9");
     expect(
       HUSH_PROJECTION_CASES.filter((entry) => entry.projection === "git-mutation").map(
         (entry) => entry.id,
@@ -45,6 +45,13 @@ describe("Hush projection scorecard corpus", () => {
     expect(journal?.baseline).toBe("rtk-log");
     expect(journal?.requiredMarkers).toHaveLength(7);
     expect(journal?.forbiddenMarkers).toContain("omitted");
+  });
+
+  test("compares single and multi-file wc without dropping count facts", () => {
+    const counts = HUSH_PROJECTION_CASES.filter((entry) => entry.projection === "count");
+    expect(counts.map((entry) => entry.id)).toEqual(["count-wc-single", "count-wc-multi"]);
+    expect(counts.every((entry) => entry.requiredMarkers.length >= 3)).toBe(true);
+    expect(counts.every((entry) => entry.forbiddenMarkers?.includes("omitted"))).toBe(true);
   });
 
   test("covers ripgrep, sed, pipelines, and and-chains independently", () => {
