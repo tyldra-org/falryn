@@ -7,6 +7,11 @@ import {
   type HushGithubCommand,
   hasGithubOutputOverride,
 } from "../domain/hush/github-command.ts";
+import {
+  gitlabCommand,
+  gitlabCommandArguments,
+  hasGitlabOutputOverride,
+} from "../domain/hush/gitlab-command.ts";
 import type { ProcessCaptureRequest } from "../domain/index.ts";
 
 const GITHUB_FIELDS: Readonly<Partial<Record<HushGithubCommand, string>>> = {
@@ -23,17 +28,28 @@ export function prepareHushCaptureRequest(request: ProcessCaptureRequest): Proce
     return request;
   }
   const shape = commandShape(request);
-  const command = shape.compound ? null : githubCommand(shape.tokens);
-  const fields = command === null ? undefined : GITHUB_FIELDS[command];
-  if (
-    command === null ||
-    fields === undefined ||
-    hasGithubOutputOverride(command, githubCommandArguments(shape.tokens))
-  ) {
+  if (shape.compound) {
     return request;
   }
-  return {
-    ...request,
-    argv: [...request.argv, "--json", fields],
-  };
+  const github = githubCommand(shape.tokens);
+  const fields = github === null ? undefined : GITHUB_FIELDS[github];
+  if (
+    github !== null &&
+    fields !== undefined &&
+    !hasGithubOutputOverride(github, githubCommandArguments(shape.tokens))
+  ) {
+    return {
+      ...request,
+      argv: [...request.argv, "--json", fields],
+    };
+  }
+  const gitlab = gitlabCommand(shape.tokens);
+  if (
+    gitlab !== null &&
+    gitlab !== "api" &&
+    !hasGitlabOutputOverride(gitlab, gitlabCommandArguments(shape.tokens))
+  ) {
+    return { ...request, argv: [...request.argv, "--output", "json"] };
+  }
+  return request;
 }

@@ -18,7 +18,7 @@ import {
 import { HUSH_RTK_BASELINE } from "./hush-command-coverage.ts";
 import { type HushLsMeasurement, measureText } from "./hush-ls-scorecard.ts";
 
-export const HUSH_PROJECTION_CORPUS_VERSION = "hush-projections.v18";
+export const HUSH_PROJECTION_CORPUS_VERSION = "hush-projections.v19";
 
 export const HUSH_FIND_LISTING_PATHS = [
   "bounds.ts",
@@ -641,6 +641,155 @@ export const HUSH_PROJECTION_CASES = [
     forbiddenMarkers: ['"tagName"', "Latest\t", "Pre-release\t"],
   },
   {
+    id: "glab-mr-list",
+    projection: "forge",
+    executable: "glab",
+    argv: ["mr", "list"],
+    rtkArgv: ["glab", "mr", "list"],
+    requiredMarkers: [
+      "-> main:",
+      "!128 feat/context-engine: Context engine groundwork",
+      "!736 perf/736-context-optimization: Do more with less context",
+      "!784 perf/736-context-optimization: Complete Hush projections",
+    ],
+    forbiddenMarkers: ['"source_branch"', "Showing 3", "omitted", "…"],
+  },
+  {
+    id: "glab-issue-list",
+    projection: "forge",
+    executable: "glab",
+    argv: ["issue", "list"],
+    rtkArgv: ["glab", "issue", "list"],
+    requiredMarkers: [
+      "#809 Implement live browser supervision and human takeover",
+      "#800 Qualify optional native acceleration kernels",
+      "#790 Implement registry-driven slash completion",
+    ],
+    forbiddenMarkers: ['"labels"', "Showing 3", "omitted", "…"],
+  },
+  {
+    id: "glab-ci-status",
+    projection: "forge",
+    executable: "glab",
+    argv: ["ci", "status"],
+    rtkArgv: ["glab", "ci", "status"],
+    requiredMarkers: [
+      "#901 fail perf/736-context-optimization abcdef01",
+      "https://gitlab.example/tyldra/falryn/-/pipelines/901",
+      "ok #1001 typecheck [verify]",
+      "fail #1002 tests [verify] script_failure",
+      "fail #1003 codeql [security] allowed script_failure",
+    ],
+    forbiddenMarkers: ['"allow_failure"', "Pipeline state:", "omitted", "…"],
+  },
+  {
+    id: "glab-pipeline-list",
+    projection: "forge",
+    executable: "glab",
+    argv: ["pipeline", "list"],
+    rtkArgv: ["glab", "pipeline", "list"],
+    baseline: "raw",
+    requiredMarkers: [
+      "#901 fail perf/736-context-optimization abcdef01 push verify",
+      "#900 ok main 12345678 merge_request_event verify",
+    ],
+    forbiddenMarkers: ['"web_url"', "Showing 2", "omitted", "…"],
+  },
+  {
+    id: "glab-api",
+    projection: "forge",
+    executable: "glab",
+    argv: ["api", "projects/736"],
+    rtkArgv: ["glab", "api", "projects/736"],
+    requiredMarkers: ['"id":736', '"path_with_namespace":"tyldra/falryn"', '"visibility":"public"'],
+    forbiddenMarkers: ["omitted", "…"],
+  },
+  {
+    id: "glab-release-list",
+    projection: "forge",
+    executable: "glab",
+    argv: ["release", "list"],
+    rtkArgv: ["glab", "release", "list"],
+    requiredMarkers: [
+      "release v0.2.0 Falryn 0.2.0 2026-08-24",
+      "upcoming v0.3.0-beta Falryn 0.3 beta 2026-09-01",
+    ],
+    forbiddenMarkers: ['"tag_name"', "Showing 2", "omitted", "…"],
+  },
+  {
+    id: "gt-log",
+    projection: "forge",
+    executable: "gt",
+    argv: ["log"],
+    rtkArgv: ["gt", "log"],
+    requiredMarkers: [
+      "* feature/top 95338df Preserve complete context | 8 seconds ago",
+      "feature/base 95610c6 Build Hush forge reducers | 2 minutes ago",
+      "main | 5 weeks ago",
+    ],
+    forbiddenMarkers: ["│", "omitted", "…"],
+  },
+  {
+    id: "gt-submit",
+    projection: "forge",
+    executable: "gt",
+    argv: ["submit"],
+    rtkArgv: ["gt", "submit"],
+    requiredMarkers: [
+      "created feature/base https://app.graphite.dev/github/pr/example/repo/101",
+      "updated feature/top https://app.graphite.dev/github/pr/example/repo/102",
+    ],
+    forbiddenMarkers: ["Validating", "Preparing", "Pushing to remote", "omitted", "…"],
+  },
+  {
+    id: "gt-sync",
+    projection: "forge",
+    executable: "gt",
+    argv: ["sync"],
+    rtkArgv: ["gt", "sync"],
+    baseline: "raw",
+    requiredMarkers: [
+      "sync main up to date",
+      "deleted feature/merged (#98 merged)",
+      "restacked feature/base -> main",
+      "restacked feature/top -> feature/base",
+    ],
+    forbiddenMarkers: ["Fetching latest", "Cleaning up", "Restacking branches", "omitted", "…"],
+  },
+  {
+    id: "gt-restack",
+    projection: "forge",
+    executable: "gt",
+    argv: ["restack"],
+    rtkArgv: ["gt", "restack"],
+    baseline: "raw",
+    requiredMarkers: ["restacked feature/base -> main", "restacked feature/top -> feature/base"],
+    forbiddenMarkers: ["Restacking branches", "omitted", "…"],
+  },
+  {
+    id: "gt-create",
+    projection: "forge",
+    executable: "gt",
+    argv: ["create"],
+    rtkArgv: ["gt", "create"],
+    baseline: "raw",
+    requiredMarkers: [
+      "created feature/demo -> main",
+      "abc1234 Preserve complete context",
+      "2 files +6 -1",
+    ],
+    forbiddenMarkers: ["insertions", "deletions", "omitted", "…"],
+  },
+  {
+    id: "gt-branch",
+    projection: "forge",
+    executable: "gt",
+    argv: ["branch"],
+    rtkArgv: ["gt", "branch"],
+    requiredMarkers: ["* feature/top", "feature/base", "main"],
+    forbiddenMarkers: ["◉", "◯", "omitted", "…"],
+  },
+  {
     id: "test-pytest",
     projection: "test",
     executable: "pytest",
@@ -780,6 +929,7 @@ type CommandRun = Readonly<{ stdout: string; stderr: string; exitCode: number }>
 export type HushProjectionScore = Readonly<{
   id: string;
   projection: HushProjectionKind;
+  gate: "rtk" | "raw" | "rewrite" | "rtk-log";
   raw: HushLsMeasurement;
   rtk: HushLsMeasurement;
   hush: HushLsMeasurement;
@@ -930,6 +1080,7 @@ async function createScorecard(): Promise<HushProjectionScorecard> {
       scores.push({
         id: fixture.id,
         projection: fixture.projection,
+        gate: fixture.baseline ?? "rtk",
         raw: rawMeasurement,
         rtk: rtkMeasurement,
         hush: hushMeasurement,
@@ -965,9 +1116,10 @@ async function createListingCorpus(root: string): Promise<void> {
 }
 
 export function formatHushProjectionScorecard(scorecard: HushProjectionScorecard): string {
-  const headings = ["case", "raw", "rtk", "hush", "delta", "context", "result"];
+  const headings = ["case", "gate", "raw", "ceiling", "hush", "delta", "context", "result"];
   const rows = scorecard.scores.map((score) => [
     score.id,
+    score.gate,
     formatMeasurement(score.raw),
     formatMeasurement(score.rtk),
     formatMeasurement(score.hush),

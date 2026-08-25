@@ -37,6 +37,23 @@ describe("Hush capture command preparation", () => {
     });
   }
 
+  const gitlabStructuredCases: readonly (readonly [string, readonly string[]])[] = [
+    ["mr list", ["mr", "list"]],
+    ["issue list", ["issue", "list"]],
+    ["ci status", ["ci", "status"]],
+    ["pipeline list", ["pipeline", "list"]],
+    ["release list", ["release", "list"]],
+  ];
+  for (const [label, argv] of gitlabStructuredCases) {
+    test(`requests structured facts for glab ${label}`, () => {
+      const request = command(argv, "/opt/homebrew/bin/glab");
+      expect(prepareHushCaptureRequest(request)).toEqual({
+        ...request,
+        argv: [...argv, "--output", "json"],
+      });
+    });
+  }
+
   const overrideCases: readonly (readonly string[])[] = [
     ["pr", "list", "--json", "number,title"],
     ["pr", "view", "42", "--comments"],
@@ -49,6 +66,21 @@ describe("Hush capture command preparation", () => {
   for (const argv of overrideCases) {
     test(`preserves explicit gh output requests: ${argv.join(" ")}`, () => {
       const request = command(argv);
+      expect(prepareHushCaptureRequest(request)).toBe(request);
+    });
+  }
+
+  const gitlabOverrideCases: readonly (readonly string[])[] = [
+    ["mr", "list", "--output", "text"],
+    ["issue", "list", "--output-format", "ids"],
+    ["ci", "status", "--live"],
+    ["pipeline", "list", "--jq", ".[0].id"],
+    ["api", "projects"],
+    ["release", "list", "-F", "json"],
+  ];
+  for (const argv of gitlabOverrideCases) {
+    test(`preserves explicit glab output requests: ${argv.join(" ")}`, () => {
+      const request = command(argv, "/opt/homebrew/bin/glab");
       expect(prepareHushCaptureRequest(request)).toBe(request);
     });
   }

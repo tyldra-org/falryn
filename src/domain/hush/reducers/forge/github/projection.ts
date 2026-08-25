@@ -1,4 +1,4 @@
-import type { ProcessCaptureReport, ProcessStreamCapture } from "../../../../process-capture.ts";
+import type { ProcessCaptureReport } from "../../../../process-capture.ts";
 import { boundStream, boundText, joinStreams } from "../../../bounds.ts";
 import type { HushStreamProjection } from "../../../contracts.ts";
 import {
@@ -7,6 +7,7 @@ import {
   type HushGithubCommand,
   hasGithubOutputOverride,
 } from "../../../github-command.ts";
+import { completeSuccessfulCapture } from "../capture.ts";
 import { formatGithubIssueList } from "./issue-list.ts";
 import { formatGithubPrList } from "./pr-list.ts";
 import { formatGithubPrView } from "./pr-view.ts";
@@ -25,7 +26,7 @@ export function githubProjection(
     command === null ||
     patterns.length > 0 ||
     hasGithubOutputOverride(command, githubCommandArguments(commandTokens)) ||
-    !canProject(capture)
+    !completeSuccessfulCapture(capture)
   ) {
     return null;
   }
@@ -66,24 +67,4 @@ function formatGithub(
     case "api":
       return null;
   }
-}
-
-function canProject(capture: ProcessCaptureReport): boolean {
-  return (
-    capture.stop.kind === "exited" &&
-    capture.exit.exitCode === 0 &&
-    capture.exit.signal === null &&
-    completeText(capture.stdout) &&
-    completeText(capture.stderr)
-  );
-}
-
-function completeText(capture: ProcessStreamCapture): boolean {
-  return (
-    capture.encoding === "utf-8" &&
-    capture.inlineText !== null &&
-    !capture.truncated &&
-    capture.omittedBytes === 0 &&
-    !capture.maxLineExceeded
-  );
 }

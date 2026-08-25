@@ -32,6 +32,8 @@ const outputs: Readonly<Record<string, () => string>> = {
     ].join("\n"),
   git: () => gitOutput(args),
   gh: () => ghOutput(args),
+  glab: () => glabOutput(args),
+  gt: () => graphiteOutput(args),
   pytest: () =>
     [
       "tests/test_hush.py::test_complete PASSED",
@@ -721,6 +723,271 @@ function ghOutput(argv: readonly string[]): string {
             "Falryn 0.3 beta\tPre-release\tv0.3.0-beta\t2026-08-23T12:00:00Z",
           ].join("\n");
     }
+    default:
+      return "";
+  }
+}
+
+function glabOutput(argv: readonly string[]): string {
+  const command = `${argv[0] ?? ""} ${argv[1] ?? ""}`;
+  const json = outputValue(argv) === "json";
+  switch (command) {
+    case "mr list": {
+      const mergeRequests = [
+        {
+          iid: 128,
+          title: "Context engine groundwork",
+          state: "opened",
+          source_branch: "feat/context-engine",
+          target_branch: "main",
+          author: { username: "falryn-dev" },
+          web_url: "https://gitlab.example/tyldra/falryn/-/merge_requests/128",
+        },
+        {
+          iid: 736,
+          title: "Do more with less context",
+          state: "opened",
+          source_branch: "perf/736-context-optimization",
+          target_branch: "main",
+          author: { username: "yogeshprasad098" },
+          web_url: "https://gitlab.example/tyldra/falryn/-/merge_requests/736",
+        },
+        {
+          iid: 784,
+          title: "Complete Hush projections",
+          state: "opened",
+          source_branch: "perf/736-context-optimization",
+          target_branch: "main",
+          author: { username: "yogeshprasad098" },
+          web_url: "https://gitlab.example/tyldra/falryn/-/merge_requests/784",
+        },
+      ];
+      return json
+        ? JSON.stringify(mergeRequests)
+        : [
+            "Showing 3 open merge requests on tyldra/falryn. (Page 1)",
+            ...mergeRequests.map(
+              (mr) =>
+                `!${mr.iid} ${mr.title} (${mr.source_branch} -> ${mr.target_branch}) @${mr.author.username}`,
+            ),
+          ].join("\n");
+    }
+    case "issue list": {
+      const issues = [
+        {
+          iid: 809,
+          title: "Implement live browser supervision and human takeover",
+          state: "opened",
+          author: { username: "yogeshprasad098" },
+          labels: ["priority:P0", "area: browser"],
+          web_url: "https://gitlab.example/tyldra/falryn/-/issues/809",
+        },
+        {
+          iid: 800,
+          title: "Qualify optional native acceleration kernels",
+          state: "opened",
+          author: { username: "yogeshprasad098" },
+          labels: ["priority:P1", "area: performance"],
+          web_url: "https://gitlab.example/tyldra/falryn/-/issues/800",
+        },
+        {
+          iid: 790,
+          title: "Implement registry-driven slash completion",
+          state: "opened",
+          author: { username: "yogeshprasad098" },
+          labels: ["priority:P1", "area: tui"],
+          web_url: "https://gitlab.example/tyldra/falryn/-/issues/790",
+        },
+      ];
+      return json
+        ? JSON.stringify(issues)
+        : [
+            "Showing 3 open issues on tyldra/falryn. (Page 1)",
+            ...issues.map(
+              (issue) =>
+                `#${issue.iid} ${issue.title} [${issue.labels.join(", ")}] @${issue.author.username}`,
+            ),
+          ].join("\n");
+    }
+    case "ci status": {
+      const status = {
+        pipeline: {
+          id: 901,
+          status: "failed",
+          ref: "perf/736-context-optimization",
+          sha: "abcdef0123456789abcdef0123456789abcdef01",
+          web_url: "https://gitlab.example/tyldra/falryn/-/pipelines/901",
+        },
+        jobs: [
+          {
+            id: 1_001,
+            name: "typecheck",
+            stage: "verify",
+            status: "success",
+            allow_failure: false,
+            failure_reason: "",
+          },
+          {
+            id: 1_002,
+            name: "tests",
+            stage: "verify",
+            status: "failed",
+            allow_failure: false,
+            failure_reason: "script_failure",
+          },
+          {
+            id: 1_003,
+            name: "codeql",
+            stage: "security",
+            status: "failed",
+            allow_failure: true,
+            failure_reason: "script_failure",
+          },
+        ],
+      };
+      return json
+        ? JSON.stringify(status)
+        : [
+            "(success) • 32s  verify    typecheck",
+            "(failed) • 1m12s verify    tests",
+            "(failed) • 52s  security  codeql",
+            "https://gitlab.example/tyldra/falryn/-/pipelines/901",
+            "SHA: abcdef0123456789abcdef0123456789abcdef01",
+            "Pipeline state: failed",
+          ].join("\n");
+    }
+    case "pipeline list": {
+      const pipelines = [
+        {
+          id: 901,
+          status: "failed",
+          ref: "perf/736-context-optimization",
+          sha: "abcdef0123456789abcdef0123456789abcdef01",
+          source: "push",
+          name: "verify",
+          web_url: "https://gitlab.example/tyldra/falryn/-/pipelines/901",
+        },
+        {
+          id: 900,
+          status: "success",
+          ref: "main",
+          sha: "1234567890abcdef1234567890abcdef12345678",
+          source: "merge_request_event",
+          name: "verify",
+          web_url: "https://gitlab.example/tyldra/falryn/-/pipelines/900",
+        },
+      ];
+      return json
+        ? JSON.stringify(pipelines)
+        : [
+            "Showing 2 pipelines on tyldra/falryn. (Page 1)",
+            "(failed) • #901 perf/736-context-optimization abcdef01 push",
+            "(success) • #900 main 12345678 merge_request_event",
+          ].join("\n");
+    }
+    case "api projects/736":
+      return JSON.stringify({
+        id: 736,
+        path_with_namespace: "tyldra/falryn",
+        visibility: "public",
+      });
+    case "release list": {
+      const releases = [
+        {
+          tag_name: "v0.2.0",
+          name: "Falryn 0.2.0",
+          upcoming_release: false,
+          released_at: "2026-08-24T12:00:00Z",
+          created_at: "2026-08-24T11:00:00Z",
+          _links: { self: "https://gitlab.example/tyldra/falryn/-/releases/v0.2.0" },
+        },
+        {
+          tag_name: "v0.3.0-beta",
+          name: "Falryn 0.3 beta",
+          upcoming_release: true,
+          released_at: "2026-09-01T12:00:00Z",
+          created_at: "2026-08-24T12:00:00Z",
+          _links: { self: "https://gitlab.example/tyldra/falryn/-/releases/v0.3.0-beta" },
+        },
+      ];
+      return json
+        ? JSON.stringify(releases)
+        : [
+            "Showing 2 releases on tyldra/falryn.",
+            "v0.2.0 Falryn 0.2.0 released 2026-08-24",
+            "v0.3.0-beta Falryn 0.3 beta upcoming 2026-09-01",
+          ].join("\n");
+    }
+    default:
+      return "";
+  }
+}
+
+function outputValue(argv: readonly string[]): string | null {
+  for (let index = 0; index < argv.length; index += 1) {
+    const argument = argv[index] ?? "";
+    if ((argument === "--output" || argument === "-F" || argument === "-O") && argv[index + 1]) {
+      return argv[index + 1] ?? null;
+    }
+    const inline = /^(?:--output|-F|-O)=(.+)$/u.exec(argument)?.[1];
+    if (inline !== undefined) {
+      return inline;
+    }
+  }
+  return null;
+}
+
+function graphiteOutput(argv: readonly string[]): string {
+  switch (argv[0]) {
+    case "log":
+      return [
+        "◉ feature/top (current)",
+        "│ 8 seconds ago",
+        "│",
+        "│ 95338df - Preserve complete context",
+        "│",
+        "◯ feature/base",
+        "│ 2 minutes ago",
+        "│",
+        "│ 95610c6 - Build Hush forge reducers",
+        "│",
+        "◯ main",
+        "│ 5 weeks ago",
+      ].join("\n");
+    case "submit":
+      return [
+        "🥞 Validating that this Graphite stack is ready to submit...",
+        "📝 Preparing to submit PRs for the following branches...",
+        "▸ feature/base (Create)",
+        "▸ feature/top (Update)",
+        "📨 Pushing to remote and creating/updating PRs...",
+        "feature/base: https://app.graphite.dev/github/pr/example/repo/101 (created)",
+        "feature/top: https://app.graphite.dev/github/pr/example/repo/102 (updated)",
+      ].join("\n");
+    case "sync":
+      return [
+        "🌲 Fetching latest changes from remote...",
+        "main is up to date.",
+        "🧹 Cleaning up merged branches...",
+        "Deleted feature/merged (PR #98 was merged).",
+        "🔄 Restacking branches...",
+        "Restacked feature/base on main.",
+        "Restacked feature/top on feature/base.",
+      ].join("\n");
+    case "restack":
+      return [
+        "🔄 Restacking branches...",
+        "Restacked feature/base on main.",
+        "Restacked feature/top on feature/base.",
+      ].join("\n");
+    case "create":
+      return [
+        "Created branch feature/demo on main.",
+        "[feature/demo abc1234] Preserve complete context",
+        " 2 files changed, 6 insertions(+), 1 deletion(-)",
+      ].join("\n");
+    case "branch":
+      return ["◉ feature/top (current)", "◯ feature/base", "◯ main"].join("\n");
     default:
       return "";
   }

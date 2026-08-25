@@ -8,7 +8,7 @@ import {
 
 describe("Hush projection scorecard corpus", () => {
   test("keeps each supported Git mutation as a separate RTK comparison", () => {
-    expect(HUSH_PROJECTION_CORPUS_VERSION).toBe("hush-projections.v18");
+    expect(HUSH_PROJECTION_CORPUS_VERSION).toBe("hush-projections.v19");
     expect(
       HUSH_PROJECTION_CASES.filter((entry) => entry.projection === "git-mutation").map(
         (entry) => entry.id,
@@ -91,6 +91,43 @@ describe("Hush projection scorecard corpus", () => {
     const runList = HUSH_PROJECTION_CASES.find((entry) => entry.id === "gh-run-list");
     expect(runList?.argv).toEqual(["run", "list", "--limit", "10"]);
     expect(runList?.requiredMarkers).toContain("cancel 32606 32607");
+  });
+
+  test("keeps each requested GitLab command as a separate RTK comparison", () => {
+    expect(
+      HUSH_PROJECTION_CASES.filter((entry) => entry.executable === "glab").map((entry) => entry.id),
+    ).toEqual([
+      "glab-mr-list",
+      "glab-issue-list",
+      "glab-ci-status",
+      "glab-pipeline-list",
+      "glab-api",
+      "glab-release-list",
+    ]);
+    expect(
+      HUSH_PROJECTION_CASES.filter((entry) => entry.executable === "glab").every((entry) =>
+        entry.forbiddenMarkers?.includes("omitted"),
+      ),
+    ).toBe(true);
+    expect(HUSH_PROJECTION_CASES.find((entry) => entry.id === "glab-pipeline-list")?.baseline).toBe(
+      "raw",
+    );
+  });
+
+  test("keeps each requested Graphite command as a separate RTK comparison", () => {
+    expect(
+      HUSH_PROJECTION_CASES.filter((entry) => entry.executable === "gt").map((entry) => entry.id),
+    ).toEqual(["gt-log", "gt-submit", "gt-sync", "gt-restack", "gt-create", "gt-branch"]);
+    expect(
+      HUSH_PROJECTION_CASES.filter((entry) => entry.executable === "gt").every((entry) =>
+        entry.forbiddenMarkers?.includes("omitted"),
+      ),
+    ).toBe(true);
+    expect(
+      HUSH_PROJECTION_CASES.filter((entry) =>
+        ["gt-sync", "gt-restack", "gt-create"].includes(entry.id),
+      ).every((entry) => "baseline" in entry && entry.baseline === "raw"),
+    ).toBe(true);
   });
 
   test("compares journalctl with RTK log while requiring every event fact", () => {
