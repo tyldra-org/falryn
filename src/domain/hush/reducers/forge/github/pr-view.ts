@@ -87,9 +87,9 @@ function checkSummary(value: unknown): string | null {
   }
   const other = entries.length - passed - failed - pending;
   return [
-    `checks ${passed}/${entries.length} passed`,
-    ...(failed === 0 ? [] : [`${failed} failed`]),
-    ...(pending === 0 ? [] : [`${pending} pending`]),
+    `checks ${passed}/${entries.length} ok`,
+    ...(failed === 0 ? [] : [`${failed} fail`]),
+    ...(pending === 0 ? [] : [`${pending} wait`]),
     ...(other === 0 ? [] : [`${other} other`]),
   ].join(", ");
 }

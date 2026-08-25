@@ -596,28 +596,36 @@ function ghOutput(argv: readonly string[]): string {
     }
     case "issue list": {
       const issues = [
-        {
-          number: 128,
-          title: "Context engine groundwork",
-          state: "OPEN",
-          labels: [{ name: "priority:P1" }],
-          updatedAt: "2026-08-23T12:00:00Z",
-        },
-        {
-          number: 736,
-          title: "Do more with less context",
-          state: "OPEN",
-          labels: [{ name: "priority:P0" }],
-          updatedAt: "2026-08-23T12:01:00Z",
-        },
-        {
-          number: 784,
-          title: "Complete Hush projections",
-          state: "OPEN",
-          labels: [{ name: "priority:P0" }],
-          updatedAt: "2026-08-23T12:02:00Z",
-        },
-      ];
+        [809, "Implement live browser supervision, screencast, and human takeover"],
+        [808, "Implement browser diagnostics, testing, accessibility, and performance tools"],
+        [807, "Qualify local and remote browser adapters, installation, and readiness"],
+        [806, "Expose Falryn capabilities to external agent hosts through a bounded MCP bridge"],
+        [805, "Harden registered LSP and DAP tools with strict contracts and live edit feedback"],
+        [804, "Qualify optional semantic retrieval beyond lexical, precise, and graph baselines"],
+        [803, "Persist code relationships and build token-budgeted repository maps"],
+        [802, "Wire precise LSP intelligence and structural search into product retrieval"],
+        [801, "Make workspace index root-qualified, incremental, and FTS5-queryable"],
+        [800, "Qualify optional native acceleration kernels behind TypeScript contracts"],
+        [
+          798,
+          "Wire provider connections and authorized authentication through product entrypoints",
+        ],
+        [797, "Implement durable goals and bounded iterative loop control"],
+        [796, "Expose per-command raw-output mode for process tools"],
+        [795, "Add safe worktree create and remove actions to the Git dashboard"],
+        [794, "Complete durable session naming and pinning in OpenTUI"],
+        [793, "Implement bounded transcript and conversation search"],
+        [792, "Expose manual history compact, checkpoint restore, and durable undo controls"],
+        [791, "Make semantic session history artifact-complete and forensically recoverable"],
+        [790, "Implement registry-driven slash completion and command aliases"],
+        [789, "Implement Ask, Plan, Debug, and Agent execution profiles"],
+      ].map(([number, title], index) => ({
+        number,
+        title,
+        state: "OPEN",
+        labels: [{ name: index % 2 === 0 ? "priority:P0" : "priority:P1" }],
+        updatedAt: `2026-08-23T12:${String(index).padStart(2, "0")}:00Z`,
+      }));
       return json
         ? JSON.stringify(issues)
         : issues
@@ -633,29 +641,24 @@ function ghOutput(argv: readonly string[]): string {
       const runs = [
         {
           databaseId: 32601,
-          name: "CI",
-          workflowName: "CI",
           status: "completed",
-          conclusion: "success",
-          createdAt: "2026-08-23T12:00:00Z",
+          conclusion: "skipped",
         },
-        {
-          databaseId: 32602,
-          name: "CodeQL",
-          workflowName: "CodeQL",
-          status: "completed",
-          conclusion: "failure",
-          createdAt: "2026-08-23T12:01:00Z",
-        },
-        {
-          databaseId: 32603,
-          name: "Platform tests",
-          workflowName: "Platform tests",
-          status: "in_progress",
-          conclusion: "",
-          createdAt: "2026-08-23T12:02:00Z",
-        },
-      ];
+        { databaseId: 32602, status: "completed", conclusion: "skipped" },
+        { databaseId: 32603, status: "completed", conclusion: "skipped" },
+        { databaseId: 32604, status: "completed", conclusion: "skipped" },
+        { databaseId: 32605, status: "completed", conclusion: "skipped" },
+        { databaseId: 32606, status: "completed", conclusion: "cancelled" },
+        { databaseId: 32607, status: "completed", conclusion: "cancelled" },
+        { databaseId: 32608, status: "completed", conclusion: "success" },
+        { databaseId: 32609, status: "completed", conclusion: "failure" },
+        { databaseId: 32610, status: "in_progress", conclusion: "" },
+      ].map((run, index) => ({
+        ...run,
+        name: "Issue governance",
+        workflowName: "Issue governance",
+        createdAt: `2026-08-23T12:${String(index).padStart(2, "0")}:00Z`,
+      }));
       return json
         ? JSON.stringify(runs)
         : runs

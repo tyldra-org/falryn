@@ -8,7 +8,7 @@ import {
 
 describe("Hush projection scorecard corpus", () => {
   test("keeps each supported Git mutation as a separate RTK comparison", () => {
-    expect(HUSH_PROJECTION_CORPUS_VERSION).toBe("hush-projections.v17");
+    expect(HUSH_PROJECTION_CORPUS_VERSION).toBe("hush-projections.v18");
     expect(
       HUSH_PROJECTION_CASES.filter((entry) => entry.projection === "git-mutation").map(
         (entry) => entry.id,
@@ -83,6 +83,14 @@ describe("Hush projection scorecard corpus", () => {
       "gh-api",
       "gh-release-list",
     ]);
+    const issueList = HUSH_PROJECTION_CASES.find((entry) => entry.id === "gh-issue-list");
+    expect(issueList?.argv).toEqual(["issue", "list", "--limit", "20"]);
+    expect(issueList?.requiredMarkers).toContain(
+      "790 Implement registry-driven slash completion and command aliases",
+    );
+    const runList = HUSH_PROJECTION_CASES.find((entry) => entry.id === "gh-run-list");
+    expect(runList?.argv).toEqual(["run", "list", "--limit", "10"]);
+    expect(runList?.requiredMarkers).toContain("cancel 32606 32607");
   });
 
   test("compares journalctl with RTK log while requiring every event fact", () => {

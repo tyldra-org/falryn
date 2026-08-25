@@ -255,7 +255,7 @@ describe("composeProductProcessTools", () => {
         "number,title,state,author,body,url,mergeable,statusCheckRollup",
       ],
     });
-    expect(outcome.output.projection).toContain("checks 1/2 passed, 1 failed");
+    expect(outcome.output.projection).toContain("checks 1/2 ok, 1 fail");
     expect(outcome.output.projection).toContain("Preserve every useful PR fact.");
     expect(outcome.output.hush).toMatchObject({
       reducerId: "forge.github",

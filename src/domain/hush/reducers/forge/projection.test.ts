@@ -16,7 +16,7 @@ describe("Hush forge projection", () => {
       },
     ]);
     const projected = forgeProjection(report(output), 64 * 1_024, [], ["gh", "pr", "list"]);
-    expect(projected.text).toBe("#736 Do more with less context");
+    expect(projected.text).toBe("736 Do more with less context");
     expect(projected.omissions).toEqual([]);
   });
 

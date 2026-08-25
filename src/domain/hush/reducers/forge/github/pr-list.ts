@@ -17,7 +17,7 @@ export function formatGithubPrList(text: string, args: readonly string[] = []): 
       const state = stringField(entry, "state");
       return number === null || title === null || state === null
         ? null
-        : `#${number} ${visibleState(state, args)}${title}`;
+        : `${number} ${visibleState(state, args)}${title}`;
     });
     return lines.every((line): line is string => line !== null) ? lines.join("\n") : null;
   }
@@ -36,7 +36,7 @@ function formatNativePrList(text: string, args: readonly string[]): string | nul
     }
     const [number, title, , state] = fields;
     return number !== undefined && /^\d+$/u.test(number) && title && state
-      ? `#${number} ${visibleState(state, args)}${title}`
+      ? `${number} ${visibleState(state, args)}${title}`
       : null;
   });
   return formatted.every((line): line is string => line !== null) ? formatted.join("\n") : null;

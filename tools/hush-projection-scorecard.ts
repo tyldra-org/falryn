@@ -18,7 +18,7 @@ import {
 import { HUSH_RTK_BASELINE } from "./hush-command-coverage.ts";
 import { type HushLsMeasurement, measureText } from "./hush-ls-scorecard.ts";
 
-export const HUSH_PROJECTION_CORPUS_VERSION = "hush-projections.v17";
+export const HUSH_PROJECTION_CORPUS_VERSION = "hush-projections.v18";
 
 export const HUSH_FIND_LISTING_PATHS = [
   "bounds.ts",
@@ -552,7 +552,11 @@ export const HUSH_PROJECTION_CASES = [
     executable: "gh",
     argv: ["pr", "list"],
     rtkArgv: ["gh", "pr", "list"],
-    requiredMarkers: ["#128", "#736", "#784", "Do more with less context"],
+    requiredMarkers: [
+      "128 Context engine groundwork",
+      "736 Do more with less context",
+      "784 Complete Hush projections",
+    ],
     forbiddenMarkers: ['"number"', "Pull Requests"],
   },
   {
@@ -566,7 +570,7 @@ export const HUSH_PROJECTION_CASES = [
       "Complete Hush projections",
       "@yogeshprasad098",
       "mergeable",
-      "checks 2/3 passed, 1 failed",
+      "checks 2/3 ok, 1 fail",
       "https://github.com/tyldra-org/falryn/pull/784",
       "Preserve every useful PR fact.",
       "No list truncation",
@@ -577,18 +581,29 @@ export const HUSH_PROJECTION_CASES = [
     id: "gh-issue-list",
     projection: "forge",
     executable: "gh",
-    argv: ["issue", "list"],
-    rtkArgv: ["gh", "issue", "list"],
-    requiredMarkers: ["#128", "#736", "#784", "Do more with less context"],
+    argv: ["issue", "list", "--limit", "20"],
+    rtkArgv: ["gh", "issue", "list", "--limit", "20"],
+    requiredMarkers: [
+      "809 Implement live browser supervision, screencast, and human takeover",
+      "800 Qualify optional native acceleration kernels behind TypeScript contracts",
+      "790 Implement registry-driven slash completion and command aliases",
+    ],
     forbiddenMarkers: ['"labels"', "Issues\n"],
   },
   {
     id: "gh-run-list",
     projection: "forge",
     executable: "gh",
-    argv: ["run", "list"],
-    rtkArgv: ["gh", "run", "list"],
-    requiredMarkers: ["ok 32601 CI", "fail 32602 CodeQL", "run 32603 Platform tests"],
+    argv: ["run", "list", "--limit", "10"],
+    rtkArgv: ["gh", "run", "list", "--limit", "10"],
+    requiredMarkers: [
+      "Issue governance:",
+      "skip 32601 32602 32603 32604 32605",
+      "cancel 32606 32607",
+      "ok 32608",
+      "fail 32609",
+      "run 32610",
+    ],
     forbiddenMarkers: ['"databaseId"', "Workflow Runs"],
   },
   {

@@ -18,7 +18,7 @@ export function formatGithubIssueList(text: string, args: readonly string[] = []
       if (number === null || title === null || state === null) {
         return null;
       }
-      return `#${number} ${visibleState(state, args)}${title}`;
+      return `${number} ${visibleState(state, args)}${title}`;
     });
     return lines.every((line): line is string => line !== null) ? lines.join("\n") : null;
   }
@@ -45,7 +45,7 @@ function formatNativeIssueList(text: string, args: readonly string[]): string | 
     ) {
       return null;
     }
-    return `#${number} ${visibleState(state, args)}${title}`;
+    return `${number} ${visibleState(state, args)}${title}`;
   });
   return formatted.every((line): line is string => line !== null) ? formatted.join("\n") : null;
 }
