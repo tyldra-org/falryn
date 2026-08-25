@@ -133,6 +133,52 @@ describe("Hush forge projection", () => {
         .text,
     ).toBe(`${conflict}\nstderr:\nrestack failed\n`);
   });
+
+  test("projects complete Jira list and view facts", () => {
+    const list = [
+      "TYPE  KEY      SUMMARY                   STATUS       ASSIGNEE       REPORTER       PRIORITY  RESOLUTION  CREATED              UPDATED              LABELS",
+      "Task  FAL-736  Optimize context engines  In Progress  Yogesh Prasad  Yogesh Prasad  High                  2026-08-23 10:15:00  2026-08-25 09:40:00  context,performance",
+    ].join("\n");
+    expect(forgeProjection(report(list), 64 * 1_024, [], ["jira", "issue", "list"]).text).toBe(
+      "TYPE\tKEY\tSUMMARY\tSTATUS\tASSIGNEE\tREPORTER\tPRIORITY\tRESOLUTION\tCREATED\tUPDATED\tLABELS\nTask\tFAL-736\tOptimize context engines\tIn Progress\tYogesh Prasad\tYogesh Prasad\tHigh\t\t2026-08-23 10:15:00\t2026-08-25 09:40:00\tcontext,performance",
+    );
+
+    const view = [
+      "Task  In Progress  Sun, 23 Aug 26  Yogesh Prasad  FAL-736  3 comments  2 linked",
+      "# Optimize context engines",
+      "Tue, 25 Aug 26  Yogesh Prasad  High  Context Platform  context, performance",
+      "",
+      "------------------------ Description ------------------------",
+      "",
+      "Preserve complete context.",
+    ].join("\n");
+    expect(
+      forgeProjection(report(view), 64 * 1_024, [], ["jira", "issue", "view", "FAL-736"]).text,
+    ).toBe(
+      "Task\tIn Progress\tSun, 23 Aug 26\tYogesh Prasad\tFAL-736\t3 comments\t2 linked\n# Optimize context engines\nTue, 25 Aug 26\tYogesh Prasad\tHigh\tContext Platform\tcontext, performance\nDescription:\nPreserve complete context.",
+    );
+  });
+
+  test("preserves Jira failures, explicit formats, and caller-filtered output exactly", () => {
+    const raw = '{"key":"FAL-736"}\n';
+    expect(
+      forgeProjection(report(raw), 64 * 1_024, [], ["jira", "issue", "view", "FAL-736", "--raw"])
+        .text,
+    ).toBe(raw);
+    const filtered = "FAL-736\tIn Progress\n";
+    expect(
+      forgeProjection(report(filtered), 64 * 1_024, ["FAL-736"], ["jira", "issue", "list"]).text,
+    ).toBe(filtered);
+    const partial = "TYPE  KEY\nTask  FAL-736\n";
+    expect(
+      forgeProjection(
+        report(partial, "Jira unavailable\n", 1),
+        64 * 1_024,
+        [],
+        ["jira", "issue", "list"],
+      ).text,
+    ).toBe(`${partial}\nstderr:\nJira unavailable\n`);
+  });
 });
 
 function report(stdout: string, stderr = "", exitCode = 0): ProcessCaptureReport {

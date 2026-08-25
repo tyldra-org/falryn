@@ -43,7 +43,7 @@ function pipelineHeader(pipeline: JsonRecord): string | null {
   ) {
     return null;
   }
-  return `#${id} ${pipelineState(status)} ${ref} ${shortSha(sha)}${url === undefined || url.length === 0 ? "" : ` | ${url}`}`;
+  return `#${id} ${pipelineState(status)} ${ref}@${shortSha(sha)}${url === undefined || url.length === 0 ? "" : ` ${url}`}`;
 }
 
 function jobLine(job: JsonRecord): string | null {

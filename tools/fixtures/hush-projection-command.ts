@@ -34,6 +34,7 @@ const outputs: Readonly<Record<string, () => string>> = {
   gh: () => ghOutput(args),
   glab: () => glabOutput(args),
   gt: () => graphiteOutput(args),
+  jira: () => jiraOutput(args),
   pytest: () =>
     [
       "tests/test_hush.py::test_complete PASSED",
@@ -47,12 +48,11 @@ const outputs: Readonly<Record<string, () => string>> = {
       "Found 2 errors in 2 files.",
     ].join("\n"),
   cargo: () => `${"Compiling falryn v0.1.0\n".repeat(6)}Finished release target in 0.42s`,
-  npm: () =>
-    [
-      "added 12 packages, and audited 13 packages in 1s",
-      "2 packages are looking for funding",
-      "found 0 vulnerabilities",
-    ].join("\n"),
+  npm: () => npmOutput(args),
+  pnpm: () => pnpmOutput(args),
+  yarn: () => yarnOutput(args),
+  npx: () => packageRunnerOutput(),
+  pnpx: () => packageRunnerOutput(),
   docker: () => dockerOutput(args),
   wc: () => wcOutput(args),
   psql: () => psqlOutput(args),
@@ -127,6 +127,182 @@ const outputs: Readonly<Record<string, () => string>> = {
       2,
     ),
 };
+
+function npmOutput(argv: readonly string[]): string {
+  const action = argv[0] ?? "";
+  if (["install", "i", "ci"].includes(action)) {
+    return [
+      "added 12 packages, and audited 13 packages in 1s",
+      "",
+      "2 packages are looking for funding",
+      "  run `npm fund` for details",
+      "",
+      "found 0 vulnerabilities",
+    ].join("\n");
+  }
+  if (action === "list" || action === "ls") {
+    return [
+      "falryn@0.3.0 /workspace",
+      "├── @falryn/context@0.3.0",
+      "├── zod@4.0.0",
+      "└── typescript@5.9.2",
+    ].join("\n");
+  }
+  if (action === "outdated") {
+    return [
+      "Package          Current  Wanted  Latest  Location                       Depended by",
+      "@falryn/context  0.2.0    0.2.5   0.3.0   node_modules/@falryn/context  falryn",
+      "zod              3.24.0   3.25.0  4.0.0   node_modules/zod              falryn",
+    ].join("\n");
+  }
+  if (action === "run" || action === "run-script") {
+    return [
+      "> falryn@0.3.0 verify",
+      "> node tools/verify-packages.mjs",
+      "",
+      "checking package graph",
+      "verified 12 packages",
+    ].join("\n");
+  }
+  throw new Error(`unsupported npm fixture arguments: ${argv.join(" ")}`);
+}
+
+function pnpmOutput(argv: readonly string[]): string {
+  const action = argv.find((argument) => ["install", "list", "outdated", "run"].includes(argument));
+  if (action === "install") {
+    return [
+      "Progress: resolved 12, reused 10, downloaded 2, added 3",
+      "Packages: +3",
+      "+++",
+      "Progress: resolved 12, reused 10, downloaded 2, added 3, done",
+      "",
+      "dependencies:",
+      "+ @falryn/context 0.3.0",
+      "+ zod 4.0.0",
+      "",
+      "devDependencies:",
+      "+ typescript 5.9.2",
+      "",
+      "Done in 1.2s using pnpm v11.0.0",
+    ].join("\n");
+  }
+  if (action === "list") {
+    if (argv.includes("--json") || argv.some((argument) => argument.startsWith("--json="))) {
+      return JSON.stringify([
+        {
+          name: "falryn",
+          version: "0.3.0",
+          dependencies: {
+            "@falryn/context": { version: "0.3.0" },
+            zod: { version: "4.0.0" },
+          },
+          devDependencies: { typescript: { version: "5.9.2" } },
+        },
+      ]);
+    }
+    return [
+      "Legend: production dependency, optional only, dev only",
+      "",
+      "falryn@0.3.0 /workspace",
+      "",
+      "dependencies:",
+      "@falryn/context 0.3.0",
+      "zod 4.0.0",
+      "",
+      "devDependencies:",
+      "typescript 5.9.2",
+    ].join("\n");
+  }
+  if (action === "outdated") {
+    if (argv.includes("json")) {
+      return JSON.stringify({
+        "@falryn/context": {
+          current: "0.2.0",
+          wanted: "0.2.5",
+          latest: "0.3.0",
+          dependencyType: "dependencies",
+        },
+        zod: {
+          current: "3.24.0",
+          wanted: "3.25.0",
+          latest: "4.0.0",
+          dependencyType: "dependencies",
+        },
+      });
+    }
+    return [
+      "Package          Current  Wanted  Latest  Package Type",
+      "@falryn/context  0.2.0    0.2.5   0.3.0   dependencies",
+      "zod              3.24.0   3.25.0  4.0.0   dependencies",
+    ].join("\n");
+  }
+  if (action === "run") {
+    return [
+      "> falryn@0.3.0 verify /workspace",
+      "> node tools/verify-packages.mjs",
+      "",
+      "checking package graph",
+      "verified 12 packages",
+    ].join("\n");
+  }
+  throw new Error(`unsupported pnpm fixture arguments: ${argv.join(" ")}`);
+}
+
+function yarnOutput(argv: readonly string[]): string {
+  const action = argv[0] ?? "";
+  if (action === "install") {
+    return [
+      "yarn install v1.22.22",
+      "[1/4] Resolving packages...",
+      "[2/4] Fetching packages...",
+      "[3/4] Linking dependencies...",
+      "[4/4] Building fresh packages...",
+      "success Saved lockfile.",
+      "success Saved 2 new dependencies.",
+      "info Direct dependencies",
+      "└─ @falryn/context@0.3.0",
+      "info All dependencies",
+      "├─ @falryn/context@0.3.0",
+      "└─ typescript@5.9.2",
+      "Done in 2.14s.",
+    ].join("\n");
+  }
+  if (action === "list") {
+    return [
+      "yarn list v1.22.22",
+      "├─ @falryn/context@0.3.0",
+      "├─ zod@4.0.0",
+      "└─ typescript@5.9.2",
+      "Done in 0.21s.",
+    ].join("\n");
+  }
+  if (action === "outdated") {
+    return [
+      "Package          Current  Wanted  Latest  Package Type  URL",
+      "@falryn/context  0.2.0    0.2.5   0.3.0   dependencies  https://example.test/context",
+      "zod              3.24.0   3.25.0  4.0.0   dependencies  https://example.test/zod",
+    ].join("\n");
+  }
+  if (action === "run") {
+    return [
+      "yarn run v1.22.22",
+      "$ node tools/verify-packages.mjs",
+      "checking package graph",
+      "verified 12 packages",
+      "Done in 0.18s.",
+    ].join("\n");
+  }
+  throw new Error(`unsupported yarn fixture arguments: ${argv.join(" ")}`);
+}
+
+function packageRunnerOutput(): string {
+  return [
+    "checking package graph",
+    "checking package graph",
+    "checking package graph",
+    "verified 12 packages",
+  ].join("\n");
+}
 
 const output = outputs[executable]?.();
 if (output === undefined) {
@@ -988,6 +1164,38 @@ function graphiteOutput(argv: readonly string[]): string {
       ].join("\n");
     case "branch":
       return ["◉ feature/top (current)", "◯ feature/base", "◯ main"].join("\n");
+    default:
+      return "";
+  }
+}
+
+function jiraOutput(argv: readonly string[]): string {
+  const command = `${argv[0] ?? ""} ${argv[1] ?? ""}`;
+  switch (command) {
+    case "issue list":
+      return [
+        "TYPE   KEY      SUMMARY                              STATUS       ASSIGNEE       REPORTER       PRIORITY  RESOLUTION  CREATED              UPDATED              LABELS",
+        "Task   FAL-736  Optimize context engines             In Progress  Yogesh Prasad  Yogesh Prasad  High                  2026-08-23 10:15:00  2026-08-25 09:40:00  context,performance",
+        "Bug    FAL-788  Wire live index candidates           To Do        Yogesh Prasad  Yogesh Prasad  Highest               2026-08-24 08:30:00  2026-08-25 08:55:00  index,context",
+        "Story  FAL-806  Expose bounded capability bridge     Done         Yogesh Prasad  Yogesh Prasad  Normal    Fixed       2026-08-24 14:20:00  2026-08-25 07:15:00  mcp,capability",
+      ].join("\n");
+    case "issue view":
+      return [
+        "Task  In Progress  Sun, 23 Aug 26  Yogesh Prasad  FAL-736  3 comments  2 linked",
+        "# Optimize context engines",
+        "Tue, 25 Aug 26  Yogesh Prasad  High  Context Platform  context, performance",
+        "",
+        "------------------------ Description ------------------------",
+        "",
+        "Make Hush, Loom, Brief, indexing, and context packing preserve every useful fact while reducing total turn cost.",
+        "",
+        "------------------------ 2 Subtasks ------------------------",
+        "",
+        "FAL-788 Wire live index candidates • Highest • To Do",
+        "FAL-806 Expose bounded capability bridge • Normal • Done",
+        "",
+        "View this issue on Jira: https://jira.example.test/browse/FAL-736",
+      ].join("\n");
     default:
       return "";
   }

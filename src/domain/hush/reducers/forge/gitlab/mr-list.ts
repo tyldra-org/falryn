@@ -49,7 +49,25 @@ function formatRows(rows: readonly MergeRequestRow[], args: readonly string[]): 
     }
     const group = rows.slice(start, end);
     const plain = group.map((row) => `${rowBody(row, args)} -> ${row.target}`).join("\n");
-    const grouped = `-> ${target}:\n${group.map((row) => rowBody(row, args)).join("\n")}`;
+    const grouped = `-> ${target}:\n${formatSourceGroups(group, args)}`;
+    chunks.push(byteLength(grouped) < byteLength(plain) ? grouped : plain);
+    start = end;
+  }
+  return chunks.join("\n");
+}
+
+/** Factor consecutive duplicate source branches without changing result order. */
+function formatSourceGroups(rows: readonly MergeRequestRow[], args: readonly string[]): string {
+  const chunks: string[] = [];
+  for (let start = 0; start < rows.length; ) {
+    const source = rows[start]?.source;
+    let end = start + 1;
+    while (end < rows.length && rows[end]?.source === source) {
+      end += 1;
+    }
+    const group = rows.slice(start, end);
+    const plain = group.map((row) => rowBody(row, args)).join("\n");
+    const grouped = `${source}:\n${group.map((row) => rowWithoutSource(row, args)).join("\n")}`;
     chunks.push(byteLength(grouped) < byteLength(plain) ? grouped : plain);
     start = end;
   }
@@ -57,7 +75,15 @@ function formatRows(rows: readonly MergeRequestRow[], args: readonly string[]): 
 }
 
 function rowBody(row: MergeRequestRow, args: readonly string[]): string {
-  return `!${row.iid} ${row.source}: ${visibleGitlabState(row.state, args, "merge-request")}${row.title}`;
+  return `!${row.iid} ${row.source}: ${rowTitle(row, args)}`;
+}
+
+function rowWithoutSource(row: MergeRequestRow, args: readonly string[]): string {
+  return `!${row.iid} ${rowTitle(row, args)}`;
+}
+
+function rowTitle(row: MergeRequestRow, args: readonly string[]): string {
+  return `${visibleGitlabState(row.state, args, "merge-request")}${row.title}`;
 }
 
 function byteLength(value: string): number {

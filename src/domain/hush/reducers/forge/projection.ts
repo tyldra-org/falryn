@@ -4,10 +4,12 @@ import type { HushStreamProjection } from "../../contracts.ts";
 import { githubCommand } from "../../github-command.ts";
 import { gitlabCommand } from "../../gitlab-command.ts";
 import { graphiteCommand } from "../../graphite-command.ts";
+import { jiraCommand } from "../../jira-command.ts";
 import { tableProjection } from "../table/projection.ts";
 import { githubProjection } from "./github/projection.ts";
 import { gitlabProjection } from "./gitlab/projection.ts";
 import { graphiteProjection } from "./graphite/projection.ts";
+import { jiraProjection } from "./jira/projection.ts";
 
 export function forgeProjection(
   capture: ProcessCaptureReport,
@@ -33,7 +35,14 @@ export function forgeProjection(
   if (graphite !== null) {
     return graphite;
   }
-  return graphiteCommand(commandTokens) === null
+  if (graphiteCommand(commandTokens) !== null) {
+    return passthroughProjection(capture, maxBytes, patterns);
+  }
+  const jira = jiraProjection(capture, maxBytes, patterns, commandTokens);
+  if (jira !== null) {
+    return jira;
+  }
+  return jiraCommand(commandTokens) === null
     ? tableProjection(capture, maxBytes, patterns)
     : passthroughProjection(capture, maxBytes, patterns);
 }

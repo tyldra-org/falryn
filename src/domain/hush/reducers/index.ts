@@ -19,6 +19,7 @@ import { jsonProjection } from "./json/projection.ts";
 import { listingProjection } from "./listing.ts";
 import { logProjection } from "./log/projection.ts";
 import { lsProjection } from "./ls/projection.ts";
+import { packageProjection } from "./package/projection.ts";
 import { searchProjection } from "./search/projection.ts";
 import { semanticProjection } from "./semantic.ts";
 import { structuredProjection } from "./structured/projection.ts";
@@ -89,7 +90,7 @@ export function specializedProjection(
     case "build":
       return semanticProjection("build", capture, maxBytes, patterns);
     case "package":
-      return semanticProjection("package", capture, maxBytes, patterns);
+      return packageProjection(capture, maxBytes, patterns, commandTokens);
     case "table":
       return tableProjection(capture, maxBytes, patterns, commandTokens);
     case "count":

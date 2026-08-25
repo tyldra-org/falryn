@@ -8,7 +8,7 @@ import {
 
 describe("Hush projection scorecard corpus", () => {
   test("keeps each supported Git mutation as a separate RTK comparison", () => {
-    expect(HUSH_PROJECTION_CORPUS_VERSION).toBe("hush-projections.v19");
+    expect(HUSH_PROJECTION_CORPUS_VERSION).toBe("hush-projections.v22");
     expect(
       HUSH_PROJECTION_CASES.filter((entry) => entry.projection === "git-mutation").map(
         (entry) => entry.id,
@@ -112,6 +112,14 @@ describe("Hush projection scorecard corpus", () => {
     expect(HUSH_PROJECTION_CASES.find((entry) => entry.id === "glab-pipeline-list")?.baseline).toBe(
       "raw",
     );
+    expect(
+      HUSH_PROJECTION_CASES.filter(
+        (entry) => entry.executable === "glab" && entry.id !== "glab-api",
+      ).every((entry) => entry.competitiveTarget === "win"),
+    ).toBe(true);
+    expect(HUSH_PROJECTION_CASES.find((entry) => entry.id === "glab-api")?.competitiveTarget).toBe(
+      "tie",
+    );
   });
 
   test("keeps each requested Graphite command as a separate RTK comparison", () => {
@@ -128,6 +136,20 @@ describe("Hush projection scorecard corpus", () => {
         ["gt-sync", "gt-restack", "gt-create"].includes(entry.id),
       ).every((entry) => "baseline" in entry && entry.baseline === "raw"),
     ).toBe(true);
+    expect(
+      HUSH_PROJECTION_CASES.filter((entry) => entry.executable === "gt").every(
+        (entry) => entry.competitiveTarget === "win",
+      ),
+    ).toBe(true);
+  });
+
+  test("keeps Jira list and view complete while requiring strict wins", () => {
+    const jira = HUSH_PROJECTION_CASES.filter((entry) => entry.executable === "jira");
+    expect(jira.map((entry) => entry.id)).toEqual(["jira-issue-list", "jira-issue-view"]);
+    expect(jira.every((entry) => entry.competitiveTarget === "win")).toBe(true);
+    expect(jira.every((entry) => entry.forbiddenMarkers?.includes("omitted"))).toBe(true);
+    expect(jira.find((entry) => entry.id === "jira-issue-list")?.requiredMarkers).toHaveLength(4);
+    expect(jira.find((entry) => entry.id === "jira-issue-view")?.requiredMarkers).toHaveLength(9);
   });
 
   test("compares journalctl with RTK log while requiring every event fact", () => {
@@ -137,6 +159,39 @@ describe("Hush projection scorecard corpus", () => {
     expect(journal?.baseline).toBe("rtk-log");
     expect(journal?.requiredMarkers).toHaveLength(7);
     expect(journal?.forbiddenMarkers).toContain("omitted");
+  });
+
+  test("keeps every requested JavaScript package surface separate and requires strict wins", () => {
+    const packages = HUSH_PROJECTION_CASES.filter((entry) =>
+      ["npm", "pnpm", "yarn", "npx", "pnpx"].includes(entry.executable),
+    );
+    expect(packages.map((entry) => entry.id)).toEqual([
+      "package-npm-install",
+      "package-npm-list",
+      "package-npm-outdated",
+      "package-npm-run",
+      "package-pnpm-install",
+      "package-pnpm-list",
+      "package-pnpm-outdated",
+      "package-pnpm-run",
+      "package-yarn-install",
+      "package-yarn-list",
+      "package-yarn-outdated",
+      "package-yarn-run",
+      "package-npx",
+      "package-pnpx",
+    ]);
+    expect(packages.every((entry) => entry.projection === "package")).toBe(true);
+    expect(
+      packages.every((entry) => "competitiveTarget" in entry && entry.competitiveTarget === "win"),
+    ).toBe(true);
+    expect(
+      packages.every(
+        (entry) =>
+          "forbiddenMarkers" in entry &&
+          (entry.forbiddenMarkers as readonly string[]).includes("omitted"),
+      ),
+    ).toBe(true);
   });
 
   test("compares single and multi-file wc without dropping count facts", () => {

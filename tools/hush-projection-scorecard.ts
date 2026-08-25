@@ -18,7 +18,7 @@ import {
 import { HUSH_RTK_BASELINE } from "./hush-command-coverage.ts";
 import { type HushLsMeasurement, measureText } from "./hush-ls-scorecard.ts";
 
-export const HUSH_PROJECTION_CORPUS_VERSION = "hush-projections.v19";
+export const HUSH_PROJECTION_CORPUS_VERSION = "hush-projections.v22";
 
 export const HUSH_FIND_LISTING_PATHS = [
   "bounds.ts",
@@ -119,6 +119,7 @@ type ProjectionCase = Readonly<{
   rtkArgv?: readonly string[];
   shellCommand?: string;
   baseline?: "raw" | "rewrite" | "rtk-log";
+  competitiveTarget?: "tie" | "win";
   acceptedExitCodes?: readonly number[];
   requiredMarkers: readonly string[];
   forbiddenMarkers?: readonly string[];
@@ -646,11 +647,13 @@ export const HUSH_PROJECTION_CASES = [
     executable: "glab",
     argv: ["mr", "list"],
     rtkArgv: ["glab", "mr", "list"],
+    competitiveTarget: "win",
     requiredMarkers: [
       "-> main:",
       "!128 feat/context-engine: Context engine groundwork",
-      "!736 perf/736-context-optimization: Do more with less context",
-      "!784 perf/736-context-optimization: Complete Hush projections",
+      "perf/736-context-optimization:",
+      "!736 Do more with less context",
+      "!784 Complete Hush projections",
     ],
     forbiddenMarkers: ['"source_branch"', "Showing 3", "omitted", "…"],
   },
@@ -660,6 +663,7 @@ export const HUSH_PROJECTION_CASES = [
     executable: "glab",
     argv: ["issue", "list"],
     rtkArgv: ["glab", "issue", "list"],
+    competitiveTarget: "win",
     requiredMarkers: [
       "#809 Implement live browser supervision and human takeover",
       "#800 Qualify optional native acceleration kernels",
@@ -673,8 +677,9 @@ export const HUSH_PROJECTION_CASES = [
     executable: "glab",
     argv: ["ci", "status"],
     rtkArgv: ["glab", "ci", "status"],
+    competitiveTarget: "win",
     requiredMarkers: [
-      "#901 fail perf/736-context-optimization abcdef01",
+      "#901 fail perf/736-context-optimization@abcdef01",
       "https://gitlab.example/tyldra/falryn/-/pipelines/901",
       "ok #1001 typecheck [verify]",
       "fail #1002 tests [verify] script_failure",
@@ -689,9 +694,10 @@ export const HUSH_PROJECTION_CASES = [
     argv: ["pipeline", "list"],
     rtkArgv: ["glab", "pipeline", "list"],
     baseline: "raw",
+    competitiveTarget: "win",
     requiredMarkers: [
-      "#901 fail perf/736-context-optimization abcdef01 push verify",
-      "#900 ok main 12345678 merge_request_event verify",
+      "#901 fail perf/736-context-optimization@abcdef01 push verify",
+      "#900 ok main@12345678 merge_request_event verify",
     ],
     forbiddenMarkers: ['"web_url"', "Showing 2", "omitted", "…"],
   },
@@ -701,6 +707,7 @@ export const HUSH_PROJECTION_CASES = [
     executable: "glab",
     argv: ["api", "projects/736"],
     rtkArgv: ["glab", "api", "projects/736"],
+    competitiveTarget: "tie",
     requiredMarkers: ['"id":736', '"path_with_namespace":"tyldra/falryn"', '"visibility":"public"'],
     forbiddenMarkers: ["omitted", "…"],
   },
@@ -710,6 +717,7 @@ export const HUSH_PROJECTION_CASES = [
     executable: "glab",
     argv: ["release", "list"],
     rtkArgv: ["glab", "release", "list"],
+    competitiveTarget: "win",
     requiredMarkers: [
       "release v0.2.0 Falryn 0.2.0 2026-08-24",
       "upcoming v0.3.0-beta Falryn 0.3 beta 2026-09-01",
@@ -722,6 +730,7 @@ export const HUSH_PROJECTION_CASES = [
     executable: "gt",
     argv: ["log"],
     rtkArgv: ["gt", "log"],
+    competitiveTarget: "win",
     requiredMarkers: [
       "* feature/top 95338df Preserve complete context | 8 seconds ago",
       "feature/base 95610c6 Build Hush forge reducers | 2 minutes ago",
@@ -735,6 +744,7 @@ export const HUSH_PROJECTION_CASES = [
     executable: "gt",
     argv: ["submit"],
     rtkArgv: ["gt", "submit"],
+    competitiveTarget: "win",
     requiredMarkers: [
       "created feature/base https://app.graphite.dev/github/pr/example/repo/101",
       "updated feature/top https://app.graphite.dev/github/pr/example/repo/102",
@@ -748,6 +758,7 @@ export const HUSH_PROJECTION_CASES = [
     argv: ["sync"],
     rtkArgv: ["gt", "sync"],
     baseline: "raw",
+    competitiveTarget: "win",
     requiredMarkers: [
       "sync main up to date",
       "deleted feature/merged (#98 merged)",
@@ -763,6 +774,7 @@ export const HUSH_PROJECTION_CASES = [
     argv: ["restack"],
     rtkArgv: ["gt", "restack"],
     baseline: "raw",
+    competitiveTarget: "win",
     requiredMarkers: ["restacked feature/base -> main", "restacked feature/top -> feature/base"],
     forbiddenMarkers: ["Restacking branches", "omitted", "…"],
   },
@@ -773,6 +785,7 @@ export const HUSH_PROJECTION_CASES = [
     argv: ["create"],
     rtkArgv: ["gt", "create"],
     baseline: "raw",
+    competitiveTarget: "win",
     requiredMarkers: [
       "created feature/demo -> main",
       "abc1234 Preserve complete context",
@@ -786,8 +799,44 @@ export const HUSH_PROJECTION_CASES = [
     executable: "gt",
     argv: ["branch"],
     rtkArgv: ["gt", "branch"],
+    competitiveTarget: "win",
     requiredMarkers: ["* feature/top", "feature/base", "main"],
     forbiddenMarkers: ["◉", "◯", "omitted", "…"],
+  },
+  {
+    id: "jira-issue-list",
+    projection: "forge",
+    executable: "jira",
+    argv: ["issue", "list"],
+    rtkArgv: ["jira", "issue", "list"],
+    competitiveTarget: "win",
+    requiredMarkers: [
+      "TYPE\tKEY\tSUMMARY\tSTATUS\tASSIGNEE\tREPORTER\tPRIORITY\tRESOLUTION\tCREATED\tUPDATED\tLABELS",
+      "Task\tFAL-736\tOptimize context engines\tIn Progress\tYogesh Prasad\tYogesh Prasad\tHigh\t\t2026-08-23 10:15:00\t2026-08-25 09:40:00\tcontext,performance",
+      "Bug\tFAL-788\tWire live index candidates\tTo Do\tYogesh Prasad\tYogesh Prasad\tHighest\t\t2026-08-24 08:30:00\t2026-08-25 08:55:00\tindex,context",
+      "Story\tFAL-806\tExpose bounded capability bridge\tDone\tYogesh Prasad\tYogesh Prasad\tNormal\tFixed\t2026-08-24 14:20:00\t2026-08-25 07:15:00\tmcp,capability",
+    ],
+    forbiddenMarkers: ["...", "[full output:", "omitted", "…"],
+  },
+  {
+    id: "jira-issue-view",
+    projection: "forge",
+    executable: "jira",
+    argv: ["issue", "view", "FAL-736"],
+    rtkArgv: ["jira", "issue", "view", "FAL-736"],
+    competitiveTarget: "win",
+    requiredMarkers: [
+      "Task\tIn Progress\tSun, 23 Aug 26\tYogesh Prasad\tFAL-736\t3 comments\t2 linked",
+      "# Optimize context engines",
+      "Tue, 25 Aug 26\tYogesh Prasad\tHigh\tContext Platform\tcontext, performance",
+      "Description:",
+      "Make Hush, Loom, Brief, indexing, and context packing preserve every useful fact while reducing total turn cost.",
+      "2 Subtasks:",
+      "FAL-788 Wire live index candidates • Highest • To Do",
+      "FAL-806 Expose bounded capability bridge • Normal • Done",
+      "https://jira.example.test/browse/FAL-736",
+    ],
+    forbiddenMarkers: ["------------------------", "View this issue on Jira:", "omitted", "…"],
   },
   {
     id: "test-pytest",
@@ -814,12 +863,188 @@ export const HUSH_PROJECTION_CASES = [
     requiredMarkers: ["Finished release target", "0.42s"],
   },
   {
-    id: "package-npm",
+    id: "package-npm-install",
     projection: "package",
     executable: "npm",
     argv: ["install"],
     rtkArgv: ["npm", "install"],
-    requiredMarkers: ["added 12 packages", "audited 13 packages", "0 vulnerabilities"],
+    competitiveTarget: "win",
+    requiredMarkers: ["packages +12; audited 13; 1s", "funding 2: npm fund", "vulnerabilities 0"],
+    forbiddenMarkers: ["looking for funding", "omitted", "…"],
+  },
+  {
+    id: "package-npm-list",
+    projection: "package",
+    executable: "npm",
+    argv: ["list"],
+    rtkArgv: ["npm", "list"],
+    competitiveTarget: "win",
+    requiredMarkers: [
+      "falryn@0.3.0 /workspace",
+      "- @falryn/context@0.3.0",
+      "- zod@4.0.0",
+      "- typescript@5.9.2",
+    ],
+    forbiddenMarkers: ["├", "└", "omitted", "…"],
+  },
+  {
+    id: "package-npm-outdated",
+    projection: "package",
+    executable: "npm",
+    argv: ["outdated"],
+    rtkArgv: ["npm", "outdated"],
+    competitiveTarget: "win",
+    requiredMarkers: [
+      "current>wanted>latest",
+      "@falryn/context 0.2.0>0.2.5>0.3.0",
+      "zod 3.24.0>3.25.0>4.0.0",
+    ],
+    forbiddenMarkers: ["node_modules", "omitted", "…"],
+  },
+  {
+    id: "package-npm-run",
+    projection: "package",
+    executable: "npm",
+    argv: ["run", "verify"],
+    rtkArgv: ["npm", "run", "verify"],
+    competitiveTarget: "win",
+    requiredMarkers: [
+      "node tools/verify-packages.mjs",
+      "checking package graph",
+      "verified 12 packages",
+    ],
+    forbiddenMarkers: ["> falryn@", "omitted", "…"],
+  },
+  {
+    id: "package-pnpm-install",
+    projection: "package",
+    executable: "pnpm",
+    argv: ["install"],
+    rtkArgv: ["pnpm", "install"],
+    competitiveTarget: "win",
+    requiredMarkers: [
+      "+3 packages",
+      "prod @falryn/context 0.3.0, zod 4.0.0",
+      "dev typescript 5.9.2",
+    ],
+    forbiddenMarkers: ["Progress:", "+++", "omitted", "…"],
+  },
+  {
+    id: "package-pnpm-list",
+    projection: "package",
+    executable: "pnpm",
+    argv: ["list"],
+    rtkArgv: ["pnpm", "list"],
+    competitiveTarget: "win",
+    requiredMarkers: [
+      "falryn@0.3.0 /workspace",
+      "prod: @falryn/context@0.3.0, zod@4.0.0",
+      "dev: typescript@5.9.2",
+    ],
+    forbiddenMarkers: ["Legend:", "omitted", "…"],
+  },
+  {
+    id: "package-pnpm-outdated",
+    projection: "package",
+    executable: "pnpm",
+    argv: ["outdated"],
+    rtkArgv: ["pnpm", "outdated"],
+    competitiveTarget: "win",
+    requiredMarkers: [
+      "current>wanted>latest",
+      "@falryn/context 0.2.0>0.2.5>0.3.0",
+      "zod 3.24.0>3.25.0>4.0.0",
+    ],
+    forbiddenMarkers: ["omitted", "…"],
+  },
+  {
+    id: "package-pnpm-run",
+    projection: "package",
+    executable: "pnpm",
+    argv: ["run", "verify"],
+    rtkArgv: ["pnpm", "run", "verify"],
+    competitiveTarget: "win",
+    requiredMarkers: [
+      "node tools/verify-packages.mjs",
+      "checking package graph",
+      "verified 12 packages",
+    ],
+    forbiddenMarkers: ["> falryn@", "omitted", "…"],
+  },
+  {
+    id: "package-yarn-install",
+    projection: "package",
+    executable: "yarn",
+    argv: ["install"],
+    rtkArgv: ["yarn", "install"],
+    competitiveTarget: "win",
+    requiredMarkers: [
+      "lockfile saved",
+      "dependencies +2",
+      "direct:",
+      "all:",
+      "@falryn/context@0.3.0",
+      "typescript@5.9.2",
+    ],
+    forbiddenMarkers: ["[1/4]", "yarn install", "omitted", "…"],
+  },
+  {
+    id: "package-yarn-list",
+    projection: "package",
+    executable: "yarn",
+    argv: ["list"],
+    rtkArgv: ["yarn", "list"],
+    competitiveTarget: "win",
+    requiredMarkers: ["- @falryn/context@0.3.0", "- zod@4.0.0", "- typescript@5.9.2"],
+    forbiddenMarkers: ["yarn list", "├", "└", "omitted", "…"],
+  },
+  {
+    id: "package-yarn-outdated",
+    projection: "package",
+    executable: "yarn",
+    argv: ["outdated"],
+    rtkArgv: ["yarn", "outdated"],
+    competitiveTarget: "win",
+    requiredMarkers: [
+      "current>wanted>latest",
+      "@falryn/context 0.2.0>0.2.5>0.3.0",
+      "zod 3.24.0>3.25.0>4.0.0",
+    ],
+    forbiddenMarkers: ["https://", "omitted", "…"],
+  },
+  {
+    id: "package-yarn-run",
+    projection: "package",
+    executable: "yarn",
+    argv: ["run", "verify"],
+    rtkArgv: ["yarn", "run", "verify"],
+    competitiveTarget: "win",
+    requiredMarkers: [
+      "node tools/verify-packages.mjs",
+      "checking package graph",
+      "verified 12 packages",
+    ],
+    forbiddenMarkers: ["yarn run", "Done in", "omitted", "…"],
+  },
+  {
+    id: "package-npx",
+    projection: "package",
+    executable: "npx",
+    argv: ["package-audit"],
+    rtkArgv: ["npx", "package-audit"],
+    competitiveTarget: "win",
+    requiredMarkers: ["checking package graph ×3", "verified 12 packages"],
+    forbiddenMarkers: ["omitted", "…"],
+  },
+  {
+    id: "package-pnpx",
+    projection: "package",
+    executable: "pnpx",
+    argv: ["package-audit"],
+    rtkArgv: ["pnpx", "package-audit"],
+    competitiveTarget: "win",
+    requiredMarkers: ["checking package graph ×3", "verified 12 packages"],
+    forbiddenMarkers: ["omitted", "…"],
   },
   {
     id: "table-docker",
@@ -933,6 +1158,9 @@ export type HushProjectionScore = Readonly<{
   raw: HushLsMeasurement;
   rtk: HushLsMeasurement;
   hush: HushLsMeasurement;
+  competitiveTarget: "tie" | "win";
+  competitiveResult: "loss" | "tie" | "win";
+  meetsCompetitiveTarget: boolean;
   withinRtkBudget: boolean;
   retainsRequiredContext: boolean;
   excludesKnownNoise: boolean;
@@ -1059,6 +1287,15 @@ async function createScorecard(): Promise<HushProjectionScorecard> {
       const withinRtkBudget =
         hushMeasurement.bytes <= rtkMeasurement.bytes &&
         hushMeasurement.estimatedTokens <= rtkMeasurement.estimatedTokens;
+      const competitiveTarget = fixture.competitiveTarget ?? "tie";
+      const competitiveResult = !withinRtkBudget
+        ? "loss"
+        : hushMeasurement.bytes < rtkMeasurement.bytes &&
+            hushMeasurement.estimatedTokens < rtkMeasurement.estimatedTokens
+          ? "win"
+          : "tie";
+      const meetsCompetitiveTarget =
+        competitiveTarget === "win" ? competitiveResult === "win" : competitiveResult !== "loss";
       const retainsRequiredContext = fixture.requiredMarkers.every((marker) =>
         reduced.value.reducedText.includes(marker),
       );
@@ -1072,7 +1309,7 @@ async function createScorecard(): Promise<HushProjectionScorecard> {
         classifyCommand(command, capture(`classify-${index}`, raw)).projection ===
         fixture.projection;
       const passes =
-        withinRtkBudget &&
+        meetsCompetitiveTarget &&
         retainsRequiredContext &&
         excludesKnownNoise &&
         noArbitraryCap &&
@@ -1084,6 +1321,9 @@ async function createScorecard(): Promise<HushProjectionScorecard> {
         raw: rawMeasurement,
         rtk: rtkMeasurement,
         hush: hushMeasurement,
+        competitiveTarget,
+        competitiveResult,
+        meetsCompetitiveTarget,
         withinRtkBudget,
         retainsRequiredContext,
         excludesKnownNoise,
@@ -1116,14 +1356,27 @@ async function createListingCorpus(root: string): Promise<void> {
 }
 
 export function formatHushProjectionScorecard(scorecard: HushProjectionScorecard): string {
-  const headings = ["case", "gate", "raw", "ceiling", "hush", "delta", "context", "result"];
+  const headings = [
+    "case",
+    "gate",
+    "goal",
+    "raw",
+    "ceiling",
+    "hush",
+    "delta",
+    "race",
+    "context",
+    "result",
+  ];
   const rows = scorecard.scores.map((score) => [
     score.id,
     score.gate,
+    score.competitiveTarget,
     formatMeasurement(score.raw),
     formatMeasurement(score.rtk),
     formatMeasurement(score.hush),
     `${score.rtk.estimatedTokens - score.hush.estimatedTokens}t`,
+    score.competitiveResult,
     score.retainsRequiredContext && score.excludesKnownNoise && score.noArbitraryCap
       ? "all"
       : "loss",

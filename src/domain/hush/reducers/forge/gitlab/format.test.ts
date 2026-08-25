@@ -25,6 +25,30 @@ describe("Hush GitLab formats", () => {
     expect(formatted).not.toContain("omitted");
   });
 
+  test("factors repeated source branches only when that reduces bytes", () => {
+    const formatted = formatGitlabMrList(
+      JSON.stringify([
+        {
+          iid: 736,
+          title: "Do more with less context",
+          state: "opened",
+          source_branch: "perf/736-context-optimization",
+          target_branch: "main",
+        },
+        {
+          iid: 784,
+          title: "Complete Hush projections",
+          state: "opened",
+          source_branch: "perf/736-context-optimization",
+          target_branch: "main",
+        },
+      ]),
+    );
+    expect(formatted).toBe(
+      "-> main:\nperf/736-context-optimization:\n!736 Do more with less context\n!784 Complete Hush projections",
+    );
+  });
+
   test("keeps every issue and complete title", () => {
     const entries = Array.from({ length: 75 }, (_, index) => ({
       iid: 700 + index,
@@ -52,8 +76,8 @@ describe("Hush GitLab formats", () => {
     }));
     const formatted = formatGitlabPipelineList(JSON.stringify(entries));
     expect(formatted?.split("\n")).toHaveLength(75);
-    expect(formatted).toContain("#900 ok main 00000000 push verify");
-    expect(formatted).toContain("#974 fail main 00000074 push verify");
+    expect(formatted).toContain("#900 ok main@00000000 push verify");
+    expect(formatted).toContain("#974 fail main@00000074 push verify");
   });
 
   test("keeps the pipeline and every job including allowed failures", () => {
@@ -79,7 +103,7 @@ describe("Hush GitLab formats", () => {
     );
     expect(formatted?.split("\n")).toHaveLength(77);
     expect(formatted).toContain(
-      "#901 fail main abcdef01 | https://gitlab.example/group/repo/-/pipelines/901",
+      "#901 fail main@abcdef01 https://gitlab.example/group/repo/-/pipelines/901",
     );
     expect(formatted).toContain("fail #1074 job-74 [test] allowed script_failure");
     expect(formatted).not.toContain("omitted");

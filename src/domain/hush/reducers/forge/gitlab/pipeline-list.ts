@@ -36,7 +36,7 @@ function pipelineLine(entry: JsonRecord): string | null {
   const details = [source, name].filter(
     (value): value is string => value !== undefined && value.length > 0,
   );
-  return `#${id} ${pipelineState(status)} ${ref} ${shortSha(sha)}${details.length === 0 ? "" : ` ${details.join(" ")}`}`;
+  return `#${id} ${pipelineState(status)} ${ref}@${shortSha(sha)}${details.length === 0 ? "" : ` ${details.join(" ")}`}`;
 }
 
 export function pipelineState(value: string): string {
