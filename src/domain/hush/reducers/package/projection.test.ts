@@ -4,7 +4,7 @@ import { duration, instant, type ProcessCaptureReport, processCaptureId } from "
 import { packageProjection } from "./projection.ts";
 
 describe("Hush package projection", () => {
-  test("dispatches npm, pnpm, yarn, npx, and pnpx through command-aware formats", () => {
+  test("dispatches package managers and runners through command-aware formats", () => {
     const cases = [
       {
         tokens: ["npm", "install"],
@@ -20,6 +20,23 @@ describe("Hush package projection", () => {
         tokens: ["yarn", "run", "verify"],
         source: "yarn run v1.22.22\n$ node verify.mjs\nverified\nDone in 0.2s.\n",
         marker: "node verify.mjs\nverified",
+      },
+      {
+        tokens: ["bun", "install"],
+        source: [
+          "bun install v1.4.0 (0aa2b1cd)",
+          "Resolved, downloaded and extracted [2]",
+          "+ zod@4.0.0",
+          "2 packages installed [18.00ms]",
+          "",
+        ].join("\n"),
+        marker:
+          "bun install v1.4.0 (0aa2b1cd)\nresolved/downloaded/extracted 2\n+ zod@4.0.0\ninstalled 2 packages [18.00ms]",
+      },
+      {
+        tokens: ["bun", "run", "verify"],
+        source: "$ bun run verify.mjs\nchecking\nchecking\nchecking\nverified\n",
+        marker: "bun run verify.mjs\nchecking ×3\nverified",
       },
       {
         tokens: ["npx", "package-audit"],
@@ -54,6 +71,22 @@ describe("Hush package projection", () => {
     expect(packageProjection(capture("unknown", source), 10_000, [], ["npm", "doctor"]).text).toBe(
       source,
     );
+    expect(packageProjection(capture("bun-audit", source), 10_000, [], ["bun", "audit"]).text).toBe(
+      source,
+    );
+    const silent = "$ user-authored output\nkeep this exact\n";
+    expect(
+      packageProjection(
+        capture("bun-silent", silent),
+        10_000,
+        [],
+        ["bun", "run", "custom", "--silent"],
+      ).text,
+    ).toBe(silent);
+    const json = '{"@falryn/context":{"current":"0.2.0","latest":"0.3.0"}}\n';
+    expect(
+      packageProjection(capture("bun-json", json), 10_000, [], ["bun", "outdated", "--json"]).text,
+    ).toBe(json);
   });
 });
 

@@ -1,6 +1,6 @@
 /** Compare every non-ls/tree Hush projection with pinned RTK on controlled output. */
 
-import { chmod, copyFile, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { prepareHushCaptureRequest } from "../src/application/hush-capture-command.ts";
@@ -18,7 +18,7 @@ import {
 import { HUSH_RTK_BASELINE } from "./hush-command-coverage.ts";
 import { type HushLsMeasurement, measureText } from "./hush-ls-scorecard.ts";
 
-export const HUSH_PROJECTION_CORPUS_VERSION = "hush-projections.v22";
+export const HUSH_PROJECTION_CORPUS_VERSION = "hush-projections.v23";
 
 export const HUSH_FIND_LISTING_PATHS = [
   "bounds.ts",
@@ -1027,6 +1027,95 @@ export const HUSH_PROJECTION_CASES = [
     forbiddenMarkers: ["yarn run", "Done in", "omitted", "…"],
   },
   {
+    id: "package-bun-install",
+    projection: "package",
+    executable: "bun",
+    argv: ["install"],
+    rtkArgv: ["bun", "install"],
+    competitiveTarget: "win",
+    requiredMarkers: [
+      "bun install v1.4.0 (0aa2b1cd)",
+      "resolved/downloaded/extracted 12",
+      "lockfile saved",
+      "+ @falryn/context@0.3.0",
+      "+ zod@4.0.0",
+      "+ typescript@5.9.2",
+      "installed 12 packages [118.00ms]",
+    ],
+    forbiddenMarkers: ["Resolving dependencies", "omitted", "…"],
+  },
+  {
+    id: "package-bun-add",
+    projection: "package",
+    executable: "bun",
+    argv: ["add", "@falryn/context", "zod"],
+    rtkArgv: ["bun", "add", "@falryn/context", "zod"],
+    competitiveTarget: "win",
+    requiredMarkers: [
+      "bun add v1.4.0 (0aa2b1cd)",
+      "resolved/downloaded/extracted 12",
+      "lockfile saved",
+      "+ @falryn/context@0.3.0",
+      "+ zod@4.0.0",
+      "+ typescript@5.9.2",
+      "installed 12 packages [118.00ms]",
+    ],
+    forbiddenMarkers: ["Resolving dependencies", "omitted", "…"],
+  },
+  {
+    id: "package-bun-outdated",
+    projection: "package",
+    executable: "bun",
+    argv: ["outdated"],
+    rtkArgv: ["bun", "outdated"],
+    competitiveTarget: "win",
+    requiredMarkers: [
+      "current>wanted>latest",
+      "@falryn/context 0.2.0>0.2.5>0.3.0",
+      "zod 3.24.0>3.25.0>4.0.0",
+    ],
+    forbiddenMarkers: ["node_modules", "omitted", "…"],
+  },
+  {
+    id: "package-bun-run",
+    projection: "package",
+    executable: "bun",
+    argv: ["run", "custom"],
+    rtkArgv: ["bun", "run", "custom"],
+    competitiveTarget: "win",
+    requiredMarkers: [
+      "bun run tools/verify-packages.mjs",
+      "checking package graph ×3",
+      "verified 12 packages",
+    ],
+    forbiddenMarkers: ["$ bun run", "omitted", "…"],
+  },
+  {
+    id: "package-bun-audit",
+    projection: "package",
+    executable: "bun",
+    argv: ["audit"],
+    rtkArgv: ["bun", "audit"],
+    competitiveTarget: "tie",
+    requiredMarkers: ["No vulnerabilities found"],
+    forbiddenMarkers: ["omitted", "…"],
+  },
+  {
+    id: "package-bun-pm-list",
+    projection: "package",
+    executable: "bun",
+    argv: ["pm", "ls"],
+    rtkArgv: ["bun", "pm", "ls"],
+    competitiveTarget: "tie",
+    requiredMarkers: [
+      "/workspace node_modules (3)",
+      "├── @falryn/context@0.3.0",
+      "├── zod@4.0.0",
+      "└── typescript@5.9.2",
+    ],
+    forbiddenMarkers: ["omitted", "…"],
+  },
+  {
     id: "package-npx",
     projection: "package",
     executable: "npx",
@@ -1401,12 +1490,16 @@ async function createFixtureCommands(root: string): Promise<string> {
   const bin = join(root, "bin");
   await mkdir(bin, { recursive: true });
   const source = join(import.meta.dir, "fixtures", "hush-projection-command.ts");
+  const fixtureSource = (await readFile(source, "utf8")).replace(
+    /^#![^\n]+/u,
+    `#!${process.execPath}`,
+  );
   await Promise.all(
     [...new Set(HUSH_PROJECTION_CASES.map((fixture) => fixture.executable))]
       .filter((executable) => executable !== "bash")
       .map(async (executable) => {
         const target = join(bin, executable);
-        await copyFile(source, target);
+        await writeFile(target, fixtureSource);
         await chmod(target, 0o755);
       }),
   );

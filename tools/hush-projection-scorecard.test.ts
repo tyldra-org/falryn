@@ -8,7 +8,7 @@ import {
 
 describe("Hush projection scorecard corpus", () => {
   test("keeps each supported Git mutation as a separate RTK comparison", () => {
-    expect(HUSH_PROJECTION_CORPUS_VERSION).toBe("hush-projections.v22");
+    expect(HUSH_PROJECTION_CORPUS_VERSION).toBe("hush-projections.v23");
     expect(
       HUSH_PROJECTION_CASES.filter((entry) => entry.projection === "git-mutation").map(
         (entry) => entry.id,
@@ -161,9 +161,9 @@ describe("Hush projection scorecard corpus", () => {
     expect(journal?.forbiddenMarkers).toContain("omitted");
   });
 
-  test("keeps every requested JavaScript package surface separate and requires strict wins", () => {
+  test("keeps every JavaScript package surface separate and enforces its win or tie target", () => {
     const packages = HUSH_PROJECTION_CASES.filter((entry) =>
-      ["npm", "pnpm", "yarn", "npx", "pnpx"].includes(entry.executable),
+      ["npm", "pnpm", "yarn", "bun", "npx", "pnpx"].includes(entry.executable),
     );
     expect(packages.map((entry) => entry.id)).toEqual([
       "package-npm-install",
@@ -178,12 +178,26 @@ describe("Hush projection scorecard corpus", () => {
       "package-yarn-list",
       "package-yarn-outdated",
       "package-yarn-run",
+      "package-bun-install",
+      "package-bun-add",
+      "package-bun-outdated",
+      "package-bun-run",
+      "package-bun-audit",
+      "package-bun-pm-list",
       "package-npx",
       "package-pnpx",
     ]);
     expect(packages.every((entry) => entry.projection === "package")).toBe(true);
+    const optimized = packages.filter(
+      (entry) => !["package-bun-audit", "package-bun-pm-list"].includes(entry.id),
+    );
     expect(
-      packages.every((entry) => "competitiveTarget" in entry && entry.competitiveTarget === "win"),
+      optimized.every((entry) => "competitiveTarget" in entry && entry.competitiveTarget === "win"),
+    ).toBe(true);
+    expect(
+      packages
+        .filter((entry) => ["package-bun-audit", "package-bun-pm-list"].includes(entry.id))
+        .every((entry) => "competitiveTarget" in entry && entry.competitiveTarget === "tie"),
     ).toBe(true);
     expect(
       packages.every(

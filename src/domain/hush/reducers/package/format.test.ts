@@ -76,6 +76,36 @@ describe("Hush package formats", () => {
     );
   });
 
+  test("compacts complete Bun install framing while retaining every fact", () => {
+    expect(
+      formatPackageInstall(
+        "bun",
+        [
+          "bun install v1.4.0 (0aa2b1cd)",
+          "Resolving dependencies",
+          "Resolved, downloaded and extracted [12]",
+          "Saved lockfile",
+          "",
+          "+ @falryn/context@0.3.0",
+          "+ zod@4.0.0",
+          "+ typescript@5.9.2",
+          "",
+          "12 packages installed [118.00ms]",
+        ].join("\n"),
+      ),
+    ).toBe(
+      [
+        "bun install v1.4.0 (0aa2b1cd)",
+        "resolved/downloaded/extracted 12",
+        "lockfile saved",
+        "+ @falryn/context@0.3.0",
+        "+ zod@4.0.0",
+        "+ typescript@5.9.2",
+        "installed 12 packages [118.00ms]",
+      ].join("\n"),
+    );
+  });
+
   test("keeps uncapped dependency trees and lists", () => {
     const dependencies = Array.from(
       { length: 75 },
@@ -133,6 +163,18 @@ describe("Hush package formats", () => {
       ),
     ).toBe("node tools/verify.mjs\n\nchecking package graph\nverified 12 packages");
     expect(
+      formatPackageScript(
+        "bun",
+        [
+          "$ bun run tools/verify-packages.mjs",
+          "checking package graph",
+          "checking package graph",
+          "checking package graph",
+          "verified 12 packages",
+        ].join("\n"),
+      ),
+    ).toBe("bun run tools/verify-packages.mjs\nchecking package graph ×3\nverified 12 packages");
+    expect(
       formatPackageRunner(
         [
           "checking package graph",
@@ -146,6 +188,12 @@ describe("Hush package formats", () => {
 
   test("declines incomplete or unfamiliar manager shapes", () => {
     expect(formatPackageInstall("pnpm", "Progress: resolved 2, added 1")).toBeNull();
+    expect(
+      formatPackageInstall(
+        "bun",
+        "bun install v1.4.0 (0aa2b1cd)\nResolving dependencies\nSaved lockfile",
+      ),
+    ).toBeNull();
     expect(formatPackageList("npm", "falryn@0.3.0 /workspace")).toBeNull();
     expect(formatPackageOutdated("unexpected output")).toBeNull();
     expect(

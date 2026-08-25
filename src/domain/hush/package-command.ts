@@ -1,6 +1,6 @@
 /** Command-aware package-manager routing for Hush projections. */
 
-export const PACKAGE_EXECUTABLES = ["npm", "pnpm", "yarn", "npx", "pnpx"] as const;
+export const PACKAGE_EXECUTABLES = ["npm", "pnpm", "yarn", "bun", "npx", "pnpx"] as const;
 
 export type PackageExecutable = (typeof PACKAGE_EXECUTABLES)[number];
 export type PackageAction = "install" | "list" | "outdated" | "run" | "other";
@@ -57,6 +57,7 @@ export function hasPackageOutputOverride(tokens: readonly string[]): boolean {
       token.startsWith("--json=") ||
       token === "--ndjson" ||
       token === "--parseable" ||
+      token === "--silent" ||
       token === "--help" ||
       token === "-h" ||
       token === "--version" ||

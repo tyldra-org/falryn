@@ -51,6 +51,7 @@ const outputs: Readonly<Record<string, () => string>> = {
   npm: () => npmOutput(args),
   pnpm: () => pnpmOutput(args),
   yarn: () => yarnOutput(args),
+  bun: () => bunOutput(args),
   npx: () => packageRunnerOutput(),
   pnpx: () => packageRunnerOutput(),
   docker: () => dockerOutput(args),
@@ -302,6 +303,52 @@ function packageRunnerOutput(): string {
     "checking package graph",
     "verified 12 packages",
   ].join("\n");
+}
+
+function bunOutput(argv: readonly string[]): string {
+  const action = argv[0] ?? "";
+  if (action === "install" || action === "add") {
+    return [
+      `bun ${action} v1.4.0 (0aa2b1cd)`,
+      "Resolving dependencies",
+      "Resolved, downloaded and extracted [12]",
+      "Saved lockfile",
+      "",
+      "+ @falryn/context@0.3.0",
+      "+ zod@4.0.0",
+      "+ typescript@5.9.2",
+      "",
+      "12 packages installed [118.00ms]",
+    ].join("\n");
+  }
+  if (action === "run") {
+    return [
+      "$ bun run tools/verify-packages.mjs",
+      "checking package graph",
+      "checking package graph",
+      "checking package graph",
+      "verified 12 packages",
+    ].join("\n");
+  }
+  if (action === "outdated") {
+    return [
+      "Package          Current  Wanted  Latest  Location                       Depended by",
+      "@falryn/context  0.2.0    0.2.5   0.3.0   node_modules/@falryn/context  falryn",
+      "zod              3.24.0   3.25.0  4.0.0   node_modules/zod              falryn",
+    ].join("\n");
+  }
+  if (action === "audit") {
+    return "No vulnerabilities found";
+  }
+  if (action === "pm" && argv[1] === "ls") {
+    return [
+      "/workspace node_modules (3)",
+      "├── @falryn/context@0.3.0",
+      "├── zod@4.0.0",
+      "└── typescript@5.9.2",
+    ].join("\n");
+  }
+  throw new Error(`unsupported bun fixture arguments: ${argv.join(" ")}`);
 }
 
 const output = outputs[executable]?.();
