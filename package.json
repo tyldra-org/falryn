@@ -19,7 +19,10 @@
     "quality:fix": "biome check --write .",
     "typecheck": "tsc --noEmit",
     "verify:repository": "bun run tools/repository-integrity.ts",
+    "check:static": "bun run --parallel quality typecheck verify:repository",
     "test": "bun test",
+    "test:parallel": "bun test --parallel=4 --only-failures",
+    "test:changed": "bun test --changed=main --only-failures",
     "test:platform-baseline": "bun test tools/benchmark-regression.test.ts src/cli-boundaries.test.ts src/sqlite-boundaries.test.ts src/source-path-fixtures.test.ts src/main.test.ts src/cli/version.test.ts src/data/roots.test.ts",
     "measure": "FALRYN_MEASURE=1 bun test src/data/measurement.test.ts",
     "benchmark:compare": "bun run tools/benchmark-regression.ts",
@@ -32,8 +35,8 @@
     "build:windows-x64": "bun build src/main.ts --compile --target=bun-windows-x64 --outfile dist/falryn",
     "smoke:macos-arm64": "FALRYN_COMPILED_SMOKE_TARGET=darwin-arm64 bun test src/main.compiled.test.ts src/tui/shell.compiled.test.ts",
     "smoke:windows-x64": "FALRYN_COMPILED_SMOKE_TARGET=win32-x64 bun test src/main.compiled.test.ts",
-    "check": "bun run quality && bun run typecheck && bun run verify:repository && bun run test",
-    "ci": "bun run quality && bun run typecheck && bun run verify:repository && bun run build && bun run test"
+    "check": "bun run check:static && bun run test",
+    "ci": "bun run check:static && bun run build && bun run test"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.9",
