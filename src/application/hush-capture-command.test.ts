@@ -8,7 +8,7 @@ type DirectCaptureRequest = Extract<ProcessCaptureRequest, { readonly argv: read
 
 describe("Hush capture command preparation", () => {
   const structuredCases: readonly (readonly [string, readonly string[], string])[] = [
-    ["pr list", ["pr", "list"], "number,title,state,author"],
+    ["pr list", ["pr", "list"], "number,title,state"],
     [
       "pr view",
       ["pr", "view", "42"],
@@ -16,6 +16,16 @@ describe("Hush capture command preparation", () => {
     ],
     ["issue list", ["issue", "list"], "number,title,state"],
     ["run list", ["run", "list"], "databaseId,workflowName,status,conclusion"],
+    [
+      "repo view",
+      ["repo", "view"],
+      "nameWithOwner,visibility,description,url,stargazerCount,forkCount,isArchived",
+    ],
+    [
+      "release list",
+      ["release", "list"],
+      "tagName,name,isLatest,isDraft,isPrerelease,publishedAt,createdAt",
+    ],
   ];
   for (const [label, argv, fields] of structuredCases) {
     test(`requests structured facts for gh ${label}`, () => {
@@ -32,6 +42,9 @@ describe("Hush capture command preparation", () => {
     ["pr", "view", "42", "--comments"],
     ["issue", "list", "--jq", ".[0].number"],
     ["run", "list", "--template", "{{.databaseId}}"],
+    ["repo", "view", "--branch", "release"],
+    ["release", "list", "--json", "tagName"],
+    ["api", "repos/tyldra-org/falryn"],
   ];
   for (const argv of overrideCases) {
     test(`preserves explicit gh output requests: ${argv.join(" ")}`, () => {

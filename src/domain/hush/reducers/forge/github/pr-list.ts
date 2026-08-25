@@ -1,6 +1,7 @@
-import { loginField, numberField, parseJson, records, stateWord, stringField } from "./json.ts";
+import { numberField, parseJson, records, stringField } from "./json.ts";
+import { visibleState } from "./list-state.ts";
 
-export function formatGithubPrList(text: string): string | null {
+export function formatGithubPrList(text: string, args: readonly string[] = []): string | null {
   const json = parseJson(text);
   if (json !== null) {
     const entries = records(json);
@@ -8,26 +9,25 @@ export function formatGithubPrList(text: string): string | null {
       return null;
     }
     if (entries.length === 0) {
-      return "no prs";
+      return "";
     }
     const lines = entries.map((entry) => {
       const number = numberField(entry, "number");
       const title = stringField(entry, "title");
       const state = stringField(entry, "state");
-      const author = loginField(entry, "author");
       return number === null || title === null || state === null
         ? null
-        : `#${number} ${stateWord(state)} ${title}${author === null ? "" : ` @${author}`}`;
+        : `#${number} ${visibleState(state, args)}${title}`;
     });
     return lines.every((line): line is string => line !== null) ? lines.join("\n") : null;
   }
-  return formatNativePrList(text);
+  return formatNativePrList(text, args);
 }
 
-function formatNativePrList(text: string): string | null {
+function formatNativePrList(text: string, args: readonly string[]): string | null {
   const lines = nonemptyLines(text);
   if (lines.length === 0) {
-    return "no prs";
+    return "";
   }
   const formatted = lines.map((line) => {
     const fields = line.split("\t");
@@ -36,7 +36,7 @@ function formatNativePrList(text: string): string | null {
     }
     const [number, title, , state] = fields;
     return number !== undefined && /^\d+$/u.test(number) && title && state
-      ? `#${number} ${stateWord(state)} ${title}`
+      ? `#${number} ${visibleState(state, args)}${title}`
       : null;
   });
   return formatted.every((line): line is string => line !== null) ? formatted.join("\n") : null;

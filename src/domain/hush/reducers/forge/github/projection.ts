@@ -4,11 +4,14 @@ import type { HushStreamProjection } from "../../../contracts.ts";
 import {
   githubCommand,
   githubCommandArguments,
+  type HushGithubCommand,
   hasGithubOutputOverride,
 } from "../../../github-command.ts";
 import { formatGithubIssueList } from "./issue-list.ts";
 import { formatGithubPrList } from "./pr-list.ts";
 import { formatGithubPrView } from "./pr-view.ts";
+import { formatGithubReleaseList } from "./release-list.ts";
+import { formatGithubRepoView } from "./repo-view.ts";
 import { formatGithubRunList } from "./run-list.ts";
 
 export function githubProjection(
@@ -30,14 +33,8 @@ export function githubProjection(
   if (source === null) {
     return null;
   }
-  const formatted =
-    command === "pr-list"
-      ? formatGithubPrList(source)
-      : command === "pr-view"
-        ? formatGithubPrView(source)
-        : command === "issue-list"
-          ? formatGithubIssueList(source)
-          : formatGithubRunList(source);
+  const args = githubCommandArguments(commandTokens);
+  const formatted = formatGithub(command, source, args);
   if (formatted === null) {
     return null;
   }
@@ -46,6 +43,29 @@ export function githubProjection(
     boundStream("stderr", capture.stderr, maxBytes, [], false),
     maxBytes,
   );
+}
+
+function formatGithub(
+  command: HushGithubCommand,
+  source: string,
+  args: readonly string[],
+): string | null {
+  switch (command) {
+    case "pr-list":
+      return formatGithubPrList(source, args);
+    case "pr-view":
+      return formatGithubPrView(source);
+    case "issue-list":
+      return formatGithubIssueList(source, args);
+    case "run-list":
+      return formatGithubRunList(source);
+    case "repo-view":
+      return formatGithubRepoView(source);
+    case "release-list":
+      return formatGithubReleaseList(source);
+    case "api":
+      return null;
+  }
 }
 
 function canProject(capture: ProcessCaptureReport): boolean {

@@ -18,7 +18,7 @@ import {
 import { HUSH_RTK_BASELINE } from "./hush-command-coverage.ts";
 import { type HushLsMeasurement, measureText } from "./hush-ls-scorecard.ts";
 
-export const HUSH_PROJECTION_CORPUS_VERSION = "hush-projections.v16";
+export const HUSH_PROJECTION_CORPUS_VERSION = "hush-projections.v17";
 
 export const HUSH_FIND_LISTING_PATHS = [
   "bounds.ts",
@@ -552,7 +552,7 @@ export const HUSH_PROJECTION_CASES = [
     executable: "gh",
     argv: ["pr", "list"],
     rtkArgv: ["gh", "pr", "list"],
-    requiredMarkers: ["#128", "#736", "#784", "Do more with less context", "@yogeshprasad098"],
+    requiredMarkers: ["#128", "#736", "#784", "Do more with less context"],
     forbiddenMarkers: ['"number"', "Pull Requests"],
   },
   {
@@ -590,6 +590,40 @@ export const HUSH_PROJECTION_CASES = [
     rtkArgv: ["gh", "run", "list"],
     requiredMarkers: ["ok 32601 CI", "fail 32602 CodeQL", "run 32603 Platform tests"],
     forbiddenMarkers: ['"databaseId"', "Workflow Runs"],
+  },
+  {
+    id: "gh-repo-view",
+    projection: "forge",
+    executable: "gh",
+    argv: ["repo", "view"],
+    rtkArgv: ["gh", "repo", "view"],
+    requiredMarkers: [
+      "tyldra-org/falryn public",
+      "A local terminal coding agent",
+      "2 stars 1 forks",
+      "https://github.com/tyldra-org/falryn",
+    ],
+    forbiddenMarkers: ['"nameWithOwner"', "# Falryn", "[public]"],
+  },
+  {
+    id: "gh-api",
+    projection: "forge",
+    executable: "gh",
+    argv: ["api", "repos/tyldra-org/falryn"],
+    rtkArgv: ["gh", "api", "repos/tyldra-org/falryn"],
+    requiredMarkers: ['"name":"falryn"', '"private":false', '"default_branch":"main"'],
+  },
+  {
+    id: "gh-release-list",
+    projection: "forge",
+    executable: "gh",
+    argv: ["release", "list"],
+    rtkArgv: ["gh", "release", "list"],
+    requiredMarkers: [
+      "latest v0.2.0 Falryn 0.2.0 2026-08-24",
+      "pre v0.3.0-beta Falryn 0.3 beta 2026-08-23",
+    ],
+    forbiddenMarkers: ['"tagName"', "Latest\t", "Pre-release\t"],
   },
   {
     id: "test-pytest",

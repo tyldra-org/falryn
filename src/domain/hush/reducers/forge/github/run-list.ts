@@ -8,7 +8,7 @@ export function formatGithubRunList(text: string): string | null {
       return null;
     }
     if (entries.length === 0) {
-      return "no runs";
+      return "";
     }
     const lines = entries.map((entry) => {
       const id = numberField(entry, "databaseId");
@@ -27,7 +27,7 @@ export function formatGithubRunList(text: string): string | null {
 function formatNativeRunList(text: string): string | null {
   const lines = text.split("\n").filter((line) => line.length > 0);
   if (lines.length === 0) {
-    return "no runs";
+    return "";
   }
   const formatted = lines.map((line) => {
     const fields = line.split("\t");

@@ -32,6 +32,11 @@ export function numberField(value: JsonRecord, key: string): number | null {
   return typeof field === "number" && Number.isSafeInteger(field) ? field : null;
 }
 
+export function booleanField(value: JsonRecord, key: string): boolean | null {
+  const field = value[key];
+  return typeof field === "boolean" ? field : null;
+}
+
 export function loginField(value: JsonRecord, key: string): string | null {
   const owner = record(value[key]);
   return owner === null ? null : stringField(owner, "login");

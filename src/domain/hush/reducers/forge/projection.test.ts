@@ -16,7 +16,7 @@ describe("Hush forge projection", () => {
       },
     ]);
     const projected = forgeProjection(report(output), 64 * 1_024, [], ["gh", "pr", "list"]);
-    expect(projected.text).toBe("#736 open Do more with less context @yogesh");
+    expect(projected.text).toBe("#736 Do more with less context");
     expect(projected.omissions).toEqual([]);
   });
 
@@ -48,6 +48,18 @@ describe("Hush forge projection", () => {
   test("preserves caller-filtered output exactly", () => {
     const output = "736\tOPEN\tDo more with less context\t\t2026-08-23T12:00:00Z\n";
     const projected = forgeProjection(report(output), 64 * 1_024, ["736"], ["gh", "issue", "list"]);
+    expect(projected.text).toBe(output);
+    expect(projected.omissions).toEqual([]);
+  });
+
+  test("keeps arbitrary API responses exact", () => {
+    const output = '{"name":"falryn","private":false}\n';
+    const projected = forgeProjection(
+      report(output),
+      64 * 1_024,
+      [],
+      ["gh", "api", "repos/tyldra-org/falryn"],
+    );
     expect(projected.text).toBe(output);
     expect(projected.omissions).toEqual([]);
   });

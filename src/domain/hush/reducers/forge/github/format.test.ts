@@ -3,6 +3,8 @@ import { describe, expect, test } from "bun:test";
 import { formatGithubIssueList } from "./issue-list.ts";
 import { formatGithubPrList } from "./pr-list.ts";
 import { formatGithubPrView } from "./pr-view.ts";
+import { formatGithubReleaseList } from "./release-list.ts";
+import { formatGithubRepoView } from "./repo-view.ts";
 import { formatGithubRunList } from "./run-list.ts";
 
 describe("Hush GitHub formats", () => {
@@ -13,7 +15,7 @@ describe("Hush GitHub formats", () => {
       state: index % 2 === 0 ? "OPEN" : "CLOSED",
       author: { login: `author-${index}` },
     }));
-    const formatted = formatGithubPrList(JSON.stringify(prs));
+    const formatted = formatGithubPrList(JSON.stringify(prs), ["--state", "all"]);
     expect(formatted?.split("\n")).toHaveLength(75);
     expect(formatted).toContain(
       "#1 open Complete pull request title 0 with retained tail marker-0",
@@ -34,8 +36,8 @@ describe("Hush GitHub formats", () => {
     }));
     const formatted = formatGithubIssueList(JSON.stringify(issues));
     expect(formatted?.split("\n")).toHaveLength(75);
-    expect(formatted).toContain("#700 open Issue context 0");
-    expect(formatted).toContain("#774 open Issue context 74");
+    expect(formatted).toContain("#700 Issue context 0");
+    expect(formatted).toContain("#774 Issue context 74");
   });
 
   test("keeps every workflow run while making status immediately readable", () => {
@@ -86,15 +88,86 @@ describe("Hush GitHub formats", () => {
     expect(formatted).not.toContain("omitted");
   });
 
+  test("does not repeat list state already carried by the command", () => {
+    const entries = JSON.stringify([
+      { number: 1, title: "Open item", state: "OPEN" },
+      { number: 2, title: "Closed item", state: "CLOSED" },
+    ]);
+    expect(formatGithubIssueList(entries)).toBe("#1 Open item\n#2 closed Closed item");
+    expect(formatGithubIssueList(entries, ["--state", "all"])).toBe(
+      "#1 open Open item\n#2 closed Closed item",
+    );
+  });
+
+  test("uses empty successful output for empty lists", () => {
+    expect(formatGithubPrList("[]")).toBe("");
+    expect(formatGithubIssueList("[]")).toBe("");
+    expect(formatGithubRunList("[]")).toBe("");
+    expect(formatGithubReleaseList("[]")).toBe("");
+  });
+
+  test("formats repository identity without copying the README", () => {
+    expect(
+      formatGithubRepoView(
+        JSON.stringify({
+          nameWithOwner: "tyldra-org/falryn",
+          visibility: "PUBLIC",
+          description: "A local terminal coding agent.",
+          url: "https://github.com/tyldra-org/falryn",
+          stargazerCount: 2,
+          forkCount: 1,
+          isArchived: false,
+        }),
+      ),
+    ).toBe(
+      "tyldra-org/falryn public\nA local terminal coding agent.\n2 stars 1 forks\nhttps://github.com/tyldra-org/falryn",
+    );
+  });
+
+  test("keeps every release with state, identity, name, and date", () => {
+    const releases = Array.from({ length: 75 }, (_, index) => ({
+      tagName: `v1.${index}.0`,
+      name: `Falryn ${index}`,
+      isLatest: index === 0,
+      isDraft: index === 1,
+      isPrerelease: index === 2,
+      publishedAt: `2026-08-${String((index % 28) + 1).padStart(2, "0")}T12:00:00Z`,
+    }));
+    const formatted = formatGithubReleaseList(JSON.stringify(releases));
+    expect(formatted?.split("\n")).toHaveLength(75);
+    expect(formatted).toContain("latest v1.0.0 Falryn 0 2026-08-01");
+    expect(formatted).toContain("draft v1.1.0 Falryn 1 2026-08-02");
+    expect(formatted).toContain("pre v1.2.0 Falryn 2 2026-08-03");
+    expect(formatted).toContain("release v1.74.0 Falryn 74 2026-08-19");
+  });
+
+  test("uses release creation date for an unpublished draft", () => {
+    expect(
+      formatGithubReleaseList(
+        JSON.stringify([
+          {
+            tagName: "v0.4.0-draft",
+            name: "Falryn draft",
+            isLatest: false,
+            isDraft: true,
+            isPrerelease: false,
+            publishedAt: null,
+            createdAt: "2026-08-25T12:00:00Z",
+          },
+        ]),
+      ),
+    ).toBe("draft v0.4.0-draft Falryn draft 2026-08-25");
+  });
+
   test("understands native gh output when capture enrichment is unavailable", () => {
     expect(
       formatGithubPrList("42\tComplete Hush support\tfeature/hush\tOPEN\t2026-08-23T12:00:00Z\n"),
-    ).toBe("#42 open Complete Hush support");
+    ).toBe("#42 Complete Hush support");
     expect(
       formatGithubIssueList(
         "736\tOPEN\tDo more with less context\troadmap, priority:P0\t2026-08-23T12:00:00Z\n",
       ),
-    ).toBe("#736 open Do more with less context");
+    ).toBe("#736 Do more with less context");
     expect(
       formatGithubRunList(
         "completed\tsuccess\tHush support\tCI\tfeature/hush\tpull_request\t32642\t2m\t2026-08-23T12:00:00Z\n",

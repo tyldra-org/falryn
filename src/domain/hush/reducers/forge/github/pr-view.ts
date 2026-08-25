@@ -31,7 +31,10 @@ function formatPrRecord(value: JsonRecord): string | null {
   const facts = [`@${author}`];
   const mergeable = stringField(value, "mergeable");
   if (mergeable !== null) {
-    facts.push(mergeableWord(mergeable));
+    const word = mergeableWord(mergeable);
+    if (word !== null) {
+      facts.push(word);
+    }
   }
   lines.push(facts.join(" | "));
 
@@ -91,14 +94,14 @@ function checkSummary(value: unknown): string | null {
   ].join(", ");
 }
 
-function mergeableWord(value: string): string {
+function mergeableWord(value: string): string | null {
   if (value === "MERGEABLE") {
     return "mergeable";
   }
   if (value === "CONFLICTING") {
     return "conflicts";
   }
-  return stateWord(value);
+  return value === "UNKNOWN" ? null : stateWord(value);
 }
 
 function formatNativePrView(text: string): string | null {

@@ -665,6 +665,59 @@ function ghOutput(argv: readonly string[]): string {
             )
             .join("\n");
     }
+    case "repo view": {
+      const repository = {
+        name: "falryn",
+        nameWithOwner: "tyldra-org/falryn",
+        owner: { login: "tyldra-org" },
+        visibility: "PUBLIC",
+        isPrivate: false,
+        isArchived: false,
+        description: "A local terminal coding agent built with Bun, TypeScript, and OpenTUI.",
+        stargazerCount: 2,
+        forkCount: 1,
+        url: "https://github.com/tyldra-org/falryn",
+      };
+      return json
+        ? JSON.stringify(repository)
+        : [
+            "name:\ttyldra-org/falryn",
+            "description:\tA local terminal coding agent built with Bun, TypeScript, and OpenTUI.",
+            "--",
+            "# Falryn",
+            "A local terminal coding agent for deliberate, inspectable work.",
+          ].join("\n");
+    }
+    case "api repos/tyldra-org/falryn":
+      return JSON.stringify({ name: "falryn", private: false, default_branch: "main" });
+    case "release list": {
+      const releases = [
+        {
+          tagName: "v0.2.0",
+          name: "Falryn 0.2.0",
+          isLatest: true,
+          isDraft: false,
+          isPrerelease: false,
+          publishedAt: "2026-08-24T12:00:00Z",
+          createdAt: "2026-08-24T11:00:00Z",
+        },
+        {
+          tagName: "v0.3.0-beta",
+          name: "Falryn 0.3 beta",
+          isLatest: false,
+          isDraft: false,
+          isPrerelease: true,
+          publishedAt: "2026-08-23T12:00:00Z",
+          createdAt: "2026-08-23T11:00:00Z",
+        },
+      ];
+      return json
+        ? JSON.stringify(releases)
+        : [
+            "Falryn 0.2.0\tLatest\tv0.2.0\t2026-08-24T12:00:00Z",
+            "Falryn 0.3 beta\tPre-release\tv0.3.0-beta\t2026-08-23T12:00:00Z",
+          ].join("\n");
+    }
     default:
       return "";
   }
