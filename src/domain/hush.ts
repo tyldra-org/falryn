@@ -100,6 +100,7 @@ export function reduceHush(request: HushRequest): Result<HushResult, HushError> 
         patterns,
         classification.tokens,
         classification.commands,
+        command.cwd,
       );
     } catch {
       strategy = "generic";

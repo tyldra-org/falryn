@@ -53,6 +53,7 @@ export function specializedProjection(
   patterns: readonly string[],
   commandTokens: readonly string[],
   commandSegments: readonly (readonly string[])[],
+  cwd: string | null,
 ): HushStreamProjection {
   switch (projection) {
     case "ls":
@@ -78,7 +79,7 @@ export function specializedProjection(
     case "git-log":
       return gitLogProjection(capture, maxBytes, patterns, commandTokens);
     case "git-mutation":
-      return gitMutationProjection(capture, maxBytes, patterns, commandTokens);
+      return gitMutationProjection(capture, maxBytes, patterns, commandTokens, cwd);
     case "forge":
       return forgeProjection(capture, maxBytes, patterns, commandTokens);
     case "test":

@@ -14,7 +14,22 @@ export function gitAddProjection(
 ): HushStreamProjection {
   if (
     !canSummarizeGitMutation(capture, patterns) ||
-    args.some((arg) => arg === "-n" || arg === "--dry-run")
+    args.some((arg) =>
+      [
+        "-n",
+        "--dry-run",
+        "-p",
+        "--patch",
+        "-i",
+        "--interactive",
+        "-e",
+        "--edit",
+        "-v",
+        "--verbose",
+      ].includes(arg),
+    ) ||
+    (capture.stdout.inlineText ?? "").length > 0 ||
+    (capture.stderr.inlineText ?? "").length > 0
   ) {
     return gitMutationFallbackProjection(capture, maxBytes, patterns);
   }

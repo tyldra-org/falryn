@@ -266,7 +266,7 @@ if (executable === "curl") {
       "100   102  100   102    0     0   1020      0 --:--:-- --:--:-- --:--:--  1020\n",
   );
   process.stdout.write(`${output}\n`);
-} else if (executable === "git" && gitSubcommand(args) === "push") {
+} else if (executable === "git" && ["checkout", "fetch", "push"].includes(gitSubcommand(args))) {
   process.stderr.write(`${output}\n`);
 } else if (output.length > 0) {
   process.stdout.write(`${output}\n`);
@@ -379,11 +379,23 @@ function gitOutput(argv: readonly string[]): string {
       return `${nativeGitLogOutput().split("\n\ncommit ", 1)[0] ?? ""}\n\n${completeGitDiffOutput()}`;
     case "add":
       return "";
+    case "branch":
+      return argv.includes("-a") || argv.includes("--all")
+        ? ["  feature/736", "* main", "  remotes/origin/main", "  remotes/origin/release/v1"].join(
+            "\n",
+          )
+        : ["  feature/736", "* main"].join("\n");
+    case "checkout":
+      return "Switched to branch 'feature/736'";
     case "commit":
       return [
         "[feature 2222222] Preserve complete context",
         " 3 files changed, 10 insertions(+), 2 deletions(-)",
       ].join("\n");
+    case "fetch":
+      return ["From github.com:tyldra-org/falryn", "   1111111..2222222  main -> origin/main"].join(
+        "\n",
+      );
     case "push":
       return [
         "Enumerating objects: 3, done.",
@@ -399,6 +411,18 @@ function gitOutput(argv: readonly string[]): string {
         " src/b.ts | 2 ++",
         " src/c.ts | 2 --",
         " 3 files changed, 10 insertions(+), 2 deletions(-)",
+      ].join("\n");
+    case "stash":
+      return argv.includes("list")
+        ? [
+            "stash@{0}: On main: Preserve complete context",
+            "stash@{1}: WIP on feature/736: Keep every useful fact",
+          ].join("\n")
+        : "Saved working directory and index state On main: Preserve complete context";
+    case "worktree":
+      return [
+        `${process.env.FALRYN_HUSH_FIXTURE_CWD ?? process.cwd()} 1111111 [main]`,
+        `${process.env.FALRYN_HUSH_FIXTURE_CWD ?? process.cwd()}-review 2222222 [review/736]`,
       ].join("\n");
     default:
       return "";

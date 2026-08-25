@@ -18,7 +18,7 @@ import {
 import { HUSH_RTK_BASELINE } from "./hush-command-coverage.ts";
 import { type HushLsMeasurement, measureText } from "./hush-ls-scorecard.ts";
 
-export const HUSH_PROJECTION_CORPUS_VERSION = "hush-projections.v15";
+export const HUSH_PROJECTION_CORPUS_VERSION = "hush-projections.v16";
 
 export const HUSH_FIND_LISTING_PATHS = [
   "bounds.ts",
@@ -475,6 +475,24 @@ export const HUSH_PROJECTION_CASES = [
     forbiddenMarkers: ["file changed", "insertion", "deletion"],
   },
   {
+    id: "git-branch",
+    projection: "git-mutation",
+    executable: "git",
+    argv: ["branch"],
+    rtkArgv: ["git", "branch"],
+    requiredMarkers: ["feature/736", "* main"],
+    forbiddenMarkers: ["remotes/origin", "omitted", "…"],
+  },
+  {
+    id: "git-checkout",
+    projection: "git-mutation",
+    executable: "git",
+    argv: ["checkout", "feature/736"],
+    rtkArgv: ["git", "checkout", "feature/736"],
+    requiredMarkers: ["ok feature/736"],
+    forbiddenMarkers: ["Switched to branch", "omitted", "…"],
+  },
+  {
     id: "git-commit",
     projection: "git-mutation",
     executable: "git",
@@ -482,6 +500,15 @@ export const HUSH_PROJECTION_CASES = [
     rtkArgv: ["git", "commit", "-m", "Preserve complete context"],
     requiredMarkers: ["ok", "2222222"],
     forbiddenMarkers: ["file changed", "insertion", "deletion"],
+  },
+  {
+    id: "git-fetch",
+    projection: "git-mutation",
+    executable: "git",
+    argv: ["fetch"],
+    rtkArgv: ["git", "fetch"],
+    requiredMarkers: ["fetched 1 ref"],
+    forbiddenMarkers: ["From github.com", "origin/main", "omitted", "…"],
   },
   {
     id: "git-push",
@@ -500,6 +527,24 @@ export const HUSH_PROJECTION_CASES = [
     rtkArgv: ["git", "pull", "--ff-only"],
     requiredMarkers: ["ok", "3 files", "+10", "-2"],
     forbiddenMarkers: ["Fast-forward", "src/a.ts", "src/b.ts", "src/c.ts"],
+  },
+  {
+    id: "git-stash",
+    projection: "git-mutation",
+    executable: "git",
+    argv: ["stash", "push", "-m", "Preserve complete context"],
+    rtkArgv: ["git", "stash", "push", "-m", "Preserve complete context"],
+    requiredMarkers: ["stashed"],
+    forbiddenMarkers: ["Saved working directory", "omitted", "…"],
+  },
+  {
+    id: "git-worktree",
+    projection: "git-mutation",
+    executable: "git",
+    argv: ["worktree", "list"],
+    rtkArgv: ["git", "worktree", "list"],
+    requiredMarkers: [". 1111111 [main]", "2222222 [review/736]"],
+    forbiddenMarkers: ["omitted", "…"],
   },
   {
     id: "gh-pr-list",
@@ -976,6 +1021,7 @@ function runCommand(
       LC_ALL: "C",
       NO_COLOR: "1",
       PATH: `${fixtureBin}:${process.env.PATH ?? ""}`,
+      FALRYN_HUSH_FIXTURE_CWD: cwd,
       ...(process.env.HOME === undefined ? {} : { HOME: process.env.HOME }),
       ...(process.env.TMPDIR === undefined ? {} : { TMPDIR: process.env.TMPDIR }),
     },

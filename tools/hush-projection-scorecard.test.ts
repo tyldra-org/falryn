@@ -8,12 +8,22 @@ import {
 
 describe("Hush projection scorecard corpus", () => {
   test("keeps each supported Git mutation as a separate RTK comparison", () => {
-    expect(HUSH_PROJECTION_CORPUS_VERSION).toBe("hush-projections.v15");
+    expect(HUSH_PROJECTION_CORPUS_VERSION).toBe("hush-projections.v16");
     expect(
       HUSH_PROJECTION_CASES.filter((entry) => entry.projection === "git-mutation").map(
         (entry) => entry.id,
       ),
-    ).toEqual(["git-add", "git-commit", "git-push", "git-pull"]);
+    ).toEqual([
+      "git-add",
+      "git-branch",
+      "git-checkout",
+      "git-commit",
+      "git-fetch",
+      "git-push",
+      "git-pull",
+      "git-stash",
+      "git-worktree",
+    ]);
   });
 
   test("compares Git and external unified diffs independently", () => {
