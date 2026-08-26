@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { HUSH_BUILD_OPERATION_CASES } from "./hush-build-operation-cases.ts";
+import { HUSH_CONTAINER_CASES } from "./hush-container-cases.ts";
 import {
   HUSH_FIND_LISTING_PATHS,
   HUSH_PROJECTION_CASES,
@@ -9,7 +10,7 @@ import {
 
 describe("Hush projection scorecard corpus", () => {
   test("keeps each supported Git mutation as a separate RTK comparison", () => {
-    expect(HUSH_PROJECTION_CORPUS_VERSION).toBe("hush-projections.v28");
+    expect(HUSH_PROJECTION_CORPUS_VERSION).toBe("hush-projections.v29");
     expect(
       HUSH_PROJECTION_CASES.filter((entry) => entry.projection === "git-mutation").map(
         (entry) => entry.id,
@@ -260,6 +261,31 @@ describe("Hush projection scorecard corpus", () => {
     ).toBe(true);
   });
 
+  test("measures every requested container surface without unsafe reductions", () => {
+    expect(HUSH_CONTAINER_CASES).toHaveLength(23);
+    const ids: readonly string[] = HUSH_CONTAINER_CASES.map((entry) => entry.id);
+    expect(ids).toEqual(
+      HUSH_PROJECTION_CASES.filter((entry) =>
+        HUSH_CONTAINER_CASES.some((candidate) => candidate.id === entry.id),
+      ).map((entry) => entry.id),
+    );
+    expect(ids).toContain("container-docker-compose-ps");
+    expect(ids).toContain("container-podman-compose-logs");
+    expect(ids).toContain("container-skopeo-copy");
+    expect(
+      HUSH_CONTAINER_CASES.filter((entry) => entry.baseline === "raw").map((entry) => entry.id),
+    ).toEqual([
+      "container-docker-ps",
+      "container-docker-images",
+      "container-docker-compose-ps",
+      "container-docker-compose-logs",
+      "container-skopeo-copy",
+    ]);
+    expect(
+      HUSH_CONTAINER_CASES.every((entry) => entry.forbiddenMarkers?.includes("omitted") ?? false),
+    ).toBe(true);
+  });
+
   test("measures every requested test-runner and wrapper as an uncapped strict win", () => {
     const runners = HUSH_PROJECTION_CASES.filter((entry) => entry.projection === "test");
     expect(runners.map((entry) => entry.id)).toEqual([
@@ -298,7 +324,13 @@ describe("Hush projection scorecard corpus", () => {
 
   test("compares journalctl with RTK log while requiring every event fact", () => {
     const logs = HUSH_PROJECTION_CASES.filter((entry) => entry.projection === "log");
-    expect(logs.map((entry) => entry.id)).toEqual(["log-docker", "log-journalctl"]);
+    expect(logs.map((entry) => entry.id)).toEqual([
+      "container-docker-logs",
+      "container-docker-compose-logs",
+      "container-podman-logs",
+      "container-podman-compose-logs",
+      "log-journalctl",
+    ]);
     const journal = HUSH_PROJECTION_CASES.find((entry) => entry.id === "log-journalctl");
     expect(journal?.baseline).toBe("rtk-log");
     expect(journal?.requiredMarkers).toHaveLength(7);

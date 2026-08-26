@@ -17,10 +17,11 @@ import {
 } from "../src/domain/index.ts";
 import { HUSH_BUILD_OPERATION_CASES } from "./hush-build-operation-cases.ts";
 import { HUSH_RTK_BASELINE } from "./hush-command-coverage.ts";
+import { HUSH_CONTAINER_CASES } from "./hush-container-cases.ts";
 import { type HushLsMeasurement, measureText } from "./hush-ls-scorecard.ts";
 import type { ProjectionCase } from "./hush-projection-case.ts";
 
-export const HUSH_PROJECTION_CORPUS_VERSION = "hush-projections.v28";
+export const HUSH_PROJECTION_CORPUS_VERSION = "hush-projections.v29";
 
 export const HUSH_FIND_LISTING_PATHS = [
   "bounds.ts",
@@ -1975,14 +1976,7 @@ export const HUSH_PROJECTION_CASES: readonly ProjectionCase[] = [
     requiredMarkers: ["complete 85/200"],
     forbiddenMarkers: ["Using ", "omitted", "…"],
   },
-  {
-    id: "table-docker",
-    projection: "table",
-    executable: "docker",
-    argv: ["ps"],
-    rtkArgv: ["docker", "ps"],
-    requiredMarkers: ["abc123", "falryn-dev", "def456", "falryn-db"],
-  },
+  ...HUSH_CONTAINER_CASES,
   {
     id: "count-wc-single",
     projection: "count",
@@ -2008,14 +2002,6 @@ export const HUSH_PROJECTION_CASES: readonly ProjectionCase[] = [
       "Σ 159L 515W 4519B",
     ],
     forbiddenMarkers: ["src/domain", "omitted", "…"],
-  },
-  {
-    id: "log-docker",
-    projection: "log",
-    executable: "docker",
-    argv: ["logs", "falryn-dev"],
-    rtkArgv: ["docker", "logs", "falryn-dev"],
-    requiredMarkers: ["service started", "req-736", "req-784"],
   },
   {
     id: "log-journalctl",

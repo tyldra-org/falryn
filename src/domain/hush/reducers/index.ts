@@ -100,7 +100,7 @@ export function specializedProjection(
     case "count":
       return countProjection(capture, maxBytes, patterns, commandTokens);
     case "log":
-      return logProjection(capture, maxBytes, patterns);
+      return logProjection(capture, maxBytes, patterns, commandTokens);
     case "curl":
       return curlProjection(capture, maxBytes, patterns);
     case "wget":

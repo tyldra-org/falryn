@@ -240,6 +240,32 @@ describe("hush reduction", () => {
     expect(partial.value.expansion.stdoutArtifact).toBe(artifactId.from("cap-1.stdout"));
   });
 
+  test("keeps arbitrary and partial container output exact", () => {
+    const applicationOutput = "application-owned output\nsecond exact line\n";
+    const run = reduceHush({
+      command: argv("/usr/bin/docker", ["run", "falryn:dev"]),
+      capture: report(applicationOutput),
+    });
+    expect(run.ok).toBe(true);
+    if (!run.ok) throw new Error("expected an exact container result");
+    expect(run.value.reducerId).toBe("container.operation");
+    expect(run.value.reducedText).toBe(applicationOutput);
+
+    const partial = reduceHush({
+      command: argv("/usr/bin/docker", ["inspect", "falryn-dev"]),
+      capture: report('[{"Id":"sha256:736"}]\n', {
+        truncated: true,
+        artifact: true,
+      }),
+    });
+    expect(partial.ok).toBe(true);
+    if (!partial.ok) throw new Error("expected a partial container result");
+    expect(partial.value.reducerId).toBe("container.table");
+    expect(partial.value.reducedText).toBe('[{"Id":"sha256:736"}]\n');
+    expect(partial.value.truncated).toBe(true);
+    expect(partial.value.expansion.stdoutArtifact).toBe(artifactId.from("cap-1.stdout"));
+  });
+
   test("preserves terminal facts and omits the child environment", () => {
     const captured = report("On branch main\n", { durationMs: 44, exitCode: 1 });
     const reduced = reduceHush({
