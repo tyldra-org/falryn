@@ -25,6 +25,9 @@ import type { WorkspaceReader } from "./workspace-read.ts";
 export const PRODUCT_READ_OWNER = "#814";
 export const MAX_PRODUCT_READ_CANDIDATES = 32;
 export const DEFAULT_PRODUCT_READ_LOOM_BYTES = 4 * 1_024;
+export const PRODUCT_READ_OUTPUT_MODES = ["loom", "raw"] as const;
+
+export type ProductReadOutputMode = (typeof PRODUCT_READ_OUTPUT_MODES)[number];
 
 const encoder = new TextEncoder();
 
@@ -43,6 +46,7 @@ const byteRange = z
   .strict();
 
 const workspaceRange = z.discriminatedUnion("kind", [lineRange, byteRange]);
+const outputMode = z.enum(PRODUCT_READ_OUTPUT_MODES).default("loom");
 
 const readLimits = z
   .object({
@@ -60,6 +64,7 @@ const pathRead = z
     path: z.string().min(1),
     range: workspaceRange.optional(),
     limits: readLimits.optional(),
+    outputMode,
   })
   .strict();
 
@@ -69,6 +74,7 @@ const manyRead = z
       .array(z.object({ path: z.string().min(1), range: workspaceRange.optional() }).strict())
       .min(1),
     limits: readLimits.optional(),
+    outputMode,
   })
   .strict();
 
@@ -256,8 +262,12 @@ export function createProductReadCoordinator(
 
   const projectRead = async (
     read: WorkspaceFileRead,
+    mode: ProductReadOutputMode,
     signal: AbortSignal,
   ): Promise<ProductReadResult> => {
+    if (mode === "raw") {
+      return { ok: true, value: read };
+    }
     if (read.expansion === null || options.loom === null || productLoom === null) {
       return { ok: true, value: read };
     }
@@ -409,6 +419,7 @@ export function createProductReadCoordinator(
 
   const projectMany = async (
     items: readonly WorkspaceReadManyItem[],
+    mode: ProductReadOutputMode,
     signal: AbortSignal,
   ): Promise<ProductReadResult> => {
     const projected: unknown[] = [];
@@ -420,7 +431,7 @@ export function createProductReadCoordinator(
         projected.push(item);
         continue;
       }
-      const next = await projectRead(item.value, signal);
+      const next = await projectRead(item.value, mode, signal);
       if (!next.ok) {
         projected.push({ index: item.index, status: "failed", error: next.error });
         continue;
@@ -525,7 +536,7 @@ export function createProductReadCoordinator(
         if (!result.ok) {
           return { ok: false, error: errorCode(result.error) };
         }
-        const items = await projectMany(result.value.items, signal);
+        const items = await projectMany(result.value.items, parsed.data.outputMode, signal);
         return items.ok
           ? {
               ok: true,
@@ -546,7 +557,7 @@ export function createProductReadCoordinator(
         signal,
       );
       return result.ok
-        ? projectRead(result.value, signal)
+        ? projectRead(result.value, parsed.data.outputMode, signal)
         : { ok: false, error: errorCode(result.error) };
     },
     candidates() {

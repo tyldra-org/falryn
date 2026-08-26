@@ -62,8 +62,15 @@ describe("composeProductWorkspaceTools", () => {
     expect(
       tools.registry.resolveByName("read_file")?.manifest.inputSchema.safeParse({
         targets: [{ path: "hello.ts", range: { kind: "line", range: { start: 1, end: 1 } } }],
+        outputMode: "raw",
       }).success,
     ).toBe(true);
+    expect(
+      tools.registry.resolveByName("read_file")?.manifest.inputSchema.safeParse({
+        path: "hello.ts",
+        outputMode: "hush",
+      }).success,
+    ).toBe(false);
     expect(
       tools.registry.resolveByName("stat_path")?.manifest.inputSchema.safeParse({
         recovery: { manifestId: "loom-1", artifactId: "artifact-1" },

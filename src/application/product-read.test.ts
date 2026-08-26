@@ -16,9 +16,11 @@ import {
   createInMemoryWorkspaceIndex,
   localPath,
   timestampFromEpochMilliseconds,
+  type WorkspaceFileRead,
+  type WorkspaceIndexPort,
 } from "../domain/index.ts";
 import { err, ok } from "../domain/result.ts";
-import { createLoomPort } from "./loom.ts";
+import { createLoomPort, type LoomPort } from "./loom.ts";
 import { createProductReadCoordinator, productReadInputSchema } from "./product-read.ts";
 import { createWorkspaceReader } from "./workspace-read.ts";
 
@@ -297,6 +299,143 @@ describe("createProductReadCoordinator", () => {
     );
     expect(repeated).toEqual(targeted);
     expect(artifacts.reads).toHaveLength(readsAfterFirstRecovery);
+  });
+
+  test("raw mode bypasses indexed and Loom projection for single and multi reads", async () => {
+    const firstSource = Array.from(
+      { length: 80 },
+      (_, index) => `export const first${index + 1} = ${index};`,
+    ).join("\n");
+    const secondSource = Array.from(
+      { length: 80 },
+      (_, index) => `export const second${index + 1} = ${index};`,
+    ).join("\n");
+    const built = buildIndexGeneration(
+      {
+        sources: [
+          {
+            logical: "src/first.ts",
+            revision: String(digestOf(new TextEncoder().encode(firstSource))),
+            text: firstSource,
+          },
+          {
+            logical: "src/second.ts",
+            revision: String(digestOf(new TextEncoder().encode(secondSource))),
+            text: secondSource,
+          },
+        ],
+      },
+      "generation-current",
+    );
+    if (!built.ok) {
+      throw new Error(built.error.code);
+    }
+    const artifacts = memoryArtifacts();
+    const reader = createWorkspaceReader(
+      createInMemoryFileSystem({
+        nodes: {
+          "/work/project": { kind: "directory" },
+          "/work/project/src": { kind: "directory" },
+          "/work/project/src/first.ts": { kind: "file", text: firstSource },
+          "/work/project/src/second.ts": { kind: "file", text: secondSource },
+        },
+      }),
+      { artifacts },
+    );
+    let adoptionCount = 0;
+    const baseLoom = createLoomPort({ artifacts });
+    const loom: LoomPort = {
+      ...baseLoom,
+      async adopt(request, signal) {
+        adoptionCount += 1;
+        return baseLoom.adopt(request, signal);
+      },
+    };
+    let snapshotCount = 0;
+    const baseIndex = createInMemoryWorkspaceIndex(built.value.generation);
+    const index: WorkspaceIndexPort = {
+      async snapshot(root, signal) {
+        snapshotCount += 1;
+        return baseIndex.snapshot(root, signal);
+      },
+    };
+    const coordinator = createProductReadCoordinator({
+      reader,
+      loom,
+      index,
+      workspaceRoot: localPath("/work/project"),
+      workspaceId: "ws-1",
+      sessionId: "session-1",
+      generation: configurationGeneration.from(1),
+    });
+    const limits = {
+      maxFileBytes: 64,
+      maxAggregateBytes: 256,
+      maxExpansionBytes: 20_000,
+      maxExpansionChunkBytes: 1_024,
+    };
+
+    const raw = await coordinator.execute(
+      { path: "src/first.ts", outputMode: "raw", limits },
+      new AbortController().signal,
+    );
+    if (!raw.ok) {
+      throw new Error(raw.error);
+    }
+    const rawValue = raw.value as WorkspaceFileRead;
+    expect(rawValue.fidelity).toBe("exact");
+    expect(rawValue.completeness).toBe("partial");
+    expect(rawValue.inlineByteLength).toBeLessThan(rawValue.byteLength);
+    expect(rawValue.continuation).not.toBeNull();
+    expect(rawValue.expansion?.kind).toBe("artifact");
+    expect("content" in rawValue).toBe(false);
+    expect("loomRecovery" in rawValue).toBe(false);
+
+    const many = await coordinator.execute(
+      {
+        targets: [{ path: "src/first.ts" }, { path: "src/second.ts" }],
+        outputMode: "raw",
+        limits,
+      },
+      new AbortController().signal,
+    );
+    if (!many.ok) {
+      throw new Error(many.error);
+    }
+    const manyValue = many.value as {
+      readonly items: ReadonlyArray<{
+        readonly status: string;
+        readonly value?: WorkspaceFileRead;
+      }>;
+    };
+    expect(manyValue.items).toHaveLength(2);
+    expect(manyValue.items.every((item) => item.status === "read")).toBe(true);
+    expect(manyValue.items.every((item) => item.value?.fidelity === "exact")).toBe(true);
+    expect(manyValue.items.every((item) => item.value?.expansion?.kind === "artifact")).toBe(true);
+    expect(adoptionCount).toBe(0);
+    expect(snapshotCount).toBe(0);
+    expect(artifacts.reads).toEqual([]);
+    expect(coordinator.candidates()).toEqual([]);
+
+    const projected = await coordinator.execute(
+      { path: "src/first.ts", outputMode: "loom", limits },
+      new AbortController().signal,
+    );
+    if (!projected.ok) {
+      throw new Error(projected.error);
+    }
+    expect(projected.value).toMatchObject({
+      projection: { kind: "indexed-outline", indexGeneration: "generation-current" },
+    });
+    expect(adoptionCount).toBe(1);
+    expect(snapshotCount).toBe(1);
+    expect(coordinator.candidates()).toHaveLength(1);
+
+    const defaultMode = productReadInputSchema.safeParse({ path: "src/first.ts" });
+    expect(defaultMode.success).toBe(true);
+    if (defaultMode.success) {
+      expect(defaultMode.data).toMatchObject({ outputMode: "loom" });
+    }
   });
 
   test("keeps small exact reads inline and rejects malformed recovery input", async () => {

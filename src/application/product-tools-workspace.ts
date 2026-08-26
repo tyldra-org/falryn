@@ -207,7 +207,7 @@ export function composeProductWorkspaceTools(
         document(
           "read_file",
           "Read file",
-          "Read exact, ranged, multi-file, or Loom-recovery workspace content",
+          "Read exact, ranged, multi-file, or Loom-recovery workspace content; Loom is the default for oversized reads and raw keeps the bounded exact result",
           "observation",
           "filesystem",
         ),
