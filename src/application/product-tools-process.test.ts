@@ -136,4 +136,133 @@ describe("composeProductProcessTools", () => {
     });
     expect(pty.status).toBe("unavailable");
   });
+
+  test("projects compound shell searches without losing returned matches", async () => {
+    const command = "rg marker src | sed -n '1,3p'";
+    const stdout = [
+      "src/a.ts:10:first marker",
+      "src/a.ts:20:second marker",
+      "src/b.ts:7:third marker",
+      "",
+    ].join("\n");
+    const capture: ProcessCapturePort = {
+      async run(request) {
+        return {
+          ok: true,
+          value: {
+            ...report(request),
+            stdout: stream("stdout", stdout),
+          },
+        };
+      },
+    };
+    const tools = composeProductProcessTools({
+      generation: configurationGeneration.from(0),
+      capture,
+      workspaceCwd: "/work",
+    });
+
+    const outcome = await tools.runner.execute({
+      invocationId: invocationId.from("inv-compound-search"),
+      toolCallId: "call-compound-search",
+      toolName: "run_shell",
+      capabilityId: capabilityId.from("builtin:workspace/run_shell@1"),
+      version: 1,
+      effect: "mutation",
+      input: {
+        command,
+        environment: { PATH: "/usr/bin" },
+      },
+      signal: new AbortController().signal,
+    });
+    expect(outcome.status).toBe("completed");
+    if (outcome.status !== "completed") {
+      return;
+    }
+    expect(outcome.output.projection).toBe(
+      "src/a.ts:\n  10 first marker\n  20 second marker\nsrc/b.ts:\n  7 third marker\n",
+    );
+    expect(outcome.output.hush).toMatchObject({
+      reducerId: "shell.compound",
+      command: {
+        mode: "bash",
+        executable: "/bin/bash",
+        command,
+      },
+      truncated: false,
+      omissions: [],
+    });
+  });
+
+  test("enriches supported GitHub reads while retaining the user's command identity", async () => {
+    const requests: ProcessCaptureRequest[] = [];
+    const stdout = JSON.stringify({
+      number: 784,
+      title: "Complete Hush projections",
+      state: "OPEN",
+      author: { login: "yogeshprasad098" },
+      body: "Preserve every useful PR fact.",
+      url: "https://github.com/tyldra-org/falryn/pull/784",
+      mergeable: "MERGEABLE",
+      statusCheckRollup: [
+        { status: "COMPLETED", conclusion: "SUCCESS" },
+        { status: "COMPLETED", conclusion: "FAILURE" },
+      ],
+    });
+    const capture: ProcessCapturePort = {
+      async run(request) {
+        requests.push(request);
+        return {
+          ok: true,
+          value: {
+            ...report(request),
+            stdout: stream("stdout", stdout),
+          },
+        };
+      },
+    };
+    const tools = composeProductProcessTools({
+      generation: configurationGeneration.from(0),
+      capture,
+      workspaceCwd: "/work",
+    });
+
+    const outcome = await tools.runner.execute({
+      invocationId: invocationId.from("inv-gh-view"),
+      toolCallId: "call-gh-view",
+      toolName: "run_process",
+      capabilityId: capabilityId.from("builtin:workspace/run_process@1"),
+      version: 1,
+      effect: "mutation",
+      input: {
+        executable: "/opt/homebrew/bin/gh",
+        argv: ["pr", "view", "784"],
+        environment: { PATH: "/opt/homebrew/bin:/usr/bin" },
+      },
+      signal: new AbortController().signal,
+    });
+    expect(outcome.status).toBe("completed");
+    if (outcome.status !== "completed") {
+      return;
+    }
+    expect(requests).toHaveLength(1);
+    expect(requests[0]).toMatchObject({
+      argv: [
+        "pr",
+        "view",
+        "784",
+        "--json",
+        "number,title,state,author,body,url,mergeable,statusCheckRollup",
+      ],
+    });
+    expect(outcome.output.projection).toContain("checks 1/2 ok, 1 fail");
+    expect(outcome.output.projection).toContain("Preserve every useful PR fact.");
+    expect(outcome.output.hush).toMatchObject({
+      reducerId: "forge.github",
+      command: {
+        executable: "/opt/homebrew/bin/gh",
+        argv: ["pr", "view", "784"],
+      },
+    });
+  });
 });

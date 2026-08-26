@@ -5,8 +5,10 @@
  * view for shell, Git, test, search, and generic process origins. Terminal
  * facts stay on the capture report. The projection is redacted for model and
  * evidence use and is never admitted as exact source when it is a reduction.
- * Does not spawn except through the injected capture port, and does not
- * register product tools or Loom manifests.
+ * For maintained read commands, the capture request may be refined to obtain
+ * structured facts while the original command remains the Hush identity. Does
+ * not spawn except through the injected capture port, and does not register
+ * product tools or Loom manifests.
  */
 
 import { z } from "zod";
@@ -36,6 +38,7 @@ import {
   type Result,
 } from "../domain/index.ts";
 import { digestBytes } from "./composer-context.ts";
+import { prepareHushCaptureRequest } from "./hush-capture-command.ts";
 import { containsRedactableSecret, redactText } from "./redaction.ts";
 
 export const HUSH_ORIGINS = ["shell", "git", "test", "search", "process"] as const;
@@ -147,7 +150,7 @@ export function createHushIntegrator(options: HushIntegratorOptions = {}): HushI
           field: "capture",
         });
       }
-      const captured = await capture.run(request.command, listener);
+      const captured = await capture.run(prepareHushCaptureRequest(request.command), listener);
       if (!captured.ok) {
         return captured;
       }

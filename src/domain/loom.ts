@@ -33,7 +33,6 @@ import {
   type EvidenceFidelity,
   type EvidenceFreshness,
   type ExactSourceHandle,
-  MAX_EVIDENCE_BATCH,
   MAX_EVIDENCE_INLINE_BYTES,
 } from "./context-evidence.ts";
 import {
@@ -46,6 +45,19 @@ import {
   type WorkspaceId,
   workspaceId,
 } from "./identity.ts";
+import {
+  createLoomCacheStore,
+  DEFAULT_LOOM_CACHE_ENTRIES,
+  HARD_LOOM_CACHE_ENTRIES,
+} from "./loom/cache.ts";
+import {
+  hashLoomBytes,
+  loomGroupRecoverable,
+  projectLoomExact,
+  projectLoomHeadTail,
+  projectLoomRange,
+  projectLoomSearchHits,
+} from "./loom/projections.ts";
 import { assertNever, err, ok, type Result } from "./result.ts";
 import type { Timestamp } from "./time.ts";
 import { timestampToEpochMilliseconds } from "./time.ts";
@@ -53,8 +65,7 @@ import { timestampToEpochMilliseconds } from "./time.ts";
 export const DEFAULT_LOOM_STRATEGY = "loom.v1";
 export const DEFAULT_LOOM_PROJECTION_MAX_BYTES = MAX_EVIDENCE_INLINE_BYTES;
 export const HARD_LOOM_PROJECTION_MAX_BYTES = MAX_EVIDENCE_INLINE_BYTES;
-export const DEFAULT_LOOM_CACHE_ENTRIES = 32;
-export const HARD_LOOM_CACHE_ENTRIES = MAX_EVIDENCE_BATCH;
+export { DEFAULT_LOOM_CACHE_ENTRIES, HARD_LOOM_CACHE_ENTRIES };
 export const MAX_LOOM_KEY_FIELD = 128;
 export const MAX_LOOM_MEMBERS = 16;
 export const MAX_LOOM_PROTECTED_FACTS = 8;
@@ -253,14 +264,10 @@ export type LoomCache = {
   get size(): number;
 };
 
-type StoredEntry = {
-  readonly key: LoomCacheKey;
-  readonly value: LoomProjectionResult;
-  readonly artifactId: ArtifactId;
-};
+export function createLoomCache(maxEntries = DEFAULT_LOOM_CACHE_ENTRIES): LoomCache {
+  return createLoomCacheStore<LoomCacheKey, LoomProjectionResult>(maxEntries);
+}
 
-const encoder = new TextEncoder();
-const decoder = new TextDecoder("utf-8", { fatal: false });
 const MEDIA_TYPE = /^[!-~]+\/[!-~]+$/;
 
 const memberSchema = z.object({
@@ -400,139 +407,6 @@ function parseClosedUnion<T extends string>(
   return ok(value as T);
 }
 
-function serializeKey(key: LoomCacheKey): string {
-  return [
-    key.digest,
-    key.generation,
-    key.strategyVersion,
-    key.configuration,
-    key.destination,
-    key.projection,
-    key.member,
-    String(key.boundA),
-    String(key.boundB),
-    String(key.maxBytes),
-    key.query,
-  ].join("\0");
-}
-
-function matchesFilter(entry: StoredEntry, filter: LoomInvalidation): boolean {
-  if (filter.all === true) {
-    return true;
-  }
-  if (filter.digest !== undefined && entry.key.digest === filter.digest) {
-    return true;
-  }
-  if (filter.generation !== undefined && entry.key.generation === filter.generation) {
-    return true;
-  }
-  if (
-    filter.strategyVersion !== undefined &&
-    entry.key.strategyVersion === filter.strategyVersion
-  ) {
-    return true;
-  }
-  if (filter.configuration !== undefined && entry.key.configuration === filter.configuration) {
-    return true;
-  }
-  if (filter.destination !== undefined && entry.key.destination === filter.destination) {
-    return true;
-  }
-  if (filter.artifactId !== undefined && entry.artifactId === filter.artifactId) {
-    return true;
-  }
-  return false;
-}
-
-export function createLoomCache(maxEntries: number = DEFAULT_LOOM_CACHE_ENTRIES): LoomCache {
-  const limit = Math.min(Math.max(1, maxEntries), HARD_LOOM_CACHE_ENTRIES);
-  const entries = new Map<string, StoredEntry>();
-
-  return {
-    get(key) {
-      const serialized = serializeKey(key);
-      const stored = entries.get(serialized);
-      if (stored === undefined) {
-        return null;
-      }
-      entries.delete(serialized);
-      entries.set(serialized, stored);
-      return stored.value;
-    },
-    put(key, value) {
-      const serialized = serializeKey(key);
-      entries.delete(serialized);
-      entries.set(serialized, { key, value, artifactId: key.member });
-      while (entries.size > limit) {
-        const oldest = entries.keys().next().value;
-        if (oldest === undefined) {
-          break;
-        }
-        entries.delete(oldest);
-      }
-    },
-    invalidate(filter) {
-      let removed = 0;
-      for (const [serialized, stored] of entries) {
-        if (matchesFilter(stored, filter)) {
-          entries.delete(serialized);
-          removed += 1;
-        }
-      }
-      return removed;
-    },
-    get size() {
-      return entries.size;
-    },
-  };
-}
-
-function hashBytes(hasher: ContentHasherPort, bytes: Uint8Array): ContentDigest {
-  const hash = hasher.create();
-  hash.update(bytes);
-  return hash.digest();
-}
-
-function utf8LeadLength(lead: number): number {
-  if ((lead & 0b1000_0000) === 0) {
-    return 1;
-  }
-  if ((lead & 0b1110_0000) === 0b1100_0000) {
-    return 2;
-  }
-  if ((lead & 0b1111_0000) === 0b1110_0000) {
-    return 3;
-  }
-  if ((lead & 0b1111_1000) === 0b1111_0000) {
-    return 4;
-  }
-  return 1;
-}
-
-function sliceUtf8(bytes: Uint8Array, offset: number, length: number): Uint8Array {
-  let end = Math.min(bytes.byteLength, offset + length);
-  while (end > offset) {
-    const previous = bytes[end - 1];
-    if (previous === undefined || (previous & 0b1100_0000) !== 0b1000_0000) {
-      break;
-    }
-    end -= 1;
-  }
-  const lead = end > offset ? bytes[end - 1] : undefined;
-  if (lead !== undefined && end - 1 + utf8LeadLength(lead) > offset + length) {
-    end -= 1;
-  }
-  return bytes.subarray(offset, end);
-}
-
-function byteOffsetOf(text: string, charIndex: number): number {
-  return encoder.encode(text.slice(0, charIndex)).byteLength;
-}
-
-function groupRecoverable(members: readonly LoomMember[]): boolean {
-  return members.every((member) => !member.required || member.availability === "available");
-}
-
 export function commitLoomManifest(input: LoomCommitInput): Result<LoomManifest, LoomError> {
   const parsed = commitSchema.safeParse({
     id: input.id,
@@ -574,7 +448,7 @@ export function commitLoomManifest(input: LoomCommitInput): Result<LoomManifest,
     workspaceId: parsed.data.workspaceId,
     sessionId: parsed.data.sessionId,
     members,
-    exactRecoverable: groupRecoverable(members),
+    exactRecoverable: loomGroupRecoverable(members),
     generation: generation.value,
     retentionUntil,
   });
@@ -686,160 +560,6 @@ function parseProjection(value: unknown): Result<ParsedProjection, LoomError> {
   }
 }
 
-function projectExact(
-  bytes: Uint8Array,
-  maxBytes: number,
-): Result<{ text: string; offset: number; byteLength: number; complete: boolean }, LoomError> {
-  if (bytes.byteLength > maxBytes) {
-    return err(loomError("oversized", "source"));
-  }
-  return ok({
-    text: decoder.decode(bytes),
-    offset: 0,
-    byteLength: bytes.byteLength,
-    complete: true,
-  });
-}
-
-function projectRange(
-  bytes: Uint8Array,
-  offsetInput: number | undefined,
-  lengthInput: number | undefined,
-  maxBytes: number,
-): Result<{ text: string; offset: number; byteLength: number; complete: boolean }, LoomError> {
-  const offset = offsetInput ?? 0;
-  if (!Number.isSafeInteger(offset) || offset < 0 || offset > bytes.byteLength) {
-    return err(loomError("malformed", "offset"));
-  }
-  const remaining = bytes.byteLength - offset;
-  const requested = lengthInput === undefined ? Math.min(remaining, maxBytes) : lengthInput;
-  if (!Number.isSafeInteger(requested) || requested < 0) {
-    return err(loomError("malformed", "length"));
-  }
-  if (requested > remaining) {
-    return err(loomError("oversized", "length"));
-  }
-  if (lengthInput === undefined && remaining > maxBytes) {
-    return err(loomError("oversized", "source"));
-  }
-  if (requested > maxBytes) {
-    return err(loomError("oversized", "length"));
-  }
-  const sliced = sliceUtf8(bytes, offset, requested);
-  return ok({
-    text: decoder.decode(sliced),
-    offset,
-    byteLength: sliced.byteLength,
-    complete: offset === 0 && sliced.byteLength === bytes.byteLength,
-  });
-}
-
-function projectHeadTail(
-  bytes: Uint8Array,
-  headBytes: number,
-  tailBytes: number,
-  maxBytes: number,
-): Result<
-  {
-    text: string;
-    offset: number;
-    byteLength: number;
-    complete: boolean;
-    omissions: readonly LoomOmission[];
-  },
-  LoomError
-> {
-  if (headBytes + tailBytes > maxBytes) {
-    return err(loomError("oversized", "projection"));
-  }
-  if (bytes.byteLength <= headBytes + tailBytes) {
-    const full = projectExact(bytes, maxBytes);
-    if (!full.ok) {
-      return full;
-    }
-    return ok({ ...full.value, omissions: [] });
-  }
-  const head = sliceUtf8(bytes, 0, headBytes);
-  const tailOffset = bytes.byteLength - tailBytes;
-  const tail = sliceUtf8(bytes, tailOffset, tailBytes);
-  const omitted = bytes.byteLength - head.byteLength - tail.byteLength;
-  const marker = `\n… ${omitted} bytes omitted …\n`;
-  const text = `${decoder.decode(head)}${marker}${decoder.decode(tail)}`;
-  return ok({
-    text,
-    offset: 0,
-    byteLength: encoder.encode(text).byteLength,
-    complete: false,
-    omissions: [{ kind: "bytes", count: omitted }],
-  });
-}
-
-function projectSearchHits(
-  bytes: Uint8Array,
-  encoding: ArtifactEncoding,
-  query: string,
-  maxHits: number,
-  contextBytes: number,
-  maxBytes: number,
-): Result<
-  {
-    text: string;
-    offset: number;
-    byteLength: number;
-    complete: boolean;
-    omissions: readonly LoomOmission[];
-    hits: readonly LoomSearchHit[];
-  },
-  LoomError
-> {
-  if (encoding !== "identity") {
-    return err(loomError("unsupported", "encoding"));
-  }
-  const text = decoder.decode(bytes);
-  const hits: LoomSearchHit[] = [];
-  let from = 0;
-  let capped = 0;
-  while (from < text.length) {
-    const index = text.indexOf(query, from);
-    if (index === -1) {
-      break;
-    }
-    if (hits.length >= maxHits) {
-      capped += 1;
-      from = index + query.length;
-      continue;
-    }
-    const start = byteOffsetOf(text, index);
-    const contextStart = Math.max(0, start - contextBytes);
-    const matchBytes = encoder.encode(query).byteLength;
-    const contextLength = start - contextStart + matchBytes + contextBytes;
-    const excerptBytes = sliceUtf8(bytes, contextStart, contextLength);
-    const excerpt = decoder.decode(excerptBytes);
-    hits.push({
-      offset: start,
-      byteLength: matchBytes,
-      text: excerpt,
-    });
-    from = index + query.length;
-  }
-  if (hits.length === 0) {
-    return err(loomError("empty", "query"));
-  }
-  const rendered = hits.map((hit) => hit.text).join("\n---\n");
-  if (encoder.encode(rendered).byteLength > maxBytes) {
-    return err(loomError("oversized", "projection"));
-  }
-  const omissions: LoomOmission[] = capped > 0 ? [{ kind: "hits-capped", count: capped }] : [];
-  return ok({
-    text: rendered,
-    offset: hits[0]?.offset ?? 0,
-    byteLength: encoder.encode(rendered).byteLength,
-    complete: false,
-    omissions,
-    hits,
-  });
-}
-
 export function retrieveLoomProjection(
   input: LoomRetrieveInput,
   hasher: ContentHasherPort,
@@ -936,7 +656,7 @@ export function retrieveLoomProjection(
   if (suppliedBytes.byteLength !== declared.byteLength) {
     return err(loomError("checksum", "byteLength"));
   }
-  const computed = hashBytes(hasher, suppliedBytes);
+  const computed = hashLoomBytes(hasher, suppliedBytes);
   if (computed !== declared.digest) {
     return err(loomError("checksum", "digest"));
   }
@@ -952,7 +672,7 @@ export function retrieveLoomProjection(
         : ((live.availability ?? member.availability) as ArtifactAvailability);
     return { ...member, availability };
   });
-  const exactRecoverable = groupRecoverable(liveMembers);
+  const exactRecoverable = loomGroupRecoverable(liveMembers);
 
   const key: LoomCacheKey = {
     digest: declared.digest,
@@ -983,7 +703,7 @@ export function retrieveLoomProjection(
   };
   switch (projection.value.kind) {
     case "exact": {
-      const result = projectExact(suppliedBytes, projection.value.maxBytes);
+      const result = projectLoomExact(suppliedBytes, projection.value.maxBytes);
       if (!result.ok) {
         return result;
       }
@@ -996,7 +716,7 @@ export function retrieveLoomProjection(
       break;
     }
     case "range": {
-      const result = projectRange(
+      const result = projectLoomRange(
         suppliedBytes,
         projection.value.offset,
         projection.value.length,
@@ -1014,7 +734,7 @@ export function retrieveLoomProjection(
       break;
     }
     case "head-tail": {
-      const result = projectHeadTail(
+      const result = projectLoomHeadTail(
         suppliedBytes,
         projection.value.headBytes,
         projection.value.tailBytes,
@@ -1031,7 +751,7 @@ export function retrieveLoomProjection(
       break;
     }
     case "search-hits": {
-      const result = projectSearchHits(
+      const result = projectLoomSearchHits(
         suppliedBytes,
         declared.encoding,
         projection.value.query,
