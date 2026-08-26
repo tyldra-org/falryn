@@ -8,7 +8,7 @@ import {
 
 describe("Hush projection scorecard corpus", () => {
   test("keeps each supported Git mutation as a separate RTK comparison", () => {
-    expect(HUSH_PROJECTION_CORPUS_VERSION).toBe("hush-projections.v26");
+    expect(HUSH_PROJECTION_CORPUS_VERSION).toBe("hush-projections.v27");
     expect(
       HUSH_PROJECTION_CASES.filter((entry) => entry.projection === "git-mutation").map(
         (entry) => entry.id,
@@ -165,6 +165,61 @@ describe("Hush projection scorecard corpus", () => {
       "diagnostic-bun-typecheck",
     ]);
     expect(diagnostics.every((entry) => entry.projection === "diagnostic")).toBe(true);
+    expect(
+      diagnostics.every(
+        (entry) => "competitiveTarget" in entry && entry.competitiveTarget === "win",
+      ),
+    ).toBe(true);
+    expect(
+      diagnostics.every(
+        (entry) =>
+          "forbiddenMarkers" in entry &&
+          (entry.forbiddenMarkers as readonly string[]).includes("omitted"),
+      ),
+    ).toBe(true);
+  });
+
+  test("measures every requested lint, format, and diagnostic surface as an uncapped strict win", () => {
+    const diagnostics = HUSH_PROJECTION_CASES.filter(
+      (entry) =>
+        entry.projection === "diagnostic" &&
+        !entry.id.includes("typecheck") &&
+        !["diagnostic-tsc", "diagnostic-basedpyright", "diagnostic-ty"].includes(entry.id),
+    );
+    expect(diagnostics.map((entry) => entry.id)).toEqual([
+      "diagnostic-format-generic",
+      "diagnostic-lint-generic",
+      "diagnostic-biome",
+      "diagnostic-eslint",
+      "diagnostic-oxlint",
+      "diagnostic-prettier",
+      "diagnostic-bun-check",
+      "diagnostic-bun-lint",
+      "diagnostic-cargo-clippy",
+      "diagnostic-cargo-check",
+      "diagnostic-cargo-fmt",
+      "diagnostic-clippy",
+      "diagnostic-mypy",
+      "diagnostic-python-mypy",
+      "diagnostic-ruff-check",
+      "diagnostic-ruff-format",
+      "diagnostic-go-vet",
+      "diagnostic-golangci-lint",
+      "diagnostic-golangci",
+      "diagnostic-dotnet-format",
+      "diagnostic-mix-format",
+      "diagnostic-phpstan",
+      "diagnostic-ecs",
+      "diagnostic-pint",
+      "diagnostic-rubocop",
+      "diagnostic-bundle-rubocop",
+      "diagnostic-precommit",
+      "diagnostic-hadolint",
+      "diagnostic-markdownlint",
+      "diagnostic-shellcheck",
+      "diagnostic-yamllint",
+    ]);
+    expect(diagnostics).toHaveLength(31);
     expect(
       diagnostics.every(
         (entry) => "competitiveTarget" in entry && entry.competitiveTarget === "win",

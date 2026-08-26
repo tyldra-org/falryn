@@ -6,8 +6,7 @@ import type { HushStreamProjection } from "../../contracts.ts";
 import { shortestText, stripAnsi } from "../../text-format.ts";
 import { semanticProjection } from "../semantic.ts";
 import { formatTypecheckDiagnostics } from "./format.ts";
-
-const TYPECHECK_EXECUTABLES = new Set(["basedpyright", "tsc", "ty"]);
+import { formatLintDiagnostics } from "./lint.ts";
 
 export function diagnosticProjection(
   capture: ProcessCaptureReport,
@@ -15,7 +14,7 @@ export function diagnosticProjection(
   patterns: readonly string[],
   commandTokens: readonly string[],
 ): HushStreamProjection {
-  if (patterns.length > 0 || !isTypecheckCommand(commandTokens) || !completeCapture(capture)) {
+  if (patterns.length > 0) {
     return semanticProjection("diagnostic", capture, maxBytes, patterns);
   }
   const exact = joinStreams(
@@ -23,22 +22,19 @@ export function diagnosticProjection(
     boundText(capture.stderr.inlineText ?? "", "stderr", maxBytes),
     maxBytes,
   );
+  if (!completeCapture(capture)) return exact;
+
   const source = [capture.stdout.inlineText, capture.stderr.inlineText]
     .filter((text): text is string => text !== null && text.length > 0)
     .map(stripAnsi)
     .join("\n");
-  const formatted = formatTypecheckDiagnostics(source, commandTokens);
+  const formatted =
+    formatTypecheckDiagnostics(source, commandTokens) ??
+    formatLintDiagnostics(source, commandTokens);
   if (formatted === null || (formatted.length === 0 && capture.exit.exitCode !== 0)) {
     return exact;
   }
   return boundText(shortestText(exact.text, formatted), "both", maxBytes);
-}
-
-function isTypecheckCommand(commandTokens: readonly string[]): boolean {
-  return (
-    TYPECHECK_EXECUTABLES.has(commandTokens[0] ?? "") ||
-    (commandTokens[0] === "bun" && commandTokens[1] === "run" && commandTokens[2] === "typecheck")
-  );
 }
 
 function completeCapture(capture: ProcessCaptureReport): boolean {

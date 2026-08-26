@@ -187,6 +187,34 @@ describe("hush reduction", () => {
     expect(failed.value.reducedText).toBe("stderr:\n$ tsc --noEmit\n");
   });
 
+  test("keeps unknown and partial lint output exact", () => {
+    const unknown = "opaque lint fact\nsecond fact\n";
+    const exact = reduceHush({
+      command: argv("/usr/bin/eslint", ["src"]),
+      capture: report(unknown, { exitCode: 1 }),
+    });
+    expect(exact.ok).toBe(true);
+    if (!exact.ok) throw new Error("expected an exact Hush result");
+    expect(exact.value.reducerId).toBe("js.lint");
+    expect(exact.value.reducedText).toBe(unknown);
+
+    const partial = reduceHush({
+      command: argv("/usr/bin/eslint", ["src"]),
+      capture: report("/workspace/src/a.ts\n  1:1 error Missing value no-undef\n", {
+        truncated: true,
+        artifact: true,
+        exitCode: 1,
+      }),
+    });
+    expect(partial.ok).toBe(true);
+    if (!partial.ok) throw new Error("expected a partial Hush result");
+    expect(partial.value.reducedText).toBe(
+      "/workspace/src/a.ts\n  1:1 error Missing value no-undef\n",
+    );
+    expect(partial.value.truncated).toBe(true);
+    expect(partial.value.expansion.stdoutArtifact).toBe(artifactId.from("cap-1.stdout"));
+  });
+
   test("preserves terminal facts and omits the child environment", () => {
     const captured = report("On branch main\n", { durationMs: 44, exitCode: 1 });
     const reduced = reduceHush({
