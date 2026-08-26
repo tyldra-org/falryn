@@ -1,11 +1,11 @@
 /** Hush policies covering the pinned RTK host-executable baseline. */
 
 import type { HushCatalogEntry, HushCommandPolicy } from "./contracts.ts";
-import { FILE_COMMANDS } from "./files.ts";
-import { JAVASCRIPT_COMMANDS } from "./javascript.ts";
-import { LANGUAGE_COMMANDS } from "./languages.ts";
-import { OPERATION_COMMANDS } from "./operations.ts";
-import { VERSION_CONTROL_COMMANDS } from "./version-control.ts";
+import { FILE_COMMANDS } from "./groups/file.ts";
+import { JAVASCRIPT_COMMANDS } from "./groups/javascript.ts";
+import { LANGUAGE_COMMANDS } from "./groups/language.ts";
+import { OPERATION_COMMANDS } from "./groups/operation.ts";
+import { VERSION_CONTROL_COMMANDS } from "./groups/version-control.ts";
 
 export type {
   HushCatalogEntry,
@@ -22,6 +22,8 @@ export const HUSH_COMMAND_CATALOG = [
   ...LANGUAGE_COMMANDS,
   ...OPERATION_COMMANDS,
 ] as const satisfies readonly HushCatalogEntry[];
+
+export type HushCatalogReducerId = (typeof HUSH_COMMAND_CATALOG)[number]["reducerId"];
 
 const CATALOG_BY_EXECUTABLE = commandIndex(HUSH_COMMAND_CATALOG);
 

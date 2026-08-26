@@ -1,36 +1,11 @@
 /** Reducer registry for explicit Hush command projection policies. */
 
 import type { ProcessCaptureReport } from "../../process-capture.ts";
-import { assertNever } from "../../result.ts";
-import type { HushProjectionKind } from "../catalog/index.ts";
 import type { HushFidelity, HushResult, HushStrategy, HushStreamProjection } from "../contracts.ts";
-import { buildProjection } from "./build/projection.ts";
+import type { HushReducerContext } from "./commands/contracts.ts";
+import { commandReducerFor } from "./commands/index.ts";
+import { searchReducer } from "./commands/shared/file.ts";
 import { compoundProjection } from "./compound/projection.ts";
-import { countProjection } from "./count/projection.ts";
-import { diagnosticProjection } from "./diagnostic/projection.ts";
-import { forgeProjection } from "./forge/projection.ts";
-import {
-  gitDiffProjection,
-  gitLogProjection,
-  gitMutationProjection,
-  gitStatusProjection,
-} from "./git/index.ts";
-import { curlProjection } from "./http/curl.ts";
-import { wgetProjection } from "./http/wget.ts";
-import { jsonProjection } from "./json/projection.ts";
-import { listingProjection } from "./listing.ts";
-import { logProjection } from "./log/projection.ts";
-import { lsProjection } from "./ls/projection.ts";
-import { networkProjection } from "./network/projection.ts";
-import { operationProjection } from "./operation/projection.ts";
-import { packageProjection } from "./package/projection.ts";
-import { searchProjection } from "./search/projection.ts";
-import { semanticProjection } from "./semantic.ts";
-import { structuredProjection } from "./structured/projection.ts";
-import { tableProjection } from "./table/projection.ts";
-import { testProjection } from "./test/projection.ts";
-import { transformProjection } from "./transform/projection.ts";
-import { treeProjection } from "./tree/projection.ts";
 
 export function fidelityFor(
   requested: HushStrategy,
@@ -53,7 +28,7 @@ export function fidelityFor(
 }
 
 export function specializedProjection(
-  projection: HushProjectionKind,
+  reducerId: string,
   capture: ProcessCaptureReport,
   maxBytes: number,
   patterns: readonly string[],
@@ -61,58 +36,23 @@ export function specializedProjection(
   commandSegments: readonly (readonly string[])[],
   cwd: string | null,
 ): HushStreamProjection {
-  switch (projection) {
-    case "ls":
-      return lsProjection(capture, maxBytes, patterns);
-    case "tree":
-      return treeProjection(capture, maxBytes, patterns, commandTokens);
-    case "listing":
-      return listingProjection(capture, maxBytes, patterns, commandTokens);
-    case "read":
-      return semanticProjection("read", capture, maxBytes, patterns);
-    case "json":
-      return jsonProjection(capture, maxBytes, patterns);
-    case "search":
-      return searchProjection(capture, maxBytes, patterns);
-    case "transform":
-      return transformProjection(capture, maxBytes, patterns);
-    case "compound":
-      return compoundProjection(capture, maxBytes, patterns, commandSegments);
-    case "git-status":
-      return gitStatusProjection(capture, maxBytes, patterns);
-    case "git-diff":
-      return gitDiffProjection(capture, maxBytes, patterns, commandTokens);
-    case "git-log":
-      return gitLogProjection(capture, maxBytes, patterns, commandTokens);
-    case "git-mutation":
-      return gitMutationProjection(capture, maxBytes, patterns, commandTokens, cwd);
-    case "forge":
-      return forgeProjection(capture, maxBytes, patterns, commandTokens);
-    case "test":
-      return testProjection(capture, maxBytes, patterns, commandTokens);
-    case "diagnostic":
-      return diagnosticProjection(capture, maxBytes, patterns, commandTokens);
-    case "build":
-      return buildProjection(capture, maxBytes, patterns, commandTokens);
-    case "package":
-      return packageProjection(capture, maxBytes, patterns, commandTokens);
-    case "table":
-      return tableProjection(capture, maxBytes, patterns, commandTokens);
-    case "count":
-      return countProjection(capture, maxBytes, patterns, commandTokens);
-    case "log":
-      return logProjection(capture, maxBytes, patterns, commandTokens);
-    case "curl":
-      return curlProjection(capture, maxBytes, patterns);
-    case "wget":
-      return wgetProjection(capture, maxBytes, patterns, commandTokens);
-    case "network":
-      return networkProjection(capture, maxBytes, patterns, commandTokens);
-    case "operation":
-      return operationProjection(capture, maxBytes, patterns, commandTokens);
-    case "structured":
-      return structuredProjection(capture, maxBytes, patterns, commandTokens);
-    default:
-      return assertNever(projection, "unhandled Hush projection");
+  const context: HushReducerContext = {
+    capture,
+    maxBytes,
+    patterns,
+    commandTokens,
+    commandSegments,
+    cwd,
+  };
+  if (reducerId === "shell.compound") {
+    return compoundProjection(capture, maxBytes, patterns, commandSegments);
   }
+  if (reducerId === "files.search") {
+    return searchReducer(context);
+  }
+  const reducer = commandReducerFor(reducerId);
+  if (reducer === null) {
+    throw new Error(`missing Hush command reducer: ${reducerId}`);
+  }
+  return reducer(context);
 }

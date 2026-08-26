@@ -1,11 +1,14 @@
 /** Exhaustive command-catalog and reducer coverage for Hush. */
 
 import { describe, expect, test } from "bun:test";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 
 import { artifactId } from "./artifact.ts";
 import { duration, instant } from "./clock.ts";
 import { HUSH_COMMAND_CATALOG, matchHushCommand } from "./hush/catalog/index.ts";
 import { commandShape } from "./hush/command-shape.ts";
+import { commandReducerFor, HUSH_COMMAND_REDUCER_IDS } from "./hush/reducers/commands/index.ts";
 import {
   MAX_COMMAND_OUTPUT_BYTES,
   type ProcessCaptureReport,
@@ -130,7 +133,117 @@ const PINNED_RTK_EXECUTABLES = [
   "yamllint",
 ] as const;
 
+const EXPECTED_CATALOG_REDUCER_IDS = [
+  "files.ls",
+  "files.tree",
+  "files.find",
+  "files.read",
+  "files.tail",
+  "files.rg",
+  "files.grep",
+  "transform.sed",
+  "files.diff",
+  "files.count",
+  "data.json",
+  "transform.log",
+  "transform.summary",
+  "test.generic",
+  "format.generic",
+  "build.generic",
+  "git.diff",
+  "git.status",
+  "git.log",
+  "git.mutation",
+  "forge.github",
+  "forge.gitlab",
+  "forge.graphite",
+  "vcs.jujutsu.diff",
+  "vcs.jujutsu.log",
+  "forge.jira",
+  "js.package",
+  "js.typecheck",
+  "js.lint",
+  "js.format",
+  "js.test",
+  "js.build",
+  "js.prisma",
+  "bun.test",
+  "bun.build",
+  "bun.lint",
+  "bun.typecheck",
+  "bun.command",
+  "rust.test",
+  "rust.diagnostic",
+  "rust.build",
+  "python.test",
+  "python.diagnostic",
+  "python.package",
+  "go.test",
+  "go.diagnostic",
+  "go.build",
+  "jvm.test",
+  "jvm.build",
+  "dotnet.test",
+  "dotnet.diagnostic",
+  "dotnet.build",
+  "apple.test",
+  "apple.build",
+  "native.build",
+  "elixir.diagnostic",
+  "elixir.build",
+  "php.test",
+  "php.diagnostic",
+  "php.command",
+  "ruby.test",
+  "ruby.diagnostic",
+  "container.table",
+  "kubernetes.table",
+  "container.log",
+  "kubernetes.log",
+  "container.build",
+  "container.operation",
+  "kubernetes.operation",
+  "package.manager",
+  "task.build",
+  "precommit.diagnostic",
+  "cloud.aws",
+  "cloud.command",
+  "data.command",
+  "network.curl",
+  "network.wget",
+  "network.command",
+  "infra.operation",
+  "system.table",
+  "diagnostic.command",
+  "operation.command",
+] as const;
+
 describe("Hush RTK command catalog", () => {
+  test("keeps catalog policies and reducer modules complete and mirrored", () => {
+    const catalogIds = HUSH_COMMAND_CATALOG.map((entry) => entry.reducerId);
+
+    expect(catalogIds).toEqual([...EXPECTED_CATALOG_REDUCER_IDS]);
+    expect(HUSH_COMMAND_REDUCER_IDS).toEqual([...EXPECTED_CATALOG_REDUCER_IDS]);
+
+    for (const reducerId of EXPECTED_CATALOG_REDUCER_IDS) {
+      const pathSegments = reducerId.split(".");
+      const catalogPath = `${join(import.meta.dir, "hush", "catalog", ...pathSegments)}.ts`;
+      const reducerPath = `${join(
+        import.meta.dir,
+        "hush",
+        "reducers",
+        "commands",
+        ...pathSegments,
+      )}.ts`;
+
+      expect(existsSync(catalogPath), reducerId).toBe(true);
+      expect(existsSync(reducerPath), reducerId).toBe(true);
+      expect(commandReducerFor(reducerId), reducerId).not.toBeNull();
+    }
+
+    expect(commandReducerFor("missing.reducer")).toBeNull();
+  });
+
   test("covers every pinned RTK executable with an explicit policy", () => {
     const catalogExecutables = new Set(
       HUSH_COMMAND_CATALOG.flatMap((entry) => [...entry.executables]),

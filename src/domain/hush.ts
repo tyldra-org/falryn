@@ -94,7 +94,7 @@ export function reduceHush(request: HushRequest): Result<HushResult, HushError> 
       projectionMaxBytes =
         request.maxReducedBytes === undefined ? MAX_HUSH_REDUCED_BYTES : maxBytes;
       projection = specializedProjection(
-        classification.projection,
+        classification.reducerId,
         request.capture,
         projectionMaxBytes,
         patterns,
