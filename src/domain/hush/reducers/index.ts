@@ -25,6 +25,7 @@ import { searchProjection } from "./search/projection.ts";
 import { semanticProjection } from "./semantic.ts";
 import { structuredProjection } from "./structured/projection.ts";
 import { tableProjection } from "./table/projection.ts";
+import { testProjection } from "./test/projection.ts";
 import { transformProjection } from "./transform/projection.ts";
 import { treeProjection } from "./tree/projection.ts";
 
@@ -85,7 +86,7 @@ export function specializedProjection(
     case "forge":
       return forgeProjection(capture, maxBytes, patterns, commandTokens);
     case "test":
-      return semanticProjection("test", capture, maxBytes, patterns);
+      return testProjection(capture, maxBytes, patterns, commandTokens);
     case "diagnostic":
       return diagnosticProjection(capture, maxBytes, patterns, commandTokens);
     case "build":

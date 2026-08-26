@@ -159,7 +159,11 @@ describe("Hush RTK command catalog", () => {
     expect(policyFor("sudo env FOO=1 git status")?.reducerId).toBe("git.status");
     expect(policyFor("npm exec tsc -- --noEmit")?.reducerId).toBe("js.typecheck");
     expect(policyFor("python -m pytest")?.reducerId).toBe("python.test");
+    expect(policyFor("uv run pytest")?.reducerId).toBe("python.test");
+    expect(policyFor("php vendor/bin/phpunit")?.reducerId).toBe("php.test");
+    expect(policyFor("vendor/bin/pest")?.reducerId).toBe("php.test");
     expect(policyFor("bundle exec rspec")?.reducerId).toBe("ruby.test");
+    expect(policyFor("rails server")).toBeNull();
     expect(commandShape(bash("git status && cargo test"))).toMatchObject({
       compound: true,
       operators: ["and"],

@@ -1238,8 +1238,29 @@ describe("hush reduction", () => {
       throw new Error("expected a hush result");
     }
     expect(reduced.value.reducerId).toBe("python.test");
-    expect(reduced.value.reducedText).toBe("2 passed 0.12s\n");
+    expect(reduced.value.reducedText).toBe("2 passed 0.12s");
     expect(reduced.value.omissions).toEqual([]);
+  });
+
+  test("keeps unknown and partial test output exact", () => {
+    const unknown = "opaque runner fact\nsecond fact\n";
+    const exact = reduceHush({
+      command: argv("/usr/bin/pytest"),
+      capture: report(unknown),
+    });
+    expect(exact.ok).toBe(true);
+    if (!exact.ok) throw new Error("expected an exact Hush result");
+    expect(exact.value.reducedText).toBe(unknown);
+
+    const partial = reduceHush({
+      command: argv("/usr/bin/pytest"),
+      capture: report("test_complete PASSED\n", { truncated: true, artifact: true }),
+    });
+    expect(partial.ok).toBe(true);
+    if (!partial.ok) throw new Error("expected a partial Hush result");
+    expect(partial.value.reducedText).toBe("test_complete PASSED\n");
+    expect(partial.value.truncated).toBe(true);
+    expect(partial.value.expansion.stdoutArtifact).toBe(artifactId.from("cap-1.stdout"));
   });
 
   test("reports a successful Git add without inventing staged counts", () => {

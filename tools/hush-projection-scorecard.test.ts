@@ -8,7 +8,7 @@ import {
 
 describe("Hush projection scorecard corpus", () => {
   test("keeps each supported Git mutation as a separate RTK comparison", () => {
-    expect(HUSH_PROJECTION_CORPUS_VERSION).toBe("hush-projections.v25");
+    expect(HUSH_PROJECTION_CORPUS_VERSION).toBe("hush-projections.v26");
     expect(
       HUSH_PROJECTION_CASES.filter((entry) => entry.projection === "git-mutation").map(
         (entry) => entry.id,
@@ -179,6 +179,42 @@ describe("Hush projection scorecard corpus", () => {
     ).toBe(true);
   });
 
+  test("measures every requested test-runner and wrapper as an uncapped strict win", () => {
+    const runners = HUSH_PROJECTION_CASES.filter((entry) => entry.projection === "test");
+    expect(runners.map((entry) => entry.id)).toEqual([
+      "test-generic",
+      "test-jest",
+      "test-vitest",
+      "test-playwright",
+      "test-mocha",
+      "test-bun",
+      "test-pytest",
+      "test-python-pytest",
+      "test-uv-pytest",
+      "test-cargo",
+      "test-cargo-nextest",
+      "test-go",
+      "test-gradle",
+      "test-gradlew",
+      "test-maven",
+      "test-maven-integration",
+      "test-sbt",
+      "test-dotnet",
+      "test-swift",
+      "test-xcodebuild",
+      "test-phpunit",
+      "test-pest",
+      "test-paratest",
+      "test-php-vendor",
+      "test-rake",
+      "test-rails",
+      "test-rspec",
+      "test-bundle-rspec",
+    ]);
+    expect(runners.every((entry) => entry.competitiveTarget === "win")).toBe(true);
+    expect(runners.every((entry) => entry.forbiddenMarkers?.includes("omitted"))).toBe(true);
+  });
+
   test("compares journalctl with RTK log while requiring every event fact", () => {
     const logs = HUSH_PROJECTION_CASES.filter((entry) => entry.projection === "log");
     expect(logs.map((entry) => entry.id)).toEqual(["log-docker", "log-journalctl"]);
@@ -238,8 +274,10 @@ describe("Hush projection scorecard corpus", () => {
   });
 
   test("keeps every requested Python and ecosystem package surface uncapped and competitive", () => {
-    const packages = HUSH_PROJECTION_CASES.filter((entry) =>
-      ["pip", "pip3", "uv", "poetry", "brew", "composer", "bundle"].includes(entry.executable),
+    const packages = HUSH_PROJECTION_CASES.filter(
+      (entry) =>
+        entry.projection === "package" &&
+        ["pip", "pip3", "uv", "poetry", "brew", "composer", "bundle"].includes(entry.executable),
     );
     expect(packages.map((entry) => entry.id)).toEqual([
       "package-pip-install",

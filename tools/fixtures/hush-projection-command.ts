@@ -20,6 +20,7 @@ if (executable === "diff") {
 }
 
 const outputs: Readonly<Record<string, () => string>> = {
+  test: () => genericTestOutput(),
   find: () => ["./src/main.ts", "./src/domain/hush.ts", "./docs/README.md"].join("\n"),
   cat: () => ["# Falryn", "", "Do more with less context.", "Keep every useful fact."].join("\n"),
   json: () => readFileSync(args[0] ?? "config.json", "utf8").trimEnd(),
@@ -35,12 +36,27 @@ const outputs: Readonly<Record<string, () => string>> = {
   glab: () => glabOutput(args),
   gt: () => graphiteOutput(args),
   jira: () => jiraOutput(args),
-  pytest: () =>
-    [
-      "tests/test_hush.py::test_complete PASSED",
-      "tests/test_hush.py::test_budget PASSED",
-      "2 passed in 0.12s",
-    ].join("\n"),
+  jest: () => jestOutput(args),
+  vitest: () => vitestOutput(args),
+  playwright: () => playwrightOutput(args),
+  mocha: () => mochaOutput(),
+  pytest: () => pytestOutput(),
+  python: () => pythonOutput(args),
+  go: () => goOutput(args),
+  gradle: () => gradleOutput(),
+  gradlew: () => gradleOutput(),
+  mvn: () => mavenOutput(),
+  sbt: () => sbtOutput(),
+  dotnet: () => dotnetTestOutput(),
+  swift: () => appleTestOutput(),
+  xcodebuild: () => appleTestOutput(),
+  php: () => phpWrapperOutput(args),
+  phpunit: () => phpunitOutput(),
+  pest: () => pestOutput(),
+  paratest: () => paratestOutput(),
+  rake: () => minitestOutput(),
+  rails: () => minitestOutput(),
+  rspec: () => rspecOutput(args),
   tsc: () =>
     [
       "src/a.ts(10,4): error TS2322: Type 'string' is not assignable to type 'number'.",
@@ -83,12 +99,12 @@ const outputs: Readonly<Record<string, () => string>> = {
       "",
       "Found 1 error, 1 warning",
     ].join("\n"),
-  cargo: () => `${"Compiling falryn v0.1.0\n".repeat(6)}Finished release target in 0.42s`,
+  cargo: () => cargoOutput(args),
   npm: () => npmOutput(args),
   pnpm: () => pnpmOutput(args),
   yarn: () => yarnOutput(args),
   bun: () => bunOutput(args),
-  npx: () => packageRunnerOutput(),
+  npx: () => npxOutput(args),
   pnpx: () => packageRunnerOutput(),
   pip: () => pipOutput(args),
   pip3: () => pipOutput(args),
@@ -171,6 +187,290 @@ const outputs: Readonly<Record<string, () => string>> = {
       2,
     ),
 };
+
+function genericTestOutput(): string {
+  return [
+    "Falryn custom runner v2",
+    "running complete",
+    "running budget",
+    "Tests: 2 passed, 0 failed",
+  ].join("\n");
+}
+
+function jestOutput(argv: readonly string[]): string {
+  if (argv.includes("--json")) {
+    return JSON.stringify({
+      testResults: [
+        {
+          name: "/workspace/src/hush.test.ts",
+          assertionResults: [
+            { fullName: "hush complete", status: "passed", failureMessages: [] },
+            { fullName: "hush budget", status: "passed", failureMessages: [] },
+          ],
+        },
+      ],
+      numTotalTests: 2,
+      numPassedTests: 2,
+      numFailedTests: 0,
+      numPendingTests: 0,
+    });
+  }
+  return [
+    "PASS src/hush.test.ts",
+    "  ✓ hush complete",
+    "  ✓ hush budget",
+    "Test Suites: 1 passed, 1 total",
+    "Tests: 2 passed, 2 total",
+    "Snapshots: 0 total",
+    "Time: 0.45 s",
+    "Ran all test suites.",
+  ].join("\n");
+}
+
+function vitestOutput(argv: readonly string[]): string {
+  if (argv.some((argument) => argument === "--reporter=json" || argument === "--reporter")) {
+    return JSON.stringify({
+      testResults: [
+        {
+          name: "/workspace/src/hush.test.ts",
+          assertionResults: [
+            { fullName: "hush complete", status: "passed", failureMessages: [] },
+            { fullName: "hush budget", status: "passed", failureMessages: [] },
+          ],
+        },
+      ],
+      numTotalTests: 2,
+      numPassedTests: 2,
+      numFailedTests: 0,
+      numPendingTests: 0,
+    });
+  }
+  return [
+    " RUN  v4.0.0 /workspace",
+    " ✓ src/hush.test.ts (2 tests)",
+    " Test Files  1 passed (1)",
+    " Tests  2 passed (2)",
+    " Duration  0.50s",
+  ].join("\n");
+}
+
+function playwrightOutput(argv: readonly string[]): string {
+  if (argv.some((argument) => argument === "--reporter=json")) {
+    return JSON.stringify({
+      stats: { expected: 2, unexpected: 0, skipped: 0, duration: 1_000 },
+      suites: [
+        {
+          title: "hush.spec.ts",
+          file: "tests/hush.spec.ts",
+          specs: [
+            { title: "complete", ok: true, tests: [] },
+            { title: "budget", ok: true, tests: [] },
+          ],
+        },
+      ],
+    });
+  }
+  return [
+    "Running 2 tests using 1 worker",
+    "  ✓ hush complete",
+    "  ✓ hush budget",
+    "  2 passed (1.00s)",
+  ].join("\n");
+}
+
+function mochaOutput(): string {
+  return ["  hush", "    ✓ complete", "    ✓ budget", "", "  2 passing (12ms)"].join("\n");
+}
+
+function pytestOutput(): string {
+  return [
+    "tests/test_hush.py::test_complete PASSED",
+    "tests/test_hush.py::test_budget PASSED",
+    "2 passed in 0.12s",
+  ].join("\n");
+}
+
+function pythonOutput(argv: readonly string[]): string {
+  if (argv[0] === "-m" && argv[1] === "pytest") return pytestOutput();
+  throw new Error(`unsupported python fixture arguments: ${argv.join(" ")}`);
+}
+
+function cargoOutput(argv: readonly string[]): string {
+  if (argv[0] === "test") {
+    return [
+      "   Compiling falryn v0.1.0 (/workspace)",
+      "    Finished `test` profile target(s) in 0.42s",
+      "     Running unittests src/lib.rs",
+      "running 2 tests",
+      "test complete ... ok",
+      "test budget ... ok",
+      "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s",
+    ].join("\n");
+  }
+  if (argv[0] === "nextest") {
+    return [
+      "Starting 2 tests across 1 binary",
+      "        PASS complete",
+      "        PASS budget",
+      "Summary [0.12s] 2 tests run: 2 passed, 0 skipped",
+    ].join("\n");
+  }
+  return `${"Compiling falryn v0.1.0\n".repeat(6)}Finished release target in 0.42s`;
+}
+
+function goOutput(argv: readonly string[]): string {
+  if (argv.includes("-json")) {
+    return [
+      { Action: "run", Package: "example/falryn", Test: "TestComplete" },
+      { Action: "pass", Package: "example/falryn", Test: "TestComplete", Elapsed: 0.01 },
+      { Action: "run", Package: "example/falryn", Test: "TestBudget" },
+      { Action: "pass", Package: "example/falryn", Test: "TestBudget", Elapsed: 0.01 },
+      { Action: "pass", Package: "example/falryn", Elapsed: 0.02 },
+    ]
+      .map((event) => JSON.stringify(event))
+      .join("\n");
+  }
+  return [
+    "=== RUN   TestComplete",
+    "--- PASS: TestComplete (0.01s)",
+    "=== RUN   TestBudget",
+    "--- PASS: TestBudget (0.01s)",
+    "PASS",
+    "ok\texample/falryn\t0.02s",
+  ].join("\n");
+}
+
+function gradleOutput(): string {
+  return [
+    "Starting a Gradle Daemon (subsequent builds will be faster)",
+    "> Task :compileJava UP-TO-DATE",
+    "> Task :processResources NO-SOURCE",
+    "> Task :test",
+    "BUILD SUCCESSFUL in 1s",
+    "4 actionable tasks: 4 executed",
+  ].join("\n");
+}
+
+function mavenOutput(): string {
+  return [
+    "[INFO] Scanning for projects...",
+    "[INFO] -----------------------< dev.falryn:core >-----------------------",
+    "[INFO] Running dev.falryn.HushTest",
+    "[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.12 s - in dev.falryn.HushTest",
+    "[INFO] BUILD SUCCESS",
+    "[INFO] Total time:  1.20 s",
+  ].join("\n");
+}
+
+function sbtOutput(): string {
+  return [
+    "[info] welcome to sbt 1.10.0",
+    "[info] loading project definition",
+    "[info] Total number of tests run: 2",
+    "[info] Tests: succeeded 2, failed 0, canceled 0, ignored 0, pending 0",
+    "[success] Total time: 1 s",
+  ].join("\n");
+}
+
+function dotnetTestOutput(): string {
+  return [
+    "Determining projects to restore...",
+    "All projects are up-to-date for restore.",
+    "Test run for Falryn.Tests.dll (.NETCoreApp,Version=v10.0)",
+    "Passed! - Failed: 0, Passed: 2, Skipped: 0, Total: 2, Duration: 12 ms - Falryn.Tests.dll",
+  ].join("\n");
+}
+
+function appleTestOutput(): string {
+  return [
+    "Building for debugging...",
+    "Build complete! (0.42s)",
+    "Test Suite 'All tests' started at 2026-08-25",
+    "Test Case 'HushTests.complete' passed (0.005 seconds)",
+    "Test Case 'HushTests.budget' passed (0.005 seconds)",
+    "Test Suite 'All tests' passed at 2026-08-25",
+    "\t Executed 2 tests, with 0 failures (0 unexpected) in 0.010 (0.012) seconds",
+    "** TEST SUCCEEDED **",
+  ].join("\n");
+}
+
+function phpWrapperOutput(argv: readonly string[]): string {
+  const tool = basename(argv[0] ?? "");
+  if (tool === "phpunit") return phpunitOutput();
+  if (tool === "pest") return pestOutput();
+  if (tool === "paratest") return paratestOutput();
+  throw new Error(`unsupported php fixture arguments: ${argv.join(" ")}`);
+}
+
+function phpunitOutput(): string {
+  return [
+    "PHPUnit 12.2.0 by Sebastian Bergmann and contributors.",
+    "Runtime: PHP 8.4.0",
+    ".. 2 / 2 (100%)",
+    "Time: 00:00:00.120, Memory: 8.00 MB",
+    "OK (2 tests, 4 assertions)",
+  ].join("\n");
+}
+
+function pestOutput(): string {
+  return ["Pest 5.0.0", "..", "Tests: 2 passed (4 assertions)", "Duration: 0.12s"].join("\n");
+}
+
+function paratestOutput(): string {
+  return [
+    "ParaTest v7.3.0 upon PHPUnit 12.2.0",
+    "Random Seed: 736",
+    ".. 2 / 2 (100%)",
+    "OK (2 tests, 4 assertions)",
+  ].join("\n");
+}
+
+function minitestOutput(): string {
+  return [
+    "Run options: --seed 736",
+    "# Running:",
+    "..",
+    "Finished in 0.012s, 166 runs/s",
+    "2 runs, 4 assertions, 0 failures, 0 errors, 0 skips",
+  ].join("\n");
+}
+
+function rspecOutput(argv: readonly string[]): string {
+  if (argv.includes("json")) {
+    return JSON.stringify({
+      examples: [
+        {
+          full_description: "hush complete",
+          status: "passed",
+          file_path: "spec/hush_spec.rb",
+          line_number: 4,
+        },
+        {
+          full_description: "hush budget",
+          status: "passed",
+          file_path: "spec/hush_spec.rb",
+          line_number: 8,
+        },
+      ],
+      summary: {
+        duration: 0.012,
+        example_count: 2,
+        failure_count: 0,
+        pending_count: 0,
+        errors_outside_of_examples_count: 0,
+      },
+    });
+  }
+  return ["..", "Finished in 0.012 seconds", "2 examples, 0 failures"].join("\n");
+}
+
+function npxOutput(argv: readonly string[]): string {
+  const tool = argv.find((argument) => ["jest", "vitest", "playwright"].includes(argument));
+  if (tool === "jest") return jestOutput(argv);
+  if (tool === "vitest") return vitestOutput(argv);
+  if (tool === "playwright") return playwrightOutput(argv);
+  return packageRunnerOutput();
+}
 
 function npmOutput(argv: readonly string[]): string {
   const action = argv[0] ?? "";
@@ -350,6 +650,18 @@ function packageRunnerOutput(): string {
 
 function bunOutput(argv: readonly string[]): string {
   const action = argv[0] ?? "";
+  if (action === "test") {
+    return [
+      "bun test v1.4.0",
+      "✓ complete",
+      "✓ budget",
+      "",
+      "2 pass",
+      "0 fail",
+      "4 expect() calls",
+      "Ran 2 tests across 1 file. [12.00ms]",
+    ].join("\n");
+  }
   if (action === "install" || action === "add") {
     return [
       `bun ${action} v1.4.0 (0aa2b1cd)`,
@@ -447,6 +759,9 @@ function pipOutput(argv: readonly string[]): string {
 }
 
 function uvOutput(argv: readonly string[]): string {
+  if (argv[0] === "run" && argv[1] === "pytest") {
+    return pytestOutput();
+  }
   if (argv[0] !== "sync") {
     throw new Error(`unsupported uv fixture arguments: ${argv.join(" ")}`);
   }
@@ -499,6 +814,9 @@ function composerOutput(argv: readonly string[]): string {
 }
 
 function bundleOutput(argv: readonly string[]): string {
+  if (argv[0] === "exec" && argv[1] === "rspec") {
+    return rspecOutput(argv.slice(2));
+  }
   if (argv[0] !== "install") {
     throw new Error(`unsupported bundle fixture arguments: ${argv.join(" ")}`);
   }

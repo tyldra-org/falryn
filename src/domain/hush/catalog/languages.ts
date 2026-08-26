@@ -9,7 +9,7 @@ export const LANGUAGE_COMMANDS = [
     projection: "test",
     executables: ["cargo"],
     examples: ["cargo test", "cargo nextest run"],
-    matches: (tokens) => ["test", "nextest"].includes((tokens[1] ?? "").toLowerCase()),
+    matches: (tokens) => tokens[1] === "test" || (tokens[1] === "nextest" && tokens[2] === "run"),
   },
   {
     reducerId: "rust.diagnostic",
@@ -193,6 +193,7 @@ export const LANGUAGE_COMMANDS = [
     projection: "test",
     executables: ["rake", "rails", "rspec"],
     examples: ["rake test", "rails test", "bundle exec rspec"],
+    matches: (tokens) => tokens[0] === "rspec" || tokens.includes("test"),
   },
   {
     reducerId: "ruby.diagnostic",
