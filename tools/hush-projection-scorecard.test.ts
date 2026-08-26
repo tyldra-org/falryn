@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import { HUSH_BUILD_OPERATION_CASES } from "./hush-build-operation-cases.ts";
 import { HUSH_CONTAINER_CASES } from "./hush-container-cases.ts";
+import { HUSH_KUBERNETES_CASES } from "./hush-kubernetes-cases.ts";
 import {
   HUSH_FIND_LISTING_PATHS,
   HUSH_PROJECTION_CASES,
@@ -10,7 +11,7 @@ import {
 
 describe("Hush projection scorecard corpus", () => {
   test("keeps each supported Git mutation as a separate RTK comparison", () => {
-    expect(HUSH_PROJECTION_CORPUS_VERSION).toBe("hush-projections.v29");
+    expect(HUSH_PROJECTION_CORPUS_VERSION).toBe("hush-projections.v30");
     expect(
       HUSH_PROJECTION_CASES.filter((entry) => entry.projection === "git-mutation").map(
         (entry) => entry.id,
@@ -286,6 +287,36 @@ describe("Hush projection scorecard corpus", () => {
     ).toBe(true);
   });
 
+  test("measures every requested Kubernetes and OpenShift surface without unsafe reductions", () => {
+    expect(HUSH_KUBERNETES_CASES).toHaveLength(19);
+    const ids: readonly string[] = HUSH_KUBERNETES_CASES.map((entry) => entry.id);
+    expect(ids).toEqual(
+      HUSH_PROJECTION_CASES.filter((entry) =>
+        HUSH_KUBERNETES_CASES.some((candidate) => candidate.id === entry.id),
+      ).map((entry) => entry.id),
+    );
+    expect(ids).toContain("kubernetes-kubectl-get-pods-wide");
+    expect(ids).toContain("kubernetes-kubectl-prefix-logs");
+    expect(ids).toContain("kubernetes-kubectl-describe");
+    expect(ids).toContain("kubernetes-oc-adm-top");
+    expect(
+      HUSH_KUBERNETES_CASES.filter((entry) => entry.baseline === "raw").map((entry) => entry.id),
+    ).toEqual([
+      "kubernetes-kubectl-get-pods",
+      "kubernetes-kubectl-pods",
+      "kubernetes-kubectl-services",
+      "kubernetes-kubectl-get-pods-wide",
+      "kubernetes-oc-get-pods",
+      "kubernetes-kubectl-logs",
+      "kubernetes-kubectl-prefix-logs",
+      "kubernetes-kubectl-arbitrary-logs",
+      "kubernetes-oc-logs",
+    ]);
+    expect(
+      HUSH_KUBERNETES_CASES.every((entry) => entry.forbiddenMarkers?.includes("omitted") ?? false),
+    ).toBe(true);
+  });
+
   test("measures every requested test-runner and wrapper as an uncapped strict win", () => {
     const runners = HUSH_PROJECTION_CASES.filter((entry) => entry.projection === "test");
     expect(runners.map((entry) => entry.id)).toEqual([
@@ -329,6 +360,10 @@ describe("Hush projection scorecard corpus", () => {
       "container-docker-compose-logs",
       "container-podman-logs",
       "container-podman-compose-logs",
+      "kubernetes-kubectl-logs",
+      "kubernetes-kubectl-prefix-logs",
+      "kubernetes-kubectl-arbitrary-logs",
+      "kubernetes-oc-logs",
       "log-journalctl",
     ]);
     const journal = HUSH_PROJECTION_CASES.find((entry) => entry.id === "log-journalctl");

@@ -266,6 +266,32 @@ describe("hush reduction", () => {
     expect(partial.value.expansion.stdoutArtifact).toBe(artifactId.from("cap-1.stdout"));
   });
 
+  test("keeps arbitrary Kubernetes logs and partial tables exact", () => {
+    const applicationOutput = "ready\nready\nrequest=req-736 status=ok\n";
+    const logs = reduceHush({
+      command: argv("/usr/bin/kubectl", ["logs", "falryn-api"]),
+      capture: report(applicationOutput),
+    });
+    expect(logs.ok).toBe(true);
+    if (!logs.ok) throw new Error("expected exact Kubernetes logs");
+    expect(logs.value.reducerId).toBe("kubernetes.log");
+    expect(logs.value.reducedText).toBe(applicationOutput);
+
+    const partial = reduceHush({
+      command: argv("/usr/bin/oc", ["get", "pods"]),
+      capture: report("NAME   READY\nfalryn 1/1\n", {
+        truncated: true,
+        artifact: true,
+      }),
+    });
+    expect(partial.ok).toBe(true);
+    if (!partial.ok) throw new Error("expected a partial Kubernetes result");
+    expect(partial.value.reducerId).toBe("kubernetes.table");
+    expect(partial.value.reducedText).toBe("NAME   READY\nfalryn 1/1\n");
+    expect(partial.value.truncated).toBe(true);
+    expect(partial.value.expansion.stdoutArtifact).toBe(artifactId.from("cap-1.stdout"));
+  });
+
   test("preserves terminal facts and omits the child environment", () => {
     const captured = report("On branch main\n", { durationMs: 44, exitCode: 1 });
     const reduced = reduceHush({

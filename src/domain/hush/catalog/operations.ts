@@ -1,5 +1,6 @@
 /** Container, cloud, infrastructure, package, and system command policies. */
 
+import { parseKubernetesCommand } from "../kubernetes-command.ts";
 import type { HushCatalogEntry } from "./contracts.ts";
 
 const CONTAINER_TABLE_COMMANDS = new Set([
@@ -38,7 +39,7 @@ export const OPERATION_COMMANDS = [
     projection: "table",
     executables: ["kubectl", "oc"],
     examples: ["kubectl get pods", "kubectl pods", "kubectl services", "oc get pods", "oc status"],
-    matches: (tokens) => CONTAINER_TABLE_COMMANDS.has(containerSubcommand(tokens)),
+    matches: isKubernetesTableCommand,
   },
   {
     reducerId: "container.log",
@@ -54,7 +55,7 @@ export const OPERATION_COMMANDS = [
     projection: "log",
     executables: ["kubectl", "oc"],
     examples: ["kubectl logs pod", "oc logs pod"],
-    matches: (tokens) => CONTAINER_LOG_COMMANDS.has(containerSubcommand(tokens)),
+    matches: (tokens) => parseKubernetesCommand(tokens)?.verb === "logs",
   },
   {
     reducerId: "container.build",
@@ -231,4 +232,15 @@ export const OPERATION_COMMANDS = [
 
 function containerSubcommand(tokens: readonly string[]): string {
   return tokens[1] === "compose" ? (tokens[2] ?? "") : (tokens[1] ?? "");
+}
+
+function isKubernetesTableCommand(tokens: readonly string[]): boolean {
+  const command = parseKubernetesCommand(tokens);
+  return (
+    command !== null &&
+    (command.verb === "get" ||
+      command.verb === "pods" ||
+      command.verb === "services" ||
+      (command.executable === "oc" && command.verb === "status"))
+  );
 }

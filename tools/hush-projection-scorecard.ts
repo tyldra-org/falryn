@@ -18,10 +18,11 @@ import {
 import { HUSH_BUILD_OPERATION_CASES } from "./hush-build-operation-cases.ts";
 import { HUSH_RTK_BASELINE } from "./hush-command-coverage.ts";
 import { HUSH_CONTAINER_CASES } from "./hush-container-cases.ts";
+import { HUSH_KUBERNETES_CASES } from "./hush-kubernetes-cases.ts";
 import { type HushLsMeasurement, measureText } from "./hush-ls-scorecard.ts";
 import type { ProjectionCase } from "./hush-projection-case.ts";
 
-export const HUSH_PROJECTION_CORPUS_VERSION = "hush-projections.v29";
+export const HUSH_PROJECTION_CORPUS_VERSION = "hush-projections.v30";
 
 export const HUSH_FIND_LISTING_PATHS = [
   "bounds.ts",
@@ -1977,6 +1978,7 @@ export const HUSH_PROJECTION_CASES: readonly ProjectionCase[] = [
     forbiddenMarkers: ["Using ", "omitted", "…"],
   },
   ...HUSH_CONTAINER_CASES,
+  ...HUSH_KUBERNETES_CASES,
   {
     id: "count-wc-single",
     projection: "count",

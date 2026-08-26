@@ -1,9 +1,11 @@
 import type { ProcessCaptureReport } from "../../../process-capture.ts";
-import { boundText, joinStreams } from "../../bounds.ts";
+import { boundStream, boundText, joinStreams } from "../../bounds.ts";
 import type { HushStreamProjection } from "../../contracts.ts";
+import { KUBERNETES_EXECUTABLES } from "../../kubernetes-command.ts";
 import { shortestText, stripAnsi } from "../../text-format.ts";
 import { formatContainerLogOutput } from "../container/log.ts";
 import { CONTAINER_EXECUTABLES, containerExecutable } from "../container/shared.ts";
+import { formatKubernetesLogOutput } from "../kubernetes/log.ts";
 import { semanticStreamProjection } from "../semantic.ts";
 import { formatShortJournal } from "./format.ts";
 
@@ -26,11 +28,20 @@ export function logProjection(
     capture.exit.signal === null;
   const plain = canFormat ? stripAnsi(source) : null;
   const container = CONTAINER_EXECUTABLES.has(containerExecutable(commandTokens));
+  const kubernetes = KUBERNETES_EXECUTABLES.has(containerExecutable(commandTokens));
   const formatted =
-    plain === null ? null : container ? formatContainerLogOutput(plain) : formatShortJournal(plain);
+    plain === null
+      ? null
+      : container
+        ? formatContainerLogOutput(plain)
+        : kubernetes
+          ? formatKubernetesLogOutput(plain)
+          : formatShortJournal(plain);
   const stdout =
     formatted === null || plain === null
-      ? semanticStreamProjection("log", "stdout", capture.stdout, maxBytes, patterns)
+      ? kubernetes
+        ? boundStream("stdout", capture.stdout, maxBytes, patterns, false)
+        : semanticStreamProjection("log", "stdout", capture.stdout, maxBytes, patterns)
       : boundText(shortestText(plain, formatted), "stdout", maxBytes);
   return joinStreams(
     stdout,
