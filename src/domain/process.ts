@@ -59,6 +59,11 @@ type CommandRequestBase = {
   readonly timeoutMs: DurationMs;
   readonly maxOutputBytes: number;
   readonly signal?: AbortSignal | undefined;
+  /**
+   * Optional bytes delivered to child stdin. They are never rendered, logged,
+   * or copied into argv/environment. Callers must keep this bounded and scoped.
+   */
+  readonly stdinBytes?: Uint8Array | undefined;
 };
 
 /**

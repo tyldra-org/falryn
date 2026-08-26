@@ -107,6 +107,7 @@ export {
 } from "./sources.ts";
 export type {
   ConfigurationFileScope,
+  ConfigurationValueWriteRequest,
   ConfigurationWriteOutcome,
   ConfigurationWriteRequest,
 } from "./writer.ts";
@@ -114,4 +115,5 @@ export {
   configurationSourcePaths,
   resolveConfigurationFilePath,
   writeConfigurationKey,
+  writeConfigurationValue,
 } from "./writer.ts";

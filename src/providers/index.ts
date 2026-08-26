@@ -28,6 +28,22 @@ export {
 } from "./auth.ts";
 export { establishProviderAuth, removeProviderCredential } from "./auth-service.ts";
 export type {
+  ProviderAccountMetadata,
+  ProviderAuthMethod,
+  ProviderConnection,
+  ProviderConnectionState,
+} from "./connection.ts";
+export {
+  MAX_PROVIDER_CONNECTIONS,
+  PROVIDER_AUTH_METHODS,
+  PROVIDER_CONNECTION_SCHEMA_VERSION,
+} from "./connection.ts";
+export type { ProviderConnectionStateParseError } from "./connection-schema.ts";
+export {
+  parseProviderConnectionState,
+  providerConnectionStateSchema,
+} from "./connection-schema.ts";
+export type {
   DeterministicAbortableScript,
   DeterministicFailureScript,
   DeterministicProviderOptions,

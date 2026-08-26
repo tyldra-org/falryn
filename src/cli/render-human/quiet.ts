@@ -118,6 +118,18 @@ export function quietResultLines(result: RunCommandResult): readonly string[] {
               (root) => `${safe(root.rootId)}\t${safe(root.name)}\t${safe(root.path)}`,
             ),
           ];
+    case "provider":
+      return result.payload === null || result.payload.kind === "failed"
+        ? []
+        : result.payload.connections.map((connection) =>
+            [
+              connection.selected ? "*" : "-",
+              safe(connection.profileId),
+              safe(connection.providerId),
+              connection.credentialConfigured ? "configured" : "unconfigured",
+              connection.models.map(safe).join(","),
+            ].join("\t"),
+          );
     case "run":
       return result.payload === null
         ? []

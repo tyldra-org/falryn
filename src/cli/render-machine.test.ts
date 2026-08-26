@@ -540,6 +540,38 @@ describe("through dispatch", () => {
     expect(err).toBe("");
   });
 
+  test("projects the same secret-free provider state in JSON and JSONL", async () => {
+    for (const format of ["json", "jsonl"] as const) {
+      const { out, err, code } = await run(["provider", "list", "--format", format]);
+      const reading = readCliStream(out.split("\n"));
+      const terminal = reading.terminal as {
+        payload?: {
+          selectedProfileId?: string | null;
+          connections?: readonly {
+            profileId?: string;
+            credentialConfigured?: boolean;
+            credentialStore?: string | null;
+          }[];
+        };
+      } | null;
+
+      expect(code).toBe(0);
+      expect(err).toBe("");
+      expect(terminal?.payload).toMatchObject({
+        selectedProfileId: "openai",
+        connections: [
+          {
+            profileId: "openai",
+            credentialConfigured: true,
+            credentialStore: "environment",
+          },
+        ],
+      });
+      expect(`${out}${err}`).not.toContain("FALRYN_OPENAI_API_KEY");
+      expect(`${out}${err}`).not.toContain(SECRET);
+    }
+  });
+
   test("writes a real lifecycle and one terminal record for --format jsonl", async () => {
     const { out } = await run(["config", "show", "--format", "jsonl"]);
     const reading = readCliStream(out.split("\n"));

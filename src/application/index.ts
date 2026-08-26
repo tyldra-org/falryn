@@ -299,6 +299,21 @@ export type {
 export { createPromptComposer } from "./prompt-composer.ts";
 export { ENHANCEMENT_MODEL_OWNER, enhancePrompt } from "./prompt-enhancement.ts";
 export type {
+  AuthorizedProviderLoginPort,
+  AuthorizedProviderLoginResult,
+  ProviderConnectionAction,
+  ProviderConnectionActionResult,
+  ProviderConnectionHandoffResult,
+  ProviderConnectionIssueCode,
+  ProviderConnectionService,
+  ProviderConnectionServicePorts,
+  ProviderConnectionStorePort,
+  ProviderConnectionStoreSnapshot,
+  ProviderConnectionStoreWriteResult,
+  ProviderConnectionView,
+} from "./provider-connections.ts";
+export { createProviderConnectionService } from "./provider-connections.ts";
+export type {
   ConsumeProviderStreamInput,
   ProviderStreamConsumeOutcome,
   ProviderStreamConsumer,

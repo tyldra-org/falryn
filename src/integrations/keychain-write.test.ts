@@ -53,9 +53,12 @@ describe("writeKeychainCredential", () => {
       "-s",
       "falryn.provider.openai",
       "-w",
-      "sk-never-log-me",
     ]);
     expect(captured.environment).toEqual({});
+    expect(captured.stdinBytes).toEqual(new TextEncoder().encode("sk-never-log-me\n"));
+    expect("argv" in captured ? JSON.stringify(captured.argv) : "").not.toContain(
+      "sk-never-log-me",
+    );
   });
 
   test("refuses unsupported platforms", async () => {

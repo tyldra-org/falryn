@@ -14,6 +14,7 @@ import {
   runDataUninstall,
   runDoctor,
   runExport,
+  runProvider,
   runSessionList,
   runSessionShow,
   runWorkspaceList,
@@ -64,6 +65,7 @@ export async function produce(
   runArgs: Extract<Invocation, { kind: "run" }>["runArgs"],
   taskArgs: Extract<Invocation, { kind: "run" }>["taskArgs"],
   commitPlanArgs: Extract<Invocation, { kind: "run" }>["commitPlanArgs"],
+  providerArgs: Extract<Invocation, { kind: "run" }>["providerArgs"],
   services: ServiceProvider,
   overrides: Readonly<Record<string, string>>,
   globals: GlobalOptions,
@@ -231,6 +233,18 @@ export async function produce(
         throw new Error("Missing parsed workspace load arguments.");
       }
       return runWorkspaceLoad(services, workspaceArgs, signal);
+    case "provider":
+      if (providerArgs === null) {
+        throw new Error("Missing parsed provider arguments.");
+      }
+      return runProvider(
+        services,
+        providerArgs,
+        globals,
+        options.streams.input,
+        signal,
+        onMutationStart,
+      );
     case "run":
       if (runArgs === null) {
         throw new Error("Missing parsed coding run arguments.");

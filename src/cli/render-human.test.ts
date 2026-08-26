@@ -1097,6 +1097,14 @@ describe("through dispatch", () => {
     }
   });
 
+  test("projects provider connections without exposing credential locators", async () => {
+    const { out, err, code } = await run(["provider", "list"]);
+    expect(code).toBe(0);
+    expect(out).toContain("OpenAI");
+    expect(out).toContain("configured:environment");
+    expect(`${out}${err}`).not.toContain("FALRYN_OPENAI_API_KEY");
+  });
+
   test("lets no rendered human text reach stdout in a machine format", async () => {
     // #19 owns these arms. Until then they must not leak this renderer's text
     // into a stream a parser is reading.

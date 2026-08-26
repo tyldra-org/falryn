@@ -9,7 +9,6 @@
 
 import {
   composeProductAgentRuntime,
-  composeProductCredentials,
   composeProductGitTools,
   composeProductIndexLifecycle,
   composeProductLanguageTools,
@@ -19,10 +18,8 @@ import {
   createDebugAdapterSupervisor,
   createEphemeralProductIndexPort,
   createLanguageServerSupervisor,
-  DEFAULT_OPENAI_CREDENTIAL_REFERENCE,
   type LoomPort,
   mergeProductToolBundles,
-  resolveProviderApiKey,
 } from "../application/index.ts";
 import {
   type ArtifactStorePort,
@@ -31,7 +28,6 @@ import {
   type EnvironmentPort,
   type EventStorePort,
   type FileSystemPort,
-  type LocalDataPlatform,
   primaryWorkspaceRoot,
   sessionId as sessionIdCodec,
   streamId,
@@ -46,36 +42,38 @@ import {
   createHostGitPort,
   createHostManagedServicePort,
   createHostProcessCapturePort,
-  hostPlatform,
   type OwnedProcessRegistry,
 } from "../integrations/index.ts";
-import { createOpenAiCompatibleAdapter } from "../providers/openai-compatible-adapter.ts";
-import type { ProviderAdapterPort } from "../providers/port.ts";
 import { createProductSubmissionPort, type SubmissionPort } from "../tui/composer/index.ts";
+import type { ControlCatalog } from "../tui/controls/index.ts";
 import { type TranscriptFeed, transcriptFeedFromProducer } from "../tui/transcript-feed.ts";
+import type { ProductProviderConnectionHandoff } from "./product-provider-connections.ts";
 import { CLI_EVENT_STREAM } from "./services.ts";
 
 export type ProductShellAttachmentPorts = {
   readonly eventStore: EventStorePort;
   readonly clock: ClockPort;
-  readonly environment: EnvironmentPort;
+  /** Compatibility input retained for callers; provider auth is now composed before this seam. */
+  readonly environment?: EnvironmentPort;
   readonly fileSystem: FileSystemPort;
   readonly workspaceSet: WorkspaceSet | null;
   /** From the loader after a durable load (#728); not hardcoded generation zero. */
   readonly configurationGeneration: ConfigurationGeneration;
   readonly signal?: AbortSignal;
-  readonly platform?: LocalDataPlatform;
   readonly commands?: ReturnType<typeof createHostCommandRunner>;
   readonly ownedProcesses?: OwnedProcessRegistry;
   /** Durable exact-output storage and optional shared Loom lifecycle (#814). */
   readonly artifacts?: ArtifactStorePort;
   readonly loom?: LoomPort;
   readonly index?: WorkspaceIndexPort & WorkspaceIndexWritePort;
+  /** Selected, authenticated provider handoff from the application-owned profile service. */
+  readonly provider?: ProductProviderConnectionHandoff;
 };
 
 export type ProductShellAttachments = {
   readonly submission: SubmissionPort;
   readonly transcriptFeed: TranscriptFeed;
+  readonly controls: ControlCatalog;
 };
 
 /**
@@ -100,25 +98,7 @@ export async function composeProductShellAttachments(
       ports.ownedProcesses === undefined ? {} : { ownedProcesses: ports.ownedProcesses },
     );
 
-  let providerAdapter: ProviderAdapterPort | undefined;
-  const credentials = composeProductCredentials({
-    clock: ports.clock,
-    commands,
-    platform: ports.platform ?? hostPlatform(),
-    environment: ports.environment,
-  });
-  const apiKey = await resolveProviderApiKey(
-    credentials.resolver,
-    DEFAULT_OPENAI_CREDENTIAL_REFERENCE,
-    ports.signal,
-  );
-  if (apiKey !== null) {
-    providerAdapter = createOpenAiCompatibleAdapter({
-      profileId: "openai",
-      baseUrl: "https://api.openai.com/v1",
-      resolveApiKey: async () => apiKey,
-    });
-  }
+  const providerAdapter = ports.provider?.kind === "ready" ? ports.provider.adapter : undefined;
 
   const workspaceRoot =
     ports.workspaceSet === null ? null : primaryWorkspaceRoot(ports.workspaceSet).path;
@@ -234,5 +214,47 @@ export async function composeProductShellAttachments(
       ...(workspaceTools === null ? {} : { contextCandidates: workspaceTools.contextCandidates }),
     }),
     transcriptFeed: transcriptFeedFromProducer(producer),
+    controls: providerControls(ports.provider),
+  };
+}
+
+function providerControls(provider: ProductProviderConnectionHandoff | undefined): ControlCatalog {
+  const ready = provider?.kind === "ready" ? provider.session : null;
+  const profile = ready?.connection.profile ?? null;
+  return {
+    sessions: [],
+    models:
+      ready?.catalog.models.map((model) => ({
+        id: String(model.modelId),
+        title: String(model.modelId),
+        detail: [
+          profile?.displayName ?? "provider",
+          model.modalities.join("+"),
+          model.tools ? "tools" : "no tools",
+          model.reasoning ? "reasoning" : "standard",
+        ].join(" · "),
+      })) ?? [],
+    context: [
+      { label: "tokens", value: { kind: "unavailable", reason: "no context pack yet" } },
+      { label: "bytes", value: { kind: "unavailable", reason: "no context pack yet" } },
+      { label: "items", value: { kind: "unavailable", reason: "no context pack yet" } },
+    ],
+    resources: [
+      {
+        label: "provider",
+        value:
+          profile === null
+            ? {
+                kind: "unavailable",
+                reason:
+                  provider?.kind === "unavailable"
+                    ? `${provider.code}; run falryn provider list or falryn provider test <id>`
+                    : "not connected; run falryn provider list",
+              }
+            : { kind: "known", text: profile.displayName },
+      },
+      { label: "memory", value: { kind: "unavailable", reason: "no resource probe yet" } },
+      { label: "tokens", value: { kind: "unavailable", reason: "no usage yet" } },
+    ],
   };
 }

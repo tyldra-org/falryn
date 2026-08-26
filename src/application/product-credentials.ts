@@ -78,8 +78,8 @@ export function composeProductCredentials(ports: ProductCredentialPorts): Produc
     resolver,
     stores,
     async placeApiKey(input) {
-      // Never log or return the secret; writeKeychainCredential takes it only
-      // for the supervised argv vector.
+      // Never log or return the secret; writeKeychainCredential passes it only
+      // through the supervised process stdin channel.
       return writeKeychainCredential({
         commands: ports.commands,
         platform: ports.platform,

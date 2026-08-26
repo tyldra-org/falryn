@@ -23,6 +23,7 @@ export function isRawArguments(value: unknown): value is RawArguments {
   const positional = field("_");
   const classes = field("class");
   const sessions = field("session");
+  const models = field("model");
   return (
     Array.isArray(positional) &&
     positional.every((item) => typeof item === "string" || typeof item === "number") &&
@@ -90,6 +91,19 @@ export function isRawArguments(value: unknown): value is RawArguments {
       (Array.isArray(field("criterion")) &&
         (field("criterion") as unknown[]).every((item) => typeof item === "string"))) &&
     optionalString(field("input")) &&
+    optionalString(field("provider")) &&
+    optionalString(field("adapter")) &&
+    optionalString(field("endpoint")) &&
+    (models === undefined ||
+      (Array.isArray(models) && models.every((item) => typeof item === "string"))) &&
+    optionalString(field("discovery")) &&
+    optionalString(field("organization")) &&
+    optionalString(field("project")) &&
+    (field("connect-timeout") === undefined || typeof field("connect-timeout") === "number") &&
+    (field("request-timeout") === undefined || typeof field("request-timeout") === "number") &&
+    optionalString(field("auth-method")) &&
+    optionalBoolean(field("api-key-stdin")) &&
+    optionalString(field("account-label")) &&
     typeof field("format") === "string" &&
     typeof field("color") === "string" &&
     typeof field("quiet") === "boolean" &&

@@ -60,6 +60,7 @@ import {
   hostPlatform,
 } from "../integrations/index.ts";
 import type { GlobalOptions } from "./options.ts";
+import { PROVIDER_CONNECTION_KEYS } from "./provider-configuration.ts";
 import {
   describeWorkspaceResolveError,
   type ResolvedCliWorkspace,
@@ -75,6 +76,12 @@ import {
  * session-scoped stream arrives with the capability that produces sessions.
  */
 export const CLI_EVENT_STREAM = "configuration";
+
+/** Product-owned declarations whose consumers are live in this build. */
+export const PRODUCT_CONFIGURATION_KEYS = [
+  ...V0_1_CONFIGURATION_KEYS,
+  ...PROVIDER_CONNECTION_KEYS,
+] as const;
 
 export type Services = {
   readonly fileSystem: FileSystemPort;
@@ -194,7 +201,7 @@ export function createServiceProvider(
     }
 
     const registry = createConfigurationRegistry({
-      declarations: V0_1_CONFIGURATION_KEYS,
+      declarations: PRODUCT_CONFIGURATION_KEYS,
       crossFieldRules: V0_1_CROSS_FIELD_RULES,
       redactor: createRuntimeRedactor(),
     });
@@ -219,7 +226,7 @@ export function createServiceProvider(
       registry,
       loader: createConfigurationLoader({
         registry,
-        declarations: V0_1_CONFIGURATION_KEYS,
+        declarations: PRODUCT_CONFIGURATION_KEYS,
         fileSystem,
         environment,
         // Injected, never reimplemented. A second redaction rule in the CLI

@@ -37,6 +37,9 @@ export function commandFrom(
     // Remaining positionals are the prompt; there is no nested action.
     return "run";
   }
+  if (group === "provider") {
+    return action === null ? null : "provider";
+  }
   if (group === "export") {
     return action === null ? "export" : null;
   }
