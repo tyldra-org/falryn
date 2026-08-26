@@ -18,7 +18,7 @@ import {
 import { HUSH_RTK_BASELINE } from "./hush-command-coverage.ts";
 import { type HushLsMeasurement, measureText } from "./hush-ls-scorecard.ts";
 
-export const HUSH_PROJECTION_CORPUS_VERSION = "hush-projections.v24";
+export const HUSH_PROJECTION_CORPUS_VERSION = "hush-projections.v25";
 
 export const HUSH_FIND_LISTING_PATHS = [
   "bounds.ts",
@@ -852,7 +852,64 @@ export const HUSH_PROJECTION_CASES = [
     executable: "tsc",
     argv: ["--noEmit"],
     rtkArgv: ["tsc", "--noEmit"],
-    requiredMarkers: ["src/a.ts", "TS2322", "src/b.ts", "TS2304", "Found 2 errors"],
+    competitiveTarget: "win",
+    acceptedExitCodes: [2],
+    requiredMarkers: [
+      "2 errors in 2 files",
+      "src/a.ts:10:4 error[TS2322]: Type 'string' is not assignable to type 'number'.",
+      "src/b.ts:20:8 error[TS2304]: Cannot find name 'missing'.",
+    ],
+    forbiddenMarkers: ["Found", "omitted", "…"],
+  },
+  {
+    id: "diagnostic-basedpyright",
+    projection: "diagnostic",
+    executable: "basedpyright",
+    argv: [],
+    rtkArgv: ["basedpyright"],
+    competitiveTarget: "win",
+    acceptedExitCodes: [1],
+    requiredMarkers: [
+      "2 errors, 1 warning, 0 informations",
+      '/workspace/app/main.py:10:5 error[reportUndefinedVariable]: "foo" is not defined',
+      '/workspace/app/main.py:25:1 error[reportAssignmentType]: Type "str" is not assignable to type "int"',
+      '/workspace/app/utils.py:8:9 warning[reportUnusedVariable]: Variable "x" is not accessed',
+    ],
+    forbiddenMarkers: ["Searching for source files", "Found 42 source files", "omitted", "…"],
+  },
+  {
+    id: "diagnostic-ty",
+    projection: "diagnostic",
+    executable: "ty",
+    argv: ["check"],
+    rtkArgv: ["ty", "check"],
+    competitiveTarget: "win",
+    acceptedExitCodes: [1],
+    requiredMarkers: [
+      "1 error, 1 warning",
+      "app/main.py:10:5 error[unresolved-reference]: Name `foo` used when not defined",
+      "10 |     foo()",
+      "|     ^^^",
+      "app/utils.py:8:9 warning[unused-variable]: Variable `x` is not used",
+      "8 |     x = 42",
+      "|     ^",
+    ],
+    forbiddenMarkers: ["Checking 15 files", "Found", "omitted", "…"],
+  },
+  {
+    id: "diagnostic-bun-typecheck",
+    projection: "diagnostic",
+    executable: "bun",
+    argv: ["run", "typecheck"],
+    baseline: "raw",
+    competitiveTarget: "win",
+    acceptedExitCodes: [2],
+    requiredMarkers: [
+      "2 errors in 2 files",
+      "src/runtime.ts:14:6 error[TS2345]: Argument of type 'string' is not assignable to parameter of type 'number'.",
+      "src/router.ts:28:3 error[TS2339]: Property 'route' does not exist on type 'Context'.",
+    ],
+    forbiddenMarkers: ["$ tsc --noEmit", "Found", "omitted", "…"],
   },
   {
     id: "build-cargo",

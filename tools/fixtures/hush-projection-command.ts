@@ -47,6 +47,42 @@ const outputs: Readonly<Record<string, () => string>> = {
       "src/b.ts(20,8): error TS2304: Cannot find name 'missing'.",
       "Found 2 errors in 2 files.",
     ].join("\n"),
+  basedpyright: () =>
+    [
+      "basedpyright 1.22.0",
+      "Searching for source files",
+      "Found 42 source files",
+      "",
+      "/workspace/app/main.py",
+      '  /workspace/app/main.py:10:5 - error: "foo" is not defined (reportUndefinedVariable)',
+      '  /workspace/app/main.py:25:1 - error: Type "str" is not assignable to type "int" (reportAssignmentType)',
+      "",
+      "/workspace/app/utils.py",
+      '  /workspace/app/utils.py:8:9 - warning: Variable "x" is not accessed (reportUnusedVariable)',
+      "",
+      "2 errors, 1 warning, 0 informations",
+    ].join("\n"),
+  ty: () =>
+    [
+      "ty 0.1.0",
+      "Checking 15 files",
+      "",
+      "error[unresolved-reference]: Name `foo` used when not defined",
+      "  --> app/main.py:10:5",
+      "   |",
+      "10 |     foo()",
+      "   |     ^^^",
+      "   |",
+      "",
+      "warning[unused-variable]: Variable `x` is not used",
+      "  --> app/utils.py:8:9",
+      "   |",
+      " 8 |     x = 42",
+      "   |     ^",
+      "   |",
+      "",
+      "Found 1 error, 1 warning",
+    ].join("\n"),
   cargo: () => `${"Compiling falryn v0.1.0\n".repeat(6)}Finished release target in 0.42s`,
   npm: () => npmOutput(args),
   pnpm: () => pnpmOutput(args),
@@ -329,6 +365,13 @@ function bunOutput(argv: readonly string[]): string {
     ].join("\n");
   }
   if (action === "run") {
+    if (argv[1] === "typecheck") {
+      return [
+        "src/runtime.ts(14,6): error TS2345: Argument of type 'string' is not assignable to parameter of type 'number'.",
+        "src/router.ts(28,3): error TS2339: Property 'route' does not exist on type 'Context'.",
+        "Found 2 errors in 2 files.",
+      ].join("\n");
+    }
     return [
       "$ bun run tools/verify-packages.mjs",
       "checking package graph",
@@ -609,10 +652,21 @@ if (executable === "curl") {
       "100   102  100   102    0     0   1020      0 --:--:-- --:--:-- --:--:--  1020\n",
   );
   process.stdout.write(`${output}\n`);
+} else if (executable === "bun" && args[0] === "run" && args[1] === "typecheck") {
+  process.stderr.write("$ tsc --noEmit\n");
+  process.stdout.write(`${output}\n`);
+  process.exit(2);
 } else if (executable === "git" && ["checkout", "fetch", "push"].includes(gitSubcommand(args))) {
   process.stderr.write(`${output}\n`);
 } else if (output.length > 0) {
   process.stdout.write(`${output}\n`);
+}
+
+if (executable === "tsc") {
+  process.exit(2);
+}
+if (executable === "basedpyright" || executable === "ty") {
+  process.exit(1);
 }
 
 function runWgetFixture(argv: readonly string[]): void {

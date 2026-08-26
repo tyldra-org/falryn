@@ -8,7 +8,7 @@ import {
 
 describe("Hush projection scorecard corpus", () => {
   test("keeps each supported Git mutation as a separate RTK comparison", () => {
-    expect(HUSH_PROJECTION_CORPUS_VERSION).toBe("hush-projections.v24");
+    expect(HUSH_PROJECTION_CORPUS_VERSION).toBe("hush-projections.v25");
     expect(
       HUSH_PROJECTION_CASES.filter((entry) => entry.projection === "git-mutation").map(
         (entry) => entry.id,
@@ -152,6 +152,33 @@ describe("Hush projection scorecard corpus", () => {
     expect(jira.find((entry) => entry.id === "jira-issue-view")?.requiredMarkers).toHaveLength(9);
   });
 
+  test("keeps each requested typecheck surface complete and requires a strict win", () => {
+    const diagnostics = HUSH_PROJECTION_CASES.filter(
+      (entry) =>
+        ["tsc", "basedpyright", "ty"].includes(entry.executable) ||
+        (entry.executable === "bun" && entry.id === "diagnostic-bun-typecheck"),
+    );
+    expect(diagnostics.map((entry) => entry.id)).toEqual([
+      "diagnostic-tsc",
+      "diagnostic-basedpyright",
+      "diagnostic-ty",
+      "diagnostic-bun-typecheck",
+    ]);
+    expect(diagnostics.every((entry) => entry.projection === "diagnostic")).toBe(true);
+    expect(
+      diagnostics.every(
+        (entry) => "competitiveTarget" in entry && entry.competitiveTarget === "win",
+      ),
+    ).toBe(true);
+    expect(
+      diagnostics.every(
+        (entry) =>
+          "forbiddenMarkers" in entry &&
+          (entry.forbiddenMarkers as readonly string[]).includes("omitted"),
+      ),
+    ).toBe(true);
+  });
+
   test("compares journalctl with RTK log while requiring every event fact", () => {
     const logs = HUSH_PROJECTION_CASES.filter((entry) => entry.projection === "log");
     expect(logs.map((entry) => entry.id)).toEqual(["log-docker", "log-journalctl"]);
@@ -162,8 +189,10 @@ describe("Hush projection scorecard corpus", () => {
   });
 
   test("keeps every JavaScript package surface separate and enforces its win or tie target", () => {
-    const packages = HUSH_PROJECTION_CASES.filter((entry) =>
-      ["npm", "pnpm", "yarn", "bun", "npx", "pnpx"].includes(entry.executable),
+    const packages = HUSH_PROJECTION_CASES.filter(
+      (entry) =>
+        entry.projection === "package" &&
+        ["npm", "pnpm", "yarn", "bun", "npx", "pnpx"].includes(entry.executable),
     );
     expect(packages.map((entry) => entry.id)).toEqual([
       "package-npm-install",

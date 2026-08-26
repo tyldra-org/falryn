@@ -163,6 +163,30 @@ describe("hush family selection", () => {
 });
 
 describe("hush reduction", () => {
+  test("removes a successful Bun typecheck echo but preserves it on unexplained failure", () => {
+    const command = argv("/usr/bin/bun", ["run", "typecheck"]);
+    const successful = reduceHush({
+      command,
+      capture: report("", { stderr: "$ tsc --noEmit\n" }),
+    });
+    expect(successful.ok).toBe(true);
+    if (!successful.ok) {
+      throw new Error("expected a Hush result");
+    }
+    expect(successful.value.reducerId).toBe("bun.typecheck");
+    expect(successful.value.reducedText).toBe("");
+
+    const failed = reduceHush({
+      command,
+      capture: report("", { stderr: "$ tsc --noEmit\n", exitCode: 1 }),
+    });
+    expect(failed.ok).toBe(true);
+    if (!failed.ok) {
+      throw new Error("expected a Hush result");
+    }
+    expect(failed.value.reducedText).toBe("stderr:\n$ tsc --noEmit\n");
+  });
+
   test("preserves terminal facts and omits the child environment", () => {
     const captured = report("On branch main\n", { durationMs: 44, exitCode: 1 });
     const reduced = reduceHush({

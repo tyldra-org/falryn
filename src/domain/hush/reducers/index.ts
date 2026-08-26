@@ -6,6 +6,7 @@ import type { HushProjectionKind } from "../catalog/index.ts";
 import type { HushFidelity, HushResult, HushStrategy, HushStreamProjection } from "../contracts.ts";
 import { compoundProjection } from "./compound/projection.ts";
 import { countProjection } from "./count/projection.ts";
+import { diagnosticProjection } from "./diagnostic/projection.ts";
 import { forgeProjection } from "./forge/projection.ts";
 import {
   gitDiffProjection,
@@ -86,7 +87,7 @@ export function specializedProjection(
     case "test":
       return semanticProjection("test", capture, maxBytes, patterns);
     case "diagnostic":
-      return semanticProjection("diagnostic", capture, maxBytes, patterns);
+      return diagnosticProjection(capture, maxBytes, patterns, commandTokens);
     case "build":
       return semanticProjection("build", capture, maxBytes, patterns);
     case "package":
