@@ -67,6 +67,26 @@ export type LoomIngestRequest = {
   readonly invocationId?: string | null;
 };
 
+export type LoomAdoptMember = {
+  readonly artifactId: string;
+  readonly required?: boolean;
+  readonly protectedFacts?: readonly string[];
+  readonly summary?: string;
+};
+
+/**
+ * Commits a Loom manifest from artifact metadata that is already durable.
+ * Adoption never reads or re-ingests artifact bytes.
+ */
+export type LoomAdoptRequest = {
+  readonly id: string;
+  readonly workspaceId: string;
+  readonly sessionId: string;
+  readonly members: readonly LoomAdoptMember[];
+  readonly generation?: string;
+  readonly retentionUntil?: string;
+};
+
 export type LoomRetrieveRequest = {
   readonly id: string;
   readonly manifestId: string;
@@ -91,13 +111,17 @@ export type LoomPortError =
   | EvidenceAdmissionError
   | {
       readonly kind: "loom-port";
-      readonly code: "cancelled" | "unavailable" | "secret";
+      readonly code: "cancelled" | "conflict" | "unavailable" | "secret";
       readonly field: "signal" | "manifest" | "member" | "projection";
     };
 
 export type LoomPort = {
   ingest(
     request: LoomIngestRequest,
+    signal?: AbortSignal,
+  ): Promise<Result<LoomIngestResult, LoomPortError>>;
+  adopt(
+    request: LoomAdoptRequest,
     signal?: AbortSignal,
   ): Promise<Result<LoomIngestResult, LoomPortError>>;
   retrieve(
@@ -118,6 +142,8 @@ export type LoomEvidenceRequest = {
   readonly projection: LoomProjectionResult;
   readonly workspaceId?: string;
   readonly scopeId?: string;
+  readonly sourceKind?: "artifact" | "file";
+  readonly origin?: string;
 };
 
 function createSha256Hasher(): ContentHasherPort {
@@ -165,6 +191,24 @@ function applyRedaction(result: LoomProjectionResult): Result<LoomProjectionResu
 
 function malformed(field: string): LoomError {
   return { kind: "loom", code: "malformed", field };
+}
+
+function sameManifest(left: LoomManifest, right: LoomManifest): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function storeManifest(
+  manifests: Map<string, LoomManifest>,
+  manifest: LoomManifest,
+): Result<LoomIngestResult, LoomPortError> {
+  const existing = manifests.get(manifest.id);
+  if (existing !== undefined) {
+    return sameManifest(existing, manifest)
+      ? ok({ manifest: existing })
+      : err({ kind: "loom-port", code: "conflict", field: "manifest" });
+  }
+  manifests.set(manifest.id, manifest);
+  return ok({ manifest });
 }
 
 async function readPlannedBytes(
@@ -339,8 +383,87 @@ export function createLoomPort(options: LoomPortOptions): LoomPort {
       if (!committed.ok) {
         return committed;
       }
-      manifests.set(committed.value.id, committed.value);
-      return ok({ manifest: committed.value });
+      return storeManifest(manifests, committed.value);
+    },
+
+    async adopt(request, signal) {
+      if (isAborted(signal)) {
+        return err(cancelled("signal"));
+      }
+      const committedMembers: Array<{
+        artifactId: string;
+        digest: ContentDigest;
+        byteLength: number;
+        mediaType: string;
+        encoding: ArtifactEncoding;
+        sensitivity: ArtifactSensitivity;
+        availability: "available";
+        required: boolean;
+        protectedFacts: readonly string[];
+        summary: string | null;
+      }> = [];
+      for (const member of request.members) {
+        if (isAborted(signal)) {
+          return err(cancelled("signal"));
+        }
+        const required = member.required !== false;
+        const id = artifactId.parse(member.artifactId);
+        if (!id.ok) {
+          if (required) {
+            return err(malformed("artifactId"));
+          }
+          continue;
+        }
+        const record = options.artifacts.get(id.value);
+        if (!record.ok) {
+          if (required) {
+            return record;
+          }
+          continue;
+        }
+        if (record.value === null || record.value.availability !== "available") {
+          if (required) {
+            return err({ kind: "loom-port", code: "unavailable", field: "member" });
+          }
+          continue;
+        }
+        if (record.value.sensitivity === "restricted") {
+          return err({ kind: "loom-port", code: "secret", field: "member" });
+        }
+        committedMembers.push({
+          artifactId: record.value.artifactId,
+          digest: record.value.digest,
+          byteLength: record.value.byteLength,
+          mediaType: record.value.mediaType,
+          encoding: record.value.encoding,
+          sensitivity: record.value.sensitivity,
+          availability: "available",
+          required,
+          protectedFacts: member.protectedFacts ?? [],
+          summary: member.summary ?? null,
+        });
+      }
+      const commitInput: {
+        id: string;
+        workspaceId: string;
+        sessionId: string;
+        members: typeof committedMembers;
+        generation?: string;
+        retentionUntil?: string;
+      } = {
+        id: request.id,
+        workspaceId: request.workspaceId,
+        sessionId: request.sessionId,
+        members: committedMembers,
+      };
+      if (request.generation !== undefined) {
+        commitInput.generation = request.generation;
+      }
+      if (request.retentionUntil !== undefined) {
+        commitInput.retentionUntil = request.retentionUntil;
+      }
+      const committed = commitLoomManifest(commitInput);
+      return committed.ok ? storeManifest(manifests, committed.value) : committed;
     },
 
     async retrieve(request, signal) {
@@ -429,8 +552,8 @@ export function loomProjectionToEvidence(
       : { kind: "inline", text: projection.text };
   return admitEvidenceCandidate({
     id: projection.id,
-    sourceKind: "artifact",
-    origin: `loom:${projection.manifestId}`,
+    sourceKind: request.sourceKind ?? "artifact",
+    origin: request.origin ?? `loom:${projection.manifestId}`,
     payload,
     estimatedTokens: Math.max(1, Math.ceil(projection.byteLength / 4)),
     freshness: projection.freshness,

@@ -9,14 +9,19 @@
 import { z } from "zod";
 
 import type {
+  ArtifactStorePort,
   CommandRunnerPort,
   ConfigurationGeneration,
+  EvidenceCandidate,
   FileSystemPort,
   LocalPath,
+  SessionId,
   ToolCatalog,
   ToolInvocationOutcome,
   ToolRegistry,
   ToolRegistryEntry,
+  WorkspaceId,
+  WorkspaceIndexPort,
 } from "../domain/index.ts";
 import {
   conflictKey,
@@ -28,6 +33,8 @@ import {
   type ToolManifestDocument,
 } from "../domain/index.ts";
 import { createCompactDocumentReader } from "./compact-document-read.ts";
+import { createLoomPort, type LoomPort } from "./loom.ts";
+import { createProductReadCoordinator, productReadInputSchema } from "./product-read.ts";
 import type { ToolRunnerPort, ToolRunnerRequest } from "./tool-call-loop.ts";
 import { createWorkspaceDiscovery } from "./workspace-discovery.ts";
 import { createWorkspaceListing } from "./workspace-listing.ts";
@@ -119,6 +126,11 @@ export type ProductWorkspaceToolPorts = {
   readonly fileSystem: FileSystemPort;
   readonly commands: CommandRunnerPort;
   readonly workspaceRoot: LocalPath;
+  readonly artifacts?: ArtifactStorePort;
+  readonly loom?: LoomPort;
+  readonly workspaceId?: WorkspaceId;
+  readonly sessionId?: SessionId;
+  readonly index?: WorkspaceIndexPort;
 };
 
 export type ProductWorkspaceTools = {
@@ -127,6 +139,7 @@ export type ProductWorkspaceTools = {
   readonly catalog: ToolCatalog;
   readonly runner: ToolRunnerPort;
   readonly toolNames: readonly string[];
+  contextCandidates(): readonly EvidenceCandidate[];
 };
 
 /**
@@ -136,7 +149,22 @@ export function composeProductWorkspaceTools(
   ports: ProductWorkspaceToolPorts,
 ): ProductWorkspaceTools {
   const listing = createWorkspaceListing(ports.fileSystem);
-  const reader = createWorkspaceReader(ports.fileSystem);
+  const reader = createWorkspaceReader(
+    ports.fileSystem,
+    ports.artifacts === undefined ? {} : { artifacts: ports.artifacts },
+  );
+  const loom =
+    ports.loom ??
+    (ports.artifacts === undefined ? null : createLoomPort({ artifacts: ports.artifacts }));
+  const productRead = createProductReadCoordinator({
+    reader,
+    loom,
+    workspaceRoot: ports.workspaceRoot,
+    workspaceId: ports.workspaceId ?? null,
+    sessionId: ports.sessionId ?? null,
+    generation: ports.generation,
+    index: ports.index ?? null,
+  });
   const compact = createCompactDocumentReader(reader);
   const writer = createWorkspaceWriter({ fileSystem: ports.fileSystem });
   const mutator = createWorkspaceMutator({ fileSystem: ports.fileSystem });
@@ -179,12 +207,12 @@ export function composeProductWorkspaceTools(
         document(
           "read_file",
           "Read file",
-          "Read a workspace file through the product reader",
+          "Read exact, ranged, multi-file, or Loom-recovery workspace content; Loom is the default for oversized reads and raw keeps the bounded exact result",
           "observation",
           "filesystem",
         ),
         {
-          inputSchema: pathInput,
+          inputSchema: productReadInputSchema,
           outputSchema: openObject,
           conflictKeysFor: pathConflictKeys,
         },
@@ -328,12 +356,8 @@ export function composeProductWorkspaceTools(
           return result.ok ? completed(result.value) : failed(errorCode(result.error));
         }
         case "read_file": {
-          const path = request.input.path;
-          if (typeof path !== "string") {
-            return failed("malformed-input");
-          }
-          const result = await reader.read(root, path, undefined, undefined, request.signal);
-          return result.ok ? completed(result.value) : failed(errorCode(result.error));
+          const result = await productRead.execute(request.input, request.signal);
+          return result.ok ? completed(result.value) : failed(result.error);
         }
         case "read_compact_document": {
           const result = await compact.read(
@@ -348,10 +372,16 @@ export function composeProductWorkspaceTools(
         }
         case "write_files": {
           const result = await writer.apply(root, request.input, request.signal);
+          if (result.ok) {
+            productRead.invalidate();
+          }
           return result.ok ? completed(result.value) : failed(errorCode(result.error));
         }
         case "mutate_paths": {
           const result = await mutator.apply(root, request.input, request.signal);
+          if (result.ok) {
+            productRead.invalidate();
+          }
           return result.ok ? completed(result.value) : failed(errorCode(result.error));
         }
         case "discover_files": {
@@ -368,6 +398,9 @@ export function composeProductWorkspaceTools(
         }
         case "apply_patch": {
           const result = await patcher.apply(root, request.input, request.signal);
+          if (result.ok) {
+            productRead.invalidate();
+          }
           return result.ok ? completed(result.value) : failed(errorCode(result.error));
         }
         default:
@@ -386,5 +419,6 @@ export function composeProductWorkspaceTools(
     catalog: registry.catalog,
     runner,
     toolNames: entries.map((entry) => entry.descriptor.name),
+    contextCandidates: productRead.candidates,
   };
 }

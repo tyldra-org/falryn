@@ -24,6 +24,30 @@ application. The current command surface includes:
 Commands support human-readable and machine-readable output forms. Results go
 to standard output and diagnostics go to standard error.
 
+## Product Read and Loom
+
+The product workspace registry includes one `read_file` capability for exact,
+ranged, multi-file, and Loom-recovery reads. Initial single- and multi-file
+requests accept `outputMode: "loom" | "raw"`. `loom` is the default. When a
+complete text file exceeds the inline limit and durable artifact storage is
+available, Read stores the exact bytes once and adopts that artifact into a
+workspace/session-scoped Loom manifest.
+
+For a digest-current indexed source, Read returns a bounded, line-numbered
+outline with explicit omitted ranges and a Loom recovery handle. The same
+projection is admitted to Context as file evidence with indexed freshness,
+transformation lineage, and the exact artifact as its expansion. If the index
+is absent, stale for that file, or has no structural records, Read falls back
+to Loom's bounded head/tail projection. Recovery supports byte ranges,
+head/tail, search hits, and exact retrieval; it does not require another
+artifact ingest.
+
+`raw` skips indexed and Loom projection for that initial request. Small files
+remain exact inline. Oversized files still obey Read's hard inline bounds and
+return the exact prefix, continuation, and artifact expansion instead of
+placing unlimited bytes in model context. Recovery requests keep their
+existing range, head/tail, search-hit, and exact projection contract.
+
 ## Verification posture
 
 The repository validates formatting, linting, TypeScript, integrity checks, and

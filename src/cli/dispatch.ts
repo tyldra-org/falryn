@@ -54,6 +54,7 @@ import {
   untilScopeStops,
 } from "./invocation-scope.ts";
 import { configurationOverridesFor, type GlobalOptions } from "./options.ts";
+import { openProductArtifactSession } from "./product-artifact-session.ts";
 import { composeProductShellAttachments } from "./product-shell-attachments.ts";
 import {
   createServiceProvider,
@@ -382,30 +383,43 @@ async function launchShell(
     stopped.signal,
   );
 
-  const productAttachments = await composeProductShellAttachments({
-    eventStore: graph.eventStore,
-    clock: graph.clock,
-    environment,
-    fileSystem: graph.fileSystem,
-    workspaceSet: resolvedWorkspace.ok === true ? resolvedWorkspace.value.set : null,
-    configurationGeneration,
-    signal: stopped.signal,
-    ...(governance.ownedProcesses === undefined
-      ? {}
-      : { ownedProcesses: governance.ownedProcesses }),
-  });
-
-  const configurationReload = startConfigurationReloadWatcher(graph, globals, {
-    streams,
-    signal: stopped.signal,
-  });
-
-  // Loaded here and nowhere earlier: this is the first line of the whole
-  // invocation that requires OpenTUI to exist.
-  const { runShell } = await import("../tui/shell.tsx");
-
-  let run: Awaited<ReturnType<typeof runShell>>;
+  const productArtifactSession = await openProductArtifactSession(graph, stopped.signal);
+  let productAttachments: Awaited<ReturnType<typeof composeProductShellAttachments>>;
   try {
+    productAttachments = await composeProductShellAttachments({
+      eventStore: graph.eventStore,
+      clock: graph.clock,
+      environment,
+      fileSystem: graph.fileSystem,
+      workspaceSet: resolvedWorkspace.ok === true ? resolvedWorkspace.value.set : null,
+      configurationGeneration,
+      signal: stopped.signal,
+      ...(productArtifactSession === null
+        ? {}
+        : {
+            artifacts: productArtifactSession.artifacts,
+            loom: productArtifactSession.loom,
+          }),
+      ...(governance.ownedProcesses === undefined
+        ? {}
+        : { ownedProcesses: governance.ownedProcesses }),
+    });
+  } catch (thrown: unknown) {
+    await productArtifactSession?.close();
+    throw thrown;
+  }
+
+  let configurationReload: ReturnType<typeof startConfigurationReloadWatcher> | null = null;
+  let run: Awaited<ReturnType<typeof import("../tui/shell.tsx")["runShell"]>>;
+  try {
+    configurationReload = startConfigurationReloadWatcher(graph, globals, {
+      streams,
+      signal: stopped.signal,
+    });
+
+    // Loaded here and nowhere earlier: this is the first line of the whole
+    // invocation that requires OpenTUI to exist.
+    const { runShell } = await import("../tui/shell.tsx");
     run = await runShell({
       streams,
       capabilities,
@@ -436,8 +450,9 @@ async function launchShell(
           }),
     });
   } finally {
-    configurationReload.dispose();
+    configurationReload?.dispose();
     finished.abort();
+    await productArtifactSession?.close();
     if (sessionNavigationBundle !== undefined) {
       await sessionNavigationBundle.close(stopped.signal);
     }

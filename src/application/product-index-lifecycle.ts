@@ -16,6 +16,8 @@ import {
   type WorkspaceIndexBuildError,
   type WorkspaceIndexBuildReport,
   type WorkspaceIndexBuildSource,
+  type WorkspaceIndexGeneration,
+  type WorkspaceIndexPort,
   type WorkspaceIndexWritePort,
 } from "../domain/index.ts";
 import { createWorkspaceDiscovery } from "./workspace-discovery.ts";
@@ -49,6 +51,32 @@ export type ProductIndexLifecyclePorts = {
   readonly workspaceRoot: LocalPath;
   readonly index: WorkspaceIndexWritePort;
 };
+
+export type EphemeralProductIndexPort = WorkspaceIndexPort & WorkspaceIndexWritePort;
+
+/**
+ * One-process generation store for product paths that do not yet own a durable
+ * root-qualified index. It is deliberately named ephemeral; durable indexing
+ * remains a separate persistence concern.
+ */
+export function createEphemeralProductIndexPort(): EphemeralProductIndexPort {
+  let current: WorkspaceIndexGeneration | null = null;
+  return {
+    async rebuild(generation, signal) {
+      if (signal?.aborted === true) {
+        return { ok: false, error: { code: "cancelled" } };
+      }
+      current = generation;
+      return ok(generation);
+    },
+    async snapshot(_root, signal) {
+      if (signal?.aborted === true) {
+        return { ok: false, error: { code: "cancelled" } };
+      }
+      return current === null ? { ok: false, error: { code: "index-absent" } } : ok(current);
+    },
+  };
+}
 
 type MutableStatus = {
   generationId: string | null;

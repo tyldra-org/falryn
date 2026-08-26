@@ -59,6 +59,24 @@ describe("composeProductWorkspaceTools", () => {
       capabilityId.from("builtin:workspace/read_file@1"),
     );
     expect(tools.catalog.resolve("shell")).toBeNull();
+    expect(
+      tools.registry.resolveByName("read_file")?.manifest.inputSchema.safeParse({
+        targets: [{ path: "hello.ts", range: { kind: "line", range: { start: 1, end: 1 } } }],
+        outputMode: "raw",
+      }).success,
+    ).toBe(true);
+    expect(
+      tools.registry.resolveByName("read_file")?.manifest.inputSchema.safeParse({
+        path: "hello.ts",
+        outputMode: "hush",
+      }).success,
+    ).toBe(false);
+    expect(
+      tools.registry.resolveByName("stat_path")?.manifest.inputSchema.safeParse({
+        recovery: { manifestId: "loom-1", artifactId: "artifact-1" },
+        projection: { kind: "exact" },
+      }).success,
+    ).toBe(false);
 
     const read = await tools.runner.execute({
       invocationId: invocationId.from("inv-read"),

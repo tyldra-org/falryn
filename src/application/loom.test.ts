@@ -35,15 +35,18 @@ function createMemoryArtifacts(): ArtifactStorePort & {
     readonly offset: number;
     readonly length: number;
   }>;
+  readonly ingests: string[];
   drop(id: string): void;
   corruptDigest(id: string): void;
 } {
   const stored = new Map<string, Uint8Array>();
   const records = new Map<string, ArtifactRecord>();
   const reads: Array<{ artifactId: string; offset: number; length: number }> = [];
+  const ingests: string[] = [];
   return {
     stored,
     reads,
+    ingests,
     drop(id) {
       stored.delete(id);
       records.delete(id);
@@ -58,6 +61,7 @@ function createMemoryArtifacts(): ArtifactStorePort & {
       }
     },
     async ingest(request: ArtifactIngestRequest) {
+      ingests.push(request.artifactId);
       const chunks: Uint8Array[] = [];
       let total = 0;
       for await (const chunk of request.content) {
@@ -122,6 +126,56 @@ function createMemoryArtifacts(): ArtifactStorePort & {
 }
 
 describe("createLoomPort", () => {
+  test("adopts existing artifact metadata without reading or storing bytes again", async () => {
+    const artifacts = createMemoryArtifacts();
+    const loom = createLoomPort({ artifacts });
+    const ingested = await loom.ingest({
+      id: "loom-source",
+      workspaceId: "ws-1",
+      sessionId: "sess-1",
+      members: [
+        {
+          artifactId: "src-main",
+          bytes: TEXT_BYTES,
+          mediaType: "text/plain",
+          sensitivity: "user-content",
+        },
+      ],
+    });
+    expect(ingested.ok).toBe(true);
+    expect(artifacts.ingests).toEqual(["src-main"]);
+    expect(artifacts.reads).toEqual([]);
+
+    const adopted = await loom.adopt({
+      id: "loom-adopted",
+      workspaceId: "ws-1",
+      sessionId: "sess-1",
+      members: [{ artifactId: "src-main", protectedFacts: ["path=src/main.ts"] }],
+    });
+    expect(adopted.ok).toBe(true);
+    expect(artifacts.ingests).toEqual(["src-main"]);
+    expect(artifacts.reads).toEqual([]);
+
+    const repeated = await loom.adopt({
+      id: "loom-adopted",
+      workspaceId: "ws-1",
+      sessionId: "sess-1",
+      members: [{ artifactId: "src-main", protectedFacts: ["path=src/main.ts"] }],
+    });
+    expect(repeated).toEqual(adopted);
+
+    const conflict = await loom.adopt({
+      id: "loom-adopted",
+      workspaceId: "ws-1",
+      sessionId: "sess-1",
+      members: [{ artifactId: "src-main", summary: "different" }],
+    });
+    expect(conflict).toEqual({
+      ok: false,
+      error: { kind: "loom-port", code: "conflict", field: "manifest" },
+    });
+  });
+
   test("ingests required members then retrieves exact source", async () => {
     const loom = createLoomPort({ artifacts: createMemoryArtifacts() });
     const ingested = await loom.ingest({

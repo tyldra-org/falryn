@@ -15,6 +15,7 @@ import {
 import type { SessionTurnTranscriptProducer } from "../../application/session-turn-transcript-producer.ts";
 import {
   type ConfigurationGeneration,
+  type EvidenceCandidate,
   type SessionId,
   type TraceId,
   type TurnId,
@@ -40,6 +41,8 @@ export type ProductSubmissionPortOptions = {
   readonly isAccepting?: () => boolean;
   /** Shared Brief controls for TUI/session (#717). */
   readonly brief?: ProductBriefControls;
+  /** Current exact/recoverable evidence produced by product tools (#814). */
+  readonly contextCandidates?: () => readonly EvidenceCandidate[];
 };
 
 export type ProductSubmissionPort = SubmissionPort & {
@@ -97,7 +100,7 @@ export function createProductSubmissionPort(
         workspaceId: options.workspaceId,
         configurationGeneration: options.configurationGeneration,
         task: snapshot.text,
-        candidates: [],
+        candidates: options.contextCandidates?.() ?? [],
         otherSections: briefed.ok ? [briefed.value.section] : [],
       });
       if (!planned.ok) {

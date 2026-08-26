@@ -35,6 +35,7 @@ describe("product submission port", () => {
     }
 
     let turns = 0;
+    let candidateReads = 0;
     const port = createProductSubmissionPort({
       producer: composed.value.attachments.turnProducer,
       workspaceId: correlation.workspaceId,
@@ -45,10 +46,15 @@ describe("product submission port", () => {
         turns += 1;
         return turnId.from(`turn-submit-${turns}`);
       },
+      contextCandidates: () => {
+        candidateReads += 1;
+        return [];
+      },
     });
 
     const outcome = await port.submit(snapshotOf("ship the turn", 1));
     expect(outcome.kind).toBe("accepted");
+    expect(candidateReads).toBe(1);
     expect(composed.value.attachments.turnProducer.events().map((event) => event.kind)).toEqual([
       "session.started",
       "turn.started",
