@@ -135,6 +135,57 @@ describe("createOpenAiCompatibleAdapter", () => {
     expect(events.at(-1)?.kind).toBe("finished");
   });
 
+  test("translates assistant tool calls before matching tool results", async () => {
+    let body: unknown = null;
+    const adapter = createOpenAiCompatibleAdapter({
+      profileId: "openai",
+      baseUrl: "https://api.example.test/v1",
+      resolveApiKey: async () => "sk-test",
+      fetch: async (_input, init) => {
+        body = JSON.parse(String(init.body));
+        return sseResponse(['data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n']);
+      },
+    });
+    const continued = request({
+      messages: [
+        { role: "user", parts: [{ kind: "text", text: "read a.ts" }] },
+        {
+          role: "assistant",
+          parts: [{ kind: "text", text: "" }],
+          toolCalls: [{ toolCallId: "call-1", name: "read_file", arguments: { path: "a.ts" } }],
+        },
+        {
+          role: "tool",
+          toolCallId: "call-1",
+          parts: [{ kind: "text", text: '{"status":"completed"}' }],
+        },
+      ],
+    });
+    for await (const _event of adapter.stream(continued, {
+      signal: new AbortController().signal,
+    })) {
+      // Consume the deterministic response so the request body is observable.
+    }
+
+    expect(body).toMatchObject({
+      messages: [
+        { role: "user", content: "read a.ts" },
+        {
+          role: "assistant",
+          content: null,
+          tool_calls: [
+            {
+              id: "call-1",
+              type: "function",
+              function: { name: "read_file", arguments: '{"path":"a.ts"}' },
+            },
+          ],
+        },
+        { role: "tool", tool_call_id: "call-1", content: '{"status":"completed"}' },
+      ],
+    });
+  });
+
   test("never puts the API key into failure messages", async () => {
     const secret = "sk-super-secret-value";
     const adapter = createOpenAiCompatibleAdapter({

@@ -73,6 +73,21 @@ function toChatMessages(messages: readonly ModelMessage[]): ChatMessage[] {
       });
       continue;
     }
+    if (message.role === "assistant" && message.toolCalls !== undefined) {
+      out.push({
+        role: "assistant",
+        content: textOf(message) || null,
+        tool_calls: message.toolCalls.map((call) => ({
+          id: call.toolCallId,
+          type: "function",
+          function: {
+            name: call.name,
+            arguments: JSON.stringify(call.arguments),
+          },
+        })),
+      });
+      continue;
+    }
     out.push({
       role: message.role,
       content: textOf(message),

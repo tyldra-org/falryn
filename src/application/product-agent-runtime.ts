@@ -3,27 +3,32 @@
  *
  * Composes the verified session runtime, turn coordinator, durable turn
  * journal, and live session/turn/transcript producer into one fail-closed
- * product graph. Leaves typed attachment points for composer submission (#707).
- *
- * Does not register builtin tools (#700), Hush/Loom product policy (#701), or
- * live vendor HTTP/OAuth adapters (#709).
+ * product graph. When a provider, registry, and tool runner are supplied, it
+ * also composes the production provider/tool continuation controller (#786).
+ * Leaves OpenTUI submission as a typed attachment point owned by #787.
  */
 
 import {
   type ClockPort,
   type ConfigurationGeneration,
   createToolCatalog,
+  createToolHookRegistry,
   type EventStorePort,
   type SessionCorrelation,
   type SessionId,
   type StreamId,
   type ToolCatalog,
+  type ToolHookRegistry,
+  type ToolPolicyProfile,
+  type ToolRegistry,
   type TraceId,
   type TurnId,
   type TurnLifecycleFact,
   type WorkspaceId,
 } from "../domain/index.ts";
 import type { ProviderAdapterPort } from "../providers/port.ts";
+import { createProductAttemptRunner } from "./product-attempt-runner.ts";
+import type { ProductToolConfirmationPort } from "./product-tool-gateway.ts";
 import type { SessionRuntime } from "./session-runtime.ts";
 import { createSessionRuntime } from "./session-runtime.ts";
 import type { SessionTurnTranscriptProducer } from "./session-turn-transcript-producer.ts";
@@ -46,12 +51,17 @@ export type ProductAgentRuntimePorts = {
    * product tools later).
    */
   readonly toolCatalog?: ToolCatalog;
+  /** Registry authority used for disclosure and the production lifecycle. */
+  readonly toolRegistry?: ToolRegistry;
   /** Optional runner; absent means tools cannot execute (fail closed). */
   readonly toolRunner?: ToolRunnerPort;
   /** Optional live or deterministic adapter; absent means no model stream. */
   readonly providerAdapter?: ProviderAdapterPort | null;
-  /** Optional attempt runner; absent means turn attempts cannot run. */
+  /** Explicit test/host override; normal product composition builds this. */
   readonly attemptRunner?: AttemptRunnerPort;
+  readonly toolHooks?: ToolHookRegistry;
+  readonly toolPolicy?: ToolPolicyProfile;
+  readonly toolConfirmation?: ProductToolConfirmationPort;
 };
 
 export type ProductAgentRuntimeError =
@@ -92,6 +102,7 @@ export type ProductAgentRuntime = {
   readonly turnCoordinator: TurnCoordinator;
   readonly journal: TurnEventJournal;
   readonly toolCatalog: ToolCatalog;
+  readonly toolRegistry: ToolRegistry | null;
   readonly toolRunner: ToolRunnerPort | null;
   readonly providerAdapter: ProviderAdapterPort | null;
   readonly attemptRunner: AttemptRunnerPort | null;
@@ -141,8 +152,10 @@ function missingCorrelationField(correlation: SessionCorrelation): ProductAgentR
 }
 
 /**
- * Compose the product agent runtime. Required ports fail closed; optional
- * seams stay null until siblings attach them.
+ * Compose the product agent runtime. Required ports fail closed. Provider,
+ * registry, and tool runner ports form one all-or-nothing live attempt graph;
+ * otherwise the attempt seam remains unavailable and callers must not claim a
+ * completed model turn.
  */
 export function composeProductAgentRuntime(
   ports: ProductAgentRuntimePorts,
@@ -164,11 +177,13 @@ export function composeProductAgentRuntime(
     return { ok: false, error: correlationError };
   }
 
+  const toolRegistry = ports.toolRegistry ?? null;
   const toolCatalog =
-    ports.toolCatalog ?? createToolCatalog(ports.correlation.configurationGeneration, []);
+    ports.toolCatalog ??
+    toolRegistry?.catalog ??
+    createToolCatalog(ports.correlation.configurationGeneration, []);
   const toolRunner = ports.toolRunner ?? null;
   const providerAdapter = ports.providerAdapter ?? null;
-  const attemptRunner = ports.attemptRunner ?? null;
 
   const sessionRuntime = createSessionRuntime();
   const turnCoordinator = createTurnCoordinator();
@@ -178,6 +193,32 @@ export function composeProductAgentRuntime(
     streamId: ports.streamId,
     correlation: ports.correlation,
   });
+  const hookRegistry = (() => {
+    if (ports.toolHooks !== undefined) {
+      return ports.toolHooks;
+    }
+    const empty = createToolHookRegistry(ports.correlation.configurationGeneration, []);
+    if (!empty.ok) {
+      throw new Error(`empty tool hook registry failed: ${empty.error.code}`);
+    }
+    return empty.value;
+  })();
+  const attemptRunner =
+    ports.attemptRunner ??
+    (providerAdapter !== null && toolRunner !== null && toolRegistry !== null
+      ? createProductAttemptRunner({
+          clock: ports.clock,
+          coordinator: turnCoordinator,
+          provider: providerAdapter,
+          registry: toolRegistry,
+          toolRunner,
+          hooks: hookRegistry,
+          journal,
+          correlation: ports.correlation,
+          ...(ports.toolPolicy === undefined ? {} : { policy: ports.toolPolicy }),
+          ...(ports.toolConfirmation === undefined ? {} : { confirmation: ports.toolConfirmation }),
+        })
+      : null);
   const turnProducer = createSessionTurnTranscriptProducer({
     eventStore: ports.eventStore,
     journal,
@@ -192,6 +233,7 @@ export function composeProductAgentRuntime(
     turnCoordinator,
     journal,
     toolCatalog,
+    toolRegistry,
     toolRunner,
     providerAdapter,
     attemptRunner,

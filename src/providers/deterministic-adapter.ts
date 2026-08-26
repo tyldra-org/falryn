@@ -63,7 +63,10 @@ export type DeterministicProviderScript =
 export type DeterministicProviderOptions = {
   readonly profileId?: string;
   readonly displayName?: string;
-  readonly script?: DeterministicProviderScript;
+  readonly script?:
+    | DeterministicProviderScript
+    | ((request: ModelRequest, requestIndex: number) => DeterministicProviderScript);
+  readonly onRequest?: (request: ModelRequest, requestIndex: number) => void;
 };
 
 function isTypedFailureScript(
@@ -112,16 +115,24 @@ export function createDeterministicProviderAdapter(
     displayName: options.displayName ?? "Deterministic fixture provider",
   };
   const models = [modelId.from("deterministic-echo")] as const;
-  const script: DeterministicProviderScript = options.script ?? {
+  const defaultScript: DeterministicProviderScript = {
     kind: "text",
     text: "ok",
     finishReason: "stop",
   };
+  let requestIndex = 0;
 
   return {
     identity,
     supportedModels: models,
     async *stream(request: ModelRequest, streamOptions): AsyncIterable<NormalizedProviderEvent> {
+      const currentRequestIndex = requestIndex;
+      requestIndex += 1;
+      options.onRequest?.(request, currentRequestIndex);
+      const script =
+        typeof options.script === "function"
+          ? options.script(request, currentRequestIndex)
+          : (options.script ?? defaultScript);
       const attempt = modelAttemptId.from(`attempt-${request.requestId}`);
       let sequence = 1;
       yield {

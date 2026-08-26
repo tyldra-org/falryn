@@ -15,7 +15,7 @@ import {
   localPath,
   streamId,
 } from "../domain/index.ts";
-import { createDeterministicProviderAdapter } from "../providers/index.ts";
+import { createDeterministicProviderAdapter, type ModelRequest } from "../providers/index.ts";
 import { resolveCodingPrompt, runCoding } from "./coding-run.ts";
 import { parseInvocation } from "./command-tree.ts";
 import { dispatch } from "./dispatch.ts";
@@ -133,7 +133,7 @@ describe("runCoding", () => {
     expect(result.errors[0]?.code).toBe("provider.adapter-required");
   });
 
-  test("completes hosted when a provider adapter is supplied", async () => {
+  test("runs a real model attempt when a provider adapter is supplied", async () => {
     const seeded = await seededHome();
     const services = providerFor(seeded)(globalsFor(seeded));
     const streams = createRecordingCliStreams({ stdin: null });
@@ -152,11 +152,204 @@ describe("runCoding", () => {
       },
     );
     expect(result.outcome.kind).toBe("completed");
-    expect(result.payload?.stage).toBe("hosted");
+    expect(result.payload?.stage).toBe("attempt-completed");
+    expect(result.payload?.response).toBe("ok");
+    expect(result.payload?.modelAttempts).toBe(1);
+    expect(result.payload?.toolResults).toBe(0);
+    expect(result.payload?.disclosedTools).toBeGreaterThan(0);
     expect(result.errors).toEqual([]);
   });
 
-  test("attaches the OpenAI-compatible adapter when an env credential resolves (#710)", async () => {
+  test("continues prompt to tool result to final text through the product gateway", async () => {
+    const seeded = await seededHome();
+    await writeFile(join(seeded.primary, "hello.ts"), "export const answer = 42;\n", "utf8");
+    const services = providerFor(seeded)(globalsFor(seeded));
+    const requests: ModelRequest[] = [];
+    const adapter = createDeterministicProviderAdapter({
+      onRequest: (request) => requests.push(request),
+      script: (_request, index) =>
+        index === 0
+          ? {
+              kind: "tool",
+              toolCallId: "call-list",
+              name: "list_dir",
+              argumentFragments: ['{"path":"."}'],
+            }
+          : { kind: "text", text: "I found hello.ts.", finishReason: "stop" },
+    });
+
+    const result = await runCoding(
+      services,
+      { promptParts: ["inspect", "the", "workspace"] },
+      {
+        input: createRecordingCliStreams({ stdin: null }).input,
+        globals: globalsFor(seeded),
+        providerAdapter: adapter,
+        identities: {
+          sessionId: "session-run-tool",
+          turnId: "turn-run-tool",
+          traceId: "trace-run-tool",
+        },
+      },
+    );
+
+    expect(result.outcome.kind).toBe("completed");
+    expect(result.payload).toMatchObject({
+      stage: "attempt-completed",
+      response: "I found hello.ts.",
+      modelAttempts: 1,
+      toolResults: 1,
+    });
+    expect(requests).toHaveLength(2);
+    expect(requests[0]?.tools.length).toBeGreaterThan(0);
+    expect(requests[0]?.tools.length).toBeLessThanOrEqual(16);
+    expect(
+      requests[1]?.messages.some(
+        (message) => message.role === "assistant" && message.toolCalls?.[0]?.name === "list_dir",
+      ),
+    ).toBe(true);
+    expect(
+      requests[1]?.messages.some(
+        (message) => message.role === "tool" && message.toolCallId === "call-list",
+      ),
+    ).toBe(true);
+  });
+
+  test("does not retry a provider failure after a tool proposal was executed", async () => {
+    const seeded = await seededHome();
+    const services = providerFor(seeded)(globalsFor(seeded));
+    let providerRequests = 0;
+    const adapter = createDeterministicProviderAdapter({
+      onRequest: () => {
+        providerRequests += 1;
+      },
+      script: (_request, index) =>
+        index === 0
+          ? {
+              kind: "tool",
+              toolCallId: "call-list-once",
+              name: "list_dir",
+              argumentFragments: ['{"path":"."}'],
+            }
+          : {
+              kind: "error",
+              failureKind: "server-failure",
+              message: "provider disconnected after the tool result",
+              retryable: true,
+            },
+    });
+
+    const result = await runCoding(
+      services,
+      { promptParts: ["inspect", "once"] },
+      {
+        input: createRecordingCliStreams({ stdin: null }).input,
+        globals: globalsFor(seeded),
+        providerAdapter: adapter,
+        identities: {
+          sessionId: "session-run-no-repeat",
+          turnId: "turn-run-no-repeat",
+          traceId: "trace-run-no-repeat",
+        },
+      },
+    );
+
+    expect(result.outcome.kind).toBe("failed");
+    expect(result.payload).toMatchObject({
+      stage: "attempt-failed",
+      modelAttempts: 1,
+      toolResults: 1,
+    });
+    expect(providerRequests).toBe(2);
+  });
+
+  test("recovers a targeted Loom range through the same read_file tool", async () => {
+    const seeded = await seededHome();
+    const large = `${"a".repeat(5_000)}needle${"z".repeat(5_000)}`;
+    await writeFile(join(seeded.primary, "large.txt"), large, "utf8");
+    const services = providerFor(seeded)(globalsFor(seeded));
+    const requests: ModelRequest[] = [];
+    const adapter = createDeterministicProviderAdapter({
+      onRequest: (request) => requests.push(request),
+      script: (request, index) => {
+        if (index === 0) {
+          return {
+            kind: "tool",
+            toolCallId: "call-read",
+            name: "read_file",
+            argumentFragments: [
+              JSON.stringify({
+                path: "large.txt",
+                limits: {
+                  maxFileBytes: 16,
+                  maxExpansionBytes: 20_000,
+                  maxExpansionChunkBytes: 1_024,
+                },
+              }),
+            ],
+          };
+        }
+        if (index === 1) {
+          const toolMessage = request.messages.findLast(
+            (message) => message.role === "tool" && message.toolCallId === "call-read",
+          );
+          const text = toolMessage?.parts.find((part) => part.kind === "text")?.text ?? "{}";
+          const result = JSON.parse(text) as {
+            output?: { value?: { loomRecovery?: Readonly<Record<string, unknown>> } };
+          };
+          const recovery = result.output?.value?.loomRecovery;
+          if (recovery === undefined) {
+            throw new Error("Loom recovery handle was not projected to the model");
+          }
+          return {
+            kind: "tool",
+            toolCallId: "call-recover",
+            name: "read_file",
+            argumentFragments: [
+              JSON.stringify({
+                recovery,
+                projection: {
+                  kind: "search-hits",
+                  query: "needle",
+                  maxHits: 1,
+                  contextBytes: 4,
+                  maxBytes: 64,
+                },
+              }),
+            ],
+          };
+        }
+        return { kind: "text", text: "Recovered needle.", finishReason: "stop" };
+      },
+    });
+
+    const result = await runCoding(
+      services,
+      { promptParts: ["find", "needle"] },
+      {
+        input: createRecordingCliStreams({ stdin: null }).input,
+        globals: globalsFor(seeded),
+        providerAdapter: adapter,
+        identities: {
+          sessionId: "session-run-loom",
+          turnId: "turn-run-loom",
+          traceId: "trace-run-loom",
+        },
+      },
+    );
+
+    expect(result.payload).toMatchObject({
+      stage: "attempt-completed",
+      response: "Recovered needle.",
+      toolResults: 2,
+    });
+    expect(requests).toHaveLength(3);
+    const providerTranscript = JSON.stringify(requests);
+    expect(providerTranscript).toContain("aaaaneedlezzzz");
+    expect(providerTranscript).not.toContain(large);
+  });
+
+  test("runs an observation through the selected credential-backed provider (#798)", async () => {
     const home = await mkdtemp(join(tmpdir(), "falryn-run-cred-"));
     homes.push(home);
     const state = join(home, "state");
@@ -183,12 +376,35 @@ describe("runCoding", () => {
         currentDirectory: localPath(seeded.primary),
       });
     const streams = createRecordingCliStreams({ stdin: null });
+    const providerBodies: unknown[] = [];
+    let providerRequest = 0;
     const result = await runCoding(
       services(globalsFor(seeded)),
       { promptParts: ["with", "key"] },
       {
         input: streams.input,
         globals: globalsFor(seeded),
+        openaiFetch: async (_input, init) => {
+          providerBodies.push(JSON.parse(String(init.body)));
+          const current = providerRequest;
+          providerRequest += 1;
+          const chunks =
+            current === 0
+              ? [
+                  'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call-list-live","function":{"name":"list_dir","arguments":"{\\"path\\":\\".\\"}"}}]}}]}',
+                  'data: {"choices":[{"delta":{},"finish_reason":"tool_calls"}]}',
+                  "",
+                ]
+              : [
+                  'data: {"choices":[{"delta":{"content":"connected with tools"}}]}',
+                  'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}',
+                  "",
+                ];
+          return new Response(chunks.join("\n\n"), {
+            status: 200,
+            headers: { "content-type": "text/event-stream" },
+          });
+        },
         identities: {
           sessionId: "session-run-cred",
           turnId: "turn-run-cred",
@@ -197,7 +413,18 @@ describe("runCoding", () => {
       },
     );
     expect(result.outcome.kind).toBe("completed");
-    expect(result.payload?.stage).toBe("hosted");
+    expect(result.payload?.stage).toBe("attempt-completed");
+    expect(result.payload?.response).toBe("connected with tools");
+    expect(result.payload?.toolResults).toBe(1);
+    expect(providerBodies).toHaveLength(2);
+    const continuedBody = providerBodies[1] as {
+      readonly messages?: readonly { readonly role?: string; readonly tool_call_id?: string }[];
+    };
+    expect(
+      continuedBody.messages?.some(
+        (message) => message.role === "tool" && message.tool_call_id === "call-list-live",
+      ),
+    ).toBe(true);
     expect(result.errors).toEqual([]);
   });
 

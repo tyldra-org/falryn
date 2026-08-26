@@ -132,6 +132,7 @@ describe("reduceTurnEvents", () => {
         startedAt: occurredAt,
         completedAt: occurredAt,
         outcome: { kind: "completed" },
+        binding: null,
       },
     ]);
     expect(turn.invocations).toEqual([

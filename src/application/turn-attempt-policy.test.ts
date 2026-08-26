@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import {
+  capabilityId,
   configurationGeneration,
   createInMemoryEventStore,
   createManualClock,
@@ -18,6 +19,7 @@ import type { ModelPolicy } from "../providers/policy.ts";
 import { parseModelPolicy } from "../providers/policy-schema.ts";
 import type { RoutedCatalogEntry } from "../providers/routing.ts";
 import {
+  type AttemptModelInput,
   type AttemptRunnerPort,
   type AttemptRunnerRequest,
   attemptCategoryForProviderFailure,
@@ -156,6 +158,43 @@ function scriptedRunner(
   };
 }
 
+function sampleModelInput(): AttemptModelInput {
+  return {
+    messages: [{ role: "user", parts: [{ kind: "text", text: "inspect" }] }],
+    tools: [
+      {
+        name: "read_file",
+        description: "Read one file",
+        parameters: { type: "object", additionalProperties: false },
+      },
+    ],
+    output: { kind: "text" },
+    budgets: {},
+    disclosure: {
+      catalogGeneration: generation,
+      toolNames: ["read_file"],
+      discoveryHandle: "tool-catalog:0",
+      families: [
+        { family: "read", available: true, reason: null },
+        { family: "browser", available: false, reason: "not-installed" },
+      ],
+      tools: [
+        {
+          name: "read_file",
+          capabilityId: capabilityId.from("workspace.read_file"),
+          version: 1,
+          schemaDigest: "sha-256:read",
+          schemaBytes: 48,
+          schemaTokensEstimated: 12,
+        },
+      ],
+      omitted: [{ name: "write_files", reason: "not-authorized" }],
+      schemaBytes: 48,
+      schemaTokensEstimated: 12,
+    },
+  };
+}
+
 describe("turn attempt policy", () => {
   test("completes on first successful attempt with visible identity", async () => {
     const { coordinator, turnId: id } = startTurn();
@@ -184,6 +223,7 @@ describe("turn attempt policy", () => {
       configurationGeneration: generation,
       signal: new AbortController().signal,
       intent: "coding",
+      modelInput: sampleModelInput(),
     });
 
     expect(outcome.kind).toBe("completed");
@@ -590,6 +630,7 @@ describe("turn attempt policy", () => {
       configurationGeneration: generation,
       signal: new AbortController().signal,
       intent: "coding",
+      modelInput: sampleModelInput(),
     });
     expect(outcome.kind).toBe("completed");
     expect(runnerCalls).toBe(1);
@@ -606,6 +647,17 @@ describe("turn attempt policy", () => {
       }
       expect(turn.outcome).toEqual({ kind: "completed" });
       expect(turn.attempts).toHaveLength(1);
+      expect(turn.attempts[0]?.binding).toMatchObject({
+        providerId: primary,
+        modelId: deep,
+        providerCatalogGeneration: 1,
+        toolCatalogGeneration: generation,
+        policyGeneration: generation,
+        discoveryHandle: "tool-catalog:0",
+        schemaBytes: 48,
+        schemaTokensEstimated: 12,
+        tools: [{ name: "read_file", schemaDigest: "sha-256:read" }],
+      });
     }
   });
 });

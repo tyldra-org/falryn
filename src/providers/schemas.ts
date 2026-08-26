@@ -48,11 +48,33 @@ const imagePartSchema = z.object({
 
 const messagePartSchema = z.discriminatedUnion("kind", [textPartSchema, imagePartSchema]);
 
-const modelMessageSchema = z.object({
-  role: z.literal(MESSAGE_ROLES),
-  parts: z.array(messagePartSchema).min(1).max(32),
-  toolCallId: z.string().min(1).max(MAX_TOOL_NAME_LENGTH).optional(),
-});
+const assistantToolCallSchema = z
+  .object({
+    toolCallId: z.string().min(1).max(MAX_TOOL_NAME_LENGTH),
+    name: z.string().min(1).max(MAX_TOOL_NAME_LENGTH),
+    arguments: z.record(z.string(), z.unknown()),
+  })
+  .strict();
+
+const modelMessageSchema = z
+  .object({
+    role: z.literal(MESSAGE_ROLES),
+    parts: z.array(messagePartSchema).min(1).max(32),
+    toolCallId: z.string().min(1).max(MAX_TOOL_NAME_LENGTH).optional(),
+    toolCalls: z.array(assistantToolCallSchema).min(1).max(MAX_REQUEST_TOOLS).optional(),
+  })
+  .strict()
+  .superRefine((message, context) => {
+    if (message.role === "tool" && message.toolCallId === undefined) {
+      context.addIssue({ code: "custom", path: ["toolCallId"], message: "tool-result-required" });
+    }
+    if (message.toolCallId !== undefined && message.role !== "tool") {
+      context.addIssue({ code: "custom", path: ["toolCallId"], message: "tool-result-only" });
+    }
+    if (message.toolCalls !== undefined && message.role !== "assistant") {
+      context.addIssue({ code: "custom", path: ["toolCalls"], message: "assistant-only" });
+    }
+  });
 
 const toolDefinitionSchema = z.object({
   name: z.string().min(1).max(MAX_TOOL_NAME_LENGTH),
@@ -97,7 +119,33 @@ export const modelRequestSchema = z
     budgets: budgetsSchema,
     metadata: requestMetadataSchema,
   })
-  .strict();
+  .strict()
+  .superRefine((request, context) => {
+    const proposed = new Set<string>();
+    const pending = new Set<string>();
+    request.messages.forEach((message, index) => {
+      for (const call of message.toolCalls ?? []) {
+        if (proposed.has(call.toolCallId)) {
+          context.addIssue({
+            code: "custom",
+            path: ["messages", index, "toolCalls"],
+            message: "duplicate-tool-call-id",
+          });
+        }
+        proposed.add(call.toolCallId);
+        pending.add(call.toolCallId);
+      }
+      if (message.role === "tool" && message.toolCallId !== undefined) {
+        if (!pending.delete(message.toolCallId)) {
+          context.addIssue({
+            code: "custom",
+            path: ["messages", index, "toolCallId"],
+            message: "orphaned-tool-result",
+          });
+        }
+      }
+    });
+  });
 
 const spineSchema = {
   requestId: modelRequestIdSchema,

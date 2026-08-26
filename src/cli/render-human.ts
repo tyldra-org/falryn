@@ -796,6 +796,16 @@ function renderCodingRun(session: Session, payload: CodingRunPayload | null): Re
     `  Workspace    ${safe(payload.workspaceId === "" ? "(none)" : payload.workspaceId)}`,
     `  Events       ${payload.eventCount}`,
   ];
+  if (payload.response !== undefined && payload.response.length > 0) {
+    lines.push("", paint(session, "plain", "Response"), payload.response);
+  }
+  if (payload.modelAttempts !== undefined) {
+    lines.push(
+      `  Attempts     ${payload.modelAttempts}`,
+      `  Tool results ${payload.toolResults ?? 0}`,
+      `  Tools shown  ${payload.disclosedTools ?? 0}`,
+    );
+  }
   return { lines, diagnostics: [] };
 }
 

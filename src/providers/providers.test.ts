@@ -91,6 +91,83 @@ describe("parseModelRequest", () => {
     });
     expect(parsed.ok).toBe(false);
   });
+
+  test("accepts an assistant tool call followed by its result", () => {
+    const parsed = parseModelRequest({
+      schemaVersion: PROVIDER_BOUNDARY_SCHEMA_VERSION,
+      requestId: "req-tool-1",
+      providerId: "openai",
+      modelId: "gpt-test",
+      messages: [
+        { role: "user", parts: [{ kind: "text", text: "read a.ts" }] },
+        {
+          role: "assistant",
+          parts: [{ kind: "text", text: "" }],
+          toolCalls: [{ toolCallId: "call-1", name: "read_file", arguments: { path: "a.ts" } }],
+        },
+        {
+          role: "tool",
+          toolCallId: "call-1",
+          parts: [{ kind: "text", text: '{"status":"completed"}' }],
+        },
+      ],
+      tools: [],
+      output: { kind: "text" },
+      budgets: {},
+      metadata: { role: "default" },
+    });
+    expect(parsed.ok).toBe(true);
+  });
+
+  test("rejects an orphaned tool result", () => {
+    const parsed = parseModelRequest({
+      schemaVersion: PROVIDER_BOUNDARY_SCHEMA_VERSION,
+      requestId: "req-tool-2",
+      providerId: "openai",
+      modelId: "gpt-test",
+      messages: [
+        {
+          role: "tool",
+          toolCallId: "call-missing",
+          parts: [{ kind: "text", text: "{}" }],
+        },
+      ],
+      tools: [],
+      output: { kind: "text" },
+      budgets: {},
+      metadata: { role: "default" },
+    });
+    expect(parsed.ok).toBe(false);
+  });
+
+  test("rejects a provider call id reused after its result", () => {
+    const parsed = parseModelRequest({
+      schemaVersion: PROVIDER_BOUNDARY_SCHEMA_VERSION,
+      requestId: "req-tool-reused",
+      providerId: "openai",
+      modelId: "gpt-test",
+      messages: [
+        { role: "user", parts: [{ kind: "text", text: "read twice" }] },
+        {
+          role: "assistant",
+          parts: [{ kind: "text", text: "" }],
+          toolCalls: [{ toolCallId: "call-1", name: "read_file", arguments: { path: "a.ts" } }],
+        },
+        { role: "tool", toolCallId: "call-1", parts: [{ kind: "text", text: "{}" }] },
+        {
+          role: "assistant",
+          parts: [{ kind: "text", text: "" }],
+          toolCalls: [{ toolCallId: "call-1", name: "read_file", arguments: { path: "b.ts" } }],
+        },
+      ],
+      tools: [],
+      output: { kind: "text" },
+      budgets: {},
+      metadata: { role: "default" },
+    });
+
+    expect(parsed.ok).toBe(false);
+  });
 });
 
 describe("parseNormalizedProviderEvent", () => {

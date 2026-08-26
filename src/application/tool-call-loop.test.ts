@@ -212,6 +212,39 @@ describe("tool call loop", () => {
     expect(outcome.iterations).toBe(2);
   });
 
+  test("rejects a provider call id reused by a later model continuation", async () => {
+    const { coordinator, turnId: id } = startAtHandlingModelEvent();
+    let executions = 0;
+    const loop = createToolCallLoop({
+      coordinator,
+      catalog: createToolCatalog(generation, [readFileDescriptor()]),
+      runner: {
+        async execute() {
+          executions += 1;
+          return { status: "completed", output: {}, effect: "completed" };
+        },
+      },
+    });
+
+    const outcome = await loop.run({
+      turnId: id,
+      configurationGeneration: generation,
+      proposals: [{ toolCallId: "call-reused", name: "read_file", arguments: { path: "a.ts" } }],
+      signal: new AbortController().signal,
+      async continueModel() {
+        return {
+          kind: "continue",
+          proposals: [
+            { toolCallId: "call-reused", name: "read_file", arguments: { path: "b.ts" } },
+          ],
+        };
+      },
+    });
+
+    expect(outcome.kind).toBe("malformed");
+    expect(executions).toBe(1);
+  });
+
   test("fails closed when the per-iteration queue bound is exceeded", async () => {
     const { coordinator, turnId: id } = startAtHandlingModelEvent();
     const loop = createToolCallLoop({

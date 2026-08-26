@@ -102,7 +102,9 @@ export type RunToolCallLoopInput = {
    * How abort settles when the signal fires. Defaults to `cancel`.
    * Timeout uses the same cleanup-before-report path.
    */
-  readonly abortAs?: "cancel" | "timeout";
+  readonly abortAs?: "cancel" | "timeout" | (() => "cancel" | "timeout");
+  /** Stable attempt lineage used to avoid invocation-id collisions on retry. */
+  readonly invocationIdPrefix?: string;
   /**
    * After an iteration's tools settle, optionally produce another proposal
    * batch (next model step). Omitted or `stop` ends the loop.
@@ -210,9 +212,11 @@ export function createToolCallLoop(options: ToolCallLoopOptions): ToolCallLoop {
   return {
     async run(input) {
       const results: ToolInvocationRecord[] = [];
+      const seenToolCallIds = new Set<string>();
       let iteration = 0;
       let proposals = toProposals(input.proposals);
-      const abortAs = input.abortAs ?? "cancel";
+      const abortAs = (): "cancel" | "timeout" =>
+        typeof input.abortAs === "function" ? input.abortAs() : (input.abortAs ?? "cancel");
 
       const beginExecute = applyCommand(
         coordinator,
@@ -236,7 +240,7 @@ export function createToolCallLoop(options: ToolCallLoopOptions): ToolCallLoop {
             coordinator,
             turnId: input.turnId,
             configurationGeneration: input.configurationGeneration,
-            abortAs,
+            abortAs: abortAs(),
             iterations: iteration,
             results,
             // Nothing executed this iteration yet.
@@ -258,12 +262,29 @@ export function createToolCallLoop(options: ToolCallLoopOptions): ToolCallLoop {
 
         iteration += 1;
 
+        const repeated = proposals.find((proposal) => seenToolCallIds.has(proposal.toolCallId));
+        if (repeated !== undefined) {
+          return settleBindFailure({
+            coordinator,
+            turnId: input.turnId,
+            configurationGeneration: input.configurationGeneration,
+            error: { code: "duplicate-tool-call-id", toolCallId: repeated.toolCallId },
+            iterations: iteration,
+            results,
+          });
+        }
+        for (const proposal of proposals) {
+          seenToolCallIds.add(proposal.toolCallId);
+        }
+
         const bound = bindToolProposals({
           catalog,
           proposals,
           maxQueued: limits.maxToolCallsPerIteration,
           nextInvocationId: (proposal) =>
-            invocationId.from(`inv-${iteration}-${proposal.toolCallId}`),
+            invocationId.from(
+              `${input.invocationIdPrefix ?? "tool"}-inv-${iteration}-${proposal.toolCallId}`,
+            ),
         });
 
         if (!bound.ok) {
@@ -301,7 +322,7 @@ export function createToolCallLoop(options: ToolCallLoopOptions): ToolCallLoop {
             coordinator,
             turnId: input.turnId,
             configurationGeneration: input.configurationGeneration,
-            abortAs,
+            abortAs: abortAs(),
             iterations: iteration,
             results,
             inFlightEffect: foldToolEffects(
@@ -332,37 +353,6 @@ export function createToolCallLoop(options: ToolCallLoopOptions): ToolCallLoop {
           });
         }
 
-        const continued = await input.continueModel({
-          turnId: input.turnId,
-          iteration,
-          results,
-          signal: input.signal,
-        });
-
-        if (input.signal.aborted) {
-          return settleAbort({
-            coordinator,
-            turnId: input.turnId,
-            configurationGeneration: input.configurationGeneration,
-            abortAs,
-            iterations: iteration,
-            results,
-            inFlightEffect: foldToolEffects(
-              results.map((record) => effectOfToolOutcome(record.outcome)),
-            ),
-          });
-        }
-
-        if (continued.kind === "stop") {
-          return finishTurn({
-            coordinator,
-            turnId: input.turnId,
-            configurationGeneration: input.configurationGeneration,
-            iterations: iteration,
-            results,
-          });
-        }
-
         const cycle = applyCommand(
           coordinator,
           input.turnId,
@@ -379,20 +369,75 @@ export function createToolCallLoop(options: ToolCallLoopOptions): ToolCallLoop {
           };
         }
 
-        const handling = applyCommand(
-          coordinator,
-          input.turnId,
-          "begin-handling-model-event",
-          input.configurationGeneration,
-        );
-        if (!handling.ok) {
-          return {
-            kind: "turn-error",
-            error: handling.error,
+        const continued = await input.continueModel({
+          turnId: input.turnId,
+          iteration,
+          results,
+          signal: input.signal,
+        });
+
+        if (input.signal.aborted) {
+          return settleAbort({
+            coordinator,
+            turnId: input.turnId,
+            configurationGeneration: input.configurationGeneration,
+            abortAs: abortAs(),
             iterations: iteration,
             results,
-            turn: coordinator.get(input.turnId),
-          };
+            inFlightEffect: foldToolEffects(
+              results.map((record) => effectOfToolOutcome(record.outcome)),
+            ),
+          });
+        }
+
+        if (continued.kind === "stop") {
+          const current = coordinator.get(input.turnId);
+          if (current?.status === "terminal") {
+            return completedOutcome(iteration, results, current);
+          }
+          if (current?.phase === "awaiting-model") {
+            const handling = applyCommand(
+              coordinator,
+              input.turnId,
+              "begin-handling-model-event",
+              input.configurationGeneration,
+            );
+            if (!handling.ok) {
+              return {
+                kind: "turn-error",
+                error: handling.error,
+                iterations: iteration,
+                results,
+                turn: coordinator.get(input.turnId),
+              };
+            }
+          }
+          return finishTurn({
+            coordinator,
+            turnId: input.turnId,
+            configurationGeneration: input.configurationGeneration,
+            iterations: iteration,
+            results,
+          });
+        }
+
+        const current = coordinator.get(input.turnId);
+        if (current?.phase === "awaiting-model") {
+          const handling = applyCommand(
+            coordinator,
+            input.turnId,
+            "begin-handling-model-event",
+            input.configurationGeneration,
+          );
+          if (!handling.ok) {
+            return {
+              kind: "turn-error",
+              error: handling.error,
+              iterations: iteration,
+              results,
+              turn: coordinator.get(input.turnId),
+            };
+          }
         }
 
         const executing = applyCommand(
@@ -980,5 +1025,19 @@ function finishTurn(input: {
     results: input.results,
     turn: input.coordinator.get(input.turnId) as TurnSnapshot,
     foldedEffect,
+  };
+}
+
+function completedOutcome(
+  iterations: number,
+  results: readonly ToolInvocationRecord[],
+  turn: TurnSnapshot,
+): Extract<ToolCallLoopOutcome, { readonly kind: "completed" }> {
+  return {
+    kind: "completed",
+    iterations,
+    results,
+    turn,
+    foldedEffect: foldToolEffects(results.map((record) => effectOfToolOutcome(record.outcome))),
   };
 }

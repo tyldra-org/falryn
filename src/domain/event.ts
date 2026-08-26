@@ -18,6 +18,8 @@ import type {
   IdempotencyKey,
   InvocationId,
   ModelAttemptId,
+  ModelId,
+  ProviderId,
   Sequence,
   SessionId,
   StreamId,
@@ -81,6 +83,59 @@ export type TerminalPayload = {
   readonly outcome: TerminalOutcome;
 };
 
+/**
+ * Immutable provider and capability snapshot observed by one model attempt.
+ *
+ * Tool schemas are identified by their canonical digest instead of copied into
+ * every event. The bound catalog generation plus digest identifies the exact
+ * schema while keeping the semantic journal bounded.
+ */
+export type ModelAttemptBinding = {
+  readonly schemaVersion: 1;
+  readonly providerId: ProviderId;
+  readonly modelId: ModelId;
+  readonly role: string;
+  readonly intent: string | null;
+  readonly reasoning: string;
+  readonly providerCatalogGeneration: number;
+  readonly toolCatalogGeneration: ConfigurationGeneration;
+  readonly policyGeneration: ConfigurationGeneration;
+  readonly runner: "product-attempt-runner.v1";
+  readonly gateway: "product-tool-gateway.v1";
+  readonly discoveryHandle: string;
+  readonly families: readonly {
+    readonly family: string;
+    readonly available: boolean;
+    readonly reason: string | null;
+  }[];
+  readonly tools: readonly {
+    readonly name: string;
+    readonly capabilityId: CapabilityId;
+    readonly version: number;
+    readonly schemaDigest: string;
+    readonly schemaBytes: number;
+    readonly schemaTokensEstimated: number;
+  }[];
+  readonly omitted: readonly {
+    readonly name: string;
+    readonly reason: string;
+  }[];
+  readonly schemaBytes: number;
+  readonly schemaTokensEstimated: number;
+  readonly budgets: {
+    readonly attempts: number | null;
+    readonly inputTokens: number | null;
+    readonly outputTokens: number | null;
+    readonly wallTimeMs: number | null;
+    readonly cost: number | null;
+  };
+};
+
+export type ModelAttemptStartedPayload = {
+  /** Absent only on legacy events written before the live product loop. */
+  readonly binding?: ModelAttemptBinding | undefined;
+};
+
 export type ConfigurationGenerationChangedPayload = {
   readonly generation: ConfigurationGeneration;
   readonly applicationClass: ConfigurationApplicationClass;
@@ -115,7 +170,7 @@ export type TurnCompletedEvent = Envelope<"turn.completed", TurnCorrelation, Ter
 export type ModelAttemptStartedEvent = Envelope<
   "model.attempt.started",
   TurnCorrelation,
-  EmptyPayload
+  ModelAttemptStartedPayload
 > & {
   readonly modelAttemptId: ModelAttemptId;
 };
