@@ -4,35 +4,18 @@ import type { CommandRequest } from "../process.ts";
 import { commandMode } from "../process.ts";
 import type { ProcessCaptureReport, ProcessStreamCapture } from "../process-capture.ts";
 import { assertNever } from "../result.ts";
-import {
-  type HushCommandClassification,
-  type HushCommandPolicy,
-  matchHushCommand,
-  SHELL_COMPOUND_POLICY,
-} from "./catalog/index.ts";
 import { commandShape, normalizeCommandTokens } from "./command-shape.ts";
 import type { HushCommandIdentity, HushFamily } from "./contracts.ts";
-
-const GENERIC_POLICY: HushCommandPolicy = {
-  family: "generic",
-  reducerId: "generic",
-  projection: "operation",
-};
-const OUTPUT_SEARCH_POLICY: HushCommandPolicy = {
-  family: "search",
-  reducerId: "files.search",
-  projection: "search",
-};
-const OUTPUT_GIT_POLICY: HushCommandPolicy = {
-  family: "git",
-  reducerId: "git.log",
-  projection: "git-log",
-};
-const OUTPUT_DIFF_POLICY: HushCommandPolicy = {
-  family: "git",
-  reducerId: "git.diff",
-  projection: "git-diff",
-};
+import {
+  GENERIC_RULE,
+  type HushCommandClassification,
+  type HushReductionRule,
+  matchHushCommand,
+  OUTPUT_GIT_DIFF_RULE,
+  OUTPUT_GIT_LOG_RULE,
+  OUTPUT_SEARCH_RULE,
+  SHELL_COMPOUND_RULE,
+} from "./rules/index.ts";
 
 export function classifyCommand(
   command: CommandRequest,
@@ -40,7 +23,7 @@ export function classifyCommand(
 ): HushCommandClassification {
   const shape = commandShape(command);
   if (shape.compound) {
-    return { ...SHELL_COMPOUND_POLICY, ...shape, matched: true };
+    return { ...SHELL_COMPOUND_RULE, ...shape, matched: true };
   }
   const matched = matchHushCommand(shape.tokens);
   if (matched !== null) {
@@ -48,7 +31,7 @@ export function classifyCommand(
   }
   const outputPolicy = policyFromOutputShape(capture.stdout);
   if (outputPolicy === null) {
-    return { ...GENERIC_POLICY, ...shape, matched: false };
+    return { ...GENERIC_RULE, ...shape, matched: false };
   }
   return { ...outputPolicy, ...shape, matched: true };
 }
@@ -117,20 +100,20 @@ export function commandTokens(command: CommandRequest): readonly string[] {
   return commandShape(command).tokens;
 }
 
-function policyFromOutputShape(stdout: ProcessStreamCapture): HushCommandPolicy | null {
+function policyFromOutputShape(stdout: ProcessStreamCapture): HushReductionRule | null {
   const text = stdout.inlineText;
   if (text === null || text.length === 0) {
     return null;
   }
   const first = text.split("\n", 1)[0] ?? "";
   if (/^[^:\n]+:\d+[::]/.test(first)) {
-    return OUTPUT_SEARCH_POLICY;
+    return OUTPUT_SEARCH_RULE;
   }
   if (first.startsWith("diff --git ")) {
-    return OUTPUT_DIFF_POLICY;
+    return OUTPUT_GIT_DIFF_RULE;
   }
   if (first.startsWith("commit ")) {
-    return OUTPUT_GIT_POLICY;
+    return OUTPUT_GIT_LOG_RULE;
   }
   return null;
 }

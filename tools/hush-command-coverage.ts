@@ -1,12 +1,12 @@
 /** Maintained Hush command-routing coverage scorecard against pinned RTK 0.45.0. */
 
 import { duration } from "../src/domain/clock.ts";
+import { commandShape } from "../src/domain/hush/command-shape.ts";
 import {
-  HUSH_COMMAND_CATALOG,
+  HUSH_COMMAND_RULES,
   HUSH_PROJECTION_KINDS,
   matchHushCommand,
-} from "../src/domain/hush/catalog/index.ts";
-import { commandShape } from "../src/domain/hush/command-shape.ts";
+} from "../src/domain/hush/rules/index.ts";
 import { MAX_COMMAND_OUTPUT_BYTES, type ProcessCaptureRequest } from "../src/domain/index.ts";
 
 export const HUSH_RTK_BASELINE = {
@@ -39,7 +39,7 @@ export function createHushCommandCoverageScorecard(): HushCommandCoverageScoreca
   const failures: HushCommandCoverageFailure[] = [];
   const executables = new Set<string>();
   let examples = 0;
-  for (const entry of HUSH_COMMAND_CATALOG) {
+  for (const entry of HUSH_COMMAND_RULES) {
     for (const executable of entry.executables) {
       executables.add(executable);
     }
@@ -73,14 +73,14 @@ export function createHushCommandCoverageScorecard(): HushCommandCoverageScoreca
   }
   return {
     baseline: HUSH_RTK_BASELINE,
-    catalogEntries: HUSH_COMMAND_CATALOG.length,
+    catalogEntries: HUSH_COMMAND_RULES.length,
     commandExecutables: executables.size,
     examples,
     projectionKinds: HUSH_PROJECTION_KINDS.length,
     failures,
     routingComplete: failures.length === 0,
     parityProvenProjections: HUSH_PROJECTION_KINDS,
-    parityProvenReducers: HUSH_COMMAND_CATALOG.map((entry) => entry.reducerId),
+    parityProvenReducers: HUSH_COMMAND_RULES.map((entry) => entry.reducerId),
   };
 }
 

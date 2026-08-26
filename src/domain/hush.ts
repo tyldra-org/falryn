@@ -19,7 +19,8 @@ import {
   type HushStreamProjection,
   MAX_HUSH_REDUCED_BYTES,
 } from "./hush/contracts.ts";
-import { fidelityFor, specializedProjection } from "./hush/reducers/index.ts";
+import type { HushReduceInput } from "./hush/reducers/contracts.ts";
+import { fidelityFor } from "./hush/reducers/index.ts";
 import { err, ok, type Result } from "./result.ts";
 
 export { classifyFamily, classifyReducerId } from "./hush/classification.ts";
@@ -93,15 +94,15 @@ export function reduceHush(request: HushRequest): Result<HushResult, HushError> 
     try {
       projectionMaxBytes =
         request.maxReducedBytes === undefined ? MAX_HUSH_REDUCED_BYTES : maxBytes;
-      projection = specializedProjection(
-        classification.reducerId,
-        request.capture,
-        projectionMaxBytes,
+      const reducerInput: HushReduceInput = {
+        capture: request.capture,
+        maxBytes: projectionMaxBytes,
         patterns,
-        classification.tokens,
-        classification.commands,
-        command.cwd,
-      );
+        commandTokens: classification.tokens,
+        commandSegments: classification.commands,
+        cwd: command.cwd,
+      };
+      projection = classification.reduce(reducerInput);
     } catch {
       strategy = "generic";
       selectedReducerId = "generic";

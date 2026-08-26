@@ -2,13 +2,11 @@
 
 import { describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
-import { join } from "node:path";
 
 import { artifactId } from "./artifact.ts";
 import { duration, instant } from "./clock.ts";
-import { HUSH_COMMAND_CATALOG, matchHushCommand } from "./hush/catalog/index.ts";
 import { commandShape } from "./hush/command-shape.ts";
-import { commandReducerFor, HUSH_COMMAND_REDUCER_IDS } from "./hush/reducers/commands/index.ts";
+import { HUSH_COMMAND_RULES, HUSH_PROJECTION_KINDS, matchHushCommand } from "./hush/rules/index.ts";
 import {
   MAX_COMMAND_OUTPUT_BYTES,
   type ProcessCaptureReport,
@@ -218,35 +216,25 @@ const EXPECTED_CATALOG_REDUCER_IDS = [
   "operation.command",
 ] as const;
 
-describe("Hush RTK command catalog", () => {
-  test("keeps catalog policies and reducer modules complete and mirrored", () => {
-    const catalogIds = HUSH_COMMAND_CATALOG.map((entry) => entry.reducerId);
+describe("Hush command rules", () => {
+  test("keeps one ordered rule and reducer for every supported command family", () => {
+    const ruleIds = HUSH_COMMAND_RULES.map((entry) => entry.reducerId);
+    const executables = new Set(HUSH_COMMAND_RULES.flatMap((entry) => [...entry.executables]));
+    const examples = HUSH_COMMAND_RULES.flatMap((entry) => [...entry.examples]);
 
-    expect(catalogIds).toEqual([...EXPECTED_CATALOG_REDUCER_IDS]);
-    expect(HUSH_COMMAND_REDUCER_IDS).toEqual([...EXPECTED_CATALOG_REDUCER_IDS]);
-
-    for (const reducerId of EXPECTED_CATALOG_REDUCER_IDS) {
-      const pathSegments = reducerId.split(".");
-      const catalogPath = `${join(import.meta.dir, "hush", "catalog", ...pathSegments)}.ts`;
-      const reducerPath = `${join(
-        import.meta.dir,
-        "hush",
-        "reducers",
-        "commands",
-        ...pathSegments,
-      )}.ts`;
-
-      expect(existsSync(catalogPath), reducerId).toBe(true);
-      expect(existsSync(reducerPath), reducerId).toBe(true);
-      expect(commandReducerFor(reducerId), reducerId).not.toBeNull();
-    }
-
-    expect(commandReducerFor("missing.reducer")).toBeNull();
+    expect(ruleIds).toEqual([...EXPECTED_CATALOG_REDUCER_IDS]);
+    expect(new Set(ruleIds).size).toBe(82);
+    expect(executables.size).toBe(131);
+    expect(examples.length).toBe(267);
+    expect(HUSH_PROJECTION_KINDS.length).toBe(25);
+    expect(HUSH_COMMAND_RULES.every((rule) => typeof rule.reduce === "function")).toBe(true);
+    expect(existsSync(`${import.meta.dir}/hush/catalog/index.ts`)).toBe(false);
+    expect(existsSync(`${import.meta.dir}/hush/reducers/commands/index.ts`)).toBe(false);
   });
 
   test("covers every pinned RTK executable with an explicit policy", () => {
     const catalogExecutables = new Set(
-      HUSH_COMMAND_CATALOG.flatMap((entry) => [...entry.executables]),
+      HUSH_COMMAND_RULES.flatMap((entry) => [...entry.executables]),
     );
     const missing = PINNED_RTK_EXECUTABLES.filter(
       (executable) => !catalogExecutables.has(executable),
@@ -255,7 +243,7 @@ describe("Hush RTK command catalog", () => {
   });
 
   test("routes every catalog example to its owning non-generic reducer", () => {
-    for (const entry of HUSH_COMMAND_CATALOG) {
+    for (const entry of HUSH_COMMAND_RULES) {
       expect(entry.examples.length).toBeGreaterThan(0);
       for (const example of entry.examples) {
         const shape = commandShape(bash(example));
@@ -345,7 +333,7 @@ describe("Hush RTK command catalog", () => {
 
   test("runs every catalog policy as a non-generic recoverable projection", () => {
     const capture = longReport();
-    for (const entry of HUSH_COMMAND_CATALOG) {
+    for (const entry of HUSH_COMMAND_RULES) {
       const example = entry.examples[0];
       if (example === undefined) {
         throw new Error(`missing example for ${entry.reducerId}`);

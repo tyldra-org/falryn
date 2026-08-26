@@ -4,8 +4,8 @@ import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { prepareHushCaptureRequest } from "../src/application/hush-capture-command.ts";
-import type { HushProjectionKind } from "../src/domain/hush/catalog/index.ts";
 import { classifyCommand } from "../src/domain/hush/classification.ts";
+import type { HushProjectionKind } from "../src/domain/hush/rules/index.ts";
 import {
   duration,
   HUSH_REDUCER_VERSION,

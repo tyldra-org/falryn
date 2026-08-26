@@ -1,4 +1,4 @@
-import type { HushProjectionKind } from "../src/domain/hush/catalog/index.ts";
+import type { HushProjectionKind } from "../src/domain/hush/rules/index.ts";
 
 export type ProjectionCase = Readonly<{
   id: string;
