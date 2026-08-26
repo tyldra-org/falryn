@@ -59,14 +59,12 @@ describe("composeProductCredentials", () => {
 
   test("placeApiKey writes through the keychain channel without returning the secret", async () => {
     const clock = createManualClock();
-    let wroteSecret: string | undefined;
+    let wroteSecret: Uint8Array | undefined;
     const bundle = composeProductCredentials({
       clock,
       commands: runner(async (request) => {
-        if ("argv" in request) {
-          const index = request.argv.indexOf("-w");
-          wroteSecret = index >= 0 ? request.argv[index + 1] : undefined;
-        }
+        wroteSecret = "stdinBytes" in request ? request.stdinBytes : undefined;
+        expect("argv" in request && request.argv).not.toContain("sk-place-me");
         return { kind: "exited", exitCode: 0, stdout: "" };
       }),
       platform: "darwin",
@@ -83,7 +81,7 @@ describe("composeProductCredentials", () => {
       secret,
     });
     expect(placed).toEqual({ kind: "written" });
-    expect(wroteSecret).toBe(secret);
+    expect(wroteSecret).toEqual(new TextEncoder().encode(`${secret}\n`));
     expect(JSON.stringify(placed)).not.toContain(secret);
   });
 });

@@ -11,9 +11,13 @@ import {
   createInMemoryFileSystem,
   createStaticEnvironment,
   createSystemClock,
+  instant,
   localPath,
+  modelId,
+  providerId,
   streamId,
 } from "../domain/index.ts";
+import { createDeterministicProviderAdapter } from "../providers/index.ts";
 import { snapshotOf } from "../tui/composer/index.ts";
 import type { GlobalOptions } from "./options.ts";
 import {
@@ -54,6 +58,10 @@ describe("composeProductShellAttachments", () => {
     const outcome = await attachments.submission.submit(snapshotOf("wire me", 1));
     expect(outcome.kind).toBe("accepted");
     expect(attachments.transcriptFeed.events().length).toBeGreaterThan(0);
+    expect(attachments.controls.resources[0]).toEqual({
+      label: "provider",
+      value: { kind: "unavailable", reason: "not connected; run falryn provider list" },
+    });
   });
 
   test("fails closed for an empty draft without the permanent #707 stub", async () => {
@@ -77,6 +85,77 @@ describe("composeProductShellAttachments", () => {
     expect(outcome.reason).toContain("empty");
     expect(outcome.owner).toBe("#707");
     expect(outcome.reason).not.toContain("no agent submission port is attached");
+  });
+
+  test("publishes the selected provider model catalog to OpenTUI controls", async () => {
+    const clock = createSystemClock();
+    const profile = {
+      profileId: "demo",
+      providerId: providerId.from("demo"),
+      adapterKind: "deterministic" as const,
+      displayName: "Demo provider",
+      endpoint: null,
+      credential: null,
+      organization: null,
+      project: null,
+      enabledModels: [modelId.from("demo-model")],
+      discovery: "static" as const,
+      timeouts: { connectMs: 1_000, requestMs: 10_000 },
+    };
+    const attachments = await composeProductShellAttachments({
+      eventStore: createInMemoryEventStore(),
+      clock,
+      fileSystem: createInMemoryFileSystem({ nodes: {} }),
+      workspaceSet: null,
+      configurationGeneration: configurationGeneration.from(0),
+      provider: {
+        kind: "ready",
+        adapter: createDeterministicProviderAdapter({
+          script: { kind: "text", text: "ok" },
+        }),
+        session: {
+          kind: "ready",
+          connection: { profile, account: null, updatedAt: clock.now() },
+          auth: {
+            profileId: "demo",
+            state: "ready",
+            consumer: "provider:demo",
+            observedAt: instant(0),
+            health: null,
+            code: null,
+            retryable: false,
+          },
+          catalog: {
+            generation: 3,
+            provenance: "remote-discovery",
+            fetchedAt: instant(0),
+            expiresAt: null,
+            models: [
+              {
+                modelId: modelId.from("demo-model"),
+                modalities: ["text", "image"],
+                tools: true,
+                streaming: true,
+                reasoning: true,
+                contextTokens: 128_000,
+                outputTokens: 8_000,
+              },
+            ],
+          },
+        },
+      },
+    });
+    expect(attachments?.controls.models).toEqual([
+      {
+        id: "demo-model",
+        title: "demo-model",
+        detail: "Demo provider · text+image · tools · reasoning",
+      },
+    ]);
+    expect(attachments?.controls.resources[0]).toEqual({
+      label: "provider",
+      value: { kind: "known", text: "Demo provider" },
+    });
   });
 
   test("correlates turns with a loader-derived generation, not a hardcoded zero", async () => {

@@ -15,6 +15,7 @@ application. The current command surface includes:
 | falryn --help / --version | Print usage or build identity |
 | falryn doctor | Run bounded environment and local-storage diagnostics |
 | falryn config show / validate / path | Inspect and validate effective configuration |
+| falryn provider list / add / use / configure / test / login / logout / remove | Manage local provider profiles and credentials |
 | falryn data reset / uninstall | Preview or apply confirmed removal of Falryn-owned local data |
 | falryn workspace list / show / save / load | Inspect or persist named workspace sets |
 | falryn export | Preview or write a versioned local export package |
@@ -23,6 +24,28 @@ application. The current command surface includes:
 
 Commands support human-readable and machine-readable output forms. Results go
 to standard output and diagnostics go to standard error.
+
+## Provider connections
+
+Provider profiles are stored in the typed `providers.connections`
+configuration value. A fresh installation includes a selected
+OpenAI-compatible profile that references `FALRYN_OPENAI_API_KEY`; configuration
+stores the reference, never the credential bytes. Additional profiles can be
+added, configured, selected, tested, logged out, or removed through
+`falryn provider`.
+
+Interactive API-key login accepts the secret only on standard input and stores
+it in the operating-system keychain on supported platforms. The supervised
+keychain command receives the secret over its standard-input channel rather
+than an argument or environment variable. OAuth PKCE and device authorization
+are accepted only through an installed official provider adapter; Falryn does
+not imitate browser sessions or subscription credentials.
+
+Human, JSON, and JSONL results expose profile, connection, account, catalog,
+and revocation state without secret material. The selected provider and its
+normalized model catalog are passed to headless runtime composition and the
+interactive model controls. The current source does not yet perform a live
+model attempt or tool continuation.
 
 ## Product Read and Loom
 

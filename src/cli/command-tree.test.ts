@@ -66,6 +66,7 @@ describe("the declared tree", () => {
     expect(await commandOf("workspace", "show")).toBe("workspace.show");
     expect(await commandOf("workspace", "save", "app")).toBe("workspace.save");
     expect(await commandOf("workspace", "load", "app")).toBe("workspace.load");
+    expect(await commandOf("provider", "list")).toBe("provider");
     expect(await commandOf("run", "fix", "the", "bug")).toBe("run");
     expect(await commandOf("completion", "bash")).toBe("completion");
   });
@@ -74,11 +75,11 @@ describe("the declared tree", () => {
     // Each of these is named in `reference/CLI.md` as a planned group. A tree
     // that parsed them would advertise them in `--help` and promise behavior
     // nothing implements.
-    const undeclared = ["provider", "tool", "extension"];
+    const undeclared = ["tool", "extension"];
     for (const group of undeclared) {
       expect(await commandOf(group)).toBe("invalid");
     }
-    expect(await helpText(null)).not.toContain("provider");
+    expect(await helpText(null)).toContain("provider <action>");
     expect(await helpText(null)).toContain("data <action>");
     expect(await helpText(null)).toContain("export");
     expect(await helpText(null)).toContain("session");
@@ -181,6 +182,52 @@ describe("invalid usage", () => {
   test("accepts a relative workspace, which the service layer resolves", async () => {
     expect(await commandOf("--workspace", "./site", "doctor")).toBe("doctor");
     expect(await commandOf("--workspace", "../sibling", "doctor")).toBe("doctor");
+  });
+});
+
+describe("provider connection arguments", () => {
+  test("normalizes safe profile metadata and keeps credentials out of argv", async () => {
+    const invocation = await parse(
+      "provider",
+      "add",
+      "local",
+      "--provider",
+      "openai-compatible",
+      "--endpoint",
+      "http://127.0.0.1:11434/v1",
+      "--model",
+      "coder-small",
+      "--model",
+      "coder-large",
+    );
+    if (invocation.kind !== "run" || invocation.providerArgs?.action !== "add") {
+      throw new Error("expected parsed provider add");
+    }
+    expect(invocation.providerArgs.profile.profileId).toBe("local");
+    expect(invocation.providerArgs.profile.enabledModels.map(String)).toEqual([
+      "coder-small",
+      "coder-large",
+    ]);
+    expect(JSON.stringify(invocation)).not.toMatch(/api.?key|secret/i);
+  });
+
+  test("requires protected stdin for API keys and validates authorized methods", async () => {
+    expect(await invalidMessage("provider", "login", "openai")).toContain("--api-key-stdin");
+    expect(
+      await commandOf("provider", "login", "openai", "--api-key-stdin", "--auth-method", "api-key"),
+    ).toBe("provider");
+    expect(await commandOf("provider", "login", "anthropic", "--auth-method", "oauth-pkce")).toBe(
+      "provider",
+    );
+    expect(await invalidMessage("provider", "login", "openai", "--secret", "value")).toContain(
+      "Unknown argument: secret",
+    );
+    expect(await invalidMessage("provider", "list", "--model", "ignored")).toContain(
+      "model is not valid with provider list",
+    );
+    expect(
+      await invalidMessage("provider", "login", "openai", "--endpoint", "https://ignored.test"),
+    ).toContain("endpoint is not valid with provider login");
   });
 });
 

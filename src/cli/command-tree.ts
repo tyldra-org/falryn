@@ -53,6 +53,7 @@ import {
   type TaskCommandArguments,
 } from "./command-tree/contracts.ts";
 import { dataArgumentsFor, dataLifecycleArgumentsFor } from "./command-tree/data.ts";
+import { providerArgumentsFor } from "./command-tree/provider.ts";
 import {
   commandFrom,
   completionArgumentsFor,
@@ -83,6 +84,7 @@ function build(argv: readonly string[], lenientPositionals = false): ReturnType<
     ? "workspace [action] [name]"
     : "workspace <action> [name]";
   const taskCommand = lenientPositionals ? "task [action]" : "task <action>";
+  const providerCommand = lenientPositionals ? "provider [action] [id]" : "provider <action> [id]";
   return (
     yargs([...argv])
       .scriptName(SCRIPT_NAME)
@@ -312,6 +314,75 @@ function build(argv: readonly string[], lenientPositionals = false): ReturnType<
               type: "string",
               describe: "bounded JSON input file as an alternate to explicit flags",
             }),
+      )
+      .command(
+        providerCommand,
+        "List, add, select, test, authenticate, or remove provider connections.",
+        (group) =>
+          group
+            .positional("action", {
+              type: "string",
+              choices: [
+                "list",
+                "add",
+                "use",
+                "configure",
+                "test",
+                "login",
+                "logout",
+                "remove",
+              ] as const,
+              describe: "provider connection action",
+            })
+            .positional("id", { type: "string", describe: "provider profile identity" })
+            .option("provider", {
+              type: "string",
+              describe: "provider identity (default: profile id)",
+            })
+            .option("adapter", {
+              type: "string",
+              choices: [
+                "deterministic",
+                "openai-compatible",
+                "anthropic",
+                "google",
+                "custom",
+              ] as const,
+              describe: "provider adapter kind",
+            })
+            .option("name", { type: "string", describe: "display name" })
+            .option("endpoint", { type: "string", describe: "explicit provider API endpoint" })
+            .option("model", {
+              type: "string",
+              array: true,
+              describe: "enabled model (repeatable)",
+            })
+            .option("discovery", {
+              type: "string",
+              choices: ["static", "remote"] as const,
+              describe: "model discovery policy",
+            })
+            .option("organization", { type: "string", describe: "safe organization identifier" })
+            .option("project", { type: "string", describe: "safe project identifier" })
+            .option("connect-timeout", {
+              type: "number",
+              describe: "connection timeout in milliseconds",
+            })
+            .option("request-timeout", {
+              type: "number",
+              describe: "request timeout in milliseconds",
+            })
+            .option("auth-method", {
+              type: "string",
+              choices: ["api-key", "oauth-pkce", "device-code"] as const,
+              describe: "official authentication method (login only)",
+            })
+            .option("api-key-stdin", {
+              type: "boolean",
+              default: false,
+              describe: "read one API key from stdin; never accepts it in argv",
+            })
+            .option("account-label", { type: "string", describe: "safe account label" }),
       )
       .command(
         sessionCommand,
@@ -614,6 +685,10 @@ export async function parseInvocation(argv: readonly string[]): Promise<Invocati
   if (typeof commitPlanArgs === "string") {
     return { kind: "invalid", message: commitPlanArgs };
   }
+  const providerArgs = providerArgumentsFor(command, parsed);
+  if (typeof providerArgs === "string") {
+    return { kind: "invalid", message: providerArgs };
+  }
   return {
     kind: "run",
     command,
@@ -631,6 +706,7 @@ export async function parseInvocation(argv: readonly string[]): Promise<Invocati
     runArgs,
     taskArgs,
     commitPlanArgs,
+    providerArgs,
   };
 }
 

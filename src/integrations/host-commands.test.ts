@@ -28,6 +28,7 @@ const runner = createHostCommandRunner();
 const ECHO = "/bin/echo";
 const ENV = "/usr/bin/env";
 const BASH = "/bin/bash";
+const CAT = "/bin/cat";
 const SHELL = "/bin/sh";
 const SLEEP = "/bin/sleep";
 /** Writes without stopping, which is what an output bound has to survive. */
@@ -41,6 +42,7 @@ function request(overrides: {
   readonly timeoutMs?: number;
   readonly maxOutputBytes?: number;
   readonly signal?: AbortSignal;
+  readonly stdinBytes?: Uint8Array;
 }) {
   return {
     executable: overrides.executable,
@@ -49,6 +51,7 @@ function request(overrides: {
     timeoutMs: duration(overrides.timeoutMs ?? 5_000),
     maxOutputBytes: overrides.maxOutputBytes ?? MAX_COMMAND_OUTPUT_BYTES,
     signal: overrides.signal,
+    stdinBytes: overrides.stdinBytes,
   };
 }
 
@@ -90,6 +93,12 @@ describe("running a command", () => {
     // intact for every value, not only for zero.
     const outcome = await runner.run(request({ executable: SHELL, argv: ["-c", "exit 44"] }));
     expect(outcome.kind === "exited" && outcome.exitCode).toBe(44);
+  });
+
+  test("delivers bounded input through stdin instead of argv or environment", async () => {
+    const input = new TextEncoder().encode("protected input\n");
+    const outcome = await runner.run(request({ executable: CAT, stdinBytes: input }));
+    expect(outcome).toEqual({ kind: "exited", exitCode: 0, stdout: "protected input\n" });
   });
 
   test("runs an intentional Bash script through the selected interpreter", async () => {

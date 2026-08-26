@@ -1,5 +1,5 @@
 /**
- * Place a provider API key into the operating-system keychain (#709).
+ * Place a provider API key into the operating-system keychain (#798).
  *
  * Approved write channel: supervised `/usr/bin/security add-generic-password`
  * with an empty child environment. Never logs the secret. Unsupported platforms
@@ -56,15 +56,17 @@ export async function writeKeychainCredential(
   }
 
   const argv: string[] = ["add-generic-password", "-U"];
-  if (options.reference.accountLabel !== null) {
-    argv.push("-a", options.reference.accountLabel);
-  }
-  argv.push("-s", options.reference.locator, "-w", options.secret);
+  argv.push("-a", options.reference.accountLabel ?? options.reference.consumer);
+  // A trailing `-w` makes `security` read the password from its protected
+  // prompt channel. The supervised child receives those bytes through stdin;
+  // the secret never appears in argv, environment, output, or diagnostics.
+  argv.push("-s", options.reference.locator, "-w");
 
   const outcome = await options.commands.run({
     executable: SECURITY_EXECUTABLE,
     argv,
     environment: {},
+    stdinBytes: new TextEncoder().encode(`${options.secret}\n`),
     timeoutMs: options.request?.timeoutMs ?? options.timeoutMs ?? DEFAULT_CREDENTIAL_TIMEOUT_MS,
     maxOutputBytes: MAX_COMMAND_OUTPUT_BYTES,
     signal: options.request?.signal,

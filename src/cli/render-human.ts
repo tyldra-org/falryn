@@ -55,6 +55,7 @@ import type {
   DataRemovalPayload,
   DoctorPayload,
   ExportCommandPayload,
+  ProviderCommandPayload,
   RunCommandResult,
   SessionListPayload,
   SessionShowPayload,
@@ -731,11 +732,55 @@ function renderPayload(session: Session, result: RunCommandResult): RenderedPayl
       return renderWorkspaceSet(session, result.payload, result.command);
     case "workspace.save":
       return renderWorkspaceSave(session, result.payload);
+    case "provider":
+      return renderProviderConnections(session, result.payload);
     case "run":
       return renderCodingRun(session, result.payload);
     default:
       return assertNever(result, "unhandled command result");
   }
+}
+
+function renderProviderConnections(
+  session: Session,
+  payload: ProviderCommandPayload | null,
+): RenderedPayload {
+  if (payload === null) {
+    return { lines: ["No provider connection result is available."], diagnostics: [] };
+  }
+  if (payload.kind === "failed") {
+    return {
+      lines: [],
+      diagnostics: [`Provider ${safe(payload.action)} failed: ${safe(payload.issue.code)}`],
+    };
+  }
+  const lines = [
+    paint(session, "plain", `Provider ${safe(payload.action)}`),
+    `  Selected  ${safe(payload.selectedProfileId ?? "(none)")}`,
+  ];
+  for (const connection of payload.connections) {
+    const selected = connection.selected ? "*" : " ";
+    const auth = connection.credentialConfigured
+      ? `configured:${connection.credentialStore ?? "reference"}`
+      : "not configured";
+    lines.push(
+      `${selected} ${safe(connection.profileId)}  ${safe(connection.displayName)}  ${safe(auth)}`,
+      `    ${safe(connection.adapterKind)}  ${safe(connection.endpoint ?? "default endpoint")}`,
+      `    models: ${connection.models.map(safe).join(", ") || "(none)"}`,
+    );
+  }
+  if (payload.catalog !== null) {
+    lines.push(`  Catalog   ${payload.catalog.models.length} models`);
+  }
+  if (payload.auth !== null) {
+    lines.push(`  Auth      ${safe(payload.auth.state)}`);
+  }
+  if (payload.revocation !== null) {
+    lines.push(
+      `  Logout    local=${safe(payload.revocation.local)} remote=${safe(payload.revocation.remote)}`,
+    );
+  }
+  return { lines, diagnostics: [] };
 }
 
 function renderCodingRun(session: Session, payload: CodingRunPayload | null): RenderedPayload {
@@ -1829,6 +1874,7 @@ function quietFindingLines(result: RunCommandResult): readonly string[] {
     case "workspace.show":
     case "workspace.load":
     case "workspace.save":
+    case "provider":
     case "run":
       return [];
     default:

@@ -4,8 +4,9 @@
  * Declares a coding entry that hosts a session/turn through the product agent
  * runtime producer (same path as composer submission #707), projects through
  * the four CLI output contracts, and never prompts. Missing prompt text fails
- * closed. Without a live provider adapter (#709), the turn is hosted then the
- * command fails closed with a typed provider error rather than hanging.
+ * closed. Without a ready selected provider connection (#798), the turn is
+ * hosted then the command fails closed with a typed remediation rather than
+ * hanging or selecting another destination silently.
  */
 
 import {
@@ -67,6 +68,7 @@ import {
   loadProductConfiguration,
   productConfigurationLoadRequest,
 } from "./product-configuration.ts";
+import { composeProductProviderConnections } from "./product-provider-connections.ts";
 import {
   COMMAND_RESULT_SCHEMA_FAMILY,
   COMMAND_RESULT_SCHEMA_VERSION,
@@ -130,9 +132,8 @@ export type CodingRunOptions = {
     readonly workspaceId?: string;
   };
   /**
-   * Optional live or deterministic adapter. When omitted, the product credential
-   * resolver attempts `FALRYN_OPENAI_API_KEY` and attaches an OpenAI-compatible
-   * adapter when present (#710). Absent credentials fail closed after hosting.
+   * Optional live or deterministic adapter for tests. Production resolves the
+   * selected provider profile through the provider connection service (#798).
    */
   readonly providerAdapter?: ProviderAdapterPort | null;
   /** Override the default OpenAI environment credential reference. */
@@ -316,7 +317,12 @@ export async function runCoding(
     };
 
     let providerAdapter = options.providerAdapter;
-    if (providerAdapter === undefined) {
+    let providerUnavailableCode = providerAdapter === null ? "provider-not-attached" : null;
+    if (
+      providerAdapter === undefined &&
+      (options.credentialReference !== undefined || options.openaiBaseUrl !== undefined)
+    ) {
+      // Compatibility seam for deterministic tests that predate connection profiles.
       const credentials = composeProductCredentials({
         clock: graph.clock,
         commands: createHostCommandRunner(ownedProcessOptions),
@@ -333,6 +339,30 @@ export async function runCoding(
           resolveApiKey: async () => apiKey,
         });
       }
+    }
+    if (providerAdapter === undefined) {
+      const handoff = await composeProductProviderConnections(
+        graph,
+        options.globals ?? {
+          format: "human",
+          color: "auto",
+          quiet: false,
+          verbose: false,
+          nonInteractive: true,
+          workspace: null,
+          addDirs: [],
+          profile: null,
+          timeoutMs: null,
+          help: false,
+          version: false,
+        },
+        {
+          configuration: configuration.values,
+          ...ownedProcessOptions,
+        },
+      ).resolveSelected(options.signal);
+      providerAdapter = handoff.kind === "ready" ? handoff.adapter : null;
+      providerUnavailableCode = handoff.kind === "unavailable" ? handoff.code : null;
     }
 
     const productArtifacts = options.artifacts ?? productArtifactSession?.artifacts;
@@ -572,7 +602,7 @@ export async function runCoding(
               {
                 code: "provider.adapter-required",
                 category: "provider",
-                message: `No live provider adapter is attached (${CODING_RUN_OWNER}; wire vendors in #709). Turn completion also failed (${completed.error.code}).`,
+                message: `The selected provider connection is unavailable (${providerUnavailableCode ?? "provider-not-ready"}). Run 'falryn provider list' and 'falryn provider test <id>' to inspect it. Turn completion also failed (${completed.error.code}).`,
               },
               { operation: "require provider for coding run" },
             ),
@@ -601,7 +631,7 @@ export async function runCoding(
             {
               code: "provider.adapter-required",
               category: "provider",
-              message: `No live provider adapter is attached (${CODING_RUN_OWNER}; wire vendors in #709).`,
+              message: `The selected provider connection is unavailable (${providerUnavailableCode ?? "provider-not-ready"}). Run 'falryn provider list' and 'falryn provider test <id>' to inspect it.`,
             },
             { operation: "require provider for coding run" },
           ),
@@ -610,9 +640,9 @@ export async function runCoding(
       );
     }
 
-    // A provider is present (tests / future #709). Hosting succeeded; model
-    // streaming remains outside this slice until attempt runners and credentials
-    // are composed. Report hosted with a completed turn and no model attempt.
+    // The selected provider connection is ready. Hosting succeeded; model
+    // streaming remains with #786's attempt runner. Report hosted with a
+    // completed turn and no invented model attempt.
     const hostedOutcome: TerminalOutcome = { kind: "completed" };
     const completed = await producer.completeTurn({
       turnId,

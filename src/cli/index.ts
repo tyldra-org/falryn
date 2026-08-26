@@ -82,6 +82,17 @@ export {
   OUTPUT_FORMATS,
   resolveColor,
 } from "./options.ts";
+export type {
+  ProductProviderConnectionHandoff,
+  ProductProviderConnectionOptions,
+  ProductProviderConnections,
+} from "./product-provider-connections.ts";
+export { composeProductProviderConnections } from "./product-provider-connections.ts";
+export {
+  DEFAULT_PROVIDER_CONNECTION_STATE,
+  PROVIDER_CONNECTION_KEYS,
+  PROVIDER_CONNECTIONS_CONFIGURATION_KEY,
+} from "./provider-configuration.ts";
 export { createOverBoundArtifactWriter } from "./refusal-artifact.ts";
 export type { HumanRenderRequest, RenderedText } from "./render-human.ts";
 export {

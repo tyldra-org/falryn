@@ -13,6 +13,7 @@ import type {
   StreamId,
   WorkspaceId,
 } from "../../domain/index.ts";
+import type { ProviderAuthMethod, ProviderProfile } from "../../providers/index.ts";
 import type { CodingRunArguments } from "../coding-run.ts";
 import type { GlobalOptions } from "../options.ts";
 import type { CommandId } from "../result.ts";
@@ -173,6 +174,17 @@ export type CompletionCommandArguments = {
 
 export type { TaskCommandArguments };
 
+export type ProviderCommandArguments =
+  | { readonly action: "list" }
+  | { readonly action: "add" | "configure"; readonly profile: ProviderProfile }
+  | { readonly action: "use" | "test" | "logout" | "remove"; readonly profileId: string }
+  | {
+      readonly action: "login";
+      readonly profileId: string;
+      readonly method: ProviderAuthMethod;
+      readonly accountLabel: string | null;
+    };
+
 /**
  * What parsing an argument vector produced.
  *
@@ -199,6 +211,7 @@ export type Invocation =
       readonly runArgs: CodingRunArguments | null;
       readonly taskArgs: TaskCommandArguments | null;
       readonly commitPlanArgs: TaskCommitPlanArguments | null;
+      readonly providerArgs: ProviderCommandArguments | null;
     }
   /** Show help. `topic` is `null` for the root, or the subcommand asked about. */
   | { readonly kind: "help"; readonly topic: string | null; readonly options: GlobalOptions }
@@ -262,6 +275,18 @@ export type RawArguments = {
   readonly blocker: readonly string[] | undefined;
   readonly criterion: readonly string[] | undefined;
   readonly input: string | undefined;
+  readonly provider: string | undefined;
+  readonly adapter: string | undefined;
+  readonly endpoint: string | undefined;
+  readonly model: readonly string[] | undefined;
+  readonly discovery: string | undefined;
+  readonly organization: string | undefined;
+  readonly project: string | undefined;
+  readonly "connect-timeout": number | undefined;
+  readonly "request-timeout": number | undefined;
+  readonly "auth-method": string | undefined;
+  readonly "api-key-stdin": boolean | undefined;
+  readonly "account-label": string | undefined;
   readonly format: string;
   readonly color: string;
   readonly quiet: boolean;

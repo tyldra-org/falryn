@@ -11,6 +11,7 @@ import {
   type ConfigurationIssue,
   type ConfigurationRegistryPort,
   type ConfigurationScope,
+  type ConfigurationValue,
   err,
   type FileSystemPort,
   joinPath,
@@ -47,6 +48,13 @@ export type ConfigurationWriteRequest = {
   readonly rawValue: string;
   /** When set, the file must still have this revision or the write is refused. */
   readonly expectedRevision?: string | null;
+};
+
+/** A typed value write used by product-owned configuration actions. */
+export type ConfigurationValueWriteRequest = Omit<ConfigurationWriteRequest, "rawValue"> & {
+  readonly value: ConfigurationValue;
+  /** Refuse when a file appeared after the caller observed it absent. */
+  readonly requireAbsent?: boolean;
 };
 
 export type ConfigurationWriteOutcome =
@@ -150,6 +158,46 @@ export async function writeConfigurationKey(
     };
   }
 
+  return writeValueAtPath(registry, fileSystem, request, path, value, signal);
+}
+
+/**
+ * Writes one already-typed value through the same validation and atomic file
+ * path as `config set`. Object-shaped product state never passes through argv
+ * JSON or a second document writer.
+ */
+export async function writeConfigurationValue(
+  registry: ConfigurationRegistryPort,
+  fileSystem: FileSystemPort,
+  request: ConfigurationValueWriteRequest,
+  signal?: AbortSignal,
+): Promise<ConfigurationWriteOutcome> {
+  if (signal?.aborted === true) {
+    return { kind: "cancelled" };
+  }
+
+  if (registry.resolve(request.keyPath).kind === "unknown") {
+    return {
+      kind: "rejected",
+      issues: [{ kind: "unknown-key", severity: "error", path: request.keyPath }],
+    };
+  }
+
+  const pathResult = resolveConfigurationFilePath(request);
+  if (!pathResult.ok) {
+    return pathResult.error;
+  }
+  return writeValueAtPath(registry, fileSystem, request, pathResult.value, request.value, signal);
+}
+
+async function writeValueAtPath(
+  registry: ConfigurationRegistryPort,
+  fileSystem: FileSystemPort,
+  request: Omit<ConfigurationWriteRequest, "rawValue"> & { readonly requireAbsent?: boolean },
+  path: LocalPath,
+  value: ConfigurationValue,
+  signal?: AbortSignal,
+): Promise<ConfigurationWriteOutcome> {
   const stated = await fileSystem.stat(path, signal);
   if (!stated.ok) {
     if (stated.error.code === "cancelled") {
@@ -166,6 +214,9 @@ export async function writeConfigurationKey(
     if (stated.value.revision !== request.expectedRevision) {
       return { kind: "stale-write", path };
     }
+  }
+  if (stated.value !== null && request.requireAbsent === true) {
+    return { kind: "stale-write", path };
   }
 
   let document: Record<string, unknown>;

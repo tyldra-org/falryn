@@ -33,6 +33,7 @@ import type {
 import type { DataRemovalPayload } from "./commands/data-removal.ts";
 import type { DoctorPayload, runDoctor } from "./commands/doctor.ts";
 import type { ExportCommandPayload, runExport } from "./commands/export.ts";
+import type { ProviderCommandPayload, runProvider } from "./commands/provider.ts";
 import type {
   runSessionList,
   runSessionShow,
@@ -98,6 +99,7 @@ export {
 } from "./commands/data-removal.ts";
 export { type DoctorPayload, type DoctorStorage, runDoctor } from "./commands/doctor.ts";
 export { type ExportCommandPayload, runExport } from "./commands/export.ts";
+export { type ProviderCommandPayload, runProvider } from "./commands/provider.ts";
 export {
   runSessionList,
   runSessionShow,
@@ -259,6 +261,8 @@ export function stoppedResult(
         outcome,
         effect,
       );
+    case "provider":
+      return resultFor<"provider", ProviderCommandPayload>("provider", null, [], outcome, effect);
     case "run":
       return resultFor<"run", CodingRunPayload>("run", null, [], outcome, effect);
     case "completion":
@@ -315,4 +319,5 @@ export type RunCommandResult =
   | Awaited<ReturnType<typeof runWorkspaceShow>>
   | Awaited<ReturnType<typeof runWorkspaceSave>>
   | Awaited<ReturnType<typeof runWorkspaceLoad>>
+  | Awaited<ReturnType<typeof runProvider>>
   | Awaited<ReturnType<typeof runCoding>>;

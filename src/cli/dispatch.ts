@@ -55,6 +55,7 @@ import {
 } from "./invocation-scope.ts";
 import { configurationOverridesFor, type GlobalOptions } from "./options.ts";
 import { openProductArtifactSession } from "./product-artifact-session.ts";
+import { composeProductProviderConnections } from "./product-provider-connections.ts";
 import { composeProductShellAttachments } from "./product-shell-attachments.ts";
 import {
   createServiceProvider,
@@ -203,6 +204,7 @@ async function runCommand(
     runArgs,
     taskArgs,
     commitPlanArgs,
+    providerArgs,
     options: globals,
   } = invocation;
 
@@ -233,6 +235,7 @@ async function runCommand(
     runArgs,
     taskArgs,
     commitPlanArgs,
+    providerArgs,
     services,
     overrides,
     globals,
@@ -384,16 +387,22 @@ async function launchShell(
   );
 
   const productArtifactSession = await openProductArtifactSession(graph, stopped.signal);
+  const provider = await composeProductProviderConnections(graph, globals, {
+    configuration,
+    ...(governance.ownedProcesses === undefined
+      ? {}
+      : { ownedProcesses: governance.ownedProcesses }),
+  }).resolveSelected(stopped.signal);
   let productAttachments: Awaited<ReturnType<typeof composeProductShellAttachments>>;
   try {
     productAttachments = await composeProductShellAttachments({
       eventStore: graph.eventStore,
       clock: graph.clock,
-      environment,
       fileSystem: graph.fileSystem,
       workspaceSet: resolvedWorkspace.ok === true ? resolvedWorkspace.value.set : null,
       configurationGeneration,
       signal: stopped.signal,
+      provider,
       ...(productArtifactSession === null
         ? {}
         : {
@@ -447,6 +456,7 @@ async function launchShell(
         : {
             submission: productAttachments.submission,
             transcriptFeed: productAttachments.transcriptFeed,
+            controls: productAttachments.controls,
           }),
     });
   } finally {
@@ -526,6 +536,7 @@ async function governed(
   runArgs: Extract<Invocation, { kind: "run" }>["runArgs"],
   taskArgs: Extract<Invocation, { kind: "run" }>["taskArgs"],
   commitPlanArgs: Extract<Invocation, { kind: "run" }>["commitPlanArgs"],
+  providerArgs: Extract<Invocation, { kind: "run" }>["providerArgs"],
   services: ServiceProvider,
   overrides: Readonly<Record<string, string>>,
   globals: GlobalOptions,
@@ -548,6 +559,7 @@ async function governed(
       runArgs,
       taskArgs,
       commitPlanArgs,
+      providerArgs,
       services,
       overrides,
       globals,
@@ -570,6 +582,7 @@ async function governed(
       runArgs,
       taskArgs,
       commitPlanArgs,
+      providerArgs,
       services,
       overrides,
       globals,

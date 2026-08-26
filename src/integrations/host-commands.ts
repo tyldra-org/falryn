@@ -87,7 +87,7 @@ export function createHostCommandRunner(options: HostCommandRunnerOptions = {}):
           ...(request.cwd === undefined ? {} : { cwd: request.cwd }),
           ...ownedTreeSpawnOptions(),
           env: request.environment,
-          stdin: "ignore",
+          stdin: request.stdinBytes ?? "ignore",
           stdout: "pipe",
           stderr: "pipe",
           signal: controller.signal,
@@ -154,6 +154,12 @@ function invalidRequest(request: CommandRequest): CommandOutcome | null {
   }
   if (!Number.isSafeInteger(request.maxOutputBytes) || request.maxOutputBytes < 0) {
     return { kind: "spawn-failed", code: "invalid-output-limit" };
+  }
+  if (
+    request.stdinBytes !== undefined &&
+    request.stdinBytes.byteLength > MAX_COMMAND_OUTPUT_BYTES
+  ) {
+    return { kind: "spawn-failed", code: "stdin-too-large" };
   }
 
   const environmentError = validateEnvironment(request.environment);
