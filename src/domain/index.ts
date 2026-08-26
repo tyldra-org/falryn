@@ -1628,6 +1628,7 @@ export {
   TEMPORARY_INGEST_OWNERS,
 } from "./local-data.ts";
 export type {
+  LoomArtifactReadPlan,
   LoomCache,
   LoomCacheKey,
   LoomCacheStatus,
@@ -1643,13 +1644,16 @@ export type {
   LoomProjectionKind,
   LoomProjectionRequest,
   LoomProjectionResult,
+  LoomProjectionSource,
   LoomProtectedFact,
+  LoomRetrievalPlan,
   LoomRetrieveInput,
   LoomSearchHit,
   LoomUnsupportedProjectionKind,
 } from "./loom.ts";
 export {
   commitLoomManifest,
+  completeLoomRetrieval,
   createLoomCache,
   DEFAULT_LOOM_CACHE_ENTRIES,
   DEFAULT_LOOM_HEAD_BYTES,
@@ -1670,6 +1674,7 @@ export {
   MAX_LOOM_PROTECTED_FACTS,
   MAX_LOOM_QUERY_BYTES,
   MAX_LOOM_SUMMARY_BYTES,
+  planLoomRetrieval,
   retrieveLoomProjection,
 } from "./loom.ts";
 export type {
