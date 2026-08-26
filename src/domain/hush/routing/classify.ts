@@ -1,10 +1,11 @@
-/** Command identity and ordered rule selection for Hush. */
+/** Command identity and ordered reducer routing for Hush. */
 
 import type { CommandRequest } from "../../process.ts";
 import { commandMode } from "../../process.ts";
 import type { ProcessCaptureReport, ProcessStreamCapture } from "../../process-capture.ts";
 import { assertNever } from "../../result.ts";
 import type { HushCommandIdentity, HushFamily } from "../contracts.ts";
+import { commandShape, normalizeCommandTokens } from "../invocation/normalize.ts";
 import {
   GENERIC_RULE,
   type HushCommandClassification,
@@ -14,8 +15,7 @@ import {
   OUTPUT_GIT_LOG_RULE,
   OUTPUT_SEARCH_RULE,
   SHELL_COMPOUND_RULE,
-} from "../rules/index.ts";
-import { commandShape, normalizeCommandTokens } from "./normalize.ts";
+} from "./index.ts";
 
 export function classifyCommand(
   command: CommandRequest,

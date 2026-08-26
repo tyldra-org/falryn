@@ -1,8 +1,8 @@
 /** Capture gate and command dispatch for Git log/show projections. */
 
 import type { ProcessCaptureReport } from "../../../../process-capture.ts";
-import { gitSubcommand, gitSubcommandArguments } from "../../../command/git.ts";
 import type { HushStreamProjection } from "../../../contracts.ts";
+import { gitSubcommand, gitSubcommandArguments } from "../../../invocation/git.ts";
 import type { HushReducer } from "../../contracts.ts";
 import { genericProjection } from "../../fallback.ts";
 import { shortestText } from "../../shared/text.ts";

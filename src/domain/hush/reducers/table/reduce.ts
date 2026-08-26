@@ -1,6 +1,6 @@
 import type { ProcessCaptureReport } from "../../../process-capture.ts";
-import { KUBERNETES_EXECUTABLES } from "../../command/kubernetes.ts";
 import type { HushStreamProjection } from "../../contracts.ts";
+import { KUBERNETES_EXECUTABLES } from "../../invocation/kubernetes.ts";
 import { CONTAINER_EXECUTABLES } from "../container/shared.ts";
 import { formatContainerTableOutput } from "../container/table.ts";
 import type { HushReducer } from "../contracts.ts";

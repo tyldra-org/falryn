@@ -1,4 +1,4 @@
-import type { HushGraphiteCommand } from "../../../command/graphite.ts";
+import type { HushGraphiteCommand } from "../../../invocation/graphite.ts";
 import { stripAnsi } from "../../shared/text.ts";
 
 /** Compact only complete, recognized Graphite mutation transcripts. */

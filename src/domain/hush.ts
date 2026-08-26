@@ -1,12 +1,11 @@
 /**
  * Hush command-output reduction over exact process-capture facts.
  *
- * This stable facade owns orchestration. Public contracts, command
- * classification, shared bounds, and family reducers live under `./hush/` so
- * adding command support does not grow one central implementation file.
+ * This stable facade owns orchestration. Public contracts, invocation parsing,
+ * reducer routing, shared bounds, and reducers live under `./hush/` so adding
+ * command support does not grow one central implementation file.
  */
 
-import { classifyCommand, commandIdentity } from "./hush/command/classify.ts";
 import {
   DEFAULT_HUSH_REDUCED_BYTES,
   HUSH_REDUCER_VERSION,
@@ -25,9 +24,9 @@ import {
   rawFallbackProjection,
 } from "./hush/reducers/fallback.ts";
 import { fidelityFor } from "./hush/reducers/fidelity.ts";
+import { classifyCommand, commandIdentity } from "./hush/routing/classify.ts";
 import { err, ok, type Result } from "./result.ts";
 
-export { classifyFamily, classifyReducerId } from "./hush/command/classify.ts";
 export type {
   HushCommandIdentity,
   HushError,
@@ -49,6 +48,7 @@ export {
   HUSH_STRATEGIES,
   MAX_HUSH_REDUCED_BYTES,
 } from "./hush/contracts.ts";
+export { classifyFamily, classifyReducerId } from "./hush/routing/classify.ts";
 
 export function createHushPort(): HushPort {
   return { reduce: reduceHush };

@@ -1,6 +1,6 @@
 /** Dispatch package-manager output to its owning parser. */
 
-import type { PackageExecutable } from "../../command/package.ts";
+import type { PackageExecutable } from "../../invocation/package.ts";
 import { compactDuplicateRuns, shortestText, stripAnsi } from "../shared/text.ts";
 import {
   type EcosystemPackageExecutable,

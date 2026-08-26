@@ -5,13 +5,13 @@ import {
   githubCommandArguments,
   type HushGithubCommand,
   hasGithubOutputOverride,
-} from "../domain/hush/command/github.ts";
+} from "../domain/hush/invocation/github.ts";
 import {
   gitlabCommand,
   gitlabCommandArguments,
   hasGitlabOutputOverride,
-} from "../domain/hush/command/gitlab.ts";
-import { commandShape } from "../domain/hush/command/normalize.ts";
+} from "../domain/hush/invocation/gitlab.ts";
+import { commandShape } from "../domain/hush/invocation/normalize.ts";
 import type { ProcessCaptureRequest } from "../domain/index.ts";
 
 const GITHUB_FIELDS: Readonly<Partial<Record<HushGithubCommand, string>>> = {

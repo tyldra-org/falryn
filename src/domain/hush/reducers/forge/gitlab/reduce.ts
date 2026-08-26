@@ -1,11 +1,11 @@
 import type { ProcessCaptureReport } from "../../../../process-capture.ts";
+import type { HushStreamProjection } from "../../../contracts.ts";
 import {
   gitlabCommand,
   gitlabCommandArguments,
   type HushGitlabCommand,
   hasGitlabOutputOverride,
-} from "../../../command/gitlab.ts";
-import type { HushStreamProjection } from "../../../contracts.ts";
+} from "../../../invocation/gitlab.ts";
 import { boundStream, boundText, joinStreams } from "../../stream.ts";
 import { completeSuccessfulCapture } from "../capture.ts";
 import { formatGitlabCiStatus } from "./ci-status.ts";

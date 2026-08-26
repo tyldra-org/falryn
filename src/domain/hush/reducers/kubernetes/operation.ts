@@ -1,6 +1,6 @@
 /** Complete Kubernetes/OpenShift operation and describe projections. */
 
-import { parseKubernetesCommand } from "../../command/kubernetes.ts";
+import { parseKubernetesCommand } from "../../invocation/kubernetes.ts";
 import { shortestText } from "../shared/text.ts";
 import { kubernetesLines } from "./shared.ts";
 import { formatKubernetesAlignedTable } from "./table.ts";

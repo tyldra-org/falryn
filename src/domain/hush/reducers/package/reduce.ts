@@ -1,10 +1,10 @@
 import type { ProcessCaptureReport } from "../../../process-capture.ts";
+import type { HushStreamProjection } from "../../contracts.ts";
 import {
   hasPackageOutputOverride,
   packageAction,
   packageExecutable,
-} from "../../command/package.ts";
-import type { HushStreamProjection } from "../../contracts.ts";
+} from "../../invocation/package.ts";
 import type { HushReducer } from "../contracts.ts";
 import { completeSuccessfulCapture } from "../forge/capture.ts";
 import { losslessTextProjection } from "../lossless-text.ts";

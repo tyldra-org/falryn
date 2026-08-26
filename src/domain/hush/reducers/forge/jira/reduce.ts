@@ -1,6 +1,10 @@
 import type { ProcessCaptureReport } from "../../../../process-capture.ts";
-import { hasJiraOutputOverride, jiraCommand, jiraCommandArguments } from "../../../command/jira.ts";
 import type { HushStreamProjection } from "../../../contracts.ts";
+import {
+  hasJiraOutputOverride,
+  jiraCommand,
+  jiraCommandArguments,
+} from "../../../invocation/jira.ts";
 import { boundStream, boundText, joinStreams } from "../../stream.ts";
 import { completeSuccessfulCapture } from "../capture.ts";
 import { formatJiraIssueList } from "./issue-list.ts";

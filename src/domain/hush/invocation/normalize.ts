@@ -1,4 +1,4 @@
-/** Safe command-shape normalization for Hush classification. */
+/** Safe command-shape normalization for Hush routing. */
 
 import type { CommandRequest } from "../../process.ts";
 import { type HushShellOperator, parseShellCommand } from "./shell.ts";

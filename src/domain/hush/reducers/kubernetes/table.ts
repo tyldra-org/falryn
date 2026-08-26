@@ -3,7 +3,7 @@
 import {
   hasCallerOwnedKubernetesOutput,
   parseKubernetesCommand,
-} from "../../command/kubernetes.ts";
+} from "../../invocation/kubernetes.ts";
 import { shortestText } from "../shared/text.ts";
 import { formatAlignedTable } from "../table/format.ts";
 import { kubernetesLines } from "./shared.ts";

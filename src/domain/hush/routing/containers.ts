@@ -1,6 +1,6 @@
 /** Container, Kubernetes, and OpenShift command rules. */
 
-import { parseKubernetesCommand } from "../command/kubernetes.ts";
+import { parseKubernetesCommand } from "../invocation/kubernetes.ts";
 import { reduceBuild } from "../reducers/build/reduce.ts";
 import { reduceLog } from "../reducers/log/reduce.ts";
 import { reduceOperation } from "../reducers/operation/reduce.ts";

@@ -456,7 +456,7 @@ function ruffOutput(argv: readonly string[]): string {
         message: "Undefined name `missing`",
         fix: null,
         noqa_row: 14,
-        url: "https://docs.astral.sh/ruff/rules/undefined-name",
+        url: "https://docs.astral.sh/ruff/routing/undefined-name",
       },
       {
         code: "E501",
@@ -466,7 +466,7 @@ function ruffOutput(argv: readonly string[]): string {
         message: "Line too long (92 > 88)",
         fix: null,
         noqa_row: 28,
-        url: "https://docs.astral.sh/ruff/rules/line-too-long",
+        url: "https://docs.astral.sh/ruff/routing/line-too-long",
       },
     ]);
   }

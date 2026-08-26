@@ -1,7 +1,7 @@
 /** Contracts shared by Hush command rules and classification. */
 
-import type { HushCommandShape } from "../command/normalize.ts";
 import type { HushFamily } from "../contracts.ts";
+import type { HushCommandShape } from "../invocation/normalize.ts";
 import type { HushReducer } from "../reducers/contracts.ts";
 
 export const HUSH_PROJECTION_KINDS = [

@@ -1,9 +1,9 @@
 import type { ProcessCaptureReport } from "../../../process-capture.ts";
-import { githubCommand } from "../../command/github.ts";
-import { gitlabCommand } from "../../command/gitlab.ts";
-import { graphiteCommand } from "../../command/graphite.ts";
-import { jiraCommand } from "../../command/jira.ts";
 import type { HushStreamProjection } from "../../contracts.ts";
+import { githubCommand } from "../../invocation/github.ts";
+import { gitlabCommand } from "../../invocation/gitlab.ts";
+import { graphiteCommand } from "../../invocation/graphite.ts";
+import { jiraCommand } from "../../invocation/jira.ts";
 import type { HushReducer } from "../contracts.ts";
 import { passthroughProjection } from "../fallback.ts";
 import { tableProjection } from "../table/reduce.ts";

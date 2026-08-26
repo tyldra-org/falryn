@@ -12,7 +12,7 @@ import {
   processCaptureId,
   reduceHush,
 } from "../../index.ts";
-import { commandShape } from "../command/normalize.ts";
+import { commandShape } from "../invocation/normalize.ts";
 import { HUSH_COMMAND_RULES, HUSH_PROJECTION_KINDS, matchHushCommand } from "./index.ts";
 
 const PINNED_RTK_EXECUTABLES = [
@@ -243,13 +243,17 @@ describe("Hush command rules", () => {
       );
     });
     const secondaryRegistries = productionFiles.filter((path) => {
-      if (path.endsWith("/rules/index.ts")) return false;
+      if (path.endsWith("/routing/index.ts")) return false;
       const source = readFileSync(path, "utf8");
       return /REDUCER_(?:MAP|REGISTRY)|REDUCERS_BY_|(?:Map|Record)<[^>]*HushReducer/u.test(source);
     });
 
     expect(forbiddenImports).toEqual([]);
     expect(secondaryRegistries).toEqual([]);
+    expect(existsSync(`${hushRoot}/command`)).toBe(false);
+    expect(existsSync(`${hushRoot}/rules`)).toBe(false);
+    expect(existsSync(`${hushRoot}/invocation/classify.ts`)).toBe(false);
+    expect(existsSync(`${hushRoot}/routing/classify.ts`)).toBe(true);
     expect(existsSync(`${hushRoot}/reducers/entrypoints.ts`)).toBe(false);
     expect(existsSync(`${hushRoot}/reducers/git/index.ts`)).toBe(false);
     expect(

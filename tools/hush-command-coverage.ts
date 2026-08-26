@@ -1,12 +1,12 @@
 /** Maintained Hush command-routing coverage scorecard against pinned RTK 0.45.0. */
 
 import { duration } from "../src/domain/clock.ts";
-import { commandShape } from "../src/domain/hush/command/normalize.ts";
+import { commandShape } from "../src/domain/hush/invocation/normalize.ts";
 import {
   HUSH_COMMAND_RULES,
   HUSH_PROJECTION_KINDS,
   matchHushCommand,
-} from "../src/domain/hush/rules/index.ts";
+} from "../src/domain/hush/routing/index.ts";
 import { MAX_COMMAND_OUTPUT_BYTES, type ProcessCaptureRequest } from "../src/domain/index.ts";
 
 export const HUSH_RTK_BASELINE = {

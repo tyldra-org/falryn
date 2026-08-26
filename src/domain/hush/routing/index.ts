@@ -1,4 +1,4 @@
-/** Ordered Hush command rules and executable lookup. */
+/** Ordered Hush reducer routing and executable lookup. */
 
 import { reduceCompound } from "../reducers/compound/reduce.ts";
 import { reduceGitDiff } from "../reducers/git/diff.ts";

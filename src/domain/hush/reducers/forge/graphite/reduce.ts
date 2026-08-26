@@ -1,11 +1,11 @@
 import type { ProcessCaptureReport } from "../../../../process-capture.ts";
+import type { HushStreamProjection } from "../../../contracts.ts";
 import {
   graphiteCommand,
   graphiteCommandArguments,
   type HushGraphiteCommand,
   hasGraphiteOutputOverride,
-} from "../../../command/graphite.ts";
-import type { HushStreamProjection } from "../../../contracts.ts";
+} from "../../../invocation/graphite.ts";
 import { boundText } from "../../stream.ts";
 import { completeSuccessfulCapture } from "../capture.ts";
 import { formatGraphiteLog } from "./log.ts";

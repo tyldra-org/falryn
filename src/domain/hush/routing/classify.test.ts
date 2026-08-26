@@ -2,8 +2,8 @@
 
 import { describe, expect, test } from "bun:test";
 import { classifyFamily, classifyReducerId } from "../../index.ts";
-import { classifyCommand } from "../command/classify.ts";
 import { argv, bash, report } from "../fixtures.ts";
+import { classifyCommand } from "./classify.ts";
 
 describe("Hush rule matching", () => {
   test("returns the matched rule, normalized command, and match evidence", () => {
