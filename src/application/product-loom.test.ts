@@ -138,12 +138,21 @@ describe("composeProductLoomContext", () => {
     }
     expect(evidence.value.origin).toContain("loom:");
 
-    const recovered = product.attachRecovery(
-      { projection: "reduced" },
-      "loom-1",
-      evidence.ok ? null : null,
-    );
+    const projection = await loom.retrieve({
+      id: "ev-2",
+      manifestId: "loom-1",
+      expectedWorkspaceId: "ws-1",
+      expectedSessionId: "sess-1",
+      projection: { kind: "exact", member: "member-1" },
+    });
+    expect(projection.ok).toBe(true);
+    if (!projection.ok) {
+      return;
+    }
+
+    const recovered = product.attachRecovery({ projection: "reduced" }, "loom-1", projection.value);
     expect(recovered.loomRecovery.manifestId).toBe("loom-1");
+    expect(recovered.loomRecovery.artifactId).toBe(projection.value.handle.artifactId);
     expect(recovered.loomRecovery.owner).toBe(PRODUCT_LOOM_OWNER);
   });
 });

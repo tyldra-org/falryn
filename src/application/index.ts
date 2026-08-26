@@ -151,6 +151,8 @@ export {
   workspaceFolderSyncSnapshot,
 } from "./language-server-workspace.ts";
 export type {
+  LoomAdoptMember,
+  LoomAdoptRequest,
   LoomEvidenceRequest,
   LoomIngestMember,
   LoomIngestRequest,
@@ -231,6 +233,18 @@ export type {
   ProductMemoryTurnResult,
 } from "./product-memory-turn.ts";
 export { composeProductMemoryTurn } from "./product-memory-turn.ts";
+export type {
+  ProductReadCoordinator,
+  ProductReadCoordinatorOptions,
+  ProductReadResult,
+} from "./product-read.ts";
+export {
+  createProductReadCoordinator,
+  DEFAULT_PRODUCT_READ_LOOM_BYTES,
+  MAX_PRODUCT_READ_CANDIDATES,
+  PRODUCT_READ_OWNER,
+  productReadInputSchema,
+} from "./product-read.ts";
 export type {
   ProductGitToolPorts,
   ProductGitTools,

@@ -26,12 +26,14 @@ import {
   createLanguageServerSupervisor,
   DEFAULT_OPENAI_CREDENTIAL_REFERENCE,
   fromUnknown,
+  type LoomPort,
   mergeProductToolBundles,
   PRODUCT_BRIEF_OWNER,
   PRODUCT_INDEX_LIFECYCLE_OWNER,
   resolveProviderApiKey,
 } from "../application/index.ts";
 import {
+  type ArtifactStorePort,
   type BriefVerbosityMode,
   type CredentialReference,
   type FalrynError,
@@ -59,6 +61,10 @@ import { createOpenAiCompatibleAdapter } from "../providers/openai-compatible-ad
 import type { ProviderAdapterPort } from "../providers/port.ts";
 import { startConfigurationReloadWatcher } from "./configuration-reload.ts";
 import type { GlobalOptions } from "./options.ts";
+import {
+  openProductArtifactSession,
+  type ProductArtifactSession,
+} from "./product-artifact-session.ts";
 import {
   loadProductConfiguration,
   productConfigurationLoadRequest,
@@ -144,6 +150,9 @@ export type CodingRunOptions = {
   readonly reloadDiagnostics?: CliStreams;
   /** Adopts owned subprocess trees for shutdown (#730). */
   readonly ownedProcesses?: OwnedProcessRegistry;
+  /** Durable exact-output storage and optional shared Loom lifecycle (#814). */
+  readonly artifacts?: ArtifactStorePort;
+  readonly loom?: LoomPort;
 };
 
 /**
@@ -267,6 +276,7 @@ export async function runCoding(
             : { streams: options.reloadDiagnostics }),
           ...(options.signal === undefined ? {} : { signal: options.signal }),
         });
+  let productArtifactSession: ProductArtifactSession | null = null;
 
   try {
     const now = graph.clock.now();
@@ -287,6 +297,9 @@ export async function runCoding(
         : productConfigurationLoadRequest(options.globals);
     const configuration = await loadProductConfiguration(graph, configRequest, options.signal);
     const generation = configuration.generation;
+    if (options.artifacts === undefined) {
+      productArtifactSession = await openProductArtifactSession(graph, options.signal);
+    }
 
     const indexStore: WorkspaceIndexWritePort & {
       readonly last: { current: WorkspaceIndexGeneration | null };
@@ -335,11 +348,17 @@ export async function runCoding(
       }
     }
 
+    const productArtifacts = options.artifacts ?? productArtifactSession?.artifacts;
+    const productLoom = options.loom ?? productArtifactSession?.loom;
     const workspaceTools = composeProductWorkspaceTools({
       generation,
       fileSystem: graph.fileSystem,
       commands: createHostCommandRunner(ownedProcessOptions),
       workspaceRoot: primaryWorkspaceRoot(workspace.value.set).path,
+      ...(productArtifacts === undefined ? {} : { artifacts: productArtifacts }),
+      ...(productLoom === undefined ? {} : { loom: productLoom }),
+      workspaceId,
+      sessionId,
     });
     const processTools = composeProductProcessTools({
       generation,
@@ -472,7 +491,7 @@ export async function runCoding(
       workspaceId,
       configurationGeneration: generation,
       task: resolved.prompt,
-      candidates: [],
+      candidates: workspaceTools.contextCandidates(),
       otherSections: (() => {
         const briefControls = composeProductBriefControls({
           initialVerbosity: arguments_.brief ?? "balanced",
@@ -658,6 +677,7 @@ export async function runCoding(
       hostedOutcome,
     );
   } finally {
+    await productArtifactSession?.close();
     configReload?.dispose();
   }
 }

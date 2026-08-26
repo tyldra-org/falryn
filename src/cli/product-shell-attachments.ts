@@ -18,10 +18,12 @@ import {
   createDebugAdapterSupervisor,
   createLanguageServerSupervisor,
   DEFAULT_OPENAI_CREDENTIAL_REFERENCE,
+  type LoomPort,
   mergeProductToolBundles,
   resolveProviderApiKey,
 } from "../application/index.ts";
 import {
+  type ArtifactStorePort,
   type ClockPort,
   type ConfigurationGeneration,
   type EnvironmentPort,
@@ -61,6 +63,9 @@ export type ProductShellAttachmentPorts = {
   readonly platform?: LocalDataPlatform;
   readonly commands?: ReturnType<typeof createHostCommandRunner>;
   readonly ownedProcesses?: OwnedProcessRegistry;
+  /** Durable exact-output storage and optional shared Loom lifecycle (#814). */
+  readonly artifacts?: ArtifactStorePort;
+  readonly loom?: LoomPort;
 };
 
 export type ProductShellAttachments = {
@@ -118,6 +123,10 @@ export async function composeProductShellAttachments(
           fileSystem: ports.fileSystem,
           commands,
           workspaceRoot: primaryWorkspaceRoot(ports.workspaceSet).path,
+          ...(ports.artifacts === undefined ? {} : { artifacts: ports.artifacts }),
+          ...(ports.loom === undefined ? {} : { loom: ports.loom }),
+          workspaceId,
+          sessionId,
         });
   const processTools =
     ports.workspaceSet === null
@@ -203,6 +212,7 @@ export async function composeProductShellAttachments(
       traceId,
       configurationGeneration: generation,
       isAccepting: () => ports.signal === undefined || !ports.signal.aborted,
+      ...(workspaceTools === null ? {} : { contextCandidates: workspaceTools.contextCandidates }),
     }),
     transcriptFeed: transcriptFeedFromProducer(producer),
   };
