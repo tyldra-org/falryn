@@ -3,6 +3,9 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { basename } from "node:path";
 
+import { cloudFixtureOutput } from "./hush-cloud-output.ts";
+import { infrastructureFixtureOutput } from "./hush-infra-output.ts";
+
 const executable = basename(Bun.argv[1] ?? "");
 const args = Bun.argv.slice(2);
 
@@ -213,24 +216,32 @@ const outputs: Readonly<Record<string, () => string>> = {
       2,
     ),
   ssh: () => ["connected example.test", "remote command: ok"].join("\n"),
-  terraform: () =>
-    [
-      "Terraform will perform the following actions:",
-      "  # falryn_context.primary will be updated in-place",
-      '  ~ resource "falryn_context" "primary"',
-      "Plan: 0 to add, 1 to change, 0 to destroy.",
-    ].join("\n"),
-  aws: () =>
-    JSON.stringify(
-      {
-        Account: "123456789012",
-        Arn: "arn:aws:iam::123456789012:user/falryn",
-        UserId: "AIDAEXAMPLE",
-      },
-      null,
-      2,
-    ),
+  aws: () => requiredCloudOutput("aws", args),
+  gcloud: () => requiredCloudOutput("gcloud", args),
+  az: () => requiredCloudOutput("az", args),
+  "ansible-playbook": () => requiredInfrastructureOutput("ansible-playbook", args),
+  "fail2ban-client": () => requiredInfrastructureOutput("fail2ban-client", args),
+  helm: () => requiredInfrastructureOutput("helm", args),
+  iptables: () => requiredInfrastructureOutput("iptables", args),
+  liquibase: () => requiredInfrastructureOutput("liquibase", args),
+  pulumi: () => requiredInfrastructureOutput("pulumi", args),
+  sops: () => requiredInfrastructureOutput("sops", args),
+  terraform: () => requiredInfrastructureOutput("terraform", args),
+  tofu: () => requiredInfrastructureOutput("tofu", args),
 };
+
+function requiredCloudOutput(executable: string, argv: readonly string[]): string {
+  const output = cloudFixtureOutput(executable, argv);
+  if (output === null) throw new Error(`unsupported cloud fixture executable: ${executable}`);
+  return output;
+}
+
+function requiredInfrastructureOutput(executable: string, argv: readonly string[]): string {
+  const output = infrastructureFixtureOutput(executable, argv);
+  if (output === null)
+    throw new Error(`unsupported infrastructure fixture executable: ${executable}`);
+  return output;
+}
 
 function genericTestOutput(): string {
   return [

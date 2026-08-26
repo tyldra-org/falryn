@@ -4,6 +4,7 @@ import { KUBERNETES_EXECUTABLES } from "../../kubernetes-command.ts";
 import { shortestText } from "../../text-format.ts";
 import { formatContainerOperationOutput } from "../container/operation.ts";
 import { CONTAINER_EXECUTABLES, containerExecutable } from "../container/shared.ts";
+import { formatInfrastructureOutput } from "../infra/format.ts";
 import { formatKubernetesOperationOutput } from "../kubernetes/operation.ts";
 import { formatOperationCommand } from "./commands.ts";
 import { formatPrismaOperation } from "./prisma.ts";
@@ -19,6 +20,7 @@ export function formatOperationOutput(
     (KUBERNETES_EXECUTABLES.has(containerExecutable(commandTokens))
       ? formatKubernetesOperationOutput(text, commandTokens)
       : null) ??
+    formatInfrastructureOutput(text, commandTokens) ??
     (commandTokens[0] === "prisma" ? formatPrismaOperation(text, commandTokens) : null) ??
     formatOperationCommand(text, commandTokens);
   return formatted === null ? null : shortestText(text, formatted);

@@ -69,13 +69,13 @@ describe("Hush ls scorecard", () => {
     });
     const formatted = formatHushLsScorecard({
       corpusVersion: HUSH_LS_CORPUS_VERSION,
-      hushVersion: "hush.v32",
+      hushVersion: "hush.v33",
       rtkVersion: "rtk 0.45.0",
       estimator: "ceil(utf8-bytes/4)",
       scores: [score],
       passes: true,
     });
-    expect(formatted).toContain("Hush hush.v32 vs rtk 0.45.0");
+    expect(formatted).toContain("Hush hush.v33 vs rtk 0.45.0");
     expect(formatted).toContain("recursive");
     expect(formatted).toContain("TOTAL");
     expect(formatted).toContain("all");

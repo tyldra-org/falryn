@@ -292,6 +292,30 @@ describe("hush reduction", () => {
     expect(partial.value.expansion.stdoutArtifact).toBe(artifactId.from("cap-1.stdout"));
   });
 
+  test("keeps partial cloud output and unrecognized infrastructure output exact", () => {
+    const cloudSource = '{\n  "Reservations": [\n    {"InstanceId":"i-0736"}\n';
+    const cloud = reduceHush({
+      command: argv("/usr/bin/aws", ["ec2", "describe-instances"]),
+      capture: report(cloudSource, { truncated: true, artifact: true }),
+    });
+    expect(cloud.ok).toBe(true);
+    if (!cloud.ok) throw new Error("expected partial cloud output");
+    expect(cloud.value.reducerId).toBe("cloud.aws");
+    expect(cloud.value.reducedText).toBe(cloudSource);
+    expect(cloud.value.truncated).toBe(true);
+    expect(cloud.value.expansion.stdoutArtifact).toBe(artifactId.from("cap-1.stdout"));
+
+    const sopsSource = "provider:\n  name: falryn\n  key_ref: local/provider\n";
+    const sops = reduceHush({
+      command: argv("/usr/bin/sops", ["config.yaml"]),
+      capture: report(sopsSource),
+    });
+    expect(sops.ok).toBe(true);
+    if (!sops.ok) throw new Error("expected exact SOPS output");
+    expect(sops.value.reducerId).toBe("infra.operation");
+    expect(sops.value.reducedText).toBe(sopsSource);
+  });
+
   test("preserves terminal facts and omits the child environment", () => {
     const captured = report("On branch main\n", { durationMs: 44, exitCode: 1 });
     const reduced = reduceHush({
@@ -1322,9 +1346,7 @@ describe("hush reduction", () => {
       throw new Error("expected a hush result");
     }
     expect(reduced.value.reducerId).toBe("cloud.aws");
-    expect(reduced.value.reducedText).toBe(
-      "AWS iam account=123456789012 user=falryn id=AIDAEXAMPLE\n",
-    );
+    expect(reduced.value.reducedText).toBe("account=123456789012 user=falryn id=AIDAEXAMPLE");
     expect(reduced.value.omissions).toEqual([]);
   });
 

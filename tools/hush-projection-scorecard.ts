@@ -16,13 +16,14 @@ import {
   reduceHush,
 } from "../src/domain/index.ts";
 import { HUSH_BUILD_OPERATION_CASES } from "./hush-build-operation-cases.ts";
+import { HUSH_CLOUD_INFRA_CASES } from "./hush-cloud-infra-cases.ts";
 import { HUSH_RTK_BASELINE } from "./hush-command-coverage.ts";
 import { HUSH_CONTAINER_CASES } from "./hush-container-cases.ts";
 import { HUSH_KUBERNETES_CASES } from "./hush-kubernetes-cases.ts";
 import { type HushLsMeasurement, measureText } from "./hush-ls-scorecard.ts";
 import type { ProjectionCase } from "./hush-projection-case.ts";
 
-export const HUSH_PROJECTION_CORPUS_VERSION = "hush-projections.v30";
+export const HUSH_PROJECTION_CORPUS_VERSION = "hush-projections.v31";
 
 export const HUSH_FIND_LISTING_PATHS = [
   "bounds.ts",
@@ -1979,6 +1980,7 @@ export const HUSH_PROJECTION_CASES: readonly ProjectionCase[] = [
   },
   ...HUSH_CONTAINER_CASES,
   ...HUSH_KUBERNETES_CASES,
+  ...HUSH_CLOUD_INFRA_CASES,
   {
     id: "count-wc-single",
     projection: "count",
@@ -2047,22 +2049,6 @@ export const HUSH_PROJECTION_CASES: readonly ProjectionCase[] = [
     argv: ["example.test", "echo", "connected"],
     rtkArgv: ["ssh", "example.test", "echo", "connected"],
     requiredMarkers: ["connected", "example.test", "remote command: ok"],
-  },
-  {
-    id: "operation-terraform",
-    projection: "operation",
-    executable: "terraform",
-    argv: ["plan"],
-    rtkArgv: ["terraform", "plan"],
-    requiredMarkers: ["falryn_context.primary", "0 to add", "1 to change", "0 to destroy"],
-  },
-  {
-    id: "structured-aws",
-    projection: "structured",
-    executable: "aws",
-    argv: ["sts", "get-caller-identity"],
-    rtkArgv: ["aws", "sts", "get-caller-identity"],
-    requiredMarkers: ["123456789012", "user=falryn", "AIDAEXAMPLE"],
   },
 ];
 
@@ -2321,6 +2307,11 @@ async function createFixtureCommands(root: string): Promise<string> {
   const fixtureSource = (await readFile(source, "utf8")).replace(
     /^#![^\n]+/u,
     `#!${process.execPath}`,
+  );
+  await Promise.all(
+    ["hush-cloud-output.ts", "hush-infra-output.ts"].map(async (name) => {
+      await writeFile(join(bin, name), await readFile(join(import.meta.dir, "fixtures", name)));
+    }),
   );
   await Promise.all(
     [...new Set(HUSH_PROJECTION_CASES.map((fixture) => fixture.executable))]

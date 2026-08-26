@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { HUSH_BUILD_OPERATION_CASES } from "./hush-build-operation-cases.ts";
+import { HUSH_CLOUD_INFRA_CASES } from "./hush-cloud-infra-cases.ts";
 import { HUSH_CONTAINER_CASES } from "./hush-container-cases.ts";
 import { HUSH_KUBERNETES_CASES } from "./hush-kubernetes-cases.ts";
 import {
@@ -11,7 +12,7 @@ import {
 
 describe("Hush projection scorecard corpus", () => {
   test("keeps each supported Git mutation as a separate RTK comparison", () => {
-    expect(HUSH_PROJECTION_CORPUS_VERSION).toBe("hush-projections.v30");
+    expect(HUSH_PROJECTION_CORPUS_VERSION).toBe("hush-projections.v31");
     expect(
       HUSH_PROJECTION_CASES.filter((entry) => entry.projection === "git-mutation").map(
         (entry) => entry.id,
@@ -315,6 +316,45 @@ describe("Hush projection scorecard corpus", () => {
     expect(
       HUSH_KUBERNETES_CASES.every((entry) => entry.forbiddenMarkers?.includes("omitted") ?? false),
     ).toBe(true);
+  });
+
+  test("measures every requested cloud and infrastructure surface without unsafe reductions", () => {
+    expect(HUSH_CLOUD_INFRA_CASES).toHaveLength(38);
+    const ids: readonly string[] = HUSH_CLOUD_INFRA_CASES.map((entry) => entry.id);
+    expect(ids).toEqual(
+      HUSH_PROJECTION_CASES.filter((entry) =>
+        HUSH_CLOUD_INFRA_CASES.some((candidate) => candidate.id === entry.id),
+      ).map((entry) => entry.id),
+    );
+    expect(ids.filter((id) => id.startsWith("cloud-aws-"))).toHaveLength(15);
+    expect(ids).toContain("cloud-gcloud-projects");
+    expect(ids).toContain("cloud-az-group");
+    expect(ids).toContain("infra-ansible");
+    expect(ids).toContain("infra-pulumi-stack-list");
+    expect(ids).toContain("infra-terraform-plan");
+    expect(ids).toContain("infra-tofu-validate");
+    expect(
+      HUSH_CLOUD_INFRA_CASES.every((entry) => entry.forbiddenMarkers?.includes("omitted") ?? false),
+    ).toBe(true);
+    expect(
+      HUSH_CLOUD_INFRA_CASES.filter((entry) => entry.competitiveTarget !== "win").map(
+        (entry) => entry.id,
+      ),
+    ).toEqual(["infra-sops", "infra-terraform-fmt", "infra-tofu-fmt"]);
+    expect(
+      HUSH_CLOUD_INFRA_CASES.filter((entry) => entry.baseline === "raw").map((entry) => entry.id),
+    ).toEqual([
+      "cloud-aws-ec2",
+      "cloud-aws-rds",
+      "cloud-aws-cloudformation",
+      "cloud-aws-logs",
+      "cloud-aws-lambda",
+      "cloud-aws-iam",
+      "infra-pulumi-preview",
+      "infra-pulumi-up",
+      "infra-pulumi-destroy",
+      "infra-pulumi-refresh",
+    ]);
   });
 
   test("measures every requested test-runner and wrapper as an uncapped strict win", () => {
