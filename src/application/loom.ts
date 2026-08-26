@@ -142,6 +142,8 @@ export type LoomEvidenceRequest = {
   readonly projection: LoomProjectionResult;
   readonly workspaceId?: string;
   readonly scopeId?: string;
+  readonly sourceKind?: "artifact" | "file";
+  readonly origin?: string;
 };
 
 function createSha256Hasher(): ContentHasherPort {
@@ -550,8 +552,8 @@ export function loomProjectionToEvidence(
       : { kind: "inline", text: projection.text };
   return admitEvidenceCandidate({
     id: projection.id,
-    sourceKind: "artifact",
-    origin: `loom:${projection.manifestId}`,
+    sourceKind: request.sourceKind ?? "artifact",
+    origin: request.origin ?? `loom:${projection.manifestId}`,
     payload,
     estimatedTokens: Math.max(1, Math.ceil(projection.byteLength / 4)),
     freshness: projection.freshness,

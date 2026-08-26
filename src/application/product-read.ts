@@ -3,24 +3,30 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
 
-import type {
-  ConfigurationGeneration,
-  EvidenceCandidate,
-  LoomProjectionRequest,
-  WorkspaceFileRead,
-  WorkspaceReadLimits,
-  WorkspaceReadManyItem,
-  WorkspaceReadRange,
-  WorkspaceReadTarget,
+import {
+  admitEvidenceCandidate,
+  type ConfigurationGeneration,
+  type EvidenceCandidate,
+  type LoomProjectionRequest,
+  type WorkspaceFileRead,
+  type WorkspaceIndexPort,
+  type WorkspaceReadLimits,
+  type WorkspaceReadManyItem,
+  type WorkspaceReadRange,
+  type WorkspaceReadTarget,
 } from "../domain/index.ts";
 import type { LoomPort } from "./loom.ts";
 import { loomProjectionToEvidence } from "./loom.ts";
 import { composeProductLoomContext } from "./product-loom.ts";
+import { projectIndexedRead } from "./product-read-outline.ts";
+import { containsRedactableSecret, redactText } from "./redaction.ts";
 import type { WorkspaceReader } from "./workspace-read.ts";
 
 export const PRODUCT_READ_OWNER = "#814";
 export const MAX_PRODUCT_READ_CANDIDATES = 32;
 export const DEFAULT_PRODUCT_READ_LOOM_BYTES = 4 * 1_024;
+
+const encoder = new TextEncoder();
 
 const lineRange = z
   .object({
@@ -75,6 +81,7 @@ const recoveryHandle = z
     byteLength: z.int().min(0).optional(),
     via: z.literal("loom-manifest").optional(),
     claimsExactSource: z.boolean().optional(),
+    origin: z.string().min(1).optional().nullable(),
     projections: z
       .tuple([
         z.literal("range"),
@@ -156,6 +163,7 @@ export type ProductReadCoordinatorOptions = {
   readonly workspaceId: string | null;
   readonly sessionId: string | null;
   readonly generation: ConfigurationGeneration;
+  readonly index?: WorkspaceIndexPort | null;
 };
 
 function stableId(prefix: string, values: readonly string[]): string {
@@ -165,6 +173,19 @@ function stableId(prefix: string, values: readonly string[]): string {
     hash.update("\0");
   }
   return `${prefix}-${hash.digest("hex").slice(0, 32)}`;
+}
+
+function utf8Bytes(value: string): number {
+  return encoder.encode(value).byteLength;
+}
+
+function redactProjectionText(value: string): string {
+  return value
+    .split("\n")
+    .map((line) =>
+      containsRedactableSecret(line) ? redactText(line, Number.MAX_SAFE_INTEGER) : line,
+    )
+    .join("\n");
 }
 
 function errorCode(error: {
@@ -217,6 +238,7 @@ export function createProductReadCoordinator(
   options: ProductReadCoordinatorOptions,
 ): ProductReadCoordinator {
   const evidence = new Map<string, EvidenceCandidate>();
+  const manifestOrigins = new Map<string, string>();
   const productLoom =
     options.loom === null ? null : composeProductLoomContext({ loom: options.loom });
 
@@ -262,6 +284,80 @@ export function createProductReadCoordinator(
     if (!adopted.ok) {
       return signal.aborted ? { ok: false, error: "cancelled" } : { ok: true, value: read };
     }
+    manifestOrigins.set(manifestId, read.bound.logical);
+    while (manifestOrigins.size > MAX_PRODUCT_READ_CANDIDATES) {
+      const oldest = manifestOrigins.keys().next().value;
+      if (oldest === undefined) {
+        break;
+      }
+      manifestOrigins.delete(oldest);
+    }
+    if (options.index !== undefined && options.index !== null) {
+      const snapshot = await options.index.snapshot(options.workspaceRoot, signal);
+      if (signal.aborted) {
+        return { ok: false, error: "cancelled" };
+      }
+      if (snapshot.ok) {
+        const indexed = projectIndexedRead(read, snapshot.value, DEFAULT_PRODUCT_READ_LOOM_BYTES);
+        if (indexed !== null) {
+          const redacted = containsRedactableSecret(indexed.text);
+          const text = redacted ? redactProjectionText(indexed.text) : indexed.text;
+          const evidenceId = stableId("evidence-read", [
+            manifestId,
+            indexed.generation,
+            indexed.kind,
+          ]);
+          const admitted = admitEvidenceCandidate({
+            id: evidenceId,
+            sourceKind: "file",
+            origin: read.bound.logical,
+            workspaceId: options.workspaceId,
+            payload: { kind: "inline", text },
+            estimatedTokens: Math.max(1, Math.ceil(utf8Bytes(text) / 4)),
+            freshness: "indexed",
+            sensitivity: "user-content",
+            trust: "adapter-declared",
+            fidelity: "deterministic-transform",
+            retrievalCost: 1,
+            expansion: read.expansion,
+            lineage: [
+              `index:${indexed.schema}`,
+              indexed.generation,
+              indexed.kind,
+              "loom-artifact",
+              ...(redacted ? ["redacted"] : []),
+            ],
+          });
+          if (admitted.ok) {
+            publish(admitted.value);
+            return {
+              ok: true,
+              value: productLoom.attachArtifactRecovery(
+                {
+                  ...compactReadMetadata(read),
+                  content: text,
+                  projection: {
+                    kind: indexed.kind,
+                    fidelity: "deterministic-transform",
+                    freshness: "indexed",
+                    sourceBytes: indexed.sourceBytes,
+                    outputBytes: utf8Bytes(text),
+                    complete: false,
+                    selectedLines: indexed.selectedLines,
+                    omissions: indexed.omissions,
+                    indexGeneration: indexed.generation,
+                    indexSchema: indexed.schema,
+                  },
+                },
+                manifestId,
+                read.expansion,
+                read.bound.logical,
+              ),
+            };
+          }
+        }
+      }
+    }
     const evidenceId = stableId("evidence-read", [manifestId, "head-tail"]);
     const retrieved = await options.loom.retrieve(
       {
@@ -280,6 +376,8 @@ export function createProductReadCoordinator(
     const admitted = loomProjectionToEvidence({
       projection: retrieved.value,
       workspaceId: options.workspaceId,
+      sourceKind: "file",
+      origin: read.bound.logical,
     });
     if (!admitted.ok) {
       return { ok: true, value: read };
@@ -304,6 +402,7 @@ export function createProductReadCoordinator(
         },
         manifestId,
         retrieved.value,
+        read.bound.logical,
       ),
     };
   };
@@ -342,6 +441,15 @@ export function createProductReadCoordinator(
       return { ok: false, error: "loom-scope-unavailable" };
     }
     const projection = requestedProjection(input.recovery.artifactId, input.projection);
+    const origin = manifestOrigins.get(input.recovery.manifestId) ?? null;
+    if (
+      origin !== null &&
+      input.recovery.origin !== null &&
+      input.recovery.origin !== undefined &&
+      input.recovery.origin !== origin
+    ) {
+      return { ok: false, error: "loom-origin-mismatch" };
+    }
     const evidenceId = stableId("evidence-recovery", [
       input.recovery.manifestId,
       input.recovery.artifactId,
@@ -364,6 +472,7 @@ export function createProductReadCoordinator(
     const admitted = loomProjectionToEvidence({
       projection: retrieved.value,
       workspaceId: options.workspaceId,
+      ...(origin === null ? {} : { sourceKind: "file" as const, origin }),
     });
     if (!admitted.ok) {
       return { ok: false, error: `loom-evidence:${errorCode(admitted.error)}` };
@@ -388,6 +497,7 @@ export function createProductReadCoordinator(
         },
         input.recovery.manifestId,
         retrieved.value,
+        origin ?? undefined,
       ),
     };
   };
@@ -445,6 +555,7 @@ export function createProductReadCoordinator(
     invalidate() {
       const removed = evidence.size;
       evidence.clear();
+      manifestOrigins.clear();
       options.loom?.invalidate({ all: true });
       return removed;
     },

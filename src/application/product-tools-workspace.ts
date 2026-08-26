@@ -21,6 +21,7 @@ import type {
   ToolRegistry,
   ToolRegistryEntry,
   WorkspaceId,
+  WorkspaceIndexPort,
 } from "../domain/index.ts";
 import {
   conflictKey,
@@ -129,6 +130,7 @@ export type ProductWorkspaceToolPorts = {
   readonly loom?: LoomPort;
   readonly workspaceId?: WorkspaceId;
   readonly sessionId?: SessionId;
+  readonly index?: WorkspaceIndexPort;
 };
 
 export type ProductWorkspaceTools = {
@@ -161,6 +163,7 @@ export function composeProductWorkspaceTools(
     workspaceId: ports.workspaceId ?? null,
     sessionId: ports.sessionId ?? null,
     generation: ports.generation,
+    index: ports.index ?? null,
   });
   const compact = createCompactDocumentReader(reader);
   const writer = createWorkspaceWriter({ fileSystem: ports.fileSystem });
@@ -193,7 +196,7 @@ export function composeProductWorkspaceTools(
       createToolRegistryEntry(
         document("stat_path", "Stat path", "Stat a workspace path", "observation", "filesystem"),
         {
-          inputSchema: productReadInputSchema,
+          inputSchema: pathInput,
           outputSchema: openObject,
           conflictKeysFor: pathConflictKeys,
         },
@@ -204,12 +207,12 @@ export function composeProductWorkspaceTools(
         document(
           "read_file",
           "Read file",
-          "Read a workspace file through the product reader",
+          "Read exact, ranged, multi-file, or Loom-recovery workspace content",
           "observation",
           "filesystem",
         ),
         {
-          inputSchema: pathInput,
+          inputSchema: productReadInputSchema,
           outputSchema: openObject,
           conflictKeysFor: pathConflictKeys,
         },

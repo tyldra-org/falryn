@@ -23,6 +23,7 @@ import {
   composeProductWorkspaceTools,
   createContextPlanner,
   createDebugAdapterSupervisor,
+  createEphemeralProductIndexPort,
   createLanguageServerSupervisor,
   DEFAULT_OPENAI_CREDENTIAL_REFERENCE,
   fromUnknown,
@@ -38,15 +39,12 @@ import {
   type CredentialReference,
   type FalrynError,
   type InputStreamPort,
-  ok,
   primaryWorkspaceRoot,
   sessionId as sessionIdCodec,
   streamId,
   type TerminalOutcome,
   traceId as traceIdCodec,
   turnId as turnIdCodec,
-  type WorkspaceIndexGeneration,
-  type WorkspaceIndexWritePort,
   workspaceId as workspaceIdCodec,
 } from "../domain/index.ts";
 import {
@@ -301,18 +299,7 @@ export async function runCoding(
       productArtifactSession = await openProductArtifactSession(graph, options.signal);
     }
 
-    const indexStore: WorkspaceIndexWritePort & {
-      readonly last: { current: WorkspaceIndexGeneration | null };
-    } = {
-      last: { current: null },
-      async rebuild(nextGeneration, signal) {
-        if (signal?.aborted === true) {
-          return { ok: false, error: { code: "cancelled" } };
-        }
-        indexStore.last.current = nextGeneration;
-        return ok(nextGeneration);
-      },
-    };
+    const indexStore = createEphemeralProductIndexPort();
     const indexLifecycle = composeProductIndexLifecycle({
       fileSystem: graph.fileSystem,
       workspaceRoot: primaryWorkspaceRoot(workspace.value.set).path,
@@ -357,6 +344,7 @@ export async function runCoding(
       workspaceRoot: primaryWorkspaceRoot(workspace.value.set).path,
       ...(productArtifacts === undefined ? {} : { artifacts: productArtifacts }),
       ...(productLoom === undefined ? {} : { loom: productLoom }),
+      index: indexStore,
       workspaceId,
       sessionId,
     });

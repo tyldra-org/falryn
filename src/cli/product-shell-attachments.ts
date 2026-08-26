@@ -11,11 +11,13 @@ import {
   composeProductAgentRuntime,
   composeProductCredentials,
   composeProductGitTools,
+  composeProductIndexLifecycle,
   composeProductLanguageTools,
   composeProductMemoryTools,
   composeProductProcessTools,
   composeProductWorkspaceTools,
   createDebugAdapterSupervisor,
+  createEphemeralProductIndexPort,
   createLanguageServerSupervisor,
   DEFAULT_OPENAI_CREDENTIAL_REFERENCE,
   type LoomPort,
@@ -34,6 +36,8 @@ import {
   sessionId as sessionIdCodec,
   streamId,
   traceId as traceIdCodec,
+  type WorkspaceIndexPort,
+  type WorkspaceIndexWritePort,
   type WorkspaceSet,
   workspaceId as workspaceIdCodec,
 } from "../domain/index.ts";
@@ -66,6 +70,7 @@ export type ProductShellAttachmentPorts = {
   /** Durable exact-output storage and optional shared Loom lifecycle (#814). */
   readonly artifacts?: ArtifactStorePort;
   readonly loom?: LoomPort;
+  readonly index?: WorkspaceIndexPort & WorkspaceIndexWritePort;
 };
 
 export type ProductShellAttachments = {
@@ -115,21 +120,36 @@ export async function composeProductShellAttachments(
     });
   }
 
+  const workspaceRoot =
+    ports.workspaceSet === null ? null : primaryWorkspaceRoot(ports.workspaceSet).path;
+  const index =
+    workspaceRoot === null || ports.artifacts === undefined
+      ? undefined
+      : (ports.index ?? createEphemeralProductIndexPort());
+  if (workspaceRoot !== null && index !== undefined) {
+    await composeProductIndexLifecycle({
+      fileSystem: ports.fileSystem,
+      workspaceRoot,
+      index,
+    }).rebuild(ports.signal);
+  }
+
   const workspaceTools =
-    ports.workspaceSet === null
+    workspaceRoot === null
       ? null
       : composeProductWorkspaceTools({
           generation,
           fileSystem: ports.fileSystem,
           commands,
-          workspaceRoot: primaryWorkspaceRoot(ports.workspaceSet).path,
+          workspaceRoot,
           ...(ports.artifacts === undefined ? {} : { artifacts: ports.artifacts }),
           ...(ports.loom === undefined ? {} : { loom: ports.loom }),
+          ...(index === undefined ? {} : { index }),
           workspaceId,
           sessionId,
         });
   const processTools =
-    ports.workspaceSet === null
+    workspaceRoot === null
       ? null
       : composeProductProcessTools({
           generation,
@@ -137,10 +157,10 @@ export async function composeProductShellAttachments(
             clock: ports.clock,
             ...(ports.ownedProcesses === undefined ? {} : { ownedProcesses: ports.ownedProcesses }),
           }),
-          workspaceCwd: String(primaryWorkspaceRoot(ports.workspaceSet).path),
+          workspaceCwd: String(workspaceRoot),
         });
   const gitTools =
-    ports.workspaceSet === null
+    workspaceRoot === null
       ? null
       : composeProductGitTools({
           generation,
@@ -154,21 +174,20 @@ export async function composeProductShellAttachments(
             clock: ports.clock,
           }),
           gitExecutable: "/usr/bin/git",
-          startPath: String(primaryWorkspaceRoot(ports.workspaceSet).path),
+          startPath: String(workspaceRoot),
         });
   const managedServices = createHostManagedServicePort(
     ports.ownedProcesses === undefined ? {} : { ownedProcesses: ports.ownedProcesses },
   );
   const languageTools =
-    ports.workspaceSet === null
+    workspaceRoot === null
       ? null
       : composeProductLanguageTools({
           generation,
           languageServers: createLanguageServerSupervisor(managedServices),
           debugAdapters: createDebugAdapterSupervisor(managedServices),
         });
-  const memoryTools =
-    ports.workspaceSet === null ? null : composeProductMemoryTools({ generation });
+  const memoryTools = workspaceRoot === null ? null : composeProductMemoryTools({ generation });
   const productTools =
     workspaceTools === null ||
     processTools === null ||

@@ -8,10 +8,12 @@ import {
   type ArtifactRecord,
   type ArtifactStorePort,
   artifactId,
+  buildIndexGeneration,
   CONTENT_DIGEST_ALGORITHM,
   configurationGeneration,
   contentDigest,
   createInMemoryFileSystem,
+  createInMemoryWorkspaceIndex,
   localPath,
   timestampFromEpochMilliseconds,
 } from "../domain/index.ts";
@@ -103,6 +105,108 @@ function memoryArtifacts(): ArtifactStorePort & {
 }
 
 describe("createProductReadCoordinator", () => {
+  test("uses current index structure for a line-aware Loom projection", async () => {
+    const lines = Array.from({ length: 160 }, (_, index) => `const value${index + 1} = ${index};`);
+    lines[0] = "export const first = 1;";
+    lines[9] = 'export const apiKey = "sk-live-SECRET-MUST-NOT-ESCAPE";';
+    lines[79] = "export function composeIndexedContext() { return first; }";
+    lines[159] = "export class FinalBoundary {}";
+    const source = lines.join("\n");
+    const digest = digestOf(new TextEncoder().encode(source));
+    const built = buildIndexGeneration(
+      { sources: [{ logical: "src/large.ts", revision: String(digest), text: source }] },
+      "generation-current",
+    );
+    if (!built.ok) {
+      throw new Error(built.error.code);
+    }
+    const artifacts = memoryArtifacts();
+    const reader = createWorkspaceReader(
+      createInMemoryFileSystem({
+        nodes: {
+          "/work/project": { kind: "directory" },
+          "/work/project/src": { kind: "directory" },
+          "/work/project/src/large.ts": { kind: "file", text: source },
+        },
+      }),
+      { artifacts },
+    );
+    const coordinator = createProductReadCoordinator({
+      reader,
+      loom: createLoomPort({ artifacts }),
+      index: createInMemoryWorkspaceIndex(built.value.generation),
+      workspaceRoot: localPath("/work/project"),
+      workspaceId: "ws-1",
+      sessionId: "session-1",
+      generation: configurationGeneration.from(1),
+    });
+
+    const initial = await coordinator.execute(
+      {
+        path: "src/large.ts",
+        limits: {
+          maxFileBytes: 16,
+          maxExpansionBytes: 20_000,
+          maxExpansionChunkBytes: 1_024,
+        },
+      },
+      new AbortController().signal,
+    );
+    if (!initial.ok) {
+      throw new Error(initial.error);
+    }
+    const payload = initial.value as {
+      readonly content: string;
+      readonly projection: { readonly kind: string; readonly indexGeneration: string };
+      readonly loomRecovery: { readonly origin: string; readonly artifactId: string };
+    };
+    expect(payload.projection).toMatchObject({
+      kind: "indexed-outline",
+      indexGeneration: "generation-current",
+    });
+    expect(payload.content).toContain("80 | export function composeIndexedContext()");
+    expect(payload.content).toMatch(/lines \d+-79 omitted/);
+    expect(payload.content).toContain("apiKey=[redacted]");
+    expect(payload.content).not.toContain("sk-live-SECRET");
+    expect(payload.loomRecovery.origin).toBe("src/large.ts");
+    expect(artifacts.ingests).toHaveLength(1);
+    expect(artifacts.reads).toHaveLength(0);
+
+    const candidate = coordinator.candidates()[0];
+    expect(candidate).toMatchObject({
+      sourceKind: "file",
+      origin: "src/large.ts",
+      freshness: "indexed",
+      fidelity: "deterministic-transform",
+    });
+    expect(candidate?.expansion?.kind).toBe("artifact");
+
+    expect(
+      await coordinator.execute(
+        {
+          recovery: { ...payload.loomRecovery, origin: "src/other.ts" },
+          projection: { kind: "range", offset: 0, length: 64, maxBytes: 64 },
+        },
+        new AbortController().signal,
+      ),
+    ).toEqual({ ok: false, error: "loom-origin-mismatch" });
+    expect(artifacts.reads).toHaveLength(0);
+
+    const recovered = await coordinator.execute(
+      {
+        recovery: payload.loomRecovery,
+        projection: { kind: "range", offset: 0, length: 64, maxBytes: 64 },
+      },
+      new AbortController().signal,
+    );
+    expect(recovered.ok).toBe(true);
+    expect(artifacts.reads).toHaveLength(1);
+    expect(coordinator.candidates()[1]).toMatchObject({
+      sourceKind: "file",
+      origin: "src/large.ts",
+    });
+  });
+
   test("retains one exact artifact and recovers targeted Loom projections", async () => {
     const source = `${"a".repeat(5_000)}needle${"z".repeat(5_000)}`;
     const artifacts = memoryArtifacts();

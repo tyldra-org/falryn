@@ -213,12 +213,14 @@ export {
   projectHushForHarness,
 } from "./product-hush-projection.ts";
 export type {
+  EphemeralProductIndexPort,
   ProductIndexLifecycle,
   ProductIndexLifecyclePorts,
   ProductIndexLifecycleStatus,
 } from "./product-index-lifecycle.ts";
 export {
   composeProductIndexLifecycle,
+  createEphemeralProductIndexPort,
   PRODUCT_INDEX_LIFECYCLE_OWNER,
 } from "./product-index-lifecycle.ts";
 export type {

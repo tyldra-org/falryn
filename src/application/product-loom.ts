@@ -7,7 +7,12 @@
  * projections.
  */
 
-import type { EvidenceCandidate, LoomProjectionResult, Result } from "../domain/index.ts";
+import type {
+  EvidenceCandidate,
+  ExactSourceHandle,
+  LoomProjectionResult,
+  Result,
+} from "../domain/index.ts";
 import type { LoomPort, LoomPortError, LoomRetrieveRequest } from "./loom.ts";
 import { loomProjectionToEvidence } from "./loom.ts";
 
@@ -21,6 +26,7 @@ export type ProductLoomRecoveryHandle = {
   readonly byteLength: number;
   readonly via: "loom-manifest";
   readonly claimsExactSource: boolean;
+  readonly origin: string | null;
   readonly projections: readonly ["range", "head-tail", "search-hits", "exact"];
 };
 
@@ -35,13 +41,42 @@ export type ProductLoomContext = {
     readonly workspaceId?: string;
     readonly signal?: AbortSignal;
   }): Promise<Result<EvidenceCandidate, LoomPortError>>;
-  recoveryHandle(manifestId: string, projection: LoomProjectionResult): ProductLoomRecoveryHandle;
+  recoveryHandle(
+    manifestId: string,
+    projection: LoomProjectionResult,
+    origin?: string,
+  ): ProductLoomRecoveryHandle;
   attachRecovery<T extends Record<string, unknown>>(
     payload: T,
     manifestId: string,
     projection: LoomProjectionResult,
+    origin?: string,
+  ): T & { readonly loomRecovery: ProductLoomRecoveryHandle };
+  attachArtifactRecovery<T extends Record<string, unknown>>(
+    payload: T,
+    manifestId: string,
+    artifact: Extract<ExactSourceHandle, { readonly kind: "artifact" }>,
+    origin?: string,
   ): T & { readonly loomRecovery: ProductLoomRecoveryHandle };
 };
+
+function artifactHandle(
+  manifestId: string,
+  artifact: Extract<ExactSourceHandle, { readonly kind: "artifact" }>,
+  origin?: string,
+): ProductLoomRecoveryHandle {
+  return {
+    owner: PRODUCT_LOOM_OWNER,
+    manifestId,
+    artifactId: artifact.artifactId,
+    digest: artifact.digest,
+    byteLength: artifact.byteLength,
+    via: "loom-manifest",
+    claimsExactSource: false,
+    origin: origin ?? null,
+    projections: ["range", "head-tail", "search-hits", "exact"],
+  };
+}
 
 /**
  * Compose product Loom helpers for live context packs and tool recovery.
@@ -59,7 +94,7 @@ export function composeProductLoomContext(ports: ProductLoomContextPorts): Produ
         ...(input.workspaceId === undefined ? {} : { workspaceId: input.workspaceId }),
       });
     },
-    recoveryHandle(manifestId, projection) {
+    recoveryHandle(manifestId, projection, origin) {
       return {
         owner: PRODUCT_LOOM_OWNER,
         manifestId,
@@ -68,13 +103,20 @@ export function composeProductLoomContext(ports: ProductLoomContextPorts): Produ
         byteLength: projection.handle.byteLength,
         via: "loom-manifest",
         claimsExactSource: projection.claimsExact,
+        origin: origin ?? null,
         projections: ["range", "head-tail", "search-hits", "exact"],
       };
     },
-    attachRecovery(payload, manifestId, projection) {
+    attachRecovery(payload, manifestId, projection, origin) {
       return {
         ...payload,
-        loomRecovery: this.recoveryHandle(manifestId, projection),
+        loomRecovery: this.recoveryHandle(manifestId, projection, origin),
+      };
+    },
+    attachArtifactRecovery(payload, manifestId, artifact, origin) {
+      return {
+        ...payload,
+        loomRecovery: artifactHandle(manifestId, artifact, origin),
       };
     },
   };
