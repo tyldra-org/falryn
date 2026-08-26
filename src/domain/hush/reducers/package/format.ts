@@ -1,5 +1,18 @@
 import type { PackageExecutable } from "../../package-command.ts";
 import { compactDuplicateRuns, shortestText, stripAnsi } from "../../text-format.ts";
+import {
+  type EcosystemPackageExecutable,
+  formatEcosystemPackageInstall,
+  formatEcosystemPackageList,
+  formatEcosystemPackageOutdated,
+} from "./ecosystem.ts";
+import {
+  formatPythonPackageInstall,
+  formatPythonPackageList,
+  formatPythonPackageOutdated,
+  formatPythonPackageShow,
+  type PythonPackageExecutable,
+} from "./python.ts";
 
 type PackageGroup = "prod" | "dev" | "optional" | "peer";
 
@@ -20,6 +33,15 @@ export function formatPackageInstall(executable: PackageExecutable, text: string
       return formatYarnInstall(text);
     case "bun":
       return formatBunInstall(text);
+    case "pip":
+    case "pip3":
+    case "uv":
+    case "poetry":
+      return formatPythonPackageInstall(executable, text);
+    case "brew":
+    case "composer":
+    case "bundle":
+      return formatEcosystemPackageInstall(executable, text);
     case "npx":
     case "pnpx":
       return null;
@@ -40,10 +62,22 @@ export function formatPackageList(executable: PackageExecutable, text: string): 
   if (executable === "yarn") {
     return formatDependencyTree(plain, true);
   }
+  if (isPythonPackageExecutable(executable)) {
+    return formatPythonPackageList(executable, plain);
+  }
+  if (isEcosystemPackageExecutable(executable)) {
+    return formatEcosystemPackageList(executable, plain);
+  }
   return null;
 }
 
-export function formatPackageOutdated(text: string): string | null {
+export function formatPackageOutdated(executable: PackageExecutable, text: string): string | null {
+  if (isPythonPackageExecutable(executable)) {
+    return formatPythonPackageOutdated(text);
+  }
+  if (isEcosystemPackageExecutable(executable)) {
+    return formatEcosystemPackageOutdated(executable, text);
+  }
   const plain = stripAnsi(text).trimEnd();
   const lines = plain.split("\n").filter((line) => line.trim().length > 0);
   if (lines.length < 2) {
@@ -82,6 +116,10 @@ export function formatPackageOutdated(text: string): string | null {
     }),
   ].join("\n");
   return shortestText(plain, formatted);
+}
+
+export function formatPackageShow(executable: PackageExecutable, text: string): string | null {
+  return executable === "pip" || executable === "pip3" ? formatPythonPackageShow(text) : null;
 }
 
 export function formatPackageScript(executable: PackageExecutable, text: string): string | null {
@@ -464,4 +502,18 @@ function trimOuterBlankLines(lines: string[]): void {
 function firstNonblankLine(lines: readonly string[], start = 0): number {
   const index = lines.findIndex((line, lineIndex) => lineIndex >= start && line.trim().length > 0);
   return index < 0 ? lines.length : index;
+}
+
+function isPythonPackageExecutable(
+  executable: PackageExecutable,
+): executable is PythonPackageExecutable {
+  return (
+    executable === "pip" || executable === "pip3" || executable === "uv" || executable === "poetry"
+  );
+}
+
+function isEcosystemPackageExecutable(
+  executable: PackageExecutable,
+): executable is EcosystemPackageExecutable {
+  return executable === "brew" || executable === "composer" || executable === "bundle";
 }

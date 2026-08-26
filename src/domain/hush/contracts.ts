@@ -13,7 +13,7 @@ import type {
 } from "../process-capture.ts";
 import type { Result } from "../result.ts";
 
-export const HUSH_REDUCER_VERSION = "hush.v25";
+export const HUSH_REDUCER_VERSION = "hush.v26";
 
 /** Longest reduced projection Hush may emit. */
 export const MAX_HUSH_REDUCED_BYTES = 64 * 1_024;

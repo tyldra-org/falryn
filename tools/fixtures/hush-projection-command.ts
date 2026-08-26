@@ -54,6 +54,13 @@ const outputs: Readonly<Record<string, () => string>> = {
   bun: () => bunOutput(args),
   npx: () => packageRunnerOutput(),
   pnpx: () => packageRunnerOutput(),
+  pip: () => pipOutput(args),
+  pip3: () => pipOutput(args),
+  uv: () => uvOutput(args),
+  poetry: () => poetryOutput(args),
+  brew: () => brewOutput(args),
+  composer: () => composerOutput(args),
+  bundle: () => bundleOutput(args),
   docker: () => dockerOutput(args),
   wc: () => wcOutput(args),
   psql: () => psqlOutput(args),
@@ -349,6 +356,117 @@ function bunOutput(argv: readonly string[]): string {
     ].join("\n");
   }
   throw new Error(`unsupported bun fixture arguments: ${argv.join(" ")}`);
+}
+
+function pipOutput(argv: readonly string[]): string {
+  const outdated = argv.includes("outdated") || argv.includes("--outdated");
+  const json = argv.some((argument) => argument === "--format=json" || argument === "--json");
+  if (json) {
+    return JSON.stringify(
+      outdated
+        ? [
+            { name: "requests", version: "2.31.0", latest_version: "2.32.3" },
+            { name: "urllib3", version: "2.1.0", latest_version: "2.2.2" },
+          ]
+        : [
+            { name: "certifi", version: "2026.8.1" },
+            { name: "requests", version: "2.32.3" },
+            { name: "urllib3", version: "2.2.2" },
+          ],
+    );
+  }
+  if (outdated) {
+    return [
+      "Package   Version  Latest  Type",
+      "--------- -------- ------- -----",
+      "requests  2.31.0   2.32.3  wheel",
+      "urllib3   2.1.0    2.2.2   wheel",
+    ].join("\n");
+  }
+  if (argv[0] === "list") {
+    return [
+      "Package   Version",
+      "--------- --------",
+      "certifi   2026.8.1",
+      "requests  2.32.3",
+      "urllib3   2.2.2",
+    ].join("\n");
+  }
+  if (argv[0] === "install") {
+    return [
+      "Collecting requests",
+      "Using cached requests-2.32.3-py3-none-any.whl",
+      "Installing collected packages: requests",
+      "Successfully installed requests-2.32.3",
+    ].join("\n");
+  }
+  throw new Error(`unsupported pip fixture arguments: ${argv.join(" ")}`);
+}
+
+function uvOutput(argv: readonly string[]): string {
+  if (argv[0] !== "sync") {
+    throw new Error(`unsupported uv fixture arguments: ${argv.join(" ")}`);
+  }
+  return [
+    "  Downloading requests-2.32.3-py3-none-any.whl (64.9 kB)",
+    "  Using cached certifi-2026.8.1-py3-none-any.whl (161 kB)",
+    "Prepared 2 packages in 15ms",
+    "Installed 2 packages in 23ms",
+    " + certifi==2026.8.1",
+    " + requests==2.32.3",
+  ].join("\n");
+}
+
+function poetryOutput(argv: readonly string[]): string {
+  if (argv[0] !== "install") {
+    throw new Error(`unsupported poetry fixture arguments: ${argv.join(" ")}`);
+  }
+  return [
+    "Installing dependencies from lock file",
+    "",
+    "No dependencies to install or update",
+  ].join("\n");
+}
+
+function brewOutput(argv: readonly string[]): string {
+  if (argv[0] !== "install") {
+    throw new Error(`unsupported brew fixture arguments: ${argv.join(" ")}`);
+  }
+  return [
+    "==> Fetching downloads for: jq",
+    "==> Downloading https://ghcr.io/v2/homebrew/core/jq/manifests/1.8.1",
+    "######################################################################## 100.0%",
+    "==> Pouring jq--1.8.1.arm64_sequoia.bottle.tar.gz",
+    "==> Summary",
+    "🍺  /opt/homebrew/Cellar/jq/1.8.1: 20 files, 1.4MB",
+  ].join("\n");
+}
+
+function composerOutput(argv: readonly string[]): string {
+  if (argv[0] !== "install") {
+    throw new Error(`unsupported composer fixture arguments: ${argv.join(" ")}`);
+  }
+  return [
+    "Loading composer repositories with package information",
+    "Updating dependencies",
+    "Lock file operations: 0 installs, 0 updates, 0 removals",
+    "Nothing to install, update or remove",
+    "Generating autoload files",
+  ].join("\n");
+}
+
+function bundleOutput(argv: readonly string[]): string {
+  if (argv[0] !== "install") {
+    throw new Error(`unsupported bundle fixture arguments: ${argv.join(" ")}`);
+  }
+  return [
+    "Using bundler 2.5.6",
+    "Using rake 13.1.0",
+    "Using ast 2.4.2",
+    "Using minitest 5.22.2",
+    "Bundle complete! 85 Gemfile dependencies, 200 gems now installed.",
+    "Use `bundle info [gemname]` to see where a bundled gem is installed.",
+  ].join("\n");
 }
 
 const output = outputs[executable]?.();

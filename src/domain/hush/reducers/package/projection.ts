@@ -14,6 +14,7 @@ import {
   formatPackageOutdated,
   formatPackageRunner,
   formatPackageScript,
+  formatPackageShow,
 } from "./format.ts";
 
 export function packageProjection(
@@ -31,7 +32,7 @@ export function packageProjection(
   ) {
     return losslessTextProjection(capture, maxBytes, patterns, false);
   }
-  const source = capture.stdout.inlineText;
+  const source = packageSource(capture);
   if (source === null) {
     return losslessTextProjection(capture, maxBytes, patterns, false);
   }
@@ -42,10 +43,12 @@ export function packageProjection(
       : action === "list"
         ? formatPackageList(executable, source)
         : action === "outdated"
-          ? formatPackageOutdated(source)
-          : action === "run"
-            ? formatPackageScript(executable, source)
-            : null;
+          ? formatPackageOutdated(executable, source)
+          : action === "show"
+            ? formatPackageShow(executable, source)
+            : action === "run"
+              ? formatPackageScript(executable, source)
+              : null;
   if (formatted === null && executable !== "npx" && executable !== "pnpx") {
     return joinStreams(
       boundStream("stdout", capture.stdout, maxBytes, [], false),
@@ -54,9 +57,26 @@ export function packageProjection(
     );
   }
   const projected = formatted ?? formatPackageRunner(source);
+  const projectedStream = capture.stdout.inlineText === source ? "stdout" : "stderr";
   return joinStreams(
-    boundText(projected, "stdout", maxBytes),
-    boundStream("stderr", capture.stderr, maxBytes, [], false),
+    projectedStream === "stdout"
+      ? boundText(projected, "stdout", maxBytes)
+      : boundStream("stdout", capture.stdout, maxBytes, [], false),
+    projectedStream === "stderr"
+      ? boundText(projected, "stderr", maxBytes)
+      : boundStream("stderr", capture.stderr, maxBytes, [], false),
     maxBytes,
   );
+}
+
+function packageSource(capture: ProcessCaptureReport): string | null {
+  const stdout = capture.stdout.inlineText;
+  const stderr = capture.stderr.inlineText;
+  if (stdout === null || stderr === null) {
+    return null;
+  }
+  if (stdout.trim().length > 0 && stderr.trim().length > 0) {
+    return null;
+  }
+  return stdout.trim().length > 0 ? stdout : stderr;
 }

@@ -48,6 +48,59 @@ describe("Hush package projection", () => {
         source: "checking\nchecking\nchecking\nverified\n",
         marker: "checking ×3\nverified",
       },
+      {
+        tokens: ["pip", "install", "requests"],
+        source:
+          "Collecting requests\nUsing cached requests.whl\nInstalling collected packages: requests\nSuccessfully installed requests-2.32.3\n",
+        marker: "installed requests-2.32.3",
+      },
+      {
+        tokens: ["pip3", "list"],
+        source: "Package   Version\n--------- -------\nrequests  2.32.3\nurllib3   2.2.2\n",
+        marker: "packages 2\nrequests@2.32.3\nurllib3@2.2.2",
+      },
+      {
+        tokens: ["uv", "sync"],
+        source:
+          "Resolved 42 packages in 123ms\nPrepared 1 package in 15ms\nInstalled 1 package in 23ms\n + requests==2.32.3\n",
+        marker: "resolved 42\n+1\n+ requests@2.32.3",
+      },
+      {
+        tokens: ["poetry", "install"],
+        source:
+          "Installing dependencies from lock file\nPackage operations: 1 install, 0 updates, 0 removals\n  - Installing requests (2.32.3)\nWriting lock file\n",
+        marker: "+1 ~0 -0\n+ requests@2.32.3\nlockfile written",
+      },
+      {
+        tokens: ["brew", "install", "jq"],
+        source:
+          "==> Fetching downloads for: jq\n==> Pouring jq--1.8.1.arm64_sequoia.bottle.tar.gz\n🍺  /opt/homebrew/Cellar/jq/1.8.1: 20 files, 1.4MB\n",
+        marker: "installed jq@1.8.1; 20 files, 1.4MB",
+      },
+      {
+        tokens: ["composer", "install"],
+        source:
+          "Installing dependencies from lock file\nPackage operations: 1 install, 0 updates, 0 removals\n  - Installing psr/log (3.0.2): Extracting archive\nGenerating autoload files\n",
+        marker: "+1 ~0 -0\n+ psr/log@3.0.2\nautoload generated",
+      },
+      {
+        tokens: ["bundle", "install"],
+        source: "Bundle complete! 4 Gemfile dependencies, 17 gems now installed.\n",
+        marker: "complete 4/17",
+      },
+      {
+        tokens: ["poetry", "show"],
+        source:
+          "certifi          2026.8.1         CA bundle\nrequests         2.32.3           HTTP library\n",
+        marker: "packages 2\ncertifi@2026.8.1 CA bundle\nrequests@2.32.3 HTTP library",
+      },
+      {
+        tokens: ["composer", "show"],
+        source:
+          "psr/log          3.0.2          Logging interface\nsymfony/console  v7.3.0         Console component\n",
+        marker:
+          "packages 2\npsr/log@3.0.2 Logging interface\nsymfony/console@v7.3.0 Console component",
+      },
     ] as const;
     for (const [index, fixture] of cases.entries()) {
       expect(
@@ -87,10 +140,28 @@ describe("Hush package projection", () => {
     expect(
       packageProjection(capture("bun-json", json), 10_000, [], ["bun", "outdated", "--json"]).text,
     ).toBe(json);
+    expect(
+      packageProjection(capture("pip-json", json), 10_000, [], ["pip", "list", "--format=json"])
+        .text,
+    ).toBe(json);
+    const mixed = capture("mixed", "Successfully installed requests-2.32.3\n", 0, "warning\n");
+    expect(packageProjection(mixed, 10_000, [], ["pip", "install", "requests"]).text).toBe(
+      "Successfully installed requests-2.32.3\n\nstderr:\nwarning\n",
+    );
+  });
+
+  test("compacts a package manager that reports only on stderr", () => {
+    const report = capture(
+      "stderr-only",
+      "",
+      0,
+      "Resolved 42 packages in 123ms\nAudited 42 packages in 5ms\n",
+    );
+    expect(packageProjection(report, 10_000, [], ["uv", "sync"]).text).toBe("stderr:\ncurrent 42");
   });
 });
 
-function capture(id: string, stdout: string, exitCode = 0): ProcessCaptureReport {
+function capture(id: string, stdout: string, exitCode = 0, stderr = ""): ProcessCaptureReport {
   return {
     captureId: processCaptureId.from(id),
     pid: 1,
@@ -101,7 +172,7 @@ function capture(id: string, stdout: string, exitCode = 0): ProcessCaptureReport
     killStage: "none",
     exit: { exitCode, signal: null },
     stdout: stream("stdout", stdout),
-    stderr: stream("stderr", ""),
+    stderr: stream("stderr", stderr),
     events: [],
   };
 }

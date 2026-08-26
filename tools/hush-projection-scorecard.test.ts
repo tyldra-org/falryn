@@ -8,7 +8,7 @@ import {
 
 describe("Hush projection scorecard corpus", () => {
   test("keeps each supported Git mutation as a separate RTK comparison", () => {
-    expect(HUSH_PROJECTION_CORPUS_VERSION).toBe("hush-projections.v23");
+    expect(HUSH_PROJECTION_CORPUS_VERSION).toBe("hush-projections.v24");
     expect(
       HUSH_PROJECTION_CASES.filter((entry) => entry.projection === "git-mutation").map(
         (entry) => entry.id,
@@ -204,6 +204,40 @@ describe("Hush projection scorecard corpus", () => {
         (entry) =>
           "forbiddenMarkers" in entry &&
           (entry.forbiddenMarkers as readonly string[]).includes("omitted"),
+      ),
+    ).toBe(true);
+  });
+
+  test("keeps every requested Python and ecosystem package surface uncapped and competitive", () => {
+    const packages = HUSH_PROJECTION_CASES.filter((entry) =>
+      ["pip", "pip3", "uv", "poetry", "brew", "composer", "bundle"].includes(entry.executable),
+    );
+    expect(packages.map((entry) => entry.id)).toEqual([
+      "package-pip-install",
+      "package-pip-list",
+      "package-pip3-outdated",
+      "package-uv-sync",
+      "package-poetry-install",
+      "package-brew-install",
+      "package-composer-install",
+      "package-bundle-install",
+    ]);
+    expect(packages.every((entry) => entry.projection === "package")).toBe(true);
+    expect(
+      packages.every((entry) => "competitiveTarget" in entry && entry.competitiveTarget === "win"),
+    ).toBe(true);
+    expect(
+      packages.every(
+        (entry) =>
+          "forbiddenMarkers" in entry &&
+          (entry.forbiddenMarkers as readonly string[]).includes("omitted"),
+      ),
+    ).toBe(true);
+    expect(
+      packages.every(
+        (entry) =>
+          "forbiddenMarkers" in entry &&
+          (entry.forbiddenMarkers as readonly string[]).includes("…"),
       ),
     ).toBe(true);
   });
