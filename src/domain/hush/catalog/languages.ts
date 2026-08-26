@@ -96,8 +96,10 @@ export const LANGUAGE_COMMANDS = [
     executables: ["gradle", "gradlew", "mvn", "mvnw", "sbt"],
     examples: [
       "gradlew build",
+      "gradle build",
       "gradlew dependencies",
       "mvn compile",
+      "mvnw package",
       "mvn package",
       "mvn install",
       "mvn verify",
@@ -185,7 +187,7 @@ export const LANGUAGE_COMMANDS = [
     family: "build",
     projection: "operation",
     executables: ["php"],
-    examples: ["php artisan about", "php -l app.php"],
+    examples: ["php app.php", "php artisan about", "php -l app.php"],
   },
   {
     reducerId: "ruby.test",

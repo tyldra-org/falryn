@@ -15,10 +15,12 @@ import {
   processCaptureId,
   reduceHush,
 } from "../src/domain/index.ts";
+import { HUSH_BUILD_OPERATION_CASES } from "./hush-build-operation-cases.ts";
 import { HUSH_RTK_BASELINE } from "./hush-command-coverage.ts";
 import { type HushLsMeasurement, measureText } from "./hush-ls-scorecard.ts";
+import type { ProjectionCase } from "./hush-projection-case.ts";
 
-export const HUSH_PROJECTION_CORPUS_VERSION = "hush-projections.v27";
+export const HUSH_PROJECTION_CORPUS_VERSION = "hush-projections.v28";
 
 export const HUSH_FIND_LISTING_PATHS = [
   "bounds.ts",
@@ -111,21 +113,7 @@ const HUSH_FIND_LISTING_MARKERS = [
   " tree/ format format.test parser policy projection render",
 ] as const;
 
-type ProjectionCase = Readonly<{
-  id: string;
-  projection: HushProjectionKind;
-  executable: string;
-  argv: readonly string[];
-  rtkArgv?: readonly string[];
-  shellCommand?: string;
-  baseline?: "raw" | "rewrite" | "rtk-log";
-  competitiveTarget?: "tie" | "win";
-  acceptedExitCodes?: readonly number[];
-  requiredMarkers: readonly string[];
-  forbiddenMarkers?: readonly string[];
-}>;
-
-export const HUSH_PROJECTION_CASES = [
+export const HUSH_PROJECTION_CASES: readonly ProjectionCase[] = [
   {
     id: "listing-find",
     projection: "listing",
@@ -1633,14 +1621,7 @@ export const HUSH_PROJECTION_CASES = [
     ],
     forbiddenMarkers: ["omitted", "…"],
   },
-  {
-    id: "build-cargo",
-    projection: "build",
-    executable: "cargo",
-    argv: ["build", "--release"],
-    rtkArgv: ["cargo", "build", "--release"],
-    requiredMarkers: ["Finished release target", "0.42s"],
-  },
+  ...HUSH_BUILD_OPERATION_CASES,
   {
     id: "package-npm-install",
     projection: "package",
@@ -2095,7 +2076,7 @@ export const HUSH_PROJECTION_CASES = [
     rtkArgv: ["aws", "sts", "get-caller-identity"],
     requiredMarkers: ["123456789012", "user=falryn", "AIDAEXAMPLE"],
   },
-] as const satisfies readonly ProjectionCase[];
+];
 
 type CommandRun = Readonly<{ stdout: string; stderr: string; exitCode: number }>;
 

@@ -51,7 +51,7 @@ export const OPERATION_COMMANDS = [
     family: "build",
     projection: "build",
     executables: ["docker", "podman"],
-    examples: ["docker build .", "docker compose build"],
+    examples: ["docker build .", "docker compose build", "podman build .", "podman compose build"],
     matches: (tokens) => containerSubcommand(tokens) === "build",
   },
   {

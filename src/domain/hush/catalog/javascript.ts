@@ -64,6 +64,7 @@ export const JAVASCRIPT_COMMANDS = [
       "prisma migrate status",
       "prisma migrate deploy",
       "prisma db push",
+      "prisma validate",
     ],
   },
   {

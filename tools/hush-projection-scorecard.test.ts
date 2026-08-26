@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
+import { HUSH_BUILD_OPERATION_CASES } from "./hush-build-operation-cases.ts";
 import {
   HUSH_FIND_LISTING_PATHS,
   HUSH_PROJECTION_CASES,
@@ -8,7 +9,7 @@ import {
 
 describe("Hush projection scorecard corpus", () => {
   test("keeps each supported Git mutation as a separate RTK comparison", () => {
-    expect(HUSH_PROJECTION_CORPUS_VERSION).toBe("hush-projections.v27");
+    expect(HUSH_PROJECTION_CORPUS_VERSION).toBe("hush-projections.v28");
     expect(
       HUSH_PROJECTION_CASES.filter((entry) => entry.projection === "git-mutation").map(
         (entry) => entry.id,
@@ -65,6 +66,8 @@ describe("Hush projection scorecard corpus", () => {
 
   test("locks the large find listing that exposed RTK path omission", () => {
     const listing = HUSH_PROJECTION_CASES[0];
+    expect(listing).toBeDefined();
+    if (listing === undefined) throw new Error("missing find scorecard case");
     expect(listing.id).toBe("listing-find");
     expect(HUSH_FIND_LISTING_PATHS).toHaveLength(67);
     expect(listing.requiredMarkers).toHaveLength(18);
@@ -231,6 +234,29 @@ describe("Hush projection scorecard corpus", () => {
           "forbiddenMarkers" in entry &&
           (entry.forbiddenMarkers as readonly string[]).includes("omitted"),
       ),
+    ).toBe(true);
+  });
+
+  test("measures every requested build and operation surface without unsafe reductions", () => {
+    expect(HUSH_BUILD_OPERATION_CASES).toHaveLength(47);
+    const ids: readonly string[] = HUSH_BUILD_OPERATION_CASES.map((entry) => entry.id);
+    expect(ids).toEqual(
+      HUSH_PROJECTION_CASES.filter((entry) =>
+        HUSH_BUILD_OPERATION_CASES.some((candidate) => candidate.id === entry.id),
+      ).map((entry) => entry.id),
+    );
+    const ties = HUSH_BUILD_OPERATION_CASES.filter(
+      (entry) => ("competitiveTarget" in entry ? entry.competitiveTarget : "tie") === "tie",
+    ).map((entry) => entry.id);
+    expect(ties).toEqual([
+      "build-go",
+      "operation-php",
+      "operation-php-lint",
+      "operation-ollama",
+      "operation-java",
+    ]);
+    expect(
+      HUSH_BUILD_OPERATION_CASES.every((entry) => entry.forbiddenMarkers.includes("omitted")),
     ).toBe(true);
   });
 

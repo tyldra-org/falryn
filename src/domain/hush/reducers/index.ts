@@ -4,6 +4,7 @@ import type { ProcessCaptureReport } from "../../process-capture.ts";
 import { assertNever } from "../../result.ts";
 import type { HushProjectionKind } from "../catalog/index.ts";
 import type { HushFidelity, HushResult, HushStrategy, HushStreamProjection } from "../contracts.ts";
+import { buildProjection } from "./build/projection.ts";
 import { compoundProjection } from "./compound/projection.ts";
 import { countProjection } from "./count/projection.ts";
 import { diagnosticProjection } from "./diagnostic/projection.ts";
@@ -20,6 +21,7 @@ import { jsonProjection } from "./json/projection.ts";
 import { listingProjection } from "./listing.ts";
 import { logProjection } from "./log/projection.ts";
 import { lsProjection } from "./ls/projection.ts";
+import { operationProjection } from "./operation/projection.ts";
 import { packageProjection } from "./package/projection.ts";
 import { searchProjection } from "./search/projection.ts";
 import { semanticProjection } from "./semantic.ts";
@@ -90,7 +92,7 @@ export function specializedProjection(
     case "diagnostic":
       return diagnosticProjection(capture, maxBytes, patterns, commandTokens);
     case "build":
-      return semanticProjection("build", capture, maxBytes, patterns);
+      return buildProjection(capture, maxBytes, patterns, commandTokens);
     case "package":
       return packageProjection(capture, maxBytes, patterns, commandTokens);
     case "table":
@@ -106,7 +108,7 @@ export function specializedProjection(
     case "network":
       return semanticProjection("network", capture, maxBytes, patterns);
     case "operation":
-      return semanticProjection("operation", capture, maxBytes, patterns);
+      return operationProjection(capture, maxBytes, patterns, commandTokens);
     case "structured":
       return structuredProjection(capture, maxBytes, patterns, commandTokens);
     default:

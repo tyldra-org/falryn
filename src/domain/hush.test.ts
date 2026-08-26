@@ -215,6 +215,31 @@ describe("hush reduction", () => {
     expect(partial.value.expansion.stdoutArtifact).toBe(artifactId.from("cap-1.stdout"));
   });
 
+  test("keeps unknown and partial build output exact", () => {
+    const unknown = "custom build fact\nsecond terminal fact\n";
+    const exact = reduceHush({
+      command: argv("/usr/bin/next", ["build"]),
+      capture: report(unknown),
+    });
+    expect(exact.ok).toBe(true);
+    if (!exact.ok) throw new Error("expected an exact Hush result");
+    expect(exact.value.reducerId).toBe("js.build");
+    expect(exact.value.reducedText).toBe(unknown);
+
+    const partial = reduceHush({
+      command: argv("/usr/bin/cargo", ["build", "--release"]),
+      capture: report("Compiling falryn v0.3.0\n", {
+        truncated: true,
+        artifact: true,
+      }),
+    });
+    expect(partial.ok).toBe(true);
+    if (!partial.ok) throw new Error("expected a partial Hush result");
+    expect(partial.value.reducedText).toBe("Compiling falryn v0.3.0\n");
+    expect(partial.value.truncated).toBe(true);
+    expect(partial.value.expansion.stdoutArtifact).toBe(artifactId.from("cap-1.stdout"));
+  });
+
   test("preserves terminal facts and omits the child environment", () => {
     const captured = report("On branch main\n", { durationMs: 44, exitCode: 1 });
     const reduced = reduceHush({
