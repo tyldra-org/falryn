@@ -105,6 +105,20 @@ export function projectLoomRange(
   });
 }
 
+export function projectLoomRangeWindow(
+  bytes: Uint8Array,
+  offset: number,
+  sourceByteLength: number,
+): LoomByteProjection {
+  const sliced = sliceUtf8(bytes, 0, bytes.byteLength);
+  return {
+    text: decoder.decode(sliced),
+    offset,
+    byteLength: sliced.byteLength,
+    complete: offset === 0 && sliced.byteLength === sourceByteLength,
+  };
+}
+
 export function projectLoomHeadTail(
   bytes: Uint8Array,
   headBytes: number,
@@ -137,6 +151,25 @@ export function projectLoomHeadTail(
     complete: false,
     omissions: [{ kind: "bytes", count: omitted }],
   });
+}
+
+export function projectLoomHeadTailWindows(
+  headBytes: Uint8Array,
+  tailBytes: Uint8Array,
+  sourceByteLength: number,
+): LoomByteProjection & { readonly omissions: readonly LoomProjectionOmission[] } {
+  const head = sliceUtf8(headBytes, 0, headBytes.byteLength);
+  const tail = sliceUtf8(tailBytes, 0, tailBytes.byteLength);
+  const omitted = sourceByteLength - head.byteLength - tail.byteLength;
+  const marker = `\n… ${omitted} bytes omitted …\n`;
+  const text = `${decoder.decode(head)}${marker}${decoder.decode(tail)}`;
+  return {
+    text,
+    offset: 0,
+    byteLength: encoder.encode(text).byteLength,
+    complete: false,
+    omissions: [{ kind: "bytes", count: omitted }],
+  };
 }
 
 export function projectLoomSearchHits(

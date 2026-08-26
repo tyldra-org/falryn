@@ -22,6 +22,7 @@ import {
   type ContentDigest,
   type ContentHasherPort,
   commitLoomManifest,
+  completeLoomRetrieval,
   contentDigest,
   createLoomCache,
   DEFAULT_LOOM_STRATEGY,
@@ -29,15 +30,17 @@ import {
   type EvidenceCandidate,
   type EvidenceCandidateInput,
   err,
+  type LoomArtifactReadPlan,
   type LoomCache,
   type LoomError,
   type LoomInvalidation,
   type LoomManifest,
   type LoomProjectionResult,
+  type LoomProjectionSource,
   type LoomRetrieveInput,
   ok,
+  planLoomRetrieval,
   type Result,
-  retrieveLoomProjection,
   timestampFromEpochMilliseconds,
 } from "../domain/index.ts";
 import { containsRedactableSecret, redactText } from "./redaction.ts";
@@ -164,6 +167,90 @@ function malformed(field: string): LoomError {
   return { kind: "loom", code: "malformed", field };
 }
 
+async function readPlannedBytes(
+  artifacts: ArtifactStorePort,
+  artifactIdValue: ReturnType<typeof artifactId.from>,
+  offset: number,
+  length: number,
+  signal?: AbortSignal,
+): Promise<Result<Uint8Array, LoomPortError>> {
+  if (isAborted(signal)) {
+    return err(cancelled("signal"));
+  }
+  if (length === 0) {
+    return ok(new Uint8Array());
+  }
+  const range = await artifacts.readRange(artifactIdValue, offset, length, signal);
+  return range.ok ? ok(range.value.bytes) : range;
+}
+
+async function readProjectionSource(
+  artifacts: ArtifactStorePort,
+  plan: LoomArtifactReadPlan,
+  signal?: AbortSignal,
+): Promise<Result<LoomProjectionSource, LoomPortError>> {
+  switch (plan.kind) {
+    case "complete": {
+      const bytes = await readPlannedBytes(
+        artifacts,
+        plan.artifactId,
+        plan.offset,
+        plan.length,
+        signal,
+      );
+      return bytes.ok
+        ? ok({ kind: "complete", artifactId: plan.artifactId, bytes: bytes.value })
+        : bytes;
+    }
+    case "range": {
+      const bytes = await readPlannedBytes(
+        artifacts,
+        plan.artifactId,
+        plan.offset,
+        plan.length,
+        signal,
+      );
+      return bytes.ok
+        ? ok({
+            kind: "range",
+            artifactId: plan.artifactId,
+            offset: plan.offset,
+            bytes: bytes.value,
+          })
+        : bytes;
+    }
+    case "head-tail": {
+      const head = await readPlannedBytes(
+        artifacts,
+        plan.artifactId,
+        plan.headOffset,
+        plan.headLength,
+        signal,
+      );
+      if (!head.ok) {
+        return head;
+      }
+      const tail = await readPlannedBytes(
+        artifacts,
+        plan.artifactId,
+        plan.tailOffset,
+        plan.tailLength,
+        signal,
+      );
+      return tail.ok
+        ? ok({
+            kind: "head-tail",
+            artifactId: plan.artifactId,
+            headOffset: plan.headOffset,
+            headBytes: head.value,
+            tailOffset: plan.tailOffset,
+            tailBytes: tail.value,
+          })
+        : tail;
+    }
+  }
+}
+
 export function createLoomPort(options: LoomPortOptions): LoomPort {
   const hasher = options.hasher ?? createSha256Hasher();
   const cache = options.cache ?? createLoomCache();
@@ -264,11 +351,7 @@ export function createLoomPort(options: LoomPortOptions): LoomPort {
       if (manifest === undefined) {
         return err({ kind: "loom-port", code: "unavailable", field: "manifest" });
       }
-      const members: Array<{
-        artifactId: string;
-        bytes: Uint8Array | null;
-        availability: string;
-      }> = [];
+      const members: LoomRetrieveInput["members"][number][] = [];
       for (const member of manifest.members) {
         if (isAborted(signal)) {
           return err(cancelled("signal"));
@@ -278,20 +361,11 @@ export function createLoomPort(options: LoomPortOptions): LoomPort {
           members.push({ artifactId: member.artifactId, bytes: null, availability: "missing" });
           continue;
         }
-        const range = await options.artifacts.readRange(
-          member.artifactId,
-          0,
-          record.value.byteLength,
-          signal,
-        );
-        if (!range.ok) {
-          members.push({ artifactId: member.artifactId, bytes: null, availability: "missing" });
-          continue;
-        }
         members.push({
           artifactId: member.artifactId,
-          bytes: range.value.bytes,
           availability: record.value.availability,
+          digest: record.value.digest,
+          byteLength: record.value.byteLength,
         });
       }
       const retrieveInput: LoomRetrieveInput = {
@@ -308,7 +382,21 @@ export function createLoomPort(options: LoomPortOptions): LoomPort {
         now: request.now ?? timestampFromEpochMilliseconds(Date.now()),
         ...(request.generation === undefined ? {} : { generation: request.generation }),
       };
-      const retrieved = retrieveLoomProjection(retrieveInput, hasher, cache);
+      const planned = planLoomRetrieval(retrieveInput, cache);
+      if (!planned.ok) {
+        return planned;
+      }
+      if (planned.value.cached !== null) {
+        return applyRedaction(planned.value.cached);
+      }
+      const source = await readProjectionSource(options.artifacts, planned.value.read, signal);
+      if (!source.ok) {
+        return source;
+      }
+      if (isAborted(signal)) {
+        return err(cancelled("signal"));
+      }
+      const retrieved = completeLoomRetrieval(planned.value, source.value, hasher, cache);
       if (!retrieved.ok) {
         return retrieved;
       }
