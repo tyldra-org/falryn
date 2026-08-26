@@ -1,4 +1,4 @@
-import { shortestText, stripAnsi } from "../../../text-format.ts";
+import { shortestText, stripAnsi } from "../../shared/text.ts";
 
 const SECTION = /^-{8,}\s+(.+?)\s+-{8,}$/u;
 const JIRA_URL = /^View this issue on Jira:\s+(https?:\/\/\S+)$/u;

@@ -1,4 +1,4 @@
-import { encodedBytes } from "../../text-format.ts";
+import { encodedBytes } from "../shared/text.ts";
 
 type SearchMatch = {
   readonly path: string;

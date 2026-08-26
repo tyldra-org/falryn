@@ -1,6 +1,6 @@
 /** Safe terminal-fact projections for container image operations. */
 
-import { shortestText } from "../../text-format.ts";
+import { shortestText } from "../shared/text.ts";
 import { containerExecutable, containerLines, containerSubcommand } from "./shared.ts";
 
 type CopyProgress = Readonly<{

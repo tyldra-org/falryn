@@ -1,4 +1,4 @@
-import { shortestText } from "../../text-format.ts";
+import { shortestText } from "../shared/text.ts";
 
 const SAFE_PATH_COMPONENT = /^[A-Za-z0-9._+@,=~-]+$/u;
 

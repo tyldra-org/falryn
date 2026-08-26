@@ -1,7 +1,7 @@
 /** Complete Ansible playbook projection. */
 
-import { shortestText } from "../../text-format.ts";
 import { buildLines } from "../build/shared.ts";
+import { shortestText } from "../shared/text.ts";
 
 export function formatAnsiblePlaybook(text: string): string | null {
   const output: string[] = [];

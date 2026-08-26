@@ -1,6 +1,6 @@
 import type { ProcessCaptureReport } from "../../../process-capture.ts";
-import { boundStream, boundText, joinStreams } from "../../bounds.ts";
 import type { HushStreamProjection } from "../../contracts.ts";
+import { boundStream, boundText, joinStreams } from "../stream.ts";
 
 export function gitStatusProjection(
   capture: ProcessCaptureReport,

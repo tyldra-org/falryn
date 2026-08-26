@@ -1,4 +1,4 @@
-import { stripAnsi } from "../../../text-format.ts";
+import { stripAnsi } from "../../shared/text.ts";
 
 type GraphiteLogRow = Readonly<{
   branch: string;

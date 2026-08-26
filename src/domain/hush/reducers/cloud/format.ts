@@ -1,6 +1,6 @@
 /** Complete cloud-CLI projections that retain every returned value. */
 
-import { compactJsonWhitespace, shortestText } from "../../text-format.ts";
+import { compactJsonWhitespace, shortestText } from "../shared/text.ts";
 import { formatAlignedTable } from "../table/format.ts";
 
 export const CLOUD_EXECUTABLES = new Set(["aws", "gcloud", "az"]);

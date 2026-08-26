@@ -1,7 +1,7 @@
 /** Complete table projections for infrastructure CLIs. */
 
-import { shortestText } from "../../text-format.ts";
 import { buildLines } from "../build/shared.ts";
+import { shortestText } from "../shared/text.ts";
 import { formatAlignedTable } from "../table/format.ts";
 
 export function formatInfrastructureTable(text: string): string | null {

@@ -1,6 +1,6 @@
 /** Dispatch complete test output to an ecosystem-specific projection. */
 
-import { shortestText } from "../../text-format.ts";
+import { shortestText } from "../shared/text.ts";
 import { formatJavascriptTests } from "./javascript.ts";
 import { formatLanguageTests } from "./languages.ts";
 import { formatPhpRubyTests } from "./php-ruby.ts";

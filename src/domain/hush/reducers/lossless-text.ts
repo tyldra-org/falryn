@@ -1,10 +1,10 @@
 /** Complete-capture text projection with only count- and syntax-preserving compaction. */
 
 import type { ProcessCaptureReport, ProcessStreamCapture } from "../../process-capture.ts";
-import { binaryOmission, boundText, joinStreams } from "../bounds.ts";
 import type { HushStreamProjection } from "../contracts.ts";
-import { compactDuplicateRuns, shortestText, stripAnsi } from "../text-format.ts";
 import { formatSearchMatches } from "./search/format.ts";
+import { compactDuplicateRuns, shortestText, stripAnsi } from "./shared/text.ts";
+import { binaryOmission, boundText, joinStreams } from "./stream.ts";
 
 export function losslessTextProjection(
   capture: ProcessCaptureReport,

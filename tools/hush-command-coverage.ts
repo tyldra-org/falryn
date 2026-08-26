@@ -1,7 +1,7 @@
 /** Maintained Hush command-routing coverage scorecard against pinned RTK 0.45.0. */
 
 import { duration } from "../src/domain/clock.ts";
-import { commandShape } from "../src/domain/hush/command-shape.ts";
+import { commandShape } from "../src/domain/hush/command/normalize.ts";
 import {
   HUSH_COMMAND_RULES,
   HUSH_PROJECTION_KINDS,

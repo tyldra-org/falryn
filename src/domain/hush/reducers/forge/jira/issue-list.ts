@@ -1,4 +1,4 @@
-import { shortestText, stripAnsi } from "../../../text-format.ts";
+import { shortestText, stripAnsi } from "../../shared/text.ts";
 
 const JIRA_ISSUE_COLUMNS = [
   "TYPE",

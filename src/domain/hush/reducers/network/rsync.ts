@@ -1,7 +1,7 @@
 /** Complete rsync transfer projection with every reported path and counter. */
 
-import { shortestText } from "../../text-format.ts";
 import { buildLines } from "../build/shared.ts";
+import { shortestText } from "../shared/text.ts";
 
 export function formatRsyncOutput(text: string): string | null {
   const lines = buildLines(text);

@@ -26,20 +26,14 @@ describe("wc format", () => {
       formatWcOutput(
         [
           "     127     384    3268 src/domain/hush/reducers/log/format.ts",
-          "      32     131    1251 src/domain/hush/reducers/log/projection.ts",
-          "     159     515    4519 total",
+          "      51     196    2115 src/domain/hush/reducers/log/reduce.ts",
+          "     178     580    5383 total",
           "",
         ].join("\n"),
-        [
-          "wc",
-          "src/domain/hush/reducers/log/format.ts",
-          "src/domain/hush/reducers/log/projection.ts",
-        ],
+        ["wc", "src/domain/hush/reducers/log/format.ts", "src/domain/hush/reducers/log/reduce.ts"],
       ),
     ).toBe(
-      ["127L 384W 3268B format.ts", "32L 131W 1251B projection.ts", "Σ 159L 515W 4519B", ""].join(
-        "\n",
-      ),
+      ["127L 384W 3268B format.ts", "51L 196W 2115B reduce.ts", "Σ 178L 580W 5383B", ""].join("\n"),
     );
   });
 

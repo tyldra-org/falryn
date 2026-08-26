@@ -3,7 +3,7 @@ import { describe, expect, test } from "bun:test";
 import { compactTreeOutput, treeEntryFacts } from "./format.ts";
 import { shouldPruneDefaultTreeNoise } from "./policy.ts";
 
-describe("semantic tree format", () => {
+describe("structured tree format", () => {
   test("preserves every visible entry instead of sampling the first 32 lines", () => {
     const entries = Array.from({ length: 48 }, (_, index) => `|-- file-${index}.ts`);
     const source = ["workspace", ...entries, "", "0 directories, 48 files", ""].join("\n");
@@ -116,7 +116,7 @@ describe("semantic tree format", () => {
     expect(treeEntryFacts(projected)).toEqual(treeEntryFacts(source));
   });
 
-  test("keeps the native shape when a semantic form would cost more context", () => {
+  test("keeps the native shape when a structured form would cost more context", () => {
     const source = ["workspace", "`-- README.md", ""].join("\n");
     expect(compactTreeOutput(source, { pruneNoise: false })).toBe(source);
   });

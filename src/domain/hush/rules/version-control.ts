@@ -1,6 +1,6 @@
 /** Git, yadm, and Jujutsu command rules. */
 
-import { gitSubcommand } from "../git-command.ts";
+import { gitSubcommand } from "../command/git.ts";
 import {
   reduceGitDiff,
   reduceGitLog,

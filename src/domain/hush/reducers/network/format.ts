@@ -1,6 +1,6 @@
 /** Command-aware network formatting with exact fallback for unknown shapes. */
 
-import { compactDuplicateRuns, compactJsonWhitespace, shortestText } from "../../text-format.ts";
+import { compactDuplicateRuns, compactJsonWhitespace, shortestText } from "../shared/text.ts";
 import { formatPingOutput } from "./ping.ts";
 import { formatRsyncOutput } from "./rsync.ts";
 

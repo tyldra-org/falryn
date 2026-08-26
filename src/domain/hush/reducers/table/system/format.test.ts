@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { encodedBytes } from "../../../text-format.ts";
+import { encodedBytes } from "../../shared/text.ts";
 import { formatDfResult } from "./df.ts";
 import { formatDuResult } from "./du.ts";
 import { formatPsResult } from "./ps.ts";

@@ -1,11 +1,11 @@
 /** Reducer entrypoints used by command rules. */
 
-import { buildProjection } from "./build/projection.ts";
-import { compoundProjection } from "./compound/projection.ts";
+import { buildProjection } from "./build/reduce.ts";
+import { compoundProjection } from "./compound/reduce.ts";
 import type { HushReducer } from "./contracts.ts";
-import { countProjection } from "./count/projection.ts";
-import { diagnosticProjection } from "./diagnostic/projection.ts";
-import { forgeProjection } from "./forge/projection.ts";
+import { countProjection } from "./count/reduce.ts";
+import { diagnosticProjection } from "./diagnostic/reduce.ts";
+import { forgeProjection } from "./forge/reduce.ts";
 import {
   gitDiffProjection,
   gitLogProjection,
@@ -14,20 +14,20 @@ import {
 } from "./git/index.ts";
 import { curlProjection } from "./http/curl.ts";
 import { wgetProjection } from "./http/wget.ts";
-import { jsonProjection } from "./json/projection.ts";
-import { listingProjection } from "./listing.ts";
-import { logProjection } from "./log/projection.ts";
-import { lsProjection } from "./ls/projection.ts";
-import { networkProjection } from "./network/projection.ts";
-import { operationProjection } from "./operation/projection.ts";
-import { packageProjection } from "./package/projection.ts";
-import { searchProjection } from "./search/projection.ts";
-import { semanticProjection } from "./semantic.ts";
-import { structuredProjection } from "./structured/projection.ts";
-import { tableProjection } from "./table/projection.ts";
-import { testProjection } from "./test/projection.ts";
-import { transformProjection } from "./transform/projection.ts";
-import { treeProjection } from "./tree/projection.ts";
+import { jsonProjection } from "./json/reduce.ts";
+import { listingProjection } from "./listing/reduce.ts";
+import { logProjection } from "./log/reduce.ts";
+import { lsProjection } from "./ls/reduce.ts";
+import { networkProjection } from "./network/reduce.ts";
+import { operationProjection } from "./operation/reduce.ts";
+import { packageProjection } from "./package/reduce.ts";
+import { plainTextProjection } from "./plain-text.ts";
+import { searchProjection } from "./search/reduce.ts";
+import { structuredProjection } from "./structured/reduce.ts";
+import { tableProjection } from "./table/reduce.ts";
+import { testProjection } from "./test/reduce.ts";
+import { transformProjection } from "./transform/reduce.ts";
+import { treeProjection } from "./tree/reduce.ts";
 
 export const reduceLs: HushReducer = ({ capture, maxBytes, patterns }) =>
   lsProjection(capture, maxBytes, patterns);
@@ -39,7 +39,7 @@ export const reduceListing: HushReducer = ({ capture, maxBytes, patterns, comman
   listingProjection(capture, maxBytes, patterns, commandTokens);
 
 export const reduceRead: HushReducer = ({ capture, maxBytes, patterns }) =>
-  semanticProjection("read", capture, maxBytes, patterns);
+  plainTextProjection("read", capture, maxBytes, patterns);
 
 export const reduceJson: HushReducer = ({ capture, maxBytes, patterns }) =>
   jsonProjection(capture, maxBytes, patterns);

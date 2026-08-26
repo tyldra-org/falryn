@@ -1,6 +1,6 @@
 /** Complete, uncapped container table and inspection projections. */
 
-import { shortestText } from "../../text-format.ts";
+import { shortestText } from "../shared/text.ts";
 import { formatAlignedTable } from "../table/format.ts";
 import { containerLines, containerSubcommand, hasCallerPresentation } from "./shared.ts";
 

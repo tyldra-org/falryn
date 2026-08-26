@@ -1,8 +1,9 @@
 import type { ProcessCaptureReport } from "../../../process-capture.ts";
-import { boundStream, boundText, genericProjection, joinStreams } from "../../bounds.ts";
 import type { HushStreamProjection } from "../../contracts.ts";
-import { shortestText } from "../../text-format.ts";
 import { formatExternalUnifiedDiff } from "../diff/format.ts";
+import { genericProjection } from "../fallback.ts";
+import { shortestText } from "../shared/text.ts";
+import { boundStream, boundText, joinStreams } from "../stream.ts";
 import { formatGitUnifiedDiff } from "./diff/format.ts";
 import { formatGitDiffStat } from "./diff/stat.ts";
 

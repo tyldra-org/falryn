@@ -1,7 +1,7 @@
 /** Complete status projections for small infrastructure CLIs. */
 
-import { shortestText } from "../../text-format.ts";
 import { buildLines } from "../build/shared.ts";
+import { shortestText } from "../shared/text.ts";
 
 export function formatFail2banStatus(text: string): string | null {
   const lines = buildLines(text);

@@ -1,7 +1,7 @@
 /** Complete Pulumi projections with all resource and output facts retained. */
 
-import { shortestText } from "../../text-format.ts";
 import { buildLines } from "../build/shared.ts";
+import { shortestText } from "../shared/text.ts";
 import { formatInfrastructureTable } from "./tables.ts";
 
 export function formatPulumi(text: string, commandTokens: readonly string[]): string | null {

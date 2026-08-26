@@ -1,4 +1,4 @@
-import { shortestText } from "../../text-format.ts";
+import { shortestText } from "../shared/text.ts";
 
 const COMPACT_HEADERS: Readonly<Record<string, string>> = {
   "CONTAINER ID": "ID",

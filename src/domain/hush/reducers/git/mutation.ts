@@ -1,6 +1,6 @@
 import type { ProcessCaptureReport } from "../../../process-capture.ts";
+import { gitSubcommand, gitSubcommandArguments } from "../../command/git.ts";
 import type { HushStreamProjection } from "../../contracts.ts";
-import { gitSubcommand, gitSubcommandArguments } from "../../git-command.ts";
 import { gitAddProjection } from "./mutation/add.ts";
 import { gitBranchProjection } from "./mutation/branch.ts";
 import { gitCheckoutProjection } from "./mutation/checkout.ts";

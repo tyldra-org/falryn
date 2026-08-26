@@ -1,4 +1,4 @@
-import { matchesPattern } from "../../bounds.ts";
+import { matchesPattern } from "../stream.ts";
 
 const CURL_PROGRESS = [
   /^\s*%\s+Total\s+%\s+Received\s+%\s+Xferd/iu,

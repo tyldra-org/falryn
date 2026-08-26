@@ -1,6 +1,6 @@
 /** Container, Kubernetes, and OpenShift command rules. */
 
-import { parseKubernetesCommand } from "../kubernetes-command.ts";
+import { parseKubernetesCommand } from "../command/kubernetes.ts";
 import { reduceBuild, reduceLog, reduceOperation, reduceTable } from "../reducers/entrypoints.ts";
 import { defineCommandRule } from "./contracts.ts";
 

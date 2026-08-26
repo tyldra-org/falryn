@@ -1,6 +1,6 @@
 /** Command-aware build formatting with the shortest complete representation. */
 
-import { shortestText } from "../../text-format.ts";
+import { shortestText } from "../shared/text.ts";
 import { formatJavascriptBuild } from "./javascript.ts";
 import { formatLanguageBuild } from "./languages.ts";
 import { formatToolBuild } from "./tools.ts";

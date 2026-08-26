@@ -13,7 +13,7 @@ import {
 
 describe("Hush projection scorecard corpus", () => {
   test("keeps each supported Git mutation as a separate RTK comparison", () => {
-    expect(HUSH_PROJECTION_CORPUS_VERSION).toBe("hush-projections.v32");
+    expect(HUSH_PROJECTION_CORPUS_VERSION).toBe("hush-projections.v33");
     expect(
       HUSH_PROJECTION_CASES.filter((entry) => entry.projection === "git-mutation").map(
         (entry) => entry.id,
@@ -74,7 +74,7 @@ describe("Hush projection scorecard corpus", () => {
     if (listing === undefined) throw new Error("missing find scorecard case");
     expect(listing.id).toBe("listing-find");
     expect(HUSH_FIND_LISTING_PATHS).toHaveLength(67);
-    expect(listing.requiredMarkers).toHaveLength(18);
+    expect(listing.requiredMarkers).toHaveLength(12);
     expect(listing.forbiddenMarkers).toContain("+17 more");
   });
 

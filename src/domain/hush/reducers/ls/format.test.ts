@@ -3,7 +3,7 @@ import { describe, expect, test } from "bun:test";
 import { compactInodeBlockLs } from "./block-format.ts";
 import { compactLongLs } from "./long-format.ts";
 
-describe("semantic ls formats", () => {
+describe("structured ls formats", () => {
   test("groups repeated long metadata while preserving every entry", () => {
     const source = [
       "total 24",

@@ -1,11 +1,11 @@
 /** Command-aware operation formatting with exact fallback on unknown shapes. */
 
-import { KUBERNETES_EXECUTABLES } from "../../kubernetes-command.ts";
-import { shortestText } from "../../text-format.ts";
+import { KUBERNETES_EXECUTABLES } from "../../command/kubernetes.ts";
 import { formatContainerOperationOutput } from "../container/operation.ts";
 import { CONTAINER_EXECUTABLES, containerExecutable } from "../container/shared.ts";
 import { formatInfrastructureOutput } from "../infra/format.ts";
 import { formatKubernetesOperationOutput } from "../kubernetes/operation.ts";
+import { shortestText } from "../shared/text.ts";
 import { formatOperationCommand } from "./commands.ts";
 import { formatPrismaOperation } from "./prisma.ts";
 

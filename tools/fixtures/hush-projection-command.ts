@@ -1479,14 +1479,12 @@ function wcOutput(argv: readonly string[]): string {
   }
   if (
     signature ===
-    ["src/domain/hush/reducers/log/format.ts", "src/domain/hush/reducers/log/projection.ts"].join(
-      "\0",
-    )
+    ["src/domain/hush/reducers/log/format.ts", "src/domain/hush/reducers/log/reduce.ts"].join("\0")
   ) {
     return [
       "     127     384    3268 src/domain/hush/reducers/log/format.ts",
-      "      32     131    1251 src/domain/hush/reducers/log/projection.ts",
-      "     159     515    4519 total",
+      "      51     196    2115 src/domain/hush/reducers/log/reduce.ts",
+      "     178     580    5383 total",
     ].join("\n");
   }
   throw new Error(`unsupported wc fixture arguments: ${argv.join(" ")}`);
@@ -1667,7 +1665,7 @@ function gitOutput(argv: readonly string[]): string {
       return [
         "## main...origin/main [ahead 1]",
         " M src/domain/hush.ts",
-        " M src/domain/hush/reducers/semantic.ts",
+        " M src/domain/hush/reducers/plain-text.ts",
         "?? tools/hush-projection-scorecard.ts",
       ].join("\n");
     case "diff":

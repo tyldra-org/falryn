@@ -3,8 +3,8 @@ import type {
   ProcessStreamCapture,
   ProcessStreamName,
 } from "../../../../process-capture.ts";
-import { binaryOmission, boundText, joinStreams, matchesPattern } from "../../../bounds.ts";
 import type { HushStreamProjection } from "../../../contracts.ts";
+import { binaryOmission, boundText, joinStreams, matchesPattern } from "../../stream.ts";
 
 const GIT_PROGRESS =
   /^\s*(?:remote:\s*)?(?:(?:Enumerating|Counting|Compressing|Writing) objects?\b|Total\s+\d+\b)/iu;

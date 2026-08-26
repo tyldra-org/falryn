@@ -17,8 +17,8 @@ export function compactTreeOutput(
   if (tree === null || tree.entries.length === 0) {
     return normalized;
   }
-  const semantic = renderHushTree(tree);
-  return encodedBytes(semantic) <= encodedBytes(normalized) ? semantic : normalized;
+  const structured = renderHushTree(tree);
+  return encodedBytes(structured) <= encodedBytes(normalized) ? structured : normalized;
 }
 
 function normalizeTreeOutput(

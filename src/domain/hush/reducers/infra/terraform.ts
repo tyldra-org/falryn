@@ -1,7 +1,7 @@
 /** Complete Terraform/OpenTofu projections. */
 
-import { shortestText } from "../../text-format.ts";
 import { buildLines } from "../build/shared.ts";
+import { shortestText } from "../shared/text.ts";
 
 export function formatTerraformLike(text: string, commandTokens: readonly string[]): string | null {
   const action = commandTokens[1] ?? "";

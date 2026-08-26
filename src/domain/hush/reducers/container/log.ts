@@ -1,6 +1,6 @@
 /** Order-preserving container log projection with no record-count cap. */
 
-import { shortestText } from "../../text-format.ts";
+import { shortestText } from "../shared/text.ts";
 import { containerLines } from "./shared.ts";
 
 const ISO_TIMESTAMP =

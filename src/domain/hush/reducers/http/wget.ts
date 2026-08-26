@@ -1,12 +1,12 @@
 import type { ProcessCaptureReport, ProcessStreamCapture } from "../../../process-capture.ts";
-import { binaryOmission, boundText, joinStreams } from "../../bounds.ts";
 import type { HushStreamProjection } from "../../contracts.ts";
 import {
   compactDuplicateRuns,
   compactJsonWhitespace,
   shortestText,
   stripAnsi,
-} from "../../text-format.ts";
+} from "../shared/text.ts";
+import { binaryOmission, boundText, joinStreams } from "../stream.ts";
 import { stripWgetProgress } from "./progress.ts";
 
 const STANDARD_WGET_LINE = [

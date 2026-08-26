@@ -1,6 +1,6 @@
 /** Complete lint, format, and diagnostic projection with exact fallback. */
 
-import { shortestText } from "../../text-format.ts";
+import { shortestText } from "../shared/text.ts";
 import { formatCommandDiagnostics } from "./commands.ts";
 import { formatEcosystemDiagnostics } from "./ecosystems.ts";
 import { formatJavascriptDiagnostics } from "./javascript.ts";

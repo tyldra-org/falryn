@@ -1,6 +1,6 @@
 /** Order-preserving Kubernetes log projection with no record-count cap. */
 
-import { shortestText } from "../../text-format.ts";
+import { shortestText } from "../shared/text.ts";
 import { kubernetesLines } from "./shared.ts";
 
 const ISO_TIMESTAMP =

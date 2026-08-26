@@ -1,6 +1,6 @@
 /** Complete curl response-header projection with an exact body. */
 
-import { compactDuplicateRuns, compactJsonWhitespace, shortestText } from "../../text-format.ts";
+import { compactDuplicateRuns, compactJsonWhitespace, shortestText } from "../shared/text.ts";
 
 const STATUS_LINE = /^HTTP\/(?:1\.[01]|2|3)\s+\d{3}(?:\s+.*)?$/u;
 const HEADER_LINE = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+:\s*.*$/u;

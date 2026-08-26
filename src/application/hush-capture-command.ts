@@ -1,17 +1,17 @@
 /** Structured capture plans for Hush-supported commands that need richer native facts. */
 
-import { commandShape } from "../domain/hush/command-shape.ts";
 import {
   githubCommand,
   githubCommandArguments,
   type HushGithubCommand,
   hasGithubOutputOverride,
-} from "../domain/hush/github-command.ts";
+} from "../domain/hush/command/github.ts";
 import {
   gitlabCommand,
   gitlabCommandArguments,
   hasGitlabOutputOverride,
-} from "../domain/hush/gitlab-command.ts";
+} from "../domain/hush/command/gitlab.ts";
+import { commandShape } from "../domain/hush/command/normalize.ts";
 import type { ProcessCaptureRequest } from "../domain/index.ts";
 
 const GITHUB_FIELDS: Readonly<Partial<Record<HushGithubCommand, string>>> = {

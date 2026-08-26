@@ -6,8 +6,7 @@
  * adding command support does not grow one central implementation file.
  */
 
-import { genericProjection, passthroughProjection, rawFallbackProjection } from "./hush/bounds.ts";
-import { classifyCommand, commandIdentity } from "./hush/classification.ts";
+import { classifyCommand, commandIdentity } from "./hush/command/classify.ts";
 import {
   DEFAULT_HUSH_REDUCED_BYTES,
   HUSH_REDUCER_VERSION,
@@ -20,10 +19,15 @@ import {
   MAX_HUSH_REDUCED_BYTES,
 } from "./hush/contracts.ts";
 import type { HushReduceInput } from "./hush/reducers/contracts.ts";
-import { fidelityFor } from "./hush/reducers/index.ts";
+import {
+  genericProjection,
+  passthroughProjection,
+  rawFallbackProjection,
+} from "./hush/reducers/fallback.ts";
+import { fidelityFor } from "./hush/reducers/fidelity.ts";
 import { err, ok, type Result } from "./result.ts";
 
-export { classifyFamily, classifyReducerId } from "./hush/classification.ts";
+export { classifyFamily, classifyReducerId } from "./hush/command/classify.ts";
 export type {
   HushCommandIdentity,
   HushError,

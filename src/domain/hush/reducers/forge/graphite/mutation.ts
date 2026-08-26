@@ -1,5 +1,5 @@
-import type { HushGraphiteCommand } from "../../../graphite-command.ts";
-import { stripAnsi } from "../../../text-format.ts";
+import type { HushGraphiteCommand } from "../../../command/graphite.ts";
+import { stripAnsi } from "../../shared/text.ts";
 
 /** Compact only complete, recognized Graphite mutation transcripts. */
 export function formatGraphiteMutation(
