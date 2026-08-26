@@ -21,9 +21,10 @@ import { HUSH_RTK_BASELINE } from "./hush-command-coverage.ts";
 import { HUSH_CONTAINER_CASES } from "./hush-container-cases.ts";
 import { HUSH_KUBERNETES_CASES } from "./hush-kubernetes-cases.ts";
 import { type HushLsMeasurement, measureText } from "./hush-ls-scorecard.ts";
+import { HUSH_NETWORK_CASES } from "./hush-network-cases.ts";
 import type { ProjectionCase } from "./hush-projection-case.ts";
 
-export const HUSH_PROJECTION_CORPUS_VERSION = "hush-projections.v31";
+export const HUSH_PROJECTION_CORPUS_VERSION = "hush-projections.v32";
 
 export const HUSH_FIND_LISTING_PATHS = [
   "bounds.ts",
@@ -1981,6 +1982,7 @@ export const HUSH_PROJECTION_CASES: readonly ProjectionCase[] = [
   ...HUSH_CONTAINER_CASES,
   ...HUSH_KUBERNETES_CASES,
   ...HUSH_CLOUD_INFRA_CASES,
+  ...HUSH_NETWORK_CASES,
   {
     id: "count-wc-single",
     projection: "count",
@@ -2023,32 +2025,6 @@ export const HUSH_PROJECTION_CASES: readonly ProjectionCase[] = [
       "05 [I] request complete tokens=219",
     ],
     forbiddenMarkers: ["Log Summary", "omitted", "…"],
-  },
-  {
-    id: "curl-json",
-    projection: "curl",
-    executable: "curl",
-    argv: ["https://example.test/status"],
-    rtkArgv: ["curl", "https://example.test/status"],
-    requiredMarkers: ["req-736", "reducers", "81", "complete", "true"],
-    forbiddenMarkers: ["% Total", "Dload", "1020"],
-  },
-  {
-    id: "wget-download",
-    projection: "wget",
-    executable: "wget",
-    argv: ["https://example.test/releases/falryn.tar.gz"],
-    rtkArgv: ["wget", "https://example.test/releases/falryn.tar.gz"],
-    requiredMarkers: ["200", "example.test/releases/falryn.tar.gz", "falryn.tar.gz", "1.5KB"],
-    forbiddenMarkers: ["Resolving", "Connecting", "100%", "saved ["],
-  },
-  {
-    id: "network-ssh",
-    projection: "network",
-    executable: "ssh",
-    argv: ["example.test", "echo", "connected"],
-    rtkArgv: ["ssh", "example.test", "echo", "connected"],
-    requiredMarkers: ["connected", "example.test", "remote command: ok"],
   },
 ];
 
@@ -2309,7 +2285,12 @@ async function createFixtureCommands(root: string): Promise<string> {
     `#!${process.execPath}`,
   );
   await Promise.all(
-    ["hush-cloud-output.ts", "hush-infra-output.ts"].map(async (name) => {
+    [
+      "hush-cloud-output.ts",
+      "hush-http-output.ts",
+      "hush-infra-output.ts",
+      "hush-network-output.ts",
+    ].map(async (name) => {
       await writeFile(join(bin, name), await readFile(join(import.meta.dir, "fixtures", name)));
     }),
   );

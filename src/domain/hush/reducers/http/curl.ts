@@ -8,6 +8,7 @@ import {
   stripAnsi,
 } from "../../text-format.ts";
 import { stripCurlProgress } from "./progress.ts";
+import { formatCurlResponse } from "./response.ts";
 
 export function curlProjection(
   capture: ProcessCaptureReport,
@@ -34,11 +35,13 @@ function projectCurlStream(
   const withoutProgress = stream === "stderr" ? stripCurlProgress(plain, patterns) : plain;
   const duplicateCompaction = compactDuplicateRuns(withoutProgress);
   const jsonCompaction = compactJsonWhitespace(withoutProgress);
+  const responseCompaction = stream === "stdout" ? formatCurlResponse(withoutProgress) : null;
   const projected = shortestText(
     plain,
     withoutProgress,
     duplicateCompaction,
     ...(jsonCompaction === null ? [] : [jsonCompaction]),
+    ...(responseCompaction === null ? [] : [responseCompaction]),
   );
   return boundText(projected, stream, maxBytes);
 }

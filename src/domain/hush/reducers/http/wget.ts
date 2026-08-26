@@ -29,7 +29,8 @@ export function wgetProjection(
   const summary =
     stdout.text.length === 0 &&
     stdout.omissions.length === 0 &&
-    capture.exit.exitCode === 0 &&
+    completeSuccess(capture) &&
+    patterns.length === 0 &&
     capture.stderr.inlineText !== null
       ? formatWgetSuccess(stripAnsi(capture.stderr.inlineText), commandTokens)
       : null;
@@ -94,8 +95,28 @@ function formatWgetSuccess(stderr: string, commandTokens: readonly string[]): st
       const trimmed = line.trim();
       return trimmed.length > 0 && !STANDARD_WGET_LINE.some((matcher) => matcher.test(trimmed));
     });
-  const summary = `${status.split(/\s+/u)[0]} ${url.replace(/^https?:\/\//u, "")} -> ${destination} ${size}`;
+  const summary = `${status.split(/\s+/u)[0]} ${url.replace(/^https?:\/\//u, "")}->${destination} ${size}`;
   return extras.length === 0 ? summary : [summary, ...extras].join("\n");
+}
+
+function completeSuccess(capture: ProcessCaptureReport): boolean {
+  return (
+    capture.stop.kind === "exited" &&
+    capture.exit.exitCode === 0 &&
+    capture.exit.signal === null &&
+    completeText(capture.stdout) &&
+    completeText(capture.stderr)
+  );
+}
+
+function completeText(stream: ProcessStreamCapture): boolean {
+  return (
+    stream.encoding === "utf-8" &&
+    stream.inlineText !== null &&
+    !stream.truncated &&
+    stream.omittedBytes === 0 &&
+    !stream.maxLineExceeded
+  );
 }
 
 function destinationFrom(tokens: readonly string[], stderr: string, url: string): string | null {

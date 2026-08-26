@@ -4,14 +4,20 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { basename } from "node:path";
 
 import { cloudFixtureOutput } from "./hush-cloud-output.ts";
+import { curlFixtureOutput, wgetFixtureOutput } from "./hush-http-output.ts";
 import { infrastructureFixtureOutput } from "./hush-infra-output.ts";
+import { networkFixtureOutput } from "./hush-network-output.ts";
 
 const executable = basename(Bun.argv[1] ?? "");
 const args = Bun.argv.slice(2);
 
-if (executable === "wget") {
-  runWgetFixture(args);
-  process.exit(0);
+if (executable === "curl" || executable === "wget") {
+  const result = executable === "curl" ? curlFixtureOutput(args) : wgetFixtureOutput(args);
+  if (result.download !== null)
+    writeFileSync(result.download.path, "x".repeat(result.download.bytes));
+  if (result.stdout.length > 0) process.stdout.write(`${result.stdout}\n`);
+  if (result.stderr.length > 0) process.stderr.write(result.stderr);
+  process.exit(result.exitCode);
 }
 if (executable === "sed") {
   runSedFixture(args);
@@ -205,17 +211,9 @@ const outputs: Readonly<Record<string, () => string>> = {
       "Aug 24 10:00:04 falryn-host falryn[736]: ERROR capture unavailable id=cap-42",
       "Aug 24 10:00:05 falryn-host falryn[736]: INFO request complete tokens=219",
     ].join("\n"),
-  curl: () =>
-    JSON.stringify(
-      {
-        status: "ok",
-        requestId: "req-736",
-        result: { reducers: 81, complete: true },
-      },
-      null,
-      2,
-    ),
-  ssh: () => ["connected example.test", "remote command: ok"].join("\n"),
+  ping: () => requiredNetworkOutput("ping", args),
+  rsync: () => requiredNetworkOutput("rsync", args),
+  ssh: () => requiredNetworkOutput("ssh", args),
   aws: () => requiredCloudOutput("aws", args),
   gcloud: () => requiredCloudOutput("gcloud", args),
   az: () => requiredCloudOutput("az", args),
@@ -240,6 +238,12 @@ function requiredInfrastructureOutput(executable: string, argv: readonly string[
   const output = infrastructureFixtureOutput(executable, argv);
   if (output === null)
     throw new Error(`unsupported infrastructure fixture executable: ${executable}`);
+  return output;
+}
+
+function requiredNetworkOutput(executable: string, argv: readonly string[]): string {
+  const output = networkFixtureOutput(executable, argv);
+  if (output === null) throw new Error(`unsupported network fixture executable: ${executable}`);
   return output;
 }
 
@@ -1595,14 +1599,7 @@ function runDiffFixture(argv: readonly string[]): void {
     ].join("\n"),
   );
 }
-if (executable === "curl") {
-  process.stderr.write(
-    "  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current\n" +
-      "                                 Dload  Upload   Total   Spent    Left  Speed\n" +
-      "100   102  100   102    0     0   1020      0 --:--:-- --:--:-- --:--:--  1020\n",
-  );
-  process.stdout.write(`${output}\n`);
-} else if (executable === "bun" && args[0] === "run" && args[1] === "typecheck") {
+if (executable === "bun" && args[0] === "run" && args[1] === "typecheck") {
   process.stderr.write("$ tsc --noEmit\n");
   process.stdout.write(`${output}\n`);
   process.exit(2);
@@ -1661,48 +1658,6 @@ function diagnosticFailure(command: string, argv: readonly string[]): boolean {
   if (command === "build") return argv.includes("--fail");
   if (command === "err") return argv.includes("--fail");
   return false;
-}
-
-function runWgetFixture(argv: readonly string[]): void {
-  const url = argv.find((argument) => /^https?:\/\//u.test(argument));
-  if (url === undefined) {
-    process.stderr.write("wget: missing URL\n");
-    process.exit(2);
-  }
-  const destination = wgetDestination(argv, url);
-  if (destination !== "-") {
-    writeFileSync(destination, "x".repeat(1_536));
-  }
-  process.stderr.write(
-    [
-      `--2026-08-23 12:00:00--  ${url}`,
-      "Resolving example.test... 192.0.2.80",
-      "Connecting to example.test|192.0.2.80|:443... connected.",
-      "HTTP request sent, awaiting response... 200 OK",
-      "Length: 1536 (1.5K) [application/gzip]",
-      `Saving to: '${destination}'`,
-      "",
-      "     0K .                                                     100% 1.50M=0.001s",
-      "",
-      `2026-08-23 12:00:00 (1.50 MB/s) - '${destination}' saved [1536/1536]`,
-      "",
-    ].join("\n"),
-  );
-}
-
-function wgetDestination(argv: readonly string[], url: string): string {
-  for (let index = 0; index < argv.length; index += 1) {
-    const argument = argv[index] ?? "";
-    if ((argument === "-O" || argument === "--output-document") && argv[index + 1] !== undefined) {
-      return argv[index + 1] ?? "index.html";
-    }
-    const inline = argument.match(/^(?:-O|--output-document=)(.+)$/u)?.[1];
-    if (inline !== undefined) {
-      return inline;
-    }
-  }
-  const path = url.split(/[?#]/u, 1)[0] ?? url;
-  return path.split("/").at(-1) || "index.html";
 }
 
 function gitOutput(argv: readonly string[]): string {

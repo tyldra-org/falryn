@@ -4,6 +4,7 @@ import { HUSH_BUILD_OPERATION_CASES } from "./hush-build-operation-cases.ts";
 import { HUSH_CLOUD_INFRA_CASES } from "./hush-cloud-infra-cases.ts";
 import { HUSH_CONTAINER_CASES } from "./hush-container-cases.ts";
 import { HUSH_KUBERNETES_CASES } from "./hush-kubernetes-cases.ts";
+import { HUSH_NETWORK_CASES } from "./hush-network-cases.ts";
 import {
   HUSH_FIND_LISTING_PATHS,
   HUSH_PROJECTION_CASES,
@@ -12,7 +13,7 @@ import {
 
 describe("Hush projection scorecard corpus", () => {
   test("keeps each supported Git mutation as a separate RTK comparison", () => {
-    expect(HUSH_PROJECTION_CORPUS_VERSION).toBe("hush-projections.v31");
+    expect(HUSH_PROJECTION_CORPUS_VERSION).toBe("hush-projections.v32");
     expect(
       HUSH_PROJECTION_CASES.filter((entry) => entry.projection === "git-mutation").map(
         (entry) => entry.id,
@@ -355,6 +356,47 @@ describe("Hush projection scorecard corpus", () => {
       "infra-pulumi-destroy",
       "infra-pulumi-refresh",
     ]);
+  });
+
+  test("measures every requested HTTP and network surface without unsafe reductions", () => {
+    expect(HUSH_NETWORK_CASES).toHaveLength(15);
+    expect(HUSH_NETWORK_CASES.map((entry) => entry.id)).toEqual([
+      "curl-json",
+      "curl-headers-json",
+      "curl-events",
+      "curl-failure-body",
+      "wget-download",
+      "wget-explicit-output",
+      "wget-stdout-json",
+      "wget-redirect",
+      "wget-failure",
+      "ping-darwin",
+      "ping-linux",
+      "rsync-transfer",
+      "rsync-dry-run",
+      "ssh-json",
+      "ssh-text",
+    ]);
+    expect(
+      HUSH_NETWORK_CASES.filter((entry) => entry.baseline === "raw").map((entry) => entry.id),
+    ).toEqual([
+      "curl-failure-body",
+      "wget-stdout-json",
+      "wget-redirect",
+      "wget-failure",
+      "ping-darwin",
+      "ping-linux",
+      "rsync-transfer",
+      "rsync-dry-run",
+    ]);
+    expect(
+      HUSH_NETWORK_CASES.filter((entry) => entry.competitiveTarget !== "win").map(
+        (entry) => entry.id,
+      ),
+    ).toEqual(["ssh-text"]);
+    expect(
+      HUSH_NETWORK_CASES.every((entry) => entry.forbiddenMarkers?.includes("omitted") ?? false),
+    ).toBe(true);
   });
 
   test("measures every requested test-runner and wrapper as an uncapped strict win", () => {

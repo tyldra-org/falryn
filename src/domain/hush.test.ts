@@ -316,6 +316,33 @@ describe("hush reduction", () => {
     expect(sops.value.reducedText).toBe(sopsSource);
   });
 
+  test("keeps partial and failed network command output exact", () => {
+    const partialSource = [
+      "PING example.test (192.0.2.80): 56 data bytes",
+      "64 bytes from 192.0.2.80: icmp_seq=0 ttl=57 time=12.345 ms",
+    ].join("\n");
+    const partial = reduceHush({
+      command: argv("/sbin/ping", ["-c", "3", "example.test"]),
+      capture: report(partialSource, { truncated: true, artifact: true }),
+    });
+    expect(partial.ok).toBe(true);
+    if (!partial.ok) throw new Error("expected partial ping output");
+    expect(partial.value.reducerId).toBe("network.command");
+    expect(partial.value.reducedText).toBe(partialSource);
+    expect(partial.value.truncated).toBe(true);
+    expect(partial.value.expansion.stdoutArtifact).toBe(artifactId.from("cap-1.stdout"));
+
+    const failureSource = "ssh: connect to host example.test port 22: Connection refused\n";
+    const failure = reduceHush({
+      command: argv("/usr/bin/ssh", ["example.test", "falryn", "status"]),
+      capture: report("", { stderr: failureSource, exitCode: 255 }),
+    });
+    expect(failure.ok).toBe(true);
+    if (!failure.ok) throw new Error("expected failed ssh output");
+    expect(failure.value.reducerId).toBe("network.command");
+    expect(failure.value.reducedText).toBe(`stderr:\n${failureSource}`);
+  });
+
   test("preserves terminal facts and omits the child environment", () => {
     const captured = report("On branch main\n", { durationMs: 44, exitCode: 1 });
     const reduced = reduceHush({
@@ -1101,7 +1128,7 @@ describe("hush reduction", () => {
     }
     expect(reduced.value.reducerId).toBe("network.wget");
     expect(reduced.value.reducedText).toBe(
-      "200 example.test/releases/falryn.tar.gz -> falryn.tar.gz 1.5KB",
+      "200 example.test/releases/falryn.tar.gz->falryn.tar.gz 1.5KB",
     );
     expect(reduced.value.omissions).toEqual([]);
   });

@@ -21,6 +21,7 @@ import { jsonProjection } from "./json/projection.ts";
 import { listingProjection } from "./listing.ts";
 import { logProjection } from "./log/projection.ts";
 import { lsProjection } from "./ls/projection.ts";
+import { networkProjection } from "./network/projection.ts";
 import { operationProjection } from "./operation/projection.ts";
 import { packageProjection } from "./package/projection.ts";
 import { searchProjection } from "./search/projection.ts";
@@ -106,7 +107,7 @@ export function specializedProjection(
     case "wget":
       return wgetProjection(capture, maxBytes, patterns, commandTokens);
     case "network":
-      return semanticProjection("network", capture, maxBytes, patterns);
+      return networkProjection(capture, maxBytes, patterns, commandTokens);
     case "operation":
       return operationProjection(capture, maxBytes, patterns, commandTokens);
     case "structured":
