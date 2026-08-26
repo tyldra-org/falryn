@@ -1,5 +1,6 @@
 import type { ProcessCaptureReport, ProcessStreamCapture } from "../../../process-capture.ts";
 import type { HushStreamProjection } from "../../contracts.ts";
+import type { HushReducer } from "../contracts.ts";
 import {
   compactDuplicateRuns,
   compactJsonWhitespace,
@@ -9,6 +10,9 @@ import {
 import { binaryOmission, boundText, joinStreams } from "../stream.ts";
 import { stripCurlProgress } from "./progress.ts";
 import { formatCurlResponse } from "./response.ts";
+
+export const reduceCurl: HushReducer = ({ capture, maxBytes, patterns }) =>
+  curlProjection(capture, maxBytes, patterns);
 
 export function curlProjection(
   capture: ProcessCaptureReport,

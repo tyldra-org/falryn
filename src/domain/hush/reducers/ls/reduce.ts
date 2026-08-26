@@ -2,9 +2,13 @@
 
 import type { ProcessCaptureReport, ProcessStreamName } from "../../../process-capture.ts";
 import type { HushStreamProjection } from "../../contracts.ts";
+import type { HushReducer } from "../contracts.ts";
 import { binaryOmission, boundStream, boundText, joinStreams } from "../stream.ts";
 import { compactInodeBlockLs } from "./block-format.ts";
 import { compactLongLs } from "./long-format.ts";
+
+export const reduceLs: HushReducer = ({ capture, maxBytes, patterns }) =>
+  lsProjection(capture, maxBytes, patterns);
 
 export function lsProjection(
   capture: ProcessCaptureReport,

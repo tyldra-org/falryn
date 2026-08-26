@@ -1,21 +1,19 @@
 /** File, search, transform, and generic command rules. */
 
-import {
-  reduceBuild,
-  reduceCount,
-  reduceDiagnostic,
-  reduceGitDiff,
-  reduceJson,
-  reduceListing,
-  reduceLog,
-  reduceLs,
-  reduceOperation,
-  reduceRead,
-  reduceSearch,
-  reduceTest,
-  reduceTransform,
-  reduceTree,
-} from "../reducers/entrypoints.ts";
+import { reduceBuild } from "../reducers/build/reduce.ts";
+import { reduceCount } from "../reducers/count/reduce.ts";
+import { reduceDiagnostic } from "../reducers/diagnostic/reduce.ts";
+import { reduceGitDiff } from "../reducers/git/diff.ts";
+import { reduceJson } from "../reducers/json/reduce.ts";
+import { reduceListing } from "../reducers/listing/reduce.ts";
+import { reduceLog } from "../reducers/log/reduce.ts";
+import { reduceLs } from "../reducers/ls/reduce.ts";
+import { reduceOperation } from "../reducers/operation/reduce.ts";
+import { reduceRead } from "../reducers/plain-text.ts";
+import { reduceSearch } from "../reducers/search/reduce.ts";
+import { reduceTest } from "../reducers/test/reduce.ts";
+import { reduceTransform } from "../reducers/transform/reduce.ts";
+import { reduceTree } from "../reducers/tree/reduce.ts";
 import { defineCommandRule } from "./contracts.ts";
 
 export const FILE_RULES = [

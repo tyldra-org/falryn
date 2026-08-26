@@ -43,7 +43,12 @@ const FIXTURE = directory("falryn", [
       file("hush.ts"),
       directory("hush", [
         file("contracts.ts"),
-        file("public-reduction.test.ts"),
+        file("files.test.ts"),
+        file("fixtures.ts"),
+        file("public.test.ts"),
+        file("systems.test.ts"),
+        file("tooling.test.ts"),
+        file("version-control.test.ts"),
         directory("command", [
           file("classify.ts"),
           file("git.test.ts"),
@@ -61,6 +66,7 @@ const FIXTURE = directory("falryn", [
           file("forge.ts"),
           file("index.ts"),
           file("javascript.ts"),
+          file("matching.test.ts"),
           file("operations.ts"),
           file("registry.test.ts"),
           file("scripting-languages.ts"),
@@ -68,7 +74,6 @@ const FIXTURE = directory("falryn", [
         ]),
         directory("reducers", [
           file("contracts.ts"),
-          file("entrypoints.ts"),
           file("fallback.ts"),
           file("fidelity.ts"),
           file("plain-text.ts"),

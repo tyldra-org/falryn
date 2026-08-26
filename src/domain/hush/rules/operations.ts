@@ -1,16 +1,14 @@
 /** Package, data, network, system, and general operation rules. */
 
-import {
-  reduceBuild,
-  reduceCurl,
-  reduceDiagnostic,
-  reduceNetwork,
-  reduceOperation,
-  reducePackage,
-  reduceStructured,
-  reduceTable,
-  reduceWget,
-} from "../reducers/entrypoints.ts";
+import { reduceBuild } from "../reducers/build/reduce.ts";
+import { reduceDiagnostic } from "../reducers/diagnostic/reduce.ts";
+import { reduceCurl } from "../reducers/http/curl.ts";
+import { reduceWget } from "../reducers/http/wget.ts";
+import { reduceNetwork } from "../reducers/network/reduce.ts";
+import { reduceOperation } from "../reducers/operation/reduce.ts";
+import { reducePackage } from "../reducers/package/reduce.ts";
+import { reduceStructured } from "../reducers/structured/reduce.ts";
+import { reduceTable } from "../reducers/table/reduce.ts";
 import { defineCommandRule } from "./contracts.ts";
 
 export const PACKAGE_OPERATION_RULES = [

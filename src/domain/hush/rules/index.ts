@@ -1,12 +1,10 @@
 /** Ordered Hush command rules and executable lookup. */
 
-import {
-  reduceCompound,
-  reduceGitDiff,
-  reduceGitLog,
-  reduceOperation,
-  reduceSearch,
-} from "../reducers/entrypoints.ts";
+import { reduceCompound } from "../reducers/compound/reduce.ts";
+import { reduceGitDiff } from "../reducers/git/diff.ts";
+import { reduceGitLog } from "../reducers/git/log/reduce.ts";
+import { reduceOperation } from "../reducers/operation/reduce.ts";
+import { reduceSearch } from "../reducers/search/reduce.ts";
 import {
   APPLE_AND_NATIVE_RULES,
   DOTNET_RULES,
@@ -31,6 +29,7 @@ import { GIT_RULES, JUJUTSU_RULES } from "./version-control.ts";
 export type {
   HushCommandClassification,
   HushCommandMatcher,
+  HushCommandMatchKind,
   HushCommandRule,
   HushProjectionKind,
   HushReductionRule,

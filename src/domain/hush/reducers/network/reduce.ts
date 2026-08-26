@@ -2,10 +2,14 @@
 
 import type { ProcessCaptureReport, ProcessStreamCapture } from "../../../process-capture.ts";
 import type { HushStreamProjection } from "../../contracts.ts";
+import type { HushReducer } from "../contracts.ts";
 import { passthroughProjection } from "../fallback.ts";
 import { shortestText, stripAnsi } from "../shared/text.ts";
 import { boundStream, boundText, joinStreams } from "../stream.ts";
 import { formatNetworkOutput } from "./format.ts";
+
+export const reduceNetwork: HushReducer = ({ capture, maxBytes, patterns, commandTokens }) =>
+  networkProjection(capture, maxBytes, patterns, commandTokens);
 
 export function networkProjection(
   capture: ProcessCaptureReport,

@@ -1,6 +1,7 @@
 /** Cloud and infrastructure command rules. */
 
-import { reduceOperation, reduceStructured } from "../reducers/entrypoints.ts";
+import { reduceOperation } from "../reducers/operation/reduce.ts";
+import { reduceStructured } from "../reducers/structured/reduce.ts";
 import { defineCommandRule } from "./contracts.ts";
 
 export const CLOUD_RULES = [

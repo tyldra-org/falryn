@@ -1,6 +1,10 @@
 import type { ProcessCaptureReport } from "../../../process-capture.ts";
 import type { HushStreamProjection } from "../../contracts.ts";
+import type { HushReducer } from "../contracts.ts";
 import { boundStream, boundText, joinStreams } from "../stream.ts";
+
+export const reduceGitStatus: HushReducer = ({ capture, maxBytes, patterns }) =>
+  gitStatusProjection(capture, maxBytes, patterns);
 
 export function gitStatusProjection(
   capture: ProcessCaptureReport,

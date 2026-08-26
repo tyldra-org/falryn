@@ -1,7 +1,7 @@
 /** Exhaustive command-rule and reducer coverage for Hush. */
 
 import { describe, expect, test } from "bun:test";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 
 import { artifactId } from "../../artifact.ts";
 import { duration, instant } from "../../clock.ts";
@@ -230,6 +230,31 @@ describe("Hush command rules", () => {
     expect(HUSH_COMMAND_RULES.every((rule) => typeof rule.reduce === "function")).toBe(true);
     expect(existsSync(`${import.meta.dir}/../catalog/index.ts`)).toBe(false);
     expect(existsSync(`${import.meta.dir}/../reducers/commands/index.ts`)).toBe(false);
+  });
+
+  test("has no secondary registry, obsolete imports, or forwarding-only reducer boundary", () => {
+    const hushRoot = `${import.meta.dir}/..`;
+    const sourceFiles = [...new Bun.Glob("**/*.ts").scanSync({ cwd: hushRoot, absolute: true })];
+    const productionFiles = sourceFiles.filter((path) => !path.endsWith(".test.ts"));
+    const forbiddenImports = productionFiles.filter((path) => {
+      const source = readFileSync(path, "utf8");
+      return /hush\/catalog|reducers\/commands|reducers\/entrypoints|reducers\/git\/index/u.test(
+        source,
+      );
+    });
+    const secondaryRegistries = productionFiles.filter((path) => {
+      if (path.endsWith("/rules/index.ts")) return false;
+      const source = readFileSync(path, "utf8");
+      return /REDUCER_(?:MAP|REGISTRY)|REDUCERS_BY_|(?:Map|Record)<[^>]*HushReducer/u.test(source);
+    });
+
+    expect(forbiddenImports).toEqual([]);
+    expect(secondaryRegistries).toEqual([]);
+    expect(existsSync(`${hushRoot}/reducers/entrypoints.ts`)).toBe(false);
+    expect(existsSync(`${hushRoot}/reducers/git/index.ts`)).toBe(false);
+    expect(
+      productionFiles.filter((path) => path.includes("/reducers/") && path.endsWith("/index.ts")),
+    ).toEqual([]);
   });
 
   test("covers every pinned RTK executable with an explicit policy", () => {

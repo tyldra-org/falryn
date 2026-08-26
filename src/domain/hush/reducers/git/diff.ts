@@ -1,11 +1,15 @@
 import type { ProcessCaptureReport } from "../../../process-capture.ts";
 import type { HushStreamProjection } from "../../contracts.ts";
+import type { HushReducer } from "../contracts.ts";
 import { formatExternalUnifiedDiff } from "../diff/format.ts";
 import { genericProjection } from "../fallback.ts";
 import { shortestText } from "../shared/text.ts";
 import { boundStream, boundText, joinStreams } from "../stream.ts";
 import { formatGitUnifiedDiff } from "./diff/format.ts";
 import { formatGitDiffStat } from "./diff/stat.ts";
+
+export const reduceGitDiff: HushReducer = ({ capture, maxBytes, patterns, commandTokens }) =>
+  gitDiffProjection(capture, maxBytes, patterns, commandTokens);
 
 export function gitDiffProjection(
   capture: ProcessCaptureReport,

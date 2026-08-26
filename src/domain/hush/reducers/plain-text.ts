@@ -6,6 +6,7 @@ import type {
   ProcessStreamName,
 } from "../../process-capture.ts";
 import type { HushStreamProjection } from "../contracts.ts";
+import type { HushReducer } from "./contracts.ts";
 import {
   compactDuplicateRuns,
   compactJsonWhitespace,
@@ -28,6 +29,9 @@ export const HUSH_PLAIN_TEXT_KINDS = [
 ] as const;
 
 export type HushPlainTextKind = (typeof HUSH_PLAIN_TEXT_KINDS)[number];
+
+export const reduceRead: HushReducer = ({ capture, maxBytes, patterns }) =>
+  plainTextProjection("read", capture, maxBytes, patterns);
 
 export function plainTextProjection(
   kind: HushPlainTextKind,

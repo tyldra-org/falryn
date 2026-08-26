@@ -3,11 +3,15 @@
 import type { ProcessCaptureReport } from "../../../../process-capture.ts";
 import { gitSubcommand, gitSubcommandArguments } from "../../../command/git.ts";
 import type { HushStreamProjection } from "../../../contracts.ts";
+import type { HushReducer } from "../../contracts.ts";
 import { genericProjection } from "../../fallback.ts";
 import { shortestText } from "../../shared/text.ts";
 import { boundStream, boundText, joinStreams } from "../../stream.ts";
 import { formatNativeGitLog } from "./format.ts";
 import { formatNativeGitShow } from "./show.ts";
+
+export const reduceGitLog: HushReducer = ({ capture, maxBytes, patterns, commandTokens }) =>
+  gitLogProjection(capture, maxBytes, patterns, commandTokens);
 
 export function gitLogProjection(
   capture: ProcessCaptureReport,

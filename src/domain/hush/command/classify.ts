@@ -23,17 +23,17 @@ export function classifyCommand(
 ): HushCommandClassification {
   const shape = commandShape(command);
   if (shape.compound) {
-    return { ...SHELL_COMPOUND_RULE, ...shape, matched: true };
+    return { ...SHELL_COMPOUND_RULE, ...shape, matched: true, matchedBy: "shell-compound" };
   }
   const matched = matchHushCommand(shape.tokens);
   if (matched !== null) {
-    return { ...matched, ...shape, matched: true };
+    return { ...matched, ...shape, matched: true, matchedBy: "command-rule" };
   }
   const outputPolicy = policyFromOutputShape(capture.stdout);
   if (outputPolicy === null) {
-    return { ...GENERIC_RULE, ...shape, matched: false };
+    return { ...GENERIC_RULE, ...shape, matched: false, matchedBy: "fallback" };
   }
-  return { ...outputPolicy, ...shape, matched: true };
+  return { ...outputPolicy, ...shape, matched: true, matchedBy: "output-shape" };
 }
 
 export function classifyFamily(command: CommandRequest, capture: ProcessCaptureReport): HushFamily {

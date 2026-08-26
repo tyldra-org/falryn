@@ -1,5 +1,6 @@
 import type { ProcessCaptureReport, ProcessStreamCapture } from "../../../process-capture.ts";
 import type { HushStreamProjection } from "../../contracts.ts";
+import type { HushReducer } from "../contracts.ts";
 import {
   compactDuplicateRuns,
   compactJsonWhitespace,
@@ -18,6 +19,9 @@ const STANDARD_WGET_LINE = [
   /^Saving to:/iu,
   /^\d{4}-\d{2}-\d{2}.*saved\s+\[/iu,
 ] as const;
+
+export const reduceWget: HushReducer = ({ capture, maxBytes, patterns, commandTokens }) =>
+  wgetProjection(capture, maxBytes, patterns, commandTokens);
 
 export function wgetProjection(
   capture: ProcessCaptureReport,

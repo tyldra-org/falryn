@@ -1,6 +1,6 @@
 /** Forge and issue-tracker command rules. */
 
-import { reduceForge } from "../reducers/entrypoints.ts";
+import { reduceForge } from "../reducers/forge/reduce.ts";
 import { defineCommandRule } from "./contracts.ts";
 
 export const FORGE_RULES = [

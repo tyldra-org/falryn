@@ -49,9 +49,12 @@ export type HushCommandRule = HushReductionRule &
     matches?: HushCommandMatcher | undefined;
   }>;
 
+export type HushCommandMatchKind = "command-rule" | "shell-compound" | "output-shape" | "fallback";
+
 export type HushCommandClassification = HushReductionRule &
   HushCommandShape & {
     readonly matched: boolean;
+    readonly matchedBy: HushCommandMatchKind;
   };
 
 type HushRuleMetadata = Omit<HushCommandRule, "reduce">;

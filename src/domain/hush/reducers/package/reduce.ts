@@ -5,6 +5,7 @@ import {
   packageExecutable,
 } from "../../command/package.ts";
 import type { HushStreamProjection } from "../../contracts.ts";
+import type { HushReducer } from "../contracts.ts";
 import { completeSuccessfulCapture } from "../forge/capture.ts";
 import { losslessTextProjection } from "../lossless-text.ts";
 import { boundStream, boundText, joinStreams } from "../stream.ts";
@@ -16,6 +17,9 @@ import {
   formatPackageScript,
   formatPackageShow,
 } from "./format.ts";
+
+export const reducePackage: HushReducer = ({ capture, maxBytes, patterns, commandTokens }) =>
+  packageProjection(capture, maxBytes, patterns, commandTokens);
 
 export function packageProjection(
   capture: ProcessCaptureReport,

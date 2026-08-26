@@ -1,12 +1,10 @@
 /** Git, yadm, and Jujutsu command rules. */
 
 import { gitSubcommand } from "../command/git.ts";
-import {
-  reduceGitDiff,
-  reduceGitLog,
-  reduceGitMutation,
-  reduceGitStatus,
-} from "../reducers/entrypoints.ts";
+import { reduceGitDiff } from "../reducers/git/diff.ts";
+import { reduceGitLog } from "../reducers/git/log/reduce.ts";
+import { reduceGitMutation } from "../reducers/git/mutation.ts";
+import { reduceGitStatus } from "../reducers/git/status.ts";
 import { defineCommandRule } from "./contracts.ts";
 
 const GIT_MUTATIONS = new Set([

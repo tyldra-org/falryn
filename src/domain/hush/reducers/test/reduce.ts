@@ -2,11 +2,15 @@
 
 import type { ProcessCaptureReport, ProcessStreamCapture } from "../../../process-capture.ts";
 import type { HushStreamProjection } from "../../contracts.ts";
+import type { HushReducer } from "../contracts.ts";
 import { passthroughProjection } from "../fallback.ts";
 import { plainTextProjection } from "../plain-text.ts";
 import { shortestText, stripAnsi } from "../shared/text.ts";
 import { boundText } from "../stream.ts";
 import { formatTestOutput } from "./format.ts";
+
+export const reduceTest: HushReducer = ({ capture, maxBytes, patterns, commandTokens }) =>
+  testProjection(capture, maxBytes, patterns, commandTokens);
 
 export function testProjection(
   capture: ProcessCaptureReport,

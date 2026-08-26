@@ -1,6 +1,7 @@
 import type { ProcessCaptureReport } from "../../../process-capture.ts";
 import { gitSubcommand, gitSubcommandArguments } from "../../command/git.ts";
 import type { HushStreamProjection } from "../../contracts.ts";
+import type { HushReducer } from "../contracts.ts";
 import { gitAddProjection } from "./mutation/add.ts";
 import { gitBranchProjection } from "./mutation/branch.ts";
 import { gitCheckoutProjection } from "./mutation/checkout.ts";
@@ -11,6 +12,14 @@ import { gitPushProjection } from "./mutation/push.ts";
 import { gitMutationFallbackProjection } from "./mutation/shared.ts";
 import { gitStashProjection } from "./mutation/stash.ts";
 import { gitWorktreeProjection } from "./mutation/worktree.ts";
+
+export const reduceGitMutation: HushReducer = ({
+  capture,
+  maxBytes,
+  patterns,
+  commandTokens,
+  cwd,
+}) => gitMutationProjection(capture, maxBytes, patterns, commandTokens, cwd);
 
 export function gitMutationProjection(
   capture: ProcessCaptureReport,

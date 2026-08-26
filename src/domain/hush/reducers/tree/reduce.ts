@@ -2,9 +2,13 @@
 
 import type { ProcessCaptureReport, ProcessStreamName } from "../../../process-capture.ts";
 import type { HushStreamProjection } from "../../contracts.ts";
+import type { HushReducer } from "../contracts.ts";
 import { binaryOmission, boundStream, boundText, joinStreams } from "../stream.ts";
 import { compactTreeOutput } from "./format.ts";
 import { shouldPruneDefaultTreeNoise } from "./policy.ts";
+
+export const reduceTree: HushReducer = ({ capture, maxBytes, patterns, commandTokens }) =>
+  treeProjection(capture, maxBytes, patterns, commandTokens);
 
 export function treeProjection(
   capture: ProcessCaptureReport,

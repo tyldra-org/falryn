@@ -4,12 +4,16 @@ import { gitlabCommand } from "../../command/gitlab.ts";
 import { graphiteCommand } from "../../command/graphite.ts";
 import { jiraCommand } from "../../command/jira.ts";
 import type { HushStreamProjection } from "../../contracts.ts";
+import type { HushReducer } from "../contracts.ts";
 import { passthroughProjection } from "../fallback.ts";
 import { tableProjection } from "../table/reduce.ts";
 import { githubProjection } from "./github/reduce.ts";
 import { gitlabProjection } from "./gitlab/reduce.ts";
 import { graphiteProjection } from "./graphite/reduce.ts";
 import { jiraProjection } from "./jira/reduce.ts";
+
+export const reduceForge: HushReducer = ({ capture, maxBytes, patterns, commandTokens }) =>
+  forgeProjection(capture, maxBytes, patterns, commandTokens);
 
 export function forgeProjection(
   capture: ProcessCaptureReport,

@@ -2,8 +2,12 @@
 
 import type { ProcessCaptureReport } from "../../../process-capture.ts";
 import type { HushStreamProjection } from "../../contracts.ts";
+import type { HushReducer } from "../contracts.ts";
 import { boundStream, boundText, joinStreams } from "../stream.ts";
 import { formatPathListing } from "./format.ts";
+
+export const reduceListing: HushReducer = ({ capture, maxBytes, patterns, commandTokens }) =>
+  listingProjection(capture, maxBytes, patterns, commandTokens);
 
 export function listingProjection(
   capture: ProcessCaptureReport,

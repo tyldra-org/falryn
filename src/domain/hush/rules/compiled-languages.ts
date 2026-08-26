@@ -1,6 +1,8 @@
 /** Compiled-language test, diagnostic, and build rules. */
 
-import { reduceBuild, reduceDiagnostic, reduceTest } from "../reducers/entrypoints.ts";
+import { reduceBuild } from "../reducers/build/reduce.ts";
+import { reduceDiagnostic } from "../reducers/diagnostic/reduce.ts";
+import { reduceTest } from "../reducers/test/reduce.ts";
 import { defineCommandRule } from "./contracts.ts";
 
 export const RUST_RULES = [

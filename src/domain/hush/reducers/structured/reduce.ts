@@ -2,9 +2,13 @@ import type { ProcessCaptureReport } from "../../../process-capture.ts";
 import type { HushStreamProjection } from "../../contracts.ts";
 import { CLOUD_EXECUTABLES } from "../cloud/format.ts";
 import { cloudProjection } from "../cloud/reduce.ts";
+import type { HushReducer } from "../contracts.ts";
 import { plainTextProjection } from "../plain-text.ts";
 import { psqlProjection } from "./psql/reduce.ts";
 import { sqliteProjection } from "./sqlite/reduce.ts";
+
+export const reduceStructured: HushReducer = ({ capture, maxBytes, patterns, commandTokens }) =>
+  structuredProjection(capture, maxBytes, patterns, commandTokens);
 
 export function structuredProjection(
   capture: ProcessCaptureReport,

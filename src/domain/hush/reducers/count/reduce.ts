@@ -1,8 +1,12 @@
 import type { ProcessCaptureReport } from "../../../process-capture.ts";
 import type { HushStreamProjection } from "../../contracts.ts";
+import type { HushReducer } from "../contracts.ts";
 import { shortestText } from "../shared/text.ts";
 import { boundStream, boundText, joinStreams } from "../stream.ts";
 import { formatWcOutput } from "./format.ts";
+
+export const reduceCount: HushReducer = ({ capture, maxBytes, patterns, commandTokens }) =>
+  countProjection(capture, maxBytes, patterns, commandTokens);
 
 export function countProjection(
   capture: ProcessCaptureReport,

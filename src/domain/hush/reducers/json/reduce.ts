@@ -1,7 +1,11 @@
 import type { ProcessCaptureReport } from "../../../process-capture.ts";
 import type { HushStreamProjection } from "../../contracts.ts";
+import type { HushReducer } from "../contracts.ts";
 import { binaryOmission, boundStream, boundText, joinStreams } from "../stream.ts";
 import { formatJsonStructure } from "./format.ts";
+
+export const reduceJson: HushReducer = ({ capture, maxBytes, patterns }) =>
+  jsonProjection(capture, maxBytes, patterns);
 
 export function jsonProjection(
   capture: ProcessCaptureReport,

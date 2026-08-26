@@ -1,7 +1,10 @@
 /** Container, Kubernetes, and OpenShift command rules. */
 
 import { parseKubernetesCommand } from "../command/kubernetes.ts";
-import { reduceBuild, reduceLog, reduceOperation, reduceTable } from "../reducers/entrypoints.ts";
+import { reduceBuild } from "../reducers/build/reduce.ts";
+import { reduceLog } from "../reducers/log/reduce.ts";
+import { reduceOperation } from "../reducers/operation/reduce.ts";
+import { reduceTable } from "../reducers/table/reduce.ts";
 import { defineCommandRule } from "./contracts.ts";
 
 const CONTAINER_TABLE_COMMANDS = new Set([
