@@ -17,6 +17,8 @@ import {
 } from "../providers/index.ts";
 import { createContextPlanner } from "./context-planner.ts";
 import type { ProductAgentRuntime } from "./product-agent-runtime.ts";
+import type { ProductContextReceipt, ProductContextSource } from "./product-context-source.ts";
+import type { ProductMemoryTurn } from "./product-memory-turn.ts";
 import { attemptModelInputFromPrompt } from "./product-model-input.ts";
 import { discloseProductTools } from "./product-tool-disclosure.ts";
 import { createTurnAttemptPolicy } from "./turn-attempt-policy.ts";
@@ -40,6 +42,10 @@ export type ProductLiveTurnResult = {
   readonly modelAttempts: number;
   readonly toolResults: number;
   readonly disclosedTools: number;
+  readonly contextStatus: ProductContextReceipt["status"] | "static";
+  readonly contextGeneration: string | null;
+  readonly recalledMemories: number;
+  readonly memoryAdmission: "admitted" | "skipped" | "failed";
 };
 
 export type ProductLiveTurnExecutor = {
@@ -53,7 +59,9 @@ export type ProductLiveTurnExecutorOptions = {
   readonly runtime: ProductAgentRuntime;
   readonly clock: ClockPort;
   readonly providerCatalog: ModelCatalog | null;
+  readonly contextSource?: ProductContextSource;
   readonly contextCandidates?: () => readonly EvidenceCandidate[];
+  readonly memory?: ProductMemoryTurn;
 };
 
 const FAILED: TerminalOutcome = { kind: "failed", effect: "none" };
@@ -113,6 +121,10 @@ export function createProductLiveTurnExecutor(
         modelAttempts: 0,
         toolResults: 0,
         disclosedTools: 0,
+        contextStatus: "static",
+        contextGeneration: null,
+        recalledMemories: 0,
+        memoryAdmission: "skipped",
       });
     }
     sessionStarted = true;
@@ -125,9 +137,17 @@ export function createProductLiveTurnExecutor(
       Partial<
         Pick<
           ProductLiveTurnResult,
-          "contextPackItems" | "modelAttempts" | "toolResults" | "disclosedTools"
+          | "contextPackItems"
+          | "modelAttempts"
+          | "toolResults"
+          | "disclosedTools"
+          | "contextStatus"
+          | "contextGeneration"
+          | "recalledMemories"
+          | "memoryAdmission"
         >
       >,
+    outcome: TerminalOutcome = FAILED,
   ): Promise<ProductLiveTurnResult> {
     const completed = await producer.completeTurn({
       turnId: input.turnId,
@@ -135,7 +155,7 @@ export function createProductLiveTurnExecutor(
       workspaceId: correlation.workspaceId,
       traceId: correlation.traceId,
       configurationGeneration: correlation.configurationGeneration,
-      outcome: FAILED,
+      outcome,
     });
     await producer.refreshFromStore();
     return result({
@@ -145,11 +165,15 @@ export function createProductLiveTurnExecutor(
         ? fields.message
         : `${fields.message}; turn completion failed (${completed.error.code})`,
       response: "",
-      terminalOutcome: FAILED,
+      terminalOutcome: outcome,
       contextPackItems: fields.contextPackItems ?? 0,
       modelAttempts: fields.modelAttempts ?? 0,
       toolResults: fields.toolResults ?? 0,
       disclosedTools: fields.disclosedTools ?? 0,
+      contextStatus: fields.contextStatus ?? "static",
+      contextGeneration: fields.contextGeneration ?? null,
+      recalledMemories: fields.recalledMemories ?? 0,
+      memoryAdmission: fields.memoryAdmission ?? "skipped",
     });
   }
 
@@ -179,8 +203,54 @@ export function createProductLiveTurnExecutor(
           modelAttempts: 0,
           toolResults: 0,
           disclosedTools: 0,
+          contextStatus: "static",
+          contextGeneration: null,
+          recalledMemories: 0,
+          memoryAdmission: "skipped",
         });
       }
+
+      const prepared =
+        options.contextSource === undefined
+          ? {
+              candidates: options.contextCandidates?.() ?? [],
+              sections: [] as readonly PromptSectionInput[],
+              receipt: null,
+            }
+          : await options.contextSource.prepare(input.prompt, input.signal);
+      if (prepared.receipt?.status === "cancelled") {
+        return settleFailure(
+          input,
+          {
+            kind: "failed",
+            code: "context.cancelled",
+            message: "context preparation was cancelled",
+            contextStatus: "cancelled",
+            contextGeneration: prepared.receipt.generation,
+          },
+          { kind: "cancelled", effect: "none" },
+        );
+      }
+
+      const recalled = options.memory?.recallBeforeTurn({
+        workspaceId: correlation.workspaceId,
+        task: input.prompt,
+        ...(input.signal === undefined ? {} : { signal: input.signal }),
+      });
+      const memorySection: PromptSectionInput | null =
+        recalled?.ok === true
+          ? recalled.value.memorySection
+          : options.memory === undefined
+            ? null
+            : {
+                id: "memory",
+                role: "memory",
+                source: "memory:#720",
+                content: `Memory unavailable (${recalled?.error.code ?? "unavailable"}).`,
+                required: false,
+                available: false,
+              };
+      const recalledMemories = recalled?.ok === true ? recalled.value.recalledCount : 0;
 
       const registry = options.runtime.toolRegistry;
       if (registry === null) {
@@ -197,9 +267,13 @@ export function createProductLiveTurnExecutor(
         workspaceId: correlation.workspaceId,
         configurationGeneration: correlation.configurationGeneration,
         task: input.prompt,
-        candidates: options.contextCandidates?.() ?? [],
+        candidates: prepared.candidates,
         tools: disclosure.promptTools,
-        otherSections: input.otherSections ?? [],
+        otherSections: [
+          ...(input.otherSections ?? []),
+          ...prepared.sections,
+          ...(memorySection === null ? [] : [memorySection]),
+        ],
       });
       if (!planned.ok) {
         return settleFailure(input, {
@@ -209,6 +283,9 @@ export function createProductLiveTurnExecutor(
             "code" in planned.error ? planned.error.code : "failed"
           })`,
           disclosedTools: disclosure.receipt.disclosed.length,
+          contextStatus: prepared.receipt?.status ?? "static",
+          contextGeneration: prepared.receipt?.generation ?? null,
+          recalledMemories,
         });
       }
 
@@ -220,6 +297,9 @@ export function createProductLiveTurnExecutor(
           message: "the selected provider connection is unavailable",
           contextPackItems: planned.value.plan.pack.items.length,
           disclosedTools: disclosure.receipt.disclosed.length,
+          contextStatus: prepared.receipt?.status ?? "static",
+          contextGeneration: prepared.receipt?.generation ?? null,
+          recalledMemories,
         });
       }
       const attemptRunner = options.runtime.requireAttemptRunner();
@@ -239,6 +319,9 @@ export function createProductLiveTurnExecutor(
                 : "the product attempt runner is unavailable",
           contextPackItems: planned.value.plan.pack.items.length,
           disclosedTools: disclosure.receipt.disclosed.length,
+          contextStatus: prepared.receipt?.status ?? "static",
+          contextGeneration: prepared.receipt?.generation ?? null,
+          recalledMemories,
         });
       }
 
@@ -282,6 +365,16 @@ export function createProductLiveTurnExecutor(
         0,
       );
       const succeeded = attempted.kind === "completed" && completed.ok && refreshed.ok;
+      const memoryAdmission =
+        !succeeded || options.memory === undefined
+          ? null
+          : options.memory.admitAfterTurn({
+              turnId: input.turnId,
+              workspaceId: correlation.workspaceId,
+              task: input.prompt,
+              outcome: terminalOutcome,
+              ...(input.signal === undefined ? {} : { signal: input.signal }),
+            });
       return result({
         kind: succeeded ? "completed" : "failed",
         code: succeeded ? "completed" : `runtime.attempt-${attempted.kind}`,
@@ -298,6 +391,17 @@ export function createProductLiveTurnExecutor(
         modelAttempts: attempted.attempts.length,
         toolResults,
         disclosedTools: disclosure.receipt.disclosed.length,
+        contextStatus: prepared.receipt?.status ?? "static",
+        contextGeneration: prepared.receipt?.generation ?? null,
+        recalledMemories,
+        memoryAdmission:
+          memoryAdmission === null
+            ? "skipped"
+            : memoryAdmission.ok && memoryAdmission.value.admitted
+              ? "admitted"
+              : memoryAdmission.ok
+                ? "skipped"
+                : "failed",
       });
     },
   };

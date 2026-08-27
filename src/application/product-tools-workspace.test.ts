@@ -12,6 +12,8 @@ import {
   invocationId,
   localPath,
 } from "../domain/index.ts";
+import { composeProductIndexLifecycle, createEphemeralProductIndexPort } from "./index.ts";
+import { mergeProductToolBundles } from "./product-tools-merge.ts";
 import { composeProductWorkspaceTools } from "./product-tools-workspace.ts";
 
 const root = localPath("/work/project");
@@ -144,5 +146,75 @@ describe("composeProductWorkspaceTools", () => {
       signal: new AbortController().signal,
     });
     expect(outcome.status).toBe("unavailable");
+  });
+
+  test("publishes a successful write into the index before returning", async () => {
+    const fileSystem = createInMemoryFileSystem({
+      nodes: {
+        "/work/project": { kind: "directory" },
+        "/work/project/existing.ts": { kind: "file", text: "export const old = true;\n" },
+      },
+    });
+    const index = createEphemeralProductIndexPort();
+    const lifecycle = composeProductIndexLifecycle({ fileSystem, workspaceRoot: root, index });
+    expect((await lifecycle.rebuild()).ok).toBe(true);
+    const tools = composeProductWorkspaceTools({
+      generation: configurationGeneration.from(0),
+      fileSystem,
+      commands: createStubCommandRunner(() => ({ kind: "exited", exitCode: 1, stdout: "" })),
+      workspaceRoot: root,
+      index,
+    });
+    const merged = mergeProductToolBundles(configurationGeneration.from(0), [tools], {
+      afterMutation: async (request) => {
+        tools.invalidateContext();
+        return (await lifecycle.refresh(request.signal)).ok;
+      },
+    });
+
+    const written = await merged.runner.execute({
+      invocationId: invocationId.from("inv-write-index"),
+      toolCallId: "call-write-index",
+      toolName: "write_files",
+      capabilityId: capabilityId.from("builtin:workspace/write_files@1"),
+      version: 1,
+      effect: "mutation",
+      input: {
+        targets: [{ kind: "create", path: "new.ts", text: "export const fresh = true;\n" }],
+      },
+      signal: new AbortController().signal,
+    });
+
+    expect(written.status).toBe("completed");
+    const snapshot = await index.snapshot(root);
+    expect(snapshot.ok).toBe(true);
+    expect(
+      snapshot.ok && snapshot.value.records.some((record) => record.logical === "new.ts"),
+    ).toBe(true);
+  });
+
+  test("keeps a completed mutation truthful when index publication is unavailable", async () => {
+    const tools = toolsUnder();
+    const merged = mergeProductToolBundles(configurationGeneration.from(0), [tools], {
+      afterMutation: async () => false,
+    });
+    const written = await merged.runner.execute({
+      invocationId: invocationId.from("inv-write-unavailable-index"),
+      toolCallId: "call-write-unavailable-index",
+      toolName: "write_files",
+      capabilityId: capabilityId.from("builtin:workspace/write_files@1"),
+      version: 1,
+      effect: "mutation",
+      input: {
+        targets: [{ kind: "create", path: "pending.ts", text: "export const pending = true;\n" }],
+      },
+      signal: new AbortController().signal,
+    });
+
+    expect(written.status).toBe("completed");
+    expect(written.status === "completed" && written.output.workspaceIndex).toEqual({
+      status: "unavailable",
+      code: "refresh-failed",
+    });
   });
 });

@@ -287,7 +287,7 @@ export function createProductReadCoordinator(
         workspaceId: options.workspaceId,
         sessionId: options.sessionId,
         generation: String(options.generation),
-        members: [{ artifactId: read.expansion.artifactId }],
+        members: [{ artifactId: read.expansion.artifactId, summary: read.bound.logical }],
       },
       signal,
     );
@@ -452,7 +452,11 @@ export function createProductReadCoordinator(
       return { ok: false, error: "loom-scope-unavailable" };
     }
     const projection = requestedProjection(input.recovery.artifactId, input.projection);
-    const origin = manifestOrigins.get(input.recovery.manifestId) ?? null;
+    const manifest = options.loom.get(input.recovery.manifestId);
+    const persistedOrigin =
+      manifest?.members.find((member) => member.artifactId === input.recovery.artifactId)
+        ?.summary ?? null;
+    const origin = manifestOrigins.get(input.recovery.manifestId) ?? persistedOrigin;
     if (
       origin !== null &&
       input.recovery.origin !== null &&

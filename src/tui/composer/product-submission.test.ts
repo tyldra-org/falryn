@@ -32,6 +32,10 @@ describe("product submission port", () => {
           modelAttempts: 1,
           toolResults: 0,
           disclosedTools: 0,
+          contextStatus: "static",
+          contextGeneration: null,
+          recalledMemories: 0,
+          memoryAdmission: "skipped",
         };
       }),
       sessionId: correlation.sessionId,
@@ -62,6 +66,10 @@ describe("product submission port", () => {
         modelAttempts: 1,
         toolResults: 0,
         disclosedTools: 0,
+        contextStatus: "static",
+        contextGeneration: null,
+        recalledMemories: 0,
+        memoryAdmission: "skipped",
       };
     });
     const first = createProductSubmissionPort({

@@ -56,6 +56,27 @@ export {
 } from "./export.ts";
 export type { LocalDataService, LocalDataServiceOptions } from "./local-data-service.ts";
 export { createLocalDataService, UNCONSTRAINED_RETENTION } from "./local-data-service.ts";
+export type {
+  LoomManifestRepository,
+  LoomManifestRepositoryOptions,
+  LoomManifestStorageError,
+} from "./loom-manifest-repository.ts";
+export { createLoomManifestRepository } from "./loom-manifest-repository.ts";
+export {
+  LOOM_MANIFESTS_TABLE,
+  LOOM_SCHEMA_VERSION,
+  MIGRATION_0006,
+} from "./loom-schema.ts";
+export type { MemoryRecordRepository } from "./memory-repository.ts";
+export {
+  createMemoryRecordRepository,
+  MAX_DURABLE_MEMORY_RECORDS,
+} from "./memory-repository.ts";
+export {
+  MEMORY_RECORDS_TABLE,
+  MEMORY_SCHEMA_VERSION,
+  MIGRATION_0005,
+} from "./memory-schema.ts";
 export type { OwnershipRegistry } from "./ownership.ts";
 export {
   ARTIFACTS_OWNERSHIP,

@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { createHash } from "node:crypto";
 import {
   createInMemoryEmbeddingCorpus,
   createInMemoryEmbeddingPort,
@@ -11,6 +12,10 @@ import {
 import { createWorkspaceRetrieval } from "./workspace-retrieval.ts";
 
 const root = localPath("/work/project");
+
+function digest(text: string): string {
+  return `sha-256:${createHash("sha256").update(text).digest("hex")}`;
+}
 
 function embedding(
   name: string,
@@ -68,7 +73,7 @@ function harness(options?: {
         text: "export function foo() { return token; }",
         startLine: 1,
         endLine: 1,
-        revision: options?.revision ?? "rev-a",
+        revision: options?.revision ?? digest("export function foo() {}"),
       },
       {
         logical: "src/b.ts",
@@ -77,7 +82,7 @@ function harness(options?: {
         text: "token in b",
         startLine: 1,
         endLine: 1,
-        revision: "rev-b",
+        revision: digest("token in b"),
       },
       {
         logical: ".env",
@@ -86,7 +91,7 @@ function harness(options?: {
         text: "TOKEN=sk-live-SECRET",
         startLine: 1,
         endLine: 1,
-        revision: "rev-env",
+        revision: digest("TOKEN=sk-live-SECRET"),
       },
       {
         logical: "../outside.ts",

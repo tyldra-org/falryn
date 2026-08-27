@@ -3,7 +3,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-
+import { createEphemeralProductIndexPort } from "../application/index.ts";
 import { CONFIGURATION_FILE_NAME } from "../config/index.ts";
 import {
   configurationGeneration,
@@ -19,7 +19,7 @@ import {
   streamId,
   workspaceRootId,
 } from "../domain/index.ts";
-import { createDeterministicProviderAdapter } from "../providers/index.ts";
+import { createDeterministicProviderAdapter, type ModelRequest } from "../providers/index.ts";
 import { snapshotOf } from "../tui/composer/index.ts";
 import type { GlobalOptions } from "./options.ts";
 import {
@@ -91,6 +91,7 @@ describe("composeProductShellAttachments", () => {
 
   test("publishes the selected provider model catalog to OpenTUI controls", async () => {
     const clock = createSystemClock();
+    const requests: ModelRequest[] = [];
     const profile = {
       profileId: "demo",
       providerId: providerId.from("demo"),
@@ -115,16 +116,27 @@ describe("composeProductShellAttachments", () => {
     if (!workspace.ok) {
       return;
     }
+    const fileSystem = createInMemoryFileSystem({
+      nodes: {
+        "/workspace": { kind: "directory" },
+        "/workspace/real-turn.ts": {
+          kind: "file",
+          text: "export function runRealTurn() { return 'indexed'; }\n",
+        },
+      },
+    });
     const attachments = await composeProductShellAttachments({
       eventStore: createInMemoryEventStore(),
       clock,
-      fileSystem: createInMemoryFileSystem({ nodes: { "/workspace": { kind: "directory" } } }),
+      fileSystem,
       workspaceSet: workspace.value,
       configurationGeneration: configurationGeneration.from(0),
+      index: createEphemeralProductIndexPort(),
       provider: {
         kind: "ready",
         adapter: createDeterministicProviderAdapter({
           script: { kind: "text", text: "ok" },
+          onRequest: (request) => requests.push(request),
         }),
         session: {
           kind: "ready",
@@ -169,7 +181,9 @@ describe("composeProductShellAttachments", () => {
       label: "provider",
       value: { kind: "known", text: "Demo provider" },
     });
-    const pendingSubmission = attachments?.submission.submit(snapshotOf("run a real turn", 1));
+    const pendingSubmission = attachments?.submission.submit(
+      snapshotOf("Where is `runRealTurn` defined?", 1),
+    );
     const refusedDuringTurn = await attachments?.sessionCreation.create();
     expect(refusedDuringTurn).toEqual({
       ok: false,
@@ -188,6 +202,8 @@ describe("composeProductShellAttachments", () => {
     expect(
       attachments?.transcriptFeed.events().some((event) => event.kind === "turn.completed"),
     ).toBe(true);
+    expect(JSON.stringify(requests[0])).toContain("real-turn.ts");
+    expect(JSON.stringify(requests[0])).toContain("runRealTurn");
     const firstSession = attachments?.transcriptFeed.events()[0]?.correlation.sessionId;
     const [created, duplicate] = await Promise.all([
       attachments?.sessionCreation.create(),

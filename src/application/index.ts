@@ -77,6 +77,8 @@ export {
 } from "./debug-adapter.ts";
 export type { DiagnosticsCollector, EmitOutcome, EmitRequest } from "./diagnostics-collector.ts";
 export { createDiagnosticsCollector, DIAGNOSTICS_OWNERSHIP } from "./diagnostics-collector.ts";
+export type { MemoryPersistencePort } from "./durable-memory-records.ts";
+export { createDurableMemoryRecords } from "./durable-memory-records.ts";
 export type { ErrorContext } from "./error-translation.ts";
 export {
   adoptForeignError,
@@ -157,6 +159,7 @@ export type {
   LoomIngestMember,
   LoomIngestRequest,
   LoomIngestResult,
+  LoomManifestPersistencePort,
   LoomPort,
   LoomPortError,
   LoomPortOptions,
@@ -201,6 +204,18 @@ export {
   PRODUCT_BRIEF_OWNER,
 } from "./product-brief.ts";
 export type {
+  ProductContextReceipt,
+  ProductContextSource,
+  ProductContextSourceOptions,
+  ProductPreparedContext,
+} from "./product-context-source.ts";
+export {
+  createProductContextSource,
+  createUnavailableProductContextSource,
+  MAX_PRODUCT_CONTEXT_QUERIES,
+  PRODUCT_CONTEXT_SOURCE_OWNER,
+} from "./product-context-source.ts";
+export type {
   ProductCredentialBundle,
   ProductCredentialPorts,
 } from "./product-credentials.ts";
@@ -239,9 +254,10 @@ export type {
 } from "./product-loom.ts";
 export { composeProductLoomContext, PRODUCT_LOOM_OWNER } from "./product-loom.ts";
 export type {
+  ProductMemoryAdmissionResult,
+  ProductMemoryRecallResult,
   ProductMemoryTurn,
   ProductMemoryTurnPorts,
-  ProductMemoryTurnResult,
 } from "./product-memory-turn.ts";
 export { composeProductMemoryTurn } from "./product-memory-turn.ts";
 export { attemptModelInputFromPrompt } from "./product-model-input.ts";

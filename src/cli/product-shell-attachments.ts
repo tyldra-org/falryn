@@ -15,13 +15,16 @@ import {
   composeProductIndexLifecycle,
   composeProductLanguageTools,
   composeProductMemoryTools,
+  composeProductMemoryTurn,
   composeProductProcessTools,
   composeProductWorkspaceTools,
   createDebugAdapterSupervisor,
-  createEphemeralProductIndexPort,
   createLanguageServerSupervisor,
+  createProductContextSource,
   createProductLiveTurnExecutor,
+  createUnavailableProductContextSource,
   type LoomPort,
+  type MemoryRecords,
   mergeProductToolBundles,
 } from "../application/index.ts";
 import {
@@ -70,6 +73,7 @@ export type ProductShellAttachmentPorts = {
   readonly artifacts?: ArtifactStorePort;
   readonly loom?: LoomPort;
   readonly index?: WorkspaceIndexPort & WorkspaceIndexWritePort;
+  readonly memoryRecords?: MemoryRecords;
   /** Selected, authenticated provider handoff from the application-owned profile service. */
   readonly provider?: ProductProviderConnectionHandoff;
 };
@@ -104,16 +108,17 @@ export async function composeProductShellAttachments(
 
   const workspaceRoot =
     ports.workspaceSet === null ? null : primaryWorkspaceRoot(ports.workspaceSet).path;
-  const index =
-    workspaceRoot === null || ports.artifacts === undefined
-      ? undefined
-      : (ports.index ?? createEphemeralProductIndexPort());
-  if (workspaceRoot !== null && index !== undefined) {
-    await composeProductIndexLifecycle({
-      fileSystem: ports.fileSystem,
-      workspaceRoot,
-      index,
-    }).rebuild(ports.signal);
+  const index = workspaceRoot === null ? undefined : ports.index;
+  const indexLifecycle =
+    workspaceRoot === null || index === undefined
+      ? null
+      : composeProductIndexLifecycle({
+          fileSystem: ports.fileSystem,
+          workspaceRoot,
+          index,
+        });
+  if (indexLifecycle !== null) {
+    await indexLifecycle.rebuild(ports.signal);
   }
 
   const managedServices = createHostManagedServicePort(
@@ -176,7 +181,13 @@ export async function composeProductShellAttachments(
             languageServers: createLanguageServerSupervisor(managedServices),
             debugAdapters: createDebugAdapterSupervisor(managedServices),
           });
-    const memoryTools = workspaceRoot === null ? null : composeProductMemoryTools({ generation });
+    const memoryTools =
+      workspaceRoot === null
+        ? null
+        : composeProductMemoryTools({
+            generation,
+            ...(ports.memoryRecords === undefined ? {} : { records: ports.memoryRecords }),
+          });
     const productTools =
       workspaceTools === null ||
       processTools === null ||
@@ -184,13 +195,19 @@ export async function composeProductShellAttachments(
       languageTools === null ||
       memoryTools === null
         ? null
-        : mergeProductToolBundles(generation, [
-            workspaceTools,
-            processTools,
-            gitTools,
-            languageTools,
-            memoryTools,
-          ]);
+        : mergeProductToolBundles(
+            generation,
+            [workspaceTools, processTools, gitTools, languageTools, memoryTools],
+            indexLifecycle === null
+              ? {}
+              : {
+                  afterMutation: async (request) => {
+                    workspaceTools.invalidateContext();
+                    const refreshed = await indexLifecycle.refresh(request.signal);
+                    return refreshed.ok;
+                  },
+                },
+          );
     const composed = composeProductAgentRuntime({
       eventStore: ports.eventStore,
       clock: ports.clock,
@@ -213,11 +230,38 @@ export async function composeProductShellAttachments(
     if (!composed.ok) {
       return null;
     }
+    const contextSource =
+      workspaceRoot === null || workspaceTools === null
+        ? undefined
+        : index === undefined
+          ? createUnavailableProductContextSource(
+              "index-unavailable",
+              workspaceTools.contextCandidates,
+            )
+          : createProductContextSource({
+              fileSystem: ports.fileSystem,
+              index,
+              workspaceRoot,
+              workspaceId,
+              additionalCandidates: workspaceTools.contextCandidates,
+            });
+    const memory =
+      memoryTools === null
+        ? undefined
+        : composeProductMemoryTurn({
+            admission: memoryTools.admission,
+            recall: memoryTools.recall,
+          });
     const executor = createProductLiveTurnExecutor({
       runtime: composed.value,
       clock: ports.clock,
       providerCatalog: ports.provider?.kind === "ready" ? ports.provider.session.catalog : null,
-      ...(workspaceTools === null ? {} : { contextCandidates: workspaceTools.contextCandidates }),
+      ...(contextSource === undefined
+        ? workspaceTools === null
+          ? {}
+          : { contextCandidates: workspaceTools.contextCandidates }
+        : { contextSource }),
+      ...(memory === undefined ? {} : { memory }),
     });
     return {
       sessionId,
