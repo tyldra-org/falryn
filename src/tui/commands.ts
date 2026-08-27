@@ -801,6 +801,15 @@ export const SHELL_COMMANDS: readonly ShellCommand[] = [
     availability: () => AVAILABLE,
   },
   {
+    id: "mode.select",
+    title: "Select execution mode",
+    description: "Inspect or select Ask, Plan, Debug, or Agent for upcoming turns.",
+    context: "global",
+    defaultBinding: null,
+    keywords: ["mode", "profile", "ask", "plan", "debug", "agent"],
+    availability: () => AVAILABLE,
+  },
+  {
     id: "context.show",
     title: "Show context",
     description: "Inspect token, byte, and item budget facts.",

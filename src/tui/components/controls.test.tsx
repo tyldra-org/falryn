@@ -7,6 +7,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { UNAVAILABLE_SUBMISSION } from "../composer/index.ts";
 import type { ControlCatalog } from "../controls/index.ts";
 import { mount } from "../harness.tsx";
 import type { ThemeRequest } from "../theme/index.ts";
@@ -35,6 +36,12 @@ const MODEL: Omit<ShellModel, "overlay" | "commands" | "transcript" | "composer"
 const CATALOG: ControlCatalog = {
   sessions: [{ id: "s1", title: "coding", detail: "workspace falryn" }],
   models: [{ id: "m1", title: "local-small", detail: "8k context" }],
+  profiles: [
+    { id: "ask", title: "Ask", detail: "Read-only answer." },
+    { id: "plan", title: "Plan", detail: "Read-only durable plan." },
+    { id: "debug", title: "Debug", detail: "Bounded diagnostic probes." },
+    { id: "agent", title: "Agent", detail: "Full authorized coding loop." },
+  ],
   context: [
     { label: "tokens", value: known("1200 / 8000") },
     { label: "bytes", value: known("48 KiB") },
@@ -88,6 +95,41 @@ describe("control overlays", () => {
     expect(frame).toContain("Context");
     expect(frame).toContain("tokens");
     expect(frame).toContain("1200 / 8000");
+  });
+
+  test("selects an execution mode from the command palette overlay", async () => {
+    let selected = "agent" as "ask" | "plan" | "debug" | "agent";
+    const submission = {
+      ...UNAVAILABLE_SUBMISSION,
+      executionProfile: {
+        get: () => selected,
+        async select(profileId: typeof selected) {
+          const changed = profileId !== selected;
+          selected = profileId;
+          return { ok: true as const, profileId, changed };
+        },
+      },
+    };
+    using shell = await mount(
+      <ShellApp
+        theme={THEME}
+        model={MODEL}
+        onExit={() => {}}
+        controls={CATALOG}
+        submission={submission}
+      />,
+    );
+
+    await runCommand(shell, "mode.select");
+    const overlay = await shell.frame("Execution modes");
+    expect(overlay).toContain("Plan");
+    shell.setup.mockInput.pressArrow("up");
+    shell.setup.mockInput.pressArrow("up");
+    shell.setup.mockInput.pressEnter();
+
+    const settled = await shell.frame("Execution mode set to plan");
+    expect(selected).toBe("plan");
+    expect(settled).toContain("Execution mode set to plan");
   });
 
   test("empty catalogs name the gap", async () => {

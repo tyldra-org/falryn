@@ -1,6 +1,10 @@
 /** Provider-neutral model input derived from one composed prompt (#786). */
 
-import type { ComposedPromptRequest, RenderedPromptSection } from "../domain/index.ts";
+import type {
+  ComposedPromptRequest,
+  EffectiveExecutionPolicy,
+  RenderedPromptSection,
+} from "../domain/index.ts";
 import type { ModelMessage } from "../providers/index.ts";
 import type { ProductToolDisclosure } from "./product-tool-disclosure.ts";
 import type { AttemptModelInput } from "./turn-attempt-policy.ts";
@@ -47,6 +51,7 @@ function capabilityBrief(disclosure: ProductToolDisclosure): string {
 export function attemptModelInputFromPrompt(
   prompt: ComposedPromptRequest,
   disclosure: ProductToolDisclosure,
+  executionPolicy: EffectiveExecutionPolicy,
 ): AttemptModelInput {
   const system = prompt.sections.filter((section) => SYSTEM_ROLES.has(section.role));
   const user = prompt.sections.filter((section) => !SYSTEM_ROLES.has(section.role));
@@ -60,6 +65,7 @@ export function attemptModelInputFromPrompt(
     tools: disclosure.modelTools,
     output: { kind: "text" },
     budgets: {},
+    executionPolicy,
     disclosure: {
       catalogGeneration: disclosure.receipt.catalogGeneration,
       toolNames: disclosure.receipt.disclosed.map((tool) => tool.name),

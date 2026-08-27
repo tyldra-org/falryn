@@ -10,6 +10,7 @@ import type {
   CapabilityInvocationCompletedEvent,
   CapabilityInvocationStartedEvent,
   ConfigurationGenerationChangedEvent,
+  ExecutionProfileSelectedEvent,
   ModelAttemptCompletedEvent,
   ModelAttemptStartedEvent,
   RuntimeEvent,
@@ -197,6 +198,25 @@ export function configurationGenerationChanged(position = 8): ConfigurationGener
   };
 }
 
+export function executionProfileSelected(position = 9): ExecutionProfileSelectedEvent {
+  return {
+    ...spine({
+      eventId: `event-profile-${position}`,
+      sequence: position,
+      idempotencyKey: `key-profile-${position}`,
+    }),
+    kind: "execution.profile.selected",
+    correlation: FIXTURE_SESSION_CORRELATION,
+    payload: {
+      selectionId: `selection-${position}`,
+      profileId: "agent",
+      profileVersion: 1,
+      completion: "implemented-and-verified",
+      applicationClass: "next-turn",
+    },
+  };
+}
+
 /** One valid event per declared kind, already in stream order. */
 export function everyEventKind(): readonly RuntimeEvent[] {
   return [
@@ -208,6 +228,7 @@ export function everyEventKind(): readonly RuntimeEvent[] {
     capabilityInvocationStarted(6),
     capabilityInvocationCompleted(7),
     configurationGenerationChanged(8),
+    executionProfileSelected(9),
   ];
 }
 

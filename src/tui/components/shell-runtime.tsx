@@ -9,10 +9,12 @@ import {
   type FileAttachmentProbe,
   type MidTurnInputService,
   type ProductBriefControls,
+  type ProductExecutionProfileControls,
 } from "../../application/index.ts";
 import {
   type AttachmentDescriptor,
   isBriefVerbosityMode,
+  isExecutionProfileId,
   MAX_EVIDENCE_INLINE_BYTES,
   parseMentions,
 } from "../../domain/index.ts";
@@ -94,6 +96,7 @@ export type ShellRuntime = {
   confirm(choice: "accept" | "deny"): boolean;
   editSecret(edit: SecretEdit): void;
   selectControl(field: "session" | "model", id: string): void;
+  selectProfile(id: string): void;
   settleChanges(notice: string): void;
   workspaceDraft(draft: string): void;
   replaceWorkspace(set: WorkspaceSetView, notice: string): void;
@@ -509,6 +512,54 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
         return;
       }
 
+      if (slash.commandId === "mode.select") {
+        const executionProfile =
+          options.submission !== undefined &&
+          options.submission !== null &&
+          "executionProfile" in options.submission
+            ? (options.submission as { executionProfile: ProductExecutionProfileControls })
+                .executionProfile
+            : null;
+        if (executionProfile === null) {
+          dispatch({
+            kind: "notice",
+            message: "Execution profile controls are not attached to this shell.",
+          });
+          return;
+        }
+        const profileId = slash.argument?.trim().toLowerCase() ?? "";
+        if (profileId === "") {
+          dispatch({
+            kind: "notice",
+            message: `Execution mode is ${executionProfile.get()} (use /mode ask|plan|debug|agent).`,
+          });
+          dispatch({ kind: "composer", action: { kind: "draft", text: "" } });
+          return;
+        }
+        if (!isExecutionProfileId(profileId)) {
+          dispatch({
+            kind: "notice",
+            message: `Unsupported execution mode “${profileId}”. Use ask|plan|debug|agent.`,
+          });
+          return;
+        }
+        void (async () => {
+          const selected = await executionProfile.select(profileId);
+          if (!selected.ok) {
+            dispatch({ kind: "notice", message: selected.message });
+            return;
+          }
+          dispatch({
+            kind: "notice",
+            message: selected.changed
+              ? `Execution mode set to ${selected.profileId}; active work keeps its bound policy.`
+              : `Execution mode is already ${selected.profileId}.`,
+          });
+          dispatch({ kind: "composer", action: { kind: "draft", text: "" } });
+        })();
+        return;
+      }
+
       const panel = workspacePanelForSlashCommand(slash.commandId);
       if (panel === null) {
         dispatch({ kind: "notice", message: `No workspace panel for ${slash.commandId}.` });
@@ -794,6 +845,41 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
     dispatch({ kind: "select-control", field, id });
   }, []);
 
+  const selectProfile = useCallback(
+    (id: string): void => {
+      const executionProfile =
+        options.submission !== undefined &&
+        options.submission !== null &&
+        "executionProfile" in options.submission
+          ? (options.submission as { executionProfile: ProductExecutionProfileControls })
+              .executionProfile
+          : null;
+      if (executionProfile === null || !isExecutionProfileId(id)) {
+        dispatch({ kind: "close-overlay" });
+        dispatch({
+          kind: "notice",
+          message:
+            executionProfile === null
+              ? "Execution profile controls are not attached to this shell."
+              : `Unsupported execution mode “${id}”.`,
+        });
+        return;
+      }
+      void executionProfile.select(id).then((selected) => {
+        dispatch({ kind: "close-overlay" });
+        dispatch({
+          kind: "notice",
+          message: !selected.ok
+            ? selected.message
+            : selected.changed
+              ? `Execution mode set to ${selected.profileId}; active work keeps its bound policy.`
+              : `Execution mode is already ${selected.profileId}.`,
+        });
+      });
+    },
+    [options.submission],
+  );
+
   const settleChanges = useCallback((notice: string): void => {
     dispatch({ kind: "changes-settled", notice });
   }, []);
@@ -860,6 +946,7 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
     confirm,
     editSecret,
     selectControl,
+    selectProfile,
     settleChanges,
     workspaceDraft,
     replaceWorkspace,

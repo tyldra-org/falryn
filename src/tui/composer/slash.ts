@@ -10,7 +10,7 @@
  * Pure. No renderer, no shell state.
  */
 
-export const SLASH_ARGUMENT_KINDS = ["none", "path", "layout-name"] as const;
+export const SLASH_ARGUMENT_KINDS = ["none", "path", "layout-name", "profile"] as const;
 export type SlashArgumentKind = (typeof SLASH_ARGUMENT_KINDS)[number];
 
 export type ComposerSlashAlias = {
@@ -19,6 +19,8 @@ export type ComposerSlashAlias = {
   /** Palette / registry command id. */
   readonly commandId: string;
   readonly argument: SlashArgumentKind;
+  /** Fixed argument supplied by a direct convenience alias. */
+  readonly fixedArgument?: string;
 };
 
 /**
@@ -53,6 +55,15 @@ export const WORKSPACE_SLASH_ALIASES: readonly ComposerSlashAlias[] = [
     commandId: "brief.set",
     argument: "layout-name",
   },
+  {
+    forms: ["/mode"],
+    commandId: "mode.select",
+    argument: "profile",
+  },
+  { forms: ["/ask"], commandId: "mode.select", argument: "none", fixedArgument: "ask" },
+  { forms: ["/plan"], commandId: "mode.select", argument: "none", fixedArgument: "plan" },
+  { forms: ["/debug"], commandId: "mode.select", argument: "none", fixedArgument: "debug" },
+  { forms: ["/agent"], commandId: "mode.select", argument: "none", fixedArgument: "agent" },
 ];
 
 export type ParsedComposerSlash =
@@ -88,7 +99,7 @@ export function parseComposerSlash(text: string): ParsedComposerSlash | null {
         return {
           kind: "match",
           commandId: alias.commandId,
-          argument: null,
+          argument: alias.fixedArgument ?? null,
           form,
         };
       }
@@ -114,6 +125,12 @@ export function parseComposerSlash(text: string): ParsedComposerSlash | null {
     return {
       kind: "unresolved",
       reason: "/workspace expects add, save, load, or show",
+    };
+  }
+  if (/^\/mode(\s|$)/i.test(trimmed)) {
+    return {
+      kind: "unresolved",
+      reason: "/mode expects ask, plan, debug, or agent",
     };
   }
 

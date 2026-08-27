@@ -26,6 +26,7 @@ import {
   DEFAULT_RETRY_BACKOFF,
   decideAttemptAction,
   type EffectCertainty,
+  type EffectiveExecutionPolicy,
   evaluateRetry,
   type ModelAttemptBinding,
   type ModelAttemptId,
@@ -64,6 +65,9 @@ export type AttemptModelInput = {
   readonly tools: readonly ModelToolDefinition[];
   readonly output: OutputContract;
   readonly budgets: ModelBudgets;
+  /** Immutable execution-profile/effect snapshot for this turn. */
+  /** Absent only for pre-profile test/adapter inputs; product turns always bind one. */
+  readonly executionPolicy?: EffectiveExecutionPolicy;
   /** Registry generation and concrete names visible to this attempt. */
   readonly disclosure: {
     readonly catalogGeneration: ConfigurationGeneration;
@@ -545,6 +549,15 @@ function attemptBinding(
     role: receipt.role,
     intent: receipt.intent,
     reasoning: receipt.reasoning,
+    ...(modelInput?.executionPolicy === undefined
+      ? {}
+      : {
+          executionProfile: {
+            id: modelInput.executionPolicy.profileId,
+            version: modelInput.executionPolicy.profileVersion,
+            completion: modelInput.executionPolicy.completion,
+          },
+        }),
     providerCatalogGeneration: receipt.catalogGeneration,
     toolCatalogGeneration: disclosure?.catalogGeneration ?? generation,
     policyGeneration: generation,

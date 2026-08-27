@@ -5,6 +5,7 @@ import {
   createInMemoryFileSystem,
   createStubCommandRunner,
   localPath,
+  resolveExecutionProfile,
 } from "../domain/index.ts";
 import {
   discloseProductTools,
@@ -59,5 +60,25 @@ describe("discloseProductTools", () => {
     });
     const read = disclosure.modelTools.find((tool) => tool.name === "read_file");
     expect(read?.parameters).toMatchObject({ anyOf: expect.any(Array) });
+  });
+
+  test("makes profile restrictions inspectable while keeping eligible reads", () => {
+    const registry = workspaceTools().registry;
+    const ask = discloseProductTools(registry, {
+      executionPolicy: resolveExecutionProfile("ask", configurationGeneration.from(7)),
+    });
+    const agent = discloseProductTools(registry, {
+      executionPolicy: resolveExecutionProfile("agent", configurationGeneration.from(7)),
+    });
+
+    expect(ask.modelTools.map((tool) => tool.name)).toContain("read_file");
+    expect(ask.receipt.disclosed.every((tool) => tool.effect === "observation")).toBe(true);
+    expect(ask.receipt.omitted).toContainEqual({
+      name: "apply_patch",
+      reason: "effect mutation denied by ask profile",
+    });
+    expect(ask.receipt.schemaTokensEstimated).toBeLessThanOrEqual(
+      agent.receipt.schemaTokensEstimated,
+    );
   });
 });

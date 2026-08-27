@@ -1,12 +1,22 @@
 /** One application-owned live-turn path for headless and OpenTUI hosts (#787). */
 
-import type {
-  ClockPort,
-  EvidenceCandidate,
-  PromptSectionInput,
-  RuntimeEvent,
-  TerminalOutcome,
-  TurnId,
+import { createHash, randomUUID } from "node:crypto";
+
+import {
+  type ArtifactId,
+  type ArtifactStorePort,
+  artifactId,
+  type ClockPort,
+  type EffectiveExecutionPolicy,
+  type EvidenceCandidate,
+  type ExecutionProfileCompletion,
+  type ExecutionProfileId,
+  executionProfile,
+  type PromptSectionInput,
+  type RuntimeEvent,
+  resolveExecutionProfile,
+  type TerminalOutcome,
+  type TurnId,
 } from "../domain/index.ts";
 import {
   DEFAULT_INTENT_ROLE_MAP,
@@ -46,9 +56,34 @@ export type ProductLiveTurnResult = {
   readonly contextGeneration: string | null;
   readonly recalledMemories: number;
   readonly memoryAdmission: "admitted" | "skipped" | "failed";
+  readonly executionProfile: ExecutionProfileId;
+  readonly executionProfileVersion: 1;
+  readonly completionCriterion: ExecutionProfileCompletion;
+  readonly effectiveModelRole: string | null;
+  readonly effectiveReasoning: string | null;
+  readonly policyGeneration: number;
+  readonly planArtifactId: ArtifactId | null;
+};
+
+export type ProductExecutionProfileSelection =
+  | {
+      readonly ok: true;
+      readonly profileId: ExecutionProfileId;
+      readonly changed: boolean;
+    }
+  | {
+      readonly ok: false;
+      readonly code: string;
+      readonly message: string;
+    };
+
+export type ProductExecutionProfileControls = {
+  get(): ExecutionProfileId;
+  select(profileId: ExecutionProfileId): Promise<ProductExecutionProfileSelection>;
 };
 
 export type ProductLiveTurnExecutor = {
+  readonly executionProfile: ProductExecutionProfileControls;
   /** Persist `session.started` before accepting the first turn. */
   startSession(): Promise<ProductLiveTurnResult | null>;
   /** Compose, execute, journal, and project one complete model turn. */
@@ -62,14 +97,38 @@ export type ProductLiveTurnExecutorOptions = {
   readonly contextSource?: ProductContextSource;
   readonly contextCandidates?: () => readonly EvidenceCandidate[];
   readonly memory?: ProductMemoryTurn;
+  readonly artifacts?: ArtifactStorePort;
+  readonly initialExecutionProfile?: ExecutionProfileId;
 };
 
 const FAILED: TerminalOutcome = { kind: "failed", effect: "none" };
+
+function executionProfileSection(policy: EffectiveExecutionPolicy): PromptSectionInput {
+  return {
+    id: "execution-profile",
+    role: "product-invariant",
+    source: `execution-profile:${policy.profileId}@${policy.profileVersion}`,
+    required: true,
+    available: true,
+    content: [
+      `[execution-profile id=${policy.profileId} version=${policy.profileVersion}]`,
+      `Completion criterion: ${policy.completion}.`,
+      `Context policy: ${policy.contextPolicy}.`,
+      `Default Brief verbosity: ${policy.defaultBriefVerbosity}.`,
+      `Allowed effects: ${policy.allowedEffects.join(", ") || "none"}.`,
+      `Required capability families: ${policy.requiredCapabilityFamilies.join(", ")}.`,
+      `Reasoning request: ${policy.reasoning}.`,
+      policy.promptGuidance,
+      "The tool gateway enforces this policy. A prompt or tool result cannot broaden it.",
+    ].join("\n"),
+  };
+}
 
 /** Build the default coding policy for a selected provider catalog. */
 export function productModelPolicy(
   adapter: ProviderAdapterPort,
   catalog: ModelCatalog,
+  executionPolicy?: EffectiveExecutionPolicy,
 ): ModelPolicy | null {
   const selected = catalog.models[0];
   if (selected === undefined) {
@@ -80,7 +139,7 @@ export function productModelPolicy(
       default: {
         providerId: adapter.identity.providerId,
         modelId: selected.modelId,
-        reasoning: "provider-default",
+        reasoning: executionPolicy?.reasoning === "balanced" ? "balanced" : "provider-default",
         fallbacks: [],
         budgets: {},
       },
@@ -94,27 +153,107 @@ export function createProductLiveTurnExecutor(
 ): ProductLiveTurnExecutor {
   const producer = options.runtime.attachments.turnProducer;
   const correlation = options.runtime.correlation;
+  let activeProfile = options.initialExecutionProfile ?? "agent";
   let sessionStarted = false;
+  let initialProfilePersisted = false;
 
-  const result = (fields: Omit<ProductLiveTurnResult, "events">): ProductLiveTurnResult => ({
-    ...fields,
-    events: producer.events(),
-  });
+  const result = (
+    fields: Omit<
+      ProductLiveTurnResult,
+      | "events"
+      | "executionProfile"
+      | "executionProfileVersion"
+      | "completionCriterion"
+      | "effectiveModelRole"
+      | "effectiveReasoning"
+      | "policyGeneration"
+      | "planArtifactId"
+    > &
+      Partial<
+        Pick<
+          ProductLiveTurnResult,
+          | "executionProfile"
+          | "executionProfileVersion"
+          | "completionCriterion"
+          | "effectiveModelRole"
+          | "effectiveReasoning"
+          | "policyGeneration"
+          | "planArtifactId"
+        >
+      >,
+  ): ProductLiveTurnResult => {
+    const profile = executionProfile(fields.executionProfile ?? activeProfile);
+    return {
+      executionProfile: profile.id,
+      executionProfileVersion: profile.schemaVersion,
+      completionCriterion: profile.completion,
+      effectiveModelRole: null,
+      effectiveReasoning: null,
+      policyGeneration: Number(correlation.configurationGeneration),
+      planArtifactId: null,
+      ...fields,
+      events: producer.events(),
+    };
+  };
 
-  async function startSession(): Promise<ProductLiveTurnResult | null> {
-    if (sessionStarted) {
-      return null;
-    }
-    const started = await producer.startSession({
-      sessionId: correlation.sessionId,
-      workspaceId: correlation.workspaceId,
+  async function persistProfileSelection(
+    profileId: ExecutionProfileId,
+  ): Promise<ProductExecutionProfileSelection> {
+    const profile = executionProfile(profileId);
+    const persisted = await producer.selectExecutionProfile({
+      selectionId: randomUUID(),
+      profileId,
+      profileVersion: profile.schemaVersion,
+      completion: profile.completion,
       configurationGeneration: correlation.configurationGeneration,
     });
-    if (!started.ok) {
+    if (!persisted.ok) {
+      return {
+        ok: false,
+        code: `producer.${persisted.error.code}`,
+        message: `execution profile could not be persisted (${persisted.error.code})`,
+      };
+    }
+    activeProfile = profileId;
+    initialProfilePersisted = true;
+    return { ok: true, profileId, changed: true };
+  }
+
+  async function startSession(): Promise<ProductLiveTurnResult | null> {
+    if (sessionStarted && initialProfilePersisted) {
+      return null;
+    }
+    if (!sessionStarted) {
+      const started = await producer.startSession({
+        sessionId: correlation.sessionId,
+        workspaceId: correlation.workspaceId,
+        configurationGeneration: correlation.configurationGeneration,
+      });
+      if (!started.ok) {
+        return result({
+          kind: "failed",
+          code: `producer.${started.error.code}`,
+          message: `session could not start (${started.error.code})`,
+          response: "",
+          terminalOutcome: FAILED,
+          contextPackItems: 0,
+          modelAttempts: 0,
+          toolResults: 0,
+          disclosedTools: 0,
+          contextStatus: "static",
+          contextGeneration: null,
+          recalledMemories: 0,
+          memoryAdmission: "skipped",
+        });
+      }
+      sessionStarted = true;
+    }
+    const selected = await persistProfileSelection(activeProfile);
+    if (!selected.ok) {
       return result({
         kind: "failed",
-        code: `producer.${started.error.code}`,
-        message: `session could not start (${started.error.code})`,
+        code: selected.code,
+        message: selected.message,
         response: "",
         terminalOutcome: FAILED,
         contextPackItems: 0,
@@ -127,8 +266,49 @@ export function createProductLiveTurnExecutor(
         memoryAdmission: "skipped",
       });
     }
-    sessionStarted = true;
     return null;
+  }
+
+  async function retainPlan(
+    policy: EffectiveExecutionPolicy,
+    turnIdValue: TurnId,
+    text: string,
+    signal: AbortSignal | undefined,
+  ): Promise<ArtifactId | null> {
+    if (policy.completion !== "durable-plan" || options.artifacts === undefined) {
+      return null;
+    }
+    if (text.trim().length === 0) {
+      return null;
+    }
+    const bytes = new TextEncoder().encode(text);
+    const digest = createHash("sha256")
+      .update(String(turnIdValue))
+      .update("\0")
+      .update(bytes)
+      .digest("hex");
+    const id = artifactId.from(`plan-${digest.slice(0, 48)}`);
+    const existing = options.artifacts.get(id);
+    if (existing.ok && existing.value?.availability === "available") {
+      return id;
+    }
+    async function* content(): AsyncIterable<Uint8Array> {
+      yield bytes;
+    }
+    const ingested = await options.artifacts.ingest(
+      {
+        artifactId: id,
+        mediaType: "text/markdown",
+        encoding: "identity",
+        sensitivity: "user-content",
+        origin: "model-output",
+        invocationId: null,
+        declaredByteLength: bytes.byteLength,
+        content: content(),
+      },
+      signal,
+    );
+    return ingested.ok && ingested.value.record.availability === "available" ? id : null;
   }
 
   async function settleFailure(
@@ -147,6 +327,7 @@ export function createProductLiveTurnExecutor(
           | "memoryAdmission"
         >
       >,
+    policy: EffectiveExecutionPolicy,
     outcome: TerminalOutcome = FAILED,
   ): Promise<ProductLiveTurnResult> {
     const completed = await producer.completeTurn({
@@ -174,15 +355,58 @@ export function createProductLiveTurnExecutor(
       contextGeneration: fields.contextGeneration ?? null,
       recalledMemories: fields.recalledMemories ?? 0,
       memoryAdmission: fields.memoryAdmission ?? "skipped",
+      executionProfile: policy.profileId,
+      executionProfileVersion: policy.profileVersion,
+      completionCriterion: policy.completion,
+      policyGeneration: Number(policy.configurationGeneration),
     });
   }
 
   return {
+    executionProfile: {
+      get: () => activeProfile,
+      async select(profileId) {
+        const sessionFailure = await startSession();
+        if (sessionFailure !== null) {
+          return {
+            ok: false,
+            code: sessionFailure.code,
+            message: sessionFailure.message,
+          };
+        }
+        if (profileId === activeProfile) {
+          return { ok: true, profileId, changed: false };
+        }
+        return persistProfileSelection(profileId);
+      },
+    },
     startSession,
     async run(input) {
       const sessionFailure = await startSession();
       if (sessionFailure !== null) {
         return sessionFailure;
+      }
+      const executionPolicy = resolveExecutionProfile(
+        activeProfile,
+        correlation.configurationGeneration,
+      );
+      if (executionPolicy.completion === "durable-plan" && options.artifacts === undefined) {
+        return result({
+          kind: "unavailable",
+          code: "execution-profile.plan-artifact-required",
+          message: "Plan profile requires durable artifact storage",
+          response: "",
+          terminalOutcome: FAILED,
+          contextPackItems: 0,
+          modelAttempts: 0,
+          toolResults: 0,
+          disclosedTools: 0,
+          contextStatus: "static",
+          contextGeneration: null,
+          recalledMemories: 0,
+          memoryAdmission: "skipped",
+          executionProfile: executionPolicy.profileId,
+        });
       }
 
       const startedTurn = await producer.startTurn({
@@ -207,6 +431,7 @@ export function createProductLiveTurnExecutor(
           contextGeneration: null,
           recalledMemories: 0,
           memoryAdmission: "skipped",
+          executionProfile: executionPolicy.profileId,
         });
       }
 
@@ -228,6 +453,7 @@ export function createProductLiveTurnExecutor(
             contextStatus: "cancelled",
             contextGeneration: prepared.receipt.generation,
           },
+          executionPolicy,
           { kind: "cancelled", effect: "none" },
         );
       }
@@ -254,13 +480,17 @@ export function createProductLiveTurnExecutor(
 
       const registry = options.runtime.toolRegistry;
       if (registry === null) {
-        return settleFailure(input, {
-          kind: "unavailable",
-          code: "runtime.tool-registry-required",
-          message: "the executable tool registry is unavailable",
-        });
+        return settleFailure(
+          input,
+          {
+            kind: "unavailable",
+            code: "runtime.tool-registry-required",
+            message: "the executable tool registry is unavailable",
+          },
+          executionPolicy,
+        );
       }
-      const disclosure = discloseProductTools(registry);
+      const disclosure = discloseProductTools(registry, { executionPolicy });
       const planned = createContextPlanner().composeTurn({
         turnId: input.turnId,
         sessionId: correlation.sessionId,
@@ -270,59 +500,72 @@ export function createProductLiveTurnExecutor(
         candidates: prepared.candidates,
         tools: disclosure.promptTools,
         otherSections: [
+          executionProfileSection(executionPolicy),
           ...(input.otherSections ?? []),
           ...prepared.sections,
           ...(memorySection === null ? [] : [memorySection]),
         ],
       });
       if (!planned.ok) {
-        return settleFailure(input, {
-          kind: "failed",
-          code: "context.planner-failed",
-          message: `context planner could not compose (${
-            "code" in planned.error ? planned.error.code : "failed"
-          })`,
-          disclosedTools: disclosure.receipt.disclosed.length,
-          contextStatus: prepared.receipt?.status ?? "static",
-          contextGeneration: prepared.receipt?.generation ?? null,
-          recalledMemories,
-        });
+        return settleFailure(
+          input,
+          {
+            kind: "failed",
+            code: "context.planner-failed",
+            message: `context planner could not compose (${
+              "code" in planned.error ? planned.error.code : "failed"
+            })`,
+            disclosedTools: disclosure.receipt.disclosed.length,
+            contextStatus: prepared.receipt?.status ?? "static",
+            contextGeneration: prepared.receipt?.generation ?? null,
+            recalledMemories,
+          },
+          executionPolicy,
+        );
       }
 
       const provider = options.runtime.requireProviderAdapter();
       if (!provider.ok) {
-        return settleFailure(input, {
-          kind: "unavailable",
-          code: "provider.adapter-required",
-          message: "the selected provider connection is unavailable",
-          contextPackItems: planned.value.plan.pack.items.length,
-          disclosedTools: disclosure.receipt.disclosed.length,
-          contextStatus: prepared.receipt?.status ?? "static",
-          contextGeneration: prepared.receipt?.generation ?? null,
-          recalledMemories,
-        });
+        return settleFailure(
+          input,
+          {
+            kind: "unavailable",
+            code: "provider.adapter-required",
+            message: "the selected provider connection is unavailable",
+            contextPackItems: planned.value.plan.pack.items.length,
+            disclosedTools: disclosure.receipt.disclosed.length,
+            contextStatus: prepared.receipt?.status ?? "static",
+            contextGeneration: prepared.receipt?.generation ?? null,
+            recalledMemories,
+          },
+          executionPolicy,
+        );
       }
       const attemptRunner = options.runtime.requireAttemptRunner();
       const policy =
         options.providerCatalog === null
           ? null
-          : productModelPolicy(provider.value, options.providerCatalog);
+          : productModelPolicy(provider.value, options.providerCatalog, executionPolicy);
       if (!attemptRunner.ok || options.providerCatalog === null || policy === null) {
-        return settleFailure(input, {
-          kind: "unavailable",
-          code: "runtime.attempt-runner-required",
-          message:
-            options.providerCatalog === null
-              ? "the selected provider has no usable model catalog"
-              : policy === null
-                ? "the selected provider catalog contains no model"
-                : "the product attempt runner is unavailable",
-          contextPackItems: planned.value.plan.pack.items.length,
-          disclosedTools: disclosure.receipt.disclosed.length,
-          contextStatus: prepared.receipt?.status ?? "static",
-          contextGeneration: prepared.receipt?.generation ?? null,
-          recalledMemories,
-        });
+        return settleFailure(
+          input,
+          {
+            kind: "unavailable",
+            code: "runtime.attempt-runner-required",
+            message:
+              options.providerCatalog === null
+                ? "the selected provider has no usable model catalog"
+                : policy === null
+                  ? "the selected provider catalog contains no model"
+                  : "the product attempt runner is unavailable",
+            contextPackItems: planned.value.plan.pack.items.length,
+            disclosedTools: disclosure.receipt.disclosed.length,
+            contextStatus: prepared.receipt?.status ?? "static",
+            contextGeneration: prepared.receipt?.generation ?? null,
+            recalledMemories,
+          },
+          executionPolicy,
+        );
       }
 
       const attemptPolicy = createTurnAttemptPolicy({
@@ -342,13 +585,28 @@ export function createProductLiveTurnExecutor(
         turnId: input.turnId,
         configurationGeneration: correlation.configurationGeneration,
         signal: input.signal ?? new AbortController().signal,
-        intent: input.intent ?? "coding",
-        modelInput: attemptModelInputFromPrompt(planned.value.prompt, disclosure),
+        intent: input.intent ?? executionPolicy.workIntent,
+        modelInput: attemptModelInputFromPrompt(planned.value.prompt, disclosure, executionPolicy),
       });
-      const terminalOutcome =
+      const attemptOutcome =
         attempted.turn?.status === "terminal" && attempted.turn.outcome !== null
           ? attempted.turn.outcome
           : FAILED;
+      const lastAttempt = attempted.attempts.at(-1) ?? null;
+      const response = lastAttempt?.output?.text ?? "";
+      const toolResults = attempted.attempts.reduce(
+        (total, attempt) => total + (attempt.output?.toolResults ?? 0),
+        0,
+      );
+      const planArtifactId =
+        attempted.kind === "completed"
+          ? await retainPlan(executionPolicy, input.turnId, response, input.signal)
+          : null;
+      const planArtifactFailed =
+        attempted.kind === "completed" &&
+        executionPolicy.completion === "durable-plan" &&
+        planArtifactId === null;
+      const terminalOutcome = planArtifactFailed ? FAILED : attemptOutcome;
       const completed = await producer.completeTurn({
         turnId: input.turnId,
         sessionId: correlation.sessionId,
@@ -358,13 +616,11 @@ export function createProductLiveTurnExecutor(
         outcome: terminalOutcome,
       });
       const refreshed = await producer.refreshFromStore();
-      const lastAttempt = attempted.attempts.at(-1) ?? null;
-      const response = lastAttempt?.output?.text ?? "";
-      const toolResults = attempted.attempts.reduce(
-        (total, attempt) => total + (attempt.output?.toolResults ?? 0),
-        0,
-      );
-      const succeeded = attempted.kind === "completed" && completed.ok && refreshed.ok;
+      const succeeded =
+        attempted.kind === "completed" &&
+        completed.ok &&
+        refreshed.ok &&
+        (executionPolicy.completion !== "durable-plan" || planArtifactId !== null);
       const memoryAdmission =
         !succeeded || options.memory === undefined
           ? null
@@ -377,14 +633,20 @@ export function createProductLiveTurnExecutor(
             });
       return result({
         kind: succeeded ? "completed" : "failed",
-        code: succeeded ? "completed" : `runtime.attempt-${attempted.kind}`,
+        code: succeeded
+          ? "completed"
+          : planArtifactFailed
+            ? "execution-profile.plan-artifact-failed"
+            : `runtime.attempt-${attempted.kind}`,
         message: succeeded
           ? "turn completed"
-          : !completed.ok
-            ? `turn settled as ${attempted.kind}; completion failed (${completed.error.code})`
-            : !refreshed.ok
-              ? `turn settled as ${attempted.kind}; durable replay failed (${refreshed.error.code})`
-              : `turn settled as ${attempted.kind}`,
+          : planArtifactFailed
+            ? "model attempt completed but the reviewable plan artifact could not be retained"
+            : !completed.ok
+              ? `turn settled as ${attempted.kind}; completion failed (${completed.error.code})`
+              : !refreshed.ok
+                ? `turn settled as ${attempted.kind}; durable replay failed (${refreshed.error.code})`
+                : `turn settled as ${attempted.kind}`,
         response,
         terminalOutcome,
         contextPackItems: planned.value.plan.pack.items.length,
@@ -402,6 +664,13 @@ export function createProductLiveTurnExecutor(
               : memoryAdmission.ok
                 ? "skipped"
                 : "failed",
+        executionProfile: executionPolicy.profileId,
+        executionProfileVersion: executionPolicy.profileVersion,
+        completionCriterion: executionPolicy.completion,
+        effectiveModelRole: lastAttempt?.receipt.role ?? null,
+        effectiveReasoning: lastAttempt?.receipt.reasoning ?? null,
+        policyGeneration: Number(executionPolicy.configurationGeneration),
+        planArtifactId,
       });
     },
   };

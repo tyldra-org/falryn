@@ -33,6 +33,9 @@ import {
   type ConfigurationGeneration,
   type EnvironmentPort,
   type EventStorePort,
+  EXECUTION_PROFILES,
+  type ExecutionProfileId,
+  executionProfile,
   type FileSystemPort,
   primaryWorkspaceRoot,
   sessionId as sessionIdCodec,
@@ -50,7 +53,11 @@ import {
   createHostProcessCapturePort,
   type OwnedProcessRegistry,
 } from "../integrations/index.ts";
-import { createProductSubmissionPort, type SubmissionPort } from "../tui/composer/index.ts";
+import {
+  createProductSubmissionPort,
+  type ProductSubmissionPort,
+  type SubmissionPort,
+} from "../tui/composer/index.ts";
 import type { ControlCatalog } from "../tui/controls/index.ts";
 import type { SessionCreationPort } from "../tui/session-creation.ts";
 import type { TranscriptFeed } from "../tui/transcript-feed.ts";
@@ -79,7 +86,7 @@ export type ProductShellAttachmentPorts = {
 };
 
 export type ProductShellAttachments = {
-  readonly submission: SubmissionPort;
+  readonly submission: ProductSubmissionPort;
   readonly transcriptFeed: TranscriptFeed;
   readonly sessionCreation: SessionCreationPort;
   readonly controls: ControlCatalog;
@@ -124,7 +131,10 @@ export async function composeProductShellAttachments(
   const managedServices = createHostManagedServicePort(
     ports.ownedProcesses === undefined ? {} : { ownedProcesses: ports.ownedProcesses },
   );
-  const brief = composeProductBriefControls();
+  let selectedExecutionProfile: ExecutionProfileId = "agent";
+  const brief = composeProductBriefControls({
+    initialVerbosity: executionProfile(selectedExecutionProfile).defaultBriefVerbosity,
+  });
 
   function buildSession() {
     const sessionId = sessionIdCodec.from(`session-shell-${randomUUID()}`);
@@ -284,6 +294,8 @@ export async function composeProductShellAttachments(
           : { contextCandidates: workspaceTools.contextCandidates }
         : { contextSource }),
       ...(memory === undefined ? {} : { memory }),
+      ...(ports.artifacts === undefined ? {} : { artifacts: ports.artifacts }),
+      initialExecutionProfile: selectedExecutionProfile,
     });
     return {
       sessionId,
@@ -318,6 +330,21 @@ export async function composeProductShellAttachments(
   let activeSubmissions = 0;
   const submission = {
     brief,
+    executionProfile: {
+      get: () => selectedExecutionProfile,
+      async select(profileId: ExecutionProfileId) {
+        const controls = active.executor.executionProfile;
+        const selected = await controls.select(profileId);
+        if (selected.ok) {
+          const previousDefault = executionProfile(selectedExecutionProfile).defaultBriefVerbosity;
+          if (brief.getVerbosity() === previousDefault) {
+            brief.setVerbosity(executionProfile(selected.profileId).defaultBriefVerbosity);
+          }
+          selectedExecutionProfile = selected.profileId;
+        }
+        return selected;
+      },
+    },
     async submit(snapshot: Parameters<SubmissionPort["submit"]>[0]) {
       const target = active.submission;
       activeSubmissions += 1;
@@ -376,6 +403,11 @@ function providerControls(provider: ProductProviderConnectionHandoff | undefined
   const profile = ready?.connection.profile ?? null;
   return {
     sessions: [],
+    profiles: EXECUTION_PROFILES.map((execution) => ({
+      id: execution.id,
+      title: execution.label,
+      detail: `${execution.description} Completion: ${execution.completion}.`,
+    })),
     models:
       ready?.catalog.models.map((model) => ({
         id: String(model.modelId),

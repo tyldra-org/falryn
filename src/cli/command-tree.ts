@@ -185,6 +185,11 @@ function build(argv: readonly string[], lenientPositionals = false): ReturnType<
               type: "string",
               choices: ["compact", "balanced", "detailed", "auto"] as const,
               describe: "Brief response-style verbosity for the live turn (#717)",
+            })
+            .option("mode", {
+              type: "string",
+              choices: ["ask", "plan", "debug", "agent"] as const,
+              describe: "Execution profile for this turn",
             }),
       )
       .command("export", "Preview or write a versioned export bundle.", (group) =>

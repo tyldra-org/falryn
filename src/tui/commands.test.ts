@@ -254,9 +254,10 @@ describe("what this build can actually do", () => {
     expect(commandById("confirmation.deny")?.defaultBinding).toBe(null);
   });
 
-  test("declares session, model, context, and resource controls", () => {
+  test("declares session, model, execution-profile, context, and resource controls", () => {
     expect(commandById("session.switch")?.defaultBinding).toBe(null);
     expect(commandById("model.select")?.defaultBinding).toBe(null);
+    expect(commandById("mode.select")?.defaultBinding).toBe(null);
     expect(commandById("context.show")?.defaultBinding).toBe(null);
     expect(commandById("resource.show")?.defaultBinding).toBe(null);
     expect(commandById("session.new")?.availability(EMPTY_COMMAND_STATE)).toEqual({

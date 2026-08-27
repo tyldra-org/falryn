@@ -7,12 +7,13 @@
 
 export const MODEL_ROLES = [
   "default",
-  "fast",
-  "deep",
-  "plan",
-  "vision",
-  "advisor",
   "compact",
+  "vision",
+  "plan",
+  "advisor",
+  "commit",
+  "fast-read",
+  "fast-edit",
 ] as const;
 
 export type ModelRole = (typeof MODEL_ROLES)[number];

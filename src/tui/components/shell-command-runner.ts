@@ -186,6 +186,9 @@ export function runAvailableCommand(
     case "model.select":
       dispatch({ kind: "open-overlay", route: { kind: "controls", panel: "model" } });
       return true;
+    case "mode.select":
+      dispatch({ kind: "open-overlay", route: { kind: "controls", panel: "profile" } });
+      return true;
     case "context.show":
       dispatch({ kind: "open-overlay", route: { kind: "controls", panel: "context" } });
       return true;

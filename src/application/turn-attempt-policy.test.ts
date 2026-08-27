@@ -55,8 +55,9 @@ function samplePolicy(): ModelPolicy {
         fallbacks: [{ providerId: secondary, modelId: fast }],
         budgets: { attempts: 2 },
       },
-      fast: { providerId: primary, modelId: fast, reasoning: "minimal" },
-      deep: { providerId: primary, modelId: deep, reasoning: "deep" },
+      "fast-read": { providerId: primary, modelId: fast, reasoning: "minimal" },
+      "fast-edit": { providerId: primary, modelId: fast, reasoning: "minimal" },
+      commit: { providerId: primary, modelId: deep, reasoning: "balanced" },
       plan: { providerId: primary, modelId: deep, reasoning: "balanced" },
       vision: {
         providerId: primary,

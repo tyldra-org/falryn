@@ -31,6 +31,7 @@ import type {
   FileAttachmentProbe,
   GitDashboard,
   MidTurnInputService,
+  ProductExecutionProfileControls,
 } from "../../application/index.ts";
 import type { Instant } from "../../domain/index.ts";
 import type {
@@ -300,6 +301,16 @@ function ResolvedShell(
     onBodyRenderable: props.runtime.registerTranscriptBody,
   };
   const catalog = props.controls ?? EMPTY_CONTROL_CATALOG;
+  const executionProfile =
+    props.submission !== undefined && "executionProfile" in props.submission
+      ? (
+          props.submission as { executionProfile: ProductExecutionProfileControls }
+        ).executionProfile.get()
+      : null;
+  const healthMessage =
+    executionProfile === null
+      ? props.activityModel.health.headline
+      : `[${executionProfile}] ${props.activityModel.health.headline}`;
   const model: ShellModel = {
     ...props.model,
     header: projectWorkspaceHeader(
@@ -320,7 +331,7 @@ function ResolvedShell(
     status: {
       ...props.model.status,
       status: statusOfHealth(props.activityModel.health.level),
-      message: props.activityModel.health.headline,
+      message: healthMessage,
       ...(props.refusal !== null
         ? { status: "error" as const, message: props.refusal }
         : props.runtime.state.notice !== null
@@ -361,6 +372,7 @@ function ResolvedShell(
       controls={catalog}
       selectedSessionId={props.runtime.state.selectedSessionId}
       selectedModelId={props.runtime.state.selectedModelId}
+      selectedProfileId={executionProfile}
       onControlSelect={(id) => {
         const overlay = props.runtime.state.overlay;
         if (overlay.kind !== "controls") {
@@ -368,6 +380,10 @@ function ResolvedShell(
         }
         if (overlay.panel === "session" || overlay.panel === "model") {
           props.runtime.selectControl(overlay.panel, id);
+          return;
+        }
+        if (overlay.panel === "profile") {
+          props.runtime.selectProfile(id);
         }
       }}
       {...(props.artifactViewer === undefined ? {} : { artifactViewer: props.artifactViewer })}

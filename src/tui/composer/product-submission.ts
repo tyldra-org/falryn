@@ -9,6 +9,7 @@
 import {
   composeProductBriefControls,
   type ProductBriefControls,
+  type ProductExecutionProfileControls,
   type ProductLiveTurnExecutor,
 } from "../../application/index.ts";
 import {
@@ -38,6 +39,7 @@ export type ProductSubmissionPortOptions = {
 
 export type ProductSubmissionPort = SubmissionPort & {
   readonly brief: ProductBriefControls;
+  readonly executionProfile: ProductExecutionProfileControls;
 };
 
 /**
@@ -54,9 +56,20 @@ export function createProductSubmissionPort(
       return turnId.from(`turn-submit:${String(options.sessionId)}:${sequence}`);
     });
   const brief = options.brief ?? composeProductBriefControls();
+  const executionProfile = options.executor.executionProfile ?? {
+    get: () => "agent" as const,
+    async select() {
+      return {
+        ok: false as const,
+        code: "execution-profile.unavailable",
+        message: "execution profile controls are not attached",
+      };
+    },
+  };
 
   return {
     brief,
+    executionProfile,
     async submit(snapshot: ComposerSnapshot): Promise<SubmissionOutcome> {
       if (snapshot.text.trim() === "") {
         return unavailable(snapshot, "the composer is empty");

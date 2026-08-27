@@ -11,6 +11,7 @@
 import type {
   CapabilityInvocationCompletedEvent,
   CapabilityInvocationStartedEvent,
+  ExecutionProfileSelectedEvent,
   ModelAttemptBinding,
   ModelAttemptCompletedEvent,
   ModelAttemptStartedEvent,
@@ -21,6 +22,7 @@ import type {
   TurnCorrelation,
   TurnStartedEvent,
 } from "./event.ts";
+import type { ExecutionProfileCompletion, ExecutionProfileId } from "./execution-profile.ts";
 import {
   type CapabilityId,
   type EventId,
@@ -45,6 +47,14 @@ export type TurnLifecycleFact =
   | {
       readonly kind: "session.started";
       readonly correlation: SessionCorrelation;
+    }
+  | {
+      readonly kind: "execution.profile.selected";
+      readonly correlation: SessionCorrelation;
+      readonly selectionId: string;
+      readonly profileId: ExecutionProfileId;
+      readonly profileVersion: 1;
+      readonly completion: ExecutionProfileCompletion;
     }
   | {
       readonly kind: "turn.started";
@@ -91,6 +101,8 @@ export function factIdentity(fact: TurnLifecycleFact): string {
   switch (fact.kind) {
     case "session.started":
       return `session:${fact.correlation.sessionId}:started`;
+    case "execution.profile.selected":
+      return `session:${fact.correlation.sessionId}:profile:${fact.selectionId}`;
     case "turn.started":
       return `turn:${fact.correlation.turnId}:started`;
     case "turn.completed":
@@ -144,6 +156,21 @@ export function buildTurnLifecycleEvent(input: BuildTurnEventInput): RuntimeEven
         kind: "session.started",
         correlation: fact.correlation,
         payload: {},
+      };
+      return event;
+    }
+    case "execution.profile.selected": {
+      const event: ExecutionProfileSelectedEvent = {
+        ...spine,
+        kind: "execution.profile.selected",
+        correlation: fact.correlation,
+        payload: {
+          selectionId: fact.selectionId,
+          profileId: fact.profileId,
+          profileVersion: fact.profileVersion,
+          completion: fact.completion,
+          applicationClass: "next-turn",
+        },
       };
       return event;
     }
@@ -247,6 +274,14 @@ export type ReplayedTurn = {
 export type TurnEventReduction = {
   readonly sessionStarted: boolean;
   readonly sessionCorrelation: SessionCorrelation | null;
+  readonly selectedExecutionProfile: ExecutionProfileId | null;
+  readonly executionProfileSelections: readonly {
+    readonly selectionId: string;
+    readonly profileId: ExecutionProfileId;
+    readonly profileVersion: 1;
+    readonly completion: ExecutionProfileCompletion;
+    readonly occurredAt: Timestamp;
+  }[];
   readonly turns: readonly ReplayedTurn[];
 };
 
@@ -287,6 +322,14 @@ type MutableTurn = {
 export function reduceTurnEvents(events: readonly RuntimeEvent[]): TurnEventReduction {
   let sessionStarted = false;
   let sessionCorrelation: SessionCorrelation | null = null;
+  let selectedExecutionProfile: ExecutionProfileId | null = null;
+  const executionProfileSelections: Array<{
+    selectionId: string;
+    profileId: ExecutionProfileId;
+    profileVersion: 1;
+    completion: ExecutionProfileCompletion;
+    occurredAt: Timestamp;
+  }> = [];
   const turns = new Map<TurnId, MutableTurn>();
   const turnOrder: TurnId[] = [];
 
@@ -295,6 +338,16 @@ export function reduceTurnEvents(events: readonly RuntimeEvent[]): TurnEventRedu
       case "session.started":
         sessionStarted = true;
         sessionCorrelation = event.correlation;
+        break;
+      case "execution.profile.selected":
+        selectedExecutionProfile = event.payload.profileId;
+        executionProfileSelections.push({
+          selectionId: event.payload.selectionId,
+          profileId: event.payload.profileId,
+          profileVersion: event.payload.profileVersion,
+          completion: event.payload.completion,
+          occurredAt: event.occurredAt,
+        });
         break;
       case "turn.started": {
         const id = event.correlation.turnId;
@@ -404,6 +457,8 @@ export function reduceTurnEvents(events: readonly RuntimeEvent[]): TurnEventRedu
   return {
     sessionStarted,
     sessionCorrelation,
+    selectedExecutionProfile,
+    executionProfileSelections,
     turns: turnOrder.flatMap((id) => {
       const turn = turns.get(id);
       return turn === undefined ? [] : [freezeTurn(turn)];

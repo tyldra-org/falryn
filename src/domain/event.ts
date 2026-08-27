@@ -11,6 +11,7 @@
  * codec rejects it and preserves the observed string for quarantine.
  */
 
+import type { ExecutionProfileCompletion, ExecutionProfileId } from "./execution-profile.ts";
 import type {
   CapabilityId,
   ConfigurationGeneration,
@@ -39,6 +40,7 @@ export const EVENT_KINDS = [
   "capability.invocation.started",
   "capability.invocation.completed",
   "configuration.generation.changed",
+  "execution.profile.selected",
 ] as const;
 
 export type EventKind = (typeof EVENT_KINDS)[number];
@@ -97,6 +99,14 @@ export type ModelAttemptBinding = {
   readonly role: string;
   readonly intent: string | null;
   readonly reasoning: string;
+  /** Absent only on events written before execution profiles shipped. */
+  readonly executionProfile?:
+    | {
+        readonly id: ExecutionProfileId;
+        readonly version: 1;
+        readonly completion: ExecutionProfileCompletion;
+      }
+    | undefined;
   readonly providerCatalogGeneration: number;
   readonly toolCatalogGeneration: ConfigurationGeneration;
   readonly policyGeneration: ConfigurationGeneration;
@@ -139,6 +149,14 @@ export type ModelAttemptStartedPayload = {
 export type ConfigurationGenerationChangedPayload = {
   readonly generation: ConfigurationGeneration;
   readonly applicationClass: ConfigurationApplicationClass;
+};
+
+export type ExecutionProfileSelectedPayload = {
+  readonly selectionId: string;
+  readonly profileId: ExecutionProfileId;
+  readonly profileVersion: 1;
+  readonly completion: ExecutionProfileCompletion;
+  readonly applicationClass: "next-turn";
 };
 
 type Envelope<Kind extends EventKind, Correlation, Payload> = {
@@ -207,6 +225,12 @@ export type ConfigurationGenerationChangedEvent = Envelope<
   ConfigurationGenerationChangedPayload
 >;
 
+export type ExecutionProfileSelectedEvent = Envelope<
+  "execution.profile.selected",
+  SessionCorrelation,
+  ExecutionProfileSelectedPayload
+>;
+
 export type RuntimeEvent =
   | SessionStartedEvent
   | TurnStartedEvent
@@ -215,7 +239,8 @@ export type RuntimeEvent =
   | ModelAttemptCompletedEvent
   | CapabilityInvocationStartedEvent
   | CapabilityInvocationCompletedEvent
-  | ConfigurationGenerationChangedEvent;
+  | ConfigurationGenerationChangedEvent
+  | ExecutionProfileSelectedEvent;
 
 export type ModelEvent = ModelAttemptStartedEvent | ModelAttemptCompletedEvent;
 

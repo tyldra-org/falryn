@@ -12,7 +12,9 @@ import {
   assertNever,
   type ClockPort,
   type EffectCertainty,
+  type EffectiveExecutionPolicy,
   foldToolEffects,
+  resolveExecutionProfile,
   type SessionCorrelation,
   type ToolHookRegistry,
   type ToolInvocationRecord,
@@ -430,6 +432,35 @@ function validateDisclosure(request: AttemptRunnerRequest, registry: ToolRegistr
   return null;
 }
 
+function unionSet<T>(
+  left: ReadonlySet<T> | undefined,
+  right: readonly T[],
+): ReadonlySet<T> | undefined {
+  if ((left?.size ?? 0) === 0 && right.length === 0) {
+    return undefined;
+  }
+  return new Set([...(left ?? []), ...right]);
+}
+
+function toolPolicyForExecution(
+  policy: EffectiveExecutionPolicy,
+  base: ToolPolicyProfile | undefined,
+): ToolPolicyProfile {
+  const deniedNames = unionSet(base?.deniedNames, policy.deniedToolNames);
+  const deniedEffects = unionSet(base?.deniedEffects, policy.deniedEffects);
+  return {
+    ...(deniedNames === undefined ? {} : { deniedNames }),
+    ...(base?.deniedCapabilityIds === undefined
+      ? {}
+      : { deniedCapabilityIds: base.deniedCapabilityIds }),
+    ...(deniedEffects === undefined ? {} : { deniedEffects }),
+    ...(base?.autoAllowEffects === undefined ? {} : { autoAllowEffects: base.autoAllowEffects }),
+    ...(base?.forceConfirmationEffects === undefined
+      ? {}
+      : { forceConfirmationEffects: base.forceConfirmationEffects }),
+  };
+}
+
 function modelRequest(
   request: AttemptRunnerRequest,
   input: AttemptModelInput,
@@ -492,7 +523,11 @@ export function createProductAttemptRunner(
         correlation: options.correlation,
         turnId: request.turnId,
         disclosedToolNames: new Set(input.disclosure.toolNames),
-        ...(options.policy === undefined ? {} : { policy: options.policy }),
+        policy: toolPolicyForExecution(
+          input.executionPolicy ??
+            resolveExecutionProfile("agent", request.boundConfigurationGeneration),
+          options.policy,
+        ),
         ...(options.confirmation === undefined ? {} : { confirmation: options.confirmation }),
         effectLedger,
       });

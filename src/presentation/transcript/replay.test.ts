@@ -43,7 +43,7 @@ import { reduceTranscript } from "./reducer.ts";
  * summary string would fail on a typo fix and teach everyone to update it
  * without reading it.
  */
-const GENERATION_1 = [
+const GENERATION_2 = [
   { kind: "notice", key: "session:session-fixture", status: "final", outcome: null },
   { kind: "turn-outcome", key: "turn:turn-fixture", status: "final", outcome: "completed" },
   {
@@ -59,6 +59,12 @@ const GENERATION_1 = [
     outcome: "uncertain",
   },
   { kind: "notice", key: "configuration:1", status: "final", outcome: null },
+  {
+    kind: "notice",
+    key: "declared:execution-profile:selection-9",
+    status: "final",
+    outcome: null,
+  },
 ] as const;
 
 function snapshot(): readonly unknown[] {
@@ -86,14 +92,14 @@ function snapshot(): readonly unknown[] {
 
 describe("replaying the fixture run", () => {
   test("produces what this generation recorded", () => {
-    expect(snapshot()).toEqual([...GENERATION_1]);
+    expect(snapshot()).toEqual([...GENERATION_2]);
   });
 
   test("is the snapshot for the generation the build declares", () => {
     // The other direction of the guard. Raising the generation without
     // revisiting the recorded output leaves a snapshot describing a reducer
     // that no longer exists.
-    expect(TRANSCRIPT_PROJECTION_GENERATION).toBe(1);
+    expect(TRANSCRIPT_PROJECTION_GENERATION).toBe(2);
   });
 
   test("replays identically twice", () => {
