@@ -66,6 +66,7 @@ import {
   type KeymapPlan,
   planKeymap,
 } from "../keymap.ts";
+import type { SessionCreationPort } from "../session-creation.ts";
 import type { SessionNavigationController } from "../session-nav/index.ts";
 import type { ThemeRequest } from "../theme/index.ts";
 import { keysOf } from "../transcript/index.ts";
@@ -139,8 +140,9 @@ export type ShellAppProps = {
   /**
    * Session, model, context, and resource facts.
    *
-   * Fixture-driven in this build: nothing produces a live session or model
-   * catalog yet. Selection is a process-local cursor over these lists.
+   * The product launch projects the selected provider's live model catalog;
+   * tests and unconfigured hosts may still supply an empty catalog. Selection
+   * is a process-local cursor over these lists.
    */
   readonly controls?: ControlCatalog;
   /** Loads artifact views for the code viewer overlay. Absent in static frames. */
@@ -152,6 +154,7 @@ export type ShellAppProps = {
   readonly workspace?: WorkspaceSetView;
   /** Application-backed session navigation (#722). */
   readonly sessionNavigationController?: SessionNavigationController;
+  readonly sessionCreation?: SessionCreationPort;
   /** Mid-turn classification while a turn is in flight (#612). */
   readonly midTurn?: MidTurnInputService;
   /** Product agent submission port (#707). Absent keeps UNAVAILABLE_SUBMISSION. */
@@ -210,6 +213,7 @@ export function ShellApp(props: ShellAppProps): ReactNode {
     ...(props.sessionNavigationController === undefined
       ? {}
       : { sessionNavigationController: props.sessionNavigationController }),
+    ...(props.sessionCreation === undefined ? {} : { sessionCreation: props.sessionCreation }),
     ...(props.midTurn === undefined ? {} : { midTurn: props.midTurn }),
     ...(props.submission === undefined ? {} : { submission: props.submission }),
   });

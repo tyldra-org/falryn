@@ -1,4 +1,4 @@
-/** Durable artifact and Loom lifecycle for one product process (#814). */
+/** Durable event, artifact, and Loom lifecycle for one product process. */
 
 import { randomUUID } from "node:crypto";
 
@@ -7,7 +7,9 @@ import {
   beginRun,
   createArtifactRepository,
   createArtifactStore,
+  createSqliteEventStore,
   type DurableArtifactStore,
+  type DurableEventStore,
   openSqliteStore,
   PRODUCTION_MIGRATIONS,
   rootChild,
@@ -19,6 +21,7 @@ import type { Services } from "./services.ts";
 
 export type ProductArtifactSession = {
   readonly artifacts: DurableArtifactStore;
+  readonly eventStore: DurableEventStore;
   readonly loom: LoomPort;
   close(signal?: AbortSignal): Promise<void>;
 };
@@ -28,8 +31,9 @@ function rootReady(status: RootStatus): boolean {
 }
 
 /**
- * Open exact-output storage only for a live product host. Failure degrades to
- * bounded inline reads; it never fabricates a recovery handle.
+ * Open the shared durable event and exact-output stores for a live product
+ * host. Failure degrades to bounded inline reads and fail-closed live turns; it
+ * never fabricates persistence or recovery.
  */
 export async function openProductArtifactSession(
   services: Services,
@@ -89,11 +93,13 @@ export async function openProductArtifactSession(
     hasher: createSha256Hasher(),
     clock: services.clock,
   });
+  const eventStore = createSqliteEventStore(store);
   const loom = createLoomPort({ artifacts });
   let closed = false;
 
   return {
     artifacts,
+    eventStore,
     loom,
     async close(closeSignal) {
       if (closed) {
@@ -103,8 +109,12 @@ export async function openProductArtifactSession(
       try {
         await artifacts.quiesce(closeSignal);
       } finally {
-        run.value.end(closeSignal);
-        await store.close();
+        try {
+          await eventStore.quiesce();
+        } finally {
+          run.value.end(closeSignal);
+          await store.close();
+        }
       }
     },
   };

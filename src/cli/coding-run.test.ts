@@ -20,6 +20,7 @@ import { resolveCodingPrompt, runCoding } from "./coding-run.ts";
 import { parseInvocation } from "./command-tree.ts";
 import { dispatch } from "./dispatch.ts";
 import type { GlobalOptions } from "./options.ts";
+import { openProductArtifactSession } from "./product-artifact-session.ts";
 import { CLI_EVENT_STREAM, createServiceProvider } from "./services.ts";
 import { createRecordingCliStreams } from "./streams.ts";
 
@@ -106,6 +107,44 @@ describe("resolveCodingPrompt", () => {
 });
 
 describe("runCoding", () => {
+  test("refuses a live turn when the durable product event store cannot open", async () => {
+    const home = await mkdtemp(join(tmpdir(), "falryn-run-no-store-"));
+    homes.push(home);
+    const stateFile = join(home, "state-is-a-file");
+    const config = join(home, "config");
+    const primary = join(home, "primary");
+    await mkdir(config, { recursive: true });
+    await mkdir(primary, { recursive: true });
+    await writeFile(stateFile, "not a directory", "utf8");
+    const seeded = {
+      home,
+      primary,
+      environment: createStaticEnvironment({
+        FALRYN_STATE_DIR: stateFile,
+        FALRYN_CONFIG_DIR: config,
+      }),
+    };
+
+    const result = await runCoding(
+      providerFor(seeded)(globalsFor(seeded)),
+      { promptParts: ["must", "be", "durable"] },
+      {
+        input: createRecordingCliStreams({ stdin: null }).input,
+        globals: globalsFor(seeded),
+        providerAdapter: createDeterministicProviderAdapter(),
+        identities: {
+          sessionId: "session-no-store",
+          turnId: "turn-no-store",
+          traceId: "trace-no-store",
+        },
+      },
+    );
+
+    expect(result.outcome).toEqual({ kind: "failed", effect: "none" });
+    expect(result.payload).toMatchObject({ stage: "compose-failed", eventCount: 0 });
+    expect(result.errors[0]?.code).toBe("runtime.durable-event-store-required");
+  });
+
   test("hosts a turn then fails closed without a provider", async () => {
     const seeded = await seededHome();
     const services = providerFor(seeded)(globalsFor(seeded));
@@ -158,6 +197,49 @@ describe("runCoding", () => {
     expect(result.payload?.toolResults).toBe(0);
     expect(result.payload?.disclosedTools).toBeGreaterThan(0);
     expect(result.errors).toEqual([]);
+
+    const durable = await openProductArtifactSession(services());
+    expect(durable).not.toBeNull();
+    if (durable !== null) {
+      const replayed = await durable.eventStore.readFrom(
+        {
+          streamId: streamId.from("live-turn:session-run-hosted"),
+          afterSequence: null,
+        },
+        20,
+      );
+      expect(replayed.ok).toBe(true);
+      if (replayed.ok) {
+        expect(replayed.value.map((event) => event.kind)).toContain("model.attempt.completed");
+        expect(replayed.value.map((event) => event.kind)).toContain("turn.completed");
+      }
+      await durable.close();
+    }
+  });
+
+  test("reopens the durable store for a second session without lifecycle identity collisions", async () => {
+    const seeded = await seededHome();
+    const services = providerFor(seeded)(globalsFor(seeded));
+    const adapter = createDeterministicProviderAdapter();
+
+    for (const suffix of ["first", "second"] as const) {
+      const result = await runCoding(
+        services,
+        { promptParts: [suffix] },
+        {
+          input: createRecordingCliStreams({ stdin: null }).input,
+          globals: globalsFor(seeded),
+          providerAdapter: adapter,
+          identities: {
+            sessionId: `session-restart-${suffix}`,
+            turnId: `turn-restart-${suffix}`,
+            traceId: `trace-restart-${suffix}`,
+          },
+        },
+      );
+      expect(result.outcome.kind).toBe("completed");
+      expect(result.payload?.stage).toBe("attempt-completed");
+    }
   });
 
   test("continues prompt to tool result to final text through the product gateway", async () => {
@@ -512,9 +594,18 @@ describe("falryn run through dispatch", () => {
       .join("")
       .split("\n")
       .filter((line) => line.length > 0)
-      .map((line) => JSON.parse(line) as { kind: string; terminal?: boolean });
+      .map(
+        (line) =>
+          JSON.parse(line) as {
+            kind: string;
+            terminal?: boolean;
+            event?: { kind?: string };
+          },
+      );
     expect(lines.length).toBeGreaterThan(1);
     expect(lines.some((line) => line.kind === "event")).toBe(true);
+    expect(lines.some((line) => line.event?.kind === "session.started")).toBe(true);
+    expect(lines.some((line) => line.event?.kind === "turn.completed")).toBe(true);
     expect(lines.at(-1)?.kind).toBe("result");
     expect(lines.at(-1)?.terminal).toBe(true);
   });

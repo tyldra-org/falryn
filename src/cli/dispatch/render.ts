@@ -14,6 +14,7 @@ import { createOverBoundArtifactWriter } from "../refusal-artifact.ts";
 import { renderHuman, renderQuiet } from "../render-human.ts";
 import { type RenderedRecords, renderJson } from "../render-json.ts";
 import { renderJsonl } from "../render-jsonl.ts";
+import { resultEvents } from "../result-events.ts";
 import { CLI_EVENT_STREAM, type ServiceProvider } from "../services.ts";
 import { type CliStreams, writeDiagnosticLine, writeResultLine } from "../streams.ts";
 
@@ -51,7 +52,7 @@ export async function render(
       return renderJsonl({
         result,
         occurredAt: nowFor(services),
-        events: await lifecycleEvents(services),
+        events: await lifecycleEvents(result, services),
         storeOverBound: createOverBoundArtifactWriter(services),
       });
     default:
@@ -83,7 +84,14 @@ function nowFor(services: ServiceProvider): Timestamp {
  * staged for it. A read that fails yields no events: a lifecycle this build
  * could not recover is detail, and the terminal record still carries the answer.
  */
-async function lifecycleEvents(services: ServiceProvider): Promise<readonly RuntimeEvent[]> {
+async function lifecycleEvents(
+  result: RunCommandResult,
+  services: ServiceProvider,
+): Promise<readonly RuntimeEvent[]> {
+  const attached = resultEvents(result);
+  if (attached !== null) {
+    return attached;
+  }
   const { eventStore } = services();
   const read = await eventStore.readFrom(
     { streamId: streamId.from(CLI_EVENT_STREAM), afterSequence: null },

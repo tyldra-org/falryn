@@ -393,26 +393,24 @@ async function launchShell(
       ? {}
       : { ownedProcesses: governance.ownedProcesses }),
   }).resolveSelected(stopped.signal);
-  let productAttachments: Awaited<ReturnType<typeof composeProductShellAttachments>>;
+  let productAttachments: Awaited<ReturnType<typeof composeProductShellAttachments>> = null;
   try {
-    productAttachments = await composeProductShellAttachments({
-      eventStore: graph.eventStore,
-      clock: graph.clock,
-      fileSystem: graph.fileSystem,
-      workspaceSet: resolvedWorkspace.ok === true ? resolvedWorkspace.value.set : null,
-      configurationGeneration,
-      signal: stopped.signal,
-      provider,
-      ...(productArtifactSession === null
-        ? {}
-        : {
-            artifacts: productArtifactSession.artifacts,
-            loom: productArtifactSession.loom,
-          }),
-      ...(governance.ownedProcesses === undefined
-        ? {}
-        : { ownedProcesses: governance.ownedProcesses }),
-    });
+    if (productArtifactSession !== null) {
+      productAttachments = await composeProductShellAttachments({
+        eventStore: productArtifactSession.eventStore,
+        clock: graph.clock,
+        fileSystem: graph.fileSystem,
+        workspaceSet: resolvedWorkspace.ok === true ? resolvedWorkspace.value.set : null,
+        configurationGeneration,
+        signal: stopped.signal,
+        provider,
+        artifacts: productArtifactSession.artifacts,
+        loom: productArtifactSession.loom,
+        ...(governance.ownedProcesses === undefined
+          ? {}
+          : { ownedProcesses: governance.ownedProcesses }),
+      });
+    }
   } catch (thrown: unknown) {
     await productArtifactSession?.close();
     throw thrown;
@@ -456,6 +454,7 @@ async function launchShell(
         : {
             submission: productAttachments.submission,
             transcriptFeed: productAttachments.transcriptFeed,
+            sessionCreation: productAttachments.sessionCreation,
             controls: productAttachments.controls,
           }),
     });

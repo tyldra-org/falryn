@@ -117,6 +117,8 @@ export type CommandState = {
   readonly confirmationNeedsSecret: boolean;
   /** Whether any cancellable work is in flight. Nothing runs work yet. */
   readonly hasRunningWork: boolean;
+  /** A composer submission has entered its attached product port and has not settled. */
+  readonly hasInFlightSubmission: boolean;
   /** Whether the selected entry's artifact opens in an artifact viewer overlay. */
   readonly hasOpenableArtifact: boolean;
   /** A diff artifact overlay is open. */
@@ -138,6 +140,8 @@ export type CommandState = {
   readonly hasRemovableWorkspaceRoot: boolean;
   /** Session navigation ports are attached and the local store is reachable. */
   readonly hasSessionNavigation: boolean;
+  /** A durable product session factory is attached. */
+  readonly hasSessionCreation: boolean;
 };
 
 /** The state of a shell with nothing behind it, which is every run today. */
@@ -158,6 +162,7 @@ export const EMPTY_COMMAND_STATE: CommandState = {
   confirmationStale: false,
   confirmationNeedsSecret: false,
   hasRunningWork: false,
+  hasInFlightSubmission: false,
   hasOpenableArtifact: false,
   hasDiffArtifactOverlay: false,
   diffArtifactHunkIndex: 0,
@@ -166,6 +171,7 @@ export const EMPTY_COMMAND_STATE: CommandState = {
   hasWorkspaceSet: false,
   hasRemovableWorkspaceRoot: false,
   hasSessionNavigation: false,
+  hasSessionCreation: false,
 };
 
 export type ShellCommand = {
@@ -772,7 +778,18 @@ export const SHELL_COMMANDS: readonly ShellCommand[] = [
     context: "global",
     defaultBinding: null,
     keywords: ["session", "new", "create"],
-    availability: () => unavailable("no session producer yet"),
+    availability: (state) => {
+      if (!state.hasSessionCreation) {
+        return unavailable("no durable session factory yet");
+      }
+      if (state.hasInFlightSubmission || state.hasRunningWork) {
+        return unavailable("the current session still has active work");
+      }
+      if (state.hasConfirmation) {
+        return unavailable("resolve the pending confirmation first");
+      }
+      return AVAILABLE;
+    },
   },
   {
     id: "model.select",

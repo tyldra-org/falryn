@@ -468,7 +468,9 @@ export function commandStateFor(
     hasWorkspaceSet: state.workspace.roots.length > 0,
     hasRemovableWorkspaceRoot: state.workspace.roots.length > 1,
     hasSessionNavigation: false,
+    hasSessionCreation: false,
     hasRunningWork: state.runningWork,
+    hasInFlightSubmission: state.composer.inFlight !== null,
   };
 }
 

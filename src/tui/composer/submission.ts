@@ -1,11 +1,9 @@
 /**
  * What happens when someone presses send, and what they are told.
  *
- * Nothing in this build can answer a prompt until a product submission port is
- * attached (#707). The question this module settles is what an interface should
- * do about that, and the answer it implements is that a submission *resolves*
- * — through a declared port, to a typed outcome, naming the issue that will
- * make it work and a route the user can take now.
+ * A prompt can run only when the product host attaches a submission port
+ * (#707). This module defines that boundary and the honest unavailable fallback
+ * used by hosts that do not attach the live executor.
  *
  * The alternatives were both worse. Discarding the input silently is the failure
  * a composer exists to prevent. Growing a stub agent loop behind the button
@@ -57,12 +55,10 @@ export type SubmissionOutcomeKind = (typeof SUBMISSION_OUTCOMES)[number];
 
 export type SubmissionOutcome =
   /**
-   * Something took the turn. Nothing produces this yet.
+   * The attached product executor durably completed the turn.
    *
-   * Declared rather than omitted because the composer's states — sending,
-   * queued, cancelled — are only meaningful against an outcome that can succeed,
-   * and a union with one member would make every consumer's `switch` a lie the
-   * day the second arrived.
+   * The snapshot is returned so the composer can settle exactly the submission
+   * that entered the live executor.
    */
   | { readonly kind: "accepted"; readonly snapshot: ComposerSnapshot }
   /**

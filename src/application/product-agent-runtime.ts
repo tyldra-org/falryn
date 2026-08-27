@@ -5,7 +5,8 @@
  * journal, and live session/turn/transcript producer into one fail-closed
  * product graph. When a provider, registry, and tool runner are supplied, it
  * also composes the production provider/tool continuation controller (#786).
- * Leaves OpenTUI submission as a typed attachment point owned by #787.
+ * The application-owned live-turn executor binds this graph to both OpenTUI
+ * and headless submission without introducing a UI-owned runtime.
  */
 
 import {
@@ -85,10 +86,9 @@ export type ProductAgentAttachmentPoints = {
    */
   readonly turnProducer: SessionTurnTranscriptProducer;
   /**
-   * Composer {@link SubmissionPort} is owned by the TUI layer (#707). Callers
-   * build it with `createProductSubmissionPort({ producer })` and pass it into
-   * `runShell` / `ShellApp`. Remains null here so application does not depend
-   * on OpenTUI types.
+   * The composer submission adapter is owned by the TUI layer (#707). It stays
+   * null here so the application runtime does not depend on OpenTUI types; the
+   * product shell attaches the shared live-turn executor at its boundary.
    */
   readonly submission: null;
 };

@@ -1,83 +1,92 @@
 import { describe, expect, test } from "bun:test";
 
-import { composeProductAgentRuntime } from "../../application/product-agent-runtime.ts";
-import {
-  configurationGeneration,
-  createInMemoryEventStore,
-  createManualClock,
-  instant,
-  sessionId,
-  streamId,
-  traceId,
-  turnId,
-  workspaceId,
-} from "../../domain/index.ts";
+import type { ProductLiveTurnExecutor } from "../../application/index.ts";
+import { configurationGeneration, sessionId, turnId, workspaceId } from "../../domain/index.ts";
 import { createProductSubmissionPort, snapshotOf, UNAVAILABLE_SUBMISSION } from "./index.ts";
 
 const correlation = {
   workspaceId: workspaceId.from("workspace-submit-1"),
   sessionId: sessionId.from("session-submit-1"),
-  traceId: traceId.from("trace-submit-1"),
   configurationGeneration: configurationGeneration.from(0),
 };
 
-describe("product submission port", () => {
-  test("accepts a non-empty snapshot by starting a session and turn", async () => {
-    const composed = composeProductAgentRuntime({
-      eventStore: createInMemoryEventStore(),
-      clock: createManualClock(instant(3_000)),
-      streamId: streamId.from("session:submit-1"),
-      correlation,
-    });
-    expect(composed.ok).toBe(true);
-    if (!composed.ok) {
-      return;
-    }
+function executor(run: ProductLiveTurnExecutor["run"]): ProductLiveTurnExecutor {
+  return { startSession: async () => null, run };
+}
 
+describe("product submission port", () => {
+  test("accepts only after the live-turn executor completes", async () => {
     let turns = 0;
-    let candidateReads = 0;
+    let executions = 0;
     const port = createProductSubmissionPort({
-      producer: composed.value.attachments.turnProducer,
-      workspaceId: correlation.workspaceId,
+      executor: executor(async () => {
+        executions += 1;
+        return {
+          kind: "completed",
+          code: "completed",
+          message: "turn completed",
+          response: "done",
+          terminalOutcome: { kind: "completed" },
+          events: [],
+          contextPackItems: 0,
+          modelAttempts: 1,
+          toolResults: 0,
+          disclosedTools: 0,
+        };
+      }),
       sessionId: correlation.sessionId,
-      traceId: correlation.traceId,
       configurationGeneration: correlation.configurationGeneration,
       nextTurnId: () => {
         turns += 1;
         return turnId.from(`turn-submit-${turns}`);
       },
-      contextCandidates: () => {
-        candidateReads += 1;
-        return [];
-      },
     });
 
     const outcome = await port.submit(snapshotOf("ship the turn", 1));
     expect(outcome.kind).toBe("accepted");
-    expect(candidateReads).toBe(1);
-    expect(composed.value.attachments.turnProducer.events().map((event) => event.kind)).toEqual([
-      "session.started",
-      "turn.started",
-    ]);
+    expect(executions).toBe(1);
+  });
+
+  test("derives default turn identities from the durable session", async () => {
+    const observed: string[] = [];
+    const live = executor(async (input) => {
+      observed.push(String(input.turnId));
+      return {
+        kind: "completed",
+        code: "completed",
+        message: "turn completed",
+        response: "done",
+        terminalOutcome: { kind: "completed" },
+        events: [],
+        contextPackItems: 0,
+        modelAttempts: 1,
+        toolResults: 0,
+        disclosedTools: 0,
+      };
+    });
+    const first = createProductSubmissionPort({
+      executor: live,
+      sessionId: sessionId.from("session-first"),
+      configurationGeneration: correlation.configurationGeneration,
+    });
+    const second = createProductSubmissionPort({
+      executor: live,
+      sessionId: sessionId.from("session-second"),
+      configurationGeneration: correlation.configurationGeneration,
+    });
+
+    await first.submit(snapshotOf("one", 1));
+    await second.submit(snapshotOf("two", 1));
+
+    expect(observed).toEqual(["turn-submit:session-first:1", "turn-submit:session-second:1"]);
   });
 
   test("fails closed for empty text and when not accepting", async () => {
-    const composed = composeProductAgentRuntime({
-      eventStore: createInMemoryEventStore(),
-      clock: createManualClock(instant(3_000)),
-      streamId: streamId.from("session:submit-2"),
-      correlation,
-    });
-    expect(composed.ok).toBe(true);
-    if (!composed.ok) {
-      return;
-    }
-
     const port = createProductSubmissionPort({
-      producer: composed.value.attachments.turnProducer,
-      workspaceId: correlation.workspaceId,
+      executor: executor(async () => {
+        throw new Error("refused submissions must not execute");
+      }),
       sessionId: correlation.sessionId,
-      traceId: correlation.traceId,
       configurationGeneration: correlation.configurationGeneration,
       isAccepting: () => false,
     });

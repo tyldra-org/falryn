@@ -9,9 +9,10 @@
  * hanging or selecting another destination silently.
  */
 
+import { randomUUID } from "node:crypto";
+
 import {
   adoptForeignError,
-  attemptModelInputFromPrompt,
   CONTEXT_PLANNER_OWNER,
   composeProductAgentRuntime,
   composeProductBriefControls,
@@ -23,13 +24,11 @@ import {
   composeProductMemoryTurn,
   composeProductProcessTools,
   composeProductWorkspaceTools,
-  createContextPlanner,
   createDebugAdapterSupervisor,
   createEphemeralProductIndexPort,
   createLanguageServerSupervisor,
-  createTurnAttemptPolicy,
+  createProductLiveTurnExecutor,
   DEFAULT_OPENAI_CREDENTIAL_REFERENCE,
-  discloseProductTools,
   type LoomPort,
   mergeProductToolBundles,
   PRODUCT_BRIEF_OWNER,
@@ -44,6 +43,7 @@ import {
   type InputStreamPort,
   type Instant,
   primaryWorkspaceRoot,
+  type RuntimeEvent,
   sessionId as sessionIdCodec,
   streamId,
   type TerminalOutcome,
@@ -59,11 +59,7 @@ import {
   hostPlatform,
   type OwnedProcessRegistry,
 } from "../integrations/index.ts";
-import {
-  DEFAULT_INTENT_ROLE_MAP,
-  type ModelCatalog,
-  type ModelPolicy,
-} from "../providers/index.ts";
+import type { ModelCatalog } from "../providers/index.ts";
 import type { OpenAiCompatibleFetch } from "../providers/openai-compatible-adapter.ts";
 import { createOpenAiCompatibleAdapter } from "../providers/openai-compatible-adapter.ts";
 import type { ProviderAdapterPort } from "../providers/port.ts";
@@ -85,7 +81,8 @@ import {
   type CommandResultOf,
   READ_ONLY_EFFECT,
 } from "./result.ts";
-import { CLI_EVENT_STREAM, type ServiceProvider } from "./services.ts";
+import { attachResultEvents } from "./result-events.ts";
+import type { ServiceProvider } from "./services.ts";
 import type { CliStreams } from "./streams.ts";
 import { describeWorkspaceResolveError } from "./workspace-resolution.ts";
 
@@ -138,7 +135,7 @@ export type CodingRunOptions = {
   readonly signal?: AbortSignal;
   /**
    * Stable identities for tests. Production derives session/turn/trace from
-   * the clock so each invocation is distinct without depending on crypto.
+   * collision-resistant invocation identities.
    */
   readonly identities?: {
     readonly sessionId: string;
@@ -249,25 +246,6 @@ function catalogForAdapter(
   };
 }
 
-function policyForCatalog(adapter: ProviderAdapterPort, catalog: ModelCatalog): ModelPolicy | null {
-  const selected = catalog.models[0];
-  if (selected === undefined) {
-    return null;
-  }
-  return {
-    roles: {
-      default: {
-        providerId: adapter.identity.providerId,
-        modelId: selected.modelId,
-        reasoning: "provider-default",
-        fallbacks: [],
-        budgets: {},
-      },
-    },
-    intents: DEFAULT_INTENT_ROLE_MAP,
-  };
-}
-
 /**
  * Host one headless coding turn through the product producer and fail closed
  * when a live provider adapter is not attached.
@@ -338,11 +316,10 @@ export async function runCoding(
   let productArtifactSession: ProductArtifactSession | null = null;
 
   try {
-    const now = graph.clock.now();
     const ids = options.identities ?? {
-      sessionId: `session-run-${now}`,
-      turnId: `turn-run-${now}`,
-      traceId: `trace-run-${now}`,
+      sessionId: `session-run-${randomUUID()}`,
+      turnId: `turn-run-${randomUUID()}`,
+      traceId: `trace-run-${randomUUID()}`,
     };
     const workspaceId = workspaceIdCodec.from(
       ids.workspaceId ?? primaryWorkspaceRoot(workspace.value.set).rootId,
@@ -356,8 +333,28 @@ export async function runCoding(
         : productConfigurationLoadRequest(options.globals);
     const configuration = await loadProductConfiguration(graph, configRequest, options.signal);
     const generation = configuration.generation;
-    if (options.artifacts === undefined) {
-      productArtifactSession = await openProductArtifactSession(graph, options.signal);
+    productArtifactSession = await openProductArtifactSession(graph, options.signal);
+    if (productArtifactSession === null) {
+      return codingResult(
+        {
+          prompt: resolved.prompt,
+          sessionId: ids.sessionId,
+          turnId: null,
+          workspaceId: String(workspaceId),
+          stage: "compose-failed",
+          eventCount: 0,
+        },
+        [
+          adoptForeignError(
+            {
+              code: "runtime.durable-event-store-required",
+              category: "persistence",
+              message: "the durable product event store could not be opened",
+            },
+            { operation: "open durable coding session" },
+          ),
+        ],
+      );
     }
 
     const indexStore = createEphemeralProductIndexPort();
@@ -473,12 +470,10 @@ export async function runCoding(
       languageTools,
       memoryTools,
     ]);
-    const toolDisclosure = discloseProductTools(productTools.registry);
-
     const composed = composeProductAgentRuntime({
-      eventStore: graph.eventStore,
+      eventStore: productArtifactSession.eventStore,
       clock: graph.clock,
-      streamId: streamId.from(CLI_EVENT_STREAM),
+      streamId: streamId.from(`live-turn:${String(sessionId)}`),
       correlation: {
         workspaceId,
         sessionId,
@@ -513,304 +508,55 @@ export async function runCoding(
       );
     }
 
-    const producer = composed.value.attachments.turnProducer;
-    const startedSession = await producer.startSession({
-      sessionId,
-      workspaceId,
-      configurationGeneration: generation,
-    });
-    if (!startedSession.ok) {
-      return codingResult(
-        {
-          prompt: resolved.prompt,
-          sessionId: ids.sessionId,
-          turnId: null,
-          workspaceId: String(workspaceId),
-          stage: "compose-failed",
-          eventCount: producer.events().length,
-        },
-        [
-          adoptForeignError(
-            {
-              code: `producer.${startedSession.error.code}`,
-              category: "internal",
-              message: `session could not start (${startedSession.error.code})`,
-            },
-            { operation: "start coding session" },
-          ),
-        ],
-      );
-    }
-
-    const startedTurn = await producer.startTurn({
-      turnId,
-      sessionId,
-      workspaceId,
-      traceId,
-      configurationGeneration: generation,
-    });
-    if (!startedTurn.ok) {
-      return codingResult(
-        {
-          prompt: resolved.prompt,
-          sessionId: ids.sessionId,
-          turnId: null,
-          workspaceId: String(workspaceId),
-          stage: "compose-failed",
-          eventCount: producer.events().length,
-        },
-        [
-          adoptForeignError(
-            {
-              code: `producer.${startedTurn.error.code}`,
-              category: "internal",
-              message: `turn could not start (${startedTurn.error.code})`,
-            },
-            { operation: "start coding turn" },
-          ),
-        ],
-      );
-    }
-
-    const planned = createContextPlanner().composeTurn({
-      turnId,
-      sessionId,
-      workspaceId,
-      configurationGeneration: generation,
-      task: resolved.prompt,
-      candidates: workspaceTools.contextCandidates(),
-      tools: toolDisclosure.promptTools,
-      otherSections: (() => {
-        const briefControls = composeProductBriefControls({
-          initialVerbosity: arguments_.brief ?? "balanced",
-        });
-        const briefed = briefControls.projectForTurn({
-          turnId,
-          sessionId,
-          configurationGeneration: generation,
-        });
-        const memoryTurn = composeProductMemoryTurn({
-          admission: memoryTools.admission,
-          recall: memoryTools.recall,
-        }).endTurn({
-          turnId,
-          sessionId,
-          workspaceId,
-          task: resolved.prompt,
-        });
-        const sections = [];
-        if (briefed.ok) {
-          sections.push(briefed.value.section);
-        }
-        if (memoryTurn.ok && memoryTurn.value.memorySection !== null) {
-          sections.push(memoryTurn.value.memorySection);
-        }
-        return sections;
-      })(),
-    });
-    if (!planned.ok) {
-      return codingResult(
-        {
-          prompt: resolved.prompt,
-          sessionId: ids.sessionId,
-          turnId: ids.turnId,
-          workspaceId: String(workspaceId),
-          stage: "compose-failed",
-          eventCount: producer.events().length,
-          contextPlannerOwner: CONTEXT_PLANNER_OWNER,
-          indexFreshness,
-          indexOwner,
-          briefVerbosity: arguments_.brief ?? "balanced",
-          briefOwner: PRODUCT_BRIEF_OWNER,
-        },
-        [
-          adoptForeignError(
-            {
-              code: "context.planner-failed",
-              category: "internal",
-              message: `live context planner could not compose (${"code" in planned.error ? planned.error.code : "failed"})`,
-            },
-            { operation: "compose live turn context" },
-          ),
-        ],
-      );
-    }
-    const contextPackItems = planned.value.plan.pack.items.length;
     const contextPlannerOwner = CONTEXT_PLANNER_OWNER;
     const briefVerbosity = arguments_.brief ?? "balanced";
     const briefOwner = PRODUCT_BRIEF_OWNER;
-
-    const provider = composed.value.requireProviderAdapter();
-    if (!provider.ok) {
-      const outcome: TerminalOutcome = { kind: "failed", effect: "none" };
-      const completed = await producer.completeTurn({
-        turnId,
-        sessionId,
-        workspaceId,
-        traceId,
-        configurationGeneration: generation,
-        outcome,
-      });
-      if (!completed.ok) {
-        return codingResult(
-          {
-            prompt: resolved.prompt,
-            sessionId: ids.sessionId,
-            turnId: ids.turnId,
-            workspaceId: String(workspaceId),
-            stage: "provider-required",
-            eventCount: producer.events().length,
-            contextPackItems,
-            contextPlannerOwner,
-            indexFreshness,
-            indexOwner,
-            briefVerbosity,
-            briefOwner,
-          },
-          [
-            adoptForeignError(
-              {
-                code: "provider.adapter-required",
-                category: "provider",
-                message: `The selected provider connection is unavailable (${providerUnavailableCode ?? "provider-not-ready"}). Run 'falryn provider list' and 'falryn provider test <id>' to inspect it. Turn completion also failed (${completed.error.code}).`,
-              },
-              { operation: "require provider for coding run" },
-            ),
-          ],
-          outcome,
-        );
-      }
-
-      return codingResult(
-        {
-          prompt: resolved.prompt,
-          sessionId: ids.sessionId,
-          turnId: ids.turnId,
-          workspaceId: String(workspaceId),
-          stage: "provider-required",
-          eventCount: producer.events().length,
-          contextPackItems,
-          contextPlannerOwner,
-          indexFreshness,
-          indexOwner,
-          briefVerbosity,
-          briefOwner,
-        },
-        [
-          adoptForeignError(
-            {
-              code: "provider.adapter-required",
-              category: "provider",
-              message: `The selected provider connection is unavailable (${providerUnavailableCode ?? "provider-not-ready"}). Run 'falryn provider list' and 'falryn provider test <id>' to inspect it.`,
-            },
-            { operation: "require provider for coding run" },
-          ),
-        ],
-        outcome,
-      );
-    }
-
-    const attemptRunner = composed.value.requireAttemptRunner();
-    const modelPolicy =
-      providerCatalog === null ? null : policyForCatalog(provider.value, providerCatalog);
-    if (!attemptRunner.ok || providerCatalog === null || modelPolicy === null) {
-      const outcome: TerminalOutcome = { kind: "failed", effect: "none" };
-      await producer.completeTurn({
-        turnId,
-        sessionId,
-        workspaceId,
-        traceId,
-        configurationGeneration: generation,
-        outcome,
-      });
-      return codingResult(
-        {
-          prompt: resolved.prompt,
-          sessionId: ids.sessionId,
-          turnId: ids.turnId,
-          workspaceId: String(workspaceId),
-          stage: "attempt-failed",
-          eventCount: producer.events().length,
-          contextPackItems,
-          contextPlannerOwner,
-          indexFreshness,
-          indexOwner,
-          briefVerbosity,
-          briefOwner,
-          modelAttempts: 0,
-          toolResults: 0,
-          disclosedTools: toolDisclosure.receipt.disclosed.length,
-        },
-        [
-          adoptForeignError(
-            {
-              code: "runtime.attempt-runner-required",
-              category: "internal",
-              message:
-                providerCatalog === null
-                  ? "The selected provider has no usable model catalog."
-                  : modelPolicy === null
-                    ? "The selected provider catalog contains no model."
-                    : "The product attempt runner is unavailable.",
-            },
-            { operation: "compose coding attempt" },
-          ),
-        ],
-        outcome,
-      );
-    }
-
-    const attemptPolicy = createTurnAttemptPolicy({
-      clock: graph.clock,
-      coordinator: composed.value.turnCoordinator,
-      runner: attemptRunner.value,
-      policy: modelPolicy,
-      catalogs: [
-        {
-          providerId: provider.value.identity.providerId,
-          catalog: providerCatalog,
-        },
-      ],
-      journal: composed.value.journal,
-    });
-    const attempted = await attemptPolicy.run({
+    const briefControls = composeProductBriefControls({ initialVerbosity: briefVerbosity });
+    const briefed = briefControls.projectForTurn({
       turnId,
+      sessionId,
       configurationGeneration: generation,
-      signal: options.signal ?? new AbortController().signal,
-      intent: "coding",
-      modelInput: attemptModelInputFromPrompt(planned.value.prompt, toolDisclosure),
     });
-    const terminalTurn = attempted.turn;
-    const terminalOutcome: TerminalOutcome =
-      terminalTurn?.status === "terminal" && terminalTurn.outcome !== null
-        ? terminalTurn.outcome
-        : { kind: "failed", effect: "none" };
-    const completed = await producer.completeTurn({
+    const memoryTurn = composeProductMemoryTurn({
+      admission: memoryTools.admission,
+      recall: memoryTools.recall,
+    }).endTurn({
       turnId,
       sessionId,
       workspaceId,
-      traceId,
-      configurationGeneration: generation,
-      outcome: terminalOutcome,
+      task: resolved.prompt,
     });
-    await producer.refreshFromStore();
-    const lastAttempt = attempted.attempts.at(-1) ?? null;
-    const response = lastAttempt?.output?.text ?? "";
-    const toolResults = attempted.attempts.reduce(
-      (total, attempt) => total + (attempt.output?.toolResults ?? 0),
-      0,
-    );
-    const succeeded = attempted.kind === "completed" && completed.ok;
+    const otherSections = [];
+    if (briefed.ok) {
+      otherSections.push(briefed.value.section);
+    }
+    if (memoryTurn.ok && memoryTurn.value.memorySection !== null) {
+      otherSections.push(memoryTurn.value.memorySection);
+    }
+    const executor = createProductLiveTurnExecutor({
+      runtime: composed.value,
+      clock: graph.clock,
+      providerCatalog,
+      contextCandidates: workspaceTools.contextCandidates,
+    });
+    const attempted = await executor.run({
+      prompt: resolved.prompt,
+      turnId,
+      ...(options.signal === undefined ? {} : { signal: options.signal }),
+      otherSections,
+    });
+    const succeeded = attempted.kind === "completed";
     const errors = succeeded
       ? []
       : [
           adoptForeignError(
             {
-              code: `runtime.attempt-${attempted.kind}`,
-              category: attempted.kind === "routing-refused" ? "provider" : "internal",
-              message: completed.ok
-                ? `The coding attempt settled as ${attempted.kind}.`
-                : `The coding attempt settled as ${attempted.kind}; session completion failed (${completed.error.code}).`,
+              code: attempted.code,
+              category: attempted.code.startsWith("provider.") ? "provider" : "internal",
+              message:
+                attempted.code === "provider.adapter-required"
+                  ? `The selected provider connection is unavailable (${providerUnavailableCode ?? "provider-not-ready"}). Run 'falryn provider list' and 'falryn provider test <id>' to inspect it.`
+                  : attempted.message,
             },
             { operation: "run coding attempt" },
           ),
@@ -822,21 +568,28 @@ export async function runCoding(
         sessionId: ids.sessionId,
         turnId: ids.turnId,
         workspaceId: String(workspaceId),
-        stage: succeeded ? "attempt-completed" : "attempt-failed",
-        eventCount: producer.events().length,
-        contextPackItems,
+        stage:
+          attempted.code === "provider.adapter-required"
+            ? "provider-required"
+            : succeeded
+              ? "attempt-completed"
+              : "attempt-failed",
+        eventCount: attempted.events.length,
+        contextPackItems: attempted.contextPackItems,
         contextPlannerOwner,
         indexFreshness,
         indexOwner,
         briefVerbosity,
         briefOwner,
-        response,
-        modelAttempts: attempted.attempts.length,
-        toolResults,
-        disclosedTools: toolDisclosure.receipt.disclosed.length,
+        response: attempted.response,
+        modelAttempts: attempted.modelAttempts,
+        toolResults: attempted.toolResults,
+        disclosedTools: attempted.disclosedTools,
       },
       errors,
-      terminalOutcome,
+      attempted.terminalOutcome,
+      READ_ONLY_EFFECT,
+      attempted.events,
     );
   } finally {
     await productArtifactSession?.close();
@@ -849,29 +602,34 @@ function codingResult(
   errors: readonly FalrynError[],
   outcome?: TerminalOutcome,
   effect: CommandEffect = READ_ONLY_EFFECT,
+  events: readonly RuntimeEvent[] = [],
 ): CodingRunResult {
-  return {
-    schemaFamily: COMMAND_RESULT_SCHEMA_FAMILY,
-    schemaVersion: COMMAND_RESULT_SCHEMA_VERSION,
-    command: CODING_RUN_COMMAND,
-    outcome:
-      outcome ?? (errors.length === 0 ? { kind: "completed" } : { kind: "failed", effect: "none" }),
-    effect,
-    payload,
-    errors,
-    warnings: [],
-    omissions: [],
-    truncation: [],
-    artifacts: [],
-    correlation: {
-      workspaceId: payload.workspaceId === "" ? null : workspaceIdCodec.from(payload.workspaceId),
-      sessionId: payload.sessionId === "" ? null : sessionIdCodec.from(payload.sessionId),
-      turnId: payload.turnId === null ? null : turnIdCodec.from(payload.turnId),
-      traceId: null,
-      scopeId: null,
-      invocationId: null,
-      capabilityId: null,
-      eventId: null,
+  return attachResultEvents(
+    {
+      schemaFamily: COMMAND_RESULT_SCHEMA_FAMILY,
+      schemaVersion: COMMAND_RESULT_SCHEMA_VERSION,
+      command: CODING_RUN_COMMAND,
+      outcome:
+        outcome ??
+        (errors.length === 0 ? { kind: "completed" } : { kind: "failed", effect: "none" }),
+      effect,
+      payload,
+      errors,
+      warnings: [],
+      omissions: [],
+      truncation: [],
+      artifacts: [],
+      correlation: {
+        workspaceId: payload.workspaceId === "" ? null : workspaceIdCodec.from(payload.workspaceId),
+        sessionId: payload.sessionId === "" ? null : sessionIdCodec.from(payload.sessionId),
+        turnId: payload.turnId === null ? null : turnIdCodec.from(payload.turnId),
+        traceId: null,
+        scopeId: null,
+        invocationId: null,
+        capabilityId: null,
+        eventId: null,
+      },
     },
-  };
+    events,
+  );
 }

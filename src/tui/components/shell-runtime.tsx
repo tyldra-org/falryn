@@ -38,6 +38,7 @@ import {
 import type { FocusRegion } from "../focus.ts";
 import { requestFromComposer, submitWhileActive } from "../mid-turn.ts";
 import { classifyPaste, looksSecret } from "../paste.ts";
+import type { SessionCreationPort } from "../session-creation.ts";
 import type { SessionNavigationController } from "../session-nav/index.ts";
 import {
   copyTranscriptBody,
@@ -120,6 +121,7 @@ export type ShellRuntimeOptions = {
   readonly workspaceController?: WorkspaceController | null;
   /** Session navigation ports when the launch path attached a local store. */
   readonly sessionNavigationController?: SessionNavigationController | null;
+  readonly sessionCreation?: SessionCreationPort | null;
   /** When set, submit-while-active classifies through #611. */
   readonly midTurn?: MidTurnInputService | null;
   /** Product Brief controls for `/brief` (#717). */
@@ -135,6 +137,7 @@ function resolveCommandState(
   ports: {
     readonly workspaceController?: WorkspaceController | null;
     readonly sessionNavigationController?: SessionNavigationController | null;
+    readonly sessionCreation?: SessionCreationPort | null;
   },
 ): CommandState {
   const base = commandStateFor(state, blocks);
@@ -148,6 +151,9 @@ function resolveCommandState(
   }
   if (ports.sessionNavigationController != null) {
     next = { ...next, hasSessionNavigation: true };
+  }
+  if (ports.sessionCreation != null) {
+    next = { ...next, hasSessionCreation: true };
   }
   return next;
 }
@@ -163,8 +169,15 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
       resolveCommandState(state, blocks, {
         workspaceController: options.workspaceController ?? null,
         sessionNavigationController: options.sessionNavigationController ?? null,
+        sessionCreation: options.sessionCreation ?? null,
       }),
-    [state, blocks, options.workspaceController, options.sessionNavigationController],
+    [
+      state,
+      blocks,
+      options.workspaceController,
+      options.sessionNavigationController,
+      options.sessionCreation,
+    ],
   );
   const commandStateRef = useRef(commandState);
   commandStateRef.current = commandState;
@@ -648,6 +661,23 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
           }
           break;
         }
+        case "session.new": {
+          const sessionCreation = options.sessionCreation ?? null;
+          if (sessionCreation === null) {
+            break;
+          }
+          dispatch({ kind: "close-overlay" });
+          dispatch({ kind: "notice", message: "Starting a new durable session…" });
+          void sessionCreation.create().then((created) => {
+            dispatch({
+              kind: "notice",
+              message: created.ok
+                ? `Started session ${created.sessionId}.`
+                : `Could not start a new session: ${created.reason}`,
+            });
+          });
+          return true;
+        }
         default:
           break;
       }
@@ -664,6 +694,7 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
       options.onExit,
       options.transcriptKeys,
       options.midTurn,
+      options.sessionCreation,
       gate,
       includeHeldPaste,
       includeTranscriptPick,

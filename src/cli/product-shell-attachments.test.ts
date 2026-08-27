@@ -11,11 +11,13 @@ import {
   createInMemoryFileSystem,
   createStaticEnvironment,
   createSystemClock,
+  createWorkspaceSet,
   instant,
   localPath,
   modelId,
   providerId,
   streamId,
+  workspaceRootId,
 } from "../domain/index.ts";
 import { createDeterministicProviderAdapter } from "../providers/index.ts";
 import { snapshotOf } from "../tui/composer/index.ts";
@@ -42,7 +44,7 @@ const GLOBALS: GlobalOptions = {
 };
 
 describe("composeProductShellAttachments", () => {
-  test("builds a submission port that accepts a non-empty draft", async () => {
+  test("fails closed when no provider or executable workspace catalog is attached", async () => {
     const attachments = await composeProductShellAttachments({
       eventStore: createInMemoryEventStore(),
       clock: createSystemClock(),
@@ -56,7 +58,7 @@ describe("composeProductShellAttachments", () => {
       return;
     }
     const outcome = await attachments.submission.submit(snapshotOf("wire me", 1));
-    expect(outcome.kind).toBe("accepted");
+    expect(outcome.kind).toBe("unavailable");
     expect(attachments.transcriptFeed.events().length).toBeGreaterThan(0);
     expect(attachments.controls.resources[0]).toEqual({
       label: "provider",
@@ -98,15 +100,26 @@ describe("composeProductShellAttachments", () => {
       credential: null,
       organization: null,
       project: null,
-      enabledModels: [modelId.from("demo-model")],
+      enabledModels: [modelId.from("deterministic-echo")],
       discovery: "static" as const,
       timeouts: { connectMs: 1_000, requestMs: 10_000 },
     };
+    const workspace = createWorkspaceSet([
+      {
+        rootId: workspaceRootId.from("workspace-shell"),
+        name: "workspace",
+        path: localPath("/workspace"),
+      },
+    ]);
+    expect(workspace.ok).toBe(true);
+    if (!workspace.ok) {
+      return;
+    }
     const attachments = await composeProductShellAttachments({
       eventStore: createInMemoryEventStore(),
       clock,
-      fileSystem: createInMemoryFileSystem({ nodes: {} }),
-      workspaceSet: null,
+      fileSystem: createInMemoryFileSystem({ nodes: { "/workspace": { kind: "directory" } } }),
+      workspaceSet: workspace.value,
       configurationGeneration: configurationGeneration.from(0),
       provider: {
         kind: "ready",
@@ -132,7 +145,7 @@ describe("composeProductShellAttachments", () => {
             expiresAt: null,
             models: [
               {
-                modelId: modelId.from("demo-model"),
+                modelId: modelId.from("deterministic-echo"),
                 modalities: ["text", "image"],
                 tools: true,
                 streaming: true,
@@ -147,8 +160,8 @@ describe("composeProductShellAttachments", () => {
     });
     expect(attachments?.controls.models).toEqual([
       {
-        id: "demo-model",
-        title: "demo-model",
+        id: "deterministic-echo",
+        title: "deterministic-echo",
         detail: "Demo provider · text+image · tools · reasoning",
       },
     ]);
@@ -156,6 +169,38 @@ describe("composeProductShellAttachments", () => {
       label: "provider",
       value: { kind: "known", text: "Demo provider" },
     });
+    const pendingSubmission = attachments?.submission.submit(snapshotOf("run a real turn", 1));
+    const refusedDuringTurn = await attachments?.sessionCreation.create();
+    expect(refusedDuringTurn).toEqual({
+      ok: false,
+      reason: "the current session still has an active turn",
+    });
+    const submitted = await pendingSubmission;
+    if (submitted?.kind === "unavailable") {
+      throw new Error(submitted.reason);
+    }
+    expect(submitted?.kind).toBe("accepted");
+    expect(
+      attachments?.transcriptFeed
+        .events()
+        .some((event) => event.kind === "model.attempt.completed"),
+    ).toBe(true);
+    expect(
+      attachments?.transcriptFeed.events().some((event) => event.kind === "turn.completed"),
+    ).toBe(true);
+    const firstSession = attachments?.transcriptFeed.events()[0]?.correlation.sessionId;
+    const [created, duplicate] = await Promise.all([
+      attachments?.sessionCreation.create(),
+      attachments?.sessionCreation.create(),
+    ]);
+    expect(created?.ok).toBe(true);
+    expect(duplicate).toEqual(created);
+    expect(attachments?.transcriptFeed.events().map((event) => event.kind)).toEqual([
+      "session.started",
+    ]);
+    expect(attachments?.transcriptFeed.events()[0]?.correlation.sessionId).not.toBe(firstSession);
+    const second = await attachments?.submission.submit(snapshotOf("run the next session", 2));
+    expect(second?.kind).toBe("accepted");
   });
 
   test("correlates turns with a loader-derived generation, not a hardcoded zero", async () => {
@@ -195,7 +240,7 @@ describe("composeProductShellAttachments", () => {
     }
 
     const accepted = await attachments.submission.submit(snapshotOf("observe generation", 1));
-    expect(accepted.kind).toBe("accepted");
+    expect(accepted.kind).toBe("unavailable");
     const turnStarted = attachments.transcriptFeed
       .events()
       .find((event) => event.kind === "turn.started");

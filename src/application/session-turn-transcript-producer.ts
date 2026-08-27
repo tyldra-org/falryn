@@ -19,6 +19,7 @@ import {
   MAX_STREAM_READ_LIMIT,
   type ModelAttemptId,
   type RuntimeEvent,
+  type Sequence,
   type SessionCorrelation,
   type SessionId,
   type StreamId,
@@ -116,12 +117,25 @@ export function createSessionTurnTranscriptProducer(
 ): SessionTurnTranscriptProducer {
   const listeners = new Set<() => void>();
   let cached: RuntimeEvent[] = [];
+  let knownEventIds = new Set<string>();
 
   function notify(): void {
     for (const listener of listeners) {
       listener();
     }
   }
+
+  options.journal.subscribe((events) => {
+    const committed = events.filter((event) => !knownEventIds.has(String(event.eventId)));
+    if (committed.length === 0) {
+      return;
+    }
+    for (const event of committed) {
+      knownEventIds.add(String(event.eventId));
+    }
+    cached = [...cached, ...committed];
+    notify();
+  });
 
   async function persistFacts(
     facts: readonly TurnLifecycleFact[],
@@ -130,8 +144,6 @@ export function createSessionTurnTranscriptProducer(
     if (persist.kind !== "persisted") {
       return { ok: false, error: { code: "persist", persist } };
     }
-    cached = [...cached, ...persist.events];
-    notify();
     return { ok: true, value: persist };
   }
 
@@ -146,17 +158,28 @@ export function createSessionTurnTranscriptProducer(
       };
     },
     async refreshFromStore() {
-      const page = await options.eventStore.readFrom(
-        { streamId: options.streamId, afterSequence: null },
-        MAX_STREAM_READ_LIMIT,
-      );
-      if (!page.ok) {
-        return {
-          ok: false,
-          error: { code: "store-error", message: page.error.code },
-        };
+      const events: RuntimeEvent[] = [];
+      let afterSequence: Sequence | null = null;
+      for (;;) {
+        const page = await options.eventStore.readFrom(
+          { streamId: options.streamId, afterSequence },
+          MAX_STREAM_READ_LIMIT,
+        );
+        if (!page.ok) {
+          return {
+            ok: false,
+            error: { code: "store-error", message: page.error.code },
+          };
+        }
+        events.push(...page.value);
+        const tail = page.value.at(-1);
+        if (tail === undefined || page.value.length < MAX_STREAM_READ_LIMIT) {
+          break;
+        }
+        afterSequence = tail.sequence;
       }
-      cached = [...page.value];
+      cached = events;
+      knownEventIds = new Set(events.map((event) => String(event.eventId)));
       notify();
       return { ok: true, value: undefined };
     },
