@@ -28,7 +28,7 @@ function localProfile(): ProviderProfile {
   return {
     profileId: "local",
     providerId: providerId.from("local"),
-    adapterKind: "openai-compatible",
+    adapterKind: "openai",
     displayName: "Local",
     endpoint: "http://127.0.0.1:11434/v1",
     credential: null,

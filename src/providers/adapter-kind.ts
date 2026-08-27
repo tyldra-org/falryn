@@ -7,7 +7,7 @@
 
 export const PROVIDER_ADAPTER_KINDS = [
   "deterministic",
-  "openai-compatible",
+  "openai",
   "anthropic",
   "google",
   "custom",

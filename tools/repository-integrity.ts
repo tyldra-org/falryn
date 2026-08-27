@@ -11,6 +11,8 @@ import { dirname, join } from "node:path";
 import { type ParseError, parse } from "jsonc-parser";
 
 type DependencyGroup = "dependencies" | "devDependencies";
+const INSTALL_LIFECYCLE_HOOKS = ["preinstall", "install", "postinstall"] as const;
+type InstallLifecycleHook = (typeof INSTALL_LIFECYCLE_HOOKS)[number];
 
 export type DirectDependencyPolicy = Readonly<{
   name: string;
@@ -18,9 +20,25 @@ export type DirectDependencyPolicy = Readonly<{
   version: string;
   license: string;
   repository: string;
+  installLifecycleHooks?: Readonly<Partial<Record<InstallLifecycleHook, string>>>;
 }>;
 
-export const DIRECT_DEPENDENCY_POLICY = [
+export const DIRECT_DEPENDENCY_POLICY: readonly DirectDependencyPolicy[] = [
+  {
+    name: "@anthropic-ai/sdk",
+    group: "dependencies",
+    version: "0.91.1",
+    license: "MIT",
+    repository: "github:anthropics/anthropic-sdk-typescript",
+  },
+  {
+    name: "@google/genai",
+    group: "dependencies",
+    version: "1.52.0",
+    license: "Apache-2.0",
+    repository: "https://github.com/googleapis/js-genai",
+    installLifecycleHooks: { preinstall: "echo 'preinstall: no-op'" },
+  },
   {
     name: "@opentui/core",
     group: "dependencies",
@@ -48,6 +66,13 @@ export const DIRECT_DEPENDENCY_POLICY = [
     version: "3.3.1",
     license: "MIT",
     repository: "https://github.com/microsoft/node-jsonc-parser",
+  },
+  {
+    name: "openai",
+    group: "dependencies",
+    version: "6.40.0",
+    license: "Apache-2.0",
+    repository: "github:openai/openai-node",
   },
   {
     name: "react",
@@ -119,7 +144,7 @@ export const DIRECT_DEPENDENCY_POLICY = [
     license: "Apache-2.0",
     repository: "https://github.com/microsoft/TypeScript",
   },
-] as const satisfies readonly DirectDependencyPolicy[];
+];
 
 const GENERATED_EXECUTABLE = {
   source: "src/main.ts",
@@ -127,8 +152,6 @@ const GENERATED_EXECUTABLE = {
   destination: "dist/falryn",
   ignoredDirectory: "/dist/",
 } as const;
-
-const INSTALL_LIFECYCLE_HOOKS = ["preinstall", "install", "postinstall"] as const;
 
 export const REPOSITORY_INTEGRITY_CODES = [
   "manifest-invalid",
@@ -323,9 +346,13 @@ function checkInstalledPackages(
       add(issues, "package-metadata-mismatch", policy.name);
     }
 
-    const scripts = asRecord(packageManifest.scripts);
-    if (scripts !== null && INSTALL_LIFECYCLE_HOOKS.some((hook) => Object.hasOwn(scripts, hook))) {
-      add(issues, "install-lifecycle-hook", policy.name);
+    const scripts = asRecord(packageManifest.scripts) ?? {};
+    for (const hook of INSTALL_LIFECYCLE_HOOKS) {
+      const declared = stringAt(scripts, hook);
+      const approved = policy.installLifecycleHooks?.[hook] ?? null;
+      if (declared !== approved) {
+        add(issues, "install-lifecycle-hook", `${policy.name}:${hook}`);
+      }
     }
   }
 }

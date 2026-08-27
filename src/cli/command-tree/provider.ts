@@ -105,7 +105,7 @@ function isProviderAction(value: string | undefined): value is ProviderAction {
 }
 
 function profileFrom(id: string, parsed: RawArguments): ProviderProfile | string {
-  const adapter = parsed.adapter ?? "openai-compatible";
+  const adapter = parsed.adapter ?? "openai";
   if (!isProviderAdapterKind(adapter)) {
     return `Argument adapter: "${adapter}" is not valid.`;
   }

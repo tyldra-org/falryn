@@ -61,12 +61,12 @@ import {
   createHostGitPort,
   createHostManagedServicePort,
   createHostProcessCapturePort,
+  createOpenAiSdkAdapter,
   hostPlatform,
+  type OpenAiSdkFetch,
   type OwnedProcessRegistry,
 } from "../integrations/index.ts";
 import type { ModelCatalog } from "../providers/index.ts";
-import type { OpenAiCompatibleFetch } from "../providers/openai-compatible-adapter.ts";
-import { createOpenAiCompatibleAdapter } from "../providers/openai-compatible-adapter.ts";
 import type { ProviderAdapterPort } from "../providers/port.ts";
 import { startConfigurationReloadWatcher } from "./configuration-reload.ts";
 import type { GlobalOptions } from "./options.ts";
@@ -170,10 +170,10 @@ export type CodingRunOptions = {
   readonly providerCatalog?: ModelCatalog;
   /** Override the default OpenAI environment credential reference. */
   readonly credentialReference?: CredentialReference;
-  /** OpenAI-compatible base URL when composing from credentials. */
+  /** OpenAI SDK base URL when composing from credentials. */
   readonly openaiBaseUrl?: string;
-  /** Injectable transport for deterministic OpenAI-compatible integration tests. */
-  readonly openaiFetch?: OpenAiCompatibleFetch;
+  /** Injectable OpenAI SDK transport for deterministic provider integration tests. */
+  readonly openaiFetch?: OpenAiSdkFetch;
   /**
    * Invocation globals for configuration load (#728). Production supplies
    * profile and CLI overrides; tests may omit for an empty load request.
@@ -415,7 +415,7 @@ export async function runCoding(
       const apiKey = await resolveProviderApiKey(credentials.resolver, reference, options.signal);
       if (apiKey !== null) {
         const baseUrl = options.openaiBaseUrl ?? "https://api.openai.com/v1";
-        providerAdapter = createOpenAiCompatibleAdapter({
+        providerAdapter = createOpenAiSdkAdapter({
           profileId: "openai",
           baseUrl,
           resolveApiKey: async () => apiKey,

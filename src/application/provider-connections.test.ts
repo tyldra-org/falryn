@@ -26,7 +26,7 @@ function profile(id: string, endpoint = "https://api.example.test/v1"): Provider
   return {
     profileId: id,
     providerId: providerId.from(id),
-    adapterKind: "openai-compatible",
+    adapterKind: "openai",
     displayName: id.toUpperCase(),
     endpoint,
     credential: null,

@@ -21,7 +21,7 @@ export const DEFAULT_PROVIDER_CONNECTION_STATE: ProviderConnectionState = {
       profile: {
         profileId: "openai",
         providerId: providerId.from("openai"),
-        adapterKind: "openai-compatible",
+        adapterKind: "openai",
         displayName: "OpenAI",
         endpoint: "https://api.openai.com/v1",
         credential: {

@@ -23,7 +23,7 @@ export type ProviderProfile = {
   readonly adapterKind: ProviderAdapterKind;
   readonly displayName: string;
   /**
-   * Data destination. Custom OpenAI-compatible endpoints are separate
+   * Data destination. Custom endpoints used through the OpenAI SDK are separate
    * destinations even when JSON looks similar.
    */
   readonly endpoint: string | null;

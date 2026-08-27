@@ -676,7 +676,7 @@ function replace(
 
 function endpointIsAllowed(profile: ProviderProfile): boolean {
   if (profile.endpoint === null) {
-    return profile.adapterKind !== "openai-compatible" && profile.adapterKind !== "custom";
+    return profile.adapterKind !== "openai" && profile.adapterKind !== "custom";
   }
   try {
     const url = new URL(profile.endpoint);

@@ -59,4 +59,6 @@ export type {
   WriteKeychainCredentialOptions,
 } from "./keychain-write.ts";
 export { writeKeychainCredential } from "./keychain-write.ts";
+export type { OpenAiSdkAdapterOptions, OpenAiSdkFetch } from "./openai-sdk-adapter.ts";
+export { createOpenAiSdkAdapter } from "./openai-sdk-adapter.ts";
 export { createProcessSignalPort, observedPlatformSignals } from "./process-signals.ts";

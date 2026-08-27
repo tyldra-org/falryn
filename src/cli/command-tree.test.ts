@@ -192,7 +192,7 @@ describe("provider connection arguments", () => {
       "add",
       "local",
       "--provider",
-      "openai-compatible",
+      "openai",
       "--endpoint",
       "http://127.0.0.1:11434/v1",
       "--model",

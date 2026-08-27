@@ -346,13 +346,7 @@ function build(argv: readonly string[], lenientPositionals = false): ReturnType<
             })
             .option("adapter", {
               type: "string",
-              choices: [
-                "deterministic",
-                "openai-compatible",
-                "anthropic",
-                "google",
-                "custom",
-              ] as const,
+              choices: ["deterministic", "openai", "anthropic", "google", "custom"] as const,
               describe: "provider adapter kind",
             })
             .option("name", { type: "string", describe: "display name" })

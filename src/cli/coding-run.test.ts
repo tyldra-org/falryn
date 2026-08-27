@@ -1018,6 +1018,9 @@ describe("runCoding", () => {
         input: streams.input,
         globals: globalsFor(seeded),
         openaiFetch: async (_input, init) => {
+          if (init === undefined) {
+            throw new Error("expected OpenAI SDK request initialization");
+          }
           providerBodies.push(JSON.parse(String(init.body)));
           const current = providerRequest;
           providerRequest += 1;
