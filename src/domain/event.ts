@@ -146,6 +146,12 @@ export type ModelAttemptStartedPayload = {
   readonly binding?: ModelAttemptBinding | undefined;
 };
 
+/** Durable invocation metadata. Absent only on legacy events. */
+export type CapabilityInvocationStartedPayload = {
+  readonly capabilityVersion?: number | undefined;
+  readonly inputDigest?: string | undefined;
+};
+
 export type ConfigurationGenerationChangedPayload = {
   readonly generation: ConfigurationGeneration;
   readonly applicationClass: ConfigurationApplicationClass;
@@ -204,7 +210,7 @@ export type ModelAttemptCompletedEvent = Envelope<
 export type CapabilityInvocationStartedEvent = Envelope<
   "capability.invocation.started",
   TurnCorrelation,
-  EmptyPayload
+  CapabilityInvocationStartedPayload
 > & {
   readonly invocationId: InvocationId;
   readonly capabilityId: CapabilityId;

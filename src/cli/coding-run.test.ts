@@ -23,6 +23,18 @@ import { createDeterministicProviderAdapter, type ModelRequest } from "../provid
 import { resolveCodingPrompt, runCoding } from "./coding-run.ts";
 import { parseInvocation } from "./command-tree.ts";
 import { dispatch } from "./dispatch.ts";
+import {
+  createLiveTurnMatrixFixture,
+  LIVE_TURN_MATRIX_CONFIRMATION,
+  LIVE_TURN_MATRIX_CONTEXT,
+  LIVE_TURN_MATRIX_EVENT_KINDS,
+  LIVE_TURN_MATRIX_FINAL_TEXT,
+  LIVE_TURN_MATRIX_PROMPT,
+  LIVE_TURN_MATRIX_STDOUT,
+  LIVE_TURN_MATRIX_TOOL_CALL_ID,
+  liveTurnMatrixArtifactId,
+  liveTurnMatrixContinuation,
+} from "./live-turn-matrix.test-support.ts";
 import type { GlobalOptions } from "./options.ts";
 import { openProductArtifactSession } from "./product-artifact-session.ts";
 import { CLI_EVENT_STREAM, createServiceProvider } from "./services.ts";
@@ -261,6 +273,159 @@ describe("runCoding", () => {
       }
       await durable.close();
     }
+  });
+
+  test("runs and replays the shared durable live-turn matrix through falryn run", async () => {
+    const seeded = await seededHome();
+    await writeFile(join(seeded.primary, "matrix.ts"), LIVE_TURN_MATRIX_CONTEXT, "utf8");
+    const services = providerFor(seeded)(globalsFor(seeded));
+    const fixture = createLiveTurnMatrixFixture(null, "cap-823-headless");
+    const result = await runCoding(
+      services,
+      { promptParts: [LIVE_TURN_MATRIX_PROMPT] },
+      {
+        input: createRecordingCliStreams({ stdin: null }).input,
+        globals: globalsFor(seeded),
+        providerAdapter: fixture.provider,
+        processCapture: fixture.processCapture,
+        toolConfirmation: LIVE_TURN_MATRIX_CONFIRMATION,
+        identities: {
+          sessionId: "session-823-headless",
+          turnId: "turn-823-headless",
+          traceId: "trace-823-headless",
+        },
+      },
+    );
+
+    expect(result.outcome.kind).toBe("completed");
+    expect(result.payload).toMatchObject({
+      stage: "attempt-completed",
+      response: LIVE_TURN_MATRIX_FINAL_TEXT,
+      modelAttempts: 1,
+      toolResults: 1,
+      executionProfile: "agent",
+    });
+    expect(fixture.captures).toBe(1);
+    expect(fixture.requests).toHaveLength(2);
+    expect(JSON.stringify(fixture.requests[0])).toContain(LIVE_TURN_MATRIX_CONTEXT.trim());
+
+    const continuation = liveTurnMatrixContinuation(fixture.requests);
+    expect(continuation.assistant.toolCalls).toEqual([
+      {
+        toolCallId: LIVE_TURN_MATRIX_TOOL_CALL_ID,
+        name: "run_process",
+        arguments: { executable: "/bin/ls", argv: ["-la"], outputMode: "hush" },
+      },
+    ]);
+    expect(continuation.tool.toolCallId).toBe(LIVE_TURN_MATRIX_TOOL_CALL_ID);
+    expect(continuation.toolOutput.output?.value).toMatchObject({
+      captureId: "cap-823-headless",
+      projection: { kind: "hush", reducer: { id: "files.ls" } },
+      stdout: { text: null },
+    });
+    expect(continuation.toolOutput.output?.value?.stdout?.recovery).not.toBeNull();
+    expect(JSON.stringify(fixture.requests[1])).not.toContain(LIVE_TURN_MATRIX_STDOUT);
+    expect(new TextEncoder().encode(continuation.serializedResult).byteLength).toBeLessThan(
+      new TextEncoder().encode(LIVE_TURN_MATRIX_STDOUT).byteLength,
+    );
+    const exactArtifact = liveTurnMatrixArtifactId(
+      continuation.toolOutput.output?.value?.stdout?.recovery,
+    );
+
+    const reopened = await openProductArtifactSession(services());
+    expect(reopened).not.toBeNull();
+    if (reopened === null) {
+      return;
+    }
+    const replayed = await reopened.eventStore.readFrom(
+      { streamId: streamId.from("live-turn:session-823-headless"), afterSequence: null },
+      100,
+    );
+    expect(replayed.ok).toBe(true);
+    if (replayed.ok) {
+      expect(replayed.value.map((event) => event.kind)).toEqual(LIVE_TURN_MATRIX_EVENT_KINDS);
+      const completed = replayed.value.find(
+        (event) => event.kind === "capability.invocation.completed",
+      );
+      expect(completed?.kind).toBe("capability.invocation.completed");
+      if (completed?.kind === "capability.invocation.completed") {
+        const artifacts = reopened.artifacts.listByInvocation(completed.invocationId, 10);
+        expect(artifacts.ok).toBe(true);
+        if (artifacts.ok) {
+          expect(artifacts.value).toHaveLength(1);
+          expect(artifacts.value[0]).toMatchObject({
+            availability: "available",
+            byteLength: new TextEncoder().encode(LIVE_TURN_MATRIX_STDOUT).byteLength,
+          });
+        }
+      }
+    }
+    const exactBytes = new TextEncoder().encode(LIVE_TURN_MATRIX_STDOUT);
+    const exact = await reopened.artifacts.readRange(exactArtifact, 0, exactBytes.byteLength);
+    expect(exact.ok).toBe(true);
+    if (exact.ok) {
+      expect(exact.value.bytes).toEqual(exactBytes);
+      expect(exact.value.endOfArtifact).toBe(true);
+    }
+    await reopened.close();
+  });
+
+  test("fails the shared live-turn path before continuation when exact Hush recovery cannot persist", async () => {
+    const seeded = await seededHome();
+    await writeFile(join(seeded.primary, "matrix.ts"), LIVE_TURN_MATRIX_CONTEXT, "utf8");
+    const services = providerFor(seeded)(globalsFor(seeded));
+    const artifacts = failingArtifactStore();
+    const fixture = createLiveTurnMatrixFixture(artifacts, "cap-823-retention-failure");
+    const result = await runCoding(
+      services,
+      { promptParts: [LIVE_TURN_MATRIX_PROMPT] },
+      {
+        input: createRecordingCliStreams({ stdin: null }).input,
+        globals: globalsFor(seeded),
+        providerAdapter: fixture.provider,
+        processCapture: fixture.processCapture,
+        toolConfirmation: LIVE_TURN_MATRIX_CONFIRMATION,
+        artifacts,
+        identities: {
+          sessionId: "session-823-retention-failure",
+          turnId: "turn-823-retention-failure",
+          traceId: "trace-823-retention-failure",
+        },
+      },
+    );
+
+    expect(result.outcome).toEqual({ kind: "failed", effect: "partial" });
+    expect(result.payload).toMatchObject({
+      stage: "attempt-failed",
+      response: "",
+      modelAttempts: 1,
+      toolResults: 1,
+    });
+    expect(fixture.captures).toBe(1);
+    expect(fixture.requests).toHaveLength(1);
+
+    const reopened = await openProductArtifactSession(services());
+    expect(reopened).not.toBeNull();
+    if (reopened === null) {
+      return;
+    }
+    const replayed = await reopened.eventStore.readFrom(
+      {
+        streamId: streamId.from("live-turn:session-823-retention-failure"),
+        afterSequence: null,
+      },
+      100,
+    );
+    expect(replayed.ok).toBe(true);
+    if (replayed.ok) {
+      expect(replayed.value.map((event) => event.kind)).toEqual(LIVE_TURN_MATRIX_EVENT_KINDS);
+      const terminal = replayed.value.find((event) => event.kind === "turn.completed");
+      expect(terminal?.kind === "turn.completed" ? terminal.payload.outcome : null).toEqual({
+        kind: "failed",
+        effect: "partial",
+      });
+    }
+    await reopened.close();
   });
 
   test("retains Plan output as a durable reviewable artifact", async () => {

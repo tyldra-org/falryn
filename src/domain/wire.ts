@@ -18,6 +18,7 @@ import {
 } from "./branded-schema.ts";
 import type { CodecIssue } from "./codec-error.ts";
 import {
+  type CapabilityInvocationStartedPayload,
   CONFIGURATION_APPLICATION_CLASSES,
   type ConfigurationGenerationChangedEvent,
   type ConfigurationGenerationChangedPayload,
@@ -132,6 +133,16 @@ const modelAttemptStartedPayloadSchema: z.ZodType<ModelAttemptStartedPayload> = 
   binding: modelAttemptBindingSchema.optional(),
 });
 
+const capabilityInvocationStartedPayloadSchema: z.ZodType<CapabilityInvocationStartedPayload> =
+  z.object({
+    capabilityVersion: z.int().min(1).optional(),
+    inputDigest: z
+      .string()
+      .regex(/^[0-9a-f]+$/)
+      .max(128)
+      .optional(),
+  });
+
 const configurationPayloadSchema: z.ZodType<ConfigurationGenerationChangedPayload> = z.object({
   generation: brandedInteger(configurationGeneration),
   applicationClass: z.literal(CONFIGURATION_APPLICATION_CLASSES),
@@ -206,7 +217,7 @@ const runtimeEventSchema: z.ZodType<RuntimeEvent> = z.discriminatedUnion("kind",
     ...toolIdentity,
     kind: z.literal("capability.invocation.started"),
     correlation: turnCorrelationSchema,
-    payload: emptyPayloadSchema,
+    payload: capabilityInvocationStartedPayloadSchema,
   }),
   z.object({
     ...envelopeSpine,
@@ -267,6 +278,15 @@ function payloadToJson(event: RuntimeEvent): Record<string, unknown> {
   switch (event.kind) {
     case "model.attempt.started":
       return event.payload.binding === undefined ? {} : { binding: event.payload.binding };
+    case "capability.invocation.started":
+      return {
+        ...(event.payload.capabilityVersion === undefined
+          ? {}
+          : { capabilityVersion: event.payload.capabilityVersion }),
+        ...(event.payload.inputDigest === undefined
+          ? {}
+          : { inputDigest: event.payload.inputDigest }),
+      };
     case "turn.completed":
     case "model.attempt.completed":
     case "capability.invocation.completed":

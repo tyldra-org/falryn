@@ -863,6 +863,7 @@ export {
 export type {
   CapabilityInvocationCompletedEvent,
   CapabilityInvocationStartedEvent,
+  CapabilityInvocationStartedPayload,
   ConfigurationApplicationClass,
   ConfigurationGenerationChangedEvent,
   ConfigurationGenerationChangedPayload,

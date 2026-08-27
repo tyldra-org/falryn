@@ -82,6 +82,8 @@ export type TurnLifecycleFact =
       readonly correlation: TurnCorrelation;
       readonly invocationId: InvocationId;
       readonly capabilityId: CapabilityId;
+      readonly capabilityVersion?: number;
+      readonly inputDigest?: string;
     }
   | {
       readonly kind: "capability.invocation.completed";
@@ -219,7 +221,12 @@ export function buildTurnLifecycleEvent(input: BuildTurnEventInput): RuntimeEven
         invocationId: fact.invocationId,
         capabilityId: fact.capabilityId,
         correlation: fact.correlation,
-        payload: {},
+        payload: {
+          ...(fact.capabilityVersion === undefined
+            ? {}
+            : { capabilityVersion: fact.capabilityVersion }),
+          ...(fact.inputDigest === undefined ? {} : { inputDigest: fact.inputDigest }),
+        },
       };
       return event;
     }

@@ -34,6 +34,7 @@ import {
   mergeProductToolBundles,
   PRODUCT_BRIEF_OWNER,
   PRODUCT_INDEX_LIFECYCLE_OWNER,
+  type ProductToolConfirmationPort,
   resolveProviderApiKey,
 } from "../application/index.ts";
 import {
@@ -45,6 +46,7 @@ import {
   type FalrynError,
   type InputStreamPort,
   type Instant,
+  type ProcessCapturePort,
   primaryWorkspaceRoot,
   type RuntimeEvent,
   sessionId as sessionIdCodec,
@@ -184,6 +186,10 @@ export type CodingRunOptions = {
   /** Durable exact-output storage and optional shared Loom lifecycle (#814). */
   readonly artifacts?: ArtifactStorePort;
   readonly loom?: LoomPort;
+  /** Injectable process host for deterministic public-entrypoint integration tests. */
+  readonly processCapture?: ProcessCapturePort;
+  /** Focused confirmation host; absent remains fail-closed for consequential tools. */
+  readonly toolConfirmation?: ProductToolConfirmationPort;
 };
 
 /**
@@ -467,7 +473,7 @@ export async function runCoding(
     });
     const processTools = composeProductProcessTools({
       generation,
-      capture: createHostProcessCapturePort(captureOptions),
+      capture: options.processCapture ?? createHostProcessCapturePort(captureOptions),
       workspaceCwd: String(workspaceRoot),
       ...(productArtifacts === undefined ? {} : { artifacts: productArtifacts }),
       ...(productLoom === undefined ? {} : { loom: productLoom }),
@@ -537,6 +543,9 @@ export async function runCoding(
       toolRegistry: productTools.registry,
       toolCatalog: productTools.catalog,
       toolRunner: productTools.runner,
+      ...(options.toolConfirmation === undefined
+        ? {}
+        : { toolConfirmation: options.toolConfirmation }),
     });
     if (!composed.ok) {
       return codingResult(

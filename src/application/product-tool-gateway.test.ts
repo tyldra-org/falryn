@@ -150,6 +150,11 @@ describe("createProductToolGateway", () => {
         "capability.invocation.started",
         "capability.invocation.completed",
       ]);
+      const started = replay.events[0];
+      expect(started?.kind === "capability.invocation.started" ? started.payload : null).toEqual({
+        capabilityVersion: entry.manifest.version,
+        inputDigest: expect.stringMatching(/^[0-9a-f]{64}$/),
+      });
     }
   });
 

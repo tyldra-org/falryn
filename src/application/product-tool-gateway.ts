@@ -7,6 +7,8 @@
  * terminal semantic facts, and returns only the bounded/redacted projection.
  */
 
+import { createHash } from "node:crypto";
+
 import {
   authorizeToolInvocation,
   type ClockPort,
@@ -291,6 +293,10 @@ export function createProductToolGateway(options: ProductToolGatewayOptions): To
           correlation: correlation(options),
           invocationId: request.invocationId,
           capabilityId: request.capabilityId,
+          capabilityVersion: request.version,
+          inputDigest: createHash("sha256")
+            .update(confirmationInputFingerprint(request.capabilityId, ready.input, ready.effect))
+            .digest("hex"),
         },
         request.signal,
       );

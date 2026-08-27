@@ -26,6 +26,7 @@ import {
   type LoomPort,
   type MemoryRecords,
   mergeProductToolBundles,
+  type ProductToolConfirmationPort,
 } from "../application/index.ts";
 import {
   type ArtifactStorePort,
@@ -37,6 +38,7 @@ import {
   type ExecutionProfileId,
   executionProfile,
   type FileSystemPort,
+  type ProcessCapturePort,
   primaryWorkspaceRoot,
   sessionId as sessionIdCodec,
   streamId,
@@ -79,6 +81,10 @@ export type ProductShellAttachmentPorts = {
   /** Durable exact-output storage and optional shared Loom lifecycle (#814). */
   readonly artifacts?: ArtifactStorePort;
   readonly loom?: LoomPort;
+  /** Injectable process host for deterministic public-entrypoint integration tests. */
+  readonly processCapture?: ProcessCapturePort;
+  /** Application-owned focused confirmation host for consequential tool calls. */
+  readonly toolConfirmation?: ProductToolConfirmationPort;
   readonly index?: WorkspaceIndexPort & WorkspaceIndexWritePort;
   readonly memoryRecords?: MemoryRecords;
   /** Selected, authenticated provider handoff from the application-owned profile service. */
@@ -158,13 +164,15 @@ export async function composeProductShellAttachments(
         ? null
         : composeProductProcessTools({
             generation,
-            capture: createHostProcessCapturePort({
-              clock: ports.clock,
-              ...(ports.artifacts === undefined ? {} : { artifacts: ports.artifacts }),
-              ...(ports.ownedProcesses === undefined
-                ? {}
-                : { ownedProcesses: ports.ownedProcesses }),
-            }),
+            capture:
+              ports.processCapture ??
+              createHostProcessCapturePort({
+                clock: ports.clock,
+                ...(ports.artifacts === undefined ? {} : { artifacts: ports.artifacts }),
+                ...(ports.ownedProcesses === undefined
+                  ? {}
+                  : { ownedProcesses: ports.ownedProcesses }),
+              }),
             workspaceCwd: String(workspaceRoot),
             ...(ports.artifacts === undefined ? {} : { artifacts: ports.artifacts }),
             ...(ports.loom === undefined ? {} : { loom: ports.loom }),
@@ -251,6 +259,7 @@ export async function composeProductShellAttachments(
         configurationGeneration: generation,
       },
       ...(providerAdapter === undefined ? {} : { providerAdapter }),
+      ...(ports.toolConfirmation === undefined ? {} : { toolConfirmation: ports.toolConfirmation }),
       ...(productTools === null
         ? {}
         : {
