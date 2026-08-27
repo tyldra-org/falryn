@@ -120,7 +120,7 @@ export async function openProductArtifactSession(
     hasher: createSha256Hasher(),
     clock: services.clock,
   });
-  const eventStore = createSqliteEventStore(store);
+  const eventStore = createSqliteEventStore(store, { projectStartedRecords: true });
   const loom = createLoomPort({
     artifacts,
     manifests: createLoomManifestRepository({ store, clock: services.clock }),

@@ -40,7 +40,7 @@ export {
   inspectUserBackup,
   restoreUserBackup,
 } from "./backup.ts";
-export type { DurableEventStore, StreamHead } from "./event-store.ts";
+export type { DurableEventStore, SqliteEventStoreOptions, StreamHead } from "./event-store.ts";
 export {
   createEventStoreShutdownParticipant,
   createSqliteEventStore,

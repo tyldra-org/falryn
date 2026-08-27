@@ -69,6 +69,16 @@ provider connection, context composition, attempt, or replay cannot be reported
 as an accepted or completed turn. Production does not fall back to the in-memory
 event-store test double when SQLite cannot open.
 
+A shared deterministic integration fixture exercises that lifecycle through
+both public composition roots. Its first provider response invokes
+`run_process`, the exact `ls -la` capture is reduced by `files.ls`, and the
+second provider request receives the correlated assistant tool call and one
+bounded Hush result without the original raw listing. Reopening product state
+replays the same ordered semantic events and reads the exact retained bytes
+through the recovery artifact without executing the process again. Required
+artifact-retention failure stops before provider continuation and settles the
+turn as failed with a partial effect.
+
 OpenTUI's `session.new` palette action creates a new durable session before it
 switches the active transcript and submission target. A failed creation leaves
 the current session selected; concurrent duplicate actions coalesce, and active

@@ -180,6 +180,8 @@ const processOutput = z
         })
         .strict(),
     ]),
+    workspaceIndex: z.json().optional(),
+    languageDiagnostics: z.json().optional(),
   })
   .strict() as z.ZodType<Readonly<Record<string, unknown>>>;
 

@@ -63,7 +63,13 @@ import {
   toStoredEvent,
   traceId,
 } from "../domain/index.ts";
-import { EVENTS_TABLE } from "./schema.ts";
+import {
+  EVENTS_TABLE,
+  INVOCATIONS_TABLE,
+  MODEL_ATTEMPTS_TABLE,
+  SESSIONS_TABLE,
+  TURNS_TABLE,
+} from "./schema.ts";
 
 /** The `persist-outcomes` participant's name, reported when it does not finish. */
 export const EVENT_STORE_PARTICIPANT_NAME = "event-store";
@@ -82,6 +88,91 @@ const INSERT_EVENT = `INSERT INTO ${EVENTS_TABLE}
    idempotency_key, payload)
   VALUES ($eventId, $streamId, $sequence, $kind, $schemaVersion, $occurredAt,
           $traceId, $idempotencyKey, $payload)`;
+
+/** Project start identities in the same commit as their source event. */
+function projectStartedRecord(statements: SqliteStatements, event: RuntimeEvent): void {
+  switch (event.kind) {
+    case "session.started":
+      statements.run(
+        `INSERT INTO ${SESSIONS_TABLE}
+          (session_id, workspace_id, stream_id, title, configuration_generation,
+           started_at, closed_at, outcome_kind, outcome_effect)
+         VALUES ($sessionId, $workspaceId, $streamId, NULL, $configurationGeneration,
+                 $startedAt, NULL, NULL, NULL)`,
+        {
+          sessionId: event.correlation.sessionId,
+          workspaceId: event.correlation.workspaceId,
+          streamId: event.streamId,
+          configurationGeneration: event.correlation.configurationGeneration,
+          startedAt: event.occurredAt,
+        },
+      );
+      return;
+    case "turn.started":
+      statements.run(
+        `INSERT INTO ${TURNS_TABLE}
+          (turn_id, session_id, parent_turn_id, started_at, completed_at,
+           outcome_kind, outcome_effect)
+         VALUES ($turnId, $sessionId, NULL, $startedAt, NULL, NULL, NULL)`,
+        {
+          turnId: event.correlation.turnId,
+          sessionId: event.correlation.sessionId,
+          startedAt: event.occurredAt,
+        },
+      );
+      return;
+    case "model.attempt.started": {
+      const binding = event.payload.binding;
+      if (binding === undefined) {
+        return;
+      }
+      statements.run(
+        `INSERT INTO ${MODEL_ATTEMPTS_TABLE}
+          (model_attempt_id, turn_id, provider_id, model_id, started_at,
+           completed_at, outcome_kind, outcome_effect)
+         VALUES ($modelAttemptId, $turnId, $providerId, $modelId, $startedAt,
+                 NULL, NULL, NULL)`,
+        {
+          modelAttemptId: event.modelAttemptId,
+          turnId: event.correlation.turnId,
+          providerId: binding.providerId,
+          modelId: binding.modelId,
+          startedAt: event.occurredAt,
+        },
+      );
+      return;
+    }
+    case "capability.invocation.started":
+      if (
+        event.payload.capabilityVersion === undefined ||
+        event.payload.inputDigest === undefined
+      ) {
+        return;
+      }
+      statements.run(
+        `INSERT INTO ${INVOCATIONS_TABLE}
+          (invocation_id, turn_id, capability_id, capability_version, input_digest,
+           started_at, completed_at, outcome_kind, outcome_effect)
+         VALUES ($invocationId, $turnId, $capabilityId, $capabilityVersion, $inputDigest,
+                 $startedAt, NULL, NULL, NULL)`,
+        {
+          invocationId: event.invocationId,
+          turnId: event.correlation.turnId,
+          capabilityId: event.capabilityId,
+          capabilityVersion: event.payload.capabilityVersion,
+          inputDigest: event.payload.inputDigest,
+          startedAt: event.occurredAt,
+        },
+      );
+      return;
+    case "turn.completed":
+    case "model.attempt.completed":
+    case "capability.invocation.completed":
+    case "configuration.generation.changed":
+    case "execution.profile.selected":
+      return;
+  }
+}
 
 const EVENT_COLUMNS = `event_id AS eventId, stream_id AS aggregateId, sequence AS sequence,
   kind AS kind, schema_version AS schemaVersion, occurred_at AS occurredAt,
@@ -115,6 +206,11 @@ export type DurableEventStore = EventStorePort & {
 
   /** Every stream holding at least one event, with the sequence it reached. */
   streamHeads(limit: number): Result<readonly StreamHead[], EventStoreError>;
+};
+
+export type SqliteEventStoreOptions = {
+  /** Atomically materialize live start identities needed by artifact foreign keys. */
+  readonly projectStartedRecords?: boolean;
 };
 
 function closedError(): SqliteStoreError {
@@ -165,7 +261,11 @@ function integerOf(value: SqliteValue | undefined): number | null {
  * decision and the insert one indivisible step: another connection cannot
  * commit a conflicting row between the reads below and the write.
  */
-function resolveAppend(statements: SqliteStatements, event: RuntimeEvent): AppendResolution {
+function resolveAppend(
+  statements: SqliteStatements,
+  event: RuntimeEvent,
+  projectRecords: boolean,
+): AppendResolution {
   const recorded = statements.all(SELECT_BY_IDEMPOTENCY_KEY, {
     streamId: event.streamId,
     idempotencyKey: event.idempotencyKey,
@@ -241,6 +341,9 @@ function resolveAppend(statements: SqliteStatements, event: RuntimeEvent): Appen
   }
 
   const stored = toStoredEvent(event);
+  if (projectRecords) {
+    projectStartedRecord(statements, event);
+  }
   statements.run(INSERT_EVENT, {
     eventId: stored.eventId,
     streamId: stored.aggregateId,
@@ -308,7 +411,10 @@ function storedEventFromRow(row: SqliteRow): Result<StoredEvent, readonly CodecI
   });
 }
 
-export function createSqliteEventStore(store: SqliteStorePort): DurableEventStore {
+export function createSqliteEventStore(
+  store: SqliteStorePort,
+  options: SqliteEventStoreOptions = {},
+): DurableEventStore {
   let accepting = true;
   const inFlight = new Set<Promise<unknown>>();
 
@@ -324,7 +430,10 @@ export function createSqliteEventStore(store: SqliteStorePort): DurableEventStor
       return err({ code: "codec", error: encoded.error });
     }
 
-    const written = store.write((statements) => resolveAppend(statements, event), signal);
+    const written = store.write(
+      (statements) => resolveAppend(statements, event, options.projectStartedRecords === true),
+      signal,
+    );
     if (!written.ok) {
       return err(eventStoreErrorFor(written.error));
     }
