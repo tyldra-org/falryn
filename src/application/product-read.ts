@@ -97,6 +97,16 @@ const recoveryHandle = z
       ])
       .readonly()
       .optional(),
+    lineage: z
+      .object({
+        invocationId: z.string().min(1),
+        captureId: z.string().min(1),
+        stream: z.enum(["stdout", "stderr"]),
+        encoding: z.enum(["utf-8", "binary"]),
+        availability: z.literal("available"),
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 
@@ -498,6 +508,7 @@ export function createProductReadCoordinator(
       value: productLoom.attachRecovery(
         {
           content: retrieved.value.text,
+          recoveryLineage: input.recovery.lineage ?? null,
           projection: {
             kind: retrieved.value.projection,
             fidelity: retrieved.value.fidelity,

@@ -19,7 +19,12 @@
 
 import type { ZodType } from "zod";
 
-import type { CapabilityId, ConfigurationGeneration, InvocationId } from "./identity.ts";
+import type {
+  ArtifactId,
+  CapabilityId,
+  ConfigurationGeneration,
+  InvocationId,
+} from "./identity.ts";
 import type { EffectCertainty } from "./outcome.ts";
 import { assertNever } from "./result.ts";
 import type { ConflictKey, EffectClass } from "./work.ts";
@@ -114,6 +119,23 @@ export type ToolBindError =
       readonly reason: "empty-name" | "invalid-version" | "invalid-effect";
     };
 
+/** Internal result facts carried from an adapter into the canonical envelope. */
+export type ToolInvocationResultMetadata = {
+  readonly artifacts: readonly {
+    readonly artifactId: ArtifactId;
+    readonly required: boolean;
+    readonly committed: boolean;
+    readonly truncated: boolean;
+  }[];
+  readonly captureOverflow: boolean;
+  readonly containedProcessExitCode?: number | undefined;
+};
+
+type ToolInvocationResultCarrier = {
+  /** Not projected as adapter output; the product gateway consumes these facts. */
+  readonly result?: ToolInvocationResultMetadata | undefined;
+};
+
 /**
  * Exhaustive per-invocation outcome after the runner returns (or binding fails
  * before execution).
@@ -122,29 +144,29 @@ export type ToolBindError =
  * `effect: "none"`.
  */
 export type ToolInvocationOutcome =
-  | {
+  | (ToolInvocationResultCarrier & {
       readonly status: "completed";
       readonly output: Readonly<Record<string, unknown>>;
       readonly effect: "completed";
-    }
-  | {
+    })
+  | (ToolInvocationResultCarrier & {
       readonly status: "failed";
       readonly reason: string;
       readonly effect: EffectCertainty;
-    }
-  | {
+    })
+  | (ToolInvocationResultCarrier & {
       readonly status: "cancelled";
       readonly effect: EffectCertainty;
-    }
-  | {
+    })
+  | (ToolInvocationResultCarrier & {
       readonly status: "timed-out";
       readonly effect: EffectCertainty;
-    }
-  | {
+    })
+  | (ToolInvocationResultCarrier & {
       readonly status: "uncertain";
       readonly effect: "uncertain";
       readonly recoveryHint: string;
-    }
+    })
   | {
       readonly status: "denied";
       readonly reason: string;
@@ -160,11 +182,11 @@ export type ToolInvocationOutcome =
       readonly reason: string;
       readonly effect: "none";
     }
-  | {
+  | (ToolInvocationResultCarrier & {
       readonly status: "partial";
       readonly output: Readonly<Record<string, unknown>>;
       readonly effect: EffectCertainty;
-    };
+    });
 
 export type ToolInvocationRecord = {
   readonly invocationId: InvocationId;

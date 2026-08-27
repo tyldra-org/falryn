@@ -3,19 +3,35 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { createHash } from "node:crypto";
 
 import {
+  type ArtifactIngestRequest,
+  type ArtifactRecord,
+  type ArtifactStorePort,
+  artifactId,
+  CONTENT_DIGEST_ALGORITHM,
   capabilityId,
   configurationGeneration,
+  contentDigest,
+  createInMemoryFileSystem,
   duration,
   instant,
   invocationId,
+  localPath,
   type ProcessCapturePort,
   type ProcessCaptureReport,
   type ProcessCaptureRequest,
   processCaptureId,
+  timestampFromEpochMilliseconds,
 } from "../domain/index.ts";
+import { err, ok } from "../domain/result.ts";
+import { createHostProcessCapturePort } from "../integrations/index.ts";
+import { createLoomPort } from "./loom.ts";
+import { MAX_PRODUCT_PROCESS_MODEL_BYTES } from "./product-process-output.ts";
+import { createProductReadCoordinator, productReadInputSchema } from "./product-read.ts";
 import { composeProductProcessTools } from "./product-tools-process.ts";
+import { createWorkspaceReader } from "./workspace-read.ts";
 
 const encoder = new TextEncoder();
 
@@ -62,13 +78,120 @@ function capturePort(): ProcessCapturePort {
   };
 }
 
-describe("composeProductProcessTools", () => {
-  test("registers process tools and returns Hush-ready capture facts", async () => {
-    const tools = composeProductProcessTools({
+function digestOf(bytes: Uint8Array) {
+  return contentDigest.from(
+    `${CONTENT_DIGEST_ALGORITHM}:${createHash("sha256").update(bytes).digest("hex")}`,
+  );
+}
+
+function memoryArtifacts(): ArtifactStorePort & { readonly ingests: ArtifactIngestRequest[] } {
+  const records = new Map<string, ArtifactRecord>();
+  const stored = new Map<string, Uint8Array>();
+  const ingests: ArtifactIngestRequest[] = [];
+  return {
+    ingests,
+    async ingest(request) {
+      ingests.push(request);
+      const chunks: Uint8Array[] = [];
+      let length = 0;
+      for await (const chunk of request.content) {
+        chunks.push(chunk);
+        length += chunk.byteLength;
+      }
+      const bytes = new Uint8Array(length);
+      let offset = 0;
+      for (const chunk of chunks) {
+        bytes.set(chunk, offset);
+        offset += chunk.byteLength;
+      }
+      const record: ArtifactRecord = {
+        artifactId: request.artifactId,
+        digest: digestOf(bytes),
+        mediaType: request.mediaType,
+        encoding: request.encoding,
+        byteLength: bytes.byteLength,
+        sensitivity: request.sensitivity,
+        origin: request.origin,
+        invocationId: request.invocationId,
+        createdAt: timestampFromEpochMilliseconds(0),
+        finalizedAt: timestampFromEpochMilliseconds(0),
+        availability: "available",
+      };
+      records.set(request.artifactId, record);
+      stored.set(request.artifactId, bytes);
+      return ok({ record, deduplicated: false, cancelledAfterCommit: false });
+    },
+    get(id) {
+      return ok(records.get(id) ?? null);
+    },
+    verifyIntegrity: async () => ok(true),
+    findByDigest: () => ok([]),
+    listByInvocation: () => ok([]),
+    async readRange(id, offset, length) {
+      const bytes = stored.get(id);
+      if (bytes === undefined) {
+        return err({ kind: "artifact", code: "not-found", artifactId: id });
+      }
+      const slice = bytes.subarray(offset, offset + length);
+      return ok({
+        artifactId: id,
+        offset,
+        byteLength: slice.byteLength,
+        bytes: slice,
+        endOfArtifact: offset + slice.byteLength >= bytes.byteLength,
+      });
+    },
+    preview: async () =>
+      err({ kind: "artifact", code: "not-found", artifactId: artifactId.from("missing") }),
+    sweep: async () => ({
+      examined: 0,
+      deleted: 0,
+      retained: [],
+      failed: 0,
+      completeness: "complete",
+      effect: "none",
+    }),
+  };
+}
+
+function processTools(capture: ProcessCapturePort = capturePort()) {
+  const artifacts = memoryArtifacts();
+  return {
+    artifacts,
+    tools: composeProductProcessTools({
       generation: configurationGeneration.from(0),
-      capture: capturePort(),
+      capture,
       workspaceCwd: "/work",
+      artifacts,
+      loom: createLoomPort({ artifacts }),
+      workspaceId: "ws-1",
+      sessionId: "session-1",
+    }),
+  };
+}
+
+describe("composeProductProcessTools", () => {
+  test("defaults outputMode to hush and rejects unsupported modes", () => {
+    const { tools } = processTools();
+    const process = tools.registry.resolveByName("run_process");
+    const shell = tools.registry.resolveByName("run_shell");
+    expect(process?.manifest.inputSchema.parse({ executable: "/bin/echo" })).toMatchObject({
+      outputMode: "hush",
     });
+    expect(shell?.manifest.inputSchema.parse({ command: "echo ok" })).toMatchObject({
+      outputMode: "hush",
+    });
+    expect(
+      process?.manifest.inputSchema.safeParse({ executable: "/bin/echo", outputMode: "other" })
+        .success,
+    ).toBe(false);
+    expect(
+      shell?.manifest.inputSchema.safeParse({ command: "echo ok", outputMode: "other" }).success,
+    ).toBe(false);
+  });
+
+  test("registers process tools and returns Hush-ready capture facts", async () => {
+    const { tools } = processTools();
     expect(tools.owner).toBe("#712");
     expect(tools.toolNames).toEqual(
       expect.arrayContaining(["run_process", "run_shell", "open_pty"]),
@@ -95,15 +218,22 @@ describe("composeProductProcessTools", () => {
     if (processOutcome.status !== "completed") {
       return;
     }
-    expect(processOutcome.output.origin).toBe("process");
-    expect(typeof processOutcome.output.projection).toBe("string");
-    const harness = processOutcome.output.harness as {
-      owner: string;
-      recovery: { captureId: string };
-    };
-    expect(harness.owner).toBe("#718");
-    expect(harness.recovery.captureId).toBe("cap-1");
-    expect(processOutcome.output.capture).toBeDefined();
+    expect(processOutcome.output).toMatchObject({
+      owner: "#796",
+      invocationId: "inv-proc",
+      captureId: "cap-1",
+      outputMode: "hush",
+      origin: "process",
+      projection: {
+        kind: "raw",
+        ordering: "per-stream",
+        complete: true,
+        fidelity: "exact",
+      },
+    });
+    expect((processOutcome.output.stdout as { recovery: unknown }).recovery).toBeNull();
+    expect("capture" in processOutcome.output).toBe(false);
+    expect("hush" in processOutcome.output).toBe(false);
 
     const shellOutcome = await tools.runner.execute({
       invocationId: invocationId.from("inv-shell"),
@@ -137,12 +267,14 @@ describe("composeProductProcessTools", () => {
     expect(pty.status).toBe("unavailable");
   });
 
-  test("projects compound shell searches without losing returned matches", async () => {
-    const command = "rg marker src | sed -n '1,3p'";
+  test("retains genuine Hush reductions and never exceeds the qualified raw projection", async () => {
     const stdout = [
-      "src/a.ts:10:first marker",
-      "src/a.ts:20:second marker",
-      "src/b.ts:7:third marker",
+      "total 800",
+      ...Array.from(
+        { length: 100 },
+        (_, index) =>
+          `-rw-r--r--  1 user staff ${1_000 + index} Aug 26 10:00 file-${index}.typescript.ts`,
+      ),
       "",
     ].join("\n");
     const capture: ProcessCapturePort = {
@@ -156,42 +288,56 @@ describe("composeProductProcessTools", () => {
         };
       },
     };
-    const tools = composeProductProcessTools({
-      generation: configurationGeneration.from(0),
-      capture,
-      workspaceCwd: "/work",
-    });
+    const { tools, artifacts } = processTools(capture);
 
     const outcome = await tools.runner.execute({
-      invocationId: invocationId.from("inv-compound-search"),
-      toolCallId: "call-compound-search",
-      toolName: "run_shell",
-      capabilityId: capabilityId.from("builtin:workspace/run_shell@1"),
+      invocationId: invocationId.from("inv-hush-test"),
+      toolCallId: "call-hush-test",
+      toolName: "run_process",
+      capabilityId: capabilityId.from("builtin:workspace/run_process@1"),
       version: 1,
       effect: "mutation",
-      input: {
-        command,
-        environment: { PATH: "/usr/bin" },
-      },
+      input: { executable: "/bin/ls", argv: ["-la"] },
       signal: new AbortController().signal,
     });
     expect(outcome.status).toBe("completed");
     if (outcome.status !== "completed") {
       return;
     }
-    expect(outcome.output.projection).toBe(
-      "src/a.ts:\n  10 first marker\n  20 second marker\nsrc/b.ts:\n  7 third marker\n",
-    );
-    expect(outcome.output.hush).toMatchObject({
-      reducerId: "shell.compound",
-      command: {
-        mode: "bash",
-        executable: "/bin/bash",
-        command,
-      },
-      truncated: false,
+    expect(
+      tools.registry.resolveByName("run_process")?.manifest.outputSchema.safeParse(outcome.output)
+        .success,
+    ).toBe(true);
+    expect(outcome.output.projection).toMatchObject({
+      kind: "hush",
+      reducer: { id: "files.ls" },
       omissions: [],
     });
+    expect((outcome.output.projection as { text: string }).text).toContain("files 644 (100)");
+    expect(artifacts.ingests).toHaveLength(1);
+    expect(artifacts.ingests[0]?.invocationId).toBe(invocationId.from("inv-hush-test"));
+    expect((outcome.output.stdout as { recovery: unknown }).recovery).not.toBeNull();
+
+    const raw = await tools.runner.execute({
+      invocationId: invocationId.from("inv-raw-test"),
+      toolCallId: "call-raw-test",
+      toolName: "run_process",
+      capabilityId: capabilityId.from("builtin:workspace/run_process@1"),
+      version: 1,
+      effect: "mutation",
+      input: {
+        executable: "/bin/ls",
+        argv: ["-la"],
+        outputMode: "raw",
+      },
+      signal: new AbortController().signal,
+    });
+    expect(raw.status).toBe("completed");
+    if (raw.status === "completed") {
+      expect(encoder.encode(JSON.stringify(outcome.output)).byteLength).toBeLessThanOrEqual(
+        encoder.encode(JSON.stringify(raw.output)).byteLength,
+      );
+    }
   });
 
   test("enriches supported GitHub reads while retaining the user's command identity", async () => {
@@ -221,11 +367,7 @@ describe("composeProductProcessTools", () => {
         };
       },
     };
-    const tools = composeProductProcessTools({
-      generation: configurationGeneration.from(0),
-      capture,
-      workspaceCwd: "/work",
-    });
+    const { tools } = processTools(capture);
 
     const outcome = await tools.runner.execute({
       invocationId: invocationId.from("inv-gh-view"),
@@ -255,14 +397,329 @@ describe("composeProductProcessTools", () => {
         "number,title,state,author,body,url,mergeable,statusCheckRollup",
       ],
     });
-    expect(outcome.output.projection).toContain("checks 1/2 ok, 1 fail");
-    expect(outcome.output.projection).toContain("Preserve every useful PR fact.");
-    expect(outcome.output.hush).toMatchObject({
-      reducerId: "forge.github",
-      command: {
+    const projection = outcome.output.projection as { kind: string; text?: string };
+    if (projection.kind === "hush") {
+      expect(projection.text).toContain("checks 1/2 ok, 1 fail");
+      expect(projection.text).toContain("Preserve every useful PR fact.");
+    } else {
+      expect((outcome.output.stdout as { text: string }).text).toBe(stdout);
+    }
+
+    const raw = await tools.runner.execute({
+      invocationId: invocationId.from("inv-gh-view-raw"),
+      toolCallId: "call-gh-view-raw",
+      toolName: "run_process",
+      capabilityId: capabilityId.from("builtin:workspace/run_process@1"),
+      version: 1,
+      effect: "mutation",
+      input: {
         executable: "/opt/homebrew/bin/gh",
         argv: ["pr", "view", "784"],
+        outputMode: "raw",
       },
+      signal: new AbortController().signal,
     });
+    expect(raw.status).toBe("completed");
+    expect(requests[1]?.mode).toBe("argv");
+    if (requests[1]?.mode === "argv") {
+      expect(requests[1].argv).toEqual(["pr", "view", "784"]);
+    }
+    if (raw.status === "completed") {
+      expect(raw.output.projection).toEqual({
+        kind: "raw",
+        ordering: "per-stream",
+        complete: true,
+        fidelity: "exact",
+      });
+      expect((raw.output.stdout as { text: string }).text).toBe(stdout);
+    }
+  });
+
+  test("returns small raw stdout and stderr exactly without forcing artifacts", async () => {
+    const capture: ProcessCapturePort = {
+      async run(request) {
+        return {
+          ok: true,
+          value: {
+            ...report(request),
+            stdout: stream("stdout", "out\n"),
+            stderr: stream("stderr", "err\n"),
+          },
+        };
+      },
+    };
+    const { tools, artifacts } = processTools(capture);
+    const outcome = await tools.runner.execute({
+      invocationId: invocationId.from("inv-raw-small"),
+      toolCallId: "call-raw-small",
+      toolName: "run_shell",
+      capabilityId: capabilityId.from("builtin:workspace/run_shell@1"),
+      version: 1,
+      effect: "mutation",
+      input: { command: "printf out; printf err >&2", outputMode: "raw" },
+      signal: new AbortController().signal,
+    });
+    expect(outcome.status).toBe("completed");
+    if (outcome.status !== "completed") {
+      return;
+    }
+    expect(outcome.output.projection).toEqual({
+      kind: "raw",
+      ordering: "per-stream",
+      complete: true,
+      fidelity: "exact",
+    });
+    expect(outcome.output.stdout).toMatchObject({ text: "out\n", completeInline: true });
+    expect(outcome.output.stderr).toMatchObject({ text: "err\n", completeInline: true });
+    expect(outcome.result?.artifacts).toEqual([]);
+    expect(artifacts.ingests).toEqual([]);
+  });
+
+  test("bounds JSON-expanding raw text and retains exact recovery", async () => {
+    const artifacts = memoryArtifacts();
+    const controls = "\u0000".repeat(6_000);
+    const capture: ProcessCapturePort = {
+      async run(request) {
+        return {
+          ok: true,
+          value: { ...report(request), stdout: stream("stdout", controls) },
+        };
+      },
+    };
+    const tools = composeProductProcessTools({
+      generation: configurationGeneration.from(0),
+      capture,
+      artifacts,
+      loom: createLoomPort({ artifacts }),
+      workspaceId: "ws-1",
+      sessionId: "session-1",
+    });
+    const outcome = await tools.runner.execute({
+      invocationId: invocationId.from("inv-raw-controls"),
+      toolCallId: "call-raw-controls",
+      toolName: "run_shell",
+      capabilityId: capabilityId.from("builtin:workspace/run_shell@1"),
+      version: 1,
+      effect: "mutation",
+      input: { command: "emit-controls", outputMode: "raw" },
+      signal: new AbortController().signal,
+    });
+    expect(outcome.status).toBe("completed");
+    if (outcome.status !== "completed") {
+      return;
+    }
+    expect(encoder.encode(JSON.stringify(outcome.output)).byteLength).toBeLessThanOrEqual(
+      MAX_PRODUCT_PROCESS_MODEL_BYTES,
+    );
+    expect(outcome.output.projection).toMatchObject({ kind: "raw", complete: false });
+    expect(outcome.output.stdout).toMatchObject({
+      text: null,
+      completeInline: false,
+      omittedBytes: 6_000,
+    });
+    expect((outcome.output.stdout as { recovery: unknown }).recovery).not.toBeNull();
+    expect(outcome.result?.artifacts[0]).toMatchObject({ committed: true, required: true });
+  });
+
+  test("retains oversized and binary raw output behind Loom recovery", async () => {
+    const artifacts = memoryArtifacts();
+    const loom = createLoomPort({ artifacts });
+    const tools = composeProductProcessTools({
+      generation: configurationGeneration.from(0),
+      capture: createHostProcessCapturePort({ artifacts }),
+      workspaceCwd: process.cwd(),
+      artifacts,
+      loom,
+      workspaceId: "ws-1",
+      sessionId: "session-1",
+    });
+    const execute = (id: string, command: string) =>
+      tools.runner.execute({
+        invocationId: invocationId.from(id),
+        toolCallId: `call-${id}`,
+        toolName: "run_shell",
+        capabilityId: capabilityId.from("builtin:workspace/run_shell@1"),
+        version: 1,
+        effect: "mutation",
+        input: { command, outputMode: "raw" },
+        signal: new AbortController().signal,
+      });
+
+    const oversized = await execute("inv-raw-large", "printf '%07000d' 0");
+    expect(oversized.status).toBe("completed");
+    if (oversized.status === "completed") {
+      const schema = tools.registry.resolveByName("run_shell")?.manifest.outputSchema;
+      expect(schema?.safeParse(oversized.output).success).toBe(true);
+      expect(oversized.output.projection).toMatchObject({
+        kind: "raw",
+        fidelity: "artifact-backed",
+        complete: false,
+      });
+      expect((oversized.output.stdout as { text: string }).text.length).toBe(6 * 1_024);
+      const recovery = (
+        oversized.output.stdout as { recovery: Readonly<Record<string, unknown>> | null }
+      ).recovery;
+      expect(recovery).toMatchObject({
+        lineage: {
+          invocationId: "inv-raw-large",
+          stream: "stdout",
+          encoding: "utf-8",
+          availability: "available",
+        },
+      });
+      expect(oversized.result?.artifacts).toHaveLength(1);
+      expect(oversized.result?.artifacts[0]).toMatchObject({ committed: true, required: true });
+      if (recovery === null) {
+        throw new Error("expected raw recovery");
+      }
+      const recoveryCaptureId = (recovery.lineage as { captureId?: unknown } | undefined)
+        ?.captureId;
+      expect(typeof recoveryCaptureId).toBe("string");
+      expect(String(recoveryCaptureId)).toMatch(/^cap-/);
+      const coordinator = createProductReadCoordinator({
+        reader: createWorkspaceReader(
+          createInMemoryFileSystem({ nodes: { "/work": { kind: "directory" } } }),
+          { artifacts },
+        ),
+        loom,
+        workspaceRoot: localPath("/work"),
+        workspaceId: "ws-1",
+        sessionId: "session-1",
+        generation: configurationGeneration.from(0),
+      });
+      const recovered = await coordinator.execute(
+        productReadInputSchema.parse({
+          recovery,
+          projection: { kind: "range", offset: 6_990, length: 10, maxBytes: 10 },
+        }),
+        new AbortController().signal,
+      );
+      expect(recovered).toMatchObject({
+        ok: true,
+        value: {
+          content: "0000000000",
+          recoveryLineage: { invocationId: "inv-raw-large", stream: "stdout" },
+        },
+      });
+    }
+
+    const binary = await execute("inv-raw-binary", "printf '\\377'");
+    expect(binary.status).toBe("completed");
+    if (binary.status === "completed") {
+      expect(binary.output.stdout).toMatchObject({ encoding: "binary", text: null });
+      expect((binary.output.stdout as { recovery: unknown }).recovery).not.toBeNull();
+      expect(binary.result?.artifacts[0]).toMatchObject({ committed: true, required: true });
+    }
+  });
+
+  test("preserves process stop semantics and reports failed exact retention as partial", async () => {
+    const cancelled: ProcessCapturePort = {
+      async run(request) {
+        return { ok: true, value: { ...report(request), stop: { kind: "cancelled" } } };
+      },
+    };
+    const cancelledOutcome = await processTools(cancelled).tools.runner.execute({
+      invocationId: invocationId.from("inv-cancelled"),
+      toolCallId: "call-cancelled",
+      toolName: "run_shell",
+      capabilityId: capabilityId.from("builtin:workspace/run_shell@1"),
+      version: 1,
+      effect: "mutation",
+      input: { command: "work", outputMode: "raw" },
+      signal: new AbortController().signal,
+    });
+    expect(cancelledOutcome.status).toBe("cancelled");
+
+    const failedProcess: ProcessCapturePort = {
+      async run(request) {
+        return {
+          ok: true,
+          value: {
+            ...report(request),
+            exit: { exitCode: 7, signal: null },
+            stderr: stream("stderr", "command failed\n"),
+          },
+        };
+      },
+    };
+    const failedProcessOutcome = await processTools(failedProcess).tools.runner.execute({
+      invocationId: invocationId.from("inv-failed-process"),
+      toolCallId: "call-failed-process",
+      toolName: "run_process",
+      capabilityId: capabilityId.from("builtin:workspace/run_process@1"),
+      version: 1,
+      effect: "mutation",
+      input: { executable: "/bin/false", argv: [], outputMode: "raw" },
+      signal: new AbortController().signal,
+    });
+    expect(failedProcessOutcome.status).toBe("completed");
+    if (failedProcessOutcome.status === "completed") {
+      expect(failedProcessOutcome.output.process).toMatchObject({ exitCode: 7, stop: "exited" });
+      expect(failedProcessOutcome.result?.containedProcessExitCode).toBe(7);
+    }
+
+    const timedOutTools = composeProductProcessTools({
+      generation: configurationGeneration.from(0),
+      capture: createHostProcessCapturePort(),
+      workspaceCwd: process.cwd(),
+    });
+    const timedOut = await timedOutTools.runner.execute({
+      invocationId: invocationId.from("inv-timed-out"),
+      toolCallId: "call-timed-out",
+      toolName: "run_shell",
+      capabilityId: capabilityId.from("builtin:workspace/run_shell@1"),
+      version: 1,
+      effect: "mutation",
+      input: { command: "sleep 1", timeoutMs: 50, outputMode: "raw" },
+      signal: new AbortController().signal,
+    });
+    expect(timedOut.status).toBe("timed-out");
+
+    const artifacts = memoryArtifacts();
+    artifacts.ingest = async (request) =>
+      err({ kind: "artifact", code: "not-found", artifactId: request.artifactId });
+    const reducedOutput = [
+      "total 800",
+      ...Array.from(
+        { length: 100 },
+        (_, index) =>
+          `-rw-r--r--  1 user staff ${1_000 + index} Aug 26 10:00 failure-${index}.typescript.ts`,
+      ),
+      "",
+    ].join("\n");
+    const reducedCapture: ProcessCapturePort = {
+      async run(request) {
+        return {
+          ok: true,
+          value: {
+            ...report(request),
+            stdout: stream("stdout", reducedOutput),
+          },
+        };
+      },
+    };
+    const tools = composeProductProcessTools({
+      generation: configurationGeneration.from(0),
+      capture: reducedCapture,
+      artifacts,
+      loom: createLoomPort({ artifacts }),
+      workspaceId: "ws-1",
+      sessionId: "session-1",
+    });
+    const partial = await tools.runner.execute({
+      invocationId: invocationId.from("inv-artifact-failed"),
+      toolCallId: "call-artifact-failed",
+      toolName: "run_process",
+      capabilityId: capabilityId.from("builtin:workspace/run_process@1"),
+      version: 1,
+      effect: "mutation",
+      input: { executable: "/bin/ls", argv: ["-la"] },
+      signal: new AbortController().signal,
+    });
+    expect(partial.status).toBe("partial");
+    if (partial.status === "partial") {
+      expect(partial.result?.artifacts[0]).toMatchObject({ committed: false, required: true });
+      expect((partial.output.stdout as { recovery: unknown }).recovery).toBeNull();
+    }
   });
 });
