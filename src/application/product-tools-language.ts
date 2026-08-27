@@ -1,17 +1,15 @@
 /**
- * Product language-server and DAP tools (#714).
+ * Strict product language-server and debug-adapter tools (#805).
  *
- * Registers builtins that adapt {@link LanguageServerSupervisor} and
- * {@link DebugAdapterSupervisor}. Session identity is model-supplied
- * serviceId/generation; hosts must already own the managed-service graph.
+ * Concrete operations are grouped behind closed schemas and adapt the existing
+ * supervisors. The supervisors remain the protocol owners; this module owns
+ * registration and dispatch through the unified product gateway.
  */
-
-import { z } from "zod";
 
 import type {
   ConfigurationGeneration,
-  ManagedServiceId,
-  ServiceGeneration,
+  FileSystemPort,
+  LocalPath,
   ToolCatalog,
   ToolInvocationOutcome,
   ToolRegistry,
@@ -20,108 +18,29 @@ import type {
 import {
   createToolRegistry,
   createToolRegistryEntry,
-  defaultConcurrencyContract,
-  defaultProjectionContract,
-  defaultToolLimits,
+  fileUriToAbsolutePath,
+  localPath,
   managedServiceId,
-  serviceGeneration,
-  type ToolManifestDocument,
 } from "../domain/index.ts";
 import type { DebugAdapterSupervisor } from "./debug-adapter.ts";
 import type { LanguageServerSupervisor } from "./language-server.ts";
+import { dapToolDefinitions } from "./product-language-tools/dap.ts";
+import { lspToolDefinitions } from "./product-language-tools/lsp.ts";
 import type { ToolRunnerPort, ToolRunnerRequest } from "./tool-call-loop.ts";
+import { createWorkspacePathBinder } from "./workspace-path.ts";
 
-export const PRODUCT_LANGUAGE_TOOLS_OWNER = "#714";
-
-const openObject = z.record(z.string(), z.unknown()) as z.ZodType<
-  Readonly<Record<string, unknown>>
->;
-
-function document(
-  name: string,
-  title: string,
-  description: string,
-  effect: ToolManifestDocument["effect"],
-  capabilityKind: ToolManifestDocument["capabilityKind"],
-): ToolManifestDocument {
-  return {
-    namespace: "workspace",
-    name,
-    version: 1,
-    source: "builtin",
-    title,
-    description,
-    effect,
-    capabilityKind,
-    platforms: [],
-    limits: defaultToolLimits({ defaultTimeoutMs: 60_000 }),
-    concurrency: defaultConcurrencyContract({ maxPerWorkspace: 2 }),
-    resultProjection: defaultProjectionContract(),
-  };
-}
-
-function mustEntry(result: ReturnType<typeof createToolRegistryEntry>): ToolRegistryEntry {
-  if (!result.ok) {
-    throw new Error(`product language tool registration failed: ${result.error.code}`);
-  }
-  return result.value;
-}
-
-function jsonRecord(value: unknown): Readonly<Record<string, unknown>> {
-  const encoded = JSON.stringify(value);
-  if (encoded === undefined) {
-    return { ok: false, reason: "unserializable" };
-  }
-  const parsed: unknown = JSON.parse(encoded);
-  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
-    return { value: parsed as unknown };
-  }
-  return parsed as Readonly<Record<string, unknown>>;
-}
-
-function failed(code: string): ToolInvocationOutcome {
-  return { status: "failed", reason: code, effect: "none" };
-}
-
-function completed(value: unknown): ToolInvocationOutcome {
-  return { status: "completed", output: jsonRecord(value), effect: "completed" };
-}
-
-function errorCode(error: { readonly code?: string; readonly kind?: string }): string {
-  if (typeof error.code === "string") {
-    return error.code;
-  }
-  if (typeof error.kind === "string") {
-    return error.kind;
-  }
-  return "failed";
-}
-
-function parseSession(input: Readonly<Record<string, unknown>>):
-  | {
-      readonly ok: true;
-      readonly serviceId: ManagedServiceId;
-      readonly generation: ServiceGeneration;
-    }
-  | { readonly ok: false; readonly reason: string } {
-  if (typeof input.serviceId !== "string" || typeof input.generation !== "number") {
-    return { ok: false, reason: "malformed-input" };
-  }
-  try {
-    return {
-      ok: true,
-      serviceId: managedServiceId.from(input.serviceId),
-      generation: serviceGeneration.from(input.generation),
-    };
-  } catch {
-    return { ok: false, reason: "malformed-input" };
-  }
-}
+export const PRODUCT_LANGUAGE_TOOLS_OWNER = "#805";
 
 export type ProductLanguageToolPorts = {
   readonly generation: ConfigurationGeneration;
   readonly languageServers: LanguageServerSupervisor;
+  /**
+   * Live composition configures the supervisor to trust its caller because
+   * #786's gateway is the sole policy and confirmation boundary.
+   */
   readonly debugAdapters: DebugAdapterSupervisor;
+  readonly fileSystem?: FileSystemPort;
+  readonly workspaceRoot?: LocalPath;
 };
 
 export type ProductLanguageTools = {
@@ -130,339 +49,164 @@ export type ProductLanguageTools = {
   readonly catalog: ToolCatalog;
   readonly runner: ToolRunnerPort;
   readonly toolNames: readonly string[];
+  /** Resynchronize open documents and collect bounded diagnostics after writes. */
+  afterWorkspaceMutation(signal?: AbortSignal): Promise<Readonly<Record<string, unknown>>>;
 };
 
-/**
- * Compose builtin LSP / DAP tools.
- */
-export function composeProductLanguageTools(ports: ProductLanguageToolPorts): ProductLanguageTools {
-  const entries: ToolRegistryEntry[] = [
-    mustEntry(
-      createToolRegistryEntry(
-        document(
-          "lsp_start",
-          "Start language server",
-          "Start a managed language server",
-          "mutation",
-          "lsp",
-        ),
-        { inputSchema: openObject, outputSchema: openObject },
-      ),
-    ),
-    mustEntry(
-      createToolRegistryEntry(
-        document("lsp_hover", "LSP hover", "Hover at a document position", "observation", "lsp"),
-        { inputSchema: openObject, outputSchema: openObject },
-      ),
-    ),
-    mustEntry(
-      createToolRegistryEntry(
-        document(
-          "lsp_definition",
-          "LSP definition",
-          "Go to definition at a document position",
-          "observation",
-          "lsp",
-        ),
-        { inputSchema: openObject, outputSchema: openObject },
-      ),
-    ),
-    mustEntry(
-      createToolRegistryEntry(
-        document(
-          "lsp_references",
-          "LSP references",
-          "Find references at a document position",
-          "observation",
-          "lsp",
-        ),
-        { inputSchema: openObject, outputSchema: openObject },
-      ),
-    ),
-    mustEntry(
-      createToolRegistryEntry(
-        document(
-          "lsp_diagnostics",
-          "LSP diagnostics",
-          "Read published diagnostics for a document URI",
-          "observation",
-          "lsp",
-        ),
-        { inputSchema: openObject, outputSchema: openObject },
-      ),
-    ),
-    mustEntry(
-      createToolRegistryEntry(
-        document(
-          "lsp_shutdown",
-          "Shutdown language server",
-          "Shut down a language server",
-          "mutation",
-          "lsp",
-        ),
-        { inputSchema: openObject, outputSchema: openObject },
-      ),
-    ),
-    mustEntry(
-      createToolRegistryEntry(
-        document(
-          "dap_start",
-          "Start debug adapter",
-          "Start a managed DAP adapter",
-          "mutation",
-          "dap",
-        ),
-        { inputSchema: openObject, outputSchema: openObject },
-      ),
-    ),
-    mustEntry(
-      createToolRegistryEntry(
-        document("dap_launch", "DAP launch", "Launch a debug target", "mutation", "dap"),
-        { inputSchema: openObject, outputSchema: openObject },
-      ),
-    ),
-    mustEntry(
-      createToolRegistryEntry(
-        document(
-          "dap_set_breakpoints",
-          "DAP breakpoints",
-          "Set breakpoints on a source",
-          "mutation",
-          "dap",
-        ),
-        { inputSchema: openObject, outputSchema: openObject },
-      ),
-    ),
-    mustEntry(
-      createToolRegistryEntry(
-        document(
-          "dap_stack_trace",
-          "DAP stack",
-          "Read a stopped thread stack",
-          "observation",
-          "dap",
-        ),
-        { inputSchema: openObject, outputSchema: openObject },
-      ),
-    ),
-    mustEntry(
-      createToolRegistryEntry(
-        document("dap_continue", "DAP continue", "Continue a stopped thread", "mutation", "dap"),
-        { inputSchema: openObject, outputSchema: openObject },
-      ),
-    ),
-    mustEntry(
-      createToolRegistryEntry(
-        document(
-          "dap_disconnect",
-          "DAP disconnect",
-          "Disconnect a debug session",
-          "mutation",
-          "dap",
-        ),
-        { inputSchema: openObject, outputSchema: openObject },
-      ),
-    ),
-  ];
+function mustEntry(result: ReturnType<typeof createToolRegistryEntry>): ToolRegistryEntry {
+  if (!result.ok) {
+    throw new Error(`product language tool registration failed: ${result.error.code}`);
+  }
+  return result.value;
+}
 
+/** Compose the complete strict LSP/DAP product operation set. */
+export function composeProductLanguageTools(ports: ProductLanguageToolPorts): ProductLanguageTools {
+  const definitions = [
+    ...lspToolDefinitions(ports.languageServers),
+    ...dapToolDefinitions(ports.debugAdapters),
+  ];
+  const entries = definitions.map((definition) =>
+    mustEntry(
+      createToolRegistryEntry(definition.document, {
+        inputSchema: definition.inputSchema,
+        outputSchema: definition.outputSchema,
+        ...(definition.effectFor === undefined ? {} : { effectFor: definition.effectFor }),
+      }),
+    ),
+  );
   const registryResult = createToolRegistry(ports.generation, entries);
   if (!registryResult.ok) {
     throw new Error(`product language tool registry failed: ${registryResult.error.code}`);
   }
   const registry = registryResult.value;
-  const lsp = ports.languageServers;
-  const dap = ports.debugAdapters;
+  const byName = new Map(definitions.map((definition) => [definition.document.name, definition]));
+  const activeLanguageServers = new Set<string>();
+  const workspacePathBinder =
+    ports.fileSystem === undefined ? null : createWorkspacePathBinder(ports.fileSystem);
 
   const runner: ToolRunnerPort = {
     async execute(request: ToolRunnerRequest): Promise<ToolInvocationOutcome> {
       if (request.signal.aborted) {
         return { status: "cancelled", effect: "none" };
       }
-      const input = request.input;
-      switch (request.toolName) {
-        case "lsp_start": {
-          const result = await lsp.start(input as never, request.signal);
-          return result.ok ? completed(result.value) : failed(errorCode(result.error));
-        }
-        case "lsp_hover": {
-          const session = parseSession(input);
-          if (!session.ok) {
-            return failed(session.reason);
-          }
-          if (
-            typeof input.uri !== "string" ||
-            typeof input.line !== "number" ||
-            typeof input.character !== "number"
-          ) {
-            return failed("malformed-input");
-          }
-          const result = await lsp.hover(
-            session.serviceId,
-            session.generation,
-            {
-              uri: input.uri,
-              position: { line: input.line, character: input.character },
-            },
-            request.signal,
-          );
-          return result.ok ? completed({ hover: result.value }) : failed(errorCode(result.error));
-        }
-        case "lsp_definition": {
-          const session = parseSession(input);
-          if (!session.ok) {
-            return failed(session.reason);
-          }
-          if (
-            typeof input.uri !== "string" ||
-            typeof input.line !== "number" ||
-            typeof input.character !== "number"
-          ) {
-            return failed("malformed-input");
-          }
-          const result = await lsp.definition(
-            session.serviceId,
-            session.generation,
-            {
-              uri: input.uri,
-              position: { line: input.line, character: input.character },
-            },
-            request.signal,
-          );
-          return result.ok
-            ? completed({ locations: result.value })
-            : failed(errorCode(result.error));
-        }
-        case "lsp_references": {
-          const session = parseSession(input);
-          if (!session.ok) {
-            return failed(session.reason);
-          }
-          if (
-            typeof input.uri !== "string" ||
-            typeof input.line !== "number" ||
-            typeof input.character !== "number"
-          ) {
-            return failed("malformed-input");
-          }
-          const result = await lsp.references(
-            session.serviceId,
-            session.generation,
-            {
-              uri: input.uri,
-              position: { line: input.line, character: input.character },
-              includeDeclaration:
-                typeof input.includeDeclaration === "boolean" ? input.includeDeclaration : true,
-            },
-            request.signal,
-          );
-          return result.ok
-            ? completed({ locations: result.value })
-            : failed(errorCode(result.error));
-        }
-        case "lsp_diagnostics": {
-          if (typeof input.serviceId !== "string" || typeof input.uri !== "string") {
-            return failed("malformed-input");
-          }
-          try {
-            const diagnostics = lsp.diagnostics(managedServiceId.from(input.serviceId), input.uri);
-            return completed({ diagnostics });
-          } catch {
-            return failed("malformed-input");
-          }
-        }
-        case "lsp_shutdown": {
-          const session = parseSession(input);
-          if (!session.ok) {
-            return failed(session.reason);
-          }
-          const result = await lsp.shutdown(session.serviceId, session.generation, request.signal);
-          return result.ok ? completed(result.value) : failed(errorCode(result.error));
-        }
-        case "dap_start": {
-          const result = await dap.start(input as never, request.signal);
-          return result.ok ? completed(result.value) : failed(errorCode(result.error));
-        }
-        case "dap_launch": {
-          const session = parseSession(input);
-          if (!session.ok) {
-            return failed(session.reason);
-          }
-          const result = await dap.launch(
-            session.serviceId,
-            session.generation,
-            input as never,
-            request.signal,
-          );
-          return result.ok ? completed(result.value) : failed(errorCode(result.error));
-        }
-        case "dap_set_breakpoints": {
-          const session = parseSession(input);
-          if (!session.ok) {
-            return failed(session.reason);
-          }
-          const result = await dap.setBreakpoints(
-            session.serviceId,
-            session.generation,
-            input as never,
-            request.signal,
-          );
-          return result.ok ? completed(result.value) : failed(errorCode(result.error));
-        }
-        case "dap_stack_trace": {
-          const session = parseSession(input);
-          if (!session.ok) {
-            return failed(session.reason);
-          }
-          if (typeof input.threadId !== "number" || typeof input.stoppedGeneration !== "number") {
-            return failed("malformed-input");
-          }
-          const result = await dap.stackTrace(
-            session.serviceId,
-            session.generation,
-            {
-              threadId: input.threadId,
-              stoppedGeneration: input.stoppedGeneration,
-              ...(typeof input.startFrame === "number" ? { startFrame: input.startFrame } : {}),
-              ...(typeof input.levels === "number" ? { levels: input.levels } : {}),
-            },
-            request.signal,
-          );
-          return result.ok ? completed({ frames: result.value }) : failed(errorCode(result.error));
-        }
-        case "dap_continue": {
-          const session = parseSession(input);
-          if (!session.ok) {
-            return failed(session.reason);
-          }
-          if (typeof input.threadId !== "number" || typeof input.stoppedGeneration !== "number") {
-            return failed("malformed-input");
-          }
-          const result = await dap.continueExecution(
-            session.serviceId,
-            session.generation,
-            { threadId: input.threadId, stoppedGeneration: input.stoppedGeneration },
-            request.signal,
-          );
-          return result.ok ? completed(result.value) : failed(errorCode(result.error));
-        }
-        case "dap_disconnect": {
-          const session = parseSession(input);
-          if (!session.ok) {
-            return failed(session.reason);
-          }
-          const result = await dap.disconnect(session.serviceId, session.generation, {
-            signal: request.signal,
-          });
-          return result.ok ? completed(result.value) : failed(errorCode(result.error));
-        }
-        default:
-          return {
-            status: "unavailable",
-            reason: `unknown product language tool: ${request.toolName}`,
-            effect: "none",
-          };
+      const definition = byName.get(request.toolName);
+      if (definition === undefined) {
+        return {
+          status: "unavailable",
+          reason: `unknown product language tool: ${request.toolName}`,
+          effect: "none",
+        };
       }
+      const parsed = definition.inputSchema.safeParse(request.input);
+      if (!parsed.success) {
+        return { status: "malformed", reason: "malformed-input", effect: "none" };
+      }
+      const outcome = await definition.execute({ ...request, input: parsed.data });
+      if (
+        outcome.status === "completed" &&
+        request.toolName.startsWith("lsp_") &&
+        typeof parsed.data.serviceId === "string"
+      ) {
+        if (request.toolName === "lsp_shutdown") {
+          activeLanguageServers.delete(parsed.data.serviceId);
+        } else {
+          activeLanguageServers.add(parsed.data.serviceId);
+        }
+      }
+      return outcome;
     },
+  };
+
+  const afterWorkspaceMutation = async (
+    signal?: AbortSignal,
+  ): Promise<Readonly<Record<string, unknown>>> => {
+    if (ports.fileSystem === undefined || ports.workspaceRoot === undefined) {
+      return { status: "unavailable", reason: "workspace-filesystem-not-bound" };
+    }
+    const servers: Array<Readonly<Record<string, unknown>>> = [];
+    for (const serviceIdText of activeLanguageServers) {
+      if (signal?.aborted === true) {
+        return { status: "cancelled", servers };
+      }
+      const serviceId = managedServiceId.from(serviceIdText);
+      const snapshot = ports.languageServers.snapshot(serviceId);
+      if (snapshot === null || (snapshot.state !== "ready" && snapshot.state !== "degraded")) {
+        servers.push({ serviceId: serviceIdText, status: "unavailable" });
+        continue;
+      }
+      const documents: Array<Readonly<Record<string, unknown>>> = [];
+      for (const tracked of snapshot.openDocuments) {
+        const decoded = fileUriToAbsolutePath(tracked.uri);
+        if (!decoded.ok) {
+          documents.push({ uri: tracked.uri, status: "invalid-uri" });
+          continue;
+        }
+        const bound = await workspacePathBinder?.bind(ports.workspaceRoot, decoded.value, signal);
+        if (bound === undefined || !bound.ok) {
+          documents.push({
+            uri: tracked.uri,
+            status: `path-${bound?.error.code ?? "unavailable"}`,
+          });
+          continue;
+        }
+        const current = ports.languageServers.document(serviceId, tracked.uri);
+        const read = await ports.fileSystem.readText(
+          localPath(bound.value.resolved),
+          4 * 1_024 * 1_024,
+          signal,
+        );
+        if (!read.ok) {
+          if (read.error.code === "not-found") {
+            const closed = await ports.languageServers.closeDocument(
+              serviceId,
+              snapshot.generation,
+              { uri: tracked.uri },
+            );
+            documents.push({
+              uri: tracked.uri,
+              status: closed.ok ? "closed-missing" : "close-failed",
+            });
+          } else {
+            documents.push({ uri: tracked.uri, status: `read-${read.error.code}` });
+          }
+          continue;
+        }
+        if (current !== null && current.text === read.value) {
+          documents.push({
+            uri: tracked.uri,
+            status: "unchanged",
+            diagnostics: ports.languageServers.diagnostics(serviceId, tracked.uri),
+          });
+          continue;
+        }
+        const changed = await ports.languageServers.changeDocument(serviceId, snapshot.generation, {
+          uri: tracked.uri,
+          version: tracked.version + 1,
+          contentChanges: [{ kind: "full", text: read.value }],
+        });
+        if (!changed.ok) {
+          documents.push({ uri: tracked.uri, status: `change-${changed.error.code}` });
+          continue;
+        }
+        const saved = await ports.languageServers.saveDocument(serviceId, snapshot.generation, {
+          uri: tracked.uri,
+          text: read.value,
+        });
+        documents.push({
+          uri: tracked.uri,
+          status: saved.ok ? "synchronized" : `save-${saved.error.code}`,
+          diagnostics: ports.languageServers.diagnostics(serviceId, tracked.uri),
+        });
+      }
+      servers.push({
+        serviceId: serviceIdText,
+        generation: Number(snapshot.generation),
+        status: "completed",
+        documents,
+      });
+    }
+    return { status: "completed", servers };
   };
 
   return {
@@ -471,5 +215,6 @@ export function composeProductLanguageTools(ports: ProductLanguageToolPorts): Pr
     catalog: registry.catalog,
     runner,
     toolNames: entries.map((entry) => entry.descriptor.name),
+    afterWorkspaceMutation,
   };
 }

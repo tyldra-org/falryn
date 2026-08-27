@@ -184,7 +184,12 @@ export async function composeProductShellAttachments(
         : composeProductLanguageTools({
             generation,
             languageServers: createLanguageServerSupervisor(managedServices),
-            debugAdapters: createDebugAdapterSupervisor(managedServices),
+            debugAdapters: createDebugAdapterSupervisor(managedServices, {
+              confirmationPolicy: "auto-allow",
+              ...(ports.artifacts === undefined ? {} : { artifacts: ports.artifacts }),
+            }),
+            fileSystem: ports.fileSystem,
+            workspaceRoot,
           });
     const memoryTools =
       workspaceRoot === null
@@ -203,15 +208,27 @@ export async function composeProductShellAttachments(
         : mergeProductToolBundles(
             generation,
             [workspaceTools, processTools, gitTools, languageTools, memoryTools],
-            indexLifecycle === null
-              ? {}
-              : {
-                  afterMutation: async (request) => {
-                    workspaceTools.invalidateContext();
-                    const refreshed = await indexLifecycle.refresh(request.signal);
-                    return refreshed.ok;
-                  },
-                },
+            {
+              afterMutation: async (request) => {
+                workspaceTools.invalidateContext();
+                const languageDiagnostics = await languageTools.afterWorkspaceMutation(
+                  request.signal,
+                );
+                if (indexLifecycle === null) {
+                  return {
+                    workspaceIndex: { status: "unavailable", code: "index-unavailable" },
+                    languageDiagnostics,
+                  };
+                }
+                const refreshed = await indexLifecycle.refresh(request.signal);
+                return {
+                  workspaceIndex: refreshed.ok
+                    ? { status: "completed" }
+                    : { status: "unavailable", code: refreshed.error.code },
+                  languageDiagnostics,
+                };
+              },
+            },
           );
     const composed = composeProductAgentRuntime({
       eventStore: ports.eventStore,

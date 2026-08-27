@@ -76,6 +76,8 @@ export type ToolDescriptor = {
   readonly inputSchema: ZodType<Readonly<Record<string, unknown>>>;
   /** Optional conflict keys derived from validated input. */
   readonly conflictKeysFor?: (input: Readonly<Record<string, unknown>>) => readonly ConflictKey[];
+  /** Trusted effect derivation after schema validation. */
+  readonly effectFor?: (input: Readonly<Record<string, unknown>>) => EffectClass;
   readonly expectedOutputBytes?: number;
 };
 
@@ -342,12 +344,23 @@ export function bindToolProposals(options: BindToolProposalsOptions): BindToolPr
 
     const input = parsed.data;
     const conflictKeys = descriptor.conflictKeysFor?.(input) ?? [];
+    const effect = descriptor.effectFor?.(input) ?? descriptor.effect;
+    if (!isEffectClass(effect)) {
+      return {
+        ok: false,
+        error: {
+          code: "invalid-descriptor",
+          name: descriptor.name,
+          reason: "invalid-effect",
+        },
+      };
+    }
 
     bound.push({
       schemaVersion: TOOL_PIPELINE_SCHEMA_VERSION,
       invocationId: nextInvocationId(proposal),
       proposal,
-      descriptor,
+      descriptor: effect === descriptor.effect ? descriptor : { ...descriptor, effect },
       input,
       conflictKeys,
     });

@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { z } from "zod";
 
 import {
   artifactId,
@@ -8,6 +9,11 @@ import {
   createManualClock,
   createStubCommandRunner,
   createToolHookRegistry,
+  createToolRegistry,
+  createToolRegistryEntry,
+  defaultConcurrencyContract,
+  defaultProjectionContract,
+  defaultToolLimits,
   instant,
   invocationId,
   localPath,
@@ -247,5 +253,78 @@ describe("createProductToolGateway", () => {
     expect((await execute("inv-write-2")).status).toBe("completed");
     expect(confirmations).toBe(1);
     expect(runnerCalls).toBe(1);
+  });
+
+  test("uses the validated argument-derived effect throughout the gateway", async () => {
+    const { clock, journal } = setup();
+    const entry = createToolRegistryEntry(
+      {
+        namespace: "workspace",
+        name: "debug_evaluate",
+        version: 1,
+        source: "builtin",
+        title: "Evaluate expression",
+        description: "Evaluate with an effect selected from the validated context",
+        effect: "interactive",
+        capabilityKind: "dap",
+        platforms: [],
+        limits: defaultToolLimits(),
+        concurrency: defaultConcurrencyContract(),
+        resultProjection: defaultProjectionContract(),
+      },
+      {
+        inputSchema: z
+          .object({ context: z.enum(["watch", "repl"]), expression: z.string().min(1) })
+          .strict(),
+        outputSchema: z.object({ result: z.string() }).strict(),
+        effectFor: (input) => (input.context === "repl" ? "interactive" : "observation"),
+      },
+    );
+    if (!entry.ok) throw new Error(entry.error.code);
+    const registry = createToolRegistry(generation, [entry.value]);
+    if (!registry.ok) throw new Error(registry.error.code);
+    const hooks = createToolHookRegistry(generation, []);
+    if (!hooks.ok) throw new Error(hooks.error.code);
+    const effects: string[] = [];
+    let confirmations = 0;
+    const gateway = createProductToolGateway({
+      clock,
+      registry: registry.value,
+      runner: {
+        execute: async (request) => {
+          effects.push(request.effect);
+          return { status: "completed", output: { result: "ok" }, effect: "completed" };
+        },
+      },
+      hooks: hooks.value,
+      journal,
+      correlation,
+      turnId: turn,
+      disclosedToolNames: new Set(["debug_evaluate"]),
+      confirmation: {
+        resolve: async (request) => {
+          confirmations += 1;
+          return { kind: "confirmed", confirmationId: request.confirmationId };
+        },
+      },
+      effectLedger: new Map(),
+    });
+    const execute = (context: "watch" | "repl", suffix: string) =>
+      gateway.execute({
+        invocationId: invocationId.from(`inv-${suffix}`),
+        toolCallId: `call-${suffix}`,
+        toolName: "debug_evaluate",
+        capabilityId: entry.value.manifest.capabilityId,
+        version: 1,
+        effect: "interactive",
+        input: { context, expression: "value" },
+        signal: new AbortController().signal,
+      });
+
+    expect((await execute("watch", "watch")).status).toBe("completed");
+    expect(confirmations).toBe(0);
+    expect((await execute("repl", "repl")).status).toBe("completed");
+    expect(confirmations).toBe(1);
+    expect(effects).toEqual(["observation", "interactive"]);
   });
 });

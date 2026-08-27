@@ -21,7 +21,10 @@ export type ProductToolBundle = {
 
 export type ProductToolMergeOptions = {
   /** Publish workspace state after any tool reports an observed mutation. */
-  readonly afterMutation?: (request: ToolRunnerRequest) => Promise<boolean>;
+  readonly afterMutation?: (
+    request: ToolRunnerRequest,
+    outcome: Extract<ToolInvocationOutcome, { readonly status: "completed" }>,
+  ) => Promise<boolean | Readonly<Record<string, unknown>>>;
 };
 
 /**
@@ -59,20 +62,21 @@ export function mergeProductToolBundles(
       if (request.effect === "observation" || outcome.effect === "none") {
         return outcome;
       }
-      const refreshed = await options.afterMutation?.(request);
-      if (refreshed !== false || outcome.status !== "completed") {
+      if (outcome.status !== "completed") {
         return outcome;
       }
-      return {
-        ...outcome,
-        output: {
-          ...outcome.output,
-          workspaceIndex: {
-            status: "unavailable",
-            code: "refresh-failed",
+      const feedback = await options.afterMutation?.(request, outcome);
+      if (feedback === undefined || feedback === true) return outcome;
+      if (feedback === false) {
+        return {
+          ...outcome,
+          output: {
+            ...outcome.output,
+            workspaceIndex: { status: "unavailable", code: "refresh-failed" },
           },
-        },
-      };
+        };
+      }
+      return { ...outcome, output: { ...outcome.output, ...feedback } };
     },
   };
   return {

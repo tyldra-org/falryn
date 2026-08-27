@@ -251,9 +251,9 @@ export function createProductToolGateway(options: ProductToolGatewayOptions): To
       const ledgerKey = `${options.turnId}:${confirmationInputFingerprint(
         ready.entry.manifest.capabilityId,
         ready.input,
-        ready.entry.manifest.effect,
+        ready.effect,
       )}`;
-      if (ready.entry.manifest.effect !== "observation") {
+      if (ready.effect !== "observation") {
         const prior = options.effectLedger.get(ledgerKey);
         if (prior !== undefined) {
           return prior;
@@ -368,7 +368,7 @@ export function createProductToolGateway(options: ProductToolGatewayOptions): To
         projection,
         failureReason(outcome),
       );
-      if (ready.entry.manifest.effect !== "observation" && effectOf(projected) !== "none") {
+      if (ready.effect !== "observation" && effectOf(projected) !== "none") {
         options.effectLedger.set(ledgerKey, projected);
       }
       return projected;

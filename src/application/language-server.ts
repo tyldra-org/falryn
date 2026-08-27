@@ -75,6 +75,7 @@ import {
   validateFormatRequest,
   validateLanguageServerStartRequest,
   validateOpenDocumentRequest,
+  validateRange,
   validateRenameRequest,
   validateTextDocumentPosition,
   validateWorkspaceFoldersChange,
@@ -83,6 +84,33 @@ import {
 import { err, ok, type Result } from "../domain/result.ts";
 
 export type LanguageServerListener = (event: LanguageServerEvent) => void;
+
+/** Closed extended request set used by strict product adapters (#805). */
+export type LanguageServerExtendedRequest =
+  | {
+      readonly kind: "declaration" | "type-definition" | "implementation";
+      readonly uri: string;
+      readonly position: { readonly line: number; readonly character: number };
+    }
+  | { readonly kind: "workspace-symbols"; readonly query: string }
+  | {
+      readonly kind: "signature-help";
+      readonly uri: string;
+      readonly position: { readonly line: number; readonly character: number };
+    }
+  | {
+      readonly kind: "call-hierarchy-prepare" | "type-hierarchy-prepare";
+      readonly uri: string;
+      readonly position: { readonly line: number; readonly character: number };
+    }
+  | {
+      readonly kind:
+        | "call-hierarchy-incoming"
+        | "call-hierarchy-outgoing"
+        | "type-hierarchy-supertypes"
+        | "type-hierarchy-subtypes";
+      readonly item: Readonly<Record<string, unknown>>;
+    };
 
 export type LanguageServerSupervisor = {
   start(
@@ -160,6 +188,17 @@ export type LanguageServerSupervisor = {
     request: LanguageServerFormatRequest,
     signal?: AbortSignal,
   ): Promise<Result<LanguageServerEditToPatchResult, LanguageServerError>>;
+  formatRange(
+    serviceId: ManagedServiceId,
+    generation: ServiceGeneration,
+    request: LanguageServerFormatRequest & {
+      readonly range: {
+        readonly start: { readonly line: number; readonly character: number };
+        readonly end: { readonly line: number; readonly character: number };
+      };
+    },
+    signal?: AbortSignal,
+  ): Promise<Result<LanguageServerEditToPatchResult, LanguageServerError>>;
   rename(
     serviceId: ManagedServiceId,
     generation: ServiceGeneration,
@@ -180,7 +219,18 @@ export type LanguageServerSupervisor = {
       LanguageServerError
     >
   >;
+  /**
+   * Send one of the closed, product-owned extended LSP requests.
+   * This is not an arbitrary JSON-RPC escape and is never registered as a tool.
+   */
+  extendedFeature(
+    serviceId: ManagedServiceId,
+    generation: ServiceGeneration,
+    request: LanguageServerExtendedRequest,
+    signal?: AbortSignal,
+  ): Promise<Result<unknown, LanguageServerError>>;
   diagnostics(serviceId: ManagedServiceId, uri: string): LanguageServerPublishDiagnostics | null;
+  document(serviceId: ManagedServiceId, uri: string): LanguageServerOpenDocument | null;
   snapshot(serviceId: ManagedServiceId): LanguageServerSnapshot | null;
   attach(
     serviceId: ManagedServiceId,
@@ -1175,6 +1225,63 @@ export function createLanguageServerSupervisor(
       return ok(converted.value);
     },
 
+    async formatRange(serviceId, generation, request, signal) {
+      const ready = requireReady(serviceId, generation);
+      if (!ready.ok) {
+        return ready;
+      }
+      const invalid = validateFormatRequest(request);
+      const range = validateRange(request.range);
+      if (invalid !== null || !range.ok) {
+        return err({
+          kind: "language-server",
+          code: "invalid-request",
+          reason: invalid ?? "invalid-range",
+        });
+      }
+      const open = ready.value.openDocuments.get(request.uri);
+      if (open === undefined) {
+        return err({ kind: "language-server", code: "document-not-open" });
+      }
+      const raw = await sendRequest(
+        ready.value,
+        "textDocument/rangeFormatting",
+        {
+          textDocument: { uri: request.uri },
+          range: range.value,
+          options: {
+            tabSize: request.tabSize ?? 2,
+            insertSpaces: request.insertSpaces ?? true,
+          },
+        },
+        ready.value.limits.requestTimeoutMs,
+        signal,
+      );
+      if (!raw.ok) {
+        return raw;
+      }
+      const edits = parseTextEditArray(raw.value);
+      if (!edits.ok) {
+        return err({ kind: "language-server", code: "invalid-request", reason: edits.error });
+      }
+      const converted = workspaceEditToPatchPlan(
+        {
+          documentEdits: [
+            {
+              textDocument: { uri: request.uri, version: open.version },
+              edits: edits.value,
+            },
+          ],
+        },
+        ready.value.openDocuments,
+        workspaceFolderUris(ready.value),
+      );
+      if (!converted.ok) {
+        return err(mapEditFailure(converted.error));
+      }
+      return ok(converted.value);
+    },
+
     async rename(serviceId, generation, request, signal) {
       const ready = requireReady(serviceId, generation);
       if (!ready.ok) {
@@ -1291,12 +1398,91 @@ export function createLanguageServerSupervisor(
       return ok({ result: parsed.value, patches });
     },
 
+    async extendedFeature(serviceId, generation, request, signal) {
+      const ready = requireReady(serviceId, generation);
+      if (!ready.ok) {
+        return ready;
+      }
+      const server = ready.value;
+      let method: string;
+      let params: unknown;
+      switch (request.kind) {
+        case "declaration":
+        case "type-definition":
+        case "implementation":
+        case "signature-help":
+        case "call-hierarchy-prepare":
+        case "type-hierarchy-prepare": {
+          const invalid = validateTextDocumentPosition(request);
+          if (invalid !== null) {
+            return err({ kind: "language-server", code: "invalid-request", reason: invalid });
+          }
+          if (!server.openDocuments.has(request.uri)) {
+            return err({ kind: "language-server", code: "document-not-open" });
+          }
+          const methods = {
+            declaration: "textDocument/declaration",
+            "type-definition": "textDocument/typeDefinition",
+            implementation: "textDocument/implementation",
+            "signature-help": "textDocument/signatureHelp",
+            "call-hierarchy-prepare": "textDocument/prepareCallHierarchy",
+            "type-hierarchy-prepare": "textDocument/prepareTypeHierarchy",
+          } as const;
+          method = methods[request.kind];
+          params = {
+            textDocument: { uri: request.uri },
+            position: request.position,
+          };
+          break;
+        }
+        case "workspace-symbols":
+          if (request.query.length > 4_096 || request.query.includes("\0")) {
+            return err({
+              kind: "language-server",
+              code: "invalid-request",
+              reason: "invalid-symbol",
+            });
+          }
+          method = "workspace/symbol";
+          params = { query: request.query };
+          break;
+        case "call-hierarchy-incoming":
+        case "call-hierarchy-outgoing":
+        case "type-hierarchy-supertypes":
+        case "type-hierarchy-subtypes": {
+          const serialized = JSON.stringify(request.item);
+          if (serialized.length > 64 * 1_024 || request.item === null) {
+            return err({
+              kind: "language-server",
+              code: "invalid-request",
+              reason: "result-too-large",
+            });
+          }
+          const methods = {
+            "call-hierarchy-incoming": "callHierarchy/incomingCalls",
+            "call-hierarchy-outgoing": "callHierarchy/outgoingCalls",
+            "type-hierarchy-supertypes": "typeHierarchy/supertypes",
+            "type-hierarchy-subtypes": "typeHierarchy/subtypes",
+          } as const;
+          method = methods[request.kind];
+          params = { item: request.item };
+          break;
+        }
+      }
+      return sendRequest(server, method, params, server.limits.requestTimeoutMs, signal);
+    },
+
     diagnostics(serviceId, uri) {
       const server = servers.get(serviceId);
       if (server === undefined) {
         return null;
       }
       return server.diagnosticsByUri.get(uri) ?? null;
+    },
+
+    document(serviceId, uri) {
+      const server = servers.get(serviceId);
+      return server?.openDocuments.get(uri) ?? null;
     },
 
     async changeWorkspaceFolders(serviceId, generation, change) {

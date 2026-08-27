@@ -165,6 +165,45 @@ process invocation and capture lineage and continues through the same provider
 tool loop. A process result contains only the selected Hush or raw projection;
 the internal capture is not serialized a second time.
 
+## Language and debugger tools
+
+The product registry contains 30 LSP operations and 29 DAP operations. Each
+operation has its own closed root input schema. Protocol-specific capability
+and launch configuration maps are recursive depth-, item-, key-, string-, and
+byte-bounded extension values rather than an arbitrary request escape. Unknown
+root fields, invalid identities, stale generations, and malformed ranges are
+rejected before transport.
+
+The LSP surface covers server lifecycle, document synchronization, navigation,
+symbols, completion and signature help, diagnostics, formatting, rename, code
+actions, and call/type hierarchies. An operation that depends on an optional
+server capability checks the initialized and dynamically registered capability
+set before sending a request. Formatting, range formatting, rename, and code
+actions return Falryn patch proposals with document-version preconditions;
+language servers do not apply those edits directly.
+
+After a completed product mutation, Falryn compares every tracked open document
+with current workspace bytes, sends a bounded full synchronization only for
+changed documents, saves the synchronized version, and attaches the latest
+available diagnostics to the same tool result. A missing file is closed in the
+language server. Files outside the bound workspace are not read.
+
+The DAP surface covers adapter and target lifecycle, launch and attach,
+configuration completion, source/function/instruction/exception breakpoints,
+threads, stack frames, scopes, variables, controlled evaluation and set
+operations, execution control, source/modules, cancellation, and bounded
+session-artifact capture. Optional requests check negotiated adapter
+capabilities before transport. Watch/hover evaluation is classified as an
+observation while REPL evaluation is interactive; the derived effect is the
+one used by policy, confirmation, scheduling, deduplication, and execution.
+
+These descriptors are composed into the same production registry and runner as
+workspace, process, Git, and memory tools. A provider can execute only the
+strict subset selected into its immutable attempt disclosure, and every such
+call passes through the unified policy, confirmation, hooks, scheduler,
+capture, journal, and projection gateway. Registration alone does not imply
+that all 59 schemas are placed in every prompt.
+
 ## Verification posture
 
 The repository validates formatting, linting, TypeScript, integrity checks, and
