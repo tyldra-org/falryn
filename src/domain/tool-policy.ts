@@ -241,7 +241,7 @@ export function evaluateToolPolicy(
   invocation: DispatchReadyInvocation,
   profile: ToolPolicyProfile = DEFAULT_TOOL_POLICY_PROFILE,
 ): ToolPolicyDecision {
-  const declared = invocation.entry.manifest.effect;
+  const declared = invocation.effect;
   if (!isEffectClass(declared)) {
     return {
       decision: "deny",
@@ -313,7 +313,7 @@ export function evaluateToolPolicy(
  */
 export function createFocusedConfirmationRequest(
   invocation: DispatchReadyInvocation,
-  classification: EffectClassification = classifyEffectForPolicy(invocation.entry.manifest.effect),
+  classification: EffectClassification = classifyEffectForPolicy(invocation.effect),
 ): FocusedConfirmationRequest {
   const capabilityId = invocation.entry.manifest.capabilityId;
   const inputFingerprint = confirmationInputFingerprint(
@@ -351,7 +351,7 @@ export function resolveFocusedConfirmation(options: {
   const liveFingerprint = confirmationInputFingerprint(
     invocation.entry.manifest.capabilityId,
     invocation.input,
-    invocation.entry.manifest.effect,
+    invocation.effect,
   );
   const liveConfirmationId = focusedConfirmationId(invocation.invocationId, liveFingerprint);
 

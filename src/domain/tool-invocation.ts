@@ -24,6 +24,7 @@ import type {
   ToolRegistryEntry,
 } from "./tool-registry.ts";
 import type { ConflictKey } from "./work.ts";
+import { type EffectClass, isEffectClass } from "./work.ts";
 
 /** Schema version this build writes for dispatch-ready invocations. */
 export const TOOL_INVOCATION_SCHEMA_VERSION = TOOL_PIPELINE_SCHEMA_VERSION;
@@ -58,6 +59,8 @@ export type DispatchReadyInvocation = {
   readonly entry: ToolRegistryEntry;
   readonly input: Readonly<Record<string, unknown>>;
   readonly conflictKeys: readonly ConflictKey[];
+  /** Concrete effect derived from validated, normalized input. */
+  readonly effect: EffectClass;
 };
 
 export type ToolValidateError =
@@ -273,6 +276,18 @@ export function validateAndNormalizeInvocations(
 
     const input = normalized.value;
     const conflictKeys = entry.manifest.conflictKeysFor?.(input) ?? [];
+    const effect = entry.manifest.effectFor?.(input) ?? entry.manifest.effect;
+    if (!isEffectClass(effect)) {
+      return {
+        ok: false,
+        error: {
+          code: "malformed-input",
+          toolCallId: raw.toolCallId,
+          name: raw.name,
+          issues: ["custom"],
+        },
+      };
+    }
     const proposal: ToolProposal = {
       toolCallId: raw.toolCallId,
       name: raw.name,
@@ -286,6 +301,7 @@ export function validateAndNormalizeInvocations(
       entry,
       input,
       conflictKeys,
+      effect,
     });
   }
 
@@ -298,7 +314,10 @@ export function toBoundToolInvocation(ready: DispatchReadyInvocation): BoundTool
     schemaVersion: ready.schemaVersion,
     invocationId: ready.invocationId,
     proposal: ready.proposal,
-    descriptor: ready.entry.descriptor,
+    descriptor:
+      ready.effect === ready.entry.descriptor.effect
+        ? ready.entry.descriptor
+        : { ...ready.entry.descriptor, effect: ready.effect },
     input: ready.input,
     conflictKeys: ready.conflictKeys,
   };

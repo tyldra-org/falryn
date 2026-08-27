@@ -217,4 +217,33 @@ describe("composeProductWorkspaceTools", () => {
       code: "refresh-failed",
     });
   });
+
+  test("attaches automatic post-mutation feedback to the same result", async () => {
+    const tools = toolsUnder();
+    const merged = mergeProductToolBundles(configurationGeneration.from(0), [tools], {
+      afterMutation: async () => ({
+        workspaceIndex: { status: "completed" },
+        languageDiagnostics: { status: "completed", servers: [] },
+      }),
+    });
+    const written = await merged.runner.execute({
+      invocationId: invocationId.from("inv-write-feedback"),
+      toolCallId: "call-write-feedback",
+      toolName: "write_files",
+      capabilityId: capabilityId.from("builtin:workspace/write_files@1"),
+      version: 1,
+      effect: "mutation",
+      input: {
+        targets: [{ kind: "create", path: "feedback.ts", text: "export {};\n" }],
+      },
+      signal: new AbortController().signal,
+    });
+
+    expect(written.status).toBe("completed");
+    if (written.status !== "completed") return;
+    expect(written.output).toMatchObject({
+      workspaceIndex: { status: "completed" },
+      languageDiagnostics: { status: "completed", servers: [] },
+    });
+  });
 });

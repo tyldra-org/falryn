@@ -822,7 +822,10 @@ describe("language-server supervisor", () => {
       if (!("method" in message) || !("id" in message)) {
         return;
       }
-      if (message.method === "textDocument/formatting") {
+      if (
+        message.method === "textDocument/formatting" ||
+        message.method === "textDocument/rangeFormatting"
+      ) {
         pushStdout(
           encodeJsonRpcFrame({
             jsonrpc: "2.0",
@@ -908,6 +911,16 @@ describe("language-server supervisor", () => {
       expect(formatted.value.deferredCommands).toEqual([]);
     }
 
+    const rangeFormatted = await supervisor.formatRange(request.serviceId, generation, {
+      uri: "file:///tmp/demo/a.ts",
+      range: { start: { line: 0, character: 0 }, end: { line: 0, character: 12 } },
+    });
+    expect(rangeFormatted.ok).toBe(true);
+    if (rangeFormatted.ok) {
+      expect(rangeFormatted.value.plan.targets[0]?.path).toBe("a.ts");
+      expect(rangeFormatted.value.deferredCommands).toEqual([]);
+    }
+
     const renamed = await supervisor.rename(request.serviceId, generation, {
       uri: "file:///tmp/demo/a.ts",
       position: { line: 0, character: 6 },
@@ -939,6 +952,72 @@ describe("language-server supervisor", () => {
       expect(actions.value.patches[0]?.plan.targets[0]?.hunks[0]?.newLines).toEqual(["let x = 1;"]);
     }
 
+    await supervisor.shutdown(request.serviceId, generation);
+  });
+
+  test("routes only the closed extended language feature set", async () => {
+    const methods: string[] = [];
+    const port = new FakeManagedServicePort((message, pushStdout) => {
+      compliantLspHandler(message, pushStdout);
+      if (!("method" in message) || !("id" in message)) return;
+      if (
+        message.method === "textDocument/declaration" ||
+        message.method === "workspace/symbol" ||
+        message.method === "callHierarchy/incomingCalls"
+      ) {
+        methods.push(message.method);
+        pushStdout(
+          encodeJsonRpcFrame({
+            jsonrpc: "2.0",
+            id: message.id,
+            result: [{ name: "value", uri: "file:///tmp/demo/a.ts" }],
+          }),
+        );
+      }
+    });
+    const supervisor = createLanguageServerSupervisor(port);
+    const request = startRequest("lsp:extended");
+    const started = await supervisor.start(request);
+    expect(started.ok).toBe(true);
+    if (!started.ok) return;
+    const generation = started.value.generation;
+    await supervisor.openDocument(request.serviceId, generation, {
+      uri: "file:///tmp/demo/a.ts",
+      languageId: "typescript",
+      text: "const value = 1;\n",
+    });
+
+    const declaration = await supervisor.extendedFeature(request.serviceId, generation, {
+      kind: "declaration",
+      uri: "file:///tmp/demo/a.ts",
+      position: { line: 0, character: 6 },
+    });
+    const symbols = await supervisor.extendedFeature(request.serviceId, generation, {
+      kind: "workspace-symbols",
+      query: "value",
+    });
+    const incoming = await supervisor.extendedFeature(request.serviceId, generation, {
+      kind: "call-hierarchy-incoming",
+      item: { name: "value", uri: "file:///tmp/demo/a.ts" },
+    });
+    expect(declaration.ok).toBe(true);
+    expect(symbols.ok).toBe(true);
+    expect(incoming.ok).toBe(true);
+    expect(methods).toEqual([
+      "textDocument/declaration",
+      "workspace/symbol",
+      "callHierarchy/incomingCalls",
+    ]);
+
+    const missing = await supervisor.extendedFeature(request.serviceId, generation, {
+      kind: "declaration",
+      uri: "file:///tmp/demo/missing.ts",
+      position: { line: 0, character: 0 },
+    });
+    expect(missing).toEqual({
+      ok: false,
+      error: { kind: "language-server", code: "document-not-open" },
+    });
     await supervisor.shutdown(request.serviceId, generation);
   });
 });

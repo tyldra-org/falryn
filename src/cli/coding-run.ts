@@ -476,7 +476,12 @@ export async function runCoding(
     const languageTools = composeProductLanguageTools({
       generation,
       languageServers: createLanguageServerSupervisor(managedServices),
-      debugAdapters: createDebugAdapterSupervisor(managedServices),
+      debugAdapters: createDebugAdapterSupervisor(managedServices, {
+        confirmationPolicy: "auto-allow",
+        ...(productArtifacts === undefined ? {} : { artifacts: productArtifacts }),
+      }),
+      fileSystem: graph.fileSystem,
+      workspaceRoot,
     });
     const memoryTools = composeProductMemoryTools({
       generation,
@@ -485,15 +490,27 @@ export async function runCoding(
     const productTools = mergeProductToolBundles(
       generation,
       [workspaceTools, processTools, gitTools, languageTools, memoryTools],
-      indexLifecycle === null
-        ? {}
-        : {
-            afterMutation: async (signalRequest) => {
-              workspaceTools.invalidateContext();
-              const refreshed = await indexLifecycle.refresh(signalRequest.signal);
-              return refreshed.ok;
-            },
-          },
+      {
+        afterMutation: async (signalRequest) => {
+          workspaceTools.invalidateContext();
+          const languageDiagnostics = await languageTools.afterWorkspaceMutation(
+            signalRequest.signal,
+          );
+          if (indexLifecycle === null) {
+            return {
+              workspaceIndex: { status: "unavailable", code: "index-unavailable" },
+              languageDiagnostics,
+            };
+          }
+          const refreshed = await indexLifecycle.refresh(signalRequest.signal);
+          return {
+            workspaceIndex: refreshed.ok
+              ? { status: "completed" }
+              : { status: "unavailable", code: refreshed.error.code },
+            languageDiagnostics,
+          };
+        },
+      },
     );
     const composed = composeProductAgentRuntime({
       eventStore: productArtifactSession.eventStore,
