@@ -66,8 +66,8 @@ const requiresMacosArm64 =
 const COLUMNS = 100;
 const ROWS = 30;
 
-/** Long enough for a native renderer to start and commit a frame on a loaded machine. */
-const MOUNT_MS = 3_000;
+/** Maximum time for a native renderer to start and commit its first Falryn frame. */
+const MOUNT_TIMEOUT_MS = 10_000;
 
 /** Long enough for the shutdown sequence, which is bounded by its own phase grace. */
 const EXIT_MS = 8_000;
@@ -298,7 +298,23 @@ async function runOnPty(
     // Already released. Harmless, and not worth failing a run over.
   }
 
-  await Bun.sleep(MOUNT_MS);
+  // Terminal capability probing can take longer on a loaded macOS runner than
+  // it does locally. Do not send input (especially SIGINT) until Falryn has
+  // committed visible application content; otherwise the test measures an
+  // interruption during OpenTUI startup rather than Falryn's signal policy.
+  const mountDeadline = Bun.nanoseconds() + MOUNT_TIMEOUT_MS * 1_000_000;
+  while (Bun.nanoseconds() < mountDeadline) {
+    const transcript = pty.transcript();
+    if (
+      transcript.includes(FRAME_START) ||
+      transcript.includes("workspace") ||
+      transcript.includes("Nothing has happened") ||
+      transcript.includes("falryn")
+    ) {
+      break;
+    }
+    await Bun.sleep(50);
+  }
 
   let read = pty.transcript().length;
   /** Waits until the interface stops drawing, and returns what this step drew. */
