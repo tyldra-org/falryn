@@ -380,11 +380,6 @@ export async function runCoding(
     const indexOwner = PRODUCT_INDEX_LIFECYCLE_OWNER;
     const ownedProcessOptions =
       options.ownedProcesses === undefined ? {} : { ownedProcesses: options.ownedProcesses };
-    const captureOptions = {
-      clock: graph.clock,
-      ...ownedProcessOptions,
-    };
-
     let providerAdapter = options.providerAdapter;
     let providerCatalog = options.providerCatalog ?? null;
     let providerUnavailableCode = providerAdapter === null ? "provider-not-attached" : null;
@@ -443,6 +438,11 @@ export async function runCoding(
 
     const productArtifacts = options.artifacts ?? productArtifactSession?.artifacts;
     const productLoom = options.loom ?? productArtifactSession?.loom;
+    const captureOptions = {
+      clock: graph.clock,
+      ...ownedProcessOptions,
+      ...(productArtifacts === undefined ? {} : { artifacts: productArtifacts }),
+    };
     const workspaceTools = composeProductWorkspaceTools({
       generation,
       fileSystem: graph.fileSystem,
@@ -458,6 +458,10 @@ export async function runCoding(
       generation,
       capture: createHostProcessCapturePort(captureOptions),
       workspaceCwd: String(workspaceRoot),
+      ...(productArtifacts === undefined ? {} : { artifacts: productArtifacts }),
+      ...(productLoom === undefined ? {} : { loom: productLoom }),
+      workspaceId: String(workspaceId),
+      sessionId: String(sessionId),
     });
     const gitTools = composeProductGitTools({
       generation,

@@ -133,6 +133,38 @@ return the exact prefix, continuation, and artifact expansion instead of
 placing unlimited bytes in model context. Recovery requests keep their
 existing range, head/tail, search-hit, and exact projection contract.
 
+## Process output, Hush, and recovery
+
+The built-in `run_process` and `run_shell` capabilities accept
+`outputMode: "hush" | "raw"`; `hush` is the default. Raw mode bypasses only
+output reduction. Schema validation, effects, confirmation, hooks, scheduling,
+capture, redaction, deadlines, cancellation, persistence, provenance, and
+result bounds remain on the same product-tool path.
+
+Small non-secret raw text is returned exactly in separate stdout and stderr
+fields. Mandatory secret replacement preserves line and column layout. The
+projection states that ordering is preserved per stream rather than claiming a
+cross-stream interleave. Raw capture admits at most 6 KiB inline per stream,
+Hush projections admit at most 8 KiB, and the complete model-facing process
+value admits at most 16 KiB. Encoding expansion that would cross the final
+bound is replaced by an artifact-backed recovery result rather than an
+over-budget JSON value.
+
+A real Hush reduction commits the exact original stream before it publishes a
+recovery handle. Hush falls back to raw when reduction is unsafe, does not make
+the complete model-facing value smaller, or cannot stay within its bound.
+Oversized and binary streams likewise expose a Loom-backed recovery handle only
+after the exact artifact is available. The handle identifies the original
+invocation, capture, stream, encoding, byte length, and permitted bounded Read
+operations. Missing required storage produces a partial result and never an
+exact-source claim.
+
+The model can submit that handle to `read_file` for a byte range, head/tail,
+search-hit, or exact recovery. The returned result preserves the original
+process invocation and capture lineage and continues through the same provider
+tool loop. A process result contains only the selected Hush or raw projection;
+the internal capture is not serialized a second time.
+
 ## Verification posture
 
 The repository validates formatting, linting, TypeScript, integrity checks, and

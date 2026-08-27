@@ -262,6 +262,20 @@ export type {
 export { composeProductMemoryTurn } from "./product-memory-turn.ts";
 export { attemptModelInputFromPrompt } from "./product-model-input.ts";
 export type {
+  ProductProcessObservation,
+  ProductProcessOutputMode,
+  ProductProcessOutputPorts,
+  ProductProcessRecoveryHandle,
+} from "./product-process-output.ts";
+export {
+  MAX_PRODUCT_PROCESS_HUSH_BYTES,
+  MAX_PRODUCT_PROCESS_MODEL_BYTES,
+  MAX_PRODUCT_PROCESS_RAW_INLINE_BYTES,
+  PRODUCT_PROCESS_OUTPUT_MODES,
+  PRODUCT_PROCESS_OUTPUT_OWNER,
+  projectProductProcessOutput,
+} from "./product-process-output.ts";
+export type {
   ProductReadCoordinator,
   ProductReadCoordinatorOptions,
   ProductReadResult,

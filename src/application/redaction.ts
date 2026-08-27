@@ -91,6 +91,15 @@ export function redactText(text: string, maxLength = MAX_CAUSE_DETAIL_LENGTH): s
   return result.length > maxLength ? `${result.slice(0, Math.max(0, maxLength - 1))}…` : result;
 }
 
+/** Redacts model/tool output without collapsing its line and column layout. */
+export function redactProjectionText(text: string, maxLength = MAX_CAUSE_DETAIL_LENGTH): string {
+  let result = text;
+  for (const rule of REDACTION_RULES) {
+    result = result.replace(rule.pattern, rule.replace);
+  }
+  return result.length > maxLength ? `${result.slice(0, Math.max(0, maxLength - 1))}…` : result;
+}
+
 /** Whether redaction would change this text. Used by negative controls. */
 export function containsRedactableSecret(text: string): boolean {
   return redactText(text, Number.MAX_SAFE_INTEGER) !== text.replace(/\s+/g, " ").trim();
@@ -133,6 +142,11 @@ export function redactMetadata(
  */
 export function createRuntimeRedactor(): SensitiveValueRedactor {
   return { placeholder: REDACTED, redactText, isSecretName };
+}
+
+/** Runtime redactor for structured model/UI values where whitespace is data. */
+export function createRuntimeProjectionRedactor(): SensitiveValueRedactor {
+  return { placeholder: REDACTED, redactText: redactProjectionText, isSecretName };
 }
 
 /**

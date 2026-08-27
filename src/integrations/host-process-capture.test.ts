@@ -12,6 +12,7 @@ import {
 import {
   contentDigest,
   duration,
+  invocationId,
   MAX_COMMAND_OUTPUT_BYTES,
   type ProcessCaptureRequest,
   timestampFromEpochMilliseconds,
@@ -123,16 +124,22 @@ describe("host process capture", () => {
   platformTest("spills overflow to an artifact instead of dropping it", async () => {
     const artifacts = createMemoryArtifacts();
     const port = createHostProcessCapturePort({ artifacts });
-    const captured = await port.run(
-      request("printf 'abcdefghij'", { maxInlineBytes: 4, maxCaptureBytes: 64 }),
-    );
+    const captured = await port.run({
+      ...request("printf 'abcdefghij'", { maxInlineBytes: 4, maxCaptureBytes: 64 }),
+      invocationId: invocationId.from("inv-spill"),
+    });
     expect(captured.ok).toBe(true);
     if (!captured.ok) {
       throw new Error("expected a capture report");
     }
     expect(captured.value.stdout.inlineText).toBe("abcd");
     expect(captured.value.stdout.artifact?.committed).toBe(true);
-    expect(decoder.decode(artifacts.stored.get("cap-1.stdout"))).toBe("abcdefghij");
+    const artifact = captured.value.stdout.artifact;
+    expect(artifact).not.toBeNull();
+    expect(decoder.decode(artifacts.stored.get(String(artifact?.artifactId)))).toBe("abcdefghij");
+    expect(artifact?.artifactId).toBe(
+      artifactId.from("cap-3f02a93f47426ba4ef78a006f268bae8.stdout"),
+    );
   });
 
   platformTest("times out a child that does not exit", async () => {

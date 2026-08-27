@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import {
+  artifactId,
   configurationGeneration,
   createInMemoryEventStore,
   createInMemoryFileSystem,
@@ -87,7 +88,28 @@ describe("createProductToolGateway", () => {
     const gateway = createProductToolGateway({
       clock,
       registry: tools.registry,
-      runner: tools.runner,
+      runner: {
+        async execute(request) {
+          const outcome = await tools.runner.execute(request);
+          return outcome.status === "completed"
+            ? {
+                ...outcome,
+                result: {
+                  artifacts: [
+                    {
+                      artifactId: artifactId.from("capture-result"),
+                      required: true,
+                      committed: true,
+                      truncated: false,
+                    },
+                  ],
+                  captureOverflow: false,
+                  containedProcessExitCode: 0,
+                },
+              }
+            : outcome;
+        },
+      },
       hooks: hooks.value,
       journal,
       correlation,
@@ -109,6 +131,11 @@ describe("createProductToolGateway", () => {
 
     expect(outcome.status).toBe("completed");
     expect(JSON.stringify(outcome)).toContain("export const a");
+    if (outcome.status === "completed") {
+      expect(outcome.output).toMatchObject({
+        artifacts: [{ artifactId: "capture-result", committed: true }],
+      });
+    }
     expect(hookPoints).toEqual(["before-capability-invocation", "after-capability-invocation"]);
     const replay = await journal.replay();
     expect(replay.kind === "rebuilt" || replay.kind === "partial").toBe(true);

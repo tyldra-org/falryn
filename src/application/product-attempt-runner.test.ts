@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import {
+  capabilityId,
   configurationGeneration,
   createInMemoryEventStore,
   createInMemoryFileSystem,
@@ -15,9 +16,15 @@ import {
   turnId,
   workspaceId,
 } from "../domain/index.ts";
-import { createDeterministicProviderAdapter, type RoutingReceipt } from "../providers/index.ts";
+import { createHostProcessCapturePort } from "../integrations/index.ts";
+import {
+  createDeterministicProviderAdapter,
+  type ModelRequest,
+  type RoutingReceipt,
+} from "../providers/index.ts";
 import { composeProductAgentRuntime } from "./product-agent-runtime.ts";
 import { discloseProductTools } from "./product-tool-disclosure.ts";
+import { composeProductProcessTools } from "./product-tools-process.ts";
 import { composeProductWorkspaceTools } from "./product-tools-workspace.ts";
 
 const generation = configurationGeneration.from(5);
@@ -262,5 +269,163 @@ describe("createProductAttemptRunner", () => {
       effect: "none",
     });
     expect(providerRequests).toBe(0);
+  });
+
+  test("continues a real raw process call with one bounded non-duplicated result", async () => {
+    const requests: ModelRequest[] = [];
+    const adapter = createDeterministicProviderAdapter({
+      script: (_request, index) =>
+        index === 0
+          ? {
+              kind: "tool",
+              toolCallId: "call-raw-process",
+              name: "run_shell",
+              argumentFragments: [
+                '{"command":"printf \'first\\nsecond api_key=hunter2\\n\'","outputMode":"raw"}',
+              ],
+            }
+          : { kind: "text", text: "done" },
+      onRequest: (request) => requests.push(request),
+    });
+    const correlation = {
+      workspaceId: workspaceId.from("workspace-attempt-process"),
+      sessionId: sessionId.from("session-attempt-process"),
+      traceId: traceId.from("trace-attempt-process"),
+      configurationGeneration: generation,
+    };
+    const tools = composeProductProcessTools({
+      generation,
+      capture: createHostProcessCapturePort(),
+      workspaceCwd: process.cwd(),
+    });
+    const runtime = composeProductAgentRuntime({
+      eventStore: createInMemoryEventStore(),
+      clock: createManualClock(instant(100)),
+      streamId: streamId.from("session:attempt-process"),
+      correlation,
+      providerAdapter: adapter,
+      toolRegistry: tools.registry,
+      toolRunner: tools.runner,
+      toolConfirmation: {
+        resolve: async (request) => ({
+          kind: "confirmed",
+          confirmationId: request.confirmationId,
+        }),
+      },
+    });
+    if (!runtime.ok) {
+      throw new Error(runtime.error.code);
+    }
+    const disclosure = discloseProductTools(tools.registry);
+    const targetTurn = turnId.from("turn-attempt-process");
+    const hosted = await runtime.value.hostTurn({
+      turnId: targetTurn,
+      sessionId: correlation.sessionId,
+      workspaceId: correlation.workspaceId,
+      traceId: correlation.traceId,
+      configurationGeneration: generation,
+    });
+    if (hosted.kind !== "hosted") {
+      throw new Error(hosted.kind);
+    }
+    for (const command of ["begin-orienting", "begin-assembling-context"] as const) {
+      const advanced = runtime.value.turnCoordinator.apply({
+        turnId: targetTurn,
+        command,
+        configurationGeneration: generation,
+      });
+      if (!advanced.ok) {
+        throw new Error(advanced.error.code);
+      }
+    }
+    const runner = runtime.value.requireAttemptRunner();
+    if (!runner.ok) {
+      throw new Error(runner.error.code);
+    }
+    const model = adapter.supportedModels[0];
+    if (model === undefined) {
+      throw new Error("missing deterministic model");
+    }
+    const result = await runner.value.run({
+      turnId: targetTurn,
+      identity: {
+        attemptNumber: 1,
+        modelAttemptId: modelAttemptId.from("attempt-process"),
+        fallbackPosition: 0,
+        providerKey: adapter.identity.providerId,
+        modelKey: String(model),
+      },
+      receipt: {
+        role: "default",
+        intent: "coding",
+        selectionReason: "intent-mapped-role",
+        requiredCapabilities: { tools: true, streaming: true },
+        providerId: adapter.identity.providerId,
+        modelId: model,
+        reasoning: "provider-default",
+        fallbackPosition: 0,
+        budgets: {},
+        catalogGeneration: 1,
+        catalogProvenance: "static-config",
+        recordedAt: null,
+      },
+      boundConfigurationGeneration: generation,
+      configurationGeneration: generation,
+      signal: new AbortController().signal,
+      modelInput: {
+        messages: [{ role: "user", parts: [{ kind: "text", text: "say hello" }] }],
+        tools: disclosure.modelTools,
+        output: { kind: "text" },
+        budgets: {},
+        disclosure: {
+          catalogGeneration: disclosure.receipt.catalogGeneration,
+          toolNames: disclosure.receipt.disclosed.map((tool) => tool.name),
+          discoveryHandle: disclosure.receipt.discoveryHandle,
+          families: disclosure.receipt.families,
+          tools: disclosure.receipt.disclosed.map((tool) => ({
+            name: tool.name,
+            capabilityId: tool.capabilityId,
+            version: tool.version,
+            schemaDigest: tool.schemaDigest,
+            schemaBytes: tool.schemaBytes,
+            schemaTokensEstimated: tool.schemaTokensEstimated,
+          })),
+          omitted: disclosure.receipt.omitted,
+          schemaBytes: disclosure.receipt.schemaBytes,
+          schemaTokensEstimated: disclosure.receipt.schemaTokensEstimated,
+        },
+      },
+    });
+
+    expect(result.fact.kind).toBe("completed");
+    expect(requests).toHaveLength(2);
+    const toolMessage = requests[1]?.messages.find((message) => message.role === "tool");
+    const toolPart = toolMessage?.parts[0];
+    if (toolPart?.kind !== "text") {
+      throw new Error("missing provider continuation tool result");
+    }
+    const continuation = JSON.parse(toolPart.text) as {
+      output: {
+        value: {
+          owner: string;
+          outputMode: string;
+          stdout: { text: string };
+          projection: { kind: string };
+        };
+      };
+    };
+    expect(continuation.output.value).toMatchObject({
+      owner: "#796",
+      outputMode: "raw",
+      stdout: { text: "first\nsecond api_key=[redacted]\n" },
+      projection: { kind: "raw", ordering: "per-stream" },
+    });
+    expect(JSON.stringify(continuation.output.value)).not.toContain("hunter2");
+    expect(JSON.stringify(continuation.output.value).match(/first/g)).toHaveLength(1);
+    expect("hush" in continuation.output.value).toBe(false);
+    expect("capture" in continuation.output.value).toBe(false);
+    expect(tools.catalog.resolve("run_shell")?.id).toBe(
+      capabilityId.from("builtin:workspace/run_shell@1"),
+    );
   });
 });

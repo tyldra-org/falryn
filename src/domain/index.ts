@@ -2777,6 +2777,7 @@ export type {
   ToolDescriptor,
   ToolInvocationOutcome,
   ToolInvocationRecord,
+  ToolInvocationResultMetadata,
   ToolProposal,
 } from "./tool-pipeline.ts";
 export {

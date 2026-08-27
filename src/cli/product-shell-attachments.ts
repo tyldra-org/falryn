@@ -150,11 +150,16 @@ export async function composeProductShellAttachments(
             generation,
             capture: createHostProcessCapturePort({
               clock: ports.clock,
+              ...(ports.artifacts === undefined ? {} : { artifacts: ports.artifacts }),
               ...(ports.ownedProcesses === undefined
                 ? {}
                 : { ownedProcesses: ports.ownedProcesses }),
             }),
             workspaceCwd: String(workspaceRoot),
+            ...(ports.artifacts === undefined ? {} : { artifacts: ports.artifacts }),
+            ...(ports.loom === undefined ? {} : { loom: ports.loom }),
+            workspaceId: String(workspaceId),
+            sessionId: String(sessionId),
           });
     const gitTools =
       workspaceRoot === null

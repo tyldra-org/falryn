@@ -26,7 +26,7 @@ import {
   type TurnLifecycleFact,
   validateAndNormalizeInvocations,
 } from "../domain/index.ts";
-import { createRuntimeRedactor } from "./redaction.ts";
+import { createRuntimeProjectionRedactor } from "./redaction.ts";
 import type { ToolRunnerPort, ToolRunnerRequest } from "./tool-call-loop.ts";
 import { createToolHookRunner } from "./tool-hook-runner.ts";
 import { envelopeToolResult } from "./tool-result-envelope.ts";
@@ -213,7 +213,7 @@ async function persist(
 export function createProductToolGateway(options: ProductToolGatewayOptions): ToolRunnerPort {
   const hookRunner = createToolHookRunner({ clock: options.clock, registry: options.hooks });
   const scheduler = createToolWorkScheduler({ clock: options.clock, runner: options.runner });
-  const redactor = createRuntimeRedactor();
+  const redactor = createRuntimeProjectionRedactor();
 
   return {
     async execute(request) {
@@ -330,6 +330,7 @@ export function createProductToolGateway(options: ProductToolGatewayOptions): To
 
       const elapsed = Math.max(0, Number(endedAt) - Number(startedAt));
       const entry = ready.entry;
+      const resultMetadata = "result" in outcome ? outcome.result : undefined;
       const enveloped = envelopeToolResult({
         invocationId: request.invocationId,
         capabilityId: request.capabilityId,
@@ -338,7 +339,7 @@ export function createProductToolGateway(options: ProductToolGatewayOptions): To
         outputSchema: entry.manifest.outputSchema,
         maxOutputBytes: entry.manifest.limits.maxOutputBytes,
         outcome,
-        artifacts: [],
+        artifacts: resultMetadata?.artifacts ?? [],
         diagnostics: [],
         timing: {
           startedAt,
@@ -348,7 +349,15 @@ export function createProductToolGateway(options: ProductToolGatewayOptions): To
           captureMs: null,
         },
         persistFailed: !committed,
-        captureOverflow: false,
+        captureOverflow: resultMetadata?.captureOverflow ?? false,
+        ...(resultMetadata?.containedProcessExitCode === undefined
+          ? {}
+          : {
+              containedOutcome: {
+                kind: "process" as const,
+                exitCode: resultMetadata.containedProcessExitCode,
+              },
+            }),
         projection: entry.manifest.resultProjection,
         redactor,
       });
