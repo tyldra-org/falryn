@@ -19,6 +19,7 @@ import {
   type AttemptFailureCategory,
   type AttemptIdentity,
   assertNever,
+  type CapabilityId,
   type ClockPort,
   type ConfigurationGeneration,
   classifyAttempt,
@@ -26,6 +27,7 @@ import {
   decideAttemptAction,
   type EffectCertainty,
   evaluateRetry,
+  type ModelAttemptBinding,
   type ModelAttemptId,
   modelAttemptId,
   NO_CORRELATION,
@@ -40,7 +42,11 @@ import {
 } from "../domain/index.ts";
 import type { ProviderFailure, ProviderFailureKind } from "../providers/errors.ts";
 import type {
+  ModelBudgets,
+  ModelMessage,
   ModelPolicy,
+  ModelToolDefinition,
+  OutputContract,
   ResolveRouteInput,
   RoutedCatalogEntry,
   RoutingOutcome,
@@ -52,18 +58,58 @@ import { awaitBackoff } from "./recovery.ts";
 import type { TurnCoordinator, TurnCoordinatorError } from "./turn-coordinator.ts";
 import type { TurnEventJournalPort } from "./turn-event-journal.ts";
 
+/** Immutable provider input shared by every retry/fallback for one turn. */
+export type AttemptModelInput = {
+  readonly messages: readonly ModelMessage[];
+  readonly tools: readonly ModelToolDefinition[];
+  readonly output: OutputContract;
+  readonly budgets: ModelBudgets;
+  /** Registry generation and concrete names visible to this attempt. */
+  readonly disclosure: {
+    readonly catalogGeneration: ConfigurationGeneration;
+    readonly toolNames: readonly string[];
+    readonly discoveryHandle: string;
+    readonly families: readonly {
+      readonly family: string;
+      readonly available: boolean;
+      readonly reason: string | null;
+    }[];
+    readonly tools: readonly {
+      readonly name: string;
+      readonly capabilityId: CapabilityId;
+      readonly version: number;
+      readonly schemaDigest: string;
+      readonly schemaBytes: number;
+      readonly schemaTokensEstimated: number;
+    }[];
+    readonly omitted: readonly { readonly name: string; readonly reason: string }[];
+    readonly schemaBytes: number;
+    readonly schemaTokensEstimated: number;
+  };
+};
+
 export type AttemptRunnerRequest = {
   readonly turnId: TurnId;
   readonly identity: AttemptIdentity;
   readonly receipt: RoutingReceipt;
+  /** Immutable configuration/policy snapshot selected for the whole turn. */
+  readonly boundConfigurationGeneration: ConfigurationGeneration;
+  /** Current turn-machine generation, which may advance during recovery. */
   readonly configurationGeneration: ConfigurationGeneration;
   readonly signal: AbortSignal;
+  readonly modelInput: AttemptModelInput | null;
 };
 
 export type AttemptRunnerResult = {
   readonly fact: AttemptFact;
   /** Turn after the attempt; may already be terminal when the runner settles. */
   readonly turn: TurnSnapshot | null;
+  /** Model-facing output retained by the product entrypoint, never by retry policy. */
+  readonly output?: {
+    readonly text: string;
+    readonly reasoning: string;
+    readonly toolResults: number;
+  };
 };
 
 /**
@@ -97,6 +143,7 @@ export type RunTurnAttemptPolicyInput = {
   readonly turnId: TurnId;
   readonly configurationGeneration: ConfigurationGeneration;
   readonly signal: AbortSignal;
+  readonly modelInput?: AttemptModelInput;
   readonly intent?: WorkIntent;
   readonly role?: ResolveRouteInput["role"];
   readonly explicit?: ResolveRouteInput["explicit"];
@@ -114,6 +161,7 @@ export type AttemptRecord = {
   readonly fact: AttemptFact;
   readonly classification: AttemptClassification;
   readonly action: AttemptAction;
+  readonly output: AttemptRunnerResult["output"] | null;
 };
 
 export type TurnAttemptPolicyOutcome =
@@ -484,6 +532,40 @@ function correlationFor(snapshot: TurnSnapshot): TurnCorrelation {
   };
 }
 
+function attemptBinding(
+  receipt: RoutingReceipt,
+  modelInput: AttemptModelInput | undefined,
+  generation: ConfigurationGeneration,
+): ModelAttemptBinding {
+  const disclosure = modelInput?.disclosure;
+  return {
+    schemaVersion: 1,
+    providerId: receipt.providerId,
+    modelId: receipt.modelId,
+    role: receipt.role,
+    intent: receipt.intent,
+    reasoning: receipt.reasoning,
+    providerCatalogGeneration: receipt.catalogGeneration,
+    toolCatalogGeneration: disclosure?.catalogGeneration ?? generation,
+    policyGeneration: generation,
+    runner: "product-attempt-runner.v1",
+    gateway: "product-tool-gateway.v1",
+    discoveryHandle: disclosure?.discoveryHandle ?? `tool-catalog:${generation}`,
+    families: disclosure?.families ?? [],
+    tools: disclosure?.tools ?? [],
+    omitted: disclosure?.omitted ?? [],
+    schemaBytes: disclosure?.schemaBytes ?? 0,
+    schemaTokensEstimated: disclosure?.schemaTokensEstimated ?? 0,
+    budgets: {
+      attempts: receipt.budgets.attempts ?? null,
+      inputTokens: receipt.budgets.inputTokens ?? null,
+      outputTokens: receipt.budgets.outputTokens ?? null,
+      wallTimeMs: receipt.budgets.wallTimeMs ?? null,
+      cost: receipt.budgets.cost ?? null,
+    },
+  };
+}
+
 /** Maps an attempt classification onto the durable attempt terminal fact. */
 function outcomeForAttemptRecord(classification: AttemptClassification): TerminalOutcome {
   switch (classification.kind) {
@@ -714,6 +796,7 @@ export function createTurnAttemptPolicy(options: TurnAttemptPolicyOptions): Turn
                 kind: "model.attempt.started",
                 correlation: correlationFor(live),
                 modelAttemptId: identity.modelAttemptId,
+                binding: attemptBinding(receipt, input.modelInput, input.configurationGeneration),
               },
             ],
             input.signal,
@@ -724,8 +807,10 @@ export function createTurnAttemptPolicy(options: TurnAttemptPolicyOptions): Turn
           turnId: input.turnId,
           identity,
           receipt,
+          boundConfigurationGeneration: input.configurationGeneration,
           configurationGeneration: generation,
           signal: input.signal,
+          modelInput: input.modelInput ?? null,
         });
 
         elapsedMs = Math.max(elapsedMs, Number(options.clock.now()) - Number(startedAt));
@@ -778,6 +863,7 @@ export function createTurnAttemptPolicy(options: TurnAttemptPolicyOptions): Turn
           fact: runnerResult.fact,
           classification,
           action,
+          output: runnerResult.output ?? null,
         });
 
         const attemptOutcome = outcomeForAttemptRecord(classification);

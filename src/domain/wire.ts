@@ -23,6 +23,8 @@ import {
   type ConfigurationGenerationChangedPayload,
   isModelEvent,
   isToolEvent,
+  type ModelAttemptBinding,
+  type ModelAttemptStartedPayload,
   type RuntimeEvent,
   type SessionCorrelation,
   type TerminalPayload,
@@ -35,6 +37,8 @@ import {
   idempotencyKey,
   invocationId,
   modelAttemptId,
+  modelId,
+  providerId,
   sequence,
   sessionId,
   streamId,
@@ -65,6 +69,59 @@ const emptyPayloadSchema = z.object({});
 
 const terminalPayloadSchema: z.ZodType<TerminalPayload> = z.object({
   outcome: terminalOutcomeSchema,
+});
+
+const nullableBudgetSchema = z.number().finite().nonnegative().nullable();
+
+const modelAttemptBindingSchema: z.ZodType<ModelAttemptBinding> = z.object({
+  schemaVersion: z.literal(1),
+  providerId: brandedString(providerId),
+  modelId: brandedString(modelId),
+  role: z.string().min(1),
+  intent: z.string().min(1).nullable(),
+  reasoning: z.string().min(1),
+  providerCatalogGeneration: z.int().nonnegative(),
+  toolCatalogGeneration: brandedInteger(configurationGeneration),
+  policyGeneration: brandedInteger(configurationGeneration),
+  runner: z.literal("product-attempt-runner.v1"),
+  gateway: z.literal("product-tool-gateway.v1"),
+  discoveryHandle: z.string().min(1),
+  families: z.array(
+    z.object({
+      family: z.string().min(1),
+      available: z.boolean(),
+      reason: z.string().min(1).nullable(),
+    }),
+  ),
+  tools: z.array(
+    z.object({
+      name: z.string().min(1),
+      capabilityId: brandedString(capabilityId),
+      version: z.int().min(1),
+      schemaDigest: z.string().min(1),
+      schemaBytes: z.int().nonnegative(),
+      schemaTokensEstimated: z.int().nonnegative(),
+    }),
+  ),
+  omitted: z.array(
+    z.object({
+      name: z.string().min(1),
+      reason: z.string().min(1),
+    }),
+  ),
+  schemaBytes: z.int().nonnegative(),
+  schemaTokensEstimated: z.int().nonnegative(),
+  budgets: z.object({
+    attempts: nullableBudgetSchema,
+    inputTokens: nullableBudgetSchema,
+    outputTokens: nullableBudgetSchema,
+    wallTimeMs: nullableBudgetSchema,
+    cost: nullableBudgetSchema,
+  }),
+});
+
+const modelAttemptStartedPayloadSchema: z.ZodType<ModelAttemptStartedPayload> = z.object({
+  binding: modelAttemptBindingSchema.optional(),
 });
 
 const configurationPayloadSchema: z.ZodType<ConfigurationGenerationChangedPayload> = z.object({
@@ -119,7 +176,7 @@ const runtimeEventSchema: z.ZodType<RuntimeEvent> = z.discriminatedUnion("kind",
     ...modelIdentity,
     kind: z.literal("model.attempt.started"),
     correlation: turnCorrelationSchema,
-    payload: emptyPayloadSchema,
+    payload: modelAttemptStartedPayloadSchema,
   }),
   z.object({
     ...envelopeSpine,
@@ -186,6 +243,8 @@ function outcomeToJson(outcome: TerminalOutcome): Record<string, unknown> {
 
 function payloadToJson(event: RuntimeEvent): Record<string, unknown> {
   switch (event.kind) {
+    case "model.attempt.started":
+      return event.payload.binding === undefined ? {} : { binding: event.payload.binding };
     case "turn.completed":
     case "model.attempt.completed":
     case "capability.invocation.completed":

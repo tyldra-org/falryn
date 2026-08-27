@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test";
 
 import { decodeRuntimeEvent, encodedByteLength, encodeRuntimeEvent } from "./codec.ts";
-import { everyEventKind, sessionStarted, turnCompleted } from "./fixtures.ts";
+import { everyEventKind, modelAttemptStarted, sessionStarted, turnCompleted } from "./fixtures.ts";
+import { capabilityId, configurationGeneration, modelId, providerId } from "./identity.ts";
 import { MAX_EVENT_BYTES, RUNTIME_EVENT_SCHEMA_VERSION } from "./limits.ts";
 import { toWireEvent } from "./wire.ts";
 
@@ -51,6 +52,57 @@ describe("round trip", () => {
         expect(size.value).toBeLessThan(MAX_EVENT_BYTES);
       }
     }
+  });
+
+  test("preserves the immutable provider and capability binding", () => {
+    const event = modelAttemptStarted();
+    const bound = {
+      ...event,
+      payload: {
+        binding: {
+          schemaVersion: 1 as const,
+          providerId: providerId.from("provider-a"),
+          modelId: modelId.from("model-a"),
+          role: "default",
+          intent: "coding",
+          reasoning: "balanced",
+          providerCatalogGeneration: 3,
+          toolCatalogGeneration: configurationGeneration.from(4),
+          policyGeneration: configurationGeneration.from(4),
+          runner: "product-attempt-runner.v1" as const,
+          gateway: "product-tool-gateway.v1" as const,
+          discoveryHandle: "tool-catalog:4",
+          families: [{ family: "read", available: true, reason: null }],
+          tools: [
+            {
+              name: "read_file",
+              capabilityId: capabilityId.from("workspace.read_file"),
+              version: 1,
+              schemaDigest: "sha-256:read",
+              schemaBytes: 48,
+              schemaTokensEstimated: 12,
+            },
+          ],
+          omitted: [{ name: "write_files", reason: "confirmation unavailable" }],
+          schemaBytes: 48,
+          schemaTokensEstimated: 12,
+          budgets: {
+            attempts: 2,
+            inputTokens: 8_000,
+            outputTokens: 2_000,
+            wallTimeMs: 30_000,
+            cost: null,
+          },
+        },
+      },
+    };
+    const encoded = encodeRuntimeEvent(bound);
+    expect(encoded.ok).toBe(true);
+    if (!encoded.ok) {
+      return;
+    }
+    const decoded = decodeRuntimeEvent(encoded.value);
+    expect(decoded).toEqual({ ok: true, value: bound });
   });
 });
 

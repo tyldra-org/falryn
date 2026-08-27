@@ -13,6 +13,7 @@ application. The current command surface includes:
 | --- | --- |
 | falryn | Open the interactive terminal interface on a capable terminal |
 | falryn --help / --version | Print usage or build identity |
+| falryn run <prompt> | Run one headless coding turn through the selected provider |
 | falryn doctor | Run bounded environment and local-storage diagnostics |
 | falryn config show / validate / path | Inspect and validate effective configuration |
 | falryn provider list / add / use / configure / test / login / logout / remove | Manage local provider profiles and credentials |
@@ -42,10 +43,21 @@ are accepted only through an installed official provider adapter; Falryn does
 not imitate browser sessions or subscription credentials.
 
 Human, JSON, and JSONL results expose profile, connection, account, catalog,
-and revocation state without secret material. The selected provider and its
-normalized model catalog are passed to headless runtime composition and the
-interactive model controls. The current source does not yet perform a live
-model attempt or tool continuation.
+and revocation state without secret material. `falryn run` passes the selected
+provider and normalized model catalog into a real model attempt. Assistant tool
+requests are validated against a bounded, generation-bound disclosure and then
+pass through policy, focused confirmation, hooks, scheduling, exact capture,
+semantic journaling, and bounded result projection before provider
+continuation. A headless turn cannot report completion unless a terminal model
+attempt ran.
+
+The provider request contains only the disclosed tool definitions, not the
+whole registered catalog. The attempt event retains the provider/model route,
+catalog and policy generations, tool-schema digests, schema cost, unavailable
+capability families, omissions, and discovery handle. Provider disconnects,
+malformed requests, cancellation, timeout, fallback exhaustion, and uncertain
+effects remain typed outcomes. Completed or uncertain consequential tool
+effects are not retried as fresh work.
 
 ## Product Read and Loom
 
@@ -64,6 +76,11 @@ is absent, stale for that file, or has no structural records, Read falls back
 to Loom's bounded head/tail projection. Recovery supports byte ranges,
 head/tail, search hits, and exact retrieval; it does not require another
 artifact ingest.
+
+In a headless coding turn, the bounded Loom result is returned through the same
+`read_file` tool lineage. A model can pass the opaque recovery handle back to
+`read_file` for a targeted projection, and the recovered result re-enters the
+same provider continuation without serializing the retained full file body.
 
 `raw` skips indexed and Loom projection for that initial request. Small files
 remain exact inline. Oversized files still obey Read's hard inline bounds and

@@ -33,11 +33,26 @@ export type ImageMessagePart = {
 
 export type MessagePart = TextMessagePart | ImageMessagePart;
 
+/**
+ * Assistant-authored tool request retained between provider continuations.
+ *
+ * Provider adapters translate this neutral shape into their own assistant
+ * tool-call message. Keeping it on the assistant message is necessary because
+ * providers reject an orphaned `tool` result that has no preceding call.
+ */
+export type ModelAssistantToolCall = {
+  readonly toolCallId: string;
+  readonly name: string;
+  readonly arguments: Readonly<Record<string, unknown>>;
+};
+
 export type ModelMessage = {
   readonly role: MessageRole;
   readonly parts: readonly MessagePart[];
   /** Present when this message is a tool result tied to a prior proposal. */
   readonly toolCallId?: string | undefined;
+  /** Present only on an assistant message that requested tools. */
+  readonly toolCalls?: readonly ModelAssistantToolCall[] | undefined;
 };
 
 export type ModelToolDefinition = {

@@ -16,6 +16,7 @@ import {
   type OwnedProcessRegistry,
 } from "../integrations/index.ts";
 import { parseProviderConnectionState } from "../providers/index.ts";
+import type { OpenAiCompatibleFetch } from "../providers/openai-compatible-adapter.ts";
 import { createOpenAiCompatibleAdapter } from "../providers/openai-compatible-adapter.ts";
 import type { ProviderAdapterPort } from "../providers/port.ts";
 import type { GlobalOptions } from "./options.ts";
@@ -50,6 +51,8 @@ export type ProductProviderConnectionOptions = {
   readonly ownedProcesses?: OwnedProcessRegistry;
   /** Reuse an already-loaded generation on bootstrap paths. */
   readonly configuration?: ConfigurationValues;
+  /** Injectable controlled transport for provider integration fixtures. */
+  readonly providerFetch?: OpenAiCompatibleFetch;
 };
 
 export function composeProductProviderConnections(
@@ -95,6 +98,7 @@ export function composeProductProviderConnections(
           supportedModels: session.catalog.models.map((model) => String(model.modelId)),
           resolveApiKey: (requestSignal) =>
             resolveProviderApiKey(credentials.resolver, reference, requestSignal),
+          ...(options.providerFetch === undefined ? {} : { fetch: options.providerFetch }),
         }),
       };
     },

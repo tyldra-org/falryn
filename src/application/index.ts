@@ -192,6 +192,8 @@ export type {
   ProductAgentSessionIds,
 } from "./product-agent-runtime.ts";
 export { composeProductAgentRuntime } from "./product-agent-runtime.ts";
+export type { ProductAttemptRunnerOptions } from "./product-attempt-runner.ts";
+export { createProductAttemptRunner } from "./product-attempt-runner.ts";
 export type { ProductBriefControls, ProductBriefControlsOptions } from "./product-brief.ts";
 export {
   composeProductBriefControls,
@@ -235,6 +237,7 @@ export type {
   ProductMemoryTurnResult,
 } from "./product-memory-turn.ts";
 export { composeProductMemoryTurn } from "./product-memory-turn.ts";
+export { attemptModelInputFromPrompt } from "./product-model-input.ts";
 export type {
   ProductReadCoordinator,
   ProductReadCoordinatorOptions,
@@ -247,6 +250,26 @@ export {
   PRODUCT_READ_OWNER,
   productReadInputSchema,
 } from "./product-read.ts";
+export type {
+  CapabilityDisclosureReceipt,
+  CapabilityFamilyAvailability,
+  DisclosedProductTool,
+  ModelCapabilityFamily,
+  ProductToolDisclosure,
+} from "./product-tool-disclosure.ts";
+export {
+  discloseProductTools,
+  MAX_DISCLOSED_PRODUCT_TOOLS,
+  MODEL_CAPABILITY_FAMILIES,
+  PRODUCT_TOOL_DISCLOSURE_SCHEMA_VERSION,
+} from "./product-tool-disclosure.ts";
+export type {
+  ProductToolConfirmationPort,
+  ProductToolConfirmationResult,
+  ProductToolEffectLedger,
+  ProductToolGatewayOptions,
+} from "./product-tool-gateway.ts";
+export { createProductToolGateway } from "./product-tool-gateway.ts";
 export type {
   ProductGitToolPorts,
   ProductGitTools,
@@ -477,6 +500,7 @@ export {
   DEFAULT_TOOL_WORK_SCHEDULER_LIMITS,
 } from "./tool-work-scheduler.ts";
 export type {
+  AttemptModelInput,
   AttemptRecord,
   AttemptRunnerPort,
   AttemptRunnerRequest,

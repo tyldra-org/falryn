@@ -98,6 +98,7 @@ export type {
   ImageMessagePart,
   MessagePart,
   MessageRole,
+  ModelAssistantToolCall,
   ModelBudgets,
   ModelMessage,
   ModelToolDefinition,
