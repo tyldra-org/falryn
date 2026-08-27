@@ -25,9 +25,10 @@ import {
   composeProductProcessTools,
   composeProductWorkspaceTools,
   createDebugAdapterSupervisor,
-  createEphemeralProductIndexPort,
   createLanguageServerSupervisor,
+  createProductContextSource,
   createProductLiveTurnExecutor,
+  createUnavailableProductContextSource,
   DEFAULT_OPENAI_CREDENTIAL_REFERENCE,
   type LoomPort,
   mergeProductToolBundles,
@@ -121,6 +122,10 @@ export type CodingRunPayload = {
   /** Selected Brief verbosity on the live turn (#717). */
   readonly briefVerbosity?: string;
   readonly briefOwner?: string;
+  readonly contextStatus?: string;
+  readonly contextGeneration?: string | null;
+  readonly recalledMemories?: number;
+  readonly memoryAdmission?: string;
   /** Final assistant text from the terminal model attempt. */
   readonly response?: string;
   readonly modelAttempts?: number;
@@ -357,14 +362,21 @@ export async function runCoding(
       );
     }
 
-    const indexStore = createEphemeralProductIndexPort();
-    const indexLifecycle = composeProductIndexLifecycle({
-      fileSystem: graph.fileSystem,
-      workspaceRoot: primaryWorkspaceRoot(workspace.value.set).path,
-      index: indexStore,
-    });
-    await indexLifecycle.rebuild(options.signal);
-    const indexFreshness = indexLifecycle.status().freshness;
+    const workspaceRoot = primaryWorkspaceRoot(workspace.value.set).path;
+    const indexStore = await productArtifactSession.openWorkspaceIndex(
+      workspaceRoot,
+      options.signal,
+    );
+    const indexLifecycle =
+      indexStore === null
+        ? null
+        : composeProductIndexLifecycle({
+            fileSystem: graph.fileSystem,
+            workspaceRoot,
+            index: indexStore,
+          });
+    await indexLifecycle?.rebuild(options.signal);
+    const indexFreshness = indexLifecycle?.status().freshness ?? "absent";
     const indexOwner = PRODUCT_INDEX_LIFECYCLE_OWNER;
     const ownedProcessOptions =
       options.ownedProcesses === undefined ? {} : { ownedProcesses: options.ownedProcesses };
@@ -435,17 +447,17 @@ export async function runCoding(
       generation,
       fileSystem: graph.fileSystem,
       commands: createHostCommandRunner(ownedProcessOptions),
-      workspaceRoot: primaryWorkspaceRoot(workspace.value.set).path,
+      workspaceRoot,
       ...(productArtifacts === undefined ? {} : { artifacts: productArtifacts }),
       ...(productLoom === undefined ? {} : { loom: productLoom }),
-      index: indexStore,
+      ...(indexStore === null ? {} : { index: indexStore }),
       workspaceId,
       sessionId,
     });
     const processTools = composeProductProcessTools({
       generation,
       capture: createHostProcessCapturePort(captureOptions),
-      workspaceCwd: String(primaryWorkspaceRoot(workspace.value.set).path),
+      workspaceCwd: String(workspaceRoot),
     });
     const gitTools = composeProductGitTools({
       generation,
@@ -454,7 +466,7 @@ export async function runCoding(
         clock: graph.clock,
       }),
       gitExecutable: "/usr/bin/git",
-      startPath: String(primaryWorkspaceRoot(workspace.value.set).path),
+      startPath: String(workspaceRoot),
     });
     const managedServices = createHostManagedServicePort(ownedProcessOptions);
     const languageTools = composeProductLanguageTools({
@@ -462,14 +474,23 @@ export async function runCoding(
       languageServers: createLanguageServerSupervisor(managedServices),
       debugAdapters: createDebugAdapterSupervisor(managedServices),
     });
-    const memoryTools = composeProductMemoryTools({ generation });
-    const productTools = mergeProductToolBundles(generation, [
-      workspaceTools,
-      processTools,
-      gitTools,
-      languageTools,
-      memoryTools,
-    ]);
+    const memoryTools = composeProductMemoryTools({
+      generation,
+      records: productArtifactSession.memoryRecords,
+    });
+    const productTools = mergeProductToolBundles(
+      generation,
+      [workspaceTools, processTools, gitTools, languageTools, memoryTools],
+      indexLifecycle === null
+        ? {}
+        : {
+            afterMutation: async (signalRequest) => {
+              workspaceTools.invalidateContext();
+              const refreshed = await indexLifecycle.refresh(signalRequest.signal);
+              return refreshed.ok;
+            },
+          },
+    );
     const composed = composeProductAgentRuntime({
       eventStore: productArtifactSession.eventStore,
       clock: graph.clock,
@@ -520,24 +541,30 @@ export async function runCoding(
     const memoryTurn = composeProductMemoryTurn({
       admission: memoryTools.admission,
       recall: memoryTools.recall,
-    }).endTurn({
-      turnId,
-      sessionId,
-      workspaceId,
-      task: resolved.prompt,
     });
     const otherSections = [];
     if (briefed.ok) {
       otherSections.push(briefed.value.section);
     }
-    if (memoryTurn.ok && memoryTurn.value.memorySection !== null) {
-      otherSections.push(memoryTurn.value.memorySection);
-    }
+    const contextSource =
+      indexStore === null
+        ? createUnavailableProductContextSource(
+            "index-unavailable",
+            workspaceTools.contextCandidates,
+          )
+        : createProductContextSource({
+            fileSystem: graph.fileSystem,
+            index: indexStore,
+            workspaceRoot,
+            workspaceId,
+            additionalCandidates: workspaceTools.contextCandidates,
+          });
     const executor = createProductLiveTurnExecutor({
       runtime: composed.value,
       clock: graph.clock,
       providerCatalog,
-      contextCandidates: workspaceTools.contextCandidates,
+      contextSource,
+      memory: memoryTurn,
     });
     const attempted = await executor.run({
       prompt: resolved.prompt,
@@ -581,6 +608,10 @@ export async function runCoding(
         indexOwner,
         briefVerbosity,
         briefOwner,
+        contextStatus: attempted.contextStatus,
+        contextGeneration: attempted.contextGeneration,
+        recalledMemories: attempted.recalledMemories,
+        memoryAdmission: attempted.memoryAdmission,
         response: attempted.response,
         modelAttempts: attempted.modelAttempts,
         toolResults: attempted.toolResults,

@@ -6,14 +6,14 @@
  * gap, a repeat, or a version out of order is defective, and finding out
  * halfway through applying it means finding out on a user's only copy.
  *
- * The production list holds four steps: migration `0001`, which creates the
+ * The production list holds six steps: migration `0001`, which creates the
  * session, turn, model-attempt, invocation, event, and projection-cursor
  * tables, migration `0002`, which creates the artifact metadata table,
- * migration `0003`, which creates run identity, and migration `0004`, which
- * creates the artifact provenance graph. Their SQL lives in `schema.ts`,
- * `artifact-schema.ts`, `run-schema.ts`, and `artifact-provenance-schema.ts`
- * beside this list, so this module stays the rules a set must satisfy and
- * those stay the schema.
+ * migration `0003`, which creates run identity, migration `0004`, which creates
+ * the artifact provenance graph, migration `0005`, which creates durable memory
+ * records, and migration `0006`, which stores Loom manifests. Their SQL lives
+ * in the adjacent schema modules, so this module owns migration-set rules while
+ * those modules own the schema.
  *
  * The aggregate view of what the set produces — every product table and the
  * version a fully migrated database reports — lives here rather than in either
@@ -32,6 +32,8 @@ import {
 } from "../domain/index.ts";
 import { ARTIFACT_TRANSFORMATIONS_TABLE, MIGRATION_0004 } from "./artifact-provenance-schema.ts";
 import { ARTIFACTS_TABLE, MIGRATION_0002 } from "./artifact-schema.ts";
+import { LOOM_MANIFESTS_TABLE, MIGRATION_0006 } from "./loom-schema.ts";
+import { MEMORY_RECORDS_TABLE, MIGRATION_0005 } from "./memory-schema.ts";
 import { MIGRATION_0003, RUNS_TABLE } from "./run-schema.ts";
 import { MIGRATION_0001, RECORD_TABLES } from "./schema.ts";
 
@@ -48,6 +50,8 @@ export const PRODUCTION_MIGRATIONS: readonly Migration[] = [
   MIGRATION_0002,
   MIGRATION_0003,
   MIGRATION_0004,
+  MIGRATION_0005,
+  MIGRATION_0006,
 ];
 
 /** Every product table the registered set creates, in creation order. */
@@ -56,6 +60,8 @@ export const PRODUCT_TABLES: readonly string[] = [
   ARTIFACTS_TABLE,
   RUNS_TABLE,
   ARTIFACT_TRANSFORMATIONS_TABLE,
+  MEMORY_RECORDS_TABLE,
+  LOOM_MANIFESTS_TABLE,
 ];
 
 function issue(

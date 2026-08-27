@@ -217,6 +217,83 @@ describe("runCoding", () => {
     }
   });
 
+  test("sends current durable index evidence in the first provider request", async () => {
+    const seeded = await seededHome();
+    await writeFile(
+      join(seeded.primary, "compose-turn.ts"),
+      "export function composeTurn() { return 'live'; }\n",
+      "utf8",
+    );
+    const services = providerFor(seeded)(globalsFor(seeded));
+    const requests: ModelRequest[] = [];
+    const result = await runCoding(
+      services,
+      { promptParts: ["Where", "is", "`composeTurn`", "defined?"] },
+      {
+        input: createRecordingCliStreams({ stdin: null }).input,
+        globals: globalsFor(seeded),
+        providerAdapter: createDeterministicProviderAdapter({
+          onRequest: (request) => requests.push(request),
+        }),
+        identities: {
+          sessionId: "session-run-index",
+          turnId: "turn-run-index",
+          traceId: "trace-run-index",
+        },
+      },
+    );
+
+    expect(result.outcome.kind).toBe("completed");
+    expect(result.payload?.contextStatus).toBe("ready");
+    expect(result.payload?.contextGeneration).toBeString();
+    expect(result.payload?.contextPackItems).toBeGreaterThan(0);
+    const firstPayload = JSON.stringify(requests[0]);
+    expect(firstPayload).toContain("compose-turn.ts");
+    expect(firstPayload).toContain("composeTurn");
+    expect(firstPayload).toContain("citation:");
+  });
+
+  test("recalls durable memory before the next prompt and admits only completed turns", async () => {
+    const seeded = await seededHome();
+    const services = providerFor(seeded)(globalsFor(seeded));
+    const first = await runCoding(
+      services,
+      { promptParts: ["Prefer", "main", "as", "the", "default", "branch."] },
+      {
+        input: createRecordingCliStreams({ stdin: null }).input,
+        globals: globalsFor(seeded),
+        providerAdapter: createDeterministicProviderAdapter(),
+        identities: {
+          sessionId: "session-run-memory-first",
+          turnId: "turn-run-memory-first",
+          traceId: "trace-run-memory-first",
+        },
+      },
+    );
+    expect(first.payload?.memoryAdmission).toBe("admitted");
+
+    const requests: ModelRequest[] = [];
+    const second = await runCoding(
+      services,
+      { promptParts: ["Use", "the", "default", "branch", "again."] },
+      {
+        input: createRecordingCliStreams({ stdin: null }).input,
+        globals: globalsFor(seeded),
+        providerAdapter: createDeterministicProviderAdapter({
+          onRequest: (request) => requests.push(request),
+        }),
+        identities: {
+          sessionId: "session-run-memory-second",
+          turnId: "turn-run-memory-second",
+          traceId: "trace-run-memory-second",
+        },
+      },
+    );
+
+    expect(second.payload?.recalledMemories).toBeGreaterThan(0);
+    expect(JSON.stringify(requests[0])).toContain("Prefer main as the default branch.");
+  });
+
   test("reopens the durable store for a second session without lifecycle identity collisions", async () => {
     const seeded = await seededHome();
     const services = providerFor(seeded)(globalsFor(seeded));
@@ -240,6 +317,47 @@ describe("runCoding", () => {
       expect(result.outcome.kind).toBe("completed");
       expect(result.payload?.stage).toBe("attempt-completed");
     }
+  });
+
+  test("restores committed Loom manifests and exact artifacts after restart", async () => {
+    const seeded = await seededHome();
+    const services = providerFor(seeded)(globalsFor(seeded));
+    const first = await openProductArtifactSession(services());
+    expect(first).not.toBeNull();
+    if (first === null) {
+      return;
+    }
+    const ingested = await first.loom.ingest({
+      id: "loom-restart-manifest",
+      workspaceId: "workspace-restart-loom",
+      sessionId: "session-restart-loom",
+      members: [
+        {
+          artifactId: "artifact-restart-loom",
+          bytes: new TextEncoder().encode("durable loom payload"),
+          mediaType: "text/plain",
+          sensitivity: "user-content",
+          summary: "src/restart.txt",
+        },
+      ],
+    });
+    expect(ingested.ok).toBe(true);
+    await first.close();
+
+    const second = await openProductArtifactSession(services());
+    expect(second).not.toBeNull();
+    if (second === null) {
+      return;
+    }
+    const recovered = await second.loom.retrieve({
+      id: "evidence-restart-loom",
+      manifestId: "loom-restart-manifest",
+      expectedWorkspaceId: "workspace-restart-loom",
+      expectedSessionId: "session-restart-loom",
+      projection: { kind: "exact", member: "artifact-restart-loom" },
+    });
+    expect(recovered.ok && recovered.value.text).toBe("durable loom payload");
+    await second.close();
   });
 
   test("continues prompt to tool result to final text through the product gateway", async () => {
@@ -341,6 +459,7 @@ describe("runCoding", () => {
       stage: "attempt-failed",
       modelAttempts: 1,
       toolResults: 1,
+      memoryAdmission: "skipped",
     });
     expect(providerRequests).toBe(2);
   });

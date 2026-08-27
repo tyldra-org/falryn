@@ -136,6 +136,16 @@ export type LoomPortOptions = {
   readonly artifacts: ArtifactStorePort;
   readonly hasher?: ContentHasherPort;
   readonly cache?: LoomCache;
+  readonly manifests?: LoomManifestPersistencePort;
+};
+
+export type LoomManifestPersistencePort = {
+  get(
+    id: string,
+  ): Result<LoomManifest | null, { readonly code: "conflict" | "malformed" | "unavailable" }>;
+  insert(
+    manifest: LoomManifest,
+  ): Result<null, { readonly code: "conflict" | "malformed" | "unavailable" }>;
 };
 
 export type LoomEvidenceRequest = {
@@ -200,15 +210,58 @@ function sameManifest(left: LoomManifest, right: LoomManifest): boolean {
 function storeManifest(
   manifests: Map<string, LoomManifest>,
   manifest: LoomManifest,
+  persistence?: LoomManifestPersistencePort,
 ): Result<LoomIngestResult, LoomPortError> {
-  const existing = manifests.get(manifest.id);
+  let existing = manifests.get(manifest.id);
+  if (existing === undefined && persistence !== undefined) {
+    const loaded = persistence.get(manifest.id);
+    if (!loaded.ok) {
+      return err({ kind: "loom-port", code: "unavailable", field: "manifest" });
+    }
+    existing = loaded.value ?? undefined;
+    if (existing !== undefined) {
+      manifests.set(existing.id, existing);
+    }
+  }
   if (existing !== undefined) {
     return sameManifest(existing, manifest)
       ? ok({ manifest: existing })
       : err({ kind: "loom-port", code: "conflict", field: "manifest" });
   }
+  if (persistence !== undefined) {
+    const stored = persistence.insert(manifest);
+    if (!stored.ok) {
+      return err({
+        kind: "loom-port",
+        code: stored.error.code === "conflict" ? "conflict" : "unavailable",
+        field: "manifest",
+      });
+    }
+  }
   manifests.set(manifest.id, manifest);
   return ok({ manifest });
+}
+
+function loadManifest(
+  manifests: Map<string, LoomManifest>,
+  persistence: LoomManifestPersistencePort | undefined,
+  id: string,
+): Result<LoomManifest | null, LoomPortError> {
+  const current = manifests.get(id);
+  if (current !== undefined) {
+    return ok(current);
+  }
+  if (persistence === undefined) {
+    return ok(null);
+  }
+  const loaded = persistence.get(id);
+  if (!loaded.ok) {
+    return err({ kind: "loom-port", code: "unavailable", field: "manifest" });
+  }
+  if (loaded.value !== null) {
+    manifests.set(loaded.value.id, loaded.value);
+  }
+  return loaded;
 }
 
 async function readPlannedBytes(
@@ -383,7 +436,7 @@ export function createLoomPort(options: LoomPortOptions): LoomPort {
       if (!committed.ok) {
         return committed;
       }
-      return storeManifest(manifests, committed.value);
+      return storeManifest(manifests, committed.value, options.manifests);
     },
 
     async adopt(request, signal) {
@@ -463,15 +516,21 @@ export function createLoomPort(options: LoomPortOptions): LoomPort {
         commitInput.retentionUntil = request.retentionUntil;
       }
       const committed = commitLoomManifest(commitInput);
-      return committed.ok ? storeManifest(manifests, committed.value) : committed;
+      return committed.ok
+        ? storeManifest(manifests, committed.value, options.manifests)
+        : committed;
     },
 
     async retrieve(request, signal) {
       if (isAborted(signal)) {
         return err(cancelled("signal"));
       }
-      const manifest = manifests.get(request.manifestId);
-      if (manifest === undefined) {
+      const loadedManifest = loadManifest(manifests, options.manifests, request.manifestId);
+      if (!loadedManifest.ok) {
+        return loadedManifest;
+      }
+      const manifest = loadedManifest.value;
+      if (manifest === null) {
         return err({ kind: "loom-port", code: "unavailable", field: "manifest" });
       }
       const members: LoomRetrieveInput["members"][number][] = [];
@@ -527,7 +586,8 @@ export function createLoomPort(options: LoomPortOptions): LoomPort {
     },
 
     get(id) {
-      return manifests.get(id) ?? null;
+      const loaded = loadManifest(manifests, options.manifests, id);
+      return loaded.ok ? loaded.value : null;
     },
 
     invalidate(filter) {

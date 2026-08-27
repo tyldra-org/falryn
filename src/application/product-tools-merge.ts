@@ -19,12 +19,18 @@ export type ProductToolBundle = {
   readonly toolNames: readonly string[];
 };
 
+export type ProductToolMergeOptions = {
+  /** Publish workspace state after any tool reports an observed mutation. */
+  readonly afterMutation?: (request: ToolRunnerRequest) => Promise<boolean>;
+};
+
 /**
  * Combine registry entries and dispatch by tool name across runners.
  */
 export function mergeProductToolBundles(
   generation: ConfigurationGeneration,
   bundles: readonly ProductToolBundle[],
+  options: ProductToolMergeOptions = {},
 ): ProductToolBundle {
   const entries: ToolRegistryEntry[] = [];
   const runners = new Map<string, ToolRunnerPort>();
@@ -49,7 +55,24 @@ export function mergeProductToolBundles(
           effect: "none",
         };
       }
-      return owned.execute(request);
+      const outcome = await owned.execute(request);
+      if (request.effect === "observation" || outcome.effect === "none") {
+        return outcome;
+      }
+      const refreshed = await options.afterMutation?.(request);
+      if (refreshed !== false || outcome.status !== "completed") {
+        return outcome;
+      }
+      return {
+        ...outcome,
+        output: {
+          ...outcome.output,
+          workspaceIndex: {
+            status: "unavailable",
+            code: "refresh-failed",
+          },
+        },
+      };
     },
   };
   return {

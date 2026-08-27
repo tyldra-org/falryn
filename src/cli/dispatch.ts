@@ -387,6 +387,13 @@ async function launchShell(
   );
 
   const productArtifactSession = await openProductArtifactSession(graph, stopped.signal);
+  const productWorkspaceIndex =
+    productArtifactSession === null || resolvedWorkspace.ok !== true
+      ? null
+      : await productArtifactSession.openWorkspaceIndex(
+          primaryWorkspaceRoot(resolvedWorkspace.value.set).path,
+          stopped.signal,
+        );
   const provider = await composeProductProviderConnections(graph, globals, {
     configuration,
     ...(governance.ownedProcesses === undefined
@@ -406,6 +413,8 @@ async function launchShell(
         provider,
         artifacts: productArtifactSession.artifacts,
         loom: productArtifactSession.loom,
+        memoryRecords: productArtifactSession.memoryRecords,
+        ...(productWorkspaceIndex === null ? {} : { index: productWorkspaceIndex }),
         ...(governance.ownedProcesses === undefined
           ? {}
           : { ownedProcesses: governance.ownedProcesses }),

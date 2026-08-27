@@ -140,6 +140,7 @@ export type ProductWorkspaceTools = {
   readonly runner: ToolRunnerPort;
   readonly toolNames: readonly string[];
   contextCandidates(): readonly EvidenceCandidate[];
+  invalidateContext(): number;
 };
 
 /**
@@ -174,6 +175,10 @@ export function composeProductWorkspaceTools(
     commands: ports.commands,
   });
   const patcher = createWorkspacePatcher({ fileSystem: ports.fileSystem });
+
+  const invalidateAfterMutation = (): void => {
+    productRead.invalidate();
+  };
 
   const entries: ToolRegistryEntry[] = [
     mustEntry(
@@ -373,14 +378,14 @@ export function composeProductWorkspaceTools(
         case "write_files": {
           const result = await writer.apply(root, request.input, request.signal);
           if (result.ok) {
-            productRead.invalidate();
+            invalidateAfterMutation();
           }
           return result.ok ? completed(result.value) : failed(errorCode(result.error));
         }
         case "mutate_paths": {
           const result = await mutator.apply(root, request.input, request.signal);
           if (result.ok) {
-            productRead.invalidate();
+            invalidateAfterMutation();
           }
           return result.ok ? completed(result.value) : failed(errorCode(result.error));
         }
@@ -399,7 +404,7 @@ export function composeProductWorkspaceTools(
         case "apply_patch": {
           const result = await patcher.apply(root, request.input, request.signal);
           if (result.ok) {
-            productRead.invalidate();
+            invalidateAfterMutation();
           }
           return result.ok ? completed(result.value) : failed(errorCode(result.error));
         }
@@ -420,5 +425,6 @@ export function composeProductWorkspaceTools(
     runner,
     toolNames: entries.map((entry) => entry.descriptor.name),
     contextCandidates: productRead.candidates,
+    invalidateContext: productRead.invalidate,
   };
 }

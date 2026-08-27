@@ -74,6 +74,30 @@ switches the active transcript and submission target. A failed creation leaves
 the current session selected; concurrent duplicate actions coalesce, and active
 turns or unresolved confirmations must settle first.
 
+## Live context, index, and memory
+
+`falryn run` and the interactive composer open a durable index database scoped
+to the active workspace root. Each process builds the current bounded index
+generation before accepting a turn. The turn extracts a small set of task
+queries, retrieves bounded candidates, verifies their stored content digests
+against current file bytes, and admits only current excerpts to Context. The
+first provider request carries the selected evidence, citations, Brief policy,
+tool disclosure, omissions, and an explicit empty, unavailable, or cancelled
+index state.
+
+Completed mutating workspace, process, and Git capabilities invalidate retained
+Read evidence and refresh the index before the next provider continuation.
+Refresh failure does not misreport the external mutation as failed; the tool
+result reports that index publication is unavailable so the model can use an
+exact Read or search fallback. The current implementation publishes a complete
+bounded generation. Incremental file deltas, native watcher overlays, FTS5,
+structural backends, and graph retrieval are not claimed here.
+
+Workspace-scoped memory records persist in SQLite. Relevant records are
+recalled before prompt composition. A new record is admitted only after the
+model attempt, terminal turn event, and durable replay all report completion;
+failed, cancelled, partial, or uncertain turns are not learned.
+
 ## Product Read and Loom
 
 The product workspace registry includes one `read_file` capability for exact,
@@ -82,6 +106,12 @@ requests accept `outputMode: "loom" | "raw"`. `loom` is the default. When a
 complete text file exceeds the inline limit and durable artifact storage is
 available, Read stores the exact bytes once and adopts that artifact into a
 workspace/session-scoped Loom manifest.
+
+Committed Loom manifest metadata is stored in SQLite beside the artifact
+records. A later Falryn process can restore the manifest, its trusted file
+origin, and exact artifact membership before accepting a recovery request.
+Missing, malformed, foreign-scope, or digest-mismatched recovery remains
+unavailable rather than being reconstructed from model-supplied metadata.
 
 For a digest-current indexed source, Read returns a bounded, line-numbered
 outline with explicit omitted ranges and a Loom recovery handle. The same
