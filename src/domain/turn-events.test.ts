@@ -63,6 +63,42 @@ describe("turn lifecycle fact identity", () => {
 });
 
 describe("reduceTurnEvents", () => {
+  test("replays session profile transitions without re-executing work", () => {
+    const events = [
+      eventAt({ kind: "session.started", correlation }, 1),
+      eventAt(
+        {
+          kind: "execution.profile.selected",
+          correlation,
+          selectionId: "profile-1",
+          profileId: "ask",
+          profileVersion: 1,
+          completion: "answer",
+        },
+        2,
+      ),
+      eventAt(
+        {
+          kind: "execution.profile.selected",
+          correlation,
+          selectionId: "profile-2",
+          profileId: "debug",
+          profileVersion: 1,
+          completion: "diagnosis",
+        },
+        3,
+      ),
+    ];
+
+    const reduction = reduceTurnEvents(events);
+    expect(reduction.selectedExecutionProfile).toBe("debug");
+    expect(reduction.executionProfileSelections.map((selection) => selection.profileId)).toEqual([
+      "ask",
+      "debug",
+    ]);
+    expect(classifyTurnReplay(events).kind).toBe("rebuilt");
+  });
+
   test("rebuilds a turn with attempt and invocation facts", () => {
     const attempt = modelAttemptId.from("attempt-1");
     const invocation = invocationId.from("inv-1");

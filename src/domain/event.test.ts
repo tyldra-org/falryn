@@ -24,6 +24,7 @@ function carriesTurnIdentity(event: RuntimeEvent): boolean {
   switch (event.kind) {
     case "session.started":
     case "configuration.generation.changed":
+    case "execution.profile.selected":
       return false;
     case "turn.started":
     case "turn.completed":
@@ -64,6 +65,7 @@ describe("event kinds", () => {
     );
     expect(scoped.get("session.started")).toBe(false);
     expect(scoped.get("configuration.generation.changed")).toBe(false);
+    expect(scoped.get("execution.profile.selected")).toBe(false);
     expect(scoped.get("turn.started")).toBe(true);
   });
 });

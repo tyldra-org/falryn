@@ -59,6 +59,7 @@ export function isRawArguments(value: unknown): value is RawArguments {
       (Array.isArray(field("prompt")) &&
         (field("prompt") as unknown[]).every((item) => typeof item === "string"))) &&
     optionalString(field("brief")) &&
+    optionalString(field("mode")) &&
     optionalString(field("statement")) &&
     optionalString(field("outcome-id")) &&
     optionalString(field("task-id")) &&

@@ -241,6 +241,8 @@ export {
   PRODUCT_INDEX_LIFECYCLE_OWNER,
 } from "./product-index-lifecycle.ts";
 export type {
+  ProductExecutionProfileControls,
+  ProductExecutionProfileSelection,
   ProductLiveTurnExecutor,
   ProductLiveTurnExecutorOptions,
   ProductLiveTurnInput,
@@ -462,6 +464,7 @@ export type {
 export { createSessionRuntime } from "./session-runtime.ts";
 export type {
   ProducerError,
+  ProducerExecutionProfileInput,
   ProducerModelAttemptInput,
   ProducerResult,
   ProducerSessionInput,

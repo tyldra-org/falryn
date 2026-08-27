@@ -15,6 +15,8 @@ import {
   type CapabilityId,
   type ConfigurationGeneration,
   type EventStorePort,
+  type ExecutionProfileCompletion,
+  type ExecutionProfileId,
   type InvocationId,
   MAX_STREAM_READ_LIMIT,
   type ModelAttemptId,
@@ -49,6 +51,14 @@ export type ProducerSessionInput = {
 };
 
 export type ProducerTurnInput = StartTurnInput;
+
+export type ProducerExecutionProfileInput = {
+  readonly selectionId: string;
+  readonly profileId: ExecutionProfileId;
+  readonly profileVersion: 1;
+  readonly completion: ExecutionProfileCompletion;
+  readonly configurationGeneration: ConfigurationGeneration;
+};
 
 export type ProducerModelAttemptInput = {
   readonly turnId: TurnId;
@@ -88,6 +98,10 @@ export type SessionTurnTranscriptProducer = {
   startSession(
     input: ProducerSessionInput,
   ): Promise<ProducerResult<{ readonly sessionId: SessionId }>>;
+  /** Persist a session-scoped profile selection for the next turn boundary. */
+  selectExecutionProfile(
+    input: ProducerExecutionProfileInput,
+  ): Promise<ProducerResult<{ readonly profileId: ExecutionProfileId }>>;
   /** Start a turn and persist `turn.started`. */
   startTurn(input: ProducerTurnInput): Promise<ProducerResult<{ readonly turnId: TurnId }>>;
   /** Persist `turn.completed` and end the session's active turn phase. */
@@ -213,6 +227,28 @@ export function createSessionTurnTranscriptProducer(
         return persisted;
       }
       return { ok: true, value: { sessionId: input.sessionId } };
+    },
+
+    async selectExecutionProfile(input) {
+      const persisted = await persistFacts([
+        {
+          kind: "execution.profile.selected",
+          correlation: {
+            workspaceId: options.correlation.workspaceId,
+            sessionId: options.correlation.sessionId,
+            traceId: options.correlation.traceId,
+            configurationGeneration: input.configurationGeneration,
+          },
+          selectionId: input.selectionId,
+          profileId: input.profileId,
+          profileVersion: input.profileVersion,
+          completion: input.completion,
+        },
+      ]);
+      if (!persisted.ok) {
+        return persisted;
+      }
+      return { ok: true, value: { profileId: input.profileId } };
     },
 
     async startTurn(input) {

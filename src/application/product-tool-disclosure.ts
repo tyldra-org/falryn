@@ -14,6 +14,7 @@ import type {
   CapabilityId,
   ConfigurationGeneration,
   EffectClass,
+  EffectiveExecutionPolicy,
   PromptToolInput,
   ToolCapabilityKind,
   ToolRegistry,
@@ -21,7 +22,8 @@ import type {
 import type { ModelToolDefinition } from "../providers/index.ts";
 
 export const PRODUCT_TOOL_DISCLOSURE_SCHEMA_VERSION = 1;
-export const MAX_DISCLOSED_PRODUCT_TOOLS = 16;
+/** Hard schema-count guard; profile ordering, not a per-mode quota, selects below it. */
+export const MAX_DISCLOSED_PRODUCT_TOOLS = 24;
 
 export const MODEL_CAPABILITY_FAMILIES = [
   "search",
@@ -70,6 +72,11 @@ export type ProductToolDisclosure = {
   readonly receipt: CapabilityDisclosureReceipt;
 };
 
+export type ProductToolDisclosureOptions = {
+  readonly maximum?: number;
+  readonly executionPolicy?: EffectiveExecutionPolicy;
+};
+
 const PREFERRED_TOOL_ORDER = [
   "read_file",
   "list_dir",
@@ -87,6 +94,30 @@ const PREFERRED_TOOL_ORDER = [
   "lsp_definition",
   "lsp_references",
   "lsp_diagnostics",
+] as const;
+
+const DEBUG_TOOL_ORDER = [
+  "read_file",
+  "list_dir",
+  "stat_path",
+  "read_compact_document",
+  "discover_files",
+  "search_text",
+  "git_status",
+  "git_diff",
+  "git_log",
+  "run_process",
+  "run_shell",
+  "lsp_hover",
+  "lsp_definition",
+  "lsp_references",
+  "lsp_diagnostics",
+  "dap_start",
+  "dap_launch",
+  "dap_set_breakpoints",
+  "dap_stack_trace",
+  "dap_continue",
+  "dap_disconnect",
 ] as const;
 
 const RAW_PROTOCOL_ESCAPES = new Set(["run_process", "run_shell"]);
@@ -146,8 +177,11 @@ function isClosedSchema(value: unknown): boolean {
   return true;
 }
 
-function familyAvailability(registry: ToolRegistry): readonly CapabilityFamilyAvailability[] {
-  const kinds = new Set(registry.entries.map((entry) => entry.manifest.capabilityKind));
+function familyAvailability(
+  disclosed: readonly DisclosedProductTool[],
+  policy: EffectiveExecutionPolicy | undefined,
+): readonly CapabilityFamilyAvailability[] {
+  const kinds = new Set(disclosed.map((entry) => entry.capabilityKind));
   const available = (family: ModelCapabilityFamily): boolean => {
     switch (family) {
       case "search":
@@ -170,8 +204,28 @@ function familyAvailability(registry: ToolRegistry): readonly CapabilityFamilyAv
   return MODEL_CAPABILITY_FAMILIES.map((family) => ({
     family,
     available: available(family),
-    reason: available(family) ? null : "no executable descriptor in this catalog generation",
+    reason: available(family)
+      ? null
+      : policy === undefined
+        ? "no executable descriptor in this catalog generation"
+        : `no ${policy.profileId}-eligible descriptor disclosed from this catalog generation`,
   }));
+}
+
+function policyOmissionReason(
+  entry: ToolRegistry["entries"][number],
+  policy: EffectiveExecutionPolicy | undefined,
+): string | null {
+  if (policy === undefined) {
+    return null;
+  }
+  if (policy.deniedToolNames.includes(entry.manifest.name)) {
+    return `denied by ${policy.profileId} profile tool policy`;
+  }
+  if (policy.deniedEffects.includes(entry.manifest.effect)) {
+    return `effect ${entry.manifest.effect} denied by ${policy.profileId} profile`;
+  }
+  return null;
 }
 
 /**
@@ -180,13 +234,17 @@ function familyAvailability(registry: ToolRegistry): readonly CapabilityFamilyAv
  */
 export function discloseProductTools(
   registry: ToolRegistry,
-  maximum = MAX_DISCLOSED_PRODUCT_TOOLS,
+  options: ProductToolDisclosureOptions = {},
 ): ProductToolDisclosure {
+  const maximum = options.maximum ?? MAX_DISCLOSED_PRODUCT_TOOLS;
+  const executionPolicy = options.executionPolicy;
   const selected = [];
   const omitted: { name: string; reason: string }[] = [];
-  const preferred = new Set<string>(PREFERRED_TOOL_ORDER);
+  const omittedNames = new Set<string>();
+  const order = executionPolicy?.profileId === "debug" ? DEBUG_TOOL_ORDER : PREFERRED_TOOL_ORDER;
+  const preferred = new Set<string>(order);
 
-  for (const name of PREFERRED_TOOL_ORDER) {
+  for (const name of order) {
     if (selected.length >= maximum) {
       break;
     }
@@ -194,18 +252,37 @@ export function discloseProductTools(
     if (entry === null) {
       continue;
     }
+    const policyReason = policyOmissionReason(entry, executionPolicy);
+    if (policyReason !== null) {
+      omitted.push({ name, reason: policyReason });
+      omittedNames.add(name);
+      continue;
+    }
     const parameters = jsonSchemaFor(entry.manifest.inputSchema);
     if (!isClosedSchema(parameters) && !RAW_PROTOCOL_ESCAPES.has(name)) {
       omitted.push({ name, reason: "permissive model-boundary schema" });
+      omittedNames.add(name);
       continue;
     }
     selected.push({ entry, parameters });
   }
 
   for (const entry of registry.entries) {
-    if (!preferred.has(entry.manifest.name)) {
-      omitted.push({ name: entry.manifest.name, reason: "bounded baseline disclosure" });
+    const name = entry.manifest.name;
+    if (
+      selected.some((candidate) => candidate.entry.manifest.name === name) ||
+      omittedNames.has(name)
+    ) {
+      continue;
     }
+    const policyReason = policyOmissionReason(entry, executionPolicy);
+    const reason =
+      policyReason ??
+      (preferred.has(name)
+        ? `profile disclosure schema budget ${maximum} reached`
+        : "bounded baseline disclosure");
+    omitted.push({ name, reason });
+    omittedNames.add(name);
   }
 
   const promptTools: PromptToolInput[] = selected.map(({ entry, parameters }) => ({
@@ -239,7 +316,7 @@ export function discloseProductTools(
     receipt: {
       schemaVersion: PRODUCT_TOOL_DISCLOSURE_SCHEMA_VERSION,
       catalogGeneration: registry.generation,
-      families: familyAvailability(registry),
+      families: familyAvailability(disclosed, executionPolicy),
       disclosed,
       omitted,
       schemaBytes: disclosed.reduce((total, tool) => total + tool.schemaBytes, 0),

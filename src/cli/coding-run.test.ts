@@ -10,9 +10,13 @@ import { join } from "node:path";
 
 import { CONFIGURATION_FILE_NAME } from "../config/index.ts";
 import {
+  type ArtifactStorePort,
+  artifactId,
   configurationGeneration,
   createStaticEnvironment,
+  err,
   localPath,
+  ok,
   streamId,
 } from "../domain/index.ts";
 import { createDeterministicProviderAdapter, type ModelRequest } from "../providers/index.ts";
@@ -80,6 +84,28 @@ function providerFor(seeded: Awaited<ReturnType<typeof seededHome>>) {
       environment: seeded.environment,
       currentDirectory: localPath(seeded.primary),
     });
+}
+
+function failingArtifactStore(): ArtifactStorePort {
+  const missing = artifactId.from("missing-plan-artifact");
+  return {
+    ingest: async (request) =>
+      err({ kind: "artifact", code: "not-found", artifactId: request.artifactId }),
+    get: () => ok(null),
+    verifyIntegrity: async () => err({ kind: "artifact", code: "not-found", artifactId: missing }),
+    findByDigest: () => ok([]),
+    listByInvocation: () => ok([]),
+    readRange: async () => err({ kind: "artifact", code: "not-found", artifactId: missing }),
+    preview: async () => err({ kind: "artifact", code: "not-found", artifactId: missing }),
+    sweep: async () => ({
+      examined: 0,
+      deleted: 0,
+      retained: [],
+      failed: 0,
+      completeness: "complete",
+      effect: "none",
+    }),
+  };
 }
 
 describe("resolveCodingPrompt", () => {
@@ -196,6 +222,15 @@ describe("runCoding", () => {
     expect(result.payload?.modelAttempts).toBe(1);
     expect(result.payload?.toolResults).toBe(0);
     expect(result.payload?.disclosedTools).toBeGreaterThan(0);
+    expect(result.payload).toMatchObject({
+      executionProfile: "agent",
+      executionProfileVersion: 1,
+      completionCriterion: "implemented-and-verified",
+      effectiveModelRole: "default",
+      effectiveReasoning: "provider-default",
+      policyGeneration: 0,
+      planArtifactId: null,
+    });
     expect(result.errors).toEqual([]);
 
     const durable = await openProductArtifactSession(services());
@@ -212,9 +247,241 @@ describe("runCoding", () => {
       if (replayed.ok) {
         expect(replayed.value.map((event) => event.kind)).toContain("model.attempt.completed");
         expect(replayed.value.map((event) => event.kind)).toContain("turn.completed");
+        expect(replayed.value.map((event) => event.kind)).toContain("execution.profile.selected");
+        const attempt = replayed.value.find((event) => event.kind === "model.attempt.started");
+        expect(
+          attempt?.kind === "model.attempt.started" ? attempt.payload.binding : null,
+        ).toMatchObject({
+          executionProfile: {
+            id: "agent",
+            version: 1,
+            completion: "implemented-and-verified",
+          },
+        });
       }
       await durable.close();
     }
+  });
+
+  test("retains Plan output as a durable reviewable artifact", async () => {
+    const seeded = await seededHome();
+    const services = providerFor(seeded)(globalsFor(seeded));
+    const requests: ModelRequest[] = [];
+    const adapter = createDeterministicProviderAdapter({
+      script: { kind: "text", text: "# Plan\n\n1. Inspect.\n2. Implement.\n" },
+      onRequest: (request) => requests.push(request),
+    });
+    const modelId = adapter.supportedModels[0];
+    if (modelId === undefined) {
+      throw new Error("deterministic provider has no model");
+    }
+    const result = await runCoding(
+      services,
+      { promptParts: ["plan", "the", "change"], mode: "plan" },
+      {
+        input: createRecordingCliStreams({ stdin: null }).input,
+        globals: globalsFor(seeded),
+        providerAdapter: adapter,
+        providerCatalog: {
+          generation: 1,
+          provenance: "static-config",
+          fetchedAt: null,
+          expiresAt: null,
+          models: [
+            {
+              modelId,
+              modalities: ["text"],
+              tools: true,
+              streaming: true,
+              reasoning: true,
+              contextTokens: 32_000,
+              outputTokens: 4_000,
+            },
+          ],
+        },
+        identities: {
+          sessionId: "session-run-plan",
+          turnId: "turn-run-plan",
+          traceId: "trace-run-plan",
+        },
+      },
+    );
+
+    expect(result.outcome.kind).toBe("completed");
+    expect(result.payload).toMatchObject({
+      executionProfile: "plan",
+      completionCriterion: "durable-plan",
+      effectiveModelRole: "plan",
+      effectiveReasoning: "balanced",
+      briefVerbosity: "detailed",
+    });
+    expect(result.payload?.planArtifactId).toBeString();
+    expect(JSON.stringify(requests[0])).toContain("[execution-profile id=plan version=1]");
+    expect(requests[0]?.tools.every((tool) => tool.name !== "run_shell")).toBe(true);
+
+    const durable = await openProductArtifactSession(services());
+    expect(durable).not.toBeNull();
+    if (durable !== null && result.payload?.planArtifactId != null) {
+      expect(durable.artifacts.get(artifactId.from(result.payload.planArtifactId))).toMatchObject({
+        ok: true,
+        value: {
+          mediaType: "text/markdown",
+          origin: "model-output",
+          availability: "available",
+        },
+      });
+      await durable.close();
+    }
+  });
+
+  test("does not complete a Plan turn when its reviewable artifact cannot persist", async () => {
+    const seeded = await seededHome();
+    const services = providerFor(seeded)(globalsFor(seeded));
+    const result = await runCoding(
+      services,
+      { promptParts: ["plan", "without", "storage"], mode: "plan" },
+      {
+        input: createRecordingCliStreams({ stdin: null }).input,
+        globals: globalsFor(seeded),
+        providerAdapter: createDeterministicProviderAdapter({
+          script: { kind: "text", text: "# Plan\n\n1. Inspect.\n" },
+        }),
+        artifacts: failingArtifactStore(),
+        identities: {
+          sessionId: "session-run-plan-artifact-failure",
+          turnId: "turn-run-plan-artifact-failure",
+          traceId: "trace-run-plan-artifact-failure",
+        },
+      },
+    );
+
+    expect(result.outcome).toMatchObject({ kind: "failed", effect: "none" });
+    expect(result.payload).toMatchObject({
+      stage: "attempt-failed",
+      executionProfile: "plan",
+      completionCriterion: "durable-plan",
+      planArtifactId: null,
+    });
+
+    const durable = await openProductArtifactSession(services());
+    expect(durable).not.toBeNull();
+    if (durable !== null) {
+      const replayed = await durable.eventStore.readFrom(
+        {
+          streamId: streamId.from("live-turn:session-run-plan-artifact-failure"),
+          afterSequence: null,
+        },
+        20,
+      );
+      expect(replayed.ok).toBe(true);
+      if (replayed.ok) {
+        const terminal = replayed.value.find((event) => event.kind === "turn.completed");
+        expect(terminal?.kind === "turn.completed" ? terminal.payload.outcome : null).toEqual({
+          kind: "failed",
+          effect: "none",
+        });
+      }
+      await durable.close();
+    }
+  });
+
+  test("Ask denies a consequential tool proposal at the live gateway", async () => {
+    const seeded = await seededHome();
+    const services = providerFor(seeded)(globalsFor(seeded));
+    let providerRequests = 0;
+    const result = await runCoding(
+      services,
+      { promptParts: ["explain", "only"], mode: "ask" },
+      {
+        input: createRecordingCliStreams({ stdin: null }).input,
+        globals: globalsFor(seeded),
+        providerAdapter: createDeterministicProviderAdapter({
+          onRequest: () => {
+            providerRequests += 1;
+          },
+          script: {
+            kind: "tool",
+            toolCallId: "call-ask-bypass",
+            name: "run_shell",
+            argumentFragments: ['{"command":"printf bypass"}'],
+          },
+        }),
+        identities: {
+          sessionId: "session-run-ask-deny",
+          turnId: "turn-run-ask-deny",
+          traceId: "trace-run-ask-deny",
+        },
+      },
+    );
+
+    expect(result.outcome).toMatchObject({ kind: "failed", effect: "none" });
+    expect(result.payload).toMatchObject({
+      stage: "attempt-failed",
+      executionProfile: "ask",
+      completionCriterion: "answer",
+      toolResults: 1,
+    });
+    expect(providerRequests).toBe(1);
+  });
+
+  test("Debug discloses bounded process, LSP, and DAP probes without edit tools", async () => {
+    const seeded = await seededHome();
+    const services = providerFor(seeded)(globalsFor(seeded));
+    const requests: ModelRequest[] = [];
+    const adapter = createDeterministicProviderAdapter({
+      script: { kind: "text", text: "Diagnosis: inspect the failing frame." },
+      onRequest: (request) => requests.push(request),
+    });
+    const modelId = adapter.supportedModels[0];
+    if (modelId === undefined) {
+      throw new Error("deterministic provider has no model");
+    }
+    const result = await runCoding(
+      services,
+      { promptParts: ["diagnose", "the", "failure"], mode: "debug" },
+      {
+        input: createRecordingCliStreams({ stdin: null }).input,
+        globals: globalsFor(seeded),
+        providerAdapter: adapter,
+        providerCatalog: {
+          generation: 1,
+          provenance: "static-config",
+          fetchedAt: null,
+          expiresAt: null,
+          models: [
+            {
+              modelId,
+              modalities: ["text"],
+              tools: true,
+              streaming: true,
+              reasoning: true,
+              contextTokens: 32_000,
+              outputTokens: 4_000,
+            },
+          ],
+        },
+        identities: {
+          sessionId: "session-run-debug",
+          turnId: "turn-run-debug",
+          traceId: "trace-run-debug",
+        },
+      },
+    );
+
+    expect(result.payload).toMatchObject({
+      stage: "attempt-completed",
+      executionProfile: "debug",
+      completionCriterion: "diagnosis",
+      effectiveModelRole: "default",
+      effectiveReasoning: "balanced",
+    });
+    const names = requests[0]?.tools.map((tool) => tool.name) ?? [];
+    expect(names).toContain("run_process");
+    expect(names).toContain("lsp_diagnostics");
+    expect(names).toContain("dap_stack_trace");
+    expect(names).toContain("dap_disconnect");
+    expect(names).not.toContain("apply_patch");
+    expect(names).not.toContain("lsp_rename");
   });
 
   test("sends current durable index evidence in the first provider request", async () => {
@@ -678,6 +945,17 @@ describe("falryn run through dispatch", () => {
     }
     expect(invocation.command).toBe("run");
     expect(invocation.runArgs).toEqual({ promptParts: ["fix", "me"] });
+  });
+
+  test("parses an explicit execution mode", async () => {
+    const invocation = await parseInvocation(["run", "--mode", "debug", "inspect", "it"]);
+    expect(invocation.kind).toBe("run");
+    if (invocation.kind === "run") {
+      expect(invocation.runArgs).toEqual({
+        promptParts: ["inspect", "it"],
+        mode: "debug",
+      });
+    }
   });
 
   test("projects provider-required through json", async () => {

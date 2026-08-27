@@ -21,6 +21,7 @@ import {
   CONFIGURATION_APPLICATION_CLASSES,
   type ConfigurationGenerationChangedEvent,
   type ConfigurationGenerationChangedPayload,
+  type ExecutionProfileSelectedPayload,
   isModelEvent,
   isToolEvent,
   type ModelAttemptBinding,
@@ -80,6 +81,13 @@ const modelAttemptBindingSchema: z.ZodType<ModelAttemptBinding> = z.object({
   role: z.string().min(1),
   intent: z.string().min(1).nullable(),
   reasoning: z.string().min(1),
+  executionProfile: z
+    .object({
+      id: z.enum(["ask", "plan", "debug", "agent"]),
+      version: z.literal(1),
+      completion: z.enum(["answer", "durable-plan", "diagnosis", "implemented-and-verified"]),
+    })
+    .optional(),
   providerCatalogGeneration: z.int().nonnegative(),
   toolCatalogGeneration: brandedInteger(configurationGeneration),
   policyGeneration: brandedInteger(configurationGeneration),
@@ -127,6 +135,14 @@ const modelAttemptStartedPayloadSchema: z.ZodType<ModelAttemptStartedPayload> = 
 const configurationPayloadSchema: z.ZodType<ConfigurationGenerationChangedPayload> = z.object({
   generation: brandedInteger(configurationGeneration),
   applicationClass: z.literal(CONFIGURATION_APPLICATION_CLASSES),
+});
+
+const executionProfilePayloadSchema: z.ZodType<ExecutionProfileSelectedPayload> = z.object({
+  selectionId: z.string().min(1).max(128),
+  profileId: z.enum(["ask", "plan", "debug", "agent"]),
+  profileVersion: z.literal(1),
+  completion: z.enum(["answer", "durable-plan", "diagnosis", "implemented-and-verified"]),
+  applicationClass: z.literal("next-turn"),
 });
 
 const envelopeSpine = {
@@ -205,6 +221,12 @@ const runtimeEventSchema: z.ZodType<RuntimeEvent> = z.discriminatedUnion("kind",
     correlation: sessionCorrelationSchema,
     payload: configurationPayloadSchema,
   }),
+  z.object({
+    ...envelopeSpine,
+    kind: z.literal("execution.profile.selected"),
+    correlation: sessionCorrelationSchema,
+    payload: executionProfilePayloadSchema,
+  }),
 ]);
 
 export type WireParseResult =
@@ -251,6 +273,14 @@ function payloadToJson(event: RuntimeEvent): Record<string, unknown> {
       return { outcome: outcomeToJson(event.payload.outcome) };
     case "configuration.generation.changed":
       return configurationPayloadToJson(event);
+    case "execution.profile.selected":
+      return {
+        selectionId: event.payload.selectionId,
+        profileId: event.payload.profileId,
+        profileVersion: event.payload.profileVersion,
+        completion: event.payload.completion,
+        applicationClass: event.payload.applicationClass,
+      };
     default:
       return {};
   }

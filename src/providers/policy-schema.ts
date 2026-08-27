@@ -74,9 +74,10 @@ const modelPolicySchema = z
     roles: z
       .object({
         default: roleRouteBaseSchema,
-        fast: roleRouteBaseSchema.optional(),
-        deep: roleRouteBaseSchema.optional(),
+        "fast-read": roleRouteBaseSchema.optional(),
+        "fast-edit": roleRouteBaseSchema.optional(),
         plan: roleRouteBaseSchema.optional(),
+        commit: roleRouteBaseSchema.optional(),
         vision: visionRoleRouteSchema.optional(),
         advisor: advisorRoleRouteSchema.optional(),
         compact: compactRoleRouteSchema.optional(),

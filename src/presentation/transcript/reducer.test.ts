@@ -19,6 +19,7 @@ import {
   capabilityInvocationStarted,
   configurationGenerationChanged,
   everyEventKind,
+  executionProfileSelected,
   FIXTURE_STREAM,
   modelAttemptCompleted,
   modelAttemptStarted,
@@ -203,6 +204,17 @@ describe("a configuration change", () => {
     expect(block?.kind).toBe("notice");
     if (block?.kind === "notice") {
       expect(block.note.text).toContain("Generation");
+    }
+  });
+});
+
+describe("an execution profile change", () => {
+  test("becomes a visible session notice", () => {
+    const block = blockFor(executionProfileSelected(9));
+    expect(block?.kind).toBe("notice");
+    if (block?.kind === "notice") {
+      expect(block.summary.text).toContain("agent");
+      expect(block.anchor).toEqual({ of: "declared", key: "execution-profile:selection-9" });
     }
   });
 });

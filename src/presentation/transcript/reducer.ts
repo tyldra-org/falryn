@@ -212,6 +212,18 @@ export function blockFor(event: RuntimeEvent): TranscriptBlock | null {
         ),
       };
 
+    case "execution.profile.selected":
+      return {
+        ...spine,
+        kind: "notice",
+        anchor: { of: "declared", key: `execution-profile:${event.payload.selectionId}` },
+        source: "runtime",
+        status: "final",
+        summary: complete(`Execution profile set to ${event.payload.profileId}.`),
+        invocationId: null,
+        note: complete(`${event.payload.completion}; applies ${event.payload.applicationClass}.`),
+      };
+
     default:
       return assertNever(event, "unhandled runtime event");
   }

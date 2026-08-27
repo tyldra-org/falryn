@@ -796,6 +796,15 @@ function renderCodingRun(session: Session, payload: CodingRunPayload | null): Re
     `  Workspace    ${safe(payload.workspaceId === "" ? "(none)" : payload.workspaceId)}`,
     `  Events       ${payload.eventCount}`,
   ];
+  if (payload.executionProfile !== undefined) {
+    lines.push(
+      `  Mode         ${safe(payload.executionProfile)}  completion=${safe(payload.completionCriterion ?? "unknown")}`,
+      `  Model role   ${safe(payload.effectiveModelRole ?? "unavailable")}  reasoning=${safe(payload.effectiveReasoning ?? "unavailable")}`,
+    );
+  }
+  if (payload.planArtifactId !== undefined && payload.planArtifactId !== null) {
+    lines.push(`  Plan artifact ${safe(payload.planArtifactId)}`);
+  }
   if (payload.response !== undefined && payload.response.length > 0) {
     lines.push("", paint(session, "plain", "Response"), payload.response);
   }

@@ -13,7 +13,7 @@ application. The current command surface includes:
 | --- | --- |
 | falryn | Open the interactive terminal interface on a capable terminal |
 | falryn --help / --version | Print usage or build identity |
-| falryn run <prompt> | Run one headless coding turn through the selected provider |
+| falryn run [--mode ask\|plan\|debug\|agent] <prompt> | Run one headless coding turn through the selected execution profile and provider |
 | falryn doctor | Run bounded environment and local-storage diagnostics |
 | falryn config show / validate / path | Inspect and validate effective configuration |
 | falryn provider list / add / use / configure / test / login / logout / remove | Manage local provider profiles and credentials |
@@ -73,6 +73,45 @@ OpenTUI's `session.new` palette action creates a new durable session before it
 switches the active transcript and submission target. A failed creation leaves
 the current session selected; concurrent duplicate actions coalesce, and active
 turns or unresolved confirmations must settle first.
+
+## Execution profiles and model roles
+
+Headless and OpenTUI turns use one versioned execution-profile contract and the
+same live-turn executor. `Agent` is the default. `falryn run --mode <profile>`,
+the `mode.select` palette action, `/mode <profile>`, and the `/ask`, `/plan`,
+`/debug`, and `/agent` aliases all select that same contract.
+
+| Profile | Completion criterion | Enforced authority |
+| --- | --- | --- |
+| Ask | answer | Observation-only evidence and tools |
+| Plan | durable plan | Observation-only investigation plus an exact reviewable Markdown artifact |
+| Debug | diagnosis | Bounded process, LSP, and DAP probes; direct edit and Git-mutation tools are denied |
+| Agent | implemented and verified | Full authorized tool loop with the normal effect policy and focused confirmations |
+
+Profile selection is persisted as a semantic session event. Each model attempt
+binds the selected profile, profile version, completion criterion, and policy
+generation before provider execution. A later selection applies only to a later
+turn and cannot broaden an in-flight attempt. The required profile guidance is
+also budgeted as a product-invariant prompt section; the gateway remains the
+authority even if a prompt or tool result asks for a wider effect.
+
+Plan cannot report completion unless its exact model output is retained as an
+available `text/markdown` artifact. Human and structured headless results expose
+the effective profile, completion criterion, model role, reasoning setting,
+policy generation, and Plan artifact identity when present. OpenTUI shows the
+active profile in the status line and emits a transcript notice when it changes.
+
+The public model roles are `default`, `compact`, `vision`, `plan`, `advisor`,
+`commit`, `fast-read`, and `fast-edit`. Unconfigured standard job roles inherit
+`default`; reasoning remains a supported setting on the effective model rather
+than a `thinking` or `deep` role. Profiles request a work intent and reasoning
+posture, but never choose a hidden provider or grant authority through model
+routing.
+
+The current disclosure path selects a bounded profile-eligible subset from the
+registered catalog and records selected, omitted, and unavailable reasons. The
+broader task-aware opportunity planner for automatic skill, MCP, workflow,
+delegation, and background-work activation is not claimed here.
 
 ## Live context, index, and memory
 

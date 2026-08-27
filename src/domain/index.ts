@@ -899,6 +899,24 @@ export type {
 } from "./event-store.ts";
 export { createInMemoryEventStore } from "./event-store.ts";
 export type {
+  EffectiveExecutionPolicy,
+  ExecutionProfile,
+  ExecutionProfileCompletion,
+  ExecutionProfileId,
+  ExecutionProfileReasoningRequest,
+  ExecutionProfileWorkIntent,
+} from "./execution-profile.ts";
+export {
+  EXECUTION_PROFILE_COMPLETIONS,
+  EXECUTION_PROFILE_IDS,
+  EXECUTION_PROFILE_REASONING_REQUESTS,
+  EXECUTION_PROFILE_SCHEMA_VERSION,
+  EXECUTION_PROFILES,
+  executionProfile,
+  isExecutionProfileId,
+  resolveExecutionProfile,
+} from "./execution-profile.ts";
+export type {
   ExportArtifactEntry,
   ExportBound,
   ExportConfigurationEntry,

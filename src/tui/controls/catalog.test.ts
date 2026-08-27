@@ -21,6 +21,7 @@ const HEADER: WorkspaceHeaderModel = {
 const CATALOG: ControlCatalog = {
   sessions: [{ id: "s1", title: "coding", detail: "workspace falryn" }],
   models: [{ id: "m1", title: "local-small", detail: "8k context" }],
+  profiles: [{ id: "agent", title: "Agent", detail: "Full authorized coding loop." }],
   context: [
     { label: "tokens", value: known("1200 / 8000") },
     { label: "bytes", value: known("48 KiB") },
@@ -74,8 +75,9 @@ describe("panel catalogs", () => {
     expect(overlayForPanel("session")).toEqual({ kind: "controls", panel: "session" });
   });
 
-  test("lists options only on session and model panels", () => {
+  test("lists options only on session, model, and profile panels", () => {
     expect(optionsFor(CATALOG, "session")).toEqual(CATALOG.sessions);
+    expect(optionsFor(CATALOG, "profile")).toEqual(CATALOG.profiles);
     expect(optionsFor(CATALOG, "context")).toEqual([]);
     expect(factsFor(CATALOG, "resource")).toEqual(CATALOG.resources);
     expect(factsFor(EMPTY_CONTROL_CATALOG, "session")).toEqual([]);
@@ -84,5 +86,6 @@ describe("panel catalogs", () => {
   test("names an empty list instead of showing a dash", () => {
     expect(emptyReason("session")).toBe("No sessions yet.");
     expect(emptyReason("model")).toBe("No models yet.");
+    expect(emptyReason("profile")).toBe("No execution modes yet.");
   });
 });

@@ -11,7 +11,19 @@ const correlation = {
 };
 
 function executor(run: ProductLiveTurnExecutor["run"]): ProductLiveTurnExecutor {
-  return { startSession: async () => null, run };
+  let profileId: "ask" | "plan" | "debug" | "agent" = "agent";
+  return {
+    executionProfile: {
+      get: () => profileId,
+      async select(nextProfileId) {
+        const changed = nextProfileId !== profileId;
+        profileId = nextProfileId;
+        return { ok: true, profileId, changed };
+      },
+    },
+    startSession: async () => null,
+    run,
+  };
 }
 
 describe("product submission port", () => {
@@ -36,6 +48,13 @@ describe("product submission port", () => {
           contextGeneration: null,
           recalledMemories: 0,
           memoryAdmission: "skipped",
+          executionProfile: "agent",
+          executionProfileVersion: 1,
+          completionCriterion: "implemented-and-verified",
+          effectiveModelRole: "default",
+          effectiveReasoning: "provider-default",
+          policyGeneration: 0,
+          planArtifactId: null,
         };
       }),
       sessionId: correlation.sessionId,
@@ -70,6 +89,13 @@ describe("product submission port", () => {
         contextGeneration: null,
         recalledMemories: 0,
         memoryAdmission: "skipped",
+        executionProfile: "agent",
+        executionProfileVersion: 1,
+        completionCriterion: "implemented-and-verified",
+        effectiveModelRole: "default",
+        effectiveReasoning: "provider-default",
+        policyGeneration: 0,
+        planArtifactId: null,
       };
     });
     const first = createProductSubmissionPort({
@@ -111,6 +137,37 @@ describe("product submission port", () => {
     if (refused.kind === "unavailable") {
       expect(refused.reason).toContain("not accepting");
     }
+  });
+
+  test("delegates mode selection to the same live-turn executor", async () => {
+    let selected = "agent" as "ask" | "plan" | "debug" | "agent";
+    const live: ProductLiveTurnExecutor = {
+      executionProfile: {
+        get: () => selected,
+        async select(profileId) {
+          const changed = profileId !== selected;
+          selected = profileId;
+          return { ok: true, profileId, changed };
+        },
+      },
+      startSession: async () => null,
+      run: async () => {
+        throw new Error("mode selection must not start a model turn");
+      },
+    };
+    const port = createProductSubmissionPort({
+      executor: live,
+      sessionId: correlation.sessionId,
+      configurationGeneration: correlation.configurationGeneration,
+    });
+
+    expect(port.executionProfile.get()).toBe("agent");
+    expect(await port.executionProfile.select("plan")).toEqual({
+      ok: true,
+      profileId: "plan",
+      changed: true,
+    });
+    expect(port.executionProfile.get()).toBe("plan");
   });
 
   test("default unavailable stub names #707", () => {

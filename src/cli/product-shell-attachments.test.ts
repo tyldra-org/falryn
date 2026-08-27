@@ -177,6 +177,12 @@ describe("composeProductShellAttachments", () => {
         detail: "Demo provider · text+image · tools · reasoning",
       },
     ]);
+    expect(attachments?.controls.profiles.map((profile) => profile.id)).toEqual([
+      "ask",
+      "plan",
+      "debug",
+      "agent",
+    ]);
     expect(attachments?.controls.resources[0]).toEqual({
       label: "provider",
       value: { kind: "known", text: "Demo provider" },
@@ -213,6 +219,7 @@ describe("composeProductShellAttachments", () => {
     expect(duplicate).toEqual(created);
     expect(attachments?.transcriptFeed.events().map((event) => event.kind)).toEqual([
       "session.started",
+      "execution.profile.selected",
     ]);
     expect(attachments?.transcriptFeed.events()[0]?.correlation.sessionId).not.toBe(firstSession);
     const second = await attachments?.submission.submit(snapshotOf("run the next session", 2));

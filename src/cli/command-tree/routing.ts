@@ -208,11 +208,12 @@ export function runArgumentsFor(
   }
   // yargs puts `run [prompt..]` into `prompt`, not into `_`.
   const brief = parsed.brief;
-  if (brief !== undefined) {
-    return {
-      promptParts: parsed.prompt ?? [],
-      brief: brief as "compact" | "balanced" | "detailed" | "auto",
-    };
-  }
-  return { promptParts: parsed.prompt ?? [] };
+  const mode = parsed.mode;
+  return {
+    promptParts: parsed.prompt ?? [],
+    ...(brief === undefined
+      ? {}
+      : { brief: brief as "compact" | "balanced" | "detailed" | "auto" }),
+    ...(mode === undefined ? {} : { mode: mode as "ask" | "plan" | "debug" | "agent" }),
+  };
 }

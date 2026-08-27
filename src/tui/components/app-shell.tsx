@@ -118,6 +118,7 @@ export type AppShellProps = {
   readonly controls?: ControlCatalog;
   readonly selectedSessionId?: string | null;
   readonly selectedModelId?: string | null;
+  readonly selectedProfileId?: string | null;
   readonly onControlSelect?: (id: string) => void;
   /** Loads artifact views for the code viewer overlay. Absent in static frames. */
   readonly artifactViewer?: ArtifactViewer;
@@ -217,6 +218,9 @@ export function AppShell(props: AppShellProps): ReactNode {
           {...(props.selectedModelId === undefined
             ? {}
             : { selectedModelId: props.selectedModelId })}
+          {...(props.selectedProfileId === undefined
+            ? {}
+            : { selectedProfileId: props.selectedProfileId })}
           {...(props.onControlSelect === undefined
             ? {}
             : { onControlSelect: props.onControlSelect })}
@@ -289,6 +293,7 @@ function ShellFrame(props: {
   readonly controls?: ControlCatalog;
   readonly selectedSessionId?: string | null;
   readonly selectedModelId?: string | null;
+  readonly selectedProfileId?: string | null;
   readonly onControlSelect?: (id: string) => void;
   readonly artifactViewer?: ArtifactViewer;
   readonly gitDashboard?: GitDashboard;
@@ -460,6 +465,7 @@ function overlayBody(
     readonly controls?: ControlCatalog;
     readonly selectedSessionId?: string | null;
     readonly selectedModelId?: string | null;
+    readonly selectedProfileId?: string | null;
     readonly onControlSelect?: (id: string) => void;
     readonly artifactViewer?: ArtifactViewer;
     readonly gitDashboard?: GitDashboard;
@@ -525,7 +531,9 @@ function overlayBody(
               ? (props.selectedSessionId ?? null)
               : overlay.panel === "model"
                 ? (props.selectedModelId ?? null)
-                : null
+                : overlay.panel === "profile"
+                  ? (props.selectedProfileId ?? null)
+                  : null
           }
           rows={rows}
           {...(props.onControlSelect === undefined ? {} : { onSelect: props.onControlSelect })}

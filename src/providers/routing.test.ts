@@ -48,15 +48,20 @@ function samplePolicy(overrides?: {
         fallbacks: overrides?.withFallback ? [{ providerId: secondary, modelId: fast }] : [],
         budgets: { attempts: 2 },
       },
-      fast: {
+      "fast-read": {
         providerId: primary,
         modelId: fast,
         reasoning: "minimal",
       },
-      deep: {
+      "fast-edit": {
+        providerId: primary,
+        modelId: fast,
+        reasoning: "minimal",
+      },
+      commit: {
         providerId: primary,
         modelId: deep,
-        reasoning: "deep",
+        reasoning: "balanced",
       },
       plan: {
         providerId: primary,
@@ -172,7 +177,7 @@ describe("model policy", () => {
     expect(policy.roles.default.fallbacks).toEqual([]);
     expect(policy.roles.default.budgets.attempts).toBe(2);
     expect(resolveIntentRole(policy, "planning")).toBe("plan");
-    expect(resolveIntentRole(policy, "read")).toBe("fast");
+    expect(resolveIntentRole(policy, "read")).toBe("fast-read");
   });
 
   test("parseModelPolicy rejects unknown role keys", () => {
@@ -357,7 +362,7 @@ describe("resolveModelRoute", () => {
     expect(outcome.code).toBe("no-compatible-model");
   });
 
-  test("reports role-unconfigured when optional role is missing", () => {
+  test("inherits the default route when a standard job role is not overridden", () => {
     const parsed = parseModelPolicy({
       roles: {
         default: { providerId: primary, modelId: deep },
@@ -372,11 +377,13 @@ describe("resolveModelRoute", () => {
       catalogs: catalogs(),
       intent: "planning",
     });
-    expect(outcome).toEqual({
-      kind: "role-unconfigured",
-      role: "plan",
-      intent: "planning",
-    });
+    expect(outcome.kind).toBe("selected");
+    if (outcome.kind !== "selected") {
+      return;
+    }
+    expect(outcome.receipt.role).toBe("plan");
+    expect(outcome.receipt.modelId).toBe(deep);
+    expect(outcome.receipt.reasoning).toBe("provider-default");
   });
 });
 
@@ -395,7 +402,7 @@ describe("specialized role support", () => {
     expect(intentPrefersReasoningEffort("fastEdit")).toBe(false);
   });
 
-  test("read and fastEdit map to fast with requirement defaults on the receipt", () => {
+  test("read and fastEdit map to distinct fast roles with requirement defaults", () => {
     const read = resolveModelRoute({
       policy: samplePolicy(),
       catalogs: catalogs(),
@@ -405,7 +412,7 @@ describe("specialized role support", () => {
     if (read.kind !== "selected") {
       return;
     }
-    expect(read.receipt.role).toBe("fast");
+    expect(read.receipt.role).toBe("fast-read");
     expect(read.receipt.modelId).toBe(fast);
     expect(read.receipt.requiredCapabilities).toEqual({ streaming: true });
     expect(read.receipt.reasoning).toBe("minimal");
@@ -419,11 +426,11 @@ describe("specialized role support", () => {
     if (edit.kind !== "selected") {
       return;
     }
-    expect(edit.receipt.role).toBe("fast");
+    expect(edit.receipt.role).toBe("fast-edit");
     expect(edit.receipt.requiredCapabilities).toEqual({ tools: true, streaming: true });
   });
 
-  test("thinking roles surface ReasoningEffort on the receipt", () => {
+  test("reasoning remains route configuration rather than a model role", () => {
     const deepOutcome = resolveModelRoute({
       policy: samplePolicy(),
       catalogs: catalogs(),
@@ -433,15 +440,10 @@ describe("specialized role support", () => {
     if (deepOutcome.kind !== "selected") {
       return;
     }
-    expect(deepOutcome.receipt.role).toBe("deep");
-    expect(deepOutcome.receipt.reasoning).toBe("deep");
+    expect(deepOutcome.receipt.role).toBe("default");
+    expect(deepOutcome.receipt.reasoning).toBe("balanced");
     expect(deepOutcome.receipt.requiredCapabilities.reasoning).toBe(true);
-    const deepRoute = samplePolicy().roles.deep;
-    expect(deepRoute).toBeDefined();
-    if (deepRoute === undefined) {
-      return;
-    }
-    expect(reasoningEffortForRoute(deepRoute)).toBe("deep");
+    expect(reasoningEffortForRoute(samplePolicy().roles.default)).toBe("balanced");
 
     const planOutcome = resolveModelRoute({
       policy: samplePolicy(),

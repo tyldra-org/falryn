@@ -159,7 +159,7 @@ export type OverlayRoute =
    */
   | { readonly kind: "confirm"; readonly id: string }
   /**
-   * Session, model, context, or resource controls.
+   * Session, model, execution-profile, context, or resource controls.
    *
    * The panel is which catalog is showing. Closing replaces the route, so a
    * dismissed picker has nowhere to linger. A nested help or palette over a
@@ -168,7 +168,7 @@ export type OverlayRoute =
    */
   | {
       readonly kind: "controls";
-      readonly panel: "session" | "model" | "context" | "resource";
+      readonly panel: "session" | "model" | "profile" | "context" | "resource";
     }
   /**
    * Workspace-set inspect and mutate overlays (#607).

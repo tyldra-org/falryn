@@ -40,6 +40,8 @@ import {
   type ArtifactStorePort,
   type BriefVerbosityMode,
   type CredentialReference,
+  type ExecutionProfileId,
+  executionProfile,
   type FalrynError,
   type InputStreamPort,
   type Instant,
@@ -96,6 +98,8 @@ export type CodingRunArguments = {
   readonly promptParts: readonly string[];
   /** Brief verbosity for live prompt composition (#717). */
   readonly brief?: BriefVerbosityMode;
+  /** Explicit execution authority for this invocation (#789). */
+  readonly mode?: ExecutionProfileId;
 };
 
 export type CodingRunPayload = {
@@ -131,6 +135,13 @@ export type CodingRunPayload = {
   readonly modelAttempts?: number;
   readonly toolResults?: number;
   readonly disclosedTools?: number;
+  readonly executionProfile?: ExecutionProfileId;
+  readonly executionProfileVersion?: number;
+  readonly completionCriterion?: string;
+  readonly effectiveModelRole?: string | null;
+  readonly effectiveReasoning?: string | null;
+  readonly policyGeneration?: number;
+  readonly planArtifactId?: string | null;
 };
 
 export type CodingRunResult = CommandResultOf<typeof CODING_RUN_COMMAND, CodingRunPayload>;
@@ -551,7 +562,9 @@ export async function runCoding(
     }
 
     const contextPlannerOwner = CONTEXT_PLANNER_OWNER;
-    const briefVerbosity = arguments_.brief ?? "balanced";
+    const selectedExecutionProfile = arguments_.mode ?? "agent";
+    const briefVerbosity =
+      arguments_.brief ?? executionProfile(selectedExecutionProfile).defaultBriefVerbosity;
     const briefOwner = PRODUCT_BRIEF_OWNER;
     const briefControls = composeProductBriefControls({ initialVerbosity: briefVerbosity });
     const briefed = briefControls.projectForTurn({
@@ -586,6 +599,8 @@ export async function runCoding(
       providerCatalog,
       contextSource,
       memory: memoryTurn,
+      artifacts: options.artifacts ?? productArtifactSession.artifacts,
+      initialExecutionProfile: selectedExecutionProfile,
     });
     const attempted = await executor.run({
       prompt: resolved.prompt,
@@ -637,6 +652,13 @@ export async function runCoding(
         modelAttempts: attempted.modelAttempts,
         toolResults: attempted.toolResults,
         disclosedTools: attempted.disclosedTools,
+        executionProfile: attempted.executionProfile,
+        executionProfileVersion: attempted.executionProfileVersion,
+        completionCriterion: attempted.completionCriterion,
+        effectiveModelRole: attempted.effectiveModelRole,
+        effectiveReasoning: attempted.effectiveReasoning,
+        policyGeneration: attempted.policyGeneration,
+        planArtifactId: attempted.planArtifactId,
       },
       errors,
       attempted.terminalOutcome,
