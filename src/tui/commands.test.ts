@@ -261,8 +261,28 @@ describe("what this build can actually do", () => {
     expect(commandById("resource.show")?.defaultBinding).toBe(null);
     expect(commandById("session.new")?.availability(EMPTY_COMMAND_STATE)).toEqual({
       kind: "unavailable",
-      reason: "no session producer yet",
+      reason: "no durable session factory yet",
     });
+    expect(
+      commandById("session.new")?.availability({
+        ...EMPTY_COMMAND_STATE,
+        hasSessionCreation: true,
+      }),
+    ).toEqual({ kind: "available" });
+    expect(
+      commandById("session.new")?.availability({
+        ...EMPTY_COMMAND_STATE,
+        hasSessionCreation: true,
+        hasInFlightSubmission: true,
+      }),
+    ).toEqual({ kind: "unavailable", reason: "the current session still has active work" });
+    expect(
+      commandById("session.new")?.availability({
+        ...EMPTY_COMMAND_STATE,
+        hasSessionCreation: true,
+        hasConfirmation: true,
+      }),
+    ).toEqual({ kind: "unavailable", reason: "resolve the pending confirmation first" });
     expect(commandById("session.switch")?.availability(EMPTY_COMMAND_STATE).kind).toBe("available");
   });
 

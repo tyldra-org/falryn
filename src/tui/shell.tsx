@@ -65,6 +65,7 @@ import {
   type RendererSession,
 } from "./renderer-session.ts";
 import { type RuntimeFeed, runtimeFeed, useRuntimeProjection } from "./runtime-feed.ts";
+import type { SessionCreationPort } from "./session-creation.ts";
 import type { SessionNavigationController } from "./session-nav/index.ts";
 import { shellModel } from "./shell-model.ts";
 import { createTerminalShutdownParticipant } from "./shutdown.ts";
@@ -142,6 +143,8 @@ export type ShellRunRequest = {
   readonly workspace?: WorkspaceSetView;
   /** Session resume/fork/rewind/replay when a local store is attached (#722). */
   readonly sessionNavigationController?: SessionNavigationController;
+  /** Creates and selects a fresh durable product session (#787). */
+  readonly sessionCreation?: SessionCreationPort;
   /** Supplied by tests, so a shell run needs no terminal and no native library. */
   readonly createRenderer?: RendererFactory;
 };
@@ -326,6 +329,9 @@ async function frameFor(session: RendererSession, request: ShellRunRequest, onEx
       {...(request.sessionNavigationController === undefined
         ? {}
         : { sessionNavigationController: request.sessionNavigationController })}
+      {...(request.sessionCreation === undefined
+        ? {}
+        : { sessionCreation: request.sessionCreation })}
     />
   );
 }
@@ -353,6 +359,7 @@ function LiveShell(props: {
   readonly workspaceController?: WorkspaceController;
   readonly workspace?: WorkspaceSetView;
   readonly sessionNavigationController?: SessionNavigationController;
+  readonly sessionCreation?: SessionCreationPort;
 }): ReactNode {
   return (
     <RenderGateProvider clock={props.clock}>
@@ -374,6 +381,7 @@ function LiveShell(props: {
         {...(props.sessionNavigationController === undefined
           ? {}
           : { sessionNavigationController: props.sessionNavigationController })}
+        {...(props.sessionCreation === undefined ? {} : { sessionCreation: props.sessionCreation })}
       />
     </RenderGateProvider>
   );
@@ -393,6 +401,7 @@ function ProjectedShell(props: {
   readonly workspaceController?: WorkspaceController;
   readonly workspace?: WorkspaceSetView;
   readonly sessionNavigationController?: SessionNavigationController;
+  readonly sessionCreation?: SessionCreationPort;
 }): ReactNode {
   const gate = useRenderGate();
   const runtime = useRuntimeProjection(props.feed, initialActivityCursor(), gate);
@@ -414,6 +423,10 @@ function ProjectedShell(props: {
         ? {}
         : { workspaceController: props.workspaceController })}
       {...(props.workspace === undefined ? {} : { workspace: props.workspace })}
+      {...(props.sessionNavigationController === undefined
+        ? {}
+        : { sessionNavigationController: props.sessionNavigationController })}
+      {...(props.sessionCreation === undefined ? {} : { sessionCreation: props.sessionCreation })}
       copyPlainPrint={plainPrintLabeledCopy}
     />
   );

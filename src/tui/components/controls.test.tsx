@@ -107,4 +107,25 @@ describe("control overlays", () => {
     expect(frame).toContain("New session");
     expect(frame.toLowerCase()).toContain("unavailable");
   });
+
+  test("session.new invokes the attached durable session factory", async () => {
+    let calls = 0;
+    using shell = await mount(
+      <ShellApp
+        theme={THEME}
+        model={MODEL}
+        onExit={() => {}}
+        sessionCreation={{
+          async create() {
+            calls += 1;
+            return { ok: true, sessionId: "session-next" };
+          },
+        }}
+      />,
+    );
+    await runCommand(shell, "session.new");
+    const frame = await shell.frame("Started session session-next.");
+    expect(calls).toBe(1);
+    expect(frame).toContain("Started session session-next.");
+  });
 });

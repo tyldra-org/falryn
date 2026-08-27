@@ -621,7 +621,7 @@ describe.if(runnable)("the compiled shell on a real terminal", () => {
   );
 
   test(
-    "takes typing into the composer and answers a submission",
+    "takes typing into the composer and fails closed without a configured provider",
     async () => {
       // Input reaching a compiled binary through a real pseudo-terminal is a
       // different path from the mock keyboard: the bytes cross a tty in raw
@@ -638,12 +638,13 @@ describe.if(runnable)("the compiled shell on a real terminal", () => {
       });
       expect(run.exitCode).toBe(EXIT_CODES.COMPLETED);
       expect(typed).toContain("hello");
-      // Product submission (#752) accepts the draft through the live producer.
-      // Silently discarding what was typed, or keeping the permanent unavailable
-      // stub, is the failure.
-      expect(submitted).toContain("Sent.");
-      expect(submitted).not.toContain("Not sent");
-      expect(submitted).not.toContain("#707");
+      // The compiled fixture has no provider credential. The live submission
+      // path must persist the failed turn, explain the missing provider, and
+      // preserve the draft rather than reporting a producer-only success.
+      expect(submitted).toContain("Not sent");
+      expect(submitted).toContain("provider connection is unavailable");
+      expect(submitted).toContain("hello");
+      expect(submitted).not.toContain("Sent.");
       expectRestored(run);
     },
     RUN_TIMEOUT_MS,

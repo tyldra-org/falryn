@@ -6,18 +6,15 @@
  * foundation: the resolved roots, the ownership registry, and the one SQLite
  * connection with its migrations applied.
  *
- * There is no interactive product work to run yet, so the bootstrap opens
- * storage, composes the product agent runtime graph (#705), and shuts down
- * immediately. Doing it here is the point: the composed lifecycle, the real
- * process-signal adapter, the real filesystem adapter, the real `bun:sqlite`
- * adapter, and the fail-closed agent host seams are all exercised by the
- * compiled executable rather than only in source mode, so a migration or
- * composition defect that does not survive `bun build --compile` fails a check
- * instead of a user's first run.
+ * Command dispatch attaches interactive or headless product work when the
+ * invocation requests it. The bootstrap itself still writes no synthetic turn:
+ * it opens storage, composes the shared lifecycle and fail-closed runtime seams,
+ * and lets the selected entrypoint own live execution. This keeps the real
+ * process-signal, filesystem, `bun:sqlite`, and compiled-binary paths under the
+ * same checks.
  *
- * Live producers (#706), composer submission (#707), vendor adapters (#709),
- * and credential resolver composition (#710) attach through the typed seams;
- * this bootstrap does not write a synthetic turn into a user's database.
+ * Live producers, composer submission, provider adapters, and credential
+ * resolution attach through typed application seams.
  */
 
 import {
@@ -241,9 +238,9 @@ export async function main(options: BootstrapOptions = {}): Promise<BootstrapRep
     // The durable event store and its projection runner, composed over the one
     // open database. The product agent runtime (#705) is composed here so the
     // turn coordinator, journal, and attachment seams fail closed when required
-    // ports are missing. Producers (#706) and composer submission (#707) still
-    // attach later — this path does not write a synthetic turn into a user's
-    // database.
+    // ports are missing. Invocation-specific producers and submission adapters
+    // attach during dispatch — this bootstrap does not write a synthetic turn
+    // into a user's database.
     const eventStore = createSqliteEventStore(opened.value);
     const productCredentials = composeProductCredentials({
       clock: systemClock,

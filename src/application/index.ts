@@ -226,6 +226,13 @@ export {
   PRODUCT_INDEX_LIFECYCLE_OWNER,
 } from "./product-index-lifecycle.ts";
 export type {
+  ProductLiveTurnExecutor,
+  ProductLiveTurnExecutorOptions,
+  ProductLiveTurnInput,
+  ProductLiveTurnResult,
+} from "./product-live-turn.ts";
+export { createProductLiveTurnExecutor, productModelPolicy } from "./product-live-turn.ts";
+export type {
   ProductLoomContext,
   ProductLoomContextPorts,
   ProductLoomRecoveryHandle,

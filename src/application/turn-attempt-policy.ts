@@ -676,12 +676,13 @@ export function createTurnAttemptPolicy(options: TurnAttemptPolicyOptions): Turn
   const retryPolicy = options.retryPolicy ?? DEFAULT_RETRY_POLICY;
   const backoff = options.backoff ?? DEFAULT_RETRY_BACKOFF;
   const jitter = options.jitter ?? (() => 0);
-  const allocateAttemptId =
-    options.allocateAttemptId ??
-    ((attemptNumber: number) => modelAttemptId.from(`attempt-${attemptNumber}`));
 
   return {
     async run(input) {
+      const allocateAttemptId =
+        options.allocateAttemptId ??
+        ((attemptNumber: number) =>
+          modelAttemptId.from(`attempt:${String(input.turnId)}:${attemptNumber}`));
       const attempts: AttemptRecord[] = [];
       const routeInput: ResolveRouteInput = {
         policy: options.policy,

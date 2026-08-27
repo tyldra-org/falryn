@@ -59,6 +59,21 @@ malformed requests, cancellation, timeout, fallback exhaustion, and uncertain
 effects remain typed outcomes. Completed or uncertain consequential tool
 effects are not retried as fresh work.
 
+The interactive composer and `falryn run` use the same application-owned
+live-turn executor. Both paths compose Context and Brief, run the selected
+provider and bounded tool continuation loop, and persist the same closed
+session, turn, model-attempt, and capability-invocation events to SQLite before
+projecting them. OpenTUI folds those committed events into its transcript;
+JSONL emits the same event values before its terminal result. A failed append,
+provider connection, context composition, attempt, or replay cannot be reported
+as an accepted or completed turn. Production does not fall back to the in-memory
+event-store test double when SQLite cannot open.
+
+OpenTUI's `session.new` palette action creates a new durable session before it
+switches the active transcript and submission target. A failed creation leaves
+the current session selected; concurrent duplicate actions coalesce, and active
+turns or unresolved confirmations must settle first.
+
 ## Product Read and Loom
 
 The product workspace registry includes one `read_file` capability for exact,
