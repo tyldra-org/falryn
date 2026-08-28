@@ -86,6 +86,7 @@ function arm(policy: "brief" | "caveman", inputTokens: number, outputTokens: num
       inputTokens,
       outputTokens,
       totalTokens: inputTokens + outputTokens,
+      totalProvenance: "provider-reported" as const,
       cachedInputTokens: 0,
       reasoningTokens: 0,
     },

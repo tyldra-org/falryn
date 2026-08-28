@@ -34,6 +34,7 @@ export type BriefComparisonUsage = {
   readonly inputTokens: number;
   readonly outputTokens: number;
   readonly totalTokens: number;
+  readonly totalProvenance: "provider-reported" | "derived-from-provider-units";
   readonly cachedInputTokens: number | null;
   readonly reasoningTokens: number | null;
 };

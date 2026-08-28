@@ -339,6 +339,10 @@ async function runArm(input: {
             outputTokens: providerUsage.outputTokens,
             totalTokens:
               providerUsage.totalTokens ?? providerUsage.inputTokens + providerUsage.outputTokens,
+            totalProvenance:
+              providerUsage.totalTokens === undefined
+                ? "derived-from-provider-units"
+                : "provider-reported",
             cachedInputTokens: providerUsage.cachedInputTokens ?? null,
             reasoningTokens: providerUsage.reasoningTokens ?? null,
           },
@@ -372,6 +376,7 @@ export function formatBriefScorecardHuman(report: ScorecardReport): string {
       lines.push(
         `  ${arm.policy} mode=${arm.policyMode} order=${arm.order} terminal=${arm.terminal} ` +
           `tokens(total/input/output/cache/reasoning)=${usage?.totalTokens ?? "?"}/${usage?.inputTokens ?? "?"}/${usage?.outputTokens ?? "?"}/${usage?.cachedInputTokens ?? "?"}/${usage?.reasoningTokens ?? "?"} ` +
+          `totalSource=${usage?.totalProvenance ?? "?"} ` +
           `requests=${arm.providerRequests} retries=${arm.retries} latencyMs=${arm.wallTimeMs.toFixed(1)} costUsd=${arm.costUsd ?? "?"} ` +
           `guidance(bytes/estimatedTokens)=${arm.guidanceBytes}/${arm.guidanceTokensEstimated} ` +
           `response(bytes/${arm.responseTokenizer})=${arm.responseBytes}/${arm.responseTokens} ` +
