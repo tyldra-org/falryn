@@ -182,6 +182,29 @@ describe("removing one entry", () => {
   });
 });
 
+describe("removing only an empty directory", () => {
+  test("removes an empty directory", async () => {
+    await fs.mkdir(at("empty"));
+
+    expect((await fileSystem.removeEmptyDirectory(at("empty"))).ok).toBe(true);
+    expect(await fs.exists(at("empty"))).toBe(false);
+  });
+
+  test("refuses files, symlinks, and populated directories", async () => {
+    await fs.writeFile(at("file"), "keep");
+    await fs.symlink(at("file"), at("link"));
+    await fs.mkdir(at("full"));
+    await fs.writeFile(at("full", "child"), "keep");
+
+    for (const path of [at("file"), at("link"), at("full")]) {
+      expect((await fileSystem.removeEmptyDirectory(path)).ok).toBe(false);
+    }
+    expect((await fs.readFile(at("file"))).toString()).toBe("keep");
+    expect(await fs.readlink(at("link"))).toBe(at("file"));
+    expect((await fs.readFile(at("full", "child"))).toString()).toBe("keep");
+  });
+});
+
 describe("resolving links and probing writability", () => {
   test("resolves a symlink to its target", async () => {
     await fs.mkdir(at("target"));
@@ -432,6 +455,7 @@ describe("cancellation", () => {
       await fileSystem.createDirectory(at("x"), 0o700, signal),
       await fileSystem.list(root, signal),
       await fileSystem.removeEntry(at("x"), signal),
+      await fileSystem.removeEmptyDirectory(at("x"), signal),
       await fileSystem.realPath(root, signal),
       await fileSystem.probeWritable(root, signal),
       await fileSystem.readText(at("note.txt"), 1_024, signal),

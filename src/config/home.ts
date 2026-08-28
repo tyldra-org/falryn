@@ -117,15 +117,14 @@ export async function prepareConfigurationHomeForWrite(
     case "cancelled":
       return resolved;
     case "legacy": {
-      const current = await fileSystem.stat(roots.current, signal);
-      if (!current.ok) {
-        return failureFromFileSystem(current.error.path, current.error.code);
-      }
-      if (current.value !== null) {
-        const removed = await fileSystem.removeEntry(roots.current, signal);
-        if (!removed.ok) {
-          return failureFromFileSystem(removed.error.path, removed.error.code);
-        }
+      // Resolution proved that the current path was absent or an empty
+      // directory. Repeating that check would still leave a race before a
+      // generic removal. Ask the adapter for the narrower atomic operation:
+      // absence is already ready for rename, while any replacement entry fails
+      // closed and leaves the legacy home untouched.
+      const removed = await fileSystem.removeEmptyDirectory(roots.current, signal);
+      if (!removed.ok && removed.error.code !== "not-found") {
+        return failureFromFileSystem(removed.error.path, removed.error.code);
       }
 
       const moved = await fileSystem.renameEntry(resolved.root, roots.current, signal);

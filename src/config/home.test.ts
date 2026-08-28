@@ -103,6 +103,34 @@ describe("configuration home migration", () => {
     expect(fs.paths()).toContain(localPath(`${CURRENT}/falryn.jsonc`));
   });
 
+  test("preserves a file or symlink that replaces the empty destination", async () => {
+    for (const replacement of [
+      { kind: "file", text: "new data" },
+      { kind: "symlink", target: "/somewhere/else" },
+    ] satisfies readonly InMemoryNode[]) {
+      const base = fileSystem({
+        [CURRENT]: { kind: "directory" },
+        [LEGACY]: { kind: "directory" },
+        [`${LEGACY}/falryn.jsonc`]: { kind: "file", text: "legacy data" },
+      });
+      const racing: FileSystemPort = {
+        ...base,
+        removeEmptyDirectory: async (path, signal) => {
+          base.put(CURRENT, replacement);
+          return base.removeEmptyDirectory(path, signal);
+        },
+      };
+
+      expect(await prepareConfigurationHomeForWrite(racing, ROOTS)).toEqual({
+        kind: "unavailable",
+        path: CURRENT,
+        code: "not-a-directory",
+      });
+      expect(base.paths()).toContain(CURRENT);
+      expect(base.paths()).toContain(localPath(`${LEGACY}/falryn.jsonc`));
+    }
+  });
+
   test("cancellation leaves legacy bytes untouched", async () => {
     const fs = fileSystem({
       [LEGACY]: { kind: "directory" },

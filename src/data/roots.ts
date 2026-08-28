@@ -163,10 +163,14 @@ export function resolveRoots(inputs: PlatformInputs): RootResolution {
   const defaults = defaultRoots(inputs);
   const roots: ResolvedRoot[] = [];
   const issues: RootResolutionIssue[] = [];
+  let configurationOverrideConfigured = false;
 
   for (const root of LOCAL_DATA_ROOTS) {
     const variable = ROOT_ENVIRONMENT_VARIABLES[root];
     const override = inputs.environment.get(variable);
+    if (root === "configuration") {
+      configurationOverrideConfigured = override !== null;
+    }
 
     if (override !== null) {
       const parsed = parseLocalPath(override);
@@ -210,7 +214,10 @@ export function resolveRoots(inputs: PlatformInputs): RootResolution {
       platform: inputs.platform,
       qualified: inputs.platform === QUALIFIED_PLATFORM,
       roots,
-      legacyConfigurationRoot: resolveLegacyConfigurationRoot(inputs, roots),
+      legacyConfigurationRoot: resolveLegacyConfigurationRoot(
+        inputs,
+        configurationOverrideConfigured,
+      ),
     },
     issues,
   };
@@ -218,10 +225,9 @@ export function resolveRoots(inputs: PlatformInputs): RootResolution {
 
 function resolveLegacyConfigurationRoot(
   inputs: PlatformInputs,
-  roots: readonly ResolvedRoot[],
+  configurationOverrideConfigured: boolean,
 ): LocalPath | null {
-  const configuration = roots.find((root) => root.root === "configuration");
-  if (configuration?.provenance === "environment-override") {
+  if (configurationOverrideConfigured) {
     return null;
   }
   const parsed = parseLocalPath(legacyConfigurationRoot(inputs));

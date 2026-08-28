@@ -117,6 +117,28 @@ describe("environment overrides", () => {
     expect(layout.legacyConfigurationRoot).toBeNull();
   });
 
+  test("a configured but invalid configuration override still disables legacy lookup", () => {
+    const resolution = resolve("darwin", { FALRYN_CONFIG_DIR: "relative/config" });
+    const configuration = resolution.layout.roots.find(
+      (resolved) => resolved.root === "configuration",
+    );
+
+    expect(configuration?.provenance).toBe("platform-default");
+    expect(resolution.layout.legacyConfigurationRoot).toBeNull();
+    expect(resolution.issues).toContainEqual({
+      root: "configuration",
+      source: "environment-override",
+      variable: "FALRYN_CONFIG_DIR",
+      code: "path-not-absolute",
+    });
+  });
+
+  test("an empty configuration override remains unset and keeps legacy lookup", () => {
+    const { layout } = resolve("darwin", { FALRYN_CONFIG_DIR: "" });
+
+    expect(layout.legacyConfigurationRoot).not.toBeNull();
+  });
+
   test("an unusable override is reported and falls back, never silently ignored", () => {
     const resolution = resolve("darwin", { FALRYN_LOG_DIR: "relative/logs" });
     const logs = resolution.layout.roots.find((resolved) => resolved.root === "logs");

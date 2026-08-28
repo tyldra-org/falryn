@@ -478,6 +478,46 @@ describe("doctor", () => {
     expect((result.payload?.unregisteredClasses.length ?? 0) > 0).toBe(true);
   });
 
+  test("reports the effective legacy configuration home without migrating it", async () => {
+    const { home, services } = await isolated();
+    const legacy = join(home, "Library", "Application Support", "Falryn", "config");
+    await mkdir(legacy, { recursive: true });
+    await writeFile(join(legacy, CONFIGURATION_FILE_NAME), "{}");
+
+    const result = await runDoctor(services);
+
+    expect(result.payload?.configurationHome).toMatchObject({
+      kind: "legacy",
+      root: localPath(legacy),
+      currentRoot: localPath(join(home, ".falryn")),
+    });
+    expect(result.payload?.blocked).toBe(false);
+    expect(await readdir(legacy)).toEqual([CONFIGURATION_FILE_NAME]);
+    expect(await readdir(home)).not.toContain(".falryn");
+  });
+
+  test("reports conflicting configuration homes and leaves both untouched", async () => {
+    const { home, services } = await isolated();
+    const current = join(home, ".falryn");
+    const legacy = join(home, "Library", "Application Support", "Falryn", "config");
+    await mkdir(current, { recursive: true });
+    await mkdir(legacy, { recursive: true });
+    await writeFile(join(current, CONFIGURATION_FILE_NAME), "current");
+    await writeFile(join(legacy, CONFIGURATION_FILE_NAME), "legacy");
+
+    const result = await runDoctor(services);
+
+    expect(result.payload?.configurationHome).toEqual({
+      kind: "conflict",
+      currentRoot: localPath(current),
+      legacyRoot: localPath(legacy),
+    });
+    expect(result.payload?.blocked).toBe(true);
+    expect(result.outcome).toEqual({ kind: "failed", effect: "none" });
+    expect(await readdir(current)).toEqual([CONFIGURATION_FILE_NAME]);
+    expect(await readdir(legacy)).toEqual([CONFIGURATION_FILE_NAME]);
+  });
+
   test("reports an absent database as absent rather than creating one", async () => {
     const { services } = await isolated();
     const result = await runDoctor(services);

@@ -1721,6 +1721,25 @@ function storageSentence(storage: DoctorPayload["storage"]): string {
   }
 }
 
+function configurationHomeSentence(home: DoctorPayload["configurationHome"]): string {
+  switch (home.kind) {
+    case "current":
+      return `${safe(home.root)} [current]`;
+    case "legacy":
+      return `${safe(home.root)} [legacy; current ${safe(home.currentRoot)}]`;
+    case "empty":
+      return `${safe(home.root)} [empty]`;
+    case "conflict":
+      return `${safe(home.currentRoot)} and ${safe(home.legacyRoot)} [conflict]`;
+    case "unavailable":
+      return `${safe(home.path)} [unavailable: ${safe(home.code)}]`;
+    case "cancelled":
+      return "inspection cancelled";
+    default:
+      return assertNever(home, "unhandled configuration home diagnosis");
+  }
+}
+
 function renderDoctor(
   session: Session,
   payload: Extract<RunCommandResult, { command: "doctor" }>["payload"],
@@ -1733,6 +1752,7 @@ function renderDoctor(
   const lines = [
     paint(session, "plain", "Falryn diagnostics"),
     `  Build      ${safe(payload.build.platform)} ${safe(payload.build.architecture)}`,
+    `  Config     ${fit(session, configurationHomeSentence(payload.configurationHome), session.columns - 13)}`,
     "  Data roots",
     ...payload.roots.map((entry) => {
       const prefix = `    ${entry.root.padEnd(rootWidth)}  `;
@@ -1775,6 +1795,27 @@ function renderDoctor(
  */
 function doctorFindings(payload: DoctorPayload): readonly string[] {
   const findings: string[] = [];
+  switch (payload.configurationHome.kind) {
+    case "conflict":
+      findings.push(
+        `The current configuration home ${safe(payload.configurationHome.currentRoot)} and legacy home ${safe(payload.configurationHome.legacyRoot)} both contain data.`,
+      );
+      break;
+    case "unavailable":
+      findings.push(
+        `The configuration home ${safe(payload.configurationHome.path)} could not be inspected safely (${safe(payload.configurationHome.code)}).`,
+      );
+      break;
+    case "cancelled":
+      findings.push("Configuration-home inspection was cancelled.");
+      break;
+    case "current":
+    case "legacy":
+    case "empty":
+      break;
+    default:
+      assertNever(payload.configurationHome, "unhandled configuration home finding");
+  }
   for (const entry of payload.roots) {
     if (!entry.resolved) {
       findings.push(`The ${entry.root} data root did not resolve to a path.`);

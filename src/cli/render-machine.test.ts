@@ -14,7 +14,7 @@
  */
 
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -681,6 +681,34 @@ describe("through dispatch", () => {
       });
       expect(machine.code).toBe(1);
     }
+  });
+
+  test("carries the effective legacy configuration home into machine output", async () => {
+    const home = await mkdtemp(join(tmpdir(), "falryn-legacy-home-"));
+    homes.push(home);
+    const legacy = join(home, "Library", "Application Support", "Falryn", "config");
+    await mkdir(legacy, { recursive: true });
+    await writeFile(join(legacy, CONFIGURATION_FILE_NAME), "{}");
+    const services = (globals: GlobalOptions) =>
+      createServiceProvider(globals, {
+        home: localPath(home),
+        platform: "darwin",
+        environment: createStaticEnvironment({ FALRYN_STATE_DIR: home }),
+      });
+
+    for (const format of ["json", "jsonl"]) {
+      const streams = createRecordingCliStreams();
+      expect(await dispatch({ argv: ["doctor", "--format", format], streams, services })).toBe(0);
+      const reading = readCliStream(streams.resultWrites().join("").split("\n"));
+      const terminal = reading.terminal as { payload?: DoctorPayload } | null;
+
+      expect(terminal?.payload?.configurationHome).toMatchObject({
+        kind: "legacy",
+        root: legacy,
+        currentRoot: join(home, ".falryn"),
+      });
+    }
+    expect(await readdir(home)).not.toContain(".falryn");
   });
 
   test("leaves an advisory-only run at exit zero in every contract", async () => {

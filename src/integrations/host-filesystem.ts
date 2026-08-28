@@ -232,6 +232,24 @@ export function createHostFileSystem(): FileSystemPort {
       }
     },
 
+    async removeEmptyDirectory(
+      path: LocalPath,
+      signal?: AbortSignal,
+    ): Promise<Result<null, FileSystemError>> {
+      if (signal?.aborted === true) {
+        return cancelled(path, "remove");
+      }
+      try {
+        // `rmdir` rejects files, symlinks, and populated directories in one
+        // filesystem operation. That property matters to callers replacing an
+        // empty directory after an earlier inspection.
+        await fs.rmdir(path);
+        return ok(null);
+      } catch (thrown: unknown) {
+        return err(translate(thrown, path, "remove"));
+      }
+    },
+
     async realPath(
       path: LocalPath,
       signal?: AbortSignal,
