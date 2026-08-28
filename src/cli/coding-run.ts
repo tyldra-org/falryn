@@ -66,10 +66,7 @@ import {
   type OpenAiSdkFetch,
   type OwnedProcessRegistry,
 } from "../integrations/index.ts";
-import {
-  catalogFromAdapterModels,
-  type ModelCatalog,
-} from "../providers/index.ts";
+import { catalogFromAdapterModels, type ModelCatalog } from "../providers/index.ts";
 import type { ProviderAdapterPort } from "../providers/port.ts";
 import { startConfigurationReloadWatcher } from "./configuration-reload.ts";
 import type { GlobalOptions } from "./options.ts";
