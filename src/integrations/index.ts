@@ -5,9 +5,20 @@
  * Bun and system APIs; nothing here may be imported by `src/domain`.
  */
 
+export type {
+  AnthropicSdkAdapterOptions,
+  AnthropicSdkFetch,
+  AnthropicSdkStreamFactory,
+} from "./anthropic-sdk-adapter.ts";
+export { createAnthropicSdkAdapter } from "./anthropic-sdk-adapter.ts";
 export { classifySqliteError, openBunSqlite } from "./bun-sqlite.ts";
 export { createSha256Hasher } from "./content-digest.ts";
 export { createEnvironmentCredentialStore } from "./environment-credentials.ts";
+export type {
+  GoogleGenAiSdkAdapterOptions,
+  GoogleGenAiStreamFactory,
+} from "./google-genai-sdk-adapter.ts";
+export { createGoogleGenAiSdkAdapter } from "./google-genai-sdk-adapter.ts";
 export type { HostBlobStore, HostBlobStoreOptions } from "./host-blobs.ts";
 export { createHostBlobStore } from "./host-blobs.ts";
 export type { HostCommandRunnerOptions } from "./host-commands.ts";

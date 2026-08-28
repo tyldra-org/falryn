@@ -47,6 +47,32 @@ function localProfile(): ProviderProfile {
   };
 }
 
+function officialProfile(
+  adapterKind: "anthropic" | "google",
+  credentialLocator: string,
+  model: string,
+): ProviderProfile {
+  return {
+    profileId: adapterKind,
+    providerId: providerId.from(adapterKind),
+    adapterKind,
+    displayName: adapterKind === "anthropic" ? "Anthropic" : "Google",
+    endpoint: null,
+    credential: {
+      storeKind: "environment",
+      locator: credentialLocator,
+      consumer: `provider:${adapterKind}`,
+      accountLabel: null,
+    },
+    organization: null,
+    project: null,
+    enabledModels: [modelId.from(model)],
+    modelCapabilities: [],
+    discovery: "static",
+    timeouts: { connectMs: 1_000, requestMs: 10_000 },
+  };
+}
+
 describe("product provider connection persistence", () => {
   const homes: string[] = [];
 
@@ -166,5 +192,53 @@ describe("product provider connection persistence", () => {
     });
     expect(discoveries).toBe(1);
     expect(JSON.stringify(tested)).not.toContain("secret-not-projected");
+  });
+
+  test("resolves selected Anthropic and Google profiles to their official SDK adapters", async () => {
+    for (const fixture of [
+      {
+        adapterKind: "anthropic" as const,
+        credentialLocator: "FALRYN_TEST_ANTHROPIC_KEY",
+        model: "claude-test",
+      },
+      {
+        adapterKind: "google" as const,
+        credentialLocator: "FALRYN_TEST_GOOGLE_KEY",
+        model: "gemini-test",
+      },
+    ]) {
+      const home = await mkdtemp(join(tmpdir(), `falryn-provider-${fixture.adapterKind}-`));
+      homes.push(home);
+      const services = createServiceProvider(GLOBALS, {
+        home: localPath(home),
+        platform: "darwin",
+        currentDirectory: localPath(home),
+        environment: createStaticEnvironment({
+          FALRYN_STATE_DIR: home,
+          [fixture.credentialLocator]: "secret-not-projected",
+        }),
+      });
+      const product = composeProductProviderConnections(services(), GLOBALS);
+      expect(
+        await product.service.execute({
+          kind: "add",
+          profile: officialProfile(fixture.adapterKind, fixture.credentialLocator, fixture.model),
+        }),
+      ).toMatchObject({ kind: "completed" });
+      expect(
+        await product.service.execute({ kind: "use", profileId: fixture.adapterKind }),
+      ).toMatchObject({ kind: "completed", selectedProfileId: fixture.adapterKind });
+
+      const selected = await product.resolveSelected();
+      expect(selected.kind).toBe("ready");
+      if (selected.kind === "ready") {
+        expect(selected.adapter.identity).toMatchObject({
+          profileId: fixture.adapterKind,
+          providerId: fixture.adapterKind,
+        });
+        expect(selected.adapter.supportedModels.map(String)).toEqual([fixture.model]);
+      }
+      expect(JSON.stringify(selected)).not.toContain("secret-not-projected");
+    }
   });
 });

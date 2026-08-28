@@ -95,8 +95,11 @@ unknown. Remote facts merge with explicit profile declarations under a new
 catalog generation. Only configured model IDs enter the effective catalog.
 Malformed records, stale generations, authentication failures, rate limits,
 timeouts, and cancellation fail closed with typed, secret-free outcomes.
-The live inference adapter currently uses the official OpenAI SDK; Anthropic
-and Google inference adapters are not yet exposed as live attempt runners.
+Live inference uses the official OpenAI, Anthropic, or Google Gen AI SDK named
+by the selected profile. Each adapter translates the same bounded messages,
+tool definitions, tool continuations, output contract, token budget, usage,
+finish reason, cancellation, and typed failure events. Falryn keeps retries
+above the SDK boundary; each SDK performs one request attempt.
 
 The provider request contains only the disclosed tool definitions, not the
 whole registered catalog. The attempt event retains the provider/model route,
