@@ -18,6 +18,7 @@ import { modelId, providerId } from "../domain/identity.ts";
 import { err, ok, type Result } from "../domain/result.ts";
 import { DISCOVERY_POLICIES, PROVIDER_ADAPTER_KINDS } from "./adapter-kind.ts";
 import { MAX_PROVIDER_METADATA_ENTRY_LENGTH } from "./limits.ts";
+import { modelCapabilityDeclarationSchema } from "./model-capability-schema.ts";
 import type { ProviderProfile } from "./profile.ts";
 
 const credentialReferenceSchema = z
@@ -40,6 +41,7 @@ export const providerProfileSchema = z
     organization: z.union([z.string().min(1).max(MAX_PROVIDER_METADATA_ENTRY_LENGTH), z.null()]),
     project: z.union([z.string().min(1).max(MAX_PROVIDER_METADATA_ENTRY_LENGTH), z.null()]),
     enabledModels: z.array(brandedString(modelId)).max(128),
+    modelCapabilities: z.array(modelCapabilityDeclarationSchema).max(128).default([]),
     discovery: z.literal(DISCOVERY_POLICIES),
     timeouts: z
       .strictObject({
@@ -48,7 +50,40 @@ export const providerProfileSchema = z
       })
       .strict(),
   })
-  .strict();
+  .strict()
+  .superRefine((profile, context) => {
+    const enabled = new Set<string>();
+    for (const [index, id] of profile.enabledModels.entries()) {
+      if (enabled.has(id)) {
+        context.addIssue({
+          code: "custom",
+          path: ["enabledModels", index],
+          message: "duplicate enabled model identity",
+        });
+      }
+      enabled.add(id);
+    }
+
+    const declared = new Set<string>();
+    for (const [index, capability] of profile.modelCapabilities.entries()) {
+      const id = String(capability.modelId);
+      if (!enabled.has(id)) {
+        context.addIssue({
+          code: "custom",
+          path: ["modelCapabilities", index, "modelId"],
+          message: "capability model is not enabled",
+        });
+      }
+      if (declared.has(id)) {
+        context.addIssue({
+          code: "custom",
+          path: ["modelCapabilities", index, "modelId"],
+          message: "duplicate model capability declaration",
+        });
+      }
+      declared.add(id);
+    }
+  });
 
 export type ProviderProfileParseError = {
   readonly kind: "provider-profile";

@@ -480,6 +480,8 @@ function modelRequest(
       role: request.receipt.role,
       ...(request.receipt.intent === null ? {} : { workIntent: request.receipt.intent }),
       configurationGeneration: Number(request.boundConfigurationGeneration),
+      providerCatalogGeneration: request.receipt.catalogGeneration,
+      modelCapabilitySchemaVersion: request.receipt.modelCapabilitySchemaVersion,
     },
   };
 }

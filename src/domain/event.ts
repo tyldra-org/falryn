@@ -108,6 +108,8 @@ export type ModelAttemptBinding = {
       }
     | undefined;
   readonly providerCatalogGeneration: number;
+  /** Absent only on events written before versioned model capability records shipped. */
+  readonly modelCapabilitySchemaVersion?: number | undefined;
   readonly toolCatalogGeneration: ConfigurationGeneration;
   readonly policyGeneration: ConfigurationGeneration;
   readonly runner: "product-attempt-runner.v1";

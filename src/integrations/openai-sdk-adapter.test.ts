@@ -1,22 +1,22 @@
 /**
- * OpenAI-compatible adapter tests (#709).
+ * OpenAI SDK adapter tests.
  *
- * Uses an injectable fetch — no live network. Opt-in live tests must never be
+ * Uses the SDK's injectable fetch, with no live network. Opt-in live tests must never be
  * required by `bun run check`.
  */
 
 import { describe, expect, test } from "bun:test";
 
 import { modelId, providerId } from "../domain/index.ts";
-import { modelRequestId } from "./identity.ts";
-import { createOpenAiCompatibleAdapter } from "./openai-compatible-adapter.ts";
-import type { ModelRequest } from "./request.ts";
-import type { NormalizedProviderEvent } from "./stream.ts";
+import { modelRequestId } from "../providers/identity.ts";
+import type { ModelRequest } from "../providers/request.ts";
+import type { NormalizedProviderEvent } from "../providers/stream.ts";
+import { createOpenAiSdkAdapter } from "./openai-sdk-adapter.ts";
 
 function request(overrides: Partial<ModelRequest> = {}): ModelRequest {
   return {
     requestId: modelRequestId.from("req-openai-1"),
-    providerId: providerId.from("openai-compatible"),
+    providerId: providerId.from("openai"),
     modelId: modelId.from("gpt-4o-mini"),
     messages: [{ role: "user", parts: [{ kind: "text", text: "hello" }] }],
     tools: [],
@@ -28,7 +28,7 @@ function request(overrides: Partial<ModelRequest> = {}): ModelRequest {
 }
 
 async function collect(
-  adapter: ReturnType<typeof createOpenAiCompatibleAdapter>,
+  adapter: ReturnType<typeof createOpenAiSdkAdapter>,
   init?: AbortSignal,
 ): Promise<readonly NormalizedProviderEvent[]> {
   const events: NormalizedProviderEvent[] = [];
@@ -47,9 +47,9 @@ function sseResponse(chunks: readonly string[], status = 200): Response {
   });
 }
 
-describe("createOpenAiCompatibleAdapter", () => {
+describe("createOpenAiSdkAdapter", () => {
   test("streams text deltas and finishes", async () => {
-    const adapter = createOpenAiCompatibleAdapter({
+    const adapter = createOpenAiSdkAdapter({
       profileId: "openai",
       baseUrl: "https://api.example.test/v1",
       resolveApiKey: async () => "sk-test",
@@ -65,8 +65,43 @@ describe("createOpenAiCompatibleAdapter", () => {
     expect(events.at(-1)?.kind).toBe("finished");
   });
 
+  test("requests and retains the trailing provider usage chunk", async () => {
+    let body: Record<string, unknown> | null = null;
+    const adapter = createOpenAiSdkAdapter({
+      profileId: "openai",
+      baseUrl: "https://api.example.test/v1",
+      resolveApiKey: async () => "sk-test",
+      fetch: async (_input, init) => {
+        if (init === undefined) {
+          throw new Error("expected OpenAI SDK request initialization");
+        }
+        body = JSON.parse(String(init.body)) as Record<string, unknown>;
+        return sseResponse([
+          'data: {"choices":[{"delta":{"content":"Hi"}}]}\n\n',
+          'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n',
+          'data: {"choices":[],"usage":{"prompt_tokens":11,"completion_tokens":3,"prompt_tokens_details":{"cached_tokens":4},"completion_tokens_details":{"reasoning_tokens":1}}}\n\n',
+          "data: [DONE]\n\n",
+        ]);
+      },
+    });
+
+    const events = await collect(adapter);
+    expect(body).toMatchObject({ stream_options: { include_usage: true } });
+    expect(events.find((event) => event.kind === "usage")).toMatchObject({
+      kind: "usage",
+      usage: {
+        provenance: "provider-reported",
+        inputTokens: 11,
+        outputTokens: 3,
+        cachedInputTokens: 4,
+        reasoningTokens: 1,
+      },
+    });
+    expect(events.at(-1)).toMatchObject({ kind: "finished", finishReason: "stop" });
+  });
+
   test("classifies 429 as rate-limit", async () => {
-    const adapter = createOpenAiCompatibleAdapter({
+    const adapter = createOpenAiSdkAdapter({
       profileId: "openai",
       baseUrl: "https://api.example.test/v1",
       resolveApiKey: async () => "sk-test",
@@ -78,8 +113,27 @@ describe("createOpenAiCompatibleAdapter", () => {
     expect(error?.kind === "error" && error.failure.retryable).toBe(true);
   });
 
+  test("leaves retries to Falryn instead of retrying inside the SDK", async () => {
+    let requests = 0;
+    const adapter = createOpenAiSdkAdapter({
+      profileId: "openai",
+      baseUrl: "https://api.example.test/v1",
+      resolveApiKey: async () => "sk-test",
+      fetch: async () => {
+        requests += 1;
+        return new Response("failure", { status: 500 });
+      },
+    });
+
+    const events = await collect(adapter);
+    const error = events.find((event) => event.kind === "error");
+    expect(requests).toBe(1);
+    expect(error?.kind === "error" && error.failure.kind).toBe("server-failure");
+    expect(error?.kind === "error" && error.failure.retryable).toBe(true);
+  });
+
   test("classifies 401 as authentication", async () => {
-    const adapter = createOpenAiCompatibleAdapter({
+    const adapter = createOpenAiSdkAdapter({
       profileId: "openai",
       baseUrl: "https://api.example.test/v1",
       resolveApiKey: async () => "sk-test",
@@ -91,7 +145,7 @@ describe("createOpenAiCompatibleAdapter", () => {
   });
 
   test("fails closed when the API key is missing", async () => {
-    const adapter = createOpenAiCompatibleAdapter({
+    const adapter = createOpenAiSdkAdapter({
       profileId: "openai",
       baseUrl: "https://api.example.test/v1",
       resolveApiKey: async () => null,
@@ -105,7 +159,7 @@ describe("createOpenAiCompatibleAdapter", () => {
   });
 
   test("classifies malformed JSON in the stream", async () => {
-    const adapter = createOpenAiCompatibleAdapter({
+    const adapter = createOpenAiSdkAdapter({
       profileId: "openai",
       baseUrl: "https://api.example.test/v1",
       resolveApiKey: async () => "sk-test",
@@ -117,7 +171,7 @@ describe("createOpenAiCompatibleAdapter", () => {
   });
 
   test("assembles fragmented tool calls into a proposal", async () => {
-    const adapter = createOpenAiCompatibleAdapter({
+    const adapter = createOpenAiSdkAdapter({
       profileId: "openai",
       baseUrl: "https://api.example.test/v1",
       resolveApiKey: async () => "sk-test",
@@ -137,11 +191,14 @@ describe("createOpenAiCompatibleAdapter", () => {
 
   test("translates assistant tool calls before matching tool results", async () => {
     let body: unknown = null;
-    const adapter = createOpenAiCompatibleAdapter({
+    const adapter = createOpenAiSdkAdapter({
       profileId: "openai",
       baseUrl: "https://api.example.test/v1",
       resolveApiKey: async () => "sk-test",
       fetch: async (_input, init) => {
+        if (init === undefined) {
+          throw new Error("expected OpenAI SDK request initialization");
+        }
         body = JSON.parse(String(init.body));
         return sseResponse(['data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n']);
       },
@@ -188,7 +245,7 @@ describe("createOpenAiCompatibleAdapter", () => {
 
   test("never puts the API key into failure messages", async () => {
     const secret = "sk-super-secret-value";
-    const adapter = createOpenAiCompatibleAdapter({
+    const adapter = createOpenAiSdkAdapter({
       profileId: "openai",
       baseUrl: "https://api.example.test/v1",
       resolveApiKey: async () => secret,

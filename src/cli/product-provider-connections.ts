@@ -12,12 +12,14 @@ import { resolveConfigurationFilePath, writeConfigurationValue } from "../config
 import type { ConfigurationValues } from "../domain/index.ts";
 import {
   createHostCommandRunner,
+  createOfficialModelDiscovery,
+  createOpenAiSdkAdapter,
   hostPlatform,
+  type OpenAiSdkFetch,
   type OwnedProcessRegistry,
 } from "../integrations/index.ts";
+import type { ModelDiscoveryPort } from "../providers/index.ts";
 import { parseProviderConnectionState } from "../providers/index.ts";
-import type { OpenAiCompatibleFetch } from "../providers/openai-compatible-adapter.ts";
-import { createOpenAiCompatibleAdapter } from "../providers/openai-compatible-adapter.ts";
 import type { ProviderAdapterPort } from "../providers/port.ts";
 import type { GlobalOptions } from "./options.ts";
 import {
@@ -52,7 +54,9 @@ export type ProductProviderConnectionOptions = {
   /** Reuse an already-loaded generation on bootstrap paths. */
   readonly configuration?: ConfigurationValues;
   /** Injectable controlled transport for provider integration fixtures. */
-  readonly providerFetch?: OpenAiCompatibleFetch;
+  readonly providerFetch?: OpenAiSdkFetch;
+  /** Injectable discovery boundary for deterministic provider fixtures. */
+  readonly modelDiscovery?: ModelDiscoveryPort;
 };
 
 export function composeProductProviderConnections(
@@ -70,7 +74,22 @@ export function composeProductProviderConnections(
     environment: services.environment,
   });
   const store = configurationStore(services, globals, options.configuration);
-  const service = createProviderConnectionService({ store, credentials, clock: services.clock });
+  const remoteDiscovery =
+    options.modelDiscovery ??
+    createOfficialModelDiscovery({
+      resolveApiKey: async (profile, signal) => {
+        const reference = profile.credential;
+        return reference === null
+          ? null
+          : resolveProviderApiKey(credentials.resolver, reference, signal);
+      },
+    });
+  const service = createProviderConnectionService({
+    store,
+    credentials,
+    clock: services.clock,
+    session: { remoteDiscovery },
+  });
 
   return {
     service,
@@ -80,7 +99,7 @@ export function composeProductProviderConnections(
         return { kind: "unavailable", code: session.issue.code, session };
       }
       const { profile } = session.connection;
-      if (profile.adapterKind !== "openai-compatible" || profile.endpoint === null) {
+      if (profile.adapterKind !== "openai" || profile.endpoint === null) {
         return { kind: "unavailable", code: "provider-adapter-unavailable", session };
       }
       const reference = profile.credential;
@@ -90,11 +109,14 @@ export function composeProductProviderConnections(
       return {
         kind: "ready",
         session,
-        adapter: createOpenAiCompatibleAdapter({
+        adapter: createOpenAiSdkAdapter({
           profileId: profile.profileId,
           providerId: String(profile.providerId),
           displayName: profile.displayName,
           baseUrl: profile.endpoint,
+          organization: profile.organization,
+          project: profile.project,
+          requestTimeoutMs: profile.timeouts.requestMs,
           supportedModels: session.catalog.models.map((model) => String(model.modelId)),
           resolveApiKey: (requestSignal) =>
             resolveProviderApiKey(credentials.resolver, reference, requestSignal),

@@ -9,6 +9,7 @@
 import type { Instant } from "../domain/clock.ts";
 import type { ModelId, ProviderId } from "../domain/identity.ts";
 import type { ModelCapability, ModelCatalog } from "./discovery.ts";
+import { featureIsSupported, type MODEL_CAPABILITY_SCHEMA_VERSION } from "./model-capability.ts";
 import {
   isRoleDisabled,
   type ModelPolicy,
@@ -58,6 +59,7 @@ export type RoutingReceipt = {
   readonly budgets: RoleBudgets;
   readonly catalogGeneration: number;
   readonly catalogProvenance: ModelCatalog["provenance"];
+  readonly modelCapabilitySchemaVersion: typeof MODEL_CAPABILITY_SCHEMA_VERSION;
   readonly recordedAt: Instant | null;
 };
 
@@ -114,14 +116,27 @@ export function modelMatchesRequirements(
   capability: ModelCapability,
   required: RouteRequirement,
 ): boolean {
-  if (required.tools === true && !capability.tools) {
+  if (capability.availability === "unavailable") {
     return false;
   }
-  if (required.streaming === true && !capability.streaming) {
+  if (required.tools === true && !featureIsSupported(capability.tools)) {
     return false;
   }
-  if (required.reasoning === true && !capability.reasoning) {
+  if (required.structuredOutput === true && !featureIsSupported(capability.structuredOutput)) {
     return false;
+  }
+  if (required.streaming === true && !featureIsSupported(capability.streaming)) {
+    return false;
+  }
+  if (required.reasoning === true && !featureIsSupported(capability.reasoning)) {
+    return false;
+  }
+  if (required.reasoningControls !== undefined) {
+    for (const control of required.reasoningControls) {
+      if (!capability.reasoningControls.includes(control)) {
+        return false;
+      }
+    }
   }
   if (
     required.minContextTokens !== undefined &&
@@ -129,9 +144,22 @@ export function modelMatchesRequirements(
   ) {
     return false;
   }
+  if (
+    required.minOutputTokens !== undefined &&
+    (capability.outputTokens === null || capability.outputTokens < required.minOutputTokens)
+  ) {
+    return false;
+  }
   if (required.modalities !== undefined) {
     for (const modality of required.modalities) {
-      if (!capability.modalities.includes(modality)) {
+      if (!capability.inputModalities.includes(modality)) {
+        return false;
+      }
+    }
+  }
+  if (required.outputModalities !== undefined) {
+    for (const modality of required.outputModalities) {
+      if (!capability.outputModalities.includes(modality)) {
         return false;
       }
     }
@@ -143,9 +171,17 @@ function findCapability(
   catalogs: readonly RoutedCatalogEntry[],
   providerId: ProviderId,
   modelId: ModelId,
+  now?: Instant,
 ): { capability: ModelCapability; catalog: ModelCatalog } | undefined {
   for (const entry of catalogs) {
     if (entry.providerId !== providerId) {
+      continue;
+    }
+    if (
+      now !== undefined &&
+      entry.catalog.expiresAt !== null &&
+      Number(entry.catalog.expiresAt) <= Number(now)
+    ) {
       continue;
     }
     const capability = entry.catalog.models.find((model) => model.modelId === modelId);
@@ -185,7 +221,12 @@ export function resolveModelRoute(input: ResolveRouteInput): RoutingOutcome {
       intent !== null ? defaultRequirementsForIntent(intent) : {},
       input.required ?? {},
     );
-    const found = findCapability(input.catalogs, input.explicit.providerId, input.explicit.modelId);
+    const found = findCapability(
+      input.catalogs,
+      input.explicit.providerId,
+      input.explicit.modelId,
+      input.now,
+    );
     if (found === undefined || !modelMatchesRequirements(found.capability, required)) {
       return {
         kind: "no-eligible-route",
@@ -218,6 +259,7 @@ export function resolveModelRoute(input: ResolveRouteInput): RoutingOutcome {
         budgets: {},
         catalogGeneration: found.catalog.generation,
         catalogProvenance: found.catalog.provenance,
+        modelCapabilitySchemaVersion: found.capability.schemaVersion,
         recordedAt: input.now ?? null,
       },
     };
@@ -228,7 +270,8 @@ export function resolveModelRoute(input: ResolveRouteInput): RoutingOutcome {
   const primaryCapability = primaryCapabilityForRole(
     input.policy,
     tentativeRole === "vision" ? "default" : tentativeRole,
-    (providerId, modelId) => findCapability(input.catalogs, providerId, modelId)?.capability,
+    (providerId, modelId) =>
+      findCapability(input.catalogs, providerId, modelId, input.now)?.capability,
   );
 
   const specialized = resolveSpecializedRole({
@@ -277,7 +320,12 @@ export function resolveModelRoute(input: ResolveRouteInput): RoutingOutcome {
     }
     visited.add(key);
 
-    const found = findCapability(input.catalogs, candidate.providerId, candidate.modelId);
+    const found = findCapability(
+      input.catalogs,
+      candidate.providerId,
+      candidate.modelId,
+      input.now,
+    );
     if (found === undefined || !modelMatchesRequirements(found.capability, required)) {
       continue;
     }
@@ -306,6 +354,7 @@ export function resolveModelRoute(input: ResolveRouteInput): RoutingOutcome {
         budgets: route.budgets,
         catalogGeneration: found.catalog.generation,
         catalogProvenance: found.catalog.provenance,
+        modelCapabilitySchemaVersion: found.capability.schemaVersion,
         recordedAt: input.now ?? null,
       },
     };

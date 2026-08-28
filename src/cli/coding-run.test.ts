@@ -454,11 +454,19 @@ describe("runCoding", () => {
           expiresAt: null,
           models: [
             {
+              schemaVersion: 1,
               modelId,
-              modalities: ["text"],
-              tools: true,
-              streaming: true,
-              reasoning: true,
+              displayName: null,
+              inputModalities: ["text"],
+              outputModalities: ["text"],
+              tools: "supported",
+              structuredOutput: "supported",
+              streaming: "supported",
+              reasoning: "supported",
+              reasoningControls: ["balanced"],
+              completeness: "complete",
+              availability: "available",
+              provenance: ["profile-declaration"],
               contextTokens: 32_000,
               outputTokens: 4_000,
             },
@@ -615,11 +623,19 @@ describe("runCoding", () => {
           expiresAt: null,
           models: [
             {
+              schemaVersion: 1,
               modelId,
-              modalities: ["text"],
-              tools: true,
-              streaming: true,
-              reasoning: true,
+              displayName: null,
+              inputModalities: ["text"],
+              outputModalities: ["text"],
+              tools: "supported",
+              structuredOutput: "supported",
+              streaming: "supported",
+              reasoning: "supported",
+              reasoningControls: ["balanced"],
+              completeness: "complete",
+              availability: "available",
+              provenance: ["profile-declaration"],
               contextTokens: 32_000,
               outputTokens: 4_000,
             },
@@ -1018,6 +1034,9 @@ describe("runCoding", () => {
         input: streams.input,
         globals: globalsFor(seeded),
         openaiFetch: async (_input, init) => {
+          if (init === undefined) {
+            throw new Error("expected OpenAI SDK request initialization");
+          }
           providerBodies.push(JSON.parse(String(init.body)));
           const current = providerRequest;
           providerRequest += 1;

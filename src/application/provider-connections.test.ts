@@ -26,13 +26,14 @@ function profile(id: string, endpoint = "https://api.example.test/v1"): Provider
   return {
     profileId: id,
     providerId: providerId.from(id),
-    adapterKind: "openai-compatible",
+    adapterKind: "openai",
     displayName: id.toUpperCase(),
     endpoint,
     credential: null,
     organization: null,
     project: null,
     enabledModels: [modelId.from(`${id}-model`)],
+    modelCapabilities: [],
     discovery: "static",
     timeouts: { connectMs: 1_000, requestMs: 10_000 },
   };
@@ -323,8 +324,100 @@ describe("provider connection service", () => {
         kind: "configure",
         profile: profile("cancel", "http://remote.test"),
         preserveCredential: true,
+        preserveCapabilities: true,
       }),
     ).toMatchObject({ kind: "failed", issue: { code: "invalid-endpoint" } });
+  });
+
+  test("preserves enabled model capability declarations across CLI-style configure", async () => {
+    const clock = createManualClock();
+    const declared: ProviderProfile = {
+      ...profile("declared"),
+      enabledModels: [modelId.from("declared-model")],
+      modelCapabilities: [
+        {
+          schemaVersion: 1,
+          modelId: modelId.from("declared-model"),
+          displayName: "Declared model",
+          inputModalities: ["text"],
+          outputModalities: ["text"],
+          tools: "supported",
+          structuredOutput: "supported",
+          streaming: "supported",
+          reasoning: "unknown",
+          reasoningControls: [],
+          contextTokens: 32_000,
+          outputTokens: 4_000,
+          completeness: "partial",
+        },
+      ],
+    };
+    const stored = memoryStore(state(declared));
+    const credentials = mutableCredentials(clock);
+    const service = createProviderConnectionService({
+      store: stored.port,
+      credentials: credentials.bundle,
+      clock,
+    });
+
+    expect(
+      await service.execute({
+        kind: "configure",
+        profile: { ...declared, displayName: "Updated", modelCapabilities: [] },
+        preserveCredential: true,
+        preserveCapabilities: true,
+      }),
+    ).toMatchObject({ kind: "completed" });
+    expect(stored.state().connections[0]?.profile.modelCapabilities).toEqual(
+      declared.modelCapabilities,
+    );
+  });
+
+  test("does not carry capability declarations across a provider identity change", async () => {
+    const clock = createManualClock();
+    const declared: ProviderProfile = {
+      ...profile("declared"),
+      enabledModels: [modelId.from("shared-name")],
+      modelCapabilities: [
+        {
+          schemaVersion: 1,
+          modelId: modelId.from("shared-name"),
+          displayName: "OpenAI declaration",
+          inputModalities: ["text"],
+          outputModalities: ["text"],
+          tools: "supported",
+          structuredOutput: "supported",
+          streaming: "supported",
+          reasoning: "unknown",
+          reasoningControls: [],
+          contextTokens: 32_000,
+          outputTokens: 4_000,
+          completeness: "partial",
+        },
+      ],
+    };
+    const stored = memoryStore(state(declared));
+    const credentials = mutableCredentials(clock);
+    const service = createProviderConnectionService({
+      store: stored.port,
+      credentials: credentials.bundle,
+      clock,
+    });
+
+    expect(
+      await service.execute({
+        kind: "configure",
+        profile: {
+          ...declared,
+          providerId: providerId.from("anthropic"),
+          adapterKind: "anthropic",
+          modelCapabilities: [],
+        },
+        preserveCredential: true,
+        preserveCapabilities: true,
+      }),
+    ).toMatchObject({ kind: "completed" });
+    expect(stored.state().connections[0]?.profile.modelCapabilities).toEqual([]);
   });
 
   test("refuses an expired authorized account before catalog handoff", async () => {

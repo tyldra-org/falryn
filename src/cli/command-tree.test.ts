@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { MAX_LOCAL_PATH_LENGTH } from "../domain/index.ts";
+import { MAX_LOCAL_PATH_LENGTH, modelId } from "../domain/index.ts";
 import { helpText, type Invocation, parseInvocation } from "./command-tree.ts";
 import {
   configurationOverridesFor,
@@ -192,7 +192,7 @@ describe("provider connection arguments", () => {
       "add",
       "local",
       "--provider",
-      "openai-compatible",
+      "openai",
       "--endpoint",
       "http://127.0.0.1:11434/v1",
       "--model",
@@ -208,7 +208,48 @@ describe("provider connection arguments", () => {
       "coder-small",
       "coder-large",
     ]);
+    expect(invocation.providerArgs.profile.modelCapabilities).toEqual([]);
     expect(JSON.stringify(invocation)).not.toMatch(/api.?key|secret/i);
+  });
+
+  test("attaches the built-in source-verified capability declaration", async () => {
+    const invocation = await parse(
+      "provider",
+      "add",
+      "openai-work",
+      "--provider",
+      "openai",
+      "--model",
+      "gpt-4o-mini",
+    );
+    if (invocation.kind !== "run" || invocation.providerArgs?.action !== "add") {
+      throw new Error("expected parsed provider add");
+    }
+    expect(invocation.providerArgs.profile.modelCapabilities).toEqual([
+      expect.objectContaining({
+        modelId: modelId.from("gpt-4o-mini"),
+        inputModalities: ["text", "image"],
+        outputModalities: ["text"],
+        tools: "supported",
+        contextTokens: 128_000,
+      }),
+    ]);
+
+    const custom = await parse(
+      "provider",
+      "add",
+      "custom-openai",
+      "--provider",
+      "openai",
+      "--endpoint",
+      "https://provider.example.test/v1",
+      "--model",
+      "gpt-4o-mini",
+    );
+    if (custom.kind !== "run" || custom.providerArgs?.action !== "add") {
+      throw new Error("expected parsed custom provider add");
+    }
+    expect(custom.providerArgs.profile.modelCapabilities).toEqual([]);
   });
 
   test("requires protected stdin for API keys and validates authorized methods", async () => {

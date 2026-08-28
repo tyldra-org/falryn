@@ -1,7 +1,9 @@
 import { describe, expect, test } from "bun:test";
 
+import { instant } from "../domain/clock.ts";
 import { modelId, providerId } from "../domain/identity.ts";
 import type { ModelCatalog } from "./discovery.ts";
+import { unknownModelCapability } from "./model-capability.ts";
 import { DEFAULT_INTENT_ROLE_MAP, type ModelPolicy, resolveIntentRole } from "./policy.ts";
 import { parseModelPolicy } from "./policy-schema.ts";
 import {
@@ -98,38 +100,70 @@ function catalogs(): readonly RoutedCatalogEntry[] {
       providerId: primary,
       catalog: catalogFor([
         {
+          schemaVersion: 1,
           modelId: fast,
-          modalities: ["text"],
-          tools: true,
-          streaming: true,
-          reasoning: false,
+          displayName: null,
+          inputModalities: ["text"],
+          outputModalities: ["text"],
+          tools: "supported",
+          structuredOutput: "supported",
+          streaming: "supported",
+          reasoning: "unsupported",
+          reasoningControls: [],
+          completeness: "complete",
+          availability: "available",
+          provenance: ["profile-declaration"],
           contextTokens: 8_000,
           outputTokens: 2_000,
         },
         {
+          schemaVersion: 1,
           modelId: deep,
-          modalities: ["text"],
-          tools: true,
-          streaming: true,
-          reasoning: true,
+          displayName: null,
+          inputModalities: ["text"],
+          outputModalities: ["text"],
+          tools: "supported",
+          structuredOutput: "supported",
+          streaming: "supported",
+          reasoning: "supported",
+          reasoningControls: ["balanced"],
+          completeness: "complete",
+          availability: "available",
+          provenance: ["profile-declaration"],
           contextTokens: 128_000,
           outputTokens: 16_000,
         },
         {
+          schemaVersion: 1,
           modelId: vision,
-          modalities: ["text", "image"],
-          tools: true,
-          streaming: true,
-          reasoning: false,
+          displayName: null,
+          inputModalities: ["text", "image"],
+          outputModalities: ["text"],
+          tools: "supported",
+          structuredOutput: "supported",
+          streaming: "supported",
+          reasoning: "unsupported",
+          reasoningControls: [],
+          completeness: "complete",
+          availability: "available",
+          provenance: ["profile-declaration"],
           contextTokens: 64_000,
           outputTokens: 4_000,
         },
         {
+          schemaVersion: 1,
           modelId: weak,
-          modalities: ["text"],
-          tools: false,
-          streaming: false,
-          reasoning: false,
+          displayName: null,
+          inputModalities: ["text"],
+          outputModalities: ["text"],
+          tools: "unsupported",
+          structuredOutput: "unsupported",
+          streaming: "unsupported",
+          reasoning: "unsupported",
+          reasoningControls: [],
+          completeness: "complete",
+          availability: "available",
+          provenance: ["profile-declaration"],
           contextTokens: 1_000,
           outputTokens: 256,
         },
@@ -140,20 +174,36 @@ function catalogs(): readonly RoutedCatalogEntry[] {
       catalog: catalogFor(
         [
           {
+            schemaVersion: 1,
             modelId: fast,
-            modalities: ["text"],
-            tools: true,
-            streaming: true,
-            reasoning: false,
+            displayName: null,
+            inputModalities: ["text"],
+            outputModalities: ["text"],
+            tools: "supported",
+            structuredOutput: "supported",
+            streaming: "supported",
+            reasoning: "unsupported",
+            reasoningControls: [],
+            completeness: "complete",
+            availability: "available",
+            provenance: ["profile-declaration"],
             contextTokens: 8_000,
             outputTokens: 2_000,
           },
           {
+            schemaVersion: 1,
             modelId: deep,
-            modalities: ["text"],
-            tools: true,
-            streaming: true,
-            reasoning: true,
+            displayName: null,
+            inputModalities: ["text"],
+            outputModalities: ["text"],
+            tools: "supported",
+            structuredOutput: "supported",
+            streaming: "supported",
+            reasoning: "supported",
+            reasoningControls: ["balanced"],
+            completeness: "complete",
+            availability: "available",
+            provenance: ["profile-declaration"],
             contextTokens: 200_000,
             outputTokens: 16_000,
           },
@@ -211,6 +261,38 @@ describe("compatibility", () => {
     expect(modelMatchesRequirements(capability, { modalities: ["image"] })).toBe(false);
     expect(modelMatchesRequirements(capability, { modalities: ["text"] })).toBe(true);
   });
+
+  test("unknown support fails closed for required features and output constraints", () => {
+    const capability = unknownModelCapability(modelId.from("unknown-model"), {
+      availability: "available",
+    });
+    expect(modelMatchesRequirements(capability, {})).toBe(true);
+    expect(modelMatchesRequirements(capability, { tools: true })).toBe(false);
+    expect(modelMatchesRequirements(capability, { structuredOutput: true })).toBe(false);
+    expect(modelMatchesRequirements(capability, { outputModalities: ["text"] })).toBe(false);
+    expect(modelMatchesRequirements(capability, { minOutputTokens: 1 })).toBe(false);
+  });
+
+  test("checks input, output, and provider-native reasoning controls independently", () => {
+    const capability = {
+      ...unknownModelCapability(modelId.from("multimodal"), { availability: "available" }),
+      inputModalities: ["text", "audio", "video", "document"] as const,
+      outputModalities: ["text", "audio"] as const,
+      reasoning: "supported" as const,
+      reasoningControls: ["low", "high"] as const,
+    };
+
+    expect(
+      modelMatchesRequirements(capability, {
+        modalities: ["audio", "video", "document"],
+        outputModalities: ["audio"],
+        reasoning: true,
+        reasoningControls: ["high"],
+      }),
+    ).toBe(true);
+    expect(modelMatchesRequirements(capability, { outputModalities: ["video"] })).toBe(false);
+    expect(modelMatchesRequirements(capability, { reasoningControls: ["medium"] })).toBe(false);
+  });
 });
 
 describe("resolveModelRoute", () => {
@@ -232,6 +314,27 @@ describe("resolveModelRoute", () => {
     expect(outcome.receipt.reasoning).toBe("balanced");
     expect(outcome.receipt.fallbackPosition).toBe(0);
     expect(outcome.receipt.catalogGeneration).toBe(1);
+  });
+
+  test("does not route from an expired remote catalog generation", () => {
+    const expired = catalogs().map((entry) =>
+      entry.providerId === primary
+        ? { ...entry, catalog: { ...entry.catalog, expiresAt: instant(10) } }
+        : entry,
+    );
+    const outcome = resolveModelRoute({
+      policy: samplePolicy(),
+      catalogs: expired,
+      intent: "coding",
+      now: instant(10),
+    });
+
+    expect(outcome).toEqual({
+      kind: "no-eligible-route",
+      role: "default",
+      intent: "coding",
+      code: "no-compatible-model",
+    });
   });
 
   test("honors explicit provider/model when compatible", () => {
@@ -574,11 +677,19 @@ describe("specialized role support", () => {
       role: "vision",
       required: {},
       primaryCapability: {
+        schemaVersion: 1,
         modelId: deep,
-        modalities: ["text"],
-        tools: true,
-        streaming: true,
-        reasoning: true,
+        displayName: null,
+        inputModalities: ["text"],
+        outputModalities: ["text"],
+        tools: "supported",
+        structuredOutput: "supported",
+        streaming: "supported",
+        reasoning: "supported",
+        reasoningControls: ["balanced"],
+        completeness: "complete",
+        availability: "available",
+        provenance: ["profile-declaration"],
         contextTokens: 128_000,
         outputTokens: 16_000,
       },
@@ -595,11 +706,19 @@ describe("specialized role support", () => {
       role: "vision",
       required: {},
       primaryCapability: {
+        schemaVersion: 1,
         modelId: vision,
-        modalities: ["text", "image"],
-        tools: true,
-        streaming: true,
-        reasoning: false,
+        displayName: null,
+        inputModalities: ["text", "image"],
+        outputModalities: ["text"],
+        tools: "supported",
+        structuredOutput: "supported",
+        streaming: "supported",
+        reasoning: "unsupported",
+        reasoningControls: [],
+        completeness: "complete",
+        availability: "available",
+        provenance: ["profile-declaration"],
         contextTokens: 64_000,
         outputTokens: 4_000,
       },

@@ -141,6 +141,11 @@ export type TurnAttemptPolicyOptions = {
    * recorded as facts; replay never re-enters the runner.
    */
   readonly journal?: TurnEventJournalPort;
+  /**
+   * False when an enclosing product producer owns turn.started/turn.completed.
+   * Model-attempt facts still use the journal.
+   */
+  readonly persistTurnLifecycle?: boolean;
 };
 
 export type RunTurnAttemptPolicyInput = {
@@ -559,6 +564,7 @@ function attemptBinding(
           },
         }),
     providerCatalogGeneration: receipt.catalogGeneration,
+    modelCapabilitySchemaVersion: receipt.modelCapabilitySchemaVersion,
     toolCatalogGeneration: disclosure?.catalogGeneration ?? generation,
     policyGeneration: generation,
     runner: "product-attempt-runner.v1",
@@ -689,6 +695,7 @@ export function createTurnAttemptPolicy(options: TurnAttemptPolicyOptions): Turn
   const retryPolicy = options.retryPolicy ?? DEFAULT_RETRY_POLICY;
   const backoff = options.backoff ?? DEFAULT_RETRY_BACKOFF;
   const jitter = options.jitter ?? (() => 0);
+  const turnLifecycleJournal = options.persistTurnLifecycle === false ? undefined : options.journal;
 
   return {
     async run(input) {
@@ -738,7 +745,7 @@ export function createTurnAttemptPolicy(options: TurnAttemptPolicyOptions): Turn
       const opened = options.coordinator.get(input.turnId);
       if (opened !== null) {
         await persistFacts(
-          options.journal,
+          turnLifecycleJournal,
           [{ kind: "turn.started", correlation: correlationFor(opened) }],
           input.signal,
         );
@@ -759,7 +766,7 @@ export function createTurnAttemptPolicy(options: TurnAttemptPolicyOptions): Turn
           const settled = options.coordinator.get(input.turnId);
           if (settled?.status === "terminal") {
             await persistFacts(
-              options.journal,
+              turnLifecycleJournal,
               [
                 {
                   kind: "turn.completed",
@@ -910,7 +917,7 @@ export function createTurnAttemptPolicy(options: TurnAttemptPolicyOptions): Turn
             const terminal = options.coordinator.get(input.turnId);
             if (terminal?.status === "terminal") {
               await persistFacts(
-                options.journal,
+                turnLifecycleJournal,
                 [
                   {
                     kind: "turn.completed",
@@ -940,7 +947,7 @@ export function createTurnAttemptPolicy(options: TurnAttemptPolicyOptions): Turn
               const terminal = options.coordinator.get(input.turnId);
               if (terminal?.status === "terminal") {
                 await persistFacts(
-                  options.journal,
+                  turnLifecycleJournal,
                   [
                     {
                       kind: "turn.completed",

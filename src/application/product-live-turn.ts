@@ -580,6 +580,7 @@ export function createProductLiveTurnExecutor(
           },
         ],
         journal: options.runtime.journal,
+        persistTurnLifecycle: false,
       });
       const attempted = await attemptPolicy.run({
         turnId: input.turnId,

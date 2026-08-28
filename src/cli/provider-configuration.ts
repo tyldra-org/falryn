@@ -8,6 +8,7 @@ import {
   type ProviderConnectionState,
 } from "../providers/connection.ts";
 import { providerConnectionStateSchema } from "../providers/connection-schema.ts";
+import { KNOWN_OPENAI_GPT_4O_MINI_CAPABILITY } from "../providers/known-model-capability.ts";
 
 export const PROVIDER_CONNECTIONS_CONFIGURATION_KEY = "providers.connections";
 
@@ -21,7 +22,7 @@ export const DEFAULT_PROVIDER_CONNECTION_STATE: ProviderConnectionState = {
       profile: {
         profileId: "openai",
         providerId: providerId.from("openai"),
-        adapterKind: "openai-compatible",
+        adapterKind: "openai",
         displayName: "OpenAI",
         endpoint: "https://api.openai.com/v1",
         credential: {
@@ -33,6 +34,7 @@ export const DEFAULT_PROVIDER_CONNECTION_STATE: ProviderConnectionState = {
         organization: null,
         project: null,
         enabledModels: [modelId.from("gpt-4o-mini")],
+        modelCapabilities: [KNOWN_OPENAI_GPT_4O_MINI_CAPABILITY],
         discovery: "static",
         timeouts: { connectMs: 15_000, requestMs: 120_000 },
       },

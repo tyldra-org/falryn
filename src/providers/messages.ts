@@ -81,4 +81,8 @@ export type RequestMetadata = {
   readonly workIntent?: string | undefined;
   /** Configuration generation observed when the request was built. */
   readonly configurationGeneration?: number | undefined;
+  /** Exact provider catalog generation bound by routing. */
+  readonly providerCatalogGeneration?: number | undefined;
+  /** Version of the selected model capability record. */
+  readonly modelCapabilitySchemaVersion?: number | undefined;
 };

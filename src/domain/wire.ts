@@ -90,6 +90,7 @@ const modelAttemptBindingSchema: z.ZodType<ModelAttemptBinding> = z.object({
     })
     .optional(),
   providerCatalogGeneration: z.int().nonnegative(),
+  modelCapabilitySchemaVersion: z.int().positive().optional(),
   toolCatalogGeneration: brandedInteger(configurationGeneration),
   policyGeneration: brandedInteger(configurationGeneration),
   runner: z.literal("product-attempt-runner.v1"),

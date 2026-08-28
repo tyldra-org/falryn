@@ -3,9 +3,8 @@
  *
  * This source area owns provider-neutral requests, stream events, profiles,
  * authentication snapshots, capability discovery, model policy / intent routing,
- * and the adapter port. Vendor leaf adapters: deterministic fixture and
- * OpenAI-compatible HTTP (`createOpenAiCompatibleAdapter`). Domain, application,
- * CLI, and OpenTUI must not import SDK types through this surface.
+ * and the adapter port. Vendor leaf adapters live in `src/integrations`; SDK
+ * request and stream types must not cross this provider-neutral boundary.
  */
 
 export type { DiscoveryPolicy, ProviderAdapterKind } from "./adapter-kind.ts";
@@ -66,6 +65,7 @@ export type {
   StaticDiscoveryOptions,
 } from "./discovery.ts";
 export {
+  catalogFromAdapterModels,
   createDeterministicRemoteDiscovery,
   createStaticModelDiscovery,
   discoverModelCatalog,
@@ -79,6 +79,10 @@ export type {
   ProviderIdentityErrorCode,
 } from "./identity.ts";
 export { modelRequestId } from "./identity.ts";
+export {
+  KNOWN_OPENAI_GPT_4O_MINI_CAPABILITY,
+  knownModelCapability,
+} from "./known-model-capability.ts";
 export {
   MAX_ASSEMBLED_TEXT_LENGTH,
   MAX_FINISH_REASON_LENGTH,
@@ -108,10 +112,31 @@ export type {
 } from "./messages.ts";
 export { isMessageRole, MESSAGE_ROLES } from "./messages.ts";
 export type {
-  OpenAiCompatibleAdapterOptions,
-  OpenAiCompatibleFetch,
-} from "./openai-compatible-adapter.ts";
-export { createOpenAiCompatibleAdapter } from "./openai-compatible-adapter.ts";
+  ModelAvailability,
+  ModelCapabilityCompleteness,
+  ModelCapabilityDeclaration,
+  ModelCapabilityProvenance,
+  ModelFeatureSupport,
+  ModelInputModality,
+  ModelOutputModality,
+} from "./model-capability.ts";
+export {
+  capabilityFromDeclaration,
+  featureIsSupported,
+  MODEL_AVAILABILITIES,
+  MODEL_CAPABILITY_COMPLETENESSES,
+  MODEL_CAPABILITY_PROVENANCES,
+  MODEL_CAPABILITY_SCHEMA_VERSION,
+  MODEL_FEATURE_SUPPORTS,
+  MODEL_INPUT_MODALITIES,
+  MODEL_OUTPUT_MODALITIES,
+  unknownModelCapability,
+} from "./model-capability.ts";
+export type { ModelCapabilityDeclarationParseError } from "./model-capability-schema.ts";
+export {
+  modelCapabilityDeclarationSchema,
+  parseModelCapabilityDeclaration,
+} from "./model-capability-schema.ts";
 export type {
   AdvisorRoleRoute,
   CompactRoleRoute,
