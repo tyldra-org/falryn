@@ -24,6 +24,7 @@ export function isRawArguments(value: unknown): value is RawArguments {
   const classes = field("class");
   const sessions = field("session");
   const models = field("model");
+  const catalogs = field("catalog");
   return (
     Array.isArray(positional) &&
     positional.every((item) => typeof item === "string" || typeof item === "number") &&
@@ -97,6 +98,8 @@ export function isRawArguments(value: unknown): value is RawArguments {
     optionalString(field("endpoint")) &&
     (models === undefined ||
       (Array.isArray(models) && models.every((item) => typeof item === "string"))) &&
+    (catalogs === undefined ||
+      (Array.isArray(catalogs) && catalogs.every((item) => typeof item === "string"))) &&
     optionalString(field("discovery")) &&
     optionalString(field("organization")) &&
     optionalString(field("project")) &&

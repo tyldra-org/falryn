@@ -31,6 +31,7 @@
     "benchmark:hush-tree": "bun run tools/hush-tree-scorecard.ts",
     "benchmark:hush-projections": "bun run tools/hush-projection-scorecard.ts",
     "benchmark:loom": "bun run tools/loom-scorecard.ts",
+    "benchmark:brief": "bun run tools/brief-scorecard.ts",
     "build": "bun build src/main.ts --compile --outfile dist/falryn",
     "build:macos-arm64": "bun build src/main.ts --compile --target=bun-darwin-arm64 --outfile dist/falryn",
     "build:windows-x64": "bun build src/main.ts --compile --target=bun-windows-x64 --outfile dist/falryn",
@@ -49,13 +50,13 @@
     "typescript": "7.0.2"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "0.91.1",
-    "@google/genai": "1.52.0",
+    "@anthropic-ai/sdk": "0.122.0",
+    "@google/genai": "2.19.0",
     "@opentui/core": "0.5.6",
     "@opentui/keymap": "0.5.6",
     "@opentui/react": "0.5.6",
     "jsonc-parser": "3.3.1",
-    "openai": "6.40.0",
+    "openai": "7.8.0",
     "react": "19.2.8",
     "yargs": "18.1.0",
     "zod": "4.4.3"

@@ -26,6 +26,23 @@ export {
   PROVIDER_AUTH_STATES,
 } from "./auth.ts";
 export { establishProviderAuth, removeProviderCredential } from "./auth-service.ts";
+export {
+  BUILTIN_MODEL_CATALOGS,
+  builtinModelCapability,
+  builtinModelCatalog,
+} from "./catalog/builtins.ts";
+export type { ModelCatalogDocument, ModelCatalogId } from "./catalog/contracts.ts";
+export {
+  isModelCatalogId,
+  MAX_MODEL_CATALOG_FILE_BYTES,
+  MAX_MODEL_CATALOGS_PER_PROFILE,
+  MAX_MODELS_PER_CATALOG,
+  MODEL_CATALOG_DOCUMENT_SCHEMA_VERSION,
+} from "./catalog/contracts.ts";
+export type { ModelCatalogParseError } from "./catalog/effective.ts";
+export { parseModelCatalog } from "./catalog/effective.ts";
+export type { ModelCatalogDocumentParseError } from "./catalog/schema.ts";
+export { modelCatalogDocumentSchema, parseModelCatalogDocument } from "./catalog/schema.ts";
 export type {
   ProviderAccountMetadata,
   ProviderAuthMethod,
@@ -81,7 +98,10 @@ export type {
 export { modelRequestId } from "./identity.ts";
 export {
   KNOWN_OPENAI_GPT_4O_MINI_CAPABILITY,
+  KNOWN_OPENAI_MODEL_CAPABILITIES,
   knownModelCapability,
+  LATEST_OPENAI_MODEL_CAPABILITIES,
+  LATEST_OPENAI_MODEL_IDS,
 } from "./known-model-capability.ts";
 export {
   MAX_ASSEMBLED_TEXT_LENGTH,
@@ -132,9 +152,13 @@ export {
   MODEL_OUTPUT_MODALITIES,
   unknownModelCapability,
 } from "./model-capability.ts";
-export type { ModelCapabilityDeclarationParseError } from "./model-capability-schema.ts";
+export type {
+  ModelCapabilityDeclarationParseError,
+  ModelCapabilityParseError,
+} from "./model-capability-schema.ts";
 export {
   modelCapabilityDeclarationSchema,
+  parseModelCapability,
   parseModelCapabilityDeclaration,
 } from "./model-capability-schema.ts";
 export type {
@@ -176,7 +200,11 @@ export type {
 } from "./profile.ts";
 export { profileCredentialConsumer } from "./profile.ts";
 export type { ProviderProfileParseError } from "./profile-schema.ts";
-export { parseProviderProfile, providerProfileSchema } from "./profile-schema.ts";
+export {
+  parseProviderProfile,
+  providerEndpointIsAllowed,
+  providerProfileSchema,
+} from "./profile-schema.ts";
 export type { ModelRequest } from "./request.ts";
 export type {
   ResolveSpecializedRoleInput,

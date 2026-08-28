@@ -374,7 +374,7 @@ export function createOfficialModelDiscovery(
     anthropic: options.loaders?.anthropic ?? loadAnthropicModels,
     google: options.loaders?.google ?? loadGoogleModels,
   };
-  let nextGeneration = options.generation ?? 2;
+  let nextGeneration = options.generation ?? 0;
   const ttlMs = options.ttlMs ?? 15 * 60_000;
 
   const publish = (
@@ -382,7 +382,8 @@ export function createOfficialModelDiscovery(
     models: readonly ModelCapability[],
     now: Instant,
   ): DiscoveryOutcome => {
-    const generation = nextGeneration;
+    const generation =
+      options.generation === undefined ? Math.max(nextGeneration, Number(now)) : nextGeneration;
     nextGeneration += 1;
     return {
       kind: "catalog",

@@ -14,9 +14,11 @@ import {
   createArtifactStore,
   createLoomManifestRepository,
   createMemoryRecordRepository,
+  createModelCatalogGenerationRepository,
   createSqliteEventStore,
   type DurableArtifactStore,
   type DurableEventStore,
+  type ModelCatalogGenerationRepository,
   openSqliteStore,
   openWorkspaceIndexStore,
   PRODUCTION_MIGRATIONS,
@@ -40,6 +42,7 @@ export type ProductArtifactSession = {
   readonly eventStore: DurableEventStore;
   readonly loom: LoomPort;
   readonly memoryRecords: MemoryRecords;
+  readonly modelCatalogs: ModelCatalogGenerationRepository;
   openWorkspaceIndex(
     workspaceRoot: LocalPath,
     signal?: AbortSignal,
@@ -141,6 +144,7 @@ export async function openProductArtifactSession(
     eventStore,
     loom,
     memoryRecords: durableMemory.value,
+    modelCatalogs: createModelCatalogGenerationRepository(store),
     async openWorkspaceIndex(workspaceRoot, openSignal) {
       if (closed || openSignal?.aborted === true) {
         return null;

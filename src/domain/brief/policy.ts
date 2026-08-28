@@ -138,13 +138,27 @@ export function selectBriefVerbosity(
   if (mode !== "auto") {
     return mode;
   }
-  if (need.interface === "narrow" || need.interface === "headless") {
-    return "compact";
-  }
   if (need.complexity === "high" || need.failures || need.uncertainty || need.recovery) {
     return "detailed";
   }
+  if (need.interface === "narrow" || need.interface === "headless") {
+    return "compact";
+  }
   return "balanced";
+}
+
+/** Bound generation at the provider instead of trimming a completed answer. */
+export function briefOutputTokenBudget(verbosity: BriefVerbosityLevel): number {
+  switch (verbosity) {
+    case "compact":
+      return 2_048;
+    case "balanced":
+      return 4_096;
+    case "detailed":
+      return 8_192;
+    default:
+      return assertNever(verbosity, "unhandled brief output budget");
+  }
 }
 
 export function briefDimensionsFor(verbosity: BriefVerbosityLevel): BriefDimensions {

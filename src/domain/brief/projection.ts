@@ -1,5 +1,7 @@
 /** Brief guidance rendering and final projection. */
 
+import { createHash } from "node:crypto";
+
 import { assertNever, err, ok, type Result } from "../result.ts";
 import {
   BRIEF_PLACEMENT,
@@ -18,6 +20,7 @@ import {
 import {
   briefDimensionsFor,
   briefError,
+  briefOutputTokenBudget,
   parseBriefNeed,
   preservedFactsFromNeed,
   resolveBriefPolicy,
@@ -118,10 +121,12 @@ export function projectBrief(request: BriefRequest): Result<BriefProjection, Bri
       selectedVerbosity,
       dimensions,
       byteLength: utf8ByteLength(guidance),
+      guidanceDigest: createHash("sha256").update(guidance).digest("hex"),
       placement: BRIEF_PLACEMENT,
       providerPlacementModified: providerModified,
       preservedFacts: facts,
       omissions,
+      outputTokenBudget: briefOutputTokenBudget(selectedVerbosity),
     },
   });
 }

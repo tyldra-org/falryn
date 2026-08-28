@@ -98,4 +98,29 @@ describe("model capability declaration codec", () => {
 
     expect(parsed.ok).toBe(false);
   });
+
+  test("rejects credential-bearing provider endpoints at the profile codec", () => {
+    for (const endpoint of [
+      "https://user:secret@api.example.test/v1",
+      "https://api.example.test/v1?api_key=secret",
+      "https://api.example.test/v1#secret",
+    ]) {
+      const parsed = parseProviderProfile({
+        profileId: "unsafe-endpoint",
+        providerId: providerId.from("unsafe-endpoint"),
+        adapterKind: "openai",
+        displayName: "Unsafe endpoint",
+        endpoint,
+        credential: null,
+        organization: null,
+        project: null,
+        enabledModels: [modelId.from("model-1")],
+        modelCapabilities: [],
+        discovery: "static",
+        timeouts: { connectMs: 1_000, requestMs: 10_000 },
+      });
+
+      expect(parsed.ok).toBe(false);
+    }
+  });
 });

@@ -356,6 +356,11 @@ function build(argv: readonly string[], lenientPositionals = false): ReturnType<
               array: true,
               describe: "enabled model (repeatable)",
             })
+            .option("catalog", {
+              type: "string",
+              array: true,
+              describe: "user model catalog identity from ~/.falryn/catalogs (repeatable)",
+            })
             .option("discovery", {
               type: "string",
               choices: ["static", "remote"] as const,

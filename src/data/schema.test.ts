@@ -24,9 +24,14 @@ import {
 } from "./fixtures.ts";
 import { LOOM_SCHEMA_VERSION } from "./loom-schema.ts";
 import { MEMORY_SCHEMA_VERSION } from "./memory-schema.ts";
+import { MIGRATION_0007, MODEL_CATALOG_SCHEMA_VERSION } from "./model-catalog-schema.ts";
 import { RUN_SCHEMA_VERSION } from "./run-schema.ts";
 import { MIGRATION_0001, RECORD_SCHEMA_VERSION, RECORD_TABLES } from "./schema.ts";
-import { PRODUCT_SCHEMA_VERSION, PRODUCT_TABLES } from "./sqlite-migrations.ts";
+import {
+  PRODUCT_SCHEMA_VERSION,
+  PRODUCT_TABLES,
+  PRODUCTION_MIGRATIONS,
+} from "./sqlite-migrations.ts";
 import { MIGRATION_TABLE } from "./sqlite-store.ts";
 
 function temporaryRoot(): Promise<LocalPath> {
@@ -77,6 +82,8 @@ describe("a fresh database", () => {
       ARTIFACT_PROVENANCE_SCHEMA_VERSION,
       MEMORY_SCHEMA_VERSION,
       LOOM_SCHEMA_VERSION,
+      MIGRATION_0007.version,
+      MODEL_CATALOG_SCHEMA_VERSION,
     ]);
     // Nothing to lose: a database at version 0 holds no product row.
     expect(store.report.backupPath).toBeNull();
@@ -117,6 +124,8 @@ describe("a fresh database", () => {
       "loom_manifests_by_scope",
       "memory_records_by_workspace",
       "model_attempts_by_turn",
+      "model_catalog_generations_by_provider",
+      "model_catalog_route_bindings_by_profile",
       "sessions_by_workspace",
       "turns_by_session",
     ]);
@@ -133,6 +142,33 @@ describe("a fresh database", () => {
     expect(reopened.report.schemaVersion).toBe(PRODUCT_SCHEMA_VERSION);
     expect(reopened.report.appliedThisRun).toEqual([]);
     await reopened.close();
+  });
+
+  test("adds route bindings without changing migration 0007 or losing its catalogs", async () => {
+    const root = await temporaryRoot();
+    const throughCatalogs = PRODUCTION_MIGRATIONS.slice(0, -1);
+    const legacy = await openProductStoreOrThrow(root, { migrations: throughCatalogs });
+    expect(
+      legacy.write((statements) =>
+        statements.run(
+          `INSERT INTO model_catalog_generations
+            (profile_id, provider_id, generation, catalog_json, published_at)
+           VALUES ('work', 'provider', 7, '{}', 100)`,
+        ),
+      ).ok,
+    ).toBe(true);
+    await legacy.close();
+
+    const upgraded = await openProductStoreOrThrow(root);
+    expect(upgraded.report.schemaVersion).toBe(MODEL_CATALOG_SCHEMA_VERSION);
+    expect(upgraded.report.appliedThisRun).toEqual([MODEL_CATALOG_SCHEMA_VERSION]);
+    expect(
+      upgraded.read(
+        `SELECT profile_id AS profileId FROM model_catalog_generations
+         WHERE profile_id = 'work' AND generation = 7`,
+      ),
+    ).toEqual({ ok: true, value: [{ profileId: "work" }] });
+    await upgraded.close();
   });
 });
 

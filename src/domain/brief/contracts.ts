@@ -111,10 +111,13 @@ export type BriefReceipt = {
   readonly selectedVerbosity: BriefVerbosityLevel;
   readonly dimensions: BriefDimensions;
   readonly byteLength: number;
+  readonly guidanceDigest: string;
   readonly placement: typeof BRIEF_PLACEMENT;
   readonly providerPlacementModified: boolean;
   readonly preservedFacts: readonly BriefPreservedFact[];
   readonly omissions: readonly BriefOmission[];
+  /** Provider output ceiling selected by Brief. This bounds generation; it never truncates it. */
+  readonly outputTokenBudget: number;
 };
 
 export type BriefProjection = {

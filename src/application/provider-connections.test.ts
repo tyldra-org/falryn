@@ -327,6 +327,20 @@ describe("provider connection service", () => {
         preserveCapabilities: true,
       }),
     ).toMatchObject({ kind: "failed", issue: { code: "invalid-endpoint" } });
+    for (const endpoint of [
+      "https://user:secret@api.example.test/v1",
+      "https://api.example.test/v1?api_key=secret",
+      "https://api.example.test/v1#secret",
+    ]) {
+      expect(
+        await service.execute({
+          kind: "configure",
+          profile: profile("cancel", endpoint),
+          preserveCredential: true,
+          preserveCapabilities: true,
+        }),
+      ).toMatchObject({ kind: "failed", issue: { code: "invalid-endpoint" } });
+    }
   });
 
   test("preserves enabled model capability declarations across CLI-style configure", async () => {

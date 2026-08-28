@@ -199,6 +199,8 @@ describe("provider connection arguments", () => {
       "coder-small",
       "--model",
       "coder-large",
+      "--catalog",
+      "local-models",
     );
     if (invocation.kind !== "run" || invocation.providerArgs?.action !== "add") {
       throw new Error("expected parsed provider add");
@@ -209,10 +211,11 @@ describe("provider connection arguments", () => {
       "coder-large",
     ]);
     expect(invocation.providerArgs.profile.modelCapabilities).toEqual([]);
+    expect(invocation.providerArgs.profile.catalogs).toEqual(["local-models"]);
     expect(JSON.stringify(invocation)).not.toMatch(/api.?key|secret/i);
   });
 
-  test("attaches the built-in source-verified capability declaration", async () => {
+  test("keeps bundled capability facts out of user profiles", async () => {
     const invocation = await parse(
       "provider",
       "add",
@@ -220,20 +223,13 @@ describe("provider connection arguments", () => {
       "--provider",
       "openai",
       "--model",
-      "gpt-4o-mini",
+      "gpt-5.6-sol",
     );
     if (invocation.kind !== "run" || invocation.providerArgs?.action !== "add") {
       throw new Error("expected parsed provider add");
     }
-    expect(invocation.providerArgs.profile.modelCapabilities).toEqual([
-      expect.objectContaining({
-        modelId: modelId.from("gpt-4o-mini"),
-        inputModalities: ["text", "image"],
-        outputModalities: ["text"],
-        tools: "supported",
-        contextTokens: 128_000,
-      }),
-    ]);
+    expect(invocation.providerArgs.profile.enabledModels).toEqual([modelId.from("gpt-5.6-sol")]);
+    expect(invocation.providerArgs.profile.modelCapabilities).toEqual([]);
 
     const custom = await parse(
       "provider",
@@ -244,7 +240,7 @@ describe("provider connection arguments", () => {
       "--endpoint",
       "https://provider.example.test/v1",
       "--model",
-      "gpt-4o-mini",
+      "gpt-5.6-sol",
     );
     if (custom.kind !== "run" || custom.providerArgs?.action !== "add") {
       throw new Error("expected parsed custom provider add");

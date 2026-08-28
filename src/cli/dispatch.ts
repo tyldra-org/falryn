@@ -408,6 +408,9 @@ async function launchShell(
           stopped.signal,
         );
   const provider = await composeProductProviderConnections(graph, globals, {
+    ...(productArtifactSession === null
+      ? {}
+      : { modelCatalogs: productArtifactSession.modelCatalogs }),
     configuration,
     ...(governance.ownedProcesses === undefined
       ? {}

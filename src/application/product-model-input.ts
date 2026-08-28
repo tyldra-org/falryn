@@ -1,6 +1,8 @@
 /** Provider-neutral model input derived from one composed prompt (#786). */
 
 import type {
+  BriefProjection,
+  BriefRequest,
   ComposedPromptRequest,
   EffectiveExecutionPolicy,
   RenderedPromptSection,
@@ -52,6 +54,10 @@ export function attemptModelInputFromPrompt(
   prompt: ComposedPromptRequest,
   disclosure: ProductToolDisclosure,
   executionPolicy: EffectiveExecutionPolicy,
+  options: {
+    readonly brief?: { readonly request: BriefRequest; readonly projection: BriefProjection };
+    readonly maxOutputTokens?: number;
+  } = {},
 ): AttemptModelInput {
   const system = prompt.sections.filter((section) => SYSTEM_ROLES.has(section.role));
   const user = prompt.sections.filter((section) => !SYSTEM_ROLES.has(section.role));
@@ -64,8 +70,29 @@ export function attemptModelInputFromPrompt(
     messages,
     tools: disclosure.modelTools,
     output: { kind: "text" },
-    budgets: {},
+    budgets: {
+      ...(options.brief === undefined && options.maxOutputTokens === undefined
+        ? {}
+        : {
+            maxOutputTokens: Math.min(
+              options.brief?.projection.receipt.outputTokenBudget ?? Number.POSITIVE_INFINITY,
+              options.maxOutputTokens ?? Number.POSITIVE_INFINITY,
+            ),
+          }),
+    },
     executionPolicy,
+    ...(options.brief === undefined
+      ? {}
+      : {
+          brief: {
+            request: options.brief.request,
+            receipt: options.brief.projection.receipt,
+            sectionSource: `brief:${options.brief.projection.receipt.policySource}`,
+            ...(options.maxOutputTokens === undefined
+              ? {}
+              : { maxOutputTokensCeiling: options.maxOutputTokens }),
+          },
+        }),
     disclosure: {
       catalogGeneration: disclosure.receipt.catalogGeneration,
       toolNames: disclosure.receipt.disclosed.map((tool) => tool.name),

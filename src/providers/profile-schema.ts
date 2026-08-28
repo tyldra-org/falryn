@@ -16,7 +16,12 @@ import {
 } from "../domain/credential.ts";
 import { modelId, providerId } from "../domain/identity.ts";
 import { err, ok, type Result } from "../domain/result.ts";
-import { DISCOVERY_POLICIES, PROVIDER_ADAPTER_KINDS } from "./adapter-kind.ts";
+import {
+  DISCOVERY_POLICIES,
+  PROVIDER_ADAPTER_KINDS,
+  type ProviderAdapterKind,
+} from "./adapter-kind.ts";
+import { isModelCatalogId, MAX_MODEL_CATALOGS_PER_PROFILE } from "./catalog/contracts.ts";
 import { MAX_PROVIDER_METADATA_ENTRY_LENGTH } from "./limits.ts";
 import { modelCapabilityDeclarationSchema } from "./model-capability-schema.ts";
 import type { ProviderProfile } from "./profile.ts";
@@ -30,6 +35,32 @@ const credentialReferenceSchema = z
   })
   .nullable();
 
+/** Validate a credential-free provider base URL before it can enter state. */
+export function providerEndpointIsAllowed(
+  adapterKind: ProviderAdapterKind,
+  endpoint: string | null,
+): boolean {
+  if (endpoint === null) {
+    return adapterKind !== "openai" && adapterKind !== "custom";
+  }
+  try {
+    const url = new URL(endpoint);
+    return (
+      url.username.length === 0 &&
+      url.password.length === 0 &&
+      url.search.length === 0 &&
+      url.hash.length === 0 &&
+      (url.protocol === "https:" ||
+        (url.protocol === "http:" &&
+          (url.hostname === "localhost" ||
+            url.hostname === "127.0.0.1" ||
+            url.hostname === "[::1]")))
+    );
+  } catch {
+    return false;
+  }
+}
+
 export const providerProfileSchema = z
   .object({
     profileId: z.string().min(1).max(MAX_PROVIDER_METADATA_ENTRY_LENGTH),
@@ -41,6 +72,10 @@ export const providerProfileSchema = z
     organization: z.union([z.string().min(1).max(MAX_PROVIDER_METADATA_ENTRY_LENGTH), z.null()]),
     project: z.union([z.string().min(1).max(MAX_PROVIDER_METADATA_ENTRY_LENGTH), z.null()]),
     enabledModels: z.array(brandedString(modelId)).max(128),
+    catalogs: z
+      .array(z.string().min(1).max(128).refine(isModelCatalogId, "invalid catalog identity"))
+      .max(MAX_MODEL_CATALOGS_PER_PROFILE)
+      .default([]),
     modelCapabilities: z.array(modelCapabilityDeclarationSchema).max(128).default([]),
     discovery: z.literal(DISCOVERY_POLICIES),
     timeouts: z
@@ -52,6 +87,14 @@ export const providerProfileSchema = z
   })
   .strict()
   .superRefine((profile, context) => {
+    if (!providerEndpointIsAllowed(profile.adapterKind, profile.endpoint)) {
+      context.addIssue({
+        code: "custom",
+        path: ["endpoint"],
+        message: "invalid or credential-bearing provider endpoint",
+      });
+    }
+
     const enabled = new Set<string>();
     for (const [index, id] of profile.enabledModels.entries()) {
       if (enabled.has(id)) {
@@ -82,6 +125,14 @@ export const providerProfileSchema = z
         });
       }
       declared.add(id);
+    }
+
+    if (new Set(profile.catalogs).size !== profile.catalogs.length) {
+      context.addIssue({
+        code: "custom",
+        path: ["catalogs"],
+        message: "duplicate model catalog identity",
+      });
     }
   });
 

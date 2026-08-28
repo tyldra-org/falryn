@@ -66,6 +66,8 @@ export type ModelDiscoveryPort = {
 
 export type StaticDiscoveryOptions = {
   readonly generation?: number;
+  /** User catalog facts already validated against this profile's destination. */
+  readonly catalogCapabilities?: readonly ModelCapabilityDeclaration[];
   readonly defaults?: Partial<
     Omit<
       ModelCapabilityDeclaration,
@@ -104,14 +106,29 @@ export function createStaticModelDiscovery(
       const declared = new Map(
         profile.modelCapabilities.map((capability) => [String(capability.modelId), capability]),
       );
+      const catalog = new Map(
+        (options.catalogCapabilities ?? []).map((capability) => [
+          String(capability.modelId),
+          capability,
+        ]),
+      );
       const models: ModelCapability[] = profile.enabledModels.map((id) => {
         const declaration = declared.get(String(id));
         if (declaration !== undefined) {
           return capabilityFromDeclaration(declaration);
         }
-        const known = knownModelCapability(profile.adapterKind, String(id), profile.endpoint);
+        const catalogDeclaration = catalog.get(String(id));
+        if (catalogDeclaration !== undefined) {
+          return capabilityFromDeclaration(catalogDeclaration, { provenance: ["user-catalog"] });
+        }
+        const known = knownModelCapability(
+          profile.adapterKind,
+          String(id),
+          profile.endpoint,
+          String(profile.providerId),
+        );
         if (known !== null) {
-          return capabilityFromDeclaration(known, { provenance: ["compatibility-default"] });
+          return capabilityFromDeclaration(known, { provenance: ["falryn-builtin"] });
         }
         const unknown = unknownModelCapability(id);
         return options.defaults === undefined
@@ -246,7 +263,7 @@ function mergeCatalogs(baseline: ModelCatalog, remote: ModelCatalog): ModelCatal
   );
   const merged = baseline.models.map((capability) => {
     const discovered = remoteById.get(String(capability.modelId));
-    return discovered === undefined ? capability : mergeCapability(capability, discovered);
+    return discovered === undefined ? capability : mergeCapability(discovered, capability);
   });
   return {
     generation: remote.generation,
@@ -257,32 +274,37 @@ function mergeCatalogs(baseline: ModelCatalog, remote: ModelCatalog): ModelCatal
   };
 }
 
-function mergeCapability(baseline: ModelCapability, remote: ModelCapability): ModelCapability {
+/** Higher-priority configured facts overlay provider discovery without hiding availability. */
+function mergeCapability(remote: ModelCapability, configured: ModelCapability): ModelCapability {
   const feature = (
-    discovered: ModelCapability["tools"],
     configured: ModelCapability["tools"],
-  ): ModelCapability["tools"] => (discovered === "unknown" ? configured : discovered);
+    discovered: ModelCapability["tools"],
+  ): ModelCapability["tools"] => (configured === "unknown" ? discovered : configured);
   return {
     schemaVersion: MODEL_CAPABILITY_SCHEMA_VERSION,
-    modelId: baseline.modelId,
-    displayName: remote.displayName ?? baseline.displayName,
+    modelId: configured.modelId,
+    displayName: configured.displayName ?? remote.displayName,
     inputModalities:
-      remote.inputModalities.length === 0 ? baseline.inputModalities : remote.inputModalities,
+      configured.inputModalities.length === 0 ? remote.inputModalities : configured.inputModalities,
     outputModalities:
-      remote.outputModalities.length === 0 ? baseline.outputModalities : remote.outputModalities,
-    tools: feature(remote.tools, baseline.tools),
-    structuredOutput: feature(remote.structuredOutput, baseline.structuredOutput),
-    streaming: feature(remote.streaming, baseline.streaming),
-    reasoning: feature(remote.reasoning, baseline.reasoning),
+      configured.outputModalities.length === 0
+        ? remote.outputModalities
+        : configured.outputModalities,
+    tools: feature(configured.tools, remote.tools),
+    structuredOutput: feature(configured.structuredOutput, remote.structuredOutput),
+    streaming: feature(configured.streaming, remote.streaming),
+    reasoning: feature(configured.reasoning, remote.reasoning),
     reasoningControls:
-      remote.reasoningControls.length === 0 ? baseline.reasoningControls : remote.reasoningControls,
-    contextTokens: remote.contextTokens ?? baseline.contextTokens,
-    outputTokens: remote.outputTokens ?? baseline.outputTokens,
+      configured.reasoningControls.length === 0
+        ? remote.reasoningControls
+        : configured.reasoningControls,
+    contextTokens: configured.contextTokens ?? remote.contextTokens,
+    outputTokens: configured.outputTokens ?? remote.outputTokens,
     completeness:
-      remote.completeness === "complete" || baseline.completeness === "complete"
+      configured.completeness === "complete" || remote.completeness === "complete"
         ? "complete"
         : "partial",
     availability: remote.availability,
-    provenance: [...new Set([...baseline.provenance, ...remote.provenance])],
+    provenance: [...new Set([...configured.provenance, ...remote.provenance])],
   };
 }

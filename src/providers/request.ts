@@ -14,6 +14,7 @@ import type {
   OutputContract,
   RequestMetadata,
 } from "./messages.ts";
+import type { ReasoningEffort } from "./policy.ts";
 
 export type ModelRequest = {
   readonly requestId: ModelRequestId;
@@ -23,5 +24,9 @@ export type ModelRequest = {
   readonly tools: readonly ModelToolDefinition[];
   readonly output: OutputContract;
   readonly budgets: ModelBudgets;
+  /** Falryn's provider-neutral posture for this request. */
+  readonly reasoning?: ReasoningEffort | undefined;
+  /** Exact provider-native control selected from the bound catalog, when available. */
+  readonly reasoningControl?: string | null | undefined;
   readonly metadata: RequestMetadata;
 };

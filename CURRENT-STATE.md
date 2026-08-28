@@ -29,7 +29,8 @@ to standard output and diagnostics go to standard error.
 ## Configuration home and local data
 
 Human-authored user configuration defaults to `~/.falryn/falryn.jsonc`, with
-profiles under `~/.falryn/profiles/` and named workspace layouts under
+profiles under `~/.falryn/profiles/`, user-authored model catalogs under
+`~/.falryn/catalogs/`, and named workspace layouts under
 `~/.falryn/layouts/`. Project configuration remains
 `<workspace>/.falryn/falryn.jsonc`. `FALRYN_CONFIG_DIR` is the explicit user
 configuration-root override.
@@ -73,20 +74,33 @@ semantic journaling, and bounded result projection before provider
 continuation. A headless turn cannot report completion unless a terminal model
 attempt ran.
 
-Each provider profile also persists a versioned, provider-neutral capability
-declaration for its enabled models. The declaration separates input modalities
-from output modalities and records tools, structured output, streaming,
-reasoning, provider-native reasoning controls, context limits, output limits,
-and completeness. Feature support is tri-state (`supported`, `unsupported`, or
-`unknown`); missing facts are never upgraded to support. The default
-`gpt-4o-mini` profile declares its source-verified text/image input, text
-output, tool, structured-output, streaming, and token-limit facts.
-Legacy default profiles receive that same declaration from a small versioned
-compatibility manifest only at the official OpenAI endpoint; unfamiliar model
-names and custom endpoints remain unknown.
+Model identity and model selection are stored separately. Falryn bundles a
+strict, versioned OpenAI model catalog into the executable, provider profiles
+select enabled model IDs and may reference user catalogs by identity, and
+optional inline profile declarations remain the highest-priority compatibility
+override. A user catalog is a bounded JSONC document at
+`~/.falryn/catalogs/<catalog-id>.jsonc`, bound to one provider identity, SDK
+adapter, and normalized endpoint so facts cannot cross destinations. Catalog
+documents separate input modalities from output modalities and record tools,
+structured output, streaming, reasoning, provider-native reasoning controls,
+context limits, output limits, and completeness. Feature support is tri-state
+(`supported`, `unsupported`, or `unknown`); missing facts are never upgraded to
+support. The default OpenAI profile enables the current general-purpose GPT-5.6 family: `gpt-5.6-sol`,
+`gpt-5.6-terra`, `gpt-5.6-luna`, and the moving `gpt-5.6` alias. Sol is ordered
+first for the default route. Their source-verified declarations record
+text/image input, text output, tools, structured output, streaming, reasoning
+controls, and token limits. Specialized realtime, audio, transcription,
+embedding, moderation, and image-generation models are not placed in this
+text-agent catalog because they require different request and output contracts.
+The compatibility manifest retains `gpt-4o-mini` for existing profiles, but
+fresh defaults do not select it. Compatibility facts apply only at the official
+OpenAI endpoint; unfamiliar model names and custom endpoints remain unknown.
 
 Remote catalog refresh uses the official OpenAI, Anthropic, or Google Gen AI
-TypeScript SDK selected by the profile. OpenAI's Models API contributes model
+TypeScript SDK selected by the profile. Successful provider-reported catalogs
+are cached as bounded, secret-free normalized documents beneath the
+platform-native cache root; the cache is disposable and scoped to the exact
+profile, provider, adapter, and endpoint. OpenAI's Models API contributes model
 identity and availability but no invented capability facts. Anthropic's richer
 Models response contributes modalities, limits, structured output, and
 reasoning controls. Google's Models response contributes supported actions,
@@ -95,16 +109,36 @@ unknown. Remote facts merge with explicit profile declarations under a new
 catalog generation. Only configured model IDs enter the effective catalog.
 Malformed records, stale generations, authentication failures, rate limits,
 timeouts, and cancellation fail closed with typed, secret-free outcomes.
-The live inference adapter currently uses the official OpenAI SDK; Anthropic
-and Google inference adapters are not yet exposed as live attempt runners.
+Before a live model adapter is created, the exact effective catalog is
+published immutably to the product SQLite state database with its provider
+profile, SDK adapter kind, and configured endpoint. Reusing a profile and
+generation with a different destination or catalog is a conflict. The model
+route and attempt retain that exact profile/destination binding and catalog
+generation, so cache eviction, profile reconfiguration, or a later provider
+refresh cannot change or erase the facts used by an in-flight or replayed
+decision. Catalog and profile files never contain credential bytes.
+Live inference uses the official OpenAI, Anthropic, or Google Gen AI SDK named
+by the selected profile. Each adapter translates the same bounded messages,
+tool definitions, tool continuations, output contract, token budget, usage,
+finish reason, cancellation, and typed failure events. A provider-native
+reasoning control is sent when the effective model catalog supports a mapping
+for the selected Falryn posture. `max` is an explicit quality-first posture and
+is eligible only when both the model catalog and adapter expose the provider's
+native `max` control. OpenAI's GPT-5.6 catalog maps Falryn `minimal` to `low` or
+`none`, not to the SDK's unrelated literal `minimal` compatibility value.
+Catalog modality support is also intersected with the adapter's current request
+transport; the live adapters accept text today and fail with
+`unsupported-capability` rather than dropping unresolved image handles. Falryn
+keeps retries above the SDK boundary; each SDK performs one request attempt.
 
 The provider request contains only the disclosed tool definitions, not the
-whole registered catalog. The attempt event retains the provider/model route,
-catalog, capability-schema, and policy generations, tool-schema digests, schema cost, unavailable
-capability families, omissions, and discovery handle. Provider disconnects,
-malformed requests, cancellation, timeout, fallback exhaustion, and uncertain
-effects remain typed outcomes. Completed or uncertain consequential tool
-effects are not retried as fresh work.
+whole registered catalog. The attempt event retains the provider profile,
+adapter kind, secret-safe destination identity, model route, resolved reasoning
+control, catalog, capability-schema, and policy generations, tool-schema
+digests, schema cost, unavailable capability families, omissions, and discovery
+handle. Provider disconnects, malformed requests, cancellation, timeout,
+fallback exhaustion, and uncertain effects remain typed outcomes. Completed or
+uncertain consequential tool effects are not retried as fresh work.
 
 The interactive composer and `falryn run` use the same application-owned
 live-turn executor. Both paths compose Context and Brief, run the selected
@@ -115,6 +149,22 @@ JSONL emits the same event values before its terminal result. A failed append,
 provider connection, context composition, attempt, or replay cannot be reported
 as an accepted or completed turn. Production does not fall back to the in-memory
 event-store test double when SQLite cannot open.
+
+Brief remains a pre-inference response-density policy; it never truncates or
+rewrites a completed answer and does not add a second model request. The shared
+live-turn path derives response obligations from the task and current Context
+state, preserves failures, risks, uncertainty, citations, validation, required
+actions, and recovery guidance, and reprojects those obligations before each
+provider continuation after tool results. Brief also supplies a mode-specific
+provider output ceiling. Projection failure is a typed turn failure rather than
+silent omission.
+
+`bun run benchmark:brief` provides a bounded matched-run scorecard against the
+pinned Caveman research policy. It records complete provider usage, retries,
+latency, guidance cost, required-fact fidelity, losing rows, and invalid rows
+without persisting raw model responses. The scorecard requires a configured
+live provider for comparative acceptance; deterministic fixtures prove only
+the comparison and failure plumbing.
 
 A shared deterministic integration fixture exercises that lifecycle through
 both public composition roots. Its first provider response invokes

@@ -6,6 +6,8 @@ import {
   type ArtifactId,
   type ArtifactStorePort,
   artifactId,
+  type BriefReceipt,
+  type BriefRequest,
   type ClockPort,
   type EffectiveExecutionPolicy,
   type EvidenceCandidate,
@@ -23,10 +25,13 @@ import {
   type ModelCatalog,
   type ModelPolicy,
   type ProviderAdapterPort,
+  type UsageUnits,
   type WorkIntent,
 } from "../providers/index.ts";
+import { createBriefComposer } from "./brief.ts";
 import { createContextPlanner } from "./context-planner.ts";
 import type { ProductAgentRuntime } from "./product-agent-runtime.ts";
+import { briefNeedAfterContext } from "./product-brief.ts";
 import type { ProductContextReceipt, ProductContextSource } from "./product-context-source.ts";
 import type { ProductMemoryTurn } from "./product-memory-turn.ts";
 import { attemptModelInputFromPrompt } from "./product-model-input.ts";
@@ -39,6 +44,12 @@ export type ProductLiveTurnInput = {
   readonly signal?: AbortSignal;
   readonly intent?: WorkIntent;
   readonly otherSections?: readonly PromptSectionInput[];
+  /** Normal Falryn response-density policy. Reprojected after live tool results. */
+  readonly briefRequest?: BriefRequest;
+  /** Research-only matched baseline policy; mutually exclusive with `briefRequest`. */
+  readonly responsePolicySection?: PromptSectionInput;
+  /** Explicit matched provider ceiling used by comparative tooling. */
+  readonly maxOutputTokens?: number;
 };
 
 export type ProductLiveTurnResult = {
@@ -63,6 +74,9 @@ export type ProductLiveTurnResult = {
   readonly effectiveReasoning: string | null;
   readonly policyGeneration: number;
   readonly planArtifactId: ArtifactId | null;
+  readonly briefReceipt: BriefReceipt | null;
+  readonly providerUsage: UsageUnits | null;
+  readonly providerRequests: number;
 };
 
 export type ProductExecutionProfileSelection =
@@ -168,6 +182,9 @@ export function createProductLiveTurnExecutor(
       | "effectiveReasoning"
       | "policyGeneration"
       | "planArtifactId"
+      | "briefReceipt"
+      | "providerUsage"
+      | "providerRequests"
     > &
       Partial<
         Pick<
@@ -179,6 +196,9 @@ export function createProductLiveTurnExecutor(
           | "effectiveReasoning"
           | "policyGeneration"
           | "planArtifactId"
+          | "briefReceipt"
+          | "providerUsage"
+          | "providerRequests"
         >
       >,
   ): ProductLiveTurnResult => {
@@ -191,6 +211,9 @@ export function createProductLiveTurnExecutor(
       effectiveReasoning: null,
       policyGeneration: Number(correlation.configurationGeneration),
       planArtifactId: null,
+      briefReceipt: null,
+      providerUsage: null,
+      providerRequests: 0,
       ...fields,
       events: producer.events(),
     };
@@ -478,6 +501,49 @@ export function createProductLiveTurnExecutor(
               };
       const recalledMemories = recalled?.ok === true ? recalled.value.recalledCount : 0;
 
+      if (input.briefRequest !== undefined && input.responsePolicySection !== undefined) {
+        return settleFailure(
+          input,
+          {
+            kind: "failed",
+            code: "brief.conflicting-policy",
+            message: "Brief and comparison response policies cannot both be active",
+            contextStatus: prepared.receipt?.status ?? "static",
+            contextGeneration: prepared.receipt?.generation ?? null,
+            recalledMemories,
+          },
+          executionPolicy,
+        );
+      }
+      const briefRequest =
+        input.briefRequest === undefined
+          ? null
+          : {
+              ...input.briefRequest,
+              need: briefNeedAfterContext(input.briefRequest.need, {
+                status: prepared.receipt?.status ?? "static",
+                candidateCount: prepared.candidates.length,
+              }),
+            };
+      const briefed =
+        briefRequest === null
+          ? null
+          : createBriefComposer().projectForTurn(input.turnId, briefRequest);
+      if (briefed !== null && !briefed.ok) {
+        return settleFailure(
+          input,
+          {
+            kind: "failed",
+            code: `brief.${briefed.error.code}`,
+            message: `Brief could not prepare the response policy (${briefed.error.code})`,
+            contextStatus: prepared.receipt?.status ?? "static",
+            contextGeneration: prepared.receipt?.generation ?? null,
+            recalledMemories,
+          },
+          executionPolicy,
+        );
+      }
+
       const registry = options.runtime.toolRegistry;
       if (registry === null) {
         return settleFailure(
@@ -504,6 +570,8 @@ export function createProductLiveTurnExecutor(
           ...(input.otherSections ?? []),
           ...prepared.sections,
           ...(memorySection === null ? [] : [memorySection]),
+          ...(briefed?.ok ? [briefed.value.section] : []),
+          ...(input.responsePolicySection === undefined ? [] : [input.responsePolicySection]),
         ],
       });
       if (!planned.ok) {
@@ -576,6 +644,10 @@ export function createProductLiveTurnExecutor(
         catalogs: [
           {
             providerId: provider.value.identity.providerId,
+            profileId: provider.value.identity.profileId,
+            adapterKind: provider.value.identity.adapterKind,
+            destinationId: provider.value.identity.destinationId,
+            requestInputModalities: provider.value.requestInputModalities,
             catalog: options.providerCatalog,
           },
         ],
@@ -587,7 +659,14 @@ export function createProductLiveTurnExecutor(
         configurationGeneration: correlation.configurationGeneration,
         signal: input.signal ?? new AbortController().signal,
         intent: input.intent ?? executionPolicy.workIntent,
-        modelInput: attemptModelInputFromPrompt(planned.value.prompt, disclosure, executionPolicy),
+        modelInput: attemptModelInputFromPrompt(planned.value.prompt, disclosure, executionPolicy, {
+          ...(briefed?.ok && briefRequest !== null
+            ? { brief: { request: briefRequest, projection: briefed.value.projection } }
+            : {}),
+          ...(input.maxOutputTokens === undefined
+            ? {}
+            : { maxOutputTokens: input.maxOutputTokens }),
+        }),
       });
       const attemptOutcome =
         attempted.turn?.status === "terminal" && attempted.turn.outcome !== null
@@ -599,6 +678,16 @@ export function createProductLiveTurnExecutor(
         (total, attempt) => total + (attempt.output?.toolResults ?? 0),
         0,
       );
+      const providerRequests = attempted.attempts.reduce(
+        (total, attempt) => total + (attempt.output?.providerRequests ?? 0),
+        0,
+      );
+      const providerUsage = aggregateAttemptUsage(
+        attempted.attempts.map((attempt) => attempt.output),
+      );
+      const briefReceipt =
+        lastAttempt?.output?.briefReceipt ??
+        (briefed?.ok ? briefed.value.projection.receipt : null);
       const planArtifactId =
         attempted.kind === "completed"
           ? await retainPlan(executionPolicy, input.turnId, response, input.signal)
@@ -672,7 +761,56 @@ export function createProductLiveTurnExecutor(
         effectiveReasoning: lastAttempt?.receipt.reasoning ?? null,
         policyGeneration: Number(executionPolicy.configurationGeneration),
         planArtifactId,
+        briefReceipt,
+        providerUsage,
+        providerRequests,
       });
     },
+  };
+}
+
+function aggregateAttemptUsage(
+  outputs: readonly (
+    | {
+        readonly usage?: UsageUnits | null;
+      }
+    | null
+    | undefined
+  )[],
+): UsageUnits | null {
+  if (
+    outputs.length === 0 ||
+    outputs.some(
+      (output) =>
+        output?.usage === undefined ||
+        output.usage === null ||
+        output.usage.provenance !== "provider-reported" ||
+        output.usage.inputTokens === undefined ||
+        output.usage.outputTokens === undefined,
+    )
+  ) {
+    return null;
+  }
+  const usage = outputs.map((output) => output?.usage as UsageUnits);
+  return {
+    provenance: "provider-reported",
+    inputTokens: usage.reduce((total, entry) => total + (entry.inputTokens ?? 0), 0),
+    outputTokens: usage.reduce((total, entry) => total + (entry.outputTokens ?? 0), 0),
+    ...(usage.every((entry) => entry.totalTokens !== undefined)
+      ? { totalTokens: usage.reduce((total, entry) => total + (entry.totalTokens ?? 0), 0) }
+      : {}),
+    ...(usage.every((entry) => entry.cachedInputTokens !== undefined)
+      ? {
+          cachedInputTokens: usage.reduce(
+            (total, entry) => total + (entry.cachedInputTokens ?? 0),
+            0,
+          ),
+        }
+      : {}),
+    ...(usage.every((entry) => entry.reasoningTokens !== undefined)
+      ? {
+          reasoningTokens: usage.reduce((total, entry) => total + (entry.reasoningTokens ?? 0), 0),
+        }
+      : {}),
   };
 }
