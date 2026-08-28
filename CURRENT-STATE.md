@@ -116,6 +116,22 @@ provider connection, context composition, attempt, or replay cannot be reported
 as an accepted or completed turn. Production does not fall back to the in-memory
 event-store test double when SQLite cannot open.
 
+Brief remains a pre-inference response-density policy; it never truncates or
+rewrites a completed answer and does not add a second model request. The shared
+live-turn path derives response obligations from the task and current Context
+state, preserves failures, risks, uncertainty, citations, validation, required
+actions, and recovery guidance, and reprojects those obligations before each
+provider continuation after tool results. Brief also supplies a mode-specific
+provider output ceiling. Projection failure is a typed turn failure rather than
+silent omission.
+
+`bun run benchmark:brief` provides a bounded matched-run scorecard against the
+pinned Caveman research policy. It records complete provider usage, retries,
+latency, guidance cost, required-fact fidelity, losing rows, and invalid rows
+without persisting raw model responses. The scorecard requires a configured
+live provider for comparative acceptance; deterministic fixtures prove only
+the comparison and failure plumbing.
+
 A shared deterministic integration fixture exercises that lifecycle through
 both public composition roots. Its first provider response invokes
 `run_process`, the exact `ls -la` capture is reduced by `files.ls`, and the

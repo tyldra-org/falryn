@@ -39,6 +39,7 @@ import {
 } from "../application/index.ts";
 import {
   type ArtifactStorePort,
+  type BriefReceipt,
   type BriefVerbosityMode,
   type CredentialReference,
   type ExecutionProfileId,
@@ -47,6 +48,7 @@ import {
   type InputStreamPort,
   type Instant,
   type ProcessCapturePort,
+  type PromptSectionInput,
   primaryWorkspaceRoot,
   type RuntimeEvent,
   sessionId as sessionIdCodec,
@@ -66,7 +68,11 @@ import {
   type OpenAiSdkFetch,
   type OwnedProcessRegistry,
 } from "../integrations/index.ts";
-import { catalogFromAdapterModels, type ModelCatalog } from "../providers/index.ts";
+import {
+  catalogFromAdapterModels,
+  type ModelCatalog,
+  type UsageUnits,
+} from "../providers/index.ts";
 import type { ProviderAdapterPort } from "../providers/port.ts";
 import { startConfigurationReloadWatcher } from "./configuration-reload.ts";
 import type { GlobalOptions } from "./options.ts";
@@ -144,6 +150,9 @@ export type CodingRunPayload = {
   readonly effectiveReasoning?: string | null;
   readonly policyGeneration?: number;
   readonly planArtifactId?: string | null;
+  readonly briefReceipt?: BriefReceipt | null;
+  readonly providerUsage?: UsageUnits | null;
+  readonly providerRequests?: number;
 };
 
 export type CodingRunResult = CommandResultOf<typeof CODING_RUN_COMMAND, CodingRunPayload>;
@@ -190,6 +199,13 @@ export type CodingRunOptions = {
   readonly processCapture?: ProcessCapturePort;
   /** Focused confirmation host; absent remains fail-closed for consequential tools. */
   readonly toolConfirmation?: ProductToolConfirmationPort;
+  /** Internal scorecard seam. It is not a public CLI option. */
+  readonly responsePolicyOverride?: {
+    readonly section: PromptSectionInput;
+    readonly maxOutputTokens: number;
+  };
+  /** Internal matched-run ceiling applied to either response policy. */
+  readonly maxOutputTokensOverride?: number;
 };
 
 /**
@@ -566,19 +582,17 @@ export async function runCoding(
       arguments_.brief ?? executionProfile(selectedExecutionProfile).defaultBriefVerbosity;
     const briefOwner = PRODUCT_BRIEF_OWNER;
     const briefControls = composeProductBriefControls({ initialVerbosity: briefVerbosity });
-    const briefed = briefControls.projectForTurn({
+    const briefRequest = briefControls.requestForTurn({
       turnId,
       sessionId,
       configurationGeneration: generation,
+      prompt: resolved.prompt,
+      interface: "headless",
     });
     const memoryTurn = composeProductMemoryTurn({
       admission: memoryTools.admission,
       recall: memoryTools.recall,
     });
-    const otherSections = [];
-    if (briefed.ok) {
-      otherSections.push(briefed.value.section);
-    }
     const contextSource =
       indexStore === null
         ? createUnavailableProductContextSource(
@@ -605,7 +619,15 @@ export async function runCoding(
       prompt: resolved.prompt,
       turnId,
       ...(options.signal === undefined ? {} : { signal: options.signal }),
-      otherSections,
+      ...(options.responsePolicyOverride === undefined ? { briefRequest } : {}),
+      ...(options.responsePolicyOverride === undefined
+        ? options.maxOutputTokensOverride === undefined
+          ? {}
+          : { maxOutputTokens: options.maxOutputTokensOverride }
+        : {
+            responsePolicySection: options.responsePolicyOverride.section,
+            maxOutputTokens: options.responsePolicyOverride.maxOutputTokens,
+          }),
     });
     const succeeded = attempted.kind === "completed";
     const errors = succeeded
@@ -658,6 +680,9 @@ export async function runCoding(
         effectiveReasoning: attempted.effectiveReasoning,
         policyGeneration: attempted.policyGeneration,
         planArtifactId: attempted.planArtifactId,
+        briefReceipt: attempted.briefReceipt,
+        providerUsage: attempted.providerUsage,
+        providerRequests: attempted.providerRequests,
       },
       errors,
       attempted.terminalOutcome,

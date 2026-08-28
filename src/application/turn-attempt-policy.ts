@@ -19,6 +19,8 @@ import {
   type AttemptFailureCategory,
   type AttemptIdentity,
   assertNever,
+  type BriefReceipt,
+  type BriefRequest,
   type CapabilityId,
   type ClockPort,
   type ConfigurationGeneration,
@@ -52,6 +54,7 @@ import type {
   RoutedCatalogEntry,
   RoutingOutcome,
   RoutingReceipt,
+  UsageUnits,
   WorkIntent,
 } from "../providers/index.ts";
 import { resolveModelRoute, resolveNextFallback } from "../providers/index.ts";
@@ -68,6 +71,14 @@ export type AttemptModelInput = {
   /** Immutable execution-profile/effect snapshot for this turn. */
   /** Absent only for pre-profile test/adapter inputs; product turns always bind one. */
   readonly executionPolicy?: EffectiveExecutionPolicy;
+  /** Mutable response policy inputs; the provider conversation remains on one lineage. */
+  readonly brief?: {
+    readonly request: BriefRequest;
+    readonly receipt: BriefReceipt;
+    readonly sectionSource: string;
+    /** Caller/provider ceiling before Brief selects the current turn budget. */
+    readonly maxOutputTokensCeiling?: number;
+  };
   /** Registry generation and concrete names visible to this attempt. */
   readonly disclosure: {
     readonly catalogGeneration: ConfigurationGeneration;
@@ -113,6 +124,9 @@ export type AttemptRunnerResult = {
     readonly text: string;
     readonly reasoning: string;
     readonly toolResults: number;
+    readonly providerRequests?: number;
+    readonly usage?: UsageUnits | null;
+    readonly briefReceipt?: BriefReceipt | null;
   };
 };
 

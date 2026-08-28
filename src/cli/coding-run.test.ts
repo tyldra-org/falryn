@@ -214,13 +214,16 @@ describe("runCoding", () => {
     const seeded = await seededHome();
     const services = providerFor(seeded)(globalsFor(seeded));
     const streams = createRecordingCliStreams({ stdin: null });
+    const requests: ModelRequest[] = [];
     const result = await runCoding(
       services,
-      { promptParts: ["hello"] },
+      { promptParts: ["Implement and verify this with cited sources"], brief: "auto" },
       {
         input: streams.input,
         globals: globalsFor(seeded),
-        providerAdapter: createDeterministicProviderAdapter(),
+        providerAdapter: createDeterministicProviderAdapter({
+          onRequest: (request) => requests.push(request),
+        }),
         identities: {
           sessionId: "session-run-hosted",
           turnId: "turn-run-hosted",
@@ -234,6 +237,25 @@ describe("runCoding", () => {
     expect(result.payload?.modelAttempts).toBe(1);
     expect(result.payload?.toolResults).toBe(0);
     expect(result.payload?.disclosedTools).toBeGreaterThan(0);
+    expect(result.payload?.briefReceipt).toMatchObject({
+      requestedMode: "auto",
+      selectedVerbosity: "detailed",
+      outputTokenBudget: 8_192,
+    });
+    expect(result.payload?.briefReceipt?.preservedFacts).toEqual(
+      expect.arrayContaining(["citation", "validation"]),
+    );
+    expect(requests[0]?.budgets.maxOutputTokens).toBe(8_192);
+    expect(
+      requests[0]?.messages
+        .flatMap((message) => message.parts)
+        .some(
+          (part) =>
+            part.kind === "text" &&
+            part.text.includes("Keep citations") &&
+            part.text.includes("Keep validation results"),
+        ),
+    ).toBe(true);
     expect(result.payload).toMatchObject({
       executionProfile: "agent",
       executionProfileVersion: 1,

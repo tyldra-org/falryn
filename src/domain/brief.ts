@@ -6,6 +6,21 @@
  */
 
 export type {
+  BriefComparisonArm,
+  BriefComparisonInvalidReason,
+  BriefComparisonMatch,
+  BriefComparisonPair,
+  BriefComparisonResult,
+  BriefComparisonUsage,
+  BriefComparisonVerdict,
+} from "./brief/comparison.ts";
+export {
+  BRIEF_COMPARISON_INVALID_REASONS,
+  BRIEF_COMPARISON_SCHEMA_VERSION,
+  BRIEF_COMPARISON_VERDICTS,
+  compareBriefPair,
+} from "./brief/comparison.ts";
+export type {
   BriefComplexity,
   BriefDensity,
   BriefDetail,
@@ -50,6 +65,7 @@ export {
   MAX_BRIEF_GUIDANCE_BYTES,
 } from "./brief/contracts.ts";
 export {
+  briefOutputTokenBudget,
   isBriefPolicySource,
   isBriefVerbosityMode,
   preservedFactsFromNeed,

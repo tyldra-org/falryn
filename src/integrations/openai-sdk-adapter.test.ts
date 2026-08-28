@@ -79,7 +79,7 @@ describe("createOpenAiSdkAdapter", () => {
         return sseResponse([
           'data: {"choices":[{"delta":{"content":"Hi"}}]}\n\n',
           'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n',
-          'data: {"choices":[],"usage":{"prompt_tokens":11,"completion_tokens":3,"prompt_tokens_details":{"cached_tokens":4},"completion_tokens_details":{"reasoning_tokens":1}}}\n\n',
+          'data: {"choices":[],"usage":{"prompt_tokens":11,"completion_tokens":3,"total_tokens":14,"prompt_tokens_details":{"cached_tokens":4},"completion_tokens_details":{"reasoning_tokens":1}}}\n\n',
           "data: [DONE]\n\n",
         ]);
       },
@@ -93,6 +93,7 @@ describe("createOpenAiSdkAdapter", () => {
         provenance: "provider-reported",
         inputTokens: 11,
         outputTokens: 3,
+        totalTokens: 14,
         cachedInputTokens: 4,
         reasoningTokens: 1,
       },

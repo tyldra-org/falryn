@@ -79,15 +79,17 @@ export function createProductSubmissionPort(
       }
 
       const id = nextTurnId();
-      const briefed = brief.projectForTurn({
+      const briefRequest = brief.requestForTurn({
         turnId: id,
         sessionId: options.sessionId,
         configurationGeneration: options.configurationGeneration,
+        prompt: snapshot.text,
+        interface: "interactive",
       });
       const started = await options.executor.run({
         prompt: snapshot.text,
         turnId: id,
-        otherSections: briefed.ok ? [briefed.value.section] : [],
+        briefRequest,
       });
       if (started.kind !== "completed") {
         return unavailable(snapshot, `${started.message} (${started.code})`);

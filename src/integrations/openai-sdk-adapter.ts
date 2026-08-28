@@ -179,6 +179,7 @@ function usageEvent(
       provenance: "provider-reported",
       inputTokens: usage.prompt_tokens,
       outputTokens: usage.completion_tokens,
+      totalTokens: usage.total_tokens,
       ...(usage.prompt_tokens_details?.cached_tokens === undefined
         ? {}
         : { cachedInputTokens: usage.prompt_tokens_details.cached_tokens }),

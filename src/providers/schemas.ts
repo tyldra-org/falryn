@@ -159,6 +159,7 @@ const usageSchema = z
   .object({
     inputTokens: z.number().int().nonnegative().optional(),
     outputTokens: z.number().int().nonnegative().optional(),
+    totalTokens: z.number().int().nonnegative().optional(),
     cachedInputTokens: z.number().int().nonnegative().optional(),
     reasoningTokens: z.number().int().nonnegative().optional(),
     provenance: z.literal(["provider-reported", "estimate", "unknown"]),

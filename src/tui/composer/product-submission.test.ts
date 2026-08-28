@@ -55,6 +55,9 @@ describe("product submission port", () => {
           effectiveReasoning: "provider-default",
           policyGeneration: 0,
           planArtifactId: null,
+          briefReceipt: null,
+          providerUsage: null,
+          providerRequests: 0,
         };
       }),
       sessionId: correlation.sessionId,
@@ -96,6 +99,9 @@ describe("product submission port", () => {
         effectiveReasoning: "provider-default",
         policyGeneration: 0,
         planArtifactId: null,
+        briefReceipt: null,
+        providerUsage: null,
+        providerRequests: 0,
       };
     });
     const first = createProductSubmissionPort({

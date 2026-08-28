@@ -173,6 +173,19 @@ describe("brief", () => {
     expect(hard.ok).toBe(true);
     if (hard.ok) {
       expect(hard.value.receipt.selectedVerbosity).toBe("detailed");
+      expect(hard.value.receipt.outputTokenBudget).toBe(8_192);
+    }
+
+    const unsafeHeadless = projectBrief(
+      request({
+        policy: { verbosity: "auto", source: "interface" },
+        need: { interface: "headless", failures: true },
+      }),
+    );
+    expect(unsafeHeadless.ok).toBe(true);
+    if (unsafeHeadless.ok) {
+      expect(unsafeHeadless.value.receipt.selectedVerbosity).toBe("detailed");
+      expect(unsafeHeadless.value.receipt.preservedFacts).toContain("failure");
     }
 
     expect(selectBriefVerbosity("auto", DEFAULT_BRIEF_NEED)).toBe("balanced");

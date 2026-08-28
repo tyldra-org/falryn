@@ -7,9 +7,11 @@ import {
   createInMemoryFileSystem,
   createManualClock,
   createStubCommandRunner,
+  DEFAULT_BRIEF_NEED,
   instant,
   localPath,
   modelAttemptId,
+  projectBrief,
   sessionId,
   streamId,
   traceId,
@@ -284,8 +286,23 @@ describe("createProductAttemptRunner", () => {
               argumentFragments: [
                 '{"command":"printf \'first\\nsecond api_key=hunter2\\n\'","outputMode":"raw"}',
               ],
+              usage: {
+                inputTokens: 10,
+                outputTokens: 2,
+                totalTokens: 12,
+                provenance: "provider-reported",
+              },
             }
-          : { kind: "text", text: "done" },
+          : {
+              kind: "text",
+              text: "done",
+              usage: {
+                inputTokens: 8,
+                outputTokens: 3,
+                totalTokens: 11,
+                provenance: "provider-reported",
+              },
+            },
       onRequest: (request) => requests.push(request),
     });
     const correlation = {
@@ -347,6 +364,17 @@ describe("createProductAttemptRunner", () => {
     if (model === undefined) {
       throw new Error("missing deterministic model");
     }
+    const briefRequest = {
+      turnId: targetTurn,
+      sessionId: correlation.sessionId,
+      configurationGeneration: generation,
+      need: DEFAULT_BRIEF_NEED,
+      policy: { verbosity: "compact" as const, source: "user" as const },
+    };
+    const briefProjection = projectBrief(briefRequest);
+    if (!briefProjection.ok) {
+      throw new Error(briefProjection.error.code);
+    }
     const result = await runner.value.run({
       turnId: targetTurn,
       identity: {
@@ -375,10 +403,26 @@ describe("createProductAttemptRunner", () => {
       configurationGeneration: generation,
       signal: new AbortController().signal,
       modelInput: {
-        messages: [{ role: "user", parts: [{ kind: "text", text: "say hello" }] }],
+        messages: [
+          {
+            role: "system",
+            parts: [
+              {
+                kind: "text",
+                text: `[brief source=brief:user]\n${briefProjection.value.guidance}`,
+              },
+            ],
+          },
+          { role: "user", parts: [{ kind: "text", text: "say hello" }] },
+        ],
         tools: disclosure.modelTools,
         output: { kind: "text" },
-        budgets: {},
+        budgets: { maxOutputTokens: briefProjection.value.receipt.outputTokenBudget },
+        brief: {
+          request: briefRequest,
+          receipt: briefProjection.value.receipt,
+          sectionSource: "brief:user",
+        },
         disclosure: {
           catalogGeneration: disclosure.receipt.catalogGeneration,
           toolNames: disclosure.receipt.disclosed.map((tool) => tool.name),
@@ -405,6 +449,11 @@ describe("createProductAttemptRunner", () => {
       providerCatalogGeneration: 1,
       modelCapabilitySchemaVersion: 1,
     });
+    expect(requests[1]?.messages[0]?.parts[0]).toMatchObject({
+      kind: "text",
+      text: expect.stringContaining("Keep risk warnings visible"),
+    });
+    expect(requests[1]?.budgets.maxOutputTokens).toBe(2_048);
     const toolMessage = requests[1]?.messages.find((message) => message.role === "tool");
     const toolPart = toolMessage?.parts[0];
     if (toolPart?.kind !== "text") {
@@ -430,6 +479,20 @@ describe("createProductAttemptRunner", () => {
     expect(JSON.stringify(continuation.output.value).match(/first/g)).toHaveLength(1);
     expect("hush" in continuation.output.value).toBe(false);
     expect("capture" in continuation.output.value).toBe(false);
+    expect(result.output).toMatchObject({
+      providerRequests: 2,
+      usage: {
+        inputTokens: 18,
+        outputTokens: 5,
+        totalTokens: 23,
+        provenance: "provider-reported",
+      },
+      briefReceipt: {
+        selectedVerbosity: "compact",
+        preservedFacts: ["risk"],
+        outputTokenBudget: 2_048,
+      },
+    });
     expect(tools.catalog.resolve("run_shell")?.id).toBe(
       capabilityId.from("builtin:workspace/run_shell@1"),
     );

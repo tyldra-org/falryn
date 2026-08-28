@@ -206,6 +206,13 @@ export {
   toCodecIssues,
 } from "./branded-schema.ts";
 export type {
+  BriefComparisonArm,
+  BriefComparisonInvalidReason,
+  BriefComparisonMatch,
+  BriefComparisonPair,
+  BriefComparisonResult,
+  BriefComparisonUsage,
+  BriefComparisonVerdict,
   BriefComplexity,
   BriefDensity,
   BriefDetail,
@@ -228,6 +235,9 @@ export type {
   BriefVerbosityMode,
 } from "./brief.ts";
 export {
+  BRIEF_COMPARISON_INVALID_REASONS,
+  BRIEF_COMPARISON_SCHEMA_VERSION,
+  BRIEF_COMPARISON_VERDICTS,
   BRIEF_COMPLEXITIES,
   BRIEF_DENSITIES,
   BRIEF_DETAIL_LEVELS,
@@ -243,6 +253,8 @@ export {
   BRIEF_STRATEGY_VERSION,
   BRIEF_VERBOSITY_LEVELS,
   BRIEF_VERBOSITY_MODES,
+  briefOutputTokenBudget,
+  compareBriefPair,
   DEFAULT_BRIEF_MAX_BYTES,
   DEFAULT_BRIEF_NEED,
   DEFAULT_BRIEF_POLICY,

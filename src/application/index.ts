@@ -24,6 +24,20 @@ export type {
   BriefComposerResult,
 } from "./brief.ts";
 export { briefSection, createBriefComposer } from "./brief.ts";
+export type {
+  CavemanIntensity,
+  CavemanPolicyError,
+  CavemanSourcePort,
+  PinnedCavemanPolicy,
+} from "./brief-comparison.ts";
+export {
+  CAVEMAN_ADAPTER_VERSION,
+  CAVEMAN_INTENSITIES,
+  CAVEMAN_PINNED_COMMIT,
+  CAVEMAN_PINNED_SKILL_DIGEST,
+  CAVEMAN_PINNED_SKILL_PATH,
+  loadPinnedCavemanPolicy,
+} from "./brief-comparison.ts";
 export type { BudgetLedger } from "./budget-ledger.ts";
 export { createBudgetLedger, MAX_BUDGET_DEPTH } from "./budget-ledger.ts";
 export type { CompactDocumentReader } from "./compact-document-read.ts";
@@ -197,9 +211,17 @@ export type {
 export { composeProductAgentRuntime } from "./product-agent-runtime.ts";
 export type { ProductAttemptRunnerOptions } from "./product-attempt-runner.ts";
 export { createProductAttemptRunner } from "./product-attempt-runner.ts";
-export type { ProductBriefControls, ProductBriefControlsOptions } from "./product-brief.ts";
+export type {
+  ProductBriefContextState,
+  ProductBriefControls,
+  ProductBriefControlsOptions,
+  ProductBriefTurnInput,
+} from "./product-brief.ts";
 export {
+  briefNeedAfterContext,
+  briefNeedAfterToolResults,
   composeProductBriefControls,
+  deriveProductBriefNeed,
   describeBriefVerbosityModes,
   PRODUCT_BRIEF_OWNER,
 } from "./product-brief.ts";

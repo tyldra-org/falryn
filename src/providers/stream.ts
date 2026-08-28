@@ -38,6 +38,7 @@ export type ProviderEventSpine = {
 export type UsageUnits = {
   readonly inputTokens?: number | undefined;
   readonly outputTokens?: number | undefined;
+  readonly totalTokens?: number | undefined;
   readonly cachedInputTokens?: number | undefined;
   readonly reasoningTokens?: number | undefined;
   /**

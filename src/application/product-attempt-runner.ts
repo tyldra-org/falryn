@@ -28,7 +28,10 @@ import {
   type ModelRequest,
   modelRequestId,
   type ProviderAdapterPort,
+  type UsageUnits,
 } from "../providers/index.ts";
+import { createBriefComposer } from "./brief.ts";
+import { briefNeedAfterToolResults } from "./product-brief.ts";
 import { measureProductToolSchema } from "./product-tool-disclosure.ts";
 import {
   createProductToolGateway,
@@ -386,6 +389,70 @@ function invalidAttempt(message: string): AttemptRunnerResult {
   };
 }
 
+function aggregateProviderUsage(usage: readonly (UsageUnits | null)[]): UsageUnits | null {
+  if (
+    usage.length === 0 ||
+    usage.some(
+      (entry) =>
+        entry === null ||
+        entry.provenance !== "provider-reported" ||
+        entry.inputTokens === undefined ||
+        entry.outputTokens === undefined,
+    )
+  ) {
+    return null;
+  }
+  return {
+    provenance: "provider-reported",
+    inputTokens: usage.reduce((total, entry) => total + (entry?.inputTokens ?? 0), 0),
+    outputTokens: usage.reduce((total, entry) => total + (entry?.outputTokens ?? 0), 0),
+    ...(usage.every((entry) => entry?.totalTokens !== undefined)
+      ? { totalTokens: usage.reduce((total, entry) => total + (entry?.totalTokens ?? 0), 0) }
+      : {}),
+    ...(usage.every((entry) => entry?.cachedInputTokens !== undefined)
+      ? {
+          cachedInputTokens: usage.reduce(
+            (total, entry) => total + (entry?.cachedInputTokens ?? 0),
+            0,
+          ),
+        }
+      : {}),
+    ...(usage.every((entry) => entry?.reasoningTokens !== undefined)
+      ? {
+          reasoningTokens: usage.reduce((total, entry) => total + (entry?.reasoningTokens ?? 0), 0),
+        }
+      : {}),
+  };
+}
+
+function replaceBriefGuidance(messages: ModelMessage[], source: string, guidance: string): boolean {
+  const marker = `[brief source=${source}]`;
+  for (const [index, entry] of messages.entries()) {
+    if (entry.role !== "system") {
+      continue;
+    }
+    const text = entry.parts
+      .filter((part) => part.kind === "text")
+      .map((part) => part.text)
+      .join("");
+    const start = text.indexOf(marker);
+    if (start < 0) {
+      continue;
+    }
+    const contentStart = start + marker.length;
+    const nextSection = text.indexOf("\n\n[", contentStart);
+    const end = nextSection < 0 ? text.length : nextSection;
+    messages[index] = {
+      role: "system",
+      parts: [
+        { kind: "text", text: `${text.slice(0, contentStart)}\n${guidance}${text.slice(end)}` },
+      ],
+    };
+    return true;
+  }
+  return false;
+}
+
 function validateDisclosure(request: AttemptRunnerRequest, registry: ToolRegistry): string | null {
   const input = request.modelInput;
   if (input === null) {
@@ -506,7 +573,7 @@ export function createProductAttemptRunner(
         return invalidAttempt("selected model is unavailable on the provider adapter");
       }
 
-      const budgets = effectiveBudgets(request);
+      let budgets = effectiveBudgets(request);
       const deadline = attemptDeadline(request.signal, budgets.wallTimeMs);
       const messages: ModelMessage[] = [...input.messages];
       const assistantText: string[] = [];
@@ -514,6 +581,10 @@ export function createProductAttemptRunner(
       const effectLedger = new Map<string, ToolInvocationRecord["outcome"]>();
       let requestSequence = 0;
       let sentResults = 0;
+      const usage: (UsageUnits | null)[] = [];
+      let briefRequest = input.brief?.request ?? null;
+      let briefReceipt = input.brief?.receipt ?? null;
+      let briefFailure: string | null = null;
       const continuation: { terminal: ProviderStreamConsumeOutcome | null } = { terminal: null };
 
       const gateway = createProductToolGateway({
@@ -554,8 +625,18 @@ export function createProductAttemptRunner(
         if (outcome.snapshot !== null && outcome.snapshot.reasoning.length > 0) {
           reasoningText.push(outcome.snapshot.reasoning);
         }
+        usage.push(outcome.snapshot?.usage ?? null);
         return outcome;
       };
+
+      const output = (toolResults: number): NonNullable<AttemptRunnerResult["output"]> => ({
+        text: assistantText.join(""),
+        reasoning: reasoningText.join(""),
+        toolResults,
+        providerRequests: requestSequence,
+        usage: aggregateProviderUsage(usage),
+        briefReceipt,
+      });
 
       try {
         const initial = await consume();
@@ -563,11 +644,7 @@ export function createProductAttemptRunner(
           return {
             fact: factFromStream(initial),
             turn: initial.turn,
-            output: {
-              text: assistantText.join(""),
-              reasoning: reasoningText.join(""),
-              toolResults: 0,
-            },
+            output: output(0),
           };
         }
 
@@ -588,6 +665,39 @@ export function createProductAttemptRunner(
             const nextResults = context.results.slice(sentResults);
             sentResults = context.results.length;
             messages.push(...nextResults.map(toolResultMessage));
+            if (briefRequest !== null && input.brief !== undefined) {
+              const nextRequest = {
+                ...briefRequest,
+                need: briefNeedAfterToolResults(briefRequest.need, nextResults),
+              };
+              const projected = createBriefComposer().projectForTurn(request.turnId, nextRequest);
+              if (!projected.ok) {
+                briefFailure = projected.error.code;
+                return { kind: "stop" };
+              }
+              if (
+                !replaceBriefGuidance(
+                  messages,
+                  input.brief.sectionSource,
+                  projected.value.projection.guidance,
+                )
+              ) {
+                briefFailure = "section-missing";
+                return { kind: "stop" };
+              }
+              briefRequest = nextRequest;
+              briefReceipt = projected.value.projection.receipt;
+              budgets = {
+                ...budgets,
+                maxOutputTokens: minBudget(
+                  minBudget(
+                    input.brief.maxOutputTokensCeiling,
+                    request.receipt.budgets.outputTokens,
+                  ),
+                  briefReceipt.outputTokenBudget,
+                ),
+              };
+            }
             const continued = await consume();
             continuation.terminal = continued;
             if (continued.kind !== "finished" || continued.toolProposals.length === 0) {
@@ -600,18 +710,24 @@ export function createProductAttemptRunner(
 
         const terminalStream = continuation.terminal;
         const fact =
-          terminalStream !== null &&
-          (terminalStream.kind !== "finished" || terminalStream.toolProposals.length === 0)
-            ? retainToolHistory(factFromStream(terminalStream), loopOutcome)
-            : factFromToolLoop(loopOutcome);
+          briefFailure !== null
+            ? {
+                kind: "failed" as const,
+                category: "invalid-request" as const,
+                retryable: false,
+                effect: effectFromToolResults(loopOutcome),
+                observedContent: loopOutcome.results.length > 0,
+                emittedToolProposal: true,
+                message: `Brief continuation failed (${briefFailure})`,
+              }
+            : terminalStream !== null &&
+                (terminalStream.kind !== "finished" || terminalStream.toolProposals.length === 0)
+              ? retainToolHistory(factFromStream(terminalStream), loopOutcome)
+              : factFromToolLoop(loopOutcome);
         return {
           fact,
           turn: loopOutcome.turn,
-          output: {
-            text: assistantText.join(""),
-            reasoning: reasoningText.join(""),
-            toolResults: loopOutcome.results.length,
-          },
+          output: output(loopOutcome.results.length),
         };
       } finally {
         deadline.dispose();
