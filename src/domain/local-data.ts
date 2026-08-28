@@ -154,6 +154,14 @@ export type RootLayout = {
    */
   readonly qualified: boolean;
   readonly roots: readonly ResolvedRoot[];
+  /**
+   * Previous platform-default configuration root, when compatibility lookup
+   * is applicable.
+   *
+   * `null` means an explicit `FALRYN_CONFIG_DIR` owns discovery and migration
+   * must not inspect a different location.
+   */
+  readonly legacyConfigurationRoot: LocalPath | null;
 };
 
 /**

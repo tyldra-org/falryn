@@ -226,7 +226,7 @@ describe("workspace resolution", () => {
     // layer out of every load while reporting success.
     const sources = (await runConfigPath(services, globals)).payload?.sources ?? [];
     expect(sources.find((source) => source.kind === "project-file")?.path).toBe(
-      `${realpathSync(site)}/${CONFIGURATION_FILE_NAME}`,
+      `${realpathSync(site)}/.falryn/${CONFIGURATION_FILE_NAME}`,
     );
   });
 
@@ -241,7 +241,7 @@ describe("workspace resolution", () => {
 
     const sources = (await runConfigPath(services, globals)).payload?.sources ?? [];
     expect(sources.find((source) => source.kind === "project-file")?.path).toBe(
-      `${realpathSync(sibling)}/${CONFIGURATION_FILE_NAME}`,
+      `${realpathSync(sibling)}/.falryn/${CONFIGURATION_FILE_NAME}`,
     );
   });
 
@@ -254,7 +254,7 @@ describe("workspace resolution", () => {
 
     const sources = (await runConfigPath(services, globals)).payload?.sources ?? [];
     expect(sources.find((source) => source.kind === "project-file")?.path).toBe(
-      `${realpathSync(explicit)}/${CONFIGURATION_FILE_NAME}`,
+      `${realpathSync(explicit)}/.falryn/${CONFIGURATION_FILE_NAME}`,
     );
   });
 
@@ -265,7 +265,7 @@ describe("workspace resolution", () => {
 
     const sources = (await runConfigPath(services, globals)).payload?.sources ?? [];
     expect(sources.find((source) => source.kind === "project-file")?.path).toBe(
-      `${realpathSync(cwd)}/${CONFIGURATION_FILE_NAME}`,
+      `${realpathSync(cwd)}/.falryn/${CONFIGURATION_FILE_NAME}`,
     );
   });
 });
@@ -434,16 +434,20 @@ describe("config show over a source it could not read", () => {
 
 describe("config path", () => {
   test("names its sources without reading any of them", async () => {
-    const { services, globals } = await isolated();
+    const { home, services, globals } = await isolated();
     const result = await runConfigPath(services, globals);
 
     expect(result.outcome).toEqual({ kind: "completed" });
     const kinds = result.payload?.sources.map((source) => source.kind) ?? [];
     expect(kinds).toContain("user-file");
     expect(kinds).toContain("project-file");
+    expect(result.payload?.sources.find((source) => source.kind === "user-file")?.path).toBe(
+      `${home}/.falryn/${CONFIGURATION_FILE_NAME}`,
+    );
     // Answering "where do settings come from" must not depend on the load
     // succeeding, because that is usually why the question is being asked.
     expect(result.errors).toEqual([]);
+    expect(await readdir(home)).toEqual([]);
   });
 
   test("names the profile source only when one was selected", async () => {
@@ -472,6 +476,46 @@ describe("doctor", () => {
     // Nothing has registered an owner on this path, so every class is
     // reported unregistered rather than assumed absent.
     expect((result.payload?.unregisteredClasses.length ?? 0) > 0).toBe(true);
+  });
+
+  test("reports the effective legacy configuration home without migrating it", async () => {
+    const { home, services } = await isolated();
+    const legacy = join(home, "Library", "Application Support", "Falryn", "config");
+    await mkdir(legacy, { recursive: true });
+    await writeFile(join(legacy, CONFIGURATION_FILE_NAME), "{}");
+
+    const result = await runDoctor(services);
+
+    expect(result.payload?.configurationHome).toMatchObject({
+      kind: "legacy",
+      root: localPath(legacy),
+      currentRoot: localPath(join(home, ".falryn")),
+    });
+    expect(result.payload?.blocked).toBe(false);
+    expect(await readdir(legacy)).toEqual([CONFIGURATION_FILE_NAME]);
+    expect(await readdir(home)).not.toContain(".falryn");
+  });
+
+  test("reports conflicting configuration homes and leaves both untouched", async () => {
+    const { home, services } = await isolated();
+    const current = join(home, ".falryn");
+    const legacy = join(home, "Library", "Application Support", "Falryn", "config");
+    await mkdir(current, { recursive: true });
+    await mkdir(legacy, { recursive: true });
+    await writeFile(join(current, CONFIGURATION_FILE_NAME), "current");
+    await writeFile(join(legacy, CONFIGURATION_FILE_NAME), "legacy");
+
+    const result = await runDoctor(services);
+
+    expect(result.payload?.configurationHome).toEqual({
+      kind: "conflict",
+      currentRoot: localPath(current),
+      legacyRoot: localPath(legacy),
+    });
+    expect(result.payload?.blocked).toBe(true);
+    expect(result.outcome).toEqual({ kind: "failed", effect: "none" });
+    expect(await readdir(current)).toEqual([CONFIGURATION_FILE_NAME]);
+    expect(await readdir(legacy)).toEqual([CONFIGURATION_FILE_NAME]);
   });
 
   test("reports an absent database as absent rather than creating one", async () => {

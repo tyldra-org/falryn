@@ -89,12 +89,12 @@ describe("createWorkspaceController", () => {
       nodes: {
         "/work/falryn": { kind: "directory" },
         "/work/docs": { kind: "directory" },
-        "/home/user/.config/falryn": { kind: "directory" },
+        "/home/user/.falryn": { kind: "directory" },
       },
     });
     const controller = createWorkspaceController({
       fileSystem: fs,
-      configurationRoot: localPath("/home/user/.config/falryn"),
+      configurationRoot: localPath("/home/user/.falryn"),
       currentDirectory: localPath("/work/falryn"),
       initial: twoRootSet(),
     });
@@ -128,5 +128,38 @@ describe("createWorkspaceController", () => {
     if (loaded.ok) {
       expect(loaded.value.roots.map((root) => root.name).sort()).toEqual(["docs", "falryn"]);
     }
+  });
+
+  test("selects the configuration home lazily for layout reads and writes", async () => {
+    const current = localPath("/home/user/.falryn");
+    const legacy = localPath("/home/user/Library/Application Support/Falryn/config");
+    const fs = createInMemoryFileSystem({
+      nodes: {
+        "/work/falryn": { kind: "directory" },
+        "/work/docs": { kind: "directory" },
+        "/home": { kind: "directory" },
+        "/home/user": { kind: "directory" },
+        "/home/user/.falryn": { kind: "directory" },
+        "/home/user/Library": { kind: "directory" },
+        "/home/user/Library/Application Support": { kind: "directory" },
+        "/home/user/Library/Application Support/Falryn": { kind: "directory" },
+        [legacy]: { kind: "directory" },
+      },
+    });
+    const intents: Array<"read" | "write"> = [];
+    const controller = createWorkspaceController({
+      fileSystem: fs,
+      configurationRoot: current,
+      configurationRootFor: async (intent) => {
+        intents.push(intent);
+        return intent === "read" ? legacy : current;
+      },
+      currentDirectory: localPath("/work/falryn"),
+      initial: twoRootSet(),
+    });
+
+    expect((await controller.listLayouts()).ok).toBe(true);
+    expect((await controller.save(controller.initial, "falryn-app")).ok).toBe(true);
+    expect(intents).toEqual(["read", "write"]);
   });
 });

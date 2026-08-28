@@ -82,7 +82,7 @@ export function discoverSources(inputs: DiscoveryInputs): {
       PROJECT_CONFIGURATION_DIRECTORY,
       CONFIGURATION_FILE_NAME,
     );
-    if (projectFile.ok) {
+    if (projectFile.ok && (!userFile.ok || projectFile.value !== userFile.value)) {
       sources.push({
         source: { kind: "project-file", file: projectFile.value, profile: null },
         file: projectFile.value,

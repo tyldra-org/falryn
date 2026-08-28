@@ -9,8 +9,10 @@ import {
 import {
   CONFIGURATION_FILE_NAME,
   type ConfigurationFileScope,
+  configurationHomeIssue,
   inspectGeneration,
   PROFILE_DIRECTORY,
+  PROJECT_CONFIGURATION_DIRECTORY,
   writeConfigurationKey,
 } from "../../config/index.ts";
 import {
@@ -84,9 +86,11 @@ export async function runConfigShow(
       workspaceResolveError(workspace.error),
     ]);
   }
-  const { loader, registry, configurationRoot, workspaceRoot } = services();
+  const { loader, registry, configurationRoot, legacyConfigurationRoot, workspaceRoot } =
+    services();
   const outcome = await loader.load({
     configurationRoot,
+    legacyConfigurationRoot,
     workspaceRoot,
     profile: options.profile,
     overrides,
@@ -134,9 +138,10 @@ export async function runConfigValidate(
       workspaceResolveError(workspace.error),
     ]);
   }
-  const { loader, configurationRoot, workspaceRoot } = services();
+  const { loader, configurationRoot, legacyConfigurationRoot, workspaceRoot } = services();
   const outcome = await loader.load({
     configurationRoot,
+    legacyConfigurationRoot,
     workspaceRoot,
     profile: options.profile,
     overrides,
@@ -194,7 +199,27 @@ export async function runConfigPath(
       workspaceResolveError(workspace.error),
     ]);
   }
-  const { configurationRoot, workspaceRoot } = services();
+  const graph = services();
+  const { workspaceRoot } = graph;
+  const home = await graph.configurationHomeForRead(signal);
+  if (home.kind === "cancelled") {
+    return resultFor<"config.path", ConfigPathPayload>("config.path", null, [], {
+      kind: "cancelled",
+      effect: "none",
+    });
+  }
+  if (home.kind === "conflict" || home.kind === "unavailable") {
+    return resultFor<"config.path", ConfigPathPayload>(
+      "config.path",
+      null,
+      errorsFrom(
+        fromConfigurationIssues([configurationHomeIssue(home)], {
+          operation: "resolve configuration path",
+        }),
+      ),
+    );
+  }
+  const configurationRoot = home.root;
   const sources: { kind: string; path: string }[] = [];
 
   const userFile = joinPath(configurationRoot, CONFIGURATION_FILE_NAME);
@@ -202,8 +227,12 @@ export async function runConfigPath(
     sources.push({ kind: "user-file", path: userFile.value });
   }
   if (workspaceRoot !== null) {
-    const projectFile = joinPath(workspaceRoot, CONFIGURATION_FILE_NAME);
-    if (projectFile.ok) {
+    const projectFile = joinPath(
+      workspaceRoot,
+      PROJECT_CONFIGURATION_DIRECTORY,
+      CONFIGURATION_FILE_NAME,
+    );
+    if (projectFile.ok && (!userFile.ok || projectFile.value !== userFile.value)) {
       sources.push({ kind: "project-file", path: projectFile.value });
     }
   }
@@ -244,13 +273,15 @@ export async function runConfigSet(
       workspaceResolveError(workspace.error),
     ]);
   }
-  const { registry, fileSystem, configurationRoot, workspaceRoot } = services();
+  const { registry, fileSystem, configurationRoot, legacyConfigurationRoot, workspaceRoot } =
+    services();
   onMutationStart?.();
   const outcome = await writeConfigurationKey(
     registry,
     fileSystem,
     {
       configurationRoot,
+      legacyConfigurationRoot,
       workspaceRoot,
       profile: options.profile,
       scope: arguments_.scope,

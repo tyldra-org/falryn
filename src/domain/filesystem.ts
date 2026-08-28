@@ -303,6 +303,18 @@ export type FileSystemPort = {
   /** Removes one file, one symlink, or one empty directory. Never recursive. */
   removeEntry(path: LocalPath, signal?: AbortSignal): Promise<Result<null, FileSystemError>>;
 
+  /**
+   * Removes one empty directory without accepting any other entry kind.
+   *
+   * Callers use this when replacing an observed empty directory. The adapter
+   * must fail if the path is now a file, symlink, or populated directory so a
+   * concurrent change cannot turn a safe cleanup into data loss.
+   */
+  removeEmptyDirectory(
+    path: LocalPath,
+    signal?: AbortSignal,
+  ): Promise<Result<null, FileSystemError>>;
+
   /** Resolves every symlink in the path, so an escape can be detected. */
   realPath(path: LocalPath, signal?: AbortSignal): Promise<Result<LocalPath, FileSystemError>>;
 
@@ -552,6 +564,27 @@ export function createInMemoryFileSystem(
           if (candidate.startsWith(prefix)) {
             return err({ kind: "filesystem", code: "not-empty", path, operation: "remove" });
           }
+        }
+      }
+      nodes.delete(path);
+      return ok(null);
+    },
+
+    async removeEmptyDirectory(path, signal) {
+      if (signal?.aborted === true) {
+        return cancelled(path, "remove");
+      }
+      const node = nodes.get(path);
+      if (node === undefined) {
+        return err({ kind: "filesystem", code: "not-found", path, operation: "remove" });
+      }
+      if (node.kind !== "directory") {
+        return err({ kind: "filesystem", code: "not-a-directory", path, operation: "remove" });
+      }
+      const prefix = `${path}/`;
+      for (const candidate of nodes.keys()) {
+        if (candidate.startsWith(prefix)) {
+          return err({ kind: "filesystem", code: "not-empty", path, operation: "remove" });
         }
       }
       nodes.delete(path);

@@ -1,6 +1,7 @@
 /** Read-only environment and storage diagnostics command. */
 
 import { fromUnknown } from "../../application/index.ts";
+import type { ConfigurationHomeResolution } from "../../config/index.ts";
 import {
   probeStorage,
   rootChild,
@@ -26,6 +27,8 @@ export type DoctorStorage =
   | { readonly kind: "undetermined"; readonly reason: "state-root-not-viable" };
 
 export type DoctorPayload = {
+  /** Effective user-authored configuration home selected without mutation. */
+  readonly configurationHome: ConfigurationHomeResolution;
   /**
    * Every declared root, where it would be, and whether it can hold data.
    *
@@ -75,12 +78,15 @@ export async function runDoctor(
   services: ServiceProvider,
 ): Promise<CommandResultOf<"doctor", DoctorPayload>> {
   try {
-    const { localData } = services();
+    const { configurationHomeForRead, localData } = services();
     const layout = localData.layout;
 
     // Read-only throughout: this probes what is there and creates nothing, so
     // a root that does not exist stays a root that does not exist.
-    const inspections = await localData.inspectRoots();
+    const [inspections, configurationHome] = await Promise.all([
+      localData.inspectRoots(),
+      configurationHomeForRead(),
+    ]);
     const byRoot = new Map<LocalDataRoot, RootInspection>(
       inspections.map((inspection) => [inspection.root, inspection]),
     );
@@ -106,12 +112,16 @@ export async function runDoctor(
     const blocked =
       inspections.some(blocksLocalData) ||
       roots.some((entry) => !entry.resolved) ||
+      configurationHome.kind === "conflict" ||
+      configurationHome.kind === "unavailable" ||
+      configurationHome.kind === "cancelled" ||
       storage.kind === "unreadable" ||
       storage.kind === "undetermined";
 
     return resultFor(
       "doctor",
       {
+        configurationHome,
         roots,
         rootIssues: localData.resolutionIssues.map((issue) => issue.code),
         databasePath,

@@ -66,6 +66,7 @@ export const ROOT_ENVIRONMENT_VARIABLES: Readonly<Record<LocalDataRoot, string>>
 export const QUALIFIED_PLATFORM: LocalDataPlatform = "darwin";
 
 const APPLICATION_DIRECTORY = "Falryn";
+const CONFIGURATION_HOME_DIRECTORY = ".falryn";
 
 export type PlatformInputs = {
   readonly platform: LocalDataPlatform;
@@ -81,7 +82,7 @@ function defaultRoots(inputs: PlatformInputs): Readonly<Record<LocalDataRoot, st
       const support = `${home}/Library/Application Support/${APPLICATION_DIRECTORY}`;
       const caches = `${home}/Library/Caches/${APPLICATION_DIRECTORY}`;
       return {
-        configuration: `${support}/config`,
+        configuration: `${home}/${CONFIGURATION_HOME_DIRECTORY}`,
         state: `${support}/state`,
         cache: caches,
         logs: `${home}/Library/Logs/${APPLICATION_DIRECTORY}`,
@@ -93,12 +94,11 @@ function defaultRoots(inputs: PlatformInputs): Readonly<Record<LocalDataRoot, st
     case "linux": {
       // XDG variables are part of the platform convention, not a Falryn
       // override, so they are read here rather than in the override pass.
-      const config = environment.get("XDG_CONFIG_HOME") ?? `${home}/.config`;
       const state = environment.get("XDG_STATE_HOME") ?? `${home}/.local/state`;
       const cache = environment.get("XDG_CACHE_HOME") ?? `${home}/.cache`;
       const data = environment.get("XDG_DATA_HOME") ?? `${home}/.local/share`;
       return {
-        configuration: `${config}/falryn`,
+        configuration: `${home}/${CONFIGURATION_HOME_DIRECTORY}`,
         state: `${state}/falryn`,
         cache: `${cache}/falryn`,
         logs: `${state}/falryn/logs`,
@@ -108,10 +108,9 @@ function defaultRoots(inputs: PlatformInputs): Readonly<Record<LocalDataRoot, st
       };
     }
     case "win32": {
-      const roaming = environment.get("APPDATA") ?? `${home}/AppData/Roaming`;
       const local = environment.get("LOCALAPPDATA") ?? `${home}/AppData/Local`;
       return {
-        configuration: `${roaming}/${APPLICATION_DIRECTORY}/config`,
+        configuration: `${home}/${CONFIGURATION_HOME_DIRECTORY}`,
         state: `${local}/${APPLICATION_DIRECTORY}/state`,
         cache: `${local}/${APPLICATION_DIRECTORY}/cache`,
         logs: `${local}/${APPLICATION_DIRECTORY}/logs`,
@@ -119,6 +118,23 @@ function defaultRoots(inputs: PlatformInputs): Readonly<Record<LocalDataRoot, st
         artifacts: `${local}/${APPLICATION_DIRECTORY}/artifacts`,
         exports: `${local}/${APPLICATION_DIRECTORY}/exports`,
       };
+    }
+  }
+}
+
+/** Previous platform-default configuration root, used only for compatibility. */
+function legacyConfigurationRoot(inputs: PlatformInputs): string {
+  const { home, environment } = inputs;
+  switch (inputs.platform) {
+    case "darwin":
+      return `${home}/Library/Application Support/${APPLICATION_DIRECTORY}/config`;
+    case "linux": {
+      const config = environment.get("XDG_CONFIG_HOME") ?? `${home}/.config`;
+      return `${config}/falryn`;
+    }
+    case "win32": {
+      const roaming = environment.get("APPDATA") ?? `${home}/AppData/Roaming`;
+      return `${roaming}/${APPLICATION_DIRECTORY}/config`;
     }
   }
 }
@@ -147,10 +163,14 @@ export function resolveRoots(inputs: PlatformInputs): RootResolution {
   const defaults = defaultRoots(inputs);
   const roots: ResolvedRoot[] = [];
   const issues: RootResolutionIssue[] = [];
+  let configurationOverrideConfigured = false;
 
   for (const root of LOCAL_DATA_ROOTS) {
     const variable = ROOT_ENVIRONMENT_VARIABLES[root];
     const override = inputs.environment.get(variable);
+    if (root === "configuration") {
+      configurationOverrideConfigured = override !== null;
+    }
 
     if (override !== null) {
       const parsed = parseLocalPath(override);
@@ -194,9 +214,24 @@ export function resolveRoots(inputs: PlatformInputs): RootResolution {
       platform: inputs.platform,
       qualified: inputs.platform === QUALIFIED_PLATFORM,
       roots,
+      legacyConfigurationRoot: resolveLegacyConfigurationRoot(
+        inputs,
+        configurationOverrideConfigured,
+      ),
     },
     issues,
   };
+}
+
+function resolveLegacyConfigurationRoot(
+  inputs: PlatformInputs,
+  configurationOverrideConfigured: boolean,
+): LocalPath | null {
+  if (configurationOverrideConfigured) {
+    return null;
+  }
+  const parsed = parseLocalPath(legacyConfigurationRoot(inputs));
+  return parsed.ok ? parsed.value : null;
 }
 
 /**
