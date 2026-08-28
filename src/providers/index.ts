@@ -200,7 +200,11 @@ export type {
 } from "./profile.ts";
 export { profileCredentialConsumer } from "./profile.ts";
 export type { ProviderProfileParseError } from "./profile-schema.ts";
-export { parseProviderProfile, providerProfileSchema } from "./profile-schema.ts";
+export {
+  parseProviderProfile,
+  providerEndpointIsAllowed,
+  providerProfileSchema,
+} from "./profile-schema.ts";
 export type { ModelRequest } from "./request.ts";
 export type {
   ResolveSpecializedRoleInput,

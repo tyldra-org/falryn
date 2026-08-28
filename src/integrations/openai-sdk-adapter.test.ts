@@ -30,10 +30,11 @@ function request(overrides: Partial<ModelRequest> = {}): ModelRequest {
 async function collect(
   adapter: ReturnType<typeof createOpenAiSdkAdapter>,
   init?: AbortSignal,
+  input: ModelRequest = request(),
 ): Promise<readonly NormalizedProviderEvent[]> {
   const events: NormalizedProviderEvent[] = [];
   const signal = init ?? new AbortController().signal;
-  for await (const event of adapter.stream(request(), { signal })) {
+  for await (const event of adapter.stream(input, { signal })) {
     events.push(event);
   }
   return events;
@@ -113,6 +114,45 @@ describe("createOpenAiSdkAdapter", () => {
       },
     });
     expect(events.at(-1)).toMatchObject({ kind: "finished", finishReason: "stop" });
+  });
+
+  test("sends the routed reasoning control and rejects unresolved image handles", async () => {
+    let body: Record<string, unknown> | null = null;
+    const adapter = createOpenAiSdkAdapter({
+      profileId: "openai",
+      baseUrl: "https://api.example.test/v1",
+      resolveApiKey: async () => "sk-test",
+      fetch: async (_input, init) => {
+        body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        return sseResponse(['data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n']);
+      },
+    });
+    await collect(
+      adapter,
+      undefined,
+      request({ reasoning: "balanced", reasoningControl: "medium" }),
+    );
+    expect(body).toMatchObject({ reasoning_effort: "medium" });
+
+    await collect(adapter, undefined, request({ reasoning: "max", reasoningControl: "max" }));
+    expect(body).toMatchObject({ reasoning_effort: "max" });
+
+    const visual = await collect(
+      adapter,
+      undefined,
+      request({
+        messages: [
+          {
+            role: "user",
+            parts: [{ kind: "image", handle: "artifact:image", mediaType: "image/png" }],
+          },
+        ],
+      }),
+    );
+    expect(visual.at(-1)).toMatchObject({
+      kind: "error",
+      failure: { kind: "unsupported-capability", retryable: false },
+    });
   });
 
   test("uses GPT-5 token budgets and translates the structured-output contract", async () => {

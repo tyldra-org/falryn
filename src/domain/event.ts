@@ -95,10 +95,15 @@ export type TerminalPayload = {
 export type ModelAttemptBinding = {
   readonly schemaVersion: 1;
   readonly providerId: ProviderId;
+  /** Absent only on events written before exact provider-profile binding shipped. */
+  readonly providerProfileId?: string | undefined;
+  readonly providerAdapterKind?: string | undefined;
+  readonly providerDestinationId?: string | undefined;
   readonly modelId: ModelId;
   readonly role: string;
   readonly intent: string | null;
   readonly reasoning: string;
+  readonly providerReasoningControl?: string | null | undefined;
   /** Absent only on events written before execution profiles shipped. */
   readonly executionProfile?:
     | {

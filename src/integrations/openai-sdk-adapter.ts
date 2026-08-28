@@ -27,6 +27,7 @@ import type { ModelMessage, ModelToolDefinition } from "../providers/messages.ts
 import type { ProviderAdapterPort, ProviderStreamOptions } from "../providers/port.ts";
 import type { ModelRequest } from "../providers/request.ts";
 import type { NormalizedProviderEvent } from "../providers/stream.ts";
+import { providerDestinationId } from "./provider-destination.ts";
 
 export type OpenAiSdkFetch = NonNullable<ClientOptions["fetch"]>;
 
@@ -51,6 +52,16 @@ type ToolCallState = {
   arguments: string;
 };
 
+class OpenAiInputError extends Error {
+  readonly failureKind: ProviderFailureKind;
+
+  constructor(failureKind: ProviderFailureKind, message: string) {
+    super(message);
+    this.name = "OpenAiInputError";
+    this.failureKind = failureKind;
+  }
+}
+
 function failure(kind: ProviderFailureKind, message: string, retryable: boolean): ProviderFailure {
   return { kind, message, retryable };
 }
@@ -62,7 +73,40 @@ function textOf(message: ModelMessage): string {
     .join("");
 }
 
+function rejectImageParts(messages: readonly ModelMessage[]): void {
+  if (messages.some((message) => message.parts.some((part) => part.kind === "image"))) {
+    throw new OpenAiInputError(
+      "unsupported-capability",
+      "The OpenAI adapter cannot resolve image handles in this request.",
+    );
+  }
+}
+
+function openAiReasoningEffort(
+  control: string | null | undefined,
+): NonNullable<OpenAI.ChatCompletionCreateParamsStreaming["reasoning_effort"]> | undefined {
+  switch (control) {
+    case undefined:
+    case null:
+      return undefined;
+    case "none":
+    case "minimal":
+    case "low":
+    case "medium":
+    case "high":
+    case "xhigh":
+    case "max":
+      return control;
+    default:
+      throw new OpenAiInputError(
+        "unsupported-capability",
+        "The selected OpenAI model does not support the requested reasoning control.",
+      );
+  }
+}
+
 function toChatMessages(messages: readonly ModelMessage[]): OpenAI.ChatCompletionMessageParam[] {
+  rejectImageParts(messages);
   const translated: OpenAI.ChatCompletionMessageParam[] = [];
   for (const message of messages) {
     if (message.role === "tool") {
@@ -117,6 +161,9 @@ function toTools(tools: readonly ModelToolDefinition[]): OpenAI.ChatCompletionTo
 function classifySdkError(error: unknown, signal: AbortSignal): ProviderFailure {
   if (signal.aborted || error instanceof APIUserAbortError) {
     return failure("cancellation", "The provider request was cancelled.", false);
+  }
+  if (error instanceof OpenAiInputError) {
+    return failure(error.failureKind, error.message, false);
   }
   if (error instanceof APIConnectionTimeoutError) {
     return failure("timeout", "The provider request timed out.", true);
@@ -202,6 +249,9 @@ export function createOpenAiSdkAdapter(options: OpenAiSdkAdapterOptions): Provid
   const identity = {
     providerId: providerId.from(options.providerId ?? "openai"),
     profileId: options.profileId,
+    adapterKind: "openai" as const,
+    endpoint: options.baseUrl,
+    destinationId: providerDestinationId("openai", options.baseUrl),
     displayName: options.displayName ?? "OpenAI",
   };
   const models = (options.supportedModels ?? LATEST_OPENAI_MODEL_IDS).map((id) =>
@@ -211,6 +261,7 @@ export function createOpenAiSdkAdapter(options: OpenAiSdkAdapterOptions): Provid
   return {
     identity,
     supportedModels: models,
+    requestInputModalities: ["text"],
     async *stream(
       request: ModelRequest,
       streamOptions: ProviderStreamOptions,
@@ -265,29 +316,43 @@ export function createOpenAiSdkAdapter(options: OpenAiSdkAdapterOptions): Provid
         return;
       }
 
-      const tools = toTools(request.tools);
-      const body: OpenAI.ChatCompletionCreateParamsStreaming = {
-        model: String(request.modelId),
-        stream: true,
-        stream_options: { include_usage: true },
-        messages: toChatMessages(request.messages),
-        ...(tools === undefined ? {} : { tools }),
-        ...(request.output.kind === "text"
-          ? {}
-          : {
-              response_format: {
-                type: "json_schema" as const,
-                json_schema: {
-                  name: request.output.name,
-                  schema: request.output.schema,
-                  strict: true,
+      let body: OpenAI.ChatCompletionCreateParamsStreaming;
+      try {
+        const tools = toTools(request.tools);
+        const reasoningEffort = openAiReasoningEffort(request.reasoningControl);
+        body = {
+          model: String(request.modelId),
+          stream: true,
+          stream_options: { include_usage: true },
+          messages: toChatMessages(request.messages),
+          ...(tools === undefined ? {} : { tools }),
+          ...(request.output.kind === "text"
+            ? {}
+            : {
+                response_format: {
+                  type: "json_schema" as const,
+                  json_schema: {
+                    name: request.output.name,
+                    schema: request.output.schema,
+                    strict: true,
+                  },
                 },
-              },
-            }),
-        ...(request.budgets.maxOutputTokens === undefined
-          ? {}
-          : { max_completion_tokens: request.budgets.maxOutputTokens }),
-      };
+              }),
+          ...(request.budgets.maxOutputTokens === undefined
+            ? {}
+            : { max_completion_tokens: request.budgets.maxOutputTokens }),
+          ...(reasoningEffort === undefined ? {} : { reasoning_effort: reasoningEffort }),
+        };
+      } catch (error) {
+        yield {
+          kind: "error",
+          requestId: request.requestId,
+          modelAttemptId: attempt,
+          sequence: next(),
+          failure: classifySdkError(error, streamOptions.signal),
+        };
+        return;
+      }
 
       const toolCalls = new Map<number, ToolCallState>();
       let finishReason: string | null = null;

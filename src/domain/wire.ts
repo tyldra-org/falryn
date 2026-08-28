@@ -78,10 +78,14 @@ const nullableBudgetSchema = z.number().finite().nonnegative().nullable();
 const modelAttemptBindingSchema: z.ZodType<ModelAttemptBinding> = z.object({
   schemaVersion: z.literal(1),
   providerId: brandedString(providerId),
+  providerProfileId: z.string().min(1).optional(),
+  providerAdapterKind: z.string().min(1).optional(),
+  providerDestinationId: z.string().min(1).optional(),
   modelId: brandedString(modelId),
   role: z.string().min(1),
   intent: z.string().min(1).nullable(),
   reasoning: z.string().min(1),
+  providerReasoningControl: z.string().min(1).nullable().optional(),
   executionProfile: z
     .object({
       id: z.enum(["ask", "plan", "debug", "agent"]),

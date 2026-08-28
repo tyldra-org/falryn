@@ -13,6 +13,7 @@ import {
   type GenerateContentResponse,
   GoogleGenAI,
   type Part,
+  ThinkingLevel,
   type Tool,
 } from "@google/genai";
 
@@ -22,6 +23,7 @@ import type { ModelMessage, ModelToolDefinition } from "../providers/messages.ts
 import type { ProviderAdapterPort, ProviderStreamOptions } from "../providers/port.ts";
 import type { ModelRequest } from "../providers/request.ts";
 import type { NormalizedProviderEvent, UsageUnits } from "../providers/stream.ts";
+import { providerDestinationId } from "./provider-destination.ts";
 
 export type GoogleGenAiStreamFactory = (
   apiKey: string,
@@ -45,6 +47,29 @@ type ToolCallState = {
   readonly name: string;
   readonly argumentsJson: string;
 };
+
+function thinkingLevel(control: string | null | undefined): ThinkingLevel | undefined {
+  switch (control) {
+    case undefined:
+    case null:
+      return undefined;
+    case "minimal":
+      return ThinkingLevel.MINIMAL;
+    case "low":
+      return ThinkingLevel.LOW;
+    case "medium":
+    case "balanced":
+      return ThinkingLevel.MEDIUM;
+    case "high":
+    case "deep":
+      return ThinkingLevel.HIGH;
+    default:
+      throw new GoogleInputError(
+        "unsupported-capability",
+        "The selected Google model does not support the requested reasoning control.",
+      );
+  }
+}
 
 class GoogleInputError extends Error {
   readonly failureKind: ProviderFailureKind;
@@ -289,6 +314,9 @@ export function createGoogleGenAiSdkAdapter(
   const identity = {
     providerId: providerId.from(options.providerId ?? "google"),
     profileId: options.profileId,
+    adapterKind: "google" as const,
+    endpoint: options.baseUrl ?? null,
+    destinationId: providerDestinationId("google", options.baseUrl ?? null),
     displayName: options.displayName ?? "Google",
   };
   const models = options.supportedModels.map((id) => modelId.from(id));
@@ -296,6 +324,7 @@ export function createGoogleGenAiSdkAdapter(
   return {
     identity,
     supportedModels: models,
+    requestInputModalities: ["text"],
     async *stream(
       request: ModelRequest,
       streamOptions: ProviderStreamOptions,
@@ -354,6 +383,7 @@ export function createGoogleGenAiSdkAdapter(
       try {
         const translated = toGoogleMessages(request.messages);
         const tools = toTools(request.tools);
+        const level = thinkingLevel(request.reasoningControl);
         sdkRequest = {
           model: String(request.modelId),
           contents: translated.contents,
@@ -363,6 +393,7 @@ export function createGoogleGenAiSdkAdapter(
               ? {}
               : { systemInstruction: translated.systemInstruction }),
             ...(tools === undefined ? {} : { tools }),
+            ...(level === undefined ? {} : { thinkingConfig: { thinkingLevel: level } }),
             ...(request.budgets.maxOutputTokens === undefined
               ? {}
               : { maxOutputTokens: request.budgets.maxOutputTokens }),

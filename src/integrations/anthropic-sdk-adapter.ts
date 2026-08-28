@@ -33,6 +33,7 @@ import type { ModelMessage, ModelToolDefinition } from "../providers/messages.ts
 import type { ProviderAdapterPort, ProviderStreamOptions } from "../providers/port.ts";
 import type { ModelRequest } from "../providers/request.ts";
 import type { NormalizedProviderEvent, UsageUnits } from "../providers/stream.ts";
+import { providerDestinationId } from "./provider-destination.ts";
 
 export type AnthropicSdkFetch = NonNullable<ClientOptions["fetch"]>;
 
@@ -88,6 +89,27 @@ function rejectImageParts(messages: readonly ModelMessage[]): void {
       "unsupported-capability",
       "The Anthropic adapter cannot resolve image handles in this request.",
     );
+  }
+}
+
+function anthropicReasoningEffort(
+  control: string | null | undefined,
+): "low" | "medium" | "high" | "xhigh" | "max" | undefined {
+  switch (control) {
+    case undefined:
+    case null:
+      return undefined;
+    case "low":
+    case "medium":
+    case "high":
+    case "xhigh":
+    case "max":
+      return control;
+    default:
+      throw new AnthropicInputError(
+        "unsupported-capability",
+        "The selected Anthropic model does not support the requested reasoning control.",
+      );
   }
 }
 
@@ -250,6 +272,9 @@ export function createAnthropicSdkAdapter(
   const identity = {
     providerId: providerId.from(options.providerId ?? "anthropic"),
     profileId: options.profileId,
+    adapterKind: "anthropic" as const,
+    endpoint: options.baseUrl ?? null,
+    destinationId: providerDestinationId("anthropic", options.baseUrl ?? null),
     displayName: options.displayName ?? "Anthropic",
   };
   const models = options.supportedModels.map((id) => modelId.from(id));
@@ -257,6 +282,7 @@ export function createAnthropicSdkAdapter(
   return {
     identity,
     supportedModels: models,
+    requestInputModalities: ["text"],
     async *stream(
       request: ModelRequest,
       streamOptions: ProviderStreamOptions,
@@ -315,6 +341,13 @@ export function createAnthropicSdkAdapter(
       try {
         const translated = toAnthropicMessages(request.messages);
         const tools = toTools(request.tools);
+        const reasoningEffort = anthropicReasoningEffort(request.reasoningControl);
+        const outputConfig = {
+          ...(reasoningEffort === undefined ? {} : { effort: reasoningEffort }),
+          ...(request.output.kind === "json-schema"
+            ? { format: { type: "json_schema" as const, schema: request.output.schema } }
+            : {}),
+        };
         body = {
           model: String(request.modelId),
           stream: true,
@@ -322,13 +355,7 @@ export function createAnthropicSdkAdapter(
           messages: translated.messages,
           ...(translated.system === undefined ? {} : { system: translated.system }),
           ...(tools === undefined ? {} : { tools }),
-          ...(request.output.kind === "json-schema"
-            ? {
-                output_config: {
-                  format: { type: "json_schema", schema: request.output.schema },
-                },
-              }
-            : {}),
+          ...(Object.keys(outputConfig).length === 0 ? {} : { output_config: outputConfig }),
         };
       } catch (error) {
         yield {

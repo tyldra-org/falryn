@@ -22,6 +22,7 @@ import {
   type OpenAiSdkFetch,
   type OwnedProcessRegistry,
 } from "../integrations/index.ts";
+import { providerDestinationId } from "../integrations/provider-destination.ts";
 import type { ModelDiscoveryPort } from "../providers/index.ts";
 import { parseProviderConnectionState } from "../providers/index.ts";
 import type { ProviderAdapterPort } from "../providers/port.ts";
@@ -125,6 +126,9 @@ export function composeProductProviderConnections(
         const published = options.modelCatalogs.publish({
           profileId: profile.profileId,
           providerId: profile.providerId,
+          adapterKind: profile.adapterKind,
+          endpoint: profile.endpoint,
+          destinationId: providerDestinationId(profile.adapterKind, profile.endpoint),
           catalog: session.catalog,
           publishedAt: services.clock.now(),
         });

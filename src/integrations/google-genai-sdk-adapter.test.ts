@@ -55,6 +55,35 @@ async function collect(
 }
 
 describe("createGoogleGenAiSdkAdapter", () => {
+  test("sends the routed reasoning control", async () => {
+    const captured: { request: GenerateContentParameters | null } = { request: null };
+    const events = await collect(
+      {
+        resolveApiKey: async () => "google-test-key",
+        createStream: async (_apiKey, input) => {
+          captured.request = input;
+          return stream([response({ candidates: [{ index: 0, finishReason: "STOP" }] })]);
+        },
+      },
+      request({ reasoning: "balanced", reasoningControl: "medium" }),
+    );
+    expect(String(captured.request?.config?.thinkingConfig?.thinkingLevel)).toBe("MEDIUM");
+    expect(events.at(-1)?.kind).toBe("finished");
+
+    const unsupported = await collect(
+      {
+        resolveApiKey: async () => "google-test-key",
+        createStream: async () =>
+          stream([response({ candidates: [{ index: 0, finishReason: "STOP" }] })]),
+      },
+      request({ reasoning: "max", reasoningControl: "max" }),
+    );
+    expect(unsupported.at(-1)).toMatchObject({
+      kind: "error",
+      failure: { kind: "unsupported-capability", retryable: false },
+    });
+  });
+
   test("normalizes text, reasoning, tool calls, usage, and finish state", async () => {
     const events = await collect({
       resolveApiKey: async () => "google-test-key",

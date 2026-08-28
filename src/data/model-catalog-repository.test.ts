@@ -43,6 +43,9 @@ describe("model catalog generation repository", () => {
     const record = {
       profileId: "work",
       providerId: providerId.from("provider"),
+      adapterKind: "openai" as const,
+      endpoint: "https://provider.example/v1",
+      destinationId: "sha-256:provider-example",
       catalog: catalog(),
       publishedAt: instant(200),
     };
@@ -52,7 +55,9 @@ describe("model catalog generation repository", () => {
     await first.close();
 
     const reopened = await openProductStoreOrThrow(root);
-    expect(createModelCatalogGenerationRepository(reopened).latest("work")).toEqual({
+    expect(
+      createModelCatalogGenerationRepository(reopened).latest("work", "sha-256:provider-example"),
+    ).toEqual({
       ok: true,
       value: record,
     });
@@ -66,6 +71,9 @@ describe("model catalog generation repository", () => {
     const base = {
       profileId: "work",
       providerId: providerId.from("provider"),
+      adapterKind: "openai" as const,
+      endpoint: "https://provider.example/v1",
+      destinationId: "sha-256:provider-example",
       catalog: catalog(),
       publishedAt: instant(200),
     };
@@ -76,6 +84,17 @@ describe("model catalog generation repository", () => {
         catalog: { ...catalog(), fetchedAt: instant(101) },
       }),
     ).toEqual({ ok: false, error: { code: "conflict" } });
+    expect(repository.publish({ ...base, endpoint: "https://other.example/v1" })).toEqual({
+      ok: false,
+      error: { code: "conflict" },
+    });
+    expect(
+      repository.publish({
+        ...base,
+        endpoint: "https://other.example/v1",
+        destinationId: "sha-256:other-example",
+      }),
+    ).toEqual({ ok: true, value: "inserted" });
     await store.close();
   });
 });

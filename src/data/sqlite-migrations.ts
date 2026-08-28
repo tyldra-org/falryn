@@ -13,7 +13,10 @@
  * the artifact provenance graph, migration `0005`, which creates durable memory
  * records, migration `0006`, which stores Loom manifests, and migration `0007`,
  * which stores immutable effective model-catalog generations. Their SQL lives
- * in the adjacent schema modules, so this module owns migration-set rules while
+ * in the adjacent schema modules. Migration `0008` binds those catalogs to an
+ * exact provider adapter and destination without changing committed migration
+ * `0007`, so an existing database retains a valid migration checksum. This
+ * module owns migration-set rules while
  * those modules own the schema.
  *
  * The aggregate view of what the set produces — every product table and the
@@ -35,7 +38,12 @@ import { ARTIFACT_TRANSFORMATIONS_TABLE, MIGRATION_0004 } from "./artifact-prove
 import { ARTIFACTS_TABLE, MIGRATION_0002 } from "./artifact-schema.ts";
 import { LOOM_MANIFESTS_TABLE, MIGRATION_0006 } from "./loom-schema.ts";
 import { MEMORY_RECORDS_TABLE, MIGRATION_0005 } from "./memory-schema.ts";
-import { MIGRATION_0007, MODEL_CATALOG_GENERATIONS_TABLE } from "./model-catalog-schema.ts";
+import {
+  MIGRATION_0007,
+  MIGRATION_0008,
+  MODEL_CATALOG_GENERATIONS_TABLE,
+  MODEL_CATALOG_ROUTE_BINDINGS_TABLE,
+} from "./model-catalog-schema.ts";
 import { MIGRATION_0003, RUNS_TABLE } from "./run-schema.ts";
 import { MIGRATION_0001, RECORD_TABLES } from "./schema.ts";
 
@@ -55,6 +63,7 @@ export const PRODUCTION_MIGRATIONS: readonly Migration[] = [
   MIGRATION_0005,
   MIGRATION_0006,
   MIGRATION_0007,
+  MIGRATION_0008,
 ];
 
 /** Every product table the registered set creates, in creation order. */
@@ -66,6 +75,7 @@ export const PRODUCT_TABLES: readonly string[] = [
   MEMORY_RECORDS_TABLE,
   LOOM_MANIFESTS_TABLE,
   MODEL_CATALOG_GENERATIONS_TABLE,
+  MODEL_CATALOG_ROUTE_BINDINGS_TABLE,
 ];
 
 function issue(

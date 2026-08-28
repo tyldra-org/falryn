@@ -543,6 +543,8 @@ function modelRequest(
     tools: [...input.tools],
     output: input.output,
     budgets,
+    reasoning: request.receipt.reasoning,
+    reasoningControl: request.receipt.reasoningControl,
     metadata: {
       role: request.receipt.role,
       ...(request.receipt.intent === null ? {} : { workIntent: request.receipt.intent }),
@@ -568,6 +570,15 @@ export function createProductAttemptRunner(
       }
       if (request.receipt.providerId !== options.provider.identity.providerId) {
         return invalidAttempt("selected provider adapter does not match the route");
+      }
+      if (request.receipt.providerProfileId !== options.provider.identity.profileId) {
+        return invalidAttempt("selected provider profile does not match the route");
+      }
+      if (request.receipt.providerAdapterKind !== options.provider.identity.adapterKind) {
+        return invalidAttempt("selected provider adapter kind does not match the route");
+      }
+      if (request.receipt.providerDestinationId !== options.provider.identity.destinationId) {
+        return invalidAttempt("selected provider destination does not match the route");
       }
       if (!options.provider.supportedModels.includes(request.receipt.modelId)) {
         return invalidAttempt("selected model is unavailable on the provider adapter");

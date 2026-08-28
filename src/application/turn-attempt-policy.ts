@@ -564,10 +564,14 @@ function attemptBinding(
   return {
     schemaVersion: 1,
     providerId: receipt.providerId,
+    providerProfileId: receipt.providerProfileId,
+    providerAdapterKind: receipt.providerAdapterKind,
+    providerDestinationId: receipt.providerDestinationId,
     modelId: receipt.modelId,
     role: receipt.role,
     intent: receipt.intent,
     reasoning: receipt.reasoning,
+    providerReasoningControl: receipt.reasoningControl,
     ...(modelInput?.executionPolicy === undefined
       ? {}
       : {

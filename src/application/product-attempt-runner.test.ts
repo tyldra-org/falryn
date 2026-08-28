@@ -78,8 +78,12 @@ function receipt(
     selectionReason: "intent-mapped-role",
     requiredCapabilities: { tools: true, streaming: true },
     providerId: setupResult.adapter.identity.providerId,
+    providerProfileId: setupResult.adapter.identity.profileId,
+    providerAdapterKind: setupResult.adapter.identity.adapterKind,
+    providerDestinationId: setupResult.adapter.identity.destinationId,
     modelId: model,
     reasoning: "provider-default",
+    reasoningControl: null,
     fallbackPosition: 0,
     budgets,
     catalogGeneration: 1,
@@ -212,6 +216,50 @@ describe("createProductAttemptRunner", () => {
       },
     });
 
+    expect(result.fact).toMatchObject({
+      kind: "failed",
+      category: "invalid-request",
+      retryable: false,
+      effect: "none",
+    });
+    expect(providerRequests).toBe(0);
+  });
+
+  test("rejects a provider profile that differs from the routed destination", async () => {
+    let providerRequests = 0;
+    const product = setup(
+      createDeterministicProviderAdapter({
+        onRequest: () => {
+          providerRequests += 1;
+        },
+      }),
+    );
+    const turn = await start(product, "turn-attempt-profile-mismatch");
+    const runner = product.runtime.requireAttemptRunner();
+    if (!runner.ok) {
+      throw new Error(runner.error.code);
+    }
+    const result = await runner.value.run({
+      turnId: turn,
+      identity: {
+        attemptNumber: 1,
+        modelAttemptId: modelAttemptId.from("attempt-profile-mismatch"),
+        fallbackPosition: 0,
+        providerKey: product.adapter.identity.providerId,
+        modelKey: String(product.adapter.supportedModels[0]),
+      },
+      receipt: { ...receipt(product), providerProfileId: "another-profile" },
+      boundConfigurationGeneration: generation,
+      configurationGeneration: generation,
+      signal: new AbortController().signal,
+      modelInput: {
+        messages: [{ role: "user", parts: [{ kind: "text", text: "hello" }] }],
+        tools: product.disclosure.modelTools,
+        output: { kind: "text" },
+        budgets: {},
+        disclosure: disclosureInput(product),
+      },
+    });
     expect(result.fact).toMatchObject({
       kind: "failed",
       category: "invalid-request",
@@ -390,8 +438,12 @@ describe("createProductAttemptRunner", () => {
         selectionReason: "intent-mapped-role",
         requiredCapabilities: { tools: true, streaming: true },
         providerId: adapter.identity.providerId,
+        providerProfileId: adapter.identity.profileId,
+        providerAdapterKind: adapter.identity.adapterKind,
+        providerDestinationId: adapter.identity.destinationId,
         modelId: model,
         reasoning: "provider-default",
+        reasoningControl: null,
         fallbackPosition: 0,
         budgets: {},
         catalogGeneration: 1,
@@ -448,6 +500,10 @@ describe("createProductAttemptRunner", () => {
     expect(requests[0]?.metadata).toMatchObject({
       providerCatalogGeneration: 1,
       modelCapabilitySchemaVersion: 1,
+    });
+    expect(requests[0]).toMatchObject({
+      reasoning: "provider-default",
+      reasoningControl: null,
     });
     expect(requests[1]?.messages[0]?.parts[0]).toMatchObject({
       kind: "text",

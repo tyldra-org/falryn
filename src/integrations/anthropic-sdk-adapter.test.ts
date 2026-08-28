@@ -56,6 +56,56 @@ function anthropicEvent(value: unknown): RawMessageStreamEvent {
 }
 
 describe("createAnthropicSdkAdapter", () => {
+  test("sends the routed reasoning control", async () => {
+    const captured: { body: MessageCreateParamsStreaming | null } = { body: null };
+    const events = await collect(
+      {
+        resolveApiKey: async () => "sk-ant-test",
+        createStream: async (_apiKey, requestBody) => {
+          captured.body = requestBody;
+          return stream([
+            anthropicEvent({
+              type: "message_start",
+              message: { usage: { input_tokens: 1, output_tokens: 0 } },
+            }),
+            anthropicEvent({
+              type: "message_delta",
+              delta: { stop_reason: "end_turn", stop_sequence: null },
+              usage: { output_tokens: 1 },
+            }),
+            anthropicEvent({ type: "message_stop" }),
+          ]);
+        },
+      },
+      request({ reasoning: "deep", reasoningControl: "high" }),
+    );
+    expect(captured.body?.output_config).toMatchObject({ effort: "high" });
+    expect(events.at(-1)?.kind).toBe("finished");
+
+    await collect(
+      {
+        resolveApiKey: async () => "sk-ant-test",
+        createStream: async (_apiKey, requestBody) => {
+          captured.body = requestBody;
+          return stream([
+            anthropicEvent({
+              type: "message_start",
+              message: { usage: { input_tokens: 1, output_tokens: 0 } },
+            }),
+            anthropicEvent({
+              type: "message_delta",
+              delta: { stop_reason: "end_turn", stop_sequence: null },
+              usage: { output_tokens: 1 },
+            }),
+            anthropicEvent({ type: "message_stop" }),
+          ]);
+        },
+      },
+      request({ reasoning: "max", reasoningControl: "max" }),
+    );
+    expect(captured.body?.output_config).toMatchObject({ effort: "max" });
+  });
+
   test("normalizes text, reasoning, tool calls, usage, and finish state", async () => {
     const events = await collect({
       resolveApiKey: async () => "sk-ant-test",

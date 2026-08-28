@@ -16,7 +16,11 @@ import {
 } from "../domain/credential.ts";
 import { modelId, providerId } from "../domain/identity.ts";
 import { err, ok, type Result } from "../domain/result.ts";
-import { DISCOVERY_POLICIES, PROVIDER_ADAPTER_KINDS } from "./adapter-kind.ts";
+import {
+  DISCOVERY_POLICIES,
+  PROVIDER_ADAPTER_KINDS,
+  type ProviderAdapterKind,
+} from "./adapter-kind.ts";
 import { isModelCatalogId, MAX_MODEL_CATALOGS_PER_PROFILE } from "./catalog/contracts.ts";
 import { MAX_PROVIDER_METADATA_ENTRY_LENGTH } from "./limits.ts";
 import { modelCapabilityDeclarationSchema } from "./model-capability-schema.ts";
@@ -30,6 +34,32 @@ const credentialReferenceSchema = z
     accountLabel: z.union([z.string().min(1).max(MAX_CREDENTIAL_LABEL_LENGTH), z.null()]),
   })
   .nullable();
+
+/** Validate a credential-free provider base URL before it can enter state. */
+export function providerEndpointIsAllowed(
+  adapterKind: ProviderAdapterKind,
+  endpoint: string | null,
+): boolean {
+  if (endpoint === null) {
+    return adapterKind !== "openai" && adapterKind !== "custom";
+  }
+  try {
+    const url = new URL(endpoint);
+    return (
+      url.username.length === 0 &&
+      url.password.length === 0 &&
+      url.search.length === 0 &&
+      url.hash.length === 0 &&
+      (url.protocol === "https:" ||
+        (url.protocol === "http:" &&
+          (url.hostname === "localhost" ||
+            url.hostname === "127.0.0.1" ||
+            url.hostname === "[::1]")))
+    );
+  } catch {
+    return false;
+  }
+}
 
 export const providerProfileSchema = z
   .object({
@@ -57,6 +87,14 @@ export const providerProfileSchema = z
   })
   .strict()
   .superRefine((profile, context) => {
+    if (!providerEndpointIsAllowed(profile.adapterKind, profile.endpoint)) {
+      context.addIssue({
+        code: "custom",
+        path: ["endpoint"],
+        message: "invalid or credential-bearing provider endpoint",
+      });
+    }
+
     const enabled = new Set<string>();
     for (const [index, id] of profile.enabledModels.entries()) {
       if (enabled.has(id)) {

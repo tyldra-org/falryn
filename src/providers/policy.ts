@@ -8,7 +8,13 @@
 import type { ModelId, ProviderId } from "../domain/identity.ts";
 import { MODEL_ROLES, type ModelRole, WORK_INTENTS, type WorkIntent } from "./roles.ts";
 
-export const REASONING_EFFORTS = ["minimal", "balanced", "deep", "provider-default"] as const;
+export const REASONING_EFFORTS = [
+  "minimal",
+  "balanced",
+  "deep",
+  "max",
+  "provider-default",
+] as const;
 
 export type ReasoningEffort = (typeof REASONING_EFFORTS)[number];
 

@@ -8,8 +8,13 @@
 
 import type { Instant } from "../domain/clock.ts";
 import type { ModelId, ProviderId } from "../domain/identity.ts";
+import type { ProviderAdapterKind } from "./adapter-kind.ts";
 import type { ModelCapability, ModelCatalog } from "./discovery.ts";
-import { featureIsSupported, type MODEL_CAPABILITY_SCHEMA_VERSION } from "./model-capability.ts";
+import {
+  featureIsSupported,
+  type MODEL_CAPABILITY_SCHEMA_VERSION,
+  type ModelInputModality,
+} from "./model-capability.ts";
 import {
   isRoleDisabled,
   type ModelPolicy,
@@ -38,6 +43,10 @@ export type ExplicitModelSelection = {
 /** One provider's catalog entry used for multi-provider routing. */
 export type RoutedCatalogEntry = {
   readonly providerId: ProviderId;
+  readonly profileId: string;
+  readonly adapterKind: ProviderAdapterKind;
+  readonly destinationId: string;
+  readonly requestInputModalities: readonly ModelInputModality[];
   readonly catalog: ModelCatalog;
 };
 
@@ -53,8 +62,12 @@ export type RoutingReceipt = {
   readonly selectionReason: RouteSelectionReason;
   readonly requiredCapabilities: RouteRequirement;
   readonly providerId: ProviderId;
+  readonly providerProfileId: string;
+  readonly providerAdapterKind: ProviderAdapterKind;
+  readonly providerDestinationId: string;
   readonly modelId: ModelId;
   readonly reasoning: ReasoningEffort;
+  readonly reasoningControl: string | null;
   readonly fallbackPosition: number;
   readonly budgets: RoleBudgets;
   readonly catalogGeneration: number;
@@ -172,7 +185,7 @@ function findCapability(
   providerId: ProviderId,
   modelId: ModelId,
   now?: Instant,
-): { capability: ModelCapability; catalog: ModelCatalog } | undefined {
+): { capability: ModelCapability; entry: RoutedCatalogEntry } | undefined {
   for (const entry of catalogs) {
     if (entry.providerId !== providerId) {
       continue;
@@ -186,10 +199,71 @@ function findCapability(
     }
     const capability = entry.catalog.models.find((model) => model.modelId === modelId);
     if (capability !== undefined) {
-      return { capability, catalog: entry.catalog };
+      return { capability, entry };
     }
   }
   return undefined;
+}
+
+const REASONING_CONTROL_PREFERENCES = {
+  deterministic: {
+    minimal: ["minimal", "low", "none"],
+    balanced: ["balanced", "medium"],
+    deep: ["deep", "high", "xhigh"],
+    max: ["max"],
+    "provider-default": [],
+  },
+  openai: {
+    minimal: ["minimal", "low", "none"],
+    balanced: ["medium"],
+    deep: ["high", "xhigh"],
+    max: ["max"],
+    "provider-default": [],
+  },
+  anthropic: {
+    minimal: ["low"],
+    balanced: ["medium"],
+    deep: ["high", "xhigh"],
+    max: ["max"],
+    "provider-default": [],
+  },
+  google: {
+    minimal: ["minimal", "low"],
+    balanced: ["medium"],
+    deep: ["high"],
+    max: [],
+    "provider-default": [],
+  },
+  custom: {
+    minimal: ["minimal", "low", "none"],
+    balanced: ["balanced", "medium"],
+    deep: ["deep", "high", "xhigh"],
+    max: ["max"],
+    "provider-default": [],
+  },
+} as const satisfies Record<ProviderAdapterKind, Record<ReasoningEffort, readonly string[]>>;
+
+function reasoningControlFor(
+  capability: ModelCapability,
+  reasoning: ReasoningEffort,
+  adapterKind: ProviderAdapterKind,
+): string | null {
+  for (const candidate of REASONING_CONTROL_PREFERENCES[adapterKind][reasoning]) {
+    if (capability.reasoningControls.includes(candidate)) {
+      return candidate;
+    }
+  }
+  return null;
+}
+
+function adapterMatchesRequirements(
+  entry: RoutedCatalogEntry,
+  required: RouteRequirement,
+): boolean {
+  return (
+    required.modalities === undefined ||
+    required.modalities.every((modality) => entry.requestInputModalities.includes(modality))
+  );
 }
 
 function buildCandidateList(
@@ -227,7 +301,11 @@ export function resolveModelRoute(input: ResolveRouteInput): RoutingOutcome {
       input.explicit.modelId,
       input.now,
     );
-    if (found === undefined || !modelMatchesRequirements(found.capability, required)) {
+    if (
+      found === undefined ||
+      !modelMatchesRequirements(found.capability, required) ||
+      !adapterMatchesRequirements(found.entry, required)
+    ) {
       return {
         kind: "no-eligible-route",
         role,
@@ -253,12 +331,16 @@ export function resolveModelRoute(input: ResolveRouteInput): RoutingOutcome {
         selectionReason: "explicit-selection",
         requiredCapabilities: required,
         providerId: input.explicit.providerId,
+        providerProfileId: found.entry.profileId,
+        providerAdapterKind: found.entry.adapterKind,
+        providerDestinationId: found.entry.destinationId,
         modelId: input.explicit.modelId,
         reasoning: "provider-default",
+        reasoningControl: null,
         fallbackPosition: 0,
         budgets: {},
-        catalogGeneration: found.catalog.generation,
-        catalogProvenance: found.catalog.provenance,
+        catalogGeneration: found.entry.catalog.generation,
+        catalogProvenance: found.entry.catalog.provenance,
         modelCapabilitySchemaVersion: found.capability.schemaVersion,
         recordedAt: input.now ?? null,
       },
@@ -326,7 +408,22 @@ export function resolveModelRoute(input: ResolveRouteInput): RoutingOutcome {
       candidate.modelId,
       input.now,
     );
-    if (found === undefined || !modelMatchesRequirements(found.capability, required)) {
+    if (
+      found === undefined ||
+      !modelMatchesRequirements(found.capability, required) ||
+      !adapterMatchesRequirements(found.entry, required)
+    ) {
+      continue;
+    }
+
+    const reasoningControl = reasoningControlFor(
+      found.capability,
+      route.reasoning,
+      found.entry.adapterKind,
+    );
+    // Unlike the adaptive postures, max is an exact quality-first request. It
+    // must never degrade to a provider default or another provider's "high".
+    if (route.reasoning === "max" && reasoningControl === null) {
       continue;
     }
 
@@ -348,12 +445,16 @@ export function resolveModelRoute(input: ResolveRouteInput): RoutingOutcome {
         selectionReason,
         requiredCapabilities: required,
         providerId: candidate.providerId,
+        providerProfileId: found.entry.profileId,
+        providerAdapterKind: found.entry.adapterKind,
+        providerDestinationId: found.entry.destinationId,
         modelId: candidate.modelId,
         reasoning: route.reasoning,
+        reasoningControl,
         fallbackPosition: position,
         budgets: route.budgets,
-        catalogGeneration: found.catalog.generation,
-        catalogProvenance: found.catalog.provenance,
+        catalogGeneration: found.entry.catalog.generation,
+        catalogProvenance: found.entry.catalog.provenance,
         modelCapabilitySchemaVersion: found.capability.schemaVersion,
         recordedAt: input.now ?? null,
       },

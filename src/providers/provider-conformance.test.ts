@@ -49,6 +49,7 @@ const primary = providerId.from("demo-provider");
 const secondary = providerId.from("demo-fallback");
 const fast = modelId.from("demo-fast");
 const vision = modelId.from("demo-vision");
+const deterministicDestination = "falryn:deterministic:default";
 
 function demoProfile(overrides: Partial<ProviderProfile> = {}): ProviderProfile {
   return {
@@ -104,6 +105,10 @@ function catalogs(): readonly RoutedCatalogEntry[] {
   return [
     {
       providerId: primary,
+      profileId: "conformance",
+      adapterKind: "deterministic",
+      destinationId: deterministicDestination,
+      requestInputModalities: ["text", "image"],
       catalog: catalogFor([
         {
           schemaVersion: 1,
@@ -143,6 +148,10 @@ function catalogs(): readonly RoutedCatalogEntry[] {
     },
     {
       providerId: secondary,
+      profileId: "fallback",
+      adapterKind: "deterministic",
+      destinationId: deterministicDestination,
+      requestInputModalities: ["text"],
       catalog: catalogFor(
         [
           {
@@ -519,6 +528,8 @@ describe("provider conformance: routing receipt and non-recursive fallback", () 
     expect(receipt.fallbackPosition).toBe(0);
     expect(receipt.catalogProvenance).toBe("static-config");
     expect(receipt.providerId).toBe(primary);
+    expect(receipt.providerProfileId).toBe("conformance");
+    expect(receipt.providerAdapterKind).toBe("deterministic");
     expect(receipt.modelId).toBe(fast);
 
     const second = resolveNextFallback({ policy, catalogs: catalogs(), intent: "coding" }, receipt);

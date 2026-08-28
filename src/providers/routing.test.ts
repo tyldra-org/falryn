@@ -4,7 +4,12 @@ import { instant } from "../domain/clock.ts";
 import { modelId, providerId } from "../domain/identity.ts";
 import type { ModelCatalog } from "./discovery.ts";
 import { unknownModelCapability } from "./model-capability.ts";
-import { DEFAULT_INTENT_ROLE_MAP, type ModelPolicy, resolveIntentRole } from "./policy.ts";
+import {
+  DEFAULT_INTENT_ROLE_MAP,
+  type ModelPolicy,
+  type ReasoningEffort,
+  resolveIntentRole,
+} from "./policy.ts";
 import { parseModelPolicy } from "./policy-schema.ts";
 import {
   defaultRequirementsForIntent,
@@ -26,6 +31,7 @@ const fast = modelId.from("fast-model");
 const deep = modelId.from("deep-model");
 const vision = modelId.from("vision-model");
 const weak = modelId.from("text-only");
+const deterministicDestination = "falryn:deterministic:default";
 
 function catalogFor(models: ModelCatalog["models"], generation = 1): ModelCatalog {
   return {
@@ -40,13 +46,14 @@ function catalogFor(models: ModelCatalog["models"], generation = 1): ModelCatalo
 function samplePolicy(overrides?: {
   readonly visionUse?: "fallback" | "always" | "off";
   readonly withFallback?: boolean;
+  readonly reasoning?: ReasoningEffort;
 }): ModelPolicy {
   const parsed = parseModelPolicy({
     roles: {
       default: {
         providerId: primary,
         modelId: deep,
-        reasoning: "balanced",
+        reasoning: overrides?.reasoning ?? "balanced",
         fallbacks: overrides?.withFallback ? [{ providerId: secondary, modelId: fast }] : [],
         budgets: { attempts: 2 },
       },
@@ -98,6 +105,10 @@ function catalogs(): readonly RoutedCatalogEntry[] {
   return [
     {
       providerId: primary,
+      profileId: "primary-profile",
+      adapterKind: "deterministic",
+      destinationId: deterministicDestination,
+      requestInputModalities: ["text", "image"],
       catalog: catalogFor([
         {
           schemaVersion: 1,
@@ -171,6 +182,10 @@ function catalogs(): readonly RoutedCatalogEntry[] {
     },
     {
       providerId: secondary,
+      profileId: "secondary-profile",
+      adapterKind: "deterministic",
+      destinationId: deterministicDestination,
+      requestInputModalities: ["text"],
       catalog: catalogFor(
         [
           {
@@ -310,10 +325,68 @@ describe("resolveModelRoute", () => {
     expect(outcome.receipt.intent).toBe("coding");
     expect(outcome.receipt.selectionReason).toBe("intent-mapped-role");
     expect(outcome.receipt.providerId).toBe(primary);
+    expect(outcome.receipt.providerProfileId).toBe("primary-profile");
+    expect(outcome.receipt.providerAdapterKind).toBe("deterministic");
+    expect(outcome.receipt.providerDestinationId).toBe(deterministicDestination);
     expect(outcome.receipt.modelId).toBe(deep);
     expect(outcome.receipt.reasoning).toBe("balanced");
+    expect(outcome.receipt.reasoningControl).toBe("balanced");
     expect(outcome.receipt.fallbackPosition).toBe(0);
     expect(outcome.receipt.catalogGeneration).toBe(1);
+  });
+
+  test("selects max only when the adapter and model advertise max", () => {
+    const maxCatalogs = catalogs().map((entry) =>
+      entry.providerId === primary
+        ? {
+            ...entry,
+            adapterKind: "openai" as const,
+            destinationId: "sha-256:openai-default",
+            catalog: {
+              ...entry.catalog,
+              models: entry.catalog.models.map((capability) =>
+                capability.modelId === deep
+                  ? { ...capability, reasoningControls: ["max"] }
+                  : capability,
+              ),
+            },
+          }
+        : entry,
+    );
+    const selected = resolveModelRoute({
+      policy: samplePolicy({ reasoning: "max" }),
+      catalogs: maxCatalogs,
+      intent: "coding",
+    });
+    expect(selected.kind).toBe("selected");
+    if (selected.kind !== "selected") {
+      return;
+    }
+    expect(selected.receipt.reasoning).toBe("max");
+    expect(selected.receipt.reasoningControl).toBe("max");
+
+    const deepRequest = resolveModelRoute({
+      policy: samplePolicy({ reasoning: "deep" }),
+      catalogs: maxCatalogs,
+      intent: "coding",
+    });
+    expect(deepRequest.kind).toBe("selected");
+    if (deepRequest.kind === "selected") {
+      expect(deepRequest.receipt.reasoning).toBe("deep");
+      expect(deepRequest.receipt.reasoningControl).toBeNull();
+    }
+
+    const unsupported = resolveModelRoute({
+      policy: samplePolicy({ reasoning: "max" }),
+      catalogs: catalogs(),
+      intent: "coding",
+    });
+    expect(unsupported).toEqual({
+      kind: "no-eligible-route",
+      role: "default",
+      intent: "coding",
+      code: "no-compatible-model",
+    });
   });
 
   test("does not route from an expired remote catalog generation", () => {
@@ -364,6 +437,26 @@ describe("resolveModelRoute", () => {
       kind: "role-disabled",
       role: "vision",
       intent: "visualUnderstanding",
+    });
+  });
+
+  test("rejects a model modality the selected adapter cannot transport", () => {
+    const textOnly = catalogs().map((entry) =>
+      entry.providerId === primary
+        ? { ...entry, requestInputModalities: ["text"] as const }
+        : entry,
+    );
+    const outcome = resolveModelRoute({
+      policy: samplePolicy(),
+      catalogs: textOnly,
+      intent: "visualUnderstanding",
+      required: { modalities: ["image"] },
+    });
+    expect(outcome).toEqual({
+      kind: "no-eligible-route",
+      role: "vision",
+      intent: "visualUnderstanding",
+      code: "no-compatible-model",
     });
   });
 

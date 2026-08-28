@@ -113,6 +113,9 @@ export function createDeterministicProviderAdapter(
   const identity = {
     providerId: providerId.from("falryn-deterministic"),
     profileId: options.profileId ?? "deterministic",
+    adapterKind: "deterministic" as const,
+    endpoint: null,
+    destinationId: "falryn:deterministic:default",
     displayName: options.displayName ?? "Deterministic fixture provider",
   };
   const models = [modelId.from("deterministic-echo")] as const;
@@ -126,6 +129,7 @@ export function createDeterministicProviderAdapter(
   return {
     identity,
     supportedModels: models,
+    requestInputModalities: ["text"],
     modelCapabilities: models.map((model) => ({
       schemaVersion: MODEL_CAPABILITY_SCHEMA_VERSION,
       modelId: model,

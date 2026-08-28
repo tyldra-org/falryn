@@ -21,6 +21,7 @@ import {
   parseProviderConnectionState,
   parseProviderProfile,
   profileCredentialConsumer,
+  providerEndpointIsAllowed,
   revokeProviderSessionCredential,
 } from "../providers/index.ts";
 import type { ProductCredentialBundle } from "./product-credentials.ts";
@@ -278,11 +279,11 @@ async function add(
   ports: ProviderConnectionServicePorts,
   signal?: AbortSignal,
 ): Promise<ProviderConnectionActionResult> {
-  if (!parseProviderProfile(action.profile).ok) {
-    return failure(action.kind, "invalid-profile", false);
-  }
   if (!endpointIsAllowed(action.profile)) {
     return failure(action.kind, "invalid-endpoint", false);
+  }
+  if (!parseProviderProfile(action.profile).ok) {
+    return failure(action.kind, "invalid-profile", false);
   }
   if (find(snapshot.state, action.profile.profileId) !== null) {
     return failure(action.kind, "duplicate-profile", false);
@@ -306,11 +307,11 @@ async function configure(
   ports: ProviderConnectionServicePorts,
   signal?: AbortSignal,
 ): Promise<ProviderConnectionActionResult> {
-  if (!parseProviderProfile(action.profile).ok) {
-    return failure(action.kind, "invalid-profile", false);
-  }
   if (!endpointIsAllowed(action.profile)) {
     return failure(action.kind, "invalid-endpoint", false);
+  }
+  if (!parseProviderProfile(action.profile).ok) {
+    return failure(action.kind, "invalid-profile", false);
   }
   const current = find(snapshot.state, action.profile.profileId);
   if (current === null) {
@@ -695,19 +696,7 @@ function replace(
 }
 
 function endpointIsAllowed(profile: ProviderProfile): boolean {
-  if (profile.endpoint === null) {
-    return profile.adapterKind !== "openai" && profile.adapterKind !== "custom";
-  }
-  try {
-    const url = new URL(profile.endpoint);
-    return (
-      url.protocol === "https:" ||
-      (url.protocol === "http:" &&
-        (url.hostname === "localhost" || url.hostname === "127.0.0.1" || url.hostname === "[::1]"))
-    );
-  } catch {
-    return false;
-  }
+  return providerEndpointIsAllowed(profile.adapterKind, profile.endpoint);
 }
 
 function sameReference(

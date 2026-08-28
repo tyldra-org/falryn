@@ -110,23 +110,35 @@ catalog generation. Only configured model IDs enter the effective catalog.
 Malformed records, stale generations, authentication failures, rate limits,
 timeouts, and cancellation fail closed with typed, secret-free outcomes.
 Before a live model adapter is created, the exact effective catalog is
-published immutably to the product SQLite state database. The model route and
-attempt retain that catalog generation, so cache eviction or a later provider
+published immutably to the product SQLite state database with its provider
+profile, SDK adapter kind, and configured endpoint. Reusing a profile and
+generation with a different destination or catalog is a conflict. The model
+route and attempt retain that exact profile/destination binding and catalog
+generation, so cache eviction, profile reconfiguration, or a later provider
 refresh cannot change or erase the facts used by an in-flight or replayed
 decision. Catalog and profile files never contain credential bytes.
 Live inference uses the official OpenAI, Anthropic, or Google Gen AI SDK named
 by the selected profile. Each adapter translates the same bounded messages,
 tool definitions, tool continuations, output contract, token budget, usage,
-finish reason, cancellation, and typed failure events. Falryn keeps retries
-above the SDK boundary; each SDK performs one request attempt.
+finish reason, cancellation, and typed failure events. A provider-native
+reasoning control is sent when the effective model catalog supports a mapping
+for the selected Falryn posture. `max` is an explicit quality-first posture and
+is eligible only when both the model catalog and adapter expose the provider's
+native `max` control. OpenAI's GPT-5.6 catalog maps Falryn `minimal` to `low` or
+`none`, not to the SDK's unrelated literal `minimal` compatibility value.
+Catalog modality support is also intersected with the adapter's current request
+transport; the live adapters accept text today and fail with
+`unsupported-capability` rather than dropping unresolved image handles. Falryn
+keeps retries above the SDK boundary; each SDK performs one request attempt.
 
 The provider request contains only the disclosed tool definitions, not the
-whole registered catalog. The attempt event retains the provider/model route,
-catalog, capability-schema, and policy generations, tool-schema digests, schema cost, unavailable
-capability families, omissions, and discovery handle. Provider disconnects,
-malformed requests, cancellation, timeout, fallback exhaustion, and uncertain
-effects remain typed outcomes. Completed or uncertain consequential tool
-effects are not retried as fresh work.
+whole registered catalog. The attempt event retains the provider profile,
+adapter kind, secret-safe destination identity, model route, resolved reasoning
+control, catalog, capability-schema, and policy generations, tool-schema
+digests, schema cost, unavailable capability families, omissions, and discovery
+handle. Provider disconnects, malformed requests, cancellation, timeout,
+fallback exhaustion, and uncertain effects remain typed outcomes. Completed or
+uncertain consequential tool effects are not retried as fresh work.
 
 The interactive composer and `falryn run` use the same application-owned
 live-turn executor. Both paths compose Context and Brief, run the selected

@@ -24,6 +24,7 @@ import {
   PROVIDER_BOUNDARY_SCHEMA_VERSION,
 } from "./limits.ts";
 import { MESSAGE_ROLES } from "./messages.ts";
+import { REASONING_EFFORTS } from "./policy.ts";
 import { MODEL_ROLES } from "./roles.ts";
 
 const modelRequestIdSchema = z.string().transform((value, ctx) => {
@@ -119,6 +120,13 @@ export const modelRequestSchema = z
     tools: z.array(toolDefinitionSchema).max(MAX_REQUEST_TOOLS),
     output: outputContractSchema,
     budgets: budgetsSchema,
+    reasoning: z.enum(REASONING_EFFORTS).optional(),
+    reasoningControl: z
+      .string()
+      .min(1)
+      .max(MAX_PROVIDER_METADATA_ENTRY_LENGTH)
+      .nullable()
+      .optional(),
     metadata: requestMetadataSchema,
   })
   .strict()

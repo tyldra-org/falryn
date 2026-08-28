@@ -34,6 +34,7 @@ const primary = providerId.from("primary");
 const secondary = providerId.from("secondary");
 const deep = modelId.from("deep-model");
 const fast = modelId.from("fast-model");
+const deterministicDestination = "falryn:deterministic:default";
 
 function catalogFor(models: ModelCatalog["models"]): ModelCatalog {
   return {
@@ -79,6 +80,10 @@ function catalogs(): readonly RoutedCatalogEntry[] {
   return [
     {
       providerId: primary,
+      profileId: "primary-profile",
+      adapterKind: "deterministic",
+      destinationId: deterministicDestination,
+      requestInputModalities: ["text"],
       catalog: catalogFor([
         {
           schemaVersion: 1,
@@ -118,6 +123,10 @@ function catalogs(): readonly RoutedCatalogEntry[] {
     },
     {
       providerId: secondary,
+      profileId: "secondary-profile",
+      adapterKind: "deterministic",
+      destinationId: deterministicDestination,
+      requestInputModalities: ["text"],
       catalog: catalogFor([
         {
           schemaVersion: 1,

@@ -644,6 +644,10 @@ export function createProductLiveTurnExecutor(
         catalogs: [
           {
             providerId: provider.value.identity.providerId,
+            profileId: provider.value.identity.profileId,
+            adapterKind: provider.value.identity.adapterKind,
+            destinationId: provider.value.identity.destinationId,
+            requestInputModalities: provider.value.requestInputModalities,
             catalog: options.providerCatalog,
           },
         ],
