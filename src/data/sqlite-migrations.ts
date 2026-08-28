@@ -6,12 +6,13 @@
  * gap, a repeat, or a version out of order is defective, and finding out
  * halfway through applying it means finding out on a user's only copy.
  *
- * The production list holds six steps: migration `0001`, which creates the
+ * The production list holds seven steps: migration `0001`, which creates the
  * session, turn, model-attempt, invocation, event, and projection-cursor
  * tables, migration `0002`, which creates the artifact metadata table,
  * migration `0003`, which creates run identity, migration `0004`, which creates
  * the artifact provenance graph, migration `0005`, which creates durable memory
- * records, and migration `0006`, which stores Loom manifests. Their SQL lives
+ * records, migration `0006`, which stores Loom manifests, and migration `0007`,
+ * which stores immutable effective model-catalog generations. Their SQL lives
  * in the adjacent schema modules, so this module owns migration-set rules while
  * those modules own the schema.
  *
@@ -34,6 +35,7 @@ import { ARTIFACT_TRANSFORMATIONS_TABLE, MIGRATION_0004 } from "./artifact-prove
 import { ARTIFACTS_TABLE, MIGRATION_0002 } from "./artifact-schema.ts";
 import { LOOM_MANIFESTS_TABLE, MIGRATION_0006 } from "./loom-schema.ts";
 import { MEMORY_RECORDS_TABLE, MIGRATION_0005 } from "./memory-schema.ts";
+import { MIGRATION_0007, MODEL_CATALOG_GENERATIONS_TABLE } from "./model-catalog-schema.ts";
 import { MIGRATION_0003, RUNS_TABLE } from "./run-schema.ts";
 import { MIGRATION_0001, RECORD_TABLES } from "./schema.ts";
 
@@ -52,6 +54,7 @@ export const PRODUCTION_MIGRATIONS: readonly Migration[] = [
   MIGRATION_0004,
   MIGRATION_0005,
   MIGRATION_0006,
+  MIGRATION_0007,
 ];
 
 /** Every product table the registered set creates, in creation order. */
@@ -62,6 +65,7 @@ export const PRODUCT_TABLES: readonly string[] = [
   ARTIFACT_TRANSFORMATIONS_TABLE,
   MEMORY_RECORDS_TABLE,
   LOOM_MANIFESTS_TABLE,
+  MODEL_CATALOG_GENERATIONS_TABLE,
 ];
 
 function issue(

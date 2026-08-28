@@ -3,8 +3,8 @@
 import { modelId, providerId } from "../../domain/index.ts";
 import {
   isDiscoveryPolicy,
+  isModelCatalogId,
   isProviderAdapterKind,
-  knownModelCapability,
   type ProviderAuthMethod,
   type ProviderProfile,
 } from "../../providers/index.ts";
@@ -20,6 +20,7 @@ const PROFILE_OPTIONS = [
   "name",
   "endpoint",
   "model",
+  "catalog",
   "discovery",
   "organization",
   "project",
@@ -120,6 +121,10 @@ function profileFrom(id: string, parsed: RawArguments): ProviderProfile | string
   }
   const provider = parsed.provider ?? id;
   const endpoint = parsed.endpoint ?? (provider === "openai" ? "https://api.openai.com/v1" : null);
+  const catalogs = parsed.catalog ?? [];
+  if (catalogs.some((catalog) => !isModelCatalogId(catalog))) {
+    return "Every --catalog must be a legal catalog identity.";
+  }
   return {
     profileId: id,
     providerId: providerId.from(provider),
@@ -130,10 +135,8 @@ function profileFrom(id: string, parsed: RawArguments): ProviderProfile | string
     organization: parsed.organization ?? null,
     project: parsed.project ?? null,
     enabledModels: models.map(modelId.from),
-    modelCapabilities: models.flatMap((id) => {
-      const capability = knownModelCapability(adapter, id, endpoint);
-      return capability === null ? [] : [capability];
-    }),
+    catalogs,
+    modelCapabilities: [],
     discovery,
     timeouts: {
       connectMs: parsed["connect-timeout"] ?? 15_000,

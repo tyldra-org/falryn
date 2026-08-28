@@ -199,6 +199,8 @@ describe("provider connection arguments", () => {
       "coder-small",
       "--model",
       "coder-large",
+      "--catalog",
+      "local-models",
     );
     if (invocation.kind !== "run" || invocation.providerArgs?.action !== "add") {
       throw new Error("expected parsed provider add");
@@ -209,10 +211,11 @@ describe("provider connection arguments", () => {
       "coder-large",
     ]);
     expect(invocation.providerArgs.profile.modelCapabilities).toEqual([]);
+    expect(invocation.providerArgs.profile.catalogs).toEqual(["local-models"]);
     expect(JSON.stringify(invocation)).not.toMatch(/api.?key|secret/i);
   });
 
-  test("attaches the built-in source-verified capability declaration", async () => {
+  test("keeps bundled capability facts out of user profiles", async () => {
     const invocation = await parse(
       "provider",
       "add",
@@ -225,17 +228,8 @@ describe("provider connection arguments", () => {
     if (invocation.kind !== "run" || invocation.providerArgs?.action !== "add") {
       throw new Error("expected parsed provider add");
     }
-    expect(invocation.providerArgs.profile.modelCapabilities).toEqual([
-      expect.objectContaining({
-        modelId: modelId.from("gpt-5.6-sol"),
-        inputModalities: ["text", "image"],
-        outputModalities: ["text"],
-        tools: "supported",
-        reasoning: "supported",
-        contextTokens: 1_050_000,
-        outputTokens: 128_000,
-      }),
-    ]);
+    expect(invocation.providerArgs.profile.enabledModels).toEqual([modelId.from("gpt-5.6-sol")]);
+    expect(invocation.providerArgs.profile.modelCapabilities).toEqual([]);
 
     const custom = await parse(
       "provider",

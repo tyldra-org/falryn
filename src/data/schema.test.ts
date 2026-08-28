@@ -24,6 +24,7 @@ import {
 } from "./fixtures.ts";
 import { LOOM_SCHEMA_VERSION } from "./loom-schema.ts";
 import { MEMORY_SCHEMA_VERSION } from "./memory-schema.ts";
+import { MODEL_CATALOG_SCHEMA_VERSION } from "./model-catalog-schema.ts";
 import { RUN_SCHEMA_VERSION } from "./run-schema.ts";
 import { MIGRATION_0001, RECORD_SCHEMA_VERSION, RECORD_TABLES } from "./schema.ts";
 import { PRODUCT_SCHEMA_VERSION, PRODUCT_TABLES } from "./sqlite-migrations.ts";
@@ -77,6 +78,7 @@ describe("a fresh database", () => {
       ARTIFACT_PROVENANCE_SCHEMA_VERSION,
       MEMORY_SCHEMA_VERSION,
       LOOM_SCHEMA_VERSION,
+      MODEL_CATALOG_SCHEMA_VERSION,
     ]);
     // Nothing to lose: a database at version 0 holds no product row.
     expect(store.report.backupPath).toBeNull();
@@ -117,6 +119,7 @@ describe("a fresh database", () => {
       "loom_manifests_by_scope",
       "memory_records_by_workspace",
       "model_attempts_by_turn",
+      "model_catalog_generations_by_provider",
       "sessions_by_workspace",
       "turns_by_session",
     ]);

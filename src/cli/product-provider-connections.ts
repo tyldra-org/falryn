@@ -3,12 +3,14 @@
 import {
   composeProductCredentials,
   createProviderConnectionService,
+  createUserCatalogModelDiscovery,
   type ProviderConnectionHandoffResult,
   type ProviderConnectionService,
   type ProviderConnectionStorePort,
   resolveProviderApiKey,
 } from "../application/index.ts";
 import { resolveConfigurationFilePath, writeConfigurationValue } from "../config/index.ts";
+import type { ModelCatalogGenerationRepository } from "../data/index.ts";
 import type { ConfigurationValues } from "../domain/index.ts";
 import {
   createAnthropicSdkAdapter,
@@ -28,6 +30,10 @@ import {
   loadProductConfiguration,
   productConfigurationLoadRequest,
 } from "./product-configuration.ts";
+import {
+  createCachedModelDiscovery,
+  productModelCatalogCacheOptions,
+} from "./product-model-catalog-cache.ts";
 import {
   DEFAULT_PROVIDER_CONNECTION_STATE,
   PROVIDER_CONNECTIONS_CONFIGURATION_KEY,
@@ -59,6 +65,8 @@ export type ProductProviderConnectionOptions = {
   readonly providerFetch?: OpenAiSdkFetch;
   /** Injectable discovery boundary for deterministic provider fixtures. */
   readonly modelDiscovery?: ModelDiscoveryPort;
+  /** Durable effective generations used by executed model routes. */
+  readonly modelCatalogs?: ModelCatalogGenerationRepository;
 };
 
 export function composeProductProviderConnections(
@@ -78,19 +86,31 @@ export function composeProductProviderConnections(
   const store = configurationStore(services, globals, options.configuration);
   const remoteDiscovery =
     options.modelDiscovery ??
-    createOfficialModelDiscovery({
-      resolveApiKey: async (profile, signal) => {
-        const reference = profile.credential;
-        return reference === null
-          ? null
-          : resolveProviderApiKey(credentials.resolver, reference, signal);
-      },
-    });
+    createCachedModelDiscovery(
+      createOfficialModelDiscovery({
+        resolveApiKey: async (profile, signal) => {
+          const reference = profile.credential;
+          return reference === null
+            ? null
+            : resolveProviderApiKey(credentials.resolver, reference, signal);
+        },
+      }),
+      productModelCatalogCacheOptions(services),
+    );
+  const staticDiscovery = createUserCatalogModelDiscovery({
+    fileSystem: services.fileSystem,
+    async configurationRoot() {
+      const home = await services.configurationHomeForRead();
+      return home.kind === "current" || home.kind === "legacy" || home.kind === "empty"
+        ? home.root
+        : services.configurationRoot;
+    },
+  });
   const service = createProviderConnectionService({
     store,
     credentials,
     clock: services.clock,
-    session: { remoteDiscovery },
+    session: { staticDiscovery, remoteDiscovery },
   });
 
   return {
@@ -101,6 +121,17 @@ export function composeProductProviderConnections(
         return { kind: "unavailable", code: session.issue.code, session };
       }
       const { profile } = session.connection;
+      if (options.modelCatalogs !== undefined) {
+        const published = options.modelCatalogs.publish({
+          profileId: profile.profileId,
+          providerId: profile.providerId,
+          catalog: session.catalog,
+          publishedAt: services.clock.now(),
+        });
+        if (!published.ok) {
+          return { kind: "unavailable", code: `catalog-${published.error.code}`, session };
+        }
+      }
       const reference = profile.credential;
       if (reference === null) {
         return { kind: "unavailable", code: "credential-unset", session };

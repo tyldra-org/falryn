@@ -126,6 +126,7 @@ export type ProviderConnectionView = {
   readonly accountLabel: string | null;
   readonly selected: boolean;
   readonly models: readonly string[];
+  readonly catalogs: readonly string[];
   readonly discovery: ProviderProfile["discovery"];
   readonly updatedAt: number;
 };
@@ -674,6 +675,7 @@ function view(connection: ProviderConnection, selected: string | null): Provider
     accountLabel: connection.account?.displayName ?? profile.credential?.accountLabel ?? null,
     selected: profile.profileId === selected,
     models: profile.enabledModels.map(String),
+    catalogs: profile.catalogs ?? [],
     discovery: profile.discovery,
     updatedAt: connection.updatedAt,
   };

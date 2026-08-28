@@ -15,8 +15,7 @@ describe("default provider configuration", () => {
       "gpt-5.6-luna",
       "gpt-5.6",
     ]);
-    expect(profile?.modelCapabilities.map((capability) => String(capability.modelId))).toEqual(
-      profile?.enabledModels.map(String),
-    );
+    expect(profile?.catalogs).toEqual([]);
+    expect(profile?.modelCapabilities).toEqual([]);
   });
 });

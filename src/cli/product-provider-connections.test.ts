@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -191,6 +191,81 @@ describe("product provider connection persistence", () => {
       catalog: { generation: 9, provenance: "remote-discovery" },
     });
     expect(discoveries).toBe(1);
+    expect(JSON.stringify(tested)).not.toContain("secret-not-projected");
+  });
+
+  test("loads referenced user catalogs from the active configuration home", async () => {
+    const home = await mkdtemp(join(tmpdir(), "falryn-provider-catalog-"));
+    homes.push(home);
+    const services = createServiceProvider(GLOBALS, {
+      home: localPath(home),
+      platform: "darwin",
+      currentDirectory: localPath(home),
+      environment: createStaticEnvironment({
+        FALRYN_STATE_DIR: home,
+        FALRYN_TEST_LOCAL_KEY: "secret-not-projected",
+      }),
+    });
+    const graph = services();
+    const catalogDirectory = join(graph.configurationRoot, "catalogs");
+    await mkdir(catalogDirectory, { recursive: true });
+    await writeFile(
+      join(catalogDirectory, "local-models.jsonc"),
+      JSON.stringify({
+        schemaVersion: 1,
+        catalogId: "local-models",
+        displayName: "Local models",
+        provider: {
+          providerId: "local",
+          adapterKind: "openai",
+          endpoint: "http://127.0.0.1:11434/v1",
+        },
+        models: [
+          {
+            schemaVersion: 1,
+            modelId: "coder",
+            displayName: "Local coder",
+            inputModalities: ["text"],
+            outputModalities: ["text"],
+            tools: "supported",
+            structuredOutput: "unknown",
+            streaming: "supported",
+            reasoning: "unknown",
+            reasoningControls: [],
+            contextTokens: 32_000,
+            outputTokens: 4_000,
+            completeness: "partial",
+          },
+        ],
+      }),
+    );
+    const service = composeProductProviderConnections(graph, GLOBALS).service;
+    const profile: ProviderProfile = {
+      ...localProfile(),
+      credential: {
+        storeKind: "environment",
+        locator: "FALRYN_TEST_LOCAL_KEY",
+        consumer: "provider:local",
+        accountLabel: null,
+      },
+      catalogs: ["local-models"],
+    };
+
+    expect(await service.execute({ kind: "add", profile })).toMatchObject({ kind: "completed" });
+    const tested = await service.execute({ kind: "test", profileId: "local" });
+    expect(tested).toMatchObject({
+      kind: "completed",
+      catalog: {
+        models: [
+          {
+            modelId: "coder",
+            displayName: "Local coder",
+            tools: "supported",
+            provenance: ["user-catalog"],
+          },
+        ],
+      },
+    });
     expect(JSON.stringify(tested)).not.toContain("secret-not-projected");
   });
 

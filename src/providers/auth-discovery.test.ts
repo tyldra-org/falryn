@@ -163,13 +163,13 @@ describe("discovery", () => {
       reasoningControls: ["none", "low", "medium", "high", "xhigh", "max"],
       contextTokens: 1_050_000,
       outputTokens: 128_000,
-      provenance: ["compatibility-default"],
+      provenance: ["falryn-builtin"],
     });
     expect(outcome.catalog.models[1]).toMatchObject({
       modelId: modelId.from("gpt-4o-mini"),
       inputModalities: ["text", "image"],
       tools: "supported",
-      provenance: ["compatibility-default"],
+      provenance: ["falryn-builtin"],
     });
     expect(outcome.catalog.models[2]).toMatchObject({
       modelId: modelId.from("unknown-openai-model"),

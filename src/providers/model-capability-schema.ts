@@ -8,11 +8,14 @@ import { modelId } from "../domain/identity.ts";
 import { err, ok, type Result } from "../domain/result.ts";
 import { MAX_PROVIDER_METADATA_ENTRY_LENGTH } from "./limits.ts";
 import {
+  MODEL_AVAILABILITIES,
   MODEL_CAPABILITY_COMPLETENESSES,
+  MODEL_CAPABILITY_PROVENANCES,
   MODEL_CAPABILITY_SCHEMA_VERSION,
   MODEL_FEATURE_SUPPORTS,
   MODEL_INPUT_MODALITIES,
   MODEL_OUTPUT_MODALITIES,
+  type ModelCapability,
   type ModelCapabilityDeclaration,
 } from "./model-capability.ts";
 
@@ -80,4 +83,53 @@ export function parseModelCapabilityDeclaration(
   return parsed.success
     ? ok(parsed.data)
     : err({ kind: "model-capability-declaration", issues: toCodecIssues(parsed.error) });
+}
+
+export type ModelCapabilityParseError = {
+  readonly kind: "model-capability";
+  readonly issues: readonly CodecIssue[];
+};
+
+/** Parses one effective catalog row without relaxing the declaration codec. */
+export function parseModelCapability(
+  value: unknown,
+): Result<ModelCapability, ModelCapabilityParseError> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return err({
+      kind: "model-capability",
+      issues: [{ path: "", code: "invalid_type" }],
+    });
+  }
+  const record = value as Record<string, unknown>;
+  const { availability, provenance, ...declarationValue } = record;
+  const declaration = parseModelCapabilityDeclaration(declarationValue);
+  const validAvailability =
+    typeof availability === "string" &&
+    (MODEL_AVAILABILITIES as readonly string[]).includes(availability);
+  const validProvenance =
+    Array.isArray(provenance) &&
+    provenance.length > 0 &&
+    provenance.length <= MODEL_CAPABILITY_PROVENANCES.length &&
+    provenance.every(
+      (item) =>
+        typeof item === "string" &&
+        (MODEL_CAPABILITY_PROVENANCES as readonly string[]).includes(item),
+    ) &&
+    new Set(provenance).size === provenance.length;
+  if (!declaration.ok || !validAvailability || !validProvenance) {
+    const issues = declaration.ok ? [] : declaration.error.issues;
+    return err({
+      kind: "model-capability",
+      issues: [
+        ...issues,
+        ...(validAvailability ? [] : [{ path: "availability", code: "invalid_value" }]),
+        ...(validProvenance ? [] : [{ path: "provenance", code: "invalid_value" }]),
+      ],
+    });
+  }
+  return ok({
+    ...declaration.value,
+    availability: availability as ModelCapability["availability"],
+    provenance: provenance as unknown as ModelCapability["provenance"],
+  });
 }

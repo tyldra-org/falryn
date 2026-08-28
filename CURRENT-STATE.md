@@ -29,7 +29,8 @@ to standard output and diagnostics go to standard error.
 ## Configuration home and local data
 
 Human-authored user configuration defaults to `~/.falryn/falryn.jsonc`, with
-profiles under `~/.falryn/profiles/` and named workspace layouts under
+profiles under `~/.falryn/profiles/`, user-authored model catalogs under
+`~/.falryn/catalogs/`, and named workspace layouts under
 `~/.falryn/layouts/`. Project configuration remains
 `<workspace>/.falryn/falryn.jsonc`. `FALRYN_CONFIG_DIR` is the explicit user
 configuration-root override.
@@ -73,13 +74,18 @@ semantic journaling, and bounded result projection before provider
 continuation. A headless turn cannot report completion unless a terminal model
 attempt ran.
 
-Each provider profile also persists a versioned, provider-neutral capability
-declaration for its enabled models. The declaration separates input modalities
-from output modalities and records tools, structured output, streaming,
-reasoning, provider-native reasoning controls, context limits, output limits,
-and completeness. Feature support is tri-state (`supported`, `unsupported`, or
-`unknown`); missing facts are never upgraded to support. The default OpenAI
-profile enables the current general-purpose GPT-5.6 family: `gpt-5.6-sol`,
+Model identity and model selection are stored separately. Falryn bundles a
+strict, versioned OpenAI model catalog into the executable, provider profiles
+select enabled model IDs and may reference user catalogs by identity, and
+optional inline profile declarations remain the highest-priority compatibility
+override. A user catalog is a bounded JSONC document at
+`~/.falryn/catalogs/<catalog-id>.jsonc`, bound to one provider identity, SDK
+adapter, and normalized endpoint so facts cannot cross destinations. Catalog
+documents separate input modalities from output modalities and record tools,
+structured output, streaming, reasoning, provider-native reasoning controls,
+context limits, output limits, and completeness. Feature support is tri-state
+(`supported`, `unsupported`, or `unknown`); missing facts are never upgraded to
+support. The default OpenAI profile enables the current general-purpose GPT-5.6 family: `gpt-5.6-sol`,
 `gpt-5.6-terra`, `gpt-5.6-luna`, and the moving `gpt-5.6` alias. Sol is ordered
 first for the default route. Their source-verified declarations record
 text/image input, text output, tools, structured output, streaming, reasoning
@@ -91,7 +97,10 @@ fresh defaults do not select it. Compatibility facts apply only at the official
 OpenAI endpoint; unfamiliar model names and custom endpoints remain unknown.
 
 Remote catalog refresh uses the official OpenAI, Anthropic, or Google Gen AI
-TypeScript SDK selected by the profile. OpenAI's Models API contributes model
+TypeScript SDK selected by the profile. Successful provider-reported catalogs
+are cached as bounded, secret-free normalized documents beneath the
+platform-native cache root; the cache is disposable and scoped to the exact
+profile, provider, adapter, and endpoint. OpenAI's Models API contributes model
 identity and availability but no invented capability facts. Anthropic's richer
 Models response contributes modalities, limits, structured output, and
 reasoning controls. Google's Models response contributes supported actions,
@@ -100,6 +109,11 @@ unknown. Remote facts merge with explicit profile declarations under a new
 catalog generation. Only configured model IDs enter the effective catalog.
 Malformed records, stale generations, authentication failures, rate limits,
 timeouts, and cancellation fail closed with typed, secret-free outcomes.
+Before a live model adapter is created, the exact effective catalog is
+published immutably to the product SQLite state database. The model route and
+attempt retain that catalog generation, so cache eviction or a later provider
+refresh cannot change or erase the facts used by an in-flight or replayed
+decision. Catalog and profile files never contain credential bytes.
 Live inference uses the official OpenAI, Anthropic, or Google Gen AI SDK named
 by the selected profile. Each adapter translates the same bounded messages,
 tool definitions, tool continuations, output contract, token budget, usage,

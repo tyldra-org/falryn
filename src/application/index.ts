@@ -194,6 +194,14 @@ export type { MemoryRecords } from "./memory-record.ts";
 export { createMemoryRecords } from "./memory-record.ts";
 export type { MidTurnInputService, MidTurnInputServiceOptions } from "./mid-turn-input.ts";
 export { createMidTurnInputService, describeMidTurnClassifyError } from "./mid-turn-input.ts";
+export type {
+  UserModelCatalogLoadError,
+  UserModelCatalogLoaderOptions,
+} from "./model-catalogs.ts";
+export {
+  createUserCatalogModelDiscovery,
+  loadUserModelCatalogs,
+} from "./model-catalogs.ts";
 export type { NotebookReader } from "./notebook-read.ts";
 export { createNotebookReader } from "./notebook-read.ts";
 export type { PdfReader } from "./pdf-read.ts";

@@ -447,6 +447,7 @@ export async function runCoding(
         },
         {
           configuration: configuration.values,
+          modelCatalogs: productArtifactSession.modelCatalogs,
           ...ownedProcessOptions,
           ...(options.openaiFetch === undefined ? {} : { providerFetch: options.openaiFetch }),
         },

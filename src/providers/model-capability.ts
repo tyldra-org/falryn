@@ -21,6 +21,8 @@ export type ModelAvailability = (typeof MODEL_AVAILABILITIES)[number];
 
 export const MODEL_CAPABILITY_PROVENANCES = [
   "profile-declaration",
+  "user-catalog",
+  "falryn-builtin",
   "provider-manifest",
   "remote-identity",
   "compatibility-default",

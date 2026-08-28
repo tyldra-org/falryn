@@ -280,6 +280,7 @@ export type RawArguments = {
   readonly adapter: string | undefined;
   readonly endpoint: string | undefined;
   readonly model: readonly string[] | undefined;
+  readonly catalog: readonly string[] | undefined;
   readonly discovery: string | undefined;
   readonly organization: string | undefined;
   readonly project: string | undefined;

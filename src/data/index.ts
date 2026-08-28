@@ -77,6 +77,17 @@ export {
   MEMORY_SCHEMA_VERSION,
   MIGRATION_0005,
 } from "./memory-schema.ts";
+export type {
+  ModelCatalogGenerationRepository,
+  ModelCatalogGenerationStorageError,
+  StoredModelCatalogGeneration,
+} from "./model-catalog-repository.ts";
+export { createModelCatalogGenerationRepository } from "./model-catalog-repository.ts";
+export {
+  MIGRATION_0007,
+  MODEL_CATALOG_GENERATIONS_TABLE,
+  MODEL_CATALOG_SCHEMA_VERSION,
+} from "./model-catalog-schema.ts";
 export type { OwnershipRegistry } from "./ownership.ts";
 export {
   ARTIFACTS_OWNERSHIP,

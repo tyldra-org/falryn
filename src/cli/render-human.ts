@@ -768,6 +768,9 @@ function renderProviderConnections(
       `    ${safe(connection.adapterKind)}  ${safe(connection.endpoint ?? "default endpoint")}`,
       `    models: ${connection.models.map(safe).join(", ") || "(none)"}`,
     );
+    if (connection.catalogs.length > 0) {
+      lines.push(`    catalogs: ${connection.catalogs.map(safe).join(", ")}`);
+    }
   }
   if (payload.catalog !== null) {
     lines.push(`  Catalog   ${payload.catalog.models.length} models`);
