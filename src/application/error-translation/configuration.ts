@@ -54,6 +54,10 @@ export function fromConfigurationIssues(
 
 function configurationMessage(issue: ConfigurationIssue): string {
   switch (issue.kind) {
+    case "configuration-home-conflict":
+      return "Both the current and legacy configuration homes contain data.";
+    case "configuration-home-unavailable":
+      return "A configuration home could not be inspected safely.";
     case "unknown-key":
       return "A configuration key is not recognized.";
     case "invalid-type":
@@ -88,6 +92,12 @@ function configurationMessage(issue: ConfigurationIssue): string {
 function configurationDetail(issue: ConfigurationIssue): string {
   const facts: string[] = [`path=${issue.path || "<root>"}`];
   switch (issue.kind) {
+    case "configuration-home-conflict":
+      facts.push(`legacyPath=${issue.legacyPath}`);
+      break;
+    case "configuration-home-unavailable":
+      facts.push(`code=${issue.code}`);
+      break;
     case "invalid-type":
       facts.push(`expected=${issue.expected}`);
       break;

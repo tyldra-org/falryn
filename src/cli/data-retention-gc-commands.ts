@@ -295,9 +295,11 @@ export async function runDataRetention(
   signal?: AbortSignal,
 ): Promise<CommandResultOf<"data.retention", DataRetentionPayload>> {
   try {
-    const { loader, removalData, configurationRoot, workspaceRoot } = services();
+    const { loader, removalData, configurationRoot, legacyConfigurationRoot, workspaceRoot } =
+      services();
     const outcome = await loader.load({
       configurationRoot,
+      legacyConfigurationRoot,
       workspaceRoot,
       profile: null,
       overrides: {},

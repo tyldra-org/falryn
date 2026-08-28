@@ -16,9 +16,13 @@
 import { createRuntimeRedactor, DIAGNOSTICS_OWNERSHIP } from "../application/index.ts";
 import {
   CONFIGURATION_OWNERSHIP,
+  type ConfigurationHomeResolution,
+  type ConfigurationHomeWriteResolution,
   type ConfigurationLoader,
   createConfigurationLoader,
   createConfigurationRegistry,
+  prepareConfigurationHomeForWrite,
+  resolveConfigurationHome,
   V0_1_CONFIGURATION_KEYS,
   V0_1_CROSS_FIELD_RULES,
 } from "../config/index.ts";
@@ -100,7 +104,16 @@ export type Services = {
   readonly removalData: ReturnType<typeof createLocalDataService>;
   readonly registry: ConfigurationRegistryPort;
   readonly loader: ConfigurationLoader;
+  /** Current user-authored configuration home, normally `~/.falryn`. */
   readonly configurationRoot: LocalPath;
+  /** Previous platform-default home, absent under an explicit override. */
+  readonly legacyConfigurationRoot: LocalPath | null;
+  /** Selects the effective read home without creating or moving anything. */
+  readonly configurationHomeForRead: (signal?: AbortSignal) => Promise<ConfigurationHomeResolution>;
+  /** Selects the write home and migrates legacy configuration when safe. */
+  readonly configurationHomeForWrite: (
+    signal?: AbortSignal,
+  ) => Promise<ConfigurationHomeWriteResolution>;
   /**
    * Primary workspace root after {@link Services.ensureWorkspaceSet}, or a
    * lexical path guess before that. Config project discovery uses the primary.
@@ -208,6 +221,7 @@ export function createServiceProvider(
 
     const eventStore = createInMemoryEventStore();
     const configurationRoot = rootChild(localData.layout, "configuration") ?? home;
+    const legacyConfigurationRoot = localData.layout.legacyConfigurationRoot;
     const currentDirectory = overrides.currentDirectory ?? currentDirectoryPath();
     let workspaceRoot = workspaceRootFrom(options, currentDirectory);
     let workspaceSet: WorkspaceSet | null = null;
@@ -248,6 +262,19 @@ export function createServiceProvider(
         streamId: streamId.from(CLI_EVENT_STREAM),
       }),
       configurationRoot,
+      legacyConfigurationRoot,
+      configurationHomeForRead: (signal) =>
+        resolveConfigurationHome(
+          fileSystem,
+          { current: configurationRoot, legacy: legacyConfigurationRoot },
+          signal,
+        ),
+      configurationHomeForWrite: (signal) =>
+        prepareConfigurationHomeForWrite(
+          fileSystem,
+          { current: configurationRoot, legacy: legacyConfigurationRoot },
+          signal,
+        ),
       get workspaceRoot() {
         return workspaceRoot;
       },
@@ -261,6 +288,14 @@ export function createServiceProvider(
         const next = await resolveCliWorkspace({
           fileSystem,
           configurationRoot,
+          configurationRootForLayouts: async (requestSignal) =>
+            configurationRootForWorkspace(
+              await resolveConfigurationHome(
+                fileSystem,
+                { current: configurationRoot, legacy: legacyConfigurationRoot },
+                requestSignal,
+              ),
+            ),
           currentDirectory,
           workspace: options.workspace,
           addDirs: options.addDirs,
@@ -277,6 +312,14 @@ export function createServiceProvider(
         const next = await resolveCliWorkspace({
           fileSystem,
           configurationRoot,
+          configurationRootForLayouts: async (requestSignal) =>
+            configurationRootForWorkspace(
+              await resolveConfigurationHome(
+                fileSystem,
+                { current: configurationRoot, legacy: legacyConfigurationRoot },
+                requestSignal,
+              ),
+            ),
           currentDirectory,
           workspace: name,
           addDirs: options.addDirs,
@@ -317,6 +360,28 @@ function currentDirectoryPath(): LocalPath | null {
 
 function valueOrNull(parsed: Result<LocalPath, LocalPathError>): LocalPath | null {
   return parsed.ok ? parsed.value : null;
+}
+
+function configurationRootForWorkspace(
+  home: ConfigurationHomeResolution,
+):
+  | { readonly ok: true; readonly value: LocalPath }
+  | { readonly ok: false; readonly error: WorkspaceResolveError } {
+  switch (home.kind) {
+    case "current":
+    case "legacy":
+    case "empty":
+      return { ok: true, value: home.root };
+    case "conflict":
+      return { ok: false, error: { code: "configuration-home", detail: "conflict" } };
+    case "unavailable":
+      return {
+        ok: false,
+        error: { code: "configuration-home", detail: home.code },
+      };
+    case "cancelled":
+      return { ok: false, error: { code: "cancelled" } };
+  }
 }
 
 export { describeWorkspaceResolveError };

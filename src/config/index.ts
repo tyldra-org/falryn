@@ -49,6 +49,16 @@ export {
   nextGeneration,
   strongestApplicationClass,
 } from "./generation.ts";
+export type {
+  ConfigurationHomeResolution,
+  ConfigurationHomeRoots,
+  ConfigurationHomeWriteResolution,
+} from "./home.ts";
+export {
+  configurationHomeIssue,
+  prepareConfigurationHomeForWrite,
+  resolveConfigurationHome,
+} from "./home.ts";
 export { inspectGeneration } from "./inspection.ts";
 export { MAX_CONFIGURATION_FILE_BYTES, parseJsonc, positionOf } from "./jsonc.ts";
 export type { RetentionClass } from "./keys.ts";

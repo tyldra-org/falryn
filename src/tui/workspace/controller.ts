@@ -155,14 +155,26 @@ export function describeWorkspaceControllerError(error: WorkspaceControllerError
 export function createWorkspaceController(options: {
   readonly fileSystem: FileSystemPort;
   readonly configurationRoot: LocalPath;
+  /** Selects legacy/current homes lazily so opening the shell remains read-only. */
+  readonly configurationRootFor?: (
+    intent: "read" | "write",
+    signal?: AbortSignal,
+  ) => Promise<LocalPath | null>;
   readonly currentDirectory: LocalPath | null;
   readonly initial: WorkspaceSet;
 }): WorkspaceController {
-  const store: WorkspaceLayoutStore = createWorkspaceLayoutStore(
-    options.fileSystem,
-    options.configurationRoot,
-  );
   const initial = viewFromSet(options.initial);
+
+  async function storeFor(
+    intent: "read" | "write",
+    signal?: AbortSignal,
+  ): Promise<WorkspaceLayoutStore | null> {
+    const root =
+      options.configurationRootFor === undefined
+        ? options.configurationRoot
+        : await options.configurationRootFor(intent, signal);
+    return root === null ? null : createWorkspaceLayoutStore(options.fileSystem, root);
+  }
 
   return {
     initial,
@@ -237,6 +249,10 @@ export function createWorkspaceController(options: {
       if (!rebuilt.ok) {
         return rebuilt;
       }
+      const store = await storeFor("write", saveOptions.signal);
+      if (store === null) {
+        return { ok: false, error: { code: "layout", detail: "configuration-home" } };
+      }
       const saved = await store.save(name, rebuilt.value, {
         force: saveOptions.force === true,
         ...(saveOptions.signal === undefined ? {} : { signal: saveOptions.signal }),
@@ -257,6 +273,10 @@ export function createWorkspaceController(options: {
     },
 
     async load(name, signal) {
+      const store = await storeFor("read", signal);
+      if (store === null) {
+        return { ok: false, error: { code: "layout", detail: "configuration-home" } };
+      }
       const loaded = await store.load(name, signal);
       if (!loaded.ok) {
         if (loaded.error.code === "cancelled") {
@@ -274,6 +294,10 @@ export function createWorkspaceController(options: {
     },
 
     async listLayouts(signal) {
+      const store = await storeFor("read", signal);
+      if (store === null) {
+        return { ok: false, error: { code: "layout", detail: "configuration-home" } };
+      }
       const listed = await store.list({
         ...(signal === undefined ? {} : { signal }),
       });

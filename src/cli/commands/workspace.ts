@@ -3,9 +3,11 @@
 import {
   adoptForeignError,
   createWorkspaceLayoutStore,
+  fromConfigurationIssue,
   fromUnknown,
   type WorkspaceLayoutStoreError,
 } from "../../application/index.ts";
+import { configurationHomeIssue } from "../../config/index.ts";
 import { type FalrynError, MAX_WORKSPACE_LAYOUT_CATALOG } from "../../domain/index.ts";
 import type { WorkspaceCommandArguments } from "../command-tree.ts";
 import type { CommandResultOf, CommandTruncation } from "../result.ts";
@@ -55,7 +57,23 @@ export async function runWorkspaceList(
   signal?: AbortSignal,
 ): Promise<CommandResultOf<"workspace.list", WorkspaceListPayload>> {
   try {
-    const { fileSystem, configurationRoot } = services();
+    const graph = services();
+    const home = await graph.configurationHomeForRead(signal);
+    if (home.kind === "cancelled") {
+      return resultFor<"workspace.list", WorkspaceListPayload>("workspace.list", null, [], {
+        kind: "cancelled",
+        effect: "none",
+      });
+    }
+    if (home.kind === "conflict" || home.kind === "unavailable") {
+      return resultFor<"workspace.list", WorkspaceListPayload>("workspace.list", null, [
+        fromConfigurationIssue(configurationHomeIssue(home), {
+          operation: "list workspace layouts",
+        }),
+      ]);
+    }
+    const { fileSystem } = graph;
+    const configurationRoot = home.root;
     const store = createWorkspaceLayoutStore(fileSystem, configurationRoot);
     const catalog = await store.list({
       limit: arguments_.limit,
@@ -128,7 +146,23 @@ export async function runWorkspaceSave(
     if (!resolved.ok) {
       return workspaceResolveFailure("workspace.save", resolved.error);
     }
-    const { fileSystem, configurationRoot } = services();
+    const graph = services();
+    const home = await graph.configurationHomeForWrite(signal);
+    if (home.kind === "cancelled") {
+      return resultFor<"workspace.save", WorkspaceSavePayload>("workspace.save", null, [], {
+        kind: "cancelled",
+        effect: "none",
+      });
+    }
+    if (home.kind === "conflict" || home.kind === "unavailable") {
+      return resultFor<"workspace.save", WorkspaceSavePayload>("workspace.save", null, [
+        fromConfigurationIssue(configurationHomeIssue(home), {
+          operation: "save workspace layout",
+        }),
+      ]);
+    }
+    const { fileSystem } = graph;
+    const configurationRoot = home.root;
     const store = createWorkspaceLayoutStore(fileSystem, configurationRoot);
     const saved = await store.save(arguments_.name, resolved.value.set, {
       force: arguments_.force,

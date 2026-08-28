@@ -65,25 +65,27 @@ describe("the platform layout", () => {
   });
 
   test("uses macOS conventions on the qualified target", () => {
-    expect(pathFor("darwin", "configuration")).toBe(
+    const { layout } = resolve("darwin");
+    expect(pathFor("darwin", "configuration")).toBe("/Users/example/.falryn");
+    expect(String(layout.legacyConfigurationRoot)).toBe(
       "/Users/example/Library/Application Support/Falryn/config",
     );
     expect(pathFor("darwin", "cache")).toBe("/Users/example/Library/Caches/Falryn");
     expect(pathFor("darwin", "logs")).toBe("/Users/example/Library/Logs/Falryn");
   });
 
-  test("follows XDG on Linux, including its own variables", () => {
+  test("uses the visible configuration home and keeps XDG for state on Linux", () => {
     const { layout } = resolve("linux", { XDG_CONFIG_HOME: "/xdg/config" });
     const configuration = layout.roots.find((resolved) => resolved.root === "configuration");
-    expect(String(configuration?.path)).toBe("/xdg/config/falryn");
-    // An XDG variable is a platform convention, not a Falryn override, so the
-    // provenance stays `platform-default`.
+    expect(String(configuration?.path)).toBe("/Users/example/.falryn");
     expect(configuration?.provenance).toBe("platform-default");
+    expect(String(layout.legacyConfigurationRoot)).toBe("/xdg/config/falryn");
     expect(pathFor("linux", "state")).toBe("/Users/example/.local/state/falryn");
   });
 
   test("uses APPDATA and LOCALAPPDATA on Windows", () => {
     const { layout } = resolve("win32", { LOCALAPPDATA: "C:/Users/example/AppData/Local" });
+    expect(pathFor("win32", "configuration")).toBe("/Users/example/.falryn");
     const cache = layout.roots.find((resolved) => resolved.root === "cache");
     expect(String(cache?.path)).toBe("C:/Users/example/AppData/Local/Falryn/cache");
   });
@@ -112,6 +114,7 @@ describe("environment overrides", () => {
     const configuration = layout.roots.find((resolved) => resolved.root === "configuration");
     expect(String(configuration?.path)).toBe("/tmp/falryn-config");
     expect(ROOT_ENVIRONMENT_VARIABLES.configuration).toBe("FALRYN_CONFIG_DIR");
+    expect(layout.legacyConfigurationRoot).toBeNull();
   });
 
   test("an unusable override is reported and falls back, never silently ignored", () => {

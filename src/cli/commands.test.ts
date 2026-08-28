@@ -226,7 +226,7 @@ describe("workspace resolution", () => {
     // layer out of every load while reporting success.
     const sources = (await runConfigPath(services, globals)).payload?.sources ?? [];
     expect(sources.find((source) => source.kind === "project-file")?.path).toBe(
-      `${realpathSync(site)}/${CONFIGURATION_FILE_NAME}`,
+      `${realpathSync(site)}/.falryn/${CONFIGURATION_FILE_NAME}`,
     );
   });
 
@@ -241,7 +241,7 @@ describe("workspace resolution", () => {
 
     const sources = (await runConfigPath(services, globals)).payload?.sources ?? [];
     expect(sources.find((source) => source.kind === "project-file")?.path).toBe(
-      `${realpathSync(sibling)}/${CONFIGURATION_FILE_NAME}`,
+      `${realpathSync(sibling)}/.falryn/${CONFIGURATION_FILE_NAME}`,
     );
   });
 
@@ -254,7 +254,7 @@ describe("workspace resolution", () => {
 
     const sources = (await runConfigPath(services, globals)).payload?.sources ?? [];
     expect(sources.find((source) => source.kind === "project-file")?.path).toBe(
-      `${realpathSync(explicit)}/${CONFIGURATION_FILE_NAME}`,
+      `${realpathSync(explicit)}/.falryn/${CONFIGURATION_FILE_NAME}`,
     );
   });
 
@@ -265,7 +265,7 @@ describe("workspace resolution", () => {
 
     const sources = (await runConfigPath(services, globals)).payload?.sources ?? [];
     expect(sources.find((source) => source.kind === "project-file")?.path).toBe(
-      `${realpathSync(cwd)}/${CONFIGURATION_FILE_NAME}`,
+      `${realpathSync(cwd)}/.falryn/${CONFIGURATION_FILE_NAME}`,
     );
   });
 });
@@ -434,16 +434,20 @@ describe("config show over a source it could not read", () => {
 
 describe("config path", () => {
   test("names its sources without reading any of them", async () => {
-    const { services, globals } = await isolated();
+    const { home, services, globals } = await isolated();
     const result = await runConfigPath(services, globals);
 
     expect(result.outcome).toEqual({ kind: "completed" });
     const kinds = result.payload?.sources.map((source) => source.kind) ?? [];
     expect(kinds).toContain("user-file");
     expect(kinds).toContain("project-file");
+    expect(result.payload?.sources.find((source) => source.kind === "user-file")?.path).toBe(
+      `${home}/.falryn/${CONFIGURATION_FILE_NAME}`,
+    );
     // Answering "where do settings come from" must not depend on the load
     // succeeding, because that is usually why the question is being asked.
     expect(result.errors).toEqual([]);
+    expect(await readdir(home)).toEqual([]);
   });
 
   test("names the profile source only when one was selected", async () => {

@@ -1655,6 +1655,10 @@ function issueLines(session: Session, issue: ConfigurationIssue): readonly strin
  */
 function issueSentence(issue: ConfigurationIssue): string {
   switch (issue.kind) {
+    case "configuration-home-conflict":
+      return `also has data at the legacy location ${safe(issue.legacyPath)}; move or remove one configuration home before continuing.`;
+    case "configuration-home-unavailable":
+      return `could not be inspected safely (${safe(issue.code)}).`;
     case "unknown-key":
       return "no setting by this name exists.";
     case "invalid-type":

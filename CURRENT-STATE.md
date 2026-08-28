@@ -26,6 +26,28 @@ application. The current command surface includes:
 Commands support human-readable and machine-readable output forms. Results go
 to standard output and diagnostics go to standard error.
 
+## Configuration home and local data
+
+Human-authored user configuration defaults to `~/.falryn/falryn.jsonc`, with
+profiles under `~/.falryn/profiles/` and named workspace layouts under
+`~/.falryn/layouts/`. Project configuration remains
+`<workspace>/.falryn/falryn.jsonc`. `FALRYN_CONFIG_DIR` is the explicit user
+configuration-root override.
+
+Without that override, Falryn recognizes the previous platform-default
+configuration root. Reads select a populated legacy root when `~/.falryn` does
+not contain data and do not create or move either path. The first user/profile
+configuration write or saved-layout write migrates the complete legacy
+directory to `~/.falryn` by rename. If both homes contain data, Falryn reports a
+typed conflict and changes neither. When the active workspace is the user's
+home, the identical user/project path is read once as user configuration.
+
+This is a configuration-only change. SQLite state and indexes, caches, logs,
+temporary ingest, artifacts, and exports keep their platform-native roots.
+Credential bytes remain in the operating-system keychain or an explicitly
+referenced external source. Help, version, doctor, and configuration inspection
+do not create `~/.falryn` or trigger migration.
+
 ## Provider connections
 
 Provider profiles are stored in the typed `providers.connections`

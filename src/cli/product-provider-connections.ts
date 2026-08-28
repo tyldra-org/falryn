@@ -124,8 +124,13 @@ function configurationStore(
         values[PROVIDER_CONNECTIONS_CONFIGURATION_KEY] ?? DEFAULT_PROVIDER_CONNECTION_STATE,
       );
 
+      const home = await services.configurationHomeForRead(signal);
+      const readRoot =
+        home.kind === "current" || home.kind === "legacy" || home.kind === "empty"
+          ? home.root
+          : services.configurationRoot;
       const path = resolveConfigurationFilePath({
-        configurationRoot: services.configurationRoot,
+        configurationRoot: readRoot,
         workspaceRoot: services.workspaceRoot,
         profile: globals.profile,
         scope,
@@ -142,6 +147,7 @@ function configurationStore(
         services.fileSystem,
         {
           configurationRoot: services.configurationRoot,
+          legacyConfigurationRoot: services.legacyConfigurationRoot,
           workspaceRoot: services.workspaceRoot,
           profile: globals.profile,
           scope,

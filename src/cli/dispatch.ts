@@ -367,6 +367,19 @@ async function launchShell(
       ? createWorkspaceController({
           fileSystem: graph.fileSystem,
           configurationRoot: graph.configurationRoot,
+          configurationRootFor: async (intent, signal) => {
+            const home =
+              intent === "write"
+                ? await graph.configurationHomeForWrite(signal)
+                : await graph.configurationHomeForRead(signal);
+            if (home.kind === "ready") {
+              return home.root;
+            }
+            if (home.kind === "current" || home.kind === "legacy" || home.kind === "empty") {
+              return home.root;
+            }
+            return null;
+          },
           currentDirectory: (() => {
             const cwd = parseLocalPath(process.cwd());
             return cwd.ok ? cwd.value : null;

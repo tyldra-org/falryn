@@ -23,6 +23,7 @@ import {
 
 export type WorkspaceResolveError =
   | { readonly code: "cancelled" }
+  | { readonly code: "configuration-home"; readonly detail: string }
   | { readonly code: "empty-workspace" }
   | { readonly code: "not-a-directory"; readonly path: string }
   | { readonly code: "missing-path"; readonly path: string }
@@ -42,6 +43,10 @@ export type ResolvedCliWorkspace = {
 export type ResolveCliWorkspaceInput = {
   readonly fileSystem: FileSystemPort;
   readonly configurationRoot: LocalPath;
+  /** Resolves legacy/current homes only when a saved layout is actually used. */
+  readonly configurationRootForLayouts?: (
+    signal?: AbortSignal,
+  ) => Promise<Result<LocalPath, WorkspaceResolveError>>;
   readonly currentDirectory: LocalPath | null;
   /** Raw `--workspace` text, or null for the current directory. */
   readonly workspace: string | null;
@@ -183,7 +188,14 @@ export async function resolveCliWorkspace(
           path: input.workspace,
         });
       }
-      const store = createWorkspaceLayoutStore(input.fileSystem, input.configurationRoot);
+      const configurationRoot =
+        input.configurationRootForLayouts === undefined
+          ? ok(input.configurationRoot)
+          : await input.configurationRootForLayouts(input.signal);
+      if (!configurationRoot.ok) {
+        return configurationRoot;
+      }
+      const store = createWorkspaceLayoutStore(input.fileSystem, configurationRoot.value);
       const loaded = await store.load(input.workspace, input.signal);
       if (!loaded.ok) {
         if (loaded.error.code === "cancelled") {
@@ -270,6 +282,8 @@ export function describeWorkspaceResolveError(error: WorkspaceResolveError): str
   switch (error.code) {
     case "cancelled":
       return "Workspace resolution was cancelled.";
+    case "configuration-home":
+      return `Saved workspace layouts are unavailable because the configuration home could not be selected (${error.detail}).`;
     case "empty-workspace":
       return "No workspace root could be resolved.";
     case "not-a-directory":
