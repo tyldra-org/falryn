@@ -229,6 +229,39 @@ describe("createOfficialModelDiscovery", () => {
     });
   });
 
+  test("rejects duplicate remote model identities instead of collapsing them", async () => {
+    const duplicate = { id: "enabled", object: "model", created: 0, owned_by: "openai" } as const;
+    const discovery = createOfficialModelDiscovery({
+      resolveApiKey: async () => "secret",
+      loaders: { openai: async () => [duplicate, duplicate] },
+    });
+    const outcome = await discovery.discover(profile("openai", ["enabled"]), {
+      signal: new AbortController().signal,
+      now: instant(0),
+    });
+
+    expect(outcome).toMatchObject({
+      kind: "failed",
+      failure: { kind: "malformed", code: "provider-model-record-duplicate", retryable: false },
+    });
+  });
+
+  test("rejects a Google record without a model identity", async () => {
+    const discovery = createOfficialModelDiscovery({
+      resolveApiKey: async () => "secret",
+      loaders: { google: async () => [{} as never] },
+    });
+    const outcome = await discovery.discover(profile("google", ["gemini-example"]), {
+      signal: new AbortController().signal,
+      now: instant(0),
+    });
+
+    expect(outcome).toMatchObject({
+      kind: "failed",
+      failure: { kind: "malformed", code: "provider-model-record-malformed", retryable: false },
+    });
+  });
+
   test("classifies cancellation, timeout, authentication, and rate limits without messages", async () => {
     const aborted = new AbortController();
     aborted.abort();

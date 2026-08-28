@@ -171,9 +171,9 @@ function normalizeGoogleModelId(name: string): string {
   return name.startsWith("models/") ? name.slice("models/".length) : name;
 }
 
-function googleCapability(record: GoogleModel): ModelCapability | null {
+function googleCapability(record: GoogleModel): ModelCapability {
   if (record.name === undefined || record.name.length === 0) {
-    return null;
+    throw new ModelDiscoveryContractError("provider-model-record-malformed");
   }
   const id = normalizeGoogleModelId(record.name);
   const actions = new Set(record.supportedActions ?? []);
@@ -196,6 +196,18 @@ function googleCapability(record: GoogleModel): ModelCapability | null {
     availability: "available",
     provenance: ["provider-manifest"],
   };
+}
+
+function uniqueCapabilities(models: readonly ModelCapability[]): readonly ModelCapability[] {
+  const seen = new Set<string>();
+  for (const capability of models) {
+    const id = String(capability.modelId);
+    if (seen.has(id)) {
+      throw new ModelDiscoveryContractError("provider-model-record-duplicate");
+    }
+    seen.add(id);
+  }
+  return models;
 }
 
 async function loadOpenAiModels(
@@ -372,7 +384,10 @@ export function createOfficialModelDiscovery(
   ): DiscoveryOutcome => {
     const generation = nextGeneration;
     nextGeneration += 1;
-    return { kind: "catalog", catalog: catalog(profile, models, now, generation, ttlMs) };
+    return {
+      kind: "catalog",
+      catalog: catalog(profile, uniqueCapabilities(models), now, generation, ttlMs),
+    };
   };
 
   return {
@@ -435,10 +450,7 @@ export function createOfficialModelDiscovery(
             const records = await loaders.google(profile, apiKey, discoveryOptions.signal);
             return publish(
               profile,
-              boundedRecords(records).flatMap((record) => {
-                const capability = googleCapability(record);
-                return capability === null ? [] : [capability];
-              }),
+              boundedRecords(records).map(googleCapability),
               discoveryOptions.now,
             );
           }
