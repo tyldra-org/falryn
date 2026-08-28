@@ -87,7 +87,12 @@ async function actionFor(
     case "add":
       return { kind: "add", profile: arguments_.profile };
     case "configure":
-      return { kind: "configure", profile: arguments_.profile, preserveCredential: true };
+      return {
+        kind: "configure",
+        profile: arguments_.profile,
+        preserveCredential: true,
+        preserveCapabilities: true,
+      };
     case "use":
     case "test":
     case "logout":

@@ -125,6 +125,7 @@ describe("composeProductShellAttachments", () => {
       organization: null,
       project: null,
       enabledModels: [modelId.from("deterministic-echo")],
+      modelCapabilities: [],
       discovery: "static" as const,
       timeouts: { connectMs: 1_000, requestMs: 10_000 },
     };
@@ -180,11 +181,19 @@ describe("composeProductShellAttachments", () => {
             expiresAt: null,
             models: [
               {
+                schemaVersion: 1,
                 modelId: modelId.from("deterministic-echo"),
-                modalities: ["text", "image"],
-                tools: true,
-                streaming: true,
-                reasoning: true,
+                displayName: null,
+                inputModalities: ["text", "image"],
+                outputModalities: ["text"],
+                tools: "supported",
+                structuredOutput: "supported",
+                streaming: "supported",
+                reasoning: "supported",
+                reasoningControls: ["balanced"],
+                completeness: "complete",
+                availability: "available",
+                provenance: ["profile-declaration"],
                 contextTokens: 128_000,
                 outputTokens: 8_000,
               },
@@ -197,7 +206,8 @@ describe("composeProductShellAttachments", () => {
       {
         id: "deterministic-echo",
         title: "deterministic-echo",
-        detail: "Demo provider · text+image · tools · reasoning",
+        detail:
+          "Demo provider · in:text+image · out:text · tools:supported · structured:supported · stream:supported · reasoning:supported · ctx:128000 · max-out:8000 · available · via:profile-declaration",
       },
     ]);
     expect(attachments?.controls.profiles.map((profile) => profile.id)).toEqual([
@@ -311,6 +321,7 @@ describe("composeProductShellAttachments", () => {
       organization: null,
       project: null,
       enabledModels: [model],
+      modelCapabilities: [],
       discovery: "static" as const,
       timeouts: { connectMs: 1_000, requestMs: 10_000 },
     };
@@ -348,11 +359,19 @@ describe("composeProductShellAttachments", () => {
             expiresAt: null,
             models: [
               {
+                schemaVersion: 1,
                 modelId: model,
-                modalities: ["text"],
-                tools: true,
-                streaming: true,
-                reasoning: true,
+                displayName: null,
+                inputModalities: ["text"],
+                outputModalities: ["text"],
+                tools: "supported",
+                structuredOutput: "supported",
+                streaming: "supported",
+                reasoning: "supported",
+                reasoningControls: ["balanced"],
+                completeness: "complete",
+                availability: "available",
+                provenance: ["profile-declaration"],
                 contextTokens: 128_000,
                 outputTokens: 8_000,
               },

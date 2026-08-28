@@ -9,6 +9,7 @@
 import { modelAttemptId, modelId, providerId } from "../domain/identity.ts";
 import type { ProviderFailure, ProviderFailureKind } from "./errors.ts";
 import { modelRequestId } from "./identity.ts";
+import { MODEL_CAPABILITY_SCHEMA_VERSION } from "./model-capability.ts";
 import type { ProviderAdapterPort } from "./port.ts";
 import type { ModelRequest } from "./request.ts";
 import type { NormalizedProviderEvent, UsageUnits } from "./stream.ts";
@@ -125,6 +126,23 @@ export function createDeterministicProviderAdapter(
   return {
     identity,
     supportedModels: models,
+    modelCapabilities: models.map((model) => ({
+      schemaVersion: MODEL_CAPABILITY_SCHEMA_VERSION,
+      modelId: model,
+      displayName: "Deterministic echo",
+      inputModalities: ["text"],
+      outputModalities: ["text"],
+      tools: "supported",
+      structuredOutput: "supported",
+      streaming: "supported",
+      reasoning: "supported",
+      reasoningControls: ["minimal", "balanced", "deep"],
+      contextTokens: 128_000,
+      outputTokens: 16_384,
+      completeness: "complete",
+      availability: "available",
+      provenance: ["provider-manifest"],
+    })),
     async *stream(request: ModelRequest, streamOptions): AsyncIterable<NormalizedProviderEvent> {
       const currentRequestIndex = requestIndex;
       requestIndex += 1;

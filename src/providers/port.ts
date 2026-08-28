@@ -7,6 +7,7 @@
  */
 
 import type { ModelId, ProviderId } from "../domain/identity.ts";
+import type { ModelCapability } from "./model-capability.ts";
 import type { ModelRequest } from "./request.ts";
 import type { NormalizedProviderEvent } from "./stream.ts";
 
@@ -30,10 +31,12 @@ export type ProviderStreamOptions = {
 export type ProviderAdapterPort = {
   readonly identity: ProviderAdapterIdentity;
   /**
-   * Models this adapter claims to support. Discovery refresh belongs to a
-   * later issue; a static list is enough for boundary tests.
+   * Models this adapter can execute. Product sessions normally supply a
+   * generation-bound discovery catalog; the list remains the execution guard.
    */
   readonly supportedModels: readonly ModelId[];
+  /** Optional adapter-owned facts used when no product catalog was supplied. */
+  readonly modelCapabilities?: readonly ModelCapability[] | undefined;
   stream(
     request: ModelRequest,
     options: ProviderStreamOptions,

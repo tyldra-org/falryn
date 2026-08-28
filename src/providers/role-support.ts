@@ -6,7 +6,8 @@
  * thinking streams or vendor adapters.
  */
 
-import type { ModelCapability, ModelModality } from "./discovery.ts";
+import type { ModelCapability } from "./discovery.ts";
+import type { ModelInputModality, ModelOutputModality } from "./model-capability.ts";
 import {
   type ModelPolicy,
   type ReasoningEffort,
@@ -17,11 +18,16 @@ import {
 import type { ModelRole, WorkIntent } from "./roles.ts";
 
 export type RouteRequirement = {
-  readonly modalities?: readonly ModelModality[];
+  readonly modalities?: readonly ModelInputModality[];
+  readonly outputModalities?: readonly ModelOutputModality[];
   readonly tools?: boolean;
+  readonly structuredOutput?: boolean;
   readonly streaming?: boolean;
   readonly reasoning?: boolean;
+  /** Provider-native controls required by the selected operation. */
+  readonly reasoningControls?: readonly string[];
   readonly minContextTokens?: number;
+  readonly minOutputTokens?: number;
 };
 
 export function defaultRequirementsForIntent(intent: WorkIntent): RouteRequirement {
@@ -60,19 +66,31 @@ export function mergeRequirements(
   override: RouteRequirement,
 ): RouteRequirement {
   const merged: {
-    modalities?: readonly ModelModality[];
+    modalities?: readonly ModelInputModality[];
+    outputModalities?: readonly ModelOutputModality[];
     tools?: boolean;
+    structuredOutput?: boolean;
     streaming?: boolean;
     reasoning?: boolean;
+    reasoningControls?: readonly string[];
     minContextTokens?: number;
+    minOutputTokens?: number;
   } = {};
   const modalities = override.modalities ?? base.modalities;
   if (modalities !== undefined) {
     merged.modalities = modalities;
   }
+  const outputModalities = override.outputModalities ?? base.outputModalities;
+  if (outputModalities !== undefined) {
+    merged.outputModalities = outputModalities;
+  }
   const tools = override.tools ?? base.tools;
   if (tools !== undefined) {
     merged.tools = tools;
+  }
+  const structuredOutput = override.structuredOutput ?? base.structuredOutput;
+  if (structuredOutput !== undefined) {
+    merged.structuredOutput = structuredOutput;
   }
   const streaming = override.streaming ?? base.streaming;
   if (streaming !== undefined) {
@@ -82,9 +100,17 @@ export function mergeRequirements(
   if (reasoning !== undefined) {
     merged.reasoning = reasoning;
   }
+  const reasoningControls = override.reasoningControls ?? base.reasoningControls;
+  if (reasoningControls !== undefined) {
+    merged.reasoningControls = reasoningControls;
+  }
   const minContextTokens = override.minContextTokens ?? base.minContextTokens;
   if (minContextTokens !== undefined) {
     merged.minContextTokens = minContextTokens;
+  }
+  const minOutputTokens = override.minOutputTokens ?? base.minOutputTokens;
+  if (minOutputTokens !== undefined) {
+    merged.minOutputTokens = minOutputTokens;
   }
   return merged;
 }
@@ -93,14 +119,14 @@ export function intentRequiresImage(
   intent: WorkIntent | null,
   required: RouteRequirement,
 ): boolean {
-  if (required.modalities?.includes("image" satisfies ModelModality)) {
+  if (required.modalities?.includes("image" satisfies ModelInputModality)) {
     return true;
   }
   return intent === "visualUnderstanding";
 }
 
 export function capabilityHasImage(capability: ModelCapability | null | undefined): boolean {
-  return capability?.modalities.includes("image") === true;
+  return capability?.inputModalities.includes("image") === true;
 }
 
 /** Whether the intent prefers a declared reasoning-effort binding (deep/plan path). */

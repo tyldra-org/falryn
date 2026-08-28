@@ -64,6 +64,7 @@ function demoProfile(overrides: Partial<ProviderProfile> = {}): ProviderProfile 
     discovery: "static",
     timeouts: { connectMs: 5_000, requestMs: 30_000 },
     ...overrides,
+    modelCapabilities: overrides.modelCapabilities ?? [],
   };
 }
 
@@ -105,20 +106,36 @@ function catalogs(): readonly RoutedCatalogEntry[] {
       providerId: primary,
       catalog: catalogFor([
         {
+          schemaVersion: 1,
           modelId: fast,
-          modalities: ["text"],
-          tools: true,
-          streaming: true,
-          reasoning: false,
+          displayName: null,
+          inputModalities: ["text"],
+          outputModalities: ["text"],
+          tools: "supported",
+          structuredOutput: "supported",
+          streaming: "supported",
+          reasoning: "unsupported",
+          reasoningControls: [],
+          completeness: "complete",
+          availability: "available",
+          provenance: ["profile-declaration"],
           contextTokens: 8_000,
           outputTokens: 2_000,
         },
         {
+          schemaVersion: 1,
           modelId: vision,
-          modalities: ["text", "image"],
-          tools: true,
-          streaming: true,
-          reasoning: false,
+          displayName: null,
+          inputModalities: ["text", "image"],
+          outputModalities: ["text"],
+          tools: "supported",
+          structuredOutput: "supported",
+          streaming: "supported",
+          reasoning: "unsupported",
+          reasoningControls: [],
+          completeness: "complete",
+          availability: "available",
+          provenance: ["profile-declaration"],
           contextTokens: 8_000,
           outputTokens: 2_000,
         },
@@ -129,11 +146,19 @@ function catalogs(): readonly RoutedCatalogEntry[] {
       catalog: catalogFor(
         [
           {
+            schemaVersion: 1,
             modelId: fast,
-            modalities: ["text"],
-            tools: true,
-            streaming: true,
-            reasoning: false,
+            displayName: null,
+            inputModalities: ["text"],
+            outputModalities: ["text"],
+            tools: "supported",
+            structuredOutput: "supported",
+            streaming: "supported",
+            reasoning: "unsupported",
+            reasoningControls: [],
+            completeness: "complete",
+            availability: "available",
+            provenance: ["profile-declaration"],
             contextTokens: 8_000,
             outputTokens: 2_000,
           },
@@ -440,11 +465,19 @@ describe("provider conformance: discovery modalities and provenance", () => {
       expiresAt: null,
       models: [
         {
+          schemaVersion: 1,
           modelId: vision,
-          modalities: ["text", "image"],
-          tools: true,
-          streaming: true,
-          reasoning: false,
+          displayName: null,
+          inputModalities: ["text", "image"],
+          outputModalities: ["text"],
+          tools: "supported",
+          structuredOutput: "supported",
+          streaming: "supported",
+          reasoning: "unsupported",
+          reasoningControls: [],
+          completeness: "complete",
+          availability: "available",
+          provenance: ["profile-declaration"],
           contextTokens: 8_000,
           outputTokens: 2_000,
         },
@@ -461,7 +494,9 @@ describe("provider conformance: discovery modalities and provenance", () => {
     expect(outcome.kind).toBe("catalog");
     if (outcome.kind === "catalog") {
       expect(outcome.catalog.provenance).toBe("remote-discovery");
-      expect(outcome.catalog.models[0]?.modalities).toContain("image");
+      expect(
+        outcome.catalog.models.find((model) => model.modelId === vision)?.inputModalities,
+      ).toContain("image");
     }
   });
 });

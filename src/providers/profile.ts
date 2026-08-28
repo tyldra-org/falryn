@@ -9,6 +9,7 @@
 import type { CredentialReference } from "../domain/configuration.ts";
 import type { ModelId, ProviderId } from "../domain/identity.ts";
 import type { DiscoveryPolicy, ProviderAdapterKind } from "./adapter-kind.ts";
+import type { ModelCapabilityDeclaration } from "./model-capability.ts";
 
 export type ProviderProfileId = string;
 
@@ -31,6 +32,8 @@ export type ProviderProfile = {
   readonly organization: string | null;
   readonly project: string | null;
   readonly enabledModels: readonly ModelId[];
+  /** Explicit facts for enabled models. An empty list leaves every fact unknown. */
+  readonly modelCapabilities: readonly ModelCapabilityDeclaration[];
   readonly discovery: DiscoveryPolicy;
   readonly timeouts: ProviderNetworkTimeouts;
 };

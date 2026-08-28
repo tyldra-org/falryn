@@ -4,8 +4,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { CONFIGURATION_FILE_NAME } from "../config/index.ts";
-import { createStaticEnvironment, localPath, modelId, providerId } from "../domain/index.ts";
-import type { ProviderProfile } from "../providers/index.ts";
+import {
+  createStaticEnvironment,
+  instant,
+  localPath,
+  modelId,
+  providerId,
+} from "../domain/index.ts";
+import type { ModelDiscoveryPort, ProviderProfile } from "../providers/index.ts";
 import type { GlobalOptions } from "./options.ts";
 import { composeProductProviderConnections } from "./product-provider-connections.ts";
 import { createServiceProvider } from "./services.ts";
@@ -35,6 +41,7 @@ function localProfile(): ProviderProfile {
     organization: null,
     project: null,
     enabledModels: [modelId.from("coder")],
+    modelCapabilities: [],
     discovery: "static",
     timeouts: { connectMs: 1_000, requestMs: 10_000 },
   };
@@ -85,5 +92,79 @@ describe("product provider connection persistence", () => {
     expect(document).toContain('"connections"');
     expect(document).toContain('"selectedProfileId": "local"');
     expect(document).not.toContain("sk-live-secret-material");
+  });
+
+  test("passes remote profiles through the composed model discovery port", async () => {
+    const home = await mkdtemp(join(tmpdir(), "falryn-provider-discovery-"));
+    homes.push(home);
+    const services = createServiceProvider(GLOBALS, {
+      home: localPath(home),
+      platform: "darwin",
+      currentDirectory: localPath(home),
+      environment: createStaticEnvironment({
+        FALRYN_STATE_DIR: home,
+        FALRYN_TEST_REMOTE_KEY: "secret-not-projected",
+      }),
+    });
+    let discoveries = 0;
+    const modelDiscovery: ModelDiscoveryPort = {
+      async discover(profile) {
+        discoveries += 1;
+        return {
+          kind: "catalog",
+          catalog: {
+            generation: 9,
+            provenance: "remote-discovery",
+            fetchedAt: instant(0),
+            expiresAt: null,
+            models: profile.enabledModels.map((model) => ({
+              schemaVersion: 1,
+              modelId: model,
+              displayName: "Remote model",
+              inputModalities: ["text"],
+              outputModalities: ["text"],
+              tools: "supported",
+              structuredOutput: "supported",
+              streaming: "supported",
+              reasoning: "unknown",
+              reasoningControls: [],
+              contextTokens: 32_000,
+              outputTokens: 4_000,
+              completeness: "partial",
+              availability: "available",
+              provenance: ["provider-manifest"],
+            })),
+          },
+        };
+      },
+    };
+    const service = composeProductProviderConnections(services(), GLOBALS, {
+      modelDiscovery,
+    }).service;
+    const remote: ProviderProfile = {
+      ...localProfile(),
+      profileId: "remote",
+      providerId: providerId.from("remote"),
+      displayName: "Remote",
+      endpoint: "https://api.example.test/v1",
+      credential: {
+        storeKind: "environment",
+        locator: "FALRYN_TEST_REMOTE_KEY",
+        consumer: "provider:remote",
+        accountLabel: null,
+      },
+      discovery: "remote",
+    };
+
+    expect(await service.execute({ kind: "add", profile: remote })).toMatchObject({
+      kind: "completed",
+    });
+    const tested = await service.execute({ kind: "test", profileId: "remote" });
+    expect(tested).toMatchObject({
+      kind: "completed",
+      catalog: { generation: 9, provenance: "remote-discovery" },
+    });
+    expect(discoveries).toBe(1);
+    expect(JSON.stringify(tested)).not.toContain("secret-not-projected");
   });
 });

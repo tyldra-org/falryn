@@ -81,6 +81,7 @@ function receipt(
     fallbackPosition: 0,
     budgets,
     catalogGeneration: 1,
+    modelCapabilitySchemaVersion: 1,
     catalogProvenance: "static-config",
     recordedAt: null,
   };
@@ -366,6 +367,7 @@ describe("createProductAttemptRunner", () => {
         fallbackPosition: 0,
         budgets: {},
         catalogGeneration: 1,
+        modelCapabilitySchemaVersion: 1,
         catalogProvenance: "static-config",
         recordedAt: null,
       },
@@ -399,6 +401,10 @@ describe("createProductAttemptRunner", () => {
 
     expect(result.fact.kind).toBe("completed");
     expect(requests).toHaveLength(2);
+    expect(requests[0]?.metadata).toMatchObject({
+      providerCatalogGeneration: 1,
+      modelCapabilitySchemaVersion: 1,
+    });
     const toolMessage = requests[1]?.messages.find((message) => message.role === "tool");
     const toolPart = toolMessage?.parts[0];
     if (toolPart?.kind !== "text") {

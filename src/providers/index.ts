@@ -65,6 +65,7 @@ export type {
   StaticDiscoveryOptions,
 } from "./discovery.ts";
 export {
+  catalogFromAdapterModels,
   createDeterministicRemoteDiscovery,
   createStaticModelDiscovery,
   discoverModelCatalog,
@@ -78,6 +79,10 @@ export type {
   ProviderIdentityErrorCode,
 } from "./identity.ts";
 export { modelRequestId } from "./identity.ts";
+export {
+  KNOWN_OPENAI_GPT_4O_MINI_CAPABILITY,
+  knownModelCapability,
+} from "./known-model-capability.ts";
 export {
   MAX_ASSEMBLED_TEXT_LENGTH,
   MAX_FINISH_REASON_LENGTH,
@@ -106,6 +111,32 @@ export type {
   TextMessagePart,
 } from "./messages.ts";
 export { isMessageRole, MESSAGE_ROLES } from "./messages.ts";
+export type {
+  ModelAvailability,
+  ModelCapabilityCompleteness,
+  ModelCapabilityDeclaration,
+  ModelCapabilityProvenance,
+  ModelFeatureSupport,
+  ModelInputModality,
+  ModelOutputModality,
+} from "./model-capability.ts";
+export {
+  capabilityFromDeclaration,
+  featureIsSupported,
+  MODEL_AVAILABILITIES,
+  MODEL_CAPABILITY_COMPLETENESSES,
+  MODEL_CAPABILITY_PROVENANCES,
+  MODEL_CAPABILITY_SCHEMA_VERSION,
+  MODEL_FEATURE_SUPPORTS,
+  MODEL_INPUT_MODALITIES,
+  MODEL_OUTPUT_MODALITIES,
+  unknownModelCapability,
+} from "./model-capability.ts";
+export type { ModelCapabilityDeclarationParseError } from "./model-capability-schema.ts";
+export {
+  modelCapabilityDeclarationSchema,
+  parseModelCapabilityDeclaration,
+} from "./model-capability-schema.ts";
 export type {
   AdvisorRoleRoute,
   CompactRoleRoute,

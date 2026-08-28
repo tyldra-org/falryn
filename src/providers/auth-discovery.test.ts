@@ -39,6 +39,7 @@ function demoProfile(overrides: Partial<ProviderProfile> = {}): ProviderProfile 
     discovery: "static",
     timeouts: { connectMs: 5_000, requestMs: 30_000 },
     ...overrides,
+    modelCapabilities: overrides.modelCapabilities ?? [],
   };
 }
 
@@ -132,6 +133,51 @@ describe("discovery", () => {
     }
   });
 
+  test("legacy built-in OpenAI profiles receive only the source-verified compatibility manifest", async () => {
+    const clock = createManualClock();
+    const legacy = demoProfile({
+      providerId: providerId.from("openai"),
+      adapterKind: "openai",
+      endpoint: "https://api.openai.com/v1",
+      credential: null,
+      enabledModels: [modelId.from("gpt-4o-mini"), modelId.from("unknown-openai-model")],
+    });
+    const outcome = await createStaticModelDiscovery().discover(legacy, {
+      signal: new AbortController().signal,
+      now: clock.now(),
+    });
+
+    expect(outcome.kind).toBe("catalog");
+    if (outcome.kind !== "catalog") {
+      return;
+    }
+    expect(outcome.catalog.models[0]).toMatchObject({
+      modelId: modelId.from("gpt-4o-mini"),
+      inputModalities: ["text", "image"],
+      tools: "supported",
+      provenance: ["compatibility-default"],
+    });
+    expect(outcome.catalog.models[1]).toMatchObject({
+      modelId: modelId.from("unknown-openai-model"),
+      tools: "unknown",
+      provenance: ["compatibility-default"],
+    });
+
+    const customEndpoint = await createStaticModelDiscovery().discover(
+      { ...legacy, endpoint: "https://provider.example.test/v1" },
+      { signal: new AbortController().signal, now: clock.now() },
+    );
+    expect(customEndpoint).toMatchObject({
+      kind: "catalog",
+      catalog: {
+        models: [
+          { modelId: modelId.from("gpt-4o-mini"), tools: "unknown" },
+          { modelId: modelId.from("unknown-openai-model"), tools: "unknown" },
+        ],
+      },
+    });
+  });
+
   test("remote discovery uses the injectable port without network", async () => {
     const clock = createManualClock();
     const remote = createDeterministicRemoteDiscovery({
@@ -142,11 +188,19 @@ describe("discovery", () => {
         expiresAt: null,
         models: [
           {
+            schemaVersion: 1,
             modelId: modelId.from("remote-1"),
-            modalities: ["text"],
-            tools: true,
-            streaming: true,
-            reasoning: true,
+            displayName: null,
+            inputModalities: ["text"],
+            outputModalities: ["text"],
+            tools: "supported",
+            structuredOutput: "supported",
+            streaming: "supported",
+            reasoning: "supported",
+            reasoningControls: ["balanced"],
+            completeness: "complete",
+            availability: "available",
+            provenance: ["profile-declaration"],
             contextTokens: 1000,
             outputTokens: 100,
           },
@@ -162,6 +216,94 @@ describe("discovery", () => {
     if (outcome.kind === "catalog") {
       expect(outcome.catalog.provenance).toBe("remote-discovery");
       expect(outcome.catalog.generation).toBe(9);
+    }
+  });
+
+  test("remote unknown facts preserve explicit declarations and exclude unconfigured models", async () => {
+    const clock = createManualClock();
+    const configuredModel = modelId.from("demo-fast");
+    const configured = demoProfile({
+      discovery: "remote",
+      enabledModels: [configuredModel],
+      modelCapabilities: [
+        {
+          schemaVersion: 1,
+          modelId: configuredModel,
+          displayName: "Configured",
+          inputModalities: ["text", "image"],
+          outputModalities: ["text"],
+          tools: "supported",
+          structuredOutput: "supported",
+          streaming: "supported",
+          reasoning: "unsupported",
+          reasoningControls: [],
+          contextTokens: 128_000,
+          outputTokens: 16_384,
+          completeness: "complete",
+        },
+      ],
+    });
+    const remote = createDeterministicRemoteDiscovery({
+      catalog: {
+        generation: 12,
+        provenance: "remote-discovery",
+        fetchedAt: clock.now(),
+        expiresAt: null,
+        models: [
+          {
+            schemaVersion: 1,
+            modelId: configuredModel,
+            displayName: "Remote identity",
+            inputModalities: [],
+            outputModalities: [],
+            tools: "unknown",
+            structuredOutput: "unknown",
+            streaming: "unknown",
+            reasoning: "unknown",
+            reasoningControls: [],
+            contextTokens: null,
+            outputTokens: null,
+            completeness: "partial",
+            availability: "available",
+            provenance: ["remote-identity"],
+          },
+          {
+            schemaVersion: 1,
+            modelId: modelId.from("not-configured"),
+            displayName: "Not configured",
+            inputModalities: ["text"],
+            outputModalities: ["text"],
+            tools: "supported",
+            structuredOutput: "supported",
+            streaming: "supported",
+            reasoning: "unsupported",
+            reasoningControls: [],
+            contextTokens: 8_000,
+            outputTokens: 1_000,
+            completeness: "complete",
+            availability: "available",
+            provenance: ["provider-manifest"],
+          },
+        ],
+      },
+    });
+
+    const outcome = await discoverModelCatalog(
+      configured,
+      { staticDiscovery: createStaticModelDiscovery(), remoteDiscovery: remote },
+      { signal: new AbortController().signal, now: clock.now() },
+    );
+    expect(outcome.kind).toBe("catalog");
+    if (outcome.kind === "catalog") {
+      expect(outcome.catalog.models).toHaveLength(1);
+      expect(outcome.catalog.models[0]).toMatchObject({
+        modelId: configuredModel,
+        inputModalities: ["text", "image"],
+        tools: "supported",
+        contextTokens: 128_000,
+        availability: "available",
+        provenance: ["profile-declaration", "remote-identity"],
+      });
     }
   });
 });

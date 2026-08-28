@@ -4,6 +4,7 @@ import { modelId, providerId } from "../../domain/index.ts";
 import {
   isDiscoveryPolicy,
   isProviderAdapterKind,
+  knownModelCapability,
   type ProviderAuthMethod,
   type ProviderProfile,
 } from "../../providers/index.ts";
@@ -129,6 +130,10 @@ function profileFrom(id: string, parsed: RawArguments): ProviderProfile | string
     organization: parsed.organization ?? null,
     project: parsed.project ?? null,
     enabledModels: models.map(modelId.from),
+    modelCapabilities: models.flatMap((id) => {
+      const capability = knownModelCapability(adapter, id, endpoint);
+      return capability === null ? [] : [capability];
+    }),
     discovery,
     timeouts: {
       connectMs: parsed["connect-timeout"] ?? 15_000,

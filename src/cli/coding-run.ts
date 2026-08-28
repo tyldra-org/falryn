@@ -66,7 +66,10 @@ import {
   type OpenAiSdkFetch,
   type OwnedProcessRegistry,
 } from "../integrations/index.ts";
-import type { ModelCatalog } from "../providers/index.ts";
+import {
+  catalogFromAdapterModels,
+  type ModelCatalog,
+} from "../providers/index.ts";
 import type { ProviderAdapterPort } from "../providers/port.ts";
 import { startConfigurationReloadWatcher } from "./configuration-reload.ts";
 import type { GlobalOptions } from "./options.ts";
@@ -251,21 +254,11 @@ function catalogForAdapter(
   generation: number,
   fetchedAt: Instant,
 ): ModelCatalog {
-  return {
+  return catalogFromAdapterModels(adapter.supportedModels, {
     generation,
-    provenance: "static-config",
     fetchedAt,
-    expiresAt: null,
-    models: adapter.supportedModels.map((modelId) => ({
-      modelId,
-      modalities: ["text"],
-      tools: true,
-      streaming: true,
-      reasoning: false,
-      contextTokens: null,
-      outputTokens: null,
-    })),
-  };
+    capabilities: adapter.modelCapabilities,
+  });
 }
 
 /**

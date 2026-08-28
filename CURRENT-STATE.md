@@ -52,7 +52,7 @@ do not create `~/.falryn` or trigger migration.
 
 Provider profiles are stored in the typed `providers.connections`
 configuration value. A fresh installation includes a selected
-OpenAI-compatible profile that references `FALRYN_OPENAI_API_KEY`; configuration
+OpenAI profile that references `FALRYN_OPENAI_API_KEY`; configuration
 stores the reference, never the credential bytes. Additional profiles can be
 added, configured, selected, tested, logged out, or removed through
 `falryn provider`.
@@ -73,9 +73,34 @@ semantic journaling, and bounded result projection before provider
 continuation. A headless turn cannot report completion unless a terminal model
 attempt ran.
 
+Each provider profile also persists a versioned, provider-neutral capability
+declaration for its enabled models. The declaration separates input modalities
+from output modalities and records tools, structured output, streaming,
+reasoning, provider-native reasoning controls, context limits, output limits,
+and completeness. Feature support is tri-state (`supported`, `unsupported`, or
+`unknown`); missing facts are never upgraded to support. The default
+`gpt-4o-mini` profile declares its source-verified text/image input, text
+output, tool, structured-output, streaming, and token-limit facts.
+Legacy default profiles receive that same declaration from a small versioned
+compatibility manifest only at the official OpenAI endpoint; unfamiliar model
+names and custom endpoints remain unknown.
+
+Remote catalog refresh uses the official OpenAI, Anthropic, or Google Gen AI
+TypeScript SDK selected by the profile. OpenAI's Models API contributes model
+identity and availability but no invented capability facts. Anthropic's richer
+Models response contributes modalities, limits, structured output, and
+reasoning controls. Google's Models response contributes supported actions,
+token limits, and thinking support; fields it does not enumerate remain
+unknown. Remote facts merge with explicit profile declarations under a new
+catalog generation. Only configured model IDs enter the effective catalog.
+Malformed records, stale generations, authentication failures, rate limits,
+timeouts, and cancellation fail closed with typed, secret-free outcomes.
+The live inference adapter currently uses the official OpenAI SDK; Anthropic
+and Google inference adapters are not yet exposed as live attempt runners.
+
 The provider request contains only the disclosed tool definitions, not the
 whole registered catalog. The attempt event retains the provider/model route,
-catalog and policy generations, tool-schema digests, schema cost, unavailable
+catalog, capability-schema, and policy generations, tool-schema digests, schema cost, unavailable
 capability families, omissions, and discovery handle. Provider disconnects,
 malformed requests, cancellation, timeout, fallback exhaustion, and uncertain
 effects remain typed outcomes. Completed or uncertain consequential tool

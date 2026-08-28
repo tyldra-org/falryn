@@ -104,6 +104,8 @@ const requestMetadataSchema = z
     role: z.literal(MODEL_ROLES),
     workIntent: z.string().min(1).max(MAX_TOOL_NAME_LENGTH).optional(),
     configurationGeneration: z.number().int().nonnegative().optional(),
+    providerCatalogGeneration: z.number().int().nonnegative().optional(),
+    modelCapabilitySchemaVersion: z.number().int().positive().optional(),
   })
   .strict();
 

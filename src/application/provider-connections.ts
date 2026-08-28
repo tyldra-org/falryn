@@ -73,6 +73,8 @@ export type ProviderConnectionAction =
       readonly profile: ProviderProfile;
       /** Product surfaces update safe metadata without silently logging out. */
       readonly preserveCredential: boolean;
+      /** Preserve declarations for enabled models when the surface cannot edit them. */
+      readonly preserveCapabilities: boolean;
     }
   | { readonly kind: "use"; readonly profileId: string }
   | { readonly kind: "test"; readonly profileId: string | null }
@@ -313,9 +315,25 @@ async function configure(
   if (current === null) {
     return failure(action.kind, "profile-missing", false);
   }
-  const profile = action.preserveCredential
-    ? { ...action.profile, credential: current.profile.credential }
-    : action.profile;
+  const preservedCapabilities =
+    action.preserveCapabilities &&
+    current.profile.adapterKind === action.profile.adapterKind &&
+    current.profile.providerId === action.profile.providerId
+      ? current.profile.modelCapabilities.filter((capability) =>
+          action.profile.enabledModels.some((model) => model === capability.modelId),
+        )
+      : [];
+  const modelCapabilities = new Map(
+    [...preservedCapabilities, ...action.profile.modelCapabilities].map((capability) => [
+      String(capability.modelId),
+      capability,
+    ]),
+  );
+  const profile: ProviderProfile = {
+    ...action.profile,
+    ...(action.preserveCredential ? { credential: current.profile.credential } : {}),
+    modelCapabilities: [...modelCapabilities.values()],
+  };
   const replacement: ProviderConnection = {
     profile,
     account: sameReference(current.profile.credential, profile.credential) ? current.account : null,

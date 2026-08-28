@@ -1,7 +1,7 @@
 /**
  * Declared provider adapter kinds and discovery policies.
  *
- * Concrete vendor SDKs attach later as leaf adapters named by these kinds.
+ * Concrete vendor SDKs attach as leaf adapters named by these kinds.
  * Compatibility is never inferred from a URL label alone.
  */
 
