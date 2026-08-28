@@ -81,7 +81,10 @@ export type {
 export { modelRequestId } from "./identity.ts";
 export {
   KNOWN_OPENAI_GPT_4O_MINI_CAPABILITY,
+  KNOWN_OPENAI_MODEL_CAPABILITIES,
   knownModelCapability,
+  LATEST_OPENAI_MODEL_CAPABILITIES,
+  LATEST_OPENAI_MODEL_IDS,
 } from "./known-model-capability.ts";
 export {
   MAX_ASSEMBLED_TEXT_LENGTH,

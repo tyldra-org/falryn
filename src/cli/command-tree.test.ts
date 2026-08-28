@@ -220,18 +220,20 @@ describe("provider connection arguments", () => {
       "--provider",
       "openai",
       "--model",
-      "gpt-4o-mini",
+      "gpt-5.6-sol",
     );
     if (invocation.kind !== "run" || invocation.providerArgs?.action !== "add") {
       throw new Error("expected parsed provider add");
     }
     expect(invocation.providerArgs.profile.modelCapabilities).toEqual([
       expect.objectContaining({
-        modelId: modelId.from("gpt-4o-mini"),
+        modelId: modelId.from("gpt-5.6-sol"),
         inputModalities: ["text", "image"],
         outputModalities: ["text"],
         tools: "supported",
-        contextTokens: 128_000,
+        reasoning: "supported",
+        contextTokens: 1_050_000,
+        outputTokens: 128_000,
       }),
     ]);
 
@@ -244,7 +246,7 @@ describe("provider connection arguments", () => {
       "--endpoint",
       "https://provider.example.test/v1",
       "--model",
-      "gpt-4o-mini",
+      "gpt-5.6-sol",
     );
     if (custom.kind !== "run" || custom.providerArgs?.action !== "add") {
       throw new Error("expected parsed custom provider add");

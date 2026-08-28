@@ -48,6 +48,20 @@ function sseResponse(chunks: readonly string[], status = 200): Response {
 }
 
 describe("createOpenAiSdkAdapter", () => {
+  test("defaults to the current OpenAI family in routing order", () => {
+    const adapter = createOpenAiSdkAdapter({
+      profileId: "openai",
+      baseUrl: "https://api.openai.com/v1",
+      resolveApiKey: async () => "sk-test",
+    });
+    expect(adapter.supportedModels.map(String)).toEqual([
+      "gpt-5.6-sol",
+      "gpt-5.6-terra",
+      "gpt-5.6-luna",
+      "gpt-5.6",
+    ]);
+  });
+
   test("streams text deltas and finishes", async () => {
     const adapter = createOpenAiSdkAdapter({
       profileId: "openai",
@@ -99,6 +113,60 @@ describe("createOpenAiSdkAdapter", () => {
       },
     });
     expect(events.at(-1)).toMatchObject({ kind: "finished", finishReason: "stop" });
+  });
+
+  test("uses GPT-5 token budgets and translates the structured-output contract", async () => {
+    let body: Record<string, unknown> | null = null;
+    const adapter = createOpenAiSdkAdapter({
+      profileId: "openai",
+      baseUrl: "https://api.openai.com/v1",
+      resolveApiKey: async () => "sk-test",
+      fetch: async (_input, init) => {
+        if (init === undefined) {
+          throw new Error("expected OpenAI SDK request initialization");
+        }
+        body = JSON.parse(String(init.body)) as Record<string, unknown>;
+        return sseResponse(['data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n']);
+      },
+    });
+    const structured = request({
+      modelId: modelId.from("gpt-5.6-sol"),
+      output: {
+        kind: "json-schema",
+        name: "falryn_result",
+        schema: {
+          type: "object",
+          properties: { result: { type: "string" } },
+          required: ["result"],
+          additionalProperties: false,
+        },
+      },
+      budgets: { maxOutputTokens: 4_096 },
+    });
+
+    for await (const _event of adapter.stream(structured, {
+      signal: new AbortController().signal,
+    })) {
+      // Consume the deterministic response so the request body is observable.
+    }
+
+    expect(body).toMatchObject({
+      model: "gpt-5.6-sol",
+      max_completion_tokens: 4_096,
+      response_format: {
+        type: "json_schema",
+        json_schema: {
+          name: "falryn_result",
+          strict: true,
+          schema: {
+            type: "object",
+            required: ["result"],
+            additionalProperties: false,
+          },
+        },
+      },
+    });
+    expect(body).not.toHaveProperty("max_tokens");
   });
 
   test("classifies 429 as rate-limit", async () => {

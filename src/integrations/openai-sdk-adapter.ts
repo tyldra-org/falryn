@@ -22,6 +22,7 @@ import OpenAI, {
 
 import { modelAttemptId, modelId, providerId } from "../domain/identity.ts";
 import type { ProviderFailure, ProviderFailureKind } from "../providers/errors.ts";
+import { LATEST_OPENAI_MODEL_IDS } from "../providers/known-model-capability.ts";
 import type { ModelMessage, ModelToolDefinition } from "../providers/messages.ts";
 import type { ProviderAdapterPort, ProviderStreamOptions } from "../providers/port.ts";
 import type { ModelRequest } from "../providers/request.ts";
@@ -203,7 +204,9 @@ export function createOpenAiSdkAdapter(options: OpenAiSdkAdapterOptions): Provid
     profileId: options.profileId,
     displayName: options.displayName ?? "OpenAI",
   };
-  const models = (options.supportedModels ?? ["gpt-4o-mini"]).map((id) => modelId.from(id));
+  const models = (options.supportedModels ?? LATEST_OPENAI_MODEL_IDS).map((id) =>
+    modelId.from(String(id)),
+  );
 
   return {
     identity,
@@ -269,9 +272,21 @@ export function createOpenAiSdkAdapter(options: OpenAiSdkAdapterOptions): Provid
         stream_options: { include_usage: true },
         messages: toChatMessages(request.messages),
         ...(tools === undefined ? {} : { tools }),
+        ...(request.output.kind === "text"
+          ? {}
+          : {
+              response_format: {
+                type: "json_schema" as const,
+                json_schema: {
+                  name: request.output.name,
+                  schema: request.output.schema,
+                  strict: true,
+                },
+              },
+            }),
         ...(request.budgets.maxOutputTokens === undefined
           ? {}
-          : { max_tokens: request.budgets.maxOutputTokens }),
+          : { max_completion_tokens: request.budgets.maxOutputTokens }),
       };
 
       const toolCalls = new Map<number, ToolCallState>();

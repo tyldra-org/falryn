@@ -133,14 +133,18 @@ describe("discovery", () => {
     }
   });
 
-  test("legacy built-in OpenAI profiles receive only the source-verified compatibility manifest", async () => {
+  test("built-in OpenAI profiles receive only source-verified compatibility facts", async () => {
     const clock = createManualClock();
     const legacy = demoProfile({
       providerId: providerId.from("openai"),
       adapterKind: "openai",
       endpoint: "https://api.openai.com/v1",
       credential: null,
-      enabledModels: [modelId.from("gpt-4o-mini"), modelId.from("unknown-openai-model")],
+      enabledModels: [
+        modelId.from("gpt-5.6-sol"),
+        modelId.from("gpt-4o-mini"),
+        modelId.from("unknown-openai-model"),
+      ],
     });
     const outcome = await createStaticModelDiscovery().discover(legacy, {
       signal: new AbortController().signal,
@@ -152,12 +156,22 @@ describe("discovery", () => {
       return;
     }
     expect(outcome.catalog.models[0]).toMatchObject({
+      modelId: modelId.from("gpt-5.6-sol"),
+      inputModalities: ["text", "image"],
+      tools: "supported",
+      reasoning: "supported",
+      reasoningControls: ["none", "low", "medium", "high", "xhigh", "max"],
+      contextTokens: 1_050_000,
+      outputTokens: 128_000,
+      provenance: ["compatibility-default"],
+    });
+    expect(outcome.catalog.models[1]).toMatchObject({
       modelId: modelId.from("gpt-4o-mini"),
       inputModalities: ["text", "image"],
       tools: "supported",
       provenance: ["compatibility-default"],
     });
-    expect(outcome.catalog.models[1]).toMatchObject({
+    expect(outcome.catalog.models[2]).toMatchObject({
       modelId: modelId.from("unknown-openai-model"),
       tools: "unknown",
       provenance: ["compatibility-default"],
@@ -171,6 +185,7 @@ describe("discovery", () => {
       kind: "catalog",
       catalog: {
         models: [
+          { modelId: modelId.from("gpt-5.6-sol"), tools: "unknown" },
           { modelId: modelId.from("gpt-4o-mini"), tools: "unknown" },
           { modelId: modelId.from("unknown-openai-model"), tools: "unknown" },
         ],

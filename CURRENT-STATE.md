@@ -78,12 +78,17 @@ declaration for its enabled models. The declaration separates input modalities
 from output modalities and records tools, structured output, streaming,
 reasoning, provider-native reasoning controls, context limits, output limits,
 and completeness. Feature support is tri-state (`supported`, `unsupported`, or
-`unknown`); missing facts are never upgraded to support. The default
-`gpt-4o-mini` profile declares its source-verified text/image input, text
-output, tool, structured-output, streaming, and token-limit facts.
-Legacy default profiles receive that same declaration from a small versioned
-compatibility manifest only at the official OpenAI endpoint; unfamiliar model
-names and custom endpoints remain unknown.
+`unknown`); missing facts are never upgraded to support. The default OpenAI
+profile enables the current general-purpose GPT-5.6 family: `gpt-5.6-sol`,
+`gpt-5.6-terra`, `gpt-5.6-luna`, and the moving `gpt-5.6` alias. Sol is ordered
+first for the default route. Their source-verified declarations record
+text/image input, text output, tools, structured output, streaming, reasoning
+controls, and token limits. Specialized realtime, audio, transcription,
+embedding, moderation, and image-generation models are not placed in this
+text-agent catalog because they require different request and output contracts.
+The compatibility manifest retains `gpt-4o-mini` for existing profiles, but
+fresh defaults do not select it. Compatibility facts apply only at the official
+OpenAI endpoint; unfamiliar model names and custom endpoints remain unknown.
 
 Remote catalog refresh uses the official OpenAI, Anthropic, or Google Gen AI
 TypeScript SDK selected by the profile. OpenAI's Models API contributes model
