@@ -1,5 +1,6 @@
 /** Human projections for local backup, retention, and garbage collection. */
 
+import type { DataRemovalPayload } from "../commands.ts";
 import type {
   DataBackupPayload,
   DataDiagnosticsPayload,
@@ -10,6 +11,53 @@ import type { DataGcPayload, DataRetentionPayload } from "../data-retention-gc-c
 import type { RenderedPayload } from "./payload.ts";
 import { paint, type Session } from "./session.ts";
 import { safe } from "./text.ts";
+
+export function renderDataRemoval(
+  session: Session,
+  payload: DataRemovalPayload | null,
+): RenderedPayload {
+  if (payload === null) {
+    return { lines: ["No local-data plan is available."], diagnostics: [] };
+  }
+
+  const lines = [
+    paint(session, "plain", `Local data ${payload.plan.kind} plan`),
+    `  Plan identity  ${safe(payload.plan.planId)}`,
+    `  Total          ${payload.plan.totalBytes} bytes in ${payload.plan.totalItems} items (${payload.plan.completeness})`,
+    "  Classes",
+  ];
+  for (const entry of payload.plan.classes) {
+    const owner = entry.owner === null ? "unregistered" : safe(entry.owner);
+    lines.push(
+      `    ${safe(entry.ownershipClass)}  ${entry.action}  ${owner}  ${entry.byteCount} bytes  ${entry.itemCount} items`,
+    );
+    for (const path of entry.paths) {
+      lines.push(`      ${safe(path)}`);
+    }
+  }
+  lines.push(`  Out of scope  ${payload.plan.outOfScope.map(safe).join(", ")}`);
+
+  if (payload.execution !== null) {
+    lines.push(`  Execution     ${payload.confirmation}; ${payload.execution.completeness}`);
+    for (const path of payload.execution.deleted) {
+      lines.push(`    deleted  ${safe(path)}`);
+    }
+    for (const retained of payload.execution.retained) {
+      lines.push(`    retained ${safe(retained.reason)}  ${safe(retained.path)}`);
+    }
+    for (const failed of payload.execution.failed) {
+      lines.push(`    failed   ${safe(failed.code)}  ${safe(failed.path)}`);
+    }
+  }
+
+  const diagnostics =
+    payload.confirmation === "not-requested"
+      ? [
+          `Preview only. Re-run with --confirm ${safe(payload.plan.planId)} to apply this exact plan.`,
+        ]
+      : [];
+  return { lines, diagnostics };
+}
 
 export function renderDataBackup(
   session: Session,
