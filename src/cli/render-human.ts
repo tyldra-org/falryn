@@ -775,6 +775,9 @@ function renderProviderConnections(
   if (payload.catalog !== null) {
     lines.push(`  Catalog   ${payload.catalog.models.length} models`);
   }
+  if (payload.discovery.kind === "failed") {
+    lines.push(`  Discovery unavailable: ${safe(payload.discovery.code)}`);
+  }
   if (payload.auth !== null) {
     lines.push(`  Auth      ${safe(payload.auth.state)}`);
   }

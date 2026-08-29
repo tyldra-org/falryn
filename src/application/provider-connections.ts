@@ -6,6 +6,7 @@
 
 import type { ClockPort, CredentialReference } from "../domain/index.ts";
 import {
+  type DiscoveryOutcome,
   MAX_PROVIDER_CONNECTIONS,
   type ModelCatalog,
   openProviderSession,
@@ -132,6 +133,20 @@ export type ProviderConnectionView = {
   readonly updatedAt: number;
 };
 
+export type ProviderConnectionDiscoveryView =
+  | { readonly kind: "not-requested" }
+  | {
+      readonly kind: "catalog";
+      readonly generation: number;
+      readonly provenance: ModelCatalog["provenance"];
+      readonly modelCount: number;
+    }
+  | {
+      readonly kind: "failed";
+      readonly code: string;
+      readonly retryable: boolean;
+    };
+
 export type ProviderConnectionActionResult =
   | {
       readonly kind: "completed";
@@ -141,6 +156,7 @@ export type ProviderConnectionActionResult =
       readonly connections: readonly ProviderConnectionView[];
       readonly auth: ProviderAuthSnapshot | null;
       readonly catalog: ModelCatalog | null;
+      readonly discovery: ProviderConnectionDiscoveryView;
       readonly revocation: {
         readonly local: string;
         readonly remote: string;
@@ -152,6 +168,7 @@ export type ProviderConnectionActionResult =
       readonly issue: { readonly code: ProviderConnectionIssueCode; readonly retryable: boolean };
       readonly auth: ProviderAuthSnapshot | null;
       readonly catalog: ModelCatalog | null;
+      readonly discovery: ProviderConnectionDiscoveryView;
     };
 
 export type ProviderConnectionServicePorts = {
@@ -298,7 +315,7 @@ async function add(
     ],
     selectedProfileId: snapshot.state.selectedProfileId ?? action.profile.profileId,
   });
-  return persist(action.kind, next, snapshot, ports.store, signal);
+  return persistAndDiscover(action.kind, next, action.profile.profileId, snapshot, ports, signal);
 }
 
 async function configure(
@@ -346,7 +363,7 @@ async function configure(
       item.profile.profileId === action.profile.profileId ? replacement : item,
     ),
   });
-  return persist(action.kind, next, snapshot, ports.store, signal);
+  return persistAndDiscover(action.kind, next, action.profile.profileId, snapshot, ports, signal);
 }
 
 async function select(
@@ -358,11 +375,12 @@ async function select(
   if (find(snapshot.state, action.profileId) === null) {
     return failure(action.kind, "profile-missing", false);
   }
-  return persist(
+  return persistAndDiscover(
     action.kind,
     changed(snapshot.state, { selectedProfileId: action.profileId }),
+    action.profileId,
     snapshot,
-    ports.store,
+    ports,
     signal,
   );
 }
@@ -405,9 +423,16 @@ async function testConnection(
       opened.session.auth.retryable,
       opened.session.auth,
       opened.session.catalog,
+      discoveryView(opened.session.discovery),
     );
   }
-  return success(action.kind, state, opened.session.auth, opened.session.catalog);
+  return success(
+    action.kind,
+    state,
+    opened.session.auth,
+    opened.session.catalog,
+    discoveryView(opened.session.discovery),
+  );
 }
 
 async function loginApiKey(
@@ -448,7 +473,7 @@ async function loginApiKey(
   const next = changed(snapshot.state, { connections: replace(snapshot.state, replacement) });
   const written = await ports.store.write(next, snapshot.fileRevision, signal);
   if (written.kind === "written") {
-    return success(action.kind, next);
+    return discoverConnection(action.kind, next, action.profileId, ports, signal);
   }
   const rollback = await revokeProviderSessionCredential({
     profile: replacement.profile,
@@ -513,7 +538,7 @@ async function loginAuthorized(
       });
       const written = await ports.store.write(next, snapshot.fileRevision, signal);
       if (written.kind === "written") {
-        return success(action.kind, next);
+        return discoverConnection(action.kind, next, action.profileId, ports, signal);
       }
       const rollback = await revokeProviderSessionCredential({
         profile: replacement.profile,
@@ -588,15 +613,55 @@ async function remove(
     : writeFailure(action.kind, written);
 }
 
-async function persist(
+async function persistAndDiscover(
   action: ProviderConnectionAction["kind"],
   state: ProviderConnectionState,
+  profileId: string,
   snapshot: ProviderConnectionStoreSnapshot,
-  store: ProviderConnectionStorePort,
+  ports: ProviderConnectionServicePorts,
   signal?: AbortSignal,
 ): Promise<ProviderConnectionActionResult> {
-  const written = await store.write(state, snapshot.fileRevision, signal);
-  return written.kind === "written" ? success(action, state) : writeFailure(action, written);
+  const written = await ports.store.write(state, snapshot.fileRevision, signal);
+  return written.kind === "written"
+    ? discoverConnection(action, state, profileId, ports, signal)
+    : writeFailure(action, written);
+}
+
+async function discoverConnection(
+  action: ProviderConnectionAction["kind"],
+  state: ProviderConnectionState,
+  profileId: string,
+  ports: ProviderConnectionServicePorts,
+  signal?: AbortSignal,
+): Promise<ProviderConnectionActionResult> {
+  const connection = find(state, profileId);
+  if (connection === null) {
+    return success(action, state);
+  }
+  const opened = await openProviderSession({
+    profile: connection.profile,
+    ports: {
+      resolver: ports.credentials.resolver,
+      clock: ports.clock,
+      stores: ports.credentials.stores,
+      ...ports.session,
+    },
+    ...(signal === undefined ? {} : { signal }),
+  });
+  if (opened.kind === "invalid-profile") {
+    return success(action, state, null, null, {
+      kind: "failed",
+      code: "invalid-profile",
+      retryable: false,
+    });
+  }
+  return success(
+    action,
+    state,
+    opened.session.auth,
+    opened.session.catalog,
+    discoveryView(opened.session.discovery),
+  );
 }
 
 function writeFailure(
@@ -630,6 +695,7 @@ function success(
   state: ProviderConnectionState,
   auth: ProviderAuthSnapshot | null = null,
   catalog: ModelCatalog | null = null,
+  discovery: ProviderConnectionDiscoveryView = { kind: "not-requested" },
 ): Extract<ProviderConnectionActionResult, { readonly kind: "completed" }> {
   return {
     kind: "completed",
@@ -639,6 +705,7 @@ function success(
     connections: state.connections.map((item) => view(item, state.selectedProfileId)),
     auth,
     catalog,
+    discovery,
     revocation: null,
   };
 }
@@ -649,8 +716,25 @@ function failure(
   retryable: boolean,
   auth: ProviderAuthSnapshot | null = null,
   catalog: ModelCatalog | null = null,
+  discovery: ProviderConnectionDiscoveryView = { kind: "not-requested" },
 ): ProviderConnectionActionResult {
-  return { kind: "failed", action, issue: { code, retryable }, auth, catalog };
+  return { kind: "failed", action, issue: { code, retryable }, auth, catalog, discovery };
+}
+
+function discoveryView(outcome: DiscoveryOutcome): ProviderConnectionDiscoveryView {
+  if (outcome.kind === "failed") {
+    return {
+      kind: "failed",
+      code: outcome.failure.code,
+      retryable: outcome.failure.retryable,
+    };
+  }
+  return {
+    kind: "catalog",
+    generation: outcome.catalog.generation,
+    provenance: outcome.catalog.provenance,
+    modelCount: outcome.catalog.models.length,
+  };
 }
 
 function unavailableHandoff(

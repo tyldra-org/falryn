@@ -184,13 +184,16 @@ describe("product provider connection persistence", () => {
 
     expect(await service.execute({ kind: "add", profile: remote })).toMatchObject({
       kind: "completed",
+      catalog: { generation: 9, provenance: "remote-discovery" },
+      discovery: { kind: "catalog", generation: 9, modelCount: 1 },
     });
+    expect(discoveries).toBe(1);
     const tested = await service.execute({ kind: "test", profileId: "remote" });
     expect(tested).toMatchObject({
       kind: "completed",
       catalog: { generation: 9, provenance: "remote-discovery" },
     });
-    expect(discoveries).toBe(1);
+    expect(discoveries).toBe(2);
     expect(JSON.stringify(tested)).not.toContain("secret-not-projected");
   });
 
@@ -251,7 +254,20 @@ describe("product provider connection persistence", () => {
       catalogs: ["local-models"],
     };
 
-    expect(await service.execute({ kind: "add", profile })).toMatchObject({ kind: "completed" });
+    expect(await service.execute({ kind: "add", profile })).toMatchObject({
+      kind: "completed",
+      catalog: {
+        models: [
+          {
+            modelId: "coder",
+            displayName: "Local coder",
+            tools: "supported",
+            provenance: ["user-catalog"],
+          },
+        ],
+      },
+      discovery: { kind: "catalog", modelCount: 1 },
+    });
     const tested = await service.execute({ kind: "test", profileId: "local" });
     expect(tested).toMatchObject({
       kind: "completed",

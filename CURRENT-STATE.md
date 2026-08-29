@@ -66,6 +66,17 @@ endpoint defaults to static discovery unless the caller opts into remote
 discovery. Enabled models and user catalog identities are repeatable inputs to
 the same typed action used by human, JSON, and JSONL callers.
 
+Successful profile creation, configuration, selection, and login automatically
+run the profile's configured discovery path. Static profiles resolve their
+enabled model facts immediately. Remote profiles refresh through the selected
+official SDK once a credential is available, then reuse the bounded platform
+cache until its catalog expires. A discovery failure is reported separately
+and never rolls back provider metadata or a credential that was already stored.
+Automatic discovery does not enable provider models that the profile did not
+select. `provider test` remains the explicit authentication and catalog
+diagnostic, while every live attempt also refreshes an expired catalog before
+binding its immutable execution generation.
+
 Interactive API-key login accepts the secret only on standard input and stores
 it in the operating-system keychain on supported platforms. The supervised
 keychain command receives the secret over its standard-input channel rather

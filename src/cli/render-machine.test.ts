@@ -590,6 +590,11 @@ describe("through dispatch", () => {
       const reading = readCliStream(out.split("\n"));
       const terminal = reading.terminal as {
         payload?: {
+          discovery?: {
+            readonly kind?: string;
+            readonly code?: string;
+            readonly retryable?: boolean;
+          };
           connections?: readonly {
             profileId?: string;
             providerId?: string;
@@ -627,6 +632,11 @@ describe("through dispatch", () => {
         catalogs: ["team-models"],
         discovery: "remote",
         updatedAt: expect.any(Number),
+      });
+      expect(terminal?.payload?.discovery).toEqual({
+        kind: "failed",
+        code: "user-catalog-file-unavailable",
+        retryable: false,
       });
       expect(`${out}${err}`).not.toMatch(/api.?key|secret/i);
     }

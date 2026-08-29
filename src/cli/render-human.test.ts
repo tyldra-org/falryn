@@ -1148,6 +1148,7 @@ describe("through dispatch", () => {
     expect(out).toContain("google  default endpoint");
     expect(out).toContain("models: gemini-pro");
     expect(out).toContain("catalogs: team-models");
+    expect(out).toContain("Discovery unavailable: user-catalog-file-unavailable");
     expect(err).toContain("Completed.");
   });
 

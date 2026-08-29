@@ -10,10 +10,12 @@ import {
   providerId,
 } from "../domain/index.ts";
 import {
+  type ModelDiscoveryPort,
   PROVIDER_CONNECTION_SCHEMA_VERSION,
   type ProviderConnectionState,
   type ProviderProfile,
   parseProviderConnectionState,
+  unknownModelCapability,
 } from "../providers/index.ts";
 import { createSecretResolver } from "./credential-resolver.ts";
 import type { ProductCredentialBundle } from "./product-credentials.ts";
@@ -158,9 +160,11 @@ describe("provider connection service", () => {
       clock,
     });
 
-    expect((await service.execute({ kind: "add", profile: profile("primary") })).kind).toBe(
-      "completed",
-    );
+    expect(await service.execute({ kind: "add", profile: profile("primary") })).toMatchObject({
+      kind: "completed",
+      catalog: { models: [{ modelId: "primary-model" }] },
+      discovery: { kind: "catalog", modelCount: 1 },
+    });
     const secret = "sk-never-project-this";
     const loggedIn = await service.execute({
       kind: "login-api-key",
@@ -168,7 +172,11 @@ describe("provider connection service", () => {
       secret,
       accountLabel: "work",
     });
-    expect(loggedIn.kind).toBe("completed");
+    expect(loggedIn).toMatchObject({
+      kind: "completed",
+      catalog: { models: [{ modelId: "primary-model" }] },
+      discovery: { kind: "catalog", modelCount: 1 },
+    });
     expect(JSON.stringify(loggedIn)).not.toContain(secret);
     expect(JSON.stringify(stored.state())).not.toContain(secret);
 
@@ -196,6 +204,77 @@ describe("provider connection service", () => {
     expect((await service.execute({ kind: "remove", profileId: "primary" })).kind).toBe(
       "completed",
     );
+  });
+
+  test("discovers automatically after remote login without rolling back a stored connection", async () => {
+    const clock = createManualClock(instant(300));
+    const stored = memoryStore(state());
+    const credentials = mutableCredentials(clock);
+    let discoveries = 0;
+    const remoteDiscovery: ModelDiscoveryPort = {
+      async discover(candidate) {
+        discoveries += 1;
+        if (candidate.credential === null) {
+          return {
+            kind: "failed",
+            failure: {
+              kind: "unavailable",
+              code: "provider-credential-unavailable",
+              retryable: false,
+            },
+          };
+        }
+        const enabled = candidate.enabledModels[0];
+        if (enabled === undefined) {
+          throw new Error("Missing enabled model fixture.");
+        }
+        return {
+          kind: "catalog",
+          catalog: {
+            generation: 7,
+            provenance: "remote-discovery",
+            fetchedAt: clock.now(),
+            expiresAt: null,
+            models: [
+              unknownModelCapability(enabled, {
+                availability: "available",
+                provenance: ["remote-identity"],
+              }),
+            ],
+          },
+        };
+      },
+    };
+    const remote = { ...profile("remote"), discovery: "remote" as const };
+    const service = createProviderConnectionService({
+      store: stored.port,
+      credentials: credentials.bundle,
+      clock,
+      session: { remoteDiscovery },
+    });
+
+    expect(await service.execute({ kind: "add", profile: remote })).toMatchObject({
+      kind: "completed",
+      catalog: null,
+      discovery: { kind: "failed", code: "provider-credential-unavailable" },
+    });
+    expect(stored.state().connections).toHaveLength(1);
+
+    const loggedIn = await service.execute({
+      kind: "login-api-key",
+      profileId: "remote",
+      secret: "sk-automatic-discovery",
+      accountLabel: "work",
+    });
+    expect(loggedIn).toMatchObject({
+      kind: "completed",
+      auth: { state: "ready" },
+      catalog: { generation: 7, models: [{ modelId: "remote-model" }] },
+      discovery: { kind: "catalog", generation: 7, modelCount: 1 },
+    });
+    expect(discoveries).toBe(2);
+    expect(JSON.stringify(loggedIn)).not.toContain("sk-automatic-discovery");
+    expect(JSON.stringify(stored.state())).not.toContain("sk-automatic-discovery");
   });
 
   test("uses an official authorized adapter and rolls its secret back after a stale write", async () => {
