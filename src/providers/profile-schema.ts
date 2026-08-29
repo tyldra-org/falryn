@@ -41,7 +41,7 @@ export function providerEndpointIsAllowed(
   endpoint: string | null,
 ): boolean {
   if (endpoint === null) {
-    return adapterKind !== "openai" && adapterKind !== "custom";
+    return adapterKind !== "openai" && adapterKind !== "commandcode" && adapterKind !== "custom";
   }
   try {
     const url = new URL(endpoint);

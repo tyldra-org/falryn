@@ -572,6 +572,76 @@ describe("through dispatch", () => {
     }
   });
 
+  test("projects SDK-aware provider setup identically in JSON and JSONL", async () => {
+    for (const format of ["json", "jsonl"] as const) {
+      const { out, err, code } = await run([
+        "provider",
+        "add",
+        "anthropic-work",
+        "--provider",
+        "anthropic",
+        "--model",
+        "claude-sonnet",
+        "--catalog",
+        "team-models",
+        "--format",
+        format,
+      ]);
+      const reading = readCliStream(out.split("\n"));
+      const terminal = reading.terminal as {
+        payload?: {
+          discovery?: {
+            readonly kind?: string;
+            readonly code?: string;
+            readonly retryable?: boolean;
+          };
+          connections?: readonly {
+            profileId?: string;
+            providerId?: string;
+            displayName?: string;
+            adapterKind?: string;
+            endpoint?: string | null;
+            credentialConfigured?: boolean;
+            credentialStore?: string | null;
+            accountLabel?: string | null;
+            selected?: boolean;
+            models?: readonly string[];
+            catalogs?: readonly string[];
+            discovery?: string;
+            updatedAt?: number;
+          }[];
+        };
+      } | null;
+      const connection = terminal?.payload?.connections?.find(
+        (candidate) => candidate.profileId === "anthropic-work",
+      );
+
+      expect(code).toBe(0);
+      expect(err).toBe("");
+      expect(connection).toEqual({
+        profileId: "anthropic-work",
+        providerId: "anthropic",
+        displayName: "anthropic-work",
+        adapterKind: "anthropic",
+        endpoint: null,
+        credentialConfigured: false,
+        credentialStore: null,
+        accountLabel: null,
+        selected: false,
+        models: ["claude-sonnet"],
+        catalogs: ["team-models"],
+        discovery: "remote",
+        updatedAt: expect.any(Number),
+      });
+      expect(terminal?.payload?.discovery).toEqual({
+        kind: "failed",
+        code: "user-catalog-file-unavailable",
+        retryable: false,
+      });
+      expect(`${out}${err}`).not.toMatch(/api.?key|secret/i);
+    }
+  });
+
   test("writes a real lifecycle and one terminal record for --format jsonl", async () => {
     const { out } = await run(["config", "show", "--format", "jsonl"]);
     const reading = readCliStream(out.split("\n"));

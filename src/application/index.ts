@@ -400,6 +400,7 @@ export type {
   AuthorizedProviderLoginResult,
   ProviderConnectionAction,
   ProviderConnectionActionResult,
+  ProviderConnectionDiscoveryView,
   ProviderConnectionHandoffResult,
   ProviderConnectionIssueCode,
   ProviderConnectionService,

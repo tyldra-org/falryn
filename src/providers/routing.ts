@@ -234,6 +234,13 @@ const REASONING_CONTROL_PREFERENCES = {
     max: [],
     "provider-default": [],
   },
+  commandcode: {
+    minimal: [],
+    balanced: [],
+    deep: [],
+    max: [],
+    "provider-default": [],
+  },
   custom: {
     minimal: ["minimal", "low", "none"],
     balanced: ["balanced", "medium"],

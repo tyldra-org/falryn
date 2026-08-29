@@ -52,3 +52,30 @@ describe("known OpenAI model capabilities", () => {
     ).toBeNull();
   });
 });
+
+describe("known Command Code model capabilities", () => {
+  test("binds published facts to the exact composite adapter destination", () => {
+    expect(
+      knownModelCapability(
+        "commandcode",
+        "claude-sonnet-5",
+        "https://api.commandcode.ai/provider/v1",
+        "commandcode",
+      ),
+    ).toMatchObject({
+      displayName: "Claude Sonnet 5",
+      inputModalities: ["text", "image"],
+      tools: "supported",
+      streaming: "supported",
+      contextTokens: 1_000_000,
+    });
+    expect(
+      knownModelCapability(
+        "commandcode",
+        "claude-sonnet-5",
+        "https://provider.example.test/v1",
+        "commandcode",
+      ),
+    ).toBeNull();
+  });
+});

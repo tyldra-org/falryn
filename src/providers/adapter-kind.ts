@@ -10,6 +10,7 @@ export const PROVIDER_ADAPTER_KINDS = [
   "openai",
   "anthropic",
   "google",
+  "commandcode",
   "custom",
 ] as const;
 

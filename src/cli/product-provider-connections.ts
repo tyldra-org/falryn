@@ -14,6 +14,7 @@ import type { ModelCatalogGenerationRepository } from "../data/index.ts";
 import type { ConfigurationValues } from "../domain/index.ts";
 import {
   createAnthropicSdkAdapter,
+  createCommandCodeSdkAdapter,
   createGoogleGenAiSdkAdapter,
   createHostCommandRunner,
   createOfficialModelDiscovery,
@@ -24,7 +25,7 @@ import {
 } from "../integrations/index.ts";
 import { providerDestinationId } from "../integrations/provider-destination.ts";
 import type { ModelDiscoveryPort } from "../providers/index.ts";
-import { parseProviderConnectionState } from "../providers/index.ts";
+import { COMMAND_CODE_OPENAI_BASE_URL, parseProviderConnectionState } from "../providers/index.ts";
 import type { ProviderAdapterPort } from "../providers/port.ts";
 import type { GlobalOptions } from "./options.ts";
 import {
@@ -173,6 +174,15 @@ export function composeProductProviderConnections(
           adapter = createGoogleGenAiSdkAdapter({
             ...common,
             baseUrl: profile.endpoint,
+          });
+          break;
+        case "commandcode":
+          if (profile.endpoint !== COMMAND_CODE_OPENAI_BASE_URL) {
+            return { kind: "unavailable", code: "provider-adapter-unavailable", session };
+          }
+          adapter = createCommandCodeSdkAdapter({
+            ...common,
+            ...(options.providerFetch === undefined ? {} : { fetch: options.providerFetch }),
           });
           break;
         case "custom":

@@ -11,6 +11,29 @@ describe("model catalog documents", () => {
     }
   });
 
+  test("bundles the current Command Code execution catalog with verified facts", () => {
+    const catalog = BUILTIN_MODEL_CATALOGS.find(
+      (candidate) => candidate.catalogId === "falryn.commandcode",
+    );
+    expect(catalog?.models).toHaveLength(62);
+    expect(catalog?.models.find((model) => model.modelId === "claude-sonnet-5")).toMatchObject({
+      inputModalities: ["text", "image"],
+      tools: "supported",
+      streaming: "supported",
+      reasoning: "supported",
+      contextTokens: 1_000_000,
+      outputTokens: null,
+      completeness: "partial",
+    });
+    expect(
+      catalog?.models.find((model) => model.modelId === "deepseek/deepseek-v4-pro"),
+    ).toMatchObject({
+      inputModalities: ["text"],
+      reasoning: "supported",
+      contextTokens: 1_000_000,
+    });
+  });
+
   test("rejects duplicate models and unknown fields", () => {
     const source = BUILTIN_MODEL_CATALOGS[0];
     expect(source).toBeDefined();

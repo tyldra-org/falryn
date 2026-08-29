@@ -12,6 +12,8 @@ export type {
 } from "./anthropic-sdk-adapter.ts";
 export { createAnthropicSdkAdapter } from "./anthropic-sdk-adapter.ts";
 export { classifySqliteError, openBunSqlite } from "./bun-sqlite.ts";
+export type { CommandCodeSdkAdapterOptions } from "./command-code-sdk-adapter.ts";
+export { createCommandCodeSdkAdapter } from "./command-code-sdk-adapter.ts";
 export { createSha256Hasher } from "./content-digest.ts";
 export { createEnvironmentCredentialStore } from "./environment-credentials.ts";
 export type {
