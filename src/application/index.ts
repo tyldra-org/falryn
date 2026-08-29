@@ -373,6 +373,11 @@ export {
   composeProductProcessTools,
   PRODUCT_PROCESS_TOOLS_OWNER,
 } from "./product-tools-process.ts";
+export type { ProductScratchToolPorts, ProductScratchTools } from "./product-tools-scratch.ts";
+export {
+  composeProductScratchTools,
+  PRODUCT_SCRATCH_TOOLS_OWNER,
+} from "./product-tools-scratch.ts";
 export type {
   ProductWorkspaceToolPorts,
   ProductWorkspaceTools,
@@ -463,6 +468,15 @@ export type {
   ScopeTreeOptions,
 } from "./scope-tree.ts";
 export { createScopeTree, MAX_LIVE_SCOPES, MAX_SCOPE_DEPTH } from "./scope-tree.ts";
+export type {
+  ScratchMetadata,
+  ScratchRead,
+  ScratchResourceError,
+  ScratchResourceOptions,
+  ScratchResourcePort,
+  ScratchWriteInput,
+} from "./scratch-resources.ts";
+export { createScratchResources } from "./scratch-resources.ts";
 export type {
   InspectedWorkspaceSession,
   InspectWorkspaceSessionError,

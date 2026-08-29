@@ -2317,6 +2317,33 @@ export {
   worstEffect,
 } from "./scope.ts";
 export type {
+  PublishScratchRevision,
+  ScratchContractError,
+  ScratchHandle,
+  ScratchMediaType,
+  ScratchName,
+  ScratchRepositoryError,
+  ScratchResource,
+  ScratchResourceRepositoryPort,
+  ScratchResourceRevision,
+  ScratchResourceView,
+  ScratchRevision,
+  ScratchStatus,
+} from "./scratch-resource.ts";
+export {
+  MAX_SCRATCH_LIST_LIMIT,
+  MAX_SCRATCH_NAME_BYTES,
+  MAX_SCRATCH_TEXT_BYTES,
+  parseScratchHandle,
+  parseScratchListLimit,
+  parseScratchMediaType,
+  parseScratchName,
+  SCRATCH_MEDIA_TYPES,
+  scratchHandle,
+  scratchRevision,
+  validateScratchText,
+} from "./scratch-resource.ts";
+export type {
   AppendDecision,
   ReplayAnomaly,
   ReplayReport,

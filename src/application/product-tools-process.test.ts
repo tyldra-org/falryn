@@ -31,6 +31,7 @@ import { createLoomPort } from "./loom.ts";
 import { MAX_PRODUCT_PROCESS_MODEL_BYTES } from "./product-process-output.ts";
 import { createProductReadCoordinator, productReadInputSchema } from "./product-read.ts";
 import { composeProductProcessTools } from "./product-tools-process.ts";
+import type { ScratchResourcePort } from "./scratch-resources.ts";
 import { createWorkspaceReader } from "./workspace-read.ts";
 
 const encoder = new TextEncoder();
@@ -265,6 +266,52 @@ describe("composeProductProcessTools", () => {
       signal: new AbortController().signal,
     });
     expect(pty.status).toBe("unavailable");
+  });
+
+  test("feeds one exact scratch revision to direct process stdin", async () => {
+    const requests: ProcessCaptureRequest[] = [];
+    const capture: ProcessCapturePort = {
+      async run(request) {
+        requests.push(request);
+        return ok(report(request));
+      },
+    };
+    const scratch = {
+      readBytes: async () => ok(encoder.encode("echo scratch\n")),
+    } as unknown as ScratchResourcePort;
+    const artifacts = memoryArtifacts();
+    const tools = composeProductProcessTools({
+      generation: configurationGeneration.from(0),
+      capture,
+      workspaceCwd: "/work",
+      artifacts,
+      loom: createLoomPort({ artifacts }),
+      workspaceId: "ws-1",
+      sessionId: "session-1",
+      scratch,
+    });
+
+    const outcome = await tools.runner.execute({
+      invocationId: invocationId.from("inv-scratch-stdin"),
+      toolCallId: "call-scratch-stdin",
+      toolName: "run_process",
+      capabilityId: capabilityId.from("builtin:workspace/run_process@1"),
+      version: 1,
+      effect: "mutation",
+      input: {
+        executable: "/bin/bash",
+        argv: ["-s"],
+        stdinScratch: {
+          handle: "scratch://session/session-1/script.sh",
+          revision: 1,
+        },
+      },
+      signal: new AbortController().signal,
+    });
+
+    expect(outcome.status).toBe("completed");
+    expect(new TextDecoder().decode(requests[0]?.stdinBytes)).toBe("echo scratch\n");
+    expect(JSON.stringify(outcome)).not.toContain("echo scratch");
   });
 
   test("retains genuine Hush reductions and never exceeds the qualified raw projection", async () => {

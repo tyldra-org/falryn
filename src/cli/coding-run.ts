@@ -23,6 +23,7 @@ import {
   composeProductMemoryTools,
   composeProductMemoryTurn,
   composeProductProcessTools,
+  composeProductScratchTools,
   composeProductWorkspaceTools,
   createDebugAdapterSupervisor,
   createLanguageServerSupervisor,
@@ -486,6 +487,12 @@ export async function runCoding(
       ...(productLoom === undefined ? {} : { loom: productLoom }),
       workspaceId: String(workspaceId),
       sessionId: String(sessionId),
+      scratch: productArtifactSession.scratch,
+    });
+    const scratchTools = composeProductScratchTools({
+      generation,
+      scratch: productArtifactSession.scratch,
+      sessionId,
     });
     const gitTools = composeProductGitTools({
       generation,
@@ -513,9 +520,15 @@ export async function runCoding(
     });
     const productTools = mergeProductToolBundles(
       generation,
-      [workspaceTools, processTools, gitTools, languageTools, memoryTools],
+      [workspaceTools, processTools, scratchTools, gitTools, languageTools, memoryTools],
       {
         afterMutation: async (signalRequest) => {
+          if (
+            signalRequest.toolName === "scratch_write" ||
+            signalRequest.toolName === "scratch_discard"
+          ) {
+            return {};
+          }
           workspaceTools.invalidateContext();
           const languageDiagnostics = await languageTools.afterWorkspaceMutation(
             signalRequest.signal,

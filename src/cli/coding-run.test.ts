@@ -4,7 +4,7 @@
  */
 
 import { afterEach, describe, expect, test } from "bun:test";
-import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -17,6 +17,7 @@ import {
   err,
   localPath,
   ok,
+  sessionId,
   streamId,
 } from "../domain/index.ts";
 import { createDeterministicProviderAdapter, type ModelRequest } from "../providers/index.ts";
@@ -872,7 +873,7 @@ describe("runCoding", () => {
     });
     expect(requests).toHaveLength(2);
     expect(requests[0]?.tools.length).toBeGreaterThan(0);
-    expect(requests[0]?.tools.length).toBeLessThanOrEqual(16);
+    expect(requests[0]?.tools.length).toBeLessThanOrEqual(20);
     expect(
       requests[1]?.messages.some(
         (message) => message.role === "assistant" && message.toolCalls?.[0]?.name === "list_dir",
@@ -883,6 +884,65 @@ describe("runCoding", () => {
         (message) => message.role === "tool" && message.toolCallId === "call-list",
       ),
     ).toBe(true);
+  });
+
+  test("writes and reopens a scratch draft through the real product tool loop", async () => {
+    const seeded = await seededHome();
+    const services = providerFor(seeded)(globalsFor(seeded));
+    const requests: ModelRequest[] = [];
+    const adapter = createDeterministicProviderAdapter({
+      onRequest: (request) => requests.push(request),
+      script: (_request, index) =>
+        index === 0
+          ? {
+              kind: "tool",
+              toolCallId: "call-scratch-write",
+              name: "scratch_write",
+              argumentFragments: [
+                '{"name":"pr-body.md","text":"# PR draft\\n","mediaType":"text/markdown"}',
+              ],
+            }
+          : { kind: "text", text: "Draft retained.", finishReason: "stop" },
+    });
+
+    const result = await runCoding(
+      services,
+      { promptParts: ["draft", "a", "PR", "body"] },
+      {
+        input: createRecordingCliStreams({ stdin: null }).input,
+        globals: globalsFor(seeded),
+        providerAdapter: adapter,
+        toolConfirmation: LIVE_TURN_MATRIX_CONFIRMATION,
+        identities: {
+          sessionId: "session-run-scratch",
+          turnId: "turn-run-scratch",
+          traceId: "trace-run-scratch",
+        },
+      },
+    );
+
+    expect(result.payload).toMatchObject({
+      stage: "attempt-completed",
+      response: "Draft retained.",
+      toolResults: 1,
+    });
+    expect(requests[0]?.tools.map((tool) => tool.name)).toContain("scratch_write");
+    expect(JSON.stringify(requests[1])).toContain(
+      "scratch://session/session-run-scratch/pr-body.md",
+    );
+    expect(JSON.stringify(requests[1])).not.toContain("workspaceIndex");
+    expect(await readdir(seeded.primary)).not.toContain("pr-body.md");
+
+    const reopened = await openProductArtifactSession(services());
+    expect(reopened).not.toBeNull();
+    if (reopened === null) return;
+    expect(
+      await reopened.scratch.read(
+        sessionId.from("session-run-scratch"),
+        "scratch://session/session-run-scratch/pr-body.md",
+      ),
+    ).toMatchObject({ ok: true, value: { revision: 1, text: "# PR draft\n" } });
+    await reopened.close();
   });
 
   test("does not retry a provider failure after a tool proposal was executed", async () => {

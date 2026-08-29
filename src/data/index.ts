@@ -174,6 +174,13 @@ export {
   SESSIONS_TABLE,
   TURNS_TABLE,
 } from "./schema.ts";
+export { createScratchResourceRepository } from "./scratch-resource-repository.ts";
+export {
+  MIGRATION_0009,
+  SCRATCH_RESOURCE_SCHEMA_VERSION,
+  SCRATCH_RESOURCES_TABLE,
+  SCRATCH_REVISIONS_TABLE,
+} from "./scratch-resource-schema.ts";
 export type { ImportOptions } from "./session-replay.ts";
 export { forkSession, importPackage, replaySession } from "./session-replay.ts";
 export {
