@@ -217,14 +217,15 @@ provider continuation after tool results. Brief also supplies a mode-specific
 provider output ceiling. Projection failure is a typed turn failure rather than
 silent omission.
 
-`auto` uses the deterministic `brief.v2` policy. Prompt shape is classified as
+`auto` uses the deterministic `brief.v3` policy. Prompt shape is classified as
 low, medium, or high without treating one technical keyword as a large task.
-High complexity, uncertainty, or recovery selects detailed output. Medium
-complexity, a failure, risk, confirmation, or required user action selects
-balanced output. A low-complexity headless or narrow turn selects compact;
-interactive turns default to balanced. Citations and validation results remain
-protected facts but do not force a larger answer by themselves. Every receipt
-records the ordered reasons for its selection.
+High complexity, uncertainty, recovery, safety-critical ambiguity, or an
+explicit clarification request selects detailed output. Medium complexity, a
+failure, risk, confirmation, required user action, or order-sensitive procedure
+selects balanced output. A low-complexity headless or narrow turn selects
+compact; interactive turns default to balanced. Citations and validation
+results remain protected facts but do not force a larger answer by themselves.
+Every receipt records the ordered reasons for its selection.
 Failures, uncertainty, confirmations, required actions, and recovery obligations
 are derived from the request itself as well as later Context and tool outcomes,
 so the first provider attempt receives the same preservation guarantees.
@@ -236,6 +237,15 @@ examples. Balanced adds only the reasoning and evidence needed to act. Detailed
 means complete rather than long: it adds relevant tradeoffs and actionable steps
 but remains direct and forbids invented background, prompt restatement, repeated
 conclusions, and filler.
+
+Brief changes density and explanation depth only. It does not impose a language,
+persona, dialect, broken grammar, or Caveman-style voice on the provider. The
+current policy defaults cap compact, balanced, and detailed at 2,048, 4,096, and
+8,192 output tokens respectively; these are ceilings, not requested answer
+lengths or universal model limits. `auto` selects a level and its ceiling from
+the live need. The effective request uses the lowest applicable Brief, model,
+route, and caller limit. Brief `off` adds neither guidance nor a Brief-derived
+ceiling; the selected model route's ordinary provider budget still applies.
 
 Human controls expose `compact`, `balanced`, `detailed`, `auto`, `on`, and
 `off`; they do not expose the backend name `raw`. `/brief off` and

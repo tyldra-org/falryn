@@ -114,6 +114,20 @@ describe("composeProductBriefControls", () => {
     });
   });
 
+  test("detects clarity escapes without imposing a writing voice", () => {
+    expect(
+      deriveProductBriefNeed({
+        prompt:
+          "Clarify this irreversible production reset step-by-step. First verify backup, then run reset --hard.",
+        interface: "headless",
+      }),
+    ).toMatchObject({
+      safetyCritical: true,
+      clarification: true,
+      orderedProcedure: true,
+    });
+  });
+
   test("keeps an ordinary tool failure balanced unless recovery is uncertain", () => {
     const initial = deriveProductBriefNeed({ prompt: "Run the check", interface: "headless" });
     const updated = briefNeedAfterToolResults(initial, [

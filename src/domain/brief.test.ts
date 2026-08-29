@@ -173,6 +173,11 @@ describe("brief", () => {
         verbosity === "compact" ? "Lead with outcome" : "Lead with the outcome",
       );
       expect(result.value.guidance).toContain(expectations[verbosity]);
+      if (verbosity === "detailed") {
+        expect(result.value.guidance).toContain(
+          "silently verify every supplied fact, constraint, and relationship is present",
+        );
+      }
       expect(result.value.guidance).toContain(
         verbosity === "compact"
           ? "Include each required fact once"
@@ -247,6 +252,36 @@ describe("brief", () => {
     expect(selectBriefVerbosity("auto", DEFAULT_BRIEF_NEED)).toBe("balanced");
   });
 
+  test("binds each selected density to a distinct provider output ceiling", () => {
+    const cases = [
+      { verbosity: "compact", outputTokenBudget: 2_048 },
+      { verbosity: "balanced", outputTokenBudget: 4_096 },
+      { verbosity: "detailed", outputTokenBudget: 8_192 },
+    ] as const;
+    for (const testCase of cases) {
+      const result = projectBrief(
+        request({ policy: { verbosity: testCase.verbosity, source: "user" } }),
+      );
+      expect(result).toMatchObject({
+        ok: true,
+        value: { receipt: { outputTokenBudget: testCase.outputTokenBudget } },
+      });
+    }
+
+    const automatic = projectBrief(
+      request({
+        policy: { verbosity: "auto", source: "user" },
+        need: { interface: "headless", safetyCritical: true },
+      }),
+    );
+    expect(automatic).toMatchObject({
+      ok: true,
+      value: {
+        receipt: { selectedVerbosity: "detailed", outputTokenBudget: 8_192 },
+      },
+    });
+  });
+
   test("auto escalates only for explanation burden and keeps cheap facts compact", () => {
     const medium = projectBrief(
       request({
@@ -296,6 +331,16 @@ describe("brief", () => {
       { need: { uncertainty: true }, verbosity: "detailed", reasons: ["uncertainty"] },
       { need: { recovery: true }, verbosity: "detailed", reasons: ["recovery"] },
       {
+        need: { safetyCritical: true },
+        verbosity: "detailed",
+        reasons: ["safety-critical"],
+      },
+      {
+        need: { clarification: true },
+        verbosity: "detailed",
+        reasons: ["clarification"],
+      },
+      {
         need: { complexity: "medium" as const },
         verbosity: "balanced",
         reasons: ["medium-complexity"],
@@ -307,6 +352,11 @@ describe("brief", () => {
         need: { requiredAction: true },
         verbosity: "balanced",
         reasons: ["required-action"],
+      },
+      {
+        need: { orderedProcedure: true },
+        verbosity: "balanced",
+        reasons: ["ordered-procedure"],
       },
       {
         need: { interface: "interactive" as const },
@@ -337,6 +387,32 @@ describe("brief", () => {
         verbosity,
         reasons: ["explicit-mode"],
       });
+    }
+  });
+
+  test("uses clarity escapes without changing the selected response voice", () => {
+    const result = projectBrief(
+      request({
+        policy: { verbosity: "auto", source: "user" },
+        need: {
+          interface: "headless",
+          safetyCritical: true,
+          clarification: true,
+          orderedProcedure: true,
+        },
+      }),
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.receipt.selectedVerbosity).toBe("detailed");
+    expect(result.value.receipt.selectionReasons).toEqual(["safety-critical", "clarification"]);
+    for (const surface of [result.value.guidance, result.value.expanded]) {
+      expect(surface).toContain("complete, unambiguous sentences");
+      expect(surface).toContain("Never compress through ambiguity");
+      expect(surface).toContain("Keep ordered steps");
+      expect(surface).not.toContain("caveman");
+      expect(surface).not.toContain("user's language");
+      expect(surface).not.toContain("fragments");
     }
   });
 

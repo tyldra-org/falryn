@@ -76,8 +76,13 @@ export const BRIEF_RESPONSE_FIXTURES: readonly BriefResponseFixture[] = [
     briefMode: "detailed",
     cavemanIntensity: "lite",
     prompt:
-      "Give recovery instructions from supplied facts: do not run reset --hard; inspect with `git status --short`; recover exact bytes from artifact-42; uncertainty remains until the digest verifies.",
-    requiredFacts: ["do not run reset --hard", "git status --short", "artifact-42", "uncertainty"],
+      "Give recovery instructions from supplied facts: do not run `git reset --hard`; inspect with `git status --short`; recover exact bytes from artifact-42; uncertainty remains until the digest verifies.",
+    requiredFacts: [
+      "do not run git reset --hard",
+      "git status --short",
+      "artifact-42",
+      "uncertainty",
+    ],
     forbiddenClaims: ["recovered successfully", "delete artifact-42"],
   },
   {

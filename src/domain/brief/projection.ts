@@ -77,6 +77,7 @@ export function projectBrief(request: BriefRequest): Result<BriefProjection, Bri
   const facts = preservedFactsFromNeed(need);
   const requiredText = joinSections([
     styleLine(selectedVerbosity),
+    ...clarityLines(need),
     ...requiredFactLines(facts, selectedVerbosity),
   ]);
   if (utf8ByteLength(requiredText) > maxBytes) {
@@ -98,7 +99,7 @@ export function projectBrief(request: BriefRequest): Result<BriefProjection, Bri
 
   const guidance = custom.length > 0 ? joinSections([requiredText, custom]) : requiredText;
   const concise = snapshotConcise(selectedVerbosity, facts);
-  const expanded = snapshotExpanded(selectedVerbosity, facts);
+  const expanded = snapshotExpanded(selectedVerbosity, facts, need);
   if (
     utf8ByteLength(concise) > HARD_BRIEF_MAX_BYTES ||
     utf8ByteLength(expanded) > HARD_BRIEF_MAX_BYTES
@@ -144,10 +145,30 @@ function styleLine(verbosity: BriefVerbosityLevel): string {
     case "balanced":
       return "Lead with the outcome. Include each explicit supplied fact once; copy names, paths, commands, errors, numbers, and negated constraints verbatim and contiguously, without inserting Markdown. Then add only the reasoning and evidence needed to act. Use short sections when helpful. Omit prompt restatement, generic background, repetition, and unnecessary examples.";
     case "detailed":
-      return "Lead with the outcome. Include each explicit supplied fact once; copy names, paths, commands, errors, numbers, and negated constraints verbatim and contiguously, without inserting Markdown. Add task-relevant reasoning, evidence, tradeoffs, and actions only when requested or needed. Detailed means complete, not long. Use focused sections; examples only when needed. Omit prompt restatement, invented background, repeated conclusions, and filler.";
+      return "Lead with the outcome. Include each explicit supplied fact once; copy names, paths, commands, errors, numbers, and negated constraints verbatim and contiguously, without inserting Markdown. Add task-relevant reasoning, evidence, tradeoffs, and actions only when requested or needed. Detailed means complete, not long. Before finishing, silently verify every supplied fact, constraint, and relationship is present. Use focused sections; examples only when needed. Omit prompt restatement, invented background, repeated conclusions, and filler.";
     default:
       return assertNever(verbosity, "unhandled brief verbosity");
   }
+}
+
+function clarityLines(need: BriefRequest["need"]): readonly string[] {
+  const lines: string[] = [];
+  if (need.safetyCritical) {
+    lines.push(
+      "Use complete, unambiguous sentences for safety warnings and irreversible confirmations. Preserve scope, order, reversibility, and prerequisites.",
+    );
+  }
+  if (need.clarification) {
+    lines.push(
+      "Answer the misunderstood point in plain, complete language. Never compress through ambiguity.",
+    );
+  }
+  if (need.orderedProcedure) {
+    lines.push(
+      "Keep ordered steps, dependencies, conjunctions, and prerequisites explicit when omission could change execution order.",
+    );
+  }
+  return lines;
 }
 
 function requiredFactLines(
@@ -226,6 +247,11 @@ function snapshotConcise(
 function snapshotExpanded(
   verbosity: BriefVerbosityLevel,
   facts: readonly BriefPreservedFact[],
+  need: BriefRequest["need"],
 ): string {
-  return joinSections([styleLine(verbosity), ...requiredFactLines(facts, "detailed")]);
+  return joinSections([
+    styleLine(verbosity),
+    ...clarityLines(need),
+    ...requiredFactLines(facts, "detailed"),
+  ]);
 }

@@ -86,6 +86,12 @@ const CONFIRMATION_TASK =
 const REQUIRED_ACTION_TASK = /\b(?:next|required) action\b|\brequired fix\b/i;
 const RECOVERY_TASK =
   /\b(?:recover|recovery|restore|rollback|roll back|revert|undo)\b|\bartifact-[A-Za-z0-9_-]+\b/i;
+const SAFETY_CRITICAL_TASK =
+  /\b(?:cannot be undone|irreversible|permanent(?:ly)?|production|credential|secret|private key|delete all|drop (?:table|database)|reset --hard|force[- ]push)\b/i;
+const CLARIFICATION_TASK =
+  /\b(?:clarify|explain again|rephrase|what do you mean|do not understand|don't understand|confused|ambiguous|unclear)\b/i;
+const ORDERED_PROCEDURE_TASK =
+  /\b(?:step[- ]by[- ]step|in (?:this|that|the following) order|before (?:you|we|running|executing)|prerequisite|first\b[\s\S]{0,160}\bthen)\b/i;
 const LIST_ITEM = /^\s*(?:[-*+] |\d+[.)] )/gm;
 const FILE_REFERENCE = /(?:^|\s)(?:\.?\.?\/)?(?:[\w.-]+\/)+[\w.-]+\.[A-Za-z0-9]+(?=\s|$|[,:;)])/gm;
 
@@ -147,6 +153,9 @@ export function deriveProductBriefNeed(input: {
     citations: CITATION_TASK.test(prompt) || (input.context?.candidateCount ?? 0) > 0,
     validation: VALIDATION_TASK.test(prompt),
     recovery: contextUnavailable || RECOVERY_TASK.test(prompt),
+    safetyCritical: SAFETY_CRITICAL_TASK.test(prompt),
+    clarification: CLARIFICATION_TASK.test(prompt),
+    orderedProcedure: ORDERED_PROCEDURE_TASK.test(prompt) || matchCount(LIST_ITEM, prompt) >= 2,
   };
 }
 

@@ -3,7 +3,7 @@
 import type { ConfigurationGeneration, SessionId, TurnId } from "../identity.ts";
 
 export const BRIEF_SCHEMA_VERSION = 1;
-export const BRIEF_STRATEGY_VERSION = "brief.v2";
+export const BRIEF_STRATEGY_VERSION = "brief.v3";
 export const BRIEF_PLACEMENT = "pre-inference" as const;
 
 export const DEFAULT_BRIEF_MAX_BYTES = 2_048;
@@ -59,6 +59,9 @@ export const BRIEF_SELECTION_REASONS = [
   "confirmation",
   "required-action",
   "recovery",
+  "safety-critical",
+  "clarification",
+  "ordered-procedure",
   "interactive-interface",
   "headless-interface",
   "narrow-interface",
@@ -96,6 +99,12 @@ export type BriefNeed = {
   readonly citations: boolean;
   readonly validation: boolean;
   readonly recovery: boolean;
+  /** The response covers credentials, production, destructive work, or another unsafe ambiguity. */
+  readonly safetyCritical: boolean;
+  /** The user is asking Falryn to clarify a misunderstood or previously ambiguous answer. */
+  readonly clarification: boolean;
+  /** The response must preserve an explicit sequence, dependency, or prerequisite order. */
+  readonly orderedProcedure: boolean;
 };
 
 export type BriefPolicy = {
@@ -179,6 +188,9 @@ export const DEFAULT_BRIEF_NEED: BriefNeed = {
   citations: false,
   validation: false,
   recovery: false,
+  safetyCritical: false,
+  clarification: false,
+  orderedProcedure: false,
 };
 
 export const DEFAULT_BRIEF_POLICY: BriefPolicy = {

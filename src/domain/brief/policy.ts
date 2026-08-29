@@ -40,6 +40,9 @@ const briefNeedSchema = z.object({
   citations: z.boolean().optional(),
   validation: z.boolean().optional(),
   recovery: z.boolean().optional(),
+  safetyCritical: z.boolean().optional(),
+  clarification: z.boolean().optional(),
+  orderedProcedure: z.boolean().optional(),
 });
 
 const briefPolicySchema = z.object({
@@ -82,6 +85,9 @@ export function parseBriefNeed(need: BriefNeed): Result<BriefNeed, BriefError> {
     citations: parsed.data.citations ?? false,
     validation: parsed.data.validation ?? false,
     recovery: parsed.data.recovery ?? false,
+    safetyCritical: parsed.data.safetyCritical ?? false,
+    clarification: parsed.data.clarification ?? false,
+    orderedProcedure: parsed.data.orderedProcedure ?? false,
   });
 }
 
@@ -156,6 +162,8 @@ export function decideBriefVerbosity(
     [need.complexity === "high", "high-complexity"],
     [need.uncertainty, "uncertainty"],
     [need.recovery, "recovery"],
+    [need.safetyCritical, "safety-critical"],
+    [need.clarification, "clarification"],
   ]);
   if (detailedReasons.length > 0) {
     return { verbosity: "detailed", reasons: detailedReasons };
@@ -167,6 +175,7 @@ export function decideBriefVerbosity(
     [need.risk, "risk"],
     [need.confirmation, "confirmation"],
     [need.requiredAction, "required-action"],
+    [need.orderedProcedure, "ordered-procedure"],
   ]);
   if (balancedReasons.length > 0) {
     return { verbosity: "balanced", reasons: balancedReasons };
