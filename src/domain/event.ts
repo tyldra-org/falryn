@@ -139,6 +139,17 @@ export type ModelAttemptBinding = {
   }[];
   readonly schemaBytes: number;
   readonly schemaTokensEstimated: number;
+  /** Secret-safe prompt-cache receipt; absent on legacy and uncached attempts. */
+  readonly promptCache?:
+    | {
+        readonly schemaVersion: 1;
+        readonly key: string;
+        readonly scope: "session";
+        readonly stablePrefixDigest: string;
+        readonly stableMessageCount: number;
+        readonly toolCatalogGeneration: number;
+      }
+    | undefined;
   readonly budgets: {
     readonly attempts: number | null;
     readonly inputTokens: number | null;

@@ -28,6 +28,7 @@ import { composeProductAgentRuntime } from "./product-agent-runtime.ts";
 import { discloseProductTools } from "./product-tool-disclosure.ts";
 import { composeProductProcessTools } from "./product-tools-process.ts";
 import { composeProductWorkspaceTools } from "./product-tools-workspace.ts";
+import { promptCacheStablePrefixDigest } from "./provider-prompt-cache.ts";
 
 const generation = configurationGeneration.from(5);
 
@@ -322,6 +323,64 @@ describe("createProductAttemptRunner", () => {
     expect(providerRequests).toBe(0);
   });
 
+  test("rejects a stale prompt cache prefix before contacting the provider", async () => {
+    let providerRequests = 0;
+    const product = setup(
+      createDeterministicProviderAdapter({
+        onRequest: () => {
+          providerRequests += 1;
+        },
+      }),
+    );
+    const turn = await start(product, "turn-attempt-cache-mismatch");
+    const runner = product.runtime.requireAttemptRunner();
+    if (!runner.ok) {
+      throw new Error(runner.error.code);
+    }
+    const stableMessages = [
+      { role: "system" as const, parts: [{ kind: "text" as const, text: "stable policy" }] },
+    ];
+    const validDigest = promptCacheStablePrefixDigest(
+      stableMessages,
+      product.disclosure.modelTools,
+    );
+
+    const result = await runner.value.run({
+      turnId: turn,
+      identity: {
+        attemptNumber: 1,
+        modelAttemptId: modelAttemptId.from("attempt-cache-mismatch"),
+        fallbackPosition: 0,
+        providerKey: product.adapter.identity.providerId,
+        modelKey: String(product.adapter.supportedModels[0]),
+      },
+      receipt: receipt(product),
+      boundConfigurationGeneration: generation,
+      configurationGeneration: generation,
+      signal: new AbortController().signal,
+      modelInput: {
+        messages: [...stableMessages, { role: "user", parts: [{ kind: "text", text: "hello" }] }],
+        tools: product.disclosure.modelTools,
+        output: { kind: "text" },
+        budgets: {},
+        promptCache: {
+          stableMessageCount: 1,
+          stablePrefixDigest: validDigest.replace(/.$/u, validDigest.endsWith("0") ? "1" : "0"),
+          toolCatalogGeneration: Number(generation),
+        },
+        disclosure: disclosureInput(product),
+      },
+    });
+
+    expect(result.fact).toMatchObject({
+      kind: "failed",
+      category: "invalid-request",
+      retryable: false,
+      effect: "none",
+    });
+    expect(providerRequests).toBe(0);
+  });
+
   test("continues a real raw process call with one bounded non-duplicated result", async () => {
     const requests: ModelRequest[] = [];
     const adapter = createDeterministicProviderAdapter({
@@ -338,6 +397,8 @@ describe("createProductAttemptRunner", () => {
                 inputTokens: 10,
                 outputTokens: 2,
                 totalTokens: 12,
+                cachedInputTokens: 0,
+                cacheWriteInputTokens: 6,
                 provenance: "provider-reported",
               },
             }
@@ -348,6 +409,8 @@ describe("createProductAttemptRunner", () => {
                 inputTokens: 8,
                 outputTokens: 3,
                 totalTokens: 11,
+                cachedInputTokens: 7,
+                cacheWriteInputTokens: 0,
                 provenance: "provider-reported",
               },
             },
@@ -541,6 +604,8 @@ describe("createProductAttemptRunner", () => {
         inputTokens: 18,
         outputTokens: 5,
         totalTokens: 23,
+        cachedInputTokens: 7,
+        cacheWriteInputTokens: 6,
         provenance: "provider-reported",
       },
       briefReceipt: {

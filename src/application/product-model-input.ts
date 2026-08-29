@@ -9,14 +9,14 @@ import type {
 } from "../domain/index.ts";
 import type { ModelMessage } from "../providers/index.ts";
 import type { ProductToolDisclosure } from "./product-tool-disclosure.ts";
+import { promptCacheStablePrefixDigest } from "./provider-prompt-cache.ts";
 import type { AttemptModelInput } from "./turn-attempt-policy.ts";
 
-const SYSTEM_ROLES = new Set([
+const STABLE_SYSTEM_ROLES = new Set([
   "product-invariant",
   "user-instruction",
   "project-instruction",
   "skill-workflow",
-  "brief",
 ]);
 
 function renderSections(sections: readonly RenderedPromptSection[]): string {
@@ -59,15 +59,27 @@ export function attemptModelInputFromPrompt(
     readonly maxOutputTokens?: number;
   } = {},
 ): AttemptModelInput {
-  const system = prompt.sections.filter((section) => SYSTEM_ROLES.has(section.role));
-  const user = prompt.sections.filter((section) => !SYSTEM_ROLES.has(section.role));
-  const messages = [
-    message("system", renderSections(system)),
+  const stableSystem = prompt.sections.filter((section) => STABLE_SYSTEM_ROLES.has(section.role));
+  const brief = prompt.sections.filter((section) => section.role === "brief");
+  const user = prompt.sections.filter(
+    (section) => !STABLE_SYSTEM_ROLES.has(section.role) && section.role !== "brief",
+  );
+  const stableMessages = [
+    message("system", renderSections(stableSystem)),
     message("system", capabilityBrief(disclosure)),
+  ].filter((entry): entry is ModelMessage => entry !== null);
+  const messages = [
+    ...stableMessages,
+    message("system", renderSections(brief)),
     message("user", renderSections(user)),
   ].filter((entry): entry is ModelMessage => entry !== null);
   return {
     messages,
+    promptCache: {
+      stableMessageCount: stableMessages.length,
+      stablePrefixDigest: promptCacheStablePrefixDigest(stableMessages, disclosure.modelTools),
+      toolCatalogGeneration: Number(disclosure.receipt.catalogGeneration),
+    },
     tools: disclosure.modelTools,
     output: { kind: "text" },
     budgets: {

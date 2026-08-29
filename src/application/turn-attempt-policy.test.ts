@@ -202,7 +202,10 @@ function scriptedRunner(
 
 function sampleModelInput(): AttemptModelInput {
   return {
-    messages: [{ role: "user", parts: [{ kind: "text", text: "inspect" }] }],
+    messages: [
+      { role: "system", parts: [{ kind: "text", text: "stable policy" }] },
+      { role: "user", parts: [{ kind: "text", text: "inspect" }] },
+    ],
     tools: [
       {
         name: "read_file",
@@ -212,6 +215,11 @@ function sampleModelInput(): AttemptModelInput {
     ],
     output: { kind: "text" },
     budgets: {},
+    promptCache: {
+      stablePrefixDigest: `sha-256:${"f".repeat(64)}`,
+      stableMessageCount: 1,
+      toolCatalogGeneration: 0,
+    },
     disclosure: {
       catalogGeneration: generation,
       toolNames: ["read_file"],
@@ -248,15 +256,25 @@ describe("turn attempt policy", () => {
       catalogs: catalogs(),
       backoff: { baseDelayMs: 0, maxDelayMs: 0, jitterRatio: 0 },
       runner: scriptedRunner([
-        () => ({
-          fact: {
-            kind: "completed",
-            finishReason: "stop",
-            observedContent: true,
-            emittedToolProposal: false,
-          },
-          turn: null,
-        }),
+        (request) => {
+          expect(request.promptCache).toMatchObject({
+            schemaVersion: 1,
+            scope: "session",
+            stablePrefixDigest: `sha-256:${"f".repeat(64)}`,
+            stableMessageCount: 1,
+            toolCatalogGeneration: 0,
+          });
+          expect(request.promptCache?.key).toMatch(/^sha-256:[a-f0-9]{64}$/u);
+          return {
+            fact: {
+              kind: "completed",
+              finishReason: "stop",
+              observedContent: true,
+              emittedToolProposal: false,
+            },
+            turn: null,
+          };
+        },
       ]),
     });
 
@@ -700,6 +718,13 @@ describe("turn attempt policy", () => {
         schemaBytes: 48,
         schemaTokensEstimated: 12,
         tools: [{ name: "read_file", schemaDigest: "sha-256:read" }],
+        promptCache: {
+          schemaVersion: 1,
+          scope: "session",
+          stablePrefixDigest: `sha-256:${"f".repeat(64)}`,
+          stableMessageCount: 1,
+          toolCatalogGeneration: 0,
+        },
       });
     }
   });

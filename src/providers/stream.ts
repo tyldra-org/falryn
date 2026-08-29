@@ -40,6 +40,7 @@ export type UsageUnits = {
   readonly outputTokens?: number | undefined;
   readonly totalTokens?: number | undefined;
   readonly cachedInputTokens?: number | undefined;
+  readonly cacheWriteInputTokens?: number | undefined;
   readonly reasoningTokens?: number | undefined;
   /**
    * Whether counts came from the provider or are Falryn estimates.

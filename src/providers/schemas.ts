@@ -25,6 +25,7 @@ import {
 } from "./limits.ts";
 import { MESSAGE_ROLES } from "./messages.ts";
 import { REASONING_EFFORTS } from "./policy.ts";
+import { PROMPT_CACHE_POLICY_SCHEMA_VERSION } from "./request.ts";
 import { MODEL_ROLES } from "./roles.ts";
 
 const modelRequestIdSchema = z.string().transform((value, ctx) => {
@@ -110,6 +111,19 @@ const requestMetadataSchema = z
   })
   .strict();
 
+const sha256DigestSchema = z.string().regex(/^sha-256:[a-f0-9]{64}$/u);
+
+const promptCachePolicySchema = z
+  .object({
+    schemaVersion: z.literal(PROMPT_CACHE_POLICY_SCHEMA_VERSION),
+    key: sha256DigestSchema,
+    scope: z.literal("session"),
+    stablePrefixDigest: sha256DigestSchema,
+    stableMessageCount: z.number().int().nonnegative(),
+    toolCatalogGeneration: z.number().int().nonnegative(),
+  })
+  .strict();
+
 export const modelRequestSchema = z
   .object({
     schemaVersion: z.literal(PROVIDER_BOUNDARY_SCHEMA_VERSION),
@@ -127,6 +141,7 @@ export const modelRequestSchema = z
       .max(MAX_PROVIDER_METADATA_ENTRY_LENGTH)
       .nullable()
       .optional(),
+    promptCache: promptCachePolicySchema.optional(),
     metadata: requestMetadataSchema,
   })
   .strict()
@@ -169,6 +184,7 @@ const usageSchema = z
     outputTokens: z.number().int().nonnegative().optional(),
     totalTokens: z.number().int().nonnegative().optional(),
     cachedInputTokens: z.number().int().nonnegative().optional(),
+    cacheWriteInputTokens: z.number().int().nonnegative().optional(),
     reasoningTokens: z.number().int().nonnegative().optional(),
     provenance: z.literal(["provider-reported", "estimate", "unknown"]),
   })

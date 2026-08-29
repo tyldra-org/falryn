@@ -205,7 +205,8 @@ export {
   providerEndpointIsAllowed,
   providerProfileSchema,
 } from "./profile-schema.ts";
-export type { ModelRequest } from "./request.ts";
+export type { ModelRequest, PromptCachePolicy, PromptCacheSeed } from "./request.ts";
+export { PROMPT_CACHE_POLICY_SCHEMA_VERSION } from "./request.ts";
 export type {
   ResolveSpecializedRoleInput,
   RouteRequirement,

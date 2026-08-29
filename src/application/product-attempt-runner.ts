@@ -37,6 +37,7 @@ import {
   createProductToolGateway,
   type ProductToolConfirmationPort,
 } from "./product-tool-gateway.ts";
+import { promptCacheStablePrefixDigest } from "./provider-prompt-cache.ts";
 import {
   createProviderStreamConsumer,
   type ProviderStreamConsumeOutcome,
@@ -417,6 +418,14 @@ function aggregateProviderUsage(usage: readonly (UsageUnits | null)[]): UsageUni
           ),
         }
       : {}),
+    ...(usage.every((entry) => entry?.cacheWriteInputTokens !== undefined)
+      ? {
+          cacheWriteInputTokens: usage.reduce(
+            (total, entry) => total + (entry?.cacheWriteInputTokens ?? 0),
+            0,
+          ),
+        }
+      : {}),
     ...(usage.every((entry) => entry?.reasoningTokens !== undefined)
       ? {
           reasoningTokens: usage.reduce((total, entry) => total + (entry?.reasoningTokens ?? 0), 0),
@@ -457,6 +466,22 @@ function validateDisclosure(request: AttemptRunnerRequest, registry: ToolRegistr
   const input = request.modelInput;
   if (input === null) {
     return "attempt model input is required";
+  }
+  if (input.promptCache !== undefined) {
+    const stableMessages = input.messages.slice(0, input.promptCache.stableMessageCount);
+    if (
+      input.promptCache.stableMessageCount < 1 ||
+      stableMessages.length !== input.promptCache.stableMessageCount ||
+      stableMessages.some(
+        (message) =>
+          message.role !== "system" ||
+          !message.parts.some((part) => part.kind === "text" && part.text.length > 0),
+      ) ||
+      promptCacheStablePrefixDigest(stableMessages, input.tools) !==
+        input.promptCache.stablePrefixDigest
+    ) {
+      return "prompt cache prefix is stale or mismatched";
+    }
   }
   const disclosed = input.disclosure.tools;
   if (
@@ -545,6 +570,7 @@ function modelRequest(
     budgets,
     reasoning: request.receipt.reasoning,
     reasoningControl: request.receipt.reasoningControl,
+    ...(request.promptCache === undefined ? {} : { promptCache: request.promptCache }),
     metadata: {
       role: request.receipt.role,
       ...(request.receipt.intent === null ? {} : { workIntent: request.receipt.intent }),

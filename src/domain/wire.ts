@@ -125,6 +125,16 @@ const modelAttemptBindingSchema: z.ZodType<ModelAttemptBinding> = z.object({
   ),
   schemaBytes: z.int().nonnegative(),
   schemaTokensEstimated: z.int().nonnegative(),
+  promptCache: z
+    .object({
+      schemaVersion: z.literal(1),
+      key: z.string().regex(/^sha-256:[a-f0-9]{64}$/u),
+      scope: z.literal("session"),
+      stablePrefixDigest: z.string().regex(/^sha-256:[a-f0-9]{64}$/u),
+      stableMessageCount: z.int().nonnegative(),
+      toolCatalogGeneration: z.int().nonnegative(),
+    })
+    .optional(),
   budgets: z.object({
     attempts: nullableBudgetSchema,
     inputTokens: nullableBudgetSchema,

@@ -807,6 +807,14 @@ function aggregateAttemptUsage(
           ),
         }
       : {}),
+    ...(usage.every((entry) => entry.cacheWriteInputTokens !== undefined)
+      ? {
+          cacheWriteInputTokens: usage.reduce(
+            (total, entry) => total + (entry.cacheWriteInputTokens ?? 0),
+            0,
+          ),
+        }
+      : {}),
     ...(usage.every((entry) => entry.reasoningTokens !== undefined)
       ? {
           reasoningTokens: usage.reduce((total, entry) => total + (entry.reasoningTokens ?? 0), 0),
