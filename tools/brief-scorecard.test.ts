@@ -1,10 +1,40 @@
 import { describe, expect, test } from "bun:test";
 
 import { compareBriefPair } from "../src/domain/index.ts";
-import { formatBriefScorecardHuman, type ScorecardReport } from "./brief-scorecard.ts";
+import {
+  createBriefScorecardProvider,
+  formatBriefScorecardHuman,
+  type ScorecardReport,
+} from "./brief-scorecard.ts";
 import { BRIEF_RESPONSE_FIXTURES } from "./fixtures/brief-response-corpus.ts";
 
 describe("Brief scorecard", () => {
+  test("selects Command Code MiniMax M3 through the verified provider adapter", () => {
+    const provider = createBriefScorecardProvider({
+      FALRYN_BRIEF_PROVIDER: "commandcode",
+      FALRYN_COMMANDCODE_API_KEY: "test-only-key",
+    });
+
+    expect(String(provider.adapter.identity.providerId)).toBe("commandcode");
+    expect(provider.adapter.identity.adapterKind).toBe("commandcode");
+    expect(provider.model).toBe("MiniMaxAI/MiniMax-M3");
+    expect(provider.catalog.models.map((model) => String(model.modelId))).toEqual([
+      "MiniMaxAI/MiniMax-M3",
+    ]);
+  });
+
+  test("fails closed when the selected provider has no credential", () => {
+    expect(() => createBriefScorecardProvider({ FALRYN_BRIEF_PROVIDER: "commandcode" })).toThrow(
+      "FALRYN_COMMANDCODE_API_KEY",
+    );
+  });
+
+  test("rejects an unsupported provider identity", () => {
+    expect(() => createBriefScorecardProvider({ FALRYN_BRIEF_PROVIDER: "compatible" })).toThrow(
+      "unsupported Brief scorecard provider: compatible",
+    );
+  });
+
   test("covers all reviewed categories, Brief levels, and Caveman intensities", () => {
     expect(new Set(BRIEF_RESPONSE_FIXTURES.map((fixture) => fixture.category)).size).toBe(6);
     expect(new Set(BRIEF_RESPONSE_FIXTURES.map((fixture) => fixture.briefMode))).toEqual(

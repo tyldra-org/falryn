@@ -29,13 +29,20 @@ import {
   ok,
   type PromptSectionInput,
 } from "../src/domain/index.ts";
-import { createOpenAiSdkAdapter, hostPlatform } from "../src/integrations/index.ts";
 import {
+  createCommandCodeSdkAdapter,
+  createOpenAiSdkAdapter,
+  hostPlatform,
+} from "../src/integrations/index.ts";
+import {
+  COMMAND_CODE_OPENAI_BASE_URL,
+  COMMAND_CODE_PROVIDER_ID,
   capabilityFromDeclaration,
   catalogFromAdapterModels,
   knownModelCapability,
   type ModelCatalog,
   type ModelRequest,
+  type ProviderAdapterKind,
   type ProviderAdapterPort,
 } from "../src/providers/index.ts";
 import {
@@ -46,6 +53,16 @@ import {
 const RESPONSE_TOKENIZER = "utf8-bytes-div4.v1";
 const DEFAULT_OUTPUT_LIMIT = 2_048;
 const MAX_REPETITIONS = 4;
+const DEFAULT_OPENAI_MODEL = "gpt-4o-mini";
+const DEFAULT_COMMAND_CODE_MODEL = "MiniMaxAI/MiniMax-M3";
+
+type ScorecardProviderId = "openai" | "commandcode";
+
+type ScorecardProvider = {
+  readonly adapter: ProviderAdapterPort;
+  readonly catalog: ModelCatalog;
+  readonly model: string;
+};
 
 type Options = {
   readonly format: "human" | "json";
@@ -172,15 +189,17 @@ function gitSource(root: string): CavemanSourcePort {
   };
 }
 
-function catalog(
-  adapter: ReturnType<typeof createOpenAiSdkAdapter>,
+function providerCatalog(
+  adapter: ProviderAdapterPort,
+  adapterKind: ProviderAdapterKind,
+  provider: string,
   model: string,
   baseUrl: string,
 ): ModelCatalog {
-  const declaration = knownModelCapability("openai", model, baseUrl);
+  const declaration = knownModelCapability(adapterKind, model, baseUrl, provider);
   if (declaration === null) {
     throw new Error(
-      `Brief scorecard requires a source-verified capability declaration for ${model}`,
+      `Brief scorecard requires a source-verified ${provider} capability declaration for ${model}`,
     );
   }
   return catalogFromAdapterModels(adapter.supportedModels, {
@@ -193,6 +212,69 @@ function catalog(
       }),
     ],
   });
+}
+
+function requiredCredential(
+  environment: Readonly<Record<string, string | undefined>>,
+  names: readonly string[],
+): string {
+  const value = names.map((name) => environment[name]).find((candidate) => candidate?.trim());
+  if (value === undefined) {
+    throw new Error(`${names.join(" or ")} is required for matched live runs`);
+  }
+  return value;
+}
+
+/** Resolve one source-verified provider/model pair for a matched live scorecard. */
+export function createBriefScorecardProvider(
+  environment: Readonly<Record<string, string | undefined>> = process.env,
+): ScorecardProvider {
+  const configuredProvider = environment.FALRYN_BRIEF_PROVIDER ?? "openai";
+  if (configuredProvider !== "openai" && configuredProvider !== "commandcode") {
+    throw new Error(`unsupported Brief scorecard provider: ${configuredProvider}`);
+  }
+  const provider: ScorecardProviderId = configuredProvider;
+  if (provider === "commandcode") {
+    const apiKey = requiredCredential(environment, [
+      "FALRYN_COMMANDCODE_API_KEY",
+      "COMMANDCODE_API_KEY",
+      "COMMAND_CODE_API_KEY",
+    ]);
+    const model = environment.FALRYN_BRIEF_MODEL ?? DEFAULT_COMMAND_CODE_MODEL;
+    const adapter = createCommandCodeSdkAdapter({
+      profileId: "brief-scorecard",
+      resolveApiKey: async () => apiKey,
+      supportedModels: [model],
+    });
+    return {
+      adapter,
+      catalog: providerCatalog(
+        adapter,
+        "commandcode",
+        COMMAND_CODE_PROVIDER_ID,
+        model,
+        COMMAND_CODE_OPENAI_BASE_URL,
+      ),
+      model,
+    };
+  }
+  const apiKey = requiredCredential(environment, ["FALRYN_OPENAI_API_KEY", "OPENAI_API_KEY"]);
+  const model = environment.FALRYN_BRIEF_MODEL ?? DEFAULT_OPENAI_MODEL;
+  const baseUrl = (environment.FALRYN_OPENAI_BASE_URL ?? "https://api.openai.com/v1").replace(
+    /\/+$/,
+    "",
+  );
+  const adapter = createOpenAiSdkAdapter({
+    profileId: "brief-scorecard",
+    baseUrl,
+    resolveApiKey: async () => apiKey,
+    supportedModels: [model],
+  });
+  return {
+    adapter,
+    catalog: providerCatalog(adapter, "openai", "openai", model, baseUrl),
+    model,
+  };
 }
 
 function globals(workspace: string): GlobalOptions {
@@ -399,22 +481,7 @@ async function main(): Promise<void> {
   const options = parseOptions(Bun.argv.slice(2));
   const controller = new AbortController();
   process.once("SIGINT", () => controller.abort("SIGINT"));
-  const apiKey = process.env.FALRYN_OPENAI_API_KEY ?? process.env.OPENAI_API_KEY ?? null;
-  if (apiKey === null || apiKey.trim() === "") {
-    throw new Error("FALRYN_OPENAI_API_KEY or OPENAI_API_KEY is required for matched live runs");
-  }
-  const model = process.env.FALRYN_BRIEF_MODEL ?? "gpt-4o-mini";
-  const baseUrl = (process.env.FALRYN_OPENAI_BASE_URL ?? "https://api.openai.com/v1").replace(
-    /\/+$/,
-    "",
-  );
-  const adapter = createOpenAiSdkAdapter({
-    profileId: "brief-scorecard",
-    baseUrl,
-    resolveApiKey: async () => apiKey,
-    supportedModels: [model],
-  });
-  const providerCatalog = catalog(adapter, model, baseUrl);
+  const { adapter, catalog: providerCatalog, model } = createBriefScorecardProvider();
   const selectedFixtures = BRIEF_RESPONSE_FIXTURES.filter(
     (fixture) => options.fixture === null || fixture.id === options.fixture,
   );
