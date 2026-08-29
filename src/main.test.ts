@@ -62,12 +62,12 @@ describe("application bootstrap", () => {
       localPath(`${options.root}/falryn.sqlite`),
     );
     expect(report.storage.ok && report.storage.value.created).toBe(true);
-    // The production set is migrations 0001 through 0008, so a clean run ends
+    // The production set is migrations 0001 through 0009, so a clean run ends
     // at the current schema with records, artifacts, runs, provenance, memory,
-    // and Loom manifests in place.
+    // Loom manifests, model catalogs, and scratch resources in place.
     expect(report.storage.ok && report.storage.value.schemaVersion).toBe(PRODUCT_SCHEMA_VERSION);
     expect(report.storage.ok && report.storage.value.appliedThisRun).toEqual([
-      1, 2, 3, 4, 5, 6, 7, 8,
+      1, 2, 3, 4, 5, 6, 7, 8, 9,
     ]);
   });
 

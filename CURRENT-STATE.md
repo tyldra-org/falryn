@@ -257,6 +257,28 @@ recalled before prompt composition. A new record is admitted only after the
 model attempt, terminal turn event, and durable replay all report completion;
 failed, cancelled, partial, or uncertain turns are not learned.
 
+## Session scratch resources
+
+The live CLI and OpenTUI tool loops expose `scratch_write`, `scratch_read`,
+`scratch_list`, and `scratch_discard` for temporary model work such as PR
+drafts, notes, and small scripts. A write stores at most 64 KiB of validated
+text as an exact artifact and publishes a durable named revision only after the
+artifact commits. The model receives a
+`scratch://session/<session-id>/<name>` handle, revision, digest, media type,
+and byte count; it does not receive a second artifact identifier.
+
+Scratch names are labels rather than paths. Handles cannot cross sessions,
+revisions are immutable, replacement uses optimistic concurrency, and discard
+creates a durable tombstone. Metadata and exact bytes survive process restart.
+Scratch writes are governed mutations, but they do not create workspace files,
+change Git, refresh the workspace index or language diagnostics, enter memory,
+or enter prompt context unless a later tool reads them explicitly.
+
+`run_process` accepts one exact `{ handle, revision }` through `stdinScratch`.
+Falryn resolves those bytes inside the governed process call and never copies
+them into argv, environment, logs, or the model-visible result. Scratch content
+does not grant execute authority and `run_shell` does not accept this input.
+
 ## Product Read and Loom
 
 The product workspace registry includes one `read_file` capability for exact,

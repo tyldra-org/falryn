@@ -16,8 +16,9 @@
  * in the adjacent schema modules. Migration `0008` binds those catalogs to an
  * exact provider adapter and destination without changing committed migration
  * `0007`, so an existing database retains a valid migration checksum. This
- * module owns migration-set rules while
- * those modules own the schema.
+ * module owns migration-set rules while migration `0009` adds session-scoped,
+ * artifact-backed scratch resources.
+ * Those adjacent modules own the schema.
  *
  * The aggregate view of what the set produces — every product table and the
  * version a fully migrated database reports — lives here rather than in either
@@ -46,6 +47,11 @@ import {
 } from "./model-catalog-schema.ts";
 import { MIGRATION_0003, RUNS_TABLE } from "./run-schema.ts";
 import { MIGRATION_0001, RECORD_TABLES } from "./schema.ts";
+import {
+  MIGRATION_0009,
+  SCRATCH_RESOURCES_TABLE,
+  SCRATCH_REVISIONS_TABLE,
+} from "./scratch-resource-schema.ts";
 
 /**
  * The migrations this build applies.
@@ -64,6 +70,7 @@ export const PRODUCTION_MIGRATIONS: readonly Migration[] = [
   MIGRATION_0006,
   MIGRATION_0007,
   MIGRATION_0008,
+  MIGRATION_0009,
 ];
 
 /** Every product table the registered set creates, in creation order. */
@@ -76,6 +83,8 @@ export const PRODUCT_TABLES: readonly string[] = [
   LOOM_MANIFESTS_TABLE,
   MODEL_CATALOG_GENERATIONS_TABLE,
   MODEL_CATALOG_ROUTE_BINDINGS_TABLE,
+  SCRATCH_RESOURCES_TABLE,
+  SCRATCH_REVISIONS_TABLE,
 ];
 
 function issue(

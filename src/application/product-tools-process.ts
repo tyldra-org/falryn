@@ -27,6 +27,7 @@ import {
   defaultToolLimits,
   duration,
   MAX_COMMAND_OUTPUT_BYTES,
+  sessionId as sessionIdCodec,
   type ToolManifestDocument,
 } from "../domain/index.ts";
 import {
@@ -45,6 +46,7 @@ import {
   type ProductProcessOutputMode,
   projectProductProcessOutput,
 } from "./product-process-output.ts";
+import type { ScratchResourcePort } from "./scratch-resources.ts";
 import type { ToolRunnerPort, ToolRunnerRequest } from "./tool-call-loop.ts";
 
 export const PRODUCT_PROCESS_TOOLS_OWNER = "#712";
@@ -61,6 +63,10 @@ const runProcessInput = z
     timeoutMs: z.number().int().positive().optional(),
     origin: z.enum(["shell", "git", "test", "search", "process"]).optional(),
     environment: z.record(z.string(), z.string()).optional(),
+    stdinScratch: z
+      .object({ handle: z.string().min(1), revision: z.int().min(1) })
+      .strict()
+      .optional(),
     outputMode: z.enum(PRODUCT_PROCESS_OUTPUT_MODES).default("hush"),
   })
   .strict() as z.ZodType<Readonly<Record<string, unknown>>>;
@@ -269,6 +275,7 @@ export type ProductProcessToolPorts = {
   readonly loom?: LoomPort;
   readonly workspaceId?: string;
   readonly sessionId?: string;
+  readonly scratch?: ScratchResourcePort;
 };
 
 export type ProductProcessTools = {
@@ -285,6 +292,33 @@ export type ProductProcessTools = {
 export function composeProductProcessTools(ports: ProductProcessToolPorts): ProductProcessTools {
   const hush = createHushIntegrator({ capture: ports.capture });
   const defaultCwd = ports.workspaceCwd;
+
+  const scratchStdin = async (
+    input: unknown,
+    signal: AbortSignal,
+  ): Promise<
+    | { readonly ok: true; readonly bytes: Uint8Array | undefined }
+    | { readonly ok: false; readonly code: string }
+  > => {
+    if (input === undefined) return { ok: true, bytes: undefined };
+    if (typeof input !== "object" || input === null || Array.isArray(input)) {
+      return { ok: false, code: "malformed-input" };
+    }
+    const handle = Reflect.get(input, "handle");
+    const revision = Reflect.get(input, "revision");
+    const owner = sessionIdCodec.parse(ports.sessionId);
+    if (ports.scratch === undefined || !owner.ok) {
+      return { ok: false, code: "scratch-unavailable" };
+    }
+    const read = await ports.scratch.readBytes(
+      owner.value,
+      handle,
+      revision,
+      MAX_COMMAND_OUTPUT_BYTES,
+      signal,
+    );
+    return read.ok ? { ok: true, bytes: read.value } : { ok: false, code: read.error.code };
+  };
 
   const observeCommand = async (
     origin: HushOrigin,
@@ -318,7 +352,7 @@ export function composeProductProcessTools(ports: ProductProcessToolPorts): Prod
         document(
           "run_process",
           "Run process",
-          "Run an argv process. outputMode hush is the default; raw bypasses only reduction while capture, safety, redaction, bounds, and targeted Read recovery remain active",
+          "Run an argv process, optionally supplying one exact scratch revision through stdin. outputMode hush is the default; raw bypasses only reduction while capture, safety, redaction, bounds, and targeted Read recovery remain active",
           "mutation",
         ),
         { inputSchema: runProcessInput, outputSchema: processOutput },
@@ -386,6 +420,8 @@ export function composeProductProcessTools(ports: ProductProcessToolPorts): Prod
           if (origin === null || outputMode === null) {
             return failed("malformed-input");
           }
+          const stdin = await scratchStdin(request.input.stdinScratch, request.signal);
+          if (!stdin.ok) return failed(stdin.code);
           const observed = await observeCommand(
             origin,
             {
@@ -396,6 +432,7 @@ export function composeProductProcessTools(ports: ProductProcessToolPorts): Prod
               ...(cwd === undefined ? {} : { cwd }),
               timeoutMs: duration(timeoutMs),
               maxOutputBytes: MAX_COMMAND_OUTPUT_BYTES,
+              ...(stdin.bytes === undefined ? {} : { stdinBytes: stdin.bytes }),
               invocationId: request.invocationId,
               ...(outputMode === "raw"
                 ? { maxInlineBytes: MAX_PRODUCT_PROCESS_RAW_INLINE_BYTES }

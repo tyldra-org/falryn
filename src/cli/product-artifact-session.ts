@@ -5,8 +5,10 @@ import { createHash, randomUUID } from "node:crypto";
 import {
   createDurableMemoryRecords,
   createLoomPort,
+  createScratchResources,
   type LoomPort,
   type MemoryRecords,
+  type ScratchResourcePort,
 } from "../application/index.ts";
 import {
   beginRun,
@@ -15,6 +17,7 @@ import {
   createLoomManifestRepository,
   createMemoryRecordRepository,
   createModelCatalogGenerationRepository,
+  createScratchResourceRepository,
   createSqliteEventStore,
   type DurableArtifactStore,
   type DurableEventStore,
@@ -43,6 +46,7 @@ export type ProductArtifactSession = {
   readonly loom: LoomPort;
   readonly memoryRecords: MemoryRecords;
   readonly modelCatalogs: ModelCatalogGenerationRepository;
+  readonly scratch: ScratchResourcePort;
   openWorkspaceIndex(
     workspaceRoot: LocalPath,
     signal?: AbortSignal,
@@ -128,6 +132,11 @@ export async function openProductArtifactSession(
     artifacts,
     manifests: createLoomManifestRepository({ store, clock: services.clock }),
   });
+  const scratch = createScratchResources({
+    artifacts,
+    repository: createScratchResourceRepository(store),
+    clock: services.clock,
+  });
   const durableMemory = createDurableMemoryRecords(createMemoryRecordRepository(store));
   if (!durableMemory.ok) {
     await artifacts.quiesce(signal);
@@ -145,6 +154,7 @@ export async function openProductArtifactSession(
     loom,
     memoryRecords: durableMemory.value,
     modelCatalogs: createModelCatalogGenerationRepository(store),
+    scratch,
     async openWorkspaceIndex(workspaceRoot, openSignal) {
       if (closed || openSignal?.aborted === true) {
         return null;

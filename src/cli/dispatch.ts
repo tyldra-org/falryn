@@ -429,6 +429,7 @@ async function launchShell(
         provider,
         artifacts: productArtifactSession.artifacts,
         loom: productArtifactSession.loom,
+        scratch: productArtifactSession.scratch,
         memoryRecords: productArtifactSession.memoryRecords,
         ...(productWorkspaceIndex === null ? {} : { index: productWorkspaceIndex }),
         ...(governance.ownedProcesses === undefined

@@ -17,6 +17,7 @@ import {
   composeProductMemoryTools,
   composeProductMemoryTurn,
   composeProductProcessTools,
+  composeProductScratchTools,
   composeProductWorkspaceTools,
   createDebugAdapterSupervisor,
   createLanguageServerSupervisor,
@@ -27,6 +28,7 @@ import {
   type MemoryRecords,
   mergeProductToolBundles,
   type ProductToolConfirmationPort,
+  type ScratchResourcePort,
 } from "../application/index.ts";
 import {
   type ArtifactStorePort,
@@ -81,6 +83,7 @@ export type ProductShellAttachmentPorts = {
   /** Durable exact-output storage and optional shared Loom lifecycle (#814). */
   readonly artifacts?: ArtifactStorePort;
   readonly loom?: LoomPort;
+  readonly scratch?: ScratchResourcePort;
   /** Injectable process host for deterministic public-entrypoint integration tests. */
   readonly processCapture?: ProcessCapturePort;
   /** Application-owned focused confirmation host for consequential tool calls. */
@@ -178,7 +181,12 @@ export async function composeProductShellAttachments(
             ...(ports.loom === undefined ? {} : { loom: ports.loom }),
             workspaceId: String(workspaceId),
             sessionId: String(sessionId),
+            ...(ports.scratch === undefined ? {} : { scratch: ports.scratch }),
           });
+    const scratchTools =
+      ports.scratch === undefined
+        ? null
+        : composeProductScratchTools({ generation, scratch: ports.scratch, sessionId });
     const gitTools =
       workspaceRoot === null
         ? null
@@ -225,9 +233,22 @@ export async function composeProductShellAttachments(
         ? null
         : mergeProductToolBundles(
             generation,
-            [workspaceTools, processTools, gitTools, languageTools, memoryTools],
+            [
+              workspaceTools,
+              processTools,
+              ...(scratchTools === null ? [] : [scratchTools]),
+              gitTools,
+              languageTools,
+              memoryTools,
+            ],
             {
               afterMutation: async (request) => {
+                if (
+                  request.toolName === "scratch_write" ||
+                  request.toolName === "scratch_discard"
+                ) {
+                  return {};
+                }
                 workspaceTools.invalidateContext();
                 const languageDiagnostics = await languageTools.afterWorkspaceMutation(
                   request.signal,

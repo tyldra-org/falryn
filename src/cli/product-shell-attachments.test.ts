@@ -333,6 +333,7 @@ describe("composeProductShellAttachments", () => {
       configurationGeneration: configurationGeneration.from(0),
       artifacts: durable.artifacts,
       loom: durable.loom,
+      scratch: durable.scratch,
       memoryRecords: durable.memoryRecords,
       index: createEphemeralProductIndexPort(),
       processCapture: fixture.processCapture,
@@ -393,6 +394,7 @@ describe("composeProductShellAttachments", () => {
     expect(submitted.kind).toBe("accepted");
     expect(fixture.captures).toBe(1);
     expect(fixture.requests).toHaveLength(2);
+    expect(fixture.requests[0]?.tools.map((tool) => tool.name)).toContain("scratch_write");
     expect(JSON.stringify(fixture.requests[0])).toContain(LIVE_TURN_MATRIX_CONTEXT.trim());
     const continuation = liveTurnMatrixContinuation(fixture.requests);
     expect(continuation.assistant.toolCalls?.[0]).toMatchObject({
@@ -420,17 +422,101 @@ describe("composeProductShellAttachments", () => {
       attachments.transcriptFeed.events().find((event) => event.kind === "turn.completed")?.payload,
     ).toMatchObject({ outcome: { kind: "completed" } });
 
-    const sessionId = attachments.transcriptFeed.events()[0]?.correlation.sessionId;
-    expect(sessionId).toBeDefined();
+    const matrixSessionId = attachments.transcriptFeed.events()[0]?.correlation.sessionId;
+    expect(matrixSessionId).toBeDefined();
+
+    const scratchRequests: ModelRequest[] = [];
+    const scratchProvider = createDeterministicProviderAdapter({
+      onRequest: (request) => scratchRequests.push(request),
+      script: (_request, index) =>
+        index === 0
+          ? {
+              kind: "tool",
+              toolCallId: "call-tui-scratch",
+              name: "scratch_write",
+              argumentFragments: [
+                '{"name":"tui-notes.md","text":"TUI scratch draft\\n","mediaType":"text/markdown"}',
+              ],
+            }
+          : { kind: "text", text: "Scratch retained.", finishReason: "stop" },
+    });
+    const scratchAttachments = await composeProductShellAttachments({
+      eventStore: durable.eventStore,
+      clock: services.clock,
+      fileSystem,
+      workspaceSet: workspace.value,
+      configurationGeneration: configurationGeneration.from(0),
+      artifacts: durable.artifacts,
+      loom: durable.loom,
+      scratch: durable.scratch,
+      memoryRecords: durable.memoryRecords,
+      index: createEphemeralProductIndexPort(),
+      toolConfirmation: LIVE_TURN_MATRIX_CONFIRMATION,
+      provider: {
+        kind: "ready",
+        adapter: scratchProvider,
+        session: {
+          kind: "ready",
+          connection: { profile, account: null, updatedAt: services.clock.now() },
+          auth: {
+            profileId: "matrix",
+            state: "ready",
+            consumer: "provider:matrix",
+            observedAt: instant(0),
+            health: null,
+            code: null,
+            retryable: false,
+          },
+          catalog: {
+            generation: 823,
+            provenance: "static-config",
+            fetchedAt: instant(0),
+            expiresAt: null,
+            models: [
+              {
+                schemaVersion: 1,
+                modelId: model,
+                displayName: null,
+                inputModalities: ["text"],
+                outputModalities: ["text"],
+                tools: "supported",
+                structuredOutput: "supported",
+                streaming: "supported",
+                reasoning: "supported",
+                reasoningControls: ["balanced"],
+                completeness: "complete",
+                availability: "available",
+                provenance: ["profile-declaration"],
+                contextTokens: 128_000,
+                outputTokens: 8_000,
+              },
+            ],
+          },
+        },
+      },
+    });
+    expect(scratchAttachments).not.toBeNull();
+    if (scratchAttachments === null) {
+      await durable.close();
+      return;
+    }
+    const scratchSubmitted = await scratchAttachments.submission.submit(
+      snapshotOf("Draft temporary notes", 1),
+    );
+    expect(scratchSubmitted.kind).toBe("accepted");
+    expect(scratchRequests).toHaveLength(2);
+    expect(JSON.stringify(scratchRequests[1])).toContain("scratch://session/");
+    const scratchSessionId = scratchAttachments.transcriptFeed.events()[0]?.correlation.sessionId;
+    expect(scratchSessionId).toBeDefined();
     await durable.close();
 
     const reopened = await openProductArtifactSession(services);
     expect(reopened).not.toBeNull();
-    if (reopened === null || sessionId === undefined) {
+    if (reopened === null || matrixSessionId === undefined || scratchSessionId === undefined) {
       return;
     }
     const replayed = await reopened.eventStore.readFrom(
-      { streamId: streamId.from(`live-turn:${String(sessionId)}`), afterSequence: null },
+      { streamId: streamId.from(`live-turn:${String(matrixSessionId)}`), afterSequence: null },
       100,
     );
     expect(replayed.ok).toBe(true);
@@ -458,6 +544,15 @@ describe("composeProductShellAttachments", () => {
       expect(exact.value.bytes).toEqual(exactBytes);
       expect(exact.value.endOfArtifact).toBe(true);
     }
+    expect(
+      await reopened.scratch.read(
+        scratchSessionId,
+        `scratch://session/${encodeURIComponent(String(scratchSessionId))}/tui-notes.md`,
+      ),
+    ).toMatchObject({
+      ok: true,
+      value: { revision: 1, text: "TUI scratch draft\n" },
+    });
     await reopened.close();
   });
 
