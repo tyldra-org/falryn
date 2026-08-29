@@ -1,6 +1,6 @@
 /** Strict product LSP operations and negotiated capability checks (#805). */
 
-import { z } from "zod";
+import type { z } from "zod";
 
 import {
   configurationGeneration,
@@ -11,138 +11,37 @@ import {
 } from "../../domain/index.ts";
 import type { LanguageServerSupervisor } from "../language-server.ts";
 import {
-  boundedProtocolObjectSchema,
-  boundedStringMapSchema,
-  boundedTextSchema,
   completed,
   errorCode,
   failed,
   type ProductLanguageToolDefinition,
   parseInput,
-  pathSchema,
-  positionInputSchema,
-  rangeSchema,
   resultOutputSchema,
   type StrictRecordSchema,
-  serviceIdSchema,
   sessionInputSchema,
-  sessionSchema,
   toolDocument,
   unavailable,
-  uriSchema,
 } from "./contracts.ts";
+import {
+  changeSchema,
+  codeActionSchema,
+  documentSchema,
+  formatSchema,
+  hierarchyItemSchema,
+  openSchema,
+  positionInputSchema,
+  rangeFormatSchema,
+  referencesSchema,
+  renameSchema,
+  restartSchema,
+  saveSchema,
+  startSchema,
+  workspaceFoldersSchema,
+  workspaceSymbolsSchema,
+} from "./lsp-schemas.ts";
 
 const MAX_EXTENDED_RESULT_BYTES = 256 * 1_024;
 const MAX_EXTENDED_RESULT_ITEMS = 512;
-
-const stringArray = z.array(z.string().max(4_096)).max(256);
-const environmentSchema = boundedStringMapSchema;
-const workspaceFolderSchema = z
-  .object({ uri: uriSchema, name: z.string().min(1).max(256) })
-  .strict();
-const limitsSchema = z
-  .object({
-    initializeTimeoutMs: z.number().int().positive().optional(),
-    shutdownTimeoutMs: z.number().int().positive().optional(),
-    requestTimeoutMs: z.number().int().positive().optional(),
-    maxRestarts: z.number().int().nonnegative().optional(),
-    restartWindowMs: z.number().int().positive().optional(),
-    maxFrameBytes: z.number().int().positive().optional(),
-  })
-  .strict();
-
-const startFields = {
-  serviceId: serviceIdSchema,
-  workspaceRoot: pathSchema,
-  serverName: z.string().min(1).max(64),
-  configurationGeneration: z.number().int().nonnegative(),
-  executable: pathSchema,
-  argv: stringArray,
-  environment: environmentSchema,
-  cwd: pathSchema.optional(),
-  initialize: z
-    .object({
-      processId: z.number().int().nonnegative().nullable(),
-      rootUri: uriSchema.nullable(),
-      workspaceFolders: z.array(workspaceFolderSchema).max(64).nullable(),
-      capabilities: boundedProtocolObjectSchema,
-      clientInfo: z
-        .object({ name: z.string().min(1).max(64), version: z.string().max(64) })
-        .strict(),
-      locale: z.string().min(1).max(64).optional(),
-    })
-    .strict(),
-  limits: limitsSchema.optional(),
-} as const;
-
-const startSchema = z.object(startFields).strict();
-const restartSchema = z
-  .object({ ...startFields, generation: z.number().int().nonnegative() })
-  .strict();
-const documentSchema = z.object({ ...sessionSchema, uri: uriSchema }).strict();
-const openSchema = z
-  .object({
-    ...sessionSchema,
-    uri: uriSchema,
-    languageId: z.string().min(1).max(64),
-    text: boundedTextSchema,
-    version: z.number().int().positive().optional(),
-  })
-  .strict();
-const contentChangeSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("full"), text: boundedTextSchema }).strict(),
-  z
-    .object({ kind: z.literal("incremental"), text: boundedTextSchema, range: rangeSchema })
-    .strict(),
-]);
-const changeSchema = z
-  .object({
-    ...sessionSchema,
-    uri: uriSchema,
-    version: z.number().int().positive(),
-    contentChanges: z.array(contentChangeSchema).min(1).max(1_024),
-  })
-  .strict();
-const saveSchema = z
-  .object({ ...sessionSchema, uri: uriSchema, text: boundedTextSchema.optional() })
-  .strict();
-const workspaceFoldersSchema = z
-  .object({
-    ...sessionSchema,
-    added: z.array(workspaceFolderSchema).max(64),
-    removed: z.array(workspaceFolderSchema).max(64),
-  })
-  .strict();
-const referencesSchema = positionInputSchema
-  .extend({ includeDeclaration: z.boolean().default(true) })
-  .strict();
-const workspaceSymbolsSchema = z
-  .object({ ...sessionSchema, query: z.string().max(4_096) })
-  .strict();
-const formatSchema = z
-  .object({
-    ...sessionSchema,
-    uri: uriSchema,
-    tabSize: z.number().int().positive().max(32).optional(),
-    insertSpaces: z.boolean().optional(),
-  })
-  .strict();
-const rangeFormatSchema = formatSchema.extend({ range: rangeSchema }).strict();
-const renameSchema = positionInputSchema.extend({ newName: z.string().min(1).max(1_024) }).strict();
-const codeActionSchema = z
-  .object({
-    ...sessionSchema,
-    uri: uriSchema,
-    range: rangeSchema,
-    only: z.array(z.string().min(1).max(256)).max(64).optional(),
-  })
-  .strict();
-const hierarchyItemSchema = z
-  .object({
-    ...sessionSchema,
-    item: boundedProtocolObjectSchema,
-  })
-  .strict();
 
 type Session = { readonly serviceId: string; readonly generation: number };
 
