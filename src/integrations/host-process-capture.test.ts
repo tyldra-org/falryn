@@ -174,6 +174,7 @@ describe("host process capture", () => {
     expect(["terminate", "kill"]).toContain(captured.value.killStage);
     const grandchildPid = Number.parseInt(captured.value.stdout.inlineText?.trim() ?? "", 10);
     expect(Number.isSafeInteger(grandchildPid) && grandchildPid > 1).toBe(true);
+    await waitUntilDead(grandchildPid);
     expect(processIsAlive(grandchildPid)).toBe(false);
   });
 
@@ -186,3 +187,13 @@ describe("host process capture", () => {
     });
   });
 });
+
+async function waitUntilDead(pid: number, timeoutMs = 2_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (!processIsAlive(pid)) {
+      return;
+    }
+    await Bun.sleep(20);
+  }
+}
