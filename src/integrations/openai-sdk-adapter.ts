@@ -342,6 +342,9 @@ export function createOpenAiSdkAdapter(options: OpenAiSdkAdapterOptions): Provid
             ? {}
             : { max_completion_tokens: request.budgets.maxOutputTokens }),
           ...(reasoningEffort === undefined ? {} : { reasoning_effort: reasoningEffort }),
+          ...(request.promptCache === undefined
+            ? {}
+            : { prompt_cache_key: request.promptCache.key }),
         };
       } catch (error) {
         yield {

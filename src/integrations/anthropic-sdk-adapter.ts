@@ -24,6 +24,7 @@ import type {
   MessageCreateParamsStreaming,
   MessageParam,
   RawMessageStreamEvent,
+  TextBlockParam,
   Tool,
 } from "@anthropic-ai/sdk/resources/messages/messages";
 
@@ -113,16 +114,40 @@ function anthropicReasoningEffort(
   }
 }
 
-function toAnthropicMessages(messages: readonly ModelMessage[]): {
-  readonly system: string | undefined;
+function toAnthropicMessages(
+  messages: readonly ModelMessage[],
+  promptCache: ModelRequest["promptCache"],
+): {
+  readonly system: string | TextBlockParam[] | undefined;
   readonly messages: MessageParam[];
 } {
   rejectImageParts(messages);
-  const system = messages
-    .filter((message) => message.role === "system")
-    .map(textOf)
-    .filter((text) => text.length > 0)
-    .join("\n\n");
+  if (
+    promptCache !== undefined &&
+    (promptCache.stableMessageCount < 1 ||
+      promptCache.stableMessageCount > messages.length ||
+      messages
+        .slice(0, promptCache.stableMessageCount)
+        .some((message) => message.role !== "system" || textOf(message).length === 0))
+  ) {
+    throw new AnthropicInputError(
+      "invalid-request",
+      "The prompt cache boundary does not identify a stable system-message prefix.",
+    );
+  }
+  const systemMessages = messages
+    .map((message, index) => ({ message, index, text: textOf(message) }))
+    .filter((entry) => entry.message.role === "system" && entry.text.length > 0);
+  const system =
+    promptCache === undefined
+      ? systemMessages.map((entry) => entry.text).join("\n\n")
+      : systemMessages.map<TextBlockParam>((entry) => ({
+          type: "text",
+          text: entry.text,
+          ...(entry.index === promptCache.stableMessageCount - 1
+            ? { cache_control: { type: "ephemeral", ttl: "5m" } }
+            : {}),
+        }));
   const translated: MessageParam[] = [];
 
   for (const message of messages) {
@@ -261,7 +286,8 @@ function usageFrom(
     inputTokens: totalInputTokens,
     outputTokens,
     totalTokens: totalInputTokens + outputTokens,
-    ...(input.cacheReadTokens === 0 ? {} : { cachedInputTokens: input.cacheReadTokens }),
+    cachedInputTokens: input.cacheReadTokens,
+    cacheWriteInputTokens: input.cacheCreationTokens,
   };
 }
 
@@ -339,7 +365,7 @@ export function createAnthropicSdkAdapter(
 
       let body: MessageCreateParamsStreaming;
       try {
-        const translated = toAnthropicMessages(request.messages);
+        const translated = toAnthropicMessages(request.messages, request.promptCache);
         const tools = toTools(request.tools);
         const reasoningEffort = anthropicReasoningEffort(request.reasoningControl);
         const outputConfig = {

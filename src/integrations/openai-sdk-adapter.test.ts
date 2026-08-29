@@ -116,6 +116,35 @@ describe("createOpenAiSdkAdapter", () => {
     expect(events.at(-1)).toMatchObject({ kind: "finished", finishReason: "stop" });
   });
 
+  test("sends the secret-safe prompt cache key", async () => {
+    let body: Record<string, unknown> | null = null;
+    const adapter = createOpenAiSdkAdapter({
+      profileId: "openai",
+      baseUrl: "https://api.example.test/v1",
+      resolveApiKey: async () => "sk-test",
+      fetch: async (_input, init) => {
+        body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        return sseResponse(['data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n']);
+      },
+    });
+    await collect(
+      adapter,
+      undefined,
+      request({
+        promptCache: {
+          schemaVersion: 1,
+          key: `sha-256:${"d".repeat(64)}`,
+          scope: "session",
+          stablePrefixDigest: `sha-256:${"e".repeat(64)}`,
+          stableMessageCount: 1,
+          toolCatalogGeneration: 1,
+        },
+      }),
+    );
+    expect(body).toMatchObject({ prompt_cache_key: `sha-256:${"d".repeat(64)}` });
+    expect(JSON.stringify(body)).not.toContain("sk-test");
+  });
+
   test("sends the routed reasoning control and rejects unresolved image handles", async () => {
     let body: Record<string, unknown> | null = null;
     const adapter = createOpenAiSdkAdapter({

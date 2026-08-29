@@ -50,6 +50,8 @@ import type {
   ModelPolicy,
   ModelToolDefinition,
   OutputContract,
+  PromptCachePolicy,
+  PromptCacheSeed,
   ResolveRouteInput,
   RoutedCatalogEntry,
   RoutingOutcome,
@@ -58,6 +60,7 @@ import type {
   WorkIntent,
 } from "../providers/index.ts";
 import { resolveModelRoute, resolveNextFallback } from "../providers/index.ts";
+import { providerPromptCachePolicy } from "./provider-prompt-cache.ts";
 import { awaitBackoff } from "./recovery.ts";
 import type { TurnCoordinator, TurnCoordinatorError } from "./turn-coordinator.ts";
 import type { TurnEventJournalPort } from "./turn-event-journal.ts";
@@ -68,6 +71,7 @@ export type AttemptModelInput = {
   readonly tools: readonly ModelToolDefinition[];
   readonly output: OutputContract;
   readonly budgets: ModelBudgets;
+  readonly promptCache?: PromptCacheSeed;
   /** Immutable execution-profile/effect snapshot for this turn. */
   /** Absent only for pre-profile test/adapter inputs; product turns always bind one. */
   readonly executionPolicy?: EffectiveExecutionPolicy;
@@ -113,6 +117,7 @@ export type AttemptRunnerRequest = {
   readonly configurationGeneration: ConfigurationGeneration;
   readonly signal: AbortSignal;
   readonly modelInput: AttemptModelInput | null;
+  readonly promptCache?: PromptCachePolicy;
 };
 
 export type AttemptRunnerResult = {
@@ -559,6 +564,7 @@ function attemptBinding(
   receipt: RoutingReceipt,
   modelInput: AttemptModelInput | undefined,
   generation: ConfigurationGeneration,
+  promptCache: PromptCachePolicy | undefined,
 ): ModelAttemptBinding {
   const disclosure = modelInput?.disclosure;
   return {
@@ -593,6 +599,7 @@ function attemptBinding(
     omitted: disclosure?.omitted ?? [],
     schemaBytes: disclosure?.schemaBytes ?? 0,
     schemaTokensEstimated: disclosure?.schemaTokensEstimated ?? 0,
+    ...(promptCache === undefined ? {} : { promptCache }),
     budgets: {
       attempts: receipt.budgets.attempts ?? null,
       inputTokens: receipt.budgets.inputTokens ?? null,
@@ -827,6 +834,15 @@ export function createTurnAttemptPolicy(options: TurnAttemptPolicyOptions): Turn
         };
 
         const live = options.coordinator.get(input.turnId);
+        const promptCache =
+          live === null || input.modelInput?.promptCache === undefined
+            ? undefined
+            : providerPromptCachePolicy({
+                sessionId: live.sessionId,
+                configurationGeneration: input.configurationGeneration,
+                receipt,
+                seed: input.modelInput.promptCache,
+              });
         if (live !== null) {
           await persistFacts(
             options.journal,
@@ -835,7 +851,12 @@ export function createTurnAttemptPolicy(options: TurnAttemptPolicyOptions): Turn
                 kind: "model.attempt.started",
                 correlation: correlationFor(live),
                 modelAttemptId: identity.modelAttemptId,
-                binding: attemptBinding(receipt, input.modelInput, input.configurationGeneration),
+                binding: attemptBinding(
+                  receipt,
+                  input.modelInput,
+                  input.configurationGeneration,
+                  promptCache,
+                ),
               },
             ],
             input.signal,
@@ -850,6 +871,7 @@ export function createTurnAttemptPolicy(options: TurnAttemptPolicyOptions): Turn
           configurationGeneration: generation,
           signal: input.signal,
           modelInput: input.modelInput ?? null,
+          ...(promptCache === undefined ? {} : { promptCache }),
         });
 
         elapsedMs = Math.max(elapsedMs, Number(options.clock.now()) - Number(startedAt));

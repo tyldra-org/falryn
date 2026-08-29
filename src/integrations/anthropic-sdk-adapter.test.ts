@@ -172,6 +172,7 @@ describe("createAnthropicSdkAdapter", () => {
         outputTokens: 7,
         totalTokens: 25,
         cachedInputTokens: 5,
+        cacheWriteInputTokens: 3,
       },
     });
     expect(events.at(-1)).toMatchObject({ kind: "finished", finishReason: "tool_use" });
@@ -182,6 +183,7 @@ describe("createAnthropicSdkAdapter", () => {
     const continued = request({
       messages: [
         { role: "system", parts: [{ kind: "text", text: "Follow policy" }] },
+        { role: "system", parts: [{ kind: "text", text: "Keep it concise" }] },
         { role: "user", parts: [{ kind: "text", text: "read a.ts" }] },
         {
           role: "assistant",
@@ -207,6 +209,14 @@ describe("createAnthropicSdkAdapter", () => {
         schema: { type: "object", properties: { answer: { type: "string" } } },
       },
       budgets: { maxOutputTokens: 321 },
+      promptCache: {
+        schemaVersion: 1,
+        key: `sha-256:${"d".repeat(64)}`,
+        scope: "session",
+        stablePrefixDigest: `sha-256:${"e".repeat(64)}`,
+        stableMessageCount: 1,
+        toolCatalogGeneration: 1,
+      },
     });
     const events = await collect(
       {
@@ -229,7 +239,14 @@ describe("createAnthropicSdkAdapter", () => {
     expect(body).toMatchObject({
       model: "claude-test",
       max_tokens: 321,
-      system: "Follow policy",
+      system: [
+        {
+          type: "text",
+          text: "Follow policy",
+          cache_control: { type: "ephemeral", ttl: "5m" },
+        },
+        { type: "text", text: "Keep it concise" },
+      ],
       tools: [
         {
           name: "read_file",

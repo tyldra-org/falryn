@@ -131,6 +131,19 @@ transport; the live adapters accept text today and fail with
 `unsupported-capability` rather than dropping unresolved image handles. Falryn
 keeps retries above the SDK boundary; each SDK performs one request attempt.
 
+Live turns also derive a secret-safe, session-scoped prompt-cache identity from
+the bound provider route, configuration and catalog generations, and the exact
+stable instruction, capability, and tool-schema prefix. Dynamic Brief guidance,
+task text, conversation, memory, and evidence remain outside that prefix.
+Retries and tool continuations on the same route reuse the identity; a session,
+route, generation, stable instruction, or disclosed schema change breaks it.
+OpenAI receives the current SDK `prompt_cache_key`. Anthropic receives a
+five-minute `cache_control` breakpoint on the last stable system block. Google
+cached-token usage remains observable, but explicit cached-content creation and
+cleanup are not implemented. Attempt events retain only cache digests and the
+stable boundary, never prompt text or credentials. Normalized usage keeps
+provider-reported cache reads and Anthropic cache writes distinct.
+
 The provider request contains only the disclosed tool definitions, not the
 whole registered catalog. The attempt event retains the provider profile,
 adapter kind, secret-safe destination identity, model route, resolved reasoning

@@ -56,6 +56,54 @@ describe("parseModelRequest", () => {
     }
   });
 
+  test("accepts a secret-safe prompt-cache policy", () => {
+    const parsed = parseModelRequest({
+      schemaVersion: PROVIDER_BOUNDARY_SCHEMA_VERSION,
+      requestId: "req-cache-1",
+      providerId: "openai",
+      modelId: "gpt-test",
+      messages: [{ role: "user", parts: [{ kind: "text", text: "hi" }] }],
+      tools: [],
+      output: { kind: "text" },
+      budgets: {},
+      promptCache: {
+        schemaVersion: 1,
+        key: `sha-256:${"a".repeat(64)}`,
+        scope: "session",
+        stablePrefixDigest: `sha-256:${"b".repeat(64)}`,
+        stableMessageCount: 2,
+        toolCatalogGeneration: 4,
+      },
+      metadata: { role: "default" },
+    });
+
+    expect(parsed.ok).toBe(true);
+  });
+
+  test("rejects prompt-cache identities that expose raw session data", () => {
+    const parsed = parseModelRequest({
+      schemaVersion: PROVIDER_BOUNDARY_SCHEMA_VERSION,
+      requestId: "req-cache-2",
+      providerId: "openai",
+      modelId: "gpt-test",
+      messages: [{ role: "user", parts: [{ kind: "text", text: "hi" }] }],
+      tools: [],
+      output: { kind: "text" },
+      budgets: {},
+      promptCache: {
+        schemaVersion: 1,
+        key: "session-user-visible",
+        scope: "session",
+        stablePrefixDigest: `sha-256:${"b".repeat(64)}`,
+        stableMessageCount: 2,
+        toolCatalogGeneration: 4,
+      },
+      metadata: { role: "default" },
+    });
+
+    expect(parsed.ok).toBe(false);
+  });
+
   test("rejects unknown fields and oversized text without echoing the payload", () => {
     const parsed = parseModelRequest({
       schemaVersion: PROVIDER_BOUNDARY_SCHEMA_VERSION,
