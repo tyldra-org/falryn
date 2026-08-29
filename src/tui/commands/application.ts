@@ -1,0 +1,119 @@
+import { AVAILABLE, type ShellCommand, unavailable } from "./contracts.ts";
+
+/** Shell, focus, overlay, and viewport commands. */
+export const APPLICATION_COMMANDS: readonly ShellCommand[] = [
+  {
+    id: "app.help",
+    title: "Help",
+    description: "Show every command, its key, and whether it is available.",
+    context: "global",
+    defaultBinding: "?",
+    keywords: ["keys", "shortcuts", "bindings"],
+    availability: () => AVAILABLE,
+  },
+  {
+    id: "app.commandPalette",
+    title: "Command palette",
+    description: "Search commands by name and run one.",
+    context: "global",
+    defaultBinding: "ctrl+p",
+    keywords: ["commands", "run", "search"],
+    availability: () => AVAILABLE,
+  },
+  {
+    id: "app.exit",
+    title: "Exit",
+    description: "Close the shell and restore the terminal.",
+    context: "global",
+    defaultBinding: "ctrl+c",
+    keywords: ["quit", "close", "leave"],
+    availability: () => AVAILABLE,
+  },
+  {
+    id: "brief.set",
+    title: "Set Brief verbosity",
+    description:
+      "Set response-style Brief verbosity (compact|balanced|detailed|auto) for upcoming turns.",
+    context: "global",
+    defaultBinding: null,
+    keywords: ["brief", "verbosity", "compact", "style"],
+    availability: () => AVAILABLE,
+  },
+  {
+    id: "app.cancel",
+    title: "Cancel current work",
+    description: "Ask the running operation to stop, without leaving the shell.",
+    context: "global",
+    defaultBinding: "escape",
+    keywords: ["stop", "abort", "interrupt"],
+    availability: (state) =>
+      state.hasRunningWork ? AVAILABLE : unavailable("nothing is running to cancel"),
+  },
+  {
+    id: "focus.next",
+    title: "Focus next region",
+    description: "Move to the next region in reading order.",
+    context: "global",
+    defaultBinding: "tab",
+    keywords: ["move", "region", "forward"],
+    availability: () => AVAILABLE,
+  },
+  {
+    id: "focus.previous",
+    title: "Focus previous region",
+    description: "Move to the previous region in reading order.",
+    context: "global",
+    defaultBinding: "shift+tab",
+    keywords: ["move", "region", "back"],
+    availability: () => AVAILABLE,
+  },
+  {
+    id: "overlay.close",
+    title: "Close overlay",
+    description: "Close the open overlay and return focus where it was.",
+    context: "overlay",
+    defaultBinding: "escape",
+    keywords: ["dismiss", "back", "escape"],
+    availability: (state) => (state.overlayOpen ? AVAILABLE : unavailable("no overlay is open")),
+  },
+  {
+    id: "view.scrollUp",
+    title: "Scroll up",
+    description: "Move the view up by a bounded amount.",
+    context: "scrollable",
+    defaultBinding: "pageup",
+    keywords: ["scroll", "up"],
+    availability: (state) =>
+      state.hasScrollableContent ? AVAILABLE : unavailable("nothing is scrollable yet"),
+  },
+  {
+    id: "view.scrollDown",
+    title: "Scroll down",
+    description: "Move the view down by a bounded amount.",
+    context: "scrollable",
+    defaultBinding: "pagedown",
+    keywords: ["scroll", "down"],
+    availability: (state) =>
+      state.hasScrollableContent ? AVAILABLE : unavailable("nothing is scrollable yet"),
+  },
+  {
+    id: "view.top",
+    title: "Go to top",
+    description: "Move to the start of the view.",
+    context: "scrollable",
+    defaultBinding: "home",
+    keywords: ["start", "beginning"],
+    availability: (state) =>
+      state.hasScrollableContent ? AVAILABLE : unavailable("nothing is scrollable yet"),
+  },
+  {
+    id: "view.bottom",
+    title: "Go to bottom",
+    description: "Move to the end of the view.",
+    context: "scrollable",
+    defaultBinding: "end",
+    keywords: ["end", "latest"],
+    availability: (state) =>
+      state.hasScrollableContent ? AVAILABLE : unavailable("nothing is scrollable yet"),
+  },
+];
