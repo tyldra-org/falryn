@@ -217,6 +217,26 @@ provider continuation after tool results. Brief also supplies a mode-specific
 provider output ceiling. Projection failure is a typed turn failure rather than
 silent omission.
 
+`auto` uses the deterministic `brief.v2` policy. Prompt shape is classified as
+low, medium, or high without treating one technical keyword as a large task.
+High complexity, uncertainty, or recovery selects detailed output. Medium
+complexity, a failure, risk, confirmation, or required user action selects
+balanced output. A low-complexity headless or narrow turn selects compact;
+interactive turns default to balanced. Citations and validation results remain
+protected facts but do not force a larger answer by themselves. Every receipt
+records the ordered reasons for its selection.
+Failures, uncertainty, confirmations, required actions, and recovery obligations
+are derived from the request itself as well as later Context and tool outcomes,
+so the first provider attempt receives the same preservation guarantees.
+
+The explicit modes use outcome-first guidance and require every explicit fact to
+appear once with names, paths, commands, errors, numbers, and negations kept
+exact. Compact requests the shortest complete answer and avoids optional
+examples. Balanced adds only the reasoning and evidence needed to act. Detailed
+means complete rather than long: it adds relevant tradeoffs and actionable steps
+but remains direct and forbids invented background, prompt restatement, repeated
+conclusions, and filler.
+
 Human controls expose `compact`, `balanced`, `detailed`, `auto`, `on`, and
 `off`; they do not expose the backend name `raw`. `/brief off` and
 `falryn run --brief off` select that internal bypass, so the turn has no Brief

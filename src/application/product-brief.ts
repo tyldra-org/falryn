@@ -72,12 +72,60 @@ export type ProductBriefContextState = {
 };
 
 const COMPLEX_TASK =
-  /\b(?:implement|refactor|debug|audit|investigate|migrate|design|architecture|security|performance|compare)\b/i;
+  /\b(?:analy[sz]e|architect|audit|compare|debug|design|diagnose|explain|implement|integrate|investigate|migrate|optimi[sz]e|plan|refactor|review|secure)\b/gi;
 const RISKY_TASK =
   /\b(?:delete|remove|overwrite|reset|deploy|publish|release|credential|secret|production)\b/i;
 const VALIDATION_TASK = /\b(?:test|verify|check|lint|typecheck|diagnostic|benchmark|build)\b/i;
 const CITATION_TASK = /\b(?:cite|cited|citation|citations|source|reference|link)\b|https?:\/\//i;
 const VALIDATION_TOOL = /(?:test|lint|check|diagnostic|typecheck|build|benchmark)/i;
+const FAILURE_TASK = /\b(?:failed|failure|errored|timed out|cancelled|denied|unavailable)\b/i;
+const UNCERTAINTY_TASK =
+  /\b(?:uncertain|uncertainty|unverified|unknown|not (?:confirmed|verified))\b/i;
+const CONFIRMATION_TASK =
+  /\b(?:requires?|needs?) (?:user )?(?:approval|authorization|confirmation|permission)\b|\b(?:approve|authorize|confirm) before\b/i;
+const REQUIRED_ACTION_TASK = /\b(?:next|required) action\b|\brequired fix\b/i;
+const RECOVERY_TASK =
+  /\b(?:recover|recovery|restore|rollback|roll back|revert|undo)\b|\bartifact-[A-Za-z0-9_-]+\b/i;
+const LIST_ITEM = /^\s*(?:[-*+] |\d+[.)] )/gm;
+const FILE_REFERENCE = /(?:^|\s)(?:\.?\.?\/)?(?:[\w.-]+\/)+[\w.-]+\.[A-Za-z0-9]+(?=\s|$|[,:;)])/gm;
+
+function matchCount(pattern: RegExp, text: string): number {
+  return [...text.matchAll(pattern)].length;
+}
+
+/** Classify prompt shape without treating one technical keyword as a large task. */
+export function classifyProductBriefComplexity(prompt: string): BriefNeed["complexity"] {
+  const text = prompt.trim();
+  if (text.length === 0) return "low";
+
+  const nonEmptyLines = text.split("\n").filter((line) => line.trim().length > 0).length;
+  const operationCount = new Set(
+    [...text.matchAll(COMPLEX_TASK)].map((match) => match[0]?.toLowerCase()).filter(Boolean),
+  ).size;
+  const listItemCount = matchCount(LIST_ITEM, text);
+  const fileReferenceCount = matchCount(FILE_REFERENCE, text);
+  const questionCount = matchCount(/\?/g, text);
+  const containsCodeBlock = text.includes("```");
+
+  const high =
+    text.length > 1_200 ||
+    nonEmptyLines > 12 ||
+    listItemCount >= 4 ||
+    operationCount >= 2 ||
+    questionCount >= 4 ||
+    (fileReferenceCount >= 3 && operationCount > 0);
+  if (high) return "high";
+
+  const medium =
+    text.length > 400 ||
+    nonEmptyLines > 4 ||
+    listItemCount >= 2 ||
+    operationCount > 0 ||
+    questionCount >= 2 ||
+    containsCodeBlock ||
+    fileReferenceCount >= 2;
+  return medium ? "medium" : "low";
+}
 
 /** Derive only response-preservation needs; this never adds task evidence. */
 export function deriveProductBriefNeed(input: {
@@ -89,19 +137,16 @@ export function deriveProductBriefNeed(input: {
   const contextUnavailable =
     input.context?.status === "degraded" || input.context?.status === "unavailable";
   return {
-    complexity:
-      prompt.length > 1_200 || prompt.split("\n").length > 12 || COMPLEX_TASK.test(prompt)
-        ? "high"
-        : "low",
+    complexity: classifyProductBriefComplexity(prompt),
     interface: input.interface,
-    failures: false,
+    failures: FAILURE_TASK.test(prompt),
     risk: RISKY_TASK.test(prompt),
-    uncertainty: contextUnavailable,
-    confirmation: false,
-    requiredAction: false,
+    uncertainty: contextUnavailable || UNCERTAINTY_TASK.test(prompt),
+    confirmation: CONFIRMATION_TASK.test(prompt),
+    requiredAction: REQUIRED_ACTION_TASK.test(prompt),
     citations: CITATION_TASK.test(prompt) || (input.context?.candidateCount ?? 0) > 0,
     validation: VALIDATION_TASK.test(prompt),
-    recovery: contextUnavailable,
+    recovery: contextUnavailable || RECOVERY_TASK.test(prompt),
   };
 }
 
@@ -136,7 +181,7 @@ export function briefNeedAfterToolResults(
   }
   return {
     ...need,
-    complexity: failures || uncertainty || recovery ? "high" : need.complexity,
+    complexity: uncertainty || recovery ? "high" : need.complexity,
     failures,
     risk,
     uncertainty,

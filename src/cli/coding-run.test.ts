@@ -241,6 +241,7 @@ describe("runCoding", () => {
     expect(result.payload?.briefReceipt).toMatchObject({
       requestedMode: "auto",
       selectedVerbosity: "detailed",
+      selectionReasons: ["high-complexity", "uncertainty", "recovery"],
       outputTokenBudget: 8_192,
     });
     expect(result.payload?.briefReceipt?.preservedFacts).toEqual(

@@ -570,7 +570,7 @@ describe("createProductAttemptRunner", () => {
     });
     expect(requests[1]?.messages[0]?.parts[0]).toMatchObject({
       kind: "text",
-      text: expect.stringContaining("Keep risk warnings visible"),
+      text: expect.stringContaining("prohibition and risk warning verbatim"),
     });
     expect(requests[1]?.budgets.maxOutputTokens).toBe(2_048);
     const toolMessage = requests[1]?.messages.find((message) => message.role === "tool");

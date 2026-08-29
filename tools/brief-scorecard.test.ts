@@ -4,11 +4,25 @@ import { compareBriefPair } from "../src/domain/index.ts";
 import {
   createBriefScorecardProvider,
   formatBriefScorecardHuman,
+  responseContainsBriefFact,
   type ScorecardReport,
 } from "./brief-scorecard.ts";
 import { BRIEF_RESPONSE_FIXTURES } from "./fixtures/brief-response-corpus.ts";
 
 describe("Brief scorecard", () => {
+  test("normalizes presentation without accepting changed fact wording", () => {
+    expect(
+      responseContainsBriefFact("**Do not run** `reset --hard`.", "do not run reset --hard"),
+    ).toBe(true);
+    expect(responseContainsBriefFact("Do  not\nrun reset --hard.", "do not run reset --hard")).toBe(
+      true,
+    );
+    expect(
+      responseContainsBriefFact("Never run git reset --hard.", "do not run reset --hard"),
+    ).toBe(false);
+    expect(responseContainsBriefFact("Run reset --hard.", "do not run reset --hard")).toBe(false);
+  });
+
   test("selects Command Code MiniMax M3 through the verified provider adapter", async () => {
     const provider = await createBriefScorecardProvider({
       FALRYN_BRIEF_PROVIDER: "commandcode",

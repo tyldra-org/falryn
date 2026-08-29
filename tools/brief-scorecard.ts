@@ -20,6 +20,7 @@ import type { GlobalOptions } from "../src/cli/options.ts";
 import { createServiceProvider } from "../src/cli/services.ts";
 import { createRecordingCliStreams } from "../src/cli/streams.ts";
 import {
+  BRIEF_STRATEGY_VERSION,
   type BriefComparisonArm,
   type BriefComparisonMatch,
   type BriefComparisonPair,
@@ -119,6 +120,18 @@ function utf8Bytes(value: string): number {
 
 function estimatedTokens(value: string): number {
   return Math.ceil(utf8Bytes(value) / 4);
+}
+
+/** Ignore presentation-only differences while preserving wording, order, and punctuation. */
+export function responseContainsBriefFact(response: string, fact: string): boolean {
+  const normalize = (value: string) =>
+    value
+      .normalize("NFKC")
+      .replace(/[`*]/g, "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .toLocaleLowerCase("en-US");
+  return normalize(response).includes(normalize(fact));
 }
 
 function withoutResponsePolicy(text: string): string {
@@ -398,10 +411,14 @@ async function runArm(input: {
   const wallTimeMs = performance.now() - startedAt;
   streams.dispose();
   const response = result.payload?.response ?? "";
-  const preservedFacts = input.fixture.requiredFacts.filter((fact) => response.includes(fact));
-  const missingFacts = input.fixture.requiredFacts.filter((fact) => !response.includes(fact));
+  const preservedFacts = input.fixture.requiredFacts.filter((fact) =>
+    responseContainsBriefFact(response, fact),
+  );
+  const missingFacts = input.fixture.requiredFacts.filter(
+    (fact) => !responseContainsBriefFact(response, fact),
+  );
   const unsupportedClaims = input.fixture.forbiddenClaims.filter((fact) =>
-    response.toLowerCase().includes(fact.toLowerCase()),
+    responseContainsBriefFact(response, fact),
   ).length;
   const providerUsage = result.payload?.providerUsage;
   const briefReceipt = result.payload?.briefReceipt;
@@ -570,7 +587,7 @@ async function main(): Promise<void> {
             fixture,
             policy: "brief",
             policyMode: fixture.briefMode,
-            policyDigest: digest(`brief.v1\0${fixture.briefMode}`),
+            policyDigest: digest(`${BRIEF_STRATEGY_VERSION}\0${fixture.briefMode}`),
             guidance: briefGuidance,
             order: briefFirst ? 1 : 2,
             match: common,

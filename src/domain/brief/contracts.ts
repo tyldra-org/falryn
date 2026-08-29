@@ -3,7 +3,7 @@
 import type { ConfigurationGeneration, SessionId, TurnId } from "../identity.ts";
 
 export const BRIEF_SCHEMA_VERSION = 1;
-export const BRIEF_STRATEGY_VERSION = "brief.v1";
+export const BRIEF_STRATEGY_VERSION = "brief.v2";
 export const BRIEF_PLACEMENT = "pre-inference" as const;
 
 export const DEFAULT_BRIEF_MAX_BYTES = 2_048;
@@ -31,7 +31,7 @@ export type BriefDetail = (typeof BRIEF_DETAIL_LEVELS)[number];
 export const BRIEF_PRESENTATIONS = ["prose", "structured"] as const;
 export type BriefPresentation = (typeof BRIEF_PRESENTATIONS)[number];
 
-export const BRIEF_COMPLEXITIES = ["low", "high"] as const;
+export const BRIEF_COMPLEXITIES = ["low", "medium", "high"] as const;
 export type BriefComplexity = (typeof BRIEF_COMPLEXITIES)[number];
 
 export const BRIEF_INTERFACES = ["interactive", "headless", "narrow"] as const;
@@ -48,6 +48,22 @@ export const BRIEF_PRESERVED_FACTS = [
   "recovery",
 ] as const;
 export type BriefPreservedFact = (typeof BRIEF_PRESERVED_FACTS)[number];
+
+export const BRIEF_SELECTION_REASONS = [
+  "explicit-mode",
+  "high-complexity",
+  "medium-complexity",
+  "failure",
+  "risk",
+  "uncertainty",
+  "confirmation",
+  "required-action",
+  "recovery",
+  "interactive-interface",
+  "headless-interface",
+  "narrow-interface",
+] as const;
+export type BriefSelectionReason = (typeof BRIEF_SELECTION_REASONS)[number];
 
 export const BRIEF_OMISSIONS = ["custom-guidance"] as const;
 export type BriefOmission = (typeof BRIEF_OMISSIONS)[number];
@@ -109,6 +125,8 @@ export type BriefReceipt = {
   readonly policySource: BriefPolicySource;
   readonly requestedMode: BriefVerbosityMode;
   readonly selectedVerbosity: BriefVerbosityLevel;
+  /** Ordered facts that caused the selected level. */
+  readonly selectionReasons: readonly BriefSelectionReason[];
   readonly dimensions: BriefDimensions;
   readonly byteLength: number;
   readonly guidanceDigest: string;

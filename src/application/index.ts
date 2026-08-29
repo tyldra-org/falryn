@@ -231,6 +231,7 @@ export type {
 export {
   briefNeedAfterContext,
   briefNeedAfterToolResults,
+  classifyProductBriefComplexity,
   composeProductBriefControls,
   deriveProductBriefNeed,
   describeBriefVerbosityModes,
