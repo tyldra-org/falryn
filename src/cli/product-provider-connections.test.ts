@@ -48,7 +48,7 @@ function localProfile(): ProviderProfile {
 }
 
 function officialProfile(
-  adapterKind: "anthropic" | "google",
+  adapterKind: "anthropic" | "google" | "commandcode",
   credentialLocator: string,
   model: string,
 ): ProviderProfile {
@@ -56,8 +56,13 @@ function officialProfile(
     profileId: adapterKind,
     providerId: providerId.from(adapterKind),
     adapterKind,
-    displayName: adapterKind === "anthropic" ? "Anthropic" : "Google",
-    endpoint: null,
+    displayName:
+      adapterKind === "anthropic"
+        ? "Anthropic"
+        : adapterKind === "google"
+          ? "Google"
+          : "Command Code",
+    endpoint: adapterKind === "commandcode" ? "https://api.commandcode.ai/provider/v1" : null,
     credential: {
       storeKind: "environment",
       locator: credentialLocator,
@@ -285,7 +290,7 @@ describe("product provider connection persistence", () => {
     expect(JSON.stringify(tested)).not.toContain("secret-not-projected");
   });
 
-  test("resolves selected Anthropic and Google profiles to their official SDK adapters", async () => {
+  test("resolves selected official profiles to their SDK adapters", async () => {
     for (const fixture of [
       {
         adapterKind: "anthropic" as const,
@@ -296,6 +301,11 @@ describe("product provider connection persistence", () => {
         adapterKind: "google" as const,
         credentialLocator: "FALRYN_TEST_GOOGLE_KEY",
         model: "gemini-test",
+      },
+      {
+        adapterKind: "commandcode" as const,
+        credentialLocator: "FALRYN_TEST_COMMAND_CODE_KEY",
+        model: "gpt-5.6-sol",
       },
     ]) {
       const home = await mkdtemp(join(tmpdir(), `falryn-provider-${fixture.adapterKind}-`));

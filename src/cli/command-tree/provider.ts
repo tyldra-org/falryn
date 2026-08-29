@@ -155,6 +155,7 @@ const OFFICIAL_PROVIDER_ADAPTERS: Readonly<Partial<Record<string, ProviderAdapte
   openai: "openai",
   anthropic: "anthropic",
   google: "google",
+  commandcode: "commandcode",
 };
 
 type ProviderArgumentResolution<T> =
@@ -209,7 +210,13 @@ function endpointFor(
       message: `Provider "${provider}" using adapter "${adapter}" requires an explicit --endpoint.`,
     };
   }
-  return { ok: true, value: provider === "openai" ? "https://api.openai.com/v1" : null };
+  if (provider === "openai") {
+    return { ok: true, value: "https://api.openai.com/v1" };
+  }
+  if (provider === "commandcode") {
+    return { ok: true, value: "https://api.commandcode.ai/provider/v1" };
+  }
+  return { ok: true, value: null };
 }
 
 function isOfficialSdkDestination(
@@ -220,5 +227,11 @@ function isOfficialSdkDestination(
   if (OFFICIAL_PROVIDER_ADAPTERS[provider] !== adapter) {
     return false;
   }
-  return provider === "openai" ? endpoint === "https://api.openai.com/v1" : endpoint === null;
+  if (provider === "openai") {
+    return endpoint === "https://api.openai.com/v1";
+  }
+  if (provider === "commandcode") {
+    return endpoint === "https://api.commandcode.ai/provider/v1";
+  }
+  return endpoint === null;
 }

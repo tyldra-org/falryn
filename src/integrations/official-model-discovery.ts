@@ -8,6 +8,7 @@ import type { Model as OpenAiModel } from "openai/resources/models";
 
 import { type Instant, instant } from "../domain/clock.ts";
 import { modelId } from "../domain/identity.ts";
+import { COMMAND_CODE_OPENAI_BASE_URL } from "../providers/command-code.ts";
 import type { DiscoveryOutcome, ModelCatalog, ModelDiscoveryPort } from "../providers/discovery.ts";
 import { MAX_PROVIDER_METADATA_ENTRY_LENGTH } from "../providers/limits.ts";
 import {
@@ -17,6 +18,11 @@ import {
   unknownModelCapability,
 } from "../providers/model-capability.ts";
 import type { ProviderProfile } from "../providers/profile.ts";
+
+export type CommandCodeModelInfo = OpenAiModel & {
+  readonly name?: unknown;
+  readonly context_length?: unknown;
+};
 
 type ResolveProviderApiKey = (
   profile: ProviderProfile,
@@ -39,6 +45,11 @@ export type OfficialModelDiscoveryLoaders = {
     apiKey: string,
     signal: AbortSignal,
   ) => Promise<readonly GoogleModel[]>;
+  readonly commandcode: (
+    profile: ProviderProfile,
+    apiKey: string,
+    signal: AbortSignal,
+  ) => Promise<readonly CommandCodeModelInfo[]>;
 };
 
 export type OfficialModelDiscoveryOptions = {
@@ -114,6 +125,18 @@ function openAiCapability(record: OpenAiModel): ModelCapability {
       provenance: ["remote-identity"],
     }),
     displayName: String(id),
+  };
+}
+
+function commandCodeCapability(record: CommandCodeModelInfo): ModelCapability {
+  const id = remoteModelId(record.id);
+  return {
+    ...unknownModelCapability(id, {
+      availability: "available",
+      provenance: ["remote-identity"],
+    }),
+    displayName: displayName(record.name, String(id)),
+    contextTokens: tokenLimit(record.context_length),
   };
 }
 
@@ -231,6 +254,33 @@ async function loadOpenAiModels(
       throw new ModelDiscoveryContractError("provider-model-catalog-too-large");
     }
     models.push(record);
+  }
+  return models;
+}
+
+async function loadCommandCodeModels(
+  profile: ProviderProfile,
+  apiKey: string,
+  signal: AbortSignal,
+): Promise<readonly CommandCodeModelInfo[]> {
+  const client = new OpenAI({
+    apiKey,
+    baseURL: profile.endpoint ?? COMMAND_CODE_OPENAI_BASE_URL,
+    maxRetries: 0,
+    timeout: profile.timeouts.requestMs,
+    logLevel: "off",
+  });
+  const page = await client.models.list({ signal });
+  const models: CommandCodeModelInfo[] = [];
+  for await (const record of page) {
+    if (models.length === MAX_DISCOVERED_MODELS) {
+      throw new ModelDiscoveryContractError("provider-model-catalog-too-large");
+    }
+    models.push({
+      ...record,
+      name: Reflect.get(record, "name"),
+      context_length: Reflect.get(record, "context_length"),
+    });
   }
   return models;
 }
@@ -373,6 +423,7 @@ export function createOfficialModelDiscovery(
     openai: options.loaders?.openai ?? loadOpenAiModels,
     anthropic: options.loaders?.anthropic ?? loadAnthropicModels,
     google: options.loaders?.google ?? loadGoogleModels,
+    commandcode: options.loaders?.commandcode ?? loadCommandCodeModels,
   };
   let nextGeneration = options.generation ?? 0;
   const ttlMs = options.ttlMs ?? 15 * 60_000;
@@ -455,6 +506,14 @@ export function createOfficialModelDiscovery(
               discoveryOptions.now,
             );
           }
+          case "commandcode": {
+            const records = await loaders.commandcode(profile, apiKey, discoveryOptions.signal);
+            return publish(
+              profile,
+              boundedRecords(records).map(commandCodeCapability),
+              discoveryOptions.now,
+            );
+          }
           default: {
             const exhaustive: never = profile.adapterKind;
             return exhaustive;
@@ -471,4 +530,5 @@ export const officialModelCapabilityTranslators = {
   openai: openAiCapability,
   anthropic: anthropicCapability,
   google: googleCapability,
+  commandcode: commandCodeCapability,
 } as const;

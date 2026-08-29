@@ -191,6 +191,7 @@ describe("provider connection arguments", () => {
       ["openai", "https://api.openai.com/v1"],
       ["anthropic", null],
       ["google", null],
+      ["commandcode", "https://api.commandcode.ai/provider/v1"],
     ] as const;
 
     for (const [provider, endpoint] of cases) {

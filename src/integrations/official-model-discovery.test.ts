@@ -128,6 +128,27 @@ describe("official model capability translation", () => {
       outputTokens: 65_536,
     });
   });
+
+  test("maps Command Code identity, display name, and context without guessing features", () => {
+    const capability = officialModelCapabilityTranslators.commandcode({
+      id: "gpt-5.6-sol",
+      object: "model",
+      created: 0,
+      owned_by: "commandcode",
+      name: "GPT-5.6 Sol",
+      context_length: 1_050_000,
+    });
+
+    expect(capability).toMatchObject({
+      modelId: modelId.from("gpt-5.6-sol"),
+      displayName: "GPT-5.6 Sol",
+      tools: "unknown",
+      streaming: "unknown",
+      contextTokens: 1_050_000,
+      availability: "available",
+      provenance: ["remote-identity"],
+    });
+  });
 });
 
 describe("createOfficialModelDiscovery", () => {
@@ -185,6 +206,53 @@ describe("createOfficialModelDiscovery", () => {
 
     expect(first).toMatchObject({ kind: "catalog", catalog: { generation: 20 } });
     expect(second).toMatchObject({ kind: "catalog", catalog: { generation: 21 } });
+  });
+
+  test("discovers Command Code through its models endpoint and selects enabled models", async () => {
+    const discovery = createOfficialModelDiscovery({
+      generation: 30,
+      resolveApiKey: async () => "command-code-key",
+      loaders: {
+        commandcode: async () => [
+          {
+            id: "gpt-5.6-sol",
+            object: "model",
+            created: 0,
+            owned_by: "commandcode",
+            name: "GPT-5.6 Sol",
+            context_length: 1_050_000,
+          },
+          {
+            id: "claude-sonnet-5",
+            object: "model",
+            created: 0,
+            owned_by: "commandcode",
+            name: "Claude Sonnet 5",
+            context_length: 1_000_000,
+          },
+        ],
+      },
+    });
+    const outcome = await discovery.discover(profile("commandcode", ["claude-sonnet-5"]), {
+      signal: new AbortController().signal,
+      now: instant(5),
+    });
+
+    expect(outcome).toMatchObject({
+      kind: "catalog",
+      catalog: {
+        generation: 30,
+        models: [
+          {
+            modelId: "claude-sonnet-5",
+            displayName: "Claude Sonnet 5",
+            contextTokens: 1_000_000,
+            availability: "available",
+          },
+        ],
+      },
+    });
+    expect(JSON.stringify(outcome)).not.toContain("command-code-key");
   });
 
   test("passes a custom endpoint to the selected official SDK loader", async () => {

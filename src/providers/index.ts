@@ -43,6 +43,16 @@ export type { ModelCatalogParseError } from "./catalog/effective.ts";
 export { parseModelCatalog } from "./catalog/effective.ts";
 export type { ModelCatalogDocumentParseError } from "./catalog/schema.ts";
 export { modelCatalogDocumentSchema, parseModelCatalogDocument } from "./catalog/schema.ts";
+export type { CommandCodeProtocol } from "./command-code.ts";
+export {
+  COMMAND_CODE_ANTHROPIC_BASE_URL,
+  COMMAND_CODE_MODEL_CAPABILITIES,
+  COMMAND_CODE_MODEL_MANIFESTS,
+  COMMAND_CODE_MODEL_PROTOCOLS,
+  COMMAND_CODE_OPENAI_BASE_URL,
+  COMMAND_CODE_PROVIDER_ID,
+  commandCodeProtocolFor,
+} from "./command-code.ts";
 export type {
   ProviderAccountMetadata,
   ProviderAuthMethod,

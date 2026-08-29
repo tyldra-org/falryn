@@ -59,7 +59,8 @@ added, configured, selected, tested, logged out, or removed through
 `falryn provider`.
 
 `provider add` and `provider configure` infer the installed official SDK only
-from an exact provider identity: `openai`, `anthropic`, or `google`. Their
+from an exact provider identity: `openai`, `anthropic`, `google`, or
+`commandcode`. Their
 official destinations default to remote model discovery. An unfamiliar
 provider requires an explicit adapter and endpoint, and a compatible custom
 endpoint defaults to static discovery unless the caller opts into remote
@@ -94,7 +95,8 @@ continuation. A headless turn cannot report completion unless a terminal model
 attempt ran.
 
 Model identity and model selection are stored separately. Falryn bundles a
-strict, versioned OpenAI model catalog into the executable, provider profiles
+strict, versioned OpenAI and Command Code model catalogs into the executable,
+provider profiles
 select enabled model IDs and may reference user catalogs by identity, and
 optional inline profile declarations remain the highest-priority compatibility
 override. A user catalog is a bounded JSONC document at
@@ -115,8 +117,18 @@ The compatibility manifest retains `gpt-4o-mini` for existing profiles, but
 fresh defaults do not select it. Compatibility facts apply only at the official
 OpenAI endpoint; unfamiliar model names and custom endpoints remain unknown.
 
+The Command Code catalog contains the 62 execution IDs currently published by
+its Provider API, with names and context limits from the model endpoint and
+text, image, and reasoning facts from Command Code's model registry. Output
+limits, structured-output support, and provider-native reasoning controls stay
+unknown because Command Code does not publish those facts per model. The
+catalog marks the provider's agent protocol as tool-capable and streaming, but
+live image transport remains unavailable until Falryn can resolve image
+handles into SDK request parts.
+
 Remote catalog refresh uses the official OpenAI, Anthropic, or Google Gen AI
-TypeScript SDK selected by the profile. Successful provider-reported catalogs
+TypeScript SDK selected by the profile. Command Code discovery uses the OpenAI
+SDK against its official Models endpoint. Successful provider-reported catalogs
 are cached as bounded, secret-free normalized documents beneath the
 platform-native cache root; the cache is disposable and scoped to the exact
 profile, provider, adapter, and endpoint. OpenAI's Models API contributes model
@@ -137,7 +149,11 @@ generation, so cache eviction, profile reconfiguration, or a later provider
 refresh cannot change or erase the facts used by an in-flight or replayed
 decision. Catalog and profile files never contain credential bytes.
 Live inference uses the official OpenAI, Anthropic, or Google Gen AI SDK named
-by the selected profile. Each adapter translates the same bounded messages,
+by the selected profile. Command Code is one Falryn provider with an exact
+model-to-protocol map: Claude execution IDs use Anthropic Messages and the
+remaining published IDs use OpenAI Chat Completions. No model-name heuristic or
+generic compatibility assumption chooses that transport. Each adapter
+translates the same bounded messages,
 tool definitions, tool continuations, output contract, token budget, usage,
 finish reason, cancellation, and typed failure events. A provider-native
 reasoning control is sent when the effective model catalog supports a mapping
