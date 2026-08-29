@@ -57,9 +57,13 @@ OpenAI profile that references `FALRYN_OPENAI_API_KEY`; configuration stores
 the reference, never the credential bytes. The environment store resolves only
 the provider's ordered declaration of Falryn-specific and provider-native
 aliases. It works through the inherited process environment on macOS, Linux,
-and Windows without parsing shell profiles or another application's credential
-files. Additional profiles can be added, configured, selected, tested, logged
-out, or removed through `falryn provider`.
+and Windows. On macOS it can also resolve one declared alias from the current
+launchd user environment; on Windows it can resolve one declared persisted User
+or Machine value. Linux deliberately has no post-start environment probe because
+its common user-manager command exposes the complete environment rather than one
+name. Falryn never parses or executes shell profiles or reads another
+application's credential files. Additional profiles can be added, configured,
+selected, tested, logged out, or removed through `falryn provider`.
 
 `provider add` and `provider configure` infer the installed official SDK only
 from an exact provider identity: `openai`, `anthropic`, `google`, or
@@ -84,11 +88,12 @@ diagnostic, while every live attempt also refreshes an expired catalog before
 binding its immutable execution generation.
 
 Interactive API-key login accepts the secret only on standard input and stores
-it in the operating-system keychain on supported platforms. The supervised
-keychain command receives the secret over its standard-input channel rather
-than an argument or environment variable. OAuth PKCE and device authorization
-are accepted only through an installed official provider adapter; Falryn does
-not imitate browser sessions or subscription credentials.
+it through `Bun.secrets`: macOS Keychain Services, Linux Secret Service, or
+Windows Credential Manager. The value does not enter command arguments,
+environment variables, diagnostics, configuration, or model context. Missing,
+locked, denied, and unavailable platform services fail closed. OAuth PKCE and
+device authorization are accepted only through an installed official provider
+adapter; Falryn does not imitate browser sessions or subscription credentials.
 
 Human, JSON, and JSONL results expose profile, connection, account, catalog,
 and revocation state without secret material. `falryn run` passes the selected

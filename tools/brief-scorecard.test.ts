@@ -9,8 +9,8 @@ import {
 import { BRIEF_RESPONSE_FIXTURES } from "./fixtures/brief-response-corpus.ts";
 
 describe("Brief scorecard", () => {
-  test("selects Command Code MiniMax M3 through the verified provider adapter", () => {
-    const provider = createBriefScorecardProvider({
+  test("selects Command Code MiniMax M3 through the verified provider adapter", async () => {
+    const provider = await createBriefScorecardProvider({
       FALRYN_BRIEF_PROVIDER: "commandcode",
       FALRYN_COMMANDCODE_API_KEY: "test-only-key",
     });
@@ -23,13 +23,13 @@ describe("Brief scorecard", () => {
     ]);
   });
 
-  test("fails closed when the selected provider has no credential", () => {
-    expect(() => createBriefScorecardProvider({ FALRYN_BRIEF_PROVIDER: "commandcode" })).toThrow(
-      "FALRYN_COMMANDCODE_API_KEY",
-    );
+  test("fails closed when the selected provider has no credential", async () => {
+    await expect(
+      createBriefScorecardProvider({ FALRYN_BRIEF_PROVIDER: "commandcode" }),
+    ).rejects.toThrow("FALRYN_COMMANDCODE_API_KEY");
   });
 
-  test("accepts every documented Command Code and Falryn compatibility alias", () => {
+  test("accepts every documented Command Code and Falryn compatibility alias", async () => {
     for (const variable of [
       "FALRYN_COMMAND_CODE_API_KEY",
       "FALRYN_CMD_API_KEY",
@@ -37,7 +37,7 @@ describe("Brief scorecard", () => {
       "CMD_API_KEY",
       "COMMANDCODE_API_KEY",
     ]) {
-      const provider = createBriefScorecardProvider({
+      const provider = await createBriefScorecardProvider({
         FALRYN_BRIEF_PROVIDER: "commandcode",
         [variable]: "test-only-key",
       });
@@ -45,10 +45,10 @@ describe("Brief scorecard", () => {
     }
   });
 
-  test("rejects an unsupported provider identity", () => {
-    expect(() => createBriefScorecardProvider({ FALRYN_BRIEF_PROVIDER: "compatible" })).toThrow(
-      "unsupported Brief scorecard provider: compatible",
-    );
+  test("rejects an unsupported provider identity", async () => {
+    await expect(
+      createBriefScorecardProvider({ FALRYN_BRIEF_PROVIDER: "compatible" }),
+    ).rejects.toThrow("unsupported Brief scorecard provider: compatible");
   });
 
   test("covers all reviewed categories, Brief levels, and Caveman intensities", () => {

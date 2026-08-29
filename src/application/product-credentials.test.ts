@@ -11,6 +11,7 @@ import {
   createManualClock,
   createStaticEnvironment,
 } from "../domain/index.ts";
+import type { OperatingSystemSecretsPort } from "../integrations/index.ts";
 import { composeProductCredentials, resolveProviderApiKey } from "./product-credentials.ts";
 
 const REFERENCE: CredentialReference = {
@@ -78,16 +79,22 @@ describe("composeProductCredentials", () => {
 
   test("placeApiKey writes through the keychain channel without returning the secret", async () => {
     const clock = createManualClock();
-    let wroteSecret: Uint8Array | undefined;
+    let wroteSecret: string | undefined;
+    const secrets: OperatingSystemSecretsPort = {
+      get: async () => null,
+      async set(options) {
+        wroteSecret = options.value;
+      },
+      delete: async () => false,
+    };
     const bundle = composeProductCredentials({
       clock,
-      commands: runner(async (request) => {
-        wroteSecret = "stdinBytes" in request ? request.stdinBytes : undefined;
-        expect("argv" in request && request.argv).not.toContain("sk-place-me");
-        return { kind: "exited", exitCode: 0, stdout: "" };
+      commands: runner(async () => {
+        throw new Error("keychain writes must not spawn a command");
       }),
       platform: "darwin",
       environment: createStaticEnvironment({}),
+      secrets,
     });
     const secret = "sk-place-me";
     const placed = await bundle.placeApiKey({
@@ -100,7 +107,7 @@ describe("composeProductCredentials", () => {
       secret,
     });
     expect(placed).toEqual({ kind: "written" });
-    expect(wroteSecret).toEqual(new TextEncoder().encode(`${secret}\n`));
+    expect(wroteSecret).toBe(secret);
     expect(JSON.stringify(placed)).not.toContain(secret);
   });
 });

@@ -11,7 +11,9 @@ import {
   CAVEMAN_PINNED_COMMIT,
   CAVEMAN_PINNED_SKILL_DIGEST,
   type CavemanSourcePort,
+  composeProductCredentials,
   loadPinnedCavemanPolicy,
+  resolveProviderApiKey,
 } from "../src/application/index.ts";
 import { runCoding } from "../src/cli/coding-run.ts";
 import type { GlobalOptions } from "../src/cli/options.ts";
@@ -24,6 +26,7 @@ import {
   type BriefComparisonUsage,
   compareBriefPair,
   createStaticEnvironment,
+  createSystemClock,
   instant,
   localPath,
   ok,
@@ -31,6 +34,8 @@ import {
 } from "../src/domain/index.ts";
 import {
   createCommandCodeSdkAdapter,
+  createHostCommandRunner,
+  createHostEnvironment,
   createOpenAiSdkAdapter,
   hostPlatform,
 } from "../src/integrations/index.ts";
@@ -45,6 +50,7 @@ import {
   type ProviderAdapterKind,
   type ProviderAdapterPort,
   providerCredentialEnvironment,
+  providerEnvironmentCredentialReference,
 } from "../src/providers/index.ts";
 import {
   BRIEF_RESPONSE_FIXTURES,
@@ -215,32 +221,54 @@ function providerCatalog(
   });
 }
 
-function requiredCredential(
+async function requiredCredential(
   environment: Readonly<Record<string, string | undefined>>,
   provider: ScorecardProviderId,
-): string {
+  useHostSession: boolean,
+): Promise<string> {
   const names = providerCredentialEnvironment(provider)?.variables;
   if (names === undefined) {
     throw new Error(`Brief scorecard has no credential environment declaration for ${provider}`);
   }
-  const value = names.map((name) => environment[name]).find((candidate) => candidate?.trim());
-  if (value === undefined) {
+  const staticValues = Object.fromEntries(
+    Object.entries(environment).filter(
+      (entry): entry is [string, string] => entry[1] !== undefined,
+    ),
+  );
+  const environmentPort = useHostSession
+    ? createHostEnvironment()
+    : createStaticEnvironment(staticValues);
+  const credentials = composeProductCredentials({
+    clock: createSystemClock(),
+    commands: createHostCommandRunner(),
+    platform: hostPlatform(),
+    environment: environmentPort,
+    ...(useHostSession ? {} : { sessionEnvironment: null }),
+  });
+  const reference = providerEnvironmentCredentialReference(provider, "brief-scorecard");
+  const value = await resolveProviderApiKey(credentials.resolver, reference);
+  if (value === null) {
     throw new Error(`${names.join(" or ")} is required for matched live runs`);
   }
   return value;
 }
 
 /** Resolve one source-verified provider/model pair for a matched live scorecard. */
-export function createBriefScorecardProvider(
-  environment: Readonly<Record<string, string | undefined>> = process.env,
-): ScorecardProvider {
+export async function createBriefScorecardProvider(
+  suppliedEnvironment?: Readonly<Record<string, string | undefined>>,
+): Promise<ScorecardProvider> {
+  const environment = suppliedEnvironment ?? process.env;
   const configuredProvider = environment.FALRYN_BRIEF_PROVIDER ?? "openai";
   if (configuredProvider !== "openai" && configuredProvider !== "commandcode") {
     throw new Error(`unsupported Brief scorecard provider: ${configuredProvider}`);
   }
   const provider: ScorecardProviderId = configuredProvider;
   if (provider === "commandcode") {
-    const apiKey = requiredCredential(environment, provider);
+    const apiKey = await requiredCredential(
+      environment,
+      provider,
+      suppliedEnvironment === undefined,
+    );
     const model = environment.FALRYN_BRIEF_MODEL ?? DEFAULT_COMMAND_CODE_MODEL;
     const adapter = createCommandCodeSdkAdapter({
       profileId: "brief-scorecard",
@@ -259,7 +287,7 @@ export function createBriefScorecardProvider(
       model,
     };
   }
-  const apiKey = requiredCredential(environment, provider);
+  const apiKey = await requiredCredential(environment, provider, suppliedEnvironment === undefined);
   const model = environment.FALRYN_BRIEF_MODEL ?? DEFAULT_OPENAI_MODEL;
   const baseUrl = (environment.FALRYN_OPENAI_BASE_URL ?? "https://api.openai.com/v1").replace(
     /\/+$/,
@@ -482,7 +510,7 @@ async function main(): Promise<void> {
   const options = parseOptions(Bun.argv.slice(2));
   const controller = new AbortController();
   process.once("SIGINT", () => controller.abort("SIGINT"));
-  const { adapter, catalog: providerCatalog, model } = createBriefScorecardProvider();
+  const { adapter, catalog: providerCatalog, model } = await createBriefScorecardProvider();
   const selectedFixtures = BRIEF_RESPONSE_FIXTURES.filter(
     (fixture) => options.fixture === null || fixture.id === options.fixture,
   );

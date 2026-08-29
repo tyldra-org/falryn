@@ -1,28 +1,16 @@
 /**
- * The operating-system keychain store, as a supervised command.
+ * Cross-platform operating-system credential storage through Bun's native
+ * secrets API.
  *
- * **No native credential module enters the lockfile.** A native binding is the
- * highest-risk dependency there is for `bun build --compile` — it has to match
- * operating system, architecture, and libc — and the usual choice for this job
- * is unmaintained. Falryn already reaches platform capabilities it cannot get
- * from Bun by running the platform's own command, and this is one more of those:
- * a narrow leaf over `/usr/bin/security` with a structured argument vector, an
- * empty environment, a bounded output, and a deadline.
- *
- * **This adapter is internal.** It is not a tool, it is registered in no
- * capability catalog, and it does not pass through the tool boundary. A
- * model-requested credential read is not a supported path.
- *
- * **macOS is the qualified target.** Linux and Windows report `unsupported`
- * with a reason rather than pretending a credential is absent; qualifying those
- * platforms is #220. The environment-reference store works everywhere, so no
- * platform is left without a credential path.
+ * Bun maps this one narrow API onto macOS Keychain Services, Linux Secret
+ * Service, and Windows Credential Manager. Falryn does not enumerate stores,
+ * expose this adapter as a tool, or pass credential values through argv,
+ * environment variables, diagnostics, or durable state.
  */
 
 import {
+  addDuration,
   type ClockPort,
-  type CommandOutcome,
-  type CommandRunnerPort,
   type CredentialPartOutcome,
   type CredentialReference,
   type CredentialRequestOptions,
@@ -34,46 +22,26 @@ import {
   type DurationMs,
   healthForStatus,
   type LocalDataPlatform,
-  MAX_COMMAND_OUTPUT_BYTES,
+  MAX_CREDENTIAL_SECRET_BYTES,
   type SecretUse,
 } from "../domain/index.ts";
 
 const STORE_KIND = "operating-system-keychain" as const;
 
-/** The platform command. Absolute, so nothing resolves it through `PATH`. */
-export const SECURITY_EXECUTABLE = "/usr/bin/security";
-
-/**
- * `security` exits with the low byte of the `OSStatus` it received.
- *
- * That rule is what makes this table derivable rather than guessed: an
- * `errSecItemNotFound` of `-25300` has low byte `0x2C`, which is the exit code
- * `44` observed on macOS for a generic password that does not exist. Every row
- * below is the same arithmetic applied to a documented `errSec` value.
- *
- * A status this table does not name is reported `unavailable` with its exit
- * code preserved in the failure code. Mapping an unknown status onto `missing`
- * would tell a user their credential is gone because a keychain misbehaved.
- */
-export const KEYCHAIN_EXIT_STATUSES: Readonly<Record<number, CredentialUnresolvedStatus>> = {
-  // errSecItemNotFound (-25300). Verified against macOS during this delivery.
-  44: "missing",
-  // errSecInteractionRequired (-25315).
-  29: "locked",
-  // errSecInteractionNotAllowed (-25308) — a locked keychain in a run that
-  // cannot prompt.
-  36: "locked",
-  // errSecAuthFailed (-25293).
-  51: "denied",
-  // errSecUserCanceled (-128) — the authorization dialog was dismissed.
-  128: "denied",
-  // errSecNoSuchKeychain (-25294).
-  50: "unavailable",
-  // errSecNotAvailable (-25291).
-  53: "unavailable",
+/** Narrow injectable boundary around `Bun.secrets`. */
+export type OperatingSystemSecretsPort = {
+  get(options: { readonly service: string; readonly name: string }): Promise<string | null>;
+  set(options: {
+    readonly service: string;
+    readonly name: string;
+    readonly value: string;
+    readonly allowUnrestrictedAccess?: boolean;
+  }): Promise<void>;
+  delete(options: { readonly service: string; readonly name: string }): Promise<boolean>;
 };
 
-/** Statuses worth another attempt: the state that caused them can change. */
+const LEGAL_IDENTIFIER = /^[^\p{Cc}]{1,255}$/u;
+
 const RETRYABLE_STATUSES: ReadonlySet<CredentialUnresolvedStatus> = new Set([
   "locked",
   "denied",
@@ -82,37 +50,81 @@ const RETRYABLE_STATUSES: ReadonlySet<CredentialUnresolvedStatus> = new Set([
   "cancelled",
 ]);
 
-/**
- * A locator `security` will read as a service name and not as an option.
- *
- * A leading dash is refused because `security` would take it as a flag. Control
- * characters are refused because a name containing one cannot have been created
- * by this build and is not worth handing to a subprocess.
- */
-const LEGAL_LOCATOR = /^[^\p{Cc}-][^\p{Cc}]{0,255}$/u;
-
 export type KeychainCredentialStoreOptions = {
-  readonly commands: CommandRunnerPort;
   readonly clock: ClockPort;
   readonly platform: LocalDataPlatform;
+  readonly secrets?: OperatingSystemSecretsPort;
   readonly timeoutMs?: DurationMs;
 };
+
+type OperationOutcome<Value> =
+  | { readonly kind: "completed"; readonly value: Value }
+  | { readonly kind: "timed-out" }
+  | { readonly kind: "cancelled" }
+  | { readonly kind: "failed" };
+
+function credentialName(reference: CredentialReference): string {
+  return reference.accountLabel ?? reference.consumer;
+}
+
+function validReference(reference: CredentialReference): boolean {
+  return (
+    LEGAL_IDENTIFIER.test(reference.locator) && LEGAL_IDENTIFIER.test(credentialName(reference))
+  );
+}
+
+async function settle<Value>(input: {
+  readonly operation: Promise<Value>;
+  readonly clock: ClockPort;
+  readonly timeoutMs: DurationMs;
+  readonly signal?: AbortSignal;
+}): Promise<OperationOutcome<Value>> {
+  if (input.signal?.aborted === true) {
+    return { kind: "cancelled" };
+  }
+  const deadlineController = new AbortController();
+  const onAbort = (): void => deadlineController.abort();
+  input.signal?.addEventListener("abort", onAbort, { once: true });
+  const operation = input.operation.then(
+    (value): OperationOutcome<Value> => ({ kind: "completed", value }),
+    (): OperationOutcome<Value> => ({ kind: "failed" }),
+  );
+  const deadline = input.clock
+    .waitUntil(addDuration(input.clock.now(), input.timeoutMs), deadlineController.signal)
+    .then(
+      (outcome): OperationOutcome<Value> =>
+        outcome === "aborted" ? { kind: "cancelled" } : { kind: "timed-out" },
+    );
+  try {
+    const outcome = await Promise.race([operation, deadline]);
+    if (outcome.kind === "completed" || outcome.kind === "failed") {
+      deadlineController.abort();
+    }
+    return outcome;
+  } finally {
+    input.signal?.removeEventListener("abort", onAbort);
+  }
+}
+
+function unresolvedStatus(
+  outcome: Exclude<OperationOutcome<unknown>, { readonly kind: "completed" }>,
+): CredentialUnresolvedStatus {
+  switch (outcome.kind) {
+    case "cancelled":
+      return "cancelled";
+    case "timed-out":
+      return "timed-out";
+    case "failed":
+      return "unavailable";
+  }
+}
 
 export function createKeychainCredentialStore(
   options: KeychainCredentialStoreOptions,
 ): CredentialStorePort {
-  const { commands, clock, platform } = options;
+  const secrets = options.secrets ?? Bun.secrets;
   const timeoutMs = options.timeoutMs ?? DEFAULT_CREDENTIAL_TIMEOUT_MS;
-
-  const availability: CredentialStoreAvailability =
-    platform === "darwin"
-      ? { kind: "available" }
-      : {
-          kind: "unsupported",
-          platform,
-          reason:
-            "Falryn qualifies the operating-system keychain on macOS only. Use an environment credential reference on this platform.",
-        };
+  const availability: CredentialStoreAvailability = { kind: "available" };
 
   const unresolved = (
     status: CredentialUnresolvedStatus,
@@ -126,40 +138,9 @@ export function createKeychainCredentialStore(
       retryable: RETRYABLE_STATUSES.has(status),
       storeKind: STORE_KIND,
       consumer,
-      health: healthForStatus(status, STORE_KIND, clock.now()),
+      health: healthForStatus(status, STORE_KIND, options.clock.now()),
     },
   });
-
-  const argumentsFor = (
-    subcommand: "find-generic-password" | "delete-generic-password",
-    reference: CredentialReference,
-  ): readonly string[] => {
-    const argv = [subcommand, "-s", reference.locator];
-    if (reference.accountLabel !== null) {
-      argv.push("-a", reference.accountLabel);
-    }
-    if (subcommand === "find-generic-password") {
-      // `-w` prints the password alone. Without it `security` prints the whole
-      // item's attributes, which is more of the keychain than was asked for.
-      argv.push("-w");
-    }
-    return argv;
-  };
-
-  const run = (
-    argv: readonly string[],
-    requestOptions?: CredentialRequestOptions,
-  ): Promise<CommandOutcome> =>
-    commands.run({
-      executable: SECURITY_EXECUTABLE,
-      argv,
-      // Empty rather than inherited: a child that inherits this process's
-      // environment inherits every credential already in it.
-      environment: {},
-      timeoutMs: requestOptions?.timeoutMs ?? timeoutMs,
-      maxOutputBytes: MAX_COMMAND_OUTPUT_BYTES,
-      signal: requestOptions?.signal,
-    });
 
   return {
     storeKind: STORE_KIND,
@@ -169,83 +150,64 @@ export function createKeychainCredentialStore(
     async read<Value>(
       reference: CredentialReference,
       use: SecretUse<Value>,
-      requestOptions?: CredentialRequestOptions,
+      request?: CredentialRequestOptions,
     ): Promise<CredentialResolution<Value>> {
-      if (availability.kind === "unsupported") {
-        return unresolved("unsupported", `platform-${platform}`, reference.consumer);
+      if (request?.signal?.aborted === true) {
+        return unresolved("cancelled", "aborted-before-read", reference.consumer);
       }
-      if (requestOptions?.signal?.aborted === true) {
-        return unresolved("cancelled", "aborted-before-spawn", reference.consumer);
-      }
-      if (!LEGAL_LOCATOR.test(reference.locator)) {
-        return unresolved("malformed", "illegal-locator", reference.consumer);
+      if (!validReference(reference)) {
+        return unresolved("malformed", "illegal-credential-identifier", reference.consumer);
       }
 
-      const outcome = await run(argumentsFor("find-generic-password", reference), requestOptions);
-      if (outcome.kind !== "exited") {
-        return unresolved(
-          nonExitStatus(outcome.kind),
-          `spawn-${outcome.kind === "spawn-failed" ? outcome.code : outcome.kind}`,
-          reference.consumer,
-        );
+      const outcome = await settle({
+        operation: secrets.get({ service: reference.locator, name: credentialName(reference) }),
+        clock: options.clock,
+        timeoutMs: request?.timeoutMs ?? timeoutMs,
+        ...(request?.signal === undefined ? {} : { signal: request.signal }),
+      });
+      if (outcome.kind !== "completed") {
+        const status = unresolvedStatus(outcome);
+        return unresolved(status, `secrets-${outcome.kind}`, reference.consumer);
       }
-      if (outcome.exitCode !== 0) {
-        const status = KEYCHAIN_EXIT_STATUSES[outcome.exitCode] ?? "unavailable";
-        return unresolved(status, `keychain-exit-${outcome.exitCode}`, reference.consumer);
+      if (outcome.value === null) {
+        return unresolved("missing", "entry-missing", reference.consumer);
       }
-
-      // `security -w` terminates the password with one newline. Only that one is
-      // removed: trimming further would silently alter a secret whose own last
-      // character is whitespace.
-      const secret = outcome.stdout.endsWith("\n") ? outcome.stdout.slice(0, -1) : outcome.stdout;
-      if (secret.length === 0) {
+      if (outcome.value.length === 0) {
         return unresolved("empty", "empty-entry", reference.consumer);
+      }
+      if (Buffer.byteLength(outcome.value, "utf8") > MAX_CREDENTIAL_SECRET_BYTES) {
+        return unresolved("malformed", "secret-too-large", reference.consumer);
       }
 
       return {
         kind: "resolved",
-        value: await use(secret),
-        health: { state: "present", storeKind: STORE_KIND, observedAt: clock.now() },
+        value: await use(outcome.value),
+        health: { state: "present", storeKind: STORE_KIND, observedAt: options.clock.now() },
       };
     },
 
     async removeSecret(
       reference: CredentialReference,
-      requestOptions?: CredentialRequestOptions,
+      request?: CredentialRequestOptions,
     ): Promise<CredentialPartOutcome> {
-      if (availability.kind === "unsupported") {
-        return { result: "unsupported", code: `platform-${platform}` };
+      if (request?.signal?.aborted === true) {
+        return { result: "failed", code: "aborted-before-delete" };
       }
-      if (!LEGAL_LOCATOR.test(reference.locator)) {
-        return { result: "failed", code: "illegal-locator" };
+      if (!validReference(reference)) {
+        return { result: "failed", code: "illegal-credential-identifier" };
       }
-      const outcome = await run(argumentsFor("delete-generic-password", reference), requestOptions);
-      if (outcome.kind !== "exited") {
-        return { result: "failed", code: `spawn-${outcome.kind}` };
+      const outcome = await settle({
+        operation: secrets.delete({ service: reference.locator, name: credentialName(reference) }),
+        clock: options.clock,
+        timeoutMs: request?.timeoutMs ?? timeoutMs,
+        ...(request?.signal === undefined ? {} : { signal: request.signal }),
+      });
+      if (outcome.kind !== "completed") {
+        return { result: "failed", code: `secrets-${outcome.kind}` };
       }
-      if (outcome.exitCode === 0) {
-        return { result: "removed", code: null };
-      }
-      return KEYCHAIN_EXIT_STATUSES[outcome.exitCode] === "missing"
-        ? { result: "not-present", code: null }
-        : { result: "failed", code: `keychain-exit-${outcome.exitCode}` };
+      return outcome.value
+        ? { result: "removed", code: null }
+        : { result: "not-present", code: null };
     },
   };
-}
-
-function nonExitStatus(
-  kind: "timed-out" | "cancelled" | "spawn-failed" | "output-exceeded",
-): CredentialUnresolvedStatus {
-  switch (kind) {
-    case "timed-out":
-      return "timed-out";
-    case "cancelled":
-      return "cancelled";
-    case "spawn-failed":
-      return "unavailable";
-    case "output-exceeded":
-      // The command wrote more than a credential can be, so whatever it wrote
-      // is not one. A prefix of it is not a shorter secret.
-      return "malformed";
-  }
 }

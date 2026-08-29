@@ -25,6 +25,7 @@ import {
   MAX_CREDENTIAL_SECRET_BYTES,
   type SecretUse,
 } from "../domain/index.ts";
+import type { SessionEnvironmentCredentialLookupPort } from "./session-environment-credentials.ts";
 
 /**
  * A legal environment variable name.
@@ -42,6 +43,8 @@ export function createEnvironmentCredentialStore(options: {
   readonly clock: ClockPort;
   /** Explicit fallbacks keyed by the persisted canonical locator. */
   readonly aliases?: Readonly<Record<string, readonly string[]>>;
+  /** Safe exact-name lookup outside the inherited process environment. */
+  readonly session?: SessionEnvironmentCredentialLookupPort | null;
 }): CredentialStorePort {
   const { environment, clock } = options;
 
@@ -88,9 +91,26 @@ export function createEnvironmentCredentialStore(options: {
       if (variables.some((variable) => !LEGAL_VARIABLE_NAME.test(variable))) {
         return unresolved("malformed", "illegal-variable-alias", false, reference.consumer);
       }
-      const value = variables
+      let value = variables
         .map((variable) => environment.get(variable))
         .find((candidate): candidate is string => candidate !== null);
+      if (value === undefined && options.session !== undefined && options.session !== null) {
+        for (const variable of variables) {
+          const sessionValue = await options.session.read(variable, requestOptions);
+          if (sessionValue.kind === "found") {
+            value = sessionValue.value;
+            break;
+          }
+          if (sessionValue.kind !== "missing") {
+            return unresolved(
+              sessionValue.kind,
+              sessionValue.code,
+              sessionValue.kind !== "malformed",
+              reference.consumer,
+            );
+          }
+        }
+      }
       if (value === undefined) {
         // The port reports an exported-but-empty variable as unset, so `missing`
         // and `empty` cannot be distinguished here. Reporting the one that is

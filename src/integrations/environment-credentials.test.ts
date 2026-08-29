@@ -14,6 +14,7 @@ import {
   MAX_CREDENTIAL_SECRET_BYTES,
 } from "../domain/index.ts";
 import { createEnvironmentCredentialStore } from "./environment-credentials.ts";
+import type { SessionEnvironmentCredentialLookupPort } from "./session-environment-credentials.ts";
 
 function store(values: Readonly<Record<string, string>> = {}) {
   return createEnvironmentCredentialStore({
@@ -91,6 +92,43 @@ describe("the environment credential store", () => {
       PROVIDER_TOKEN: "from-provider",
     }).read(reference(), (secret) => secret);
     expect(resolution.kind === "resolved" && resolution.value).toBe("from-falryn");
+  });
+
+  test("falls back to exact-name session lookup in declared order", async () => {
+    const reads: string[] = [];
+    const session: SessionEnvironmentCredentialLookupPort = {
+      async read(variable) {
+        reads.push(variable);
+        return variable === "PROVIDER_TOKEN"
+          ? { kind: "found", value: "from-session" }
+          : { kind: "missing" };
+      },
+    };
+    const resolution = await createEnvironmentCredentialStore({
+      environment: createStaticEnvironment({}),
+      clock: createManualClock(),
+      aliases: { FALRYN_PROVIDER_TOKEN: ["PROVIDER_TOKEN", "LEGACY_PROVIDER_TOKEN"] },
+      session,
+    }).read(reference(), (secret) => secret);
+    expect(resolution.kind === "resolved" && resolution.value).toBe("from-session");
+    expect(reads).toEqual(["FALRYN_PROVIDER_TOKEN", "PROVIDER_TOKEN"]);
+  });
+
+  test("never consults session state when an inherited value exists", async () => {
+    let used = false;
+    const session: SessionEnvironmentCredentialLookupPort = {
+      async read() {
+        used = true;
+        return { kind: "found", value: "wrong" };
+      },
+    };
+    const resolution = await createEnvironmentCredentialStore({
+      environment: createStaticEnvironment({ FALRYN_PROVIDER_TOKEN: "inherited" }),
+      clock: createManualClock(),
+      session,
+    }).read(reference(), (secret) => secret);
+    expect(resolution.kind === "resolved" && resolution.value).toBe("inherited");
+    expect(used).toBe(false);
   });
 
   test("refuses malformed aliases instead of probing them", async () => {
