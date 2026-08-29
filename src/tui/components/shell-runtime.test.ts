@@ -100,6 +100,7 @@ describe("opening an overlay", () => {
     expect(overlayRegions({ kind: "inspect", key: "process-exit" })[0]?.id).toBe("overlay.inspect");
     expect(overlayRegions({ kind: "confirm", id: "conf-1" })[0]?.id).toBe("overlay.confirm");
     expect(overlayRegions({ kind: "controls", panel: "session" })[0]?.id).toBe("overlay.controls");
+    expect(overlayRegions({ kind: "compression" })[0]?.id).toBe("overlay.compression");
     expect(overlayRegions({ kind: "workspace", panel: "show", draft: "" })[0]?.id).toBe(
       "overlay.workspace",
     );
@@ -133,6 +134,7 @@ describe("opening an overlay", () => {
       { kind: "inspect", key: "process-exit" } as const,
       { kind: "confirm", id: "conf-1" } as const,
       { kind: "controls", panel: "session" } as const,
+      { kind: "compression" } as const,
     ]) {
       for (const region of overlayRegions(route)) {
         expect({ id: region.id, labelled: region.label.length > 0 }).toEqual({

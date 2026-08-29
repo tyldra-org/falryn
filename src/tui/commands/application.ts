@@ -30,6 +30,15 @@ export const APPLICATION_COMMANDS: readonly ShellCommand[] = [
     availability: () => AVAILABLE,
   },
   {
+    id: "compression.show",
+    title: "Compression controls",
+    description: "Inspect and configure Brief, Hush, and Loom in one interactive panel.",
+    context: "global",
+    defaultBinding: null,
+    keywords: ["compression", "brief", "hush", "loom", "raw", "tokens"],
+    availability: () => AVAILABLE,
+  },
+  {
     id: "brief.set",
     title: "Set Brief verbosity",
     description:

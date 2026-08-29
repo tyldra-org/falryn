@@ -67,6 +67,8 @@ export function overlayRegions(route: OverlayRoute): readonly FocusRegion[] {
       return [{ id: "overlay.confirm", label: "confirmation" }];
     case "controls":
       return [{ id: "overlay.controls", label: "controls" }];
+    case "compression":
+      return [{ id: "overlay.compression", label: "compression controls" }];
     case "workspace":
       return [{ id: "overlay.workspace", label: "workspace set" }];
     case "session-nav":

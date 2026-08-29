@@ -386,6 +386,8 @@ function ResolvedShell(
           props.runtime.selectProfile(id);
         }
       }}
+      compression={props.runtime.compression}
+      onCompressionSelect={props.runtime.selectCompression}
       {...(props.artifactViewer === undefined ? {} : { artifactViewer: props.artifactViewer })}
       {...(props.gitDashboard === undefined ? {} : { gitDashboard: props.gitDashboard })}
       onChangesSettled={props.runtime.settleChanges}

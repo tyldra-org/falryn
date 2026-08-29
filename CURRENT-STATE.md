@@ -254,6 +254,14 @@ prompt section, Brief receipt, or Brief-derived output budget. In a TUI session,
 `/brief on` restores the last enabled density mode. The stateless CLI maps
 `--brief on` to `auto`.
 
+The TUI also exposes `/compression`, a single interactive control sheet for
+Brief, Hush, and Loom. It shows the current state of all three engines, selects
+an explicit Brief density, toggles Hush or Loom, and can enable or disable all
+three together. `/brief`, `/hush`, and `/loom` remain compatible direct
+shortcuts rather than becoming a second configuration system. Human-facing
+`off` continues to map to each engine's bounded backend raw mode; it does not
+disable safety, capture, artifacts, recovery, or provider limits.
+
 `bun run benchmark:brief` provides a bounded matched-run scorecard against the
 pinned Caveman research policy. It records complete provider usage, retries,
 latency, guidance cost, required-fact fidelity, losing rows, and invalid rows

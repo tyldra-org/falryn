@@ -30,6 +30,12 @@ import {
 } from "../composer/index.ts";
 import { createMemoryAttachmentPayloads } from "../composer/payload.ts";
 import {
+  applyCompressionControl,
+  type CompressionControlAction,
+  type CompressionControlState,
+  compressionControlState,
+} from "../compression.ts";
+import {
   applySecretEdit,
   type ConfirmationDecision,
   type ConfirmationPrompt,
@@ -95,6 +101,8 @@ export type ShellRuntime = {
   paletteQuery(query: string): void;
   confirm(choice: "accept" | "deny"): boolean;
   editSecret(edit: SecretEdit): void;
+  readonly compression: CompressionControlState;
+  selectCompression(action: CompressionControlAction): void;
   selectControl(field: "session" | "model", id: string): void;
   selectProfile(id: string): void;
   settleChanges(notice: string): void;
@@ -210,6 +218,19 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
   const onConfirmation = options.onConfirmation;
   const onSecretSubmit = options.onSecretSubmit;
   const copyPort = options.copyPort ?? null;
+  const submissionBrief =
+    options.submission !== undefined && options.submission !== null && "brief" in options.submission
+      ? (options.submission as { brief: ProductBriefControls }).brief
+      : null;
+  const briefControls = options.brief ?? submissionBrief;
+  const submissionOutput =
+    options.submission !== undefined &&
+    options.submission !== null &&
+    "output" in options.submission
+      ? (options.submission as { output: ProductOutputControls }).output
+      : null;
+  const outputControls = options.output ?? submissionOutput;
+  const compression = compressionControlState(briefControls, outputControls);
 
   const editSecret = useCallback((edit: SecretEdit): void => {
     secretRef.current = applySecretEdit(secretRef.current, edit);
@@ -471,13 +492,7 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
       }
 
       if (slash.commandId === "brief.set") {
-        const submissionBrief =
-          options.submission !== undefined &&
-          options.submission !== null &&
-          "brief" in options.submission
-            ? (options.submission as { brief: ProductBriefControls }).brief
-            : null;
-        const brief = options.brief ?? submissionBrief;
+        const brief = briefControls;
         if (brief === null) {
           dispatch({
             kind: "notice",
@@ -511,13 +526,7 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
       }
 
       if (slash.commandId === "hush.set" || slash.commandId === "loom.set") {
-        const submissionOutput =
-          options.submission !== undefined &&
-          options.submission !== null &&
-          "output" in options.submission
-            ? (options.submission as { output: ProductOutputControls }).output
-            : null;
-        const output = options.output ?? submissionOutput;
+        const output = outputControls;
         const engine = slash.commandId === "hush.set" ? "Hush" : "Loom";
         if (output === null) {
           dispatch({
@@ -599,6 +608,12 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
         return;
       }
 
+      if (slash.commandId === "compression.show") {
+        dispatch({ kind: "open-overlay", route: { kind: "compression" } });
+        dispatch({ kind: "composer", action: { kind: "draft", text: "" } });
+        return;
+      }
+
       const panel = workspacePanelForSlashCommand(slash.commandId);
       if (panel === null) {
         dispatch({ kind: "notice", message: `No workspace panel for ${slash.commandId}.` });
@@ -636,9 +651,9 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
     })();
   }, [
     fileProbe,
-    options.brief,
+    briefControls,
     options.midTurn,
-    options.output,
+    outputControls,
     options.submission,
     options.workspaceController,
     submitMidTurn,
@@ -885,6 +900,16 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
     dispatch({ kind: "select-control", field, id });
   }, []);
 
+  const selectCompression = useCallback(
+    (action: CompressionControlAction): void => {
+      dispatch({
+        kind: "notice",
+        message: applyCompressionControl(briefControls, outputControls, action),
+      });
+    },
+    [briefControls, outputControls],
+  );
+
   const selectProfile = useCallback(
     (id: string): void => {
       const executionProfile =
@@ -985,6 +1010,8 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
     paletteQuery,
     confirm,
     editSecret,
+    compression,
+    selectCompression,
     selectControl,
     selectProfile,
     settleChanges,
