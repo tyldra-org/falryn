@@ -188,13 +188,13 @@ describe("invalid usage", () => {
 describe("provider connection arguments", () => {
   test("infers official SDK adapters and remote discovery from exact provider identities", async () => {
     const cases = [
-      ["openai", "https://api.openai.com/v1"],
-      ["anthropic", null],
-      ["google", null],
-      ["commandcode", "https://api.commandcode.ai/provider/v1"],
+      ["openai", "https://api.openai.com/v1", "FALRYN_OPENAI_API_KEY"],
+      ["anthropic", null, "FALRYN_ANTHROPIC_API_KEY"],
+      ["google", null, "FALRYN_GOOGLE_API_KEY"],
+      ["commandcode", "https://api.commandcode.ai/provider/v1", "FALRYN_COMMANDCODE_API_KEY"],
     ] as const;
 
-    for (const [provider, endpoint] of cases) {
+    for (const [provider, endpoint, credentialVariable] of cases) {
       const invocation = await parse(
         "provider",
         "add",
@@ -211,6 +211,11 @@ describe("provider connection arguments", () => {
         adapterKind: provider,
         discovery: "remote",
         endpoint,
+        credential: {
+          storeKind: "environment",
+          locator: credentialVariable,
+          consumer: `provider:${provider}-work`,
+        },
       });
     }
   });
@@ -284,6 +289,7 @@ describe("provider connection arguments", () => {
       discovery: "static",
       endpoint: "http://127.0.0.1:11434/v1",
       catalogs: ["local-models"],
+      credential: null,
     });
     expect(invocation.providerArgs.profile.enabledModels.map(String)).toEqual([
       "coder-small",

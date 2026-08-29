@@ -70,6 +70,15 @@ export {
   providerConnectionStateSchema,
 } from "./connection-schema.ts";
 export type {
+  OfficialProviderCredentialId,
+  ProviderCredentialEnvironment,
+} from "./credential-environment.ts";
+export {
+  providerCredentialEnvironment,
+  providerCredentialEnvironmentAliases,
+  providerEnvironmentCredentialReference,
+} from "./credential-environment.ts";
+export type {
   DeterministicAbortableScript,
   DeterministicFailureScript,
   DeterministicProviderOptions,

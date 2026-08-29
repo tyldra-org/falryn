@@ -53,19 +53,24 @@ do not create `~/.falryn` or trigger migration.
 
 Provider profiles are stored in the typed `providers.connections`
 configuration value. A fresh installation includes a selected
-OpenAI profile that references `FALRYN_OPENAI_API_KEY`; configuration
-stores the reference, never the credential bytes. Additional profiles can be
-added, configured, selected, tested, logged out, or removed through
-`falryn provider`.
+OpenAI profile that references `FALRYN_OPENAI_API_KEY`; configuration stores
+the reference, never the credential bytes. The environment store resolves only
+the provider's ordered declaration of Falryn-specific and provider-native
+aliases. It works through the inherited process environment on macOS, Linux,
+and Windows without parsing shell profiles or another application's credential
+files. Additional profiles can be added, configured, selected, tested, logged
+out, or removed through `falryn provider`.
 
 `provider add` and `provider configure` infer the installed official SDK only
 from an exact provider identity: `openai`, `anthropic`, `google`, or
 `commandcode`. Their
-official destinations default to remote model discovery. An unfamiliar
-provider requires an explicit adapter and endpoint, and a compatible custom
-endpoint defaults to static discovery unless the caller opts into remote
-discovery. Enabled models and user catalog identities are repeatable inputs to
-the same typed action used by human, JSON, and JSONL callers.
+official destinations receive their provider's canonical environment reference
+and default to remote model discovery. An unfamiliar provider requires an
+explicit adapter and endpoint, and a compatible custom endpoint receives no
+inferred credential and defaults to static discovery unless the caller opts
+into remote discovery. Enabled models and user catalog identities are
+repeatable inputs to the same typed action used by human, JSON, and JSONL
+callers.
 
 Successful profile creation, configuration, selection, and login automatically
 run the profile's configured discovery path. Static profiles resolve their

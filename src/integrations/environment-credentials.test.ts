@@ -22,6 +22,14 @@ function store(values: Readonly<Record<string, string>> = {}) {
   });
 }
 
+function aliasedStore(values: Readonly<Record<string, string>> = {}) {
+  return createEnvironmentCredentialStore({
+    environment: createStaticEnvironment(values),
+    clock: createManualClock(),
+    aliases: { FALRYN_PROVIDER_TOKEN: ["PROVIDER_TOKEN", "LEGACY_PROVIDER_TOKEN"] },
+  });
+}
+
 function reference(overrides: Partial<CredentialReference> = {}): CredentialReference {
   return {
     storeKind: "environment",
@@ -67,6 +75,35 @@ describe("the environment credential store", () => {
       (secret) => secret,
     );
     expect(resolution.kind === "unresolved" && resolution.failure.status).toBe("missing");
+  });
+
+  test("uses only declared aliases when the canonical variable is absent", async () => {
+    const resolution = await aliasedStore({ PROVIDER_TOKEN: "from-provider" }).read(
+      reference(),
+      (secret) => secret,
+    );
+    expect(resolution.kind === "resolved" && resolution.value).toBe("from-provider");
+  });
+
+  test("gives the canonical Falryn variable precedence over provider aliases", async () => {
+    const resolution = await aliasedStore({
+      FALRYN_PROVIDER_TOKEN: "from-falryn",
+      PROVIDER_TOKEN: "from-provider",
+    }).read(reference(), (secret) => secret);
+    expect(resolution.kind === "resolved" && resolution.value).toBe("from-falryn");
+  });
+
+  test("refuses malformed aliases instead of probing them", async () => {
+    const malformed = createEnvironmentCredentialStore({
+      environment: createStaticEnvironment({}),
+      clock: createManualClock(),
+      aliases: { FALRYN_PROVIDER_TOKEN: ["bad alias"] },
+    });
+    const resolution = await malformed.read(reference(), (secret) => secret);
+    expect(resolution.kind === "unresolved" && resolution.failure).toMatchObject({
+      status: "malformed",
+      code: "illegal-variable-alias",
+    });
   });
 
   test("refuses a locator that is not a legal variable name", async () => {

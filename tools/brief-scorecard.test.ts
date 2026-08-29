@@ -29,6 +29,22 @@ describe("Brief scorecard", () => {
     );
   });
 
+  test("accepts every documented Command Code and Falryn compatibility alias", () => {
+    for (const variable of [
+      "FALRYN_COMMAND_CODE_API_KEY",
+      "FALRYN_CMD_API_KEY",
+      "COMMAND_CODE_API_KEY",
+      "CMD_API_KEY",
+      "COMMANDCODE_API_KEY",
+    ]) {
+      const provider = createBriefScorecardProvider({
+        FALRYN_BRIEF_PROVIDER: "commandcode",
+        [variable]: "test-only-key",
+      });
+      expect(provider.model).toBe("MiniMaxAI/MiniMax-M3");
+    }
+  });
+
   test("rejects an unsupported provider identity", () => {
     expect(() => createBriefScorecardProvider({ FALRYN_BRIEF_PROVIDER: "compatible" })).toThrow(
       "unsupported Brief scorecard provider: compatible",

@@ -57,6 +57,25 @@ describe("composeProductCredentials", () => {
     expect(key).toBeNull();
   });
 
+  test("resolves an official provider-native alias through the canonical reference", async () => {
+    const clock = createManualClock();
+    const bundle = composeProductCredentials({
+      clock,
+      commands: runner(async () => {
+        throw new Error("keychain must not run for environment refs");
+      }),
+      platform: "linux",
+      environment: createStaticEnvironment({ OPENAI_API_KEY: "sk-provider-native" }),
+    });
+    const key = await resolveProviderApiKey(bundle.resolver, {
+      storeKind: "environment",
+      locator: "FALRYN_OPENAI_API_KEY",
+      consumer: "provider:openai",
+      accountLabel: null,
+    });
+    expect(key).toBe("sk-provider-native");
+  });
+
   test("placeApiKey writes through the keychain channel without returning the secret", async () => {
     const clock = createManualClock();
     let wroteSecret: Uint8Array | undefined;

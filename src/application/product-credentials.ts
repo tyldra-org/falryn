@@ -22,16 +22,16 @@ import {
   createKeychainCredentialStore,
   writeKeychainCredential,
 } from "../integrations/index.ts";
+import {
+  providerCredentialEnvironmentAliases,
+  providerEnvironmentCredentialReference,
+} from "../providers/index.ts";
 import { createSecretResolver } from "./credential-resolver.ts";
 import type { DiagnosticsCollector } from "./diagnostics-collector.ts";
 
 /** Default environment credential for OpenAI SDK live runs (#710/#752). */
-export const DEFAULT_OPENAI_CREDENTIAL_REFERENCE: CredentialReference = {
-  storeKind: "environment",
-  locator: "FALRYN_OPENAI_API_KEY",
-  consumer: "provider:openai",
-  accountLabel: null,
-};
+export const DEFAULT_OPENAI_CREDENTIAL_REFERENCE: CredentialReference =
+  providerEnvironmentCredentialReference("openai", "openai");
 
 export type ProductCredentialPorts = {
   readonly clock: ClockPort;
@@ -66,6 +66,7 @@ export function composeProductCredentials(ports: ProductCredentialPorts): Produc
   const environment = createEnvironmentCredentialStore({
     environment: ports.environment,
     clock: ports.clock,
+    aliases: providerCredentialEnvironmentAliases(),
   });
   const stores = [keychain, environment] as const;
   const resolver = createSecretResolver({

@@ -44,6 +44,7 @@ import {
   type ModelRequest,
   type ProviderAdapterKind,
   type ProviderAdapterPort,
+  providerCredentialEnvironment,
 } from "../src/providers/index.ts";
 import {
   BRIEF_RESPONSE_FIXTURES,
@@ -216,8 +217,12 @@ function providerCatalog(
 
 function requiredCredential(
   environment: Readonly<Record<string, string | undefined>>,
-  names: readonly string[],
+  provider: ScorecardProviderId,
 ): string {
+  const names = providerCredentialEnvironment(provider)?.variables;
+  if (names === undefined) {
+    throw new Error(`Brief scorecard has no credential environment declaration for ${provider}`);
+  }
   const value = names.map((name) => environment[name]).find((candidate) => candidate?.trim());
   if (value === undefined) {
     throw new Error(`${names.join(" or ")} is required for matched live runs`);
@@ -235,11 +240,7 @@ export function createBriefScorecardProvider(
   }
   const provider: ScorecardProviderId = configuredProvider;
   if (provider === "commandcode") {
-    const apiKey = requiredCredential(environment, [
-      "FALRYN_COMMANDCODE_API_KEY",
-      "COMMANDCODE_API_KEY",
-      "COMMAND_CODE_API_KEY",
-    ]);
+    const apiKey = requiredCredential(environment, provider);
     const model = environment.FALRYN_BRIEF_MODEL ?? DEFAULT_COMMAND_CODE_MODEL;
     const adapter = createCommandCodeSdkAdapter({
       profileId: "brief-scorecard",
@@ -258,7 +259,7 @@ export function createBriefScorecardProvider(
       model,
     };
   }
-  const apiKey = requiredCredential(environment, ["FALRYN_OPENAI_API_KEY", "OPENAI_API_KEY"]);
+  const apiKey = requiredCredential(environment, provider);
   const model = environment.FALRYN_BRIEF_MODEL ?? DEFAULT_OPENAI_MODEL;
   const baseUrl = (environment.FALRYN_OPENAI_BASE_URL ?? "https://api.openai.com/v1").replace(
     /\/+$/,

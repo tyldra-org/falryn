@@ -9,6 +9,7 @@ import {
   type ProviderAdapterKind,
   type ProviderAuthMethod,
   type ProviderProfile,
+  providerEnvironmentCredentialReference,
 } from "../../providers/index.ts";
 import type { ProviderCommandArguments, RawArguments, RunnableCommand } from "./contracts.ts";
 
@@ -131,13 +132,16 @@ function profileFrom(id: string, parsed: RawArguments): ProviderProfile | string
   if (catalogs.some((catalog) => !isModelCatalogId(catalog))) {
     return "Every --catalog must be a legal catalog identity.";
   }
+  const credential = isOfficialSdkDestination(provider, adapter, endpointResult.value)
+    ? providerEnvironmentCredentialReference(provider, id)
+    : null;
   return {
     profileId: id,
     providerId: providerId.from(provider),
     adapterKind: adapter,
     displayName: parsed.name ?? id,
     endpoint: endpointResult.value,
-    credential: null,
+    credential,
     organization: parsed.organization ?? null,
     project: parsed.project ?? null,
     enabledModels: models.map(modelId.from),

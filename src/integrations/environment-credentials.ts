@@ -1,10 +1,10 @@
 /**
  * The environment-reference credential store.
  *
- * The locator is a variable name and nothing else. This store never scans the
- * environment for names that look like credentials — the same rule the
- * configuration bridge follows — because a variable becoming a credential
- * merely by being spelled a certain way is how an unrelated value ends up in a
+ * The locator is a canonical variable name. A caller may supply explicit
+ * aliases for that locator, but this store never scans the environment for
+ * names that look like credentials. A variable becoming a credential merely
+ * because its name looks plausible is how an unrelated value ends up in a
  * provider request.
  *
  * It works on every platform, so no host is left without a credential path when
@@ -40,8 +40,15 @@ const STORE_KIND = "environment" as const;
 export function createEnvironmentCredentialStore(options: {
   readonly environment: EnvironmentPort;
   readonly clock: ClockPort;
+  /** Explicit fallbacks keyed by the persisted canonical locator. */
+  readonly aliases?: Readonly<Record<string, readonly string[]>>;
 }): CredentialStorePort {
   const { environment, clock } = options;
+
+  const variablesFor = (locator: string): readonly string[] => [
+    locator,
+    ...(options.aliases?.[locator] ?? []),
+  ];
 
   const unresolved = (
     status: CredentialUnresolvedStatus,
@@ -77,8 +84,14 @@ export function createEnvironmentCredentialStore(options: {
         return unresolved("malformed", "illegal-variable-name", false, reference.consumer);
       }
 
-      const value = environment.get(reference.locator);
-      if (value === null) {
+      const variables = variablesFor(reference.locator);
+      if (variables.some((variable) => !LEGAL_VARIABLE_NAME.test(variable))) {
+        return unresolved("malformed", "illegal-variable-alias", false, reference.consumer);
+      }
+      const value = variables
+        .map((variable) => environment.get(variable))
+        .find((candidate): candidate is string => candidate !== null);
+      if (value === undefined) {
         // The port reports an exported-but-empty variable as unset, so `missing`
         // and `empty` cannot be distinguished here. Reporting the one that is
         // certainly true is better than inventing the one that might be.
