@@ -186,6 +186,34 @@ describe("invalid usage", () => {
 });
 
 describe("provider connection arguments", () => {
+  test("infers official SDK adapters and remote discovery from exact provider identities", async () => {
+    const cases = [
+      ["openai", "https://api.openai.com/v1"],
+      ["anthropic", null],
+      ["google", null],
+    ] as const;
+
+    for (const [provider, endpoint] of cases) {
+      const invocation = await parse(
+        "provider",
+        "add",
+        `${provider}-work`,
+        "--provider",
+        provider,
+        "--model",
+        `${provider}-model`,
+      );
+      if (invocation.kind !== "run" || invocation.providerArgs?.action !== "add") {
+        throw new Error(`expected parsed ${provider} provider add`);
+      }
+      expect(invocation.providerArgs.profile).toMatchObject({
+        adapterKind: provider,
+        discovery: "remote",
+        endpoint,
+      });
+    }
+  });
+
   test("normalizes safe profile metadata and keeps credentials out of argv", async () => {
     const invocation = await parse(
       "provider",
@@ -212,7 +240,90 @@ describe("provider connection arguments", () => {
     ]);
     expect(invocation.providerArgs.profile.modelCapabilities).toEqual([]);
     expect(invocation.providerArgs.profile.catalogs).toEqual(["local-models"]);
+    expect(invocation.providerArgs.profile.discovery).toBe("static");
     expect(JSON.stringify(invocation)).not.toMatch(/api.?key|secret/i);
+  });
+
+  test("requires explicit transport facts for custom provider identities", async () => {
+    expect(await invalidMessage("provider", "add", "local", "--model", "coder-small")).toContain(
+      'Provider "local" requires an explicit --adapter.',
+    );
+    expect(
+      await invalidMessage(
+        "provider",
+        "add",
+        "local",
+        "--adapter",
+        "openai",
+        "--model",
+        "coder-small",
+      ),
+    ).toContain('Provider "local" using adapter "openai" requires an explicit --endpoint.');
+
+    const invocation = await parse(
+      "provider",
+      "add",
+      "local",
+      "--adapter",
+      "openai",
+      "--endpoint",
+      "http://127.0.0.1:11434/v1",
+      "--model",
+      "coder-small",
+      "--model",
+      "coder-large",
+      "--catalog",
+      "local-models",
+    );
+    if (invocation.kind !== "run" || invocation.providerArgs?.action !== "add") {
+      throw new Error("expected parsed custom provider add");
+    }
+    expect(invocation.providerArgs.profile).toMatchObject({
+      adapterKind: "openai",
+      discovery: "static",
+      endpoint: "http://127.0.0.1:11434/v1",
+      catalogs: ["local-models"],
+    });
+    expect(invocation.providerArgs.profile.enabledModels.map(String)).toEqual([
+      "coder-small",
+      "coder-large",
+    ]);
+  });
+
+  test("keeps explicit adapter and discovery overrides compatible", async () => {
+    const deterministic = await parse(
+      "provider",
+      "add",
+      "fixture",
+      "--adapter",
+      "deterministic",
+      "--model",
+      "deterministic-echo",
+    );
+    if (deterministic.kind !== "run" || deterministic.providerArgs?.action !== "add") {
+      throw new Error("expected parsed deterministic provider add");
+    }
+    expect(deterministic.providerArgs.profile).toMatchObject({
+      adapterKind: "deterministic",
+      discovery: "static",
+      endpoint: null,
+    });
+
+    const staticOpenAi = await parse(
+      "provider",
+      "add",
+      "offline-openai",
+      "--provider",
+      "openai",
+      "--discovery",
+      "static",
+      "--model",
+      "gpt-5.6-sol",
+    );
+    if (staticOpenAi.kind !== "run" || staticOpenAi.providerArgs?.action !== "add") {
+      throw new Error("expected parsed static OpenAI provider add");
+    }
+    expect(staticOpenAi.providerArgs.profile.discovery).toBe("static");
   });
 
   test("keeps bundled capability facts out of user profiles", async () => {
@@ -246,6 +357,7 @@ describe("provider connection arguments", () => {
       throw new Error("expected parsed custom provider add");
     }
     expect(custom.providerArgs.profile.modelCapabilities).toEqual([]);
+    expect(custom.providerArgs.profile.discovery).toBe("static");
   });
 
   test("requires protected stdin for API keys and validates authorized methods", async () => {

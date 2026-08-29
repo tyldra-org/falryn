@@ -58,6 +58,14 @@ stores the reference, never the credential bytes. Additional profiles can be
 added, configured, selected, tested, logged out, or removed through
 `falryn provider`.
 
+`provider add` and `provider configure` infer the installed official SDK only
+from an exact provider identity: `openai`, `anthropic`, or `google`. Their
+official destinations default to remote model discovery. An unfamiliar
+provider requires an explicit adapter and endpoint, and a compatible custom
+endpoint defaults to static discovery unless the caller opts into remote
+discovery. Enabled models and user catalog identities are repeatable inputs to
+the same typed action used by human, JSON, and JSONL callers.
+
 Interactive API-key login accepts the secret only on standard input and stores
 it in the operating-system keychain on supported platforms. The supervised
 keychain command receives the secret over its standard-input channel rather

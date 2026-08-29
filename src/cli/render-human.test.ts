@@ -1129,6 +1129,28 @@ describe("through dispatch", () => {
     expect(`${out}${err}`).not.toContain("FALRYN_OPENAI_API_KEY");
   });
 
+  test("shows SDK-aware provider setup through the human surface", async () => {
+    const { out, err, code } = await run([
+      "provider",
+      "add",
+      "google-work",
+      "--provider",
+      "google",
+      "--model",
+      "gemini-pro",
+      "--catalog",
+      "team-models",
+    ]);
+
+    expect(code).toBe(0);
+    expect(out).toContain("Provider add");
+    expect(out).toContain("google-work");
+    expect(out).toContain("google  default endpoint");
+    expect(out).toContain("models: gemini-pro");
+    expect(out).toContain("catalogs: team-models");
+    expect(err).toContain("Completed.");
+  });
+
   test("lets no rendered human text reach stdout in a machine format", async () => {
     // #19 owns these arms. Until then they must not leak this renderer's text
     // into a stream a parser is reading.
