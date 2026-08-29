@@ -16,6 +16,7 @@ import {
   composeProductLanguageTools,
   composeProductMemoryTools,
   composeProductMemoryTurn,
+  composeProductOutputControls,
   composeProductProcessTools,
   composeProductScratchTools,
   composeProductWorkspaceTools,
@@ -144,6 +145,7 @@ export async function composeProductShellAttachments(
   const brief = composeProductBriefControls({
     initialVerbosity: executionProfile(selectedExecutionProfile).defaultBriefVerbosity,
   });
+  const output = composeProductOutputControls();
 
   function buildSession() {
     const sessionId = sessionIdCodec.from(`session-shell-${randomUUID()}`);
@@ -161,6 +163,7 @@ export async function composeProductShellAttachments(
             ...(index === undefined ? {} : { index }),
             workspaceId,
             sessionId,
+            userReadOutputMode: output.getLoomMode,
           });
     const processTools =
       workspaceRoot === null
@@ -182,6 +185,7 @@ export async function composeProductShellAttachments(
             workspaceId: String(workspaceId),
             sessionId: String(sessionId),
             ...(ports.scratch === undefined ? {} : { scratch: ports.scratch }),
+            userOutputMode: output.getHushMode,
           });
     const scratchTools =
       ports.scratch === undefined
@@ -336,6 +340,7 @@ export async function composeProductShellAttachments(
         sessionId,
         configurationGeneration: generation,
         brief,
+        output,
         isAccepting: () => ports.signal === undefined || !ports.signal.aborted,
       }),
     };
@@ -360,6 +365,7 @@ export async function composeProductShellAttachments(
   let activeSubmissions = 0;
   const submission = {
     brief,
+    output,
     executionProfile: {
       get: () => selectedExecutionProfile,
       async select(profileId: ExecutionProfileId) {

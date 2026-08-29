@@ -180,6 +180,8 @@ export type ProductReadCoordinatorOptions = {
   readonly sessionId: string | null;
   readonly generation: ConfigurationGeneration;
   readonly index?: WorkspaceIndexPort | null;
+  /** Session/user preference. `raw` is authoritative over a model request for Loom. */
+  readonly userOutputMode?: () => ProductReadOutputMode;
 };
 
 function stableId(prefix: string, values: readonly string[]): string {
@@ -540,6 +542,8 @@ export function createProductReadCoordinator(
       if ("recovery" in parsed.data) {
         return recover(parsed.data, signal);
       }
+      const effectiveOutputMode =
+        options.userOutputMode?.() === "raw" ? "raw" : parsed.data.outputMode;
       if ("targets" in parsed.data) {
         const targets = parsed.data.targets as readonly WorkspaceReadTarget[];
         const result = await options.reader.readMany(
@@ -551,7 +555,7 @@ export function createProductReadCoordinator(
         if (!result.ok) {
           return { ok: false, error: errorCode(result.error) };
         }
-        const items = await projectMany(result.value.items, parsed.data.outputMode, signal);
+        const items = await projectMany(result.value.items, effectiveOutputMode, signal);
         return items.ok
           ? {
               ok: true,
@@ -572,7 +576,7 @@ export function createProductReadCoordinator(
         signal,
       );
       return result.ok
-        ? projectRead(result.value, parsed.data.outputMode, signal)
+        ? projectRead(result.value, effectiveOutputMode, signal)
         : { ok: false, error: errorCode(result.error) };
     },
     candidates() {

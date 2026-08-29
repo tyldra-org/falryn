@@ -87,7 +87,12 @@ describe("parseComposerSlash", () => {
     for (const alias of WORKSPACE_SLASH_ALIASES) {
       expect(["none", "path", "layout-name", "profile"]).toContain(alias.argument);
       expect(commandById(alias.commandId)?.id).toBe(alias.commandId);
-      if (alias.commandId === "brief.set" || alias.commandId === "mode.select") {
+      if (
+        alias.commandId === "brief.set" ||
+        alias.commandId === "hush.set" ||
+        alias.commandId === "loom.set" ||
+        alias.commandId === "mode.select"
+      ) {
         expect(workspacePanelForSlashCommand(alias.commandId)).toBeNull();
         continue;
       }

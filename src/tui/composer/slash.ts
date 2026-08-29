@@ -56,6 +56,16 @@ export const WORKSPACE_SLASH_ALIASES: readonly ComposerSlashAlias[] = [
     argument: "layout-name",
   },
   {
+    forms: ["/hush"],
+    commandId: "hush.set",
+    argument: "layout-name",
+  },
+  {
+    forms: ["/loom"],
+    commandId: "loom.set",
+    argument: "layout-name",
+  },
+  {
     forms: ["/mode"],
     commandId: "mode.select",
     argument: "profile",

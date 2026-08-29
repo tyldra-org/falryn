@@ -191,6 +191,33 @@ describe("composeProductProcessTools", () => {
     ).toBe(false);
   });
 
+  test("makes a user-level Hush off preference authoritative over model input", async () => {
+    const artifacts = memoryArtifacts();
+    const tools = composeProductProcessTools({
+      generation: configurationGeneration.from(0),
+      capture: capturePort(),
+      artifacts,
+      loom: createLoomPort({ artifacts }),
+      workspaceId: "ws-1",
+      sessionId: "session-1",
+      userOutputMode: () => "raw",
+    });
+    const outcome = await tools.runner.execute({
+      invocationId: invocationId.from("inv-user-hush-off"),
+      toolCallId: "call-user-hush-off",
+      toolName: "run_shell",
+      capabilityId: capabilityId.from("builtin:workspace/run_shell@1"),
+      version: 1,
+      effect: "mutation",
+      input: { command: "printf exact", outputMode: "hush" },
+      signal: new AbortController().signal,
+    });
+    expect(outcome).toMatchObject({
+      status: "completed",
+      output: { outputMode: "raw", projection: { kind: "raw", fidelity: "exact" } },
+    });
+  });
+
   test("registers process tools and returns Hush-ready capture facts", async () => {
     const { tools } = processTools();
     expect(tools.owner).toBe("#712");

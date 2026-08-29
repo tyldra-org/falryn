@@ -145,6 +145,47 @@ describe("product submission port", () => {
     }
   });
 
+  test("omits Brief entirely when the user turns it off", async () => {
+    let receivedBrief = true;
+    const port = createProductSubmissionPort({
+      executor: executor(async (input) => {
+        receivedBrief = input.briefRequest !== undefined;
+        return {
+          kind: "completed",
+          code: "completed",
+          message: "turn completed",
+          response: "raw provider response",
+          terminalOutcome: { kind: "completed" },
+          events: [],
+          contextPackItems: 0,
+          modelAttempts: 1,
+          toolResults: 0,
+          disclosedTools: 0,
+          contextStatus: "static",
+          contextGeneration: null,
+          recalledMemories: 0,
+          memoryAdmission: "skipped",
+          executionProfile: "agent",
+          executionProfileVersion: 1,
+          completionCriterion: "implemented-and-verified",
+          effectiveModelRole: "default",
+          effectiveReasoning: "provider-default",
+          policyGeneration: 0,
+          planArtifactId: null,
+          briefReceipt: null,
+          providerUsage: null,
+          providerRequests: 1,
+        };
+      }),
+      sessionId: correlation.sessionId,
+      configurationGeneration: correlation.configurationGeneration,
+    });
+    port.brief.setFrontendMode("off");
+    const outcome = await port.submit(snapshotOf("answer without Brief", 1));
+    expect(outcome.kind).toBe("accepted");
+    expect(receivedBrief).toBe(false);
+  });
+
   test("delegates mode selection to the same live-turn executor", async () => {
     let selected = "agent" as "ask" | "plan" | "debug" | "agent";
     const live: ProductLiveTurnExecutor = {

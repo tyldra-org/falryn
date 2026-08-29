@@ -276,6 +276,8 @@ export type ProductProcessToolPorts = {
   readonly workspaceId?: string;
   readonly sessionId?: string;
   readonly scratch?: ScratchResourcePort;
+  /** Session/user preference. `raw` is authoritative over a model request for Hush. */
+  readonly userOutputMode?: () => ProductProcessOutputMode;
 };
 
 export type ProductProcessTools = {
@@ -416,10 +418,11 @@ export function composeProductProcessTools(ports: ProductProcessToolPorts): Prod
           const timeoutMs =
             typeof request.input.timeoutMs === "number" ? request.input.timeoutMs : 30_000;
           const origin = parseOrigin(request.input.origin);
-          const outputMode = parseOutputMode(request.input.outputMode);
-          if (origin === null || outputMode === null) {
+          const requestedOutputMode = parseOutputMode(request.input.outputMode);
+          if (origin === null || requestedOutputMode === null) {
             return failed("malformed-input");
           }
+          const outputMode = ports.userOutputMode?.() === "raw" ? "raw" : requestedOutputMode;
           const stdin = await scratchStdin(request.input.stdinScratch, request.signal);
           if (!stdin.ok) return failed(stdin.code);
           const observed = await observeCommand(
@@ -479,10 +482,11 @@ export function composeProductProcessTools(ports: ProductProcessToolPorts): Prod
                 : defaultCwd;
           const timeoutMs =
             typeof request.input.timeoutMs === "number" ? request.input.timeoutMs : 30_000;
-          const outputMode = parseOutputMode(request.input.outputMode);
-          if (outputMode === null) {
+          const requestedOutputMode = parseOutputMode(request.input.outputMode);
+          if (requestedOutputMode === null) {
             return failed("malformed-input");
           }
+          const outputMode = ports.userOutputMode?.() === "raw" ? "raw" : requestedOutputMode;
           const observed = await observeCommand(
             "shell",
             {

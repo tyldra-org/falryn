@@ -10,10 +10,10 @@ import {
   type MidTurnInputService,
   type ProductBriefControls,
   type ProductExecutionProfileControls,
+  type ProductOutputControls,
 } from "../../application/index.ts";
 import {
   type AttachmentDescriptor,
-  isBriefVerbosityMode,
   isExecutionProfileId,
   MAX_EVIDENCE_INLINE_BYTES,
   parseMentions,
@@ -129,6 +129,8 @@ export type ShellRuntimeOptions = {
   readonly midTurn?: MidTurnInputService | null;
   /** Product Brief controls for `/brief` (#717). */
   readonly brief?: ProductBriefControls | null;
+  /** Product Hush/Loom controls for `/hush` and `/loom`. */
+  readonly output?: ProductOutputControls | null;
 };
 
 const encoder = new TextEncoder();
@@ -487,27 +489,64 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
         if (mode === "") {
           dispatch({
             kind: "notice",
-            message: `Brief verbosity is ${brief.getVerbosity()} (use /brief compact|balanced|detailed|auto).`,
+            message: `Brief is ${brief.getFrontendMode()} (use /brief compact|balanced|detailed|auto|on|off).`,
           });
           dispatch({ kind: "composer", action: { kind: "draft", text: "" } });
           return;
         }
-        if (!isBriefVerbosityMode(mode)) {
+        const set = brief.setFrontendMode(mode);
+        if (!set.ok) {
           dispatch({
             kind: "notice",
-            message: `Unsupported Brief verbosity “${mode}”. Use compact|balanced|detailed|auto.`,
+            message: `Unsupported Brief mode “${mode}”. Use compact|balanced|detailed|auto|on|off.`,
           });
-          return;
-        }
-        const set = brief.setVerbosity(mode);
-        if (!set.ok) {
-          dispatch({ kind: "notice", message: `Could not set Brief verbosity to ${mode}.` });
           return;
         }
         dispatch({
           kind: "notice",
-          message: `Brief verbosity set to ${set.value}.`,
+          message: `Brief set to ${brief.getFrontendMode()}.`,
         });
+        dispatch({ kind: "composer", action: { kind: "draft", text: "" } });
+        return;
+      }
+
+      if (slash.commandId === "hush.set" || slash.commandId === "loom.set") {
+        const submissionOutput =
+          options.submission !== undefined &&
+          options.submission !== null &&
+          "output" in options.submission
+            ? (options.submission as { output: ProductOutputControls }).output
+            : null;
+        const output = options.output ?? submissionOutput;
+        const engine = slash.commandId === "hush.set" ? "Hush" : "Loom";
+        if (output === null) {
+          dispatch({
+            kind: "notice",
+            message: `${engine} controls are not attached to this shell.`,
+          });
+          return;
+        }
+        const state = slash.argument?.trim().toLowerCase() ?? "";
+        const current =
+          slash.commandId === "hush.set" ? output.getHushState() : output.getLoomState();
+        if (state === "") {
+          dispatch({
+            kind: "notice",
+            message: `${engine} is ${current} (use /${engine.toLowerCase()} on|off).`,
+          });
+          dispatch({ kind: "composer", action: { kind: "draft", text: "" } });
+          return;
+        }
+        const set =
+          slash.commandId === "hush.set" ? output.setHushState(state) : output.setLoomState(state);
+        if (!set.ok) {
+          dispatch({
+            kind: "notice",
+            message: `Unsupported ${engine} state “${state}”. Use on|off.`,
+          });
+          return;
+        }
+        dispatch({ kind: "notice", message: `${engine} set to ${set.value}.` });
         dispatch({ kind: "composer", action: { kind: "draft", text: "" } });
         return;
       }
@@ -599,6 +638,7 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
     fileProbe,
     options.brief,
     options.midTurn,
+    options.output,
     options.submission,
     options.workspaceController,
     submitMidTurn,

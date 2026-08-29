@@ -194,7 +194,7 @@ fallback exhaustion, and uncertain effects remain typed outcomes. Completed or
 uncertain consequential tool effects are not retried as fresh work.
 
 The interactive composer and `falryn run` use the same application-owned
-live-turn executor. Both paths compose Context and Brief, run the selected
+live-turn executor. Both paths compose Context and, unless disabled, Brief; run the selected
 provider and bounded tool continuation loop, and persist the same closed
 session, turn, model-attempt, and capability-invocation events to SQLite before
 projecting them. OpenTUI folds those committed events into its transcript;
@@ -211,6 +211,13 @@ actions, and recovery guidance, and reprojects those obligations before each
 provider continuation after tool results. Brief also supplies a mode-specific
 provider output ceiling. Projection failure is a typed turn failure rather than
 silent omission.
+
+Human controls expose `compact`, `balanced`, `detailed`, `auto`, `on`, and
+`off`; they do not expose the backend name `raw`. `/brief off` and
+`falryn run --brief off` select that internal bypass, so the turn has no Brief
+prompt section, Brief receipt, or Brief-derived output budget. In a TUI session,
+`/brief on` restores the last enabled density mode. The stateless CLI maps
+`--brief on` to `auto`.
 
 `bun run benchmark:brief` provides a bounded matched-run scorecard against the
 pinned Caveman research policy. It records complete provider usage, retries,
@@ -354,6 +361,12 @@ return the exact prefix, continuation, and artifact expansion instead of
 placing unlimited bytes in model context. Recovery requests keep their
 existing range, head/tail, search-hit, and exact projection contract.
 
+The TUI exposes `/loom on|off`, and headless runs expose
+`--loom on|off`. `off` maps to the existing backend `raw` mode and overrides a
+model request for Loom projection. The model-facing Read schema keeps
+`loom|raw` because those values describe execution semantics; the human-facing
+control never asks users to select `raw` directly.
+
 ## Process output, Hush, and recovery
 
 The built-in `run_process` and `run_shell` capabilities accept
@@ -385,6 +398,12 @@ search-hit, or exact recovery. The returned result preserves the original
 process invocation and capture lineage and continues through the same provider
 tool loop. A process result contains only the selected Hush or raw projection;
 the internal capture is not serialized a second time.
+
+The TUI exposes `/hush on|off`, and headless runs expose
+`--hush on|off`. `off` maps to the existing backend `raw` mode and overrides a
+model request for Hush reduction. The model-facing process schemas keep
+`hush|raw`; capture, redaction, hard bounds, artifacts, and targeted recovery
+remain active when the human-facing control is off.
 
 ## Language and debugger tools
 

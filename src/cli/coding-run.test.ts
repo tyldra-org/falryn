@@ -1224,6 +1224,29 @@ describe("falryn run through dispatch", () => {
     }
   });
 
+  test("keeps raw backend names behind human on and off controls", async () => {
+    const invocation = await parseInvocation([
+      "run",
+      "--brief",
+      "off",
+      "--hush",
+      "off",
+      "--loom",
+      "on",
+      "inspect",
+      "it",
+    ]);
+    expect(invocation.kind).toBe("run");
+    if (invocation.kind === "run") {
+      expect(invocation.runArgs).toEqual({
+        promptParts: ["inspect", "it"],
+        brief: "raw",
+        hush: "raw",
+        loom: "loom",
+      });
+    }
+  });
+
   test("projects provider-required through json", async () => {
     const seeded = await seededHome();
     const streams = createRecordingCliStreams({ stdin: null });

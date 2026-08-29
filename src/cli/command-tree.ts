@@ -183,8 +183,18 @@ function build(argv: readonly string[], lenientPositionals = false): ReturnType<
             })
             .option("brief", {
               type: "string",
-              choices: ["compact", "balanced", "detailed", "auto"] as const,
-              describe: "Brief response-style verbosity for the live turn (#717)",
+              choices: ["compact", "balanced", "detailed", "auto", "on", "off"] as const,
+              describe: "Brief response density; off uses the backend raw mode (#827)",
+            })
+            .option("hush", {
+              type: "string",
+              choices: ["on", "off"] as const,
+              describe: "Hush command-output reduction; off uses backend raw mode",
+            })
+            .option("loom", {
+              type: "string",
+              choices: ["on", "off"] as const,
+              describe: "Loom large-read projection; off uses backend raw mode",
             })
             .option("mode", {
               type: "string",

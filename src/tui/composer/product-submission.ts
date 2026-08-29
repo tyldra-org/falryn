@@ -8,9 +8,11 @@
 
 import {
   composeProductBriefControls,
+  composeProductOutputControls,
   type ProductBriefControls,
   type ProductExecutionProfileControls,
   type ProductLiveTurnExecutor,
+  type ProductOutputControls,
 } from "../../application/index.ts";
 import {
   type ConfigurationGeneration,
@@ -35,10 +37,13 @@ export type ProductSubmissionPortOptions = {
   readonly isAccepting?: () => boolean;
   /** Shared Brief controls for TUI/session (#717). */
   readonly brief?: ProductBriefControls;
+  /** Shared Hush/Loom controls for this TUI session. */
+  readonly output?: ProductOutputControls;
 };
 
 export type ProductSubmissionPort = SubmissionPort & {
   readonly brief: ProductBriefControls;
+  readonly output: ProductOutputControls;
   readonly executionProfile: ProductExecutionProfileControls;
 };
 
@@ -56,6 +61,7 @@ export function createProductSubmissionPort(
       return turnId.from(`turn-submit:${String(options.sessionId)}:${sequence}`);
     });
   const brief = options.brief ?? composeProductBriefControls();
+  const output = options.output ?? composeProductOutputControls();
   const executionProfile = options.executor.executionProfile ?? {
     get: () => "agent" as const,
     async select() {
@@ -69,6 +75,7 @@ export function createProductSubmissionPort(
 
   return {
     brief,
+    output,
     executionProfile,
     async submit(snapshot: ComposerSnapshot): Promise<SubmissionOutcome> {
       if (snapshot.text.trim() === "") {
@@ -89,7 +96,7 @@ export function createProductSubmissionPort(
       const started = await options.executor.run({
         prompt: snapshot.text,
         turnId: id,
-        briefRequest,
+        ...(briefRequest === null ? {} : { briefRequest }),
       });
       if (started.kind !== "completed") {
         return unavailable(snapshot, `${started.message} (${started.code})`);

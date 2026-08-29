@@ -29,8 +29,8 @@ describe("composeProductBriefControls", () => {
       sessionId: sessionId.from("session-1"),
       configurationGeneration: configurationGeneration.from(0),
     });
-    expect(projected.ok).toBe(true);
-    if (!projected.ok) {
+    expect(projected?.ok).toBe(true);
+    if (projected === null || !projected.ok) {
       return;
     }
     expect(projected.value.section.role).toBe("brief");
@@ -42,6 +42,23 @@ describe("composeProductBriefControls", () => {
     const set = brief.setVerbosity("loud");
     expect(set.ok).toBe(false);
     expect(brief.getVerbosity()).toBe("balanced");
+  });
+
+  test("exposes off while retaining raw only as the backend bypass", () => {
+    const brief = composeProductBriefControls({ initialVerbosity: "detailed" });
+    expect(brief.setFrontendMode("off")).toEqual({ ok: true, value: "off" });
+    expect(brief.getFrontendMode()).toBe("off");
+    expect(brief.getVerbosity()).toBe("raw");
+    expect(
+      brief.requestForTurn({
+        turnId: turnId.from("turn-brief-off"),
+        sessionId: sessionId.from("session-brief-off"),
+        configurationGeneration: configurationGeneration.from(0),
+      }),
+    ).toBeNull();
+    expect(brief.setFrontendMode("on")).toEqual({ ok: true, value: "on" });
+    expect(brief.getFrontendMode()).toBe("detailed");
+    expect(brief.getVerbosity()).toBe("detailed");
   });
 
   test("derives response obligations from the task and degraded context", () => {

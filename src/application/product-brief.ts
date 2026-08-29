@@ -25,14 +25,29 @@ import { type BriefComposer, type BriefComposerResult, createBriefComposer } fro
 
 export const PRODUCT_BRIEF_OWNER = "#717";
 
+export const PRODUCT_BRIEF_MODES = [...BRIEF_VERBOSITY_MODES, "raw"] as const;
+export type ProductBriefMode = (typeof PRODUCT_BRIEF_MODES)[number];
+
+export const PRODUCT_BRIEF_FRONTEND_MODES = [...BRIEF_VERBOSITY_MODES, "on", "off"] as const;
+export type ProductBriefFrontendMode = (typeof PRODUCT_BRIEF_FRONTEND_MODES)[number];
+
+export type ProductBriefModeError = {
+  readonly code: "unsupported-verbosity";
+  readonly value: string;
+};
+
 export type ProductBriefControls = {
   readonly owner: typeof PRODUCT_BRIEF_OWNER;
-  getVerbosity(): BriefVerbosityMode;
-  setVerbosity(
-    mode: BriefVerbosityMode | string,
-  ): Result<BriefVerbosityMode, { readonly code: "unsupported-verbosity"; readonly value: string }>;
-  requestForTurn(input: ProductBriefTurnInput): BriefRequest;
-  projectForTurn(input: ProductBriefTurnInput): BriefComposerResult;
+  /** Backend mode. `raw` means Brief contributes no prompt or budget policy. */
+  getVerbosity(): ProductBriefMode;
+  /** Human-facing state. The backend-only `raw` mode is reported as `off`. */
+  getFrontendMode(): ProductBriefFrontendMode;
+  setVerbosity(mode: ProductBriefMode | string): Result<ProductBriefMode, ProductBriefModeError>;
+  setFrontendMode(
+    mode: ProductBriefFrontendMode | string,
+  ): Result<ProductBriefFrontendMode, ProductBriefModeError>;
+  requestForTurn(input: ProductBriefTurnInput): BriefRequest | null;
+  projectForTurn(input: ProductBriefTurnInput): BriefComposerResult | null;
 };
 
 export type ProductBriefTurnInput = {
@@ -148,9 +163,24 @@ export function briefNeedAfterContext(
 }
 
 export type ProductBriefControlsOptions = {
-  readonly initialVerbosity?: BriefVerbosityMode;
+  readonly initialVerbosity?: ProductBriefMode;
   readonly composer?: BriefComposer;
 };
+
+export function isProductBriefMode(value: string): value is ProductBriefMode {
+  return value === "raw" || isBriefVerbosityMode(value);
+}
+
+export function isProductBriefFrontendMode(value: string): value is ProductBriefFrontendMode {
+  return value === "on" || value === "off" || isBriefVerbosityMode(value);
+}
+
+/** Convert a human control into the backend mode used for a stateless turn. */
+export function productBriefModeFromFrontend(mode: ProductBriefFrontendMode): ProductBriefMode {
+  if (mode === "off") return "raw";
+  if (mode === "on") return "auto";
+  return mode;
+}
 
 /**
  * Compose product Brief controls for CLI/TUI/live prompt composition.
@@ -159,8 +189,10 @@ export function composeProductBriefControls(
   options: ProductBriefControlsOptions = {},
 ): ProductBriefControls {
   const composer = options.composer ?? createBriefComposer();
-  let verbosity: BriefVerbosityMode = options.initialVerbosity ?? "balanced";
-  const requestForTurn = (input: ProductBriefTurnInput): BriefRequest => {
+  let verbosity: ProductBriefMode = options.initialVerbosity ?? "balanced";
+  let lastEnabledVerbosity: BriefVerbosityMode = verbosity === "raw" ? "balanced" : verbosity;
+  const requestForTurn = (input: ProductBriefTurnInput): BriefRequest | null => {
+    if (verbosity === "raw") return null;
     const policy: BriefPolicy = {
       verbosity,
       source: "user",
@@ -184,20 +216,41 @@ export function composeProductBriefControls(
     getVerbosity() {
       return verbosity;
     },
+    getFrontendMode() {
+      return verbosity === "raw" ? "off" : verbosity;
+    },
     setVerbosity(mode) {
-      if (!isBriefVerbosityMode(mode)) {
+      if (!isProductBriefMode(mode)) {
         return err({ code: "unsupported-verbosity", value: String(mode) });
       }
       verbosity = mode;
+      if (mode !== "raw") lastEnabledVerbosity = mode;
+      return ok(mode);
+    },
+    setFrontendMode(mode) {
+      if (!isProductBriefFrontendMode(mode)) {
+        return err({ code: "unsupported-verbosity", value: String(mode) });
+      }
+      if (mode === "off") {
+        verbosity = "raw";
+        return ok("off");
+      }
+      if (mode === "on") {
+        verbosity = lastEnabledVerbosity;
+        return ok("on");
+      }
+      verbosity = mode;
+      lastEnabledVerbosity = mode;
       return ok(mode);
     },
     requestForTurn,
     projectForTurn(input) {
-      return composer.projectForTurn(input.turnId, requestForTurn(input));
+      const request = requestForTurn(input);
+      return request === null ? null : composer.projectForTurn(input.turnId, request);
     },
   };
 }
 
 export function describeBriefVerbosityModes(): string {
-  return BRIEF_VERBOSITY_MODES.join("|");
+  return PRODUCT_BRIEF_FRONTEND_MODES.join("|");
 }

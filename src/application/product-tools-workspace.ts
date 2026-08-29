@@ -34,6 +34,7 @@ import {
 } from "../domain/index.ts";
 import { createCompactDocumentReader } from "./compact-document-read.ts";
 import { createLoomPort, type LoomPort } from "./loom.ts";
+import type { ProductReadOutputMode } from "./product-read.ts";
 import { createProductReadCoordinator, productReadInputSchema } from "./product-read.ts";
 import type { ToolRunnerPort, ToolRunnerRequest } from "./tool-call-loop.ts";
 import { createWorkspaceDiscovery } from "./workspace-discovery.ts";
@@ -131,6 +132,8 @@ export type ProductWorkspaceToolPorts = {
   readonly workspaceId?: WorkspaceId;
   readonly sessionId?: SessionId;
   readonly index?: WorkspaceIndexPort;
+  /** Session/user preference. `raw` is authoritative over a model request for Loom. */
+  readonly userReadOutputMode?: () => ProductReadOutputMode;
 };
 
 export type ProductWorkspaceTools = {
@@ -165,6 +168,7 @@ export function composeProductWorkspaceTools(
     sessionId: ports.sessionId ?? null,
     generation: ports.generation,
     index: ports.index ?? null,
+    ...(ports.userReadOutputMode === undefined ? {} : { userOutputMode: ports.userReadOutputMode }),
   });
   const compact = createCompactDocumentReader(reader);
   const writer = createWorkspaceWriter({ fileSystem: ports.fileSystem });

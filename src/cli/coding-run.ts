@@ -22,6 +22,7 @@ import {
   composeProductLanguageTools,
   composeProductMemoryTools,
   composeProductMemoryTurn,
+  composeProductOutputControls,
   composeProductProcessTools,
   composeProductScratchTools,
   composeProductWorkspaceTools,
@@ -35,13 +36,15 @@ import {
   mergeProductToolBundles,
   PRODUCT_BRIEF_OWNER,
   PRODUCT_INDEX_LIFECYCLE_OWNER,
+  type ProductBriefMode,
+  type ProductProcessOutputMode,
+  type ProductReadOutputMode,
   type ProductToolConfirmationPort,
   resolveProviderApiKey,
 } from "../application/index.ts";
 import {
   type ArtifactStorePort,
   type BriefReceipt,
-  type BriefVerbosityMode,
   type CredentialReference,
   type ExecutionProfileId,
   executionProfile,
@@ -106,7 +109,11 @@ export { DEFAULT_OPENAI_CREDENTIAL_REFERENCE };
 export type CodingRunArguments = {
   readonly promptParts: readonly string[];
   /** Brief verbosity for live prompt composition (#717). */
-  readonly brief?: BriefVerbosityMode;
+  readonly brief?: ProductBriefMode;
+  /** Human `--hush off` is normalized to the backend `raw` mode. */
+  readonly hush?: ProductProcessOutputMode;
+  /** Human `--loom off` is normalized to the backend `raw` mode. */
+  readonly loom?: ProductReadOutputMode;
   /** Explicit execution authority for this invocation (#789). */
   readonly mode?: ExecutionProfileId;
 };
@@ -135,6 +142,8 @@ export type CodingRunPayload = {
   /** Selected Brief verbosity on the live turn (#717). */
   readonly briefVerbosity?: string;
   readonly briefOwner?: string;
+  readonly hushOutputMode?: ProductProcessOutputMode;
+  readonly loomOutputMode?: ProductReadOutputMode;
   readonly contextStatus?: string;
   readonly contextGeneration?: string | null;
   readonly recalledMemories?: number;
@@ -463,6 +472,10 @@ export async function runCoding(
 
     const productArtifacts = options.artifacts ?? productArtifactSession?.artifacts;
     const productLoom = options.loom ?? productArtifactSession?.loom;
+    const outputControls = composeProductOutputControls({
+      hush: arguments_.hush ?? "hush",
+      loom: arguments_.loom ?? "loom",
+    });
     const captureOptions = {
       clock: graph.clock,
       ...ownedProcessOptions,
@@ -478,6 +491,7 @@ export async function runCoding(
       ...(indexStore === null ? {} : { index: indexStore }),
       workspaceId,
       sessionId,
+      userReadOutputMode: outputControls.getLoomMode,
     });
     const processTools = composeProductProcessTools({
       generation,
@@ -488,6 +502,7 @@ export async function runCoding(
       workspaceId: String(workspaceId),
       sessionId: String(sessionId),
       scratch: productArtifactSession.scratch,
+      userOutputMode: outputControls.getHushMode,
     });
     const scratchTools = composeProductScratchTools({
       generation,
@@ -633,7 +648,9 @@ export async function runCoding(
       prompt: resolved.prompt,
       turnId,
       ...(options.signal === undefined ? {} : { signal: options.signal }),
-      ...(options.responsePolicyOverride === undefined ? { briefRequest } : {}),
+      ...(options.responsePolicyOverride === undefined && briefRequest !== null
+        ? { briefRequest }
+        : {}),
       ...(options.responsePolicyOverride === undefined
         ? options.maxOutputTokensOverride === undefined
           ? {}
@@ -679,6 +696,8 @@ export async function runCoding(
         indexOwner,
         briefVerbosity,
         briefOwner,
+        hushOutputMode: outputControls.getHushMode(),
+        loomOutputMode: outputControls.getLoomMode(),
         contextStatus: attempted.contextStatus,
         contextGeneration: attempted.contextGeneration,
         recalledMemories: attempted.recalledMemories,
