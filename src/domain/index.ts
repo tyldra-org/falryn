@@ -292,6 +292,38 @@ export {
   validateAmounts,
 } from "./budget.ts";
 export type {
+  CapabilityConsumer,
+  CapabilityCredentialState,
+  CapabilityDependencyState,
+  CapabilityEffectiveHealthState,
+  CapabilityExternalHostReadiness,
+  CapabilityHealthCode,
+  CapabilityHealthDiagnostic,
+  CapabilityHealthEntry,
+  CapabilityHealthError,
+  CapabilityHealthEvidence,
+  CapabilityHealthQuery,
+  CapabilityHealthQueryResult,
+  CapabilityHealthSnapshot,
+  CapabilityHealthSummary,
+  CapabilityProbeObservation,
+  CapabilityRecovery,
+  CapabilityResourceState,
+  CapabilityRuntimeReadiness,
+} from "./capability-health.ts";
+export {
+  CAPABILITY_CONSUMERS,
+  CAPABILITY_EFFECTIVE_HEALTH_STATES,
+  CAPABILITY_HEALTH_CODES,
+  CAPABILITY_HEALTH_SCHEMA_VERSION,
+  DEFAULT_CAPABILITY_HEALTH_QUERY_LIMIT,
+  inspectCapabilityHealth,
+  MAX_CAPABILITY_HEALTH_QUERY_LIMIT,
+  MAX_CAPABILITY_HEALTH_QUERY_TEXT_LENGTH,
+  MAX_CAPABILITY_HEALTH_REASON_LENGTH,
+  queryCapabilityHealth,
+} from "./capability-health.ts";
+export type {
   CapabilityAvailability,
   CapabilityCard,
   CapabilityCompatibility,

@@ -118,6 +118,10 @@ const modelAttemptBindingSchema: z.ZodType<ModelAttemptBinding> = z.object({
             available: z.boolean(),
             executable: z.boolean(),
             disclosed: z.boolean(),
+            health: z.string().min(1).optional(),
+            selected: z.boolean().optional(),
+            projected: z.boolean().optional(),
+            diagnosticCodes: z.array(z.string().min(1)).max(16).optional(),
           }),
         )
         .max(256),

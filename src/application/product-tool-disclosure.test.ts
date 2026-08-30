@@ -48,6 +48,13 @@ describe("discloseProductTools", () => {
     ]);
     expect(disclosure.receipt.discoveryHandle).toBe("capability-catalog:7");
     expect(disclosure.receipt.registryTotal).toBe(tools.registry.entries.length);
+    expect(disclosure.receipt.health).toMatchObject({
+      consumer: "native-model",
+      summary: {
+        registered: tools.registry.entries.length,
+        disclosed: disclosure.receipt.disclosed.length,
+      },
+    });
     expect(disclosure.receipt.schemaBytes).toBeGreaterThan(0);
     expect(disclosure.receipt.schemaTokensEstimated).toBeGreaterThan(0);
     expect(
@@ -95,5 +102,34 @@ describe("discloseProductTools", () => {
     expect(ask.receipt.schemaTokensEstimated).toBeLessThanOrEqual(
       agent.receipt.schemaTokensEstimated,
     );
+  });
+
+  test("does not disclose registered tools when the named consumer runtime is unavailable", () => {
+    const tools = workspaceTools();
+    const disclosure = discloseProductTools(
+      createProductCapabilityRegistry(tools.registry.generation, tools.registry),
+      tools.registry,
+      {
+        consumer: "native-model",
+        healthEvidence: {
+          runtime: {
+            attemptRunner: "missing",
+            provider: "missing",
+            workspace: "available",
+          },
+        },
+      },
+    );
+
+    expect(disclosure.modelTools).toEqual([]);
+    expect(disclosure.receipt.omitted).toContainEqual({
+      name: "read_file",
+      reason: "missing-attempt-runner: model attempt runner is unavailable",
+    });
+    expect(disclosure.receipt.health.summary).toMatchObject({
+      registered: tools.registry.entries.length,
+      disclosed: 0,
+      selectable: 0,
+    });
   });
 });

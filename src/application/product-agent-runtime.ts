@@ -10,12 +10,16 @@
  */
 
 import {
+  type CapabilityConsumer,
+  type CapabilityHealthEvidence,
+  type CapabilityHealthSnapshot,
   type CapabilityRegistry,
   type ClockPort,
   type ConfigurationGeneration,
   createToolCatalog,
   createToolHookRegistry,
   type EventStorePort,
+  inspectCapabilityHealth,
   type SessionCorrelation,
   type SessionId,
   type StreamId,
@@ -29,6 +33,7 @@ import {
   type WorkspaceId,
 } from "../domain/index.ts";
 import type { ProviderAdapterPort } from "../providers/port.ts";
+import { type CapabilityInspector, createCapabilityInspector } from "./capability-inspector.ts";
 import { createProductAttemptRunner } from "./product-attempt-runner.ts";
 import { createProductCapabilityRegistry } from "./product-capability-registry.ts";
 import type { ProductToolConfirmationPort } from "./product-tool-gateway.ts";
@@ -77,7 +82,8 @@ export type ProductAgentRuntimeError =
   | { readonly code: "missing-correlation-field"; readonly field: string }
   | { readonly code: "provider-adapter-required" }
   | { readonly code: "attempt-runner-required" }
-  | { readonly code: "tool-runner-required" };
+  | { readonly code: "tool-runner-required" }
+  | { readonly code: "capability-registry-required" };
 
 export type ProductAgentRuntimeComposeResult =
   | { readonly ok: true; readonly value: ProductAgentRuntime }
@@ -117,6 +123,15 @@ export type ProductAgentRuntime = {
   requireToolRunner(): ProductAgentPortResult<ToolRunnerPort>;
   requireProviderAdapter(): ProductAgentPortResult<ProviderAdapterPort>;
   requireAttemptRunner(): ProductAgentPortResult<AttemptRunnerPort>;
+  /** Read-only health snapshot shared by model, CLI, OpenTUI, and external-host projections. */
+  inspectCapabilities(
+    consumer: CapabilityConsumer,
+    evidence?: CapabilityHealthEvidence,
+  ): ProductAgentPortResult<CapabilityHealthSnapshot>;
+  capabilityInspector(
+    consumer: CapabilityConsumer,
+    evidence?: CapabilityHealthEvidence,
+  ): ProductAgentPortResult<CapabilityInspector>;
   /**
    * Start a turn on the coordinator and persist `turn.started`. Proves the
    * product graph can host a turn without depending on builtin tools or live
@@ -262,6 +277,38 @@ export function composeProductAgentRuntime(
         return { ok: false, error: { code: "provider-adapter-required" } };
       }
       return { ok: true, value: providerAdapter };
+    },
+    inspectCapabilities(consumer, evidence = {}) {
+      if (capabilityRegistry === null) {
+        return { ok: false, error: { code: "capability-registry-required" } };
+      }
+      return {
+        ok: true,
+        value: inspectCapabilityHealth(capabilityRegistry, consumer, {
+          ...evidence,
+          now: evidence.now ?? ports.clock.now(),
+          runtime: {
+            attemptRunner: attemptRunner === null ? "missing" : "available",
+            provider: providerAdapter === null ? "missing" : "available",
+            workspace: "available",
+          },
+        }),
+      };
+    },
+    capabilityInspector(consumer, evidence = {}) {
+      if (capabilityRegistry === null) {
+        return { ok: false, error: { code: "capability-registry-required" } };
+      }
+      const health = inspectCapabilityHealth(capabilityRegistry, consumer, {
+        ...evidence,
+        now: evidence.now ?? ports.clock.now(),
+        runtime: {
+          attemptRunner: attemptRunner === null ? "missing" : "available",
+          provider: providerAdapter === null ? "missing" : "available",
+          workspace: "available",
+        },
+      });
+      return { ok: true, value: createCapabilityInspector(health) };
     },
     requireAttemptRunner() {
       if (attemptRunner === null) {

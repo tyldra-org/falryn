@@ -138,6 +138,10 @@ export type ModelAttemptBinding = {
           readonly available: boolean;
           readonly executable: boolean;
           readonly disclosed: boolean;
+          readonly health?: string | undefined;
+          readonly selected?: boolean | undefined;
+          readonly projected?: boolean | undefined;
+          readonly diagnosticCodes?: readonly string[] | undefined;
         }[];
       }
     | undefined;

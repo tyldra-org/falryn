@@ -12,6 +12,10 @@ import { z } from "zod";
 
 import type {
   CapabilityCard,
+  CapabilityConsumer,
+  CapabilityHealthEntry,
+  CapabilityHealthEvidence,
+  CapabilityHealthSummary,
   CapabilityId,
   CapabilityLifecycle,
   CapabilityRegistry,
@@ -27,6 +31,7 @@ import {
   CAPABILITY_FAMILIES,
   capabilityCard,
   capabilityLifecycle,
+  inspectCapabilityHealth,
 } from "../domain/index.ts";
 import type { ModelToolDefinition } from "../providers/index.ts";
 
@@ -61,6 +66,12 @@ export type CapabilityDisclosureReceipt = {
   readonly catalogGeneration: ConfigurationGeneration;
   readonly families: readonly CapabilityFamilyAvailability[];
   readonly capabilityCards: readonly CapabilityCard[];
+  readonly health: {
+    readonly consumer: CapabilityConsumer;
+    readonly observedAt: CapabilityHealthEntry["diagnostics"][number]["observedAt"];
+    readonly summary: CapabilityHealthSummary;
+    readonly entries: readonly CapabilityHealthEntry[];
+  };
   readonly registryTotal: number;
   readonly registryCounts: Readonly<Record<string, number>>;
   readonly disclosed: readonly DisclosedProductTool[];
@@ -79,6 +90,8 @@ export type ProductToolDisclosure = {
 export type ProductToolDisclosureOptions = {
   readonly maximum?: number;
   readonly executionPolicy?: EffectiveExecutionPolicy;
+  readonly consumer?: CapabilityConsumer;
+  readonly healthEvidence?: CapabilityHealthEvidence;
 };
 
 const PREFERRED_TOOL_ORDER = [
@@ -188,37 +201,12 @@ function isClosedSchema(value: unknown): boolean {
 }
 
 function familyAvailability(
-  registry: CapabilityRegistry,
+  health: readonly CapabilityHealthEntry[],
   policy: EffectiveExecutionPolicy | undefined,
 ): readonly CapabilityFamilyAvailability[] {
-  const eligible = (entry: CapabilityRegistry["entries"][number]): boolean => {
-    const operational = entry.state.operational;
-    if (
-      !operational.installed ||
-      !operational.configured ||
-      !operational.allowed ||
-      operational.denied ||
-      operational.incompatible ||
-      operational.quarantined
-    ) {
-      return false;
-    }
-    if (entry.state.availability !== "available" && entry.state.availability !== "degraded") {
-      return false;
-    }
-    if (policy === undefined) return true;
-    if (policy.deniedEffects.includes(entry.effect)) return false;
-    if (
-      (entry.kind === "tool" || entry.kind === "mcp-tool") &&
-      policy.deniedToolNames.includes(entry.name)
-    ) {
-      return false;
-    }
-    return true;
-  };
   const available = (family: ModelCapabilityFamily): boolean => {
     if (family === "capability") return true;
-    return registry.entries.some((entry) => entry.family === family && eligible(entry));
+    return health.some((entry) => entry.family === family && entry.selectable);
   };
   return MODEL_CAPABILITY_FAMILIES.map((family) => ({
     family,
@@ -261,6 +249,18 @@ export function discloseProductTools(
   }
   const maximum = options.maximum ?? MAX_DISCLOSED_PRODUCT_TOOLS;
   const executionPolicy = options.executionPolicy;
+  const consumer = options.consumer ?? "native-model";
+  const healthEvidence: CapabilityHealthEvidence = {
+    ...(options.healthEvidence ?? {}),
+    ...(executionPolicy === undefined
+      ? {}
+      : {
+          deniedEffects: executionPolicy.deniedEffects,
+          deniedNames: executionPolicy.deniedToolNames,
+        }),
+  };
+  const initialHealth = inspectCapabilityHealth(capabilityRegistry, consumer, healthEvidence);
+  const healthById = new Map(initialHealth.entries.map((entry) => [entry.capabilityId, entry]));
   const selected = [];
   const omitted: { name: string; reason: string }[] = [];
   const omittedNames = new Set<string>();
@@ -278,6 +278,18 @@ export function discloseProductTools(
     const policyReason = policyOmissionReason(entry, executionPolicy);
     if (policyReason !== null) {
       omitted.push({ name, reason: policyReason });
+      omittedNames.add(name);
+      continue;
+    }
+    const capabilityHealth = healthById.get(entry.manifest.capabilityId);
+    if (capabilityHealth === undefined || !capabilityHealth.selectable) {
+      omitted.push({
+        name,
+        reason:
+          capabilityHealth?.diagnostics[0] === undefined
+            ? "capability health is unavailable"
+            : `${capabilityHealth.diagnostics[0].code}: ${capabilityHealth.diagnostics[0].message}`,
+      });
       omittedNames.add(name);
       continue;
     }
@@ -351,6 +363,11 @@ export function discloseProductTools(
       .slice(0, Math.max(0, maximum - disclosed.length))
       .map((entry) => capabilityCard(entry, { disclosed: true })),
   ];
+  const finalHealth = inspectCapabilityHealth(capabilityRegistry, consumer, {
+    ...healthEvidence,
+    disclosed: capabilityCards.map((card) => card.capabilityId),
+    selected: [...disclosedIds],
+  });
   const registryCounts = Object.fromEntries(
     CAPABILITY_CONTRIBUTION_KINDS.map((kind) => [
       kind,
@@ -363,8 +380,18 @@ export function discloseProductTools(
     receipt: {
       schemaVersion: PRODUCT_TOOL_DISCLOSURE_SCHEMA_VERSION,
       catalogGeneration: registry.generation,
-      families: familyAvailability(capabilityRegistry, executionPolicy),
+      families: familyAvailability(finalHealth.entries, executionPolicy),
       capabilityCards,
+      health: {
+        consumer: finalHealth.consumer,
+        observedAt: finalHealth.observedAt,
+        summary: finalHealth.summary,
+        entries: capabilityCards
+          .map((card) =>
+            finalHealth.entries.find((entry) => entry.capabilityId === card.capabilityId),
+          )
+          .filter((entry): entry is CapabilityHealthEntry => entry !== undefined),
+      },
       registryTotal: capabilityRegistry.entries.length,
       registryCounts,
       disclosed,

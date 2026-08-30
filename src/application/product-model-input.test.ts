@@ -102,6 +102,55 @@ function disclosure(): ProductToolDisclosure {
           lifecycle,
         },
       ],
+      health: {
+        consumer: "native-model",
+        observedAt: null,
+        summary: {
+          registered: 1,
+          available: 1,
+          disclosed: 1,
+          executable: 1,
+          projected: 0,
+          selected: 1,
+          active: 0,
+          selectable: 1,
+          byHealth: {
+            healthy: 1,
+            degraded: 0,
+            unavailable: 0,
+            incompatible: 0,
+            denied: 0,
+            quarantined: 0,
+            unknown: 0,
+          },
+        },
+        entries: [
+          {
+            capabilityId: id,
+            title: "Read file",
+            summary: "Read a file",
+            kind: "tool",
+            family: "read",
+            source: "builtin",
+            sourceId: "builtin:workspace",
+            version: 1,
+            generation,
+            consumer: "native-model",
+            effect: "observation",
+            availability: "available",
+            health: "healthy",
+            registered: true,
+            available: true,
+            disclosed: true,
+            executable: true,
+            projected: false,
+            selected: true,
+            active: false,
+            selectable: true,
+            diagnostics: [],
+          },
+        ],
+      },
       registryTotal: 1,
       registryCounts: { tool: 1 },
       disclosed: [
@@ -142,6 +191,13 @@ describe("attemptModelInputFromPrompt", () => {
       disclosure(),
       resolveExecutionProfile("agent", generation),
     );
+
+    expect(first.disclosure.capabilityCatalog?.cards[0]).toMatchObject({
+      health: "healthy",
+      selected: true,
+      projected: false,
+      diagnosticCodes: [],
+    });
 
     expect(first.promptCache?.stableMessageCount).toBe(2);
     expect(first.promptCache?.toolCatalogGeneration).toBe(3);

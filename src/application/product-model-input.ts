@@ -43,10 +43,13 @@ function capabilityBrief(disclosure: ProductToolDisclosure): string {
     .map((entry) => `${entry.kind}:${entry.title}`)
     .join(", ");
   const routingFacts = disclosure.receipt.capabilityCards
-    .map(
-      (entry) =>
-        `${entry.title}[effect=${entry.effect};availability=${entry.lifecycle.availability};cost=${entry.costClass};latency=${entry.latencyClass}]`,
-    )
+    .map((entry) => {
+      const health = disclosure.receipt.health.entries.find(
+        (candidate) => candidate.capabilityId === entry.capabilityId,
+      );
+      const reasons = health?.diagnostics.map((diagnostic) => diagnostic.code).join("+") ?? "none";
+      return `${entry.title}[effect=${entry.effect};health=${health?.health ?? "unknown"};selectable=${health?.selectable ?? false};reasons=${reasons};cost=${entry.costClass};latency=${entry.latencyClass}]`;
+    })
     .join(", ");
   return [
     `[capability-disclosure source=${disclosure.receipt.discoveryHandle}]`,
@@ -138,6 +141,22 @@ export function attemptModelInputFromPrompt(
           available: card.lifecycle.available,
           executable: card.lifecycle.executable,
           disclosed: card.lifecycle.disclosed,
+          health:
+            disclosure.receipt.health.entries.find(
+              (entry) => entry.capabilityId === card.capabilityId,
+            )?.health ?? "unknown",
+          selected:
+            disclosure.receipt.health.entries.find(
+              (entry) => entry.capabilityId === card.capabilityId,
+            )?.selected ?? false,
+          projected:
+            disclosure.receipt.health.entries.find(
+              (entry) => entry.capabilityId === card.capabilityId,
+            )?.projected ?? false,
+          diagnosticCodes:
+            disclosure.receipt.health.entries
+              .find((entry) => entry.capabilityId === card.capabilityId)
+              ?.diagnostics.map((diagnostic) => diagnostic.code) ?? [],
         })),
       },
       families: disclosure.receipt.families,

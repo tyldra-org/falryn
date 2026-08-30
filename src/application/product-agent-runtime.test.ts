@@ -5,6 +5,7 @@ import {
   createInMemoryEventStore,
   createManualClock,
   createToolCatalog,
+  createToolRegistry,
   instant,
   sessionId,
   streamId,
@@ -92,6 +93,10 @@ describe("composeProductAgentRuntime", () => {
       ok: false,
       error: { code: "attempt-runner-required" },
     });
+    expect(runtime.inspectCapabilities("cli")).toEqual({
+      ok: false,
+      error: { code: "capability-registry-required" },
+    });
   });
 
   test("hosts a turn through coordinator and durable journal without builtins or HTTP", async () => {
@@ -153,5 +158,27 @@ describe("composeProductAgentRuntime", () => {
     expect(composed.value.requireProviderAdapter().ok).toBe(true);
     expect(composed.value.requireAttemptRunner().ok).toBe(true);
     expect(composed.value.toolCatalog.resolve("shell")).toBeNull();
+  });
+
+  test("exposes one read-only health and inspector boundary for every consumer", () => {
+    const registry = createToolRegistry(correlation.configurationGeneration, []);
+    if (!registry.ok) throw new Error(registry.error.code);
+    const composed = composeProductAgentRuntime(ports({ toolRegistry: registry.value }));
+    expect(composed.ok).toBe(true);
+    if (!composed.ok) return;
+
+    const health = composed.value.inspectCapabilities("opentui");
+    expect(health.ok).toBe(true);
+    if (!health.ok) return;
+    expect(health.value).toMatchObject({
+      consumer: "opentui",
+      observedAt: instant(1_000),
+      summary: { registered: 0 },
+    });
+    const inspector = composed.value.capabilityInspector("cli");
+    expect(inspector.ok).toBe(true);
+    if (!inspector.ok) return;
+    expect(inspector.value.doctor()).toMatchObject({ healthy: true, readOnly: true });
+    expect(inspector.value.permissions().mutationAction).toBe("settings.permissions");
   });
 });

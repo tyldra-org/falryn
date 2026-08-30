@@ -630,7 +630,18 @@ export function createProductLiveTurnExecutor(
           executionPolicy,
         );
       }
-      const disclosure = discloseProductTools(capabilityRegistry, registry, { executionPolicy });
+      const disclosure = discloseProductTools(capabilityRegistry, registry, {
+        executionPolicy,
+        consumer: "native-model",
+        healthEvidence: {
+          now: options.clock.now(),
+          runtime: {
+            attemptRunner: options.runtime.attemptRunner === null ? "missing" : "available",
+            provider: options.runtime.providerAdapter === null ? "missing" : "available",
+            workspace: "available",
+          },
+        },
+      });
       const planned = createContextPlanner().composeTurn({
         turnId: input.turnId,
         sessionId: correlation.sessionId,

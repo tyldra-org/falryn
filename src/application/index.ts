@@ -40,6 +40,36 @@ export {
 } from "./brief-comparison.ts";
 export type { BudgetLedger } from "./budget-ledger.ts";
 export { createBudgetLedger, MAX_BUDGET_DEPTH } from "./budget-ledger.ts";
+export type {
+  CapabilityProbeError,
+  CapabilityProbePort,
+  CapabilityProbeResult,
+  InspectProductCapabilityHealthOptions,
+} from "./capability-health.ts";
+export {
+  DEFAULT_CAPABILITY_PROBE_TIMEOUT_MS,
+  DEFAULT_CAPABILITY_PROBE_TTL_MS,
+  inspectProductCapabilityHealth,
+  MAX_CAPABILITY_PROBE_CONCURRENCY,
+  MAX_CAPABILITY_PROBE_TIMEOUT_MS,
+  MAX_CAPABILITY_PROBE_TTL_MS,
+  MAX_CAPABILITY_PROBES,
+} from "./capability-health.ts";
+export type {
+  CapabilityDoctorFinding,
+  CapabilityDoctorInspection,
+  CapabilityInspector,
+  CapabilityInspectorError,
+  CapabilityPermissionFact,
+  CapabilityPermissionsInspection,
+  CapabilityToolsInspection,
+} from "./capability-inspector.ts";
+export {
+  CAPABILITY_INSPECTOR_SCHEMA_VERSION,
+  createCapabilityInspector,
+  MAX_CAPABILITIES_PER_DOCTOR_FINDING,
+  MAX_CAPABILITY_DOCTOR_FINDINGS,
+} from "./capability-inspector.ts";
 export type { CompactDocumentReader } from "./compact-document-read.ts";
 export { createCompactDocumentReader } from "./compact-document-read.ts";
 export type {
