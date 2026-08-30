@@ -63,6 +63,17 @@ function prompt(brief: string, project = "Project rules"): ComposedPromptRequest
 }
 
 function disclosure(): ProductToolDisclosure {
+  const id = capabilityId.from("workspace.read_file");
+  const lifecycle = {
+    registered: true,
+    available: true,
+    disclosed: true,
+    executable: true,
+    projected: false,
+    availability: "available",
+    health: "healthy",
+    reasons: [],
+  } as const;
   const modelTool = {
     name: "read_file",
     description: "Read a file",
@@ -75,22 +86,41 @@ function disclosure(): ProductToolDisclosure {
       schemaVersion: 1,
       catalogGeneration: generation,
       families: [{ family: "read", available: true, reason: null }],
+      capabilityCards: [
+        {
+          capabilityId: id,
+          title: "Read file",
+          summary: "Read a file",
+          kind: "tool",
+          family: "read",
+          effect: "observation",
+          source: "builtin",
+          sourceId: "builtin:workspace",
+          version: 1,
+          costClass: "unknown",
+          latencyClass: "unknown",
+          lifecycle,
+        },
+      ],
+      registryTotal: 1,
+      registryCounts: { tool: 1 },
       disclosed: [
         {
           name: "read_file",
-          capabilityId: capabilityId.from("workspace.read_file"),
+          capabilityId: id,
           version: 1,
           effect: "observation",
           capabilityKind: "filesystem",
           schemaDigest: `sha-256:${"c".repeat(64)}`,
           schemaBytes: 48,
           schemaTokensEstimated: 12,
+          lifecycle,
         },
       ],
       omitted: [],
       schemaBytes: 48,
       schemaTokensEstimated: 12,
-      discoveryHandle: "tool-catalog:3",
+      discoveryHandle: "capability-catalog:3",
     },
   };
 }
@@ -128,5 +158,22 @@ describe("attemptModelInputFromPrompt", () => {
     expect(first.promptCache?.stablePrefixDigest).not.toBe(
       changedProject.promptCache?.stablePrefixDigest,
     );
+    expect(first.messages[1]?.parts[0]).toMatchObject({
+      text: expect.stringContaining("cost=unknown;latency=unknown"),
+    });
+    expect(first.disclosure.capabilityCatalog).toMatchObject({
+      total: 1,
+      counts: { tool: 1 },
+      cards: [
+        {
+          capabilityId: capabilityId.from("workspace.read_file"),
+          kind: "tool",
+          family: "read",
+          available: true,
+          executable: true,
+          disclosed: true,
+        },
+      ],
+    });
   });
 });

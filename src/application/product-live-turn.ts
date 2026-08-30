@@ -618,18 +618,19 @@ export function createProductLiveTurnExecutor(
       }
 
       const registry = options.runtime.toolRegistry;
-      if (registry === null) {
+      const capabilityRegistry = options.runtime.capabilityRegistry;
+      if (registry === null || capabilityRegistry === null) {
         return settleFailure(
           input,
           {
             kind: "unavailable",
-            code: "runtime.tool-registry-required",
-            message: "the executable tool registry is unavailable",
+            code: "runtime.capability-registry-required",
+            message: "the capability or executable tool registry is unavailable",
           },
           executionPolicy,
         );
       }
-      const disclosure = discloseProductTools(registry, { executionPolicy });
+      const disclosure = discloseProductTools(capabilityRegistry, registry, { executionPolicy });
       const planned = createContextPlanner().composeTurn({
         turnId: input.turnId,
         sessionId: correlation.sessionId,

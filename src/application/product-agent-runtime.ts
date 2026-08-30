@@ -10,6 +10,7 @@
  */
 
 import {
+  type CapabilityRegistry,
   type ClockPort,
   type ConfigurationGeneration,
   createToolCatalog,
@@ -29,6 +30,7 @@ import {
 } from "../domain/index.ts";
 import type { ProviderAdapterPort } from "../providers/port.ts";
 import { createProductAttemptRunner } from "./product-attempt-runner.ts";
+import { createProductCapabilityRegistry } from "./product-capability-registry.ts";
 import type { ProductToolConfirmationPort } from "./product-tool-gateway.ts";
 import type { SessionRuntime } from "./session-runtime.ts";
 import { createSessionRuntime } from "./session-runtime.ts";
@@ -52,6 +54,8 @@ export type ProductAgentRuntimePorts = {
    * product tools later).
    */
   readonly toolCatalog?: ToolCatalog;
+  /** Immutable discovery authority shared across capability primitives. */
+  readonly capabilityRegistry?: CapabilityRegistry;
   /** Registry authority used for disclosure and the production lifecycle. */
   readonly toolRegistry?: ToolRegistry;
   /** Optional runner; absent means tools cannot execute (fail closed). */
@@ -102,6 +106,7 @@ export type ProductAgentRuntime = {
   readonly turnCoordinator: TurnCoordinator;
   readonly journal: TurnEventJournal;
   readonly toolCatalog: ToolCatalog;
+  readonly capabilityRegistry: CapabilityRegistry | null;
   readonly toolRegistry: ToolRegistry | null;
   readonly toolRunner: ToolRunnerPort | null;
   readonly providerAdapter: ProviderAdapterPort | null;
@@ -178,6 +183,11 @@ export function composeProductAgentRuntime(
   }
 
   const toolRegistry = ports.toolRegistry ?? null;
+  const capabilityRegistry =
+    ports.capabilityRegistry ??
+    (toolRegistry === null
+      ? null
+      : createProductCapabilityRegistry(ports.correlation.configurationGeneration, toolRegistry));
   const toolCatalog =
     ports.toolCatalog ??
     toolRegistry?.catalog ??
@@ -233,6 +243,7 @@ export function composeProductAgentRuntime(
     turnCoordinator,
     journal,
     toolCatalog,
+    capabilityRegistry,
     toolRegistry,
     toolRunner,
     providerAdapter,

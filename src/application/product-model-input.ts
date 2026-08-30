@@ -38,10 +38,23 @@ function capabilityBrief(disclosure: ProductToolDisclosure): string {
     )
     .join(", ");
   const tools = disclosure.receipt.disclosed.map((tool) => tool.name).join(", ");
+  const otherCapabilities = disclosure.receipt.capabilityCards
+    .filter((entry) => entry.kind !== "tool" && entry.kind !== "mcp-tool")
+    .map((entry) => `${entry.kind}:${entry.title}`)
+    .join(", ");
+  const routingFacts = disclosure.receipt.capabilityCards
+    .map(
+      (entry) =>
+        `${entry.title}[effect=${entry.effect};availability=${entry.lifecycle.availability};cost=${entry.costClass};latency=${entry.latencyClass}]`,
+    )
+    .join(", ");
   return [
     `[capability-disclosure source=${disclosure.receipt.discoveryHandle}]`,
     `Families: ${families}`,
     `Executable tools for this attempt: ${tools || "none"}`,
+    `Other disclosed capabilities: ${otherCapabilities || "none"}`,
+    `Capability routing facts: ${routingFacts || "none"}`,
+    `Registry inventory: ${disclosure.receipt.registryTotal} validated contributions in this generation.`,
     `Additional capabilities are discoverable through ${disclosure.receipt.discoveryHandle}; registered tools omitted here are not executable in this attempt.`,
   ].join("\n");
 }
@@ -111,6 +124,22 @@ export function attemptModelInputFromPrompt(
       catalogGeneration: disclosure.receipt.catalogGeneration,
       toolNames: disclosure.receipt.disclosed.map((tool) => tool.name),
       discoveryHandle: disclosure.receipt.discoveryHandle,
+      capabilityCatalog: {
+        total: disclosure.receipt.registryTotal,
+        counts: disclosure.receipt.registryCounts,
+        cards: disclosure.receipt.capabilityCards.map((card) => ({
+          capabilityId: card.capabilityId,
+          kind: card.kind,
+          family: card.family,
+          source: card.source,
+          version: card.version,
+          costClass: card.costClass,
+          latencyClass: card.latencyClass,
+          available: card.lifecycle.available,
+          executable: card.lifecycle.executable,
+          disclosed: card.lifecycle.disclosed,
+        })),
+      },
       families: disclosure.receipt.families,
       tools: disclosure.receipt.disclosed.map((tool) => ({
         name: tool.name,

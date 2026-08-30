@@ -3,6 +3,8 @@
  */
 
 import type {
+  CapabilityRegistry,
+  CapabilityRegistryEntry,
   ConfigurationGeneration,
   ToolCatalog,
   ToolInvocationOutcome,
@@ -10,16 +12,23 @@ import type {
   ToolRegistryEntry,
 } from "../domain/index.ts";
 import { createToolRegistry } from "../domain/index.ts";
+import { createProductCapabilityRegistry } from "./product-capability-registry.ts";
 import type { ToolRunnerPort, ToolRunnerRequest } from "./tool-call-loop.ts";
 
-export type ProductToolBundle = {
+export type ProductToolSourceBundle = {
   readonly registry: ToolRegistry;
   readonly catalog: ToolCatalog;
   readonly runner: ToolRunnerPort;
   readonly toolNames: readonly string[];
 };
 
+export type ProductToolBundle = ProductToolSourceBundle & {
+  readonly capabilityRegistry: CapabilityRegistry;
+};
+
 export type ProductToolMergeOptions = {
+  /** Validated non-tool contributions from skills, MCP, plugins, and other owners. */
+  readonly capabilityEntries?: readonly CapabilityRegistryEntry[];
   /** Publish workspace state after any tool reports an observed mutation. */
   readonly afterMutation?: (
     request: ToolRunnerRequest,
@@ -32,7 +41,7 @@ export type ProductToolMergeOptions = {
  */
 export function mergeProductToolBundles(
   generation: ConfigurationGeneration,
-  bundles: readonly ProductToolBundle[],
+  bundles: readonly ProductToolSourceBundle[],
   options: ProductToolMergeOptions = {},
 ): ProductToolBundle {
   const entries: ToolRegistryEntry[] = [];
@@ -48,6 +57,11 @@ export function mergeProductToolBundles(
     throw new Error(`product tool merge failed: ${registryResult.error.code}`);
   }
   const registry = registryResult.value;
+  const capabilityRegistry = createProductCapabilityRegistry(
+    generation,
+    registry,
+    options.capabilityEntries,
+  );
   const runner: ToolRunnerPort = {
     async execute(request: ToolRunnerRequest): Promise<ToolInvocationOutcome> {
       const owned = runners.get(request.toolName);
@@ -81,6 +95,7 @@ export function mergeProductToolBundles(
   };
   return {
     registry,
+    capabilityRegistry,
     catalog: registry.catalog,
     runner,
     toolNames: entries.map((entry) => entry.descriptor.name),

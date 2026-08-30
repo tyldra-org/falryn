@@ -295,6 +295,7 @@ export async function composeProductShellAttachments(
         ? {}
         : {
             toolRegistry: productTools.registry,
+            capabilityRegistry: productTools.capabilityRegistry,
             toolCatalog: productTools.catalog,
             toolRunner: productTools.runner,
           }),

@@ -7,6 +7,7 @@ import {
   localPath,
   resolveExecutionProfile,
 } from "../domain/index.ts";
+import { createProductCapabilityRegistry } from "./product-capability-registry.ts";
 import {
   discloseProductTools,
   MAX_DISCLOSED_PRODUCT_TOOLS,
@@ -31,7 +32,10 @@ function workspaceTools() {
 describe("discloseProductTools", () => {
   test("publishes a bounded exact-schema subset with an inspectable receipt", () => {
     const tools = workspaceTools();
-    const disclosure = discloseProductTools(tools.registry);
+    const disclosure = discloseProductTools(
+      createProductCapabilityRegistry(tools.registry.generation, tools.registry),
+      tools.registry,
+    );
 
     expect(disclosure.modelTools.length).toBeLessThanOrEqual(MAX_DISCLOSED_PRODUCT_TOOLS);
     expect(disclosure.modelTools.map((tool) => tool.name)).toContain("read_file");
@@ -42,7 +46,8 @@ describe("discloseProductTools", () => {
     expect(disclosure.receipt.families.map((entry) => entry.family)).toEqual([
       ...MODEL_CAPABILITY_FAMILIES,
     ]);
-    expect(disclosure.receipt.discoveryHandle).toBe("tool-catalog:7");
+    expect(disclosure.receipt.discoveryHandle).toBe("capability-catalog:7");
+    expect(disclosure.receipt.registryTotal).toBe(tools.registry.entries.length);
     expect(disclosure.receipt.schemaBytes).toBeGreaterThan(0);
     expect(disclosure.receipt.schemaTokensEstimated).toBeGreaterThan(0);
     expect(
@@ -51,7 +56,11 @@ describe("discloseProductTools", () => {
   });
 
   test("omits permissive schemas instead of exposing a catch-all boundary", () => {
-    const disclosure = discloseProductTools(workspaceTools().registry);
+    const tools = workspaceTools();
+    const disclosure = discloseProductTools(
+      createProductCapabilityRegistry(tools.registry.generation, tools.registry),
+      tools.registry,
+    );
 
     expect(disclosure.modelTools.map((tool) => tool.name)).not.toContain("write_files");
     expect(disclosure.receipt.omitted).toContainEqual({
@@ -64,10 +73,11 @@ describe("discloseProductTools", () => {
 
   test("makes profile restrictions inspectable while keeping eligible reads", () => {
     const registry = workspaceTools().registry;
-    const ask = discloseProductTools(registry, {
+    const capabilities = createProductCapabilityRegistry(registry.generation, registry);
+    const ask = discloseProductTools(capabilities, registry, {
       executionPolicy: resolveExecutionProfile("ask", configurationGeneration.from(7)),
     });
-    const agent = discloseProductTools(registry, {
+    const agent = discloseProductTools(capabilities, registry, {
       executionPolicy: resolveExecutionProfile("agent", configurationGeneration.from(7)),
     });
 
@@ -76,6 +86,11 @@ describe("discloseProductTools", () => {
     expect(ask.receipt.omitted).toContainEqual({
       name: "apply_patch",
       reason: "effect mutation denied by ask profile",
+    });
+    expect(ask.receipt.families).toContainEqual({
+      family: "run",
+      available: false,
+      reason: "no ask-eligible descriptor available in this catalog generation",
     });
     expect(ask.receipt.schemaTokensEstimated).toBeLessThanOrEqual(
       agent.receipt.schemaTokensEstimated,

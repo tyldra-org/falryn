@@ -582,6 +582,7 @@ export async function runCoding(
       },
       ...(providerAdapter !== undefined && providerAdapter !== null ? { providerAdapter } : {}),
       toolRegistry: productTools.registry,
+      capabilityRegistry: productTools.capabilityRegistry,
       toolCatalog: productTools.catalog,
       toolRunner: productTools.runner,
       ...(options.toolConfirmation === undefined
