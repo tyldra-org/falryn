@@ -100,6 +100,8 @@ export function attemptModelInputFromPrompt(
             request: options.brief.request,
             receipt: options.brief.projection.receipt,
             sectionSource: `brief:${options.brief.projection.receipt.policySource}`,
+            fallbackGuidance: options.brief.projection.guidance,
+            semanticGuidance: options.brief.projection.semanticGuidance,
             ...(options.maxOutputTokens === undefined
               ? {}
               : { maxOutputTokensCeiling: options.maxOutputTokens }),

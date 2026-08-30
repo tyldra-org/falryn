@@ -158,6 +158,7 @@ export type {
   ModelFeatureSupport,
   ModelInputModality,
   ModelOutputModality,
+  ModelResponseDensityControl,
 } from "./model-capability.ts";
 export {
   capabilityFromDeclaration,
@@ -169,6 +170,7 @@ export {
   MODEL_FEATURE_SUPPORTS,
   MODEL_INPUT_MODALITIES,
   MODEL_OUTPUT_MODALITIES,
+  MODEL_RESPONSE_DENSITY_CONTROLS,
   unknownModelCapability,
 } from "./model-capability.ts";
 export type {
@@ -180,6 +182,20 @@ export {
   parseModelCapability,
   parseModelCapabilityDeclaration,
 } from "./model-capability-schema.ts";
+export type {
+  ModelBillingMode,
+  ModelPricing,
+  ModelPricingKind,
+  ModelPricingTier,
+  ModelPricingUtcWindow,
+  ModelTokenPrice,
+} from "./model-pricing.ts";
+export {
+  MODEL_BILLING_MODES,
+  MODEL_PRICE_TOKEN_UNIT,
+  MODEL_PRICING_KINDS,
+  unknownModelPricing,
+} from "./model-pricing.ts";
 export type {
   AdvisorRoleRoute,
   CompactRoleRoute,

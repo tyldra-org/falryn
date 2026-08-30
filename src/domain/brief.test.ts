@@ -20,6 +20,7 @@ import {
   isBriefPolicySource,
   isBriefVerbosityMode,
   projectBrief,
+  recordBriefDelivery,
   resolveBriefPolicy,
   selectBriefVerbosity,
   sessionId,
@@ -109,12 +110,54 @@ describe("brief", () => {
     expect(result.value.receipt.selectedVerbosity).toBe("balanced");
     expect(result.value.receipt.selectionReasons).toEqual(["explicit-mode"]);
     expect(result.value.receipt.providerPlacementModified).toBe(false);
+    expect(result.value.receipt.delivery).toBe("prompt");
+    expect(result.value.receipt.providerResponseDensityControl).toBeNull();
     expect(result.value.receipt.preservedFacts).toEqual([]);
     expect(result.value.guidance).toContain("reasoning and evidence needed to act");
     expect(result.value.concise).toBe("Brief balanced. Preserve: none.");
     expect(result.value.expanded).toContain("reasoning and evidence needed to act");
     expect(result.value.receipt.byteLength).toBeGreaterThan(0);
     expect(result.value.receipt.byteLength).toBeLessThanOrEqual(DEFAULT_BRIEF_MAX_BYTES);
+    expect(result.value.semanticGuidance).toBe("");
+  });
+
+  test("records native-only and native-plus-semantic delivery without changing the policy", () => {
+    const simple = projectBrief(request({ policy: { verbosity: "compact", source: "user" } }));
+    expect(simple.ok).toBe(true);
+    if (!simple.ok) return;
+    const nativeOnly = recordBriefDelivery(
+      simple.value.receipt,
+      simple.value.semanticGuidance,
+      "low",
+    );
+    expect(nativeOnly).toMatchObject({
+      delivery: "native",
+      providerResponseDensityControl: "low",
+      byteLength: 0,
+      outputTokenBudget: 2_048,
+    });
+
+    const protectedResult = projectBrief(
+      request({
+        policy: { verbosity: "compact", source: "user" },
+        need: { failures: true, recovery: true },
+      }),
+    );
+    expect(protectedResult.ok).toBe(true);
+    if (!protectedResult.ok) return;
+    expect(protectedResult.value.semanticGuidance).toContain("failed effect");
+    expect(protectedResult.value.semanticGuidance).toContain("recovery action");
+    expect(protectedResult.value.semanticGuidance).not.toContain("shortest complete answer");
+    expect(
+      recordBriefDelivery(
+        protectedResult.value.receipt,
+        protectedResult.value.semanticGuidance,
+        "low",
+      ),
+    ).toMatchObject({
+      delivery: "native-with-semantic-prompt",
+      providerResponseDensityControl: "low",
+    });
   });
 
   test("keeps required facts in compact, concise, and expanded snapshots", () => {

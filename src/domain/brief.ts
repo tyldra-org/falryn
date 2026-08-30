@@ -22,6 +22,7 @@ export {
 } from "./brief/comparison.ts";
 export type {
   BriefComplexity,
+  BriefDelivery,
   BriefDensity,
   BriefDetail,
   BriefDimensions,
@@ -45,6 +46,7 @@ export type {
 } from "./brief/contracts.ts";
 export {
   BRIEF_COMPLEXITIES,
+  BRIEF_DELIVERIES,
   BRIEF_DENSITIES,
   BRIEF_DETAIL_LEVELS,
   BRIEF_DIRECTNESS_LEVELS,
@@ -76,4 +78,4 @@ export {
   resolveBriefPolicy,
   selectBriefVerbosity,
 } from "./brief/policy.ts";
-export { projectBrief } from "./brief/projection.ts";
+export { projectBrief, recordBriefDelivery } from "./brief/projection.ts";

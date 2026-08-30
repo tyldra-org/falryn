@@ -109,6 +109,7 @@ function catalogs(): readonly RoutedCatalogEntry[] {
       adapterKind: "deterministic",
       destinationId: deterministicDestination,
       requestInputModalities: ["text", "image"],
+      requestResponseDensityControls: ["low", "high"],
       catalog: catalogFor([
         {
           schemaVersion: 1,
@@ -138,6 +139,7 @@ function catalogs(): readonly RoutedCatalogEntry[] {
           streaming: "supported",
           reasoning: "supported",
           reasoningControls: ["balanced"],
+          responseDensityControls: ["low", "medium"],
           completeness: "complete",
           availability: "available",
           provenance: ["profile-declaration"],
@@ -331,6 +333,7 @@ describe("resolveModelRoute", () => {
     expect(outcome.receipt.modelId).toBe(deep);
     expect(outcome.receipt.reasoning).toBe("balanced");
     expect(outcome.receipt.reasoningControl).toBe("balanced");
+    expect(outcome.receipt.responseDensityControls).toEqual(["low"]);
     expect(outcome.receipt.fallbackPosition).toBe(0);
     expect(outcome.receipt.catalogGeneration).toBe(1);
   });

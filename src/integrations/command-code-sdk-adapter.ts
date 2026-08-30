@@ -79,7 +79,10 @@ function defaultChildren(
   };
 }
 
-function unsupportedModelEvents(request: ModelRequest): readonly NormalizedProviderEvent[] {
+function unsupportedEvents(
+  request: ModelRequest,
+  message: string,
+): readonly NormalizedProviderEvent[] {
   const attempt = modelAttemptId.from(`attempt-${request.requestId}`);
   return [
     {
@@ -95,7 +98,7 @@ function unsupportedModelEvents(request: ModelRequest): readonly NormalizedProvi
       sequence: 2,
       failure: {
         kind: "unsupported-capability",
-        message: "The selected Command Code model has no verified transport mapping.",
+        message,
         retryable: false,
       },
     },
@@ -127,13 +130,25 @@ export function createCommandCodeSdkAdapter(
     supportedModels,
     // Both SDK leaves remain text-only until Falryn resolves image handles.
     requestInputModalities: ["text"],
+    // OpenAI-compatible transport does not establish OpenAI-native verbosity support.
+    requestResponseDensityControls: [],
     async *stream(
       request: ModelRequest,
       streamOptions: ProviderStreamOptions,
     ): AsyncIterable<NormalizedProviderEvent> {
       const protocol = commandCodeProtocolFor(String(request.modelId));
       if (protocol === null) {
-        yield* unsupportedModelEvents(request);
+        yield* unsupportedEvents(
+          request,
+          "The selected Command Code model has no verified transport mapping.",
+        );
+        return;
+      }
+      if (request.responseDensityControl !== null && request.responseDensityControl !== undefined) {
+        yield* unsupportedEvents(
+          request,
+          "Command Code does not publish a native response-density contract for this model.",
+        );
         return;
       }
       yield* children[protocol].stream(request, streamOptions);

@@ -141,6 +141,7 @@ export const modelRequestSchema = z
       .max(MAX_PROVIDER_METADATA_ENTRY_LENGTH)
       .nullable()
       .optional(),
+    responseDensityControl: z.enum(["low", "medium", "high"]).nullable().optional(),
     promptCache: promptCachePolicySchema.optional(),
     metadata: requestMetadataSchema,
   })

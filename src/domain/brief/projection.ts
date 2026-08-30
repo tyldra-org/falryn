@@ -7,11 +7,13 @@ import {
   BRIEF_PLACEMENT,
   BRIEF_SCHEMA_VERSION,
   BRIEF_STRATEGY_VERSION,
+  type BriefDelivery,
   type BriefDimensions,
   type BriefError,
   type BriefOmission,
   type BriefPreservedFact,
   type BriefProjection,
+  type BriefReceipt,
   type BriefRequest,
   type BriefVerbosityLevel,
   DEFAULT_BRIEF_MAX_BYTES,
@@ -80,6 +82,10 @@ export function projectBrief(request: BriefRequest): Result<BriefProjection, Bri
     ...clarityLines(need),
     ...requiredFactLines(facts, selectedVerbosity),
   ]);
+  const requiredSemanticText = joinSections([
+    ...clarityLines(need),
+    ...requiredFactLines(facts, selectedVerbosity),
+  ]);
   if (utf8ByteLength(requiredText) > maxBytes) {
     return err(briefError("oversized", "required-facts"));
   }
@@ -98,6 +104,8 @@ export function projectBrief(request: BriefRequest): Result<BriefProjection, Bri
   }
 
   const guidance = custom.length > 0 ? joinSections([requiredText, custom]) : requiredText;
+  const semanticGuidance =
+    custom.length > 0 ? joinSections([requiredSemanticText, custom]) : requiredSemanticText;
   const concise = snapshotConcise(selectedVerbosity, facts);
   const expanded = snapshotExpanded(selectedVerbosity, facts, need);
   if (
@@ -113,6 +121,7 @@ export function projectBrief(request: BriefRequest): Result<BriefProjection, Bri
     sessionId: request.sessionId,
     configurationGeneration: request.configurationGeneration,
     guidance,
+    semanticGuidance,
     concise,
     expanded,
     receipt: {
@@ -123,6 +132,8 @@ export function projectBrief(request: BriefRequest): Result<BriefProjection, Bri
       selectedVerbosity,
       selectionReasons: decision.reasons,
       dimensions,
+      delivery: "prompt",
+      providerResponseDensityControl: null,
       byteLength: utf8ByteLength(guidance),
       guidanceDigest: createHash("sha256").update(guidance).digest("hex"),
       placement: BRIEF_PLACEMENT,
@@ -132,6 +143,27 @@ export function projectBrief(request: BriefRequest): Result<BriefProjection, Bri
       outputTokenBudget: briefOutputTokenBudget(selectedVerbosity),
     },
   });
+}
+
+/** Bind a projected Brief policy to the controls actually sent on one provider request. */
+export function recordBriefDelivery(
+  receipt: BriefReceipt,
+  promptGuidance: string,
+  providerResponseDensityControl: string | null,
+): BriefReceipt {
+  const delivery: BriefDelivery =
+    providerResponseDensityControl === null
+      ? "prompt"
+      : promptGuidance.length === 0
+        ? "native"
+        : "native-with-semantic-prompt";
+  return {
+    ...receipt,
+    delivery,
+    providerResponseDensityControl,
+    byteLength: utf8ByteLength(promptGuidance),
+    guidanceDigest: createHash("sha256").update(promptGuidance).digest("hex"),
+  };
 }
 
 function utf8ByteLength(text: string): number {

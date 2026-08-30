@@ -1,6 +1,7 @@
 /** Official Command Code Provider API identity and bundled model facts. */
 
 import { modelId } from "../domain/identity.ts";
+import { commandCodePricingFor } from "./catalog/builtin/command-code-pricing.ts";
 import type { ModelCapabilityDeclaration } from "./model-capability.ts";
 
 export const COMMAND_CODE_PROVIDER_ID = "commandcode";
@@ -150,7 +151,10 @@ export const COMMAND_CODE_MODEL_CAPABILITIES: readonly ModelCapabilityDeclaratio
     reasoning: model.reasoning ? "supported" : "unsupported",
     // Provider-native controls are not published per model. Use provider default.
     reasoningControls: [],
+    // OpenAI-compatible transport does not prove OpenAI-native verbosity support.
+    responseDensityControls: [],
     contextTokens: model.contextTokens,
     outputTokens: null,
+    pricing: commandCodePricingFor(model.id),
     completeness: "partial",
   }));

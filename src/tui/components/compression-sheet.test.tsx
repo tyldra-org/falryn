@@ -54,6 +54,13 @@ describe("compression sheet", () => {
     const changed = await shell.frame("Brief · detailed (current)");
     expect(brief.getFrontendMode()).toBe("detailed");
     expect(changed).toContain("Brief set to detailed.");
+
+    shell.setup.mockInput.pressArrow("down");
+    shell.setup.mockInput.pressArrow("down");
+    shell.setup.mockInput.pressEnter();
+    const hushChanged = await shell.frame("Hush · off");
+    expect(output.getHushState()).toBe("off");
+    expect(hushChanged).toContain("Hush set to off.");
   });
 
   test("opens through /compression and names unattached controls honestly", async () => {

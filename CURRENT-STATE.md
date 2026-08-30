@@ -114,7 +114,12 @@ override. A user catalog is a bounded JSONC document at
 adapter, and normalized endpoint so facts cannot cross destinations. Catalog
 documents separate input modalities from output modalities and record tools,
 structured output, streaming, reasoning, provider-native reasoning controls,
-context limits, output limits, and completeness. Feature support is tri-state
+provider-native response-density controls, context limits, output limits,
+provider-bound pricing schedules, and completeness. Pricing uses integer USD
+microunits per million tokens and retains source, observation time, billing
+mode, context/service/time bands, effective interval, and distinct input,
+cached-input, cache-write-input, and output rates. Unpublished rates stay
+explicitly unknown. Feature support is tri-state
 (`supported`, `unsupported`, or `unknown`); missing facts are never upgraded to
 support. The default OpenAI profile enables the current general-purpose GPT-5.6 family: `gpt-5.6-sol`,
 `gpt-5.6-terra`, `gpt-5.6-luna`, and the moving `gpt-5.6` alias. Sol is ordered
@@ -134,7 +139,13 @@ limits, structured-output support, and provider-native reasoning controls stay
 unknown because Command Code does not publish those facts per model. The
 catalog marks the provider's agent protocol as tool-capable and streaming, but
 live image transport remains unavailable until Falryn can resolve image
-handles into SDK request parts.
+handles into SDK request parts. Its bundled pricing schedules cover every one
+of those 62 IDs from Command Code's current official table, including
+long-context, time-of-day, cache, and temporary-free conditions. They are
+marked as published estimates because Command Code says routed upstream cost
+can vary. OpenAI's catalog independently records its official direct-API
+schedule, so an identical model ID never borrows a price from another
+destination.
 
 Remote catalog refresh uses the official OpenAI, Anthropic, or Google Gen AI
 TypeScript SDK selected by the profile. Command Code discovery uses the OpenAI
@@ -217,7 +228,17 @@ provider continuation after tool results. Brief also supplies a mode-specific
 provider output ceiling. Projection failure is a typed turn failure rather than
 silent omission.
 
-`auto` uses the deterministic `brief.v3` policy. Prompt shape is classified as
+`brief.v4` delivers that policy through one provider-neutral request field.
+The route first intersects controls published for the exact model with controls
+implemented by the selected SDK adapter. OpenAI GPT-5.6 requests use native
+`verbosity`; models without a verified native control receive Brief's bounded
+prompt guidance. When native density is available, only task-specific semantic
+obligations remain in the prompt. Command Code does not inherit OpenAI
+verbosity merely because one of its transports is OpenAI-compatible. The Brief
+receipt records `prompt`, `native`, or `native-with-semantic-prompt`, the exact
+normalized native value, and the guidance bytes actually sent.
+
+`auto` uses the deterministic `brief.v4` policy. Prompt shape is classified as
 low, medium, or high without treating one technical keyword as a large task.
 High complexity, uncertainty, recovery, safety-critical ambiguity, or an
 explicit clarification request selects detailed output. Medium complexity, a

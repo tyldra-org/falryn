@@ -1,7 +1,11 @@
 import { afterEach, describe, expect, test } from "bun:test";
 
 import { instant, modelId, providerId } from "../domain/index.ts";
-import { MODEL_CAPABILITY_SCHEMA_VERSION, type ModelCatalog } from "../providers/index.ts";
+import {
+  MODEL_CAPABILITY_SCHEMA_VERSION,
+  type ModelCatalog,
+  unknownModelPricing,
+} from "../providers/index.ts";
 import { openProductStoreOrThrow, removeTemporaryRoots, temporaryRoot } from "./fixtures.ts";
 import { createModelCatalogGenerationRepository } from "./model-catalog-repository.ts";
 
@@ -25,8 +29,10 @@ function catalog(generation = 7): ModelCatalog {
         streaming: "supported",
         reasoning: "unknown",
         reasoningControls: [],
+        responseDensityControls: [],
         contextTokens: 32_000,
         outputTokens: 4_000,
+        pricing: unknownModelPricing(),
         completeness: "partial",
         availability: "available",
         provenance: ["user-catalog"],

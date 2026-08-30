@@ -214,6 +214,7 @@ export type {
   BriefComparisonUsage,
   BriefComparisonVerdict,
   BriefComplexity,
+  BriefDelivery,
   BriefDensity,
   BriefDetail,
   BriefDimensions,
@@ -241,6 +242,7 @@ export {
   BRIEF_COMPARISON_SCHEMA_VERSION,
   BRIEF_COMPARISON_VERDICTS,
   BRIEF_COMPLEXITIES,
+  BRIEF_DELIVERIES,
   BRIEF_DENSITIES,
   BRIEF_DETAIL_LEVELS,
   BRIEF_DIRECTNESS_LEVELS,
@@ -268,6 +270,7 @@ export {
   MAX_BRIEF_GUIDANCE_BYTES,
   preservedFactsFromNeed,
   projectBrief,
+  recordBriefDelivery,
   resolveBriefPolicy,
   selectBriefVerbosity,
 } from "./brief.ts";

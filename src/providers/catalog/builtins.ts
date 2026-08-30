@@ -12,6 +12,21 @@ import type { ModelCatalogDocument } from "./contracts.ts";
 import { parseModelCatalogDocument } from "./schema.ts";
 
 function requiredBuiltin(value: unknown): ModelCatalogDocument {
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    !("models" in value) ||
+    !Array.isArray(value.models) ||
+    value.models.some(
+      (model) =>
+        typeof model !== "object" ||
+        model === null ||
+        !("pricing" in model) ||
+        !("responseDensityControls" in model),
+    )
+  ) {
+    throw new Error("Falryn's built-in model catalog omits required capability-depth facts.");
+  }
   const parsed = parseModelCatalogDocument(value);
   if (!parsed.ok) {
     throw new Error("Falryn was built with an invalid model catalog resource.");

@@ -309,6 +309,7 @@ export function createAnthropicSdkAdapter(
     identity,
     supportedModels: models,
     requestInputModalities: ["text"],
+    requestResponseDensityControls: [],
     async *stream(
       request: ModelRequest,
       streamOptions: ProviderStreamOptions,
@@ -331,6 +332,20 @@ export function createAnthropicSdkAdapter(
           modelAttemptId: attempt,
           sequence: next(),
           failure: failure("cancellation", "The provider request was cancelled.", false),
+        };
+        return;
+      }
+      if (request.responseDensityControl !== null && request.responseDensityControl !== undefined) {
+        yield {
+          kind: "error",
+          requestId: request.requestId,
+          modelAttemptId: attempt,
+          sequence: next(),
+          failure: failure(
+            "unsupported-capability",
+            "This Anthropic SDK route has no verified native response-density control.",
+            false,
+          ),
         };
         return;
       }

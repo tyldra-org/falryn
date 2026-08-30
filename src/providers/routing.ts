@@ -14,6 +14,7 @@ import {
   featureIsSupported,
   type MODEL_CAPABILITY_SCHEMA_VERSION,
   type ModelInputModality,
+  type ModelResponseDensityControl,
 } from "./model-capability.ts";
 import {
   isRoleDisabled,
@@ -47,6 +48,7 @@ export type RoutedCatalogEntry = {
   readonly adapterKind: ProviderAdapterKind;
   readonly destinationId: string;
   readonly requestInputModalities: readonly ModelInputModality[];
+  readonly requestResponseDensityControls?: readonly ModelResponseDensityControl[];
   readonly catalog: ModelCatalog;
 };
 
@@ -68,6 +70,8 @@ export type RoutingReceipt = {
   readonly modelId: ModelId;
   readonly reasoning: ReasoningEffort;
   readonly reasoningControl: string | null;
+  /** Exact model-and-adapter intersection available to Brief for this route. */
+  readonly responseDensityControls: readonly ModelResponseDensityControl[];
   readonly fallbackPosition: number;
   readonly budgets: RoleBudgets;
   readonly catalogGeneration: number;
@@ -263,6 +267,15 @@ function reasoningControlFor(
   return null;
 }
 
+function responseDensityControlsFor(
+  capability: ModelCapability,
+  entry: RoutedCatalogEntry,
+): readonly ModelResponseDensityControl[] {
+  const modelControls = capability.responseDensityControls ?? [];
+  const adapterControls = entry.requestResponseDensityControls ?? [];
+  return modelControls.filter((control) => adapterControls.includes(control));
+}
+
 function adapterMatchesRequirements(
   entry: RoutedCatalogEntry,
   required: RouteRequirement,
@@ -344,6 +357,7 @@ export function resolveModelRoute(input: ResolveRouteInput): RoutingOutcome {
         modelId: input.explicit.modelId,
         reasoning: "provider-default",
         reasoningControl: null,
+        responseDensityControls: responseDensityControlsFor(found.capability, found.entry),
         fallbackPosition: 0,
         budgets: {},
         catalogGeneration: found.entry.catalog.generation,
@@ -458,6 +472,7 @@ export function resolveModelRoute(input: ResolveRouteInput): RoutingOutcome {
         modelId: candidate.modelId,
         reasoning: route.reasoning,
         reasoningControl,
+        responseDensityControls: responseDensityControlsFor(found.capability, found.entry),
         fallbackPosition: position,
         budgets: route.budgets,
         catalogGeneration: found.entry.catalog.generation,

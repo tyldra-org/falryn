@@ -8,6 +8,11 @@ describe("model catalog documents", () => {
     expect(BUILTIN_MODEL_CATALOGS.length).toBeGreaterThan(0);
     for (const catalog of BUILTIN_MODEL_CATALOGS) {
       expect(parseModelCatalogDocument(catalog)).toEqual({ ok: true, value: catalog });
+      expect(
+        catalog.models.every(
+          (model) => model.pricing !== undefined && model.responseDensityControls !== undefined,
+        ),
+      ).toBe(true);
     }
   });
 
@@ -16,21 +21,39 @@ describe("model catalog documents", () => {
       (candidate) => candidate.catalogId === "falryn.commandcode",
     );
     expect(catalog?.models).toHaveLength(62);
+    expect(catalog?.models.every((model) => model.pricing?.kind !== "unknown")).toBe(true);
     expect(catalog?.models.find((model) => model.modelId === "claude-sonnet-5")).toMatchObject({
       inputModalities: ["text", "image"],
       tools: "supported",
       streaming: "supported",
       reasoning: "supported",
+      responseDensityControls: [],
       contextTokens: 1_000_000,
       outputTokens: null,
       completeness: "partial",
+      pricing: {
+        kind: "published-estimate",
+        billingMode: "provider-credit",
+      },
     });
-    expect(
-      catalog?.models.find((model) => model.modelId === "deepseek/deepseek-v4-pro"),
-    ).toMatchObject({
+    const deepSeek = catalog?.models.find((model) => model.modelId === "deepseek/deepseek-v4-pro");
+    expect(deepSeek).toMatchObject({
       inputModalities: ["text"],
       reasoning: "supported",
       contextTokens: 1_000_000,
+    });
+    expect(deepSeek?.pricing?.tiers.map((tier) => tier.id)).toEqual(["off-peak", "peak"]);
+    expect(deepSeek?.pricing?.tiers[0]?.utcWindows[0]?.startMinuteInclusive).toBe(0);
+    expect(deepSeek?.pricing?.tiers[1]?.utcWindows[0]?.startMinuteInclusive).toBe(60);
+    const freeMiniMax = catalog?.models.find(
+      (model) => model.modelId === "minimax/minimax-m3-free",
+    );
+    expect(freeMiniMax?.pricing?.kind).toBe("free");
+    expect(freeMiniMax?.pricing?.tiers[0]?.effectiveUntil).toBe("2026-09-06T00:00:00Z");
+    expect(freeMiniMax?.pricing?.tiers[0]?.usdMicrosPerMillionTokens).toMatchObject({
+      input: 0,
+      output: 0,
+      cachedInput: 0,
     });
   });
 

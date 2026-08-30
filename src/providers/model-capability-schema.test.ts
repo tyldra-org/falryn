@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import { modelId, providerId } from "../domain/identity.ts";
 import { parseModelCapabilityDeclaration } from "./model-capability-schema.ts";
+import { unknownModelPricing } from "./model-pricing.ts";
 import { parseProviderProfile } from "./profile-schema.ts";
 
 function declaration() {
@@ -16,8 +17,10 @@ function declaration() {
     streaming: "supported" as const,
     reasoning: "supported" as const,
     reasoningControls: ["low", "high"] as const,
+    responseDensityControls: ["low", "high"] as const,
     contextTokens: 128_000,
     outputTokens: 16_384,
+    pricing: unknownModelPricing(),
     completeness: "complete" as const,
   };
 }
@@ -43,6 +46,83 @@ describe("model capability declaration codec", () => {
       outputTokens: 2_000,
     });
     expect(impossibleLimit.ok).toBe(false);
+
+    const duplicateDensity = parseModelCapabilityDeclaration({
+      ...declaration(),
+      responseDensityControls: ["low", "low"],
+    });
+    expect(duplicateDensity.ok).toBe(false);
+  });
+
+  test("validates versioned provider pricing and defaults old declarations to unknown", () => {
+    const { pricing: _pricing, ...legacy } = declaration();
+    const migrated = parseModelCapabilityDeclaration(legacy);
+    expect(migrated.ok).toBe(true);
+    if (migrated.ok) {
+      expect(migrated.value.pricing).toEqual(unknownModelPricing());
+    }
+
+    const priced = parseModelCapabilityDeclaration({
+      ...declaration(),
+      pricing: {
+        kind: "published",
+        billingMode: "api",
+        currency: "USD",
+        tokenUnit: 1_000_000,
+        sourceUrl: "https://provider.example.test/pricing",
+        observedAt: "2026-08-29T00:00:00Z",
+        tiers: [
+          {
+            id: "standard",
+            label: "Standard",
+            serviceTier: "standard",
+            inputTokensFrom: 0,
+            inputTokensThrough: null,
+            effectiveFrom: null,
+            effectiveUntil: null,
+            utcWindows: [],
+            usdMicrosPerMillionTokens: {
+              input: 200_000,
+              cachedInput: 20_000,
+              cacheWriteInput: 250_000,
+              output: 1_200_000,
+            },
+          },
+        ],
+      },
+    });
+    expect(priced.ok).toBe(true);
+
+    const invalid = parseModelCapabilityDeclaration({
+      ...declaration(),
+      pricing: {
+        kind: "published",
+        billingMode: "api",
+        currency: "USD",
+        tokenUnit: 1_000_000,
+        sourceUrl: "https://provider.example.test/pricing",
+        observedAt: "2026-08-29T00:00:00Z",
+        tiers: [
+          {
+            id: "bad",
+            label: "Bad",
+            serviceTier: null,
+            inputTokensFrom: 2_000,
+            inputTokensThrough: 1_000,
+            effectiveFrom: null,
+            effectiveUntil: null,
+            utcWindows: [],
+            usdMicrosPerMillionTokens: {
+              input: -1,
+              cachedInput: null,
+              cacheWriteInput: null,
+              output: 1,
+            },
+          },
+        ],
+      },
+    });
+    expect(invalid.ok).toBe(false);
   });
 
   test("represents every supported transport modality without treating code as one", () => {

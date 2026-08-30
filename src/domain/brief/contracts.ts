@@ -3,7 +3,7 @@
 import type { ConfigurationGeneration, SessionId, TurnId } from "../identity.ts";
 
 export const BRIEF_SCHEMA_VERSION = 1;
-export const BRIEF_STRATEGY_VERSION = "brief.v3";
+export const BRIEF_STRATEGY_VERSION = "brief.v4";
 export const BRIEF_PLACEMENT = "pre-inference" as const;
 
 export const DEFAULT_BRIEF_MAX_BYTES = 2_048;
@@ -15,6 +15,9 @@ export type BriefVerbosityLevel = (typeof BRIEF_VERBOSITY_LEVELS)[number];
 
 export const BRIEF_VERBOSITY_MODES = ["compact", "balanced", "detailed", "auto"] as const;
 export type BriefVerbosityMode = (typeof BRIEF_VERBOSITY_MODES)[number];
+
+export const BRIEF_DELIVERIES = ["prompt", "native", "native-with-semantic-prompt"] as const;
+export type BriefDelivery = (typeof BRIEF_DELIVERIES)[number];
 
 export const BRIEF_POLICY_SOURCES = ["user", "session", "interface", "default"] as const;
 export type BriefPolicySource = (typeof BRIEF_POLICY_SOURCES)[number];
@@ -137,6 +140,11 @@ export type BriefReceipt = {
   /** Ordered facts that caused the selected level. */
   readonly selectionReasons: readonly BriefSelectionReason[];
   readonly dimensions: BriefDimensions;
+  /** How the effective provider request received Brief's response-density policy. */
+  readonly delivery: BriefDelivery;
+  /** Exact normalized native control sent to the provider, when one was sent. */
+  readonly providerResponseDensityControl: string | null;
+  /** Bytes of Brief guidance actually included in the provider prompt. */
   readonly byteLength: number;
   readonly guidanceDigest: string;
   readonly placement: typeof BRIEF_PLACEMENT;
@@ -152,7 +160,10 @@ export type BriefProjection = {
   readonly turnId: TurnId;
   readonly sessionId: SessionId;
   readonly configurationGeneration: ConfigurationGeneration;
+  /** Complete provider-neutral fallback guidance. */
   readonly guidance: string;
+  /** Required facts and user guidance that native density controls cannot express. */
+  readonly semanticGuidance: string;
   readonly concise: string;
   readonly expanded: string;
   readonly receipt: BriefReceipt;

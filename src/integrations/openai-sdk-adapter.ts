@@ -262,6 +262,7 @@ export function createOpenAiSdkAdapter(options: OpenAiSdkAdapterOptions): Provid
     identity,
     supportedModels: models,
     requestInputModalities: ["text"],
+    requestResponseDensityControls: ["low", "medium", "high"],
     async *stream(
       request: ModelRequest,
       streamOptions: ProviderStreamOptions,
@@ -342,6 +343,10 @@ export function createOpenAiSdkAdapter(options: OpenAiSdkAdapterOptions): Provid
             ? {}
             : { max_completion_tokens: request.budgets.maxOutputTokens }),
           ...(reasoningEffort === undefined ? {} : { reasoning_effort: reasoningEffort }),
+          ...(request.responseDensityControl === null ||
+          request.responseDensityControl === undefined
+            ? {}
+            : { verbosity: request.responseDensityControl }),
           ...(request.promptCache === undefined
             ? {}
             : { prompt_cache_key: request.promptCache.key }),

@@ -19,6 +19,7 @@ import {
   type ModelInputModality,
   unknownModelCapability,
 } from "./model-capability.ts";
+import { unknownModelPricing } from "./model-pricing.ts";
 import type { ProviderProfile } from "./profile.ts";
 
 /** Compatibility alias for consumers that mean model input modality. */
@@ -300,6 +301,10 @@ function mergeCapability(remote: ModelCapability, configured: ModelCapability): 
         : configured.reasoningControls,
     contextTokens: configured.contextTokens ?? remote.contextTokens,
     outputTokens: configured.outputTokens ?? remote.outputTokens,
+    pricing:
+      configured.pricing === undefined || configured.pricing.kind === "unknown"
+        ? (remote.pricing ?? unknownModelPricing())
+        : configured.pricing,
     completeness:
       configured.completeness === "complete" || remote.completeness === "complete"
         ? "complete"

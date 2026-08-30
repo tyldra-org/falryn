@@ -130,6 +130,7 @@ export function createDeterministicProviderAdapter(
     identity,
     supportedModels: models,
     requestInputModalities: ["text"],
+    requestResponseDensityControls: ["low", "medium", "high"],
     modelCapabilities: models.map((model) => ({
       schemaVersion: MODEL_CAPABILITY_SCHEMA_VERSION,
       modelId: model,
@@ -141,6 +142,7 @@ export function createDeterministicProviderAdapter(
       streaming: "supported",
       reasoning: "supported",
       reasoningControls: ["minimal", "balanced", "deep"],
+      responseDensityControls: ["low", "medium", "high"],
       contextTokens: 128_000,
       outputTokens: 16_384,
       completeness: "complete",

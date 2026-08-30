@@ -26,6 +26,7 @@ function receipt(overrides: Partial<RoutingReceipt> = {}): RoutingReceipt {
     catalogProvenance: "static-config",
     recordedAt: null,
     ...overrides,
+    responseDensityControls: overrides.responseDensityControls ?? [],
   };
 }
 

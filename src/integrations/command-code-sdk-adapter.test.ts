@@ -7,7 +7,7 @@ import type { ModelRequest } from "../providers/request.ts";
 import type { NormalizedProviderEvent } from "../providers/stream.ts";
 import { createCommandCodeSdkAdapter } from "./command-code-sdk-adapter.ts";
 
-function request(model: string): ModelRequest {
+function request(model: string, overrides: Partial<ModelRequest> = {}): ModelRequest {
   return {
     requestId: modelRequestId.from(`request-${model.replaceAll("/", "-")}`),
     providerId: providerId.from("commandcode"),
@@ -17,6 +17,7 @@ function request(model: string): ModelRequest {
     output: { kind: "text" },
     budgets: {},
     metadata: { role: "default" },
+    ...overrides,
   };
 }
 
@@ -93,6 +94,29 @@ describe("createCommandCodeSdkAdapter", () => {
     );
 
     const events = await collect(adapter, request("unknown-model"));
+    expect(events.at(-1)).toMatchObject({
+      kind: "error",
+      failure: { kind: "unsupported-capability", retryable: false },
+    });
+  });
+
+  test("does not inherit OpenAI-native verbosity from a compatible wire protocol", async () => {
+    const calls: string[] = [];
+    const adapter = createCommandCodeSdkAdapter(
+      {
+        profileId: "commandcode",
+        resolveApiKey: async () => "secret",
+        supportedModels: ["gpt-5.6-sol"],
+      },
+      () => ({ openai: child("openai", calls), anthropic: child("anthropic", calls) }),
+    );
+
+    expect(adapter.requestResponseDensityControls).toEqual([]);
+    const events = await collect(
+      adapter,
+      request("gpt-5.6-sol", { responseDensityControl: "low" }),
+    );
+    expect(calls).toEqual([]);
     expect(events.at(-1)).toMatchObject({
       kind: "error",
       failure: { kind: "unsupported-capability", retryable: false },

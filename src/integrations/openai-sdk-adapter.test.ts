@@ -145,7 +145,7 @@ describe("createOpenAiSdkAdapter", () => {
     expect(JSON.stringify(body)).not.toContain("sk-test");
   });
 
-  test("sends the routed reasoning control and rejects unresolved image handles", async () => {
+  test("sends routed reasoning and response-density controls and rejects unresolved images", async () => {
     let body: Record<string, unknown> | null = null;
     const adapter = createOpenAiSdkAdapter({
       profileId: "openai",
@@ -159,9 +159,13 @@ describe("createOpenAiSdkAdapter", () => {
     await collect(
       adapter,
       undefined,
-      request({ reasoning: "balanced", reasoningControl: "medium" }),
+      request({
+        reasoning: "balanced",
+        reasoningControl: "medium",
+        responseDensityControl: "low",
+      }),
     );
-    expect(body).toMatchObject({ reasoning_effort: "medium" });
+    expect(body).toMatchObject({ reasoning_effort: "medium", verbosity: "low" });
 
     await collect(adapter, undefined, request({ reasoning: "max", reasoningControl: "max" }));
     expect(body).toMatchObject({ reasoning_effort: "max" });

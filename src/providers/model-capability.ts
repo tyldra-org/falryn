@@ -1,6 +1,7 @@
 /** Provider-neutral model facts used by discovery and routing. */
 
 import type { ModelId } from "../domain/identity.ts";
+import { type ModelPricing, unknownModelPricing } from "./model-pricing.ts";
 
 export const MODEL_CAPABILITY_SCHEMA_VERSION = 1;
 
@@ -12,6 +13,10 @@ export type ModelOutputModality = (typeof MODEL_OUTPUT_MODALITIES)[number];
 
 export const MODEL_FEATURE_SUPPORTS = ["supported", "unsupported", "unknown"] as const;
 export type ModelFeatureSupport = (typeof MODEL_FEATURE_SUPPORTS)[number];
+
+/** Provider-neutral response-density values that SDK adapters may translate natively. */
+export const MODEL_RESPONSE_DENSITY_CONTROLS = ["low", "medium", "high"] as const;
+export type ModelResponseDensityControl = (typeof MODEL_RESPONSE_DENSITY_CONTROLS)[number];
 
 export const MODEL_CAPABILITY_COMPLETENESSES = ["complete", "partial"] as const;
 export type ModelCapabilityCompleteness = (typeof MODEL_CAPABILITY_COMPLETENESSES)[number];
@@ -42,8 +47,12 @@ export type ModelCapabilityDeclaration = {
   readonly reasoning: ModelFeatureSupport;
   /** Provider-native values such as low, medium, high, or a token budget mode. */
   readonly reasoningControls: readonly string[];
+  /** Native response-density controls confirmed for this exact model. */
+  readonly responseDensityControls?: readonly ModelResponseDensityControl[];
   readonly contextTokens: number | null;
   readonly outputTokens: number | null;
+  /** Provider-bound, versioned rates. Unknown values are never inferred from names. */
+  readonly pricing?: ModelPricing;
   readonly completeness: ModelCapabilityCompleteness;
 };
 
@@ -75,8 +84,10 @@ export function unknownModelCapability(
     streaming: "unknown",
     reasoning: "unknown",
     reasoningControls: [],
+    responseDensityControls: [],
     contextTokens: null,
     outputTokens: null,
+    pricing: unknownModelPricing(),
     completeness: "partial",
     availability: options.availability ?? "unknown",
     provenance: options.provenance ?? ["compatibility-default"],
@@ -92,6 +103,7 @@ export function capabilityFromDeclaration(
 ): ModelCapability {
   return {
     ...declaration,
+    pricing: declaration.pricing ?? unknownModelPricing(),
     availability: options.availability ?? "unknown",
     provenance: options.provenance ?? ["profile-declaration"],
   };

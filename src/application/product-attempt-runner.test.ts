@@ -85,6 +85,7 @@ function receipt(
     modelId: model,
     reasoning: "provider-default",
     reasoningControl: null,
+    responseDensityControls: [],
     fallbackPosition: 0,
     budgets,
     catalogGeneration: 1,
@@ -507,6 +508,7 @@ describe("createProductAttemptRunner", () => {
         modelId: model,
         reasoning: "provider-default",
         reasoningControl: null,
+        responseDensityControls: ["low", "medium", "high"],
         fallbackPosition: 0,
         budgets: {},
         catalogGeneration: 1,
@@ -537,6 +539,8 @@ describe("createProductAttemptRunner", () => {
           request: briefRequest,
           receipt: briefProjection.value.receipt,
           sectionSource: "brief:user",
+          fallbackGuidance: briefProjection.value.guidance,
+          semanticGuidance: briefProjection.value.semanticGuidance,
         },
         disclosure: {
           catalogGeneration: disclosure.receipt.catalogGeneration,
@@ -567,7 +571,13 @@ describe("createProductAttemptRunner", () => {
     expect(requests[0]).toMatchObject({
       reasoning: "provider-default",
       reasoningControl: null,
+      responseDensityControl: "low",
     });
+    expect(
+      requests[0]?.messages.some((message) =>
+        message.parts.some((part) => part.kind === "text" && part.text.includes("[brief source=")),
+      ),
+    ).toBe(false);
     expect(requests[1]?.messages[0]?.parts[0]).toMatchObject({
       kind: "text",
       text: expect.stringContaining("prohibition and risk warning verbatim"),
@@ -611,6 +621,8 @@ describe("createProductAttemptRunner", () => {
       briefReceipt: {
         selectedVerbosity: "compact",
         preservedFacts: ["risk"],
+        delivery: "native-with-semantic-prompt",
+        providerResponseDensityControl: "low",
         outputTokenBudget: 2_048,
       },
     });
