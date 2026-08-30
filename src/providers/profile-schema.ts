@@ -26,7 +26,10 @@ import { MAX_PROVIDER_METADATA_ENTRY_LENGTH } from "./limits.ts";
 import { modelCapabilityDeclarationSchema } from "./model-capability-schema.ts";
 import type { ProviderProfile } from "./profile.ts";
 import { providerTransportCompatibilityMatchesAdapter } from "./transport-compatibility.ts";
-import { providerTransportCompatibilityDeclarationSchema } from "./transport-compatibility-schema.ts";
+import {
+  providerModelTransportCompatibilityOverrideSchema,
+  providerTransportCompatibilityDeclarationSchema,
+} from "./transport-compatibility-schema.ts";
 
 const credentialReferenceSchema = z
   .strictObject({
@@ -82,6 +85,10 @@ export const providerProfileSchema: z.ZodType<ProviderProfile> = z
     transportCompatibility: providerTransportCompatibilityDeclarationSchema
       .nullable()
       .default(null),
+    modelTransportCompatibility: z
+      .array(providerModelTransportCompatibilityOverrideSchema)
+      .max(128)
+      .default([]),
     discovery: z.literal(DISCOVERY_POLICIES),
     timeouts: z
       .strictObject({
@@ -152,6 +159,35 @@ export const providerProfileSchema: z.ZodType<ProviderProfile> = z
         path: ["transportCompatibility", "dialect"],
         message: "transport dialect does not match provider adapter",
       });
+    }
+
+    const modelCompatibility = new Set<string>();
+    for (const [index, override] of profile.modelTransportCompatibility.entries()) {
+      const id = String(override.modelId);
+      if (!enabled.has(id)) {
+        context.addIssue({
+          code: "custom",
+          path: ["modelTransportCompatibility", index, "modelId"],
+          message: "transport override model is not enabled",
+        });
+      }
+      if (modelCompatibility.has(id)) {
+        context.addIssue({
+          code: "custom",
+          path: ["modelTransportCompatibility", index, "modelId"],
+          message: "duplicate model transport override",
+        });
+      }
+      modelCompatibility.add(id);
+      if (
+        !providerTransportCompatibilityMatchesAdapter(profile.adapterKind, override.declaration)
+      ) {
+        context.addIssue({
+          code: "custom",
+          path: ["modelTransportCompatibility", index, "declaration", "dialect"],
+          message: "model transport dialect does not match provider adapter",
+        });
+      }
     }
   });
 

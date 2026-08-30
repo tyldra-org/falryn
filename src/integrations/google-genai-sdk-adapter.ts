@@ -25,9 +25,12 @@ import type { ModelMessage, ModelToolDefinition } from "../providers/messages.ts
 import type { ProviderAdapterPort, ProviderStreamOptions } from "../providers/port.ts";
 import type { ModelRequest } from "../providers/request.ts";
 import type { NormalizedProviderEvent, UsageUnits } from "../providers/stream.ts";
-import type { GoogleGenerateContentTransportCompatibilityDeclaration } from "../providers/transport-compatibility.ts";
+import type {
+  GoogleGenerateContentTransportCompatibilityDeclaration,
+  ProviderModelTransportCompatibilityOverride,
+} from "../providers/transport-compatibility.ts";
 import { providerDestinationId } from "./provider-destination.ts";
-import { resolveProviderTransportCompatibilityPlan } from "./provider-transport-compatibility.ts";
+import { resolveProviderTransportCompatibilityPlanSet } from "./provider-transport-compatibility.ts";
 
 export type GoogleGenAiStreamFactory = (
   apiKey: string,
@@ -52,6 +55,7 @@ export type GoogleGenAiSdkAdapterOptions = {
   /** Deterministic cache boundary used by tests. Production leaves this absent. */
   readonly createCache?: GoogleGenAiCacheFactory;
   readonly compatibility?: GoogleGenerateContentTransportCompatibilityDeclaration;
+  readonly modelCompatibility?: readonly ProviderModelTransportCompatibilityOverride[];
 };
 
 type ToolCallState = {
@@ -353,14 +357,20 @@ const SAFETY_FINISH_REASONS = new Set([
 export function createGoogleGenAiSdkAdapter(
   options: GoogleGenAiSdkAdapterOptions,
 ): ProviderAdapterPort {
-  const resolvedCompatibility = resolveProviderTransportCompatibilityPlan(
+  const models = options.supportedModels.map((id) => modelId.from(id));
+  const resolvedCompatibility = resolveProviderTransportCompatibilityPlanSet(
     "google",
     options.compatibility,
+    models,
+    options.modelCompatibility,
   );
   if (!resolvedCompatibility.ok) {
     throw new Error("Google Gen AI SDK adapter received an incompatible transport declaration");
   }
-  const transportCompatibility = resolvedCompatibility.value;
+  const transportCompatibility = resolvedCompatibility.value.destination;
+  const compatibilityByModel = new Map(
+    resolvedCompatibility.value.models.map((entry) => [String(entry.modelId), entry.plan]),
+  );
   const identity = {
     providerId: providerId.from(options.providerId ?? "google"),
     profileId: options.profileId,
@@ -370,7 +380,6 @@ export function createGoogleGenAiSdkAdapter(
     transportCompatibilityId: transportCompatibility.compatibilityId,
     displayName: options.displayName ?? "Google",
   };
-  const models = options.supportedModels.map((id) => modelId.from(id));
   const cacheEntries = new Map<
     string,
     { readonly name: string | null; readonly expiresAt: number }
@@ -450,6 +459,9 @@ export function createGoogleGenAiSdkAdapter(
     requestInputModalities: ["text"],
     requestResponseDensityControls: [],
     transportCompatibility,
+    transportCompatibilityFor(selectedModelId) {
+      return compatibilityByModel.get(String(selectedModelId)) ?? null;
+    },
     async *stream(
       request: ModelRequest,
       streamOptions: ProviderStreamOptions,

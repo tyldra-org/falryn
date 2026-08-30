@@ -20,7 +20,7 @@ import OpenAI, {
   UnprocessableEntityError,
 } from "openai";
 
-import { modelAttemptId, modelId, providerId } from "../domain/identity.ts";
+import { type ModelId, modelAttemptId, modelId, providerId } from "../domain/identity.ts";
 import type { ProviderFailure, ProviderFailureKind } from "../providers/errors.ts";
 import { LATEST_OPENAI_MODEL_IDS } from "../providers/known-model-capability.ts";
 import type { ModelMessage, ModelToolDefinition } from "../providers/messages.ts";
@@ -29,10 +29,14 @@ import type { ModelRequest } from "../providers/request.ts";
 import type { NormalizedProviderEvent } from "../providers/stream.ts";
 import type {
   OpenAiChatTransportCompatibilityDeclaration,
+  ProviderModelTransportCompatibilityOverride,
   ProviderTransportCompatibilityPlan,
 } from "../providers/transport-compatibility.ts";
 import { providerDestinationId } from "./provider-destination.ts";
-import { resolveProviderTransportCompatibilityPlan } from "./provider-transport-compatibility.ts";
+import {
+  resolveProviderTransportCompatibilityPlan,
+  resolveProviderTransportCompatibilityPlanSet,
+} from "./provider-transport-compatibility.ts";
 
 export type OpenAiSdkFetch = NonNullable<ClientOptions["fetch"]>;
 
@@ -50,6 +54,7 @@ export type OpenAiSdkAdapterOptions = {
   readonly project?: string | null;
   readonly requestTimeoutMs?: number;
   readonly compatibility?: OpenAiChatTransportCompatibilityDeclaration;
+  readonly modelCompatibility?: readonly ProviderModelTransportCompatibilityOverride[];
 };
 
 type ToolCallState = {
@@ -297,18 +302,41 @@ function completeToolProposals(
 
 /** Create a live SDK-backed Chat Completions adapter. */
 export function createOpenAiSdkAdapter(options: OpenAiSdkAdapterOptions): ProviderAdapterPort {
-  const resolvedCompatibility = resolveProviderTransportCompatibilityPlan(
+  const models = (options.supportedModels ?? LATEST_OPENAI_MODEL_IDS).map((id) =>
+    modelId.from(String(id)),
+  );
+  const resolvedCompatibility = resolveProviderTransportCompatibilityPlanSet(
     "openai",
     options.compatibility,
+    models,
+    options.modelCompatibility,
   );
   if (!resolvedCompatibility.ok) {
     throw new Error("OpenAI SDK adapter received an incompatible transport declaration");
   }
-  const transportCompatibility: ProviderTransportCompatibilityPlan = resolvedCompatibility.value;
-  const compatibility = transportCompatibility.declaration;
-  if (compatibility.dialect !== "openai-chat-completions") {
+  const transportCompatibility: ProviderTransportCompatibilityPlan =
+    resolvedCompatibility.value.destination;
+  if (transportCompatibility.declaration.dialect !== "openai-chat-completions") {
     throw new Error("OpenAI SDK adapter requires the OpenAI Chat Completions dialect");
   }
+  const compatibilityByModel = new Map(
+    resolvedCompatibility.value.models.map((entry) => [String(entry.modelId), entry.plan]),
+  );
+  const transportCompatibilityFor = (
+    selectedModelId: ModelId,
+  ): ProviderTransportCompatibilityPlan | null => {
+    const bound = compatibilityByModel.get(String(selectedModelId));
+    if (bound !== undefined) {
+      return bound;
+    }
+    const resolved = resolveProviderTransportCompatibilityPlan("openai", options.compatibility, {
+      modelId: selectedModelId,
+      ...(options.modelCompatibility === undefined
+        ? {}
+        : { modelOverrides: options.modelCompatibility }),
+    });
+    return resolved.ok ? resolved.value : null;
+  };
   const identity = {
     providerId: providerId.from(options.providerId ?? "openai"),
     profileId: options.profileId,
@@ -318,9 +346,6 @@ export function createOpenAiSdkAdapter(options: OpenAiSdkAdapterOptions): Provid
     transportCompatibilityId: transportCompatibility.compatibilityId,
     displayName: options.displayName ?? "OpenAI",
   };
-  const models = (options.supportedModels ?? LATEST_OPENAI_MODEL_IDS).map((id) =>
-    modelId.from(String(id)),
-  );
 
   return {
     identity,
@@ -328,6 +353,7 @@ export function createOpenAiSdkAdapter(options: OpenAiSdkAdapterOptions): Provid
     requestInputModalities: ["text"],
     requestResponseDensityControls: ["low", "medium", "high"],
     transportCompatibility,
+    transportCompatibilityFor,
     async *stream(
       request: ModelRequest,
       streamOptions: ProviderStreamOptions,
@@ -353,6 +379,25 @@ export function createOpenAiSdkAdapter(options: OpenAiSdkAdapterOptions): Provid
         };
         return;
       }
+      const modelTransportCompatibility = transportCompatibilityFor(request.modelId);
+      if (
+        modelTransportCompatibility === null ||
+        modelTransportCompatibility.declaration.dialect !== "openai-chat-completions"
+      ) {
+        yield {
+          kind: "error",
+          requestId: request.requestId,
+          modelAttemptId: attempt,
+          sequence: next(),
+          failure: failure(
+            "unsupported-capability",
+            "The selected model has no verified OpenAI transport compatibility plan.",
+            false,
+          ),
+        };
+        return;
+      }
+      const compatibility = modelTransportCompatibility.declaration;
       if (request.promptCache !== undefined && request.promptCache.mode !== "openai-routing-key") {
         yield {
           kind: "error",

@@ -726,6 +726,11 @@ export function createProductLiveTurnExecutor(
             adapterKind: provider.value.identity.adapterKind,
             destinationId: provider.value.identity.destinationId,
             transportCompatibilityId: provider.value.identity.transportCompatibilityId,
+            transportCompatibility: provider.value.transportCompatibility,
+            modelTransportCompatibility: options.providerCatalog.models.flatMap((model) => {
+              const plan = provider.value.transportCompatibilityFor(model.modelId);
+              return plan === null ? [] : [{ modelId: model.modelId, plan }];
+            }),
             requestInputModalities: provider.value.requestInputModalities,
             requestResponseDensityControls: provider.value.requestResponseDensityControls ?? [],
             catalog: options.providerCatalog,

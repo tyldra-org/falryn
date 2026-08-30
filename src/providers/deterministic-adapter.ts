@@ -13,7 +13,10 @@ import { MODEL_CAPABILITY_SCHEMA_VERSION } from "./model-capability.ts";
 import type { ProviderAdapterPort } from "./port.ts";
 import type { ModelRequest } from "./request.ts";
 import type { NormalizedProviderEvent, UsageUnits } from "./stream.ts";
-import { defaultProviderTransportCompatibility } from "./transport-compatibility.ts";
+import {
+  bindProviderTransportCompatibilityToModel,
+  defaultProviderTransportCompatibility,
+} from "./transport-compatibility.ts";
 
 export type DeterministicFailureScript = {
   readonly kind: "error";
@@ -137,6 +140,11 @@ export function createDeterministicProviderAdapter(
     requestInputModalities: ["text"],
     requestResponseDensityControls: ["low", "medium", "high"],
     transportCompatibility,
+    transportCompatibilityFor(selectedModelId) {
+      return models.includes(selectedModelId)
+        ? bindProviderTransportCompatibilityToModel(transportCompatibility, selectedModelId)
+        : null;
+    },
     modelCapabilities: models.map((model) => ({
       schemaVersion: MODEL_CAPABILITY_SCHEMA_VERSION,
       modelId: model,

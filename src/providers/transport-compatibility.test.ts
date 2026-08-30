@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { modelId } from "../domain/identity.ts";
 import {
   defaultProviderTransportCompatibility,
   OPENAI_CHAT_TRANSPORT_DEFAULT,
@@ -55,6 +56,53 @@ describe("provider transport compatibility", () => {
         adapterKind: "anthropic",
         dialect: "openai-chat-completions",
       },
+    });
+  });
+
+  test("selects an exact-model override after the destination declaration", () => {
+    const selectedModelId = modelId.from("compatible-model");
+    const resolved = resolveProviderTransportCompatibility(
+      "openai",
+      { ...OPENAI_CHAT_TRANSPORT_DEFAULT, systemMessageRole: "system" },
+      {
+        modelId: selectedModelId,
+        modelOverrides: [
+          {
+            schemaVersion: 1,
+            modelId: selectedModelId,
+            declaration: {
+              ...OPENAI_CHAT_TRANSPORT_DEFAULT,
+              systemMessageRole: "developer",
+              maxOutputTokensField: "max_tokens",
+            },
+            source: {
+              kind: "provider-documentation",
+              url: "https://provider.example/docs/models/compatible-model",
+              observedAt: "2026-08-29T00:00:00Z",
+            },
+          },
+        ],
+      },
+    );
+
+    expect(resolved.ok).toBe(true);
+    if (!resolved.ok) {
+      return;
+    }
+    expect(resolved.value.provenance).toBe("model-override");
+    expect(resolved.value.declaration).toMatchObject({
+      systemMessageRole: "developer",
+      maxOutputTokensField: "max_tokens",
+    });
+    expect(resolved.value.receipt).toMatchObject({
+      modelId: selectedModelId,
+      selectedLayer: "model-override",
+      source: { kind: "provider-documentation" },
+      layers: [
+        { layer: "adapter-default", status: "superseded" },
+        { layer: "destination-profile", status: "superseded" },
+        { layer: "model-override", status: "selected" },
+      ],
     });
   });
 

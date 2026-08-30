@@ -30,6 +30,7 @@ import {
   type ModelResponseDensityControl,
   modelRequestId,
   type ProviderAdapterPort,
+  providerTransportCompatibilityReceiptMatchesPlan,
   type UsageUnits,
 } from "../providers/index.ts";
 import { createBriefComposer } from "./brief.ts";
@@ -630,10 +631,16 @@ export function createProductAttemptRunner(
       if (request.receipt.providerDestinationId !== options.provider.identity.destinationId) {
         return invalidAttempt("selected provider destination does not match the route");
       }
+      const transportCompatibility = options.provider.transportCompatibilityFor(
+        request.receipt.modelId,
+      );
       if (
-        options.provider.identity.transportCompatibilityId !== undefined &&
-        request.receipt.transportCompatibilityId !==
-          options.provider.identity.transportCompatibilityId
+        transportCompatibility === null ||
+        request.receipt.transportCompatibilityId !== transportCompatibility.compatibilityId ||
+        !providerTransportCompatibilityReceiptMatchesPlan(
+          request.receipt.transportCompatibilityReceipt,
+          transportCompatibility,
+        )
       ) {
         return invalidAttempt("selected provider transport compatibility does not match the route");
       }

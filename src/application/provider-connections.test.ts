@@ -479,6 +479,17 @@ describe("provider connection service", () => {
         ...OPENAI_CHAT_TRANSPORT_DEFAULT,
         systemMessageRole: "developer",
       },
+      modelTransportCompatibility: [
+        {
+          schemaVersion: 1,
+          modelId: modelId.from("compatible-model"),
+          declaration: {
+            ...OPENAI_CHAT_TRANSPORT_DEFAULT,
+            maxOutputTokensField: "max_tokens",
+          },
+          source: { kind: "user-declaration", url: null, observedAt: null },
+        },
+      ],
     };
     const stored = memoryStore(state(declared));
     const credentials = mutableCredentials(clock);
@@ -491,7 +502,12 @@ describe("provider connection service", () => {
     expect(
       await service.execute({
         kind: "configure",
-        profile: { ...declared, displayName: "Preserved", transportCompatibility: null },
+        profile: {
+          ...declared,
+          displayName: "Preserved",
+          transportCompatibility: null,
+          modelTransportCompatibility: [],
+        },
         preserveCredential: true,
         preserveCapabilities: true,
         preserveTransportCompatibility: true,
@@ -500,17 +516,26 @@ describe("provider connection service", () => {
     expect(stored.state().connections[0]?.profile.transportCompatibility).toEqual(
       declared.transportCompatibility,
     );
+    expect(stored.state().connections[0]?.profile.modelTransportCompatibility).toEqual(
+      declared.modelTransportCompatibility,
+    );
 
     expect(
       await service.execute({
         kind: "configure",
-        profile: { ...declared, displayName: "Reset", transportCompatibility: null },
+        profile: {
+          ...declared,
+          displayName: "Reset",
+          transportCompatibility: null,
+          modelTransportCompatibility: [],
+        },
         preserveCredential: true,
         preserveCapabilities: true,
         preserveTransportCompatibility: false,
       }),
     ).toMatchObject({ kind: "completed" });
     expect(stored.state().connections[0]?.profile.transportCompatibility).toBeNull();
+    expect(stored.state().connections[0]?.profile.modelTransportCompatibility).toEqual([]);
   });
 
   test("does not carry capability declarations across a provider identity change", async () => {

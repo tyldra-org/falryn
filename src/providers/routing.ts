@@ -34,7 +34,12 @@ import {
   resolveSpecializedRole,
 } from "./role-support.ts";
 import type { ModelRole, WorkIntent } from "./roles.ts";
-import { defaultProviderTransportCompatibility } from "./transport-compatibility.ts";
+import {
+  bindProviderTransportCompatibilityToModel,
+  defaultProviderTransportCompatibility,
+  type ProviderTransportCompatibilityPlan,
+  type ProviderTransportCompatibilityReceipt,
+} from "./transport-compatibility.ts";
 
 export type { RouteRequirement } from "./role-support.ts";
 
@@ -50,6 +55,13 @@ export type RoutedCatalogEntry = {
   readonly adapterKind: ProviderAdapterKind;
   readonly destinationId: string;
   readonly transportCompatibilityId?: string | undefined;
+  readonly transportCompatibility?: ProviderTransportCompatibilityPlan | undefined;
+  readonly modelTransportCompatibility?:
+    | readonly {
+        readonly modelId: ModelId;
+        readonly plan: ProviderTransportCompatibilityPlan;
+      }[]
+    | undefined;
   readonly requestInputModalities: readonly ModelInputModality[];
   readonly requestResponseDensityControls?: readonly ModelResponseDensityControl[];
   readonly catalog: ModelCatalog;
@@ -71,6 +83,7 @@ export type RoutingReceipt = {
   readonly providerAdapterKind: ProviderAdapterKind;
   readonly providerDestinationId: string;
   readonly transportCompatibilityId: string;
+  readonly transportCompatibilityReceipt: ProviderTransportCompatibilityReceipt;
   readonly modelId: ModelId;
   readonly reasoning: ReasoningEffort;
   readonly reasoningControl: string | null;
@@ -131,6 +144,24 @@ export type ResolveRouteInput = {
   /** Provider/model pairs already attempted; proves non-recursion. */
   readonly visited?: ReadonlySet<string>;
 };
+
+function transportCompatibilityFor(
+  entry: RoutedCatalogEntry,
+  selectedModelId: ModelId,
+): ProviderTransportCompatibilityPlan {
+  const exact = entry.modelTransportCompatibility?.find(
+    (candidate) => candidate.modelId === selectedModelId,
+  )?.plan;
+  if (exact !== undefined) {
+    return exact;
+  }
+  const base =
+    entry.transportCompatibility ?? defaultProviderTransportCompatibility(entry.adapterKind);
+  return bindProviderTransportCompatibilityToModel(
+    { ...base, compatibilityId: entry.transportCompatibilityId ?? base.compatibilityId },
+    selectedModelId,
+  );
+}
 
 function routeKey(providerId: ProviderId, modelId: ModelId): string {
   return `${providerId}\0${modelId}`;
@@ -368,6 +399,7 @@ export function resolveModelRoute(input: ResolveRouteInput): RoutingOutcome {
         code: "fallback-recursion",
       };
     }
+    const transportCompatibility = transportCompatibilityFor(found.entry, input.explicit.modelId);
     return {
       kind: "selected",
       capability: found.capability,
@@ -380,9 +412,8 @@ export function resolveModelRoute(input: ResolveRouteInput): RoutingOutcome {
         providerProfileId: found.entry.profileId,
         providerAdapterKind: found.entry.adapterKind,
         providerDestinationId: found.entry.destinationId,
-        transportCompatibilityId:
-          found.entry.transportCompatibilityId ??
-          defaultProviderTransportCompatibility(found.entry.adapterKind).compatibilityId,
+        transportCompatibilityId: transportCompatibility.compatibilityId,
+        transportCompatibilityReceipt: transportCompatibility.receipt,
         modelId: input.explicit.modelId,
         reasoning: "provider-default",
         reasoningControl: null,
@@ -488,6 +519,7 @@ export function resolveModelRoute(input: ResolveRouteInput): RoutingOutcome {
             : "role-policy"
         : "fallback";
 
+    const transportCompatibility = transportCompatibilityFor(found.entry, candidate.modelId);
     return {
       kind: "selected",
       capability: found.capability,
@@ -500,9 +532,8 @@ export function resolveModelRoute(input: ResolveRouteInput): RoutingOutcome {
         providerProfileId: found.entry.profileId,
         providerAdapterKind: found.entry.adapterKind,
         providerDestinationId: found.entry.destinationId,
-        transportCompatibilityId:
-          found.entry.transportCompatibilityId ??
-          defaultProviderTransportCompatibility(found.entry.adapterKind).compatibilityId,
+        transportCompatibilityId: transportCompatibility.compatibilityId,
+        transportCompatibilityReceipt: transportCompatibility.receipt,
         modelId: candidate.modelId,
         reasoning: route.reasoning,
         reasoningControl,

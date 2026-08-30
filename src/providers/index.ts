@@ -320,14 +320,22 @@ export type {
   OpenAiStreamingUsageMode,
   OpenAiSystemMessageRole,
   OpenAiToolResultNameMode,
+  ProviderModelTransportCompatibilityOverride,
   ProviderTransportCompatibilityDeclaration,
   ProviderTransportCompatibilityError,
+  ProviderTransportCompatibilityLayer,
+  ProviderTransportCompatibilityLayerReceipt,
+  ProviderTransportCompatibilityLayerStatus,
   ProviderTransportCompatibilityPlan,
   ProviderTransportCompatibilityProvenance,
+  ProviderTransportCompatibilityReceipt,
   ProviderTransportCompatibilityResolution,
+  ProviderTransportCompatibilitySource,
+  ProviderTransportCompatibilitySourceKind,
   ProviderTransportDialect,
 } from "./transport-compatibility.ts";
 export {
+  bindProviderTransportCompatibilityToModel,
   defaultProviderTransportCompatibility,
   OPENAI_ASSISTANT_AFTER_TOOL_RESULT_MODES,
   OPENAI_CHAT_TRANSPORT_DEFAULT,
@@ -337,13 +345,16 @@ export {
   OPENAI_SYSTEM_MESSAGE_ROLES,
   OPENAI_TOOL_RESULT_NAME_MODES,
   PROVIDER_TRANSPORT_COMPATIBILITY_SCHEMA_VERSION,
+  PROVIDER_TRANSPORT_COMPATIBILITY_SOURCE_KINDS,
   PROVIDER_TRANSPORT_DIALECTS,
   providerTransportCompatibilityMatchesAdapter,
+  providerTransportCompatibilityReceiptMatchesPlan,
   resolveProviderTransportCompatibility,
 } from "./transport-compatibility.ts";
 export type { ProviderTransportCompatibilityDeclarationParseError } from "./transport-compatibility-schema.ts";
 export {
   parseProviderTransportCompatibilityDeclaration,
+  providerModelTransportCompatibilityOverrideSchema,
   providerTransportCompatibilityDeclarationSchema,
 } from "./transport-compatibility-schema.ts";
 export type { ProviderBoundaryParseError } from "./validate.ts";

@@ -54,6 +54,8 @@ export type ProviderAdapterPort = {
   readonly requestResponseDensityControls?: readonly ModelResponseDensityControl[];
   /** Secret-free plan used by this concrete adapter instance. */
   readonly transportCompatibility?: ProviderTransportCompatibilityPlan | undefined;
+  /** Exact immutable translation plan for one supported model. */
+  transportCompatibilityFor(modelId: ModelId): ProviderTransportCompatibilityPlan | null;
   /** Optional adapter-owned facts used when no product catalog was supplied. */
   readonly modelCapabilities?: readonly ModelCapability[] | undefined;
   stream(

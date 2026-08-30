@@ -2,8 +2,9 @@
 
 import { z } from "zod";
 
-import { toCodecIssues } from "../domain/branded-schema.ts";
+import { brandedString, toCodecIssues } from "../domain/branded-schema.ts";
 import type { CodecIssue } from "../domain/codec-error.ts";
+import { modelId } from "../domain/identity.ts";
 import { err, ok, type Result } from "../domain/result.ts";
 import {
   OPENAI_ASSISTANT_AFTER_TOOL_RESULT_MODES,
@@ -13,6 +14,8 @@ import {
   OPENAI_SYSTEM_MESSAGE_ROLES,
   OPENAI_TOOL_RESULT_NAME_MODES,
   PROVIDER_TRANSPORT_COMPATIBILITY_SCHEMA_VERSION,
+  PROVIDER_TRANSPORT_COMPATIBILITY_SOURCE_KINDS,
+  type ProviderModelTransportCompatibilityOverride,
   type ProviderTransportCompatibilityDeclaration,
 } from "./transport-compatibility.ts";
 
@@ -39,6 +42,34 @@ export const providerTransportCompatibilityDeclarationSchema: z.ZodType<Provider
     z.strictObject({ schemaVersion: version, dialect: z.literal("deterministic") }),
     z.strictObject({ schemaVersion: version, dialect: z.literal("custom-unavailable") }),
   ]);
+
+function sourceUrlIsAllowed(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" && url.username.length === 0 && url.password.length === 0;
+  } catch {
+    return false;
+  }
+}
+
+export const providerModelTransportCompatibilityOverrideSchema: z.ZodType<ProviderModelTransportCompatibilityOverride> =
+  z
+    .strictObject({
+      schemaVersion: version,
+      modelId: brandedString(modelId),
+      declaration: providerTransportCompatibilityDeclarationSchema,
+      source: z
+        .strictObject({
+          kind: z.enum(PROVIDER_TRANSPORT_COMPATIBILITY_SOURCE_KINDS),
+          url: z.union([
+            z.string().min(1).max(2048).refine(sourceUrlIsAllowed, "invalid source URL"),
+            z.null(),
+          ]),
+          observedAt: z.union([z.string().datetime({ offset: true }), z.null()]),
+        })
+        .strict(),
+    })
+    .strict();
 
 export type ProviderTransportCompatibilityDeclarationParseError = {
   readonly kind: "provider-transport-compatibility";

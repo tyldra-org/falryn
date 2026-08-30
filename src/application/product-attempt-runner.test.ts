@@ -73,6 +73,10 @@ function receipt(
   if (model === undefined) {
     throw new Error("deterministic provider has no model");
   }
+  const transportCompatibility = setupResult.adapter.transportCompatibilityFor(model);
+  if (transportCompatibility === null) {
+    throw new Error("deterministic provider has no transport compatibility");
+  }
   return {
     role: "default",
     intent: "coding",
@@ -84,6 +88,7 @@ function receipt(
     providerDestinationId: setupResult.adapter.identity.destinationId,
     transportCompatibilityId:
       setupResult.adapter.identity.transportCompatibilityId ?? "transport:deterministic",
+    transportCompatibilityReceipt: transportCompatibility.receipt,
     modelId: model,
     reasoning: "provider-default",
     reasoningControl: null,
@@ -523,6 +528,10 @@ describe("createProductAttemptRunner", () => {
     if (model === undefined) {
       throw new Error("missing deterministic model");
     }
+    const transportCompatibility = adapter.transportCompatibilityFor(model);
+    if (transportCompatibility === null) {
+      throw new Error("missing deterministic transport compatibility");
+    }
     const briefRequest = {
       turnId: targetTurn,
       sessionId: correlation.sessionId,
@@ -554,6 +563,7 @@ describe("createProductAttemptRunner", () => {
         providerDestinationId: adapter.identity.destinationId,
         transportCompatibilityId:
           adapter.identity.transportCompatibilityId ?? "transport:deterministic",
+        transportCompatibilityReceipt: transportCompatibility.receipt,
         modelId: model,
         reasoning: "provider-default",
         reasoningControl: null,

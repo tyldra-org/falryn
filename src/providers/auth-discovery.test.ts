@@ -73,10 +73,35 @@ describe("parseProviderProfile", () => {
     expect(defaulted.ok).toBe(true);
     if (defaulted.ok) {
       expect(defaulted.value.transportCompatibility).toBeNull();
+      expect(defaulted.value.modelTransportCompatibility).toEqual([]);
     }
     expect(mismatched.ok).toBe(false);
     if (!mismatched.ok) {
       expect(mismatched.error.issues.some((issue) => issue.path.endsWith("dialect"))).toBe(true);
+    }
+  });
+
+  test("accepts sourced exact-model compatibility and rejects disabled models", () => {
+    const exact = {
+      schemaVersion: 1 as const,
+      modelId: modelId.from("demo-fast"),
+      declaration: { schemaVersion: 1 as const, dialect: "deterministic" as const },
+      source: {
+        kind: "provider-documentation" as const,
+        url: "https://provider.example/models/demo-fast",
+        observedAt: "2026-08-29T00:00:00Z",
+      },
+    };
+    const accepted = parseProviderProfile(demoProfile({ modelTransportCompatibility: [exact] }));
+    const disabled = parseProviderProfile({
+      ...demoProfile(),
+      modelTransportCompatibility: [{ ...exact, modelId: modelId.from("disabled-model") }],
+    });
+
+    expect(accepted.ok).toBe(true);
+    expect(disabled.ok).toBe(false);
+    if (!disabled.ok) {
+      expect(disabled.error.issues.some((issue) => issue.path.endsWith("modelId"))).toBe(true);
     }
   });
 

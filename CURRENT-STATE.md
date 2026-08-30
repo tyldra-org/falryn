@@ -188,16 +188,23 @@ transport; the live adapters accept text today and fail with
 keeps retries above the SDK boundary; each SDK performs one request attempt.
 
 Provider wire behavior is a separate versioned contract. Every adapter resolves
-one immutable transport-compatibility plan and publishes its SHA-256 identity.
-The route, provider request metadata, and durable model-attempt binding retain
-that identity, and the attempt runner refuses a route whose plan differs from
-the live adapter. Existing profiles use the installed adapter's baseline.
-OpenAI profiles may instead declare the exact Chat Completions behavior for
+an immutable destination plan plus one plan for each enabled model and publishes
+their SHA-256 identities. Resolution is ordered: installed SDK baseline, optional
+destination declaration, then an optional exact-model override. The route keeps
+the selected plan's source and layer receipt; provider request metadata and the
+durable model-attempt binding retain its identity. The attempt runner refuses an
+identity or receipt that differs from the live adapter before network I/O.
+Existing profiles use the installed adapter's baseline. OpenAI profiles may
+instead declare the exact Chat Completions behavior for
 system or developer messages, output-token field, streaming usage, finish
 reason, strict tool schemas, tool-result names, and assistant bridging after a
-tool result. The strict profile codec rejects a dialect that does not match the
-selected adapter. Falryn does not infer these facts from a model name, provider
-label, or endpoint URL.
+tool result at destination or exact-model scope. Exact-model declarations name
+an enabled model and retain nullable HTTPS source and observation metadata. The
+strict profile codec rejects duplicate or disabled model overrides and any
+dialect that does not match the selected adapter. Source metadata is audit data,
+not authority. Falryn does not infer these facts from a model name, provider
+label, or endpoint URL. OpenAI Responses is not implemented by this Chat
+Completions adapter.
 
 Live turns also derive a secret-safe, session-scoped prompt-cache identity from
 the bound provider route, configuration and catalog generations, and the exact

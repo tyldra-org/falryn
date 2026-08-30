@@ -473,6 +473,77 @@ describe("createOpenAiSdkAdapter", () => {
     expect(events.at(-1)).toMatchObject({ kind: "finished", finishReason: "stop" });
   });
 
+  test("applies an exact-model wire override and exposes its receipt", async () => {
+    const bodies: Record<string, unknown>[] = [];
+    const selectedModelId = modelId.from("compatible-model");
+    const baselineModelId = modelId.from("baseline-model");
+    const adapter = createOpenAiSdkAdapter({
+      profileId: "layered-compatible",
+      baseUrl: "https://compatible.example.test/v1",
+      resolveApiKey: async () => "sk-test",
+      supportedModels: [selectedModelId, baselineModelId],
+      compatibility: OPENAI_CHAT_TRANSPORT_DEFAULT,
+      modelCompatibility: [
+        {
+          schemaVersion: 1,
+          modelId: selectedModelId,
+          declaration: {
+            ...OPENAI_CHAT_TRANSPORT_DEFAULT,
+            systemMessageRole: "developer",
+            maxOutputTokensField: "max_tokens",
+          },
+          source: {
+            kind: "provider-documentation",
+            url: "https://provider.example/docs/compatible-model",
+            observedAt: "2026-08-29T00:00:00Z",
+          },
+        },
+      ],
+      fetch: async (_input, init) => {
+        bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+        return sseResponse(['data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n']);
+      },
+    });
+
+    const modelMessages: ModelRequest["messages"] = [
+      { role: "system", parts: [{ kind: "text", text: "policy" }] },
+      { role: "user", parts: [{ kind: "text", text: "hello" }] },
+    ];
+    await collect(
+      adapter,
+      undefined,
+      request({
+        modelId: selectedModelId,
+        messages: modelMessages,
+        budgets: { maxOutputTokens: 1_024 },
+      }),
+    );
+    await collect(
+      adapter,
+      undefined,
+      request({
+        modelId: baselineModelId,
+        messages: modelMessages,
+        budgets: { maxOutputTokens: 1_024 },
+      }),
+    );
+
+    expect(adapter.transportCompatibilityFor(selectedModelId)?.receipt).toMatchObject({
+      selectedLayer: "model-override",
+      modelId: selectedModelId,
+    });
+    expect(bodies[0]).toMatchObject({ max_tokens: 1_024 });
+    expect((bodies[0]?.messages as unknown[] | undefined)?.[0]).toEqual({
+      role: "developer",
+      content: "policy",
+    });
+    expect(bodies[1]).toMatchObject({ max_completion_tokens: 1_024 });
+    expect((bodies[1]?.messages as unknown[] | undefined)?.[0]).toEqual({
+      role: "system",
+      content: "policy",
+    });
+  });
+
   test("never puts the API key into failure messages", async () => {
     const secret = "sk-super-secret-value";
     const adapter = createOpenAiSdkAdapter({

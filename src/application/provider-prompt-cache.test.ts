@@ -1,12 +1,13 @@
 import { describe, expect, test } from "bun:test";
 
 import { configurationGeneration, modelId, providerId, sessionId } from "../domain/index.ts";
-import type { RoutingReceipt } from "../providers/index.ts";
+import { defaultProviderTransportCompatibility, type RoutingReceipt } from "../providers/index.ts";
 import { providerPromptCachePolicy } from "./provider-prompt-cache.ts";
 
 const generation = configurationGeneration.from(7);
 
 function receipt(overrides: Partial<RoutingReceipt> = {}): RoutingReceipt {
+  const transport = defaultProviderTransportCompatibility("openai");
   return {
     role: "default",
     intent: "coding",
@@ -17,6 +18,7 @@ function receipt(overrides: Partial<RoutingReceipt> = {}): RoutingReceipt {
     providerAdapterKind: "openai",
     providerDestinationId: "sha-256:destination",
     transportCompatibilityId: "sha-256:transport",
+    transportCompatibilityReceipt: transport.receipt,
     modelId: modelId.from("gpt-5.6-sol"),
     reasoning: "provider-default",
     reasoningControl: null,

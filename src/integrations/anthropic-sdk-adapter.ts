@@ -34,9 +34,12 @@ import type { ModelMessage, ModelToolDefinition } from "../providers/messages.ts
 import type { ProviderAdapterPort, ProviderStreamOptions } from "../providers/port.ts";
 import type { ModelRequest } from "../providers/request.ts";
 import type { NormalizedProviderEvent, UsageUnits } from "../providers/stream.ts";
-import type { AnthropicMessagesTransportCompatibilityDeclaration } from "../providers/transport-compatibility.ts";
+import type {
+  AnthropicMessagesTransportCompatibilityDeclaration,
+  ProviderModelTransportCompatibilityOverride,
+} from "../providers/transport-compatibility.ts";
 import { providerDestinationId } from "./provider-destination.ts";
-import { resolveProviderTransportCompatibilityPlan } from "./provider-transport-compatibility.ts";
+import { resolveProviderTransportCompatibilityPlanSet } from "./provider-transport-compatibility.ts";
 
 export type AnthropicSdkFetch = NonNullable<ClientOptions["fetch"]>;
 
@@ -58,6 +61,7 @@ export type AnthropicSdkAdapterOptions = {
   /** Deterministic SDK boundary used by tests. Production leaves this absent. */
   readonly createStream?: AnthropicSdkStreamFactory;
   readonly compatibility?: AnthropicMessagesTransportCompatibilityDeclaration;
+  readonly modelCompatibility?: readonly ProviderModelTransportCompatibilityOverride[];
 };
 
 type ToolCallState = {
@@ -299,14 +303,20 @@ function usageFrom(
 export function createAnthropicSdkAdapter(
   options: AnthropicSdkAdapterOptions,
 ): ProviderAdapterPort {
-  const resolvedCompatibility = resolveProviderTransportCompatibilityPlan(
+  const models = options.supportedModels.map((id) => modelId.from(id));
+  const resolvedCompatibility = resolveProviderTransportCompatibilityPlanSet(
     "anthropic",
     options.compatibility,
+    models,
+    options.modelCompatibility,
   );
   if (!resolvedCompatibility.ok) {
     throw new Error("Anthropic SDK adapter received an incompatible transport declaration");
   }
-  const transportCompatibility = resolvedCompatibility.value;
+  const transportCompatibility = resolvedCompatibility.value.destination;
+  const compatibilityByModel = new Map(
+    resolvedCompatibility.value.models.map((entry) => [String(entry.modelId), entry.plan]),
+  );
   const identity = {
     providerId: providerId.from(options.providerId ?? "anthropic"),
     profileId: options.profileId,
@@ -316,7 +326,6 @@ export function createAnthropicSdkAdapter(
     transportCompatibilityId: transportCompatibility.compatibilityId,
     displayName: options.displayName ?? "Anthropic",
   };
-  const models = options.supportedModels.map((id) => modelId.from(id));
 
   return {
     identity,
@@ -324,6 +333,9 @@ export function createAnthropicSdkAdapter(
     requestInputModalities: ["text"],
     requestResponseDensityControls: [],
     transportCompatibility,
+    transportCompatibilityFor(selectedModelId) {
+      return compatibilityByModel.get(String(selectedModelId)) ?? null;
+    },
     async *stream(
       request: ModelRequest,
       streamOptions: ProviderStreamOptions,

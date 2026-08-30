@@ -151,6 +151,7 @@ export function composeProductProviderConnections(
         displayName: profile.displayName,
         requestTimeoutMs: profile.timeouts.requestMs,
         supportedModels: session.catalog.models.map((model) => String(model.modelId)),
+        modelCompatibility: profile.modelTransportCompatibility ?? [],
         resolveApiKey: (requestSignal: AbortSignal) =>
           resolveProviderApiKey(credentials.resolver, reference, requestSignal),
       };

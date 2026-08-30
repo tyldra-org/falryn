@@ -10,11 +10,14 @@ import {
 import type { ProviderAdapterPort, ProviderStreamOptions } from "../providers/port.ts";
 import type { ModelRequest } from "../providers/request.ts";
 import type { NormalizedProviderEvent } from "../providers/stream.ts";
-import type { CommandCodeTransportCompatibilityDeclaration } from "../providers/transport-compatibility.ts";
+import type {
+  CommandCodeTransportCompatibilityDeclaration,
+  ProviderModelTransportCompatibilityOverride,
+} from "../providers/transport-compatibility.ts";
 import { createAnthropicSdkAdapter } from "./anthropic-sdk-adapter.ts";
 import { createOpenAiSdkAdapter, type OpenAiSdkFetch } from "./openai-sdk-adapter.ts";
 import { providerDestinationId } from "./provider-destination.ts";
-import { resolveProviderTransportCompatibilityPlan } from "./provider-transport-compatibility.ts";
+import { resolveProviderTransportCompatibilityPlanSet } from "./provider-transport-compatibility.ts";
 
 export type CommandCodeSdkAdapterOptions = {
   readonly profileId: string;
@@ -25,6 +28,7 @@ export type CommandCodeSdkAdapterOptions = {
   readonly requestTimeoutMs?: number;
   readonly fetch?: OpenAiSdkFetch;
   readonly compatibility?: CommandCodeTransportCompatibilityDeclaration;
+  readonly modelCompatibility?: readonly ProviderModelTransportCompatibilityOverride[];
 };
 
 type CommandCodeChildAdapters = {
@@ -121,17 +125,22 @@ export function createCommandCodeSdkAdapter(
   options: CommandCodeSdkAdapterOptions,
   createChildren: CommandCodeChildAdapterFactory = defaultChildren,
 ): ProviderAdapterPort {
-  const resolvedCompatibility = resolveProviderTransportCompatibilityPlan(
+  const grouped = supportedModelsByProtocol(options.supportedModels);
+  const supportedModels = [...grouped.openai, ...grouped.anthropic].map(modelId.from);
+  const resolvedCompatibility = resolveProviderTransportCompatibilityPlanSet(
     "commandcode",
     options.compatibility,
+    supportedModels,
+    options.modelCompatibility,
   );
   if (!resolvedCompatibility.ok) {
     throw new Error("Command Code adapter received an incompatible transport declaration");
   }
-  const transportCompatibility = resolvedCompatibility.value;
-  const grouped = supportedModelsByProtocol(options.supportedModels);
+  const transportCompatibility = resolvedCompatibility.value.destination;
+  const compatibilityByModel = new Map(
+    resolvedCompatibility.value.models.map((entry) => [String(entry.modelId), entry.plan]),
+  );
   const children = createChildren(options, grouped);
-  const supportedModels = [...grouped.openai, ...grouped.anthropic].map(modelId.from);
 
   return {
     identity: {
@@ -149,6 +158,9 @@ export function createCommandCodeSdkAdapter(
     // OpenAI-compatible transport does not establish OpenAI-native verbosity support.
     requestResponseDensityControls: [],
     transportCompatibility,
+    transportCompatibilityFor(selectedModelId) {
+      return compatibilityByModel.get(String(selectedModelId)) ?? null;
+    },
     async *stream(
       request: ModelRequest,
       streamOptions: ProviderStreamOptions,

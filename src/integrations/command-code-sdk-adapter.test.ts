@@ -37,6 +37,9 @@ function child(
     },
     supportedModels: [],
     requestInputModalities: ["text"],
+    transportCompatibilityFor() {
+      return null;
+    },
     async *stream(input): AsyncIterable<NormalizedProviderEvent> {
       calls.push(name);
       inputs.push(input);
