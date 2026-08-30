@@ -109,10 +109,13 @@ strict, versioned OpenAI, Anthropic, Google, and Command Code model catalogs
 as committed JSON resources into the executable. `bun run generate:model-catalogs`
 deterministically regenerates Command Code's resource from its verified model,
 reasoning-control, and provider-pricing sources; `bun run check:model-catalogs`
-validates all four resources and rejects generated drift. The ordinary static
-check runs that verification in parallel with repository integrity, type
-checking, and code quality. The command reports each catalog's model count,
-canonical SHA-256 resource digest, and committed path. Every built-in catalog
+validates all four resources and rejects generated drift. It also reports
+complete and partial model counts plus unresolved core facts. A built-in model
+cannot claim `complete` while its modalities, feature support, context or
+output limit, or pricing remain unresolved. The ordinary static check runs that
+verification in parallel with repository integrity, type checking, and code
+quality. The command reports each catalog's model count, coverage, canonical
+SHA-256 resource digest, and committed path. Every built-in catalog
 also records bounded resolved source URLs, observation times, source authority,
 confidence, and the identity, capability, token-limit, or prompt-cache facts
 supported by each source. Provider documentation is preferred. Upstream model

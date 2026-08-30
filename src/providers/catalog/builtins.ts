@@ -7,6 +7,7 @@ import commandCodeCatalogValue from "./builtin/commandcode.json";
 import googleCatalogValue from "./builtin/google.json";
 import openAiCatalogValue from "./builtin/openai.json";
 import type { ModelCatalogDocument } from "./contracts.ts";
+import { incompleteCompleteModelIds, inspectModelCatalogCoverage } from "./coverage.ts";
 import { parseModelCatalogDocument } from "./schema.ts";
 
 function requiredBuiltin(value: unknown): ModelCatalogDocument {
@@ -34,6 +35,14 @@ function requiredBuiltin(value: unknown): ModelCatalogDocument {
   const parsed = parseModelCatalogDocument(value);
   if (!parsed.ok) {
     throw new Error("Falryn was built with an invalid model catalog resource.");
+  }
+  const incompleteCompleteModels = incompleteCompleteModelIds(
+    inspectModelCatalogCoverage(parsed.value),
+  );
+  if (incompleteCompleteModels.length > 0) {
+    throw new Error(
+      `Falryn's built-in model catalog marks unresolved models complete: ${incompleteCompleteModels.join(", ")}.`,
+    );
   }
   if (
     parsed.value.sources.length === 0 ||

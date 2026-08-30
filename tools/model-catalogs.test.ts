@@ -16,6 +16,29 @@ describe("built-in model catalog generation", () => {
       "falryn.commandcode",
     ]);
     expect(reports.map((report) => report.modelCount)).toEqual([10, 4, 5, 62]);
+    expect(
+      reports.map((report) => [
+        report.coverage.completeModelCount,
+        report.coverage.partialModelCount,
+      ]),
+    ).toEqual([
+      [10, 0],
+      [4, 0],
+      [5, 0],
+      [0, 62],
+    ]);
+    expect(
+      reports
+        .slice(0, 3)
+        .every((report) =>
+          Object.values(report.coverage.unresolvedCoreFactCounts).every((count) => count === 0),
+        ),
+    ).toBe(true);
+    expect(reports[3]?.coverage.unresolvedCoreFactCounts).toMatchObject({
+      "structured-output": 62,
+      "output-limit": 62,
+      reasoning: 11,
+    });
     expect(reports.filter((report) => report.generated).map((report) => report.catalogId)).toEqual([
       "falryn.commandcode",
     ]);

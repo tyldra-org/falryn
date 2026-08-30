@@ -3,6 +3,10 @@
 import { createHash } from "node:crypto";
 import { join, relative } from "node:path";
 
+import {
+  inspectModelCatalogCoverage,
+  type ModelCatalogCoverage,
+} from "../src/providers/catalog/coverage.ts";
 import { parseModelCatalogDocument } from "../src/providers/catalog/schema.ts";
 import { createCommandCodeCatalog } from "./model-catalogs/command-code.ts";
 
@@ -21,6 +25,7 @@ export type ModelCatalogResourceReport = {
   readonly catalogId: string;
   readonly path: string;
   readonly modelCount: number;
+  readonly coverage: ModelCatalogCoverage;
   readonly digest: string;
   readonly generated: boolean;
 };
@@ -47,6 +52,21 @@ export function modelCatalogDigest(source: string): string {
   return `sha-256:${createHash("sha256").update(source).digest("hex")}`;
 }
 
+function formatCoverage(coverage: ModelCatalogCoverage): string {
+  const unresolved = Object.entries(coverage.unresolvedCoreFactCounts)
+    .filter(([, count]) => count > 0)
+    .map(([fact, count]) => `${fact}=${count}`)
+    .join(", ");
+  return [
+    `${coverage.completeModelCount} complete`,
+    `${coverage.partialModelCount} partial`,
+    `unresolved ${unresolved || "none"}`,
+    `controls reasoning=${coverage.modelsWithReasoningControls}/${coverage.modelCount}`,
+    `density=${coverage.modelsWithResponseDensityControls}/${coverage.modelCount}`,
+    `cache-min=${coverage.modelsWithKnownPromptCacheMinimum}/${coverage.modelCount}`,
+  ].join("; ");
+}
+
 async function inspectCatalogFile(
   resource: (typeof RESOURCES)[number],
 ): Promise<ModelCatalogResourceReport> {
@@ -65,6 +85,7 @@ async function inspectCatalogFile(
     catalogId: parsed.value.catalogId,
     path: relative(ROOT, path),
     modelCount: parsed.value.models.length,
+    coverage: inspectModelCatalogCoverage(parsed.value),
     digest: modelCatalogDigest(source),
     generated: create !== null,
   };
@@ -85,7 +106,7 @@ async function main(): Promise<void> {
     const reports = await checkModelCatalogs();
     for (const report of reports) {
       process.stdout.write(
-        `${report.catalogId}: ${report.modelCount} models, ${report.digest} (${report.path})\n`,
+        `${report.catalogId}: ${report.modelCount} models (${formatCoverage(report.coverage)}), ${report.digest} (${report.path})\n`,
       );
     }
     return;
@@ -94,7 +115,7 @@ async function main(): Promise<void> {
   const reports = await checkModelCatalogs();
   for (const report of reports) {
     process.stdout.write(
-      `${report.generated ? "Generated" : "Validated"} ${report.catalogId}: ${report.modelCount} models, ${report.digest}.\n`,
+      `${report.generated ? "Generated" : "Validated"} ${report.catalogId}: ${report.modelCount} models (${formatCoverage(report.coverage)}), ${report.digest}.\n`,
     );
   }
 }
