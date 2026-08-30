@@ -20,6 +20,8 @@
       "reasoning": "supported",
       "reasoningControls": ["low", "medium", "high", "xhigh", "max"],
       "responseDensityControls": [],
+      "promptCacheModes": ["anthropic-ephemeral"],
+      "promptCacheMinimumInputTokens": 512,
       "contextTokens": 1000000,
       "outputTokens": 128000,
       "pricing": {
@@ -62,6 +64,8 @@
       "reasoning": "supported",
       "reasoningControls": ["low", "medium", "high", "xhigh", "max"],
       "responseDensityControls": [],
+      "promptCacheModes": ["anthropic-ephemeral"],
+      "promptCacheMinimumInputTokens": 512,
       "contextTokens": 1000000,
       "outputTokens": 128000,
       "pricing": {
@@ -104,6 +108,8 @@
       "reasoning": "supported",
       "reasoningControls": ["low", "medium", "high", "xhigh", "max"],
       "responseDensityControls": [],
+      "promptCacheModes": ["anthropic-ephemeral"],
+      "promptCacheMinimumInputTokens": 1024,
       "contextTokens": 1000000,
       "outputTokens": 128000,
       "pricing": {
@@ -162,6 +168,8 @@
       "reasoning": "supported",
       "reasoningControls": [],
       "responseDensityControls": [],
+      "promptCacheModes": ["anthropic-ephemeral"],
+      "promptCacheMinimumInputTokens": 4096,
       "contextTokens": 200000,
       "outputTokens": 64000,
       "pricing": {

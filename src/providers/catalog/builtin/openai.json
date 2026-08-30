@@ -20,6 +20,8 @@
       "reasoning": "supported",
       "reasoningControls": ["none", "low", "medium", "high", "xhigh", "max"],
       "responseDensityControls": ["low", "medium", "high"],
+      "promptCacheModes": ["openai-routing-key"],
+      "promptCacheMinimumInputTokens": 1024,
       "contextTokens": 1050000,
       "outputTokens": 128000,
       "pricing": {
@@ -78,6 +80,8 @@
       "reasoning": "supported",
       "reasoningControls": ["none", "low", "medium", "high", "xhigh", "max"],
       "responseDensityControls": ["low", "medium", "high"],
+      "promptCacheModes": ["openai-routing-key"],
+      "promptCacheMinimumInputTokens": 1024,
       "contextTokens": 1050000,
       "outputTokens": 128000,
       "pricing": {
@@ -136,6 +140,8 @@
       "reasoning": "supported",
       "reasoningControls": ["none", "low", "medium", "high", "xhigh", "max"],
       "responseDensityControls": ["low", "medium", "high"],
+      "promptCacheModes": ["openai-routing-key"],
+      "promptCacheMinimumInputTokens": 1024,
       "contextTokens": 1050000,
       "outputTokens": 128000,
       "pricing": {
@@ -194,6 +200,8 @@
       "reasoning": "supported",
       "reasoningControls": ["none", "low", "medium", "high", "xhigh", "max"],
       "responseDensityControls": ["low", "medium", "high"],
+      "promptCacheModes": ["openai-routing-key"],
+      "promptCacheMinimumInputTokens": 1024,
       "contextTokens": 1050000,
       "outputTokens": 128000,
       "pricing": {
@@ -252,6 +260,8 @@
       "reasoning": "supported",
       "reasoningControls": ["none", "low", "medium", "high", "xhigh"],
       "responseDensityControls": ["low", "medium", "high"],
+      "promptCacheModes": ["openai-routing-key"],
+      "promptCacheMinimumInputTokens": 1024,
       "contextTokens": 1050000,
       "outputTokens": 128000,
       "pricing": {
@@ -310,6 +320,8 @@
       "reasoning": "supported",
       "reasoningControls": ["none", "low", "medium", "high", "xhigh"],
       "responseDensityControls": ["low", "medium", "high"],
+      "promptCacheModes": ["openai-routing-key"],
+      "promptCacheMinimumInputTokens": 1024,
       "contextTokens": 1050000,
       "outputTokens": 128000,
       "pricing": {
@@ -368,6 +380,8 @@
       "reasoning": "supported",
       "reasoningControls": ["low", "medium", "high", "xhigh"],
       "responseDensityControls": ["low", "medium", "high"],
+      "promptCacheModes": ["openai-routing-key"],
+      "promptCacheMinimumInputTokens": 1024,
       "contextTokens": 400000,
       "outputTokens": 128000,
       "pricing": {
@@ -410,6 +424,8 @@
       "reasoning": "supported",
       "reasoningControls": ["none", "low", "medium", "high", "xhigh"],
       "responseDensityControls": ["low", "medium", "high"],
+      "promptCacheModes": ["openai-routing-key"],
+      "promptCacheMinimumInputTokens": 1024,
       "contextTokens": 400000,
       "outputTokens": 128000,
       "pricing": {
@@ -452,6 +468,8 @@
       "reasoning": "supported",
       "reasoningControls": ["none", "low", "medium", "high", "xhigh"],
       "responseDensityControls": ["low", "medium", "high"],
+      "promptCacheModes": ["openai-routing-key"],
+      "promptCacheMinimumInputTokens": 1024,
       "contextTokens": 400000,
       "outputTokens": 128000,
       "pricing": {
@@ -494,6 +512,8 @@
       "reasoning": "unsupported",
       "reasoningControls": [],
       "responseDensityControls": [],
+      "promptCacheModes": ["openai-routing-key"],
+      "promptCacheMinimumInputTokens": 1024,
       "contextTokens": 128000,
       "outputTokens": 16384,
       "pricing": {

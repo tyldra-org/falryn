@@ -27,6 +27,10 @@ function receipt(overrides: Partial<RoutingReceipt> = {}): RoutingReceipt {
     recordedAt: null,
     ...overrides,
     responseDensityControls: overrides.responseDensityControls ?? [],
+    promptCacheMode:
+      "promptCacheMode" in overrides ? overrides.promptCacheMode : "openai-routing-key",
+    promptCacheMinimumInputTokens:
+      "promptCacheMinimumInputTokens" in overrides ? overrides.promptCacheMinimumInputTokens : 1024,
   };
 }
 
@@ -49,6 +53,10 @@ describe("providerPromptCachePolicy", () => {
     const first = policy();
     const second = policy();
     expect(first).toEqual(second);
+    expect(first).toMatchObject({
+      mode: "openai-routing-key",
+      minimumInputTokens: 1024,
+    });
     expect(first.key).toMatch(/^sha-256:[a-f0-9]{64}$/u);
     expect(first.key).not.toContain("session-1");
   });
@@ -75,5 +83,20 @@ describe("providerPromptCachePolicy", () => {
       }).key,
     ];
     expect(new Set([baseline, ...variants]).size).toBe(variants.length + 1);
+  });
+
+  test("does not invent a cache mechanism for a route that did not declare one", () => {
+    expect(() =>
+      providerPromptCachePolicy({
+        sessionId: sessionId.from("session-1"),
+        configurationGeneration: generation,
+        receipt: receipt({ promptCacheMode: null }),
+        seed: {
+          stablePrefixDigest: `sha-256:${"a".repeat(64)}`,
+          stableMessageCount: 2,
+          toolCatalogGeneration: 7,
+        },
+      }),
+    ).toThrow("requires a routed cache mechanism");
   });
 });

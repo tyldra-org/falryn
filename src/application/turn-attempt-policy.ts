@@ -630,7 +630,10 @@ export function createTurnAttemptPolicy(options: TurnAttemptPolicyOptions): Turn
 
         const live = options.coordinator.get(input.turnId);
         const promptCache =
-          live === null || input.modelInput?.promptCache === undefined
+          live === null ||
+          input.modelInput?.promptCache === undefined ||
+          receipt.promptCacheMode === null ||
+          receipt.promptCacheMode === undefined
             ? undefined
             : providerPromptCachePolicy({
                 sessionId: live.sessionId,

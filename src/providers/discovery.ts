@@ -303,6 +303,12 @@ function mergeCapability(remote: ModelCapability, configured: ModelCapability): 
       (configured.responseDensityControls ?? []).length === 0
         ? (remote.responseDensityControls ?? [])
         : (configured.responseDensityControls ?? []),
+    promptCacheModes:
+      (configured.promptCacheModes ?? []).length === 0
+        ? (remote.promptCacheModes ?? [])
+        : (configured.promptCacheModes ?? []),
+    promptCacheMinimumInputTokens:
+      configured.promptCacheMinimumInputTokens ?? remote.promptCacheMinimumInputTokens ?? null,
     contextTokens: configured.contextTokens ?? remote.contextTokens,
     outputTokens: configured.outputTokens ?? remote.outputTokens,
     pricing:

@@ -14,7 +14,7 @@ import type {
   OutputContract,
   RequestMetadata,
 } from "./messages.ts";
-import type { ModelResponseDensityControl } from "./model-capability.ts";
+import type { ModelPromptCacheMode, ModelResponseDensityControl } from "./model-capability.ts";
 import type { ReasoningEffort } from "./policy.ts";
 
 export const PROMPT_CACHE_POLICY_SCHEMA_VERSION = 1;
@@ -33,6 +33,8 @@ export type PromptCachePolicy = {
   readonly stablePrefixDigest: string;
   readonly stableMessageCount: number;
   readonly toolCatalogGeneration: number;
+  readonly mode: ModelPromptCacheMode;
+  readonly minimumInputTokens: number | null;
 };
 
 /** Stable prefix facts supplied before the provider route is selected. */

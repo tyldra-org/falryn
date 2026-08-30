@@ -148,6 +148,15 @@ export type ModelAttemptBinding = {
         readonly stablePrefixDigest: string;
         readonly stableMessageCount: number;
         readonly toolCatalogGeneration: number;
+        /** Absent only on events written before cache mechanisms were catalog-bound. */
+        readonly mode?:
+          | "implicit-prefix"
+          | "openai-routing-key"
+          | "anthropic-ephemeral"
+          | "google-explicit-resource"
+          | "provider-managed"
+          | undefined;
+        readonly minimumInputTokens?: number | null | undefined;
       }
     | undefined;
   readonly budgets: {

@@ -124,6 +124,7 @@ function toAnthropicMessages(
   rejectImageParts(messages);
   if (
     promptCache !== undefined &&
+    promptCache.mode === "anthropic-ephemeral" &&
     (promptCache.stableMessageCount < 1 ||
       promptCache.stableMessageCount > messages.length ||
       messages
@@ -139,7 +140,7 @@ function toAnthropicMessages(
     .map((message, index) => ({ message, index, text: textOf(message) }))
     .filter((entry) => entry.message.role === "system" && entry.text.length > 0);
   const system =
-    promptCache === undefined
+    promptCache === undefined || promptCache.mode !== "anthropic-ephemeral"
       ? systemMessages.map((entry) => entry.text).join("\n\n")
       : systemMessages.map<TextBlockParam>((entry) => ({
           type: "text",
@@ -344,6 +345,20 @@ export function createAnthropicSdkAdapter(
           failure: failure(
             "unsupported-capability",
             "This Anthropic SDK route has no verified native response-density control.",
+            false,
+          ),
+        };
+        return;
+      }
+      if (request.promptCache !== undefined && request.promptCache.mode !== "anthropic-ephemeral") {
+        yield {
+          kind: "error",
+          requestId: request.requestId,
+          modelAttemptId: attempt,
+          sequence: next(),
+          failure: failure(
+            "unsupported-capability",
+            "The routed prompt-cache mechanism is incompatible with Anthropic.",
             false,
           ),
         };

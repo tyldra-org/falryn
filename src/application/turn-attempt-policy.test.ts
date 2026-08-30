@@ -257,14 +257,8 @@ describe("turn attempt policy", () => {
       backoff: { baseDelayMs: 0, maxDelayMs: 0, jitterRatio: 0 },
       runner: scriptedRunner([
         (request) => {
-          expect(request.promptCache).toMatchObject({
-            schemaVersion: 1,
-            scope: "session",
-            stablePrefixDigest: `sha-256:${"f".repeat(64)}`,
-            stableMessageCount: 1,
-            toolCatalogGeneration: 0,
-          });
-          expect(request.promptCache?.key).toMatch(/^sha-256:[a-f0-9]{64}$/u);
+          // Deterministic test routes do not advertise a provider cache API.
+          expect(request.promptCache).toBeUndefined();
           return {
             fact: {
               kind: "completed",
@@ -718,13 +712,6 @@ describe("turn attempt policy", () => {
         schemaBytes: 48,
         schemaTokensEstimated: 12,
         tools: [{ name: "read_file", schemaDigest: "sha-256:read" }],
-        promptCache: {
-          schemaVersion: 1,
-          scope: "session",
-          stablePrefixDigest: `sha-256:${"f".repeat(64)}`,
-          stableMessageCount: 1,
-          toolCatalogGeneration: 0,
-        },
       });
     }
   });

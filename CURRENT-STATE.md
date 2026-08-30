@@ -104,9 +104,9 @@ semantic journaling, and bounded result projection before provider
 continuation. A headless turn cannot report completion unless a terminal model
 attempt ran.
 
-Model identity and model selection are stored separately. Falryn bundles a
-strict, versioned OpenAI and Command Code model catalogs into the executable,
-provider profiles
+Model identity and model selection are stored separately. Falryn bundles
+strict, versioned OpenAI, Anthropic, Google, and Command Code model catalogs
+into the executable, provider profiles
 select enabled model IDs and may reference user catalogs by identity, and
 optional inline profile declarations remain the highest-priority compatibility
 override. A user catalog is a bounded JSONC document at
@@ -193,12 +193,19 @@ stable instruction, capability, and tool-schema prefix. Dynamic Brief guidance,
 task text, conversation, memory, and evidence remain outside that prefix.
 Retries and tool continuations on the same route reuse the identity; a session,
 route, generation, stable instruction, or disclosed schema change breaks it.
-OpenAI receives the current SDK `prompt_cache_key`. Anthropic receives a
-five-minute `cache_control` breakpoint on the last stable system block. Google
-cached-token usage remains observable, but explicit cached-content creation and
-cleanup are not implemented. Attempt events retain only cache digests and the
-stable boundary, never prompt text or credentials. Normalized usage keeps
-provider-reported cache reads and Anthropic cache writes distinct.
+Each built-in model records its exact provider cache mechanism, published
+minimum cacheable prefix, and provider-bound cache-read and cache-write prices;
+unknown thresholds or prices remain unknown. OpenAI receives the current SDK
+`prompt_cache_key`. Anthropic receives a five-minute `cache_control` breakpoint
+on the last stable system block. Google uses automatic prefix caching on current
+models and creates a five-minute explicit cached-content resource only where the
+bundled model contract verifies that mechanism; failed cache creation falls back
+to the exact uncached request. Command Code keeps Falryn's stable prefix but lets
+its Provider API manage cache locality without leaking OpenAI- or
+Anthropic-specific controls through its protocol adapters. Attempt events retain
+the selected mechanism, eligibility threshold, cache digests, and stable
+boundary, never prompt text or credentials. Normalized usage keeps
+provider-reported cache reads and cache writes distinct.
 
 The provider request contains only the disclosed tool definitions, not the
 whole registered catalog. The attempt event retains the provider profile,

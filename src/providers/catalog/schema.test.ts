@@ -14,7 +14,13 @@ describe("model catalog documents", () => {
       expect(parseModelCatalogDocument(catalog)).toEqual({ ok: true, value: catalog });
       expect(
         catalog.models.every(
-          (model) => model.pricing !== undefined && model.responseDensityControls !== undefined,
+          (model) =>
+            model.pricing !== undefined &&
+            model.responseDensityControls !== undefined &&
+            (model.promptCacheModes?.length ?? 0) > 0 &&
+            model.pricing.tiers.every(
+              (tier) => tier.usdMicrosPerMillionTokens.cachedInput !== null,
+            ),
         ),
       ).toBe(true);
     }
@@ -110,8 +116,20 @@ describe("model catalog documents", () => {
       inputModalities: ["text", "image"],
       structuredOutput: "supported",
       reasoningControls: ["low", "medium", "high", "xhigh", "max"],
+      promptCacheModes: ["anthropic-ephemeral"],
+      promptCacheMinimumInputTokens: 512,
       contextTokens: 1_000_000,
       outputTokens: 128_000,
+      pricing: {
+        tiers: [
+          {
+            usdMicrosPerMillionTokens: {
+              cachedInput: 500_000,
+              cacheWriteInput: 6_250_000,
+            },
+          },
+        ],
+      },
     });
     expect(
       anthropic?.models.find((model) => model.modelId === "claude-haiku-4-5-20251001"),

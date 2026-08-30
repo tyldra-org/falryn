@@ -15,6 +15,7 @@ import {
   MODEL_FEATURE_SUPPORTS,
   MODEL_INPUT_MODALITIES,
   MODEL_OUTPUT_MODALITIES,
+  MODEL_PROMPT_CACHE_MODES,
   MODEL_RESPONSE_DENSITY_CONTROLS,
   type ModelCapability,
   type ModelCapabilityDeclaration,
@@ -165,6 +166,13 @@ export const modelCapabilityDeclarationSchema = z
       .array(z.enum(MODEL_RESPONSE_DENSITY_CONTROLS))
       .max(MODEL_RESPONSE_DENSITY_CONTROLS.length)
       .default([]),
+    promptCacheModes: z
+      .array(z.enum(MODEL_PROMPT_CACHE_MODES))
+      .max(MODEL_PROMPT_CACHE_MODES.length)
+      .default([]),
+    promptCacheMinimumInputTokens: z
+      .union([z.number().int().positive().max(100_000_000), z.null()])
+      .default(null),
     contextTokens: z.union([z.number().int().positive().max(100_000_000), z.null()]),
     outputTokens: z.union([z.number().int().positive().max(10_000_000), z.null()]),
     pricing: modelPricingSchema.default(() => ({
@@ -179,6 +187,7 @@ export const modelCapabilityDeclarationSchema = z
       ["outputModalities", capability.outputModalities],
       ["reasoningControls", capability.reasoningControls],
       ["responseDensityControls", capability.responseDensityControls],
+      ["promptCacheModes", capability.promptCacheModes],
     ] as const) {
       if (!unique(values)) {
         context.addIssue({ code: "custom", path: [field], message: "duplicate capability value" });
@@ -189,6 +198,16 @@ export const modelCapabilityDeclarationSchema = z
         code: "custom",
         path: ["reasoningControls"],
         message: "reasoning controls require supported reasoning",
+      });
+    }
+    if (
+      capability.promptCacheModes.length === 0 &&
+      capability.promptCacheMinimumInputTokens !== null
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["promptCacheMinimumInputTokens"],
+        message: "cache minimum requires a prompt-cache mode",
       });
     }
     if (

@@ -24,7 +24,10 @@ function requiredBuiltin(value: unknown): ModelCatalogDocument {
         typeof model !== "object" ||
         model === null ||
         !("pricing" in model) ||
-        !("responseDensityControls" in model),
+        !("responseDensityControls" in model) ||
+        !("promptCacheModes" in model) ||
+        !Array.isArray(model.promptCacheModes) ||
+        model.promptCacheModes.length === 0,
     )
   ) {
     throw new Error("Falryn's built-in model catalog omits required capability-depth facts.");
@@ -32,6 +35,17 @@ function requiredBuiltin(value: unknown): ModelCatalogDocument {
   const parsed = parseModelCatalogDocument(value);
   if (!parsed.ok) {
     throw new Error("Falryn was built with an invalid model catalog resource.");
+  }
+  if (
+    parsed.value.models.some(
+      (model) =>
+        (model.promptCacheModes ?? []).length > 0 &&
+        (model.pricing === undefined ||
+          model.pricing.tiers.length === 0 ||
+          model.pricing.tiers.some((tier) => tier.usdMicrosPerMillionTokens.cachedInput === null)),
+    )
+  ) {
+    throw new Error("Falryn's cache-capable model catalog omits cache-read pricing.");
   }
   return parsed.value;
 }

@@ -73,6 +73,8 @@ describe("parseModelRequest", () => {
         stablePrefixDigest: `sha-256:${"b".repeat(64)}`,
         stableMessageCount: 2,
         toolCatalogGeneration: 4,
+        mode: "openai-routing-key",
+        minimumInputTokens: 1024,
       },
       metadata: { role: "default" },
     });
@@ -97,6 +99,8 @@ describe("parseModelRequest", () => {
         stablePrefixDigest: `sha-256:${"b".repeat(64)}`,
         stableMessageCount: 2,
         toolCatalogGeneration: 4,
+        mode: "openai-routing-key",
+        minimumInputTokens: 1024,
       },
       metadata: { role: "default" },
     });

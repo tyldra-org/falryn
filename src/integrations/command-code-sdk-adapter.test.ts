@@ -21,7 +21,11 @@ function request(model: string, overrides: Partial<ModelRequest> = {}): ModelReq
   };
 }
 
-function child(name: "openai" | "anthropic", calls: string[]): ProviderAdapterPort {
+function child(
+  name: "openai" | "anthropic",
+  calls: string[],
+  inputs: ModelRequest[] = [],
+): ProviderAdapterPort {
   return {
     identity: {
       providerId: providerId.from("commandcode"),
@@ -35,6 +39,7 @@ function child(name: "openai" | "anthropic", calls: string[]): ProviderAdapterPo
     requestInputModalities: ["text"],
     async *stream(input): AsyncIterable<NormalizedProviderEvent> {
       calls.push(name);
+      inputs.push(input);
       yield {
         kind: "request-started",
         requestId: input.requestId,
@@ -116,6 +121,79 @@ describe("createCommandCodeSdkAdapter", () => {
       adapter,
       request("gpt-5.6-sol", { responseDensityControl: "low" }),
     );
+    expect(calls).toEqual([]);
+    expect(events.at(-1)).toMatchObject({
+      kind: "error",
+      failure: { kind: "unsupported-capability", retryable: false },
+    });
+  });
+
+  test("keeps provider-managed caching out of the delegated wire protocol", async () => {
+    const calls: string[] = [];
+    const inputs: ModelRequest[] = [];
+    const adapter = createCommandCodeSdkAdapter(
+      {
+        profileId: "commandcode",
+        resolveApiKey: async () => "secret",
+        supportedModels: ["gpt-5.6-sol"],
+      },
+      () => ({
+        openai: child("openai", calls, inputs),
+        anthropic: child("anthropic", calls, inputs),
+      }),
+    );
+
+    await collect(
+      adapter,
+      request("gpt-5.6-sol", {
+        promptCache: {
+          schemaVersion: 1,
+          key: `sha-256:${"a".repeat(64)}`,
+          scope: "session",
+          stablePrefixDigest: `sha-256:${"b".repeat(64)}`,
+          stableMessageCount: 1,
+          toolCatalogGeneration: 1,
+          mode: "provider-managed",
+          minimumInputTokens: null,
+        },
+      }),
+    );
+
+    expect(calls).toEqual(["openai"]);
+    expect(inputs).toHaveLength(1);
+    expect(inputs[0]?.promptCache).toBeUndefined();
+  });
+
+  test("rejects cache controls that Command Code did not publish", async () => {
+    const calls: string[] = [];
+    const adapter = createCommandCodeSdkAdapter(
+      {
+        profileId: "commandcode",
+        resolveApiKey: async () => "secret",
+        supportedModels: ["gpt-5.6-sol"],
+      },
+      () => ({
+        openai: child("openai", calls),
+        anthropic: child("anthropic", calls),
+      }),
+    );
+
+    const events = await collect(
+      adapter,
+      request("gpt-5.6-sol", {
+        promptCache: {
+          schemaVersion: 1,
+          key: `sha-256:${"c".repeat(64)}`,
+          scope: "session",
+          stablePrefixDigest: `sha-256:${"d".repeat(64)}`,
+          stableMessageCount: 1,
+          toolCatalogGeneration: 1,
+          mode: "openai-routing-key",
+          minimumInputTokens: 1024,
+        },
+      }),
+    );
+
     expect(calls).toEqual([]);
     expect(events.at(-1)).toMatchObject({
       kind: "error",

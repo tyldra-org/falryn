@@ -138,6 +138,8 @@ describe("createOpenAiSdkAdapter", () => {
           stablePrefixDigest: `sha-256:${"e".repeat(64)}`,
           stableMessageCount: 1,
           toolCatalogGeneration: 1,
+          mode: "openai-routing-key",
+          minimumInputTokens: 1024,
         },
       }),
     );

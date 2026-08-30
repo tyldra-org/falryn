@@ -18,6 +18,8 @@ function declaration() {
     reasoning: "supported" as const,
     reasoningControls: ["low", "high"] as const,
     responseDensityControls: ["low", "high"] as const,
+    promptCacheModes: ["openai-routing-key"] as const,
+    promptCacheMinimumInputTokens: 1024,
     contextTokens: 128_000,
     outputTokens: 16_384,
     pricing: unknownModelPricing(),

@@ -207,6 +207,11 @@ export const COMMAND_CODE_MODEL_CAPABILITIES: readonly ModelCapabilityDeclaratio
       reasoningControls,
       // OpenAI-compatible transport does not prove OpenAI-native verbosity support.
       responseDensityControls: [],
+      // Command Code documents provider/session cache locality and publishes a
+      // cache-read rate for every registry model. Its API manages that cache;
+      // clients preserve a stable prefix but do not send vendor cache markers.
+      promptCacheModes: ["provider-managed"],
+      promptCacheMinimumInputTokens: null,
       contextTokens: model.contextTokens,
       outputTokens: null,
       pricing: commandCodePricingFor(model.id),

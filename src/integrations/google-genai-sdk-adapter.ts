@@ -8,7 +8,9 @@
 
 import {
   ApiError,
+  type CachedContent,
   type Content,
+  type CreateCachedContentParameters,
   type GenerateContentParameters,
   type GenerateContentResponse,
   GoogleGenAI,
@@ -30,6 +32,11 @@ export type GoogleGenAiStreamFactory = (
   request: GenerateContentParameters,
 ) => Promise<AsyncIterable<GenerateContentResponse>>;
 
+export type GoogleGenAiCacheFactory = (
+  apiKey: string,
+  request: CreateCachedContentParameters,
+) => Promise<CachedContent>;
+
 export type GoogleGenAiSdkAdapterOptions = {
   readonly profileId: string;
   readonly displayName?: string;
@@ -40,6 +47,8 @@ export type GoogleGenAiSdkAdapterOptions = {
   readonly requestTimeoutMs?: number;
   /** Deterministic SDK boundary used by tests. Production leaves this absent. */
   readonly createStream?: GoogleGenAiStreamFactory;
+  /** Deterministic cache boundary used by tests. Production leaves this absent. */
+  readonly createCache?: GoogleGenAiCacheFactory;
 };
 
 type ToolCallState = {
@@ -275,6 +284,36 @@ function streamFor(
   return client.models.generateContentStream(request);
 }
 
+function cacheFor(
+  options: GoogleGenAiSdkAdapterOptions,
+  apiKey: string,
+  request: CreateCachedContentParameters,
+): Promise<CachedContent> {
+  if (options.createCache !== undefined) {
+    return options.createCache(apiKey, request);
+  }
+  const client = new GoogleGenAI({
+    apiKey,
+    httpOptions: {
+      ...(options.baseUrl === null || options.baseUrl === undefined
+        ? {}
+        : { baseUrl: options.baseUrl.replace(/\/+$/u, "") }),
+      timeout: options.requestTimeoutMs ?? 120_000,
+      retryOptions: { attempts: 1 },
+    },
+  });
+  return client.caches.create(request);
+}
+
+type GooglePromptCacheResolution = {
+  readonly name: string;
+  readonly cacheWriteInputTokens: number;
+};
+
+const GOOGLE_PROMPT_CACHE_TTL_MS = 5 * 60 * 1_000;
+const GOOGLE_PROMPT_CACHE_RETRY_MS = 30 * 1_000;
+const MAX_GOOGLE_PROMPT_CACHE_ENTRIES = 64;
+
 function usageFrom(response: GenerateContentResponse): UsageUnits | null {
   const usage = response.usageMetadata;
   if (usage === undefined) {
@@ -320,6 +359,78 @@ export function createGoogleGenAiSdkAdapter(
     displayName: options.displayName ?? "Google",
   };
   const models = options.supportedModels.map((id) => modelId.from(id));
+  const cacheEntries = new Map<
+    string,
+    { readonly name: string | null; readonly expiresAt: number }
+  >();
+  const pendingCaches = new Map<string, Promise<GooglePromptCacheResolution | null>>();
+
+  const resolveExplicitCache = async (
+    apiKey: string,
+    request: ModelRequest,
+    stable: ReturnType<typeof toGoogleMessages>,
+    tools: Tool[] | undefined,
+    signal: AbortSignal,
+  ): Promise<GooglePromptCacheResolution | null> => {
+    const policy = request.promptCache;
+    if (policy === undefined || policy.mode !== "google-explicit-resource") {
+      return null;
+    }
+    const now = Date.now();
+    const existing = cacheEntries.get(policy.key);
+    if (existing !== undefined && existing.expiresAt > now) {
+      return existing.name === null ? null : { name: existing.name, cacheWriteInputTokens: 0 };
+    }
+    const pending = pendingCaches.get(policy.key);
+    if (pending !== undefined) {
+      const resolved = await pending;
+      return resolved === null ? null : { name: resolved.name, cacheWriteInputTokens: 0 };
+    }
+    if (cacheEntries.size >= MAX_GOOGLE_PROMPT_CACHE_ENTRIES) {
+      cacheEntries.clear();
+    }
+    const creation = (async (): Promise<GooglePromptCacheResolution | null> => {
+      try {
+        const cached = await cacheFor(options, apiKey, {
+          model: String(request.modelId),
+          config: {
+            abortSignal: signal,
+            ttl: "300s",
+            displayName: `falryn-${policy.key.slice("sha-256:".length, 24)}`,
+            ...(stable.contents.length === 0 ? {} : { contents: stable.contents }),
+            ...(stable.systemInstruction === undefined
+              ? {}
+              : { systemInstruction: stable.systemInstruction }),
+            ...(tools === undefined ? {} : { tools }),
+          },
+        });
+        if (cached.name === undefined || cached.name.length === 0) {
+          cacheEntries.set(policy.key, {
+            name: null,
+            expiresAt: now + GOOGLE_PROMPT_CACHE_RETRY_MS,
+          });
+          return null;
+        }
+        cacheEntries.set(policy.key, {
+          name: cached.name,
+          expiresAt: now + GOOGLE_PROMPT_CACHE_TTL_MS,
+        });
+        return {
+          name: cached.name,
+          cacheWriteInputTokens: cached.usageMetadata?.totalTokenCount ?? 0,
+        };
+      } catch {
+        // Prompt caching is an optimization. Authentication, request, and
+        // provider failures are still reported by the uncached generation.
+        cacheEntries.set(policy.key, { name: null, expiresAt: now + GOOGLE_PROMPT_CACHE_RETRY_MS });
+        return null;
+      } finally {
+        pendingCaches.delete(policy.key);
+      }
+    })();
+    pendingCaches.set(policy.key, creation);
+    return creation;
+  };
 
   return {
     identity,
@@ -395,10 +506,51 @@ export function createGoogleGenAiSdkAdapter(
       }
 
       let sdkRequest: GenerateContentParameters;
+      let cacheWriteInputTokens: number | undefined;
       try {
-        const translated = toGoogleMessages(request.messages);
+        let translated = toGoogleMessages(request.messages);
         const tools = toTools(request.tools);
         const level = thinkingLevel(request.reasoningControl);
+        let cachedContent: string | undefined;
+        let requestTools = tools;
+        if (request.promptCache !== undefined) {
+          if (
+            request.promptCache.mode !== "google-explicit-resource" &&
+            request.promptCache.mode !== "implicit-prefix"
+          ) {
+            throw new GoogleInputError(
+              "unsupported-capability",
+              "The routed prompt-cache mechanism is incompatible with Google GenAI.",
+            );
+          }
+          if (request.promptCache.mode === "google-explicit-resource") {
+            const stableMessages = request.messages.slice(
+              0,
+              request.promptCache.stableMessageCount,
+            );
+            const dynamicMessages = request.messages.slice(request.promptCache.stableMessageCount);
+            const stable = toGoogleMessages(stableMessages);
+            const dynamic = toGoogleMessages(dynamicMessages);
+            // Google forbids repeating system instructions and tools alongside
+            // a cached-content reference. A later system message therefore
+            // falls back to the exact implicit-prefix request.
+            if (dynamic.systemInstruction === undefined && dynamic.contents.length > 0) {
+              const resolved = await resolveExplicitCache(
+                apiKey,
+                request,
+                stable,
+                tools,
+                streamOptions.signal,
+              );
+              if (resolved !== null) {
+                translated = dynamic;
+                cachedContent = resolved.name;
+                cacheWriteInputTokens = resolved.cacheWriteInputTokens;
+                requestTools = undefined;
+              }
+            }
+          }
+        }
         sdkRequest = {
           model: String(request.modelId),
           contents: translated.contents,
@@ -407,7 +559,8 @@ export function createGoogleGenAiSdkAdapter(
             ...(translated.systemInstruction === undefined
               ? {}
               : { systemInstruction: translated.systemInstruction }),
-            ...(tools === undefined ? {} : { tools }),
+            ...(requestTools === undefined ? {} : { tools: requestTools }),
+            ...(cachedContent === undefined ? {} : { cachedContent }),
             ...(level === undefined ? {} : { thinkingConfig: { thinkingLevel: level } }),
             ...(request.budgets.maxOutputTokens === undefined
               ? {}
@@ -519,7 +672,10 @@ export function createGoogleGenAiSdkAdapter(
           requestId: request.requestId,
           modelAttemptId: attempt,
           sequence: next(),
-          usage: finalUsage,
+          usage:
+            cacheWriteInputTokens === undefined
+              ? finalUsage
+              : { ...finalUsage, cacheWriteInputTokens },
         };
       }
       if (safetyBlocked) {

@@ -20,6 +20,8 @@
       "reasoning": "supported",
       "reasoningControls": ["low", "medium", "high"],
       "responseDensityControls": [],
+      "promptCacheModes": ["google-explicit-resource", "implicit-prefix"],
+      "promptCacheMinimumInputTokens": 4096,
       "contextTokens": 1048576,
       "outputTokens": 65536,
       "pricing": {
@@ -78,6 +80,8 @@
       "reasoning": "supported",
       "reasoningControls": ["minimal", "low", "medium", "high"],
       "responseDensityControls": [],
+      "promptCacheModes": ["implicit-prefix"],
+      "promptCacheMinimumInputTokens": 4096,
       "contextTokens": 1048576,
       "outputTokens": 65536,
       "pricing": {
@@ -136,6 +140,8 @@
       "reasoning": "supported",
       "reasoningControls": ["minimal", "low", "medium", "high"],
       "responseDensityControls": [],
+      "promptCacheModes": ["implicit-prefix"],
+      "promptCacheMinimumInputTokens": 4096,
       "contextTokens": 1048576,
       "outputTokens": 65536,
       "pricing": {
@@ -178,6 +184,8 @@
       "reasoning": "supported",
       "reasoningControls": ["minimal", "low", "medium", "high"],
       "responseDensityControls": [],
+      "promptCacheModes": ["implicit-prefix"],
+      "promptCacheMinimumInputTokens": null,
       "contextTokens": 1048576,
       "outputTokens": 65536,
       "pricing": {
@@ -220,6 +228,8 @@
       "reasoning": "supported",
       "reasoningControls": ["minimal", "low", "medium", "high"],
       "responseDensityControls": [],
+      "promptCacheModes": ["implicit-prefix"],
+      "promptCacheMinimumInputTokens": null,
       "contextTokens": 1048576,
       "outputTokens": 65536,
       "pricing": {

@@ -14,6 +14,7 @@ import {
   featureIsSupported,
   type MODEL_CAPABILITY_SCHEMA_VERSION,
   type ModelInputModality,
+  type ModelPromptCacheMode,
   type ModelResponseDensityControl,
 } from "./model-capability.ts";
 import {
@@ -72,6 +73,9 @@ export type RoutingReceipt = {
   readonly reasoningControl: string | null;
   /** Exact model-and-adapter intersection available to Brief for this route. */
   readonly responseDensityControls: readonly ModelResponseDensityControl[];
+  /** Exact cache mechanism selected from the model-and-adapter contract. */
+  readonly promptCacheMode?: ModelPromptCacheMode | null;
+  readonly promptCacheMinimumInputTokens?: number | null;
   readonly fallbackPosition: number;
   readonly budgets: RoleBudgets;
   readonly catalogGeneration: number;
@@ -276,6 +280,25 @@ function responseDensityControlsFor(
   return modelControls.filter((control) => adapterControls.includes(control));
 }
 
+const PROMPT_CACHE_MODE_PREFERENCES = {
+  deterministic: [] as const,
+  openai: ["openai-routing-key"] as const,
+  anthropic: ["anthropic-ephemeral"] as const,
+  google: ["google-explicit-resource", "implicit-prefix"] as const,
+  commandcode: ["provider-managed"] as const,
+  custom: [] as const,
+} satisfies Record<ProviderAdapterKind, readonly ModelPromptCacheMode[]>;
+
+function promptCacheModeFor(
+  capability: ModelCapability,
+  adapterKind: ProviderAdapterKind,
+): ModelPromptCacheMode | null {
+  const supported = capability.promptCacheModes ?? [];
+  return (
+    PROMPT_CACHE_MODE_PREFERENCES[adapterKind].find((mode) => supported.includes(mode)) ?? null
+  );
+}
+
 function adapterMatchesRequirements(
   entry: RoutedCatalogEntry,
   required: RouteRequirement,
@@ -358,6 +381,8 @@ export function resolveModelRoute(input: ResolveRouteInput): RoutingOutcome {
         reasoning: "provider-default",
         reasoningControl: null,
         responseDensityControls: responseDensityControlsFor(found.capability, found.entry),
+        promptCacheMode: promptCacheModeFor(found.capability, found.entry.adapterKind),
+        promptCacheMinimumInputTokens: found.capability.promptCacheMinimumInputTokens ?? null,
         fallbackPosition: 0,
         budgets: {},
         catalogGeneration: found.entry.catalog.generation,
@@ -473,6 +498,8 @@ export function resolveModelRoute(input: ResolveRouteInput): RoutingOutcome {
         reasoning: route.reasoning,
         reasoningControl,
         responseDensityControls: responseDensityControlsFor(found.capability, found.entry),
+        promptCacheMode: promptCacheModeFor(found.capability, found.entry.adapterKind),
+        promptCacheMinimumInputTokens: found.capability.promptCacheMinimumInputTokens ?? null,
         fallbackPosition: position,
         budgets: route.budgets,
         catalogGeneration: found.entry.catalog.generation,

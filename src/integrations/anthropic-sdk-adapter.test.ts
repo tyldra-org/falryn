@@ -216,6 +216,8 @@ describe("createAnthropicSdkAdapter", () => {
         stablePrefixDigest: `sha-256:${"e".repeat(64)}`,
         stableMessageCount: 1,
         toolCatalogGeneration: 1,
+        mode: "anthropic-ephemeral",
+        minimumInputTokens: 1024,
       },
     });
     const events = await collect(

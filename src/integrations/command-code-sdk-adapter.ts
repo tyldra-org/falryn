@@ -105,6 +105,10 @@ function unsupportedEvents(
   ];
 }
 
+function withoutPromptCache({ promptCache: _promptCache, ...request }: ModelRequest): ModelRequest {
+  return request;
+}
+
 /**
  * Create one Command Code provider while preserving the protocol required by
  * each model. Claude uses Anthropic Messages; all other verified models use
@@ -151,7 +155,18 @@ export function createCommandCodeSdkAdapter(
         );
         return;
       }
-      yield* children[protocol].stream(request, streamOptions);
+      if (request.promptCache !== undefined && request.promptCache.mode !== "provider-managed") {
+        yield* unsupportedEvents(
+          request,
+          "The selected Command Code route received an incompatible prompt-cache mechanism.",
+        );
+        return;
+      }
+      // Command Code owns cache routing behind both wire protocols. Preserve
+      // Falryn's byte-stable prefix, but do not leak OpenAI or Anthropic cache
+      // controls into a provider-managed API contract.
+      const delegated = request.promptCache === undefined ? request : withoutPromptCache(request);
+      yield* children[protocol].stream(delegated, streamOptions);
     },
   };
 }

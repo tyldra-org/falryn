@@ -338,6 +338,53 @@ describe("resolveModelRoute", () => {
     expect(outcome.receipt.catalogGeneration).toBe(1);
   });
 
+  test("selects only a cache mechanism shared by the exact model and adapter", () => {
+    const googleCatalogs = catalogs().map((entry) =>
+      entry.providerId === primary
+        ? {
+            ...entry,
+            adapterKind: "google" as const,
+            destinationId: "sha-256:google-default",
+            catalog: {
+              ...entry.catalog,
+              models: entry.catalog.models.map((capability) =>
+                capability.modelId === deep
+                  ? {
+                      ...capability,
+                      promptCacheModes: ["implicit-prefix", "google-explicit-resource"] as const,
+                      promptCacheMinimumInputTokens: 4096,
+                    }
+                  : capability,
+              ),
+            },
+          }
+        : entry,
+    );
+    const selected = resolveModelRoute({
+      policy: samplePolicy(),
+      catalogs: googleCatalogs,
+      intent: "coding",
+    });
+    expect(selected.kind).toBe("selected");
+    if (selected.kind !== "selected") {
+      return;
+    }
+    expect(selected.receipt.promptCacheMode).toBe("google-explicit-resource");
+    expect(selected.receipt.promptCacheMinimumInputTokens).toBe(4096);
+
+    const incompatible = resolveModelRoute({
+      policy: samplePolicy(),
+      catalogs: googleCatalogs.map((entry) =>
+        entry.providerId === primary ? { ...entry, adapterKind: "openai" as const } : entry,
+      ),
+      intent: "coding",
+    });
+    expect(incompatible.kind).toBe("selected");
+    if (incompatible.kind === "selected") {
+      expect(incompatible.receipt.promptCacheMode).toBeNull();
+    }
+  });
+
   test("selects max only when the adapter and model advertise max", () => {
     const maxCatalogs = catalogs().map((entry) =>
       entry.providerId === primary

@@ -30,6 +30,8 @@ function catalog(generation = 7): ModelCatalog {
         reasoning: "unknown",
         reasoningControls: [],
         responseDensityControls: [],
+        promptCacheModes: [],
+        promptCacheMinimumInputTokens: null,
         contextTokens: 32_000,
         outputTokens: 4_000,
         pricing: unknownModelPricing(),

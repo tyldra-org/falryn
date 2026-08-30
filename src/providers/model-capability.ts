@@ -18,6 +18,16 @@ export type ModelFeatureSupport = (typeof MODEL_FEATURE_SUPPORTS)[number];
 export const MODEL_RESPONSE_DENSITY_CONTROLS = ["low", "medium", "high"] as const;
 export type ModelResponseDensityControl = (typeof MODEL_RESPONSE_DENSITY_CONTROLS)[number];
 
+/** Exact provider cache mechanism verified for a model and transport. */
+export const MODEL_PROMPT_CACHE_MODES = [
+  "implicit-prefix",
+  "openai-routing-key",
+  "anthropic-ephemeral",
+  "google-explicit-resource",
+  "provider-managed",
+] as const;
+export type ModelPromptCacheMode = (typeof MODEL_PROMPT_CACHE_MODES)[number];
+
 export const MODEL_CAPABILITY_COMPLETENESSES = ["complete", "partial"] as const;
 export type ModelCapabilityCompleteness = (typeof MODEL_CAPABILITY_COMPLETENESSES)[number];
 
@@ -49,6 +59,10 @@ export type ModelCapabilityDeclaration = {
   readonly reasoningControls: readonly string[];
   /** Native response-density controls confirmed for this exact model. */
   readonly responseDensityControls?: readonly ModelResponseDensityControl[];
+  /** Prompt-cache mechanisms confirmed for this exact provider-bound model. */
+  readonly promptCacheModes?: readonly ModelPromptCacheMode[];
+  /** Published minimum cacheable prefix, or null when the provider does not publish one. */
+  readonly promptCacheMinimumInputTokens?: number | null;
   readonly contextTokens: number | null;
   readonly outputTokens: number | null;
   /** Provider-bound, versioned rates. Unknown values are never inferred from names. */
@@ -85,6 +99,8 @@ export function unknownModelCapability(
     reasoning: "unknown",
     reasoningControls: [],
     responseDensityControls: [],
+    promptCacheModes: [],
+    promptCacheMinimumInputTokens: null,
     contextTokens: null,
     outputTokens: null,
     pricing: unknownModelPricing(),
@@ -103,6 +119,8 @@ export function capabilityFromDeclaration(
 ): ModelCapability {
   return {
     ...declaration,
+    promptCacheModes: declaration.promptCacheModes ?? [],
+    promptCacheMinimumInputTokens: declaration.promptCacheMinimumInputTokens ?? null,
     pricing: declaration.pricing ?? unknownModelPricing(),
     availability: options.availability ?? "unknown",
     provenance: options.provenance ?? ["profile-declaration"],

@@ -1,5 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import type { GenerateContentParameters, GenerateContentResponse } from "@google/genai";
+import type {
+  CachedContent,
+  CreateCachedContentParameters,
+  GenerateContentParameters,
+  GenerateContentResponse,
+} from "@google/genai";
 
 import { modelId, providerId } from "../domain/index.ts";
 import { modelRequestId } from "../providers/identity.ts";
@@ -49,6 +54,19 @@ async function collect(
   });
   const events: NormalizedProviderEvent[] = [];
   for await (const event of adapter.stream(input, { signal: new AbortController().signal })) {
+    events.push(event);
+  }
+  return events;
+}
+
+async function collectFrom(
+  adapter: ReturnType<typeof createGoogleGenAiSdkAdapter>,
+  input: ModelRequest,
+): Promise<readonly NormalizedProviderEvent[]> {
+  const events: NormalizedProviderEvent[] = [];
+  for await (const event of adapter.stream(input, {
+    signal: new AbortController().signal,
+  })) {
     events.push(event);
   }
   return events;
@@ -140,6 +158,125 @@ describe("createGoogleGenAiSdkAdapter", () => {
       },
     });
     expect(events.at(-1)).toMatchObject({ kind: "finished", finishReason: "STOP" });
+  });
+
+  test("creates and reuses one explicit cached prefix while reporting read and write tokens", async () => {
+    const cacheRequests: CreateCachedContentParameters[] = [];
+    const generateRequests: GenerateContentParameters[] = [];
+    const adapter = createGoogleGenAiSdkAdapter({
+      profileId: "google",
+      supportedModels: ["gemini-test"],
+      resolveApiKey: async () => "google-test-key",
+      createCache: async (_apiKey, cacheRequest) => {
+        cacheRequests.push(cacheRequest);
+        return {
+          name: "cachedContents/falryn-prefix",
+          usageMetadata: { totalTokenCount: 6 },
+        } as CachedContent;
+      },
+      createStream: async (_apiKey, generateRequest) => {
+        generateRequests.push(generateRequest);
+        return stream([
+          response({
+            candidates: [{ index: 0, finishReason: "STOP" }],
+            usageMetadata: {
+              promptTokenCount: 8,
+              candidatesTokenCount: 2,
+              cachedContentTokenCount: 6,
+              totalTokenCount: 10,
+            },
+          }),
+        ]);
+      },
+    });
+    const input = request({
+      messages: [
+        { role: "system", parts: [{ kind: "text", text: "Stable policy" }] },
+        { role: "user", parts: [{ kind: "text", text: "Dynamic question" }] },
+      ],
+      tools: [
+        {
+          name: "read_file",
+          description: "Read a file",
+          parameters: { type: "object", properties: { path: { type: "string" } } },
+        },
+      ],
+      promptCache: {
+        schemaVersion: 1,
+        key: `sha-256:${"a".repeat(64)}`,
+        scope: "session",
+        stablePrefixDigest: `sha-256:${"b".repeat(64)}`,
+        stableMessageCount: 1,
+        toolCatalogGeneration: 1,
+        mode: "google-explicit-resource",
+        minimumInputTokens: 4096,
+      },
+    });
+
+    const first = await collectFrom(adapter, input);
+    const second = await collectFrom(adapter, input);
+
+    expect(cacheRequests).toHaveLength(1);
+    expect(cacheRequests[0]).toMatchObject({
+      model: "gemini-test",
+      config: {
+        ttl: "300s",
+        systemInstruction: "Stable policy",
+        tools: [{ functionDeclarations: [{ name: "read_file" }] }],
+      },
+    });
+    expect(generateRequests).toHaveLength(2);
+    expect(generateRequests[0]).toMatchObject({
+      contents: [{ role: "user", parts: [{ text: "Dynamic question" }] }],
+      config: { cachedContent: "cachedContents/falryn-prefix" },
+    });
+    expect(generateRequests[0]?.config?.systemInstruction).toBeUndefined();
+    expect(generateRequests[0]?.config?.tools).toBeUndefined();
+    expect(first.find((event) => event.kind === "usage")).toMatchObject({
+      usage: { cachedInputTokens: 6, cacheWriteInputTokens: 6 },
+    });
+    expect(second.find((event) => event.kind === "usage")).toMatchObject({
+      usage: { cachedInputTokens: 6, cacheWriteInputTokens: 0 },
+    });
+  });
+
+  test("fails open to the exact request when explicit cache creation is unavailable", async () => {
+    const captured: { request: GenerateContentParameters | null } = { request: null };
+    const events = await collect(
+      {
+        resolveApiKey: async () => "google-test-key",
+        createCache: async () => {
+          throw new TypeError("cache endpoint unavailable");
+        },
+        createStream: async (_apiKey, input) => {
+          captured.request = input;
+          return stream([response({ candidates: [{ index: 0, finishReason: "STOP" }] })]);
+        },
+      },
+      request({
+        messages: [
+          { role: "system", parts: [{ kind: "text", text: "Stable policy" }] },
+          { role: "user", parts: [{ kind: "text", text: "Dynamic question" }] },
+        ],
+        promptCache: {
+          schemaVersion: 1,
+          key: `sha-256:${"c".repeat(64)}`,
+          scope: "session",
+          stablePrefixDigest: `sha-256:${"d".repeat(64)}`,
+          stableMessageCount: 1,
+          toolCatalogGeneration: 1,
+          mode: "google-explicit-resource",
+          minimumInputTokens: 4096,
+        },
+      }),
+    );
+
+    expect(captured.request).toMatchObject({
+      contents: [{ role: "user", parts: [{ text: "Dynamic question" }] }],
+      config: { systemInstruction: "Stable policy" },
+    });
+    expect(captured.request?.config?.cachedContent).toBeUndefined();
+    expect(events.at(-1)?.kind).toBe("finished");
   });
 
   test("translates system, tools, continuations, output schema, and output budget", async () => {

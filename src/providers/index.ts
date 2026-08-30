@@ -160,6 +160,7 @@ export type {
   ModelFeatureSupport,
   ModelInputModality,
   ModelOutputModality,
+  ModelPromptCacheMode,
   ModelResponseDensityControl,
 } from "./model-capability.ts";
 export {
@@ -172,6 +173,7 @@ export {
   MODEL_FEATURE_SUPPORTS,
   MODEL_INPUT_MODALITIES,
   MODEL_OUTPUT_MODALITIES,
+  MODEL_PROMPT_CACHE_MODES,
   MODEL_RESPONSE_DENSITY_CONTROLS,
   unknownModelCapability,
 } from "./model-capability.ts";

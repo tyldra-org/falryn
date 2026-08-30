@@ -288,6 +288,20 @@ export function createOpenAiSdkAdapter(options: OpenAiSdkAdapterOptions): Provid
         };
         return;
       }
+      if (request.promptCache !== undefined && request.promptCache.mode !== "openai-routing-key") {
+        yield {
+          kind: "error",
+          requestId: request.requestId,
+          modelAttemptId: attempt,
+          sequence: next(),
+          failure: failure(
+            "unsupported-capability",
+            "The routed prompt-cache mechanism is incompatible with OpenAI.",
+            false,
+          ),
+        };
+        return;
+      }
 
       let apiKey: string | null;
       try {
@@ -347,7 +361,7 @@ export function createOpenAiSdkAdapter(options: OpenAiSdkAdapterOptions): Provid
           request.responseDensityControl === undefined
             ? {}
             : { verbosity: request.responseDensityControl }),
-          ...(request.promptCache === undefined
+          ...(request.promptCache === undefined || request.promptCache.mode !== "openai-routing-key"
             ? {}
             : { prompt_cache_key: request.promptCache.key }),
         };
