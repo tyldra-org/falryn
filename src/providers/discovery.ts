@@ -299,6 +299,10 @@ function mergeCapability(remote: ModelCapability, configured: ModelCapability): 
       configured.reasoningControls.length === 0
         ? remote.reasoningControls
         : configured.reasoningControls,
+    responseDensityControls:
+      (configured.responseDensityControls ?? []).length === 0
+        ? (remote.responseDensityControls ?? [])
+        : (configured.responseDensityControls ?? []),
     contextTokens: configured.contextTokens ?? remote.contextTokens,
     outputTokens: configured.outputTokens ?? remote.outputTokens,
     pricing:

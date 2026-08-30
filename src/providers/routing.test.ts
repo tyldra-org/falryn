@@ -392,6 +392,46 @@ describe("resolveModelRoute", () => {
     });
   });
 
+  test("maps portable effort to exact Command Code route controls", () => {
+    const commandCodeCatalogs = catalogs().map((entry) =>
+      entry.providerId === primary
+        ? {
+            ...entry,
+            adapterKind: "commandcode" as const,
+            destinationId: "sha-256:commandcode-default",
+            catalog: {
+              ...entry.catalog,
+              models: entry.catalog.models.map((capability) =>
+                capability.modelId === deep
+                  ? {
+                      ...capability,
+                      reasoningControls: ["low", "high", "max"],
+                    }
+                  : capability,
+              ),
+            },
+          }
+        : entry,
+    );
+
+    for (const [reasoning, expected] of [
+      ["minimal", "low"],
+      ["balanced", null],
+      ["deep", "high"],
+      ["max", "max"],
+    ] as const) {
+      const selected = resolveModelRoute({
+        policy: samplePolicy({ reasoning }),
+        catalogs: commandCodeCatalogs,
+        intent: "coding",
+      });
+      expect(selected.kind).toBe("selected");
+      if (selected.kind === "selected") {
+        expect(selected.receipt.reasoningControl).toBe(expected);
+      }
+    }
+  });
+
   test("does not route from an expired remote catalog generation", () => {
     const expired = catalogs().map((entry) =>
       entry.providerId === primary

@@ -239,10 +239,10 @@ const REASONING_CONTROL_PREFERENCES = {
     "provider-default": [],
   },
   commandcode: {
-    minimal: [],
-    balanced: [],
-    deep: [],
-    max: [],
+    minimal: ["low"],
+    balanced: ["medium"],
+    deep: ["high", "xhigh"],
+    max: ["max"],
     "provider-default": [],
   },
   custom: {

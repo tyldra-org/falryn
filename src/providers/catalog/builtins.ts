@@ -7,6 +7,8 @@ import {
   COMMAND_CODE_PROVIDER_ID,
 } from "../command-code.ts";
 import type { ModelCapabilityDeclaration } from "../model-capability.ts";
+import anthropicCatalogValue from "./builtin/anthropic.json";
+import googleCatalogValue from "./builtin/google.json";
 import openAiCatalogValue from "./builtin/openai.json";
 import type { ModelCatalogDocument } from "./contracts.ts";
 import { parseModelCatalogDocument } from "./schema.ts";
@@ -36,6 +38,8 @@ function requiredBuiltin(value: unknown): ModelCatalogDocument {
 
 export const BUILTIN_MODEL_CATALOGS: readonly ModelCatalogDocument[] = [
   requiredBuiltin(openAiCatalogValue),
+  requiredBuiltin(anthropicCatalogValue),
+  requiredBuiltin(googleCatalogValue),
   requiredBuiltin({
     schemaVersion: 1,
     catalogId: "falryn.commandcode",

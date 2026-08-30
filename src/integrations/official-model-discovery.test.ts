@@ -99,7 +99,7 @@ describe("official model capability translation", () => {
       structuredOutput: "supported",
       streaming: "supported",
       reasoning: "supported",
-      reasoningControls: ["low", "medium", "high", "adaptive", "enabled"],
+      reasoningControls: ["low", "medium", "high"],
       contextTokens: 200_000,
       outputTokens: 64_000,
       provenance: ["provider-manifest"],

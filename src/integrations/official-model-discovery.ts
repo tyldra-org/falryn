@@ -154,13 +154,6 @@ function anthropicCapability(record: AnthropicModelInfo): ModelCapability {
       controls.push("xhigh");
     }
   }
-  if (capabilities?.thinking.types.adaptive.supported === true) {
-    controls.push("adaptive");
-  }
-  if (capabilities?.thinking.types.enabled.supported === true) {
-    controls.push("enabled");
-  }
-
   return {
     schemaVersion: MODEL_CAPABILITY_SCHEMA_VERSION,
     modelId: id,

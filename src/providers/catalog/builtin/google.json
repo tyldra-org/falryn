@@ -1,0 +1,254 @@
+{
+  "schemaVersion": 1,
+  "catalogId": "falryn.google",
+  "displayName": "Falryn Google catalog",
+  "provider": {
+    "providerId": "google",
+    "adapterKind": "google",
+    "endpoint": null
+  },
+  "models": [
+    {
+      "schemaVersion": 1,
+      "modelId": "gemini-3.7-flash",
+      "displayName": "Gemini 3.7 Flash",
+      "inputModalities": ["text", "image", "audio", "video", "document"],
+      "outputModalities": ["text"],
+      "tools": "supported",
+      "structuredOutput": "supported",
+      "streaming": "supported",
+      "reasoning": "supported",
+      "reasoningControls": ["low", "medium", "high"],
+      "responseDensityControls": [],
+      "contextTokens": 1048576,
+      "outputTokens": 65536,
+      "pricing": {
+        "kind": "published",
+        "billingMode": "api",
+        "currency": "USD",
+        "tokenUnit": 1000000,
+        "sourceUrl": "https://ai.google.dev/gemini-api/docs/pricing",
+        "observedAt": "2026-08-29T00:00:00Z",
+        "tiers": [
+          {
+            "id": "standard-introductory",
+            "label": "Standard introductory",
+            "serviceTier": "standard",
+            "inputTokensFrom": 0,
+            "inputTokensThrough": null,
+            "effectiveFrom": null,
+            "effectiveUntil": "2027-01-01T00:00:00Z",
+            "utcWindows": [],
+            "usdMicrosPerMillionTokens": {
+              "input": 750000,
+              "cachedInput": 75000,
+              "cacheWriteInput": null,
+              "output": 3750000
+            }
+          },
+          {
+            "id": "standard-2027",
+            "label": "Standard from 2027",
+            "serviceTier": "standard",
+            "inputTokensFrom": 0,
+            "inputTokensThrough": null,
+            "effectiveFrom": "2027-01-01T00:00:00Z",
+            "effectiveUntil": null,
+            "utcWindows": [],
+            "usdMicrosPerMillionTokens": {
+              "input": 1500000,
+              "cachedInput": 150000,
+              "cacheWriteInput": null,
+              "output": 7500000
+            }
+          }
+        ]
+      },
+      "completeness": "complete"
+    },
+    {
+      "schemaVersion": 1,
+      "modelId": "gemini-3.6-flash",
+      "displayName": "Gemini 3.6 Flash",
+      "inputModalities": ["text", "image", "audio", "video", "document"],
+      "outputModalities": ["text"],
+      "tools": "supported",
+      "structuredOutput": "supported",
+      "streaming": "supported",
+      "reasoning": "supported",
+      "reasoningControls": ["minimal", "low", "medium", "high"],
+      "responseDensityControls": [],
+      "contextTokens": 1048576,
+      "outputTokens": 65536,
+      "pricing": {
+        "kind": "published",
+        "billingMode": "api",
+        "currency": "USD",
+        "tokenUnit": 1000000,
+        "sourceUrl": "https://ai.google.dev/gemini-api/docs/pricing",
+        "observedAt": "2026-08-29T00:00:00Z",
+        "tiers": [
+          {
+            "id": "standard-introductory",
+            "label": "Standard introductory",
+            "serviceTier": "standard",
+            "inputTokensFrom": 0,
+            "inputTokensThrough": null,
+            "effectiveFrom": null,
+            "effectiveUntil": "2027-01-01T00:00:00Z",
+            "utcWindows": [],
+            "usdMicrosPerMillionTokens": {
+              "input": 750000,
+              "cachedInput": 75000,
+              "cacheWriteInput": null,
+              "output": 3750000
+            }
+          },
+          {
+            "id": "standard-2027",
+            "label": "Standard from 2027",
+            "serviceTier": "standard",
+            "inputTokensFrom": 0,
+            "inputTokensThrough": null,
+            "effectiveFrom": "2027-01-01T00:00:00Z",
+            "effectiveUntil": null,
+            "utcWindows": [],
+            "usdMicrosPerMillionTokens": {
+              "input": 1500000,
+              "cachedInput": 150000,
+              "cacheWriteInput": null,
+              "output": 7500000
+            }
+          }
+        ]
+      },
+      "completeness": "complete"
+    },
+    {
+      "schemaVersion": 1,
+      "modelId": "gemini-3.5-flash",
+      "displayName": "Gemini 3.5 Flash",
+      "inputModalities": ["text", "image", "audio", "video", "document"],
+      "outputModalities": ["text"],
+      "tools": "supported",
+      "structuredOutput": "supported",
+      "streaming": "supported",
+      "reasoning": "supported",
+      "reasoningControls": ["minimal", "low", "medium", "high"],
+      "responseDensityControls": [],
+      "contextTokens": 1048576,
+      "outputTokens": 65536,
+      "pricing": {
+        "kind": "published",
+        "billingMode": "api",
+        "currency": "USD",
+        "tokenUnit": 1000000,
+        "sourceUrl": "https://ai.google.dev/gemini-api/docs/pricing",
+        "observedAt": "2026-08-29T00:00:00Z",
+        "tiers": [
+          {
+            "id": "standard",
+            "label": "Standard",
+            "serviceTier": "standard",
+            "inputTokensFrom": 0,
+            "inputTokensThrough": null,
+            "effectiveFrom": null,
+            "effectiveUntil": null,
+            "utcWindows": [],
+            "usdMicrosPerMillionTokens": {
+              "input": 1500000,
+              "cachedInput": 150000,
+              "cacheWriteInput": null,
+              "output": 9000000
+            }
+          }
+        ]
+      },
+      "completeness": "complete"
+    },
+    {
+      "schemaVersion": 1,
+      "modelId": "gemini-3.5-flash-lite",
+      "displayName": "Gemini 3.5 Flash-Lite",
+      "inputModalities": ["text", "image", "audio", "video", "document"],
+      "outputModalities": ["text"],
+      "tools": "supported",
+      "structuredOutput": "supported",
+      "streaming": "supported",
+      "reasoning": "supported",
+      "reasoningControls": ["minimal", "low", "medium", "high"],
+      "responseDensityControls": [],
+      "contextTokens": 1048576,
+      "outputTokens": 65536,
+      "pricing": {
+        "kind": "published",
+        "billingMode": "api",
+        "currency": "USD",
+        "tokenUnit": 1000000,
+        "sourceUrl": "https://ai.google.dev/gemini-api/docs/pricing",
+        "observedAt": "2026-08-29T00:00:00Z",
+        "tiers": [
+          {
+            "id": "standard",
+            "label": "Standard",
+            "serviceTier": "standard",
+            "inputTokensFrom": 0,
+            "inputTokensThrough": null,
+            "effectiveFrom": null,
+            "effectiveUntil": null,
+            "utcWindows": [],
+            "usdMicrosPerMillionTokens": {
+              "input": 300000,
+              "cachedInput": 30000,
+              "cacheWriteInput": null,
+              "output": 2500000
+            }
+          }
+        ]
+      },
+      "completeness": "complete"
+    },
+    {
+      "schemaVersion": 1,
+      "modelId": "gemini-3.1-flash-lite",
+      "displayName": "Gemini 3.1 Flash-Lite",
+      "inputModalities": ["text", "image", "audio", "video", "document"],
+      "outputModalities": ["text"],
+      "tools": "supported",
+      "structuredOutput": "supported",
+      "streaming": "supported",
+      "reasoning": "supported",
+      "reasoningControls": ["minimal", "low", "medium", "high"],
+      "responseDensityControls": [],
+      "contextTokens": 1048576,
+      "outputTokens": 65536,
+      "pricing": {
+        "kind": "published",
+        "billingMode": "api",
+        "currency": "USD",
+        "tokenUnit": 1000000,
+        "sourceUrl": "https://ai.google.dev/gemini-api/docs/pricing",
+        "observedAt": "2026-08-29T00:00:00Z",
+        "tiers": [
+          {
+            "id": "standard",
+            "label": "Standard",
+            "serviceTier": "standard",
+            "inputTokensFrom": 0,
+            "inputTokensThrough": null,
+            "effectiveFrom": null,
+            "effectiveUntil": null,
+            "utcWindows": [],
+            "usdMicrosPerMillionTokens": {
+              "input": 250000,
+              "cachedInput": 25000,
+              "cacheWriteInput": null,
+              "output": 1500000
+            }
+          }
+        ]
+      },
+      "completeness": "complete"
+    }
+  ]
+}

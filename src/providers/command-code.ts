@@ -133,28 +133,83 @@ export const COMMAND_CODE_MODEL_PROTOCOLS: ReadonlyMap<string, CommandCodeProtoc
   COMMAND_CODE_MODEL_MANIFESTS.map((model) => [model.id, model.protocol]),
 );
 
+/**
+ * Exact request-level effort values published by Command Code for each route.
+ * Models absent from this map use provider-managed reasoning depth and must not
+ * receive a guessed effort value.
+ */
+export const COMMAND_CODE_MODEL_REASONING_CONTROLS: ReadonlyMap<string, readonly string[]> =
+  new Map([
+    ["deepseek/deepseek-v4-pro", ["high", "max"]],
+    ["deepseek/deepseek-v4-flash", ["high", "max"]],
+    ["deepseek/deepseek-v4-flash-vision-exp", ["high", "max"]],
+    ["z-ai/glm-5.3-flash", ["low", "high", "max"]],
+    ["zai-org/GLM-5.3", ["low", "high", "max"]],
+    ["zai-org/GLM-5.2", ["high", "max"]],
+    ["Qwen/Qwen3.8-Max", ["low", "medium", "xhigh"]],
+    ["Qwen/Qwen3.8-27B", ["low", "medium", "xhigh"]],
+    ["Qwen/Qwen3.8-Flash", ["low", "medium", "xhigh"]],
+    ["tencent/hy4-preview", ["low", "medium", "high"]],
+    ["claude-sonnet-5", ["low", "medium", "high", "xhigh", "max"]],
+    ["claude-sonnet-4-6", ["low", "medium", "high", "xhigh", "max"]],
+    ["claude-fable-5", ["low", "medium", "high", "xhigh", "max"]],
+    ["claude-opus-5", ["low", "medium", "high", "xhigh", "max"]],
+    ["claude-opus-4-8", ["low", "medium", "high", "xhigh", "max"]],
+    ["claude-opus-4-7", ["low", "medium", "high", "xhigh", "max"]],
+    ["gpt-5.6-sol", ["low", "medium", "high", "xhigh", "max"]],
+    ["gpt-5.6-terra", ["low", "medium", "high", "xhigh", "max"]],
+    ["gpt-5.6-luna", ["low", "medium", "high", "xhigh", "max"]],
+    ["gpt-5.5", ["low", "medium", "high", "xhigh"]],
+    ["gpt-5.4", ["low", "medium", "high", "xhigh"]],
+    ["gpt-5.3-codex", ["low", "medium", "high", "xhigh"]],
+    ["gpt-5.4-mini", ["low", "medium", "high"]],
+    ["google/gemini-3.7-flash", ["low", "medium", "high"]],
+    ["google/gemini-3.6-flash", ["low", "medium", "high"]],
+    ["google/gemini-3.5-flash", ["low", "medium", "high"]],
+    ["google/gemini-3.5-flash-lite", ["low", "medium", "high"]],
+    ["google/gemini-3.1-flash-lite", ["low", "medium", "high"]],
+    ["sakana/fugu-ultra", ["high", "xhigh"]],
+    ["xai/grok-4.5", ["low", "medium", "high"]],
+    ["xai/grok-4.6", ["low", "medium", "high", "xhigh"]],
+  ]);
+
+for (const id of COMMAND_CODE_MODEL_REASONING_CONTROLS.keys()) {
+  if (!COMMAND_CODE_MODEL_PROTOCOLS.has(id)) {
+    throw new Error(`Command Code reasoning controls reference unknown model ${id}.`);
+  }
+}
+
 export function commandCodeProtocolFor(model: string): CommandCodeProtocol | null {
   return COMMAND_CODE_MODEL_PROTOCOLS.get(model) ?? null;
 }
 
+export function commandCodeReasoningControlsFor(model: string): readonly string[] {
+  return COMMAND_CODE_MODEL_REASONING_CONTROLS.get(model) ?? [];
+}
+
 export const COMMAND_CODE_MODEL_CAPABILITIES: readonly ModelCapabilityDeclaration[] =
-  COMMAND_CODE_MODEL_MANIFESTS.map((model) => ({
-    schemaVersion: 1,
-    modelId: modelId.from(model.id),
-    displayName: model.name,
-    inputModalities: model.image ? ["text", "image"] : ["text"],
-    outputModalities: ["text"],
-    // Command Code exposes these models through agent-compatible tool protocols.
-    tools: "supported",
-    structuredOutput: "unknown",
-    streaming: "supported",
-    reasoning: model.reasoning ? "supported" : "unsupported",
-    // Provider-native controls are not published per model. Use provider default.
-    reasoningControls: [],
-    // OpenAI-compatible transport does not prove OpenAI-native verbosity support.
-    responseDensityControls: [],
-    contextTokens: model.contextTokens,
-    outputTokens: null,
-    pricing: commandCodePricingFor(model.id),
-    completeness: "partial",
-  }));
+  COMMAND_CODE_MODEL_MANIFESTS.map((model) => {
+    const reasoningControls = commandCodeReasoningControlsFor(model.id);
+    return {
+      schemaVersion: 1,
+      modelId: modelId.from(model.id),
+      displayName: model.name,
+      inputModalities: model.image ? ["text", "image"] : ["text"],
+      outputModalities: ["text"],
+      // Command Code exposes these models through agent-compatible tool protocols.
+      tools: "supported",
+      structuredOutput: "unknown",
+      streaming: "supported",
+      // A missing effort selector is not proof that the underlying model cannot
+      // reason. Only publish support when Command Code does; otherwise retain
+      // the uncertainty instead of turning an absent field into a negative fact.
+      reasoning: model.reasoning || reasoningControls.length > 0 ? "supported" : "unknown",
+      reasoningControls,
+      // OpenAI-compatible transport does not prove OpenAI-native verbosity support.
+      responseDensityControls: [],
+      contextTokens: model.contextTokens,
+      outputTokens: null,
+      pricing: commandCodePricingFor(model.id),
+      completeness: "partial",
+    };
+  });

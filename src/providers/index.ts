@@ -49,9 +49,11 @@ export {
   COMMAND_CODE_MODEL_CAPABILITIES,
   COMMAND_CODE_MODEL_MANIFESTS,
   COMMAND_CODE_MODEL_PROTOCOLS,
+  COMMAND_CODE_MODEL_REASONING_CONTROLS,
   COMMAND_CODE_OPENAI_BASE_URL,
   COMMAND_CODE_PROVIDER_ID,
   commandCodeProtocolFor,
+  commandCodeReasoningControlsFor,
 } from "./command-code.ts";
 export type {
   ProviderAccountMetadata,
