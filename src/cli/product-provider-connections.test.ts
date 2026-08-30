@@ -543,6 +543,73 @@ describe("product provider connection persistence", () => {
     expect(JSON.stringify(events)).not.toContain("secret-not-projected");
   });
 
+  test("routes Google continuations through the durable product state port", async () => {
+    const home = await mkdtemp(join(tmpdir(), "falryn-provider-google-continuation-"));
+    homes.push(home);
+    const services = createServiceProvider(GLOBALS, {
+      home: localPath(home),
+      platform: "darwin",
+      currentDirectory: localPath(home),
+      environment: createStaticEnvironment({
+        FALRYN_STATE_DIR: home,
+        FALRYN_TEST_GOOGLE_KEY: "secret-not-projected",
+      }),
+    });
+    let loadCount = 0;
+    const providerContinuations: ProviderContinuationStatePort = {
+      load() {
+        loadCount += 1;
+        return { ok: false, error: { code: "unavailable" } };
+      },
+      save() {
+        return { ok: true, value: { inserted: 0, replaced: 0 } };
+      },
+    };
+    const product = composeProductProviderConnections(services(), GLOBALS, {
+      providerContinuations,
+    });
+    const profile = officialProfile("google", "FALRYN_TEST_GOOGLE_KEY", "gemini-test");
+    expect(await product.service.execute({ kind: "add", profile })).toMatchObject({
+      kind: "completed",
+    });
+    expect(
+      await product.service.execute({ kind: "use", profileId: profile.profileId }),
+    ).toMatchObject({ kind: "completed" });
+    const selected = await product.resolveSelected();
+    expect(selected.kind).toBe("ready");
+    if (selected.kind !== "ready") {
+      return;
+    }
+    const events = await providerEvents(selected.adapter, {
+      requestId: modelRequestId.from("google-product-continuation"),
+      providerId: providerId.from("google"),
+      modelId: modelId.from("gemini-test"),
+      messages: [
+        { role: "user", parts: [{ kind: "text", text: "read" }] },
+        {
+          role: "assistant",
+          parts: [],
+          toolCalls: [{ toolCallId: "google_product", name: "read_file", arguments: {} }],
+        },
+        {
+          role: "tool",
+          toolCallId: "google_product",
+          parts: [{ kind: "text", text: "contents" }],
+        },
+      ],
+      tools: [],
+      output: { kind: "text" },
+      budgets: {},
+      metadata: { role: "default" },
+    });
+    expect(loadCount).toBe(1);
+    expect(events.at(-1)).toMatchObject({
+      kind: "error",
+      failure: { kind: "adapter-defect", retryable: false },
+    });
+    expect(JSON.stringify(events)).not.toContain("secret-not-projected");
+  });
+
   test("composes an OpenAI Responses destination without treating it as a provider", async () => {
     const home = await mkdtemp(join(tmpdir(), "falryn-provider-openai-responses-"));
     homes.push(home);

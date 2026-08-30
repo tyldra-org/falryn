@@ -21,6 +21,21 @@ import {
   ANTHROPIC_THINKING_MODES,
   ANTHROPIC_THINKING_REPLAY_MODES,
   ANTHROPIC_TOOL_RESULT_ORDERINGS,
+  GOOGLE_API_VERSION_MODES,
+  GOOGLE_FUNCTION_CALL_IDENTITIES,
+  GOOGLE_FUNCTION_RESPONSE_ORDERINGS,
+  GOOGLE_GENERATE_CONTENT_TRANSPORT_DEFAULT,
+  GOOGLE_INPUT_ENCODINGS,
+  GOOGLE_MAX_OUTPUT_TOKEN_FIELDS,
+  GOOGLE_PROMPT_CACHE_BINDINGS,
+  GOOGLE_ROLE_MAPPINGS,
+  GOOGLE_SAFETY_MODES,
+  GOOGLE_STREAMING_MODES,
+  GOOGLE_STRUCTURED_OUTPUT_MODES,
+  GOOGLE_SYSTEM_INSTRUCTION_MODES,
+  GOOGLE_THINKING_MODES,
+  GOOGLE_THINKING_REPLAY_MODES,
+  GOOGLE_USAGE_MODES,
   OPENAI_ASSISTANT_AFTER_TOOL_RESULT_MODES,
   OPENAI_FINISH_REASON_MODES,
   OPENAI_MAX_OUTPUT_TOKEN_FIELDS,
@@ -168,7 +183,55 @@ export const providerTransportCompatibilityDeclarationSchema: z.ZodType<Provider
           });
         }
       }),
-    z.strictObject({ schemaVersion: version, dialect: z.literal("google-generate-content") }),
+    z
+      .strictObject({
+        schemaVersion: version,
+        dialect: z.literal("google-generate-content"),
+        systemInstruction: z
+          .enum(GOOGLE_SYSTEM_INSTRUCTION_MODES)
+          .default(GOOGLE_GENERATE_CONTENT_TRANSPORT_DEFAULT.systemInstruction),
+        roleMapping: z
+          .enum(GOOGLE_ROLE_MAPPINGS)
+          .default(GOOGLE_GENERATE_CONTENT_TRANSPORT_DEFAULT.roleMapping),
+        maxOutputTokensField: z
+          .enum(GOOGLE_MAX_OUTPUT_TOKEN_FIELDS)
+          .default(GOOGLE_GENERATE_CONTENT_TRANSPORT_DEFAULT.maxOutputTokensField),
+        thinking: z
+          .enum(GOOGLE_THINKING_MODES)
+          .default(GOOGLE_GENERATE_CONTENT_TRANSPORT_DEFAULT.thinking),
+        thinkingReplay: z
+          .enum(GOOGLE_THINKING_REPLAY_MODES)
+          .default(GOOGLE_GENERATE_CONTENT_TRANSPORT_DEFAULT.thinkingReplay),
+        structuredOutput: z
+          .enum(GOOGLE_STRUCTURED_OUTPUT_MODES)
+          .default(GOOGLE_GENERATE_CONTENT_TRANSPORT_DEFAULT.structuredOutput),
+        functionCallIdentity: z
+          .enum(GOOGLE_FUNCTION_CALL_IDENTITIES)
+          .default(GOOGLE_GENERATE_CONTENT_TRANSPORT_DEFAULT.functionCallIdentity),
+        functionResponseOrdering: z
+          .enum(GOOGLE_FUNCTION_RESPONSE_ORDERINGS)
+          .default(GOOGLE_GENERATE_CONTENT_TRANSPORT_DEFAULT.functionResponseOrdering),
+        promptCacheBinding: z
+          .enum(GOOGLE_PROMPT_CACHE_BINDINGS)
+          .default(GOOGLE_GENERATE_CONTENT_TRANSPORT_DEFAULT.promptCacheBinding),
+        safety: z
+          .enum(GOOGLE_SAFETY_MODES)
+          .default(GOOGLE_GENERATE_CONTENT_TRANSPORT_DEFAULT.safety),
+        streaming: z
+          .enum(GOOGLE_STREAMING_MODES)
+          .default(GOOGLE_GENERATE_CONTENT_TRANSPORT_DEFAULT.streaming),
+        usage: z.enum(GOOGLE_USAGE_MODES).default(GOOGLE_GENERATE_CONTENT_TRANSPORT_DEFAULT.usage),
+        inputEncoding: z
+          .enum(GOOGLE_INPUT_ENCODINGS)
+          .default(GOOGLE_GENERATE_CONTENT_TRANSPORT_DEFAULT.inputEncoding),
+        apiVersion: z
+          .enum(GOOGLE_API_VERSION_MODES)
+          .default(GOOGLE_GENERATE_CONTENT_TRANSPORT_DEFAULT.apiVersion),
+        automaticFunctionCalling: z
+          .literal(false)
+          .default(GOOGLE_GENERATE_CONTENT_TRANSPORT_DEFAULT.automaticFunctionCalling),
+      })
+      .strict(),
     z.strictObject({ schemaVersion: version, dialect: z.literal("command-code-router") }),
     z.strictObject({ schemaVersion: version, dialect: z.literal("deterministic") }),
     z.strictObject({ schemaVersion: version, dialect: z.literal("custom-unavailable") }),

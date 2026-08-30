@@ -17,6 +17,8 @@ export { createCommandCodeProviderAdapter } from "./command-code-provider-adapte
 export { createSha256Hasher } from "./content-digest.ts";
 export { createEnvironmentCredentialStore } from "./environment-credentials.ts";
 export type {
+  GoogleCachedContentBinding,
+  GoogleCachedContentBindingPort,
   GoogleGenAiSdkAdapterOptions,
   GoogleGenAiStreamFactory,
 } from "./google-genai-sdk-adapter.ts";

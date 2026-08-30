@@ -141,9 +141,67 @@ export type AnthropicMessagesTransportCompatibilityDeclaration = {
   readonly inputEncoding: AnthropicInputEncoding;
 };
 
+export const GOOGLE_SYSTEM_INSTRUCTION_MODES = ["top-level"] as const;
+export type GoogleSystemInstructionMode = (typeof GOOGLE_SYSTEM_INSTRUCTION_MODES)[number];
+
+export const GOOGLE_ROLE_MAPPINGS = ["user-model"] as const;
+export type GoogleRoleMapping = (typeof GOOGLE_ROLE_MAPPINGS)[number];
+
+export const GOOGLE_MAX_OUTPUT_TOKEN_FIELDS = ["maxOutputTokens"] as const;
+export type GoogleMaxOutputTokenField = (typeof GOOGLE_MAX_OUTPUT_TOKEN_FIELDS)[number];
+
+export const GOOGLE_THINKING_MODES = ["thinking-level"] as const;
+export type GoogleThinkingMode = (typeof GOOGLE_THINKING_MODES)[number];
+
+export const GOOGLE_THINKING_REPLAY_MODES = ["part-signature"] as const;
+export type GoogleThinkingReplayMode = (typeof GOOGLE_THINKING_REPLAY_MODES)[number];
+
+export const GOOGLE_STRUCTURED_OUTPUT_MODES = ["response-json-schema"] as const;
+export type GoogleStructuredOutputMode = (typeof GOOGLE_STRUCTURED_OUTPUT_MODES)[number];
+
+export const GOOGLE_FUNCTION_CALL_IDENTITIES = ["provider-or-derived-position"] as const;
+export type GoogleFunctionCallIdentity = (typeof GOOGLE_FUNCTION_CALL_IDENTITIES)[number];
+
+export const GOOGLE_FUNCTION_RESPONSE_ORDERINGS = ["model-before-user"] as const;
+export type GoogleFunctionResponseOrdering = (typeof GOOGLE_FUNCTION_RESPONSE_ORDERINGS)[number];
+
+export const GOOGLE_PROMPT_CACHE_BINDINGS = ["implicit-or-bound-resource"] as const;
+export type GooglePromptCacheBinding = (typeof GOOGLE_PROMPT_CACHE_BINDINGS)[number];
+
+export const GOOGLE_SAFETY_MODES = ["prompt-feedback-and-finish-reason"] as const;
+export type GoogleSafetyMode = (typeof GOOGLE_SAFETY_MODES)[number];
+
+export const GOOGLE_STREAMING_MODES = ["single-candidate-parts"] as const;
+export type GoogleStreamingMode = (typeof GOOGLE_STREAMING_MODES)[number];
+
+export const GOOGLE_USAGE_MODES = ["response-usage-metadata"] as const;
+export type GoogleUsageMode = (typeof GOOGLE_USAGE_MODES)[number];
+
+export const GOOGLE_INPUT_ENCODINGS = ["text-parts"] as const;
+export type GoogleInputEncoding = (typeof GOOGLE_INPUT_ENCODINGS)[number];
+
+export const GOOGLE_API_VERSION_MODES = ["sdk-managed"] as const;
+export type GoogleApiVersionMode = (typeof GOOGLE_API_VERSION_MODES)[number];
+
+/** Exact request, continuation, cache-reference, and stream policy for Generate Content. */
 export type GoogleGenerateContentTransportCompatibilityDeclaration = {
   readonly schemaVersion: typeof PROVIDER_TRANSPORT_COMPATIBILITY_SCHEMA_VERSION;
   readonly dialect: "google-generate-content";
+  readonly systemInstruction: GoogleSystemInstructionMode;
+  readonly roleMapping: GoogleRoleMapping;
+  readonly maxOutputTokensField: GoogleMaxOutputTokenField;
+  readonly thinking: GoogleThinkingMode;
+  readonly thinkingReplay: GoogleThinkingReplayMode;
+  readonly structuredOutput: GoogleStructuredOutputMode;
+  readonly functionCallIdentity: GoogleFunctionCallIdentity;
+  readonly functionResponseOrdering: GoogleFunctionResponseOrdering;
+  readonly promptCacheBinding: GooglePromptCacheBinding;
+  readonly safety: GoogleSafetyMode;
+  readonly streaming: GoogleStreamingMode;
+  readonly usage: GoogleUsageMode;
+  readonly inputEncoding: GoogleInputEncoding;
+  readonly apiVersion: GoogleApiVersionMode;
+  readonly automaticFunctionCalling: false;
 };
 
 export type CommandCodeTransportCompatibilityDeclaration = {
@@ -333,6 +391,27 @@ export const ANTHROPIC_MESSAGES_TRANSPORT_DEFAULT: AnthropicMessagesTransportCom
     inputEncoding: "text-blocks",
   };
 
+export const GOOGLE_GENERATE_CONTENT_TRANSPORT_DEFAULT: GoogleGenerateContentTransportCompatibilityDeclaration =
+  {
+    schemaVersion: PROVIDER_TRANSPORT_COMPATIBILITY_SCHEMA_VERSION,
+    dialect: "google-generate-content",
+    systemInstruction: "top-level",
+    roleMapping: "user-model",
+    maxOutputTokensField: "maxOutputTokens",
+    thinking: "thinking-level",
+    thinkingReplay: "part-signature",
+    structuredOutput: "response-json-schema",
+    functionCallIdentity: "provider-or-derived-position",
+    functionResponseOrdering: "model-before-user",
+    promptCacheBinding: "implicit-or-bound-resource",
+    safety: "prompt-feedback-and-finish-reason",
+    streaming: "single-candidate-parts",
+    usage: "response-usage-metadata",
+    inputEncoding: "text-parts",
+    apiVersion: "sdk-managed",
+    automaticFunctionCalling: false,
+  };
+
 const DEFAULT_DECLARATIONS: Readonly<
   Record<ProviderAdapterKind, ProviderTransportCompatibilityDeclaration>
 > = {
@@ -342,10 +421,7 @@ const DEFAULT_DECLARATIONS: Readonly<
   },
   openai: OPENAI_CHAT_TRANSPORT_DEFAULT,
   anthropic: ANTHROPIC_MESSAGES_TRANSPORT_DEFAULT,
-  google: {
-    schemaVersion: PROVIDER_TRANSPORT_COMPATIBILITY_SCHEMA_VERSION,
-    dialect: "google-generate-content",
-  },
+  google: GOOGLE_GENERATE_CONTENT_TRANSPORT_DEFAULT,
   commandcode: {
     schemaVersion: PROVIDER_TRANSPORT_COMPATIBILITY_SCHEMA_VERSION,
     dialect: "command-code-router",
@@ -360,7 +436,7 @@ const DEFAULT_COMPATIBILITY_IDS: Readonly<Record<ProviderAdapterKind, string>> =
   deterministic: "sha-256:295d1812537ede14745552f9fe1fe8ae2bfaf0010f7ddc3ef1ad200b5a1c4da3",
   openai: "sha-256:0ce93cf5d370f82b9c340a26b77fb3c4c5f36c2f917d42356379246e4b1e590c",
   anthropic: "sha-256:9097c50ab7aca8ff19d70e22deb4cbc20aa34d3df35f1c81c0d5daf60b960baa",
-  google: "sha-256:dfd8cce1aa9dd538b096e6fd5d311217944213f40d65cc98239f4b61ed6b054a",
+  google: "sha-256:93788a5e4057d726c2d9054cc890c474abd6c091973e7b0fe25fc81143d35ceb",
   commandcode: "sha-256:ebe240ba24f73e0818135cb83b0e120f40a6e13c7728d8f93bd6d210195adcd0",
   custom: "sha-256:9e4c9376ebd5369a18ef0653485ab3086e8e73fc3484208ab6e8d603cf773d3a",
 };
@@ -496,6 +572,25 @@ function canonicalDeclaration(
         inputEncoding: declaration.inputEncoding,
       };
     case "google-generate-content":
+      return {
+        schemaVersion: declaration.schemaVersion,
+        dialect: declaration.dialect,
+        systemInstruction: declaration.systemInstruction,
+        roleMapping: declaration.roleMapping,
+        maxOutputTokensField: declaration.maxOutputTokensField,
+        thinking: declaration.thinking,
+        thinkingReplay: declaration.thinkingReplay,
+        structuredOutput: declaration.structuredOutput,
+        functionCallIdentity: declaration.functionCallIdentity,
+        functionResponseOrdering: declaration.functionResponseOrdering,
+        promptCacheBinding: declaration.promptCacheBinding,
+        safety: declaration.safety,
+        streaming: declaration.streaming,
+        usage: declaration.usage,
+        inputEncoding: declaration.inputEncoding,
+        apiVersion: declaration.apiVersion,
+        automaticFunctionCalling: declaration.automaticFunctionCalling,
+      };
     case "command-code-router":
     case "deterministic":
     case "custom-unavailable":
