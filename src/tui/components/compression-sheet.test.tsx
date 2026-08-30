@@ -76,4 +76,46 @@ describe("compression sheet", () => {
     expect(frame).toContain("Brief · unavailable");
     expect(frame).toContain("Hush · unavailable");
   });
+
+  test("scrolls a short sheet and applies disable-all and enable-all through live controls", async () => {
+    const brief = composeProductBriefControls({ initialVerbosity: "balanced" });
+    const output = composeProductOutputControls();
+    const submission = { ...UNAVAILABLE_SUBMISSION, brief, output };
+    using shell = await mount(
+      <ShellApp theme={THEME} model={MODEL} onExit={() => {}} submission={submission} />,
+      { shape: { columns: 70, rows: 12 } },
+    );
+
+    await shell.frame();
+    await shell.press("\t");
+    await shell.press("\t");
+    await shell.type("/compression");
+    await shell.press("\r");
+    await shell.frame("Brief · balanced (current)");
+
+    for (let index = 0; index < 6; index += 1) {
+      shell.setup.mockInput.pressArrow("down");
+    }
+    const scrolled = await shell.frame("Disable all");
+    expect(scrolled).toContain("Disable all");
+    shell.setup.mockInput.pressEnter();
+
+    const disabled = await shell.frame("Brief · off (current)");
+    expect(disabled).toContain("Brief, Hush, and Loom are off.");
+    expect(brief.getFrontendMode()).toBe("off");
+    expect(output.getHushState()).toBe("off");
+    expect(output.getLoomState()).toBe("off");
+
+    for (let index = 0; index < 3; index += 1) {
+      shell.setup.mockInput.pressArrow("down");
+    }
+    await shell.frame("Enable all");
+    shell.setup.mockInput.pressEnter();
+
+    const enabled = await shell.frame("Brief · balanced (current)");
+    expect(enabled).toContain("Brief, Hush, and Loom enabled.");
+    expect(brief.getFrontendMode()).toBe("balanced");
+    expect(output.getHushState()).toBe("on");
+    expect(output.getLoomState()).toBe("on");
+  });
 });

@@ -7,6 +7,8 @@ function arm(overrides: Partial<BriefComparisonArm> = {}): BriefComparisonArm {
   return {
     policy: "brief",
     policyMode: "compact",
+    delivery: "prompt",
+    providerResponseDensityControl: null,
     policyDigest: "policy-brief",
     guidanceBytes: 100,
     guidanceTokensEstimated: 25,

@@ -214,6 +214,8 @@ export type CodingRunOptions = {
     readonly section: PromptSectionInput;
     readonly maxOutputTokens: number;
   };
+  /** Internal matched-run seam for fixtures that must not expose executable tools. */
+  readonly toolExposureOverride?: "none";
   /** Internal matched-run ceiling applied to either response policy. */
   readonly maxOutputTokensOverride?: number;
 };
@@ -533,37 +535,40 @@ export async function runCoding(
       generation,
       records: productArtifactSession.memoryRecords,
     });
-    const productTools = mergeProductToolBundles(
-      generation,
-      [workspaceTools, processTools, scratchTools, gitTools, languageTools, memoryTools],
-      {
-        afterMutation: async (signalRequest) => {
-          if (
-            signalRequest.toolName === "scratch_write" ||
-            signalRequest.toolName === "scratch_discard"
-          ) {
-            return {};
-          }
-          workspaceTools.invalidateContext();
-          const languageDiagnostics = await languageTools.afterWorkspaceMutation(
-            signalRequest.signal,
+    const productTools =
+      options.toolExposureOverride === "none"
+        ? mergeProductToolBundles(generation, [])
+        : mergeProductToolBundles(
+            generation,
+            [workspaceTools, processTools, scratchTools, gitTools, languageTools, memoryTools],
+            {
+              afterMutation: async (signalRequest) => {
+                if (
+                  signalRequest.toolName === "scratch_write" ||
+                  signalRequest.toolName === "scratch_discard"
+                ) {
+                  return {};
+                }
+                workspaceTools.invalidateContext();
+                const languageDiagnostics = await languageTools.afterWorkspaceMutation(
+                  signalRequest.signal,
+                );
+                if (indexLifecycle === null) {
+                  return {
+                    workspaceIndex: { status: "unavailable", code: "index-unavailable" },
+                    languageDiagnostics,
+                  };
+                }
+                const refreshed = await indexLifecycle.refresh(signalRequest.signal);
+                return {
+                  workspaceIndex: refreshed.ok
+                    ? { status: "completed" }
+                    : { status: "unavailable", code: refreshed.error.code },
+                  languageDiagnostics,
+                };
+              },
+            },
           );
-          if (indexLifecycle === null) {
-            return {
-              workspaceIndex: { status: "unavailable", code: "index-unavailable" },
-              languageDiagnostics,
-            };
-          }
-          const refreshed = await indexLifecycle.refresh(signalRequest.signal);
-          return {
-            workspaceIndex: refreshed.ok
-              ? { status: "completed" }
-              : { status: "unavailable", code: refreshed.error.code },
-            languageDiagnostics,
-          };
-        },
-      },
-    );
     const composed = composeProductAgentRuntime({
       eventStore: productArtifactSession.eventStore,
       clock: graph.clock,

@@ -1,5 +1,7 @@
 /** Matched Brief/Caveman comparison contracts (#827). */
 
+import type { BriefDelivery } from "./contracts.ts";
+
 export const BRIEF_COMPARISON_SCHEMA_VERSION = 1;
 export const BRIEF_COMPARISON_VERDICTS = ["pass", "tie", "loss", "invalid"] as const;
 export type BriefComparisonVerdict = (typeof BRIEF_COMPARISON_VERDICTS)[number];
@@ -42,6 +44,8 @@ export type BriefComparisonUsage = {
 export type BriefComparisonArm = {
   readonly policy: "brief" | "caveman";
   readonly policyMode: string;
+  readonly delivery: BriefDelivery;
+  readonly providerResponseDensityControl: string | null;
   readonly policyDigest: string;
   readonly guidanceBytes: number;
   readonly guidanceTokensEstimated: number;

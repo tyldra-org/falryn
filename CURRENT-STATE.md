@@ -316,6 +316,14 @@ without persisting raw model responses. The scorecard requires a configured
 live provider for comparative acceptance; deterministic fixtures prove only
 the comparison and failure plumbing.
 
+The checked-in #827 qualification ran the six reviewed fixtures twice with
+alternating order through Command Code `MiniMaxAI/MiniMax-M3`. Both arms used
+the live headless provider path, a 2,048-token output ceiling, concurrency one,
+and no disclosed tools. All 12 pairs passed with full Brief fidelity, no retry,
+loss, invalid row, or missing Brief fact. Brief used 8,502 provider-reported
+complete-turn tokens; the pinned Caveman arms used 25,892. This is evidence for
+that provider, model, corpus, and run only. It is not a universal model claim.
+
 A shared deterministic integration fixture exercises that lifecycle through
 both public composition roots. Its first provider response invokes
 `run_process`, the exact `ls -la` capture is reduced by `files.ls`, and the

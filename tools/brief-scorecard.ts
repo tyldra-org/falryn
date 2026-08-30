@@ -63,6 +63,7 @@ const DEFAULT_OUTPUT_LIMIT = 2_048;
 const MAX_REPETITIONS = 4;
 const DEFAULT_OPENAI_MODEL = "gpt-4o-mini";
 const DEFAULT_COMMAND_CODE_MODEL = "MiniMaxAI/MiniMax-M3";
+const BRIEF_SCORECARD_SCHEMA_VERSION = 2;
 
 type ScorecardProviderId = "openai" | "commandcode";
 
@@ -81,7 +82,7 @@ type Options = {
 };
 
 export type ScorecardReport = {
-  readonly schemaVersion: 1;
+  readonly schemaVersion: typeof BRIEF_SCORECARD_SCHEMA_VERSION;
   readonly generatedAt: string;
   readonly baseline: {
     readonly commit: string;
@@ -94,6 +95,7 @@ export type ScorecardReport = {
     readonly outputTokenLimit: number;
     readonly responseTokenizer: string;
     readonly concurrency: 1;
+    readonly toolExposure: "none";
   };
   readonly attempts: readonly BriefComparisonArm[];
   readonly pairs: readonly BriefComparisonPair[];
@@ -392,6 +394,7 @@ async function runArm(input: {
       providerAdapter: adapter,
       providerCatalog: input.providerCatalog,
       maxOutputTokensOverride: DEFAULT_OUTPUT_LIMIT,
+      toolExposureOverride: "none",
       identities: {
         sessionId: `brief-scorecard-${randomUUID()}`,
         turnId: `brief-scorecard-${randomUUID()}`,
@@ -424,10 +427,13 @@ async function runArm(input: {
   const briefReceipt = result.payload?.briefReceipt;
   const toolResults = result.payload?.toolResults ?? 0;
   const reportedProviderRequests = result.payload?.providerRequests ?? 0;
+  const exposedProviderTools = providerRequests.some((request) => request.tools.length > 0);
   const terminal =
     result.outcome.kind === "cancelled"
       ? "cancelled"
-      : toolResults > 0 || reportedProviderRequests !== providerRequests.length
+      : toolResults > 0 ||
+          exposedProviderTools ||
+          reportedProviderRequests !== providerRequests.length
         ? "partial"
         : result.payload?.stage === "attempt-completed"
           ? "completed"
@@ -435,6 +441,9 @@ async function runArm(input: {
   return {
     policy: input.policy,
     policyMode: input.policyMode,
+    delivery: input.policy === "brief" ? (briefReceipt?.delivery ?? "prompt") : "prompt",
+    providerResponseDensityControl:
+      input.policy === "brief" ? (briefReceipt?.providerResponseDensityControl ?? null) : null,
     policyDigest:
       input.policy === "brief"
         ? (briefReceipt?.guidanceDigest ?? input.policyDigest)
@@ -502,7 +511,7 @@ export function formatBriefScorecardHuman(report: ScorecardReport): string {
     for (const arm of [pair.brief, pair.caveman]) {
       const usage = arm.usage;
       lines.push(
-        `  ${arm.policy} mode=${arm.policyMode} order=${arm.order} terminal=${arm.terminal} ` +
+        `  ${arm.policy} mode=${arm.policyMode} delivery=${arm.delivery} native=${arm.providerResponseDensityControl ?? "none"} order=${arm.order} terminal=${arm.terminal} ` +
           `tokens(total/input/output/cache/reasoning)=${usage?.totalTokens ?? "?"}/${usage?.inputTokens ?? "?"}/${usage?.outputTokens ?? "?"}/${usage?.cachedInputTokens ?? "?"}/${usage?.reasoningTokens ?? "?"} ` +
           `totalSource=${usage?.totalProvenance ?? "?"} ` +
           `requests=${arm.providerRequests} retries=${arm.retries} latencyMs=${arm.wallTimeMs.toFixed(1)} costUsd=${arm.costUsd ?? "?"} ` +
@@ -634,7 +643,7 @@ async function main(): Promise<void> {
     }
     const results = pairs.map(compareBriefPair);
     const report: ScorecardReport = {
-      schemaVersion: 1,
+      schemaVersion: BRIEF_SCORECARD_SCHEMA_VERSION,
       generatedAt: new Date().toISOString(),
       baseline: {
         commit: CAVEMAN_PINNED_COMMIT,
@@ -647,6 +656,7 @@ async function main(): Promise<void> {
         outputTokenLimit: DEFAULT_OUTPUT_LIMIT,
         responseTokenizer: RESPONSE_TOKENIZER,
         concurrency: 1,
+        toolExposure: "none",
       },
       attempts,
       pairs,

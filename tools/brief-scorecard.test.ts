@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { createHash } from "node:crypto";
 
 import { compareBriefPair } from "../src/domain/index.ts";
 import {
@@ -7,6 +8,7 @@ import {
   responseContainsBriefFact,
   type ScorecardReport,
 } from "./brief-scorecard.ts";
+import qualification from "./fixtures/brief-qualification-commandcode-minimax-m3.json";
 import { BRIEF_RESPONSE_FIXTURES } from "./fixtures/brief-response-corpus.ts";
 
 describe("Brief scorecard", () => {
@@ -82,7 +84,7 @@ describe("Brief scorecard", () => {
       caveman: arm("caveman", 120, 20),
     });
     const report: ScorecardReport = {
-      schemaVersion: 1,
+      schemaVersion: 2,
       generatedAt: "2026-08-27T00:00:00.000Z",
       baseline: { commit: "commit", sourceDigest: "digest", adapterVersion: "adapter" },
       provider: { id: "provider", model: "model" },
@@ -91,6 +93,7 @@ describe("Brief scorecard", () => {
         outputTokenLimit: 2_048,
         responseTokenizer: "tokenizer",
         concurrency: 1,
+        toolExposure: "none",
       },
       attempts: [arm("brief", 90, 10), arm("caveman", 120, 20)],
       pairs: [
@@ -112,9 +115,48 @@ describe("Brief scorecard", () => {
     const human = formatBriefScorecardHuman(report);
     expect(human).toContain("fixture-1");
     expect(human).toContain("verdict=pass");
+    expect(human).toContain("mode=compact delivery=prompt native=none");
     expect(human).toContain("tokens(total/input/output/cache/reasoning)=100/90/10/0/0");
     expect(human).toContain("requests=1 retries=0");
     expect(human).toContain('required=["fact"] preserved=["fact"] missingFacts=[]');
+  });
+
+  test("retains the reviewed live qualification without raw model content", () => {
+    expect(qualification.summary).toEqual({
+      total: 12,
+      passed: 12,
+      tied: 0,
+      lost: 0,
+      invalid: 0,
+      accepted: 12,
+      partial: false,
+      complete: true,
+    });
+    expect(qualification.rows).toHaveLength(BRIEF_RESPONSE_FIXTURES.length * 2);
+    expect(qualification.rows.map((row) => row.pairId)).toEqual(
+      BRIEF_RESPONSE_FIXTURES.flatMap((fixture) => [`${fixture.id}-1`, `${fixture.id}-2`]),
+    );
+    expect(qualification.rows.every((row) => row.briefFidelity === 1)).toBe(true);
+    expect(qualification.rows.every((row) => row.verdict === "pass" && row.accepted)).toBe(true);
+    expect(qualification.settings).toMatchObject({
+      briefDelivery: "prompt",
+      providerResponseDensityControl: null,
+      toolExposure: "none",
+    });
+    expect(qualification.aggregate.briefMissingFacts).toBe(0);
+    expect(qualification.rows.reduce((total, row) => total + row.tokenDelta, 0)).toBe(
+      qualification.aggregate.tokenDelta,
+    );
+    expect(qualification.aggregate.briefTotalTokens).toBeLessThan(
+      qualification.aggregate.cavemanTotalTokens,
+    );
+    expect(qualification.sourceReportDigest).toMatch(/^[0-9a-f]{64}$/u);
+    expect(createHash("sha256").update(JSON.stringify(BRIEF_RESPONSE_FIXTURES)).digest("hex")).toBe(
+      qualification.fixtureCorpusDigest,
+    );
+    expect(JSON.stringify(qualification)).not.toMatch(
+      /(?:responseText|promptText|apiKey|credentialValue)/u,
+    );
   });
 });
 
@@ -122,6 +164,8 @@ function arm(policy: "brief" | "caveman", inputTokens: number, outputTokens: num
   return {
     policy,
     policyMode: policy === "brief" ? "compact" : "ultra",
+    delivery: "prompt" as const,
+    providerResponseDensityControl: null,
     policyDigest: `${policy}-digest`,
     guidanceBytes: 10,
     guidanceTokensEstimated: 3,
