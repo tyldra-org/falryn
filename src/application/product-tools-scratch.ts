@@ -123,7 +123,7 @@ export function composeProductScratchTools(ports: ProductScratchToolPorts): Prod
         document(
           "scratch_write",
           "Write scratch resource",
-          "Create or revise session-scoped text without changing workspace files, Git, index, memory, or prompt context",
+          "Create or revise a session-scoped draft or temporary text without changing workspace files, Git, index, memory, or prompt context",
           "mutation",
         ),
         {

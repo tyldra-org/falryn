@@ -97,7 +97,10 @@ describe("product capability registry", () => {
     const bundle = mergeProductToolBundles(tools.registry.generation, [tools], {
       capabilityEntries: [skillContribution()],
     });
-    const disclosure = discloseProductTools(bundle.capabilityRegistry, bundle.registry);
+    const disclosure = discloseProductTools(bundle.capabilityRegistry, bundle.registry, {
+      task: "Review this change for correctness and blast radius",
+      intent: "independentCritique",
+    });
 
     expect(disclosure.receipt.catalogGeneration).toBe(bundle.registry.generation);
     expect(disclosure.receipt.discoveryHandle).toBe("capability-catalog:12");

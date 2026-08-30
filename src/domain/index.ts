@@ -2010,6 +2010,33 @@ export {
   notebookReadLimits,
   parseNotebookReadRequest,
 } from "./notebook-read.ts";
+export type {
+  AutomationOpportunity,
+  AutomationOpportunityKind,
+  CapabilityOpportunityCandidate,
+  ModelCapabilityBrief,
+  OpportunityCandidateDecision,
+  OpportunityDecisionKind,
+  OpportunityModelAssistance,
+  OpportunityPlanInput,
+  OpportunityReasonCode,
+  OpportunitySignalFamily,
+} from "./opportunity-plan.ts";
+export {
+  AUTOMATION_OPPORTUNITY_KINDS,
+  DEFAULT_OPPORTUNITY_SCHEMA_TOKEN_BUDGET,
+  DEFAULT_OPPORTUNITY_SELECTION_LIMIT,
+  MAX_OPPORTUNITY_REASON_CODES,
+  MAX_OPPORTUNITY_REJECTIONS,
+  MAX_OPPORTUNITY_SCHEMA_TOKEN_BUDGET,
+  MAX_OPPORTUNITY_SELECTION_LIMIT,
+  MAX_OPPORTUNITY_TASK_CHARACTERS,
+  OPPORTUNITY_DECISIONS,
+  OPPORTUNITY_PLAN_SCHEMA_VERSION,
+  OPPORTUNITY_REASON_CODES,
+  OPPORTUNITY_SIGNAL_FAMILIES,
+  planCapabilityOpportunities,
+} from "./opportunity-plan.ts";
 export type { EffectCertainty, TerminalOutcome, TerminalOutcomeKind } from "./outcome.ts";
 export {
   EFFECT_CERTAINTIES,

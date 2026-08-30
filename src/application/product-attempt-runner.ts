@@ -506,6 +506,15 @@ function validateDisclosure(request: AttemptRunnerRequest, registry: ToolRegistr
     }
   }
   const disclosed = input.disclosure.tools;
+  const opportunityPlan = input.disclosure.opportunityPlan;
+  if (
+    opportunityPlan !== undefined &&
+    (opportunityPlan.catalogGeneration !== input.disclosure.catalogGeneration ||
+      opportunityPlan.policyGeneration !== request.boundConfigurationGeneration ||
+      opportunityPlan.discoveryHandle !== input.disclosure.discoveryHandle)
+  ) {
+    return "opportunity plan generation or discovery identity is stale";
+  }
   if (
     input.tools.length !== disclosed.length ||
     input.disclosure.toolNames.length !== disclosed.length
@@ -525,6 +534,12 @@ function validateDisclosure(request: AttemptRunnerRequest, registry: ToolRegistr
       return "capability disclosure order or identity is invalid";
     }
     seen.add(receipt.name);
+    if (
+      opportunityPlan !== undefined &&
+      !opportunityPlan.selected.some((candidate) => candidate.capabilityId === receipt.capabilityId)
+    ) {
+      return "provider tool was not selected by the bound opportunity plan";
+    }
     const entry = registry.resolveByName(receipt.name);
     if (
       entry === null ||

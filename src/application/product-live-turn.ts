@@ -633,6 +633,8 @@ export function createProductLiveTurnExecutor(
       const disclosure = discloseProductTools(capabilityRegistry, registry, {
         executionPolicy,
         consumer: "native-model",
+        task: input.prompt,
+        intent: input.intent ?? executionPolicy.workIntent,
         healthEvidence: {
           now: options.clock.now(),
           runtime: {

@@ -16,6 +16,11 @@ import {
   timestampSchema,
   toCodecIssues,
 } from "./branded-schema.ts";
+import {
+  CAPABILITY_EFFECTIVE_HEALTH_STATES,
+  CAPABILITY_HEALTH_CODES,
+} from "./capability-health.ts";
+import { CAPABILITY_CONTRIBUTION_KINDS, CAPABILITY_SOURCES } from "./capability-registry.ts";
 import type { CodecIssue } from "./codec-error.ts";
 import {
   type CapabilityInvocationStartedPayload,
@@ -48,7 +53,20 @@ import {
   turnId,
   workspaceId,
 } from "./identity.ts";
+import {
+  AUTOMATION_OPPORTUNITY_KINDS,
+  MAX_OPPORTUNITY_REASON_CODES,
+  MAX_OPPORTUNITY_REJECTIONS,
+  MAX_OPPORTUNITY_SCHEMA_TOKEN_BUDGET,
+  MAX_OPPORTUNITY_SELECTION_LIMIT,
+  type ModelCapabilityBrief,
+  OPPORTUNITY_DECISIONS,
+  OPPORTUNITY_PLAN_SCHEMA_VERSION,
+  OPPORTUNITY_REASON_CODES,
+  OPPORTUNITY_SIGNAL_FAMILIES,
+} from "./opportunity-plan.ts";
 import type { TerminalOutcome } from "./outcome.ts";
+import { EFFECT_CLASSES } from "./work.ts";
 
 const schemaVersionSchema = z.int().min(1);
 
@@ -74,6 +92,71 @@ const terminalPayloadSchema: z.ZodType<TerminalPayload> = z.object({
 });
 
 const nullableBudgetSchema = z.number().finite().nonnegative().nullable();
+
+const opportunityDecisionSchema = z
+  .object({
+    capabilityId: brandedString(capabilityId),
+    name: z.string().min(1).max(256),
+    kind: z.enum(CAPABILITY_CONTRIBUTION_KINDS),
+    family: z.enum(OPPORTUNITY_SIGNAL_FAMILIES).nullable(),
+    source: z.enum(CAPABILITY_SOURCES),
+    effect: z.enum(EFFECT_CLASSES),
+    health: z.enum(CAPABILITY_EFFECTIVE_HEALTH_STATES),
+    decision: z.enum(OPPORTUNITY_DECISIONS),
+    score: z.int(),
+    schemaTokensEstimated: z.int().nonnegative(),
+    reasons: z.array(z.enum(OPPORTUNITY_REASON_CODES)).max(MAX_OPPORTUNITY_REASON_CODES),
+    diagnosticCodes: z.array(z.enum(CAPABILITY_HEALTH_CODES)).max(CAPABILITY_HEALTH_CODES.length),
+  })
+  .strict();
+
+const modelCapabilityBriefSchema: z.ZodType<ModelCapabilityBrief> = z
+  .object({
+    schemaVersion: z.literal(OPPORTUNITY_PLAN_SCHEMA_VERSION),
+    planId: z.string().min(1).max(256),
+    taskFingerprint: z.string().regex(/^[a-f0-9]{24}$/u),
+    catalogGeneration: brandedInteger(configurationGeneration),
+    policyGeneration: brandedInteger(configurationGeneration),
+    profileId: z.enum(["ask", "plan", "debug", "agent"]),
+    signalledFamilies: z
+      .array(z.enum(OPPORTUNITY_SIGNAL_FAMILIES))
+      .max(OPPORTUNITY_SIGNAL_FAMILIES.length),
+    requiredFamilies: z.array(z.string().min(1).max(64)).max(OPPORTUNITY_SIGNAL_FAMILIES.length),
+    primaryFamily: z.enum(OPPORTUNITY_SIGNAL_FAMILIES),
+    fallbackFamilies: z
+      .array(z.enum(OPPORTUNITY_SIGNAL_FAMILIES))
+      .max(OPPORTUNITY_SIGNAL_FAMILIES.length),
+    selected: z.array(opportunityDecisionSchema).max(MAX_OPPORTUNITY_SELECTION_LIMIT),
+    fallbacks: z.array(opportunityDecisionSchema).max(MAX_OPPORTUNITY_REJECTIONS),
+    rejected: z.array(opportunityDecisionSchema).max(MAX_OPPORTUNITY_REJECTIONS),
+    omittedRejected: z.int().nonnegative(),
+    opportunities: z
+      .array(
+        z
+          .object({
+            kind: z.enum(AUTOMATION_OPPORTUNITY_KINDS),
+            decision: z.enum(["selected", "recommended", "unavailable", "not-needed", "deferred"]),
+            capabilityIds: z
+              .array(brandedString(capabilityId))
+              .max(MAX_OPPORTUNITY_SELECTION_LIMIT),
+            reason: z.enum(OPPORTUNITY_REASON_CODES),
+          })
+          .strict(),
+      )
+      .max(AUTOMATION_OPPORTUNITY_KINDS.length),
+    modelAssistance: z
+      .object({
+        decision: z.enum(["not-needed", "eligible"]),
+        candidateIds: z.array(brandedString(capabilityId)).max(2),
+        reason: z.enum(["deterministic-winner", "semantic-tie"]),
+      })
+      .strict(),
+    schemaTokensEstimated: z.int().nonnegative(),
+    selectionLimit: z.int().min(1).max(MAX_OPPORTUNITY_SELECTION_LIMIT),
+    schemaTokenBudget: z.int().nonnegative().max(MAX_OPPORTUNITY_SCHEMA_TOKEN_BUDGET),
+    discoveryHandle: z.string().min(1).max(256),
+  })
+  .strict();
 
 const modelAttemptBindingSchema: z.ZodType<ModelAttemptBinding> = z.object({
   schemaVersion: z.literal(1),
@@ -101,6 +184,7 @@ const modelAttemptBindingSchema: z.ZodType<ModelAttemptBinding> = z.object({
   runner: z.literal("product-attempt-runner.v1"),
   gateway: z.literal("product-tool-gateway.v1"),
   discoveryHandle: z.string().min(1),
+  opportunityPlan: modelCapabilityBriefSchema.optional(),
   capabilityCatalog: z
     .object({
       total: z.int().nonnegative(),

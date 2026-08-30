@@ -339,6 +339,11 @@ export type {
 } from "./product-memory-turn.ts";
 export { composeProductMemoryTurn } from "./product-memory-turn.ts";
 export { attemptModelInputFromPrompt } from "./product-model-input.ts";
+export type { ProductOpportunityPlanOptions } from "./product-opportunity-plan.ts";
+export {
+  createProductOpportunityPlan,
+  productOpportunityIntentFamilies,
+} from "./product-opportunity-plan.ts";
 export type {
   ProductEngineFrontendState,
   ProductOutputControlError,
@@ -397,6 +402,10 @@ export type {
   ProductToolGatewayOptions,
 } from "./product-tool-gateway.ts";
 export { createProductToolGateway } from "./product-tool-gateway.ts";
+export {
+  isClosedProductToolSchema,
+  measureProductToolSchema,
+} from "./product-tool-schema.ts";
 export type {
   ProductGitToolPorts,
   ProductGitTools,
