@@ -1,4 +1,8 @@
 import { describe, expect, test } from "bun:test";
+import type {
+  MessageCreateParamsStreaming,
+  RawMessageStreamEvent,
+} from "@anthropic-ai/sdk/resources/messages/messages";
 
 import {
   capabilityId,
@@ -18,7 +22,7 @@ import {
   turnId,
   workspaceId,
 } from "../domain/index.ts";
-import { createHostProcessCapturePort } from "../integrations/index.ts";
+import { createAnthropicSdkAdapter, createHostProcessCapturePort } from "../integrations/index.ts";
 import {
   createDeterministicProviderAdapter,
   type ModelRequest,
@@ -147,7 +151,143 @@ function disclosureInput(product: ReturnType<typeof setup>) {
   };
 }
 
+function anthropicStream(
+  events: readonly RawMessageStreamEvent[],
+): AsyncIterable<RawMessageStreamEvent> {
+  return {
+    async *[Symbol.asyncIterator]() {
+      yield* events;
+    },
+  };
+}
+
+function anthropicEvent(value: unknown): RawMessageStreamEvent {
+  return value as RawMessageStreamEvent;
+}
+
 describe("createProductAttemptRunner", () => {
+  test("continues an Anthropic Messages tool call through the product gateway", async () => {
+    const bodies: MessageCreateParamsStreaming[] = [];
+    const adapter = createAnthropicSdkAdapter({
+      profileId: "anthropic-product-test",
+      supportedModels: ["claude-test"],
+      resolveApiKey: async () => "sk-ant-test",
+      createStream: async (_apiKey, body) => {
+        bodies.push(body);
+        if (bodies.length === 1) {
+          return anthropicStream([
+            anthropicEvent({
+              type: "message_start",
+              message: { usage: { input_tokens: 8, output_tokens: 0 } },
+            }),
+            anthropicEvent({
+              type: "content_block_start",
+              index: 0,
+              content_block: {
+                type: "tool_use",
+                id: "toolu_product",
+                name: "list_dir",
+                input: {},
+                caller: { type: "direct" },
+              },
+            }),
+            anthropicEvent({
+              type: "content_block_delta",
+              index: 0,
+              delta: { type: "input_json_delta", partial_json: '{"path":"."}' },
+            }),
+            anthropicEvent({ type: "content_block_stop", index: 0 }),
+            anthropicEvent({
+              type: "message_delta",
+              delta: { stop_reason: "tool_use", stop_sequence: null },
+              usage: { output_tokens: 3 },
+            }),
+            anthropicEvent({ type: "message_stop" }),
+          ]);
+        }
+        return anthropicStream([
+          anthropicEvent({
+            type: "message_start",
+            message: { usage: { input_tokens: 12, output_tokens: 0 } },
+          }),
+          anthropicEvent({
+            type: "content_block_start",
+            index: 0,
+            content_block: { type: "text", text: "", citations: null },
+          }),
+          anthropicEvent({
+            type: "content_block_delta",
+            index: 0,
+            delta: { type: "text_delta", text: "Directory inspected." },
+          }),
+          anthropicEvent({ type: "content_block_stop", index: 0 }),
+          anthropicEvent({
+            type: "message_delta",
+            delta: { stop_reason: "end_turn", stop_sequence: null },
+            usage: { output_tokens: 4 },
+          }),
+          anthropicEvent({ type: "message_stop" }),
+        ]);
+      },
+    });
+    const product = setup(adapter);
+    const turn = await start(product, "turn-attempt-anthropic-tool");
+    const runner = product.runtime.requireAttemptRunner();
+    if (!runner.ok) {
+      throw new Error(runner.error.code);
+    }
+
+    const result = await runner.value.run({
+      turnId: turn,
+      identity: {
+        attemptNumber: 1,
+        modelAttemptId: modelAttemptId.from("attempt-anthropic-tool"),
+        fallbackPosition: 0,
+        providerKey: adapter.identity.providerId,
+        modelKey: String(adapter.supportedModels[0]),
+      },
+      receipt: receipt(product),
+      boundConfigurationGeneration: generation,
+      configurationGeneration: generation,
+      signal: new AbortController().signal,
+      modelInput: {
+        messages: [
+          { role: "system", parts: [{ kind: "text", text: "Use workspace tools." }] },
+          { role: "user", parts: [{ kind: "text", text: "Inspect the workspace root." }] },
+        ],
+        tools: product.disclosure.modelTools,
+        output: { kind: "text" },
+        budgets: { maxOutputTokens: 256 },
+        disclosure: disclosureInput(product),
+      },
+    });
+
+    expect(result.fact.kind).toBe("completed");
+    expect(result.output).toMatchObject({
+      text: "Directory inspected.",
+      toolResults: 1,
+      providerRequests: 2,
+      usage: {
+        inputTokens: 20,
+        outputTokens: 7,
+        totalTokens: 27,
+        provenance: "provider-reported",
+      },
+    });
+    expect(bodies).toHaveLength(2);
+    expect(bodies[0]).toMatchObject({
+      model: "claude-test",
+      max_tokens: 256,
+      system: [{ type: "text", text: "Use workspace tools." }],
+    });
+    expect(JSON.stringify(bodies[1]?.messages)).toContain(
+      '"type":"tool_use","id":"toolu_product","name":"list_dir"',
+    );
+    expect(JSON.stringify(bodies[1]?.messages)).toContain(
+      '"type":"tool_result","tool_use_id":"toolu_product"',
+    );
+  });
+
   test("classifies its own wall-time deadline as timed-out", async () => {
     const product = setup();
     const turn = await start(product, "turn-attempt-timeout");

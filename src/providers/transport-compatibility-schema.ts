@@ -7,6 +7,20 @@ import type { CodecIssue } from "../domain/codec-error.ts";
 import { modelId } from "../domain/identity.ts";
 import { err, ok, type Result } from "../domain/result.ts";
 import {
+  ANTHROPIC_API_VERSION_MODES,
+  ANTHROPIC_BETA_HEADER_MODES,
+  ANTHROPIC_INPUT_ENCODINGS,
+  ANTHROPIC_MAX_OUTPUT_TOKEN_FIELDS,
+  ANTHROPIC_MESSAGES_TRANSPORT_DEFAULT,
+  ANTHROPIC_PROMPT_CACHE_PLACEMENTS,
+  ANTHROPIC_PROMPT_CACHE_TTLS,
+  ANTHROPIC_SERVICE_TIERS,
+  ANTHROPIC_STREAMING_USAGE_MODES,
+  ANTHROPIC_STRUCTURED_OUTPUT_MODES,
+  ANTHROPIC_SYSTEM_PROMPT_MODES,
+  ANTHROPIC_THINKING_MODES,
+  ANTHROPIC_THINKING_REPLAY_MODES,
+  ANTHROPIC_TOOL_RESULT_ORDERINGS,
   OPENAI_ASSISTANT_AFTER_TOOL_RESULT_MODES,
   OPENAI_FINISH_REASON_MODES,
   OPENAI_MAX_OUTPUT_TOKEN_FIELDS,
@@ -80,7 +94,80 @@ export const providerTransportCompatibilityDeclarationSchema: z.ZodType<Provider
           });
         }
       }),
-    z.strictObject({ schemaVersion: version, dialect: z.literal("anthropic-messages") }),
+    z
+      .strictObject({
+        schemaVersion: version,
+        dialect: z.literal("anthropic-messages"),
+        systemPrompt: z
+          .enum(ANTHROPIC_SYSTEM_PROMPT_MODES)
+          .default(ANTHROPIC_MESSAGES_TRANSPORT_DEFAULT.systemPrompt),
+        maxOutputTokensField: z
+          .enum(ANTHROPIC_MAX_OUTPUT_TOKEN_FIELDS)
+          .default(ANTHROPIC_MESSAGES_TRANSPORT_DEFAULT.maxOutputTokensField),
+        thinking: z
+          .enum(ANTHROPIC_THINKING_MODES)
+          .default(ANTHROPIC_MESSAGES_TRANSPORT_DEFAULT.thinking),
+        thinkingReplay: z
+          .enum(ANTHROPIC_THINKING_REPLAY_MODES)
+          .default(ANTHROPIC_MESSAGES_TRANSPORT_DEFAULT.thinkingReplay),
+        structuredOutput: z
+          .enum(ANTHROPIC_STRUCTURED_OUTPUT_MODES)
+          .default(ANTHROPIC_MESSAGES_TRANSPORT_DEFAULT.structuredOutput),
+        promptCachePlacement: z
+          .enum(ANTHROPIC_PROMPT_CACHE_PLACEMENTS)
+          .default(ANTHROPIC_MESSAGES_TRANSPORT_DEFAULT.promptCachePlacement),
+        promptCacheTtl: z
+          .union([z.enum(ANTHROPIC_PROMPT_CACHE_TTLS), z.null()])
+          .default(ANTHROPIC_MESSAGES_TRANSPORT_DEFAULT.promptCacheTtl),
+        toolResultOrdering: z
+          .enum(ANTHROPIC_TOOL_RESULT_ORDERINGS)
+          .default(ANTHROPIC_MESSAGES_TRANSPORT_DEFAULT.toolResultOrdering),
+        strictToolSchemas: z
+          .boolean()
+          .default(ANTHROPIC_MESSAGES_TRANSPORT_DEFAULT.strictToolSchemas),
+        streamingUsage: z
+          .enum(ANTHROPIC_STREAMING_USAGE_MODES)
+          .default(ANTHROPIC_MESSAGES_TRANSPORT_DEFAULT.streamingUsage),
+        serviceTier: z
+          .enum(ANTHROPIC_SERVICE_TIERS)
+          .default(ANTHROPIC_MESSAGES_TRANSPORT_DEFAULT.serviceTier),
+        apiVersion: z
+          .enum(ANTHROPIC_API_VERSION_MODES)
+          .default(ANTHROPIC_MESSAGES_TRANSPORT_DEFAULT.apiVersion),
+        betaHeaders: z
+          .enum(ANTHROPIC_BETA_HEADER_MODES)
+          .default(ANTHROPIC_MESSAGES_TRANSPORT_DEFAULT.betaHeaders),
+        inputEncoding: z
+          .enum(ANTHROPIC_INPUT_ENCODINGS)
+          .default(ANTHROPIC_MESSAGES_TRANSPORT_DEFAULT.inputEncoding),
+      })
+      .strict()
+      .superRefine((declaration, context) => {
+        if (declaration.thinking === "adaptive" && declaration.thinkingReplay !== "signed-blocks") {
+          context.addIssue({
+            code: "custom",
+            path: ["thinkingReplay"],
+            message: "adaptive thinking requires signed-block replay",
+          });
+        }
+        if (
+          declaration.promptCachePlacement === "system-prefix" &&
+          declaration.promptCacheTtl === null
+        ) {
+          context.addIssue({
+            code: "custom",
+            path: ["promptCacheTtl"],
+            message: "system-prefix prompt caching requires a TTL",
+          });
+        }
+        if (declaration.promptCachePlacement === "none" && declaration.promptCacheTtl !== null) {
+          context.addIssue({
+            code: "custom",
+            path: ["promptCacheTtl"],
+            message: "a disabled prompt cache cannot declare a TTL",
+          });
+        }
+      }),
     z.strictObject({ schemaVersion: version, dialect: z.literal("google-generate-content") }),
     z.strictObject({ schemaVersion: version, dialect: z.literal("command-code-router") }),
     z.strictObject({ schemaVersion: version, dialect: z.literal("deterministic") }),

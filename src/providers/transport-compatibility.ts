@@ -82,9 +82,63 @@ export type OpenAiResponsesTransportCompatibilityDeclaration = {
   readonly parallelToolCalls: boolean;
 };
 
+export const ANTHROPIC_SYSTEM_PROMPT_MODES = ["top-level-blocks"] as const;
+export type AnthropicSystemPromptMode = (typeof ANTHROPIC_SYSTEM_PROMPT_MODES)[number];
+
+export const ANTHROPIC_MAX_OUTPUT_TOKEN_FIELDS = ["max_tokens"] as const;
+export type AnthropicMaxOutputTokenField = (typeof ANTHROPIC_MAX_OUTPUT_TOKEN_FIELDS)[number];
+
+export const ANTHROPIC_THINKING_MODES = ["none", "adaptive"] as const;
+export type AnthropicThinkingMode = (typeof ANTHROPIC_THINKING_MODES)[number];
+
+export const ANTHROPIC_THINKING_REPLAY_MODES = ["none", "signed-blocks"] as const;
+export type AnthropicThinkingReplayMode = (typeof ANTHROPIC_THINKING_REPLAY_MODES)[number];
+
+export const ANTHROPIC_STRUCTURED_OUTPUT_MODES = ["none", "output-config-json-schema"] as const;
+export type AnthropicStructuredOutputMode = (typeof ANTHROPIC_STRUCTURED_OUTPUT_MODES)[number];
+
+export const ANTHROPIC_PROMPT_CACHE_PLACEMENTS = ["none", "system-prefix"] as const;
+export type AnthropicPromptCachePlacement = (typeof ANTHROPIC_PROMPT_CACHE_PLACEMENTS)[number];
+
+export const ANTHROPIC_PROMPT_CACHE_TTLS = ["5m", "1h"] as const;
+export type AnthropicPromptCacheTtl = (typeof ANTHROPIC_PROMPT_CACHE_TTLS)[number];
+
+export const ANTHROPIC_TOOL_RESULT_ORDERINGS = ["assistant-before-user"] as const;
+export type AnthropicToolResultOrdering = (typeof ANTHROPIC_TOOL_RESULT_ORDERINGS)[number];
+
+export const ANTHROPIC_STREAMING_USAGE_MODES = ["message-start-and-delta"] as const;
+export type AnthropicStreamingUsageMode = (typeof ANTHROPIC_STREAMING_USAGE_MODES)[number];
+
+export const ANTHROPIC_SERVICE_TIERS = ["auto", "standard_only"] as const;
+export type AnthropicServiceTier = (typeof ANTHROPIC_SERVICE_TIERS)[number];
+
+export const ANTHROPIC_API_VERSION_MODES = ["sdk-managed"] as const;
+export type AnthropicApiVersionMode = (typeof ANTHROPIC_API_VERSION_MODES)[number];
+
+export const ANTHROPIC_BETA_HEADER_MODES = ["none"] as const;
+export type AnthropicBetaHeaderMode = (typeof ANTHROPIC_BETA_HEADER_MODES)[number];
+
+export const ANTHROPIC_INPUT_ENCODINGS = ["text-blocks"] as const;
+export type AnthropicInputEncoding = (typeof ANTHROPIC_INPUT_ENCODINGS)[number];
+
+/** Exact request, continuation, cache, and stream policy for Anthropic Messages. */
 export type AnthropicMessagesTransportCompatibilityDeclaration = {
   readonly schemaVersion: typeof PROVIDER_TRANSPORT_COMPATIBILITY_SCHEMA_VERSION;
   readonly dialect: "anthropic-messages";
+  readonly systemPrompt: AnthropicSystemPromptMode;
+  readonly maxOutputTokensField: AnthropicMaxOutputTokenField;
+  readonly thinking: AnthropicThinkingMode;
+  readonly thinkingReplay: AnthropicThinkingReplayMode;
+  readonly structuredOutput: AnthropicStructuredOutputMode;
+  readonly promptCachePlacement: AnthropicPromptCachePlacement;
+  readonly promptCacheTtl: AnthropicPromptCacheTtl | null;
+  readonly toolResultOrdering: AnthropicToolResultOrdering;
+  readonly strictToolSchemas: boolean;
+  readonly streamingUsage: AnthropicStreamingUsageMode;
+  readonly serviceTier: AnthropicServiceTier;
+  readonly apiVersion: AnthropicApiVersionMode;
+  readonly betaHeaders: AnthropicBetaHeaderMode;
+  readonly inputEncoding: AnthropicInputEncoding;
 };
 
 export type GoogleGenerateContentTransportCompatibilityDeclaration = {
@@ -259,6 +313,26 @@ export const OPENAI_RESPONSES_TRANSPORT_DEFAULT: OpenAiResponsesTransportCompati
     parallelToolCalls: true,
   };
 
+export const ANTHROPIC_MESSAGES_TRANSPORT_DEFAULT: AnthropicMessagesTransportCompatibilityDeclaration =
+  {
+    schemaVersion: PROVIDER_TRANSPORT_COMPATIBILITY_SCHEMA_VERSION,
+    dialect: "anthropic-messages",
+    systemPrompt: "top-level-blocks",
+    maxOutputTokensField: "max_tokens",
+    thinking: "adaptive",
+    thinkingReplay: "signed-blocks",
+    structuredOutput: "output-config-json-schema",
+    promptCachePlacement: "system-prefix",
+    promptCacheTtl: "5m",
+    toolResultOrdering: "assistant-before-user",
+    strictToolSchemas: true,
+    streamingUsage: "message-start-and-delta",
+    serviceTier: "auto",
+    apiVersion: "sdk-managed",
+    betaHeaders: "none",
+    inputEncoding: "text-blocks",
+  };
+
 const DEFAULT_DECLARATIONS: Readonly<
   Record<ProviderAdapterKind, ProviderTransportCompatibilityDeclaration>
 > = {
@@ -267,10 +341,7 @@ const DEFAULT_DECLARATIONS: Readonly<
     dialect: "deterministic",
   },
   openai: OPENAI_CHAT_TRANSPORT_DEFAULT,
-  anthropic: {
-    schemaVersion: PROVIDER_TRANSPORT_COMPATIBILITY_SCHEMA_VERSION,
-    dialect: "anthropic-messages",
-  },
+  anthropic: ANTHROPIC_MESSAGES_TRANSPORT_DEFAULT,
   google: {
     schemaVersion: PROVIDER_TRANSPORT_COMPATIBILITY_SCHEMA_VERSION,
     dialect: "google-generate-content",
@@ -288,7 +359,7 @@ const DEFAULT_DECLARATIONS: Readonly<
 const DEFAULT_COMPATIBILITY_IDS: Readonly<Record<ProviderAdapterKind, string>> = {
   deterministic: "sha-256:295d1812537ede14745552f9fe1fe8ae2bfaf0010f7ddc3ef1ad200b5a1c4da3",
   openai: "sha-256:0ce93cf5d370f82b9c340a26b77fb3c4c5f36c2f917d42356379246e4b1e590c",
-  anthropic: "sha-256:bd4b92183e4fd81802f804afb15d93b94977a36462ba77e409089cdea8d15a8b",
+  anthropic: "sha-256:9097c50ab7aca8ff19d70e22deb4cbc20aa34d3df35f1c81c0d5daf60b960baa",
   google: "sha-256:dfd8cce1aa9dd538b096e6fd5d311217944213f40d65cc98239f4b61ed6b054a",
   commandcode: "sha-256:ebe240ba24f73e0818135cb83b0e120f40a6e13c7728d8f93bd6d210195adcd0",
   custom: "sha-256:9e4c9376ebd5369a18ef0653485ab3086e8e73fc3484208ab6e8d603cf773d3a",
@@ -406,6 +477,24 @@ function canonicalDeclaration(
         parallelToolCalls: declaration.parallelToolCalls,
       };
     case "anthropic-messages":
+      return {
+        schemaVersion: declaration.schemaVersion,
+        dialect: declaration.dialect,
+        systemPrompt: declaration.systemPrompt,
+        maxOutputTokensField: declaration.maxOutputTokensField,
+        thinking: declaration.thinking,
+        thinkingReplay: declaration.thinkingReplay,
+        structuredOutput: declaration.structuredOutput,
+        promptCachePlacement: declaration.promptCachePlacement,
+        promptCacheTtl: declaration.promptCacheTtl,
+        toolResultOrdering: declaration.toolResultOrdering,
+        strictToolSchemas: declaration.strictToolSchemas,
+        streamingUsage: declaration.streamingUsage,
+        serviceTier: declaration.serviceTier,
+        apiVersion: declaration.apiVersion,
+        betaHeaders: declaration.betaHeaders,
+        inputEncoding: declaration.inputEncoding,
+      };
     case "google-generate-content":
     case "command-code-router":
     case "deterministic":
