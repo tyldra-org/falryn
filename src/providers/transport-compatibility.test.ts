@@ -3,6 +3,7 @@ import { modelId } from "../domain/identity.ts";
 import {
   defaultProviderTransportCompatibility,
   OPENAI_CHAT_TRANSPORT_DEFAULT,
+  OPENAI_RESPONSES_TRANSPORT_DEFAULT,
   PROVIDER_TRANSPORT_COMPATIBILITY_SCHEMA_VERSION,
   resolveProviderTransportCompatibility,
 } from "./transport-compatibility.ts";
@@ -122,5 +123,30 @@ describe("provider transport compatibility", () => {
       return;
     }
     expect(unknown.error.issues.some((issue) => issue.code === "unrecognized_keys")).toBe(true);
+  });
+
+  test("parses Responses retention modes and rejects contradictory state", () => {
+    expect(
+      parseProviderTransportCompatibilityDeclaration(OPENAI_RESPONSES_TRANSPORT_DEFAULT).ok,
+    ).toBe(true);
+    expect(
+      parseProviderTransportCompatibilityDeclaration({
+        ...OPENAI_RESPONSES_TRANSPORT_DEFAULT,
+        continuation: "previous-response",
+        store: false,
+      }).ok,
+    ).toBe(false);
+    expect(
+      parseProviderTransportCompatibilityDeclaration({
+        ...OPENAI_RESPONSES_TRANSPORT_DEFAULT,
+        store: true,
+      }).ok,
+    ).toBe(false);
+    expect(
+      parseProviderTransportCompatibilityDeclaration({
+        ...OPENAI_RESPONSES_TRANSPORT_DEFAULT,
+        includeEncryptedReasoning: false,
+      }).ok,
+    ).toBe(false);
   });
 });

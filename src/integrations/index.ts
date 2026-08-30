@@ -79,6 +79,13 @@ export {
   createOfficialModelDiscovery,
   officialModelCapabilityTranslators,
 } from "./official-model-discovery.ts";
+export type { OpenAiProviderAdapterOptions } from "./openai-provider-adapter.ts";
+export { createOpenAiProviderAdapter } from "./openai-provider-adapter.ts";
+export type {
+  OpenAiResponsesSdkAdapterOptions,
+  OpenAiResponsesSdkFetch,
+} from "./openai-responses-sdk-adapter.ts";
+export { createOpenAiResponsesSdkAdapter } from "./openai-responses-sdk-adapter.ts";
 export type { OpenAiSdkAdapterOptions, OpenAiSdkFetch } from "./openai-sdk-adapter.ts";
 export { createOpenAiSdkAdapter } from "./openai-sdk-adapter.ts";
 export { createProcessSignalPort, observedPlatformSignals } from "./process-signals.ts";

@@ -3,6 +3,7 @@ import { modelId } from "../domain/identity.ts";
 import {
   defaultProviderTransportCompatibility,
   OPENAI_CHAT_TRANSPORT_DEFAULT,
+  OPENAI_RESPONSES_TRANSPORT_DEFAULT,
 } from "../providers/transport-compatibility.ts";
 import {
   resolveProviderTransportCompatibilityPlan,
@@ -42,6 +43,21 @@ describe("resolveProviderTransportCompatibilityPlan", () => {
     expect(second.ok).toBe(true);
     if (first.ok && second.ok) {
       expect(first.value.compatibilityId).not.toBe(second.value.compatibilityId);
+    }
+  });
+
+  test("keeps Chat Completions and Responses plans independently identifiable", () => {
+    const chat = resolveProviderTransportCompatibilityPlan("openai", OPENAI_CHAT_TRANSPORT_DEFAULT);
+    const responses = resolveProviderTransportCompatibilityPlan(
+      "openai",
+      OPENAI_RESPONSES_TRANSPORT_DEFAULT,
+    );
+
+    expect(chat.ok).toBe(true);
+    expect(responses.ok).toBe(true);
+    if (chat.ok && responses.ok) {
+      expect(chat.value.compatibilityId).not.toBe(responses.value.compatibilityId);
+      expect(responses.value.receipt.selectedLayer).toBe("destination-profile");
     }
   });
 

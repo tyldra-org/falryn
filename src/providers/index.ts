@@ -82,6 +82,13 @@ export {
   providerConnectionStateSchema,
 } from "./connection-schema.ts";
 export type {
+  ProviderContinuationStateError,
+  ProviderContinuationStateKey,
+  ProviderContinuationStatePort,
+  ProviderContinuationStateRecord,
+} from "./continuation-state.ts";
+export { PROVIDER_CONTINUATION_STATE_SCHEMA_VERSION } from "./continuation-state.ts";
+export type {
   OfficialProviderCredentialId,
   ProviderCredentialEnvironment,
 } from "./credential-environment.ts";
@@ -327,6 +334,11 @@ export type {
   OpenAiChatTransportCompatibilityDeclaration,
   OpenAiFinishReasonMode,
   OpenAiMaxOutputTokenField,
+  OpenAiResponsesContinuationMode,
+  OpenAiResponsesPromptCacheTtl,
+  OpenAiResponsesReasoningSummary,
+  OpenAiResponsesServiceTier,
+  OpenAiResponsesTransportCompatibilityDeclaration,
   OpenAiStreamingUsageMode,
   OpenAiSystemMessageRole,
   OpenAiToolResultNameMode,
@@ -351,6 +363,11 @@ export {
   OPENAI_CHAT_TRANSPORT_DEFAULT,
   OPENAI_FINISH_REASON_MODES,
   OPENAI_MAX_OUTPUT_TOKEN_FIELDS,
+  OPENAI_RESPONSES_CONTINUATION_MODES,
+  OPENAI_RESPONSES_PROMPT_CACHE_TTLS,
+  OPENAI_RESPONSES_REASONING_SUMMARIES,
+  OPENAI_RESPONSES_SERVICE_TIERS,
+  OPENAI_RESPONSES_TRANSPORT_DEFAULT,
   OPENAI_STREAMING_USAGE_MODES,
   OPENAI_SYSTEM_MESSAGE_ROLES,
   OPENAI_TOOL_RESULT_NAME_MODES,

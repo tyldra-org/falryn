@@ -199,6 +199,7 @@ const failureSchema = z
   .object({
     kind: z.literal(PROVIDER_FAILURE_KINDS),
     retryable: z.boolean(),
+    retryAfterMs: z.number().int().nonnegative().optional(),
     message: z.string().min(1).max(MAX_MESSAGE_TEXT_LENGTH),
   })
   .strict();

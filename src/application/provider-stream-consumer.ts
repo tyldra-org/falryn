@@ -208,6 +208,7 @@ function emptySnapshot(): StreamAssemblySnapshot {
     toolProposals: [],
     usage: null,
     finishReason: null,
+    providerMetadata: {},
     diagnostics: [],
   };
 }

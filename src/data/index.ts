@@ -104,6 +104,15 @@ export {
   createProjectionShutdownParticipant,
   PROJECTION_PARTICIPANT_NAME,
 } from "./projections.ts";
+export {
+  createProviderContinuationStateRepository,
+  MAX_DURABLE_PROVIDER_CONTINUATIONS,
+} from "./provider-continuation-repository.ts";
+export {
+  MIGRATION_0010,
+  PROVIDER_CONTINUATION_SCHEMA_VERSION,
+  PROVIDER_CONTINUATION_STATES_TABLE,
+} from "./provider-continuation-schema.ts";
 export type { ReachabilityGcInputs, ReachabilityGcOptions } from "./reachability-gc.ts";
 export {
   computeGcPlanId,

@@ -238,6 +238,25 @@ describe("parseNormalizedProviderEvent", () => {
     }
   });
 
+  test("accepts bounded provider retry metadata", () => {
+    const parsed = parseNormalizedProviderEvent({
+      kind: "error",
+      requestId: "req-retry",
+      modelAttemptId: "attempt-retry",
+      sequence: 2,
+      failure: {
+        kind: "rate-limit",
+        retryable: true,
+        retryAfterMs: 1_250,
+        message: "The provider rate-limited this request.",
+      },
+    });
+    expect(parsed).toMatchObject({
+      ok: true,
+      value: { failure: { retryAfterMs: 1_250 } },
+    });
+  });
+
   test("rejects a second-shape unknown kind", () => {
     const parsed = parseNormalizedProviderEvent({
       kind: "billing-surprise",

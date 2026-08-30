@@ -18,13 +18,13 @@ import {
   createGoogleGenAiSdkAdapter,
   createHostCommandRunner,
   createOfficialModelDiscovery,
-  createOpenAiSdkAdapter,
+  createOpenAiProviderAdapter,
   hostPlatform,
   type OpenAiSdkFetch,
   type OwnedProcessRegistry,
 } from "../integrations/index.ts";
 import { providerDestinationId } from "../integrations/provider-destination.ts";
-import type { ModelDiscoveryPort } from "../providers/index.ts";
+import type { ModelDiscoveryPort, ProviderContinuationStatePort } from "../providers/index.ts";
 import {
   COMMAND_CODE_OPENAI_BASE_URL,
   parseProviderConnectionState,
@@ -73,6 +73,8 @@ export type ProductProviderConnectionOptions = {
   readonly modelDiscovery?: ModelDiscoveryPort;
   /** Durable effective generations used by executed model routes. */
   readonly modelCatalogs?: ModelCatalogGenerationRepository;
+  /** Durable exact-route state used by stateful provider SDK transports. */
+  readonly providerContinuations?: ProviderContinuationStatePort;
 };
 
 export function composeProductProviderConnections(
@@ -172,16 +174,23 @@ export function composeProductProviderConnections(
           if (profile.endpoint === null) {
             return { kind: "unavailable", code: "provider-adapter-unavailable", session };
           }
-          if (compatibility.value.declaration.dialect !== "openai-chat-completions") {
+          if (
+            compatibility.value.declaration.dialect !== "openai-chat-completions" &&
+            compatibility.value.declaration.dialect !== "openai-responses"
+          ) {
             return { kind: "unavailable", code: "transport-compatibility-mismatch", session };
           }
-          adapter = createOpenAiSdkAdapter({
+          adapter = createOpenAiProviderAdapter({
             ...common,
             baseUrl: profile.endpoint,
             compatibility: compatibility.value.declaration,
             organization: profile.organization,
             project: profile.project,
             ...(options.providerFetch === undefined ? {} : { fetch: options.providerFetch }),
+            ...(options.providerContinuations === undefined
+              ? {}
+              : { continuationState: options.providerContinuations }),
+            now: () => services.clock.now(),
           });
           break;
         case "anthropic":

@@ -11,8 +11,16 @@ import {
   modelId,
   providerId,
 } from "../domain/index.ts";
+import type { OpenAiSdkFetch } from "../integrations/index.ts";
 import type { ModelDiscoveryPort, ProviderProfile } from "../providers/index.ts";
+import {
+  type ModelRequest,
+  modelRequestId,
+  type NormalizedProviderEvent,
+  OPENAI_RESPONSES_TRANSPORT_DEFAULT,
+} from "../providers/index.ts";
 import type { GlobalOptions } from "./options.ts";
+import { openProductArtifactSession } from "./product-artifact-session.ts";
 import { composeProductProviderConnections } from "./product-provider-connections.ts";
 import { createServiceProvider } from "./services.ts";
 
@@ -78,6 +86,63 @@ function officialProfile(
     discovery: "static",
     timeouts: { connectMs: 1_000, requestMs: 10_000 },
   };
+}
+
+function sse(events: readonly object[]): Response {
+  return new Response(events.map((value) => `data: ${JSON.stringify(value)}\n\n`).join(""), {
+    status: 200,
+    headers: { "content-type": "text/event-stream" },
+  });
+}
+
+function responsesResult(id: string, output: readonly object[] = []): Record<string, unknown> {
+  return {
+    id,
+    object: "response",
+    created_at: 1,
+    status: "completed",
+    error: null,
+    incomplete_details: null,
+    instructions: null,
+    max_output_tokens: 2_048,
+    model: "gpt-5.6-sol",
+    output,
+    parallel_tool_calls: true,
+    previous_response_id: null,
+    prompt: null,
+    reasoning: { effort: "medium", summary: "auto" },
+    safety_identifier: null,
+    service_tier: "default",
+    store: false,
+    temperature: null,
+    text: { format: { type: "text" }, verbosity: "medium" },
+    tool_choice: "auto",
+    tools: [],
+    top_logprobs: 0,
+    top_p: null,
+    truncation: "disabled",
+    usage: null,
+    user: null,
+    metadata: {},
+  };
+}
+
+async function providerEvents(
+  adapter: {
+    stream(
+      request: ModelRequest,
+      options: { signal: AbortSignal },
+    ): AsyncIterable<NormalizedProviderEvent>;
+  },
+  request: ModelRequest,
+): Promise<readonly NormalizedProviderEvent[]> {
+  const events: NormalizedProviderEvent[] = [];
+  for await (const event of adapter.stream(request, {
+    signal: new AbortController().signal,
+  })) {
+    events.push(event);
+  }
+  return events;
 }
 
 describe("product provider connection persistence", () => {
@@ -402,5 +467,253 @@ describe("product provider connection persistence", () => {
       }
       expect(JSON.stringify(selected)).not.toContain("secret-not-projected");
     }
+  });
+
+  test("composes an OpenAI Responses destination without treating it as a provider", async () => {
+    const home = await mkdtemp(join(tmpdir(), "falryn-provider-openai-responses-"));
+    homes.push(home);
+    const services = createServiceProvider(GLOBALS, {
+      home: localPath(home),
+      platform: "darwin",
+      currentDirectory: localPath(home),
+      environment: createStaticEnvironment({
+        FALRYN_STATE_DIR: home,
+        FALRYN_TEST_OPENAI_KEY: "secret-not-projected",
+      }),
+    });
+    const product = composeProductProviderConnections(services(), GLOBALS, {
+      providerFetch: async () => {
+        throw new Error("adapter composition must not contact the provider");
+      },
+    });
+    const profile: ProviderProfile = {
+      ...localProfile(),
+      profileId: "openai-responses",
+      providerId: providerId.from("openai"),
+      displayName: "OpenAI Responses",
+      endpoint: "https://api.openai.com/v1",
+      credential: {
+        storeKind: "environment",
+        locator: "FALRYN_TEST_OPENAI_KEY",
+        consumer: "provider:openai",
+        accountLabel: null,
+      },
+      enabledModels: [modelId.from("gpt-5.6-sol")],
+      transportCompatibility: OPENAI_RESPONSES_TRANSPORT_DEFAULT,
+    };
+
+    expect(await product.service.execute({ kind: "add", profile })).toMatchObject({
+      kind: "completed",
+    });
+    expect(
+      await product.service.execute({ kind: "use", profileId: "openai-responses" }),
+    ).toMatchObject({ kind: "completed", selectedProfileId: "openai-responses" });
+
+    const selected = await product.resolveSelected();
+    expect(selected.kind).toBe("ready");
+    if (selected.kind === "ready") {
+      expect(selected.adapter.identity).toMatchObject({
+        adapterKind: "openai",
+        providerId: "openai",
+        profileId: "openai-responses",
+      });
+      expect(
+        selected.adapter.transportCompatibilityFor(modelId.from("gpt-5.6-sol"))?.declaration
+          .dialect,
+      ).toBe("openai-responses");
+    }
+    expect(JSON.stringify(selected)).not.toContain("secret-not-projected");
+  });
+
+  test("replays exact Responses tool state through product routing after restart", async () => {
+    const home = await mkdtemp(join(tmpdir(), "falryn-provider-responses-restart-"));
+    homes.push(home);
+    const services = createServiceProvider(GLOBALS, {
+      home: localPath(home),
+      platform: "darwin",
+      currentDirectory: localPath(home),
+      environment: createStaticEnvironment({
+        FALRYN_STATE_DIR: join(home, "state"),
+        FALRYN_ARTIFACT_DIR: join(home, "artifacts"),
+        FALRYN_TEMP_DIR: join(home, "tmp"),
+        FALRYN_TEST_OPENAI_KEY: "secret-not-projected",
+      }),
+    });
+    const graph = services();
+    const profile: ProviderProfile = {
+      ...localProfile(),
+      profileId: "openai-responses-restart",
+      providerId: providerId.from("openai"),
+      endpoint: "https://api.openai.com/v1",
+      credential: {
+        storeKind: "environment",
+        locator: "FALRYN_TEST_OPENAI_KEY",
+        consumer: "provider:openai",
+        accountLabel: null,
+      },
+      enabledModels: [modelId.from("gpt-5.6-sol")],
+      transportCompatibility: OPENAI_RESPONSES_TRANSPORT_DEFAULT,
+    };
+    const configured = composeProductProviderConnections(graph, GLOBALS).service;
+    expect(await configured.execute({ kind: "add", profile })).toMatchObject({ kind: "completed" });
+    expect(await configured.execute({ kind: "use", profileId: profile.profileId })).toMatchObject({
+      kind: "completed",
+    });
+
+    const bodies: Record<string, unknown>[] = [];
+    let providerCall = 0;
+    const fetch: OpenAiSdkFetch = async (_input, init) => {
+      bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+      providerCall += 1;
+      if (providerCall === 1) {
+        const reasoning = {
+          id: "reasoning-restart",
+          type: "reasoning",
+          encrypted_content: "opaque-provider-state",
+          summary: [],
+          status: "completed",
+        };
+        const functionCall = {
+          id: "function-restart",
+          type: "function_call",
+          call_id: "call-restart",
+          name: "read_file",
+          arguments: "{}",
+          status: "completed",
+        };
+        return sse([
+          {
+            type: "response.output_item.done",
+            sequence_number: 1,
+            output_index: 0,
+            item: reasoning,
+          },
+          {
+            type: "response.output_item.added",
+            sequence_number: 2,
+            output_index: 1,
+            item: { ...functionCall, arguments: "", status: "in_progress" },
+          },
+          {
+            type: "response.output_item.done",
+            sequence_number: 3,
+            output_index: 1,
+            item: functionCall,
+          },
+          {
+            type: "response.completed",
+            sequence_number: 4,
+            response: responsesResult("response-before-restart", [reasoning, functionCall]),
+          },
+        ]);
+      }
+      return sse([
+        {
+          type: "response.output_text.delta",
+          sequence_number: 1,
+          item_id: "message-after-restart",
+          output_index: 0,
+          content_index: 0,
+          delta: "done",
+          logprobs: [],
+        },
+        {
+          type: "response.completed",
+          sequence_number: 2,
+          response: responsesResult("response-after-restart"),
+        },
+      ]);
+    };
+
+    const firstState = await openProductArtifactSession(graph);
+    expect(firstState).not.toBeNull();
+    if (firstState === null) {
+      throw new Error("expected durable product state");
+    }
+    const first = await composeProductProviderConnections(graph, GLOBALS, {
+      providerFetch: fetch,
+      providerContinuations: firstState.providerContinuations,
+    }).resolveSelected();
+    expect(first.kind).toBe("ready");
+    if (first.kind !== "ready") {
+      throw new Error(`expected first provider route, got ${first.code}`);
+    }
+    const baseRequest: ModelRequest = {
+      requestId: modelRequestId.from("responses-before-restart"),
+      providerId: providerId.from("openai"),
+      modelId: modelId.from("gpt-5.6-sol"),
+      messages: [{ role: "user", parts: [{ kind: "text", text: "read" }] }],
+      tools: [
+        {
+          name: "read_file",
+          description: "Read a file.",
+          parameters: { type: "object", additionalProperties: false },
+        },
+      ],
+      output: { kind: "text" },
+      budgets: {},
+      metadata: { role: "default" },
+    };
+    const beforeRestart = await providerEvents(first.adapter, baseRequest);
+    expect(beforeRestart.at(-1)).toMatchObject({ kind: "finished", finishReason: "tool_calls" });
+    expect(beforeRestart).toContainEqual(
+      expect.objectContaining({
+        kind: "provider-metadata",
+        entries: { continuationStateSaved: "true", continuationStateSavedCount: "1" },
+      }),
+    );
+    await firstState.close();
+
+    const restartedState = await openProductArtifactSession(graph);
+    expect(restartedState).not.toBeNull();
+    if (restartedState === null) {
+      throw new Error("expected reopened product state");
+    }
+    const restarted = await composeProductProviderConnections(graph, GLOBALS, {
+      providerFetch: fetch,
+      providerContinuations: restartedState.providerContinuations,
+    }).resolveSelected();
+    expect(restarted.kind).toBe("ready");
+    if (restarted.kind !== "ready") {
+      throw new Error(`expected restarted provider route, got ${restarted.code}`);
+    }
+    const afterRestart = await providerEvents(restarted.adapter, {
+      ...baseRequest,
+      requestId: modelRequestId.from("responses-after-restart"),
+      messages: [
+        ...baseRequest.messages,
+        {
+          role: "assistant",
+          parts: [],
+          toolCalls: [{ toolCallId: "call-restart", name: "read_file", arguments: {} }],
+        },
+        {
+          role: "tool",
+          toolCallId: "call-restart",
+          parts: [{ kind: "text", text: "contents" }],
+        },
+      ],
+    });
+    expect(afterRestart).toContainEqual(
+      expect.objectContaining({
+        kind: "provider-metadata",
+        entries: { continuationStateLoaded: "true", continuationStateLoadedCount: "1" },
+      }),
+    );
+    expect(afterRestart.at(-1)).toMatchObject({ kind: "finished", finishReason: "completed" });
+    expect(bodies[1]?.input).toEqual([
+      { role: "user", content: "read" },
+      {
+        id: "reasoning-restart",
+        type: "reasoning",
+        encrypted_content: "opaque-provider-state",
+        summary: [],
+        status: "completed",
+      },
+      { type: "function_call", call_id: "call-restart", name: "read_file", arguments: "{}" },
+      { type: "function_call_output", call_id: "call-restart", output: "contents" },
+    ]);
+    expect(JSON.stringify(afterRestart)).not.toContain("opaque-provider-state");
+    await restartedState.close();
   });
 });

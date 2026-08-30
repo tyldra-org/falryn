@@ -7,6 +7,7 @@ export const PROVIDER_TRANSPORT_COMPATIBILITY_SCHEMA_VERSION = 1;
 
 export const PROVIDER_TRANSPORT_DIALECTS = [
   "openai-chat-completions",
+  "openai-responses",
   "anthropic-messages",
   "google-generate-content",
   "command-code-router",
@@ -47,6 +48,40 @@ export type OpenAiChatTransportCompatibilityDeclaration = {
   readonly assistantAfterToolResult: OpenAiAssistantAfterToolResultMode;
 };
 
+export const OPENAI_RESPONSES_CONTINUATION_MODES = ["stateless", "previous-response"] as const;
+export type OpenAiResponsesContinuationMode = (typeof OPENAI_RESPONSES_CONTINUATION_MODES)[number];
+
+export const OPENAI_RESPONSES_REASONING_SUMMARIES = [
+  "none",
+  "auto",
+  "concise",
+  "detailed",
+] as const;
+export type OpenAiResponsesReasoningSummary = (typeof OPENAI_RESPONSES_REASONING_SUMMARIES)[number];
+
+export const OPENAI_RESPONSES_PROMPT_CACHE_TTLS = ["provider-default", "30m"] as const;
+export type OpenAiResponsesPromptCacheTtl = (typeof OPENAI_RESPONSES_PROMPT_CACHE_TTLS)[number];
+
+export const OPENAI_RESPONSES_SERVICE_TIERS = ["auto", "default"] as const;
+export type OpenAiResponsesServiceTier = (typeof OPENAI_RESPONSES_SERVICE_TIERS)[number];
+
+/** Exact request, continuation, retention, and stream policy for Responses. */
+export type OpenAiResponsesTransportCompatibilityDeclaration = {
+  readonly schemaVersion: typeof PROVIDER_TRANSPORT_COMPATIBILITY_SCHEMA_VERSION;
+  readonly dialect: "openai-responses";
+  readonly systemMessageRole: OpenAiSystemMessageRole;
+  readonly continuation: OpenAiResponsesContinuationMode;
+  readonly store: boolean;
+  readonly includeEncryptedReasoning: boolean;
+  readonly reasoningSummary: OpenAiResponsesReasoningSummary;
+  readonly promptCacheTtl: OpenAiResponsesPromptCacheTtl;
+  readonly sessionAffinity: "prompt-cache-key";
+  readonly serviceTier: OpenAiResponsesServiceTier;
+  readonly streamObfuscation: boolean;
+  readonly strictToolSchemas: boolean;
+  readonly parallelToolCalls: boolean;
+};
+
 export type AnthropicMessagesTransportCompatibilityDeclaration = {
   readonly schemaVersion: typeof PROVIDER_TRANSPORT_COMPATIBILITY_SCHEMA_VERSION;
   readonly dialect: "anthropic-messages";
@@ -74,6 +109,7 @@ export type CustomUnavailableTransportCompatibilityDeclaration = {
 
 export type ProviderTransportCompatibilityDeclaration =
   | OpenAiChatTransportCompatibilityDeclaration
+  | OpenAiResponsesTransportCompatibilityDeclaration
   | AnthropicMessagesTransportCompatibilityDeclaration
   | GoogleGenerateContentTransportCompatibilityDeclaration
   | CommandCodeTransportCompatibilityDeclaration
@@ -206,6 +242,23 @@ export const OPENAI_CHAT_TRANSPORT_DEFAULT: OpenAiChatTransportCompatibilityDecl
   assistantAfterToolResult: "none",
 };
 
+export const OPENAI_RESPONSES_TRANSPORT_DEFAULT: OpenAiResponsesTransportCompatibilityDeclaration =
+  {
+    schemaVersion: PROVIDER_TRANSPORT_COMPATIBILITY_SCHEMA_VERSION,
+    dialect: "openai-responses",
+    systemMessageRole: "developer",
+    continuation: "stateless",
+    store: false,
+    includeEncryptedReasoning: true,
+    reasoningSummary: "auto",
+    promptCacheTtl: "provider-default",
+    sessionAffinity: "prompt-cache-key",
+    serviceTier: "auto",
+    streamObfuscation: true,
+    strictToolSchemas: true,
+    parallelToolCalls: true,
+  };
+
 const DEFAULT_DECLARATIONS: Readonly<
   Record<ProviderAdapterKind, ProviderTransportCompatibilityDeclaration>
 > = {
@@ -247,7 +300,10 @@ export function providerTransportCompatibilityMatchesAdapter(
 ): boolean {
   switch (adapterKind) {
     case "openai":
-      return declaration.dialect === "openai-chat-completions";
+      return (
+        declaration.dialect === "openai-chat-completions" ||
+        declaration.dialect === "openai-responses"
+      );
     case "anthropic":
       return declaration.dialect === "anthropic-messages";
     case "google":
@@ -332,6 +388,22 @@ function canonicalDeclaration(
         strictToolSchemas: declaration.strictToolSchemas,
         toolResultName: declaration.toolResultName,
         assistantAfterToolResult: declaration.assistantAfterToolResult,
+      };
+    case "openai-responses":
+      return {
+        schemaVersion: declaration.schemaVersion,
+        dialect: declaration.dialect,
+        systemMessageRole: declaration.systemMessageRole,
+        continuation: declaration.continuation,
+        store: declaration.store,
+        includeEncryptedReasoning: declaration.includeEncryptedReasoning,
+        reasoningSummary: declaration.reasoningSummary,
+        promptCacheTtl: declaration.promptCacheTtl,
+        sessionAffinity: declaration.sessionAffinity,
+        serviceTier: declaration.serviceTier,
+        streamObfuscation: declaration.streamObfuscation,
+        strictToolSchemas: declaration.strictToolSchemas,
+        parallelToolCalls: declaration.parallelToolCalls,
       };
     case "anthropic-messages":
     case "google-generate-content":

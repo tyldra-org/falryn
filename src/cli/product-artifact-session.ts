@@ -17,6 +17,7 @@ import {
   createLoomManifestRepository,
   createMemoryRecordRepository,
   createModelCatalogGenerationRepository,
+  createProviderContinuationStateRepository,
   createScratchResourceRepository,
   createSqliteEventStore,
   type DurableArtifactStore,
@@ -38,6 +39,7 @@ import {
   runId,
 } from "../domain/index.ts";
 import { createHostBlobStore, createSha256Hasher, openBunSqlite } from "../integrations/index.ts";
+import type { ProviderContinuationStatePort } from "../providers/index.ts";
 import type { Services } from "./services.ts";
 
 export type ProductArtifactSession = {
@@ -46,6 +48,7 @@ export type ProductArtifactSession = {
   readonly loom: LoomPort;
   readonly memoryRecords: MemoryRecords;
   readonly modelCatalogs: ModelCatalogGenerationRepository;
+  readonly providerContinuations: ProviderContinuationStatePort;
   readonly scratch: ScratchResourcePort;
   openWorkspaceIndex(
     workspaceRoot: LocalPath,
@@ -154,6 +157,7 @@ export async function openProductArtifactSession(
     loom,
     memoryRecords: durableMemory.value,
     modelCatalogs: createModelCatalogGenerationRepository(store),
+    providerContinuations: createProviderContinuationStateRepository(store),
     scratch,
     async openWorkspaceIndex(workspaceRoot, openSignal) {
       if (closed || openSignal?.aborted === true) {
