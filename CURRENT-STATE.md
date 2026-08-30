@@ -327,7 +327,28 @@ parsing and completion for these actions are not claimed here.
 
 The provider request contains only the disclosed tool definitions and bounded
 compact capability cards, not the whole registered catalog or implementation
-bodies. The attempt event retains the provider profile,
+bodies. Before each provider request, the product runtime now derives one
+deterministic opportunity plan from the normalized task, work intent, execution
+profile, current capability-health generation, exact model-schema eligibility,
+effect, source locality, declared cost/latency class, an optional
+application-supplied preference, and stable publication order. It selects the
+bounded schema set before inference;
+an explicit shell request keeps the shell route, while structured browser access
+stays ahead of visual computer use when both are relevant. Matching skill,
+workflow, MCP/plugin, delegation, background, browser, and computer opportunities
+are reported as selected, recommended, unavailable, deferred, or not needed.
+This planner does not install or execute those contributions; their owning
+runtimes remain separate.
+
+The model capability brief names the preferred family, fallbacks, selected
+contributions, automation decisions, schema-token cost, negative availability,
+and the bounded discovery handle. It retains only a SHA-256-derived task
+fingerprint rather than the task text. A semantic top-rank tie is marked eligible
+for model assistance, but the planner does not add a separate routing-model
+request. The same plan is validated against the provider-bound schema set and
+persisted with the attempt, so a stale generation, altered discovery identity,
+or unselected tool schema fails before provider execution. The attempt event
+also retains the provider profile,
 adapter kind, secret-safe destination identity, model route, resolved reasoning
 control, catalog, capability-schema, and policy generations, contribution
 counts/cards, capability cost/latency classes, tool-schema digests, schema cost,
@@ -502,11 +523,14 @@ new session. An in-flight turn keeps the model identity it captured before
 provider execution. This selection remains process-local; durable role and
 fallback editing is still outside the current interface.
 
-The current disclosure path selects a bounded profile-eligible subset from the
-shared registry, resolves exact executable schemas through `ToolRegistry`, and
-records selected, omitted, unavailable, and non-executable facts. The
-broader task-aware opportunity planner for automatic skill, MCP, workflow,
-delegation, and background-work activation is not claimed here.
+The current disclosure path uses that task-aware opportunity plan to select a
+bounded profile-eligible subset from the shared registry, resolves exact
+executable schemas through `ToolRegistry`, and records selected, fallback,
+rejected, omitted, unavailable, and non-executable facts. Automatic skill and
+workflow loading, MCP/plugin execution, delegated/nested agents, and durable
+background scheduling still belong to their dedicated runtimes; #193 exposes
+the deterministic opportunity and truthful availability without claiming those
+sibling executors.
 
 ## Live context, index, and memory
 

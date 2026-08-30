@@ -28,6 +28,7 @@ import type {
   TurnId,
   WorkspaceId,
 } from "./identity.ts";
+import type { ModelCapabilityBrief } from "./opportunity-plan.ts";
 import type { TerminalOutcome } from "./outcome.ts";
 import type { Timestamp } from "./time.ts";
 
@@ -122,6 +123,7 @@ export type ModelAttemptBinding = {
   readonly runner: "product-attempt-runner.v1";
   readonly gateway: "product-tool-gateway.v1";
   readonly discoveryHandle: string;
+  readonly opportunityPlan?: ModelCapabilityBrief | undefined;
   /** Bounded, secret-free inventory facts for replay and support inspection. */
   readonly capabilityCatalog?:
     | {

@@ -7,7 +7,6 @@
  * in the receipt as omitted; it is never silently executable.
  */
 
-import { createHash } from "node:crypto";
 import { z } from "zod";
 
 import type {
@@ -22,6 +21,7 @@ import type {
   ConfigurationGeneration,
   EffectClass,
   EffectiveExecutionPolicy,
+  ModelCapabilityBrief,
   PromptToolInput,
   ToolCapabilityKind,
   ToolRegistry,
@@ -32,8 +32,13 @@ import {
   capabilityCard,
   capabilityLifecycle,
   inspectCapabilityHealth,
+  resolveExecutionProfile,
 } from "../domain/index.ts";
-import type { ModelToolDefinition } from "../providers/index.ts";
+import type { ModelToolDefinition, WorkIntent } from "../providers/index.ts";
+import { createProductOpportunityPlan } from "./product-opportunity-plan.ts";
+import { isClosedProductToolSchema, measureProductToolSchema } from "./product-tool-schema.ts";
+
+export { measureProductToolSchema } from "./product-tool-schema.ts";
 
 export const PRODUCT_TOOL_DISCLOSURE_SCHEMA_VERSION = 1;
 /** Hard schema-count guard; profile ordering, not a per-mode quota, selects below it. */
@@ -72,6 +77,7 @@ export type CapabilityDisclosureReceipt = {
     readonly summary: CapabilityHealthSummary;
     readonly entries: readonly CapabilityHealthEntry[];
   };
+  readonly opportunityPlan: ModelCapabilityBrief;
   readonly registryTotal: number;
   readonly registryCounts: Readonly<Record<string, number>>;
   readonly disclosed: readonly DisclosedProductTool[];
@@ -92,112 +98,18 @@ export type ProductToolDisclosureOptions = {
   readonly executionPolicy?: EffectiveExecutionPolicy;
   readonly consumer?: CapabilityConsumer;
   readonly healthEvidence?: CapabilityHealthEvidence;
+  readonly task?: string;
+  readonly intent?: WorkIntent;
+  readonly preferredCapabilityIds?: readonly CapabilityId[];
+  readonly schemaTokenBudget?: number;
 };
 
-const PREFERRED_TOOL_ORDER = [
-  "read_file",
-  "list_dir",
-  "stat_path",
-  "read_compact_document",
-  "write_files",
-  "scratch_write",
-  "scratch_read",
-  "scratch_list",
-  "scratch_discard",
-  "preview_patch",
-  "apply_patch",
-  "run_process",
-  "run_shell",
-  "git_status",
-  "git_diff",
-  "git_log",
-  "lsp_hover",
-  "lsp_definition",
-  "lsp_references",
-  "lsp_diagnostics",
-] as const;
-
-const DEBUG_TOOL_ORDER = [
-  "read_file",
-  "list_dir",
-  "stat_path",
-  "read_compact_document",
-  "scratch_read",
-  "scratch_list",
-  "discover_files",
-  "search_text",
-  "git_status",
-  "git_diff",
-  "git_log",
-  "run_process",
-  "run_shell",
-  "lsp_hover",
-  "lsp_definition",
-  "lsp_references",
-  "lsp_diagnostics",
-  "dap_start",
-  "dap_launch",
-  "dap_set_breakpoints",
-  "dap_stack_trace",
-  "dap_continue",
-  "dap_disconnect",
-] as const;
-
 const RAW_PROTOCOL_ESCAPES = new Set(["run_process", "run_shell"]);
-const encoder = new TextEncoder();
-
-export function measureProductToolSchema(schema: Readonly<Record<string, unknown>>) {
-  const encoded = JSON.stringify(schema);
-  const bytes = encoder.encode(encoded).byteLength;
-  return {
-    digest: `sha-256:${createHash("sha256").update(encoded).digest("hex")}`,
-    bytes,
-    tokensEstimated: Math.ceil(bytes / 4),
-  };
-}
 
 function jsonSchemaFor(
   schema: z.ZodType<Readonly<Record<string, unknown>>>,
 ): Readonly<Record<string, unknown>> {
   return z.toJSONSchema(schema) as Readonly<Record<string, unknown>>;
-}
-
-function isClosedSchema(value: unknown): boolean {
-  if (typeof value !== "object" || value === null) {
-    return true;
-  }
-  if (Array.isArray(value)) {
-    return value.every(isClosedSchema);
-  }
-  const schema = value as Readonly<Record<string, unknown>>;
-  for (const union of [schema.anyOf, schema.oneOf, schema.allOf]) {
-    if (Array.isArray(union) && !union.every(isClosedSchema)) {
-      return false;
-    }
-  }
-  if (schema.type === "object") {
-    if (schema.additionalProperties !== false) {
-      return false;
-    }
-    if (typeof schema.properties === "object" && schema.properties !== null) {
-      for (const property of Object.values(schema.properties)) {
-        if (!isClosedSchema(property)) {
-          return false;
-        }
-      }
-    }
-  }
-  if (schema.type === "array" && schema.items !== undefined && !isClosedSchema(schema.items)) {
-    return false;
-  }
-  if (typeof schema.$defs === "object" && schema.$defs !== null) {
-    for (const definition of Object.values(schema.$defs)) {
-      if (!isClosedSchema(definition)) {
-        return false;
-      }
-    }
-  }
-  return true;
 }
 
 function familyAvailability(
@@ -235,10 +147,7 @@ function policyOmissionReason(
   return null;
 }
 
-/**
- * Select the current coding baseline. Task-aware opportunity planning expands
- * this in #193; #786 keeps the first live attempt bounded and inspectable.
- */
+/** Select one task-aware, generation-bound schema set for a provider attempt. */
 export function discloseProductTools(
   capabilityRegistry: CapabilityRegistry,
   registry: ToolRegistry,
@@ -247,8 +156,18 @@ export function discloseProductTools(
   if (capabilityRegistry.generation !== registry.generation) {
     throw new Error("capability and tool registry generations do not match");
   }
-  const maximum = options.maximum ?? MAX_DISCLOSED_PRODUCT_TOOLS;
-  const executionPolicy = options.executionPolicy;
+  const requestedMaximum = options.maximum ?? MAX_DISCLOSED_PRODUCT_TOOLS;
+  const maximum = Math.min(
+    MAX_DISCLOSED_PRODUCT_TOOLS,
+    Math.max(
+      1,
+      Number.isFinite(requestedMaximum)
+        ? Math.trunc(requestedMaximum)
+        : MAX_DISCLOSED_PRODUCT_TOOLS,
+    ),
+  );
+  const executionPolicy =
+    options.executionPolicy ?? resolveExecutionProfile("agent", registry.generation);
   const consumer = options.consumer ?? "native-model";
   const healthEvidence: CapabilityHealthEvidence = {
     ...(options.healthEvidence ?? {}),
@@ -261,20 +180,36 @@ export function discloseProductTools(
   };
   const initialHealth = inspectCapabilityHealth(capabilityRegistry, consumer, healthEvidence);
   const healthById = new Map(initialHealth.entries.map((entry) => [entry.capabilityId, entry]));
+  const opportunityPlan = createProductOpportunityPlan(
+    capabilityRegistry,
+    registry,
+    initialHealth,
+    executionPolicy,
+    {
+      ...(options.task === undefined ? {} : { task: options.task }),
+      intent: options.intent ?? executionPolicy.workIntent,
+      ...(options.preferredCapabilityIds === undefined
+        ? {}
+        : { preferredCapabilityIds: options.preferredCapabilityIds }),
+      selectionLimit: maximum,
+      ...(options.schemaTokenBudget === undefined
+        ? {}
+        : { schemaTokenBudget: options.schemaTokenBudget }),
+    },
+  );
   const selected = [];
   const omitted: { name: string; reason: string }[] = [];
   const omittedNames = new Set<string>();
-  const order = executionPolicy?.profileId === "debug" ? DEBUG_TOOL_ORDER : PREFERRED_TOOL_ORDER;
-  const preferred = new Set<string>(order);
-
-  for (const name of order) {
+  for (const planned of opportunityPlan.selected) {
     if (selected.length >= maximum) {
       break;
     }
-    const entry = registry.resolveByName(name);
+    if (planned.kind !== "tool" && planned.kind !== "mcp-tool") continue;
+    const entry = registry.resolveByCapabilityId(planned.capabilityId);
     if (entry === null) {
       continue;
     }
+    const name = entry.manifest.name;
     const policyReason = policyOmissionReason(entry, executionPolicy);
     if (policyReason !== null) {
       omitted.push({ name, reason: policyReason });
@@ -294,7 +229,7 @@ export function discloseProductTools(
       continue;
     }
     const parameters = jsonSchemaFor(entry.manifest.inputSchema);
-    if (!isClosedSchema(parameters) && !RAW_PROTOCOL_ESCAPES.has(name)) {
+    if (!isClosedProductToolSchema(parameters) && !RAW_PROTOCOL_ESCAPES.has(name)) {
       omitted.push({ name, reason: "permissive model-boundary schema" });
       omittedNames.add(name);
       continue;
@@ -311,11 +246,21 @@ export function discloseProductTools(
       continue;
     }
     const policyReason = policyOmissionReason(entry, executionPolicy);
+    const planned = [...opportunityPlan.fallbacks, ...opportunityPlan.rejected].find(
+      (candidate) => candidate.capabilityId === entry.manifest.capabilityId,
+    );
+    const capabilityHealth = healthById.get(entry.manifest.capabilityId);
     const reason =
       policyReason ??
-      (preferred.has(name)
-        ? `profile disclosure schema budget ${maximum} reached`
-        : "bounded baseline disclosure");
+      (capabilityHealth !== undefined && !capabilityHealth.selectable
+        ? capabilityHealth.diagnostics[0] === undefined
+          ? "capability health is unavailable"
+          : `${capabilityHealth.diagnostics[0].code}: ${capabilityHealth.diagnostics[0].message}`
+        : planned?.reasons.includes("schema-unavailable") === true
+          ? "permissive model-boundary schema"
+          : planned === undefined
+            ? "bounded opportunity plan"
+            : `${planned.decision}: ${planned.reasons.join(", ") || "not selected"}`);
     omitted.push({ name, reason });
     omittedNames.add(name);
   }
@@ -351,6 +296,24 @@ export function discloseProductTools(
     };
   });
   const disclosedIds = new Set(disclosed.map((entry) => entry.capabilityId));
+  const plannedCardIds = new Set([
+    ...opportunityPlan.selected.map((entry) => entry.capabilityId),
+    ...opportunityPlan.fallbacks.map((entry) => entry.capabilityId),
+    ...opportunityPlan.rejected
+      .filter((entry) => entry.kind !== "tool" && entry.kind !== "mcp-tool")
+      .filter((entry) =>
+        entry.reasons.some((reason) =>
+          [
+            "explicit-capability",
+            "user-preference",
+            "task-term-match",
+            "required-skill-match",
+            "workflow-match",
+          ].includes(reason),
+        ),
+      )
+      .map((entry) => entry.capabilityId),
+  ]);
   const capabilityCards = [
     ...disclosed.map((tool) => {
       const entry = capabilityRegistry.resolveById(tool.capabilityId);
@@ -360,13 +323,14 @@ export function discloseProductTools(
     ...capabilityRegistry.entries
       .filter((entry) => entry.kind !== "tool" && entry.kind !== "mcp-tool")
       .filter((entry) => !disclosedIds.has(entry.capabilityId))
+      .filter((entry) => plannedCardIds.has(entry.capabilityId))
       .slice(0, Math.max(0, maximum - disclosed.length))
       .map((entry) => capabilityCard(entry, { disclosed: true })),
   ];
   const finalHealth = inspectCapabilityHealth(capabilityRegistry, consumer, {
     ...healthEvidence,
     disclosed: capabilityCards.map((card) => card.capabilityId),
-    selected: [...disclosedIds],
+    selected: opportunityPlan.selected.map((entry) => entry.capabilityId),
   });
   const registryCounts = Object.fromEntries(
     CAPABILITY_CONTRIBUTION_KINDS.map((kind) => [
@@ -392,6 +356,7 @@ export function discloseProductTools(
           )
           .filter((entry): entry is CapabilityHealthEntry => entry !== undefined),
       },
+      opportunityPlan,
       registryTotal: capabilityRegistry.entries.length,
       registryCounts,
       disclosed,

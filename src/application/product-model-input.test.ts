@@ -151,6 +151,47 @@ function disclosure(): ProductToolDisclosure {
           },
         ],
       },
+      opportunityPlan: {
+        schemaVersion: 1,
+        planId: "capability-plan:3:0123456789abcdef01234567",
+        taskFingerprint: "0123456789abcdef01234567",
+        catalogGeneration: generation,
+        policyGeneration: generation,
+        profileId: "agent",
+        signalledFamilies: ["read", "capability"],
+        requiredFamilies: ["read", "capability"],
+        primaryFamily: "read",
+        fallbackFamilies: ["capability"],
+        selected: [
+          {
+            capabilityId: id,
+            name: "read_file",
+            kind: "tool",
+            family: "read",
+            source: "builtin",
+            effect: "observation",
+            health: "healthy",
+            decision: "selected",
+            score: 100,
+            schemaTokensEstimated: 12,
+            reasons: ["task-family", "healthy"],
+            diagnosticCodes: [],
+          },
+        ],
+        fallbacks: [],
+        rejected: [],
+        omittedRejected: 0,
+        opportunities: [],
+        modelAssistance: {
+          decision: "not-needed",
+          candidateIds: [],
+          reason: "deterministic-winner",
+        },
+        schemaTokensEstimated: 12,
+        selectionLimit: 24,
+        schemaTokenBudget: 12_000,
+        discoveryHandle: "capability-catalog:3",
+      },
       registryTotal: 1,
       registryCounts: { tool: 1 },
       disclosed: [
@@ -198,6 +239,10 @@ describe("attemptModelInputFromPrompt", () => {
       projected: false,
       diagnosticCodes: [],
     });
+    expect(first.disclosure.opportunityPlan).toMatchObject({
+      primaryFamily: "read",
+      selected: [{ name: "read_file" }],
+    });
 
     expect(first.promptCache?.stableMessageCount).toBe(2);
     expect(first.promptCache?.toolCatalogGeneration).toBe(3);
@@ -214,9 +259,12 @@ describe("attemptModelInputFromPrompt", () => {
     expect(first.promptCache?.stablePrefixDigest).not.toBe(
       changedProject.promptCache?.stablePrefixDigest,
     );
-    expect(first.messages[1]?.parts[0]).toMatchObject({
-      text: expect.stringContaining("cost=unknown;latency=unknown"),
-    });
+    const capabilityPart = first.messages[1]?.parts[0];
+    expect(capabilityPart?.kind).toBe("text");
+    if (capabilityPart?.kind === "text") {
+      expect(capabilityPart.text).toContain("Deterministically selected: read_file");
+      expect(capabilityPart.text).toContain("Schema budget: 12/12000 estimated tokens");
+    }
     expect(first.disclosure.capabilityCatalog).toMatchObject({
       total: 1,
       counts: { tool: 1 },

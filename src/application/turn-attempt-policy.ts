@@ -390,6 +390,9 @@ function attemptBinding(
     runner: "product-attempt-runner.v1",
     gateway: "product-tool-gateway.v1",
     discoveryHandle: disclosure?.discoveryHandle ?? `capability-catalog:${generation}`,
+    ...(disclosure?.opportunityPlan === undefined
+      ? {}
+      : { opportunityPlan: disclosure.opportunityPlan }),
     ...(disclosure?.capabilityCatalog === undefined
       ? {}
       : { capabilityCatalog: disclosure.capabilityCatalog }),

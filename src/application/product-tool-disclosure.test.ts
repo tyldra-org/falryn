@@ -55,11 +55,48 @@ describe("discloseProductTools", () => {
         disclosed: disclosure.receipt.disclosed.length,
       },
     });
+    expect(disclosure.receipt.opportunityPlan).toMatchObject({
+      catalogGeneration: configurationGeneration.from(7),
+      profileId: "agent",
+      modelAssistance: { decision: expect.any(String) },
+    });
     expect(disclosure.receipt.schemaBytes).toBeGreaterThan(0);
     expect(disclosure.receipt.schemaTokensEstimated).toBeGreaterThan(0);
     expect(
       disclosure.receipt.disclosed.every((tool) => tool.schemaDigest.startsWith("sha-256:")),
     ).toBe(true);
+  });
+
+  test("uses the task-aware deterministic plan before publishing schemas", () => {
+    const tools = workspaceTools();
+    const disclosure = discloseProductTools(
+      createProductCapabilityRegistry(tools.registry.generation, tools.registry),
+      tools.registry,
+      { task: "Find every reference to a.ts", intent: "read" },
+    );
+
+    expect(disclosure.receipt.opportunityPlan.primaryFamily).toBe("search");
+    expect(disclosure.modelTools[0]?.name).toBe("read_file");
+    expect(
+      disclosure.receipt.opportunityPlan.rejected.find((entry) => entry.name === "search_text"),
+    ).toMatchObject({ reasons: ["schema-unavailable"] });
+    expect(disclosure.receipt.opportunityPlan.selected.map((entry) => entry.name)).toContain(
+      "read_file",
+    );
+    expect(disclosure.receipt.opportunityPlan.taskFingerprint).toMatch(/^[a-f0-9]{24}$/u);
+    expect(JSON.stringify(disclosure.receipt.opportunityPlan)).not.toContain("every reference");
+  });
+
+  test("clamps disclosure count to the hard model-schema bound", () => {
+    const tools = workspaceTools();
+    const disclosure = discloseProductTools(
+      createProductCapabilityRegistry(tools.registry.generation, tools.registry),
+      tools.registry,
+      { maximum: Number.POSITIVE_INFINITY },
+    );
+
+    expect(disclosure.modelTools.length).toBeLessThanOrEqual(MAX_DISCLOSED_PRODUCT_TOOLS);
+    expect(disclosure.receipt.opportunityPlan.selectionLimit).toBe(MAX_DISCLOSED_PRODUCT_TOOLS);
   });
 
   test("omits permissive schemas instead of exposing a catch-all boundary", () => {

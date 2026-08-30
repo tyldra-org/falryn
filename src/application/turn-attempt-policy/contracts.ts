@@ -13,6 +13,7 @@ import type {
   EffectCertainty,
   EffectiveExecutionPolicy,
   ModelAttemptId,
+  ModelCapabilityBrief,
   RetryBackoff,
   RetryPolicy,
   TurnId,
@@ -62,6 +63,7 @@ export type AttemptModelInput = {
     readonly catalogGeneration: ConfigurationGeneration;
     readonly toolNames: readonly string[];
     readonly discoveryHandle: string;
+    readonly opportunityPlan?: ModelCapabilityBrief;
     /** Compact non-secret inventory facts; exact schemas stay in `tools`. */
     readonly capabilityCatalog?: {
       readonly total: number;

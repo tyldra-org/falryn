@@ -145,6 +145,7 @@ function disclosureInput(product: ReturnType<typeof setup>) {
     catalogGeneration: product.disclosure.receipt.catalogGeneration,
     toolNames: product.disclosure.receipt.disclosed.map((tool) => tool.name),
     discoveryHandle: product.disclosure.receipt.discoveryHandle,
+    opportunityPlan: product.disclosure.receipt.opportunityPlan,
     families: product.disclosure.receipt.families,
     tools: product.disclosure.receipt.disclosed.map((tool) => ({
       name: tool.name,
@@ -533,6 +534,58 @@ describe("createProductAttemptRunner", () => {
         disclosure: {
           ...disclosureInput(product),
           catalogGeneration: configurationGeneration.from(6),
+        },
+      },
+    });
+
+    expect(result.fact).toMatchObject({
+      kind: "failed",
+      category: "invalid-request",
+      retryable: false,
+      effect: "none",
+    });
+    expect(providerRequests).toBe(0);
+  });
+
+  test("rejects a stale opportunity plan before contacting the provider", async () => {
+    let providerRequests = 0;
+    const product = setup(
+      createDeterministicProviderAdapter({
+        onRequest: () => {
+          providerRequests += 1;
+        },
+      }),
+    );
+    const turn = await start(product, "turn-attempt-stale-opportunity-plan");
+    const runner = product.runtime.requireAttemptRunner();
+    if (!runner.ok) {
+      throw new Error(runner.error.code);
+    }
+    const disclosure = disclosureInput(product);
+    const result = await runner.value.run({
+      turnId: turn,
+      identity: {
+        attemptNumber: 1,
+        modelAttemptId: modelAttemptId.from("attempt-stale-opportunity-plan"),
+        fallbackPosition: 0,
+        providerKey: product.adapter.identity.providerId,
+        modelKey: String(product.adapter.supportedModels[0]),
+      },
+      receipt: receipt(product),
+      boundConfigurationGeneration: generation,
+      configurationGeneration: generation,
+      signal: new AbortController().signal,
+      modelInput: {
+        messages: [{ role: "user", parts: [{ kind: "text", text: "hello" }] }],
+        tools: product.disclosure.modelTools,
+        output: { kind: "text" },
+        budgets: {},
+        disclosure: {
+          ...disclosure,
+          opportunityPlan: {
+            ...disclosure.opportunityPlan,
+            policyGeneration: configurationGeneration.from(6),
+          },
         },
       },
     });

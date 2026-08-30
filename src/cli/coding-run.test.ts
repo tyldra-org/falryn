@@ -969,12 +969,12 @@ describe("runCoding", () => {
       },
     );
 
+    expect(requests[0]?.tools.map((tool) => tool.name)).toContain("scratch_write");
     expect(result.payload).toMatchObject({
       stage: "attempt-completed",
       response: "Draft retained.",
       toolResults: 1,
     });
-    expect(requests[0]?.tools.map((tool) => tool.name)).toContain("scratch_write");
     expect(JSON.stringify(requests[1])).toContain(
       "scratch://session/session-run-scratch/pr-body.md",
     );

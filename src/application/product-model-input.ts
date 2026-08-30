@@ -30,6 +30,17 @@ function message(role: "system" | "user", text: string): ModelMessage | null {
 }
 
 function capabilityBrief(disclosure: ProductToolDisclosure): string {
+  const plan = disclosure.receipt.opportunityPlan;
+  const fallbackSummary = plan.fallbacks
+    .slice(0, 5)
+    .map((entry) => `${entry.name}(${entry.reasons.join("+")})`)
+    .join(", ");
+  const rejectedSummary = plan.rejected
+    .slice(0, 5)
+    .map((entry) => `${entry.name}:${entry.decision}(${entry.reasons.join("+")})`)
+    .join(", ");
+  const shownRejected = Math.min(5, plan.rejected.length);
+  const hiddenRejected = plan.rejected.length - shownRejected + plan.omittedRejected;
   const families = disclosure.receipt.families
     .map((entry) =>
       entry.available
@@ -52,7 +63,14 @@ function capabilityBrief(disclosure: ProductToolDisclosure): string {
     })
     .join(", ");
   return [
-    `[capability-disclosure source=${disclosure.receipt.discoveryHandle}]`,
+    `[capability-disclosure source=${disclosure.receipt.discoveryHandle} plan=${plan.planId}]`,
+    `Preferred path: ${plan.primaryFamily}; fallbacks: ${plan.fallbackFamilies.join(", ") || "none"}.`,
+    `Deterministically selected: ${plan.selected.map((entry) => entry.name).join(", ") || "none"}.`,
+    `Candidate fallbacks: ${fallbackSummary || "none"}.`,
+    `Rejected or unavailable: ${rejectedSummary || "none"}; ${shownRejected} shown, ${hiddenRejected} omitted.`,
+    `Automation opportunities: ${plan.opportunities.map((entry) => `${entry.kind}=${entry.decision}`).join(", ")}.`,
+    `Routing-model assistance: ${plan.modelAssistance.decision} (${plan.modelAssistance.reason}).`,
+    `Schema budget: ${plan.schemaTokensEstimated}/${plan.schemaTokenBudget} estimated tokens across ${plan.selected.length}/${plan.selectionLimit} selected slots.`,
     `Families: ${families}`,
     `Executable tools for this attempt: ${tools || "none"}`,
     `Other disclosed capabilities: ${otherCapabilities || "none"}`,
@@ -127,6 +145,7 @@ export function attemptModelInputFromPrompt(
       catalogGeneration: disclosure.receipt.catalogGeneration,
       toolNames: disclosure.receipt.disclosed.map((tool) => tool.name),
       discoveryHandle: disclosure.receipt.discoveryHandle,
+      opportunityPlan: disclosure.receipt.opportunityPlan,
       capabilityCatalog: {
         total: disclosure.receipt.registryTotal,
         counts: disclosure.receipt.registryCounts,
