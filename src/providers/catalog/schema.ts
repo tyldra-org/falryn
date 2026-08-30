@@ -23,8 +23,12 @@ import {
 const unique = (values: readonly string[]): boolean => new Set(values).size === values.length;
 
 function isSafeEvidenceUrl(value: string): boolean {
-  const url = new URL(value);
-  return url.protocol === "https:" && url.username === "" && url.password === "";
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" && url.username === "" && url.password === "";
+  } catch {
+    return false;
+  }
 }
 
 const modelCatalogSourceSchema = z

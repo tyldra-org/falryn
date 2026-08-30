@@ -208,6 +208,12 @@ describe("model catalog documents", () => {
       sources: [{ ...source.sources[0], sourceUrl: "http://user:secret@example.com/models" }],
     });
     expect(unsafeSource.ok).toBe(false);
+
+    const malformedSource = parseModelCatalogDocument({
+      ...source,
+      sources: [{ ...source.sources[0], sourceUrl: "not a url" }],
+    });
+    expect(malformedSource.ok).toBe(false);
   });
 
   test("keeps existing user catalogs compatible when source evidence is absent", () => {
