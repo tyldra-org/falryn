@@ -325,6 +325,24 @@ loss, invalid row, or missing Brief fact. Brief used 8,502 provider-reported
 complete-turn tokens; the pinned Caveman arms used 25,892. This is evidence for
 that provider, model, corpus, and run only. It is not a universal model claim.
 
+`bun run benchmark:compression` is the aggregate qualification command for the
+three live compression lanes. It refuses a dirty checkout, reruns the complete
+Hush projection corpus against the locally pinned RTK executable, reruns Loom
+against the pinned Headroom fixture, consumes the reviewed provider-reported
+Brief qualification, and executes the focused provider-continuation, process,
+Read, Loom-recovery, and headless live-turn tests. Its human and JSON forms are
+projections of the same typed result. Every Hush, Loom, and Brief row remains
+visible, including ties and failures; test stdout and stderr are represented
+only by digests. Estimated Hush/Loom tokens and provider-reported Brief tokens
+remain separate, so the report never publishes a false cross-lane total.
+
+The Hush inventory comparison remains pinned to RTK 0.45.0 at commit
+`b34be37caf3796b69a50952a28e60e32b5daad43`, while executable projection runs
+are pinned separately to RTK 0.46.0. The aggregate report verifies and displays
+both facts instead of relabelling the older command-inventory evidence. A dirty,
+partial, cancelled, stale, baseline-missing, fact-losing, or recovery-missing
+run cannot produce an overall pass.
+
 A shared deterministic integration fixture exercises that lifecycle through
 both public composition roots. Its first provider response invokes
 `run_process`, the exact `ls -la` capture is reduced by `files.ls`, and the
