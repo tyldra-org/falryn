@@ -5,7 +5,7 @@ import { modelRequestId } from "../providers/identity.ts";
 import type { ProviderAdapterPort } from "../providers/port.ts";
 import type { ModelRequest } from "../providers/request.ts";
 import type { NormalizedProviderEvent } from "../providers/stream.ts";
-import { createCommandCodeSdkAdapter } from "./command-code-sdk-adapter.ts";
+import { createCommandCodeProviderAdapter } from "./command-code-provider-adapter.ts";
 
 function request(model: string, overrides: Partial<ModelRequest> = {}): ModelRequest {
   return {
@@ -64,10 +64,10 @@ async function collect(
   return events;
 }
 
-describe("createCommandCodeSdkAdapter", () => {
+describe("createCommandCodeProviderAdapter", () => {
   test("routes exact model IDs through their documented provider protocol", async () => {
     const calls: string[] = [];
-    const adapter = createCommandCodeSdkAdapter(
+    const adapter = createCommandCodeProviderAdapter(
       {
         profileId: "commandcode",
         resolveApiKey: async () => "secret",
@@ -92,7 +92,7 @@ describe("createCommandCodeSdkAdapter", () => {
   });
 
   test("fails closed when an unverified model reaches the adapter", async () => {
-    const adapter = createCommandCodeSdkAdapter(
+    const adapter = createCommandCodeProviderAdapter(
       {
         profileId: "commandcode",
         resolveApiKey: async () => "secret",
@@ -110,7 +110,7 @@ describe("createCommandCodeSdkAdapter", () => {
 
   test("does not inherit OpenAI-native verbosity from a compatible wire protocol", async () => {
     const calls: string[] = [];
-    const adapter = createCommandCodeSdkAdapter(
+    const adapter = createCommandCodeProviderAdapter(
       {
         profileId: "commandcode",
         resolveApiKey: async () => "secret",
@@ -134,7 +134,7 @@ describe("createCommandCodeSdkAdapter", () => {
   test("keeps provider-managed caching out of the delegated wire protocol", async () => {
     const calls: string[] = [];
     const inputs: ModelRequest[] = [];
-    const adapter = createCommandCodeSdkAdapter(
+    const adapter = createCommandCodeProviderAdapter(
       {
         profileId: "commandcode",
         resolveApiKey: async () => "secret",
@@ -169,7 +169,7 @@ describe("createCommandCodeSdkAdapter", () => {
 
   test("rejects cache controls that Command Code did not publish", async () => {
     const calls: string[] = [];
-    const adapter = createCommandCodeSdkAdapter(
+    const adapter = createCommandCodeProviderAdapter(
       {
         profileId: "commandcode",
         resolveApiKey: async () => "secret",

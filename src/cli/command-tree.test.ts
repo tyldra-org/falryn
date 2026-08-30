@@ -186,7 +186,7 @@ describe("invalid usage", () => {
 });
 
 describe("provider connection arguments", () => {
-  test("infers official SDK adapters and remote discovery from exact provider identities", async () => {
+  test("infers provider adapters and remote discovery from exact provider identities", async () => {
     const cases = [
       ["openai", "https://api.openai.com/v1", "FALRYN_OPENAI_API_KEY"],
       ["anthropic", null, "FALRYN_ANTHROPIC_API_KEY"],

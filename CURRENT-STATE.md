@@ -163,17 +163,18 @@ Malformed records, stale generations, authentication failures, rate limits,
 timeouts, and cancellation fail closed with typed, secret-free outcomes.
 Before a live model adapter is created, the exact effective catalog is
 published immutably to the product SQLite state database with its provider
-profile, SDK adapter kind, and configured endpoint. Reusing a profile and
+profile, provider adapter kind, and configured endpoint. Reusing a profile and
 generation with a different destination or catalog is a conflict. The model
 route and attempt retain that exact profile/destination binding and catalog
 generation, so cache eviction, profile reconfiguration, or a later provider
 refresh cannot change or erase the facts used by an in-flight or replayed
 decision. Catalog and profile files never contain credential bytes.
-Live inference uses the official OpenAI, Anthropic, or Google Gen AI SDK named
-by the selected profile. Command Code is one Falryn provider with an exact
-model-to-protocol map: Claude execution IDs use Anthropic Messages and the
-remaining published IDs use OpenAI Chat Completions. No model-name heuristic or
-generic compatibility assumption chooses that transport. Each adapter
+Live inference uses provider adapters. The OpenAI, Anthropic, and Google
+adapters each instantiate their official SDK directly. Command Code is one
+Falryn provider whose composite adapter uses an exact model-to-protocol map:
+Claude execution IDs delegate to the Anthropic SDK leaf and the remaining
+published IDs delegate to the OpenAI SDK leaf. No model-name heuristic or
+generic compatibility assumption chooses that transport. Each provider adapter
 translates the same bounded messages,
 tool definitions, tool continuations, output contract, token budget, usage,
 finish reason, cancellation, and typed failure events. A provider-native
@@ -256,7 +257,7 @@ silent omission.
 
 `brief.v4` delivers that policy through one provider-neutral request field.
 The route first intersects controls published for the exact model with controls
-implemented by the selected SDK adapter. OpenAI GPT-5.6 requests use native
+implemented by the selected provider adapter. OpenAI GPT-5.6 requests use native
 `verbosity`; models without a verified native control receive Brief's bounded
 prompt guidance. When native density is available, only task-specific semantic
 obligations remain in the prompt. Command Code does not inherit OpenAI

@@ -14,7 +14,7 @@ import type { ModelCatalogGenerationRepository } from "../data/index.ts";
 import type { ConfigurationValues } from "../domain/index.ts";
 import {
   createAnthropicSdkAdapter,
-  createCommandCodeSdkAdapter,
+  createCommandCodeProviderAdapter,
   createGoogleGenAiSdkAdapter,
   createHostCommandRunner,
   createOfficialModelDiscovery,
@@ -211,7 +211,7 @@ export function composeProductProviderConnections(
           if (compatibility.value.declaration.dialect !== "command-code-router") {
             return { kind: "unavailable", code: "transport-compatibility-mismatch", session };
           }
-          adapter = createCommandCodeSdkAdapter({
+          adapter = createCommandCodeProviderAdapter({
             ...common,
             compatibility: compatibility.value.declaration,
             ...(options.providerFetch === undefined ? {} : { fetch: options.providerFetch }),

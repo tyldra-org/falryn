@@ -19,7 +19,7 @@ import { createOpenAiSdkAdapter, type OpenAiSdkFetch } from "./openai-sdk-adapte
 import { providerDestinationId } from "./provider-destination.ts";
 import { resolveProviderTransportCompatibilityPlanSet } from "./provider-transport-compatibility.ts";
 
-export type CommandCodeSdkAdapterOptions = {
+export type CommandCodeProviderAdapterOptions = {
   readonly profileId: string;
   readonly displayName?: string;
   readonly providerId?: string;
@@ -37,7 +37,7 @@ type CommandCodeChildAdapters = {
 };
 
 type CommandCodeChildAdapterFactory = (
-  options: CommandCodeSdkAdapterOptions,
+  options: CommandCodeProviderAdapterOptions,
   supportedModels: Readonly<Record<"openai" | "anthropic", readonly string[]>>,
 ) => CommandCodeChildAdapters;
 
@@ -59,7 +59,7 @@ function supportedModelsByProtocol(models: readonly string[]): {
 }
 
 function defaultChildren(
-  options: CommandCodeSdkAdapterOptions,
+  options: CommandCodeProviderAdapterOptions,
   supportedModels: Readonly<Record<"openai" | "anthropic", readonly string[]>>,
 ): CommandCodeChildAdapters {
   const common = {
@@ -121,8 +121,8 @@ function withoutPromptCache({ promptCache: _promptCache, ...request }: ModelRequ
  * each model. Claude uses Anthropic Messages; all other verified models use
  * OpenAI Chat Completions.
  */
-export function createCommandCodeSdkAdapter(
-  options: CommandCodeSdkAdapterOptions,
+export function createCommandCodeProviderAdapter(
+  options: CommandCodeProviderAdapterOptions,
   createChildren: CommandCodeChildAdapterFactory = defaultChildren,
 ): ProviderAdapterPort {
   const grouped = supportedModelsByProtocol(options.supportedModels);

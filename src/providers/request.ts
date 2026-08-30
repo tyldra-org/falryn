@@ -55,7 +55,7 @@ export type ModelRequest = {
   readonly reasoning?: ReasoningEffort | undefined;
   /** Exact provider-native control selected from the bound catalog, when available. */
   readonly reasoningControl?: string | null | undefined;
-  /** Normalized response density translated by a supporting SDK adapter. */
+  /** Normalized response density translated by a supporting provider adapter. */
   readonly responseDensityControl?: ModelResponseDensityControl | null | undefined;
   readonly promptCache?: PromptCachePolicy | undefined;
   readonly metadata: RequestMetadata;

@@ -351,7 +351,7 @@ describe("product provider connection persistence", () => {
     expect(JSON.stringify(tested)).not.toContain("secret-not-projected");
   });
 
-  test("resolves selected official profiles to their SDK adapters", async () => {
+  test("resolves selected profiles to their installed provider adapters", async () => {
     for (const fixture of [
       {
         adapterKind: "anthropic" as const,

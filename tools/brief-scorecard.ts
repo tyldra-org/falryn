@@ -34,7 +34,7 @@ import {
   type PromptSectionInput,
 } from "../src/domain/index.ts";
 import {
-  createCommandCodeSdkAdapter,
+  createCommandCodeProviderAdapter,
   createHostCommandRunner,
   createHostEnvironment,
   createOpenAiSdkAdapter,
@@ -285,7 +285,7 @@ export async function createBriefScorecardProvider(
       suppliedEnvironment === undefined,
     );
     const model = environment.FALRYN_BRIEF_MODEL ?? DEFAULT_COMMAND_CODE_MODEL;
-    const adapter = createCommandCodeSdkAdapter({
+    const adapter = createCommandCodeProviderAdapter({
       profileId: "brief-scorecard",
       resolveApiKey: async () => apiKey,
       supportedModels: [model],

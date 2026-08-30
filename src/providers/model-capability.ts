@@ -14,7 +14,7 @@ export type ModelOutputModality = (typeof MODEL_OUTPUT_MODALITIES)[number];
 export const MODEL_FEATURE_SUPPORTS = ["supported", "unsupported", "unknown"] as const;
 export type ModelFeatureSupport = (typeof MODEL_FEATURE_SUPPORTS)[number];
 
-/** Provider-neutral response-density values that SDK adapters may translate natively. */
+/** Provider-neutral response-density values that provider adapters may translate natively. */
 export const MODEL_RESPONSE_DENSITY_CONTROLS = ["low", "medium", "high"] as const;
 export type ModelResponseDensityControl = (typeof MODEL_RESPONSE_DENSITY_CONTROLS)[number];
 
