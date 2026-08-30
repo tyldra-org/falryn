@@ -46,7 +46,6 @@ export { modelCatalogDocumentSchema, parseModelCatalogDocument } from "./catalog
 export type { CommandCodeProtocol } from "./command-code.ts";
 export {
   COMMAND_CODE_ANTHROPIC_BASE_URL,
-  COMMAND_CODE_MODEL_CAPABILITIES,
   COMMAND_CODE_MODEL_MANIFESTS,
   COMMAND_CODE_MODEL_PROTOCOLS,
   COMMAND_CODE_MODEL_REASONING_CONTROLS,

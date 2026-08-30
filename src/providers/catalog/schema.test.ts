@@ -9,13 +9,15 @@ import { parseModelCatalogDocument } from "./schema.ts";
 
 describe("model catalog documents", () => {
   test("validates every catalog compiled into the application", () => {
-    expect(BUILTIN_MODEL_CATALOGS.length).toBeGreaterThan(0);
+    expect(BUILTIN_MODEL_CATALOGS).toHaveLength(4);
     for (const catalog of BUILTIN_MODEL_CATALOGS) {
       expect(parseModelCatalogDocument(catalog)).toEqual({ ok: true, value: catalog });
       expect(
         catalog.models.every(
           (model) =>
             model.pricing !== undefined &&
+            model.pricing.sourceUrl !== null &&
+            model.pricing.observedAt !== null &&
             model.responseDensityControls !== undefined &&
             (model.promptCacheModes?.length ?? 0) > 0 &&
             model.pricing.tiers.every(
@@ -149,6 +151,29 @@ describe("model catalog documents", () => {
     expect(google?.models.find((model) => model.modelId === "gemini-3.6-flash")).toMatchObject({
       reasoningControls: ["minimal", "low", "medium", "high"],
     });
+  });
+
+  test("keeps prices bound to the exact provider destination", () => {
+    const openAi = BUILTIN_MODEL_CATALOGS.find(
+      (candidate) => candidate.catalogId === "falryn.openai",
+    );
+    const commandCode = BUILTIN_MODEL_CATALOGS.find(
+      (candidate) => candidate.catalogId === "falryn.commandcode",
+    );
+    const openAiSol = openAi?.models.find((model) => model.modelId === "gpt-5.6-sol");
+    const commandCodeSol = commandCode?.models.find((model) => model.modelId === "gpt-5.6-sol");
+
+    expect(openAi?.provider.endpoint).toBe("https://api.openai.com/v1");
+    expect(commandCode?.provider.endpoint).toBe("https://api.commandcode.ai/provider/v1");
+    expect(openAiSol?.pricing?.billingMode).toBe("api");
+    expect(commandCodeSol?.pricing?.billingMode).toBe("provider-credit");
+    expect(openAiSol?.pricing?.sourceUrl).toBe("https://developers.openai.com/api/docs/pricing");
+    expect(commandCodeSol?.pricing?.sourceUrl).toBe(
+      "https://commandcode.ai/docs/resources/pricing-limits",
+    );
+    expect(openAiSol?.pricing?.tiers[0]?.usdMicrosPerMillionTokens.input).not.toBe(
+      commandCodeSol?.pricing?.tiers[0]?.usdMicrosPerMillionTokens.input,
+    );
   });
 
   test("rejects duplicate models and unknown fields", () => {

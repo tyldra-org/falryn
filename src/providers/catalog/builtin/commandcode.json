@@ -1,0 +1,2998 @@
+{
+  "schemaVersion": 1,
+  "catalogId": "falryn.commandcode",
+  "displayName": "Falryn Command Code catalog",
+  "provider": {
+    "providerId": "commandcode",
+    "adapterKind": "commandcode",
+    "endpoint": "https://api.commandcode.ai/provider/v1"
+  },
+  "models": [
+    {
+      "schemaVersion": 1,
+      "modelId": "claude-sonnet-5",
+      "displayName": "Claude Sonnet 5",
+      "inputModalities": ["text", "image"],
+      "outputModalities": ["text"],
+      "tools": "supported",
+      "structuredOutput": "unknown",
+      "streaming": "supported",
+      "reasoning": "supported",
+      "reasoningControls": ["low", "medium", "high", "xhigh", "max"],
+      "responseDensityControls": [],
+      "promptCacheModes": ["provider-managed"],
+      "promptCacheMinimumInputTokens": null,
+      "contextTokens": 1000000,
+      "outputTokens": null,
+      "pricing": {
+        "kind": "published-estimate",
+        "billingMode": "provider-credit",
+        "currency": "USD",
+        "tokenUnit": 1000000,
+        "sourceUrl": "https://commandcode.ai/docs/resources/pricing-limits",
+        "observedAt": "2026-08-29T00:00:00Z",
+        "tiers": [
+          {
+            "id": "standard",
+            "label": "standard",
+            "serviceTier": "standard",
+            "inputTokensFrom": 0,
+            "inputTokensThrough": null,
+            "effectiveFrom": null,
+            "effectiveUntil": null,
+            "utcWindows": [],
+            "usdMicrosPerMillionTokens": {
+              "input": 2000000,
+              "cachedInput": 200000,
+              "cacheWriteInput": 2500000,
+              "output": 10000000
+            }
+          }
+        ]
+      },
+      "completeness": "partial"
+    },
+    {
+      "schemaVersion": 1,
+      "modelId": "claude-sonnet-4-6",
+      "displayName": "Claude Sonnet 4.6",
+      "inputModalities": ["text", "image"],
+      "outputModalities": ["text"],
+      "tools": "supported",
+      "structuredOutput": "unknown",
+      "streaming": "supported",
+      "reasoning": "supported",
+      "reasoningControls": ["low", "medium", "high", "xhigh", "max"],
+      "responseDensityControls": [],
+      "promptCacheModes": ["provider-managed"],
+      "promptCacheMinimumInputTokens": null,
+      "contextTokens": 1000000,
+      "outputTokens": null,
+      "pricing": {
+        "kind": "published-estimate",
+        "billingMode": "provider-credit",
+        "currency": "USD",
+        "tokenUnit": 1000000,
+        "sourceUrl": "https://commandcode.ai/docs/resources/pricing-limits",
+        "observedAt": "2026-08-29T00:00:00Z",
+        "tiers": [
+          {
+            "id": "standard",
+            "label": "standard",
+            "serviceTier": "standard",
+            "inputTokensFrom": 0,
+            "inputTokensThrough": null,
+            "effectiveFrom": null,
+            "effectiveUntil": null,
+            "utcWindows": [],
+            "usdMicrosPerMillionTokens": {
+              "input": 3000000,
+              "cachedInput": 300000,
+              "cacheWriteInput": 3750000,
+              "output": 15000000
+            }
+          }
+        ]
+      },
+      "completeness": "partial"
+    },
+    {
+      "schemaVersion": 1,
+      "modelId": "claude-fable-5",
+      "displayName": "Claude Fable 5",
+      "inputModalities": ["text", "image"],
+      "outputModalities": ["text"],
+      "tools": "supported",
+      "structuredOutput": "unknown",
+      "streaming": "supported",
+      "reasoning": "supported",
+      "reasoningControls": ["low", "medium", "high", "xhigh", "max"],
+      "responseDensityControls": [],
+      "promptCacheModes": ["provider-managed"],
+      "promptCacheMinimumInputTokens": null,
+      "contextTokens": 1000000,
+      "outputTokens": null,
+      "pricing": {
+        "kind": "published-estimate",
+        "billingMode": "provider-credit",
+        "currency": "USD",
+        "tokenUnit": 1000000,
+        "sourceUrl": "https://commandcode.ai/docs/resources/pricing-limits",
+        "observedAt": "2026-08-29T00:00:00Z",
+        "tiers": [
+          {
+            "id": "standard",
+            "label": "standard",
+            "serviceTier": "standard",
+            "inputTokensFrom": 0,
+            "inputTokensThrough": null,
+            "effectiveFrom": null,
+            "effectiveUntil": null,
+            "utcWindows": [],
+            "usdMicrosPerMillionTokens": {
+              "input": 10000000,
+              "cachedInput": 1000000,
+              "cacheWriteInput": 12500000,
+              "output": 50000000
+            }
+          }
+        ]
+      },
+      "completeness": "partial"
+    },
+    {
+      "schemaVersion": 1,
+      "modelId": "claude-opus-5",
+      "displayName": "Claude Opus 5",
+      "inputModalities": ["text", "image"],
+      "outputModalities": ["text"],
+      "tools": "supported",
+      "structuredOutput": "unknown",
+      "streaming": "supported",
+      "reasoning": "supported",
+      "reasoningControls": ["low", "medium", "high", "xhigh", "max"],
+      "responseDensityControls": [],
+      "promptCacheModes": ["provider-managed"],
+      "promptCacheMinimumInputTokens": null,
+      "contextTokens": 1000000,
+      "outputTokens": null,
+      "pricing": {
+        "kind": "published-estimate",
+        "billingMode": "provider-credit",
+        "currency": "USD",
+        "tokenUnit": 1000000,
+        "sourceUrl": "https://commandcode.ai/docs/resources/pricing-limits",
+        "observedAt": "2026-08-29T00:00:00Z",
+        "tiers": [
+          {
+            "id": "standard",
+            "label": "standard",
+            "serviceTier": "standard",
+            "inputTokensFrom": 0,
+            "inputTokensThrough": null,
+            "effectiveFrom": null,
+            "effectiveUntil": null,
+            "utcWindows": [],
+            "usdMicrosPerMillionTokens": {
+              "input": 5000000,
+              "cachedInput": 500000,
+              "cacheWriteInput": 6250000,
+              "output": 25000000
+            }
+          }
+        ]
+      },
+      "completeness": "partial"
+    },
+    {
+      "schemaVersion": 1,
+      "modelId": "claude-opus-4-8",
+      "displayName": "Claude Opus 4.8",
+      "inputModalities": ["text", "image"],
+      "outputModalities": ["text"],
+      "tools": "supported",
+      "structuredOutput": "unknown",
+      "streaming": "supported",
+      "reasoning": "supported",
+      "reasoningControls": ["low", "medium", "high", "xhigh", "max"],
+      "responseDensityControls": [],
+      "promptCacheModes": ["provider-managed"],
+      "promptCacheMinimumInputTokens": null,
+      "contextTokens": 1000000,
+      "outputTokens": null,
+      "pricing": {
+        "kind": "published-estimate",
+        "billingMode": "provider-credit",
+        "currency": "USD",
+        "tokenUnit": 1000000,
+        "sourceUrl": "https://commandcode.ai/docs/resources/pricing-limits",
+        "observedAt": "2026-08-29T00:00:00Z",
+        "tiers": [
+          {
+            "id": "standard",
+            "label": "standard",
+            "serviceTier": "standard",
+            "inputTokensFrom": 0,
+            "inputTokensThrough": null,
+            "effectiveFrom": null,
+            "effectiveUntil": null,
+            "utcWindows": [],
+            "usdMicrosPerMillionTokens": {
+              "input": 5000000,
+              "cachedInput": 500000,
+              "cacheWriteInput": 6250000,
+              "output": 25000000
+            }
+          }
+        ]
+      },
+      "completeness": "partial"
+    },
+    {
+      "schemaVersion": 1,
+      "modelId": "claude-opus-4-7",
+      "displayName": "Claude Opus 4.7",
+      "inputModalities": ["text", "image"],
+      "outputModalities": ["text"],
+      "tools": "supported",
+      "structuredOutput": "unknown",
+      "streaming": "supported",
+      "reasoning": "supported",
+      "reasoningControls": ["low", "medium", "high", "xhigh", "max"],
+      "responseDensityControls": [],
+      "promptCacheModes": ["provider-managed"],
+      "promptCacheMinimumInputTokens": null,
+      "contextTokens": 1000000,
+      "outputTokens": null,
+      "pricing": {
+        "kind": "published-estimate",
+        "billingMode": "provider-credit",
+        "currency": "USD",
+        "tokenUnit": 1000000,
+        "sourceUrl": "https://commandcode.ai/docs/resources/pricing-limits",
+        "observedAt": "2026-08-29T00:00:00Z",
+        "tiers": [
+          {
+            "id": "standard",
+            "label": "standard",
+            "serviceTier": "standard",
+            "inputTokensFrom": 0,
+            "inputTokensThrough": null,
+            "effectiveFrom": null,
+            "effectiveUntil": null,
+            "utcWindows": [],
+            "usdMicrosPerMillionTokens": {
+              "input": 5000000,
+              "cachedInput": 500000,
+              "cacheWriteInput": 6250000,
+              "output": 25000000
+            }
+          }
+        ]
+      },
+      "completeness": "partial"
+    },
+    {
+      "schemaVersion": 1,
+      "modelId": "claude-haiku-4-5-20251001",
+      "displayName": "Claude Haiku 4.5",
+      "inputModalities": ["text", "image"],
+      "outputModalities": ["text"],
+      "tools": "supported",
+      "structuredOutput": "unknown",
+      "streaming": "supported",
+      "reasoning": "unknown",
+      "reasoningControls": [],
+      "responseDensityControls": [],
+      "promptCacheModes": ["provider-managed"],
+      "promptCacheMinimumInputTokens": null,
+      "contextTokens": 200000,
+      "outputTokens": null,
+      "pricing": {
+        "kind": "published-estimate",
+        "billingMode": "provider-credit",
+        "currency": "USD",
+        "tokenUnit": 1000000,
+        "sourceUrl": "https://commandcode.ai/docs/resources/pricing-limits",
+        "observedAt": "2026-08-29T00:00:00Z",
+        "tiers": [
+          {
+            "id": "standard",
+            "label": "standard",
+            "serviceTier": "standard",
+            "inputTokensFrom": 0,
+            "inputTokensThrough": null,
+            "effectiveFrom": null,
+            "effectiveUntil": null,
+            "utcWindows": [],
+            "usdMicrosPerMillionTokens": {
+              "input": 1000000,
+              "cachedInput": 100000,
+              "cacheWriteInput": 1250000,
+              "output": 5000000
+            }
+          }
+        ]
+      },
+      "completeness": "partial"
+    },
+    {
+      "schemaVersion": 1,
+      "modelId": "gpt-5.6-sol",
+      "displayName": "GPT-5.6 Sol",
+      "inputModalities": ["text", "image"],
+      "outputModalities": ["text"],
+      "tools": "supported",
+      "structuredOutput": "unknown",
+      "streaming": "supported",
+      "reasoning": "supported",
+      "reasoningControls": ["low", "medium", "high", "xhigh", "max"],
+      "responseDensityControls": [],
+      "promptCacheModes": ["provider-managed"],
+      "promptCacheMinimumInputTokens": null,
+      "contextTokens": 1050000,
+      "outputTokens": null,
+      "pricing": {
+        "kind": "published-estimate",
+        "billingMode": "provider-credit",
+        "currency": "USD",
+        "tokenUnit": 1000000,
+        "sourceUrl": "https://commandcode.ai/docs/resources/pricing-limits",
+        "observedAt": "2026-08-29T00:00:00Z",
+        "tiers": [
+          {
+            "id": "standard-short",
+            "label": "Short context",
+            "serviceTier": "standard",
+            "inputTokensFrom": 0,
+            "inputTokensThrough": 272000,
+            "effectiveFrom": null,
+            "effectiveUntil": null,
+            "utcWindows": [],
+            "usdMicrosPerMillionTokens": {
+              "input": 5000000,
+              "cachedInput": 500000,
+              "cacheWriteInput": 6250000,
+              "output": 30000000
+            }
+          },
+          {
+            "id": "standard-long",
+            "label": "Long context",
+            "serviceTier": "standard",
+            "inputTokensFrom": 272001,
+            "inputTokensThrough": null,
+            "effectiveFrom": null,
+            "effectiveUntil": null,
+            "utcWindows": [],
+            "usdMicrosPerMillionTokens": {
+              "input": 10000000,
+              "cachedInput": 1000000,
+              "cacheWriteInput": 12500000,
+              "output": 45000000
+            }
+          }
+        ]
+      },
+      "completeness": "partial"
+    },
+    {
+      "schemaVersion": 1,
+      "modelId": "gpt-5.6-terra",
+      "displayName": "GPT-5.6 Terra",
+      "inputModalities": ["text", "image"],
+      "outputModalities": ["text"],
+      "tools": "supported",
+      "structuredOutput": "unknown",
+      "streaming": "supported",
+      "reasoning": "supported",
+      "reasoningControls": ["low", "medium", "high", "xhigh", "max"],
+      "responseDensityControls": [],
+      "promptCacheModes": ["provider-managed"],
+      "promptCacheMinimumInputTokens": null,
+      "contextTokens": 1050000,
+      "outputTokens": null,
+      "pricing": {
+        "kind": "published-estimate",
+        "billingMode": "provider-credit",
+        "currency": "USD",
+        "tokenUnit": 1000000,
+        "sourceUrl": "https://commandcode.ai/docs/resources/pricing-limits",
+        "observedAt": "2026-08-29T00:00:00Z",
+        "tiers": [
+          {
+            "id": "standard-short",
+            "label": "Short context",
+            "serviceTier": "standard",
+            "inputTokensFrom": 0,
+            "inputTokensThrough": 272000,
+            "effectiveFrom": null,
+            "effectiveUntil": null,
+            "utcWindows": [],
+            "usdMicrosPerMillionTokens": {
+              "input": 2000000,
+              "cachedInput": 200000,
+              "cacheWriteInput": 2500000,
+              "output": 12000000
+            }
+          },
+          {
+            "id": "standard-long",
+            "label": "Long context",
+            "serviceTier": "standard",
+            "inputTokensFrom": 272001,
+            "inputTokensThrough": null,
+            "effectiveFrom": null,
+            "effectiveUntil": null,
+            "utcWindows": [],
+            "usdMicrosPerMillionTokens": {
+              "input": 4000000,
+              "cachedInput": 400000,
+              "cacheWriteInput": 5000000,
+              "output": 18000000
+            }
+          }
+        ]
+      },
+      "completeness": "partial"
+    },
+    {
+      "schemaVersion": 1,
+      "modelId": "gpt-5.6-luna",
+      "displayName": "GPT-5.6 Luna",
+      "inputModalities": ["text", "image"],
+      "outputModalities": ["text"],
+      "tools": "supported",
+      "structuredOutput": "unknown",
+      "streaming": "supported",
+      "reasoning": "supported",
+      "reasoningControls": ["low", "medium", "high", "xhigh", "max"],
+      "responseDensityControls": [],
+      "promptCacheModes": ["provider-managed"],
+      "promptCacheMinimumInputTokens": null,
+      "contextTokens": 1050000,
+      "outputTokens": null,
+      "pricing": {
+        "kind": "published-estimate",
+        "billingMode": "provider-credit",
+        "currency": "USD",
+        "tokenUnit": 1000000,
+        "sourceUrl": "https://commandcode.ai/docs/resources/pricing-limits",
+        "observedAt": "2026-08-29T00:00:00Z",
+        "tiers": [
+          {
+            "id": "standard-short",
+            "label": "Short context",
+            "serviceTier": "standard",
+            "inputTokensFrom": 0,
+            "inputTokensThrough": 272000,
+            "effectiveFrom": null,
+            "effectiveUntil": null,
+            "utcWindows": [],
+            "usdMicrosPerMillionTokens": {
+              "input": 200000,
+              "cachedInput": 20000,
+              "cacheWriteInput": 250000,
+              "output": 1200000
+            }
+          },
+          {
+            "id": "standard-long",
+            "label": "Long context",
+            "serviceTier": "standard",
+            "inputTokensFrom": 272001,
+            "inputTokensThrough": null,
+            "effectiveFrom": null,
+            "effectiveUntil": null,
+            "utcWindows": [],
+            "usdMicrosPerMillionTokens": {
+              "input": 400000,
+              "cachedInput": 40000,
+              "cacheWriteInput": 500000,
+              "output": 1800000
+            }
+          }
+        ]
+      },
+      "completeness": "partial"
+    },
+    {
+      "schemaVersion": 1,
+      "modelId": "gpt-5.5",
+      "displayName": "GPT-5.5",
+      "inputModalities": ["text", "image"],
+      "outputModalities": ["text"],
+      "tools": "supported",
+      "structuredOutput": "unknown",
+      "streaming": "supported",
+      "reasoning": "supported",
+      "reasoningControls": ["low", "medium", "high", "xhigh"],
+      "responseDensityControls": [],
+      "promptCacheModes": ["provider-managed"],
+      "promptCacheMinimumInputTokens": null,
+      "contextTokens": 400000,
+      "outputTokens": null,
+      "pricing": {
+        "kind": "published-estimate",
+        "billingMode": "provider-credit",
+        "currency": "USD",
+        "tokenUnit": 1000000,
+        "sourceUrl": "https://commandcode.ai/docs/resources/pricing-limits",
+        "observedAt": "2026-08-29T00:00:00Z",
+        "tiers": [
+          {
+            "id": "standard",
+            "label": "standard",
+            "serviceTier": "standard",
+            "inputTokensFrom": 0,
+            "inputTokensThrough": null,
+            "effectiveFrom": null,
+            "effectiveUntil": null,
+            "utcWindows": [],
+            "usdMicrosPerMillionTokens": {
+              "input": 5000000,
+              "cachedInput": 500000,
+              "cacheWriteInput": 0,
+              "output": 30000000
+            }
+          }
+        ]
+      },
+      "completeness": "partial"
+    },
+    {
+      "schemaVersion": 1,
+      "modelId": "gpt-5.4",
+      "displayName": "GPT-5.4",
+      "inputModalities": ["text", "image"],
+      "outputModalities": ["text"],
+      "tools": "supported",
+      "structuredOutput": "unknown",
+      "streaming": "supported",
+      "reasoning": "supported",
+      "reasoningControls": ["low", "medium", "high", "xhigh"],
+      "responseDensityControls": [],
+      "promptCacheModes": ["provider-managed"],
+      "promptCacheMinimumInputTokens": null,
+      "contextTokens": 400000,
+      "outputTokens": null,
+      "pricing": {
+        "kind": "published-estimate",
+        "billingMode": "provider-credit",
+        "currency": "USD",
+        "tokenUnit": 1000000,
+        "sourceUrl": "https://commandcode.ai/docs/resources/pricing-limits",
+        "observedAt": "2026-08-29T00:00:00Z",
+        "tiers": [
+          {
+            "id": "standard",
+            "label": "standard",
+            "serviceTier": "standard",
+            "inputTokensFrom": 0,
+            "inputTokensThrough": null,
+            "effectiveFrom": null,
+            "effectiveUntil": null,
+            "utcWindows": [],
+            "usdMicrosPerMillionTokens": {
+              "input": 2500000,
+              "cachedInput": 250000,
+              "cacheWriteInput": 0,
+              "output": 15000000
+            }
+          }
+        ]
+      },
+      "completeness": "partial"
+    },
+    {
+      "schemaVersion": 1,
+      "modelId": "gpt-5.3-codex",
+      "displayName": "GPT-5.3 Codex",
+      "inputModalities": ["text", "image"],
+      "outputModalities": ["text"],
+      "tools": "supported",
+      "structuredOutput": "unknown",
+      "streaming": "supported",
+      "reasoning": "supported",
+      "reasoningControls": ["low", "medium", "high", "xhigh"],
+      "responseDensityControls": [],
+      "promptCacheModes": ["provider-managed"],
+      "promptCacheMinimumInputTokens": null,
+      "contextTokens": 400000,
+      "outputTokens": null,
+      "pricing": {
+        "kind": "published-estimate",
+        "billingMode": "provider-credit",
+        "currency": "USD",
+        "tokenUnit": 1000000,
+        "sourceUrl": "https://commandcode.ai/docs/resources/pricing-limits",
+        "observedAt": "2026-08-29T00:00:00Z",
+        "tiers": [
+          {
+            "id": "standard",
+            "label": "standard",
+            "serviceTier": "standard",
+            "inputTokensFrom": 0,
+            "inputTokensThrough": null,
+            "effectiveFrom": null,
+            "effectiveUntil": null,
+            "utcWindows": [],
+            "usdMicrosPerMillionTokens": {
+              "input": 2000000,
+              "cachedInput": 500000,
+              "cacheWriteInput": 0,
+              "output": 8000000
+            }
+          }
+        ]
+      },
+      "completeness": "partial"
+    },
+    {
+      "schemaVersion": 1,
+      "modelId": "gpt-5.4-mini",
+      "displayName": "GPT-5.4 Mini",
+      "inputModalities": ["text", "image"],
+      "outputModalities": ["text"],
+      "tools": "supported",
+      "structuredOutput": "unknown",
+      "streaming": "supported",
+      "reasoning": "supported",
+      "reasoningControls": ["low", "medium", "high"],
+      "responseDensityControls": [],
+      "promptCacheModes": ["provider-managed"],
+      "promptCacheMinimumInputTokens": null,
+      "contextTokens": 400000,
+      "outputTokens": null,
+      "pricing": {
+        "kind": "published-estimate",
+        "billingMode": "provider-credit",
+        "currency": "USD",
+        "tokenUnit": 1000000,
+        "sourceUrl": "https://commandcode.ai/docs/resources/pricing-limits",
+        "observedAt": "2026-08-29T00:00:00Z",
+        "tiers": [
+          {
+            "id": "standard",
+            "label": "standard",
+            "serviceTier": "standard",
+            "inputTokensFrom": 0,
+            "inputTokensThrough": null,
+            "effectiveFrom": null,
+            "effectiveUntil": null,
+            "utcWindows": [],
+            "usdMicrosPerMillionTokens": {
+              "input": 750000,
+              "cachedInput": 75000,
+              "cacheWriteInput": 0,
+              "output": 4500000
+            }
+          }
+        ]
+      },
+      "completeness": "partial"
+    },
+    {
+      "schemaVersion": 1,
+      "modelId": "deepseek/deepseek-v4-pro",
+      "displayName": "DeepSeek V4 Pro (latest)",
+      "inputModalities": ["text"],
+      "outputModalities": ["text"],
+      "tools": "supported",
+      "structuredOutput": "unknown",
+      "streaming": "supported",
+      "reasoning": "supported",
+      "reasoningControls": ["high", "max"],
+      "responseDensityControls": [],
+      "promptCacheModes": ["provider-managed"],
+      "promptCacheMinimumInputTokens": null,
+      "contextTokens": 1000000,
+      "outputTokens": null,
+      "pricing": {
+        "kind": "published-estimate",
+        "billingMode": "provider-credit",
+        "currency": "USD",
+        "tokenUnit": 1000000,
+        "sourceUrl": "https://commandcode.ai/docs/resources/pricing-limits",
+        "observedAt": "2026-08-29T00:00:00Z",
+        "tiers": [
+          {
+            "id": "off-peak",
+            "label": "off-peak",
+            "serviceTier": "standard",
+            "inputTokensFrom": 0,
+            "inputTokensThrough": null,
+            "effectiveFrom": "2026-08-16T16:00:00Z",
+            "effectiveUntil": null,
+            "utcWindows": [
+              {
+                "startMinuteInclusive": 0,
+                "endMinuteExclusive": 60
+              },
+              {
+                "startMinuteInclusive": 240,
+                "endMinuteExclusive": 360
+              },
+              {
+                "startMinuteInclusive": 600,
+                "endMinuteExclusive": 1440
+              }
+            ],
+            "usdMicrosPerMillionTokens": {
+              "input": 660000,
+              "cachedInput": 22000,
+              "cacheWriteInput": null,
+              "output": 1980000
+            }
+          },
+          {
+            "id": "peak",
+            "label": "peak",
+            "serviceTier": "standard",
+            "inputTokensFrom": 0,
+            "inputTokensThrough": null,
+            "effectiveFrom": "2026-08-16T16:00:00Z",
+            "effectiveUntil": null,
+            "utcWindows": [
+              {
+                "startMinuteInclusive": 60,
+                "endMinuteExclusive": 240
+              },
+              {
+                "startMinuteInclusive": 360,
+                "endMinuteExclusive": 600
+              }
+            ],
+            "usdMicrosPerMillionTokens": {
+              "input": 1320000,
+              "cachedInput": 44000,
+              "cacheWriteInput": null,
+              "output": 3960000
+            }
+          }
+        ]
+      },
+      "completeness": "partial"
+    },
+    {
+      "schemaVersion": 1,
+      "modelId": "deepseek/deepseek-v4-flash",
+      "displayName": "DeepSeek V4 Flash (latest)",
+      "inputModalities": ["text"],
+      "outputModalities": ["text"],
+      "tools": "supported",
+      "structuredOutput": "unknown",
+      "streaming": "supported",
+      "reasoning": "supported",
+      "reasoningControls": ["high", "max"],
+      "responseDensityControls": [],
+      "promptCacheModes": ["provider-managed"],
+      "promptCacheMinimumInputTokens": null,
+      "contextTokens": 1000000,
+      "outputTokens": null,
+      "pricing": {
+        "kind": "published-estimate",
+        "billingMode": "provider-credit",
+        "currency": "USD",
+        "tokenUnit": 1000000,
+        "sourceUrl": "https://commandcode.ai/docs/resources/pricing-limits",
+        "observedAt": "2026-08-29T00:00:00Z",
+        "tiers": [
+          {
+            "id": "off-peak",
+            "label": "off-peak",
+            "serviceTier": "standard",
+            "inputTokensFrom": 0,
+            "inputTokensThrough": null,
+            "effectiveFrom": "2026-08-16T16:00:00Z",
+            "effectiveUntil": null,
+            "utcWindows": [
+              {
+                "startMinuteInclusive": 0,
+                "endMinuteExclusive": 60
+              },
+              {
+                "startMinuteInclusive": 240,
+                "endMinuteExclusive": 360
+              },
+              {
+                "startMinuteInclusive": 600,
+                "endMinuteExclusive": 1440
+              }
+            ],
+            "usdMicrosPerMillionTokens": {
+              "input": 220000,
+              "cachedInput": 7000,
+              "cacheWriteInput": null,
+              "output": 660000
+            }
+          },
+          {
+            "id": "peak",
+            "label": "peak",
+            "serviceTier": "standard",
+            "inputTokensFrom": 0,
+            "inputTokensThrough": null,
+            "effectiveFrom": "2026-08-16T16:00:00Z",
+            "effectiveUntil": null,
+            "utcWindows": [
+              {
+                "startMinuteInclusive": 60,
+                "endMinuteExclusive": 240
+              },
+              {
+                "startMinuteInclusive": 360,
+                "endMinuteExclusive": 600
+              }
+            ],
+            "usdMicrosPerMillionTokens": {
+              "input": 440000,
+              "cachedInput": 14000,
+              "cacheWriteInput": null,
+              "output": 1320000
+            }
+          }
+        ]
+      },
+      "completeness": "partial"
+    },
+    {
+      "schemaVersion": 1,
+      "modelId": "deepseek/deepseek-v4-flash-vision-exp",
+      "displayName": "DeepSeek V4 Flash Vision (exp)",
+      "inputModalities": ["text", "image"],
+      "outputModalities": ["text"],
+      "tools": "supported",
+      "structuredOutput": "unknown",
+      "streaming": "supported",
+      "reasoning": "supported",
+      "reasoningControls": ["high", "max"],
+      "responseDensityControls": [],
+      "promptCacheModes": ["provider-managed"],
+      "promptCacheMinimumInputTokens": null,
+      "contextTokens": 1000000,
+      "outputTokens": null,
+      "pricing": {
+        "kind": "published-estimate",
+        "billingMode": "provider-credit",
+        "currency": "USD",
+        "tokenUnit": 1000000,
+        "sourceUrl": "https://commandcode.ai/docs/resources/pricing-limits",
+        "observedAt": "2026-08-29T00:00:00Z",
+        "tiers": [
+          {
+            "id": "off-peak",
+            "label": "off-peak",
+            "serviceTier": "standard",
+            "inputTokensFrom": 0,
+            "inputTokensThrough": null,
+            "effectiveFrom": "2026-08-16T16:00:00Z",
+            "effectiveUntil": null,
+            "utcWindows": [
+              {
+                "startMinuteInclusive": 0,
+                "endMinuteExclusive": 60
+              },
+              {
+                "startMinuteInclusive": 240,
+                "endMinuteExclusive": 360
+              },
+              {
+                "startMinuteInclusive": 600,
+                "endMinuteExclusive": 1440
+              }
+            ],
+            "usdMicrosPerMillionTokens": {
+              "input": 220000,
+              "cachedInput": 7000,
+              "cacheWriteInput": null,
+              "output": 660000
+            }
+          },
+          {
+            "id": "peak",
+            "label": "peak",
+            "serviceTier": "standard",
+            "inputTokensFrom": 0,
+            "inputTokensThrough": null,
+            "effectiveFrom": "2026-08-16T16:00:00Z",
+            "effectiveUntil": null,
+            "utcWindows": [
+              {
+                "startMinuteInclusive": 60,
+                "endMinuteExclusive": 240
+              },
+              {
+                "startMinuteInclusive": 360,
+                "endMinuteExclusive": 600
+              }
+            ],
+            "usdMicrosPerMillionTokens": {
+              "input": 440000,
+              "cachedInput": 14000,
+              "cacheWriteInput": null,
+              "output": 1320000
+            }
+          }
+        ]
+      },
+      "completeness": "partial"
+    },
+    {
+      "schemaVersion": 1,
+      "modelId": "moonshotai/Kimi-K3",
+      "displayName": "Kimi K3",
+      "inputModalities": ["text", "image"],
+      "outputModalities": ["text"],
+      "tools": "supported",
+      "structuredOutput": "unknown",
+      "streaming": "supported",
+      "reasoning": "supported",
+      "reasoningControls": [],
+      "responseDensityControls": [],
+      "promptCacheModes": ["provider-managed"],
+      "promptCacheMinimumInputTokens": null,
+      "contextTokens": 1000000,
+      "outputTokens": null,
+      "pricing": {
+        "kind": "published-estimate",
+        "billingMode": "provider-credit",
+        "currency": "USD",
+        "tokenUnit": 1000000,
+        "sourceUrl": "https://commandcode.ai/docs/resources/pricing-limits",
+        "observedAt": "2026-08-29T00:00:00Z",
+        "tiers": [
+          {
+            "id": "standard",
+            "label": "standard",
+            "serviceTier": "standard",
+            "inputTokensFrom": 0,
+            "inputTokensThrough": null,
+            "effectiveFrom": null,
+            "effectiveUntil": null,
+            "utcWindows": [],
+            "usdMicrosPerMillionTokens": {
+              "input": 3000000,
+              "cachedInput": 300000,
+              "cacheWriteInput": null,
+              "output": 15000000
+            }
+          }
+        ]
+      },
+      "completeness": "partial"
+    },
+    {
+      "schemaVersion": 1,
+      "modelId": "moonshotai/Kimi-K2.7-Code",
+      "displayName": "Kimi K2.7 Code",
+      "inputModalities": ["text", "image"],
+      "outputModalities": ["text"],
+      "tools": "supported",
+      "structuredOutput": "unknown",
+      "streaming": "supported",
+      "reasoning": "supported",
+      "reasoningControls": [],
+      "responseDensityControls": [],
+      "promptCacheModes": ["provider-managed"],
+      "promptCacheMinimumInputTokens": null,
+      "contextTokens": 256000,
+      "outputTokens": null,
+      "pricing": {
+        "kind": "published-estimate",
+        "billingMode": "provider-credit",
+        "currency": "USD",
+        "tokenUnit": 1000000,
+        "sourceUrl": "https://commandcode.ai/docs/resources/pricing-limits",
+        "observedAt": "2026-08-29T00:00:00Z",
+        "tiers": [
+          {
+            "id": "standard",
+            "label": "standard",
+            "serviceTier": "standard",
+            "inputTokensFrom": 0,
+            "inputTokensThrough": null,
+            "effectiveFrom": null,
+            "effectiveUntil": null,
+            "utcWindows": [],
+            "usdMicrosPerMillionTokens": {
+              "input": 950000,
+              "cachedInput": 190000,
+              "cacheWriteInput": null,
+              "output": 4000000
+            }
+          }
+        ]
+      },
+      "completeness": "partial"
+    },
+    {
+      "schemaVersion": 1,
+      "modelId": "moonshotai/Kimi-K2.7-Code-Highspeed",
+      "displayName": "Kimi K2.7 Code HighSpeed",
+      "inputModalities": ["text", "image"],
+      "outputModalities": ["text"],
+      "tools": "supported",
+      "structuredOutput": "unknown",
+      "streaming": "supported",
+      "reasoning": "supported",
+      "reasoningControls": [],
+      "responseDensityControls": [],
+      "promptCacheModes": ["provider-managed"],
+      "promptCacheMinimumInputTokens": null,
+      "contextTokens": 262000,
+      "outputTokens": null,
+      "pricing": {
+        "kind": "published-estimate",
+        "billingMode": "provider-credit",
+        "currency": "USD",
+        "tokenUnit": 1000000,
+        "sourceUrl": "https://commandcode.ai/docs/resources/pricing-limits",
+        "observedAt": "2026-08-29T00:00:00Z",
+        "tiers": [
+          {
+            "id": "standard",
+            "label": "standard",
+            "serviceTier": "standard",
+            "inputTokensFrom": 0,
+            "inputTokensThrough": null,
+            "effectiveFrom": null,
+            "effectiveUntil": null,
+            "utcWindows": [],
+            "usdMicrosPerMillionTokens": {
+              "input": 1900000,
+              "cachedInput": 380000,
+              "cacheWriteInput": null,
+              "output": 8000000
+            }
+          }
+        ]
+      },
+      "completeness": "partial"
+    },
+    {
+      "schemaVersion": 1,
+      "modelId": "moonshotai/Kimi-K2.6",
+      "displayName": "Kimi K2.6",
+      "inputModalities": ["text", "image"],
+      "outputModalities": ["text"],
+      "tools": "supported",
+      "structuredOutput": "unknown",
+      "streaming": "supported",
+      "reasoning": "unknown",
+      "reasoningControls": [],
+      "responseDensityControls": [],
+      "promptCacheModes": ["provider-managed"],
+      "promptCacheMinimumInputTokens": null,
+      "contextTokens": 256000,
+      "outputTokens": null,
+      "pricing": {
+        "kind": "published-estimate",
+        "billingMode": "provider-credit",
+        "currency": "USD",
+        "tokenUnit": 1000000,
+        "sourceUrl": "https://commandcode.ai/docs/resources/pricing-limits",
+        "observedAt": "2026-08-29T00:00:00Z",
+        "tiers": [
+          {
+            "id": "standard",
+            "label": "standard",
+            "serviceTier": "standard",
+            "inputTokensFrom": 0,
+            "inputTokensThrough": null,
+            "effectiveFrom": null,
+            "effectiveUntil": null,
+            "utcWindows": [],
+            "usdMicrosPerMillionTokens": {
+              "input": 950000,
+              "cachedInput": 160000,
+              "cacheWriteInput": null,
+              "output": 4000000
+            }
+          }
+        ]
+      },
+      "completeness": "partial"
+    },
+    {
+      "schemaVersion": 1,
+      "modelId": "moonshotai/Kimi-K2.5",
+      "displayName": "Kimi K2.5",
+      "inputModalities": ["text", "image"],
+      "outputModalities": ["text"],
+      "tools": "supported",
+      "structuredOutput": "unknown",
+      "streaming": "supported",
+      "reasoning": "unknown",
+      "reasoningControls": [],
+      "responseDensityControls": [],
+      "promptCacheModes": ["provider-managed"],
+      "promptCacheMinimumInputTokens": null,
+      "contextTokens": 256000,
+      "outputTokens": null,
+      "pricing": {
+        "kind": "published-estimate",
+        "billingMode": "provider-credit",
+        "currency": "USD",
+        "tokenUnit": 1000000,
+        "sourceUrl": "https://commandcode.ai/docs/resources/pricing-limits",
+        "observedAt": "2026-08-29T00:00:00Z",
+        "tiers": [
+          {
+            "id": "standard",
+            "label": "standard",
+            "serviceTier": "standard",
+            "inputTokensFrom": 0,
+            "inputTokensThrough": null,
+            "effectiveFrom": null,
+            "effectiveUntil": null,
+            "utcWindows": [],
+            "usdMicrosPerMillionTokens": {
+              "input": 600000,
+              "cachedInput": 100000,
+              "cacheWriteInput": null,
+              "output": 3000000
+            }
+          }
+        ]
+      },
+      "completeness": "partial"
+    },
+    {
+      "schemaVersion": 1,
+      "modelId": "z-ai/glm-5.3-flash",
+      "displayName": "GLM-5.3 Flash",
+      "inputModalities": ["text", "image"],
+      "outputModalities": ["text"],
+      "tools": "supported",
+      "structuredOutput": "unknown",
+      "streaming": "supported",
+      "reasoning": "supported",
+      "reasoningControls": ["low", "high", "max"],
+      "responseDensityControls": [],
+      "promptCacheModes": ["provider-managed"],
+      "promptCacheMinimumInputTokens": null,
+      "contextTokens": 1048576,
+      "outputTokens": null,
+      "pricing": {
+        "kind": "published-estimate",
+        "billingMode": "provider-credit",
+        "currency": "USD",
+        "tokenUnit": 1000000,
+        "sourceUrl": "https://commandcode.ai/docs/resources/pricing-limits",
+        "observedAt": "2026-08-29T00:00:00Z",
+        "tiers": [
+          {
+            "id": "standard",
+            "label": "standard",
+            "serviceTier": "standard",
+            "inputTokensFrom": 0,
+            "inputTokensThrough": null,
+            "effectiveFrom": null,
+            "effectiveUntil": null,
+            "utcWindows": [],
+            "usdMicrosPerMillionTokens": {
+              "input": 150000,
+              "cachedInput": 30000,
+              "cacheWriteInput": null,
+              "output": 500000
+            }
+          }
+        ]
+      },
+      "completeness": "partial"
+    },
+    {
+      "schemaVersion": 1,
+      "modelId": "zai-org/GLM-5.3",
+      "displayName": "GLM-5.3",
+      "inputModalities": ["text"],
+      "outputModalities": ["text"],
+      "tools": "supported",
+      "structuredOutput": "unknown",
+      "streaming": "supported",
+      "reasoning": "supported",
+      "reasoningControls": ["low", "high", "max"],
+      "responseDensityControls": [],
+      "promptCacheModes": ["provider-managed"],
+      "promptCacheMinimumInputTokens": null,
+      "contextTokens": 1000000,
+      "outputTokens": null,
+      "pricing": {
+        "kind": "published-estimate",
+        "billingMode": "provider-credit",
+        "currency": "USD",
+        "tokenUnit": 1000000,
+        "sourceUrl": "https://commandcode.ai/docs/resources/pricing-limits",
+        "observedAt": "2026-08-29T00:00:00Z",
+        "tiers": [
+          {
+            "id": "standard",
+            "label": "standard",
+            "serviceTier": "standard",
+            "inputTokensFrom": 0,
+            "inputTokensThrough": null,
+            "effectiveFrom": null,
+            "effectiveUntil": null,
+            "utcWindows": [],
+            "usdMicrosPerMillionTokens": {
+              "input": 1400000,
+              "cachedInput": 260000,
+              "cacheWriteInput": null,
+              "output": 4400000
+            }
+          }
+        ]
+      },
+      "completeness": "partial"
+    },
+    {
+      "schemaVersion": 1,
+      "modelId": "zai-org/GLM-5.2",
+      "displayName": "GLM-5.2",
+      "inputModalities": ["text"],
+      "outputModalities": ["text"],
+      "tools": "supported",
+      "structuredOutput": "unknown",
+      "streaming": "supported",
+      "reasoning": "supported",
+      "reasoningControls": ["high", "max"],
+      "responseDensityControls": [],
+      "promptCacheModes": ["provider-managed"],
+      "promptCacheMinimumInputTokens": null,
+      "contextTokens": 1000000,
+      "outputTokens": null,
+      "pricing": {
+        "kind": "published-estimate",
+        "billingMode": "provider-credit",
+        "currency": "USD",
+        "tokenUnit": 1000000,
+        "sourceUrl": "https://commandcode.ai/docs/resources/pricing-limits",
+        "observedAt": "2026-08-29T00:00:00Z",
+        "tiers": [
+          {
+            "id": "standard",
+            "label": "standard",
+            "serviceTier": "standard",
+            "inputTokensFrom": 0,
+            "inputTokensThrough": null,
+            "effectiveFrom": null,
+            "effectiveUntil": null,
+            "utcWindows": [],
+            "usdMicrosPerMillionTokens": {
+              "input": 1400000,
+              "cachedInput": 260000,
+              "cacheWriteInput": null,
+              "output": 4400000
+            }
+          }
+        ]
+      },
+      "completeness": "partial"
+    },
+    {
+      "schemaVersion": 1,
+      "modelId": "zai-org/GLM-5.2-Fast",
+      "displayName": "GLM-5.2 Fast",
+      "inputModalities": ["text"],
+      "outputModalities": ["text"],
+      "tools": "supported",
+      "structuredOutput": "unknown",
+      "streaming": "supported",
+      "reasoning": "unknown",
+      "reasoningControls": [],
+      "responseDensityControls": [],
+      "promptCacheModes": ["provider-managed"],
+      "promptCacheMinimumInputTokens": null,
+      "contextTokens": 1000000,
+      "outputTokens": null,
+      "pricing": {
+        "kind": "published-estimate",
+        "billingMode": "provider-credit",
+        "currency": "USD",
+        "tokenUnit": 1000000,
+        "sourceUrl": "https://commandcode.ai/docs/resources/pricing-limits",
+        "observedAt": "2026-08-29T00:00:00Z",
+        "tiers": [
+          {
+            "id": "standard",
+            "label": "standard",
+            "serviceTier": "standard",
+            "inputTokensFrom": 0,
+            "inputTokensThrough": null,
+            "effectiveFrom": null,
+            "effectiveUntil": null,
+            "utcWindows": [],
+            "usdMicrosPerMillionTokens": {
+              "input": 3000000,
+              "cachedInput": 500000,
+              "cacheWriteInput": null,
+              "output": 10250000
+            }
+          }
+        ]
+      },
+      "completeness": "partial"
+    },
+    {
+      "schemaVersion": 1,
+      "modelId": "zai-org/GLM-5.1",
+      "displayName": "GLM-5.1",
+      "inputModalities": ["text"],
+      "outputModalities": ["text"],
+      "tools": "supported",
+      "structuredOutput": "unknown",
+      "streaming": "supported",
+      "reasoning": "unknown",
+      "reasoningControls": [],
+      "responseDensityControls": [],
+      "promptCacheModes": ["provider-managed"],
+      "promptCacheMinimumInputTokens": null,
+      "contextTokens": 200000,
+      "outputTokens": null,
+      "pricing": {
+        "kind": "published-estimate",
+        "billingMode": "provider-credit",
+        "currency": "USD",
+        "tokenUnit": 1000000,
+        "sourceUrl": "https://commandcode.ai/docs/resources/pricing-limits",
+        "observedAt": "2026-08-29T00:00:00Z",
+        "tiers": [
+          {
+            "id": "standard",
+            "label": "standard",
+            "serviceTier": "standard",
+            "inputTokensFrom": 0,
+            "inputTokensThrough": null,
+            "effectiveFrom": null,
+            "effectiveUntil": null,
+            "utcWindows": [],
+            "usdMicrosPerMillionTokens": {
+              "input": 1400000,
+              "cachedInput": 260000,
+              "cacheWriteInput": null,
+              "output": 4400000
+            }
+          }
+        ]
+      },
+      "completeness": "partial"
+    },
+    {
+      "schemaVersion": 1,
+      "modelId": "zai-org/GLM-5",
+      "displayName": "GLM-5",
+      "inputModalities": ["text"],
+      "outputModalities": ["text"],
+      "tools": "supported",
+      "structuredOutput": "unknown",
+      "streaming": "supported",
+      "reasoning": "unknown",
+      "reasoningControls": [],
+      "responseDensityControls": [],
+      "promptCacheModes": ["provider-managed"],
+      "promptCacheMinimumInputTokens": null,
+      "contextTokens": 200000,
+      "outputTokens": null,
+      "pricing": {
+        "kind": "published-estimate",
+        "billingMode": "provider-credit",
+        "currency": "USD",
+        "tokenUnit": 1000000,
+        "sourceUrl": "https://commandcode.ai/docs/resources/pricing-limits",
+        "observedAt": "2026-08-29T00:00:00Z",
+        "tiers": [
+          {
+            "id": "standard",
+            "label": "standard",
+            "serviceTier": "standard",
+            "inputTokensFrom": 0,
+            "inputTokensThrough": null,
+            "effectiveFrom": null,
+            "effectiveUntil": null,
+            "utcWindows": [],
+            "usdMicrosPerMillionTokens": {
+              "input": 1000000,
+              "cachedInput": 200000,
+              "cacheWriteInput": null,
+              "output": 3200000
+            }
+          }
+        ]
+      },
+      "completeness": "partial"
+    },
+    {
+      "schemaVersion": 1,
+      "modelId": "MiniMaxAI/MiniMax-M3",
+      "displayName": "MiniMax M3",
+      "inputModalities": ["text", "image"],
+      "outputModalities": ["text"],
+      "tools": "supported",
+      "structuredOutput": "unknown",
+      "streaming": "supported",
+      "reasoning": "supported",
+      "reasoningControls": [],
+      "responseDensityControls": [],
+      "promptCacheModes": ["provider-managed"],
+      "promptCacheMinimumInputTokens": null,
+      "contextTokens": 1000000,
+      "outputTokens": null,
+      "pricing": {
+        "kind": "published-estimate",
+        "billingMode": "provider-credit",
+        "currency": "USD",
+        "tokenUnit": 1000000,
+        "sourceUrl": "https://commandcode.ai/docs/resources/pricing-limits",
+        "observedAt": "2026-08-29T00:00:00Z",
+        "tiers": [
+          {
+            "id": "standard",
+            "label": "Standard context",
+            "serviceTier": "standard",
+            "inputTokensFrom": 0,
+            "inputTokensThrough": 512000,
+            "effectiveFrom": null,
+            "effectiveUntil": null,
+            "utcWindows": [],
+            "usdMicrosPerMillionTokens": {
+              "input": 300000,
+              "cachedInput": 60000,
+              "cacheWriteInput": null,
+              "output": 1200000
+            }
+          },
+          {
+            "id": "long",
+            "label": "Long context",
+            "serviceTier": "standard",
+            "inputTokensFrom": 512001,
+            "inputTokensThrough": null,
+            "effectiveFrom": null,
+            "effectiveUntil": null,
+            "utcWindows": [],
+            "usdMicrosPerMillionTokens": {
+              "input": 300000,
+              "cachedInput": 60000,
+              "cacheWriteInput": null,
+              "output": 1200000
+            }
+          }
+        ]
+      },
+      "completeness": "partial"
+    },
+    {
+      "schemaVersion": 1,
+      "modelId": "MiniMaxAI/MiniMax-M2.7",
+      "displayName": "MiniMax M2.7",
+      "inputModalities": ["text"],
+      "outputModalities": ["text"],
+      "tools": "supported",
+      "structuredOutput": "unknown",
+      "streaming": "supported",
+      "reasoning": "unknown",
+      "reasoningControls": [],
+      "responseDensityControls": [],
+      "promptCacheModes": ["provider-managed"],
+      "promptCacheMinimumInputTokens": null,
+      "contextTokens": 200000,
+      "outputTokens": null,
+      "pricing": {
+        "kind": "published-estimate",
+        "billingMode": "provider-credit",
+        "currency": "USD",
+        "tokenUnit": 1000000,
+        "sourceUrl": "https://commandcode.ai/docs/resources/pricing-limits",
+        "observedAt": "2026-08-29T00:00:00Z",
+        "tiers": [
+          {
+            "id": "standard",
+            "label": "standard",
+            "serviceTier": "standard",
+            "inputTokensFrom": 0,
+            "inputTokensThrough": null,
+            "effectiveFrom": null,
+            "effectiveUntil": null,
+            "utcWindows": [],
+            "usdMicrosPerMillionTokens": {
+              "input": 300000,
+              "cachedInput": 60000,
+              "cacheWriteInput": null,
+              "output": 1200000
+            }
+          }
+        ]
+      },
+      "completeness": "partial"
+    },
+    {
+      "schemaVersion": 1,
+      "modelId": "minimax/minimax-m3-free",
+      "displayName": "MiniMax M3",
+      "inputModalities": ["text", "image"],
+      "outputModalities": ["text"],
+      "tools": "supported",
+      "structuredOutput": "unknown",
+      "streaming": "supported",
+      "reasoning": "supported",
+      "reasoningControls": [],
+      "responseDensityControls": [],
+      "promptCacheModes": ["provider-managed"],
+      "promptCacheMinimumInputTokens": null,
+      "contextTokens": 1000000,
+      "outputTokens": null,
+      "pricing": {
+        "kind": "free",
+        "billingMode": "free",
+        "currency": "USD",
+        "tokenUnit": 1000000,
+        "sourceUrl": "https://commandcode.ai/docs/resources/pricing-limits",
+        "observedAt": "2026-08-29T00:00:00Z",
+        "tiers": [
+          {
+            "id": "free",
+            "label": "free",
+            "serviceTier": "standard",
+            "inputTokensFrom": 0,
+            "inputTokensThrough": null,
+            "effectiveFrom": null,
+            "effectiveUntil": "2026-09-06T00:00:00Z",
+            "utcWindows": [],
+            "usdMicrosPerMillionTokens": {
+              "input": 0,
+              "cachedInput": 0,
+              "cacheWriteInput": null,
+              "output": 0
+            }
+          }
+        ]
+      },
+      "completeness": "partial"
+    },
+    {
+      "schemaVersion": 1,
+      "modelId": "minimax/minimax-m2.7-free",
+      "displayName": "MiniMax M2.7",
+      "inputModalities": ["text"],
+      "outputModalities": ["text"],
+      "tools": "supported",
+      "structuredOutput": "unknown",
+      "streaming": "supported",
+      "reasoning": "unknown",
+      "reasoningControls": [],
+      "responseDensityControls": [],
+      "promptCacheModes": ["provider-managed"],
+      "promptCacheMinimumInputTokens": null,
+      "contextTokens": 197000,
+      "outputTokens": null,
+      "pricing": {
+        "kind": "free",
+        "billingMode": "free",
+        "currency": "USD",
+        "tokenUnit": 1000000,
+        "sourceUrl": "https://commandcode.ai/docs/resources/pricing-limits",
+        "observedAt": "2026-08-29T00:00:00Z",
+        "tiers": [
+          {
+            "id": "free",
+            "label": "free",
+            "serviceTier": "standard",
+            "inputTokensFrom": 0,
+            "inputTokensThrough": null,
+            "effectiveFrom": null,
+            "effectiveUntil": "2026-09-06T00:00:00Z",
+            "utcWindows": [],
+            "usdMicrosPerMillionTokens": {
+              "input": 0,
+              "cachedInput": 0,
+              "cacheWriteInput": null,
+              "output": 0
+            }
+          }
+        ]
+      },
+      "completeness": "partial"
+    },
+    {
+      "schemaVersion": 1,
+      "modelId": "MiniMaxAI/MiniMax-M2.5",
+      "displayName": "MiniMax M2.5",
+      "inputModalities": ["text"],
+      "outputModalities": ["text"],
+      "tools": "supported",
+      "structuredOutput": "unknown",
+      "streaming": "supported",
+      "reasoning": "unknown",
+      "reasoningControls": [],
+      "responseDensityControls": [],
+      "promptCacheModes": ["provider-managed"],
+      "promptCacheMinimumInputTokens": null,
+      "contextTokens": 200000,
+      "outputTokens": null,
+      "pricing": {
+        "kind": "published-estimate",
+        "billingMode": "provider-credit",
+        "currency": "USD",
+        "tokenUnit": 1000000,
+        "sourceUrl": "https://commandcode.ai/docs/resources/pricing-limits",
+        "observedAt": "2026-08-29T00:00:00Z",
+        "tiers": [
+          {
+            "id": "standard",
+            "label": "standard",
+            "serviceTier": "standard",
+            "inputTokensFrom": 0,
+            "inputTokensThrough": null,
+            "effectiveFrom": null,
+            "effectiveUntil": null,
+            "utcWindows": [],
+            "usdMicrosPerMillionTokens": {
+              "input": 300000,
+              "cachedInput": 30000,
+              "cacheWriteInput": null,
+              "output": 1200000
+            }
+          }
+        ]
+      },
+      "completeness": "partial"
+    },
+    {
+      "schemaVersion": 1,
+      "modelId": "xiaomi/mimo-v2.5-pro",
+      "displayName": "MiMo V2.5 Pro",
+      "inputModalities": ["text"],
+      "outputModalities": ["text"],
+      "tools": "supported",
+      "structuredOutput": "unknown",
+      "streaming": "supported",
+      "reasoning": "unknown",
+      "reasoningControls": [],
+      "responseDensityControls": [],
+      "promptCacheModes": ["provider-managed"],
+      "promptCacheMinimumInputTokens": null,
+      "contextTokens": 1000000,
+      "outputTokens": null,
+      "pricing": {
+        "kind": "published-estimate",
+        "billingMode": "provider-credit",
+        "currency": "USD",
+        "tokenUnit": 1000000,
+        "sourceUrl": "https://commandcode.ai/docs/resources/pricing-limits",
+        "observedAt": "2026-08-29T00:00:00Z",
+        "tiers": [
+          {
+            "id": "standard",
+            "label": "standard",
+            "serviceTier": "standard",
+            "inputTokensFrom": 0,
+            "inputTokensThrough": null,
+            "effectiveFrom": null,
+            "effectiveUntil": null,
+            "utcWindows": [],
+            "usdMicrosPerMillionTokens": {
+              "input": 435000,
+              "cachedInput": 3600,
+              "cacheWriteInput": null,
+              "output": 870000
+            }
+          }
+        ]
+      },
+      "completeness": "partial"
+    },
+    {
+      "schemaVersion": 1,
+      "modelId": "xiaomi/mimo-v2.5",
+      "displayName": "MiMo V2.5",
+      "inputModalities": ["text", "image"],
+      "outputModalities": ["text"],
+      "tools": "supported",
+      "structuredOutput": "unknown",
+      "streaming": "supported",
+      "reasoning": "unknown",
+      "reasoningControls": [],
+      "responseDensityControls": [],
+      "promptCacheModes": ["provider-managed"],
+      "promptCacheMinimumInputTokens": null,
+      "contextTokens": 1000000,
+      "outputTokens": null,
+      "pricing": {
+        "kind": "published-estimate",
+        "billingMode": "provider-credit",
+        "currency": "USD",
+        "tokenUnit": 1000000,
+        "sourceUrl": "https://commandcode.ai/docs/resources/pricing-limits",
+        "observedAt": "2026-08-29T00:00:00Z",
+        "tiers": [
+          {
+            "id": "standard",
+            "label": "standard",
+            "serviceTier": "standard",
+            "inputTokensFrom": 0,
+            "inputTokensThrough": null,
+            "effectiveFrom": null,
+            "effectiveUntil": null,
+            "utcWindows": [],
+            "usdMicrosPerMillionTokens": {
+              "input": 140000,
+              "cachedInput": 2800,
+              "cacheWriteInput": null,
+              "output": 280000
+            }
+          }
+        ]
+      },
+      "completeness": "partial"
+    },
+    {
+      "schemaVersion": 1,
+      "modelId": "Qwen/Qwen3.8-Max",
+      "displayName": "Qwen 3.8 Max",
+      "inputModalities": ["text", "image"],
+      "outputModalities": ["text"],
+      "tools": "supported",
+      "structuredOutput": "unknown",
+      "streaming": "supported",
+      "reasoning": "supported",
+      "reasoningControls": ["low", "medium", "xhigh"],
+      "responseDensityControls": [],
+      "promptCacheModes": ["provider-managed"],
+      "promptCacheMinimumInputTokens": null,
+      "contextTokens": 1000000,
+      "outputTokens": null,
+      "pricing": {
+        "kind": "published-estimate",
+        "billingMode": "provider-credit",
+        "currency": "USD",
+        "tokenUnit": 1000000,
+        "sourceUrl": "https://commandcode.ai/docs/resources/pricing-limits",
+        "observedAt": "2026-08-29T00:00:00Z",
+        "tiers": [
+          {
+            "id": "standard",
+            "label": "standard",
+            "serviceTier": "standard",
+            "inputTokensFrom": 0,
+            "inputTokensThrough": null,
+            "effectiveFrom": null,
+            "effectiveUntil": null,
+            "utcWindows": [],
+            "usdMicrosPerMillionTokens": {
+              "input": 2000000,
+              "cachedInput": 250000,
+              "cacheWriteInput": 2500000,
+              "output": 6000000
+            }
+          }
+        ]
+      },
+      "completeness": "partial"
+    },
+    {
+      "schemaVersion": 1,
+      "modelId": "Qwen/Qwen3.8-27B",
+      "displayName": "Qwen 3.8 27B",
+      "inputModalities": ["text", "image"],
+      "outputModalities": ["text"],
+      "tools": "supported",
+      "structuredOutput": "unknown",
+      "streaming": "supported",
+      "reasoning": "supported",
+      "reasoningControls": ["low", "medium", "xhigh"],
+      "responseDensityControls": [],
+      "promptCacheModes": ["provider-managed"],
+      "promptCacheMinimumInputTokens": null,
+      "contextTokens": 262144,
+      "outputTokens": null,
+      "pricing": {
+        "kind": "published-estimate",
+        "billingMode": "provider-credit",
+        "currency": "USD",
+        "tokenUnit": 1000000,
+        "sourceUrl": "https://commandcode.ai/docs/resources/pricing-limits",
+        "observedAt": "2026-08-29T00:00:00Z",
+        "tiers": [
+          {
+            "id": "standard",
+            "label": "standard",
+            "serviceTier": "standard",
+            "inputTokensFrom": 0,
+            "inputTokensThrough": null,
+            "effectiveFrom": null,
+            "effectiveUntil": null,
+            "utcWindows": [],
+            "usdMicrosPerMillionTokens": {
+              "input": 400000,
+              "cachedInput": 40000,
+              "cacheWriteInput": null,
+              "output": 3000000
+            }
+          }
+        ]
+      },
+      "completeness": "partial"
+    },
+    {
+      "schemaVersion": 1,
+      "modelId": "Qwen/Qwen3.8-Flash",
+      "displayName": "Qwen 3.8 Flash",
+      "inputModalities": ["text", "image"],
+      "outputModalities": ["text"],
+      "tools": "supported",
+      "structuredOutput": "unknown",
+      "streaming": "supported",
+      "reasoning": "supported",
+      "reasoningControls": ["low", "medium", "xhigh"],
+      "responseDensityControls": [],
+      "promptCacheModes": ["provider-managed"],
+      "promptCacheMinimumInputTokens": null,
+      "contextTokens": 1000000,
+      "outputTokens": null,
+      "pricing": {
+        "kind": "published-estimate",
+        "billingMode": "provider-credit",
+        "currency": "USD",
+        "tokenUnit": 1000000,
+        "sourceUrl": "https://commandcode.ai/docs/resources/pricing-limits",
+        "observedAt": "2026-08-29T00:00:00Z",
+        "tiers": [
+          {
+            "id": "standard",
+            "label": "standard",
+            "serviceTier": "standard",
+            "inputTokensFrom": 0,
+            "inputTokensThrough": null,
+            "effectiveFrom": null,
+            "effectiveUntil": null,
+            "utcWindows": [],
+            "usdMicrosPerMillionTokens": {
+              "input": 160000,
+              "cachedInput": 16000,
+              "cacheWriteInput": null,
+              "output": 470000
+            }
+          }
+        ]
+      },
+      "completeness": "partial"
+    },
+    {
+      "schemaVersion": 1,
+      "modelId": "Qwen/Qwen3.7-Max",
+      "displayName": "Qwen 3.7 Max",
+      "inputModalities": ["text"],
+      "outputModalities": ["text"],
+      "tools": "supported",
+      "structuredOutput": "unknown",
+      "streaming": "supported",
+      "reasoning": "supported",
+      "reasoningControls": [],
+      "responseDensityControls": [],
+      "promptCacheModes": ["provider-managed"],
+      "promptCacheMinimumInputTokens": null,
+      "contextTokens": 1000000,
+      "outputTokens": null,
+      "pricing": {
+        "kind": "published-estimate",
+        "billingMode": "provider-credit",
+        "currency": "USD",
+        "tokenUnit": 1000000,
+        "sourceUrl": "https://commandcode.ai/docs/resources/pricing-limits",
+        "observedAt": "2026-08-29T00:00:00Z",
+        "tiers": [
+          {
+            "id": "standard",
+            "label": "standard",
+            "serviceTier": "standard",
+            "inputTokensFrom": 0,
+            "inputTokensThrough": null,
+            "effectiveFrom": null,
+            "effectiveUntil": null,
+            "utcWindows": [],
+            "usdMicrosPerMillionTokens": {
+              "input": 2500000,
+              "cachedInput": 500000,
+              "cacheWriteInput": 3130000,
+              "output": 7500000
+            }
+          }
+        ]
+      },
+      "completeness": "partial"
+    },
+    {
+      "schemaVersion": 1,
+      "modelId": "Qwen/Qwen3.7-Plus",
+      "displayName": "Qwen 3.7 Plus",
+      "inputModalities": ["text", "image"],
+      "outputModalities": ["text"],
+      "tools": "supported",
+      "structuredOutput": "unknown",
+      "streaming": "supported",
+      "reasoning": "supported",
+      "reasoningControls": [],
+      "responseDensityControls": [],
+      "promptCacheModes": ["provider-managed"],
+      "promptCacheMinimumInputTokens": null,
+      "contextTokens": 1000000,
+      "outputTokens": null,
+      "pricing": {
+        "kind": "published-estimate",
+        "billingMode": "provider-credit",
+        "currency": "USD",
+        "tokenUnit": 1000000,
+        "sourceUrl": "https://commandcode.ai/docs/resources/pricing-limits",
+        "observedAt": "2026-08-29T00:00:00Z",
+        "tiers": [
+          {
+            "id": "standard",
+            "label": "Standard context",
+            "serviceTier": "standard",
+            "inputTokensFrom": 0,
+            "inputTokensThrough": 256000,
+            "effectiveFrom": null,
+            "effectiveUntil": null,
+            "utcWindows": [],
+            "usdMicrosPerMillionTokens": {
+              "input": 400000,
+              "cachedInput": 80000,
+              "cacheWriteInput": 500000,
+              "output": 1600000
+            }
+          },
+          {
+            "id": "long",
+            "label": "Long context",
+            "serviceTier": "standard",
+            "inputTokensFrom": 256001,
+            "inputTokensThrough": null,
+            "effectiveFrom": null,
+            "effectiveUntil": null,
+            "utcWindows": [],
+            "usdMicrosPerMillionTokens": {
+              "input": 1200000,
+              "cachedInput": 240000,
+              "cacheWriteInput": 1500000,
+              "output": 4800000
+            }
+          }
+        ]
+      },
+      "completeness": "partial"
+    },
+    {
+      "schemaVersion": 1,
+      "modelId": "Qwen/Qwen3.7-Flash",
+      "displayName": "Qwen 3.7 Flash",
+      "inputModalities": ["text", "image"],
+      "outputModalities": ["text"],
+      "tools": "supported",
+      "structuredOutput": "unknown",
+      "streaming": "supported",
+      "reasoning": "supported",
+      "reasoningControls": [],
+      "responseDensityControls": [],
+      "promptCacheModes": ["provider-managed"],
+      "promptCacheMinimumInputTokens": null,
+      "contextTokens": 1000000,
+      "outputTokens": null,
+      "pricing": {
+        "kind": "published-estimate",
+        "billingMode": "provider-credit",
+        "currency": "USD",
+        "tokenUnit": 1000000,
+        "sourceUrl": "https://commandcode.ai/docs/resources/pricing-limits",
+        "observedAt": "2026-08-29T00:00:00Z",
+        "tiers": [
+          {
+            "id": "standard",
+            "label": "standard",
+            "serviceTier": "standard",
+            "inputTokensFrom": 0,
+            "inputTokensThrough": 32000,
+            "effectiveFrom": null,
+            "effectiveUntil": null,
+            "utcWindows": [],
+            "usdMicrosPerMillionTokens": {
+              "input": 30000,
+              "cachedInput": 6000,
+              "cacheWriteInput": 38000,
+              "output": 130000
+            }
+          },
+          {
+            "id": "extended",
+            "label": "extended",
+            "serviceTier": "standard",
+            "inputTokensFrom": 32001,
+            "inputTokensThrough": 256000,
+            "effectiveFrom": null,
+            "effectiveUntil": null,
+            "utcWindows": [],
+            "usdMicrosPerMillionTokens": {
+              "input": 100000,
+              "cachedInput": 20000,
+              "cacheWriteInput": 125000,
+              "output": 400000
+            }
+          },
+          {
+            "id": "long",
+            "label": "long",
+            "serviceTier": "standard",
+            "inputTokensFrom": 256001,
+            "inputTokensThrough": null,
+            "effectiveFrom": null,
+            "effectiveUntil": null,
+            "utcWindows": [],
+            "usdMicrosPerMillionTokens": {
+              "input": 200000,
+              "cachedInput": 40000,
+              "cacheWriteInput": 250000,
+              "output": 800000
+            }
+          }
+        ]
+      },
+      "completeness": "partial"
+    },
+    {
+      "schemaVersion": 1,
+      "modelId": "Qwen/Qwen3.6-Max-Preview",
+      "displayName": "Qwen 3.6 Max Preview",
+      "inputModalities": ["text"],
+      "outputModalities": ["text"],
+      "tools": "supported",
+      "structuredOutput": "unknown",
+      "streaming": "supported",
+      "reasoning": "supported",
+      "reasoningControls": [],
+      "responseDensityControls": [],
+      "promptCacheModes": ["provider-managed"],
+      "promptCacheMinimumInputTokens": null,
+      "contextTokens": 200000,
+      "outputTokens": null,
+      "pricing": {
+        "kind": "published-estimate",
+        "billingMode": "provider-credit",
+        "currency": "USD",
+        "tokenUnit": 1000000,
+        "sourceUrl": "https://commandcode.ai/docs/resources/pricing-limits",
+        "observedAt": "2026-08-29T00:00:00Z",
+        "tiers": [
+          {
+            "id": "standard",
+            "label": "standard",
+            "serviceTier": "standard",
+            "inputTokensFrom": 0,
+            "inputTokensThrough": null,
+            "effectiveFrom": null,
+            "effectiveUntil": null,
+            "utcWindows": [],
+            "usdMicrosPerMillionTokens": {
+              "input": 1300000,
+              "cachedInput": 260000,
+              "cacheWriteInput": 1630000,
+              "output": 7800000
+            }
+          }
+        ]
+      },
+      "completeness": "partial"
+    },
+    {
+      "schemaVersion": 1,
+      "modelId": "Qwen/Qwen3.6-Plus",
+      "displayName": "Qwen 3.6 Plus",
+      "inputModalities": ["text", "image"],
+      "outputModalities": ["text"],
+      "tools": "supported",
+      "structuredOutput": "unknown",
+      "streaming": "supported",
+      "reasoning": "supported",
+      "reasoningControls": [],
+      "responseDensityControls": [],
+      "promptCacheModes": ["provider-managed"],
+      "promptCacheMinimumInputTokens": null,
+      "contextTokens": 200000,
+      "outputTokens": null,
+      "pricing": {
+        "kind": "published-estimate",
+        "billingMode": "provider-credit",
+        "currency": "USD",
+        "tokenUnit": 1000000,
+        "sourceUrl": "https://commandcode.ai/docs/resources/pricing-limits",
+        "observedAt": "2026-08-29T00:00:00Z",
+        "tiers": [
+          {
+            "id": "standard",
+            "label": "standard",
+            "serviceTier": "standard",
+            "inputTokensFrom": 0,
+            "inputTokensThrough": 256000,
+            "effectiveFrom": null,
+            "effectiveUntil": null,
+            "utcWindows": [],
+            "usdMicrosPerMillionTokens": {
+              "input": 500000,
+              "cachedInput": 100000,
+              "cacheWriteInput": null,
+              "output": 3000000
+            }
+          },
+          {
+            "id": "long",
+            "label": "long",
+            "serviceTier": "standard",
+            "inputTokensFrom": 256001,
+            "inputTokensThrough": null,
+            "effectiveFrom": null,
+            "effectiveUntil": null,
+            "utcWindows": [],
+            "usdMicrosPerMillionTokens": {
+              "input": 2000000,
+              "cachedInput": 200000,
+              "cacheWriteInput": null,
+              "output": 6000000
+            }
+          }
+        ]
+      },
+      "completeness": "partial"
+    },
+    {
+      "schemaVersion": 1,
+      "modelId": "stepfun/Step-3.7-Flash",
+      "displayName": "Step 3.7 Flash",
+      "inputModalities": ["text", "image"],
+      "outputModalities": ["text"],
+      "tools": "supported",
+      "structuredOutput": "unknown",
+      "streaming": "supported",
+      "reasoning": "supported",
+      "reasoningControls": [],
+      "responseDensityControls": [],
+      "promptCacheModes": ["provider-managed"],
+      "promptCacheMinimumInputTokens": null,
+      "contextTokens": 256000,
+      "outputTokens": null,
+      "pricing": {
+        "kind": "published-estimate",
+        "billingMode": "provider-credit",
+        "currency": "USD",
+        "tokenUnit": 1000000,
+        "sourceUrl": "https://commandcode.ai/docs/resources/pricing-limits",
+        "observedAt": "2026-08-29T00:00:00Z",
+        "tiers": [
+          {
+            "id": "standard",
+            "label": "standard",
+            "serviceTier": "standard",
+            "inputTokensFrom": 0,
+            "inputTokensThrough": null,
+            "effectiveFrom": null,
+            "effectiveUntil": null,
+            "utcWindows": [],
+            "usdMicrosPerMillionTokens": {
+              "input": 200000,
+              "cachedInput": 40000,
+              "cacheWriteInput": null,
+              "output": 1150000
+            }
+          }
+        ]
+      },
+      "completeness": "partial"
+    },
+    {
+      "schemaVersion": 1,
+      "modelId": "stepfun/Step-3.5-Flash",
+      "displayName": "Step 3.5 Flash",
+      "inputModalities": ["text"],
+      "outputModalities": ["text"],
+      "tools": "supported",
+      "structuredOutput": "unknown",
+      "streaming": "supported",
+      "reasoning": "supported",
+      "reasoningControls": [],
+      "responseDensityControls": [],
+      "promptCacheModes": ["provider-managed"],
+      "promptCacheMinimumInputTokens": null,
+      "contextTokens": 1000000,
+      "outputTokens": null,
+      "pricing": {
+        "kind": "published-estimate",
+        "billingMode": "provider-credit",
+        "currency": "USD",
+        "tokenUnit": 1000000,
+        "sourceUrl": "https://commandcode.ai/docs/resources/pricing-limits",
+        "observedAt": "2026-08-29T00:00:00Z",
+        "tiers": [
+          {
+            "id": "standard",
+            "label": "standard",
+            "serviceTier": "standard",
+            "inputTokensFrom": 0,
+            "inputTokensThrough": null,
+            "effectiveFrom": null,
+            "effectiveUntil": null,
+            "utcWindows": [],
+            "usdMicrosPerMillionTokens": {
+              "input": 100000,
+              "cachedInput": 20000,
+              "cacheWriteInput": null,
+              "output": 300000
+            }
+          }
+        ]
+      },
+      "completeness": "partial"
+    },
+    {
+      "schemaVersion": 1,
+      "modelId": "tencent/hy3-paid",
+      "displayName": "Tencent Hy3",
+      "inputModalities": ["text"],
+      "outputModalities": ["text"],
+      "tools": "supported",
+      "structuredOutput": "unknown",
+      "streaming": "supported",
+      "reasoning": "supported",
+      "reasoningControls": [],
+      "responseDensityControls": [],
+      "promptCacheModes": ["provider-managed"],
+      "promptCacheMinimumInputTokens": null,
+      "contextTokens": 262144,
+      "outputTokens": null,
+      "pricing": {
+        "kind": "published-estimate",
+        "billingMode": "provider-credit",
+        "currency": "USD",
+        "tokenUnit": 1000000,
+        "sourceUrl": "https://commandcode.ai/docs/resources/pricing-limits",
+        "observedAt": "2026-08-29T00:00:00Z",
+        "tiers": [
+          {
+            "id": "standard",
+            "label": "standard",
+            "serviceTier": "standard",
+            "inputTokensFrom": 0,
+            "inputTokensThrough": null,
+            "effectiveFrom": null,
+            "effectiveUntil": null,
+            "utcWindows": [],
+            "usdMicrosPerMillionTokens": {
+              "input": 140000,
+              "cachedInput": 35000,
+              "cacheWriteInput": null,
+              "output": 580000
+            }
+          }
+        ]
+      },
+      "completeness": "partial"
+    },
+    {
+      "schemaVersion": 1,
+      "modelId": "tencent/hy4-preview",
+      "displayName": "Tencent Hy4 Preview",
+      "inputModalities": ["text"],
+      "outputModalities": ["text"],
+      "tools": "supported",
+      "structuredOutput": "unknown",
+      "streaming": "supported",
+      "reasoning": "supported",
+      "reasoningControls": ["low", "medium", "high"],
+      "responseDensityControls": [],
+      "promptCacheModes": ["provider-managed"],
+      "promptCacheMinimumInputTokens": null,
+      "contextTokens": 1048576,
+      "outputTokens": null,
+      "pricing": {
+        "kind": "published-estimate",
+        "billingMode": "provider-credit",
+        "currency": "USD",
+        "tokenUnit": 1000000,
+        "sourceUrl": "https://commandcode.ai/docs/resources/pricing-limits",
+        "observedAt": "2026-08-29T00:00:00Z",
+        "tiers": [
+          {
+            "id": "standard",
+            "label": "standard",
+            "serviceTier": "standard",
+            "inputTokensFrom": 0,
+            "inputTokensThrough": null,
+            "effectiveFrom": null,
+            "effectiveUntil": null,
+            "utcWindows": [],
+            "usdMicrosPerMillionTokens": {
+              "input": 834000,
+              "cachedInput": 42000,
+              "cacheWriteInput": null,
+              "output": 2501000
+            }
+          }
+        ]
+      },
+      "completeness": "partial"
+    },
+    {
+      "schemaVersion": 1,
+      "modelId": "google/gemini-3.7-flash",
+      "displayName": "Gemini 3.7 Flash",
+      "inputModalities": ["text", "image"],
+      "outputModalities": ["text"],
+      "tools": "supported",
+      "structuredOutput": "unknown",
+      "streaming": "supported",
+      "reasoning": "supported",
+      "reasoningControls": ["low", "medium", "high"],
+      "responseDensityControls": [],
+      "promptCacheModes": ["provider-managed"],
+      "promptCacheMinimumInputTokens": null,
+      "contextTokens": 1048576,
+      "outputTokens": null,
+      "pricing": {
+        "kind": "published-estimate",
+        "billingMode": "provider-credit",
+        "currency": "USD",
+        "tokenUnit": 1000000,
+        "sourceUrl": "https://commandcode.ai/docs/resources/pricing-limits",
+        "observedAt": "2026-08-29T00:00:00Z",
+        "tiers": [
+          {
+            "id": "standard",
+            "label": "standard",
+            "serviceTier": "standard",
+            "inputTokensFrom": 0,
+            "inputTokensThrough": null,
+            "effectiveFrom": null,
+            "effectiveUntil": "2027-01-01T00:00:00Z",
+            "utcWindows": [],
+            "usdMicrosPerMillionTokens": {
+              "input": 750000,
+              "cachedInput": 75000,
+              "cacheWriteInput": 41670,
+              "output": 3750000
+            }
+          }
+        ]
+      },
+      "completeness": "partial"
+    },
+    {
+      "schemaVersion": 1,
+      "modelId": "google/gemini-3.6-flash",
+      "displayName": "Gemini 3.6 Flash",
+      "inputModalities": ["text", "image"],
+      "outputModalities": ["text"],
+      "tools": "supported",
+      "structuredOutput": "unknown",
+      "streaming": "supported",
+      "reasoning": "supported",
+      "reasoningControls": ["low", "medium", "high"],
+      "responseDensityControls": [],
+      "promptCacheModes": ["provider-managed"],
+      "promptCacheMinimumInputTokens": null,
+      "contextTokens": 1000000,
+      "outputTokens": null,
+      "pricing": {
+        "kind": "published-estimate",
+        "billingMode": "provider-credit",
+        "currency": "USD",
+        "tokenUnit": 1000000,
+        "sourceUrl": "https://commandcode.ai/docs/resources/pricing-limits",
+        "observedAt": "2026-08-29T00:00:00Z",
+        "tiers": [
+          {
+            "id": "standard",
+            "label": "standard",
+            "serviceTier": "standard",
+            "inputTokensFrom": 0,
+            "inputTokensThrough": null,
+            "effectiveFrom": null,
+            "effectiveUntil": null,
+            "utcWindows": [],
+            "usdMicrosPerMillionTokens": {
+              "input": 1500000,
+              "cachedInput": 150000,
+              "cacheWriteInput": null,
+              "output": 7500000
+            }
+          }
+        ]
+      },
+      "completeness": "partial"
+    },
+    {
+      "schemaVersion": 1,
+      "modelId": "google/gemini-3.5-flash",
+      "displayName": "Gemini 3.5 Flash",
+      "inputModalities": ["text", "image"],
+      "outputModalities": ["text"],
+      "tools": "supported",
+      "structuredOutput": "unknown",
+      "streaming": "supported",
+      "reasoning": "supported",
+      "reasoningControls": ["low", "medium", "high"],
+      "responseDensityControls": [],
+      "promptCacheModes": ["provider-managed"],
+      "promptCacheMinimumInputTokens": null,
+      "contextTokens": 1000000,
+      "outputTokens": null,
+      "pricing": {
+        "kind": "published-estimate",
+        "billingMode": "provider-credit",
+        "currency": "USD",
+        "tokenUnit": 1000000,
+        "sourceUrl": "https://commandcode.ai/docs/resources/pricing-limits",
+        "observedAt": "2026-08-29T00:00:00Z",
+        "tiers": [
+          {
+            "id": "standard",
+            "label": "standard",
+            "serviceTier": "standard",
+            "inputTokensFrom": 0,
+            "inputTokensThrough": null,
+            "effectiveFrom": null,
+            "effectiveUntil": null,
+            "utcWindows": [],
+            "usdMicrosPerMillionTokens": {
+              "input": 1500000,
+              "cachedInput": 150000,
+              "cacheWriteInput": null,
+              "output": 9000000
+            }
+          }
+        ]
+      },
+      "completeness": "partial"
+    },
+    {
+      "schemaVersion": 1,
+      "modelId": "google/gemini-3.5-flash-lite",
+      "displayName": "Gemini 3.5 Flash Lite",
+      "inputModalities": ["text", "image"],
+      "outputModalities": ["text"],
+      "tools": "supported",
+      "structuredOutput": "unknown",
+      "streaming": "supported",
+      "reasoning": "supported",
+      "reasoningControls": ["low", "medium", "high"],
+      "responseDensityControls": [],
+      "promptCacheModes": ["provider-managed"],
+      "promptCacheMinimumInputTokens": null,
+      "contextTokens": 1000000,
+      "outputTokens": null,
+      "pricing": {
+        "kind": "published-estimate",
+        "billingMode": "provider-credit",
+        "currency": "USD",
+        "tokenUnit": 1000000,
+        "sourceUrl": "https://commandcode.ai/docs/resources/pricing-limits",
+        "observedAt": "2026-08-29T00:00:00Z",
+        "tiers": [
+          {
+            "id": "standard",
+            "label": "standard",
+            "serviceTier": "standard",
+            "inputTokensFrom": 0,
+            "inputTokensThrough": null,
+            "effectiveFrom": null,
+            "effectiveUntil": null,
+            "utcWindows": [],
+            "usdMicrosPerMillionTokens": {
+              "input": 300000,
+              "cachedInput": 30000,
+              "cacheWriteInput": null,
+              "output": 2500000
+            }
+          }
+        ]
+      },
+      "completeness": "partial"
+    },
+    {
+      "schemaVersion": 1,
+      "modelId": "google/gemini-3.1-flash-lite",
+      "displayName": "Gemini 3.1 Flash Lite",
+      "inputModalities": ["text", "image"],
+      "outputModalities": ["text"],
+      "tools": "supported",
+      "structuredOutput": "unknown",
+      "streaming": "supported",
+      "reasoning": "supported",
+      "reasoningControls": ["low", "medium", "high"],
+      "responseDensityControls": [],
+      "promptCacheModes": ["provider-managed"],
+      "promptCacheMinimumInputTokens": null,
+      "contextTokens": 1000000,
+      "outputTokens": null,
+      "pricing": {
+        "kind": "published-estimate",
+        "billingMode": "provider-credit",
+        "currency": "USD",
+        "tokenUnit": 1000000,
+        "sourceUrl": "https://commandcode.ai/docs/resources/pricing-limits",
+        "observedAt": "2026-08-29T00:00:00Z",
+        "tiers": [
+          {
+            "id": "standard",
+            "label": "standard",
+            "serviceTier": "standard",
+            "inputTokensFrom": 0,
+            "inputTokensThrough": null,
+            "effectiveFrom": null,
+            "effectiveUntil": null,
+            "utcWindows": [],
+            "usdMicrosPerMillionTokens": {
+              "input": 250000,
+              "cachedInput": 30000,
+              "cacheWriteInput": null,
+              "output": 1500000
+            }
+          }
+        ]
+      },
+      "completeness": "partial"
+    },
+    {
+      "schemaVersion": 1,
+      "modelId": "sakana/fugu-ultra",
+      "displayName": "Fugu Ultra",
+      "inputModalities": ["text", "image"],
+      "outputModalities": ["text"],
+      "tools": "supported",
+      "structuredOutput": "unknown",
+      "streaming": "supported",
+      "reasoning": "supported",
+      "reasoningControls": ["high", "xhigh"],
+      "responseDensityControls": [],
+      "promptCacheModes": ["provider-managed"],
+      "promptCacheMinimumInputTokens": null,
+      "contextTokens": 1000000,
+      "outputTokens": null,
+      "pricing": {
+        "kind": "published-estimate",
+        "billingMode": "provider-credit",
+        "currency": "USD",
+        "tokenUnit": 1000000,
+        "sourceUrl": "https://commandcode.ai/docs/resources/pricing-limits",
+        "observedAt": "2026-08-29T00:00:00Z",
+        "tiers": [
+          {
+            "id": "standard",
+            "label": "standard",
+            "serviceTier": "standard",
+            "inputTokensFrom": 0,
+            "inputTokensThrough": null,
+            "effectiveFrom": null,
+            "effectiveUntil": null,
+            "utcWindows": [],
+            "usdMicrosPerMillionTokens": {
+              "input": 5000000,
+              "cachedInput": 500000,
+              "cacheWriteInput": null,
+              "output": 30000000
+            }
+          }
+        ]
+      },
+      "completeness": "partial"
+    },
+    {
+      "schemaVersion": 1,
+      "modelId": "nvidia/nemotron-3-ultra-550b-a55b",
+      "displayName": "Nemotron 3 Ultra",
+      "inputModalities": ["text"],
+      "outputModalities": ["text"],
+      "tools": "supported",
+      "structuredOutput": "unknown",
+      "streaming": "supported",
+      "reasoning": "supported",
+      "reasoningControls": [],
+      "responseDensityControls": [],
+      "promptCacheModes": ["provider-managed"],
+      "promptCacheMinimumInputTokens": null,
+      "contextTokens": 1000000,
+      "outputTokens": null,
+      "pricing": {
+        "kind": "published-estimate",
+        "billingMode": "provider-credit",
+        "currency": "USD",
+        "tokenUnit": 1000000,
+        "sourceUrl": "https://commandcode.ai/docs/resources/pricing-limits",
+        "observedAt": "2026-08-29T00:00:00Z",
+        "tiers": [
+          {
+            "id": "standard",
+            "label": "standard",
+            "serviceTier": "standard",
+            "inputTokensFrom": 0,
+            "inputTokensThrough": null,
+            "effectiveFrom": null,
+            "effectiveUntil": null,
+            "utcWindows": [],
+            "usdMicrosPerMillionTokens": {
+              "input": 600000,
+              "cachedInput": 120000,
+              "cacheWriteInput": null,
+              "output": 2400000
+            }
+          }
+        ]
+      },
+      "completeness": "partial"
+    },
+    {
+      "schemaVersion": 1,
+      "modelId": "thinkingmachines/inkling",
+      "displayName": "Inkling",
+      "inputModalities": ["text", "image"],
+      "outputModalities": ["text"],
+      "tools": "supported",
+      "structuredOutput": "unknown",
+      "streaming": "supported",
+      "reasoning": "supported",
+      "reasoningControls": [],
+      "responseDensityControls": [],
+      "promptCacheModes": ["provider-managed"],
+      "promptCacheMinimumInputTokens": null,
+      "contextTokens": 256000,
+      "outputTokens": null,
+      "pricing": {
+        "kind": "published-estimate",
+        "billingMode": "provider-credit",
+        "currency": "USD",
+        "tokenUnit": 1000000,
+        "sourceUrl": "https://commandcode.ai/docs/resources/pricing-limits",
+        "observedAt": "2026-08-29T00:00:00Z",
+        "tiers": [
+          {
+            "id": "standard",
+            "label": "standard",
+            "serviceTier": "standard",
+            "inputTokensFrom": 0,
+            "inputTokensThrough": null,
+            "effectiveFrom": null,
+            "effectiveUntil": null,
+            "utcWindows": [],
+            "usdMicrosPerMillionTokens": {
+              "input": 1000000,
+              "cachedInput": 170000,
+              "cacheWriteInput": null,
+              "output": 4050000
+            }
+          }
+        ]
+      },
+      "completeness": "partial"
+    },
+    {
+      "schemaVersion": 1,
+      "modelId": "thinkingmachines/inkling-small",
+      "displayName": "Inkling Small",
+      "inputModalities": ["text", "image"],
+      "outputModalities": ["text"],
+      "tools": "supported",
+      "structuredOutput": "unknown",
+      "streaming": "supported",
+      "reasoning": "supported",
+      "reasoningControls": [],
+      "responseDensityControls": [],
+      "promptCacheModes": ["provider-managed"],
+      "promptCacheMinimumInputTokens": null,
+      "contextTokens": 1000000,
+      "outputTokens": null,
+      "pricing": {
+        "kind": "published-estimate",
+        "billingMode": "provider-credit",
+        "currency": "USD",
+        "tokenUnit": 1000000,
+        "sourceUrl": "https://commandcode.ai/docs/resources/pricing-limits",
+        "observedAt": "2026-08-29T00:00:00Z",
+        "tiers": [
+          {
+            "id": "standard",
+            "label": "standard",
+            "serviceTier": "standard",
+            "inputTokensFrom": 0,
+            "inputTokensThrough": null,
+            "effectiveFrom": null,
+            "effectiveUntil": null,
+            "utcWindows": [],
+            "usdMicrosPerMillionTokens": {
+              "input": 500000,
+              "cachedInput": 100000,
+              "cacheWriteInput": null,
+              "output": 1200000
+            }
+          }
+        ]
+      },
+      "completeness": "partial"
+    },
+    {
+      "schemaVersion": 1,
+      "modelId": "poolside/laguna-s-2.1-free",
+      "displayName": "Laguna S 2.1",
+      "inputModalities": ["text"],
+      "outputModalities": ["text"],
+      "tools": "supported",
+      "structuredOutput": "unknown",
+      "streaming": "supported",
+      "reasoning": "supported",
+      "reasoningControls": [],
+      "responseDensityControls": [],
+      "promptCacheModes": ["provider-managed"],
+      "promptCacheMinimumInputTokens": null,
+      "contextTokens": 256000,
+      "outputTokens": null,
+      "pricing": {
+        "kind": "free",
+        "billingMode": "free",
+        "currency": "USD",
+        "tokenUnit": 1000000,
+        "sourceUrl": "https://commandcode.ai/docs/resources/pricing-limits",
+        "observedAt": "2026-08-29T00:00:00Z",
+        "tiers": [
+          {
+            "id": "free",
+            "label": "free",
+            "serviceTier": "standard",
+            "inputTokensFrom": 0,
+            "inputTokensThrough": null,
+            "effectiveFrom": null,
+            "effectiveUntil": null,
+            "utcWindows": [],
+            "usdMicrosPerMillionTokens": {
+              "input": 0,
+              "cachedInput": 0,
+              "cacheWriteInput": null,
+              "output": 0
+            }
+          }
+        ]
+      },
+      "completeness": "partial"
+    },
+    {
+      "schemaVersion": 1,
+      "modelId": "meta/muse-spark-1.1",
+      "displayName": "Muse Spark 1.1",
+      "inputModalities": ["text", "image"],
+      "outputModalities": ["text"],
+      "tools": "supported",
+      "structuredOutput": "unknown",
+      "streaming": "supported",
+      "reasoning": "supported",
+      "reasoningControls": [],
+      "responseDensityControls": [],
+      "promptCacheModes": ["provider-managed"],
+      "promptCacheMinimumInputTokens": null,
+      "contextTokens": 1048576,
+      "outputTokens": null,
+      "pricing": {
+        "kind": "published-estimate",
+        "billingMode": "provider-credit",
+        "currency": "USD",
+        "tokenUnit": 1000000,
+        "sourceUrl": "https://commandcode.ai/docs/resources/pricing-limits",
+        "observedAt": "2026-08-29T00:00:00Z",
+        "tiers": [
+          {
+            "id": "standard",
+            "label": "standard",
+            "serviceTier": "standard",
+            "inputTokensFrom": 0,
+            "inputTokensThrough": null,
+            "effectiveFrom": null,
+            "effectiveUntil": null,
+            "utcWindows": [],
+            "usdMicrosPerMillionTokens": {
+              "input": 1250000,
+              "cachedInput": 150000,
+              "cacheWriteInput": null,
+              "output": 4250000
+            }
+          }
+        ]
+      },
+      "completeness": "partial"
+    },
+    {
+      "schemaVersion": 1,
+      "modelId": "meta/muse-spark-1.2",
+      "displayName": "Muse Spark 1.2",
+      "inputModalities": ["text", "image"],
+      "outputModalities": ["text"],
+      "tools": "supported",
+      "structuredOutput": "unknown",
+      "streaming": "supported",
+      "reasoning": "supported",
+      "reasoningControls": [],
+      "responseDensityControls": [],
+      "promptCacheModes": ["provider-managed"],
+      "promptCacheMinimumInputTokens": null,
+      "contextTokens": 1048576,
+      "outputTokens": null,
+      "pricing": {
+        "kind": "published-estimate",
+        "billingMode": "provider-credit",
+        "currency": "USD",
+        "tokenUnit": 1000000,
+        "sourceUrl": "https://commandcode.ai/docs/resources/pricing-limits",
+        "observedAt": "2026-08-29T00:00:00Z",
+        "tiers": [
+          {
+            "id": "standard",
+            "label": "standard",
+            "serviceTier": "standard",
+            "inputTokensFrom": 0,
+            "inputTokensThrough": null,
+            "effectiveFrom": null,
+            "effectiveUntil": null,
+            "utcWindows": [],
+            "usdMicrosPerMillionTokens": {
+              "input": 1250000,
+              "cachedInput": 150000,
+              "cacheWriteInput": null,
+              "output": 4250000
+            }
+          }
+        ]
+      },
+      "completeness": "partial"
+    },
+    {
+      "schemaVersion": 1,
+      "modelId": "meta/muse-spark-1.2-contributor",
+      "displayName": "Muse Spark 1.2 Contributor",
+      "inputModalities": ["text", "image"],
+      "outputModalities": ["text"],
+      "tools": "supported",
+      "structuredOutput": "unknown",
+      "streaming": "supported",
+      "reasoning": "supported",
+      "reasoningControls": [],
+      "responseDensityControls": [],
+      "promptCacheModes": ["provider-managed"],
+      "promptCacheMinimumInputTokens": null,
+      "contextTokens": 1048576,
+      "outputTokens": null,
+      "pricing": {
+        "kind": "published-estimate",
+        "billingMode": "provider-credit",
+        "currency": "USD",
+        "tokenUnit": 1000000,
+        "sourceUrl": "https://commandcode.ai/docs/resources/pricing-limits",
+        "observedAt": "2026-08-29T00:00:00Z",
+        "tiers": [
+          {
+            "id": "standard",
+            "label": "standard",
+            "serviceTier": "standard",
+            "inputTokensFrom": 0,
+            "inputTokensThrough": null,
+            "effectiveFrom": null,
+            "effectiveUntil": null,
+            "utcWindows": [],
+            "usdMicrosPerMillionTokens": {
+              "input": 100000,
+              "cachedInput": 2000,
+              "cacheWriteInput": null,
+              "output": 200000
+            }
+          }
+        ]
+      },
+      "completeness": "partial"
+    },
+    {
+      "schemaVersion": 1,
+      "modelId": "xai/grok-4.5",
+      "displayName": "Grok 4.5",
+      "inputModalities": ["text", "image"],
+      "outputModalities": ["text"],
+      "tools": "supported",
+      "structuredOutput": "unknown",
+      "streaming": "supported",
+      "reasoning": "supported",
+      "reasoningControls": ["low", "medium", "high"],
+      "responseDensityControls": [],
+      "promptCacheModes": ["provider-managed"],
+      "promptCacheMinimumInputTokens": null,
+      "contextTokens": 500000,
+      "outputTokens": null,
+      "pricing": {
+        "kind": "published-estimate",
+        "billingMode": "provider-credit",
+        "currency": "USD",
+        "tokenUnit": 1000000,
+        "sourceUrl": "https://commandcode.ai/docs/resources/pricing-limits",
+        "observedAt": "2026-08-29T00:00:00Z",
+        "tiers": [
+          {
+            "id": "standard",
+            "label": "standard",
+            "serviceTier": "standard",
+            "inputTokensFrom": 0,
+            "inputTokensThrough": null,
+            "effectiveFrom": null,
+            "effectiveUntil": null,
+            "utcWindows": [],
+            "usdMicrosPerMillionTokens": {
+              "input": 2000000,
+              "cachedInput": 500000,
+              "cacheWriteInput": null,
+              "output": 6000000
+            }
+          }
+        ]
+      },
+      "completeness": "partial"
+    },
+    {
+      "schemaVersion": 1,
+      "modelId": "xai/grok-4.6",
+      "displayName": "Grok 4.6",
+      "inputModalities": ["text"],
+      "outputModalities": ["text"],
+      "tools": "supported",
+      "structuredOutput": "unknown",
+      "streaming": "supported",
+      "reasoning": "supported",
+      "reasoningControls": ["low", "medium", "high", "xhigh"],
+      "responseDensityControls": [],
+      "promptCacheModes": ["provider-managed"],
+      "promptCacheMinimumInputTokens": null,
+      "contextTokens": 500000,
+      "outputTokens": null,
+      "pricing": {
+        "kind": "published-estimate",
+        "billingMode": "provider-credit",
+        "currency": "USD",
+        "tokenUnit": 1000000,
+        "sourceUrl": "https://commandcode.ai/docs/resources/pricing-limits",
+        "observedAt": "2026-08-29T00:00:00Z",
+        "tiers": [
+          {
+            "id": "standard",
+            "label": "standard",
+            "serviceTier": "standard",
+            "inputTokensFrom": 0,
+            "inputTokensThrough": 200000,
+            "effectiveFrom": null,
+            "effectiveUntil": null,
+            "utcWindows": [],
+            "usdMicrosPerMillionTokens": {
+              "input": 2000000,
+              "cachedInput": 500000,
+              "cacheWriteInput": null,
+              "output": 6000000
+            }
+          },
+          {
+            "id": "long",
+            "label": "long",
+            "serviceTier": "standard",
+            "inputTokensFrom": 200001,
+            "inputTokensThrough": null,
+            "effectiveFrom": null,
+            "effectiveUntil": null,
+            "utcWindows": [],
+            "usdMicrosPerMillionTokens": {
+              "input": 4000000,
+              "cachedInput": 1000000,
+              "cacheWriteInput": null,
+              "output": 12000000
+            }
+          }
+        ]
+      },
+      "completeness": "partial"
+    }
+  ]
+}

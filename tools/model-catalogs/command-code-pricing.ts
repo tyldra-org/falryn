@@ -5,7 +5,7 @@ import {
   type ModelPricingTier,
   type ModelPricingUtcWindow,
   unknownModelPricing,
-} from "../../model-pricing.ts";
+} from "../../src/providers/model-pricing.ts";
 
 const SOURCE_URL = "https://commandcode.ai/docs/resources/pricing-limits";
 const OBSERVED_AT = "2026-08-29T00:00:00Z";

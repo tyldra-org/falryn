@@ -106,10 +106,16 @@ attempt ran.
 
 Model identity and model selection are stored separately. Falryn bundles
 strict, versioned OpenAI, Anthropic, Google, and Command Code model catalogs
-into the executable, provider profiles
-select enabled model IDs and may reference user catalogs by identity, and
-optional inline profile declarations remain the highest-priority compatibility
-override. A user catalog is a bounded JSONC document at
+as committed JSON resources into the executable. `bun run generate:model-catalogs`
+deterministically regenerates Command Code's resource from its verified model,
+reasoning-control, and provider-pricing sources; `bun run check:model-catalogs`
+validates all four resources and rejects generated drift. The ordinary static
+check runs that verification in parallel with repository integrity, type
+checking, and code quality. Generation reports a canonical SHA-256 resource
+digest without putting transport behavior or credentials into catalog data.
+Provider profiles select enabled model IDs and may reference user catalogs by
+identity, and optional inline profile declarations remain the highest-priority
+compatibility override. A user catalog is a bounded JSONC document at
 `~/.falryn/catalogs/<catalog-id>.jsonc`, bound to one provider identity, SDK
 adapter, and normalized endpoint so facts cannot cross destinations. Catalog
 documents separate input modalities from output modalities and record tools,
@@ -145,7 +151,10 @@ long-context, time-of-day, cache, and temporary-free conditions. They are
 marked as published estimates because Command Code says routed upstream cost
 can vary. OpenAI's catalog independently records its official direct-API
 schedule, so an identical model ID never borrows a price from another
-destination.
+destination. Command Code's capability projection and pricing schedule are
+catalog-generation inputs; runtime catalog loading reads the same strictly
+parsed resource shape as OpenAI, Anthropic, and Google. Its exact protocol and
+reasoning-control maps remain separate transport-routing facts.
 
 Remote catalog refresh uses the official OpenAI, Anthropic, or Google Gen AI
 TypeScript SDK selected by the profile. Command Code discovery uses the OpenAI
