@@ -308,7 +308,7 @@ function capture(id: string, run: CommandRun): ProcessCaptureReport {
   };
 }
 
-async function createScorecard(): Promise<HushLsScorecard> {
+export async function createHushLsScorecard(): Promise<HushLsScorecard> {
   const ls = Bun.which("ls");
   const rtk = Bun.which("rtk");
   if (ls === null || rtk === null) {
@@ -388,7 +388,7 @@ function formatOutputComparisons(scorecard: HushLsScorecard): string {
 }
 
 async function main(): Promise<void> {
-  const scorecard = await createScorecard();
+  const scorecard = await createHushLsScorecard();
   if (process.argv.includes("--json")) {
     console.log(JSON.stringify(scorecard, null, 2));
   } else {

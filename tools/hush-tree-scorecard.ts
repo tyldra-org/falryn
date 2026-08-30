@@ -248,7 +248,7 @@ async function createFixtureCommand(
   return { bin, tree };
 }
 
-async function createScorecard(): Promise<HushTreeScorecard> {
+export async function createHushTreeScorecard(): Promise<HushTreeScorecard> {
   const rtk = Bun.which("rtk");
   if (rtk === null) {
     throw new Error("hush tree scorecard requires a local rtk binary");
@@ -315,7 +315,7 @@ async function createScorecard(): Promise<HushTreeScorecard> {
 }
 
 async function main(): Promise<void> {
-  const scorecard = await createScorecard();
+  const scorecard = await createHushTreeScorecard();
   if (process.argv.includes("--json")) {
     console.log(JSON.stringify(scorecard, null, 2));
   } else {
