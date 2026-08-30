@@ -16,6 +16,7 @@ import {
   composeProductLanguageTools,
   composeProductMemoryTools,
   composeProductMemoryTurn,
+  composeProductOutputControls,
   composeProductProcessTools,
   composeProductScratchTools,
   composeProductWorkspaceTools,
@@ -40,6 +41,7 @@ import {
   type ExecutionProfileId,
   executionProfile,
   type FileSystemPort,
+  type ModelId,
   type ProcessCapturePort,
   primaryWorkspaceRoot,
   sessionId as sessionIdCodec,
@@ -121,6 +123,11 @@ export async function composeProductShellAttachments(
     );
 
   const providerAdapter = ports.provider?.kind === "ready" ? ports.provider.adapter : undefined;
+  let selectedModelId: ModelId | null =
+    ports.provider?.kind === "ready"
+      ? (ports.provider.session.catalog.models.find((model) => model.availability !== "unavailable")
+          ?.modelId ?? null)
+      : null;
 
   const workspaceRoot =
     ports.workspaceSet === null ? null : primaryWorkspaceRoot(ports.workspaceSet).path;
@@ -144,6 +151,7 @@ export async function composeProductShellAttachments(
   const brief = composeProductBriefControls({
     initialVerbosity: executionProfile(selectedExecutionProfile).defaultBriefVerbosity,
   });
+  const output = composeProductOutputControls();
 
   function buildSession() {
     const sessionId = sessionIdCodec.from(`session-shell-${randomUUID()}`);
@@ -161,6 +169,7 @@ export async function composeProductShellAttachments(
             ...(index === undefined ? {} : { index }),
             workspaceId,
             sessionId,
+            userReadOutputMode: output.getLoomMode,
           });
     const processTools =
       workspaceRoot === null
@@ -182,6 +191,7 @@ export async function composeProductShellAttachments(
             workspaceId: String(workspaceId),
             sessionId: String(sessionId),
             ...(ports.scratch === undefined ? {} : { scratch: ports.scratch }),
+            userOutputMode: output.getHushMode,
           });
     const scratchTools =
       ports.scratch === undefined
@@ -326,6 +336,7 @@ export async function composeProductShellAttachments(
       ...(memory === undefined ? {} : { memory }),
       ...(ports.artifacts === undefined ? {} : { artifacts: ports.artifacts }),
       initialExecutionProfile: selectedExecutionProfile,
+      ...(selectedModelId === null ? {} : { initialModelId: selectedModelId }),
     });
     return {
       sessionId,
@@ -336,6 +347,7 @@ export async function composeProductShellAttachments(
         sessionId,
         configurationGeneration: generation,
         brief,
+        output,
         isAccepting: () => ports.signal === undefined || !ports.signal.aborted,
       }),
     };
@@ -360,6 +372,7 @@ export async function composeProductShellAttachments(
   let activeSubmissions = 0;
   const submission = {
     brief,
+    output,
     executionProfile: {
       get: () => selectedExecutionProfile,
       async select(profileId: ExecutionProfileId) {
@@ -371,6 +384,16 @@ export async function composeProductShellAttachments(
             brief.setVerbosity(executionProfile(selected.profileId).defaultBriefVerbosity);
           }
           selectedExecutionProfile = selected.profileId;
+        }
+        return selected;
+      },
+    },
+    modelSelection: {
+      get: () => active.executor.modelSelection.get(),
+      async select(modelId: ModelId) {
+        const selected = await active.executor.modelSelection.select(modelId);
+        if (selected.ok) {
+          selectedModelId = selected.modelId;
         }
         return selected;
       },

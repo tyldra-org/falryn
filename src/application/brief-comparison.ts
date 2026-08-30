@@ -4,11 +4,11 @@ import { createHash } from "node:crypto";
 
 import { err, ok, type PromptSectionInput, type Result } from "../domain/index.ts";
 
-export const CAVEMAN_PINNED_COMMIT = "2f49f0e1a352aa810e70056b7930aeb0b3d219b4";
+export const CAVEMAN_PINNED_COMMIT = "17f9f2ec2377b0bfe16b52ee03a462e7f0a02bc8";
 export const CAVEMAN_PINNED_SKILL_PATH = "skills/caveman/SKILL.md";
 export const CAVEMAN_PINNED_SKILL_DIGEST =
-  "1eddf7055618153869975678d9ff36635602a3aa333f8b4cc0787f12de75b6f8";
-export const CAVEMAN_ADAPTER_VERSION = "falryn.caveman.v1";
+  "3edd677596cbf12f010f25f05dfb1e8a6c9c178d92499c86e5b5afa44c86c16c";
+export const CAVEMAN_ADAPTER_VERSION = "falryn.caveman.v2";
 export const CAVEMAN_INTENSITIES = ["lite", "full", "ultra"] as const;
 export type CavemanIntensity = (typeof CAVEMAN_INTENSITIES)[number];
 

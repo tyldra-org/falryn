@@ -2,11 +2,12 @@
  * Session, model, context, and resource controls, on a real terminal.
  *
  * The sheet is an overlay over catalogs the application port supplies. Selecting
- * a session or model updates the header through a process-local cursor. Nothing
- * is persisted and no provider is called.
+ * a session updates a view-local cursor. Model selection passes through the
+ * application control before the header changes.
  */
 
 import { describe, expect, test } from "bun:test";
+import { modelId } from "../../domain/index.ts";
 import { UNAVAILABLE_SUBMISSION } from "../composer/index.ts";
 import type { ControlCatalog } from "../controls/index.ts";
 import { mount } from "../harness.tsx";
@@ -84,6 +85,39 @@ describe("control overlays", () => {
     expect(frame).not.toContain("Esc closes this");
     expect(frame).toContain("coding");
     expect(frame).not.toContain("no session yet");
+  });
+
+  test("selecting a model updates the application control before the header", async () => {
+    let selected = modelId.from("m0");
+    const submission = {
+      ...UNAVAILABLE_SUBMISSION,
+      modelSelection: {
+        get: () => selected,
+        async select(nextModelId: typeof selected) {
+          const changed = nextModelId !== selected;
+          selected = nextModelId;
+          return { ok: true as const, modelId: selected, changed };
+        },
+      },
+    };
+    using shell = await mount(
+      <ShellApp
+        theme={THEME}
+        model={MODEL}
+        onExit={() => {}}
+        controls={CATALOG}
+        submission={submission}
+      />,
+    );
+
+    await runCommand(shell, "model.select");
+    await shell.frame("Models");
+    shell.setup.mockInput.pressEnter();
+
+    const frame = await shell.frame("Model selected: m1.");
+    expect(selected).toBe(modelId.from("m1"));
+    expect(frame).toContain("local-small");
+    expect(frame).not.toContain("no provider yet");
   });
 
   test("shows named context facts", async () => {

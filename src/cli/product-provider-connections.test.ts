@@ -41,6 +41,7 @@ function localProfile(): ProviderProfile {
     organization: null,
     project: null,
     enabledModels: [modelId.from("coder")],
+    transportCompatibility: null,
     modelCapabilities: [],
     discovery: "static",
     timeouts: { connectMs: 1_000, requestMs: 10_000 },
@@ -72,6 +73,7 @@ function officialProfile(
     organization: null,
     project: null,
     enabledModels: [modelId.from(model)],
+    transportCompatibility: null,
     modelCapabilities: [],
     discovery: "static",
     timeouts: { connectMs: 1_000, requestMs: 10_000 },
@@ -202,6 +204,65 @@ describe("product provider connection persistence", () => {
     expect(JSON.stringify(tested)).not.toContain("secret-not-projected");
   });
 
+  test("resolves provider-native aliases on Linux through the shared environment store", async () => {
+    const home = await mkdtemp(join(tmpdir(), "falryn-provider-alias-"));
+    homes.push(home);
+    const services = createServiceProvider(GLOBALS, {
+      home: localPath(home),
+      platform: "linux",
+      currentDirectory: localPath(home),
+      environment: createStaticEnvironment({
+        FALRYN_STATE_DIR: home,
+        COMMAND_CODE_API_KEY: "secret-not-projected",
+      }),
+    });
+    const modelDiscovery: ModelDiscoveryPort = {
+      async discover(profile) {
+        return {
+          kind: "catalog",
+          catalog: {
+            generation: 1,
+            provenance: "remote-discovery",
+            fetchedAt: instant(0),
+            expiresAt: null,
+            models: profile.enabledModels.map((model) => ({
+              schemaVersion: 1,
+              modelId: model,
+              displayName: "MiniMax M3",
+              inputModalities: ["text"],
+              outputModalities: ["text"],
+              tools: "supported",
+              structuredOutput: "unknown",
+              streaming: "supported",
+              reasoning: "supported",
+              reasoningControls: [],
+              contextTokens: 1_000_000,
+              outputTokens: null,
+              completeness: "partial",
+              availability: "available",
+              provenance: ["provider-manifest"],
+            })),
+          },
+        };
+      },
+    };
+    const service = composeProductProviderConnections(services(), GLOBALS, {
+      modelDiscovery,
+    }).service;
+    const profile = {
+      ...officialProfile("commandcode", "FALRYN_COMMANDCODE_API_KEY", "MiniMaxAI/MiniMax-M3"),
+      discovery: "remote" as const,
+    };
+
+    const added = await service.execute({ kind: "add", profile });
+    expect(added).toMatchObject({
+      kind: "completed",
+      auth: { state: "ready" },
+      discovery: { kind: "catalog", modelCount: 1 },
+    });
+    expect(JSON.stringify(added)).not.toContain("secret-not-projected");
+  });
+
   test("loads referenced user catalogs from the active configuration home", async () => {
     const home = await mkdtemp(join(tmpdir(), "falryn-provider-catalog-"));
     homes.push(home);
@@ -290,7 +351,7 @@ describe("product provider connection persistence", () => {
     expect(JSON.stringify(tested)).not.toContain("secret-not-projected");
   });
 
-  test("resolves selected official profiles to their SDK adapters", async () => {
+  test("resolves selected profiles to their installed provider adapters", async () => {
     for (const fixture of [
       {
         adapterKind: "anthropic" as const,

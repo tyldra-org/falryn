@@ -81,6 +81,7 @@ const modelAttemptBindingSchema: z.ZodType<ModelAttemptBinding> = z.object({
   providerProfileId: z.string().min(1).optional(),
   providerAdapterKind: z.string().min(1).optional(),
   providerDestinationId: z.string().min(1).optional(),
+  transportCompatibilityId: z.string().min(1).optional(),
   modelId: brandedString(modelId),
   role: z.string().min(1),
   intent: z.string().min(1).nullable(),
@@ -133,6 +134,16 @@ const modelAttemptBindingSchema: z.ZodType<ModelAttemptBinding> = z.object({
       stablePrefixDigest: z.string().regex(/^sha-256:[a-f0-9]{64}$/u),
       stableMessageCount: z.int().nonnegative(),
       toolCatalogGeneration: z.int().nonnegative(),
+      mode: z
+        .enum([
+          "implicit-prefix",
+          "openai-routing-key",
+          "anthropic-ephemeral",
+          "google-explicit-resource",
+          "provider-managed",
+        ])
+        .optional(),
+      minimumInputTokens: z.int().positive().nullable().optional(),
     })
     .optional(),
   budgets: z.object({

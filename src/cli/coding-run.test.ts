@@ -241,6 +241,7 @@ describe("runCoding", () => {
     expect(result.payload?.briefReceipt).toMatchObject({
       requestedMode: "auto",
       selectedVerbosity: "detailed",
+      selectionReasons: ["high-complexity", "uncertainty", "recovery"],
       outputTokenBudget: 8_192,
     });
     expect(result.payload?.briefReceipt?.preservedFacts).toEqual(
@@ -296,6 +297,43 @@ describe("runCoding", () => {
       }
       await durable.close();
     }
+  });
+
+  test("keeps matched no-tool scorecard turns on the live path without tool disclosure", async () => {
+    const seeded = await seededHome();
+    const services = providerFor(seeded)(globalsFor(seeded));
+    const requests: ModelRequest[] = [];
+    const result = await runCoding(
+      services,
+      { promptParts: ["Answer only from the supplied fact."], mode: "ask", brief: "compact" },
+      {
+        input: createRecordingCliStreams({ stdin: null }).input,
+        globals: globalsFor(seeded),
+        providerAdapter: createDeterministicProviderAdapter({
+          onRequest: (request) => requests.push(request),
+        }),
+        toolExposureOverride: "none",
+        identities: {
+          sessionId: "session-run-no-tools",
+          turnId: "turn-run-no-tools",
+          traceId: "trace-run-no-tools",
+        },
+      },
+    );
+
+    expect(result.outcome.kind).toBe("completed");
+    expect(result.payload?.disclosedTools).toBe(0);
+    expect(result.payload?.toolResults).toBe(0);
+    expect(requests).toHaveLength(1);
+    expect(requests[0]?.tools).toEqual([]);
+    expect(
+      requests[0]?.messages
+        .flatMap((message) => message.parts)
+        .some(
+          (part) =>
+            part.kind === "text" && part.text.includes("Executable tools for this attempt: none"),
+        ),
+    ).toBe(true);
   });
 
   test("runs and replays the shared durable live-turn matrix through falryn run", async () => {
@@ -1220,6 +1258,29 @@ describe("falryn run through dispatch", () => {
       expect(invocation.runArgs).toEqual({
         promptParts: ["inspect", "it"],
         mode: "debug",
+      });
+    }
+  });
+
+  test("keeps raw backend names behind human on and off controls", async () => {
+    const invocation = await parseInvocation([
+      "run",
+      "--brief",
+      "off",
+      "--hush",
+      "off",
+      "--loom",
+      "on",
+      "inspect",
+      "it",
+    ]);
+    expect(invocation.kind).toBe("run");
+    if (invocation.kind === "run") {
+      expect(invocation.runArgs).toEqual({
+        promptParts: ["inspect", "it"],
+        brief: "raw",
+        hush: "raw",
+        loom: "loom",
       });
     }
   });

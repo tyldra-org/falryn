@@ -19,8 +19,53 @@
       "streaming": "supported",
       "reasoning": "supported",
       "reasoningControls": ["none", "low", "medium", "high", "xhigh", "max"],
+      "responseDensityControls": ["low", "medium", "high"],
+      "promptCacheModes": ["openai-routing-key"],
+      "promptCacheMinimumInputTokens": 1024,
       "contextTokens": 1050000,
       "outputTokens": 128000,
+      "pricing": {
+        "kind": "published",
+        "billingMode": "api",
+        "currency": "USD",
+        "tokenUnit": 1000000,
+        "sourceUrl": "https://developers.openai.com/api/docs/pricing",
+        "observedAt": "2026-08-29T00:00:00Z",
+        "tiers": [
+          {
+            "id": "standard-short",
+            "label": "Standard short context",
+            "serviceTier": "standard",
+            "inputTokensFrom": 0,
+            "inputTokensThrough": 272000,
+            "effectiveFrom": null,
+            "effectiveUntil": null,
+            "utcWindows": [],
+            "usdMicrosPerMillionTokens": {
+              "input": 4000000,
+              "cachedInput": 400000,
+              "cacheWriteInput": 5000000,
+              "output": 20000000
+            }
+          },
+          {
+            "id": "standard-long",
+            "label": "Standard long context",
+            "serviceTier": "standard",
+            "inputTokensFrom": 272001,
+            "inputTokensThrough": null,
+            "effectiveFrom": null,
+            "effectiveUntil": null,
+            "utcWindows": [],
+            "usdMicrosPerMillionTokens": {
+              "input": 8000000,
+              "cachedInput": 800000,
+              "cacheWriteInput": 10000000,
+              "output": 30000000
+            }
+          }
+        ]
+      },
       "completeness": "complete"
     },
     {
@@ -34,8 +79,53 @@
       "streaming": "supported",
       "reasoning": "supported",
       "reasoningControls": ["none", "low", "medium", "high", "xhigh", "max"],
+      "responseDensityControls": ["low", "medium", "high"],
+      "promptCacheModes": ["openai-routing-key"],
+      "promptCacheMinimumInputTokens": 1024,
       "contextTokens": 1050000,
       "outputTokens": 128000,
+      "pricing": {
+        "kind": "published",
+        "billingMode": "api",
+        "currency": "USD",
+        "tokenUnit": 1000000,
+        "sourceUrl": "https://developers.openai.com/api/docs/pricing",
+        "observedAt": "2026-08-29T00:00:00Z",
+        "tiers": [
+          {
+            "id": "standard-short",
+            "label": "Standard short context",
+            "serviceTier": "standard",
+            "inputTokensFrom": 0,
+            "inputTokensThrough": 272000,
+            "effectiveFrom": null,
+            "effectiveUntil": null,
+            "utcWindows": [],
+            "usdMicrosPerMillionTokens": {
+              "input": 2000000,
+              "cachedInput": 200000,
+              "cacheWriteInput": 2500000,
+              "output": 12000000
+            }
+          },
+          {
+            "id": "standard-long",
+            "label": "Standard long context",
+            "serviceTier": "standard",
+            "inputTokensFrom": 272001,
+            "inputTokensThrough": null,
+            "effectiveFrom": null,
+            "effectiveUntil": null,
+            "utcWindows": [],
+            "usdMicrosPerMillionTokens": {
+              "input": 4000000,
+              "cachedInput": 400000,
+              "cacheWriteInput": 5000000,
+              "output": 18000000
+            }
+          }
+        ]
+      },
       "completeness": "complete"
     },
     {
@@ -49,8 +139,53 @@
       "streaming": "supported",
       "reasoning": "supported",
       "reasoningControls": ["none", "low", "medium", "high", "xhigh", "max"],
+      "responseDensityControls": ["low", "medium", "high"],
+      "promptCacheModes": ["openai-routing-key"],
+      "promptCacheMinimumInputTokens": 1024,
       "contextTokens": 1050000,
       "outputTokens": 128000,
+      "pricing": {
+        "kind": "published",
+        "billingMode": "api",
+        "currency": "USD",
+        "tokenUnit": 1000000,
+        "sourceUrl": "https://developers.openai.com/api/docs/pricing",
+        "observedAt": "2026-08-29T00:00:00Z",
+        "tiers": [
+          {
+            "id": "standard-short",
+            "label": "Standard short context",
+            "serviceTier": "standard",
+            "inputTokensFrom": 0,
+            "inputTokensThrough": 272000,
+            "effectiveFrom": null,
+            "effectiveUntil": null,
+            "utcWindows": [],
+            "usdMicrosPerMillionTokens": {
+              "input": 200000,
+              "cachedInput": 20000,
+              "cacheWriteInput": 250000,
+              "output": 1200000
+            }
+          },
+          {
+            "id": "standard-long",
+            "label": "Standard long context",
+            "serviceTier": "standard",
+            "inputTokensFrom": 272001,
+            "inputTokensThrough": null,
+            "effectiveFrom": null,
+            "effectiveUntil": null,
+            "utcWindows": [],
+            "usdMicrosPerMillionTokens": {
+              "input": 400000,
+              "cachedInput": 40000,
+              "cacheWriteInput": 500000,
+              "output": 1800000
+            }
+          }
+        ]
+      },
       "completeness": "complete"
     },
     {
@@ -64,8 +199,305 @@
       "streaming": "supported",
       "reasoning": "supported",
       "reasoningControls": ["none", "low", "medium", "high", "xhigh", "max"],
+      "responseDensityControls": ["low", "medium", "high"],
+      "promptCacheModes": ["openai-routing-key"],
+      "promptCacheMinimumInputTokens": 1024,
       "contextTokens": 1050000,
       "outputTokens": 128000,
+      "pricing": {
+        "kind": "published",
+        "billingMode": "api",
+        "currency": "USD",
+        "tokenUnit": 1000000,
+        "sourceUrl": "https://developers.openai.com/api/docs/models/gpt-5.6-sol",
+        "observedAt": "2026-08-29T00:00:00Z",
+        "tiers": [
+          {
+            "id": "standard-short",
+            "label": "Standard short context",
+            "serviceTier": "standard",
+            "inputTokensFrom": 0,
+            "inputTokensThrough": 272000,
+            "effectiveFrom": null,
+            "effectiveUntil": null,
+            "utcWindows": [],
+            "usdMicrosPerMillionTokens": {
+              "input": 4000000,
+              "cachedInput": 400000,
+              "cacheWriteInput": 5000000,
+              "output": 20000000
+            }
+          },
+          {
+            "id": "standard-long",
+            "label": "Standard long context",
+            "serviceTier": "standard",
+            "inputTokensFrom": 272001,
+            "inputTokensThrough": null,
+            "effectiveFrom": null,
+            "effectiveUntil": null,
+            "utcWindows": [],
+            "usdMicrosPerMillionTokens": {
+              "input": 8000000,
+              "cachedInput": 800000,
+              "cacheWriteInput": 10000000,
+              "output": 30000000
+            }
+          }
+        ]
+      },
+      "completeness": "complete"
+    },
+    {
+      "schemaVersion": 1,
+      "modelId": "gpt-5.5",
+      "displayName": "GPT-5.5",
+      "inputModalities": ["text", "image"],
+      "outputModalities": ["text"],
+      "tools": "supported",
+      "structuredOutput": "supported",
+      "streaming": "supported",
+      "reasoning": "supported",
+      "reasoningControls": ["none", "low", "medium", "high", "xhigh"],
+      "responseDensityControls": ["low", "medium", "high"],
+      "promptCacheModes": ["openai-routing-key"],
+      "promptCacheMinimumInputTokens": 1024,
+      "contextTokens": 1050000,
+      "outputTokens": 128000,
+      "pricing": {
+        "kind": "published",
+        "billingMode": "api",
+        "currency": "USD",
+        "tokenUnit": 1000000,
+        "sourceUrl": "https://developers.openai.com/api/docs/models/gpt-5.5",
+        "observedAt": "2026-08-29T00:00:00Z",
+        "tiers": [
+          {
+            "id": "standard-short",
+            "label": "Standard short context",
+            "serviceTier": "standard",
+            "inputTokensFrom": 0,
+            "inputTokensThrough": 272000,
+            "effectiveFrom": null,
+            "effectiveUntil": null,
+            "utcWindows": [],
+            "usdMicrosPerMillionTokens": {
+              "input": 5000000,
+              "cachedInput": 500000,
+              "cacheWriteInput": null,
+              "output": 30000000
+            }
+          },
+          {
+            "id": "standard-long",
+            "label": "Standard long context",
+            "serviceTier": "standard",
+            "inputTokensFrom": 272001,
+            "inputTokensThrough": null,
+            "effectiveFrom": null,
+            "effectiveUntil": null,
+            "utcWindows": [],
+            "usdMicrosPerMillionTokens": {
+              "input": 10000000,
+              "cachedInput": 1000000,
+              "cacheWriteInput": null,
+              "output": 45000000
+            }
+          }
+        ]
+      },
+      "completeness": "complete"
+    },
+    {
+      "schemaVersion": 1,
+      "modelId": "gpt-5.4",
+      "displayName": "GPT-5.4",
+      "inputModalities": ["text", "image"],
+      "outputModalities": ["text"],
+      "tools": "supported",
+      "structuredOutput": "supported",
+      "streaming": "supported",
+      "reasoning": "supported",
+      "reasoningControls": ["none", "low", "medium", "high", "xhigh"],
+      "responseDensityControls": ["low", "medium", "high"],
+      "promptCacheModes": ["openai-routing-key"],
+      "promptCacheMinimumInputTokens": 1024,
+      "contextTokens": 1050000,
+      "outputTokens": 128000,
+      "pricing": {
+        "kind": "published",
+        "billingMode": "api",
+        "currency": "USD",
+        "tokenUnit": 1000000,
+        "sourceUrl": "https://developers.openai.com/api/docs/models/gpt-5.4",
+        "observedAt": "2026-08-29T00:00:00Z",
+        "tiers": [
+          {
+            "id": "standard-short",
+            "label": "Standard short context",
+            "serviceTier": "standard",
+            "inputTokensFrom": 0,
+            "inputTokensThrough": 272000,
+            "effectiveFrom": null,
+            "effectiveUntil": null,
+            "utcWindows": [],
+            "usdMicrosPerMillionTokens": {
+              "input": 2500000,
+              "cachedInput": 250000,
+              "cacheWriteInput": null,
+              "output": 15000000
+            }
+          },
+          {
+            "id": "standard-long",
+            "label": "Standard long context",
+            "serviceTier": "standard",
+            "inputTokensFrom": 272001,
+            "inputTokensThrough": null,
+            "effectiveFrom": null,
+            "effectiveUntil": null,
+            "utcWindows": [],
+            "usdMicrosPerMillionTokens": {
+              "input": 5000000,
+              "cachedInput": 500000,
+              "cacheWriteInput": null,
+              "output": 22500000
+            }
+          }
+        ]
+      },
+      "completeness": "complete"
+    },
+    {
+      "schemaVersion": 1,
+      "modelId": "gpt-5.3-codex",
+      "displayName": "GPT-5.3 Codex",
+      "inputModalities": ["text", "image"],
+      "outputModalities": ["text"],
+      "tools": "supported",
+      "structuredOutput": "supported",
+      "streaming": "supported",
+      "reasoning": "supported",
+      "reasoningControls": ["low", "medium", "high", "xhigh"],
+      "responseDensityControls": ["low", "medium", "high"],
+      "promptCacheModes": ["openai-routing-key"],
+      "promptCacheMinimumInputTokens": 1024,
+      "contextTokens": 400000,
+      "outputTokens": 128000,
+      "pricing": {
+        "kind": "published",
+        "billingMode": "api",
+        "currency": "USD",
+        "tokenUnit": 1000000,
+        "sourceUrl": "https://developers.openai.com/api/docs/models/gpt-5.3-codex",
+        "observedAt": "2026-08-29T00:00:00Z",
+        "tiers": [
+          {
+            "id": "standard",
+            "label": "Standard",
+            "serviceTier": "standard",
+            "inputTokensFrom": 0,
+            "inputTokensThrough": null,
+            "effectiveFrom": null,
+            "effectiveUntil": null,
+            "utcWindows": [],
+            "usdMicrosPerMillionTokens": {
+              "input": 1750000,
+              "cachedInput": 175000,
+              "cacheWriteInput": null,
+              "output": 14000000
+            }
+          }
+        ]
+      },
+      "completeness": "complete"
+    },
+    {
+      "schemaVersion": 1,
+      "modelId": "gpt-5.4-mini",
+      "displayName": "GPT-5.4 Mini",
+      "inputModalities": ["text", "image"],
+      "outputModalities": ["text"],
+      "tools": "supported",
+      "structuredOutput": "supported",
+      "streaming": "supported",
+      "reasoning": "supported",
+      "reasoningControls": ["none", "low", "medium", "high", "xhigh"],
+      "responseDensityControls": ["low", "medium", "high"],
+      "promptCacheModes": ["openai-routing-key"],
+      "promptCacheMinimumInputTokens": 1024,
+      "contextTokens": 400000,
+      "outputTokens": 128000,
+      "pricing": {
+        "kind": "published",
+        "billingMode": "api",
+        "currency": "USD",
+        "tokenUnit": 1000000,
+        "sourceUrl": "https://developers.openai.com/api/docs/models/gpt-5.4-mini",
+        "observedAt": "2026-08-29T00:00:00Z",
+        "tiers": [
+          {
+            "id": "standard",
+            "label": "Standard",
+            "serviceTier": "standard",
+            "inputTokensFrom": 0,
+            "inputTokensThrough": null,
+            "effectiveFrom": null,
+            "effectiveUntil": null,
+            "utcWindows": [],
+            "usdMicrosPerMillionTokens": {
+              "input": 750000,
+              "cachedInput": 75000,
+              "cacheWriteInput": null,
+              "output": 4500000
+            }
+          }
+        ]
+      },
+      "completeness": "complete"
+    },
+    {
+      "schemaVersion": 1,
+      "modelId": "gpt-5.4-nano",
+      "displayName": "GPT-5.4 nano",
+      "inputModalities": ["text", "image"],
+      "outputModalities": ["text"],
+      "tools": "supported",
+      "structuredOutput": "supported",
+      "streaming": "supported",
+      "reasoning": "supported",
+      "reasoningControls": ["none", "low", "medium", "high", "xhigh"],
+      "responseDensityControls": ["low", "medium", "high"],
+      "promptCacheModes": ["openai-routing-key"],
+      "promptCacheMinimumInputTokens": 1024,
+      "contextTokens": 400000,
+      "outputTokens": 128000,
+      "pricing": {
+        "kind": "published",
+        "billingMode": "api",
+        "currency": "USD",
+        "tokenUnit": 1000000,
+        "sourceUrl": "https://developers.openai.com/api/docs/models/gpt-5.4-nano",
+        "observedAt": "2026-08-29T00:00:00Z",
+        "tiers": [
+          {
+            "id": "standard",
+            "label": "Standard",
+            "serviceTier": "standard",
+            "inputTokensFrom": 0,
+            "inputTokensThrough": null,
+            "effectiveFrom": null,
+            "effectiveUntil": null,
+            "utcWindows": [],
+            "usdMicrosPerMillionTokens": {
+              "input": 200000,
+              "cachedInput": 20000,
+              "cacheWriteInput": null,
+              "output": 1250000
+            }
+          }
+        ]
+      },
       "completeness": "complete"
     },
     {
@@ -79,8 +511,37 @@
       "streaming": "supported",
       "reasoning": "unsupported",
       "reasoningControls": [],
+      "responseDensityControls": [],
+      "promptCacheModes": ["openai-routing-key"],
+      "promptCacheMinimumInputTokens": 1024,
       "contextTokens": 128000,
       "outputTokens": 16384,
+      "pricing": {
+        "kind": "published",
+        "billingMode": "api",
+        "currency": "USD",
+        "tokenUnit": 1000000,
+        "sourceUrl": "https://developers.openai.com/api/docs/models/gpt-4o-mini",
+        "observedAt": "2026-08-29T00:00:00Z",
+        "tiers": [
+          {
+            "id": "standard",
+            "label": "Standard",
+            "serviceTier": "standard",
+            "inputTokensFrom": 0,
+            "inputTokensThrough": null,
+            "effectiveFrom": null,
+            "effectiveUntil": null,
+            "utcWindows": [],
+            "usdMicrosPerMillionTokens": {
+              "input": 150000,
+              "cachedInput": 75000,
+              "cacheWriteInput": null,
+              "output": 600000
+            }
+          }
+        ]
+      },
       "completeness": "complete"
     }
   ]

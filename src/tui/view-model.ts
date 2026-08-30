@@ -170,6 +170,8 @@ export type OverlayRoute =
       readonly kind: "controls";
       readonly panel: "session" | "model" | "profile" | "context" | "resource";
     }
+  /** One interactive surface for Brief, Hush, and Loom. */
+  | { readonly kind: "compression" }
   /**
    * Workspace-set inspect and mutate overlays (#607).
    *

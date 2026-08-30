@@ -7,20 +7,53 @@ import {
   COMMAND_CODE_PROVIDER_ID,
 } from "../command-code.ts";
 import type { ModelCapabilityDeclaration } from "../model-capability.ts";
+import anthropicCatalogValue from "./builtin/anthropic.json";
+import googleCatalogValue from "./builtin/google.json";
 import openAiCatalogValue from "./builtin/openai.json";
 import type { ModelCatalogDocument } from "./contracts.ts";
 import { parseModelCatalogDocument } from "./schema.ts";
 
 function requiredBuiltin(value: unknown): ModelCatalogDocument {
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    !("models" in value) ||
+    !Array.isArray(value.models) ||
+    value.models.some(
+      (model) =>
+        typeof model !== "object" ||
+        model === null ||
+        !("pricing" in model) ||
+        !("responseDensityControls" in model) ||
+        !("promptCacheModes" in model) ||
+        !Array.isArray(model.promptCacheModes) ||
+        model.promptCacheModes.length === 0,
+    )
+  ) {
+    throw new Error("Falryn's built-in model catalog omits required capability-depth facts.");
+  }
   const parsed = parseModelCatalogDocument(value);
   if (!parsed.ok) {
     throw new Error("Falryn was built with an invalid model catalog resource.");
+  }
+  if (
+    parsed.value.models.some(
+      (model) =>
+        (model.promptCacheModes ?? []).length > 0 &&
+        (model.pricing === undefined ||
+          model.pricing.tiers.length === 0 ||
+          model.pricing.tiers.some((tier) => tier.usdMicrosPerMillionTokens.cachedInput === null)),
+    )
+  ) {
+    throw new Error("Falryn's cache-capable model catalog omits cache-read pricing.");
   }
   return parsed.value;
 }
 
 export const BUILTIN_MODEL_CATALOGS: readonly ModelCatalogDocument[] = [
   requiredBuiltin(openAiCatalogValue),
+  requiredBuiltin(anthropicCatalogValue),
+  requiredBuiltin(googleCatalogValue),
   requiredBuiltin({
     schemaVersion: 1,
     catalogId: "falryn.commandcode",

@@ -14,6 +14,8 @@ import {
   featureIsSupported,
   type MODEL_CAPABILITY_SCHEMA_VERSION,
   type ModelInputModality,
+  type ModelPromptCacheMode,
+  type ModelResponseDensityControl,
 } from "./model-capability.ts";
 import {
   isRoleDisabled,
@@ -32,6 +34,12 @@ import {
   resolveSpecializedRole,
 } from "./role-support.ts";
 import type { ModelRole, WorkIntent } from "./roles.ts";
+import {
+  bindProviderTransportCompatibilityToModel,
+  defaultProviderTransportCompatibility,
+  type ProviderTransportCompatibilityPlan,
+  type ProviderTransportCompatibilityReceipt,
+} from "./transport-compatibility.ts";
 
 export type { RouteRequirement } from "./role-support.ts";
 
@@ -46,7 +54,16 @@ export type RoutedCatalogEntry = {
   readonly profileId: string;
   readonly adapterKind: ProviderAdapterKind;
   readonly destinationId: string;
+  readonly transportCompatibilityId?: string | undefined;
+  readonly transportCompatibility?: ProviderTransportCompatibilityPlan | undefined;
+  readonly modelTransportCompatibility?:
+    | readonly {
+        readonly modelId: ModelId;
+        readonly plan: ProviderTransportCompatibilityPlan;
+      }[]
+    | undefined;
   readonly requestInputModalities: readonly ModelInputModality[];
+  readonly requestResponseDensityControls?: readonly ModelResponseDensityControl[];
   readonly catalog: ModelCatalog;
 };
 
@@ -65,9 +82,16 @@ export type RoutingReceipt = {
   readonly providerProfileId: string;
   readonly providerAdapterKind: ProviderAdapterKind;
   readonly providerDestinationId: string;
+  readonly transportCompatibilityId: string;
+  readonly transportCompatibilityReceipt: ProviderTransportCompatibilityReceipt;
   readonly modelId: ModelId;
   readonly reasoning: ReasoningEffort;
   readonly reasoningControl: string | null;
+  /** Exact model-and-adapter intersection available to Brief for this route. */
+  readonly responseDensityControls: readonly ModelResponseDensityControl[];
+  /** Exact cache mechanism selected from the model-and-adapter contract. */
+  readonly promptCacheMode?: ModelPromptCacheMode | null;
+  readonly promptCacheMinimumInputTokens?: number | null;
   readonly fallbackPosition: number;
   readonly budgets: RoleBudgets;
   readonly catalogGeneration: number;
@@ -120,6 +144,24 @@ export type ResolveRouteInput = {
   /** Provider/model pairs already attempted; proves non-recursion. */
   readonly visited?: ReadonlySet<string>;
 };
+
+function transportCompatibilityFor(
+  entry: RoutedCatalogEntry,
+  selectedModelId: ModelId,
+): ProviderTransportCompatibilityPlan {
+  const exact = entry.modelTransportCompatibility?.find(
+    (candidate) => candidate.modelId === selectedModelId,
+  )?.plan;
+  if (exact !== undefined) {
+    return exact;
+  }
+  const base =
+    entry.transportCompatibility ?? defaultProviderTransportCompatibility(entry.adapterKind);
+  return bindProviderTransportCompatibilityToModel(
+    { ...base, compatibilityId: entry.transportCompatibilityId ?? base.compatibilityId },
+    selectedModelId,
+  );
+}
 
 function routeKey(providerId: ProviderId, modelId: ModelId): string {
   return `${providerId}\0${modelId}`;
@@ -235,10 +277,10 @@ const REASONING_CONTROL_PREFERENCES = {
     "provider-default": [],
   },
   commandcode: {
-    minimal: [],
-    balanced: [],
-    deep: [],
-    max: [],
+    minimal: ["low"],
+    balanced: ["medium"],
+    deep: ["high", "xhigh"],
+    max: ["max"],
     "provider-default": [],
   },
   custom: {
@@ -261,6 +303,34 @@ function reasoningControlFor(
     }
   }
   return null;
+}
+
+function responseDensityControlsFor(
+  capability: ModelCapability,
+  entry: RoutedCatalogEntry,
+): readonly ModelResponseDensityControl[] {
+  const modelControls = capability.responseDensityControls ?? [];
+  const adapterControls = entry.requestResponseDensityControls ?? [];
+  return modelControls.filter((control) => adapterControls.includes(control));
+}
+
+const PROMPT_CACHE_MODE_PREFERENCES = {
+  deterministic: [] as const,
+  openai: ["openai-routing-key"] as const,
+  anthropic: ["anthropic-ephemeral"] as const,
+  google: ["google-explicit-resource", "implicit-prefix"] as const,
+  commandcode: ["provider-managed"] as const,
+  custom: [] as const,
+} satisfies Record<ProviderAdapterKind, readonly ModelPromptCacheMode[]>;
+
+function promptCacheModeFor(
+  capability: ModelCapability,
+  adapterKind: ProviderAdapterKind,
+): ModelPromptCacheMode | null {
+  const supported = capability.promptCacheModes ?? [];
+  return (
+    PROMPT_CACHE_MODE_PREFERENCES[adapterKind].find((mode) => supported.includes(mode)) ?? null
+  );
 }
 
 function adapterMatchesRequirements(
@@ -329,6 +399,7 @@ export function resolveModelRoute(input: ResolveRouteInput): RoutingOutcome {
         code: "fallback-recursion",
       };
     }
+    const transportCompatibility = transportCompatibilityFor(found.entry, input.explicit.modelId);
     return {
       kind: "selected",
       capability: found.capability,
@@ -341,9 +412,14 @@ export function resolveModelRoute(input: ResolveRouteInput): RoutingOutcome {
         providerProfileId: found.entry.profileId,
         providerAdapterKind: found.entry.adapterKind,
         providerDestinationId: found.entry.destinationId,
+        transportCompatibilityId: transportCompatibility.compatibilityId,
+        transportCompatibilityReceipt: transportCompatibility.receipt,
         modelId: input.explicit.modelId,
         reasoning: "provider-default",
         reasoningControl: null,
+        responseDensityControls: responseDensityControlsFor(found.capability, found.entry),
+        promptCacheMode: promptCacheModeFor(found.capability, found.entry.adapterKind),
+        promptCacheMinimumInputTokens: found.capability.promptCacheMinimumInputTokens ?? null,
         fallbackPosition: 0,
         budgets: {},
         catalogGeneration: found.entry.catalog.generation,
@@ -443,6 +519,7 @@ export function resolveModelRoute(input: ResolveRouteInput): RoutingOutcome {
             : "role-policy"
         : "fallback";
 
+    const transportCompatibility = transportCompatibilityFor(found.entry, candidate.modelId);
     return {
       kind: "selected",
       capability: found.capability,
@@ -455,9 +532,14 @@ export function resolveModelRoute(input: ResolveRouteInput): RoutingOutcome {
         providerProfileId: found.entry.profileId,
         providerAdapterKind: found.entry.adapterKind,
         providerDestinationId: found.entry.destinationId,
+        transportCompatibilityId: transportCompatibility.compatibilityId,
+        transportCompatibilityReceipt: transportCompatibility.receipt,
         modelId: candidate.modelId,
         reasoning: route.reasoning,
         reasoningControl,
+        responseDensityControls: responseDensityControlsFor(found.capability, found.entry),
+        promptCacheMode: promptCacheModeFor(found.capability, found.entry.adapterKind),
+        promptCacheMinimumInputTokens: found.capability.promptCacheMinimumInputTokens ?? null,
         fallbackPosition: position,
         budgets: route.budgets,
         catalogGeneration: found.entry.catalog.generation,

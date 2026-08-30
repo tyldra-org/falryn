@@ -12,8 +12,8 @@ export type {
 } from "./anthropic-sdk-adapter.ts";
 export { createAnthropicSdkAdapter } from "./anthropic-sdk-adapter.ts";
 export { classifySqliteError, openBunSqlite } from "./bun-sqlite.ts";
-export type { CommandCodeSdkAdapterOptions } from "./command-code-sdk-adapter.ts";
-export { createCommandCodeSdkAdapter } from "./command-code-sdk-adapter.ts";
+export type { CommandCodeProviderAdapterOptions } from "./command-code-provider-adapter.ts";
+export { createCommandCodeProviderAdapter } from "./command-code-provider-adapter.ts";
 export { createSha256Hasher } from "./content-digest.ts";
 export { createEnvironmentCredentialStore } from "./environment-credentials.ts";
 export type {
@@ -61,12 +61,11 @@ export {
   createHostOutputStream,
   observeHandles,
 } from "./host-terminal.ts";
-export type { KeychainCredentialStoreOptions } from "./keychain-credentials.ts";
-export {
-  createKeychainCredentialStore,
-  KEYCHAIN_EXIT_STATUSES,
-  SECURITY_EXECUTABLE,
+export type {
+  KeychainCredentialStoreOptions,
+  OperatingSystemSecretsPort,
 } from "./keychain-credentials.ts";
+export { createKeychainCredentialStore } from "./keychain-credentials.ts";
 export type {
   CredentialWriteResult,
   WriteKeychainCredentialOptions,
@@ -83,3 +82,12 @@ export {
 export type { OpenAiSdkAdapterOptions, OpenAiSdkFetch } from "./openai-sdk-adapter.ts";
 export { createOpenAiSdkAdapter } from "./openai-sdk-adapter.ts";
 export { createProcessSignalPort, observedPlatformSignals } from "./process-signals.ts";
+export type {
+  SessionEnvironmentCredentialLookupOptions,
+  SessionEnvironmentCredentialLookupPort,
+  SessionEnvironmentLookupOutcome,
+} from "./session-environment-credentials.ts";
+export {
+  createSessionEnvironmentCredentialLookup,
+  LAUNCHCTL_EXECUTABLE,
+} from "./session-environment-credentials.ts";

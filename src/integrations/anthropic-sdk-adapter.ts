@@ -34,7 +34,12 @@ import type { ModelMessage, ModelToolDefinition } from "../providers/messages.ts
 import type { ProviderAdapterPort, ProviderStreamOptions } from "../providers/port.ts";
 import type { ModelRequest } from "../providers/request.ts";
 import type { NormalizedProviderEvent, UsageUnits } from "../providers/stream.ts";
+import type {
+  AnthropicMessagesTransportCompatibilityDeclaration,
+  ProviderModelTransportCompatibilityOverride,
+} from "../providers/transport-compatibility.ts";
 import { providerDestinationId } from "./provider-destination.ts";
+import { resolveProviderTransportCompatibilityPlanSet } from "./provider-transport-compatibility.ts";
 
 export type AnthropicSdkFetch = NonNullable<ClientOptions["fetch"]>;
 
@@ -55,6 +60,8 @@ export type AnthropicSdkAdapterOptions = {
   readonly requestTimeoutMs?: number;
   /** Deterministic SDK boundary used by tests. Production leaves this absent. */
   readonly createStream?: AnthropicSdkStreamFactory;
+  readonly compatibility?: AnthropicMessagesTransportCompatibilityDeclaration;
+  readonly modelCompatibility?: readonly ProviderModelTransportCompatibilityOverride[];
 };
 
 type ToolCallState = {
@@ -124,6 +131,7 @@ function toAnthropicMessages(
   rejectImageParts(messages);
   if (
     promptCache !== undefined &&
+    promptCache.mode === "anthropic-ephemeral" &&
     (promptCache.stableMessageCount < 1 ||
       promptCache.stableMessageCount > messages.length ||
       messages
@@ -139,7 +147,7 @@ function toAnthropicMessages(
     .map((message, index) => ({ message, index, text: textOf(message) }))
     .filter((entry) => entry.message.role === "system" && entry.text.length > 0);
   const system =
-    promptCache === undefined
+    promptCache === undefined || promptCache.mode !== "anthropic-ephemeral"
       ? systemMessages.map((entry) => entry.text).join("\n\n")
       : systemMessages.map<TextBlockParam>((entry) => ({
           type: "text",
@@ -295,20 +303,39 @@ function usageFrom(
 export function createAnthropicSdkAdapter(
   options: AnthropicSdkAdapterOptions,
 ): ProviderAdapterPort {
+  const models = options.supportedModels.map((id) => modelId.from(id));
+  const resolvedCompatibility = resolveProviderTransportCompatibilityPlanSet(
+    "anthropic",
+    options.compatibility,
+    models,
+    options.modelCompatibility,
+  );
+  if (!resolvedCompatibility.ok) {
+    throw new Error("Anthropic SDK adapter received an incompatible transport declaration");
+  }
+  const transportCompatibility = resolvedCompatibility.value.destination;
+  const compatibilityByModel = new Map(
+    resolvedCompatibility.value.models.map((entry) => [String(entry.modelId), entry.plan]),
+  );
   const identity = {
     providerId: providerId.from(options.providerId ?? "anthropic"),
     profileId: options.profileId,
     adapterKind: "anthropic" as const,
     endpoint: options.baseUrl ?? null,
     destinationId: providerDestinationId("anthropic", options.baseUrl ?? null),
+    transportCompatibilityId: transportCompatibility.compatibilityId,
     displayName: options.displayName ?? "Anthropic",
   };
-  const models = options.supportedModels.map((id) => modelId.from(id));
 
   return {
     identity,
     supportedModels: models,
     requestInputModalities: ["text"],
+    requestResponseDensityControls: [],
+    transportCompatibility,
+    transportCompatibilityFor(selectedModelId) {
+      return compatibilityByModel.get(String(selectedModelId)) ?? null;
+    },
     async *stream(
       request: ModelRequest,
       streamOptions: ProviderStreamOptions,
@@ -331,6 +358,34 @@ export function createAnthropicSdkAdapter(
           modelAttemptId: attempt,
           sequence: next(),
           failure: failure("cancellation", "The provider request was cancelled.", false),
+        };
+        return;
+      }
+      if (request.responseDensityControl !== null && request.responseDensityControl !== undefined) {
+        yield {
+          kind: "error",
+          requestId: request.requestId,
+          modelAttemptId: attempt,
+          sequence: next(),
+          failure: failure(
+            "unsupported-capability",
+            "This Anthropic SDK route has no verified native response-density control.",
+            false,
+          ),
+        };
+        return;
+      }
+      if (request.promptCache !== undefined && request.promptCache.mode !== "anthropic-ephemeral") {
+        yield {
+          kind: "error",
+          requestId: request.requestId,
+          modelAttemptId: attempt,
+          sequence: next(),
+          failure: failure(
+            "unsupported-capability",
+            "The routed prompt-cache mechanism is incompatible with Anthropic.",
+            false,
+          ),
         };
         return;
       }

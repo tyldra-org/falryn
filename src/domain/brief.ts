@@ -22,6 +22,7 @@ export {
 } from "./brief/comparison.ts";
 export type {
   BriefComplexity,
+  BriefDelivery,
   BriefDensity,
   BriefDetail,
   BriefDimensions,
@@ -39,11 +40,13 @@ export type {
   BriefProjection,
   BriefReceipt,
   BriefRequest,
+  BriefSelectionReason,
   BriefVerbosityLevel,
   BriefVerbosityMode,
 } from "./brief/contracts.ts";
 export {
   BRIEF_COMPLEXITIES,
+  BRIEF_DELIVERIES,
   BRIEF_DENSITIES,
   BRIEF_DETAIL_LEVELS,
   BRIEF_DIRECTNESS_LEVELS,
@@ -55,6 +58,7 @@ export {
   BRIEF_PRESENTATIONS,
   BRIEF_PRESERVED_FACTS,
   BRIEF_SCHEMA_VERSION,
+  BRIEF_SELECTION_REASONS,
   BRIEF_STRATEGY_VERSION,
   BRIEF_VERBOSITY_LEVELS,
   BRIEF_VERBOSITY_MODES,
@@ -64,12 +68,14 @@ export {
   HARD_BRIEF_MAX_BYTES,
   MAX_BRIEF_GUIDANCE_BYTES,
 } from "./brief/contracts.ts";
+export type { BriefVerbosityDecision } from "./brief/policy.ts";
 export {
   briefOutputTokenBudget,
+  decideBriefVerbosity,
   isBriefPolicySource,
   isBriefVerbosityMode,
   preservedFactsFromNeed,
   resolveBriefPolicy,
   selectBriefVerbosity,
 } from "./brief/policy.ts";
-export { projectBrief } from "./brief/projection.ts";
+export { projectBrief, recordBriefDelivery } from "./brief/projection.ts";

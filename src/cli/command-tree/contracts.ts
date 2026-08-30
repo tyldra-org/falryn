@@ -256,6 +256,8 @@ export type RawArguments = {
   readonly "add-dir": readonly string[] | undefined;
   readonly prompt: readonly string[] | undefined;
   readonly brief: string | undefined;
+  readonly hush: string | undefined;
+  readonly loom: string | undefined;
   readonly mode: string | undefined;
   readonly key: string | undefined;
   readonly value: string | undefined;

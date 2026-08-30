@@ -53,19 +53,28 @@ do not create `~/.falryn` or trigger migration.
 
 Provider profiles are stored in the typed `providers.connections`
 configuration value. A fresh installation includes a selected
-OpenAI profile that references `FALRYN_OPENAI_API_KEY`; configuration
-stores the reference, never the credential bytes. Additional profiles can be
-added, configured, selected, tested, logged out, or removed through
-`falryn provider`.
+OpenAI profile that references `FALRYN_OPENAI_API_KEY`; configuration stores
+the reference, never the credential bytes. The environment store resolves only
+the provider's ordered declaration of Falryn-specific and provider-native
+aliases. It works through the inherited process environment on macOS, Linux,
+and Windows. On macOS it can also resolve one declared alias from the current
+launchd user environment; on Windows it can resolve one declared persisted User
+or Machine value. Linux deliberately has no post-start environment probe because
+its common user-manager command exposes the complete environment rather than one
+name. Falryn never parses or executes shell profiles or reads another
+application's credential files. Additional profiles can be added, configured,
+selected, tested, logged out, or removed through `falryn provider`.
 
 `provider add` and `provider configure` infer the installed official SDK only
 from an exact provider identity: `openai`, `anthropic`, `google`, or
 `commandcode`. Their
-official destinations default to remote model discovery. An unfamiliar
-provider requires an explicit adapter and endpoint, and a compatible custom
-endpoint defaults to static discovery unless the caller opts into remote
-discovery. Enabled models and user catalog identities are repeatable inputs to
-the same typed action used by human, JSON, and JSONL callers.
+official destinations receive their provider's canonical environment reference
+and default to remote model discovery. An unfamiliar provider requires an
+explicit adapter and endpoint, and a compatible custom endpoint receives no
+inferred credential and defaults to static discovery unless the caller opts
+into remote discovery. Enabled models and user catalog identities are
+repeatable inputs to the same typed action used by human, JSON, and JSONL
+callers.
 
 Successful profile creation, configuration, selection, and login automatically
 run the profile's configured discovery path. Static profiles resolve their
@@ -79,11 +88,12 @@ diagnostic, while every live attempt also refreshes an expired catalog before
 binding its immutable execution generation.
 
 Interactive API-key login accepts the secret only on standard input and stores
-it in the operating-system keychain on supported platforms. The supervised
-keychain command receives the secret over its standard-input channel rather
-than an argument or environment variable. OAuth PKCE and device authorization
-are accepted only through an installed official provider adapter; Falryn does
-not imitate browser sessions or subscription credentials.
+it through `Bun.secrets`: macOS Keychain Services, Linux Secret Service, or
+Windows Credential Manager. The value does not enter command arguments,
+environment variables, diagnostics, configuration, or model context. Missing,
+locked, denied, and unavailable platform services fail closed. OAuth PKCE and
+device authorization are accepted only through an installed official provider
+adapter; Falryn does not imitate browser sessions or subscription credentials.
 
 Human, JSON, and JSONL results expose profile, connection, account, catalog,
 and revocation state without secret material. `falryn run` passes the selected
@@ -94,9 +104,9 @@ semantic journaling, and bounded result projection before provider
 continuation. A headless turn cannot report completion unless a terminal model
 attempt ran.
 
-Model identity and model selection are stored separately. Falryn bundles a
-strict, versioned OpenAI and Command Code model catalogs into the executable,
-provider profiles
+Model identity and model selection are stored separately. Falryn bundles
+strict, versioned OpenAI, Anthropic, Google, and Command Code model catalogs
+into the executable, provider profiles
 select enabled model IDs and may reference user catalogs by identity, and
 optional inline profile declarations remain the highest-priority compatibility
 override. A user catalog is a bounded JSONC document at
@@ -104,7 +114,12 @@ override. A user catalog is a bounded JSONC document at
 adapter, and normalized endpoint so facts cannot cross destinations. Catalog
 documents separate input modalities from output modalities and record tools,
 structured output, streaming, reasoning, provider-native reasoning controls,
-context limits, output limits, and completeness. Feature support is tri-state
+provider-native response-density controls, context limits, output limits,
+provider-bound pricing schedules, and completeness. Pricing uses integer USD
+microunits per million tokens and retains source, observation time, billing
+mode, context/service/time bands, effective interval, and distinct input,
+cached-input, cache-write-input, and output rates. Unpublished rates stay
+explicitly unknown. Feature support is tri-state
 (`supported`, `unsupported`, or `unknown`); missing facts are never upgraded to
 support. The default OpenAI profile enables the current general-purpose GPT-5.6 family: `gpt-5.6-sol`,
 `gpt-5.6-terra`, `gpt-5.6-luna`, and the moving `gpt-5.6` alias. Sol is ordered
@@ -124,7 +139,13 @@ limits, structured-output support, and provider-native reasoning controls stay
 unknown because Command Code does not publish those facts per model. The
 catalog marks the provider's agent protocol as tool-capable and streaming, but
 live image transport remains unavailable until Falryn can resolve image
-handles into SDK request parts.
+handles into SDK request parts. Its bundled pricing schedules cover every one
+of those 62 IDs from Command Code's current official table, including
+long-context, time-of-day, cache, and temporary-free conditions. They are
+marked as published estimates because Command Code says routed upstream cost
+can vary. OpenAI's catalog independently records its official direct-API
+schedule, so an identical model ID never borrows a price from another
+destination.
 
 Remote catalog refresh uses the official OpenAI, Anthropic, or Google Gen AI
 TypeScript SDK selected by the profile. Command Code discovery uses the OpenAI
@@ -142,17 +163,18 @@ Malformed records, stale generations, authentication failures, rate limits,
 timeouts, and cancellation fail closed with typed, secret-free outcomes.
 Before a live model adapter is created, the exact effective catalog is
 published immutably to the product SQLite state database with its provider
-profile, SDK adapter kind, and configured endpoint. Reusing a profile and
+profile, provider adapter kind, and configured endpoint. Reusing a profile and
 generation with a different destination or catalog is a conflict. The model
 route and attempt retain that exact profile/destination binding and catalog
 generation, so cache eviction, profile reconfiguration, or a later provider
 refresh cannot change or erase the facts used by an in-flight or replayed
 decision. Catalog and profile files never contain credential bytes.
-Live inference uses the official OpenAI, Anthropic, or Google Gen AI SDK named
-by the selected profile. Command Code is one Falryn provider with an exact
-model-to-protocol map: Claude execution IDs use Anthropic Messages and the
-remaining published IDs use OpenAI Chat Completions. No model-name heuristic or
-generic compatibility assumption chooses that transport. Each adapter
+Live inference uses provider adapters. The OpenAI, Anthropic, and Google
+adapters each instantiate their official SDK directly. Command Code is one
+Falryn provider whose composite adapter uses an exact model-to-protocol map:
+Claude execution IDs delegate to the Anthropic SDK leaf and the remaining
+published IDs delegate to the OpenAI SDK leaf. No model-name heuristic or
+generic compatibility assumption chooses that transport. Each provider adapter
 translates the same bounded messages,
 tool definitions, tool continuations, output contract, token budget, usage,
 finish reason, cancellation, and typed failure events. A provider-native
@@ -166,18 +188,44 @@ transport; the live adapters accept text today and fail with
 `unsupported-capability` rather than dropping unresolved image handles. Falryn
 keeps retries above the SDK boundary; each SDK performs one request attempt.
 
+Provider wire behavior is a separate versioned contract. Every adapter resolves
+an immutable destination plan plus one plan for each enabled model and publishes
+their SHA-256 identities. Resolution is ordered: installed SDK baseline, optional
+destination declaration, then an optional exact-model override. The route keeps
+the selected plan's source and layer receipt; provider request metadata and the
+durable model-attempt binding retain its identity. The attempt runner refuses an
+identity or receipt that differs from the live adapter before network I/O.
+Existing profiles use the installed adapter's baseline. OpenAI profiles may
+instead declare the exact Chat Completions behavior for
+system or developer messages, output-token field, streaming usage, finish
+reason, strict tool schemas, tool-result names, and assistant bridging after a
+tool result at destination or exact-model scope. Exact-model declarations name
+an enabled model and retain nullable HTTPS source and observation metadata. The
+strict profile codec rejects duplicate or disabled model overrides and any
+dialect that does not match the selected adapter. Source metadata is audit data,
+not authority. Falryn does not infer these facts from a model name, provider
+label, or endpoint URL. OpenAI Responses is not implemented by this Chat
+Completions adapter.
+
 Live turns also derive a secret-safe, session-scoped prompt-cache identity from
 the bound provider route, configuration and catalog generations, and the exact
 stable instruction, capability, and tool-schema prefix. Dynamic Brief guidance,
 task text, conversation, memory, and evidence remain outside that prefix.
 Retries and tool continuations on the same route reuse the identity; a session,
 route, generation, stable instruction, or disclosed schema change breaks it.
-OpenAI receives the current SDK `prompt_cache_key`. Anthropic receives a
-five-minute `cache_control` breakpoint on the last stable system block. Google
-cached-token usage remains observable, but explicit cached-content creation and
-cleanup are not implemented. Attempt events retain only cache digests and the
-stable boundary, never prompt text or credentials. Normalized usage keeps
-provider-reported cache reads and Anthropic cache writes distinct.
+Each built-in model records its exact provider cache mechanism, published
+minimum cacheable prefix, and provider-bound cache-read and cache-write prices;
+unknown thresholds or prices remain unknown. OpenAI receives the current SDK
+`prompt_cache_key`. Anthropic receives a five-minute `cache_control` breakpoint
+on the last stable system block. Google uses automatic prefix caching on current
+models and creates a five-minute explicit cached-content resource only where the
+bundled model contract verifies that mechanism; failed cache creation falls back
+to the exact uncached request. Command Code keeps Falryn's stable prefix but lets
+its Provider API manage cache locality without leaking OpenAI- or
+Anthropic-specific controls through its protocol adapters. Attempt events retain
+the selected mechanism, eligibility threshold, cache digests, and stable
+boundary, never prompt text or credentials. Normalized usage keeps
+provider-reported cache reads and cache writes distinct.
 
 The provider request contains only the disclosed tool definitions, not the
 whole registered catalog. The attempt event retains the provider profile,
@@ -189,7 +237,7 @@ fallback exhaustion, and uncertain effects remain typed outcomes. Completed or
 uncertain consequential tool effects are not retried as fresh work.
 
 The interactive composer and `falryn run` use the same application-owned
-live-turn executor. Both paths compose Context and Brief, run the selected
+live-turn executor. Both paths compose Context and, unless disabled, Brief; run the selected
 provider and bounded tool continuation loop, and persist the same closed
 session, turn, model-attempt, and capability-invocation events to SQLite before
 projecting them. OpenTUI folds those committed events into its transcript;
@@ -207,12 +255,75 @@ provider continuation after tool results. Brief also supplies a mode-specific
 provider output ceiling. Projection failure is a typed turn failure rather than
 silent omission.
 
+`brief.v4` delivers that policy through one provider-neutral request field.
+The route first intersects controls published for the exact model with controls
+implemented by the selected provider adapter. OpenAI GPT-5.6 requests use native
+`verbosity`; models without a verified native control receive Brief's bounded
+prompt guidance. When native density is available, only task-specific semantic
+obligations remain in the prompt. Command Code does not inherit OpenAI
+verbosity merely because one of its transports is OpenAI-compatible. The Brief
+receipt records `prompt`, `native`, or `native-with-semantic-prompt`, the exact
+normalized native value, and the guidance bytes actually sent.
+
+`auto` uses the deterministic `brief.v4` policy. Prompt shape is classified as
+low, medium, or high without treating one technical keyword as a large task.
+High complexity, uncertainty, recovery, safety-critical ambiguity, or an
+explicit clarification request selects detailed output. Medium complexity, a
+failure, risk, confirmation, required user action, or order-sensitive procedure
+selects balanced output. A low-complexity headless or narrow turn selects
+compact; interactive turns default to balanced. Citations and validation
+results remain protected facts but do not force a larger answer by themselves.
+Every receipt records the ordered reasons for its selection.
+Failures, uncertainty, confirmations, required actions, and recovery obligations
+are derived from the request itself as well as later Context and tool outcomes,
+so the first provider attempt receives the same preservation guarantees.
+
+The explicit modes use outcome-first guidance and require every explicit fact to
+appear once with names, paths, commands, errors, numbers, and negations kept
+exact. Compact requests the shortest complete answer and avoids optional
+examples. Balanced adds only the reasoning and evidence needed to act. Detailed
+means complete rather than long: it adds relevant tradeoffs and actionable steps
+but remains direct and forbids invented background, prompt restatement, repeated
+conclusions, and filler.
+
+Brief changes density and explanation depth only. It does not impose a language,
+persona, dialect, broken grammar, or Caveman-style voice on the provider. The
+current policy defaults cap compact, balanced, and detailed at 2,048, 4,096, and
+8,192 output tokens respectively; these are ceilings, not requested answer
+lengths or universal model limits. `auto` selects a level and its ceiling from
+the live need. The effective request uses the lowest applicable Brief, model,
+route, and caller limit. Brief `off` adds neither guidance nor a Brief-derived
+ceiling; the selected model route's ordinary provider budget still applies.
+
+Human controls expose `compact`, `balanced`, `detailed`, `auto`, `on`, and
+`off`; they do not expose the backend name `raw`. `/brief off` and
+`falryn run --brief off` select that internal bypass, so the turn has no Brief
+prompt section, Brief receipt, or Brief-derived output budget. In a TUI session,
+`/brief on` restores the last enabled density mode. The stateless CLI maps
+`--brief on` to `auto`.
+
+The TUI also exposes `/compression`, a single interactive control sheet for
+Brief, Hush, and Loom. It shows the current state of all three engines, selects
+an explicit Brief density, toggles Hush or Loom, and can enable or disable all
+three together. `/brief`, `/hush`, and `/loom` remain compatible direct
+shortcuts rather than becoming a second configuration system. Human-facing
+`off` continues to map to each engine's bounded backend raw mode; it does not
+disable safety, capture, artifacts, recovery, or provider limits.
+
 `bun run benchmark:brief` provides a bounded matched-run scorecard against the
 pinned Caveman research policy. It records complete provider usage, retries,
 latency, guidance cost, required-fact fidelity, losing rows, and invalid rows
 without persisting raw model responses. The scorecard requires a configured
 live provider for comparative acceptance; deterministic fixtures prove only
 the comparison and failure plumbing.
+
+The checked-in #827 qualification ran the six reviewed fixtures twice with
+alternating order through Command Code `MiniMaxAI/MiniMax-M3`. Both arms used
+the live headless provider path, a 2,048-token output ceiling, concurrency one,
+and no disclosed tools. All 12 pairs passed with full Brief fidelity, no retry,
+loss, invalid row, or missing Brief fact. Brief used 8,502 provider-reported
+complete-turn tokens; the pinned Caveman arms used 25,892. This is evidence for
+that provider, model, corpus, and run only. It is not a universal model claim.
 
 A shared deterministic integration fixture exercises that lifecycle through
 both public composition roots. Its first provider response invokes
@@ -262,6 +373,14 @@ The public model roles are `default`, `compact`, `vision`, `plan`, `advisor`,
 than a `thinking` or `deep` role. Profiles request a work intent and reasoning
 posture, but never choose a hidden provider or grant authority through model
 routing.
+
+OpenTUI's model picker is connected to the live turn path. A selection must
+exist in the current catalog generation, must not be unavailable, and must be
+executable by the selected provider adapter. A successful selection becomes an
+the process-local default route for later turns and remains selected when the process creates a
+new session. An in-flight turn keeps the model identity it captured before
+provider execution. This selection remains process-local; durable role and
+fallback editing is still outside the current interface.
 
 The current disclosure path selects a bounded profile-eligible subset from the
 registered catalog and records selected, omitted, and unavailable reasons. The
@@ -349,6 +468,12 @@ return the exact prefix, continuation, and artifact expansion instead of
 placing unlimited bytes in model context. Recovery requests keep their
 existing range, head/tail, search-hit, and exact projection contract.
 
+The TUI exposes `/loom on|off`, and headless runs expose
+`--loom on|off`. `off` maps to the existing backend `raw` mode and overrides a
+model request for Loom projection. The model-facing Read schema keeps
+`loom|raw` because those values describe execution semantics; the human-facing
+control never asks users to select `raw` directly.
+
 ## Process output, Hush, and recovery
 
 The built-in `run_process` and `run_shell` capabilities accept
@@ -380,6 +505,12 @@ search-hit, or exact recovery. The returned result preserves the original
 process invocation and capture lineage and continues through the same provider
 tool loop. A process result contains only the selected Hush or raw projection;
 the internal capture is not serialized a second time.
+
+The TUI exposes `/hush on|off`, and headless runs expose
+`--hush on|off`. `off` maps to the existing backend `raw` mode and overrides a
+model request for Hush reduction. The model-facing process schemas keep
+`hush|raw`; capture, redaction, hard bounds, artifacts, and targeted recovery
+remain active when the human-facing control is off.
 
 ## Language and debugger tools
 

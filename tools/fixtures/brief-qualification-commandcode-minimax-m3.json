@@ -1,0 +1,201 @@
+{
+  "schemaVersion": 1,
+  "scorecardSchemaVersion": 2,
+  "observedAt": "2026-08-30T06:55:48.125Z",
+  "sourceReportDigest": "b1a6c38e0958e87795c0e1fc24c45c5fd3c819f79eedbff2d1b9bf475532d627",
+  "fixtureCorpusDigest": "b5e74e617625b092609a8f0264bae61e2eb6804248d2b9170deb083fd6cd52bb",
+  "baseline": {
+    "commit": "17f9f2ec2377b0bfe16b52ee03a462e7f0a02bc8",
+    "sourceDigest": "3edd677596cbf12f010f25f05dfb1e8a6c9c178d92499c86e5b5afa44c86c16c",
+    "adapterVersion": "falryn.caveman.v2"
+  },
+  "provider": {
+    "id": "commandcode",
+    "model": "MiniMaxAI/MiniMax-M3"
+  },
+  "settings": {
+    "repetitions": 2,
+    "outputTokenLimit": 2048,
+    "responseTokenizer": "utf8-bytes-div4.v1",
+    "concurrency": 1,
+    "toolExposure": "none",
+    "briefDelivery": "prompt",
+    "providerResponseDensityControl": null
+  },
+  "summary": {
+    "total": 12,
+    "passed": 12,
+    "tied": 0,
+    "lost": 0,
+    "invalid": 0,
+    "accepted": 12,
+    "partial": false,
+    "complete": true
+  },
+  "aggregate": {
+    "briefTotalTokens": 8502,
+    "cavemanTotalTokens": 25892,
+    "tokenDelta": -17390,
+    "briefOutputTokens": 1372,
+    "cavemanOutputTokens": 1036,
+    "briefGuidanceBytes": 7710,
+    "cavemanGuidanceBytes": 81400,
+    "briefMissingFacts": 0,
+    "cavemanMissingFacts": 4,
+    "briefRetries": 0,
+    "cavemanRetries": 0
+  },
+  "rows": [
+    {
+      "pairId": "coding-explanation-1",
+      "verdict": "pass",
+      "accepted": true,
+      "briefComparableTokens": 636,
+      "cavemanComparableTokens": 2098,
+      "briefCachedInputTokens": 128,
+      "cavemanCachedInputTokens": 128,
+      "tokenDelta": -1462,
+      "briefFidelity": 1,
+      "cavemanFidelity": 1
+    },
+    {
+      "pairId": "coding-explanation-2",
+      "verdict": "pass",
+      "accepted": true,
+      "briefComparableTokens": 896,
+      "cavemanComparableTokens": 2103,
+      "briefCachedInputTokens": 609,
+      "cavemanCachedInputTokens": 1920,
+      "tokenDelta": -1207,
+      "briefFidelity": 1,
+      "cavemanFidelity": 1
+    },
+    {
+      "pairId": "implementation-summary-1",
+      "verdict": "pass",
+      "accepted": true,
+      "briefComparableTokens": 902,
+      "cavemanComparableTokens": 2096,
+      "briefCachedInputTokens": 256,
+      "cavemanCachedInputTokens": 128,
+      "tokenDelta": -1194,
+      "briefFidelity": 1,
+      "cavemanFidelity": 0.75
+    },
+    {
+      "pairId": "implementation-summary-2",
+      "verdict": "pass",
+      "accepted": true,
+      "briefComparableTokens": 687,
+      "cavemanComparableTokens": 2098,
+      "briefCachedInputTokens": 512,
+      "cavemanCachedInputTokens": 2066,
+      "tokenDelta": -1411,
+      "briefFidelity": 1,
+      "cavemanFidelity": 0.75
+    },
+    {
+      "pairId": "verification-failure-1",
+      "verdict": "pass",
+      "accepted": true,
+      "briefComparableTokens": 646,
+      "cavemanComparableTokens": 2130,
+      "briefCachedInputTokens": 128,
+      "cavemanCachedInputTokens": 256,
+      "tokenDelta": -1484,
+      "briefFidelity": 1,
+      "cavemanFidelity": 1
+    },
+    {
+      "pairId": "verification-failure-2",
+      "verdict": "pass",
+      "accepted": true,
+      "briefComparableTokens": 633,
+      "cavemanComparableTokens": 2124,
+      "briefCachedInputTokens": 587,
+      "cavemanCachedInputTokens": 1920,
+      "tokenDelta": -1491,
+      "briefFidelity": 1,
+      "cavemanFidelity": 1
+    },
+    {
+      "pairId": "code-review-1",
+      "verdict": "pass",
+      "accepted": true,
+      "briefComparableTokens": 684,
+      "cavemanComparableTokens": 2130,
+      "briefCachedInputTokens": 256,
+      "cavemanCachedInputTokens": 128,
+      "tokenDelta": -1446,
+      "briefFidelity": 1,
+      "cavemanFidelity": 1
+    },
+    {
+      "pairId": "code-review-2",
+      "verdict": "pass",
+      "accepted": true,
+      "briefComparableTokens": 629,
+      "cavemanComparableTokens": 2223,
+      "briefCachedInputTokens": 512,
+      "cavemanCachedInputTokens": 2070,
+      "tokenDelta": -1594,
+      "briefFidelity": 1,
+      "cavemanFidelity": 0.75
+    },
+    {
+      "pairId": "recovery-1",
+      "verdict": "pass",
+      "accepted": true,
+      "briefComparableTokens": 699,
+      "cavemanComparableTokens": 2371,
+      "briefCachedInputTokens": 384,
+      "cavemanCachedInputTokens": 128,
+      "tokenDelta": -1672,
+      "briefFidelity": 1,
+      "cavemanFidelity": 1
+    },
+    {
+      "pairId": "recovery-2",
+      "verdict": "pass",
+      "accepted": true,
+      "briefComparableTokens": 980,
+      "cavemanComparableTokens": 2371,
+      "briefCachedInputTokens": 640,
+      "cavemanCachedInputTokens": 2048,
+      "tokenDelta": -1391,
+      "briefFidelity": 1,
+      "cavemanFidelity": 1
+    },
+    {
+      "pairId": "short-factual-1",
+      "verdict": "pass",
+      "accepted": true,
+      "briefComparableTokens": 555,
+      "cavemanComparableTokens": 2074,
+      "briefCachedInputTokens": 128,
+      "cavemanCachedInputTokens": 128,
+      "tokenDelta": -1519,
+      "briefFidelity": 1,
+      "cavemanFidelity": 0.5
+    },
+    {
+      "pairId": "short-factual-2",
+      "verdict": "pass",
+      "accepted": true,
+      "briefComparableTokens": 555,
+      "cavemanComparableTokens": 2074,
+      "briefCachedInputTokens": 537,
+      "cavemanCachedInputTokens": 2058,
+      "tokenDelta": -1519,
+      "briefFidelity": 1,
+      "cavemanFidelity": 1
+    }
+  ],
+  "limitations": [
+    "One provider and one model were qualified.",
+    "The provider uses managed prompt caching; cached input tokens remain visible per arm in the source report.",
+    "The provider did not report monetary cost.",
+    "Command Code MiniMax M3 used prompt delivery because its catalog does not declare a native response-density control.",
+    "The scorecard contains no raw prompt, response, or credential values."
+  ]
+}

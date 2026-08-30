@@ -51,8 +51,23 @@ export const WORKSPACE_SLASH_ALIASES: readonly ComposerSlashAlias[] = [
     argument: "none",
   },
   {
+    forms: ["/compression"],
+    commandId: "compression.show",
+    argument: "none",
+  },
+  {
     forms: ["/brief"],
     commandId: "brief.set",
+    argument: "layout-name",
+  },
+  {
+    forms: ["/hush"],
+    commandId: "hush.set",
+    argument: "layout-name",
+  },
+  {
+    forms: ["/loom"],
+    commandId: "loom.set",
     argument: "layout-name",
   },
   {

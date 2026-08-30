@@ -14,6 +14,7 @@ import {
   type EffectCertainty,
   type EffectiveExecutionPolicy,
   foldToolEffects,
+  recordBriefDelivery,
   resolveExecutionProfile,
   type SessionCorrelation,
   type ToolHookRegistry,
@@ -26,8 +27,10 @@ import {
   type ModelBudgets,
   type ModelMessage,
   type ModelRequest,
+  type ModelResponseDensityControl,
   modelRequestId,
   type ProviderAdapterPort,
+  providerTransportCompatibilityReceiptMatchesPlan,
   type UsageUnits,
 } from "../providers/index.ts";
 import { createBriefComposer } from "./brief.ts";
@@ -434,7 +437,7 @@ function aggregateProviderUsage(usage: readonly (UsageUnits | null)[]): UsageUni
   };
 }
 
-function replaceBriefGuidance(messages: ModelMessage[], source: string, guidance: string): boolean {
+function setBriefGuidance(messages: ModelMessage[], source: string, guidance: string): void {
   const marker = `[brief source=${source}]`;
   for (const [index, entry] of messages.entries()) {
     if (entry.role !== "system") {
@@ -451,15 +454,34 @@ function replaceBriefGuidance(messages: ModelMessage[], source: string, guidance
     const contentStart = start + marker.length;
     const nextSection = text.indexOf("\n\n[", contentStart);
     const end = nextSection < 0 ? text.length : nextSection;
-    messages[index] = {
-      role: "system",
-      parts: [
-        { kind: "text", text: `${text.slice(0, contentStart)}\n${guidance}${text.slice(end)}` },
-      ],
-    };
-    return true;
+    const before = text.slice(0, start).trimEnd();
+    const after = text.slice(end).trimStart();
+    const brief = guidance.length === 0 ? "" : `${marker}\n${guidance}`;
+    const replacement = [before, brief, after].filter((part) => part.length > 0).join("\n\n");
+    if (replacement.length === 0) {
+      messages.splice(index, 1);
+    } else {
+      messages[index] = { role: "system", parts: [{ kind: "text", text: replacement }] };
+    }
+    return;
   }
-  return false;
+  if (guidance.length === 0) {
+    return;
+  }
+  const userIndex = messages.findIndex((message) => message.role === "user");
+  messages.splice(userIndex < 0 ? messages.length : userIndex, 0, {
+    role: "system",
+    parts: [{ kind: "text", text: `${marker}\n${guidance}` }],
+  });
+}
+
+function responseDensityControlFor(
+  receipt: AttemptRunnerRequest["receipt"],
+  verbosity: NonNullable<AttemptModelInput["brief"]>["receipt"]["selectedVerbosity"],
+): ModelResponseDensityControl | null {
+  const control: ModelResponseDensityControl =
+    verbosity === "compact" ? "low" : verbosity === "balanced" ? "medium" : "high";
+  return receipt.responseDensityControls.includes(control) ? control : null;
 }
 
 function validateDisclosure(request: AttemptRunnerRequest, registry: ToolRegistry): string | null {
@@ -558,6 +580,7 @@ function modelRequest(
   input: AttemptModelInput,
   messages: readonly ModelMessage[],
   budgets: ModelBudgets,
+  responseDensityControl: ModelResponseDensityControl | null,
   sequence: number,
 ): ModelRequest {
   return {
@@ -570,12 +593,14 @@ function modelRequest(
     budgets,
     reasoning: request.receipt.reasoning,
     reasoningControl: request.receipt.reasoningControl,
+    responseDensityControl,
     ...(request.promptCache === undefined ? {} : { promptCache: request.promptCache }),
     metadata: {
       role: request.receipt.role,
       ...(request.receipt.intent === null ? {} : { workIntent: request.receipt.intent }),
       configurationGeneration: Number(request.boundConfigurationGeneration),
       providerCatalogGeneration: request.receipt.catalogGeneration,
+      transportCompatibilityId: request.receipt.transportCompatibilityId,
       modelCapabilitySchemaVersion: request.receipt.modelCapabilitySchemaVersion,
     },
   };
@@ -606,8 +631,30 @@ export function createProductAttemptRunner(
       if (request.receipt.providerDestinationId !== options.provider.identity.destinationId) {
         return invalidAttempt("selected provider destination does not match the route");
       }
+      const transportCompatibility = options.provider.transportCompatibilityFor(
+        request.receipt.modelId,
+      );
+      if (
+        transportCompatibility === null ||
+        request.receipt.transportCompatibilityId !== transportCompatibility.compatibilityId ||
+        !providerTransportCompatibilityReceiptMatchesPlan(
+          request.receipt.transportCompatibilityReceipt,
+          transportCompatibility,
+        )
+      ) {
+        return invalidAttempt("selected provider transport compatibility does not match the route");
+      }
       if (!options.provider.supportedModels.includes(request.receipt.modelId)) {
         return invalidAttempt("selected model is unavailable on the provider adapter");
+      }
+      if (
+        request.receipt.responseDensityControls.some(
+          (control) => !(options.provider.requestResponseDensityControls ?? []).includes(control),
+        )
+      ) {
+        return invalidAttempt(
+          "selected response-density control is unavailable on the provider adapter",
+        );
       }
 
       let budgets = effectiveBudgets(request);
@@ -621,6 +668,7 @@ export function createProductAttemptRunner(
       const usage: (UsageUnits | null)[] = [];
       let briefRequest = input.brief?.request ?? null;
       let briefReceipt = input.brief?.receipt ?? null;
+      let responseDensityControl: ModelResponseDensityControl | null = null;
       let briefFailure: string | null = null;
       const continuation: { terminal: ProviderStreamConsumeOutcome | null } = { terminal: null };
 
@@ -646,9 +694,29 @@ export function createProductAttemptRunner(
         coordinator: options.coordinator,
       });
 
+      if (input.brief !== undefined) {
+        responseDensityControl = responseDensityControlFor(
+          request.receipt,
+          input.brief.receipt.selectedVerbosity,
+        );
+        const guidance =
+          responseDensityControl === null
+            ? input.brief.fallbackGuidance
+            : input.brief.semanticGuidance;
+        setBriefGuidance(messages, input.brief.sectionSource, guidance);
+        briefReceipt = recordBriefDelivery(input.brief.receipt, guidance, responseDensityControl);
+      }
+
       const consume = async (): Promise<ProviderStreamConsumeOutcome> => {
         requestSequence += 1;
-        const currentRequest = modelRequest(request, input, messages, budgets, requestSequence);
+        const currentRequest = modelRequest(
+          request,
+          input,
+          messages,
+          budgets,
+          responseDensityControl,
+          requestSequence,
+        );
         const outcome = await consumer.consume({
           turnId: request.turnId,
           configurationGeneration: request.configurationGeneration,
@@ -712,18 +780,21 @@ export function createProductAttemptRunner(
                 briefFailure = projected.error.code;
                 return { kind: "stop" };
               }
-              if (
-                !replaceBriefGuidance(
-                  messages,
-                  input.brief.sectionSource,
-                  projected.value.projection.guidance,
-                )
-              ) {
-                briefFailure = "section-missing";
-                return { kind: "stop" };
-              }
+              responseDensityControl = responseDensityControlFor(
+                request.receipt,
+                projected.value.projection.receipt.selectedVerbosity,
+              );
+              const guidance =
+                responseDensityControl === null
+                  ? projected.value.projection.guidance
+                  : projected.value.projection.semanticGuidance;
+              setBriefGuidance(messages, input.brief.sectionSource, guidance);
               briefRequest = nextRequest;
-              briefReceipt = projected.value.projection.receipt;
+              briefReceipt = recordBriefDelivery(
+                projected.value.projection.receipt,
+                guidance,
+                responseDensityControl,
+              );
               budgets = {
                 ...budgets,
                 maxOutputTokens: minBudget(

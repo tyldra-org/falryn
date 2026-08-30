@@ -99,6 +99,8 @@ export type ModelAttemptBinding = {
   readonly providerProfileId?: string | undefined;
   readonly providerAdapterKind?: string | undefined;
   readonly providerDestinationId?: string | undefined;
+  /** Absent only on events written before transport compatibility binding shipped. */
+  readonly transportCompatibilityId?: string | undefined;
   readonly modelId: ModelId;
   readonly role: string;
   readonly intent: string | null;
@@ -148,6 +150,15 @@ export type ModelAttemptBinding = {
         readonly stablePrefixDigest: string;
         readonly stableMessageCount: number;
         readonly toolCatalogGeneration: number;
+        /** Absent only on events written before cache mechanisms were catalog-bound. */
+        readonly mode?:
+          | "implicit-prefix"
+          | "openai-routing-key"
+          | "anthropic-ephemeral"
+          | "google-explicit-resource"
+          | "provider-managed"
+          | undefined;
+        readonly minimumInputTokens?: number | null | undefined;
       }
     | undefined;
   readonly budgets: {

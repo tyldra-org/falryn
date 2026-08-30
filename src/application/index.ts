@@ -223,15 +223,24 @@ export type {
   ProductBriefContextState,
   ProductBriefControls,
   ProductBriefControlsOptions,
+  ProductBriefFrontendMode,
+  ProductBriefMode,
+  ProductBriefModeError,
   ProductBriefTurnInput,
 } from "./product-brief.ts";
 export {
   briefNeedAfterContext,
   briefNeedAfterToolResults,
+  classifyProductBriefComplexity,
   composeProductBriefControls,
   deriveProductBriefNeed,
   describeBriefVerbosityModes,
+  isProductBriefFrontendMode,
+  isProductBriefMode,
+  PRODUCT_BRIEF_FRONTEND_MODES,
+  PRODUCT_BRIEF_MODES,
   PRODUCT_BRIEF_OWNER,
+  productBriefModeFromFrontend,
 } from "./product-brief.ts";
 export type {
   ProductContextReceipt,
@@ -277,6 +286,8 @@ export type {
   ProductLiveTurnExecutorOptions,
   ProductLiveTurnInput,
   ProductLiveTurnResult,
+  ProductModelSelection,
+  ProductModelSelectionControls,
 } from "./product-live-turn.ts";
 export { createProductLiveTurnExecutor, productModelPolicy } from "./product-live-turn.ts";
 export type {
@@ -294,6 +305,16 @@ export type {
 export { composeProductMemoryTurn } from "./product-memory-turn.ts";
 export { attemptModelInputFromPrompt } from "./product-model-input.ts";
 export type {
+  ProductEngineFrontendState,
+  ProductOutputControlError,
+  ProductOutputControls,
+  ProductOutputControlsOptions,
+} from "./product-output-controls.ts";
+export {
+  composeProductOutputControls,
+  PRODUCT_ENGINE_FRONTEND_STATES,
+} from "./product-output-controls.ts";
+export type {
   ProductProcessObservation,
   ProductProcessOutputMode,
   ProductProcessOutputPorts,
@@ -310,12 +331,14 @@ export {
 export type {
   ProductReadCoordinator,
   ProductReadCoordinatorOptions,
+  ProductReadOutputMode,
   ProductReadResult,
 } from "./product-read.ts";
 export {
   createProductReadCoordinator,
   DEFAULT_PRODUCT_READ_LOOM_BYTES,
   MAX_PRODUCT_READ_CANDIDATES,
+  PRODUCT_READ_OUTPUT_MODES,
   PRODUCT_READ_OWNER,
   productReadInputSchema,
 } from "./product-read.ts";

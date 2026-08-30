@@ -92,6 +92,7 @@ async function actionFor(
         profile: arguments_.profile,
         preserveCredential: true,
         preserveCapabilities: true,
+        preserveTransportCompatibility: true,
       };
     case "use":
     case "test":

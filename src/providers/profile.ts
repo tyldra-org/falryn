@@ -11,6 +11,10 @@ import type { ModelId, ProviderId } from "../domain/identity.ts";
 import type { DiscoveryPolicy, ProviderAdapterKind } from "./adapter-kind.ts";
 import type { ModelCatalogId } from "./catalog/contracts.ts";
 import type { ModelCapabilityDeclaration } from "./model-capability.ts";
+import type {
+  ProviderModelTransportCompatibilityOverride,
+  ProviderTransportCompatibilityDeclaration,
+} from "./transport-compatibility.ts";
 
 export type ProviderProfileId = string;
 
@@ -37,6 +41,10 @@ export type ProviderProfile = {
   readonly catalogs?: readonly ModelCatalogId[];
   /** Explicit facts for enabled models. An empty list leaves every fact unknown. */
   readonly modelCapabilities: readonly ModelCapabilityDeclaration[];
+  /** Optional destination-bound wire overrides; omitted profiles use the exact adapter baseline. */
+  readonly transportCompatibility: ProviderTransportCompatibilityDeclaration | null;
+  /** Exact-model overrides layered after the destination declaration. */
+  readonly modelTransportCompatibility?: readonly ProviderModelTransportCompatibilityOverride[];
   readonly discovery: DiscoveryPolicy;
   readonly timeouts: ProviderNetworkTimeouts;
 };

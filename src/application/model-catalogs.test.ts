@@ -50,6 +50,7 @@ function profile(overrides: Partial<ProviderProfile> = {}): ProviderProfile {
     discovery: "static",
     timeouts: { connectMs: 1_000, requestMs: 10_000 },
     ...overrides,
+    transportCompatibility: overrides.transportCompatibility ?? null,
   };
 }
 

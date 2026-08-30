@@ -63,6 +63,8 @@ export type ProviderConnectionAction =
       readonly preserveCredential: boolean;
       /** Preserve declarations for enabled models when the surface cannot edit them. */
       readonly preserveCapabilities: boolean;
+      /** Preserve the wire-compatibility declaration when the surface cannot edit it. */
+      readonly preserveTransportCompatibility: boolean;
     }
   | { readonly kind: "use"; readonly profileId: string }
   | { readonly kind: "test"; readonly profileId: string | null }

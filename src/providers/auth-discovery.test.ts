@@ -39,6 +39,7 @@ function demoProfile(overrides: Partial<ProviderProfile> = {}): ProviderProfile 
     discovery: "static",
     timeouts: { connectMs: 5_000, requestMs: 30_000 },
     ...overrides,
+    transportCompatibility: overrides.transportCompatibility ?? null,
     modelCapabilities: overrides.modelCapabilities ?? [],
   };
 }
@@ -47,6 +48,61 @@ describe("parseProviderProfile", () => {
   test("accepts a complete profile", () => {
     const parsed = parseProviderProfile(demoProfile());
     expect(parsed.ok).toBe(true);
+  });
+
+  test("defaults the transport plan and rejects a mismatched dialect", () => {
+    const defaulted = parseProviderProfile({
+      ...demoProfile(),
+      transportCompatibility: undefined,
+    });
+    const mismatched = parseProviderProfile({
+      ...demoProfile({ adapterKind: "anthropic" }),
+      transportCompatibility: {
+        schemaVersion: 1,
+        dialect: "openai-chat-completions",
+        systemMessageRole: "system",
+        maxOutputTokensField: "max_completion_tokens",
+        streamingUsage: "include",
+        finishReason: "required",
+        strictToolSchemas: false,
+        toolResultName: "omit",
+        assistantAfterToolResult: "none",
+      },
+    });
+
+    expect(defaulted.ok).toBe(true);
+    if (defaulted.ok) {
+      expect(defaulted.value.transportCompatibility).toBeNull();
+      expect(defaulted.value.modelTransportCompatibility).toEqual([]);
+    }
+    expect(mismatched.ok).toBe(false);
+    if (!mismatched.ok) {
+      expect(mismatched.error.issues.some((issue) => issue.path.endsWith("dialect"))).toBe(true);
+    }
+  });
+
+  test("accepts sourced exact-model compatibility and rejects disabled models", () => {
+    const exact = {
+      schemaVersion: 1 as const,
+      modelId: modelId.from("demo-fast"),
+      declaration: { schemaVersion: 1 as const, dialect: "deterministic" as const },
+      source: {
+        kind: "provider-documentation" as const,
+        url: "https://provider.example/models/demo-fast",
+        observedAt: "2026-08-29T00:00:00Z",
+      },
+    };
+    const accepted = parseProviderProfile(demoProfile({ modelTransportCompatibility: [exact] }));
+    const disabled = parseProviderProfile({
+      ...demoProfile(),
+      modelTransportCompatibility: [{ ...exact, modelId: modelId.from("disabled-model") }],
+    });
+
+    expect(accepted.ok).toBe(true);
+    expect(disabled.ok).toBe(false);
+    if (!disabled.ok) {
+      expect(disabled.error.issues.some((issue) => issue.path.endsWith("modelId"))).toBe(true);
+    }
   });
 
   test("rejects a plaintext credential without echoing it", () => {
@@ -252,6 +308,7 @@ describe("discovery", () => {
           streaming: "supported",
           reasoning: "unsupported",
           reasoningControls: [],
+          responseDensityControls: ["low"],
           contextTokens: 128_000,
           outputTokens: 16_384,
           completeness: "complete",
@@ -276,6 +333,7 @@ describe("discovery", () => {
             streaming: "unknown",
             reasoning: "unknown",
             reasoningControls: [],
+            responseDensityControls: ["medium", "high"],
             contextTokens: null,
             outputTokens: null,
             completeness: "partial",
@@ -315,6 +373,7 @@ describe("discovery", () => {
         modelId: configuredModel,
         inputModalities: ["text", "image"],
         tools: "supported",
+        responseDensityControls: ["low"],
         contextTokens: 128_000,
         availability: "available",
         provenance: ["profile-declaration", "remote-identity"],

@@ -14,7 +14,7 @@ import type { ModelCatalogGenerationRepository } from "../data/index.ts";
 import type { ConfigurationValues } from "../domain/index.ts";
 import {
   createAnthropicSdkAdapter,
-  createCommandCodeSdkAdapter,
+  createCommandCodeProviderAdapter,
   createGoogleGenAiSdkAdapter,
   createHostCommandRunner,
   createOfficialModelDiscovery,
@@ -25,7 +25,11 @@ import {
 } from "../integrations/index.ts";
 import { providerDestinationId } from "../integrations/provider-destination.ts";
 import type { ModelDiscoveryPort } from "../providers/index.ts";
-import { COMMAND_CODE_OPENAI_BASE_URL, parseProviderConnectionState } from "../providers/index.ts";
+import {
+  COMMAND_CODE_OPENAI_BASE_URL,
+  parseProviderConnectionState,
+  resolveProviderTransportCompatibility,
+} from "../providers/index.ts";
 import type { ProviderAdapterPort } from "../providers/port.ts";
 import type { GlobalOptions } from "./options.ts";
 import {
@@ -147,41 +151,69 @@ export function composeProductProviderConnections(
         displayName: profile.displayName,
         requestTimeoutMs: profile.timeouts.requestMs,
         supportedModels: session.catalog.models.map((model) => String(model.modelId)),
+        modelCompatibility: profile.modelTransportCompatibility ?? [],
         resolveApiKey: (requestSignal: AbortSignal) =>
           resolveProviderApiKey(credentials.resolver, reference, requestSignal),
       };
+      const compatibility = resolveProviderTransportCompatibility(
+        profile.adapterKind,
+        profile.transportCompatibility,
+      );
+      if (!compatibility.ok) {
+        return {
+          kind: "unavailable",
+          code: `transport-compatibility-${compatibility.error.code}`,
+          session,
+        };
+      }
       let adapter: ProviderAdapterPort;
       switch (profile.adapterKind) {
         case "openai":
           if (profile.endpoint === null) {
             return { kind: "unavailable", code: "provider-adapter-unavailable", session };
           }
+          if (compatibility.value.declaration.dialect !== "openai-chat-completions") {
+            return { kind: "unavailable", code: "transport-compatibility-mismatch", session };
+          }
           adapter = createOpenAiSdkAdapter({
             ...common,
             baseUrl: profile.endpoint,
+            compatibility: compatibility.value.declaration,
             organization: profile.organization,
             project: profile.project,
             ...(options.providerFetch === undefined ? {} : { fetch: options.providerFetch }),
           });
           break;
         case "anthropic":
+          if (compatibility.value.declaration.dialect !== "anthropic-messages") {
+            return { kind: "unavailable", code: "transport-compatibility-mismatch", session };
+          }
           adapter = createAnthropicSdkAdapter({
             ...common,
             baseUrl: profile.endpoint,
+            compatibility: compatibility.value.declaration,
           });
           break;
         case "google":
+          if (compatibility.value.declaration.dialect !== "google-generate-content") {
+            return { kind: "unavailable", code: "transport-compatibility-mismatch", session };
+          }
           adapter = createGoogleGenAiSdkAdapter({
             ...common,
             baseUrl: profile.endpoint,
+            compatibility: compatibility.value.declaration,
           });
           break;
         case "commandcode":
           if (profile.endpoint !== COMMAND_CODE_OPENAI_BASE_URL) {
             return { kind: "unavailable", code: "provider-adapter-unavailable", session };
           }
-          adapter = createCommandCodeSdkAdapter({
+          if (compatibility.value.declaration.dialect !== "command-code-router") {
+            return { kind: "unavailable", code: "transport-compatibility-mismatch", session };
+          }
+          adapter = createCommandCodeProviderAdapter({
             ...common,
+            compatibility: compatibility.value.declaration,
             ...(options.providerFetch === undefined ? {} : { fetch: options.providerFetch }),
           });
           break;

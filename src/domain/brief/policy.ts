@@ -20,6 +20,7 @@ import {
   type BriefPolicy,
   type BriefPolicySource,
   type BriefPreservedFact,
+  type BriefSelectionReason,
   type BriefVerbosityLevel,
   type BriefVerbosityMode,
   DEFAULT_BRIEF_NEED,
@@ -39,6 +40,9 @@ const briefNeedSchema = z.object({
   citations: z.boolean().optional(),
   validation: z.boolean().optional(),
   recovery: z.boolean().optional(),
+  safetyCritical: z.boolean().optional(),
+  clarification: z.boolean().optional(),
+  orderedProcedure: z.boolean().optional(),
 });
 
 const briefPolicySchema = z.object({
@@ -81,6 +85,9 @@ export function parseBriefNeed(need: BriefNeed): Result<BriefNeed, BriefError> {
     citations: parsed.data.citations ?? false,
     validation: parsed.data.validation ?? false,
     recovery: parsed.data.recovery ?? false,
+    safetyCritical: parsed.data.safetyCritical ?? false,
+    clarification: parsed.data.clarification ?? false,
+    orderedProcedure: parsed.data.orderedProcedure ?? false,
   });
 }
 
@@ -131,20 +138,66 @@ export function resolveBriefPolicy(
   return ok(DEFAULT_BRIEF_POLICY);
 }
 
+export type BriefVerbosityDecision = {
+  readonly verbosity: BriefVerbosityLevel;
+  readonly reasons: readonly BriefSelectionReason[];
+};
+
+function activeReasons(
+  candidates: readonly (readonly [active: boolean, reason: BriefSelectionReason])[],
+): readonly BriefSelectionReason[] {
+  return candidates.filter(([active]) => active).map(([, reason]) => reason);
+}
+
+/** Choose the shortest level that can explain the current response obligations safely. */
+export function decideBriefVerbosity(
+  mode: BriefVerbosityMode,
+  need: BriefNeed,
+): BriefVerbosityDecision {
+  if (mode !== "auto") {
+    return { verbosity: mode, reasons: ["explicit-mode"] };
+  }
+
+  const detailedReasons = activeReasons([
+    [need.complexity === "high", "high-complexity"],
+    [need.uncertainty, "uncertainty"],
+    [need.recovery, "recovery"],
+    [need.safetyCritical, "safety-critical"],
+    [need.clarification, "clarification"],
+  ]);
+  if (detailedReasons.length > 0) {
+    return { verbosity: "detailed", reasons: detailedReasons };
+  }
+
+  const balancedReasons = activeReasons([
+    [need.complexity === "medium", "medium-complexity"],
+    [need.failures, "failure"],
+    [need.risk, "risk"],
+    [need.confirmation, "confirmation"],
+    [need.requiredAction, "required-action"],
+    [need.orderedProcedure, "ordered-procedure"],
+  ]);
+  if (balancedReasons.length > 0) {
+    return { verbosity: "balanced", reasons: balancedReasons };
+  }
+
+  switch (need.interface) {
+    case "interactive":
+      return { verbosity: "balanced", reasons: ["interactive-interface"] };
+    case "headless":
+      return { verbosity: "compact", reasons: ["headless-interface"] };
+    case "narrow":
+      return { verbosity: "compact", reasons: ["narrow-interface"] };
+    default:
+      return assertNever(need.interface, "unhandled brief interface");
+  }
+}
+
 export function selectBriefVerbosity(
   mode: BriefVerbosityMode,
   need: BriefNeed,
 ): BriefVerbosityLevel {
-  if (mode !== "auto") {
-    return mode;
-  }
-  if (need.complexity === "high" || need.failures || need.uncertainty || need.recovery) {
-    return "detailed";
-  }
-  if (need.interface === "narrow" || need.interface === "headless") {
-    return "compact";
-  }
-  return "balanced";
+  return decideBriefVerbosity(mode, need).verbosity;
 }
 
 /** Bound generation at the provider instead of trimming a completed answer. */
@@ -177,15 +230,15 @@ export function briefDimensionsFor(verbosity: BriefVerbosityLevel): BriefDimensi
         density: "moderate",
         directness: "direct",
         detail: "standard",
-        presentation: "prose",
+        presentation: "structured",
       };
     case "detailed":
       return {
         verbosity,
         density: "dense",
-        directness: "hedged",
+        directness: "direct",
         detail: "worked",
-        presentation: "prose",
+        presentation: "structured",
       };
     default:
       return assertNever(verbosity, "unhandled brief verbosity");

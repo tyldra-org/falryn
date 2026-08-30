@@ -29,6 +29,7 @@ import { type ReactNode, useMemo, useRef } from "react";
 import type { ArtifactViewer, GitDashboard } from "../../application/index.ts";
 import type { Instant } from "../../domain/index.ts";
 import type { ComposerAction } from "../composer/index.ts";
+import type { CompressionControlAction, CompressionControlState } from "../compression.ts";
 import type { ConfirmationChoiceId, ConfirmationView, SecretEdit } from "../confirmation/index.ts";
 import {
   CONTROL_PANEL_TITLES,
@@ -57,6 +58,7 @@ import { ArtifactViewerOverlay } from "../viewer/artifact-viewer-overlay.tsx";
 import type { WorkspaceController, WorkspaceSetView } from "../workspace/index.ts";
 import { ActivityRail } from "./activity-rail.tsx";
 import { ComposerView } from "./composer.tsx";
+import { CompressionSheet } from "./compression-sheet.tsx";
 import { ConfirmationSheet } from "./confirmation.tsx";
 import { type Frame, FrameProvider } from "./context.tsx";
 import { ControlSheet } from "./controls.tsx";
@@ -120,6 +122,8 @@ export type AppShellProps = {
   readonly selectedModelId?: string | null;
   readonly selectedProfileId?: string | null;
   readonly onControlSelect?: (id: string) => void;
+  readonly compression?: CompressionControlState;
+  readonly onCompressionSelect?: (action: CompressionControlAction) => void;
   /** Loads artifact views for the code viewer overlay. Absent in static frames. */
   readonly artifactViewer?: ArtifactViewer;
   /** Observes Git status, worktrees, and checkpoints. Absent in static frames. */
@@ -224,6 +228,10 @@ export function AppShell(props: AppShellProps): ReactNode {
           {...(props.onControlSelect === undefined
             ? {}
             : { onControlSelect: props.onControlSelect })}
+          {...(props.compression === undefined ? {} : { compression: props.compression })}
+          {...(props.onCompressionSelect === undefined
+            ? {}
+            : { onCompressionSelect: props.onCompressionSelect })}
           {...(props.artifactViewer === undefined ? {} : { artifactViewer: props.artifactViewer })}
           {...(props.gitDashboard === undefined ? {} : { gitDashboard: props.gitDashboard })}
           {...(props.onChangesSettled === undefined
@@ -295,6 +303,8 @@ function ShellFrame(props: {
   readonly selectedModelId?: string | null;
   readonly selectedProfileId?: string | null;
   readonly onControlSelect?: (id: string) => void;
+  readonly compression?: CompressionControlState;
+  readonly onCompressionSelect?: (action: CompressionControlAction) => void;
   readonly artifactViewer?: ArtifactViewer;
   readonly gitDashboard?: GitDashboard;
   readonly onChangesSettled?: (notice: string) => void;
@@ -421,6 +431,8 @@ function overlayTitle(
       return confirmation?.prompt.title ?? "Confirm";
     case "controls":
       return CONTROL_PANEL_TITLES[route.panel];
+    case "compression":
+      return "Compression";
     case "workspace":
       return workspacePanelTitle(route.panel);
     case "session-nav":
@@ -467,6 +479,8 @@ function overlayBody(
     readonly selectedModelId?: string | null;
     readonly selectedProfileId?: string | null;
     readonly onControlSelect?: (id: string) => void;
+    readonly compression?: CompressionControlState;
+    readonly onCompressionSelect?: (action: CompressionControlAction) => void;
     readonly artifactViewer?: ArtifactViewer;
     readonly gitDashboard?: GitDashboard;
     readonly onChangesSettled?: (notice: string) => void;
@@ -537,6 +551,16 @@ function overlayBody(
           }
           rows={rows}
           {...(props.onControlSelect === undefined ? {} : { onSelect: props.onControlSelect })}
+        />
+      );
+    case "compression":
+      return (
+        <CompressionSheet
+          state={props.compression ?? { brief: null, hush: null, loom: null }}
+          rows={rows}
+          {...(props.onCompressionSelect === undefined
+            ? {}
+            : { onSelect: props.onCompressionSelect })}
         />
       );
     case "workspace":

@@ -15,11 +15,136 @@ import {
   MODEL_FEATURE_SUPPORTS,
   MODEL_INPUT_MODALITIES,
   MODEL_OUTPUT_MODALITIES,
+  MODEL_PROMPT_CACHE_MODES,
+  MODEL_RESPONSE_DENSITY_CONTROLS,
   type ModelCapability,
   type ModelCapabilityDeclaration,
 } from "./model-capability.ts";
+import {
+  MODEL_BILLING_MODES,
+  MODEL_PRICE_TOKEN_UNIT,
+  MODEL_PRICING_KINDS,
+  unknownModelPricing,
+} from "./model-pricing.ts";
 
 const unique = (values: readonly string[]): boolean => new Set(values).size === values.length;
+
+const nullablePriceSchema = z.union([
+  z.number().int().nonnegative().max(1_000_000_000_000),
+  z.null(),
+]);
+
+const modelPricingSchema = z
+  .strictObject({
+    kind: z.enum(MODEL_PRICING_KINDS),
+    billingMode: z.enum(MODEL_BILLING_MODES),
+    currency: z.union([z.literal("USD"), z.null()]),
+    tokenUnit: z.literal(MODEL_PRICE_TOKEN_UNIT),
+    sourceUrl: z.union([z.string().url().max(2048), z.null()]),
+    observedAt: z.union([z.iso.datetime({ offset: true }), z.null()]),
+    tiers: z
+      .array(
+        z
+          .strictObject({
+            id: z.string().trim().min(1).max(MAX_PROVIDER_METADATA_ENTRY_LENGTH),
+            label: z.string().trim().min(1).max(MAX_PROVIDER_METADATA_ENTRY_LENGTH),
+            serviceTier: z.union([
+              z.string().trim().min(1).max(MAX_PROVIDER_METADATA_ENTRY_LENGTH),
+              z.null(),
+            ]),
+            inputTokensFrom: z.number().int().nonnegative().max(100_000_000),
+            inputTokensThrough: z.union([
+              z.number().int().nonnegative().max(100_000_000),
+              z.null(),
+            ]),
+            effectiveFrom: z.union([z.iso.datetime({ offset: true }), z.null()]),
+            effectiveUntil: z.union([z.iso.datetime({ offset: true }), z.null()]),
+            utcWindows: z
+              .array(
+                z
+                  .strictObject({
+                    startMinuteInclusive: z.number().int().min(0).max(1439),
+                    endMinuteExclusive: z.number().int().min(1).max(1440),
+                  })
+                  .refine(
+                    (window) => window.startMinuteInclusive < window.endMinuteExclusive,
+                    "invalid UTC pricing window",
+                  ),
+              )
+              .max(8),
+            usdMicrosPerMillionTokens: z
+              .strictObject({
+                input: nullablePriceSchema,
+                cachedInput: nullablePriceSchema,
+                cacheWriteInput: nullablePriceSchema,
+                output: nullablePriceSchema,
+              })
+              .strict(),
+          })
+          .strict()
+          .superRefine((tier, context) => {
+            if (
+              tier.inputTokensThrough !== null &&
+              tier.inputTokensThrough < tier.inputTokensFrom
+            ) {
+              context.addIssue({
+                code: "custom",
+                path: ["inputTokensThrough"],
+                message: "pricing tier ends before it starts",
+              });
+            }
+            if (
+              tier.effectiveFrom !== null &&
+              tier.effectiveUntil !== null &&
+              Date.parse(tier.effectiveUntil) <= Date.parse(tier.effectiveFrom)
+            ) {
+              context.addIssue({
+                code: "custom",
+                path: ["effectiveUntil"],
+                message: "pricing interval ends before it starts",
+              });
+            }
+          }),
+      )
+      .max(32),
+  })
+  .strict()
+  .superRefine((pricing, context) => {
+    if (new Set(pricing.tiers.map((tier) => tier.id)).size !== pricing.tiers.length) {
+      context.addIssue({ code: "custom", path: ["tiers"], message: "duplicate pricing tier" });
+    }
+    if (pricing.kind === "unknown" && pricing.tiers.length > 0) {
+      context.addIssue({
+        code: "custom",
+        path: ["tiers"],
+        message: "unknown pricing cannot declare rates",
+      });
+    }
+    if (pricing.kind !== "unknown" && pricing.tiers.length === 0) {
+      context.addIssue({
+        code: "custom",
+        path: ["tiers"],
+        message: "known pricing requires at least one tier",
+      });
+    }
+    if (
+      pricing.kind === "unknown" &&
+      (pricing.currency !== null || pricing.billingMode !== "unknown")
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["kind"],
+        message: "unknown pricing requires unknown billing and currency",
+      });
+    }
+    if (pricing.kind !== "unknown" && (pricing.currency === null || pricing.sourceUrl === null)) {
+      context.addIssue({
+        code: "custom",
+        path: ["sourceUrl"],
+        message: "known pricing requires currency and source",
+      });
+    }
+  });
 
 export const modelCapabilityDeclarationSchema = z
   .strictObject({
@@ -37,8 +162,23 @@ export const modelCapabilityDeclarationSchema = z
     reasoningControls: z
       .array(z.string().trim().min(1).max(MAX_PROVIDER_METADATA_ENTRY_LENGTH))
       .max(16),
+    responseDensityControls: z
+      .array(z.enum(MODEL_RESPONSE_DENSITY_CONTROLS))
+      .max(MODEL_RESPONSE_DENSITY_CONTROLS.length)
+      .default([]),
+    promptCacheModes: z
+      .array(z.enum(MODEL_PROMPT_CACHE_MODES))
+      .max(MODEL_PROMPT_CACHE_MODES.length)
+      .default([]),
+    promptCacheMinimumInputTokens: z
+      .union([z.number().int().positive().max(100_000_000), z.null()])
+      .default(null),
     contextTokens: z.union([z.number().int().positive().max(100_000_000), z.null()]),
     outputTokens: z.union([z.number().int().positive().max(10_000_000), z.null()]),
+    pricing: modelPricingSchema.default(() => ({
+      ...unknownModelPricing(),
+      tiers: [],
+    })),
     completeness: z.enum(MODEL_CAPABILITY_COMPLETENESSES),
   })
   .superRefine((capability, context) => {
@@ -46,6 +186,8 @@ export const modelCapabilityDeclarationSchema = z
       ["inputModalities", capability.inputModalities],
       ["outputModalities", capability.outputModalities],
       ["reasoningControls", capability.reasoningControls],
+      ["responseDensityControls", capability.responseDensityControls],
+      ["promptCacheModes", capability.promptCacheModes],
     ] as const) {
       if (!unique(values)) {
         context.addIssue({ code: "custom", path: [field], message: "duplicate capability value" });
@@ -56,6 +198,16 @@ export const modelCapabilityDeclarationSchema = z
         code: "custom",
         path: ["reasoningControls"],
         message: "reasoning controls require supported reasoning",
+      });
+    }
+    if (
+      capability.promptCacheModes.length === 0 &&
+      capability.promptCacheMinimumInputTokens !== null
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["promptCacheMinimumInputTokens"],
+        message: "cache minimum requires a prompt-cache mode",
       });
     }
     if (

@@ -27,6 +27,7 @@ function profile(): ProviderProfile {
     project: null,
     enabledModels: [modelId.from("demo")],
     catalogs: [],
+    transportCompatibility: null,
     modelCapabilities: [],
     discovery: "remote",
     timeouts: { connectMs: 1_000, requestMs: 10_000 },

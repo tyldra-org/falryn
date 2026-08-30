@@ -14,6 +14,7 @@ import {
   type ExecutionProfileCompletion,
   type ExecutionProfileId,
   executionProfile,
+  type ModelId,
   type PromptSectionInput,
   type RuntimeEvent,
   resolveExecutionProfile,
@@ -96,8 +97,27 @@ export type ProductExecutionProfileControls = {
   select(profileId: ExecutionProfileId): Promise<ProductExecutionProfileSelection>;
 };
 
+export type ProductModelSelection =
+  | {
+      readonly ok: true;
+      readonly modelId: ModelId;
+      readonly changed: boolean;
+    }
+  | {
+      readonly ok: false;
+      readonly code: string;
+      readonly message: string;
+    };
+
+/** Process-local model choice. Persistent role configuration remains owned by #273. */
+export type ProductModelSelectionControls = {
+  get(): ModelId | null;
+  select(modelId: ModelId): Promise<ProductModelSelection>;
+};
+
 export type ProductLiveTurnExecutor = {
   readonly executionProfile: ProductExecutionProfileControls;
+  readonly modelSelection: ProductModelSelectionControls;
   /** Persist `session.started` before accepting the first turn. */
   startSession(): Promise<ProductLiveTurnResult | null>;
   /** Compose, execute, journal, and project one complete model turn. */
@@ -113,6 +133,8 @@ export type ProductLiveTurnExecutorOptions = {
   readonly memory?: ProductMemoryTurn;
   readonly artifacts?: ArtifactStorePort;
   readonly initialExecutionProfile?: ExecutionProfileId;
+  /** Process-local initial model. Persistent role configuration remains owned by #273. */
+  readonly initialModelId?: ModelId;
 };
 
 const FAILED: TerminalOutcome = { kind: "failed", effect: "none" };
@@ -143,8 +165,14 @@ export function productModelPolicy(
   adapter: ProviderAdapterPort,
   catalog: ModelCatalog,
   executionPolicy?: EffectiveExecutionPolicy,
+  selectedModelId?: ModelId | null,
 ): ModelPolicy | null {
-  const selected = catalog.models[0];
+  const selected =
+    (selectedModelId === undefined || selectedModelId === null
+      ? undefined
+      : catalog.models.find(
+          (model) => model.modelId === selectedModelId && model.availability !== "unavailable",
+        )) ?? catalog.models.find((model) => model.availability !== "unavailable");
   if (selected === undefined) {
     return null;
   }
@@ -168,6 +196,11 @@ export function createProductLiveTurnExecutor(
   const producer = options.runtime.attachments.turnProducer;
   const correlation = options.runtime.correlation;
   let activeProfile = options.initialExecutionProfile ?? "agent";
+  let activeModelId =
+    options.initialModelId ??
+    options.providerCatalog?.models.find((model) => model.availability !== "unavailable")
+      ?.modelId ??
+    null;
   let sessionStarted = false;
   let initialProfilePersisted = false;
 
@@ -403,6 +436,45 @@ export function createProductLiveTurnExecutor(
         return persistProfileSelection(profileId);
       },
     },
+    modelSelection: {
+      get: () => activeModelId,
+      async select(modelId) {
+        const catalog = options.providerCatalog;
+        if (catalog === null) {
+          return {
+            ok: false,
+            code: "model.catalog-unavailable",
+            message: "the selected provider has no usable model catalog",
+          };
+        }
+        const capability = catalog.models.find((model) => model.modelId === modelId);
+        if (capability === undefined) {
+          return {
+            ok: false,
+            code: "model.not-found",
+            message: "the selected model is not present in the current catalog generation",
+          };
+        }
+        if (capability.availability === "unavailable") {
+          return {
+            ok: false,
+            code: "model.unavailable",
+            message: "the selected model is unavailable in the current catalog generation",
+          };
+        }
+        const provider = options.runtime.requireProviderAdapter();
+        if (!provider.ok || !provider.value.supportedModels.includes(modelId)) {
+          return {
+            ok: false,
+            code: "model.transport-unavailable",
+            message: "the selected provider adapter cannot execute this model",
+          };
+        }
+        const changed = activeModelId !== modelId;
+        activeModelId = modelId;
+        return { ok: true, modelId, changed };
+      },
+    },
     startSession,
     async run(input) {
       const sessionFailure = await startSession();
@@ -413,6 +485,7 @@ export function createProductLiveTurnExecutor(
         activeProfile,
         correlation.configurationGeneration,
       );
+      const selectedModelId = activeModelId;
       if (executionPolicy.completion === "durable-plan" && options.artifacts === undefined) {
         return result({
           kind: "unavailable",
@@ -613,7 +686,12 @@ export function createProductLiveTurnExecutor(
       const policy =
         options.providerCatalog === null
           ? null
-          : productModelPolicy(provider.value, options.providerCatalog, executionPolicy);
+          : productModelPolicy(
+              provider.value,
+              options.providerCatalog,
+              executionPolicy,
+              selectedModelId,
+            );
       if (!attemptRunner.ok || options.providerCatalog === null || policy === null) {
         return settleFailure(
           input,
@@ -647,7 +725,14 @@ export function createProductLiveTurnExecutor(
             profileId: provider.value.identity.profileId,
             adapterKind: provider.value.identity.adapterKind,
             destinationId: provider.value.identity.destinationId,
+            transportCompatibilityId: provider.value.identity.transportCompatibilityId,
+            transportCompatibility: provider.value.transportCompatibility,
+            modelTransportCompatibility: options.providerCatalog.models.flatMap((model) => {
+              const plan = provider.value.transportCompatibilityFor(model.modelId);
+              return plan === null ? [] : [{ modelId: model.modelId, plan }];
+            }),
             requestInputModalities: provider.value.requestInputModalities,
+            requestResponseDensityControls: provider.value.requestResponseDensityControls ?? [],
             catalog: options.providerCatalog,
           },
         ],

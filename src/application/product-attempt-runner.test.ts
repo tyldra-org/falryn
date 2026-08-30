@@ -73,6 +73,10 @@ function receipt(
   if (model === undefined) {
     throw new Error("deterministic provider has no model");
   }
+  const transportCompatibility = setupResult.adapter.transportCompatibilityFor(model);
+  if (transportCompatibility === null) {
+    throw new Error("deterministic provider has no transport compatibility");
+  }
   return {
     role: "default",
     intent: "coding",
@@ -82,9 +86,13 @@ function receipt(
     providerProfileId: setupResult.adapter.identity.profileId,
     providerAdapterKind: setupResult.adapter.identity.adapterKind,
     providerDestinationId: setupResult.adapter.identity.destinationId,
+    transportCompatibilityId:
+      setupResult.adapter.identity.transportCompatibilityId ?? "transport:deterministic",
+    transportCompatibilityReceipt: transportCompatibility.receipt,
     modelId: model,
     reasoning: "provider-default",
     reasoningControl: null,
+    responseDensityControls: [],
     fallbackPosition: 0,
     budgets,
     catalogGeneration: 1,
@@ -261,6 +269,51 @@ describe("createProductAttemptRunner", () => {
         disclosure: disclosureInput(product),
       },
     });
+    expect(result.fact).toMatchObject({
+      kind: "failed",
+      category: "invalid-request",
+      retryable: false,
+      effect: "none",
+    });
+    expect(providerRequests).toBe(0);
+  });
+
+  test("rejects a transport plan that differs from the routed plan", async () => {
+    let providerRequests = 0;
+    const product = setup(
+      createDeterministicProviderAdapter({
+        onRequest: () => {
+          providerRequests += 1;
+        },
+      }),
+    );
+    const turn = await start(product, "turn-attempt-transport-mismatch");
+    const runner = product.runtime.requireAttemptRunner();
+    if (!runner.ok) {
+      throw new Error(runner.error.code);
+    }
+    const result = await runner.value.run({
+      turnId: turn,
+      identity: {
+        attemptNumber: 1,
+        modelAttemptId: modelAttemptId.from("attempt-transport-mismatch"),
+        fallbackPosition: 0,
+        providerKey: product.adapter.identity.providerId,
+        modelKey: String(product.adapter.supportedModels[0]),
+      },
+      receipt: { ...receipt(product), transportCompatibilityId: `sha-256:${"0".repeat(64)}` },
+      boundConfigurationGeneration: generation,
+      configurationGeneration: generation,
+      signal: new AbortController().signal,
+      modelInput: {
+        messages: [{ role: "user", parts: [{ kind: "text", text: "hello" }] }],
+        tools: product.disclosure.modelTools,
+        output: { kind: "text" },
+        budgets: {},
+        disclosure: disclosureInput(product),
+      },
+    });
+
     expect(result.fact).toMatchObject({
       kind: "failed",
       category: "invalid-request",
@@ -475,6 +528,10 @@ describe("createProductAttemptRunner", () => {
     if (model === undefined) {
       throw new Error("missing deterministic model");
     }
+    const transportCompatibility = adapter.transportCompatibilityFor(model);
+    if (transportCompatibility === null) {
+      throw new Error("missing deterministic transport compatibility");
+    }
     const briefRequest = {
       turnId: targetTurn,
       sessionId: correlation.sessionId,
@@ -504,9 +561,13 @@ describe("createProductAttemptRunner", () => {
         providerProfileId: adapter.identity.profileId,
         providerAdapterKind: adapter.identity.adapterKind,
         providerDestinationId: adapter.identity.destinationId,
+        transportCompatibilityId:
+          adapter.identity.transportCompatibilityId ?? "transport:deterministic",
+        transportCompatibilityReceipt: transportCompatibility.receipt,
         modelId: model,
         reasoning: "provider-default",
         reasoningControl: null,
+        responseDensityControls: ["low", "medium", "high"],
         fallbackPosition: 0,
         budgets: {},
         catalogGeneration: 1,
@@ -537,6 +598,8 @@ describe("createProductAttemptRunner", () => {
           request: briefRequest,
           receipt: briefProjection.value.receipt,
           sectionSource: "brief:user",
+          fallbackGuidance: briefProjection.value.guidance,
+          semanticGuidance: briefProjection.value.semanticGuidance,
         },
         disclosure: {
           catalogGeneration: disclosure.receipt.catalogGeneration,
@@ -567,10 +630,16 @@ describe("createProductAttemptRunner", () => {
     expect(requests[0]).toMatchObject({
       reasoning: "provider-default",
       reasoningControl: null,
+      responseDensityControl: "low",
     });
+    expect(
+      requests[0]?.messages.some((message) =>
+        message.parts.some((part) => part.kind === "text" && part.text.includes("[brief source=")),
+      ),
+    ).toBe(false);
     expect(requests[1]?.messages[0]?.parts[0]).toMatchObject({
       kind: "text",
-      text: expect.stringContaining("Keep risk warnings visible"),
+      text: expect.stringContaining("prohibition and risk warning verbatim"),
     });
     expect(requests[1]?.budgets.maxOutputTokens).toBe(2_048);
     const toolMessage = requests[1]?.messages.find((message) => message.role === "tool");
@@ -611,6 +680,8 @@ describe("createProductAttemptRunner", () => {
       briefReceipt: {
         selectedVerbosity: "compact",
         preservedFacts: ["risk"],
+        delivery: "native-with-semantic-prompt",
+        providerResponseDensityControl: "low",
         outputTokenBudget: 2_048,
       },
     });

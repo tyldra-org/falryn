@@ -65,6 +65,7 @@ function demoProfile(overrides: Partial<ProviderProfile> = {}): ProviderProfile 
     discovery: "static",
     timeouts: { connectMs: 5_000, requestMs: 30_000 },
     ...overrides,
+    transportCompatibility: overrides.transportCompatibility ?? null,
     modelCapabilities: overrides.modelCapabilities ?? [],
   };
 }

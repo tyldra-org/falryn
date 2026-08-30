@@ -13,6 +13,10 @@ import { MODEL_CAPABILITY_SCHEMA_VERSION } from "./model-capability.ts";
 import type { ProviderAdapterPort } from "./port.ts";
 import type { ModelRequest } from "./request.ts";
 import type { NormalizedProviderEvent, UsageUnits } from "./stream.ts";
+import {
+  bindProviderTransportCompatibilityToModel,
+  defaultProviderTransportCompatibility,
+} from "./transport-compatibility.ts";
 
 export type DeterministicFailureScript = {
   readonly kind: "error";
@@ -64,6 +68,8 @@ export type DeterministicProviderScript =
 export type DeterministicProviderOptions = {
   readonly profileId?: string;
   readonly displayName?: string;
+  /** Test-only model identities used to exercise selection and fallback. */
+  readonly supportedModels?: readonly string[];
   readonly script?:
     | DeterministicProviderScript
     | ((request: ModelRequest, requestIndex: number) => DeterministicProviderScript);
@@ -110,15 +116,17 @@ function waitForAbort(signal: AbortSignal): Promise<void> {
 export function createDeterministicProviderAdapter(
   options: DeterministicProviderOptions = {},
 ): ProviderAdapterPort {
+  const transportCompatibility = defaultProviderTransportCompatibility("deterministic");
   const identity = {
     providerId: providerId.from("falryn-deterministic"),
     profileId: options.profileId ?? "deterministic",
     adapterKind: "deterministic" as const,
     endpoint: null,
     destinationId: "falryn:deterministic:default",
+    transportCompatibilityId: transportCompatibility.compatibilityId,
     displayName: options.displayName ?? "Deterministic fixture provider",
   };
-  const models = [modelId.from("deterministic-echo")] as const;
+  const models = (options.supportedModels ?? ["deterministic-echo"]).map(modelId.from);
   const defaultScript: DeterministicProviderScript = {
     kind: "text",
     text: "ok",
@@ -130,6 +138,13 @@ export function createDeterministicProviderAdapter(
     identity,
     supportedModels: models,
     requestInputModalities: ["text"],
+    requestResponseDensityControls: ["low", "medium", "high"],
+    transportCompatibility,
+    transportCompatibilityFor(selectedModelId) {
+      return models.includes(selectedModelId)
+        ? bindProviderTransportCompatibilityToModel(transportCompatibility, selectedModelId)
+        : null;
+    },
     modelCapabilities: models.map((model) => ({
       schemaVersion: MODEL_CAPABILITY_SCHEMA_VERSION,
       modelId: model,
@@ -141,6 +156,7 @@ export function createDeterministicProviderAdapter(
       streaming: "supported",
       reasoning: "supported",
       reasoningControls: ["minimal", "balanced", "deep"],
+      responseDensityControls: ["low", "medium", "high"],
       contextTokens: 128_000,
       outputTokens: 16_384,
       completeness: "complete",

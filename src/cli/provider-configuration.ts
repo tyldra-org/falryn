@@ -8,6 +8,7 @@ import {
   type ProviderConnectionState,
 } from "../providers/connection.ts";
 import { providerConnectionStateSchema } from "../providers/connection-schema.ts";
+import { providerEnvironmentCredentialReference } from "../providers/index.ts";
 import { LATEST_OPENAI_MODEL_IDS } from "../providers/known-model-capability.ts";
 
 export const PROVIDER_CONNECTIONS_CONFIGURATION_KEY = "providers.connections";
@@ -25,16 +26,12 @@ export const DEFAULT_PROVIDER_CONNECTION_STATE: ProviderConnectionState = {
         adapterKind: "openai",
         displayName: "OpenAI",
         endpoint: "https://api.openai.com/v1",
-        credential: {
-          storeKind: "environment",
-          locator: "FALRYN_OPENAI_API_KEY",
-          consumer: "provider:openai",
-          accountLabel: null,
-        },
+        credential: providerEnvironmentCredentialReference("openai", "openai"),
         organization: null,
         project: null,
         enabledModels: LATEST_OPENAI_MODEL_IDS,
         catalogs: [],
+        transportCompatibility: null,
         modelCapabilities: [],
         discovery: "static",
         timeouts: { connectMs: 15_000, requestMs: 120_000 },

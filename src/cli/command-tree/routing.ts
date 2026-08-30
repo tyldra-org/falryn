@@ -1,5 +1,9 @@
 /** Command routing and root/config/run argument normalization. */
 
+import {
+  type ProductBriefFrontendMode,
+  productBriefModeFromFrontend,
+} from "../../application/index.ts";
 import type { CodingRunArguments } from "../coding-run.ts";
 
 import type {
@@ -208,12 +212,16 @@ export function runArgumentsFor(
   }
   // yargs puts `run [prompt..]` into `prompt`, not into `_`.
   const brief = parsed.brief;
+  const hush = parsed.hush;
+  const loom = parsed.loom;
   const mode = parsed.mode;
   return {
     promptParts: parsed.prompt ?? [],
     ...(brief === undefined
       ? {}
-      : { brief: brief as "compact" | "balanced" | "detailed" | "auto" }),
+      : { brief: productBriefModeFromFrontend(brief as ProductBriefFrontendMode) }),
+    ...(hush === undefined ? {} : { hush: hush === "off" ? "raw" : "hush" }),
+    ...(loom === undefined ? {} : { loom: loom === "off" ? "raw" : "loom" }),
     ...(mode === undefined ? {} : { mode: mode as "ask" | "plan" | "debug" | "agent" }),
   };
 }

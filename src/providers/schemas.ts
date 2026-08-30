@@ -24,6 +24,7 @@ import {
   PROVIDER_BOUNDARY_SCHEMA_VERSION,
 } from "./limits.ts";
 import { MESSAGE_ROLES } from "./messages.ts";
+import { MODEL_PROMPT_CACHE_MODES } from "./model-capability.ts";
 import { REASONING_EFFORTS } from "./policy.ts";
 import { PROMPT_CACHE_POLICY_SCHEMA_VERSION } from "./request.ts";
 import { MODEL_ROLES } from "./roles.ts";
@@ -107,6 +108,7 @@ const requestMetadataSchema = z
     workIntent: z.string().min(1).max(MAX_TOOL_NAME_LENGTH).optional(),
     configurationGeneration: z.number().int().nonnegative().optional(),
     providerCatalogGeneration: z.number().int().nonnegative().optional(),
+    transportCompatibilityId: z.string().min(1).max(MAX_PROVIDER_METADATA_ENTRY_LENGTH).optional(),
     modelCapabilitySchemaVersion: z.number().int().positive().optional(),
   })
   .strict();
@@ -121,6 +123,8 @@ const promptCachePolicySchema = z
     stablePrefixDigest: sha256DigestSchema,
     stableMessageCount: z.number().int().nonnegative(),
     toolCatalogGeneration: z.number().int().nonnegative(),
+    mode: z.enum(MODEL_PROMPT_CACHE_MODES),
+    minimumInputTokens: z.union([z.number().int().positive(), z.null()]),
   })
   .strict();
 
@@ -141,6 +145,7 @@ export const modelRequestSchema = z
       .max(MAX_PROVIDER_METADATA_ENTRY_LENGTH)
       .nullable()
       .optional(),
+    responseDensityControl: z.enum(["low", "medium", "high"]).nullable().optional(),
     promptCache: promptCachePolicySchema.optional(),
     metadata: requestMetadataSchema,
   })

@@ -11,6 +11,7 @@ import {
 } from "../domain/index.ts";
 import {
   type ModelDiscoveryPort,
+  OPENAI_CHAT_TRANSPORT_DEFAULT,
   PROVIDER_CONNECTION_SCHEMA_VERSION,
   type ProviderConnectionState,
   type ProviderProfile,
@@ -35,6 +36,7 @@ function profile(id: string, endpoint = "https://api.example.test/v1"): Provider
     organization: null,
     project: null,
     enabledModels: [modelId.from(`${id}-model`)],
+    transportCompatibility: null,
     modelCapabilities: [],
     discovery: "static",
     timeouts: { connectMs: 1_000, requestMs: 10_000 },
@@ -404,6 +406,7 @@ describe("provider connection service", () => {
         profile: profile("cancel", "http://remote.test"),
         preserveCredential: true,
         preserveCapabilities: true,
+        preserveTransportCompatibility: true,
       }),
     ).toMatchObject({ kind: "failed", issue: { code: "invalid-endpoint" } });
     for (const endpoint of [
@@ -417,6 +420,7 @@ describe("provider connection service", () => {
           profile: profile("cancel", endpoint),
           preserveCredential: true,
           preserveCapabilities: true,
+          preserveTransportCompatibility: true,
         }),
       ).toMatchObject({ kind: "failed", issue: { code: "invalid-endpoint" } });
     }
@@ -459,11 +463,79 @@ describe("provider connection service", () => {
         profile: { ...declared, displayName: "Updated", modelCapabilities: [] },
         preserveCredential: true,
         preserveCapabilities: true,
+        preserveTransportCompatibility: true,
       }),
     ).toMatchObject({ kind: "completed" });
     expect(stored.state().connections[0]?.profile.modelCapabilities).toEqual(
       declared.modelCapabilities,
     );
+  });
+
+  test("distinguishes compatibility preservation from an explicit baseline reset", async () => {
+    const clock = createManualClock();
+    const declared: ProviderProfile = {
+      ...profile("compatible"),
+      transportCompatibility: {
+        ...OPENAI_CHAT_TRANSPORT_DEFAULT,
+        systemMessageRole: "developer",
+      },
+      modelTransportCompatibility: [
+        {
+          schemaVersion: 1,
+          modelId: modelId.from("compatible-model"),
+          declaration: {
+            ...OPENAI_CHAT_TRANSPORT_DEFAULT,
+            maxOutputTokensField: "max_tokens",
+          },
+          source: { kind: "user-declaration", url: null, observedAt: null },
+        },
+      ],
+    };
+    const stored = memoryStore(state(declared));
+    const credentials = mutableCredentials(clock);
+    const service = createProviderConnectionService({
+      store: stored.port,
+      credentials: credentials.bundle,
+      clock,
+    });
+
+    expect(
+      await service.execute({
+        kind: "configure",
+        profile: {
+          ...declared,
+          displayName: "Preserved",
+          transportCompatibility: null,
+          modelTransportCompatibility: [],
+        },
+        preserveCredential: true,
+        preserveCapabilities: true,
+        preserveTransportCompatibility: true,
+      }),
+    ).toMatchObject({ kind: "completed" });
+    expect(stored.state().connections[0]?.profile.transportCompatibility).toEqual(
+      declared.transportCompatibility,
+    );
+    expect(stored.state().connections[0]?.profile.modelTransportCompatibility).toEqual(
+      declared.modelTransportCompatibility,
+    );
+
+    expect(
+      await service.execute({
+        kind: "configure",
+        profile: {
+          ...declared,
+          displayName: "Reset",
+          transportCompatibility: null,
+          modelTransportCompatibility: [],
+        },
+        preserveCredential: true,
+        preserveCapabilities: true,
+        preserveTransportCompatibility: false,
+      }),
+    ).toMatchObject({ kind: "completed" });
+    expect(stored.state().connections[0]?.profile.transportCompatibility).toBeNull();
+    expect(stored.state().connections[0]?.profile.modelTransportCompatibility).toEqual([]);
   });
 
   test("does not carry capability declarations across a provider identity change", async () => {
@@ -508,6 +580,7 @@ describe("provider connection service", () => {
         },
         preserveCredential: true,
         preserveCapabilities: true,
+        preserveTransportCompatibility: true,
       }),
     ).toMatchObject({ kind: "completed" });
     expect(stored.state().connections[0]?.profile.modelCapabilities).toEqual([]);

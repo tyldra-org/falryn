@@ -184,6 +184,22 @@ async function configure(
   const profile: ProviderProfile = {
     ...action.profile,
     ...(action.preserveCredential ? { credential: current.profile.credential } : {}),
+    ...(action.preserveTransportCompatibility &&
+    action.profile.transportCompatibility === null &&
+    current.profile.transportCompatibility !== null &&
+    current.profile.adapterKind === action.profile.adapterKind &&
+    current.profile.providerId === action.profile.providerId &&
+    current.profile.endpoint === action.profile.endpoint
+      ? { transportCompatibility: current.profile.transportCompatibility }
+      : {}),
+    ...(action.preserveTransportCompatibility &&
+    (action.profile.modelTransportCompatibility?.length ?? 0) === 0 &&
+    (current.profile.modelTransportCompatibility?.length ?? 0) > 0 &&
+    current.profile.adapterKind === action.profile.adapterKind &&
+    current.profile.providerId === action.profile.providerId &&
+    current.profile.endpoint === action.profile.endpoint
+      ? { modelTransportCompatibility: current.profile.modelTransportCompatibility }
+      : {}),
     modelCapabilities: [...modelCapabilities.values()],
   };
   const replacement: ProviderConnection = {

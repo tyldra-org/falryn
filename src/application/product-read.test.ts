@@ -359,6 +359,7 @@ describe("createProductReadCoordinator", () => {
         return baseIndex.snapshot(root, signal);
       },
     };
+    let forceRaw = false;
     const coordinator = createProductReadCoordinator({
       reader,
       loom,
@@ -367,6 +368,7 @@ describe("createProductReadCoordinator", () => {
       workspaceId: "ws-1",
       sessionId: "session-1",
       generation: configurationGeneration.from(1),
+      userOutputMode: () => (forceRaw ? "raw" : "loom"),
     });
     const limits = {
       maxFileBytes: 64,
@@ -430,6 +432,19 @@ describe("createProductReadCoordinator", () => {
     expect(adoptionCount).toBe(1);
     expect(snapshotCount).toBe(1);
     expect(coordinator.candidates()).toHaveLength(1);
+
+    forceRaw = true;
+    const userDisabled = await coordinator.execute(
+      { path: "src/second.ts", outputMode: "loom", limits },
+      new AbortController().signal,
+    );
+    if (!userDisabled.ok) {
+      throw new Error(userDisabled.error);
+    }
+    expect(userDisabled.value).toMatchObject({ fidelity: "exact", completeness: "partial" });
+    expect("loomRecovery" in (userDisabled.value as object)).toBe(false);
+    expect(adoptionCount).toBe(1);
+    expect(snapshotCount).toBe(1);
 
     const defaultMode = productReadInputSchema.safeParse({ path: "src/first.ts" });
     expect(defaultMode.success).toBe(true);

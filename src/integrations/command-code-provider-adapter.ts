@@ -10,11 +10,16 @@ import {
 import type { ProviderAdapterPort, ProviderStreamOptions } from "../providers/port.ts";
 import type { ModelRequest } from "../providers/request.ts";
 import type { NormalizedProviderEvent } from "../providers/stream.ts";
+import type {
+  CommandCodeTransportCompatibilityDeclaration,
+  ProviderModelTransportCompatibilityOverride,
+} from "../providers/transport-compatibility.ts";
 import { createAnthropicSdkAdapter } from "./anthropic-sdk-adapter.ts";
 import { createOpenAiSdkAdapter, type OpenAiSdkFetch } from "./openai-sdk-adapter.ts";
 import { providerDestinationId } from "./provider-destination.ts";
+import { resolveProviderTransportCompatibilityPlanSet } from "./provider-transport-compatibility.ts";
 
-export type CommandCodeSdkAdapterOptions = {
+export type CommandCodeProviderAdapterOptions = {
   readonly profileId: string;
   readonly displayName?: string;
   readonly providerId?: string;
@@ -22,6 +27,8 @@ export type CommandCodeSdkAdapterOptions = {
   readonly supportedModels: readonly string[];
   readonly requestTimeoutMs?: number;
   readonly fetch?: OpenAiSdkFetch;
+  readonly compatibility?: CommandCodeTransportCompatibilityDeclaration;
+  readonly modelCompatibility?: readonly ProviderModelTransportCompatibilityOverride[];
 };
 
 type CommandCodeChildAdapters = {
@@ -30,7 +37,7 @@ type CommandCodeChildAdapters = {
 };
 
 type CommandCodeChildAdapterFactory = (
-  options: CommandCodeSdkAdapterOptions,
+  options: CommandCodeProviderAdapterOptions,
   supportedModels: Readonly<Record<"openai" | "anthropic", readonly string[]>>,
 ) => CommandCodeChildAdapters;
 
@@ -52,7 +59,7 @@ function supportedModelsByProtocol(models: readonly string[]): {
 }
 
 function defaultChildren(
-  options: CommandCodeSdkAdapterOptions,
+  options: CommandCodeProviderAdapterOptions,
   supportedModels: Readonly<Record<"openai" | "anthropic", readonly string[]>>,
 ): CommandCodeChildAdapters {
   const common = {
@@ -79,7 +86,10 @@ function defaultChildren(
   };
 }
 
-function unsupportedModelEvents(request: ModelRequest): readonly NormalizedProviderEvent[] {
+function unsupportedEvents(
+  request: ModelRequest,
+  message: string,
+): readonly NormalizedProviderEvent[] {
   const attempt = modelAttemptId.from(`attempt-${request.requestId}`);
   return [
     {
@@ -95,11 +105,15 @@ function unsupportedModelEvents(request: ModelRequest): readonly NormalizedProvi
       sequence: 2,
       failure: {
         kind: "unsupported-capability",
-        message: "The selected Command Code model has no verified transport mapping.",
+        message,
         retryable: false,
       },
     },
   ];
+}
+
+function withoutPromptCache({ promptCache: _promptCache, ...request }: ModelRequest): ModelRequest {
+  return request;
 }
 
 /**
@@ -107,13 +121,26 @@ function unsupportedModelEvents(request: ModelRequest): readonly NormalizedProvi
  * each model. Claude uses Anthropic Messages; all other verified models use
  * OpenAI Chat Completions.
  */
-export function createCommandCodeSdkAdapter(
-  options: CommandCodeSdkAdapterOptions,
+export function createCommandCodeProviderAdapter(
+  options: CommandCodeProviderAdapterOptions,
   createChildren: CommandCodeChildAdapterFactory = defaultChildren,
 ): ProviderAdapterPort {
   const grouped = supportedModelsByProtocol(options.supportedModels);
-  const children = createChildren(options, grouped);
   const supportedModels = [...grouped.openai, ...grouped.anthropic].map(modelId.from);
+  const resolvedCompatibility = resolveProviderTransportCompatibilityPlanSet(
+    "commandcode",
+    options.compatibility,
+    supportedModels,
+    options.modelCompatibility,
+  );
+  if (!resolvedCompatibility.ok) {
+    throw new Error("Command Code adapter received an incompatible transport declaration");
+  }
+  const transportCompatibility = resolvedCompatibility.value.destination;
+  const compatibilityByModel = new Map(
+    resolvedCompatibility.value.models.map((entry) => [String(entry.modelId), entry.plan]),
+  );
+  const children = createChildren(options, grouped);
 
   return {
     identity: {
@@ -122,21 +149,49 @@ export function createCommandCodeSdkAdapter(
       adapterKind: "commandcode",
       endpoint: COMMAND_CODE_OPENAI_BASE_URL,
       destinationId: providerDestinationId("commandcode", COMMAND_CODE_OPENAI_BASE_URL),
+      transportCompatibilityId: transportCompatibility.compatibilityId,
       displayName: options.displayName ?? "Command Code",
     },
     supportedModels,
     // Both SDK leaves remain text-only until Falryn resolves image handles.
     requestInputModalities: ["text"],
+    // OpenAI-compatible transport does not establish OpenAI-native verbosity support.
+    requestResponseDensityControls: [],
+    transportCompatibility,
+    transportCompatibilityFor(selectedModelId) {
+      return compatibilityByModel.get(String(selectedModelId)) ?? null;
+    },
     async *stream(
       request: ModelRequest,
       streamOptions: ProviderStreamOptions,
     ): AsyncIterable<NormalizedProviderEvent> {
       const protocol = commandCodeProtocolFor(String(request.modelId));
       if (protocol === null) {
-        yield* unsupportedModelEvents(request);
+        yield* unsupportedEvents(
+          request,
+          "The selected Command Code model has no verified transport mapping.",
+        );
         return;
       }
-      yield* children[protocol].stream(request, streamOptions);
+      if (request.responseDensityControl !== null && request.responseDensityControl !== undefined) {
+        yield* unsupportedEvents(
+          request,
+          "Command Code does not publish a native response-density contract for this model.",
+        );
+        return;
+      }
+      if (request.promptCache !== undefined && request.promptCache.mode !== "provider-managed") {
+        yield* unsupportedEvents(
+          request,
+          "The selected Command Code route received an incompatible prompt-cache mechanism.",
+        );
+        return;
+      }
+      // Command Code owns cache routing behind both wire protocols. Preserve
+      // Falryn's byte-stable prefix, but do not leak OpenAI or Anthropic cache
+      // controls into a provider-managed API contract.
+      const delegated = request.promptCache === undefined ? request : withoutPromptCache(request);
+      yield* children[protocol].stream(delegated, streamOptions);
     },
   };
 }

@@ -20,24 +20,30 @@ import {
   type CredentialWriteResult,
   createEnvironmentCredentialStore,
   createKeychainCredentialStore,
+  createSessionEnvironmentCredentialLookup,
+  type OperatingSystemSecretsPort,
+  type SessionEnvironmentCredentialLookupPort,
   writeKeychainCredential,
 } from "../integrations/index.ts";
+import {
+  providerCredentialEnvironmentAliases,
+  providerEnvironmentCredentialReference,
+} from "../providers/index.ts";
 import { createSecretResolver } from "./credential-resolver.ts";
 import type { DiagnosticsCollector } from "./diagnostics-collector.ts";
 
 /** Default environment credential for OpenAI SDK live runs (#710/#752). */
-export const DEFAULT_OPENAI_CREDENTIAL_REFERENCE: CredentialReference = {
-  storeKind: "environment",
-  locator: "FALRYN_OPENAI_API_KEY",
-  consumer: "provider:openai",
-  accountLabel: null,
-};
+export const DEFAULT_OPENAI_CREDENTIAL_REFERENCE: CredentialReference =
+  providerEnvironmentCredentialReference("openai", "openai");
 
 export type ProductCredentialPorts = {
   readonly clock: ClockPort;
   readonly commands: CommandRunnerPort;
   readonly platform: LocalDataPlatform;
   readonly environment: EnvironmentPort;
+  readonly secrets?: OperatingSystemSecretsPort;
+  /** Injectable null disables post-start environment lookup in isolated tests. */
+  readonly sessionEnvironment?: SessionEnvironmentCredentialLookupPort | null;
   readonly diagnostics?: DiagnosticsCollector;
 };
 
@@ -59,13 +65,23 @@ export type ProductCredentialBundle = {
  */
 export function composeProductCredentials(ports: ProductCredentialPorts): ProductCredentialBundle {
   const keychain = createKeychainCredentialStore({
-    commands: ports.commands,
     clock: ports.clock,
     platform: ports.platform,
+    ...(ports.secrets === undefined ? {} : { secrets: ports.secrets }),
   });
+  const sessionEnvironment =
+    ports.sessionEnvironment === undefined
+      ? createSessionEnvironmentCredentialLookup({
+          commands: ports.commands,
+          environment: ports.environment,
+          platform: ports.platform,
+        })
+      : ports.sessionEnvironment;
   const environment = createEnvironmentCredentialStore({
     environment: ports.environment,
     clock: ports.clock,
+    aliases: providerCredentialEnvironmentAliases(),
+    session: sessionEnvironment,
   });
   const stores = [keychain, environment] as const;
   const resolver = createSecretResolver({
@@ -78,13 +94,13 @@ export function composeProductCredentials(ports: ProductCredentialPorts): Produc
     resolver,
     stores,
     async placeApiKey(input) {
-      // Never log or return the secret; writeKeychainCredential passes it only
-      // through the supervised process stdin channel.
+      // Never log or return the secret. Bun passes it directly to the current
+      // user's operating-system vault rather than argv or environment.
       return writeKeychainCredential({
-        commands: ports.commands,
         platform: ports.platform,
         reference: input.reference,
         secret: input.secret,
+        ...(ports.secrets === undefined ? {} : { secrets: ports.secrets }),
       });
     },
   };

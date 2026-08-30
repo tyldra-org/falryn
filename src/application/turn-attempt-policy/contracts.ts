@@ -50,6 +50,10 @@ export type AttemptModelInput = {
     readonly request: BriefRequest;
     readonly receipt: BriefReceipt;
     readonly sectionSource: string;
+    /** Full provider-neutral prompt fallback. */
+    readonly fallbackGuidance: string;
+    /** Guidance retained alongside a provider-native density control. */
+    readonly semanticGuidance: string;
     /** Caller/provider ceiling before Brief selects the current turn budget. */
     readonly maxOutputTokensCeiling?: number;
   };

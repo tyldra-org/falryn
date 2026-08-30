@@ -35,6 +35,9 @@ export function promptCacheStablePrefixDigest(
  * tool continuations on the same bound route retain it.
  */
 export function providerPromptCachePolicy(input: ProviderPromptCacheInput): PromptCachePolicy {
+  if (input.receipt.promptCacheMode === null || input.receipt.promptCacheMode === undefined) {
+    throw new Error("A provider prompt-cache policy requires a routed cache mechanism.");
+  }
   const keyMaterial = JSON.stringify({
     schemaVersion: PROMPT_CACHE_POLICY_SCHEMA_VERSION,
     sessionId: String(input.sessionId),
@@ -56,5 +59,7 @@ export function providerPromptCachePolicy(input: ProviderPromptCacheInput): Prom
     stablePrefixDigest: input.seed.stablePrefixDigest,
     stableMessageCount: input.seed.stableMessageCount,
     toolCatalogGeneration: input.seed.toolCatalogGeneration,
+    mode: input.receipt.promptCacheMode,
+    minimumInputTokens: input.receipt.promptCacheMinimumInputTokens ?? null,
   };
 }

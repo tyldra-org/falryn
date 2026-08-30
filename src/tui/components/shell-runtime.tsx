@@ -10,12 +10,14 @@ import {
   type MidTurnInputService,
   type ProductBriefControls,
   type ProductExecutionProfileControls,
+  type ProductModelSelectionControls,
+  type ProductOutputControls,
 } from "../../application/index.ts";
 import {
   type AttachmentDescriptor,
-  isBriefVerbosityMode,
   isExecutionProfileId,
   MAX_EVIDENCE_INLINE_BYTES,
+  modelId,
   parseMentions,
 } from "../../domain/index.ts";
 import type { TranscriptBlock } from "../../presentation/index.ts";
@@ -29,6 +31,12 @@ import {
   workspacePanelForSlashCommand,
 } from "../composer/index.ts";
 import { createMemoryAttachmentPayloads } from "../composer/payload.ts";
+import {
+  applyCompressionControl,
+  type CompressionControlAction,
+  type CompressionControlState,
+  compressionControlState,
+} from "../compression.ts";
 import {
   applySecretEdit,
   type ConfirmationDecision,
@@ -95,6 +103,8 @@ export type ShellRuntime = {
   paletteQuery(query: string): void;
   confirm(choice: "accept" | "deny"): boolean;
   editSecret(edit: SecretEdit): void;
+  readonly compression: CompressionControlState;
+  selectCompression(action: CompressionControlAction): void;
   selectControl(field: "session" | "model", id: string): void;
   selectProfile(id: string): void;
   settleChanges(notice: string): void;
@@ -129,6 +139,8 @@ export type ShellRuntimeOptions = {
   readonly midTurn?: MidTurnInputService | null;
   /** Product Brief controls for `/brief` (#717). */
   readonly brief?: ProductBriefControls | null;
+  /** Product Hush/Loom controls for `/hush` and `/loom`. */
+  readonly output?: ProductOutputControls | null;
 };
 
 const encoder = new TextEncoder();
@@ -162,9 +174,18 @@ function resolveCommandState(
 }
 
 export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
+  const modelSelection =
+    options.submission !== undefined && "modelSelection" in options.submission
+      ? (
+          options.submission as SubmissionPort & {
+            readonly modelSelection: ProductModelSelectionControls;
+          }
+        ).modelSelection
+      : null;
   const [state, dispatch] = useReducer(shellReducer, INITIAL_SHELL_STATE, (base) => ({
     ...base,
     workspace: options.workspace ?? EMPTY_WORKSPACE_SET,
+    selectedModelId: modelSelection === null ? base.selectedModelId : modelSelection.get(),
   }));
   const blocks = options.transcriptBlocks ?? NO_BLOCKS;
   const commandState = useMemo(
@@ -208,6 +229,19 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
   const onConfirmation = options.onConfirmation;
   const onSecretSubmit = options.onSecretSubmit;
   const copyPort = options.copyPort ?? null;
+  const submissionBrief =
+    options.submission !== undefined && options.submission !== null && "brief" in options.submission
+      ? (options.submission as { brief: ProductBriefControls }).brief
+      : null;
+  const briefControls = options.brief ?? submissionBrief;
+  const submissionOutput =
+    options.submission !== undefined &&
+    options.submission !== null &&
+    "output" in options.submission
+      ? (options.submission as { output: ProductOutputControls }).output
+      : null;
+  const outputControls = options.output ?? submissionOutput;
+  const compression = compressionControlState(briefControls, outputControls);
 
   const editSecret = useCallback((edit: SecretEdit): void => {
     secretRef.current = applySecretEdit(secretRef.current, edit);
@@ -469,13 +503,7 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
       }
 
       if (slash.commandId === "brief.set") {
-        const submissionBrief =
-          options.submission !== undefined &&
-          options.submission !== null &&
-          "brief" in options.submission
-            ? (options.submission as { brief: ProductBriefControls }).brief
-            : null;
-        const brief = options.brief ?? submissionBrief;
+        const brief = briefControls;
         if (brief === null) {
           dispatch({
             kind: "notice",
@@ -487,27 +515,58 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
         if (mode === "") {
           dispatch({
             kind: "notice",
-            message: `Brief verbosity is ${brief.getVerbosity()} (use /brief compact|balanced|detailed|auto).`,
+            message: `Brief is ${brief.getFrontendMode()} (use /brief compact|balanced|detailed|auto|on|off).`,
           });
           dispatch({ kind: "composer", action: { kind: "draft", text: "" } });
           return;
         }
-        if (!isBriefVerbosityMode(mode)) {
+        const set = brief.setFrontendMode(mode);
+        if (!set.ok) {
           dispatch({
             kind: "notice",
-            message: `Unsupported Brief verbosity “${mode}”. Use compact|balanced|detailed|auto.`,
+            message: `Unsupported Brief mode “${mode}”. Use compact|balanced|detailed|auto|on|off.`,
           });
-          return;
-        }
-        const set = brief.setVerbosity(mode);
-        if (!set.ok) {
-          dispatch({ kind: "notice", message: `Could not set Brief verbosity to ${mode}.` });
           return;
         }
         dispatch({
           kind: "notice",
-          message: `Brief verbosity set to ${set.value}.`,
+          message: `Brief set to ${brief.getFrontendMode()}.`,
         });
+        dispatch({ kind: "composer", action: { kind: "draft", text: "" } });
+        return;
+      }
+
+      if (slash.commandId === "hush.set" || slash.commandId === "loom.set") {
+        const output = outputControls;
+        const engine = slash.commandId === "hush.set" ? "Hush" : "Loom";
+        if (output === null) {
+          dispatch({
+            kind: "notice",
+            message: `${engine} controls are not attached to this shell.`,
+          });
+          return;
+        }
+        const state = slash.argument?.trim().toLowerCase() ?? "";
+        const current =
+          slash.commandId === "hush.set" ? output.getHushState() : output.getLoomState();
+        if (state === "") {
+          dispatch({
+            kind: "notice",
+            message: `${engine} is ${current} (use /${engine.toLowerCase()} on|off).`,
+          });
+          dispatch({ kind: "composer", action: { kind: "draft", text: "" } });
+          return;
+        }
+        const set =
+          slash.commandId === "hush.set" ? output.setHushState(state) : output.setLoomState(state);
+        if (!set.ok) {
+          dispatch({
+            kind: "notice",
+            message: `Unsupported ${engine} state “${state}”. Use on|off.`,
+          });
+          return;
+        }
+        dispatch({ kind: "notice", message: `${engine} set to ${set.value}.` });
         dispatch({ kind: "composer", action: { kind: "draft", text: "" } });
         return;
       }
@@ -560,6 +619,12 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
         return;
       }
 
+      if (slash.commandId === "compression.show") {
+        dispatch({ kind: "open-overlay", route: { kind: "compression" } });
+        dispatch({ kind: "composer", action: { kind: "draft", text: "" } });
+        return;
+      }
+
       const panel = workspacePanelForSlashCommand(slash.commandId);
       if (panel === null) {
         dispatch({ kind: "notice", message: `No workspace panel for ${slash.commandId}.` });
@@ -597,8 +662,9 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
     })();
   }, [
     fileProbe,
-    options.brief,
+    briefControls,
     options.midTurn,
+    outputControls,
     options.submission,
     options.workspaceController,
     submitMidTurn,
@@ -841,9 +907,44 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
     });
   }, [midTurn]);
 
-  const selectControl = useCallback((field: "session" | "model", id: string): void => {
-    dispatch({ kind: "select-control", field, id });
-  }, []);
+  const selectControl = useCallback(
+    (field: "session" | "model", id: string): void => {
+      if (field === "session") {
+        dispatch({ kind: "select-control", field, id });
+        return;
+      }
+      if (modelSelection === null) {
+        dispatch({ kind: "close-overlay" });
+        dispatch({ kind: "notice", message: "Model selection is not attached." });
+        return;
+      }
+      void modelSelection.select(modelId.from(id)).then((selected) => {
+        if (selected.ok) {
+          dispatch({ kind: "select-control", field, id: String(selected.modelId) });
+          dispatch({
+            kind: "notice",
+            message: selected.changed
+              ? `Model selected: ${String(selected.modelId)}.`
+              : `Model already selected: ${String(selected.modelId)}.`,
+          });
+          return;
+        }
+        dispatch({ kind: "close-overlay" });
+        dispatch({ kind: "notice", message: `${selected.message} (${selected.code})` });
+      });
+    },
+    [modelSelection],
+  );
+
+  const selectCompression = useCallback(
+    (action: CompressionControlAction): void => {
+      dispatch({
+        kind: "notice",
+        message: applyCompressionControl(briefControls, outputControls, action),
+      });
+    },
+    [briefControls, outputControls],
+  );
 
   const selectProfile = useCallback(
     (id: string): void => {
@@ -945,6 +1046,8 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
     paletteQuery,
     confirm,
     editSecret,
+    compression,
+    selectCompression,
     selectControl,
     selectProfile,
     settleChanges,

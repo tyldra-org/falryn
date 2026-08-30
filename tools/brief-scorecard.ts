@@ -11,32 +11,47 @@ import {
   CAVEMAN_PINNED_COMMIT,
   CAVEMAN_PINNED_SKILL_DIGEST,
   type CavemanSourcePort,
+  composeProductCredentials,
   loadPinnedCavemanPolicy,
+  resolveProviderApiKey,
 } from "../src/application/index.ts";
 import { runCoding } from "../src/cli/coding-run.ts";
 import type { GlobalOptions } from "../src/cli/options.ts";
 import { createServiceProvider } from "../src/cli/services.ts";
 import { createRecordingCliStreams } from "../src/cli/streams.ts";
 import {
+  BRIEF_STRATEGY_VERSION,
   type BriefComparisonArm,
   type BriefComparisonMatch,
   type BriefComparisonPair,
   type BriefComparisonUsage,
   compareBriefPair,
   createStaticEnvironment,
+  createSystemClock,
   instant,
   localPath,
   ok,
   type PromptSectionInput,
 } from "../src/domain/index.ts";
-import { createOpenAiSdkAdapter, hostPlatform } from "../src/integrations/index.ts";
 import {
+  createCommandCodeProviderAdapter,
+  createHostCommandRunner,
+  createHostEnvironment,
+  createOpenAiSdkAdapter,
+  hostPlatform,
+} from "../src/integrations/index.ts";
+import {
+  COMMAND_CODE_OPENAI_BASE_URL,
+  COMMAND_CODE_PROVIDER_ID,
   capabilityFromDeclaration,
   catalogFromAdapterModels,
   knownModelCapability,
   type ModelCatalog,
   type ModelRequest,
+  type ProviderAdapterKind,
   type ProviderAdapterPort,
+  providerCredentialEnvironment,
+  providerEnvironmentCredentialReference,
 } from "../src/providers/index.ts";
 import {
   BRIEF_RESPONSE_FIXTURES,
@@ -46,6 +61,17 @@ import {
 const RESPONSE_TOKENIZER = "utf8-bytes-div4.v1";
 const DEFAULT_OUTPUT_LIMIT = 2_048;
 const MAX_REPETITIONS = 4;
+const DEFAULT_OPENAI_MODEL = "gpt-4o-mini";
+const DEFAULT_COMMAND_CODE_MODEL = "MiniMaxAI/MiniMax-M3";
+const BRIEF_SCORECARD_SCHEMA_VERSION = 2;
+
+type ScorecardProviderId = "openai" | "commandcode";
+
+type ScorecardProvider = {
+  readonly adapter: ProviderAdapterPort;
+  readonly catalog: ModelCatalog;
+  readonly model: string;
+};
 
 type Options = {
   readonly format: "human" | "json";
@@ -56,7 +82,7 @@ type Options = {
 };
 
 export type ScorecardReport = {
-  readonly schemaVersion: 1;
+  readonly schemaVersion: typeof BRIEF_SCORECARD_SCHEMA_VERSION;
   readonly generatedAt: string;
   readonly baseline: {
     readonly commit: string;
@@ -69,6 +95,7 @@ export type ScorecardReport = {
     readonly outputTokenLimit: number;
     readonly responseTokenizer: string;
     readonly concurrency: 1;
+    readonly toolExposure: "none";
   };
   readonly attempts: readonly BriefComparisonArm[];
   readonly pairs: readonly BriefComparisonPair[];
@@ -95,6 +122,18 @@ function utf8Bytes(value: string): number {
 
 function estimatedTokens(value: string): number {
   return Math.ceil(utf8Bytes(value) / 4);
+}
+
+/** Ignore presentation-only differences while preserving wording, order, and punctuation. */
+export function responseContainsBriefFact(response: string, fact: string): boolean {
+  const normalize = (value: string) =>
+    value
+      .normalize("NFKC")
+      .replace(/[`*]/g, "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .toLocaleLowerCase("en-US");
+  return normalize(response).includes(normalize(fact));
 }
 
 function withoutResponsePolicy(text: string): string {
@@ -172,15 +211,17 @@ function gitSource(root: string): CavemanSourcePort {
   };
 }
 
-function catalog(
-  adapter: ReturnType<typeof createOpenAiSdkAdapter>,
+function providerCatalog(
+  adapter: ProviderAdapterPort,
+  adapterKind: ProviderAdapterKind,
+  provider: string,
   model: string,
   baseUrl: string,
 ): ModelCatalog {
-  const declaration = knownModelCapability("openai", model, baseUrl);
+  const declaration = knownModelCapability(adapterKind, model, baseUrl, provider);
   if (declaration === null) {
     throw new Error(
-      `Brief scorecard requires a source-verified capability declaration for ${model}`,
+      `Brief scorecard requires a source-verified ${provider} capability declaration for ${model}`,
     );
   }
   return catalogFromAdapterModels(adapter.supportedModels, {
@@ -193,6 +234,91 @@ function catalog(
       }),
     ],
   });
+}
+
+async function requiredCredential(
+  environment: Readonly<Record<string, string | undefined>>,
+  provider: ScorecardProviderId,
+  useHostSession: boolean,
+): Promise<string> {
+  const names = providerCredentialEnvironment(provider)?.variables;
+  if (names === undefined) {
+    throw new Error(`Brief scorecard has no credential environment declaration for ${provider}`);
+  }
+  const staticValues = Object.fromEntries(
+    Object.entries(environment).filter(
+      (entry): entry is [string, string] => entry[1] !== undefined,
+    ),
+  );
+  const environmentPort = useHostSession
+    ? createHostEnvironment()
+    : createStaticEnvironment(staticValues);
+  const credentials = composeProductCredentials({
+    clock: createSystemClock(),
+    commands: createHostCommandRunner(),
+    platform: hostPlatform(),
+    environment: environmentPort,
+    ...(useHostSession ? {} : { sessionEnvironment: null }),
+  });
+  const reference = providerEnvironmentCredentialReference(provider, "brief-scorecard");
+  const value = await resolveProviderApiKey(credentials.resolver, reference);
+  if (value === null) {
+    throw new Error(`${names.join(" or ")} is required for matched live runs`);
+  }
+  return value;
+}
+
+/** Resolve one source-verified provider/model pair for a matched live scorecard. */
+export async function createBriefScorecardProvider(
+  suppliedEnvironment?: Readonly<Record<string, string | undefined>>,
+): Promise<ScorecardProvider> {
+  const environment = suppliedEnvironment ?? process.env;
+  const configuredProvider = environment.FALRYN_BRIEF_PROVIDER ?? "openai";
+  if (configuredProvider !== "openai" && configuredProvider !== "commandcode") {
+    throw new Error(`unsupported Brief scorecard provider: ${configuredProvider}`);
+  }
+  const provider: ScorecardProviderId = configuredProvider;
+  if (provider === "commandcode") {
+    const apiKey = await requiredCredential(
+      environment,
+      provider,
+      suppliedEnvironment === undefined,
+    );
+    const model = environment.FALRYN_BRIEF_MODEL ?? DEFAULT_COMMAND_CODE_MODEL;
+    const adapter = createCommandCodeProviderAdapter({
+      profileId: "brief-scorecard",
+      resolveApiKey: async () => apiKey,
+      supportedModels: [model],
+    });
+    return {
+      adapter,
+      catalog: providerCatalog(
+        adapter,
+        "commandcode",
+        COMMAND_CODE_PROVIDER_ID,
+        model,
+        COMMAND_CODE_OPENAI_BASE_URL,
+      ),
+      model,
+    };
+  }
+  const apiKey = await requiredCredential(environment, provider, suppliedEnvironment === undefined);
+  const model = environment.FALRYN_BRIEF_MODEL ?? DEFAULT_OPENAI_MODEL;
+  const baseUrl = (environment.FALRYN_OPENAI_BASE_URL ?? "https://api.openai.com/v1").replace(
+    /\/+$/,
+    "",
+  );
+  const adapter = createOpenAiSdkAdapter({
+    profileId: "brief-scorecard",
+    baseUrl,
+    resolveApiKey: async () => apiKey,
+    supportedModels: [model],
+  });
+  return {
+    adapter,
+    catalog: providerCatalog(adapter, "openai", "openai", model, baseUrl),
+    model,
+  };
 }
 
 function globals(workspace: string): GlobalOptions {
@@ -268,6 +394,7 @@ async function runArm(input: {
       providerAdapter: adapter,
       providerCatalog: input.providerCatalog,
       maxOutputTokensOverride: DEFAULT_OUTPUT_LIMIT,
+      toolExposureOverride: "none",
       identities: {
         sessionId: `brief-scorecard-${randomUUID()}`,
         turnId: `brief-scorecard-${randomUUID()}`,
@@ -287,19 +414,26 @@ async function runArm(input: {
   const wallTimeMs = performance.now() - startedAt;
   streams.dispose();
   const response = result.payload?.response ?? "";
-  const preservedFacts = input.fixture.requiredFacts.filter((fact) => response.includes(fact));
-  const missingFacts = input.fixture.requiredFacts.filter((fact) => !response.includes(fact));
+  const preservedFacts = input.fixture.requiredFacts.filter((fact) =>
+    responseContainsBriefFact(response, fact),
+  );
+  const missingFacts = input.fixture.requiredFacts.filter(
+    (fact) => !responseContainsBriefFact(response, fact),
+  );
   const unsupportedClaims = input.fixture.forbiddenClaims.filter((fact) =>
-    response.toLowerCase().includes(fact.toLowerCase()),
+    responseContainsBriefFact(response, fact),
   ).length;
   const providerUsage = result.payload?.providerUsage;
   const briefReceipt = result.payload?.briefReceipt;
   const toolResults = result.payload?.toolResults ?? 0;
   const reportedProviderRequests = result.payload?.providerRequests ?? 0;
+  const exposedProviderTools = providerRequests.some((request) => request.tools.length > 0);
   const terminal =
     result.outcome.kind === "cancelled"
       ? "cancelled"
-      : toolResults > 0 || reportedProviderRequests !== providerRequests.length
+      : toolResults > 0 ||
+          exposedProviderTools ||
+          reportedProviderRequests !== providerRequests.length
         ? "partial"
         : result.payload?.stage === "attempt-completed"
           ? "completed"
@@ -307,6 +441,9 @@ async function runArm(input: {
   return {
     policy: input.policy,
     policyMode: input.policyMode,
+    delivery: input.policy === "brief" ? (briefReceipt?.delivery ?? "prompt") : "prompt",
+    providerResponseDensityControl:
+      input.policy === "brief" ? (briefReceipt?.providerResponseDensityControl ?? null) : null,
     policyDigest:
       input.policy === "brief"
         ? (briefReceipt?.guidanceDigest ?? input.policyDigest)
@@ -374,7 +511,7 @@ export function formatBriefScorecardHuman(report: ScorecardReport): string {
     for (const arm of [pair.brief, pair.caveman]) {
       const usage = arm.usage;
       lines.push(
-        `  ${arm.policy} mode=${arm.policyMode} order=${arm.order} terminal=${arm.terminal} ` +
+        `  ${arm.policy} mode=${arm.policyMode} delivery=${arm.delivery} native=${arm.providerResponseDensityControl ?? "none"} order=${arm.order} terminal=${arm.terminal} ` +
           `tokens(total/input/output/cache/reasoning)=${usage?.totalTokens ?? "?"}/${usage?.inputTokens ?? "?"}/${usage?.outputTokens ?? "?"}/${usage?.cachedInputTokens ?? "?"}/${usage?.reasoningTokens ?? "?"} ` +
           `totalSource=${usage?.totalProvenance ?? "?"} ` +
           `requests=${arm.providerRequests} retries=${arm.retries} latencyMs=${arm.wallTimeMs.toFixed(1)} costUsd=${arm.costUsd ?? "?"} ` +
@@ -399,22 +536,7 @@ async function main(): Promise<void> {
   const options = parseOptions(Bun.argv.slice(2));
   const controller = new AbortController();
   process.once("SIGINT", () => controller.abort("SIGINT"));
-  const apiKey = process.env.FALRYN_OPENAI_API_KEY ?? process.env.OPENAI_API_KEY ?? null;
-  if (apiKey === null || apiKey.trim() === "") {
-    throw new Error("FALRYN_OPENAI_API_KEY or OPENAI_API_KEY is required for matched live runs");
-  }
-  const model = process.env.FALRYN_BRIEF_MODEL ?? "gpt-4o-mini";
-  const baseUrl = (process.env.FALRYN_OPENAI_BASE_URL ?? "https://api.openai.com/v1").replace(
-    /\/+$/,
-    "",
-  );
-  const adapter = createOpenAiSdkAdapter({
-    profileId: "brief-scorecard",
-    baseUrl,
-    resolveApiKey: async () => apiKey,
-    supportedModels: [model],
-  });
-  const providerCatalog = catalog(adapter, model, baseUrl);
+  const { adapter, catalog: providerCatalog, model } = await createBriefScorecardProvider();
   const selectedFixtures = BRIEF_RESPONSE_FIXTURES.filter(
     (fixture) => options.fixture === null || fixture.id === options.fixture,
   );
@@ -474,7 +596,7 @@ async function main(): Promise<void> {
             fixture,
             policy: "brief",
             policyMode: fixture.briefMode,
-            policyDigest: digest(`brief.v1\0${fixture.briefMode}`),
+            policyDigest: digest(`${BRIEF_STRATEGY_VERSION}\0${fixture.briefMode}`),
             guidance: briefGuidance,
             order: briefFirst ? 1 : 2,
             match: common,
@@ -521,7 +643,7 @@ async function main(): Promise<void> {
     }
     const results = pairs.map(compareBriefPair);
     const report: ScorecardReport = {
-      schemaVersion: 1,
+      schemaVersion: BRIEF_SCORECARD_SCHEMA_VERSION,
       generatedAt: new Date().toISOString(),
       baseline: {
         commit: CAVEMAN_PINNED_COMMIT,
@@ -534,6 +656,7 @@ async function main(): Promise<void> {
         outputTokenLimit: DEFAULT_OUTPUT_LIMIT,
         responseTokenizer: RESPONSE_TOKENIZER,
         concurrency: 1,
+        toolExposure: "none",
       },
       attempts,
       pairs,

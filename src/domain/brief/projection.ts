@@ -7,11 +7,13 @@ import {
   BRIEF_PLACEMENT,
   BRIEF_SCHEMA_VERSION,
   BRIEF_STRATEGY_VERSION,
+  type BriefDelivery,
   type BriefDimensions,
   type BriefError,
   type BriefOmission,
   type BriefPreservedFact,
   type BriefProjection,
+  type BriefReceipt,
   type BriefRequest,
   type BriefVerbosityLevel,
   DEFAULT_BRIEF_MAX_BYTES,
@@ -21,10 +23,10 @@ import {
   briefDimensionsFor,
   briefError,
   briefOutputTokenBudget,
+  decideBriefVerbosity,
   parseBriefNeed,
   preservedFactsFromNeed,
   resolveBriefPolicy,
-  selectBriefVerbosity,
 } from "./policy.ts";
 
 const HIDDEN_TOOL_CALL = /<tool_call\b|<invoke\b|<function(?:_call)?\b|\btool_calls\s*[:=]/i;
@@ -56,7 +58,8 @@ export function projectBrief(request: BriefRequest): Result<BriefProjection, Bri
     return policyResult;
   }
   const policy = policyResult.value;
-  const selectedVerbosity = selectBriefVerbosity(policy.verbosity, need);
+  const decision = decideBriefVerbosity(policy.verbosity, need);
+  const selectedVerbosity = decision.verbosity;
   const defaults = briefDimensionsFor(selectedVerbosity);
   const dimensions: BriefDimensions = {
     verbosity: selectedVerbosity,
@@ -75,7 +78,12 @@ export function projectBrief(request: BriefRequest): Result<BriefProjection, Bri
 
   const facts = preservedFactsFromNeed(need);
   const requiredText = joinSections([
-    styleLine(selectedVerbosity, dimensions),
+    styleLine(selectedVerbosity),
+    ...clarityLines(need),
+    ...requiredFactLines(facts, selectedVerbosity),
+  ]);
+  const requiredSemanticText = joinSections([
+    ...clarityLines(need),
     ...requiredFactLines(facts, selectedVerbosity),
   ]);
   if (utf8ByteLength(requiredText) > maxBytes) {
@@ -96,8 +104,10 @@ export function projectBrief(request: BriefRequest): Result<BriefProjection, Bri
   }
 
   const guidance = custom.length > 0 ? joinSections([requiredText, custom]) : requiredText;
+  const semanticGuidance =
+    custom.length > 0 ? joinSections([requiredSemanticText, custom]) : requiredSemanticText;
   const concise = snapshotConcise(selectedVerbosity, facts);
-  const expanded = snapshotExpanded(selectedVerbosity, dimensions, facts);
+  const expanded = snapshotExpanded(selectedVerbosity, facts, need);
   if (
     utf8ByteLength(concise) > HARD_BRIEF_MAX_BYTES ||
     utf8ByteLength(expanded) > HARD_BRIEF_MAX_BYTES
@@ -111,6 +121,7 @@ export function projectBrief(request: BriefRequest): Result<BriefProjection, Bri
     sessionId: request.sessionId,
     configurationGeneration: request.configurationGeneration,
     guidance,
+    semanticGuidance,
     concise,
     expanded,
     receipt: {
@@ -119,7 +130,10 @@ export function projectBrief(request: BriefRequest): Result<BriefProjection, Bri
       policySource: policy.source,
       requestedMode: policy.verbosity,
       selectedVerbosity,
+      selectionReasons: decision.reasons,
       dimensions,
+      delivery: "prompt",
+      providerResponseDensityControl: null,
       byteLength: utf8ByteLength(guidance),
       guidanceDigest: createHash("sha256").update(guidance).digest("hex"),
       placement: BRIEF_PLACEMENT,
@@ -131,22 +145,62 @@ export function projectBrief(request: BriefRequest): Result<BriefProjection, Bri
   });
 }
 
+/** Bind a projected Brief policy to the controls actually sent on one provider request. */
+export function recordBriefDelivery(
+  receipt: BriefReceipt,
+  promptGuidance: string,
+  providerResponseDensityControl: string | null,
+): BriefReceipt {
+  const delivery: BriefDelivery =
+    providerResponseDensityControl === null
+      ? "prompt"
+      : promptGuidance.length === 0
+        ? "native"
+        : "native-with-semantic-prompt";
+  return {
+    ...receipt,
+    delivery,
+    providerResponseDensityControl,
+    byteLength: utf8ByteLength(promptGuidance),
+    guidanceDigest: createHash("sha256").update(promptGuidance).digest("hex"),
+  };
+}
+
 function utf8ByteLength(text: string): number {
   return new TextEncoder().encode(text).byteLength;
 }
 
-function styleLine(verbosity: BriefVerbosityLevel, dimensions: BriefDimensions): string {
-  const base = `Respond with ${verbosity} ${dimensions.density} ${dimensions.presentation}, ${dimensions.directness} tone, and ${dimensions.detail} detail.`;
+function styleLine(verbosity: BriefVerbosityLevel): string {
   switch (verbosity) {
     case "compact":
-      return `${base} Prefer short sentences. Do not add examples unless a required fact needs one.`;
+      return "Lead with outcome. Include each required fact once. Copy names, paths, commands, errors, numbers, and negated constraints verbatim. Use the shortest complete answer: one paragraph or list. No restatement, background, repetition, or optional examples.";
     case "balanced":
-      return `${base} Explain enough to act; keep examples rare.`;
+      return "Lead with the outcome. Include each explicit supplied fact once; copy names, paths, commands, errors, numbers, and negated constraints verbatim and contiguously, without inserting Markdown. Then add only the reasoning and evidence needed to act. Use short sections when helpful. Omit prompt restatement, generic background, repetition, and unnecessary examples.";
     case "detailed":
-      return `${base} Include short examples where they clarify a required fact.`;
+      return "Lead with the outcome. Include each explicit supplied fact once; copy names, paths, commands, errors, numbers, and negated constraints verbatim and contiguously, without inserting Markdown. Add task-relevant reasoning, evidence, tradeoffs, and actions only when requested or needed. Detailed means complete, not long. Before finishing, silently verify every supplied fact, constraint, and relationship is present. Use focused sections; examples only when needed. Omit prompt restatement, invented background, repeated conclusions, and filler.";
     default:
       return assertNever(verbosity, "unhandled brief verbosity");
   }
+}
+
+function clarityLines(need: BriefRequest["need"]): readonly string[] {
+  const lines: string[] = [];
+  if (need.safetyCritical) {
+    lines.push(
+      "Use complete, unambiguous sentences for safety warnings and irreversible confirmations. Preserve scope, order, reversibility, and prerequisites.",
+    );
+  }
+  if (need.clarification) {
+    lines.push(
+      "Answer the misunderstood point in plain, complete language. Never compress through ambiguity.",
+    );
+  }
+  if (need.orderedProcedure) {
+    lines.push(
+      "Keep ordered steps, dependencies, conjunctions, and prerequisites explicit when omission could change execution order.",
+    );
+  }
+  return lines;
 }
 
 function requiredFactLines(
@@ -162,12 +216,12 @@ function requiredFactLines(
           : "Keep every failed effect visible. Verbosity never authorizes omitting a failed effect.";
       case "risk":
         return compact
-          ? "Keep risk warnings visible."
-          : "Keep risk warnings visible at every verbosity.";
+          ? "Keep every explicit prohibition and risk warning verbatim and visible."
+          : "Keep every explicit prohibition and risk warning verbatim and visible at every verbosity.";
       case "uncertainty":
         return compact
-          ? "Keep uncertainty visible."
-          : "Keep uncertainty visible; do not present a guess as established.";
+          ? "Keep explicit uncertainty wording verbatim and visible."
+          : "Keep explicit uncertainty wording verbatim and visible; do not present a guess as established.";
       case "confirmation":
         return compact
           ? "Keep required confirmation visible."
@@ -186,8 +240,8 @@ function requiredFactLines(
           : "Keep validation results visible, including failures.";
       case "recovery":
         return compact
-          ? "Keep recovery actions visible."
-          : "Keep recovery actions visible and actionable.";
+          ? "Keep every recovery action, artifact handle, command, and verification condition verbatim."
+          : "Keep every recovery action, artifact handle, command, and verification condition verbatim and actionable.";
       default:
         return assertNever(fact, "unhandled preserved fact");
     }
@@ -224,8 +278,12 @@ function snapshotConcise(
 
 function snapshotExpanded(
   verbosity: BriefVerbosityLevel,
-  dimensions: BriefDimensions,
   facts: readonly BriefPreservedFact[],
+  need: BriefRequest["need"],
 ): string {
-  return joinSections([styleLine(verbosity, dimensions), ...requiredFactLines(facts, "detailed")]);
+  return joinSections([
+    styleLine(verbosity),
+    ...clarityLines(need),
+    ...requiredFactLines(facts, "detailed"),
+  ]);
 }

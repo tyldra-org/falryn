@@ -368,6 +368,7 @@ function attemptBinding(
     providerProfileId: receipt.providerProfileId,
     providerAdapterKind: receipt.providerAdapterKind,
     providerDestinationId: receipt.providerDestinationId,
+    transportCompatibilityId: receipt.transportCompatibilityId,
     modelId: receipt.modelId,
     role: receipt.role,
     intent: receipt.intent,
@@ -630,7 +631,10 @@ export function createTurnAttemptPolicy(options: TurnAttemptPolicyOptions): Turn
 
         const live = options.coordinator.get(input.turnId);
         const promptCache =
-          live === null || input.modelInput?.promptCache === undefined
+          live === null ||
+          input.modelInput?.promptCache === undefined ||
+          receipt.promptCacheMode === null ||
+          receipt.promptCacheMode === undefined
             ? undefined
             : providerPromptCachePolicy({
                 sessionId: live.sessionId,

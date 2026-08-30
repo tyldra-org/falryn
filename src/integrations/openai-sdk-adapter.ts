@@ -20,14 +20,23 @@ import OpenAI, {
   UnprocessableEntityError,
 } from "openai";
 
-import { modelAttemptId, modelId, providerId } from "../domain/identity.ts";
+import { type ModelId, modelAttemptId, modelId, providerId } from "../domain/identity.ts";
 import type { ProviderFailure, ProviderFailureKind } from "../providers/errors.ts";
 import { LATEST_OPENAI_MODEL_IDS } from "../providers/known-model-capability.ts";
 import type { ModelMessage, ModelToolDefinition } from "../providers/messages.ts";
 import type { ProviderAdapterPort, ProviderStreamOptions } from "../providers/port.ts";
 import type { ModelRequest } from "../providers/request.ts";
 import type { NormalizedProviderEvent } from "../providers/stream.ts";
+import type {
+  OpenAiChatTransportCompatibilityDeclaration,
+  ProviderModelTransportCompatibilityOverride,
+  ProviderTransportCompatibilityPlan,
+} from "../providers/transport-compatibility.ts";
 import { providerDestinationId } from "./provider-destination.ts";
+import {
+  resolveProviderTransportCompatibilityPlan,
+  resolveProviderTransportCompatibilityPlanSet,
+} from "./provider-transport-compatibility.ts";
 
 export type OpenAiSdkFetch = NonNullable<ClientOptions["fetch"]>;
 
@@ -44,6 +53,8 @@ export type OpenAiSdkAdapterOptions = {
   readonly organization?: string | null;
   readonly project?: string | null;
   readonly requestTimeoutMs?: number;
+  readonly compatibility?: OpenAiChatTransportCompatibilityDeclaration;
+  readonly modelCompatibility?: readonly ProviderModelTransportCompatibilityOverride[];
 };
 
 type ToolCallState = {
@@ -105,19 +116,52 @@ function openAiReasoningEffort(
   }
 }
 
-function toChatMessages(messages: readonly ModelMessage[]): OpenAI.ChatCompletionMessageParam[] {
+function toolCallNames(messages: readonly ModelMessage[]): ReadonlyMap<string, string> {
+  const names = new Map<string, string>();
+  for (const message of messages) {
+    for (const call of message.toolCalls ?? []) {
+      names.set(call.toolCallId, call.name);
+    }
+  }
+  return names;
+}
+
+function toChatMessages(
+  messages: readonly ModelMessage[],
+  compatibility: OpenAiChatTransportCompatibilityDeclaration,
+): OpenAI.ChatCompletionMessageParam[] {
   rejectImageParts(messages);
   const translated: OpenAI.ChatCompletionMessageParam[] = [];
+  const names = toolCallNames(messages);
+  let previousRole: ModelMessage["role"] | null = null;
   for (const message of messages) {
+    if (
+      message.role === "user" &&
+      previousRole === "tool" &&
+      compatibility.assistantAfterToolResult === "empty-assistant"
+    ) {
+      translated.push({ role: "assistant", content: "" });
+    }
     if (message.role === "tool") {
       if (message.toolCallId === undefined) {
+        previousRole = message.role;
         continue;
       }
-      translated.push({
+      const name = names.get(message.toolCallId);
+      if (compatibility.toolResultName === "required" && name === undefined) {
+        throw new OpenAiInputError(
+          "invalid-request",
+          "The selected OpenAI-compatible transport requires a tool-result name.",
+        );
+      }
+      const translatedTool: OpenAI.ChatCompletionToolMessageParam & { readonly name?: string } = {
         role: "tool",
         content: textOf(message),
         tool_call_id: message.toolCallId,
-      });
+        ...(compatibility.toolResultName === "required" && name !== undefined ? { name } : {}),
+      };
+      translated.push(translatedTool);
+      previousRole = message.role;
       continue;
     }
     if (message.role === "assistant") {
@@ -137,14 +181,25 @@ function toChatMessages(messages: readonly ModelMessage[]): OpenAI.ChatCompletio
               })),
             }),
       });
+      previousRole = message.role;
       continue;
     }
-    translated.push({ role: message.role, content: textOf(message) });
+    translated.push({
+      role:
+        message.role === "system" && compatibility.systemMessageRole === "developer"
+          ? "developer"
+          : message.role,
+      content: textOf(message),
+    });
+    previousRole = message.role;
   }
   return translated;
 }
 
-function toTools(tools: readonly ModelToolDefinition[]): OpenAI.ChatCompletionTool[] | undefined {
+function toTools(
+  tools: readonly ModelToolDefinition[],
+  compatibility: OpenAiChatTransportCompatibilityDeclaration,
+): OpenAI.ChatCompletionTool[] | undefined {
   if (tools.length === 0) {
     return undefined;
   }
@@ -154,6 +209,7 @@ function toTools(tools: readonly ModelToolDefinition[]): OpenAI.ChatCompletionTo
       name: tool.name,
       description: tool.description,
       parameters: tool.parameters,
+      ...(compatibility.strictToolSchemas ? { strict: true } : {}),
     },
   }));
 }
@@ -246,22 +302,58 @@ function completeToolProposals(
 
 /** Create a live SDK-backed Chat Completions adapter. */
 export function createOpenAiSdkAdapter(options: OpenAiSdkAdapterOptions): ProviderAdapterPort {
+  const models = (options.supportedModels ?? LATEST_OPENAI_MODEL_IDS).map((id) =>
+    modelId.from(String(id)),
+  );
+  const resolvedCompatibility = resolveProviderTransportCompatibilityPlanSet(
+    "openai",
+    options.compatibility,
+    models,
+    options.modelCompatibility,
+  );
+  if (!resolvedCompatibility.ok) {
+    throw new Error("OpenAI SDK adapter received an incompatible transport declaration");
+  }
+  const transportCompatibility: ProviderTransportCompatibilityPlan =
+    resolvedCompatibility.value.destination;
+  if (transportCompatibility.declaration.dialect !== "openai-chat-completions") {
+    throw new Error("OpenAI SDK adapter requires the OpenAI Chat Completions dialect");
+  }
+  const compatibilityByModel = new Map(
+    resolvedCompatibility.value.models.map((entry) => [String(entry.modelId), entry.plan]),
+  );
+  const transportCompatibilityFor = (
+    selectedModelId: ModelId,
+  ): ProviderTransportCompatibilityPlan | null => {
+    const bound = compatibilityByModel.get(String(selectedModelId));
+    if (bound !== undefined) {
+      return bound;
+    }
+    const resolved = resolveProviderTransportCompatibilityPlan("openai", options.compatibility, {
+      modelId: selectedModelId,
+      ...(options.modelCompatibility === undefined
+        ? {}
+        : { modelOverrides: options.modelCompatibility }),
+    });
+    return resolved.ok ? resolved.value : null;
+  };
   const identity = {
     providerId: providerId.from(options.providerId ?? "openai"),
     profileId: options.profileId,
     adapterKind: "openai" as const,
     endpoint: options.baseUrl,
     destinationId: providerDestinationId("openai", options.baseUrl),
+    transportCompatibilityId: transportCompatibility.compatibilityId,
     displayName: options.displayName ?? "OpenAI",
   };
-  const models = (options.supportedModels ?? LATEST_OPENAI_MODEL_IDS).map((id) =>
-    modelId.from(String(id)),
-  );
 
   return {
     identity,
     supportedModels: models,
     requestInputModalities: ["text"],
+    requestResponseDensityControls: ["low", "medium", "high"],
+    transportCompatibility,
+    transportCompatibilityFor,
     async *stream(
       request: ModelRequest,
       streamOptions: ProviderStreamOptions,
@@ -284,6 +376,39 @@ export function createOpenAiSdkAdapter(options: OpenAiSdkAdapterOptions): Provid
           modelAttemptId: attempt,
           sequence: next(),
           failure: failure("cancellation", "The provider request was cancelled.", false),
+        };
+        return;
+      }
+      const modelTransportCompatibility = transportCompatibilityFor(request.modelId);
+      if (
+        modelTransportCompatibility === null ||
+        modelTransportCompatibility.declaration.dialect !== "openai-chat-completions"
+      ) {
+        yield {
+          kind: "error",
+          requestId: request.requestId,
+          modelAttemptId: attempt,
+          sequence: next(),
+          failure: failure(
+            "unsupported-capability",
+            "The selected model has no verified OpenAI transport compatibility plan.",
+            false,
+          ),
+        };
+        return;
+      }
+      const compatibility = modelTransportCompatibility.declaration;
+      if (request.promptCache !== undefined && request.promptCache.mode !== "openai-routing-key") {
+        yield {
+          kind: "error",
+          requestId: request.requestId,
+          modelAttemptId: attempt,
+          sequence: next(),
+          failure: failure(
+            "unsupported-capability",
+            "The routed prompt-cache mechanism is incompatible with OpenAI.",
+            false,
+          ),
         };
         return;
       }
@@ -318,13 +443,21 @@ export function createOpenAiSdkAdapter(options: OpenAiSdkAdapterOptions): Provid
 
       let body: OpenAI.ChatCompletionCreateParamsStreaming;
       try {
-        const tools = toTools(request.tools);
+        const tools = toTools(request.tools, compatibility);
         const reasoningEffort = openAiReasoningEffort(request.reasoningControl);
+        const outputBudget =
+          request.budgets.maxOutputTokens === undefined
+            ? {}
+            : compatibility.maxOutputTokensField === "max_tokens"
+              ? { max_tokens: request.budgets.maxOutputTokens }
+              : { max_completion_tokens: request.budgets.maxOutputTokens };
         body = {
           model: String(request.modelId),
           stream: true,
-          stream_options: { include_usage: true },
-          messages: toChatMessages(request.messages),
+          ...(compatibility.streamingUsage === "include"
+            ? { stream_options: { include_usage: true } }
+            : {}),
+          messages: toChatMessages(request.messages, compatibility),
           ...(tools === undefined ? {} : { tools }),
           ...(request.output.kind === "text"
             ? {}
@@ -338,11 +471,13 @@ export function createOpenAiSdkAdapter(options: OpenAiSdkAdapterOptions): Provid
                   },
                 },
               }),
-          ...(request.budgets.maxOutputTokens === undefined
-            ? {}
-            : { max_completion_tokens: request.budgets.maxOutputTokens }),
+          ...outputBudget,
           ...(reasoningEffort === undefined ? {} : { reasoning_effort: reasoningEffort }),
-          ...(request.promptCache === undefined
+          ...(request.responseDensityControl === null ||
+          request.responseDensityControl === undefined
+            ? {}
+            : { verbosity: request.responseDensityControl }),
+          ...(request.promptCache === undefined || request.promptCache.mode !== "openai-routing-key"
             ? {}
             : { prompt_cache_key: request.promptCache.key }),
         };
@@ -463,18 +598,34 @@ export function createOpenAiSdkAdapter(options: OpenAiSdkAdapterOptions): Provid
         return;
       }
       if (finishReason === null) {
-        yield {
-          kind: "error",
-          requestId: request.requestId,
-          modelAttemptId: attempt,
-          sequence: next(),
-          failure: failure(
-            "malformed-stream",
-            "The provider stream ended without a terminal event.",
-            false,
-          ),
-        };
-        return;
+        if (compatibility.finishReason === "required") {
+          yield {
+            kind: "error",
+            requestId: request.requestId,
+            modelAttemptId: attempt,
+            sequence: next(),
+            failure: failure(
+              "malformed-stream",
+              "The provider stream ended without a terminal event.",
+              false,
+            ),
+          };
+          return;
+        }
+        finishReason = completeToolProposals(toolCalls).length > 0 ? "tool_calls" : "stop";
+      }
+      if (!proposalsEmitted) {
+        for (const tool of completeToolProposals(toolCalls)) {
+          yield {
+            kind: "tool-proposal",
+            requestId: request.requestId,
+            modelAttemptId: attempt,
+            sequence: next(),
+            toolCallId: tool.id,
+            name: tool.name,
+            argumentsJson: tool.arguments,
+          };
+        }
       }
       yield {
         kind: "finished",
