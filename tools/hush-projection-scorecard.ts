@@ -2047,7 +2047,7 @@ export type HushProjectionScorecard = Readonly<{
   passes: boolean;
 }>;
 
-async function createScorecard(): Promise<HushProjectionScorecard> {
+export async function createHushProjectionScorecard(): Promise<HushProjectionScorecard> {
   const rtk = Bun.which("rtk");
   if (rtk === null) {
     throw new Error("hush projection scorecard requires a local rtk binary");
@@ -2420,7 +2420,7 @@ function combinedOutput(run: CommandRun): string {
 }
 
 if (import.meta.main) {
-  const scorecard = await createScorecard();
+  const scorecard = await createHushProjectionScorecard();
   console.log(
     process.argv.includes("--json")
       ? JSON.stringify(scorecard, null, 2)

@@ -1,8 +1,4 @@
-/** Official Command Code Provider API identity and bundled model facts. */
-
-import { modelId } from "../domain/identity.ts";
-import { commandCodePricingFor } from "./catalog/builtin/command-code-pricing.ts";
-import type { ModelCapabilityDeclaration } from "./model-capability.ts";
+/** Official Command Code Provider API identity and transport-routing facts. */
 
 export const COMMAND_CODE_PROVIDER_ID = "commandcode";
 export const COMMAND_CODE_OPENAI_BASE_URL = "https://api.commandcode.ai/provider/v1";
@@ -10,7 +6,7 @@ export const COMMAND_CODE_ANTHROPIC_BASE_URL = "https://api.commandcode.ai/provi
 
 export type CommandCodeProtocol = "openai" | "anthropic";
 
-type CommandCodeModelManifest = {
+export type CommandCodeModelManifest = {
   readonly id: string;
   readonly name: string;
   readonly contextTokens: number;
@@ -186,35 +182,3 @@ export function commandCodeProtocolFor(model: string): CommandCodeProtocol | nul
 export function commandCodeReasoningControlsFor(model: string): readonly string[] {
   return COMMAND_CODE_MODEL_REASONING_CONTROLS.get(model) ?? [];
 }
-
-export const COMMAND_CODE_MODEL_CAPABILITIES: readonly ModelCapabilityDeclaration[] =
-  COMMAND_CODE_MODEL_MANIFESTS.map((model) => {
-    const reasoningControls = commandCodeReasoningControlsFor(model.id);
-    return {
-      schemaVersion: 1,
-      modelId: modelId.from(model.id),
-      displayName: model.name,
-      inputModalities: model.image ? ["text", "image"] : ["text"],
-      outputModalities: ["text"],
-      // Command Code exposes these models through agent-compatible tool protocols.
-      tools: "supported",
-      structuredOutput: "unknown",
-      streaming: "supported",
-      // A missing effort selector is not proof that the underlying model cannot
-      // reason. Only publish support when Command Code does; otherwise retain
-      // the uncertainty instead of turning an absent field into a negative fact.
-      reasoning: model.reasoning || reasoningControls.length > 0 ? "supported" : "unknown",
-      reasoningControls,
-      // OpenAI-compatible transport does not prove OpenAI-native verbosity support.
-      responseDensityControls: [],
-      // Command Code documents provider/session cache locality and publishes a
-      // cache-read rate for every registry model. Its API manages that cache;
-      // clients preserve a stable prefix but do not send vendor cache markers.
-      promptCacheModes: ["provider-managed"],
-      promptCacheMinimumInputTokens: null,
-      contextTokens: model.contextTokens,
-      outputTokens: null,
-      pricing: commandCodePricingFor(model.id),
-      completeness: "partial",
-    };
-  });
