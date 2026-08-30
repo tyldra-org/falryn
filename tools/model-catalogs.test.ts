@@ -8,7 +8,18 @@ import {
 
 describe("built-in model catalog generation", () => {
   test("keeps committed resources synchronized with their verified sources", async () => {
-    await expect(checkModelCatalogs()).resolves.toBeUndefined();
+    const reports = await checkModelCatalogs();
+    expect(reports.map((report) => report.catalogId)).toEqual([
+      "falryn.openai",
+      "falryn.anthropic",
+      "falryn.google",
+      "falryn.commandcode",
+    ]);
+    expect(reports.map((report) => report.modelCount)).toEqual([10, 4, 5, 62]);
+    expect(reports.filter((report) => report.generated).map((report) => report.catalogId)).toEqual([
+      "falryn.commandcode",
+    ]);
+    expect(reports.every((report) => /^sha-256:[0-9a-f]{64}$/u.test(report.digest))).toBe(true);
   });
 
   test("produces deterministic Command Code bytes and digest", () => {

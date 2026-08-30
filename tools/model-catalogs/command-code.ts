@@ -21,6 +21,22 @@ export function createCommandCodeCatalog(): ModelCatalogDocument {
       adapterKind: "commandcode",
       endpoint: COMMAND_CODE_OPENAI_BASE_URL,
     },
+    sources: [
+      {
+        sourceUrl: "https://commandcode.ai/docs/provider",
+        observedAt: "2026-08-30T00:00:00Z",
+        facts: ["identity", "capabilities"],
+        kind: "provider-documentation",
+        confidence: "high",
+      },
+      {
+        sourceUrl: "https://commandcode.ai/docs/resources/pricing-limits",
+        observedAt: "2026-08-30T00:00:00Z",
+        facts: ["identity", "limits", "prompt-cache"],
+        kind: "provider-documentation",
+        confidence: "high",
+      },
+    ],
     models: COMMAND_CODE_MODEL_MANIFESTS.map((model) => {
       const reasoningControls = commandCodeReasoningControlsFor(model.id);
       return {

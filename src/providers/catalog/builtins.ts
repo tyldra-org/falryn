@@ -15,6 +15,9 @@ function requiredBuiltin(value: unknown): ModelCatalogDocument {
     value === null ||
     !("models" in value) ||
     !Array.isArray(value.models) ||
+    !("sources" in value) ||
+    !Array.isArray(value.sources) ||
+    value.sources.length === 0 ||
     value.models.some(
       (model) =>
         typeof model !== "object" ||
@@ -33,6 +36,11 @@ function requiredBuiltin(value: unknown): ModelCatalogDocument {
     throw new Error("Falryn was built with an invalid model catalog resource.");
   }
   if (
+    parsed.value.sources.length === 0 ||
+    !parsed.value.sources.some((source) => source.facts.includes("identity")) ||
+    !parsed.value.sources.some((source) => source.facts.includes("capabilities")) ||
+    !parsed.value.sources.some((source) => source.facts.includes("limits")) ||
+    !parsed.value.sources.some((source) => source.facts.includes("prompt-cache")) ||
     parsed.value.models.some(
       (model) =>
         model.pricing === undefined ||

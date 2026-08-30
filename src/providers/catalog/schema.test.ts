@@ -12,6 +12,12 @@ describe("model catalog documents", () => {
     expect(BUILTIN_MODEL_CATALOGS).toHaveLength(4);
     for (const catalog of BUILTIN_MODEL_CATALOGS) {
       expect(parseModelCatalogDocument(catalog)).toEqual({ ok: true, value: catalog });
+      expect(catalog.sources.length).toBeGreaterThan(0);
+      expect(new Set(catalog.sources.flatMap((source) => source.facts))).toEqual(
+        new Set(["identity", "capabilities", "limits", "prompt-cache"]),
+      );
+      expect(catalog.sources.every((source) => source.kind !== "user-declared")).toBe(true);
+      expect(catalog.sources.every((source) => source.confidence === "high")).toBe(true);
       expect(
         catalog.models.every(
           (model) =>
@@ -190,5 +196,53 @@ describe("model catalog documents", () => {
 
     const unknown = parseModelCatalogDocument({ ...source, credential: "secret" });
     expect(unknown.ok).toBe(false);
+
+    const duplicateSource = parseModelCatalogDocument({
+      ...source,
+      sources: [source.sources[0], source.sources[0]],
+    });
+    expect(duplicateSource.ok).toBe(false);
+
+    const unsafeSource = parseModelCatalogDocument({
+      ...source,
+      sources: [{ ...source.sources[0], sourceUrl: "http://user:secret@example.com/models" }],
+    });
+    expect(unsafeSource.ok).toBe(false);
+  });
+
+  test("keeps existing user catalogs compatible when source evidence is absent", () => {
+    const source = BUILTIN_MODEL_CATALOGS[0];
+    expect(source).toBeDefined();
+    if (source === undefined) {
+      return;
+    }
+    const { sources: _sources, ...catalogWithoutSources } = source;
+
+    expect(parseModelCatalogDocument(catalogWithoutSources)).toMatchObject({
+      ok: true,
+      value: { sources: [] },
+    });
+  });
+
+  test("labels legacy user evidence without overstating its authority", () => {
+    const source = BUILTIN_MODEL_CATALOGS[0];
+    expect(source).toBeDefined();
+    if (source === undefined) {
+      return;
+    }
+    const legacySources = source.sources.map(
+      ({ kind: _kind, confidence: _confidence, ...entry }) => entry,
+    );
+
+    expect(parseModelCatalogDocument({ ...source, sources: legacySources })).toMatchObject({
+      ok: true,
+      value: {
+        sources: legacySources.map((entry) => ({
+          ...entry,
+          kind: "user-declared",
+          confidence: "unknown",
+        })),
+      },
+    });
   });
 });

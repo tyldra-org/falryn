@@ -31,13 +31,24 @@ export {
   builtinModelCapability,
   builtinModelCatalog,
 } from "./catalog/builtins.ts";
-export type { ModelCatalogDocument, ModelCatalogId } from "./catalog/contracts.ts";
+export type {
+  ModelCatalogDocument,
+  ModelCatalogId,
+  ModelCatalogSource,
+  ModelCatalogSourceConfidence,
+  ModelCatalogSourceFact,
+  ModelCatalogSourceKind,
+} from "./catalog/contracts.ts";
 export {
   isModelCatalogId,
   MAX_MODEL_CATALOG_FILE_BYTES,
+  MAX_MODEL_CATALOG_SOURCES,
   MAX_MODEL_CATALOGS_PER_PROFILE,
   MAX_MODELS_PER_CATALOG,
   MODEL_CATALOG_DOCUMENT_SCHEMA_VERSION,
+  MODEL_CATALOG_SOURCE_CONFIDENCE,
+  MODEL_CATALOG_SOURCE_FACTS,
+  MODEL_CATALOG_SOURCE_KINDS,
 } from "./catalog/contracts.ts";
 export type { ModelCatalogParseError } from "./catalog/effective.ts";
 export { parseModelCatalog } from "./catalog/effective.ts";

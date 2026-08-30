@@ -7,6 +7,22 @@
     "adapterKind": "commandcode",
     "endpoint": "https://api.commandcode.ai/provider/v1"
   },
+  "sources": [
+    {
+      "sourceUrl": "https://commandcode.ai/docs/provider",
+      "observedAt": "2026-08-30T00:00:00Z",
+      "facts": ["identity", "capabilities"],
+      "kind": "provider-documentation",
+      "confidence": "high"
+    },
+    {
+      "sourceUrl": "https://commandcode.ai/docs/resources/pricing-limits",
+      "observedAt": "2026-08-30T00:00:00Z",
+      "facts": ["identity", "limits", "prompt-cache"],
+      "kind": "provider-documentation",
+      "confidence": "high"
+    }
+  ],
   "models": [
     {
       "schemaVersion": 1,
