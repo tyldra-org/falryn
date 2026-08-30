@@ -3,6 +3,7 @@ import type {
   MessageCreateParamsStreaming,
   RawMessageStreamEvent,
 } from "@anthropic-ai/sdk/resources/messages/messages";
+import type { GenerateContentParameters, GenerateContentResponse } from "@google/genai";
 
 import {
   capabilityId,
@@ -22,7 +23,11 @@ import {
   turnId,
   workspaceId,
 } from "../domain/index.ts";
-import { createAnthropicSdkAdapter, createHostProcessCapturePort } from "../integrations/index.ts";
+import {
+  createAnthropicSdkAdapter,
+  createGoogleGenAiSdkAdapter,
+  createHostProcessCapturePort,
+} from "../integrations/index.ts";
 import {
   createDeterministicProviderAdapter,
   type ModelRequest,
@@ -165,7 +170,170 @@ function anthropicEvent(value: unknown): RawMessageStreamEvent {
   return value as RawMessageStreamEvent;
 }
 
+function googleStream(
+  responses: readonly GenerateContentResponse[],
+): AsyncIterable<GenerateContentResponse> {
+  return {
+    async *[Symbol.asyncIterator]() {
+      yield* responses;
+    },
+  };
+}
+
+function googleResponse(value: unknown): GenerateContentResponse {
+  return value as GenerateContentResponse;
+}
+
 describe("createProductAttemptRunner", () => {
+  test("continues a signed Google function call through the product gateway", async () => {
+    const bodies: GenerateContentParameters[] = [];
+    const adapter = createGoogleGenAiSdkAdapter({
+      profileId: "google-product-test",
+      supportedModels: ["gemini-test"],
+      resolveApiKey: async () => "google-test-key",
+      createStream: async (_apiKey, body) => {
+        bodies.push(body);
+        if (bodies.length === 1) {
+          return googleStream([
+            googleResponse({
+              candidates: [
+                {
+                  index: 0,
+                  content: {
+                    role: "model",
+                    parts: [
+                      {
+                        text: "inspect",
+                        thought: true,
+                        thoughtSignature: "thought-product",
+                      },
+                      {
+                        functionCall: {
+                          id: "google-call-product",
+                          name: "list_dir",
+                          args: { path: "." },
+                        },
+                        thoughtSignature: "function-product",
+                      },
+                    ],
+                  },
+                  finishReason: "STOP",
+                },
+              ],
+              usageMetadata: {
+                promptTokenCount: 8,
+                candidatesTokenCount: 3,
+                thoughtsTokenCount: 2,
+                totalTokenCount: 13,
+              },
+            }),
+          ]);
+        }
+        return googleStream([
+          googleResponse({
+            candidates: [
+              {
+                index: 0,
+                content: { role: "model", parts: [{ text: "Directory inspected." }] },
+                finishReason: "STOP",
+              },
+            ],
+            usageMetadata: {
+              promptTokenCount: 12,
+              candidatesTokenCount: 4,
+              totalTokenCount: 16,
+            },
+          }),
+        ]);
+      },
+    });
+    const product = setup(adapter);
+    const turn = await start(product, "turn-attempt-google-tool");
+    const runner = product.runtime.requireAttemptRunner();
+    if (!runner.ok) {
+      throw new Error(runner.error.code);
+    }
+
+    const result = await runner.value.run({
+      turnId: turn,
+      identity: {
+        attemptNumber: 1,
+        modelAttemptId: modelAttemptId.from("attempt-google-tool"),
+        fallbackPosition: 0,
+        providerKey: adapter.identity.providerId,
+        modelKey: String(adapter.supportedModels[0]),
+      },
+      receipt: receipt(product),
+      boundConfigurationGeneration: generation,
+      configurationGeneration: generation,
+      signal: new AbortController().signal,
+      modelInput: {
+        messages: [
+          { role: "system", parts: [{ kind: "text", text: "Use workspace tools." }] },
+          { role: "user", parts: [{ kind: "text", text: "Inspect the workspace root." }] },
+        ],
+        tools: product.disclosure.modelTools,
+        output: { kind: "text" },
+        budgets: { maxOutputTokens: 256 },
+        disclosure: disclosureInput(product),
+      },
+    });
+
+    expect(result.fact.kind).toBe("completed");
+    expect(result.output).toMatchObject({
+      text: "Directory inspected.",
+      toolResults: 1,
+      providerRequests: 2,
+      usage: {
+        inputTokens: 20,
+        outputTokens: 7,
+        totalTokens: 29,
+        provenance: "provider-reported",
+      },
+    });
+    expect(bodies).toHaveLength(2);
+    expect(bodies[0]).toMatchObject({
+      model: "gemini-test",
+      config: {
+        systemInstruction: "Use workspace tools.",
+        maxOutputTokens: 256,
+        automaticFunctionCalling: { disable: true },
+      },
+    });
+    expect(bodies[1]?.contents).toMatchObject([
+      { role: "user", parts: [{ text: "Inspect the workspace root." }] },
+      {
+        role: "model",
+        parts: [
+          {
+            text: "inspect",
+            thought: true,
+            thoughtSignature: "thought-product",
+          },
+          {
+            functionCall: {
+              id: "google-call-product",
+              name: "list_dir",
+              args: { path: "." },
+            },
+            thoughtSignature: "function-product",
+          },
+        ],
+      },
+      {
+        role: "user",
+        parts: [
+          {
+            functionResponse: {
+              id: "google-call-product",
+              name: "list_dir",
+            },
+          },
+        ],
+      },
+    ]);
+  });
+
   test("continues an Anthropic Messages tool call through the product gateway", async () => {
     const bodies: MessageCreateParamsStreaming[] = [];
     const adapter = createAnthropicSdkAdapter({

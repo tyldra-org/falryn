@@ -1,12 +1,16 @@
 import { describe, expect, test } from "bun:test";
-import type {
-  CachedContent,
-  CreateCachedContentParameters,
-  GenerateContentParameters,
-  GenerateContentResponse,
+import {
+  ApiError,
+  type CreateCachedContentParameters,
+  type GenerateContentParameters,
+  type GenerateContentResponse,
 } from "@google/genai";
 
 import { modelId, providerId } from "../domain/index.ts";
+import type {
+  ProviderContinuationStatePort,
+  ProviderContinuationStateRecord,
+} from "../providers/continuation-state.ts";
 import { modelRequestId } from "../providers/identity.ts";
 import type { ModelRequest } from "../providers/request.ts";
 import type { NormalizedProviderEvent } from "../providers/stream.ts";
@@ -70,6 +74,51 @@ async function collectFrom(
     events.push(event);
   }
   return events;
+}
+
+function continuationStore(): {
+  readonly port: ProviderContinuationStatePort;
+  readonly records: Map<string, ProviderContinuationStateRecord>;
+} {
+  const records = new Map<string, ProviderContinuationStateRecord>();
+  const key = (record: {
+    readonly profileId: string;
+    readonly providerId: string;
+    readonly destinationId: string;
+    readonly transportCompatibilityId: string;
+    readonly modelId: string;
+    readonly toolCallId: string;
+  }): string =>
+    [
+      record.profileId,
+      record.providerId,
+      record.destinationId,
+      record.transportCompatibilityId,
+      record.modelId,
+      record.toolCallId,
+    ].join("\u0000");
+  return {
+    records,
+    port: {
+      load(input) {
+        return { ok: true, value: records.get(key(input)) ?? null };
+      },
+      save(input) {
+        let inserted = 0;
+        let replaced = 0;
+        for (const record of input) {
+          const id = key(record);
+          if (records.has(id)) {
+            replaced += 1;
+          } else {
+            inserted += 1;
+          }
+          records.set(id, record);
+        }
+        return { ok: true, value: { inserted, replaced } };
+      },
+    },
+  };
 }
 
 describe("createGoogleGenAiSdkAdapter", () => {
@@ -160,19 +209,24 @@ describe("createGoogleGenAiSdkAdapter", () => {
     expect(events.at(-1)).toMatchObject({ kind: "finished", finishReason: "STOP" });
   });
 
-  test("creates and reuses one explicit cached prefix while reporting read and write tokens", async () => {
+  test("uses a bound explicit cached prefix and reports provider read and write tokens", async () => {
     const cacheRequests: CreateCachedContentParameters[] = [];
     const generateRequests: GenerateContentParameters[] = [];
+    let cacheResolution = 0;
     const adapter = createGoogleGenAiSdkAdapter({
       profileId: "google",
       supportedModels: ["gemini-test"],
       resolveApiKey: async () => "google-test-key",
-      createCache: async (_apiKey, cacheRequest) => {
-        cacheRequests.push(cacheRequest);
-        return {
-          name: "cachedContents/falryn-prefix",
-          usageMetadata: { totalTokenCount: 6 },
-        } as CachedContent;
+      cachedContent: {
+        async resolve(input) {
+          cacheRequests.push(input.create);
+          cacheResolution += 1;
+          return {
+            kind: "bound",
+            name: "cachedContents/falryn-prefix",
+            cacheWriteInputTokens: cacheResolution === 1 ? 6 : 0,
+          };
+        },
       },
       createStream: async (_apiKey, generateRequest) => {
         generateRequests.push(generateRequest);
@@ -216,7 +270,7 @@ describe("createGoogleGenAiSdkAdapter", () => {
     const first = await collectFrom(adapter, input);
     const second = await collectFrom(adapter, input);
 
-    expect(cacheRequests).toHaveLength(1);
+    expect(cacheRequests).toHaveLength(2);
     expect(cacheRequests[0]).toMatchObject({
       model: "gemini-test",
       config: {
@@ -245,8 +299,10 @@ describe("createGoogleGenAiSdkAdapter", () => {
     const events = await collect(
       {
         resolveApiKey: async () => "google-test-key",
-        createCache: async () => {
-          throw new TypeError("cache endpoint unavailable");
+        cachedContent: {
+          async resolve() {
+            throw new TypeError("cache endpoint unavailable");
+          },
         },
         createStream: async (_apiKey, input) => {
           captured.request = input;
@@ -326,6 +382,7 @@ describe("createGoogleGenAiSdkAdapter", () => {
       config: {
         systemInstruction: "Follow policy",
         maxOutputTokens: 321,
+        automaticFunctionCalling: { disable: true },
         responseMimeType: "application/json",
         responseJsonSchema: { type: "object" },
         tools: [
@@ -414,5 +471,245 @@ describe("createGoogleGenAiSdkAdapter", () => {
       kind: "error",
       failure: { kind: "provider-safety", retryable: false },
     });
+  });
+
+  test("persists and replays signed thought state across adapter restart", async () => {
+    const durable = continuationStore();
+    const firstAdapter = createGoogleGenAiSdkAdapter({
+      profileId: "google",
+      supportedModels: ["gemini-test"],
+      resolveApiKey: async () => "google-test-key",
+      continuationState: durable.port,
+      now: () => 123,
+      createStream: async () =>
+        stream([
+          response({
+            candidates: [
+              {
+                index: 0,
+                content: {
+                  role: "model",
+                  parts: [
+                    {
+                      text: "private reasoning",
+                      thought: true,
+                      thoughtSignature: "thought-signature",
+                    },
+                    {
+                      functionCall: {
+                        id: "call-signed",
+                        name: "read_file",
+                        args: { path: "a.ts" },
+                      },
+                      thoughtSignature: "function-signature",
+                    },
+                  ],
+                },
+                finishReason: "STOP",
+              },
+            ],
+          }),
+        ]),
+    });
+    const firstEvents = await collectFrom(firstAdapter, request());
+    expect(firstEvents.find((event) => event.kind === "provider-metadata")).toMatchObject({
+      entries: { continuationStateSaved: "true", continuationStateSavedCount: "1" },
+    });
+    expect(JSON.stringify(firstEvents)).not.toContain("thought-signature");
+    expect(JSON.stringify(firstEvents)).not.toContain("function-signature");
+    expect(durable.records.size).toBe(1);
+
+    const continuedRequest: { value: GenerateContentParameters | null } = { value: null };
+    const restartedAdapter = createGoogleGenAiSdkAdapter({
+      profileId: "google",
+      supportedModels: ["gemini-test"],
+      resolveApiKey: async () => "google-test-key",
+      continuationState: durable.port,
+      createStream: async (_apiKey, input) => {
+        continuedRequest.value = input;
+        return stream([response({ candidates: [{ index: 0, finishReason: "STOP" }] })]);
+      },
+    });
+    const continued = request({
+      messages: [
+        { role: "user", parts: [{ kind: "text", text: "read a.ts" }] },
+        {
+          role: "assistant",
+          parts: [{ kind: "text", text: "" }],
+          toolCalls: [
+            { toolCallId: "call-signed", name: "read_file", arguments: { path: "a.ts" } },
+          ],
+        },
+        {
+          role: "tool",
+          toolCallId: "call-signed",
+          parts: [{ kind: "text", text: '{"status":"completed"}' }],
+        },
+      ],
+    });
+    const continuedEvents = await collectFrom(restartedAdapter, continued);
+
+    expect(continuedEvents.find((event) => event.kind === "provider-metadata")).toMatchObject({
+      entries: { continuationStateLoaded: "true", continuationStateLoadedCount: "1" },
+    });
+    expect(continuedRequest.value?.contents).toMatchObject([
+      { role: "user", parts: [{ text: "read a.ts" }] },
+      {
+        role: "model",
+        parts: [
+          {
+            text: "private reasoning",
+            thought: true,
+            thoughtSignature: "thought-signature",
+          },
+          {
+            functionCall: { id: "call-signed", name: "read_file" },
+            thoughtSignature: "function-signature",
+          },
+        ],
+      },
+      {
+        role: "user",
+        parts: [{ functionResponse: { id: "call-signed", name: "read_file" } }],
+      },
+    ]);
+    expect(continuedEvents.at(-1)?.kind).toBe("finished");
+  });
+
+  test("rejects multi-candidate, post-terminal, and malformed usage streams", async () => {
+    const multi = await collect({
+      resolveApiKey: async () => "google-test-key",
+      createStream: async () =>
+        stream([
+          response({
+            candidates: [
+              { index: 0, finishReason: "STOP" },
+              { index: 1, finishReason: "STOP" },
+            ],
+          }),
+        ]),
+    });
+    expect(multi.at(-1)).toMatchObject({ kind: "error", failure: { kind: "malformed-stream" } });
+
+    const postTerminal = await collect({
+      resolveApiKey: async () => "google-test-key",
+      createStream: async () =>
+        stream([
+          response({ candidates: [{ index: 0, finishReason: "STOP" }] }),
+          response({
+            candidates: [{ index: 0, content: { role: "model", parts: [{ text: "late" }] } }],
+          }),
+        ]),
+    });
+    expect(postTerminal.at(-1)).toMatchObject({
+      kind: "error",
+      failure: { kind: "malformed-stream" },
+    });
+
+    const invalidUsage = await collect({
+      resolveApiKey: async () => "google-test-key",
+      createStream: async () =>
+        stream([
+          response({
+            candidates: [{ index: 0, finishReason: "STOP" }],
+            usageMetadata: { promptTokenCount: 10, cachedContentTokenCount: 11 },
+          }),
+        ]),
+    });
+    expect(invalidUsage.at(-1)).toMatchObject({
+      kind: "error",
+      failure: { kind: "malformed-stream" },
+    });
+  });
+
+  test("rejects transport identity drift and invalid message ordering before SDK execution", async () => {
+    let executions = 0;
+    const options = {
+      resolveApiKey: async () => "google-test-key",
+      createStream: async () => {
+        executions += 1;
+        return stream([response({ candidates: [{ index: 0, finishReason: "STOP" }] })]);
+      },
+    } satisfies Omit<GoogleGenAiSdkAdapterOptions, "profileId" | "supportedModels">;
+
+    const drift = await collect(
+      options,
+      request({ metadata: { role: "default", transportCompatibilityId: "sha-256:wrong" } }),
+    );
+    expect(drift.at(-1)).toMatchObject({
+      kind: "error",
+      failure: { kind: "invalid-request", retryable: false },
+    });
+
+    const misplacedSystem = await collect(
+      options,
+      request({
+        messages: [
+          { role: "user", parts: [{ kind: "text", text: "hello" }] },
+          { role: "system", parts: [{ kind: "text", text: "late policy" }] },
+        ],
+      }),
+    );
+    expect(misplacedSystem.at(-1)).toMatchObject({
+      kind: "error",
+      failure: { kind: "invalid-request", retryable: false },
+    });
+
+    const orphanResult = await collect(
+      options,
+      request({
+        messages: [
+          { role: "user", parts: [{ kind: "text", text: "hello" }] },
+          {
+            role: "tool",
+            toolCallId: "missing-call",
+            parts: [{ kind: "text", text: "contents" }],
+          },
+        ],
+      }),
+    );
+    expect(orphanResult.at(-1)).toMatchObject({
+      kind: "error",
+      failure: { kind: "invalid-request", retryable: false },
+    });
+    expect(executions).toBe(0);
+  });
+
+  test("normalizes SDK rate limits and cancellation without exposing provider details", async () => {
+    const rateLimited = await collect({
+      resolveApiKey: async () => "google-test-key",
+      createStream: async () => {
+        throw new ApiError({ status: 429, message: "secret provider detail" });
+      },
+    });
+    expect(rateLimited.at(-1)).toMatchObject({
+      kind: "error",
+      failure: { kind: "rate-limit", retryable: true },
+    });
+    expect(JSON.stringify(rateLimited)).not.toContain("secret provider detail");
+
+    let credentialReads = 0;
+    const adapter = createGoogleGenAiSdkAdapter({
+      profileId: "google",
+      supportedModels: ["gemini-test"],
+      resolveApiKey: async () => {
+        credentialReads += 1;
+        return "google-test-key";
+      },
+      createStream: async () => {
+        throw new Error("must not execute");
+      },
+    });
+    const controller = new AbortController();
+    controller.abort();
+    const events: NormalizedProviderEvent[] = [];
+    for await (const event of adapter.stream(request(), { signal: controller.signal })) {
+      events.push(event);
+    }
+    expect(events.at(-1)).toMatchObject({
+      kind: "error",
+      failure: { kind: "cancellation", retryable: false },
+    });
+    expect(credentialReads).toBe(0);
   });
 });

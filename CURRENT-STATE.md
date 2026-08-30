@@ -261,6 +261,20 @@ by product composition. A restarted adapter loads only a matching profile,
 provider, destination, model, plan, and tool-call record; opaque continuation
 bytes never enter prompts, normalized events, or diagnostics.
 
+The Google Generate Content declaration binds top-level system instructions,
+user/model roles, `maxOutputTokens`, thinking-level control, JSON Schema output,
+provider or derived function-call identities, model-before-user function-result
+ordering, prompt-feedback and finish-reason safety, single-candidate streaming,
+usage metadata, text-part input, and disabled SDK automatic function calling.
+The official-SDK leaf validates candidate, part, usage, and terminal ordering;
+rejects unsupported server parts, partial or duplicate function calls, unsafe
+finishes, malformed usage, and transport-plan drift; and reports exact cached
+input, output, and reasoning usage when Google supplies it. Signed thought parts
+and per-function thought signatures use the same exact-route SQLite continuation
+repository and replay after restart without placing opaque signatures in
+normalized events or diagnostics. Live image handles remain unsupported until
+the artifact-backed media issues supply exact bytes.
+
 Live turns also derive a secret-safe, session-scoped prompt-cache identity from
 the bound provider route, configuration and catalog generations, and the exact
 stable instruction, capability, and tool-schema prefix. Dynamic Brief guidance,
@@ -271,10 +285,11 @@ Each built-in model records its exact provider cache mechanism, published
 minimum cacheable prefix, and provider-bound cache-read and cache-write prices;
 unknown thresholds or prices remain unknown. OpenAI receives the current SDK
 `prompt_cache_key`. Anthropic receives a five-minute `cache_control` breakpoint
-on the last stable system block. Google uses automatic prefix caching on current
-models and creates a five-minute explicit cached-content resource only where the
-bundled model contract verifies that mechanism; failed cache creation falls back
-to the exact uncached request. Command Code keeps Falryn's stable prefix but lets
+on the last stable system block. Google reports provider-managed cache usage.
+The Generate Content adapter can consume an exact cached-content binding, but
+creation, reuse, expiry, deletion, restart recovery, and retention are not yet
+implemented. Without that binding, an explicit-cache request sends the exact
+uncached prompt. Command Code keeps Falryn's stable prefix but lets
 its Provider API manage cache locality without leaking OpenAI- or
 Anthropic-specific controls through its protocol adapters. Attempt events retain
 the selected mechanism, eligibility threshold, cache digests, and stable

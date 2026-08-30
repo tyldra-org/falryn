@@ -3,6 +3,7 @@ import { modelId } from "../domain/identity.ts";
 import {
   ANTHROPIC_MESSAGES_TRANSPORT_DEFAULT,
   defaultProviderTransportCompatibility,
+  GOOGLE_GENERATE_CONTENT_TRANSPORT_DEFAULT,
   OPENAI_CHAT_TRANSPORT_DEFAULT,
   OPENAI_RESPONSES_TRANSPORT_DEFAULT,
   PROVIDER_TRANSPORT_COMPATIBILITY_SCHEMA_VERSION,
@@ -176,6 +177,19 @@ describe("provider transport compatibility", () => {
         ...ANTHROPIC_MESSAGES_TRANSPORT_DEFAULT,
         promptCachePlacement: "none",
         promptCacheTtl: "5m",
+      }).ok,
+    ).toBe(false);
+  });
+
+  test("parses the complete Google Generate Content plan and rejects drift", () => {
+    const parsed = parseProviderTransportCompatibilityDeclaration(
+      GOOGLE_GENERATE_CONTENT_TRANSPORT_DEFAULT,
+    );
+    expect(parsed).toEqual({ ok: true, value: GOOGLE_GENERATE_CONTENT_TRANSPORT_DEFAULT });
+    expect(
+      parseProviderTransportCompatibilityDeclaration({
+        ...GOOGLE_GENERATE_CONTENT_TRANSPORT_DEFAULT,
+        automaticFunctionCalling: true,
       }).ok,
     ).toBe(false);
   });

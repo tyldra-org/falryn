@@ -215,6 +215,10 @@ export function composeProductProviderConnections(
             ...common,
             baseUrl: profile.endpoint,
             compatibility: compatibility.value.declaration,
+            ...(options.providerContinuations === undefined
+              ? {}
+              : { continuationState: options.providerContinuations }),
+            now: () => services.clock.now(),
           });
           break;
         case "commandcode":
