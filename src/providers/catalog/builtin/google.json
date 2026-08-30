@@ -7,6 +7,22 @@
     "adapterKind": "google",
     "endpoint": null
   },
+  "sources": [
+    {
+      "sourceUrl": "https://ai.google.dev/gemini-api/docs/models",
+      "observedAt": "2026-08-30T00:00:00Z",
+      "facts": ["identity", "capabilities", "limits"],
+      "kind": "provider-documentation",
+      "confidence": "high"
+    },
+    {
+      "sourceUrl": "https://ai.google.dev/gemini-api/docs/caching",
+      "observedAt": "2026-08-30T00:00:00Z",
+      "facts": ["prompt-cache"],
+      "kind": "provider-documentation",
+      "confidence": "high"
+    }
+  ],
   "models": [
     {
       "schemaVersion": 1,

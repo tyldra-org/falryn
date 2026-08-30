@@ -7,6 +7,22 @@
     "adapterKind": "anthropic",
     "endpoint": null
   },
+  "sources": [
+    {
+      "sourceUrl": "https://platform.claude.com/docs/en/models/overview",
+      "observedAt": "2026-08-30T00:00:00Z",
+      "facts": ["identity", "capabilities", "limits"],
+      "kind": "provider-documentation",
+      "confidence": "high"
+    },
+    {
+      "sourceUrl": "https://platform.claude.com/docs/en/build-with-claude/prompt-caching",
+      "observedAt": "2026-08-30T00:00:00Z",
+      "facts": ["prompt-cache"],
+      "kind": "provider-documentation",
+      "confidence": "high"
+    }
+  ],
   "models": [
     {
       "schemaVersion": 1,

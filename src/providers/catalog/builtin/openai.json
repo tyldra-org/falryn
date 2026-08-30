@@ -7,6 +7,22 @@
     "adapterKind": "openai",
     "endpoint": "https://api.openai.com/v1"
   },
+  "sources": [
+    {
+      "sourceUrl": "https://developers.openai.com/api/docs/models",
+      "observedAt": "2026-08-30T00:00:00Z",
+      "facts": ["identity", "capabilities", "limits"],
+      "kind": "provider-documentation",
+      "confidence": "high"
+    },
+    {
+      "sourceUrl": "https://developers.openai.com/api/docs/guides/prompt-caching",
+      "observedAt": "2026-08-30T00:00:00Z",
+      "facts": ["prompt-cache"],
+      "kind": "provider-documentation",
+      "confidence": "high"
+    }
+  ],
   "models": [
     {
       "schemaVersion": 1,

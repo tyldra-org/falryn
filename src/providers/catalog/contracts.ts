@@ -8,6 +8,37 @@ export const MODEL_CATALOG_DOCUMENT_SCHEMA_VERSION = 1;
 export const MAX_MODEL_CATALOGS_PER_PROFILE = 16;
 export const MAX_MODELS_PER_CATALOG = 512;
 export const MAX_MODEL_CATALOG_FILE_BYTES = 2 * 1024 * 1024;
+export const MAX_MODEL_CATALOG_SOURCES = 16;
+
+export const MODEL_CATALOG_SOURCE_FACTS = [
+  "identity",
+  "capabilities",
+  "limits",
+  "prompt-cache",
+] as const;
+export type ModelCatalogSourceFact = (typeof MODEL_CATALOG_SOURCE_FACTS)[number];
+
+export const MODEL_CATALOG_SOURCE_KINDS = [
+  "provider-documentation",
+  "model-author-documentation",
+  "sdk-documentation",
+  "runtime-observation",
+  "independent-research",
+  "user-declared",
+] as const;
+export type ModelCatalogSourceKind = (typeof MODEL_CATALOG_SOURCE_KINDS)[number];
+
+export const MODEL_CATALOG_SOURCE_CONFIDENCE = ["high", "medium", "low", "unknown"] as const;
+export type ModelCatalogSourceConfidence = (typeof MODEL_CATALOG_SOURCE_CONFIDENCE)[number];
+
+export type ModelCatalogSource = {
+  readonly sourceUrl: string;
+  readonly observedAt: string;
+  readonly facts: readonly ModelCatalogSourceFact[];
+  /** What authority produced the resolved page or observation. Search results are not sources. */
+  readonly kind: ModelCatalogSourceKind;
+  readonly confidence: ModelCatalogSourceConfidence;
+};
 
 export type ModelCatalogId = string;
 
@@ -25,6 +56,8 @@ export type ModelCatalogDocument = {
     readonly adapterKind: ProviderAdapterKind;
     readonly endpoint: string | null;
   };
+  /** Evidence for non-pricing facts. Every pricing schedule retains its own source. */
+  readonly sources: readonly ModelCatalogSource[];
   readonly models: readonly ModelCapabilityDeclaration[];
 };
 

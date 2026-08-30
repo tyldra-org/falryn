@@ -1,16 +1,13 @@
 /** Built-in catalog resources compiled into every Falryn executable. */
 
 import type { ProviderAdapterKind } from "../adapter-kind.ts";
-import {
-  COMMAND_CODE_MODEL_CAPABILITIES,
-  COMMAND_CODE_OPENAI_BASE_URL,
-  COMMAND_CODE_PROVIDER_ID,
-} from "../command-code.ts";
 import type { ModelCapabilityDeclaration } from "../model-capability.ts";
 import anthropicCatalogValue from "./builtin/anthropic.json";
+import commandCodeCatalogValue from "./builtin/commandcode.json";
 import googleCatalogValue from "./builtin/google.json";
 import openAiCatalogValue from "./builtin/openai.json";
 import type { ModelCatalogDocument } from "./contracts.ts";
+import { incompleteCompleteModelIds, inspectModelCatalogCoverage } from "./coverage.ts";
 import { parseModelCatalogDocument } from "./schema.ts";
 
 function requiredBuiltin(value: unknown): ModelCatalogDocument {
@@ -19,6 +16,9 @@ function requiredBuiltin(value: unknown): ModelCatalogDocument {
     value === null ||
     !("models" in value) ||
     !Array.isArray(value.models) ||
+    !("sources" in value) ||
+    !Array.isArray(value.sources) ||
+    value.sources.length === 0 ||
     value.models.some(
       (model) =>
         typeof model !== "object" ||
@@ -36,16 +36,34 @@ function requiredBuiltin(value: unknown): ModelCatalogDocument {
   if (!parsed.ok) {
     throw new Error("Falryn was built with an invalid model catalog resource.");
   }
+  const incompleteCompleteModels = incompleteCompleteModelIds(
+    inspectModelCatalogCoverage(parsed.value),
+  );
+  if (incompleteCompleteModels.length > 0) {
+    throw new Error(
+      `Falryn's built-in model catalog marks unresolved models complete: ${incompleteCompleteModels.join(", ")}.`,
+    );
+  }
   if (
+    parsed.value.sources.length === 0 ||
+    !parsed.value.sources.some((source) => source.facts.includes("identity")) ||
+    !parsed.value.sources.some((source) => source.facts.includes("capabilities")) ||
+    !parsed.value.sources.some((source) => source.facts.includes("limits")) ||
+    !parsed.value.sources.some((source) => source.facts.includes("prompt-cache")) ||
     parsed.value.models.some(
       (model) =>
-        (model.promptCacheModes ?? []).length > 0 &&
-        (model.pricing === undefined ||
-          model.pricing.tiers.length === 0 ||
-          model.pricing.tiers.some((tier) => tier.usdMicrosPerMillionTokens.cachedInput === null)),
+        model.pricing === undefined ||
+        (model.pricing.kind !== "unknown" &&
+          (model.pricing.sourceUrl === null || model.pricing.observedAt === null)) ||
+        ((model.promptCacheModes ?? []).length > 0 &&
+          (model.pricing === undefined ||
+            model.pricing.tiers.length === 0 ||
+            model.pricing.tiers.some(
+              (tier) => tier.usdMicrosPerMillionTokens.cachedInput === null,
+            ))),
     )
   ) {
-    throw new Error("Falryn's cache-capable model catalog omits cache-read pricing.");
+    throw new Error("Falryn's built-in model catalog omits pricing provenance or cache rates.");
   }
   return parsed.value;
 }
@@ -54,17 +72,7 @@ export const BUILTIN_MODEL_CATALOGS: readonly ModelCatalogDocument[] = [
   requiredBuiltin(openAiCatalogValue),
   requiredBuiltin(anthropicCatalogValue),
   requiredBuiltin(googleCatalogValue),
-  requiredBuiltin({
-    schemaVersion: 1,
-    catalogId: "falryn.commandcode",
-    displayName: "Falryn Command Code catalog",
-    provider: {
-      providerId: COMMAND_CODE_PROVIDER_ID,
-      adapterKind: "commandcode",
-      endpoint: COMMAND_CODE_OPENAI_BASE_URL,
-    },
-    models: COMMAND_CODE_MODEL_CAPABILITIES,
-  }),
+  requiredBuiltin(commandCodeCatalogValue),
 ];
 
 function normalizedEndpoint(value: string | null): string | null {
