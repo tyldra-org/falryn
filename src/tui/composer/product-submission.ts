@@ -12,6 +12,7 @@ import {
   type ProductBriefControls,
   type ProductExecutionProfileControls,
   type ProductLiveTurnExecutor,
+  type ProductModelSelectionControls,
   type ProductOutputControls,
 } from "../../application/index.ts";
 import {
@@ -45,6 +46,7 @@ export type ProductSubmissionPort = SubmissionPort & {
   readonly brief: ProductBriefControls;
   readonly output: ProductOutputControls;
   readonly executionProfile: ProductExecutionProfileControls;
+  readonly modelSelection: ProductModelSelectionControls;
 };
 
 /**
@@ -77,6 +79,7 @@ export function createProductSubmissionPort(
     brief,
     output,
     executionProfile,
+    modelSelection: options.executor.modelSelection,
     async submit(snapshot: ComposerSnapshot): Promise<SubmissionOutcome> {
       if (snapshot.text.trim() === "") {
         return unavailable(snapshot, "the composer is empty");

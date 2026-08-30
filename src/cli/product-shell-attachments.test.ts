@@ -115,6 +115,8 @@ describe("composeProductShellAttachments", () => {
   test("publishes the selected provider model catalog to OpenTUI controls", async () => {
     const clock = createSystemClock();
     const requests: ModelRequest[] = [];
+    const defaultModel = modelId.from("deterministic-echo");
+    const selectedModel = modelId.from("deterministic-selected");
     const profile = {
       profileId: "demo",
       providerId: providerId.from("demo"),
@@ -124,7 +126,7 @@ describe("composeProductShellAttachments", () => {
       credential: null,
       organization: null,
       project: null,
-      enabledModels: [modelId.from("deterministic-echo")],
+      enabledModels: [defaultModel, selectedModel],
       modelCapabilities: [],
       discovery: "static" as const,
       timeouts: { connectMs: 1_000, requestMs: 10_000 },
@@ -159,6 +161,7 @@ describe("composeProductShellAttachments", () => {
       provider: {
         kind: "ready",
         adapter: createDeterministicProviderAdapter({
+          supportedModels: [defaultModel, selectedModel],
           script: { kind: "text", text: "ok" },
           onRequest: (request) => requests.push(request),
         }),
@@ -182,9 +185,26 @@ describe("composeProductShellAttachments", () => {
             models: [
               {
                 schemaVersion: 1,
-                modelId: modelId.from("deterministic-echo"),
+                modelId: defaultModel,
                 displayName: null,
                 inputModalities: ["text", "image"],
+                outputModalities: ["text"],
+                tools: "supported",
+                structuredOutput: "supported",
+                streaming: "supported",
+                reasoning: "supported",
+                reasoningControls: ["balanced"],
+                completeness: "complete",
+                availability: "available",
+                provenance: ["profile-declaration"],
+                contextTokens: 128_000,
+                outputTokens: 8_000,
+              },
+              {
+                schemaVersion: 1,
+                modelId: selectedModel,
+                displayName: "Selected model",
+                inputModalities: ["text"],
                 outputModalities: ["text"],
                 tools: "supported",
                 structuredOutput: "supported",
@@ -202,13 +222,9 @@ describe("composeProductShellAttachments", () => {
         },
       },
     });
-    expect(attachments?.controls.models).toEqual([
-      {
-        id: "deterministic-echo",
-        title: "deterministic-echo",
-        detail:
-          "Demo provider · in:text+image · out:text · tools:supported · structured:supported · stream:supported · reasoning:supported · ctx:128000 · max-out:8000 · available · via:profile-declaration",
-      },
+    expect(attachments?.controls.models.map((model) => model.id)).toEqual([
+      "deterministic-echo",
+      "deterministic-selected",
     ]);
     expect(attachments?.controls.profiles.map((profile) => profile.id)).toEqual([
       "ask",
@@ -219,6 +235,11 @@ describe("composeProductShellAttachments", () => {
     expect(attachments?.controls.resources[0]).toEqual({
       label: "provider",
       value: { kind: "known", text: "Demo provider" },
+    });
+    expect(await attachments?.submission.modelSelection.select(selectedModel)).toEqual({
+      ok: true,
+      modelId: selectedModel,
+      changed: true,
     });
     const pendingSubmission = attachments?.submission.submit(
       snapshotOf("Where is `runRealTurn` defined?", 1),
@@ -243,6 +264,7 @@ describe("composeProductShellAttachments", () => {
     ).toBe(true);
     expect(JSON.stringify(requests[0])).toContain("real-turn.ts");
     expect(JSON.stringify(requests[0])).toContain("runRealTurn");
+    expect(requests[0]?.modelId).toBe(selectedModel);
     const firstSession = attachments?.transcriptFeed.events()[0]?.correlation.sessionId;
     const [created, duplicate] = await Promise.all([
       attachments?.sessionCreation.create(),
@@ -257,6 +279,7 @@ describe("composeProductShellAttachments", () => {
     expect(attachments?.transcriptFeed.events()[0]?.correlation.sessionId).not.toBe(firstSession);
     const second = await attachments?.submission.submit(snapshotOf("run the next session", 2));
     expect(second?.kind).toBe("accepted");
+    expect(requests.at(-1)?.modelId).toBe(selectedModel);
   });
 
   test("runs and replays the shared durable live-turn matrix through OpenTUI", async () => {

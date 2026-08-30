@@ -10,12 +10,14 @@ import {
   type MidTurnInputService,
   type ProductBriefControls,
   type ProductExecutionProfileControls,
+  type ProductModelSelectionControls,
   type ProductOutputControls,
 } from "../../application/index.ts";
 import {
   type AttachmentDescriptor,
   isExecutionProfileId,
   MAX_EVIDENCE_INLINE_BYTES,
+  modelId,
   parseMentions,
 } from "../../domain/index.ts";
 import type { TranscriptBlock } from "../../presentation/index.ts";
@@ -172,9 +174,18 @@ function resolveCommandState(
 }
 
 export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
+  const modelSelection =
+    options.submission !== undefined && "modelSelection" in options.submission
+      ? (
+          options.submission as SubmissionPort & {
+            readonly modelSelection: ProductModelSelectionControls;
+          }
+        ).modelSelection
+      : null;
   const [state, dispatch] = useReducer(shellReducer, INITIAL_SHELL_STATE, (base) => ({
     ...base,
     workspace: options.workspace ?? EMPTY_WORKSPACE_SET,
+    selectedModelId: modelSelection === null ? base.selectedModelId : modelSelection.get(),
   }));
   const blocks = options.transcriptBlocks ?? NO_BLOCKS;
   const commandState = useMemo(
@@ -896,9 +907,34 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
     });
   }, [midTurn]);
 
-  const selectControl = useCallback((field: "session" | "model", id: string): void => {
-    dispatch({ kind: "select-control", field, id });
-  }, []);
+  const selectControl = useCallback(
+    (field: "session" | "model", id: string): void => {
+      if (field === "session") {
+        dispatch({ kind: "select-control", field, id });
+        return;
+      }
+      if (modelSelection === null) {
+        dispatch({ kind: "close-overlay" });
+        dispatch({ kind: "notice", message: "Model selection is not attached." });
+        return;
+      }
+      void modelSelection.select(modelId.from(id)).then((selected) => {
+        if (selected.ok) {
+          dispatch({ kind: "select-control", field, id: String(selected.modelId) });
+          dispatch({
+            kind: "notice",
+            message: selected.changed
+              ? `Model selected: ${String(selected.modelId)}.`
+              : `Model already selected: ${String(selected.modelId)}.`,
+          });
+          return;
+        }
+        dispatch({ kind: "close-overlay" });
+        dispatch({ kind: "notice", message: `${selected.message} (${selected.code})` });
+      });
+    },
+    [modelSelection],
+  );
 
   const selectCompression = useCallback(
     (action: CompressionControlAction): void => {

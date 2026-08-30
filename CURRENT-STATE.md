@@ -346,6 +346,14 @@ than a `thinking` or `deep` role. Profiles request a work intent and reasoning
 posture, but never choose a hidden provider or grant authority through model
 routing.
 
+OpenTUI's model picker is connected to the live turn path. A selection must
+exist in the current catalog generation, must not be unavailable, and must be
+executable by the selected provider adapter. A successful selection becomes an
+the process-local default route for later turns and remains selected when the process creates a
+new session. An in-flight turn keeps the model identity it captured before
+provider execution. This selection remains process-local; durable role and
+fallback editing is still outside the current interface.
+
 The current disclosure path selects a bounded profile-eligible subset from the
 registered catalog and records selected, omitted, and unavailable reasons. The
 broader task-aware opportunity planner for automatic skill, MCP, workflow,

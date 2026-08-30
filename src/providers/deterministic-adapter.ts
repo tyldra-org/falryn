@@ -64,6 +64,8 @@ export type DeterministicProviderScript =
 export type DeterministicProviderOptions = {
   readonly profileId?: string;
   readonly displayName?: string;
+  /** Test-only model identities used to exercise selection and fallback. */
+  readonly supportedModels?: readonly string[];
   readonly script?:
     | DeterministicProviderScript
     | ((request: ModelRequest, requestIndex: number) => DeterministicProviderScript);
@@ -118,7 +120,7 @@ export function createDeterministicProviderAdapter(
     destinationId: "falryn:deterministic:default",
     displayName: options.displayName ?? "Deterministic fixture provider",
   };
-  const models = [modelId.from("deterministic-echo")] as const;
+  const models = (options.supportedModels ?? ["deterministic-echo"]).map(modelId.from);
   const defaultScript: DeterministicProviderScript = {
     kind: "text",
     text: "ok",

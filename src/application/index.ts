@@ -286,6 +286,8 @@ export type {
   ProductLiveTurnExecutorOptions,
   ProductLiveTurnInput,
   ProductLiveTurnResult,
+  ProductModelSelection,
+  ProductModelSelectionControls,
 } from "./product-live-turn.ts";
 export { createProductLiveTurnExecutor, productModelPolicy } from "./product-live-turn.ts";
 export type {

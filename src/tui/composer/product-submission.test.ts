@@ -1,7 +1,13 @@
 import { describe, expect, test } from "bun:test";
 
 import type { ProductLiveTurnExecutor } from "../../application/index.ts";
-import { configurationGeneration, sessionId, turnId, workspaceId } from "../../domain/index.ts";
+import {
+  configurationGeneration,
+  modelId,
+  sessionId,
+  turnId,
+  workspaceId,
+} from "../../domain/index.ts";
 import { createProductSubmissionPort, snapshotOf, UNAVAILABLE_SUBMISSION } from "./index.ts";
 
 const correlation = {
@@ -12,6 +18,7 @@ const correlation = {
 
 function executor(run: ProductLiveTurnExecutor["run"]): ProductLiveTurnExecutor {
   let profileId: "ask" | "plan" | "debug" | "agent" = "agent";
+  let selectedModelId = modelId.from("model-default");
   return {
     executionProfile: {
       get: () => profileId,
@@ -19,6 +26,14 @@ function executor(run: ProductLiveTurnExecutor["run"]): ProductLiveTurnExecutor 
         const changed = nextProfileId !== profileId;
         profileId = nextProfileId;
         return { ok: true, profileId, changed };
+      },
+    },
+    modelSelection: {
+      get: () => selectedModelId,
+      async select(nextModelId) {
+        const changed = nextModelId !== selectedModelId;
+        selectedModelId = nextModelId;
+        return { ok: true, modelId: selectedModelId, changed };
       },
     },
     startSession: async () => null,
@@ -197,6 +212,12 @@ describe("product submission port", () => {
           return { ok: true, profileId, changed };
         },
       },
+      modelSelection: {
+        get: () => modelId.from("model-default"),
+        async select(nextModelId) {
+          return { ok: true, modelId: nextModelId, changed: true };
+        },
+      },
       startSession: async () => null,
       run: async () => {
         throw new Error("mode selection must not start a model turn");
@@ -215,6 +236,72 @@ describe("product submission port", () => {
       changed: true,
     });
     expect(port.executionProfile.get()).toBe("plan");
+  });
+
+  test("delegates model selection to the live executor", async () => {
+    let selectedModelId = modelId.from("model-default");
+    const observed: string[] = [];
+    const live: ProductLiveTurnExecutor = {
+      executionProfile: {
+        get: () => "agent",
+        async select(profileId) {
+          return { ok: true, profileId, changed: false };
+        },
+      },
+      modelSelection: {
+        get: () => selectedModelId,
+        async select(nextModelId) {
+          const changed = nextModelId !== selectedModelId;
+          selectedModelId = nextModelId;
+          return { ok: true, modelId: selectedModelId, changed };
+        },
+      },
+      startSession: async () => null,
+      async run() {
+        observed.push(String(selectedModelId));
+        return {
+          kind: "completed",
+          code: "completed",
+          message: "turn completed",
+          response: "done",
+          terminalOutcome: { kind: "completed" },
+          events: [],
+          contextPackItems: 0,
+          modelAttempts: 1,
+          toolResults: 0,
+          disclosedTools: 0,
+          contextStatus: "static",
+          contextGeneration: null,
+          recalledMemories: 0,
+          memoryAdmission: "skipped",
+          executionProfile: "agent",
+          executionProfileVersion: 1,
+          completionCriterion: "implemented-and-verified",
+          effectiveModelRole: "default",
+          effectiveReasoning: "provider-default",
+          policyGeneration: 0,
+          planArtifactId: null,
+          briefReceipt: null,
+          providerUsage: null,
+          providerRequests: 1,
+        };
+      },
+    };
+    const port = createProductSubmissionPort({
+      executor: live,
+      sessionId: correlation.sessionId,
+      configurationGeneration: correlation.configurationGeneration,
+    });
+
+    expect(await port.modelSelection.select(modelId.from("model-selected"))).toEqual({
+      ok: true,
+      modelId: modelId.from("model-selected"),
+      changed: true,
+    });
+    expect(await port.submit(snapshotOf("use the selected model", 1))).toMatchObject({
+      kind: "accepted",
+    });
+    expect(observed).toEqual(["model-selected"]);
   });
 
   test("default unavailable stub names #707", () => {
