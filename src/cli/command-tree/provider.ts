@@ -146,6 +146,7 @@ function profileFrom(id: string, parsed: RawArguments): ProviderProfile | string
     project: parsed.project ?? null,
     enabledModels: models.map(modelId.from),
     catalogs,
+    transportCompatibility: null,
     modelCapabilities: [],
     discovery: discoveryResult.value,
     timeouts: {

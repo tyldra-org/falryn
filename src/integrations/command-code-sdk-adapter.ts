@@ -10,9 +10,11 @@ import {
 import type { ProviderAdapterPort, ProviderStreamOptions } from "../providers/port.ts";
 import type { ModelRequest } from "../providers/request.ts";
 import type { NormalizedProviderEvent } from "../providers/stream.ts";
+import type { CommandCodeTransportCompatibilityDeclaration } from "../providers/transport-compatibility.ts";
 import { createAnthropicSdkAdapter } from "./anthropic-sdk-adapter.ts";
 import { createOpenAiSdkAdapter, type OpenAiSdkFetch } from "./openai-sdk-adapter.ts";
 import { providerDestinationId } from "./provider-destination.ts";
+import { resolveProviderTransportCompatibilityPlan } from "./provider-transport-compatibility.ts";
 
 export type CommandCodeSdkAdapterOptions = {
   readonly profileId: string;
@@ -22,6 +24,7 @@ export type CommandCodeSdkAdapterOptions = {
   readonly supportedModels: readonly string[];
   readonly requestTimeoutMs?: number;
   readonly fetch?: OpenAiSdkFetch;
+  readonly compatibility?: CommandCodeTransportCompatibilityDeclaration;
 };
 
 type CommandCodeChildAdapters = {
@@ -118,6 +121,14 @@ export function createCommandCodeSdkAdapter(
   options: CommandCodeSdkAdapterOptions,
   createChildren: CommandCodeChildAdapterFactory = defaultChildren,
 ): ProviderAdapterPort {
+  const resolvedCompatibility = resolveProviderTransportCompatibilityPlan(
+    "commandcode",
+    options.compatibility,
+  );
+  if (!resolvedCompatibility.ok) {
+    throw new Error("Command Code adapter received an incompatible transport declaration");
+  }
+  const transportCompatibility = resolvedCompatibility.value;
   const grouped = supportedModelsByProtocol(options.supportedModels);
   const children = createChildren(options, grouped);
   const supportedModels = [...grouped.openai, ...grouped.anthropic].map(modelId.from);
@@ -129,6 +140,7 @@ export function createCommandCodeSdkAdapter(
       adapterKind: "commandcode",
       endpoint: COMMAND_CODE_OPENAI_BASE_URL,
       destinationId: providerDestinationId("commandcode", COMMAND_CODE_OPENAI_BASE_URL),
+      transportCompatibilityId: transportCompatibility.compatibilityId,
       displayName: options.displayName ?? "Command Code",
     },
     supportedModels,
@@ -136,6 +148,7 @@ export function createCommandCodeSdkAdapter(
     requestInputModalities: ["text"],
     // OpenAI-compatible transport does not establish OpenAI-native verbosity support.
     requestResponseDensityControls: [],
+    transportCompatibility,
     async *stream(
       request: ModelRequest,
       streamOptions: ProviderStreamOptions,

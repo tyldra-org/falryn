@@ -184,6 +184,14 @@ async function configure(
   const profile: ProviderProfile = {
     ...action.profile,
     ...(action.preserveCredential ? { credential: current.profile.credential } : {}),
+    ...(action.preserveTransportCompatibility &&
+    action.profile.transportCompatibility === null &&
+    current.profile.transportCompatibility !== null &&
+    current.profile.adapterKind === action.profile.adapterKind &&
+    current.profile.providerId === action.profile.providerId &&
+    current.profile.endpoint === action.profile.endpoint
+      ? { transportCompatibility: current.profile.transportCompatibility }
+      : {}),
     modelCapabilities: [...modelCapabilities.values()],
   };
   const replacement: ProviderConnection = {

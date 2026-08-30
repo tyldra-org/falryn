@@ -307,6 +307,45 @@ export type {
   StreamAssemblyTerminal,
 } from "./stream-assembly.ts";
 export { normalizeProviderStream, ProviderStreamAssembler } from "./stream-assembly.ts";
+export type {
+  AnthropicMessagesTransportCompatibilityDeclaration,
+  CommandCodeTransportCompatibilityDeclaration,
+  CustomUnavailableTransportCompatibilityDeclaration,
+  DeterministicTransportCompatibilityDeclaration,
+  GoogleGenerateContentTransportCompatibilityDeclaration,
+  OpenAiAssistantAfterToolResultMode,
+  OpenAiChatTransportCompatibilityDeclaration,
+  OpenAiFinishReasonMode,
+  OpenAiMaxOutputTokenField,
+  OpenAiStreamingUsageMode,
+  OpenAiSystemMessageRole,
+  OpenAiToolResultNameMode,
+  ProviderTransportCompatibilityDeclaration,
+  ProviderTransportCompatibilityError,
+  ProviderTransportCompatibilityPlan,
+  ProviderTransportCompatibilityProvenance,
+  ProviderTransportCompatibilityResolution,
+  ProviderTransportDialect,
+} from "./transport-compatibility.ts";
+export {
+  defaultProviderTransportCompatibility,
+  OPENAI_ASSISTANT_AFTER_TOOL_RESULT_MODES,
+  OPENAI_CHAT_TRANSPORT_DEFAULT,
+  OPENAI_FINISH_REASON_MODES,
+  OPENAI_MAX_OUTPUT_TOKEN_FIELDS,
+  OPENAI_STREAMING_USAGE_MODES,
+  OPENAI_SYSTEM_MESSAGE_ROLES,
+  OPENAI_TOOL_RESULT_NAME_MODES,
+  PROVIDER_TRANSPORT_COMPATIBILITY_SCHEMA_VERSION,
+  PROVIDER_TRANSPORT_DIALECTS,
+  providerTransportCompatibilityMatchesAdapter,
+  resolveProviderTransportCompatibility,
+} from "./transport-compatibility.ts";
+export type { ProviderTransportCompatibilityDeclarationParseError } from "./transport-compatibility-schema.ts";
+export {
+  parseProviderTransportCompatibilityDeclaration,
+  providerTransportCompatibilityDeclarationSchema,
+} from "./transport-compatibility-schema.ts";
 export type { ProviderBoundaryParseError } from "./validate.ts";
 export {
   parseModelRequest,

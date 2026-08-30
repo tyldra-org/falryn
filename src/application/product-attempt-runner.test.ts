@@ -82,6 +82,8 @@ function receipt(
     providerProfileId: setupResult.adapter.identity.profileId,
     providerAdapterKind: setupResult.adapter.identity.adapterKind,
     providerDestinationId: setupResult.adapter.identity.destinationId,
+    transportCompatibilityId:
+      setupResult.adapter.identity.transportCompatibilityId ?? "transport:deterministic",
     modelId: model,
     reasoning: "provider-default",
     reasoningControl: null,
@@ -262,6 +264,51 @@ describe("createProductAttemptRunner", () => {
         disclosure: disclosureInput(product),
       },
     });
+    expect(result.fact).toMatchObject({
+      kind: "failed",
+      category: "invalid-request",
+      retryable: false,
+      effect: "none",
+    });
+    expect(providerRequests).toBe(0);
+  });
+
+  test("rejects a transport plan that differs from the routed plan", async () => {
+    let providerRequests = 0;
+    const product = setup(
+      createDeterministicProviderAdapter({
+        onRequest: () => {
+          providerRequests += 1;
+        },
+      }),
+    );
+    const turn = await start(product, "turn-attempt-transport-mismatch");
+    const runner = product.runtime.requireAttemptRunner();
+    if (!runner.ok) {
+      throw new Error(runner.error.code);
+    }
+    const result = await runner.value.run({
+      turnId: turn,
+      identity: {
+        attemptNumber: 1,
+        modelAttemptId: modelAttemptId.from("attempt-transport-mismatch"),
+        fallbackPosition: 0,
+        providerKey: product.adapter.identity.providerId,
+        modelKey: String(product.adapter.supportedModels[0]),
+      },
+      receipt: { ...receipt(product), transportCompatibilityId: `sha-256:${"0".repeat(64)}` },
+      boundConfigurationGeneration: generation,
+      configurationGeneration: generation,
+      signal: new AbortController().signal,
+      modelInput: {
+        messages: [{ role: "user", parts: [{ kind: "text", text: "hello" }] }],
+        tools: product.disclosure.modelTools,
+        output: { kind: "text" },
+        budgets: {},
+        disclosure: disclosureInput(product),
+      },
+    });
+
     expect(result.fact).toMatchObject({
       kind: "failed",
       category: "invalid-request",
@@ -505,6 +552,8 @@ describe("createProductAttemptRunner", () => {
         providerProfileId: adapter.identity.profileId,
         providerAdapterKind: adapter.identity.adapterKind,
         providerDestinationId: adapter.identity.destinationId,
+        transportCompatibilityId:
+          adapter.identity.transportCompatibilityId ?? "transport:deterministic",
         modelId: model,
         reasoning: "provider-default",
         reasoningControl: null,

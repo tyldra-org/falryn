@@ -34,7 +34,9 @@ import type { ModelMessage, ModelToolDefinition } from "../providers/messages.ts
 import type { ProviderAdapterPort, ProviderStreamOptions } from "../providers/port.ts";
 import type { ModelRequest } from "../providers/request.ts";
 import type { NormalizedProviderEvent, UsageUnits } from "../providers/stream.ts";
+import type { AnthropicMessagesTransportCompatibilityDeclaration } from "../providers/transport-compatibility.ts";
 import { providerDestinationId } from "./provider-destination.ts";
+import { resolveProviderTransportCompatibilityPlan } from "./provider-transport-compatibility.ts";
 
 export type AnthropicSdkFetch = NonNullable<ClientOptions["fetch"]>;
 
@@ -55,6 +57,7 @@ export type AnthropicSdkAdapterOptions = {
   readonly requestTimeoutMs?: number;
   /** Deterministic SDK boundary used by tests. Production leaves this absent. */
   readonly createStream?: AnthropicSdkStreamFactory;
+  readonly compatibility?: AnthropicMessagesTransportCompatibilityDeclaration;
 };
 
 type ToolCallState = {
@@ -296,12 +299,21 @@ function usageFrom(
 export function createAnthropicSdkAdapter(
   options: AnthropicSdkAdapterOptions,
 ): ProviderAdapterPort {
+  const resolvedCompatibility = resolveProviderTransportCompatibilityPlan(
+    "anthropic",
+    options.compatibility,
+  );
+  if (!resolvedCompatibility.ok) {
+    throw new Error("Anthropic SDK adapter received an incompatible transport declaration");
+  }
+  const transportCompatibility = resolvedCompatibility.value;
   const identity = {
     providerId: providerId.from(options.providerId ?? "anthropic"),
     profileId: options.profileId,
     adapterKind: "anthropic" as const,
     endpoint: options.baseUrl ?? null,
     destinationId: providerDestinationId("anthropic", options.baseUrl ?? null),
+    transportCompatibilityId: transportCompatibility.compatibilityId,
     displayName: options.displayName ?? "Anthropic",
   };
   const models = options.supportedModels.map((id) => modelId.from(id));
@@ -311,6 +323,7 @@ export function createAnthropicSdkAdapter(
     supportedModels: models,
     requestInputModalities: ["text"],
     requestResponseDensityControls: [],
+    transportCompatibility,
     async *stream(
       request: ModelRequest,
       streamOptions: ProviderStreamOptions,

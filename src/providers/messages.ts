@@ -83,6 +83,8 @@ export type RequestMetadata = {
   readonly configurationGeneration?: number | undefined;
   /** Exact provider catalog generation bound by routing. */
   readonly providerCatalogGeneration?: number | undefined;
+  /** Exact request/response translation plan bound to the selected adapter. */
+  readonly transportCompatibilityId?: string | undefined;
   /** Version of the selected model capability record. */
   readonly modelCapabilitySchemaVersion?: number | undefined;
 };

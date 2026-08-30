@@ -13,6 +13,7 @@ import { MODEL_CAPABILITY_SCHEMA_VERSION } from "./model-capability.ts";
 import type { ProviderAdapterPort } from "./port.ts";
 import type { ModelRequest } from "./request.ts";
 import type { NormalizedProviderEvent, UsageUnits } from "./stream.ts";
+import { defaultProviderTransportCompatibility } from "./transport-compatibility.ts";
 
 export type DeterministicFailureScript = {
   readonly kind: "error";
@@ -112,12 +113,14 @@ function waitForAbort(signal: AbortSignal): Promise<void> {
 export function createDeterministicProviderAdapter(
   options: DeterministicProviderOptions = {},
 ): ProviderAdapterPort {
+  const transportCompatibility = defaultProviderTransportCompatibility("deterministic");
   const identity = {
     providerId: providerId.from("falryn-deterministic"),
     profileId: options.profileId ?? "deterministic",
     adapterKind: "deterministic" as const,
     endpoint: null,
     destinationId: "falryn:deterministic:default",
+    transportCompatibilityId: transportCompatibility.compatibilityId,
     displayName: options.displayName ?? "Deterministic fixture provider",
   };
   const models = (options.supportedModels ?? ["deterministic-echo"]).map(modelId.from);
@@ -133,6 +136,7 @@ export function createDeterministicProviderAdapter(
     supportedModels: models,
     requestInputModalities: ["text"],
     requestResponseDensityControls: ["low", "medium", "high"],
+    transportCompatibility,
     modelCapabilities: models.map((model) => ({
       schemaVersion: MODEL_CAPABILITY_SCHEMA_VERSION,
       modelId: model,

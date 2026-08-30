@@ -31,6 +31,7 @@ export const DEFAULT_PROVIDER_CONNECTION_STATE: ProviderConnectionState = {
         project: null,
         enabledModels: LATEST_OPENAI_MODEL_IDS,
         catalogs: [],
+        transportCompatibility: null,
         modelCapabilities: [],
         discovery: "static",
         timeouts: { connectMs: 15_000, requestMs: 120_000 },

@@ -34,6 +34,7 @@ import {
   resolveSpecializedRole,
 } from "./role-support.ts";
 import type { ModelRole, WorkIntent } from "./roles.ts";
+import { defaultProviderTransportCompatibility } from "./transport-compatibility.ts";
 
 export type { RouteRequirement } from "./role-support.ts";
 
@@ -48,6 +49,7 @@ export type RoutedCatalogEntry = {
   readonly profileId: string;
   readonly adapterKind: ProviderAdapterKind;
   readonly destinationId: string;
+  readonly transportCompatibilityId?: string | undefined;
   readonly requestInputModalities: readonly ModelInputModality[];
   readonly requestResponseDensityControls?: readonly ModelResponseDensityControl[];
   readonly catalog: ModelCatalog;
@@ -68,6 +70,7 @@ export type RoutingReceipt = {
   readonly providerProfileId: string;
   readonly providerAdapterKind: ProviderAdapterKind;
   readonly providerDestinationId: string;
+  readonly transportCompatibilityId: string;
   readonly modelId: ModelId;
   readonly reasoning: ReasoningEffort;
   readonly reasoningControl: string | null;
@@ -377,6 +380,9 @@ export function resolveModelRoute(input: ResolveRouteInput): RoutingOutcome {
         providerProfileId: found.entry.profileId,
         providerAdapterKind: found.entry.adapterKind,
         providerDestinationId: found.entry.destinationId,
+        transportCompatibilityId:
+          found.entry.transportCompatibilityId ??
+          defaultProviderTransportCompatibility(found.entry.adapterKind).compatibilityId,
         modelId: input.explicit.modelId,
         reasoning: "provider-default",
         reasoningControl: null,
@@ -494,6 +500,9 @@ export function resolveModelRoute(input: ResolveRouteInput): RoutingOutcome {
         providerProfileId: found.entry.profileId,
         providerAdapterKind: found.entry.adapterKind,
         providerDestinationId: found.entry.destinationId,
+        transportCompatibilityId:
+          found.entry.transportCompatibilityId ??
+          defaultProviderTransportCompatibility(found.entry.adapterKind).compatibilityId,
         modelId: candidate.modelId,
         reasoning: route.reasoning,
         reasoningControl,

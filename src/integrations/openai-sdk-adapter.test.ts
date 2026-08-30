@@ -11,6 +11,7 @@ import { modelId, providerId } from "../domain/index.ts";
 import { modelRequestId } from "../providers/identity.ts";
 import type { ModelRequest } from "../providers/request.ts";
 import type { NormalizedProviderEvent } from "../providers/stream.ts";
+import { OPENAI_CHAT_TRANSPORT_DEFAULT } from "../providers/transport-compatibility.ts";
 import { createOpenAiSdkAdapter } from "./openai-sdk-adapter.ts";
 
 function request(overrides: Partial<ModelRequest> = {}): ModelRequest {
@@ -385,6 +386,91 @@ describe("createOpenAiSdkAdapter", () => {
         { role: "tool", tool_call_id: "call-1", content: '{"status":"completed"}' },
       ],
     });
+  });
+
+  test("applies an explicit OpenAI-compatible wire plan without heuristics", async () => {
+    let body: Record<string, unknown> | null = null;
+    const adapter = createOpenAiSdkAdapter({
+      profileId: "compatible",
+      baseUrl: "https://compatible.example.test/v1",
+      resolveApiKey: async () => "sk-test",
+      compatibility: {
+        ...OPENAI_CHAT_TRANSPORT_DEFAULT,
+        systemMessageRole: "developer",
+        maxOutputTokensField: "max_tokens",
+        streamingUsage: "omit",
+        finishReason: "infer",
+        strictToolSchemas: true,
+        toolResultName: "required",
+        assistantAfterToolResult: "empty-assistant",
+      },
+      fetch: async (_input, init) => {
+        body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        return sseResponse([
+          'data: {"choices":[{"delta":{"content":"done"}}]}\n\n',
+          "data: [DONE]\n\n",
+        ]);
+      },
+    });
+    const events = await collect(
+      adapter,
+      undefined,
+      request({
+        messages: [
+          { role: "system", parts: [{ kind: "text", text: "policy" }] },
+          { role: "user", parts: [{ kind: "text", text: "read a.ts" }] },
+          {
+            role: "assistant",
+            parts: [{ kind: "text", text: "" }],
+            toolCalls: [{ toolCallId: "call-1", name: "read_file", arguments: { path: "a.ts" } }],
+          },
+          {
+            role: "tool",
+            toolCallId: "call-1",
+            parts: [{ kind: "text", text: '{"status":"completed"}' }],
+          },
+          { role: "user", parts: [{ kind: "text", text: "continue" }] },
+        ],
+        tools: [
+          {
+            name: "read_file",
+            description: "Read a file.",
+            parameters: {
+              type: "object",
+              properties: { path: { type: "string" } },
+              required: ["path"],
+              additionalProperties: false,
+            },
+          },
+        ],
+        budgets: { maxOutputTokens: 2_048 },
+      }),
+    );
+
+    expect(adapter.transportCompatibility?.provenance).toBe("profile-declaration");
+    expect(body).toMatchObject({
+      max_tokens: 2_048,
+      messages: [
+        { role: "developer", content: "policy" },
+        { role: "user", content: "read a.ts" },
+        {
+          role: "assistant",
+          tool_calls: [{ id: "call-1", function: { name: "read_file" } }],
+        },
+        {
+          role: "tool",
+          tool_call_id: "call-1",
+          name: "read_file",
+          content: '{"status":"completed"}',
+        },
+        { role: "assistant", content: "" },
+        { role: "user", content: "continue" },
+      ],
+      tools: [{ type: "function", function: { name: "read_file", strict: true } }],
+    });
+    expect(body).not.toHaveProperty("max_completion_tokens");
+    expect(body).not.toHaveProperty("stream_options");
+    expect(events.at(-1)).toMatchObject({ kind: "finished", finishReason: "stop" });
   });
 
   test("never puts the API key into failure messages", async () => {

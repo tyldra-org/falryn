@@ -599,6 +599,7 @@ function modelRequest(
       ...(request.receipt.intent === null ? {} : { workIntent: request.receipt.intent }),
       configurationGeneration: Number(request.boundConfigurationGeneration),
       providerCatalogGeneration: request.receipt.catalogGeneration,
+      transportCompatibilityId: request.receipt.transportCompatibilityId,
       modelCapabilitySchemaVersion: request.receipt.modelCapabilitySchemaVersion,
     },
   };
@@ -628,6 +629,13 @@ export function createProductAttemptRunner(
       }
       if (request.receipt.providerDestinationId !== options.provider.identity.destinationId) {
         return invalidAttempt("selected provider destination does not match the route");
+      }
+      if (
+        options.provider.identity.transportCompatibilityId !== undefined &&
+        request.receipt.transportCompatibilityId !==
+          options.provider.identity.transportCompatibilityId
+      ) {
+        return invalidAttempt("selected provider transport compatibility does not match the route");
       }
       if (!options.provider.supportedModels.includes(request.receipt.modelId)) {
         return invalidAttempt("selected model is unavailable on the provider adapter");

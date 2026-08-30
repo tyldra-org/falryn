@@ -24,6 +24,7 @@ function profile(
     organization: null,
     project: null,
     enabledModels: models.map(modelId.from),
+    transportCompatibility: null,
     modelCapabilities: [],
     discovery: "remote",
     timeouts: { connectMs: 1_000, requestMs: 10_000 },

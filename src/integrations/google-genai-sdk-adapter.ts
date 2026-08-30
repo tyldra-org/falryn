@@ -25,7 +25,9 @@ import type { ModelMessage, ModelToolDefinition } from "../providers/messages.ts
 import type { ProviderAdapterPort, ProviderStreamOptions } from "../providers/port.ts";
 import type { ModelRequest } from "../providers/request.ts";
 import type { NormalizedProviderEvent, UsageUnits } from "../providers/stream.ts";
+import type { GoogleGenerateContentTransportCompatibilityDeclaration } from "../providers/transport-compatibility.ts";
 import { providerDestinationId } from "./provider-destination.ts";
+import { resolveProviderTransportCompatibilityPlan } from "./provider-transport-compatibility.ts";
 
 export type GoogleGenAiStreamFactory = (
   apiKey: string,
@@ -49,6 +51,7 @@ export type GoogleGenAiSdkAdapterOptions = {
   readonly createStream?: GoogleGenAiStreamFactory;
   /** Deterministic cache boundary used by tests. Production leaves this absent. */
   readonly createCache?: GoogleGenAiCacheFactory;
+  readonly compatibility?: GoogleGenerateContentTransportCompatibilityDeclaration;
 };
 
 type ToolCallState = {
@@ -350,12 +353,21 @@ const SAFETY_FINISH_REASONS = new Set([
 export function createGoogleGenAiSdkAdapter(
   options: GoogleGenAiSdkAdapterOptions,
 ): ProviderAdapterPort {
+  const resolvedCompatibility = resolveProviderTransportCompatibilityPlan(
+    "google",
+    options.compatibility,
+  );
+  if (!resolvedCompatibility.ok) {
+    throw new Error("Google Gen AI SDK adapter received an incompatible transport declaration");
+  }
+  const transportCompatibility = resolvedCompatibility.value;
   const identity = {
     providerId: providerId.from(options.providerId ?? "google"),
     profileId: options.profileId,
     adapterKind: "google" as const,
     endpoint: options.baseUrl ?? null,
     destinationId: providerDestinationId("google", options.baseUrl ?? null),
+    transportCompatibilityId: transportCompatibility.compatibilityId,
     displayName: options.displayName ?? "Google",
   };
   const models = options.supportedModels.map((id) => modelId.from(id));
@@ -437,6 +449,7 @@ export function createGoogleGenAiSdkAdapter(
     supportedModels: models,
     requestInputModalities: ["text"],
     requestResponseDensityControls: [],
+    transportCompatibility,
     async *stream(
       request: ModelRequest,
       streamOptions: ProviderStreamOptions,

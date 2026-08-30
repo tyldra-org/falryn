@@ -16,6 +16,7 @@ function receipt(overrides: Partial<RoutingReceipt> = {}): RoutingReceipt {
     providerProfileId: "primary",
     providerAdapterKind: "openai",
     providerDestinationId: "sha-256:destination",
+    transportCompatibilityId: "sha-256:transport",
     modelId: modelId.from("gpt-5.6-sol"),
     reasoning: "provider-default",
     reasoningControl: null,

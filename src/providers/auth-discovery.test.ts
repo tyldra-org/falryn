@@ -39,6 +39,7 @@ function demoProfile(overrides: Partial<ProviderProfile> = {}): ProviderProfile 
     discovery: "static",
     timeouts: { connectMs: 5_000, requestMs: 30_000 },
     ...overrides,
+    transportCompatibility: overrides.transportCompatibility ?? null,
     modelCapabilities: overrides.modelCapabilities ?? [],
   };
 }
@@ -47,6 +48,36 @@ describe("parseProviderProfile", () => {
   test("accepts a complete profile", () => {
     const parsed = parseProviderProfile(demoProfile());
     expect(parsed.ok).toBe(true);
+  });
+
+  test("defaults the transport plan and rejects a mismatched dialect", () => {
+    const defaulted = parseProviderProfile({
+      ...demoProfile(),
+      transportCompatibility: undefined,
+    });
+    const mismatched = parseProviderProfile({
+      ...demoProfile({ adapterKind: "anthropic" }),
+      transportCompatibility: {
+        schemaVersion: 1,
+        dialect: "openai-chat-completions",
+        systemMessageRole: "system",
+        maxOutputTokensField: "max_completion_tokens",
+        streamingUsage: "include",
+        finishReason: "required",
+        strictToolSchemas: false,
+        toolResultName: "omit",
+        assistantAfterToolResult: "none",
+      },
+    });
+
+    expect(defaulted.ok).toBe(true);
+    if (defaulted.ok) {
+      expect(defaulted.value.transportCompatibility).toBeNull();
+    }
+    expect(mismatched.ok).toBe(false);
+    if (!mismatched.ok) {
+      expect(mismatched.error.issues.some((issue) => issue.path.endsWith("dialect"))).toBe(true);
+    }
   });
 
   test("rejects a plaintext credential without echoing it", () => {

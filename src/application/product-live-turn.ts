@@ -725,6 +725,7 @@ export function createProductLiveTurnExecutor(
             profileId: provider.value.identity.profileId,
             adapterKind: provider.value.identity.adapterKind,
             destinationId: provider.value.identity.destinationId,
+            transportCompatibilityId: provider.value.identity.transportCompatibilityId,
             requestInputModalities: provider.value.requestInputModalities,
             requestResponseDensityControls: provider.value.requestResponseDensityControls ?? [],
             catalog: options.providerCatalog,

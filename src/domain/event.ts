@@ -99,6 +99,8 @@ export type ModelAttemptBinding = {
   readonly providerProfileId?: string | undefined;
   readonly providerAdapterKind?: string | undefined;
   readonly providerDestinationId?: string | undefined;
+  /** Absent only on events written before transport compatibility binding shipped. */
+  readonly transportCompatibilityId?: string | undefined;
   readonly modelId: ModelId;
   readonly role: string;
   readonly intent: string | null;

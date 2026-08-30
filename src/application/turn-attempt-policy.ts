@@ -368,6 +368,7 @@ function attemptBinding(
     providerProfileId: receipt.providerProfileId,
     providerAdapterKind: receipt.providerAdapterKind,
     providerDestinationId: receipt.providerDestinationId,
+    transportCompatibilityId: receipt.transportCompatibilityId,
     modelId: receipt.modelId,
     role: receipt.role,
     intent: receipt.intent,

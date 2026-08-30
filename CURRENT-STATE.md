@@ -187,6 +187,18 @@ transport; the live adapters accept text today and fail with
 `unsupported-capability` rather than dropping unresolved image handles. Falryn
 keeps retries above the SDK boundary; each SDK performs one request attempt.
 
+Provider wire behavior is a separate versioned contract. Every adapter resolves
+one immutable transport-compatibility plan and publishes its SHA-256 identity.
+The route, provider request metadata, and durable model-attempt binding retain
+that identity, and the attempt runner refuses a route whose plan differs from
+the live adapter. Existing profiles use the installed adapter's baseline.
+OpenAI profiles may instead declare the exact Chat Completions behavior for
+system or developer messages, output-token field, streaming usage, finish
+reason, strict tool schemas, tool-result names, and assistant bridging after a
+tool result. The strict profile codec rejects a dialect that does not match the
+selected adapter. Falryn does not infer these facts from a model name, provider
+label, or endpoint URL.
+
 Live turns also derive a secret-safe, session-scoped prompt-cache identity from
 the bound provider route, configuration and catalog generations, and the exact
 stable instruction, capability, and tool-schema prefix. Dynamic Brief guidance,
