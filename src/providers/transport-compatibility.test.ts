@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { modelId } from "../domain/identity.ts";
 import {
+  ANTHROPIC_MESSAGES_TRANSPORT_DEFAULT,
   defaultProviderTransportCompatibility,
   OPENAI_CHAT_TRANSPORT_DEFAULT,
   OPENAI_RESPONSES_TRANSPORT_DEFAULT,
@@ -146,6 +147,35 @@ describe("provider transport compatibility", () => {
       parseProviderTransportCompatibilityDeclaration({
         ...OPENAI_RESPONSES_TRANSPORT_DEFAULT,
         includeEncryptedReasoning: false,
+      }).ok,
+    ).toBe(false);
+  });
+
+  test("parses the complete Anthropic Messages plan and rejects unsafe combinations", () => {
+    const parsed = parseProviderTransportCompatibilityDeclaration(
+      ANTHROPIC_MESSAGES_TRANSPORT_DEFAULT,
+    );
+    expect(parsed).toEqual({ ok: true, value: ANTHROPIC_MESSAGES_TRANSPORT_DEFAULT });
+
+    expect(
+      parseProviderTransportCompatibilityDeclaration({
+        ...ANTHROPIC_MESSAGES_TRANSPORT_DEFAULT,
+        thinking: "adaptive",
+        thinkingReplay: "none",
+      }).ok,
+    ).toBe(false);
+    expect(
+      parseProviderTransportCompatibilityDeclaration({
+        ...ANTHROPIC_MESSAGES_TRANSPORT_DEFAULT,
+        promptCachePlacement: "system-prefix",
+        promptCacheTtl: null,
+      }).ok,
+    ).toBe(false);
+    expect(
+      parseProviderTransportCompatibilityDeclaration({
+        ...ANTHROPIC_MESSAGES_TRANSPORT_DEFAULT,
+        promptCachePlacement: "none",
+        promptCacheTtl: "5m",
       }).ok,
     ).toBe(false);
   });

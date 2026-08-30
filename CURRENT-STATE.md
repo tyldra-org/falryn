@@ -246,6 +246,21 @@ metadata reports only whether bounded state was saved or loaded and how many
 tool calls it covered. Missing, malformed, oversized, or unavailable durable
 state fails the continuation closed.
 
+The Anthropic Messages declaration separately binds top-level system blocks,
+`max_tokens`, adaptive thinking, signed-thinking replay, JSON-schema output,
+system-prefix cache placement and TTL, assistant-before-user tool-result
+ordering, strict tool schemas, message-start/delta usage, and service tier. Its
+plan also records SDK-managed API versioning, the absence of beta headers, and
+the currently verified text-block input encoding. Its
+official-SDK leaf validates the complete message and content-block lifecycle,
+rejects malformed or unsupported server output, and normalizes provider refusal,
+context exhaustion, paused turns, retry timing, cache usage, and reasoning
+usage. Signed thinking and opaque redacted-thinking blocks are retained
+unchanged for tool continuation in the same exact-route SQLite repository used
+by product composition. A restarted adapter loads only a matching profile,
+provider, destination, model, plan, and tool-call record; opaque continuation
+bytes never enter prompts, normalized events, or diagnostics.
+
 Live turns also derive a secret-safe, session-scoped prompt-cache identity from
 the bound provider route, configuration and catalog generations, and the exact
 stable instruction, capability, and tool-schema prefix. Dynamic Brief guidance,
