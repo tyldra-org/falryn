@@ -95,4 +95,93 @@ describe("createOpenAiProviderAdapter", () => {
       adapter.transportCompatibilityFor(modelId.from("responses-model"))?.receipt,
     ).toMatchObject({ selectedLayer: "model-override", modelId: "responses-model" });
   });
+
+  test("keeps shared text semantics equal across Chat Completions and Responses", async () => {
+    const adapter = createOpenAiProviderAdapter({
+      profileId: "openai-conformance",
+      baseUrl: "https://api.example.test/v1",
+      supportedModels: ["chat-model", "responses-model"],
+      resolveApiKey: async () => "sk-test",
+      compatibility: OPENAI_CHAT_TRANSPORT_DEFAULT,
+      modelCompatibility: [
+        {
+          schemaVersion: 1,
+          modelId: modelId.from("responses-model"),
+          declaration: OPENAI_RESPONSES_TRANSPORT_DEFAULT,
+          source: {
+            kind: "provider-documentation",
+            url: "https://platform.openai.com/docs/api-reference/responses",
+            observedAt: "2026-08-30T00:00:00Z",
+          },
+        },
+      ],
+      fetch: async (input) =>
+        String(input).endsWith("/responses")
+          ? new Response(
+              [
+                `data: ${JSON.stringify({
+                  type: "response.output_text.delta",
+                  sequence_number: 1,
+                  item_id: "message-1",
+                  output_index: 0,
+                  content_index: 0,
+                  delta: "same",
+                  logprobs: [],
+                })}\n\n`,
+                `data: ${JSON.stringify({
+                  type: "response.completed",
+                  sequence_number: 2,
+                  response: {
+                    id: "resp-1",
+                    status: "completed",
+                    error: null,
+                    incomplete_details: null,
+                    usage: null,
+                  },
+                })}\n\n`,
+              ].join(""),
+              { headers: { "content-type": "text/event-stream" } },
+            )
+          : new Response(
+              [
+                `data: ${JSON.stringify({
+                  id: "chatcmpl-1",
+                  object: "chat.completion.chunk",
+                  created: 1,
+                  model: "chat-model",
+                  choices: [
+                    {
+                      index: 0,
+                      delta: { role: "assistant", content: "same" },
+                      finish_reason: null,
+                    },
+                  ],
+                })}\n\n`,
+                `data: ${JSON.stringify({
+                  id: "chatcmpl-1",
+                  object: "chat.completion.chunk",
+                  created: 1,
+                  model: "chat-model",
+                  choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
+                })}\n\n`,
+                "data: [DONE]\n\n",
+              ].join(""),
+              { headers: { "content-type": "text/event-stream" } },
+            ),
+    });
+
+    const chat = await collect(adapter, request("chat-model"));
+    const responses = await collect(adapter, request("responses-model"));
+    const semanticText = (events: readonly NormalizedProviderEvent[]) =>
+      events.flatMap((event) => (event.kind === "text-delta" ? [event.text] : [])).join("");
+
+    expect(semanticText(chat)).toBe("same");
+    expect(semanticText(responses)).toBe("same");
+    expect(chat.map((event) => event.kind)).toEqual(["request-started", "text-delta", "finished"]);
+    expect(responses.map((event) => event.kind)).toEqual([
+      "request-started",
+      "text-delta",
+      "finished",
+    ]);
+  });
 });

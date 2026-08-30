@@ -1,6 +1,7 @@
 /** OpenAI Responses transport conformance tests with SDK-injected HTTP fixtures. */
 
 import { describe, expect, test } from "bun:test";
+import { APIConnectionTimeoutError } from "openai";
 
 import { modelId, providerId } from "../domain/index.ts";
 import { modelRequestId } from "../providers/identity.ts";
@@ -516,6 +517,221 @@ describe("createOpenAiResponsesSdkAdapter", () => {
     });
 
     expect((await collect(adapter)).at(-1)).toMatchObject({
+      kind: "error",
+      failure: { kind: "malformed-stream", retryable: false },
+    });
+  });
+
+  test("retains parallel tool calls atomically for durable continuation", async () => {
+    let saved: readonly { readonly toolCallId: string }[] = [];
+    const calls = [
+      {
+        id: "fc-1",
+        type: "function_call",
+        call_id: "call-1",
+        name: "read_file",
+        arguments: "{}",
+        status: "completed",
+      },
+      {
+        id: "fc-2",
+        type: "function_call",
+        call_id: "call-2",
+        name: "read_file",
+        arguments: "{}",
+        status: "completed",
+      },
+    ];
+    const adapter = createOpenAiResponsesSdkAdapter({
+      profileId: "parallel",
+      baseUrl: "https://api.example.test/v1",
+      supportedModels: ["gpt-test"],
+      resolveApiKey: async () => "sk-test",
+      compatibility: OPENAI_RESPONSES_TRANSPORT_DEFAULT,
+      continuationState: {
+        load: () => ({ ok: true, value: null }),
+        save(records) {
+          saved = records;
+          return { ok: true, value: { inserted: records.length, replaced: 0 } };
+        },
+      },
+      now: () => 100,
+      fetch: async () =>
+        sseResponse([
+          {
+            type: "response.output_item.added",
+            sequence_number: 1,
+            output_index: 0,
+            item: { ...calls[0], arguments: "", status: "in_progress" },
+          },
+          {
+            type: "response.output_item.done",
+            sequence_number: 2,
+            output_index: 0,
+            item: calls[0],
+          },
+          {
+            type: "response.output_item.added",
+            sequence_number: 3,
+            output_index: 1,
+            item: { ...calls[1], arguments: "", status: "in_progress" },
+          },
+          {
+            type: "response.output_item.done",
+            sequence_number: 4,
+            output_index: 1,
+            item: calls[1],
+          },
+          {
+            type: "response.completed",
+            sequence_number: 5,
+            response: response("resp-parallel", { output: calls }),
+          },
+        ]),
+    });
+
+    const events = await collect(adapter);
+    expect(events.filter((item) => item.kind === "tool-proposal")).toHaveLength(2);
+    expect(saved.map((item) => item.toolCallId)).toEqual(["call-1", "call-2"]);
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        kind: "provider-metadata",
+        entries: { continuationStateSaved: "true", continuationStateSavedCount: "2" },
+      }),
+    );
+    expect(events.at(-1)).toMatchObject({ kind: "finished", finishReason: "tool_calls" });
+  });
+
+  test("normalizes retry delay and timeout without exposing provider detail", async () => {
+    const rateLimited = createOpenAiResponsesSdkAdapter({
+      profileId: "rate-limit",
+      baseUrl: "https://api.example.test/v1",
+      supportedModels: ["gpt-test"],
+      resolveApiKey: async () => "sk-test",
+      compatibility: OPENAI_RESPONSES_TRANSPORT_DEFAULT,
+      fetch: async () =>
+        new Response(
+          JSON.stringify({
+            error: {
+              message: "secret provider detail",
+              type: "rate_limit_error",
+              code: "rate_limit_exceeded",
+            },
+          }),
+          {
+            status: 429,
+            headers: { "content-type": "application/json", "retry-after-ms": "1250" },
+          },
+        ),
+    });
+    const rateEvents = await collect(rateLimited);
+    expect(rateEvents.at(-1)).toMatchObject({
+      kind: "error",
+      failure: { kind: "rate-limit", retryable: true, retryAfterMs: 1_250 },
+    });
+    expect(JSON.stringify(rateEvents)).not.toContain("secret provider detail");
+
+    const timedOut = createOpenAiResponsesSdkAdapter({
+      profileId: "timeout",
+      baseUrl: "https://api.example.test/v1",
+      supportedModels: ["gpt-test"],
+      resolveApiKey: async () => "sk-test",
+      compatibility: OPENAI_RESPONSES_TRANSPORT_DEFAULT,
+      fetch: async () => {
+        throw new APIConnectionTimeoutError({ message: "secret timeout detail" });
+      },
+    });
+    const timeoutEvents = await collect(timedOut);
+    expect(timeoutEvents.at(-1)).toMatchObject({
+      kind: "error",
+      failure: { kind: "timeout", retryable: true },
+    });
+    expect(JSON.stringify(timeoutEvents)).not.toContain("secret timeout detail");
+  });
+
+  test("fails closed on unresolved media, unsupported output, and malformed ordering", async () => {
+    const unresolvedMedia = createOpenAiResponsesSdkAdapter({
+      profileId: "media",
+      baseUrl: "https://api.example.test/v1",
+      supportedModels: ["gpt-test"],
+      resolveApiKey: async () => "sk-test",
+      compatibility: OPENAI_RESPONSES_TRANSPORT_DEFAULT,
+      fetch: async () => {
+        throw new Error("fetch must not run for unresolved media");
+      },
+    });
+    expect(
+      (
+        await collect(
+          unresolvedMedia,
+          request({
+            messages: [
+              {
+                role: "user",
+                parts: [{ kind: "image", handle: "artifact:image", mediaType: "image/png" }],
+              },
+            ],
+          }),
+        )
+      ).at(-1),
+    ).toMatchObject({
+      kind: "error",
+      failure: { kind: "unsupported-capability", retryable: false },
+    });
+
+    const unsupportedOutput = createOpenAiResponsesSdkAdapter({
+      profileId: "unsupported-output",
+      baseUrl: "https://api.example.test/v1",
+      supportedModels: ["gpt-test"],
+      resolveApiKey: async () => "sk-test",
+      compatibility: OPENAI_RESPONSES_TRANSPORT_DEFAULT,
+      fetch: async () =>
+        sseResponse([
+          {
+            type: "response.output_item.done",
+            sequence_number: 1,
+            output_index: 0,
+            item: { id: "search-1", type: "web_search_call", status: "completed" },
+          },
+          { type: "response.completed", sequence_number: 2, response: response("resp-web") },
+        ]),
+    });
+    expect((await collect(unsupportedOutput)).at(-1)).toMatchObject({
+      kind: "error",
+      failure: { kind: "unsupported-capability", retryable: false },
+    });
+
+    const malformedOrdering = createOpenAiResponsesSdkAdapter({
+      profileId: "malformed-ordering",
+      baseUrl: "https://api.example.test/v1",
+      supportedModels: ["gpt-test"],
+      resolveApiKey: async () => "sk-test",
+      compatibility: OPENAI_RESPONSES_TRANSPORT_DEFAULT,
+      fetch: async () => {
+        const functionCall = {
+          id: "fc-without-added",
+          type: "function_call",
+          call_id: "call-without-added",
+          name: "read_file",
+          arguments: "{}",
+          status: "completed",
+        };
+        return sseResponse([
+          {
+            type: "response.output_item.done",
+            sequence_number: 1,
+            output_index: 0,
+            item: functionCall,
+          },
+          {
+            type: "response.completed",
+            sequence_number: 2,
+            response: response("resp-malformed", { output: [functionCall] }),
+          },
+        ]);
+      },
+    });
+    expect((await collect(malformedOrdering)).at(-1)).toMatchObject({
       kind: "error",
       failure: { kind: "malformed-stream", retryable: false },
     });

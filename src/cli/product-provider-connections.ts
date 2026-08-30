@@ -24,7 +24,7 @@ import {
   type OwnedProcessRegistry,
 } from "../integrations/index.ts";
 import { providerDestinationId } from "../integrations/provider-destination.ts";
-import type { ModelDiscoveryPort } from "../providers/index.ts";
+import type { ModelDiscoveryPort, ProviderContinuationStatePort } from "../providers/index.ts";
 import {
   COMMAND_CODE_OPENAI_BASE_URL,
   parseProviderConnectionState,
@@ -73,6 +73,8 @@ export type ProductProviderConnectionOptions = {
   readonly modelDiscovery?: ModelDiscoveryPort;
   /** Durable effective generations used by executed model routes. */
   readonly modelCatalogs?: ModelCatalogGenerationRepository;
+  /** Durable exact-route state used by stateful provider SDK transports. */
+  readonly providerContinuations?: ProviderContinuationStatePort;
 };
 
 export function composeProductProviderConnections(
@@ -185,6 +187,10 @@ export function composeProductProviderConnections(
             organization: profile.organization,
             project: profile.project,
             ...(options.providerFetch === undefined ? {} : { fetch: options.providerFetch }),
+            ...(options.providerContinuations === undefined
+              ? {}
+              : { continuationState: options.providerContinuations }),
+            now: () => services.clock.now(),
           });
           break;
         case "anthropic":

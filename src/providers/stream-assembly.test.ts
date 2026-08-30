@@ -68,6 +68,23 @@ describe("ProviderStreamAssembler", () => {
     }
   });
 
+  test("retains only secret-safe provider metadata for diagnostics", () => {
+    const assembler = new ProviderStreamAssembler();
+    assembler.push({ ...spine(1), kind: "request-started" });
+    const metadata = assembler.push({
+      ...spine(2),
+      kind: "provider-metadata",
+      entries: { continuationStateLoaded: "true", continuationStateLoadedCount: "2" },
+    });
+    expect(metadata.kind).toBe("emit");
+    if (metadata.kind === "emit") {
+      expect(metadata.snapshot.providerMetadata).toEqual({
+        continuationStateLoaded: "true",
+        continuationStateLoadedCount: "2",
+      });
+    }
+  });
+
   test("rejects a sequence gap without echoing payload text", () => {
     const assembler = new ProviderStreamAssembler();
     assembler.push({ ...spine(1), kind: "request-started" });

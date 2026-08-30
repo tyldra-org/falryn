@@ -23,6 +23,11 @@ import type {
 } from "openai/resources/responses/responses";
 
 import { type ModelId, modelAttemptId, modelId, providerId } from "../domain/identity.ts";
+import {
+  PROVIDER_CONTINUATION_STATE_SCHEMA_VERSION,
+  type ProviderContinuationStateKey,
+  type ProviderContinuationStatePort,
+} from "../providers/continuation-state.ts";
 import type { ProviderFailure, ProviderFailureKind } from "../providers/errors.ts";
 import { LATEST_OPENAI_MODEL_IDS } from "../providers/known-model-capability.ts";
 import type { ModelMessage, ModelToolDefinition } from "../providers/messages.ts";
@@ -55,6 +60,9 @@ export type OpenAiResponsesSdkAdapterOptions = {
   readonly requestTimeoutMs?: number;
   readonly compatibility: OpenAiResponsesTransportCompatibilityDeclaration;
   readonly modelCompatibility?: readonly ProviderModelTransportCompatibilityOverride[];
+  readonly continuationState?: ProviderContinuationStatePort;
+  /** Injectable for deterministic persistence fixtures. */
+  readonly now?: () => number;
 };
 
 type ToolCallState = {
@@ -75,6 +83,7 @@ type RetainedContinuation = {
 };
 
 const MAX_RETAINED_TOOL_CALLS = 256;
+const MAX_CONTINUATION_STATE_JSON_LENGTH = 4 * 1024 * 1024;
 
 class OpenAiResponsesInputError extends Error {
   readonly failureKind: ProviderFailureKind;
@@ -86,8 +95,29 @@ class OpenAiResponsesInputError extends Error {
   }
 }
 
-function failure(kind: ProviderFailureKind, message: string, retryable: boolean): ProviderFailure {
-  return { kind, message, retryable };
+function failure(
+  kind: ProviderFailureKind,
+  message: string,
+  retryable: boolean,
+  retryAfterMs?: number,
+): ProviderFailure {
+  return {
+    kind,
+    message,
+    retryable,
+    ...(retryAfterMs === undefined ? {} : { retryAfterMs }),
+  };
+}
+
+function retryAfterMs(headers: Headers): number | undefined {
+  const millisecondsHeader = headers.get("retry-after-ms");
+  const milliseconds = millisecondsHeader === null ? Number.NaN : Number(millisecondsHeader);
+  if (Number.isFinite(milliseconds) && milliseconds >= 0) {
+    return Math.trunc(milliseconds);
+  }
+  const secondsHeader = headers.get("retry-after");
+  const seconds = secondsHeader === null ? Number.NaN : Number(secondsHeader);
+  return Number.isFinite(seconds) && seconds >= 0 ? Math.trunc(seconds * 1_000) : undefined;
 }
 
 function classifySdkError(error: unknown, signal: AbortSignal): ProviderFailure {
@@ -107,7 +137,12 @@ function classifySdkError(error: unknown, signal: AbortSignal): ProviderFailure 
     return failure("authorization", "The provider denied this request.", false);
   }
   if (error instanceof RateLimitError) {
-    return failure("rate-limit", "The provider rate-limited this request.", true);
+    return failure(
+      "rate-limit",
+      "The provider rate-limited this request.",
+      true,
+      retryAfterMs(error.headers),
+    );
   }
   if (error instanceof BadRequestError || error instanceof UnprocessableEntityError) {
     return failure("invalid-request", "The provider rejected the request shape.", false);
@@ -402,6 +437,63 @@ function retain(
   }
 }
 
+function parseRetainedContinuation(stateJson: string): RetainedContinuation | null {
+  if (stateJson.length === 0 || stateJson.length > MAX_CONTINUATION_STATE_JSON_LENGTH) {
+    return null;
+  }
+  let value: unknown;
+  try {
+    value = JSON.parse(stateJson) as unknown;
+  } catch {
+    return null;
+  }
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return null;
+  }
+  const record = value as Record<string, unknown>;
+  if (
+    record.schemaVersion !== PROVIDER_CONTINUATION_STATE_SCHEMA_VERSION ||
+    typeof record.responseId !== "string" ||
+    record.responseId.length === 0 ||
+    !Array.isArray(record.reasoning) ||
+    record.reasoning.some(
+      (item) =>
+        typeof item !== "object" ||
+        item === null ||
+        Array.isArray(item) ||
+        (item as Record<string, unknown>).type !== "reasoning" ||
+        typeof (item as Record<string, unknown>).id !== "string" ||
+        ((item as Record<string, unknown>).id as string).length === 0,
+    )
+  ) {
+    return null;
+  }
+  return {
+    responseId: record.responseId,
+    reasoning: record.reasoning as ResponseReasoningItem[],
+  };
+}
+
+function continuationStateJson(value: RetainedContinuation): string {
+  return JSON.stringify({
+    schemaVersion: PROVIDER_CONTINUATION_STATE_SCHEMA_VERSION,
+    responseId: value.responseId,
+    reasoning: value.reasoning,
+  });
+}
+
+function assistantToolCallIds(messages: readonly ModelMessage[]): readonly string[] {
+  return [
+    ...new Set(
+      messages.flatMap((message) =>
+        message.role === "assistant"
+          ? (message.toolCalls ?? []).map((call) => call.toolCallId)
+          : [],
+      ),
+    ),
+  ];
+}
+
 /** Create a direct official-SDK Responses transport adapter. */
 export function createOpenAiResponsesSdkAdapter(
   options: OpenAiResponsesSdkAdapterOptions,
@@ -450,6 +542,18 @@ export function createOpenAiResponsesSdkAdapter(
     transportCompatibilityId: transportCompatibility.compatibilityId,
     displayName: options.displayName ?? "OpenAI",
   };
+  const continuationKey = (
+    selectedModelId: ModelId,
+    transportCompatibilityId: string,
+    toolCallId: string,
+  ): ProviderContinuationStateKey => ({
+    profileId: identity.profileId,
+    providerId: identity.providerId,
+    destinationId: identity.destinationId,
+    transportCompatibilityId,
+    modelId: selectedModelId,
+    toolCallId,
+  });
 
   return {
     identity,
@@ -507,6 +611,54 @@ export function createOpenAiResponsesSdkAdapter(
         return;
       }
 
+      const retainedForRequest = new Map(retained);
+      let durableStateLoaded = 0;
+      if (options.continuationState !== undefined) {
+        for (const toolCallId of assistantToolCallIds(request.messages)) {
+          if (retainedForRequest.has(toolCallId)) {
+            continue;
+          }
+          const loaded = options.continuationState.load(
+            continuationKey(request.modelId, plan.compatibilityId, toolCallId),
+          );
+          if (!loaded.ok) {
+            yield errorEvent(
+              failure(
+                "adapter-defect",
+                "Durable provider continuation state could not be read.",
+                false,
+              ),
+            );
+            return;
+          }
+          if (loaded.value === null) {
+            continue;
+          }
+          const parsed = parseRetainedContinuation(loaded.value.stateJson);
+          if (parsed === null) {
+            yield errorEvent(
+              failure("adapter-defect", "Durable provider continuation state is malformed.", false),
+            );
+            return;
+          }
+          retain(retainedForRequest, toolCallId, parsed);
+          retain(retained, toolCallId, parsed);
+          durableStateLoaded += 1;
+        }
+      }
+      if (durableStateLoaded > 0) {
+        yield {
+          kind: "provider-metadata",
+          requestId: request.requestId,
+          modelAttemptId: attempt,
+          sequence: next(),
+          entries: {
+            continuationStateLoaded: "true",
+            continuationStateLoadedCount: String(durableStateLoaded),
+          },
+        };
+      }
+
       let apiKey: string | null;
       try {
         apiKey = await options.resolveApiKey(streamOptions.signal);
@@ -523,7 +675,7 @@ export function createOpenAiResponsesSdkAdapter(
 
       let body: ResponseCreateParamsStreaming;
       try {
-        body = responseBody(request, compatibility, retained);
+        body = responseBody(request, compatibility, retainedForRequest);
       } catch (error) {
         yield errorEvent(classifySdkError(error, streamOptions.signal));
         return;
@@ -812,11 +964,54 @@ export function createOpenAiResponsesSdkAdapter(
                 (state): state is ToolCallState & { callId: string } =>
                   state.callId !== null && state.proposed,
               );
+              const retainedValue: RetainedContinuation = {
+                responseId: event.response.id,
+                reasoning: compatibility.includeEncryptedReasoning ? [...reasoning] : [],
+              };
+              if (options.continuationState !== undefined && proposed.length > 0) {
+                const stateJson = continuationStateJson(retainedValue);
+                if (stateJson.length > MAX_CONTINUATION_STATE_JSON_LENGTH) {
+                  yield errorEvent(
+                    failure(
+                      "unsupported-capability",
+                      "Provider continuation state exceeds Falryn's durable bound.",
+                      false,
+                    ),
+                  );
+                  return;
+                }
+                const capturedAt = Math.max(0, Math.trunc(options.now?.() ?? Date.now()));
+                const saved = options.continuationState.save(
+                  proposed.map((state) => ({
+                    ...continuationKey(request.modelId, plan.compatibilityId, state.callId),
+                    schemaVersion: PROVIDER_CONTINUATION_STATE_SCHEMA_VERSION,
+                    stateJson,
+                    capturedAt,
+                  })),
+                );
+                if (!saved.ok) {
+                  yield errorEvent(
+                    failure(
+                      "adapter-defect",
+                      "Durable provider continuation state could not be retained.",
+                      false,
+                    ),
+                  );
+                  return;
+                }
+                yield {
+                  kind: "provider-metadata",
+                  requestId: request.requestId,
+                  modelAttemptId: attempt,
+                  sequence: next(),
+                  entries: {
+                    continuationStateSaved: "true",
+                    continuationStateSavedCount: String(proposed.length),
+                  },
+                };
+              }
               for (const state of proposed) {
-                retain(retained, state.callId, {
-                  responseId: event.response.id,
-                  reasoning: compatibility.includeEncryptedReasoning ? [...reasoning] : [],
-                });
+                retain(retained, state.callId, retainedValue);
               }
               yield {
                 kind: "finished",

@@ -6,7 +6,7 @@
  * gap, a repeat, or a version out of order is defective, and finding out
  * halfway through applying it means finding out on a user's only copy.
  *
- * The production list holds seven steps: migration `0001`, which creates the
+ * The production list starts with migration `0001`, which creates the
  * session, turn, model-attempt, invocation, event, and projection-cursor
  * tables, migration `0002`, which creates the artifact metadata table,
  * migration `0003`, which creates run identity, migration `0004`, which creates
@@ -17,7 +17,8 @@
  * exact provider adapter and destination without changing committed migration
  * `0007`, so an existing database retains a valid migration checksum. This
  * module owns migration-set rules while migration `0009` adds session-scoped,
- * artifact-backed scratch resources.
+ * artifact-backed scratch resources. Migration `0010` stores provider-opaque
+ * continuation state under exact route and model identity.
  * Those adjacent modules own the schema.
  *
  * The aggregate view of what the set produces — every product table and the
@@ -45,6 +46,10 @@ import {
   MODEL_CATALOG_GENERATIONS_TABLE,
   MODEL_CATALOG_ROUTE_BINDINGS_TABLE,
 } from "./model-catalog-schema.ts";
+import {
+  MIGRATION_0010,
+  PROVIDER_CONTINUATION_STATES_TABLE,
+} from "./provider-continuation-schema.ts";
 import { MIGRATION_0003, RUNS_TABLE } from "./run-schema.ts";
 import { MIGRATION_0001, RECORD_TABLES } from "./schema.ts";
 import {
@@ -71,6 +76,7 @@ export const PRODUCTION_MIGRATIONS: readonly Migration[] = [
   MIGRATION_0007,
   MIGRATION_0008,
   MIGRATION_0009,
+  MIGRATION_0010,
 ];
 
 /** Every product table the registered set creates, in creation order. */
@@ -85,6 +91,7 @@ export const PRODUCT_TABLES: readonly string[] = [
   MODEL_CATALOG_ROUTE_BINDINGS_TABLE,
   SCRATCH_RESOURCES_TABLE,
   SCRATCH_REVISIONS_TABLE,
+  PROVIDER_CONTINUATION_STATES_TABLE,
 ];
 
 function issue(

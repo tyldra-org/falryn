@@ -666,6 +666,7 @@ export function createProductAttemptRunner(
       let requestSequence = 0;
       let sentResults = 0;
       const usage: (UsageUnits | null)[] = [];
+      const providerMetadata: Record<string, string> = {};
       let briefRequest = input.brief?.request ?? null;
       let briefReceipt = input.brief?.receipt ?? null;
       let responseDensityControl: ModelResponseDensityControl | null = null;
@@ -731,6 +732,9 @@ export function createProductAttemptRunner(
           reasoningText.push(outcome.snapshot.reasoning);
         }
         usage.push(outcome.snapshot?.usage ?? null);
+        if (outcome.snapshot !== null) {
+          Object.assign(providerMetadata, outcome.snapshot.providerMetadata);
+        }
         return outcome;
       };
 
@@ -741,6 +745,7 @@ export function createProductAttemptRunner(
         providerRequests: requestSequence,
         usage: aggregateProviderUsage(usage),
         briefReceipt,
+        providerMetadata: { ...providerMetadata },
       });
 
       try {

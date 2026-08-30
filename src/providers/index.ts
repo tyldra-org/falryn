@@ -72,6 +72,13 @@ export {
   providerConnectionStateSchema,
 } from "./connection-schema.ts";
 export type {
+  ProviderContinuationStateError,
+  ProviderContinuationStateKey,
+  ProviderContinuationStatePort,
+  ProviderContinuationStateRecord,
+} from "./continuation-state.ts";
+export { PROVIDER_CONTINUATION_STATE_SCHEMA_VERSION } from "./continuation-state.ts";
+export type {
   OfficialProviderCredentialId,
   ProviderCredentialEnvironment,
 } from "./credential-environment.ts";

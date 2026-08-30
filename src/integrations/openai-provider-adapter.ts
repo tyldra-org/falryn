@@ -1,6 +1,7 @@
 /** OpenAI provider adapter with exact-model Chat Completions/Responses routing. */
 
 import { modelAttemptId, modelId, providerId } from "../domain/identity.ts";
+import type { ProviderContinuationStatePort } from "../providers/continuation-state.ts";
 import type { ProviderAdapterPort, ProviderStreamOptions } from "../providers/port.ts";
 import type { ModelRequest } from "../providers/request.ts";
 import type { NormalizedProviderEvent } from "../providers/stream.ts";
@@ -32,6 +33,8 @@ export type OpenAiProviderAdapterOptions = {
     | OpenAiChatTransportCompatibilityDeclaration
     | OpenAiResponsesTransportCompatibilityDeclaration;
   readonly modelCompatibility?: readonly ProviderModelTransportCompatibilityOverride[];
+  readonly continuationState?: ProviderContinuationStatePort;
+  readonly now?: () => number;
 };
 
 type OpenAiTransport = "chat" | "responses";
@@ -135,6 +138,10 @@ export function createOpenAiProviderAdapter(
         ? options.compatibility
         : OPENAI_RESPONSES_TRANSPORT_DEFAULT,
     modelCompatibility: responsesOverrides,
+    ...(options.continuationState === undefined
+      ? {}
+      : { continuationState: options.continuationState }),
+    ...(options.now === undefined ? {} : { now: options.now }),
   });
   const transportCompatibility = resolved.value.destination;
 

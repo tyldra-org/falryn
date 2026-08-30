@@ -106,6 +106,8 @@ export type AttemptRunnerResult = {
     readonly providerRequests?: number;
     readonly usage?: UsageUnits | null;
     readonly briefReceipt?: BriefReceipt | null;
+    /** Secret-safe provider receipts for diagnostics and replay inspection. */
+    readonly providerMetadata?: Readonly<Record<string, string>>;
   };
 };
 
