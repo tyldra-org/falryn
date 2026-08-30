@@ -169,8 +169,11 @@ route and attempt retain that exact profile/destination binding and catalog
 generation, so cache eviction, profile reconfiguration, or a later provider
 refresh cannot change or erase the facts used by an in-flight or replayed
 decision. Catalog and profile files never contain credential bytes.
-Live inference uses provider adapters. The OpenAI, Anthropic, and Google
-adapters each instantiate their official SDK directly. Command Code is one
+Live inference uses provider adapters. OpenAI is one Falryn provider above two
+official-SDK transport leaves: Chat Completions and Responses. Its immutable
+destination and exact-model plans select the leaf without changing provider
+identity. Anthropic and Google each instantiate their official SDK directly.
+Command Code is one
 Falryn provider whose composite adapter uses an exact model-to-protocol map:
 Claude execution IDs delegate to the Anthropic SDK leaf and the remaining
 published IDs delegate to the OpenAI SDK leaf. No model-name heuristic or
@@ -196,16 +199,26 @@ the selected plan's source and layer receipt; provider request metadata and the
 durable model-attempt binding retain its identity. The attempt runner refuses an
 identity or receipt that differs from the live adapter before network I/O.
 Existing profiles use the installed adapter's baseline. OpenAI profiles may
-instead declare the exact Chat Completions behavior for
+instead declare exact Chat Completions behavior for
 system or developer messages, output-token field, streaming usage, finish
 reason, strict tool schemas, tool-result names, and assistant bridging after a
-tool result at destination or exact-model scope. Exact-model declarations name
+tool result at destination or exact-model scope. The separate Responses
+declaration records instruction role, stateless encrypted-reasoning replay or
+stored previous-response continuation, provider storage, reasoning summary,
+prompt-cache retention, stream obfuscation, parallel calls, and strict tool
+schemas. The plan also records session affinity through the prompt-cache key and
+the supported automatic or default service tier. The Responses leaf translates function calls and outputs with their
+provider call identities, normalizes text, reasoning, usage, refusal,
+incomplete, failed, and terminal events, and rejects malformed or duplicate
+tool identities. Exact-model declarations name
 an enabled model and retain nullable HTTPS source and observation metadata. The
 strict profile codec rejects duplicate or disabled model overrides and any
 dialect that does not match the selected adapter. Source metadata is audit data,
 not authority. Falryn does not infer these facts from a model name, provider
-label, or endpoint URL. OpenAI Responses is not implemented by this Chat
-Completions adapter.
+label, or endpoint URL. Chat Completions and Responses state never cross their
+transport leaves. Responses continuation state is currently bounded and
+process-local; durable opaque-state persistence and restart/replay conformance
+remain unfinished in #856.
 
 Live turns also derive a secret-safe, session-scoped prompt-cache identity from
 the bound provider route, configuration and catalog generations, and the exact

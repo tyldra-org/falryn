@@ -12,6 +12,7 @@ import {
   providerId,
 } from "../domain/index.ts";
 import type { ModelDiscoveryPort, ProviderProfile } from "../providers/index.ts";
+import { OPENAI_RESPONSES_TRANSPORT_DEFAULT } from "../providers/index.ts";
 import type { GlobalOptions } from "./options.ts";
 import { composeProductProviderConnections } from "./product-provider-connections.ts";
 import { createServiceProvider } from "./services.ts";
@@ -402,5 +403,61 @@ describe("product provider connection persistence", () => {
       }
       expect(JSON.stringify(selected)).not.toContain("secret-not-projected");
     }
+  });
+
+  test("composes an OpenAI Responses destination without treating it as a provider", async () => {
+    const home = await mkdtemp(join(tmpdir(), "falryn-provider-openai-responses-"));
+    homes.push(home);
+    const services = createServiceProvider(GLOBALS, {
+      home: localPath(home),
+      platform: "darwin",
+      currentDirectory: localPath(home),
+      environment: createStaticEnvironment({
+        FALRYN_STATE_DIR: home,
+        FALRYN_TEST_OPENAI_KEY: "secret-not-projected",
+      }),
+    });
+    const product = composeProductProviderConnections(services(), GLOBALS, {
+      providerFetch: async () => {
+        throw new Error("adapter composition must not contact the provider");
+      },
+    });
+    const profile: ProviderProfile = {
+      ...localProfile(),
+      profileId: "openai-responses",
+      providerId: providerId.from("openai"),
+      displayName: "OpenAI Responses",
+      endpoint: "https://api.openai.com/v1",
+      credential: {
+        storeKind: "environment",
+        locator: "FALRYN_TEST_OPENAI_KEY",
+        consumer: "provider:openai",
+        accountLabel: null,
+      },
+      enabledModels: [modelId.from("gpt-5.6-sol")],
+      transportCompatibility: OPENAI_RESPONSES_TRANSPORT_DEFAULT,
+    };
+
+    expect(await product.service.execute({ kind: "add", profile })).toMatchObject({
+      kind: "completed",
+    });
+    expect(
+      await product.service.execute({ kind: "use", profileId: "openai-responses" }),
+    ).toMatchObject({ kind: "completed", selectedProfileId: "openai-responses" });
+
+    const selected = await product.resolveSelected();
+    expect(selected.kind).toBe("ready");
+    if (selected.kind === "ready") {
+      expect(selected.adapter.identity).toMatchObject({
+        adapterKind: "openai",
+        providerId: "openai",
+        profileId: "openai-responses",
+      });
+      expect(
+        selected.adapter.transportCompatibilityFor(modelId.from("gpt-5.6-sol"))?.declaration
+          .dialect,
+      ).toBe("openai-responses");
+    }
+    expect(JSON.stringify(selected)).not.toContain("secret-not-projected");
   });
 });

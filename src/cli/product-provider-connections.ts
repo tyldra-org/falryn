@@ -18,7 +18,7 @@ import {
   createGoogleGenAiSdkAdapter,
   createHostCommandRunner,
   createOfficialModelDiscovery,
-  createOpenAiSdkAdapter,
+  createOpenAiProviderAdapter,
   hostPlatform,
   type OpenAiSdkFetch,
   type OwnedProcessRegistry,
@@ -172,10 +172,13 @@ export function composeProductProviderConnections(
           if (profile.endpoint === null) {
             return { kind: "unavailable", code: "provider-adapter-unavailable", session };
           }
-          if (compatibility.value.declaration.dialect !== "openai-chat-completions") {
+          if (
+            compatibility.value.declaration.dialect !== "openai-chat-completions" &&
+            compatibility.value.declaration.dialect !== "openai-responses"
+          ) {
             return { kind: "unavailable", code: "transport-compatibility-mismatch", session };
           }
-          adapter = createOpenAiSdkAdapter({
+          adapter = createOpenAiProviderAdapter({
             ...common,
             baseUrl: profile.endpoint,
             compatibility: compatibility.value.declaration,

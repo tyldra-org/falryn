@@ -7,6 +7,7 @@ const INTEGRATIONS_ROOT = dirname(import.meta.path);
 const SDK_LEAF_ADAPTERS = {
   "anthropic-sdk-adapter.ts": 'from "@anthropic-ai/sdk"',
   "google-genai-sdk-adapter.ts": 'from "@google/genai"',
+  "openai-responses-sdk-adapter.ts": 'from "openai"',
   "openai-sdk-adapter.ts": 'from "openai"',
 } as const;
 
@@ -36,5 +37,13 @@ describe("provider adapter naming", () => {
     expect(commandCode).not.toMatch(/from ["'](?:openai|@anthropic-ai\/sdk)["']/u);
     expect(commandCode).not.toContain("CommandCodeSdkAdapter");
     expect(commandCode).not.toContain("createCommandCodeSdkAdapter");
+  });
+
+  test("names OpenAI as a provider above its SDK transport leaves", async () => {
+    const openAi = await source("openai-provider-adapter.ts");
+
+    expect(openAi).toContain("createOpenAiSdkAdapter");
+    expect(openAi).toContain("createOpenAiResponsesSdkAdapter");
+    expect(openAi).not.toMatch(/from ["']openai["']/u);
   });
 });

@@ -10,6 +10,10 @@ import {
   OPENAI_ASSISTANT_AFTER_TOOL_RESULT_MODES,
   OPENAI_FINISH_REASON_MODES,
   OPENAI_MAX_OUTPUT_TOKEN_FIELDS,
+  OPENAI_RESPONSES_CONTINUATION_MODES,
+  OPENAI_RESPONSES_PROMPT_CACHE_TTLS,
+  OPENAI_RESPONSES_REASONING_SUMMARIES,
+  OPENAI_RESPONSES_SERVICE_TIERS,
   OPENAI_STREAMING_USAGE_MODES,
   OPENAI_SYSTEM_MESSAGE_ROLES,
   OPENAI_TOOL_RESULT_NAME_MODES,
@@ -36,6 +40,46 @@ export const providerTransportCompatibilityDeclarationSchema: z.ZodType<Provider
         assistantAfterToolResult: z.enum(OPENAI_ASSISTANT_AFTER_TOOL_RESULT_MODES),
       })
       .strict(),
+    z
+      .strictObject({
+        schemaVersion: version,
+        dialect: z.literal("openai-responses"),
+        systemMessageRole: z.enum(OPENAI_SYSTEM_MESSAGE_ROLES),
+        continuation: z.enum(OPENAI_RESPONSES_CONTINUATION_MODES),
+        store: z.boolean(),
+        includeEncryptedReasoning: z.boolean(),
+        reasoningSummary: z.enum(OPENAI_RESPONSES_REASONING_SUMMARIES),
+        promptCacheTtl: z.enum(OPENAI_RESPONSES_PROMPT_CACHE_TTLS),
+        sessionAffinity: z.literal("prompt-cache-key"),
+        serviceTier: z.enum(OPENAI_RESPONSES_SERVICE_TIERS),
+        streamObfuscation: z.boolean(),
+        strictToolSchemas: z.boolean(),
+        parallelToolCalls: z.boolean(),
+      })
+      .strict()
+      .superRefine((declaration, context) => {
+        if (declaration.continuation === "previous-response" && !declaration.store) {
+          context.addIssue({
+            code: "custom",
+            path: ["store"],
+            message: "previous-response continuation requires provider storage",
+          });
+        }
+        if (declaration.continuation === "stateless" && declaration.store) {
+          context.addIssue({
+            code: "custom",
+            path: ["store"],
+            message: "stateless continuation cannot enable provider storage",
+          });
+        }
+        if (declaration.continuation === "stateless" && !declaration.includeEncryptedReasoning) {
+          context.addIssue({
+            code: "custom",
+            path: ["includeEncryptedReasoning"],
+            message: "stateless continuation must retain encrypted reasoning",
+          });
+        }
+      }),
     z.strictObject({ schemaVersion: version, dialect: z.literal("anthropic-messages") }),
     z.strictObject({ schemaVersion: version, dialect: z.literal("google-generate-content") }),
     z.strictObject({ schemaVersion: version, dialect: z.literal("command-code-router") }),
