@@ -77,6 +77,10 @@ export type AttemptModelInput = {
         readonly available: boolean;
         readonly executable: boolean;
         readonly disclosed: boolean;
+        readonly health?: string;
+        readonly selected?: boolean;
+        readonly projected?: boolean;
+        readonly diagnosticCodes?: readonly string[];
       }[];
     };
     readonly families: readonly {

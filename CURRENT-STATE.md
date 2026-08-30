@@ -307,12 +307,31 @@ arbitrary entry quota, while queries default to 32 entries and are capped at
 extension, agent, workflow, provider, and UI loaders remain with their owning
 issues.
 
+Each registry generation can now be inspected through one consumer-specific
+capability-health snapshot. The pure evaluator combines declared lifecycle and
+operational state with supplied platform, architecture, dependency, credential,
+resource, policy, probe, provider/attempt-runner/workspace, and external-host
+facts. Healthy, degraded, unavailable, incompatible, denied, quarantined, and
+unknown remain distinct from registered, disclosed, executable, projected,
+selected, and active. Bounded active probes validate catalog identity, count,
+concurrency, timeout, cancellation, and freshness; their text and recovery
+handles are redacted before projection. Stale results become unknown.
+
+The product runtime exposes that same immutable snapshot to native-model, CLI,
+OpenTUI, headless, and external-host consumers. Its read-only inspector derives
+tools queries, deduplicated doctor findings, and effective permission facts from
+one generation. Queries default to 32 rows and admit at most 256, carry a
+deterministic continuation handle, and reject stale generations. Permission
+changes remain owned by settings rather than the inspector. Slash command
+parsing and completion for these actions are not claimed here.
+
 The provider request contains only the disclosed tool definitions and bounded
 compact capability cards, not the whole registered catalog or implementation
 bodies. The attempt event retains the provider profile,
 adapter kind, secret-safe destination identity, model route, resolved reasoning
 control, catalog, capability-schema, and policy generations, contribution
 counts/cards, capability cost/latency classes, tool-schema digests, schema cost,
+effective health/selection/projection flags, stable diagnostic codes,
 unavailable capability families,
 omissions, and a `capability-catalog:<generation>` discovery handle. Provider
 disconnects, malformed requests, cancellation, timeout,

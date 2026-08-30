@@ -36,6 +36,7 @@ describe("what the runtime can describe", () => {
       "shutdown",
       "codec",
       "credentials",
+      "capability",
     ]);
   });
 
