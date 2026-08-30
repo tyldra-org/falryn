@@ -242,6 +242,11 @@ export {
   PRODUCT_BRIEF_OWNER,
   productBriefModeFromFrontend,
 } from "./product-brief.ts";
+export {
+  capabilityEntryFromTool,
+  capabilityFamilyForTool,
+  createProductCapabilityRegistry,
+} from "./product-capability-registry.ts";
 export type {
   ProductContextReceipt,
   ProductContextSource,
@@ -386,7 +391,7 @@ export {
   composeProductMemoryTools,
   PRODUCT_MEMORY_TOOLS_OWNER,
 } from "./product-tools-memory.ts";
-export type { ProductToolBundle } from "./product-tools-merge.ts";
+export type { ProductToolBundle, ProductToolSourceBundle } from "./product-tools-merge.ts";
 export { mergeProductToolBundles } from "./product-tools-merge.ts";
 export type {
   ProductProcessToolPorts,

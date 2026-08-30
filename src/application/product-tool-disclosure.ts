@@ -11,7 +11,10 @@ import { createHash } from "node:crypto";
 import { z } from "zod";
 
 import type {
+  CapabilityCard,
   CapabilityId,
+  CapabilityLifecycle,
+  CapabilityRegistry,
   ConfigurationGeneration,
   EffectClass,
   EffectiveExecutionPolicy,
@@ -19,22 +22,19 @@ import type {
   ToolCapabilityKind,
   ToolRegistry,
 } from "../domain/index.ts";
+import {
+  CAPABILITY_CONTRIBUTION_KINDS,
+  CAPABILITY_FAMILIES,
+  capabilityCard,
+  capabilityLifecycle,
+} from "../domain/index.ts";
 import type { ModelToolDefinition } from "../providers/index.ts";
 
 export const PRODUCT_TOOL_DISCLOSURE_SCHEMA_VERSION = 1;
 /** Hard schema-count guard; profile ordering, not a per-mode quota, selects below it. */
 export const MAX_DISCLOSED_PRODUCT_TOOLS = 24;
 
-export const MODEL_CAPABILITY_FAMILIES = [
-  "search",
-  "read",
-  "edit",
-  "run",
-  "browser",
-  "computer",
-  "delegate",
-  "capability",
-] as const;
+export const MODEL_CAPABILITY_FAMILIES = CAPABILITY_FAMILIES;
 
 export type ModelCapabilityFamily = (typeof MODEL_CAPABILITY_FAMILIES)[number];
 
@@ -53,12 +53,16 @@ export type DisclosedProductTool = {
   readonly schemaDigest: string;
   readonly schemaBytes: number;
   readonly schemaTokensEstimated: number;
+  readonly lifecycle: CapabilityLifecycle;
 };
 
 export type CapabilityDisclosureReceipt = {
   readonly schemaVersion: typeof PRODUCT_TOOL_DISCLOSURE_SCHEMA_VERSION;
   readonly catalogGeneration: ConfigurationGeneration;
   readonly families: readonly CapabilityFamilyAvailability[];
+  readonly capabilityCards: readonly CapabilityCard[];
+  readonly registryTotal: number;
+  readonly registryCounts: Readonly<Record<string, number>>;
   readonly disclosed: readonly DisclosedProductTool[];
   readonly omitted: readonly { readonly name: string; readonly reason: string }[];
   readonly schemaBytes: number;
@@ -184,28 +188,37 @@ function isClosedSchema(value: unknown): boolean {
 }
 
 function familyAvailability(
-  disclosed: readonly DisclosedProductTool[],
+  registry: CapabilityRegistry,
   policy: EffectiveExecutionPolicy | undefined,
 ): readonly CapabilityFamilyAvailability[] {
-  const kinds = new Set(disclosed.map((entry) => entry.capabilityKind));
-  const available = (family: ModelCapabilityFamily): boolean => {
-    switch (family) {
-      case "search":
-        return kinds.has("search") || kinds.has("lsp");
-      case "read":
-      case "edit":
-        return kinds.has("filesystem");
-      case "run":
-        return kinds.has("process") || kinds.has("git");
-      case "browser":
-        return kinds.has("browser") || kinds.has("network");
-      case "computer":
-        return kinds.has("computer-use");
-      case "delegate":
-        return false;
-      case "capability":
-        return true;
+  const eligible = (entry: CapabilityRegistry["entries"][number]): boolean => {
+    const operational = entry.state.operational;
+    if (
+      !operational.installed ||
+      !operational.configured ||
+      !operational.allowed ||
+      operational.denied ||
+      operational.incompatible ||
+      operational.quarantined
+    ) {
+      return false;
     }
+    if (entry.state.availability !== "available" && entry.state.availability !== "degraded") {
+      return false;
+    }
+    if (policy === undefined) return true;
+    if (policy.deniedEffects.includes(entry.effect)) return false;
+    if (
+      (entry.kind === "tool" || entry.kind === "mcp-tool") &&
+      policy.deniedToolNames.includes(entry.name)
+    ) {
+      return false;
+    }
+    return true;
+  };
+  const available = (family: ModelCapabilityFamily): boolean => {
+    if (family === "capability") return true;
+    return registry.entries.some((entry) => entry.family === family && eligible(entry));
   };
   return MODEL_CAPABILITY_FAMILIES.map((family) => ({
     family,
@@ -213,8 +226,8 @@ function familyAvailability(
     reason: available(family)
       ? null
       : policy === undefined
-        ? "no executable descriptor in this catalog generation"
-        : `no ${policy.profileId}-eligible descriptor disclosed from this catalog generation`,
+        ? "no available descriptor in this catalog generation"
+        : `no ${policy.profileId}-eligible descriptor available in this catalog generation`,
   }));
 }
 
@@ -239,9 +252,13 @@ function policyOmissionReason(
  * this in #193; #786 keeps the first live attempt bounded and inspectable.
  */
 export function discloseProductTools(
+  capabilityRegistry: CapabilityRegistry,
   registry: ToolRegistry,
   options: ProductToolDisclosureOptions = {},
 ): ProductToolDisclosure {
+  if (capabilityRegistry.generation !== registry.generation) {
+    throw new Error("capability and tool registry generations do not match");
+  }
   const maximum = options.maximum ?? MAX_DISCLOSED_PRODUCT_TOOLS;
   const executionPolicy = options.executionPolicy;
   const selected = [];
@@ -305,6 +322,10 @@ export function discloseProductTools(
   }));
   const disclosed = selected.map(({ entry, parameters }) => {
     const measured = measureProductToolSchema(parameters);
+    const capability = capabilityRegistry.resolveById(entry.manifest.capabilityId);
+    if (capability === null) {
+      throw new Error(`tool missing from capability registry: ${entry.manifest.name}`);
+    }
     return {
       name: entry.manifest.name,
       capabilityId: entry.manifest.capabilityId,
@@ -314,15 +335,38 @@ export function discloseProductTools(
       schemaDigest: measured.digest,
       schemaBytes: measured.bytes,
       schemaTokensEstimated: measured.tokensEstimated,
+      lifecycle: capabilityLifecycle(capability, { disclosed: true }),
     };
   });
+  const disclosedIds = new Set(disclosed.map((entry) => entry.capabilityId));
+  const capabilityCards = [
+    ...disclosed.map((tool) => {
+      const entry = capabilityRegistry.resolveById(tool.capabilityId);
+      if (entry === null) throw new Error(`disclosed capability missing: ${tool.name}`);
+      return capabilityCard(entry, { disclosed: true });
+    }),
+    ...capabilityRegistry.entries
+      .filter((entry) => entry.kind !== "tool" && entry.kind !== "mcp-tool")
+      .filter((entry) => !disclosedIds.has(entry.capabilityId))
+      .slice(0, Math.max(0, maximum - disclosed.length))
+      .map((entry) => capabilityCard(entry, { disclosed: true })),
+  ];
+  const registryCounts = Object.fromEntries(
+    CAPABILITY_CONTRIBUTION_KINDS.map((kind) => [
+      kind,
+      capabilityRegistry.entries.filter((entry) => entry.kind === kind).length,
+    ]),
+  );
   return {
     promptTools,
     modelTools,
     receipt: {
       schemaVersion: PRODUCT_TOOL_DISCLOSURE_SCHEMA_VERSION,
       catalogGeneration: registry.generation,
-      families: familyAvailability(disclosed, executionPolicy),
+      families: familyAvailability(capabilityRegistry, executionPolicy),
+      capabilityCards,
+      registryTotal: capabilityRegistry.entries.length,
+      registryCounts,
       disclosed,
       omitted,
       schemaBytes: disclosed.reduce((total, tool) => total + tool.schemaBytes, 0),
@@ -330,7 +374,7 @@ export function discloseProductTools(
         (total, tool) => total + tool.schemaTokensEstimated,
         0,
       ),
-      discoveryHandle: `tool-catalog:${registry.generation}`,
+      discoveryHandle: `capability-catalog:${capabilityRegistry.generation}`,
     },
   };
 }

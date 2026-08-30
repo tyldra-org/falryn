@@ -389,7 +389,10 @@ function attemptBinding(
     policyGeneration: generation,
     runner: "product-attempt-runner.v1",
     gateway: "product-tool-gateway.v1",
-    discoveryHandle: disclosure?.discoveryHandle ?? `tool-catalog:${generation}`,
+    discoveryHandle: disclosure?.discoveryHandle ?? `capability-catalog:${generation}`,
+    ...(disclosure?.capabilityCatalog === undefined
+      ? {}
+      : { capabilityCatalog: disclosure.capabilityCatalog }),
     families: disclosure?.families ?? [],
     tools: disclosure?.tools ?? [],
     omitted: disclosure?.omitted ?? [],

@@ -62,6 +62,23 @@ export type AttemptModelInput = {
     readonly catalogGeneration: ConfigurationGeneration;
     readonly toolNames: readonly string[];
     readonly discoveryHandle: string;
+    /** Compact non-secret inventory facts; exact schemas stay in `tools`. */
+    readonly capabilityCatalog?: {
+      readonly total: number;
+      readonly counts: Readonly<Record<string, number>>;
+      readonly cards: readonly {
+        readonly capabilityId: CapabilityId;
+        readonly kind: string;
+        readonly family: string | null;
+        readonly source: string;
+        readonly version: number;
+        readonly costClass: string;
+        readonly latencyClass: string;
+        readonly available: boolean;
+        readonly executable: boolean;
+        readonly disclosed: boolean;
+      }[];
+    };
     readonly families: readonly {
       readonly family: string;
       readonly available: boolean;

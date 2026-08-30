@@ -223,7 +223,7 @@ function sampleModelInput(): AttemptModelInput {
     disclosure: {
       catalogGeneration: generation,
       toolNames: ["read_file"],
-      discoveryHandle: "tool-catalog:0",
+      discoveryHandle: "capability-catalog:0",
       families: [
         { family: "read", available: true, reason: null },
         { family: "browser", available: false, reason: "not-installed" },
@@ -708,7 +708,7 @@ describe("turn attempt policy", () => {
         modelCapabilitySchemaVersion: 1,
         toolCatalogGeneration: generation,
         policyGeneration: generation,
-        discoveryHandle: "tool-catalog:0",
+        discoveryHandle: "capability-catalog:0",
         schemaBytes: 48,
         schemaTokensEstimated: 12,
         tools: [{ name: "read_file", schemaDigest: "sha-256:read" }],

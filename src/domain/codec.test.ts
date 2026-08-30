@@ -71,7 +71,25 @@ describe("round trip", () => {
           policyGeneration: configurationGeneration.from(4),
           runner: "product-attempt-runner.v1" as const,
           gateway: "product-tool-gateway.v1" as const,
-          discoveryHandle: "tool-catalog:4",
+          discoveryHandle: "capability-catalog:4",
+          capabilityCatalog: {
+            total: 1,
+            counts: { tool: 1 },
+            cards: [
+              {
+                capabilityId: capabilityId.from("workspace.read_file"),
+                kind: "tool",
+                family: "read",
+                source: "builtin",
+                version: 1,
+                costClass: "unknown",
+                latencyClass: "unknown",
+                available: true,
+                executable: true,
+                disclosed: true,
+              },
+            ],
+          },
           families: [{ family: "read", available: true, reason: null }],
           tools: [
             {

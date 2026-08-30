@@ -101,6 +101,28 @@ const modelAttemptBindingSchema: z.ZodType<ModelAttemptBinding> = z.object({
   runner: z.literal("product-attempt-runner.v1"),
   gateway: z.literal("product-tool-gateway.v1"),
   discoveryHandle: z.string().min(1),
+  capabilityCatalog: z
+    .object({
+      total: z.int().nonnegative(),
+      counts: z.record(z.string().min(1), z.int().nonnegative()),
+      cards: z
+        .array(
+          z.object({
+            capabilityId: brandedString(capabilityId),
+            kind: z.string().min(1),
+            family: z.string().min(1).nullable(),
+            source: z.string().min(1),
+            version: z.int().positive(),
+            costClass: z.string().min(1),
+            latencyClass: z.string().min(1),
+            available: z.boolean(),
+            executable: z.boolean(),
+            disclosed: z.boolean(),
+          }),
+        )
+        .max(256),
+    })
+    .optional(),
   families: z.array(
     z.object({
       family: z.string().min(1),

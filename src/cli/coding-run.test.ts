@@ -254,6 +254,16 @@ describe("runCoding", () => {
         .some(
           (part) =>
             part.kind === "text" &&
+            part.text.includes("source=capability-catalog:0") &&
+            part.text.includes("Registry inventory:"),
+        ),
+    ).toBe(true);
+    expect(
+      requests[0]?.messages
+        .flatMap((message) => message.parts)
+        .some(
+          (part) =>
+            part.kind === "text" &&
             part.text.includes("Keep citations") &&
             part.text.includes("Keep validation results"),
         ),

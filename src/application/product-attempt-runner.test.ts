@@ -34,6 +34,7 @@ import {
   type RoutingReceipt,
 } from "../providers/index.ts";
 import { composeProductAgentRuntime } from "./product-agent-runtime.ts";
+import { createProductCapabilityRegistry } from "./product-capability-registry.ts";
 import { discloseProductTools } from "./product-tool-disclosure.ts";
 import { composeProductProcessTools } from "./product-tools-process.ts";
 import { composeProductWorkspaceTools } from "./product-tools-workspace.ts";
@@ -70,7 +71,10 @@ function setup(
   if (!runtime.ok) {
     throw new Error(runtime.error.code);
   }
-  const disclosure = discloseProductTools(tools.registry);
+  const disclosure = discloseProductTools(
+    createProductCapabilityRegistry(tools.registry.generation, tools.registry),
+    tools.registry,
+  );
   return { adapter, correlation, runtime: runtime.value, disclosure };
 }
 
@@ -806,7 +810,10 @@ describe("createProductAttemptRunner", () => {
     if (!runtime.ok) {
       throw new Error(runtime.error.code);
     }
-    const disclosure = discloseProductTools(tools.registry);
+    const disclosure = discloseProductTools(
+      createProductCapabilityRegistry(tools.registry.generation, tools.registry),
+      tools.registry,
+    );
     const targetTurn = turnId.from("turn-attempt-process");
     const hosted = await runtime.value.hostTurn({
       turnId: targetTurn,

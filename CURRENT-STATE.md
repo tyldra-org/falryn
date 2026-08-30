@@ -296,12 +296,26 @@ the selected mechanism, eligibility threshold, cache digests, and stable
 boundary, never prompt text or credentials. Normalized usage keeps
 provider-reported cache reads and cache writes distinct.
 
-The provider request contains only the disclosed tool definitions, not the
-whole registered catalog. The attempt event retains the provider profile,
+Falryn now publishes the executable tool inventory into one immutable shared
+capability registry generation. Its strict contribution contract covers tools,
+MCP tools/resources/prompts, skills, hooks, plugins, commands, agents/subagents,
+workflows, providers, and UI contributions without treating those primitives as
+one executor. Existing tool capability IDs remain canonical; `ToolRegistry`
+continues to own exact schemas and runner bindings. Installed inventory has no
+arbitrary entry quota, while queries default to 32 entries and are capped at
+256. Current production loaders contribute the built-in product tools. Live
+extension, agent, workflow, provider, and UI loaders remain with their owning
+issues.
+
+The provider request contains only the disclosed tool definitions and bounded
+compact capability cards, not the whole registered catalog or implementation
+bodies. The attempt event retains the provider profile,
 adapter kind, secret-safe destination identity, model route, resolved reasoning
-control, catalog, capability-schema, and policy generations, tool-schema
-digests, schema cost, unavailable capability families, omissions, and discovery
-handle. Provider disconnects, malformed requests, cancellation, timeout,
+control, catalog, capability-schema, and policy generations, contribution
+counts/cards, capability cost/latency classes, tool-schema digests, schema cost,
+unavailable capability families,
+omissions, and a `capability-catalog:<generation>` discovery handle. Provider
+disconnects, malformed requests, cancellation, timeout,
 fallback exhaustion, and uncertain effects remain typed outcomes. Completed or
 uncertain consequential tool effects are not retried as fresh work.
 
@@ -470,7 +484,8 @@ provider execution. This selection remains process-local; durable role and
 fallback editing is still outside the current interface.
 
 The current disclosure path selects a bounded profile-eligible subset from the
-registered catalog and records selected, omitted, and unavailable reasons. The
+shared registry, resolves exact executable schemas through `ToolRegistry`, and
+records selected, omitted, unavailable, and non-executable facts. The
 broader task-aware opportunity planner for automatic skill, MCP, workflow,
 delegation, and background-work activation is not claimed here.
 

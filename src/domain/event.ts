@@ -122,6 +122,25 @@ export type ModelAttemptBinding = {
   readonly runner: "product-attempt-runner.v1";
   readonly gateway: "product-tool-gateway.v1";
   readonly discoveryHandle: string;
+  /** Bounded, secret-free inventory facts for replay and support inspection. */
+  readonly capabilityCatalog?:
+    | {
+        readonly total: number;
+        readonly counts: Readonly<Record<string, number>>;
+        readonly cards: readonly {
+          readonly capabilityId: CapabilityId;
+          readonly kind: string;
+          readonly family: string | null;
+          readonly source: string;
+          readonly version: number;
+          readonly costClass: string;
+          readonly latencyClass: string;
+          readonly available: boolean;
+          readonly executable: boolean;
+          readonly disclosed: boolean;
+        }[];
+      }
+    | undefined;
   readonly families: readonly {
     readonly family: string;
     readonly available: boolean;
