@@ -21,6 +21,7 @@ import {
   createHostAuthorizedProviderLogin,
   createHostCommandRunner,
   createOfficialModelDiscovery,
+  createOpenAiCodexAuthorizedLoginAdapter,
   createOpenAiProviderAdapter,
   hostPlatform,
   type OpenAiSdkFetch,
@@ -37,6 +38,7 @@ import type {
 } from "../providers/index.ts";
 import {
   COMMAND_CODE_OPENAI_BASE_URL,
+  OPENAI_CODEX_AUTHORIZATION_UNAVAILABLE_CODE,
   parseProviderConnectionState,
   resolveProviderTransportCompatibility,
 } from "../providers/index.ts";
@@ -105,33 +107,44 @@ export function composeProductProviderConnections(
   const commands = createHostCommandRunner(
     options.ownedProcesses === undefined ? {} : { ownedProcesses: options.ownedProcesses },
   );
-  const credentials = composeProductCredentials({
+  const credentialOptions = {
     clock: services.clock,
     commands,
     platform: hostPlatform(),
     environment: services.environment,
-    ...(options.credentialSecrets === undefined ? {} : { secrets: options.credentialSecrets }),
-  });
-  const authorizedAdapters = options.authorizedLoginAdapters ?? [];
-  const authorizedLogin =
-    authorizedAdapters.length === 0
-      ? undefined
-      : createAuthorizedProviderLogin({
-          registry: createAuthorizedLoginAdapterRegistry(authorizedAdapters),
-          credentials,
-          clock: services.clock,
-          host:
-            options.authorizedLoginHost ??
-            createHostAuthorizedProviderLogin({
-              commands,
-              platform: hostPlatform(),
-              environment: services.environment,
-              ...(options.authorizationInteraction === undefined
-                ? {}
-                : { interaction: options.authorizationInteraction }),
-              allowBrowser: options.allowAuthorizationBrowser === true && !globals.nonInteractive,
-            }),
-        });
+  };
+  const credentials =
+    options.credentialSecrets === undefined
+      ? composeProductCredentials(credentialOptions)
+      : composeProductCredentials({ ...credentialOptions, secrets: options.credentialSecrets });
+  const authorizedAdapters = options.authorizedLoginAdapters ?? [
+    createOpenAiCodexAuthorizedLoginAdapter(),
+  ];
+  let authorizedLogin: ReturnType<typeof createAuthorizedProviderLogin> | undefined;
+  if (authorizedAdapters.length > 0) {
+    let host = options.authorizedLoginHost;
+    if (host === undefined) {
+      const hostOptions = {
+        commands,
+        platform: hostPlatform(),
+        environment: services.environment,
+        allowBrowser: options.allowAuthorizationBrowser === true && !globals.nonInteractive,
+      };
+      host =
+        options.authorizationInteraction === undefined
+          ? createHostAuthorizedProviderLogin(hostOptions)
+          : createHostAuthorizedProviderLogin({
+              ...hostOptions,
+              interaction: options.authorizationInteraction,
+            });
+    }
+    authorizedLogin = createAuthorizedProviderLogin({
+      registry: createAuthorizedLoginAdapterRegistry(authorizedAdapters),
+      credentials,
+      clock: services.clock,
+      host,
+    });
+  }
   const store = configurationStore(services, globals, options.configuration);
   const remoteDiscovery =
     options.modelDiscovery ??
@@ -276,6 +289,12 @@ export function composeProductProviderConnections(
             ...(options.providerFetch === undefined ? {} : { fetch: options.providerFetch }),
           });
           break;
+        case "openai-codex":
+          return {
+            kind: "unavailable",
+            code: OPENAI_CODEX_AUTHORIZATION_UNAVAILABLE_CODE,
+            session,
+          };
         case "custom":
         case "deterministic":
           return { kind: "unavailable", code: "provider-adapter-unavailable", session };

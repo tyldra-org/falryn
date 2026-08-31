@@ -25,6 +25,7 @@ import {
   type ModelRequest,
   modelRequestId,
   type NormalizedProviderEvent,
+  OPENAI_CODEX_AUTHORIZATION_UNAVAILABLE_CODE,
   OPENAI_RESPONSES_TRANSPORT_DEFAULT,
 } from "../providers/index.ts";
 import type { GlobalOptions } from "./options.ts";
@@ -198,6 +199,144 @@ describe("product provider connection persistence", () => {
     expect(document).toContain('"connections"');
     expect(document).toContain('"selectedProfileId": "local"');
     expect(document).not.toContain("sk-live-secret-material");
+  });
+
+  test("fails OpenAI Codex subscription login with the source-verified provider-policy code", async () => {
+    const home = await mkdtemp(join(tmpdir(), "falryn-provider-openai-codex-"));
+    homes.push(home);
+    const services = createServiceProvider(GLOBALS, {
+      home: localPath(home),
+      platform: "darwin",
+      currentDirectory: localPath(home),
+      environment: createStaticEnvironment({ FALRYN_STATE_DIR: home }),
+    });
+    let secretWrites = 0;
+    let authorizationHostCalls = 0;
+    const credentialSecrets: OperatingSystemSecretsPort = {
+      get: async () => null,
+      set: async () => {
+        secretWrites += 1;
+      },
+      delete: async () => false,
+    };
+    const authorizedLoginHost: AuthorizedProviderLoginHost = {
+      crypto: {
+        randomBase64Url: () => {
+          authorizationHostCalls += 1;
+          return "unexpected-random";
+        },
+        sha256Base64Url: () => {
+          authorizationHostCalls += 1;
+          return "unexpected-digest";
+        },
+        equal: () => {
+          authorizationHostCalls += 1;
+          return false;
+        },
+      },
+      loopback: {
+        listen: async () => {
+          authorizationHostCalls += 1;
+          return { kind: "unavailable", code: "unexpected-loopback" };
+        },
+      },
+      browser: {
+        launch: async () => {
+          authorizationHostCalls += 1;
+          return { kind: "unavailable", code: "unexpected-browser" };
+        },
+      },
+      interaction: {
+        presentLocalLaunchUri: async () => {
+          authorizationHostCalls += 1;
+          return { kind: "unavailable" };
+        },
+        requestAuthorizationCode: async () => {
+          authorizationHostCalls += 1;
+          return { kind: "unavailable" };
+        },
+        presentDeviceCode: async () => {
+          authorizationHostCalls += 1;
+          return { kind: "unavailable" };
+        },
+      },
+    };
+    const composition = composeProductProviderConnections(services(), GLOBALS, {
+      credentialSecrets,
+      authorizedLoginHost,
+    });
+    const { service } = composition;
+    const profile: ProviderProfile = {
+      profileId: "openai-codex",
+      providerId: providerId.from("openai-codex"),
+      adapterKind: "openai-codex",
+      displayName: "OpenAI Codex",
+      endpoint: null,
+      credential: null,
+      organization: null,
+      project: null,
+      enabledModels: [modelId.from("gpt-5-codex")],
+      transportCompatibility: null,
+      modelCapabilities: [],
+      discovery: "static",
+      timeouts: { connectMs: 1_000, requestMs: 10_000 },
+    };
+
+    expect(
+      await service.execute({ kind: "add", profile: { ...profile, discovery: "remote" } }),
+    ).toMatchObject({
+      kind: "failed",
+      issue: { code: "invalid-profile", retryable: false },
+    });
+    expect(await service.execute({ kind: "add", profile })).toMatchObject({
+      kind: "completed",
+      connections: [{}, { profileId: "openai-codex", authMethods: [] }],
+      discovery: {
+        kind: "failed",
+        code: OPENAI_CODEX_AUTHORIZATION_UNAVAILABLE_CODE,
+        retryable: false,
+      },
+    });
+    for (const action of [
+      {
+        kind: "login-api-key" as const,
+        profileId: "openai-codex",
+        secret: "must-not-be-stored",
+        accountLabel: null,
+      },
+      {
+        kind: "login-authorized" as const,
+        profileId: "openai-codex",
+        method: "oauth-pkce" as const,
+      },
+      {
+        kind: "login-authorized" as const,
+        profileId: "openai-codex",
+        method: "device-code" as const,
+      },
+    ]) {
+      expect(await service.execute(action)).toMatchObject({
+        kind: "failed",
+        issue: { code: OPENAI_CODEX_AUTHORIZATION_UNAVAILABLE_CODE, retryable: false },
+      });
+    }
+    expect(await service.execute({ kind: "test", profileId: "openai-codex" })).toMatchObject({
+      kind: "failed",
+      issue: { code: OPENAI_CODEX_AUTHORIZATION_UNAVAILABLE_CODE, retryable: false },
+    });
+    expect(await service.execute({ kind: "use", profileId: "openai-codex" })).toMatchObject({
+      kind: "completed",
+      discovery: { code: OPENAI_CODEX_AUTHORIZATION_UNAVAILABLE_CODE },
+    });
+    expect(await composition.resolveSelected()).toMatchObject({
+      kind: "unavailable",
+      code: OPENAI_CODEX_AUTHORIZATION_UNAVAILABLE_CODE,
+    });
+    expect(await service.execute({ kind: "list" })).toMatchObject({
+      connections: [{}, { profileId: "openai-codex", credentialConfigured: false }],
+    });
+    expect(secretWrites).toBe(0);
+    expect(authorizationHostCalls).toBe(0);
   });
 
   test("passes remote profiles through the composed model discovery port", async () => {

@@ -6,6 +6,7 @@ import {
   isDiscoveryPolicy,
   isModelCatalogId,
   isProviderAdapterKind,
+  openAiCodexProfilePolicyIssue,
   type ProviderAdapterKind,
   type ProviderAuthMethod,
   type ProviderProfile,
@@ -135,7 +136,7 @@ function profileFrom(id: string, parsed: RawArguments): ProviderProfile | string
   const credential = isOfficialSdkDestination(provider, adapter, endpointResult.value)
     ? providerEnvironmentCredentialReference(provider, id)
     : null;
-  return {
+  const profile: ProviderProfile = {
     profileId: id,
     providerId: providerId.from(provider),
     adapterKind: adapter,
@@ -154,6 +155,11 @@ function profileFrom(id: string, parsed: RawArguments): ProviderProfile | string
       requestMs: parsed["request-timeout"] ?? 120_000,
     },
   };
+  const openAiCodexIssue = openAiCodexProfilePolicyIssue({
+    ...profile,
+    providerId: String(profile.providerId),
+  });
+  return openAiCodexIssue === null ? profile : openAiCodexIssue.message;
 }
 
 const OFFICIAL_PROVIDER_ADAPTERS: Readonly<Partial<Record<string, ProviderAdapterKind>>> = {
@@ -161,6 +167,7 @@ const OFFICIAL_PROVIDER_ADAPTERS: Readonly<Partial<Record<string, ProviderAdapte
   anthropic: "anthropic",
   google: "google",
   commandcode: "commandcode",
+  "openai-codex": "openai-codex",
 };
 
 type ProviderArgumentResolution<T> =
@@ -181,7 +188,16 @@ function adapterFor(
   if (!isProviderAdapterKind(adapter)) {
     return { ok: false, message: `Argument adapter: "${adapter}" is not valid.` };
   }
-  return { ok: true, value: adapter };
+  const openAiCodexIssue = openAiCodexProfilePolicyIssue({
+    providerId: provider,
+    adapterKind: adapter,
+    endpoint: null,
+    credential: null,
+    discovery: "static",
+  });
+  return openAiCodexIssue === null
+    ? { ok: true, value: adapter }
+    : { ok: false, message: openAiCodexIssue.message };
 }
 
 function discoveryFor(
@@ -229,7 +245,7 @@ function isOfficialSdkDestination(
   adapter: ProviderAdapterKind,
   endpoint: string | null,
 ): boolean {
-  if (OFFICIAL_PROVIDER_ADAPTERS[provider] !== adapter) {
+  if (OFFICIAL_PROVIDER_ADAPTERS[provider] !== adapter || provider === "openai-codex") {
     return false;
   }
   if (provider === "openai") {

@@ -278,6 +278,13 @@ const REASONING_CONTROL_PREFERENCES = {
     max: ["max"],
     "provider-default": [],
   },
+  "openai-codex": {
+    minimal: [],
+    balanced: [],
+    deep: [],
+    max: [],
+    "provider-default": [],
+  },
   custom: {
     minimal: ["minimal", "low", "none"],
     balanced: ["balanced", "medium"],
@@ -315,6 +322,7 @@ const PROMPT_CACHE_MODE_PREFERENCES = {
   anthropic: ["anthropic-ephemeral"] as const,
   google: ["google-explicit-resource", "implicit-prefix"] as const,
   commandcode: ["provider-managed"] as const,
+  "openai-codex": [] as const,
   custom: [] as const,
 } satisfies Record<ProviderAdapterKind, readonly ModelPromptCacheMode[]>;
 

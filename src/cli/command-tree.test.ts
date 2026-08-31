@@ -220,6 +220,75 @@ describe("provider connection arguments", () => {
     }
   });
 
+  test("keeps OpenAI Codex subscription identity separate from API-key OpenAI", async () => {
+    const invocation = await parse("provider", "add", "openai-codex", "--model", "gpt-5-codex");
+    if (invocation.kind !== "run" || invocation.providerArgs?.action !== "add") {
+      throw new Error("expected parsed OpenAI Codex provider add");
+    }
+    expect(invocation.providerArgs.profile).toMatchObject({
+      providerId: "openai-codex",
+      adapterKind: "openai-codex",
+      endpoint: null,
+      credential: null,
+      discovery: "static",
+    });
+  });
+
+  test("rejects every CLI route around the reserved OpenAI Codex identity", async () => {
+    for (const arguments_ of [
+      [
+        "provider",
+        "add",
+        "work",
+        "--provider",
+        "openai-codex",
+        "--adapter",
+        "openai",
+        "--endpoint",
+        "https://api.openai.com/v1",
+        "--model",
+        "gpt-5-codex",
+      ],
+      [
+        "provider",
+        "add",
+        "work",
+        "--provider",
+        "openai",
+        "--adapter",
+        "openai-codex",
+        "--model",
+        "gpt-5-codex",
+      ],
+    ] as const) {
+      expect(await invalidMessage(...arguments_)).toContain(
+        "the openai-codex provider identity and adapter must be used together",
+      );
+    }
+    expect(
+      await invalidMessage(
+        "provider",
+        "add",
+        "openai-codex",
+        "--endpoint",
+        "https://api.openai.com/v1",
+        "--model",
+        "gpt-5-codex",
+      ),
+    ).toContain("openai-codex has no direct provider endpoint");
+    expect(
+      await invalidMessage(
+        "provider",
+        "add",
+        "openai-codex",
+        "--discovery",
+        "remote",
+        "--model",
+        "gpt-5-codex",
+      ),
+    ).toContain("openai-codex cannot perform direct provider model discovery");
+  });
+
   test("normalizes safe profile metadata and keeps credentials out of argv", async () => {
     const invocation = await parse(
       "provider",

@@ -4,6 +4,7 @@ import type { ClockPort, CredentialReference } from "../../domain/index.ts";
 import type {
   AuthorizedLoginMethod,
   ModelCatalog,
+  OPENAI_CODEX_AUTHORIZATION_UNAVAILABLE_CODE,
   ProviderAccountMetadata,
   ProviderAuthMethod,
   ProviderAuthorizationReceipt,
@@ -139,6 +140,7 @@ export type ProviderConnectionIssueCode =
   | "credential-state-diverged"
   | "credential-expired"
   | "authorized-login-unavailable"
+  | typeof OPENAI_CODEX_AUTHORIZATION_UNAVAILABLE_CODE
   | "authorization-denied"
   | "authorization-timed-out"
   | "authorization-failed"

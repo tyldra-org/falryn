@@ -359,6 +359,7 @@ function build(argv: readonly string[], lenientPositionals = false): ReturnType<
               choices: [
                 "deterministic",
                 "openai",
+                "openai-codex",
                 "anthropic",
                 "google",
                 "commandcode",

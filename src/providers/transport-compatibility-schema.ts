@@ -234,6 +234,7 @@ export const providerTransportCompatibilityDeclarationSchema: z.ZodType<Provider
       .strict(),
     z.strictObject({ schemaVersion: version, dialect: z.literal("command-code-router") }),
     z.strictObject({ schemaVersion: version, dialect: z.literal("deterministic") }),
+    z.strictObject({ schemaVersion: version, dialect: z.literal("openai-codex-unavailable") }),
     z.strictObject({ schemaVersion: version, dialect: z.literal("custom-unavailable") }),
   ]);
 

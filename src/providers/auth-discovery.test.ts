@@ -50,6 +50,30 @@ describe("parseProviderProfile", () => {
     expect(parsed.ok).toBe(true);
   });
 
+  test("reserves the OpenAI Codex identity for credential-free policy profiles", () => {
+    const policyProfile: ProviderProfile = {
+      ...demoProfile(),
+      providerId: providerId.from("openai-codex"),
+      adapterKind: "openai-codex",
+      credential: null,
+    };
+    expect(parseProviderProfile(policyProfile).ok).toBe(true);
+
+    for (const [candidate, path] of [
+      [{ ...policyProfile, adapterKind: "openai" as const }, "adapterKind"],
+      [{ ...policyProfile, providerId: providerId.from("openai") }, "providerId"],
+      [{ ...policyProfile, endpoint: "https://api.openai.com/v1" }, "endpoint"],
+      [{ ...policyProfile, credential: REFERENCE }, "credential"],
+      [{ ...policyProfile, discovery: "remote" as const }, "discovery"],
+    ] as const) {
+      const parsed = parseProviderProfile(candidate);
+      expect(parsed.ok).toBe(false);
+      if (!parsed.ok) {
+        expect(parsed.error.issues.some((issue) => issue.path === path)).toBe(true);
+      }
+    }
+  });
+
   test("defaults the transport plan and rejects a mismatched dialect", () => {
     const defaulted = parseProviderProfile({
       ...demoProfile(),

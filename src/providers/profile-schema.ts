@@ -24,6 +24,7 @@ import {
 import { isModelCatalogId, MAX_MODEL_CATALOGS_PER_PROFILE } from "./catalog/contracts.ts";
 import { MAX_PROVIDER_METADATA_ENTRY_LENGTH } from "./limits.ts";
 import { modelCapabilityDeclarationSchema } from "./model-capability-schema.ts";
+import { openAiCodexProfilePolicyIssue } from "./openai-codex-policy.ts";
 import type { ProviderProfile } from "./profile.ts";
 import { providerTransportCompatibilityMatchesAdapter } from "./transport-compatibility.ts";
 import {
@@ -99,6 +100,18 @@ export const providerProfileSchema: z.ZodType<ProviderProfile> = z
   })
   .strict()
   .superRefine((profile, context) => {
+    const openAiCodexIssue = openAiCodexProfilePolicyIssue({
+      ...profile,
+      providerId: String(profile.providerId),
+    });
+    if (openAiCodexIssue !== null) {
+      context.addIssue({
+        code: "custom",
+        path: [openAiCodexIssue.path],
+        message: openAiCodexIssue.message,
+      });
+    }
+
     if (!providerEndpointIsAllowed(profile.adapterKind, profile.endpoint)) {
       context.addIssue({
         code: "custom",

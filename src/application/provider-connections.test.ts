@@ -485,6 +485,47 @@ describe("provider connection service", () => {
     }
   });
 
+  test("requires logout before converting an API-key profile to OpenAI Codex", async () => {
+    const clock = createManualClock();
+    const reference: CredentialReference = {
+      storeKind: "environment",
+      locator: "FALRYN_OPENAI_API_KEY",
+      consumer: "provider:transition",
+      accountLabel: null,
+    };
+    const current = { ...profile("transition"), credential: reference };
+    const stored = memoryStore(state(current));
+    const credentials = mutableCredentials(clock);
+    const service = createProviderConnectionService({
+      store: stored.port,
+      credentials: credentials.bundle,
+      clock,
+    });
+
+    expect(
+      await service.execute({
+        kind: "configure",
+        profile: {
+          ...profile("transition"),
+          providerId: providerId.from("openai-codex"),
+          adapterKind: "openai-codex",
+          endpoint: null,
+          credential: null,
+        },
+        preserveCredential: true,
+        preserveCapabilities: true,
+        preserveTransportCompatibility: true,
+      }),
+    ).toMatchObject({
+      kind: "failed",
+      issue: { code: "credential-already-configured", retryable: false },
+    });
+    expect(stored.state().connections[0]?.profile).toMatchObject({
+      adapterKind: "openai",
+      credential: reference,
+    });
+  });
+
   test("preserves enabled model capability declarations across CLI-style configure", async () => {
     const clock = createManualClock();
     const declared: ProviderProfile = {

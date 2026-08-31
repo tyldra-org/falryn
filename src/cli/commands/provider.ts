@@ -9,6 +9,8 @@ import type { InputStreamPort } from "../../domain/index.ts";
 import {
   type AuthorizationInteractionPort,
   MAX_AUTHORIZATION_CODE_LENGTH,
+  OPENAI_CODEX_AUTHORIZATION_UNAVAILABLE_CODE,
+  OPENAI_CODEX_AUTHORIZATION_UNAVAILABLE_MESSAGE,
 } from "../../providers/index.ts";
 import type { ProviderCommandArguments } from "../command-tree.ts";
 import type { GlobalOptions } from "../options.ts";
@@ -213,6 +215,8 @@ function messageFor(code: string): string {
       return "The provider profile is not ready; inspect its authentication and catalog state.";
     case "authorized-login-unavailable":
       return "This provider has no official authorized login adapter in this build.";
+    case OPENAI_CODEX_AUTHORIZATION_UNAVAILABLE_CODE:
+      return OPENAI_CODEX_AUTHORIZATION_UNAVAILABLE_MESSAGE;
     case "selected-profile-remove-refused":
       return "Select another provider before removing the active profile.";
     case "state-stale":
