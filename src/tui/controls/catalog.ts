@@ -40,12 +40,12 @@ export type ControlCatalog = {
 
 export type ControlSelection = {
   readonly sessionId: string | null;
-  readonly modelId: string | null;
+  readonly modelKey: string | null;
 };
 
 export const EMPTY_CONTROL_SELECTION: ControlSelection = {
   sessionId: null,
-  modelId: null,
+  modelKey: null,
 };
 
 function unavailableFact(reason: string): FactValue {
@@ -90,7 +90,7 @@ export function projectHeader(
   return {
     ...header,
     session: fieldFromOptions(header.session, catalog.sessions, selection.sessionId, "session"),
-    model: fieldFromOptions(header.model, catalog.models, selection.modelId, "model"),
+    model: fieldFromOptions(header.model, catalog.models, selection.modelKey, "model"),
   };
 }
 

@@ -351,7 +351,7 @@ describe("session and model selection", () => {
       { kind: "open-overlay", route: { kind: "controls", panel: "model" } },
       { kind: "select-control", field: "model", id: "m1" },
     ]);
-    expect(state.selectedModelId).toBe("m1");
+    expect(state.selectedModelKey).toBe("m1");
     expect(state.overlay).toEqual({ kind: "confirm", id: "conf-write" });
     expect(state.boundConfirmation?.id).toBe("conf-write");
   });

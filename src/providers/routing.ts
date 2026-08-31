@@ -17,6 +17,7 @@ import {
   type ModelPromptCacheMode,
   type ModelResponseDensityControl,
 } from "./model-capability.ts";
+import { type ProviderModelIdentity, providerModelIdentityKey } from "./model-identity.ts";
 import {
   isRoleDisabled,
   type ModelPolicy,
@@ -43,10 +44,7 @@ import {
 
 export type { RouteRequirement } from "./role-support.ts";
 
-export type ExplicitModelSelection = {
-  readonly providerId: ProviderId;
-  readonly modelId: ModelId;
-};
+export type ExplicitModelSelection = ProviderModelIdentity;
 
 /** One provider's catalog entry used for multi-provider routing. */
 export type RoutedCatalogEntry = {
@@ -141,7 +139,7 @@ export type ResolveRouteInput = {
    * attempt index into the ordered list (0 = primary). Callers advance on failure.
    */
   readonly fallbackPosition?: number;
-  /** Provider/model pairs already attempted; proves non-recursion. */
+  /** Exact profile/provider/model routes already attempted; proves non-recursion. */
   readonly visited?: ReadonlySet<string>;
 };
 
@@ -161,10 +159,6 @@ function transportCompatibilityFor(
     { ...base, compatibilityId: entry.transportCompatibilityId ?? base.compatibilityId },
     selectedModelId,
   );
-}
-
-function routeKey(providerId: ProviderId, modelId: ModelId): string {
-  return `${providerId}\0${modelId}`;
 }
 
 export function modelMatchesRequirements(
@@ -224,12 +218,13 @@ export function modelMatchesRequirements(
 
 function findCapability(
   catalogs: readonly RoutedCatalogEntry[],
+  providerProfileId: string,
   providerId: ProviderId,
   modelId: ModelId,
   now?: Instant,
 ): { capability: ModelCapability; entry: RoutedCatalogEntry } | undefined {
   for (const entry of catalogs) {
-    if (entry.providerId !== providerId) {
+    if (entry.profileId !== providerProfileId || entry.providerId !== providerId) {
       continue;
     }
     if (
@@ -343,12 +338,15 @@ function adapterMatchesRequirements(
   );
 }
 
-function buildCandidateList(
-  route: RoleRoute,
-): readonly { providerId: ProviderId; modelId: ModelId }[] {
+function buildCandidateList(route: RoleRoute): readonly ProviderModelIdentity[] {
   return [
-    { providerId: route.providerId, modelId: route.modelId },
+    {
+      providerProfileId: route.providerProfileId,
+      providerId: route.providerId,
+      modelId: route.modelId,
+    },
     ...route.fallbacks.map((fallback) => ({
+      providerProfileId: fallback.providerProfileId,
       providerId: fallback.providerId,
       modelId: fallback.modelId,
     })),
@@ -374,6 +372,7 @@ export function resolveModelRoute(input: ResolveRouteInput): RoutingOutcome {
     );
     const found = findCapability(
       input.catalogs,
+      input.explicit.providerProfileId,
       input.explicit.providerId,
       input.explicit.modelId,
       input.now,
@@ -390,7 +389,7 @@ export function resolveModelRoute(input: ResolveRouteInput): RoutingOutcome {
         code: "explicit-incompatible",
       };
     }
-    const key = routeKey(input.explicit.providerId, input.explicit.modelId);
+    const key = providerModelIdentityKey(input.explicit);
     if (visited.has(key)) {
       return {
         kind: "no-eligible-route",
@@ -435,8 +434,8 @@ export function resolveModelRoute(input: ResolveRouteInput): RoutingOutcome {
   const primaryCapability = primaryCapabilityForRole(
     input.policy,
     tentativeRole === "vision" ? "default" : tentativeRole,
-    (providerId, modelId) =>
-      findCapability(input.catalogs, providerId, modelId, input.now)?.capability,
+    (providerProfileId, providerId, modelId) =>
+      findCapability(input.catalogs, providerProfileId, providerId, modelId, input.now)?.capability,
   );
 
   const specialized = resolveSpecializedRole({
@@ -474,7 +473,7 @@ export function resolveModelRoute(input: ResolveRouteInput): RoutingOutcome {
     if (candidate === undefined) {
       continue;
     }
-    const key = routeKey(candidate.providerId, candidate.modelId);
+    const key = providerModelIdentityKey(candidate);
     if (visited.has(key)) {
       return {
         kind: "no-eligible-route",
@@ -487,6 +486,7 @@ export function resolveModelRoute(input: ResolveRouteInput): RoutingOutcome {
 
     const found = findCapability(
       input.catalogs,
+      candidate.providerProfileId,
       candidate.providerId,
       candidate.modelId,
       input.now,
@@ -529,7 +529,7 @@ export function resolveModelRoute(input: ResolveRouteInput): RoutingOutcome {
         selectionReason,
         requiredCapabilities: required,
         providerId: candidate.providerId,
-        providerProfileId: found.entry.profileId,
+        providerProfileId: candidate.providerProfileId,
         providerAdapterKind: found.entry.adapterKind,
         providerDestinationId: found.entry.destinationId,
         transportCompatibilityId: transportCompatibility.compatibilityId,
@@ -567,7 +567,13 @@ export function resolveNextFallback(
   previous: RoutingReceipt,
 ): RoutingOutcome {
   const visited = new Set(input.visited ?? []);
-  visited.add(routeKey(previous.providerId, previous.modelId));
+  visited.add(
+    providerModelIdentityKey({
+      providerProfileId: previous.providerProfileId,
+      providerId: previous.providerId,
+      modelId: previous.modelId,
+    }),
+  );
   const { explicit: _ignored, ...rest } = input;
   return resolveModelRoute({
     ...rest,

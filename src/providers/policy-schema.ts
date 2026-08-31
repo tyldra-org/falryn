@@ -25,6 +25,7 @@ const budgetsSchema = z
 
 const fallbackTargetSchema = z
   .object({
+    providerProfileId: z.string().min(1).max(4_096),
     providerId: providerIdSchema,
     modelId: modelIdSchema,
   })
@@ -32,6 +33,7 @@ const fallbackTargetSchema = z
 
 const roleRouteBaseSchema = z
   .object({
+    providerProfileId: z.string().min(1).max(4_096),
     providerId: providerIdSchema,
     modelId: modelIdSchema,
     reasoning: z.enum(REASONING_EFFORTS).default("provider-default"),
