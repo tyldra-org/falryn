@@ -31,6 +31,7 @@ import {
   type ProviderProfile,
   parseModelPolicy,
   parseModelRequest,
+  providerModelIdentityKey,
   type RoutedCatalogEntry,
   type RoutingReceipt,
   redactProviderDiagnosticText,
@@ -84,12 +85,14 @@ function samplePolicy(): ModelPolicy {
   const parsed = parseModelPolicy({
     roles: {
       default: {
+        providerProfileId: "conformance",
         providerId: primary,
         modelId: fast,
         reasoning: "minimal",
-        fallbacks: [{ providerId: secondary, modelId: fast }],
+        fallbacks: [{ providerProfileId: "fallback", providerId: secondary, modelId: fast }],
       },
       vision: {
+        providerProfileId: "conformance",
         providerId: primary,
         modelId: vision,
         use: "fallback",
@@ -555,7 +558,13 @@ describe("provider conformance: routing receipt and non-recursive fallback", () 
       policy,
       catalogs: catalogs(),
       intent: "coding",
-      visited: new Set([`${primary}\0${fast}`]),
+      visited: new Set([
+        providerModelIdentityKey({
+          providerProfileId: "conformance",
+          providerId: primary,
+          modelId: fast,
+        }),
+      ]),
     });
     expect(recursive.kind).toBe("no-eligible-route");
     if (recursive.kind === "no-eligible-route") {

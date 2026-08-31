@@ -22,7 +22,11 @@ import {
   streamId,
   workspaceRootId,
 } from "../domain/index.ts";
-import { createDeterministicProviderAdapter, type ModelRequest } from "../providers/index.ts";
+import {
+  createDeterministicProviderAdapter,
+  type ModelRequest,
+  providerModelIdentityKey,
+} from "../providers/index.ts";
 import { snapshotOf } from "../tui/composer/index.ts";
 import {
   createLiveTurnMatrixFixture,
@@ -119,7 +123,7 @@ describe("composeProductShellAttachments", () => {
     const selectedModel = modelId.from("deterministic-selected");
     const profile = {
       profileId: "demo",
-      providerId: providerId.from("demo"),
+      providerId: providerId.from("falryn-deterministic"),
       adapterKind: "deterministic" as const,
       displayName: "Demo provider",
       endpoint: null,
@@ -162,6 +166,8 @@ describe("composeProductShellAttachments", () => {
       provider: {
         kind: "ready",
         adapter: createDeterministicProviderAdapter({
+          profileId: "demo",
+          displayName: "Demo provider",
           supportedModels: [defaultModel, selectedModel],
           script: { kind: "text", text: "ok" },
           onRequest: (request) => requests.push(request),
@@ -223,9 +229,15 @@ describe("composeProductShellAttachments", () => {
         },
       },
     });
+    const defaultSelection = {
+      providerProfileId: "demo",
+      providerId: profile.providerId,
+      modelId: defaultModel,
+    };
+    const selectedSelection = { ...defaultSelection, modelId: selectedModel };
     expect(attachments?.controls.models.map((model) => model.id)).toEqual([
-      "deterministic-echo",
-      "deterministic-selected",
+      providerModelIdentityKey(defaultSelection),
+      providerModelIdentityKey(selectedSelection),
     ]);
     expect(attachments?.controls.profiles.map((profile) => profile.id)).toEqual([
       "ask",
@@ -237,9 +249,23 @@ describe("composeProductShellAttachments", () => {
       label: "provider",
       value: { kind: "known", text: "Demo provider" },
     });
-    expect(await attachments?.submission.modelSelection.select(selectedModel)).toEqual({
+    expect(
+      await attachments?.submission.modelSelection.select({
+        ...selectedSelection,
+        providerProfileId: "another-profile",
+      }),
+    ).toEqual({
+      ok: false,
+      code: "model.provider-profile-mismatch",
+      message: "the selected model does not belong to the active provider profile",
+    });
+    expect(attachments?.submission.modelSelection.get()).toEqual(defaultSelection);
+    expect(await attachments?.submission.modelSelection.select(selectedSelection)).toEqual({
       ok: true,
+      providerProfileId: "demo",
+      providerId: profile.providerId,
       modelId: selectedModel,
+      providerDisplayName: "Demo provider",
       changed: true,
     });
     const pendingSubmission = attachments?.submission.submit(

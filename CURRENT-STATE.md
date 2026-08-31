@@ -125,6 +125,15 @@ Search-result pages are not evidence. Each pricing schedule keeps its own
 provider-bound source and observation time. Catalog resources contain data only;
 TypeScript owns strict validation and the Command Code generator, without
 putting transport behavior or credentials into catalog data.
+Every live model selection is bound to the exact provider profile, provider,
+and model tuple rather than a bare model ID. Role routes, fallbacks, explicit
+selection, recursion tracking, and routing receipts retain that full identity,
+so the same model ID can safely exist under multiple accounts, endpoints, or
+providers. The interactive model picker shows the provider display name and
+profile beside each model, and its selection notice repeats all three identity
+parts. Malformed, mismatched, missing, unavailable, or transport-ineligible
+selections fail without replacing the current model. Persistent role and model
+configuration editing remains future work under GitHub issue #273.
 Provider profiles select enabled model IDs and may reference user catalogs by
 identity, and optional inline profile declarations remain the highest-priority
 compatibility override. A user catalog is a bounded JSONC document at

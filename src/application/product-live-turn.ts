@@ -26,6 +26,8 @@ import {
   type ModelCatalog,
   type ModelPolicy,
   type ProviderAdapterPort,
+  type ProviderModelIdentity,
+  sameProviderModelIdentity,
   type UsageUnits,
   type WorkIntent,
 } from "../providers/index.ts";
@@ -100,7 +102,10 @@ export type ProductExecutionProfileControls = {
 export type ProductModelSelection =
   | {
       readonly ok: true;
+      readonly providerProfileId: string;
+      readonly providerId: ProviderModelIdentity["providerId"];
       readonly modelId: ModelId;
+      readonly providerDisplayName: string;
       readonly changed: boolean;
     }
   | {
@@ -111,8 +116,8 @@ export type ProductModelSelection =
 
 /** Process-local model choice. Persistent role configuration remains owned by #273. */
 export type ProductModelSelectionControls = {
-  get(): ModelId | null;
-  select(modelId: ModelId): Promise<ProductModelSelection>;
+  get(): ProviderModelIdentity | null;
+  select(identity: ProviderModelIdentity): Promise<ProductModelSelection>;
 };
 
 export type ProductLiveTurnExecutor = {
@@ -134,7 +139,7 @@ export type ProductLiveTurnExecutorOptions = {
   readonly artifacts?: ArtifactStorePort;
   readonly initialExecutionProfile?: ExecutionProfileId;
   /** Process-local initial model. Persistent role configuration remains owned by #273. */
-  readonly initialModelId?: ModelId;
+  readonly initialModel?: ProviderModelIdentity;
 };
 
 const FAILED: TerminalOutcome = { kind: "failed", effect: "none" };
@@ -165,13 +170,17 @@ export function productModelPolicy(
   adapter: ProviderAdapterPort,
   catalog: ModelCatalog,
   executionPolicy?: EffectiveExecutionPolicy,
-  selectedModelId?: ModelId | null,
+  selectedModel?: ProviderModelIdentity | null,
 ): ModelPolicy | null {
   const selected =
-    (selectedModelId === undefined || selectedModelId === null
+    (selectedModel === undefined ||
+    selectedModel === null ||
+    selectedModel.providerProfileId !== adapter.identity.profileId ||
+    selectedModel.providerId !== adapter.identity.providerId
       ? undefined
       : catalog.models.find(
-          (model) => model.modelId === selectedModelId && model.availability !== "unavailable",
+          (model) =>
+            model.modelId === selectedModel.modelId && model.availability !== "unavailable",
         )) ?? catalog.models.find((model) => model.availability !== "unavailable");
   if (selected === undefined) {
     return null;
@@ -179,6 +188,7 @@ export function productModelPolicy(
   return {
     roles: {
       default: {
+        providerProfileId: adapter.identity.profileId,
         providerId: adapter.identity.providerId,
         modelId: selected.modelId,
         reasoning: executionPolicy?.reasoning === "balanced" ? "balanced" : "provider-default",
@@ -196,11 +206,19 @@ export function createProductLiveTurnExecutor(
   const producer = options.runtime.attachments.turnProducer;
   const correlation = options.runtime.correlation;
   let activeProfile = options.initialExecutionProfile ?? "agent";
-  let activeModelId =
-    options.initialModelId ??
-    options.providerCatalog?.models.find((model) => model.availability !== "unavailable")
-      ?.modelId ??
-    null;
+  const providerIdentity = options.runtime.providerAdapter?.identity ?? null;
+  const initialCatalogModel = options.providerCatalog?.models.find(
+    (model) => model.availability !== "unavailable",
+  )?.modelId;
+  let activeModel: ProviderModelIdentity | null =
+    options.initialModel ??
+    (providerIdentity === null || initialCatalogModel === undefined
+      ? null
+      : {
+          providerProfileId: providerIdentity.profileId,
+          providerId: providerIdentity.providerId,
+          modelId: initialCatalogModel,
+        });
   let sessionStarted = false;
   let initialProfilePersisted = false;
 
@@ -437,8 +455,8 @@ export function createProductLiveTurnExecutor(
       },
     },
     modelSelection: {
-      get: () => activeModelId,
-      async select(modelId) {
+      get: () => activeModel,
+      async select(identity) {
         const catalog = options.providerCatalog;
         if (catalog === null) {
           return {
@@ -447,7 +465,19 @@ export function createProductLiveTurnExecutor(
             message: "the selected provider has no usable model catalog",
           };
         }
-        const capability = catalog.models.find((model) => model.modelId === modelId);
+        const provider = options.runtime.requireProviderAdapter();
+        if (
+          !provider.ok ||
+          identity.providerProfileId !== provider.value.identity.profileId ||
+          identity.providerId !== provider.value.identity.providerId
+        ) {
+          return {
+            ok: false,
+            code: "model.provider-profile-mismatch",
+            message: "the selected model does not belong to the active provider profile",
+          };
+        }
+        const capability = catalog.models.find((model) => model.modelId === identity.modelId);
         if (capability === undefined) {
           return {
             ok: false,
@@ -462,17 +492,23 @@ export function createProductLiveTurnExecutor(
             message: "the selected model is unavailable in the current catalog generation",
           };
         }
-        const provider = options.runtime.requireProviderAdapter();
-        if (!provider.ok || !provider.value.supportedModels.includes(modelId)) {
+        if (!provider.value.supportedModels.includes(identity.modelId)) {
           return {
             ok: false,
             code: "model.transport-unavailable",
             message: "the selected provider adapter cannot execute this model",
           };
         }
-        const changed = activeModelId !== modelId;
-        activeModelId = modelId;
-        return { ok: true, modelId, changed };
+        const changed = !sameProviderModelIdentity(activeModel, identity);
+        activeModel = identity;
+        return {
+          ok: true,
+          providerProfileId: identity.providerProfileId,
+          providerId: identity.providerId,
+          modelId: identity.modelId,
+          providerDisplayName: provider.value.identity.displayName,
+          changed,
+        };
       },
     },
     startSession,
@@ -485,7 +521,7 @@ export function createProductLiveTurnExecutor(
         activeProfile,
         correlation.configurationGeneration,
       );
-      const selectedModelId = activeModelId;
+      const selectedModel = activeModel;
       if (executionPolicy.completion === "durable-plan" && options.artifacts === undefined) {
         return result({
           kind: "unavailable",
@@ -704,7 +740,7 @@ export function createProductLiveTurnExecutor(
               provider.value,
               options.providerCatalog,
               executionPolicy,
-              selectedModelId,
+              selectedModel,
             );
       if (!attemptRunner.ok || options.providerCatalog === null || policy === null) {
         return settleFailure(

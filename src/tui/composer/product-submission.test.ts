@@ -4,10 +4,12 @@ import type { ProductLiveTurnExecutor } from "../../application/index.ts";
 import {
   configurationGeneration,
   modelId,
+  providerId,
   sessionId,
   turnId,
   workspaceId,
 } from "../../domain/index.ts";
+import { type ProviderModelIdentity, sameProviderModelIdentity } from "../../providers/index.ts";
 import { createProductSubmissionPort, snapshotOf, UNAVAILABLE_SUBMISSION } from "./index.ts";
 
 const correlation = {
@@ -16,9 +18,32 @@ const correlation = {
   configurationGeneration: configurationGeneration.from(0),
 };
 
+const TEST_PROVIDER_ID = providerId.from("test-provider");
+const TEST_PROVIDER_PROFILE_ID = "test-profile";
+
+function modelSelection(value: string): ProviderModelIdentity {
+  return {
+    providerProfileId: TEST_PROVIDER_PROFILE_ID,
+    providerId: TEST_PROVIDER_ID,
+    modelId: modelId.from(value),
+  };
+}
+
+function selectedModel(
+  selection: ProviderModelIdentity,
+  changed: boolean,
+): Extract<Awaited<ReturnType<ProductLiveTurnExecutor["modelSelection"]["select"]>>, { ok: true }> {
+  return {
+    ok: true,
+    ...selection,
+    providerDisplayName: "Test provider",
+    changed,
+  };
+}
+
 function executor(run: ProductLiveTurnExecutor["run"]): ProductLiveTurnExecutor {
   let profileId: "ask" | "plan" | "debug" | "agent" = "agent";
-  let selectedModelId = modelId.from("model-default");
+  let selected = modelSelection("model-default");
   return {
     executionProfile: {
       get: () => profileId,
@@ -29,11 +54,11 @@ function executor(run: ProductLiveTurnExecutor["run"]): ProductLiveTurnExecutor 
       },
     },
     modelSelection: {
-      get: () => selectedModelId,
-      async select(nextModelId) {
-        const changed = nextModelId !== selectedModelId;
-        selectedModelId = nextModelId;
-        return { ok: true, modelId: selectedModelId, changed };
+      get: () => selected,
+      async select(next) {
+        const changed = !sameProviderModelIdentity(next, selected);
+        selected = next;
+        return selectedModel(selected, changed);
       },
     },
     startSession: async () => null,
@@ -213,9 +238,9 @@ describe("product submission port", () => {
         },
       },
       modelSelection: {
-        get: () => modelId.from("model-default"),
-        async select(nextModelId) {
-          return { ok: true, modelId: nextModelId, changed: true };
+        get: () => modelSelection("model-default"),
+        async select(next) {
+          return selectedModel(next, true);
         },
       },
       startSession: async () => null,
@@ -239,7 +264,7 @@ describe("product submission port", () => {
   });
 
   test("delegates model selection to the live executor", async () => {
-    let selectedModelId = modelId.from("model-default");
+    let selected = modelSelection("model-default");
     const observed: string[] = [];
     const live: ProductLiveTurnExecutor = {
       executionProfile: {
@@ -249,16 +274,16 @@ describe("product submission port", () => {
         },
       },
       modelSelection: {
-        get: () => selectedModelId,
-        async select(nextModelId) {
-          const changed = nextModelId !== selectedModelId;
-          selectedModelId = nextModelId;
-          return { ok: true, modelId: selectedModelId, changed };
+        get: () => selected,
+        async select(next) {
+          const changed = !sameProviderModelIdentity(next, selected);
+          selected = next;
+          return selectedModel(selected, changed);
         },
       },
       startSession: async () => null,
       async run() {
-        observed.push(String(selectedModelId));
+        observed.push(String(selected.modelId));
         return {
           kind: "completed",
           code: "completed",
@@ -293,11 +318,10 @@ describe("product submission port", () => {
       configurationGeneration: correlation.configurationGeneration,
     });
 
-    expect(await port.modelSelection.select(modelId.from("model-selected"))).toEqual({
-      ok: true,
-      modelId: modelId.from("model-selected"),
-      changed: true,
-    });
+    const nextSelection = modelSelection("model-selected");
+    expect(await port.modelSelection.select(nextSelection)).toEqual(
+      selectedModel(nextSelection, true),
+    );
     expect(await port.submit(snapshotOf("use the selected model", 1))).toMatchObject({
       kind: "accepted",
     });

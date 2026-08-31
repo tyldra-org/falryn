@@ -38,11 +38,16 @@ import {
 import type { ProviderFailure, ProviderFailureKind } from "../providers/errors.ts";
 import type {
   PromptCachePolicy,
+  ProviderModelIdentity,
   ResolveRouteInput,
   RoutingOutcome,
   RoutingReceipt,
 } from "../providers/index.ts";
-import { resolveModelRoute, resolveNextFallback } from "../providers/index.ts";
+import {
+  providerModelIdentityKey,
+  resolveModelRoute,
+  resolveNextFallback,
+} from "../providers/index.ts";
 import { providerPromptCachePolicy } from "./provider-prompt-cache.ts";
 import { awaitBackoff } from "./recovery.ts";
 import type {
@@ -59,8 +64,12 @@ export * from "./turn-attempt-policy/contracts.ts";
 
 const DEFAULT_RETRY_POLICY: RetryPolicy = { maxAttempts: 3, retryable: true };
 
-function routeKey(providerId: string, modelId: string): string {
-  return `${providerId}\0${modelId}`;
+function routeIdentity(receipt: RoutingReceipt): ProviderModelIdentity {
+  return {
+    providerProfileId: receipt.providerProfileId,
+    providerId: receipt.providerId,
+    modelId: receipt.modelId,
+  };
 }
 
 /** Map a provider failure kind onto the domain attempt category. */
@@ -553,7 +562,7 @@ export function createTurnAttemptPolicy(options: TurnAttemptPolicyOptions): Turn
       }
 
       let receipt = initial.receipt;
-      const visited = new Set<string>([routeKey(receipt.providerId, receipt.modelId)]);
+      const visited = new Set<string>([providerModelIdentityKey(routeIdentity(receipt))]);
       let attemptsOnCurrentRoute = 0;
       let elapsedMs = 0;
       let generation = input.configurationGeneration;
@@ -817,7 +826,7 @@ export function createTurnAttemptPolicy(options: TurnAttemptPolicyOptions): Turn
               };
             }
             receipt = fallbackProbe.receipt;
-            visited.add(routeKey(receipt.providerId, receipt.modelId));
+            visited.add(providerModelIdentityKey(routeIdentity(receipt)));
             attemptsOnCurrentRoute = 0;
             continue;
           }

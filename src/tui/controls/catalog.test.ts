@@ -35,17 +35,17 @@ const CATALOG: ControlCatalog = {
 
 describe("projectHeader", () => {
   test("leaves unavailable fields when nothing is selected", () => {
-    expect(projectHeader(HEADER, CATALOG, { sessionId: null, modelId: null })).toEqual(HEADER);
+    expect(projectHeader(HEADER, CATALOG, { sessionId: null, modelKey: null })).toEqual(HEADER);
   });
 
   test("projects a selected id as a known untrusted label", () => {
-    const header = projectHeader(HEADER, CATALOG, { sessionId: "s1", modelId: "m1" });
+    const header = projectHeader(HEADER, CATALOG, { sessionId: "s1", modelKey: "m1" });
     expect(header.session).toEqual(known("coding"));
     expect(header.model).toEqual(known("local-small"));
   });
 
   test("names a vanished id instead of reusing the last label", () => {
-    const header = projectHeader(HEADER, CATALOG, { sessionId: "gone", modelId: "missing" });
+    const header = projectHeader(HEADER, CATALOG, { sessionId: "gone", modelKey: "missing" });
     expect(header.session).toEqual({ kind: "error", reason: "session is gone" });
     expect(header.model).toEqual({ kind: "error", reason: "model is gone" });
   });

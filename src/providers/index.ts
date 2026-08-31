@@ -204,6 +204,15 @@ export {
   parseModelCapabilityDeclaration,
 } from "./model-capability-schema.ts";
 export type {
+  ProviderModelIdentity,
+  ProviderModelIdentityKeyParseResult,
+} from "./model-identity.ts";
+export {
+  parseProviderModelIdentityKey,
+  providerModelIdentityKey,
+  sameProviderModelIdentity,
+} from "./model-identity.ts";
+export type {
   ModelBillingMode,
   ModelPricing,
   ModelPricingKind,

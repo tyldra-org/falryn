@@ -17,10 +17,10 @@ import {
   type AttachmentDescriptor,
   isExecutionProfileId,
   MAX_EVIDENCE_INLINE_BYTES,
-  modelId,
   parseMentions,
 } from "../../domain/index.ts";
 import type { TranscriptBlock } from "../../presentation/index.ts";
+import { parseProviderModelIdentityKey, providerModelIdentityKey } from "../../providers/index.ts";
 import type { CopyTextPort, CopyTextResult } from "../clipboard.ts";
 import { type CommandState, commandById } from "../commands.ts";
 import {
@@ -182,11 +182,15 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
           }
         ).modelSelection
       : null;
-  const [state, dispatch] = useReducer(shellReducer, INITIAL_SHELL_STATE, (base) => ({
-    ...base,
-    workspace: options.workspace ?? EMPTY_WORKSPACE_SET,
-    selectedModelId: modelSelection === null ? base.selectedModelId : modelSelection.get(),
-  }));
+  const [state, dispatch] = useReducer(shellReducer, INITIAL_SHELL_STATE, (base) => {
+    const selectedModel = modelSelection?.get() ?? null;
+    return {
+      ...base,
+      workspace: options.workspace ?? EMPTY_WORKSPACE_SET,
+      selectedModelKey:
+        selectedModel === null ? base.selectedModelKey : providerModelIdentityKey(selectedModel),
+    };
+  });
   const blocks = options.transcriptBlocks ?? NO_BLOCKS;
   const commandState = useMemo(
     () =>
@@ -918,14 +922,28 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
         dispatch({ kind: "notice", message: "Model selection is not attached." });
         return;
       }
-      void modelSelection.select(modelId.from(id)).then((selected) => {
+      const parsed = parseProviderModelIdentityKey(id);
+      if (!parsed.ok) {
+        dispatch({ kind: "close-overlay" });
+        dispatch({ kind: "notice", message: `${parsed.message} (${parsed.code})` });
+        return;
+      }
+      void modelSelection.select(parsed.value).then((selected) => {
         if (selected.ok) {
-          dispatch({ kind: "select-control", field, id: String(selected.modelId) });
+          dispatch({
+            kind: "select-control",
+            field,
+            id: providerModelIdentityKey({
+              providerProfileId: selected.providerProfileId,
+              providerId: selected.providerId,
+              modelId: selected.modelId,
+            }),
+          });
           dispatch({
             kind: "notice",
             message: selected.changed
-              ? `Model selected: ${String(selected.modelId)}.`
-              : `Model already selected: ${String(selected.modelId)}.`,
+              ? `Model selected: ${String(selected.modelId)} · Provider: ${selected.providerDisplayName} (${String(selected.providerId)}) · Profile: ${selected.providerProfileId}.`
+              : `Model already selected: ${String(selected.modelId)} · Provider: ${selected.providerDisplayName} (${String(selected.providerId)}) · Profile: ${selected.providerProfileId}.`,
           });
           return;
         }
