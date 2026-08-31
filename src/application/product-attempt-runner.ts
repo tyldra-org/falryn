@@ -14,6 +14,7 @@ import {
   type EffectCertainty,
   type EffectiveExecutionPolicy,
   foldToolEffects,
+  type ModelCapabilityBrief,
   recordBriefDelivery,
   resolveExecutionProfile,
   type SessionCorrelation,
@@ -48,6 +49,7 @@ import {
 import {
   createToolCallLoop,
   type ToolCallLoopOutcome,
+  type ToolFallbackPolicy,
   type ToolRunnerPort,
 } from "./tool-call-loop.ts";
 import {
@@ -153,11 +155,77 @@ function assistantToolMessage(
   };
 }
 
-function toolResultMessage(record: ToolInvocationRecord): ModelMessage {
+function toolResultMessage(
+  record: ToolInvocationRecord,
+  plan: ModelCapabilityBrief | undefined,
+): ModelMessage {
+  const transitions =
+    plan?.degradation.transitions.filter(
+      (transition) =>
+        transition.fromCapabilityId === record.capabilityId &&
+        transition.triggers.includes("runtime-unavailable"),
+    ) ?? [];
+  const decisions = new Map(
+    [...(plan?.selected ?? []), ...(plan?.rejected ?? [])].map((decision) => [
+      decision.capabilityId,
+      decision,
+    ]),
+  );
+  const terminal = plan?.degradation.terminalOutcomes.find(
+    (outcome) => outcome.capabilityId === record.capabilityId,
+  );
+  const payload =
+    record.outcome.status === "unavailable" && plan !== undefined
+      ? {
+          ...record.outcome,
+          degradation: {
+            decision: transitions.length > 0 ? "fallback-available" : "terminal-unavailable",
+            candidates: transitions
+              .map((transition) => decisions.get(transition.toCapabilityId)?.name)
+              .filter((name): name is string => name !== undefined),
+            strategy: "model-continuation",
+            terminalReason: terminal?.reason ?? "no-declared-fallback",
+            recoveryHandles: terminal?.recoveryHandles ?? [],
+          },
+        }
+      : record.outcome;
   return {
     role: "tool",
     toolCallId: record.toolCallId,
-    parts: [{ kind: "text", text: JSON.stringify(record.outcome) }],
+    parts: [{ kind: "text", text: JSON.stringify(payload) }],
+  };
+}
+
+function fallbackPolicy(
+  plan: ModelCapabilityBrief | undefined,
+  registry: ToolRegistry,
+  disclosedToolNames: readonly string[],
+): ToolFallbackPolicy | undefined {
+  if (plan === undefined) return undefined;
+  const disclosed = new Set(disclosedToolNames);
+  const grouped = new Map<string, string[]>();
+  for (const transition of plan.degradation.transitions) {
+    if (!transition.triggers.includes("runtime-unavailable")) continue;
+    const source = registry.resolveByCapabilityId(transition.fromCapabilityId);
+    const target = registry.resolveByCapabilityId(transition.toCapabilityId);
+    if (
+      source === null ||
+      target === null ||
+      !disclosed.has(source.manifest.name) ||
+      !disclosed.has(target.manifest.name)
+    ) {
+      continue;
+    }
+    const targets = grouped.get(source.manifest.name) ?? [];
+    if (!targets.includes(target.manifest.name)) targets.push(target.manifest.name);
+    grouped.set(source.manifest.name, targets);
+  }
+  return {
+    maxTransitions: plan.degradation.maxRuntimeTransitions,
+    transitions: [...grouped].map(([fromToolName, toToolNames]) => ({
+      fromToolName,
+      toToolNames: Object.freeze(toToolNames),
+    })),
   };
 }
 
@@ -511,7 +579,8 @@ function validateDisclosure(request: AttemptRunnerRequest, registry: ToolRegistr
     opportunityPlan !== undefined &&
     (opportunityPlan.catalogGeneration !== input.disclosure.catalogGeneration ||
       opportunityPlan.policyGeneration !== request.boundConfigurationGeneration ||
-      opportunityPlan.discoveryHandle !== input.disclosure.discoveryHandle)
+      opportunityPlan.discoveryHandle !== input.disclosure.discoveryHandle ||
+      opportunityPlan.degradation.catalogGeneration !== input.disclosure.catalogGeneration)
   ) {
     return "opportunity plan generation or discovery identity is stale";
   }
@@ -556,6 +625,40 @@ function validateDisclosure(request: AttemptRunnerRequest, registry: ToolRegistr
       measured.tokensEstimated !== receipt.schemaTokensEstimated
     ) {
       return "capability disclosure schema is mismatched";
+    }
+  }
+  if (opportunityPlan !== undefined) {
+    const selectedOrder = new Map(
+      opportunityPlan.selected.map((candidate, index) => [candidate.capabilityId, index]),
+    );
+    for (const transition of opportunityPlan.degradation.transitions) {
+      const source = registry.resolveByCapabilityId(transition.fromCapabilityId);
+      const target = registry.resolveByCapabilityId(transition.toCapabilityId);
+      const sourceOrder = selectedOrder.get(transition.fromCapabilityId);
+      const targetOrder = selectedOrder.get(transition.toCapabilityId);
+      const targetDisclosed = disclosed.some(
+        (tool) => tool.capabilityId === transition.toCapabilityId,
+      );
+      const observedEffectChange =
+        source === null || target === null
+          ? null
+          : source.manifest.effect === target.manifest.effect
+            ? "same"
+            : target.manifest.effect === "observation"
+              ? "reduced"
+              : null;
+      if (
+        source === null ||
+        target === null ||
+        targetOrder === undefined ||
+        !targetDisclosed ||
+        transition.fromCapabilityId === transition.toCapabilityId ||
+        (sourceOrder !== undefined && targetOrder <= sourceOrder) ||
+        observedEffectChange === null ||
+        transition.effectChange !== observedEffectChange
+      ) {
+        return "capability degradation transition is stale, recursive, or widens authority";
+      }
     }
   }
   return null;
@@ -704,6 +807,9 @@ export function createProductAttemptRunner(
         ),
         ...(options.confirmation === undefined ? {} : { confirmation: options.confirmation }),
         effectLedger,
+        ...(input.disclosure.opportunityPlan === undefined
+          ? {}
+          : { opportunityPlan: input.disclosure.opportunityPlan }),
       });
       const consumer = createProviderStreamConsumer({
         clock: options.clock,
@@ -774,10 +880,16 @@ export function createProductAttemptRunner(
         }
 
         messages.push(assistantToolMessage(initial.snapshot.text, initial.toolProposals));
+        const runtimeFallbackPolicy = fallbackPolicy(
+          input.disclosure.opportunityPlan,
+          options.registry,
+          input.disclosure.toolNames,
+        );
         const loop = createToolCallLoop({
           coordinator: options.coordinator,
           catalog: options.registry.catalog,
           runner: gateway,
+          ...(runtimeFallbackPolicy === undefined ? {} : { fallbackPolicy: runtimeFallbackPolicy }),
         });
         const loopOutcome = await loop.run({
           turnId: request.turnId,
@@ -789,7 +901,11 @@ export function createProductAttemptRunner(
           async continueModel(context) {
             const nextResults = context.results.slice(sentResults);
             sentResults = context.results.length;
-            messages.push(...nextResults.map(toolResultMessage));
+            messages.push(
+              ...nextResults.map((record) =>
+                toolResultMessage(record, input.disclosure.opportunityPlan),
+              ),
+            );
             if (briefRequest !== null && input.brief !== undefined) {
               const nextRequest = {
                 ...briefRequest,

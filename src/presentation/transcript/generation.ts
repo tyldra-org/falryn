@@ -27,8 +27,9 @@ import type { Sequence, StreamId } from "../../domain/index.ts";
 
 /**
  * Raised whenever the reducer's **structural** output for the same events would
- * change: which blocks exist, what each is anchored to, its kind, its status, or
- * the outcome it reports. Adding a kind nothing produces is not a change.
+ * change: which blocks exist, what each is anchored to, its kind, its status,
+ * the outcome it reports, or whether content is complete, omitted, redacted, or
+ * truncated. Adding a kind nothing produces is not a change.
  *
  * Summary wording is deliberately outside the rule, and the boundary is drawn
  * where the replay guard can actually hold it. `./replay.test.ts` records the
@@ -46,7 +47,7 @@ import type { Sequence, StreamId } from "../../domain/index.ts";
  * own checks do not apply is a comment that is quietly false, and the next
  * person to change a summary will believe they were covered.
  */
-export const TRANSCRIPT_PROJECTION_GENERATION = 2;
+export const TRANSCRIPT_PROJECTION_GENERATION = 3;
 
 /** How far one stream has been folded into a transcript. */
 export type TranscriptCursor = {

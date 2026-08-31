@@ -41,6 +41,17 @@ function capabilityBrief(disclosure: ProductToolDisclosure): string {
     .join(", ");
   const shownRejected = Math.min(5, plan.rejected.length);
   const hiddenRejected = plan.rejected.length - shownRejected + plan.omittedRejected;
+  const decisionById = new Map(
+    [...plan.selected, ...plan.rejected].map((decision) => [decision.capabilityId, decision]),
+  );
+  const degradationSummary = plan.degradation.transitions
+    .slice(0, 5)
+    .map((transition) => {
+      const from = decisionById.get(transition.fromCapabilityId)?.name ?? "unknown";
+      const to = decisionById.get(transition.toCapabilityId)?.name ?? "unknown";
+      return `${from}->${to}(${transition.effectChange};model-continuation)`;
+    })
+    .join(", ");
   const families = disclosure.receipt.families
     .map((entry) =>
       entry.available
@@ -70,6 +81,7 @@ function capabilityBrief(disclosure: ProductToolDisclosure): string {
     `Rejected or unavailable: ${rejectedSummary || "none"}; ${shownRejected} shown, ${hiddenRejected} omitted.`,
     `Automation opportunities: ${plan.opportunities.map((entry) => `${entry.kind}=${entry.decision}`).join(", ")}.`,
     `Routing-model assistance: ${plan.modelAssistance.decision} (${plan.modelAssistance.reason}).`,
+    `Explicit degradation: ${degradationSummary || "none"}; ${plan.degradation.terminalOutcomes.length} terminal unavailable outcomes; at most ${plan.degradation.maxRuntimeTransitions} runtime transitions.`,
     `Schema budget: ${plan.schemaTokensEstimated}/${plan.schemaTokenBudget} estimated tokens across ${plan.selected.length}/${plan.selectionLimit} selected slots.`,
     `Families: ${families}`,
     `Executable tools for this attempt: ${tools || "none"}`,

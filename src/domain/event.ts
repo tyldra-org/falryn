@@ -28,7 +28,7 @@ import type {
   TurnId,
   WorkspaceId,
 } from "./identity.ts";
-import type { ModelCapabilityBrief } from "./opportunity-plan.ts";
+import type { CapabilityUnavailableReason, ModelCapabilityBrief } from "./opportunity-plan.ts";
 import type { TerminalOutcome } from "./outcome.ts";
 import type { Timestamp } from "./time.ts";
 
@@ -206,6 +206,30 @@ export type CapabilityInvocationStartedPayload = {
   readonly inputDigest?: string | undefined;
 };
 
+export type CapabilityInvocationCompletedPayload = TerminalPayload & {
+  /** Exact normalized runner status; absent on legacy events. */
+  readonly observedStatus?:
+    | "completed"
+    | "failed"
+    | "cancelled"
+    | "timed-out"
+    | "uncertain"
+    | "denied"
+    | "unavailable"
+    | "malformed"
+    | "partial"
+    | undefined;
+  /** Secret-free transition facts from the attempt-bound degradation plan. */
+  readonly degradation?:
+    | {
+        readonly decision: "fallback-available" | "terminal-unavailable";
+        readonly candidateIds: readonly CapabilityId[];
+        readonly terminalReason: CapabilityUnavailableReason;
+        readonly recoveryHandles: readonly string[];
+      }
+    | undefined;
+};
+
 export type ConfigurationGenerationChangedPayload = {
   readonly generation: ConfigurationGeneration;
   readonly applicationClass: ConfigurationApplicationClass;
@@ -273,7 +297,7 @@ export type CapabilityInvocationStartedEvent = Envelope<
 export type CapabilityInvocationCompletedEvent = Envelope<
   "capability.invocation.completed",
   TurnCorrelation,
-  TerminalPayload
+  CapabilityInvocationCompletedPayload
 > & {
   readonly invocationId: InvocationId;
   readonly capabilityId: CapabilityId;

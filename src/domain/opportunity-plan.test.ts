@@ -155,6 +155,17 @@ describe("deterministic opportunity planning", () => {
     expect(result.opportunities.find((item) => item.kind === "computer")?.decision).toBe(
       "deferred",
     );
+    expect(result.degradation.transitions).toContainEqual(
+      expect.objectContaining({
+        fromCapabilityId: result.selected.find((entry) => entry.name === "browser_dom")
+          ?.capabilityId,
+        toCapabilityId: result.selected.find((entry) => entry.name === "computer_click")
+          ?.capabilityId,
+        strategy: "model-continuation",
+        informationChange: "different-contract",
+        effectChange: "same",
+      }),
+    );
   });
 
   test("selects matching skills, workflows, and MCP contributions without executing them", () => {
@@ -227,6 +238,7 @@ describe("deterministic opportunity planning", () => {
       preferredCapabilityIds: ["run_shell"],
     });
     const rejected = result.rejected.find((entry) => entry.name === "run_shell");
+    if (rejected === undefined) throw new Error("missing denied fallback fixture");
     expect(rejected).toMatchObject({
       decision: "unavailable",
       health: "denied",
@@ -234,6 +246,12 @@ describe("deterministic opportunity planning", () => {
     expect(rejected?.reasons).toContain("policy-denied");
     expect(rejected?.reasons).toContain("task-family");
     expect(rejected?.reasons).toContain("user-preference");
+    expect(result.degradation.terminalOutcomes).toContainEqual({
+      capabilityId: rejected.capabilityId,
+      outcome: "unavailable",
+      reason: "policy-denied",
+      recoveryHandles: [`capability:allow:${rejected.capabilityId}`],
+    });
   });
 
   test("returns a bounded no-candidate plan and rejects stale or malformed identity", () => {

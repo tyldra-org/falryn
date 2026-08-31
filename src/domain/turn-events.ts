@@ -10,6 +10,7 @@
 
 import type {
   CapabilityInvocationCompletedEvent,
+  CapabilityInvocationCompletedPayload,
   CapabilityInvocationStartedEvent,
   ExecutionProfileSelectedEvent,
   ModelAttemptBinding,
@@ -91,6 +92,8 @@ export type TurnLifecycleFact =
       readonly invocationId: InvocationId;
       readonly capabilityId: CapabilityId;
       readonly outcome: TerminalOutcome;
+      readonly observedStatus?: CapabilityInvocationCompletedPayload["observedStatus"];
+      readonly degradation?: CapabilityInvocationCompletedPayload["degradation"];
     };
 
 /**
@@ -237,7 +240,11 @@ export function buildTurnLifecycleEvent(input: BuildTurnEventInput): RuntimeEven
         invocationId: fact.invocationId,
         capabilityId: fact.capabilityId,
         correlation: fact.correlation,
-        payload: { outcome: fact.outcome },
+        payload: {
+          outcome: fact.outcome,
+          ...(fact.observedStatus === undefined ? {} : { observedStatus: fact.observedStatus }),
+          ...(fact.degradation === undefined ? {} : { degradation: fact.degradation }),
+        },
       };
       return event;
     }
@@ -260,6 +267,8 @@ export type ReplayedInvocation = {
   readonly startedAt: Timestamp | null;
   readonly completedAt: Timestamp | null;
   readonly outcome: TerminalOutcome | null;
+  readonly observedStatus: CapabilityInvocationCompletedPayload["observedStatus"] | null;
+  readonly degradation: CapabilityInvocationCompletedPayload["degradation"] | null;
 };
 
 /**
@@ -306,6 +315,8 @@ type MutableInvocation = {
   startedAt: Timestamp | null;
   completedAt: Timestamp | null;
   outcome: TerminalOutcome | null;
+  observedStatus: CapabilityInvocationCompletedPayload["observedStatus"] | null;
+  degradation: CapabilityInvocationCompletedPayload["degradation"] | null;
 };
 
 type MutableTurn = {
@@ -427,6 +438,8 @@ export function reduceTurnEvents(events: readonly RuntimeEvent[]): TurnEventRedu
             startedAt: null,
             completedAt: null,
             outcome: null,
+            observedStatus: null,
+            degradation: null,
           };
           turn.invocations.set(event.invocationId, invocation);
           turn.invocationOrder.push(event.invocationId);
@@ -445,12 +458,16 @@ export function reduceTurnEvents(events: readonly RuntimeEvent[]): TurnEventRedu
             startedAt: null,
             completedAt: null,
             outcome: null,
+            observedStatus: null,
+            degradation: null,
           };
           turn.invocations.set(event.invocationId, invocation);
           turn.invocationOrder.push(event.invocationId);
         }
         invocation.completedAt = event.occurredAt;
         invocation.outcome = event.payload.outcome;
+        invocation.observedStatus = event.payload.observedStatus ?? null;
+        invocation.degradation = event.payload.degradation ?? null;
         invocation.capabilityId = event.capabilityId;
         break;
       }
@@ -534,6 +551,8 @@ function freezeTurn(turn: MutableTurn): ReplayedTurn {
               startedAt: invocation.startedAt,
               completedAt: invocation.completedAt,
               outcome: invocation.outcome,
+              observedStatus: invocation.observedStatus,
+              degradation: invocation.degradation,
             },
           ];
     }),

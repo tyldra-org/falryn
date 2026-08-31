@@ -55,11 +55,21 @@ export type ToolRunnerPort = {
   execute(request: ToolRunnerRequest): Promise<ToolInvocationOutcome>;
 };
 
+/** Explicit no-effect runtime fallback edges selected before provider inference. */
+export type ToolFallbackPolicy = {
+  readonly maxTransitions: number;
+  readonly transitions: readonly {
+    readonly fromToolName: string;
+    readonly toToolNames: readonly string[];
+  }[];
+};
+
 export type ToolCallLoopOptions = {
   readonly coordinator: TurnCoordinator;
   readonly catalog: ToolCatalog;
   readonly runner: ToolRunnerPort;
   readonly limits?: Partial<ToolCallLoopLimits>;
+  readonly fallbackPolicy?: ToolFallbackPolicy;
 };
 
 export type ContinueModelContext = {

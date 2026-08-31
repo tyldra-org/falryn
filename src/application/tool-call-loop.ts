@@ -53,6 +53,8 @@ export function createToolCallLoop(options: ToolCallLoopOptions): ToolCallLoop {
     async run(input) {
       const results: ToolInvocationRecord[] = [];
       const seenToolCallIds = new Set<string>();
+      const fallbackVisited = new Set<string>();
+      let fallbackTransitions = 0;
       let iteration = 0;
       let proposals = toProposals(input.proposals);
       const abortAs = (): "cancel" | "timeout" =>
@@ -172,14 +174,27 @@ export function createToolCallLoop(options: ToolCallLoopOptions): ToolCallLoop {
         }
 
         const preTerminal = classifyPreTerminal(executed.records);
-        if (preTerminal !== null) {
+        const fallback =
+          preTerminal?.kind === "unavailable" && input.continueModel !== undefined
+            ? resolveExplicitFallback(
+                executed.records,
+                options.fallbackPolicy,
+                fallbackVisited,
+                fallbackTransitions,
+                limits.maxIterations,
+              )
+            : null;
+        if (preTerminal !== null && fallback?.kind !== "available") {
           return settleClassified({
             coordinator,
             turnId: input.turnId,
             configurationGeneration: input.configurationGeneration,
             iterations: iteration,
             results,
-            classified: preTerminal,
+            classified:
+              fallback?.kind === "exhausted"
+                ? { kind: "unavailable", reason: fallback.reason }
+                : preTerminal,
           });
         }
 
@@ -261,6 +276,40 @@ export function createToolCallLoop(options: ToolCallLoopOptions): ToolCallLoop {
           });
         }
 
+        if (fallback?.kind === "available") {
+          const nextNames = continued.proposals.map((proposal) => proposal.name);
+          const undeclared = nextNames.find((name) => !fallback.allowedToolNames.has(name));
+          if (undeclared !== undefined) {
+            return settleClassified({
+              coordinator,
+              turnId: input.turnId,
+              configurationGeneration: input.configurationGeneration,
+              iterations: iteration,
+              results,
+              classified: {
+                kind: "unavailable",
+                reason: `fallback-not-declared:${undeclared}`,
+              },
+            });
+          }
+          if (
+            nextNames.length === 0 ||
+            fallbackTransitions + nextNames.length > fallback.maximumTransitions
+          ) {
+            return settleClassified({
+              coordinator,
+              turnId: input.turnId,
+              configurationGeneration: input.configurationGeneration,
+              iterations: iteration,
+              results,
+              classified: { kind: "unavailable", reason: "fallback-transition-limit" },
+            });
+          }
+          for (const source of fallback.fromToolNames) fallbackVisited.add(source);
+          for (const target of nextNames) fallbackVisited.add(target);
+          fallbackTransitions += nextNames.length;
+        }
+
         const current = coordinator.get(input.turnId);
         if (current?.phase === "awaiting-model") {
           const handling = applyCommand(
@@ -336,6 +385,50 @@ function toProposals(
     name: proposal.name,
     arguments: proposal.arguments,
   }));
+}
+
+type ExplicitFallbackResolution =
+  | {
+      readonly kind: "available";
+      readonly fromToolNames: readonly string[];
+      readonly allowedToolNames: ReadonlySet<string>;
+      readonly maximumTransitions: number;
+    }
+  | { readonly kind: "exhausted"; readonly reason: string };
+
+function resolveExplicitFallback(
+  records: readonly ToolInvocationRecord[],
+  policy: ToolCallLoopOptions["fallbackPolicy"],
+  visited: ReadonlySet<string>,
+  transitionsMade: number,
+  loopMaximum: number,
+): ExplicitFallbackResolution {
+  const fromToolNames = records
+    .filter((record) => record.outcome.status === "unavailable")
+    .map((record) => record.toolName);
+  if (policy === undefined || fromToolNames.length === 0) {
+    return { kind: "exhausted", reason: "no-declared-fallback" };
+  }
+  const maximumTransitions = Math.min(loopMaximum, Math.max(1, Math.trunc(policy.maxTransitions)));
+  if (transitionsMade >= maximumTransitions) {
+    return { kind: "exhausted", reason: "fallback-transition-limit" };
+  }
+  const declaredToolNames = policy.transitions
+    .filter((transition) => fromToolNames.includes(transition.fromToolName))
+    .flatMap((transition) => transition.toToolNames);
+  if (declaredToolNames.length === 0) {
+    return { kind: "exhausted", reason: "no-declared-fallback" };
+  }
+  const allowedToolNames = new Set(declaredToolNames.filter((name) => !visited.has(name)));
+  if (allowedToolNames.size === 0) {
+    return { kind: "exhausted", reason: "fallback-exhausted" };
+  }
+  return {
+    kind: "available",
+    fromToolNames: Object.freeze(fromToolNames),
+    allowedToolNames,
+    maximumTransitions,
+  };
 }
 
 function applyCommand(

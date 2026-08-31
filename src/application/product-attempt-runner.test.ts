@@ -39,6 +39,7 @@ import { discloseProductTools } from "./product-tool-disclosure.ts";
 import { composeProductProcessTools } from "./product-tools-process.ts";
 import { composeProductWorkspaceTools } from "./product-tools-workspace.ts";
 import { promptCacheStablePrefixDigest } from "./provider-prompt-cache.ts";
+import type { ToolRunnerPort } from "./tool-call-loop.ts";
 
 const generation = configurationGeneration.from(5);
 
@@ -46,6 +47,7 @@ function setup(
   adapter = createDeterministicProviderAdapter({
     script: { kind: "abortable", hangUntilAbort: true },
   }),
+  wrapRunner: (base: ToolRunnerPort) => ToolRunnerPort = (base) => base,
 ) {
   const correlation = {
     workspaceId: workspaceId.from("workspace-attempt-product"),
@@ -59,14 +61,16 @@ function setup(
     commands: createStubCommandRunner(() => ({ kind: "exited", exitCode: 1, stdout: "" })),
     workspaceRoot: localPath("/work"),
   });
+  const eventStore = createInMemoryEventStore();
+  const runtimeStreamId = streamId.from("session:attempt-product");
   const runtime = composeProductAgentRuntime({
-    eventStore: createInMemoryEventStore(),
+    eventStore,
     clock: createManualClock(instant(100)),
-    streamId: streamId.from("session:attempt-product"),
+    streamId: runtimeStreamId,
     correlation,
     providerAdapter: adapter,
     toolRegistry: tools.registry,
-    toolRunner: tools.runner,
+    toolRunner: wrapRunner(tools.runner),
   });
   if (!runtime.ok) {
     throw new Error(runtime.error.code);
@@ -75,7 +79,14 @@ function setup(
     createProductCapabilityRegistry(tools.registry.generation, tools.registry),
     tools.registry,
   );
-  return { adapter, correlation, runtime: runtime.value, disclosure };
+  return {
+    adapter,
+    correlation,
+    runtime: runtime.value,
+    disclosure,
+    eventStore,
+    runtimeStreamId,
+  };
 }
 
 function receipt(
@@ -461,6 +472,105 @@ describe("createProductAttemptRunner", () => {
     );
   });
 
+  test("returns an explicit degradation notice and accepts only its declared fallback", async () => {
+    const requests: ModelRequest[] = [];
+    const adapter = createDeterministicProviderAdapter({
+      script: (_request, index) => {
+        if (index === 0) {
+          return {
+            kind: "tool",
+            toolCallId: "call-read-primary",
+            name: "read_file",
+            argumentFragments: ['{"path":"missing.ts"}'],
+          };
+        }
+        if (index === 1) {
+          return {
+            kind: "tool",
+            toolCallId: "call-read-fallback",
+            name: "list_dir",
+            argumentFragments: ['{"path":"."}'],
+          };
+        }
+        return { kind: "text", text: "Used the declared fallback." };
+      },
+      onRequest: (request) => requests.push(request),
+    });
+    const product = setup(adapter, (base) => ({
+      async execute(request) {
+        return request.toolName === "read_file"
+          ? { status: "unavailable", reason: "reader-offline", effect: "none" }
+          : base.execute(request);
+      },
+    }));
+    const turn = await start(product, "turn-attempt-degradation");
+    const runner = product.runtime.requireAttemptRunner();
+    if (!runner.ok) throw new Error(runner.error.code);
+
+    const result = await runner.value.run({
+      turnId: turn,
+      identity: {
+        attemptNumber: 1,
+        modelAttemptId: modelAttemptId.from("attempt-degradation"),
+        fallbackPosition: 0,
+        providerKey: adapter.identity.providerId,
+        modelKey: String(adapter.supportedModels[0]),
+      },
+      receipt: receipt(product),
+      boundConfigurationGeneration: generation,
+      configurationGeneration: generation,
+      signal: new AbortController().signal,
+      modelInput: {
+        messages: [{ role: "user", parts: [{ kind: "text", text: "Inspect the workspace." }] }],
+        tools: product.disclosure.modelTools,
+        output: { kind: "text" },
+        budgets: {},
+        disclosure: disclosureInput(product),
+      },
+    });
+
+    expect(result.fact.kind).toBe("completed");
+    expect(result.output).toMatchObject({
+      text: "Used the declared fallback.",
+      toolResults: 2,
+      providerRequests: 3,
+    });
+    const fallbackResult = requests[1]?.messages
+      .find((message) => message.role === "tool")
+      ?.parts.find((part) => part.kind === "text");
+    expect(fallbackResult?.kind).toBe("text");
+    if (fallbackResult?.kind !== "text") throw new Error("missing fallback tool result");
+    expect(fallbackResult.text).toContain('"decision":"fallback-available"');
+    expect(fallbackResult.text).toContain('"candidates":["list_dir"');
+    expect(requests[2]?.messages.some((message) => message.role === "tool")).toBe(true);
+
+    const stored = await product.eventStore.readFrom(
+      { streamId: product.runtimeStreamId, afterSequence: null },
+      32,
+    );
+    expect(stored.ok).toBe(true);
+    if (!stored.ok) throw new Error(stored.error.code);
+    const readCompletion = stored.value.find(
+      (event) =>
+        event.kind === "capability.invocation.completed" &&
+        event.capabilityId === capabilityId.from("builtin:workspace/read_file@1"),
+    );
+    expect(readCompletion?.kind).toBe("capability.invocation.completed");
+    if (readCompletion?.kind !== "capability.invocation.completed") {
+      throw new Error("missing durable read completion");
+    }
+    expect(readCompletion.payload).toMatchObject({
+      observedStatus: "unavailable",
+      degradation: {
+        decision: "fallback-available",
+        terminalReason: "fallback-exhausted",
+      },
+    });
+    expect(readCompletion.payload.degradation?.candidateIds).toContain(
+      capabilityId.from("builtin:workspace/list_dir@1"),
+    );
+  });
+
   test("classifies its own wall-time deadline as timed-out", async () => {
     const product = setup();
     const turn = await start(product, "turn-attempt-timeout");
@@ -585,6 +695,71 @@ describe("createProductAttemptRunner", () => {
           opportunityPlan: {
             ...disclosure.opportunityPlan,
             policyGeneration: configurationGeneration.from(6),
+          },
+        },
+      },
+    });
+
+    expect(result.fact).toMatchObject({
+      kind: "failed",
+      category: "invalid-request",
+      retryable: false,
+      effect: "none",
+    });
+    expect(providerRequests).toBe(0);
+  });
+
+  test("rejects an undeclared recursive degradation edge before contacting the provider", async () => {
+    let providerRequests = 0;
+    const product = setup(
+      createDeterministicProviderAdapter({
+        onRequest: () => {
+          providerRequests += 1;
+        },
+      }),
+    );
+    const turn = await start(product, "turn-attempt-recursive-degradation");
+    const runner = product.runtime.requireAttemptRunner();
+    if (!runner.ok) throw new Error(runner.error.code);
+    const disclosure = disclosureInput(product);
+    const opportunityPlan = disclosure.opportunityPlan;
+    const transition = opportunityPlan?.degradation.transitions[0];
+    if (opportunityPlan === undefined || transition === undefined) {
+      throw new Error("expected a degradation transition");
+    }
+
+    const result = await runner.value.run({
+      turnId: turn,
+      identity: {
+        attemptNumber: 1,
+        modelAttemptId: modelAttemptId.from("attempt-recursive-degradation"),
+        fallbackPosition: 0,
+        providerKey: product.adapter.identity.providerId,
+        modelKey: String(product.adapter.supportedModels[0]),
+      },
+      receipt: receipt(product),
+      boundConfigurationGeneration: generation,
+      configurationGeneration: generation,
+      signal: new AbortController().signal,
+      modelInput: {
+        messages: [{ role: "user", parts: [{ kind: "text", text: "hello" }] }],
+        tools: product.disclosure.modelTools,
+        output: { kind: "text" },
+        budgets: {},
+        disclosure: {
+          ...disclosure,
+          opportunityPlan: {
+            ...opportunityPlan,
+            degradation: {
+              ...opportunityPlan.degradation,
+              transitions: [
+                {
+                  ...transition,
+                  toCapabilityId: transition.fromCapabilityId,
+                },
+                ...opportunityPlan.degradation.transitions.slice(1),
+              ],
+            },
           },
         },
       },
