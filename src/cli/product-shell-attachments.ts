@@ -524,6 +524,19 @@ function providerControls(provider: ProductProviderConnectionHandoff | undefined
               }
             : { kind: "known", text: profile.displayName },
       },
+      {
+        label: "authentication",
+        value:
+          ready === null
+            ? {
+                kind: "unavailable",
+                reason: provider?.kind === "unavailable" ? provider.code : "not connected",
+              }
+            : {
+                kind: "known",
+                text: `${ready.auth.state} · ${ready.connection.account?.authMethod ?? "api-key"}`,
+              },
+      },
       { label: "memory", value: { kind: "unavailable", reason: "no resource probe yet" } },
       { label: "tokens", value: { kind: "unavailable", reason: "no usage yet" } },
     ],

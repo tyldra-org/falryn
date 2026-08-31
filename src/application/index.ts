@@ -13,6 +13,15 @@ export { createArtifactReader } from "./artifact-read.ts";
 export type { ArtifactViewer } from "./artifact-view.ts";
 export { createArtifactViewer } from "./artifact-view.ts";
 export type {
+  AuthorizedLoginAdapterBinding,
+  AuthorizedLoginAdapterRegistry,
+  AuthorizedLoginAdapterResolution,
+  AuthorizedLoginRegistrySnapshot,
+} from "./authorized-login-registry.ts";
+export { createAuthorizedLoginAdapterRegistry } from "./authorized-login-registry.ts";
+export type { AuthorizedProviderLoginOptions } from "./authorized-provider-login.ts";
+export { createAuthorizedProviderLogin } from "./authorized-provider-login.ts";
+export type {
   BoundedQueue,
   BoundedQueueOptions,
   EnqueueRequest,

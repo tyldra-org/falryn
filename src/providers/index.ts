@@ -26,6 +26,52 @@ export {
   PROVIDER_AUTH_STATES,
 } from "./auth.ts";
 export { establishProviderAuth, removeProviderCredential } from "./auth-service.ts";
+export type {
+  AuthorizationBrowserPort,
+  AuthorizationCallback,
+  AuthorizationCallbackMode,
+  AuthorizationCryptoPort,
+  AuthorizationInteractionPort,
+  AuthorizationLoopbackPort,
+  AuthorizationLoopbackSession,
+  AuthorizationReceiptOutcome,
+  AuthorizedLoginMethod,
+  AuthorizedProviderCredential,
+  AuthorizedProviderLoginDescriptor,
+  AuthorizedProviderLoginHost,
+  ProviderAuthorizationDenied,
+  ProviderAuthorizationExchangeResult,
+  ProviderAuthorizationFailure,
+  ProviderAuthorizationReceipt,
+  ProviderAuthorizedLoginAdapter,
+  ProviderAuthorizedLoginAvailability,
+  ProviderDeviceCodePollResult,
+  ProviderDeviceCodeStartResult,
+  ProviderPkceStartResult,
+  ProviderRefreshResult,
+  ProviderRemoteRevocationResult,
+} from "./authorized-login.ts";
+export {
+  AUTHORIZATION_CALLBACK_MODES,
+  AUTHORIZATION_RECEIPT_OUTCOMES,
+  AUTHORIZED_LOGIN_METHODS,
+  AUTHORIZED_LOGIN_SCHEMA_VERSION,
+  MAX_AUTHORIZATION_CODE_LENGTH,
+  MAX_AUTHORIZATION_ID_LENGTH,
+  MAX_AUTHORIZATION_SCOPE_LENGTH,
+  MAX_AUTHORIZATION_SCOPES,
+  MAX_AUTHORIZATION_TOKEN_LENGTH,
+  MAX_AUTHORIZATION_URL_LENGTH,
+} from "./authorized-login.ts";
+export type { AuthorizedLoginParseError } from "./authorized-login-schema.ts";
+export {
+  authorizedProviderCredentialSchema,
+  authorizedProviderLoginDescriptorSchema,
+  parseAuthorizedProviderCredential,
+  parseAuthorizedProviderLoginDescriptor,
+  parseProviderAuthorizationReceipt,
+  providerAuthorizationReceiptSchema,
+} from "./authorized-login-schema.ts";
 export {
   BUILTIN_MODEL_CATALOGS,
   builtinModelCapability,

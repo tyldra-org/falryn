@@ -2,9 +2,11 @@
 
 import type { ClockPort, CredentialReference } from "../../domain/index.ts";
 import type {
+  AuthorizedLoginMethod,
   ModelCatalog,
   ProviderAccountMetadata,
   ProviderAuthMethod,
+  ProviderAuthorizationReceipt,
   ProviderAuthSnapshot,
   ProviderConnection,
   ProviderConnectionState,
@@ -38,19 +40,59 @@ export type AuthorizedProviderLoginResult =
       readonly kind: "authorized";
       readonly reference: CredentialReference;
       readonly account: ProviderAccountMetadata;
+      readonly receipt: ProviderAuthorizationReceipt;
     }
-  | { readonly kind: "cancelled" }
-  | { readonly kind: "denied"; readonly code: string }
-  | { readonly kind: "timed-out"; readonly code: string }
-  | { readonly kind: "failed"; readonly code: string; readonly retryable: boolean };
+  | { readonly kind: "cancelled"; readonly receipt: ProviderAuthorizationReceipt | null }
+  | {
+      readonly kind: "denied";
+      readonly code: string;
+      readonly receipt: ProviderAuthorizationReceipt | null;
+    }
+  | {
+      readonly kind: "timed-out";
+      readonly code: string;
+      readonly receipt: ProviderAuthorizationReceipt | null;
+    }
+  | {
+      readonly kind: "failed";
+      readonly code: string;
+      readonly retryable: boolean;
+      readonly receipt: ProviderAuthorizationReceipt | null;
+    };
 
-/** Official provider flow. The adapter persists its own secret bytes. */
+export type AuthorizedProviderRefreshResult =
+  | {
+      readonly kind: "refreshed";
+      readonly reference: CredentialReference;
+      readonly account: ProviderAccountMetadata;
+    }
+  | {
+      readonly kind: "reauthorization-required" | "failed" | "unavailable" | "cancelled";
+      readonly code: string;
+      readonly retryable: boolean;
+    };
+
+export type AuthorizedProviderRevocationResult = {
+  readonly remote: "revoked" | "not-attempted" | "failed" | "unsupported";
+  readonly code: string | null;
+};
+
+/** Shared provider flow. Falryn persists secret bytes after adapter exchange. */
 export type AuthorizedProviderLoginPort = {
+  methods(profile: ProviderProfile): readonly AuthorizedLoginMethod[];
   authorize(
     profile: ProviderProfile,
     method: Exclude<ProviderAuthMethod, "api-key">,
     signal?: AbortSignal,
   ): Promise<AuthorizedProviderLoginResult>;
+  refresh(
+    connection: ProviderConnection,
+    signal?: AbortSignal,
+  ): Promise<AuthorizedProviderRefreshResult>;
+  revoke(
+    connection: ProviderConnection,
+    signal?: AbortSignal,
+  ): Promise<AuthorizedProviderRevocationResult>;
 };
 
 export type ProviderConnectionAction =
@@ -114,6 +156,7 @@ export type ProviderConnectionView = {
   readonly credentialConfigured: boolean;
   readonly credentialStore: CredentialReference["storeKind"] | null;
   readonly accountLabel: string | null;
+  readonly authMethods: readonly ProviderAuthMethod[];
   readonly selected: boolean;
   readonly models: readonly string[];
   readonly catalogs: readonly string[];
@@ -149,6 +192,7 @@ export type ProviderConnectionActionResult =
         readonly local: string;
         readonly remote: string;
       } | null;
+      readonly authorization: ProviderAuthorizationReceipt | null;
     }
   | {
       readonly kind: "failed";
@@ -157,6 +201,7 @@ export type ProviderConnectionActionResult =
       readonly auth: ProviderAuthSnapshot | null;
       readonly catalog: ModelCatalog | null;
       readonly discovery: ProviderConnectionDiscoveryView;
+      readonly authorization: ProviderAuthorizationReceipt | null;
     };
 
 export type ProviderConnectionServicePorts = {

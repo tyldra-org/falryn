@@ -249,6 +249,10 @@ describe("composeProductShellAttachments", () => {
       label: "provider",
       value: { kind: "known", text: "Demo provider" },
     });
+    expect(attachments?.controls.resources[1]).toEqual({
+      label: "authentication",
+      value: { kind: "known", text: "ready · api-key" },
+    });
     expect(
       await attachments?.submission.modelSelection.select({
         ...selectedSelection,

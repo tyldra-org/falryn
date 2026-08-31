@@ -11,6 +11,12 @@ export type {
   AnthropicSdkStreamFactory,
 } from "./anthropic-sdk-adapter.ts";
 export { createAnthropicSdkAdapter } from "./anthropic-sdk-adapter.ts";
+export type { HostAuthorizedProviderLoginOptions } from "./authorized-login-host.ts";
+export {
+  createAuthorizationCrypto,
+  createBunAuthorizationLoopback,
+  createHostAuthorizedProviderLogin,
+} from "./authorized-login-host.ts";
 export { classifySqliteError, openBunSqlite } from "./bun-sqlite.ts";
 export type { CommandCodeProviderAdapterOptions } from "./command-code-provider-adapter.ts";
 export { createCommandCodeProviderAdapter } from "./command-code-provider-adapter.ts";
