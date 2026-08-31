@@ -4,6 +4,7 @@ import type { ModelInfo as AnthropicModelInfo } from "@anthropic-ai/sdk/resource
 
 import { instant } from "../domain/clock.ts";
 import { modelId, providerId } from "../domain/identity.ts";
+import { OPENAI_CODEX_AUTHORIZATION_UNAVAILABLE_CODE } from "../providers/openai-codex-policy.ts";
 import type { ProviderProfile } from "../providers/profile.ts";
 import {
   createOfficialModelDiscovery,
@@ -153,6 +154,31 @@ describe("official model capability translation", () => {
 });
 
 describe("createOfficialModelDiscovery", () => {
+  test("reports the OpenAI Codex provider-policy boundary before credential resolution", async () => {
+    let credentialResolutions = 0;
+    const discovery = createOfficialModelDiscovery({
+      resolveApiKey: async () => {
+        credentialResolutions += 1;
+        return "must-not-be-resolved";
+      },
+    });
+
+    expect(
+      await discovery.discover(profile("openai-codex", ["gpt-5-codex"]), {
+        signal: new AbortController().signal,
+        now: instant(1_000),
+      }),
+    ).toEqual({
+      kind: "failed",
+      failure: {
+        kind: "unsupported-policy",
+        code: OPENAI_CODEX_AUTHORIZATION_UNAVAILABLE_CODE,
+        retryable: false,
+      },
+    });
+    expect(credentialResolutions).toBe(0);
+  });
+
   test("publishes only configured model identities and marks missing ones unavailable", async () => {
     const discovery = createOfficialModelDiscovery({
       generation: 11,

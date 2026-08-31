@@ -87,6 +87,7 @@ export {
   createOfficialModelDiscovery,
   officialModelCapabilityTranslators,
 } from "./official-model-discovery.ts";
+export { createOpenAiCodexAuthorizedLoginAdapter } from "./openai-codex-authorized-login-adapter.ts";
 export type { OpenAiProviderAdapterOptions } from "./openai-provider-adapter.ts";
 export { createOpenAiProviderAdapter } from "./openai-provider-adapter.ts";
 export type {

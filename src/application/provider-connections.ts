@@ -9,6 +9,7 @@ import {
   type DiscoveryOutcome,
   MAX_PROVIDER_CONNECTIONS,
   type ModelCatalog,
+  OPENAI_CODEX_AUTHORIZATION_UNAVAILABLE_CODE,
   openProviderSession,
   PROVIDER_CONNECTION_SCHEMA_VERSION,
   type ProviderAuthorizationReceipt,
@@ -95,6 +96,9 @@ export function createProviderConnectionService(
       let connection = find(parsed.value, parsed.value.selectedProfileId);
       if (connection === null) {
         return unavailableHandoff("profile-missing", false);
+      }
+      if (connection.profile.adapterKind === "openai-codex") {
+        return unavailableHandoff(OPENAI_CODEX_AUTHORIZATION_UNAVAILABLE_CODE, false, connection);
       }
       const expired = expiredAuth(connection, ports.clock);
       if (expired !== null) {
@@ -210,6 +214,9 @@ async function configure(
   if (current === null) {
     return failure(action.kind, "profile-missing", false);
   }
+  if (current.profile.credential !== null && action.profile.adapterKind === "openai-codex") {
+    return failure(action.kind, "credential-already-configured", false);
+  }
   const preservedCapabilities =
     action.preserveCapabilities &&
     current.profile.adapterKind === action.profile.adapterKind &&
@@ -291,6 +298,9 @@ async function testConnection(
   if (connection === null) {
     return failure(action.kind, "profile-missing", false);
   }
+  if (connection.profile.adapterKind === "openai-codex") {
+    return failure(action.kind, OPENAI_CODEX_AUTHORIZATION_UNAVAILABLE_CODE, false);
+  }
   const expired = expiredAuth(connection, ports.clock);
   if (expired !== null) {
     return failure(action.kind, "credential-expired", false, expired);
@@ -339,6 +349,9 @@ async function loginApiKey(
   }
   if (current.profile.credential !== null) {
     return failure(action.kind, "credential-already-configured", false);
+  }
+  if (current.profile.adapterKind === "openai-codex") {
+    return failure(action.kind, OPENAI_CODEX_AUTHORIZATION_UNAVAILABLE_CODE, false);
   }
   const reference: CredentialReference = {
     storeKind: "operating-system-keychain",
@@ -421,9 +434,7 @@ async function loginAuthorized(
     case "failed":
       return failure(
         action.kind,
-        authorized.code === "authorized-login-adapter-unavailable"
-          ? "authorized-login-unavailable"
-          : "authorization-failed",
+        authorizedLoginFailureCode(authorized.code),
         authorized.retryable,
         null,
         null,
@@ -594,6 +605,21 @@ async function discoverConnection(
   if (connection === null) {
     return success(action, state, null, null, undefined, authorization, ports.authorizedLogin);
   }
+  if (connection.profile.adapterKind === "openai-codex") {
+    return success(
+      action,
+      state,
+      null,
+      null,
+      {
+        kind: "failed",
+        code: OPENAI_CODEX_AUTHORIZATION_UNAVAILABLE_CODE,
+        retryable: false,
+      },
+      authorization,
+      ports.authorizedLogin,
+    );
+  }
   const opened = await openProviderSession({
     profile: connection.profile,
     ports: {
@@ -698,6 +724,16 @@ function failure(
   };
 }
 
+function authorizedLoginFailureCode(code: string): ProviderConnectionIssueCode {
+  if (code === "authorized-login-adapter-unavailable") {
+    return "authorized-login-unavailable";
+  }
+  if (code === OPENAI_CODEX_AUTHORIZATION_UNAVAILABLE_CODE) {
+    return OPENAI_CODEX_AUTHORIZATION_UNAVAILABLE_CODE;
+  }
+  return "authorization-failed";
+}
+
 function discoveryView(outcome: DiscoveryOutcome): ProviderConnectionDiscoveryView {
   if (outcome.kind === "failed") {
     return {
@@ -730,6 +766,7 @@ function view(
   authorizedLogin: ProviderConnectionServicePorts["authorizedLogin"],
 ): ProviderConnectionView {
   const { profile } = connection;
+  const authorizedMethods = authorizedLogin?.methods(profile) ?? [];
   return {
     profileId: profile.profileId,
     providerId: String(profile.providerId),
@@ -739,7 +776,10 @@ function view(
     credentialConfigured: profile.credential !== null,
     credentialStore: profile.credential?.storeKind ?? null,
     accountLabel: connection.account?.displayName ?? profile.credential?.accountLabel ?? null,
-    authMethods: ["api-key", ...(authorizedLogin?.methods(profile) ?? [])],
+    authMethods:
+      profile.adapterKind === "openai-codex"
+        ? authorizedMethods
+        : ["api-key", ...authorizedMethods],
     selected: profile.profileId === selected,
     models: profile.enabledModels.map(String),
     catalogs: profile.catalogs ?? [],

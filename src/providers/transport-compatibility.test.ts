@@ -13,11 +13,18 @@ import { parseProviderTransportCompatibilityDeclaration } from "./transport-comp
 
 describe("provider transport compatibility", () => {
   test("gives every adapter an immutable default plan", () => {
-    const plans = ["deterministic", "openai", "anthropic", "google", "commandcode", "custom"].map(
-      (adapterKind) =>
-        defaultProviderTransportCompatibility(
-          adapterKind as Parameters<typeof defaultProviderTransportCompatibility>[0],
-        ),
+    const plans = [
+      "deterministic",
+      "openai",
+      "anthropic",
+      "google",
+      "commandcode",
+      "openai-codex",
+      "custom",
+    ].map((adapterKind) =>
+      defaultProviderTransportCompatibility(
+        adapterKind as Parameters<typeof defaultProviderTransportCompatibility>[0],
+      ),
     );
 
     expect(plans.every((plan) => plan.provenance === "adapter-default")).toBe(true);

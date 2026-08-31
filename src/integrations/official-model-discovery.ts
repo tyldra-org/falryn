@@ -17,6 +17,7 @@ import {
   type ModelFeatureSupport,
   unknownModelCapability,
 } from "../providers/model-capability.ts";
+import { OPENAI_CODEX_AUTHORIZATION_UNAVAILABLE_CODE } from "../providers/openai-codex-policy.ts";
 import type { ProviderProfile } from "../providers/profile.ts";
 
 export type CommandCodeModelInfo = OpenAiModel & {
@@ -269,10 +270,14 @@ async function loadCommandCodeModels(
     if (models.length === MAX_DISCOVERED_MODELS) {
       throw new ModelDiscoveryContractError("provider-model-catalog-too-large");
     }
+    const enriched = record as typeof record & {
+      readonly name?: unknown;
+      readonly context_length?: unknown;
+    };
     models.push({
       ...record,
-      name: Reflect.get(record, "name"),
-      context_length: Reflect.get(record, "context_length"),
+      name: enriched.name,
+      context_length: enriched.context_length,
     });
   }
   return models;
@@ -349,10 +354,11 @@ function failure(error: unknown, signal: AbortSignal): DiscoveryOutcome {
       failure: { kind: "malformed", code: error.code, retryable: false },
     };
   }
-  const status =
-    typeof error === "object" && error !== null && typeof Reflect.get(error, "status") === "number"
-      ? Number(Reflect.get(error, "status"))
+  const statusValue =
+    typeof error === "object" && error !== null
+      ? (error as { readonly status?: unknown }).status
       : null;
+  const status = typeof statusValue === "number" ? statusValue : null;
   if (status === 401 || status === 403) {
     return {
       kind: "failed",
@@ -444,6 +450,16 @@ export function createOfficialModelDiscovery(
         return {
           kind: "failed",
           failure: { kind: "unsupported-policy", code: "profile-not-remote", retryable: false },
+        };
+      }
+      if (profile.adapterKind === "openai-codex") {
+        return {
+          kind: "failed",
+          failure: {
+            kind: "unsupported-policy",
+            code: OPENAI_CODEX_AUTHORIZATION_UNAVAILABLE_CODE,
+            retryable: false,
+          },
         };
       }
       if (profile.adapterKind === "custom" || profile.adapterKind === "deterministic") {

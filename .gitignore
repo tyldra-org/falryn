@@ -21,6 +21,7 @@ node_modules/
 
 # Caches and temporary work
 /.cache/
+/.pi/
 /.tmp/
 /tmp/
 /temp/

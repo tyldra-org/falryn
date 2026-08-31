@@ -12,6 +12,7 @@ export const PROVIDER_TRANSPORT_DIALECTS = [
   "google-generate-content",
   "command-code-router",
   "deterministic",
+  "openai-codex-unavailable",
   "custom-unavailable",
 ] as const;
 
@@ -214,6 +215,11 @@ export type DeterministicTransportCompatibilityDeclaration = {
   readonly dialect: "deterministic";
 };
 
+type OpenAiCodexUnavailableTransportCompatibilityDeclaration = {
+  readonly schemaVersion: typeof PROVIDER_TRANSPORT_COMPATIBILITY_SCHEMA_VERSION;
+  readonly dialect: "openai-codex-unavailable";
+};
+
 export type CustomUnavailableTransportCompatibilityDeclaration = {
   readonly schemaVersion: typeof PROVIDER_TRANSPORT_COMPATIBILITY_SCHEMA_VERSION;
   readonly dialect: "custom-unavailable";
@@ -226,6 +232,7 @@ export type ProviderTransportCompatibilityDeclaration =
   | GoogleGenerateContentTransportCompatibilityDeclaration
   | CommandCodeTransportCompatibilityDeclaration
   | DeterministicTransportCompatibilityDeclaration
+  | OpenAiCodexUnavailableTransportCompatibilityDeclaration
   | CustomUnavailableTransportCompatibilityDeclaration;
 
 export const PROVIDER_TRANSPORT_COMPATIBILITY_SOURCE_KINDS = [
@@ -426,6 +433,10 @@ const DEFAULT_DECLARATIONS: Readonly<
     schemaVersion: PROVIDER_TRANSPORT_COMPATIBILITY_SCHEMA_VERSION,
     dialect: "command-code-router",
   },
+  "openai-codex": {
+    schemaVersion: PROVIDER_TRANSPORT_COMPATIBILITY_SCHEMA_VERSION,
+    dialect: "openai-codex-unavailable",
+  },
   custom: {
     schemaVersion: PROVIDER_TRANSPORT_COMPATIBILITY_SCHEMA_VERSION,
     dialect: "custom-unavailable",
@@ -438,6 +449,7 @@ const DEFAULT_COMPATIBILITY_IDS: Readonly<Record<ProviderAdapterKind, string>> =
   anthropic: "sha-256:9097c50ab7aca8ff19d70e22deb4cbc20aa34d3df35f1c81c0d5daf60b960baa",
   google: "sha-256:93788a5e4057d726c2d9054cc890c474abd6c091973e7b0fe25fc81143d35ceb",
   commandcode: "sha-256:ebe240ba24f73e0818135cb83b0e120f40a6e13c7728d8f93bd6d210195adcd0",
+  "openai-codex": "sha-256:339974ddc83e0fecad1184fa7745f283b5e251cc023c93d1db895d21b5fd4f8f",
   custom: "sha-256:9e4c9376ebd5369a18ef0653485ab3086e8e73fc3484208ab6e8d603cf773d3a",
 };
 
@@ -457,6 +469,8 @@ export function providerTransportCompatibilityMatchesAdapter(
       return declaration.dialect === "google-generate-content";
     case "commandcode":
       return declaration.dialect === "command-code-router";
+    case "openai-codex":
+      return declaration.dialect === "openai-codex-unavailable";
     case "deterministic":
       return declaration.dialect === "deterministic";
     case "custom":
@@ -593,6 +607,7 @@ function canonicalDeclaration(
       };
     case "command-code-router":
     case "deterministic":
+    case "openai-codex-unavailable":
     case "custom-unavailable":
       return {
         schemaVersion: declaration.schemaVersion,

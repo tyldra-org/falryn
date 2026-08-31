@@ -65,11 +65,12 @@ name. Falryn never parses or executes shell profiles or reads another
 application's credential files. Additional profiles can be added, configured,
 selected, tested, logged out, or removed through `falryn provider`.
 
-`provider add` and `provider configure` infer the installed official SDK only
+`provider add` and `provider configure` infer an installed official API SDK only
 from an exact provider identity: `openai`, `anthropic`, `google`, or
-`commandcode`. Their
-official destinations receive their provider's canonical environment reference
-and default to remote model discovery. An unfamiliar provider requires an
+`commandcode`. Their official destinations receive their provider's canonical
+environment reference and default to remote model discovery. The distinct
+`openai-codex` identity has no API-key reference or direct HTTP destination and
+defaults to static discovery. An unfamiliar provider requires an
 explicit adapter and endpoint, and a compatible custom endpoint receives no
 inferred credential and defaults to static discovery unless the caller opts
 into remote discovery. Enabled models and user catalog identities are
@@ -94,6 +95,20 @@ environment variables, diagnostics, configuration, or model context. Missing,
 locked, denied, and unavailable platform services fail closed. OAuth PKCE and
 device authorization are accepted only through an installed official provider
 adapter; Falryn does not imitate browser sessions or subscription credentials.
+
+The installed `openai-codex` policy adapter keeps ChatGPT/Codex subscription
+identity separate from the `openai` API-key destination. OpenAI's public Codex
+documentation describes authentication owned by Codex and an experimental
+`codex app-server` delegation boundary, but no third-party OAuth client
+registration or subscription-backed HTTP contract for Falryn. Both authorized
+methods therefore return
+`openai-codex-third-party-authorization-unavailable` before any browser, device,
+token, vault, or provider transport work starts. The profile schema binds the
+reserved identity and adapter in both directions and requires a null endpoint,
+null credential reference, and static discovery. API-key login, provider tests,
+automatic discovery, and model handoff return the same policy result. Converting
+an API profile with a credential reference is refused until logout. Falryn never
+silently switches this identity to usage-based API billing.
 
 Installed authorized-login adapters enter one versioned registry keyed by the
 exact provider, SDK adapter, and method. Each attempt binds the current registry
