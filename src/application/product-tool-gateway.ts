@@ -16,6 +16,7 @@ import {
   duration,
   type EffectCertainty,
   type FocusedConfirmationRequest,
+  type ModelCapabilityBrief,
   type PolicyAuthorizedInvocation,
   type SessionCorrelation,
   type TerminalOutcome,
@@ -61,6 +62,7 @@ export type ProductToolGatewayOptions = {
   readonly policy?: ToolPolicyProfile;
   readonly confirmation?: ProductToolConfirmationPort;
   readonly effectLedger: ProductToolEffectLedger;
+  readonly opportunityPlan?: ModelCapabilityBrief;
 };
 
 function terminalOutcome(outcome: ToolInvocationOutcome): TerminalOutcome {
@@ -141,6 +143,30 @@ function failureReason(outcome: ToolInvocationOutcome): string {
     case "completed":
       return "completed";
   }
+}
+
+function degradationObservation(
+  request: ToolRunnerRequest,
+  outcome: ToolInvocationOutcome,
+  plan: ModelCapabilityBrief | undefined,
+) {
+  if (outcome.status !== "unavailable" || plan === undefined) return undefined;
+  const transitions = plan.degradation.transitions.filter(
+    (transition) =>
+      transition.fromCapabilityId === request.capabilityId &&
+      transition.triggers.includes("runtime-unavailable"),
+  );
+  const terminal = plan.degradation.terminalOutcomes.find(
+    (candidate) => candidate.capabilityId === request.capabilityId,
+  );
+  return {
+    decision:
+      transitions.length > 0 ? ("fallback-available" as const) : ("terminal-unavailable" as const),
+    candidateIds: Object.freeze(transitions.map((transition) => transition.toCapabilityId)),
+    terminalReason:
+      terminal?.reason ?? (transitions.length > 0 ? "fallback-exhausted" : "no-declared-fallback"),
+    recoveryHandles: terminal?.recoveryHandles ?? [],
+  };
 }
 
 function projectedOutcome(
@@ -322,6 +348,7 @@ export function createProductToolGateway(options: ProductToolGatewayOptions): To
         signal: request.signal,
       });
 
+      const degradation = degradationObservation(request, outcome, options.opportunityPlan);
       const committed = await persist(
         options,
         {
@@ -330,6 +357,8 @@ export function createProductToolGateway(options: ProductToolGatewayOptions): To
           invocationId: request.invocationId,
           capabilityId: request.capabilityId,
           outcome: terminalOutcome(outcome),
+          observedStatus: outcome.status,
+          ...(degradation === undefined ? {} : { degradation }),
         },
         request.signal,
       );

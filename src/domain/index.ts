@@ -965,6 +965,7 @@ export {
 } from "./error.ts";
 export type {
   CapabilityInvocationCompletedEvent,
+  CapabilityInvocationCompletedPayload,
   CapabilityInvocationStartedEvent,
   CapabilityInvocationStartedPayload,
   ConfigurationApplicationClass,
@@ -2013,7 +2014,12 @@ export {
 export type {
   AutomationOpportunity,
   AutomationOpportunityKind,
+  CapabilityDegradationPlan,
+  CapabilityDegradationTrigger,
+  CapabilityFallbackTransition,
   CapabilityOpportunityCandidate,
+  CapabilityUnavailableOutcome,
+  CapabilityUnavailableReason,
   ModelCapabilityBrief,
   OpportunityCandidateDecision,
   OpportunityDecisionKind,
@@ -2024,8 +2030,14 @@ export type {
 } from "./opportunity-plan.ts";
 export {
   AUTOMATION_OPPORTUNITY_KINDS,
+  CAPABILITY_DEGRADATION_SCHEMA_VERSION,
+  CAPABILITY_DEGRADATION_TRIGGERS,
+  CAPABILITY_UNAVAILABLE_REASONS,
   DEFAULT_OPPORTUNITY_SCHEMA_TOKEN_BUDGET,
   DEFAULT_OPPORTUNITY_SELECTION_LIMIT,
+  MAX_CAPABILITY_DEGRADATION_TRANSITIONS,
+  MAX_CAPABILITY_FALLBACKS_PER_SOURCE,
+  MAX_CAPABILITY_RUNTIME_FALLBACK_TRANSITIONS,
   MAX_OPPORTUNITY_REASON_CODES,
   MAX_OPPORTUNITY_REJECTIONS,
   MAX_OPPORTUNITY_SCHEMA_TOKEN_BUDGET,

@@ -30,45 +30,84 @@
 
 import { describe, expect, test } from "bun:test";
 import { everyEventKind, FIXTURE_STREAM } from "../../domain/fixtures.ts";
-import type { StreamId } from "../../domain/index.ts";
+import { capabilityId, type StreamId } from "../../domain/index.ts";
 import { initialCursor, resumable, TRANSCRIPT_PROJECTION_GENERATION } from "./generation.ts";
 import { reduceTranscript } from "./reducer.ts";
 
 /**
- * What generation 1 produces for `everyEventKind()`.
+ * What generation 3 produces for `everyEventKind()`.
  *
  * Reduced to the facts a change would alter: which blocks exist, in what order,
- * what each is anchored to, whether it settled, and what outcome it reports.
+ * what each is anchored to, whether it settled, what outcome it reports, and
+ * whether its content is complete or omitted.
  * Deliberately not a full structural snapshot — a snapshot that included every
  * summary string would fail on a typo fix and teach everyone to update it
  * without reading it.
  */
-const GENERATION_2 = [
-  { kind: "notice", key: "session:session-fixture", status: "final", outcome: null },
-  { kind: "turn-outcome", key: "turn:turn-fixture", status: "final", outcome: "completed" },
+const GENERATION_3 = [
+  {
+    kind: "notice",
+    key: "session:session-fixture",
+    status: "final",
+    outcome: null,
+    disclosure: null,
+  },
+  {
+    kind: "turn-outcome",
+    key: "turn:turn-fixture",
+    status: "final",
+    outcome: "completed",
+    disclosure: null,
+  },
   {
     kind: "model-outcome",
     key: "model-attempt:attempt-fixture",
     status: "final",
     outcome: "failed",
+    disclosure: null,
   },
   {
     kind: "tool-result",
     key: "invocation:invocation-fixture",
     status: "final",
     outcome: "uncertain",
+    disclosure: "complete",
   },
-  { kind: "notice", key: "configuration:1", status: "final", outcome: null },
+  {
+    kind: "notice",
+    key: "configuration:1",
+    status: "final",
+    outcome: null,
+    disclosure: null,
+  },
   {
     kind: "notice",
     key: "declared:execution-profile:selection-9",
     status: "final",
     outcome: null,
+    disclosure: null,
   },
 ] as const;
 
 function snapshot(): readonly unknown[] {
-  return reduceTranscript(everyEventKind()).blocks.map((block) => ({
+  const events = everyEventKind().map((event) =>
+    event.kind === "capability.invocation.completed"
+      ? {
+          ...event,
+          payload: {
+            ...event.payload,
+            observedStatus: "unavailable" as const,
+            degradation: {
+              decision: "fallback-available" as const,
+              candidateIds: [capabilityId.from("builtin:workspace/list_dir@1")],
+              terminalReason: "fallback-exhausted" as const,
+              recoveryHandles: [],
+            },
+          },
+        }
+      : event,
+  );
+  return reduceTranscript(events).blocks.map((block) => ({
     kind: block.kind,
     key:
       block.anchor.of === "session"
@@ -87,19 +126,20 @@ function snapshot(): readonly unknown[] {
       "outcome" in block && block.outcome !== null && block.outcome !== undefined
         ? block.outcome.kind
         : null,
+    disclosure: block.kind === "tool-result" ? block.output.disclosure.kind : null,
   }));
 }
 
 describe("replaying the fixture run", () => {
   test("produces what this generation recorded", () => {
-    expect(snapshot()).toEqual([...GENERATION_2]);
+    expect(snapshot()).toEqual([...GENERATION_3]);
   });
 
   test("is the snapshot for the generation the build declares", () => {
     // The other direction of the guard. Raising the generation without
     // revisiting the recorded output leaves a snapshot describing a reducer
     // that no longer exists.
-    expect(TRANSCRIPT_PROJECTION_GENERATION).toBe(2);
+    expect(TRANSCRIPT_PROJECTION_GENERATION).toBe(3);
   });
 
   test("replays identically twice", () => {

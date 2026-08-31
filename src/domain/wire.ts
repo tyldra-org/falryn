@@ -23,6 +23,7 @@ import {
 import { CAPABILITY_CONTRIBUTION_KINDS, CAPABILITY_SOURCES } from "./capability-registry.ts";
 import type { CodecIssue } from "./codec-error.ts";
 import {
+  type CapabilityInvocationCompletedPayload,
   type CapabilityInvocationStartedPayload,
   CONFIGURATION_APPLICATION_CLASSES,
   type ConfigurationGenerationChangedEvent,
@@ -55,6 +56,12 @@ import {
 } from "./identity.ts";
 import {
   AUTOMATION_OPPORTUNITY_KINDS,
+  CAPABILITY_DEGRADATION_SCHEMA_VERSION,
+  CAPABILITY_DEGRADATION_TRIGGERS,
+  CAPABILITY_UNAVAILABLE_REASONS,
+  MAX_CAPABILITY_DEGRADATION_TRANSITIONS,
+  MAX_CAPABILITY_FALLBACKS_PER_SOURCE,
+  MAX_CAPABILITY_RUNTIME_FALLBACK_TRANSITIONS,
   MAX_OPPORTUNITY_REASON_CODES,
   MAX_OPPORTUNITY_REJECTIONS,
   MAX_OPPORTUNITY_SCHEMA_TOKEN_BUDGET,
@@ -107,6 +114,7 @@ const opportunityDecisionSchema = z
     schemaTokensEstimated: z.int().nonnegative(),
     reasons: z.array(z.enum(OPPORTUNITY_REASON_CODES)).max(MAX_OPPORTUNITY_REASON_CODES),
     diagnosticCodes: z.array(z.enum(CAPABILITY_HEALTH_CODES)).max(CAPABILITY_HEALTH_CODES.length),
+    recoveryHandles: z.array(z.string().min(1).max(512)).max(MAX_OPPORTUNITY_REASON_CODES),
   })
   .strict();
 
@@ -149,6 +157,46 @@ const modelCapabilityBriefSchema: z.ZodType<ModelCapabilityBrief> = z
         decision: z.enum(["not-needed", "eligible"]),
         candidateIds: z.array(brandedString(capabilityId)).max(2),
         reason: z.enum(["deterministic-winner", "semantic-tie"]),
+      })
+      .strict(),
+    degradation: z
+      .object({
+        schemaVersion: z.literal(CAPABILITY_DEGRADATION_SCHEMA_VERSION),
+        catalogGeneration: brandedInteger(configurationGeneration),
+        strategy: z.literal("explicit-model-continuation"),
+        maxRuntimeTransitions: z.int().min(1).max(MAX_CAPABILITY_RUNTIME_FALLBACK_TRANSITIONS),
+        transitions: z
+          .array(
+            z
+              .object({
+                fromCapabilityId: brandedString(capabilityId),
+                toCapabilityId: brandedString(capabilityId),
+                triggers: z
+                  .array(z.enum(CAPABILITY_DEGRADATION_TRIGGERS))
+                  .min(1)
+                  .max(CAPABILITY_DEGRADATION_TRIGGERS.length),
+                strategy: z.literal("model-continuation"),
+                informationChange: z.literal("different-contract"),
+                effectChange: z.enum(["same", "reduced"]),
+                notice: z.string().min(1).max(512),
+              })
+              .strict(),
+          )
+          .max(MAX_CAPABILITY_DEGRADATION_TRANSITIONS),
+        terminalOutcomes: z
+          .array(
+            z
+              .object({
+                capabilityId: brandedString(capabilityId),
+                outcome: z.literal("unavailable"),
+                reason: z.enum(CAPABILITY_UNAVAILABLE_REASONS),
+                recoveryHandles: z
+                  .array(z.string().min(1).max(512))
+                  .max(MAX_OPPORTUNITY_REASON_CODES),
+              })
+              .strict(),
+          )
+          .max(MAX_CAPABILITY_DEGRADATION_TRANSITIONS),
       })
       .strict(),
     schemaTokensEstimated: z.int().nonnegative(),
@@ -279,6 +327,32 @@ const capabilityInvocationStartedPayloadSchema: z.ZodType<CapabilityInvocationSt
       .optional(),
   });
 
+const capabilityInvocationCompletedPayloadSchema: z.ZodType<CapabilityInvocationCompletedPayload> =
+  z.object({
+    outcome: terminalOutcomeSchema,
+    observedStatus: z
+      .enum([
+        "completed",
+        "failed",
+        "cancelled",
+        "timed-out",
+        "uncertain",
+        "denied",
+        "unavailable",
+        "malformed",
+        "partial",
+      ])
+      .optional(),
+    degradation: z
+      .object({
+        decision: z.enum(["fallback-available", "terminal-unavailable"]),
+        candidateIds: z.array(brandedString(capabilityId)).max(MAX_CAPABILITY_FALLBACKS_PER_SOURCE),
+        terminalReason: z.enum(CAPABILITY_UNAVAILABLE_REASONS),
+        recoveryHandles: z.array(z.string().min(1).max(512)).max(MAX_OPPORTUNITY_REASON_CODES),
+      })
+      .optional(),
+  });
+
 const configurationPayloadSchema: z.ZodType<ConfigurationGenerationChangedPayload> = z.object({
   generation: brandedInteger(configurationGeneration),
   applicationClass: z.literal(CONFIGURATION_APPLICATION_CLASSES),
@@ -360,7 +434,7 @@ const runtimeEventSchema: z.ZodType<RuntimeEvent> = z.discriminatedUnion("kind",
     ...toolIdentity,
     kind: z.literal("capability.invocation.completed"),
     correlation: turnCorrelationSchema,
-    payload: terminalPayloadSchema,
+    payload: capabilityInvocationCompletedPayloadSchema,
   }),
   z.object({
     ...envelopeSpine,
@@ -425,8 +499,17 @@ function payloadToJson(event: RuntimeEvent): Record<string, unknown> {
       };
     case "turn.completed":
     case "model.attempt.completed":
-    case "capability.invocation.completed":
       return { outcome: outcomeToJson(event.payload.outcome) };
+    case "capability.invocation.completed":
+      return {
+        outcome: outcomeToJson(event.payload.outcome),
+        ...(event.payload.observedStatus === undefined
+          ? {}
+          : { observedStatus: event.payload.observedStatus }),
+        ...(event.payload.degradation === undefined
+          ? {}
+          : { degradation: event.payload.degradation }),
+      };
     case "configuration.generation.changed":
       return configurationPayloadToJson(event);
     case "execution.profile.selected":

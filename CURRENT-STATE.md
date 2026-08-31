@@ -340,6 +340,25 @@ are reported as selected, recommended, unavailable, deferred, or not needed.
 This planner does not install or execute those contributions; their owning
 runtimes remain separate.
 
+The opportunity plan also contains an explicit, generation-bound degradation
+graph. A fallback edge names its source and target capability, the unavailable
+condition that permits it, the information and effect difference, and the
+terminal unavailable result when no target succeeds. Only a no-effect
+`unavailable` tool result can return to the model for another choice; failed,
+denied, malformed, partial, uncertain, cancelled, and timed-out results keep
+their existing terminal or recovery behavior. Falryn never substitutes a tool
+silently. The next model proposal must name one of the declared targets, remain
+within the attempt's disclosed schema set, and pass the normal validation,
+policy, confirmation, hook, scheduler, and execution path. Self-edges,
+backward/recursive transitions, authority widening, stale generations, and
+transition-budget exhaustion fail closed before another effect.
+
+The unavailable result sent to the model carries a bounded notice with the
+declared target names, terminal reason, and recovery handles. The durable
+capability-invocation event records the normalized unavailable status and the
+same secret-free transition receipt, so replay and machine consumers do not
+have to infer degradation from a generic failed outcome.
+
 The model capability brief names the preferred family, fallbacks, selected
 contributions, automation decisions, schema-token cost, negative availability,
 and the bounded discovery handle. It retains only a SHA-256-derived task

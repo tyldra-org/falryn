@@ -129,7 +129,14 @@ describe("reduceTurnEvents", () => {
           correlation: turnCorrelation,
           invocationId: invocation,
           capabilityId: capability,
-          outcome: { kind: "completed" },
+          outcome: { kind: "failed", effect: "none" },
+          observedStatus: "unavailable",
+          degradation: {
+            decision: "fallback-available",
+            candidateIds: [capabilityId.from("fallback")],
+            terminalReason: "fallback-exhausted",
+            recoveryHandles: ["capability-health:read"],
+          },
         },
         5,
       ),
@@ -177,7 +184,14 @@ describe("reduceTurnEvents", () => {
         capabilityId: capability,
         startedAt: occurredAt,
         completedAt: occurredAt,
-        outcome: { kind: "completed" },
+        outcome: { kind: "failed", effect: "none" },
+        observedStatus: "unavailable",
+        degradation: {
+          decision: "fallback-available",
+          candidateIds: [capabilityId.from("fallback")],
+          terminalReason: "fallback-exhausted",
+          recoveryHandles: ["capability-health:read"],
+        },
       },
     ]);
   });
