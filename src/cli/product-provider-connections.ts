@@ -2,6 +2,8 @@
 
 import {
   composeProductCredentials,
+  createAuthorizedLoginAdapterRegistry,
+  createAuthorizedProviderLogin,
   createProviderConnectionService,
   createUserCatalogModelDiscovery,
   type ProviderConnectionHandoffResult,
@@ -16,15 +18,23 @@ import {
   createAnthropicSdkAdapter,
   createCommandCodeProviderAdapter,
   createGoogleGenAiSdkAdapter,
+  createHostAuthorizedProviderLogin,
   createHostCommandRunner,
   createOfficialModelDiscovery,
   createOpenAiProviderAdapter,
   hostPlatform,
   type OpenAiSdkFetch,
+  type OperatingSystemSecretsPort,
   type OwnedProcessRegistry,
 } from "../integrations/index.ts";
 import { providerDestinationId } from "../integrations/provider-destination.ts";
-import type { ModelDiscoveryPort, ProviderContinuationStatePort } from "../providers/index.ts";
+import type {
+  AuthorizationInteractionPort,
+  AuthorizedProviderLoginHost,
+  ModelDiscoveryPort,
+  ProviderAuthorizedLoginAdapter,
+  ProviderContinuationStatePort,
+} from "../providers/index.ts";
 import {
   COMMAND_CODE_OPENAI_BASE_URL,
   parseProviderConnectionState,
@@ -75,6 +85,16 @@ export type ProductProviderConnectionOptions = {
   readonly modelCatalogs?: ModelCatalogGenerationRepository;
   /** Durable exact-route state used by stateful provider SDK transports. */
   readonly providerContinuations?: ProviderContinuationStatePort;
+  /** Installed provider-specific authorized-login adapters. */
+  readonly authorizedLoginAdapters?: readonly ProviderAuthorizedLoginAdapter[];
+  /** Injectable complete host for deterministic coordinator tests. */
+  readonly authorizedLoginHost?: AuthorizedProviderLoginHost;
+  /** Human interaction used by manual and device-code flows. */
+  readonly authorizationInteraction?: AuthorizationInteractionPort;
+  /** Browser launch remains opt-in and is always disabled in headless mode. */
+  readonly allowAuthorizationBrowser?: boolean;
+  /** Injectable operating-system vault used by end-to-end tests. */
+  readonly credentialSecrets?: OperatingSystemSecretsPort;
 };
 
 export function composeProductProviderConnections(
@@ -90,7 +110,28 @@ export function composeProductProviderConnections(
     commands,
     platform: hostPlatform(),
     environment: services.environment,
+    ...(options.credentialSecrets === undefined ? {} : { secrets: options.credentialSecrets }),
   });
+  const authorizedAdapters = options.authorizedLoginAdapters ?? [];
+  const authorizedLogin =
+    authorizedAdapters.length === 0
+      ? undefined
+      : createAuthorizedProviderLogin({
+          registry: createAuthorizedLoginAdapterRegistry(authorizedAdapters),
+          credentials,
+          clock: services.clock,
+          host:
+            options.authorizedLoginHost ??
+            createHostAuthorizedProviderLogin({
+              commands,
+              platform: hostPlatform(),
+              environment: services.environment,
+              ...(options.authorizationInteraction === undefined
+                ? {}
+                : { interaction: options.authorizationInteraction }),
+              allowBrowser: options.allowAuthorizationBrowser === true && !globals.nonInteractive,
+            }),
+        });
   const store = configurationStore(services, globals, options.configuration);
   const remoteDiscovery =
     options.modelDiscovery ??
@@ -119,6 +160,7 @@ export function composeProductProviderConnections(
     credentials,
     clock: services.clock,
     session: { staticDiscovery, remoteDiscovery },
+    ...(authorizedLogin === undefined ? {} : { authorizedLogin }),
   });
 
   return {

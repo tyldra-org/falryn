@@ -10,17 +10,21 @@ import {
   providerId,
 } from "../domain/index.ts";
 import {
+  AUTHORIZED_LOGIN_SCHEMA_VERSION,
   type ModelDiscoveryPort,
   OPENAI_CHAT_TRANSPORT_DEFAULT,
   PROVIDER_CONNECTION_SCHEMA_VERSION,
+  type ProviderAuthorizationReceipt,
   type ProviderConnectionState,
   type ProviderProfile,
+  parseAuthorizedProviderCredential,
   parseProviderConnectionState,
   unknownModelCapability,
 } from "../providers/index.ts";
 import { createSecretResolver } from "./credential-resolver.ts";
 import type { ProductCredentialBundle } from "./product-credentials.ts";
 import {
+  type AuthorizedProviderLoginPort,
   createProviderConnectionService,
   type ProviderConnectionStorePort,
 } from "./provider-connections.ts";
@@ -141,12 +145,68 @@ function mutableCredentials(clock: ReturnType<typeof createManualClock>) {
         secrets.set(reference.locator, secret);
         return { kind: "written" };
       },
+      async placeAuthorizedCredential({ reference, credential }) {
+        secrets.set(reference.locator, JSON.stringify(credential));
+        return { kind: "written" };
+      },
+      async withAuthorizedCredential(reference, use, signal) {
+        const resolved = await keychain.read(
+          reference,
+          async (secret) => {
+            const parsed = parseAuthorizedProviderCredential(JSON.parse(secret));
+            return parsed.ok
+              ? { kind: "used" as const, value: await use(parsed.value) }
+              : { kind: "invalid" as const };
+          },
+          signal === undefined ? undefined : { signal },
+        );
+        if (resolved.kind === "unresolved") {
+          return resolved;
+        }
+        return resolved.value.kind === "invalid"
+          ? { kind: "invalid" as const, code: "authorized-credential-invalid" as const }
+          : { kind: "resolved" as const, value: resolved.value.value, health: resolved.health };
+      },
     } satisfies ProductCredentialBundle,
     place(reference: CredentialReference, secret: string) {
       secrets.set(reference.locator, secret);
     },
     has(locator: string): boolean {
       return secrets.has(locator);
+    },
+  };
+}
+
+function authorizationReceipt(
+  clock: ReturnType<typeof createManualClock>,
+  method: "oauth-pkce" | "device-code",
+): ProviderAuthorizationReceipt {
+  return {
+    schemaVersion: AUTHORIZED_LOGIN_SCHEMA_VERSION,
+    attemptId: "auth-test",
+    adapterId: "test-authorized-login",
+    adapterGeneration: 1,
+    providerId: "device",
+    profileId: "device",
+    method,
+    startedAt: clock.now(),
+    finishedAt: clock.now(),
+    outcome: "authorized" as const,
+    code: null,
+  };
+}
+
+function authorizedLoginStub(
+  authorize: AuthorizedProviderLoginPort["authorize"],
+): AuthorizedProviderLoginPort {
+  return {
+    methods: () => ["oauth-pkce", "device-code"],
+    authorize,
+    async refresh() {
+      return { kind: "unavailable", code: "authorized-refresh-unavailable", retryable: false };
+    },
+    async revoke() {
+      return { remote: "unsupported", code: null };
     },
   };
 }
@@ -293,22 +353,21 @@ describe("provider connection service", () => {
       store: stored.port,
       credentials: credentials.bundle,
       clock,
-      authorizedLogin: {
-        async authorize() {
-          credentials.place(reference, "authorized-secret");
-          return {
-            kind: "authorized",
-            reference,
-            account: {
-              accountId: "acct-1",
-              displayName: "Device account",
-              authMethod: "device-code",
-              authorizedAt: clock.now(),
-              expiresAt: instant(500),
-            },
-          };
-        },
-      },
+      authorizedLogin: authorizedLoginStub(async (_profile, method) => {
+        credentials.place(reference, "authorized-secret");
+        return {
+          kind: "authorized",
+          reference,
+          account: {
+            accountId: "acct-1",
+            displayName: "Device account",
+            authMethod: "device-code",
+            authorizedAt: clock.now(),
+            expiresAt: instant(500),
+          },
+          receipt: authorizationReceipt(clock, method),
+        };
+      }),
     });
 
     const result = await service.execute({
@@ -390,7 +449,7 @@ describe("provider connection service", () => {
       store: stored.port,
       credentials: credentials.bundle,
       clock,
-      authorizedLogin: { authorize: async () => ({ kind: "cancelled" }) },
+      authorizedLogin: authorizedLoginStub(async () => ({ kind: "cancelled", receipt: null })),
     });
     expect(
       await service.execute({
@@ -584,6 +643,140 @@ describe("provider connection service", () => {
       }),
     ).toMatchObject({ kind: "completed" });
     expect(stored.state().connections[0]?.profile.modelCapabilities).toEqual([]);
+  });
+
+  test("rotates an expired authorized credential before handoff and survives service restart", async () => {
+    const clock = createManualClock(instant(600));
+    const oldReference: CredentialReference = {
+      storeKind: "operating-system-keychain",
+      locator: "falryn.provider.refresh.old",
+      consumer: "provider:refresh",
+      accountLabel: "refresh",
+    };
+    const newReference: CredentialReference = {
+      ...oldReference,
+      locator: "falryn.provider.refresh.new",
+    };
+    const expiredProfile = { ...profile("refresh"), credential: oldReference };
+    const initial = state(expiredProfile);
+    const current = initial.connections[0];
+    if (current === undefined) throw new Error("missing refresh fixture");
+    const stored = memoryStore({
+      ...initial,
+      connections: [
+        {
+          ...current,
+          account: {
+            accountId: "account-refresh",
+            displayName: "Refresh account",
+            authMethod: "oauth-pkce",
+            authorizedAt: instant(100),
+            expiresAt: instant(500),
+          },
+        },
+      ],
+    });
+    const credentials = mutableCredentials(clock);
+    credentials.place(oldReference, "old-authorized-secret");
+    credentials.place(newReference, "new-authorized-secret");
+    let refreshes = 0;
+    const authorizedLogin: AuthorizedProviderLoginPort = {
+      methods: () => ["oauth-pkce"],
+      authorize: async () => ({ kind: "cancelled", receipt: null }),
+      async refresh() {
+        refreshes += 1;
+        return {
+          kind: "refreshed",
+          reference: newReference,
+          account: {
+            accountId: "account-refresh",
+            displayName: "Refresh account",
+            authMethod: "oauth-pkce",
+            authorizedAt: clock.now(),
+            expiresAt: instant(1_000),
+          },
+        };
+      },
+      revoke: async () => ({ remote: "revoked", code: null }),
+    };
+    const first = createProviderConnectionService({
+      store: stored.port,
+      credentials: credentials.bundle,
+      clock,
+      authorizedLogin,
+    });
+
+    expect(await first.openSelected()).toMatchObject({
+      kind: "ready",
+      connection: { profile: { credential: newReference } },
+    });
+    expect(refreshes).toBe(1);
+    expect(credentials.has(oldReference.locator)).toBe(false);
+    expect(credentials.has(newReference.locator)).toBe(true);
+
+    const restarted = createProviderConnectionService({
+      store: stored.port,
+      credentials: credentials.bundle,
+      clock,
+      authorizedLogin,
+    });
+    expect(await restarted.openSelected()).toMatchObject({
+      kind: "ready",
+      connection: { profile: { credential: newReference } },
+    });
+    expect(refreshes).toBe(1);
+  });
+
+  test("reports remote revocation failure separately while completing local logout", async () => {
+    const clock = createManualClock(instant(600));
+    const reference: CredentialReference = {
+      storeKind: "operating-system-keychain",
+      locator: "falryn.provider.partial-logout",
+      consumer: "provider:partial-logout",
+      accountLabel: "partial-logout",
+    };
+    const configured = state({ ...profile("partial-logout"), credential: reference });
+    const current = configured.connections[0];
+    if (current === undefined) throw new Error("missing partial logout fixture");
+    const stored = memoryStore({
+      ...configured,
+      connections: [
+        {
+          ...current,
+          account: {
+            accountId: "account-partial",
+            displayName: "Partial account",
+            authMethod: "oauth-pkce",
+            authorizedAt: instant(100),
+            expiresAt: null,
+          },
+        },
+      ],
+    });
+    const credentials = mutableCredentials(clock);
+    credentials.place(reference, "authorized-secret");
+    const service = createProviderConnectionService({
+      store: stored.port,
+      credentials: credentials.bundle,
+      clock,
+      authorizedLogin: {
+        methods: () => ["oauth-pkce"],
+        authorize: async () => ({ kind: "cancelled", receipt: null }),
+        refresh: async () => ({
+          kind: "unavailable",
+          code: "authorized-refresh-unavailable",
+          retryable: false,
+        }),
+        revoke: async () => ({ remote: "failed", code: "provider-revoke-failed" }),
+      },
+    });
+
+    expect(await service.execute({ kind: "logout", profileId: "partial-logout" })).toMatchObject({
+      kind: "completed",
+      revocation: { local: "removed", remote: "failed" },
+    });
+    expect(credentials.has(reference.locator)).toBe(false);
+    expect(stored.state().connections[0]?.profile.credential).toBeNull();
   });
 
   test("refuses an expired authorized account before catalog handoff", async () => {

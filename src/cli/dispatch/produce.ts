@@ -237,14 +237,7 @@ export async function produce(
       if (providerArgs === null) {
         throw new Error("Missing parsed provider arguments.");
       }
-      return runProvider(
-        services,
-        providerArgs,
-        globals,
-        options.streams.input,
-        signal,
-        onMutationStart,
-      );
+      return runProvider(services, providerArgs, globals, options.streams, signal, onMutationStart);
     case "run":
       if (runArgs === null) {
         throw new Error("Missing parsed coding run arguments.");
