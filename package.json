@@ -25,7 +25,7 @@
     "check:fast": "bun run check:static && bun run test:parallel",
     "check:changed": "bun run check:static && bun run test:changed",
     "test": "bun test",
-    "test:parallel": "bun test --parallel=4 --only-failures",
+    "test:parallel": "bun test --parallel=4 --path-ignore-patterns=src/cli/process-boundary.test.ts --only-failures && bun test src/cli/process-boundary.test.ts --only-failures",
     "test:changed": "bun test --changed=main --only-failures",
     "test:watch": "bun test --hot --only-failures",
     "test:platform-baseline": "bun test tools/benchmark-regression.test.ts src/cli-boundaries.test.ts src/sqlite-boundaries.test.ts src/source-path-fixtures.test.ts src/main.test.ts src/cli/version.test.ts src/data/roots.test.ts",
