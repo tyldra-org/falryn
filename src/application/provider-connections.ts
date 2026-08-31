@@ -11,6 +11,7 @@ import {
   type ModelCatalog,
   openProviderSession,
   PROVIDER_CONNECTION_SCHEMA_VERSION,
+  type ProviderAuthorizationReceipt,
   type ProviderAuthSnapshot,
   type ProviderConnection,
   type ProviderConnectionState,
@@ -54,7 +55,15 @@ export function createProviderConnectionService(
     }
     switch (action.kind) {
       case "list":
-        return success(action.kind, parsed.value);
+        return success(
+          action.kind,
+          parsed.value,
+          null,
+          null,
+          undefined,
+          null,
+          ports.authorizedLogin,
+        );
       case "test":
         return testConnection(action, parsed.value, ports, signal);
       case "add":
@@ -83,13 +92,47 @@ export function createProviderConnectionService(
       if (!parsed.ok || parsed.value.selectedProfileId === null) {
         return unavailableHandoff("selected-profile-required", false);
       }
-      const connection = find(parsed.value, parsed.value.selectedProfileId);
+      let connection = find(parsed.value, parsed.value.selectedProfileId);
       if (connection === null) {
         return unavailableHandoff("profile-missing", false);
       }
       const expired = expiredAuth(connection, ports.clock);
       if (expired !== null) {
-        return unavailableHandoff("credential-expired", false, connection, expired);
+        if (ports.authorizedLogin === undefined) {
+          return unavailableHandoff("credential-expired", false, connection, expired);
+        }
+        const refreshed = await ports.authorizedLogin.refresh(connection, signal);
+        if (refreshed.kind !== "refreshed") {
+          return unavailableHandoff(refreshed.code, refreshed.retryable, connection, expired);
+        }
+        const replacement: ProviderConnection = {
+          profile: { ...connection.profile, credential: refreshed.reference },
+          account: refreshed.account,
+          updatedAt: ports.clock.now(),
+        };
+        const next = changed(parsed.value, {
+          connections: replace(parsed.value, replacement),
+        });
+        const written = await ports.store.write(next, snapshot.fileRevision, signal);
+        if (written.kind !== "written") {
+          await revokeProviderSessionCredential({
+            profile: replacement.profile,
+            stores: ports.credentials.stores,
+            ...(signal === undefined ? {} : { signal }),
+          });
+          return unavailableHandoff(
+            written.kind === "stale" ? "state-stale" : "state-write-failed",
+            true,
+            connection,
+            expired,
+          );
+        }
+        await revokeProviderSessionCredential({
+          profile: connection.profile,
+          stores: ports.credentials.stores,
+          ...(signal === undefined ? {} : { signal }),
+        });
+        connection = replacement;
       }
       const opened = await openProviderSession({
         profile: connection.profile,
@@ -354,13 +397,39 @@ async function loginAuthorized(
   const authorized = await ports.authorizedLogin.authorize(current.profile, action.method, signal);
   switch (authorized.kind) {
     case "cancelled":
-      return failure(action.kind, "cancelled", false);
+      return failure(action.kind, "cancelled", false, null, null, undefined, authorized.receipt);
     case "denied":
-      return failure(action.kind, "authorization-denied", false);
+      return failure(
+        action.kind,
+        "authorization-denied",
+        false,
+        null,
+        null,
+        undefined,
+        authorized.receipt,
+      );
     case "timed-out":
-      return failure(action.kind, "authorization-timed-out", true);
+      return failure(
+        action.kind,
+        "authorization-timed-out",
+        true,
+        null,
+        null,
+        undefined,
+        authorized.receipt,
+      );
     case "failed":
-      return failure(action.kind, "authorization-failed", authorized.retryable);
+      return failure(
+        action.kind,
+        authorized.code === "authorized-login-adapter-unavailable"
+          ? "authorized-login-unavailable"
+          : "authorization-failed",
+        authorized.retryable,
+        null,
+        null,
+        undefined,
+        authorized.receipt,
+      );
     case "authorized": {
       const now = ports.clock.now();
       if (
@@ -374,8 +443,24 @@ async function loginAuthorized(
           ...(signal === undefined ? {} : { signal }),
         });
         return rollback.local === "removed" || rollback.local === "not-present"
-          ? failure(action.kind, "authorization-failed", false)
-          : failure(action.kind, "credential-rollback-failed", true);
+          ? failure(
+              action.kind,
+              "authorization-failed",
+              false,
+              null,
+              null,
+              undefined,
+              authorized.receipt,
+            )
+          : failure(
+              action.kind,
+              "credential-rollback-failed",
+              true,
+              null,
+              null,
+              undefined,
+              authorized.receipt,
+            );
       }
       const replacement: ProviderConnection = {
         profile: { ...current.profile, credential: authorized.reference },
@@ -387,7 +472,14 @@ async function loginAuthorized(
       });
       const written = await ports.store.write(next, snapshot.fileRevision, signal);
       if (written.kind === "written") {
-        return discoverConnection(action.kind, next, action.profileId, ports, signal);
+        return discoverConnection(
+          action.kind,
+          next,
+          action.profileId,
+          ports,
+          signal,
+          authorized.receipt,
+        );
       }
       const rollback = await revokeProviderSessionCredential({
         profile: replacement.profile,
@@ -395,9 +487,17 @@ async function loginAuthorized(
         ...(signal === undefined ? {} : { signal }),
       });
       if (rollback.local !== "removed" && rollback.local !== "not-present") {
-        return failure(action.kind, "credential-rollback-failed", true);
+        return failure(
+          action.kind,
+          "credential-rollback-failed",
+          true,
+          null,
+          null,
+          undefined,
+          authorized.receipt,
+        );
       }
-      return writeFailure(action.kind, written);
+      return writeFailure(action.kind, written, authorized.receipt);
     }
   }
 }
@@ -424,7 +524,10 @@ async function logout(
   const next = changed(snapshot.state, { connections: replace(snapshot.state, replacement) });
   const written = await ports.store.write(next, snapshot.fileRevision, signal);
   if (written.kind === "written") {
-    return { ...success(action.kind, next), revocation };
+    return {
+      ...success(action.kind, next, null, null, undefined, null, ports.authorizedLogin),
+      revocation,
+    };
   }
   return revocation.local === "removed"
     ? failure(action.kind, "credential-state-diverged", true)
@@ -455,7 +558,10 @@ async function remove(
   });
   const written = await ports.store.write(next, snapshot.fileRevision, signal);
   if (written.kind === "written") {
-    return { ...success(action.kind, next), revocation };
+    return {
+      ...success(action.kind, next, null, null, undefined, null, ports.authorizedLogin),
+      revocation,
+    };
   }
   return revocation.local === "removed"
     ? failure(action.kind, "credential-state-diverged", true)
@@ -482,10 +588,11 @@ async function discoverConnection(
   profileId: string,
   ports: ProviderConnectionServicePorts,
   signal?: AbortSignal,
+  authorization: ProviderAuthorizationReceipt | null = null,
 ): Promise<ProviderConnectionActionResult> {
   const connection = find(state, profileId);
   if (connection === null) {
-    return success(action, state);
+    return success(action, state, null, null, undefined, authorization, ports.authorizedLogin);
   }
   const opened = await openProviderSession({
     profile: connection.profile,
@@ -498,11 +605,15 @@ async function discoverConnection(
     ...(signal === undefined ? {} : { signal }),
   });
   if (opened.kind === "invalid-profile") {
-    return success(action, state, null, null, {
-      kind: "failed",
-      code: "invalid-profile",
-      retryable: false,
-    });
+    return success(
+      action,
+      state,
+      null,
+      null,
+      { kind: "failed", code: "invalid-profile", retryable: false },
+      authorization,
+      ports.authorizedLogin,
+    );
   }
   return success(
     action,
@@ -510,20 +621,23 @@ async function discoverConnection(
     opened.session.auth,
     opened.session.catalog,
     discoveryView(opened.session.discovery),
+    authorization,
+    ports.authorizedLogin,
   );
 }
 
 function writeFailure(
   action: ProviderConnectionAction["kind"],
   written: Exclude<ProviderConnectionStoreWriteResult, { readonly kind: "written" }>,
+  authorization: ProviderAuthorizationReceipt | null = null,
 ): ProviderConnectionActionResult {
   switch (written.kind) {
     case "stale":
-      return failure(action, "state-stale", true);
+      return failure(action, "state-stale", true, null, null, undefined, authorization);
     case "cancelled":
-      return failure(action, "cancelled", false);
+      return failure(action, "cancelled", false, null, null, undefined, authorization);
     case "failed":
-      return failure(action, "state-write-failed", true);
+      return failure(action, "state-write-failed", true, null, null, undefined, authorization);
   }
 }
 
@@ -545,17 +659,22 @@ function success(
   auth: ProviderAuthSnapshot | null = null,
   catalog: ModelCatalog | null = null,
   discovery: ProviderConnectionDiscoveryView = { kind: "not-requested" },
+  authorization: ProviderAuthorizationReceipt | null = null,
+  authorizedLogin: ProviderConnectionServicePorts["authorizedLogin"] = undefined,
 ): Extract<ProviderConnectionActionResult, { readonly kind: "completed" }> {
   return {
     kind: "completed",
     action,
     stateRevision: state.revision,
     selectedProfileId: state.selectedProfileId,
-    connections: state.connections.map((item) => view(item, state.selectedProfileId)),
+    connections: state.connections.map((item) =>
+      view(item, state.selectedProfileId, authorizedLogin),
+    ),
     auth,
     catalog,
     discovery,
     revocation: null,
+    authorization,
   };
 }
 
@@ -566,8 +685,17 @@ function failure(
   auth: ProviderAuthSnapshot | null = null,
   catalog: ModelCatalog | null = null,
   discovery: ProviderConnectionDiscoveryView = { kind: "not-requested" },
+  authorization: ProviderAuthorizationReceipt | null = null,
 ): ProviderConnectionActionResult {
-  return { kind: "failed", action, issue: { code, retryable }, auth, catalog, discovery };
+  return {
+    kind: "failed",
+    action,
+    issue: { code, retryable },
+    auth,
+    catalog,
+    discovery,
+    authorization,
+  };
 }
 
 function discoveryView(outcome: DiscoveryOutcome): ProviderConnectionDiscoveryView {
@@ -596,7 +724,11 @@ function unavailableHandoff(
   return { kind: "unavailable", issue: { code, retryable }, connection, auth, catalog };
 }
 
-function view(connection: ProviderConnection, selected: string | null): ProviderConnectionView {
+function view(
+  connection: ProviderConnection,
+  selected: string | null,
+  authorizedLogin: ProviderConnectionServicePorts["authorizedLogin"],
+): ProviderConnectionView {
   const { profile } = connection;
   return {
     profileId: profile.profileId,
@@ -607,6 +739,7 @@ function view(connection: ProviderConnection, selected: string | null): Provider
     credentialConfigured: profile.credential !== null,
     credentialStore: profile.credential?.storeKind ?? null,
     accountLabel: connection.account?.displayName ?? profile.credential?.accountLabel ?? null,
+    authMethods: ["api-key", ...(authorizedLogin?.methods(profile) ?? [])],
     selected: profile.profileId === selected,
     models: profile.enabledModels.map(String),
     catalogs: profile.catalogs ?? [],
@@ -668,11 +801,16 @@ async function revokeUnlessShared(
       remote: "not-attempted",
     };
   }
-  return revokeProviderSessionCredential({
+  const remote =
+    ports.authorizedLogin === undefined
+      ? { remote: "not-attempted" as const, code: null }
+      : await ports.authorizedLogin.revoke(connection, signal);
+  const local = await revokeProviderSessionCredential({
     profile: connection.profile,
     stores: ports.credentials.stores,
     ...(signal === undefined ? {} : { signal }),
   });
+  return { ...local, remote: remote.remote };
 }
 
 function expiredAuth(

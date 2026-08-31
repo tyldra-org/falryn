@@ -6,18 +6,22 @@ import { join } from "node:path";
 import { CONFIGURATION_FILE_NAME } from "../config/index.ts";
 import {
   createStaticEnvironment,
+  duration,
   instant,
   localPath,
   modelId,
   providerId,
 } from "../domain/index.ts";
-import type { OpenAiSdkFetch } from "../integrations/index.ts";
+import type { OpenAiSdkFetch, OperatingSystemSecretsPort } from "../integrations/index.ts";
 import type {
+  AuthorizedProviderLoginHost,
   ModelDiscoveryPort,
+  ProviderAuthorizedLoginAdapter,
   ProviderContinuationStatePort,
   ProviderProfile,
 } from "../providers/index.ts";
 import {
+  AUTHORIZED_LOGIN_SCHEMA_VERSION,
   type ModelRequest,
   modelRequestId,
   type NormalizedProviderEvent,
@@ -330,6 +334,205 @@ describe("product provider connection persistence", () => {
       discovery: { kind: "catalog", modelCount: 1 },
     });
     expect(JSON.stringify(added)).not.toContain("secret-not-projected");
+  });
+
+  test("runs an installed PKCE adapter through product login and uses its vault token for one provider attempt", async () => {
+    const home = await mkdtemp(join(tmpdir(), "falryn-provider-authorized-"));
+    homes.push(home);
+    const services = createServiceProvider(GLOBALS, {
+      home: localPath(home),
+      platform: "darwin",
+      currentDirectory: localPath(home),
+      environment: createStaticEnvironment({ FALRYN_STATE_DIR: home }),
+    });
+    const secret = "authorized-token-never-projected";
+    const stored = new Map<string, string>();
+    const credentialSecrets: OperatingSystemSecretsPort = {
+      async get({ service, name }) {
+        return stored.get(`${service}:${name}`) ?? null;
+      },
+      async set({ service, name, value }) {
+        stored.set(`${service}:${name}`, value);
+      },
+      async delete({ service, name }) {
+        return stored.delete(`${service}:${name}`);
+      },
+    };
+    const authorizedLoginHost: AuthorizedProviderLoginHost = {
+      crypto: {
+        randomBase64Url: (bytes) => (bytes === 32 ? "state-fixture" : "credential-fixture"),
+        sha256Base64Url: () => "challenge-fixture",
+        equal: (left, right) => left === right,
+      },
+      loopback: {
+        async listen() {
+          return {
+            kind: "listening",
+            session: {
+              redirectUri: "http://127.0.0.1:43123/callback",
+              prepareBrowserLaunch: () => "http://127.0.0.1:43123/start",
+              receive: async () => ({
+                kind: "callback",
+                state: "state-fixture",
+                code: "callback-fixture",
+              }),
+              close: async () => undefined,
+            },
+          };
+        },
+      },
+      browser: { launch: async () => ({ kind: "opened" }) },
+      interaction: {
+        presentLocalLaunchUri: async () => ({ kind: "presented" }),
+        requestAuthorizationCode: async () => ({ kind: "unavailable" }),
+        presentDeviceCode: async () => ({ kind: "presented" }),
+      },
+    };
+    const authorizedLoginAdapter: ProviderAuthorizedLoginAdapter = {
+      descriptor: {
+        schemaVersion: AUTHORIZED_LOGIN_SCHEMA_VERSION,
+        adapterId: "fixture-pkce",
+        providerId: providerId.from("fixture"),
+        adapterKind: "openai",
+        methods: ["oauth-pkce", "device-code"],
+        scopes: ["models.read"],
+        callbackModes: ["loopback"],
+        loopbackRedirectUri: null,
+        manualRedirectUri: null,
+        refresh: false,
+        revoke: false,
+        accountLookup: false,
+        revision: "fixture-v1",
+      },
+      availability: () => ({ kind: "available" }),
+      beginPkce: async () => ({
+        kind: "ready",
+        authorizationUrl: "https://provider.example.test/authorize",
+      }),
+      exchangePkce: async () => ({
+        kind: "authorized",
+        credential: {
+          schemaVersion: AUTHORIZED_LOGIN_SCHEMA_VERSION,
+          kind: "authorized-provider",
+          accessToken: secret,
+          refreshToken: "refresh-never-projected",
+          tokenType: "Bearer",
+          scopes: ["models.read"],
+          issuedAt: instant(Date.now()),
+          expiresAt: instant(Date.now() + 60_000),
+        },
+        account: {
+          accountId: "fixture-account",
+          displayName: "Fixture account",
+          authMethod: "oauth-pkce",
+          authorizedAt: instant(0),
+          expiresAt: instant(Date.now() + 60_000),
+        },
+      }),
+      beginDeviceCode: async () => ({
+        kind: "ready",
+        deviceCode: "device-code-never-projected",
+        userCode: "ABCD-EFGH",
+        verificationUri: "https://provider.example.test/device",
+        verificationUriComplete: null,
+        pollIntervalMs: duration(0),
+        expiresAt: instant(Date.now() + 60_000),
+      }),
+      pollDeviceCode: async () => ({
+        kind: "authorized",
+        credential: {
+          schemaVersion: AUTHORIZED_LOGIN_SCHEMA_VERSION,
+          kind: "authorized-provider",
+          accessToken: secret,
+          refreshToken: null,
+          tokenType: "Bearer",
+          scopes: ["models.read"],
+          issuedAt: instant(Date.now()),
+          expiresAt: instant(Date.now() + 60_000),
+        },
+        account: {
+          accountId: "fixture-device-account",
+          displayName: "Fixture device account",
+          authMethod: "device-code",
+          authorizedAt: instant(0),
+          expiresAt: instant(Date.now() + 60_000),
+        },
+      }),
+    };
+    const authorizationHeaders: string[] = [];
+    const product = composeProductProviderConnections(services(), GLOBALS, {
+      authorizedLoginAdapters: [authorizedLoginAdapter],
+      authorizedLoginHost,
+      credentialSecrets,
+      providerFetch: async (_input, init) => {
+        authorizationHeaders.push(new Headers(init?.headers).get("authorization") ?? "");
+        return sse([
+          { choices: [{ delta: { content: "done" } }] },
+          { choices: [{ delta: {}, finish_reason: "stop" }] },
+        ]);
+      },
+    });
+    const fixtureProfile: ProviderProfile = {
+      ...localProfile(),
+      profileId: "fixture",
+      providerId: providerId.from("fixture"),
+      displayName: "Fixture",
+      endpoint: "https://provider.example.test/v1",
+      enabledModels: [modelId.from("fixture-model")],
+    };
+
+    expect(await product.service.execute({ kind: "add", profile: fixtureProfile })).toMatchObject({
+      kind: "completed",
+      connections: [
+        {},
+        { profileId: "fixture", authMethods: ["api-key", "oauth-pkce", "device-code"] },
+      ],
+    });
+    const login = await product.service.execute({
+      kind: "login-authorized",
+      profileId: "fixture",
+      method: "oauth-pkce",
+    });
+    expect(login).toMatchObject({
+      kind: "completed",
+      authorization: { adapterId: "fixture-pkce", outcome: "authorized" },
+    });
+    expect(JSON.stringify(login)).not.toContain(secret);
+    expect(await product.service.execute({ kind: "use", profileId: "fixture" })).toMatchObject({
+      kind: "completed",
+    });
+    const selected = await product.resolveSelected();
+    expect(selected.kind).toBe("ready");
+    if (selected.kind !== "ready") throw new Error("authorized provider was not ready");
+    const events = await providerEvents(selected.adapter, {
+      requestId: modelRequestId.from("authorized-product-attempt"),
+      providerId: providerId.from("fixture"),
+      modelId: modelId.from("fixture-model"),
+      messages: [{ role: "user", parts: [{ kind: "text", text: "hello" }] }],
+      tools: [],
+      output: { kind: "text" },
+      budgets: {},
+      metadata: { role: "default" },
+    });
+    expect(events.at(-1)).toMatchObject({ kind: "finished", finishReason: "stop" });
+    expect(authorizationHeaders).toEqual([`Bearer ${secret}`]);
+    expect(JSON.stringify(events)).not.toContain(secret);
+    expect(await product.service.execute({ kind: "logout", profileId: "fixture" })).toMatchObject({
+      kind: "completed",
+      revocation: { local: "removed", remote: "unsupported" },
+    });
+    const deviceLogin = await product.service.execute({
+      kind: "login-authorized",
+      profileId: "fixture",
+      method: "device-code",
+    });
+    expect(deviceLogin).toMatchObject({
+      kind: "completed",
+      connections: [{}, { accountLabel: "Fixture device account" }],
+      authorization: { method: "device-code", outcome: "authorized" },
+    });
+    expect(JSON.stringify(deviceLogin)).not.toContain("device-code-never-projected");
+    expect(JSON.stringify(deviceLogin)).not.toContain("ABCD-EFGH");
   });
 
   test("loads referenced user catalogs from the active configuration home", async () => {

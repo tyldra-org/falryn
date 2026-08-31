@@ -95,6 +95,33 @@ locked, denied, and unavailable platform services fail closed. OAuth PKCE and
 device authorization are accepted only through an installed official provider
 adapter; Falryn does not imitate browser sessions or subscription credentials.
 
+Installed authorized-login adapters enter one versioned registry keyed by the
+exact provider, SDK adapter, and method. Each attempt binds the current registry
+generation before network work starts. The shared coordinator implements PKCE
+S256, random state, bounded random-port loopback callbacks or a strict
+adapter-declared `127.0.0.1` redirect, provider-approved manual-code fallback,
+bounded device-code polling, cancellation, and a hard deadline. A browser
+receives only a local loopback URL in its argument vector;
+the provider URL and OAuth state stay inside the loopback broker. Headless runs
+do not launch a browser, and ordinary diagnostics never print provider URLs,
+callback codes, or device codes.
+
+Successful exchange stores one versioned access/refresh credential bundle in
+the operating-system vault and persists only its opaque reference plus safe
+account metadata. Public results carry a secret-free terminal receipt with the
+attempt, adapter, generation, method, outcome, and structural failure code.
+Immediately before provider handoff, an expired authorized connection refreshes
+through its bound adapter, writes a rotated vault reference, publishes the
+connection change, and then removes the old local credential. Logout reports
+remote revocation and local deletion separately. This shared lifecycle does not
+claim that a provider supports subscription login until an installed adapter
+advertises the method as available.
+
+CLI, JSON, and JSONL provider actions project the same authorization receipt
+and safe account state. OpenTUI's provider resource view projects the effective
+authentication state and method from the same selected connection; it does not
+copy protocol codes or credential values into the renderer.
+
 Human, JSON, and JSONL results expose profile, connection, account, catalog,
 and revocation state without secret material. `falryn run` passes the selected
 provider and normalized model catalog into a real model attempt. Assistant tool
@@ -125,6 +152,15 @@ Search-result pages are not evidence. Each pricing schedule keeps its own
 provider-bound source and observation time. Catalog resources contain data only;
 TypeScript owns strict validation and the Command Code generator, without
 putting transport behavior or credentials into catalog data.
+Every live model selection is bound to the exact provider profile, provider,
+and model tuple rather than a bare model ID. Role routes, fallbacks, explicit
+selection, recursion tracking, and routing receipts retain that full identity,
+so the same model ID can safely exist under multiple accounts, endpoints, or
+providers. The interactive model picker shows the provider display name and
+profile beside each model, and its selection notice repeats all three identity
+parts. Malformed, mismatched, missing, unavailable, or transport-ineligible
+selections fail without replacing the current model. Persistent role and model
+configuration editing remains future work under GitHub issue #273.
 Provider profiles select enabled model IDs and may reference user catalogs by
 identity, and optional inline profile declarations remain the highest-priority
 compatibility override. A user catalog is a bounded JSONC document at

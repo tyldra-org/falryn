@@ -50,24 +50,58 @@ function samplePolicy(): ModelPolicy {
   const parsed = parseModelPolicy({
     roles: {
       default: {
+        providerProfileId: "primary-profile",
         providerId: primary,
         modelId: deep,
         reasoning: "balanced",
-        fallbacks: [{ providerId: secondary, modelId: fast }],
+        fallbacks: [
+          { providerProfileId: "secondary-profile", providerId: secondary, modelId: fast },
+        ],
         budgets: { attempts: 2 },
       },
-      "fast-read": { providerId: primary, modelId: fast, reasoning: "minimal" },
-      "fast-edit": { providerId: primary, modelId: fast, reasoning: "minimal" },
-      commit: { providerId: primary, modelId: deep, reasoning: "balanced" },
-      plan: { providerId: primary, modelId: deep, reasoning: "balanced" },
+      "fast-read": {
+        providerProfileId: "primary-profile",
+        providerId: primary,
+        modelId: fast,
+        reasoning: "minimal",
+      },
+      "fast-edit": {
+        providerProfileId: "primary-profile",
+        providerId: primary,
+        modelId: fast,
+        reasoning: "minimal",
+      },
+      commit: {
+        providerProfileId: "primary-profile",
+        providerId: primary,
+        modelId: deep,
+        reasoning: "balanced",
+      },
+      plan: {
+        providerProfileId: "primary-profile",
+        providerId: primary,
+        modelId: deep,
+        reasoning: "balanced",
+      },
       vision: {
+        providerProfileId: "primary-profile",
         providerId: primary,
         modelId: deep,
         reasoning: "provider-default",
         use: "off",
       },
-      advisor: { providerId: secondary, modelId: deep, use: "explicit" },
-      compact: { providerId: primary, modelId: fast, use: "evaluated" },
+      advisor: {
+        providerProfileId: "secondary-profile",
+        providerId: secondary,
+        modelId: deep,
+        use: "explicit",
+      },
+      compact: {
+        providerProfileId: "primary-profile",
+        providerId: primary,
+        modelId: fast,
+        use: "evaluated",
+      },
     },
   });
   if (!parsed.ok) {
@@ -566,6 +600,7 @@ describe("turn attempt policy", () => {
     const parsed = parseModelPolicy({
       roles: {
         default: {
+          providerProfileId: "primary-profile",
           providerId: primary,
           modelId: deep,
           reasoning: "balanced",

@@ -607,6 +607,7 @@ describe("through dispatch", () => {
             selected?: boolean;
             models?: readonly string[];
             catalogs?: readonly string[];
+            authMethods?: readonly string[];
             discovery?: string;
             updatedAt?: number;
           }[];
@@ -630,6 +631,7 @@ describe("through dispatch", () => {
         selected: false,
         models: ["claude-sonnet"],
         catalogs: ["team-models"],
+        authMethods: ["api-key"],
         discovery: "remote",
         updatedAt: expect.any(Number),
       });
@@ -638,7 +640,8 @@ describe("through dispatch", () => {
         code: "user-catalog-file-unavailable",
         retryable: false,
       });
-      expect(`${out}${err}`).not.toMatch(/api.?key|secret/i);
+      expect(`${out}${err}`).not.toContain("ANTHROPIC_API_KEY");
+      expect(`${out}${err}`).not.toContain(SECRET);
     }
   });
 

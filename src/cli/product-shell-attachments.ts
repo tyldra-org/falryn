@@ -41,7 +41,6 @@ import {
   type ExecutionProfileId,
   executionProfile,
   type FileSystemPort,
-  type ModelId,
   type ProcessCapturePort,
   primaryWorkspaceRoot,
   sessionId as sessionIdCodec,
@@ -59,6 +58,7 @@ import {
   createHostProcessCapturePort,
   type OwnedProcessRegistry,
 } from "../integrations/index.ts";
+import { type ProviderModelIdentity, providerModelIdentityKey } from "../providers/index.ts";
 import {
   createProductSubmissionPort,
   type ProductSubmissionPort,
@@ -123,11 +123,21 @@ export async function composeProductShellAttachments(
     );
 
   const providerAdapter = ports.provider?.kind === "ready" ? ports.provider.adapter : undefined;
-  let selectedModelId: ModelId | null =
+  const providerProfile =
+    ports.provider?.kind === "ready" ? ports.provider.session.connection.profile : null;
+  const defaultModelId =
     ports.provider?.kind === "ready"
-      ? (ports.provider.session.catalog.models.find((model) => model.availability !== "unavailable")
-          ?.modelId ?? null)
-      : null;
+      ? ports.provider.session.catalog.models.find((model) => model.availability !== "unavailable")
+          ?.modelId
+      : undefined;
+  let selectedModel: ProviderModelIdentity | null =
+    providerProfile === null || defaultModelId === undefined
+      ? null
+      : {
+          providerProfileId: providerProfile.profileId,
+          providerId: providerProfile.providerId,
+          modelId: defaultModelId,
+        };
 
   const workspaceRoot =
     ports.workspaceSet === null ? null : primaryWorkspaceRoot(ports.workspaceSet).path;
@@ -337,7 +347,7 @@ export async function composeProductShellAttachments(
       ...(memory === undefined ? {} : { memory }),
       ...(ports.artifacts === undefined ? {} : { artifacts: ports.artifacts }),
       initialExecutionProfile: selectedExecutionProfile,
-      ...(selectedModelId === null ? {} : { initialModelId: selectedModelId }),
+      ...(selectedModel === null ? {} : { initialModel: selectedModel }),
     });
     return {
       sessionId,
@@ -391,10 +401,14 @@ export async function composeProductShellAttachments(
     },
     modelSelection: {
       get: () => active.executor.modelSelection.get(),
-      async select(modelId: ModelId) {
-        const selected = await active.executor.modelSelection.select(modelId);
+      async select(identity: ProviderModelIdentity) {
+        const selected = await active.executor.modelSelection.select(identity);
         if (selected.ok) {
-          selectedModelId = selected.modelId;
+          selectedModel = {
+            providerProfileId: selected.providerProfileId,
+            providerId: selected.providerId,
+            modelId: selected.modelId,
+          };
         }
         return selected;
       },
@@ -463,23 +477,34 @@ function providerControls(provider: ProductProviderConnectionHandoff | undefined
       detail: `${execution.description} Completion: ${execution.completion}.`,
     })),
     models:
-      ready?.catalog.models.map((model) => ({
-        id: String(model.modelId),
-        title: String(model.modelId),
-        detail: [
-          profile?.displayName ?? "provider",
-          `in:${model.inputModalities.join("+") || "unknown"}`,
-          `out:${model.outputModalities.join("+") || "unknown"}`,
-          `tools:${model.tools}`,
-          `structured:${model.structuredOutput}`,
-          `stream:${model.streaming}`,
-          `reasoning:${model.reasoning}`,
-          `ctx:${model.contextTokens ?? "unknown"}`,
-          `max-out:${model.outputTokens ?? "unknown"}`,
-          model.availability,
-          `via:${model.provenance.join("+")}`,
-        ].join(" · "),
-      })) ?? [],
+      ready?.catalog.models.flatMap((model) =>
+        profile === null
+          ? []
+          : [
+              {
+                id: providerModelIdentityKey({
+                  providerProfileId: profile.profileId,
+                  providerId: profile.providerId,
+                  modelId: model.modelId,
+                }),
+                title: `${String(model.modelId)} · ${profile.displayName}`,
+                detail: [
+                  `provider:${String(profile.providerId)}`,
+                  `profile:${profile.profileId}`,
+                  `in:${model.inputModalities.join("+") || "unknown"}`,
+                  `out:${model.outputModalities.join("+") || "unknown"}`,
+                  `tools:${model.tools}`,
+                  `structured:${model.structuredOutput}`,
+                  `stream:${model.streaming}`,
+                  `reasoning:${model.reasoning}`,
+                  `ctx:${model.contextTokens ?? "unknown"}`,
+                  `max-out:${model.outputTokens ?? "unknown"}`,
+                  model.availability,
+                  `via:${model.provenance.join("+")}`,
+                ].join(" · "),
+              },
+            ],
+      ) ?? [],
     context: [
       { label: "tokens", value: { kind: "unavailable", reason: "no context pack yet" } },
       { label: "bytes", value: { kind: "unavailable", reason: "no context pack yet" } },
@@ -498,6 +523,19 @@ function providerControls(provider: ProductProviderConnectionHandoff | undefined
                     : "not connected; run falryn provider list",
               }
             : { kind: "known", text: profile.displayName },
+      },
+      {
+        label: "authentication",
+        value:
+          ready === null
+            ? {
+                kind: "unavailable",
+                reason: provider?.kind === "unavailable" ? provider.code : "not connected",
+              }
+            : {
+                kind: "known",
+                text: `${ready.auth.state} · ${ready.connection.account?.authMethod ?? "api-key"}`,
+              },
       },
       { label: "memory", value: { kind: "unavailable", reason: "no resource probe yet" } },
       { label: "tokens", value: { kind: "unavailable", reason: "no usage yet" } },

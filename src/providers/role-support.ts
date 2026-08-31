@@ -270,6 +270,7 @@ export function primaryCapabilityForRole(
   policy: ModelPolicy,
   role: ModelRole,
   findCapability: (
+    providerProfileId: RoleRoute["providerProfileId"],
     providerId: RoleRoute["providerId"],
     modelId: RoleRoute["modelId"],
   ) => ModelCapability | undefined,
@@ -278,5 +279,5 @@ export function primaryCapabilityForRole(
   if (route === undefined) {
     return null;
   }
-  return findCapability(route.providerId, route.modelId) ?? null;
+  return findCapability(route.providerProfileId, route.providerId, route.modelId) ?? null;
 }

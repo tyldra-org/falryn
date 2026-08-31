@@ -7,7 +7,8 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { modelId } from "../../domain/index.ts";
+import { modelId, providerId } from "../../domain/index.ts";
+import { providerModelIdentityKey, sameProviderModelIdentity } from "../../providers/index.ts";
 import { UNAVAILABLE_SUBMISSION } from "../composer/index.ts";
 import type { ControlCatalog } from "../controls/index.ts";
 import { mount } from "../harness.tsx";
@@ -34,9 +35,22 @@ const MODEL: Omit<ShellModel, "overlay" | "commands" | "transcript" | "composer"
   help: [{ title: "Leaving", body: "Ctrl+C ends the shell." }],
 };
 
+const MODEL_SELECTION = {
+  providerProfileId: "openai-work",
+  providerId: providerId.from("openai"),
+  modelId: modelId.from("m1"),
+};
+const MODEL_KEY = providerModelIdentityKey(MODEL_SELECTION);
+
 const CATALOG: ControlCatalog = {
   sessions: [{ id: "s1", title: "coding", detail: "workspace falryn" }],
-  models: [{ id: "m1", title: "local-small", detail: "8k context" }],
+  models: [
+    {
+      id: MODEL_KEY,
+      title: "m1 · OpenAI work",
+      detail: "provider:openai · profile:openai-work · 8k context",
+    },
+  ],
   profiles: [
     { id: "ask", title: "Ask", detail: "Read-only answer." },
     { id: "plan", title: "Plan", detail: "Read-only durable plan." },
@@ -88,15 +102,20 @@ describe("control overlays", () => {
   });
 
   test("selecting a model updates the application control before the header", async () => {
-    let selected = modelId.from("m0");
+    let selected = { ...MODEL_SELECTION, modelId: modelId.from("m0") };
     const submission = {
       ...UNAVAILABLE_SUBMISSION,
       modelSelection: {
         get: () => selected,
-        async select(nextModelId: typeof selected) {
-          const changed = nextModelId !== selected;
-          selected = nextModelId;
-          return { ok: true as const, modelId: selected, changed };
+        async select(next: typeof selected) {
+          const changed = !sameProviderModelIdentity(next, selected);
+          selected = next;
+          return {
+            ok: true as const,
+            ...selected,
+            providerDisplayName: "OpenAI work",
+            changed,
+          };
         },
       },
     };
@@ -114,9 +133,9 @@ describe("control overlays", () => {
     await shell.frame("Models");
     shell.setup.mockInput.pressEnter();
 
-    const frame = await shell.frame("Model selected: m1.");
-    expect(selected).toBe(modelId.from("m1"));
-    expect(frame).toContain("local-small");
+    const frame = await shell.frame("Model selected: m1");
+    expect(selected).toEqual(MODEL_SELECTION);
+    expect(frame).toContain("m1 · OpenAI work");
     expect(frame).not.toContain("no provider yet");
   });
 

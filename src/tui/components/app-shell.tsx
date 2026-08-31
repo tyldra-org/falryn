@@ -119,7 +119,7 @@ export type AppShellProps = {
   readonly onSecretEdit?: (edit: SecretEdit) => void;
   readonly controls?: ControlCatalog;
   readonly selectedSessionId?: string | null;
-  readonly selectedModelId?: string | null;
+  readonly selectedModelKey?: string | null;
   readonly selectedProfileId?: string | null;
   readonly onControlSelect?: (id: string) => void;
   readonly compression?: CompressionControlState;
@@ -219,9 +219,9 @@ export function AppShell(props: AppShellProps): ReactNode {
           {...(props.selectedSessionId === undefined
             ? {}
             : { selectedSessionId: props.selectedSessionId })}
-          {...(props.selectedModelId === undefined
+          {...(props.selectedModelKey === undefined
             ? {}
-            : { selectedModelId: props.selectedModelId })}
+            : { selectedModelKey: props.selectedModelKey })}
           {...(props.selectedProfileId === undefined
             ? {}
             : { selectedProfileId: props.selectedProfileId })}
@@ -300,7 +300,7 @@ function ShellFrame(props: {
   readonly onSecretEdit?: (edit: SecretEdit) => void;
   readonly controls?: ControlCatalog;
   readonly selectedSessionId?: string | null;
-  readonly selectedModelId?: string | null;
+  readonly selectedModelKey?: string | null;
   readonly selectedProfileId?: string | null;
   readonly onControlSelect?: (id: string) => void;
   readonly compression?: CompressionControlState;
@@ -476,7 +476,7 @@ function overlayBody(
     readonly onSecretEdit?: (edit: SecretEdit) => void;
     readonly controls?: ControlCatalog;
     readonly selectedSessionId?: string | null;
-    readonly selectedModelId?: string | null;
+    readonly selectedModelKey?: string | null;
     readonly selectedProfileId?: string | null;
     readonly onControlSelect?: (id: string) => void;
     readonly compression?: CompressionControlState;
@@ -544,7 +544,7 @@ function overlayBody(
             overlay.panel === "session"
               ? (props.selectedSessionId ?? null)
               : overlay.panel === "model"
-                ? (props.selectedModelId ?? null)
+                ? (props.selectedModelKey ?? null)
                 : overlay.panel === "profile"
                   ? (props.selectedProfileId ?? null)
                   : null

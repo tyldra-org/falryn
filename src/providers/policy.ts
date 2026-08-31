@@ -5,7 +5,7 @@
  * router consumes and the Zod parse for untrusted config JSON.
  */
 
-import type { ModelId, ProviderId } from "../domain/identity.ts";
+import type { ProviderModelIdentity } from "./model-identity.ts";
 import { MODEL_ROLES, type ModelRole, WORK_INTENTS, type WorkIntent } from "./roles.ts";
 
 export const REASONING_EFFORTS = [
@@ -30,14 +30,9 @@ export type RoleBudgets = {
   readonly cost?: number;
 };
 
-export type FallbackTarget = {
-  readonly providerId: ProviderId;
-  readonly modelId: ModelId;
-};
+export type FallbackTarget = ProviderModelIdentity;
 
-export type RoleRoute = {
-  readonly providerId: ProviderId;
-  readonly modelId: ModelId;
+export type RoleRoute = ProviderModelIdentity & {
   readonly reasoning: ReasoningEffort;
   readonly fallbacks: readonly FallbackTarget[];
   readonly budgets: RoleBudgets;

@@ -316,7 +316,7 @@ function ResolvedShell(
     header: projectWorkspaceHeader(
       projectHeader(props.model.header, catalog, {
         sessionId: props.runtime.state.selectedSessionId,
-        modelId: props.runtime.state.selectedModelId,
+        modelKey: props.runtime.state.selectedModelKey,
       }),
       props.runtime.commandState.hasWorkspaceSet ? props.runtime.state.workspace : null,
     ),
@@ -371,7 +371,7 @@ function ResolvedShell(
       onSecretEdit={props.runtime.editSecret}
       controls={catalog}
       selectedSessionId={props.runtime.state.selectedSessionId}
-      selectedModelId={props.runtime.state.selectedModelId}
+      selectedModelKey={props.runtime.state.selectedModelKey}
       selectedProfileId={executionProfile}
       onControlSelect={(id) => {
         const overlay = props.runtime.state.overlay;

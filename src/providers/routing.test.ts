@@ -4,6 +4,7 @@ import { instant } from "../domain/clock.ts";
 import { modelId, providerId } from "../domain/identity.ts";
 import type { ModelCatalog } from "./discovery.ts";
 import { unknownModelCapability } from "./model-capability.ts";
+import { providerModelIdentityKey } from "./model-identity.ts";
 import {
   DEFAULT_INTENT_ROLE_MAP,
   type ModelPolicy,
@@ -51,44 +52,54 @@ function samplePolicy(overrides?: {
   const parsed = parseModelPolicy({
     roles: {
       default: {
+        providerProfileId: "primary-profile",
         providerId: primary,
         modelId: deep,
         reasoning: overrides?.reasoning ?? "balanced",
-        fallbacks: overrides?.withFallback ? [{ providerId: secondary, modelId: fast }] : [],
+        fallbacks: overrides?.withFallback
+          ? [{ providerProfileId: "secondary-profile", providerId: secondary, modelId: fast }]
+          : [],
         budgets: { attempts: 2 },
       },
       "fast-read": {
+        providerProfileId: "primary-profile",
         providerId: primary,
         modelId: fast,
         reasoning: "minimal",
       },
       "fast-edit": {
+        providerProfileId: "primary-profile",
         providerId: primary,
         modelId: fast,
         reasoning: "minimal",
       },
       commit: {
+        providerProfileId: "primary-profile",
         providerId: primary,
         modelId: deep,
         reasoning: "balanced",
       },
       plan: {
+        providerProfileId: "primary-profile",
         providerId: primary,
         modelId: deep,
         reasoning: "balanced",
       },
       vision: {
+        providerProfileId: "primary-profile",
         providerId: primary,
         modelId: vision,
         reasoning: "provider-default",
         use: overrides?.visionUse ?? "fallback",
       },
       advisor: {
+        providerProfileId: "secondary-profile",
         providerId: secondary,
         modelId: deep,
         use: "explicit",
       },
       compact: {
+        providerProfileId: "primary-profile",
         providerId: primary,
         modelId: fast,
         use: "evaluated",
@@ -250,8 +261,8 @@ describe("model policy", () => {
   test("parseModelPolicy rejects unknown role keys", () => {
     const result = parseModelPolicy({
       roles: {
-        default: { providerId: "p", modelId: "m" },
-        mystery: { providerId: "p", modelId: "m" },
+        default: { providerProfileId: "profile", providerId: "p", modelId: "m" },
+        mystery: { providerProfileId: "profile", providerId: "p", modelId: "m" },
       },
     });
     expect(result.ok).toBe(false);
@@ -505,7 +516,7 @@ describe("resolveModelRoute", () => {
       policy: samplePolicy(),
       catalogs: catalogs(),
       intent: "coding",
-      explicit: { providerId: primary, modelId: fast },
+      explicit: { providerProfileId: "primary-profile", providerId: primary, modelId: fast },
       required: { tools: true },
     });
     expect(outcome.kind).toBe("selected");
@@ -514,6 +525,51 @@ describe("resolveModelRoute", () => {
     }
     expect(outcome.receipt.selectionReason).toBe("explicit-selection");
     expect(outcome.receipt.modelId).toBe(fast);
+  });
+
+  test("selects the exact profile when two profiles expose the same provider model", () => {
+    const [primaryCatalog] = catalogs();
+    expect(primaryCatalog).toBeDefined();
+    if (primaryCatalog === undefined) {
+      return;
+    }
+    const duplicateProfile = {
+      ...primaryCatalog,
+      profileId: "personal-profile",
+      destinationId: "falryn:deterministic:personal",
+      catalog: { ...primaryCatalog.catalog, generation: 9 },
+    };
+
+    const outcome = resolveModelRoute({
+      policy: samplePolicy(),
+      catalogs: [primaryCatalog, duplicateProfile],
+      intent: "coding",
+      explicit: {
+        providerProfileId: "personal-profile",
+        providerId: primary,
+        modelId: deep,
+      },
+    });
+
+    expect(outcome.kind).toBe("selected");
+    if (outcome.kind !== "selected") {
+      return;
+    }
+    expect(outcome.receipt.providerProfileId).toBe("personal-profile");
+    expect(outcome.receipt.providerDestinationId).toBe("falryn:deterministic:personal");
+    expect(outcome.receipt.catalogGeneration).toBe(9);
+  });
+
+  test("requires provider profile identity in policy configuration", () => {
+    const result = parseModelPolicy({
+      roles: {
+        default: { providerId: primary, modelId: deep },
+      },
+    });
+    expect(result).toMatchObject({
+      ok: false,
+      error: { code: "invalid-model-policy", path: "roles.default.providerProfileId" },
+    });
   });
 
   test("refuses disabled vision role", () => {
@@ -556,10 +612,17 @@ describe("resolveModelRoute", () => {
     const parsed = parseModelPolicy({
       roles: {
         default: {
+          providerProfileId: "primary-profile",
           providerId: primary,
           modelId: weak,
           reasoning: "minimal",
-          fallbacks: [{ providerId: secondary, modelId: fast }],
+          fallbacks: [
+            {
+              providerProfileId: "secondary-profile",
+              providerId: secondary,
+              modelId: fast,
+            },
+          ],
         },
       },
     });
@@ -625,7 +688,13 @@ describe("resolveModelRoute", () => {
       policy,
       catalogs: catalogs(),
       role: "default",
-      visited: new Set([`${primary}\0${deep}`]),
+      visited: new Set([
+        providerModelIdentityKey({
+          providerProfileId: "primary-profile",
+          providerId: primary,
+          modelId: deep,
+        }),
+      ]),
     });
     expect(outcome.kind).toBe("no-eligible-route");
     if (outcome.kind !== "no-eligible-route") {
@@ -651,7 +720,7 @@ describe("resolveModelRoute", () => {
   test("inherits the default route when a standard job role is not overridden", () => {
     const parsed = parseModelPolicy({
       roles: {
-        default: { providerId: primary, modelId: deep },
+        default: { providerProfileId: "primary-profile", providerId: primary, modelId: deep },
       },
     });
     expect(parsed.ok).toBe(true);
@@ -791,7 +860,7 @@ describe("specialized role support", () => {
   test("vision unconfigured fails closed when image is required", () => {
     const parsed = parseModelPolicy({
       roles: {
-        default: { providerId: primary, modelId: deep },
+        default: { providerProfileId: "primary-profile", providerId: primary, modelId: deep },
       },
     });
     expect(parsed.ok).toBe(true);
@@ -830,8 +899,9 @@ describe("specialized role support", () => {
   test("compact use off fails closed", () => {
     const parsed = parseModelPolicy({
       roles: {
-        default: { providerId: primary, modelId: deep },
+        default: { providerProfileId: "primary-profile", providerId: primary, modelId: deep },
         compact: {
+          providerProfileId: "primary-profile",
           providerId: primary,
           modelId: fast,
           use: "off",

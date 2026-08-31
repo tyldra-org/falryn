@@ -110,4 +110,27 @@ describe("composeProductCredentials", () => {
     expect(wroteSecret).toBe(secret);
     expect(JSON.stringify(placed)).not.toContain(secret);
   });
+
+  test("fails closed for a malformed authorized credential bundle", async () => {
+    const bundle = composeProductCredentials({
+      clock: createManualClock(),
+      commands: runner(async () => {
+        throw new Error("credential lookup must use the injected vault");
+      }),
+      platform: "darwin",
+      environment: createStaticEnvironment({}),
+      secrets: {
+        get: async () => "{malformed-authorized-credential",
+        set: async () => undefined,
+        delete: async () => false,
+      },
+    });
+    const key = await resolveProviderApiKey(bundle.resolver, {
+      storeKind: "operating-system-keychain",
+      locator: "falryn.provider-authorized.v1.openai.auth-fixture",
+      consumer: "provider:openai",
+      accountLabel: "fixture",
+    });
+    expect(key).toBeNull();
+  });
 });

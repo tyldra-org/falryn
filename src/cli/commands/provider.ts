@@ -6,11 +6,16 @@ import {
   type ProviderConnectionActionResult,
 } from "../../application/index.ts";
 import type { InputStreamPort } from "../../domain/index.ts";
+import {
+  type AuthorizationInteractionPort,
+  MAX_AUTHORIZATION_CODE_LENGTH,
+} from "../../providers/index.ts";
 import type { ProviderCommandArguments } from "../command-tree.ts";
 import type { GlobalOptions } from "../options.ts";
 import { composeProductProviderConnections } from "../product-provider-connections.ts";
 import type { CommandEffect, CommandResultOf } from "../result.ts";
 import type { ServiceProvider } from "../services.ts";
+import { type CliStreams, writeDiagnosticLine } from "../streams.ts";
 import { resultFor } from "./shared.ts";
 
 const MAX_API_KEY_BYTES = 16_384;
@@ -21,18 +26,21 @@ export async function runProvider(
   services: ServiceProvider,
   arguments_: ProviderCommandArguments,
   globals: GlobalOptions,
-  input: InputStreamPort,
+  streams: CliStreams,
   signal?: AbortSignal,
   onMutationStart?: () => void,
 ): Promise<CommandResultOf<"provider", ProviderCommandPayload>> {
-  const action = await actionFor(arguments_, input);
+  const action = await actionFor(arguments_, streams.input);
   if (typeof action === "string") {
     return providerFailure(arguments_.action, action);
   }
   if (isMutation(action)) {
     onMutationStart?.();
   }
-  const service = composeProductProviderConnections(services(), globals).service;
+  const service = composeProductProviderConnections(services(), globals, {
+    authorizationInteraction: createProviderAuthorizationInteraction(streams),
+    allowAuthorizationBrowser: !globals.nonInteractive && streams.capabilities.stderr.isTty,
+  }).service;
   const payload = await service.execute(action, signal);
   if (payload.kind === "completed") {
     return resultFor("provider", payload, [], undefined, effectFor(action, "completed"));
@@ -58,6 +66,36 @@ export async function runProvider(
     uncertain ? { kind: "uncertain", effect: "uncertain" } : undefined,
     effectFor(action, uncertain ? "uncertain" : "none"),
   );
+}
+
+export function createProviderAuthorizationInteraction(
+  streams: CliStreams,
+): AuthorizationInteractionPort {
+  const present = (line: string): "presented" | "unavailable" =>
+    writeDiagnosticLine(streams, line).status === "accepted" ? "presented" : "unavailable";
+  return {
+    async presentLocalLaunchUri({ providerId, localLaunchUri }) {
+      return { kind: present(`Authorize ${providerId}: ${localLaunchUri}`) };
+    },
+    async requestAuthorizationCode({ signal }) {
+      if (signal.aborted) {
+        return { kind: "cancelled" };
+      }
+      const read = await streams.input.read();
+      if (!read.ok || read.value.kind !== "text" || signal.aborted) {
+        return signal.aborted ? { kind: "cancelled" } : { kind: "unavailable" };
+      }
+      const code = read.value.text.trim();
+      return code.length > 0 && code.length <= MAX_AUTHORIZATION_CODE_LENGTH
+        ? { kind: "submitted", code }
+        : { kind: "unavailable" };
+    },
+    async presentDeviceCode() {
+      // Device codes are transient credentials. A CLI diagnostic or captured
+      // headless stream is not a protected interaction channel.
+      return { kind: "unavailable" };
+    },
+  };
 }
 
 function providerError(

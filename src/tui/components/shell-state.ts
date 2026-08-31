@@ -111,7 +111,8 @@ export type ShellState = {
   /** Last decided identity, so the same prompt is not re-offered. */
   readonly resolvedConfirmationKey: string | null;
   readonly selectedSessionId: string | null;
-  readonly selectedModelId: string | null;
+  /** Provider-qualified model control key, never a bare model ID. */
+  readonly selectedModelKey: string | null;
   /** Bound workspace roots for this session, or empty when none are attached. */
   readonly workspace: WorkspaceSetView;
   /** True while a mid-turn in-flight attempt is attached (#612). */
@@ -163,7 +164,7 @@ export const INITIAL_SHELL_STATE: ShellState = {
   secretGraphemes: 0,
   resolvedConfirmationKey: null,
   selectedSessionId: null,
-  selectedModelId: null,
+  selectedModelKey: null,
   workspace: EMPTY_WORKSPACE_SET,
   runningWork: false,
 };
@@ -345,7 +346,7 @@ export function shellReducer(state: ShellState, action: ShellAction): ShellState
       const selected =
         action.field === "session"
           ? { ...state, selectedSessionId: action.id }
-          : { ...state, selectedModelId: action.id };
+          : { ...state, selectedModelKey: action.id };
       return selected.overlay.kind === "none"
         ? selected
         : shellReducer(selected, { kind: "close-overlay" });
