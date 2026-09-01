@@ -1,37 +1,53 @@
 /**
- * Default TUI product attachments (#752 / #711 / #712).
+ * Default live-product attachments for the TUI.
  *
- * Composes the product agent runtime, credentials, OpenAI-compatible adapter
- * (when a key resolves), and product tools (#711 workspace + #712 process) so
- * `launchShell` can pass a real submission port and transcript feed into
- * `runShell`.
+ * Composes the durable session host, authenticated provider, product tools,
+ * shared live-turn executor, transcript feed, and session-creation control so
+ * `launchShell` can attach one application-owned runtime to `runShell`.
  */
+
+import { randomUUID } from "node:crypto";
 
 import {
   composeProductAgentRuntime,
-  composeProductCredentials,
+  composeProductBriefControls,
   composeProductGitTools,
+  composeProductIndexLifecycle,
   composeProductLanguageTools,
   composeProductMemoryTools,
+  composeProductMemoryTurn,
+  composeProductOutputControls,
   composeProductProcessTools,
+  composeProductScratchTools,
   composeProductWorkspaceTools,
   createDebugAdapterSupervisor,
   createLanguageServerSupervisor,
-  DEFAULT_OPENAI_CREDENTIAL_REFERENCE,
+  createProductContextSource,
+  createProductLiveTurnExecutor,
+  createUnavailableProductContextSource,
+  type LoomPort,
+  type MemoryRecords,
   mergeProductToolBundles,
-  resolveProviderApiKey,
+  type ProductToolConfirmationPort,
+  type ScratchResourcePort,
 } from "../application/index.ts";
 import {
+  type ArtifactStorePort,
   type ClockPort,
   type ConfigurationGeneration,
   type EnvironmentPort,
   type EventStorePort,
+  EXECUTION_PROFILES,
+  type ExecutionProfileId,
+  executionProfile,
   type FileSystemPort,
-  type LocalDataPlatform,
+  type ProcessCapturePort,
   primaryWorkspaceRoot,
   sessionId as sessionIdCodec,
   streamId,
   traceId as traceIdCodec,
+  type WorkspaceIndexPort,
+  type WorkspaceIndexWritePort,
   type WorkspaceSet,
   workspaceId as workspaceIdCodec,
 } from "../domain/index.ts";
@@ -40,32 +56,51 @@ import {
   createHostGitPort,
   createHostManagedServicePort,
   createHostProcessCapturePort,
-  hostPlatform,
   type OwnedProcessRegistry,
 } from "../integrations/index.ts";
-import { createOpenAiCompatibleAdapter } from "../providers/openai-compatible-adapter.ts";
-import type { ProviderAdapterPort } from "../providers/port.ts";
-import { createProductSubmissionPort, type SubmissionPort } from "../tui/composer/index.ts";
-import { type TranscriptFeed, transcriptFeedFromProducer } from "../tui/transcript-feed.ts";
-import { CLI_EVENT_STREAM } from "./services.ts";
+import { type ProviderModelIdentity, providerModelIdentityKey } from "../providers/index.ts";
+import {
+  createProductSubmissionPort,
+  type ProductSubmissionPort,
+  type SubmissionPort,
+} from "../tui/composer/index.ts";
+import type { ControlCatalog } from "../tui/controls/index.ts";
+import type { SessionCreationPort } from "../tui/session-creation.ts";
+import type { TranscriptFeed } from "../tui/transcript-feed.ts";
+import type { ProductProviderConnectionHandoff } from "./product-provider-connections.ts";
 
 export type ProductShellAttachmentPorts = {
+  /** Durable in production; tests may inject the in-memory event-store double. */
   readonly eventStore: EventStorePort;
   readonly clock: ClockPort;
-  readonly environment: EnvironmentPort;
+  /** Compatibility input retained for callers; provider auth is now composed before this seam. */
+  readonly environment?: EnvironmentPort;
   readonly fileSystem: FileSystemPort;
   readonly workspaceSet: WorkspaceSet | null;
   /** From the loader after a durable load (#728); not hardcoded generation zero. */
   readonly configurationGeneration: ConfigurationGeneration;
   readonly signal?: AbortSignal;
-  readonly platform?: LocalDataPlatform;
   readonly commands?: ReturnType<typeof createHostCommandRunner>;
   readonly ownedProcesses?: OwnedProcessRegistry;
+  /** Durable exact-output storage and optional shared Loom lifecycle (#814). */
+  readonly artifacts?: ArtifactStorePort;
+  readonly loom?: LoomPort;
+  readonly scratch?: ScratchResourcePort;
+  /** Injectable process host for deterministic public-entrypoint integration tests. */
+  readonly processCapture?: ProcessCapturePort;
+  /** Application-owned focused confirmation host for consequential tool calls. */
+  readonly toolConfirmation?: ProductToolConfirmationPort;
+  readonly index?: WorkspaceIndexPort & WorkspaceIndexWritePort;
+  readonly memoryRecords?: MemoryRecords;
+  /** Selected, authenticated provider handoff from the application-owned profile service. */
+  readonly provider?: ProductProviderConnectionHandoff;
 };
 
 export type ProductShellAttachments = {
-  readonly submission: SubmissionPort;
+  readonly submission: ProductSubmissionPort;
   readonly transcriptFeed: TranscriptFeed;
+  readonly sessionCreation: SessionCreationPort;
+  readonly controls: ControlCatalog;
 };
 
 /**
@@ -75,14 +110,11 @@ export type ProductShellAttachments = {
 export async function composeProductShellAttachments(
   ports: ProductShellAttachmentPorts,
 ): Promise<ProductShellAttachments | null> {
-  const now = ports.clock.now();
   const workspaceId = workspaceIdCodec.from(
     ports.workspaceSet === null
       ? "workspace-unbound"
       : primaryWorkspaceRoot(ports.workspaceSet).rootId,
   );
-  const sessionId = sessionIdCodec.from(`session-shell-${now}`);
-  const traceId = traceIdCodec.from(`trace-shell-${now}`);
   const generation = ports.configurationGeneration;
   const commands =
     ports.commands ??
@@ -90,120 +122,423 @@ export async function composeProductShellAttachments(
       ports.ownedProcesses === undefined ? {} : { ownedProcesses: ports.ownedProcesses },
     );
 
-  let providerAdapter: ProviderAdapterPort | undefined;
-  const credentials = composeProductCredentials({
-    clock: ports.clock,
-    commands,
-    platform: ports.platform ?? hostPlatform(),
-    environment: ports.environment,
-  });
-  const apiKey = await resolveProviderApiKey(
-    credentials.resolver,
-    DEFAULT_OPENAI_CREDENTIAL_REFERENCE,
-    ports.signal,
-  );
-  if (apiKey !== null) {
-    providerAdapter = createOpenAiCompatibleAdapter({
-      profileId: "openai",
-      baseUrl: "https://api.openai.com/v1",
-      resolveApiKey: async () => apiKey,
-    });
+  const providerAdapter = ports.provider?.kind === "ready" ? ports.provider.adapter : undefined;
+  const providerProfile =
+    ports.provider?.kind === "ready" ? ports.provider.session.connection.profile : null;
+  const defaultModelId =
+    ports.provider?.kind === "ready"
+      ? ports.provider.session.catalog.models.find((model) => model.availability !== "unavailable")
+          ?.modelId
+      : undefined;
+  let selectedModel: ProviderModelIdentity | null =
+    providerProfile === null || defaultModelId === undefined
+      ? null
+      : {
+          providerProfileId: providerProfile.profileId,
+          providerId: providerProfile.providerId,
+          modelId: defaultModelId,
+        };
+
+  const workspaceRoot =
+    ports.workspaceSet === null ? null : primaryWorkspaceRoot(ports.workspaceSet).path;
+  const index = workspaceRoot === null ? undefined : ports.index;
+  const indexLifecycle =
+    workspaceRoot === null || index === undefined
+      ? null
+      : composeProductIndexLifecycle({
+          fileSystem: ports.fileSystem,
+          workspaceRoot,
+          index,
+        });
+  if (indexLifecycle !== null) {
+    await indexLifecycle.rebuild(ports.signal);
   }
 
-  const workspaceTools =
-    ports.workspaceSet === null
-      ? null
-      : composeProductWorkspaceTools({
-          generation,
-          fileSystem: ports.fileSystem,
-          commands,
-          workspaceRoot: primaryWorkspaceRoot(ports.workspaceSet).path,
-        });
-  const processTools =
-    ports.workspaceSet === null
-      ? null
-      : composeProductProcessTools({
-          generation,
-          capture: createHostProcessCapturePort({
-            clock: ports.clock,
-            ...(ports.ownedProcesses === undefined ? {} : { ownedProcesses: ports.ownedProcesses }),
-          }),
-          workspaceCwd: String(primaryWorkspaceRoot(ports.workspaceSet).path),
-        });
-  const gitTools =
-    ports.workspaceSet === null
-      ? null
-      : composeProductGitTools({
-          generation,
-          git: createHostGitPort({
-            capture: createHostProcessCapturePort({
-              clock: ports.clock,
-              ...(ports.ownedProcesses === undefined
-                ? {}
-                : { ownedProcesses: ports.ownedProcesses }),
-            }),
-            clock: ports.clock,
-          }),
-          gitExecutable: "/usr/bin/git",
-          startPath: String(primaryWorkspaceRoot(ports.workspaceSet).path),
-        });
   const managedServices = createHostManagedServicePort(
     ports.ownedProcesses === undefined ? {} : { ownedProcesses: ports.ownedProcesses },
   );
-  const languageTools =
-    ports.workspaceSet === null
-      ? null
-      : composeProductLanguageTools({
-          generation,
-          languageServers: createLanguageServerSupervisor(managedServices),
-          debugAdapters: createDebugAdapterSupervisor(managedServices),
-        });
-  const memoryTools =
-    ports.workspaceSet === null ? null : composeProductMemoryTools({ generation });
-  const productTools =
-    workspaceTools === null ||
-    processTools === null ||
-    gitTools === null ||
-    languageTools === null ||
-    memoryTools === null
-      ? null
-      : mergeProductToolBundles(generation, [
-          workspaceTools,
-          processTools,
-          gitTools,
-          languageTools,
-          memoryTools,
-        ]);
-
-  const composed = composeProductAgentRuntime({
-    eventStore: ports.eventStore,
-    clock: ports.clock,
-    streamId: streamId.from(CLI_EVENT_STREAM),
-    correlation: {
-      workspaceId,
-      sessionId,
-      traceId,
-      configurationGeneration: generation,
-    },
-    ...(providerAdapter === undefined ? {} : { providerAdapter }),
-    ...(productTools === null
-      ? {}
-      : { toolCatalog: productTools.catalog, toolRunner: productTools.runner }),
+  let selectedExecutionProfile: ExecutionProfileId = "agent";
+  const brief = composeProductBriefControls({
+    initialVerbosity: executionProfile(selectedExecutionProfile).defaultBriefVerbosity,
   });
-  if (!composed.ok) {
-    return null;
+  const output = composeProductOutputControls();
+
+  function buildSession() {
+    const sessionId = sessionIdCodec.from(`session-shell-${randomUUID()}`);
+    const traceId = traceIdCodec.from(`trace-shell-${randomUUID()}`);
+    const workspaceTools =
+      workspaceRoot === null
+        ? null
+        : composeProductWorkspaceTools({
+            generation,
+            fileSystem: ports.fileSystem,
+            commands,
+            workspaceRoot,
+            ...(ports.artifacts === undefined ? {} : { artifacts: ports.artifacts }),
+            ...(ports.loom === undefined ? {} : { loom: ports.loom }),
+            ...(index === undefined ? {} : { index }),
+            workspaceId,
+            sessionId,
+            userReadOutputMode: output.getLoomMode,
+          });
+    const processTools =
+      workspaceRoot === null
+        ? null
+        : composeProductProcessTools({
+            generation,
+            capture:
+              ports.processCapture ??
+              createHostProcessCapturePort({
+                clock: ports.clock,
+                ...(ports.artifacts === undefined ? {} : { artifacts: ports.artifacts }),
+                ...(ports.ownedProcesses === undefined
+                  ? {}
+                  : { ownedProcesses: ports.ownedProcesses }),
+              }),
+            workspaceCwd: String(workspaceRoot),
+            ...(ports.artifacts === undefined ? {} : { artifacts: ports.artifacts }),
+            ...(ports.loom === undefined ? {} : { loom: ports.loom }),
+            workspaceId: String(workspaceId),
+            sessionId: String(sessionId),
+            ...(ports.scratch === undefined ? {} : { scratch: ports.scratch }),
+            userOutputMode: output.getHushMode,
+          });
+    const scratchTools =
+      ports.scratch === undefined
+        ? null
+        : composeProductScratchTools({ generation, scratch: ports.scratch, sessionId });
+    const gitTools =
+      workspaceRoot === null
+        ? null
+        : composeProductGitTools({
+            generation,
+            git: createHostGitPort({
+              capture: createHostProcessCapturePort({
+                clock: ports.clock,
+                ...(ports.ownedProcesses === undefined
+                  ? {}
+                  : { ownedProcesses: ports.ownedProcesses }),
+              }),
+              clock: ports.clock,
+            }),
+            gitExecutable: "/usr/bin/git",
+            startPath: String(workspaceRoot),
+          });
+    const languageTools =
+      workspaceRoot === null
+        ? null
+        : composeProductLanguageTools({
+            generation,
+            languageServers: createLanguageServerSupervisor(managedServices),
+            debugAdapters: createDebugAdapterSupervisor(managedServices, {
+              confirmationPolicy: "auto-allow",
+              ...(ports.artifacts === undefined ? {} : { artifacts: ports.artifacts }),
+            }),
+            fileSystem: ports.fileSystem,
+            workspaceRoot,
+          });
+    const memoryTools =
+      workspaceRoot === null
+        ? null
+        : composeProductMemoryTools({
+            generation,
+            ...(ports.memoryRecords === undefined ? {} : { records: ports.memoryRecords }),
+          });
+    const productTools =
+      workspaceTools === null ||
+      processTools === null ||
+      gitTools === null ||
+      languageTools === null ||
+      memoryTools === null
+        ? null
+        : mergeProductToolBundles(
+            generation,
+            [
+              workspaceTools,
+              processTools,
+              ...(scratchTools === null ? [] : [scratchTools]),
+              gitTools,
+              languageTools,
+              memoryTools,
+            ],
+            {
+              afterMutation: async (request) => {
+                if (
+                  request.toolName === "scratch_write" ||
+                  request.toolName === "scratch_discard"
+                ) {
+                  return {};
+                }
+                workspaceTools.invalidateContext();
+                const languageDiagnostics = await languageTools.afterWorkspaceMutation(
+                  request.signal,
+                );
+                if (indexLifecycle === null) {
+                  return {
+                    workspaceIndex: { status: "unavailable", code: "index-unavailable" },
+                    languageDiagnostics,
+                  };
+                }
+                const refreshed = await indexLifecycle.refresh(request.signal);
+                return {
+                  workspaceIndex: refreshed.ok
+                    ? { status: "completed" }
+                    : { status: "unavailable", code: refreshed.error.code },
+                  languageDiagnostics,
+                };
+              },
+            },
+          );
+    const composed = composeProductAgentRuntime({
+      eventStore: ports.eventStore,
+      clock: ports.clock,
+      streamId: streamId.from(`live-turn:${String(sessionId)}`),
+      correlation: {
+        workspaceId,
+        sessionId,
+        traceId,
+        configurationGeneration: generation,
+      },
+      ...(providerAdapter === undefined ? {} : { providerAdapter }),
+      ...(ports.toolConfirmation === undefined ? {} : { toolConfirmation: ports.toolConfirmation }),
+      ...(productTools === null
+        ? {}
+        : {
+            toolRegistry: productTools.registry,
+            capabilityRegistry: productTools.capabilityRegistry,
+            toolCatalog: productTools.catalog,
+            toolRunner: productTools.runner,
+          }),
+    });
+    if (!composed.ok) {
+      return null;
+    }
+    const contextSource =
+      workspaceRoot === null || workspaceTools === null
+        ? undefined
+        : index === undefined
+          ? createUnavailableProductContextSource(
+              "index-unavailable",
+              workspaceTools.contextCandidates,
+            )
+          : createProductContextSource({
+              fileSystem: ports.fileSystem,
+              index,
+              workspaceRoot,
+              workspaceId,
+              additionalCandidates: workspaceTools.contextCandidates,
+            });
+    const memory =
+      memoryTools === null
+        ? undefined
+        : composeProductMemoryTurn({
+            admission: memoryTools.admission,
+            recall: memoryTools.recall,
+          });
+    const executor = createProductLiveTurnExecutor({
+      runtime: composed.value,
+      clock: ports.clock,
+      providerCatalog: ports.provider?.kind === "ready" ? ports.provider.session.catalog : null,
+      ...(contextSource === undefined
+        ? workspaceTools === null
+          ? {}
+          : { contextCandidates: workspaceTools.contextCandidates }
+        : { contextSource }),
+      ...(memory === undefined ? {} : { memory }),
+      ...(ports.artifacts === undefined ? {} : { artifacts: ports.artifacts }),
+      initialExecutionProfile: selectedExecutionProfile,
+      ...(selectedModel === null ? {} : { initialModel: selectedModel }),
+    });
+    return {
+      sessionId,
+      producer: composed.value.attachments.turnProducer,
+      executor,
+      submission: createProductSubmissionPort({
+        executor,
+        sessionId,
+        configurationGeneration: generation,
+        brief,
+        output,
+        isAccepting: () => ports.signal === undefined || !ports.signal.aborted,
+      }),
+    };
   }
 
-  const producer = composed.value.attachments.turnProducer;
+  const initial = buildSession();
+  if (initial === null) {
+    return null;
+  }
+  let active = initial;
+  const listeners = new Set<() => void>();
+  let unsubscribeActive = active.producer.subscribe(() => {
+    for (const listener of listeners) listener();
+  });
+  const transcriptFeed: TranscriptFeed = {
+    events: () => active.producer.events(),
+    subscribe(listener) {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+  };
+  let activeSubmissions = 0;
+  const submission = {
+    brief,
+    output,
+    executionProfile: {
+      get: () => selectedExecutionProfile,
+      async select(profileId: ExecutionProfileId) {
+        const controls = active.executor.executionProfile;
+        const selected = await controls.select(profileId);
+        if (selected.ok) {
+          const previousDefault = executionProfile(selectedExecutionProfile).defaultBriefVerbosity;
+          if (brief.getVerbosity() === previousDefault) {
+            brief.setVerbosity(executionProfile(selected.profileId).defaultBriefVerbosity);
+          }
+          selectedExecutionProfile = selected.profileId;
+        }
+        return selected;
+      },
+    },
+    modelSelection: {
+      get: () => active.executor.modelSelection.get(),
+      async select(identity: ProviderModelIdentity) {
+        const selected = await active.executor.modelSelection.select(identity);
+        if (selected.ok) {
+          selectedModel = {
+            providerProfileId: selected.providerProfileId,
+            providerId: selected.providerId,
+            modelId: selected.modelId,
+          };
+        }
+        return selected;
+      },
+    },
+    async submit(snapshot: Parameters<SubmissionPort["submit"]>[0]) {
+      const target = active.submission;
+      activeSubmissions += 1;
+      try {
+        return await target.submit(snapshot);
+      } finally {
+        activeSubmissions -= 1;
+      }
+    },
+  };
+  let sessionCreationInFlight: ReturnType<SessionCreationPort["create"]> | null = null;
+
+  async function createAndActivateSession() {
+    if (activeSubmissions > 0) {
+      return { ok: false as const, reason: "the current session still has an active turn" };
+    }
+    const candidate = buildSession();
+    if (candidate === null) {
+      return { ok: false as const, reason: "the product runtime could not compose" };
+    }
+    const failed = await candidate.executor.startSession();
+    if (failed !== null) {
+      return { ok: false as const, reason: failed.message };
+    }
+    unsubscribeActive();
+    active = candidate;
+    unsubscribeActive = active.producer.subscribe(() => {
+      for (const listener of listeners) listener();
+    });
+    for (const listener of listeners) listener();
+    return { ok: true as const, sessionId: String(active.sessionId) };
+  }
+
   return {
-    submission: createProductSubmissionPort({
-      producer,
-      workspaceId,
-      sessionId,
-      traceId,
-      configurationGeneration: generation,
-      isAccepting: () => ports.signal === undefined || !ports.signal.aborted,
-    }),
-    transcriptFeed: transcriptFeedFromProducer(producer),
+    submission,
+    transcriptFeed,
+    sessionCreation: {
+      async create() {
+        if (sessionCreationInFlight !== null) {
+          return sessionCreationInFlight;
+        }
+        sessionCreationInFlight = createAndActivateSession();
+        try {
+          return await sessionCreationInFlight;
+        } finally {
+          sessionCreationInFlight = null;
+        }
+      },
+    },
+    controls: providerControls(ports.provider),
+  };
+}
+
+function providerControls(provider: ProductProviderConnectionHandoff | undefined): ControlCatalog {
+  const ready = provider?.kind === "ready" ? provider.session : null;
+  const profile = ready?.connection.profile ?? null;
+  return {
+    sessions: [],
+    profiles: EXECUTION_PROFILES.map((execution) => ({
+      id: execution.id,
+      title: execution.label,
+      detail: `${execution.description} Completion: ${execution.completion}.`,
+    })),
+    models:
+      ready?.catalog.models.flatMap((model) =>
+        profile === null
+          ? []
+          : [
+              {
+                id: providerModelIdentityKey({
+                  providerProfileId: profile.profileId,
+                  providerId: profile.providerId,
+                  modelId: model.modelId,
+                }),
+                title: `${String(model.modelId)} · ${profile.displayName}`,
+                detail: [
+                  `provider:${String(profile.providerId)}`,
+                  `profile:${profile.profileId}`,
+                  `in:${model.inputModalities.join("+") || "unknown"}`,
+                  `out:${model.outputModalities.join("+") || "unknown"}`,
+                  `tools:${model.tools}`,
+                  `structured:${model.structuredOutput}`,
+                  `stream:${model.streaming}`,
+                  `reasoning:${model.reasoning}`,
+                  `ctx:${model.contextTokens ?? "unknown"}`,
+                  `max-out:${model.outputTokens ?? "unknown"}`,
+                  model.availability,
+                  `via:${model.provenance.join("+")}`,
+                ].join(" · "),
+              },
+            ],
+      ) ?? [],
+    context: [
+      { label: "tokens", value: { kind: "unavailable", reason: "no context pack yet" } },
+      { label: "bytes", value: { kind: "unavailable", reason: "no context pack yet" } },
+      { label: "items", value: { kind: "unavailable", reason: "no context pack yet" } },
+    ],
+    resources: [
+      {
+        label: "provider",
+        value:
+          profile === null
+            ? {
+                kind: "unavailable",
+                reason:
+                  provider?.kind === "unavailable"
+                    ? `${provider.code}; run falryn provider list or falryn provider test <id>`
+                    : "not connected; run falryn provider list",
+              }
+            : { kind: "known", text: profile.displayName },
+      },
+      {
+        label: "authentication",
+        value:
+          ready === null
+            ? {
+                kind: "unavailable",
+                reason: provider?.kind === "unavailable" ? provider.code : "not connected",
+              }
+            : {
+                kind: "known",
+                text: `${ready.auth.state} · ${ready.connection.account?.authMethod ?? "api-key"}`,
+              },
+      },
+      { label: "memory", value: { kind: "unavailable", reason: "no resource probe yet" } },
+      { label: "tokens", value: { kind: "unavailable", reason: "no usage yet" } },
+    ],
   };
 }

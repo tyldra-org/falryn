@@ -77,6 +77,7 @@ describe("read from cursor", () => {
       expect(read.value.map((event) => event.sequence)).toEqual([
         sequence.from(7),
         sequence.from(8),
+        sequence.from(9),
       ]);
     }
   });

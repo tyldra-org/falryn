@@ -54,6 +54,9 @@ export function runAvailableCommand(
     case "app.commandPalette":
       dispatch({ kind: "open-overlay", route: { kind: "palette", query: "" } });
       return true;
+    case "compression.show":
+      dispatch({ kind: "open-overlay", route: { kind: "compression" } });
+      return true;
     case "overlay.close":
       dispatch({ kind: "close-overlay" });
       return true;
@@ -185,6 +188,9 @@ export function runAvailableCommand(
       return true;
     case "model.select":
       dispatch({ kind: "open-overlay", route: { kind: "controls", panel: "model" } });
+      return true;
+    case "mode.select":
+      dispatch({ kind: "open-overlay", route: { kind: "controls", panel: "profile" } });
       return true;
     case "context.show":
       dispatch({ kind: "open-overlay", route: { kind: "controls", panel: "context" } });

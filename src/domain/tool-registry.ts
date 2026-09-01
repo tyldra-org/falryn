@@ -158,6 +158,8 @@ export type ToolManifest = ToolManifestDocument & {
   readonly inputSchema: z.ZodType<Readonly<Record<string, unknown>>>;
   readonly outputSchema: z.ZodType<Readonly<Record<string, unknown>>>;
   readonly conflictKeysFor?: (input: Readonly<Record<string, unknown>>) => readonly ConflictKey[];
+  /** Trusted effect derivation after the model input has passed its Zod schema. */
+  readonly effectFor?: (input: Readonly<Record<string, unknown>>) => EffectClass;
 };
 
 export type ToolRegistryEntry = {
@@ -352,6 +354,14 @@ export type RegisterToolSchemas = {
   readonly inputSchema: z.ZodType<Readonly<Record<string, unknown>>>;
   readonly outputSchema: z.ZodType<Readonly<Record<string, unknown>>>;
   readonly conflictKeysFor?: (input: Readonly<Record<string, unknown>>) => readonly ConflictKey[];
+  /**
+   * Derive the concrete effect from validated, normalized arguments.
+   *
+   * The manifest effect remains the conservative discovery default. The
+   * invocation-bound value is what policy, confirmation, scheduling, and the
+   * runner consume.
+   */
+  readonly effectFor?: (input: Readonly<Record<string, unknown>>) => EffectClass;
 };
 
 /**
@@ -389,6 +399,7 @@ export function createToolRegistryEntry(
     inputSchema: schemas.inputSchema,
     outputSchema: schemas.outputSchema,
     ...(schemas.conflictKeysFor === undefined ? {} : { conflictKeysFor: schemas.conflictKeysFor }),
+    ...(schemas.effectFor === undefined ? {} : { effectFor: schemas.effectFor }),
   };
 
   const descriptor: ToolDescriptor = {
@@ -401,6 +412,7 @@ export function createToolRegistryEntry(
     ...(manifest.conflictKeysFor === undefined
       ? {}
       : { conflictKeysFor: manifest.conflictKeysFor }),
+    ...(manifest.effectFor === undefined ? {} : { effectFor: manifest.effectFor }),
   };
 
   return ok({ manifest, descriptor });

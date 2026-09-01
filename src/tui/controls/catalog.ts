@@ -8,12 +8,13 @@
 
 import { type FactValue, known, type WorkspaceHeaderModel } from "../view-model.ts";
 
-export const CONTROL_PANELS = ["session", "model", "context", "resource"] as const;
+export const CONTROL_PANELS = ["session", "model", "profile", "context", "resource"] as const;
 export type ControlPanel = (typeof CONTROL_PANELS)[number];
 
 export const CONTROL_PANEL_TITLES: Readonly<Record<ControlPanel, string>> = {
   session: "Sessions",
   model: "Models",
+  profile: "Execution modes",
   context: "Context",
   resource: "Resources",
 };
@@ -32,18 +33,19 @@ export type ControlFact = {
 export type ControlCatalog = {
   readonly sessions: readonly ControlOption[];
   readonly models: readonly ControlOption[];
+  readonly profiles: readonly ControlOption[];
   readonly context: readonly ControlFact[];
   readonly resources: readonly ControlFact[];
 };
 
 export type ControlSelection = {
   readonly sessionId: string | null;
-  readonly modelId: string | null;
+  readonly modelKey: string | null;
 };
 
 export const EMPTY_CONTROL_SELECTION: ControlSelection = {
   sessionId: null,
-  modelId: null,
+  modelKey: null,
 };
 
 function unavailableFact(reason: string): FactValue {
@@ -54,6 +56,7 @@ function unavailableFact(reason: string): FactValue {
 export const EMPTY_CONTROL_CATALOG: ControlCatalog = {
   sessions: [],
   models: [],
+  profiles: [],
   context: [
     { label: "tokens", value: unavailableFact("no context pack yet") },
     { label: "bytes", value: unavailableFact("no context pack yet") },
@@ -87,7 +90,7 @@ export function projectHeader(
   return {
     ...header,
     session: fieldFromOptions(header.session, catalog.sessions, selection.sessionId, "session"),
-    model: fieldFromOptions(header.model, catalog.models, selection.modelId, "model"),
+    model: fieldFromOptions(header.model, catalog.models, selection.modelKey, "model"),
   };
 }
 
@@ -135,6 +138,8 @@ export function optionsFor(catalog: ControlCatalog, panel: ControlPanel): readon
       return catalog.sessions;
     case "model":
       return catalog.models;
+    case "profile":
+      return catalog.profiles;
     case "context":
     case "resource":
       return [];
@@ -153,6 +158,7 @@ export function factsFor(catalog: ControlCatalog, panel: ControlPanel): readonly
       return catalog.resources;
     case "session":
     case "model":
+    case "profile":
       return [];
     default: {
       const exhaustive: never = panel;
@@ -167,6 +173,8 @@ export function emptyReason(panel: ControlPanel): string {
       return "No sessions yet.";
     case "model":
       return "No models yet.";
+    case "profile":
+      return "No execution modes yet.";
     case "context":
       return "No context facts yet.";
     case "resource":

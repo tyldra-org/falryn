@@ -36,6 +36,7 @@ import {
   type WorkspaceRetrievalError,
   type WorkspaceRetrievalResult,
 } from "../domain/index.ts";
+import { createWorkspaceReader, type WorkspaceReader } from "./workspace-read.ts";
 
 export type WorkspaceRetrieval = {
   retrieve(
@@ -73,6 +74,7 @@ function isAborted(signal: AbortSignal | undefined): boolean {
 }
 
 export function createWorkspaceRetrieval(options: WorkspaceRetrievalOptions): WorkspaceRetrieval {
+  const reader = createWorkspaceReader(options.fileSystem);
   return {
     async retrieve(root, request, signal) {
       const parsed = parseWorkspaceRetrievalQuery(request);
@@ -136,6 +138,10 @@ export function createWorkspaceRetrieval(options: WorkspaceRetrievalOptions): Wo
             : scored.attempt;
 
       const ranked: RetrievalHit[] = [];
+      const freshnessByPath = new Map<
+        string,
+        Promise<"current" | "stale" | "unverified" | "cancelled">
+      >();
       for (const row of scored.scored) {
         if (isAborted(signal)) {
           return { ok: false, error: { code: "cancelled" } };
@@ -144,12 +150,18 @@ export function createWorkspaceRetrieval(options: WorkspaceRetrievalOptions): Wo
         if (!bound.ok) {
           continue;
         }
-        const freshness = await verifyFreshness(
-          options.fileSystem,
-          bound.value.resolved,
-          row.record,
-          signal,
-        );
+        let freshnessPromise = freshnessByPath.get(row.record.logical);
+        if (freshnessPromise === undefined) {
+          freshnessPromise = verifyFreshness(
+            reader,
+            root,
+            row.record.logical,
+            row.record.revision,
+            signal,
+          );
+          freshnessByPath.set(row.record.logical, freshnessPromise);
+        }
+        const freshness = await freshnessPromise;
         if (freshness === "cancelled") {
           return { ok: false, error: { code: "cancelled" } };
         }
@@ -259,17 +271,15 @@ async function planSemantic(
 }
 
 async function verifyFreshness(
-  fileSystem: FileSystemPort,
-  resolved: LocalPath,
-  record: WorkspaceIndexRecord,
+  reader: WorkspaceReader,
+  root: LocalPath,
+  logical: string,
+  expectedDigest: string,
   signal: AbortSignal | undefined,
 ): Promise<"current" | "stale" | "unverified" | "cancelled"> {
-  const stated = await fileSystem.stat(resolved, signal);
-  if (!stated.ok) {
-    return stated.error.code === "cancelled" ? "cancelled" : "unverified";
+  const read = await reader.read(root, logical, undefined, undefined, signal);
+  if (!read.ok) {
+    return read.error.code === "cancelled" ? "cancelled" : "unverified";
   }
-  if (stated.value === null || stated.value.kind !== "file") {
-    return "stale";
-  }
-  return stated.value.revision === record.revision ? "current" : "stale";
+  return String(read.value.digest) === expectedDigest ? "current" : "stale";
 }

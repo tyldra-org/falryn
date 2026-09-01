@@ -4,7 +4,7 @@
 
 import { describe, expect, test } from "bun:test";
 
-import { configurationGeneration, sessionId, turnId, workspaceId } from "../domain/index.ts";
+import { configurationGeneration, turnId, workspaceId } from "../domain/index.ts";
 import { composeProductMemoryTurn } from "./product-memory-turn.ts";
 import { composeProductMemoryTools, PRODUCT_MEMORY_TOOLS_OWNER } from "./product-tools-memory.ts";
 
@@ -19,7 +19,7 @@ describe("composeProductMemoryTools", () => {
 });
 
 describe("composeProductMemoryTurn", () => {
-  test("admits turn text and recalls into a memory prompt section", () => {
+  test("recalls before the prompt and admits only after a completed terminal turn", () => {
     const tools = composeProductMemoryTools({
       generation: configurationGeneration.from(0),
     });
@@ -27,18 +27,38 @@ describe("composeProductMemoryTurn", () => {
       admission: tools.admission,
       recall: tools.recall,
     });
-    const ended = turn.endTurn({
-      turnId: turnId.from("turn-1"),
-      sessionId: sessionId.from("session-1"),
+    const before = turn.recallBeforeTurn({
       workspaceId: workspaceId.from("workspace-1"),
       task: "Prefer main as the default branch.",
+    });
+    expect(before.ok && before.value.recalledCount).toBe(0);
+
+    const ended = turn.admitAfterTurn({
+      turnId: turnId.from("turn-1"),
+      workspaceId: workspaceId.from("workspace-1"),
+      task: "Prefer main as the default branch.",
+      outcome: { kind: "completed" },
     });
     expect(ended.ok).toBe(true);
     if (!ended.ok) {
       return;
     }
     expect(ended.value.admittedId).toBe("mem-turn-1");
-    expect(ended.value.recalledCount).toBeGreaterThan(0);
-    expect(ended.value.memorySection?.role).toBe("memory");
+    expect(ended.value.admitted).toBe(true);
+
+    const after = turn.recallBeforeTurn({
+      workspaceId: workspaceId.from("workspace-1"),
+      task: "default branch main",
+    });
+    expect(after.ok && after.value.recalledCount).toBeGreaterThan(0);
+    expect(after.ok && after.value.memorySection?.role).toBe("memory");
+
+    const failed = turn.admitAfterTurn({
+      turnId: turnId.from("turn-2"),
+      workspaceId: workspaceId.from("workspace-1"),
+      task: "unfinished work",
+      outcome: { kind: "failed", effect: "none" },
+    });
+    expect(failed.ok && failed.value.admittedId).toBeNull();
   });
 });

@@ -1,15 +1,19 @@
 /**
  * Declared provider adapter kinds and discovery policies.
  *
- * Concrete vendor SDKs attach later as leaf adapters named by these kinds.
+ * Concrete vendor SDKs attach as leaf adapters. Composite provider adapters,
+ * such as Command Code, retain their provider identity while selecting an SDK
+ * leaf for each exact model route.
  * Compatibility is never inferred from a URL label alone.
  */
 
 export const PROVIDER_ADAPTER_KINDS = [
   "deterministic",
-  "openai-compatible",
+  "openai",
   "anthropic",
   "google",
+  "commandcode",
+  "openai-codex",
   "custom",
 ] as const;
 

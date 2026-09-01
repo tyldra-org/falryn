@@ -147,6 +147,12 @@ function unreadSource(kind: ConfigurationSourceKind, outcome: SourceOutcome): So
 }
 
 const DOCTOR: DoctorPayload = {
+  configurationHome: {
+    kind: "current",
+    root: localPath("/home/example/.falryn"),
+    currentRoot: localPath("/home/example/.falryn"),
+    legacyRoot: localPath("/home/example/Library/Application Support/Falryn/config"),
+  },
   roots: [
     { root: "state", path: "/tmp/falryn/state", resolved: true, viability: "ready", code: null },
     {
@@ -876,6 +882,7 @@ describe("doctor", () => {
   test("reports the roots, the database, and the ownership classes", () => {
     const rendered = human(resultOf("doctor", DOCTOR), { columns: 100 });
     expect(rendered.result).toContain("darwin arm64");
+    expect(rendered.result).toContain("/home/example/.falryn [current]");
     expect(rendered.result).toContain("/tmp/falryn/state");
     expect(rendered.result).toContain("schema 3 of 3, current");
     expect(rendered.result).toContain("unregistered: extensions");
@@ -892,6 +899,23 @@ describe("doctor", () => {
     expect(flat(rendered.diagnostics)).toContain("The cache data root cannot hold data");
     expect(flat(rendered.diagnostics)).toContain("A data-root override was refused");
     expect(flat(rendered.diagnostics)).toContain("The database could not be read");
+  });
+
+  test("names both configuration homes when they conflict", () => {
+    const rendered = human(
+      resultOf("doctor", {
+        ...DOCTOR,
+        configurationHome: {
+          kind: "conflict",
+          currentRoot: localPath("/home/example/.falryn"),
+          legacyRoot: localPath("/home/example/legacy-config"),
+        },
+      }),
+      { columns: 120 },
+    );
+
+    expect(rendered.result).toContain("/home/example/.falryn and /home/example/legacy-config");
+    expect(flat(rendered.diagnostics)).toContain("both contain data");
   });
 
   test("says so explicitly when it collected nothing", () => {
@@ -1095,6 +1119,37 @@ describe("through dispatch", () => {
     for (const line of out.split("\n").filter((entry) => entry !== "")) {
       expect(line.startsWith("/")).toBe(true);
     }
+  });
+
+  test("projects provider connections without exposing credential locators", async () => {
+    const { out, err, code } = await run(["provider", "list"]);
+    expect(code).toBe(0);
+    expect(out).toContain("OpenAI");
+    expect(out).toContain("configured:environment");
+    expect(`${out}${err}`).not.toContain("FALRYN_OPENAI_API_KEY");
+  });
+
+  test("shows SDK-aware provider setup through the human surface", async () => {
+    const { out, err, code } = await run([
+      "provider",
+      "add",
+      "google-work",
+      "--provider",
+      "google",
+      "--model",
+      "gemini-pro",
+      "--catalog",
+      "team-models",
+    ]);
+
+    expect(code).toBe(0);
+    expect(out).toContain("Provider add");
+    expect(out).toContain("google-work");
+    expect(out).toContain("google  default endpoint");
+    expect(out).toContain("models: gemini-pro");
+    expect(out).toContain("catalogs: team-models");
+    expect(out).toContain("Discovery unavailable: user-catalog-file-unavailable");
+    expect(err).toContain("Completed.");
   });
 
   test("lets no rendered human text reach stdout in a machine format", async () => {

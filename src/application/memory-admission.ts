@@ -50,7 +50,7 @@ export function createMemoryAdmission(
       if (!admitted.ok) {
         return admitted;
       }
-      const stored = records.define(input);
+      const stored = records.define(input, signal);
       if (!stored.ok) {
         return stored;
       }

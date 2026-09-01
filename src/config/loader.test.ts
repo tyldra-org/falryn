@@ -32,6 +32,7 @@ import { createConfigurationLoader, type LoadRequest } from "./loader.ts";
 import { createConfigurationRegistry } from "./registry.ts";
 
 const CONFIG_ROOT = localPath("/d/config");
+const LEGACY_CONFIG_ROOT = localPath("/d/legacy-config");
 const WORKSPACE = localPath("/w/project");
 
 const USER_FILE = "/d/config/falryn.jsonc";
@@ -98,6 +99,56 @@ function published(outcome: ConfigurationLoadOutcome) {
 }
 
 describe("precedence across the six layers", () => {
+  test("reads the legacy user home without mutating it", async () => {
+    const legacyFile = "/d/legacy-config/falryn.jsonc";
+    const { loader } = harness({
+      nodes: {
+        "/d/legacy-config": { kind: "directory" },
+        [legacyFile]: file(`{ "schemaVersion": 1, "diagnostics": { "level": "warn" } }`),
+      },
+    });
+
+    const outcome = published(
+      await loader.load({
+        ...REQUEST,
+        legacyConfigurationRoot: LEGACY_CONFIG_ROOT,
+      }),
+    );
+
+    expect(outcome.record.values["diagnostics.level"]).toBe("warn");
+    expect(
+      outcome.record.sources.find((source) => source.source.kind === "user-file")?.source.file,
+    ).toBe(localPath(legacyFile));
+  });
+
+  test("refuses independently populated current and legacy homes", async () => {
+    const { loader } = harness({
+      nodes: {
+        "/d/config": { kind: "directory" },
+        [USER_FILE]: file(`{ "schemaVersion": 1 }`),
+        "/d/legacy-config": { kind: "directory" },
+        "/d/legacy-config/falryn.jsonc": file(`{ "schemaVersion": 1 }`),
+      },
+    });
+
+    const outcome = await loader.load({
+      ...REQUEST,
+      legacyConfigurationRoot: LEGACY_CONFIG_ROOT,
+    });
+
+    expect(outcome.kind).toBe("rejected");
+    if (outcome.kind === "rejected") {
+      expect(outcome.issues).toEqual([
+        {
+          kind: "configuration-home-conflict",
+          severity: "error",
+          path: CONFIG_ROOT,
+          legacyPath: LEGACY_CONFIG_ROOT,
+        },
+      ]);
+    }
+  });
+
   test("built-in defaults apply when no source sets anything", async () => {
     const { loader, registry } = harness();
     const outcome = published(await loader.load(REQUEST));
@@ -105,6 +156,30 @@ describe("precedence across the six layers", () => {
     expect(outcome.record.values).toEqual(registry.defaults());
     const level = outcome.record.provenance.find((entry) => entry.path === "diagnostics.level");
     expect(level?.source.kind).toBe("built-in-default");
+  });
+
+  test("does not read one path twice when the workspace is the user home", async () => {
+    const homeRoot = localPath("/home/user/.falryn");
+    const filePath = "/home/user/.falryn/falryn.jsonc";
+    const { loader } = harness({
+      nodes: {
+        "/home/user/.falryn": { kind: "directory" },
+        [filePath]: file(`{ "schemaVersion": 1, "diagnostics": { "level": "warn" } }`),
+      },
+    });
+
+    const outcome = published(
+      await loader.load({
+        configurationRoot: homeRoot,
+        workspaceRoot: localPath("/home/user"),
+        profile: null,
+      }),
+    );
+
+    expect(outcome.record.sources.filter((source) => source.source.file === filePath)).toHaveLength(
+      1,
+    );
+    expect(outcome.record.values["diagnostics.level"]).toBe("warn");
   });
 
   test("each layer beats the one below it", async () => {

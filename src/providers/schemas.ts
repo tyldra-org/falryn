@@ -24,6 +24,9 @@ import {
   PROVIDER_BOUNDARY_SCHEMA_VERSION,
 } from "./limits.ts";
 import { MESSAGE_ROLES } from "./messages.ts";
+import { MODEL_PROMPT_CACHE_MODES } from "./model-capability.ts";
+import { REASONING_EFFORTS } from "./policy.ts";
+import { PROMPT_CACHE_POLICY_SCHEMA_VERSION } from "./request.ts";
 import { MODEL_ROLES } from "./roles.ts";
 
 const modelRequestIdSchema = z.string().transform((value, ctx) => {
@@ -48,11 +51,33 @@ const imagePartSchema = z.object({
 
 const messagePartSchema = z.discriminatedUnion("kind", [textPartSchema, imagePartSchema]);
 
-const modelMessageSchema = z.object({
-  role: z.literal(MESSAGE_ROLES),
-  parts: z.array(messagePartSchema).min(1).max(32),
-  toolCallId: z.string().min(1).max(MAX_TOOL_NAME_LENGTH).optional(),
-});
+const assistantToolCallSchema = z
+  .object({
+    toolCallId: z.string().min(1).max(MAX_TOOL_NAME_LENGTH),
+    name: z.string().min(1).max(MAX_TOOL_NAME_LENGTH),
+    arguments: z.record(z.string(), z.unknown()),
+  })
+  .strict();
+
+const modelMessageSchema = z
+  .object({
+    role: z.literal(MESSAGE_ROLES),
+    parts: z.array(messagePartSchema).min(1).max(32),
+    toolCallId: z.string().min(1).max(MAX_TOOL_NAME_LENGTH).optional(),
+    toolCalls: z.array(assistantToolCallSchema).min(1).max(MAX_REQUEST_TOOLS).optional(),
+  })
+  .strict()
+  .superRefine((message, context) => {
+    if (message.role === "tool" && message.toolCallId === undefined) {
+      context.addIssue({ code: "custom", path: ["toolCallId"], message: "tool-result-required" });
+    }
+    if (message.toolCallId !== undefined && message.role !== "tool") {
+      context.addIssue({ code: "custom", path: ["toolCallId"], message: "tool-result-only" });
+    }
+    if (message.toolCalls !== undefined && message.role !== "assistant") {
+      context.addIssue({ code: "custom", path: ["toolCalls"], message: "assistant-only" });
+    }
+  });
 
 const toolDefinitionSchema = z.object({
   name: z.string().min(1).max(MAX_TOOL_NAME_LENGTH),
@@ -82,6 +107,24 @@ const requestMetadataSchema = z
     role: z.literal(MODEL_ROLES),
     workIntent: z.string().min(1).max(MAX_TOOL_NAME_LENGTH).optional(),
     configurationGeneration: z.number().int().nonnegative().optional(),
+    providerCatalogGeneration: z.number().int().nonnegative().optional(),
+    transportCompatibilityId: z.string().min(1).max(MAX_PROVIDER_METADATA_ENTRY_LENGTH).optional(),
+    modelCapabilitySchemaVersion: z.number().int().positive().optional(),
+  })
+  .strict();
+
+const sha256DigestSchema = z.string().regex(/^sha-256:[a-f0-9]{64}$/u);
+
+const promptCachePolicySchema = z
+  .object({
+    schemaVersion: z.literal(PROMPT_CACHE_POLICY_SCHEMA_VERSION),
+    key: sha256DigestSchema,
+    scope: z.literal("session"),
+    stablePrefixDigest: sha256DigestSchema,
+    stableMessageCount: z.number().int().nonnegative(),
+    toolCatalogGeneration: z.number().int().nonnegative(),
+    mode: z.enum(MODEL_PROMPT_CACHE_MODES),
+    minimumInputTokens: z.union([z.number().int().positive(), z.null()]),
   })
   .strict();
 
@@ -95,9 +138,44 @@ export const modelRequestSchema = z
     tools: z.array(toolDefinitionSchema).max(MAX_REQUEST_TOOLS),
     output: outputContractSchema,
     budgets: budgetsSchema,
+    reasoning: z.enum(REASONING_EFFORTS).optional(),
+    reasoningControl: z
+      .string()
+      .min(1)
+      .max(MAX_PROVIDER_METADATA_ENTRY_LENGTH)
+      .nullable()
+      .optional(),
+    responseDensityControl: z.enum(["low", "medium", "high"]).nullable().optional(),
+    promptCache: promptCachePolicySchema.optional(),
     metadata: requestMetadataSchema,
   })
-  .strict();
+  .strict()
+  .superRefine((request, context) => {
+    const proposed = new Set<string>();
+    const pending = new Set<string>();
+    request.messages.forEach((message, index) => {
+      for (const call of message.toolCalls ?? []) {
+        if (proposed.has(call.toolCallId)) {
+          context.addIssue({
+            code: "custom",
+            path: ["messages", index, "toolCalls"],
+            message: "duplicate-tool-call-id",
+          });
+        }
+        proposed.add(call.toolCallId);
+        pending.add(call.toolCallId);
+      }
+      if (message.role === "tool" && message.toolCallId !== undefined) {
+        if (!pending.delete(message.toolCallId)) {
+          context.addIssue({
+            code: "custom",
+            path: ["messages", index, "toolCallId"],
+            message: "orphaned-tool-result",
+          });
+        }
+      }
+    });
+  });
 
 const spineSchema = {
   requestId: modelRequestIdSchema,
@@ -109,7 +187,9 @@ const usageSchema = z
   .object({
     inputTokens: z.number().int().nonnegative().optional(),
     outputTokens: z.number().int().nonnegative().optional(),
+    totalTokens: z.number().int().nonnegative().optional(),
     cachedInputTokens: z.number().int().nonnegative().optional(),
+    cacheWriteInputTokens: z.number().int().nonnegative().optional(),
     reasoningTokens: z.number().int().nonnegative().optional(),
     provenance: z.literal(["provider-reported", "estimate", "unknown"]),
   })
@@ -119,6 +199,7 @@ const failureSchema = z
   .object({
     kind: z.literal(PROVIDER_FAILURE_KINDS),
     retryable: z.boolean(),
+    retryAfterMs: z.number().int().nonnegative().optional(),
     message: z.string().min(1).max(MAX_MESSAGE_TEXT_LENGTH),
   })
   .strict();

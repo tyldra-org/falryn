@@ -4,22 +4,40 @@
  */
 
 import { afterEach, describe, expect, test } from "bun:test";
-import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { CONFIGURATION_FILE_NAME } from "../config/index.ts";
 import {
+  type ArtifactStorePort,
+  artifactId,
   configurationGeneration,
   createStaticEnvironment,
+  err,
   localPath,
+  ok,
+  sessionId,
   streamId,
 } from "../domain/index.ts";
-import { createDeterministicProviderAdapter } from "../providers/index.ts";
+import { createDeterministicProviderAdapter, type ModelRequest } from "../providers/index.ts";
 import { resolveCodingPrompt, runCoding } from "./coding-run.ts";
 import { parseInvocation } from "./command-tree.ts";
 import { dispatch } from "./dispatch.ts";
+import {
+  createLiveTurnMatrixFixture,
+  LIVE_TURN_MATRIX_CONFIRMATION,
+  LIVE_TURN_MATRIX_CONTEXT,
+  LIVE_TURN_MATRIX_EVENT_KINDS,
+  LIVE_TURN_MATRIX_FINAL_TEXT,
+  LIVE_TURN_MATRIX_PROMPT,
+  LIVE_TURN_MATRIX_STDOUT,
+  LIVE_TURN_MATRIX_TOOL_CALL_ID,
+  liveTurnMatrixArtifactId,
+  liveTurnMatrixContinuation,
+} from "./live-turn-matrix.test-support.ts";
 import type { GlobalOptions } from "./options.ts";
+import { openProductArtifactSession } from "./product-artifact-session.ts";
 import { CLI_EVENT_STREAM, createServiceProvider } from "./services.ts";
 import { createRecordingCliStreams } from "./streams.ts";
 
@@ -81,6 +99,28 @@ function providerFor(seeded: Awaited<ReturnType<typeof seededHome>>) {
     });
 }
 
+function failingArtifactStore(): ArtifactStorePort {
+  const missing = artifactId.from("missing-plan-artifact");
+  return {
+    ingest: async (request) =>
+      err({ kind: "artifact", code: "not-found", artifactId: request.artifactId }),
+    get: () => ok(null),
+    verifyIntegrity: async () => err({ kind: "artifact", code: "not-found", artifactId: missing }),
+    findByDigest: () => ok([]),
+    listByInvocation: () => ok([]),
+    readRange: async () => err({ kind: "artifact", code: "not-found", artifactId: missing }),
+    preview: async () => err({ kind: "artifact", code: "not-found", artifactId: missing }),
+    sweep: async () => ({
+      examined: 0,
+      deleted: 0,
+      retained: [],
+      failed: 0,
+      completeness: "complete",
+      effect: "none",
+    }),
+  };
+}
+
 describe("resolveCodingPrompt", () => {
   test("prefers argv text over stdin", async () => {
     const streams = createRecordingCliStreams({ stdin: "from stdin" });
@@ -106,6 +146,44 @@ describe("resolveCodingPrompt", () => {
 });
 
 describe("runCoding", () => {
+  test("refuses a live turn when the durable product event store cannot open", async () => {
+    const home = await mkdtemp(join(tmpdir(), "falryn-run-no-store-"));
+    homes.push(home);
+    const stateFile = join(home, "state-is-a-file");
+    const config = join(home, "config");
+    const primary = join(home, "primary");
+    await mkdir(config, { recursive: true });
+    await mkdir(primary, { recursive: true });
+    await writeFile(stateFile, "not a directory", "utf8");
+    const seeded = {
+      home,
+      primary,
+      environment: createStaticEnvironment({
+        FALRYN_STATE_DIR: stateFile,
+        FALRYN_CONFIG_DIR: config,
+      }),
+    };
+
+    const result = await runCoding(
+      providerFor(seeded)(globalsFor(seeded)),
+      { promptParts: ["must", "be", "durable"] },
+      {
+        input: createRecordingCliStreams({ stdin: null }).input,
+        globals: globalsFor(seeded),
+        providerAdapter: createDeterministicProviderAdapter(),
+        identities: {
+          sessionId: "session-no-store",
+          turnId: "turn-no-store",
+          traceId: "trace-no-store",
+        },
+      },
+    );
+
+    expect(result.outcome).toEqual({ kind: "failed", effect: "none" });
+    expect(result.payload).toMatchObject({ stage: "compose-failed", eventCount: 0 });
+    expect(result.errors[0]?.code).toBe("runtime.durable-event-store-required");
+  });
+
   test("hosts a turn then fails closed without a provider", async () => {
     const seeded = await seededHome();
     const services = providerFor(seeded)(globalsFor(seeded));
@@ -133,17 +211,20 @@ describe("runCoding", () => {
     expect(result.errors[0]?.code).toBe("provider.adapter-required");
   });
 
-  test("completes hosted when a provider adapter is supplied", async () => {
+  test("runs a real model attempt when a provider adapter is supplied", async () => {
     const seeded = await seededHome();
     const services = providerFor(seeded)(globalsFor(seeded));
     const streams = createRecordingCliStreams({ stdin: null });
+    const requests: ModelRequest[] = [];
     const result = await runCoding(
       services,
-      { promptParts: ["hello"] },
+      { promptParts: ["Implement and verify this with cited sources"], brief: "auto" },
       {
         input: streams.input,
         globals: globalsFor(seeded),
-        providerAdapter: createDeterministicProviderAdapter(),
+        providerAdapter: createDeterministicProviderAdapter({
+          onRequest: (request) => requests.push(request),
+        }),
         identities: {
           sessionId: "session-run-hosted",
           turnId: "turn-run-hosted",
@@ -152,11 +233,902 @@ describe("runCoding", () => {
       },
     );
     expect(result.outcome.kind).toBe("completed");
-    expect(result.payload?.stage).toBe("hosted");
+    expect(result.payload?.stage).toBe("attempt-completed");
+    expect(result.payload?.response).toBe("ok");
+    expect(result.payload?.modelAttempts).toBe(1);
+    expect(result.payload?.toolResults).toBe(0);
+    expect(result.payload?.disclosedTools).toBeGreaterThan(0);
+    expect(result.payload?.briefReceipt).toMatchObject({
+      requestedMode: "auto",
+      selectedVerbosity: "detailed",
+      selectionReasons: ["high-complexity", "uncertainty", "recovery"],
+      outputTokenBudget: 8_192,
+    });
+    expect(result.payload?.briefReceipt?.preservedFacts).toEqual(
+      expect.arrayContaining(["citation", "validation"]),
+    );
+    expect(requests[0]?.budgets.maxOutputTokens).toBe(8_192);
+    expect(
+      requests[0]?.messages
+        .flatMap((message) => message.parts)
+        .some(
+          (part) =>
+            part.kind === "text" &&
+            part.text.includes("source=capability-catalog:0") &&
+            part.text.includes("Registry inventory:"),
+        ),
+    ).toBe(true);
+    expect(
+      requests[0]?.messages
+        .flatMap((message) => message.parts)
+        .some(
+          (part) =>
+            part.kind === "text" &&
+            part.text.includes("Keep citations") &&
+            part.text.includes("Keep validation results"),
+        ),
+    ).toBe(true);
+    expect(result.payload).toMatchObject({
+      executionProfile: "agent",
+      executionProfileVersion: 1,
+      completionCriterion: "implemented-and-verified",
+      effectiveModelRole: "default",
+      effectiveReasoning: "provider-default",
+      policyGeneration: 0,
+      planArtifactId: null,
+    });
     expect(result.errors).toEqual([]);
+
+    const durable = await openProductArtifactSession(services());
+    expect(durable).not.toBeNull();
+    if (durable !== null) {
+      const replayed = await durable.eventStore.readFrom(
+        {
+          streamId: streamId.from("live-turn:session-run-hosted"),
+          afterSequence: null,
+        },
+        20,
+      );
+      expect(replayed.ok).toBe(true);
+      if (replayed.ok) {
+        expect(replayed.value.map((event) => event.kind)).toContain("model.attempt.completed");
+        expect(replayed.value.map((event) => event.kind)).toContain("turn.completed");
+        expect(replayed.value.map((event) => event.kind)).toContain("execution.profile.selected");
+        const attempt = replayed.value.find((event) => event.kind === "model.attempt.started");
+        expect(
+          attempt?.kind === "model.attempt.started" ? attempt.payload.binding : null,
+        ).toMatchObject({
+          executionProfile: {
+            id: "agent",
+            version: 1,
+            completion: "implemented-and-verified",
+          },
+        });
+      }
+      await durable.close();
+    }
   });
 
-  test("attaches the OpenAI-compatible adapter when an env credential resolves (#710)", async () => {
+  test("keeps matched no-tool scorecard turns on the live path without tool disclosure", async () => {
+    const seeded = await seededHome();
+    const services = providerFor(seeded)(globalsFor(seeded));
+    const requests: ModelRequest[] = [];
+    const result = await runCoding(
+      services,
+      { promptParts: ["Answer only from the supplied fact."], mode: "ask", brief: "compact" },
+      {
+        input: createRecordingCliStreams({ stdin: null }).input,
+        globals: globalsFor(seeded),
+        providerAdapter: createDeterministicProviderAdapter({
+          onRequest: (request) => requests.push(request),
+        }),
+        toolExposureOverride: "none",
+        identities: {
+          sessionId: "session-run-no-tools",
+          turnId: "turn-run-no-tools",
+          traceId: "trace-run-no-tools",
+        },
+      },
+    );
+
+    expect(result.outcome.kind).toBe("completed");
+    expect(result.payload?.disclosedTools).toBe(0);
+    expect(result.payload?.toolResults).toBe(0);
+    expect(requests).toHaveLength(1);
+    expect(requests[0]?.tools).toEqual([]);
+    expect(
+      requests[0]?.messages
+        .flatMap((message) => message.parts)
+        .some(
+          (part) =>
+            part.kind === "text" && part.text.includes("Executable tools for this attempt: none"),
+        ),
+    ).toBe(true);
+  });
+
+  test("runs and replays the shared durable live-turn matrix through falryn run", async () => {
+    const seeded = await seededHome();
+    await writeFile(join(seeded.primary, "matrix.ts"), LIVE_TURN_MATRIX_CONTEXT, "utf8");
+    const services = providerFor(seeded)(globalsFor(seeded));
+    const fixture = createLiveTurnMatrixFixture(null, "cap-823-headless");
+    const result = await runCoding(
+      services,
+      { promptParts: [LIVE_TURN_MATRIX_PROMPT] },
+      {
+        input: createRecordingCliStreams({ stdin: null }).input,
+        globals: globalsFor(seeded),
+        providerAdapter: fixture.provider,
+        processCapture: fixture.processCapture,
+        toolConfirmation: LIVE_TURN_MATRIX_CONFIRMATION,
+        identities: {
+          sessionId: "session-823-headless",
+          turnId: "turn-823-headless",
+          traceId: "trace-823-headless",
+        },
+      },
+    );
+
+    expect(result.outcome.kind).toBe("completed");
+    expect(result.payload).toMatchObject({
+      stage: "attempt-completed",
+      response: LIVE_TURN_MATRIX_FINAL_TEXT,
+      modelAttempts: 1,
+      toolResults: 1,
+      executionProfile: "agent",
+    });
+    expect(fixture.captures).toBe(1);
+    expect(fixture.requests).toHaveLength(2);
+    expect(JSON.stringify(fixture.requests[0])).toContain(LIVE_TURN_MATRIX_CONTEXT.trim());
+
+    const continuation = liveTurnMatrixContinuation(fixture.requests);
+    expect(continuation.assistant.toolCalls).toEqual([
+      {
+        toolCallId: LIVE_TURN_MATRIX_TOOL_CALL_ID,
+        name: "run_process",
+        arguments: { executable: "/bin/ls", argv: ["-la"], outputMode: "hush" },
+      },
+    ]);
+    expect(continuation.tool.toolCallId).toBe(LIVE_TURN_MATRIX_TOOL_CALL_ID);
+    expect(continuation.toolOutput.output?.value).toMatchObject({
+      captureId: "cap-823-headless",
+      projection: { kind: "hush", reducer: { id: "files.ls" } },
+      stdout: { text: null },
+    });
+    expect(continuation.toolOutput.output?.value?.stdout?.recovery).not.toBeNull();
+    expect(JSON.stringify(fixture.requests[1])).not.toContain(LIVE_TURN_MATRIX_STDOUT);
+    expect(new TextEncoder().encode(continuation.serializedResult).byteLength).toBeLessThan(
+      new TextEncoder().encode(LIVE_TURN_MATRIX_STDOUT).byteLength,
+    );
+    const exactArtifact = liveTurnMatrixArtifactId(
+      continuation.toolOutput.output?.value?.stdout?.recovery,
+    );
+
+    const reopened = await openProductArtifactSession(services());
+    expect(reopened).not.toBeNull();
+    if (reopened === null) {
+      return;
+    }
+    const replayed = await reopened.eventStore.readFrom(
+      { streamId: streamId.from("live-turn:session-823-headless"), afterSequence: null },
+      100,
+    );
+    expect(replayed.ok).toBe(true);
+    if (replayed.ok) {
+      expect(replayed.value.map((event) => event.kind)).toEqual(LIVE_TURN_MATRIX_EVENT_KINDS);
+      const completed = replayed.value.find(
+        (event) => event.kind === "capability.invocation.completed",
+      );
+      expect(completed?.kind).toBe("capability.invocation.completed");
+      if (completed?.kind === "capability.invocation.completed") {
+        const artifacts = reopened.artifacts.listByInvocation(completed.invocationId, 10);
+        expect(artifacts.ok).toBe(true);
+        if (artifacts.ok) {
+          expect(artifacts.value).toHaveLength(1);
+          expect(artifacts.value[0]).toMatchObject({
+            availability: "available",
+            byteLength: new TextEncoder().encode(LIVE_TURN_MATRIX_STDOUT).byteLength,
+          });
+        }
+      }
+    }
+    const exactBytes = new TextEncoder().encode(LIVE_TURN_MATRIX_STDOUT);
+    const exact = await reopened.artifacts.readRange(exactArtifact, 0, exactBytes.byteLength);
+    expect(exact.ok).toBe(true);
+    if (exact.ok) {
+      expect(exact.value.bytes).toEqual(exactBytes);
+      expect(exact.value.endOfArtifact).toBe(true);
+    }
+    await reopened.close();
+  });
+
+  test("fails the shared live-turn path before continuation when exact Hush recovery cannot persist", async () => {
+    const seeded = await seededHome();
+    await writeFile(join(seeded.primary, "matrix.ts"), LIVE_TURN_MATRIX_CONTEXT, "utf8");
+    const services = providerFor(seeded)(globalsFor(seeded));
+    const artifacts = failingArtifactStore();
+    const fixture = createLiveTurnMatrixFixture(artifacts, "cap-823-retention-failure");
+    const result = await runCoding(
+      services,
+      { promptParts: [LIVE_TURN_MATRIX_PROMPT] },
+      {
+        input: createRecordingCliStreams({ stdin: null }).input,
+        globals: globalsFor(seeded),
+        providerAdapter: fixture.provider,
+        processCapture: fixture.processCapture,
+        toolConfirmation: LIVE_TURN_MATRIX_CONFIRMATION,
+        artifacts,
+        identities: {
+          sessionId: "session-823-retention-failure",
+          turnId: "turn-823-retention-failure",
+          traceId: "trace-823-retention-failure",
+        },
+      },
+    );
+
+    expect(result.outcome).toEqual({ kind: "failed", effect: "partial" });
+    expect(result.payload).toMatchObject({
+      stage: "attempt-failed",
+      response: "",
+      modelAttempts: 1,
+      toolResults: 1,
+    });
+    expect(fixture.captures).toBe(1);
+    expect(fixture.requests).toHaveLength(1);
+
+    const reopened = await openProductArtifactSession(services());
+    expect(reopened).not.toBeNull();
+    if (reopened === null) {
+      return;
+    }
+    const replayed = await reopened.eventStore.readFrom(
+      {
+        streamId: streamId.from("live-turn:session-823-retention-failure"),
+        afterSequence: null,
+      },
+      100,
+    );
+    expect(replayed.ok).toBe(true);
+    if (replayed.ok) {
+      expect(replayed.value.map((event) => event.kind)).toEqual(LIVE_TURN_MATRIX_EVENT_KINDS);
+      const terminal = replayed.value.find((event) => event.kind === "turn.completed");
+      expect(terminal?.kind === "turn.completed" ? terminal.payload.outcome : null).toEqual({
+        kind: "failed",
+        effect: "partial",
+      });
+    }
+    await reopened.close();
+  });
+
+  test("retains Plan output as a durable reviewable artifact", async () => {
+    const seeded = await seededHome();
+    const services = providerFor(seeded)(globalsFor(seeded));
+    const requests: ModelRequest[] = [];
+    const adapter = createDeterministicProviderAdapter({
+      script: { kind: "text", text: "# Plan\n\n1. Inspect.\n2. Implement.\n" },
+      onRequest: (request) => requests.push(request),
+    });
+    const modelId = adapter.supportedModels[0];
+    if (modelId === undefined) {
+      throw new Error("deterministic provider has no model");
+    }
+    const result = await runCoding(
+      services,
+      { promptParts: ["plan", "the", "change"], mode: "plan" },
+      {
+        input: createRecordingCliStreams({ stdin: null }).input,
+        globals: globalsFor(seeded),
+        providerAdapter: adapter,
+        providerCatalog: {
+          generation: 1,
+          provenance: "static-config",
+          fetchedAt: null,
+          expiresAt: null,
+          models: [
+            {
+              schemaVersion: 1,
+              modelId,
+              displayName: null,
+              inputModalities: ["text"],
+              outputModalities: ["text"],
+              tools: "supported",
+              structuredOutput: "supported",
+              streaming: "supported",
+              reasoning: "supported",
+              reasoningControls: ["balanced"],
+              completeness: "complete",
+              availability: "available",
+              provenance: ["profile-declaration"],
+              contextTokens: 32_000,
+              outputTokens: 4_000,
+            },
+          ],
+        },
+        identities: {
+          sessionId: "session-run-plan",
+          turnId: "turn-run-plan",
+          traceId: "trace-run-plan",
+        },
+      },
+    );
+
+    expect(result.outcome.kind).toBe("completed");
+    expect(result.payload).toMatchObject({
+      executionProfile: "plan",
+      completionCriterion: "durable-plan",
+      effectiveModelRole: "plan",
+      effectiveReasoning: "balanced",
+      briefVerbosity: "detailed",
+    });
+    expect(result.payload?.planArtifactId).toBeString();
+    expect(JSON.stringify(requests[0])).toContain("[execution-profile id=plan version=1]");
+    expect(requests[0]?.tools.every((tool) => tool.name !== "run_shell")).toBe(true);
+
+    const durable = await openProductArtifactSession(services());
+    expect(durable).not.toBeNull();
+    if (durable !== null && result.payload?.planArtifactId != null) {
+      expect(durable.artifacts.get(artifactId.from(result.payload.planArtifactId))).toMatchObject({
+        ok: true,
+        value: {
+          mediaType: "text/markdown",
+          origin: "model-output",
+          availability: "available",
+        },
+      });
+      await durable.close();
+    }
+  });
+
+  test("does not complete a Plan turn when its reviewable artifact cannot persist", async () => {
+    const seeded = await seededHome();
+    const services = providerFor(seeded)(globalsFor(seeded));
+    const result = await runCoding(
+      services,
+      { promptParts: ["plan", "without", "storage"], mode: "plan" },
+      {
+        input: createRecordingCliStreams({ stdin: null }).input,
+        globals: globalsFor(seeded),
+        providerAdapter: createDeterministicProviderAdapter({
+          script: { kind: "text", text: "# Plan\n\n1. Inspect.\n" },
+        }),
+        artifacts: failingArtifactStore(),
+        identities: {
+          sessionId: "session-run-plan-artifact-failure",
+          turnId: "turn-run-plan-artifact-failure",
+          traceId: "trace-run-plan-artifact-failure",
+        },
+      },
+    );
+
+    expect(result.outcome).toMatchObject({ kind: "failed", effect: "none" });
+    expect(result.payload).toMatchObject({
+      stage: "attempt-failed",
+      executionProfile: "plan",
+      completionCriterion: "durable-plan",
+      planArtifactId: null,
+    });
+
+    const durable = await openProductArtifactSession(services());
+    expect(durable).not.toBeNull();
+    if (durable !== null) {
+      const replayed = await durable.eventStore.readFrom(
+        {
+          streamId: streamId.from("live-turn:session-run-plan-artifact-failure"),
+          afterSequence: null,
+        },
+        20,
+      );
+      expect(replayed.ok).toBe(true);
+      if (replayed.ok) {
+        const terminal = replayed.value.find((event) => event.kind === "turn.completed");
+        expect(terminal?.kind === "turn.completed" ? terminal.payload.outcome : null).toEqual({
+          kind: "failed",
+          effect: "none",
+        });
+      }
+      await durable.close();
+    }
+  });
+
+  test("Ask denies a consequential tool proposal at the live gateway", async () => {
+    const seeded = await seededHome();
+    const services = providerFor(seeded)(globalsFor(seeded));
+    let providerRequests = 0;
+    const result = await runCoding(
+      services,
+      { promptParts: ["explain", "only"], mode: "ask" },
+      {
+        input: createRecordingCliStreams({ stdin: null }).input,
+        globals: globalsFor(seeded),
+        providerAdapter: createDeterministicProviderAdapter({
+          onRequest: () => {
+            providerRequests += 1;
+          },
+          script: {
+            kind: "tool",
+            toolCallId: "call-ask-bypass",
+            name: "run_shell",
+            argumentFragments: ['{"command":"printf bypass"}'],
+          },
+        }),
+        identities: {
+          sessionId: "session-run-ask-deny",
+          turnId: "turn-run-ask-deny",
+          traceId: "trace-run-ask-deny",
+        },
+      },
+    );
+
+    expect(result.outcome).toMatchObject({ kind: "failed", effect: "none" });
+    expect(result.payload).toMatchObject({
+      stage: "attempt-failed",
+      executionProfile: "ask",
+      completionCriterion: "answer",
+      toolResults: 1,
+    });
+    expect(providerRequests).toBe(1);
+  });
+
+  test("Debug discloses bounded process, LSP, and DAP probes without edit tools", async () => {
+    const seeded = await seededHome();
+    const services = providerFor(seeded)(globalsFor(seeded));
+    const requests: ModelRequest[] = [];
+    const adapter = createDeterministicProviderAdapter({
+      script: { kind: "text", text: "Diagnosis: inspect the failing frame." },
+      onRequest: (request) => requests.push(request),
+    });
+    const modelId = adapter.supportedModels[0];
+    if (modelId === undefined) {
+      throw new Error("deterministic provider has no model");
+    }
+    const result = await runCoding(
+      services,
+      { promptParts: ["diagnose", "the", "failure"], mode: "debug" },
+      {
+        input: createRecordingCliStreams({ stdin: null }).input,
+        globals: globalsFor(seeded),
+        providerAdapter: adapter,
+        providerCatalog: {
+          generation: 1,
+          provenance: "static-config",
+          fetchedAt: null,
+          expiresAt: null,
+          models: [
+            {
+              schemaVersion: 1,
+              modelId,
+              displayName: null,
+              inputModalities: ["text"],
+              outputModalities: ["text"],
+              tools: "supported",
+              structuredOutput: "supported",
+              streaming: "supported",
+              reasoning: "supported",
+              reasoningControls: ["balanced"],
+              completeness: "complete",
+              availability: "available",
+              provenance: ["profile-declaration"],
+              contextTokens: 32_000,
+              outputTokens: 4_000,
+            },
+          ],
+        },
+        identities: {
+          sessionId: "session-run-debug",
+          turnId: "turn-run-debug",
+          traceId: "trace-run-debug",
+        },
+      },
+    );
+
+    expect(result.payload).toMatchObject({
+      stage: "attempt-completed",
+      executionProfile: "debug",
+      completionCriterion: "diagnosis",
+      effectiveModelRole: "default",
+      effectiveReasoning: "balanced",
+    });
+    const names = requests[0]?.tools.map((tool) => tool.name) ?? [];
+    expect(names).toContain("run_process");
+    expect(names).toContain("lsp_diagnostics");
+    expect(names).toContain("dap_stack_trace");
+    expect(names).toContain("dap_disconnect");
+    expect(names).not.toContain("apply_patch");
+    expect(names).not.toContain("lsp_rename");
+  });
+
+  test("sends current durable index evidence in the first provider request", async () => {
+    const seeded = await seededHome();
+    await writeFile(
+      join(seeded.primary, "compose-turn.ts"),
+      "export function composeTurn() { return 'live'; }\n",
+      "utf8",
+    );
+    const services = providerFor(seeded)(globalsFor(seeded));
+    const requests: ModelRequest[] = [];
+    const result = await runCoding(
+      services,
+      { promptParts: ["Where", "is", "`composeTurn`", "defined?"] },
+      {
+        input: createRecordingCliStreams({ stdin: null }).input,
+        globals: globalsFor(seeded),
+        providerAdapter: createDeterministicProviderAdapter({
+          onRequest: (request) => requests.push(request),
+        }),
+        identities: {
+          sessionId: "session-run-index",
+          turnId: "turn-run-index",
+          traceId: "trace-run-index",
+        },
+      },
+    );
+
+    expect(result.outcome.kind).toBe("completed");
+    expect(result.payload?.contextStatus).toBe("ready");
+    expect(result.payload?.contextGeneration).toBeString();
+    expect(result.payload?.contextPackItems).toBeGreaterThan(0);
+    const firstPayload = JSON.stringify(requests[0]);
+    expect(firstPayload).toContain("compose-turn.ts");
+    expect(firstPayload).toContain("composeTurn");
+    expect(firstPayload).toContain("citation:");
+  });
+
+  test("recalls durable memory before the next prompt and admits only completed turns", async () => {
+    const seeded = await seededHome();
+    const services = providerFor(seeded)(globalsFor(seeded));
+    const first = await runCoding(
+      services,
+      { promptParts: ["Prefer", "main", "as", "the", "default", "branch."] },
+      {
+        input: createRecordingCliStreams({ stdin: null }).input,
+        globals: globalsFor(seeded),
+        providerAdapter: createDeterministicProviderAdapter(),
+        identities: {
+          sessionId: "session-run-memory-first",
+          turnId: "turn-run-memory-first",
+          traceId: "trace-run-memory-first",
+        },
+      },
+    );
+    expect(first.payload?.memoryAdmission).toBe("admitted");
+
+    const requests: ModelRequest[] = [];
+    const second = await runCoding(
+      services,
+      { promptParts: ["Use", "the", "default", "branch", "again."] },
+      {
+        input: createRecordingCliStreams({ stdin: null }).input,
+        globals: globalsFor(seeded),
+        providerAdapter: createDeterministicProviderAdapter({
+          onRequest: (request) => requests.push(request),
+        }),
+        identities: {
+          sessionId: "session-run-memory-second",
+          turnId: "turn-run-memory-second",
+          traceId: "trace-run-memory-second",
+        },
+      },
+    );
+
+    expect(second.payload?.recalledMemories).toBeGreaterThan(0);
+    expect(JSON.stringify(requests[0])).toContain("Prefer main as the default branch.");
+  });
+
+  test("reopens the durable store for a second session without lifecycle identity collisions", async () => {
+    const seeded = await seededHome();
+    const services = providerFor(seeded)(globalsFor(seeded));
+    const adapter = createDeterministicProviderAdapter();
+
+    for (const suffix of ["first", "second"] as const) {
+      const result = await runCoding(
+        services,
+        { promptParts: [suffix] },
+        {
+          input: createRecordingCliStreams({ stdin: null }).input,
+          globals: globalsFor(seeded),
+          providerAdapter: adapter,
+          identities: {
+            sessionId: `session-restart-${suffix}`,
+            turnId: `turn-restart-${suffix}`,
+            traceId: `trace-restart-${suffix}`,
+          },
+        },
+      );
+      expect(result.outcome.kind).toBe("completed");
+      expect(result.payload?.stage).toBe("attempt-completed");
+    }
+  });
+
+  test("restores committed Loom manifests and exact artifacts after restart", async () => {
+    const seeded = await seededHome();
+    const services = providerFor(seeded)(globalsFor(seeded));
+    const first = await openProductArtifactSession(services());
+    expect(first).not.toBeNull();
+    if (first === null) {
+      return;
+    }
+    const ingested = await first.loom.ingest({
+      id: "loom-restart-manifest",
+      workspaceId: "workspace-restart-loom",
+      sessionId: "session-restart-loom",
+      members: [
+        {
+          artifactId: "artifact-restart-loom",
+          bytes: new TextEncoder().encode("durable loom payload"),
+          mediaType: "text/plain",
+          sensitivity: "user-content",
+          summary: "src/restart.txt",
+        },
+      ],
+    });
+    expect(ingested.ok).toBe(true);
+    await first.close();
+
+    const second = await openProductArtifactSession(services());
+    expect(second).not.toBeNull();
+    if (second === null) {
+      return;
+    }
+    const recovered = await second.loom.retrieve({
+      id: "evidence-restart-loom",
+      manifestId: "loom-restart-manifest",
+      expectedWorkspaceId: "workspace-restart-loom",
+      expectedSessionId: "session-restart-loom",
+      projection: { kind: "exact", member: "artifact-restart-loom" },
+    });
+    expect(recovered.ok && recovered.value.text).toBe("durable loom payload");
+    await second.close();
+  });
+
+  test("continues prompt to tool result to final text through the product gateway", async () => {
+    const seeded = await seededHome();
+    await writeFile(join(seeded.primary, "hello.ts"), "export const answer = 42;\n", "utf8");
+    const services = providerFor(seeded)(globalsFor(seeded));
+    const requests: ModelRequest[] = [];
+    const adapter = createDeterministicProviderAdapter({
+      onRequest: (request) => requests.push(request),
+      script: (_request, index) =>
+        index === 0
+          ? {
+              kind: "tool",
+              toolCallId: "call-list",
+              name: "list_dir",
+              argumentFragments: ['{"path":"."}'],
+            }
+          : { kind: "text", text: "I found hello.ts.", finishReason: "stop" },
+    });
+
+    const result = await runCoding(
+      services,
+      { promptParts: ["inspect", "the", "workspace"] },
+      {
+        input: createRecordingCliStreams({ stdin: null }).input,
+        globals: globalsFor(seeded),
+        providerAdapter: adapter,
+        identities: {
+          sessionId: "session-run-tool",
+          turnId: "turn-run-tool",
+          traceId: "trace-run-tool",
+        },
+      },
+    );
+
+    expect(result.outcome.kind).toBe("completed");
+    expect(result.payload).toMatchObject({
+      stage: "attempt-completed",
+      response: "I found hello.ts.",
+      modelAttempts: 1,
+      toolResults: 1,
+    });
+    expect(requests).toHaveLength(2);
+    expect(requests[0]?.tools.length).toBeGreaterThan(0);
+    expect(requests[0]?.tools.length).toBeLessThanOrEqual(20);
+    expect(
+      requests[1]?.messages.some(
+        (message) => message.role === "assistant" && message.toolCalls?.[0]?.name === "list_dir",
+      ),
+    ).toBe(true);
+    expect(
+      requests[1]?.messages.some(
+        (message) => message.role === "tool" && message.toolCallId === "call-list",
+      ),
+    ).toBe(true);
+  });
+
+  test("writes and reopens a scratch draft through the real product tool loop", async () => {
+    const seeded = await seededHome();
+    const services = providerFor(seeded)(globalsFor(seeded));
+    const requests: ModelRequest[] = [];
+    const adapter = createDeterministicProviderAdapter({
+      onRequest: (request) => requests.push(request),
+      script: (_request, index) =>
+        index === 0
+          ? {
+              kind: "tool",
+              toolCallId: "call-scratch-write",
+              name: "scratch_write",
+              argumentFragments: [
+                '{"name":"pr-body.md","text":"# PR draft\\n","mediaType":"text/markdown"}',
+              ],
+            }
+          : { kind: "text", text: "Draft retained.", finishReason: "stop" },
+    });
+
+    const result = await runCoding(
+      services,
+      { promptParts: ["draft", "a", "PR", "body"] },
+      {
+        input: createRecordingCliStreams({ stdin: null }).input,
+        globals: globalsFor(seeded),
+        providerAdapter: adapter,
+        toolConfirmation: LIVE_TURN_MATRIX_CONFIRMATION,
+        identities: {
+          sessionId: "session-run-scratch",
+          turnId: "turn-run-scratch",
+          traceId: "trace-run-scratch",
+        },
+      },
+    );
+
+    expect(requests[0]?.tools.map((tool) => tool.name)).toContain("scratch_write");
+    expect(result.payload).toMatchObject({
+      stage: "attempt-completed",
+      response: "Draft retained.",
+      toolResults: 1,
+    });
+    expect(JSON.stringify(requests[1])).toContain(
+      "scratch://session/session-run-scratch/pr-body.md",
+    );
+    expect(JSON.stringify(requests[1])).not.toContain("workspaceIndex");
+    expect(await readdir(seeded.primary)).not.toContain("pr-body.md");
+
+    const reopened = await openProductArtifactSession(services());
+    expect(reopened).not.toBeNull();
+    if (reopened === null) return;
+    expect(
+      await reopened.scratch.read(
+        sessionId.from("session-run-scratch"),
+        "scratch://session/session-run-scratch/pr-body.md",
+      ),
+    ).toMatchObject({ ok: true, value: { revision: 1, text: "# PR draft\n" } });
+    await reopened.close();
+  });
+
+  test("does not retry a provider failure after a tool proposal was executed", async () => {
+    const seeded = await seededHome();
+    const services = providerFor(seeded)(globalsFor(seeded));
+    let providerRequests = 0;
+    const adapter = createDeterministicProviderAdapter({
+      onRequest: () => {
+        providerRequests += 1;
+      },
+      script: (_request, index) =>
+        index === 0
+          ? {
+              kind: "tool",
+              toolCallId: "call-list-once",
+              name: "list_dir",
+              argumentFragments: ['{"path":"."}'],
+            }
+          : {
+              kind: "error",
+              failureKind: "server-failure",
+              message: "provider disconnected after the tool result",
+              retryable: true,
+            },
+    });
+
+    const result = await runCoding(
+      services,
+      { promptParts: ["inspect", "once"] },
+      {
+        input: createRecordingCliStreams({ stdin: null }).input,
+        globals: globalsFor(seeded),
+        providerAdapter: adapter,
+        identities: {
+          sessionId: "session-run-no-repeat",
+          turnId: "turn-run-no-repeat",
+          traceId: "trace-run-no-repeat",
+        },
+      },
+    );
+
+    expect(result.outcome.kind).toBe("failed");
+    expect(result.payload).toMatchObject({
+      stage: "attempt-failed",
+      modelAttempts: 1,
+      toolResults: 1,
+      memoryAdmission: "skipped",
+    });
+    expect(providerRequests).toBe(2);
+  });
+
+  test("recovers a targeted Loom range through the same read_file tool", async () => {
+    const seeded = await seededHome();
+    const large = `${"a".repeat(5_000)}needle${"z".repeat(5_000)}`;
+    await writeFile(join(seeded.primary, "large.txt"), large, "utf8");
+    const services = providerFor(seeded)(globalsFor(seeded));
+    const requests: ModelRequest[] = [];
+    const adapter = createDeterministicProviderAdapter({
+      onRequest: (request) => requests.push(request),
+      script: (request, index) => {
+        if (index === 0) {
+          return {
+            kind: "tool",
+            toolCallId: "call-read",
+            name: "read_file",
+            argumentFragments: [
+              JSON.stringify({
+                path: "large.txt",
+                limits: {
+                  maxFileBytes: 16,
+                  maxExpansionBytes: 20_000,
+                  maxExpansionChunkBytes: 1_024,
+                },
+              }),
+            ],
+          };
+        }
+        if (index === 1) {
+          const toolMessage = request.messages.findLast(
+            (message) => message.role === "tool" && message.toolCallId === "call-read",
+          );
+          const text = toolMessage?.parts.find((part) => part.kind === "text")?.text ?? "{}";
+          const result = JSON.parse(text) as {
+            output?: { value?: { loomRecovery?: Readonly<Record<string, unknown>> } };
+          };
+          const recovery = result.output?.value?.loomRecovery;
+          if (recovery === undefined) {
+            throw new Error("Loom recovery handle was not projected to the model");
+          }
+          return {
+            kind: "tool",
+            toolCallId: "call-recover",
+            name: "read_file",
+            argumentFragments: [
+              JSON.stringify({
+                recovery,
+                projection: {
+                  kind: "search-hits",
+                  query: "needle",
+                  maxHits: 1,
+                  contextBytes: 4,
+                  maxBytes: 64,
+                },
+              }),
+            ],
+          };
+        }
+        return { kind: "text", text: "Recovered needle.", finishReason: "stop" };
+      },
+    });
+
+    const result = await runCoding(
+      services,
+      { promptParts: ["find", "needle"] },
+      {
+        input: createRecordingCliStreams({ stdin: null }).input,
+        globals: globalsFor(seeded),
+        providerAdapter: adapter,
+        identities: {
+          sessionId: "session-run-loom",
+          turnId: "turn-run-loom",
+          traceId: "trace-run-loom",
+        },
+      },
+    );
+
+    expect(result.payload).toMatchObject({
+      stage: "attempt-completed",
+      response: "Recovered needle.",
+      toolResults: 2,
+    });
+    expect(requests).toHaveLength(3);
+    const providerTranscript = JSON.stringify(requests);
+    expect(providerTranscript).toContain("aaaaneedlezzzz");
+    expect(providerTranscript).not.toContain(large);
+  });
+
+  test("runs an observation through the selected credential-backed provider (#798)", async () => {
     const home = await mkdtemp(join(tmpdir(), "falryn-run-cred-"));
     homes.push(home);
     const state = join(home, "state");
@@ -183,12 +1155,38 @@ describe("runCoding", () => {
         currentDirectory: localPath(seeded.primary),
       });
     const streams = createRecordingCliStreams({ stdin: null });
+    const providerBodies: unknown[] = [];
+    let providerRequest = 0;
     const result = await runCoding(
       services(globalsFor(seeded)),
       { promptParts: ["with", "key"] },
       {
         input: streams.input,
         globals: globalsFor(seeded),
+        openaiFetch: async (_input, init) => {
+          if (init === undefined) {
+            throw new Error("expected OpenAI SDK request initialization");
+          }
+          providerBodies.push(JSON.parse(String(init.body)));
+          const current = providerRequest;
+          providerRequest += 1;
+          const chunks =
+            current === 0
+              ? [
+                  'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call-list-live","function":{"name":"list_dir","arguments":"{\\"path\\":\\".\\"}"}}]}}]}',
+                  'data: {"choices":[{"delta":{},"finish_reason":"tool_calls"}]}',
+                  "",
+                ]
+              : [
+                  'data: {"choices":[{"delta":{"content":"connected with tools"}}]}',
+                  'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}',
+                  "",
+                ];
+          return new Response(chunks.join("\n\n"), {
+            status: 200,
+            headers: { "content-type": "text/event-stream" },
+          });
+        },
         identities: {
           sessionId: "session-run-cred",
           turnId: "turn-run-cred",
@@ -197,7 +1195,18 @@ describe("runCoding", () => {
       },
     );
     expect(result.outcome.kind).toBe("completed");
-    expect(result.payload?.stage).toBe("hosted");
+    expect(result.payload?.stage).toBe("attempt-completed");
+    expect(result.payload?.response).toBe("connected with tools");
+    expect(result.payload?.toolResults).toBe(1);
+    expect(providerBodies).toHaveLength(2);
+    const continuedBody = providerBodies[1] as {
+      readonly messages?: readonly { readonly role?: string; readonly tool_call_id?: string }[];
+    };
+    expect(
+      continuedBody.messages?.some(
+        (message) => message.role === "tool" && message.tool_call_id === "call-list-live",
+      ),
+    ).toBe(true);
     expect(result.errors).toEqual([]);
   });
 
@@ -252,6 +1261,40 @@ describe("falryn run through dispatch", () => {
     expect(invocation.runArgs).toEqual({ promptParts: ["fix", "me"] });
   });
 
+  test("parses an explicit execution mode", async () => {
+    const invocation = await parseInvocation(["run", "--mode", "debug", "inspect", "it"]);
+    expect(invocation.kind).toBe("run");
+    if (invocation.kind === "run") {
+      expect(invocation.runArgs).toEqual({
+        promptParts: ["inspect", "it"],
+        mode: "debug",
+      });
+    }
+  });
+
+  test("keeps raw backend names behind human on and off controls", async () => {
+    const invocation = await parseInvocation([
+      "run",
+      "--brief",
+      "off",
+      "--hush",
+      "off",
+      "--loom",
+      "on",
+      "inspect",
+      "it",
+    ]);
+    expect(invocation.kind).toBe("run");
+    if (invocation.kind === "run") {
+      expect(invocation.runArgs).toEqual({
+        promptParts: ["inspect", "it"],
+        brief: "raw",
+        hush: "raw",
+        loom: "loom",
+      });
+    }
+  });
+
   test("projects provider-required through json", async () => {
     const seeded = await seededHome();
     const streams = createRecordingCliStreams({ stdin: null });
@@ -285,9 +1328,18 @@ describe("falryn run through dispatch", () => {
       .join("")
       .split("\n")
       .filter((line) => line.length > 0)
-      .map((line) => JSON.parse(line) as { kind: string; terminal?: boolean });
+      .map(
+        (line) =>
+          JSON.parse(line) as {
+            kind: string;
+            terminal?: boolean;
+            event?: { kind?: string };
+          },
+      );
     expect(lines.length).toBeGreaterThan(1);
     expect(lines.some((line) => line.kind === "event")).toBe(true);
+    expect(lines.some((line) => line.event?.kind === "session.started")).toBe(true);
+    expect(lines.some((line) => line.event?.kind === "turn.completed")).toBe(true);
     expect(lines.at(-1)?.kind).toBe("result");
     expect(lines.at(-1)?.terminal).toBe(true);
   });

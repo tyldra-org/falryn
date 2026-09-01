@@ -52,6 +52,7 @@ import { type BridgeResult, readEnvironmentLayer, readOverrideLayer } from "./br
 import { composeLayers, declaredKeysOf, type LayerInput } from "./composition.ts";
 import type { ConfigurationKeyDeclaration } from "./declaration.ts";
 import { diffGenerations, nextGeneration, strongestApplicationClass } from "./generation.ts";
+import { configurationHomeIssue, resolveConfigurationHome } from "./home.ts";
 import { discoverSources, readSource } from "./sources.ts";
 
 /**
@@ -93,6 +94,8 @@ export type ConfigurationLoaderOptions = {
 
 export type LoadRequest = {
   readonly configurationRoot: LocalPath;
+  /** Previous platform-default root; absent for direct library callers. */
+  readonly legacyConfigurationRoot?: LocalPath | null;
   readonly workspaceRoot: LocalPath | null;
   readonly profile: string | null;
   /** Key path to raw string, already parsed by the command owner. */
@@ -124,8 +127,28 @@ export function createConfigurationLoader(
       const layers: LayerInput[] = [];
       const issues: ConfigurationIssue[] = [];
 
+      const home = await resolveConfigurationHome(
+        options.fileSystem,
+        {
+          current: request.configurationRoot,
+          legacy: request.legacyConfigurationRoot ?? null,
+        },
+        signal,
+      );
+      if (home.kind === "cancelled") {
+        return { kind: "cancelled" };
+      }
+      if (home.kind === "conflict" || home.kind === "unavailable") {
+        return {
+          kind: "rejected",
+          issues: [configurationHomeIssue(home)],
+          sources: reports,
+          retained: current,
+        };
+      }
+
       const discovery = discoverSources({
-        configurationRoot: request.configurationRoot,
+        configurationRoot: home.root,
         workspaceRoot: request.workspaceRoot,
         profile: request.profile,
       });

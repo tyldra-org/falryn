@@ -4,7 +4,9 @@ set -euo pipefail
 
 SRC="${SKILLS_SRC:-$HOME/.agents/skills}"
 DST="$(cd "$(dirname "$0")" && pwd)"
-SKILLS=(gh-cli git-workflow change-review typescript-best-practices opentui)
+PORTABLE_SKILLS=(gh-cli git-workflow change-review typescript-best-practices opentui)
+PROJECT_SKILLS=(falryn-workflow)
+SKILLS=("${PORTABLE_SKILLS[@]}" "${PROJECT_SKILLS[@]}")
 APPLY=0
 
 for arg in "$@"; do

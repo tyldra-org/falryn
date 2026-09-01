@@ -68,6 +68,11 @@ describe("display width", () => {
     expect(displayWidth("falryn")).toBe(6);
   });
 
+  test("matches Bun and OpenTUI for ordinary display text", () => {
+    const text = "Falryn 日本 👩‍💻 e\u0301";
+    expect(displayWidth(text)).toBe(Bun.stringWidth(text));
+  });
+
   test("counts a wide character as two cells", () => {
     // `.length` is 2 and the terminal draws 4 columns. Laying this out by
     // length is what draws a box that does not close.

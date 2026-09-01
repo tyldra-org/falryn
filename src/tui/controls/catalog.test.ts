@@ -21,6 +21,7 @@ const HEADER: WorkspaceHeaderModel = {
 const CATALOG: ControlCatalog = {
   sessions: [{ id: "s1", title: "coding", detail: "workspace falryn" }],
   models: [{ id: "m1", title: "local-small", detail: "8k context" }],
+  profiles: [{ id: "agent", title: "Agent", detail: "Full authorized coding loop." }],
   context: [
     { label: "tokens", value: known("1200 / 8000") },
     { label: "bytes", value: known("48 KiB") },
@@ -34,17 +35,17 @@ const CATALOG: ControlCatalog = {
 
 describe("projectHeader", () => {
   test("leaves unavailable fields when nothing is selected", () => {
-    expect(projectHeader(HEADER, CATALOG, { sessionId: null, modelId: null })).toEqual(HEADER);
+    expect(projectHeader(HEADER, CATALOG, { sessionId: null, modelKey: null })).toEqual(HEADER);
   });
 
   test("projects a selected id as a known untrusted label", () => {
-    const header = projectHeader(HEADER, CATALOG, { sessionId: "s1", modelId: "m1" });
+    const header = projectHeader(HEADER, CATALOG, { sessionId: "s1", modelKey: "m1" });
     expect(header.session).toEqual(known("coding"));
     expect(header.model).toEqual(known("local-small"));
   });
 
   test("names a vanished id instead of reusing the last label", () => {
-    const header = projectHeader(HEADER, CATALOG, { sessionId: "gone", modelId: "missing" });
+    const header = projectHeader(HEADER, CATALOG, { sessionId: "gone", modelKey: "missing" });
     expect(header.session).toEqual({ kind: "error", reason: "session is gone" });
     expect(header.model).toEqual({ kind: "error", reason: "model is gone" });
   });
@@ -74,8 +75,9 @@ describe("panel catalogs", () => {
     expect(overlayForPanel("session")).toEqual({ kind: "controls", panel: "session" });
   });
 
-  test("lists options only on session and model panels", () => {
+  test("lists options only on session, model, and profile panels", () => {
     expect(optionsFor(CATALOG, "session")).toEqual(CATALOG.sessions);
+    expect(optionsFor(CATALOG, "profile")).toEqual(CATALOG.profiles);
     expect(optionsFor(CATALOG, "context")).toEqual([]);
     expect(factsFor(CATALOG, "resource")).toEqual(CATALOG.resources);
     expect(factsFor(EMPTY_CONTROL_CATALOG, "session")).toEqual([]);
@@ -84,5 +86,6 @@ describe("panel catalogs", () => {
   test("names an empty list instead of showing a dash", () => {
     expect(emptyReason("session")).toBe("No sessions yet.");
     expect(emptyReason("model")).toBe("No models yet.");
+    expect(emptyReason("profile")).toBe("No execution modes yet.");
   });
 });

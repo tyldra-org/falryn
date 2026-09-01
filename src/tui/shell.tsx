@@ -57,6 +57,7 @@ import { POINTER_KEY, type ShellCapabilities } from "./capabilities.ts";
 import { RenderGateProvider, useRenderGate } from "./components/render-gate.tsx";
 import { ShellApp } from "./components/shell-app.tsx";
 import type { SubmissionPort } from "./composer/submission.ts";
+import type { ControlCatalog } from "./controls/index.ts";
 import {
   nothingToRestore,
   openRendererSession,
@@ -64,6 +65,7 @@ import {
   type RendererSession,
 } from "./renderer-session.ts";
 import { type RuntimeFeed, runtimeFeed, useRuntimeProjection } from "./runtime-feed.ts";
+import type { SessionCreationPort } from "./session-creation.ts";
 import type { SessionNavigationController } from "./session-nav/index.ts";
 import { shellModel } from "./shell-model.ts";
 import { createTerminalShutdownParticipant } from "./shutdown.ts";
@@ -130,6 +132,8 @@ export type ShellRunRequest = {
   readonly transcriptFeed?: TranscriptFeed;
   /** Product agent submission port (#707). Absent keeps UNAVAILABLE_SUBMISSION. */
   readonly submission?: SubmissionPort;
+  /** Provider/model choices projected from the selected connection catalog. */
+  readonly controls?: ControlCatalog;
   /** Resolves `@path` mentions. Optional because tests and no-workspace runs have none. */
   readonly fileProbe?: FileAttachmentProbe | null;
   /** Git changes dashboard. Optional when no workspace or git executable is available. */
@@ -139,6 +143,8 @@ export type ShellRunRequest = {
   readonly workspace?: WorkspaceSetView;
   /** Session resume/fork/rewind/replay when a local store is attached (#722). */
   readonly sessionNavigationController?: SessionNavigationController;
+  /** Creates and selects a fresh durable product session (#787). */
+  readonly sessionCreation?: SessionCreationPort;
   /** Supplied by tests, so a shell run needs no terminal and no native library. */
   readonly createRenderer?: RendererFactory;
 };
@@ -313,6 +319,7 @@ async function frameFor(session: RendererSession, request: ShellRunRequest, onEx
       {...(feed === undefined ? {} : { feed })}
       {...(request.transcriptFeed === undefined ? {} : { transcriptFeed: request.transcriptFeed })}
       {...(request.submission === undefined ? {} : { submission: request.submission })}
+      {...(request.controls === undefined ? {} : { controls: request.controls })}
       {...(request.fileProbe === undefined ? {} : { fileProbe: request.fileProbe })}
       {...(request.gitDashboard === undefined ? {} : { gitDashboard: request.gitDashboard })}
       {...(request.workspaceController === undefined
@@ -322,6 +329,9 @@ async function frameFor(session: RendererSession, request: ShellRunRequest, onEx
       {...(request.sessionNavigationController === undefined
         ? {}
         : { sessionNavigationController: request.sessionNavigationController })}
+      {...(request.sessionCreation === undefined
+        ? {}
+        : { sessionCreation: request.sessionCreation })}
     />
   );
 }
@@ -343,11 +353,13 @@ function LiveShell(props: {
   readonly feed?: RuntimeFeed;
   readonly transcriptFeed?: TranscriptFeed;
   readonly submission?: SubmissionPort;
+  readonly controls?: ControlCatalog;
   readonly fileProbe?: FileAttachmentProbe | null;
   readonly gitDashboard?: GitDashboard;
   readonly workspaceController?: WorkspaceController;
   readonly workspace?: WorkspaceSetView;
   readonly sessionNavigationController?: SessionNavigationController;
+  readonly sessionCreation?: SessionCreationPort;
 }): ReactNode {
   return (
     <RenderGateProvider clock={props.clock}>
@@ -359,6 +371,7 @@ function LiveShell(props: {
         {...(props.feed === undefined ? {} : { feed: props.feed })}
         {...(props.transcriptFeed === undefined ? {} : { transcriptFeed: props.transcriptFeed })}
         {...(props.submission === undefined ? {} : { submission: props.submission })}
+        {...(props.controls === undefined ? {} : { controls: props.controls })}
         {...(props.fileProbe === undefined ? {} : { fileProbe: props.fileProbe })}
         {...(props.gitDashboard === undefined ? {} : { gitDashboard: props.gitDashboard })}
         {...(props.workspaceController === undefined
@@ -368,6 +381,7 @@ function LiveShell(props: {
         {...(props.sessionNavigationController === undefined
           ? {}
           : { sessionNavigationController: props.sessionNavigationController })}
+        {...(props.sessionCreation === undefined ? {} : { sessionCreation: props.sessionCreation })}
       />
     </RenderGateProvider>
   );
@@ -381,11 +395,13 @@ function ProjectedShell(props: {
   readonly feed?: RuntimeFeed;
   readonly transcriptFeed?: TranscriptFeed;
   readonly submission?: SubmissionPort;
+  readonly controls?: ControlCatalog;
   readonly fileProbe?: FileAttachmentProbe | null;
   readonly gitDashboard?: GitDashboard;
   readonly workspaceController?: WorkspaceController;
   readonly workspace?: WorkspaceSetView;
   readonly sessionNavigationController?: SessionNavigationController;
+  readonly sessionCreation?: SessionCreationPort;
 }): ReactNode {
   const gate = useRenderGate();
   const runtime = useRuntimeProjection(props.feed, initialActivityCursor(), gate);
@@ -400,12 +416,17 @@ function ProjectedShell(props: {
       transcript={transcript}
       {...(runtime.shutdown === null ? {} : { shutdown: runtime.shutdown })}
       {...(props.submission === undefined ? {} : { submission: props.submission })}
+      {...(props.controls === undefined ? {} : { controls: props.controls })}
       {...(props.fileProbe === undefined ? {} : { fileProbe: props.fileProbe })}
       {...(props.gitDashboard === undefined ? {} : { gitDashboard: props.gitDashboard })}
       {...(props.workspaceController === undefined
         ? {}
         : { workspaceController: props.workspaceController })}
       {...(props.workspace === undefined ? {} : { workspace: props.workspace })}
+      {...(props.sessionNavigationController === undefined
+        ? {}
+        : { sessionNavigationController: props.sessionNavigationController })}
+      {...(props.sessionCreation === undefined ? {} : { sessionCreation: props.sessionCreation })}
       copyPlainPrint={plainPrintLabeledCopy}
     />
   );

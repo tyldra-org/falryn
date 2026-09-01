@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import {
+  capabilityId,
   configurationGeneration,
   createInMemoryEventStore,
   createManualClock,
@@ -18,6 +19,7 @@ import type { ModelPolicy } from "../providers/policy.ts";
 import { parseModelPolicy } from "../providers/policy-schema.ts";
 import type { RoutedCatalogEntry } from "../providers/routing.ts";
 import {
+  type AttemptModelInput,
   type AttemptRunnerPort,
   type AttemptRunnerRequest,
   attemptCategoryForProviderFailure,
@@ -32,6 +34,7 @@ const primary = providerId.from("primary");
 const secondary = providerId.from("secondary");
 const deep = modelId.from("deep-model");
 const fast = modelId.from("fast-model");
+const deterministicDestination = "falryn:deterministic:default";
 
 function catalogFor(models: ModelCatalog["models"]): ModelCatalog {
   return {
@@ -47,23 +50,58 @@ function samplePolicy(): ModelPolicy {
   const parsed = parseModelPolicy({
     roles: {
       default: {
+        providerProfileId: "primary-profile",
         providerId: primary,
         modelId: deep,
         reasoning: "balanced",
-        fallbacks: [{ providerId: secondary, modelId: fast }],
+        fallbacks: [
+          { providerProfileId: "secondary-profile", providerId: secondary, modelId: fast },
+        ],
         budgets: { attempts: 2 },
       },
-      fast: { providerId: primary, modelId: fast, reasoning: "minimal" },
-      deep: { providerId: primary, modelId: deep, reasoning: "deep" },
-      plan: { providerId: primary, modelId: deep, reasoning: "balanced" },
+      "fast-read": {
+        providerProfileId: "primary-profile",
+        providerId: primary,
+        modelId: fast,
+        reasoning: "minimal",
+      },
+      "fast-edit": {
+        providerProfileId: "primary-profile",
+        providerId: primary,
+        modelId: fast,
+        reasoning: "minimal",
+      },
+      commit: {
+        providerProfileId: "primary-profile",
+        providerId: primary,
+        modelId: deep,
+        reasoning: "balanced",
+      },
+      plan: {
+        providerProfileId: "primary-profile",
+        providerId: primary,
+        modelId: deep,
+        reasoning: "balanced",
+      },
       vision: {
+        providerProfileId: "primary-profile",
         providerId: primary,
         modelId: deep,
         reasoning: "provider-default",
         use: "off",
       },
-      advisor: { providerId: secondary, modelId: deep, use: "explicit" },
-      compact: { providerId: primary, modelId: fast, use: "evaluated" },
+      advisor: {
+        providerProfileId: "secondary-profile",
+        providerId: secondary,
+        modelId: deep,
+        use: "explicit",
+      },
+      compact: {
+        providerProfileId: "primary-profile",
+        providerId: primary,
+        modelId: fast,
+        use: "evaluated",
+      },
     },
   });
   if (!parsed.ok) {
@@ -76,22 +114,42 @@ function catalogs(): readonly RoutedCatalogEntry[] {
   return [
     {
       providerId: primary,
+      profileId: "primary-profile",
+      adapterKind: "deterministic",
+      destinationId: deterministicDestination,
+      requestInputModalities: ["text"],
       catalog: catalogFor([
         {
+          schemaVersion: 1,
           modelId: deep,
-          modalities: ["text"],
-          tools: true,
-          streaming: true,
-          reasoning: true,
+          displayName: null,
+          inputModalities: ["text"],
+          outputModalities: ["text"],
+          tools: "supported",
+          structuredOutput: "supported",
+          streaming: "supported",
+          reasoning: "supported",
+          reasoningControls: ["balanced"],
+          completeness: "complete",
+          availability: "available",
+          provenance: ["profile-declaration"],
           contextTokens: 128_000,
           outputTokens: 16_000,
         },
         {
+          schemaVersion: 1,
           modelId: fast,
-          modalities: ["text"],
-          tools: true,
-          streaming: true,
-          reasoning: false,
+          displayName: null,
+          inputModalities: ["text"],
+          outputModalities: ["text"],
+          tools: "supported",
+          structuredOutput: "supported",
+          streaming: "supported",
+          reasoning: "unsupported",
+          reasoningControls: [],
+          completeness: "complete",
+          availability: "available",
+          provenance: ["profile-declaration"],
           contextTokens: 8_000,
           outputTokens: 2_000,
         },
@@ -99,22 +157,42 @@ function catalogs(): readonly RoutedCatalogEntry[] {
     },
     {
       providerId: secondary,
+      profileId: "secondary-profile",
+      adapterKind: "deterministic",
+      destinationId: deterministicDestination,
+      requestInputModalities: ["text"],
       catalog: catalogFor([
         {
+          schemaVersion: 1,
           modelId: fast,
-          modalities: ["text"],
-          tools: true,
-          streaming: true,
-          reasoning: false,
+          displayName: null,
+          inputModalities: ["text"],
+          outputModalities: ["text"],
+          tools: "supported",
+          structuredOutput: "supported",
+          streaming: "supported",
+          reasoning: "unsupported",
+          reasoningControls: [],
+          completeness: "complete",
+          availability: "available",
+          provenance: ["profile-declaration"],
           contextTokens: 8_000,
           outputTokens: 2_000,
         },
         {
+          schemaVersion: 1,
           modelId: deep,
-          modalities: ["text"],
-          tools: true,
-          streaming: true,
-          reasoning: true,
+          displayName: null,
+          inputModalities: ["text"],
+          outputModalities: ["text"],
+          tools: "supported",
+          structuredOutput: "supported",
+          streaming: "supported",
+          reasoning: "supported",
+          reasoningControls: ["balanced"],
+          completeness: "complete",
+          availability: "available",
+          provenance: ["profile-declaration"],
           contextTokens: 128_000,
           outputTokens: 16_000,
         },
@@ -156,6 +234,51 @@ function scriptedRunner(
   };
 }
 
+function sampleModelInput(): AttemptModelInput {
+  return {
+    messages: [
+      { role: "system", parts: [{ kind: "text", text: "stable policy" }] },
+      { role: "user", parts: [{ kind: "text", text: "inspect" }] },
+    ],
+    tools: [
+      {
+        name: "read_file",
+        description: "Read one file",
+        parameters: { type: "object", additionalProperties: false },
+      },
+    ],
+    output: { kind: "text" },
+    budgets: {},
+    promptCache: {
+      stablePrefixDigest: `sha-256:${"f".repeat(64)}`,
+      stableMessageCount: 1,
+      toolCatalogGeneration: 0,
+    },
+    disclosure: {
+      catalogGeneration: generation,
+      toolNames: ["read_file"],
+      discoveryHandle: "capability-catalog:0",
+      families: [
+        { family: "read", available: true, reason: null },
+        { family: "browser", available: false, reason: "not-installed" },
+      ],
+      tools: [
+        {
+          name: "read_file",
+          capabilityId: capabilityId.from("workspace.read_file"),
+          version: 1,
+          schemaDigest: "sha-256:read",
+          schemaBytes: 48,
+          schemaTokensEstimated: 12,
+        },
+      ],
+      omitted: [{ name: "write_files", reason: "not-authorized" }],
+      schemaBytes: 48,
+      schemaTokensEstimated: 12,
+    },
+  };
+}
+
 describe("turn attempt policy", () => {
   test("completes on first successful attempt with visible identity", async () => {
     const { coordinator, turnId: id } = startTurn();
@@ -167,15 +290,19 @@ describe("turn attempt policy", () => {
       catalogs: catalogs(),
       backoff: { baseDelayMs: 0, maxDelayMs: 0, jitterRatio: 0 },
       runner: scriptedRunner([
-        () => ({
-          fact: {
-            kind: "completed",
-            finishReason: "stop",
-            observedContent: true,
-            emittedToolProposal: false,
-          },
-          turn: null,
-        }),
+        (request) => {
+          // Deterministic test routes do not advertise a provider cache API.
+          expect(request.promptCache).toBeUndefined();
+          return {
+            fact: {
+              kind: "completed",
+              finishReason: "stop",
+              observedContent: true,
+              emittedToolProposal: false,
+            },
+            turn: null,
+          };
+        },
       ]),
     });
 
@@ -184,6 +311,7 @@ describe("turn attempt policy", () => {
       configurationGeneration: generation,
       signal: new AbortController().signal,
       intent: "coding",
+      modelInput: sampleModelInput(),
     });
 
     expect(outcome.kind).toBe("completed");
@@ -472,6 +600,7 @@ describe("turn attempt policy", () => {
     const parsed = parseModelPolicy({
       roles: {
         default: {
+          providerProfileId: "primary-profile",
           providerId: primary,
           modelId: deep,
           reasoning: "balanced",
@@ -590,6 +719,7 @@ describe("turn attempt policy", () => {
       configurationGeneration: generation,
       signal: new AbortController().signal,
       intent: "coding",
+      modelInput: sampleModelInput(),
     });
     expect(outcome.kind).toBe("completed");
     expect(runnerCalls).toBe(1);
@@ -606,6 +736,18 @@ describe("turn attempt policy", () => {
       }
       expect(turn.outcome).toEqual({ kind: "completed" });
       expect(turn.attempts).toHaveLength(1);
+      expect(turn.attempts[0]?.binding).toMatchObject({
+        providerId: primary,
+        modelId: deep,
+        providerCatalogGeneration: 1,
+        modelCapabilitySchemaVersion: 1,
+        toolCatalogGeneration: generation,
+        policyGeneration: generation,
+        discoveryHandle: "capability-catalog:0",
+        schemaBytes: 48,
+        schemaTokensEstimated: 12,
+        tools: [{ name: "read_file", schemaDigest: "sha-256:read" }],
+      });
     }
   });
 });

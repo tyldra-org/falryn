@@ -36,6 +36,16 @@ function readFileDescriptor(): ToolDescriptor {
   };
 }
 
+function readBackupDescriptor(): ToolDescriptor {
+  return {
+    id: capabilityId.from("workspace.read-backup"),
+    version: 1,
+    name: "read_backup",
+    effect: "observation",
+    inputSchema: pathSchema,
+  };
+}
+
 function writeFileDescriptor(): ToolDescriptor {
   return {
     id: capabilityId.from("workspace.write"),
@@ -175,6 +185,137 @@ describe("tool call loop", () => {
     expect(outcome.results).toHaveLength(2);
   });
 
+  test("continues after no-effect unavailability only through an explicit fallback edge", async () => {
+    const { coordinator, turnId: id } = startAtHandlingModelEvent();
+    const seen: string[] = [];
+    const loop = createToolCallLoop({
+      coordinator,
+      catalog: createToolCatalog(generation, [readFileDescriptor(), readBackupDescriptor()]),
+      runner: successRunner((request) => {
+        seen.push(request.toolName);
+        return request.toolName === "read_file"
+          ? { status: "unavailable", reason: "primary-offline", effect: "none" }
+          : { status: "completed", output: { path: request.input.path }, effect: "completed" };
+      }),
+      fallbackPolicy: {
+        maxTransitions: 2,
+        transitions: [{ fromToolName: "read_file", toToolNames: ["read_backup"] }],
+      },
+    });
+
+    const outcome = await loop.run({
+      turnId: id,
+      configurationGeneration: generation,
+      proposals: [{ toolCallId: "call-primary", name: "read_file", arguments: { path: "a.ts" } }],
+      signal: new AbortController().signal,
+      async continueModel(context) {
+        if (context.iteration > 1) return { kind: "stop" };
+        expect(context.results.at(-1)?.outcome.status).toBe("unavailable");
+        return {
+          kind: "continue",
+          proposals: [
+            { toolCallId: "call-fallback", name: "read_backup", arguments: { path: "a.ts" } },
+          ],
+        };
+      },
+    });
+
+    expect(outcome.kind).toBe("completed");
+    expect(seen).toEqual(["read_file", "read_backup"]);
+    expect(outcome.results.map((record) => record.outcome.status)).toEqual([
+      "unavailable",
+      "completed",
+    ]);
+  });
+
+  test("lets the model explain terminal unavailability without forcing a fallback call", async () => {
+    const { coordinator, turnId: id } = startAtHandlingModelEvent();
+    let executions = 0;
+    const loop = createToolCallLoop({
+      coordinator,
+      catalog: createToolCatalog(generation, [readFileDescriptor(), readBackupDescriptor()]),
+      runner: successRunner(() => {
+        executions += 1;
+        return { status: "unavailable", reason: "primary-offline", effect: "none" };
+      }),
+      fallbackPolicy: {
+        maxTransitions: 2,
+        transitions: [{ fromToolName: "read_file", toToolNames: ["read_backup"] }],
+      },
+    });
+
+    const outcome = await loop.run({
+      turnId: id,
+      configurationGeneration: generation,
+      proposals: [{ toolCallId: "call-primary", name: "read_file", arguments: { path: "a.ts" } }],
+      signal: new AbortController().signal,
+      async continueModel(context) {
+        expect(context.results.at(-1)?.outcome.status).toBe("unavailable");
+        return { kind: "stop" };
+      },
+    });
+
+    expect(outcome.kind).toBe("completed");
+    expect(executions).toBe(1);
+  });
+
+  test("rejects recursive fallback proposals without another effect", async () => {
+    const { coordinator, turnId: id } = startAtHandlingModelEvent();
+    let executions = 0;
+    const loop = createToolCallLoop({
+      coordinator,
+      catalog: createToolCatalog(generation, [
+        readFileDescriptor(),
+        readBackupDescriptor(),
+        writeFileDescriptor(),
+      ]),
+      runner: successRunner(() => {
+        executions += 1;
+        return { status: "unavailable", reason: "offline", effect: "none" };
+      }),
+      fallbackPolicy: {
+        maxTransitions: 2,
+        transitions: [
+          { fromToolName: "read_file", toToolNames: ["read_backup"] },
+          { fromToolName: "read_backup", toToolNames: ["read_file"] },
+        ],
+      },
+    });
+
+    const outcome = await loop.run({
+      turnId: id,
+      configurationGeneration: generation,
+      proposals: [{ toolCallId: "call-primary", name: "read_file", arguments: { path: "a.ts" } }],
+      signal: new AbortController().signal,
+      async continueModel(context) {
+        return context.iteration === 1
+          ? {
+              kind: "continue",
+              proposals: [
+                {
+                  toolCallId: "call-fallback",
+                  name: "read_backup",
+                  arguments: { path: "a.ts" },
+                },
+              ],
+            }
+          : {
+              kind: "continue",
+              proposals: [
+                {
+                  toolCallId: "call-recursive",
+                  name: "read_file",
+                  arguments: { path: "a.ts" },
+                },
+              ],
+            };
+      },
+    });
+
+    expect(outcome).toMatchObject({ kind: "unavailable", reason: "fallback-exhausted" });
+    expect(executions).toBe(2);
+  });
+
   test("fails closed when max iterations are exceeded", async () => {
     const { coordinator, turnId: id } = startAtHandlingModelEvent();
     const loop = createToolCallLoop({
@@ -210,6 +351,39 @@ describe("tool call loop", () => {
     expect(outcome.bound).toBe("max-iterations");
     expect(outcome.maximum).toBe(2);
     expect(outcome.iterations).toBe(2);
+  });
+
+  test("rejects a provider call id reused by a later model continuation", async () => {
+    const { coordinator, turnId: id } = startAtHandlingModelEvent();
+    let executions = 0;
+    const loop = createToolCallLoop({
+      coordinator,
+      catalog: createToolCatalog(generation, [readFileDescriptor()]),
+      runner: {
+        async execute() {
+          executions += 1;
+          return { status: "completed", output: {}, effect: "completed" };
+        },
+      },
+    });
+
+    const outcome = await loop.run({
+      turnId: id,
+      configurationGeneration: generation,
+      proposals: [{ toolCallId: "call-reused", name: "read_file", arguments: { path: "a.ts" } }],
+      signal: new AbortController().signal,
+      async continueModel() {
+        return {
+          kind: "continue",
+          proposals: [
+            { toolCallId: "call-reused", name: "read_file", arguments: { path: "b.ts" } },
+          ],
+        };
+      },
+    });
+
+    expect(outcome.kind).toBe("malformed");
+    expect(executions).toBe(1);
   });
 
   test("fails closed when the per-iteration queue bound is exceeded", async () => {

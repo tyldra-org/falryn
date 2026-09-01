@@ -56,7 +56,9 @@ describe("the provenance table", () => {
     expect(first.report.backupPath).toBeNull();
     await first.close();
 
-    const upgraded = await openProductStoreOrThrow(root);
+    const upgraded = await openProductStoreOrThrow(root, {
+      migrations: [MIGRATION_0001, MIGRATION_0002, MIGRATION_0003, MIGRATION_0004],
+    });
     expect(upgraded.report.created).toBe(false);
     expect(upgraded.report.appliedThisRun).toEqual([ARTIFACT_PROVENANCE_SCHEMA_VERSION]);
     expect(upgraded.report.schemaVersion).toBe(ARTIFACT_PROVENANCE_SCHEMA_VERSION);

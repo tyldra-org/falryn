@@ -40,7 +40,7 @@ export {
   inspectUserBackup,
   restoreUserBackup,
 } from "./backup.ts";
-export type { DurableEventStore, StreamHead } from "./event-store.ts";
+export type { DurableEventStore, SqliteEventStoreOptions, StreamHead } from "./event-store.ts";
 export {
   createEventStoreShutdownParticipant,
   createSqliteEventStore,
@@ -56,6 +56,40 @@ export {
 } from "./export.ts";
 export type { LocalDataService, LocalDataServiceOptions } from "./local-data-service.ts";
 export { createLocalDataService, UNCONSTRAINED_RETENTION } from "./local-data-service.ts";
+export type {
+  LoomManifestRepository,
+  LoomManifestRepositoryOptions,
+  LoomManifestStorageError,
+} from "./loom-manifest-repository.ts";
+export { createLoomManifestRepository } from "./loom-manifest-repository.ts";
+export {
+  LOOM_MANIFESTS_TABLE,
+  LOOM_SCHEMA_VERSION,
+  MIGRATION_0006,
+} from "./loom-schema.ts";
+export type { MemoryRecordRepository } from "./memory-repository.ts";
+export {
+  createMemoryRecordRepository,
+  MAX_DURABLE_MEMORY_RECORDS,
+} from "./memory-repository.ts";
+export {
+  MEMORY_RECORDS_TABLE,
+  MEMORY_SCHEMA_VERSION,
+  MIGRATION_0005,
+} from "./memory-schema.ts";
+export type {
+  ModelCatalogGenerationRepository,
+  ModelCatalogGenerationStorageError,
+  StoredModelCatalogGeneration,
+} from "./model-catalog-repository.ts";
+export { createModelCatalogGenerationRepository } from "./model-catalog-repository.ts";
+export {
+  MIGRATION_0007,
+  MIGRATION_0008,
+  MODEL_CATALOG_GENERATIONS_TABLE,
+  MODEL_CATALOG_ROUTE_BINDINGS_TABLE,
+  MODEL_CATALOG_SCHEMA_VERSION,
+} from "./model-catalog-schema.ts";
 export type { OwnershipRegistry } from "./ownership.ts";
 export {
   ARTIFACTS_OWNERSHIP,
@@ -70,6 +104,15 @@ export {
   createProjectionShutdownParticipant,
   PROJECTION_PARTICIPANT_NAME,
 } from "./projections.ts";
+export {
+  createProviderContinuationStateRepository,
+  MAX_DURABLE_PROVIDER_CONTINUATIONS,
+} from "./provider-continuation-repository.ts";
+export {
+  MIGRATION_0010,
+  PROVIDER_CONTINUATION_SCHEMA_VERSION,
+  PROVIDER_CONTINUATION_STATES_TABLE,
+} from "./provider-continuation-schema.ts";
 export type { ReachabilityGcInputs, ReachabilityGcOptions } from "./reachability-gc.ts";
 export {
   computeGcPlanId,
@@ -140,6 +183,13 @@ export {
   SESSIONS_TABLE,
   TURNS_TABLE,
 } from "./schema.ts";
+export { createScratchResourceRepository } from "./scratch-resource-repository.ts";
+export {
+  MIGRATION_0009,
+  SCRATCH_RESOURCE_SCHEMA_VERSION,
+  SCRATCH_RESOURCES_TABLE,
+  SCRATCH_REVISIONS_TABLE,
+} from "./scratch-resource-schema.ts";
 export type { ImportOptions } from "./session-replay.ts";
 export { forkSession, importPackage, replaySession } from "./session-replay.ts";
 export {

@@ -29,6 +29,9 @@ const EXIT_OWNER = "cli/exit.ts";
 /** The one module that turns a result into human-readable text. */
 const RENDERER = "cli/render-human.ts";
 
+/** The one renderer module that owns ANSI styling and color application. */
+const COLOR_RENDERER = "cli/render-human/session.ts";
+
 /** The projections that turn a result into records a machine reads. */
 const MACHINE_RENDERERS = ["cli/render-json.ts", "cli/render-jsonl.ts", "cli/schema.ts"];
 
@@ -369,9 +372,9 @@ describe("the CLI area", () => {
   test("emits an escape sequence from the one module entitled to", async () => {
     // Every other module writing an ANSI escape would be a second colour
     // policy, reachable on paths where colour was refused.
-    const escapes = await offenders(/\\u001b\[/, [RENDERER]);
+    const escapes = await offenders(/\\u001b\[/, [COLOR_RENDERER]);
     expect(escapes).toEqual([]);
-    expect(await readCode(RENDERER)).toContain("\\u001b[");
+    expect(await readCode(COLOR_RENDERER)).toContain("\\u001b[");
   });
 
   test("keeps the machine projections pure too", async () => {

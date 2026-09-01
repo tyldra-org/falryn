@@ -289,6 +289,20 @@ export type ConfigurationIssueSeverity = "error" | "warning";
  * the input.
  */
 export type ConfigurationIssue =
+  /** Both the current and legacy user configuration homes contain data. */
+  | {
+      readonly kind: "configuration-home-conflict";
+      readonly severity: "error";
+      readonly path: string;
+      readonly legacyPath: string;
+    }
+  /** A configuration home could not be inspected safely. */
+  | {
+      readonly kind: "configuration-home-unavailable";
+      readonly severity: "error";
+      readonly path: string;
+      readonly code: string;
+    }
   /** A key no declaration owns. Never mapped onto a similar known key. */
   | { readonly kind: "unknown-key"; readonly severity: "error"; readonly path: string }
   | {

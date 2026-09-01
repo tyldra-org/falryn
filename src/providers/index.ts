@@ -3,9 +3,8 @@
  *
  * This source area owns provider-neutral requests, stream events, profiles,
  * authentication snapshots, capability discovery, model policy / intent routing,
- * and the adapter port. Vendor leaf adapters: deterministic fixture and
- * OpenAI-compatible HTTP (`createOpenAiCompatibleAdapter`). Domain, application,
- * CLI, and OpenTUI must not import SDK types through this surface.
+ * and the adapter port. Vendor leaf adapters live in `src/integrations`; SDK
+ * request and stream types must not cross this provider-neutral boundary.
  */
 
 export type { DiscoveryPolicy, ProviderAdapterKind } from "./adapter-kind.ts";
@@ -27,6 +26,123 @@ export {
   PROVIDER_AUTH_STATES,
 } from "./auth.ts";
 export { establishProviderAuth, removeProviderCredential } from "./auth-service.ts";
+export type {
+  AuthorizationBrowserPort,
+  AuthorizationCallback,
+  AuthorizationCallbackMode,
+  AuthorizationCryptoPort,
+  AuthorizationInteractionPort,
+  AuthorizationLoopbackPort,
+  AuthorizationLoopbackSession,
+  AuthorizationReceiptOutcome,
+  AuthorizedLoginMethod,
+  AuthorizedProviderCredential,
+  AuthorizedProviderLoginDescriptor,
+  AuthorizedProviderLoginHost,
+  ProviderAuthorizationDenied,
+  ProviderAuthorizationExchangeResult,
+  ProviderAuthorizationFailure,
+  ProviderAuthorizationReceipt,
+  ProviderAuthorizedLoginAdapter,
+  ProviderAuthorizedLoginAvailability,
+  ProviderDeviceCodePollResult,
+  ProviderDeviceCodeStartResult,
+  ProviderPkceStartResult,
+  ProviderRefreshResult,
+  ProviderRemoteRevocationResult,
+} from "./authorized-login.ts";
+export {
+  AUTHORIZATION_CALLBACK_MODES,
+  AUTHORIZATION_RECEIPT_OUTCOMES,
+  AUTHORIZED_LOGIN_METHODS,
+  AUTHORIZED_LOGIN_SCHEMA_VERSION,
+  MAX_AUTHORIZATION_CODE_LENGTH,
+  MAX_AUTHORIZATION_ID_LENGTH,
+  MAX_AUTHORIZATION_SCOPE_LENGTH,
+  MAX_AUTHORIZATION_SCOPES,
+  MAX_AUTHORIZATION_TOKEN_LENGTH,
+  MAX_AUTHORIZATION_URL_LENGTH,
+} from "./authorized-login.ts";
+export type { AuthorizedLoginParseError } from "./authorized-login-schema.ts";
+export {
+  authorizedProviderCredentialSchema,
+  authorizedProviderLoginDescriptorSchema,
+  parseAuthorizedProviderCredential,
+  parseAuthorizedProviderLoginDescriptor,
+  parseProviderAuthorizationReceipt,
+  providerAuthorizationReceiptSchema,
+} from "./authorized-login-schema.ts";
+export {
+  BUILTIN_MODEL_CATALOGS,
+  builtinModelCapability,
+  builtinModelCatalog,
+} from "./catalog/builtins.ts";
+export type {
+  ModelCatalogDocument,
+  ModelCatalogId,
+  ModelCatalogSource,
+  ModelCatalogSourceConfidence,
+  ModelCatalogSourceFact,
+  ModelCatalogSourceKind,
+} from "./catalog/contracts.ts";
+export {
+  isModelCatalogId,
+  MAX_MODEL_CATALOG_FILE_BYTES,
+  MAX_MODEL_CATALOG_SOURCES,
+  MAX_MODEL_CATALOGS_PER_PROFILE,
+  MAX_MODELS_PER_CATALOG,
+  MODEL_CATALOG_DOCUMENT_SCHEMA_VERSION,
+  MODEL_CATALOG_SOURCE_CONFIDENCE,
+  MODEL_CATALOG_SOURCE_FACTS,
+  MODEL_CATALOG_SOURCE_KINDS,
+} from "./catalog/contracts.ts";
+export type { ModelCatalogParseError } from "./catalog/effective.ts";
+export { parseModelCatalog } from "./catalog/effective.ts";
+export type { ModelCatalogDocumentParseError } from "./catalog/schema.ts";
+export { modelCatalogDocumentSchema, parseModelCatalogDocument } from "./catalog/schema.ts";
+export type { CommandCodeProtocol } from "./command-code.ts";
+export {
+  COMMAND_CODE_ANTHROPIC_BASE_URL,
+  COMMAND_CODE_MODEL_MANIFESTS,
+  COMMAND_CODE_MODEL_PROTOCOLS,
+  COMMAND_CODE_MODEL_REASONING_CONTROLS,
+  COMMAND_CODE_OPENAI_BASE_URL,
+  COMMAND_CODE_PROVIDER_ID,
+  commandCodeProtocolFor,
+  commandCodeReasoningControlsFor,
+} from "./command-code.ts";
+export type {
+  ProviderAccountMetadata,
+  ProviderAuthMethod,
+  ProviderConnection,
+  ProviderConnectionState,
+} from "./connection.ts";
+export {
+  MAX_PROVIDER_CONNECTIONS,
+  PROVIDER_AUTH_METHODS,
+  PROVIDER_CONNECTION_SCHEMA_VERSION,
+} from "./connection.ts";
+export type { ProviderConnectionStateParseError } from "./connection-schema.ts";
+export {
+  parseProviderConnectionState,
+  providerConnectionStateSchema,
+} from "./connection-schema.ts";
+export type {
+  ProviderContinuationStateError,
+  ProviderContinuationStateKey,
+  ProviderContinuationStatePort,
+  ProviderContinuationStateRecord,
+} from "./continuation-state.ts";
+export { PROVIDER_CONTINUATION_STATE_SCHEMA_VERSION } from "./continuation-state.ts";
+export type {
+  OfficialProviderCredentialId,
+  ProviderCredentialEnvironment,
+} from "./credential-environment.ts";
+export {
+  providerCredentialEnvironment,
+  providerCredentialEnvironmentAliases,
+  providerEnvironmentCredentialReference,
+} from "./credential-environment.ts";
 export type {
   DeterministicAbortableScript,
   DeterministicFailureScript,
@@ -50,6 +166,7 @@ export type {
   StaticDiscoveryOptions,
 } from "./discovery.ts";
 export {
+  catalogFromAdapterModels,
   createDeterministicRemoteDiscovery,
   createStaticModelDiscovery,
   discoverModelCatalog,
@@ -63,6 +180,13 @@ export type {
   ProviderIdentityErrorCode,
 } from "./identity.ts";
 export { modelRequestId } from "./identity.ts";
+export {
+  KNOWN_OPENAI_GPT_4O_MINI_CAPABILITY,
+  KNOWN_OPENAI_MODEL_CAPABILITIES,
+  knownModelCapability,
+  LATEST_OPENAI_MODEL_CAPABILITIES,
+  LATEST_OPENAI_MODEL_IDS,
+} from "./known-model-capability.ts";
 export {
   MAX_ASSEMBLED_TEXT_LENGTH,
   MAX_FINISH_REASON_LENGTH,
@@ -82,6 +206,7 @@ export type {
   ImageMessagePart,
   MessagePart,
   MessageRole,
+  ModelAssistantToolCall,
   ModelBudgets,
   ModelMessage,
   ModelToolDefinition,
@@ -91,10 +216,68 @@ export type {
 } from "./messages.ts";
 export { isMessageRole, MESSAGE_ROLES } from "./messages.ts";
 export type {
-  OpenAiCompatibleAdapterOptions,
-  OpenAiCompatibleFetch,
-} from "./openai-compatible-adapter.ts";
-export { createOpenAiCompatibleAdapter } from "./openai-compatible-adapter.ts";
+  ModelAvailability,
+  ModelCapabilityCompleteness,
+  ModelCapabilityDeclaration,
+  ModelCapabilityProvenance,
+  ModelFeatureSupport,
+  ModelInputModality,
+  ModelOutputModality,
+  ModelPromptCacheMode,
+  ModelResponseDensityControl,
+} from "./model-capability.ts";
+export {
+  capabilityFromDeclaration,
+  featureIsSupported,
+  MODEL_AVAILABILITIES,
+  MODEL_CAPABILITY_COMPLETENESSES,
+  MODEL_CAPABILITY_PROVENANCES,
+  MODEL_CAPABILITY_SCHEMA_VERSION,
+  MODEL_FEATURE_SUPPORTS,
+  MODEL_INPUT_MODALITIES,
+  MODEL_OUTPUT_MODALITIES,
+  MODEL_PROMPT_CACHE_MODES,
+  MODEL_RESPONSE_DENSITY_CONTROLS,
+  unknownModelCapability,
+} from "./model-capability.ts";
+export type {
+  ModelCapabilityDeclarationParseError,
+  ModelCapabilityParseError,
+} from "./model-capability-schema.ts";
+export {
+  modelCapabilityDeclarationSchema,
+  parseModelCapability,
+  parseModelCapabilityDeclaration,
+} from "./model-capability-schema.ts";
+export type {
+  ProviderModelIdentity,
+  ProviderModelIdentityKeyParseResult,
+} from "./model-identity.ts";
+export {
+  parseProviderModelIdentityKey,
+  providerModelIdentityKey,
+  sameProviderModelIdentity,
+} from "./model-identity.ts";
+export type {
+  ModelBillingMode,
+  ModelPricing,
+  ModelPricingKind,
+  ModelPricingTier,
+  ModelPricingUtcWindow,
+  ModelTokenPrice,
+} from "./model-pricing.ts";
+export {
+  MODEL_BILLING_MODES,
+  MODEL_PRICE_TOKEN_UNIT,
+  MODEL_PRICING_KINDS,
+  unknownModelPricing,
+} from "./model-pricing.ts";
+export {
+  OPENAI_CODEX_AUTHORIZATION_UNAVAILABLE_CODE,
+  OPENAI_CODEX_AUTHORIZATION_UNAVAILABLE_MESSAGE,
+  OPENAI_CODEX_PROVIDER_ID,
+  openAiCodexProfilePolicyIssue,
+} from "./openai-codex-policy.ts";
 export type {
   AdvisorRoleRoute,
   CompactRoleRoute,
@@ -134,8 +317,13 @@ export type {
 } from "./profile.ts";
 export { profileCredentialConsumer } from "./profile.ts";
 export type { ProviderProfileParseError } from "./profile-schema.ts";
-export { parseProviderProfile, providerProfileSchema } from "./profile-schema.ts";
-export type { ModelRequest } from "./request.ts";
+export {
+  parseProviderProfile,
+  providerEndpointIsAllowed,
+  providerProfileSchema,
+} from "./profile-schema.ts";
+export type { ModelRequest, PromptCachePolicy, PromptCacheSeed } from "./request.ts";
+export { PROMPT_CACHE_POLICY_SCHEMA_VERSION } from "./request.ts";
 export type {
   ResolveSpecializedRoleInput,
   RouteRequirement,
@@ -197,6 +385,66 @@ export type {
   StreamAssemblyTerminal,
 } from "./stream-assembly.ts";
 export { normalizeProviderStream, ProviderStreamAssembler } from "./stream-assembly.ts";
+export type {
+  AnthropicMessagesTransportCompatibilityDeclaration,
+  CommandCodeTransportCompatibilityDeclaration,
+  CustomUnavailableTransportCompatibilityDeclaration,
+  DeterministicTransportCompatibilityDeclaration,
+  GoogleGenerateContentTransportCompatibilityDeclaration,
+  OpenAiAssistantAfterToolResultMode,
+  OpenAiChatTransportCompatibilityDeclaration,
+  OpenAiFinishReasonMode,
+  OpenAiMaxOutputTokenField,
+  OpenAiResponsesContinuationMode,
+  OpenAiResponsesPromptCacheTtl,
+  OpenAiResponsesReasoningSummary,
+  OpenAiResponsesServiceTier,
+  OpenAiResponsesTransportCompatibilityDeclaration,
+  OpenAiStreamingUsageMode,
+  OpenAiSystemMessageRole,
+  OpenAiToolResultNameMode,
+  ProviderModelTransportCompatibilityOverride,
+  ProviderTransportCompatibilityDeclaration,
+  ProviderTransportCompatibilityError,
+  ProviderTransportCompatibilityLayer,
+  ProviderTransportCompatibilityLayerReceipt,
+  ProviderTransportCompatibilityLayerStatus,
+  ProviderTransportCompatibilityPlan,
+  ProviderTransportCompatibilityProvenance,
+  ProviderTransportCompatibilityReceipt,
+  ProviderTransportCompatibilityResolution,
+  ProviderTransportCompatibilitySource,
+  ProviderTransportCompatibilitySourceKind,
+  ProviderTransportDialect,
+} from "./transport-compatibility.ts";
+export {
+  bindProviderTransportCompatibilityToModel,
+  defaultProviderTransportCompatibility,
+  OPENAI_ASSISTANT_AFTER_TOOL_RESULT_MODES,
+  OPENAI_CHAT_TRANSPORT_DEFAULT,
+  OPENAI_FINISH_REASON_MODES,
+  OPENAI_MAX_OUTPUT_TOKEN_FIELDS,
+  OPENAI_RESPONSES_CONTINUATION_MODES,
+  OPENAI_RESPONSES_PROMPT_CACHE_TTLS,
+  OPENAI_RESPONSES_REASONING_SUMMARIES,
+  OPENAI_RESPONSES_SERVICE_TIERS,
+  OPENAI_RESPONSES_TRANSPORT_DEFAULT,
+  OPENAI_STREAMING_USAGE_MODES,
+  OPENAI_SYSTEM_MESSAGE_ROLES,
+  OPENAI_TOOL_RESULT_NAME_MODES,
+  PROVIDER_TRANSPORT_COMPATIBILITY_SCHEMA_VERSION,
+  PROVIDER_TRANSPORT_COMPATIBILITY_SOURCE_KINDS,
+  PROVIDER_TRANSPORT_DIALECTS,
+  providerTransportCompatibilityMatchesAdapter,
+  providerTransportCompatibilityReceiptMatchesPlan,
+  resolveProviderTransportCompatibility,
+} from "./transport-compatibility.ts";
+export type { ProviderTransportCompatibilityDeclarationParseError } from "./transport-compatibility-schema.ts";
+export {
+  parseProviderTransportCompatibilityDeclaration,
+  providerModelTransportCompatibilityOverrideSchema,
+  providerTransportCompatibilityDeclarationSchema,
+} from "./transport-compatibility-schema.ts";
 export type { ProviderBoundaryParseError } from "./validate.ts";
 export {
   parseModelRequest,

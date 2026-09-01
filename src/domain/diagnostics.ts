@@ -29,6 +29,7 @@ export const DIAGNOSTIC_SUBSYSTEMS = [
   "shutdown",
   "codec",
   "credentials",
+  "capability",
 ] as const;
 
 export type DiagnosticSubsystem = (typeof DIAGNOSTIC_SUBSYSTEMS)[number];

@@ -11,6 +11,7 @@ import {
   createManualClock,
   createStaticEnvironment,
 } from "../domain/index.ts";
+import type { OperatingSystemSecretsPort } from "../integrations/index.ts";
 import { composeProductCredentials, resolveProviderApiKey } from "./product-credentials.ts";
 
 const REFERENCE: CredentialReference = {
@@ -57,20 +58,43 @@ describe("composeProductCredentials", () => {
     expect(key).toBeNull();
   });
 
+  test("resolves an official provider-native alias through the canonical reference", async () => {
+    const clock = createManualClock();
+    const bundle = composeProductCredentials({
+      clock,
+      commands: runner(async () => {
+        throw new Error("keychain must not run for environment refs");
+      }),
+      platform: "linux",
+      environment: createStaticEnvironment({ OPENAI_API_KEY: "sk-provider-native" }),
+    });
+    const key = await resolveProviderApiKey(bundle.resolver, {
+      storeKind: "environment",
+      locator: "FALRYN_OPENAI_API_KEY",
+      consumer: "provider:openai",
+      accountLabel: null,
+    });
+    expect(key).toBe("sk-provider-native");
+  });
+
   test("placeApiKey writes through the keychain channel without returning the secret", async () => {
     const clock = createManualClock();
     let wroteSecret: string | undefined;
+    const secrets: OperatingSystemSecretsPort = {
+      get: async () => null,
+      async set(options) {
+        wroteSecret = options.value;
+      },
+      delete: async () => false,
+    };
     const bundle = composeProductCredentials({
       clock,
-      commands: runner(async (request) => {
-        if ("argv" in request) {
-          const index = request.argv.indexOf("-w");
-          wroteSecret = index >= 0 ? request.argv[index + 1] : undefined;
-        }
-        return { kind: "exited", exitCode: 0, stdout: "" };
+      commands: runner(async () => {
+        throw new Error("keychain writes must not spawn a command");
       }),
       platform: "darwin",
       environment: createStaticEnvironment({}),
+      secrets,
     });
     const secret = "sk-place-me";
     const placed = await bundle.placeApiKey({
@@ -85,5 +109,28 @@ describe("composeProductCredentials", () => {
     expect(placed).toEqual({ kind: "written" });
     expect(wroteSecret).toBe(secret);
     expect(JSON.stringify(placed)).not.toContain(secret);
+  });
+
+  test("fails closed for a malformed authorized credential bundle", async () => {
+    const bundle = composeProductCredentials({
+      clock: createManualClock(),
+      commands: runner(async () => {
+        throw new Error("credential lookup must use the injected vault");
+      }),
+      platform: "darwin",
+      environment: createStaticEnvironment({}),
+      secrets: {
+        get: async () => "{malformed-authorized-credential",
+        set: async () => undefined,
+        delete: async () => false,
+      },
+    });
+    const key = await resolveProviderApiKey(bundle.resolver, {
+      storeKind: "operating-system-keychain",
+      locator: "falryn.provider-authorized.v1.openai.auth-fixture",
+      consumer: "provider:openai",
+      accountLabel: "fixture",
+    });
+    expect(key).toBeNull();
   });
 });

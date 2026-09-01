@@ -56,6 +56,58 @@ describe("parseModelRequest", () => {
     }
   });
 
+  test("accepts a secret-safe prompt-cache policy", () => {
+    const parsed = parseModelRequest({
+      schemaVersion: PROVIDER_BOUNDARY_SCHEMA_VERSION,
+      requestId: "req-cache-1",
+      providerId: "openai",
+      modelId: "gpt-test",
+      messages: [{ role: "user", parts: [{ kind: "text", text: "hi" }] }],
+      tools: [],
+      output: { kind: "text" },
+      budgets: {},
+      promptCache: {
+        schemaVersion: 1,
+        key: `sha-256:${"a".repeat(64)}`,
+        scope: "session",
+        stablePrefixDigest: `sha-256:${"b".repeat(64)}`,
+        stableMessageCount: 2,
+        toolCatalogGeneration: 4,
+        mode: "openai-routing-key",
+        minimumInputTokens: 1024,
+      },
+      metadata: { role: "default" },
+    });
+
+    expect(parsed.ok).toBe(true);
+  });
+
+  test("rejects prompt-cache identities that expose raw session data", () => {
+    const parsed = parseModelRequest({
+      schemaVersion: PROVIDER_BOUNDARY_SCHEMA_VERSION,
+      requestId: "req-cache-2",
+      providerId: "openai",
+      modelId: "gpt-test",
+      messages: [{ role: "user", parts: [{ kind: "text", text: "hi" }] }],
+      tools: [],
+      output: { kind: "text" },
+      budgets: {},
+      promptCache: {
+        schemaVersion: 1,
+        key: "session-user-visible",
+        scope: "session",
+        stablePrefixDigest: `sha-256:${"b".repeat(64)}`,
+        stableMessageCount: 2,
+        toolCatalogGeneration: 4,
+        mode: "openai-routing-key",
+        minimumInputTokens: 1024,
+      },
+      metadata: { role: "default" },
+    });
+
+    expect(parsed.ok).toBe(false);
+  });
+
   test("rejects unknown fields and oversized text without echoing the payload", () => {
     const parsed = parseModelRequest({
       schemaVersion: PROVIDER_BOUNDARY_SCHEMA_VERSION,
@@ -91,6 +143,83 @@ describe("parseModelRequest", () => {
     });
     expect(parsed.ok).toBe(false);
   });
+
+  test("accepts an assistant tool call followed by its result", () => {
+    const parsed = parseModelRequest({
+      schemaVersion: PROVIDER_BOUNDARY_SCHEMA_VERSION,
+      requestId: "req-tool-1",
+      providerId: "openai",
+      modelId: "gpt-test",
+      messages: [
+        { role: "user", parts: [{ kind: "text", text: "read a.ts" }] },
+        {
+          role: "assistant",
+          parts: [{ kind: "text", text: "" }],
+          toolCalls: [{ toolCallId: "call-1", name: "read_file", arguments: { path: "a.ts" } }],
+        },
+        {
+          role: "tool",
+          toolCallId: "call-1",
+          parts: [{ kind: "text", text: '{"status":"completed"}' }],
+        },
+      ],
+      tools: [],
+      output: { kind: "text" },
+      budgets: {},
+      metadata: { role: "default" },
+    });
+    expect(parsed.ok).toBe(true);
+  });
+
+  test("rejects an orphaned tool result", () => {
+    const parsed = parseModelRequest({
+      schemaVersion: PROVIDER_BOUNDARY_SCHEMA_VERSION,
+      requestId: "req-tool-2",
+      providerId: "openai",
+      modelId: "gpt-test",
+      messages: [
+        {
+          role: "tool",
+          toolCallId: "call-missing",
+          parts: [{ kind: "text", text: "{}" }],
+        },
+      ],
+      tools: [],
+      output: { kind: "text" },
+      budgets: {},
+      metadata: { role: "default" },
+    });
+    expect(parsed.ok).toBe(false);
+  });
+
+  test("rejects a provider call id reused after its result", () => {
+    const parsed = parseModelRequest({
+      schemaVersion: PROVIDER_BOUNDARY_SCHEMA_VERSION,
+      requestId: "req-tool-reused",
+      providerId: "openai",
+      modelId: "gpt-test",
+      messages: [
+        { role: "user", parts: [{ kind: "text", text: "read twice" }] },
+        {
+          role: "assistant",
+          parts: [{ kind: "text", text: "" }],
+          toolCalls: [{ toolCallId: "call-1", name: "read_file", arguments: { path: "a.ts" } }],
+        },
+        { role: "tool", toolCallId: "call-1", parts: [{ kind: "text", text: "{}" }] },
+        {
+          role: "assistant",
+          parts: [{ kind: "text", text: "" }],
+          toolCalls: [{ toolCallId: "call-1", name: "read_file", arguments: { path: "b.ts" } }],
+        },
+      ],
+      tools: [],
+      output: { kind: "text" },
+      budgets: {},
+      metadata: { role: "default" },
+    });
+
+    expect(parsed.ok).toBe(false);
+  });
 });
 
 describe("parseNormalizedProviderEvent", () => {
@@ -107,6 +236,25 @@ describe("parseNormalizedProviderEvent", () => {
       expect(isTerminalProviderEvent(parsed.value)).toBe(true);
       expect(parsed.value.modelAttemptId).toBe(modelAttemptId.from("attempt-1"));
     }
+  });
+
+  test("accepts bounded provider retry metadata", () => {
+    const parsed = parseNormalizedProviderEvent({
+      kind: "error",
+      requestId: "req-retry",
+      modelAttemptId: "attempt-retry",
+      sequence: 2,
+      failure: {
+        kind: "rate-limit",
+        retryable: true,
+        retryAfterMs: 1_250,
+        message: "The provider rate-limited this request.",
+      },
+    });
+    expect(parsed).toMatchObject({
+      ok: true,
+      value: { failure: { retryAfterMs: 1_250 } },
+    });
   });
 
   test("rejects a second-shape unknown kind", () => {

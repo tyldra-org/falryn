@@ -25,7 +25,7 @@ import {
 } from "../domain/index.ts";
 import { createMemoryAdmission, type MemoryAdmissionPort } from "./memory-admission.ts";
 import { createMemoryRecall, type MemoryRecallPort } from "./memory-recall.ts";
-import { createMemoryRecords } from "./memory-record.ts";
+import { createMemoryRecords, type MemoryRecords } from "./memory-record.ts";
 import type { ToolRunnerPort, ToolRunnerRequest } from "./tool-call-loop.ts";
 
 export const PRODUCT_MEMORY_TOOLS_OWNER = "#720";
@@ -85,6 +85,7 @@ function completed(value: unknown): ToolInvocationOutcome {
 
 export type ProductMemoryToolPorts = {
   readonly generation: ConfigurationGeneration;
+  readonly records?: MemoryRecords;
   readonly admission?: MemoryAdmissionPort;
   readonly recall?: MemoryRecallPort;
 };
@@ -103,7 +104,7 @@ export type ProductMemoryTools = {
  * Compose builtin memory admit/recall tools.
  */
 export function composeProductMemoryTools(ports: ProductMemoryToolPorts): ProductMemoryTools {
-  const store = createMemoryRecords();
+  const store = ports.records ?? createMemoryRecords();
   const admission = ports.admission ?? createMemoryAdmission(store);
   const recall = ports.recall ?? createMemoryRecall(store);
 

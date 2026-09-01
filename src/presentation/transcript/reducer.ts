@@ -8,20 +8,19 @@
  * second, differently-informed one.
  *
  * **What this build can actually produce.** Five of the sixteen block kinds have
- * a producer today: `notice`, `turn-outcome`, `model-outcome`, `tool-request`,
- * and `tool-result`. The other eleven are declared in `./blocks.ts` and reached
- * only by fixtures, because nothing in this build has an agent loop, a
- * provider, a tool runner, or a process boundary that emits them. Stating the
- * number here rather than leaving it to be counted is the point: a transcript
- * that looked complete would be the most misleading thing this area could ship.
+ * a lifecycle-event producer today: `notice`, `turn-outcome`, `model-outcome`,
+ * `tool-request`, and `tool-result`. The other eleven are declared in
+ * `./blocks.ts` but are not emitted by this reducer's closed `RuntimeEvent`
+ * vocabulary. Stating the number here rather than leaving it to be counted is
+ * the point: a transcript that looked complete would be the most misleading
+ * thing this area could ship.
  *
- * **Every block this build produces is `ordinary`.** The runtime's invocation and
- * turn events carry no payload, so nothing reaching this reducer is sensitive or
- * secret, and claiming otherwise would be theatre. The other two sensitivity
- * classes are constructed by fixtures so the transcript surface has something to
- * render them against — see `./fixtures.ts`. A test asserts this, so the first
- * event that does carry content has to revisit it rather than inherit
- * `ordinary` by default.
+ * **Every block this build produces is `ordinary`.** Invocation completion may
+ * carry a bounded, secret-free degradation receipt; it still carries no tool
+ * input or result payload. The other two sensitivity classes are constructed by
+ * fixtures so the transcript surface has something to render them against — see
+ * `./fixtures.ts`. A test asserts this, so the first event that does carry
+ * sensitive content has to revisit it rather than inherit `ordinary` by default.
  *
  * **Two events deliberately produce nothing.** `turn.started` and
  * `model.attempt.started` open a scope; they do not say anything. A block for
@@ -66,6 +65,27 @@ export const EMPTY_PROJECTION: TranscriptProjection = {
   refusedRevisions: 0,
   cursors: [],
 };
+
+function invocationResultOutput(
+  event: Extract<RuntimeEvent, { readonly kind: "capability.invocation.completed" }>,
+) {
+  const degradation = event.payload.degradation;
+  if (degradation === undefined) {
+    return omitted("invocation events carry no result payload");
+  }
+  const fallbacks =
+    degradation.candidateIds.length === 0 ? "none" : degradation.candidateIds.join(", ");
+  const recovery =
+    degradation.recoveryHandles.length === 0
+      ? ""
+      : ` Recovery: ${degradation.recoveryHandles.join(", ")}.`;
+  return bound(
+    `Observed ${event.payload.observedStatus ?? "unavailable"}. ` +
+      `Degradation: ${degradation.decision}. ` +
+      `Fallbacks: ${fallbacks}. ` +
+      `Terminal: ${degradation.terminalReason}.${recovery}`,
+  );
+}
 
 /**
  * Builds a transcript from an ordered run of events.
@@ -194,7 +214,7 @@ export function blockFor(event: RuntimeEvent): TranscriptBlock | null {
         summary: complete(`Ran ${event.capabilityId}.`),
         invocationId: event.invocationId,
         capability: event.capabilityId,
-        output: omitted("invocation events carry no payload"),
+        output: invocationResultOutput(event),
         outcome: event.payload.outcome,
       };
 
@@ -210,6 +230,18 @@ export function blockFor(event: RuntimeEvent): TranscriptBlock | null {
         note: bound(
           `Generation ${event.payload.generation} applies ${event.payload.applicationClass}.`,
         ),
+      };
+
+    case "execution.profile.selected":
+      return {
+        ...spine,
+        kind: "notice",
+        anchor: { of: "declared", key: `execution-profile:${event.payload.selectionId}` },
+        source: "runtime",
+        status: "final",
+        summary: complete(`Execution profile set to ${event.payload.profileId}.`),
+        invocationId: null,
+        note: complete(`${event.payload.completion}; applies ${event.payload.applicationClass}.`),
       };
 
     default:

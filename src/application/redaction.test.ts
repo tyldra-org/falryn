@@ -3,6 +3,7 @@ import { describe, expect, test } from "bun:test";
 import { MAX_CAUSE_DETAIL_LENGTH } from "../domain/index.ts";
 import {
   containsRedactableSecret,
+  createRuntimeProjectionRedactor,
   isSecretName,
   REDACTED,
   redactMetadata,
@@ -31,6 +32,14 @@ describe("free text", () => {
 
   test("leaves ordinary text untouched", () => {
     expect(redactText("queue depth 12 of maxItems 8")).toBe("queue depth 12 of maxItems 8");
+  });
+
+  test("preserves tool-output layout while redacting secrets", () => {
+    const projected = createRuntimeProjectionRedactor().redactText(
+      "first\n  second api_key=hunter2\n",
+      Number.MAX_SAFE_INTEGER,
+    );
+    expect(projected).toBe("first\n  second api_key=[redacted]\n");
   });
 
   test("is bounded, counting the ellipsis toward the bound", () => {

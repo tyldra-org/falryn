@@ -108,9 +108,9 @@ describe("help", () => {
 
   test("says why a command cannot run", async () => {
     // Listed, discoverable, and answered — rather than hidden or silently inert.
-    // The overlay is a fraction of the frame, so this asserts reasons that sit
-    // in the visible window, not every later command in the registry.
-    using shell = await open(40);
+    // Use a tall frame so adding unrelated commands cannot displace the
+    // transcript reasons this contract is checking.
+    using shell = await open(100);
     const frame = await shell.press("?");
     expect(frame).toContain("there is no transcript yet");
     expect(frame).toContain("there is no openable artifact to view for this entry");

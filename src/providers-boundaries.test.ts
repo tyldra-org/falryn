@@ -8,7 +8,7 @@
 
 import { describe, expect, test } from "bun:test";
 import { readFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 const SOURCE_ROOT = dirname(import.meta.path);
 const AREA = join(SOURCE_ROOT, "providers");
@@ -24,6 +24,11 @@ async function areaFiles(): Promise<readonly string[]> {
 
 function isProduct(file: string): boolean {
   return !/\.test\.tsx?$/.test(file);
+}
+
+function isInside(root: string, path: string): boolean {
+  const offset = relative(root, path);
+  return offset !== ".." && !offset.startsWith(`..${sep}`) && !isAbsolute(offset);
 }
 
 async function readCode(file: string): Promise<string> {
@@ -42,14 +47,14 @@ describe("providers source-area boundaries", () => {
         if (specifier === undefined) {
           continue;
         }
-        if (specifier.startsWith("./") || specifier.startsWith("../providers/")) {
-          continue;
-        }
         if (specifier === "zod") {
           continue;
         }
-        if (specifier.startsWith("../domain/") || specifier === "../domain/index.ts") {
-          continue;
+        if (specifier.startsWith(".")) {
+          const imported = resolve(dirname(join(AREA, file)), specifier);
+          if (isInside(AREA, imported) || isInside(join(SOURCE_ROOT, "domain"), imported)) {
+            continue;
+          }
         }
         offenders.push(`${file}: ${specifier}`);
       }

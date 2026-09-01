@@ -1,35 +1,33 @@
 /**
  * Product composer submission port (#707 / #715 / #717).
  *
- * Maps a composer snapshot onto the live session/turn producer: ensure a
- * session is ready, compose a Brief + planner-backed prompt, start a turn,
- * and return accepted — or fail closed with a precise unavailable reason.
+ * Maps a composer snapshot onto the application-owned live-turn executor.
+ * Accepted means the provider turn reached a durable terminal result; a
+ * producer-only turn is never reported as accepted.
  */
 
 import {
-  CONTEXT_PLANNER_OWNER,
   composeProductBriefControls,
-  createContextPlanner,
+  composeProductOutputControls,
   type ProductBriefControls,
+  type ProductExecutionProfileControls,
+  type ProductLiveTurnExecutor,
+  type ProductModelSelectionControls,
+  type ProductOutputControls,
 } from "../../application/index.ts";
-import type { SessionTurnTranscriptProducer } from "../../application/session-turn-transcript-producer.ts";
 import {
   type ConfigurationGeneration,
   type SessionId,
-  type TraceId,
   type TurnId,
   turnId,
-  type WorkspaceId,
 } from "../../domain/index.ts";
 import type { ComposerSnapshot, SubmissionOutcome, SubmissionPort } from "./submission.ts";
 
 export const PRODUCT_SUBMISSION_OWNER = "#707";
 
 export type ProductSubmissionPortOptions = {
-  readonly producer: SessionTurnTranscriptProducer;
-  readonly workspaceId: WorkspaceId;
+  readonly executor: ProductLiveTurnExecutor;
   readonly sessionId: SessionId;
-  readonly traceId: TraceId;
   readonly configurationGeneration: ConfigurationGeneration;
   /** Stable turn ids for tests; defaults to a monotonic counter. */
   readonly nextTurnId?: () => TurnId;
@@ -40,31 +38,48 @@ export type ProductSubmissionPortOptions = {
   readonly isAccepting?: () => boolean;
   /** Shared Brief controls for TUI/session (#717). */
   readonly brief?: ProductBriefControls;
+  /** Shared Hush/Loom controls for this TUI session. */
+  readonly output?: ProductOutputControls;
 };
 
 export type ProductSubmissionPort = SubmissionPort & {
   readonly brief: ProductBriefControls;
+  readonly output: ProductOutputControls;
+  readonly executionProfile: ProductExecutionProfileControls;
+  readonly modelSelection: ProductModelSelectionControls;
 };
 
 /**
- * Build a submission port that starts a real turn through the product producer.
+ * Build a submission port that executes a complete durable model turn.
  */
 export function createProductSubmissionPort(
   options: ProductSubmissionPortOptions,
 ): ProductSubmissionPort {
   let sequence = 0;
-  let sessionStarted = false;
   const nextTurnId =
     options.nextTurnId ??
     (() => {
       sequence += 1;
-      return turnId.from(`turn-submit-${sequence}`);
+      return turnId.from(`turn-submit:${String(options.sessionId)}:${sequence}`);
     });
-  const planner = createContextPlanner();
   const brief = options.brief ?? composeProductBriefControls();
+  const output = options.output ?? composeProductOutputControls();
+  const executionProfile = options.executor.executionProfile ?? {
+    get: () => "agent" as const,
+    async select() {
+      return {
+        ok: false as const,
+        code: "execution-profile.unavailable",
+        message: "execution profile controls are not attached",
+      };
+    },
+  };
 
   return {
     brief,
+    output,
+    executionProfile,
+    modelSelection: options.executor.modelSelection,
     async submit(snapshot: ComposerSnapshot): Promise<SubmissionOutcome> {
       if (snapshot.text.trim() === "") {
         return unavailable(snapshot, "the composer is empty");
@@ -73,49 +88,21 @@ export function createProductSubmissionPort(
         return unavailable(snapshot, "the agent is not accepting submissions right now");
       }
 
-      if (!sessionStarted) {
-        const started = await options.producer.startSession({
-          sessionId: options.sessionId,
-          workspaceId: options.workspaceId,
-          configurationGeneration: options.configurationGeneration,
-        });
-        if (!started.ok) {
-          return unavailable(snapshot, `session could not start (${started.error.code})`);
-        }
-        sessionStarted = true;
-      }
-
       const id = nextTurnId();
-      const briefed = brief.projectForTurn({
+      const briefRequest = brief.requestForTurn({
         turnId: id,
         sessionId: options.sessionId,
         configurationGeneration: options.configurationGeneration,
+        prompt: snapshot.text,
+        interface: "interactive",
       });
-      const planned = planner.composeTurn({
+      const started = await options.executor.run({
+        prompt: snapshot.text,
         turnId: id,
-        sessionId: options.sessionId,
-        workspaceId: options.workspaceId,
-        configurationGeneration: options.configurationGeneration,
-        task: snapshot.text,
-        candidates: [],
-        otherSections: briefed.ok ? [briefed.value.section] : [],
+        ...(briefRequest === null ? {} : { briefRequest }),
       });
-      if (!planned.ok) {
-        return unavailable(
-          snapshot,
-          `context planner could not compose (${"code" in planned.error ? planned.error.code : "failed"}; ${CONTEXT_PLANNER_OWNER})`,
-        );
-      }
-
-      const startedTurn = await options.producer.startTurn({
-        turnId: id,
-        sessionId: options.sessionId,
-        workspaceId: options.workspaceId,
-        traceId: options.traceId,
-        configurationGeneration: options.configurationGeneration,
-      });
-      if (!startedTurn.ok) {
-        return unavailable(snapshot, `turn could not start (${startedTurn.error.code})`);
+      if (started.kind !== "completed") {
+        return unavailable(snapshot, `${started.message} (${started.code})`);
       }
 
       return { kind: "accepted", snapshot };
