@@ -99,6 +99,11 @@ export type ReplayTurnEventsOutcome =
 
 export type TurnEventJournal = {
   /**
+   * Observe events after the store has accepted them. The journal remains the
+   * ordering authority; subscribers only project committed facts.
+   */
+  subscribe(listener: (events: readonly RuntimeEvent[]) => void): () => void;
+  /**
    * Appends lifecycle facts in order. Duplicate idempotency keys are receipts,
    * not failures — retries never create a second effect record.
    */
@@ -123,6 +128,7 @@ export type TurnEventJournalPort = Pick<TurnEventJournal, "persist">;
 export function createTurnEventJournal(options: TurnEventJournalOptions): TurnEventJournal {
   let next: Sequence | null = null;
   const maxEvents = options.maxEvents ?? MAX_STREAM_READ_LIMIT;
+  const listeners = new Set<(events: readonly RuntimeEvent[]) => void>();
 
   function aborted(signal?: AbortSignal): boolean {
     return signal?.aborted === true;
@@ -281,6 +287,12 @@ export function createTurnEventJournal(options: TurnEventJournalOptions): TurnEv
   }
 
   return {
+    subscribe(listener) {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
     async persist(facts, signal) {
       const events: RuntimeEvent[] = [];
       const receipts: AppendReceipt[] = [];
@@ -313,6 +325,9 @@ export function createTurnEventJournal(options: TurnEventJournalOptions): TurnEv
         }
         events.push(event);
         receipts.push(appended.value);
+        for (const listener of listeners) {
+          listener([event]);
+        }
         if (appended.value.kind === "appended") {
           sequence = nextSequence(sequence);
           next = sequence;

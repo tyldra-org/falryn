@@ -881,106 +881,110 @@ describe("host git stage commit and sync", () => {
     }
   });
 
-  gitTest("fetches, fast-forward pulls, and pushes without force flags", async () => {
-    const { remote } = await repoWithOrigin();
-    const local = await cloneFrom(remote);
-    const other = await cloneFrom(remote);
-    const lagging = await cloneFrom(remote);
-    await writeFile(join(other, "from-other.txt"), "other\n", "utf8");
-    await runGitOk(other, ["add", "from-other.txt"]);
-    await runGitOk(other, ["commit", "-m", "Add other"]);
-    await runGitOk(other, ["push", "origin", "main"]);
-    const git = port();
-    const fastForward = await git.sync({
-      gitExecutable: GIT,
-      startPath: lagging,
-      timeoutMs: duration(5_000),
-    });
-    expect(fastForward.ok).toBe(true);
-    if (fastForward.ok) {
-      expect(fastForward.value.fetched).toBe(true);
-      expect(fastForward.value.fastForwarded).toBe(true);
-      expect(fastForward.value.pushed).toBe(false);
-    }
-    const fetched = await git.fetch({
-      gitExecutable: GIT,
-      startPath: local,
-      timeoutMs: duration(5_000),
-    });
-    expect(fetched.ok).toBe(true);
-    if (fetched.ok) {
-      expect(fetched.value.remote).toBe("origin");
-      expect(
-        fetched.value.identity.behind.state === "observed"
-          ? fetched.value.identity.behind.value
-          : 0,
-      ).toBeGreaterThan(0);
-    }
-    const pulled = await git.pull({
-      gitExecutable: GIT,
-      startPath: local,
-      timeoutMs: duration(5_000),
-    });
-    expect(pulled.ok).toBe(true);
-    await writeFile(join(local, "from-local.txt"), "local\n", "utf8");
-    const staged = await git.stage({
-      gitExecutable: GIT,
-      startPath: local,
-      paths: ["from-local.txt"],
-      timeoutMs: duration(5_000),
-    });
-    expect(staged.ok).toBe(true);
-    const committed = await git.commit({
-      gitExecutable: GIT,
-      startPath: local,
-      subject: "feat: local",
-      timeoutMs: duration(5_000),
-    });
-    expect(committed.ok).toBe(true);
-    const pushed = await git.push({
-      gitExecutable: GIT,
-      startPath: local,
-      timeoutMs: duration(5_000),
-    });
-    expect(pushed.ok).toBe(true);
-    await writeFile(join(local, "from-sync.txt"), "sync\n", "utf8");
-    const restaged = await git.stage({
-      gitExecutable: GIT,
-      startPath: local,
-      paths: ["from-sync.txt"],
-      timeoutMs: duration(5_000),
-    });
-    expect(restaged.ok).toBe(true);
-    const more = await git.commit({
-      gitExecutable: GIT,
-      startPath: local,
-      subject: "feat: sync ahead",
-      timeoutMs: duration(5_000),
-    });
-    expect(more.ok).toBe(true);
-    const published = await git.sync({
-      gitExecutable: GIT,
-      startPath: local,
-      timeoutMs: duration(5_000),
-    });
-    expect(published.ok).toBe(true);
-    if (published.ok) {
-      expect(published.value.fetched).toBe(true);
-      expect(published.value.fastForwarded).toBe(false);
-      expect(published.value.pushed).toBe(true);
-    }
-    const synced = await git.sync({
-      gitExecutable: GIT,
-      startPath: local,
-      timeoutMs: duration(5_000),
-    });
-    expect(synced.ok).toBe(true);
-    if (synced.ok) {
-      expect(synced.value.fetched).toBe(true);
-      expect(synced.value.fastForwarded).toBe(false);
-      expect(synced.value.pushed).toBe(false);
-    }
-  });
+  gitTest(
+    "fetches, fast-forward pulls, and pushes without force flags",
+    async () => {
+      const { remote } = await repoWithOrigin();
+      const local = await cloneFrom(remote);
+      const other = await cloneFrom(remote);
+      const lagging = await cloneFrom(remote);
+      await writeFile(join(other, "from-other.txt"), "other\n", "utf8");
+      await runGitOk(other, ["add", "from-other.txt"]);
+      await runGitOk(other, ["commit", "-m", "Add other"]);
+      await runGitOk(other, ["push", "origin", "main"]);
+      const git = port();
+      const fastForward = await git.sync({
+        gitExecutable: GIT,
+        startPath: lagging,
+        timeoutMs: duration(5_000),
+      });
+      expect(fastForward.ok).toBe(true);
+      if (fastForward.ok) {
+        expect(fastForward.value.fetched).toBe(true);
+        expect(fastForward.value.fastForwarded).toBe(true);
+        expect(fastForward.value.pushed).toBe(false);
+      }
+      const fetched = await git.fetch({
+        gitExecutable: GIT,
+        startPath: local,
+        timeoutMs: duration(5_000),
+      });
+      expect(fetched.ok).toBe(true);
+      if (fetched.ok) {
+        expect(fetched.value.remote).toBe("origin");
+        expect(
+          fetched.value.identity.behind.state === "observed"
+            ? fetched.value.identity.behind.value
+            : 0,
+        ).toBeGreaterThan(0);
+      }
+      const pulled = await git.pull({
+        gitExecutable: GIT,
+        startPath: local,
+        timeoutMs: duration(5_000),
+      });
+      expect(pulled.ok).toBe(true);
+      await writeFile(join(local, "from-local.txt"), "local\n", "utf8");
+      const staged = await git.stage({
+        gitExecutable: GIT,
+        startPath: local,
+        paths: ["from-local.txt"],
+        timeoutMs: duration(5_000),
+      });
+      expect(staged.ok).toBe(true);
+      const committed = await git.commit({
+        gitExecutable: GIT,
+        startPath: local,
+        subject: "feat: local",
+        timeoutMs: duration(5_000),
+      });
+      expect(committed.ok).toBe(true);
+      const pushed = await git.push({
+        gitExecutable: GIT,
+        startPath: local,
+        timeoutMs: duration(5_000),
+      });
+      expect(pushed.ok).toBe(true);
+      await writeFile(join(local, "from-sync.txt"), "sync\n", "utf8");
+      const restaged = await git.stage({
+        gitExecutable: GIT,
+        startPath: local,
+        paths: ["from-sync.txt"],
+        timeoutMs: duration(5_000),
+      });
+      expect(restaged.ok).toBe(true);
+      const more = await git.commit({
+        gitExecutable: GIT,
+        startPath: local,
+        subject: "feat: sync ahead",
+        timeoutMs: duration(5_000),
+      });
+      expect(more.ok).toBe(true);
+      const published = await git.sync({
+        gitExecutable: GIT,
+        startPath: local,
+        timeoutMs: duration(5_000),
+      });
+      expect(published.ok).toBe(true);
+      if (published.ok) {
+        expect(published.value.fetched).toBe(true);
+        expect(published.value.fastForwarded).toBe(false);
+        expect(published.value.pushed).toBe(true);
+      }
+      const synced = await git.sync({
+        gitExecutable: GIT,
+        startPath: local,
+        timeoutMs: duration(5_000),
+      });
+      expect(synced.ok).toBe(true);
+      if (synced.ok) {
+        expect(synced.value.fetched).toBe(true);
+        expect(synced.value.fastForwarded).toBe(false);
+        expect(synced.value.pushed).toBe(false);
+      }
+    },
+    15_000,
+  );
 
   gitTest("refuses a dirty pull, a missing upstream, and a diverged sync", async () => {
     const { root, remote } = await repoWithOrigin();

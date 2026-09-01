@@ -10,7 +10,10 @@
 
 import type {
   CapabilityInvocationCompletedEvent,
+  CapabilityInvocationCompletedPayload,
   CapabilityInvocationStartedEvent,
+  ExecutionProfileSelectedEvent,
+  ModelAttemptBinding,
   ModelAttemptCompletedEvent,
   ModelAttemptStartedEvent,
   RuntimeEvent,
@@ -20,6 +23,7 @@ import type {
   TurnCorrelation,
   TurnStartedEvent,
 } from "./event.ts";
+import type { ExecutionProfileCompletion, ExecutionProfileId } from "./execution-profile.ts";
 import {
   type CapabilityId,
   type EventId,
@@ -46,6 +50,14 @@ export type TurnLifecycleFact =
       readonly correlation: SessionCorrelation;
     }
   | {
+      readonly kind: "execution.profile.selected";
+      readonly correlation: SessionCorrelation;
+      readonly selectionId: string;
+      readonly profileId: ExecutionProfileId;
+      readonly profileVersion: 1;
+      readonly completion: ExecutionProfileCompletion;
+    }
+  | {
       readonly kind: "turn.started";
       readonly correlation: TurnCorrelation;
     }
@@ -58,6 +70,7 @@ export type TurnLifecycleFact =
       readonly kind: "model.attempt.started";
       readonly correlation: TurnCorrelation;
       readonly modelAttemptId: ModelAttemptId;
+      readonly binding?: ModelAttemptBinding;
     }
   | {
       readonly kind: "model.attempt.completed";
@@ -70,6 +83,8 @@ export type TurnLifecycleFact =
       readonly correlation: TurnCorrelation;
       readonly invocationId: InvocationId;
       readonly capabilityId: CapabilityId;
+      readonly capabilityVersion?: number;
+      readonly inputDigest?: string;
     }
   | {
       readonly kind: "capability.invocation.completed";
@@ -77,6 +92,8 @@ export type TurnLifecycleFact =
       readonly invocationId: InvocationId;
       readonly capabilityId: CapabilityId;
       readonly outcome: TerminalOutcome;
+      readonly observedStatus?: CapabilityInvocationCompletedPayload["observedStatus"];
+      readonly degradation?: CapabilityInvocationCompletedPayload["degradation"];
     };
 
 /**
@@ -89,6 +106,8 @@ export function factIdentity(fact: TurnLifecycleFact): string {
   switch (fact.kind) {
     case "session.started":
       return `session:${fact.correlation.sessionId}:started`;
+    case "execution.profile.selected":
+      return `session:${fact.correlation.sessionId}:profile:${fact.selectionId}`;
     case "turn.started":
       return `turn:${fact.correlation.turnId}:started`;
     case "turn.completed":
@@ -145,6 +164,21 @@ export function buildTurnLifecycleEvent(input: BuildTurnEventInput): RuntimeEven
       };
       return event;
     }
+    case "execution.profile.selected": {
+      const event: ExecutionProfileSelectedEvent = {
+        ...spine,
+        kind: "execution.profile.selected",
+        correlation: fact.correlation,
+        payload: {
+          selectionId: fact.selectionId,
+          profileId: fact.profileId,
+          profileVersion: fact.profileVersion,
+          completion: fact.completion,
+          applicationClass: "next-turn",
+        },
+      };
+      return event;
+    }
     case "turn.started": {
       const event: TurnStartedEvent = {
         ...spine,
@@ -169,7 +203,7 @@ export function buildTurnLifecycleEvent(input: BuildTurnEventInput): RuntimeEven
         kind: "model.attempt.started",
         modelAttemptId: fact.modelAttemptId,
         correlation: fact.correlation,
-        payload: {},
+        payload: fact.binding === undefined ? {} : { binding: fact.binding },
       };
       return event;
     }
@@ -190,7 +224,12 @@ export function buildTurnLifecycleEvent(input: BuildTurnEventInput): RuntimeEven
         invocationId: fact.invocationId,
         capabilityId: fact.capabilityId,
         correlation: fact.correlation,
-        payload: {},
+        payload: {
+          ...(fact.capabilityVersion === undefined
+            ? {}
+            : { capabilityVersion: fact.capabilityVersion }),
+          ...(fact.inputDigest === undefined ? {} : { inputDigest: fact.inputDigest }),
+        },
       };
       return event;
     }
@@ -201,7 +240,11 @@ export function buildTurnLifecycleEvent(input: BuildTurnEventInput): RuntimeEven
         invocationId: fact.invocationId,
         capabilityId: fact.capabilityId,
         correlation: fact.correlation,
-        payload: { outcome: fact.outcome },
+        payload: {
+          outcome: fact.outcome,
+          ...(fact.observedStatus === undefined ? {} : { observedStatus: fact.observedStatus }),
+          ...(fact.degradation === undefined ? {} : { degradation: fact.degradation }),
+        },
       };
       return event;
     }
@@ -215,6 +258,7 @@ export type ReplayedAttempt = {
   readonly startedAt: Timestamp | null;
   readonly completedAt: Timestamp | null;
   readonly outcome: TerminalOutcome | null;
+  readonly binding: ModelAttemptBinding | null;
 };
 
 export type ReplayedInvocation = {
@@ -223,6 +267,8 @@ export type ReplayedInvocation = {
   readonly startedAt: Timestamp | null;
   readonly completedAt: Timestamp | null;
   readonly outcome: TerminalOutcome | null;
+  readonly observedStatus: CapabilityInvocationCompletedPayload["observedStatus"] | null;
+  readonly degradation: CapabilityInvocationCompletedPayload["degradation"] | null;
 };
 
 /**
@@ -244,6 +290,14 @@ export type ReplayedTurn = {
 export type TurnEventReduction = {
   readonly sessionStarted: boolean;
   readonly sessionCorrelation: SessionCorrelation | null;
+  readonly selectedExecutionProfile: ExecutionProfileId | null;
+  readonly executionProfileSelections: readonly {
+    readonly selectionId: string;
+    readonly profileId: ExecutionProfileId;
+    readonly profileVersion: 1;
+    readonly completion: ExecutionProfileCompletion;
+    readonly occurredAt: Timestamp;
+  }[];
   readonly turns: readonly ReplayedTurn[];
 };
 
@@ -252,6 +306,7 @@ type MutableAttempt = {
   startedAt: Timestamp | null;
   completedAt: Timestamp | null;
   outcome: TerminalOutcome | null;
+  binding: ModelAttemptBinding | null;
 };
 
 type MutableInvocation = {
@@ -260,6 +315,8 @@ type MutableInvocation = {
   startedAt: Timestamp | null;
   completedAt: Timestamp | null;
   outcome: TerminalOutcome | null;
+  observedStatus: CapabilityInvocationCompletedPayload["observedStatus"] | null;
+  degradation: CapabilityInvocationCompletedPayload["degradation"] | null;
 };
 
 type MutableTurn = {
@@ -283,6 +340,14 @@ type MutableTurn = {
 export function reduceTurnEvents(events: readonly RuntimeEvent[]): TurnEventReduction {
   let sessionStarted = false;
   let sessionCorrelation: SessionCorrelation | null = null;
+  let selectedExecutionProfile: ExecutionProfileId | null = null;
+  const executionProfileSelections: Array<{
+    selectionId: string;
+    profileId: ExecutionProfileId;
+    profileVersion: 1;
+    completion: ExecutionProfileCompletion;
+    occurredAt: Timestamp;
+  }> = [];
   const turns = new Map<TurnId, MutableTurn>();
   const turnOrder: TurnId[] = [];
 
@@ -291,6 +356,16 @@ export function reduceTurnEvents(events: readonly RuntimeEvent[]): TurnEventRedu
       case "session.started":
         sessionStarted = true;
         sessionCorrelation = event.correlation;
+        break;
+      case "execution.profile.selected":
+        selectedExecutionProfile = event.payload.profileId;
+        executionProfileSelections.push({
+          selectionId: event.payload.selectionId,
+          profileId: event.payload.profileId,
+          profileVersion: event.payload.profileVersion,
+          completion: event.payload.completion,
+          occurredAt: event.occurredAt,
+        });
         break;
       case "turn.started": {
         const id = event.correlation.turnId;
@@ -326,11 +401,13 @@ export function reduceTurnEvents(events: readonly RuntimeEvent[]): TurnEventRedu
             startedAt: null,
             completedAt: null,
             outcome: null,
+            binding: null,
           };
           turn.attempts.set(event.modelAttemptId, attempt);
           turn.attemptOrder.push(event.modelAttemptId);
         }
         attempt.startedAt = event.occurredAt;
+        attempt.binding = event.payload.binding ?? null;
         break;
       }
       case "model.attempt.completed": {
@@ -342,6 +419,7 @@ export function reduceTurnEvents(events: readonly RuntimeEvent[]): TurnEventRedu
             startedAt: null,
             completedAt: null,
             outcome: null,
+            binding: null,
           };
           turn.attempts.set(event.modelAttemptId, attempt);
           turn.attemptOrder.push(event.modelAttemptId);
@@ -360,6 +438,8 @@ export function reduceTurnEvents(events: readonly RuntimeEvent[]): TurnEventRedu
             startedAt: null,
             completedAt: null,
             outcome: null,
+            observedStatus: null,
+            degradation: null,
           };
           turn.invocations.set(event.invocationId, invocation);
           turn.invocationOrder.push(event.invocationId);
@@ -378,12 +458,16 @@ export function reduceTurnEvents(events: readonly RuntimeEvent[]): TurnEventRedu
             startedAt: null,
             completedAt: null,
             outcome: null,
+            observedStatus: null,
+            degradation: null,
           };
           turn.invocations.set(event.invocationId, invocation);
           turn.invocationOrder.push(event.invocationId);
         }
         invocation.completedAt = event.occurredAt;
         invocation.outcome = event.payload.outcome;
+        invocation.observedStatus = event.payload.observedStatus ?? null;
+        invocation.degradation = event.payload.degradation ?? null;
         invocation.capabilityId = event.capabilityId;
         break;
       }
@@ -397,6 +481,8 @@ export function reduceTurnEvents(events: readonly RuntimeEvent[]): TurnEventRedu
   return {
     sessionStarted,
     sessionCorrelation,
+    selectedExecutionProfile,
+    executionProfileSelections,
     turns: turnOrder.flatMap((id) => {
       const turn = turns.get(id);
       return turn === undefined ? [] : [freezeTurn(turn)];
@@ -450,6 +536,7 @@ function freezeTurn(turn: MutableTurn): ReplayedTurn {
               startedAt: attempt.startedAt,
               completedAt: attempt.completedAt,
               outcome: attempt.outcome,
+              binding: attempt.binding,
             },
           ];
     }),
@@ -464,6 +551,8 @@ function freezeTurn(turn: MutableTurn): ReplayedTurn {
               startedAt: invocation.startedAt,
               completedAt: invocation.completedAt,
               outcome: invocation.outcome,
+              observedStatus: invocation.observedStatus,
+              degradation: invocation.degradation,
             },
           ];
     }),

@@ -48,8 +48,8 @@ export const COMMAND_RESULT_SCHEMA_VERSION = 1;
  *
  * A closed union rather than a string, so a projection switching on it is
  * exhaustive and a command cannot be rendered by a branch that was never
- * written for it. Groups whose capability does not exist are absent: a tree
- * advertising `provider` would promise behavior nothing implements.
+ * written for it. Groups whose capability does not exist are absent so help
+ * cannot promise behavior the product does not implement.
  */
 export const COMMAND_IDS = [
   /** The no-argument invocation, which prints help until #21 lands the shell. */
@@ -87,6 +87,8 @@ export const COMMAND_IDS = [
   "workspace.show",
   "workspace.save",
   "workspace.load",
+  /** Provider profile, authentication, selection, and model-catalog actions (#798). */
+  "provider",
   /** Shell completion install script (#731). */
   "completion",
   /** Headless coding entry (#708). */

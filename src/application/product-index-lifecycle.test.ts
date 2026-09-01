@@ -16,6 +16,7 @@ import {
 import { createHostFileSystem } from "../integrations/index.ts";
 import {
   composeProductIndexLifecycle,
+  createEphemeralProductIndexPort,
   PRODUCT_INDEX_LIFECYCLE_OWNER,
 } from "./product-index-lifecycle.ts";
 
@@ -36,6 +37,23 @@ function writePort(): WorkspaceIndexWritePort & {
 }
 
 describe("composeProductIndexLifecycle", () => {
+  test("exposes rebuilt ephemeral generations through the read port", async () => {
+    const index = createEphemeralProductIndexPort();
+    const root = parseLocalPath("/work/project");
+    if (!root.ok) {
+      throw new Error(root.error.code);
+    }
+    expect((await index.snapshot(root.value)).ok).toBe(false);
+    const generation: WorkspaceIndexGeneration = {
+      id: "generation-1",
+      schema: "workspace-index/v1",
+      lifecycle: "ready",
+      records: [],
+    };
+    expect((await index.rebuild(generation)).ok).toBe(true);
+    expect(await index.snapshot(root.value)).toEqual(ok(generation));
+  });
+
   test("rebuilds from workspace inventory and tags ready freshness", async () => {
     const rootDir = realpathSync(mkdtempSync(join(tmpdir(), "falryn-index-lifecycle-")));
     mkdirSync(join(rootDir, "src"), { recursive: true });

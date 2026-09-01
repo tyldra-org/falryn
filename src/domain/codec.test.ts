@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test";
 
 import { decodeRuntimeEvent, encodedByteLength, encodeRuntimeEvent } from "./codec.ts";
-import { everyEventKind, sessionStarted, turnCompleted } from "./fixtures.ts";
+import { everyEventKind, modelAttemptStarted, sessionStarted, turnCompleted } from "./fixtures.ts";
+import { capabilityId, configurationGeneration, modelId, providerId } from "./identity.ts";
 import { MAX_EVENT_BYTES, RUNTIME_EVENT_SCHEMA_VERSION } from "./limits.ts";
 import { toWireEvent } from "./wire.ts";
 
@@ -51,6 +52,136 @@ describe("round trip", () => {
         expect(size.value).toBeLessThan(MAX_EVENT_BYTES);
       }
     }
+  });
+
+  test("preserves the immutable provider and capability binding", () => {
+    const event = modelAttemptStarted();
+    const bound = {
+      ...event,
+      payload: {
+        binding: {
+          schemaVersion: 1 as const,
+          providerId: providerId.from("provider-a"),
+          modelId: modelId.from("model-a"),
+          role: "default",
+          intent: "coding",
+          reasoning: "balanced",
+          providerCatalogGeneration: 3,
+          toolCatalogGeneration: configurationGeneration.from(4),
+          policyGeneration: configurationGeneration.from(4),
+          runner: "product-attempt-runner.v1" as const,
+          gateway: "product-tool-gateway.v1" as const,
+          discoveryHandle: "capability-catalog:4",
+          opportunityPlan: {
+            schemaVersion: 1 as const,
+            planId: "capability-plan:4:0123456789abcdef01234567",
+            taskFingerprint: "0123456789abcdef01234567",
+            catalogGeneration: configurationGeneration.from(4),
+            policyGeneration: configurationGeneration.from(4),
+            profileId: "agent" as const,
+            signalledFamilies: ["read", "capability"] as const,
+            requiredFamilies: ["read", "capability"],
+            primaryFamily: "read" as const,
+            fallbackFamilies: ["capability"] as const,
+            selected: [
+              {
+                capabilityId: capabilityId.from("workspace.read_file"),
+                name: "read_file",
+                kind: "tool" as const,
+                family: "read" as const,
+                source: "builtin" as const,
+                effect: "observation" as const,
+                health: "healthy" as const,
+                decision: "selected" as const,
+                score: 100,
+                schemaTokensEstimated: 12,
+                reasons: ["task-family", "healthy"] as const,
+                diagnosticCodes: [],
+                recoveryHandles: [],
+              },
+            ],
+            fallbacks: [],
+            rejected: [],
+            omittedRejected: 0,
+            opportunities: [],
+            modelAssistance: {
+              decision: "not-needed" as const,
+              candidateIds: [],
+              reason: "deterministic-winner" as const,
+            },
+            degradation: {
+              schemaVersion: 1 as const,
+              catalogGeneration: configurationGeneration.from(4),
+              strategy: "explicit-model-continuation" as const,
+              maxRuntimeTransitions: 4,
+              transitions: [],
+              terminalOutcomes: [
+                {
+                  capabilityId: capabilityId.from("workspace.read_file"),
+                  outcome: "unavailable" as const,
+                  reason: "no-declared-fallback" as const,
+                  recoveryHandles: [],
+                },
+              ],
+            },
+            schemaTokensEstimated: 12,
+            selectionLimit: 24,
+            schemaTokenBudget: 12_000,
+            discoveryHandle: "capability-catalog:4",
+          },
+          capabilityCatalog: {
+            total: 1,
+            counts: { tool: 1 },
+            cards: [
+              {
+                capabilityId: capabilityId.from("workspace.read_file"),
+                kind: "tool",
+                family: "read",
+                source: "builtin",
+                version: 1,
+                costClass: "unknown",
+                latencyClass: "unknown",
+                available: true,
+                executable: true,
+                disclosed: true,
+                health: "healthy",
+                selected: true,
+                projected: false,
+                diagnosticCodes: [],
+              },
+            ],
+          },
+          families: [{ family: "read", available: true, reason: null }],
+          tools: [
+            {
+              name: "read_file",
+              capabilityId: capabilityId.from("workspace.read_file"),
+              version: 1,
+              schemaDigest: "sha-256:read",
+              schemaBytes: 48,
+              schemaTokensEstimated: 12,
+            },
+          ],
+          omitted: [{ name: "write_files", reason: "confirmation unavailable" }],
+          schemaBytes: 48,
+          schemaTokensEstimated: 12,
+          budgets: {
+            attempts: 2,
+            inputTokens: 8_000,
+            outputTokens: 2_000,
+            wallTimeMs: 30_000,
+            cost: null,
+          },
+        },
+      },
+    };
+    const encoded = encodeRuntimeEvent(bound);
+    expect(encoded.ok).toBe(true);
+    if (!encoded.ok) {
+      return;
+    }
+    const decoded = decodeRuntimeEvent(encoded.value);
+    expect(decoded).toEqual({ ok: true, value: bound });
   });
 });
 

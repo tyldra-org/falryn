@@ -72,7 +72,7 @@ const GROUP_ACTIONS: Readonly<Record<string, readonly string[]>> = {
 const GROUP_OPTIONS: Readonly<Record<string, readonly string[]>> = {
   config: ["--file-scope", "--revision"],
   data: ["--class", "--confirm", "--pinned-session"],
-  run: ["--brief"],
+  run: ["--brief", "--hush", "--loom", "--mode"],
   export: ["--session", "--after", "--before", "--include-sensitive", "--name", "--write"],
   task: [
     "--statement",
@@ -111,7 +111,10 @@ const GROUP_OPTIONS: Readonly<Record<string, readonly string[]>> = {
 const OPTION_CHOICES: Readonly<Record<string, readonly string[]>> = {
   "--format": OUTPUT_FORMATS,
   "--color": COLOR_CHOICES,
-  "--brief": ["compact", "balanced", "detailed", "auto"],
+  "--brief": ["compact", "balanced", "detailed", "auto", "on", "off"],
+  "--hush": ["on", "off"],
+  "--loom": ["on", "off"],
+  "--mode": ["ask", "plan", "debug", "agent"],
   "--file-scope": ["user", "project", "profile"],
   "--filter": SESSION_CATALOG_FILTERS,
   "--replay-action": SESSION_REPLAY_ACTIONS,
@@ -160,6 +163,9 @@ const VALUE_OPTIONS = new Set([
   "--seek-sequence",
   "--output",
   "--brief",
+  "--hush",
+  "--loom",
+  "--mode",
 ]);
 
 const bashTemplate = `###-begin-{{app_name}}-completions-###

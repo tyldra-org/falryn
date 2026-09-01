@@ -22,6 +22,7 @@ import {
   type ContentDigest,
   type ContentHasherPort,
   commitLoomManifest,
+  completeLoomRetrieval,
   contentDigest,
   createLoomCache,
   DEFAULT_LOOM_STRATEGY,
@@ -29,15 +30,17 @@ import {
   type EvidenceCandidate,
   type EvidenceCandidateInput,
   err,
+  type LoomArtifactReadPlan,
   type LoomCache,
   type LoomError,
   type LoomInvalidation,
   type LoomManifest,
   type LoomProjectionResult,
+  type LoomProjectionSource,
   type LoomRetrieveInput,
   ok,
+  planLoomRetrieval,
   type Result,
-  retrieveLoomProjection,
   timestampFromEpochMilliseconds,
 } from "../domain/index.ts";
 import { containsRedactableSecret, redactText } from "./redaction.ts";
@@ -64,6 +67,26 @@ export type LoomIngestRequest = {
   readonly invocationId?: string | null;
 };
 
+export type LoomAdoptMember = {
+  readonly artifactId: string;
+  readonly required?: boolean;
+  readonly protectedFacts?: readonly string[];
+  readonly summary?: string;
+};
+
+/**
+ * Commits a Loom manifest from artifact metadata that is already durable.
+ * Adoption never reads or re-ingests artifact bytes.
+ */
+export type LoomAdoptRequest = {
+  readonly id: string;
+  readonly workspaceId: string;
+  readonly sessionId: string;
+  readonly members: readonly LoomAdoptMember[];
+  readonly generation?: string;
+  readonly retentionUntil?: string;
+};
+
 export type LoomRetrieveRequest = {
   readonly id: string;
   readonly manifestId: string;
@@ -88,13 +111,17 @@ export type LoomPortError =
   | EvidenceAdmissionError
   | {
       readonly kind: "loom-port";
-      readonly code: "cancelled" | "unavailable" | "secret";
+      readonly code: "cancelled" | "conflict" | "unavailable" | "secret";
       readonly field: "signal" | "manifest" | "member" | "projection";
     };
 
 export type LoomPort = {
   ingest(
     request: LoomIngestRequest,
+    signal?: AbortSignal,
+  ): Promise<Result<LoomIngestResult, LoomPortError>>;
+  adopt(
+    request: LoomAdoptRequest,
     signal?: AbortSignal,
   ): Promise<Result<LoomIngestResult, LoomPortError>>;
   retrieve(
@@ -109,12 +136,24 @@ export type LoomPortOptions = {
   readonly artifacts: ArtifactStorePort;
   readonly hasher?: ContentHasherPort;
   readonly cache?: LoomCache;
+  readonly manifests?: LoomManifestPersistencePort;
+};
+
+export type LoomManifestPersistencePort = {
+  get(
+    id: string,
+  ): Result<LoomManifest | null, { readonly code: "conflict" | "malformed" | "unavailable" }>;
+  insert(
+    manifest: LoomManifest,
+  ): Result<null, { readonly code: "conflict" | "malformed" | "unavailable" }>;
 };
 
 export type LoomEvidenceRequest = {
   readonly projection: LoomProjectionResult;
   readonly workspaceId?: string;
   readonly scopeId?: string;
+  readonly sourceKind?: "artifact" | "file";
+  readonly origin?: string;
 };
 
 function createSha256Hasher(): ContentHasherPort {
@@ -162,6 +201,151 @@ function applyRedaction(result: LoomProjectionResult): Result<LoomProjectionResu
 
 function malformed(field: string): LoomError {
   return { kind: "loom", code: "malformed", field };
+}
+
+function sameManifest(left: LoomManifest, right: LoomManifest): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function storeManifest(
+  manifests: Map<string, LoomManifest>,
+  manifest: LoomManifest,
+  persistence?: LoomManifestPersistencePort,
+): Result<LoomIngestResult, LoomPortError> {
+  let existing = manifests.get(manifest.id);
+  if (existing === undefined && persistence !== undefined) {
+    const loaded = persistence.get(manifest.id);
+    if (!loaded.ok) {
+      return err({ kind: "loom-port", code: "unavailable", field: "manifest" });
+    }
+    existing = loaded.value ?? undefined;
+    if (existing !== undefined) {
+      manifests.set(existing.id, existing);
+    }
+  }
+  if (existing !== undefined) {
+    return sameManifest(existing, manifest)
+      ? ok({ manifest: existing })
+      : err({ kind: "loom-port", code: "conflict", field: "manifest" });
+  }
+  if (persistence !== undefined) {
+    const stored = persistence.insert(manifest);
+    if (!stored.ok) {
+      return err({
+        kind: "loom-port",
+        code: stored.error.code === "conflict" ? "conflict" : "unavailable",
+        field: "manifest",
+      });
+    }
+  }
+  manifests.set(manifest.id, manifest);
+  return ok({ manifest });
+}
+
+function loadManifest(
+  manifests: Map<string, LoomManifest>,
+  persistence: LoomManifestPersistencePort | undefined,
+  id: string,
+): Result<LoomManifest | null, LoomPortError> {
+  const current = manifests.get(id);
+  if (current !== undefined) {
+    return ok(current);
+  }
+  if (persistence === undefined) {
+    return ok(null);
+  }
+  const loaded = persistence.get(id);
+  if (!loaded.ok) {
+    return err({ kind: "loom-port", code: "unavailable", field: "manifest" });
+  }
+  if (loaded.value !== null) {
+    manifests.set(loaded.value.id, loaded.value);
+  }
+  return loaded;
+}
+
+async function readPlannedBytes(
+  artifacts: ArtifactStorePort,
+  artifactIdValue: ReturnType<typeof artifactId.from>,
+  offset: number,
+  length: number,
+  signal?: AbortSignal,
+): Promise<Result<Uint8Array, LoomPortError>> {
+  if (isAborted(signal)) {
+    return err(cancelled("signal"));
+  }
+  if (length === 0) {
+    return ok(new Uint8Array());
+  }
+  const range = await artifacts.readRange(artifactIdValue, offset, length, signal);
+  return range.ok ? ok(range.value.bytes) : range;
+}
+
+async function readProjectionSource(
+  artifacts: ArtifactStorePort,
+  plan: LoomArtifactReadPlan,
+  signal?: AbortSignal,
+): Promise<Result<LoomProjectionSource, LoomPortError>> {
+  switch (plan.kind) {
+    case "complete": {
+      const bytes = await readPlannedBytes(
+        artifacts,
+        plan.artifactId,
+        plan.offset,
+        plan.length,
+        signal,
+      );
+      return bytes.ok
+        ? ok({ kind: "complete", artifactId: plan.artifactId, bytes: bytes.value })
+        : bytes;
+    }
+    case "range": {
+      const bytes = await readPlannedBytes(
+        artifacts,
+        plan.artifactId,
+        plan.offset,
+        plan.length,
+        signal,
+      );
+      return bytes.ok
+        ? ok({
+            kind: "range",
+            artifactId: plan.artifactId,
+            offset: plan.offset,
+            bytes: bytes.value,
+          })
+        : bytes;
+    }
+    case "head-tail": {
+      const head = await readPlannedBytes(
+        artifacts,
+        plan.artifactId,
+        plan.headOffset,
+        plan.headLength,
+        signal,
+      );
+      if (!head.ok) {
+        return head;
+      }
+      const tail = await readPlannedBytes(
+        artifacts,
+        plan.artifactId,
+        plan.tailOffset,
+        plan.tailLength,
+        signal,
+      );
+      return tail.ok
+        ? ok({
+            kind: "head-tail",
+            artifactId: plan.artifactId,
+            headOffset: plan.headOffset,
+            headBytes: head.value,
+            tailOffset: plan.tailOffset,
+            tailBytes: tail.value,
+          })
+        : tail;
+    }
+  }
 }
 
 export function createLoomPort(options: LoomPortOptions): LoomPort {
@@ -252,23 +436,104 @@ export function createLoomPort(options: LoomPortOptions): LoomPort {
       if (!committed.ok) {
         return committed;
       }
-      manifests.set(committed.value.id, committed.value);
-      return ok({ manifest: committed.value });
+      return storeManifest(manifests, committed.value, options.manifests);
+    },
+
+    async adopt(request, signal) {
+      if (isAborted(signal)) {
+        return err(cancelled("signal"));
+      }
+      const committedMembers: Array<{
+        artifactId: string;
+        digest: ContentDigest;
+        byteLength: number;
+        mediaType: string;
+        encoding: ArtifactEncoding;
+        sensitivity: ArtifactSensitivity;
+        availability: "available";
+        required: boolean;
+        protectedFacts: readonly string[];
+        summary: string | null;
+      }> = [];
+      for (const member of request.members) {
+        if (isAborted(signal)) {
+          return err(cancelled("signal"));
+        }
+        const required = member.required !== false;
+        const id = artifactId.parse(member.artifactId);
+        if (!id.ok) {
+          if (required) {
+            return err(malformed("artifactId"));
+          }
+          continue;
+        }
+        const record = options.artifacts.get(id.value);
+        if (!record.ok) {
+          if (required) {
+            return record;
+          }
+          continue;
+        }
+        if (record.value === null || record.value.availability !== "available") {
+          if (required) {
+            return err({ kind: "loom-port", code: "unavailable", field: "member" });
+          }
+          continue;
+        }
+        if (record.value.sensitivity === "restricted") {
+          return err({ kind: "loom-port", code: "secret", field: "member" });
+        }
+        committedMembers.push({
+          artifactId: record.value.artifactId,
+          digest: record.value.digest,
+          byteLength: record.value.byteLength,
+          mediaType: record.value.mediaType,
+          encoding: record.value.encoding,
+          sensitivity: record.value.sensitivity,
+          availability: "available",
+          required,
+          protectedFacts: member.protectedFacts ?? [],
+          summary: member.summary ?? null,
+        });
+      }
+      const commitInput: {
+        id: string;
+        workspaceId: string;
+        sessionId: string;
+        members: typeof committedMembers;
+        generation?: string;
+        retentionUntil?: string;
+      } = {
+        id: request.id,
+        workspaceId: request.workspaceId,
+        sessionId: request.sessionId,
+        members: committedMembers,
+      };
+      if (request.generation !== undefined) {
+        commitInput.generation = request.generation;
+      }
+      if (request.retentionUntil !== undefined) {
+        commitInput.retentionUntil = request.retentionUntil;
+      }
+      const committed = commitLoomManifest(commitInput);
+      return committed.ok
+        ? storeManifest(manifests, committed.value, options.manifests)
+        : committed;
     },
 
     async retrieve(request, signal) {
       if (isAborted(signal)) {
         return err(cancelled("signal"));
       }
-      const manifest = manifests.get(request.manifestId);
-      if (manifest === undefined) {
+      const loadedManifest = loadManifest(manifests, options.manifests, request.manifestId);
+      if (!loadedManifest.ok) {
+        return loadedManifest;
+      }
+      const manifest = loadedManifest.value;
+      if (manifest === null) {
         return err({ kind: "loom-port", code: "unavailable", field: "manifest" });
       }
-      const members: Array<{
-        artifactId: string;
-        bytes: Uint8Array | null;
-        availability: string;
-      }> = [];
+      const members: LoomRetrieveInput["members"][number][] = [];
       for (const member of manifest.members) {
         if (isAborted(signal)) {
           return err(cancelled("signal"));
@@ -278,20 +543,11 @@ export function createLoomPort(options: LoomPortOptions): LoomPort {
           members.push({ artifactId: member.artifactId, bytes: null, availability: "missing" });
           continue;
         }
-        const range = await options.artifacts.readRange(
-          member.artifactId,
-          0,
-          record.value.byteLength,
-          signal,
-        );
-        if (!range.ok) {
-          members.push({ artifactId: member.artifactId, bytes: null, availability: "missing" });
-          continue;
-        }
         members.push({
           artifactId: member.artifactId,
-          bytes: range.value.bytes,
           availability: record.value.availability,
+          digest: record.value.digest,
+          byteLength: record.value.byteLength,
         });
       }
       const retrieveInput: LoomRetrieveInput = {
@@ -308,7 +564,21 @@ export function createLoomPort(options: LoomPortOptions): LoomPort {
         now: request.now ?? timestampFromEpochMilliseconds(Date.now()),
         ...(request.generation === undefined ? {} : { generation: request.generation }),
       };
-      const retrieved = retrieveLoomProjection(retrieveInput, hasher, cache);
+      const planned = planLoomRetrieval(retrieveInput, cache);
+      if (!planned.ok) {
+        return planned;
+      }
+      if (planned.value.cached !== null) {
+        return applyRedaction(planned.value.cached);
+      }
+      const source = await readProjectionSource(options.artifacts, planned.value.read, signal);
+      if (!source.ok) {
+        return source;
+      }
+      if (isAborted(signal)) {
+        return err(cancelled("signal"));
+      }
+      const retrieved = completeLoomRetrieval(planned.value, source.value, hasher, cache);
       if (!retrieved.ok) {
         return retrieved;
       }
@@ -316,7 +586,8 @@ export function createLoomPort(options: LoomPortOptions): LoomPort {
     },
 
     get(id) {
-      return manifests.get(id) ?? null;
+      const loaded = loadManifest(manifests, options.manifests, id);
+      return loaded.ok ? loaded.value : null;
     },
 
     invalidate(filter) {
@@ -341,8 +612,8 @@ export function loomProjectionToEvidence(
       : { kind: "inline", text: projection.text };
   return admitEvidenceCandidate({
     id: projection.id,
-    sourceKind: "artifact",
-    origin: `loom:${projection.manifestId}`,
+    sourceKind: request.sourceKind ?? "artifact",
+    origin: request.origin ?? `loom:${projection.manifestId}`,
     payload,
     estimatedTokens: Math.max(1, Math.ceil(projection.byteLength / 4)),
     freshness: projection.freshness,

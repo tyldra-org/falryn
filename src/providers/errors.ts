@@ -31,6 +31,8 @@ export type ProviderFailure = {
   readonly kind: ProviderFailureKind;
   /** Whether a caller may retry this attempt without inspecting effects. */
   readonly retryable: boolean;
+  /** Provider-declared delay before a retry. Missing remains unknown. */
+  readonly retryAfterMs?: number | undefined;
   /**
    * User-safe summary. Never includes headers, URLs with credentials, prompts,
    * or secret material.

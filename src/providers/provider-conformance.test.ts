@@ -31,6 +31,7 @@ import {
   type ProviderProfile,
   parseModelPolicy,
   parseModelRequest,
+  providerModelIdentityKey,
   type RoutedCatalogEntry,
   type RoutingReceipt,
   redactProviderDiagnosticText,
@@ -49,6 +50,7 @@ const primary = providerId.from("demo-provider");
 const secondary = providerId.from("demo-fallback");
 const fast = modelId.from("demo-fast");
 const vision = modelId.from("demo-vision");
+const deterministicDestination = "falryn:deterministic:default";
 
 function demoProfile(overrides: Partial<ProviderProfile> = {}): ProviderProfile {
   return {
@@ -64,6 +66,8 @@ function demoProfile(overrides: Partial<ProviderProfile> = {}): ProviderProfile 
     discovery: "static",
     timeouts: { connectMs: 5_000, requestMs: 30_000 },
     ...overrides,
+    transportCompatibility: overrides.transportCompatibility ?? null,
+    modelCapabilities: overrides.modelCapabilities ?? [],
   };
 }
 
@@ -81,12 +85,14 @@ function samplePolicy(): ModelPolicy {
   const parsed = parseModelPolicy({
     roles: {
       default: {
+        providerProfileId: "conformance",
         providerId: primary,
         modelId: fast,
         reasoning: "minimal",
-        fallbacks: [{ providerId: secondary, modelId: fast }],
+        fallbacks: [{ providerProfileId: "fallback", providerId: secondary, modelId: fast }],
       },
       vision: {
+        providerProfileId: "conformance",
         providerId: primary,
         modelId: vision,
         use: "fallback",
@@ -103,22 +109,42 @@ function catalogs(): readonly RoutedCatalogEntry[] {
   return [
     {
       providerId: primary,
+      profileId: "conformance",
+      adapterKind: "deterministic",
+      destinationId: deterministicDestination,
+      requestInputModalities: ["text", "image"],
       catalog: catalogFor([
         {
+          schemaVersion: 1,
           modelId: fast,
-          modalities: ["text"],
-          tools: true,
-          streaming: true,
-          reasoning: false,
+          displayName: null,
+          inputModalities: ["text"],
+          outputModalities: ["text"],
+          tools: "supported",
+          structuredOutput: "supported",
+          streaming: "supported",
+          reasoning: "unsupported",
+          reasoningControls: [],
+          completeness: "complete",
+          availability: "available",
+          provenance: ["profile-declaration"],
           contextTokens: 8_000,
           outputTokens: 2_000,
         },
         {
+          schemaVersion: 1,
           modelId: vision,
-          modalities: ["text", "image"],
-          tools: true,
-          streaming: true,
-          reasoning: false,
+          displayName: null,
+          inputModalities: ["text", "image"],
+          outputModalities: ["text"],
+          tools: "supported",
+          structuredOutput: "supported",
+          streaming: "supported",
+          reasoning: "unsupported",
+          reasoningControls: [],
+          completeness: "complete",
+          availability: "available",
+          provenance: ["profile-declaration"],
           contextTokens: 8_000,
           outputTokens: 2_000,
         },
@@ -126,14 +152,26 @@ function catalogs(): readonly RoutedCatalogEntry[] {
     },
     {
       providerId: secondary,
+      profileId: "fallback",
+      adapterKind: "deterministic",
+      destinationId: deterministicDestination,
+      requestInputModalities: ["text"],
       catalog: catalogFor(
         [
           {
+            schemaVersion: 1,
             modelId: fast,
-            modalities: ["text"],
-            tools: true,
-            streaming: true,
-            reasoning: false,
+            displayName: null,
+            inputModalities: ["text"],
+            outputModalities: ["text"],
+            tools: "supported",
+            structuredOutput: "supported",
+            streaming: "supported",
+            reasoning: "unsupported",
+            reasoningControls: [],
+            completeness: "complete",
+            availability: "available",
+            provenance: ["profile-declaration"],
             contextTokens: 8_000,
             outputTokens: 2_000,
           },
@@ -440,11 +478,19 @@ describe("provider conformance: discovery modalities and provenance", () => {
       expiresAt: null,
       models: [
         {
+          schemaVersion: 1,
           modelId: vision,
-          modalities: ["text", "image"],
-          tools: true,
-          streaming: true,
-          reasoning: false,
+          displayName: null,
+          inputModalities: ["text", "image"],
+          outputModalities: ["text"],
+          tools: "supported",
+          structuredOutput: "supported",
+          streaming: "supported",
+          reasoning: "unsupported",
+          reasoningControls: [],
+          completeness: "complete",
+          availability: "available",
+          provenance: ["profile-declaration"],
           contextTokens: 8_000,
           outputTokens: 2_000,
         },
@@ -461,7 +507,9 @@ describe("provider conformance: discovery modalities and provenance", () => {
     expect(outcome.kind).toBe("catalog");
     if (outcome.kind === "catalog") {
       expect(outcome.catalog.provenance).toBe("remote-discovery");
-      expect(outcome.catalog.models[0]?.modalities).toContain("image");
+      expect(
+        outcome.catalog.models.find((model) => model.modelId === vision)?.inputModalities,
+      ).toContain("image");
     }
   });
 });
@@ -484,6 +532,8 @@ describe("provider conformance: routing receipt and non-recursive fallback", () 
     expect(receipt.fallbackPosition).toBe(0);
     expect(receipt.catalogProvenance).toBe("static-config");
     expect(receipt.providerId).toBe(primary);
+    expect(receipt.providerProfileId).toBe("conformance");
+    expect(receipt.providerAdapterKind).toBe("deterministic");
     expect(receipt.modelId).toBe(fast);
 
     const second = resolveNextFallback({ policy, catalogs: catalogs(), intent: "coding" }, receipt);
@@ -508,7 +558,13 @@ describe("provider conformance: routing receipt and non-recursive fallback", () 
       policy,
       catalogs: catalogs(),
       intent: "coding",
-      visited: new Set([`${primary}\0${fast}`]),
+      visited: new Set([
+        providerModelIdentityKey({
+          providerProfileId: "conformance",
+          providerId: primary,
+          modelId: fast,
+        }),
+      ]),
     });
     expect(recursive.kind).toBe("no-eligible-route");
     if (recursive.kind === "no-eligible-route") {

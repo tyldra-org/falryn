@@ -13,6 +13,15 @@ export { createArtifactReader } from "./artifact-read.ts";
 export type { ArtifactViewer } from "./artifact-view.ts";
 export { createArtifactViewer } from "./artifact-view.ts";
 export type {
+  AuthorizedLoginAdapterBinding,
+  AuthorizedLoginAdapterRegistry,
+  AuthorizedLoginAdapterResolution,
+  AuthorizedLoginRegistrySnapshot,
+} from "./authorized-login-registry.ts";
+export { createAuthorizedLoginAdapterRegistry } from "./authorized-login-registry.ts";
+export type { AuthorizedProviderLoginOptions } from "./authorized-provider-login.ts";
+export { createAuthorizedProviderLogin } from "./authorized-provider-login.ts";
+export type {
   BoundedQueue,
   BoundedQueueOptions,
   EnqueueRequest,
@@ -24,8 +33,52 @@ export type {
   BriefComposerResult,
 } from "./brief.ts";
 export { briefSection, createBriefComposer } from "./brief.ts";
+export type {
+  CavemanIntensity,
+  CavemanPolicyError,
+  CavemanSourcePort,
+  PinnedCavemanPolicy,
+} from "./brief-comparison.ts";
+export {
+  CAVEMAN_ADAPTER_VERSION,
+  CAVEMAN_INTENSITIES,
+  CAVEMAN_PINNED_COMMIT,
+  CAVEMAN_PINNED_SKILL_DIGEST,
+  CAVEMAN_PINNED_SKILL_PATH,
+  loadPinnedCavemanPolicy,
+} from "./brief-comparison.ts";
 export type { BudgetLedger } from "./budget-ledger.ts";
 export { createBudgetLedger, MAX_BUDGET_DEPTH } from "./budget-ledger.ts";
+export type {
+  CapabilityProbeError,
+  CapabilityProbePort,
+  CapabilityProbeResult,
+  InspectProductCapabilityHealthOptions,
+} from "./capability-health.ts";
+export {
+  DEFAULT_CAPABILITY_PROBE_TIMEOUT_MS,
+  DEFAULT_CAPABILITY_PROBE_TTL_MS,
+  inspectProductCapabilityHealth,
+  MAX_CAPABILITY_PROBE_CONCURRENCY,
+  MAX_CAPABILITY_PROBE_TIMEOUT_MS,
+  MAX_CAPABILITY_PROBE_TTL_MS,
+  MAX_CAPABILITY_PROBES,
+} from "./capability-health.ts";
+export type {
+  CapabilityDoctorFinding,
+  CapabilityDoctorInspection,
+  CapabilityInspector,
+  CapabilityInspectorError,
+  CapabilityPermissionFact,
+  CapabilityPermissionsInspection,
+  CapabilityToolsInspection,
+} from "./capability-inspector.ts";
+export {
+  CAPABILITY_INSPECTOR_SCHEMA_VERSION,
+  createCapabilityInspector,
+  MAX_CAPABILITIES_PER_DOCTOR_FINDING,
+  MAX_CAPABILITY_DOCTOR_FINDINGS,
+} from "./capability-inspector.ts";
 export type { CompactDocumentReader } from "./compact-document-read.ts";
 export { createCompactDocumentReader } from "./compact-document-read.ts";
 export type {
@@ -77,6 +130,8 @@ export {
 } from "./debug-adapter.ts";
 export type { DiagnosticsCollector, EmitOutcome, EmitRequest } from "./diagnostics-collector.ts";
 export { createDiagnosticsCollector, DIAGNOSTICS_OWNERSHIP } from "./diagnostics-collector.ts";
+export type { MemoryPersistencePort } from "./durable-memory-records.ts";
+export { createDurableMemoryRecords } from "./durable-memory-records.ts";
 export type { ErrorContext } from "./error-translation.ts";
 export {
   adoptForeignError,
@@ -151,10 +206,13 @@ export {
   workspaceFolderSyncSnapshot,
 } from "./language-server-workspace.ts";
 export type {
+  LoomAdoptMember,
+  LoomAdoptRequest,
   LoomEvidenceRequest,
   LoomIngestMember,
   LoomIngestRequest,
   LoomIngestResult,
+  LoomManifestPersistencePort,
   LoomPort,
   LoomPortError,
   LoomPortOptions,
@@ -175,6 +233,14 @@ export type { MemoryRecords } from "./memory-record.ts";
 export { createMemoryRecords } from "./memory-record.ts";
 export type { MidTurnInputService, MidTurnInputServiceOptions } from "./mid-turn-input.ts";
 export { createMidTurnInputService, describeMidTurnClassifyError } from "./mid-turn-input.ts";
+export type {
+  UserModelCatalogLoadError,
+  UserModelCatalogLoaderOptions,
+} from "./model-catalogs.ts";
+export {
+  createUserCatalogModelDiscovery,
+  loadUserModelCatalogs,
+} from "./model-catalogs.ts";
 export type { NotebookReader } from "./notebook-read.ts";
 export { createNotebookReader } from "./notebook-read.ts";
 export type { PdfReader } from "./pdf-read.ts";
@@ -190,12 +256,48 @@ export type {
   ProductAgentSessionIds,
 } from "./product-agent-runtime.ts";
 export { composeProductAgentRuntime } from "./product-agent-runtime.ts";
-export type { ProductBriefControls, ProductBriefControlsOptions } from "./product-brief.ts";
-export {
-  composeProductBriefControls,
-  describeBriefVerbosityModes,
-  PRODUCT_BRIEF_OWNER,
+export type { ProductAttemptRunnerOptions } from "./product-attempt-runner.ts";
+export { createProductAttemptRunner } from "./product-attempt-runner.ts";
+export type {
+  ProductBriefContextState,
+  ProductBriefControls,
+  ProductBriefControlsOptions,
+  ProductBriefFrontendMode,
+  ProductBriefMode,
+  ProductBriefModeError,
+  ProductBriefTurnInput,
 } from "./product-brief.ts";
+export {
+  briefNeedAfterContext,
+  briefNeedAfterToolResults,
+  classifyProductBriefComplexity,
+  composeProductBriefControls,
+  deriveProductBriefNeed,
+  describeBriefVerbosityModes,
+  isProductBriefFrontendMode,
+  isProductBriefMode,
+  PRODUCT_BRIEF_FRONTEND_MODES,
+  PRODUCT_BRIEF_MODES,
+  PRODUCT_BRIEF_OWNER,
+  productBriefModeFromFrontend,
+} from "./product-brief.ts";
+export {
+  capabilityEntryFromTool,
+  capabilityFamilyForTool,
+  createProductCapabilityRegistry,
+} from "./product-capability-registry.ts";
+export type {
+  ProductContextReceipt,
+  ProductContextSource,
+  ProductContextSourceOptions,
+  ProductPreparedContext,
+} from "./product-context-source.ts";
+export {
+  createProductContextSource,
+  createUnavailableProductContextSource,
+  MAX_PRODUCT_CONTEXT_QUERIES,
+  PRODUCT_CONTEXT_SOURCE_OWNER,
+} from "./product-context-source.ts";
 export type {
   ProductCredentialBundle,
   ProductCredentialPorts,
@@ -211,14 +313,27 @@ export {
   projectHushForHarness,
 } from "./product-hush-projection.ts";
 export type {
+  EphemeralProductIndexPort,
   ProductIndexLifecycle,
   ProductIndexLifecyclePorts,
   ProductIndexLifecycleStatus,
 } from "./product-index-lifecycle.ts";
 export {
   composeProductIndexLifecycle,
+  createEphemeralProductIndexPort,
   PRODUCT_INDEX_LIFECYCLE_OWNER,
 } from "./product-index-lifecycle.ts";
+export type {
+  ProductExecutionProfileControls,
+  ProductExecutionProfileSelection,
+  ProductLiveTurnExecutor,
+  ProductLiveTurnExecutorOptions,
+  ProductLiveTurnInput,
+  ProductLiveTurnResult,
+  ProductModelSelection,
+  ProductModelSelectionControls,
+} from "./product-live-turn.ts";
+export { createProductLiveTurnExecutor, productModelPolicy } from "./product-live-turn.ts";
 export type {
   ProductLoomContext,
   ProductLoomContextPorts,
@@ -226,11 +341,80 @@ export type {
 } from "./product-loom.ts";
 export { composeProductLoomContext, PRODUCT_LOOM_OWNER } from "./product-loom.ts";
 export type {
+  ProductMemoryAdmissionResult,
+  ProductMemoryRecallResult,
   ProductMemoryTurn,
   ProductMemoryTurnPorts,
-  ProductMemoryTurnResult,
 } from "./product-memory-turn.ts";
 export { composeProductMemoryTurn } from "./product-memory-turn.ts";
+export { attemptModelInputFromPrompt } from "./product-model-input.ts";
+export type { ProductOpportunityPlanOptions } from "./product-opportunity-plan.ts";
+export {
+  createProductOpportunityPlan,
+  productOpportunityIntentFamilies,
+} from "./product-opportunity-plan.ts";
+export type {
+  ProductEngineFrontendState,
+  ProductOutputControlError,
+  ProductOutputControls,
+  ProductOutputControlsOptions,
+} from "./product-output-controls.ts";
+export {
+  composeProductOutputControls,
+  PRODUCT_ENGINE_FRONTEND_STATES,
+} from "./product-output-controls.ts";
+export type {
+  ProductProcessObservation,
+  ProductProcessOutputMode,
+  ProductProcessOutputPorts,
+  ProductProcessRecoveryHandle,
+} from "./product-process-output.ts";
+export {
+  MAX_PRODUCT_PROCESS_HUSH_BYTES,
+  MAX_PRODUCT_PROCESS_MODEL_BYTES,
+  MAX_PRODUCT_PROCESS_RAW_INLINE_BYTES,
+  PRODUCT_PROCESS_OUTPUT_MODES,
+  PRODUCT_PROCESS_OUTPUT_OWNER,
+  projectProductProcessOutput,
+} from "./product-process-output.ts";
+export type {
+  ProductReadCoordinator,
+  ProductReadCoordinatorOptions,
+  ProductReadOutputMode,
+  ProductReadResult,
+} from "./product-read.ts";
+export {
+  createProductReadCoordinator,
+  DEFAULT_PRODUCT_READ_LOOM_BYTES,
+  MAX_PRODUCT_READ_CANDIDATES,
+  PRODUCT_READ_OUTPUT_MODES,
+  PRODUCT_READ_OWNER,
+  productReadInputSchema,
+} from "./product-read.ts";
+export type {
+  CapabilityDisclosureReceipt,
+  CapabilityFamilyAvailability,
+  DisclosedProductTool,
+  ModelCapabilityFamily,
+  ProductToolDisclosure,
+} from "./product-tool-disclosure.ts";
+export {
+  discloseProductTools,
+  MAX_DISCLOSED_PRODUCT_TOOLS,
+  MODEL_CAPABILITY_FAMILIES,
+  PRODUCT_TOOL_DISCLOSURE_SCHEMA_VERSION,
+} from "./product-tool-disclosure.ts";
+export type {
+  ProductToolConfirmationPort,
+  ProductToolConfirmationResult,
+  ProductToolEffectLedger,
+  ProductToolGatewayOptions,
+} from "./product-tool-gateway.ts";
+export { createProductToolGateway } from "./product-tool-gateway.ts";
+export {
+  isClosedProductToolSchema,
+  measureProductToolSchema,
+} from "./product-tool-schema.ts";
 export type {
   ProductGitToolPorts,
   ProductGitTools,
@@ -255,7 +439,7 @@ export {
   composeProductMemoryTools,
   PRODUCT_MEMORY_TOOLS_OWNER,
 } from "./product-tools-memory.ts";
-export type { ProductToolBundle } from "./product-tools-merge.ts";
+export type { ProductToolBundle, ProductToolSourceBundle } from "./product-tools-merge.ts";
 export { mergeProductToolBundles } from "./product-tools-merge.ts";
 export type {
   ProductProcessToolPorts,
@@ -265,6 +449,11 @@ export {
   composeProductProcessTools,
   PRODUCT_PROCESS_TOOLS_OWNER,
 } from "./product-tools-process.ts";
+export type { ProductScratchToolPorts, ProductScratchTools } from "./product-tools-scratch.ts";
+export {
+  composeProductScratchTools,
+  PRODUCT_SCRATCH_TOOLS_OWNER,
+} from "./product-tools-scratch.ts";
 export type {
   ProductWorkspaceToolPorts,
   ProductWorkspaceTools,
@@ -282,6 +471,22 @@ export type {
 } from "./prompt-composer.ts";
 export { createPromptComposer } from "./prompt-composer.ts";
 export { ENHANCEMENT_MODEL_OWNER, enhancePrompt } from "./prompt-enhancement.ts";
+export type {
+  AuthorizedProviderLoginPort,
+  AuthorizedProviderLoginResult,
+  ProviderConnectionAction,
+  ProviderConnectionActionResult,
+  ProviderConnectionDiscoveryView,
+  ProviderConnectionHandoffResult,
+  ProviderConnectionIssueCode,
+  ProviderConnectionService,
+  ProviderConnectionServicePorts,
+  ProviderConnectionStorePort,
+  ProviderConnectionStoreSnapshot,
+  ProviderConnectionStoreWriteResult,
+  ProviderConnectionView,
+} from "./provider-connections.ts";
+export { createProviderConnectionService } from "./provider-connections.ts";
 export type {
   ConsumeProviderStreamInput,
   ProviderStreamConsumeOutcome,
@@ -341,6 +546,15 @@ export type {
 } from "./scope-tree.ts";
 export { createScopeTree, MAX_LIVE_SCOPES, MAX_SCOPE_DEPTH } from "./scope-tree.ts";
 export type {
+  ScratchMetadata,
+  ScratchRead,
+  ScratchResourceError,
+  ScratchResourceOptions,
+  ScratchResourcePort,
+  ScratchWriteInput,
+} from "./scratch-resources.ts";
+export { createScratchResources } from "./scratch-resources.ts";
+export type {
   InspectedWorkspaceSession,
   InspectWorkspaceSessionError,
   InspectWorkspaceSessionInput,
@@ -371,6 +585,7 @@ export type {
 export { createSessionRuntime } from "./session-runtime.ts";
 export type {
   ProducerError,
+  ProducerExecutionProfileInput,
   ProducerModelAttemptInput,
   ProducerResult,
   ProducerSessionInput,
@@ -446,6 +661,7 @@ export {
   DEFAULT_TOOL_WORK_SCHEDULER_LIMITS,
 } from "./tool-work-scheduler.ts";
 export type {
+  AttemptModelInput,
   AttemptRecord,
   AttemptRunnerPort,
   AttemptRunnerRequest,

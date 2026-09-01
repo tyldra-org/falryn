@@ -6,7 +6,13 @@
 import { describe, expect, test } from "bun:test";
 
 import { createShutdownCoordinator } from "../application/shutdown-coordinator.ts";
-import { createManualClock, duration, instant, MAX_COMMAND_OUTPUT_BYTES } from "../domain/index.ts";
+import {
+  createManualClock,
+  createSystemClock,
+  duration,
+  instant,
+  MAX_COMMAND_OUTPUT_BYTES,
+} from "../domain/index.ts";
 import { createHostCommandRunner } from "./host-commands.ts";
 import {
   createOwnedProcessRegistry,
@@ -27,9 +33,8 @@ describe("owned-process shutdown participant", () => {
   });
 
   platformTest("stops an owned tree adopted through the command runner", async () => {
-    const clock = createManualClock(instant(0));
     const bundle = createOwnedProcessRegistry();
-    const coordinator = createShutdownCoordinator({ clock });
+    const coordinator = createShutdownCoordinator({ clock: createSystemClock() });
     coordinator.register(bundle.shutdownParticipant);
 
     const runner = createHostCommandRunner({ ownedProcesses: bundle.registry });
@@ -44,9 +49,7 @@ describe("owned-process shutdown participant", () => {
     });
     await Bun.sleep(20);
 
-    const pending = coordinator.shutdown({ level: "forced" });
-    await clock.runUntilIdle();
-    const report = await pending;
+    const report = await coordinator.shutdown({ level: "forced" });
 
     controller.abort();
     expect(report.unfinished).toEqual([]);

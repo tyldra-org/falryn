@@ -18,9 +18,10 @@
  *   that renders a value someone else wrote passes it through here first.
  *
  * Nothing here knows about colour, renderer handles, or layout state. It takes
- * strings and numbers and returns strings and numbers. For joined emoji it uses
- * Bun's width primitive, the same one the pinned OpenTUI renderer selects on
- * Bun, so this arithmetic remains the answer the frame actually spends.
+ * strings and numbers and returns strings and numbers. Clean display text uses
+ * Bun's native width primitive, the same one the pinned OpenTUI renderer
+ * selects on Bun, so this arithmetic remains the answer the frame actually
+ * spends without maintaining another Unicode width table in TypeScript.
  */
 
 /**
@@ -32,81 +33,28 @@
  */
 export const MAX_DISPLAY_WIDTH = 10_000;
 
-/** Characters that occupy no cell: combining marks and format controls. */
-const ZERO_WIDTH = /^[\p{Mn}\p{Me}\p{Cf}]$/u;
-
-/**
- * Code-point ranges that occupy two cells.
- *
- * The East Asian Wide and Fullwidth ranges a terminal actually double, plus the
- * emoji blocks. Deliberately a documented subset rather than the full Unicode
- * table: the whole table is a generated artifact that would have to be
- * regenerated per Unicode release, and every character outside these ranges
- * that a terminal doubles is a character this build has no case for yet.
- */
-const WIDE_RANGES: readonly (readonly [number, number])[] = [
-  [0x1100, 0x115f], // Hangul Jamo initial consonants
-  [0x2e80, 0x303e], // CJK radicals, Kangxi, CJK symbols and punctuation
-  [0x3041, 0x33ff], // Hiragana through CJK compatibility
-  [0x3400, 0x4dbf], // CJK unified ideographs extension A
-  [0x4e00, 0x9fff], // CJK unified ideographs
-  [0xa000, 0xa4cf], // Yi syllables and radicals
-  [0xac00, 0xd7a3], // Hangul syllables
-  [0xf900, 0xfaff], // CJK compatibility ideographs
-  [0xfe10, 0xfe19], // Vertical forms
-  [0xfe30, 0xfe6f], // CJK compatibility forms, small form variants
-  [0xff00, 0xff60], // Fullwidth forms
-  [0xffe0, 0xffe6], // Fullwidth signs
-  [0x1f300, 0x1f64f], // Miscellaneous symbols, pictographs, emoticons
-  [0x1f680, 0x1f6ff], // Transport and map symbols
-  [0x1f900, 0x1f9ff], // Supplemental symbols and pictographs
-  [0x20000, 0x3fffd], // CJK unified ideographs extensions B onward
-];
-
-function isWide(code: number): boolean {
-  return WIDE_RANGES.some(([low, high]) => code >= low && code <= high);
-}
-
-/**
- * The cells one character occupies.
- *
- * A control character is zero because it is not drawn — but a caller should
- * have sanitized it away before measuring anything, and this answer exists so
- * measurement of unsanitized text is merely wrong rather than unbounded.
- */
-function characterWidth(character: string): number {
-  const code = character.codePointAt(0) ?? 0;
-  if (code < 0x20 || (code >= 0x7f && code <= 0x9f)) {
-    return 0;
-  }
-  if (ZERO_WIDTH.test(character)) {
-    return 0;
-  }
-  return isWide(code) ? 2 : 1;
-}
-
 /**
  * The cells one grapheme cluster occupies.
  *
- * Most clusters retain the explicit Falryn policy above, including its
- * treatment of control text before sanitization. A zero-width-joiner cluster
- * is different: its constituent emoji are one rendered glyph, so summing
- * their code-point widths overestimates the cells the renderer consumes.
- * OpenTUI 0.5.6 delegates that measurement to `Bun.stringWidth` on Bun; using
- * the same primitive at this narrow seam keeps width, truncation, and wrapping
- * aligned with the pinned renderer without importing presentation code into the
- * domain or changing the policy for other text.
+ * A grapheme is the smallest unit any caller here can split, and Bun measures
+ * it with the same ANSI, combining-mark, wide-character, and joined-emoji rules
+ * OpenTUI uses. Calling the native primitive once per grapheme is reserved for
+ * text containing controls; ordinary text takes the one-call fast path in
+ * {@link displayWidth}.
  */
 function graphemeWidth(grapheme: string): number {
-  if (grapheme.includes("\u200d")) {
-    return Bun.stringWidth(grapheme);
-  }
+  return Bun.stringWidth(grapheme);
+}
 
-  let width = 0;
-  for (const character of grapheme) {
-    width += characterWidth(character);
+/** Whether text contains a C0, DEL, or C1 control character. */
+function containsControl(text: string): boolean {
+  for (const character of text) {
+    const code = character.codePointAt(0) ?? 0;
+    if (code < 0x20 || (code >= 0x7f && code <= 0x9f)) {
+      return true;
+    }
   }
-  return width;
+  return false;
 }
 
 /**
@@ -192,6 +140,14 @@ const WORD_SEGMENTER = new Intl.Segmenter(undefined, { granularity: "word" });
 
 /** How many terminal cells this text occupies. */
 export function displayWidth(text: string): number {
+  // Bun intentionally treats ANSI sequences as zero-width. Falryn's untrusted
+  // boundary instead makes the escape byte zero-width while the printable tail
+  // remains visible until the value is sanitized. Preserve that safety policy
+  // for control-bearing text; ordinary display text stays on Bun's native path.
+  if (!containsControl(text)) {
+    return Bun.stringWidth(text);
+  }
+
   let width = 0;
   for (const grapheme of graphemes(text)) {
     width += graphemeWidth(grapheme);

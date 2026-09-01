@@ -31,6 +31,7 @@ import type {
   FileAttachmentProbe,
   GitDashboard,
   MidTurnInputService,
+  ProductExecutionProfileControls,
 } from "../../application/index.ts";
 import type { Instant } from "../../domain/index.ts";
 import type {
@@ -66,6 +67,7 @@ import {
   type KeymapPlan,
   planKeymap,
 } from "../keymap.ts";
+import type { SessionCreationPort } from "../session-creation.ts";
 import type { SessionNavigationController } from "../session-nav/index.ts";
 import type { ThemeRequest } from "../theme/index.ts";
 import { keysOf } from "../transcript/index.ts";
@@ -139,8 +141,9 @@ export type ShellAppProps = {
   /**
    * Session, model, context, and resource facts.
    *
-   * Fixture-driven in this build: nothing produces a live session or model
-   * catalog yet. Selection is a process-local cursor over these lists.
+   * The product launch projects the selected provider's live model catalog;
+   * tests and unconfigured hosts may still supply an empty catalog. Selection
+   * is a process-local cursor over these lists.
    */
   readonly controls?: ControlCatalog;
   /** Loads artifact views for the code viewer overlay. Absent in static frames. */
@@ -152,6 +155,7 @@ export type ShellAppProps = {
   readonly workspace?: WorkspaceSetView;
   /** Application-backed session navigation (#722). */
   readonly sessionNavigationController?: SessionNavigationController;
+  readonly sessionCreation?: SessionCreationPort;
   /** Mid-turn classification while a turn is in flight (#612). */
   readonly midTurn?: MidTurnInputService;
   /** Product agent submission port (#707). Absent keeps UNAVAILABLE_SUBMISSION. */
@@ -210,6 +214,7 @@ export function ShellApp(props: ShellAppProps): ReactNode {
     ...(props.sessionNavigationController === undefined
       ? {}
       : { sessionNavigationController: props.sessionNavigationController }),
+    ...(props.sessionCreation === undefined ? {} : { sessionCreation: props.sessionCreation }),
     ...(props.midTurn === undefined ? {} : { midTurn: props.midTurn }),
     ...(props.submission === undefined ? {} : { submission: props.submission }),
   });
@@ -296,12 +301,22 @@ function ResolvedShell(
     onBodyRenderable: props.runtime.registerTranscriptBody,
   };
   const catalog = props.controls ?? EMPTY_CONTROL_CATALOG;
+  const executionProfile =
+    props.submission !== undefined && "executionProfile" in props.submission
+      ? (
+          props.submission as { executionProfile: ProductExecutionProfileControls }
+        ).executionProfile.get()
+      : null;
+  const healthMessage =
+    executionProfile === null
+      ? props.activityModel.health.headline
+      : `[${executionProfile}] ${props.activityModel.health.headline}`;
   const model: ShellModel = {
     ...props.model,
     header: projectWorkspaceHeader(
       projectHeader(props.model.header, catalog, {
         sessionId: props.runtime.state.selectedSessionId,
-        modelId: props.runtime.state.selectedModelId,
+        modelKey: props.runtime.state.selectedModelKey,
       }),
       props.runtime.commandState.hasWorkspaceSet ? props.runtime.state.workspace : null,
     ),
@@ -316,7 +331,7 @@ function ResolvedShell(
     status: {
       ...props.model.status,
       status: statusOfHealth(props.activityModel.health.level),
-      message: props.activityModel.health.headline,
+      message: healthMessage,
       ...(props.refusal !== null
         ? { status: "error" as const, message: props.refusal }
         : props.runtime.state.notice !== null
@@ -356,7 +371,8 @@ function ResolvedShell(
       onSecretEdit={props.runtime.editSecret}
       controls={catalog}
       selectedSessionId={props.runtime.state.selectedSessionId}
-      selectedModelId={props.runtime.state.selectedModelId}
+      selectedModelKey={props.runtime.state.selectedModelKey}
+      selectedProfileId={executionProfile}
       onControlSelect={(id) => {
         const overlay = props.runtime.state.overlay;
         if (overlay.kind !== "controls") {
@@ -364,8 +380,14 @@ function ResolvedShell(
         }
         if (overlay.panel === "session" || overlay.panel === "model") {
           props.runtime.selectControl(overlay.panel, id);
+          return;
+        }
+        if (overlay.panel === "profile") {
+          props.runtime.selectProfile(id);
         }
       }}
+      compression={props.runtime.compression}
+      onCompressionSelect={props.runtime.selectCompression}
       {...(props.artifactViewer === undefined ? {} : { artifactViewer: props.artifactViewer })}
       {...(props.gitDashboard === undefined ? {} : { gitDashboard: props.gitDashboard })}
       onChangesSettled={props.runtime.settleChanges}

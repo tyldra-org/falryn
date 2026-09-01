@@ -8,6 +8,8 @@
  * spill exact overflow to artifacts.
  */
 
+import { createHash, randomUUID } from "node:crypto";
+
 import type { ArtifactStorePort } from "../domain/artifact.ts";
 import type { ClockPort } from "../domain/clock.ts";
 import { createSystemClock } from "../domain/clock.ts";
@@ -43,8 +45,6 @@ export function createHostProcessCapturePort(
   const clock = options.clock ?? createSystemClock();
   const artifacts = options.artifacts ?? null;
   const ownedProcesses = options.ownedProcesses;
-  let nextId = 1;
-
   return {
     async run(
       request: ProcessCaptureRequest,
@@ -58,10 +58,10 @@ export function createHostProcessCapturePort(
         return cancelledWithoutProcess(clock, artifacts, request, listener);
       }
 
-      const captureId = processCaptureId.from(`cap-${nextId}`);
-      nextId += 1;
+      const captureId = captureIdFor(request);
       const collector = createProcessCaptureCollector({
         captureId,
+        ...(request.invocationId === undefined ? {} : { invocationId: request.invocationId }),
         limits: resolveProcessCaptureLimits(request),
         artifacts,
         listener,
@@ -167,7 +167,8 @@ async function cancelledWithoutProcess(
   listener: ProcessCaptureListener | undefined,
 ): Promise<Result<ProcessCaptureReport, ProcessCaptureError>> {
   const collector = createProcessCaptureCollector({
-    captureId: processCaptureId.from("cap-cancelled"),
+    captureId: captureIdFor(request),
+    ...(request.invocationId === undefined ? {} : { invocationId: request.invocationId }),
     limits: resolveProcessCaptureLimits(request),
     artifacts,
     listener,
@@ -175,6 +176,12 @@ async function cancelledWithoutProcess(
   const now = clock.now();
   await collector.start(0, now);
   return ok(await collector.finish({ exitCode: null, signal: null }, now, { kind: "cancelled" }));
+}
+
+function captureIdFor(request: ProcessCaptureRequest) {
+  const source = request.invocationId === undefined ? randomUUID() : String(request.invocationId);
+  const digest = createHash("sha256").update(source).digest("hex").slice(0, 32);
+  return processCaptureId.from(`cap-${digest}`);
 }
 
 async function readStream(

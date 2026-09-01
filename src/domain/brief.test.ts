@@ -15,10 +15,12 @@ import {
   DEFAULT_BRIEF_MAX_BYTES,
   DEFAULT_BRIEF_NEED,
   DEFAULT_BRIEF_POLICY,
+  decideBriefVerbosity,
   HARD_BRIEF_MAX_BYTES,
   isBriefPolicySource,
   isBriefVerbosityMode,
   projectBrief,
+  recordBriefDelivery,
   resolveBriefPolicy,
   selectBriefVerbosity,
   sessionId,
@@ -106,13 +108,56 @@ describe("brief", () => {
     expect(result.value.receipt.policySource).toBe("default");
     expect(result.value.receipt.requestedMode).toBe("balanced");
     expect(result.value.receipt.selectedVerbosity).toBe("balanced");
+    expect(result.value.receipt.selectionReasons).toEqual(["explicit-mode"]);
     expect(result.value.receipt.providerPlacementModified).toBe(false);
+    expect(result.value.receipt.delivery).toBe("prompt");
+    expect(result.value.receipt.providerResponseDensityControl).toBeNull();
     expect(result.value.receipt.preservedFacts).toEqual([]);
-    expect(result.value.guidance).toContain("Respond with balanced");
+    expect(result.value.guidance).toContain("reasoning and evidence needed to act");
     expect(result.value.concise).toBe("Brief balanced. Preserve: none.");
-    expect(result.value.expanded).toContain("Respond with balanced");
+    expect(result.value.expanded).toContain("reasoning and evidence needed to act");
     expect(result.value.receipt.byteLength).toBeGreaterThan(0);
     expect(result.value.receipt.byteLength).toBeLessThanOrEqual(DEFAULT_BRIEF_MAX_BYTES);
+    expect(result.value.semanticGuidance).toBe("");
+  });
+
+  test("records native-only and native-plus-semantic delivery without changing the policy", () => {
+    const simple = projectBrief(request({ policy: { verbosity: "compact", source: "user" } }));
+    expect(simple.ok).toBe(true);
+    if (!simple.ok) return;
+    const nativeOnly = recordBriefDelivery(
+      simple.value.receipt,
+      simple.value.semanticGuidance,
+      "low",
+    );
+    expect(nativeOnly).toMatchObject({
+      delivery: "native",
+      providerResponseDensityControl: "low",
+      byteLength: 0,
+      outputTokenBudget: 2_048,
+    });
+
+    const protectedResult = projectBrief(
+      request({
+        policy: { verbosity: "compact", source: "user" },
+        need: { failures: true, recovery: true },
+      }),
+    );
+    expect(protectedResult.ok).toBe(true);
+    if (!protectedResult.ok) return;
+    expect(protectedResult.value.semanticGuidance).toContain("failed effect");
+    expect(protectedResult.value.semanticGuidance).toContain("recovery action");
+    expect(protectedResult.value.semanticGuidance).not.toContain("shortest complete answer");
+    expect(
+      recordBriefDelivery(
+        protectedResult.value.receipt,
+        protectedResult.value.semanticGuidance,
+        "low",
+      ),
+    ).toMatchObject({
+      delivery: "native-with-semantic-prompt",
+      providerResponseDensityControl: "low",
+    });
   });
 
   test("keeps required facts in compact, concise, and expanded snapshots", () => {
@@ -147,8 +192,64 @@ describe("brief", () => {
       expect(surface).toContain("recovery");
     }
     expect(result.value.guidance).toContain("lossy");
+    expect(result.value.guidance).toContain("prohibition and risk warning verbatim");
+    expect(result.value.guidance).toContain("uncertainty wording verbatim");
+    expect(result.value.guidance).toContain("recovery action, artifact handle, command");
     expect(result.value.expanded).toContain("lossy projection as exact source");
     expect(result.value.concise).not.toBe(result.value.expanded);
+  });
+
+  test("each explicit mode gives concrete output guidance without padding", () => {
+    const expectations = {
+      compact: "shortest complete answer",
+      balanced: "reasoning and evidence needed to act",
+      detailed: "Detailed means complete, not long",
+    } as const;
+
+    for (const verbosity of ["compact", "balanced", "detailed"] as const) {
+      const result = projectBrief(
+        request({ policy: { verbosity, source: "user" }, need: { citations: true } }),
+      );
+      expect(result.ok).toBe(true);
+      if (!result.ok) continue;
+      expect(result.value.guidance).toContain(
+        verbosity === "compact" ? "Lead with outcome" : "Lead with the outcome",
+      );
+      expect(result.value.guidance).toContain(expectations[verbosity]);
+      if (verbosity === "detailed") {
+        expect(result.value.guidance).toContain(
+          "silently verify every supplied fact, constraint, and relationship is present",
+        );
+      }
+      expect(result.value.guidance).toContain(
+        verbosity === "compact"
+          ? "Include each required fact once"
+          : "Include each explicit supplied fact once",
+      );
+      expect(result.value.guidance).toContain("negated constraints verbatim");
+      if (verbosity !== "compact") {
+        expect(result.value.guidance).toContain("contiguously, without inserting Markdown");
+      }
+      expect(result.value.guidance).toContain(
+        verbosity === "compact" ? "No restatement" : "Omit prompt restatement",
+      );
+      expect(result.value.guidance).not.toContain("hedged");
+      expect(result.value.guidance).not.toContain("dense");
+      expect(result.value.receipt.selectionReasons).toEqual(["explicit-mode"]);
+    }
+
+    const detailed = projectBrief(request({ policy: { verbosity: "detailed", source: "user" } }));
+    expect(detailed.ok).toBe(true);
+    if (detailed.ok) {
+      expect(detailed.value.receipt.dimensions.directness).toBe("direct");
+      expect(detailed.value.receipt.dimensions.presentation).toBe("structured");
+    }
+
+    const balanced = projectBrief(request({ policy: { verbosity: "balanced", source: "user" } }));
+    expect(balanced.ok).toBe(true);
+    if (balanced.ok) {
+      expect(balanced.value.receipt.dimensions.presentation).toBe("structured");
+    }
   });
 
   test("auto records the selected level from interface and need", () => {
@@ -162,6 +263,7 @@ describe("brief", () => {
     if (narrow.ok) {
       expect(narrow.value.receipt.requestedMode).toBe("auto");
       expect(narrow.value.receipt.selectedVerbosity).toBe("compact");
+      expect(narrow.value.receipt.selectionReasons).toEqual(["narrow-interface"]);
     }
 
     const hard = projectBrief(
@@ -173,9 +275,188 @@ describe("brief", () => {
     expect(hard.ok).toBe(true);
     if (hard.ok) {
       expect(hard.value.receipt.selectedVerbosity).toBe("detailed");
+      expect(hard.value.receipt.selectionReasons).toEqual(["high-complexity"]);
+      expect(hard.value.receipt.outputTokenBudget).toBe(8_192);
+    }
+
+    const failedHeadless = projectBrief(
+      request({
+        policy: { verbosity: "auto", source: "interface" },
+        need: { interface: "headless", failures: true },
+      }),
+    );
+    expect(failedHeadless.ok).toBe(true);
+    if (failedHeadless.ok) {
+      expect(failedHeadless.value.receipt.selectedVerbosity).toBe("balanced");
+      expect(failedHeadless.value.receipt.selectionReasons).toEqual(["failure"]);
+      expect(failedHeadless.value.receipt.preservedFacts).toContain("failure");
     }
 
     expect(selectBriefVerbosity("auto", DEFAULT_BRIEF_NEED)).toBe("balanced");
+  });
+
+  test("binds each selected density to a distinct provider output ceiling", () => {
+    const cases = [
+      { verbosity: "compact", outputTokenBudget: 2_048 },
+      { verbosity: "balanced", outputTokenBudget: 4_096 },
+      { verbosity: "detailed", outputTokenBudget: 8_192 },
+    ] as const;
+    for (const testCase of cases) {
+      const result = projectBrief(
+        request({ policy: { verbosity: testCase.verbosity, source: "user" } }),
+      );
+      expect(result).toMatchObject({
+        ok: true,
+        value: { receipt: { outputTokenBudget: testCase.outputTokenBudget } },
+      });
+    }
+
+    const automatic = projectBrief(
+      request({
+        policy: { verbosity: "auto", source: "user" },
+        need: { interface: "headless", safetyCritical: true },
+      }),
+    );
+    expect(automatic).toMatchObject({
+      ok: true,
+      value: {
+        receipt: { selectedVerbosity: "detailed", outputTokenBudget: 8_192 },
+      },
+    });
+  });
+
+  test("auto escalates only for explanation burden and keeps cheap facts compact", () => {
+    const medium = projectBrief(
+      request({
+        policy: { verbosity: "auto", source: "user" },
+        need: { complexity: "medium", interface: "headless", risk: true },
+      }),
+    );
+    expect(medium.ok).toBe(true);
+    if (medium.ok) {
+      expect(medium.value.receipt.selectedVerbosity).toBe("balanced");
+      expect(medium.value.receipt.selectionReasons).toEqual(["medium-complexity", "risk"]);
+    }
+
+    const uncertain = projectBrief(
+      request({
+        policy: { verbosity: "auto", source: "user" },
+        need: { interface: "headless", failures: true, uncertainty: true, recovery: true },
+      }),
+    );
+    expect(uncertain.ok).toBe(true);
+    if (uncertain.ok) {
+      expect(uncertain.value.receipt.selectedVerbosity).toBe("detailed");
+      expect(uncertain.value.receipt.selectionReasons).toEqual(["uncertainty", "recovery"]);
+    }
+
+    const compactFacts = projectBrief(
+      request({
+        policy: { verbosity: "auto", source: "user" },
+        need: { interface: "headless", citations: true, validation: true },
+      }),
+    );
+    expect(compactFacts.ok).toBe(true);
+    if (compactFacts.ok) {
+      expect(compactFacts.value.receipt.selectedVerbosity).toBe("compact");
+      expect(compactFacts.value.receipt.selectionReasons).toEqual(["headless-interface"]);
+      expect(compactFacts.value.receipt.preservedFacts).toEqual(["citation", "validation"]);
+    }
+  });
+
+  test("auto decision table covers every escalation and interface fallback", () => {
+    const cases = [
+      {
+        need: { complexity: "high" as const },
+        verbosity: "detailed",
+        reasons: ["high-complexity"],
+      },
+      { need: { uncertainty: true }, verbosity: "detailed", reasons: ["uncertainty"] },
+      { need: { recovery: true }, verbosity: "detailed", reasons: ["recovery"] },
+      {
+        need: { safetyCritical: true },
+        verbosity: "detailed",
+        reasons: ["safety-critical"],
+      },
+      {
+        need: { clarification: true },
+        verbosity: "detailed",
+        reasons: ["clarification"],
+      },
+      {
+        need: { complexity: "medium" as const },
+        verbosity: "balanced",
+        reasons: ["medium-complexity"],
+      },
+      { need: { failures: true }, verbosity: "balanced", reasons: ["failure"] },
+      { need: { risk: true }, verbosity: "balanced", reasons: ["risk"] },
+      { need: { confirmation: true }, verbosity: "balanced", reasons: ["confirmation"] },
+      {
+        need: { requiredAction: true },
+        verbosity: "balanced",
+        reasons: ["required-action"],
+      },
+      {
+        need: { orderedProcedure: true },
+        verbosity: "balanced",
+        reasons: ["ordered-procedure"],
+      },
+      {
+        need: { interface: "interactive" as const },
+        verbosity: "balanced",
+        reasons: ["interactive-interface"],
+      },
+      {
+        need: { interface: "headless" as const },
+        verbosity: "compact",
+        reasons: ["headless-interface"],
+      },
+      {
+        need: { interface: "narrow" as const },
+        verbosity: "compact",
+        reasons: ["narrow-interface"],
+      },
+    ] as const;
+
+    for (const testCase of cases) {
+      expect(decideBriefVerbosity("auto", { ...DEFAULT_BRIEF_NEED, ...testCase.need })).toEqual({
+        verbosity: testCase.verbosity,
+        reasons: testCase.reasons,
+      });
+    }
+
+    for (const verbosity of ["compact", "balanced", "detailed"] as const) {
+      expect(decideBriefVerbosity(verbosity, DEFAULT_BRIEF_NEED)).toEqual({
+        verbosity,
+        reasons: ["explicit-mode"],
+      });
+    }
+  });
+
+  test("uses clarity escapes without changing the selected response voice", () => {
+    const result = projectBrief(
+      request({
+        policy: { verbosity: "auto", source: "user" },
+        need: {
+          interface: "headless",
+          safetyCritical: true,
+          clarification: true,
+          orderedProcedure: true,
+        },
+      }),
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.receipt.selectedVerbosity).toBe("detailed");
+    expect(result.value.receipt.selectionReasons).toEqual(["safety-critical", "clarification"]);
+    for (const surface of [result.value.guidance, result.value.expanded]) {
+      expect(surface).toContain("complete, unambiguous sentences");
+      expect(surface).toContain("Never compress through ambiguity");
+      expect(surface).toContain("Keep ordered steps");
+      expect(surface).not.toContain("caveman");
+      expect(surface).not.toContain("user's language");
+      expect(surface).not.toContain("fragments");
+    }
   });
 
   test("user policy wins over session, interface, and default", () => {

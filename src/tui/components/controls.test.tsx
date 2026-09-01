@@ -2,11 +2,14 @@
  * Session, model, context, and resource controls, on a real terminal.
  *
  * The sheet is an overlay over catalogs the application port supplies. Selecting
- * a session or model updates the header through a process-local cursor. Nothing
- * is persisted and no provider is called.
+ * a session updates a view-local cursor. Model selection passes through the
+ * application control before the header changes.
  */
 
 import { describe, expect, test } from "bun:test";
+import { modelId, providerId } from "../../domain/index.ts";
+import { providerModelIdentityKey, sameProviderModelIdentity } from "../../providers/index.ts";
+import { UNAVAILABLE_SUBMISSION } from "../composer/index.ts";
 import type { ControlCatalog } from "../controls/index.ts";
 import { mount } from "../harness.tsx";
 import type { ThemeRequest } from "../theme/index.ts";
@@ -32,9 +35,28 @@ const MODEL: Omit<ShellModel, "overlay" | "commands" | "transcript" | "composer"
   help: [{ title: "Leaving", body: "Ctrl+C ends the shell." }],
 };
 
+const MODEL_SELECTION = {
+  providerProfileId: "openai-work",
+  providerId: providerId.from("openai"),
+  modelId: modelId.from("m1"),
+};
+const MODEL_KEY = providerModelIdentityKey(MODEL_SELECTION);
+
 const CATALOG: ControlCatalog = {
   sessions: [{ id: "s1", title: "coding", detail: "workspace falryn" }],
-  models: [{ id: "m1", title: "local-small", detail: "8k context" }],
+  models: [
+    {
+      id: MODEL_KEY,
+      title: "m1 · OpenAI work",
+      detail: "provider:openai · profile:openai-work · 8k context",
+    },
+  ],
+  profiles: [
+    { id: "ask", title: "Ask", detail: "Read-only answer." },
+    { id: "plan", title: "Plan", detail: "Read-only durable plan." },
+    { id: "debug", title: "Debug", detail: "Bounded diagnostic probes." },
+    { id: "agent", title: "Agent", detail: "Full authorized coding loop." },
+  ],
   context: [
     { label: "tokens", value: known("1200 / 8000") },
     { label: "bytes", value: known("48 KiB") },
@@ -79,6 +101,44 @@ describe("control overlays", () => {
     expect(frame).not.toContain("no session yet");
   });
 
+  test("selecting a model updates the application control before the header", async () => {
+    let selected = { ...MODEL_SELECTION, modelId: modelId.from("m0") };
+    const submission = {
+      ...UNAVAILABLE_SUBMISSION,
+      modelSelection: {
+        get: () => selected,
+        async select(next: typeof selected) {
+          const changed = !sameProviderModelIdentity(next, selected);
+          selected = next;
+          return {
+            ok: true as const,
+            ...selected,
+            providerDisplayName: "OpenAI work",
+            changed,
+          };
+        },
+      },
+    };
+    using shell = await mount(
+      <ShellApp
+        theme={THEME}
+        model={MODEL}
+        onExit={() => {}}
+        controls={CATALOG}
+        submission={submission}
+      />,
+    );
+
+    await runCommand(shell, "model.select");
+    await shell.frame("Models");
+    shell.setup.mockInput.pressEnter();
+
+    const frame = await shell.frame("Model selected: m1");
+    expect(selected).toEqual(MODEL_SELECTION);
+    expect(frame).toContain("m1 · OpenAI work");
+    expect(frame).not.toContain("no provider yet");
+  });
+
   test("shows named context facts", async () => {
     using shell = await mount(
       <ShellApp theme={THEME} model={MODEL} onExit={() => {}} controls={CATALOG} />,
@@ -88,6 +148,41 @@ describe("control overlays", () => {
     expect(frame).toContain("Context");
     expect(frame).toContain("tokens");
     expect(frame).toContain("1200 / 8000");
+  });
+
+  test("selects an execution mode from the command palette overlay", async () => {
+    let selected = "agent" as "ask" | "plan" | "debug" | "agent";
+    const submission = {
+      ...UNAVAILABLE_SUBMISSION,
+      executionProfile: {
+        get: () => selected,
+        async select(profileId: typeof selected) {
+          const changed = profileId !== selected;
+          selected = profileId;
+          return { ok: true as const, profileId, changed };
+        },
+      },
+    };
+    using shell = await mount(
+      <ShellApp
+        theme={THEME}
+        model={MODEL}
+        onExit={() => {}}
+        controls={CATALOG}
+        submission={submission}
+      />,
+    );
+
+    await runCommand(shell, "mode.select");
+    const overlay = await shell.frame("Execution modes");
+    expect(overlay).toContain("Plan");
+    shell.setup.mockInput.pressArrow("up");
+    shell.setup.mockInput.pressArrow("up");
+    shell.setup.mockInput.pressEnter();
+
+    const settled = await shell.frame("Execution mode set to plan");
+    expect(selected).toBe("plan");
+    expect(settled).toContain("Execution mode set to plan");
   });
 
   test("empty catalogs name the gap", async () => {
@@ -106,5 +201,26 @@ describe("control overlays", () => {
     const frame = await shell.frame("New session");
     expect(frame).toContain("New session");
     expect(frame.toLowerCase()).toContain("unavailable");
+  });
+
+  test("session.new invokes the attached durable session factory", async () => {
+    let calls = 0;
+    using shell = await mount(
+      <ShellApp
+        theme={THEME}
+        model={MODEL}
+        onExit={() => {}}
+        sessionCreation={{
+          async create() {
+            calls += 1;
+            return { ok: true, sessionId: "session-next" };
+          },
+        }}
+      />,
+    );
+    await runCommand(shell, "session.new");
+    const frame = await shell.frame("Started session session-next.");
+    expect(calls).toBe(1);
+    expect(frame).toContain("Started session session-next.");
   });
 });

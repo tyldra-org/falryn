@@ -5,10 +5,16 @@
  * router consumes and the Zod parse for untrusted config JSON.
  */
 
-import type { ModelId, ProviderId } from "../domain/identity.ts";
+import type { ProviderModelIdentity } from "./model-identity.ts";
 import { MODEL_ROLES, type ModelRole, WORK_INTENTS, type WorkIntent } from "./roles.ts";
 
-export const REASONING_EFFORTS = ["minimal", "balanced", "deep", "provider-default"] as const;
+export const REASONING_EFFORTS = [
+  "minimal",
+  "balanced",
+  "deep",
+  "max",
+  "provider-default",
+] as const;
 
 export type ReasoningEffort = (typeof REASONING_EFFORTS)[number];
 
@@ -24,14 +30,9 @@ export type RoleBudgets = {
   readonly cost?: number;
 };
 
-export type FallbackTarget = {
-  readonly providerId: ProviderId;
-  readonly modelId: ModelId;
-};
+export type FallbackTarget = ProviderModelIdentity;
 
-export type RoleRoute = {
-  readonly providerId: ProviderId;
-  readonly modelId: ModelId;
+export type RoleRoute = ProviderModelIdentity & {
   readonly reasoning: ReasoningEffort;
   readonly fallbacks: readonly FallbackTarget[];
   readonly budgets: RoleBudgets;
@@ -51,9 +52,10 @@ export type CompactRoleRoute = RoleRoute & {
 
 export type ModelRoleRoutes = {
   readonly default: RoleRoute;
-  readonly fast?: RoleRoute;
-  readonly deep?: RoleRoute;
+  readonly "fast-read"?: RoleRoute;
+  readonly "fast-edit"?: RoleRoute;
   readonly plan?: RoleRoute;
+  readonly commit?: RoleRoute;
   readonly vision?: VisionRoleRoute;
   readonly advisor?: AdvisorRoleRoute;
   readonly compact?: CompactRoleRoute;
@@ -66,11 +68,11 @@ export type IntentRoleMap = {
 /** Design-table defaults: intent → generative role. */
 export const DEFAULT_INTENT_ROLE_MAP = {
   coding: "default",
-  read: "fast",
-  toolRouting: "fast",
-  fastEdit: "fast",
+  read: "fast-read",
+  toolRouting: "fast-read",
+  fastEdit: "fast-edit",
   planning: "plan",
-  deepReview: "deep",
+  deepReview: "default",
   verification: "default",
   visualUnderstanding: "vision",
   independentCritique: "advisor",
@@ -108,12 +110,14 @@ export function roleRouteFor(
   switch (role) {
     case "default":
       return policy.roles.default;
-    case "fast":
-      return policy.roles.fast;
-    case "deep":
-      return policy.roles.deep;
+    case "fast-read":
+      return policy.roles["fast-read"] ?? policy.roles.default;
+    case "fast-edit":
+      return policy.roles["fast-edit"] ?? policy.roles.default;
     case "plan":
-      return policy.roles.plan;
+      return policy.roles.plan ?? policy.roles.default;
+    case "commit":
+      return policy.roles.commit ?? policy.roles.default;
     case "vision":
       return policy.roles.vision;
     case "advisor":
@@ -139,9 +143,10 @@ export function isRoleDisabled(
     case "compact":
       return "use" in route && route.use === "off";
     case "default":
-    case "fast":
-    case "deep":
+    case "fast-read":
+    case "fast-edit":
     case "plan":
+    case "commit":
       return false;
     default: {
       const _exhaustive: never = role;

@@ -18,36 +18,19 @@ import {
   type JsonRpcId,
   type JsonRpcMessage,
   LANGUAGE_SERVER_PROTOCOL,
-  type LanguageServerChangeDocumentRequest,
   type LanguageServerClientInfo,
-  type LanguageServerCloseDocumentRequest,
-  type LanguageServerCodeActionResult,
-  type LanguageServerCodeActionsRequest,
-  type LanguageServerCompletionList,
-  type LanguageServerDocumentSymbolsRequest,
   type LanguageServerEditToPatchResult,
   type LanguageServerError,
   type LanguageServerEvent,
   type LanguageServerFailureReason,
-  type LanguageServerFormatRequest,
-  type LanguageServerHover,
   type LanguageServerLimits,
-  type LanguageServerLocation,
-  type LanguageServerLocationLink,
   type LanguageServerOpenDocument,
-  type LanguageServerOpenDocumentRequest,
   type LanguageServerPublishDiagnostics,
-  type LanguageServerReferencesRequest,
   type LanguageServerRegisteredCapability,
-  type LanguageServerRenameRequest,
-  type LanguageServerSaveDocumentRequest,
   type LanguageServerSnapshot,
   type LanguageServerStartRequest,
   type LanguageServerState,
-  type LanguageServerSymbols,
-  type LanguageServerTextDocumentPosition,
   type LanguageServerWorkspaceFolder,
-  type LanguageServerWorkspaceFoldersChange,
   languageServerLimits,
   MAX_LANGUAGE_SERVER_OPEN_DOCUMENTS,
   MAX_LANGUAGE_SERVER_REGISTERED_CAPABILITIES,
@@ -75,6 +58,7 @@ import {
   validateFormatRequest,
   validateLanguageServerStartRequest,
   validateOpenDocumentRequest,
+  validateRange,
   validateRenameRequest,
   validateTextDocumentPosition,
   validateWorkspaceFoldersChange,
@@ -82,111 +66,12 @@ import {
 } from "../domain/index.ts";
 import { err, ok, type Result } from "../domain/result.ts";
 
-export type LanguageServerListener = (event: LanguageServerEvent) => void;
+import type {
+  LanguageServerListener,
+  LanguageServerSupervisor,
+} from "./language-server/contracts.ts";
 
-export type LanguageServerSupervisor = {
-  start(
-    request: LanguageServerStartRequest,
-    signal?: AbortSignal,
-  ): Promise<Result<LanguageServerSnapshot, LanguageServerError>>;
-  shutdown(
-    serviceId: ManagedServiceId,
-    generation: ServiceGeneration,
-    signal?: AbortSignal,
-  ): Promise<Result<LanguageServerSnapshot, LanguageServerError>>;
-  openDocument(
-    serviceId: ManagedServiceId,
-    generation: ServiceGeneration,
-    request: LanguageServerOpenDocumentRequest,
-  ): Promise<Result<LanguageServerSnapshot, LanguageServerError>>;
-  changeDocument(
-    serviceId: ManagedServiceId,
-    generation: ServiceGeneration,
-    request: LanguageServerChangeDocumentRequest,
-  ): Promise<Result<LanguageServerSnapshot, LanguageServerError>>;
-  saveDocument(
-    serviceId: ManagedServiceId,
-    generation: ServiceGeneration,
-    request: LanguageServerSaveDocumentRequest,
-  ): Promise<Result<LanguageServerSnapshot, LanguageServerError>>;
-  closeDocument(
-    serviceId: ManagedServiceId,
-    generation: ServiceGeneration,
-    request: LanguageServerCloseDocumentRequest,
-  ): Promise<Result<LanguageServerSnapshot, LanguageServerError>>;
-  changeWorkspaceFolders(
-    serviceId: ManagedServiceId,
-    generation: ServiceGeneration,
-    change: LanguageServerWorkspaceFoldersChange,
-  ): Promise<Result<LanguageServerSnapshot, LanguageServerError>>;
-  hover(
-    serviceId: ManagedServiceId,
-    generation: ServiceGeneration,
-    request: LanguageServerTextDocumentPosition,
-    signal?: AbortSignal,
-  ): Promise<Result<LanguageServerHover | null, LanguageServerError>>;
-  definition(
-    serviceId: ManagedServiceId,
-    generation: ServiceGeneration,
-    request: LanguageServerTextDocumentPosition,
-    signal?: AbortSignal,
-  ): Promise<
-    Result<
-      readonly LanguageServerLocation[] | readonly LanguageServerLocationLink[],
-      LanguageServerError
-    >
-  >;
-  references(
-    serviceId: ManagedServiceId,
-    generation: ServiceGeneration,
-    request: LanguageServerReferencesRequest,
-    signal?: AbortSignal,
-  ): Promise<Result<readonly LanguageServerLocation[], LanguageServerError>>;
-  documentSymbols(
-    serviceId: ManagedServiceId,
-    generation: ServiceGeneration,
-    request: LanguageServerDocumentSymbolsRequest,
-    signal?: AbortSignal,
-  ): Promise<Result<LanguageServerSymbols, LanguageServerError>>;
-  completion(
-    serviceId: ManagedServiceId,
-    generation: ServiceGeneration,
-    request: LanguageServerTextDocumentPosition,
-    signal?: AbortSignal,
-  ): Promise<Result<LanguageServerCompletionList, LanguageServerError>>;
-  formatDocument(
-    serviceId: ManagedServiceId,
-    generation: ServiceGeneration,
-    request: LanguageServerFormatRequest,
-    signal?: AbortSignal,
-  ): Promise<Result<LanguageServerEditToPatchResult, LanguageServerError>>;
-  rename(
-    serviceId: ManagedServiceId,
-    generation: ServiceGeneration,
-    request: LanguageServerRenameRequest,
-    signal?: AbortSignal,
-  ): Promise<Result<LanguageServerEditToPatchResult, LanguageServerError>>;
-  codeActions(
-    serviceId: ManagedServiceId,
-    generation: ServiceGeneration,
-    request: LanguageServerCodeActionsRequest,
-    signal?: AbortSignal,
-  ): Promise<
-    Result<
-      {
-        readonly result: LanguageServerCodeActionResult;
-        readonly patches: readonly LanguageServerEditToPatchResult[];
-      },
-      LanguageServerError
-    >
-  >;
-  diagnostics(serviceId: ManagedServiceId, uri: string): LanguageServerPublishDiagnostics | null;
-  snapshot(serviceId: ManagedServiceId): LanguageServerSnapshot | null;
-  attach(
-    serviceId: ManagedServiceId,
-    listener: LanguageServerListener,
-  ): Result<{ detach(): void }, LanguageServerError>;
-};
+export * from "./language-server/contracts.ts";
 
 type LiveServer = {
   readonly request: LanguageServerStartRequest;
@@ -1175,6 +1060,63 @@ export function createLanguageServerSupervisor(
       return ok(converted.value);
     },
 
+    async formatRange(serviceId, generation, request, signal) {
+      const ready = requireReady(serviceId, generation);
+      if (!ready.ok) {
+        return ready;
+      }
+      const invalid = validateFormatRequest(request);
+      const range = validateRange(request.range);
+      if (invalid !== null || !range.ok) {
+        return err({
+          kind: "language-server",
+          code: "invalid-request",
+          reason: invalid ?? "invalid-range",
+        });
+      }
+      const open = ready.value.openDocuments.get(request.uri);
+      if (open === undefined) {
+        return err({ kind: "language-server", code: "document-not-open" });
+      }
+      const raw = await sendRequest(
+        ready.value,
+        "textDocument/rangeFormatting",
+        {
+          textDocument: { uri: request.uri },
+          range: range.value,
+          options: {
+            tabSize: request.tabSize ?? 2,
+            insertSpaces: request.insertSpaces ?? true,
+          },
+        },
+        ready.value.limits.requestTimeoutMs,
+        signal,
+      );
+      if (!raw.ok) {
+        return raw;
+      }
+      const edits = parseTextEditArray(raw.value);
+      if (!edits.ok) {
+        return err({ kind: "language-server", code: "invalid-request", reason: edits.error });
+      }
+      const converted = workspaceEditToPatchPlan(
+        {
+          documentEdits: [
+            {
+              textDocument: { uri: request.uri, version: open.version },
+              edits: edits.value,
+            },
+          ],
+        },
+        ready.value.openDocuments,
+        workspaceFolderUris(ready.value),
+      );
+      if (!converted.ok) {
+        return err(mapEditFailure(converted.error));
+      }
+      return ok(converted.value);
+    },
+
     async rename(serviceId, generation, request, signal) {
       const ready = requireReady(serviceId, generation);
       if (!ready.ok) {
@@ -1291,12 +1233,91 @@ export function createLanguageServerSupervisor(
       return ok({ result: parsed.value, patches });
     },
 
+    async extendedFeature(serviceId, generation, request, signal) {
+      const ready = requireReady(serviceId, generation);
+      if (!ready.ok) {
+        return ready;
+      }
+      const server = ready.value;
+      let method: string;
+      let params: unknown;
+      switch (request.kind) {
+        case "declaration":
+        case "type-definition":
+        case "implementation":
+        case "signature-help":
+        case "call-hierarchy-prepare":
+        case "type-hierarchy-prepare": {
+          const invalid = validateTextDocumentPosition(request);
+          if (invalid !== null) {
+            return err({ kind: "language-server", code: "invalid-request", reason: invalid });
+          }
+          if (!server.openDocuments.has(request.uri)) {
+            return err({ kind: "language-server", code: "document-not-open" });
+          }
+          const methods = {
+            declaration: "textDocument/declaration",
+            "type-definition": "textDocument/typeDefinition",
+            implementation: "textDocument/implementation",
+            "signature-help": "textDocument/signatureHelp",
+            "call-hierarchy-prepare": "textDocument/prepareCallHierarchy",
+            "type-hierarchy-prepare": "textDocument/prepareTypeHierarchy",
+          } as const;
+          method = methods[request.kind];
+          params = {
+            textDocument: { uri: request.uri },
+            position: request.position,
+          };
+          break;
+        }
+        case "workspace-symbols":
+          if (request.query.length > 4_096 || request.query.includes("\0")) {
+            return err({
+              kind: "language-server",
+              code: "invalid-request",
+              reason: "invalid-symbol",
+            });
+          }
+          method = "workspace/symbol";
+          params = { query: request.query };
+          break;
+        case "call-hierarchy-incoming":
+        case "call-hierarchy-outgoing":
+        case "type-hierarchy-supertypes":
+        case "type-hierarchy-subtypes": {
+          const serialized = JSON.stringify(request.item);
+          if (serialized.length > 64 * 1_024 || request.item === null) {
+            return err({
+              kind: "language-server",
+              code: "invalid-request",
+              reason: "result-too-large",
+            });
+          }
+          const methods = {
+            "call-hierarchy-incoming": "callHierarchy/incomingCalls",
+            "call-hierarchy-outgoing": "callHierarchy/outgoingCalls",
+            "type-hierarchy-supertypes": "typeHierarchy/supertypes",
+            "type-hierarchy-subtypes": "typeHierarchy/subtypes",
+          } as const;
+          method = methods[request.kind];
+          params = { item: request.item };
+          break;
+        }
+      }
+      return sendRequest(server, method, params, server.limits.requestTimeoutMs, signal);
+    },
+
     diagnostics(serviceId, uri) {
       const server = servers.get(serviceId);
       if (server === undefined) {
         return null;
       }
       return server.diagnosticsByUri.get(uri) ?? null;
+    },
+
+    document(serviceId, uri) {
+      const server = servers.get(serviceId);
+      return server?.openDocuments.get(uri) ?? null;
     },
 
     async changeWorkspaceFolders(serviceId, generation, change) {

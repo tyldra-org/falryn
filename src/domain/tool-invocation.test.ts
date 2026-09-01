@@ -130,6 +130,33 @@ describe("validateAndNormalizeInvocations", () => {
     expect(bound.input).toEqual(catalogBound.input);
   });
 
+  test("derives one invocation effect from validated arguments", () => {
+    const entry = createToolRegistryEntry(readFileDocument({ name: "evaluate" }), {
+      inputSchema: z.object({ context: z.enum(["watch", "repl"]) }).strict() as z.ZodType<
+        Readonly<Record<string, unknown>>
+      >,
+      outputSchema: pathOutputSchema,
+      effectFor: (input) => (input.context === "repl" ? "interactive" : "observation"),
+    });
+    expect(entry.ok).toBe(true);
+    if (!entry.ok) return;
+    const registry = createToolRegistry(generation, [entry.value]);
+    expect(registry.ok).toBe(true);
+    if (!registry.ok) return;
+
+    const result = validateAndNormalizeInvocations({
+      registry: registry.value,
+      proposals: [{ toolCallId: "call-eval", name: "evaluate", arguments: { context: "repl" } }],
+      maxQueued: 1,
+      nextInvocationId: () => invocationId.from("inv-eval"),
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok || result.value[0] === undefined) return;
+    expect(result.value[0].effect).toBe("interactive");
+    expect(result.value[0].entry.manifest.effect).toBe("observation");
+    expect(toBoundToolInvocation(result.value[0]).descriptor.effect).toBe("interactive");
+  });
+
   test("rejects unknown tools with no effect", () => {
     const registry = buildRegistry();
     const result = validateAndNormalizeInvocations({

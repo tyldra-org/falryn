@@ -1,5 +1,5 @@
 /**
- * Session, model, context, and resource controls.
+ * Session, model, execution-profile, context, and resource controls.
  *
  * Session and model panels pick from the application port's lists. Context and
  * resource panels list labelled facts. Neither writes a session nor calls a
@@ -49,7 +49,7 @@ export function ControlSheet(props: ControlSheetProps): ReactNode {
     return null;
   }
 
-  if (props.panel === "session" || props.panel === "model") {
+  if (props.panel === "session" || props.panel === "model" || props.panel === "profile") {
     return (
       <OptionList
         options={optionsFor(props.catalog, props.panel)}

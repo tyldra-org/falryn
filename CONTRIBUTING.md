@@ -21,5 +21,33 @@ The expected contribution path will be conventional:
 Contributions will be evaluated on correctness, scope, tests, and documentation
 for released behavior—not on an editor, agent, or workflow choice.
 
+## Fast local checks
+
+Use the smallest command that proves the current edit while iterating:
+
+```sh
+bun run check:static       # quality, types, repository integrity, and catalogs
+bun run test:changed       # tests affected relative to main
+bun test src/domain/opportunity-plan.test.ts  # one test file
+bun run test:watch         # rerun tests while files change
+```
+
+Run the bounded four-worker suite when a change needs full local coverage:
+
+```sh
+bun run test:parallel
+```
+
+The suite keeps the real-process boundary tests serial so worker contention does
+not distort their timeout assertions. `bun run check:fast` runs the static checks
+and the complete suite. Do not nest it inside another `bun run --parallel` call
+because both stages already create concurrent work. Before requesting review,
+run the canonical checks:
+
+```sh
+bun run check
+bun run build
+```
+
 [CONTRIBUTOR-READINESS.md](CONTRIBUTOR-READINESS.md) records the safeguards
 already prepared for that transition.

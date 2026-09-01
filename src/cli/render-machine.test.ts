@@ -14,7 +14,7 @@
  */
 
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -540,6 +540,111 @@ describe("through dispatch", () => {
     expect(err).toBe("");
   });
 
+  test("projects the same secret-free provider state in JSON and JSONL", async () => {
+    for (const format of ["json", "jsonl"] as const) {
+      const { out, err, code } = await run(["provider", "list", "--format", format]);
+      const reading = readCliStream(out.split("\n"));
+      const terminal = reading.terminal as {
+        payload?: {
+          selectedProfileId?: string | null;
+          connections?: readonly {
+            profileId?: string;
+            credentialConfigured?: boolean;
+            credentialStore?: string | null;
+          }[];
+        };
+      } | null;
+
+      expect(code).toBe(0);
+      expect(err).toBe("");
+      expect(terminal?.payload).toMatchObject({
+        selectedProfileId: "openai",
+        connections: [
+          {
+            profileId: "openai",
+            credentialConfigured: true,
+            credentialStore: "environment",
+          },
+        ],
+      });
+      expect(`${out}${err}`).not.toContain("FALRYN_OPENAI_API_KEY");
+      expect(`${out}${err}`).not.toContain(SECRET);
+    }
+  });
+
+  test("projects SDK-aware provider setup identically in JSON and JSONL", async () => {
+    for (const format of ["json", "jsonl"] as const) {
+      const { out, err, code } = await run([
+        "provider",
+        "add",
+        "anthropic-work",
+        "--provider",
+        "anthropic",
+        "--model",
+        "claude-sonnet",
+        "--catalog",
+        "team-models",
+        "--format",
+        format,
+      ]);
+      const reading = readCliStream(out.split("\n"));
+      const terminal = reading.terminal as {
+        payload?: {
+          discovery?: {
+            readonly kind?: string;
+            readonly code?: string;
+            readonly retryable?: boolean;
+          };
+          connections?: readonly {
+            profileId?: string;
+            providerId?: string;
+            displayName?: string;
+            adapterKind?: string;
+            endpoint?: string | null;
+            credentialConfigured?: boolean;
+            credentialStore?: string | null;
+            accountLabel?: string | null;
+            selected?: boolean;
+            models?: readonly string[];
+            catalogs?: readonly string[];
+            authMethods?: readonly string[];
+            discovery?: string;
+            updatedAt?: number;
+          }[];
+        };
+      } | null;
+      const connection = terminal?.payload?.connections?.find(
+        (candidate) => candidate.profileId === "anthropic-work",
+      );
+
+      expect(code).toBe(0);
+      expect(err).toBe("");
+      expect(connection).toEqual({
+        profileId: "anthropic-work",
+        providerId: "anthropic",
+        displayName: "anthropic-work",
+        adapterKind: "anthropic",
+        endpoint: null,
+        credentialConfigured: true,
+        credentialStore: "environment",
+        accountLabel: null,
+        selected: false,
+        models: ["claude-sonnet"],
+        catalogs: ["team-models"],
+        authMethods: ["api-key"],
+        discovery: "remote",
+        updatedAt: expect.any(Number),
+      });
+      expect(terminal?.payload?.discovery).toEqual({
+        kind: "failed",
+        code: "user-catalog-file-unavailable",
+        retryable: false,
+      });
+      expect(`${out}${err}`).not.toContain("ANTHROPIC_API_KEY");
+      expect(`${out}${err}`).not.toContain(SECRET);
+    }
+  });
+
   test("writes a real lifecycle and one terminal record for --format jsonl", async () => {
     const { out } = await run(["config", "show", "--format", "jsonl"]);
     const reading = readCliStream(out.split("\n"));
@@ -649,6 +754,34 @@ describe("through dispatch", () => {
       });
       expect(machine.code).toBe(1);
     }
+  });
+
+  test("carries the effective legacy configuration home into machine output", async () => {
+    const home = await mkdtemp(join(tmpdir(), "falryn-legacy-home-"));
+    homes.push(home);
+    const legacy = join(home, "Library", "Application Support", "Falryn", "config");
+    await mkdir(legacy, { recursive: true });
+    await writeFile(join(legacy, CONFIGURATION_FILE_NAME), "{}");
+    const services = (globals: GlobalOptions) =>
+      createServiceProvider(globals, {
+        home: localPath(home),
+        platform: "darwin",
+        environment: createStaticEnvironment({ FALRYN_STATE_DIR: home }),
+      });
+
+    for (const format of ["json", "jsonl"]) {
+      const streams = createRecordingCliStreams();
+      expect(await dispatch({ argv: ["doctor", "--format", format], streams, services })).toBe(0);
+      const reading = readCliStream(streams.resultWrites().join("").split("\n"));
+      const terminal = reading.terminal as { payload?: DoctorPayload } | null;
+
+      expect(terminal?.payload?.configurationHome).toMatchObject({
+        kind: "legacy",
+        root: legacy,
+        currentRoot: join(home, ".falryn"),
+      });
+    }
+    expect(await readdir(home)).not.toContain(".falryn");
   });
 
   test("leaves an advisory-only run at exit zero in every contract", async () => {

@@ -2,7 +2,7 @@
  * Public entry for provider profile + auth + discovery in one session view.
  *
  * This is the vertical slice for authentication, configuration, and capability
- * discovery. Streaming adapters and routing attach later.
+ * discovery. Streaming adapters and routing consume the resulting session.
  */
 
 import type { ClockPort } from "../domain/clock.ts";

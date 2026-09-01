@@ -16,9 +16,21 @@ import {
 } from "../domain/credential.ts";
 import { modelId, providerId } from "../domain/identity.ts";
 import { err, ok, type Result } from "../domain/result.ts";
-import { DISCOVERY_POLICIES, PROVIDER_ADAPTER_KINDS } from "./adapter-kind.ts";
+import {
+  DISCOVERY_POLICIES,
+  PROVIDER_ADAPTER_KINDS,
+  type ProviderAdapterKind,
+} from "./adapter-kind.ts";
+import { isModelCatalogId, MAX_MODEL_CATALOGS_PER_PROFILE } from "./catalog/contracts.ts";
 import { MAX_PROVIDER_METADATA_ENTRY_LENGTH } from "./limits.ts";
+import { modelCapabilityDeclarationSchema } from "./model-capability-schema.ts";
+import { openAiCodexProfilePolicyIssue } from "./openai-codex-policy.ts";
 import type { ProviderProfile } from "./profile.ts";
+import { providerTransportCompatibilityMatchesAdapter } from "./transport-compatibility.ts";
+import {
+  providerModelTransportCompatibilityOverrideSchema,
+  providerTransportCompatibilityDeclarationSchema,
+} from "./transport-compatibility-schema.ts";
 
 const credentialReferenceSchema = z
   .strictObject({
@@ -29,7 +41,33 @@ const credentialReferenceSchema = z
   })
   .nullable();
 
-export const providerProfileSchema = z
+/** Validate a credential-free provider base URL before it can enter state. */
+export function providerEndpointIsAllowed(
+  adapterKind: ProviderAdapterKind,
+  endpoint: string | null,
+): boolean {
+  if (endpoint === null) {
+    return adapterKind !== "openai" && adapterKind !== "commandcode" && adapterKind !== "custom";
+  }
+  try {
+    const url = new URL(endpoint);
+    return (
+      url.username.length === 0 &&
+      url.password.length === 0 &&
+      url.search.length === 0 &&
+      url.hash.length === 0 &&
+      (url.protocol === "https:" ||
+        (url.protocol === "http:" &&
+          (url.hostname === "localhost" ||
+            url.hostname === "127.0.0.1" ||
+            url.hostname === "[::1]")))
+    );
+  } catch {
+    return false;
+  }
+}
+
+export const providerProfileSchema: z.ZodType<ProviderProfile> = z
   .object({
     profileId: z.string().min(1).max(MAX_PROVIDER_METADATA_ENTRY_LENGTH),
     providerId: brandedString(providerId),
@@ -40,6 +78,18 @@ export const providerProfileSchema = z
     organization: z.union([z.string().min(1).max(MAX_PROVIDER_METADATA_ENTRY_LENGTH), z.null()]),
     project: z.union([z.string().min(1).max(MAX_PROVIDER_METADATA_ENTRY_LENGTH), z.null()]),
     enabledModels: z.array(brandedString(modelId)).max(128),
+    catalogs: z
+      .array(z.string().min(1).max(128).refine(isModelCatalogId, "invalid catalog identity"))
+      .max(MAX_MODEL_CATALOGS_PER_PROFILE)
+      .default([]),
+    modelCapabilities: z.array(modelCapabilityDeclarationSchema).max(128).default([]),
+    transportCompatibility: providerTransportCompatibilityDeclarationSchema
+      .nullable()
+      .default(null),
+    modelTransportCompatibility: z
+      .array(providerModelTransportCompatibilityOverrideSchema)
+      .max(128)
+      .default([]),
     discovery: z.literal(DISCOVERY_POLICIES),
     timeouts: z
       .strictObject({
@@ -48,7 +98,111 @@ export const providerProfileSchema = z
       })
       .strict(),
   })
-  .strict();
+  .strict()
+  .superRefine((profile, context) => {
+    const openAiCodexIssue = openAiCodexProfilePolicyIssue({
+      ...profile,
+      providerId: String(profile.providerId),
+    });
+    if (openAiCodexIssue !== null) {
+      context.addIssue({
+        code: "custom",
+        path: [openAiCodexIssue.path],
+        message: openAiCodexIssue.message,
+      });
+    }
+
+    if (!providerEndpointIsAllowed(profile.adapterKind, profile.endpoint)) {
+      context.addIssue({
+        code: "custom",
+        path: ["endpoint"],
+        message: "invalid or credential-bearing provider endpoint",
+      });
+    }
+
+    const enabled = new Set<string>();
+    for (const [index, id] of profile.enabledModels.entries()) {
+      if (enabled.has(id)) {
+        context.addIssue({
+          code: "custom",
+          path: ["enabledModels", index],
+          message: "duplicate enabled model identity",
+        });
+      }
+      enabled.add(id);
+    }
+
+    const declared = new Set<string>();
+    for (const [index, capability] of profile.modelCapabilities.entries()) {
+      const id = String(capability.modelId);
+      if (!enabled.has(id)) {
+        context.addIssue({
+          code: "custom",
+          path: ["modelCapabilities", index, "modelId"],
+          message: "capability model is not enabled",
+        });
+      }
+      if (declared.has(id)) {
+        context.addIssue({
+          code: "custom",
+          path: ["modelCapabilities", index, "modelId"],
+          message: "duplicate model capability declaration",
+        });
+      }
+      declared.add(id);
+    }
+
+    if (new Set(profile.catalogs).size !== profile.catalogs.length) {
+      context.addIssue({
+        code: "custom",
+        path: ["catalogs"],
+        message: "duplicate model catalog identity",
+      });
+    }
+
+    if (
+      profile.transportCompatibility !== null &&
+      !providerTransportCompatibilityMatchesAdapter(
+        profile.adapterKind,
+        profile.transportCompatibility,
+      )
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["transportCompatibility", "dialect"],
+        message: "transport dialect does not match provider adapter",
+      });
+    }
+
+    const modelCompatibility = new Set<string>();
+    for (const [index, override] of profile.modelTransportCompatibility.entries()) {
+      const id = String(override.modelId);
+      if (!enabled.has(id)) {
+        context.addIssue({
+          code: "custom",
+          path: ["modelTransportCompatibility", index, "modelId"],
+          message: "transport override model is not enabled",
+        });
+      }
+      if (modelCompatibility.has(id)) {
+        context.addIssue({
+          code: "custom",
+          path: ["modelTransportCompatibility", index, "modelId"],
+          message: "duplicate model transport override",
+        });
+      }
+      modelCompatibility.add(id);
+      if (
+        !providerTransportCompatibilityMatchesAdapter(profile.adapterKind, override.declaration)
+      ) {
+        context.addIssue({
+          code: "custom",
+          path: ["modelTransportCompatibility", index, "declaration", "dialect"],
+          message: "model transport dialect does not match provider adapter",
+        });
+      }
+    }
+  });
 
 export type ProviderProfileParseError = {
   readonly kind: "provider-profile";

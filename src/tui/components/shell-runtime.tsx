@@ -9,14 +9,18 @@ import {
   type FileAttachmentProbe,
   type MidTurnInputService,
   type ProductBriefControls,
+  type ProductExecutionProfileControls,
+  type ProductModelSelectionControls,
+  type ProductOutputControls,
 } from "../../application/index.ts";
 import {
   type AttachmentDescriptor,
-  isBriefVerbosityMode,
+  isExecutionProfileId,
   MAX_EVIDENCE_INLINE_BYTES,
   parseMentions,
 } from "../../domain/index.ts";
 import type { TranscriptBlock } from "../../presentation/index.ts";
+import { parseProviderModelIdentityKey, providerModelIdentityKey } from "../../providers/index.ts";
 import type { CopyTextPort, CopyTextResult } from "../clipboard.ts";
 import { type CommandState, commandById } from "../commands.ts";
 import {
@@ -28,6 +32,12 @@ import {
 } from "../composer/index.ts";
 import { createMemoryAttachmentPayloads } from "../composer/payload.ts";
 import {
+  applyCompressionControl,
+  type CompressionControlAction,
+  type CompressionControlState,
+  compressionControlState,
+} from "../compression.ts";
+import {
   applySecretEdit,
   type ConfirmationDecision,
   type ConfirmationPrompt,
@@ -38,6 +48,7 @@ import {
 import type { FocusRegion } from "../focus.ts";
 import { requestFromComposer, submitWhileActive } from "../mid-turn.ts";
 import { classifyPaste, looksSecret } from "../paste.ts";
+import type { SessionCreationPort } from "../session-creation.ts";
 import type { SessionNavigationController } from "../session-nav/index.ts";
 import {
   copyTranscriptBody,
@@ -92,7 +103,10 @@ export type ShellRuntime = {
   paletteQuery(query: string): void;
   confirm(choice: "accept" | "deny"): boolean;
   editSecret(edit: SecretEdit): void;
+  readonly compression: CompressionControlState;
+  selectCompression(action: CompressionControlAction): void;
   selectControl(field: "session" | "model", id: string): void;
+  selectProfile(id: string): void;
   settleChanges(notice: string): void;
   workspaceDraft(draft: string): void;
   replaceWorkspace(set: WorkspaceSetView, notice: string): void;
@@ -120,10 +134,13 @@ export type ShellRuntimeOptions = {
   readonly workspaceController?: WorkspaceController | null;
   /** Session navigation ports when the launch path attached a local store. */
   readonly sessionNavigationController?: SessionNavigationController | null;
+  readonly sessionCreation?: SessionCreationPort | null;
   /** When set, submit-while-active classifies through #611. */
   readonly midTurn?: MidTurnInputService | null;
   /** Product Brief controls for `/brief` (#717). */
   readonly brief?: ProductBriefControls | null;
+  /** Product Hush/Loom controls for `/hush` and `/loom`. */
+  readonly output?: ProductOutputControls | null;
 };
 
 const encoder = new TextEncoder();
@@ -135,6 +152,7 @@ function resolveCommandState(
   ports: {
     readonly workspaceController?: WorkspaceController | null;
     readonly sessionNavigationController?: SessionNavigationController | null;
+    readonly sessionCreation?: SessionCreationPort | null;
   },
 ): CommandState {
   const base = commandStateFor(state, blocks);
@@ -149,22 +167,45 @@ function resolveCommandState(
   if (ports.sessionNavigationController != null) {
     next = { ...next, hasSessionNavigation: true };
   }
+  if (ports.sessionCreation != null) {
+    next = { ...next, hasSessionCreation: true };
+  }
   return next;
 }
 
 export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
-  const [state, dispatch] = useReducer(shellReducer, INITIAL_SHELL_STATE, (base) => ({
-    ...base,
-    workspace: options.workspace ?? EMPTY_WORKSPACE_SET,
-  }));
+  const modelSelection =
+    options.submission !== undefined && "modelSelection" in options.submission
+      ? (
+          options.submission as SubmissionPort & {
+            readonly modelSelection: ProductModelSelectionControls;
+          }
+        ).modelSelection
+      : null;
+  const [state, dispatch] = useReducer(shellReducer, INITIAL_SHELL_STATE, (base) => {
+    const selectedModel = modelSelection?.get() ?? null;
+    return {
+      ...base,
+      workspace: options.workspace ?? EMPTY_WORKSPACE_SET,
+      selectedModelKey:
+        selectedModel === null ? base.selectedModelKey : providerModelIdentityKey(selectedModel),
+    };
+  });
   const blocks = options.transcriptBlocks ?? NO_BLOCKS;
   const commandState = useMemo(
     () =>
       resolveCommandState(state, blocks, {
         workspaceController: options.workspaceController ?? null,
         sessionNavigationController: options.sessionNavigationController ?? null,
+        sessionCreation: options.sessionCreation ?? null,
       }),
-    [state, blocks, options.workspaceController, options.sessionNavigationController],
+    [
+      state,
+      blocks,
+      options.workspaceController,
+      options.sessionNavigationController,
+      options.sessionCreation,
+    ],
   );
   const commandStateRef = useRef(commandState);
   commandStateRef.current = commandState;
@@ -192,6 +233,19 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
   const onConfirmation = options.onConfirmation;
   const onSecretSubmit = options.onSecretSubmit;
   const copyPort = options.copyPort ?? null;
+  const submissionBrief =
+    options.submission !== undefined && options.submission !== null && "brief" in options.submission
+      ? (options.submission as { brief: ProductBriefControls }).brief
+      : null;
+  const briefControls = options.brief ?? submissionBrief;
+  const submissionOutput =
+    options.submission !== undefined &&
+    options.submission !== null &&
+    "output" in options.submission
+      ? (options.submission as { output: ProductOutputControls }).output
+      : null;
+  const outputControls = options.output ?? submissionOutput;
+  const compression = compressionControlState(briefControls, outputControls);
 
   const editSecret = useCallback((edit: SecretEdit): void => {
     secretRef.current = applySecretEdit(secretRef.current, edit);
@@ -453,13 +507,7 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
       }
 
       if (slash.commandId === "brief.set") {
-        const submissionBrief =
-          options.submission !== undefined &&
-          options.submission !== null &&
-          "brief" in options.submission
-            ? (options.submission as { brief: ProductBriefControls }).brief
-            : null;
-        const brief = options.brief ?? submissionBrief;
+        const brief = briefControls;
         if (brief === null) {
           dispatch({
             kind: "notice",
@@ -471,27 +519,112 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
         if (mode === "") {
           dispatch({
             kind: "notice",
-            message: `Brief verbosity is ${brief.getVerbosity()} (use /brief compact|balanced|detailed|auto).`,
+            message: `Brief is ${brief.getFrontendMode()} (use /brief compact|balanced|detailed|auto|on|off).`,
           });
           dispatch({ kind: "composer", action: { kind: "draft", text: "" } });
           return;
         }
-        if (!isBriefVerbosityMode(mode)) {
+        const set = brief.setFrontendMode(mode);
+        if (!set.ok) {
           dispatch({
             kind: "notice",
-            message: `Unsupported Brief verbosity “${mode}”. Use compact|balanced|detailed|auto.`,
+            message: `Unsupported Brief mode “${mode}”. Use compact|balanced|detailed|auto|on|off.`,
           });
-          return;
-        }
-        const set = brief.setVerbosity(mode);
-        if (!set.ok) {
-          dispatch({ kind: "notice", message: `Could not set Brief verbosity to ${mode}.` });
           return;
         }
         dispatch({
           kind: "notice",
-          message: `Brief verbosity set to ${set.value}.`,
+          message: `Brief set to ${brief.getFrontendMode()}.`,
         });
+        dispatch({ kind: "composer", action: { kind: "draft", text: "" } });
+        return;
+      }
+
+      if (slash.commandId === "hush.set" || slash.commandId === "loom.set") {
+        const output = outputControls;
+        const engine = slash.commandId === "hush.set" ? "Hush" : "Loom";
+        if (output === null) {
+          dispatch({
+            kind: "notice",
+            message: `${engine} controls are not attached to this shell.`,
+          });
+          return;
+        }
+        const state = slash.argument?.trim().toLowerCase() ?? "";
+        const current =
+          slash.commandId === "hush.set" ? output.getHushState() : output.getLoomState();
+        if (state === "") {
+          dispatch({
+            kind: "notice",
+            message: `${engine} is ${current} (use /${engine.toLowerCase()} on|off).`,
+          });
+          dispatch({ kind: "composer", action: { kind: "draft", text: "" } });
+          return;
+        }
+        const set =
+          slash.commandId === "hush.set" ? output.setHushState(state) : output.setLoomState(state);
+        if (!set.ok) {
+          dispatch({
+            kind: "notice",
+            message: `Unsupported ${engine} state “${state}”. Use on|off.`,
+          });
+          return;
+        }
+        dispatch({ kind: "notice", message: `${engine} set to ${set.value}.` });
+        dispatch({ kind: "composer", action: { kind: "draft", text: "" } });
+        return;
+      }
+
+      if (slash.commandId === "mode.select") {
+        const executionProfile =
+          options.submission !== undefined &&
+          options.submission !== null &&
+          "executionProfile" in options.submission
+            ? (options.submission as { executionProfile: ProductExecutionProfileControls })
+                .executionProfile
+            : null;
+        if (executionProfile === null) {
+          dispatch({
+            kind: "notice",
+            message: "Execution profile controls are not attached to this shell.",
+          });
+          return;
+        }
+        const profileId = slash.argument?.trim().toLowerCase() ?? "";
+        if (profileId === "") {
+          dispatch({
+            kind: "notice",
+            message: `Execution mode is ${executionProfile.get()} (use /mode ask|plan|debug|agent).`,
+          });
+          dispatch({ kind: "composer", action: { kind: "draft", text: "" } });
+          return;
+        }
+        if (!isExecutionProfileId(profileId)) {
+          dispatch({
+            kind: "notice",
+            message: `Unsupported execution mode “${profileId}”. Use ask|plan|debug|agent.`,
+          });
+          return;
+        }
+        void (async () => {
+          const selected = await executionProfile.select(profileId);
+          if (!selected.ok) {
+            dispatch({ kind: "notice", message: selected.message });
+            return;
+          }
+          dispatch({
+            kind: "notice",
+            message: selected.changed
+              ? `Execution mode set to ${selected.profileId}; active work keeps its bound policy.`
+              : `Execution mode is already ${selected.profileId}.`,
+          });
+          dispatch({ kind: "composer", action: { kind: "draft", text: "" } });
+        })();
+        return;
+      }
+
+      if (slash.commandId === "compression.show") {
+        dispatch({ kind: "open-overlay", route: { kind: "compression" } });
         dispatch({ kind: "composer", action: { kind: "draft", text: "" } });
         return;
       }
@@ -533,8 +666,9 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
     })();
   }, [
     fileProbe,
-    options.brief,
+    briefControls,
     options.midTurn,
+    outputControls,
     options.submission,
     options.workspaceController,
     submitMidTurn,
@@ -648,6 +782,23 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
           }
           break;
         }
+        case "session.new": {
+          const sessionCreation = options.sessionCreation ?? null;
+          if (sessionCreation === null) {
+            break;
+          }
+          dispatch({ kind: "close-overlay" });
+          dispatch({ kind: "notice", message: "Starting a new durable session…" });
+          void sessionCreation.create().then((created) => {
+            dispatch({
+              kind: "notice",
+              message: created.ok
+                ? `Started session ${created.sessionId}.`
+                : `Could not start a new session: ${created.reason}`,
+            });
+          });
+          return true;
+        }
         default:
           break;
       }
@@ -664,6 +815,7 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
       options.onExit,
       options.transcriptKeys,
       options.midTurn,
+      options.sessionCreation,
       gate,
       includeHeldPaste,
       includeTranscriptPick,
@@ -759,9 +911,93 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
     });
   }, [midTurn]);
 
-  const selectControl = useCallback((field: "session" | "model", id: string): void => {
-    dispatch({ kind: "select-control", field, id });
-  }, []);
+  const selectControl = useCallback(
+    (field: "session" | "model", id: string): void => {
+      if (field === "session") {
+        dispatch({ kind: "select-control", field, id });
+        return;
+      }
+      if (modelSelection === null) {
+        dispatch({ kind: "close-overlay" });
+        dispatch({ kind: "notice", message: "Model selection is not attached." });
+        return;
+      }
+      const parsed = parseProviderModelIdentityKey(id);
+      if (!parsed.ok) {
+        dispatch({ kind: "close-overlay" });
+        dispatch({ kind: "notice", message: `${parsed.message} (${parsed.code})` });
+        return;
+      }
+      void modelSelection.select(parsed.value).then((selected) => {
+        if (selected.ok) {
+          dispatch({
+            kind: "select-control",
+            field,
+            id: providerModelIdentityKey({
+              providerProfileId: selected.providerProfileId,
+              providerId: selected.providerId,
+              modelId: selected.modelId,
+            }),
+          });
+          dispatch({
+            kind: "notice",
+            message: selected.changed
+              ? `Model selected: ${String(selected.modelId)} · Provider: ${selected.providerDisplayName} (${String(selected.providerId)}) · Profile: ${selected.providerProfileId}.`
+              : `Model already selected: ${String(selected.modelId)} · Provider: ${selected.providerDisplayName} (${String(selected.providerId)}) · Profile: ${selected.providerProfileId}.`,
+          });
+          return;
+        }
+        dispatch({ kind: "close-overlay" });
+        dispatch({ kind: "notice", message: `${selected.message} (${selected.code})` });
+      });
+    },
+    [modelSelection],
+  );
+
+  const selectCompression = useCallback(
+    (action: CompressionControlAction): void => {
+      dispatch({
+        kind: "notice",
+        message: applyCompressionControl(briefControls, outputControls, action),
+      });
+    },
+    [briefControls, outputControls],
+  );
+
+  const selectProfile = useCallback(
+    (id: string): void => {
+      const executionProfile =
+        options.submission !== undefined &&
+        options.submission !== null &&
+        "executionProfile" in options.submission
+          ? (options.submission as { executionProfile: ProductExecutionProfileControls })
+              .executionProfile
+          : null;
+      if (executionProfile === null || !isExecutionProfileId(id)) {
+        dispatch({ kind: "close-overlay" });
+        dispatch({
+          kind: "notice",
+          message:
+            executionProfile === null
+              ? "Execution profile controls are not attached to this shell."
+              : `Unsupported execution mode “${id}”.`,
+        });
+        return;
+      }
+      void executionProfile.select(id).then((selected) => {
+        dispatch({ kind: "close-overlay" });
+        dispatch({
+          kind: "notice",
+          message: !selected.ok
+            ? selected.message
+            : selected.changed
+              ? `Execution mode set to ${selected.profileId}; active work keeps its bound policy.`
+              : `Execution mode is already ${selected.profileId}.`,
+        });
+      });
+    },
+    [options.submission],
+  );
 
   const settleChanges = useCallback((notice: string): void => {
     dispatch({ kind: "changes-settled", notice });
@@ -828,7 +1064,10 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
     paletteQuery,
     confirm,
     editSecret,
+    compression,
+    selectCompression,
     selectControl,
+    selectProfile,
     settleChanges,
     workspaceDraft,
     replaceWorkspace,

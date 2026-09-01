@@ -61,6 +61,15 @@ describe("shell completion", () => {
     expect(candidates).toEqual(expect.arrayContaining(["show", "validate", "path", "set"]));
   });
 
+  test("offers human controls without exposing backend raw names", () => {
+    expect(getCompletionCandidates(["run", "--brief", ""])).toEqual(
+      expect.arrayContaining(["compact", "balanced", "detailed", "auto", "on", "off"]),
+    );
+    expect(getCompletionCandidates(["run", "--hush", ""])).toEqual(["on", "off"]);
+    expect(getCompletionCandidates(["run", "--loom", ""])).toEqual(["on", "off"]);
+    expect(getCompletionCandidates(["run", "--hush", ""])).not.toContain("raw");
+  });
+
   test("answers runtime completion on stdout without constructing services", async () => {
     const streams = createRecordingCliStreams();
     const code = await dispatch({

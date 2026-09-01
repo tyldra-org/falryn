@@ -1,0 +1,27 @@
+/** Command-aware operation formatting with exact fallback on unknown shapes. */
+
+import { KUBERNETES_EXECUTABLES } from "../../invocation/kubernetes.ts";
+import { formatContainerOperationOutput } from "../container/operation.ts";
+import { CONTAINER_EXECUTABLES, containerExecutable } from "../container/shared.ts";
+import { formatInfrastructureOutput } from "../infra/format.ts";
+import { formatKubernetesOperationOutput } from "../kubernetes/operation.ts";
+import { shortestText } from "../shared/text.ts";
+import { formatOperationCommand } from "./commands.ts";
+import { formatPrismaOperation } from "./prisma.ts";
+
+export function formatOperationOutput(
+  text: string,
+  commandTokens: readonly string[],
+): string | null {
+  const formatted =
+    (CONTAINER_EXECUTABLES.has(containerExecutable(commandTokens))
+      ? formatContainerOperationOutput(text, commandTokens)
+      : null) ??
+    (KUBERNETES_EXECUTABLES.has(containerExecutable(commandTokens))
+      ? formatKubernetesOperationOutput(text, commandTokens)
+      : null) ??
+    formatInfrastructureOutput(text, commandTokens) ??
+    (commandTokens[0] === "prisma" ? formatPrismaOperation(text, commandTokens) : null) ??
+    formatOperationCommand(text, commandTokens);
+  return formatted === null ? null : shortestText(text, formatted);
+}

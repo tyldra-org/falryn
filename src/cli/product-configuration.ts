@@ -88,6 +88,7 @@ export async function loadProductConfiguration(
   const outcome = await graph.loader.load(
     {
       configurationRoot: graph.configurationRoot,
+      legacyConfigurationRoot: graph.legacyConfigurationRoot,
       workspaceRoot: graph.workspaceRoot,
       profile: request.profile,
       overrides: request.overrides,

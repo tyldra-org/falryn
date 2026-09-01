@@ -18,19 +18,14 @@ import {
   type BoundToolInvocation,
   bindToolProposals,
   type ConfigurationGeneration,
-  DEFAULT_MAX_CONCURRENT_TOOLS,
-  DEFAULT_MAX_TOOL_CALLS_PER_ITERATION,
-  DEFAULT_MAX_TOOL_LOOP_ITERATIONS,
   type EffectCertainty,
   effectOfToolOutcome,
   foldToolEffects,
-  type InvocationId,
   invocationId,
   MAX_CONCURRENT_TOOLS,
   MAX_TOOL_CALLS_PER_ITERATION,
   MAX_TOOL_LOOP_ITERATIONS,
   type ToolBindError,
-  type ToolCatalog,
   type ToolInvocationOutcome,
   type ToolInvocationRecord,
   type ToolProposal,
@@ -38,170 +33,17 @@ import {
   type TurnSnapshot,
 } from "../domain/index.ts";
 import type { AssembledToolProposal } from "../providers/index.ts";
+import {
+  DEFAULT_TOOL_CALL_LOOP_LIMITS,
+  type ToolCallLoop,
+  type ToolCallLoopLimits,
+  type ToolCallLoopOptions,
+  type ToolCallLoopOutcome,
+  type ToolRunnerPort,
+} from "./tool-call-loop/contracts.ts";
 import type { TurnCoordinator, TurnCoordinatorError } from "./turn-coordinator.ts";
 
-export type ToolCallLoopLimits = {
-  /** Max model→tool cycles in one `run` (fail closed when exceeded). */
-  readonly maxIterations: number;
-  /** Max concurrent in-flight tool executions. */
-  readonly maxConcurrentTools: number;
-  /** Max proposals admitted per iteration (queue bound). */
-  readonly maxToolCallsPerIteration: number;
-};
-
-export const DEFAULT_TOOL_CALL_LOOP_LIMITS: ToolCallLoopLimits = {
-  maxIterations: DEFAULT_MAX_TOOL_LOOP_ITERATIONS,
-  maxConcurrentTools: DEFAULT_MAX_CONCURRENT_TOOLS,
-  maxToolCallsPerIteration: DEFAULT_MAX_TOOL_CALLS_PER_ITERATION,
-};
-
-/**
- * Narrow execution boundary. Receives only validated input and an abort
- * signal — never provider clients, UI state, or unrestricted host access.
- */
-export type ToolRunnerRequest = {
-  readonly invocationId: InvocationId;
-  readonly toolCallId: string;
-  readonly toolName: string;
-  readonly capabilityId: BoundToolInvocation["descriptor"]["id"];
-  readonly version: number;
-  readonly effect: BoundToolInvocation["descriptor"]["effect"];
-  readonly input: Readonly<Record<string, unknown>>;
-  readonly signal: AbortSignal;
-};
-
-export type ToolRunnerPort = {
-  execute(request: ToolRunnerRequest): Promise<ToolInvocationOutcome>;
-};
-
-export type ToolCallLoopOptions = {
-  readonly coordinator: TurnCoordinator;
-  readonly catalog: ToolCatalog;
-  readonly runner: ToolRunnerPort;
-  readonly limits?: Partial<ToolCallLoopLimits>;
-};
-
-export type ContinueModelContext = {
-  readonly turnId: TurnId;
-  readonly iteration: number;
-  readonly results: readonly ToolInvocationRecord[];
-  readonly signal: AbortSignal;
-};
-
-export type ContinueModelResult =
-  | { readonly kind: "stop" }
-  | { readonly kind: "continue"; readonly proposals: readonly ToolProposal[] };
-
-export type RunToolCallLoopInput = {
-  readonly turnId: TurnId;
-  readonly configurationGeneration: ConfigurationGeneration;
-  /** Proposals from stream assembly (#43) or a prior continue-model step. */
-  readonly proposals: readonly ToolProposal[] | readonly AssembledToolProposal[];
-  readonly signal: AbortSignal;
-  /**
-   * How abort settles when the signal fires. Defaults to `cancel`.
-   * Timeout uses the same cleanup-before-report path.
-   */
-  readonly abortAs?: "cancel" | "timeout";
-  /**
-   * After an iteration's tools settle, optionally produce another proposal
-   * batch (next model step). Omitted or `stop` ends the loop.
-   */
-  readonly continueModel?: (context: ContinueModelContext) => Promise<ContinueModelResult>;
-};
-
-export type ToolCallLoopBound =
-  | "max-iterations"
-  | "max-concurrent-tools"
-  | "max-tool-calls-per-iteration";
-
-export type ToolCallLoopOutcome =
-  | {
-      readonly kind: "completed";
-      readonly iterations: number;
-      readonly results: readonly ToolInvocationRecord[];
-      readonly turn: TurnSnapshot;
-      readonly foldedEffect: EffectCertainty;
-    }
-  | {
-      readonly kind: "cancelled";
-      readonly iterations: number;
-      readonly results: readonly ToolInvocationRecord[];
-      readonly turn: TurnSnapshot;
-      readonly effect: EffectCertainty;
-    }
-  | {
-      readonly kind: "timed-out";
-      readonly iterations: number;
-      readonly results: readonly ToolInvocationRecord[];
-      readonly turn: TurnSnapshot;
-      readonly effect: EffectCertainty;
-    }
-  | {
-      readonly kind: "failed";
-      readonly iterations: number;
-      readonly results: readonly ToolInvocationRecord[];
-      readonly turn: TurnSnapshot;
-      readonly effect: EffectCertainty;
-      readonly reason: string;
-    }
-  | {
-      readonly kind: "uncertain";
-      readonly iterations: number;
-      readonly results: readonly ToolInvocationRecord[];
-      readonly turn: TurnSnapshot;
-      readonly recoveryHint: string;
-    }
-  | {
-      readonly kind: "denied";
-      readonly iterations: number;
-      readonly results: readonly ToolInvocationRecord[];
-      readonly turn: TurnSnapshot;
-      readonly reason: string;
-    }
-  | {
-      readonly kind: "malformed";
-      readonly iterations: number;
-      readonly results: readonly ToolInvocationRecord[];
-      readonly turn: TurnSnapshot;
-      readonly reason: string;
-      readonly bindError: ToolBindError | null;
-    }
-  | {
-      readonly kind: "unavailable";
-      readonly iterations: number;
-      readonly results: readonly ToolInvocationRecord[];
-      readonly turn: TurnSnapshot;
-      readonly reason: string;
-    }
-  | {
-      readonly kind: "partial";
-      readonly iterations: number;
-      readonly results: readonly ToolInvocationRecord[];
-      readonly turn: TurnSnapshot;
-      readonly effect: EffectCertainty;
-      readonly reason: string;
-    }
-  | {
-      readonly kind: "bound-exceeded";
-      readonly bound: ToolCallLoopBound;
-      readonly maximum: number;
-      readonly attempted: number;
-      readonly iterations: number;
-      readonly results: readonly ToolInvocationRecord[];
-      readonly turn: TurnSnapshot | null;
-    }
-  | {
-      readonly kind: "turn-error";
-      readonly error: TurnCoordinatorError;
-      readonly iterations: number;
-      readonly results: readonly ToolInvocationRecord[];
-      readonly turn: TurnSnapshot | null;
-    };
-
-export type ToolCallLoop = {
-  run(input: RunToolCallLoopInput): Promise<ToolCallLoopOutcome>;
-};
+export * from "./tool-call-loop/contracts.ts";
 
 export function createToolCallLoop(options: ToolCallLoopOptions): ToolCallLoop {
   const limits = normalizeLimits(options.limits);
@@ -210,9 +52,13 @@ export function createToolCallLoop(options: ToolCallLoopOptions): ToolCallLoop {
   return {
     async run(input) {
       const results: ToolInvocationRecord[] = [];
+      const seenToolCallIds = new Set<string>();
+      const fallbackVisited = new Set<string>();
+      let fallbackTransitions = 0;
       let iteration = 0;
       let proposals = toProposals(input.proposals);
-      const abortAs = input.abortAs ?? "cancel";
+      const abortAs = (): "cancel" | "timeout" =>
+        typeof input.abortAs === "function" ? input.abortAs() : (input.abortAs ?? "cancel");
 
       const beginExecute = applyCommand(
         coordinator,
@@ -236,7 +82,7 @@ export function createToolCallLoop(options: ToolCallLoopOptions): ToolCallLoop {
             coordinator,
             turnId: input.turnId,
             configurationGeneration: input.configurationGeneration,
-            abortAs,
+            abortAs: abortAs(),
             iterations: iteration,
             results,
             // Nothing executed this iteration yet.
@@ -258,12 +104,29 @@ export function createToolCallLoop(options: ToolCallLoopOptions): ToolCallLoop {
 
         iteration += 1;
 
+        const repeated = proposals.find((proposal) => seenToolCallIds.has(proposal.toolCallId));
+        if (repeated !== undefined) {
+          return settleBindFailure({
+            coordinator,
+            turnId: input.turnId,
+            configurationGeneration: input.configurationGeneration,
+            error: { code: "duplicate-tool-call-id", toolCallId: repeated.toolCallId },
+            iterations: iteration,
+            results,
+          });
+        }
+        for (const proposal of proposals) {
+          seenToolCallIds.add(proposal.toolCallId);
+        }
+
         const bound = bindToolProposals({
           catalog,
           proposals,
           maxQueued: limits.maxToolCallsPerIteration,
           nextInvocationId: (proposal) =>
-            invocationId.from(`inv-${iteration}-${proposal.toolCallId}`),
+            invocationId.from(
+              `${input.invocationIdPrefix ?? "tool"}-inv-${iteration}-${proposal.toolCallId}`,
+            ),
         });
 
         if (!bound.ok) {
@@ -301,7 +164,7 @@ export function createToolCallLoop(options: ToolCallLoopOptions): ToolCallLoop {
             coordinator,
             turnId: input.turnId,
             configurationGeneration: input.configurationGeneration,
-            abortAs,
+            abortAs: abortAs(),
             iterations: iteration,
             results,
             inFlightEffect: foldToolEffects(
@@ -311,49 +174,31 @@ export function createToolCallLoop(options: ToolCallLoopOptions): ToolCallLoop {
         }
 
         const preTerminal = classifyPreTerminal(executed.records);
-        if (preTerminal !== null) {
+        const fallback =
+          preTerminal?.kind === "unavailable" && input.continueModel !== undefined
+            ? resolveExplicitFallback(
+                executed.records,
+                options.fallbackPolicy,
+                fallbackVisited,
+                fallbackTransitions,
+                limits.maxIterations,
+              )
+            : null;
+        if (preTerminal !== null && fallback?.kind !== "available") {
           return settleClassified({
             coordinator,
             turnId: input.turnId,
             configurationGeneration: input.configurationGeneration,
             iterations: iteration,
             results,
-            classified: preTerminal,
+            classified:
+              fallback?.kind === "exhausted"
+                ? { kind: "unavailable", reason: fallback.reason }
+                : preTerminal,
           });
         }
 
         if (input.continueModel === undefined) {
-          return finishTurn({
-            coordinator,
-            turnId: input.turnId,
-            configurationGeneration: input.configurationGeneration,
-            iterations: iteration,
-            results,
-          });
-        }
-
-        const continued = await input.continueModel({
-          turnId: input.turnId,
-          iteration,
-          results,
-          signal: input.signal,
-        });
-
-        if (input.signal.aborted) {
-          return settleAbort({
-            coordinator,
-            turnId: input.turnId,
-            configurationGeneration: input.configurationGeneration,
-            abortAs,
-            iterations: iteration,
-            results,
-            inFlightEffect: foldToolEffects(
-              results.map((record) => effectOfToolOutcome(record.outcome)),
-            ),
-          });
-        }
-
-        if (continued.kind === "stop") {
           return finishTurn({
             coordinator,
             turnId: input.turnId,
@@ -379,20 +224,109 @@ export function createToolCallLoop(options: ToolCallLoopOptions): ToolCallLoop {
           };
         }
 
-        const handling = applyCommand(
-          coordinator,
-          input.turnId,
-          "begin-handling-model-event",
-          input.configurationGeneration,
-        );
-        if (!handling.ok) {
-          return {
-            kind: "turn-error",
-            error: handling.error,
+        const continued = await input.continueModel({
+          turnId: input.turnId,
+          iteration,
+          results,
+          signal: input.signal,
+        });
+
+        if (input.signal.aborted) {
+          return settleAbort({
+            coordinator,
+            turnId: input.turnId,
+            configurationGeneration: input.configurationGeneration,
+            abortAs: abortAs(),
             iterations: iteration,
             results,
-            turn: coordinator.get(input.turnId),
-          };
+            inFlightEffect: foldToolEffects(
+              results.map((record) => effectOfToolOutcome(record.outcome)),
+            ),
+          });
+        }
+
+        if (continued.kind === "stop") {
+          const current = coordinator.get(input.turnId);
+          if (current?.status === "terminal") {
+            return completedOutcome(iteration, results, current);
+          }
+          if (current?.phase === "awaiting-model") {
+            const handling = applyCommand(
+              coordinator,
+              input.turnId,
+              "begin-handling-model-event",
+              input.configurationGeneration,
+            );
+            if (!handling.ok) {
+              return {
+                kind: "turn-error",
+                error: handling.error,
+                iterations: iteration,
+                results,
+                turn: coordinator.get(input.turnId),
+              };
+            }
+          }
+          return finishTurn({
+            coordinator,
+            turnId: input.turnId,
+            configurationGeneration: input.configurationGeneration,
+            iterations: iteration,
+            results,
+          });
+        }
+
+        if (fallback?.kind === "available") {
+          const nextNames = continued.proposals.map((proposal) => proposal.name);
+          const undeclared = nextNames.find((name) => !fallback.allowedToolNames.has(name));
+          if (undeclared !== undefined) {
+            return settleClassified({
+              coordinator,
+              turnId: input.turnId,
+              configurationGeneration: input.configurationGeneration,
+              iterations: iteration,
+              results,
+              classified: {
+                kind: "unavailable",
+                reason: `fallback-not-declared:${undeclared}`,
+              },
+            });
+          }
+          if (
+            nextNames.length === 0 ||
+            fallbackTransitions + nextNames.length > fallback.maximumTransitions
+          ) {
+            return settleClassified({
+              coordinator,
+              turnId: input.turnId,
+              configurationGeneration: input.configurationGeneration,
+              iterations: iteration,
+              results,
+              classified: { kind: "unavailable", reason: "fallback-transition-limit" },
+            });
+          }
+          for (const source of fallback.fromToolNames) fallbackVisited.add(source);
+          for (const target of nextNames) fallbackVisited.add(target);
+          fallbackTransitions += nextNames.length;
+        }
+
+        const current = coordinator.get(input.turnId);
+        if (current?.phase === "awaiting-model") {
+          const handling = applyCommand(
+            coordinator,
+            input.turnId,
+            "begin-handling-model-event",
+            input.configurationGeneration,
+          );
+          if (!handling.ok) {
+            return {
+              kind: "turn-error",
+              error: handling.error,
+              iterations: iteration,
+              results,
+              turn: coordinator.get(input.turnId),
+            };
+          }
         }
 
         const executing = applyCommand(
@@ -451,6 +385,50 @@ function toProposals(
     name: proposal.name,
     arguments: proposal.arguments,
   }));
+}
+
+type ExplicitFallbackResolution =
+  | {
+      readonly kind: "available";
+      readonly fromToolNames: readonly string[];
+      readonly allowedToolNames: ReadonlySet<string>;
+      readonly maximumTransitions: number;
+    }
+  | { readonly kind: "exhausted"; readonly reason: string };
+
+function resolveExplicitFallback(
+  records: readonly ToolInvocationRecord[],
+  policy: ToolCallLoopOptions["fallbackPolicy"],
+  visited: ReadonlySet<string>,
+  transitionsMade: number,
+  loopMaximum: number,
+): ExplicitFallbackResolution {
+  const fromToolNames = records
+    .filter((record) => record.outcome.status === "unavailable")
+    .map((record) => record.toolName);
+  if (policy === undefined || fromToolNames.length === 0) {
+    return { kind: "exhausted", reason: "no-declared-fallback" };
+  }
+  const maximumTransitions = Math.min(loopMaximum, Math.max(1, Math.trunc(policy.maxTransitions)));
+  if (transitionsMade >= maximumTransitions) {
+    return { kind: "exhausted", reason: "fallback-transition-limit" };
+  }
+  const declaredToolNames = policy.transitions
+    .filter((transition) => fromToolNames.includes(transition.fromToolName))
+    .flatMap((transition) => transition.toToolNames);
+  if (declaredToolNames.length === 0) {
+    return { kind: "exhausted", reason: "no-declared-fallback" };
+  }
+  const allowedToolNames = new Set(declaredToolNames.filter((name) => !visited.has(name)));
+  if (allowedToolNames.size === 0) {
+    return { kind: "exhausted", reason: "fallback-exhausted" };
+  }
+  return {
+    kind: "available",
+    fromToolNames: Object.freeze(fromToolNames),
+    allowedToolNames,
+    maximumTransitions,
+  };
 }
 
 function applyCommand(
@@ -980,5 +958,19 @@ function finishTurn(input: {
     results: input.results,
     turn: input.coordinator.get(input.turnId) as TurnSnapshot,
     foldedEffect,
+  };
+}
+
+function completedOutcome(
+  iterations: number,
+  results: readonly ToolInvocationRecord[],
+  turn: TurnSnapshot,
+): Extract<ToolCallLoopOutcome, { readonly kind: "completed" }> {
+  return {
+    kind: "completed",
+    iterations,
+    results,
+    turn,
+    foldedEffect: foldToolEffects(results.map((record) => effectOfToolOutcome(record.outcome))),
   };
 }

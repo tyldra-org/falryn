@@ -38,16 +38,22 @@ export function startConfigurationReloadWatcher(
   } = {},
 ): ConfigurationReloadHandle {
   const loadRequest = options.loadRequest ?? productConfigurationLoadRequest(globals);
-  const paths = configurationSourcePaths(
-    graph.configurationRoot,
-    graph.workspaceRoot,
-    loadRequest.profile,
-  );
+  const paths = [
+    ...configurationSourcePaths(graph.configurationRoot, graph.workspaceRoot, loadRequest.profile),
+    ...(graph.legacyConfigurationRoot === null
+      ? []
+      : configurationSourcePaths(
+          graph.legacyConfigurationRoot,
+          graph.workspaceRoot,
+          loadRequest.profile,
+        )),
+  ].filter((path, index, all) => all.indexOf(path) === index);
   const streams = options.streams;
   return createConfigurationReloadWatcher({
     loader: graph.loader,
     loadRequest: {
       configurationRoot: graph.configurationRoot,
+      legacyConfigurationRoot: graph.legacyConfigurationRoot,
       workspaceRoot: graph.workspaceRoot,
       profile: loadRequest.profile,
       overrides: loadRequest.overrides,

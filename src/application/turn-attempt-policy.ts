@@ -13,23 +13,20 @@
  */
 
 import {
-  type AttemptAction,
   type AttemptClassification,
   type AttemptFact,
   type AttemptFailureCategory,
   type AttemptIdentity,
   assertNever,
-  type ClockPort,
   type ConfigurationGeneration,
   classifyAttempt,
   DEFAULT_RETRY_BACKOFF,
   decideAttemptAction,
   type EffectCertainty,
   evaluateRetry,
-  type ModelAttemptId,
+  type ModelAttemptBinding,
   modelAttemptId,
   NO_CORRELATION,
-  type RetryBackoff,
   type RetryPolicy,
   type TerminalOutcome,
   type TurnCorrelation,
@@ -40,156 +37,39 @@ import {
 } from "../domain/index.ts";
 import type { ProviderFailure, ProviderFailureKind } from "../providers/errors.ts";
 import type {
-  ModelPolicy,
+  PromptCachePolicy,
+  ProviderModelIdentity,
   ResolveRouteInput,
-  RoutedCatalogEntry,
   RoutingOutcome,
   RoutingReceipt,
-  WorkIntent,
 } from "../providers/index.ts";
-import { resolveModelRoute, resolveNextFallback } from "../providers/index.ts";
+import {
+  providerModelIdentityKey,
+  resolveModelRoute,
+  resolveNextFallback,
+} from "../providers/index.ts";
+import { providerPromptCachePolicy } from "./provider-prompt-cache.ts";
 import { awaitBackoff } from "./recovery.ts";
+import type {
+  AttemptModelInput,
+  AttemptRecord,
+  TurnAttemptPolicy,
+  TurnAttemptPolicyOptions,
+  TurnAttemptPolicyOutcome,
+} from "./turn-attempt-policy/contracts.ts";
 import type { TurnCoordinator, TurnCoordinatorError } from "./turn-coordinator.ts";
 import type { TurnEventJournalPort } from "./turn-event-journal.ts";
 
-export type AttemptRunnerRequest = {
-  readonly turnId: TurnId;
-  readonly identity: AttemptIdentity;
-  readonly receipt: RoutingReceipt;
-  readonly configurationGeneration: ConfigurationGeneration;
-  readonly signal: AbortSignal;
-};
-
-export type AttemptRunnerResult = {
-  readonly fact: AttemptFact;
-  /** Turn after the attempt; may already be terminal when the runner settles. */
-  readonly turn: TurnSnapshot | null;
-};
-
-/**
- * One model attempt. Implementations typically wrap the stream consumer and
- * optional tool-call loop; tests inject deterministic scripts.
- */
-export type AttemptRunnerPort = {
-  run(request: AttemptRunnerRequest): Promise<AttemptRunnerResult>;
-};
-
-export type TurnAttemptPolicyOptions = {
-  readonly clock: ClockPort;
-  readonly coordinator: TurnCoordinator;
-  readonly runner: AttemptRunnerPort;
-  readonly policy: ModelPolicy;
-  readonly catalogs: readonly RoutedCatalogEntry[];
-  readonly retryPolicy?: RetryPolicy;
-  readonly backoff?: RetryBackoff;
-  /** Injected for deterministic backoff tests. Defaults to 0 (no jitter). */
-  readonly jitter?: () => number;
-  /** Allocates a branded attempt id. Defaults to `attempt-<n>`. */
-  readonly allocateAttemptId?: (attemptNumber: number) => ModelAttemptId;
-  /**
-   * Optional durable journal (#46). When set, attempt/turn terminals are
-   * recorded as facts; replay never re-enters the runner.
-   */
-  readonly journal?: TurnEventJournalPort;
-};
-
-export type RunTurnAttemptPolicyInput = {
-  readonly turnId: TurnId;
-  readonly configurationGeneration: ConfigurationGeneration;
-  readonly signal: AbortSignal;
-  readonly intent?: WorkIntent;
-  readonly role?: ResolveRouteInput["role"];
-  readonly explicit?: ResolveRouteInput["explicit"];
-  readonly required?: ResolveRouteInput["required"];
-  /**
-   * Elapsed budget across all attempts (ms), or `null` for unbounded.
-   * Defaults to `null`.
-   */
-  readonly elapsedBudgetMs?: number | null;
-};
-
-export type AttemptRecord = {
-  readonly identity: AttemptIdentity;
-  readonly receipt: RoutingReceipt;
-  readonly fact: AttemptFact;
-  readonly classification: AttemptClassification;
-  readonly action: AttemptAction;
-};
-
-export type TurnAttemptPolicyOutcome =
-  | {
-      readonly kind: "completed";
-      readonly attempts: readonly AttemptRecord[];
-      readonly turn: TurnSnapshot;
-    }
-  | {
-      readonly kind: "refusal";
-      readonly source: "model" | "policy" | "provider-safety";
-      readonly reason: string;
-      readonly effect: EffectCertainty;
-      readonly attempts: readonly AttemptRecord[];
-      readonly turn: TurnSnapshot | null;
-    }
-  | {
-      readonly kind: "partial";
-      readonly reason: string;
-      readonly effect: EffectCertainty;
-      readonly attempts: readonly AttemptRecord[];
-      readonly turn: TurnSnapshot;
-    }
-  | {
-      readonly kind: "failed";
-      readonly effect: EffectCertainty;
-      readonly message: string;
-      readonly attempts: readonly AttemptRecord[];
-      readonly turn: TurnSnapshot;
-    }
-  | {
-      readonly kind: "cancelled";
-      readonly effect: EffectCertainty;
-      readonly attempts: readonly AttemptRecord[];
-      readonly turn: TurnSnapshot;
-    }
-  | {
-      readonly kind: "timed-out";
-      readonly effect: EffectCertainty;
-      readonly attempts: readonly AttemptRecord[];
-      readonly turn: TurnSnapshot;
-    }
-  | {
-      readonly kind: "uncertain";
-      readonly effect: "uncertain";
-      readonly attempts: readonly AttemptRecord[];
-      readonly turn: TurnSnapshot;
-    }
-  | {
-      readonly kind: "exhausted";
-      readonly reason: string;
-      readonly attempts: readonly AttemptRecord[];
-      readonly turn: TurnSnapshot | null;
-    }
-  | {
-      readonly kind: "routing-refused";
-      readonly code: string;
-      readonly detail: string;
-      readonly attempts: readonly AttemptRecord[];
-      readonly turn: TurnSnapshot | null;
-    }
-  | {
-      readonly kind: "turn-error";
-      readonly error: TurnCoordinatorError;
-      readonly attempts: readonly AttemptRecord[];
-      readonly turn: TurnSnapshot | null;
-    };
-
-export type TurnAttemptPolicy = {
-  run(input: RunTurnAttemptPolicyInput): Promise<TurnAttemptPolicyOutcome>;
-};
+export * from "./turn-attempt-policy/contracts.ts";
 
 const DEFAULT_RETRY_POLICY: RetryPolicy = { maxAttempts: 3, retryable: true };
 
-function routeKey(providerId: string, modelId: string): string {
-  return `${providerId}\0${modelId}`;
+function routeIdentity(receipt: RoutingReceipt): ProviderModelIdentity {
+  return {
+    providerProfileId: receipt.providerProfileId,
+    providerId: receipt.providerId,
+    modelId: receipt.modelId,
+  };
 }
 
 /** Map a provider failure kind onto the domain attempt category. */
@@ -484,6 +364,63 @@ function correlationFor(snapshot: TurnSnapshot): TurnCorrelation {
   };
 }
 
+function attemptBinding(
+  receipt: RoutingReceipt,
+  modelInput: AttemptModelInput | undefined,
+  generation: ConfigurationGeneration,
+  promptCache: PromptCachePolicy | undefined,
+): ModelAttemptBinding {
+  const disclosure = modelInput?.disclosure;
+  return {
+    schemaVersion: 1,
+    providerId: receipt.providerId,
+    providerProfileId: receipt.providerProfileId,
+    providerAdapterKind: receipt.providerAdapterKind,
+    providerDestinationId: receipt.providerDestinationId,
+    transportCompatibilityId: receipt.transportCompatibilityId,
+    modelId: receipt.modelId,
+    role: receipt.role,
+    intent: receipt.intent,
+    reasoning: receipt.reasoning,
+    providerReasoningControl: receipt.reasoningControl,
+    ...(modelInput?.executionPolicy === undefined
+      ? {}
+      : {
+          executionProfile: {
+            id: modelInput.executionPolicy.profileId,
+            version: modelInput.executionPolicy.profileVersion,
+            completion: modelInput.executionPolicy.completion,
+          },
+        }),
+    providerCatalogGeneration: receipt.catalogGeneration,
+    modelCapabilitySchemaVersion: receipt.modelCapabilitySchemaVersion,
+    toolCatalogGeneration: disclosure?.catalogGeneration ?? generation,
+    policyGeneration: generation,
+    runner: "product-attempt-runner.v1",
+    gateway: "product-tool-gateway.v1",
+    discoveryHandle: disclosure?.discoveryHandle ?? `capability-catalog:${generation}`,
+    ...(disclosure?.opportunityPlan === undefined
+      ? {}
+      : { opportunityPlan: disclosure.opportunityPlan }),
+    ...(disclosure?.capabilityCatalog === undefined
+      ? {}
+      : { capabilityCatalog: disclosure.capabilityCatalog }),
+    families: disclosure?.families ?? [],
+    tools: disclosure?.tools ?? [],
+    omitted: disclosure?.omitted ?? [],
+    schemaBytes: disclosure?.schemaBytes ?? 0,
+    schemaTokensEstimated: disclosure?.schemaTokensEstimated ?? 0,
+    ...(promptCache === undefined ? {} : { promptCache }),
+    budgets: {
+      attempts: receipt.budgets.attempts ?? null,
+      inputTokens: receipt.budgets.inputTokens ?? null,
+      outputTokens: receipt.budgets.outputTokens ?? null,
+      wallTimeMs: receipt.budgets.wallTimeMs ?? null,
+      cost: receipt.budgets.cost ?? null,
+    },
+  };
+}
+
 /** Maps an attempt classification onto the durable attempt terminal fact. */
 function outcomeForAttemptRecord(classification: AttemptClassification): TerminalOutcome {
   switch (classification.kind) {
@@ -594,12 +531,14 @@ export function createTurnAttemptPolicy(options: TurnAttemptPolicyOptions): Turn
   const retryPolicy = options.retryPolicy ?? DEFAULT_RETRY_POLICY;
   const backoff = options.backoff ?? DEFAULT_RETRY_BACKOFF;
   const jitter = options.jitter ?? (() => 0);
-  const allocateAttemptId =
-    options.allocateAttemptId ??
-    ((attemptNumber: number) => modelAttemptId.from(`attempt-${attemptNumber}`));
+  const turnLifecycleJournal = options.persistTurnLifecycle === false ? undefined : options.journal;
 
   return {
     async run(input) {
+      const allocateAttemptId =
+        options.allocateAttemptId ??
+        ((attemptNumber: number) =>
+          modelAttemptId.from(`attempt:${String(input.turnId)}:${attemptNumber}`));
       const attempts: AttemptRecord[] = [];
       const routeInput: ResolveRouteInput = {
         policy: options.policy,
@@ -623,7 +562,7 @@ export function createTurnAttemptPolicy(options: TurnAttemptPolicyOptions): Turn
       }
 
       let receipt = initial.receipt;
-      const visited = new Set<string>([routeKey(receipt.providerId, receipt.modelId)]);
+      const visited = new Set<string>([providerModelIdentityKey(routeIdentity(receipt))]);
       let attemptsOnCurrentRoute = 0;
       let elapsedMs = 0;
       let generation = input.configurationGeneration;
@@ -642,7 +581,7 @@ export function createTurnAttemptPolicy(options: TurnAttemptPolicyOptions): Turn
       const opened = options.coordinator.get(input.turnId);
       if (opened !== null) {
         await persistFacts(
-          options.journal,
+          turnLifecycleJournal,
           [{ kind: "turn.started", correlation: correlationFor(opened) }],
           input.signal,
         );
@@ -663,7 +602,7 @@ export function createTurnAttemptPolicy(options: TurnAttemptPolicyOptions): Turn
           const settled = options.coordinator.get(input.turnId);
           if (settled?.status === "terminal") {
             await persistFacts(
-              options.journal,
+              turnLifecycleJournal,
               [
                 {
                   kind: "turn.completed",
@@ -706,6 +645,18 @@ export function createTurnAttemptPolicy(options: TurnAttemptPolicyOptions): Turn
         };
 
         const live = options.coordinator.get(input.turnId);
+        const promptCache =
+          live === null ||
+          input.modelInput?.promptCache === undefined ||
+          receipt.promptCacheMode === null ||
+          receipt.promptCacheMode === undefined
+            ? undefined
+            : providerPromptCachePolicy({
+                sessionId: live.sessionId,
+                configurationGeneration: input.configurationGeneration,
+                receipt,
+                seed: input.modelInput.promptCache,
+              });
         if (live !== null) {
           await persistFacts(
             options.journal,
@@ -714,6 +665,12 @@ export function createTurnAttemptPolicy(options: TurnAttemptPolicyOptions): Turn
                 kind: "model.attempt.started",
                 correlation: correlationFor(live),
                 modelAttemptId: identity.modelAttemptId,
+                binding: attemptBinding(
+                  receipt,
+                  input.modelInput,
+                  input.configurationGeneration,
+                  promptCache,
+                ),
               },
             ],
             input.signal,
@@ -724,8 +681,11 @@ export function createTurnAttemptPolicy(options: TurnAttemptPolicyOptions): Turn
           turnId: input.turnId,
           identity,
           receipt,
+          boundConfigurationGeneration: input.configurationGeneration,
           configurationGeneration: generation,
           signal: input.signal,
+          modelInput: input.modelInput ?? null,
+          ...(promptCache === undefined ? {} : { promptCache }),
         });
 
         elapsedMs = Math.max(elapsedMs, Number(options.clock.now()) - Number(startedAt));
@@ -778,6 +738,7 @@ export function createTurnAttemptPolicy(options: TurnAttemptPolicyOptions): Turn
           fact: runnerResult.fact,
           classification,
           action,
+          output: runnerResult.output ?? null,
         });
 
         const attemptOutcome = outcomeForAttemptRecord(classification);
@@ -810,7 +771,7 @@ export function createTurnAttemptPolicy(options: TurnAttemptPolicyOptions): Turn
             const terminal = options.coordinator.get(input.turnId);
             if (terminal?.status === "terminal") {
               await persistFacts(
-                options.journal,
+                turnLifecycleJournal,
                 [
                   {
                     kind: "turn.completed",
@@ -840,7 +801,7 @@ export function createTurnAttemptPolicy(options: TurnAttemptPolicyOptions): Turn
               const terminal = options.coordinator.get(input.turnId);
               if (terminal?.status === "terminal") {
                 await persistFacts(
-                  options.journal,
+                  turnLifecycleJournal,
                   [
                     {
                       kind: "turn.completed",
@@ -865,7 +826,7 @@ export function createTurnAttemptPolicy(options: TurnAttemptPolicyOptions): Turn
               };
             }
             receipt = fallbackProbe.receipt;
-            visited.add(routeKey(receipt.providerId, receipt.modelId));
+            visited.add(providerModelIdentityKey(routeIdentity(receipt)));
             attemptsOnCurrentRoute = 0;
             continue;
           }

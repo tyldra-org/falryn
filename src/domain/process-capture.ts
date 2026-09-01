@@ -12,7 +12,7 @@
 import { type ArtifactId, type ArtifactStorePort, artifactId } from "./artifact.ts";
 import type { DurationMs, Instant } from "./clock.ts";
 import { elapsedBetween } from "./clock.ts";
-import type { ProcessCaptureId } from "./identity.ts";
+import type { InvocationId, ProcessCaptureId } from "./identity.ts";
 import {
   type CommandRequest,
   isAbsoluteCommandPath,
@@ -61,6 +61,8 @@ export type ProcessCaptureLimits = {
 };
 
 export type ProcessCaptureRequest = CommandRequest & {
+  /** Invocation lineage for durable capture artifacts when a tool call owns the process. */
+  readonly invocationId?: InvocationId | undefined;
   readonly maxInlineBytes?: number | undefined;
   readonly maxCaptureBytes?: number | undefined;
   readonly maxLineBytes?: number | undefined;
@@ -318,6 +320,7 @@ type ProcessCaptureEventDetail = {
 
 export function createProcessCaptureCollector(options: {
   readonly captureId: ProcessCaptureId;
+  readonly invocationId?: InvocationId | undefined;
   readonly limits: ProcessCaptureLimits;
   readonly artifacts: ArtifactStorePort | null;
   readonly listener?: ProcessCaptureListener | undefined;
@@ -474,6 +477,7 @@ export function createProcessCaptureCollector(options: {
       let nextStop = stop;
       const stdout = await finalizeStream(
         options.captureId,
+        options.invocationId ?? null,
         "stdout",
         streams.stdout,
         options.limits,
@@ -482,6 +486,7 @@ export function createProcessCaptureCollector(options: {
       );
       const stderr = await finalizeStream(
         options.captureId,
+        options.invocationId ?? null,
         "stderr",
         streams.stderr,
         options.limits,
@@ -550,6 +555,7 @@ function spillFailed(capture: ProcessStreamCapture): boolean {
 
 async function finalizeStream(
   captureId: ProcessCaptureId,
+  invocationId: InvocationId | null,
   stream: ProcessStreamName,
   buffer: StreamBuffer,
   limits: ProcessCaptureLimits,
@@ -586,7 +592,7 @@ async function finalizeStream(
         encoding: "identity",
         sensitivity: "user-content",
         origin: "capture",
-        invocationId: null,
+        invocationId,
         declaredByteLength: retained.byteLength,
         content: chunksOf(retained),
       });

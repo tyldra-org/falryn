@@ -52,6 +52,19 @@ describe("parseComposerSlash", () => {
     });
   });
 
+  test("opens one compression control surface without an argument", () => {
+    expect(parseComposerSlash("/compression")).toEqual({
+      kind: "match",
+      commandId: "compression.show",
+      argument: null,
+      form: "/compression",
+    });
+    expect(parseComposerSlash("/compression off")).toEqual({
+      kind: "unresolved",
+      reason: "/compression takes no argument",
+    });
+  });
+
   test("keeps path arguments case-sensitive", () => {
     expect(parseComposerSlash("/workspace add /Tmp/Extra")).toMatchObject({
       kind: "match",
@@ -85,13 +98,36 @@ describe("parseComposerSlash", () => {
 
   test("declares an argument schema for every workspace alias onto a real command", () => {
     for (const alias of WORKSPACE_SLASH_ALIASES) {
-      expect(["none", "path", "layout-name"]).toContain(alias.argument);
+      expect(["none", "path", "layout-name", "profile"]).toContain(alias.argument);
       expect(commandById(alias.commandId)?.id).toBe(alias.commandId);
-      if (alias.commandId === "brief.set") {
+      if (
+        alias.commandId === "brief.set" ||
+        alias.commandId === "hush.set" ||
+        alias.commandId === "loom.set" ||
+        alias.commandId === "compression.show" ||
+        alias.commandId === "mode.select"
+      ) {
         expect(workspacePanelForSlashCommand(alias.commandId)).toBeNull();
         continue;
       }
       expect(workspacePanelForSlashCommand(alias.commandId)).not.toBeNull();
     }
+  });
+
+  test("maps canonical and direct execution-mode aliases onto one action", () => {
+    expect(parseComposerSlash("/mode plan")).toMatchObject({
+      kind: "match",
+      commandId: "mode.select",
+      argument: "plan",
+    });
+    expect(parseComposerSlash("/debug")).toMatchObject({
+      kind: "match",
+      commandId: "mode.select",
+      argument: "debug",
+    });
+    expect(parseComposerSlash("/agent extra")).toEqual({
+      kind: "unresolved",
+      reason: "/agent takes no argument",
+    });
   });
 });

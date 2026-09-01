@@ -1,0 +1,1235 @@
+import { describe, expect, test } from "bun:test";
+import type {
+  MessageCreateParamsStreaming,
+  RawMessageStreamEvent,
+} from "@anthropic-ai/sdk/resources/messages/messages";
+import type { GenerateContentParameters, GenerateContentResponse } from "@google/genai";
+
+import {
+  capabilityId,
+  configurationGeneration,
+  createInMemoryEventStore,
+  createInMemoryFileSystem,
+  createManualClock,
+  createStubCommandRunner,
+  DEFAULT_BRIEF_NEED,
+  instant,
+  localPath,
+  modelAttemptId,
+  projectBrief,
+  sessionId,
+  streamId,
+  traceId,
+  turnId,
+  workspaceId,
+} from "../domain/index.ts";
+import {
+  createAnthropicSdkAdapter,
+  createGoogleGenAiSdkAdapter,
+  createHostProcessCapturePort,
+} from "../integrations/index.ts";
+import {
+  createDeterministicProviderAdapter,
+  type ModelRequest,
+  type RoutingReceipt,
+} from "../providers/index.ts";
+import { composeProductAgentRuntime } from "./product-agent-runtime.ts";
+import { createProductCapabilityRegistry } from "./product-capability-registry.ts";
+import { discloseProductTools } from "./product-tool-disclosure.ts";
+import { composeProductProcessTools } from "./product-tools-process.ts";
+import { composeProductWorkspaceTools } from "./product-tools-workspace.ts";
+import { promptCacheStablePrefixDigest } from "./provider-prompt-cache.ts";
+import type { ToolRunnerPort } from "./tool-call-loop.ts";
+
+const generation = configurationGeneration.from(5);
+
+function setup(
+  adapter = createDeterministicProviderAdapter({
+    script: { kind: "abortable", hangUntilAbort: true },
+  }),
+  wrapRunner: (base: ToolRunnerPort) => ToolRunnerPort = (base) => base,
+) {
+  const correlation = {
+    workspaceId: workspaceId.from("workspace-attempt-product"),
+    sessionId: sessionId.from("session-attempt-product"),
+    traceId: traceId.from("trace-attempt-product"),
+    configurationGeneration: generation,
+  };
+  const tools = composeProductWorkspaceTools({
+    generation,
+    fileSystem: createInMemoryFileSystem({ nodes: { "/work": { kind: "directory" } } }),
+    commands: createStubCommandRunner(() => ({ kind: "exited", exitCode: 1, stdout: "" })),
+    workspaceRoot: localPath("/work"),
+  });
+  const eventStore = createInMemoryEventStore();
+  const runtimeStreamId = streamId.from("session:attempt-product");
+  const runtime = composeProductAgentRuntime({
+    eventStore,
+    clock: createManualClock(instant(100)),
+    streamId: runtimeStreamId,
+    correlation,
+    providerAdapter: adapter,
+    toolRegistry: tools.registry,
+    toolRunner: wrapRunner(tools.runner),
+  });
+  if (!runtime.ok) {
+    throw new Error(runtime.error.code);
+  }
+  const disclosure = discloseProductTools(
+    createProductCapabilityRegistry(tools.registry.generation, tools.registry),
+    tools.registry,
+  );
+  return {
+    adapter,
+    correlation,
+    runtime: runtime.value,
+    disclosure,
+    eventStore,
+    runtimeStreamId,
+  };
+}
+
+function receipt(
+  setupResult: ReturnType<typeof setup>,
+  budgets: RoutingReceipt["budgets"] = {},
+): RoutingReceipt {
+  const model = setupResult.adapter.supportedModels[0];
+  if (model === undefined) {
+    throw new Error("deterministic provider has no model");
+  }
+  const transportCompatibility = setupResult.adapter.transportCompatibilityFor(model);
+  if (transportCompatibility === null) {
+    throw new Error("deterministic provider has no transport compatibility");
+  }
+  return {
+    role: "default",
+    intent: "coding",
+    selectionReason: "intent-mapped-role",
+    requiredCapabilities: { tools: true, streaming: true },
+    providerId: setupResult.adapter.identity.providerId,
+    providerProfileId: setupResult.adapter.identity.profileId,
+    providerAdapterKind: setupResult.adapter.identity.adapterKind,
+    providerDestinationId: setupResult.adapter.identity.destinationId,
+    transportCompatibilityId:
+      setupResult.adapter.identity.transportCompatibilityId ?? "transport:deterministic",
+    transportCompatibilityReceipt: transportCompatibility.receipt,
+    modelId: model,
+    reasoning: "provider-default",
+    reasoningControl: null,
+    responseDensityControls: [],
+    fallbackPosition: 0,
+    budgets,
+    catalogGeneration: 1,
+    modelCapabilitySchemaVersion: 1,
+    catalogProvenance: "static-config",
+    recordedAt: null,
+  };
+}
+
+async function start(setupResult: ReturnType<typeof setup>, id: string) {
+  const turn = turnId.from(id);
+  const hosted = await setupResult.runtime.hostTurn({
+    turnId: turn,
+    sessionId: setupResult.correlation.sessionId,
+    workspaceId: setupResult.correlation.workspaceId,
+    traceId: setupResult.correlation.traceId,
+    configurationGeneration: generation,
+  });
+  if (hosted.kind !== "hosted") {
+    throw new Error(hosted.kind);
+  }
+  for (const command of ["begin-orienting", "begin-assembling-context"] as const) {
+    const advanced = setupResult.runtime.turnCoordinator.apply({
+      turnId: turn,
+      command,
+      configurationGeneration: generation,
+    });
+    if (!advanced.ok) {
+      throw new Error(advanced.error.code);
+    }
+  }
+  return turn;
+}
+
+function disclosureInput(product: ReturnType<typeof setup>) {
+  return {
+    catalogGeneration: product.disclosure.receipt.catalogGeneration,
+    toolNames: product.disclosure.receipt.disclosed.map((tool) => tool.name),
+    discoveryHandle: product.disclosure.receipt.discoveryHandle,
+    opportunityPlan: product.disclosure.receipt.opportunityPlan,
+    families: product.disclosure.receipt.families,
+    tools: product.disclosure.receipt.disclosed.map((tool) => ({
+      name: tool.name,
+      capabilityId: tool.capabilityId,
+      version: tool.version,
+      schemaDigest: tool.schemaDigest,
+      schemaBytes: tool.schemaBytes,
+      schemaTokensEstimated: tool.schemaTokensEstimated,
+    })),
+    omitted: product.disclosure.receipt.omitted,
+    schemaBytes: product.disclosure.receipt.schemaBytes,
+    schemaTokensEstimated: product.disclosure.receipt.schemaTokensEstimated,
+  };
+}
+
+function anthropicStream(
+  events: readonly RawMessageStreamEvent[],
+): AsyncIterable<RawMessageStreamEvent> {
+  return {
+    async *[Symbol.asyncIterator]() {
+      yield* events;
+    },
+  };
+}
+
+function anthropicEvent(value: unknown): RawMessageStreamEvent {
+  return value as RawMessageStreamEvent;
+}
+
+function googleStream(
+  responses: readonly GenerateContentResponse[],
+): AsyncIterable<GenerateContentResponse> {
+  return {
+    async *[Symbol.asyncIterator]() {
+      yield* responses;
+    },
+  };
+}
+
+function googleResponse(value: unknown): GenerateContentResponse {
+  return value as GenerateContentResponse;
+}
+
+describe("createProductAttemptRunner", () => {
+  test("continues a signed Google function call through the product gateway", async () => {
+    const bodies: GenerateContentParameters[] = [];
+    const adapter = createGoogleGenAiSdkAdapter({
+      profileId: "google-product-test",
+      supportedModels: ["gemini-test"],
+      resolveApiKey: async () => "google-test-key",
+      createStream: async (_apiKey, body) => {
+        bodies.push(body);
+        if (bodies.length === 1) {
+          return googleStream([
+            googleResponse({
+              candidates: [
+                {
+                  index: 0,
+                  content: {
+                    role: "model",
+                    parts: [
+                      {
+                        text: "inspect",
+                        thought: true,
+                        thoughtSignature: "thought-product",
+                      },
+                      {
+                        functionCall: {
+                          id: "google-call-product",
+                          name: "list_dir",
+                          args: { path: "." },
+                        },
+                        thoughtSignature: "function-product",
+                      },
+                    ],
+                  },
+                  finishReason: "STOP",
+                },
+              ],
+              usageMetadata: {
+                promptTokenCount: 8,
+                candidatesTokenCount: 3,
+                thoughtsTokenCount: 2,
+                totalTokenCount: 13,
+              },
+            }),
+          ]);
+        }
+        return googleStream([
+          googleResponse({
+            candidates: [
+              {
+                index: 0,
+                content: { role: "model", parts: [{ text: "Directory inspected." }] },
+                finishReason: "STOP",
+              },
+            ],
+            usageMetadata: {
+              promptTokenCount: 12,
+              candidatesTokenCount: 4,
+              totalTokenCount: 16,
+            },
+          }),
+        ]);
+      },
+    });
+    const product = setup(adapter);
+    const turn = await start(product, "turn-attempt-google-tool");
+    const runner = product.runtime.requireAttemptRunner();
+    if (!runner.ok) {
+      throw new Error(runner.error.code);
+    }
+
+    const result = await runner.value.run({
+      turnId: turn,
+      identity: {
+        attemptNumber: 1,
+        modelAttemptId: modelAttemptId.from("attempt-google-tool"),
+        fallbackPosition: 0,
+        providerKey: adapter.identity.providerId,
+        modelKey: String(adapter.supportedModels[0]),
+      },
+      receipt: receipt(product),
+      boundConfigurationGeneration: generation,
+      configurationGeneration: generation,
+      signal: new AbortController().signal,
+      modelInput: {
+        messages: [
+          { role: "system", parts: [{ kind: "text", text: "Use workspace tools." }] },
+          { role: "user", parts: [{ kind: "text", text: "Inspect the workspace root." }] },
+        ],
+        tools: product.disclosure.modelTools,
+        output: { kind: "text" },
+        budgets: { maxOutputTokens: 256 },
+        disclosure: disclosureInput(product),
+      },
+    });
+
+    expect(result.fact.kind).toBe("completed");
+    expect(result.output).toMatchObject({
+      text: "Directory inspected.",
+      toolResults: 1,
+      providerRequests: 2,
+      usage: {
+        inputTokens: 20,
+        outputTokens: 7,
+        totalTokens: 29,
+        provenance: "provider-reported",
+      },
+    });
+    expect(bodies).toHaveLength(2);
+    expect(bodies[0]).toMatchObject({
+      model: "gemini-test",
+      config: {
+        systemInstruction: "Use workspace tools.",
+        maxOutputTokens: 256,
+        automaticFunctionCalling: { disable: true },
+      },
+    });
+    expect(bodies[1]?.contents).toMatchObject([
+      { role: "user", parts: [{ text: "Inspect the workspace root." }] },
+      {
+        role: "model",
+        parts: [
+          {
+            text: "inspect",
+            thought: true,
+            thoughtSignature: "thought-product",
+          },
+          {
+            functionCall: {
+              id: "google-call-product",
+              name: "list_dir",
+              args: { path: "." },
+            },
+            thoughtSignature: "function-product",
+          },
+        ],
+      },
+      {
+        role: "user",
+        parts: [
+          {
+            functionResponse: {
+              id: "google-call-product",
+              name: "list_dir",
+            },
+          },
+        ],
+      },
+    ]);
+  });
+
+  test("continues an Anthropic Messages tool call through the product gateway", async () => {
+    const bodies: MessageCreateParamsStreaming[] = [];
+    const adapter = createAnthropicSdkAdapter({
+      profileId: "anthropic-product-test",
+      supportedModels: ["claude-test"],
+      resolveApiKey: async () => "sk-ant-test",
+      createStream: async (_apiKey, body) => {
+        bodies.push(body);
+        if (bodies.length === 1) {
+          return anthropicStream([
+            anthropicEvent({
+              type: "message_start",
+              message: { usage: { input_tokens: 8, output_tokens: 0 } },
+            }),
+            anthropicEvent({
+              type: "content_block_start",
+              index: 0,
+              content_block: {
+                type: "tool_use",
+                id: "toolu_product",
+                name: "list_dir",
+                input: {},
+                caller: { type: "direct" },
+              },
+            }),
+            anthropicEvent({
+              type: "content_block_delta",
+              index: 0,
+              delta: { type: "input_json_delta", partial_json: '{"path":"."}' },
+            }),
+            anthropicEvent({ type: "content_block_stop", index: 0 }),
+            anthropicEvent({
+              type: "message_delta",
+              delta: { stop_reason: "tool_use", stop_sequence: null },
+              usage: { output_tokens: 3 },
+            }),
+            anthropicEvent({ type: "message_stop" }),
+          ]);
+        }
+        return anthropicStream([
+          anthropicEvent({
+            type: "message_start",
+            message: { usage: { input_tokens: 12, output_tokens: 0 } },
+          }),
+          anthropicEvent({
+            type: "content_block_start",
+            index: 0,
+            content_block: { type: "text", text: "", citations: null },
+          }),
+          anthropicEvent({
+            type: "content_block_delta",
+            index: 0,
+            delta: { type: "text_delta", text: "Directory inspected." },
+          }),
+          anthropicEvent({ type: "content_block_stop", index: 0 }),
+          anthropicEvent({
+            type: "message_delta",
+            delta: { stop_reason: "end_turn", stop_sequence: null },
+            usage: { output_tokens: 4 },
+          }),
+          anthropicEvent({ type: "message_stop" }),
+        ]);
+      },
+    });
+    const product = setup(adapter);
+    const turn = await start(product, "turn-attempt-anthropic-tool");
+    const runner = product.runtime.requireAttemptRunner();
+    if (!runner.ok) {
+      throw new Error(runner.error.code);
+    }
+
+    const result = await runner.value.run({
+      turnId: turn,
+      identity: {
+        attemptNumber: 1,
+        modelAttemptId: modelAttemptId.from("attempt-anthropic-tool"),
+        fallbackPosition: 0,
+        providerKey: adapter.identity.providerId,
+        modelKey: String(adapter.supportedModels[0]),
+      },
+      receipt: receipt(product),
+      boundConfigurationGeneration: generation,
+      configurationGeneration: generation,
+      signal: new AbortController().signal,
+      modelInput: {
+        messages: [
+          { role: "system", parts: [{ kind: "text", text: "Use workspace tools." }] },
+          { role: "user", parts: [{ kind: "text", text: "Inspect the workspace root." }] },
+        ],
+        tools: product.disclosure.modelTools,
+        output: { kind: "text" },
+        budgets: { maxOutputTokens: 256 },
+        disclosure: disclosureInput(product),
+      },
+    });
+
+    expect(result.fact.kind).toBe("completed");
+    expect(result.output).toMatchObject({
+      text: "Directory inspected.",
+      toolResults: 1,
+      providerRequests: 2,
+      usage: {
+        inputTokens: 20,
+        outputTokens: 7,
+        totalTokens: 27,
+        provenance: "provider-reported",
+      },
+    });
+    expect(bodies).toHaveLength(2);
+    expect(bodies[0]).toMatchObject({
+      model: "claude-test",
+      max_tokens: 256,
+      system: [{ type: "text", text: "Use workspace tools." }],
+    });
+    expect(JSON.stringify(bodies[1]?.messages)).toContain(
+      '"type":"tool_use","id":"toolu_product","name":"list_dir"',
+    );
+    expect(JSON.stringify(bodies[1]?.messages)).toContain(
+      '"type":"tool_result","tool_use_id":"toolu_product"',
+    );
+  });
+
+  test("returns an explicit degradation notice and accepts only its declared fallback", async () => {
+    const requests: ModelRequest[] = [];
+    const adapter = createDeterministicProviderAdapter({
+      script: (_request, index) => {
+        if (index === 0) {
+          return {
+            kind: "tool",
+            toolCallId: "call-read-primary",
+            name: "read_file",
+            argumentFragments: ['{"path":"missing.ts"}'],
+          };
+        }
+        if (index === 1) {
+          return {
+            kind: "tool",
+            toolCallId: "call-read-fallback",
+            name: "list_dir",
+            argumentFragments: ['{"path":"."}'],
+          };
+        }
+        return { kind: "text", text: "Used the declared fallback." };
+      },
+      onRequest: (request) => requests.push(request),
+    });
+    const product = setup(adapter, (base) => ({
+      async execute(request) {
+        return request.toolName === "read_file"
+          ? { status: "unavailable", reason: "reader-offline", effect: "none" }
+          : base.execute(request);
+      },
+    }));
+    const turn = await start(product, "turn-attempt-degradation");
+    const runner = product.runtime.requireAttemptRunner();
+    if (!runner.ok) throw new Error(runner.error.code);
+
+    const result = await runner.value.run({
+      turnId: turn,
+      identity: {
+        attemptNumber: 1,
+        modelAttemptId: modelAttemptId.from("attempt-degradation"),
+        fallbackPosition: 0,
+        providerKey: adapter.identity.providerId,
+        modelKey: String(adapter.supportedModels[0]),
+      },
+      receipt: receipt(product),
+      boundConfigurationGeneration: generation,
+      configurationGeneration: generation,
+      signal: new AbortController().signal,
+      modelInput: {
+        messages: [{ role: "user", parts: [{ kind: "text", text: "Inspect the workspace." }] }],
+        tools: product.disclosure.modelTools,
+        output: { kind: "text" },
+        budgets: {},
+        disclosure: disclosureInput(product),
+      },
+    });
+
+    expect(result.fact.kind).toBe("completed");
+    expect(result.output).toMatchObject({
+      text: "Used the declared fallback.",
+      toolResults: 2,
+      providerRequests: 3,
+    });
+    const fallbackResult = requests[1]?.messages
+      .find((message) => message.role === "tool")
+      ?.parts.find((part) => part.kind === "text");
+    expect(fallbackResult?.kind).toBe("text");
+    if (fallbackResult?.kind !== "text") throw new Error("missing fallback tool result");
+    expect(fallbackResult.text).toContain('"decision":"fallback-available"');
+    expect(fallbackResult.text).toContain('"candidates":["list_dir"');
+    expect(requests[2]?.messages.some((message) => message.role === "tool")).toBe(true);
+
+    const stored = await product.eventStore.readFrom(
+      { streamId: product.runtimeStreamId, afterSequence: null },
+      32,
+    );
+    expect(stored.ok).toBe(true);
+    if (!stored.ok) throw new Error(stored.error.code);
+    const readCompletion = stored.value.find(
+      (event) =>
+        event.kind === "capability.invocation.completed" &&
+        event.capabilityId === capabilityId.from("builtin:workspace/read_file@1"),
+    );
+    expect(readCompletion?.kind).toBe("capability.invocation.completed");
+    if (readCompletion?.kind !== "capability.invocation.completed") {
+      throw new Error("missing durable read completion");
+    }
+    expect(readCompletion.payload).toMatchObject({
+      observedStatus: "unavailable",
+      degradation: {
+        decision: "fallback-available",
+        terminalReason: "fallback-exhausted",
+      },
+    });
+    expect(readCompletion.payload.degradation?.candidateIds).toContain(
+      capabilityId.from("builtin:workspace/list_dir@1"),
+    );
+  });
+
+  test("classifies its own wall-time deadline as timed-out", async () => {
+    const product = setup();
+    const turn = await start(product, "turn-attempt-timeout");
+    const runner = product.runtime.requireAttemptRunner();
+    if (!runner.ok) {
+      throw new Error(runner.error.code);
+    }
+
+    const result = await runner.value.run({
+      turnId: turn,
+      identity: {
+        attemptNumber: 1,
+        modelAttemptId: modelAttemptId.from("attempt-timeout"),
+        fallbackPosition: 0,
+        providerKey: product.adapter.identity.providerId,
+        modelKey: String(product.adapter.supportedModels[0]),
+      },
+      receipt: receipt(product),
+      boundConfigurationGeneration: generation,
+      configurationGeneration: generation,
+      signal: new AbortController().signal,
+      modelInput: {
+        messages: [{ role: "user", parts: [{ kind: "text", text: "wait" }] }],
+        tools: product.disclosure.modelTools,
+        output: { kind: "text" },
+        budgets: { wallTimeMs: 5 },
+        disclosure: disclosureInput(product),
+      },
+    });
+
+    expect(result.fact).toEqual({ kind: "timed-out", effect: "none", retryable: true });
+    expect(result.turn?.status).toBe("terminal");
+    if (result.turn?.status === "terminal") {
+      expect(result.turn.outcome).toEqual({ kind: "timed-out", effect: "none" });
+    }
+  });
+
+  test("rejects a stale disclosure before contacting the provider", async () => {
+    let providerRequests = 0;
+    const product = setup(
+      createDeterministicProviderAdapter({
+        onRequest: () => {
+          providerRequests += 1;
+        },
+      }),
+    );
+    const turn = await start(product, "turn-attempt-stale");
+    const runner = product.runtime.requireAttemptRunner();
+    if (!runner.ok) {
+      throw new Error(runner.error.code);
+    }
+
+    const result = await runner.value.run({
+      turnId: turn,
+      identity: {
+        attemptNumber: 1,
+        modelAttemptId: modelAttemptId.from("attempt-stale"),
+        fallbackPosition: 0,
+        providerKey: product.adapter.identity.providerId,
+        modelKey: String(product.adapter.supportedModels[0]),
+      },
+      receipt: receipt(product),
+      boundConfigurationGeneration: generation,
+      configurationGeneration: generation,
+      signal: new AbortController().signal,
+      modelInput: {
+        messages: [{ role: "user", parts: [{ kind: "text", text: "hello" }] }],
+        tools: product.disclosure.modelTools,
+        output: { kind: "text" },
+        budgets: {},
+        disclosure: {
+          ...disclosureInput(product),
+          catalogGeneration: configurationGeneration.from(6),
+        },
+      },
+    });
+
+    expect(result.fact).toMatchObject({
+      kind: "failed",
+      category: "invalid-request",
+      retryable: false,
+      effect: "none",
+    });
+    expect(providerRequests).toBe(0);
+  });
+
+  test("rejects a stale opportunity plan before contacting the provider", async () => {
+    let providerRequests = 0;
+    const product = setup(
+      createDeterministicProviderAdapter({
+        onRequest: () => {
+          providerRequests += 1;
+        },
+      }),
+    );
+    const turn = await start(product, "turn-attempt-stale-opportunity-plan");
+    const runner = product.runtime.requireAttemptRunner();
+    if (!runner.ok) {
+      throw new Error(runner.error.code);
+    }
+    const disclosure = disclosureInput(product);
+    const result = await runner.value.run({
+      turnId: turn,
+      identity: {
+        attemptNumber: 1,
+        modelAttemptId: modelAttemptId.from("attempt-stale-opportunity-plan"),
+        fallbackPosition: 0,
+        providerKey: product.adapter.identity.providerId,
+        modelKey: String(product.adapter.supportedModels[0]),
+      },
+      receipt: receipt(product),
+      boundConfigurationGeneration: generation,
+      configurationGeneration: generation,
+      signal: new AbortController().signal,
+      modelInput: {
+        messages: [{ role: "user", parts: [{ kind: "text", text: "hello" }] }],
+        tools: product.disclosure.modelTools,
+        output: { kind: "text" },
+        budgets: {},
+        disclosure: {
+          ...disclosure,
+          opportunityPlan: {
+            ...disclosure.opportunityPlan,
+            policyGeneration: configurationGeneration.from(6),
+          },
+        },
+      },
+    });
+
+    expect(result.fact).toMatchObject({
+      kind: "failed",
+      category: "invalid-request",
+      retryable: false,
+      effect: "none",
+    });
+    expect(providerRequests).toBe(0);
+  });
+
+  test("rejects an undeclared recursive degradation edge before contacting the provider", async () => {
+    let providerRequests = 0;
+    const product = setup(
+      createDeterministicProviderAdapter({
+        onRequest: () => {
+          providerRequests += 1;
+        },
+      }),
+    );
+    const turn = await start(product, "turn-attempt-recursive-degradation");
+    const runner = product.runtime.requireAttemptRunner();
+    if (!runner.ok) throw new Error(runner.error.code);
+    const disclosure = disclosureInput(product);
+    const opportunityPlan = disclosure.opportunityPlan;
+    const transition = opportunityPlan?.degradation.transitions[0];
+    if (opportunityPlan === undefined || transition === undefined) {
+      throw new Error("expected a degradation transition");
+    }
+
+    const result = await runner.value.run({
+      turnId: turn,
+      identity: {
+        attemptNumber: 1,
+        modelAttemptId: modelAttemptId.from("attempt-recursive-degradation"),
+        fallbackPosition: 0,
+        providerKey: product.adapter.identity.providerId,
+        modelKey: String(product.adapter.supportedModels[0]),
+      },
+      receipt: receipt(product),
+      boundConfigurationGeneration: generation,
+      configurationGeneration: generation,
+      signal: new AbortController().signal,
+      modelInput: {
+        messages: [{ role: "user", parts: [{ kind: "text", text: "hello" }] }],
+        tools: product.disclosure.modelTools,
+        output: { kind: "text" },
+        budgets: {},
+        disclosure: {
+          ...disclosure,
+          opportunityPlan: {
+            ...opportunityPlan,
+            degradation: {
+              ...opportunityPlan.degradation,
+              transitions: [
+                {
+                  ...transition,
+                  toCapabilityId: transition.fromCapabilityId,
+                },
+                ...opportunityPlan.degradation.transitions.slice(1),
+              ],
+            },
+          },
+        },
+      },
+    });
+
+    expect(result.fact).toMatchObject({
+      kind: "failed",
+      category: "invalid-request",
+      retryable: false,
+      effect: "none",
+    });
+    expect(providerRequests).toBe(0);
+  });
+
+  test("rejects a provider profile that differs from the routed destination", async () => {
+    let providerRequests = 0;
+    const product = setup(
+      createDeterministicProviderAdapter({
+        onRequest: () => {
+          providerRequests += 1;
+        },
+      }),
+    );
+    const turn = await start(product, "turn-attempt-profile-mismatch");
+    const runner = product.runtime.requireAttemptRunner();
+    if (!runner.ok) {
+      throw new Error(runner.error.code);
+    }
+    const result = await runner.value.run({
+      turnId: turn,
+      identity: {
+        attemptNumber: 1,
+        modelAttemptId: modelAttemptId.from("attempt-profile-mismatch"),
+        fallbackPosition: 0,
+        providerKey: product.adapter.identity.providerId,
+        modelKey: String(product.adapter.supportedModels[0]),
+      },
+      receipt: { ...receipt(product), providerProfileId: "another-profile" },
+      boundConfigurationGeneration: generation,
+      configurationGeneration: generation,
+      signal: new AbortController().signal,
+      modelInput: {
+        messages: [{ role: "user", parts: [{ kind: "text", text: "hello" }] }],
+        tools: product.disclosure.modelTools,
+        output: { kind: "text" },
+        budgets: {},
+        disclosure: disclosureInput(product),
+      },
+    });
+    expect(result.fact).toMatchObject({
+      kind: "failed",
+      category: "invalid-request",
+      retryable: false,
+      effect: "none",
+    });
+    expect(providerRequests).toBe(0);
+  });
+
+  test("rejects a transport plan that differs from the routed plan", async () => {
+    let providerRequests = 0;
+    const product = setup(
+      createDeterministicProviderAdapter({
+        onRequest: () => {
+          providerRequests += 1;
+        },
+      }),
+    );
+    const turn = await start(product, "turn-attempt-transport-mismatch");
+    const runner = product.runtime.requireAttemptRunner();
+    if (!runner.ok) {
+      throw new Error(runner.error.code);
+    }
+    const result = await runner.value.run({
+      turnId: turn,
+      identity: {
+        attemptNumber: 1,
+        modelAttemptId: modelAttemptId.from("attempt-transport-mismatch"),
+        fallbackPosition: 0,
+        providerKey: product.adapter.identity.providerId,
+        modelKey: String(product.adapter.supportedModels[0]),
+      },
+      receipt: { ...receipt(product), transportCompatibilityId: `sha-256:${"0".repeat(64)}` },
+      boundConfigurationGeneration: generation,
+      configurationGeneration: generation,
+      signal: new AbortController().signal,
+      modelInput: {
+        messages: [{ role: "user", parts: [{ kind: "text", text: "hello" }] }],
+        tools: product.disclosure.modelTools,
+        output: { kind: "text" },
+        budgets: {},
+        disclosure: disclosureInput(product),
+      },
+    });
+
+    expect(result.fact).toMatchObject({
+      kind: "failed",
+      category: "invalid-request",
+      retryable: false,
+      effect: "none",
+    });
+    expect(providerRequests).toBe(0);
+  });
+
+  test("rejects a provider tool schema that does not match the disclosure receipt", async () => {
+    let providerRequests = 0;
+    const product = setup(
+      createDeterministicProviderAdapter({
+        onRequest: () => {
+          providerRequests += 1;
+        },
+      }),
+    );
+    const turn = await start(product, "turn-attempt-schema-mismatch");
+    const runner = product.runtime.requireAttemptRunner();
+    if (!runner.ok) {
+      throw new Error(runner.error.code);
+    }
+    const first = product.disclosure.modelTools[0];
+    if (first === undefined) {
+      throw new Error("expected a disclosed tool");
+    }
+
+    const result = await runner.value.run({
+      turnId: turn,
+      identity: {
+        attemptNumber: 1,
+        modelAttemptId: modelAttemptId.from("attempt-schema-mismatch"),
+        fallbackPosition: 0,
+        providerKey: product.adapter.identity.providerId,
+        modelKey: String(product.adapter.supportedModels[0]),
+      },
+      receipt: receipt(product),
+      boundConfigurationGeneration: generation,
+      configurationGeneration: generation,
+      signal: new AbortController().signal,
+      modelInput: {
+        messages: [{ role: "user", parts: [{ kind: "text", text: "hello" }] }],
+        tools: [
+          { ...first, parameters: { type: "object", additionalProperties: true } },
+          ...product.disclosure.modelTools.slice(1),
+        ],
+        output: { kind: "text" },
+        budgets: {},
+        disclosure: disclosureInput(product),
+      },
+    });
+
+    expect(result.fact).toMatchObject({
+      kind: "failed",
+      category: "invalid-request",
+      retryable: false,
+      effect: "none",
+    });
+    expect(providerRequests).toBe(0);
+  });
+
+  test("rejects a stale prompt cache prefix before contacting the provider", async () => {
+    let providerRequests = 0;
+    const product = setup(
+      createDeterministicProviderAdapter({
+        onRequest: () => {
+          providerRequests += 1;
+        },
+      }),
+    );
+    const turn = await start(product, "turn-attempt-cache-mismatch");
+    const runner = product.runtime.requireAttemptRunner();
+    if (!runner.ok) {
+      throw new Error(runner.error.code);
+    }
+    const stableMessages = [
+      { role: "system" as const, parts: [{ kind: "text" as const, text: "stable policy" }] },
+    ];
+    const validDigest = promptCacheStablePrefixDigest(
+      stableMessages,
+      product.disclosure.modelTools,
+    );
+
+    const result = await runner.value.run({
+      turnId: turn,
+      identity: {
+        attemptNumber: 1,
+        modelAttemptId: modelAttemptId.from("attempt-cache-mismatch"),
+        fallbackPosition: 0,
+        providerKey: product.adapter.identity.providerId,
+        modelKey: String(product.adapter.supportedModels[0]),
+      },
+      receipt: receipt(product),
+      boundConfigurationGeneration: generation,
+      configurationGeneration: generation,
+      signal: new AbortController().signal,
+      modelInput: {
+        messages: [...stableMessages, { role: "user", parts: [{ kind: "text", text: "hello" }] }],
+        tools: product.disclosure.modelTools,
+        output: { kind: "text" },
+        budgets: {},
+        promptCache: {
+          stableMessageCount: 1,
+          stablePrefixDigest: validDigest.replace(/.$/u, validDigest.endsWith("0") ? "1" : "0"),
+          toolCatalogGeneration: Number(generation),
+        },
+        disclosure: disclosureInput(product),
+      },
+    });
+
+    expect(result.fact).toMatchObject({
+      kind: "failed",
+      category: "invalid-request",
+      retryable: false,
+      effect: "none",
+    });
+    expect(providerRequests).toBe(0);
+  });
+
+  test("continues a real raw process call with one bounded non-duplicated result", async () => {
+    const requests: ModelRequest[] = [];
+    const adapter = createDeterministicProviderAdapter({
+      script: (_request, index) =>
+        index === 0
+          ? {
+              kind: "tool",
+              toolCallId: "call-raw-process",
+              name: "run_shell",
+              argumentFragments: [
+                '{"command":"printf \'first\\nsecond api_key=hunter2\\n\'","outputMode":"raw"}',
+              ],
+              usage: {
+                inputTokens: 10,
+                outputTokens: 2,
+                totalTokens: 12,
+                cachedInputTokens: 0,
+                cacheWriteInputTokens: 6,
+                provenance: "provider-reported",
+              },
+            }
+          : {
+              kind: "text",
+              text: "done",
+              usage: {
+                inputTokens: 8,
+                outputTokens: 3,
+                totalTokens: 11,
+                cachedInputTokens: 7,
+                cacheWriteInputTokens: 0,
+                provenance: "provider-reported",
+              },
+            },
+      onRequest: (request) => requests.push(request),
+    });
+    const correlation = {
+      workspaceId: workspaceId.from("workspace-attempt-process"),
+      sessionId: sessionId.from("session-attempt-process"),
+      traceId: traceId.from("trace-attempt-process"),
+      configurationGeneration: generation,
+    };
+    const tools = composeProductProcessTools({
+      generation,
+      capture: createHostProcessCapturePort(),
+      workspaceCwd: process.cwd(),
+    });
+    const runtime = composeProductAgentRuntime({
+      eventStore: createInMemoryEventStore(),
+      clock: createManualClock(instant(100)),
+      streamId: streamId.from("session:attempt-process"),
+      correlation,
+      providerAdapter: adapter,
+      toolRegistry: tools.registry,
+      toolRunner: tools.runner,
+      toolConfirmation: {
+        resolve: async (request) => ({
+          kind: "confirmed",
+          confirmationId: request.confirmationId,
+        }),
+      },
+    });
+    if (!runtime.ok) {
+      throw new Error(runtime.error.code);
+    }
+    const disclosure = discloseProductTools(
+      createProductCapabilityRegistry(tools.registry.generation, tools.registry),
+      tools.registry,
+    );
+    const targetTurn = turnId.from("turn-attempt-process");
+    const hosted = await runtime.value.hostTurn({
+      turnId: targetTurn,
+      sessionId: correlation.sessionId,
+      workspaceId: correlation.workspaceId,
+      traceId: correlation.traceId,
+      configurationGeneration: generation,
+    });
+    if (hosted.kind !== "hosted") {
+      throw new Error(hosted.kind);
+    }
+    for (const command of ["begin-orienting", "begin-assembling-context"] as const) {
+      const advanced = runtime.value.turnCoordinator.apply({
+        turnId: targetTurn,
+        command,
+        configurationGeneration: generation,
+      });
+      if (!advanced.ok) {
+        throw new Error(advanced.error.code);
+      }
+    }
+    const runner = runtime.value.requireAttemptRunner();
+    if (!runner.ok) {
+      throw new Error(runner.error.code);
+    }
+    const model = adapter.supportedModels[0];
+    if (model === undefined) {
+      throw new Error("missing deterministic model");
+    }
+    const transportCompatibility = adapter.transportCompatibilityFor(model);
+    if (transportCompatibility === null) {
+      throw new Error("missing deterministic transport compatibility");
+    }
+    const briefRequest = {
+      turnId: targetTurn,
+      sessionId: correlation.sessionId,
+      configurationGeneration: generation,
+      need: DEFAULT_BRIEF_NEED,
+      policy: { verbosity: "compact" as const, source: "user" as const },
+    };
+    const briefProjection = projectBrief(briefRequest);
+    if (!briefProjection.ok) {
+      throw new Error(briefProjection.error.code);
+    }
+    const result = await runner.value.run({
+      turnId: targetTurn,
+      identity: {
+        attemptNumber: 1,
+        modelAttemptId: modelAttemptId.from("attempt-process"),
+        fallbackPosition: 0,
+        providerKey: adapter.identity.providerId,
+        modelKey: String(model),
+      },
+      receipt: {
+        role: "default",
+        intent: "coding",
+        selectionReason: "intent-mapped-role",
+        requiredCapabilities: { tools: true, streaming: true },
+        providerId: adapter.identity.providerId,
+        providerProfileId: adapter.identity.profileId,
+        providerAdapterKind: adapter.identity.adapterKind,
+        providerDestinationId: adapter.identity.destinationId,
+        transportCompatibilityId:
+          adapter.identity.transportCompatibilityId ?? "transport:deterministic",
+        transportCompatibilityReceipt: transportCompatibility.receipt,
+        modelId: model,
+        reasoning: "provider-default",
+        reasoningControl: null,
+        responseDensityControls: ["low", "medium", "high"],
+        fallbackPosition: 0,
+        budgets: {},
+        catalogGeneration: 1,
+        modelCapabilitySchemaVersion: 1,
+        catalogProvenance: "static-config",
+        recordedAt: null,
+      },
+      boundConfigurationGeneration: generation,
+      configurationGeneration: generation,
+      signal: new AbortController().signal,
+      modelInput: {
+        messages: [
+          {
+            role: "system",
+            parts: [
+              {
+                kind: "text",
+                text: `[brief source=brief:user]\n${briefProjection.value.guidance}`,
+              },
+            ],
+          },
+          { role: "user", parts: [{ kind: "text", text: "say hello" }] },
+        ],
+        tools: disclosure.modelTools,
+        output: { kind: "text" },
+        budgets: { maxOutputTokens: briefProjection.value.receipt.outputTokenBudget },
+        brief: {
+          request: briefRequest,
+          receipt: briefProjection.value.receipt,
+          sectionSource: "brief:user",
+          fallbackGuidance: briefProjection.value.guidance,
+          semanticGuidance: briefProjection.value.semanticGuidance,
+        },
+        disclosure: {
+          catalogGeneration: disclosure.receipt.catalogGeneration,
+          toolNames: disclosure.receipt.disclosed.map((tool) => tool.name),
+          discoveryHandle: disclosure.receipt.discoveryHandle,
+          families: disclosure.receipt.families,
+          tools: disclosure.receipt.disclosed.map((tool) => ({
+            name: tool.name,
+            capabilityId: tool.capabilityId,
+            version: tool.version,
+            schemaDigest: tool.schemaDigest,
+            schemaBytes: tool.schemaBytes,
+            schemaTokensEstimated: tool.schemaTokensEstimated,
+          })),
+          omitted: disclosure.receipt.omitted,
+          schemaBytes: disclosure.receipt.schemaBytes,
+          schemaTokensEstimated: disclosure.receipt.schemaTokensEstimated,
+        },
+      },
+    });
+
+    expect(result.fact.kind).toBe("completed");
+    expect(requests).toHaveLength(2);
+    expect(requests[0]?.metadata).toMatchObject({
+      providerCatalogGeneration: 1,
+      modelCapabilitySchemaVersion: 1,
+    });
+    expect(requests[0]).toMatchObject({
+      reasoning: "provider-default",
+      reasoningControl: null,
+      responseDensityControl: "low",
+    });
+    expect(
+      requests[0]?.messages.some((message) =>
+        message.parts.some((part) => part.kind === "text" && part.text.includes("[brief source=")),
+      ),
+    ).toBe(false);
+    expect(requests[1]?.messages[0]?.parts[0]).toMatchObject({
+      kind: "text",
+      text: expect.stringContaining("prohibition and risk warning verbatim"),
+    });
+    expect(requests[1]?.budgets.maxOutputTokens).toBe(2_048);
+    const toolMessage = requests[1]?.messages.find((message) => message.role === "tool");
+    const toolPart = toolMessage?.parts[0];
+    if (toolPart?.kind !== "text") {
+      throw new Error("missing provider continuation tool result");
+    }
+    const continuation = JSON.parse(toolPart.text) as {
+      output: {
+        value: {
+          owner: string;
+          outputMode: string;
+          stdout: { text: string };
+          projection: { kind: string };
+        };
+      };
+    };
+    expect(continuation.output.value).toMatchObject({
+      owner: "#796",
+      outputMode: "raw",
+      stdout: { text: "first\nsecond api_key=[redacted]\n" },
+      projection: { kind: "raw", ordering: "per-stream" },
+    });
+    expect(JSON.stringify(continuation.output.value)).not.toContain("hunter2");
+    expect(JSON.stringify(continuation.output.value).match(/first/g)).toHaveLength(1);
+    expect("hush" in continuation.output.value).toBe(false);
+    expect("capture" in continuation.output.value).toBe(false);
+    expect(result.output).toMatchObject({
+      providerRequests: 2,
+      usage: {
+        inputTokens: 18,
+        outputTokens: 5,
+        totalTokens: 23,
+        cachedInputTokens: 7,
+        cacheWriteInputTokens: 6,
+        provenance: "provider-reported",
+      },
+      briefReceipt: {
+        selectedVerbosity: "compact",
+        preservedFacts: ["risk"],
+        delivery: "native-with-semantic-prompt",
+        providerResponseDensityControl: "low",
+        outputTokenBudget: 2_048,
+      },
+    });
+    expect(tools.catalog.resolve("run_shell")?.id).toBe(
+      capabilityId.from("builtin:workspace/run_shell@1"),
+    );
+  });
+});

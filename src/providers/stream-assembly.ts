@@ -46,6 +46,8 @@ export type StreamAssemblySnapshot = {
    */
   readonly usage: UsageUnits | null;
   readonly finishReason: string | null;
+  /** Secret-safe adapter receipts; opaque continuation payloads never enter here. */
+  readonly providerMetadata: Readonly<Record<string, string>>;
   readonly diagnostics: readonly StreamAssemblyDiagnostic[];
 };
 
@@ -122,6 +124,7 @@ export class ProviderStreamAssembler {
   private reasoning = "";
   private usage: UsageUnits | null = null;
   private finishReason: string | null = null;
+  private readonly providerMetadata: Record<string, string> = {};
   private readonly toolProposals: AssembledToolProposal[] = [];
   private readonly inFlight = new Map<string, InFlightTool>();
   private readonly diagnostics: StreamAssemblyDiagnostic[] = [];
@@ -135,6 +138,7 @@ export class ProviderStreamAssembler {
       toolProposals: [...this.toolProposals],
       usage: this.usage,
       finishReason: this.finishReason,
+      providerMetadata: { ...this.providerMetadata },
       diagnostics: [...this.diagnostics],
     };
   }
@@ -202,6 +206,7 @@ export class ProviderStreamAssembler {
         return { kind: "emit", event, snapshot: this.snapshot() };
 
       case "provider-metadata":
+        Object.assign(this.providerMetadata, event.entries);
         return { kind: "emit", event, snapshot: this.snapshot() };
 
       case "finished":

@@ -1,23 +1,14 @@
-/**
- * Place a provider API key into the operating-system keychain (#709).
- *
- * Approved write channel: supervised `/usr/bin/security add-generic-password`
- * with an empty child environment. Never logs the secret. Unsupported platforms
- * report `unsupported` rather than inventing a store.
- */
+/** Store a provider API key in the current user's operating-system vault. */
 
 import {
-  type CommandRunnerPort,
   type CredentialReference,
   type CredentialRequestOptions,
-  DEFAULT_CREDENTIAL_TIMEOUT_MS,
-  type DurationMs,
   type LocalDataPlatform,
-  MAX_COMMAND_OUTPUT_BYTES,
+  MAX_CREDENTIAL_SECRET_BYTES,
 } from "../domain/index.ts";
-import { SECURITY_EXECUTABLE } from "./keychain-credentials.ts";
+import type { OperatingSystemSecretsPort } from "./keychain-credentials.ts";
 
-const LEGAL_LOCATOR = /^[^\p{Cc}-][^\p{Cc}]{0,255}$/u;
+const LEGAL_IDENTIFIER = /^[^\p{Cc}]{1,255}$/u;
 
 export type CredentialWriteResult =
   | { readonly kind: "written" }
@@ -25,56 +16,41 @@ export type CredentialWriteResult =
   | { readonly kind: "unsupported"; readonly code: string };
 
 export type WriteKeychainCredentialOptions = {
-  readonly commands: CommandRunnerPort;
   readonly platform: LocalDataPlatform;
   readonly reference: CredentialReference;
   readonly secret: string;
-  readonly timeoutMs?: DurationMs;
+  readonly secrets?: OperatingSystemSecretsPort;
   readonly request?: CredentialRequestOptions;
 };
 
-/**
- * Write (or update with `-U`) a generic password for the given reference.
- */
+/** Write or replace the exact service/account pair without exposing its value. */
 export async function writeKeychainCredential(
   options: WriteKeychainCredentialOptions,
 ): Promise<CredentialWriteResult> {
-  if (options.platform !== "darwin") {
-    return {
-      kind: "unsupported",
-      code: `platform-${options.platform}`,
-    };
-  }
-  if (!LEGAL_LOCATOR.test(options.reference.locator)) {
-    return { kind: "failed", code: "illegal-locator" };
+  const name = options.reference.accountLabel ?? options.reference.consumer;
+  if (!LEGAL_IDENTIFIER.test(options.reference.locator) || !LEGAL_IDENTIFIER.test(name)) {
+    return { kind: "failed", code: "illegal-credential-identifier" };
   }
   if (options.secret.length === 0) {
     return { kind: "failed", code: "empty-secret" };
   }
+  if (Buffer.byteLength(options.secret, "utf8") > MAX_CREDENTIAL_SECRET_BYTES) {
+    return { kind: "failed", code: "secret-too-large" };
+  }
   if (options.request?.signal?.aborted === true) {
-    return { kind: "failed", code: "aborted-before-spawn" };
+    return { kind: "failed", code: "aborted-before-write" };
   }
 
-  const argv: string[] = ["add-generic-password", "-U"];
-  if (options.reference.accountLabel !== null) {
-    argv.push("-a", options.reference.accountLabel);
-  }
-  argv.push("-s", options.reference.locator, "-w", options.secret);
-
-  const outcome = await options.commands.run({
-    executable: SECURITY_EXECUTABLE,
-    argv,
-    environment: {},
-    timeoutMs: options.request?.timeoutMs ?? options.timeoutMs ?? DEFAULT_CREDENTIAL_TIMEOUT_MS,
-    maxOutputBytes: MAX_COMMAND_OUTPUT_BYTES,
-    signal: options.request?.signal,
-  });
-
-  if (outcome.kind !== "exited") {
-    return { kind: "failed", code: `spawn-${outcome.kind}` };
-  }
-  if (outcome.exitCode === 0) {
+  try {
+    await (options.secrets ?? Bun.secrets).set({
+      service: options.reference.locator,
+      name,
+      value: options.secret,
+      // Never weaken the macOS access-control list for unattended access.
+      allowUnrestrictedAccess: false,
+    });
     return { kind: "written" };
+  } catch {
+    return { kind: "failed", code: "secrets-write-failed" };
   }
-  return { kind: "failed", code: `keychain-exit-${outcome.exitCode}` };
 }

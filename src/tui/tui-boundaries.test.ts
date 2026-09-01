@@ -920,6 +920,7 @@ describe("the rendered test harness", () => {
       "components/activity-rail.test.tsx",
       "components/composer-keys.test.tsx",
       "components/composer.test.tsx",
+      "components/compression-sheet.test.tsx",
       "components/confirmation.test.tsx",
       "components/controls.test.tsx",
       "components/frame.test.tsx",

@@ -39,9 +39,12 @@ unannounced capabilities, or private research into this repository.
 | Mutating Git work | git-workflow |
 | GitHub issues, pull requests, Actions, Projects, or merge state | gh-cli |
 | Local diff, branch, or pull-request review | change-review plus the relevant stack skill |
+| Falryn Plan, Implement, Review, Verify, Merge, Deliver, Next, greetings, walkthroughs, or project-status routing | falryn-workflow |
 
 Use the installed or vendored skill appropriate to the checkout. Portable skills
 must remain portable and must not acquire Falryn product strategy.
+`falryn-workflow` is the deliberate repository-specific exception. Keep its
+vendored package synchronized with the maintainer-global package.
 
 ## Validation
 

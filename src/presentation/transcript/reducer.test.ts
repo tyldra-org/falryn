@@ -2,11 +2,9 @@
  * Events in, transcript out — and an honest count of what this build can show.
  *
  * The test that earns its place here is the last one in "what this build can
- * produce". Five of sixteen kinds have a producer, and asserting the number
- * rather than describing it means the day something starts producing a sixth,
- * this file says so. A transcript area that quietly grew a producer and left
- * `CURRENT-STATE.md` claiming otherwise is exactly the drift these controls
- * exist to prevent.
+ * produce". Five of sixteen kinds have a lifecycle-event producer, and
+ * asserting the number rather than describing it means the day this reducer
+ * starts producing a sixth, this file says so.
  *
  * The tool pair is the other thing worth watching. It is the only place in this
  * build where two real events revise one block, so it is the only place the
@@ -19,6 +17,7 @@ import {
   capabilityInvocationStarted,
   configurationGenerationChanged,
   everyEventKind,
+  executionProfileSelected,
   FIXTURE_STREAM,
   modelAttemptCompleted,
   modelAttemptStarted,
@@ -26,7 +25,7 @@ import {
   turnCompleted,
   turnStarted,
 } from "../../domain/fixtures.ts";
-import { sequence } from "../../domain/index.ts";
+import { capabilityId, sequence } from "../../domain/index.ts";
 import { outcomeOf } from "./blocks.ts";
 import { TRANSCRIPT_PROJECTION_GENERATION } from "./generation.ts";
 import { blockFor, EMPTY_PROJECTION, reduceTranscript } from "./reducer.ts";
@@ -42,8 +41,8 @@ describe("what this build can produce", () => {
   });
 
   test("produces exactly five block kinds, and names them", () => {
-    // The honest count. Eleven kinds are declared and unreachable because no
-    // agent loop, provider, tool runner, or process boundary exists yet.
+    // The honest count. Eleven kinds are declared but are not emitted by the
+    // closed lifecycle-event vocabulary this reducer consumes.
     const kinds = everyEventKind()
       .map(blockFor)
       .filter((block) => block !== null)
@@ -65,10 +64,10 @@ describe("what this build can produce", () => {
     expect(blockFor(modelAttemptStarted(4))).toBe(null);
   });
 
-  test("marks every produced block ordinary, because no payload reaches it", () => {
-    // Asserted rather than described. The runtime's events carry no payload, so
-    // nothing here is sensitive or secret — and the first event that does carry
-    // content has to revisit this instead of inheriting `ordinary` by default.
+  test("marks lifecycle blocks ordinary because their content is absent or secret-free", () => {
+    // Invocation completion may carry a bounded degradation receipt, but that
+    // receipt is explicitly secret-free. The first sensitive event content has
+    // to revisit this instead of inheriting `ordinary` by default.
     for (const event of everyEventKind()) {
       const block = blockFor(event);
       if (block !== null) {
@@ -125,6 +124,30 @@ describe("a tool call", () => {
     expect(request?.kind).toBe("tool-request");
     if (request?.kind === "tool-request") {
       expect(request.input.disclosure.kind).toBe("omitted");
+    }
+  });
+
+  test("shows a secret-free degradation receipt instead of hiding the fallback", () => {
+    const completed = capabilityInvocationCompleted(7, { kind: "failed", effect: "none" });
+    const block = blockFor({
+      ...completed,
+      payload: {
+        ...completed.payload,
+        observedStatus: "unavailable",
+        degradation: {
+          decision: "fallback-available",
+          candidateIds: [capabilityId.from("builtin:workspace/list_dir@1")],
+          terminalReason: "fallback-exhausted",
+          recoveryHandles: ["capability-health:workspace.read"],
+        },
+      },
+    });
+    expect(block?.kind).toBe("tool-result");
+    if (block?.kind === "tool-result") {
+      expect(block.output.text).toContain("fallback-available");
+      expect(block.output.text).toContain("builtin:workspace/list_dir@1");
+      expect(block.output.text).toContain("capability-health:workspace.read");
+      expect(block.output.disclosure.kind).toBe("complete");
     }
   });
 });
@@ -203,6 +226,17 @@ describe("a configuration change", () => {
     expect(block?.kind).toBe("notice");
     if (block?.kind === "notice") {
       expect(block.note.text).toContain("Generation");
+    }
+  });
+});
+
+describe("an execution profile change", () => {
+  test("becomes a visible session notice", () => {
+    const block = blockFor(executionProfileSelected(9));
+    expect(block?.kind).toBe("notice");
+    if (block?.kind === "notice") {
+      expect(block.summary.text).toContain("agent");
+      expect(block.anchor).toEqual({ of: "declared", key: "execution-profile:selection-9" });
     }
   });
 });

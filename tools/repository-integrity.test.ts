@@ -26,7 +26,7 @@ function validInput(): RepositoryIntegrityInput {
         version: policy.version,
         license: policy.license,
         repository: { url: `${policy.repository}.git` },
-        scripts: {},
+        scripts: { ...policy.installLifecycleHooks },
       },
     ]),
   );

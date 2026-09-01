@@ -1,0 +1,220 @@
+{
+  "schemaVersion": 1,
+  "catalogId": "falryn.anthropic",
+  "displayName": "Falryn Anthropic catalog",
+  "provider": {
+    "providerId": "anthropic",
+    "adapterKind": "anthropic",
+    "endpoint": null
+  },
+  "sources": [
+    {
+      "sourceUrl": "https://platform.claude.com/docs/en/models/overview",
+      "observedAt": "2026-08-30T00:00:00Z",
+      "facts": ["identity", "capabilities", "limits"],
+      "kind": "provider-documentation",
+      "confidence": "high"
+    },
+    {
+      "sourceUrl": "https://platform.claude.com/docs/en/build-with-claude/prompt-caching",
+      "observedAt": "2026-08-30T00:00:00Z",
+      "facts": ["prompt-cache"],
+      "kind": "provider-documentation",
+      "confidence": "high"
+    }
+  ],
+  "models": [
+    {
+      "schemaVersion": 1,
+      "modelId": "claude-fable-5",
+      "displayName": "Claude Fable 5",
+      "inputModalities": ["text", "image"],
+      "outputModalities": ["text"],
+      "tools": "supported",
+      "structuredOutput": "supported",
+      "streaming": "supported",
+      "reasoning": "supported",
+      "reasoningControls": ["low", "medium", "high", "xhigh", "max"],
+      "responseDensityControls": [],
+      "promptCacheModes": ["anthropic-ephemeral"],
+      "promptCacheMinimumInputTokens": 512,
+      "contextTokens": 1000000,
+      "outputTokens": 128000,
+      "pricing": {
+        "kind": "published",
+        "billingMode": "api",
+        "currency": "USD",
+        "tokenUnit": 1000000,
+        "sourceUrl": "https://platform.claude.com/docs/en/build-with-claude/prompt-caching",
+        "observedAt": "2026-08-29T00:00:00Z",
+        "tiers": [
+          {
+            "id": "standard",
+            "label": "Standard",
+            "serviceTier": "standard",
+            "inputTokensFrom": 0,
+            "inputTokensThrough": null,
+            "effectiveFrom": null,
+            "effectiveUntil": null,
+            "utcWindows": [],
+            "usdMicrosPerMillionTokens": {
+              "input": 10000000,
+              "cachedInput": 1000000,
+              "cacheWriteInput": 12500000,
+              "output": 50000000
+            }
+          }
+        ]
+      },
+      "completeness": "complete"
+    },
+    {
+      "schemaVersion": 1,
+      "modelId": "claude-opus-5",
+      "displayName": "Claude Opus 5",
+      "inputModalities": ["text", "image"],
+      "outputModalities": ["text"],
+      "tools": "supported",
+      "structuredOutput": "supported",
+      "streaming": "supported",
+      "reasoning": "supported",
+      "reasoningControls": ["low", "medium", "high", "xhigh", "max"],
+      "responseDensityControls": [],
+      "promptCacheModes": ["anthropic-ephemeral"],
+      "promptCacheMinimumInputTokens": 512,
+      "contextTokens": 1000000,
+      "outputTokens": 128000,
+      "pricing": {
+        "kind": "published",
+        "billingMode": "api",
+        "currency": "USD",
+        "tokenUnit": 1000000,
+        "sourceUrl": "https://platform.claude.com/docs/en/build-with-claude/prompt-caching",
+        "observedAt": "2026-08-29T00:00:00Z",
+        "tiers": [
+          {
+            "id": "standard",
+            "label": "Standard",
+            "serviceTier": "standard",
+            "inputTokensFrom": 0,
+            "inputTokensThrough": null,
+            "effectiveFrom": null,
+            "effectiveUntil": null,
+            "utcWindows": [],
+            "usdMicrosPerMillionTokens": {
+              "input": 5000000,
+              "cachedInput": 500000,
+              "cacheWriteInput": 6250000,
+              "output": 25000000
+            }
+          }
+        ]
+      },
+      "completeness": "complete"
+    },
+    {
+      "schemaVersion": 1,
+      "modelId": "claude-sonnet-5",
+      "displayName": "Claude Sonnet 5",
+      "inputModalities": ["text", "image"],
+      "outputModalities": ["text"],
+      "tools": "supported",
+      "structuredOutput": "supported",
+      "streaming": "supported",
+      "reasoning": "supported",
+      "reasoningControls": ["low", "medium", "high", "xhigh", "max"],
+      "responseDensityControls": [],
+      "promptCacheModes": ["anthropic-ephemeral"],
+      "promptCacheMinimumInputTokens": 1024,
+      "contextTokens": 1000000,
+      "outputTokens": 128000,
+      "pricing": {
+        "kind": "published",
+        "billingMode": "api",
+        "currency": "USD",
+        "tokenUnit": 1000000,
+        "sourceUrl": "https://platform.claude.com/docs/en/build-with-claude/prompt-caching",
+        "observedAt": "2026-08-29T00:00:00Z",
+        "tiers": [
+          {
+            "id": "standard-introductory",
+            "label": "Standard through August 2026",
+            "serviceTier": "standard",
+            "inputTokensFrom": 0,
+            "inputTokensThrough": null,
+            "effectiveFrom": null,
+            "effectiveUntil": "2026-09-01T00:00:00Z",
+            "utcWindows": [],
+            "usdMicrosPerMillionTokens": {
+              "input": 2000000,
+              "cachedInput": 200000,
+              "cacheWriteInput": 2500000,
+              "output": 10000000
+            }
+          },
+          {
+            "id": "standard-september-2026",
+            "label": "Standard from September 2026",
+            "serviceTier": "standard",
+            "inputTokensFrom": 0,
+            "inputTokensThrough": null,
+            "effectiveFrom": "2026-09-01T00:00:00Z",
+            "effectiveUntil": null,
+            "utcWindows": [],
+            "usdMicrosPerMillionTokens": {
+              "input": 3000000,
+              "cachedInput": 300000,
+              "cacheWriteInput": 3750000,
+              "output": 15000000
+            }
+          }
+        ]
+      },
+      "completeness": "complete"
+    },
+    {
+      "schemaVersion": 1,
+      "modelId": "claude-haiku-4-5-20251001",
+      "displayName": "Claude Haiku 4.5",
+      "inputModalities": ["text", "image"],
+      "outputModalities": ["text"],
+      "tools": "supported",
+      "structuredOutput": "supported",
+      "streaming": "supported",
+      "reasoning": "supported",
+      "reasoningControls": [],
+      "responseDensityControls": [],
+      "promptCacheModes": ["anthropic-ephemeral"],
+      "promptCacheMinimumInputTokens": 4096,
+      "contextTokens": 200000,
+      "outputTokens": 64000,
+      "pricing": {
+        "kind": "published",
+        "billingMode": "api",
+        "currency": "USD",
+        "tokenUnit": 1000000,
+        "sourceUrl": "https://platform.claude.com/docs/en/build-with-claude/prompt-caching",
+        "observedAt": "2026-08-29T00:00:00Z",
+        "tiers": [
+          {
+            "id": "standard",
+            "label": "Standard",
+            "serviceTier": "standard",
+            "inputTokensFrom": 0,
+            "inputTokensThrough": null,
+            "effectiveFrom": null,
+            "effectiveUntil": null,
+            "utcWindows": [],
+            "usdMicrosPerMillionTokens": {
+              "input": 1000000,
+              "cachedInput": 100000,
+              "cacheWriteInput": 1250000,
+              "output": 5000000
+            }
+          }
+        ]
+      },
+      "completeness": "complete"
+    }
+  ]
+}

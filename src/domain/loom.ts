@@ -15,252 +15,73 @@ import {
   ARTIFACT_AVAILABILITIES,
   ARTIFACT_ENCODINGS,
   ARTIFACT_SENSITIVITIES,
-  type ArtifactAvailability,
-  type ArtifactEncoding,
   type ArtifactId,
-  type ArtifactSensitivity,
   artifactId,
-  type ContentDigest,
   contentDigest,
   MAX_ARTIFACT_BYTES,
   MAX_MEDIA_TYPE_LENGTH,
 } from "./artifact.ts";
 import type { ContentHasherPort } from "./blob.ts";
 import { brandedString, timestampSchema } from "./branded-schema.ts";
-import { CONTEXT_BUDGET_DESTINATIONS, type ContextBudgetDestination } from "./context-budget.ts";
+import { CONTEXT_BUDGET_DESTINATIONS } from "./context-budget.ts";
 import {
   EVIDENCE_FRESHNESSES,
   type EvidenceFidelity,
   type EvidenceFreshness,
   type ExactSourceHandle,
-  MAX_EVIDENCE_BATCH,
-  MAX_EVIDENCE_INLINE_BYTES,
 } from "./context-evidence.ts";
+import { type EvidenceId, evidenceId, loomManifestId, sessionId, workspaceId } from "./identity.ts";
+import { createLoomCacheStore, DEFAULT_LOOM_CACHE_ENTRIES } from "./loom/cache.ts";
 import {
-  type EvidenceId,
-  evidenceId,
-  type LoomManifestId,
-  loomManifestId,
-  type SessionId,
-  sessionId,
-  type WorkspaceId,
-  workspaceId,
-} from "./identity.ts";
+  DEFAULT_LOOM_HEAD_BYTES,
+  DEFAULT_LOOM_PROJECTION_MAX_BYTES,
+  DEFAULT_LOOM_SEARCH_CONTEXT_BYTES,
+  DEFAULT_LOOM_SEARCH_HITS,
+  DEFAULT_LOOM_STRATEGY,
+  DEFAULT_LOOM_TAIL_BYTES,
+  HARD_LOOM_PROJECTION_MAX_BYTES,
+  HARD_LOOM_SEARCH_HITS,
+  LOOM_UNSUPPORTED_PROJECTION_KINDS,
+  type LoomArtifactReadPlan,
+  type LoomCache,
+  type LoomCacheKey,
+  type LoomCommitInput,
+  type LoomError,
+  type LoomErrorCode,
+  type LoomManifest,
+  type LoomMember,
+  type LoomMemberBytes,
+  type LoomOmission,
+  type LoomProjectionResult,
+  type LoomProjectionSource,
+  type LoomRetrieveInput,
+  type LoomSearchHit,
+  MAX_LOOM_KEY_FIELD,
+  MAX_LOOM_MEMBERS,
+  MAX_LOOM_PROTECTED_FACT_BYTES,
+  MAX_LOOM_PROTECTED_FACTS,
+  MAX_LOOM_QUERY_BYTES,
+  MAX_LOOM_SUMMARY_BYTES,
+} from "./loom/contracts.ts";
+import {
+  hashLoomBytes,
+  loomGroupRecoverable,
+  projectLoomExact,
+  projectLoomHeadTail,
+  projectLoomHeadTailWindows,
+  projectLoomRange,
+  projectLoomRangeWindow,
+  projectLoomSearchHits,
+} from "./loom/projections.ts";
 import { assertNever, err, ok, type Result } from "./result.ts";
-import type { Timestamp } from "./time.ts";
 import { timestampToEpochMilliseconds } from "./time.ts";
 
-export const DEFAULT_LOOM_STRATEGY = "loom.v1";
-export const DEFAULT_LOOM_PROJECTION_MAX_BYTES = MAX_EVIDENCE_INLINE_BYTES;
-export const HARD_LOOM_PROJECTION_MAX_BYTES = MAX_EVIDENCE_INLINE_BYTES;
-export const DEFAULT_LOOM_CACHE_ENTRIES = 32;
-export const HARD_LOOM_CACHE_ENTRIES = MAX_EVIDENCE_BATCH;
-export const MAX_LOOM_KEY_FIELD = 128;
-export const MAX_LOOM_MEMBERS = 16;
-export const MAX_LOOM_PROTECTED_FACTS = 8;
-export const MAX_LOOM_PROTECTED_FACT_BYTES = 128;
-export const MAX_LOOM_SUMMARY_BYTES = 512;
-export const MAX_LOOM_QUERY_BYTES = 128;
-export const DEFAULT_LOOM_HEAD_BYTES = 256;
-export const DEFAULT_LOOM_TAIL_BYTES = 256;
-export const DEFAULT_LOOM_SEARCH_HITS = 8;
-export const HARD_LOOM_SEARCH_HITS = 32;
-export const DEFAULT_LOOM_SEARCH_CONTEXT_BYTES = 64;
+export * from "./loom/contracts.ts";
 
-export const LOOM_PROJECTION_KINDS = ["exact", "range", "head-tail", "search-hits"] as const;
-export type LoomProjectionKind = (typeof LOOM_PROJECTION_KINDS)[number];
+export function createLoomCache(maxEntries = DEFAULT_LOOM_CACHE_ENTRIES): LoomCache {
+  return createLoomCacheStore<LoomCacheKey, LoomProjectionResult>(maxEntries);
+}
 
-export const LOOM_UNSUPPORTED_PROJECTION_KINDS = [
-  "structural",
-  "indexed-chunks",
-  "lossy-summary",
-] as const;
-export type LoomUnsupportedProjectionKind = (typeof LOOM_UNSUPPORTED_PROJECTION_KINDS)[number];
-
-export type LoomErrorCode =
-  | "malformed"
-  | "unsupported"
-  | "oversized"
-  | "unavailable"
-  | "checksum"
-  | "secret"
-  | "denied"
-  | "expired"
-  | "empty";
-
-export type LoomError = {
-  readonly kind: "loom";
-  readonly code: LoomErrorCode;
-  readonly field: string | null;
-};
-
-export type LoomProtectedFact = string;
-
-export type LoomMember = {
-  readonly artifactId: ArtifactId;
-  readonly digest: ContentDigest;
-  readonly byteLength: number;
-  readonly mediaType: string;
-  readonly encoding: ArtifactEncoding;
-  readonly sensitivity: ArtifactSensitivity;
-  readonly availability: ArtifactAvailability;
-  readonly required: boolean;
-  readonly protectedFacts: readonly LoomProtectedFact[];
-  readonly summary: string | null;
-};
-
-export type LoomManifest = {
-  readonly id: LoomManifestId;
-  readonly workspaceId: WorkspaceId;
-  readonly sessionId: SessionId;
-  readonly members: readonly LoomMember[];
-  readonly exactRecoverable: boolean;
-  readonly generation: string;
-  readonly retentionUntil: Timestamp | null;
-};
-
-export type LoomHandle = {
-  readonly manifestId: LoomManifestId;
-  readonly artifactId: ArtifactId;
-  readonly digest: ContentDigest;
-  readonly byteLength: number;
-  readonly workspaceId: WorkspaceId;
-  readonly sessionId: SessionId;
-};
-
-export type LoomOmission =
-  | { readonly kind: "bytes"; readonly count: number }
-  | { readonly kind: "hits-capped"; readonly count: number };
-
-export type LoomSearchHit = {
-  readonly offset: number;
-  readonly byteLength: number;
-  readonly text: string;
-};
-
-export type LoomCacheStatus = "hit" | "miss";
-
-export type LoomProjectionRequest =
-  | {
-      readonly kind: "exact";
-      readonly member: string;
-      readonly maxBytes?: number;
-    }
-  | {
-      readonly kind: "range";
-      readonly member: string;
-      readonly offset?: number;
-      readonly length?: number;
-      readonly maxBytes?: number;
-    }
-  | {
-      readonly kind: "head-tail";
-      readonly member: string;
-      readonly headBytes?: number;
-      readonly tailBytes?: number;
-      readonly maxBytes?: number;
-    }
-  | {
-      readonly kind: "search-hits";
-      readonly member: string;
-      readonly query: string;
-      readonly maxHits?: number;
-      readonly contextBytes?: number;
-      readonly maxBytes?: number;
-    };
-
-export type LoomMemberBytes = {
-  readonly artifactId: string;
-  readonly bytes: Uint8Array | null;
-  readonly availability?: string;
-};
-
-export type LoomCommitInput = {
-  readonly id: unknown;
-  readonly workspaceId: unknown;
-  readonly sessionId: unknown;
-  readonly members: unknown;
-  readonly generation?: unknown;
-  readonly retentionUntil?: unknown;
-};
-
-export type LoomRetrieveInput = {
-  readonly id: unknown;
-  readonly freshness?: unknown;
-  readonly manifest: LoomManifest;
-  readonly expectedWorkspaceId: unknown;
-  readonly expectedSessionId: unknown;
-  readonly members: readonly LoomMemberBytes[];
-  readonly projection: unknown;
-  readonly destination?: unknown;
-  readonly generation?: unknown;
-  readonly strategyVersion?: unknown;
-  readonly configuration?: unknown;
-  readonly now?: unknown;
-};
-
-export type LoomProjectionResult = {
-  readonly id: EvidenceId;
-  readonly manifestId: LoomManifestId;
-  readonly fidelity: EvidenceFidelity;
-  readonly freshness: EvidenceFreshness;
-  readonly text: string;
-  readonly projection: LoomProjectionKind;
-  readonly offset: number;
-  readonly byteLength: number;
-  readonly sourceBytes: number;
-  readonly complete: boolean;
-  readonly claimsExact: boolean;
-  readonly cache: LoomCacheStatus;
-  readonly exactRecoverable: boolean;
-  readonly exactSource: ExactSourceHandle | null;
-  readonly expansion: ExactSourceHandle;
-  readonly handle: LoomHandle;
-  readonly omissions: readonly LoomOmission[];
-  readonly hits: readonly LoomSearchHit[];
-  readonly protectedFacts: readonly LoomProtectedFact[];
-  readonly lineage: readonly string[];
-};
-
-export type LoomCacheKey = {
-  readonly digest: ContentDigest;
-  readonly generation: string;
-  readonly strategyVersion: string;
-  readonly configuration: string;
-  readonly destination: ContextBudgetDestination;
-  readonly projection: LoomProjectionKind;
-  readonly member: ArtifactId;
-  readonly boundA: number;
-  readonly boundB: number;
-  readonly maxBytes: number;
-  readonly query: string;
-};
-
-export type LoomInvalidation = {
-  readonly digest?: ContentDigest;
-  readonly generation?: string;
-  readonly strategyVersion?: string;
-  readonly configuration?: string;
-  readonly destination?: ContextBudgetDestination;
-  readonly artifactId?: ArtifactId;
-  readonly all?: boolean;
-};
-
-export type LoomCache = {
-  get(key: LoomCacheKey): LoomProjectionResult | null;
-  put(key: LoomCacheKey, value: LoomProjectionResult): void;
-  invalidate(filter: LoomInvalidation): number;
-  get size(): number;
-};
-
-type StoredEntry = {
-  readonly key: LoomCacheKey;
-  readonly value: LoomProjectionResult;
-  readonly artifactId: ArtifactId;
-};
-
-const encoder = new TextEncoder();
-const decoder = new TextDecoder("utf-8", { fatal: false });
 const MEDIA_TYPE = /^[!-~]+\/[!-~]+$/;
 
 const memberSchema = z.object({
@@ -400,139 +221,6 @@ function parseClosedUnion<T extends string>(
   return ok(value as T);
 }
 
-function serializeKey(key: LoomCacheKey): string {
-  return [
-    key.digest,
-    key.generation,
-    key.strategyVersion,
-    key.configuration,
-    key.destination,
-    key.projection,
-    key.member,
-    String(key.boundA),
-    String(key.boundB),
-    String(key.maxBytes),
-    key.query,
-  ].join("\0");
-}
-
-function matchesFilter(entry: StoredEntry, filter: LoomInvalidation): boolean {
-  if (filter.all === true) {
-    return true;
-  }
-  if (filter.digest !== undefined && entry.key.digest === filter.digest) {
-    return true;
-  }
-  if (filter.generation !== undefined && entry.key.generation === filter.generation) {
-    return true;
-  }
-  if (
-    filter.strategyVersion !== undefined &&
-    entry.key.strategyVersion === filter.strategyVersion
-  ) {
-    return true;
-  }
-  if (filter.configuration !== undefined && entry.key.configuration === filter.configuration) {
-    return true;
-  }
-  if (filter.destination !== undefined && entry.key.destination === filter.destination) {
-    return true;
-  }
-  if (filter.artifactId !== undefined && entry.artifactId === filter.artifactId) {
-    return true;
-  }
-  return false;
-}
-
-export function createLoomCache(maxEntries: number = DEFAULT_LOOM_CACHE_ENTRIES): LoomCache {
-  const limit = Math.min(Math.max(1, maxEntries), HARD_LOOM_CACHE_ENTRIES);
-  const entries = new Map<string, StoredEntry>();
-
-  return {
-    get(key) {
-      const serialized = serializeKey(key);
-      const stored = entries.get(serialized);
-      if (stored === undefined) {
-        return null;
-      }
-      entries.delete(serialized);
-      entries.set(serialized, stored);
-      return stored.value;
-    },
-    put(key, value) {
-      const serialized = serializeKey(key);
-      entries.delete(serialized);
-      entries.set(serialized, { key, value, artifactId: key.member });
-      while (entries.size > limit) {
-        const oldest = entries.keys().next().value;
-        if (oldest === undefined) {
-          break;
-        }
-        entries.delete(oldest);
-      }
-    },
-    invalidate(filter) {
-      let removed = 0;
-      for (const [serialized, stored] of entries) {
-        if (matchesFilter(stored, filter)) {
-          entries.delete(serialized);
-          removed += 1;
-        }
-      }
-      return removed;
-    },
-    get size() {
-      return entries.size;
-    },
-  };
-}
-
-function hashBytes(hasher: ContentHasherPort, bytes: Uint8Array): ContentDigest {
-  const hash = hasher.create();
-  hash.update(bytes);
-  return hash.digest();
-}
-
-function utf8LeadLength(lead: number): number {
-  if ((lead & 0b1000_0000) === 0) {
-    return 1;
-  }
-  if ((lead & 0b1110_0000) === 0b1100_0000) {
-    return 2;
-  }
-  if ((lead & 0b1111_0000) === 0b1110_0000) {
-    return 3;
-  }
-  if ((lead & 0b1111_1000) === 0b1111_0000) {
-    return 4;
-  }
-  return 1;
-}
-
-function sliceUtf8(bytes: Uint8Array, offset: number, length: number): Uint8Array {
-  let end = Math.min(bytes.byteLength, offset + length);
-  while (end > offset) {
-    const previous = bytes[end - 1];
-    if (previous === undefined || (previous & 0b1100_0000) !== 0b1000_0000) {
-      break;
-    }
-    end -= 1;
-  }
-  const lead = end > offset ? bytes[end - 1] : undefined;
-  if (lead !== undefined && end - 1 + utf8LeadLength(lead) > offset + length) {
-    end -= 1;
-  }
-  return bytes.subarray(offset, end);
-}
-
-function byteOffsetOf(text: string, charIndex: number): number {
-  return encoder.encode(text.slice(0, charIndex)).byteLength;
-}
-
-function groupRecoverable(members: readonly LoomMember[]): boolean {
-  return members.every((member) => !member.required || member.availability === "available");
-}
-
 export function commitLoomManifest(input: LoomCommitInput): Result<LoomManifest, LoomError> {
   const parsed = commitSchema.safeParse({
     id: input.id,
@@ -574,7 +262,7 @@ export function commitLoomManifest(input: LoomCommitInput): Result<LoomManifest,
     workspaceId: parsed.data.workspaceId,
     sessionId: parsed.data.sessionId,
     members,
-    exactRecoverable: groupRecoverable(members),
+    exactRecoverable: loomGroupRecoverable(members),
     generation: generation.value,
     retentionUntil,
   });
@@ -686,165 +374,114 @@ function parseProjection(value: unknown): Result<ParsedProjection, LoomError> {
   }
 }
 
-function projectExact(
-  bytes: Uint8Array,
-  maxBytes: number,
-): Result<{ text: string; offset: number; byteLength: number; complete: boolean }, LoomError> {
-  if (bytes.byteLength > maxBytes) {
-    return err(loomError("oversized", "source"));
-  }
-  return ok({
-    text: decoder.decode(bytes),
-    offset: 0,
-    byteLength: bytes.byteLength,
-    complete: true,
-  });
-}
+export type LoomRetrievalPlan = {
+  readonly input: LoomRetrieveInput;
+  readonly id: EvidenceId;
+  readonly freshness: EvidenceFreshness;
+  readonly projection: ParsedProjection;
+  readonly declared: LoomMember;
+  readonly key: LoomCacheKey;
+  readonly read: LoomArtifactReadPlan;
+  readonly exactRecoverable: boolean;
+  readonly metadataVerified: boolean;
+  readonly cached: LoomProjectionResult | null;
+};
 
-function projectRange(
-  bytes: Uint8Array,
-  offsetInput: number | undefined,
-  lengthInput: number | undefined,
-  maxBytes: number,
-): Result<{ text: string; offset: number; byteLength: number; complete: boolean }, LoomError> {
-  const offset = offsetInput ?? 0;
-  if (!Number.isSafeInteger(offset) || offset < 0 || offset > bytes.byteLength) {
-    return err(loomError("malformed", "offset"));
-  }
-  const remaining = bytes.byteLength - offset;
-  const requested = lengthInput === undefined ? Math.min(remaining, maxBytes) : lengthInput;
-  if (!Number.isSafeInteger(requested) || requested < 0) {
-    return err(loomError("malformed", "length"));
-  }
-  if (requested > remaining) {
-    return err(loomError("oversized", "length"));
-  }
-  if (lengthInput === undefined && remaining > maxBytes) {
-    return err(loomError("oversized", "source"));
-  }
-  if (requested > maxBytes) {
-    return err(loomError("oversized", "length"));
-  }
-  const sliced = sliceUtf8(bytes, offset, requested);
-  return ok({
-    text: decoder.decode(sliced),
-    offset,
-    byteLength: sliced.byteLength,
-    complete: offset === 0 && sliced.byteLength === bytes.byteLength,
-  });
-}
-
-function projectHeadTail(
-  bytes: Uint8Array,
-  headBytes: number,
-  tailBytes: number,
-  maxBytes: number,
-): Result<
-  {
-    text: string;
-    offset: number;
-    byteLength: number;
-    complete: boolean;
-    omissions: readonly LoomOmission[];
-  },
-  LoomError
-> {
-  if (headBytes + tailBytes > maxBytes) {
-    return err(loomError("oversized", "projection"));
-  }
-  if (bytes.byteLength <= headBytes + tailBytes) {
-    const full = projectExact(bytes, maxBytes);
-    if (!full.ok) {
-      return full;
+function planArtifactRead(
+  projection: ParsedProjection,
+  sourceByteLength: number,
+): Result<LoomArtifactReadPlan, LoomError> {
+  switch (projection.kind) {
+    case "exact":
+      if (sourceByteLength > projection.maxBytes) {
+        return err(loomError("oversized", "source"));
+      }
+      return ok({
+        kind: "complete",
+        artifactId: projection.member,
+        offset: 0,
+        length: sourceByteLength,
+      });
+    case "range": {
+      const offset = projection.offset ?? 0;
+      if (!Number.isSafeInteger(offset) || offset < 0 || offset > sourceByteLength) {
+        return err(loomError("malformed", "offset"));
+      }
+      const remaining = sourceByteLength - offset;
+      const requested = projection.length ?? Math.min(remaining, projection.maxBytes);
+      if (!Number.isSafeInteger(requested) || requested < 0) {
+        return err(loomError("malformed", "length"));
+      }
+      if (requested > remaining) {
+        return err(loomError("oversized", "length"));
+      }
+      if (projection.length === undefined && remaining > projection.maxBytes) {
+        return err(loomError("oversized", "source"));
+      }
+      if (requested > projection.maxBytes) {
+        return err(loomError("oversized", "length"));
+      }
+      return offset === 0 && requested === sourceByteLength
+        ? ok({
+            kind: "complete",
+            artifactId: projection.member,
+            offset: 0,
+            length: sourceByteLength,
+          })
+        : ok({ kind: "range", artifactId: projection.member, offset, length: requested });
     }
-    return ok({ ...full.value, omissions: [] });
+    case "head-tail":
+      if (projection.headBytes + projection.tailBytes > projection.maxBytes) {
+        return err(loomError("oversized", "projection"));
+      }
+      if (sourceByteLength <= projection.headBytes + projection.tailBytes) {
+        return ok({
+          kind: "complete",
+          artifactId: projection.member,
+          offset: 0,
+          length: sourceByteLength,
+        });
+      }
+      return ok({
+        kind: "head-tail",
+        artifactId: projection.member,
+        headOffset: 0,
+        headLength: projection.headBytes,
+        tailOffset: sourceByteLength - projection.tailBytes,
+        tailLength: projection.tailBytes,
+      });
+    case "search-hits":
+      return ok({
+        kind: "complete",
+        artifactId: projection.member,
+        offset: 0,
+        length: sourceByteLength,
+      });
+    default:
+      return assertNever(projection, "unhandled loom projection");
   }
-  const head = sliceUtf8(bytes, 0, headBytes);
-  const tailOffset = bytes.byteLength - tailBytes;
-  const tail = sliceUtf8(bytes, tailOffset, tailBytes);
-  const omitted = bytes.byteLength - head.byteLength - tail.byteLength;
-  const marker = `\n… ${omitted} bytes omitted …\n`;
-  const text = `${decoder.decode(head)}${marker}${decoder.decode(tail)}`;
-  return ok({
-    text,
-    offset: 0,
-    byteLength: encoder.encode(text).byteLength,
-    complete: false,
-    omissions: [{ kind: "bytes", count: omitted }],
-  });
 }
 
-function projectSearchHits(
-  bytes: Uint8Array,
-  encoding: ArtifactEncoding,
-  query: string,
-  maxHits: number,
-  contextBytes: number,
-  maxBytes: number,
-): Result<
-  {
-    text: string;
-    offset: number;
-    byteLength: number;
-    complete: boolean;
-    omissions: readonly LoomOmission[];
-    hits: readonly LoomSearchHit[];
-  },
-  LoomError
-> {
-  if (encoding !== "identity") {
-    return err(loomError("unsupported", "encoding"));
+function memberIsRecoverable(member: LoomMember, live: LoomMemberBytes | undefined): boolean {
+  if (live === undefined || live.bytes === null) {
+    return !member.required;
   }
-  const text = decoder.decode(bytes);
-  const hits: LoomSearchHit[] = [];
-  let from = 0;
-  let capped = 0;
-  while (from < text.length) {
-    const index = text.indexOf(query, from);
-    if (index === -1) {
-      break;
-    }
-    if (hits.length >= maxHits) {
-      capped += 1;
-      from = index + query.length;
-      continue;
-    }
-    const start = byteOffsetOf(text, index);
-    const contextStart = Math.max(0, start - contextBytes);
-    const matchBytes = encoder.encode(query).byteLength;
-    const contextLength = start - contextStart + matchBytes + contextBytes;
-    const excerptBytes = sliceUtf8(bytes, contextStart, contextLength);
-    const excerpt = decoder.decode(excerptBytes);
-    hits.push({
-      offset: start,
-      byteLength: matchBytes,
-      text: excerpt,
-    });
-    from = index + query.length;
+  if ((live.availability ?? member.availability) !== "available") {
+    return !member.required;
   }
-  if (hits.length === 0) {
-    return err(loomError("empty", "query"));
+  if (live.digest !== undefined && live.digest !== member.digest) {
+    return !member.required;
   }
-  const rendered = hits.map((hit) => hit.text).join("\n---\n");
-  if (encoder.encode(rendered).byteLength > maxBytes) {
-    return err(loomError("oversized", "projection"));
+  if (live.byteLength !== undefined && live.byteLength !== member.byteLength) {
+    return !member.required;
   }
-  const omissions: LoomOmission[] = capped > 0 ? [{ kind: "hits-capped", count: capped }] : [];
-  return ok({
-    text: rendered,
-    offset: hits[0]?.offset ?? 0,
-    byteLength: encoder.encode(rendered).byteLength,
-    complete: false,
-    omissions,
-    hits,
-  });
+  return true;
 }
 
-export function retrieveLoomProjection(
+export function planLoomRetrieval(
   input: LoomRetrieveInput,
-  hasher: ContentHasherPort,
   cache?: LoomCache,
-): Result<LoomProjectionResult, LoomError> {
+): Result<LoomRetrievalPlan, LoomError> {
   const id = evidenceId.parse(input.id);
   if (!id.ok) {
     return err(loomError("malformed", "id"));
@@ -928,31 +565,23 @@ export function retrieveLoomProjection(
   }
 
   const supplied = input.members.find((member) => member.artifactId === declared.artifactId);
-  const suppliedBytes = supplied?.bytes ?? null;
   const suppliedAvailability = supplied?.availability ?? declared.availability;
-  if (suppliedBytes === null || suppliedAvailability !== "available") {
+  if (supplied === undefined || supplied.bytes === null || suppliedAvailability !== "available") {
     return err(loomError("unavailable", "member"));
   }
-  if (suppliedBytes.byteLength !== declared.byteLength) {
+  if (supplied.byteLength !== undefined && supplied.byteLength !== declared.byteLength) {
     return err(loomError("checksum", "byteLength"));
   }
-  const computed = hashBytes(hasher, suppliedBytes);
-  if (computed !== declared.digest) {
+  if (supplied.digest !== undefined && supplied.digest !== declared.digest) {
     return err(loomError("checksum", "digest"));
   }
 
-  const liveMembers = input.manifest.members.map((member) => {
-    const live = input.members.find((candidate) => candidate.artifactId === member.artifactId);
-    if (live === undefined) {
-      return member.required ? { ...member, availability: "missing" as const } : member;
-    }
-    const availability =
-      live.bytes === null
-        ? "missing"
-        : ((live.availability ?? member.availability) as ArtifactAvailability);
-    return { ...member, availability };
-  });
-  const exactRecoverable = groupRecoverable(liveMembers);
+  const exactRecoverable = input.manifest.members.every((member) =>
+    memberIsRecoverable(
+      member,
+      input.members.find((candidate) => candidate.artifactId === member.artifactId),
+    ),
+  );
 
   const key: LoomCacheKey = {
     digest: declared.digest,
@@ -967,9 +596,80 @@ export function retrieveLoomProjection(
     maxBytes: projection.value.maxBytes,
     query: projection.value.query,
   };
+  const read = planArtifactRead(projection.value, declared.byteLength);
+  if (!read.ok) {
+    return read;
+  }
   const cached = cache?.get(key) ?? null;
-  if (cached !== null) {
-    return ok({ ...cached, cache: "hit", exactRecoverable, freshness: freshness.value });
+  return ok({
+    input,
+    id: id.value,
+    freshness: freshness.value,
+    projection: projection.value,
+    declared,
+    key,
+    read: read.value,
+    exactRecoverable,
+    metadataVerified: supplied.digest !== undefined && supplied.byteLength !== undefined,
+    cached:
+      cached === null
+        ? null
+        : { ...cached, cache: "hit", exactRecoverable, freshness: freshness.value },
+  });
+}
+
+function validateProjectionSource(
+  plan: LoomRetrievalPlan,
+  source: LoomProjectionSource,
+  hasher: ContentHasherPort,
+): Result<void, LoomError> {
+  if (source.artifactId !== plan.declared.artifactId) {
+    return err(loomError("checksum", "artifactId"));
+  }
+  if (source.kind === "complete") {
+    if (source.bytes.byteLength !== plan.declared.byteLength) {
+      return err(loomError("checksum", "byteLength"));
+    }
+    if (hashLoomBytes(hasher, source.bytes) !== plan.declared.digest) {
+      return err(loomError("checksum", "digest"));
+    }
+    return ok(undefined);
+  }
+  if (!plan.metadataVerified || source.kind !== plan.read.kind) {
+    return err(loomError("checksum", "source"));
+  }
+  if (source.kind === "range" && plan.read.kind === "range") {
+    if (source.offset !== plan.read.offset || source.bytes.byteLength !== plan.read.length) {
+      return err(loomError("checksum", "range"));
+    }
+    return ok(undefined);
+  }
+  if (source.kind === "head-tail" && plan.read.kind === "head-tail") {
+    if (
+      source.headOffset !== plan.read.headOffset ||
+      source.headBytes.byteLength !== plan.read.headLength ||
+      source.tailOffset !== plan.read.tailOffset ||
+      source.tailBytes.byteLength !== plan.read.tailLength
+    ) {
+      return err(loomError("checksum", "range"));
+    }
+    return ok(undefined);
+  }
+  return err(loomError("checksum", "source"));
+}
+
+export function completeLoomRetrieval(
+  plan: LoomRetrievalPlan,
+  source: LoomProjectionSource,
+  hasher: ContentHasherPort,
+  cache?: LoomCache,
+): Result<LoomProjectionResult, LoomError> {
+  const verified = validateProjectionSource(plan, source, hasher);
+  if (!verified.ok) {
+    return verified;
+  }
+  if (plan.cached !== null) {
+    return ok(plan.cached);
   }
 
   let projected: {
@@ -981,9 +681,12 @@ export function retrieveLoomProjection(
     hits: readonly LoomSearchHit[];
     fidelity: EvidenceFidelity;
   };
-  switch (projection.value.kind) {
+  switch (plan.projection.kind) {
     case "exact": {
-      const result = projectExact(suppliedBytes, projection.value.maxBytes);
+      if (source.kind !== "complete") {
+        return err(loomError("checksum", "source"));
+      }
+      const result = projectLoomExact(source.bytes, plan.projection.maxBytes);
       if (!result.ok) {
         return result;
       }
@@ -996,12 +699,17 @@ export function retrieveLoomProjection(
       break;
     }
     case "range": {
-      const result = projectRange(
-        suppliedBytes,
-        projection.value.offset,
-        projection.value.length,
-        projection.value.maxBytes,
-      );
+      const result =
+        source.kind === "complete"
+          ? projectLoomRange(
+              source.bytes,
+              plan.projection.offset,
+              plan.projection.length,
+              plan.projection.maxBytes,
+            )
+          : source.kind === "range"
+            ? ok(projectLoomRangeWindow(source.bytes, source.offset, plan.declared.byteLength))
+            : err(loomError("checksum", "source"));
       if (!result.ok) {
         return result;
       }
@@ -1014,12 +722,23 @@ export function retrieveLoomProjection(
       break;
     }
     case "head-tail": {
-      const result = projectHeadTail(
-        suppliedBytes,
-        projection.value.headBytes,
-        projection.value.tailBytes,
-        projection.value.maxBytes,
-      );
+      const result =
+        source.kind === "complete"
+          ? projectLoomHeadTail(
+              source.bytes,
+              plan.projection.headBytes,
+              plan.projection.tailBytes,
+              plan.projection.maxBytes,
+            )
+          : source.kind === "head-tail"
+            ? ok(
+                projectLoomHeadTailWindows(
+                  source.headBytes,
+                  source.tailBytes,
+                  plan.declared.byteLength,
+                ),
+              )
+            : err(loomError("checksum", "source"));
       if (!result.ok) {
         return result;
       }
@@ -1031,13 +750,16 @@ export function retrieveLoomProjection(
       break;
     }
     case "search-hits": {
-      const result = projectSearchHits(
-        suppliedBytes,
-        declared.encoding,
-        projection.value.query,
-        projection.value.maxHits,
-        projection.value.contextBytes,
-        projection.value.maxBytes,
+      if (source.kind !== "complete") {
+        return err(loomError("checksum", "source"));
+      }
+      const result = projectLoomSearchHits(
+        source.bytes,
+        plan.declared.encoding,
+        plan.projection.query,
+        plan.projection.maxHits,
+        plan.projection.contextBytes,
+        plan.projection.maxBytes,
       );
       if (!result.ok) {
         return result;
@@ -1046,45 +768,72 @@ export function retrieveLoomProjection(
       break;
     }
     default:
-      return assertNever(projection.value, "unhandled loom projection");
+      return assertNever(plan.projection, "unhandled loom projection");
   }
 
   const claimsExact = projected.fidelity === "exact-source" && projected.complete;
   const expansion: ExactSourceHandle = {
     kind: "artifact",
-    artifactId: declared.artifactId,
-    digest: declared.digest,
-    byteLength: declared.byteLength,
+    artifactId: plan.declared.artifactId,
+    digest: plan.declared.digest,
+    byteLength: plan.declared.byteLength,
   };
   const result: LoomProjectionResult = {
-    id: id.value,
-    manifestId: input.manifest.id,
+    id: plan.id,
+    manifestId: plan.input.manifest.id,
     fidelity: projected.fidelity,
-    freshness: freshness.value,
+    freshness: plan.freshness,
     text: projected.text,
-    projection: projection.value.kind,
+    projection: plan.projection.kind,
     offset: projected.offset,
     byteLength: projected.byteLength,
-    sourceBytes: declared.byteLength,
+    sourceBytes: plan.declared.byteLength,
     complete: projected.complete,
     claimsExact,
     cache: "miss",
-    exactRecoverable,
+    exactRecoverable: plan.exactRecoverable,
     exactSource: claimsExact ? expansion : null,
     expansion,
     handle: {
-      manifestId: input.manifest.id,
-      artifactId: declared.artifactId,
-      digest: declared.digest,
-      byteLength: declared.byteLength,
-      workspaceId: input.manifest.workspaceId,
-      sessionId: input.manifest.sessionId,
+      manifestId: plan.input.manifest.id,
+      artifactId: plan.declared.artifactId,
+      digest: plan.declared.digest,
+      byteLength: plan.declared.byteLength,
+      workspaceId: plan.input.manifest.workspaceId,
+      sessionId: plan.input.manifest.sessionId,
     },
     omissions: projected.omissions,
     hits: projected.hits,
-    protectedFacts: declared.protectedFacts,
-    lineage: [DEFAULT_LOOM_STRATEGY, projection.value.kind],
+    protectedFacts: plan.declared.protectedFacts,
+    lineage: [DEFAULT_LOOM_STRATEGY, plan.projection.kind],
   };
-  cache?.put(key, { ...result, cache: "hit" });
+  cache?.put(plan.key, { ...result, cache: "hit" });
   return ok(result);
+}
+
+export function retrieveLoomProjection(
+  input: LoomRetrieveInput,
+  hasher: ContentHasherPort,
+  cache?: LoomCache,
+): Result<LoomProjectionResult, LoomError> {
+  const plan = planLoomRetrieval(input, cache);
+  if (!plan.ok) {
+    return plan;
+  }
+  const supplied = input.members.find(
+    (member) => member.artifactId === plan.value.declared.artifactId,
+  );
+  if (supplied?.bytes === undefined || supplied.bytes === null) {
+    return err(loomError("unavailable", "member"));
+  }
+  return completeLoomRetrieval(
+    plan.value,
+    {
+      kind: "complete",
+      artifactId: plan.value.declared.artifactId,
+      bytes: supplied.bytes,
+    },
+    hasher,
+    cache,
+  );
 }

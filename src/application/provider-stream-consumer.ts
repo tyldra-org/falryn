@@ -68,7 +68,7 @@ export type ConsumeProviderStreamInput = {
    * How cooperative abort settles the turn when the signal fires before a
    * provider terminal. Defaults to `cancel`.
    */
-  readonly abortAs?: "cancel" | "timeout";
+  readonly abortAs?: "cancel" | "timeout" | (() => "cancel" | "timeout");
 };
 
 export type ProviderStreamConsumeOutcome =
@@ -208,6 +208,7 @@ function emptySnapshot(): StreamAssemblySnapshot {
     toolProposals: [],
     usage: null,
     finishReason: null,
+    providerMetadata: {},
     diagnostics: [],
   };
 }
@@ -220,6 +221,8 @@ export function createProviderStreamConsumer(
 
   return {
     async consume(input) {
+      const abortDisposition = (): "cancel" | "timeout" =>
+        typeof input.abortAs === "function" ? input.abortAs() : (input.abortAs ?? "cancel");
       const turn = coordinator.get(input.turnId);
       if (turn === null) {
         return {
@@ -475,7 +478,7 @@ export function createProviderStreamConsumer(
         while (!next.done) {
           if (input.signal.aborted) {
             queue.drain();
-            return settleAbort(latestSnapshot, input.abortAs ?? "cancel");
+            return settleAbort(latestSnapshot, abortDisposition());
           }
 
           const { event, snapshot } = next.value;
@@ -510,7 +513,7 @@ export function createProviderStreamConsumer(
               break;
             case "cancelled":
               queue.drain();
-              return settleAbort(latestSnapshot, input.abortAs ?? "cancel");
+              return settleAbort(latestSnapshot, abortDisposition());
             case "rejected": {
               queue.drain();
               const handlingError = ensureHandling();

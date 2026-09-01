@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { MAX_LOCAL_PATH_LENGTH } from "../domain/index.ts";
+import { MAX_LOCAL_PATH_LENGTH, modelId } from "../domain/index.ts";
 import { helpText, type Invocation, parseInvocation } from "./command-tree.ts";
 import {
   configurationOverridesFor,
@@ -66,6 +66,7 @@ describe("the declared tree", () => {
     expect(await commandOf("workspace", "show")).toBe("workspace.show");
     expect(await commandOf("workspace", "save", "app")).toBe("workspace.save");
     expect(await commandOf("workspace", "load", "app")).toBe("workspace.load");
+    expect(await commandOf("provider", "list")).toBe("provider");
     expect(await commandOf("run", "fix", "the", "bug")).toBe("run");
     expect(await commandOf("completion", "bash")).toBe("completion");
   });
@@ -74,11 +75,11 @@ describe("the declared tree", () => {
     // Each of these is named in `reference/CLI.md` as a planned group. A tree
     // that parsed them would advertise them in `--help` and promise behavior
     // nothing implements.
-    const undeclared = ["provider", "tool", "extension"];
+    const undeclared = ["tool", "extension"];
     for (const group of undeclared) {
       expect(await commandOf(group)).toBe("invalid");
     }
-    expect(await helpText(null)).not.toContain("provider");
+    expect(await helpText(null)).toContain("provider <action>");
     expect(await helpText(null)).toContain("data <action>");
     expect(await helpText(null)).toContain("export");
     expect(await helpText(null)).toContain("session");
@@ -181,6 +182,277 @@ describe("invalid usage", () => {
   test("accepts a relative workspace, which the service layer resolves", async () => {
     expect(await commandOf("--workspace", "./site", "doctor")).toBe("doctor");
     expect(await commandOf("--workspace", "../sibling", "doctor")).toBe("doctor");
+  });
+});
+
+describe("provider connection arguments", () => {
+  test("infers provider adapters and remote discovery from exact provider identities", async () => {
+    const cases = [
+      ["openai", "https://api.openai.com/v1", "FALRYN_OPENAI_API_KEY"],
+      ["anthropic", null, "FALRYN_ANTHROPIC_API_KEY"],
+      ["google", null, "FALRYN_GOOGLE_API_KEY"],
+      ["commandcode", "https://api.commandcode.ai/provider/v1", "FALRYN_COMMANDCODE_API_KEY"],
+    ] as const;
+
+    for (const [provider, endpoint, credentialVariable] of cases) {
+      const invocation = await parse(
+        "provider",
+        "add",
+        `${provider}-work`,
+        "--provider",
+        provider,
+        "--model",
+        `${provider}-model`,
+      );
+      if (invocation.kind !== "run" || invocation.providerArgs?.action !== "add") {
+        throw new Error(`expected parsed ${provider} provider add`);
+      }
+      expect(invocation.providerArgs.profile).toMatchObject({
+        adapterKind: provider,
+        discovery: "remote",
+        endpoint,
+        credential: {
+          storeKind: "environment",
+          locator: credentialVariable,
+          consumer: `provider:${provider}-work`,
+        },
+      });
+    }
+  });
+
+  test("keeps OpenAI Codex subscription identity separate from API-key OpenAI", async () => {
+    const invocation = await parse("provider", "add", "openai-codex", "--model", "gpt-5-codex");
+    if (invocation.kind !== "run" || invocation.providerArgs?.action !== "add") {
+      throw new Error("expected parsed OpenAI Codex provider add");
+    }
+    expect(invocation.providerArgs.profile).toMatchObject({
+      providerId: "openai-codex",
+      adapterKind: "openai-codex",
+      endpoint: null,
+      credential: null,
+      discovery: "static",
+    });
+  });
+
+  test("rejects every CLI route around the reserved OpenAI Codex identity", async () => {
+    for (const arguments_ of [
+      [
+        "provider",
+        "add",
+        "work",
+        "--provider",
+        "openai-codex",
+        "--adapter",
+        "openai",
+        "--endpoint",
+        "https://api.openai.com/v1",
+        "--model",
+        "gpt-5-codex",
+      ],
+      [
+        "provider",
+        "add",
+        "work",
+        "--provider",
+        "openai",
+        "--adapter",
+        "openai-codex",
+        "--model",
+        "gpt-5-codex",
+      ],
+    ] as const) {
+      expect(await invalidMessage(...arguments_)).toContain(
+        "the openai-codex provider identity and adapter must be used together",
+      );
+    }
+    expect(
+      await invalidMessage(
+        "provider",
+        "add",
+        "openai-codex",
+        "--endpoint",
+        "https://api.openai.com/v1",
+        "--model",
+        "gpt-5-codex",
+      ),
+    ).toContain("openai-codex has no direct provider endpoint");
+    expect(
+      await invalidMessage(
+        "provider",
+        "add",
+        "openai-codex",
+        "--discovery",
+        "remote",
+        "--model",
+        "gpt-5-codex",
+      ),
+    ).toContain("openai-codex cannot perform direct provider model discovery");
+  });
+
+  test("normalizes safe profile metadata and keeps credentials out of argv", async () => {
+    const invocation = await parse(
+      "provider",
+      "add",
+      "local",
+      "--provider",
+      "openai",
+      "--endpoint",
+      "http://127.0.0.1:11434/v1",
+      "--model",
+      "coder-small",
+      "--model",
+      "coder-large",
+      "--catalog",
+      "local-models",
+    );
+    if (invocation.kind !== "run" || invocation.providerArgs?.action !== "add") {
+      throw new Error("expected parsed provider add");
+    }
+    expect(invocation.providerArgs.profile.profileId).toBe("local");
+    expect(invocation.providerArgs.profile.enabledModels.map(String)).toEqual([
+      "coder-small",
+      "coder-large",
+    ]);
+    expect(invocation.providerArgs.profile.modelCapabilities).toEqual([]);
+    expect(invocation.providerArgs.profile.catalogs).toEqual(["local-models"]);
+    expect(invocation.providerArgs.profile.discovery).toBe("static");
+    expect(JSON.stringify(invocation)).not.toMatch(/api.?key|secret/i);
+  });
+
+  test("requires explicit transport facts for custom provider identities", async () => {
+    expect(await invalidMessage("provider", "add", "local", "--model", "coder-small")).toContain(
+      'Provider "local" requires an explicit --adapter.',
+    );
+    expect(
+      await invalidMessage(
+        "provider",
+        "add",
+        "local",
+        "--adapter",
+        "openai",
+        "--model",
+        "coder-small",
+      ),
+    ).toContain('Provider "local" using adapter "openai" requires an explicit --endpoint.');
+
+    const invocation = await parse(
+      "provider",
+      "add",
+      "local",
+      "--adapter",
+      "openai",
+      "--endpoint",
+      "http://127.0.0.1:11434/v1",
+      "--model",
+      "coder-small",
+      "--model",
+      "coder-large",
+      "--catalog",
+      "local-models",
+    );
+    if (invocation.kind !== "run" || invocation.providerArgs?.action !== "add") {
+      throw new Error("expected parsed custom provider add");
+    }
+    expect(invocation.providerArgs.profile).toMatchObject({
+      adapterKind: "openai",
+      discovery: "static",
+      endpoint: "http://127.0.0.1:11434/v1",
+      catalogs: ["local-models"],
+      credential: null,
+    });
+    expect(invocation.providerArgs.profile.enabledModels.map(String)).toEqual([
+      "coder-small",
+      "coder-large",
+    ]);
+  });
+
+  test("keeps explicit adapter and discovery overrides compatible", async () => {
+    const deterministic = await parse(
+      "provider",
+      "add",
+      "fixture",
+      "--adapter",
+      "deterministic",
+      "--model",
+      "deterministic-echo",
+    );
+    if (deterministic.kind !== "run" || deterministic.providerArgs?.action !== "add") {
+      throw new Error("expected parsed deterministic provider add");
+    }
+    expect(deterministic.providerArgs.profile).toMatchObject({
+      adapterKind: "deterministic",
+      discovery: "static",
+      endpoint: null,
+    });
+
+    const staticOpenAi = await parse(
+      "provider",
+      "add",
+      "offline-openai",
+      "--provider",
+      "openai",
+      "--discovery",
+      "static",
+      "--model",
+      "gpt-5.6-sol",
+    );
+    if (staticOpenAi.kind !== "run" || staticOpenAi.providerArgs?.action !== "add") {
+      throw new Error("expected parsed static OpenAI provider add");
+    }
+    expect(staticOpenAi.providerArgs.profile.discovery).toBe("static");
+  });
+
+  test("keeps bundled capability facts out of user profiles", async () => {
+    const invocation = await parse(
+      "provider",
+      "add",
+      "openai-work",
+      "--provider",
+      "openai",
+      "--model",
+      "gpt-5.6-sol",
+    );
+    if (invocation.kind !== "run" || invocation.providerArgs?.action !== "add") {
+      throw new Error("expected parsed provider add");
+    }
+    expect(invocation.providerArgs.profile.enabledModels).toEqual([modelId.from("gpt-5.6-sol")]);
+    expect(invocation.providerArgs.profile.modelCapabilities).toEqual([]);
+
+    const custom = await parse(
+      "provider",
+      "add",
+      "custom-openai",
+      "--provider",
+      "openai",
+      "--endpoint",
+      "https://provider.example.test/v1",
+      "--model",
+      "gpt-5.6-sol",
+    );
+    if (custom.kind !== "run" || custom.providerArgs?.action !== "add") {
+      throw new Error("expected parsed custom provider add");
+    }
+    expect(custom.providerArgs.profile.modelCapabilities).toEqual([]);
+    expect(custom.providerArgs.profile.discovery).toBe("static");
+  });
+
+  test("requires protected stdin for API keys and validates authorized methods", async () => {
+    expect(await invalidMessage("provider", "login", "openai")).toContain("--api-key-stdin");
+    expect(
+      await commandOf("provider", "login", "openai", "--api-key-stdin", "--auth-method", "api-key"),
+    ).toBe("provider");
+    expect(await commandOf("provider", "login", "anthropic", "--auth-method", "oauth-pkce")).toBe(
+      "provider",
+    );
+    expect(await invalidMessage("provider", "login", "openai", "--secret", "value")).toContain(
+      "Unknown argument: secret",
+    );
+    expect(await invalidMessage("provider", "list", "--model", "ignored")).toContain(
+      "model is not valid with provider list",
+    );
+    expect(
+      await invalidMessage("provider", "login", "openai", "--endpoint", "https://ignored.test"),
+    ).toContain("endpoint is not valid with provider login");
   });
 });
 
