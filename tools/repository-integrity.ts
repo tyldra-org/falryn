@@ -42,21 +42,21 @@ export const DIRECT_DEPENDENCY_POLICY: readonly DirectDependencyPolicy[] = [
   {
     name: "@opentui/core",
     group: "dependencies",
-    version: "0.5.6",
+    version: "0.5.9",
     license: "MIT",
     repository: "https://github.com/anomalyco/opentui",
   },
   {
     name: "@opentui/keymap",
     group: "dependencies",
-    version: "0.5.6",
+    version: "0.5.9",
     license: "MIT",
     repository: "https://github.com/anomalyco/opentui",
   },
   {
     name: "@opentui/react",
     group: "dependencies",
-    version: "0.5.6",
+    version: "0.5.9",
     license: "MIT",
     repository: "https://github.com/anomalyco/opentui",
   },
@@ -91,7 +91,7 @@ export const DIRECT_DEPENDENCY_POLICY: readonly DirectDependencyPolicy[] = [
   {
     name: "zod",
     group: "dependencies",
-    version: "4.4.3",
+    version: "4.5.1",
     license: "MIT",
     repository: "https://github.com/colinhacks/zod",
   },
