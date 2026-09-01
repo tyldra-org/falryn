@@ -378,7 +378,6 @@ function ShellFrame(props: {
        */}
       <ComposerView
         model={model.composer}
-        {...(props.now === undefined ? {} : { now: props.now })}
         {...(props.onComposerAction === undefined ? {} : { onAction: props.onComposerAction })}
         {...(props.onComposerFocus === undefined ? {} : { onFocus: props.onComposerFocus })}
       />

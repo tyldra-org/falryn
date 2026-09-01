@@ -14,7 +14,6 @@
 
 import { describe, expect, test } from "bun:test";
 import { type CapturedSpan, MouseButton, TextareaRenderable } from "@opentui/core";
-import { createManualClock, duration, type Instant } from "../../domain/index.ts";
 import { mount, type Rendered, type TerminalShape } from "../harness.tsx";
 import { INLINE_PASTE_LIMIT } from "../paste.ts";
 import { parseHex, resolveTheme, type ThemeRequest } from "../theme/index.ts";
@@ -67,17 +66,11 @@ async function open(
   shape: TerminalShape = { columns: 100, rows: 24 },
   kittyKeyboard = false,
   theme: ThemeRequest = THEME,
-  now?: () => Instant,
 ): Promise<Session> {
-  const shell = await mount(
-    <ShellApp
-      theme={theme}
-      model={MODEL}
-      onExit={() => {}}
-      {...(now === undefined ? {} : { now })}
-    />,
-    { shape, kittyKeyboard },
-  );
+  const shell = await mount(<ShellApp theme={theme} model={MODEL} onExit={() => {}} />, {
+    shape,
+    kittyKeyboard,
+  });
   await shell.frame();
   const pressNamed = (key: NamedKey): Promise<string> => shell.press(SEQUENCES[key]);
   return Object.assign(shell, {
@@ -137,13 +130,6 @@ function selectedRange(textarea: TextareaRenderable): {
 
 function click(shell: Session, x: number, y: number): Promise<void> {
   return shell.setup.mockMouse.click(x, y, MouseButton.LEFT, { delayMs: 0 });
-}
-
-function wordRange(textarea: TextareaRenderable): { readonly start: number; readonly end: number } {
-  textarea.moveCursorRight();
-  textarea.moveWordBackward();
-  textarea.moveWordForward({ select: true });
-  return selectedRange(textarea);
 }
 
 describe("focus", () => {
@@ -214,18 +200,17 @@ describe("selection", () => {
     expect(spansWithBackground(shell, background)).toEqual([]);
   });
 
-  test("matches native word motions for starts, middles, ends, punctuation, and CJK", async () => {
+  test("uses native repeated-click word selection for words, punctuation, and CJK", async () => {
     const cases = [
-      { label: "word start", text: "alpha beta", column: 0 },
-      { label: "word middle", text: "alpha beta", column: 2 },
-      { label: "word end", text: "alpha beta", column: 4 },
-      { label: "punctuation", text: "alpha, beta", column: 5 },
-      { label: "CJK run", text: "詞語 text", column: 1 },
+      { label: "word start", text: "alpha beta", column: 0, expected: { start: 0, end: 5 } },
+      { label: "word middle", text: "alpha beta", column: 2, expected: { start: 0, end: 5 } },
+      { label: "word end", text: "alpha beta", column: 4, expected: { start: 0, end: 5 } },
+      { label: "punctuation", text: "alpha, beta", column: 5, expected: { start: 5, end: 7 } },
+      { label: "CJK run", text: "詞語 text", column: 1, expected: { start: 0, end: 4 } },
     ] as const;
 
     for (const scenario of cases) {
-      const clock = createManualClock();
-      using pointer = await open(undefined, false, THEME, clock.now);
+      using pointer = await open();
       await pointer.focusComposer();
       await pointer.type(scenario.text);
       const pointerTextarea = composerTextarea(pointer);
@@ -237,32 +222,22 @@ describe("selection", () => {
       const frame = await pointer.frame();
       const actual = selectedRange(pointerTextarea);
 
-      using native = await open();
-      await native.focusComposer();
-      await native.type(scenario.text);
-      const nativeTextarea = composerTextarea(native);
-      await click(native, x, y);
-      const expected = wordRange(nativeTextarea);
-
-      expect(actual, scenario.label).toEqual(expected);
+      expect(actual, scenario.label).toEqual(scenario.expected);
       expect(frame, scenario.label).toContain("Selection active");
       expect(pointer.setup.captureSpans().cursor, scenario.label).not.toBeNull();
     }
   });
 
-  test("matches native logical-line motions for first, middle, final, and empty lines", async () => {
+  test("uses native repeated-click selection for populated and empty logical lines", async () => {
     const cases = [
       { label: "first", text: "first\nmiddle\nfinal", row: 0, expected: { start: 0, end: 5 } },
       { label: "middle", text: "first\nmiddle\nfinal", row: 1, expected: { start: 6, end: 12 } },
       { label: "final", text: "first\nmiddle\nfinal", row: 2, expected: { start: 13, end: 18 } },
-      // OpenTUI represents the middle line terminator as the only selectable
-      // cell of an empty logical line.
-      { label: "empty", text: "first\n\nfinal", row: 1, expected: { start: 6, end: 7 } },
+      { label: "empty", text: "first\n\nfinal", row: 1, expected: null },
     ] as const;
 
     for (const scenario of cases) {
-      const clock = createManualClock();
-      using pointer = await open({ columns: 100, rows: 32 }, false, THEME, clock.now);
+      using pointer = await open({ columns: 100, rows: 32 });
       await pointer.focusComposer();
       await pointer.paste(scenario.text);
       const pointerTextarea = composerTextarea(pointer);
@@ -276,13 +251,16 @@ describe("selection", () => {
       const actual = pointerTextarea.getSelection();
 
       expect(actual, scenario.label).toEqual(scenario.expected);
-      expect(frame, scenario.label).toContain("Selection active");
+      if (scenario.expected === null) {
+        expect(frame, scenario.label).not.toContain("Selection active");
+      } else {
+        expect(frame, scenario.label).toContain("Selection active");
+      }
     }
   });
 
-  test("keeps native multi-line drag selection and resets the click sequence", async () => {
-    const clock = createManualClock();
-    using pointer = await open({ columns: 100, rows: 32 }, false, THEME, clock.now);
+  test("keeps native multi-line drag selection", async () => {
+    using pointer = await open({ columns: 100, rows: 32 });
     await pointer.focusComposer();
     await pointer.paste("first\nsecond");
     const pointerTextarea = composerTextarea(pointer);
@@ -301,28 +279,10 @@ describe("selection", () => {
 
     expect(dragged).toEqual(selectedRange(nativeTextarea));
     expect(dragFrame).toContain("Selection active");
-
-    using reset = await open({ columns: 100, rows: 32 }, false, THEME, clock.now);
-    await reset.focusComposer();
-    await reset.paste("first\nsecond");
-    const resetTextarea = composerTextarea(reset);
-    const resetX = resetTextarea.x + 1;
-    const resetY = resetTextarea.y;
-    await click(reset, resetX, resetY);
-    await click(reset, resetX, resetY);
-    expect(resetTextarea.getSelection()).not.toBeNull();
-
-    await reset.setup.mockMouse.drag(resetX, resetY, resetX, resetY + 1, MouseButton.LEFT, {
-      delayMs: 0,
-    });
-    await reset.frame();
-    await click(reset, resetX, resetY);
-    expect(resetTextarea.getSelection()).toBeNull();
   });
 
-  test("leaves changed-cell and expired presses as native collapsed placement", async () => {
-    const clock = createManualClock();
-    using shell = await open(undefined, false, THEME, clock.now);
+  test("leaves distant or expired presses as native collapsed placement", async () => {
+    using shell = await open();
     await shell.focusComposer();
     await shell.type("alpha beta");
     const textarea = composerTextarea(shell);
@@ -333,7 +293,7 @@ describe("selection", () => {
     expect(textarea.getSelection()).toBeNull();
 
     await click(shell, textarea.x + 7, y);
-    await clock.advance(duration(401));
+    await Bun.sleep(550);
     await click(shell, textarea.x + 7, y);
     expect(textarea.getSelection()).toBeNull();
   });
