@@ -98,7 +98,7 @@ export const DIRECT_DEPENDENCY_POLICY: readonly DirectDependencyPolicy[] = [
   {
     name: "@biomejs/biome",
     group: "devDependencies",
-    version: "2.5.9",
+    version: "2.5.11",
     license: "MIT OR Apache-2.0",
     repository: "https://github.com/biomejs/biome",
   },
