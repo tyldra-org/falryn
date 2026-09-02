@@ -15,13 +15,16 @@ application. The current command surface includes:
 | falryn --help / --version | Print usage or build identity |
 | falryn run [--mode ask\|plan\|debug\|agent] <prompt> | Run one headless coding turn through the selected execution profile and provider |
 | falryn doctor | Run bounded environment and local-storage diagnostics |
-| falryn config show / validate / path | Inspect and validate effective configuration |
+| falryn config show / validate / path / set | Inspect, validate, or revision-safely update effective configuration |
 | falryn provider list / add / use / configure / test / login / logout / remove | Manage local provider profiles and credentials |
-| falryn data reset / uninstall | Preview or apply confirmed removal of Falryn-owned local data |
+| falryn data backup / inspect / restore / diagnostics / retention / gc / reset / uninstall | Inspect, preserve, repair, retain, collect, or preview/apply confirmed removal of Falryn-owned local data |
 | falryn workspace list / show / save / load | Inspect or persist named workspace sets |
-| falryn export | Preview or write a versioned local export package |
-| falryn session list / show | List or inspect locally stored sessions |
+| falryn export / import | Preview or write a versioned local export package, or import one after verification |
+| falryn replay | Rebuild one stored session projection without repeating effects |
+| falryn session list / show / resume / fork / rewind / replay | Inspect or navigate durable session history while preserving lineage |
+| falryn task decompose / validate / progress / commit-plan | Project deterministic task structure, validation, progress, or a reviewable commit plan |
 | falryn artifact list / show / get | Inspect locally stored artifacts |
+| falryn completion bash / zsh / fish | Print shell completion scripts |
 
 Commands support human-readable and machine-readable output forms. Results go
 to standard output and diagnostics go to standard error.
