@@ -19,6 +19,7 @@
     "quality:fix": "biome check --write .",
     "typecheck": "tsc --noEmit",
     "verify:repository": "bun run tools/repository-integrity.ts",
+    "audit:issues": "bun run tools/issue-readiness-cli.ts",
     "generate:model-catalogs": "bun run tools/model-catalogs.ts",
     "check:model-catalogs": "bun run tools/model-catalogs.ts --check",
     "check:static": "bun run --parallel quality typecheck verify:repository check:model-catalogs",

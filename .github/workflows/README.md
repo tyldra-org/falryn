@@ -18,7 +18,9 @@ merge permission. `issue-governance.yml` comments on missing machine-checkable
 repository metadata; it deliberately does not invent an owner or labels. A
 repository-scoped `GITHUB_TOKEN` cannot read the private organization Project,
 so Roadmap membership, Status, and hierarchy remain mandatory but are verified
-by private Project automation and maintainer or agent audits. Repository policy
+by private Project automation and the authenticated `bun run audit:issues`
+maintainer command documented in
+[`CONTRIBUTOR-READINESS.md`](../../CONTRIBUTOR-READINESS.md). Repository policy
 checks exempt only the repository owner's account; all other contributors,
 including collaborators and maintainers, use the same validation path.
 

@@ -47,7 +47,24 @@ parent or explicit Standalone relationship. The `Issue governance` workflow
 reminds maintainers about repository-owned assignee and label metadata; it never
 invents them. Because a repository-scoped `GITHUB_TOKEN` cannot read the private
 organization Project, Roadmap membership, Status, and hierarchy are verified by
-private Project automation and maintainer or agent audits.
+private Project automation and the repository-owned maintainer audit:
+
+```bash
+bun run audit:issues -- --live tyldra-org/falryn \
+  --project-owner tyldra-org --project-number 1 \
+  --docs-root ../falryn-docs \
+  --snapshot-out /tmp/falryn-issue-readiness.json
+```
+
+Live mode uses the active `gh` authentication and requires access to the private
+Roadmap. It emits exact issue-number diagnostics and never receives a token in
+argv. Keep snapshots local: they contain issue bodies and Project metadata.
+Re-run deterministically without network access using `--snapshot <path>`;
+add `--baseline <previous-path>` to detect a title or milestone change whose
+body was not reconciled. `--docs-root` verifies canonical documentation paths
+against a checked-out Falryn Docs tree. The audit checks metadata, hierarchy,
+body bounds and markers, blockers, cycles, canonical paths, and docs-only
+completion wording; it never mutates GitHub.
 
 Pull requests link an issue, explain scope, validation, documentation impact,
 and risk. Automation applies changed-file area labels, exactly one `size: *`
