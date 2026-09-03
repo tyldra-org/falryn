@@ -1,15 +1,30 @@
-# Next delta
+# Next
 
-Canonical owner: [`DEVELOPMENT.md#next-mode`](https://github.com/tyldra-org/falryn-docs/blob/main/DEVELOPMENT.md#next-mode).
+Next is read-only routing over the private Falryn Roadmap. It never mutates issues, Project fields, branches, pull requests, source, or documentation.
 
-Next is read-only. Run the repository-owned live Roadmap audit, or replay a captured snapshot through that same auditor. Never manually reproduce priority, readiness, dependency, liveness, or delivery ordering.
+## Required authority
 
-If the audit reports any diagnostic, report it and do not route work. Otherwise:
+Require authenticated access to the exact private Roadmap and both repositories represented in its audit. Run the repository-owned live Roadmap audit or replay a complete authorized snapshot through the same auditor. Do not manually reproduce priority, readiness, dependency, liveness, or delivery order.
 
-- resume an authoritative active delivery first;
-- route a Ready selection to Deliver;
-- route a Not Ready selection to Plan;
-- route parent outcomes through their selected actionable child;
-- use Falryn Docs-qualified forms only for docs-owned work.
+Without private Roadmap access, return:
 
-Return the exact state evidence and one copy-ready suggested prompt. Do not execute it.
+```text
+Next unavailable: authenticated maintainer Roadmap access is required. Explicit public issue and PR inspection remains available.
+```
+
+Do not list, infer, or approximate private candidates from public issue numbers, milestones, recency, labels, or board-independent guesses. Do not suggest making the Project public.
+
+## Routing
+
+If the audit emits any diagnostic, report it and produce no sequence. Otherwise:
+
+1. resume one valid active delivery or interrupted parent chain first;
+2. select the first actionable entry in the generated dependency-safe sequence;
+3. route Ready work to Deliver and Not Ready work to Plan;
+4. route a parent through its selected actionable child;
+5. respect the sole assignee and name another owner rather than taking over; and
+6. use Falryn Docs-qualified selectors only for private docs-owned work.
+
+Parent-chain selectors are resume-only. Next never starts work or invents authorization.
+
+Report the audit generation, selected repository and issue, sequence position, readiness, owner, blockers, active delivery evidence, and one exact `Suggested next prompt:`. If no safe route exists, use `Suggested next prompt: none` and name the prerequisite without disclosing private content.

@@ -34,7 +34,7 @@ This is one skill with focused modules. Choose one primary module from the actua
 - Pair React or Next.js with core for a concrete language/runtime issue; do not load the compiler catalog for every component review.
 - Pair advanced types with compiler only when compile cost or declaration behavior is part of the problem.
 - Pair this skill with `change-review` when reviewing a diff; this skill owns stack correctness, while `change-review` owns evidence and severity.
-- Pair with `engineering-best-practices` for non-trivial architecture, concurrency, migration, reliability, or verification design.
+- When an independent cross-language engineering skill is installed, pair it for non-trivial architecture, concurrency, migration, reliability, or verification design. This TypeScript bundle does not require one by name.
 
 ## Validation order
 

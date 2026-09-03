@@ -53,41 +53,29 @@ incidental prose does not count. The
 `Issue governance` workflow reminds maintainers about
 repository-owned assignee and label metadata; it never invents them.
 
-Two repository-owned audits cover different boundaries. The issue-body audit
-checks the current Falryn implementation handoff:
+The public checkout does not require Falryn Docs or Roadmap access. A public
+issue must contain its complete implementation handoff before a maintainer marks
+it Ready. Ordinary contributors validate source with the repository commands in
+`CONTRIBUTING.md`; they do not need to run private governance audits.
 
-```bash
-bun run audit:issues -- --live tyldra-org/falryn \
-  --project-owner tyldra-org --project-number 1 \
-  --docs-root ../falryn-docs \
-  --snapshot-out /tmp/falryn-issue-readiness.json
-```
+Two repository-owned audits are maintainer controls. The issue-body audit checks
+public Falryn handoffs against the private canonical-document tree. The Roadmap
+audit checks private cross-repository Project membership, Status, Priority,
+Readiness, linked-pull-request liveness, and exact delivery sequence. Their live
+forms require authenticated access to the private companion repository and
+Roadmap and are intentionally unavailable to a public-only checkout.
 
-The cross-repository Roadmap audit checks all open and closed Falryn and Falryn
-Docs issues, Project membership, Status, Priority, Readiness, linked-pull-request
-liveness, and the exact derived delivery sequence:
+Maintainers use the authoritative command forms and required arguments in the
+private companion's development contract, substituting only the verified local
+checkout and snapshot paths. Tokens are never passed in argv. Snapshots contain issue bodies and
+private Project metadata, remain local, and are never committed or copied into
+public reports. Snapshot parsing rejects missing scope, invalid or future
+observations, and contradictory state. Any diagnostic suppresses sequencing.
 
-```bash
-bun run audit:roadmap -- \
-  --live tyldra-org/falryn \
-  --live tyldra-org/falryn-docs \
-  --project-owner tyldra-org --project-number 1 \
-  --snapshot-out /tmp/falryn-roadmap-governance.json
-```
-
-Live mode requires exactly the Falryn and Falryn Docs repositories, uses active
-`gh` authentication, and requires access to the private Roadmap. It emits
-repository-qualified issue diagnostics and never receives a token in argv.
-Snapshot parsing rejects omitted or out-of-scope repository or Project issue
-items, invalid or future observations, and contradictory state. Timestamp order
-uses normalized instants. Keep snapshots local: they contain issue bodies and Project
-metadata. Re-run deterministically without network access using `--snapshot
-<path>`. The Roadmap report reconciles milestone and relationship state,
-requires reciprocal open native hierarchy, uses native blockers for a
-topological order, and then resolves eligible ties by active delivery, approved
-P0, milestone, Priority, open transitive dependents, creation time, repository,
-and issue number. Any diagnostic suppresses the sequence. It never uses board
-position or update recency and never mutates GitHub.
+An agent without private authority reports that maintainer governance is
+unavailable. It may still inspect, review, and verify an explicitly named public
+Falryn issue or pull request. It never reconstructs private readiness or order
+from issue numbers, labels, milestones, recency, or board-independent guesses.
 
 An issue with an open blocker remains Todo. A leaf may have at most one open
 closing pull request and is In Progress while it is open. A parent never owns a

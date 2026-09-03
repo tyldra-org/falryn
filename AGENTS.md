@@ -8,11 +8,13 @@ and supported by evidence.
 This file configures agents acting in the public Falryn repository. It is not a
 requirement for human contributors or forks.
 
-Canonical public and contributor documentation belongs in the companion
-`falryn-docs` repository. This application repository owns code-adjacent
-`CURRENT-STATE.md`, contributor controls, source comments, fixtures, and files
-required to build or validate the product. Do not introduce product roadmaps,
-detailed future designs, unannounced capabilities, or private research here.
+Full product, architecture, and contributor documentation is maintained in the
+private companion `falryn-docs` repository. The public application repository
+owns code-adjacent `CURRENT-STATE.md`, public issue handoffs, contributor
+controls, source comments, fixtures, and everything required to build and
+validate the product. Public source, issue, and pull-request work must not
+require private documentation or Roadmap access. Do not copy private roadmaps,
+detailed future designs, unannounced capabilities, or research here.
 
 ## Before acting
 
@@ -32,11 +34,11 @@ detailed future designs, unannounced capabilities, or private research here.
 - bun:sqlite with versioned SQL migrations for local state.
 - One normal Bun process; external commands stay behind narrow, typed boundaries.
 
-## Required skills
+## Skill routing
 
 | Work | Skill |
 | --- | --- |
-| Non-trivial architecture, debugging, refactoring, migrations, concurrency, reliability, maintainability, or verification | engineering-best-practices |
+| Non-trivial architecture, debugging, refactoring, migrations, concurrency, reliability, maintainability, or verification | Use the optional global `engineering-best-practices` skill when installed. It is not vendored or required for ordinary public-checkout work. |
 | TypeScript, TSX, JavaScript, tests, build scripts, or tsconfig | typescript-best-practices |
 | OpenTUI behavior, layout, input, rendering, or packaging | opentui-best-practices |
 | Mutating Git work | git-workflow |
@@ -45,10 +47,14 @@ detailed future designs, unannounced capabilities, or private research here.
 | Falryn Plan, Implement, Review, Verify, Merge, Deliver, Next, greetings, walkthroughs, or project-status routing | falryn-workflow |
 
 Use the vendored skill appropriate to the checkout. Each `SKILL.md` is a compact
-router; load only the deep reference that owns the task. The six portable skills
-must not acquire Falryn product strategy. `falryn-workflow` is the sole
-repository-specific exception. Keep all seven vendored bundles synchronized
-with the maintainer-global copies through `.agents/skills/sync-from-global.sh`.
+router; load only the deep reference that owns the task. The five portable
+vendored skills must not acquire Falryn product strategy. `falryn-workflow` is
+the sole repository-specific exception and contains the complete public-checkout
+workflow. Private Falryn Docs and Roadmap authority is an authenticated
+maintainer addition, never a prerequisite for ordinary public work. Keep all six
+vendored bundles synchronized with the maintainer-global copies through
+`.agents/skills/sync-from-global.sh`. The global-only
+`engineering-best-practices` bundle is outside that synchronization set.
 
 ## Validation
 

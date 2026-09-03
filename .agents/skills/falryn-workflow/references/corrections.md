@@ -1,10 +1,14 @@
-# Correction delta
+# Corrections
 
-Canonical owner: [`DEVELOPMENT.md#correcting-work-before-and-after-merge`](https://github.com/tyldra-org/falryn-docs/blob/main/DEVELOPMENT.md#correcting-work-before-and-after-merge).
+Resolve a verified gap from current public GitHub and repository state.
 
-- Valid open PR: correct the existing branch and PR, then verify the new head.
-- Closed unmerged PR: reopen only when branch, base, scope, and policy still hold; otherwise create a fresh delivery.
-- Merged but incomplete original acceptance: reopen the owning issue and use a fresh branch from current default.
-- Distinct new outcome: create one focused follow-up issue.
+- **Open pull request:** keep the same issue, branch, application PR, and still-valid private companions. Add focused commits. Every pushed head invalidates earlier review, Verify, and merge approval.
+- **Closed without merge:** reopen only when the head branch, base, scope, issue, and companion set remain valid. Otherwise create a fresh replacement delivery.
+- **Merged but incomplete original acceptance:** reopen the owning issue, reconcile stale private Project completion when accessible, and use a fresh branch from the current default branch. Never reuse the squash-merged branch.
+- **Distinct new outcome:** create one focused follow-up issue instead of expanding completed acceptance.
 
-Never mutate code during Verify, reuse a merged branch, treat a merged PR as editable, or retry an uncertain effect without reconciliation. A correction needs observable progress and returns through fresh Review/Verify evidence.
+Do not mutate source during Verify, edit a merged pull request, treat a previous merge approval as current, or blindly retry a possibly completed external effect. Preserve exact partial-delivery evidence.
+
+A correction must change observable evidence, such as source, tests, diagnostics, dependency state, or a delivery precondition. After repair, run Review or Verify against the new exact revision.
+
+If private authority is required but unavailable, public diagnosis and issue/PR preparation may continue. Private Project or docs reconciliation remains an explicit maintainer action and cannot be inferred.

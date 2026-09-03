@@ -1,15 +1,21 @@
-# Parent delivery delta
+# Parent delivery
 
-Canonical owner: the parent behavior within [`DEVELOPMENT.md#deliver-mode`](https://github.com/tyldra-org/falryn-docs/blob/main/DEVELOPMENT.md#deliver-mode).
+Parent delivery requires authenticated private Roadmap access. A parent is an outcome tracker, never a branch or mega-pull request.
 
-- `Deliver — Target: Parent issue #N` selects the first ordered, unblocked,
-  incomplete child. If that child is Not Ready, the controller runs its bounded
-  planning phase before implementation; it never skips ahead to a later Ready
-  sibling.
-- `Deliver — Target: Parent chain #N` continues the same controller through
-  remaining ordered children, one issue/branch/PR/bundle at a time.
-- Recompute eligibility with the repository-owned Roadmap audit after each child; never rely on a stale sibling list.
-- Keep the parent In Progress while required work remains.
-- After the last required child, run integrated parent verification; close and mark Done only when every parent criterion passes.
+## One-child selector
 
-These are the only parent delivery selectors. Do not introduce another host-specific wrapper.
+`Deliver - Target: Parent issue #N` selects the first ordered, unblocked, incomplete child from the current Roadmap audit. If that child is Not Ready, the controller plans that same child before implementation. It never skips ahead to a later Ready sibling.
+
+Run one child's full delivery cycle, including required private docs companions, application merge, issue and Project reconciliation, and safe checkout synchronization. Stop when another child remains and report that exact child.
+
+## Chain selector
+
+`Deliver - Target: Parent chain #N` uses the same controller but continues through remaining ordered children. It recomputes the private sequence after each settled child. It never parallelizes siblings, emits a next-sibling prompt while CI or merge is pending, or turns the parent into an implementation branch.
+
+Stop the chain on missing private authority, awaiting user input, changed merge preconditions, an uncertain effect, or three repair passes without progress. Report the exact child and resume selector.
+
+## Parent completion
+
+Keep the parent In Progress while required work remains. After the last required child, run integrated parent verification across behavior, failure, recovery, resource, security, documentation, and product projection criteria. Close and mark Done only when every parent criterion passes. An integration code gap becomes one dedicated native child.
+
+Without private Roadmap access, report parent routing unavailable. Do not reconstruct child order from issue numbering or public recency.

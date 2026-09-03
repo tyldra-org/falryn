@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Validate the seven vendored skill bundles and optional source parity."""
+"""Validate six vendored skill bundles and optional distributed-source parity."""
 
 from __future__ import annotations
 
 import argparse
 import hashlib
+import os
 import re
 import sys
 import unicodedata
@@ -16,11 +17,11 @@ PORTABLE = (
     "gh-cli",
     "git-workflow",
     "change-review",
-    "engineering-best-practices",
     "typescript-best-practices",
     "opentui-best-practices",
 )
 PROJECT = ("falryn-workflow",)
+RETIRED = ("engineering-best-practices",)
 SKILLS = PORTABLE + PROJECT
 FORBIDDEN_PORTABLE = (
     "falryn",
@@ -97,25 +98,78 @@ def validate_links(root: Path, errors: list[str]) -> int:
     return checked
 
 
+def walk_entries(root: Path) -> list[Path]:
+    entries: list[Path] = []
+    traversal_errors: list[OSError] = []
+
+    def record_error(error: OSError) -> None:
+        traversal_errors.append(error)
+
+    for directory, directory_names, file_names in os.walk(
+        root,
+        topdown=True,
+        onerror=record_error,
+        followlinks=False,
+    ):
+        directory_names.sort()
+        file_names.sort()
+        parent = Path(directory)
+        entries.extend(parent / name for name in directory_names)
+        entries.extend(parent / name for name in file_names)
+    if traversal_errors:
+        details = "; ".join(str(error) for error in traversal_errors)
+        raise ValueError(f"unable to traverse {root}: {details}")
+    return entries
+
+
 def file_manifest(root: Path) -> dict[str, str]:
     result: dict[str, str] = {}
-    for path in sorted(root.rglob("*")):
-        if not path.is_file() or path.name == ".DS_Store":
-            continue
+    for path in walk_entries(root):
         relative = path.relative_to(root).as_posix()
-        result[relative] = hashlib.sha256(path.read_bytes()).hexdigest()
+        if path.is_symlink():
+            raise ValueError(f"filesystem symlink is not allowed: {path}")
+        if path.name == ".DS_Store":
+            if not path.is_file():
+                raise ValueError(f"unsupported Finder metadata entry: {path}")
+            continue
+        if path.is_dir():
+            result[f"directory:{relative}"] = ""
+        elif path.is_file():
+            result[f"file:{relative}"] = hashlib.sha256(path.read_bytes()).hexdigest()
+        else:
+            raise ValueError(f"unsupported filesystem entry: {path}")
     return result
 
 
 def validate_source_parity(source: Path, errors: list[str]) -> None:
+    if ".." in source.parts:
+        fail(errors, f"parity source path contains a parent segment: {source}")
+        return
+    try:
+        if source.absolute() != source.resolve(strict=True):
+            fail(errors, f"parity source root resolves through a symlink: {source}")
+            return
+    except OSError as error:
+        fail(errors, f"unable to resolve parity source root {source}: {error}")
+        return
     for skill in SKILLS:
         source_root = source / skill
         destination_root = ROOT / skill
         if not source_root.is_dir():
             fail(errors, f"missing parity source bundle: {skill}")
             continue
-        source_manifest = file_manifest(source_root)
-        destination_manifest = file_manifest(destination_root)
+        source_links = [source_root] if source_root.is_symlink() else []
+        source_links.extend(path for path in source_root.rglob("*") if path.is_symlink())
+        if source_links:
+            for path in source_links:
+                fail(errors, f"parity source symlink is not allowed: {path}")
+            continue
+        try:
+            source_manifest = file_manifest(source_root)
+            destination_manifest = file_manifest(destination_root)
+        except ValueError as error:
+            fail(errors, str(error))
+            continue
         if source_manifest != destination_manifest:
             source_only = sorted(source_manifest.keys() - destination_manifest.keys())
             destination_only = sorted(destination_manifest.keys() - source_manifest.keys())
@@ -141,8 +195,32 @@ def main() -> int:
     args = parser.parse_args()
     errors: list[str] = []
 
-    for metadata in ROOT.rglob(".DS_Store"):
+    try:
+        root_entries = walk_entries(ROOT)
+    except ValueError as error:
+        fail(errors, str(error))
+        root_entries = []
+
+    for metadata in (path for path in root_entries if path.name == ".DS_Store"):
         fail(errors, f"Finder metadata is not allowed: {metadata.relative_to(ROOT)}")
+
+    for path in root_entries:
+        if path.is_symlink():
+            fail(errors, f"vendored skill symlink is not allowed: {path.relative_to(ROOT)}")
+        elif not path.is_dir() and not path.is_file():
+            fail(errors, f"unsupported vendored filesystem entry: {path.relative_to(ROOT)}")
+
+    actual_bundles = {
+        path.name
+        for path in ROOT.iterdir()
+        if path.is_dir() and (path / "SKILL.md").is_file()
+    }
+    if actual_bundles != set(SKILLS):
+        fail(errors, f"unexpected vendored skill inventory: {sorted(actual_bundles ^ set(SKILLS))}")
+
+    for skill in RETIRED:
+        if (ROOT / skill).exists() or (ROOT / skill).is_symlink():
+            fail(errors, f"global-only bundle must not be vendored: {skill}")
 
     for skill in SKILLS:
         skill_root = ROOT / skill
@@ -191,10 +269,47 @@ def main() -> int:
         if "gh release create" in line and "--draft" not in line:
             fail(errors, "every documented release-create command must remain a draft")
 
+    workflow_root = ROOT / "falryn-workflow"
+    workflow_text = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in sorted(workflow_root.rglob("*.md"))
+    ).lower()
+    if "https://github.com/tyldra-org/falryn-docs" in workflow_text:
+        fail(errors, "Falryn workflow must not require private HTTP documentation links")
+    if "complete executable workflow" not in workflow_text:
+        fail(errors, "Falryn workflow must declare its self-contained public contract")
+    for required_access_term in (
+        "public-only",
+        "authenticated maintainer",
+        "private-roadmap-unavailable",
+        "private-update-required",
+        "tyldra-org/falryn-docs",
+        "roadmap project 1",
+        "never clone it automatically",
+        "do not print private document text",
+    ):
+        if required_access_term not in workflow_text:
+            fail(errors, f"Falryn workflow is missing access outcome: {required_access_term}")
+
+    workflow_contracts = {
+        "plan.md": ("one public Falryn issue", "no required implementation fact may exist only there"),
+        "implement.md": ("complete public issue handoff", "A private link cannot fill"),
+        "review.md": ("current diff", "documentation verification as unavailable"),
+        "verify.md": ("Public-only verification", "must not claim full delivery-bundle readiness"),
+        "merge.md": ("A public-only application PR may merge only", "private maintainer authority is mandatory"),
+        "next.md": ("Next unavailable", "Do not list, infer, or approximate private candidates"),
+        "reporting.md": ("private Project fields", "private Roadmap unavailable"),
+    }
+    for filename, phrases in workflow_contracts.items():
+        text = (workflow_root / "references" / filename).read_text(encoding="utf-8")
+        for phrase in phrases:
+            if phrase not in text:
+                fail(errors, f"Falryn workflow {filename} is missing required contract: {phrase}")
+
     parent_delivery = (
-        ROOT / "falryn-workflow" / "references" / "parent-delivery.md"
+        workflow_root / "references" / "parent-delivery.md"
     ).read_text(encoding="utf-8")
-    if "first ordered, unblocked," not in parent_delivery or "never skips ahead" not in parent_delivery:
+    if "first ordered, unblocked, incomplete child" not in parent_delivery or "never skips ahead" not in parent_delivery:
         fail(errors, "parent delivery must retain canonical ordered-child planning semantics")
 
     stale_paths = (
@@ -242,7 +357,7 @@ def main() -> int:
 
     checked_links = validate_links(ROOT, errors)
     if args.source is not None:
-        validate_source_parity(args.source.expanduser().resolve(), errors)
+        validate_source_parity(args.source.expanduser(), errors)
 
     if errors:
         for error in errors:
@@ -250,8 +365,8 @@ def main() -> int:
         print(f"skill bundle validation failed with {len(errors)} error(s)", file=sys.stderr)
         return 1
 
-    parity = " with source parity" if args.source is not None else ""
-    print(f"validated {len(SKILLS)} skill bundles and {checked_links} local links{parity}")
+    parity = " with distributed-source parity" if args.source is not None else ""
+    print(f"validated {len(SKILLS)} vendored skill bundles and {checked_links} local links{parity}")
     return 0
 
 
