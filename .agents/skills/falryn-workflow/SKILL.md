@@ -59,4 +59,8 @@ Use [reporting](references/reporting.md). Name exact targets, revisions, access 
 
 ## Distribution
 
-Keep this Falryn-specific bundle byte-identical between the maintainer-global `falryn-workflow` directory and `falryn/.agents/skills/falryn-workflow/`. The five other vendored skills remain portable. `engineering-best-practices` is global-only and is not a Falryn distribution dependency.
+The bundle committed at `falryn/.agents/skills/falryn-workflow/` is authoritative.
+Falryn Docs agents resolve it from a verified sibling checkout and may use an
+installed global copy only as a fallback. Public Falryn work must not depend on
+either a global installation or the private docs checkout. The five other
+vendored skills remain portable.

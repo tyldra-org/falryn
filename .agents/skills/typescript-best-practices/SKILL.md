@@ -1,46 +1,76 @@
 ---
 name: typescript-best-practices
-description: TypeScript, JavaScript, and TSX engineering for implementation, review, debugging, compiler configuration, advanced types, migrations, React/Next.js typing, and public API documentation. Use repository scripts and installed-version documentation rather than generic tool defaults.
+description: TypeScript, JavaScript, and TSX engineering for implementation, review, debugging, compiler configuration, type-system design, async work, React and Next.js, package boundaries, migrations, testing, and documentation. Use for code or configuration whose correctness depends on TypeScript or its runtime ecosystem.
 ---
 
 # TypeScript best practices
 
-This is one skill with focused modules. Choose one primary module from the actual task and changed surface; load a second only for a distinct concern.
+Use this bundle to make TypeScript code correct at both compile time and runtime.
+It contains original guidance and examples, not copied or pinned vendor docs.
+Resolve version-sensitive details against the packages installed in the target
+repository.
 
-## Invariants
+## Start here
 
-1. Inspect `package.json`, lockfile, `tsconfig*`, runtime, framework versions, repository guidance, and existing scripts before recommending syntax or tools.
-2. Prefer the repository's package manager and validation commands. Do not run a package manager that may install missing tools merely to inspect a project.
-3. Validate untrusted data at runtime; static types do not establish runtime truth.
-4. Preserve strictness. Fix causes rather than adding broad assertions, `any`, ignored diagnostics, skipped tests, or weaker compiler options.
-5. Keep types proportional to the problem. Prefer readable domain states and narrow boundaries over clever type-level machinery.
-6. Distinguish compiler errors, lint findings, runtime behavior, framework contracts, and performance measurements; one does not prove another.
-7. For current library, framework, or tool APIs, consult maintained documentation matching the installed version before changing code.
+1. Inspect repository guidance, `package.json`, the lockfile, `tsconfig*`, the
+   runtime, framework versions, and validation scripts.
+2. Identify the trust boundary, domain contract, state owner, side effects,
+   cancellation path, and package boundary touched by the task.
+3. Load the one reference that owns the main risk. Load another only for a
+   distinct compiler, framework, packaging, or verification concern.
+4. Make the smallest change at the owning boundary. Preserve strictness unless
+   changing it is the explicit task.
+5. Prove compile-time behavior and runtime behavior separately.
 
-## Routing
+## Non-negotiable rules
 
-| Task | Primary module |
+- Keep external data `unknown` until runtime validation establishes its shape.
+- Make invalid states hard to represent, but keep types proportional and
+  readable.
+- Fix the source of a diagnostic. Do not reach first for `any`, assertions,
+  ignored errors, skipped tests, or weaker compiler options.
+- Treat cancellation, cleanup, ordering, concurrency limits, and partial effects
+  as API behavior.
+- Align TypeScript resolution, emitted JavaScript, declarations, package exports,
+  the runtime, and the bundler.
+- Verify current framework APIs and compiler flags against maintained
+  documentation for the installed version.
+- Use the repository's package manager and scripts. Do not invoke a command that
+  may install an absent tool merely to inspect the project.
+
+## Reference map
+
+| Primary concern | Read |
 | --- | --- |
-| Ordinary TypeScript/JavaScript implementation, boundary validation, state, errors, or async work | [TypeScript core](modules/typescript-best-practices/GUIDE.md) |
-| `tsconfig`, compiler performance, module resolution, declarations, project references, JS→TS migration, or monorepo diagnosis | [Compiler and projects](modules/typescript/GUIDE.md) |
-| Generics, conditional/mapped/template-literal types, inference, brands, guards, or reusable type utilities | [Advanced types](modules/typescript-advanced-types/GUIDE.md) |
-| JSDoc, TypeDoc, ADRs, or TypeScript public API documentation | [TypeScript documentation](modules/typescript-docs/GUIDE.md) |
-| React + TypeScript defect review or hooks/state analysis | [React review](modules/typescript-react-reviewer/GUIDE.md) |
-| Next.js App Router + TypeScript implementation or review | [Next.js](modules/nextjs-react-typescript/GUIDE.md) |
+| Runtime validation, domain states, public functions, errors | [Language and boundaries](references/language-and-boundaries.md) |
+| Promises, cancellation, bounded concurrency, cleanup, runtime performance | [Async and runtime](references/async-and-runtime.md) |
+| Generics, inference, brands, guards, mapped and conditional types | [Type-system design](references/type-system-design.md) |
+| `tsconfig`, diagnostics, checker performance, project references, JS migration | [Compiler, projects, and migrations](references/compiler-projects-and-migrations.md) |
+| Module resolution, declarations, exports, ESM/CJS, package consumers | [Modules and packages](references/modules-and-packages.md) |
+| React components, hooks, effects, state, identity, and performance | [React](references/react.md) |
+| Next.js App Router, Server Components, route handlers, caching, and mutations | [Next.js](references/nextjs.md) |
+| Runtime tests, type tests, review evidence, and failure-path proof | [Testing and review](references/testing-and-review.md) |
+| JSDoc, API contracts, examples, ADRs, and documentation maintenance | [Documentation](references/documentation.md) |
 
-## Composition
+## Validation ladder
 
-- Pair core with compiler only when implementation changes compiler or package boundaries.
-- Pair React or Next.js with core for a concrete language/runtime issue; do not load the compiler catalog for every component review.
-- Pair advanced types with compiler only when compile cost or declaration behavior is part of the problem.
-- Pair this skill with `change-review` when reviewing a diff; this skill owns stack correctness, while `change-review` owns evidence and severity.
-- When an independent cross-language engineering skill is installed, pair it for non-trivial architecture, concurrency, migration, reliability, or verification design. This TypeScript bundle does not require one by name.
+Run only the levels relevant to the changed surface, in this order:
 
-## Validation order
+1. focused compiler diagnostics or a type test;
+2. focused runtime tests, including rejection and failure paths;
+3. repository typecheck, lint, and formatting checks;
+4. build or declaration generation for configuration, exports, or packaging;
+5. consumer-shaped install or import tests for published contracts.
 
-1. Run focused diagnostics for touched files when available.
-2. Run the repository's typecheck.
-3. Run focused tests and lint/format checks.
-4. Run the build only when configuration, package boundaries, exports, framework compilation, or generated output may change.
+Report exact commands and outcomes. If a level is unavailable or skipped, state
+that directly.
 
-Report exact commands and outcomes. If validation is unavailable or skipped, say so rather than implying success.
+## Completion gate
+
+- External values are validated before domain use.
+- Types exclude the intended invalid states without concealing uncertainty.
+- Async work defines ownership, ordering, capacity, cancellation, and cleanup.
+- Runtime behavior, compiler behavior, and framework behavior were not confused.
+- Resolution, emitted files, declarations, and exports agree.
+- Tests cover success plus relevant rejection, failure, cancellation, and
+  migration paths.

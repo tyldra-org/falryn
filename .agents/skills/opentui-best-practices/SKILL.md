@@ -1,40 +1,72 @@
 ---
 name: opentui-best-practices
-description: OpenTUI Core, React, and Solid implementation and review for renderer lifecycle, components, layout, input, keymaps, testing, plugins, media, SSH, and standalone packaging. Uses a version-pinned official documentation snapshot plus compact non-duplicating practices.
+description: OpenTUI Core, React, and Solid engineering for renderer lifecycle, rendering, layout, input, focus, testing, debugging, extensions, and packaging. Use for implementation or review; consult installed-version documentation for exact APIs.
 ---
 
 # OpenTUI best practices
 
-The installed package exports and the matching pinned official documentation in `docs/` are the API source of truth. [UPSTREAM.md](UPSTREAM.md) records the exact source and refresh contract. The three files in `references/` add stable workflow and review guidance without copying API tables.
+Use this skill to choose the structure and proof of an OpenTUI change. Installed
+package exports and version-matched official documentation own exact API names,
+props, events, defaults, and package entrypoints. This bundle owns engineering
+judgment and does not duplicate an API manual.
+
+The references include original TypeScript and TSX patterns. Treat them as
+design examples, not as a compatibility promise. Confirm imports, component
+names, props, and event fields against the installed OpenTUI version before
+using them.
+
+## Working method
+
+1. Resolve the installed OpenTUI packages, versions, runtime, binding, terminal
+   modes, and validation commands.
+2. Identify who owns the renderer, framework root, input, focus, subscriptions,
+   native resources, and shutdown.
+3. Keep domain behavior independent of OpenTUI and project it into explicit UI
+   state.
+4. Model input, focus, resize, scrolling, loading, cancellation, and failure as
+   observable state transitions.
+5. Keep rendering and keystroke handling bounded. Move blocking or streaming
+   work behind cancellable owners.
+6. Prove behavior with the test renderer first, then use real-terminal or
+   packaged smoke tests only for behavior a headless renderer cannot establish.
 
 ## Invariants
 
-1. Inspect installed `@opentui/*` versions and the existing Core, React, or Solid setup before selecting APIs.
-2. Start with one exact MDX owner from the routing table. Load a practices reference only for framework choice, implementation structure, troubleshooting, or review.
-3. When source types and the pinned MDX disagree, inspect the installed package. Consult newer upstream docs only to diagnose a mismatch or plan an upgrade; do not silently use main-branch APIs with an older package.
-4. The owner that creates a renderer, framework root, plugin, subscription, worker, or server owns its documented cleanup. Do not call `process.exit()` from reusable UI code.
-5. Host-owned keystrokes, focus, rendering, layout, and shutdown must not wait on unbounded work or synchronous plugin IPC.
-6. Cover changed interaction, focus, resize, rendering, and lifecycle behavior with the documented test renderer or focused integration tests.
+1. One visible lifecycle owns renderer creation, framework mounting, cleanup,
+   and terminal restoration.
+2. Framework-owned renderables are changed through their framework contract,
+   not mutated behind the reconciler.
+3. Layout follows measured terminal cells and constraints, never guessed browser
+   CSS behavior or one fixed terminal size.
+4. Input resolves intent before effects run. Focus and keymap precedence are
+   deterministic and testable.
+5. Empty, loading, unavailable, cancelled, and failed states remain visible.
+6. Packaged applications resolve every native asset and entrypoint without
+   relying on source-tree paths.
 
-## Route one exact owner
+## Routing
 
-| Task | Start here |
+| Concern | Read |
 | --- | --- |
-| Install, quickstart, runtime support | [Getting started](docs/getting-started.mdx), [quickstart](docs/getting-started/quickstart.mdx), or [runtime support](docs/getting-started/runtime-support.mdx) |
-| Renderer, lifecycle, rendering pipeline | [Renderer](docs/core-concepts/renderer.mdx), [lifecycle](docs/core-concepts/lifecycle.mdx), or [pipeline](docs/core-concepts/rendering-pipeline.mdx) |
-| Renderables, text/cells, layout | [Renderables](docs/core-concepts/renderables.mdx), [text and cells](docs/core-concepts/text-and-cells.mdx), or [layout](docs/core-concepts/layout.mdx) |
-| React or Solid binding | [React](docs/bindings/react.mdx) or [Solid](docs/bindings/solid.mdx) |
-| Component selection or exact props | [Component overview](docs/components/overview.mdx), then `docs/components/<name>.mdx` |
-| Keyboard, paste, focus, selection, clipboard | [Interaction](docs/core-concepts/interaction.mdx), [keyboard](docs/core-concepts/keyboard.mdx), or [clipboard](docs/core-concepts/clipboard.mdx) |
-| Layered keymaps and commands | [Keymap overview](docs/keymap/overview.mdx), then the Core, React, Solid, host, or addon page |
-| Tests, rendering diagnostics, troubleshooting | [Testing](docs/core-concepts/testing.mdx), [rendering diagnostics](docs/test-and-debug/rendering-diagnostics.mdx), or [troubleshooting](docs/test-and-debug/troubleshooting.mdx) |
-| Custom renderables, editing, post-processing, runtime plugins | `docs/extend/*.mdx` |
-| Plugin contribution and slots | [Plugin slots](docs/plugins/slots.mdx), then the Core, React, or Solid page |
-| Animation or audio applications | `docs/application-apis/*.mdx` and [audio](docs/core-concepts/audio.mdx) |
-| Tree-sitter, package entrypoints, native buffers/images, terminal capabilities, Yoga | `docs/reference/*.mdx` |
-| SSH, Three.js, QR, deployment, standalone executables | [SSH](docs/reference/ssh.mdx), [Three.js](docs/reference/three.mdx), [QR](docs/reference/qr-encoder.mdx), [deployment](docs/ship/deploy.mdx), or [standalone](docs/reference/standalone-executables.mdx) |
-| Framework choice and implementation structure | [Implementation practices](references/implementation.md) |
-| Diagnose a failure without copying stale API guesses | [Troubleshooting practices](references/troubleshooting.md) |
-| Review an OpenTUI change | [Review checklist](references/review.md) plus the exact changed API MDX |
+| Renderer ownership, UI state boundaries, startup, shutdown, suspend, or resume | [Architecture and lifecycle](references/architecture-and-lifecycle.md) |
+| Components, text cells, layout, resize, scrolling, rendering cost, or visual fallback | [Rendering and layout](references/rendering-and-layout.md) |
+| Keyboard, paste, mouse, focus, selection, commands, or keymap precedence | [Input and interaction](references/input-and-interaction.md) |
+| Imperative renderable construction, updates, removal, or disposal | [Core binding](references/core-binding.md) |
+| React roots, hooks, effects, refs, keys, or component identity | [React binding](references/react-binding.md) |
+| Solid roots, signals, effects, cleanup, or reactive ownership | [Solid binding](references/solid-binding.md) |
+| Test renderer use, frame evidence, failure reproduction, cleanup, or performance diagnosis | [Testing and debugging](references/testing-and-debugging.md) |
+| Native assets, Tree-sitter, workers, media, SSH, standalone builds, or deployment | [Packaging and runtime resources](references/packaging-and-runtime-resources.md) |
+| Plugins, custom renderables, registration, compatibility, or extension cleanup | [Extensions and plugins](references/extensions-and-plugins.md) |
 
-Do not load the whole MDX corpus. Read only the pages required by the changed surface.
+Load one primary reference. Add another only when the task crosses a separate
+lifecycle, interaction, or distribution boundary. Pair this skill with the
+repository's change-review process for review reasoning.
+
+## Completion check
+
+- Do source types and version-matched documentation support every API used?
+- Can one owner restore the terminal and release every resource after success,
+  failure, cancellation, and repeated mount or shutdown?
+- Do narrow, wide, resized, focused, and unavailable states behave explicitly?
+- Do tests prove state and interaction before relying on frame snapshots?
+- Does the packaged artifact work without development-only paths or resources?
