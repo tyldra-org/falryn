@@ -72,15 +72,18 @@ git log --pretty=%s -n 30 | sed -n 's/^\([a-z]*\)(\([^)]*\)).*/\2/p' | sort -u
 
 In a monorepo the scope is usually the package or app directory. **Omit the scope rather than invent one** — `docs: clarify local setup` beats `docs(misc): clarify local setup`. A weak scope is worse than none, because it teaches future readers a category that doesn't exist.
 
-## Commit message bodies
+## Commit message bodies and trailers
 
-Never create or preserve a commit body. Commit and merge messages are one-line
-subjects only. Do not use footers, trailers, `BREAKING CHANGE:` text, issue
-references, test notes, or session narration in a commit or merge message. Keep
-that context in the issue or pull-request body.
+Repository policy, contributor policy, hooks, and legal requirements decide
+whether a message is subject-only or carries a body, footers, or trailers.
+Preserve required DCO sign-offs, real co-author attribution, breaking-change
+metadata, and issue references. Never strip existing metadata merely to apply a
+generic style.
 
-Breaking changes use the `!` marker in the subject. Migration details belong
-in the pull request, release notes, or documentation.
+When no effective policy requires a body, keep transient validation and session
+narration in the issue or pull-request body rather than inventing commit prose.
+For breaking changes, use the repository's established subject marker and/or
+required trailer; migration details belong where that repository requires them.
 
 ## Writing one
 
@@ -137,9 +140,11 @@ Weak ones fail the same way every time — they describe the act of editing:
 2. Convert past tense to imperative.
 3. Strip version tokens and release prefixes. Legacy formats like `[v2.4] Add background enrichment` usually have a *good* summary behind the token — keep it, replace only the prefix: `feat(enrichment): add background enrichment with runtime controls`.
 4. Replace vague wording with the real changed behavior and object.
-5. Add the `!` marker to the subject when the change is breaking. Never add a
-   body, footer, or trailer.
-6. **Keep the existing wording where it's already clear, conventional, and specific.** Rewriting a good subject into your own phrasing is churn, not improvement.
+5. Represent breaking behavior and required metadata exactly as the effective
+   repository policy specifies.
+6. Preserve required bodies, footers, and trailers; changing the subject does
+   not authorize deleting metadata.
+7. **Keep the existing wording where it's already clear, conventional, and specific.** Rewriting a good subject into your own phrasing is churn, not improvement.
 
 Rewriting a *published* commit's message is a history rewrite — see [rewrite.md](rewrite.md) before touching anything already pushed.
 
@@ -188,6 +193,9 @@ Rules:
 
 ## Merge subjects
 
-`Merge branch '<branch>'` — the git default, administrative, no body. No conventional type: a merge isn't a change, it's a join, and typing it `feat:` corrupts changelog generation.
+When repository policy permits Git's default merge message,
+`Merge branch '<branch>'` is an administrative subject rather than a
+conventional change type. Preserve any required message body or trailers.
 
-Squash-merge on GitHub uses the PR title as the subject — **gh-cli** `process/merge.md`.
+A GitHub squash merge often starts from the PR title, but the final reviewed
+message and metadata follow repository policy — **gh-cli** `process/merge.md`.

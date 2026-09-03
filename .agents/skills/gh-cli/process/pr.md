@@ -1,142 +1,60 @@
-# pr
+# Pull requests
 
-Open, update, and land pull requests. A PR is outward-facing — show the title and body before it goes out.
+Create and maintain GitHub pull requests. Use `git-workflow` for fetch, branch, commit, push, rewrite, and checkout synchronization.
 
-## GitHub context (read first)
+## Inspect before opening
 
-This file is the GitHub PR process. Resolve the GitHub repository with the project `AGENTS.md` or `gh repo view`; push and sync remain **git-workflow**. If the repository is not hosted on GitHub, this skill does not apply.
+Resolve the repository, default branch, intended head, and current head SHA. Review the three-dot branch diff and commit range through `git-workflow`; confirm the branch is pushed, current enough for repository policy, secret-free, and based on the intended branch.
 
-## Tooling
-
-When the host is GitHub, prefer `gh`:
-
-```bash
-gh auth status
-```
-
-If `gh` is unavailable or unauthenticated, say so and ask whether the user wants to install or authenticate it. Do **not** fall back to raw `curl` with a token pulled from the environment or `.git-credentials` — that path reads secrets into the transcript and into shell history. The user runs `gh auth login` themselves.
-
-## Before opening
-
-```bash
-git fetch origin
-git log origin/<default-branch>..<branch> --oneline    # the commits
-git diff origin/<default-branch>...<branch> --stat     # three dots: the branch's own changes
-```
-
-Three dots, not two. `git diff A..B` shows the difference between two tips including whatever landed on A; `A...B` shows only what B added since the fork point. Reviewers see the three-dot diff.
-
-Check:
-
-- Branch is pushed and current with the base.
-- Every commit is one the user would want in the permanent record. If the branch has `checkpoint` or fixup commits, offer to clean them up first ([rewrite.md](../../git-workflow/reference/rewrite.md)) — it's their call.
-- No secrets in the diff. Re-check; the pre-commit scan may have missed a file added later.
-- CI config exists and will actually run on this base.
-
-## Base branch
-
-Confirm the base explicitly. Getting this wrong is the most common PR error and it produces a diff full of unrelated commits.
-
-```bash
-gh pr create --base <default-branch> --head <branch>
-```
-
-For **stacked PRs**, the base is the parent branch, and the description must say so — otherwise the reviewer reviews the parent's changes too.
+For stacked PRs, use the parent branch as base and disclose the stack and landing order.
 
 ## Title and body
 
-**Title** follows the same rules as a commit subject ([conventions.md](../../git-workflow/reference/conventions.md)): `type(scope): summary`, imperative, ≤72 chars. For a squash-merge repo the title *becomes* the commit subject — it matters more, not less.
+Follow repository templates and conventions. In a squash-merge repository, remember that the title may become the commit subject. Keep validation, risk, rationale, delivery order, issue links, and companion links in the PR body; do not copy them into a subject-only commit or merge message when repository policy forbids bodies.
 
-**Body** is where prose is allowed. Prefer the repository's PR template when present. Otherwise:
+A useful fallback body is:
 
 ```markdown
 ## What
-One paragraph. What changed and what it enables.
+What changed and what it enables.
 
 ## Why
-The problem or the ticket. Link it: Refs #123.
-
-## How
-Only when the approach is non-obvious. Name the tradeoff you took and the one you rejected.
+The problem and owning issue.
 
 ## Verification
-What you ran and what it showed. Commands and results, not "tested locally".
+Commands or observed checks and their outcomes.
 
 ## Risk
-Blast radius, migration steps, rollback plan. "None" is a valid answer — write it, don't omit the section.
+Blast radius, migration, rollback, or an explicit none.
 ```
 
-Omit sections that are genuinely empty rather than filling them with filler. Never include AI attribution, generated-by footers, or emoji headers.
+Render the complete title and body before creation. A user's explicit request to open the named PR—including a draft—is sufficient authorization; do not ask again unless the target, visibility, or content is materially ambiguous.
 
-The PR body is separate from the commit and merge messages. It remains the
-durable place for validation, risks, rationale, delivery details, and issue
-links; the resulting commit or merge is always subject-only with no body.
-
-If `.github/PULL_REQUEST_TEMPLATE.md` exists, it wins — fill it, don't replace it.
-
-## Size
-
-A PR over ~400 changed lines gets reviewed worse than two PRs of 200. If the branch is large and separable, say so and offer to split before opening. If it's large and genuinely atomic (a rename, a generated file, a vendored dependency), say that in the body so the reviewer knows not to read line by line.
-
-## Draft PRs
+Use the repository's installed CLI help for current flags:
 
 ```bash
-gh pr create --draft
+gh pr create --help
+gh pr edit --help
 ```
 
-Use when CI needs to run on incomplete work or when soliciting direction early. A draft PR is not a protected-operation exemption — still ask.
+After creation, re-read the PR and report its URL, base, head, and head SHA.
 
-## After opening
+## Updates
 
-```bash
-gh pr view <n>            # confirm it created what you intended
-gh pr checks <n>          # CI state — see ci.md
-```
+Push focused follow-up commits through `git-workflow`, then re-read the PR. A new head SHA invalidates earlier review and merge evidence.
 
-Report the URL. Never enable auto-merge — landing is always a human decision.
+When replacing title or body, first read the current value, prepare the complete replacement in a file, preserve out-of-scope fields, write once, and re-read. Never pipe an unchecked transformation into a remote edit.
 
-## Updating
+Choose continuation from actual state:
 
-Push follow-up commits; do not force-push a PR under review unless asked. Force-pushing invalidates in-progress review comments and hides what changed since the last look. When the user does want a clean history, do it once, at the end, after approval.
+- **Open:** update the existing branch and PR.
+- **Closed unmerged:** inspect why; reopen only if target, branch, policy, and scope still hold, otherwise open a fresh PR.
+- **Merged:** create a focused follow-up from the current target branch; never reuse the merged record as mutable work.
 
-```bash
-gh pr diff <n>            # what the reviewer currently sees
-```
-
-When editing a PR body, retain the current body, render and validate the full replacement before writing, and re-read it afterward. Never pipe an unchecked transform into `gh pr edit --body-file -`; follow [Remote body and metadata safety](../SKILL.md#remote-body-and-metadata-safety).
-
-## Correcting work before and after merge
-
-Choose the continuation from the PR's actual state:
-
-- **Open PR:** continue on its existing branch and PR. Push focused follow-up
-  commits, then repeat review and validation against the new `headRefOid`; an
-  earlier Verify or approval does not apply to the new revision. Do not create
-  a duplicate branch or PR for the same correction.
-- **Closed without merge:** inspect why it closed, whether the head branch still
-  exists, whether the base and scope remain valid, and whether repository
-  policy permits reopening. Reopen the same PR only when those facts still
-  hold; otherwise create a fresh branch and PR.
-- **Merged:** the PR is an immutable delivery record and cannot be reopened or
-  merged again. Reopen the owning issue when its original acceptance remains
-  incomplete, or create a focused follow-up issue when the correction is a new
-  outcome. Branch from the current target branch and open a new PR.
-
-Do not reuse a squash- or rebase-merged branch for post-merge correction. Its
-commit ancestry differs from the landed history and can produce a confusing
-range; a fresh branch from the updated target gives the correction an exact
-base. A rollback is a separate revert workflow, not ordinary follow-up work.
+Do not force-push a reviewed PR unless explicitly authorized through `git-workflow`; a rewrite changes the evidence base.
 
 ## Landing
 
-**Merging is irreversible in practice** — confirm before, every time, even after approval.
+Merge only through [merge.md](merge.md) or, for dependent PRs, [delivery.md](delivery.md). Confirmation must identify the exact reviewed target and revision, or an exact ordered bundle of reviewed revisions. Re-read head SHA, checks, reviews, rulesets, mergeability, and repository merge method immediately before invoking the merge.
 
-Re-read the PR immediately before confirmation, record its exact head SHA, and follow [merge.md](merge.md#merge-a-github-pull-request). Use `--match-head-commit` so a new push invalidates the merge rather than silently landing unreviewed code.
-
-Match repository policy and topology. Do not add `--admin`, `--auto`, or `--delete-branch` silently. After landing, verify that the PR is truly merged and synchronize safe local checkouts; do not assume the command switched local branches.
-
-For a change delivered through multiple repositories or dependent PRs, use [delivery.md](delivery.md).
-
-## Reviewing someone else's PR
-
-See [review.md](review.md).
+Do not silently enable auto-merge, administrative bypass, queueing, or branch deletion.

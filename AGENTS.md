@@ -8,9 +8,11 @@ and supported by evidence.
 This file configures agents acting in the public Falryn repository. It is not a
 requirement for human contributors or forks.
 
-Public documentation belongs under docs/ and covers released or source-verified
-behavior only. Do not introduce product roadmaps, detailed future designs,
-unannounced capabilities, or private research into this repository.
+Canonical public and contributor documentation belongs in the companion
+`falryn-docs` repository. This application repository owns code-adjacent
+`CURRENT-STATE.md`, contributor controls, source comments, fixtures, and files
+required to build or validate the product. Do not introduce product roadmaps,
+detailed future designs, unannounced capabilities, or private research here.
 
 ## Before acting
 
@@ -42,10 +44,11 @@ unannounced capabilities, or private research into this repository.
 | Local diff, branch, or pull-request review | change-review plus the relevant stack skill |
 | Falryn Plan, Implement, Review, Verify, Merge, Deliver, Next, greetings, walkthroughs, or project-status routing | falryn-workflow |
 
-Use the installed or vendored skill appropriate to the checkout. Portable skills
-must remain portable and must not acquire Falryn product strategy.
-`falryn-workflow` is the deliberate repository-specific exception. Keep its
-vendored package synchronized with the maintainer-global package.
+Use the vendored skill appropriate to the checkout. Each `SKILL.md` is a compact
+router; load only the deep reference that owns the task. The six portable skills
+must not acquire Falryn product strategy. `falryn-workflow` is the sole
+repository-specific exception. Keep all seven vendored bundles synchronized
+with the maintainer-global copies through `.agents/skills/sync-from-global.sh`.
 
 ## Validation
 

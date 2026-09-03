@@ -1,16 +1,10 @@
-# Corrections
+# Correction delta
 
-Use this guide after a Verify gap or when a delivery PR is closed, incomplete,
-or already merged.
+Canonical owner: [`DEVELOPMENT.md#correcting-work-before-and-after-merge`](https://github.com/tyldra-org/falryn-docs/blob/main/DEVELOPMENT.md#correcting-work-before-and-after-merge).
 
-| Observed state | Correct response |
-| --- | --- |
-| Open valid PR | Keep its issue, branch, and PR. Add focused implementation commits, then run a new Verify. |
-| Closed without merge | Reopen only if its head, target, and issue scope remain valid. Otherwise use a fresh branch and replacement PR. |
-| Merged but acceptance incomplete | Reopen the owning issue, reconcile stale **Done** to **Todo**, and implement from a fresh branch based on the updated default branch. |
-| Distinct outcome | Create one focused follow-up issue. |
-| Parent integration gap | Create one dedicated native integration child; never modify completed child PRs or create a parent mega-PR. |
+- Valid open PR: correct the existing branch and PR, then verify the new head.
+- Closed unmerged PR: reopen only when branch, base, scope, and policy still hold; otherwise create a fresh delivery.
+- Merged but incomplete original acceptance: reopen the owning issue and use a fresh branch from current default.
+- Distinct new outcome: create one focused follow-up issue.
 
-Every push invalidates the prior Verify result, merge preview, and approval
-tied to the former head. Do not reuse a squash-merged branch for corrections.
-Reverting a landed change is a separately authorized workflow.
+Never mutate code during Verify, reuse a merged branch, treat a merged PR as editable, or retry an uncertain effect without reconciliation. A correction needs observable progress and returns through fresh Review/Verify evidence.

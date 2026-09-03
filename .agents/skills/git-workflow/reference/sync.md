@@ -16,8 +16,8 @@ git fetch --prune origin
 
 | Situation | Do |
 |---|---|
-| Your branch, unpushed | `git rebase origin/<default>` — linear, no noise |
-| Your branch, pushed, nobody else on it | `git rebase` then force-push with lease (confirm first) |
+| Your branch, unpushed | After explicit rewrite confirmation, `git rebase origin/<default>` |
+| Your branch, pushed, nobody else on it | After rewrite confirmation, `git rebase`; separately confirm the exact force-push lease |
 | Shared branch, others have commits | `git merge origin/<default>` — never rebase shared history |
 | Long-lived integration branch | `git merge` — the merge commits are the record |
 | Just want the latest default branch locally | fetch, inspect, then fast-forward explicitly |
@@ -55,14 +55,9 @@ git branch backup/<branch>-$(date +%Y-%m-%d)   # cheap insurance; free to delete
 git rebase origin/<default-branch>
 ```
 
-Rebasing rewrites SHAs. Back up first; confirm first if the branch is published.
+Rebasing rewrites SHAs. Confirm the exact outcome even when the branch is unpushed, then create and record the backup ref before invoking rebase.
 
-Enable these once per repo; they make rebase materially safer:
-
-```bash
-git config rebase.autostash true   # stash/pop around the rebase
-git config rerere.enabled true     # remember conflict resolutions
-```
+Repository configuration is a separate mutation. Inspect existing `rebase.autostash` and `rerere.enabled` values; change them only when requested or required by repository guidance.
 
 After the rebase, verify content survived:
 
@@ -125,7 +120,7 @@ Never `git push --all`, `--mirror`, or `--tags` as part of a routine push. Each 
 ! [rejected]  <branch> -> <branch> (non-fast-forward)
 ```
 
-This means the remote moved. **It is never fixed by forcing.** Fetch, inspect what arrived, integrate, push again. If forcing is genuinely correct (you rewrote your own unshared branch), that's a separate explicit ask — see the force-push invariant in [SKILL.md](../SKILL.md#force-push).
+This means the remote moved. **It is never fixed by forcing.** Fetch, inspect what arrived, integrate, push again. If forcing is genuinely correct (you rewrote your own unshared branch), that is a separate explicit confirmation — see the force-push invariant in [SKILL.md](../SKILL.md#invariants).
 
 ## Upstream forks
 

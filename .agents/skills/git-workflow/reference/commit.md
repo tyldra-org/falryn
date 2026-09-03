@@ -2,7 +2,8 @@
 
 Stage one logical unit, verify it, commit it. Subject rules in [conventions.md](conventions.md).
 
-Autocommit is **on by default** in the skill entrypoint—commit at clean boundaries unless the session has `autocommit off`.
+Follow the active repository and user policy for automatic commits. Without an
+authoritative opt-in, stop at the clean boundary and suggest the commit.
 
 ## Boundaries
 
@@ -22,16 +23,15 @@ Checkpoint commits on an unlanded branch are fine — `chore(<scope>): checkpoin
 
 ## Commit message
 
-Every commit uses one subject line and no body:
+Follow the effective subject, body, trailer, and signing policy in
+[conventions.md](conventions.md). For a reviewed subject-only message:
 
 ```bash
 git commit -m "type(scope): summary"
 ```
 
-Never create, preserve, copy, or infer a commit body. Keep validation,
-rationale, issue links, and delivery details in the issue or pull-request body.
-If a repository or platform requires a non-empty commit body, stop and report
-the incompatibility; do not add one.
+When a body or trailers are required, materialize and inspect the complete
+message before using `git commit -F <reviewed-message-file>`.
 
 ## Procedure
 
@@ -105,11 +105,9 @@ Follow [conventions.md](conventions.md). The repo's established type and scope s
 
 ### 7. Commit
 
-```bash
-git commit -m "type(scope): summary"
-```
-
-Never open an editor, use `git commit -F`, or add a commit body.
+Use `git commit -m "type(scope): summary"` only when the effective policy is
+subject-only. Otherwise use the previously reviewed complete message. In a
+non-interactive host, do not invoke an editor that can block unexpectedly.
 
 If the repo signs (`commit.gpgsign`, a signing key, or signed commits in `git log --show-signature -1`), keep signing. Never `--no-gpg-sign`.
 
@@ -128,15 +126,15 @@ Binaries and large generated assets are worth confirming before they go in — t
 
 ## Amending
 
-Amend only when all three hold: unpushed, it's the tip, and the user is fine with it. Otherwise make a new commit. See [rewrite.md](rewrite.md).
+Amend only when it is the unpushed tip and the user explicitly confirms the rewrite. Otherwise make a new commit. See [rewrite.md](rewrite.md).
 
 ```bash
-git commit --amend -m "<existing subject>"       # keep subject, no body
-git commit --amend -m "type(scope): summary"     # change subject
+git commit --amend --no-edit                       # preserve the exact message
+git commit --amend -F <reviewed-message-file>      # replace the full message
 ```
 
-Do not use `--no-edit`: it can preserve an existing body. Every amend must
-reissue a subject-only message.
+Do not use `-m` to reissue only the subject when the existing or required
+message contains bodies or trailers. Verify the resulting full message.
 
 ## Moving uncommitted work
 

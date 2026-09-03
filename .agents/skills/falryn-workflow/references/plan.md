@@ -1,22 +1,11 @@
-# Plan
+# Plan delta
 
-Read the Plan section of the canonical Development contract before acting.
+Canonical owner: [`DEVELOPMENT.md#plan-mode`](https://github.com/tyldra-org/falryn-docs/blob/main/DEVELOPMENT.md#plan-mode).
 
-- Plan a parent or one PR-sized issue in its existing GitHub owner. Inspect its
-  hierarchy, milestone, Project fields, blockers, documents, source, state,
-  and relevant checks.
-- Make the outcome implementation-ready: define the boundary, included
-  behavior, non-goals, dependencies, contracts, edge cases, resource and
-  safety limits, documentation impact, validation, and completion criteria.
-- Keep the target **Todo**. Split only an oversized issue with unambiguous
-  boundaries into ordered native subissues; preserve parent, milestone, Project
-  membership, and exact blockers.
-- Update the Ready checklist only for facts actually resolved. Report **Ready**
-  with the first implementation action, or **Not Ready** with exact blockers.
+- Resolve the exact Falryn or Falryn Docs target before editing planning state.
+- Keep the issue Todo and implementation-free.
+- Make scope, boundaries, blockers, failure/recovery behavior, product wiring, validation, documentation impact, and one-PR fit exact.
+- Use native hierarchy and dependency relationships; do not create a parallel plan hierarchy.
+- Mark Ready only from evidence. Report unresolved items as Not Ready.
 
-Plan may edit the issue, hierarchy, dependencies, and Project metadata. It
-does not write code, create a branch or PR, set **In Progress**, close an
-issue, or merge.
-
-For documentation ownership and the final prompt, read
-[Reporting](reporting.md).
+Issue metadata and sequencing rules remain owned by [issue governance](issue-governance.md).

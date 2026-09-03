@@ -12,7 +12,8 @@ Before changing remote state, record:
 - the required landing order and why it is safe;
 - the reviewed head SHA of every PR;
 - required checks, reviews, merge method, issue-closing behavior, and release or deployment follow-up;
-- the final commit and merge messages are subject-only; no commit or merge body is allowed; PR bodies own the validation and delivery details;
+- the final commit and merge messages required by each repository and
+  contributor policy, including any mandatory bodies, footers, or trailers;
 - the local checkout, if any, associated with each repository.
 
 Cross-repository delivery is sequential, not atomic. A bundle needs an order that keeps every intermediate remote state acceptable. If no safe order exists, introduce compatibility first or stop and redesign the delivery.
@@ -32,16 +33,19 @@ A passing companion PR does not compensate for a failing or stale member. If any
 
 ## Merge in the declared order
 
-Confirm before the first merge and show the ordered PR set. Then merge one PR at a time using the repository-selected strategy and the reviewed head SHA:
+Before the first merge, obtain or revalidate one confirmation bound to the complete ordered PR set, every reviewed head SHA, each merge method, and each final message. Any changed revision or precondition invalidates the affected approval. Then merge one PR at a time using the repository-selected strategy and reviewed head SHA:
+
+For merge-commit or squash strategies, bind the reviewed message explicitly:
 
 ```bash
-gh pr merge <n> \
-  --repo <owner/repo> \
-  --match-head-commit <reviewed-head-sha> \
-  --merge
+gh pr merge <n> --repo <owner/repo> --match-head-commit <reviewed-head-sha> \
+  --merge --subject "<reviewed subject>" --body-file <reviewed-body-file>
 ```
 
-Replace `--merge` with `--squash` or `--rebase` only when repository policy selects it. Do not add `--admin`, `--auto`, or `--delete-branch` implicitly.
+Use `--body ""` only when the effective policy requires a subject-only result.
+Replace `--merge` with `--squash` when selected. For a rebase merge, review the
+existing commit messages and invoke `--rebase`; do not claim a synthetic final
+message. Do not add `--admin`, `--auto`, or `--delete-branch` implicitly.
 
 After each merge:
 
