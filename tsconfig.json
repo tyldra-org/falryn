@@ -16,6 +16,8 @@
     "isolatedModules": true,
     "noEmit": true,
     "strict": true,
+    "incremental": true,
+    "tsBuildInfoFile": ".cache/typescript/tsconfig.tsbuildinfo",
     "noUncheckedIndexedAccess": true,
     "exactOptionalPropertyTypes": true,
     "noImplicitOverride": true,
