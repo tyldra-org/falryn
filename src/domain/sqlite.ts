@@ -11,12 +11,10 @@
  * Three rules the types carry rather than document:
  *
  * - **A transaction wraps synchronous work.** `bun:sqlite` models better-sqlite3
- *   and hands its transaction a synchronous function, and
- *   [data and state](../../../falryn-docs/architecture/DATA-AND-STATE.md)
- *   requires transactions that never wait on providers, processes, network, or
- *   user input. The signature enforces that structurally: work handed to a
- *   transaction cannot `await`. Wrapping the boundary in a promise would hand
- *   that guarantee back to every caller.
+ *   and hands its transaction a synchronous function. Falryn transactions never
+ *   wait on providers, processes, network, or user input. The signature enforces
+ *   that structurally: work handed to a transaction cannot `await`. Wrapping the
+ *   boundary in a promise would hand that guarantee back to every caller.
  * - **Close is the one asynchronous operation**, because a truncating WAL
  *   checkpoint waits for readers and a shutdown phase has to be able to give up
  *   on it. Everything else answers immediately or fails.

@@ -1,14 +1,28 @@
-# Merge delta
+# Merge
 
-Canonical owner: the Merge authorization and bundle contract in [`DEVELOPMENT.md#recognized-prompt-forms`](https://github.com/tyldra-org/falryn-docs/blob/main/DEVELOPMENT.md#recognized-prompt-forms).
+Merge requires a fresh passing Verify preview and user confirmation bound to the unchanged exact bundle. Load `gh-cli` for remote merge and reconciliation and `git-workflow` for safe local synchronization.
 
-Do not use this page as a standalone merge checklist. Load `gh-cli` and execute the canonical full-bundle algorithm:
+## Recheck immediately before mutation
 
-- require a fresh passing Verify preview for the exact resolved bundle;
-- treat the recognized Merge selector or unmistakable natural-language equivalent as confirmation only for that unchanged preview;
-- re-read every head, check, review, ruleset, mergeability result, companion, order, message, checkout, and default branch;
-- merge companions first and the application PR last;
-- stop on first unexpected result and report partial delivery exactly;
-- reconcile GitHub state, then safely synchronize eligible clean checkouts.
+Re-read every previewed pull request, head and base revision, required check, review, thread, ruleset, mergeability result, companion identity, order, final message, repository setting, default branch, and local checkout. Stop and return to Verify if any precondition changed.
 
-Any changed precondition invalidates the preview and returns to Verify.
+A public-only application PR may merge only when fresh verification proves that no private documentation update or private Project prerequisite is required. If documentation impact is required or unresolved, private maintainer authority is mandatory.
+
+## Merge order
+
+For an authenticated cross-repository bundle:
+
+1. squash-merge each required private docs companion at its reviewed head;
+2. stop on the first unexpected result and report exactly what landed;
+3. revalidate the application PR after companion settlement; and
+4. squash-merge the application PR last.
+
+Use the reviewed PR title as the subject. Keep the body empty unless the preview approved one useful short issue-reference footer. Never copy PR prose, checks, risks, or incremental commit messages into the squash message.
+
+The operations are sequential, not atomic. A partial bundle remains partial and receives no completion claim.
+
+## Reconcile
+
+After all required merges, re-read PR and issue state, close or repair the delivery owner as appropriate, reconcile private Project fields when accessible, and safely fast-forward eligible clean default-branch checkouts. Leave dirty, detached, divergent, conflicted, or branch-locked checkouts untouched. Branch deletion is separate.
+
+Verify resulting merge SHAs and report a safe revert-through-new-PR path. Merge authorization never covers release publication, destructive cleanup, or unrelated work.

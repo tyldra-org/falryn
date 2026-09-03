@@ -142,7 +142,7 @@ export const TUI_MATRIX: readonly MatrixRow[] = [
       kind: "manual",
       platform: "macOS arm64, Ghostty 1.3.1, zsh 5.9, no multiplexer, C.UTF-8",
       result:
-        "compiled artifact and renderer controls recorded; human emulator steps remain unqualified and limitations are recorded in falryn-docs",
+        "compiled artifact and renderer controls recorded; human emulator steps remain unqualified and limitations are recorded in private maintainer documentation",
     },
   },
   {

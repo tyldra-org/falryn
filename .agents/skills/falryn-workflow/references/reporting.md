@@ -1,14 +1,26 @@
-# Reporting delta
+# Reporting
 
-Canonical owners: [`DEVELOPMENT.md#suggesting-the-next-prompt`](https://github.com/tyldra-org/falryn-docs/blob/main/DEVELOPMENT.md#suggesting-the-next-prompt) and [`#reporting-file-locations`](https://github.com/tyldra-org/falryn-docs/blob/main/DEVELOPMENT.md#reporting-file-locations).
+Report only observed facts.
 
-Report only observed facts:
+Include:
 
-- exact repository target, issue/PR/milestone identity, and revision;
-- authorized state mutations and resulting GitHub/Roadmap state;
-- commands/checks and outcomes;
-- merged, pending, failed, skipped, partial, or blocked bundle members;
-- residual risks, limitations, and safe recovery;
-- local files as clickable absolute paths in chat, plus repository-qualified paths and links when useful—never committed machine paths.
+- exact repository, issue, pull request, milestone, and revision identities available to the current access profile;
+- whether the run used public-only or authenticated maintainer authority;
+- authorized mutations and verified resulting state;
+- commands and checks with outcomes;
+- merged, pending, failed, skipped, partial, unavailable, or blocked bundle members;
+- documentation-impact classification without reproducing private content;
+- residual risks, limitations, and safe recovery; and
+- one next eligible action.
 
-Finish with one exact copy-ready `Suggested next prompt:` derived from fresh authoritative state. A suggestion never authorizes action. Omit the prompt only while an authorized Parent chain is actively continuing.
+For a file the user may inspect, provide its clickable absolute local path in chat plus repository-qualified path and durable link when that location is public and useful. Never commit machine-specific paths.
+
+Do not print private document text, private Project fields, snapshots, authenticated API responses, credentials, or private checkout paths into public issues, pull requests, commits, artifacts, or logs. Public reports may state only the delivery fact required, such as `private documentation update required`, `verified unaffected`, or `private Roadmap unavailable`.
+
+A completed mode or orientation ends with one exact copy-ready line:
+
+```text
+Suggested next prompt: Verify - Target: PR #123
+```
+
+Use the repository's recognized typographic-dash form when required by its interface. Derive the prompt from fresh authoritative state. A suggestion does not authorize the action. If private access is required, use `Suggested next prompt: none` and name the missing maintainer action.
