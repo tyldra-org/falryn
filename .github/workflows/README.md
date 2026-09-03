@@ -15,11 +15,12 @@ write-scoped token only to mutate labels and never checks out or executes an
 untrusted pull-request head. `pr-vouch.yml` uses the committed
 [VOUCHED.td](../VOUCHED.td) trust list, classifies authors, and never grants
 merge permission. `issue-governance.yml` comments on missing machine-checkable
-repository metadata; it deliberately does not invent an owner or labels. A
-repository-scoped `GITHUB_TOKEN` cannot read the private organization Project,
-so Roadmap membership, Status, and hierarchy remain mandatory but are verified
-by private Project automation and the authenticated `bun run audit:issues`
-maintainer command documented in
+repository metadata; it deliberately does not invent an owner, milestone, or
+labels. A repository-scoped `GITHUB_TOKEN` cannot read the private organization
+Project, so Roadmap membership, Status, Priority, Readiness, and hierarchy
+remain mandatory but are verified by private Project automation and the
+authenticated `bun run audit:issues` and `bun run audit:roadmap` maintainer
+commands documented in
 [`CONTRIBUTOR-READINESS.md`](../../CONTRIBUTOR-READINESS.md). Repository policy
 checks exempt only the repository owner's account; all other contributors,
 including collaborators and maintainers, use the same validation path.

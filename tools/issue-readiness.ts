@@ -1,3 +1,5 @@
+import { declaresStandalone } from "./issue-governance-body";
+
 export const ISSUE_READINESS_SCHEMA_VERSION = 1 as const;
 export const DEFAULT_MAXIMUM_ISSUE_BODY_BYTES = 65_536;
 
@@ -7,7 +9,9 @@ const SHARED_MARKER = "<!-- shared-delivery-governance-v1 -->";
 const LEGACY_SHARED_MARKER = "<!-- whole-product-excellence-contract-2026-08-24 -->";
 const AUDIT_MARKER = "<!-- all-open-audit-reconciliation-2026-09-01 -->";
 const CANONICAL_DOC_LINK =
-  /https:\/\/github\.com\/(?:tyldra-org|yogeshprasad098)\/falryn-docs\/blob\/main\/([^\s)#?]+)(?:#[^\s)]*)?/g;
+  /https:\/\/github\.com\/tyldra-org\/falryn-docs\/blob\/main\/([^\s)#?]+)(?:#[^\s)]*)?/g;
+const OBSOLETE_CANONICAL_OWNER_LINK =
+  /https:\/\/github\.com\/yogeshprasad098\/falryn-docs\/blob\/main\//i;
 const ISSUE_REFERENCE = /#(\d+)\b/g;
 const DECLARED_CHILD_COUNT = /\b(\d+)\s+native GitHub sub-?issues\b/gi;
 
@@ -62,6 +66,7 @@ export type IssueReadinessCode =
   | "prose-blocker-not-native-open"
   | "dependency-cycle"
   | "canonical-document-missing"
+  | "canonical-document-owner-invalid"
   | "docs-only-product-completion"
   | "body-title-drift"
   | "body-milestone-drift";
@@ -255,26 +260,6 @@ function declaredParentReferences(body: string): ReadonlySet<number> {
     }
   }
   return references;
-}
-
-function declaresStandalone(body: string): boolean {
-  let inRelationship = false;
-  for (const line of body.split("\n")) {
-    const plain = line.replaceAll("**", "").trim();
-    const heading = plain.match(/^##\s+(.+)$/);
-    if (heading !== null) {
-      inRelationship = heading[1]?.trim().toLowerCase().endsWith("relationship") === true;
-      continue;
-    }
-    if (
-      (inRelationship && /\bStandalone\b/i.test(plain)) ||
-      /^(?:-\s*)?Standalone\b/i.test(plain) ||
-      /^-\s*Delivery role:\s*.*\bStandalone\b/i.test(plain)
-    ) {
-      return true;
-    }
-  }
-  return false;
 }
 
 function normalizedDocumentPath(value: string): string | null {
@@ -568,6 +553,15 @@ export function auditIssueReadiness(
         "docs-only-product-completion",
         issue.number,
         "docs/research-only issue requires product-boundary delivery",
+      );
+    }
+
+    if (OBSOLETE_CANONICAL_OWNER_LINK.test(issue.body)) {
+      add(
+        diagnostics,
+        "canonical-document-owner-invalid",
+        issue.number,
+        "canonical documentation link uses obsolete yogeshprasad098/falryn-docs owner",
       );
     }
 

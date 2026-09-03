@@ -9,8 +9,9 @@ body:
       value: |
         Please do not disclose vulnerabilities here; use the private security
         reporting path in SECURITY.md. A triager adds each valid issue to the
-        Falryn Roadmap, assigns one owner, sets Status to Todo, applies an area
-        label, and records a native parent or Standalone relationship.
+        Falryn Roadmap exactly once, assigns one owner and milestone, sets
+        Status to Todo, selects P0–P3 Priority and current Readiness, applies
+        an area label, and records a native parent or Standalone relationship.
   - type: textarea
     id: expected
     attributes:
@@ -79,3 +80,27 @@ body:
       placeholder: "#123 or Standalone"
     validations:
       required: true
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Dependencies and blockers
+      description: Link exact blocking issues, or write None.
+    validations:
+      required: true
+  - type: textarea
+    id: validation
+    attributes:
+      label: Validation and documentation impact
+      description: Name the regression checks and any affected public documentation.
+    validations:
+      required: true
+  - type: checkboxes
+    id: readiness
+    attributes:
+      label: Ready checklist
+      description: Leave an item unchecked until its evidence is known; a triager sets the authoritative Project Readiness field.
+      options:
+        - label: The reproduction and current source baseline are verified.
+        - label: The correction fits one focused pull request and names its owner boundaries.
+        - label: Failure, regression, cancellation, recovery, and product wiring are explicit.
+        - label: Focused validation and documentation impact are testable.

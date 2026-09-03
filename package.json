@@ -20,6 +20,7 @@
     "typecheck": "tsc --noEmit",
     "verify:repository": "bun run tools/repository-integrity.ts",
     "audit:issues": "bun run tools/issue-readiness-cli.ts",
+    "audit:roadmap": "bun run tools/roadmap-governance-cli.ts",
     "generate:model-catalogs": "bun run tools/model-catalogs.ts",
     "check:model-catalogs": "bun run tools/model-catalogs.ts --check",
     "check:static": "bun run --parallel quality typecheck verify:repository check:model-catalogs",
