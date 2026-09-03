@@ -34,8 +34,9 @@ unannounced capabilities, or private research into this repository.
 
 | Work | Skill |
 | --- | --- |
+| Non-trivial architecture, debugging, refactoring, migrations, concurrency, reliability, maintainability, or verification | engineering-best-practices |
 | TypeScript, TSX, JavaScript, tests, build scripts, or tsconfig | typescript-best-practices |
-| OpenTUI behavior, layout, input, rendering, or packaging | opentui |
+| OpenTUI behavior, layout, input, rendering, or packaging | opentui-best-practices |
 | Mutating Git work | git-workflow |
 | GitHub issues, pull requests, Actions, Projects, or merge state | gh-cli |
 | Local diff, branch, or pull-request review | change-review plus the relevant stack skill |

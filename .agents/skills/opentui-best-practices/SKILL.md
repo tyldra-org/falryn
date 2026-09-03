@@ -1,12 +1,12 @@
 ---
-name: opentui
+name: opentui-best-practices
 description: >-
   Build, configure, test, debug, and package terminal UIs with OpenTUI Core,
   React, or Solid. Use for TUI components, layout, input, keymaps, animations,
   audio, plugins, SSH, QR, Three.js, and Bun standalone executables.
 ---
 
-# OpenTUI
+# OpenTUI best practices
 
 The installed OpenTUI version and its matching vendored `docs/**/*.mdx` are the
 API source of truth. `modules/opentui-extended/` is a companion for framework

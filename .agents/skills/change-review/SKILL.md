@@ -11,8 +11,8 @@ description: >-
 Review the exact revision, not an assumption about the change. This skill owns
 review reasoning and the evidence-backed report. It does not own GitHub PR
 commands or posting a review (`gh-cli`), Git porcelain (`git-workflow`), or
-stack-specific correctness (`typescript-best-practices`, `opentui`, and the
-relevant project guidance).
+stack-specific correctness (`typescript-best-practices`,
+`opentui-best-practices`, and the relevant project guidance).
 
 ## Safety and scope
 

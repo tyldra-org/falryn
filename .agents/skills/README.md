@@ -8,8 +8,8 @@ guidance. `AGENTS.md` points here first.
 
 | Tier | Skills | Content | Where users get them |
 | --- | --- | --- | --- |
-| **Universal** | `git-workflow`, `gh-cli`, `change-review` | No product or repo names; reusable in any repository | Vendored in `falryn/.agents/skills/` |
-| **Stack** | `typescript-best-practices`, `opentui` | TypeScript and terminal-UI guidance | Vendored in this repository |
+| **Universal** | `git-workflow`, `gh-cli`, `change-review`, `engineering-best-practices` | No product or repo names; reusable in any repository | Vendored in `falryn/.agents/skills/` |
+| **Stack** | `typescript-best-practices`, `opentui-best-practices` | TypeScript and terminal-UI guidance | Vendored in this repository |
 | **Falryn workflow** | `falryn-workflow` | Maintainer modes, issue ownership, project orientation, and next-step routing | Vendored here and synchronized with the maintainer-global copy |
 
 Universal skills must not mention Falryn, its organization, or local process.
@@ -25,8 +25,9 @@ guidance as a fallback. Do not rely on `~/.agents/skills` being installed.
 
 | Skill | Load before |
 | --- | --- |
+| `engineering-best-practices` | Non-trivial design, debugging, refactoring, migrations, concurrency, reliability, maintainability, or verification |
 | `typescript-best-practices` | TypeScript, TSX, JS, tests, build scripts, or `tsconfig` work |
-| `opentui` | Terminal UI, renderer, layout, input, keymaps, or packaging work |
+| `opentui-best-practices` | Terminal UI, renderer, layout, input, keymaps, or packaging work |
 | `git-workflow` | Mutating git work: commit, branch, rebase, push, or recovery |
 | `gh-cli` | GitHub `gh`: issues, pull requests, Actions, Projects, merge, or flags |
 | `change-review` | Reviewing a local diff, branch, or pull request; pair with `gh-cli` for GitHub state and a stack skill for changed code |
@@ -50,7 +51,7 @@ shipping it to users, run from this directory:
 ```
 
 `--apply` uses `rsync --delete`; review the preview before applying it. The
-helper syncs the five portable skills and the project-specific
+helper syncs the six portable skills and the project-specific
 `falryn-workflow` package. Do not add Falryn text to the portable skills.
 
 The committed copy is canonical for people using this repository.
