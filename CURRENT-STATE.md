@@ -130,9 +130,13 @@ account metadata. Public results carry a secret-free terminal receipt with the
 attempt, adapter, generation, method, outcome, and structural failure code.
 Immediately before provider handoff, an expired authorized connection refreshes
 through its bound adapter, writes a rotated vault reference, publishes the
-connection change, and then removes the old local credential. Logout reports
-remote revocation and local deletion separately. This shared lifecycle does not
-claim that a provider supports subscription login until an installed adapter
+connection change, and then removes the old local credential. The current
+refresh path removes that replaced reference without first proving that another
+profile does not still own the same store, locator, consumer, and account-label
+identity; logout and profile removal already use the shared-reference check.
+GitHub issue #910 owns the focused refresh correction. Logout reports remote
+revocation and local deletion separately. This shared lifecycle does not claim
+that a provider supports subscription login until an installed adapter
 advertises the method as available.
 
 CLI, JSON, and JSONL provider actions project the same authorization receipt
@@ -350,16 +354,25 @@ the selected mechanism, eligibility threshold, cache digests, and stable
 boundary, never prompt text or credentials. Normalized usage keeps
 provider-reported cache reads and cache writes distinct.
 
-Falryn now publishes the executable tool inventory into one immutable shared
-capability registry generation. Its strict contribution contract covers tools,
-MCP tools/resources/prompts, skills, hooks, plugins, commands, agents/subagents,
-workflows, providers, and UI contributions without treating those primitives as
-one executor. Existing tool capability IDs remain canonical; `ToolRegistry`
-continues to own exact schemas and runner bindings. Installed inventory has no
-arbitrary entry quota, while queries default to 32 entries and are capped at
-256. Current production loaders contribute the built-in product tools. Live
-extension, agent, workflow, provider, and UI loaders remain with their owning
-issues.
+Falryn publishes the registered built-in product-tool inventory into one
+immutable shared capability registry generation. Its strict contribution
+contract covers tools, MCP tools/resources/prompts, skills, hooks, plugins,
+commands, agents/subagents, workflows, providers, and UI contributions without
+treating those primitives as one executor. Existing tool capability IDs remain
+canonical; `ToolRegistry` continues to own exact schemas and runner bindings.
+Installed inventory has no arbitrary entry quota, while queries default to 32
+entries and are capped at 256. Current production loaders contribute the
+built-in product tools. Live extension, agent, workflow, package-provider, and
+UI loaders remain with their owning issues.
+
+Current product publication does not yet prove each runner binding before it
+marks every registered tool available, healthy, and executable, so a tool such
+as `open_pty` can be advertised before its runner later returns `unavailable`.
+GitHub issue #195 owns executable binding proof and #150 owns truthful
+native-registry publication. The capability registry also keys identity by kind
+plus namespace/name rather than the complete source-owner-qualified identity,
+so equal names from distinct owners cannot yet coexist; #898 owns the
+scope-bearing catalog identity correction.
 
 Each registry generation can now be inspected through one consumer-specific
 capability-health snapshot. The pure evaluator combines declared lifecycle and
@@ -371,12 +384,15 @@ selected, and active. Bounded active probes validate catalog identity, count,
 concurrency, timeout, cancellation, and freshness; their text and recovery
 handles are redacted before projection. Stale results become unknown.
 
-The product runtime exposes that same immutable snapshot to native-model, CLI,
-OpenTUI, headless, and external-host consumers. Its read-only inspector derives
-tools queries, deduplicated doctor findings, and effective permission facts from
-one generation. Queries default to 32 rows and admit at most 256, carry a
-deterministic continuation handle, and reject stale generations. Permission
-changes remain owned by settings rather than the inspector. Slash command
+The evaluator can derive consumer-specific snapshots for native-model, CLI,
+OpenTUI, headless, and external-host contracts. Product composition uses the
+snapshot for built-in model disclosure and diagnostics, but a public external
+host and live Extension/MCP execution are not implemented. Its read-only
+inspector derives tool queries, deduplicated doctor findings, and effective
+permission facts from one generation. Queries default to 32 rows and admit at
+most 256, carry a deterministic continuation handle, and reject stale
+generations. Permission changes remain owned by settings rather than the
+inspector. General catalog commands, external-host transport, and slash-command
 parsing and completion for these actions are not claimed here.
 
 The provider request contains only the disclosed tool definitions and bounded
@@ -413,6 +429,15 @@ capability-invocation event records the normalized unavailable status and the
 same secret-free transition receipt, so replay and machine consumers do not
 have to infer degradation from a generic failed outcome.
 
+The current gateway does not append equivalent semantic invocation facts for
+proposals rejected before its main execution gates, including aborted,
+stale-generation, undisclosed, malformed, effect-ledger-reused, policy-denied,
+confirmation-denied, and pre-hook-denied proposals; GitHub issue #200 owns that
+pre-execution evidence gap. Effect-ledger lookup can also suppress an
+intentionally repeated identical non-idempotent operation without a distinct
+admitted retry or idempotency identity; #218 owns that reuse and effect-certainty
+correction.
+
 The model capability brief names the preferred family, fallbacks, selected
 contributions, automation decisions, schema-token cost, negative availability,
 and the bounded discovery handle. It retains only a SHA-256-derived task
@@ -428,9 +453,15 @@ counts/cards, capability cost/latency classes, tool-schema digests, schema cost,
 effective health/selection/projection flags, stable diagnostic codes,
 unavailable capability families,
 omissions, and a `capability-catalog:<generation>` discovery handle. Provider
-disconnects, malformed requests, cancellation, timeout,
-fallback exhaustion, and uncertain effects remain typed outcomes. Completed or
-uncertain consequential tool effects are not retried as fresh work.
+disconnects, malformed requests, cancellation, timeout, fallback exhaustion,
+and uncertain effects remain typed policy-run outcomes. The current policy can
+return `exhausted` with a null or nonterminal turn; GitHub issue #215
+owns settlement to the existing `failed` turn terminal while retaining the
+specific policy outcome. OpenAI Responses and Anthropic adapters parse provider
+retry timing, but normalization currently drops it before turn retry policy;
+Google GenAI and legacy OpenAI paths do not expose equivalent timing here.
+Completed or uncertain consequential tool effects are not retried as fresh
+work.
 
 The interactive composer and `falryn run` use the same application-owned
 live-turn executor. Both paths compose Context and, unless disabled, Brief; run the selected
@@ -440,7 +471,11 @@ projecting them. OpenTUI folds those committed events into its transcript;
 JSONL emits the same event values before its terminal result. A failed append,
 provider connection, context composition, attempt, or replay cannot be reported
 as an accepted or completed turn. Production does not fall back to the in-memory
-event-store test double when SQLite cannot open.
+event-store test double when SQLite cannot open. Bootstrap currently also
+constructs and discards a separate `session:bootstrap-idle` product runtime in
+addition to the real headless or
+OpenTUI session runtime. GitHub issue #909 owns removal of that duplicate runtime
+and journal authority without dropping required initialization or cleanup.
 
 Brief remains a pre-inference response-density policy; it never truncates or
 rewrites a completed answer and does not add a second model request. The shared
@@ -566,7 +601,7 @@ the `mode.select` palette action, `/mode <profile>`, and the `/ask`, `/plan`,
 | Ask | answer | Observation-only evidence and tools |
 | Plan | durable plan | Observation-only investigation plus an exact reviewable Markdown artifact |
 | Debug | diagnosis | Bounded process, LSP, and DAP probes; direct edit and Git-mutation tools are denied |
-| Agent | implemented and verified | Full authorized tool loop with the normal effect policy and focused confirmations |
+| Agent | implemented and verified | Full authorized tool loop; confirmation-required effects fail closed unless the host supplies an authorized confirmation port |
 
 Profile selection is persisted as a semantic session event. Each model attempt
 binds the selected profile, profile version, completion criterion, and policy
@@ -586,14 +621,19 @@ The public model roles are `default`, `compact`, `vision`, `plan`, `advisor`,
 `default`; reasoning remains a supported setting on the effective model rather
 than a `thinking` or `deep` role. Profiles request a work intent and reasoning
 posture, but never choose a hidden provider or grant authority through model
-routing.
+routing. The current product turn still receives one selected provider catalog
+and fixed adapter, so cross-profile or cross-provider fallback is not
+executable; GitHub issue #215 owns immutable per-attempt route and provider
+recovery. Configured role-level aggregate token, time, and cost budgets are
+recorded rather than enforced across retries and provider continuations; #205
+owns their hierarchical enforcement.
 
 OpenTUI's model picker is connected to the live turn path. A selection must
 exist in the current catalog generation, must not be unavailable, and must be
-executable by the selected provider adapter. A successful selection becomes an
-the process-local default route for later turns and remains selected when the process creates a
-new session. An in-flight turn keeps the model identity it captured before
-provider execution. This selection remains process-local; durable role and
+executable by the selected provider adapter. A successful selection becomes the
+process-local default route for later turns and remains selected when the
+process creates a new session. An in-flight turn keeps the model identity it
+captured before provider execution. This selection remains process-local; durable role and
 fallback editing is still outside the current interface.
 
 The current disclosure path uses that task-aware opportunity plan to select a
@@ -622,7 +662,17 @@ Refresh failure does not misreport the external mutation as failed; the tool
 result reports that index publication is unavailable so the model can use an
 exact Read or search fallback. The current implementation publishes a complete
 bounded generation. Incremental file deltas, native watcher overlays, FTS5,
-structural backends, and graph retrieval are not claimed here.
+structural backends, and graph retrieval are not claimed here. Startup indexing
+currently admits only TypeScript, TSX, JavaScript, JSX, Markdown, and JSON,
+rebuilds a complete
+generation, and may exact-read broad candidate sets for as many as four derived
+task queries before applying the final match limit.
+
+Named workspace sets can be saved and shown, but product tools, index, language
+services, attachments, session navigation, and configuration remain bound to
+the invocation-time primary root. OpenTUI add/remove/load actions currently
+change the shell workspace-set view rather than recomposing generation-bound
+runtime authority. GitHub issue #879 owns that product wiring and revocation.
 
 Workspace-scoped memory records persist in SQLite. Relevant records are
 recalled before prompt composition. A new record is admitted only after the
@@ -695,10 +745,12 @@ control never asks users to select `raw` directly.
 ## Process output, Hush, and recovery
 
 The built-in `run_process` and `run_shell` capabilities accept
-`outputMode: "hush" | "raw"`; `hush` is the default. Raw mode bypasses only
-output reduction. Schema validation, effects, confirmation, hooks, scheduling,
-capture, redaction, deadlines, cancellation, persistence, provenance, and
-result bounds remain on the same product-tool path.
+`outputMode: "hush" | "raw"`; `hush` is the default. `open_pty` is registered
+but returns `unavailable` until the session-owned PTY host in GitHub issue #712
+is composed. Raw mode bypasses only output reduction. Schema validation, effects,
+confirmation, hooks, scheduling, capture, redaction, deadlines, cancellation,
+persistence, provenance, and result bounds remain on the same product-tool
+path.
 
 Small non-secret raw text is returned exactly in separate stdout and stderr
 fields. Mandatory secret replacement preserves line and column layout. The
@@ -768,6 +820,50 @@ strict subset selected into its immutable attempt disclosure, and every such
 call passes through the unified policy, confirmation, hooks, scheduler,
 capture, journal, and projection gateway. Registration alone does not imply
 that all 59 schemas are placed in every prompt.
+
+## Current product-integration limits
+
+The model tool loop defaults to four concurrent executions and enforces an
+implementation ceiling of sixteen, while the generic scheduler defaults to
+eight concurrent units and one per conflict key. The tool manifest's separate
+`maxGlobal` and `maxPerWorkspace` declarations are not propagated by the
+product gateway, which schedules each concurrent invocation as its own one-item
+batch. The standalone hierarchical `BudgetLedger` is not composed into the
+runtime, and duplicate reservation IDs can overwrite ledger records. GitHub
+issue #205 owns manifest-limit propagation, reservation identity, and enforced
+hierarchical admission; #158 applies those bounds to nested agent scopes.
+
+The gateway accepts an injectable `ProductToolConfirmationPort` and fails closed
+when confirmation is required but no authorized presenter exists. Normal CLI
+composition only forwards an optional port, and no non-test OpenTUI resolver is
+currently product-composed. The product workspace bundle also constructs its
+patcher without the available Git observation port, so live preview/apply miss
+the patch layer's current in-progress-operation and observed-HEAD safeguards.
+GitHub issue #200 owns both final pre-effect product paths.
+
+Built-in before/after capability hooks run in process. Package hook loading is
+not composed, shipped ordering uses descending priority and hook ID rather than
+the full planned dependency/source/owner order, and a timeout settles the hook
+without propagating an `AbortSignal` to stop late asynchronous work. GitHub issue
+#143 owns those hook-runtime corrections.
+
+Read, Loom, Hush, and selected process paths retain exact overflow artifacts,
+but the generic gateway can still replace an oversized result with an omission
+marker without a mandatory exact recovery artifact. GitHub issue #791 owns
+universal exact-byte admission and completeness; #207 owns lifecycle and garbage
+collection after sealing.
+
+Image, PDF, and notebook readers exist in the application source but are not
+registered in the product tool bundle, and live provider adapters accept text
+only; their document/media owners remain GitHub issues #183–#188.
+
+No durable background-job, delegated-agent, nested-subagent, workflow, schedule,
+goal/loop, structured-question, work-item, or cross-session mailbox runner is
+product-composed. Current opportunity records for those families are plans, not
+execution. Their existing owners include GitHub issues #155–#162, #284, #797,
+#890, #891, and #897. Extensions, MCP servers, package contributions, skills,
+prompts, and external hosts likewise remain registry contracts or planned
+loaders unless explicitly described above as built-in production behavior.
 
 ## Verification posture
 
