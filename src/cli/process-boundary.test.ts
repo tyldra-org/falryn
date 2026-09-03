@@ -87,6 +87,33 @@ function run(
 }
 
 /**
+ * One default process observation per mode and scenario.
+ *
+ * Exit-code coverage, the reachable-code set, and stdout purity inspect the same
+ * immutable process result. Re-spawning it for each assertion adds contention
+ * without exercising another boundary; option-bearing and interrupt runs remain
+ * independent below.
+ */
+const defaultScenarioRuns = new WeakMap<Mode, Map<string, Run>>();
+
+function defaultScenarioRun(mode: Mode, scenario: string): Run {
+  let modeRuns = defaultScenarioRuns.get(mode);
+  if (modeRuns === undefined) {
+    modeRuns = new Map();
+    defaultScenarioRuns.set(mode, modeRuns);
+  }
+
+  const observed = modeRuns.get(scenario);
+  if (observed !== undefined) {
+    return observed;
+  }
+
+  const finished = run(mode, scenario);
+  modeRuns.set(scenario, finished);
+  return finished;
+}
+
+/**
  * Spawns a scenario, waits for it to say it is ready, and interrupts it.
  *
  * Readiness is the probe's own notice rather than a delay, so the signal can
@@ -167,7 +194,7 @@ for (const mode of [SOURCE, COMPILED]) {
       test(
         `exits ${expected} for ${scenario}`,
         () => {
-          expect(run(mode, scenario).exitCode).toBe(expected);
+          expect(defaultScenarioRun(mode, scenario).exitCode).toBe(expected);
         },
         PROBE_TIMEOUT_MS,
       );
@@ -177,11 +204,13 @@ for (const mode of [SOURCE, COMPILED]) {
       "produces every code this build declares reachable, and no other",
       () => {
         const produced = new Set(
-          Object.keys(CODE_BY_SCENARIO).map((scenario) => run(mode, scenario).exitCode),
+          Object.keys(CODE_BY_SCENARIO).map(
+            (scenario) => defaultScenarioRun(mode, scenario).exitCode,
+          ),
         );
         // The unknown-scenario path is the only remaining reachable code path
         // and it resolves through the same table.
-        produced.add(run(mode, "no-such-scenario").exitCode);
+        produced.add(defaultScenarioRun(mode, "no-such-scenario").exitCode);
 
         expect([...produced].sort((left, right) => left - right)).toEqual([
           ...EMITTABLE_EXIT_CODES,
@@ -198,7 +227,7 @@ for (const mode of [SOURCE, COMPILED]) {
     test(
       "resolves an unusable invocation to invalid usage",
       () => {
-        const finished = run(mode, "no-such-scenario");
+        const finished = defaultScenarioRun(mode, "no-such-scenario");
         expect(finished.exitCode).toBe(EXIT_CODES.INVALID_USAGE);
         // Even the complaint about the invocation stays off stdout.
         expect(finished.stdout).toBe("");
@@ -213,7 +242,7 @@ for (const mode of [SOURCE, COMPILED]) {
       "carries the result and never a diagnostic, on every scenario",
       () => {
         for (const scenario of Object.keys(CODE_BY_SCENARIO)) {
-          const finished = run(mode, scenario);
+          const finished = defaultScenarioRun(mode, scenario);
           // Every stdout line parses as the selected result format. A progress
           // notice or a warning on this handle would fail here rather than in a
           // consumer's parser.
