@@ -13,11 +13,15 @@ The Apache-2.0 grant in LICENSE covers the Falryn software: everything under
 `src/`, `tools/`, the build and CI configuration, and the documentation in this
 repository.
 
-`.agents/skills/` is development-time agent guidance. It is not part of the Falryn software and are not included in the compiled
-executable — `bun run build` bundles from `src/main.ts` only, and the resulting
-binary contains none of this material.
+`.agents/skills/` is development-time agent guidance. It is not part of the
+Falryn software and is not included in the compiled executable — `bun run
+build` bundles from `src/main.ts` only, and the resulting binary contains none
+of this material.
 
 Where a skill in that directory originates from another project, that
 material remains under its own licence and copyright, regardless of the grant in
 LICENSE. A skill that carries its own LICENSE or NOTICE file is governed by that
-file. Nothing in this repository's LICENSE relicenses work it does not own.
+file. The OpenTUI documentation snapshot under
+`.agents/skills/opentui-best-practices/docs/` is sourced and versioned as recorded
+in that bundle's `UPSTREAM.md` and remains under `LICENSE.opentui`. Nothing in
+this repository's LICENSE relicenses work it does not own.

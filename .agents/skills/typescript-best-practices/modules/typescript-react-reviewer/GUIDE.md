@@ -1,134 +1,51 @@
----
-name: typescript-react-reviewer
-description: Review TypeScript + React code for correctness, hooks misuse, state bugs, and maintainability. Use for PR reviews, React 19 patterns, useEffect abuse, state management checks, or TypeScript safety in React components.
----
+# React and TypeScript review
 
-# TypeScript + React Review
+Use with `change-review`: this guide owns React/TypeScript correctness, while `change-review` owns evidence, severity, and reporting. Judge severity from reachable consequences rather than pattern labels or numeric thresholds.
 
-Defect-first review for React + TypeScript. Scan critical issues before style.
+## Review order
 
-## Critical (block merge)
+1. Installed React/framework version and server/client model.
+2. Hooks ordering, lifecycle, and external synchronization.
+3. State ownership, transitions, and stale closures.
+4. Runtime input validation and TypeScript soundness.
+5. Accessibility, loading, empty, error, cancellation, and retry states.
+6. Measured rendering or bundle performance.
+7. Focused interaction and failure tests.
 
-| Issue | Why |
-| --- | --- |
-| `useEffect` for derived state | Extra render, sync bugs |
-| Missing effect cleanup | Leaks |
-| Direct state mutation | Silent stale UI |
-| Conditional hooks | Breaks Rules of Hooks |
-| `key={index}` on dynamic lists | State corruption on reorder |
-| Unjustified `any` | Safety bypass |
-| `useFormStatus` in same component as `<form>` | Always pending=false |
-| Promise created in render for `use()` | Infinite loop |
+## Effects
 
-## High priority
-
-| Issue | Impact |
-| --- | --- |
-| Incomplete dependency arrays | Stale closures |
-| Props typed `any` | Runtime surprises |
-| Unjustified `useMemo` / `useCallback` | Noise (unless Compiler / measured) |
-| Missing Error Boundaries | Poor failure UX |
-| Controlled input from `undefined` | React warnings |
-
-## Architecture / style
-
-| Issue | Prefer |
-| --- | --- |
-| Component ≫ 300 lines | Split |
-| Prop drilling > 2–3 levels | Composition / context |
-| State far from usage | Colocate |
-| Custom hooks without `use` prefix | Rename |
-
-## Quick detections
-
-### Derived state / events in effects
+Effects synchronize React with external systems. Derived render values usually belong in render; user-triggered effects usually belong in the event path that caused them.
 
 ```tsx
-// Bad
-useEffect(() => setFullName(firstName + " " + lastName), [firstName, lastName]);
-// Good
+// Derived value: no effect or mirrored state needed.
 const fullName = `${firstName} ${lastName}`;
-
-// Bad: notify in effect on cart flag
-// Good: notify in the click handler that mutates cart
 ```
 
-### React 19
+An effect is not automatically defective because it sets state. Verify whether it coordinates an external subscription, asynchronous result, or lifecycle. Require cleanup for retained resources and protection against stale async results when relevant.
 
-```tsx
-// useFormStatus must be in a child of <form>
-function SubmitButton() {
-  const { pending } = useFormStatus();
-  return (
-    <button type="submit" disabled={pending}>
-      Send
-    </button>
-  );
-}
+## Hooks and state
 
-// use() needs a stable promise (props/state), not fetch() in render
-function View({ dataPromise }: { dataPromise: Promise<Data> }) {
-  const data = use(dataPromise);
-  return <>{data.id}</>;
-}
-```
+- Call hooks unconditionally at the top level, except APIs whose documented contract explicitly permits other placement.
+- Keep state near its owner; lift or share it only when multiple consumers need one source of truth.
+- Do not mutate state containers in place when React depends on identity to detect change.
+- Avoid copying server/cache data into local state unless the copy has an explicit independent lifecycle.
+- Use the repository's existing state and data libraries. Do not prescribe a new library merely from component size or nesting depth.
+- Do not suppress hook dependency diagnostics without proving an equivalent invariant.
 
-### Mutations
+## Type boundaries
 
-```ts
-// Bad
-items.push(newItem);
-setItems(items);
-// Good
-setItems([...items, newItem]);
-```
+- Type props and exported callbacks explicitly where they form a public contract.
+- Validate network, storage, URL, form, and postMessage input at runtime.
+- Avoid broad `any`, unproved assertions, and optional fields that create impossible state combinations.
+- `React.FC` is not inherently a defect; assess whether its semantics help or hinder the specific public API.
+- Use stable domain keys for reorderable collections; an array index is valid only when identity and order are truly static.
 
-### TypeScript red flags
+## Performance
 
-```ts
-const data: any = response; // bad
-const App: React.FC<Props> = () => null; // avoid; prefer explicit props
-const App = ({ prop }: Props) => null; // good
-```
+Do not require `memo`, `useMemo`, `useCallback`, virtualization, or component splitting from arbitrary line, duration, or item-count thresholds. First identify a measured render, interaction, memory, or bundle problem and its cause. Remove unnecessary memoization when it adds dependency risk without evidence.
 
-Prefer `noUncheckedIndexedAccess` so `arr[i]` is `T | undefined`.
+## Version-sensitive APIs
 
-## Review workflow
+Before reviewing `use`, actions, `useActionState`, `useFormStatus`, optimistic state, Server Components, or compiler-driven memoization, verify the installed React and framework documentation. `useFormStatus` observes a parent form and therefore belongs in a descendant. Promises consumed during render must have stable ownership rather than being recreated every render.
 
-1. Critical table patterns
-2. React 19 APIs — [react19-patterns.md](references/react19-patterns.md)
-3. Server vs client state separation
-4. TypeScript safety (generics, discriminants, strict config)
-5. Maintainability (size, hooks, structure) — [checklist.md](references/checklist.md)
-
-## State defaults
-
-| Data | Prefer |
-| --- | --- |
-| Server/async | TanStack Query (don't mirror into `useState`) |
-| Simple global UI | Zustand (or existing store) |
-| Fine-grained atoms | Jotai (if already used) |
-| Local UI | `useState` / `useReducer` |
-| Forms | React 19 `useActionState` when applicable |
-
-```ts
-// Bad: copy query → local state
-// Good: const { data: todos } = useQuery(...)
-```
-
-## Immediate flags
-
-| Pattern | Fix |
-| --- | --- |
-| `eslint-disable react-hooks/exhaustive-deps` | Refactor |
-| Component defined inside component | Hoist |
-| `useState(undefined)` for text inputs | `""` |
-| App-level barrel `index.ts` | Direct imports |
-
-## References
-
-- [react19-patterns.md](references/react19-patterns.md)
-- [antipatterns.md](references/antipatterns.md)
-- [checklist.md](references/checklist.md)
-
-For Next.js App Router conventions → `modules/nextjs-react-typescript/GUIDE.md`.
+See [the focused checklist](references/checklist.md).

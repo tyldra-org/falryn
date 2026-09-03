@@ -1,20 +1,21 @@
 # rewrite
 
-History surgery: amend, squash, reword, reorder, rebase, filter. Everything here rewrites SHAs. Back up first, verify by tree hash, and confirm before publishing (skill **Confirm before** + backup rules still apply).
+History surgery: amend, squash, reword, reorder, rebase, filter. Everything here rewrites SHAs. Confirm the exact outcome before touching history, then create a backup and verify by tree hash. Publishing a rewritten ref requires a second confirmation bound to the exact remote lease.
 
 ## Commit messages during rewrites
 
-Recreated commits are always subject-only. Strip existing bodies during
-amend, reword, squash, reorder, and rebase operations; never preserve,
-invent, or expand them. Do not use `--no-edit` when it would preserve a
-body. If a repository or platform requires a non-empty body, stop and report
-the incompatibility; do not add one.
+A rewrite changes commit identity, not message policy. Preserve required
+bodies, sign-offs, co-author lines, breaking-change metadata, and issue
+trailers unless the confirmed rewrite explicitly changes them. Prepare and
+review every replacement message in full. Use `--no-edit` when the exact
+existing message must survive an amend; use a validated message file when the
+complete message changes.
 
 ## Gate
 
 Before touching history, answer three questions out loud:
 
-1. **Is it pushed?** `git log origin/<branch>..<branch> --oneline` — commits listed are unpushed and safe to rewrite. Anything not listed is published.
+1. **Is it pushed?** `git log origin/<branch>..<branch> --oneline` — commits listed are unpushed; anything not listed is published. Both cases still require rewrite confirmation, while the published case also requires ownership and force-push review.
 2. **Is anyone else on it?** A published branch with other people's work on it is not yours to rewrite. Use `git revert` or a follow-up commit instead.
 3. **Is the intended outcome unambiguous?** "Clean this up" is not an instruction. `reset --soft`, `reset --hard`, `revert`, and `rebase --onto` all "get rid of a commit" and only one is right. Confirm the outcome, not the command.
 
@@ -29,16 +30,16 @@ git rev-parse HEAD                          # record the SHA in your summary
 
 ## Amend the tip
 
-Unpushed tip only.
+Unpushed tip only, after explicit amend confirmation.
 
 ```bash
 git add <files>
-git commit --amend -m "<existing subject>"          # keep subject, no body
-git commit --amend -m "type(scope): summary"       # change subject
+git commit --amend --no-edit                       # preserve the exact message
+git commit --amend -F <reviewed-message-file>      # replace the full message
 ```
 
-Every amend must reissue a subject-only message; do not use `--no-edit` when
-it can preserve a body.
+Inspect `git log -1 --format=%B` afterward. A changed subject does not authorize
+stripping an existing body or trailers.
 
 Amending changes the SHA. If the commit is pushed, landing the amend requires a force-push — confirm that separately.
 
@@ -52,25 +53,30 @@ Interactive rebase is not available in a non-interactive environment. Use the sc
 
 ```bash
 # squash a whole branch into one — reset to the MERGE BASE, not to the base branch
-git reset --soft "$(git merge-base <base-branch> HEAD)" && git commit -m "type(scope): summary"
+git reset --soft "$(git merge-base <base-branch> HEAD)" && \
+  git commit -F <reviewed-message-file>
 
 # squash the last N into one
-git reset --soft HEAD~N && git commit -m "type(scope): summary"
+git reset --soft HEAD~N && git commit -F <reviewed-message-file>
 
 # drop a specific commit
 git rebase --onto <sha>^ <sha> <branch>
-
-# reword a specific commit (not the tip)
-GIT_SEQUENCE_EDITOR="sed -i '' 's/^pick <short-sha>/reword <short-sha>/'" git rebase -i <sha>^
 ```
 
-`reset --soft` keeps everything staged — it is the safest squash. `reset --mixed` (default) unstages. `reset --hard` **discards the working tree** and is the single most destructive routine git command; it needs its own confirmation and a backup ref, always.
+`reset --soft` keeps everything staged. `reset --mixed` (default) unstages.
+`reset --hard` **discards the working tree** and needs its own confirmation and
+a backup ref, always.
 
-Prefer `fixup` commits during work and one squash at the end:
+Rewording a non-tip commit needs both a sequence editor and a commit-message
+editor. In a non-interactive host, proceed only with reviewed portable helper
+scripts for both; do not embed platform-specific `sed -i` syntax or leave Git
+waiting for an editor.
+
+Prefer `fixup` commits during work and one confirmed autosquash at the end:
 
 ```bash
 git commit --fixup <sha>
-git rebase --autosquash origin/<default-branch>
+GIT_SEQUENCE_EDITOR=: git rebase -i --autosquash origin/<default-branch>
 ```
 
 ## Moving commits between branches

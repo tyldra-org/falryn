@@ -1,108 +1,69 @@
----
-name: typescript-advanced-types
-description: Advanced TypeScript type system—generics, conditional types, mapped types, template literals, and utility types. Use when building reusable type utilities, library APIs, or compile-time inference logic. Not for everyday idioms, tsc tuning, or React review.
----
+# Advanced TypeScript types
 
-# Advanced Types
+Use when a reusable API needs non-trivial inference, narrowing, brands, conditional or mapped types. Keep the public contract simpler than the implementation whenever possible.
 
-Type-level programming for libraries and complex inference. Keep types as simple as the problem allows; escalate complexity only when it removes real bugs.
+## Escalation order
 
-For implementation patterns (guards, builders, branded helpers) → `modules/typescript-pro/GUIDE.md`.  
-For type-instantiation / compile cost → `modules/typescript/GUIDE.md`.
+1. Built-in utility types: `Pick`, `Omit`, `Partial`, `Required`, `Readonly`, `Record`, `Exclude`, `Extract`, `NonNullable`, `Parameters`, `ReturnType`, `Awaited`.
+2. Generic constraints that express the minimum capability.
+3. Discriminated unions and user-defined guards.
+4. Mapped or conditional types.
+5. Template-literal types and bounded recursion only when the API truly benefits.
 
-## When to use
-
-- Reusable generic APIs or form/config/state type systems
-- Conditional / mapped / template-literal type logic
-- Custom utility types beyond builtins
-- Type tests for public generics
-
-## Core map
-
-| Topic | Start here |
-| --- | --- |
-| Generics & constraints | Section below |
-| Conditional types / `infer` | Section below + [details.md](references/details.md) |
-| Mapped & template-literal types | Section below + [details.md](references/details.md) |
-| Builtin utilities | Section below |
-| Worked patterns (event emitter, etc.) | [details.md](references/details.md) |
-
-## Generics
+## Core patterns
 
 ```ts
-function identity<T>(value: T): T {
-  return value;
+function getProperty<T, K extends keyof T>(value: T, key: K): T[K] {
+  return value[key];
 }
 
-interface HasLength {
-  length: number;
-}
-
-function logLength<T extends HasLength>(item: T): T {
-  console.log(item.length);
-  return item;
-}
-
-function merge<T, U>(obj1: T, obj2: U): T & U {
-  return { ...obj1, ...obj2 };
-}
-```
-
-## Conditional types
-
-```ts
-type IsString<T> = T extends string ? true : false;
-type Flatten<T> = T extends Array<infer U> ? Flatten<U> : T;
-type NonNullable<T> = T extends null | undefined ? never : T;
-```
-
-Prefer named aliases for complex conditionals (compiler caching). Cap recursion; see compiler rules `type-extract-conditional-types` and `type-limit-recursion-depth`.
-
-## Mapped types
-
-```ts
-type ReadonlyDeep<T> = {
-  readonly [K in keyof T]: T[K] extends object ? ReadonlyDeep<T[K]> : T[K];
-};
+type ElementOf<T> = T extends readonly (infer Item)[] ? Item : never;
 
 type Optional<T, K extends keyof T> = Omit<T, K> & Partial<Pick<T, K>>;
+
+type EventName<Key extends string> = `${Key}Changed`;
 ```
 
-Prefer `interface` for object shapes when performance matters; use `type` for unions, mapped, and conditional forms.
+Avoid user-authored compiler intrinsics. Do not model every HTTP method, state, or field as present merely to simplify a generic constraint.
 
-## Template literal types
+## Inference and `satisfies`
+
+`satisfies` checks assignability while preserving the type TypeScript infers under the expression's contextual typing rules. It does not guarantee that every nested literal remains narrow. Verify the actual inferred type when literal preservation matters.
 
 ```ts
-type EventName<T extends string> = `on${Capitalize<T>}`;
-type PropEventSource<Type> = {
-  on<Key extends string & keyof Type>(
-    eventName: `${Key}Changed`,
-    callback: (newValue: Type[Key]) => void
-  ): void;
-};
+const routes = {
+  home: "/",
+  profile: "/profile",
+} as const satisfies Record<string, string>;
+
+type Route = (typeof routes)[keyof typeof routes];
 ```
 
-## Builtin utilities (prefer before inventing)
+## Brands and guards
 
-`Partial`, `Required`, `Readonly`, `Pick`, `Omit`, `Exclude`, `Extract`, `NonNullable`, `Record`, `ReturnType`, `Parameters`, `Awaited`.
-
-## Type testing
+A brand prevents accidental mixing after construction; it does not validate raw data.
 
 ```ts
-type AssertEqual<T, U> = [T] extends [U] ? ([U] extends [T] ? true : false) : false;
+declare const userIdBrand: unique symbol;
+type UserId = string & { readonly [userIdBrand]: true };
 
-type _ok = AssertEqual<string, string>; // true
+function parseUserId(value: string): UserId | undefined {
+  return value.length > 0 ? (value as UserId) : undefined;
+}
 ```
 
-For Vitest `expectTypeOf` workflows → `modules/typescript-expert/GUIDE.md`.
+Use predicates and assertion functions only when their implementation actually proves the promised type.
 
-## Pitfalls
+## Type tests
 
-- Prefer `unknown` over `any`
-- Avoid deep recursive / huge union types (quadratic / exponential cost)
-- Prefer discriminated unions for narrowing
-- Document non-obvious type utilities with JSDoc
+For public or complex inference, add compile-time assertions using the repository's existing type-test tool. Cover accepted and rejected calls, inferred return/property types, readonly behavior, union distribution, and recursion limits. Use `@ts-expect-error` only for a deliberate negative case and require that it fails if the error disappears.
 
-## Details
+See [validated patterns](references/patterns.md) for an event map, state-safe builder, and exact-one utility.
 
-Worked examples (typed event emitter, builders, form paths, etc.): [references/details.md](references/details.md).
+## Constraints
+
+- Prefer `unknown` to `any` at unresolved boundaries.
+- Cap recursive depth and large generated unions.
+- Name complex types for diagnostics and compiler reuse.
+- Document invariants that a type cannot express at runtime.
+- Measure checker cost before weakening a useful contract.

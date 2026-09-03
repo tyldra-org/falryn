@@ -1,64 +1,37 @@
----
-name: nextjs-react-typescript
-description: TypeScript conventions for Next.js App Router, React Server Components, Shadcn/Radix, and Tailwind. Use when building or refactoring Next.js apps, choosing client vs server components, or typing App Router data flows.
----
+# Next.js App Router and TypeScript
 
-# Next.js + React + TypeScript
+Use for App Router projects. Inspect the installed Next.js and React versions, route conventions, rendering mode, and repository stack before choosing APIs.
 
-Conventions for App Router projects. Prefer the repo's existing UI stack; only introduce Shadcn/Radix/Tailwind/`nuqs` when already present or explicitly requested.
+## Framework conventions first
 
-For React anti-pattern review → `modules/typescript-react-reviewer/GUIDE.md`.  
-For general TS idioms → `modules/typescript-best-practices/GUIDE.md`.
+- App Router convention files such as `page`, `layout`, `loading`, `error`, and `not-found` use the exports required by the installed framework, including required default component exports.
+- Prefer named exports for ordinary feature modules only when repository conventions permit them.
+- Default to Server Components where the installed framework supports them; add a client boundary only for client-side state, effects, events, browser APIs, or client-only libraries.
+- Keep client boundaries narrow and pass only serializable values across server/client boundaries.
 
-## Structure & style
+## Data and input
 
-- Concise TypeScript; functional components; named exports
-- Directories: `lowercase-with-dashes`
-- File order: exported component → subcomponents → helpers → types
-- Descriptive booleans: `isLoading`, `hasError`
-- Prefer `interface` for component props; unions via `type`
-- Avoid enums; use const objects / string unions
-- Prefer `function` declarations for top-level components/helpers
+- Follow current caching, revalidation, actions, route-handler, params, and search-param contracts for the installed version.
+- Validate route, query, form, header, cookie, body, storage, and external-service input at runtime.
+- Keep authorization and mutation checks on the trusted server boundary; client visibility is not authorization.
+- Avoid mirroring server data into client state unless it has an intentionally separate editable lifecycle.
 
-## TypeScript
+## Structure
 
-- Type all exports; explicit props (`{ prop }: Props`), not `React.FC`
-- Validate external input (route params, searchParams, body) at boundaries
-- Colocate types with the feature; share only stable contracts
+- Match existing directories, naming, styling, component libraries, and URL-state tools.
+- Colocate feature-specific types; share only stable contracts.
+- Keep runtime-sensitive imports on the correct server, edge, or client side.
+- Treat route metadata, static generation, dynamic rendering, and middleware as version-sensitive APIs.
 
-## Server vs client
+## Review checklist
 
-- Default to Server Components
-- Add `'use client'` only for Web APIs, interactivity, or browser-only libs
-- Keep client leaves small; don't fetch in client just to use hooks
-- Wrap slow client trees in `<Suspense>` with a real fallback
-- `next/dynamic` for non-critical client bundles
+- Required framework exports and filenames are correct.
+- Server/client boundaries minimize shipped JavaScript without blocking needed interaction.
+- Secrets and privileged dependencies cannot enter client bundles.
+- Loading, error, empty, not-found, and mutation states are visible and accessible.
+- Streaming and suspense boundaries have useful fallbacks and stable promise ownership.
+- Cache behavior and invalidation match the mutation contract.
+- Images, fonts, and dynamic imports follow the installed framework's supported path.
+- Build, typecheck, route tests, and relevant browser behavior were validated through repository commands.
 
-## Data & URL state
-
-- Follow current Next.js App Router data-fetching / caching guidance for the installed version
-- Prefer server-side data loading; pass serializable props to clients
-- If the project uses `nuqs`, keep URL state typed there instead of ad-hoc parsers
-
-## UI
-
-- Mobile-first Tailwind when the project already uses it
-- Compose Shadcn/Radix primitives; don't re-skin unless asked
-- Images: sized, lazy where appropriate, modern formats via `next/image`
-
-## Performance checklist
-
-- [ ] Minimal `'use client'` surface
-- [ ] No unnecessary `useEffect` / mirrored server state
-- [ ] Suspense boundaries around heavy client islands
-- [ ] Images optimized
-- [ ] Bundle: avoid app-wide barrels
-
-## Do / don't
-
-| Do | Don't |
-| --- | --- |
-| RSC by default | `'use client'` on layouts that don't need it |
-| Typed props + boundary validation | `any` for `params` / `searchParams` |
-| Named exports | Default-export soup in features |
-| Match existing stack | Add Shadcn/Radix/`nuqs` unprompted |
+Use [React review](../typescript-react-reviewer/GUIDE.md) for hooks and state defects, [TypeScript core](../typescript-best-practices/GUIDE.md) for language boundaries, and current official documentation for exact Next.js APIs.

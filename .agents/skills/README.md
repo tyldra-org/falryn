@@ -8,14 +8,19 @@ guidance. `AGENTS.md` points here first.
 
 | Tier | Skills | Content | Where users get them |
 | --- | --- | --- | --- |
-| **Universal** | `git-workflow`, `gh-cli`, `change-review`, `engineering-best-practices` | No product or repo names; reusable in any repository | Vendored in `falryn/.agents/skills/` |
-| **Stack** | `typescript-best-practices`, `opentui-best-practices` | TypeScript and terminal-UI guidance | Vendored in this repository |
+| **Portable universal** | `git-workflow`, `gh-cli`, `change-review`, `engineering-best-practices` | No product or repository policy; reusable across projects | Vendored in `.agents/skills/` |
+| **Portable stack** | `typescript-best-practices`, `opentui-best-practices` | Version-aware TypeScript and terminal-UI guidance without Falryn policy | Vendored in `.agents/skills/` |
 | **Falryn workflow** | `falryn-workflow` | Maintainer modes, issue ownership, project orientation, and next-step routing | Vendored here and synchronized with the maintainer-global copy |
 
-Universal skills must not mention Falryn, its organization, or local process.
-Stack skills may describe their technology, but must remain useful outside this
-repository. `falryn-workflow` is the deliberate project-specific exception.
-Keep repository-local rules outside the portable skills.
+All six portable skills must remain useful outside Falryn and must not contain
+Falryn, organization, maintainer-home, or repository-local policy. Stack skills
+may describe their technology. `falryn-workflow` is the sole deliberate
+project-specific exception.
+
+Each bundle has one compact `SKILL.md` router. Deep references are retained only
+when they own a distinct concern. The TypeScript bundle consolidates overlapping
+source material into six focused modules; the OpenTUI bundle keeps the complete
+version-pinned upstream MDX snapshot plus three non-duplicating practice guides.
 
 **Precedence in this checkout:** system and user instructions → repository-local
 `AGENTS.md` / `CONTRIBUTING.md` → relevant vendored skill → personal or global
@@ -45,13 +50,18 @@ When maintaining a synchronized skill in personal `~/.agents/skills/` and
 shipping it to users, run from this directory:
 
 ```bash
-./sync-from-global.sh          # preview content changes (ignores Finder metadata)
-# Review the itemized diff, then apply it deliberately:
-./sync-from-global.sh --apply
+./validate-bundles.py              # validate committed structure and routes
+./validate-bundles.test.py         # run focused positive and negative cases
+./validate-bundles.py --source ~/.agents/skills  # include exact source parity
+./sync-from-global.sh              # preview itemized content changes
+./sync-from-global.test.sh         # isolated missing/preview/apply/check tests
+./sync-from-global.sh --apply      # synchronize, then verify exact parity
+./sync-from-global.sh --check      # verify parity without mutation
 ```
 
-`--apply` uses `rsync --delete`; review the preview before applying it. The
-helper syncs the six portable skills and the project-specific
-`falryn-workflow` package. Do not add Falryn text to the portable skills.
+The helper preflights all seven source bundles and their declared identities
+before any destination mutation. `--apply` uses `rsync --delete`, excludes
+Finder metadata, and finishes with a recursive parity check. It fails rather
+than silently skipping a missing bundle. Review the preview before applying.
 
 The committed copy is canonical for people using this repository.

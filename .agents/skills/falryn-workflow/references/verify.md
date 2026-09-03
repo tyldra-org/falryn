@@ -1,28 +1,9 @@
-# Verify
+# Verify delta
 
-Read the Verify section of the canonical Development contract before acting.
-Verification is a fresh, read-only audit; do not silently repair missing
-behavior or broaden scope.
+Canonical owner: [`DEVELOPMENT.md#verify-mode`](https://github.com/tyldra-org/falryn-docs/blob/main/DEVELOPMENT.md#verify-mode).
 
-Review is complementary, not a synonym: use [Review](review.md) when the user
-asks for an exact file/diff inventory, code-review findings, and blast-radius
-assessment. Verify establishes delivery readiness against the issue and
-complete bundle.
+Verify reads product source, docs, diffs, checks, artifacts, and exact revisions without changing them. It may mutate only the issue/Roadmap governance state explicitly required by the canonical Verify contract, such as reopening an incomplete owner, reconciling post-merge status, recording a missing PR-sized gap, or closing a fully proven parent.
 
-Choose the scope the target names:
+For a PR, verify the complete delivery bundle and preview every repository, head SHA, docs-first order, final squash subject/footer choice, and safe checkout synchronization. Do not merge. Any later revision or precondition change requires a fresh Verify.
 
-- **Delivery PR:** audit the complete PR: its issue, full diff, delivery owner,
-  checks, review findings, documentation impact, and merge readiness. Preview
-  its exact squash subject and optional footer, plus safe post-merge checkout
-  synchronization.
-- **PR-sized issue, parent, milestone, or range:** compare the actual
-  implementation against the selected acceptance scope, including required
-  children, integration, recovery, security, resource, projection,
-  documentation, and release criteria as applicable.
-
-Record an implementation gap in its right owner. Code fixes require an explicit
-Implement request, except within Deliver's correction loop. A passing Verify
-may suggest Merge but never authorizes it.
-
-Read [Corrections](corrections.md) for an observed gap, and
-[Reporting](reporting.md) for the next prompt.
+A gap is not silently fixed in Verify; route it through [corrections](corrections.md).

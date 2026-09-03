@@ -1,22 +1,14 @@
-# Merge
+# Merge delta
 
-Merge is a separate, explicit manual action. Read the Merge requirements in the
-canonical Development contract and the exact current Verify result first.
+Canonical owner: the Merge authorization and bundle contract in [`DEVELOPMENT.md#recognized-prompt-forms`](https://github.com/tyldra-org/falryn-docs/blob/main/DEVELOPMENT.md#recognized-prompt-forms).
 
-Merge only when the user sent Merge — Target: PR #N and the named PR has a
-fresh passing Verify that previewed its exact squash subject, optional footer,
-and available local checkouts.
+Do not use this page as a standalone merge checklist. Load `gh-cli` and execute the canonical full-bundle algorithm:
 
-Before merging, re-read the PR head, required check, review, mergeability
-result, repository setting, previewed checkout, and default branch.
-Any change invalidates the preview: stop and require a fresh Verify.
+- require a fresh passing Verify preview for the exact resolved bundle;
+- treat the recognized Merge selector or unmistakable natural-language equivalent as confirmation only for that unchanged preview;
+- re-read every head, check, review, ruleset, mergeability result, companion, order, message, checkout, and default branch;
+- merge companions first and the application PR last;
+- stop on first unexpected result and report partial delivery exactly;
+- reconcile GitHub state, then safely synchronize eligible clean checkouts.
 
-- Squash merge when it is enabled. Keep the reviewed PR title as the
-  conventional-commit subject; do not invent a body.
-- Reconcile closed issues, Project status, parent progress, documentation, and
-  CURRENT-STATE.md after the complete bundle lands.
-- Only then return each available clean, attached checkout to its fetched
-  default branch with fast-forward-only semantics. Never stash, reset, rebase,
-  force, or discard work to make synchronization succeed.
-
-Read [Reporting](reporting.md) before finishing.
+Any changed precondition invalidates the preview and returns to Verify.

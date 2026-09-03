@@ -1,108 +1,51 @@
----
-name: typescript-docs
-description: Generate TypeScript documentation with JSDoc, TypeDoc, and ADRs. Use when documenting public APIs, setting up docs CI, writing architectural decision records, or applying framework-specific doc patterns (NestJS, Express, React, Angular, Vue).
----
+# TypeScript documentation
 
-# TypeScript Documentation
+Document public contracts, behavior, failure, and decisions without duplicating the implementation.
 
-Layered docs: JSDoc in source → TypeDoc for API reference → ADRs for decisions.
+## Choose the owner
 
-## Quick reference
-
-| Tool | Purpose | Command |
-| --- | --- | --- |
-| TypeDoc | API docs | `npx typedoc` |
-| ESLint JSDoc | Validate comments | project eslint / `eslint --ext .ts src/` |
-| Compodoc | Angular docs | `npx compodoc -p tsconfig.json` |
-
-Useful tags: `@param`, `@returns`, `@throws`, `@example`, `@remarks`, `@see`, `@deprecated`.
+| Need | Owner |
+| --- | --- |
+| exported symbol contract and non-obvious invariant | source JSDoc/TSDoc |
+| generated API navigation | TypeDoc or repository-selected generator |
+| durable architectural decision and trade-offs | ADR |
+| user task or operational flow | repository documentation |
+| implementation evidence | tests, issue, or pull-request record—not prose claims |
 
 ## Workflow
 
-### 1. TypeDoc
+1. Inspect the current public exports, docs tooling, repository conventions, and installed versions.
+2. Document why, constraints, failure, examples, and migration—not restated syntax.
+3. Keep examples minimal, typed, secret-free, and runnable when practical.
+4. Use the repository's existing generator and lint rules. Consult maintained documentation matching the installed TypeDoc, JSDoc plugin, framework, and CI versions before adding configuration.
+5. Generate or validate docs with repository commands and inspect the rendered result or output diff.
 
-```bash
-npm install --save-dev typedoc typedoc-plugin-markdown
-```
-
-```json
-{
-  "entryPoints": ["src/index.ts"],
-  "out": "docs/api",
-  "plugin": ["typedoc-plugin-markdown"],
-  "excludePrivate": true,
-  "readme": "README.md"
-}
-```
-
-### 2. JSDoc on public surface
+## Public API comments
 
 ```ts
 /**
- * Authenticates a user and returns access tokens.
+ * Parses one external account payload.
  *
- * @param credentials - Login credentials
- * @returns Authentication result with tokens
- * @throws {InvalidCredentialsError} When credentials are invalid
- *
- * @example
- * ```ts
- * const token = await authService.login(email, password);
- * ```
+ * @param input - Untrusted value from the transport boundary.
+ * @returns A validated account or a typed rejection.
+ * @remarks Does not persist or authorize the account.
  */
-export async function login(
-  credentials: LoginCredentials
-): Promise<AuthResult> {
-  // ...
+export function parseAccount(input: unknown): ParseResult<Account> {
+  // implementation
 }
 ```
 
-Document **why**, generics constraints, and errors—not obvious getters.
-
-### 3. ADR
-
-```markdown
-# ADR-001: Title
-
-## Status
-Accepted
-
-## Context
-What forces the decision?
-
-## Decision
-What we will do.
-
-## Consequences
-What gets easier / harder.
-```
-
-### 4. CI
-
-Generate + validate docs on `src/**` and `docs/**` changes. Prefer existing project workflows over inventing new ones.
-
-### 5. Validate
-
-Enable JSDoc ESLint rules the repo already uses (or add minimal `jsdoc/require-*` rules). Fix until clean before shipping.
-
-## Examples
-
-See [references/examples.md](references/examples.md) for React hooks, utilities, and NestJS controllers.
-
-## Practices
-
-1. Public APIs only (exclude private via TypeDoc / `@internal`)
-2. Runnable `@example` blocks for non-trivial APIs
-3. `@throws` + `@deprecated` with migration notes
-4. Never put secrets in docs
-5. Keep docs in the same PR as behavior changes
+Document thrown errors only when throwing is part of the contract. Use `@deprecated` with a replacement and removal/migration expectation. Avoid comments for obvious getters or parameter names.
 
 ## References
 
-- [jsdoc-patterns.md](references/jsdoc-patterns.md)
-- [framework-patterns.md](references/framework-patterns.md)
-- [adr-patterns.md](references/adr-patterns.md)
-- [pipeline-setup.md](references/pipeline-setup.md)
-- [validation.md](references/validation.md)
-- [typedoc-configuration.md](references/typedoc-configuration.md)
-- [examples.md](references/examples.md)
+- [JSDoc and API comments](references/jsdoc.md)
+- [Architecture decisions](references/adrs.md)
+- [Framework-facing documentation](references/frameworks.md)
+
+## Guardrails
+
+- Never invent performance, security, adoption, or maintenance measurements.
+- Never copy stale CI action versions or removed generator options into reusable guidance.
+- Keep secrets, live tokens, private URLs, and personal data out of examples.
+- Public docs ship with behavior changes when they are part of the same delivery outcome; repository-specific cross-repository ordering belongs to that repository's workflow.
