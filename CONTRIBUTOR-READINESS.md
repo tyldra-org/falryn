@@ -41,13 +41,20 @@ block the owner.
 
 ## Triage contract
 
-Every valid report is triaged into the Falryn Roadmap with exactly one owner,
-one Status, one work-type label, at least one area label, and either a native
-parent or explicit Standalone relationship. The `Issue governance` workflow
-reminds maintainers about repository-owned assignee and label metadata; it never
-invents them. Because a repository-scoped `GITHUB_TOKEN` cannot read the private
-organization Project, Roadmap membership, Status, and hierarchy are verified by
-private Project automation and the repository-owned maintainer audit:
+Every valid report is triaged into the Falryn Roadmap exactly once with one
+owner, one milestone, one Status, one P0–P3 Priority, current Readiness, one
+work-type label, at least one area label, and either a native parent or explicit
+Standalone relationship. Priority expresses urgency; Readiness records whether
+the current issue contract is executable without invention; native blockers
+remain the hard dependency authority. A Standalone declaration uses the
+whole-line issue-form value `Standalone` or the exact durable marker `Planning
+relationship: Standalone-v1.` Descriptive, negated, legacy ownership, or
+incidental prose does not count. The
+`Issue governance` workflow reminds maintainers about
+repository-owned assignee and label metadata; it never invents them.
+
+Two repository-owned audits cover different boundaries. The issue-body audit
+checks the current Falryn implementation handoff:
 
 ```bash
 bun run audit:issues -- --live tyldra-org/falryn \
@@ -56,15 +63,41 @@ bun run audit:issues -- --live tyldra-org/falryn \
   --snapshot-out /tmp/falryn-issue-readiness.json
 ```
 
-Live mode uses the active `gh` authentication and requires access to the private
-Roadmap. It emits exact issue-number diagnostics and never receives a token in
-argv. Keep snapshots local: they contain issue bodies and Project metadata.
-Re-run deterministically without network access using `--snapshot <path>`;
-add `--baseline <previous-path>` to detect a title or milestone change whose
-body was not reconciled. `--docs-root` verifies canonical documentation paths
-against a checked-out Falryn Docs tree. The audit checks metadata, hierarchy,
-body bounds and markers, blockers, cycles, canonical paths, and docs-only
-completion wording; it never mutates GitHub.
+The cross-repository Roadmap audit checks all open and closed Falryn and Falryn
+Docs issues, Project membership, Status, Priority, Readiness, linked-pull-request
+liveness, and the exact derived delivery sequence:
+
+```bash
+bun run audit:roadmap -- \
+  --live tyldra-org/falryn \
+  --live tyldra-org/falryn-docs \
+  --project-owner tyldra-org --project-number 1 \
+  --snapshot-out /tmp/falryn-roadmap-governance.json
+```
+
+Live mode requires exactly the Falryn and Falryn Docs repositories, uses active
+`gh` authentication, and requires access to the private Roadmap. It emits
+repository-qualified issue diagnostics and never receives a token in argv.
+Snapshot parsing rejects omitted or out-of-scope repository or Project issue
+items, invalid or future observations, and contradictory state. Timestamp order
+uses normalized instants. Keep snapshots local: they contain issue bodies and Project
+metadata. Re-run deterministically without network access using `--snapshot
+<path>`. The Roadmap report reconciles milestone and relationship state,
+requires reciprocal open native hierarchy, uses native blockers for a
+topological order, and then resolves eligible ties by active delivery, approved
+P0, milestone, Priority, open transitive dependents, creation time, repository,
+and issue number. Any diagnostic suppresses the sequence. It never uses board
+position or update recency and never mutates GitHub.
+
+An issue with an open blocker remains Todo. A leaf may have at most one open
+closing pull request and is In Progress while it is open. A parent never owns a
+closing pull request, becomes In
+Progress when a child starts or closes, and remains there through integrated
+verification after the final child closes. An open leaf may remain In Progress
+without an open linked closing pull request for at most seven calendar days
+after the Status transition. Closed issues retain recorded P0–P3 values; a
+previously unset closed issue uses the non-ranking Historical value rather than
+an invented past priority.
 
 Pull requests link an issue, explain scope, validation, documentation impact,
 and risk. Automation applies changed-file area labels, exactly one `size: *`

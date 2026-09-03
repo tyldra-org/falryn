@@ -18,7 +18,7 @@ function issue(overrides: Partial<IssueReadinessIssue> = {}): IssueReadinessIssu
       "",
       "## Relationship",
       "",
-      "Standalone roadmap-maintenance issue.",
+      "Planning relationship: Standalone-v1.",
       "",
       "## Completion proof",
       "",
@@ -71,11 +71,37 @@ describe("issue readiness audit", () => {
     const blocker = issue({ number: 3, title: "Blocker" });
     const accepted = issue({
       number: 4,
-      body: "## Outcome\n\nStandalone qualification.\n\n## Accepted terminal outcomes\n\nAccepted or rejected with evidence.",
+      body: "## Outcome\n\nStandalone qualification.\n\nPlanning relationship: Standalone-v1.\n\n## Accepted terminal outcomes\n\nAccepted or rejected with evidence.",
     });
 
     expect(auditIssueReadiness(snapshot([blocker, child, parent, accepted]))).toEqual([]);
     expect(auditIssueReadiness(snapshot([accepted, parent, child, blocker]))).toEqual([]);
+  });
+
+  test("does not accept noncanonical or negated Standalone text as a relationship", () => {
+    for (const declaration of [
+      "Standalone is not the issue relationship.",
+      "Standalone isn't the issue relationship.",
+      "Standalone does not apply.",
+      "Standalone: not applicable.",
+      "Standalone cannot apply.",
+      "Standalone no longer applies.",
+      "Standalone is no longer applicable.",
+      "Standalone should not apply.",
+      "Standalone must not apply.",
+      "Standalone no.",
+      "Standalone false.",
+      "Standalone work is not the issue relationship.",
+      "Standalone-v1.",
+      "Delivery role: Standalone-v1.",
+      "standalone",
+      "-Standalone",
+    ]) {
+      const negated = issue({
+        body: issue().body.replace("Planning relationship: Standalone-v1.", declaration),
+      });
+      expect(codes(snapshot([negated]))).toContain("planning-relationship-missing");
+    }
   });
 
   test("rejects malformed or duplicate snapshot identities", () => {
@@ -112,18 +138,18 @@ describe("issue readiness audit", () => {
   test("detects dependency cycles and blocker prose drift", () => {
     const first = issue({
       number: 1,
-      body: "## Outcome\n\nBlocked by #2 and #3.\n\nStandalone issue.\n\n## Completion proof\n\nComplete.",
+      body: "## Outcome\n\nBlocked by #2 and #3.\n\nPlanning relationship: Standalone-v1.\n\n## Completion proof\n\nComplete.",
       blockedBy: [{ number: 2, state: "OPEN" }],
     });
     const second = issue({
       number: 2,
-      body: "## Outcome\n\nIssue #2 is blocked by #1.\n\nStandalone issue.\n\n## Completion proof\n\nComplete.",
+      body: "## Outcome\n\nIssue #2 is blocked by #1.\n\nPlanning relationship: Standalone-v1.\n\n## Completion proof\n\nComplete.",
       blockedBy: [{ number: 1, state: "OPEN" }],
     });
     const third = issue({ number: 3 });
     const unrelated = issue({
       number: 4,
-      body: "## Outcome\n\n#99 is blocked by #100.\n\nStandalone issue.\n\n## Completion proof\n\nComplete.",
+      body: "## Outcome\n\n#99 is blocked by #100.\n\nPlanning relationship: Standalone-v1.\n\n## Completion proof\n\nComplete.",
     });
 
     expect(codes(snapshot([first, second, third, unrelated]))).toEqual([
@@ -191,7 +217,8 @@ describe("issue readiness audit", () => {
       body: [
         "## Outcome",
         "",
-        "Standalone. Use [Errors](https://github.com/tyldra-org/falryn-docs/blob/main/reference/ERRORS.md).",
+        "Planning relationship: Standalone-v1.",
+        "Use [Errors](https://github.com/tyldra-org/falryn-docs/blob/main/reference/ERRORS.md).",
         "Use [Missing](https://github.com/yogeshprasad098/falryn-docs/blob/main/guides/MISSING.md).",
         "",
         "## Completion proof",
@@ -204,7 +231,7 @@ describe("issue readiness audit", () => {
       documentationPaths: new Set(["reference/ERRORS.md"]),
     });
     expect(diagnostics).toEqual([
-      expect.objectContaining({ code: "canonical-document-missing", issueNumber: 1 }),
+      expect.objectContaining({ code: "canonical-document-owner-invalid", issueNumber: 1 }),
     ]);
   });
 
