@@ -42,6 +42,8 @@ gh issue edit 123 --repo OWNER/REPO \
 
 Use `--template`, `--assignee`, `--type`, and `--project` only when the repository supports them. Supply multiline Markdown through a validated body file or validated stdin artifact, not an interpolated shell string.
 
+Current CLI versions can upload images or video with `--attach`. Validate file type, size, privacy, alt text, and whether the media itself contains secrets or personal data. Attachment upload is not atomic: an issue may be created or edited with a subset of files even when the command exits nonzero. Capture the printed URL, re-read the issue, and use the command's recovery support only after verifying the partial result.
+
 Before replacing an existing body, retain the pre-image, render and inspect the full candidate, then re-read the issue after writing. Never pipe an unchecked transform into `gh issue edit --body-file -`; follow [Remote body and metadata safety](../SKILL.md#remote-body-and-metadata-safety).
 
 ## Native hierarchy and dependencies
@@ -80,6 +82,7 @@ gh issue status --repo OWNER/REPO
 gh issue comment 123 --repo OWNER/REPO --body-file -
 gh issue close 123 --repo OWNER/REPO --reason completed
 gh issue close 123 --repo OWNER/REPO --reason "not planned"
+gh issue close 123 --repo OWNER/REPO --duplicate-of 456
 gh issue reopen 123 --repo OWNER/REPO
 gh issue transfer 123 NEW-OWNER/NEW-REPO --repo OWNER/REPO
 gh issue lock 123 --repo OWNER/REPO --reason spam
@@ -88,7 +91,9 @@ gh issue pin 123 --repo OWNER/REPO
 
 Closing, locking, pinning, transferring, deleting, or bulk-changing issues requires exact targets and post-write verification. Transfer can break repository-scoped milestones, labels, links, and automation; inspect both sides first.
 
-Use `duplicate`, `not planned`, and completion reasons truthfully. Never close an issue merely because its milestone moved or its Project item was archived.
+Use duplicate, not-planned, and completion reasons truthfully. A duplicate must name the canonical issue, not only carry a label or comment. Never close an issue merely because its milestone moved or its Project item was archived.
+
+`gh issue edit` can target several issues in one repository. Treat that as a batch: materialize the exact numbers, confirm the shared mutation is correct for every item, and verify each result separately.
 
 Comments, reactions, events, and timeline items are distinct records. Use `gh issue comment` for discussion; use documented API endpoints for reactions or timeline inspection. Editing another person's content, deleting comments, or mass-reacting is socially consequential and requires exact authorization.
 

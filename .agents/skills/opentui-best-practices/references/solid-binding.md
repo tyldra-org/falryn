@@ -50,9 +50,16 @@ bounded state updates.
 
 ## Root lifecycle
 
-Create one Solid root per renderer ownership boundary. Dispose the root before
-destroying the renderer. Nested roots and plugin slots need independent owners
-only when their lifetimes can actually diverge.
+Create one Solid root per renderer ownership boundary. `render()` resolves after
+the initial mount and does not return a disposer. When the caller passes a
+renderer, that caller owns `renderer.destroy()`. Renderer destruction disposes
+the Solid root, runs `onCleanup` callbacks, and removes binding subscriptions.
+Do not invent a separate root-disposal path.
+
+When `render()` creates a renderer from configuration instead, application
+shutdown must reach that renderer through the supported binding API. Nested
+roots and plugin slots need independent owners only when their lifetimes can
+actually diverge.
 
 When changing bindings, migrate one tree owner at a time. Remove React-specific
 or Core-specific adapters after the Solid path owns every caller.
@@ -63,5 +70,6 @@ or Core-specific adapters after the Solid path owns every caller.
 - Reactive evaluation contains no blocking or hidden external work.
 - Subscriptions and retained resources register cleanup with that owner.
 - Handlers read current state without maintaining a second mutable copy.
-- The root is disposed before renderer destruction.
+- The renderer owner destroys it on every exit path, which disposes the Solid
+  root and its cleanup callbacks.
 - React lifecycle assumptions have not been copied into Solid code.

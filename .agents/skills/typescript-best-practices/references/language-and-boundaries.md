@@ -125,6 +125,19 @@ function requiredPort(value: unknown): number {
 }
 ```
 
+## Own disposable resources
+
+Keep acquisition and cleanup in the same lexical owner. When the selected
+compiler, transform, runtime, and dependency contract support explicit resource
+management, `using` and `await using` can encode that ownership. Otherwise use a
+visible `try` and `finally` path.
+
+Do not add disposal syntax merely because TypeScript accepts it. Verify the
+runtime support or emitted helper path, the object's `Symbol.dispose` or
+`Symbol.asyncDispose` behavior, cleanup order, and what happens when both the
+body and disposal fail. Resources transferred to another owner must leave the
+current scope deliberately rather than being disposed on exit.
+
 ## Review checks
 
 - Every assertion is backed by a nearby invariant or unavoidable foreign API.
@@ -132,4 +145,5 @@ function requiredPort(value: unknown): number {
 - Indexed access and nullable values are safe under the effective strict flags.
 - Domain identifiers cannot be mixed accidentally where the cost would matter.
 - Public exports and module side effects are intentional.
+- Disposable resources have one owner and a tested cleanup path.
 - Rejected input and error identity are tested.

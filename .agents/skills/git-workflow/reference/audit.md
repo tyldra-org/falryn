@@ -4,27 +4,30 @@ Repository hygiene: what's leaking, what's bloating, what's stale.
 
 ## Secret scan
 
+Use the repository's configured secret scanner across the working tree and reachable history, with redaction enabled. A hand-written keyword search is only a triage aid; it misses many credential formats and produces false positives. Do not print a suspected secret merely to prove it matched.
+
 ```bash
-git grep -nEI '(api[_-]?key|secret|password|token|BEGIN [A-Z ]*PRIVATE KEY|aws_access_key_id)' -- . ':!*.lock' ':!*test*'
-git log --all --diff-filter=A --name-only --pretty=format: | sort -u | grep -Ei '\.(env|pem|p12|key|jks)$|credentials|id_rsa'
+git grep -IlE '(api[_-]?key|secret|password|token|BEGIN [A-Z ]*PRIVATE KEY|aws_access_key_id)' -- .
+git log --all --diff-filter=A --name-only --pretty=format: \
+  | sort -u | rg -i '\.(env|pem|p12|key|jks)$|credentials|id_rsa'
 ```
 
-Scan history, not just the working tree — a file deleted three commits ago is still in every clone.
+Scan history, not just the working tree. A file deleted three commits ago remains in existing clones and any reachable remote history.
 
 Also check what's *tracked* that shouldn't be:
 
 ```bash
-git ls-files | grep -Ei '^\.env|\.pem$|\.p12$|credentials\.json|id_rsa'
+git ls-files | rg -i '^\.env|\.pem$|\.p12$|credentials\.json|id_rsa'
 ```
 
 ## Secret-leak response
 
 Order matters. Getting it wrong wastes the window when it counts.
 
-1. **Rotate the credential. Immediately, before anything else.** Assume it is compromised the moment it hit a remote — bots scrape public pushes within seconds, and it's in every clone, every fork, every CI log, and the remote's reflog. History rewriting does not un-leak it.
+1. **Rotate the credential immediately.** Assume exposure once it reached a remote or log. History rewriting does not revoke it.
 2. **Check for use.** Provider audit logs, unexpected API calls, unfamiliar IPs.
 3. **Stop the bleeding.** Add the path to `.gitignore`; `git rm --cached <path>`; commit.
-4. **Then**, and only if the user wants it, purge from history — [rewrite.md](rewrite.md#repo-wide-history-rewriting). Explain the cost first: every clone breaks, every open PR breaks, every SHA in a ticket goes stale.
+4. **Then**, and only if the user wants it, purge from history; [rewrite.md](rewrite.md#repo-wide-history-rewriting). Explain the cost first: clones need coordination, affected PRs and comparisons may break, and rewritten SHAs in external records go stale.
 5. **Ask the host to expire cached views.** On GitHub, force-pushed and dangling commits stay reachable by SHA until support purges them. The rewrite alone leaves the secret fetchable.
 6. **Record it.** What leaked, when, rotated when, purged or not.
 
@@ -41,7 +44,7 @@ du -sh .git
 
 A `.git` much larger than the checkout means history carries something the working tree doesn't. Candidates for Git LFS or for removal from history.
 
-Committed binaries are permanent by default — every clone downloads every version forever. Catch them before commit ([commit.md](commit.md)), not in an audit six months later.
+Committed binaries are permanent by default; every clone downloads every version forever. Catch them before commit ([commit.md](commit.md)), not in an audit six months later.
 
 ## Ignore rules
 
@@ -52,26 +55,26 @@ git check-ignore -v <path>           # why is this ignored
 
 Check that `.gitignore` covers: build output, dependency dirs, editor state (`.idea/`, `.vscode/` unless shared), OS files (`.DS_Store`, `Thumbs.db`), local env (`.env*`, `!.env.example`), coverage, caches, logs.
 
-`.env.example` should be tracked and should contain **no real values** — placeholder strings only. It's the most common accidental-leak path because it looks safe.
+`.env.example` should be tracked and should contain **no real values**; placeholder strings only. It's the most common accidental-leak path because it looks safe.
 
 ## Stale branches
 
 ```bash
 git fetch --prune
-git branch -vv | grep ': gone]'                                   # remote deleted
-git for-each-ref --sort=committerdate refs/remotes/origin --format='%(committerdate:short) %(refname:short)' | head -20
+git branch -vv | rg ': gone]'                                     # remote deleted
+git for-each-ref --sort=committerdate refs/remotes/<remote> --format='%(committerdate:short) %(refname:short)' | head -20
 ```
 
-Report the list with ages. Never bulk-delete — each deletion is its own ask, and each needs the unlanded-commit check from [branch.md](branch.md#deleting).
+Report the list with ages. Never bulk-delete; each deletion is its own ask, and each needs the unlanded-commit check from [branch.md](branch.md#deleting).
 
 ## Line endings
 
 ```bash
 cat .gitattributes 2>/dev/null
-git ls-files --eol | grep -v 'i/lf' | head
+git ls-files --eol | rg -v 'i/lf' | head
 ```
 
-A repo with no `.gitattributes` and mixed-OS contributors gets whole-file phantom diffs. The fix is `* text=auto eol=lf` in `.gitattributes` plus a one-time renormalization (`git add --renormalize .`) — flag it, don't do it unasked; it touches every file.
+A repo with no `.gitattributes` and mixed-OS contributors gets whole-file phantom diffs. The fix is `* text=auto eol=lf` in `.gitattributes` plus a one-time renormalization (`git add --renormalize .`); flag it, don't do it unasked; it touches every file.
 
 ## Signing
 
@@ -80,16 +83,12 @@ git config --get commit.gpgsign
 git log --show-signature -3
 ```
 
-If the repo signs, keep signing. If the branch protection requires signatures, an unsigned commit will be rejected at push time — check before, not after.
+If the repo signs, keep signing. If the branch protection requires signatures, an unsigned commit will be rejected at push time; check before, not after.
 
 ## Config sanity
 
-```bash
-git config --list --local
-```
-
-Watch for: a `user.email` that leaks a personal address into a work repo (or vice versa), `push.default = matching`, credentials in a remote URL (`https://user:token@host/...` — a leak sitting in `.git/config`).
+Query relevant local keys with `--show-origin` rather than dumping unrelated configuration. Watch for a `user.email` that crosses personal and work identities, `push.default=matching`, unsafe hooks or filters, and credentials embedded in remote URLs. Redact any credential before reporting the URL.
 
 ## Health summary
 
-Report as findings, severity-ordered. Do not fix anything during an audit — an audit that edits is a refactor with no review.
+Report as findings, severity-ordered. Do not fix anything during an audit; an audit that edits is a refactor with no review.

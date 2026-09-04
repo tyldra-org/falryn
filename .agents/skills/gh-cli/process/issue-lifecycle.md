@@ -11,7 +11,7 @@ When policy uses these fields:
 3. update an open parent only when repository rules require it;
 4. re-read issue, parent, and Project state.
 
-Resolve actual Project field and option IDs through [projects.md](projects.md); never infer them from display text alone.
+Use the readable single-item selectors or resolve Project field and option IDs through [projects.md](projects.md), depending on the installed CLI and whether the operation is scripted. Never infer an ambiguous field or option from display order.
 
 ## After merge
 

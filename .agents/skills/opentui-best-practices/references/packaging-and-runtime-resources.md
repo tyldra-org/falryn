@@ -3,6 +3,9 @@
 Treat every file outside ordinary TypeScript modules as an explicit runtime
 dependency.
 
+Read [Runtime and package selection](runtime-and-package-selection.md) before
+choosing Bun, Node.js, package entry points, framework peers, or native targets.
+
 ## Resolve packaged resources
 
 Inventory native libraries, parsers, queries, workers, fonts, images, media, and
@@ -41,6 +44,11 @@ The production resolver should use the installed OpenTUI release's supported
 runtime-resource API. Run its packaging test from the built artifact while the
 source checkout is absent from the working directory.
 
+For the 0.5.10 baseline, `OTUI_ASSET_ROOT` relocates the complete runtime asset
+set and must be absolute and set before the first Core import. A nonempty value
+disables package-relative fallback. On Linux, select the required libc before
+the Core module graph evaluates. Do not mutate either setting after Core loads.
+
 ## Own native and remote sessions
 
 Native resources need explicit cleanup after success, partial startup, failure,
@@ -50,6 +58,11 @@ binary loads or that an asset was embedded, copied, executable, or discoverable.
 An SSH session owns its renderer, dimensions, input, output, subscriptions, and
 disconnect cleanup. Do not share mutable renderer state or focus between
 clients.
+
+Treat SSH exposure as a network service. The 0.5.10 SSH package defaults to open
+authentication and a loopback listener. Configure authentication, a persistent
+host key, connection limits, shutdown, and clipboard policy before binding a
+public interface. A warning is not access control.
 
 Audio, images, animation, and post-processing must degrade when the terminal or
 build lacks support. Bound queues and buffers, release native handles, and keep
@@ -63,6 +76,11 @@ set. Do not hide version mismatches behind casts or local declarations.
 
 Run typechecking and focused renderer tests first. Then build and launch the
 produced artifact on each claimed operating-system and CPU target.
+
+Node.js support is an ESM path that needs the release's minimum Node version and
+FFI flag. A TypeScript build or a successful package import does not prove the
+native renderer can start. Bun-only runtime-plugin and Three.js entry points
+must not enter a Node artifact.
 
 ## Prove distribution behavior
 

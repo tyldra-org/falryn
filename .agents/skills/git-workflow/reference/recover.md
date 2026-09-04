@@ -4,13 +4,13 @@ Getting work back. Committed or staged work is often recoverable while reflogs a
 
 ## First, stop
 
-Do not run more git commands hoping to fix it. Each one adds reflog noise, and `git gc` or another `reset` can turn recoverable into unrecoverable. Read state, then act once.
+Stop mutating the repository. Another reset, reflog expiry, maintenance run, or garbage collection can turn recoverable work into unrecoverable work. Capture read-only state first:
 
 ```bash
 git status --short --branch
 git reflog -30
 git stash list
-git fsck --lost-found 2>/dev/null | head -20
+git fsck --unreachable --no-reflogs 2>/dev/null | head -20
 ```
 
 ## The reflog is the answer to most of this
@@ -30,7 +30,7 @@ git branch recovered-<what> <sha>   # safest: a new branch, nothing else moves
 git switch recovered-<what>
 ```
 
-Always recover to a **new branch** first, inspect, then decide. Never `reset --hard` back to the lost SHA as the first move — that's another destructive operation on top of an unclear state.
+Always recover to a **new branch** first, inspect, then decide. Never `reset --hard` back to the lost SHA as the first move; that's another destructive operation on top of an unclear state.
 
 ## By symptom
 
@@ -46,45 +46,46 @@ Or, without moving anything: `git cherry-pick` the commits onto the right branch
 
 ### "I need to undo the last commit"
 
-Four different outcomes — pick deliberately:
+Four different outcomes; pick deliberately:
 
 | Want | Command | Working tree |
 |---|---|---|
 | Undo commit, keep changes staged | `git reset --soft HEAD~1` | untouched |
 | Undo commit, keep changes unstaged | `git reset HEAD~1` | untouched |
 | Undo commit, discard changes | `git reset --hard HEAD~1` | **destroyed** |
-| Undo a *published* commit | `git revert <sha>` | new commit, safe |
+| Undo a shared/default/release commit | `git revert <sha>` | new commit, preserves history |
 
-Published → `revert`, always. The other three rewrite history.
+The reset forms rewrite history. Prefer `revert` for shared, default, release, or reviewed history. Rewriting an owned published feature branch is possible only through [rewrite.md](rewrite.md) with explicit coordination and a leased force-push.
 
 ### "I ran `reset --hard` and lost work"
 
 Committed work: in the reflog, recoverable above.
 
-Uncommitted work: **gone**, unless it was ever staged. Staged content becomes a dangling blob:
+Uncommitted work may be gone unless it was staged or another tool retained it. Staged content may remain as a dangling blob until pruning:
 
 ```bash
-git fsck --lost-found
+git fsck --unreachable --no-reflogs
 git show <dangling-blob-sha>
 ```
 
-If it was never staged and never committed, git never saw it. Check the editor's local history / undo buffer instead — that's the only remaining copy.
+If it was never staged and never committed, Git cannot recover it. Check editor history, filesystem snapshots, backups, and other process state.
 
 ### "I deleted a branch"
 
 ```bash
-git reflog show <branch>            # often still works right after deletion
-git fsck --lost-found | grep commit
+git reflog --all                    # look for the deleted tip in surviving reflogs
+git fsck --unreachable --no-reflogs # inspect candidates without writing lost-found files
 git branch <branch> <sha>
 ```
 
-If the branch was pushed, `git fetch origin <branch>` may simply bring it back.
+If the branch still exists remotely, `git fetch <remote> <branch>` may bring it back.
 
 ### "I lost a stash"
 
 ```bash
-git fsck --unreachable | grep commit | cut -d' ' -f3 | xargs git log --merges --no-walk
-git stash apply <sha>
+git fsck --unreachable --no-reflogs
+git show --stat <candidate-sha>
+git stash apply <verified-stash-sha>
 ```
 
 Dropped stashes are unreachable commits and survive until `gc`.
@@ -93,24 +94,24 @@ Dropped stashes are unreachable commits and survive until `gc`.
 
 ```bash
 git rebase --abort                  # if still mid-rebase
-git reset --hard ORIG_HEAD          # if it completed — protected, back up first
+git reset --hard ORIG_HEAD          # if it completed; protected, back up first
 ```
 
 `ORIG_HEAD` holds the pre-rebase/pre-merge/pre-reset position. It's overwritten by the next such operation, so use it immediately or read the SHA off the reflog instead.
 
 ### "I force-pushed over someone's work"
 
-Their commits still exist on any machine that has them, and in the remote's reflog if the host exposes it (many forges do not). Recovery path:
+Their commits may still exist in a clone that fetched them, or in host-retained data if the provider exposes a recovery path. Recovery path:
 
-1. Ask whoever pushed to run `git reflog` locally — they almost certainly still have it.
-2. Check open pull requests on the host — some forges retain force-pushed commits in the PR timeline and they remain fetchable by SHA: `git fetch origin <sha>`.
-3. Check CI logs for the SHA, then `git fetch origin <sha>`.
+1. Ask whoever pushed to run `git reflog` locally; they almost certainly still have it.
+2. Check open pull requests on the host. Some forges retain force-pushed commits or expose pull-request refs. Fetching an arbitrary SHA may be disabled, so use the host's documented ref when available.
+3. Check CI metadata for the SHA, then recover it from a clone or documented host ref that still has the object.
 
 Report the incident plainly. Don't quietly re-push and hope.
 
 ### "I committed a secret"
 
-Do not start with history rewriting. See [audit.md](audit.md#secret-leak-response) — rotation first.
+Do not start with history rewriting. See [audit.md](audit.md#secret-leak-response); rotation first.
 
 ## Time limits
 

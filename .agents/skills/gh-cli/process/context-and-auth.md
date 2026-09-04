@@ -39,10 +39,12 @@ Scope possession does not prove repository, organization, environment, or Projec
 
 Never run `gh auth token`, print credential files, inject a token into `curl`, or place tokens in command arguments, logs, issue bodies, or scripts.
 
+Automation may receive a token through the runner's protected environment. Treat `GH_TOKEN`/`GITHUB_TOKEN` and `GH_ENTERPRISE_TOKEN`/`GITHUB_ENTERPRISE_TOKEN` as secret inputs with host-specific precedence. Never echo them, forward them to an unverified process, or persist them in Git configuration.
+
 ## Resolve repository and branch
 
 ```bash
-gh repo view HOST/OWNER/REPO \
+gh repo view https://<host>/<owner>/<repo> \
   --json nameWithOwner,defaultBranchRef,isArchived,visibility,url
 git symbolic-ref refs/remotes/origin/HEAD --short 2>/dev/null
 ```
@@ -78,6 +80,19 @@ gh ruleset --help
 
 If the installed CLI lacks a documented flag, use an official API fallback or report the version blocker. Do not approximate a native relationship with body text.
 
+GitHub.com and GitHub Enterprise Server can expose different features even with the same local CLI. Verify server capability and permissions before using issue relationships, Projects, rulesets, attestations, or previews.
+
+## API gateway configuration
+
+Recent CLI versions can set a per-host `api_host`:
+
+```bash
+gh config get api_host --host <github-host>
+gh config set api_host <gateway-host> --host <github-host>
+```
+
+This setting is experimental. It routes API traffic through a gateway but keeps the original host for authentication, Git remotes, and browser URLs, and it is not a security boundary. Changing it affects later commands for that host. Inspect current help, verify the gateway owner and TLS name, and re-read the value after an authorized change.
+
 ## Stop conditions
 
 Stop on:
@@ -88,4 +103,3 @@ Stop on:
 - archived, transferred, or renamed target not acknowledged by the user;
 - local remote and requested repository disagreement;
 - a CLI/API version difference that changes semantics.
-

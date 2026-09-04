@@ -43,7 +43,7 @@ gh ruleset view RULESET_ID --repo OWNER/REPO
 
 Rulesets and branch protection should define required reviews, status checks, signed commits, linear history, deployments, and bypass actors deliberately. Do not weaken protection to land one PR. Fix the PR or request a scoped exception.
 
-`gh ruleset list`, `check`, and `view` inspect rulesets; create, update, or delete operations may require the web UI or authenticated API. Before reporting “no rules,” distinguish an empty result from unsupported plan or host capability, insufficient permission, organization-owned policy, and an API or CLI error. Re-read the effective branch rules after every write.
+`gh ruleset list`, `check`, and `view` inspect rulesets; create, update, or delete operations may require the web UI or authenticated API. Before reporting "no rules," distinguish an empty result from unsupported plan or host capability, insufficient permission, organization-owned policy, and an API or CLI error. Re-read the effective branch rules after every write.
 
 Changing bypass lists or required checks is permission-changing and consequential. Preview the exact diff and confirm.
 
@@ -76,7 +76,7 @@ Publishing Pages or production deployments is outward-facing. Confirm the source
 
 Maintain issue forms, PR templates, `CODEOWNERS`, `SECURITY.md`, support/funding metadata, and organization defaults in their canonical locations. Validate YAML and resulting UI behavior. A template is guidance, not proof that every issue or PR follows it.
 
-Topics, homepage, description, social preview, licenses, language detection, and repository features are metadata—not evidence that the project delivers the advertised capability. Keep metadata accurate and verify resulting visibility.
+Topics, homepage, description, social preview, licenses, language detection, and repository features are metadata, not evidence that the project delivers the advertised capability. Keep metadata accurate and verify resulting visibility.
 
 ## Verify and report
 

@@ -22,6 +22,8 @@ gh api repos/OWNER/REPO/issues/123 -X PATCH -f state=closed
 
 Use `-F` for typed values, `-f` for strings, `--input -` for JSON from stdin, and `--hostname` for Enterprise. Inspect response status and body. Follow official endpoint versioning and preview requirements.
 
+When the endpoint supports version headers, pass the current documented `X-GitHub-Api-Version` explicitly in durable automation. Use `gh api --cache` only for read-only requests where bounded staleness is acceptable. Never cache a mutation response and treat it as current state.
+
 ## GraphQL
 
 ```bash
@@ -79,6 +81,8 @@ Do not create helper scripts containing tokens. Temporary files must contain onl
 
 Inspect rate-limit responses and abuse detection. Back off with bounded retries; do not parallelize hundreds of writes blindly.
 
+Check the process exit status before consuming output. GitHub CLI uses 0 for success, 1 for general failure, 2 for cancellation, and 4 when authentication is required, while individual commands may define more. A nonzero result may still accompany partial remote success, so re-read target state before retrying.
+
 For a long batch, emit progress and retain enough identifiers to resume. Separate parent creation from child linking and Project field updates so a failure does not obscure which stage applied.
 
 ## API mutation checks
@@ -92,4 +96,4 @@ Before using a mutation:
 - know the exact inverse or recovery path;
 - confirm if deletion, publication, permission, visibility, or broad state change is involved.
 
-Afterward, query the public object shape that users and automation consume—not merely the mutation response.
+Afterward, query the public object shape that users and automation consume, not merely the mutation response.

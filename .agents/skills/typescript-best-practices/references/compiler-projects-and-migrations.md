@@ -9,6 +9,8 @@ flags, framework tooling, and referenced projects can alter the result.
 Inspect:
 
 - the installed TypeScript version and the binary invoked by repository scripts;
+- whether any linter, framework, editor bridge, generator, or local tool imports
+  `typescript` as a programmatic API;
 - runtime and bundler versions;
 - all `tsconfig*` files and their `extends` chains;
 - package `type`, exports, workspace links, and generated files;
@@ -16,6 +18,28 @@ Inspect:
 
 Use the project-local compiler. `--showConfig` can reveal the resolved
 configuration, but it does not prove runtime resolution or build output.
+
+## Account for the TypeScript 7 compiler split
+
+TypeScript 7.0 moved the command-line compiler and language server to the native
+implementation. Its `typescript` package does not provide the established
+TypeScript 6 programmatic compiler API. A successful `tsc` run therefore says
+nothing about tools that call `createProgram`, walk compiler nodes, register a
+language-service plugin, or expect the old module exports.
+
+Inventory those tools before upgrading. Follow each tool's supported compiler
+matrix. When a project needs the TypeScript 6 API beside the TypeScript 7 CLI,
+use the compatibility package or package alias recommended by the TypeScript
+team and the affected tool. Keep the choice explicit in `package.json` and
+scripts. Do not hide a mismatch with declarations or casts.
+
+For TypeScript 7.x migrations, check the current release notes before changing
+configuration. TypeScript 7.0 adopted stricter defaults for `strict`, `module`,
+`target`, `noUncheckedSideEffectImports`, `rootDir`, and ambient `types`. It also
+turned several TypeScript 6 deprecations into errors, including ES5 output,
+Node10 and classic resolution, legacy module formats, `baseUrl`, `outFile`, and
+`downlevelIteration`. Fix the configuration and runtime contract instead of
+adding a blanket deprecation suppression.
 
 ## Choose options from runtime behavior
 
@@ -26,6 +50,8 @@ configuration, but it does not prove runtime resolution or build output.
 - Include only required global type packages. Uncontrolled ambient types can
   silently change every source file.
 - Keep `include`, `exclude`, `rootDir`, and output ownership intentional.
+- Declare required ambient packages through `types` instead of relying on an
+  accidental scan of every installed `@types` package.
 - Remember that `paths` guides TypeScript resolution. It does not rewrite
   emitted specifiers by itself.
 

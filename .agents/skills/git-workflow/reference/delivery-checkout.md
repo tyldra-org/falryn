@@ -6,7 +6,7 @@ Synchronize local Git checkouts only after remote delivery succeeds. GitHub issu
 
 For each checkout, follow [the default-checkout synchronization procedure](sync.md#synchronize-the-default-checkout-after-merge). Do not duplicate or reorder those safeguards here.
 
-Apply it only when the checkout is clean, attached, and free of an in-progress Git operation. A dirty, divergent, detached, conflicted, or worktree-locked checkout is a stop condition—not permission to stash, reset, rebase, discard, or force.
+Apply it only when the checkout is clean, attached, and free of an in-progress Git operation. A dirty, divergent, detached, conflicted, or worktree-locked checkout is a stop condition, not permission to stash, reset, rebase, discard, or force.
 
 For multiple repositories, derive local iteration order from the completed delivery bundle rather than assuming documentation-first or application-first. Synchronize each available clean checkout independently and preserve any checkout that cannot safely fast-forward.
 

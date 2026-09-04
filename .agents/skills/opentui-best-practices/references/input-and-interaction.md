@@ -14,55 +14,29 @@ Detect conflicts instead of letting registration order decide. Text controls
 must retain ordinary character input while keeping deliberate navigation,
 cancellation, and submission commands reachable.
 
-Make precedence data, not subscription order:
+Use direct keyboard events when one owner needs the original event. Use a
+component's binding options for local editing or selection behavior. Use
+`@opentui/keymap` when commands span views, need focus-scoped precedence, support
+sequences or user configuration, or drive a command palette and shortcut help.
 
-```ts
-type Context = "dialog" | "editor" | "application";
-type Command = "close-dialog" | "submit" | "move-up" | "quit";
-type Key = { readonly name: string; readonly ctrl: boolean };
-
-const bindings: Readonly<Record<Context, ReadonlyMap<string, Command>>> = {
-  dialog: new Map([["escape", "close-dialog"]]),
-  editor: new Map([["return", "submit"], ["up", "move-up"]]),
-  application: new Map([["ctrl+c", "quit"]]),
-};
-
-function chord(key: Key): string {
-  return `${key.ctrl ? "ctrl+" : ""}${key.name}`;
-}
-
-function resolveCommand(key: Key, active: readonly Context[]): Command | null {
-  const value = chord(key);
-  for (const context of active) {
-    const command = bindings[context].get(value);
-    if (command !== undefined) return command;
-  }
-  return null;
-}
-```
-
-The OpenTUI handler then becomes small. Verify event fields for the installed
-binding:
+A direct handler should stay small and name one global intent. Verify event
+fields for the installed binding:
 
 ```tsx
 import { useKeyboard } from "@opentui/react";
 
-function useCommandDispatch(
-  dialogOpen: boolean,
-  dispatch: (command: Command) => void,
-): void {
+function useInterrupt(dispatch: (command: "interrupt") => void): void {
   useKeyboard((event) => {
-    const command = resolveCommand(
-      { name: event.name, ctrl: event.ctrl },
-      dialogOpen ? ["dialog", "application"] : ["editor", "application"],
-    );
-
-    if (command === null) return;
+    if (event.name !== "c" || !event.ctrl) return;
     event.preventDefault();
-    dispatch(command);
+    dispatch("interrupt");
   });
 }
 ```
+
+Do not rebuild a layered command engine from registration order. Read
+[Keymaps and commands](keymaps-and-commands.md) for shared commands and
+precedence.
 
 ## Own focus explicitly
 

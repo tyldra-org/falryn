@@ -13,9 +13,9 @@ Falryn ships six skill bundles so a public checkout can resolve its normal repos
 The five portable skills must remain useful outside Falryn and must not contain Falryn, organization, maintainer-home, or repository-local policy. `falryn-workflow` is the sole project-specific exception.
 
 Each bundle has one compact `SKILL.md` router. Deep references remain only when
-they own a distinct concern. The TypeScript and OpenTUI bundles each have nine
-original practice references. Neither
-bundle contains copied upstream documentation.
+they own a distinct concern. The TypeScript bundle has twelve original practice
+references, and the OpenTUI bundle has fourteen. Neither bundle contains copied
+upstream documentation.
 
 ## Resolution
 

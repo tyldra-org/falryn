@@ -23,7 +23,7 @@ that step.
 
 - Use type-only imports where the effective config preserves their meaning.
 - Avoid hidden import-time effects and registration.
-- Treat a barrel as a deliberate API surface. Check cycles, side effects,
+- Treat a barrel as a deliberate public API. Check cycles, side effects,
   tree-shaking behavior, and accidental exposure.
 - Break cycles by relocating stable contracts or inverting dependencies. A
   dynamic import that only hides the cycle is not a structural fix.

@@ -87,9 +87,9 @@ gh extension browse
 gh alias list
 ```
 
-Extensions execute local code with the user's GitHub authority. Inspect source, publisher, permissions, install method, and updates before installation. Do not install or remove extensions without explicit user direction.
+Extensions execute local code with the user's GitHub authority. Inspect source, publisher, permissions, install method, and updates before installation. Pin a reviewed release or commit when repeatability matters. Do not install, upgrade, or remove extensions without explicit user direction.
 
-Aliases must not hide destructive flags, tokens, repository inference, or confirmation-sensitive operations.
+Aliases must not hide destructive flags, tokens, repository inference, shell evaluation, or confirmation-sensitive operations. Use [cli-runtime.md](cli-runtime.md) for configuration and scripting rules.
 
 ## CLI utilities and agent surfaces
 

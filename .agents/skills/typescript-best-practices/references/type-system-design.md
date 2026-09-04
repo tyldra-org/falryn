@@ -1,7 +1,7 @@
 # Type-system design
 
 Use advanced types to improve a public contract, not to demonstrate type-level
-cleverness. Keep the public surface simpler than the implementation when
+cleverness. Keep the public contract simpler than the implementation when
 possible.
 
 ## Escalation order

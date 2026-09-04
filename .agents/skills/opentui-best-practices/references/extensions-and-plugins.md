@@ -1,98 +1,92 @@
 # Extensions and plugins
 
-Plugins and custom renderables run inside or beside a latency-sensitive terminal
-host. Validate each contribution before it enters a live registry.
+Use this reference for typed plugin slots, runtime-loaded modules, custom
+renderables supplied by extensions, registration conflicts, and plugin cleanup.
 
-## Define the extension contract
+## Separate the three contracts
 
-Each extension needs:
+OpenTUI exposes related mechanisms with different authority:
+
+- plugin slots let a host define typed regions and accept contributions;
+- runtime-module support lets a Bun host import trusted external modules while
+  sharing the host's Core, React, Solid, and related singleton packages;
+- custom renderables add drawing behavior and native ownership to a render tree.
+
+Plugin slots do not discover packages, parse manifests, sandbox code, grant
+permissions, or define a complete application plugin lifecycle. Runtime loading
+does not decide which UI regions a module may change. Keep discovery, trust,
+loading, registration, contribution, and disposal as separate steps.
+
+## Keep slot authority with the host
+
+The host owns slot names, prop types, shared context, layout, ordering, modes,
+fallbacks, and error policy. A plugin returns only the node type accepted by the
+chosen Core, React, or Solid registry.
+
+Registries are scoped to one renderer and key. Reusing the same pair returns the
+same registry in the 0.5.10 baseline. The shared context must keep the same
+object identity. Create and register only while the renderer is live. After
+asynchronous loading, check renderer lifetime again before mutation.
+
+Each registration returns an unregister function. Renderer destruction clears
+its registries and runs registered plugin disposal. Framework slot components
+also release their subscriptions and contribution subtrees through their own
+owner cleanup.
+
+## Define a bounded plugin contract
+
+Require:
 
 - stable identity and a compatible host-version range;
-- explicit authority over commands, key bindings, panels, and render layers;
-- bounded input, output, memory, and execution time;
+- named slot contributions and explicit host context;
+- input, output, memory, and execution limits;
 - cancellation and failure isolation;
-- one owner for registration and cleanup;
-- a visible unavailable or degraded state.
+- one registration owner and one disposal path;
+- a visible unavailable or degraded result.
 
-Do not let registration order decide which command, key binding, resource, or
-render layer wins. Detect conflicts before mounting the extension.
+Detect duplicate identities and conflicting contributions before mounting.
+Make ordering data explicit. Do not let import order decide which plugin wins.
 
-## Roll back partial registration
+Buffer plugin errors with a fixed limit and route them to host diagnostics.
+Failure placeholders must be simpler and safer than the contribution they
+replace. A placeholder failure cannot take down the host error path.
 
-Return one cleanup function for everything the extension registered:
+## Load trusted modules through one runtime layer
 
-```ts
-type Dispose = () => void;
-type Registry<T> = { readonly add: (value: T) => Dispose };
-type ExtensionHost = {
-  readonly commands: Registry<unknown>;
-  readonly keymap: Registry<unknown>;
-  readonly panels: Registry<unknown>;
-};
-type Extension = {
-  readonly commands: unknown;
-  readonly bindings: unknown;
-  readonly panels: unknown;
-};
+Runtime-module support is Bun-only in OpenTUI 0.5.10. Choose the support package
+for the host binding. React and Solid support already include Core. Installing
+both a framework support layer and Core support creates competing global setup.
 
-function disposeAll(disposers: readonly Dispose[]): unknown[] {
-  const failures: unknown[] = [];
-  for (const dispose of disposers.slice().reverse()) {
-    try {
-      dispose();
-    } catch (error) {
-      failures.push(error);
-    }
-  }
-  return failures;
-}
+Use the configurable installer when the host must add or replace mapped module
+specifiers. Keep the map narrow. A package absent from the host map remains the
+plugin's deployment responsibility. Node stubs for runtime support throw during
+import and are not a compatibility path.
 
-function mountExtension(host: ExtensionHost, extension: Extension): () => void {
-  const disposers: Dispose[] = [];
-  try {
-    disposers.push(host.commands.add(extension.commands));
-    disposers.push(host.keymap.add(extension.bindings));
-    disposers.push(host.panels.add(extension.panels));
-  } catch (error) {
-    throw new AggregateError(
-      [error, ...disposeAll(disposers)],
-      "Extension mount failed",
-    );
-  }
+Treat runtime-loaded code as trusted code unless the application adds a real
+process, permission, or operating-system isolation boundary. Type validation and
+a narrow slot contract reduce mistakes. They do not sandbox a module.
 
-  return () => {
-    const failures = disposeAll(disposers);
-    if (failures.length > 0) {
-      throw new AggregateError(failures, "Extension cleanup failed");
-    }
-  };
-}
-```
+## Keep custom renderables contained
 
-If cleanup can be asynchronous, make the disposal contract asynchronous from
-the start and await all registered cleanup before reporting shutdown complete.
+A plugin-provided renderable owns its buffers, dirty state, clipping, hit
+regions, layout inputs, retained native resources, and disposal. Do not grant
+unrestricted renderer mutation when a slot or command contribution is enough.
+Keep I/O and expensive preparation out of drawing and event handlers.
 
-## Protect the host
+## Test registration and failure
 
-Extension callbacks must not block input or rendering. Schedule external work
-behind a bounded owner and project results into state. Reject contributions that
-escape size, time, capability, or naming limits.
-
-Keep custom renderables responsible for their buffers, dirty state, hit regions,
-and disposal. Do not give a plugin unrestricted renderer mutation when a narrow
-panel or command contract is sufficient.
-
-## Change compatibility deliberately
-
-When an OpenTUI or host upgrade changes extension contracts, migrate registered
-extensions and tests together. Remove obsolete adapters after their final
-caller moves unless the product intentionally supports multiple versions.
+Cover duplicate registration, ordering, each slot mode, initial contribution
+failure, later subtree failure, placeholder failure, unregistration, renderer
+destruction, and partial plugin setup. Runtime-loading tests must use the built
+artifact and deployed sidecars rather than source-only imports.
 
 ## Review checks
 
-- Identity and compatibility are checked before registration.
-- Conflicting commands, keymaps, and render layers fail explicitly.
-- Partial registration rolls back in reverse order.
-- Cleanup failure remains visible and does not stop later cleanup.
-- Extension work has cancellation, time, memory, and output bounds.
-- Plugins cannot mutate more renderer state than their contract grants.
+- Discovery, loading, slot registration, and disposal have separate owners.
+- The host controls layout, context, ordering, and failure policy.
+- Renderer lifetime is checked after asynchronous loading.
+- Every registration is removable and renderer destruction clears the rest.
+- Runtime-module support is installed once for the owning Bun binding.
+- Untrusted code is not mislabeled as sandboxed.
+- Custom renderables cannot mutate more terminal state than their contract
+  requires.
