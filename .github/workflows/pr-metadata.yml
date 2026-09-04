@@ -20,7 +20,22 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.base.sha }}
 
+      - name: Detect trusted policy availability
+        id: trusted_policy
+        shell: bash
+        run: |
+          if [[ -f .github/scripts/contribution-policy.cjs ]]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Record policy bootstrap
+        if: steps.trusted_policy.outputs.available != 'true'
+        run: echo "The base revision predates contribution-policy enforcement; this bootstrap run has no trusted policy to execute."
+
       - name: Check issue link and review context
+        if: steps.trusted_policy.outputs.available == 'true'
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: |

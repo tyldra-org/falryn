@@ -102,6 +102,17 @@ The behavior remains local-only.
 }
 
 describe("contribution policy", () => {
+  test("bootstraps before the trusted policy exists on the base revision", async () => {
+    const workflow = await Bun.file(
+      new URL("../.github/workflows/pr-metadata.yml", import.meta.url),
+    ).text();
+
+    expect(workflow).toContain(["ref: $", "{{ github.event.pull_request.base.sha }}"].join(""));
+    expect(workflow).toContain("id: trusted_policy");
+    expect(workflow).toContain("if: steps.trusted_policy.outputs.available != 'true'");
+    expect(workflow).toContain("if: steps.trusted_policy.outputs.available == 'true'");
+  });
+
   test("accepts a complete contribution issue without private planning metadata", () => {
     expect(policy.validateIssue(issue())).toEqual([]);
     expect(policy.validateIssue(issue({ body: "### Outcome\n\nOnly an outcome." }))).toContain(
