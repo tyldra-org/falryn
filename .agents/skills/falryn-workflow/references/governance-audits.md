@@ -48,13 +48,13 @@ Replay with:
 bun run audit:roadmap -- --snapshot <snapshot>
 ```
 
-The live form requires exactly those two repositories and that Project. It checks membership, required fields, native hierarchy and blockers, milestone ordering, closing-pull-request liveness, state consistency, and dependency-safe ordering. The default liveness grace is seven days. Change `--liveness-grace-hours` only when the governance contract itself changes, not to suppress a diagnostic.
+The live form requires exactly those two repositories and that Project. It checks membership; exact field option names, descriptions, colors, and order; required enabled Project workflows; native hierarchy and blockers; milestone ordering; closing-pull-request liveness; state consistency; and dependency-safe routing. The API does not expose every Project workflow filter or field effect, so a maintainer also verifies those settings against [Roadmap fields and automation](roadmap-fields.md) after Project maintenance. The default liveness grace is seven days. Change `--liveness-grace-hours` only when the governance contract itself changes, not to suppress a diagnostic.
 
 ## Snapshot handling
 
 Snapshots can contain public issue bodies, private repository records, Project metadata, identities, and timestamps. Store them outside both repositories in a newly created private temporary directory with restrictive permissions. Never commit, attach, paste, upload, or summarize their private fields into a public issue, pull request, CI log, or artifact. Delete or securely retire them after their bounded replay purpose ends.
 
-A replay proves only that the deterministic analyzer returns the same result for that captured generation. It does not prove the live state is still current. Regenerate after any relevant issue, hierarchy, blocker, milestone, assignee, pull request, Project field, or repository state change.
+A replay proves only that the deterministic analyzer returns the same result for that captured generation and schema version. It does not prove the live state is still current. Regenerate after any relevant issue, hierarchy, blocker, milestone, assignee, pull request, Project field, Project workflow, or repository state change. Schema version 2 snapshots include option descriptions, colors, and Project workflow enabled state; older snapshots are intentionally rejected.
 
 ## Interpret results
 

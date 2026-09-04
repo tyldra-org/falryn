@@ -15,7 +15,7 @@ Before an issue can be treated as implementation-ready, its public body must ide
 - documentation impact without requiring the implementer to read private content; and
 - a non-empty Ready checklist whose checked facts remain current.
 
-A private documentation link is supplementary. If removing access to that link makes the issue ambiguous, the issue is Not Ready.
+A private documentation link is supplementary. If removing access to that link makes the issue ambiguous, the issue is `Needs Planning`.
 
 Use native GitHub hierarchy and blockers. A parent owns an integrated outcome and routes through PR-sized children; it never owns a branch or mega-pull request. A standalone issue uses the repository's exact affirmative standalone marker. Do not infer hierarchy or blockers from incidental prose.
 
@@ -34,7 +34,11 @@ With authenticated Roadmap access, resolve the issue's exact repository, assigne
 - Done requires closure and complete delivery proof.
 - Open blockers prevent implementation.
 - Ready is evidence about contract completeness, not blocker absence.
+- Needs Planning means the public contract still lacks current evidence.
+- Needs Decision requires a named maintainer decision in the public issue; it is not a generic blocked state.
 - Parent and Historical states never create implementation slots.
+
+Use the exact option meanings and transitions in [Roadmap fields and automation](roadmap-fields.md). New open leaves default to Todo, P2, and Needs Planning. Feature, bug, documentation, infrastructure, maintenance, and research issues share this same governance boundary; work type never changes the meaning of Priority or Readiness.
 
 Run the exact repository-owned commands in [governance audits](governance-audits.md) after governance mutations. Any diagnostic suppresses routing until reconciled.
 

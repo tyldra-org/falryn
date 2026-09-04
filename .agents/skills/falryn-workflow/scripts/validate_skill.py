@@ -33,6 +33,7 @@ REQUIRED_REFERENCES = {
     "parent-delivery.md",
     "plan.md",
     "private-authority.md",
+    "roadmap-fields.md",
     "reporting.md",
     "review.md",
     "targets-and-transitions.md",

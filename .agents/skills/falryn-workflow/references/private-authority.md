@@ -56,7 +56,7 @@ Private evidence informs the action but does not become public output automatica
 
 A public Falryn issue is the implementation handoff. Before an authenticated maintainer marks it Ready, its body must state every issue-specific baseline, scope, boundary, failure and recovery rule, product composition point, validation requirement, and documentation impact needed to implement it.
 
-A private link may provide broader maintainer context, but it cannot replace those public facts. If the issue is incomplete, Plan updates the public issue or reports Not Ready. It never tells a public contributor to discover missing behavior in a private document.
+A private link may provide broader maintainer context, but it cannot replace those public facts. If the issue is incomplete, Plan updates the public issue or reports Needs Planning; if a named human choice is required, it reports Needs Decision. It never tells a public contributor to discover missing behavior in a private document.
 
 ## Connection lifecycle
 

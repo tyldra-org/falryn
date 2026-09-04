@@ -21,6 +21,16 @@ contributions open:
    risk; and
 5. run the canonical checks before requesting review.
 
+Use the Feature form for capability work, Bug report for corrections, and Work
+item for documentation, infrastructure or maintenance, and research or
+qualification. These types do not change the shared readiness or pull-request
+quality bar.
+
+If your account cannot assign an owner or milestone or cannot see the private
+Roadmap, complete the public issue form and stop there. Automation separates
+your remaining public fields from maintainer-only triage; a maintainer applies
+those values before implementation starts.
+
 Contributions will be evaluated on correctness, scope, tests, and documentation
 for released behavior, not on an editor, agent, or workflow choice. The public
 issue must contain everything needed to implement its slice. Contributors never

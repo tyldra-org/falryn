@@ -80,7 +80,14 @@ isolated library that no product path uses is not a completed user feature.
 Outside issues and pull requests are currently restricted. Collaborators use
 the same issue-backed path that will apply when outside contributions open.
 
-1. Select one assigned, Ready, unblocked PR-sized issue.
+Choose `Feature` for new user-visible behavior, `Bug report` for a defect
+correction, and `Work item` for documentation, infrastructure or maintenance,
+and research or qualification. Work type describes why the issue exists;
+Priority describes urgency, and Readiness describes the next valid planning
+action. They are independent.
+
+1. Select one assigned, Ready, unblocked PR-sized issue. New leaves begin as
+   Todo, P2, and Needs Planning; only verified evidence moves them to Ready.
 2. Read its native parent, subissues, blockers, linked pull requests, and public
    completion proof.
 3. Verify the stated baseline against the current default branch.
@@ -177,7 +184,8 @@ numbers across repositories.
 
 Use the repository template. Every non-Dependabot pull request must:
 
-- use `Closes #N` when it fully delivers the public issue, otherwise `Refs #N`;
+- close exactly one PR-sized public issue with `Closes #N`; split or re-plan
+  partial work instead of opening a non-closing application pull request;
 - describe the scope, exact checks and observed results, documentation impact,
   risk, and limitations;
 - identify any companion pull request without disclosing private content;

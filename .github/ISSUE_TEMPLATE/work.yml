@@ -1,61 +1,68 @@
-name: Feature
-description: Propose one user-visible capability or meaningful improvement.
-title: "feat: "
-labels:
-  - "type: feature"
+name: Work item
+description: Propose documentation, infrastructure, maintenance, or qualification work.
+title: ""
 body:
   - type: markdown
     attributes:
       value: |
-        Thanks for proposing an improvement. Before implementation, a triager
-        adds the issue to the Falryn Roadmap exactly once, assigns one owner
-        and milestone, and records a native parent or Standalone relationship.
-        New leaves enter Status **Todo**, Priority **P2**, and Readiness
-        **Needs Planning** until evidence supports another value. P0 is never
-        inferred. Contributors complete this public form; they do not need
-        permission to assign the milestone or edit the private Project. See
-        CONTRIBUTING.md for the required workflow.
+        Use this form when the outcome is neither a user-visible feature nor a
+        defect correction. The selected work type is reconciled to one
+        `type:*` label. New leaves enter Status **Todo**, Priority **P2**, and
+        Readiness **Needs Planning** until evidence supports another value.
+        Contributors complete this public form; maintainers assign the owner,
+        milestone, and private Project fields. Security vulnerabilities belong
+        in the private reporting path.
+  - type: dropdown
+    id: work_type
+    attributes:
+      label: Work type
+      description: Choose the single primary reason this issue exists.
+      options:
+        - Documentation
+        - Infrastructure and maintenance
+        - Research and qualification
+    validations:
+      required: true
   - type: textarea
     id: outcome
     attributes:
       label: Outcome
-      description: What user outcome should change, and who owns it?
-      placeholder: As a …, I can …, so that …
+      description: State the concrete artifact or capability this issue must leave behind and who benefits.
     validations:
       required: true
   - type: textarea
     id: baseline
     attributes:
       label: Observed baseline and remaining change
-      description: State what the current source does and the exact remaining delta.
+      description: State what exists now, how it was verified, and the exact remaining delta.
     validations:
       required: true
   - type: textarea
     id: scope
     attributes:
       label: Scope and non-goals
-      description: State what is included and deliberately excluded.
+      description: Name the owning boundary, included work, and deliberate exclusions.
     validations:
       required: true
   - type: textarea
     id: contracts
     attributes:
-      label: Contracts and product wiring
-      description: Name inputs, outputs, state, effects, owner boundaries, and the real CLI, OpenTUI, headless, model, export, replay, or diagnostic composition point.
+      label: Contracts and consumers
+      description: Name affected inputs, outputs, policy, automation, documents, or product paths and the owners that consume them.
     validations:
       required: true
   - type: textarea
     id: failures
     attributes:
       label: Limits, failures, and recovery
-      description: Cover relevant limits, invalid, partial, cancelled, unavailable, stale, cleanup, and recovery behavior.
+      description: Cover applicable limits, invalid or partial outcomes, rollback, cleanup, and recovery.
     validations:
       required: true
   - type: textarea
     id: completion
     attributes:
       label: Completion proof
-      description: List observable acceptance criteria, edge cases, and evidence that completes this issue.
+      description: List observable acceptance criteria and the exact evidence that completes the issue.
       placeholder: |
         - [ ]
     validations:
@@ -95,7 +102,7 @@ body:
     id: relationship
     attributes:
       label: Planning relationship
-      description: Choose Standalone or link the native parent in the next field.
+      description: Choose Standalone, a native child, or a parent outcome.
       options:
         - Standalone
         - Native child of an existing parent
@@ -114,7 +121,7 @@ body:
     id: validation
     attributes:
       label: Validation
-      description: Name focused positive, negative, restart, resource, and platform checks.
+      description: Name focused positive, negative, replay, resource, and platform checks that apply.
     validations:
       required: true
   - type: textarea
@@ -130,7 +137,7 @@ body:
       label: Ready checklist
       description: Leave an item unchecked until its evidence is known. The Project remains Needs Planning, or Needs Decision when a named decision blocks planning, until every item is current.
       options:
-        - label: The current source baseline and remaining delta are verified.
+        - label: The current baseline and remaining delta are verified.
         - label: The scope fits one focused pull request and names its owner boundaries.
-        - label: Limits, failures, cancellation, recovery, and product wiring are explicit.
+        - label: Limits, failure behavior, consumers, and recovery are explicit.
         - label: Focused validation and documentation impact are testable.

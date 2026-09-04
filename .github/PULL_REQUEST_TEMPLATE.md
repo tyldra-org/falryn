@@ -2,17 +2,26 @@
 
 Closes #
 
-<!-- Use Refs # instead when this PR does not fully resolve the issue. -->
+<!-- Every non-Dependabot PR closes exactly one PR-sized Falryn issue.
+     Split or re-plan partial work instead of replacing this with Refs.
+     If you cannot set milestone or private Project fields, wait for maintainer
+     triage; the metadata check reports those as maintainer-owned gaps. -->
 
-<!-- Every non-Dependabot PR links its owning issue. Automation checks this
-     field and the required sections below. -->
+## Primary change class
 
-## Change class
-
-- [ ] Feature or bug fix
-- [ ] Documentation
+- [ ] Feature
+- [ ] Bug fix
+- [ ] Documentation only
 - [ ] Infrastructure or dependency update
+- [ ] Research or qualification
+- [ ] Refactor or maintenance
+
+<!-- Select exactly one primary class. -->
+
+## Compatibility
+
 - [ ] Breaking change (also apply the `breaking-change` label)
+- [ ] Backward compatible or not applicable
 
 ## Delivery identity
 
@@ -56,7 +65,8 @@ Closes #
 
 <!-- The optional maintainer modes add delivery orchestration. Every PR still
      needs Target, Scope, Validation, and Documentation. Automation applies one
-     `size: *` label from changed lines; split an XL PR when practical. -->
+     `size: *` label from changed lines. A non-draft PR must complete every item
+     below; split an XL PR when practical. -->
 
 - [ ] The target is one Ready, unblocked PR-sized issue.
 - [ ] The issue is assigned and **In Progress**.

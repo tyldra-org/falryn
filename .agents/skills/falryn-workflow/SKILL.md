@@ -24,8 +24,9 @@ Load this skill for Falryn work, but activate a maintainer mode only when the us
 3. Classify private authority as available or unavailable using [private authority](references/private-authority.md). Do not request, print, or persist credentials.
 4. Load `gh-cli` for GitHub, `git-workflow` for Git mutations, `change-review` for review reasoning, and the relevant available stack skill.
 5. Read [issue governance](references/issue-governance.md) before issue mutation, implementation, or routing.
-6. Use [governance audits](references/governance-audits.md) for readiness, Project, liveness, or sequence claims. Use [documentation delivery](references/documentation-delivery.md) for documentation impact or a companion pull request.
-7. Stop on an incomplete public implementation contract, unresolved authority, stale revision evidence, conflicting ownership, or a private-only operation without private access.
+6. Read [Roadmap fields and automation](references/roadmap-fields.md) before changing Priority, Readiness, Project workflows, issue forms, or governance automation.
+7. Use [governance audits](references/governance-audits.md) for readiness, Project, liveness, or sequence claims. Use [documentation delivery](references/documentation-delivery.md) for documentation impact or a companion pull request.
+8. Stop on an incomplete public implementation contract, unresolved authority, stale revision evidence, conflicting ownership, or a private-only operation without private access.
 
 ## Route one mode
 
@@ -42,6 +43,7 @@ Load this skill for Falryn work, but activate a maintainer mode only when the us
 | `Next - Target: Falryn Roadmap`, orientation, or status | [Next](references/next.md) |
 | Verify gap or incomplete merged delivery | [Corrections](references/corrections.md) |
 | Issue-readiness, Roadmap, liveness, or sequencing audit | [Governance audits](references/governance-audits.md) |
+| Priority, Readiness, or Project automation maintenance | [Roadmap fields and automation](references/roadmap-fields.md) |
 | Documentation impact, owner lookup, or companion delivery | [Documentation delivery](references/documentation-delivery.md) |
 
 The ASCII hyphen forms above and the corresponding typographic-dash forms are equivalent selectors.
