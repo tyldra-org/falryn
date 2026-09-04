@@ -2,11 +2,10 @@
 
 const REQUIRED_ISSUE_SECTIONS = [
   "Outcome",
-  "Native parent issue",
   "Dependencies and blockers",
   "Completion proof",
   "Documentation impact",
-  "Ready checklist",
+  "Contribution checklist",
 ];
 
 const REQUIRED_PR_SECTIONS = [
@@ -100,19 +99,13 @@ function requestedArea(body) {
   return value === null ? null : (REQUESTED_AREAS.get(withoutComments(value)) ?? null);
 }
 
-function validateIssueMetadata(issue) {
+function validateIssueClassification(issue) {
   if (issue.state !== "open") return [];
 
   const errors = [];
   const labels = labelsOf(issue);
   const workTypes = labels.filter((label) => label === "bug" || label.startsWith("type:"));
 
-  if ((issue.assignees ?? []).length !== 1) {
-    errors.push("assign exactly one GitHub owner");
-  }
-  if (!issue.milestone) {
-    errors.push("assign exactly one repository milestone");
-  }
   if (workTypes.length !== 1) {
     errors.push("apply exactly one work-type label (`bug` or `type:*`)");
   }
@@ -133,18 +126,18 @@ function validateIssueContract(issue) {
       errors.push(`complete the ${heading} section`);
     }
   }
-  const ready = section(body, "Ready checklist");
-  if (ready !== null) {
-    const counts = checkboxCounts(ready);
+  const checklist = section(body, "Contribution checklist");
+  if (checklist !== null) {
+    const counts = checkboxCounts(checklist);
     if (counts.checked + counts.unchecked === 0) {
-      errors.push("include at least one item in the Ready checklist");
+      errors.push("include at least one item in the Contribution checklist");
     }
   }
   return errors;
 }
 
 function validateIssue(issue) {
-  return [...validateIssueContract(issue), ...validateIssueMetadata(issue)];
+  return [...validateIssueContract(issue), ...validateIssueClassification(issue)];
 }
 
 function parseOwningIssue(body) {
@@ -253,10 +246,10 @@ function validateTargetIssue(issue, relations) {
     errors.push("the owning issue must still be open");
   }
 
-  const ready = section(issue.body ?? "", "Ready checklist");
-  const counts = ready === null ? { checked: 0, unchecked: 0 } : checkboxCounts(ready);
+  const checklist = section(issue.body ?? "", "Contribution checklist");
+  const counts = checklist === null ? { checked: 0, unchecked: 0 } : checkboxCounts(checklist);
   if (counts.checked === 0 || counts.unchecked > 0) {
-    errors.push("the owning issue must have a non-empty, fully checked Ready checklist");
+    errors.push("the owning issue must have a non-empty, fully checked Contribution checklist");
   }
   if ((relations.subIssues?.totalCount ?? 0) > 0) {
     errors.push("the owning issue must be a PR-sized leaf, not a parent outcome");
@@ -285,8 +278,8 @@ module.exports = {
   requestedWorkType,
   section,
   validateIssue,
+  validateIssueClassification,
   validateIssueContract,
-  validateIssueMetadata,
   validatePullRequest,
   validateTargetIssue,
 };

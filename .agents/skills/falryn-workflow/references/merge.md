@@ -6,7 +6,7 @@ Merge requires a fresh passing Verify preview and user confirmation bound to the
 
 Re-read every previewed pull request, head and base revision, required check, review, thread, ruleset, mergeability result, companion identity, order, final message, repository setting, default branch, and local checkout. Stop and return to Verify if any precondition changed.
 
-A public-only application PR may merge only when fresh verification proves that no private documentation update or private Project prerequisite is required. If documentation impact is required or unresolved, private maintainer authority is mandatory.
+A contribution PR whose issue is outside the Roadmap has no private Project prerequisite. If its issue is Roadmap-owned, apply the private verification and reconciliation contract. If private documentation impact is required or unresolved, private maintainer authority remains mandatory.
 
 ## Merge order
 

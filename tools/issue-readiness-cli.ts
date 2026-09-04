@@ -116,6 +116,7 @@ function relationFromGraphQl(value: unknown, subject: string): IssueReadinessRel
 
 function liveIssueFromGraphQl(
   value: unknown,
+  roadmapItemCount: number,
   roadmapStatuses: readonly string[],
 ): IssueReadinessIssue {
   const record = asRecord(value, "live issue");
@@ -136,6 +137,7 @@ function liveIssueFromGraphQl(
       stringValue(asRecord(entry, "label").name, "label.name"),
     ),
     milestone: milestone === null ? null : stringValue(milestone.title, "milestone.title"),
+    roadmapItemCount,
     roadmapStatuses,
     parent,
     subIssues: completeConnectionNodes(record.subIssues, "live issue.subIssues").map(
@@ -151,7 +153,9 @@ async function loadRoadmapStatuses(
   repository: string,
   projectOwner: string,
   projectNumber: number,
-): Promise<ReadonlyMap<number, readonly string[]>> {
+): Promise<
+  ReadonlyMap<number, { readonly itemCount: number; readonly statuses: readonly string[] }>
+> {
   const query = `query($after:String) {
   repositoryOwner(login:${JSON.stringify(projectOwner)}) {
     ... on Organization { projectV2(number:${projectNumber}) { ...ProjectItems } }
@@ -175,7 +179,7 @@ fragment ProjectItems on ProjectV2 {
     }
   }
 }`;
-  const statuses = new Map<number, string[]>();
+  const membership = new Map<number, { itemCount: number; statuses: string[] }>();
   let after: string | null = null;
   while (true) {
     const args = ["api", "graphql", "-f", `query=${query}`];
@@ -201,7 +205,8 @@ fragment ProjectItems on ProjectV2 {
         continue;
       }
       const number = positiveInteger(content.number, "Roadmap item.number");
-      const issueStatuses = statuses.get(number) ?? [];
+      const current = membership.get(number) ?? { itemCount: 0, statuses: [] };
+      const issueStatuses = [...current.statuses];
       for (const fieldValue of completeConnectionNodes(
         item.fieldValues,
         "Roadmap item.fieldValues",
@@ -215,11 +220,11 @@ fragment ProjectItems on ProjectV2 {
           issueStatuses.push(fieldRecord.name);
         }
       }
-      statuses.set(number, issueStatuses);
+      membership.set(number, { itemCount: current.itemCount + 1, statuses: issueStatuses });
     }
     const pageInfo = asRecord(items.pageInfo, "Roadmap project.items.pageInfo");
     if (pageInfo.hasNextPage !== true) {
-      return statuses;
+      return membership;
     }
     after = stringValue(pageInfo.endCursor, "Roadmap project.items.pageInfo.endCursor");
   }
@@ -260,12 +265,13 @@ async function loadLiveSnapshot(
     after = stringValue(pageInfo.endCursor, "GraphQL issues.pageInfo.endCursor");
   }
 
-  const statuses = await loadRoadmapStatuses(repository, projectOwner, projectNumber);
+  const membership = await loadRoadmapStatuses(repository, projectOwner, projectNumber);
   const issues = issueRecords
     .map((value) => {
       const record = asRecord(value, "live issue");
       const number = positiveInteger(record.number, "live issue.number");
-      return liveIssueFromGraphQl(value, statuses.get(number) ?? []);
+      const roadmap = membership.get(number) ?? { itemCount: 0, statuses: [] };
+      return liveIssueFromGraphQl(value, roadmap.itemCount, roadmap.statuses);
     })
     .sort((left, right) => left.number - right.number);
   return {
@@ -370,17 +376,24 @@ async function main(): Promise<void> {
       ...(baseline === undefined ? {} : { baseline }),
       ...(documentationPaths === undefined ? {} : { documentationPaths }),
     });
+    const roadmapIssueCount = snapshot.issues.filter((issue) => issue.roadmapItemCount > 0).length;
     if (options.json) {
       console.log(
         JSON.stringify(
-          { repository: snapshot.repository, issueCount: snapshot.issues.length, diagnostics },
+          {
+            repository: snapshot.repository,
+            issueCount: snapshot.issues.length,
+            repositoryIssueCount: snapshot.issues.length,
+            roadmapIssueCount,
+            diagnostics,
+          },
           null,
           2,
         ),
       );
     } else if (diagnostics.length === 0) {
       console.log(
-        `issue readiness verified for ${snapshot.issues.length} open issues in ${snapshot.repository}`,
+        `issue readiness verified for ${roadmapIssueCount} Roadmap-owned open issues from ${snapshot.issues.length} open repository issues in ${snapshot.repository}`,
       );
     } else {
       for (const diagnostic of diagnostics) {

@@ -25,7 +25,7 @@ jobs:
         with:
           ref: ${{ github.event.repository.default_branch }}
 
-      - name: Report missing ownership or Roadmap metadata
+      - name: Reconcile and validate the public contribution contract
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: |
@@ -70,9 +70,7 @@ jobs:
               labels.push(requestedArea);
             }
             issue.labels = labels.map((name) => ({ name }));
-            const contributorErrors = policy.validateIssueContract(issue);
-            const maintainerErrors = policy.validateIssueMetadata(issue);
-            const errors = [...contributorErrors, ...maintainerErrors];
+            const errors = policy.validateIssue(issue);
 
             const marker = "<!-- falryn-issue-governance -->";
             const comments = await github.paginate(github.rest.issues.listComments, {
@@ -92,14 +90,8 @@ jobs:
               return;
             }
 
-            const contributorSection = contributorErrors.length === 0
-              ? "- [x] The public issue-form contract is complete."
-              : contributorErrors.map((error) => `- [ ] ${error}`).join("\n");
-            const maintainerSection = [
-              ...maintainerErrors.map((error) => `- [ ] ${error}`),
-              "- [ ] Reconcile exactly one Roadmap item. A new open leaf defaults to Status **Todo**, Priority **P2**, and Readiness **Needs Planning**; preserve verified active or specialized values instead of resetting existing work.",
-            ].join("\n");
-            const body = `${marker}\nThis issue has two separate readiness lanes. Contributors do not need milestone or private Project permissions.\n\n### Contributor-owned public contract\n\n${contributorSection}\n\n### Maintainer-only triage\n\n${maintainerSection}\n\nAfter completing the public fields, wait for a maintainer to finish assignment and scheduling. See the [triage contract](https://github.com/tyldra-org/falryn/blob/main/CONTRIBUTOR-READINESS.md#triage-contract) and [field meanings](https://github.com/tyldra-org/falryn/blob/main/.agents/skills/falryn-workflow/references/roadmap-fields.md).`;
+            const checklist = errors.map((error) => `- [ ] ${error}`).join("\n");
+            const body = `${marker}\nPlease complete the public contribution contract:\n\n${checklist}\n\nYou do not need an assignee, milestone, Priority, Readiness, or access to the private Falryn Roadmap. Maintainers decide separately whether an issue belongs in the product-development plan. See the [contribution guide](https://github.com/tyldra-org/falryn/blob/main/CONTRIBUTING.md).`;
             if (existing) {
               await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
             } else {

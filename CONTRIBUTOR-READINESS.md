@@ -37,53 +37,43 @@ merge evidence.
 
 ## Triage contract
 
-Issue creation deliberately separates accessible contributor work from
-maintainer scheduling:
+Public contribution and private product planning are independent:
 
 | Actor | Responsibility |
 | --- | --- |
-| Contributor | Choose Feature, Bug report, or Work item; complete the public outcome, baseline or reproduction, scope, boundaries, dependencies, proof, documentation impact, relationship, and Ready checklist. |
-| Repository automation | Map the declared general work type and primary area to canonical labels, then report incomplete public evidence separately from maintainer triage. |
-| Maintainer | Assign the sole owner and milestone, verify native relationships, and reconcile the private Roadmap item, Status, Priority, and Readiness. |
+| Contributor | Choose Feature, Bug report, or Work item; complete the public outcome, baseline or reproduction, scope, dependencies, proof, documentation impact, and Contribution checklist. |
+| Repository automation | Map the declared work type and primary area to canonical labels, then report only missing public contribution evidence. |
+| Maintainer | Review the contribution on its public merits. Separately decide whether to adopt it into the private product-development Roadmap. |
 
-A contributor is never expected to edit the private Project or assign metadata
-their repository permission does not expose. Once the public contract is
-complete, they wait for maintainer triage before implementation or a non-draft
-pull request. The public field guide explains each private value so the handoff
-is predictable, not so contributors must mutate it.
+A contribution issue may remain unassigned, have no milestone, and have no
+private Project item. That is valid. Contributors do not supply or wait for
+Status, Priority, or Readiness. For a large or direction-setting change, wait
+for a maintainer to confirm public scope before spending substantial effort.
 
-Every public issue must remain useful without Falryn Docs or private Roadmap
-access. Before a maintainer marks a PR-sized issue Ready, its public body names:
+Every contribution issue must remain useful without Falryn Docs or private
+Roadmap access. Before a non-draft pull request, its public body names:
 
 - the observed source baseline and remaining outcome;
-- scope, non-goals, owner boundaries, and native relationships;
+- scope and relevant non-goals;
 - inputs, outputs, state, effects, limits, failures, cancellation, cleanup, and
   recovery that apply to the slice;
 - the real product composition point;
 - focused validation and completion proof; and
 - documentation impact using the results in [DEVELOPMENT.md](DEVELOPMENT.md).
 
-Repository-visible triage also assigns exactly one owner, one milestone, one
-work-type label, at least one area label, and a native parent or explicit
-Standalone relationship. The issue form and `issue-governance.yml` expose these
-requirements. `Feature` and `Bug report` apply their work type directly. The
+Repository automation requires one work-type label and at least one area label.
+The issue form and `issue-governance.yml` expose these requirements. `Feature`
+and `Bug report` apply their work type directly. The
 general `Work item` form covers documentation, infrastructure and maintenance,
 and research or qualification; repository automation maps its declared work
-type and every form's primary area to canonical labels. Native GitHub
-relationships remain authoritative over prose.
+type and every form's primary area to canonical labels.
 
-Authenticated maintainers additionally reconcile the private Roadmap's Status,
-Priority, Readiness, liveness, and sequence fields. Those fields cannot replace
-the public handoff and are not a contributor prerequisite. New open leaves
-start as **Todo**, **P2**, and **Needs Planning**. **Ready** means the current
-PR-sized contract is verified, **Needs Decision** names a human choice in the
-public issue, **Parent** is an open native parent, and **Historical** readiness
-is closed-only. Priority remains P0 emergency, P1 high, P2 normal, or P3 low;
-it does not encode blockers or work type. The exact option descriptions,
-transitions, and Project automation contract live in the vendored
-[Roadmap field guide](.agents/skills/falryn-workflow/references/roadmap-fields.md),
-and the [governance audit guide](.agents/skills/falryn-workflow/references/governance-audits.md)
-owns verification.
+If a maintainer adopts an issue into product development, Project membership
+becomes the private ownership marker. Only then do the sole assignee, milestone,
+Status, P0-P3 Priority, Readiness, native hierarchy, liveness, and deterministic
+sequence rules apply. The maintainer workflow lives in the vendored
+[Roadmap field guide](.agents/skills/falryn-workflow/references/roadmap-fields.md).
+It must not leak into the public contribution check.
 
 Audit snapshots may contain issue bodies and private Project metadata. They stay
 outside both repositories and never enter public reports. An unavailable private
@@ -97,8 +87,8 @@ target, scope, validation, documentation, and risk sections. Automation then:
 
 - checks the conventional title, exactly one primary change class, concrete
   section evidence, and valid documentation-impact results;
-- verifies the owning issue is open, metadata-complete, a Ready PR-sized leaf,
-  and free of open native blockers;
+- verifies the owning issue is open, publicly complete, PR-sized, and free of
+  open native blockers;
 - applies changed-file area labels and exactly one `size:*` label;
 - records the author's `vouch:*` trust classification; and
 - runs the multi-platform source and compiled validation in `ci.yml`.

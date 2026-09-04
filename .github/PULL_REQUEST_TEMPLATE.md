@@ -4,8 +4,8 @@ Closes #
 
 <!-- Every non-Dependabot PR closes exactly one PR-sized Falryn issue.
      Split or re-plan partial work instead of replacing this with Refs.
-     If you cannot set milestone or private Project fields, wait for maintainer
-     triage; the metadata check reports those as maintainer-owned gaps. -->
+     Contributors do not need an assignee, milestone, private Roadmap item,
+     Priority, or Readiness. -->
 
 ## Primary change class
 
@@ -63,16 +63,13 @@ Closes #
 
 ## Delivery checklist
 
-<!-- The optional maintainer modes add delivery orchestration. Every PR still
-     needs Target, Scope, Validation, and Documentation. Automation applies one
-     `size: *` label from changed lines. A non-draft PR must complete every item
-     below; split an XL PR when practical. -->
+<!-- Private product planning is a separate maintainer workflow. Every PR needs
+     Target, Scope, Validation, and Documentation. Automation applies one
+     `size: *` label from changed lines. A non-draft PR must complete every
+     public item below; split an XL PR when practical. -->
 
-- [ ] The target is one Ready, unblocked PR-sized issue.
-- [ ] The issue is assigned and **In Progress**.
-- [ ] Its parent is **In Progress** when this is the first required child to begin.
+- [ ] The target is one open, unblocked, PR-sized public issue with a current Contribution checklist.
 - [ ] The branch targets the current default branch and contains no unrelated work.
-- [ ] Any parent remains open and **In Progress** for integrated verification.
 - [ ] The PR title is a clean conventional subject suitable for squash merge.
 - [ ] The squash commit is subject-only by default; any body is limited to one useful short issue-reference footer.
 - [ ] Validation, risks, documentation impact, delivery details, and incremental messages remain in this PR rather than the squash commit.

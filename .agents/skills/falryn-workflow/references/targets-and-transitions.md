@@ -33,7 +33,7 @@ After resolution, inspect native `parent`, `subIssues`, `blockedBy`, `blocking`,
 | Mode | Permitted result | Does not authorize |
 | --- | --- | --- |
 | Plan | Complete a public issue contract and, with private authority, reconcile planning metadata | Source edits, implementation branch, In Progress, merge |
-| Implement | Deliver one Ready, unblocked, assigned PR-sized issue to an open pull request | Parent implementation, approval, merge |
+| Implement | Deliver one publicly complete, unblocked PR-sized issue to an open pull request; require Ready and assignment only when Roadmap-owned | Parent implementation, approval, merge |
 | Review | Assess one exact pull-request revision | Comments, approval, edits, Project mutation, merge |
 | Verify | Audit an exact PR, issue, parent, milestone, or range; perform only named governance reconciliation | Product or documentation repair, merge, release |
 | Merge | Merge the unchanged bundle from a fresh Verify preview and reconcile it | Changed revisions, release publication, branch deletion |
@@ -44,14 +44,14 @@ Plan, Implement, Review, Verify, and Merge remain separate manual modes. Review 
 
 ## State ownership
 
-- Public issue body: complete implementation handoff.
+- Public issue body: contribution and implementation handoff.
 - Native issue relationships: hierarchy and blockers.
 - Private Roadmap: Status, Priority, Readiness, liveness, and sequence.
 - Source, tests, builds, and `CURRENT-STATE.md`: implemented behavior.
 - Falryn Docs: canonical product and documentation contracts.
 - Pull requests and checks: changed revision and delivery evidence.
 
-One owner never substitutes for another. A checked Ready list cannot override an open blocker. A Project field cannot fill an incomplete public handoff. Green CI cannot prove a different revision or missing documentation owner.
+One owner never substitutes for another. A checked Contribution or Ready list cannot override an open blocker. A Project field cannot fill an incomplete public handoff. Green CI cannot prove a different revision or missing documentation owner.
 
 ## Invalidation
 

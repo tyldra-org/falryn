@@ -707,6 +707,7 @@ async function main(): Promise<void> {
   const report = analyzeRoadmapGovernance(snapshot, {
     livenessGraceHours: options.livenessGraceHours,
   });
+  const roadmapIssueCount = snapshot.issues.filter((issue) => issue.projectItems.length > 0).length;
   if (options.json) {
     process.stdout.write(
       `${JSON.stringify(
@@ -714,6 +715,8 @@ async function main(): Promise<void> {
           project: `${snapshot.projectOwner}/${snapshot.projectNumber}`,
           repositories: snapshot.repositories,
           issueCount: snapshot.issues.length,
+          repositoryIssueCount: snapshot.issues.length,
+          roadmapIssueCount,
           nonIssueProjectItems: snapshot.nonIssueProjectItems.length,
           ...report,
         },
@@ -723,7 +726,7 @@ async function main(): Promise<void> {
     );
   } else {
     process.stdout.write(
-      `Roadmap ${snapshot.projectOwner}/${snapshot.projectNumber}: ${snapshot.issues.length} issues, ${report.diagnostics.length} diagnostics\n`,
+      `Roadmap ${snapshot.projectOwner}/${snapshot.projectNumber}: ${roadmapIssueCount} managed issues from ${snapshot.issues.length} repository issues, ${report.diagnostics.length} diagnostics\n`,
     );
     for (const diagnostic of report.diagnostics) {
       process.stdout.write(

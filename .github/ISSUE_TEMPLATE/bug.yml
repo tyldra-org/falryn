@@ -8,13 +8,11 @@ body:
     attributes:
       value: |
         Please do not disclose vulnerabilities here; use the private security
-        reporting path in SECURITY.md. A triager adds each valid issue to the
-        Falryn Roadmap exactly once, assigns one owner and milestone, and
-        records a native parent or Standalone relationship. New leaves enter
-        Status **Todo**, Priority **P2**, and Readiness **Needs Planning** until
-        evidence supports another value. P0 is never inferred. Contributors
-        complete this public form; they do not need permission to assign the
-        milestone or edit the private Project.
+        reporting path in SECURITY.md. This public report does not need an
+        assignee, milestone, Priority, Readiness, or access to the private
+        Falryn Roadmap. Maintainers decide separately whether to adopt an issue
+        into the product-development plan. A focused correction may use the
+        public contribution path without private planning metadata.
   - type: textarea
     id: outcome
     attributes:
@@ -59,7 +57,7 @@ body:
     id: area
     attributes:
       label: Primary area
-      description: A triager applies the matching `area:*` label.
+      description: Repository automation applies the matching `area:*` label.
       options:
         - Runtime and application
         - CLI and headless use
@@ -77,24 +75,6 @@ body:
         - Release and compatibility
         - Security and privacy
         - Documentation
-    validations:
-      required: true
-  - type: dropdown
-    id: relationship
-    attributes:
-      label: Planning relationship
-      description: Choose Standalone or link the native parent in the next field.
-      options:
-        - Standalone
-        - Native child of an existing parent
-    validations:
-      required: true
-  - type: input
-    id: parent
-    attributes:
-      label: Native parent issue
-      description: Required when this is a child; otherwise write Standalone.
-      placeholder: "#123 or Standalone"
     validations:
       required: true
   - type: textarea
@@ -121,8 +101,8 @@ body:
   - type: checkboxes
     id: readiness
     attributes:
-      label: Ready checklist
-      description: Leave an item unchecked until its evidence is known. The Project remains Needs Planning, or Needs Decision when a named decision blocks planning, until every item is current.
+      label: Contribution checklist
+      description: Complete these before opening a non-draft correction pull request. They do not represent private Roadmap readiness.
       options:
         - label: The reproduction and current source baseline are verified.
         - label: The correction fits one focused pull request and names its owner boundaries.

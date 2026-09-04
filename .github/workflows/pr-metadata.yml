@@ -58,12 +58,12 @@ jobs:
                 errors.push(
                   ...policy
                     .validateIssueContract(response.data)
-                    .map((error) => `owning issue contributor contract: ${error}`),
+                    .map((error) => `owning issue public contract: ${error}`),
                 );
                 errors.push(
                   ...policy
-                    .validateIssueMetadata(response.data)
-                    .map((error) => `owning issue maintainer triage: ${error}`),
+                    .validateIssueClassification(response.data)
+                    .map((error) => `owning issue repository classification: ${error}`),
                 );
                 errors.push(...policy.validateTargetIssue(response.data, relations));
               }

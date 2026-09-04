@@ -7,11 +7,10 @@ body:
       value: |
         Use this form when the outcome is neither a user-visible feature nor a
         defect correction. The selected work type is reconciled to one
-        `type:*` label. New leaves enter Status **Todo**, Priority **P2**, and
-        Readiness **Needs Planning** until evidence supports another value.
-        Contributors complete this public form; maintainers assign the owner,
-        milestone, and private Project fields. Security vulnerabilities belong
-        in the private reporting path.
+        `type:*` label. This public contribution does not need an assignee,
+        milestone, Priority, Readiness, or private Roadmap access. Maintainers
+        decide separately whether to adopt it into the product-development
+        plan. Security vulnerabilities belong in the private reporting path.
   - type: dropdown
     id: work_type
     attributes:
@@ -78,7 +77,7 @@ body:
     id: area
     attributes:
       label: Primary area
-      description: A triager applies the matching `area:*` label.
+      description: Repository automation applies the matching `area:*` label.
       options:
         - Runtime and application
         - CLI and headless use
@@ -98,25 +97,6 @@ body:
         - Documentation
     validations:
       required: true
-  - type: dropdown
-    id: relationship
-    attributes:
-      label: Planning relationship
-      description: Choose Standalone, a native child, or a parent outcome.
-      options:
-        - Standalone
-        - Native child of an existing parent
-        - Parent outcome with PR-sized children to be planned
-    validations:
-      required: true
-  - type: input
-    id: parent
-    attributes:
-      label: Native parent issue
-      description: Required when this is a child; otherwise write Standalone.
-      placeholder: "#123 or Standalone"
-    validations:
-      required: true
   - type: textarea
     id: validation
     attributes:
@@ -134,8 +114,8 @@ body:
   - type: checkboxes
     id: readiness
     attributes:
-      label: Ready checklist
-      description: Leave an item unchecked until its evidence is known. The Project remains Needs Planning, or Needs Decision when a named decision blocks planning, until every item is current.
+      label: Contribution checklist
+      description: Complete these before opening a non-draft implementation pull request. They do not represent private Roadmap readiness.
       options:
         - label: The current baseline and remaining delta are verified.
         - label: The scope fits one focused pull request and names its owner boundaries.

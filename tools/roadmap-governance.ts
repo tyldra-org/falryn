@@ -73,7 +73,6 @@ export const ROADMAP_READINESS_OPTIONS = [
 ] as const;
 
 export const ROADMAP_REQUIRED_WORKFLOWS = [
-  "Auto-add to project",
   "Auto-add sub-issues to project",
   "Auto-close issue",
   "Item added to project",
@@ -955,8 +954,11 @@ export function analyzeRoadmapGovernance(
   const allIssues = new Map<IssueKey, RoadmapGovernanceIssue>(
     snapshot.issues.map((issue) => [issueKey(issue.repository, issue.number), issue]),
   );
+  const managedIssues = new Map<IssueKey, RoadmapGovernanceIssue>(
+    [...allIssues].filter(([, issue]) => issue.projectItems.length > 0),
+  );
   const issues = new Map<IssueKey, RoadmapGovernanceIssue>(
-    [...allIssues].filter(([, issue]) => issue.state === "OPEN"),
+    [...managedIssues].filter(([, issue]) => issue.state === "OPEN"),
   );
 
   if (!sameFieldOptions(snapshot.statusOptions, ROADMAP_STATUS_OPTIONS)) {
@@ -1007,12 +1009,15 @@ export function analyzeRoadmapGovernance(
     const repositoryDifference = compareText(left.repository, right.repository);
     return repositoryDifference !== 0 ? repositoryDifference : left.number - right.number;
   })) {
-    if (issue.projectItems.length !== 1) {
+    if (issue.projectItems.length === 0) {
+      continue;
+    }
+    if (issue.projectItems.length > 1) {
       add(
         diagnostics,
         "project-membership-count",
         issue,
-        `expected one Project item; found ${issue.projectItems.length}`,
+        `expected at most one Project item; found ${issue.projectItems.length}`,
       );
       continue;
     }
@@ -1388,7 +1393,7 @@ export function analyzeRoadmapGovernance(
     }
   }
 
-  for (const issue of snapshot.issues) {
+  for (const issue of managedIssues.values()) {
     const sourceKey = issueKey(issue.repository, issue.number);
     const validateRelation = (relation: RoadmapRelation, kind: string): void => {
       const targetKey = issueKey(relation.repository, relation.number);
@@ -1403,6 +1408,14 @@ export function analyzeRoadmapGovernance(
           );
         }
         return;
+      }
+      if (target.projectItems.length === 0 && (kind !== "blocker" || relation.state === "OPEN")) {
+        add(
+          diagnostics,
+          "relationship-target-missing",
+          issue,
+          `${kind} ${targetKey} is outside the Roadmap-owned issue set`,
+        );
       }
       if (relation.state !== target.state) {
         add(

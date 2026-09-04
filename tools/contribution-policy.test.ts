@@ -5,8 +5,8 @@ type Policy = {
   readonly requestedArea: (body: string) => string | null;
   readonly requestedWorkType: (body: string) => string | null;
   readonly validateIssue: (issue: Record<string, unknown>) => readonly string[];
+  readonly validateIssueClassification: (issue: Record<string, unknown>) => readonly string[];
   readonly validateIssueContract: (issue: Record<string, unknown>) => readonly string[];
-  readonly validateIssueMetadata: (issue: Record<string, unknown>) => readonly string[];
   readonly validatePullRequest: (pullRequest: Record<string, unknown>) => {
     readonly errors: readonly string[];
     readonly owningIssue: { readonly number: number } | null;
@@ -24,10 +24,6 @@ const readyIssueBody = `### Outcome
 
 Deliver bounded behavior.
 
-### Native parent issue
-
-Standalone
-
 ### Dependencies and blockers
 
 None
@@ -40,7 +36,7 @@ Run the focused regression test.
 
 not-applicable
 
-### Ready checklist
+### Contribution checklist
 
 - [x] The contract is verified.
 `;
@@ -49,8 +45,8 @@ function issue(overrides: Record<string, unknown> = {}): Record<string, unknown>
   return {
     state: "open",
     body: readyIssueBody,
-    assignees: [{ login: "owner" }],
-    milestone: { title: "v0.4 Extensions and Collaboration" },
+    assignees: [],
+    milestone: null,
     labels: [{ name: "type: feature" }, { name: "area: runtime" }],
     ...overrides,
   };
@@ -106,23 +102,21 @@ The behavior remains local-only.
 }
 
 describe("contribution policy", () => {
-  test("accepts a complete issue and reports missing public contract sections", () => {
+  test("accepts a complete contribution issue without private planning metadata", () => {
     expect(policy.validateIssue(issue())).toEqual([]);
     expect(policy.validateIssue(issue({ body: "### Outcome\n\nOnly an outcome." }))).toContain(
-      "complete the Ready checklist section",
+      "complete the Contribution checklist section",
     );
   });
 
-  test("separates contributor-owned contract gaps from maintainer metadata", () => {
+  test("keeps public classification separate from private planning metadata", () => {
     const input = issue({
-      body: "### Outcome\n\nOnly an outcome.",
-      assignees: [],
-      milestone: null,
+      labels: [],
     });
-    expect(policy.validateIssueContract(input)).toContain("complete the Ready checklist section");
-    expect(policy.validateIssueMetadata(input)).toEqual([
-      "assign exactly one GitHub owner",
-      "assign exactly one repository milestone",
+    expect(policy.validateIssueContract(input)).toEqual([]);
+    expect(policy.validateIssueClassification(input)).toEqual([
+      "apply exactly one work-type label (`bug` or `type:*`)",
+      "apply at least one `area:*` label",
     ]);
   });
 
@@ -150,7 +144,7 @@ describe("contribution policy", () => {
     );
   });
 
-  test("requires a Ready leaf with no open native blockers", () => {
+  test("requires a contribution-ready leaf with no open native blockers", () => {
     expect(
       policy.validateTargetIssue(issue(), {
         subIssues: { totalCount: 0 },
@@ -175,7 +169,7 @@ describe("contribution policy", () => {
       },
     );
     expect(errors).toContain(
-      "the owning issue must have a non-empty, fully checked Ready checklist",
+      "the owning issue must have a non-empty, fully checked Contribution checklist",
     );
     expect(errors).toContain("the owning issue must be a PR-sized leaf, not a parent outcome");
     expect(errors).toContain("the owning issue has open blocker(s): tyldra-org/falryn#9");

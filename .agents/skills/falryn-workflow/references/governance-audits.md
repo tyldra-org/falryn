@@ -29,7 +29,7 @@ bun run audit:issues -- \
   --docs-root <docs-root>
 ```
 
-The live form checks every open public issue, native relationships, Project Status membership, public Ready evidence, and canonical-document links. `--baseline <older-snapshot>` is valid only for a deliberately reviewed same-repository comparison. `--json` changes output shape, not authority.
+The live form loads every open public issue so relationships can be resolved, but audits only issues deliberately present in the private Roadmap. Contribution issues outside the Project do not need an assignee, milestone, Project Status, or private readiness evidence and cannot suppress maintainer routing. `--baseline <older-snapshot>` is valid only for a deliberately reviewed same-repository comparison. `--json` changes output shape, not authority.
 
 ## Cross-repository Roadmap audit
 
@@ -48,13 +48,13 @@ Replay with:
 bun run audit:roadmap -- --snapshot <snapshot>
 ```
 
-The live form requires exactly those two repositories and that Project. It checks membership; exact field option names, descriptions, colors, and order; required enabled Project workflows; native hierarchy and blockers; milestone ordering; closing-pull-request liveness; state consistency; and dependency-safe routing. The API does not expose every Project workflow filter or field effect, so a maintainer also verifies those settings against [Roadmap fields and automation](roadmap-fields.md) after Project maintenance. The default liveness grace is seven days. Change `--liveness-grace-hours` only when the governance contract itself changes, not to suppress a diagnostic.
+The live form requires exactly those two repositories and that Project. It audits Project members only, while retaining repository issue records needed to resolve their relationships. It checks duplicate membership; exact field option names, descriptions, colors, and order; required enabled Project workflows; native hierarchy and blockers; milestone ordering; closing-pull-request liveness; state consistency; and dependency-safe routing. An open hierarchy or blocker dependency of a Roadmap issue must also be adopted so ordering stays complete. The API does not expose every Project workflow filter or field effect, so a maintainer also verifies those settings against [Roadmap fields and automation](roadmap-fields.md) after Project maintenance. The default liveness grace is seven days. Change `--liveness-grace-hours` only when the governance contract itself changes, not to suppress a diagnostic.
 
 ## Snapshot handling
 
 Snapshots can contain public issue bodies, private repository records, Project metadata, identities, and timestamps. Store them outside both repositories in a newly created private temporary directory with restrictive permissions. Never commit, attach, paste, upload, or summarize their private fields into a public issue, pull request, CI log, or artifact. Delete or securely retire them after their bounded replay purpose ends.
 
-A replay proves only that the deterministic analyzer returns the same result for that captured generation and schema version. It does not prove the live state is still current. Regenerate after any relevant issue, hierarchy, blocker, milestone, assignee, pull request, Project field, Project workflow, or repository state change. Schema version 2 snapshots include option descriptions, colors, and Project workflow enabled state; older snapshots are intentionally rejected.
+A replay proves only that the deterministic analyzer returns the same result for that captured generation and schema version. It does not prove the live state is still current. Regenerate after any relevant issue, hierarchy, blocker, milestone, assignee, pull request, Project field, Project workflow, or repository state change. Roadmap schema version 2 snapshots include option descriptions, colors, and Project workflow enabled state. Issue-readiness schema version 2 records Project item count so an issue outside the Project is distinct from an adopted item missing Status. Older snapshots are intentionally rejected.
 
 ## Interpret results
 

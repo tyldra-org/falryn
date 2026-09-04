@@ -15,7 +15,7 @@ Collaborators already use the contribution path that will apply when outside
 contributions open:
 
 1. discuss a meaningful outcome in a GitHub issue;
-2. wait for a maintainer to confirm that its public handoff is Ready;
+2. confirm that the public issue is in scope before investing in a large change;
 3. create a short-lived, focused branch;
 4. open one pull request with its scope, validation, documentation impact, and
    risk; and
@@ -23,17 +23,18 @@ contributions open:
 
 Use the Feature form for capability work, Bug report for corrections, and Work
 item for documentation, infrastructure or maintenance, and research or
-qualification. These types do not change the shared readiness or pull-request
+qualification. These types do not change the shared contribution or pull-request
 quality bar.
 
-If your account cannot assign an owner or milestone or cannot see the private
-Roadmap, complete the public issue form and stop there. Automation separates
-your remaining public fields from maintainer-only triage; a maintainer applies
-those values before implementation starts.
+Do not assign or wait for an assignee, milestone, private Roadmap item, Priority,
+or Readiness. Those fields belong to the maintainer's separate product-development
+plan. A maintainer may adopt a contribution issue into that plan, but adoption is
+not required for the issue or its pull request to use the public contribution
+path.
 
 Contributions will be evaluated on correctness, scope, tests, and documentation
 for released behavior, not on an editor, agent, or workflow choice. The public
-issue must contain everything needed to implement its slice. Contributors never
+issue must contain enough public context to review its slice. Contributors never
 need Falryn Docs or private Roadmap access.
 
 [DEVELOPMENT.md](DEVELOPMENT.md) is the complete public-checkout guide for

@@ -82,18 +82,22 @@ the same issue-backed path that will apply when outside contributions open.
 
 Choose `Feature` for new user-visible behavior, `Bug report` for a defect
 correction, and `Work item` for documentation, infrastructure or maintenance,
-and research or qualification. Work type describes why the issue exists;
-Priority describes urgency, and Readiness describes the next valid planning
-action. They are independent.
+and research or qualification. These public contribution types do not require
+access to the maintainer's milestones or private Roadmap.
 
-1. Select one assigned, Ready, unblocked PR-sized issue. New leaves begin as
-   Todo, P2, and Needs Planning; only verified evidence moves them to Ready.
-2. Read its native parent, subissues, blockers, linked pull requests, and public
+1. Select one open, unblocked, PR-sized public issue whose Contribution
+   checklist is current. Discuss large or direction-setting changes first.
+2. Read its blockers, linked pull requests, and public
    completion proof.
 3. Verify the stated baseline against the current default branch.
 4. Stop if the issue is a parent outcome, has unresolved requirements, or
    depends on private text for implementation behavior.
-5. Create or continue one short-lived branch for that delivery owner.
+5. Create or continue one short-lived branch for that contribution.
+
+Maintainer product work uses a separate private lane. When a maintainer
+deliberately adds an issue to the Falryn Roadmap, that issue also receives the
+Roadmap's assignee, milestone, Status, Priority, Readiness, hierarchy, and
+delivery rules. Issues outside the Project do not inherit those requirements.
 
 Parents collect integrated outcomes. They do not own branches or large pull
 requests. Work that needs separate review belongs in a native child issue. A

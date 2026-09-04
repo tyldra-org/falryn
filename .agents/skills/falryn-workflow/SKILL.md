@@ -56,11 +56,14 @@ Authenticated maintainer operation adds the verified private Falryn Docs and Roa
 
 Ordinary contributors and forks do not need these maintainer modes. They follow public `DEVELOPMENT.md`, `CONTRIBUTING.md`, the issue body, source, and repository checks.
 
+Private Project membership is an explicit maintainer decision to adopt an issue into Falryn product development. A public contribution issue or pull request does not require an assignee, milestone, Project item, Priority, Readiness, or knowledge of the private Roadmap. Never make those private fields a public contribution gate.
+
 ## Non-negotiable boundaries
 
 - Plan, Implement, Review, Verify, and Merge are separate manual modes. Review and Verify never authorize Merge.
 - Deliver is the sole composite mode. Parent issues are outcome trackers, never branches or mega-pull requests.
 - One PR-sized issue owns one focused application PR. A private docs companion exists only when an authenticated maintainer verifies that documentation must change.
+- Roadmap governance applies only to issues deliberately present in the private Project. Repository issues outside it remain valid contribution or discussion records and never enter private routing by inference.
 - No public issue may depend on private documentation for an implementation requirement. Before Ready, its public body must contain the complete issue-specific handoff.
 - Private content, snapshots, paths, Project fields, and credentials never enter public source, issues, pull requests, logs, artifacts, or reports merely because an agent could access them.
 - Re-read live GitHub state before every mutation. Activity, green CI, issue prose, and cached state do not substitute for current evidence.

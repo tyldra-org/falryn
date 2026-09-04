@@ -5,7 +5,7 @@ Five workflows.
 | Workflow | Question | Trigger |
 | --- | --- | --- |
 | [`ci.yml`](ci.yml) | Is this revision safe to merge? | every pull request, and every push to `main` |
-| [`pr-metadata.yml`](pr-metadata.yml) | Does a PR close one Ready leaf and retain complete review evidence? | pull-request updates |
+| [`pr-metadata.yml`](pr-metadata.yml) | Does a PR close one contribution-ready issue and retain complete review evidence? | pull-request updates |
 | [`pr-labels.yml`](pr-labels.yml) | Which product area and review size apply? | pull-request updates, including forks without code checkout |
 | [`pr-vouch.yml`](pr-vouch.yml) | Is the author a collaborator, maintainer-vouched, unvouched, or blocked? | pull-request updates, `/recheck-vouch`, and trust-list changes |
 | [`issue-governance.yml`](issue-governance.yml) | Is the public issue contract complete and are declared labels reconciled? | issue metadata or state changes |
@@ -13,25 +13,27 @@ Five workflows.
 `pr-metadata.yml` is a required `main` check. It loads the policy from the
 trusted base revision, validates meaningful template content, and verifies the
 owning issue is an open, unblocked, metadata-complete PR-sized leaf with a
-fully checked Ready list. `pr-labels.yml` receives a
+fully checked Contribution checklist. `pr-labels.yml` receives a
 write-scoped token only to mutate labels and never checks out or executes an
 untrusted pull-request head. `pr-vouch.yml` uses the committed
 [VOUCHED.td](../VOUCHED.td) trust list, classifies authors, and never grants
 merge permission. `issue-governance.yml` maps an issue form's declared work
-type and primary area to canonical labels, then comments on missing
-machine-checkable repository metadata. It never invents an owner or milestone.
-A repository-scoped `GITHUB_TOKEN` cannot read the private organization
-Project, so Roadmap membership, Status, Priority, Readiness, and hierarchy
-remain mandatory but are verified by private Project automation and the
-authenticated `bun run audit:issues` and `bun run audit:roadmap` maintainer
-commands documented in the vendored
+type and primary area to canonical labels, then comments only on missing public
+contribution evidence. It never asks for an assignee, milestone, or private
+Project field.
+
+The private Roadmap is a separate maintainer product-development system.
+Project membership marks an issue as adopted into that plan. Only those issues
+are subject to private Status, Priority, Readiness, milestone, hierarchy,
+liveness, and sequencing checks from `bun run audit:issues` and
+`bun run audit:roadmap`, documented in the vendored
 [`governance-audits.md`](../../.agents/skills/falryn-workflow/references/governance-audits.md)
-guide. The Roadmap audit also requires the private Project's issue auto-add and
-state-reconciliation workflows to remain enabled. The API cannot expose every
+guide. The Roadmap does not auto-add every repository issue. Its existing-item
+and subissue reconciliation workflows remain enabled. The API cannot expose every
 workflow filter or effect, so maintainers verify those settings against the
 [`roadmap-fields.md`](../../.agents/skills/falryn-workflow/references/roadmap-fields.md)
 contract after Project maintenance. [`CONTRIBUTOR-READINESS.md`](../../CONTRIBUTOR-READINESS.md)
-explains why those private access gates exist.
+explains the public/private boundary.
 
 `issue-governance.yml` and `pr-metadata.yml` apply to every human account,
 including the repository owner. Dependabot retains its dedicated metadata path,

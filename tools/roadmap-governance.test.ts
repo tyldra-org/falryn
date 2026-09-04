@@ -265,7 +265,7 @@ describe("analyzeRoadmapGovernance", () => {
           option.name === "P2" ? { ...option, description: "Normal work" } : option,
         ),
         projectWorkflows: value.projectWorkflows.filter(
-          (workflow) => workflow.name !== "Auto-add to project",
+          (workflow) => workflow.name !== "Auto-add sub-issues to project",
         ),
       }),
     ).toEqual(["priority-field-invalid", "project-workflow-invalid"]);
@@ -300,25 +300,41 @@ describe("analyzeRoadmapGovernance", () => {
     ).toEqual(["non-issue-project-item"]);
   });
 
-  test("requires one Project item and valid classifications", () => {
-    const missing = issue({ projectItems: [] });
-    const invalid = issue({
+  test("ignores contribution issues outside the Project and rejects duplicate membership", () => {
+    const contribution = issue({ projectItems: [] });
+    const duplicate = issue({
       number: 2,
+      projectItems: [projectItem({ id: "item-2a" }), projectItem({ id: "item-2b" })],
+    });
+    expect(codes(snapshot([contribution]))).toEqual([]);
+    expect(analyzeRoadmapGovernance(snapshot([contribution])).deliverySequence).toEqual([]);
+    expect(codes(snapshot([duplicate]))).toEqual(["project-membership-count"]);
+  });
+
+  test("requires valid classifications for Roadmap-owned issues", () => {
+    const invalid = issue({
       projectItems: [
         projectItem({
-          id: "item-2",
           status: "Done",
           priority: "Historical",
           readiness: "Historical",
         }),
       ],
     });
-    expect(codes(snapshot([missing, invalid]))).toEqual([
-      "project-membership-count",
+    expect(codes(snapshot([invalid]))).toEqual([
       "open-historical-priority",
       "readiness-invalid",
       "status-invalid",
     ]);
+  });
+
+  test("requires open Roadmap dependencies to be adopted into the Project", () => {
+    const planned = issue({
+      blockedBy: [{ repository: REPOSITORY, number: 2, state: "OPEN" }],
+    });
+    const contribution = issue({ number: 2, projectItems: [] });
+
+    expect(codes(snapshot([planned, contribution]))).toEqual(["relationship-target-missing"]);
   });
 
   test("rejects noncanonical or negated Standalone relationship text", () => {
