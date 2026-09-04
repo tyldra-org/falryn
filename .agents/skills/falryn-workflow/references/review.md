@@ -6,7 +6,7 @@ Review is a read-only assessment of one exact Falryn or, with private access, Fa
 
 Resolve the repository, base and head SHA, author, public delivery issue, checks, reviews, merge state, and complete current diff. Inventory every added, modified, deleted, and renamed file. Read affected behavior, callers, data and wire formats, configuration, persistence, projections, and cleanup paths rather than reviewing filenames alone.
 
-Compare the change with its public issue contract, current source, tests, and `CURRENT-STATE.md`. When private docs access exists, add the exact documentation owners and companion evidence without copying their content into the public report. Without access, classify documentation verification as unavailable rather than pretending it is unaffected.
+Compare the change with its public issue contract, current source, tests, and `CURRENT-STATE.md`. Apply [documentation delivery](documentation-delivery.md) when private docs access exists, adding exact owner and companion evidence without copying private content into the public report. Without access, classify documentation verification as unavailable rather than pretending it is unaffected.
 
 Trace the central safety condition and concrete failure paths. Findings identify severity, path and line, impact, likelihood, and the cheapest disproving check. Separate actionable defects from cleared risks and unavailable evidence.
 

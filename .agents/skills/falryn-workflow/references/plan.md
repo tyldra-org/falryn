@@ -15,13 +15,13 @@ Read the issue, native hierarchy and blockers, source, tests, manifests, `CURREN
 - focused validation and documentation impact; and
 - a current non-empty Ready checklist.
 
-The issue body must preserve every issue-specific fact an implementer cannot safely infer. Private documentation may guide an authenticated maintainer, but no required implementation fact may exist only there.
+The issue body must preserve every issue-specific fact an implementer cannot safely infer. Private documentation may guide an authenticated maintainer, but no required implementation fact may exist only there. Classify canonical owners through [documentation delivery](documentation-delivery.md).
 
 Plan may update the public issue, its native hierarchy, and blockers. It does not create implementation branches or pull requests, write source, set In Progress, close an issue, or merge anything.
 
 ## Access outcomes
 
-With private Roadmap access, reconcile Project metadata and mark Ready only when all public and private preconditions pass. Without it, Plan may complete the public handoff but must report `private-roadmap-unavailable`; it cannot claim authoritative readiness or sequence position.
+With private Roadmap access, reconcile Project metadata and mark Ready only when all public and private preconditions pass, then run [governance audits](governance-audits.md). Without it, Plan may complete the public handoff but must report `private-roadmap-unavailable`; it cannot claim authoritative readiness or sequence position.
 
 A missing product decision remains Not Ready. Do not invent it, copy broad private design into the public issue, or begin implementation while planning.
 

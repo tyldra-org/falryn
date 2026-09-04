@@ -23,7 +23,7 @@ An unrelated directory named `falryn-docs` is not authority. Do not add, replace
 
 Without a local checkout, authenticated `gh` access may read the exact private repository. Never clone it automatically, broaden visibility, request a token in chat, place a token on a command line, or persist fetched private content in Falryn.
 
-Roadmap access exists only when the authenticated account can read the exact organization Project and its required fields. Repository issue access does not imply Project access. A cached report is authoritative only for its recorded snapshot and scope.
+Roadmap access exists only when the authenticated account can read the exact organization Project and its required fields. Repository issue access does not imply Project access. A cached report is authoritative only for its recorded snapshot and scope. Use [governance audits](governance-audits.md) after proving access; use [documentation delivery](documentation-delivery.md) after resolving the canonical owners.
 
 ## Access profiles
 

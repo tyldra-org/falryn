@@ -1,15 +1,21 @@
 ---
 name: falryn-workflow
-description: Falryn-specific routing for optional Plan, Implement, Review, Verify, Merge, Deliver, and Next modes, plus read-only project orientation. Use only in Falryn or Falryn Docs work; all other skill bundles remain product-agnostic.
+description: Falryn-specific source, issue, pull-request, documentation, and Roadmap workflow for public-only and authenticated maintainer work across Falryn and Falryn Docs. Use for Falryn mode prompts, project orientation, delivery, or workflow maintenance; never for unrelated repositories.
 ---
 
 # Falryn workflow
 
 This bundle is the complete executable workflow for agents operating in the public Falryn checkout. It does not require a Falryn Docs checkout or private Roadmap access for public source, issue, and pull-request inspection.
 
+It was last reconciled on 2026-09-03 against the public and private repository contracts, the live GitHub issue and Project model, GitHub CLI 2.100.0, and the repository-owned governance auditors. Treat that as a maintenance marker. Live repository guidance, source, GitHub state, installed CLI help, and verified private authority remain authoritative.
+
 Falryn Docs and the Roadmap remain private maintainer authorities. Read [private authority](references/private-authority.md) before any operation that needs documentation ownership, Project fields, exact delivery sequencing, a docs-only target, or a cross-repository delivery bundle. Missing private access is an `unavailable` result, never permission to guess or disclose private state.
 
 A Falryn greeting, walkthrough, status question, or "what next?" request routes through [Next](references/next.md).
+
+## Request classification
+
+Load this skill for Falryn work, but activate a maintainer mode only when the user supplies its selector or an unmistakable natural-language equivalent. An ordinary unprefixed request follows normal task semantics plus repository guidance and the relevant stack, Git, GitHub, or review skill. It does not silently become Plan, Deliver, Merge, Next, or a Roadmap mutation. Read [targets and transitions](references/targets-and-transitions.md) whenever the target or mode boundary is not already exact.
 
 ## Before acting
 
@@ -18,12 +24,14 @@ A Falryn greeting, walkthrough, status question, or "what next?" request routes 
 3. Classify private authority as available or unavailable using [private authority](references/private-authority.md). Do not request, print, or persist credentials.
 4. Load `gh-cli` for GitHub, `git-workflow` for Git mutations, `change-review` for review reasoning, and the relevant available stack skill.
 5. Read [issue governance](references/issue-governance.md) before issue mutation, implementation, or routing.
-6. Stop on an incomplete public implementation contract, unresolved authority, stale revision evidence, conflicting ownership, or a private-only operation without private access.
+6. Use [governance audits](references/governance-audits.md) for readiness, Project, liveness, or sequence claims. Use [documentation delivery](references/documentation-delivery.md) for documentation impact or a companion pull request.
+7. Stop on an incomplete public implementation contract, unresolved authority, stale revision evidence, conflicting ownership, or a private-only operation without private access.
 
 ## Route one mode
 
 | Request | Local owner |
 | --- | --- |
+| Target parsing, repository selection, mode activation, or state transition | [Targets and transitions](references/targets-and-transitions.md) |
 | `Plan - Target: ...` | [Plan](references/plan.md) |
 | `Implement - Target: ...` | [Implement](references/implement.md) |
 | `Review - Target: PR #N` | [Review](references/review.md) |
@@ -33,6 +41,8 @@ A Falryn greeting, walkthrough, status question, or "what next?" request routes 
 | `Deliver - Target: Parent issue #N` or `Parent chain #N` | [Deliver](references/deliver.md) and [Parent delivery](references/parent-delivery.md) |
 | `Next - Target: Falryn Roadmap`, orientation, or status | [Next](references/next.md) |
 | Verify gap or incomplete merged delivery | [Corrections](references/corrections.md) |
+| Issue-readiness, Roadmap, liveness, or sequencing audit | [Governance audits](references/governance-audits.md) |
+| Documentation impact, owner lookup, or companion delivery | [Documentation delivery](references/documentation-delivery.md) |
 
 The ASCII hyphen forms above and the corresponding typographic-dash forms are equivalent selectors.
 
@@ -52,6 +62,7 @@ Ordinary contributors and forks do not need these maintainer modes. They follow 
 - No public issue may depend on private documentation for an implementation requirement. Before Ready, its public body must contain the complete issue-specific handoff.
 - Private content, snapshots, paths, Project fields, and credentials never enter public source, issues, pull requests, logs, artifacts, or reports merely because an agent could access them.
 - Re-read live GitHub state before every mutation. Activity, green CI, issue prose, and cached state do not substitute for current evidence.
+- Never publish private issue bodies, document text, Project fields, snapshots, or local private-checkout paths. Report only the minimum delivery classification needed by the public action.
 
 ## Reporting
 
@@ -63,4 +74,5 @@ The bundle committed at `falryn/.agents/skills/falryn-workflow/` is authoritativ
 Falryn Docs agents resolve it from a verified sibling checkout and may use an
 installed global copy only as a fallback. Public Falryn work must not depend on
 either a global installation or the private docs checkout. The five other
-vendored skills remain portable.
+vendored skills remain portable. When maintaining the optional global copy,
+change and validate the vendored bundle first, then require exact file parity.

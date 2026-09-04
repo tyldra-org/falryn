@@ -4,7 +4,7 @@ Next is read-only routing over the private Falryn Roadmap. It never mutates issu
 
 ## Required authority
 
-Require authenticated access to the exact private Roadmap and both repositories represented in its audit. Run the repository-owned live Roadmap audit or replay a complete authorized snapshot through the same auditor. Do not manually reproduce priority, readiness, dependency, liveness, or delivery order.
+Require authenticated access to the exact private Roadmap and both repositories represented in its audit. Run the exact live or replay command in [governance audits](governance-audits.md). Do not manually reproduce priority, readiness, dependency, liveness, or delivery order.
 
 Without private Roadmap access, return:
 

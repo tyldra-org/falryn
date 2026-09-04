@@ -14,14 +14,14 @@ Implement accepts one explicitly named, Ready, unblocked PR-sized Falryn issue. 
 
 Implement the complete issue with the smallest coherent source and test changes. Update `CURRENT-STATE.md` only when shipped behavior changes. Run focused checks while iterating, then the repository's required validation.
 
-Classify documentation impact as:
+Classify documentation impact through [documentation delivery](documentation-delivery.md) as:
 
 - `private-update-required`;
 - `private-verify-unaffected`;
 - `public-code-adjacent-update`; or
 - `not-applicable`.
 
-A contributor without private docs access records the classification and evidence in the Falryn PR. An authenticated maintainer owns any required private docs companion. Do not copy private pages into Falryn or make up a companion link.
+A contributor without private docs access records the classification and evidence in the Falryn PR. An authenticated maintainer owns any required private docs companion. Do not copy private pages into Falryn or make up a companion link. After readiness or Status changes, run the scopes required by [governance audits](governance-audits.md).
 
 Commit and push only intended paths. Open or update one focused application PR with its delivery owner, scope, validation, limitations, documentation classification, and any verified companion identity. Implement never merges unless the originating request is the composite Deliver mode and all fresh delivery conditions pass.
 

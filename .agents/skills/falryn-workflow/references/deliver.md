@@ -4,7 +4,7 @@ Deliver is one maintainer controller for one resolved PR-sized issue at a time. 
 
 ## Authority
 
-Upstream Deliver requires authenticated private Roadmap access because it changes Status and Readiness, resolves exact sequence and ownership, and reconciles completion. A required docs companion also requires private Falryn Docs access. Without either required authority, return `unavailable` before state mutation and name the explicit public preparation or maintainer action that can proceed.
+Upstream Deliver requires authenticated private Roadmap access because it changes Status and Readiness, resolves exact sequence and ownership, and reconciles completion through [governance audits](governance-audits.md). A required docs companion also requires private Falryn Docs access and [documentation delivery](documentation-delivery.md). Without either required authority, return `unavailable` before state mutation and name the explicit public preparation or maintainer action that can proceed.
 
 The originating Deliver request authorizes merge only for the exact issue's freshly verified application PR and explicitly verified companions. It does not authorize changed revisions, missing checks, unresolved reviews, a different owner, or unrelated pull requests.
 

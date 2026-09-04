@@ -10,7 +10,7 @@ A public-only application PR may merge only when fresh verification proves that 
 
 ## Merge order
 
-For an authenticated cross-repository bundle:
+For an authenticated cross-repository bundle, follow [documentation delivery](documentation-delivery.md):
 
 1. squash-merge each required private docs companion at its reviewed head;
 2. stop on the first unexpected result and report exactly what landed;
@@ -23,6 +23,6 @@ The operations are sequential, not atomic. A partial bundle remains partial and 
 
 ## Reconcile
 
-After all required merges, re-read PR and issue state, close or repair the delivery owner as appropriate, reconcile private Project fields when accessible, and safely fast-forward eligible clean default-branch checkouts. Leave dirty, detached, divergent, conflicted, or branch-locked checkouts untouched. Branch deletion is separate.
+After all required merges, re-read PR and issue state, close or repair the delivery owner as appropriate, reconcile private Project fields when accessible, run [governance audits](governance-audits.md), and safely fast-forward eligible clean default-branch checkouts. Leave dirty, detached, divergent, conflicted, or branch-locked checkouts untouched. Branch deletion is separate.
 
 Verify resulting merge SHAs and report a safe revert-through-new-PR path. Merge authorization never covers release publication, destructive cleanup, or unrelated work.

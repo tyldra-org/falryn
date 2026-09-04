@@ -36,7 +36,7 @@ With authenticated Roadmap access, resolve the issue's exact repository, assigne
 - Ready is evidence about contract completeness, not blocker absence.
 - Parent and Historical states never create implementation slots.
 
-Run the repository-owned readiness and Roadmap auditors after governance mutations. Any diagnostic suppresses routing until reconciled.
+Run the exact repository-owned commands in [governance audits](governance-audits.md) after governance mutations. Any diagnostic suppresses routing until reconciled.
 
 ## Mutation safety
 
