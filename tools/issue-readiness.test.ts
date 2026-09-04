@@ -29,6 +29,7 @@ function issue(overrides: Partial<IssueReadinessIssue> = {}): IssueReadinessIssu
     assignees: ["maintainer"],
     labels: ["type: chore", "area: docs"],
     milestone: "v0.4 Extensions and Collaboration",
+    roadmapItemCount: 1,
     roadmapStatuses: ["Todo"],
     parent: null,
     subIssues: [],
@@ -39,7 +40,7 @@ function issue(overrides: Partial<IssueReadinessIssue> = {}): IssueReadinessIssu
 
 function snapshot(issues: readonly IssueReadinessIssue[]): IssueReadinessSnapshot {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     repository: "tyldra-org/falryn",
     generatedAt: "2026-09-02T00:00:00Z",
     issues,
@@ -78,6 +79,26 @@ describe("issue readiness audit", () => {
     expect(auditIssueReadiness(snapshot([accepted, parent, child, blocker]))).toEqual([]);
   });
 
+  test("accepts the level-three headings emitted by GitHub issue forms", () => {
+    const issueFormBody = issue({
+      body: [
+        "### Outcome",
+        "",
+        "Deliver one deterministic fixture.",
+        "",
+        "### Planning relationship",
+        "",
+        "Standalone",
+        "",
+        "### Completion proof",
+        "",
+        "Complete when the fixture passes.",
+      ].join("\n"),
+    });
+
+    expect(auditIssueReadiness(snapshot([issueFormBody]))).toEqual([]);
+  });
+
   test("does not accept noncanonical or negated Standalone text as a relationship", () => {
     for (const declaration of [
       "Standalone is not the issue relationship.",
@@ -105,8 +126,8 @@ describe("issue readiness audit", () => {
   });
 
   test("rejects malformed or duplicate snapshot identities", () => {
-    expect(() => parseIssueReadinessSnapshot({ schemaVersion: 2 })).toThrow(
-      "snapshot.schemaVersion must be 1",
+    expect(() => parseIssueReadinessSnapshot({ schemaVersion: 1 })).toThrow(
+      "snapshot.schemaVersion must be 2",
     );
     expect(() => parseIssueReadinessSnapshot(snapshot([issue(), issue()]))).toThrow(
       "snapshot contains duplicate issue #1",
@@ -119,6 +140,7 @@ describe("issue readiness audit", () => {
       assignees: [],
       labels: ["type: docs", "bug"],
       milestone: null,
+      roadmapItemCount: 2,
       roadmapStatuses: ["Todo", "Done"],
     });
 
@@ -133,6 +155,19 @@ describe("issue readiness audit", () => {
       "heading-missing",
       "heading-missing",
     ]);
+  });
+
+  test("ignores contribution issues outside the private Roadmap", () => {
+    const contribution = issue({
+      assignees: [],
+      labels: [],
+      milestone: null,
+      roadmapItemCount: 0,
+      roadmapStatuses: [],
+      body: "A public contribution report may start with partial context.",
+    });
+
+    expect(auditIssueReadiness(snapshot([contribution]))).toEqual([]);
   });
 
   test("detects dependency cycles and blocker prose drift", () => {

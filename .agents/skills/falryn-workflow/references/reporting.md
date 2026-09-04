@@ -15,7 +15,7 @@ Include:
 
 For a file the user may inspect, provide its clickable absolute local path in chat plus repository-qualified path and durable link when that location is public and useful. Never commit machine-specific paths.
 
-Do not print private document text, private Project fields, snapshots, authenticated API responses, credentials, or private checkout paths into public issues, pull requests, commits, artifacts, or logs. Public reports may state only the delivery fact required, such as `private documentation update required`, `verified unaffected`, or `private Roadmap unavailable`.
+Do not print private document text, private Project fields, snapshots, authenticated API responses, credentials, or private checkout paths into public issues, pull requests, commits, artifacts, or logs. Use the public classifications in [documentation delivery](documentation-delivery.md) and report only the delivery fact required.
 
 A completed mode or orientation ends with one exact copy-ready line:
 

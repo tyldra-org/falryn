@@ -2,6 +2,10 @@ import { describe, expect, test } from "bun:test";
 import {
   analyzeRoadmapGovernance,
   parseRoadmapGovernanceSnapshot,
+  ROADMAP_PRIORITY_OPTIONS,
+  ROADMAP_READINESS_OPTIONS,
+  ROADMAP_REQUIRED_WORKFLOWS,
+  ROADMAP_STATUS_OPTIONS,
   type RoadmapGovernanceIssue,
   type RoadmapGovernanceSnapshot,
 } from "./roadmap-governance";
@@ -21,7 +25,7 @@ function projectItem(
     status: "Todo",
     statusUpdatedAt: "2026-09-01T00:00:00.000Z",
     priority: "P2",
-    readiness: "Not Ready",
+    readiness: "Needs Planning",
     ...overrides,
   };
 }
@@ -60,9 +64,16 @@ Planning relationship: Standalone-v1.
   };
 }
 
+function readyBody(): string {
+  return issue().body.replace(
+    "- [ ] Verify the source baseline.",
+    "- [x] Verify the source baseline.",
+  );
+}
+
 function snapshot(issues: readonly RoadmapGovernanceIssue[]): RoadmapGovernanceSnapshot {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     generatedAt: "2026-09-03T00:00:00.000Z",
     projectOwner: "tyldra-org",
     projectNumber: 1,
@@ -78,9 +89,10 @@ function snapshot(issues: readonly RoadmapGovernanceIssue[]): RoadmapGovernanceS
         count: issues.filter((entry) => entry.repository === "tyldra-org/falryn-docs").length,
       },
     ],
-    statusOptions: ["Todo", "In Progress", "Done"],
-    priorityOptions: ["P0", "P1", "P2", "P3", "Historical"],
-    readinessOptions: ["Ready", "Not Ready", "Parent", "Historical"],
+    statusOptions: ROADMAP_STATUS_OPTIONS,
+    priorityOptions: ROADMAP_PRIORITY_OPTIONS,
+    readinessOptions: ROADMAP_READINESS_OPTIONS,
+    projectWorkflows: ROADMAP_REQUIRED_WORKFLOWS.map((name) => ({ name, enabled: true })),
     issues,
     nonIssueProjectItems: [],
   };
@@ -233,8 +245,8 @@ describe("analyzeRoadmapGovernance", () => {
   test("requires complete Project field schemas", () => {
     const input = {
       ...snapshot([issue()]),
-      statusOptions: ["Todo"],
-      priorityOptions: ["P0", "P1", "P2", "P3"],
+      statusOptions: ROADMAP_STATUS_OPTIONS.slice(0, 1),
+      priorityOptions: ROADMAP_PRIORITY_OPTIONS.slice(0, 4),
       readinessOptions: [],
     };
     expect(codes(input)).toEqual([
@@ -242,6 +254,40 @@ describe("analyzeRoadmapGovernance", () => {
       "readiness-field-invalid",
       "status-field-invalid",
     ]);
+  });
+
+  test("requires exact Project option metadata and enabled automation", () => {
+    const value = snapshot([issue()]);
+    expect(
+      codes({
+        ...value,
+        priorityOptions: value.priorityOptions.map((option) =>
+          option.name === "P2" ? { ...option, description: "Normal work" } : option,
+        ),
+        projectWorkflows: value.projectWorkflows.filter(
+          (workflow) => workflow.name !== "Auto-add sub-issues to project",
+        ),
+      }),
+    ).toEqual(["priority-field-invalid", "project-workflow-invalid"]);
+
+    expect(
+      codes({
+        ...value,
+        projectWorkflows: value.projectWorkflows.map((workflow) =>
+          workflow.name === "Item added to project" ? { ...workflow, enabled: false } : workflow,
+        ),
+      }),
+    ).toEqual(["project-workflow-invalid"]);
+
+    expect(
+      codes({
+        ...value,
+        projectWorkflows: [
+          ...value.projectWorkflows,
+          { name: "Item added to project", enabled: true },
+        ],
+      }),
+    ).toEqual(["project-workflow-invalid"]);
   });
 
   test("rejects non-issue Project items", () => {
@@ -254,25 +300,41 @@ describe("analyzeRoadmapGovernance", () => {
     ).toEqual(["non-issue-project-item"]);
   });
 
-  test("requires one Project item and valid classifications", () => {
-    const missing = issue({ projectItems: [] });
-    const invalid = issue({
+  test("ignores contribution issues outside the Project and rejects duplicate membership", () => {
+    const contribution = issue({ projectItems: [] });
+    const duplicate = issue({
       number: 2,
+      projectItems: [projectItem({ id: "item-2a" }), projectItem({ id: "item-2b" })],
+    });
+    expect(codes(snapshot([contribution]))).toEqual([]);
+    expect(analyzeRoadmapGovernance(snapshot([contribution])).deliverySequence).toEqual([]);
+    expect(codes(snapshot([duplicate]))).toEqual(["project-membership-count"]);
+  });
+
+  test("requires valid classifications for Roadmap-owned issues", () => {
+    const invalid = issue({
       projectItems: [
         projectItem({
-          id: "item-2",
           status: "Done",
           priority: "Historical",
           readiness: "Historical",
         }),
       ],
     });
-    expect(codes(snapshot([missing, invalid]))).toEqual([
-      "project-membership-count",
+    expect(codes(snapshot([invalid]))).toEqual([
       "open-historical-priority",
       "readiness-invalid",
       "status-invalid",
     ]);
+  });
+
+  test("requires open Roadmap dependencies to be adopted into the Project", () => {
+    const planned = issue({
+      blockedBy: [{ repository: REPOSITORY, number: 2, state: "OPEN" }],
+    });
+    const contribution = issue({ number: 2, projectItems: [] });
+
+    expect(codes(snapshot([planned, contribution]))).toEqual(["relationship-target-missing"]);
   });
 
   test("rejects noncanonical or negated Standalone relationship text", () => {
@@ -348,6 +410,41 @@ Planning relationship: Standalone-v1.
     expect(codes(snapshot([readyWithoutEvidence, readyWithEvidence]))).toEqual([
       "readiness-evidence-mismatch",
     ]);
+  });
+
+  test("requires a named decision owner for Needs Decision", () => {
+    const missingDecision = issue({
+      projectItems: [projectItem({ readiness: "Needs Decision" })],
+    });
+    const namedDecision = issue({
+      number: 2,
+      body: `${issue().body}\nDecision required: @maintainer — choose the public fallback behavior.\n`,
+      projectItems: [projectItem({ id: "item-2", readiness: "Needs Decision" })],
+    });
+    const report = analyzeRoadmapGovernance(snapshot([missingDecision, namedDecision]));
+    expect(report.diagnostics.map((diagnostic) => diagnostic.code)).toEqual([
+      "decision-evidence-missing",
+    ]);
+    expect(report.deliverySequence).toEqual([]);
+    expect(analyzeRoadmapGovernance(snapshot([namedDecision])).deliverySequence[0]?.readiness).toBe(
+      "Needs Decision",
+    );
+  });
+
+  test("requires active implementation leaves to remain Ready", () => {
+    const input = issue({
+      projectItems: [projectItem({ status: "In Progress", readiness: "Needs Planning" })],
+      closingPullRequests: [
+        {
+          repository: REPOSITORY,
+          number: 10,
+          state: "OPEN",
+          isDraft: true,
+          updatedAt: "2026-09-02T00:00:00.000Z",
+        },
+      ],
+    });
+    expect(codes(snapshot([input]))).toEqual(["in-progress-readiness-invalid"]);
   });
 
   test("rejects an open issue assigned to a closed milestone", () => {
@@ -592,10 +689,12 @@ Planning relationship: Standalone-v1.
     });
     const stale = issue({
       number: 4,
+      body: readyBody(),
       projectItems: [
         projectItem({
           id: "item-4",
           status: "In Progress",
+          readiness: "Ready",
           statusUpdatedAt: "2026-08-01T00:00:00.000Z",
         }),
       ],
@@ -650,8 +749,9 @@ Planning relationship: Standalone-v1.
   test("reconciles active child, parent, and closing-pull-request status", () => {
     const child = issue({
       number: 2,
+      body: readyBody(),
       parent: { repository: REPOSITORY, number: 1, state: "OPEN" },
-      projectItems: [projectItem({ id: "item-2", status: "In Progress" })],
+      projectItems: [projectItem({ id: "item-2", status: "In Progress", readiness: "Ready" })],
     });
     const parent = issue({
       body: "## Outcome\n\nDeliver the integrated parent.\n",
@@ -699,8 +799,9 @@ Planning relationship: Standalone-v1.
     const blocker = issue();
     const blocked = issue({
       number: 2,
+      body: readyBody(),
       blockedBy: [{ repository: REPOSITORY, number: 1, state: "OPEN" }],
-      projectItems: [projectItem({ id: "item-2", status: "In Progress" })],
+      projectItems: [projectItem({ id: "item-2", status: "In Progress", readiness: "Ready" })],
       closingPullRequests: [
         {
           repository: REPOSITORY,
@@ -721,13 +822,19 @@ Planning relationship: Standalone-v1.
 
   test("accepts a bounded no-PR grace period and an open closing PR", () => {
     const grace = issue({
+      body: readyBody(),
       projectItems: [
-        projectItem({ status: "In Progress", statusUpdatedAt: "2026-09-02T00:00:00.000Z" }),
+        projectItem({
+          status: "In Progress",
+          statusUpdatedAt: "2026-09-02T00:00:00.000Z",
+          readiness: "Ready",
+        }),
       ],
     });
     const withPullRequest = issue({
       number: 2,
-      projectItems: [projectItem({ id: "item-2", status: "In Progress" })],
+      body: readyBody(),
+      projectItems: [projectItem({ id: "item-2", status: "In Progress", readiness: "Ready" })],
       closingPullRequests: [
         {
           repository: REPOSITORY,
@@ -767,7 +874,8 @@ Planning relationship: Standalone-v1.
 
   test("rejects In Progress after its closing pull request closes unmerged", () => {
     const stale = issue({
-      projectItems: [projectItem({ status: "In Progress" })],
+      body: readyBody(),
+      projectItems: [projectItem({ status: "In Progress", readiness: "Ready" })],
       closingPullRequests: [
         {
           repository: "tyldra-org/falryn",

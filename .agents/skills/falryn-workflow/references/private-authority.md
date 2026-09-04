@@ -23,7 +23,7 @@ An unrelated directory named `falryn-docs` is not authority. Do not add, replace
 
 Without a local checkout, authenticated `gh` access may read the exact private repository. Never clone it automatically, broaden visibility, request a token in chat, place a token on a command line, or persist fetched private content in Falryn.
 
-Roadmap access exists only when the authenticated account can read the exact organization Project and its required fields. Repository issue access does not imply Project access. A cached report is authoritative only for its recorded snapshot and scope.
+Roadmap access exists only when the authenticated account can read the exact organization Project and its required fields. Repository issue access does not imply Project access. A cached report is authoritative only for its recorded snapshot and scope. Use [governance audits](governance-audits.md) after proving access; use [documentation delivery](documentation-delivery.md) after resolving the canonical owners.
 
 ## Access profiles
 
@@ -54,9 +54,9 @@ Private evidence informs the action but does not become public output automatica
 
 ## Public implementation rule
 
-A public Falryn issue is the implementation handoff. Before an authenticated maintainer marks it Ready, its body must state every issue-specific baseline, scope, boundary, failure and recovery rule, product composition point, validation requirement, and documentation impact needed to implement it.
+A Roadmap-owned public Falryn issue is the maintainer implementation handoff. Before an authenticated maintainer marks it Ready, its body must state every issue-specific baseline, scope, boundary, failure and recovery rule, product composition point, validation requirement, and documentation impact needed to implement it. Ordinary contribution issues use the lighter public contract and require no private field.
 
-A private link may provide broader maintainer context, but it cannot replace those public facts. If the issue is incomplete, Plan updates the public issue or reports Not Ready. It never tells a public contributor to discover missing behavior in a private document.
+A private link may provide broader maintainer context, but it cannot replace those public facts. If the issue is incomplete, Plan updates the public issue or reports Needs Planning; if a named human choice is required, it reports Needs Decision. It never tells a public contributor to discover missing behavior in a private document.
 
 ## Connection lifecycle
 

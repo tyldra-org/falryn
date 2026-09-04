@@ -6,11 +6,11 @@ Merge requires a fresh passing Verify preview and user confirmation bound to the
 
 Re-read every previewed pull request, head and base revision, required check, review, thread, ruleset, mergeability result, companion identity, order, final message, repository setting, default branch, and local checkout. Stop and return to Verify if any precondition changed.
 
-A public-only application PR may merge only when fresh verification proves that no private documentation update or private Project prerequisite is required. If documentation impact is required or unresolved, private maintainer authority is mandatory.
+A contribution PR whose issue is outside the Roadmap has no private Project prerequisite. If its issue is Roadmap-owned, apply the private verification and reconciliation contract. If private documentation impact is required or unresolved, private maintainer authority remains mandatory.
 
 ## Merge order
 
-For an authenticated cross-repository bundle:
+For an authenticated cross-repository bundle, follow [documentation delivery](documentation-delivery.md):
 
 1. squash-merge each required private docs companion at its reviewed head;
 2. stop on the first unexpected result and report exactly what landed;
@@ -23,6 +23,6 @@ The operations are sequential, not atomic. A partial bundle remains partial and 
 
 ## Reconcile
 
-After all required merges, re-read PR and issue state, close or repair the delivery owner as appropriate, reconcile private Project fields when accessible, and safely fast-forward eligible clean default-branch checkouts. Leave dirty, detached, divergent, conflicted, or branch-locked checkouts untouched. Branch deletion is separate.
+After all required merges, re-read PR and issue state, close or repair the delivery owner as appropriate, reconcile private Project fields when accessible, run [governance audits](governance-audits.md), and safely fast-forward eligible clean default-branch checkouts. Leave dirty, detached, divergent, conflicted, or branch-locked checkouts untouched. Branch deletion is separate.
 
 Verify resulting merge SHAs and report a safe revert-through-new-PR path. Merge authorization never covers release publication, destructive cleanup, or unrelated work.

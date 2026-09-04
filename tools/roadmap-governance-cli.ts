@@ -5,10 +5,12 @@ import {
   analyzeRoadmapGovernance,
   parseRoadmapGovernanceSnapshot,
   ROADMAP_REPOSITORIES,
+  type RoadmapFieldOption,
   type RoadmapGovernanceIssue,
   type RoadmapGovernanceSnapshot,
   type RoadmapNonIssueProjectItem,
   type RoadmapProjectItem,
+  type RoadmapProjectWorkflow,
   type RoadmapPullRequestState,
   type RoadmapRelation,
 } from "./roadmap-governance";
@@ -29,9 +31,10 @@ type CliOptions = {
 
 type LiveProject = {
   readonly id: string;
-  readonly statusOptions: readonly string[];
-  readonly priorityOptions: readonly string[];
-  readonly readinessOptions: readonly string[];
+  readonly statusOptions: readonly RoadmapFieldOption[];
+  readonly priorityOptions: readonly RoadmapFieldOption[];
+  readonly readinessOptions: readonly RoadmapFieldOption[];
+  readonly projectWorkflows: readonly RoadmapProjectWorkflow[];
   readonly itemsByContentId: ReadonlyMap<string, readonly RoadmapProjectItem[]>;
   readonly nonIssueProjectItems: readonly RoadmapNonIssueProjectItem[];
 };
@@ -83,6 +86,15 @@ function booleanValue(value: unknown, subject: string): boolean {
     throw new Error(`${subject} must be a boolean`);
   }
   return value;
+}
+
+function fieldOptionFromGraphQl(value: unknown, subject: string): RoadmapFieldOption {
+  const record = asRecord(value, subject);
+  return {
+    name: stringValue(record.name, `${subject}.name`),
+    description: stringValue(record.description, `${subject}.description`),
+    color: stringValue(record.color, `${subject}.color`),
+  };
 }
 
 function completeConnectionNodes(value: unknown, subject: string): readonly unknown[] {
@@ -205,8 +217,14 @@ async function loadProject(projectOwner: string, projectNumber: number): Promise
       totalCount
       nodes {
         ... on ProjectV2Field { id name dataType }
-        ... on ProjectV2SingleSelectField { id name dataType options { id name } }
+        ... on ProjectV2SingleSelectField {
+          id name dataType options { id name description color }
+        }
       }
+    }
+    workflows(first:100) {
+      totalCount
+      nodes { name enabled }
     }
     items(first:100,after:$after) {
       totalCount
@@ -232,12 +250,13 @@ async function loadProject(projectOwner: string, projectNumber: number): Promise
   }`;
   let after: string | null = null;
   let projectId: string | null = null;
-  let statusOptions: readonly string[] = [];
-  let priorityOptions: readonly string[] = [];
-  let readinessOptions: readonly string[] = [];
+  let statusOptions: readonly RoadmapFieldOption[] = [];
+  let priorityOptions: readonly RoadmapFieldOption[] = [];
+  let readinessOptions: readonly RoadmapFieldOption[] = [];
+  let projectWorkflows: readonly RoadmapProjectWorkflow[] | null = null;
   const observedFields = new Map<
     string,
-    { readonly id: string; readonly options: readonly string[] }
+    { readonly id: string; readonly options: readonly RoadmapFieldOption[] }
   >();
   let expectedItems: number | null = null;
   const itemRecords: unknown[] = [];
@@ -261,16 +280,13 @@ async function loadProject(projectOwner: string, projectNumber: number): Promise
       const id = stringValue(field.id, `Roadmap project field ${name}.id`);
       const options = arrayValue(field.options, `Roadmap project field ${name}.options`).map(
         (option, optionIndex) =>
-          stringValue(
-            asRecord(option, `Roadmap project field ${name}.options[${optionIndex}]`).name,
-            `Roadmap project field ${name}.options[${optionIndex}].name`,
-          ),
+          fieldOptionFromGraphQl(option, `Roadmap project field ${name}.options[${optionIndex}]`),
       );
       const observed = observedFields.get(name);
       if (observed !== undefined && observed.id !== id) {
         throw new Error(`Roadmap contains duplicate ${name} fields`);
       }
-      if (observed !== undefined && observed.options.join("\0") !== options.join("\0")) {
+      if (observed !== undefined && JSON.stringify(observed.options) !== JSON.stringify(options)) {
         throw new Error(`Roadmap field ${name} changed while it was being collected`);
       }
       observedFields.set(name, { id, options });
@@ -282,6 +298,25 @@ async function loadProject(projectOwner: string, projectNumber: number): Promise
         readinessOptions = options;
       }
     }
+    const workflows = completeConnectionNodes(project.workflows, "Roadmap project.workflows").map(
+      (value, index): RoadmapProjectWorkflow => {
+        const workflow = asRecord(value, `Roadmap project.workflows.nodes[${index}]`);
+        return {
+          name: stringValue(workflow.name, `Roadmap project.workflows.nodes[${index}].name`),
+          enabled: booleanValue(
+            workflow.enabled,
+            `Roadmap project.workflows.nodes[${index}].enabled`,
+          ),
+        };
+      },
+    );
+    if (
+      projectWorkflows !== null &&
+      JSON.stringify(projectWorkflows) !== JSON.stringify(workflows)
+    ) {
+      throw new Error("Roadmap Project workflows changed while they were being collected");
+    }
+    projectWorkflows = workflows;
     const items = asRecord(project.items, "Roadmap project.items");
     expectedItems ??= nonNegativeInteger(items.totalCount, "Roadmap project.items.totalCount");
     itemRecords.push(...arrayValue(items.nodes, "Roadmap project.items.nodes"));
@@ -293,7 +328,12 @@ async function loadProject(projectOwner: string, projectNumber: number): Promise
     }
   } while (after !== null);
 
-  if (projectId === null || expectedItems === null || expectedItems !== itemRecords.length) {
+  if (
+    projectId === null ||
+    projectWorkflows === null ||
+    expectedItems === null ||
+    expectedItems !== itemRecords.length
+  ) {
     throw new Error(
       `Roadmap item pagination mismatch: expected ${expectedItems ?? "unknown"}, received ${itemRecords.length}`,
     );
@@ -315,6 +355,7 @@ async function loadProject(projectOwner: string, projectNumber: number): Promise
     statusOptions,
     priorityOptions,
     readinessOptions,
+    projectWorkflows,
     itemsByContentId: new Map([...mutableItems].map(([key, value]) => [key, value] as const)),
     nonIssueProjectItems,
   };
@@ -562,7 +603,7 @@ async function loadLiveSnapshot(options: CliOptions): Promise<RoadmapGovernanceS
   );
   assertAllProjectIssueItemsConsumed(project.itemsByContentId, consumedProjectContentIds);
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     generatedAt: new Date().toISOString(),
     projectOwner: options.projectOwner,
     projectNumber: options.projectNumber,
@@ -575,6 +616,7 @@ async function loadLiveSnapshot(options: CliOptions): Promise<RoadmapGovernanceS
     statusOptions: project.statusOptions,
     priorityOptions: project.priorityOptions,
     readinessOptions: project.readinessOptions,
+    projectWorkflows: project.projectWorkflows,
     issues: issueGroups.flat(),
     nonIssueProjectItems: project.nonIssueProjectItems,
   };
@@ -665,6 +707,7 @@ async function main(): Promise<void> {
   const report = analyzeRoadmapGovernance(snapshot, {
     livenessGraceHours: options.livenessGraceHours,
   });
+  const roadmapIssueCount = snapshot.issues.filter((issue) => issue.projectItems.length > 0).length;
   if (options.json) {
     process.stdout.write(
       `${JSON.stringify(
@@ -672,6 +715,8 @@ async function main(): Promise<void> {
           project: `${snapshot.projectOwner}/${snapshot.projectNumber}`,
           repositories: snapshot.repositories,
           issueCount: snapshot.issues.length,
+          repositoryIssueCount: snapshot.issues.length,
+          roadmapIssueCount,
           nonIssueProjectItems: snapshot.nonIssueProjectItems.length,
           ...report,
         },
@@ -681,7 +726,7 @@ async function main(): Promise<void> {
     );
   } else {
     process.stdout.write(
-      `Roadmap ${snapshot.projectOwner}/${snapshot.projectNumber}: ${snapshot.issues.length} issues, ${report.diagnostics.length} diagnostics\n`,
+      `Roadmap ${snapshot.projectOwner}/${snapshot.projectNumber}: ${roadmapIssueCount} managed issues from ${snapshot.issues.length} repository issues, ${report.diagnostics.length} diagnostics\n`,
     );
     for (const diagnostic of report.diagnostics) {
       process.stdout.write(
@@ -689,7 +734,7 @@ async function main(): Promise<void> {
       );
     }
     process.stdout.write(
-      `\nDelivery sequence (${report.deliverySequence.length} actionable issues):\n`,
+      `\nRouting sequence (${report.deliverySequence.length} open leaf issues):\n`,
     );
     for (const entry of report.deliverySequence) {
       process.stdout.write(

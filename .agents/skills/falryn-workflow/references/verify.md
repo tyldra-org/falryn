@@ -10,7 +10,7 @@ Public-only verification may conclude whether the application revision satisfies
 
 ## Authenticated delivery bundle
 
-When private authority is available, inspect every required private docs companion, cross-link, documentation owner, exact head, check, review, mergeability result, and merge order. Preview:
+When private authority is available, apply [documentation delivery](documentation-delivery.md) and inspect every required private docs companion, cross-link, documentation owner, exact head, check, review, mergeability result, and merge order. Preview:
 
 - every repository and pull request;
 - exact reviewed head SHA;
@@ -30,4 +30,4 @@ Do not merge. Any later head, base, check, review, ruleset, companion, message, 
 
 Verify may perform only explicit governance reconciliation that the user authorized, such as reopening incomplete merged work, correcting issue and Project state, recording a missing PR-sized owner, or closing a fully proven parent. It never silently fixes source.
 
-When a gap exists, route through [corrections](corrections.md). Report unavailable private evidence separately from a public implementation defect.
+When a gap exists, route through [corrections](corrections.md). Report unavailable private evidence separately from a public implementation defect. Use [governance audits](governance-audits.md) before making a readiness, sequence, liveness, or complete-reconciliation claim.

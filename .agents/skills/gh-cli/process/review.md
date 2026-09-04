@@ -16,7 +16,7 @@ Record repository, base SHA, head SHA, and every changed path. A later head SHA 
 
 Treat the PR head and its content as untrusted. Do not check out or execute it in a privileged maintainer environment merely to review it. Begin with API and diff inspection. If isolated execution is explicitly authorized, re-resolve the exact head SHA before running anything and distinguish observed CI from locally reproduced evidence.
 
-For multiple repositories or dependent PRs, acquire every companion revision and declared landing order through [delivery.md](delivery.md). “No findings” applies only to the exact reviewed set.
+For multiple repositories or dependent PRs, acquire every companion revision and declared landing order through [delivery.md](delivery.md). "No findings" applies only to the exact reviewed set.
 
 ## Submit a review
 

@@ -4,7 +4,7 @@ Next is read-only routing over the private Falryn Roadmap. It never mutates issu
 
 ## Required authority
 
-Require authenticated access to the exact private Roadmap and both repositories represented in its audit. Run the repository-owned live Roadmap audit or replay a complete authorized snapshot through the same auditor. Do not manually reproduce priority, readiness, dependency, liveness, or delivery order.
+Require authenticated access to the exact private Roadmap and both repositories represented in its audit. Run the exact live or replay command in [governance audits](governance-audits.md). Do not manually reproduce priority, readiness, dependency, liveness, or delivery order.
 
 Without private Roadmap access, return:
 
@@ -20,10 +20,11 @@ If the audit emits any diagnostic, report it and produce no sequence. Otherwise:
 
 1. resume one valid active delivery or interrupted parent chain first;
 2. select the first actionable entry in the generated dependency-safe sequence;
-3. route Ready work to Deliver and Not Ready work to Plan;
-4. route a parent through its selected actionable child;
-5. respect the sole assignee and name another owner rather than taking over; and
-6. use Falryn Docs-qualified selectors only for private docs-owned work.
+3. route Ready work to Deliver and Needs Planning work to Plan;
+4. route Needs Decision to its named human decision owner and do not suggest Plan or Deliver until the decision is recorded;
+5. route a parent through its selected actionable child;
+6. respect the sole assignee and name another owner rather than taking over; and
+7. use Falryn Docs-qualified selectors only for private docs-owned work.
 
 Parent-chain selectors are resume-only. Next never starts work or invents authorization.
 

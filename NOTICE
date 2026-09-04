@@ -20,8 +20,4 @@ of this material.
 
 Where a skill in that directory originates from another project, that
 material remains under its own licence and copyright, regardless of the grant in
-LICENSE. A skill that carries its own LICENSE or NOTICE file is governed by that
-file. The OpenTUI documentation snapshot under
-`.agents/skills/opentui-best-practices/docs/` is sourced and versioned as recorded
-in that bundle's `UPSTREAM.md` and remains under `LICENSE.opentui`. Nothing in
-this repository's LICENSE relicenses work it does not own.
+LICENSE. Nothing in this repository's LICENSE relicenses work it does not own.

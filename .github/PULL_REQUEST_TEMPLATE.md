@@ -2,17 +2,26 @@
 
 Closes #
 
-<!-- Use Refs # instead when this PR does not fully resolve the issue. -->
+<!-- Every non-Dependabot PR closes exactly one PR-sized Falryn issue.
+     Split or re-plan partial work instead of replacing this with Refs.
+     Contributors do not need an assignee, milestone, private Roadmap item,
+     Priority, or Readiness. -->
 
-<!-- Every non-Dependabot PR links its owning issue. Automation checks this
-     field and the required sections below. -->
+## Primary change class
 
-## Change class
-
-- [ ] Feature or bug fix
-- [ ] Documentation
+- [ ] Feature
+- [ ] Bug fix
+- [ ] Documentation only
 - [ ] Infrastructure or dependency update
+- [ ] Research or qualification
+- [ ] Refactor or maintenance
+
+<!-- Select exactly one primary class. -->
+
+## Compatibility
+
 - [ ] Breaking change (also apply the `breaking-change` label)
+- [ ] Backward compatible or not applicable
 
 ## Delivery identity
 
@@ -32,8 +41,18 @@ Closes #
 
 ## Documentation
 
+- Documentation impact:
+- Companion documentation PR or reason none:
+
+<!-- Record every applicable result. `not-applicable` is exclusive.
+     public-code-adjacent-update | private-update-required |
+     private-verify-unaffected | private-verification-unavailable |
+     not-applicable -->
+
 - [ ] `CURRENT-STATE.md` reflects only behavior supported by this change.
 - [ ] Affected public documentation owners were updated or verified unaffected.
+- [ ] Any private update or unavailable verification is identified without exposing private content.
+- [ ] Required application and documentation pull requests use reciprocal links and the same delivery owner.
 - [ ] Public claims are source-verified; no roadmap, unannounced capability, private research, or internal design was added.
 - [ ] Existing public documentation was updated instead of creating a duplicate owner.
 - [ ] Repository-qualified paths and GitHub links are shareable; no private or contributor-specific local path is persisted.
@@ -44,15 +63,13 @@ Closes #
 
 ## Delivery checklist
 
-<!-- The optional maintainer modes add delivery orchestration. Every PR still
-     needs Target, Scope, Validation, and Documentation. Automation applies one
-     `size: *` label from changed lines; split an XL PR when practical. -->
+<!-- Private product planning is a separate maintainer workflow. Every PR needs
+     Target, Scope, Validation, and Documentation. Automation applies one
+     `size: *` label from changed lines. A non-draft PR must complete every
+     public item below; split an XL PR when practical. -->
 
-- [ ] The target is one Ready, unblocked PR-sized issue.
-- [ ] The issue is assigned and **In Progress**.
-- [ ] Its parent is **In Progress** when this is the first required child to begin.
+- [ ] The target is one open, unblocked, PR-sized public issue with a current Contribution checklist.
 - [ ] The branch targets the current default branch and contains no unrelated work.
-- [ ] Any parent remains open and **In Progress** for integrated verification.
 - [ ] The PR title is a clean conventional subject suitable for squash merge.
 - [ ] The squash commit is subject-only by default; any body is limited to one useful short issue-reference footer.
 - [ ] Validation, risks, documentation impact, delivery details, and incremental messages remain in this PR rather than the squash commit.

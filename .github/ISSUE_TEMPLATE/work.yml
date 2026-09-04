@@ -1,0 +1,123 @@
+name: Work item
+description: Propose documentation, infrastructure, maintenance, or qualification work.
+title: ""
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form when the outcome is neither a user-visible feature nor a
+        defect correction. The selected work type is reconciled to one
+        `type:*` label. This public contribution does not need an assignee,
+        milestone, Priority, Readiness, or private Roadmap access. Maintainers
+        decide separately whether to adopt it into the product-development
+        plan. Security vulnerabilities belong in the private reporting path.
+  - type: dropdown
+    id: work_type
+    attributes:
+      label: Work type
+      description: Choose the single primary reason this issue exists.
+      options:
+        - Documentation
+        - Infrastructure and maintenance
+        - Research and qualification
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Outcome
+      description: State the concrete artifact or capability this issue must leave behind and who benefits.
+    validations:
+      required: true
+  - type: textarea
+    id: baseline
+    attributes:
+      label: Observed baseline and remaining change
+      description: State what exists now, how it was verified, and the exact remaining delta.
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope and non-goals
+      description: Name the owning boundary, included work, and deliberate exclusions.
+    validations:
+      required: true
+  - type: textarea
+    id: contracts
+    attributes:
+      label: Contracts and consumers
+      description: Name affected inputs, outputs, policy, automation, documents, or product paths and the owners that consume them.
+    validations:
+      required: true
+  - type: textarea
+    id: failures
+    attributes:
+      label: Limits, failures, and recovery
+      description: Cover applicable limits, invalid or partial outcomes, rollback, cleanup, and recovery.
+    validations:
+      required: true
+  - type: textarea
+    id: completion
+    attributes:
+      label: Completion proof
+      description: List observable acceptance criteria and the exact evidence that completes the issue.
+      placeholder: |
+        - [ ]
+    validations:
+      required: true
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Dependencies and blockers
+      description: Link exact blocking issues, or write None.
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Primary area
+      description: Repository automation applies the matching `area:*` label.
+      options:
+        - Runtime and application
+        - CLI and headless use
+        - Providers and models
+        - Terminal UI
+        - Language intelligence
+        - Tools and execution
+        - Context and compression
+        - Data, persistence, and artifacts
+        - Memory
+        - Agents and workflows
+        - Extensions and marketplace
+        - Web and browser
+        - Performance
+        - Release and compatibility
+        - Security and privacy
+        - Documentation
+    validations:
+      required: true
+  - type: textarea
+    id: validation
+    attributes:
+      label: Validation
+      description: Name focused positive, negative, replay, resource, and platform checks that apply.
+    validations:
+      required: true
+  - type: textarea
+    id: documentation
+    attributes:
+      label: Documentation impact
+      description: Record applicable public-code-adjacent-update, private-update-required, private-verify-unaffected, private-verification-unavailable, or not-applicable results and why.
+    validations:
+      required: true
+  - type: checkboxes
+    id: readiness
+    attributes:
+      label: Contribution checklist
+      description: Complete these before opening a non-draft implementation pull request. They do not represent private Roadmap readiness.
+      options:
+        - label: The current baseline and remaining delta are verified.
+        - label: The scope fits one focused pull request and names its owner boundaries.
+        - label: Limits, failure behavior, consumers, and recovery are explicit.
+        - label: Focused validation and documentation impact are testable.

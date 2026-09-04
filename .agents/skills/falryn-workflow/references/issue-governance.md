@@ -1,42 +1,45 @@
 # Issue governance
 
-Falryn issues own implementation work. Private Roadmap fields own maintainer scheduling but never replace a complete public issue body.
+Falryn repository issues own public discussion and contribution work. The private Roadmap owns only the maintainer's selected product-development work.
 
 ## Public issue contract
 
-Before an issue can be treated as implementation-ready, its public body must identify:
+Before a contribution issue can own a non-draft pull request, its public body must identify:
 
 - the observed shipped baseline and exact remaining outcome;
 - included behavior, non-goals, and one PR-sized ownership boundary;
-- native parent, children, and blocker relationships where applicable;
-- typed inputs, outputs, state, effects, limits, failures, cancellation, partial and unavailable behavior, recovery, and cleanup relevant to the slice;
-- the real CLI, OpenTUI, headless, model, export, replay, diagnostic, or other product composition point;
-- focused positive, negative, restart, resource, and platform validation;
+- relevant blockers and dependencies;
+- enough scope, behavior, failure, and recovery context to review the proposed slice;
+- focused validation appropriate to the change;
 - documentation impact without requiring the implementer to read private content; and
-- a non-empty Ready checklist whose checked facts remain current.
+- a non-empty Contribution checklist whose checked facts remain current.
 
-A private documentation link is supplementary. If removing access to that link makes the issue ambiguous, the issue is Not Ready.
+A private documentation link is never a contribution requirement. If removing access to it makes the public change ambiguous, the public contract is incomplete.
 
-Use native GitHub hierarchy and blockers. A parent owns an integrated outcome and routes through PR-sized children; it never owns a branch or mega-pull request. A standalone issue uses the repository's exact affirmative standalone marker. Do not infer hierarchy or blockers from incidental prose.
+Use native GitHub blockers when they exist. Private product planning may add native hierarchy after adopting an issue, but contributors do not need to create or infer that hierarchy.
 
 ## Public-only behavior
 
-An agent without private Roadmap access may inspect and improve the public contract. It may not assert Roadmap Status, Priority, Readiness, sequence position, or ownership metadata it cannot observe. It reports `private-roadmap-unavailable` and stops before a transition that requires those fields.
+An agent without private Roadmap access may inspect and improve the public contribution contract and work on an explicitly authorized contribution. It may not assert Roadmap Status, Priority, Readiness, sequence position, or ownership metadata it cannot observe. A missing private connection does not block ordinary contribution work.
 
-Ordinary contributors do not need maintainer Project access. They follow the public issue, `CONTRIBUTING.md`, source, and checks. A maintainer performs private triage and delivery reconciliation.
+Ordinary contributors do not need maintainer Project access. They follow the public issue, `CONTRIBUTING.md`, source, and checks. They never assign or wait for a milestone or private field.
 
 ## Maintainer behavior
 
-With authenticated Roadmap access, resolve the issue's exact repository, assignee, milestone, Status, Priority, Readiness, Project item, native parent and children, blockers, and linked pull requests. Keep these rules:
+Project membership means a maintainer deliberately adopted the issue into product development. Only then resolve its exact repository, assignee, milestone, Status, Priority, Readiness, Project item, native parent and children, blockers, and linked pull requests. Keep these rules:
 
 - Todo covers planning and blocked work.
 - In Progress requires active implementation. A leaf without an open closing PR follows the private liveness limit.
 - Done requires closure and complete delivery proof.
 - Open blockers prevent implementation.
 - Ready is evidence about contract completeness, not blocker absence.
+- Needs Planning means the public contract still lacks current evidence.
+- Needs Decision requires a named maintainer decision in the public issue; it is not a generic blocked state.
 - Parent and Historical states never create implementation slots.
 
-Run the repository-owned readiness and Roadmap auditors after governance mutations. Any diagnostic suppresses routing until reconciled.
+Use the exact option meanings and transitions in [Roadmap fields and automation](roadmap-fields.md). Newly adopted Roadmap leaves default to Todo, P2, and Needs Planning. Feature, bug, documentation, infrastructure, maintenance, and research issues may all be adopted, but their public work type never creates Roadmap membership or changes the meaning of Priority or Readiness.
+
+Run the exact repository-owned commands in [governance audits](governance-audits.md) after governance mutations. Any diagnostic suppresses routing until reconciled.
 
 ## Mutation safety
 

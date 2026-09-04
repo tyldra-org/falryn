@@ -5,25 +5,42 @@ Five workflows.
 | Workflow | Question | Trigger |
 | --- | --- | --- |
 | [`ci.yml`](ci.yml) | Is this revision safe to merge? | every pull request, and every push to `main` |
-| [`pr-metadata.yml`](pr-metadata.yml) | Does a contributor PR retain its issue link and required review context? | pull-request updates |
+| [`pr-metadata.yml`](pr-metadata.yml) | Does a PR close one contribution-ready issue and retain complete review evidence? | pull-request updates |
 | [`pr-labels.yml`](pr-labels.yml) | Which product area and review size apply? | pull-request updates, including forks without code checkout |
 | [`pr-vouch.yml`](pr-vouch.yml) | Is the author a collaborator, maintainer-vouched, unvouched, or blocked? | pull-request updates, `/recheck-vouch`, and trust-list changes |
-| [`issue-governance.yml`](issue-governance.yml) | Is live issue ownership and repository labeling complete? | issue metadata or state changes |
+| [`issue-governance.yml`](issue-governance.yml) | Is the public issue contract complete and are declared labels reconciled? | issue metadata or state changes |
 
-`pr-metadata.yml` is a required `main` check. `pr-labels.yml` receives a
+`pr-metadata.yml` is a required `main` check. It loads the policy from the
+trusted base revision, validates meaningful template content, and verifies the
+owning issue is an open, unblocked, metadata-complete PR-sized leaf with a
+fully checked Contribution checklist. `pr-labels.yml` receives a
 write-scoped token only to mutate labels and never checks out or executes an
 untrusted pull-request head. `pr-vouch.yml` uses the committed
 [VOUCHED.td](../VOUCHED.td) trust list, classifies authors, and never grants
-merge permission. `issue-governance.yml` comments on missing machine-checkable
-repository metadata; it deliberately does not invent an owner, milestone, or
-labels. A repository-scoped `GITHUB_TOKEN` cannot read the private organization
-Project, so Roadmap membership, Status, Priority, Readiness, and hierarchy
-remain mandatory but are verified by private Project automation and the
-authenticated `bun run audit:issues` and `bun run audit:roadmap` maintainer
-commands documented in
-[`CONTRIBUTOR-READINESS.md`](../../CONTRIBUTOR-READINESS.md). Repository policy
-checks exempt only the repository owner's account; all other contributors,
-including collaborators and maintainers, use the same validation path.
+merge permission. `issue-governance.yml` maps an issue form's declared work
+type and primary area to canonical labels, then comments only on missing public
+contribution evidence. It never asks for an assignee, milestone, or private
+Project field.
+
+The private Roadmap is a separate maintainer product-development system.
+Project membership marks an issue as adopted into that plan. Only those issues
+are subject to private Status, Priority, Readiness, milestone, hierarchy,
+liveness, and sequencing checks from `bun run audit:issues` and
+`bun run audit:roadmap`, documented in the vendored
+[`governance-audits.md`](../../.agents/skills/falryn-workflow/references/governance-audits.md)
+guide. The Roadmap does not auto-add every repository issue. Its existing-item
+and subissue reconciliation workflows remain enabled. The API cannot expose every
+workflow filter or effect, so maintainers verify those settings against the
+[`roadmap-fields.md`](../../.agents/skills/falryn-workflow/references/roadmap-fields.md)
+contract after Project maintenance. [`CONTRIBUTOR-READINESS.md`](../../CONTRIBUTOR-READINESS.md)
+explains the public/private boundary.
+
+`issue-governance.yml` and `pr-metadata.yml` apply to every human account,
+including the repository owner. Dependabot retains its dedicated metadata path,
+and events created by `github-actions[bot]` are skipped only to make label
+reconciliation repeat-safe. Both workflows load
+`.github/scripts/contribution-policy.cjs`; focused tests keep the form parsing
+and pull-request evidence rules executable.
 
 Relative performance comparison (`bun run measure` / `bun run benchmark:compare`)
 is **local-only**. It is not a CI job: shared-runner variance made an advisory

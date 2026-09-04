@@ -6,6 +6,7 @@ on:
 
 permissions:
   contents: read
+  issues: read
   pull-requests: read
 
 jobs:
@@ -14,35 +15,75 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      - name: Check out the trusted policy
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+
+      - name: Detect trusted policy availability
+        id: trusted_policy
+        shell: bash
+        run: |
+          if [[ -f .github/scripts/contribution-policy.cjs ]]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Record policy bootstrap
+        if: steps.trusted_policy.outputs.available != 'true'
+        run: echo "The base revision predates contribution-policy enforcement; this bootstrap run has no trusted policy to execute."
+
       - name: Check issue link and review context
+        if: steps.trusted_policy.outputs.available == 'true'
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: |
+            const policy = require("./.github/scripts/contribution-policy.cjs");
+            const { owner, repo } = context.repo;
             const pullRequest = context.payload.pull_request;
-            const author = pullRequest.user.login;
-            if (author === "dependabot[bot]" || author === "yogeshprasad098") return;
+            const result = policy.validatePullRequest(pullRequest);
+            if (pullRequest.user.login === "dependabot[bot]") return;
 
-            const body = pullRequest.body ?? "";
-            const missing = [];
-            const conventionalTitle = /^(?:build|chore|ci|docs|feat|fix|perf|refactor|revert|test)(?:\([A-Za-z0-9._/-]+\))?!?: .+$/;
-            if (!conventionalTitle.test(pullRequest.title)) {
-              missing.push("a conventional PR title such as `feat(tui): add search` or `fix: preserve exit status`");
-            }
-            const issueReference = /\b(?:closes?|fix(?:es|ed)?|resolves?|refs?)\s+(?:[\w.-]+\/[\w.-]+)?#\d+/i;
-            if (!issueReference.test(body)) {
-              missing.push("an issue reference such as `Closes #123` or `Refs #123`");
+            const errors = [...result.errors];
+            if (result.owningIssue !== null) {
+              const response = await github.rest.issues.get({
+                owner,
+                repo,
+                issue_number: result.owningIssue.number,
+              });
+              const relationData = await github.graphql(
+                `query($owner:String!,$repo:String!,$number:Int!) {
+                  repository(owner:$owner,name:$repo) {
+                    issue(number:$number) {
+                      subIssues(first:1) { totalCount }
+                      blockedBy(first:100) {
+                        totalCount
+                        nodes { number state repository { nameWithOwner } }
+                      }
+                    }
+                  }
+                }`,
+                { owner, repo, number: result.owningIssue.number },
+              );
+              const relations = relationData.repository?.issue;
+              if (relations === null || relations === undefined) {
+                errors.push("read the owning issue's native hierarchy and blockers");
+              } else {
+                errors.push(
+                  ...policy
+                    .validateIssueContract(response.data)
+                    .map((error) => `owning issue public contract: ${error}`),
+                );
+                errors.push(
+                  ...policy
+                    .validateIssueClassification(response.data)
+                    .map((error) => `owning issue repository classification: ${error}`),
+                );
+                errors.push(...policy.validateTargetIssue(response.data, relations));
+              }
             }
 
-            for (const heading of [
-              "## Target and outcome",
-              "## Scope",
-              "## Validation",
-              "## Documentation",
-              "## Risk and limitations",
-            ]) {
-              if (!body.includes(heading)) missing.push(`the ${heading} section`);
-            }
-
-            if (missing.length > 0) {
-              core.setFailed(`Update the pull request template: ${missing.join(", ")}.`);
+            if (errors.length > 0) {
+              core.setFailed(`Update the pull request contract:\n- ${[...new Set(errors)].join("\n- ")}`);
             }

@@ -28,8 +28,10 @@ bun run build
 ## Project
 
 - [Current state](CURRENT-STATE.md)
+- [Development](DEVELOPMENT.md)
 - [Security policy](SECURITY.md)
 - [Contributing](CONTRIBUTING.md)
+- [Contributor readiness](CONTRIBUTOR-READINESS.md)
 - [License](LICENSE)
 
 Falryn is [Apache-2.0](LICENSE). The license covers the repository's source,

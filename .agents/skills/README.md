@@ -12,9 +12,10 @@ Falryn ships six skill bundles so a public checkout can resolve its normal repos
 
 The five portable skills must remain useful outside Falryn and must not contain Falryn, organization, maintainer-home, or repository-local policy. `falryn-workflow` is the sole project-specific exception.
 
-`engineering-best-practices` is intentionally global-only. Falryn may use it when installed in a maintainer environment, but the public checkout neither vendors nor requires it.
-
-Each bundle has one compact `SKILL.md` router. Deep references remain only when they own a distinct concern. The TypeScript bundle has six focused modules. The OpenTUI bundle keeps the complete version-pinned upstream MDX snapshot plus three non-duplicating practice guides.
+Each bundle has one compact `SKILL.md` router. Deep references remain only when
+they own a distinct concern. The TypeScript bundle has twelve original practice
+references, and the OpenTUI bundle has fourteen. Neither bundle contains copied
+upstream documentation.
 
 ## Resolution
 
@@ -35,22 +36,10 @@ The Falryn workflow resolves public source, issue, and pull-request work locally
 
 `git-workflow` owns Git. `gh-cli` owns GitHub. `change-review` owns evidence-backed review reasoning. Never substitute one CLI for another.
 
-Optional global-only skills such as `engineering-best-practices` and `find-docs` remain personal maintainer resources unless separately admitted into the public distribution.
+## Maintenance
 
-## Maintainer synchronization
-
-Run from this directory:
-
-```bash
-./validate-bundles.py
-./validate-bundles.test.py
-./validate-bundles.py --source ~/.agents/skills
-./sync-from-global.sh
-./sync-from-global.test.sh
-./sync-from-global.sh --apply
-./sync-from-global.sh --check
-```
-
-The helper preflights all six distributed source bundles, their declared identities, and the complete visible and hidden destination bundle inventory before any destination mutation. Source-root, destination-root, and nested skill symlinks; source or destination paths containing parent (`..`) segments; non-regular source or vendored entries; destination Finder metadata; source- or destination-contained temporary storage; and incomplete shell or Python scans fail closed. Path operands are option-terminated before canonicalization, so leading-hyphen names cannot redirect traversal. It removes the retired vendored `engineering-best-practices` path only after complete preflight; only a symlink at that exact top-level retired destination may proceed to safe unlinking, while a nested symlink fails. It never reads, changes, or deletes the global-only source bundle. `--apply` uses checksum-based `rsync --delete`, excludes source Finder metadata from transfer, and finishes with a fresh recursive inventory and file/directory parity verification. `--check` fails on distributed drift, unknown bundle identities, symlinks, Finder residue, a retired destination bundle, or incomplete traversal.
-
-With `--source`, the validator proves exact parity only for the six distributed bundles. The committed copy is canonical for people using this repository.
+The committed bundles are authoritative for this checkout. Keep portable bundle
+changes product-neutral. Maintain `falryn-workflow` here as the public Falryn
+contract; the private companion adds maintainer-only documentation and Roadmap
+authority after access is verified. Personal or global installations are
+optional copies and never replace the committed repository guidance.

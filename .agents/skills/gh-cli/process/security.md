@@ -28,7 +28,7 @@ gh api repos/OWNER/REPO/security-advisories --paginate
 gh ruleset list --repo OWNER/REPO
 ```
 
-Security endpoints require feature availability and specific permissions. Distinguish “no findings” from “feature disabled,” “not licensed,” “insufficient permission,” and “endpoint unavailable.”
+Security endpoints require feature availability and specific permissions. Distinguish "no findings" from "feature disabled," "not licensed," "insufficient permission," and "endpoint unavailable."
 
 ## Triage
 
@@ -80,4 +80,3 @@ Never disable a scanner, branch rule, push protection, or required check merely 
 ## Reporting
 
 Report counts by state and severity, feature/permission gaps, validated findings, dismissals with reasons, remediation status, and remaining exposure. Do not include secret values or sensitive exploit detail outside the authorized audience.
-

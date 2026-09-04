@@ -4,7 +4,7 @@ Parent delivery requires authenticated private Roadmap access. A parent is an ou
 
 ## One-child selector
 
-`Deliver - Target: Parent issue #N` selects the first ordered, unblocked, incomplete child from the current Roadmap audit. If that child is Not Ready, the controller plans that same child before implementation. It never skips ahead to a later Ready sibling.
+`Deliver - Target: Parent issue #N` selects the first ordered, unblocked, incomplete child from the current [Roadmap audit](governance-audits.md). If that child Needs Planning, the controller plans that same child before implementation. If it Needs Decision, delivery stops at the named decision owner. It never skips ahead to a later Ready sibling.
 
 Run one child's full delivery cycle, including required private docs companions, application merge, issue and Project reconciliation, and safe checkout synchronization. Stop when another child remains and report that exact child.
 
