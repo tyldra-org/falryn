@@ -13,6 +13,13 @@ body:
         Status to Todo, selects P0–P3 Priority and current Readiness, applies
         an area label, and records a native parent or Standalone relationship.
   - type: textarea
+    id: outcome
+    attributes:
+      label: Outcome
+      description: State the user-visible correction and the boundary this issue owns.
+    validations:
+      required: true
+  - type: textarea
     id: expected
     attributes:
       label: Expected behavior
@@ -36,6 +43,13 @@ body:
     attributes:
       label: Environment
       description: Falryn revision, OS, terminal, runtime, provider, and relevant configuration.
+    validations:
+      required: true
+  - type: textarea
+    id: boundaries
+    attributes:
+      label: Failure and recovery boundary
+      description: Describe relevant limits, cancellation, partial effects, stale state, cleanup, and recovery.
     validations:
       required: true
   - type: dropdown
@@ -90,8 +104,15 @@ body:
   - type: textarea
     id: validation
     attributes:
-      label: Validation and documentation impact
-      description: Name the regression checks and any affected public documentation.
+      label: Completion proof
+      description: Name the regression checks, negative controls, and observed result that prove the correction.
+    validations:
+      required: true
+  - type: textarea
+    id: documentation
+    attributes:
+      label: Documentation impact
+      description: Record applicable public-code-adjacent-update, private-update-required, private-verify-unaffected, private-verification-unavailable, or not-applicable results and why.
     validations:
       required: true
   - type: checkboxes

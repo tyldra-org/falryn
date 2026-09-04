@@ -291,12 +291,15 @@ function canonicalDocumentPaths(body: string): readonly string[] {
 function hasHeading(body: string, heading: (typeof REQUIRED_HEADINGS)[number]): boolean {
   return body.split("\n").some((line) => {
     const normalized = line.trim().toLowerCase();
-    if (heading === "Completion proof") {
-      return (
-        normalized === "## accepted terminal outcomes" || /^## .*completion proof$/.test(normalized)
-      );
+    const match = normalized.match(/^#{2,3}\s+(.+)$/);
+    const title = match?.[1];
+    if (title === undefined) {
+      return false;
     }
-    return normalized === `## ${heading.toLowerCase()}`;
+    if (heading === "Completion proof") {
+      return title === "accepted terminal outcomes" || /^.*completion proof$/.test(title);
+    }
+    return title === heading.toLowerCase();
   });
 }
 
@@ -466,7 +469,7 @@ export function auditIssueReadiness(
     }
     for (const heading of REQUIRED_HEADINGS) {
       if (!hasHeading(issue.body, heading)) {
-        add(diagnostics, "heading-missing", issue.number, `missing ## ${heading}`);
+        add(diagnostics, "heading-missing", issue.number, `missing ${heading} heading`);
       }
     }
 

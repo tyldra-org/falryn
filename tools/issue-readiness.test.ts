@@ -78,6 +78,26 @@ describe("issue readiness audit", () => {
     expect(auditIssueReadiness(snapshot([accepted, parent, child, blocker]))).toEqual([]);
   });
 
+  test("accepts the level-three headings emitted by GitHub issue forms", () => {
+    const issueFormBody = issue({
+      body: [
+        "### Outcome",
+        "",
+        "Deliver one deterministic fixture.",
+        "",
+        "### Planning relationship",
+        "",
+        "Standalone",
+        "",
+        "### Completion proof",
+        "",
+        "Complete when the fixture passes.",
+      ].join("\n"),
+    });
+
+    expect(auditIssueReadiness(snapshot([issueFormBody]))).toEqual([]);
+  });
+
   test("does not accept noncanonical or negated Standalone text as a relationship", () => {
     for (const declaration of [
       "Standalone is not the issue relationship.",
