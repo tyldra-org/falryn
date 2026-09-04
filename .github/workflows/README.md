@@ -20,8 +20,10 @@ labels. A repository-scoped `GITHUB_TOKEN` cannot read the private organization
 Project, so Roadmap membership, Status, Priority, Readiness, and hierarchy
 remain mandatory but are verified by private Project automation and the
 authenticated `bun run audit:issues` and `bun run audit:roadmap` maintainer
-commands documented in
-[`CONTRIBUTOR-READINESS.md`](../../CONTRIBUTOR-READINESS.md). Repository policy
+commands documented in the vendored
+[`governance-audits.md`](../../.agents/skills/falryn-workflow/references/governance-audits.md)
+guide. [`CONTRIBUTOR-READINESS.md`](../../CONTRIBUTOR-READINESS.md) explains why
+those private access gates exist. Repository policy
 checks exempt only the repository owner's account; all other contributors,
 including collaborators and maintainers, use the same validation path.
 

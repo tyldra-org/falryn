@@ -20,7 +20,7 @@ Load this skill for Falryn work, but activate a maintainer mode only when the us
 ## Before acting
 
 1. Resolve the exact repository and target. Never substitute a same-numbered object from another repository.
-2. Read public source, tests, `CURRENT-STATE.md`, repository guidance, and the target's public issue or pull-request evidence.
+2. Read public `DEVELOPMENT.md`, source, tests, `CURRENT-STATE.md`, repository guidance, and the target's public issue or pull-request evidence.
 3. Classify private authority as available or unavailable using [private authority](references/private-authority.md). Do not request, print, or persist credentials.
 4. Load `gh-cli` for GitHub, `git-workflow` for Git mutations, `change-review` for review reasoning, and the relevant available stack skill.
 5. Read [issue governance](references/issue-governance.md) before issue mutation, implementation, or routing.
@@ -52,7 +52,7 @@ Public-only operation supports inspection and preparation around an explicitly n
 
 Authenticated maintainer operation adds the verified private Falryn Docs and Roadmap authorities. Only that profile may run Next, parent-chain routing, docs-only modes, Project reconciliation, or a cross-repository docs-first merge bundle.
 
-Ordinary contributors and forks do not need these maintainer modes. They follow public `CONTRIBUTING.md`, the issue body, source, and repository checks.
+Ordinary contributors and forks do not need these maintainer modes. They follow public `DEVELOPMENT.md`, `CONTRIBUTING.md`, the issue body, source, and repository checks.
 
 ## Non-negotiable boundaries
 

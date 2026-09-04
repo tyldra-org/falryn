@@ -11,43 +11,31 @@ Security reports remain welcome. Please use the private process in
 
 ## When contributions open
 
-The expected contribution path will be conventional:
+Collaborators already use the contribution path that will apply when outside
+contributions open:
 
 1. discuss a meaningful outcome in a GitHub issue;
-2. create a short-lived, focused branch;
-3. open one pull request with its scope and validation; and
-4. run bun run check before requesting review.
+2. wait for a maintainer to confirm that its public handoff is Ready;
+3. create a short-lived, focused branch;
+4. open one pull request with its scope, validation, documentation impact, and
+   risk; and
+5. run the canonical checks before requesting review.
 
 Contributions will be evaluated on correctness, scope, tests, and documentation
-for released behavior—not on an editor, agent, or workflow choice.
+for released behavior, not on an editor, agent, or workflow choice. The public
+issue must contain everything needed to implement its slice. Contributors never
+need Falryn Docs or private Roadmap access.
 
-## Fast local checks
+[DEVELOPMENT.md](DEVELOPMENT.md) is the complete public-checkout guide for
+setup, repository ownership, issue selection, validation, documentation impact,
+and pull requests.
 
-Use the smallest command that proves the current edit while iterating:
+## Development and review
 
-```sh
-bun run check:static       # quality, types, repository integrity, and catalogs
-bun run test:changed       # tests affected relative to main
-bun test src/domain/opportunity-plan.test.ts  # one test file
-bun run test:watch         # rerun tests while files change
-```
+Use the focused and full validation commands in
+[DEVELOPMENT.md](DEVELOPMENT.md). The pull request records the exact commands
+run, observed results, skipped checks, documentation impact, and limitations.
+Never weaken or bypass a failing repository check.
 
-Run the bounded four-worker suite when a change needs full local coverage:
-
-```sh
-bun run test:parallel
-```
-
-The suite keeps the real-process boundary tests serial so worker contention does
-not distort their timeout assertions. `bun run check:fast` runs the static checks
-and the complete suite. Do not nest it inside another `bun run --parallel` call
-because both stages already create concurrent work. Before requesting review,
-run the canonical checks:
-
-```sh
-bun run check
-bun run build
-```
-
-[CONTRIBUTOR-READINESS.md](CONTRIBUTOR-READINESS.md) records the safeguards
-already prepared for that transition.
+[CONTRIBUTOR-READINESS.md](CONTRIBUTOR-READINESS.md) records the repository and
+governance safeguards already prepared for opening outside contributions.

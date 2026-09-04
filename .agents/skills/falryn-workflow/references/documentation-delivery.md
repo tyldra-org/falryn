@@ -1,6 +1,6 @@
 # Documentation delivery
 
-Falryn Docs owns stable product and architecture contracts. Public Falryn owns source, tests, `CURRENT-STATE.md`, code-adjacent guidance, and complete public implementation handoffs. Keep that boundary intact while delivering one coherent outcome.
+Falryn Docs owns stable product and architecture contracts. Public Falryn owns source, tests, `DEVELOPMENT.md`, `CURRENT-STATE.md`, code-adjacent guidance, and complete public implementation handoffs. Keep that boundary intact while delivering one coherent outcome.
 
 ## Resolve documentation owners
 
@@ -23,6 +23,7 @@ Translate that into the public delivery record without private content:
 
 - `private-update-required` for `create` or `update`;
 - `private-verify-unaffected` for verified unaffected owners;
+- `private-verification-unavailable` when the actor cannot inspect a private owner;
 - `public-code-adjacent-update` for `CURRENT-STATE.md`, contributor controls, fixtures, comments, or other public repository-owned guidance; or
 - `not-applicable` when no documentation owner is affected.
 

@@ -18,6 +18,7 @@ Classify documentation impact through [documentation delivery](documentation-del
 
 - `private-update-required`;
 - `private-verify-unaffected`;
+- `private-verification-unavailable`;
 - `public-code-adjacent-update`; or
 - `not-applicable`.
 

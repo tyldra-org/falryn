@@ -32,8 +32,18 @@ Closes #
 
 ## Documentation
 
+- Documentation impact:
+- Companion documentation PR or reason none:
+
+<!-- Record every applicable result. `not-applicable` is exclusive.
+     public-code-adjacent-update | private-update-required |
+     private-verify-unaffected | private-verification-unavailable |
+     not-applicable -->
+
 - [ ] `CURRENT-STATE.md` reflects only behavior supported by this change.
 - [ ] Affected public documentation owners were updated or verified unaffected.
+- [ ] Any private update or unavailable verification is identified without exposing private content.
+- [ ] Required application and documentation pull requests use reciprocal links and the same delivery owner.
 - [ ] Public claims are source-verified; no roadmap, unannounced capability, private research, or internal design was added.
 - [ ] Existing public documentation was updated instead of creating a duplicate owner.
 - [ ] Repository-qualified paths and GitHub links are shareable; no private or contributor-specific local path is persisted.
