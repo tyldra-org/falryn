@@ -1,6 +1,6 @@
 # projects
 
-Use GitHub Projects as the live cross-repository planning and prioritization layer. Keep implementation ownership in repository issues.
+Use GitHub Projects for planning across one or more repositories when the current repository or organization has chosen that model. Keep implementation ownership in repository issues unless its established process says otherwise.
 
 ## Resolve the Project
 
@@ -69,7 +69,15 @@ Native subissues may be auto-added by Project workflows or repository linkage, b
 
 ## Update fields
 
-Resolve IDs first:
+For one human-selected item on current CLI versions, prefer readable selectors and let the CLI resolve IDs:
+
+```bash
+gh project item-edit NUMBER --owner OWNER \
+  --url https://github.com/OWNER/REPO/issues/123 \
+  --field Status --value "In Progress"
+```
+
+Use this only after verifying that the field and option names are unambiguous. For repeatable automation, bulk work, iteration fields, or older CLI versions, resolve IDs first:
 
 ```bash
 gh project view NUMBER --owner OWNER --format json
@@ -95,6 +103,8 @@ gh project item-edit \
 
 Use `--text`, `--number`, `--date`, or `--iteration-id` for matching field types. Never derive option IDs from labels or display order.
 
+Check `gh project item-edit --help` before relying on the readable `--field`/`--value` form. GitHub Enterprise and older CLI versions may require the node-ID form.
+
 ## Automation and workflows
 
 Use built-in Project workflows for deterministic state transitions such as auto-add, item closed, PR merged, and status updates. Keep repository Actions for behavior that truly needs code or cross-system logic.
@@ -102,6 +112,14 @@ Use built-in Project workflows for deterministic state transitions such as auto-
 Before enabling automation, test a narrow example and check for loops, cross-repository scope, archived-item behavior, and whether manual states will be overwritten.
 
 **Automation is not completion proof.** After merge or close, verify issue state, Project fields, and parent rollups per [issue-lifecycle.md](issue-lifecycle.md). Repair explicitly when the visible board is wrong.
+
+## Project and item lifecycle
+
+Closing a Project is reversible with the installed command's `--undo` form. Archiving an item is also reversible and is different from deleting it. Resolve owner, Project number, item ID, linked issue/PR, and current state before either operation.
+
+Copy, link/unlink, template marking, field deletion, item deletion, and Project deletion change structure or ownership. Snapshot the Project, fields, items, workflows, links, and views first. Confirm destructive targets exactly, then verify both the Project and linked repository records. Deleting a Project item does not delete its Issue or PR, while deleting a field removes that dimension from every item.
+
+Check current help for `close`, `copy`, `delete`, `field-delete`, `item-archive`, `item-delete`, `mark-template`, and `unlink`. GitHub Enterprise availability can differ. Never replace an unavailable native lifecycle operation with a visually similar field update.
 
 ## Audit
 
@@ -117,4 +135,3 @@ Verify:
 - saved views or UI-only work still outstanding.
 
 Closing or archiving a Project item does not close its Issue. Closing an Issue does not necessarily archive its item. Audit both states.
-

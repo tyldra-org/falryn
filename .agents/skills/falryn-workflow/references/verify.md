@@ -1,28 +1,33 @@
 # Verify
 
-Read the Verify section of the canonical Development contract before acting.
-Verification is a fresh, read-only audit; do not silently repair missing
-behavior or broaden scope.
+Verify audits the exact target without editing product source, pull-request contents, or private documentation.
 
-Review is complementary, not a synonym: use [Review](review.md) when the user
-asks for an exact file/diff inventory, code-review findings, and blast-radius
-assessment. Verify establishes delivery readiness against the issue and
-complete bundle.
+## Public application PR
 
-Choose the scope the target names:
+Inspect the exact base and head revisions, complete diff, public delivery issue, source behavior, tests, `CURRENT-STATE.md`, checks, reviews, rulesets, mergeability, documentation-impact declaration, and available clean local checkout state.
 
-- **Delivery PR:** audit the complete PR: its issue, full diff, delivery owner,
-  checks, review findings, documentation impact, and merge readiness. Preview
-  its exact squash subject and optional footer, plus safe post-merge checkout
-  synchronization.
-- **PR-sized issue, parent, milestone, or range:** compare the actual
-  implementation against the selected acceptance scope, including required
-  children, integration, recovery, security, resource, projection,
-  documentation, and release criteria as applicable.
+Public-only verification may conclude whether the application revision satisfies its public contract. It must not claim full delivery-bundle readiness when private documentation impact is required or unresolved.
 
-Record an implementation gap in its right owner. Code fixes require an explicit
-Implement request, except within Deliver's correction loop. A passing Verify
-may suggest Merge but never authorizes it.
+## Authenticated delivery bundle
 
-Read [Corrections](corrections.md) for an observed gap, and
-[Reporting](reporting.md) for the next prompt.
+When private authority is available, apply [documentation delivery](documentation-delivery.md) and inspect every required private docs companion, cross-link, documentation owner, exact head, check, review, mergeability result, and merge order. Preview:
+
+- every repository and pull request;
+- exact reviewed head SHA;
+- docs-first and application-last order;
+- squash method and final subject;
+- any allowed short issue-reference footer or an empty body; and
+- each eligible local checkout and safe post-merge default branch.
+
+Do not merge. Any later head, base, check, review, ruleset, companion, message, checkout, or mergeability change invalidates the preview.
+
+## Other targets
+
+- A PR-sized issue verifies delivered behavior against every public acceptance criterion and, for maintainers, private documentation and Project reconciliation.
+- A parent requires all necessary children complete plus integrated behavior, failure, recovery, resource, security, and projection evidence.
+- A milestone or range requires private Roadmap and documentation authority.
+- A docs-only target requires private Falryn Docs authority.
+
+Verify may perform only explicit governance reconciliation that the user authorized, such as reopening incomplete merged work, correcting issue and Project state, recording a missing PR-sized owner, or closing a fully proven parent. It never silently fixes source.
+
+When a gap exists, route through [corrections](corrections.md). Report unavailable private evidence separately from a public implementation defect. Use [governance audits](governance-audits.md) before making a readiness, sequence, liveness, or complete-reconciliation claim.

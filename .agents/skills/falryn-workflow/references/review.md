@@ -1,41 +1,19 @@
 # Review
 
-Use `Review — Target: PR #N` to assess a pull request before or alongside
-Verify. It is read-only: do not comment, approve, merge, change
-labels or Project state, edit files, create a branch, or start delivery.
+Review is a read-only assessment of one exact Falryn or, with private access, Falryn Docs pull-request revision. Load `change-review`, `gh-cli`, and the relevant available stack skill.
 
-Load `change-review` for the portable review procedure, `gh-cli` for GitHub PR
-state, and the relevant stack skill for changed code. Read the Review section
-of the canonical Development contract first, then apply Falryn-specific scope:
+## Evidence
 
-1. Resolve the exact repository, PR, base and head SHA, author, linked issue,
-   and current check state. Do not review a stale local branch as though it
-   were the PR head.
-2. Read the complete diff and report every added, modified, deleted, and
-   renamed file. Group files by product area and distinguish production code,
-   tests, configuration or generated assets, and documentation.
-3. Explain the observable behavior or contract changed by the diff. Read the
-   modified symbols and the relevant callers, owners, schemas, configuration,
-   persistence, wire formats, UI projections, and documentation rather than
-   inferring effects from filenames alone.
-4. Apply a blast-radius lens: identify the one factual condition most important
-   to the change's safety; trace where it could fail beyond the diff; and list
-   only concrete risks with a file and line, likelihood, impact, and cheapest
-   check. Keep separately the risks that were examined and cleared.
-5. Use the PR's observed CI and review state as evidence. Do not check out or
-   execute an untrusted pull-request head in a maintainer environment. If the
-   central safety condition needs active proof, name the smallest focused test
-   or reproduction; run it only when the user explicitly authorizes execution
-   in an appropriate isolated environment. Otherwise mark the fact unproven.
-6. Report actionable findings only. A finding names the exact changed or
-   affected path and line, explains the failure path, and gives a focused
-   correction. Do not manufacture concerns or treat style preferences as bugs.
+Resolve the repository, base and head SHA, author, public delivery issue, checks, reviews, merge state, and complete current diff. Inventory every added, modified, deleted, and renamed file. Read affected behavior, callers, data and wire formats, configuration, persistence, projections, and cleanup paths rather than reviewing filenames alone.
 
-The report includes: exact PR and revision; a complete changed-file inventory;
-what changed; the important safety condition and evidence level; findings in
-severity order; cleared risks; check evidence and gaps; documentation impact;
-and the cheapest pre-merge validation. Finish with one exact Suggested next
-prompt from refreshed state. Review may recommend `Implement` or `Verify`, but
-never starts, approves, merges, or authorizes another action.
+Compare the change with its public issue contract, current source, tests, and `CURRENT-STATE.md`. Apply [documentation delivery](documentation-delivery.md) when private docs access exists, adding exact owner and companion evidence without copying private content into the public report. Without access, classify documentation verification as unavailable rather than pretending it is unaffected.
 
-Read [Reporting](reporting.md) for the final report form.
+Trace the central safety condition and concrete failure paths. Findings identify severity, path and line, impact, likelihood, and the cheapest disproving check. Separate actionable defects from cleared risks and unavailable evidence.
+
+Observed CI and existing tests are evidence, not proof of every behavior. Never execute an untrusted pull-request head in a privileged maintainer checkout.
+
+## Boundaries
+
+Review never edits source, comments, approves, merges, changes labels or Project fields, or starts delivery. It does not establish complete bundle merge readiness; Verify owns that decision.
+
+Report the exact revision, inventory, changed behavior, findings, safety condition, evidence level, cleared risks, documentation-access state, observed checks, and next safe prompt.

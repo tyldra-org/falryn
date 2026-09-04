@@ -1,11 +1,95 @@
 import { Buffer } from "node:buffer";
 import { declaresStandalone } from "./issue-governance-body";
 
-const SCHEMA_VERSION = 1 as const;
-const STATUS_VALUES = ["Todo", "In Progress", "Done"] as const;
+const SCHEMA_VERSION = 2 as const;
+
+export const ROADMAP_STATUS_OPTIONS = [
+  { name: "Todo", description: "This item hasn't been started", color: "GREEN" },
+  {
+    name: "In Progress",
+    description: "This is actively being worked on",
+    color: "YELLOW",
+  },
+  { name: "Done", description: "This has been completed", color: "PURPLE" },
+] as const;
+
+export const ROADMAP_PRIORITY_OPTIONS = [
+  {
+    name: "P0",
+    description:
+      "Immediate: approved active security, data-loss, availability, or release emergency.",
+    color: "RED",
+  },
+  {
+    name: "P1",
+    description: "High: milestone critical path, safety prerequisite, or multi-outcome unlocker.",
+    color: "ORANGE",
+  },
+  {
+    name: "P2",
+    description: "Normal: required milestone work outside the critical path.",
+    color: "YELLOW",
+  },
+  {
+    name: "P3",
+    description: "Low: optional, experimental, polish, or safely deferrable work.",
+    color: "GRAY",
+  },
+  {
+    name: "Historical",
+    description: "Closed-only: no contemporaneous P0-P3 value; excluded from routing.",
+    color: "GRAY",
+  },
+] as const;
+
+export const ROADMAP_READINESS_OPTIONS = [
+  {
+    name: "Ready",
+    description:
+      "Verified PR-sized contract; implementation may start when assigned and unblocked.",
+    color: "GREEN",
+  },
+  {
+    name: "Needs Planning",
+    description: "Needs source evidence, scope, boundaries, validation, or documentation impact.",
+    color: "YELLOW",
+  },
+  {
+    name: "Needs Decision",
+    description: "Planning is paused on a named maintainer product, policy, or tradeoff decision.",
+    color: "RED",
+  },
+  {
+    name: "Parent",
+    description:
+      "Open outcome routes through native PR-sized children; never implemented directly.",
+    color: "BLUE",
+  },
+  {
+    name: "Historical",
+    description: "Closed issue; excluded from current routing.",
+    color: "GRAY",
+  },
+] as const;
+
+export const ROADMAP_REQUIRED_WORKFLOWS = [
+  "Auto-add sub-issues to project",
+  "Auto-close issue",
+  "Item added to project",
+  "Item closed",
+  "Pull request linked to issue",
+  "Pull request merged",
+] as const;
+
 const OPEN_PRIORITIES = ["P0", "P1", "P2", "P3"] as const;
 const CLOSED_PRIORITIES = [...OPEN_PRIORITIES, "Historical"] as const;
-const READINESS_VALUES = ["Ready", "Not Ready", "Parent", "Historical"] as const;
+const READINESS_VALUES = [
+  "Ready",
+  "Needs Planning",
+  "Needs Decision",
+  "Parent",
+  "Historical",
+] as const;
 const ROADMAP_STATUSES = ["Todo", "In Progress", "Done"] as const;
 const MILESTONE_ORDER = [
   "v0.1 Foundation",
@@ -25,6 +109,17 @@ export type RoadmapPullRequestState = "OPEN" | "CLOSED" | "MERGED";
 export type RoadmapPriority = (typeof CLOSED_PRIORITIES)[number];
 export type RoadmapReadiness = (typeof READINESS_VALUES)[number];
 export type RoadmapStatus = (typeof ROADMAP_STATUSES)[number];
+
+export type RoadmapFieldOption = {
+  readonly name: string;
+  readonly description: string;
+  readonly color: string;
+};
+
+export type RoadmapProjectWorkflow = {
+  readonly name: string;
+  readonly enabled: boolean;
+};
 
 export type RoadmapRelation = {
   readonly repository: string;
@@ -86,9 +181,10 @@ export type RoadmapGovernanceSnapshot = {
   readonly projectId: string;
   readonly repositories: readonly string[];
   readonly repositoryIssueCounts: readonly RoadmapRepositoryIssueCount[];
-  readonly statusOptions: readonly string[];
-  readonly priorityOptions: readonly string[];
-  readonly readinessOptions: readonly string[];
+  readonly statusOptions: readonly RoadmapFieldOption[];
+  readonly priorityOptions: readonly RoadmapFieldOption[];
+  readonly readinessOptions: readonly RoadmapFieldOption[];
+  readonly projectWorkflows: readonly RoadmapProjectWorkflow[];
   readonly issues: readonly RoadmapGovernanceIssue[];
   readonly nonIssueProjectItems: readonly RoadmapNonIssueProjectItem[];
 };
@@ -118,8 +214,11 @@ export type RoadmapGovernanceCode =
   | "readiness-field-invalid"
   | "readiness-invalid"
   | "readiness-evidence-mismatch"
+  | "decision-evidence-missing"
+  | "in-progress-readiness-invalid"
   | "parent-readiness-invalid"
   | "closed-readiness-invalid"
+  | "project-workflow-invalid"
   | "stale-in-progress"
   | "in-progress-blocked"
   | "in-progress-closing-pr-closed"
@@ -148,7 +247,7 @@ export type RoadmapDeliverySequenceEntry = {
   readonly title: string;
   readonly milestone: string;
   readonly priority: Exclude<RoadmapPriority, "Historical">;
-  readonly readiness: "Ready" | "Not Ready";
+  readonly readiness: "Ready" | "Needs Planning" | "Needs Decision";
   readonly status: "Todo" | "In Progress";
   readonly openTransitiveDependents: number;
   readonly crossMilestonePrerequisite: boolean;
@@ -263,6 +362,26 @@ function stringArray(value: unknown, subject: string): readonly string[] {
   return arrayValue(value, subject).map((entry, index) =>
     stringValue(entry, `${subject}[${index}]`),
   );
+}
+
+function parseFieldOption(value: unknown, subject: string): RoadmapFieldOption {
+  const record = asRecord(value, subject);
+  return {
+    name: stringValue(record.name, `${subject}.name`),
+    description: stringValue(record.description, `${subject}.description`),
+    color: stringValue(record.color, `${subject}.color`),
+  };
+}
+
+function parseProjectWorkflow(value: unknown, subject: string): RoadmapProjectWorkflow {
+  const record = asRecord(value, subject);
+  if (typeof record.enabled !== "boolean") {
+    throw new Error(`${subject}.enabled must be a boolean`);
+  }
+  return {
+    name: stringValue(record.name, `${subject}.name`),
+    enabled: record.enabled,
+  };
 }
 
 function parseRelation(value: unknown, subject: string): RoadmapRelation {
@@ -453,9 +572,18 @@ export function parseRoadmapGovernanceSnapshot(value: unknown): RoadmapGovernanc
     projectId: stringValue(record.projectId, "snapshot.projectId"),
     repositories,
     repositoryIssueCounts,
-    statusOptions: stringArray(record.statusOptions, "snapshot.statusOptions"),
-    priorityOptions: stringArray(record.priorityOptions, "snapshot.priorityOptions"),
-    readinessOptions: stringArray(record.readinessOptions, "snapshot.readinessOptions"),
+    statusOptions: arrayValue(record.statusOptions, "snapshot.statusOptions").map((option, index) =>
+      parseFieldOption(option, `snapshot.statusOptions[${index}]`),
+    ),
+    priorityOptions: arrayValue(record.priorityOptions, "snapshot.priorityOptions").map(
+      (option, index) => parseFieldOption(option, `snapshot.priorityOptions[${index}]`),
+    ),
+    readinessOptions: arrayValue(record.readinessOptions, "snapshot.readinessOptions").map(
+      (option, index) => parseFieldOption(option, `snapshot.readinessOptions[${index}]`),
+    ),
+    projectWorkflows: arrayValue(record.projectWorkflows, "snapshot.projectWorkflows").map(
+      (workflow, index) => parseProjectWorkflow(workflow, `snapshot.projectWorkflows[${index}]`),
+    ),
     issues,
     nonIssueProjectItems: arrayValue(
       record.nonIssueProjectItems,
@@ -481,6 +609,24 @@ function sameStrings(left: readonly string[], right: readonly string[]): boolean
   return left.length === right.length && left.every((value, index) => value === right[index]);
 }
 
+function sameFieldOptions(
+  left: readonly RoadmapFieldOption[],
+  right: readonly RoadmapFieldOption[],
+): boolean {
+  return (
+    left.length === right.length &&
+    left.every((option, index) => {
+      const expected = right[index];
+      return (
+        expected !== undefined &&
+        option.name === expected.name &&
+        option.description === expected.description &&
+        option.color === expected.color
+      );
+    })
+  );
+}
+
 function isOneOf<const Values extends readonly string[]>(
   value: string | null,
   values: Values,
@@ -499,6 +645,10 @@ function add(
 
 function hasP0Approval(body: string): boolean {
   return /^P0 approval:\s+@[A-Za-z0-9-]+\s+on\s+\d{4}-\d{2}-\d{2}\s+—\s+\S/im.test(body);
+}
+
+function hasDecisionRequest(body: string): boolean {
+  return /^Decision required:\s+@[A-Za-z0-9-]+\s+—\s+\S/im.test(body);
 }
 
 function readyChecklist(
@@ -768,7 +918,9 @@ function sequence(
       issue.milestone === null ||
       issue.milestoneState !== "OPEN" ||
       !isOneOf(item.priority, OPEN_PRIORITIES) ||
-      (item.readiness !== "Ready" && item.readiness !== "Not Ready") ||
+      (item.readiness !== "Ready" &&
+        item.readiness !== "Needs Planning" &&
+        item.readiness !== "Needs Decision") ||
       (item.status !== "Todo" && item.status !== "In Progress")
     ) {
       continue;
@@ -802,33 +954,47 @@ export function analyzeRoadmapGovernance(
   const allIssues = new Map<IssueKey, RoadmapGovernanceIssue>(
     snapshot.issues.map((issue) => [issueKey(issue.repository, issue.number), issue]),
   );
+  const managedIssues = new Map<IssueKey, RoadmapGovernanceIssue>(
+    [...allIssues].filter(([, issue]) => issue.projectItems.length > 0),
+  );
   const issues = new Map<IssueKey, RoadmapGovernanceIssue>(
-    [...allIssues].filter(([, issue]) => issue.state === "OPEN"),
+    [...managedIssues].filter(([, issue]) => issue.state === "OPEN"),
   );
 
-  if (!sameStrings(snapshot.statusOptions, STATUS_VALUES)) {
+  if (!sameFieldOptions(snapshot.statusOptions, ROADMAP_STATUS_OPTIONS)) {
     diagnostics.push({
       code: "status-field-invalid",
       repository: "*",
       issueNumber: 0,
-      message: `Status options must be exactly ${STATUS_VALUES.join(", ")}`,
+      message: "Status option names, descriptions, colors, and order do not match the contract",
     });
   }
-  if (!sameStrings(snapshot.priorityOptions, CLOSED_PRIORITIES)) {
+  if (!sameFieldOptions(snapshot.priorityOptions, ROADMAP_PRIORITY_OPTIONS)) {
     diagnostics.push({
       code: "priority-field-invalid",
       repository: "*",
       issueNumber: 0,
-      message: `Priority options must be exactly ${CLOSED_PRIORITIES.join(", ")}`,
+      message: "Priority option names, descriptions, colors, and order do not match the contract",
     });
   }
-  if (!sameStrings(snapshot.readinessOptions, READINESS_VALUES)) {
+  if (!sameFieldOptions(snapshot.readinessOptions, ROADMAP_READINESS_OPTIONS)) {
     diagnostics.push({
       code: "readiness-field-invalid",
       repository: "*",
       issueNumber: 0,
-      message: `Readiness options must be exactly ${READINESS_VALUES.join(", ")}`,
+      message: "Readiness option names, descriptions, colors, and order do not match the contract",
     });
+  }
+  for (const name of ROADMAP_REQUIRED_WORKFLOWS) {
+    const matches = snapshot.projectWorkflows.filter((workflow) => workflow.name === name);
+    if (matches.length !== 1 || matches[0]?.enabled !== true) {
+      diagnostics.push({
+        code: "project-workflow-invalid",
+        repository: "*",
+        issueNumber: 0,
+        message: `required Project workflow must exist exactly once and be enabled: ${name}`,
+      });
+    }
   }
   for (const item of snapshot.nonIssueProjectItems) {
     diagnostics.push({
@@ -843,12 +1009,15 @@ export function analyzeRoadmapGovernance(
     const repositoryDifference = compareText(left.repository, right.repository);
     return repositoryDifference !== 0 ? repositoryDifference : left.number - right.number;
   })) {
-    if (issue.projectItems.length !== 1) {
+    if (issue.projectItems.length === 0) {
+      continue;
+    }
+    if (issue.projectItems.length > 1) {
       add(
         diagnostics,
         "project-membership-count",
         issue,
-        `expected one Project item; found ${issue.projectItems.length}`,
+        `expected at most one Project item; found ${issue.projectItems.length}`,
       );
       continue;
     }
@@ -985,14 +1154,38 @@ export function analyzeRoadmapGovernance(
         }
       } else if (
         issue.subIssues.length === 0 &&
+        item.readiness === "Needs Decision" &&
+        !hasDecisionRequest(issue.body)
+      ) {
+        add(
+          diagnostics,
+          "decision-evidence-missing",
+          issue,
+          "Needs Decision requires `Decision required: @owner — question` in the issue body",
+        );
+      } else if (
+        issue.subIssues.length === 0 &&
         item.readiness !== "Ready" &&
-        item.readiness !== "Not Ready"
+        item.readiness !== "Needs Planning" &&
+        item.readiness !== "Needs Decision"
       ) {
         add(
           diagnostics,
           "readiness-invalid",
           issue,
-          `open leaf must use Ready or Not Ready; found ${item.readiness}`,
+          `open leaf must use Ready, Needs Planning, or Needs Decision; found ${item.readiness}`,
+        );
+      }
+      if (
+        issue.subIssues.length === 0 &&
+        item.status === "In Progress" &&
+        item.readiness !== "Ready"
+      ) {
+        add(
+          diagnostics,
+          "in-progress-readiness-invalid",
+          issue,
+          `In Progress leaf must remain Ready; found ${item.readiness ?? "none"}`,
         );
       }
 
@@ -1200,7 +1393,7 @@ export function analyzeRoadmapGovernance(
     }
   }
 
-  for (const issue of snapshot.issues) {
+  for (const issue of managedIssues.values()) {
     const sourceKey = issueKey(issue.repository, issue.number);
     const validateRelation = (relation: RoadmapRelation, kind: string): void => {
       const targetKey = issueKey(relation.repository, relation.number);
@@ -1215,6 +1408,14 @@ export function analyzeRoadmapGovernance(
           );
         }
         return;
+      }
+      if (target.projectItems.length === 0 && (kind !== "blocker" || relation.state === "OPEN")) {
+        add(
+          diagnostics,
+          "relationship-target-missing",
+          issue,
+          `${kind} ${targetKey} is outside the Roadmap-owned issue set`,
+        );
       }
       if (relation.state !== target.state) {
         add(

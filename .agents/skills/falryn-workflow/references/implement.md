@@ -1,27 +1,31 @@
 # Implement
 
-Read the Implement section of the canonical Development contract before acting.
+Implement accepts one explicitly named, publicly complete, unblocked PR-sized Falryn issue. If the issue is Roadmap-owned, it must also be Ready and assigned under the private maintainer contract. A parent target is not an implementation target; route it through its selected child.
 
-- Accept exactly one Ready, unblocked, PR-sized standalone issue or native
-  child. A parent target is not directly implementable; identify its next
-  eligible child instead.
-- Re-read the issue, parent, blockers, design owners, source, state,
-  repository guidance, and required skills. Stop as **Not Ready** rather than
-  silently planning while coding.
-- Confirm the authenticated GitHub account is the issue's sole assignee, then
-  set it **In Progress** before code. Set the parent **In Progress** when this
-  is its first active child. Stop and route to the owner when the account does
-  not match.
-- Continue a valid open delivery branch and PR after a failed Verify; otherwise
-  branch from the current default branch using the repository convention.
-- Implement the complete scoped outcome, focused tests, the recorded
-  documentation impact, and the smallest supported CURRENT-STATE.md update.
-  Run applicable repository-owned checks.
-- Push only the intended work and update or open one focused delivery PR.
-  Include canonical documentation changes for the same issue in that PR; it is
-  the sole delivery owner and closes its Falryn issue when appropriate.
+## Preconditions
 
-Implement never merges. A new head invalidates the prior Verify result, merge
-preview, and approval tied to that revision. Follow with a fresh Verify.
+1. Read the complete public issue handoff, source baseline, tests, `CURRENT-STATE.md`, repository guidance, native hierarchy, blockers, and existing delivery pull requests.
+2. Require every Contribution checklist item to be checked and current. For Roadmap-owned delivery, also require the maintainer Ready checklist. A private link cannot fill a missing public requirement.
+3. For upstream maintainer delivery, require authenticated Roadmap access, confirm the authenticated account is the sole assignee, verify Ready and unblocked state, then set In Progress before source mutation.
+4. A contribution issue outside the Roadmap needs no private access or private readiness claim. Implementation may proceed when its public handoff is complete and the user authorizes work in the current branch or a fork. Follow `CONTRIBUTING.md` and the public pull-request contract.
+5. Reuse a valid open correction branch and PR only after fresh verification. Otherwise branch from the fetched current default branch.
 
-For incomplete or merged outcomes, read [Corrections](corrections.md).
+## Execution
+
+Implement the complete issue with the smallest coherent source and test changes. Update `CURRENT-STATE.md` only when shipped behavior changes. Run focused checks while iterating, then the repository's required validation.
+
+Classify documentation impact through [documentation delivery](documentation-delivery.md) as:
+
+- `private-update-required`;
+- `private-verify-unaffected`;
+- `private-verification-unavailable`;
+- `public-code-adjacent-update`; or
+- `not-applicable`.
+
+A contributor without private docs access records the classification and evidence in the Falryn PR. An authenticated maintainer owns any required private docs companion. Do not copy private pages into Falryn or make up a companion link. After Roadmap readiness or Status changes, run the scopes required by [governance audits](governance-audits.md).
+
+Commit and push only intended paths. Open or update one focused application PR with its delivery owner, scope, validation, limitations, documentation classification, and any verified companion identity. Implement never merges unless the originating request is the composite Deliver mode and all fresh delivery conditions pass.
+
+## Stop conditions
+
+Stop on an incomplete issue body, open blocker, ownership mismatch, stale base, conflicting public and private contracts, unavailable required docs companion, failed validation, uncertain external effect, or changed PR revision. Report the exact recovery action.

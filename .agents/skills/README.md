@@ -1,56 +1,45 @@
 # Vendored agent skills
 
-Skills shipped in this repository so every checkout — contributor, fork, or
-agent without a personal `~/.agents/skills` install — resolves the same portable
-guidance. `AGENTS.md` points here first.
+Falryn ships six skill bundles so a public checkout can resolve its normal repository guidance without private documentation, private Roadmap access, or a personal skill installation.
 
-## Tiers
+## Inventory
 
-| Tier | Skills | Content | Where users get them |
-| --- | --- | --- | --- |
-| **Universal** | `git-workflow`, `gh-cli`, `change-review` | No product or repo names; reusable in any repository | Vendored in `falryn/.agents/skills/` |
-| **Stack** | `typescript-best-practices`, `opentui` | TypeScript and terminal-UI guidance | Vendored in this repository |
-| **Falryn workflow** | `falryn-workflow` | Maintainer modes, issue ownership, project orientation, and next-step routing | Vendored here and synchronized with the maintainer-global copy |
+| Tier | Skills | Content |
+| --- | --- | --- |
+| Portable universal | `git-workflow`, `gh-cli`, `change-review` | General Git, GitHub, and change-review guidance reusable across repositories |
+| Portable stack | `typescript-best-practices`, `opentui-best-practices` | Version-aware TypeScript and terminal-UI guidance without Falryn policy |
+| Falryn workflow | `falryn-workflow` | Complete Falryn-specific public workflow plus explicit authenticated-maintainer gates for private docs and Roadmap operations |
 
-Universal skills must not mention Falryn, its organization, or local process.
-Stack skills may describe their technology, but must remain useful outside this
-repository. `falryn-workflow` is the deliberate project-specific exception.
-Keep repository-local rules outside the portable skills.
+The five portable skills must remain useful outside Falryn and must not contain Falryn, organization, maintainer-home, or repository-local policy. `falryn-workflow` is the sole project-specific exception.
 
-**Precedence in this checkout:** system and user instructions → repository-local
-`AGENTS.md` / `CONTRIBUTING.md` → relevant vendored skill → personal or global
-guidance as a fallback. Do not rely on `~/.agents/skills` being installed.
+Each bundle has one compact `SKILL.md` router. Deep references remain only when
+they own a distinct concern. The TypeScript bundle has twelve original practice
+references, and the OpenTUI bundle has fourteen. Neither bundle contains copied
+upstream documentation.
+
+## Resolution
+
+In this checkout, apply system and user instructions first, then repository `AGENTS.md` and `CONTRIBUTING.md`, then the relevant vendored skill. A personal or global skill may add guidance only when it does not replace repository policy.
+
+The Falryn workflow resolves public source, issue, and pull-request work locally. Private Falryn Docs and Roadmap information is used only after exact authenticated maintainer access is proven. Missing private authority produces an explicit unavailable result for private-only operations; it never causes a guessed fallback.
 
 ## Load gates
 
 | Skill | Load before |
 | --- | --- |
-| `typescript-best-practices` | TypeScript, TSX, JS, tests, build scripts, or `tsconfig` work |
-| `opentui` | Terminal UI, renderer, layout, input, keymaps, or packaging work |
-| `git-workflow` | Mutating git work: commit, branch, rebase, push, or recovery |
-| `gh-cli` | GitHub `gh`: issues, pull requests, Actions, Projects, merge, or flags |
+| `typescript-best-practices` | TypeScript, TSX, JavaScript, tests, build scripts, or `tsconfig` work |
+| `opentui-best-practices` | Terminal UI, renderer, layout, input, keymaps, or packaging work |
+| `git-workflow` | Mutating Git work: commit, branch, rebase, push, or recovery |
+| `gh-cli` | GitHub issues, pull requests, Actions, Projects, merge, or exact flags |
 | `change-review` | Reviewing a local diff, branch, or pull request; pair with `gh-cli` for GitHub state and a stack skill for changed code |
 | `falryn-workflow` | Falryn Plan, Implement, Review, Verify, Merge, Deliver, or Next modes; greetings, walkthroughs, status questions, and next-step routing |
 
-`git-workflow` owns git. `gh-cli` owns GitHub. `change-review` owns
-evidence-backed review reasoning. Never substitute one CLI for another.
+`git-workflow` owns Git. `gh-cli` owns GitHub. `change-review` owns evidence-backed review reasoning. Never substitute one CLI for another.
 
-Optional global-only: `find-docs` may remain in personal `~/.agents/skills/`
-until it becomes part of the default contributor path.
+## Maintenance
 
-## Maintainer sync
-
-When maintaining a synchronized skill in personal `~/.agents/skills/` and
-shipping it to users, run from this directory:
-
-```bash
-./sync-from-global.sh          # preview content changes (ignores Finder metadata)
-# Review the itemized diff, then apply it deliberately:
-./sync-from-global.sh --apply
-```
-
-`--apply` uses `rsync --delete`; review the preview before applying it. The
-helper syncs the five portable skills and the project-specific
-`falryn-workflow` package. Do not add Falryn text to the portable skills.
-
-The committed copy is canonical for people using this repository.
+The committed bundles are authoritative for this checkout. Keep portable bundle
+changes product-neutral. Maintain `falryn-workflow` here as the public Falryn
+contract; the private companion adds maintainer-only documentation and Roadmap
+authority after access is verified. Personal or global installations are
+optional copies and never replace the committed repository guidance.

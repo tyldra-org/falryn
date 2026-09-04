@@ -8,10 +8,18 @@ body:
     attributes:
       value: |
         Please do not disclose vulnerabilities here; use the private security
-        reporting path in SECURITY.md. A triager adds each valid issue to the
-        Falryn Roadmap exactly once, assigns one owner and milestone, sets
-        Status to Todo, selects P0–P3 Priority and current Readiness, applies
-        an area label, and records a native parent or Standalone relationship.
+        reporting path in SECURITY.md. This public report does not need an
+        assignee, milestone, Priority, Readiness, or access to the private
+        Falryn Roadmap. Maintainers decide separately whether to adopt an issue
+        into the product-development plan. A focused correction may use the
+        public contribution path without private planning metadata.
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Outcome
+      description: State the user-visible correction and the boundary this issue owns.
+    validations:
+      required: true
   - type: textarea
     id: expected
     attributes:
@@ -38,11 +46,18 @@ body:
       description: Falryn revision, OS, terminal, runtime, provider, and relevant configuration.
     validations:
       required: true
+  - type: textarea
+    id: boundaries
+    attributes:
+      label: Failure and recovery boundary
+      description: Describe relevant limits, cancellation, partial effects, stale state, cleanup, and recovery.
+    validations:
+      required: true
   - type: dropdown
     id: area
     attributes:
       label: Primary area
-      description: A triager applies the matching `area:*` label.
+      description: Repository automation applies the matching `area:*` label.
       options:
         - Runtime and application
         - CLI and headless use
@@ -62,24 +77,6 @@ body:
         - Documentation
     validations:
       required: true
-  - type: dropdown
-    id: relationship
-    attributes:
-      label: Planning relationship
-      description: Choose Standalone or link the native parent in the next field.
-      options:
-        - Standalone
-        - Native child of an existing parent
-    validations:
-      required: true
-  - type: input
-    id: parent
-    attributes:
-      label: Native parent issue
-      description: Required when this is a child; otherwise write Standalone.
-      placeholder: "#123 or Standalone"
-    validations:
-      required: true
   - type: textarea
     id: dependencies
     attributes:
@@ -90,15 +87,22 @@ body:
   - type: textarea
     id: validation
     attributes:
-      label: Validation and documentation impact
-      description: Name the regression checks and any affected public documentation.
+      label: Completion proof
+      description: Name the regression checks, negative controls, and observed result that prove the correction.
+    validations:
+      required: true
+  - type: textarea
+    id: documentation
+    attributes:
+      label: Documentation impact
+      description: Record applicable public-code-adjacent-update, private-update-required, private-verify-unaffected, private-verification-unavailable, or not-applicable results and why.
     validations:
       required: true
   - type: checkboxes
     id: readiness
     attributes:
-      label: Ready checklist
-      description: Leave an item unchecked until its evidence is known; a triager sets the authoritative Project Readiness field.
+      label: Contribution checklist
+      description: Complete these before opening a non-draft correction pull request. They do not represent private Roadmap readiness.
       options:
         - label: The reproduction and current source baseline are verified.
         - label: The correction fits one focused pull request and names its owner boundaries.

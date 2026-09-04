@@ -7,17 +7,24 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thanks for proposing an improvement. Before implementation, a triager
-        adds the issue to the Falryn Roadmap exactly once, assigns one owner
-        and milestone, sets Status to Todo, selects P0–P3 Priority and current
-        Readiness, applies an area label, and records a native parent or
-        Standalone relationship. See CONTRIBUTING.md for the required workflow.
+        Thanks for proposing an improvement. This public contribution does not
+        need an assignee, milestone, Priority, Readiness, or access to the
+        private Falryn Roadmap. Maintainers decide separately whether to adopt
+        an issue into the product-development plan. Discuss a large change
+        before investing in an implementation. See CONTRIBUTING.md.
   - type: textarea
-    id: goal
+    id: outcome
     attributes:
-      label: Goal
-      description: What user outcome should change?
+      label: Outcome
+      description: What user outcome should change, and who owns it?
       placeholder: As a …, I can …, so that …
+    validations:
+      required: true
+  - type: textarea
+    id: baseline
+    attributes:
+      label: Observed baseline and remaining change
+      description: State what the current source does and the exact remaining delta.
     validations:
       required: true
   - type: textarea
@@ -28,10 +35,24 @@ body:
     validations:
       required: true
   - type: textarea
-    id: acceptance
+    id: contracts
     attributes:
-      label: Acceptance criteria
-      description: List observable behavior, edge cases, and limits.
+      label: Contracts and product wiring
+      description: Name inputs, outputs, state, effects, owner boundaries, and the real CLI, OpenTUI, headless, model, export, replay, or diagnostic composition point.
+    validations:
+      required: true
+  - type: textarea
+    id: failures
+    attributes:
+      label: Limits, failures, and recovery
+      description: Cover relevant limits, invalid, partial, cancelled, unavailable, stale, cleanup, and recovery behavior.
+    validations:
+      required: true
+  - type: textarea
+    id: completion
+    attributes:
+      label: Completion proof
+      description: List observable acceptance criteria, edge cases, and evidence that completes this issue.
       placeholder: |
         - [ ]
     validations:
@@ -47,7 +68,7 @@ body:
     id: area
     attributes:
       label: Primary area
-      description: A triager applies the matching `area:*` label.
+      description: Repository automation applies the matching `area:*` label.
       options:
         - Runtime and application
         - CLI and headless use
@@ -67,37 +88,25 @@ body:
         - Documentation
     validations:
       required: true
-  - type: dropdown
-    id: relationship
-    attributes:
-      label: Planning relationship
-      description: Choose Standalone or link the native parent in the next field.
-      options:
-        - Standalone
-        - Native child of an existing parent
-        - Parent outcome with PR-sized children to be planned
-    validations:
-      required: true
-  - type: input
-    id: parent
-    attributes:
-      label: Native parent issue
-      description: Required when this is a child; otherwise write Standalone.
-      placeholder: "#123 or Standalone"
-    validations:
-      required: true
   - type: textarea
     id: validation
     attributes:
-      label: Validation and documentation impact
-      description: Name focused checks and any affected public documentation.
+      label: Validation
+      description: Name focused positive, negative, restart, resource, and platform checks.
+    validations:
+      required: true
+  - type: textarea
+    id: documentation
+    attributes:
+      label: Documentation impact
+      description: Record applicable public-code-adjacent-update, private-update-required, private-verify-unaffected, private-verification-unavailable, or not-applicable results and why.
     validations:
       required: true
   - type: checkboxes
     id: readiness
     attributes:
-      label: Ready checklist
-      description: Leave an item unchecked until its evidence is known; a triager sets the authoritative Project Readiness field.
+      label: Contribution checklist
+      description: Complete these before opening a non-draft implementation pull request. They do not represent private Roadmap readiness.
       options:
         - label: The current source baseline and remaining delta are verified.
         - label: The scope fits one focused pull request and names its owner boundaries.

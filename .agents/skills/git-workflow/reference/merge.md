@@ -1,13 +1,13 @@
 # merge
 
-Local integration merges and the topology they produce. Landing a **GitHub pull request** is not this file — use **gh-cli** `process/merge.md`.
+Local integration merges and the topology they produce. Landing a **GitHub pull request** is not this file; use **gh-cli** `process/merge.md`.
 
 ## Merge strategy by intent
 
 | Intent | Strategy | Why |
 |---|---|---|
 | Preserve an integration or release lane locally | `--no-ff` when topology requires it | The merge commit records the join |
-| Keep a strictly linear local history | rebase then fast-forward | No merge commits; rewrites branch SHAs — [rewrite.md](rewrite.md) / [sync.md](sync.md) |
+| Keep a strictly linear local history | rebase then fast-forward | No merge commits; rewrites branch SHAs; [rewrite.md](rewrite.md) / [sync.md](sync.md) |
 | Update your branch from the default branch | see [sync.md](sync.md) | Different problem |
 
 **The repo already has an answer.** Inspect contribution guidance and `git log --graph --oneline -30`.
@@ -16,8 +16,8 @@ Local integration merges and the topology they produce. Landing a **GitHub pull 
 
 ```bash
 git switch <default-branch>
-git fetch origin
-git merge --ff-only origin/<default-branch>     # confirm you're current
+git fetch <remote>
+git merge --ff-only <remote>/<default-branch>   # confirm you're current
 git merge --no-ff <branch> -m "Merge branch '<branch>'"
 ```
 
@@ -48,7 +48,7 @@ git show --remerge-diff <merge-sha>
 
 Same rule as everywhere: **stop and ask**. Full procedure in [sync.md](sync.md#conflicts).
 
-Never resolve a conflict in a merge you did not fully read. A merge conflict resolution is an invisible edit — it appears in no diff of any individual commit, only in `git show -m <merge>`. That's exactly where mistakes hide.
+Never resolve a conflict in a merge you did not fully read. A merge conflict resolution is an invisible edit; it appears in no diff of any individual commit, only in `git show -m <merge>`. That's exactly where mistakes hide.
 
 After resolving, before committing the merge:
 
@@ -79,4 +79,4 @@ Refuses rather than creating a merge commit. Good default for pulling the defaul
 
 ## Octopus merges
 
-Don't. Merging three branches at once produces a commit nobody can bisect through or revert cleanly. Merge them one at a time.
+Avoid octopus merges unless the repository deliberately uses them for non-conflicting integration. They are harder to review, bisect, and revert. Merge branches one at a time for ordinary delivery.

@@ -1,35 +1,31 @@
 # Next
 
-Next is read-only routing. It also handles a greeting, project walkthrough,
-status question, or "what next?" request in a Falryn checkout. Read the Next
-section of the canonical Development contract and
-[Issue governance](issue-governance.md) before acting; it never changes issue,
-Project, branch, pull-request, or source state.
+Next is read-only routing over the private Falryn Roadmap. It never mutates issues, Project fields, branches, pull requests, source, or documentation.
 
-1. Read the authenticated GitHub identity, then the Falryn Roadmap, both issue
-   repositories, native hierarchy and blockers, Project Status, Priority and
-   Readiness, active delivery bundles, review/check state, and CURRENT-STATE.md.
-2. Resume a valid open delivery pull request or interrupted parent chain before
-   unrelated work. A bare In Progress field, recent update, or board position
-   is not delivery proof.
-3. Otherwise run or reproduce the repository-owned Roadmap projection. Native
-   blockers form a topological order. Resolve each eligible frontier by an
-   explicitly approved P0, canonical milestone order, P1 through P3,
-   descending open transitive dependents, then creation time, repository, and
-   issue number. Closed and Historical issues are excluded; parents route
-   through their sequenced children.
-4. Readiness decides the mode. Route a selected Not Ready issue to Plan and a
-   selected Ready issue to Deliver. For another account's issue, name that
-   owner rather than taking it over. Missing ownership routes to assignment and
-   Plan. Manual modes remain for work outside Deliver, including PR/milestone
-   audits and separately authorized releases.
-5. Treat the projection as bound to its exact GitHub generation. Regenerate it
-   after milestone, hierarchy, blocker, Status, Priority, Readiness, issue, or
-   closing-PR changes; never fall back to board order or update recency.
-6. When a product decision or external prerequisite blocks progress, emit
-   Suggested next prompt: none and name it.
+## Required authority
 
-Next never starts the suggested work and never emits a Parent chain selector
-except to resume a host-interrupted in-flight chain.
+Require authenticated access to the exact private Roadmap and both repositories represented in its audit. Run the exact live or replay command in [governance audits](governance-audits.md). Do not manually reproduce priority, readiness, dependency, liveness, or delivery order.
 
-Read [Reporting](reporting.md) for the exact final form.
+Without private Roadmap access, return:
+
+```text
+Next unavailable: authenticated maintainer Roadmap access is required. Explicit public issue and PR inspection remains available.
+```
+
+Do not list, infer, or approximate private candidates from public issue numbers, milestones, recency, labels, or board-independent guesses. Do not suggest making the Project public.
+
+## Routing
+
+If the audit emits any diagnostic, report it and produce no sequence. Otherwise:
+
+1. resume one valid active delivery or interrupted parent chain first;
+2. select the first actionable entry in the generated dependency-safe sequence;
+3. route Ready work to Deliver and Needs Planning work to Plan;
+4. route Needs Decision to its named human decision owner and do not suggest Plan or Deliver until the decision is recorded;
+5. route a parent through its selected actionable child;
+6. respect the sole assignee and name another owner rather than taking over; and
+7. use Falryn Docs-qualified selectors only for private docs-owned work.
+
+Parent-chain selectors are resume-only. Next never starts work or invents authorization.
+
+Report the audit generation, selected repository and issue, sequence position, readiness, owner, blockers, active delivery evidence, and one exact `Suggested next prompt:`. If no safe route exists, use `Suggested next prompt: none` and name the prerequisite without disclosing private content.

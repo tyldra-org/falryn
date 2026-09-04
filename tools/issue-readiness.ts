@@ -1,6 +1,6 @@
 import { declaresStandalone } from "./issue-governance-body";
 
-export const ISSUE_READINESS_SCHEMA_VERSION = 1 as const;
+export const ISSUE_READINESS_SCHEMA_VERSION = 2 as const;
 export const DEFAULT_MAXIMUM_ISSUE_BODY_BYTES = 65_536;
 
 const ROADMAP_STATUSES = new Set(["Todo", "In Progress", "Done"]);
@@ -31,6 +31,7 @@ export type IssueReadinessIssue = {
   readonly assignees: readonly string[];
   readonly labels: readonly string[];
   readonly milestone: string | null;
+  readonly roadmapItemCount: number;
   readonly roadmapStatuses: readonly string[];
   readonly parent: IssueReadinessRelation | null;
   readonly subIssues: readonly IssueReadinessRelation[];
@@ -113,6 +114,13 @@ function positiveInteger(value: unknown, subject: string): number {
   return value;
 }
 
+function nonNegativeInteger(value: unknown, subject: string): number {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) {
+    throw new Error(`${subject} must be a non-negative integer`);
+  }
+  return value;
+}
+
 function arrayValue(value: unknown, subject: string): readonly unknown[] {
   if (!Array.isArray(value)) {
     throw new Error(`${subject} must be an array`);
@@ -152,6 +160,7 @@ function parseIssue(value: unknown, index: number): IssueReadinessIssue {
       stringValue(entry, `${subject}.labels[${itemIndex}]`),
     ),
     milestone: nullableString(record.milestone, `${subject}.milestone`),
+    roadmapItemCount: nonNegativeInteger(record.roadmapItemCount, `${subject}.roadmapItemCount`),
     roadmapStatuses: arrayValue(record.roadmapStatuses, `${subject}.roadmapStatuses`).map(
       (entry, itemIndex) => stringValue(entry, `${subject}.roadmapStatuses[${itemIndex}]`),
     ),
@@ -291,12 +300,15 @@ function canonicalDocumentPaths(body: string): readonly string[] {
 function hasHeading(body: string, heading: (typeof REQUIRED_HEADINGS)[number]): boolean {
   return body.split("\n").some((line) => {
     const normalized = line.trim().toLowerCase();
-    if (heading === "Completion proof") {
-      return (
-        normalized === "## accepted terminal outcomes" || /^## .*completion proof$/.test(normalized)
-      );
+    const match = normalized.match(/^#{2,3}\s+(.+)$/);
+    const title = match?.[1];
+    if (title === undefined) {
+      return false;
     }
-    return normalized === `## ${heading.toLowerCase()}`;
+    if (heading === "Completion proof") {
+      return title === "accepted terminal outcomes" || /^.*completion proof$/.test(title);
+    }
+    return title === heading.toLowerCase();
   });
 }
 
@@ -367,12 +379,15 @@ export function auditIssueReadiness(
   const baseline = baselineByNumber(options.baseline);
   const openIssues = new Map(
     snapshot.issues
-      .filter((issue) => issue.state === "OPEN")
+      .filter((issue) => issue.state === "OPEN" && issue.roadmapItemCount > 0)
       .map((issue) => [issue.number, issue] as const),
   );
   const diagnostics: IssueReadinessDiagnostic[] = [];
 
   for (const issue of [...snapshot.issues].sort((left, right) => left.number - right.number)) {
+    if (issue.roadmapItemCount === 0) {
+      continue;
+    }
     const workTypes = issue.labels.filter((label) => label === "bug" || label.startsWith("type:"));
     if (issue.assignees.length !== 1) {
       add(
@@ -397,12 +412,16 @@ export function auditIssueReadiness(
       add(diagnostics, "milestone-missing", issue.number, "missing milestone");
     }
     const validStatuses = issue.roadmapStatuses.filter((status) => ROADMAP_STATUSES.has(status));
-    if (issue.roadmapStatuses.length !== 1 || validStatuses.length !== 1) {
+    if (
+      issue.roadmapItemCount !== 1 ||
+      issue.roadmapStatuses.length !== 1 ||
+      validStatuses.length !== 1
+    ) {
       add(
         diagnostics,
         "roadmap-status-count",
         issue.number,
-        `expected one Todo/In Progress/Done status; found ${issue.roadmapStatuses.join(", ") || "none"}`,
+        `expected one Project item with one Todo/In Progress/Done status; found ${issue.roadmapItemCount} item(s) and ${issue.roadmapStatuses.join(", ") || "no status"}`,
       );
     }
     const blockerReferences = declaredBlockerReferences(issue.body, issue.number);
@@ -466,7 +485,7 @@ export function auditIssueReadiness(
     }
     for (const heading of REQUIRED_HEADINGS) {
       if (!hasHeading(issue.body, heading)) {
-        add(diagnostics, "heading-missing", issue.number, `missing ## ${heading}`);
+        add(diagnostics, "heading-missing", issue.number, `missing ${heading} heading`);
       }
     }
 

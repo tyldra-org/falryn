@@ -27,11 +27,7 @@ gh run cancel RUN_ID --repo OWNER/REPO
 
 Dispatch only after validating the ref and typed inputs. A workflow may deploy, publish, rotate infrastructure, or delete resources; inspect YAML and environment protection first.
 
-Do not run `gh run watch` in the chat turn. Long waits follow [ci.md](ci.md):
-background `gh run watch`, snapshot `gh run view`, foreground wait only if
-the user asks to wait in-chat. Do not rerun unchanged failures more than
-once unless the user explicitly wants a flake investigation. Canceling
-another person's or production run requires confirmation.
+Use [ci.md](ci.md) for snapshot and native-wait semantics; the embedding host decides how to schedule a long waiter. Do not rerun unchanged failures more than once unless the user explicitly wants a flake investigation. Canceling another person's or production run requires confirmation.
 
 ## Artifacts, caches, and logs
 
@@ -53,7 +49,7 @@ gh variable list --repo OWNER/REPO
 gh variable set NAME --repo OWNER/REPO --body VALUE
 ```
 
-Specify scope explicitly: repository, environment, organization, Codespaces, Dependabot, or Actions. Pipe secret values through stdin or an approved secure source; never place them in arguments, files, issue bodies, output, or memory.
+Specify scope explicitly: repository, environment, organization, Codespaces, Dependabot, or Actions. Pipe secret values through stdin or an approved secret provider; never place them in arguments, persistent plaintext files, issue bodies, logs, or output.
 
 Verify secret names and scopes only. Do not claim to verify values. Variables are readable and must not contain secrets.
 
@@ -71,11 +67,10 @@ Deleting or replacing a secret/variable requires impact review for workflows, en
 
 ## Attestations and releases
 
-Use `gh attestation` to verify or download provenance when supported. Attestation proves a declared build relationship, not that the source is safe or tests passed.
+Use `gh attestation verify` to check artifact integrity and provenance when supported. Bind verification to the expected owner or repository and, for stronger policy, the signer workflow or reusable-workflow repository, source ref, and digest. The signed certificate identity and witnessed timestamps have different trust properties from workflow-controlled predicate content. An attestation does not prove that source is safe or tests passed.
 
 Publishing artifacts, packages, deployments, or releases requires the release workflow and explicit confirmation.
 
 ## Audit
 
 Verify workflow state, exact commit/ref, conclusion, jobs, artifacts, environment, permissions, and any external result. A green workflow is not proof that an external deployment or publication completed unless that result is independently observed.
-

@@ -1,48 +1,46 @@
 # Issue governance
 
-Read this before creating, materially editing, routing, or implementing a
-Falryn work issue. The canonical policy is
-[falryn-docs/ISSUE-GOVERNANCE.md](https://github.com/tyldra-org/falryn-docs/blob/main/ISSUE-GOVERNANCE.md);
-that document wins if this reference conflicts.
+Falryn repository issues own public discussion and contribution work. The private Roadmap owns only the maintainer's selected product-development work.
 
-An open work issue must have all of the following before it is Ready:
+## Public issue contract
 
-- exactly one Falryn Roadmap issue item;
-- exactly one GitHub assignee and repository milestone;
-- Project Status set to **Todo**, **In Progress**, or **Done**;
-- Project Priority set to **P0**, **P1**, **P2**, or **P3**;
-- Project Readiness set to **Ready** or **Not Ready** for leaves and
-  **Parent** for parent outcomes;
-- exactly one work-type label (`bug` or `type:*`) and at least one `area:*`
-  label; and
-- a native parent or explicit **Standalone** relationship.
+Before a contribution issue can own a non-draft pull request, its public body must identify:
 
-`epic` marks a parent outcome but never substitutes for a work type. Use the
-Project's native **Parent issue** and **Sub-issues progress** fields for parent
-work; do not recreate hierarchy or progress in labels or checklists. A
-standalone issue has no fabricated child progress. Keep native hierarchy one
-level deep. Preserve the parent's milestone unless the child is an explicitly
-declared `early-prerequisite-v1` in a strictly earlier milestone.
+- the observed shipped baseline and exact remaining outcome;
+- included behavior, non-goals, and one PR-sized ownership boundary;
+- relevant blockers and dependencies;
+- enough scope, behavior, failure, and recovery context to review the proposed slice;
+- focused validation appropriate to the change;
+- documentation impact without requiring the implementer to read private content; and
+- a non-empty Contribution checklist whose checked facts remain current.
 
-Keep planned or blocked work **Todo**. Move an issue to **In Progress** only
-when its sole assignee's authenticated GitHub account starts implementation. A
-leaf may own at most one open closing PR and is In Progress while that PR is
-open. A parent never owns a closing PR; start it when a child starts or closes
-and retain In Progress through integrated verification after the final child
-closes. An open leaf without an open closing PR has seven calendar days to
-expose a draft PR or return to Todo. Set **Done** only after the issue is closed and its proof is
-reconciled. Closed issues use Historical Readiness and retain P0–P3, or use
-Historical Priority when no contemporaneous rank exists. Reopened Historical
-work returns to Todo, Not Ready, and current P0–P3 triage.
+A private documentation link is never a contribution requirement. If removing access to it makes the public change ambiguous, the public contract is incomplete.
 
-Native blockers decide hard order. Among the eligible topological frontier,
-Next uses valid active delivery, explicitly approved P0, canonical milestone
-order, P1 through P3, open transitive dependents, creation time, repository,
-and issue number. Board position and update recency never decide the sequence.
-Not Ready routes to Plan; Ready routes to Deliver; parents route through their
-sequenced children.
+Use native GitHub blockers when they exist. Private product planning may add native hierarchy after adopting an issue, but contributors do not need to create or infer that hierarchy.
 
-For a target owned by another account, do not write source, branches, pull
-requests, or implementation state. Plan, Verify, and read-only routing remain
-valid; route the next implementation prompt to the actual owner. Reassignment
-is an explicit GitHub update, never an implied handoff.
+## Public-only behavior
+
+An agent without private Roadmap access may inspect and improve the public contribution contract and work on an explicitly authorized contribution. It may not assert Roadmap Status, Priority, Readiness, sequence position, or ownership metadata it cannot observe. A missing private connection does not block ordinary contribution work.
+
+Ordinary contributors do not need maintainer Project access. They follow the public issue, `CONTRIBUTING.md`, source, and checks. They never assign or wait for a milestone or private field.
+
+## Maintainer behavior
+
+Project membership means a maintainer deliberately adopted the issue into product development. Only then resolve its exact repository, assignee, milestone, Status, Priority, Readiness, Project item, native parent and children, blockers, and linked pull requests. Keep these rules:
+
+- Todo covers planning and blocked work.
+- In Progress requires active implementation. A leaf without an open closing PR follows the private liveness limit.
+- Done requires closure and complete delivery proof.
+- Open blockers prevent implementation.
+- Ready is evidence about contract completeness, not blocker absence.
+- Needs Planning means the public contract still lacks current evidence.
+- Needs Decision requires a named maintainer decision in the public issue; it is not a generic blocked state.
+- Parent and Historical states never create implementation slots.
+
+Use the exact option meanings and transitions in [Roadmap fields and automation](roadmap-fields.md). Newly adopted Roadmap leaves default to Todo, P2, and Needs Planning. Feature, bug, documentation, infrastructure, maintenance, and research issues may all be adopted, but their public work type never creates Roadmap membership or changes the meaning of Priority or Readiness.
+
+Run the exact repository-owned commands in [governance audits](governance-audits.md) after governance mutations. Any diagnostic suppresses routing until reconciled.
+
+## Mutation safety
+
+Before replacing a body or field, retain the exact preimage, validate the complete candidate, re-read current state, apply only to the resolved issue or Project item, and verify the result. Do not pipe fallible generated output directly into a mutation. Bulk work must be bounded, repeat-safe, and report partial results per issue.

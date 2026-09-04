@@ -2,7 +2,7 @@
 
 Stage one logical unit, verify it, commit it. Subject rules in [conventions.md](conventions.md).
 
-Autocommit is **on by default** in the skill entrypoint—commit at clean boundaries unless the session has `autocommit off`.
+Follow the active repository and user policy for automatic commits. A commit policy does not authorize a push, rewrite, merge, tag, or deletion.
 
 ## Boundaries
 
@@ -18,20 +18,19 @@ Commit at clean logical boundaries:
 
 **Don't split for its own sake.** A rename touching 40 files is one commit. A feature and its tests are one commit unless the repo says otherwise. Granularity tracks *reasons to change*, not file count.
 
-Checkpoint commits on an unlanded branch are fine — `chore(<scope>): checkpoint <what>`, not `wip`. Flag them so they get squashed before landing ([rewrite.md](rewrite.md)).
+Checkpoint commits on an unlanded branch are fine; `chore(<scope>): checkpoint <what>`, not `wip`. Flag them so they get squashed before landing ([rewrite.md](rewrite.md)).
 
 ## Commit message
 
-Every commit uses one subject line and no body:
+Follow the effective subject, body, trailer, and signing policy in
+[conventions.md](conventions.md). For a reviewed subject-only message:
 
 ```bash
 git commit -m "type(scope): summary"
 ```
 
-Never create, preserve, copy, or infer a commit body. Keep validation,
-rationale, issue links, and delivery details in the issue or pull-request body.
-If a repository or platform requires a non-empty commit body, stop and report
-the incompatibility; do not add one.
+When a body or trailers are required, materialize and inspect the complete
+message before using `git commit -F <reviewed-message-file>`.
 
 ## Procedure
 
@@ -58,7 +57,7 @@ Scan for: secrets, debug prints, commented-out code, absolute local paths, large
 
 ### 3. Stage
 
-Prefer explicit paths — they're the only form that can't surprise you:
+Prefer explicit paths. They are the only form that cannot expand beyond the names supplied:
 
 ```bash
 git add path/to/file path/to/other-file
@@ -71,7 +70,7 @@ git add -A -- packages/auth/
 git add -p                          # interactive, when one file holds two changes
 ```
 
-Bare `git add .` / `git add -A` at repo root is acceptable **only** after reading `git status --short` and confirming every listed path belongs. In practice that's rare — on a tree with several things in flight it's how unrelated work gets swept into a commit that claims to be about one thing.
+Bare `git add .` / `git add -A` at repo root is acceptable **only** after reading `git status --short` and confirming every listed path belongs. In practice that's rare; on a tree with several things in flight it's how unrelated work gets swept into a commit that claims to be about one thing.
 
 Leave unrelated changes unstaged. Never fold them in "since they were there".
 
@@ -83,11 +82,11 @@ git diff --cached --stat
 
 Every staged path belongs to the unit. If one doesn't: `git restore --staged <path>`.
 
-**Nothing staged?** Stop — don't create an empty commit. Report there was nothing to commit.
+**Nothing staged?** Stop. Do not create an empty commit. Report that there was nothing to commit.
 
 ### 5. Validate
 
-Run focused validation for the changed files when practical — the adjacent test, the linter on the touched package, the type checker. Not the whole suite unless the change is broad.
+Run focused validation for the changed files when practical; the adjacent test, the linter on the touched package, the type checker. Not the whole suite unless the change is broad.
 
 If validation is skipped, say so explicitly in the summary. Silence reads as "it passed".
 
@@ -105,11 +104,9 @@ Follow [conventions.md](conventions.md). The repo's established type and scope s
 
 ### 7. Commit
 
-```bash
-git commit -m "type(scope): summary"
-```
-
-Never open an editor, use `git commit -F`, or add a commit body.
+Use `git commit -m "type(scope): summary"` only when the effective policy is
+subject-only. Otherwise use the previously reviewed complete message. In a
+non-interactive host, do not invoke an editor that can block unexpectedly.
 
 If the repo signs (`commit.gpgsign`, a signing key, or signed commits in `git log --show-signature -1`), keep signing. Never `--no-gpg-sign`.
 
@@ -120,23 +117,23 @@ If the repo signs (`commit.gpgsign`, a signing key, or signed commits in `git lo
 
 ## Generated artifacts and lockfiles
 
-**Lockfiles are source.** Commit them with the dependency change that produced them, always. A dependency change without its lockfile is a broken commit.
+Treat a tracked lockfile as source and commit it with the dependency change that produced it. If repository policy deliberately omits a lockfile for that package type, do not introduce one. A dependency change that leaves an expected lockfile stale is incomplete.
 
-**Generated output** — build artifacts, exported media, tool output directories — usually belongs in `.gitignore`, not in a commit. When it *is* tracked (committed docs, checked-in fixtures, generated API clients), keep it in the same commit as the source that produced it, so the two never drift.
+**Generated output.** Build artifacts, exported media, and tool output directories usually belong in `.gitignore`, not in a commit. When output is tracked, such as committed docs, checked-in fixtures, or generated API clients, keep it in the same commit as the source that produced it.
 
-Binaries and large generated assets are worth confirming before they go in — they're permanent, every clone pays for them forever, and `.gitignore` is usually the right answer instead.
+Binaries and large generated assets are worth confirming before they go in; they're permanent, every clone pays for them forever, and `.gitignore` is usually the right answer instead.
 
 ## Amending
 
-Amend only when all three hold: unpushed, it's the tip, and the user is fine with it. Otherwise make a new commit. See [rewrite.md](rewrite.md).
+Amend only when it is the unpushed tip and the user explicitly confirms the rewrite. Otherwise make a new commit. See [rewrite.md](rewrite.md).
 
 ```bash
-git commit --amend -m "<existing subject>"       # keep subject, no body
-git commit --amend -m "type(scope): summary"     # change subject
+git commit --amend --no-edit                       # preserve the exact message
+git commit --amend -F <reviewed-message-file>      # replace the full message
 ```
 
-Do not use `--no-edit`: it can preserve an existing body. Every amend must
-reissue a subject-only message.
+Do not use `-m` to reissue only the subject when the existing or required
+message contains bodies or trailers. Verify the resulting full message.
 
 ## Moving uncommitted work
 
@@ -144,4 +141,4 @@ reissue a subject-only message.
 git stash push -m "<what>"
 ```
 
-Never bare `git stash` — an unlabeled entry you can't identify later. Pop it back the same session. If work needs to survive, it needs a branch or a worktree, not a stash.
+That command omits untracked files. Read [undo.md](undo.md#stash) before stashing a mixed tree, applying a stash, or dropping one. If work needs to survive, put it on a branch or in a worktree rather than leaving it in the stash indefinitely.

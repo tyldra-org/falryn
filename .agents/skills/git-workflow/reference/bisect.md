@@ -1,6 +1,6 @@
 # bisect
 
-Find the commit that introduced a regression. Non-destructive — bisect only moves HEAD, and `git bisect reset` always returns you home.
+Find the commit that introduced a regression. Bisect moves `HEAD` and a test script may mutate the checkout. Start clean; `git bisect reset` normally returns to the recorded pre-bisect revision.
 
 ## Preconditions
 
@@ -14,7 +14,7 @@ Find the commit that introduced a regression. Non-destructive — bisect only mo
 git bisect start
 git bisect bad <bad-sha>          # or omit for HEAD
 git bisect good <good-sha>
-# git checks out a midpoint; test it, then:
+# Git checks out a midpoint. Test it, then:
 git bisect good      # or: git bisect bad
 # repeat until git names the first bad commit
 git bisect reset
@@ -22,7 +22,7 @@ git bisect reset
 
 `log2(N)` steps: 1000 commits is 10 tests.
 
-## Automated — prefer this
+## Automated bisect
 
 ```bash
 git bisect start <bad-sha> <good-sha>
@@ -30,15 +30,15 @@ git bisect run <command>
 git bisect reset
 ```
 
-The command's exit code is the verdict: **0 = good, 1–124 = bad, 125 = skip (untestable), 126/127 = abort.**
+The command's exit code is the verdict: **0 = good, 1 through 127 except 125 = bad, 125 = skip, and any other code aborts.** Exit 126 or 127 usually means a shell execution error, so make the test harness convert infrastructure failures to 125 instead of letting Git classify them as bad.
 
 ```bash
 git bisect run npm test -- path/to/failing.test.js
 git bisect run cargo test --test regression
-git bisect run ./scripts/repro.sh
+git bisect run <stable-path>/repro.sh
 ```
 
-Write a purpose-built repro script rather than running the whole suite — it's faster, and it can't be confused by an unrelated test that was also broken in that range.
+Write a purpose-built repro script rather than running the whole suite. Keep it outside the worktree or ensure every tested revision contains the same script, since checkout can replace repository files during the search.
 
 Make the script robust to commits where the build itself fails:
 
@@ -56,7 +56,7 @@ Without the `125`, every unbuildable commit in the range is scored as "bad" and 
 Git prints the first bad commit with its full diff summary. Then:
 
 1. **Verify it.** Check out the parent, confirm good; check out the commit, confirm bad. Bisect is only as correct as the test.
-2. **Understand the mechanism** before proposing a fix. "This commit is where it broke" is not "this line is why it broke" — the commit may have exposed a latent bug rather than introduced one.
+2. **Understand the mechanism** before proposing a fix. "This commit is where it broke" is not "this line is why it broke"; the commit may have exposed a latent bug rather than introduced one.
 3. **Merge commits** as the culprit mean the bug is in the interaction, not in either branch. Bisect within each parent if you need more resolution.
 
 ## Narrowing the range
@@ -68,14 +68,14 @@ git bisect log                        # replayable record of the session
 git bisect replay <file>              # resume a saved session
 ```
 
-`git bisect log` is worth saving before `reset` — it's the audit trail for how you reached the conclusion, and it lets you resume if you made a wrong call.
+`git bisect log` is worth saving before `reset`; it's the audit trail for how you reached the conclusion, and it lets you resume if you made a wrong call.
 
 ## When bisect is the wrong tool
 
-- **The regression is in dependencies, not commits** — check the lockfile diff first.
-- **The range is small (under ~10 commits)** — read them; it's faster.
-- **The bad behavior is environmental** (a config change, an expired cert, a data change) — no commit introduced it, and bisect will blame something innocent.
-- **History is a squash-merge chain** — the culprit is a whole PR, which may be too coarse. Bisect finds the PR, then read it.
+- **The regression is in dependencies, not commits**; check the lockfile diff first.
+- **The range is small (under ~10 commits)**; read them; it's faster.
+- **The bad behavior is environmental** (a config change, an expired cert, a data change); no commit introduced it, and bisect will blame something innocent.
+- **History is a squash-merge chain**; the culprit is a whole PR, which may be too coarse. Bisect finds the PR, then read it.
 
 ## Always finish
 

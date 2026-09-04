@@ -1,47 +1,21 @@
 # Parent delivery
 
-Read this with [Deliver](deliver.md) for a parent target. A parent is a
-scheduler, never a parent branch, mega-PR, or second controller.
+Parent delivery requires authenticated private Roadmap access. A parent is an outcome tracker, never a branch or mega-pull request.
 
-| Selector | Scope | Stop condition |
-| --- | --- | --- |
-| Parent issue #N | First eligible ordered, unblocked incomplete child | One child fully lands; report its exact next-child Deliver prompt |
-| Parent chain #N | Every remaining ordered, unblocked incomplete child | All children and parent integration pass, or a real stop |
+## One-child selector
 
-Every child cycle is serial: readiness → implementation → fresh Verify → merge
-→ GitHub/Project/local-checkout reconcile. An opened PR, started CI, green job,
-or closed issue is not a completed child.
+`Deliver - Target: Parent issue #N` selects the first ordered, unblocked, incomplete child from the current [Roadmap audit](governance-audits.md). If that child Needs Planning, the controller plans that same child before implementation. If it Needs Decision, delivery stops at the named decision owner. It never skips ahead to a later Ready sibling.
 
-Before selecting a child, confirm the authenticated GitHub account is its sole
-assignee. A child owned by another account is a real stop: name the owner and
-route that exact child to it. Do not skip an ordered child or take it over.
+Run one child's full delivery cycle, including required private docs companions, application merge, issue and Project reconciliation, and safe checkout synchronization. Stop when another child remains and report that exact child.
 
-For a Parent chain:
+## Chain selector
 
-- Start the next child immediately after reconciliation. Do not end after a
-  merge, PR, CI start, status report, or because the next slice is large.
-- Do not emit a per-child handoff or a resume prompt while siblings remain.
-  Keep a concise progress line, for example:
+`Deliver - Target: Parent chain #N` uses the same controller but continues through remaining ordered children. It recomputes the private sequence after each settled child. It never parallelizes siblings, emits a next-sibling prompt while CI or merge is pending, or turns the parent into an implementation branch.
 
-  ~~~text
-  Parent chain #264: #265 Done → #266 in progress → #267–#270 pending
-  ~~~
+Stop the chain on missing private authority, awaiting user input, changed merge preconditions, an uncertain effect, or three repair passes without progress. Report the exact child and resume selector.
 
-- /loop and /goal lead to the same controller, but their host syntaxes differ.
-  In Codex, either set the objective directly with
-  `/goal Deliver — Target: Parent chain #N` or, when the Desktop UI has
-  already entered Goal mode, send `Deliver — Target: Parent chain #N` as that
-  goal's objective. In another harness, use either its supported `/goal` or
-  `/loop` mode-entry syntax; an inline target is valid only when that harness
-  supports it. Neither entrypoint authorizes parallel phase agents or writers.
-- Keep the controller active while required CI resolves. If the host cuts the
-  turn during CI, merge, or reconciliation, report the PR URLs, head SHAs,
-  progress, and Deliver — Target: Parent chain #<same parent> as the resume
-  prompt.
-- After the last child, run the parent's integrated verification. Close the
-  parent only when it passes; then route through Next without starting an
-  unrelated target.
+## Parent completion
 
-Real chain stops are awaiting a required user decision, an unsatisfied merge
-precondition, or three repair passes without progress. Name the exact active
-child and resume selector.
+Keep the parent In Progress while required work remains. After the last required child, run integrated parent verification across behavior, failure, recovery, resource, security, documentation, and product projection criteria. Close and mark Done only when every parent criterion passes. An integration code gap becomes one dedicated native child.
+
+Without private Roadmap access, report parent routing unavailable. Do not reconstruct child order from issue numbering or public recency.

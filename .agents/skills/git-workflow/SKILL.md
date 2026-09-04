@@ -1,205 +1,95 @@
 ---
 name: git-workflow
-description: >-
-  Git process and safety: commit, branch, fetch/push/rebase, local merge,
-  rewrite, recover, bisect, tags, autocommit. Use when mutating a local git
-  repo. Does not cover GitHub platform work (gh-cli) or other forge workflows.
+description: Repository-agnostic Git work for checkout state, staging, commits, branches, worktrees, remotes, synchronization, patches, merges, rebases, recovery, maintenance, and tags. Use for local Git or ref mutations, not forge records.
 ---
 
 # Git workflow
 
-Git porcelain and git history safety. Every commit should be reviewable. Every history rewrite should be deliberate.
+Use this skill whenever Git changes a working tree, index, object database, configuration, or ref. Add `gh-cli` only when the verified remote host is GitHub. Repository guidance overrides this generic process.
 
-## Skill boundaries
+This bundle was last audited on 2026-09-03 against upstream Git 2.55.0 and behaviorally exercised with Apple Git 2.50.1. Treat that as a maintenance marker, not a compatibility promise. The installed Git, repository format, extensions, and version-matched official documentation own exact syntax and capability.
 
-This skill owns `git`. It does not own hosting-platform workflows.
+## Portability contract
 
-| | git-workflow (this) | gh-cli |
-| --- | --- | --- |
-| Answers | How do we commit, branch, sync, rewrite, recover? | How do we use `gh` on github.com? |
-| Tool | `git` | `gh` |
-| Owns | Stage, commit, branch, fetch/push/rebase, local merge, rewrite, recover, bisect, tags, autocommit | GitHub issues, PRs, Actions, Projects, `gh` flags |
-| Does not own | `gh` commands; GitHub objects | `git` porcelain |
-| Load when | Any mutating git work | GitHub platform work |
+This is a global skill, not a policy file for one repository or project. Discover the current repository's remote names, default and protected branches, contribution rules, commit and tag conventions, hooks, signing requirements, pull strategy, validation commands, worktree layout, and release process each time. Examples use placeholders or common names only to show command shape. They do not establish defaults. Never carry a resolved path, ref, remote, identity, credential context, or policy from one repository into another.
 
-`git remote origin` is a conventional remote name. It does not identify a hosting platform.
+## Invariants
 
-Opening or merging a pull request is not git. Load `gh-cli` for GitHub; use the approved integration for another hosting platform.
+1. Resolve an existing checkout before mutating it:
+   ```bash
+   git status --short --branch
+   git remote -v
+   git worktree list
+   ```
+   For initialization or clone work, resolve and inspect the destination instead, then follow [repository-layout.md](reference/repository-layout.md).
+2. Read repository `AGENTS.md`, `CONTRIBUTING.md`, hooks, attributes, and observed conventions before choosing a flow.
+3. Resolve every branch, remote, base, and path explicitly. Do not assume `origin`, `main`, the current branch, or one checkout per repository.
+4. Inspect `git diff` and `git diff --cached`. Preserve unrelated changes and stage only intended paths; never hide them in a stash, commit, reset, or clean operation.
+5. Stop on a dirty tree you did not create, unknown worktree, detached HEAD, conflict, rejected push, failing hook, or in-progress operation. Do not auto-resolve or initialize a repository uninvited.
+6. Never bypass hooks with `--no-verify`, signing with `--no-gpg-sign`, or policy with a force flag.
+7. Never commit secrets, credential files, private keys, service-account data, or password-bearing connection strings. Treat committed secrets as leaked; rotate before any authorized history repair.
+8. Confirm before every history rewrite (`commit --amend`, rebase, squash, filter), force-push, hard reset, destructive clean, branch/tag deletion, tag move, object pruning, or other hard-to-recover ref or object change, even when commits are not published.
+9. Force-push only after creating a backup ref and only with the exact lease form `--force-with-lease=<branch>:<expected-old-sha>`. Never use bare `--force` or bare `--force-with-lease`.
+10. After mutation, re-read the affected state. Report old and new SHAs, validation, skipped work, and a safe undo path when one exists.
 
-After GitHub merges land: `gh-cli` → [issue-lifecycle.md](../gh-cli/process/issue-lifecycle.md) for issue/Project reconcile; then [delivery-checkout.md](reference/delivery-checkout.md) for local default-branch sync.
+## Route one primary guide
 
-Load `git-workflow` whenever git history changes. Add `gh-cli` when the host is GitHub.
+| Intent | Guide |
+| --- | --- |
+| Initialize, clone, change remotes, use sparse/partial clones, submodules, or LFS | [repository-layout.md](reference/repository-layout.md) |
+| Stage or commit | [commit.md](reference/commit.md) |
+| Branch create, switch, or delete | [branch.md](reference/branch.md) |
+| Create, move, lock, repair, or remove a linked worktree | [worktree.md](reference/worktree.md) |
+| Fetch, pull, rebase, or push | [sync.md](reference/sync.md) |
+| Synchronize default checkouts after delivery | [delivery-checkout.md](reference/delivery-checkout.md) |
+| Local merge | [merge.md](reference/merge.md) |
+| Restore, reset, revert, clean, or manage a stash | [undo.md](reference/undo.md) |
+| Cherry-pick, apply, or exchange patches | [patches.md](reference/patches.md) |
+| Amend, rebase, squash, rewrite, or force-push | [rewrite.md](reference/rewrite.md) |
+| Recover lost or overwritten work | [recover.md](reference/recover.md) |
+| Find the introducing commit | [bisect.md](reference/bisect.md) |
+| Secret/history/size audit | [audit.md](reference/audit.md) |
+| Configure Git, ignore rules, attributes, hooks, credentials, or signing | [configuration.md](reference/configuration.md) |
+| Diagnose repository health or run maintenance, fsck, gc, prune, or bundles | [maintenance.md](reference/maintenance.md) |
+| Create or move a Git tag | [release.md](reference/release.md) |
+| Subject, branch, and tag conventions | [conventions.md](reference/conventions.md) |
 
-Repositories may vendor this skill under `.agents/skills/` for checkout-local resolution; skill content stays host-agnostic.
+Open a second guide only when the task truly crosses boundaries. After a GitHub merge, use `gh-cli` for remote issue/Project reconciliation and [delivery-checkout.md](reference/delivery-checkout.md) for local synchronization.
 
-## How to use
+For an uncommon porcelain or plumbing command not listed here, identify which Git layer it changes, read the installed help and current official documentation, and preserve these invariants. Do not use low-level ref or object commands merely to bypass a porcelain safety check.
 
-### 1. Resolve context
+## Ownership boundaries
 
-```bash
-git status --short --branch
-git log --oneline -10
-git remote -v
-```
+| Operation | Owner |
+| --- | --- |
+| status, diff, log, blame | answer directly; no skill mutation flow needed |
+| repository setup, worktree, stage, commit, rebase, tag, push, recovery | `git-workflow` |
+| GitHub issues, PRs, checks, merge, Projects | `gh-cli` |
+| non-GitHub forge operations | the matching forge process, not `gh-cli` |
 
-Never act on an assumed branch, worktree, remote, or default branch.
+A remote alias is not a forge identity. Inspect its URL. Never use `gh` against GitLab, Bitbucket, Azure Repos, or an ambiguous host.
 
-- `not a git repository` → do not `git init` uninvited.
-- Mid-rebase, mid-merge, or detached HEAD you didn't create → stop and report first.
+## Commit policy
 
-### 2. Route to a reference
+The fallback subject and naming guidance lives in
+[conventions.md](reference/conventions.md). Repository and active user policy
+choose message bodies, trailers, signing, and automatic commit behavior. If no
+active authoritative policy enables unprompted commits, report the clean boundary
+and suggest a subject instead. Automatic commit policy never authorizes push,
+rewrite, merge, deletion, or another separately confirmed action.
 
-| Request sounds like | Command | Reference |
-|---|---|---|
-| "commit this", "save this", "check it in" | `commit` | [commit.md](reference/commit.md) |
-| "start a branch", "switch to", "delete that branch" | `branch` | [branch.md](reference/branch.md) |
-| "catch up with main", "push this", "I'm behind" | `sync` | [sync.md](reference/sync.md) |
-| "sync local main after PR merged", "fast-forward after delivery" | `delivery-checkout` | [delivery-checkout.md](reference/delivery-checkout.md) |
-| "merge these branches locally" | `merge` | [merge.md](reference/merge.md) |
-| "clean up these commits", "squash", "rebase" | `rewrite` | [rewrite.md](reference/rewrite.md) |
-| "I lost my work", "undo that", "get it back" | `recover` | [recover.md](reference/recover.md) |
-| "what broke this", "it worked last week" | `bisect` | [bisect.md](reference/bisect.md) |
-| "any secrets in here", "why is the repo so big" | `audit` | [audit.md](reference/audit.md) |
-| "tag it", "cut a git tag" | `release` | [release.md](reference/release.md) |
-| commit subject, branch name, tag name | `conventions` | [conventions.md](reference/conventions.md) |
-| "review my local diff", "what could this branch break" | `change-review` | This skill supplies any needed Git context; `change-review` owns the assessment |
+## Exact syntax and compatibility
 
-GitHub PR / issue / Actions / merge-on-GitHub → `gh-cli`. Cross-cutting review
-reasoning belongs to `change-review`; this skill owns only Git context and any
-later commit or branch mutation. Other hosting-platform operations need their
-approved workflow.
-
-Ask only when two routes imply different outcomes or authority. Vague destructive intent → resolve the desired outcome first. One-off `status` / `log` / `diff` / `show` / `blame` needs no skill.
-
-### 3. Gather only what the task needs
-
-**Touching remote / default branch.** Resolve it. Do not assume `main`:
-
-```bash
-git symbolic-ref refs/remotes/origin/HEAD --short 2>/dev/null \
-  || git remote show origin | sed -n '/HEAD branch/s/.*: //p'
-```
-
-**Writing subjects / branch names.** Match the repo:
-
-```bash
-git log --pretty=%s -n 30
-git branch -a
-git log --graph --oneline -20
-```
-
-Honor `CONTRIBUTING.md`, `AGENTS.md`, `commitlint.config.*`, `.gitmessage` when present.
-
-**Merging / branching / tagging.** Detect the workflow model ([below](#workflow-models)).
-
-### 4. Act, then report
-
-Follow the reference. Re-read after writes.
-
-## Ownership
-
-| Concern | Home |
-|---|---|
-| Stage / commit / amend / stash | [commit.md](reference/commit.md) |
-| Subjects, branches, tags | [conventions.md](reference/conventions.md) |
-| History rewrite, force-push lease | [rewrite.md](reference/rewrite.md) |
-| Post-merge default-branch sync | [delivery-checkout.md](reference/delivery-checkout.md) |
-| Non-negotiable git safety (this file) | sections below |
-
-## Precedence
-
-Safety rules never bend. Everything else loses to anything more specific:
-
-1. User's explicit instruction this session
-2. Repo-local rules (`CONTRIBUTING.md`, `AGENTS.md`, commitlint)
-3. Observed repo convention (`git log`, `git branch -a`)
-4. Defaults in this skill
-
-Follow higher layers silently. No convention authorizes committing a secret or bare `--force`.
-
-## Safety rules
-
-### Secrets
-
-Never stage credentials, API keys, tokens, private keys, `.env`, service-account JSON, or connection strings with passwords. Ambiguous path → stop and ask. "Already tracked" is not consent to add more.
-
-Already committed → treat as leaked. Rotate first, rewrite second. [audit.md](reference/audit.md#secret-leak-response).
-
-Never read tokens from the environment or `.git-credentials` onto a command line.
-
-### Confirm before
-
-Show the concrete command and get explicit confirmation for:
-
-- force push; history rewrite (`filter-repo` / `filter-branch` / squash-reword of pushed commits)
-- `reset --hard`, `clean -fdx`, restoring over uncommitted work
-- deleting branches/tags (local or remote); moving or re-pushing tags
-- work on a branch that isn't yours
-
-Routine local work proceeds normally: commit (when autocommit is on or the user asked), branch, stash, fetch, push **your** branch. See [Autocommit](#autocommit).
-
-Hosting-platform confirmations (merge a PR, publish a release, delete a repo) live in that platform's approved workflow.
-
-### Back up before destroying
-
-Before rewrite, force push, hard reset, or branch deletion that could drop commits:
+Use the installed Git, not remembered flag tables:
 
 ```bash
-git branch backup/<what>-$(date +%Y-%m-%d)
-git rev-parse 'backup/<what>^{tree}' '<newref>^{tree}'
+git --version --build-options
+git help <command>
+git <command> -h
 ```
 
-Compare tree hashes, not subjects. Keep the backup until confirmed.
+Prefer stable porcelain. Check help before using a recent option, and provide a supported fallback instead of silently changing semantics. Never parse human-oriented output when a documented machine format such as `--format`, `-z`, or an explicit plumbing command exists.
 
-### Force push
+## Evidence after mutation
 
-Pinned lease only. Details in [rewrite.md](reference/rewrite.md):
-
-```bash
-git push --force-with-lease=<branch>:<expected-old-sha> origin <branch>
-```
-
-Never bare `--force` or bare `--force-with-lease`. Afterward: say SHAs changed; other clones need fetch + reset or a fresh clone.
-
-### Stop, don't improvise
-
-Stop and report. No silent abort, no `--no-verify`, no unchanged retry:
-
-- merge/rebase conflict; failing hook; rejected push
-- detached HEAD or dirty tree you didn't create
-- ambiguous branch/remote/target
-
-## Commit and merge messages
-
-One subject line only. Never create, preserve, copy, or infer a commit/merge body. That covers ordinary commits, amend/reword, squash, rewrite, and merge commits. If the repo requires a non-empty body, stop and report. Do not invent one. Form: [conventions.md](reference/conventions.md).
-
-## Autocommit
-
-On by default. When a unit of work reaches a clean boundary ([commit.md](reference/commit.md)), commit it rather than leaving unrelated changes piled in the tree.
-
-- `autocommit on` (default). Commit at clean boundaries. May stage in-scope generated output (docs, fixtures, lockfiles) with the change that produced them.
-- `autocommit off`. At a boundary, name it and suggest a subject. Stage/commit only when asked.
-
-Session-scoped only. Never authorizes Confirm before actions. Subject-only rule still applies.
-
-## Workflow models
-
-Read when merging, branching, or tagging:
-
-| Model | Tell | Implications |
-|---|---|---|
-| GitHub flow | Short branches → one default | Branch, PR via `gh-cli`, land |
-| Trunk-based | Direct default-branch commits, flags | Small commits |
-| Git flow | `develop` + `release/*` + `hotfix/*` | Features → `develop`; hotfixes from tags |
-| Release train | Long-lived version lanes, `--no-ff` | Never rebase/delete lane branches |
-| Fork-based | `origin` fork remote, `upstream` canonical | Never push `upstream`; sync from it (`origin` here = git remote name) |
-
-Detect via `git branch -a`, `git log --graph`, `CONTRIBUTING.md`. If ambiguous, ask once.
-
-## Reporting back
-
-After ref moves: what moved with SHAs; what you skipped and why; undo path for anything destructive (backup ref or `git reset --hard <sha>`).
-
-## Escalation
-
-Outside these rules → one sentence and stop. A wrong permitted git op on a shared branch costs more than a question.
+Re-read status, branch/upstream, and affected refs. For a commit, verify the exact staged tree and resulting SHA. For push or rewrite, verify the remote tracking state and lease result. For recovery, preserve the source evidence until the user confirms the restored result.
