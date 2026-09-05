@@ -99,6 +99,15 @@ deliberately adds an issue to the Falryn Roadmap, that issue also receives the
 Roadmap's assignee, milestone, Status, Priority, Readiness, hierarchy, and
 delivery rules. Issues outside the Project do not inherit those requirements.
 
+Repository automation uses the maintainer-applied `roadmap` label to select the
+maintainer issue format. It checks Outcome, Completion proof, and repository
+classification without requiring the public form's exact headings. A delivery
+PR still requires a fully checked Ready checklist, or the original Contribution
+checklist when an adopted contribution retains that form, and an open,
+unblocked leaf. Issues without the label use the public contribution form.
+The label selects formatting only; it neither proves private Project membership
+nor replaces the authenticated readiness and Roadmap audits.
+
 Parents collect integrated outcomes. They do not own branches or large pull
 requests. Work that needs separate review belongs in a native child issue. A
 checklist is enough for steps that cannot produce a useful pull request by

@@ -7,7 +7,7 @@ Apply [shared execution efficiency](execution-efficiency.md) within Implement's 
 ## Preconditions
 
 1. Read the complete public issue handoff, source baseline, tests, `CURRENT-STATE.md`, repository guidance, native hierarchy, blockers, and existing delivery pull requests.
-2. Require every Contribution checklist item to be checked and current. For Roadmap-owned delivery, also require the maintainer Ready checklist. A private link cannot fill a missing public requirement.
+2. Require the selected issue format's checklist to be checked and current: Contribution checklist for public submissions, Ready checklist for maintainer handoffs. An adopted public contribution may retain its original form; do not require a duplicate Contribution checklist on a maintainer handoff. Roadmap-owned delivery still requires the authenticated readiness audit. A private link cannot fill a missing public requirement.
 3. For upstream maintainer delivery, require authenticated Roadmap access, confirm the authenticated account is the sole assignee, verify Ready and unblocked state, then set In Progress before source mutation.
 4. A contribution issue outside the Roadmap needs no private access or private readiness claim. Implementation may proceed when its public handoff is complete and the user authorizes work in the current branch or a fork. Follow `CONTRIBUTING.md` and the public pull-request contract.
 5. Reuse a valid open correction branch and PR only after fresh verification. Otherwise branch from the fetched current default branch.

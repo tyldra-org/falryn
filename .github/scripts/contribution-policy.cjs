@@ -89,6 +89,32 @@ function labelsOf(issue) {
   return (issue.labels ?? []).map((label) => (typeof label === "string" ? label : label.name));
 }
 
+// This public label selects a body format, not private Project membership or
+// readiness. Those facts remain the responsibility of the maintainer auditors.
+function isMaintainerIssue(issue) {
+  return labelsOf(issue).includes("roadmap");
+}
+
+function issueChecklist(issue) {
+  const body = issue.body ?? "";
+  // Adopted public contributions can retain their original form.
+  return isMaintainerIssue(issue) && section(body, "Contribution checklist") === null
+    ? "Ready checklist"
+    : "Contribution checklist";
+}
+
+function maintainerCompletionProof(body) {
+  // Keep the heading vocabulary aligned with tools/issue-readiness.ts.
+  for (const match of body.matchAll(/^#{2,3}\s+(.+)$/gm)) {
+    const heading = match[1].trim();
+    if (/(?:completion proof$|^accepted terminal outcomes$)/i.test(heading)) {
+      const value = section(body, heading);
+      if (value !== null && withoutComments(value).length > 0) return value;
+    }
+  }
+  return null;
+}
+
 function requestedWorkType(body) {
   const value = section(body ?? "", "Work type");
   return value === null ? null : (REQUESTED_WORK_TYPES.get(withoutComments(value)) ?? null);
@@ -120,17 +146,24 @@ function validateIssueContract(issue) {
 
   const errors = [];
   const body = issue.body ?? "";
-  for (const heading of REQUIRED_ISSUE_SECTIONS) {
-    const value = section(body, heading);
+  const headings = isMaintainerIssue(issue)
+    ? ["Outcome", "Completion proof"]
+    : REQUIRED_ISSUE_SECTIONS;
+  for (const heading of headings) {
+    const value =
+      isMaintainerIssue(issue) && heading === "Completion proof"
+        ? maintainerCompletionProof(body)
+        : section(body, heading);
     if (value === null || withoutComments(value).length === 0) {
       errors.push(`complete the ${heading} section`);
     }
   }
-  const checklist = section(body, "Contribution checklist");
+  const checklistHeading = issueChecklist(issue);
+  const checklist = section(body, checklistHeading);
   if (checklist !== null) {
     const counts = checkboxCounts(checklist);
     if (counts.checked + counts.unchecked === 0) {
-      errors.push("include at least one item in the Contribution checklist");
+      errors.push(`include at least one item in the ${checklistHeading}`);
     }
   }
   return errors;
@@ -246,10 +279,11 @@ function validateTargetIssue(issue, relations) {
     errors.push("the owning issue must still be open");
   }
 
-  const checklist = section(issue.body ?? "", "Contribution checklist");
+  const checklistHeading = issueChecklist(issue);
+  const checklist = section(issue.body ?? "", checklistHeading);
   const counts = checklist === null ? { checked: 0, unchecked: 0 } : checkboxCounts(checklist);
   if (counts.checked === 0 || counts.unchecked > 0) {
-    errors.push("the owning issue must have a non-empty, fully checked Contribution checklist");
+    errors.push(`the owning issue must have a non-empty, fully checked ${checklistHeading}`);
   }
   if ((relations.subIssues?.totalCount ?? 0) > 0) {
     errors.push("the owning issue must be a PR-sized leaf, not a parent outcome");
@@ -273,6 +307,7 @@ function validateTargetIssue(issue, relations) {
 
 module.exports = {
   checkboxCounts,
+  isMaintainerIssue,
   parseOwningIssue,
   requestedArea,
   requestedWorkType,

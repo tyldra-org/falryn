@@ -73,7 +73,7 @@ jobs:
                 errors.push(
                   ...policy
                     .validateIssueContract(response.data)
-                    .map((error) => `owning issue public contract: ${error}`),
+                    .map((error) => `owning issue contract: ${error}`),
                 );
                 errors.push(
                   ...policy
