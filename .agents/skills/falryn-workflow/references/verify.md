@@ -2,6 +2,8 @@
 
 Verify audits the exact target without editing product source, pull-request contents, or private documentation.
 
+Apply [shared execution efficiency](execution-efficiency.md) within Verify's permissions. Reuse trustworthy exact-input validation evidence, not stale bundle readiness or permission to repair or merge.
+
 ## Public application PR
 
 Inspect the exact base and head revisions, complete diff, public delivery issue, source behavior, tests, `CURRENT-STATE.md`, checks, reviews, rulesets, mergeability, documentation-impact declaration, and available clean local checkout state.

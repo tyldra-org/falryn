@@ -8,6 +8,10 @@ Upstream Deliver requires authenticated private Roadmap access because it change
 
 The originating Deliver request authorizes merge only for the exact issue's freshly verified application PR and explicitly verified companions. It does not authorize changed revisions, missing checks, unresolved reviews, a different owner, or unrelated pull requests.
 
+## Efficient execution
+
+Apply [shared execution efficiency](execution-efficiency.md) throughout the existing controller loop. Deliver alone composes modes; evidence reuse never authorizes a manual mode to enter this loop. Keep bounded repairs, exact-revision verification, docs-first merge, and reconciliation unchanged.
+
 ## Controller loop
 
 1. Resolve the exact public issue, private Project state, assignee, hierarchy, blockers, and current delivery work.

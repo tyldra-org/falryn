@@ -2,6 +2,8 @@
 
 Next is read-only routing over the private Falryn Roadmap. It never mutates issues, Project fields, branches, pull requests, source, or documentation.
 
+Apply [shared execution efficiency](execution-efficiency.md) within Next's read-only boundary. Use the required audit and routing evidence without preparing implementation or starting the suggested prompt.
+
 ## Required authority
 
 Require authenticated access to the exact private Roadmap and both repositories represented in its audit. Run the exact live or replay command in [governance audits](governance-audits.md). Do not manually reproduce priority, readiness, dependency, liveness, or delivery order.

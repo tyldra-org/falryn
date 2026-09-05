@@ -2,6 +2,8 @@
 
 Implement accepts one explicitly named, publicly complete, unblocked PR-sized Falryn issue. If the issue is Roadmap-owned, it must also be Ready and assigned under the private maintainer contract. A parent target is not an implementation target; route it through its selected child.
 
+Apply [shared execution efficiency](execution-efficiency.md) within Implement's permissions. Reuse the current complete handoff and valid evidence without skipping validation or starting another mode.
+
 ## Preconditions
 
 1. Read the complete public issue handoff, source baseline, tests, `CURRENT-STATE.md`, repository guidance, native hierarchy, blockers, and existing delivery pull requests.

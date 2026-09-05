@@ -25,6 +25,7 @@ REQUIRED_REFERENCES = {
     "corrections.md",
     "deliver.md",
     "documentation-delivery.md",
+    "execution-efficiency.md",
     "governance-audits.md",
     "implement.md",
     "issue-governance.md",

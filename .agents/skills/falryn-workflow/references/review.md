@@ -2,6 +2,8 @@
 
 Review is a read-only assessment of one exact Falryn or, with private access, Falryn Docs pull-request revision. Load `change-review`, `gh-cli`, and the relevant available stack skill.
 
+Apply [shared execution efficiency](execution-efficiency.md) within Review's read-only boundary. Reuse valid observations while inspecting the complete current diff; never turn a finding into an unrequested repair or posted review.
+
 ## Evidence
 
 Resolve the repository, base and head SHA, author, public delivery issue, checks, reviews, merge state, and complete current diff. Inventory every added, modified, deleted, and renamed file. Read affected behavior, callers, data and wire formats, configuration, persistence, projections, and cleanup paths rather than reviewing filenames alone.
