@@ -31,7 +31,9 @@ jobs:
           script: |
             const policy = require("./.github/scripts/contribution-policy.cjs");
             const { owner, repo } = context.repo;
-            const issue = context.payload.issue;
+            const { data: issue } = await github.rest.issues.get({
+              owner, repo, issue_number: context.payload.issue.number,
+            });
             let labels = issue.labels.map((label) => label.name);
             const requestedWorkType = policy.requestedWorkType(issue.body);
             if (requestedWorkType !== null) {
@@ -91,9 +93,16 @@ jobs:
             }
 
             const checklist = errors.map((error) => `- [ ] ${error}`).join("\n");
-            const body = `${marker}\nPlease complete the public contribution contract:\n\n${checklist}\n\nYou do not need an assignee, milestone, Priority, Readiness, or access to the private Falryn Roadmap. Maintainers decide separately whether an issue belongs in the product-development plan. See the [contribution guide](https://github.com/tyldra-org/falryn/blob/main/CONTRIBUTING.md).`;
+            const maintainer = policy.isMaintainerIssue(issue);
+            const contract = maintainer ? "maintainer issue contract" : "public contribution contract";
+            const guidance = maintainer
+              ? "This check covers public issue content and classification only. Private Roadmap membership, planning, and readiness are checked separately by the maintainer auditors."
+              : "You do not need an assignee, milestone, Priority, Readiness, or access to the private Falryn Roadmap. Maintainers decide separately whether an issue belongs in the product-development plan.";
+            const body = `${marker}\nPlease complete the ${contract}:\n\n${checklist}\n\n${guidance} See the [contribution guide](https://github.com/tyldra-org/falryn/blob/main/CONTRIBUTING.md).`;
             if (existing) {
-              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+              if (existing.body !== body) {
+                await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+              }
             } else {
               await github.rest.issues.createComment({ owner, repo, issue_number: issue.number, body });
             }

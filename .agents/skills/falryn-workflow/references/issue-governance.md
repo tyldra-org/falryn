@@ -26,6 +26,14 @@ Ordinary contributors do not need maintainer Project access. They follow the pub
 
 ## Maintainer behavior
 
+The public `roadmap` label selects the maintainer body format for repository
+automation; only a maintainer applies this routing label. It does not prove
+private Project membership or readiness. The public bot checks Outcome,
+Completion proof, and classification. Delivery PRs require a fully checked
+Ready checklist, or the original Contribution checklist for an adopted public
+form, plus an open, unblocked leaf. Private planning requirements remain with
+the authenticated auditors below. Unlabeled issues keep the public form checks.
+
 Project membership means a maintainer deliberately adopted the issue into product development. Only then resolve its exact repository, assignee, milestone, Status, Priority, Readiness, Project item, native parent and children, blockers, and linked pull requests. Keep these rules:
 
 - Todo covers planning and blocked work.

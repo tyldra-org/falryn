@@ -68,7 +68,7 @@ Closes #
      `size: *` label from changed lines. A non-draft PR must complete every
      public item below; split an XL PR when practical. -->
 
-- [ ] The target is one open, unblocked, PR-sized public issue with a current Contribution checklist.
+- [ ] The target is one open, unblocked, PR-sized issue with a current Contribution checklist or the maintainer format's Ready checklist.
 - [ ] The branch targets the current default branch and contains no unrelated work.
 - [ ] The PR title is a clean conventional subject suitable for squash merge.
 - [ ] The squash commit is subject-only by default; any body is limited to one useful short issue-reference footer.
