@@ -2,6 +2,8 @@
 
 Plan makes one public Falryn issue implementation-ready without writing product code.
 
+Apply [shared execution efficiency](execution-efficiency.md) within Plan's permissions. Reuse current evidence without omitting any required handoff fact or beginning implementation.
+
 ## Public evidence
 
 Read the issue, native hierarchy and blockers, source, tests, manifests, `CURRENT-STATE.md`, repository guidance, and relevant public pull requests. Resolve:

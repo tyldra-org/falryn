@@ -2,6 +2,8 @@
 
 Merge requires a fresh passing Verify preview and user confirmation bound to the unchanged exact bundle. Load `gh-cli` for remote merge and reconciliation and `git-workflow` for safe local synchronization.
 
+Apply [shared execution efficiency](execution-efficiency.md) within Merge's exact authorization. Reuse unchanged reviewed source evidence, but perform every fresh pre-mutation check below.
+
 ## Recheck immediately before mutation
 
 Re-read every previewed pull request, head and base revision, required check, review, thread, ruleset, mergeability result, companion identity, order, final message, repository setting, default branch, and local checkout. Stop and return to Verify if any precondition changed.
