@@ -46,7 +46,7 @@ Load this skill for Falryn work, but activate a maintainer mode only when the us
 | Priority, Readiness, or Project automation maintenance | [Roadmap fields and automation](references/roadmap-fields.md) |
 | Documentation impact, owner lookup, or companion delivery | [Documentation delivery](references/documentation-delivery.md) |
 
-The ASCII hyphen forms above and the corresponding typographic-dash forms are equivalent selectors.
+The ASCII hyphen forms above and the corresponding typographic-dash forms are equivalent selectors. All Deliver selectors use [efficient execution](references/deliver.md#efficient-execution) by default, including parent chains. This reduces repeated work, not required verification or completion criteria; no extra prompt, mode, or flag is needed.
 
 ## Access boundary
 

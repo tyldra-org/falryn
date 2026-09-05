@@ -1,6 +1,6 @@
 # Parent delivery
 
-Parent delivery requires authenticated private Roadmap access. A parent is an outcome tracker, never a branch or mega-pull request.
+Parent delivery requires authenticated private Roadmap access. A parent is an outcome tracker, never a branch or mega-pull request. Apply [efficient execution](deliver.md#efficient-execution) to both parent selectors without changing child or parent completion criteria.
 
 ## One-child selector
 
@@ -11,6 +11,10 @@ Run one child's full delivery cycle, including required private docs companions,
 ## Chain selector
 
 `Deliver - Target: Parent chain #N` uses the same controller but continues through remaining ordered children. It recomputes the private sequence after each settled child. It never parallelizes siblings, emits a next-sibling prompt while CI or merge is pending, or turns the parent into an implementation branch.
+
+Carry the same controller's revision-bound working record across children. Reuse unchanged repository guidance and documentation knowledge, inspect the intervening source and contract changes, and resolve each next child's complete handoff against the new baseline. A previous child's tests, readiness, or merge authorization do not prove the next child. Recompute authoritative ordering after every settled child as required; evidence reuse never freezes the sequence.
+
+Do not start the next child's implementation before the current child's required checks, companion/application merges, reconciliation, and safe checkout synchronization settle. Independent work within the current child may overlap under the shared efficiency rules; sibling delivery remains serial. Report per-child elapsed time, the phase bottleneck, and observed repeated overhead without creating another parent status document.
 
 Stop the chain on missing private authority, awaiting user input, changed merge preconditions, an uncertain effect, or three repair passes without progress. Report the exact child and resume selector.
 
