@@ -4,8 +4,8 @@ import {
   type ArtifactView,
   artifactId,
   CONTENT_DIGEST_ALGORITHM,
-  timestampFromEpochMilliseconds,
-} from "../../domain/index.ts";
+} from "../../domain/artifacts/index.ts";
+import { timestampFromEpochMilliseconds } from "../../domain/foundation/index.ts";
 import { diagnosticViewFrom } from "./diagnostic-view.ts";
 
 const FIXTURE_DIGEST = `${CONTENT_DIGEST_ALGORITHM}:${"d".repeat(64)}`;

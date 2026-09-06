@@ -1,13 +1,13 @@
 import { describe, expect, test } from "bun:test";
 
-import { modelId, providerId } from "../../domain/identity.ts";
-import { unknownModelPricing } from "../model-pricing.ts";
+import { modelId, providerId } from "../../domain/foundation/identity.ts";
 import type { ModelCatalogDocument } from "./contracts.ts";
 import {
   incompleteCompleteModelIds,
   inspectModelCatalogCoverage,
   unresolvedModelCatalogCoreFacts,
 } from "./coverage.ts";
+import { unknownModelPricing } from "./model-pricing.ts";
 
 const unresolvedModel = {
   schemaVersion: 1 as const,

@@ -3,20 +3,20 @@
 import {
   assertNever,
   MAX_STREAM_READ_LIMIT,
-  type RuntimeEvent,
   streamId,
   type Timestamp,
   timestampFromEpochMilliseconds,
-} from "../../domain/index.ts";
+} from "../../domain/foundation/index.ts";
+import type { RuntimeEvent } from "../../domain/sessions/index.ts";
 import type { RunCommandResult } from "../commands.ts";
 import { allowsColor, type GlobalOptions, resolveColor } from "../options.ts";
-import { createOverBoundArtifactWriter } from "../refusal-artifact.ts";
-import { renderHuman, renderQuiet } from "../render-human.ts";
-import { type RenderedRecords, renderJson } from "../render-json.ts";
-import { renderJsonl } from "../render-jsonl.ts";
-import { resultEvents } from "../result-events.ts";
-import { CLI_EVENT_STREAM, type ServiceProvider } from "../services.ts";
-import { type CliStreams, writeDiagnosticLine, writeResultLine } from "../streams.ts";
+import { createOverBoundArtifactWriter } from "../output/refusal-artifact.ts";
+import { renderHuman, renderQuiet } from "../output/render-human.ts";
+import { type RenderedRecords, renderJson } from "../output/render-json.ts";
+import { renderJsonl } from "../output/render-jsonl.ts";
+import { resultEvents } from "../output/result-events.ts";
+import { type CliStreams, writeDiagnosticLine, writeResultLine } from "../output/streams.ts";
+import { CLI_EVENT_STREAM, type ServiceProvider } from "../runtime/services.ts";
 
 export async function render(
   result: RunCommandResult,

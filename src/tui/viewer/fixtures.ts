@@ -4,17 +4,15 @@
  * Not product surface. Lets rendered tests open artifact viewers without SQLite.
  */
 
-import type { ArtifactViewer } from "../../application/index.ts";
+import type { ArtifactViewer } from "../../application/artifacts/index.ts";
 import {
   ARTIFACT_VIEW_VERSION,
   type ArtifactView,
   artifactId,
   CONTENT_DIGEST_ALGORITHM,
-  err,
-  ok,
   parseArtifactViewRequest,
-  timestampFromEpochMilliseconds,
-} from "../../domain/index.ts";
+} from "../../domain/artifacts/index.ts";
+import { err, ok, timestampFromEpochMilliseconds } from "../../domain/foundation/index.ts";
 
 const FIXTURE_DIGEST = `${CONTENT_DIGEST_ALGORITHM}:${"b".repeat(64)}`;
 

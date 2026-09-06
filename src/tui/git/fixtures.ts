@@ -2,14 +2,10 @@
  * Test Git dashboard port. Not product surface.
  */
 
-import type { GitDashboard, GitDashboardSnapshot } from "../../application/index.ts";
-import {
-  type GitCheckpointRecord,
-  type GitIdentity,
-  instant,
-  localPath,
-  ok,
-} from "../../domain/index.ts";
+import type { GitDashboard, GitDashboardSnapshot } from "../../application/git/index.ts";
+import { instant, ok } from "../../domain/foundation/index.ts";
+import type { GitCheckpointRecord, GitIdentity } from "../../domain/git/index.ts";
+import { localPath } from "../../domain/workspace/index.ts";
 
 export function fixtureGitIdentity(): GitIdentity {
   return {

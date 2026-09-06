@@ -1,6 +1,6 @@
 /** Provider action argument normalization. Secret bytes are never accepted here. */
 
-import { modelId, providerId } from "../../domain/index.ts";
+import { modelId, providerId } from "../../domain/foundation/index.ts";
 import {
   type DiscoveryPolicy,
   isDiscoveryPolicy,

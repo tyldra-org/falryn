@@ -1,11 +1,11 @@
 /** Provider command projection over the application-owned connection service. */
 
-import {
-  adoptForeignError,
-  type ProviderConnectionAction,
-  type ProviderConnectionActionResult,
-} from "../../application/index.ts";
-import type { InputStreamPort } from "../../domain/index.ts";
+import { adoptForeignError } from "../../application/diagnostics/index.ts";
+import type {
+  ProviderConnectionAction,
+  ProviderConnectionActionResult,
+} from "../../application/providers/index.ts";
+import type { InputStreamPort } from "../../domain/terminal/index.ts";
 import {
   type AuthorizationInteractionPort,
   MAX_AUTHORIZATION_CODE_LENGTH,
@@ -14,10 +14,10 @@ import {
 } from "../../providers/index.ts";
 import type { ProviderCommandArguments } from "../command-tree.ts";
 import type { GlobalOptions } from "../options.ts";
-import { composeProductProviderConnections } from "../product-provider-connections.ts";
-import type { CommandEffect, CommandResultOf } from "../result.ts";
-import type { ServiceProvider } from "../services.ts";
-import { type CliStreams, writeDiagnosticLine } from "../streams.ts";
+import type { CommandEffect, CommandResultOf } from "../output/result.ts";
+import { type CliStreams, writeDiagnosticLine } from "../output/streams.ts";
+import { composeProductProviderConnections } from "../runtime/product-provider-connections.ts";
+import type { ServiceProvider } from "../runtime/services.ts";
 import { resultFor } from "./shared.ts";
 
 const MAX_API_KEY_BYTES = 16_384;

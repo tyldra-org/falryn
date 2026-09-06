@@ -19,8 +19,9 @@
  * transcript, and far more useful than a seamless one.
  */
 
-import type { RuntimeEvent, Sequence, StreamId } from "../../domain/index.ts";
-import { assertNever } from "../../domain/index.ts";
+import type { Sequence, StreamId } from "../../domain/foundation/index.ts";
+import { assertNever } from "../../domain/foundation/index.ts";
+import type { RuntimeEvent } from "../../domain/sessions/index.ts";
 
 export type SequenceAnomaly =
   /** Events between two applied sequences were never seen. */

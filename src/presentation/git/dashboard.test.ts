@@ -3,7 +3,9 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { type GitIdentity, type GitStatusEntry, instant, localPath } from "../../domain/index.ts";
+import { instant } from "../../domain/foundation/index.ts";
+import type { GitIdentity, GitStatusEntry } from "../../domain/git/index.ts";
+import { localPath } from "../../domain/workspace/index.ts";
 import { changesDashboardFrom, rowsForTab } from "./dashboard.ts";
 
 function identity(): GitIdentity {

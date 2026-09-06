@@ -5,7 +5,7 @@
  * as other commands; this projection never names a spawn.
  */
 
-import type { ArtifactView, ArtifactViewState } from "../../domain/index.ts";
+import type { ArtifactView, ArtifactViewState } from "../../domain/artifacts/index.ts";
 
 export type DiagnosticViewModel = {
   readonly artifactId: string;

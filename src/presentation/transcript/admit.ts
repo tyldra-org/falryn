@@ -19,7 +19,7 @@ import {
   ok,
   parseTimestamp,
   type Result,
-} from "../../domain/index.ts";
+} from "../../domain/foundation/index.ts";
 import {
   BLOCK_SENSITIVITIES,
   BLOCK_SOURCES,

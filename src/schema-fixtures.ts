@@ -12,9 +12,14 @@ import {
   evaluateSchemaVersion,
   MINIMUM_READER_FIELD,
   SCHEMA_VERSION_FIELD,
-} from "./config/schema-family.ts";
-import { CONTENT_DIGEST_ALGORITHM } from "./domain/artifact.ts";
-import { decodeRuntimeEvent } from "./domain/codec.ts";
+} from "./config/document/schema-family.ts";
+import { CONTENT_DIGEST_ALGORITHM } from "./domain/artifacts/artifact.ts";
+import { sessionStarted } from "./domain/fixtures.ts";
+import {
+  RUNTIME_EVENT_SCHEMA_FAMILY,
+  RUNTIME_EVENT_SCHEMA_VERSION,
+} from "./domain/foundation/limits.ts";
+import { decodeRuntimeEvent } from "./domain/sessions/codec.ts";
 import {
   EXPORT_FORMAT,
   EXPORT_SCHEMA_VERSION,
@@ -22,10 +27,8 @@ import {
   MINIMUM_COMPATIBLE_EXPORT_SCHEMA_VERSION,
   parseExportManifest,
   RECORDS_MEMBER,
-} from "./domain/export.ts";
-import { sessionStarted } from "./domain/fixtures.ts";
-import { RUNTIME_EVENT_SCHEMA_FAMILY, RUNTIME_EVENT_SCHEMA_VERSION } from "./domain/limits.ts";
-import { toWireEvent } from "./domain/wire.ts";
+} from "./domain/sessions/export.ts";
+import { toWireEvent } from "./domain/sessions/wire.ts";
 
 export const SCHEMA_FIXTURE_FAMILIES = [
   RUNTIME_EVENT_SCHEMA_FAMILY,

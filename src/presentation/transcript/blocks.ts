@@ -36,18 +36,17 @@
  * Nothing here renders, holds a stream, or names a colour.
  */
 
+import type { ArtifactAvailability, ArtifactId } from "../../domain/artifacts/index.ts";
 import type {
-  ArtifactAvailability,
-  ArtifactId,
   ConfigurationGeneration,
   InvocationId,
   ModelAttemptId,
   SessionId,
-  TerminalOutcome,
   Timestamp,
   TurnId,
-} from "../../domain/index.ts";
-import { assertNever } from "../../domain/index.ts";
+} from "../../domain/foundation/index.ts";
+import { assertNever } from "../../domain/foundation/index.ts";
+import type { TerminalOutcome } from "../../domain/orchestration/index.ts";
 import type { BoundedText, ExpansionRoute } from "./disclosure.ts";
 import { routeOf } from "./disclosure.ts";
 

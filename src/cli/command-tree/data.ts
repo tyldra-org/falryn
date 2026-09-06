@@ -8,7 +8,7 @@ import {
   isOwnershipClass,
   isPlanId,
   type OwnershipClass,
-} from "../../domain/index.ts";
+} from "../../domain/storage/index.ts";
 
 import type {
   DataCommandArguments,

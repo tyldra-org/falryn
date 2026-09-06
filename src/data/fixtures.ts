@@ -23,14 +23,10 @@ import {
   type ContentHasher,
   type ContentHasherPort,
   contentDigest,
-  createManualClock,
-  err,
-  instant,
-  type LocalPath,
-  localPath,
+} from "../domain/artifacts/index.ts";
+import { createManualClock, err, instant, ok, type Result } from "../domain/foundation/index.ts";
+import {
   type Migration,
-  ok,
-  type Result,
   type SqliteConnectionPort,
   type SqliteFailure,
   type SqliteFailureCode,
@@ -40,10 +36,11 @@ import {
   type SqliteStoreError,
   type SqliteStorePort,
   SqliteWorkError,
-} from "../domain/index.ts";
+} from "../domain/storage/index.ts";
+import { type LocalPath, localPath } from "../domain/workspace/index.ts";
 import { createSha256Hasher, openBunSqlite } from "../integrations/index.ts";
-import { PRODUCTION_MIGRATIONS } from "./sqlite-migrations.ts";
-import { openSqliteStore, sqliteDatabasePath } from "./sqlite-store.ts";
+import { PRODUCTION_MIGRATIONS } from "./sqlite/sqlite-migrations.ts";
+import { openSqliteStore, sqliteDatabasePath } from "./sqlite/sqlite-store.ts";
 
 /** A fixed instant, so a stored timestamp is stable across runs and machines. */
 export const FIXTURE_INSTANT = instant(Date.UTC(2026, 6, 31, 12, 0, 0));

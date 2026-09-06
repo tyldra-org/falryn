@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { createRecordingCliStreams } from "../streams.ts";
+import { createRecordingCliStreams } from "../output/streams.ts";
 import { createProviderAuthorizationInteraction } from "./provider.ts";
 
 describe("provider authorization interaction", () => {

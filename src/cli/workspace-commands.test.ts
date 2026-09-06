@@ -8,13 +8,14 @@ import { chmod, mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { createStaticEnvironment, localPath } from "../domain/index.ts";
+import { createStaticEnvironment } from "../domain/foundation/index.ts";
+import { localPath } from "../domain/workspace/index.ts";
 import { parseInvocation } from "./command-tree.ts";
 import { dispatch } from "./dispatch.ts";
-import { EXIT_CODES } from "./exit.ts";
 import type { GlobalOptions } from "./options.ts";
-import { createServiceProvider } from "./services.ts";
-import { createRecordingCliStreams } from "./streams.ts";
+import { EXIT_CODES } from "./output/exit.ts";
+import { createRecordingCliStreams } from "./output/streams.ts";
+import { createServiceProvider } from "./runtime/services.ts";
 
 const homes: string[] = [];
 

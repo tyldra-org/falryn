@@ -1,24 +1,16 @@
 /** Public invocation contracts and the private raw parser shape. */
 
-import type {
-  ArtifactId,
-  BackupName,
-  ExportName,
-  ExportSelection,
-  GcPlanId,
-  OwnershipClass,
-  PlanId,
-  SessionCatalogFilter,
-  SessionId,
-  StreamId,
-  WorkspaceId,
-} from "../../domain/index.ts";
+import type { ArtifactId } from "../../domain/artifacts/index.ts";
+import type { ExportName } from "../../domain/extensions/index.ts";
+import type { SessionId, StreamId, WorkspaceId } from "../../domain/foundation/index.ts";
+import type { ExportSelection, SessionCatalogFilter } from "../../domain/sessions/index.ts";
+import type { BackupName, GcPlanId, OwnershipClass, PlanId } from "../../domain/storage/index.ts";
 import type { ProviderAuthMethod, ProviderProfile } from "../../providers/index.ts";
-import type { CodingRunArguments } from "../coding-run.ts";
+import type { TaskCommitPlanArguments } from "../commands/task-commit-plan-commands.ts";
+import type { TaskCommandArguments } from "../commands/task-intelligence-parse.ts";
 import type { GlobalOptions } from "../options.ts";
-import type { CommandId } from "../result.ts";
-import type { TaskCommitPlanArguments } from "../task-commit-plan-commands.ts";
-import type { TaskCommandArguments } from "../task-intelligence-parse.ts";
+import type { CommandId } from "../output/result.ts";
+import type { CodingRunArguments } from "../runtime/coding-run.ts";
 
 export const SCRIPT_NAME = "falryn";
 

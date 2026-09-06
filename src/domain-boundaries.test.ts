@@ -86,15 +86,19 @@ describe("the domain module graph", () => {
 
   test("detects a reintroduced type-only artifact and blob cycle", async () => {
     const sources = await domainSources();
-    const blob = sources.get("blob.ts");
+    const blob = sources.get("artifacts/blob.ts");
     expect(blob).toBeDefined();
 
-    const reintroduced = blob?.replace('from "./identity.ts"', 'from "./artifact.ts"');
+    const reintroduced = blob?.replace('from "../foundation/identity.ts"', 'from "./artifact.ts"');
     expect(reintroduced).toBeDefined();
     expect(reintroduced).not.toBe(blob);
 
     const withCycle = new Map(sources);
-    withCycle.set("blob.ts", reintroduced ?? "");
-    expect(cycles(withCycle)).toContainEqual(["artifact.ts", "blob.ts", "artifact.ts"]);
+    withCycle.set("artifacts/blob.ts", reintroduced ?? "");
+    expect(cycles(withCycle)).toContainEqual([
+      "artifacts/artifact.ts",
+      "artifacts/blob.ts",
+      "artifacts/artifact.ts",
+    ]);
   });
 });

@@ -11,17 +11,19 @@ import {
   queryWorkspaceSessions,
   resumeWorkspaceSession,
   rewindWorkspaceSession,
-} from "../../application/index.ts";
+} from "../../application/sessions/index.ts";
 import {
-  type EventStorePort,
   type SessionId,
-  type SessionRepositoryPort,
   sessionId,
   streamId,
+  type WorkspaceId,
+} from "../../domain/foundation/index.ts";
+import {
+  type EventStorePort,
+  type SessionRepositoryPort,
   TERMINAL_OUTCOME_PROJECTION_GENERATION,
   type TurnRepositoryPort,
-  type WorkspaceId,
-} from "../../domain/index.ts";
+} from "../../domain/sessions/index.ts";
 import type { ReplayAction } from "./format.ts";
 
 export type SessionNavigationControllerError =

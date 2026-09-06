@@ -23,7 +23,7 @@
  * is the transcript surface's problem.
  */
 
-import { sanitizeTerminalText } from "../../domain/index.ts";
+import { sanitizeTerminalText } from "../../domain/terminal/index.ts";
 
 /**
  * The routes a view may offer for content it is not showing in full.

@@ -1,7 +1,7 @@
 /** Coverage proof for provider-bound model catalog documents. */
 
-import type { ModelCapabilityDeclaration } from "../model-capability.ts";
 import type { ModelCatalogDocument } from "./contracts.ts";
+import type { ModelCapabilityDeclaration } from "./model-capability.ts";
 
 export const MODEL_CATALOG_CORE_FACTS = [
   "input-modalities",

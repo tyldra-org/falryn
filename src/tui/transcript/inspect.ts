@@ -12,7 +12,7 @@
  * one.
  */
 
-import type { TerminalOutcome } from "../../domain/index.ts";
+import type { TerminalOutcome } from "../../domain/orchestration/index.ts";
 import {
   type BoundedText,
   blockKey,

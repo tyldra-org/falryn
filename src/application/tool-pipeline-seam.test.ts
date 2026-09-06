@@ -1,28 +1,29 @@
 import { describe, expect, test } from "bun:test";
 import { z } from "zod";
-
 import {
-  authorizeToolInvocation,
   configurationGeneration,
   createManualClock,
+  duration,
+  instant,
+  invocationId,
+} from "../domain/foundation/index.ts";
+import { EVENT_KINDS } from "../domain/sessions/index.ts";
+import {
+  authorizeToolInvocation,
   createToolHookRegistry,
   createToolRegistry,
   createToolRegistryEntry,
   defaultConcurrencyContract,
   defaultProjectionContract,
   defaultToolLimits,
-  duration,
-  EVENT_KINDS,
-  instant,
-  invocationId,
   type ToolHookEnvelope,
   type ToolManifestDocument,
   validateAndNormalizeInvocations,
-} from "../domain/index.ts";
-import { createRuntimeRedactor } from "./redaction.ts";
-import { createToolHookRunner } from "./tool-hook-runner.ts";
-import { envelopeToolResult } from "./tool-result-envelope.ts";
-import { createToolWorkScheduler } from "./tool-work-scheduler.ts";
+} from "../domain/tools/index.ts";
+import { createRuntimeRedactor } from "./diagnostics/redaction.ts";
+import { createToolHookRunner } from "./tools/tool-hook-runner.ts";
+import { envelopeToolResult } from "./tools/tool-result-envelope.ts";
+import { createToolWorkScheduler } from "./tools/tool-work-scheduler.ts";
 
 const generation = configurationGeneration.from(0);
 

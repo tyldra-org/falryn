@@ -9,21 +9,21 @@
 
 import { describe, expect, test } from "bun:test";
 
-import { CONTENT_DIGEST_ALGORITHM, contentDigest } from "./artifact.ts";
-import type { ContentHasherPort } from "./blob.ts";
-import { composeContextPack } from "./context-compose.ts";
+import { CONTENT_DIGEST_ALGORITHM, contentDigest } from "./artifacts/artifact.ts";
+import type { ContentHasherPort } from "./artifacts/blob.ts";
+import { composeContextPack } from "./context/context-compose.ts";
 import {
   admitEvidenceCandidate,
   admitEvidenceCandidates,
   type EvidenceCandidate,
   type EvidenceCandidateInput,
   MAX_EVIDENCE_BATCH,
-} from "./context-evidence.ts";
-import { expandContextEvidence } from "./context-expand.ts";
+} from "./context/context-evidence.ts";
+import { expandContextEvidence } from "./context/context-expand.ts";
 import {
   DEFAULT_LONG_SESSION_CONVERSATION_ITEMS,
   inspectContextEvidence,
-} from "./context-inspect.ts";
+} from "./context/context-inspect.ts";
 
 const DIGEST = `${CONTENT_DIGEST_ALGORITHM}:${"a".repeat(64)}`;
 const OTHER_DIGEST = `${CONTENT_DIGEST_ALGORITHM}:${"b".repeat(64)}`;

@@ -3,12 +3,14 @@
 import {
   type createArtifactReader,
   createDurableArtifactApi,
+  queryStoredArtifacts,
+} from "../../application/artifacts/index.ts";
+import {
   fromArtifactCatalogError,
   fromArtifactError,
   fromArtifactReadError,
   fromUnknown,
-  queryStoredArtifacts,
-} from "../../application/index.ts";
+} from "../../application/diagnostics/index.ts";
 import {
   type ArtifactApiError,
   type ArtifactCatalogEntry,
@@ -17,18 +19,16 @@ import {
   type ArtifactLineage,
   type ArtifactReadError,
   type ArtifactRecord,
-  type LocalPath,
-  localPath,
   MAX_ARTIFACT_CATALOG,
   MAX_ARTIFACT_READ_RANGE_BYTES,
-  MAX_STREAM_WRITE_BYTES,
-  type OutputStreamPort,
-  type Result,
-} from "../../domain/index.ts";
+} from "../../domain/artifacts/index.ts";
+import type { Result } from "../../domain/foundation/index.ts";
+import { MAX_STREAM_WRITE_BYTES, type OutputStreamPort } from "../../domain/terminal/index.ts";
+import { type LocalPath, localPath } from "../../domain/workspace/index.ts";
 import { createHostFileOutputStream } from "../../integrations/index.ts";
 import type { ArtifactCommandArguments } from "../command-tree.ts";
-import type { CommandResultOf, CommandTruncation } from "../result.ts";
-import type { ServiceProvider } from "../services.ts";
+import type { CommandResultOf, CommandTruncation } from "../output/result.ts";
+import type { ServiceProvider } from "../runtime/services.ts";
 import { resultFor } from "./shared.ts";
 import { openArtifactStore } from "./storage.ts";
 

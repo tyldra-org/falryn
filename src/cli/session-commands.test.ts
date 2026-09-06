@@ -11,26 +11,26 @@ import { chmod, mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { REDACTED } from "../application/index.ts";
-import { createSqliteEventStore } from "../data/event-store.ts";
+import { REDACTED } from "../application/diagnostics/index.ts";
 import { openProductStoreOrThrow, removeTemporaryRoots } from "../data/fixtures.ts";
-import { createRecordRepositories } from "../data/repositories.ts";
+import { createSqliteEventStore } from "../data/sessions/event-store.ts";
+import { createRecordRepositories } from "../data/sessions/repositories.ts";
 import { sessionStarted } from "../domain/fixtures.ts";
 import {
   createStaticEnvironment,
-  localPath,
   type SessionId,
   sessionId,
   streamId,
   turnId,
   workspaceId,
-} from "../domain/index.ts";
+} from "../domain/foundation/index.ts";
+import { localPath } from "../domain/workspace/index.ts";
 import { parseInvocation } from "./command-tree.ts";
 import { dispatch } from "./dispatch.ts";
-import { EXIT_CODES } from "./exit.ts";
 import type { GlobalOptions } from "./options.ts";
-import { createServiceProvider } from "./services.ts";
-import { createRecordingCliStreams } from "./streams.ts";
+import { EXIT_CODES } from "./output/exit.ts";
+import { createRecordingCliStreams } from "./output/streams.ts";
+import { createServiceProvider } from "./runtime/services.ts";
 
 afterEach(removeTemporaryRoots);
 

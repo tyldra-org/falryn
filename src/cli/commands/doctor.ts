@@ -1,6 +1,6 @@
 /** Read-only environment and storage diagnostics command. */
 
-import { fromUnknown } from "../../application/index.ts";
+import { fromUnknown } from "../../application/diagnostics/index.ts";
 import type { ConfigurationHomeResolution } from "../../config/index.ts";
 import {
   probeStorage,
@@ -12,14 +12,14 @@ import {
   blocksLocalData,
   LOCAL_DATA_ROOTS,
   type LocalDataRoot,
-  type LocalPath,
   type OwnershipClass,
   type RootInspection,
   type RootViability,
-} from "../../domain/index.ts";
+} from "../../domain/storage/index.ts";
+import type { LocalPath } from "../../domain/workspace/index.ts";
 import { openBunSqlite } from "../../integrations/index.ts";
-import type { CommandResultOf } from "../result.ts";
-import type { ServiceProvider } from "../services.ts";
+import type { CommandResultOf } from "../output/result.ts";
+import type { ServiceProvider } from "../runtime/services.ts";
 import { resultFor } from "./shared.ts";
 
 export type DoctorStorage =

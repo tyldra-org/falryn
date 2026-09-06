@@ -10,8 +10,8 @@
  * it into text.
  */
 
-import { assertNever, effectOf, type TerminalOutcome } from "../domain/index.ts";
-import type { CodingRunPayload, runCoding } from "./coding-run.ts";
+import { assertNever } from "../domain/foundation/index.ts";
+import { effectOf, type TerminalOutcome } from "../domain/orchestration/index.ts";
 import type {
   ArtifactGetPayload,
   ArtifactListPayload,
@@ -30,9 +30,17 @@ import type {
   runConfigShow,
   runConfigValidate,
 } from "./commands/config.ts";
+import type {
+  DataBackupPayload,
+  DataDiagnosticsPayload,
+  DataInspectPayload,
+  DataRestorePayload,
+} from "./commands/data-backup-commands.ts";
 import type { DataRemovalPayload } from "./commands/data-removal.ts";
+import type { DataGcPayload, DataRetentionPayload } from "./commands/data-retention-gc-commands.ts";
 import type { DoctorPayload, runDoctor } from "./commands/doctor.ts";
 import type { ExportCommandPayload, runExport } from "./commands/export.ts";
+import type { runImport, runReplay } from "./commands/import-replay-commands.ts";
 import type { ProviderCommandPayload, runProvider } from "./commands/provider.ts";
 import type {
   runSessionList,
@@ -41,6 +49,12 @@ import type {
   SessionShowPayload,
 } from "./commands/session.ts";
 import { resultFor } from "./commands/shared.ts";
+import type { TaskCommitPlanPayload } from "./commands/task-commit-plan-commands.ts";
+import type {
+  runTaskDecompose,
+  runTaskProgress,
+  runTaskValidate,
+} from "./commands/task-intelligence-commands.ts";
 import type {
   runWorkspaceList,
   runWorkspaceLoad,
@@ -50,28 +64,14 @@ import type {
   WorkspaceSavePayload,
   WorkspaceSetPayload,
 } from "./commands/workspace.ts";
-import type {
-  DataBackupPayload,
-  DataDiagnosticsPayload,
-  DataInspectPayload,
-  DataRestorePayload,
-} from "./data-backup-commands.ts";
-import type { DataGcPayload, DataRetentionPayload } from "./data-retention-gc-commands.ts";
-import type { runImport, runReplay } from "./import-replay-commands.ts";
-import type { CommandEffect, CommandId, CommandResultOf } from "./result.ts";
+import type { CommandEffect, CommandId, CommandResultOf } from "./output/result.ts";
+import type { CodingRunPayload, runCoding } from "./runtime/coding-run.ts";
 import type {
   runSessionForkOrRewind,
   runSessionReplay,
   runSessionResume,
-} from "./session-navigation.ts";
-import type { TaskCommitPlanPayload } from "./task-commit-plan-commands.ts";
-import type {
-  runTaskDecompose,
-  runTaskProgress,
-  runTaskValidate,
-} from "./task-intelligence-commands.ts";
+} from "./runtime/session-navigation.ts";
 
-export { type CodingRunArguments, type CodingRunPayload, runCoding } from "./coding-run.ts";
 export {
   type ArtifactCommandExtras,
   type ArtifactGetPayload,
@@ -116,6 +116,7 @@ export {
   type WorkspaceSavePayload,
   type WorkspaceSetPayload,
 } from "./commands/workspace.ts";
+export { type CodingRunArguments, type CodingRunPayload, runCoding } from "./runtime/coding-run.ts";
 
 export function stoppedResult(
   command: Exclude<CommandId, "default" | "help" | "version">,

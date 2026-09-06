@@ -4,13 +4,9 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { EXIT_CODES } from "./cli/index.ts";
 import { PRODUCT_SCHEMA_VERSION } from "./data/index.ts";
-import {
-  createStaticEnvironment,
-  DEFAULT_PHASE_GRACE_MS,
-  type LocalPath,
-  localPath,
-  SHUTDOWN_PHASES,
-} from "./domain/index.ts";
+import { createStaticEnvironment } from "./domain/foundation/index.ts";
+import { DEFAULT_PHASE_GRACE_MS, SHUTDOWN_PHASES } from "./domain/orchestration/index.ts";
+import { type LocalPath, localPath } from "./domain/workspace/index.ts";
 import { type BootstrapOptions, bootstrapExitCode, main } from "./main.ts";
 
 const roots: string[] = [];

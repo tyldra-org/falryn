@@ -12,108 +12,75 @@
  * artifact bytes and no export format.
  */
 
-export type { ArtifactProvenanceRepository } from "./artifact-provenance-repository.ts";
-export { createArtifactProvenanceRepository } from "./artifact-provenance-repository.ts";
+export type { ArtifactProvenanceRepository } from "./artifacts/artifact-provenance-repository.ts";
+export { createArtifactProvenanceRepository } from "./artifacts/artifact-provenance-repository.ts";
 export {
   ARTIFACT_PROVENANCE_SCHEMA_VERSION,
   ARTIFACT_TRANSFORMATIONS_TABLE,
   MIGRATION_0004,
-} from "./artifact-provenance-schema.ts";
-export { createArtifactRepository } from "./artifact-repository.ts";
+} from "./artifacts/artifact-provenance-schema.ts";
+export { createArtifactRepository } from "./artifacts/artifact-repository.ts";
 export {
   ARTIFACT_SCHEMA_VERSION,
   ARTIFACTS_TABLE,
   MIGRATION_0002,
-} from "./artifact-schema.ts";
-export type { ArtifactStoreOptions, DurableArtifactStore, StoredBytes } from "./artifact-store.ts";
+} from "./artifacts/artifact-schema.ts";
+export type {
+  ArtifactStoreOptions,
+  DurableArtifactStore,
+  StoredBytes,
+} from "./artifacts/artifact-store.ts";
 export {
   ARTIFACT_PARTICIPANT_NAME,
   createArtifactShutdownParticipant,
   createArtifactStore,
   VERIFICATION_CHUNK_BYTES,
   verifyStoredBytes,
-} from "./artifact-store.ts";
-export type { BackupOptions } from "./backup.ts";
+} from "./artifacts/artifact-store.ts";
+export type {
+  LoomManifestRepository,
+  LoomManifestRepositoryOptions,
+  LoomManifestStorageError,
+} from "./artifacts/loom-manifest-repository.ts";
+export { createLoomManifestRepository } from "./artifacts/loom-manifest-repository.ts";
+export {
+  LOOM_MANIFESTS_TABLE,
+  LOOM_SCHEMA_VERSION,
+  MIGRATION_0006,
+} from "./artifacts/loom-schema.ts";
+export { createScratchResourceRepository } from "./artifacts/scratch-resource-repository.ts";
+export {
+  MIGRATION_0009,
+  SCRATCH_RESOURCE_SCHEMA_VERSION,
+  SCRATCH_RESOURCES_TABLE,
+  SCRATCH_REVISIONS_TABLE,
+} from "./artifacts/scratch-resource-schema.ts";
+export type { BackupOptions } from "./lifecycle/backup.ts";
 export {
   collectLocalDiagnostics,
   createUserBackup,
   inspectUserBackup,
   restoreUserBackup,
-} from "./backup.ts";
-export type { DurableEventStore, SqliteEventStoreOptions, StreamHead } from "./event-store.ts";
-export {
-  createEventStoreShutdownParticipant,
-  createSqliteEventStore,
-  EVENT_STORE_PARTICIPANT_NAME,
-} from "./event-store.ts";
-export type { ExportOptions } from "./export.ts";
+} from "./lifecycle/backup.ts";
+export type { ExportOptions } from "./lifecycle/export.ts";
 export {
   EXPORT_CHUNK_BYTES,
   resolveInventory,
   verifyPackage,
   WRITTEN_SCHEMA_FAMILIES,
   writePackage,
-} from "./export.ts";
-export type { LocalDataService, LocalDataServiceOptions } from "./local-data-service.ts";
-export { createLocalDataService, UNCONSTRAINED_RETENTION } from "./local-data-service.ts";
-export type {
-  LoomManifestRepository,
-  LoomManifestRepositoryOptions,
-  LoomManifestStorageError,
-} from "./loom-manifest-repository.ts";
-export { createLoomManifestRepository } from "./loom-manifest-repository.ts";
-export {
-  LOOM_MANIFESTS_TABLE,
-  LOOM_SCHEMA_VERSION,
-  MIGRATION_0006,
-} from "./loom-schema.ts";
-export type { MemoryRecordRepository } from "./memory-repository.ts";
-export {
-  createMemoryRecordRepository,
-  MAX_DURABLE_MEMORY_RECORDS,
-} from "./memory-repository.ts";
-export {
-  MEMORY_RECORDS_TABLE,
-  MEMORY_SCHEMA_VERSION,
-  MIGRATION_0005,
-} from "./memory-schema.ts";
-export type {
-  ModelCatalogGenerationRepository,
-  ModelCatalogGenerationStorageError,
-  StoredModelCatalogGeneration,
-} from "./model-catalog-repository.ts";
-export { createModelCatalogGenerationRepository } from "./model-catalog-repository.ts";
-export {
-  MIGRATION_0007,
-  MIGRATION_0008,
-  MODEL_CATALOG_GENERATIONS_TABLE,
-  MODEL_CATALOG_ROUTE_BINDINGS_TABLE,
-  MODEL_CATALOG_SCHEMA_VERSION,
-} from "./model-catalog-schema.ts";
-export type { OwnershipRegistry } from "./ownership.ts";
+} from "./lifecycle/export.ts";
+export type { LocalDataService, LocalDataServiceOptions } from "./lifecycle/local-data-service.ts";
+export { createLocalDataService, UNCONSTRAINED_RETENTION } from "./lifecycle/local-data-service.ts";
+export type { OwnershipRegistry } from "./lifecycle/ownership.ts";
 export {
   ARTIFACTS_OWNERSHIP,
   CREDENTIAL_REFERENCE_OWNERSHIP,
   createOwnershipRegistry,
   EXPORTS_OWNERSHIP,
   TEMPORARY_INGEST_OWNERSHIP,
-} from "./ownership.ts";
-export type { ProjectionRunner, ProjectionRunnerOptions } from "./projections.ts";
-export {
-  createProjectionRunner,
-  createProjectionShutdownParticipant,
-  PROJECTION_PARTICIPANT_NAME,
-} from "./projections.ts";
-export {
-  createProviderContinuationStateRepository,
-  MAX_DURABLE_PROVIDER_CONTINUATIONS,
-} from "./provider-continuation-repository.ts";
-export {
-  MIGRATION_0010,
-  PROVIDER_CONTINUATION_SCHEMA_VERSION,
-  PROVIDER_CONTINUATION_STATES_TABLE,
-} from "./provider-continuation-schema.ts";
-export type { ReachabilityGcInputs, ReachabilityGcOptions } from "./reachability-gc.ts";
+} from "./lifecycle/ownership.ts";
+export type { ReachabilityGcInputs, ReachabilityGcOptions } from "./lifecycle/reachability-gc.ts";
 export {
   computeGcPlanId,
   executeReachabilityGc,
@@ -122,9 +89,9 @@ export {
   MAX_GC_EXPORT_PACKAGES,
   parseExportDirectoryEntry,
   planReachabilityGc,
-} from "./reachability-gc.ts";
-export { MAX_RECONCILED_ENTRIES, reconcileTemporaryIngest } from "./reconciliation.ts";
-export type { BeginRunOptions, RecoveryOptions, RunSession } from "./recovery.ts";
+} from "./lifecycle/reachability-gc.ts";
+export { MAX_RECONCILED_ENTRIES, reconcileTemporaryIngest } from "./lifecycle/reconciliation.ts";
+export type { BeginRunOptions, RecoveryOptions, RunSession } from "./lifecycle/recovery.ts";
 export {
   beginRun,
   createRunShutdownParticipant,
@@ -132,8 +99,8 @@ export {
   probeCrashSignals,
   RUN_PARTICIPANT_NAME,
   recoverInterruptedWork,
-} from "./recovery.ts";
-export type { PlanInputs, ResetSelection } from "./removal.ts";
+} from "./lifecycle/recovery.ts";
+export type { PlanInputs, ResetSelection } from "./lifecycle/removal.ts";
 export {
   computePlanId,
   executeRemoval,
@@ -141,15 +108,8 @@ export {
   MAX_REMOVED_ENTRIES,
   planReset,
   planUninstall,
-} from "./removal.ts";
-export type { SessionViewLimits } from "./repositories.ts";
-export {
-  applyCompletion,
-  createRecordRepositories,
-  DEFAULT_SESSION_VIEW_LIMITS,
-  readSessionView,
-} from "./repositories.ts";
-export type { RetentionInputs, UsageMeasurement } from "./retention.ts";
+} from "./lifecycle/removal.ts";
+export type { RetentionInputs, UsageMeasurement } from "./lifecycle/retention.ts";
 export {
   MAX_MEASURED_DEPTH,
   MAX_MEASURED_ENTRIES,
@@ -158,8 +118,8 @@ export {
   owningRoot,
   pathsForClass,
   reportRetention,
-} from "./retention.ts";
-export type { PlatformInputs, RootResolution, RootResolutionIssue } from "./roots.ts";
+} from "./lifecycle/retention.ts";
+export type { PlatformInputs, RootResolution, RootResolutionIssue } from "./lifecycle/roots.ts";
 export {
   FALLBACK_HOME,
   inspectRoots,
@@ -170,8 +130,67 @@ export {
   resolveRoots,
   rootChild,
   usableRoots,
-} from "./roots.ts";
-export { MIGRATION_0003, RUN_SCHEMA_VERSION, RUNS_TABLE } from "./run-schema.ts";
+} from "./lifecycle/roots.ts";
+export type { StorageProbe, StorageProbeOptions } from "./lifecycle/storage-probe.ts";
+export { probeStorage } from "./lifecycle/storage-probe.ts";
+export type { MemoryRecordRepository } from "./memory/memory-repository.ts";
+export {
+  createMemoryRecordRepository,
+  MAX_DURABLE_MEMORY_RECORDS,
+} from "./memory/memory-repository.ts";
+export {
+  MEMORY_RECORDS_TABLE,
+  MEMORY_SCHEMA_VERSION,
+  MIGRATION_0005,
+} from "./memory/memory-schema.ts";
+export type {
+  ModelCatalogGenerationRepository,
+  ModelCatalogGenerationStorageError,
+  StoredModelCatalogGeneration,
+} from "./providers/model-catalog-repository.ts";
+export { createModelCatalogGenerationRepository } from "./providers/model-catalog-repository.ts";
+export {
+  MIGRATION_0007,
+  MIGRATION_0008,
+  MODEL_CATALOG_GENERATIONS_TABLE,
+  MODEL_CATALOG_ROUTE_BINDINGS_TABLE,
+  MODEL_CATALOG_SCHEMA_VERSION,
+} from "./providers/model-catalog-schema.ts";
+export type {
+  DurableEventStore,
+  SqliteEventStoreOptions,
+  StreamHead,
+} from "./sessions/event-store.ts";
+export {
+  createEventStoreShutdownParticipant,
+  createSqliteEventStore,
+  EVENT_STORE_PARTICIPANT_NAME,
+} from "./sessions/event-store.ts";
+export type { ProjectionRunner, ProjectionRunnerOptions } from "./sessions/projections.ts";
+export {
+  createProjectionRunner,
+  createProjectionShutdownParticipant,
+  PROJECTION_PARTICIPANT_NAME,
+} from "./sessions/projections.ts";
+export {
+  createProviderContinuationStateRepository,
+  MAX_DURABLE_PROVIDER_CONTINUATIONS,
+} from "./sessions/provider-continuation-repository.ts";
+export {
+  MIGRATION_0010,
+  PROVIDER_CONTINUATION_SCHEMA_VERSION,
+  PROVIDER_CONTINUATION_STATES_TABLE,
+} from "./sessions/provider-continuation-schema.ts";
+export type { SessionViewLimits } from "./sessions/repositories.ts";
+export {
+  applyCompletion,
+  createRecordRepositories,
+  DEFAULT_SESSION_VIEW_LIMITS,
+  readSessionView,
+} from "./sessions/repositories.ts";
+export { MIGRATION_0003, RUN_SCHEMA_VERSION, RUNS_TABLE } from "./sessions/run-schema.ts";
+export type { ImportOptions } from "./sessions/session-replay.ts";
+export { forkSession, importPackage, replaySession } from "./sessions/session-replay.ts";
 export {
   EVENTS_TABLE,
   INVOCATIONS_TABLE,
@@ -182,23 +201,14 @@ export {
   RECORD_TABLES,
   SESSIONS_TABLE,
   TURNS_TABLE,
-} from "./schema.ts";
-export { createScratchResourceRepository } from "./scratch-resource-repository.ts";
-export {
-  MIGRATION_0009,
-  SCRATCH_RESOURCE_SCHEMA_VERSION,
-  SCRATCH_RESOURCES_TABLE,
-  SCRATCH_REVISIONS_TABLE,
-} from "./scratch-resource-schema.ts";
-export type { ImportOptions } from "./session-replay.ts";
-export { forkSession, importPackage, replaySession } from "./session-replay.ts";
+} from "./sqlite/schema.ts";
 export {
   latestVersion,
   PRODUCT_SCHEMA_VERSION,
   PRODUCT_TABLES,
   PRODUCTION_MIGRATIONS,
   validateMigrationSet,
-} from "./sqlite-migrations.ts";
+} from "./sqlite/sqlite-migrations.ts";
 export {
   createSqliteShutdownParticipant,
   MIGRATION_TABLE,
@@ -208,15 +218,16 @@ export {
   SQLITE_STATE_OWNERSHIP,
   sqliteDatabasePath,
   storeErrorForFailure,
-} from "./sqlite-store.ts";
-export type { StorageProbe, StorageProbeOptions } from "./storage-probe.ts";
-export { probeStorage } from "./storage-probe.ts";
+} from "./sqlite/sqlite-store.ts";
 export {
   WORKSPACE_INDEX_GENERATIONS_TABLE,
   WORKSPACE_INDEX_MIGRATION_0001,
   WORKSPACE_INDEX_MIGRATIONS,
   WORKSPACE_INDEX_RECORDS_TABLE,
   WORKSPACE_INDEX_SCHEMA_VERSION,
-} from "./workspace-index-schema.ts";
-export type { WorkspaceIndexStore, WorkspaceIndexStoreOptions } from "./workspace-index-store.ts";
-export { openWorkspaceIndexStore } from "./workspace-index-store.ts";
+} from "./workspace/workspace-index-schema.ts";
+export type {
+  WorkspaceIndexStore,
+  WorkspaceIndexStoreOptions,
+} from "./workspace/workspace-index-store.ts";
+export { openWorkspaceIndexStore } from "./workspace/workspace-index-store.ts";

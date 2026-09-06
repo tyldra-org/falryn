@@ -3,10 +3,10 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { digestBytes } from "../../application/index.ts";
+import { digestBytes } from "../../application/context/index.ts";
 import { blockKey } from "../../presentation/index.ts";
 import { everyBlockKind } from "../../presentation/transcript/fixtures.ts";
-import type { CopyTextPort } from "../clipboard.ts";
+import type { CopyTextPort } from "../runtime/clipboard.ts";
 import { copyTranscriptBody, copyTranscriptIdentity } from "./copy.ts";
 
 const encoder = new TextEncoder();

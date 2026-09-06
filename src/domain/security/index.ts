@@ -1,0 +1,38 @@
+/** Public contracts for this capability. Internal modules import their exact dependencies. */
+
+export type {
+  CredentialFailure,
+  CredentialHealth,
+  CredentialHealthState,
+  CredentialPartOutcome,
+  CredentialPartResult,
+  CredentialReferenceStorePort,
+  CredentialRemovalCompleteness,
+  CredentialRemovalConfirmation,
+  CredentialRemovalOutcome,
+  CredentialRemovalRefusal,
+  CredentialRequestOptions,
+  CredentialResolution,
+  CredentialStoreAvailability,
+  CredentialStorePort,
+  CredentialUnresolvedStatus,
+  CredentialWriteResult,
+  InMemoryCredentialStoreOptions,
+  SecretRequest,
+  SecretResolverPort,
+  SecretUse,
+} from "./credential.ts";
+export {
+  CREDENTIAL_HEALTH_STATES,
+  CREDENTIAL_PART_RESULTS,
+  CREDENTIAL_UNRESOLVED_STATUSES,
+  createInMemoryCredentialStore,
+  credentialRemovalIdentity,
+  DEFAULT_CREDENTIAL_TIMEOUT_MS,
+  healthForStatus,
+  isCredentialUnresolvedStatus,
+  MAX_CREDENTIAL_LABEL_LENGTH,
+  MAX_CREDENTIAL_LOCATOR_LENGTH,
+  MAX_CREDENTIAL_SECRET_BYTES,
+  unknownHealth,
+} from "./credential.ts";

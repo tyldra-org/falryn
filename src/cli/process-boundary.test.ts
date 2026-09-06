@@ -20,11 +20,15 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-
-import { EMITTABLE_EXIT_CODES, EXIT_CODES, type ExitCode, UNEMITTABLE_EXIT_CODES } from "./exit.ts";
 import { MAX_TIMEOUT_MS } from "./options.ts";
+import {
+  EMITTABLE_EXIT_CODES,
+  EXIT_CODES,
+  type ExitCode,
+  UNEMITTABLE_EXIT_CODES,
+} from "./output/exit.ts";
+import { readCliStream } from "./output/schema.ts";
 import { type OutcomeScenario, STREAM_RECORD_COUNT } from "./probe-fixtures.ts";
-import { readCliStream } from "./schema.ts";
 
 const PROBE_ENTRY = join(dirname(import.meta.path), "probe-fixtures.ts");
 

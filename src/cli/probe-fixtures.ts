@@ -14,29 +14,29 @@
  * it exists to test.
  */
 
-import { createRuntimeLifecycle } from "../application/index.ts";
+import { createRuntimeLifecycle } from "../application/runtime/index.ts";
 import {
   addDuration,
   assertNever,
   createSystemClock,
   duration,
   type FalrynError,
-  type FileSystemPort,
   NO_CORRELATION,
   scopeId,
-  type TerminalOutcome,
-} from "../domain/index.ts";
+} from "../domain/foundation/index.ts";
+import type { TerminalOutcome } from "../domain/orchestration/index.ts";
+import type { FileSystemPort } from "../domain/workspace/index.ts";
 import { createHostFileSystem, createProcessSignalPort } from "../integrations/index.ts";
 import { dispatch } from "./dispatch.ts";
-import { type ExitCode, resolveExitCode } from "./exit.ts";
-import { createHostGovernance, type InvocationGovernance } from "./invocation-scope.ts";
+import { type ExitCode, resolveExitCode } from "./output/exit.ts";
 import {
   type CliStreams,
   createHostCliStreams,
   outcomeAfterFlush,
   writeDiagnosticLine,
   writeResultLine,
-} from "./streams.ts";
+} from "./output/streams.ts";
+import { createHostGovernance, type InvocationGovernance } from "./runtime/invocation-scope.ts";
 
 /**
  * Scenarios whose whole behavior is the outcome they end with.

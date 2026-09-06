@@ -1,10 +1,11 @@
 /** Data reset and uninstall command family. */
 
-import { fromRemovalRefusal, fromUnknown } from "../../application/index.ts";
-import type { RemovalOutcome, RemovalPlan, TerminalOutcome } from "../../domain/index.ts";
+import { fromRemovalRefusal, fromUnknown } from "../../application/diagnostics/index.ts";
+import type { TerminalOutcome } from "../../domain/orchestration/index.ts";
+import type { RemovalOutcome, RemovalPlan } from "../../domain/storage/index.ts";
 import type { DataCommandArguments } from "../command-tree.ts";
-import type { CommandResultOf } from "../result.ts";
-import type { ServiceProvider } from "../services.ts";
+import type { CommandResultOf } from "../output/result.ts";
+import type { ServiceProvider } from "../runtime/services.ts";
 import { MUTATION_NOT_OBSERVED, resultFor } from "./shared.ts";
 
 export type DataRemovalPayload = {

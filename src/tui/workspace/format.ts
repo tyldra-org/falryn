@@ -6,7 +6,7 @@
  * this module only formats what those ports already resolved.
  */
 
-import { type FactValue, known, type WorkspaceHeaderModel } from "../view-model.ts";
+import { type FactValue, known, type WorkspaceHeaderModel } from "../shell/view-model.ts";
 
 export type WorkspaceRootView = {
   readonly rootId: string;

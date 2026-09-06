@@ -8,7 +8,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { INLINE_PASTE_LIMIT } from "../paste.ts";
+import { INLINE_PASTE_LIMIT } from "./paste.ts";
 import {
   type ComposerAction,
   type ComposerState,

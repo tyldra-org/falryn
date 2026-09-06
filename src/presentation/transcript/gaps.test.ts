@@ -23,8 +23,8 @@ import {
   turnCompleted,
   turnStarted,
 } from "../../domain/fixtures.ts";
-import type { Sequence, StreamId } from "../../domain/index.ts";
-import { sequence } from "../../domain/index.ts";
+import type { Sequence, StreamId } from "../../domain/foundation/index.ts";
+import { sequence } from "../../domain/foundation/index.ts";
 import { describeAnomaly, detectAnomalies } from "./gaps.ts";
 
 /** Sequences are branded, so a literal has to go through the domain's codec. */

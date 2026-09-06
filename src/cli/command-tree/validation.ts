@@ -5,7 +5,7 @@ import {
   isLegalWorkspaceLayoutName,
   localPathTextError,
   MAX_LOCAL_PATH_LENGTH,
-} from "../../domain/index.ts";
+} from "../../domain/workspace/index.ts";
 import {
   type ColorChoice,
   type GlobalOptions,

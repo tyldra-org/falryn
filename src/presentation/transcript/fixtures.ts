@@ -26,16 +26,17 @@
  * real one would carry.
  */
 
-import type { ArtifactId, ConfigurationGeneration, Timestamp } from "../../domain/index.ts";
+import type { ArtifactId } from "../../domain/artifacts/index.ts";
+import { artifactId } from "../../domain/artifacts/index.ts";
+import type { ConfigurationGeneration, Timestamp } from "../../domain/foundation/index.ts";
 import {
-  artifactId,
   configurationGeneration,
   invocationId,
   modelAttemptId,
   sessionId,
   timestampFromEpochMilliseconds,
   turnId,
-} from "../../domain/index.ts";
+} from "../../domain/foundation/index.ts";
 import type { BlockAnchor, TranscriptBlock, TranscriptBlockKind } from "./blocks.ts";
 import { TRANSCRIPT_BLOCK_KINDS, UNKNOWN_TRANSCRIPT_BLOCK_KIND } from "./blocks.ts";
 import { bound, complete, omitted, redacted } from "./disclosure.ts";

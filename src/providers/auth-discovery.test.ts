@@ -1,22 +1,18 @@
 import { describe, expect, test } from "bun:test";
 
-import { createSecretResolver } from "../application/credential-resolver.ts";
-import {
-  type CredentialReference,
-  createInMemoryCredentialStore,
-  createManualClock,
-  modelId,
-  providerId,
-} from "../domain/index.ts";
-import { establishProviderAuth, removeProviderCredential } from "./auth-service.ts";
+import { createSecretResolver } from "../application/authentication/credential-resolver.ts";
+import type { CredentialReference } from "../domain/configuration/index.ts";
+import { createManualClock, modelId, providerId } from "../domain/foundation/index.ts";
+import { createInMemoryCredentialStore } from "../domain/security/index.ts";
+import { establishProviderAuth, removeProviderCredential } from "./authentication/auth-service.ts";
 import {
   createDeterministicRemoteDiscovery,
   createStaticModelDiscovery,
   discoverModelCatalog,
-} from "./discovery.ts";
-import type { ProviderProfile } from "./profile.ts";
-import { parseProviderProfile } from "./profile-schema.ts";
-import { openProviderSession } from "./session.ts";
+} from "./catalog/discovery.ts";
+import type { ProviderProfile } from "./configuration/profile.ts";
+import { parseProviderProfile } from "./configuration/profile-schema.ts";
+import { openProviderSession } from "./protocol/session.ts";
 
 const REFERENCE: CredentialReference = {
   storeKind: "environment",

@@ -22,7 +22,7 @@
  * safe costs a pass and removes the whole class of failure.
  */
 
-import { sanitizeTerminalText, truncateToWidth } from "../../domain/index.ts";
+import { sanitizeTerminalText, truncateToWidth } from "../../domain/terminal/index.ts";
 import { STATUS_PRESENTATION, type Theme, textAttributes } from "../theme/index.ts";
 import type { TranscriptRow } from "./rows.ts";
 

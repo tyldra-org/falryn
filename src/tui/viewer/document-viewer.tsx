@@ -6,10 +6,10 @@
  */
 
 import type { ReactNode } from "react";
-import { wrapToWidthWindow } from "../../domain/index.ts";
+import { wrapToWidthWindow } from "../../domain/terminal/index.ts";
 import type { DocumentViewModel } from "../../presentation/viewer/index.ts";
-import { useFrame } from "../components/context.tsx";
-import { Line } from "../components/primitives.tsx";
+import { useFrame } from "../shell/context.tsx";
+import { Line } from "../visual/primitives.tsx";
 
 const PANEL_CHROME_COLUMNS = 4;
 

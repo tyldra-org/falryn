@@ -7,7 +7,7 @@
  * range is a later child; this module does not store a Falryn-owned range.
  */
 
-import { assertNever } from "../../domain/index.ts";
+import { assertNever } from "../../domain/foundation/index.ts";
 import { blockKey, type TranscriptBlock } from "./blocks.ts";
 import type { BoundedText } from "./disclosure.ts";
 

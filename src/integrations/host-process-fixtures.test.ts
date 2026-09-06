@@ -9,11 +9,12 @@
 
 import { describe, expect, test } from "bun:test";
 
-import { duration, MAX_COMMAND_OUTPUT_BYTES, type ProcessCaptureRequest } from "../domain/index.ts";
-import { createHostCommandRunner } from "./host-commands.ts";
-import { createHostProcessCapturePort } from "./host-process-capture.ts";
-import { createHostPtySessionPort } from "./host-process-sessions.ts";
-import { ownedTreeSpawnOptions } from "./host-process-tree.ts";
+import { duration } from "../domain/foundation/index.ts";
+import { MAX_COMMAND_OUTPUT_BYTES, type ProcessCaptureRequest } from "../domain/process/index.ts";
+import { createHostCommandRunner } from "./process/host-commands.ts";
+import { createHostProcessCapturePort } from "./process/host-process-capture.ts";
+import { createHostPtySessionPort } from "./process/host-process-sessions.ts";
+import { ownedTreeSpawnOptions } from "./process/host-process-tree.ts";
 
 const POSIX = process.platform !== "win32";
 const platformTest = POSIX ? test : test.skip;

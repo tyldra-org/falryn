@@ -5,10 +5,10 @@ import { dirname, join } from "node:path";
 const INTEGRATIONS_ROOT = dirname(import.meta.path);
 
 const SDK_LEAF_ADAPTERS = {
-  "anthropic-sdk-adapter.ts": 'from "@anthropic-ai/sdk"',
-  "google-genai-sdk-adapter.ts": 'from "@google/genai"',
-  "openai-responses-sdk-adapter.ts": 'from "openai"',
-  "openai-sdk-adapter.ts": 'from "openai"',
+  "providers/anthropic-sdk-adapter.ts": 'from "@anthropic-ai/sdk"',
+  "providers/google-genai-sdk-adapter.ts": 'from "@google/genai"',
+  "providers/openai-responses-sdk-adapter.ts": 'from "openai"',
+  "providers/openai-sdk-adapter.ts": 'from "openai"',
 } as const;
 
 async function source(file: string): Promise<string> {
@@ -18,7 +18,7 @@ async function source(file: string): Promise<string> {
 describe("provider adapter naming", () => {
   test("reserves the SDK adapter suffix for direct vendor SDK leaves", async () => {
     const sdkAdapters: string[] = [];
-    const glob = new Bun.Glob("*-sdk-adapter.ts");
+    const glob = new Bun.Glob("**/*-sdk-adapter.ts");
     for await (const file of glob.scan({ cwd: INTEGRATIONS_ROOT })) {
       sdkAdapters.push(file);
     }
@@ -30,7 +30,7 @@ describe("provider adapter naming", () => {
   });
 
   test("names Command Code as a composite provider adapter", async () => {
-    const commandCode = await source("command-code-provider-adapter.ts");
+    const commandCode = await source("providers/command-code-provider-adapter.ts");
 
     expect(commandCode).toContain("createOpenAiSdkAdapter");
     expect(commandCode).toContain("createAnthropicSdkAdapter");
@@ -40,7 +40,7 @@ describe("provider adapter naming", () => {
   });
 
   test("names OpenAI as a provider above its SDK transport leaves", async () => {
-    const openAi = await source("openai-provider-adapter.ts");
+    const openAi = await source("providers/openai-provider-adapter.ts");
 
     expect(openAi).toContain("createOpenAiSdkAdapter");
     expect(openAi).toContain("createOpenAiResponsesSdkAdapter");

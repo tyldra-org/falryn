@@ -4,8 +4,8 @@
  */
 
 import { type ReactNode, useEffect, useState } from "react";
-import type { ArtifactViewer } from "../../application/index.ts";
-import type { ArtifactView } from "../../domain/index.ts";
+import type { ArtifactViewer } from "../../application/artifacts/index.ts";
+import type { ArtifactView } from "../../domain/artifacts/index.ts";
 import type { ArtifactPresentation } from "../../presentation/transcript/artifact-open.ts";
 import {
   type CodeViewModel,

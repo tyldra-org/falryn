@@ -6,20 +6,6 @@
  * bytes are stable across runs and machines.
  */
 
-import type {
-  CapabilityInvocationCompletedEvent,
-  CapabilityInvocationStartedEvent,
-  ConfigurationGenerationChangedEvent,
-  ExecutionProfileSelectedEvent,
-  ModelAttemptCompletedEvent,
-  ModelAttemptStartedEvent,
-  RuntimeEvent,
-  SessionCorrelation,
-  SessionStartedEvent,
-  TurnCompletedEvent,
-  TurnCorrelation,
-  TurnStartedEvent,
-} from "./event.ts";
 import {
   capabilityId,
   configurationGeneration,
@@ -35,11 +21,30 @@ import {
   traceId,
   turnId,
   workspaceId,
-} from "./identity.ts";
-import { RUNTIME_EVENT_SCHEMA_VERSION } from "./limits.ts";
-import type { TerminalOutcome } from "./outcome.ts";
-import type { InvocationRecord, ModelAttemptRecord, SessionRecord, TurnRecord } from "./records.ts";
-import { timestampFromEpochMilliseconds } from "./time.ts";
+} from "./foundation/identity.ts";
+import { RUNTIME_EVENT_SCHEMA_VERSION } from "./foundation/limits.ts";
+import { timestampFromEpochMilliseconds } from "./foundation/time.ts";
+import type { TerminalOutcome } from "./orchestration/outcome.ts";
+import type {
+  CapabilityInvocationCompletedEvent,
+  CapabilityInvocationStartedEvent,
+  ConfigurationGenerationChangedEvent,
+  ExecutionProfileSelectedEvent,
+  ModelAttemptCompletedEvent,
+  ModelAttemptStartedEvent,
+  RuntimeEvent,
+  SessionCorrelation,
+  SessionStartedEvent,
+  TurnCompletedEvent,
+  TurnCorrelation,
+  TurnStartedEvent,
+} from "./sessions/event.ts";
+import type {
+  InvocationRecord,
+  ModelAttemptRecord,
+  SessionRecord,
+  TurnRecord,
+} from "./sessions/records.ts";
 
 export const FIXTURE_OCCURRED_AT = timestampFromEpochMilliseconds(Date.UTC(2026, 6, 31, 12, 0, 0));
 

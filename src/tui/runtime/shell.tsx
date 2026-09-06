@@ -1,0 +1,465 @@
+/**
+ * The interactive shell, start to finish.
+ *
+ * This is the only module that composes a renderer, a React root, and the
+ * invocation's stop signal, and it is deliberately shaped like `dispatch`: open,
+ * run, tear down, report. Everything it composes is separately testable — the
+ * launch decision, the capability record, renderer configuration, and the session's
+ * restoration each answer on their own — so what is left here is the wiring and
+ * the one thing wiring is uniquely able to get wrong, which is the order things
+ * are released in.
+ *
+ * It ends in exactly one way in this build: something stopped it. There is no
+ * composer, no command, and no quit binding yet, so the shell runs until the
+ * invocation's scope is cancelled by an interrupt, or its `--timeout` deadline
+ * passes, or the renderer goes away underneath it. The seam for the shell
+ * closing itself exists and is reported distinctly, because #26 will use it and
+ * a caller that could not tell the two apart would report a deliberate quit as a
+ * cancellation.
+ *
+ * Nothing here calls `process.exit()`. Teardown is not something to be skipped
+ * to exit faster — it is the reason the user gets their terminal back.
+ *
+ * This module reaches OpenTUI's runtime. `src/cli/dispatch.ts` imports it
+ * dynamically, so a run the launch decision refused never evaluates it and never
+ * loads the native library.
+ */
+
+import { createRoot, type Root } from "@opentui/react";
+import type { ReactNode } from "react";
+import type { FileAttachmentProbe } from "../../application/context/index.ts";
+import { fromRendererFailure } from "../../application/diagnostics/index.ts";
+import type { GitDashboard } from "../../application/git/index.ts";
+import type { ScopeTree } from "../../application/orchestration/index.ts";
+import type { ShutdownCoordinator } from "../../application/runtime/index.ts";
+import {
+  type CliStreams,
+  type GlobalOptions,
+  resolveColor,
+  writeDiagnosticLine,
+} from "../../cli/index.ts";
+import type { ConfigurationValues } from "../../domain/configuration/index.ts";
+import type { ClockPort, EnvironmentPort, FalrynError } from "../../domain/foundation/index.ts";
+import { plainPrintLabeledCopy } from "../../integrations/terminal/host-terminal.ts";
+import { initialActivityCursor } from "../../presentation/index.ts";
+import type { SubmissionPort } from "../composer/submission.ts";
+import type { ControlCatalog } from "../controls/index.ts";
+import type { SessionNavigationController } from "../session-nav/index.ts";
+import {
+  prefersConservativeSymbols,
+  prefersReducedMotion,
+  requestedVariant,
+} from "../shell/appearance.ts";
+import type { SessionCreationPort } from "../shell/session-creation.ts";
+import { ShellApp } from "../shell/shell-app.tsx";
+import { shellModel } from "../shell/shell-model.ts";
+import { selectVariant, type ThemeRequest } from "../theme/index.ts";
+import type { TranscriptFeed } from "../transcript/transcript-feed.ts";
+import { useTranscriptProjection } from "../transcript/transcript-feed.ts";
+import { RenderGateProvider, useRenderGate } from "../visual/render-gate.tsx";
+import type { WorkspaceController, WorkspaceSetView } from "../workspace/index.ts";
+import { POINTER_KEY, type ShellCapabilities } from "./capabilities.ts";
+import {
+  nothingToRestore,
+  openRendererSession,
+  type RendererFactory,
+  type RendererSession,
+} from "./renderer-session.ts";
+import { type RuntimeFeed, runtimeFeed, useRuntimeProjection } from "./runtime-feed.ts";
+import { createTerminalShutdownParticipant } from "./shutdown.ts";
+
+export type ShellRunRequest = {
+  readonly streams: CliStreams;
+  readonly capabilities: ShellCapabilities;
+  /**
+   * The invocation clock. Pointer recognition reads `now()`; the render gate
+   * waits through `waitUntil` so stream paints share a cadence without a second
+   * animation frame. Repeated pointer presses must not create a second time
+   * source or read the wall clock.
+   */
+  readonly clock: ClockPort;
+  /** The parsed options. `--color` and `--workspace` both reach the frame. */
+  readonly options: GlobalOptions;
+  /** Read for the appearance preferences, and for nothing else. */
+  readonly environment: EnvironmentPort;
+  /**
+   * The settings this run opens with.
+   *
+   * Values rather than a service, and that direction is the contract: the shell
+   * is handed what it needs and cannot reach back for more, so nothing in the
+   * interface can read a key that was never resolved on the launch path. It is
+   * also `ConfigurationValues` rather than a projected settings object, because
+   * no interface key is declared yet and a projection would be an invented shape
+   * with one field in it.
+   *
+   * Optional for the reason `shutdown` and `scopes` are: a caller that composed
+   * no service graph has nothing to resolve. An absent value is not the same as
+   * an empty one — a caller that resolved settings and found none passes the
+   * registry's defaults, which are complete by construction.
+   */
+  readonly configuration?: ConfigurationValues;
+  /** Aborts when the invocation's scope stops: an interrupt, or a deadline. */
+  readonly stop: AbortSignal;
+  /**
+   * Where the `restore-terminal` participant is registered.
+   *
+   * Optional because a caller that composed no runtime lifecycle has no
+   * coordinator to register with, and the shell still restores on its own way
+   * out. The participant is what covers the paths the shell never returns
+   * from — an escalated interrupt, a forced shutdown — rather than the ones it
+   * does.
+   */
+  readonly shutdown?: ShutdownCoordinator;
+  /**
+   * The scope tree this invocation is running inside.
+   *
+   * Read-only here, and only for the rail: the shell folds its ordered events
+   * into the activity projection. Optional for the same reason `shutdown` is —
+   * a caller that composed no runtime has none — and an absent tree is reported
+   * as nothing attached rather than as nothing happening.
+   */
+  readonly scopes?: ScopeTree;
+  /**
+   * Live session/turn transcript event feed (#706). Optional until a caller
+   * attaches the product producer; absent keeps the empty transcript honest.
+   */
+  readonly transcriptFeed?: TranscriptFeed;
+  /** Product agent submission port (#707). Absent keeps UNAVAILABLE_SUBMISSION. */
+  readonly submission?: SubmissionPort;
+  /** Provider/model choices projected from the selected connection catalog. */
+  readonly controls?: ControlCatalog;
+  /** Resolves `@path` mentions. Optional because tests and no-workspace runs have none. */
+  readonly fileProbe?: FileAttachmentProbe | null;
+  /** Git changes dashboard. Optional when no workspace or git executable is available. */
+  readonly gitDashboard?: GitDashboard;
+  /** Workspace-set controller and initial roots for header and palette commands. */
+  readonly workspaceController?: WorkspaceController;
+  readonly workspace?: WorkspaceSetView;
+  /** Session resume/fork/rewind/replay when a local store is attached (#722). */
+  readonly sessionNavigationController?: SessionNavigationController;
+  /** Creates and selects a fresh durable product session (#787). */
+  readonly sessionCreation?: SessionCreationPort;
+  /** Supplied by tests, so a shell run needs no terminal and no native library. */
+  readonly createRenderer?: RendererFactory;
+};
+
+export type ShellRun =
+  /** The scope stopped it. The caller resolves the outcome from the scope. */
+  | { readonly kind: "stopped" }
+  /** The shell ended itself. Reserved for #26; nothing produces it today. */
+  | { readonly kind: "closed" }
+  /** The renderer never started, or went away underneath the shell. */
+  | { readonly kind: "failed"; readonly error: FalrynError };
+
+/**
+ * Runs the shell until something stops it.
+ *
+ * Never throws. Every failure the renderer can produce is returned as a typed
+ * error, because the caller has to restore the terminal, emit a plain
+ * diagnostic, and resolve an exit status — none of which it can do from inside a
+ * stack unwind.
+ */
+export async function runShell(request: ShellRunRequest): Promise<ShellRun> {
+  const opened = await openRendererSession({
+    capabilities: request.capabilities,
+    // One key, read here and interpreted nowhere else. The interface is handed
+    // resolved values and takes exactly one boolean out of them — it never
+    // imports `src/config`, and it cannot reach back for a key that was not
+    // resolved on the launch path.
+    //
+    // Anything that is not `true` is off, absence included. A caller that
+    // composed no service graph resolved no configuration, and turning a user's
+    // terminal selection over to Falryn is not something to infer from a missing
+    // value.
+    pointer: request.configuration?.[POINTER_KEY] === true,
+    ...(request.createRenderer === undefined ? {} : { createRenderer: request.createRenderer }),
+  });
+
+  if (!opened.ok) {
+    // Registered and run even though there is nothing to give back. A failure
+    // path that skips restoration is the one path where the terminal is most
+    // likely to already be half-configured, and "nothing to restore" is a fact
+    // the report should state rather than an absence nobody recorded.
+    const terminal = nothingToRestore();
+    register(request.shutdown, terminal);
+    terminal.restore();
+    return { kind: "failed", error: fromRendererFailure(opened.error) };
+  }
+
+  const session = opened.value;
+  register(request.shutdown, session);
+
+  try {
+    return await drive(session, request);
+  } finally {
+    // Always, on every path including a throw from React. The renderer is
+    // released after the tree is unmounted, never before: unmounting into a
+    // destroyed renderer is a second failure on top of the first.
+    session.restore();
+  }
+}
+
+/** Mounts the tree, keeps it current, and waits for something to end the run. */
+async function drive(session: RendererSession, request: ShellRunRequest): Promise<ShellRun> {
+  const root = createRoot(session.renderer);
+  // A renderer that tore itself down — an unhandled rejection reached OpenTUI's
+  // own handler, or the host stream went away — must not leave the shell waiting
+  // on a stop signal that is never coming.
+  const lost = new AbortController();
+  const onDestroy = (): void => lost.abort();
+  session.renderer.on("destroy", onDestroy);
+
+  // The shell ending itself. #23 built this seam and nothing reached it: the
+  // scope stopping was the only way out, and on a terminal in raw mode — where
+  // Ctrl+C arrives as a byte rather than as `SIGINT` — that meant killing the
+  // process from another window. `app.exit` aborts this.
+  const closed = new AbortController();
+
+  let paused = false;
+  const unsubscribe = session.onResize(() => {
+    // Only the pause decision. The tree re-renders itself: `AppShell` measures
+    // the viewport through the renderer, so a resize reaches every component
+    // that cares without this having to re-render anything — and without the
+    // overlay route, the theme, or the cache passing through a re-render that
+    // could drop them.
+    if (!session.isRenderable()) {
+      // Zero or transient dimensions: stop drawing, keep everything. The session
+      // is not torn down and the tree is not unmounted, so the terminal coming
+      // back is a repaint rather than a restart.
+      if (!paused) {
+        paused = true;
+        session.renderer.pause();
+      }
+      return;
+    }
+    if (paused) {
+      paused = false;
+      session.renderer.resume();
+    }
+  });
+
+  try {
+    root.render(await frameFor(session, request, () => closed.abort()));
+    await settled(request.stop, lost.signal, closed.signal);
+
+    if (lost.signal.aborted && !request.stop.aborted && !closed.signal.aborted) {
+      return {
+        kind: "failed",
+        error: fromRendererFailure({ code: "lost", detail: null }),
+      };
+    }
+    // A deliberate quit outranks the stop signal: pressing the exit key and an
+    // interrupt arriving in the same moment is one departure, and the user's own
+    // is the one to report.
+    return closed.signal.aborted ? { kind: "closed" } : { kind: "stopped" };
+  } finally {
+    unsubscribe();
+    session.renderer.off("destroy", onDestroy);
+    unmount(root, request.streams);
+  }
+}
+
+/**
+ * How long to wait for the terminal to say whether it is light or dark.
+ *
+ * Bounded and short. The answer decides the palette, so waiting for it means the
+ * first painted frame is not the wrong one — but a terminal that never answers
+ * must not hold the interface closed, and most do not answer at all.
+ */
+const THEME_QUERY_TIMEOUT_MS = 120;
+
+/** The whole tree, with the theme resolved from what this terminal reported. */
+async function frameFor(session: RendererSession, request: ShellRunRequest, onExit: () => void) {
+  const { capabilities, environment, options } = request;
+
+  // Asked before the first paint rather than reacted to afterwards. A frame
+  // painted dark and corrected to light a moment later is a visible flash, and
+  // it happens on exactly the terminals that answered correctly.
+  const prefers = await session.renderer.waitForThemeMode(THEME_QUERY_TIMEOUT_MS);
+
+  const theme = {
+    variant: selectVariant({
+      requested: requestedVariant(environment),
+      terminalPrefers: prefers,
+    }),
+    // The resolved level, after `--color`. The raw capability would put colour
+    // on a run that asked for none.
+    colorLevel: resolveColor(options.color, capabilities.handles.stdout.color),
+    symbols: capabilities.handles.stdout.symbols,
+    conservativeSymbols: prefersConservativeSymbols(capabilities),
+    reducedMotion: prefersReducedMotion(environment, capabilities),
+    generation: capabilities.generation,
+  } satisfies ThemeRequest;
+
+  const {
+    overlay: _overlay,
+    commands: _commands,
+    transcript: _transcript,
+    ...model
+  } = shellModel(options);
+
+  // Transcript is empty unless a caller attaches the #706 producer feed.
+  // Activity is different (#370): the runtime this shell is running inside does
+  // exist, so the rail is fed from it rather than left empty. `undefined` when
+  // the caller composed no scope tree.
+  const feed = runtimeFeed({ scopes: request.scopes, shutdown: request.shutdown });
+
+  return (
+    <LiveShell
+      theme={theme}
+      model={model}
+      onExit={onExit}
+      clock={request.clock}
+      {...(feed === undefined ? {} : { feed })}
+      {...(request.transcriptFeed === undefined ? {} : { transcriptFeed: request.transcriptFeed })}
+      {...(request.submission === undefined ? {} : { submission: request.submission })}
+      {...(request.controls === undefined ? {} : { controls: request.controls })}
+      {...(request.fileProbe === undefined ? {} : { fileProbe: request.fileProbe })}
+      {...(request.gitDashboard === undefined ? {} : { gitDashboard: request.gitDashboard })}
+      {...(request.workspaceController === undefined
+        ? {}
+        : { workspaceController: request.workspaceController })}
+      {...(request.workspace === undefined ? {} : { workspace: request.workspace })}
+      {...(request.sessionNavigationController === undefined
+        ? {}
+        : { sessionNavigationController: request.sessionNavigationController })}
+      {...(request.sessionCreation === undefined
+        ? {}
+        : { sessionCreation: request.sessionCreation })}
+    />
+  );
+}
+
+/**
+ * The shell, subscribed to the runtime.
+ *
+ * A component rather than a value because the tree is rendered once: `drive`
+ * hands React one element and never hands it another, so anything that changes
+ * during a run has to change from inside the tree. The subscription is here
+ * rather than in `ShellApp` so that component stays something a test can hand a
+ * projection to.
+ */
+function LiveShell(props: {
+  readonly theme: ThemeRequest;
+  readonly model: Parameters<typeof ShellApp>[0]["model"];
+  readonly onExit: () => void;
+  readonly clock: ClockPort;
+  readonly feed?: RuntimeFeed;
+  readonly transcriptFeed?: TranscriptFeed;
+  readonly submission?: SubmissionPort;
+  readonly controls?: ControlCatalog;
+  readonly fileProbe?: FileAttachmentProbe | null;
+  readonly gitDashboard?: GitDashboard;
+  readonly workspaceController?: WorkspaceController;
+  readonly workspace?: WorkspaceSetView;
+  readonly sessionNavigationController?: SessionNavigationController;
+  readonly sessionCreation?: SessionCreationPort;
+}): ReactNode {
+  return (
+    <RenderGateProvider clock={props.clock}>
+      <ProjectedShell
+        theme={props.theme}
+        model={props.model}
+        onExit={props.onExit}
+        now={props.clock.now}
+        {...(props.feed === undefined ? {} : { feed: props.feed })}
+        {...(props.transcriptFeed === undefined ? {} : { transcriptFeed: props.transcriptFeed })}
+        {...(props.submission === undefined ? {} : { submission: props.submission })}
+        {...(props.controls === undefined ? {} : { controls: props.controls })}
+        {...(props.fileProbe === undefined ? {} : { fileProbe: props.fileProbe })}
+        {...(props.gitDashboard === undefined ? {} : { gitDashboard: props.gitDashboard })}
+        {...(props.workspaceController === undefined
+          ? {}
+          : { workspaceController: props.workspaceController })}
+        {...(props.workspace === undefined ? {} : { workspace: props.workspace })}
+        {...(props.sessionNavigationController === undefined
+          ? {}
+          : { sessionNavigationController: props.sessionNavigationController })}
+        {...(props.sessionCreation === undefined ? {} : { sessionCreation: props.sessionCreation })}
+      />
+    </RenderGateProvider>
+  );
+}
+
+function ProjectedShell(props: {
+  readonly theme: ThemeRequest;
+  readonly model: Parameters<typeof ShellApp>[0]["model"];
+  readonly onExit: () => void;
+  readonly now: ClockPort["now"];
+  readonly feed?: RuntimeFeed;
+  readonly transcriptFeed?: TranscriptFeed;
+  readonly submission?: SubmissionPort;
+  readonly controls?: ControlCatalog;
+  readonly fileProbe?: FileAttachmentProbe | null;
+  readonly gitDashboard?: GitDashboard;
+  readonly workspaceController?: WorkspaceController;
+  readonly workspace?: WorkspaceSetView;
+  readonly sessionNavigationController?: SessionNavigationController;
+  readonly sessionCreation?: SessionCreationPort;
+}): ReactNode {
+  const gate = useRenderGate();
+  const runtime = useRuntimeProjection(props.feed, initialActivityCursor(), gate);
+  const transcript = useTranscriptProjection(props.transcriptFeed, gate);
+  return (
+    <ShellApp
+      theme={props.theme}
+      model={props.model}
+      onExit={props.onExit}
+      now={props.now}
+      activity={runtime.activity}
+      transcript={transcript}
+      {...(runtime.shutdown === null ? {} : { shutdown: runtime.shutdown })}
+      {...(props.submission === undefined ? {} : { submission: props.submission })}
+      {...(props.controls === undefined ? {} : { controls: props.controls })}
+      {...(props.fileProbe === undefined ? {} : { fileProbe: props.fileProbe })}
+      {...(props.gitDashboard === undefined ? {} : { gitDashboard: props.gitDashboard })}
+      {...(props.workspaceController === undefined
+        ? {}
+        : { workspaceController: props.workspaceController })}
+      {...(props.workspace === undefined ? {} : { workspace: props.workspace })}
+      {...(props.sessionNavigationController === undefined
+        ? {}
+        : { sessionNavigationController: props.sessionNavigationController })}
+      {...(props.sessionCreation === undefined ? {} : { sessionCreation: props.sessionCreation })}
+      copyPlainPrint={plainPrintLabeledCopy}
+    />
+  );
+}
+
+/**
+ * Unmounts the React tree, reporting rather than propagating a teardown failure.
+ *
+ * A throw here would skip `session.restore()` in the caller's `finally`, which
+ * is the one thing this whole area exists to guarantee happens.
+ */
+function unmount(root: Root, streams: CliStreams): void {
+  try {
+    root.unmount();
+  } catch (thrown) {
+    writeDiagnosticLine(
+      streams,
+      `The interface did not unmount cleanly: ${thrown instanceof Error ? thrown.message : "unknown failure"}`,
+    );
+  }
+}
+
+function register(
+  coordinator: ShutdownCoordinator | undefined,
+  terminal: Parameters<typeof createTerminalShutdownParticipant>[0],
+): void {
+  // A registration refused because shutdown had already begun is not worth
+  // failing the run over: the shell restores on its own way out regardless, and
+  // the coordinator refuses precisely because the phase may already have run.
+  coordinator?.register(createTerminalShutdownParticipant(terminal));
+}
+
+/** Resolves once any of the given signals has aborted. */
+function settled(...signals: readonly AbortSignal[]): Promise<void> {
+  const any = AbortSignal.any([...signals]);
+  if (any.aborted) {
+    return Promise.resolve();
+  }
+  return new Promise<void>((resolve) => {
+    any.addEventListener("abort", () => resolve(), { once: true });
+  });
+}

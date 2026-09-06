@@ -12,15 +12,14 @@
  * every consumer need a terminal.
  */
 
+import type { Instant, ScopeId } from "../../domain/foundation/index.ts";
+import { instant, scopeId } from "../../domain/foundation/index.ts";
 import type {
   EffectCertainty,
-  Instant,
   ScopeEvent,
-  ScopeId,
   ScopeKind,
   TerminalOutcome,
-} from "../../domain/index.ts";
-import { instant, scopeId } from "../../domain/index.ts";
+} from "../../domain/orchestration/index.ts";
 
 /** A fixed moment. Never a clock: a fixture that read one would not replay. */
 export const FIXTURE_INSTANT: Instant = instant(Date.UTC(2026, 7, 1, 9, 30, 0));

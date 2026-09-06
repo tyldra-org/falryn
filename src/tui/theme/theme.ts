@@ -14,7 +14,7 @@
  * exactly the terminal that cannot carry it.
  */
 
-import type { ColorLevel, SymbolSupport } from "../../domain/index.ts";
+import type { ColorLevel, SymbolSupport } from "../../domain/terminal/index.ts";
 import { resolvePalette } from "./palette.ts";
 import { type SymbolRole, type SymbolSet, symbolsFor } from "./symbols.ts";
 import {

@@ -1,10 +1,7 @@
 /** Read-only CLI opening boundaries for artifact and session storage. */
 
-import {
-  createArtifactReader,
-  fromSqliteStoreError,
-  fromUnknown,
-} from "../../application/index.ts";
+import { createArtifactReader } from "../../application/artifacts/index.ts";
+import { fromSqliteStoreError, fromUnknown } from "../../application/diagnostics/index.ts";
 import {
   createArtifactProvenanceRepository,
   createArtifactRepository,
@@ -15,18 +12,14 @@ import {
   rootChild,
   sqliteDatabasePath,
 } from "../../data/index.ts";
-import {
-  blocksLocalData,
-  DEFAULT_BUSY_TIMEOUT_MS,
-  type FalrynError,
-  runId,
-} from "../../domain/index.ts";
+import { type FalrynError, runId } from "../../domain/foundation/index.ts";
+import { blocksLocalData, DEFAULT_BUSY_TIMEOUT_MS } from "../../domain/storage/index.ts";
 import {
   createHostBlobStore,
   createSha256Hasher,
   openBunSqlite,
 } from "../../integrations/index.ts";
-import type { ServiceProvider } from "../services.ts";
+import type { ServiceProvider } from "../runtime/services.ts";
 
 type ArtifactStore = Extract<Awaited<ReturnType<typeof openSqliteStore>>, { ok: true }>["value"];
 

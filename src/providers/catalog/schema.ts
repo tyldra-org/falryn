@@ -2,13 +2,12 @@
 
 import { z } from "zod";
 
-import { brandedString, toCodecIssues } from "../../domain/branded-schema.ts";
-import type { CodecIssue } from "../../domain/codec-error.ts";
-import { providerId } from "../../domain/identity.ts";
-import { err, ok, type Result } from "../../domain/result.ts";
-import { PROVIDER_ADAPTER_KINDS } from "../adapter-kind.ts";
-import { MAX_PROVIDER_METADATA_ENTRY_LENGTH } from "../limits.ts";
-import { modelCapabilityDeclarationSchema } from "../model-capability-schema.ts";
+import { brandedString, toCodecIssues } from "../../domain/foundation/branded-schema.ts";
+import type { CodecIssue } from "../../domain/foundation/codec-error.ts";
+import { providerId } from "../../domain/foundation/identity.ts";
+import { err, ok, type Result } from "../../domain/foundation/result.ts";
+import { PROVIDER_ADAPTER_KINDS } from "../configuration/adapter-kind.ts";
+import { MAX_PROVIDER_METADATA_ENTRY_LENGTH } from "../protocol/limits.ts";
 import {
   isModelCatalogId,
   MAX_MODEL_CATALOG_SOURCES,
@@ -19,6 +18,7 @@ import {
   MODEL_CATALOG_SOURCE_KINDS,
   type ModelCatalogDocument,
 } from "./contracts.ts";
+import { modelCapabilityDeclarationSchema } from "./model-capability-schema.ts";
 
 const unique = (values: readonly string[]): boolean => new Set(values).size === values.length;
 

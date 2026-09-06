@@ -35,7 +35,15 @@
 import { afterEach, expect, test } from "bun:test";
 import { join } from "node:path";
 
-import { createArtifactViewer } from "../application/artifact-view.ts";
+import { createArtifactViewer } from "../application/artifacts/artifact-view.ts";
+import {
+  ARTIFACT_API_VERSION,
+  type ArtifactProvenancePort,
+  type ArtifactRepositoryPort,
+  type ArtifactStorePort,
+  artifactId,
+  type BlobStorePort,
+} from "../domain/artifacts/index.ts";
 import {
   everyEventKind,
   invocationRecord,
@@ -44,42 +52,37 @@ import {
   turnRecord,
 } from "../domain/fixtures.ts";
 import {
-  ARTIFACT_API_VERSION,
-  type ArtifactProvenancePort,
-  type ArtifactRepositoryPort,
-  type ArtifactStorePort,
-  artifactId,
-  type BlobStorePort,
   type ClockPort,
   createManualClock,
-  type EventStorePort,
-  type LocalPath,
-  localPath,
-  type ProjectionCursor,
-  type RecordRepositories,
   type RunId,
   runId as runIdCodec,
-  type SessionView,
-  type SqliteStorePort,
   sequence,
-  TERMINAL_OUTCOME_PROJECTION_GENERATION,
   type Timestamp,
-} from "../domain/index.ts";
+} from "../domain/foundation/index.ts";
+import {
+  type EventStorePort,
+  type ProjectionCursor,
+  type RecordRepositories,
+  type SessionView,
+  TERMINAL_OUTCOME_PROJECTION_GENERATION,
+} from "../domain/sessions/index.ts";
+import type { SqliteStorePort } from "../domain/storage/index.ts";
+import { type LocalPath, localPath } from "../domain/workspace/index.ts";
 import { createHostBlobStore, createSha256Hasher } from "../integrations/index.ts";
-import { createArtifactProvenanceRepository } from "./artifact-provenance-repository.ts";
-import { createArtifactRepository } from "./artifact-repository.ts";
-import { createArtifactStore, type DurableArtifactStore } from "./artifact-store.ts";
-import { createSqliteEventStore } from "./event-store.ts";
+import { createArtifactProvenanceRepository } from "./artifacts/artifact-provenance-repository.ts";
+import { createArtifactRepository } from "./artifacts/artifact-repository.ts";
+import { createArtifactStore, type DurableArtifactStore } from "./artifacts/artifact-store.ts";
 import {
   FIXTURE_INSTANT,
   temporaryRoot as makeTemporaryRoot,
   openProductStoreOrThrow,
   removeTemporaryRoots,
 } from "./fixtures.ts";
-import { createProjectionRunner, type ProjectionRunner } from "./projections.ts";
-import { beginRun } from "./recovery.ts";
-import { createRecordRepositories, readSessionView } from "./repositories.ts";
-import { PRODUCT_SCHEMA_VERSION, PRODUCTION_MIGRATIONS } from "./sqlite-migrations.ts";
+import { beginRun } from "./lifecycle/recovery.ts";
+import { createSqliteEventStore } from "./sessions/event-store.ts";
+import { createProjectionRunner, type ProjectionRunner } from "./sessions/projections.ts";
+import { createRecordRepositories, readSessionView } from "./sessions/repositories.ts";
+import { PRODUCT_SCHEMA_VERSION, PRODUCTION_MIGRATIONS } from "./sqlite/sqlite-migrations.ts";
 
 afterEach(removeTemporaryRoots);
 

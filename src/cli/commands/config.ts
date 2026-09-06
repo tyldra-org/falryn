@@ -5,7 +5,7 @@ import {
   fromConfigurationIssues,
   fromUnknown,
   fromUnreadConfigurationSources,
-} from "../../application/index.ts";
+} from "../../application/diagnostics/index.ts";
 import {
   CONFIGURATION_FILE_NAME,
   type ConfigurationFileScope,
@@ -19,13 +19,13 @@ import {
   type ConfigurationInspection,
   type ConfigurationIssue,
   isUnreadSource,
-  joinPath,
   type SourceReport,
-} from "../../domain/index.ts";
+} from "../../domain/configuration/index.ts";
+import { joinPath } from "../../domain/workspace/index.ts";
 import type { ConfigSetArguments } from "../command-tree.ts";
 import type { GlobalOptions } from "../options.ts";
-import type { CommandResultOf } from "../result.ts";
-import type { ServiceProvider } from "../services.ts";
+import type { CommandResultOf } from "../output/result.ts";
+import type { ServiceProvider } from "../runtime/services.ts";
 import {
   errorsFrom,
   MUTATION_NOT_OBSERVED,

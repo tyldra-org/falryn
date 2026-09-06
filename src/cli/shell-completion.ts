@@ -7,7 +7,7 @@
  * flag; fish has no upstream yargs template, so its wrapper lives here.
  */
 
-import { SESSION_CATALOG_FILTERS } from "../domain/index.ts";
+import { SESSION_CATALOG_FILTERS } from "../domain/sessions/index.ts";
 import { SCRIPT_NAME, SESSION_REPLAY_ACTIONS } from "./command-tree.ts";
 import { COLOR_CHOICES, OUTPUT_FORMATS } from "./options.ts";
 

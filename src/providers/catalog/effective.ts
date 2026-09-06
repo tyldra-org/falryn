@@ -1,10 +1,10 @@
 /** Strict codec for immutable effective model-catalog generations. */
 
-import { instant, modelId } from "../../domain/index.ts";
-import { err, ok, type Result } from "../../domain/result.ts";
-import type { CatalogProvenance, ModelCatalog } from "../discovery.ts";
-import type { ModelCapability } from "../model-capability.ts";
-import { parseModelCapability } from "../model-capability-schema.ts";
+import { instant, modelId } from "../../domain/foundation/index.ts";
+import { err, ok, type Result } from "../../domain/foundation/result.ts";
+import type { CatalogProvenance, ModelCatalog } from "./discovery.ts";
+import type { ModelCapability } from "./model-capability.ts";
+import { parseModelCapability } from "./model-capability-schema.ts";
 
 export type ModelCatalogParseError = {
   readonly kind: "model-catalog";

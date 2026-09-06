@@ -1,0 +1,850 @@
+/**
+ * Turn-level retry, fallback, refusal, partial, and terminal policy.
+ *
+ * Sits above the #43 stream consumer and #44 tool-call loop. Each attempt is
+ * visible ({@link AttemptIdentity}), retries are bounded via
+ * {@link evaluateRetry}, and fallback reuses `#37` {@link resolveNextFallback}
+ * with a visited set so routes never recurse.
+ *
+ * Optional {@link TurnEventJournalPort} records attempt/turn facts through the
+ * existing event store (#46). Replay never re-enters this policy or its runner.
+ * Does not talk to live vendor adapters. Callers inject an
+ * {@link AttemptRunnerPort} (tests use deterministic doubles).
+ */
+
+import {
+  assertNever,
+  type ConfigurationGeneration,
+  modelAttemptId,
+  NO_CORRELATION,
+  type TurnId,
+} from "../../domain/foundation/index.ts";
+import type {
+  EffectCertainty,
+  RetryPolicy,
+  TerminalOutcome,
+} from "../../domain/orchestration/index.ts";
+import {
+  type AttemptClassification,
+  type AttemptFact,
+  type AttemptFailureCategory,
+  type AttemptIdentity,
+  classifyAttempt,
+  DEFAULT_RETRY_BACKOFF,
+  decideAttemptAction,
+  evaluateRetry,
+  type ModelAttemptBinding,
+  type TurnCorrelation,
+  type TurnLifecycleFact,
+  type TurnSnapshot,
+  terminalOutcomeForClassification,
+} from "../../domain/sessions/index.ts";
+import type {
+  PromptCachePolicy,
+  ProviderModelIdentity,
+  ResolveRouteInput,
+  RoutingOutcome,
+  RoutingReceipt,
+} from "../../providers/index.ts";
+import {
+  providerModelIdentityKey,
+  resolveModelRoute,
+  resolveNextFallback,
+} from "../../providers/index.ts";
+import type { ProviderFailure, ProviderFailureKind } from "../../providers/protocol/errors.ts";
+import { providerPromptCachePolicy } from "../providers/provider-prompt-cache.ts";
+import { awaitBackoff } from "./recovery.ts";
+import type {
+  AttemptModelInput,
+  AttemptRecord,
+  TurnAttemptPolicy,
+  TurnAttemptPolicyOptions,
+  TurnAttemptPolicyOutcome,
+} from "./turn-attempt-policy/contracts.ts";
+import type { TurnCoordinator, TurnCoordinatorError } from "./turn-coordinator.ts";
+import type { TurnEventJournalPort } from "./turn-event-journal.ts";
+
+export * from "./turn-attempt-policy/contracts.ts";
+
+const DEFAULT_RETRY_POLICY: RetryPolicy = { maxAttempts: 3, retryable: true };
+
+function routeIdentity(receipt: RoutingReceipt): ProviderModelIdentity {
+  return {
+    providerProfileId: receipt.providerProfileId,
+    providerId: receipt.providerId,
+    modelId: receipt.modelId,
+  };
+}
+
+/** Map a provider failure kind onto the domain attempt category. */
+export function attemptCategoryForProviderFailure(
+  kind: ProviderFailureKind,
+): AttemptFailureCategory {
+  switch (kind) {
+    case "network":
+      return "transport";
+    case "rate-limit":
+      return "rate-limit";
+    case "authentication":
+      return "authentication";
+    case "authorization":
+      return "authorization";
+    case "invalid-request":
+      return "invalid-request";
+    case "unsupported-capability":
+      return "unsupported";
+    case "malformed-stream":
+      return "malformed";
+    case "provider-safety":
+      return "safety";
+    case "server-failure":
+      return "server";
+    case "adapter-defect":
+      return "adapter";
+    case "cancellation":
+      return "other";
+    case "timeout":
+      return "other";
+    default:
+      return assertNever(kind, "unhandled provider failure kind");
+  }
+}
+
+export function attemptFactFromProviderFailure(
+  failure: ProviderFailure,
+  options: {
+    readonly effect: EffectCertainty;
+    readonly observedContent: boolean;
+    readonly emittedToolProposal: boolean;
+  },
+): AttemptFact {
+  if (failure.kind === "cancellation") {
+    return { kind: "cancelled", effect: options.effect };
+  }
+  if (failure.kind === "timeout") {
+    return {
+      kind: "timed-out",
+      effect: options.effect,
+      retryable: failure.retryable,
+    };
+  }
+  if (failure.kind === "provider-safety") {
+    return {
+      kind: "refusal",
+      source: "provider-safety",
+      reason: failure.message,
+      effect: options.effect,
+    };
+  }
+  return {
+    kind: "failed",
+    category: attemptCategoryForProviderFailure(failure.kind),
+    retryable: failure.retryable,
+    effect: options.effect,
+    observedContent: options.observedContent,
+    emittedToolProposal: options.emittedToolProposal,
+    message: failure.message,
+  };
+}
+
+function routingDetail(outcome: Exclude<RoutingOutcome, { kind: "selected" }>): string {
+  switch (outcome.kind) {
+    case "no-eligible-route":
+      return outcome.code;
+    case "role-disabled":
+      return "role-disabled";
+    case "role-unconfigured":
+      return "role-unconfigured";
+    case "policy-invalid":
+      return outcome.code;
+    default:
+      return assertNever(outcome, "unhandled routing outcome");
+  }
+}
+
+function advanceToAssemblingContext(
+  coordinator: TurnCoordinator,
+  turnId: TurnId,
+  configurationGeneration: ConfigurationGeneration,
+): TurnCoordinatorError | null {
+  const snapshot = coordinator.get(turnId);
+  if (snapshot === null) {
+    return { code: "turn-not-found", turnId };
+  }
+  if (snapshot.status === "terminal") {
+    return null;
+  }
+  if (snapshot.phase === "assembling-context") {
+    return null;
+  }
+  if (snapshot.phase !== "created" && snapshot.phase !== "orienting") {
+    return null;
+  }
+  if (snapshot.phase === "created") {
+    const orient = coordinator.apply({
+      turnId,
+      command: "begin-orienting",
+      configurationGeneration,
+    });
+    if (!orient.ok) {
+      return orient.error;
+    }
+  }
+  const assemble = coordinator.apply({
+    turnId,
+    command: "begin-assembling-context",
+    configurationGeneration,
+  });
+  if (!assemble.ok) {
+    return assemble.error;
+  }
+  return null;
+}
+
+function recoverForNextAttempt(
+  coordinator: TurnCoordinator,
+  turnId: TurnId,
+  nextGeneration: ConfigurationGeneration,
+): TurnCoordinatorError | null {
+  const snapshot = coordinator.get(turnId);
+  if (snapshot === null) {
+    return { code: "turn-not-found", turnId };
+  }
+  if (snapshot.status !== "terminal") {
+    return null;
+  }
+  const recovered = coordinator.apply({
+    turnId,
+    command: "recover",
+    configurationGeneration: nextGeneration,
+    recoveryGeneration: nextGeneration,
+  });
+  if (!recovered.ok) {
+    return recovered.error;
+  }
+  return advanceToAssemblingContext(coordinator, turnId, nextGeneration);
+}
+
+function settleCommandFor(
+  classification: Exclude<
+    AttemptClassification,
+    | { readonly kind: "may-retry-same" }
+    | { readonly kind: "may-fallback" }
+    | { readonly kind: "completed" }
+  >,
+): {
+  readonly command: "fail" | "cancel" | "time-out" | "mark-uncertain";
+  readonly effect: EffectCertainty;
+} {
+  const outcome: TerminalOutcome = terminalOutcomeForClassification(classification);
+  switch (outcome.kind) {
+    case "failed":
+      return { command: "fail", effect: outcome.effect };
+    case "cancelled":
+      return { command: "cancel", effect: outcome.effect };
+    case "timed-out":
+      return { command: "time-out", effect: outcome.effect };
+    case "uncertain":
+      return { command: "mark-uncertain", effect: "uncertain" };
+    case "completed":
+      return { command: "fail", effect: "none" };
+    default:
+      return assertNever(outcome, "unhandled terminal outcome");
+  }
+}
+
+/**
+ * Drive a non-terminal turn to a named settlement. Walks the happy-path phase
+ * chain when still early so `complete` / `fail` are legal.
+ */
+function ensureTerminal(
+  coordinator: TurnCoordinator,
+  turnId: TurnId,
+  configurationGeneration: ConfigurationGeneration,
+  classification: Exclude<
+    AttemptClassification,
+    { readonly kind: "may-retry-same" } | { readonly kind: "may-fallback" }
+  >,
+): TurnSnapshot | null {
+  let current = coordinator.get(turnId);
+  if (current === null) {
+    return null;
+  }
+  if (current.status === "terminal") {
+    return current;
+  }
+
+  const phaseOrder = [
+    "assembling-context",
+    "awaiting-model",
+    "handling-model-event",
+    "evaluating-completion",
+  ] as const;
+  const beginCommands = {
+    "assembling-context": "begin-awaiting-model",
+    "awaiting-model": "begin-handling-model-event",
+    "handling-model-event": "begin-evaluating-completion",
+  } as const;
+
+  while (current.status === "active") {
+    if (current.phase === "evaluating-completion" || current.phase === "executing-capability") {
+      break;
+    }
+    if (current.phase === "orienting" || current.phase === "created") {
+      const advanced = advanceToAssemblingContext(coordinator, turnId, configurationGeneration);
+      if (advanced !== null) {
+        return coordinator.get(turnId);
+      }
+      current = coordinator.get(turnId) ?? current;
+      continue;
+    }
+    if (!(current.phase in beginCommands)) {
+      break;
+    }
+    const command = beginCommands[current.phase as keyof typeof beginCommands];
+    const applied = coordinator.apply({
+      turnId,
+      command,
+      configurationGeneration,
+    });
+    if (!applied.ok) {
+      break;
+    }
+    current = applied.value.snapshot;
+    if (!phaseOrder.includes(current.phase as (typeof phaseOrder)[number])) {
+      break;
+    }
+  }
+
+  current = coordinator.get(turnId);
+  if (current === null || current.status === "terminal") {
+    return current;
+  }
+
+  if (classification.kind === "completed") {
+    if (current.phase !== "evaluating-completion") {
+      // Best-effort: if still in handling-model-event, move to evaluating.
+      if (current.phase === "handling-model-event") {
+        coordinator.apply({
+          turnId,
+          command: "begin-evaluating-completion",
+          configurationGeneration,
+        });
+      }
+    }
+    coordinator.apply({
+      turnId,
+      command: "complete",
+      configurationGeneration,
+    });
+    return coordinator.get(turnId);
+  }
+
+  const { command, effect } = settleCommandFor(classification);
+  coordinator.apply({
+    turnId,
+    command,
+    configurationGeneration,
+    effect,
+  });
+  return coordinator.get(turnId);
+}
+
+function mustTurn(coordinator: TurnCoordinator, turnId: TurnId): TurnSnapshot {
+  const turn = coordinator.get(turnId);
+  if (turn === null) {
+    throw new Error(`turn ${turnId} missing after settlement`);
+  }
+  return turn;
+}
+
+function correlationFor(snapshot: TurnSnapshot): TurnCorrelation {
+  return {
+    workspaceId: snapshot.workspaceId,
+    sessionId: snapshot.sessionId,
+    traceId: snapshot.traceId,
+    configurationGeneration: snapshot.configurationGeneration,
+    turnId: snapshot.turnId,
+  };
+}
+
+function attemptBinding(
+  receipt: RoutingReceipt,
+  modelInput: AttemptModelInput | undefined,
+  generation: ConfigurationGeneration,
+  promptCache: PromptCachePolicy | undefined,
+): ModelAttemptBinding {
+  const disclosure = modelInput?.disclosure;
+  return {
+    schemaVersion: 1,
+    providerId: receipt.providerId,
+    providerProfileId: receipt.providerProfileId,
+    providerAdapterKind: receipt.providerAdapterKind,
+    providerDestinationId: receipt.providerDestinationId,
+    transportCompatibilityId: receipt.transportCompatibilityId,
+    modelId: receipt.modelId,
+    role: receipt.role,
+    intent: receipt.intent,
+    reasoning: receipt.reasoning,
+    providerReasoningControl: receipt.reasoningControl,
+    ...(modelInput?.executionPolicy === undefined
+      ? {}
+      : {
+          executionProfile: {
+            id: modelInput.executionPolicy.profileId,
+            version: modelInput.executionPolicy.profileVersion,
+            completion: modelInput.executionPolicy.completion,
+          },
+        }),
+    providerCatalogGeneration: receipt.catalogGeneration,
+    modelCapabilitySchemaVersion: receipt.modelCapabilitySchemaVersion,
+    toolCatalogGeneration: disclosure?.catalogGeneration ?? generation,
+    policyGeneration: generation,
+    runner: "product-attempt-runner.v1",
+    gateway: "product-tool-gateway.v1",
+    discoveryHandle: disclosure?.discoveryHandle ?? `capability-catalog:${generation}`,
+    ...(disclosure?.opportunityPlan === undefined
+      ? {}
+      : { opportunityPlan: disclosure.opportunityPlan }),
+    ...(disclosure?.capabilityCatalog === undefined
+      ? {}
+      : { capabilityCatalog: disclosure.capabilityCatalog }),
+    families: disclosure?.families ?? [],
+    tools: disclosure?.tools ?? [],
+    omitted: disclosure?.omitted ?? [],
+    schemaBytes: disclosure?.schemaBytes ?? 0,
+    schemaTokensEstimated: disclosure?.schemaTokensEstimated ?? 0,
+    ...(promptCache === undefined ? {} : { promptCache }),
+    budgets: {
+      attempts: receipt.budgets.attempts ?? null,
+      inputTokens: receipt.budgets.inputTokens ?? null,
+      outputTokens: receipt.budgets.outputTokens ?? null,
+      wallTimeMs: receipt.budgets.wallTimeMs ?? null,
+      cost: receipt.budgets.cost ?? null,
+    },
+  };
+}
+
+/** Maps an attempt classification onto the durable attempt terminal fact. */
+function outcomeForAttemptRecord(classification: AttemptClassification): TerminalOutcome {
+  switch (classification.kind) {
+    case "completed":
+      return { kind: "completed" };
+    case "may-retry-same":
+    case "may-fallback":
+      return { kind: "failed", effect: classification.effect };
+    case "refusal":
+    case "partial":
+    case "failed":
+    case "cancelled":
+    case "timed-out":
+    case "uncertain":
+      return terminalOutcomeForClassification(classification);
+    default:
+      return assertNever(classification, "unhandled attempt classification");
+  }
+}
+
+async function persistFacts(
+  journal: TurnEventJournalPort | undefined,
+  facts: readonly TurnLifecycleFact[],
+  signal: AbortSignal,
+): Promise<void> {
+  if (journal === undefined || facts.length === 0) {
+    return;
+  }
+  await journal.persist(facts, signal);
+}
+
+function settleFromClassification(
+  coordinator: TurnCoordinator,
+  turnId: TurnId,
+  configurationGeneration: ConfigurationGeneration,
+  attempts: readonly AttemptRecord[],
+  classification: Exclude<
+    AttemptClassification,
+    { readonly kind: "may-retry-same" } | { readonly kind: "may-fallback" }
+  >,
+  existingTurn: TurnSnapshot | null = null,
+): TurnAttemptPolicyOutcome {
+  const turn =
+    existingTurn?.status === "terminal"
+      ? existingTurn
+      : (ensureTerminal(coordinator, turnId, configurationGeneration, classification) ??
+        existingTurn);
+
+  switch (classification.kind) {
+    case "completed":
+      return {
+        kind: "completed",
+        attempts,
+        turn: turn ?? mustTurn(coordinator, turnId),
+      };
+    case "refusal":
+      return {
+        kind: "refusal",
+        source: classification.source,
+        reason: classification.reason,
+        effect: classification.effect,
+        attempts,
+        turn,
+      };
+    case "partial":
+      return {
+        kind: "partial",
+        reason: classification.reason,
+        effect: classification.effect,
+        attempts,
+        turn: turn ?? mustTurn(coordinator, turnId),
+      };
+    case "failed":
+      return {
+        kind: "failed",
+        effect: classification.effect,
+        message: classification.message,
+        attempts,
+        turn: turn ?? mustTurn(coordinator, turnId),
+      };
+    case "cancelled":
+      return {
+        kind: "cancelled",
+        effect: classification.effect,
+        attempts,
+        turn: turn ?? mustTurn(coordinator, turnId),
+      };
+    case "timed-out":
+      return {
+        kind: "timed-out",
+        effect: classification.effect,
+        attempts,
+        turn: turn ?? mustTurn(coordinator, turnId),
+      };
+    case "uncertain":
+      return {
+        kind: "uncertain",
+        effect: "uncertain",
+        attempts,
+        turn: turn ?? mustTurn(coordinator, turnId),
+      };
+    default:
+      return assertNever(classification, "unhandled settlement classification");
+  }
+}
+
+export function createTurnAttemptPolicy(options: TurnAttemptPolicyOptions): TurnAttemptPolicy {
+  const retryPolicy = options.retryPolicy ?? DEFAULT_RETRY_POLICY;
+  const backoff = options.backoff ?? DEFAULT_RETRY_BACKOFF;
+  const jitter = options.jitter ?? (() => 0);
+  const turnLifecycleJournal = options.persistTurnLifecycle === false ? undefined : options.journal;
+
+  return {
+    async run(input) {
+      const allocateAttemptId =
+        options.allocateAttemptId ??
+        ((attemptNumber: number) =>
+          modelAttemptId.from(`attempt:${String(input.turnId)}:${attemptNumber}`));
+      const attempts: AttemptRecord[] = [];
+      const routeInput: ResolveRouteInput = {
+        policy: options.policy,
+        catalogs: options.catalogs,
+        ...(input.intent === undefined ? {} : { intent: input.intent }),
+        ...(input.role === undefined ? {} : { role: input.role }),
+        ...(input.explicit === undefined ? {} : { explicit: input.explicit }),
+        ...(input.required === undefined ? {} : { required: input.required }),
+        now: options.clock.now(),
+      };
+
+      const initial = resolveModelRoute(routeInput);
+      if (initial.kind !== "selected") {
+        return {
+          kind: "routing-refused",
+          code: initial.kind,
+          detail: routingDetail(initial),
+          attempts,
+          turn: options.coordinator.get(input.turnId),
+        };
+      }
+
+      let receipt = initial.receipt;
+      const visited = new Set<string>([providerModelIdentityKey(routeIdentity(receipt))]);
+      let attemptsOnCurrentRoute = 0;
+      let elapsedMs = 0;
+      let generation = input.configurationGeneration;
+      const startedAt = options.clock.now();
+
+      const prepared = advanceToAssemblingContext(options.coordinator, input.turnId, generation);
+      if (prepared !== null) {
+        return {
+          kind: "turn-error",
+          error: prepared,
+          attempts,
+          turn: options.coordinator.get(input.turnId),
+        };
+      }
+
+      const opened = options.coordinator.get(input.turnId);
+      if (opened !== null) {
+        await persistFacts(
+          turnLifecycleJournal,
+          [{ kind: "turn.started", correlation: correlationFor(opened) }],
+          input.signal,
+        );
+      }
+
+      while (true) {
+        if (input.signal.aborted) {
+          const cancelled = settleFromClassification(
+            options.coordinator,
+            input.turnId,
+            generation,
+            attempts,
+            {
+              kind: "cancelled",
+              effect: "none",
+            },
+          );
+          const settled = options.coordinator.get(input.turnId);
+          if (settled?.status === "terminal") {
+            await persistFacts(
+              turnLifecycleJournal,
+              [
+                {
+                  kind: "turn.completed",
+                  correlation: correlationFor(settled),
+                  outcome: settled.outcome,
+                },
+              ],
+              input.signal,
+            );
+          }
+          return cancelled;
+        }
+
+        const current = options.coordinator.get(input.turnId);
+        if (current?.status === "terminal") {
+          const nextGeneration = (generation + 1) as ConfigurationGeneration;
+          const recovered = recoverForNextAttempt(
+            options.coordinator,
+            input.turnId,
+            nextGeneration,
+          );
+          if (recovered !== null) {
+            return {
+              kind: "turn-error",
+              error: recovered,
+              attempts,
+              turn: options.coordinator.get(input.turnId),
+            };
+          }
+          generation = nextGeneration;
+        }
+
+        const attemptNumber = attempts.length + 1;
+        const identity: AttemptIdentity = {
+          attemptNumber,
+          modelAttemptId: allocateAttemptId(attemptNumber),
+          fallbackPosition: receipt.fallbackPosition,
+          providerKey: receipt.providerId,
+          modelKey: receipt.modelId,
+        };
+
+        const live = options.coordinator.get(input.turnId);
+        const promptCache =
+          live === null ||
+          input.modelInput?.promptCache === undefined ||
+          receipt.promptCacheMode === null ||
+          receipt.promptCacheMode === undefined
+            ? undefined
+            : providerPromptCachePolicy({
+                sessionId: live.sessionId,
+                configurationGeneration: input.configurationGeneration,
+                receipt,
+                seed: input.modelInput.promptCache,
+              });
+        if (live !== null) {
+          await persistFacts(
+            options.journal,
+            [
+              {
+                kind: "model.attempt.started",
+                correlation: correlationFor(live),
+                modelAttemptId: identity.modelAttemptId,
+                binding: attemptBinding(
+                  receipt,
+                  input.modelInput,
+                  input.configurationGeneration,
+                  promptCache,
+                ),
+              },
+            ],
+            input.signal,
+          );
+        }
+
+        const runnerResult = await options.runner.run({
+          turnId: input.turnId,
+          identity,
+          receipt,
+          boundConfigurationGeneration: input.configurationGeneration,
+          configurationGeneration: generation,
+          signal: input.signal,
+          modelInput: input.modelInput ?? null,
+          ...(promptCache === undefined ? {} : { promptCache }),
+        });
+
+        elapsedMs = Math.max(elapsedMs, Number(options.clock.now()) - Number(startedAt));
+
+        const classification = classifyAttempt(runnerResult.fact);
+        const fallbackProbe = resolveNextFallback(
+          { ...routeInput, visited, now: options.clock.now() },
+          receipt,
+        );
+        const fallbackAvailable = fallbackProbe.kind === "selected";
+
+        let retryDecision = null;
+        if (classification.kind === "may-retry-same") {
+          attemptsOnCurrentRoute += 1;
+          retryDecision = evaluateRetry({
+            error: {
+              code: "provider.attempt.retryable",
+              category: "provider",
+              message: classification.message,
+              retryable: true,
+              effect: classification.effect,
+              cause: null,
+              correlation: { ...NO_CORRELATION, turnId: input.turnId },
+              recovery: ["retry"],
+              exitCategory: "runtime-error",
+              related: [],
+              relatedDropped: 0,
+              recognized: true,
+            },
+            policy: retryPolicy,
+            attemptsMade: attemptsOnCurrentRoute,
+            elapsedMs,
+            elapsedBudgetMs: input.elapsedBudgetMs ?? null,
+            idempotent: true,
+            cancelled: input.signal.aborted,
+            backoff,
+            jitter,
+          });
+        }
+
+        const action = decideAttemptAction({
+          classification,
+          retryDecision,
+          fallbackAvailable,
+        });
+
+        attempts.push({
+          identity,
+          receipt,
+          fact: runnerResult.fact,
+          classification,
+          action,
+          output: runnerResult.output ?? null,
+        });
+
+        const attemptOutcome = outcomeForAttemptRecord(classification);
+        const afterAttempt = options.coordinator.get(input.turnId);
+        if (afterAttempt !== null) {
+          await persistFacts(
+            options.journal,
+            [
+              {
+                kind: "model.attempt.completed",
+                correlation: correlationFor(afterAttempt),
+                modelAttemptId: identity.modelAttemptId,
+                outcome: attemptOutcome,
+              },
+            ],
+            input.signal,
+          );
+        }
+
+        switch (action.kind) {
+          case "settle": {
+            const settled = settleFromClassification(
+              options.coordinator,
+              input.turnId,
+              generation,
+              attempts,
+              action.classification,
+              runnerResult.turn,
+            );
+            const terminal = options.coordinator.get(input.turnId);
+            if (terminal?.status === "terminal") {
+              await persistFacts(
+                turnLifecycleJournal,
+                [
+                  {
+                    kind: "turn.completed",
+                    correlation: correlationFor(terminal),
+                    outcome: terminal.outcome,
+                  },
+                ],
+                input.signal,
+              );
+            }
+            return settled;
+          }
+          case "retry-same": {
+            const waited = await awaitBackoff(
+              options.clock,
+              { kind: "retry", attempt: action.attempt, delayMs: action.delayMs },
+              input.signal,
+            );
+            if (waited === "cancelled" || input.signal.aborted) {
+              const cancelled = settleFromClassification(
+                options.coordinator,
+                input.turnId,
+                generation,
+                attempts,
+                { kind: "cancelled", effect: "none" },
+              );
+              const terminal = options.coordinator.get(input.turnId);
+              if (terminal?.status === "terminal") {
+                await persistFacts(
+                  turnLifecycleJournal,
+                  [
+                    {
+                      kind: "turn.completed",
+                      correlation: correlationFor(terminal),
+                      outcome: terminal.outcome,
+                    },
+                  ],
+                  input.signal,
+                );
+              }
+              return cancelled;
+            }
+            continue;
+          }
+          case "fallback": {
+            if (fallbackProbe.kind !== "selected") {
+              return {
+                kind: "exhausted",
+                reason: "fallback-exhausted",
+                attempts,
+                turn: options.coordinator.get(input.turnId),
+              };
+            }
+            receipt = fallbackProbe.receipt;
+            visited.add(providerModelIdentityKey(routeIdentity(receipt)));
+            attemptsOnCurrentRoute = 0;
+            continue;
+          }
+          case "exhausted":
+            return {
+              kind: "exhausted",
+              reason: action.reason,
+              attempts,
+              turn: options.coordinator.get(input.turnId),
+            };
+          default:
+            return assertNever(action, "unhandled attempt action");
+        }
+      }
+    },
+  };
+}

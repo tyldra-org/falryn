@@ -22,7 +22,7 @@
  * issue implements, and the one implementation here is the honest refusal.
  */
 
-import type { AttachmentDescriptor, MentionSpan } from "../../domain/index.ts";
+import type { AttachmentDescriptor, MentionSpan } from "../../domain/context/index.ts";
 
 /**
  * The text of one submission, as it was when it was sent.

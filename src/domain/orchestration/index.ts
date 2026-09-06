@@ -1,0 +1,281 @@
+/** Public contracts for this capability. Internal modules import their exact dependencies. */
+
+export type {
+  BudgetAmounts,
+  BudgetDimension,
+  BudgetError,
+  BudgetId,
+  BudgetLimits,
+  BudgetReport,
+  DimensionReport,
+  ReservationId,
+} from "./budget.ts";
+export {
+  BUDGET_DIMENSIONS,
+  enlargesLimits,
+  isBudgetDimension,
+  narrowLimits,
+  validateAmounts,
+} from "./budget.ts";
+export type {
+  AutomationOpportunity,
+  AutomationOpportunityKind,
+  CapabilityDegradationPlan,
+  CapabilityDegradationTrigger,
+  CapabilityFallbackTransition,
+  CapabilityOpportunityCandidate,
+  CapabilityUnavailableOutcome,
+  CapabilityUnavailableReason,
+  ModelCapabilityBrief,
+  OpportunityCandidateDecision,
+  OpportunityDecisionKind,
+  OpportunityModelAssistance,
+  OpportunityPlanInput,
+  OpportunityReasonCode,
+  OpportunitySignalFamily,
+} from "./opportunity-plan.ts";
+export {
+  AUTOMATION_OPPORTUNITY_KINDS,
+  CAPABILITY_DEGRADATION_SCHEMA_VERSION,
+  CAPABILITY_DEGRADATION_TRIGGERS,
+  CAPABILITY_UNAVAILABLE_REASONS,
+  DEFAULT_OPPORTUNITY_SCHEMA_TOKEN_BUDGET,
+  DEFAULT_OPPORTUNITY_SELECTION_LIMIT,
+  MAX_CAPABILITY_DEGRADATION_TRANSITIONS,
+  MAX_CAPABILITY_FALLBACKS_PER_SOURCE,
+  MAX_CAPABILITY_RUNTIME_FALLBACK_TRANSITIONS,
+  MAX_OPPORTUNITY_REASON_CODES,
+  MAX_OPPORTUNITY_REJECTIONS,
+  MAX_OPPORTUNITY_SCHEMA_TOKEN_BUDGET,
+  MAX_OPPORTUNITY_SELECTION_LIMIT,
+  MAX_OPPORTUNITY_TASK_CHARACTERS,
+  OPPORTUNITY_DECISIONS,
+  OPPORTUNITY_PLAN_SCHEMA_VERSION,
+  OPPORTUNITY_REASON_CODES,
+  OPPORTUNITY_SIGNAL_FAMILIES,
+  planCapabilityOpportunities,
+} from "./opportunity-plan.ts";
+export type { EffectCertainty, TerminalOutcome, TerminalOutcomeKind } from "./outcome.ts";
+export {
+  EFFECT_CERTAINTIES,
+  effectOf,
+  isTerminalOutcomeKind,
+  requiresInspection,
+  TERMINAL_OUTCOME_KINDS,
+} from "./outcome.ts";
+export type {
+  ArtifactHandle,
+  ArtifactSpillPort,
+  EnqueueOutcome,
+  LimitKind,
+  OverflowPolicy,
+  QueueItem,
+  QueueItemId,
+  QueueLimits,
+  QueueReport,
+} from "./queue.ts";
+export { OVERFLOW_POLICIES } from "./queue.ts";
+export type {
+  QueueDepthByPriority,
+  RecoveryOption,
+  ScheduledWork,
+  SchedulerLimits,
+  SchedulerPort,
+  SchedulerReport,
+  SchedulingError,
+  SchedulingResult,
+  WorkRunner,
+} from "./scheduling.ts";
+export { RECOVERY_OPTIONS } from "./scheduling.ts";
+export type {
+  CancellationReason,
+  ScopeError,
+  ScopeEvent,
+  ScopeEventKind,
+  ScopeKind,
+  ScopeReport,
+  ScopeState,
+  ScopeStatus,
+} from "./scope.ts";
+export {
+  cancellationOutcomeFor,
+  effectSeverity,
+  isScopeKind,
+  SCOPE_KINDS,
+  SCOPE_STATUSES,
+  timeoutOutcomeFor,
+  worstEffect,
+} from "./scope.ts";
+export type {
+  ParticipantReport,
+  ParticipantStatus,
+  PhaseReport,
+  ShutdownError,
+  ShutdownLevel,
+  ShutdownParticipant,
+  ShutdownPhase,
+  ShutdownPhaseContext,
+  ShutdownReport,
+} from "./shutdown.ts";
+export {
+  DEFAULT_PHASE_GRACE_MS,
+  ESCALATED_PHASE_GRACE_MS,
+  FORCED_PHASE_GRACE_MS,
+  graceForLevel,
+  isShutdownPhase,
+  MAX_SHUTDOWN_PARTICIPANTS,
+  SHUTDOWN_LEVELS,
+  SHUTDOWN_PHASES,
+} from "./shutdown.ts";
+export type {
+  TaskAdvisorAdvice,
+  TaskAdvisorError,
+  TaskAdvisorErrorCode,
+  TaskAdvisorFinding,
+  TaskAdvisorInput,
+  TaskAdvisorMode,
+  TaskAdvisorProposal,
+  TaskAdvisorProvenance,
+} from "./task-advisor.ts";
+export {
+  adviseTask,
+  describeTaskAdvisorError,
+  MAX_ADVISOR_EVIDENCE,
+  MAX_ADVISOR_PROPOSALS,
+  MAX_ADVISOR_QUESTION_BYTES,
+  MAX_ADVISOR_RUBRIC,
+  MAX_ADVISOR_TEXT_BYTES,
+  TASK_ADVISOR_MODES,
+  TASK_ADVISOR_SOURCE,
+  TASK_ADVISOR_VERSION,
+} from "./task-advisor.ts";
+export type {
+  TaskCommitAdvice,
+  TaskCommitPlanError,
+  TaskCommitPlanErrorCode,
+  TaskCommitPlanInput,
+  TaskCommitPlanProvenance,
+} from "./task-commit-plan.ts";
+export {
+  describeTaskCommitPlanError,
+  MAX_COMMIT_SCOPE_PATH_BYTES,
+  MAX_COMMIT_SCOPE_PATHS,
+  planTaskCommits,
+  TASK_COMMIT_PLAN_SOURCE,
+  TASK_COMMIT_PLAN_VERSION,
+} from "./task-commit-plan.ts";
+export type {
+  BoundedTask,
+  TaskDecomposeError,
+  TaskDecomposeErrorCode,
+  TaskDecomposeInput,
+  TaskDecomposeProvenance,
+  TaskDecomposition,
+} from "./task-decompose.ts";
+export {
+  decomposeUserOutcome,
+  describeTaskDecomposeError,
+  MAX_BOUNDED_TASKS,
+  MAX_GOAL_BYTES,
+  MAX_GOALS,
+  MAX_NON_GOALS,
+  MAX_OUTCOME_STATEMENT_BYTES,
+  TASK_DECOMPOSE_SOURCE,
+  TASK_DECOMPOSE_VERSION,
+} from "./task-decompose.ts";
+export type {
+  TaskCompletionCriterion,
+  TaskGraph,
+  TaskGraphBlocker,
+  TaskGraphError,
+  TaskGraphErrorCode,
+  TaskGraphInput,
+  TaskGraphNode,
+  TaskGraphProvenance,
+  TaskGraphReadiness,
+  TaskJoinPolicy,
+} from "./task-graph.ts";
+export {
+  describeTaskGraphError,
+  isTaskJoinPolicy,
+  MAX_GRAPH_BLOCKERS,
+  MAX_GRAPH_CRITERIA,
+  MAX_GRAPH_EDGES,
+  MAX_GRAPH_TASKS,
+  MAX_GRAPH_TEXT_BYTES,
+  planTaskGraph,
+  TASK_GRAPH_READINESS,
+  TASK_GRAPH_SOURCE,
+  TASK_GRAPH_VERSION,
+  TASK_JOIN_POLICIES,
+} from "./task-graph.ts";
+export type {
+  TaskObservation,
+  TaskObservationStatus,
+  TaskProgressAction,
+  TaskProgressActionKind,
+  TaskProgressError,
+  TaskProgressErrorCode,
+  TaskProgressInput,
+  TaskProgressNode,
+  TaskProgressOverall,
+  TaskProgressProjection,
+  TaskProgressProvenance,
+  TaskProgressState,
+} from "./task-progress.ts";
+export {
+  describeTaskProgressError,
+  MAX_PROGRESS_NOTE_BYTES,
+  MAX_PROGRESS_OBSERVATIONS,
+  projectTaskProgress,
+  TASK_OBSERVATION_STATUSES,
+  TASK_PROGRESS_ACTION_KINDS,
+  TASK_PROGRESS_OVERALL,
+  TASK_PROGRESS_SOURCE,
+  TASK_PROGRESS_STATES,
+  TASK_PROGRESS_VERSION,
+} from "./task-progress.ts";
+export type {
+  TaskValidationAdvice,
+  TaskValidationError,
+  TaskValidationErrorCode,
+  TaskValidationInput,
+  TaskValidationKind,
+  TaskValidationProvenance,
+  TaskValidationRecommendation,
+} from "./task-validation.ts";
+export {
+  describeTaskValidationError,
+  MAX_CRITERIA_PER_TASK,
+  MAX_CRITERION_BYTES,
+  MAX_VALIDATION_RECOMMENDATIONS,
+  MAX_VALIDATION_TASKS,
+  recommendTaskValidation,
+  TASK_VALIDATION_KINDS,
+  TASK_VALIDATION_SOURCE,
+  TASK_VALIDATION_VERSION,
+} from "./task-validation.ts";
+export type {
+  ConflictKey,
+  EffectClass,
+  PriorityClass,
+  RetryPolicy,
+  WorkUnit,
+  WorkUnitError,
+  WorkUnitId,
+} from "./work.ts";
+export {
+  conflictKey,
+  EFFECT_CLASSES,
+  effectiveConflictKeys,
+  GLOBAL_CONFLICT_KEY,
+  isEffectClass,
+  isFreelyParallel,
+  isPriorityClass,
+  MAX_WORK_IDENTIFIER_LENGTH,
+  NO_RETRY,
+  PRIORITY_CLASSES,
+  parseWorkUnitId,
+  priorityRank,
+  workUnitId,
+} from "./work.ts";

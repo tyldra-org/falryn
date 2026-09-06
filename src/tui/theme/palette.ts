@@ -21,7 +21,7 @@
  * and words, which `contrast.ts` and its tests hold to.
  */
 
-import type { ColorLevel } from "../../domain/index.ts";
+import type { ColorLevel } from "../../domain/terminal/index.ts";
 import type { ColorToken, Palette, ThemeVariant } from "./tokens.ts";
 
 /**

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import type { ProductLiveTurnExecutor } from "../../application/index.ts";
+import type { ProductLiveTurnExecutor } from "../../application/runtime/index.ts";
 import {
   configurationGeneration,
   modelId,
@@ -8,7 +8,7 @@ import {
   sessionId,
   turnId,
   workspaceId,
-} from "../../domain/index.ts";
+} from "../../domain/foundation/index.ts";
 import { type ProviderModelIdentity, sameProviderModelIdentity } from "../../providers/index.ts";
 import { createProductSubmissionPort, snapshotOf, UNAVAILABLE_SUBMISSION } from "./index.ts";
 

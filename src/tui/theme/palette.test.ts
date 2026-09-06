@@ -8,7 +8,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { COLOR_LEVELS, type ColorLevel } from "../../domain/index.ts";
+import { COLOR_LEVELS, type ColorLevel } from "../../domain/terminal/index.ts";
 import { PALETTES, parseHex, quantize, resolvePalette } from "./palette.ts";
 import { COLOR_TOKENS, THEME_VARIANTS } from "./tokens.ts";
 

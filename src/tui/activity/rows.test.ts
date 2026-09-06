@@ -14,7 +14,7 @@ import {
   type EffectCertainty,
   TERMINAL_OUTCOME_KINDS,
   type TerminalOutcome,
-} from "../../domain/index.ts";
+} from "../../domain/orchestration/index.ts";
 import type { ActivityEntry, HealthLevel, RuntimeHealth } from "../../presentation/index.ts";
 import { HEALTH_LEVELS } from "../../presentation/index.ts";
 import { resolveTheme, STATUS_PRESENTATION, type StatusToken } from "../theme/index.ts";

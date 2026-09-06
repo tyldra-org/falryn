@@ -32,8 +32,8 @@
  * Nothing here holds React, OpenTUI, a clock, or a colour literal.
  */
 
-import type { Timestamp } from "../../domain/index.ts";
-import { assertNever, timestampToEpochMilliseconds } from "../../domain/index.ts";
+import type { Timestamp } from "../../domain/foundation/index.ts";
+import { assertNever, timestampToEpochMilliseconds } from "../../domain/foundation/index.ts";
 import type {
   BoundedText,
   Disclosure,

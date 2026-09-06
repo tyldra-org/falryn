@@ -4,26 +4,25 @@ import { chmod, mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { REDACTED } from "../application/index.ts";
+import { REDACTED } from "../application/diagnostics/index.ts";
 import {
   CONFIGURATION_FILE_NAME,
   CONFIGURATION_SCHEMA_VERSION,
   PROJECT_CONFIGURATION_DIRECTORY,
   SCHEMA_VERSION_FIELD,
 } from "../config/index.ts";
+import { createStaticEnvironment, err } from "../domain/foundation/index.ts";
 import {
   createInMemoryFileSystem,
-  createStaticEnvironment,
-  err,
   type FileSystemErrorCode,
   type FileSystemPort,
   type InMemoryNode,
   localPath,
-} from "../domain/index.ts";
+} from "../domain/workspace/index.ts";
 import { runConfigPath, runConfigShow, runConfigValidate, runDoctor } from "./commands.ts";
-import { EXIT_CODES, resolveExitCode } from "./exit.ts";
 import { DIAGNOSTIC_LEVEL_KEY, type GlobalOptions } from "./options.ts";
-import { createServiceProvider, type ServiceProvider } from "./services.ts";
+import { EXIT_CODES, resolveExitCode } from "./output/exit.ts";
+import { createServiceProvider, type ServiceProvider } from "./runtime/services.ts";
 
 /** Token-shaped text the runtime redactor recognizes. Never a real credential. */
 const SECRET = "sk-live-ABCDEFGH12345678";

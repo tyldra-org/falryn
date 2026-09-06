@@ -1,15 +1,12 @@
-import type { ProductToolConfirmationPort } from "../application/index.ts";
+import type { ProductToolConfirmationPort } from "../application/tools/index.ts";
+import { type ArtifactId, type ArtifactStorePort, artifactId } from "../domain/artifacts/index.ts";
+import { instant, processCaptureId } from "../domain/foundation/index.ts";
 import {
-  type ArtifactId,
-  type ArtifactStorePort,
-  artifactId,
   createProcessCaptureCollector,
-  instant,
   type ProcessCapturePort,
-  processCaptureId,
-  type RuntimeEvent,
   resolveProcessCaptureLimits,
-} from "../domain/index.ts";
+} from "../domain/process/index.ts";
+import type { RuntimeEvent } from "../domain/sessions/index.ts";
 import {
   createDeterministicProviderAdapter,
   type ModelMessage,

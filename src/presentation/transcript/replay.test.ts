@@ -30,7 +30,7 @@
 
 import { describe, expect, test } from "bun:test";
 import { everyEventKind, FIXTURE_STREAM } from "../../domain/fixtures.ts";
-import { capabilityId, type StreamId } from "../../domain/index.ts";
+import { capabilityId, type StreamId } from "../../domain/foundation/index.ts";
 import { initialCursor, resumable, TRANSCRIPT_PROJECTION_GENERATION } from "./generation.ts";
 import { reduceTranscript } from "./reducer.ts";
 

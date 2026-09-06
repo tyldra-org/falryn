@@ -28,9 +28,9 @@ import {
   PROBE_MARKER,
   PROBE_SCENARIOS,
   type ProbeScenario,
-} from "./probe-fixtures.tsx";
+} from "./runtime/probe-fixtures.tsx";
 
-const FIXTURE = join(dirname(import.meta.path), "probe-fixtures.tsx");
+const FIXTURE = join(dirname(import.meta.path), "runtime/probe-fixtures.tsx");
 
 /** A disposable compiler workspace, including the fixture executable. */
 const fixtureDirectory = await mkdtemp(join(tmpdir(), "falryn-opentui-probe-"));

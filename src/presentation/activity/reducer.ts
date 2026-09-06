@@ -27,7 +27,7 @@
  * take.
  */
 
-import type { ScopeEvent } from "../../domain/index.ts";
+import type { ScopeEvent } from "../../domain/orchestration/index.ts";
 import { type ActivityEntry, entryForEvent, foldEntry, isLive } from "./entries.ts";
 
 /**

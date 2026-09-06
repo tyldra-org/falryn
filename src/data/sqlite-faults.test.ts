@@ -10,16 +10,11 @@
 
 import { afterEach, describe, expect, test } from "bun:test";
 import { readdir } from "node:fs/promises";
-import { createShutdownCoordinator } from "../application/index.ts";
-import {
-  createManualClock,
-  instant,
-  type LocalPath,
-  type ManualClock,
-  type Migration,
-  type ShutdownReport,
-  type SqliteStorePort,
-} from "../domain/index.ts";
+import { createShutdownCoordinator } from "../application/runtime/index.ts";
+import { createManualClock, instant, type ManualClock } from "../domain/foundation/index.ts";
+import type { ShutdownReport } from "../domain/orchestration/index.ts";
+import type { Migration, SqliteStorePort } from "../domain/storage/index.ts";
+import type { LocalPath } from "../domain/workspace/index.ts";
 import {
   type Faults,
   faultingOpener,
@@ -30,7 +25,7 @@ import {
   createSqliteShutdownParticipant,
   openSqliteStore,
   sqliteDatabasePath,
-} from "./sqlite-store.ts";
+} from "./sqlite/sqlite-store.ts";
 
 function temporaryRoot(): Promise<LocalPath> {
   return makeTemporaryRoot("falryn-sqlite-fault-");

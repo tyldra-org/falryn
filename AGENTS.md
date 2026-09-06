@@ -55,6 +55,14 @@ maintainer addition, never a prerequisite for ordinary public work. This
 checkout is authoritative for its vendored bundles. A global installation is an
 optional convenience and must not become a public-checkout dependency.
 
+## Source organization
+
+Follow the capability layout in `DEVELOPMENT.md`. Extend the owning capability
+within its layer; keep test fixtures beside their subject and host composition
+out of application actions. Revisit the complete design before adding a special
+case. Do not create empty source files for open issues or revive layer-wide
+export catalogs.
+
 ## Validation
 
 - Follow the public validation contract in `DEVELOPMENT.md` and the exact

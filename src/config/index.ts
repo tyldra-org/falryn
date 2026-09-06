@@ -11,21 +11,7 @@
  * supplies it; this area writes no redaction rules of its own.
  */
 
-export type { BridgeResult } from "./bridges.ts";
-export { readEnvironmentLayer, readOverrideLayer } from "./bridges.ts";
-export type { Composition, CompositionInputs, LayerInput } from "./composition.ts";
-export { composeLayers, declaredKeysOf } from "./composition.ts";
-export type {
-  CredentialReferenceLookup,
-  CredentialRemovalRequest,
-} from "./credentials.ts";
-export {
-  createInMemoryReferenceStore,
-  parseCredentialReference,
-  readCredentialReference,
-  removeCredential,
-} from "./credentials.ts";
-export type { ConfigurationKeyDeclaration } from "./declaration.ts";
+export type { ConfigurationKeyDeclaration } from "./document/declaration.ts";
 export {
   credentialReferenceKey,
   enumKey,
@@ -37,31 +23,74 @@ export {
   mapZodIssues,
   objectKey,
   pathOverrideKey,
-} from "./declaration.ts";
+} from "./document/declaration.ts";
 export {
   assignConfigurationValue,
   createEmptyConfigurationDocument,
   parseConfigurationDocument,
   serializeConfigurationDocument,
-} from "./document.ts";
+} from "./document/document.ts";
+export { MAX_CONFIGURATION_FILE_BYTES, parseJsonc, positionOf } from "./document/jsonc.ts";
+export type { SchemaVersionPolicy, SchemaVersionVerdict } from "./document/schema-family.ts";
 export {
-  diffGenerations,
-  nextGeneration,
-  strongestApplicationClass,
-} from "./generation.ts";
+  CONFIGURATION_MINIMUM_SCHEMA_VERSION,
+  CONFIGURATION_SCHEMA_FAMILY,
+  CONFIGURATION_SCHEMA_VERSION,
+  DEFAULT_SCHEMA_VERSION_POLICY,
+  evaluateSchemaVersion,
+  MINIMUM_READER_FIELD,
+  RESERVED_DOCUMENT_FIELDS,
+  SCHEMA_VERSION_FIELD,
+} from "./document/schema-family.ts";
+export type {
+  CredentialReferenceLookup,
+  CredentialRemovalRequest,
+} from "./host/credentials.ts";
+export {
+  createInMemoryReferenceStore,
+  parseCredentialReference,
+  readCredentialReference,
+  removeCredential,
+} from "./host/credentials.ts";
 export type {
   ConfigurationHomeResolution,
   ConfigurationHomeRoots,
   ConfigurationHomeWriteResolution,
-} from "./home.ts";
+} from "./host/home.ts";
 export {
   configurationHomeIssue,
   prepareConfigurationHomeForWrite,
   resolveConfigurationHome,
-} from "./home.ts";
-export { inspectGeneration } from "./inspection.ts";
-export { MAX_CONFIGURATION_FILE_BYTES, parseJsonc, positionOf } from "./jsonc.ts";
-export type { RetentionClass } from "./keys.ts";
+} from "./host/home.ts";
+export type {
+  ConfigurationReloadWatcher,
+  ConfigurationReloadWatcherOptions,
+  FileChangeSubscriber,
+} from "./host/reload-watcher.ts";
+export { createConfigurationReloadWatcher } from "./host/reload-watcher.ts";
+export type {
+  ConfigurationFileScope,
+  ConfigurationValueWriteRequest,
+  ConfigurationWriteOutcome,
+  ConfigurationWriteRequest,
+} from "./host/writer.ts";
+export {
+  configurationSourcePaths,
+  resolveConfigurationFilePath,
+  writeConfigurationKey,
+  writeConfigurationValue,
+} from "./host/writer.ts";
+export type { BridgeResult } from "./resolution/bridges.ts";
+export { readEnvironmentLayer, readOverrideLayer } from "./resolution/bridges.ts";
+export type { Composition, CompositionInputs, LayerInput } from "./resolution/composition.ts";
+export { composeLayers, declaredKeysOf } from "./resolution/composition.ts";
+export {
+  diffGenerations,
+  nextGeneration,
+  strongestApplicationClass,
+} from "./resolution/generation.ts";
+export { inspectGeneration } from "./resolution/inspection.ts";
+export type { RetentionClass } from "./resolution/keys.ts";
 export {
   DATA_KEYS,
   DIAGNOSTICS_KEYS,
@@ -74,37 +103,20 @@ export {
   TOTAL_QUOTA_COVERS_CLASSES,
   V0_1_CONFIGURATION_KEYS,
   V0_1_CROSS_FIELD_RULES,
-} from "./keys.ts";
+} from "./resolution/keys.ts";
 export type {
   ConfigurationLoader,
   ConfigurationLoaderOptions,
   LoadRequest,
-} from "./loader.ts";
-export { createConfigurationLoader } from "./loader.ts";
-export { CONFIGURATION_OWNERSHIP } from "./ownership.ts";
+} from "./resolution/loader.ts";
+export { createConfigurationLoader } from "./resolution/loader.ts";
+export { CONFIGURATION_OWNERSHIP } from "./resolution/ownership.ts";
 export type {
   ConfigurationCrossFieldRule,
   ConfigurationRegistryOptions,
-} from "./registry.ts";
-export { createConfigurationRegistry, foldDeclaredValue } from "./registry.ts";
-export type {
-  ConfigurationReloadWatcher,
-  ConfigurationReloadWatcherOptions,
-  FileChangeSubscriber,
-} from "./reload-watcher.ts";
-export { createConfigurationReloadWatcher } from "./reload-watcher.ts";
-export type { SchemaVersionPolicy, SchemaVersionVerdict } from "./schema-family.ts";
-export {
-  CONFIGURATION_MINIMUM_SCHEMA_VERSION,
-  CONFIGURATION_SCHEMA_FAMILY,
-  CONFIGURATION_SCHEMA_VERSION,
-  DEFAULT_SCHEMA_VERSION_POLICY,
-  evaluateSchemaVersion,
-  MINIMUM_READER_FIELD,
-  RESERVED_DOCUMENT_FIELDS,
-  SCHEMA_VERSION_FIELD,
-} from "./schema-family.ts";
-export type { DiscoveredSource, DiscoveryInputs, ReadSource } from "./sources.ts";
+} from "./resolution/registry.ts";
+export { createConfigurationRegistry, foldDeclaredValue } from "./resolution/registry.ts";
+export type { DiscoveredSource, DiscoveryInputs, ReadSource } from "./resolution/sources.ts";
 export {
   CONFIGURATION_FILE_NAME,
   discoverSources,
@@ -114,16 +126,4 @@ export {
   PROJECT_CONFIGURATION_DIRECTORY,
   readSource,
   sourceLabel,
-} from "./sources.ts";
-export type {
-  ConfigurationFileScope,
-  ConfigurationValueWriteRequest,
-  ConfigurationWriteOutcome,
-  ConfigurationWriteRequest,
-} from "./writer.ts";
-export {
-  configurationSourcePaths,
-  resolveConfigurationFilePath,
-  writeConfigurationKey,
-  writeConfigurationValue,
-} from "./writer.ts";
+} from "./resolution/sources.ts";

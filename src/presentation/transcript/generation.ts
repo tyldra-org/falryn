@@ -23,7 +23,7 @@
  * be invisible. So a generation mismatch rebuilds instead.
  */
 
-import type { Sequence, StreamId } from "../../domain/index.ts";
+import type { Sequence, StreamId } from "../../domain/foundation/index.ts";
 
 /**
  * Raised whenever the reducer's **structural** output for the same events would

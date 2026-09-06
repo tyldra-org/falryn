@@ -9,21 +9,21 @@ import { join } from "node:path";
 
 import { openProductStoreOrThrow, removeTemporaryRoots } from "../data/fixtures.ts";
 import { createArtifactRepository, createArtifactStore } from "../data/index.ts";
+import { artifactId } from "../domain/artifacts/index.ts";
 import {
-  artifactId,
   createManualClock,
   createStaticEnvironment,
   instant,
-  localPath,
   runId,
-} from "../domain/index.ts";
+} from "../domain/foundation/index.ts";
+import { localPath } from "../domain/workspace/index.ts";
 import { createHostBlobStore, createSha256Hasher } from "../integrations/index.ts";
 import { parseInvocation } from "./command-tree.ts";
 import { dispatch } from "./dispatch.ts";
-import { EXIT_CODES } from "./exit.ts";
 import type { GlobalOptions } from "./options.ts";
-import { createServiceProvider } from "./services.ts";
-import { createRecordingCliStreams } from "./streams.ts";
+import { EXIT_CODES } from "./output/exit.ts";
+import { createRecordingCliStreams } from "./output/streams.ts";
+import { createServiceProvider } from "./runtime/services.ts";
 
 afterEach(removeTemporaryRoots);
 

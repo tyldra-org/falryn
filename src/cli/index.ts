@@ -41,37 +41,6 @@ export {
 } from "./commands.ts";
 export type { DispatchOptions } from "./dispatch.ts";
 export { dispatch } from "./dispatch.ts";
-export type { ExitCode, ExitResolution } from "./exit.ts";
-export {
-  DECLARED_EXIT_CODES,
-  EMITTABLE_EXIT_CODES,
-  EXIT_CODES,
-  exitCodeForError,
-  resolveExitCode,
-  SHELL_RESERVED_EXIT_CODES,
-  UNEMITTABLE_EXIT_CODES,
-} from "./exit.ts";
-export type { GovernedRun, HostGovernance, InvocationGovernance } from "./invocation-scope.ts";
-export {
-  createHostGovernance,
-  createInvocationGovernance,
-  openInvocationScope,
-  runUnderScope,
-  untilScopeStops,
-} from "./invocation-scope.ts";
-export type {
-  MidTurnClassifyArguments,
-  MidTurnClassifyPayload,
-  MidTurnClassifyResult,
-} from "./mid-turn.ts";
-export {
-  classifyAndRenderJsonl,
-  createHeadlessMidTurnService,
-  MID_TURN_CLASSIFY_COMMAND,
-  projectMidTurnEventsToJsonl,
-  resolveMidTurnIntent,
-  runMidTurnClassify,
-} from "./mid-turn.ts";
 export type { ColorChoice, GlobalOptions, OutputFormat } from "./options.ts";
 export {
   allowsColor,
@@ -82,34 +51,33 @@ export {
   OUTPUT_FORMATS,
   resolveColor,
 } from "./options.ts";
-export type {
-  ProductProviderConnectionHandoff,
-  ProductProviderConnectionOptions,
-  ProductProviderConnections,
-} from "./product-provider-connections.ts";
-export { composeProductProviderConnections } from "./product-provider-connections.ts";
+export type { ExitCode, ExitResolution } from "./output/exit.ts";
 export {
-  DEFAULT_PROVIDER_CONNECTION_STATE,
-  PROVIDER_CONNECTION_KEYS,
-  PROVIDER_CONNECTIONS_CONFIGURATION_KEY,
-} from "./provider-configuration.ts";
-export { createOverBoundArtifactWriter } from "./refusal-artifact.ts";
-export type { HumanRenderRequest, RenderedText } from "./render-human.ts";
+  DECLARED_EXIT_CODES,
+  EMITTABLE_EXIT_CODES,
+  EXIT_CODES,
+  exitCodeForError,
+  resolveExitCode,
+  SHELL_RESERVED_EXIT_CODES,
+  UNEMITTABLE_EXIT_CODES,
+} from "./output/exit.ts";
+export { createOverBoundArtifactWriter } from "./output/refusal-artifact.ts";
+export type { HumanRenderRequest, RenderedText } from "./output/render-human.ts";
 export {
   DEFAULT_DISPLAY_COLUMNS,
   MIN_DISPLAY_COLUMNS,
   renderHuman,
   renderPlainText,
   renderQuiet,
-} from "./render-human.ts";
+} from "./output/render-human.ts";
 export type {
   MachineRenderRequest,
   OverBoundArtifactWriter,
   RenderedRecords,
-} from "./render-json.ts";
-export { renderJson } from "./render-json.ts";
-export type { JsonlRenderRequest } from "./render-jsonl.ts";
-export { renderJsonl } from "./render-jsonl.ts";
+} from "./output/render-json.ts";
+export { renderJson } from "./output/render-json.ts";
+export type { JsonlRenderRequest } from "./output/render-jsonl.ts";
+export { renderJsonl } from "./output/render-jsonl.ts";
 export type {
   CommandEffect,
   CommandId,
@@ -118,7 +86,7 @@ export type {
   CommandResultOf,
   CommandTruncation,
   CommandWarning,
-} from "./result.ts";
+} from "./output/result.ts";
 export {
   COMMAND_IDS,
   COMMAND_RESULT_SCHEMA_FAMILY,
@@ -129,7 +97,7 @@ export {
   MAX_WARNINGS,
   READ_ONLY_EFFECT,
   succeeded,
-} from "./result.ts";
+} from "./output/result.ts";
 export type {
   CliArtifactErrorCode,
   CliArtifactHandle,
@@ -147,7 +115,7 @@ export type {
   CliResultBody,
   CliResultRecord,
   CliStreamReading,
-} from "./schema.ts";
+} from "./output/schema.ts";
 export {
   CLI_ARTIFACT_ERROR_CODES,
   CLI_ENCODE_ERROR_CODES,
@@ -164,9 +132,7 @@ export {
   readCliRecord,
   readCliStream,
   TERMINAL_CLI_RECORD_KINDS,
-} from "./schema.ts";
-export type { HostServiceOptions, ServiceProvider, Services } from "./services.ts";
-export { CLI_EVENT_STREAM, createServiceProvider } from "./services.ts";
+} from "./output/schema.ts";
 export type {
   CliStreams,
   CliStreamsParts,
@@ -174,7 +140,7 @@ export type {
   RecordedCliStreams,
   RecordingCliStreamsOptions,
   StreamsFlushReport,
-} from "./streams.ts";
+} from "./output/streams.ts";
 export {
   createCliStreams,
   createHostCliStreams,
@@ -183,6 +149,45 @@ export {
   outcomeAfterFlush,
   writeDiagnosticLine,
   writeResultLine,
-} from "./streams.ts";
+} from "./output/streams.ts";
+export type {
+  GovernedRun,
+  HostGovernance,
+  InvocationGovernance,
+} from "./runtime/invocation-scope.ts";
+export {
+  createHostGovernance,
+  createInvocationGovernance,
+  openInvocationScope,
+  runUnderScope,
+  untilScopeStops,
+} from "./runtime/invocation-scope.ts";
+export type {
+  MidTurnClassifyArguments,
+  MidTurnClassifyPayload,
+  MidTurnClassifyResult,
+} from "./runtime/mid-turn.ts";
+export {
+  classifyAndRenderJsonl,
+  createHeadlessMidTurnService,
+  MID_TURN_CLASSIFY_COMMAND,
+  projectMidTurnEventsToJsonl,
+  resolveMidTurnIntent,
+  runMidTurnClassify,
+} from "./runtime/mid-turn.ts";
+export { composeProductCredentials } from "./runtime/product-credentials.ts";
+export type {
+  ProductProviderConnectionHandoff,
+  ProductProviderConnectionOptions,
+  ProductProviderConnections,
+} from "./runtime/product-provider-connections.ts";
+export { composeProductProviderConnections } from "./runtime/product-provider-connections.ts";
+export {
+  DEFAULT_PROVIDER_CONNECTION_STATE,
+  PROVIDER_CONNECTION_KEYS,
+  PROVIDER_CONNECTIONS_CONFIGURATION_KEY,
+} from "./runtime/provider-configuration.ts";
+export type { HostServiceOptions, ServiceProvider, Services } from "./runtime/services.ts";
+export { CLI_EVENT_STREAM, createServiceProvider } from "./runtime/services.ts";
 export type { BuildIdentity, RunMode } from "./version.ts";
 export { buildIdentity, FALRYN_VERSION, RUN_MODES, runModeFor, versionText } from "./version.ts";

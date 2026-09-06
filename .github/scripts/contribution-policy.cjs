@@ -104,7 +104,7 @@ function issueChecklist(issue) {
 }
 
 function maintainerCompletionProof(body) {
-  // Keep the heading vocabulary aligned with tools/issue-readiness.ts.
+  // Keep the heading vocabulary aligned with tools/governance/issue-readiness.ts.
   for (const match of body.matchAll(/^#{2,3}\s+(.+)$/gm)) {
     const heading = match[1].trim();
     if (/(?:completion proof$|^accepted terminal outcomes$)/i.test(heading)) {

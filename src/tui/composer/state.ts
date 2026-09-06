@@ -33,8 +33,7 @@ import {
   parseMentions,
   removeAttachment,
   upsertAttachment,
-} from "../../domain/index.ts";
-import { classifyPaste, describePaste, noticeOfPaste, type PasteNotice } from "../paste.ts";
+} from "../../domain/context/index.ts";
 import {
   EMPTY_HISTORY,
   type InputHistory,
@@ -42,6 +41,7 @@ import {
   recallPrevious,
   remember,
 } from "./history.ts";
+import { classifyPaste, describePaste, noticeOfPaste, type PasteNotice } from "./paste.ts";
 import { type ComposerSnapshot, type SubmissionOutcome, snapshotOf } from "./submission.ts";
 
 /**

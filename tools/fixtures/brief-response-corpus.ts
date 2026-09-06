@@ -1,7 +1,7 @@
 /** Reviewed, synthetic, secret-free response-density fixtures (#827). */
 
-import type { CavemanIntensity } from "../../src/application/index.ts";
-import type { BriefVerbosityLevel } from "../../src/domain/index.ts";
+import type { CavemanIntensity } from "../../src/application/compression/index.ts";
+import type { BriefVerbosityLevel } from "../../src/domain/compression/index.ts";
 
 export type BriefResponseFixture = {
   readonly id: string;

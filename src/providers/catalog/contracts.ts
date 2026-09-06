@@ -1,8 +1,8 @@
 /** Versioned, secret-free model catalog documents. */
 
-import type { ProviderId } from "../../domain/identity.ts";
-import type { ProviderAdapterKind } from "../adapter-kind.ts";
-import type { ModelCapabilityDeclaration } from "../model-capability.ts";
+import type { ProviderId } from "../../domain/foundation/identity.ts";
+import type { ProviderAdapterKind } from "../configuration/adapter-kind.ts";
+import type { ModelCapabilityDeclaration } from "./model-capability.ts";
 
 export const MODEL_CATALOG_DOCUMENT_SCHEMA_VERSION = 1;
 export const MAX_MODEL_CATALOGS_PER_PROFILE = 16;

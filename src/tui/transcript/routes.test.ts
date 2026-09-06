@@ -10,8 +10,8 @@
 
 import { describe, expect, test } from "bun:test";
 import { EXPANSION_ROUTES } from "../../presentation/index.ts";
-import { commandById, EMPTY_COMMAND_STATE } from "../commands.ts";
-import { commandRows } from "../keymap.ts";
+import { commandById, EMPTY_COMMAND_STATE } from "../commands/commands.ts";
+import { commandRows } from "../commands/keymap.ts";
 import { commandForRoute, describeRouteWith } from "./routes.ts";
 
 function rows() {

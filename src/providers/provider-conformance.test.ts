@@ -8,12 +8,8 @@
 
 import { describe, expect, test } from "bun:test";
 
-import {
-  type CredentialReference,
-  createManualClock,
-  modelId,
-  providerId,
-} from "../domain/index.ts";
+import type { CredentialReference } from "../domain/configuration/index.ts";
+import { createManualClock, modelId, providerId } from "../domain/foundation/index.ts";
 import {
   createDeterministicProviderAdapter,
   createDeterministicRemoteDiscovery,
