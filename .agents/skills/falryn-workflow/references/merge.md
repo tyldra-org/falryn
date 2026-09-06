@@ -1,6 +1,11 @@
 # Merge
 
-Merge requires a fresh passing Verify preview and user confirmation bound to the unchanged exact bundle. Load `gh-cli` for remote merge and reconciliation and `git-workflow` for safe local synchronization.
+Merge requires a fresh passing Verify preview and authorization covering the
+exact delivery. Manual Merge uses confirmation bound to the unchanged bundle.
+Inside Deliver, use the originating request's in-scope authority and freshly
+verified revisions under [target invalidation](targets-and-transitions.md#invalidation).
+Do not ask again for authority already granted by the user. Load `gh-cli` for
+remote merge and reconciliation and `git-workflow` for local synchronization.
 
 Apply [shared execution efficiency](execution-efficiency.md) within Merge's exact authorization. Reuse unchanged reviewed source evidence, but perform every fresh pre-mutation check below.
 
@@ -25,6 +30,11 @@ The operations are sequential, not atomic. A partial bundle remains partial and 
 
 ## Reconcile
 
-After all required merges, re-read PR and issue state, close or repair the delivery owner as appropriate, reconcile private Project fields when accessible, run [governance audits](governance-audits.md), and safely fast-forward eligible clean default-branch checkouts. Leave dirty, detached, divergent, conflicted, or branch-locked checkouts untouched. Branch deletion is separate.
+After all required merges, re-read PR and issue state and close or repair the
+delivery owner as appropriate. Reconcile Project fields and run
+[governance audits](governance-audits.md) only for Roadmap-owned work. Safely
+fast-forward eligible clean default-branch checkouts. Leave dirty, detached,
+divergent, conflicted, or branch-locked checkouts untouched. Branch deletion is
+separate.
 
 Verify resulting merge SHAs and report a safe revert-through-new-PR path. Merge authorization never covers release publication, destructive cleanup, or unrelated work.

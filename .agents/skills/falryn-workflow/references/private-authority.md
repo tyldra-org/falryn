@@ -9,15 +9,18 @@ Their existence and identity may be named. Their contents remain private.
 
 ## Resolve access independently
 
-Documentation access and Roadmap access are separate facts. Prove each before use.
+Documentation access and Roadmap access are separate facts. Prove each before
+use, only when the requested operation needs it. Docs access alone can support
+docs-only work outside the Project; Project access alone does not prove private
+documentation accuracy.
 
 For a local docs checkout:
 
 1. locate an explicitly supplied checkout or the sibling `../falryn-docs` directory;
-2. confirm that it is a Git checkout;
-3. inspect its remote URL and require exact repository identity `tyldra-org/falryn-docs`;
-4. read its `AGENTS.md` before any file or Git operation; and
-5. inspect its current branch and revision rather than relying on remembered content.
+2. read its applicable `AGENTS.md` before further inspection;
+3. confirm that it is a Git checkout and require exact remote identity `tyldra-org/falryn-docs`;
+4. inspect its current branch and revision rather than relying on remembered content; and
+5. read only the documentation owners needed for the task.
 
 An unrelated directory named `falryn-docs` is not authority. Do not add, replace, or rewrite its remote to make it qualify.
 
@@ -35,6 +38,12 @@ Use public Falryn source, tests, `CURRENT-STATE.md`, issue and pull-request bodi
 - verify the application revision and public evidence;
 - plan a public issue body without claiming private readiness; and
 - prepare an ordinary contribution under `CONTRIBUTING.md`.
+
+An explicit Deliver request may complete a public contribution or
+repository-approved issue-free maintenance PR when its public contract and
+documentation disposition are complete and no operation needs private
+authority. It must not infer private Project membership or sequence, or treat
+unavailable required docs verification as unaffected.
 
 It may not:
 

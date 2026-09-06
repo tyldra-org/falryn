@@ -2,6 +2,11 @@
 
 Parent delivery requires authenticated private Roadmap access. A parent is an outcome tracker, never a branch or mega-pull request. Apply [efficient execution](deliver.md#efficient-execution) to both parent selectors without changing child or parent completion criteria.
 
+The same rules apply to `Docs parent issue` and `Docs parent chain` selectors
+in Falryn Docs. Resolve each child's repository and existing delivery through
+[target resolution](targets-and-transitions.md#resolve-a-delivery-target); do not
+turn a docs-owned child into an application issue or duplicate an existing PR.
+
 ## One-child selector
 
 `Deliver - Target: Parent issue #N` selects the first ordered, unblocked, incomplete child from the current [Roadmap audit](governance-audits.md). If that child Needs Planning, the controller plans that same child before implementation. If it Needs Decision, delivery stops at the named decision owner. It never skips ahead to a later Ready sibling.

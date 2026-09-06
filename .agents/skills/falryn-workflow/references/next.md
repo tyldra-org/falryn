@@ -22,12 +22,17 @@ If the audit emits any diagnostic, report it and produce no sequence. Otherwise:
 
 1. resume one valid active delivery or interrupted parent chain first;
 2. select the first actionable entry in the generated dependency-safe sequence;
-3. route Ready work to Deliver and Needs Planning work to Plan;
+3. prefer Deliver for both Ready and Needs Planning work; Deliver plans the selected issue before implementation when needed, so an unchecked Ready checklist alone is not a reason to suggest manual Plan;
 4. route Needs Decision to its named human decision owner and do not suggest Plan or Deliver until the decision is recorded;
 5. route a parent through its selected actionable child;
 6. respect the sole assignee and name another owner rather than taking over; and
 7. use Falryn Docs-qualified selectors only for private docs-owned work.
 
-Parent-chain selectors are resume-only. Next never starts work or invents authorization.
+## Continuation
+
+Use [shared continuation routing](targets-and-transitions.md#suggest-the-next-action)
+for the selected object and scope. Needs Planning can enter Deliver's planning
+phase. Missing authority, a named decision, another owner, or audit diagnostics
+remain prerequisites. Next never starts the suggested work.
 
 Report the audit generation, selected repository and issue, sequence position, readiness, owner, blockers, active delivery evidence, and one exact `Suggested next prompt:`. If no safe route exists, use `Suggested next prompt: none` and name the prerequisite without disclosing private content.
