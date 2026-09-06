@@ -29,6 +29,9 @@ Translate that into the public delivery record without private content:
 
 Name the evidence class and result, not private prose. A public contributor may declare likely impact, but an authenticated maintainer settles any required private verification before merge.
 
+Several public results may apply; `not-applicable` is exclusive. Unavailable
+private verification cannot be relabeled unaffected to complete delivery.
+
 ## Choose the delivery owner
 
 A product change keeps its PR-sized public Falryn issue as the delivery owner. A required Falryn Docs pull request is a companion to that issue. It uses a repository-qualified reference such as `Refs tyldra-org/falryn#N`, cross-links the application pull request, and does not create or close a same-numbered docs issue by inference.

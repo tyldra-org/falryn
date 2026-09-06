@@ -6,7 +6,13 @@ Apply [shared execution efficiency](execution-efficiency.md) within Review's rea
 
 ## Evidence
 
-Resolve the repository, base and head SHA, author, public delivery issue, checks, reviews, merge state, and complete current diff. Inventory every added, modified, deleted, and renamed file. Read affected behavior, callers, data and wire formats, configuration, persistence, projections, and cleanup paths rather than reviewing filenames alone.
+Resolve the repository, base and head SHA, author, delivery owner, checks,
+reviews, merge state, and complete current diff. Use
+[target resolution](targets-and-transitions.md#resolve-a-delivery-target) to
+distinguish application owners, docs-only owners, companions, and approved
+issue-free maintenance. Inventory every added, modified, deleted, and renamed
+file. Read affected behavior, callers, data and wire formats, configuration,
+persistence, projections, and cleanup paths rather than filenames alone.
 
 Compare the change with its public issue contract, current source, tests, and `CURRENT-STATE.md`. Apply [documentation delivery](documentation-delivery.md) when private docs access exists, adding exact owner and companion evidence without copying private content into the public report. Without access, classify documentation verification as unavailable rather than pretending it is unaffected.
 

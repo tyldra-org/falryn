@@ -30,6 +30,12 @@ Apply [shared execution efficiency](execution-efficiency.md) throughout the exis
 
 ## Controller loop
 
+Load the guide for a stage when its work is needed: [Plan](plan.md),
+[Implement](implement.md), [Review](review.md), [Verify](verify.md), or
+[Merge](merge.md). Apply its evidence and validation requirements within this
+controller's authority. Manual-stage stopping points do not end Deliver, and
+an already satisfied stage needs no repeated work merely to follow the list.
+
 1. Resolve the exact target, owner, requested scope, existing PRs, companions, blockers, and applicable Project state. Apply assignment and readiness requirements only to work governed by them.
 2. Establish the remaining work from current evidence. Plan missing contract facts before implementation; keep Roadmap work Todo until implementation is admitted. A named human decision remains a stop condition.
 3. Reuse valid branches and PRs. Implement or repair only missing acceptance within the resolved scope; set Roadmap work In Progress when implementation begins. A docs-only outcome edits its docs owner, not application code.
@@ -44,7 +50,9 @@ Do not create duplicate branches or pull requests. Use [corrections](corrections
 for closed or merged work; never reopen or edit a merged PR. A distinct outcome
 receives one focused follow-up issue.
 
-After a standalone delivery completes, report the next eligible target without
-starting it. Use Next when Roadmap authority is available; otherwise report the
-completed public scope without guessing private order. A child continues only
+After a standalone delivery completes, use
+[continuation routing](targets-and-transitions.md#suggest-the-next-action).
+Use Next for requested Roadmap selection with verified authority. Access alone
+does not require finding more work; report no next action when the outcome is
+complete and no useful continuation is established. A child continues only
 within its parent rules. For parent selectors, read [parent delivery](parent-delivery.md).

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate falryn-workflow structure, routing, privacy, and local links."""
+"""Validate bundle structure, local links, and public content boundaries."""
 
 from __future__ import annotations
 
@@ -21,33 +21,6 @@ PRIVATE_LINK_RE = re.compile(
 )
 ALLOWED_ROOT_ENTRIES = {"SKILL.md", "references", "scripts"}
 IGNORED_ROOT_ENTRIES = {".gitignore"}
-REQUIRED_REFERENCES = {
-    "corrections.md",
-    "deliver.md",
-    "documentation-delivery.md",
-    "execution-efficiency.md",
-    "governance-audits.md",
-    "implement.md",
-    "issue-governance.md",
-    "merge.md",
-    "next.md",
-    "parent-delivery.md",
-    "plan.md",
-    "private-authority.md",
-    "roadmap-fields.md",
-    "reporting.md",
-    "review.md",
-    "targets-and-transitions.md",
-    "verify.md",
-}
-REQUIRED_ENTRYPOINT_MARKERS = {
-    "## Request classification",
-    "## Route one mode",
-    "## Access boundary",
-    "## Non-negotiable boundaries",
-    "## Reporting",
-    "## Distribution",
-}
 
 
 def slugify(heading: str) -> str:
@@ -108,22 +81,9 @@ def main() -> int:
 
     skill_text = SKILL.read_text(encoding="utf-8")
     validate_frontmatter(skill_text, errors)
-    for marker in sorted(REQUIRED_ENTRYPOINT_MARKERS):
-        if marker not in skill_text:
-            errors.append(f"SKILL.md is missing required section: {marker}")
-
-    reference_files = set(REFERENCES.glob("*.md"))
-    reference_names = {path.name for path in reference_files}
-    if reference_names != REQUIRED_REFERENCES:
-        missing = sorted(REQUIRED_REFERENCES - reference_names)
-        extra = sorted(reference_names - REQUIRED_REFERENCES)
-        if missing:
-            errors.append(f"missing required references: {', '.join(missing)}")
-        if extra:
-            errors.append(f"unregistered references: {', '.join(extra)}")
-
+    reference_files = set(REFERENCES.rglob("*.md"))
     markdown_files = [SKILL, *sorted(reference_files)]
-    linked_references: set[Path] = set()
+    links: dict[Path, set[Path]] = {path: set() for path in markdown_files}
     for source in markdown_files:
         text = source.read_text(encoding="utf-8")
         relative_source = source.relative_to(ROOT)
@@ -143,8 +103,8 @@ def main() -> int:
             if not destination.is_file():
                 errors.append(f"{relative_source} links to missing {raw_target}")
                 continue
-            if source == SKILL and destination.parent == REFERENCES:
-                linked_references.add(destination)
+            if destination in links:
+                links[source].add(destination)
             if anchor:
                 headings = {
                     slugify(heading)
@@ -153,10 +113,19 @@ def main() -> int:
                 if anchor not in headings:
                     errors.append(f"{relative_source} links to missing anchor {raw_target}")
 
-    unlinked = sorted(reference_files - linked_references)
+    reachable: set[Path] = set()
+    pending = [SKILL]
+    while pending:
+        source = pending.pop()
+        if source in reachable:
+            continue
+        reachable.add(source)
+        pending.extend(links[source] - reachable)
+
+    unlinked = sorted(reference_files - reachable)
     if unlinked:
         errors.append(
-            "references not linked directly from SKILL.md: "
+            "references unreachable from SKILL.md: "
             + ", ".join(path.name for path in unlinked)
         )
 

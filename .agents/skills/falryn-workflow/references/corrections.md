@@ -2,7 +2,7 @@
 
 Resolve a verified gap from current public GitHub and repository state.
 
-- **Open pull request:** keep the same issue, branch, application PR, and still-valid private companions. Add focused commits. Every pushed head invalidates earlier review, Verify, and merge approval.
+- **Open pull request:** keep the same issue, branch, PR, and still-valid companions. Add focused commits. Every pushed head requires fresh review and Verify before merge under [target invalidation](targets-and-transitions.md#invalidation).
 - **Closed without merge:** reopen only when the head branch, base, scope, issue, and companion set remain valid. Otherwise create a fresh replacement delivery.
 - **Merged but incomplete original acceptance:** reopen the owning issue, reconcile stale private Project completion when accessible, and use a fresh branch from the current default branch. Never reuse the squash-merged branch.
 - **Distinct new outcome:** create one focused follow-up issue instead of expanding completed acceptance.

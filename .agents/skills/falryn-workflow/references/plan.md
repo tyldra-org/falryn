@@ -1,12 +1,19 @@
 # Plan
 
-Plan makes one public Falryn issue implementation-ready without writing product code.
+Plan completes the contract for one resolved Falryn or docs-only issue without
+implementing it. Resolve repository ownership through
+[targets and transitions](targets-and-transitions.md), then use the issue
+format required by [issue governance](issue-governance.md). A docs-only target
+requires Docs access and its repository guidance; private content stays there.
 
 Apply [shared execution efficiency](execution-efficiency.md) within Plan's permissions. Reuse current evidence without omitting any required handoff fact or beginning implementation.
 
-## Public evidence
+## Contract evidence
 
-Read the issue, native hierarchy and blockers, source, tests, manifests, `CURRENT-STATE.md`, repository guidance, and relevant public pull requests. Resolve:
+Read the issue, native hierarchy and blockers, repository guidance, and relevant
+PRs. For implementation claims, inspect source, tests, manifests, and
+`CURRENT-STATE.md`. For docs-only work, read affected canonical owners and the
+source evidence needed for their claims. Resolve the applicable facts:
 
 - exact outcome, baseline, included behavior, and non-goals;
 - one PR-sized owner or native child split;
@@ -15,18 +22,36 @@ Read the issue, native hierarchy and blockers, source, tests, manifests, `CURREN
 - failures, cancellation, partial and unavailable outcomes, recovery, and cleanup;
 - product composition and user-facing projections;
 - focused validation and documentation impact; and
-- a current non-empty Ready checklist.
+- a current non-empty checklist for the selected format: Contribution for a
+  public submission, Ready for a maintainer handoff. An adopted public form may
+  retain its Contribution checklist.
 
-The issue body must preserve every issue-specific fact an implementer cannot safely infer. Private documentation may guide an authenticated maintainer, but no required implementation fact may exist only there. Classify canonical owners through [documentation delivery](documentation-delivery.md).
+The issue body must preserve every issue-specific fact an implementer cannot
+safely infer. A public Falryn handoff cannot leave required implementation facts
+only in private documentation. Docs-only contracts remain in their private
+repository. Classify owners through [documentation delivery](documentation-delivery.md).
 
-Plan may update the public issue, its native hierarchy, and blockers. It does not create implementation branches or pull requests, write source, set In Progress, close an issue, or merge anything.
+Plan may update the resolved issue, its native hierarchy, and blockers. For
+docs-only planning, read the affected canonical owners and required source
+evidence without editing the documentation deliverable. Plan does not create
+implementation branches or PRs, write source, set In Progress, close an issue,
+or merge anything.
 
 ## Access outcomes
 
-With private Roadmap access, reconcile Project metadata and mark Ready only when all public and private preconditions pass, then run [governance audits](governance-audits.md). Without it, Plan may complete the public handoff but must report `private-roadmap-unavailable`; it cannot claim authoritative readiness or sequence position.
+For Roadmap-owned work, reconcile metadata and mark Ready only when all required
+preconditions pass, then run [governance audits](governance-audits.md). If required
+Roadmap access is missing, report `private-roadmap-unavailable`; do not claim
+private readiness or sequence. An issue outside the Project needs only its
+repository's contract and does not require Project access or adoption.
 
-A missing derivable fact remains Needs Planning. A choice that only a human may make becomes Needs Decision and records `Decision required: @owner — question` in the public issue. Do not invent the answer, copy broad private design into the public issue, or begin implementation while planning. After the decision is recorded, return to Needs Planning until Plan verifies the complete contract.
+For Roadmap work, missing derivable facts mean Needs Planning. A human-owned
+choice means Needs Decision and a `Decision required: @owner — question` line in
+the owning issue. After the decision, return to Needs Planning until the contract
+is verified. Outside the Project, report the missing fact or decision without
+inventing private fields. Do not invent an answer, copy private design into a
+public issue, or begin implementation while planning.
 
 ## Result
 
-Report the exact issue, edits made, observed blockers, public-contract completeness, private-authority state, and first safe action. Use [reporting](reporting.md).
+Report the exact issue, edits made, observed blockers, public-contract completeness, private-authority state, and first safe action. Use [reporting](../SKILL.md#reporting).

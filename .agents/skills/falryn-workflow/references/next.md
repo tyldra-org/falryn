@@ -28,34 +28,11 @@ If the audit emits any diagnostic, report it and produce no sequence. Otherwise:
 6. respect the sole assignee and name another owner rather than taking over; and
 7. use Falryn Docs-qualified selectors only for private docs-owned work.
 
-## Choose the delivery scope
+## Continuation
 
-Resolve the suggested object through [delivery target resolution](targets-and-transitions.md#resolve-a-delivery-target).
-Prefer the existing PR selector when continuing that PR, the issue selector
-when selecting work without an active PR, and the docs-qualified form for a
-docs-owned target. The input object does not select a manual stage. Resume a valid
-interrupted chain with its exact parent-chain selector. For a new chain, prefer
-`Deliver - Target: Parent chain #N` when the user's requested scope is that
-parent outcome, or a broad Roadmap request and the audit establish a coherent
-remaining child sequence owned by the authenticated account. Do not widen an
-explicit single-issue request into a chain. A parent link alone is not enough:
-verify the native hierarchy, remaining scope, ownership, and ordering first.
-Use that child's issue or existing PR form when only its delivery is established.
-
-This preference covers Plan, Implement, Review, Verify, and Merge. An existing
-implementation branch or PR, review findings, pending checks, or a verified PR
-awaiting merge normally belongs to the same delivery controller. Recommend
-continuing Deliver for its resolved target instead of
-asking the user to advance through those stages with separate prompts.
-
-Suggest a manual mode only when the user requests that stage or step-by-step
-control, or the specific task cannot be handled by the delivery controller and
-requires an isolated operation. Name that concrete reason; reaching a normal
-delivery stage is not one. Do not use manual modes to bypass missing authority, another
-owner, an unresolved decision, or a failed audit. Those remain prerequisites.
-
-Next recommends a prompt; it never starts delivery. A new chain suggestion
-offers that scope for the user to invoke and does not itself authorize any
-child's implementation or merge.
+Use [shared continuation routing](targets-and-transitions.md#suggest-the-next-action)
+for the selected object and scope. Needs Planning can enter Deliver's planning
+phase. Missing authority, a named decision, another owner, or audit diagnostics
+remain prerequisites. Next never starts the suggested work.
 
 Report the audit generation, selected repository and issue, sequence position, readiness, owner, blockers, active delivery evidence, and one exact `Suggested next prompt:`. If no safe route exists, use `Suggested next prompt: none` and name the prerequisite without disclosing private content.

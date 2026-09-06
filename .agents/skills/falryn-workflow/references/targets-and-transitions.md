@@ -20,13 +20,17 @@ An ordinary Falryn request without one of those meanings remains an ordinary tas
 | `Docs issue #N` | `tyldra-org/falryn-docs` docs-only issue N |
 | `Docs parent issue #N` | `tyldra-org/falryn-docs` docs-only parent N |
 | `Docs parent chain #N` | Remaining ordered children of the docs-only parent N |
-| `Docs PR #N` | `tyldra-org/falryn-docs` docs-only pull request N |
+| `Docs PR #N` | `tyldra-org/falryn-docs` pull request N; resolve its docs-only or companion role |
 | `Falryn Roadmap` | `tyldra-org` Project 1 through [Next](next.md) |
 | Full GitHub URL | The exact host, repository, and object in that URL |
 
 Never substitute a same-numbered object from the other repository. A companion link expands a delivery bundle only after the primary target is resolved and the reciprocal link, delivery owner, and current revision agree.
 
-After resolution, inspect native `parent`, `subIssues`, `blockedBy`, `blocking`, closing pull requests, milestone, assignee, and Project membership. Do not reconstruct hierarchy or dependencies from body prose when native relationships exist.
+For issue or PR work, inspect native hierarchy, blockers, and closing PRs needed
+by the operation. For Roadmap work, also resolve milestone, assignee, and exact
+Project membership through authenticated authority. Public inspection must not
+require private metadata. Never reconstruct hierarchy or dependencies from body
+prose when native relationships exist.
 
 ## Resolve a delivery target
 
@@ -61,12 +65,57 @@ an existing issue, PR, or parent selector within the requested scope. Missing
 scope, owner, authority, or sequence evidence requires resolution, not an
 invented selector or a fallback manual prompt.
 
+## Suggest the next action
+
+Resolve the suggested object through [delivery target resolution](#resolve-a-delivery-target).
+Prefer the existing PR selector when continuing that PR, the issue selector
+when selecting work without an active PR, and the docs-qualified form for a
+docs-owned target. The input object does not select a manual stage. Resume a valid
+interrupted chain with its exact parent-chain selector. For a new chain, prefer
+`Deliver - Target: Parent chain #N` when the user's requested scope is that
+parent outcome, or a broad Roadmap request and the audit establish a coherent
+remaining child sequence owned by the authenticated account. Do not widen an
+explicit single-issue request into a chain. A parent link alone is not enough:
+verify the native hierarchy, remaining scope, ownership, and ordering first.
+Use that child's issue or existing PR form when only its delivery is established.
+
+Choose one useful next action from the user's goal, current evidence, and
+remaining work. Prefer Deliver when the intended next outcome is complete
+delivery. An existing PR, review findings, pending checks, or a PR ready to merge
+can remain in the same controller; its current stage alone does not require a
+manual prompt.
+
+Recommend a manual mode when its bounded result is the better next action,
+even if Deliver could perform that stage. For example, Plan can establish scope
+before committing to implementation, Review can provide an independent
+assessment, Verify can establish completion without making repairs, and Merge
+can land an already verified bundle. Implement fits a request to prepare a PR
+without merging. Honor explicit stage control and explain the concrete reason
+for a manual suggestion. Do not manufacture a checkpoint for routine progress.
+
+Do not use a manual mode to bypass missing authority, another owner, an
+unresolved decision, or a failed audit. Those remain prerequisites. Suggest no
+action when the requested outcome is complete and no useful continuation is
+established. Output one selected prompt, not a menu of automatic and manual
+alternatives, unless the user asks for options.
+
+A suggested prompt never starts delivery. A new chain suggestion
+offers that scope for the user to invoke and does not itself authorize any
+child's implementation or merge.
+
+Derive the suggestion from fresh evidence for the current scope. Public work
+may suggest continuation of its exact issue or PR without private Roadmap
+access. Selecting new Roadmap work or a parent sequence requires Next and its
+audits. Do not audit the entire Roadmap just to continue a known public PR.
+When no safe action is established, report `Suggested next prompt: none` and
+the missing prerequisite.
+
 ## Mode boundaries
 
 | Mode | Permitted result | Does not authorize |
 | --- | --- | --- |
-| Plan | Complete a public issue contract and, with private authority, reconcile planning metadata | Source edits, implementation branch, In Progress, merge |
-| Implement | Deliver one publicly complete, unblocked PR-sized issue to an open pull request; require Ready and assignment only when Roadmap-owned | Parent implementation, approval, merge |
+| Plan | Complete the resolved issue contract and, for Roadmap-owned work, reconcile planning metadata | Source or docs implementation, implementation branch, In Progress, merge |
+| Implement | Deliver one complete, unblocked PR-sized issue to a PR in its repository; require Ready and assignment only when Roadmap-owned | Parent implementation, approval, merge |
 | Review | Assess one exact pull-request revision | Comments, approval, edits, Project mutation, merge |
 | Verify | Audit an exact PR, issue, parent, milestone, or range; perform only named governance reconciliation | Product or documentation repair, merge, release |
 | Merge | Merge the unchanged bundle from a fresh Verify preview and reconcile it | Changed revisions, release publication, branch deletion |
@@ -88,6 +137,17 @@ One owner never substitutes for another. A checked Contribution or Ready list ca
 
 ## Invalidation
 
-Re-resolve the target and repeat the affected review or verification after any change to a head SHA, base, issue body, hierarchy, blocker, assignee, milestone, Project field, companion identity, check, review, ruleset, mergeability result, default branch, or relevant checkout state. Never carry merge authorization or a Roadmap sequence across one of those changes.
+Re-resolve affected facts after a head, base, issue contract, hierarchy, blocker,
+assignee, milestone, Project field, companion, check, review, ruleset, default
+branch, mergeability, or relevant checkout change. Refresh the affected review,
+verification, and authoritative sequence before relying on them.
+
+Keep authorization separate from evidence. A revision-specific manual merge
+preview becomes stale when its preconditions change. An authorized Deliver
+request still covers in-scope repair, but the changed candidate requires fresh
+review, verification, and merge preflight. A normal check transition or completed
+companion requires reconciliation, not a new user request. Changed ownership,
+additional outcomes, or a wider bundle must be resolved against the user's
+actual authorization before proceeding.
 
 Stop on an ambiguous natural-language selector, a missing object, cross-repository identity mismatch, unsupported target for the selected mode, or conflict between public and private authorities. Ask one focused question only when the ambiguity changes the repository, object, or authorized mutation.
