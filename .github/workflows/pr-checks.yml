@@ -1,0 +1,288 @@
+name: Pull request checks
+
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize, ready_for_review]
+  pull_request_target:
+    types: [opened, reopened, synchronize, ready_for_review, converted_to_draft]
+  issue_comment:
+    types: [created]
+  push:
+    branches: [main]
+    paths:
+      - .github/VOUCHED.td
+      - .github/workflows/pr-checks.yml
+
+# Metadata reads trusted base policy with a read-only token. Only the label
+# writers below receive write permissions, and only on trusted events.
+permissions:
+  contents: read
+  issues: read
+  pull-requests: read
+
+jobs:
+  validate:
+    if: github.event_name == 'pull_request'
+    name: Validate contribution metadata
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out the trusted policy
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+
+      - name: Detect trusted policy availability
+        id: trusted_policy
+        shell: bash
+        run: |
+          if [[ -f .github/scripts/contribution-policy.cjs ]]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Record policy bootstrap
+        if: steps.trusted_policy.outputs.available != 'true'
+        run: echo "The base revision predates contribution-policy enforcement; this bootstrap run has no trusted policy to execute."
+
+      - name: Check issue link and review context
+        if: steps.trusted_policy.outputs.available == 'true'
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const policy = require("./.github/scripts/contribution-policy.cjs");
+            const { owner, repo } = context.repo;
+            const pullRequest = context.payload.pull_request;
+            const result = policy.validatePullRequest(pullRequest);
+            if (pullRequest.user.login === "dependabot[bot]") return;
+
+            const errors = [...result.errors];
+            if (result.owningIssue !== null) {
+              const response = await github.rest.issues.get({
+                owner,
+                repo,
+                issue_number: result.owningIssue.number,
+              });
+              const relationData = await github.graphql(
+                `query($owner:String!,$repo:String!,$number:Int!) {
+                  repository(owner:$owner,name:$repo) {
+                    issue(number:$number) {
+                      subIssues(first:1) { totalCount }
+                      blockedBy(first:100) {
+                        totalCount
+                        nodes { number state repository { nameWithOwner } }
+                      }
+                    }
+                  }
+                }`,
+                { owner, repo, number: result.owningIssue.number },
+              );
+              const relations = relationData.repository?.issue;
+              if (relations === null || relations === undefined) {
+                errors.push("read the owning issue's native hierarchy and blockers");
+              } else {
+                errors.push(
+                  ...policy
+                    .validateIssueContract(response.data)
+                    .map((error) => `owning issue contract: ${error}`),
+                );
+                errors.push(
+                  ...policy
+                    .validateIssueClassification(response.data)
+                    .map((error) => `owning issue repository classification: ${error}`),
+                );
+                errors.push(...policy.validateTargetIssue(response.data, relations));
+              }
+            }
+
+            if (errors.length > 0) {
+              core.setFailed(`Update the pull request contract:\n- ${[...new Set(errors)].join("\n- ")}`);
+            }
+
+  area:
+    if: github.event_name == 'pull_request_target' && contains(fromJSON('["opened", "reopened", "synchronize"]'), github.event.action)
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+    concurrency:
+      group: pr-labels-area-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    name: Apply area labels
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # This job never checks out or executes pull-request code. The
+      # target event is used only so fork pull requests can receive labels.
+      - name: Apply changed-file area labels
+        uses: actions/labeler@bf12e9b00b37c5c0ca2b87b79b2daf7891dbda13 # v7.0.0
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          configuration-path: .github/labeler.yml
+
+  size:
+    if: github.event_name == 'pull_request_target' && contains(fromJSON('["opened", "reopened", "synchronize"]'), github.event.action)
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+    concurrency:
+      group: pr-labels-size-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    name: Apply size label
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # Like the area job, this uses API metadata only and never checks out the
+      # untrusted head from a fork.
+      - name: Classify changed lines
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const issue_number = context.payload.pull_request.number;
+            const files = await github.paginate(github.rest.pulls.listFiles, {
+              owner,
+              repo,
+              pull_number: issue_number,
+              per_page: 100,
+            });
+            const isTestFile = (filename) => /(^|\/)(?:__tests__|test|tests)\/|\.(?:test|spec|integration|browser)\.[^/]+$/i.test(filename);
+            const totalChangedLines = files.reduce(
+              (total, file) => total + file.additions + file.deletions,
+              0,
+            );
+            const nonTestChangedLines = files
+              .filter((file) => !isTestFile(file.filename))
+              .reduce((total, file) => total + file.additions + file.deletions, 0);
+            const changedLines = nonTestChangedLines === 0
+              ? totalChangedLines
+              : nonTestChangedLines;
+            const size = changedLines < 50 ? "size: XS"
+              : changedLines < 200 ? "size: S"
+              : changedLines < 500 ? "size: M"
+              : changedLines < 1000 ? "size: L"
+              : "size: XL";
+            const { data: existing } = await github.rest.issues.listLabelsOnIssue({
+              owner,
+              repo,
+              issue_number,
+            });
+            const obsolete = existing
+              .map((label) => label.name)
+              .filter((label) => label.startsWith("size: ") && label !== size);
+            for (const name of obsolete) {
+              try {
+                await github.rest.issues.removeLabel({ owner, repo, issue_number, name });
+              } catch (error) {
+                if (error.status !== 404) throw error;
+              }
+            }
+            if (!existing.some((label) => label.name === size)) {
+              await github.rest.issues.addLabels({ owner, repo, issue_number, labels: [size] });
+            }
+            core.info(
+              `PR #${issue_number}: ${nonTestChangedLines} non-test changed lines, ${totalChangedLines - nonTestChangedLines} test changed lines, ${changedLines} effective lines -> ${size}`,
+            );
+
+  collect:
+    if: github.event_name != 'pull_request'
+    name: Select pull requests
+    runs-on: ubuntu-latest
+    outputs:
+      targets: ${{ steps.targets.outputs.value }}
+    steps:
+      - id: targets
+        name: Resolve affected pull requests
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            if (context.eventName === "pull_request_target") {
+              const pullRequest = context.payload.pull_request;
+              core.setOutput("value", JSON.stringify([{ number: pullRequest.number, author: pullRequest.user.login }]));
+              return;
+            }
+            if (context.eventName === "issue_comment") {
+              const issue = context.payload.issue;
+              const body = context.payload.comment?.body ?? "";
+              if (!issue.pull_request || !body.includes("/recheck-vouch")) {
+                core.setOutput("value", "[]");
+                return;
+              }
+              core.setOutput("value", JSON.stringify([{ number: issue.number, author: issue.user.login }]));
+              return;
+            }
+            const pulls = await github.paginate(github.rest.pulls.list, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: "open",
+              per_page: 100,
+            });
+            core.setOutput(
+              "value",
+              JSON.stringify(pulls.map((pull) => ({ number: pull.number, author: pull.user.login }))),
+            );
+
+  label:
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+    name: Label pull request
+    needs: collect
+    if: needs.collect.outputs.targets != '[]'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target: ${{ fromJson(needs.collect.outputs.targets) }}
+    concurrency:
+      group: pr-vouch-${{ matrix.target.number }}
+      cancel-in-progress: true
+    steps:
+      - id: vouch
+        name: Classify author trust
+        uses: mitchellh/vouch/action/check-user@d66fa29a64600490892131ad87597c30c91fcac4 # v1
+        with:
+          user: ${{ matrix.target.author }}
+          allow-fail: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Apply one vouch label
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          PR_NUMBER: ${{ matrix.target.number }}
+          VOUCH_STATUS: ${{ steps.vouch.outputs.status }}
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const issue_number = Number(process.env.PR_NUMBER);
+            const status = process.env.VOUCH_STATUS;
+            const managed = new Set(["vouch: trusted", "vouch: unvouched", "vouch: blocked"]);
+            const next = status === "denounced"
+              ? "vouch: blocked"
+              : ["bot", "collaborator", "vouched"].includes(status)
+                ? "vouch: trusted"
+                : "vouch: unvouched";
+            const { data: current } = await github.rest.issues.listLabelsOnIssue({
+              owner,
+              repo,
+              issue_number,
+              per_page: 100,
+            });
+            const obsolete = current
+              .map((label) => label.name)
+              .filter((label) => managed.has(label) && label !== next);
+            for (const name of obsolete) {
+              try {
+                await github.rest.issues.removeLabel({ owner, repo, issue_number, name });
+              } catch (error) {
+                if (error.status !== 404) throw error;
+              }
+            }
+            if (!current.some((label) => label.name === next)) {
+              await github.rest.issues.addLabels({ owner, repo, issue_number, labels: [next] });
+            }
+            core.info(`PR #${issue_number}: ${status} -> ${next}`);

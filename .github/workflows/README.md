@@ -1,31 +1,37 @@
 # Workflows
 
-Five workflows.
+Three workflows.
 
 | Workflow | Question | Trigger |
 | --- | --- | --- |
 | [`ci.yml`](ci.yml) | Is this revision safe to merge? | every pull request, and every push to `main` |
-| [`pr-metadata.yml`](pr-metadata.yml) | Does a PR close one contribution-ready issue and retain complete review evidence? | pull-request updates |
-| [`pr-labels.yml`](pr-labels.yml) | Which product area and review size apply? | pull-request updates, including forks without code checkout |
-| [`pr-vouch.yml`](pr-vouch.yml) | Is the author a collaborator, maintainer-vouched, unvouched, or blocked? | pull-request updates, `/recheck-vouch`, and trust-list changes |
+| [`pr-checks.yml`](pr-checks.yml) | Does the PR meet contribution requirements, and which area, size, and author-trust labels apply? | PR updates, `/recheck-vouch`, and trust-list or workflow changes |
 | [`issue-governance.yml`](issue-governance.yml) | Is the public issue contract complete and are declared labels reconciled? | issue metadata or state changes |
 
-`pr-metadata.yml` is a required `main` check. It loads the policy from the
+`Validate contribution metadata` remains the required `main` check in
+`pr-checks.yml`. It loads the policy from the
 trusted base revision, validates meaningful template content, and verifies the
 owning issue is an open, unblocked, metadata-complete PR-sized leaf with a
 fully checked Contribution checklist or maintainer Ready checklist. The
 maintainer-applied `roadmap` label selects that issue format, not private Project
 membership or readiness. Maintainer issues retain the auditor's Outcome and
 completion-proof heading vocabulary; public submissions retain the public form.
-`pr-labels.yml` receives a
-write-scoped token only to mutate labels and never checks out or executes an
-untrusted pull-request head. `pr-vouch.yml` uses the committed
-[VOUCHED.td](../VOUCHED.td) trust list, classifies authors, and never grants
+The area, size, and vouch label jobs receive
+write-scoped tokens only to mutate labels and never check out or execute an
+untrusted pull-request head. The vouch jobs use the committed
+[VOUCHED.td](../VOUCHED.td) trust list, classify authors, and never grant
 merge permission. `issue-governance.yml` maps an issue form's declared work
 type and primary area to canonical labels, then comments on missing evidence for
 the selected format. It reads current issue state, leaves an unchanged reminder
 alone, and removes its reminder when the issue passes. It never asks for an
 assignee, milestone, or private Project field.
+
+Metadata validation runs only on `pull_request` with read-only permissions.
+Area and size labeling run on `pull_request_target` for opened, reopened, and
+synchronize events. Vouch selection keeps its trusted PR, comment, and main-push
+triggers. Separate per-PR concurrency groups prevent label runs from cancelling
+metadata validation or each other. The vouch label matrix still depends only on
+its target-selection job; the other jobs run independently.
 
 The private Roadmap is a separate maintainer product-development system.
 Project membership marks an issue as adopted into that plan. Only those issues
@@ -40,10 +46,10 @@ workflow filter or effect, so maintainers verify those settings against the
 contract after Project maintenance. [`CONTRIBUTOR-READINESS.md`](../../CONTRIBUTOR-READINESS.md)
 explains the public/private boundary.
 
-`issue-governance.yml` and `pr-metadata.yml` apply to every human account,
+Issue governance and PR metadata validation apply to every human account,
 including the repository owner. Dependabot retains its dedicated metadata path,
 and events created by `github-actions[bot]` are skipped only to make label
-reconciliation repeat-safe. Both workflows load
+reconciliation repeat-safe. Both policy jobs load
 `.github/scripts/contribution-policy.cjs`; focused tests keep the form parsing
 and pull-request evidence rules executable.
 
