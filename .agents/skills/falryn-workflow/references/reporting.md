@@ -20,7 +20,13 @@ Do not print private document text, private Project fields, snapshots, authentic
 A completed mode or orientation ends with one exact copy-ready line:
 
 ```text
-Suggested next prompt: Verify - Target: PR #123
+Suggested next prompt: Deliver - Target: Issue #123
 ```
 
 Use the repository's recognized typographic-dash form when required by its interface. Derive the prompt from fresh authoritative state. A suggestion does not authorize the action. If private access is required, use `Suggested next prompt: none` and name the missing maintainer action.
+
+For continuing work, prefer the automatic delivery selector appropriate to the
+verified scope, following [Next's routing](next.md#choose-the-delivery-scope).
+Use a manual-stage suggestion only when the user's requested control or a
+concrete isolated task calls for it, and state that reason. Needs Planning alone
+does not require a manual prompt because Deliver includes planning.
