@@ -29,6 +29,6 @@ For continuing work, prefer the automatic delivery selector appropriate to the
 verified scope, following [Next's routing](next.md#choose-the-delivery-scope).
 This applies to every manual mode: Plan, Implement, Review, Verify, and Merge.
 Do not turn normal delivery progress into a sequence of manual-stage prompts;
-continue the same issue or chain through Deliver, including verification and
+continue the same resolved delivery through Deliver, including verification and
 merge. Use a manual suggestion only for the user's requested stage control or
 an isolated task the controller cannot handle, and state that specific reason.

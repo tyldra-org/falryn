@@ -30,19 +30,22 @@ If the audit emits any diagnostic, report it and produce no sequence. Otherwise:
 
 ## Choose the delivery scope
 
-Prefer `Deliver - Target: Issue #N` for one selected issue. Resume a valid
+Resolve the suggested object through [delivery target resolution](targets-and-transitions.md#resolve-a-delivery-target).
+Prefer the existing PR selector when continuing that PR, the issue selector
+when selecting work without an active PR, and the docs-qualified form for a
+docs-owned target. The input object does not select a manual stage. Resume a valid
 interrupted chain with its exact parent-chain selector. For a new chain, prefer
 `Deliver - Target: Parent chain #N` when the user's requested scope is that
 parent outcome, or a broad Roadmap request and the audit establish a coherent
 remaining child sequence owned by the authenticated account. Do not widen an
 explicit single-issue request into a chain. A parent link alone is not enough:
 verify the native hierarchy, remaining scope, ownership, and ordering first.
-Use the single-issue form when only that child's delivery is established.
+Use that child's issue or existing PR form when only its delivery is established.
 
 This preference covers Plan, Implement, Review, Verify, and Merge. An existing
 implementation branch or PR, review findings, pending checks, or a verified PR
 awaiting merge normally belongs to the same delivery controller. Recommend
-continuing Deliver for its resolved issue or active parent chain instead of
+continuing Deliver for its resolved target instead of
 asking the user to advance through those stages with separate prompts.
 
 Suggest a manual mode only when the user requests that stage or step-by-step

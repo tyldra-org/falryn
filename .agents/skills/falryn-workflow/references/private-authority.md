@@ -36,6 +36,12 @@ Use public Falryn source, tests, `CURRENT-STATE.md`, issue and pull-request bodi
 - plan a public issue body without claiming private readiness; and
 - prepare an ordinary contribution under `CONTRIBUTING.md`.
 
+An explicit Deliver request may complete a public contribution or
+repository-approved issue-free maintenance PR when its public contract and
+documentation disposition are complete and no operation needs private
+authority. It must not infer private Project membership or sequence, or treat
+unavailable required docs verification as unaffected.
+
 It may not:
 
 - infer or report private Status, Priority, Readiness, ordering, or docs contents;

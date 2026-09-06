@@ -1,12 +1,28 @@
 # Deliver
 
-Deliver is one maintainer controller for one resolved PR-sized issue at a time. It serially performs readiness, implementation, fresh verification, bounded correction, merge, and reconciliation. It never creates planner, implementer, verifier, goal-wrapper, or parent-branch machinery.
+Deliver is one controller for completing a resolved delivery, one PR-sized
+outcome at a time. Issue, PR, docs, and parent inputs use the same
+[target resolution](targets-and-transitions.md#resolve-a-delivery-target) and
+continue from observed state. It never creates separate planner, implementer,
+verifier, goal-wrapper, or parent-branch machinery.
 
 ## Authority
 
-Upstream Deliver requires authenticated private Roadmap access because it changes Status and Readiness, resolves exact sequence and ownership, and reconciles completion through [governance audits](governance-audits.md). A required docs companion also requires private Falryn Docs access and [documentation delivery](documentation-delivery.md). Without either required authority, return `unavailable` before state mutation and name the explicit public preparation or maintainer action that can proceed.
+Require authenticated authority for every operation in the resolved scope.
+Roadmap-owned work and parent sequencing require private Roadmap access and
+[governance audits](governance-audits.md). Private docs work or a required docs
+companion requires Falryn Docs access and [documentation delivery](documentation-delivery.md).
+An ordinary public contribution or issue-free maintenance PR does not acquire
+private Project requirements by entering through Deliver. Unresolved private
+documentation impact still blocks complete delivery. Return `unavailable`
+before a mutation that lacks required authority, naming the missing prerequisite.
 
-The originating Deliver request authorizes merge only for the exact issue's freshly verified application PR and explicitly verified companions. It does not authorize changed revisions, missing checks, unresolved reviews, a different owner, or unrelated pull requests.
+The originating Deliver request authorizes completion and merge only within its
+resolved scope, at freshly verified revisions, including required companions
+when that scope covers them. This applies equally to application and docs-only
+deliveries. Repairs require fresh review and verification; previous revision
+evidence cannot authorize a changed head. Missing checks, unresolved reviews,
+changed ownership, and unrelated PRs are not covered.
 
 ## Efficient execution
 
@@ -14,16 +30,21 @@ Apply [shared execution efficiency](execution-efficiency.md) throughout the exis
 
 ## Controller loop
 
-1. Resolve the exact public issue, private Project state, assignee, hierarchy, blockers, and current delivery work.
-2. Plan only when readiness is unresolved, keeping the issue Todo.
-3. Set In Progress immediately before implementation after all preconditions pass.
-4. Implement one complete PR-sized slice and any required private companion.
-5. Verify the exact bundle without source mutation.
-6. Return actionable gaps to the same issue and branch, require observable progress, then verify the new revision.
+1. Resolve the exact target, owner, requested scope, existing PRs, companions, blockers, and applicable Project state. Apply assignment and readiness requirements only to work governed by them.
+2. Establish the remaining work from current evidence. Plan missing contract facts before implementation; keep Roadmap work Todo until implementation is admitted. A named human decision remains a stop condition.
+3. Reuse valid branches and PRs. Implement or repair only missing acceptance within the resolved scope; set Roadmap work In Progress when implementation begins. A docs-only outcome edits its docs owner, not application code.
+4. Review the current diff and verify the exact authorized bundle. Reuse unchanged trustworthy evidence, but refresh merge preconditions. An already complete PR proceeds to verification rather than repeating planning or implementation.
+5. Wait for required checks and resolve in-scope findings inside this controller. Do not hand the user separate Review, Verify, or Merge prompts merely because that stage has been reached.
+6. Return actionable gaps to the same owner and branch, require observable progress, then review and verify the new revision.
 7. After three repair passes without changed evidence, stop for a different strategy.
-8. Merge private docs first and the application last under [Merge](merge.md).
-9. Reconcile issue, private Project, parent, `CURRENT-STATE.md`, and safe local checkouts.
+8. Merge required docs companions first and the application last under [Merge](merge.md). A docs-only delivery merges its docs PR; a scoped companion request stops after that member.
+9. Reconcile the applicable issue, Project, parent, documentation, and safe local checkouts. Update `CURRENT-STATE.md` only when application behavior changed. Verify an already-merged target and finish missing reconciliation instead of merging again.
 
-Do not create duplicate branches or pull requests. A merged but incomplete delivery reopens its owner and uses a fresh branch. A distinct outcome receives one focused follow-up issue.
+Do not create duplicate branches or pull requests. Use [corrections](corrections.md)
+for closed or merged work; never reopen or edit a merged PR. A distinct outcome
+receives one focused follow-up issue.
 
-After a standalone issue completes, run Next and report the next target without starting it. A child continues only within its parent rules. For parent selectors, also read [parent delivery](parent-delivery.md).
+After a standalone delivery completes, report the next eligible target without
+starting it. Use Next when Roadmap authority is available; otherwise report the
+completed public scope without guessing private order. A child continues only
+within its parent rules. For parent selectors, read [parent delivery](parent-delivery.md).

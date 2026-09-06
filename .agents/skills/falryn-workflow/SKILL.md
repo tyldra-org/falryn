@@ -38,8 +38,8 @@ Load this skill for Falryn work, but activate a maintainer mode only when the us
 | `Review - Target: PR #N` | [Review](references/review.md) |
 | `Verify - Target: ...` | [Verify](references/verify.md) |
 | `Merge - Target: ...` | [Merge](references/merge.md) |
-| `Deliver - Target: Issue #N` | [Deliver](references/deliver.md) |
-| `Deliver - Target: Parent issue #N` or `Parent chain #N` | [Deliver](references/deliver.md) and [Parent delivery](references/parent-delivery.md) |
+| `Deliver` for an issue, PR, or docs-qualified issue/PR | [Target resolution](references/targets-and-transitions.md#resolve-a-delivery-target) and [Deliver](references/deliver.md) |
+| `Deliver` for a parent issue or parent chain, including docs-qualified parents | [Target resolution](references/targets-and-transitions.md#resolve-a-delivery-target), [Deliver](references/deliver.md), and [Parent delivery](references/parent-delivery.md) |
 | `Next - Target: Falryn Roadmap`, orientation, or status | [Next](references/next.md) |
 | Verify gap or incomplete merged delivery | [Corrections](references/corrections.md) |
 | Issue-readiness, Roadmap, liveness, or sequencing audit | [Governance audits](references/governance-audits.md) |

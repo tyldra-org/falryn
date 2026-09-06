@@ -28,6 +28,39 @@ Never substitute a same-numbered object from the other repository. A companion l
 
 After resolution, inspect native `parent`, `subIssues`, `blockedBy`, `blocking`, closing pull requests, milestone, assignee, and Project membership. Do not reconstruct hierarchy or dependencies from body prose when native relationships exist.
 
+## Resolve a delivery target
+
+Keep the requested operation, repository/object, authorized scope, and current
+delivery state separate. An issue or PR identifies work; it does not choose a
+manual workflow stage. Resolve these facts once before entering Deliver:
+
+| Input to Deliver | Resolved work |
+| --- | --- |
+| `Issue #N` or `Docs issue #N` | That repository's leaf issue and its existing delivery PR, if any |
+| `PR #N` | That exact Falryn PR, its owning issue, and verified required companions |
+| `Docs PR #N` | That exact docs PR and its docs-only owner, or its verified role in an application delivery |
+| `Parent issue #N` or `Docs parent issue #N` | One next ordered child of that parent |
+| `Parent chain #N` or `Docs parent chain #N` | The remaining ordered child deliveries within that parent |
+| Exact GitHub issue/PR URL | The corresponding repository-qualified object above |
+
+For a PR input, resolve its actual owner from the closing relationship and
+current contract. Reuse the existing PR rather than starting a replacement
+because the user entered through a different object. Keep a repository-approved
+issue-free maintenance PR, such as Dependabot, PR-owned; do not invent a dummy
+issue. A missing or conflicting owner on an issue-required PR is a resolution
+gap, not permission to guess.
+
+A docs companion is not a separate docs-only outcome. If a request is limited
+to that companion, deliver only that authorized member and report the remaining
+application delivery. Suggest the resolved application Deliver target when the
+user wants the whole outcome; do not silently acquire authority to merge it.
+
+Milestones, ranges, and Roadmap targets are selection or assessment scopes,
+not new bulk Deliver controllers. Use the authoritative sequence to recommend
+an existing issue, PR, or parent selector within the requested scope. Missing
+scope, owner, authority, or sequence evidence requires resolution, not an
+invented selector or a fallback manual prompt.
+
 ## Mode boundaries
 
 | Mode | Permitted result | Does not authorize |
@@ -37,7 +70,7 @@ After resolution, inspect native `parent`, `subIssues`, `blockedBy`, `blocking`,
 | Review | Assess one exact pull-request revision | Comments, approval, edits, Project mutation, merge |
 | Verify | Audit an exact PR, issue, parent, milestone, or range; perform only named governance reconciliation | Product or documentation repair, merge, release |
 | Merge | Merge the unchanged bundle from a fresh Verify preview and reconcile it | Changed revisions, release publication, branch deletion |
-| Deliver | Run the named issue's bounded Plan, Implement, Verify, correction, Merge, and reconciliation loop | Unrelated issues, changed heads, unlimited retries |
+| Deliver | Resolve the named issue, PR, docs, or parent scope and complete its remaining planning, implementation, review, verification, correction, merge, and reconciliation | Unrelated work, stale revision evidence, unlimited retries |
 | Next | Read and route from one valid private Roadmap generation | Any mutation or automatic start of the suggested mode |
 
 Plan, Implement, Review, Verify, and Merge remain separate manual modes. Review and Verify do not imply Merge. Deliver is the only composite mode, and its original request binds merge authority to the exact delivery owner and verified revisions.
