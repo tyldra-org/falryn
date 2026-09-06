@@ -21,6 +21,7 @@ import {
   DEFAULT_MAX_TOOL_LOOP_ITERATIONS,
 } from "../../../domain/tools/index.ts";
 import type { AssembledToolProposal } from "../../../providers/index.ts";
+import type { ProductTaskResources } from "../../orchestration/product-resources.ts";
 import type { TurnCoordinator, TurnCoordinatorError } from "../turn-coordinator.ts";
 
 export type ToolCallLoopLimits = {
@@ -43,6 +44,8 @@ export const DEFAULT_TOOL_CALL_LOOP_LIMITS: ToolCallLoopLimits = {
  * signal — never provider clients, UI state, or unrestricted host access.
  */
 export type ToolRunnerRequest = {
+  /** Product-owned parent allowance for composition; never supplied by a model. */
+  readonly taskResources?: ProductTaskResources;
   readonly invocationId: InvocationId;
   readonly toolCallId: string;
   readonly toolName: string;

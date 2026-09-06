@@ -11,9 +11,20 @@
 import type { Deadline } from "../foundation/deadline.ts";
 import type { BudgetDimension } from "./budget.ts";
 import type { TerminalOutcome } from "./outcome.ts";
+import type { ResourceAdmissionReceipt } from "./resource-admission.ts";
 import type { ConflictKey, PriorityClass, WorkUnit, WorkUnitId } from "./work.ts";
 
 export type SchedulingError =
+  | {
+      readonly code: "resource-admission";
+      readonly unitId: WorkUnitId;
+      readonly receipt: ResourceAdmissionReceipt;
+    }
+  | {
+      readonly code: "queue-limit";
+      readonly unitId: WorkUnitId;
+      readonly dimension: "items" | "bytes";
+    }
   /** A dependency edge points at a unit that was never submitted. */
   | {
       readonly code: "unknown-dependency";
@@ -102,6 +113,9 @@ export type SchedulerLimits = {
    * one is promoted. Bounds starvation without inverting priority.
    */
   readonly starvationThreshold: number;
+  readonly maxQueued?: number;
+  readonly maxQueuedBytes?: number;
+  readonly reservedInteractive?: number;
 };
 
 export type QueueDepthByPriority = Readonly<Record<PriorityClass, number>>;
@@ -135,6 +149,11 @@ export type WorkRunner<Value> = (context: {
 export type ScheduledWork<Value> = {
   readonly unit: WorkUnit;
   readonly run: WorkRunner<Value>;
+  readonly inputBytes?: number;
+  /** Synchronous atomic admission, called only when scheduler capacity is available. */
+  readonly admit?: () =>
+    | { readonly kind: "ready" | "wait" }
+    | { readonly kind: "refused"; readonly receipt: ResourceAdmissionReceipt };
 };
 
 export type SchedulerPort<Value> = {

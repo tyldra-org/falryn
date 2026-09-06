@@ -18,7 +18,6 @@
  */
 
 import type { ZodType } from "zod";
-
 import type {
   ArtifactId,
   CapabilityId,
@@ -27,6 +26,7 @@ import type {
 } from "../foundation/identity.ts";
 import { assertNever } from "../foundation/result.ts";
 import type { EffectCertainty } from "../orchestration/outcome.ts";
+import type { ResourceAdmissionReceipt } from "../orchestration/resource-admission.ts";
 import type { ConflictKey, EffectClass } from "../orchestration/work.ts";
 import { isEffectClass } from "../orchestration/work.ts";
 
@@ -145,7 +145,7 @@ type ToolInvocationResultCarrier = {
  * Pre-execution outcomes (`denied`, `unavailable`, `malformed`) always carry
  * `effect: "none"`.
  */
-export type ToolInvocationOutcome =
+export type ToolInvocationOutcome = { readonly admission?: ResourceAdmissionReceipt } & (
   | (ToolInvocationResultCarrier & {
       readonly status: "completed";
       readonly output: Readonly<Record<string, unknown>>;
@@ -188,7 +188,8 @@ export type ToolInvocationOutcome =
       readonly status: "partial";
       readonly output: Readonly<Record<string, unknown>>;
       readonly effect: EffectCertainty;
-    });
+    })
+);
 
 export type ToolInvocationRecord = {
   readonly invocationId: InvocationId;

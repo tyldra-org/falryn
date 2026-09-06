@@ -18,7 +18,7 @@ const budgetsSchema = z
     inputTokens: z.number().int().positive().optional(),
     outputTokens: z.number().int().positive().optional(),
     wallTimeMs: z.number().int().positive().optional(),
-    cost: z.number().positive().optional(),
+    cost: z.int().positive().optional(),
   })
   .strict()
   .default({});

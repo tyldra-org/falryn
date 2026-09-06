@@ -8,7 +8,13 @@
  */
 
 import { createHash } from "node:crypto";
-import { type ClockPort, duration, type TurnId } from "../../domain/foundation/index.ts";
+import {
+  type ClockPort,
+  deadlineAt,
+  duration,
+  instant,
+  type TurnId,
+} from "../../domain/foundation/index.ts";
 import type {
   EffectCertainty,
   ModelCapabilityBrief,
@@ -19,20 +25,25 @@ import {
   authorizeToolInvocation,
   confirmationInputFingerprint,
   type FocusedConfirmationRequest,
-  type PolicyAuthorizedInvocation,
   type ToolHookEnvelope,
   type ToolHookRegistry,
   type ToolInvocationOutcome,
   type ToolPolicyProfile,
   type ToolRegistry,
   validateAndNormalizeInvocations,
+  workUnitForAuthorized,
 } from "../../domain/tools/index.ts";
 import { createRuntimeProjectionRedactor } from "../diagnostics/redaction.ts";
+import {
+  capacityScope,
+  type ProductResources,
+  type ProductTaskResources,
+  processProductResources,
+} from "../orchestration/product-resources.ts";
 import type { ToolRunnerPort, ToolRunnerRequest } from "../runtime/tool-call-loop.ts";
 import type { TurnEventJournalPort } from "../runtime/turn-event-journal.ts";
 import { createToolHookRunner } from "./tool-hook-runner.ts";
 import { envelopeToolResult } from "./tool-result-envelope.ts";
-import { createToolWorkScheduler } from "./tool-work-scheduler.ts";
 
 export type ProductToolConfirmationResult =
   | { readonly kind: "confirmed"; readonly confirmationId: string }
@@ -50,6 +61,8 @@ export type ProductToolEffectLedger = Map<string, ToolInvocationOutcome>;
 
 export type ProductToolGatewayOptions = {
   readonly clock: ClockPort;
+  readonly resources?: ProductResources;
+  readonly taskResources?: ProductTaskResources;
   readonly registry: ToolRegistry;
   readonly runner: ToolRunnerPort;
   readonly journal: TurnEventJournalPort;
@@ -238,7 +251,7 @@ async function persist(
 /** Create the runner injected into the existing bounded tool-call loop. */
 export function createProductToolGateway(options: ProductToolGatewayOptions): ToolRunnerPort {
   const hookRunner = createToolHookRunner({ clock: options.clock, registry: options.hooks });
-  const scheduler = createToolWorkScheduler({ clock: options.clock, runner: options.runner });
+  const resources = options.resources ?? processProductResources;
   const redactor = createRuntimeProjectionRedactor();
 
   return {
@@ -329,17 +342,90 @@ export function createProductToolGateway(options: ProductToolGatewayOptions): To
       }
 
       const startedAt = options.clock.now();
-      const scheduled = await scheduler.run({
-        items: [{ authorized: authorized.value as PolicyAuthorizedInvocation }],
-        joinPolicy: "all",
+      const manifest = ready.entry.manifest;
+      const family = `${manifest.source}:${manifest.namespace}/${manifest.name}`;
+      const task = options.taskResources ?? resources.openTask(String(options.registry.generation));
+      const scopes = [];
+      if (manifest.concurrency.maxGlobal !== null)
+        scopes.push({
+          scope: capacityScope("tool", "falryn", family, "concurrency", "occupancy"),
+          amount: 1,
+          limit: manifest.concurrency.maxGlobal,
+        });
+      if (manifest.concurrency.maxPerWorkspace !== null)
+        scopes.push({
+          scope: capacityScope(
+            "tool",
+            "falryn",
+            family,
+            "concurrency",
+            "occupancy",
+            String(options.correlation.workspaceId),
+          ),
+          amount: 1,
+          limit: manifest.concurrency.maxPerWorkspace,
+        });
+      const workDeadline =
+        manifest.limits.defaultTimeoutMs === null
+          ? null
+          : deadlineAt(instant(Number(startedAt) + manifest.limits.defaultTimeoutMs));
+      const admitted = await task.execute({
+        operation: String(request.invocationId),
+        attempt: String(options.turnId),
+        generation: String(options.registry.generation),
+        unit: workUnitForAuthorized({ authorized: authorized.value }, workDeadline, null),
+        inputBytes: new TextEncoder().encode(JSON.stringify(ready.input)).length,
+        amounts: {
+          ...manifest.resourceAmounts,
+          bufferedBytes: manifest.limits.maxInputBytes + manifest.limits.maxOutputBytes,
+          bufferedItems: 1,
+        },
+        scopes,
         signal: request.signal,
-        maxQueued: 1,
+        async run(signal) {
+          const value = await options.runner.execute({
+            ...request,
+            capabilityId: manifest.capabilityId,
+            version: manifest.version,
+            effect: ready.effect,
+            input: ready.input,
+            signal,
+          });
+          return {
+            value,
+            terminated:
+              value.status === "completed" ||
+              value.status === "denied" ||
+              value.status === "malformed" ||
+              value.status === "unavailable",
+          };
+        },
       });
+      if (options.taskResources === undefined) task.close();
       const endedAt = options.clock.now();
       const outcome: ToolInvocationOutcome =
-        scheduled.kind === "completed" && scheduled.records[0] !== undefined
-          ? scheduled.records[0].outcome
-          : { status: "unavailable", reason: "tool-schedule-rejected", effect: "none" };
+        admitted.kind === "completed"
+          ? { ...admitted.value, admission: admitted.receipt }
+          : admitted.kind === "replayed"
+            ? {
+                status: "unavailable",
+                reason: "resource-result-replayed",
+                effect: "none",
+                admission: admitted.receipt,
+              }
+            : admitted.receipt.acquired
+              ? {
+                  status: "uncertain",
+                  effect: "uncertain",
+                  recoveryHint: "resource-capacity-held-awaiting-termination",
+                  admission: admitted.receipt,
+                }
+              : {
+                  status: "unavailable",
+                  reason: admitted.receipt.state,
+                  effect: "none",
+                  admission: admitted.receipt,
+                };
 
       await hookRunner.runPost({
         envelope: hookEnvelope(request, options.registry, "after-capability-invocation", outcome),
@@ -356,6 +442,7 @@ export function createProductToolGateway(options: ProductToolGatewayOptions): To
           capabilityId: request.capabilityId,
           outcome: terminalOutcome(outcome),
           observedStatus: outcome.status,
+          admission: admitted.receipt,
           ...(degradation === undefined ? {} : { degradation }),
         },
         request.signal,
@@ -404,7 +491,7 @@ export function createProductToolGateway(options: ProductToolGatewayOptions): To
       if (ready.effect !== "observation" && effectOf(projected) !== "none") {
         options.effectLedger.set(ledgerKey, projected);
       }
-      return projected;
+      return { ...projected, admission: admitted.receipt };
     },
   };
 }

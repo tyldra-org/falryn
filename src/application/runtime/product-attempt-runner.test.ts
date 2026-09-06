@@ -31,6 +31,7 @@ import {
   type RoutingReceipt,
 } from "../../providers/index.ts";
 import { createProductCapabilityRegistry } from "../capabilities/product-capability-registry.ts";
+import { createProductResources } from "../orchestration/product-resources.ts";
 import { promptCacheStablePrefixDigest } from "../providers/provider-prompt-cache.ts";
 import { discloseProductTools } from "../tools/product-tool-disclosure.ts";
 import { composeProductProcessTools } from "../tools/product-tools-process.ts";
@@ -63,6 +64,7 @@ function setup(
   const runtime = composeProductAgentRuntime({
     eventStore,
     clock: createManualClock(instant(100)),
+    resources: createProductResources(createManualClock(instant(100))),
     streamId: runtimeStreamId,
     correlation,
     providerAdapter: adapter,
@@ -1020,6 +1022,7 @@ describe("createProductAttemptRunner", () => {
     const runtime = composeProductAgentRuntime({
       eventStore: createInMemoryEventStore(),
       clock: createManualClock(instant(100)),
+      resources: createProductResources(createManualClock(instant(100))),
       streamId: streamId.from("session:attempt-process"),
       correlation,
       providerAdapter: adapter,
@@ -1229,4 +1232,98 @@ describe("createProductAttemptRunner", () => {
       capabilityId.from("builtin:workspace/run_shell@1"),
     );
   });
+});
+
+test("a live continuation cannot reset an exhausted whole-task input allowance", async () => {
+  let requests = 0;
+  const adapter = createDeterministicProviderAdapter({
+    onRequest: () => {
+      requests++;
+    },
+    script: (_request, index) =>
+      index === 0
+        ? {
+            kind: "tool",
+            toolCallId: "budget-read",
+            name: "list_dir",
+            argumentFragments: ['{"path":"."}'],
+            usage: { inputTokens: 10, outputTokens: 1, provenance: "provider-reported" },
+          }
+        : { kind: "text", text: "should not launch" },
+  });
+  const product = setup(adapter);
+  const id = await start(product, "turn-resource-residual");
+  const runner = product.runtime.requireAttemptRunner();
+  if (!runner.ok) throw new Error("runner required");
+  const result = await runner.value.run({
+    turnId: id,
+    identity: {
+      attemptNumber: 1,
+      modelAttemptId: modelAttemptId.from("attempt-resource-residual"),
+      fallbackPosition: 0,
+      providerKey: adapter.identity.providerId,
+      modelKey:
+        adapter.supportedModels[0] ??
+        (() => {
+          throw new Error("model required");
+        })(),
+    },
+    receipt: receipt(product, { inputTokens: 10, outputTokens: 30 }),
+    boundConfigurationGeneration: generation,
+    configurationGeneration: generation,
+    signal: new AbortController().signal,
+    modelInput: {
+      messages: [{ role: "user", parts: [{ kind: "text", text: "List the directory." }] }],
+      tools: product.disclosure.modelTools,
+      output: { kind: "text" },
+      budgets: { maxInputTokens: 10, maxOutputTokens: 20 },
+      disclosure: disclosureInput(product),
+    },
+  });
+  expect(requests).toBe(1);
+  expect(result.fact.kind).toBe("failed");
+  expect(result.output?.providerRequests).toBe(1);
+  expect({ fact: result.fact, admissions: result.output?.admissions }).toMatchObject({
+    admissions: [{ state: "admitted" }, { state: "limit-exceeded" }],
+  });
+});
+
+test("configured integer cost fails closed before a live request when pricing is unknown", async () => {
+  let requests = 0;
+  const product = setup(
+    createDeterministicProviderAdapter({
+      script: { kind: "text", text: "not sent" },
+      onRequest: () => {
+        requests++;
+      },
+    }),
+  );
+  const id = await start(product, "turn-resource-pricing");
+  const runner = product.runtime.requireAttemptRunner();
+  if (!runner.ok) throw new Error("runner required");
+  const route = receipt(product, { cost: 1000 });
+  const result = await runner.value.run({
+    turnId: id,
+    identity: {
+      attemptNumber: 1,
+      modelAttemptId: modelAttemptId.from("attempt-resource-pricing"),
+      fallbackPosition: 0,
+      providerKey: route.providerId,
+      modelKey: route.modelId,
+    },
+    receipt: route,
+    boundConfigurationGeneration: generation,
+    configurationGeneration: generation,
+    signal: new AbortController().signal,
+    modelInput: {
+      messages: [{ role: "user", parts: [{ kind: "text", text: "Hello." }] }],
+      tools: product.disclosure.modelTools,
+      output: { kind: "text" },
+      budgets: { maxInputTokens: 100, maxOutputTokens: 100 },
+      disclosure: disclosureInput(product),
+    },
+  });
+  expect(requests).toBe(0);
+  expect(result.output?.providerRequests).toBe(0);
+  expect(result.output?.admissions?.[0]?.state).toBe("quota-unknown");
 });

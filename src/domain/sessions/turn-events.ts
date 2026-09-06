@@ -74,6 +74,7 @@ export type TurnLifecycleFact =
     }
   | {
       readonly kind: "model.attempt.completed";
+      readonly admissions?: ModelAttemptCompletedEvent["payload"]["admissions"];
       readonly correlation: TurnCorrelation;
       readonly modelAttemptId: ModelAttemptId;
       readonly outcome: TerminalOutcome;
@@ -92,6 +93,7 @@ export type TurnLifecycleFact =
       readonly invocationId: InvocationId;
       readonly capabilityId: CapabilityId;
       readonly outcome: TerminalOutcome;
+      readonly admission?: CapabilityInvocationCompletedPayload["admission"];
       readonly observedStatus?: CapabilityInvocationCompletedPayload["observedStatus"];
       readonly degradation?: CapabilityInvocationCompletedPayload["degradation"];
     };
@@ -213,7 +215,10 @@ export function buildTurnLifecycleEvent(input: BuildTurnEventInput): RuntimeEven
         kind: "model.attempt.completed",
         modelAttemptId: fact.modelAttemptId,
         correlation: fact.correlation,
-        payload: { outcome: fact.outcome },
+        payload: {
+          outcome: fact.outcome,
+          ...(fact.admissions === undefined ? {} : { admissions: fact.admissions }),
+        },
       };
       return event;
     }
@@ -242,6 +247,7 @@ export function buildTurnLifecycleEvent(input: BuildTurnEventInput): RuntimeEven
         correlation: fact.correlation,
         payload: {
           outcome: fact.outcome,
+          ...(fact.admission === undefined ? {} : { admission: fact.admission }),
           ...(fact.observedStatus === undefined ? {} : { observedStatus: fact.observedStatus }),
           ...(fact.degradation === undefined ? {} : { degradation: fact.degradation }),
         },
@@ -267,6 +273,7 @@ export type ReplayedInvocation = {
   readonly startedAt: Timestamp | null;
   readonly completedAt: Timestamp | null;
   readonly outcome: TerminalOutcome | null;
+  readonly admission: CapabilityInvocationCompletedPayload["admission"] | null;
   readonly observedStatus: CapabilityInvocationCompletedPayload["observedStatus"] | null;
   readonly degradation: CapabilityInvocationCompletedPayload["degradation"] | null;
 };
@@ -315,6 +322,7 @@ type MutableInvocation = {
   startedAt: Timestamp | null;
   completedAt: Timestamp | null;
   outcome: TerminalOutcome | null;
+  admission: CapabilityInvocationCompletedPayload["admission"] | null;
   observedStatus: CapabilityInvocationCompletedPayload["observedStatus"] | null;
   degradation: CapabilityInvocationCompletedPayload["degradation"] | null;
 };
@@ -438,6 +446,7 @@ export function reduceTurnEvents(events: readonly RuntimeEvent[]): TurnEventRedu
             startedAt: null,
             completedAt: null,
             outcome: null,
+            admission: null,
             observedStatus: null,
             degradation: null,
           };
@@ -458,6 +467,7 @@ export function reduceTurnEvents(events: readonly RuntimeEvent[]): TurnEventRedu
             startedAt: null,
             completedAt: null,
             outcome: null,
+            admission: null,
             observedStatus: null,
             degradation: null,
           };
@@ -466,6 +476,7 @@ export function reduceTurnEvents(events: readonly RuntimeEvent[]): TurnEventRedu
         }
         invocation.completedAt = event.occurredAt;
         invocation.outcome = event.payload.outcome;
+        invocation.admission = event.payload.admission ?? null;
         invocation.observedStatus = event.payload.observedStatus ?? null;
         invocation.degradation = event.payload.degradation ?? null;
         invocation.capabilityId = event.capabilityId;
@@ -551,6 +562,7 @@ function freezeTurn(turn: MutableTurn): ReplayedTurn {
               startedAt: invocation.startedAt,
               completedAt: invocation.completedAt,
               outcome: invocation.outcome,
+              admission: invocation.admission,
               observedStatus: invocation.observedStatus,
               degradation: invocation.degradation,
             },

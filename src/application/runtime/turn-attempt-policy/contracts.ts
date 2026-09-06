@@ -13,6 +13,7 @@ import type {
   ModelCapabilityBrief,
   RetryPolicy,
 } from "../../../domain/orchestration/index.ts";
+import type { ResourceAdmissionReceipt } from "../../../domain/orchestration/resource-admission.ts";
 import type {
   AttemptAction,
   AttemptClassification,
@@ -22,6 +23,7 @@ import type {
   RetryBackoff,
   TurnSnapshot,
 } from "../../../domain/sessions/index.ts";
+import type { ModelCapability } from "../../../providers/catalog/model-capability.ts";
 import type {
   ModelBudgets,
   ModelMessage,
@@ -36,6 +38,10 @@ import type {
   UsageUnits,
   WorkIntent,
 } from "../../../providers/index.ts";
+import type {
+  ProductResources,
+  ProductTaskResources,
+} from "../../orchestration/product-resources.ts";
 import type { TurnCoordinator, TurnCoordinatorError } from "../turn-coordinator.ts";
 import type { TurnEventJournalPort } from "../turn-event-journal.ts";
 
@@ -108,6 +114,8 @@ export type AttemptModelInput = {
 };
 
 export type AttemptRunnerRequest = {
+  readonly taskResources?: ProductTaskResources;
+  readonly resourceCapability?: ModelCapability;
   readonly turnId: TurnId;
   readonly identity: AttemptIdentity;
   readonly receipt: RoutingReceipt;
@@ -126,6 +134,7 @@ export type AttemptRunnerResult = {
   readonly turn: TurnSnapshot | null;
   /** Model-facing output retained by the product entrypoint, never by retry policy. */
   readonly output?: {
+    readonly admissions?: readonly ResourceAdmissionReceipt[];
     readonly text: string;
     readonly reasoning: string;
     readonly toolResults: number;
@@ -146,6 +155,7 @@ export type AttemptRunnerPort = {
 };
 
 export type TurnAttemptPolicyOptions = {
+  readonly resources?: ProductResources;
   readonly clock: ClockPort;
   readonly coordinator: TurnCoordinator;
   readonly runner: AttemptRunnerPort;
