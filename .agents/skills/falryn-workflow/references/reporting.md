@@ -23,7 +23,7 @@ A completed mode or orientation ends with one exact copy-ready line:
 Suggested next prompt: Deliver - Target: Issue #123
 ```
 
-Use the repository's recognized typographic-dash form when required by its interface. Derive the prompt from fresh authoritative state. A suggestion does not authorize the action. If private access is required, use `Suggested next prompt: none` and name the missing maintainer action.
+Use the repository's recognized typographic-dash form when required by its interface. Derive the prompt from fresh authoritative state. A suggestion does not authorize the action. If required private access is unavailable, use `Suggested next prompt: none` and name the missing maintainer action.
 
 For continuing work, prefer the automatic delivery selector appropriate to the
 verified scope, following [Next's routing](next.md#choose-the-delivery-scope).
