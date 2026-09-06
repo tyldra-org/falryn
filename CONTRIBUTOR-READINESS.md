@@ -68,6 +68,19 @@ general `Work item` form covers documentation, infrastructure and maintenance,
 and research or qualification; repository automation maps its declared work
 type and every form's primary area to canonical labels.
 
+The maintainer-applied `roadmap` label selects the maintainer issue format in
+both issue and PR checks. These issues need Outcome and Completion proof rather
+than the public form's exact section names. Before a delivery PR, the Ready
+checklist must be non-empty and fully checked; an adopted public contribution
+may retain its Contribution checklist. Classification, open-leaf, and native
+blocker checks still apply. Author identity, body text, and the identity of the
+person editing an issue do not select this format. The label does not establish
+private Project membership or verified readiness.
+
+Issue automation reads the current issue before validating it. It updates its
+own reminder only when the diagnostic text changes and removes that reminder
+when the selected contract passes. It does not modify human comments.
+
 If a maintainer adopts an issue into product development, Project membership
 becomes the private ownership marker. Only then do the sole assignee, milestone,
 Status, P0-P3 Priority, Readiness, native hierarchy, liveness, and deterministic

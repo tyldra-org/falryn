@@ -13,14 +13,19 @@ Five workflows.
 `pr-metadata.yml` is a required `main` check. It loads the policy from the
 trusted base revision, validates meaningful template content, and verifies the
 owning issue is an open, unblocked, metadata-complete PR-sized leaf with a
-fully checked Contribution checklist. `pr-labels.yml` receives a
+fully checked Contribution checklist or maintainer Ready checklist. The
+maintainer-applied `roadmap` label selects that issue format, not private Project
+membership or readiness. Maintainer issues retain the auditor's Outcome and
+completion-proof heading vocabulary; public submissions retain the public form.
+`pr-labels.yml` receives a
 write-scoped token only to mutate labels and never checks out or executes an
 untrusted pull-request head. `pr-vouch.yml` uses the committed
 [VOUCHED.td](../VOUCHED.td) trust list, classifies authors, and never grants
 merge permission. `issue-governance.yml` maps an issue form's declared work
-type and primary area to canonical labels, then comments only on missing public
-contribution evidence. It never asks for an assignee, milestone, or private
-Project field.
+type and primary area to canonical labels, then comments on missing evidence for
+the selected format. It reads current issue state, leaves an unchanged reminder
+alone, and removes its reminder when the issue passes. It never asks for an
+assignee, milestone, or private Project field.
 
 The private Roadmap is a separate maintainer product-development system.
 Project membership marks an issue as adopted into that plan. Only those issues
