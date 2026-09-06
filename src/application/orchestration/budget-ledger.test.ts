@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test";
 
-import type { BudgetId, ReservationId } from "../../domain/orchestration/index.ts";
+import {
+  BUDGET_DIMENSIONS,
+  type BudgetId,
+  type ReservationId,
+} from "../../domain/orchestration/index.ts";
 import { createBudgetLedger } from "./budget-ledger.ts";
 
 const ROOT = "budget-root" as BudgetId;
@@ -12,6 +16,37 @@ function reservation(name: string): ReservationId {
 }
 
 describe("limits", () => {
+  test.each([-1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, Number.MAX_SAFE_INTEGER + 1])(
+    "rejects invalid limits before creating or narrowing a budget: %s",
+    (value) => {
+      for (const dimension of BUDGET_DIMENSIONS) {
+        const ledger = createBudgetLedger();
+        const limits = { [dimension]: value };
+        expect(ledger.createRoot(ROOT, limits).ok).toBe(false);
+        expect(ledger.report(ROOT)).toBeNull();
+        expect(ledger.createRoot(ROOT, { [dimension]: 10 }).ok).toBe(true);
+        const before = ledger.report(ROOT);
+        expect(ledger.createChild(ROOT, CHILD, limits).ok).toBe(false);
+        expect(ledger.wouldNarrow(ROOT, limits).ok).toBe(false);
+        expect(ledger.report(CHILD)).toBeNull();
+        expect(ledger.report(ROOT)).toEqual(before);
+      }
+    },
+  );
+
+  test("root limits are a snapshot, including explicit zero and unlimited dimensions", () => {
+    const ledger = createBudgetLedger();
+    const limits = { tokens: 10, operations: 0, bytes: null };
+    expect(ledger.createRoot(ROOT, limits).ok).toBe(true);
+    limits.tokens = 1_000;
+    limits.operations = 1;
+    expect(ledger.reserve(ROOT, reservation("tokens"), { tokens: 11 }).ok).toBe(false);
+    expect(ledger.reserve(ROOT, reservation("operation"), { operations: 1 }).ok).toBe(false);
+    expect(ledger.reserve(ROOT, reservation("bytes"), { bytes: 100 }).ok).toBe(true);
+    expect(ledger.report(ROOT)?.dimensions.tokens.limit).toBe(10);
+    expect(ledger.report(ROOT)?.dimensions.bytes.limit).toBeNull();
+  });
+
   test("a child cannot enlarge what it inherited", () => {
     const ledger = createBudgetLedger();
     ledger.createRoot(ROOT, { tokens: 1_000, costMicros: 500 });
@@ -48,6 +83,90 @@ describe("limits", () => {
 });
 
 describe("reserve, consume, release", () => {
+  test.each(["open", "consumed", "released"] as const)(
+    "a duplicate ID cannot replace a %s reservation or charge another budget",
+    (state) => {
+      const ledger = createBudgetLedger();
+      ledger.createRoot(ROOT, { tokens: 100, bytes: 100 });
+      ledger.createChild(ROOT, CHILD, {});
+      const id = reservation("original");
+      expect(ledger.reserve(CHILD, id, { tokens: 30, bytes: 20 }).ok).toBe(true);
+      if (state === "consumed") expect(ledger.consume(id, { tokens: 10 }).ok).toBe(true);
+      if (state === "released") expect(ledger.release(id).ok).toBe(true);
+      const root = ledger.report(ROOT);
+      const child = ledger.report(CHILD);
+      for (const target of [ROOT, CHILD]) {
+        for (const amounts of [{ tokens: 30, bytes: 20 }, { tokens: 1 }, {}]) {
+          expect(ledger.reserve(target, id, amounts)).toEqual({
+            ok: false,
+            error: { code: "duplicate-reservation", reservationId: id },
+          });
+          expect(ledger.report(ROOT)).toEqual(root);
+          expect(ledger.report(CHILD)).toEqual(child);
+        }
+      }
+      if (state === "open") {
+        expect(ledger.consume(id, { tokens: 10, bytes: 5 }).ok).toBe(true);
+        expect(ledger.report(ROOT)?.dimensions.tokens.remaining).toBe(90);
+        expect(ledger.report(ROOT)?.dimensions.bytes.remaining).toBe(95);
+      }
+      expect(ledger.release(id).ok).toBe(true);
+      expect(ledger.openReservationCount()).toBe(0);
+    },
+  );
+
+  test.each([...BUDGET_DIMENSIONS])(
+    "unlimited %s accounting stays exact at its numeric ceiling",
+    (dimension) => {
+      const ledger = createBudgetLedger();
+      ledger.createRoot(ROOT, {});
+      ledger.createChild(ROOT, CHILD, {});
+      ledger.createChild(CHILD, GRANDCHILD, {});
+      ledger.reserve(ROOT, reservation("used"), { [dimension]: Number.MAX_SAFE_INTEGER - 3 });
+      ledger.consume(reservation("used"), { [dimension]: Number.MAX_SAFE_INTEGER - 3 });
+      ledger.reserve(CHILD, reservation("held"), { [dimension]: 2 });
+      const before = [ROOT, CHILD, GRANDCHILD].map((id) => ledger.report(id));
+
+      expect(ledger.reserve(GRANDCHILD, reservation("overflow"), { [dimension]: 2 })).toEqual({
+        ok: false,
+        error: { code: "accounting-overflow", budgetId: ROOT, dimension, remaining: 1 },
+      });
+      expect([ROOT, CHILD, GRANDCHILD].map((id) => ledger.report(id))).toEqual(before);
+      expect(ledger.release(reservation("held")).ok).toBe(true);
+      expect(ledger.reserve(GRANDCHILD, reservation("boundary"), { [dimension]: 3 }).ok).toBe(true);
+      expect(ledger.consume(reservation("boundary"), { [dimension]: 3 }).ok).toBe(true);
+      expect(ledger.report(ROOT)?.dimensions[dimension]).toEqual({
+        limit: null,
+        reserved: 0,
+        consumed: Number.MAX_SAFE_INTEGER,
+        remaining: null,
+      });
+      expect(ledger.openReservationCount()).toBe(0);
+    },
+  );
+
+  test("a rejected settlement preserves every dimension until a valid settlement", () => {
+    const ledger = createBudgetLedger();
+    ledger.createRoot(ROOT, { tokens: 100, bytes: 100 });
+    ledger.createChild(ROOT, CHILD, {});
+    const amounts = { tokens: 20, bytes: 30 };
+    ledger.reserve(CHILD, reservation("a"), amounts);
+    amounts.tokens = 80;
+    const before = [ledger.report(ROOT), ledger.report(CHILD)];
+    for (const actual of [{ tokens: 21 }, { bytes: -1 }, { bytes: Number.NaN }]) {
+      expect(ledger.consume(reservation("a"), actual).ok).toBe(false);
+      expect([ledger.report(ROOT), ledger.report(CHILD)]).toEqual(before);
+    }
+    expect(ledger.consume(reservation("a"), { tokens: 10, bytes: 5 }).ok).toBe(true);
+    for (const id of [ROOT, CHILD]) {
+      expect(ledger.report(id)?.dimensions.tokens.remaining).toBe(90);
+      expect(ledger.report(id)?.dimensions.bytes.remaining).toBe(95);
+    }
+    expect(ledger.consume(reservation("a"), {}).ok).toBe(false);
+    expect(ledger.release(reservation("a")).ok).toBe(true);
+    expect(ledger.report(ROOT)?.dimensions.tokens.remaining).toBe(90);
+  });
+
   test("accounts without drift across many integer operations", () => {
     const ledger = createBudgetLedger();
     ledger.createRoot(ROOT, { costMicros: 1_000_000 });
@@ -171,7 +290,7 @@ describe("hierarchy", () => {
     const refused = ledger.reserve(GRANDCHILD, reservation("a"), { tokens: 50 });
     expect(refused.ok).toBe(false);
 
-    // The grandchild and child were charged first, then rolled back.
+    // An ancestor refusal must leave the entire chain unchanged.
     expect(ledger.report(GRANDCHILD)?.dimensions.tokens.reserved).toBe(0);
     expect(ledger.report(CHILD)?.dimensions.tokens.reserved).toBe(0);
     expect(ledger.report(ROOT)?.dimensions.tokens.reserved).toBe(0);

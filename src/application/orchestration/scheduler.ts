@@ -21,6 +21,7 @@
  *   forever on work that already ended.
  */
 
+import { randomUUID } from "node:crypto";
 import {
   type ClockPort,
   type Deadline,
@@ -415,14 +416,17 @@ export function createScheduler<Value>(options: SchedulerOptions): SchedulerPort
 
     const start = (entry: Entry<Value>): void => {
       if (budget !== undefined) {
-        const reservationId = `${entry.unit.id}:reservation` as ReservationId;
+        // Work IDs may recur across generations and scheduler instances.
+        // Capacity belongs to this execution, not to the reusable work label.
+        const reservationId = randomUUID() as ReservationId;
         const reserved = budget.ledger.reserve(budget.budgetId, reservationId, {
           operations: 1,
           bytes: entry.unit.expectedOutputBytes,
         });
         if (!reserved.ok) {
           const error: SchedulingError =
-            reserved.error.code === "budget-exhausted"
+            reserved.error.code === "budget-exhausted" ||
+            reserved.error.code === "accounting-overflow"
               ? {
                   code: "budget-exhausted",
                   unitId: entry.unit.id,

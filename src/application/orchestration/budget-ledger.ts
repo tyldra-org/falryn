@@ -2,9 +2,8 @@
  * Hierarchical budget accounting.
  *
  * A reservation is taken against a budget *and every ancestor*, so a child
- * cannot spend what its parent no longer has. If any ancestor refuses, the
- * partial reservation is rolled back before returning — leaving a partial
- * charge behind would leak budget that nothing will ever release.
+ * cannot spend what its parent no longer has. Every ancestor is checked before
+ * any charge is applied, so a refusal leaves the entire chain unchanged.
  *
  * Reserved amounts count against the limit immediately. Two units that each fit
  * in the remaining budget must not both be admitted and overshoot together;
@@ -25,6 +24,7 @@ import {
   narrowLimits,
   type ReservationId,
   validateAmounts,
+  validateLimits,
 } from "../../domain/orchestration/index.ts";
 
 /**
@@ -89,6 +89,7 @@ export type BudgetLedger = {
   /** Whether a requested child limit would have been narrowed. */
   wouldNarrow(parentId: BudgetId, limits: BudgetLimits): Result<boolean, BudgetError>;
 
+  /** Reservation IDs cannot be reused, including after settlement. */
   reserve(
     budgetId: BudgetId,
     reservationId: ReservationId,
@@ -137,11 +138,15 @@ export function createBudgetLedger(): BudgetLedger {
       if (nodes.has(budgetId)) {
         return err({ code: "duplicate-budget", budgetId });
       }
+      const valid = validateLimits(limits);
+      if (!valid.ok) {
+        return valid;
+      }
       nodes.set(budgetId, {
         budgetId,
         parentId: null,
         depth: 0,
-        limits,
+        limits: { ...limits },
         reserved: zeroed(),
         consumed: zeroed(),
       });
@@ -163,6 +168,10 @@ export function createBudgetLedger(): BudgetLedger {
       if (parent.depth + 1 > MAX_BUDGET_DEPTH) {
         return err({ code: "budget-depth-exceeded", maximumDepth: MAX_BUDGET_DEPTH });
       }
+      const valid = validateLimits(limits);
+      if (!valid.ok) {
+        return valid;
+      }
       nodes.set(budgetId, {
         budgetId,
         parentId,
@@ -179,6 +188,10 @@ export function createBudgetLedger(): BudgetLedger {
       if (parent === undefined) {
         return err({ code: "unknown-budget", budgetId: parentId });
       }
+      const valid = validateLimits(limits);
+      if (!valid.ok) {
+        return valid;
+      }
       return ok(enlargesLimits(parent.limits, limits));
     },
 
@@ -194,21 +207,18 @@ export function createBudgetLedger(): BudgetLedger {
       if (!nodes.has(budgetId)) {
         return err({ code: "unknown-budget", budgetId });
       }
+      if (reservations.has(reservationId)) {
+        return err({ code: "duplicate-reservation", reservationId });
+      }
       const requested = filled(amounts);
       const chain = chainOf(budgetId);
 
-      // Apply nearest-first, rolling back everything applied so far the moment
-      // an ancestor refuses. A partial charge would never be released.
-      const applied: BudgetNode[] = [];
+      // Preflight the whole chain before writing. Even unlimited dimensions
+      // must stay within exact integer accounting.
       for (const node of chain) {
         for (const dimension of BUDGET_DIMENSIONS) {
           const remaining = remainingIn(node, dimension);
           if (remaining !== null && requested[dimension] > remaining) {
-            for (const rollback of applied) {
-              for (const undo of BUDGET_DIMENSIONS) {
-                rollback.reserved[undo] -= requested[undo];
-              }
-            }
             return err({
               code: "budget-exhausted",
               budgetId: node.budgetId,
@@ -217,11 +227,22 @@ export function createBudgetLedger(): BudgetLedger {
               remaining,
             });
           }
+          const safeRemaining =
+            Number.MAX_SAFE_INTEGER - node.reserved[dimension] - node.consumed[dimension];
+          if (requested[dimension] > safeRemaining) {
+            return err({
+              code: "accounting-overflow",
+              budgetId: node.budgetId,
+              dimension,
+              remaining: safeRemaining,
+            });
+          }
         }
+      }
+      for (const node of chain) {
         for (const dimension of BUDGET_DIMENSIONS) {
           node.reserved[dimension] += requested[dimension];
         }
-        applied.push(node);
       }
 
       reservations.set(reservationId, {
