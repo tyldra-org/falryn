@@ -230,6 +230,7 @@ export function composeProductGitTools(ports: ProductGitToolPorts): ProductGitTo
   const git = ports.git;
 
   const runner: ToolRunnerPort = {
+    hasBinding: (id) => registry.resolveByCapabilityId(id) !== null,
     async execute(request: ToolRunnerRequest): Promise<ToolInvocationOutcome> {
       if (request.signal.aborted) {
         return { status: "cancelled", effect: "none" };

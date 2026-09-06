@@ -84,3 +84,6 @@ export {
   queryCapabilityRegistry,
   serializeCapabilityRegistry,
 } from "./capability-registry.ts";
+
+export type { CompositionGraph, CompositionNode, CompositionProvenance } from "./composition.ts";
+export { compositionProvenanceSchema, parseCompositionGraph } from "./composition.ts";

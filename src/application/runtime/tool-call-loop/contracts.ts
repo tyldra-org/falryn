@@ -1,3 +1,4 @@
+import type { CompositionProvenance } from "../../../domain/capabilities/composition.ts";
 /** Public contracts and bounds for iterative model tool execution. */
 
 import type {
@@ -44,6 +45,9 @@ export const DEFAULT_TOOL_CALL_LOOP_LIMITS: ToolCallLoopLimits = {
  * signal — never provider clients, UI state, or unrestricted host access.
  */
 export type ToolRunnerRequest = {
+  readonly composition?: CompositionProvenance;
+  /** Trusted composition consumer; never serialized or supplied by a provider. */
+  readonly captureExactOutput?: (value: Readonly<Record<string, unknown>>) => void;
   /** Product-owned parent allowance for composition; never supplied by a model. */
   readonly taskResources?: ProductTaskResources;
   readonly invocationId: InvocationId;
@@ -57,6 +61,12 @@ export type ToolRunnerRequest = {
 };
 
 export type ToolRunnerPort = {
+  hasBinding?(id: BoundToolInvocation["descriptor"]["id"]): boolean;
+  executeBatch?(
+    batch: readonly BoundToolInvocation[],
+    signal: AbortSignal,
+    maxConcurrent: number,
+  ): Promise<readonly ToolInvocationRecord[]>;
   execute(request: ToolRunnerRequest): Promise<ToolInvocationOutcome>;
 };
 

@@ -204,7 +204,9 @@ function projectedOutcome(
     case "unavailable":
       return { status, effect: "none", reason };
     case "malformed":
-      return { status, effect: "none", reason };
+      return effect === "none"
+        ? { status, effect, reason }
+        : { status: "failed", effect, reason: "invalid-native-output" };
   }
 }
 
@@ -242,10 +244,12 @@ function correlation(options: ProductToolGatewayOptions) {
 async function persist(
   options: ProductToolGatewayOptions,
   fact: TurnLifecycleFact,
-  signal: AbortSignal,
+  signal?: AbortSignal,
 ): Promise<boolean> {
   const result = await options.journal.persist([fact], signal);
-  return result.kind === "persisted";
+  return (
+    result.kind === "persisted" && result.receipts.every((receipt) => receipt.kind !== "duplicate")
+  );
 }
 
 /** Create the runner injected into the existing bounded tool-call loop. */
@@ -287,6 +291,13 @@ export function createProductToolGateway(options: ProductToolGatewayOptions): To
         };
       }
       const ready = validated.value[0];
+      if (
+        ready.entry.manifest.capabilityId !== request.capabilityId ||
+        ready.entry.manifest.version !== request.version ||
+        (request.composition !== undefined && ready.entry.manifest.effect !== request.effect)
+      ) {
+        return { status: "unavailable", reason: "capability-binding-mismatch", effect: "none" };
+      }
       const ledgerKey = `${options.turnId}:${confirmationInputFingerprint(
         ready.entry.manifest.capabilityId,
         ready.input,
@@ -331,6 +342,7 @@ export function createProductToolGateway(options: ProductToolGatewayOptions): To
           invocationId: request.invocationId,
           capabilityId: request.capabilityId,
           capabilityVersion: request.version,
+          ...(request.composition === undefined ? {} : { composition: request.composition }),
           inputDigest: createHash("sha256")
             .update(confirmationInputFingerprint(request.capabilityId, ready.input, ready.effect))
             .digest("hex"),
@@ -383,8 +395,23 @@ export function createProductToolGateway(options: ProductToolGatewayOptions): To
         scopes,
         signal: request.signal,
         async run(signal) {
+          if (
+            request.composition !== undefined &&
+            options.runner.hasBinding?.(manifest.capabilityId) !== true
+          ) {
+            return {
+              value: {
+                status: "unavailable",
+                reason: "missing-native-binding",
+                effect: "none",
+              } as const,
+              terminated: true,
+            };
+          }
+          const { captureExactOutput: _captureExactOutput, ...nativeRequest } = request;
           const value = await options.runner.execute({
-            ...request,
+            ...nativeRequest,
+            taskResources: task,
             capabilityId: manifest.capabilityId,
             version: manifest.version,
             effect: ready.effect,
@@ -433,25 +460,10 @@ export function createProductToolGateway(options: ProductToolGatewayOptions): To
       });
 
       const degradation = degradationObservation(request, outcome, options.opportunityPlan);
-      const committed = await persist(
-        options,
-        {
-          kind: "capability.invocation.completed",
-          correlation: correlation(options),
-          invocationId: request.invocationId,
-          capabilityId: request.capabilityId,
-          outcome: terminalOutcome(outcome),
-          observedStatus: outcome.status,
-          admission: admitted.receipt,
-          ...(degradation === undefined ? {} : { degradation }),
-        },
-        request.signal,
-      );
-
       const elapsed = Math.max(0, Number(endedAt) - Number(startedAt));
       const entry = ready.entry;
       const resultMetadata = "result" in outcome ? outcome.result : undefined;
-      const enveloped = envelopeToolResult({
+      const envelopeInput: Parameters<typeof envelopeToolResult>[0] = {
         invocationId: request.invocationId,
         capabilityId: request.capabilityId,
         version: request.version,
@@ -468,7 +480,7 @@ export function createProductToolGateway(options: ProductToolGatewayOptions): To
           executeMs: duration(elapsed),
           captureMs: null,
         },
-        persistFailed: !committed,
+        persistFailed: false,
         captureOverflow: resultMetadata?.captureOverflow ?? false,
         ...(resultMetadata?.containedProcessExitCode === undefined
           ? {}
@@ -480,7 +492,34 @@ export function createProductToolGateway(options: ProductToolGatewayOptions): To
             }),
         projection: entry.manifest.resultProjection,
         redactor,
+      };
+      let enveloped = envelopeToolResult(envelopeInput);
+      const validatedOutcome = projectedOutcome(
+        enveloped.result.status,
+        enveloped.result.effect,
+        enveloped.projection as unknown as Readonly<Record<string, unknown>>,
+        failureReason(outcome),
+      );
+      const committed = await persist(options, {
+        kind: "capability.invocation.completed",
+        correlation: correlation(options),
+        invocationId: request.invocationId,
+        capabilityId: request.capabilityId,
+        outcome: terminalOutcome(validatedOutcome),
+        observedStatus: validatedOutcome.status,
+        ...(request.composition === undefined ? {} : { composition: request.composition }),
+        admission: admitted.receipt,
+        ...(degradation === undefined ? {} : { degradation }),
       });
+      if (!committed) enveloped = envelopeToolResult({ ...envelopeInput, persistFailed: true });
+      if (
+        enveloped.result.status === "completed" &&
+        !enveloped.result.captureTruncated &&
+        enveloped.result.value !== null &&
+        committed
+      ) {
+        request.captureExactOutput?.(enveloped.result.value);
+      }
       const projection = enveloped.projection as unknown as Readonly<Record<string, unknown>>;
       const projected = projectedOutcome(
         enveloped.result.status,
@@ -491,7 +530,11 @@ export function createProductToolGateway(options: ProductToolGatewayOptions): To
       if (ready.effect !== "observation" && effectOf(projected) !== "none") {
         options.effectLedger.set(ledgerKey, projected);
       }
-      return { ...projected, admission: admitted.receipt };
+      return {
+        ...projected,
+        admission: admitted.receipt,
+        ...(request.composition === undefined ? {} : { composition: request.composition }),
+      };
     },
   };
 }

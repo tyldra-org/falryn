@@ -173,6 +173,8 @@ export const LIVE_TURN_MATRIX_EVENT_KINDS: RuntimeEvent["kind"][] = [
   "turn.started",
   "model.attempt.started",
   "capability.invocation.started",
+  "capability.invocation.started",
+  "capability.invocation.completed",
   "capability.invocation.completed",
   "model.attempt.completed",
   "turn.completed",

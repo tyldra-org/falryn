@@ -129,6 +129,7 @@ export type TurnEventJournalPort = Pick<TurnEventJournal, "persist">;
 
 export function createTurnEventJournal(options: TurnEventJournalOptions): TurnEventJournal {
   let next: Sequence | null = null;
+  let appendTail: Promise<unknown> = Promise.resolve();
   const maxEvents = options.maxEvents ?? MAX_STREAM_READ_LIMIT;
   const listeners = new Set<(events: readonly RuntimeEvent[]) => void>();
 
@@ -295,51 +296,10 @@ export function createTurnEventJournal(options: TurnEventJournalOptions): TurnEv
         listeners.delete(listener);
       };
     },
-    async persist(facts, signal) {
-      const events: RuntimeEvent[] = [];
-      const receipts: AppendReceipt[] = [];
-      if (facts.length === 0) {
-        return { kind: "persisted", events, receipts };
-      }
-
-      const discovered = await discoverNextSequence(signal);
-      if (!discovered.ok) {
-        if ("cancelled" in discovered) {
-          return { kind: "cancelled", events, receipts };
-        }
-        return { kind: "store-error", error: discovered.error, events, receipts };
-      }
-
-      let sequence = discovered.next;
-      for (const fact of facts) {
-        if (aborted(signal)) {
-          return { kind: "cancelled", events, receipts };
-        }
-        const event = buildTurnLifecycleEvent({
-          fact,
-          streamId: options.streamId,
-          sequence,
-          occurredAt: timestampFromEpochMilliseconds(options.clock.now()),
-        });
-        const appended = await options.eventStore.append(event, signal);
-        if (!appended.ok) {
-          return { kind: "store-error", error: appended.error, events, receipts };
-        }
-        events.push(event);
-        receipts.push(appended.value);
-        for (const listener of listeners) {
-          listener([event]);
-        }
-        if (appended.value.kind === "appended") {
-          sequence = nextSequence(sequence);
-          next = sequence;
-        } else {
-          sequence = nextSequence(appended.value.sequence);
-          next = sequence;
-        }
-      }
-
-      return { kind: "persisted", events, receipts };
+    persist(facts, signal) {
+      const pending = appendTail.then(() => persistFacts(facts, signal));
+      appendTail = pending.catch(() => undefined);
+      return pending;
     },
 
     async replay(signal) {
@@ -356,65 +316,78 @@ export function createTurnEventJournal(options: TurnEventJournalOptions): TurnEv
     async replayTurn(turnId, signal) {
       const read = await readAllEvents(signal);
       if (!read.ok) {
-        if ("cancelled" in read) {
-          return { kind: "cancelled" };
-        }
-        return { kind: "store-error", error: read.error };
+        return "cancelled" in read
+          ? { kind: "cancelled" }
+          : { kind: "store-error", error: read.error };
       }
-
-      const classified = classifyRead(read.events, read.truncated);
-      if (classified.kind === "empty") {
+      const replayed = classifyRead(read.events, read.truncated);
+      const turn =
+        replayed.kind === "empty"
+          ? undefined
+          : replayed.turns.find((entry) => entry.turnId === turnId);
+      if (replayed.kind === "empty" || turn === undefined)
         return {
           kind: "turn-missing",
           turnId,
           streamId: options.streamId,
-          events: [],
-          truncated: false,
+          events: replayed.events,
+          truncated: replayed.kind === "empty" ? false : replayed.truncated,
         };
-      }
-
-      const turn = classified.turns.find((entry) => entry.turnId === turnId);
-      if (turn === undefined) {
-        return {
-          kind: "turn-missing",
-          turnId,
-          streamId: options.streamId,
-          events: classified.events,
-          truncated: classified.truncated,
-        };
-      }
-
-      switch (classified.kind) {
-        case "corrupt":
-          return {
-            kind: "corrupt",
-            streamId: options.streamId,
-            turns: [turn],
-            events: classified.events,
-            report: classified.report,
-            truncated: classified.truncated,
-          };
-        case "partial":
-          return {
-            kind: "partial",
-            turns: [turn],
-            events: classified.events,
-            report: classified.report,
-            truncated: true,
-          };
-        case "rebuilt":
-          return {
-            kind: "rebuilt",
-            turns: [turn],
-            events: classified.events,
-            report: classified.report,
-            truncated: false,
-          };
-        default: {
-          const _exhaustive: never = classified;
-          return _exhaustive;
-        }
-      }
+      return { ...replayed, turns: [turn] };
     },
   };
+
+  async function persistFacts(
+    facts: readonly TurnLifecycleFact[],
+    signal?: AbortSignal,
+  ): Promise<PersistTurnEventsOutcome> {
+    const events: RuntimeEvent[] = [];
+    const receipts: AppendReceipt[] = [];
+    if (facts.length === 0) {
+      return { kind: "persisted", events, receipts };
+    }
+
+    const discovered = await discoverNextSequence(signal);
+    if (!discovered.ok) {
+      if ("cancelled" in discovered) {
+        return { kind: "cancelled", events, receipts };
+      }
+      return { kind: "store-error", error: discovered.error, events, receipts };
+    }
+
+    let sequence = discovered.next;
+    for (const fact of facts) {
+      if (aborted(signal)) {
+        return { kind: "cancelled", events, receipts };
+      }
+      const event = buildTurnLifecycleEvent({
+        fact,
+        streamId: options.streamId,
+        sequence,
+        occurredAt: timestampFromEpochMilliseconds(options.clock.now()),
+      });
+      const appended = await options.eventStore.append(event, signal);
+      if (!appended.ok) {
+        return { kind: "store-error", error: appended.error, events, receipts };
+      }
+      events.push(event);
+      receipts.push(appended.value);
+      if (appended.value.kind === "appended") {
+        sequence = nextSequence(sequence);
+        next = sequence;
+      } else {
+        // An old idempotency receipt must not rewind the live append cursor.
+        sequence =
+          sequence > appended.value.sequence ? sequence : nextSequence(appended.value.sequence);
+        next = sequence;
+      }
+      if (appended.value.kind === "appended") {
+        for (const listener of listeners) {
+          listener([event]);
+        }
+      }
+    }
+
+    return { kind: "persisted", events, receipts };
+  }
 }

@@ -476,6 +476,16 @@ describe("composeProductShellAttachments", () => {
       LIVE_TURN_MATRIX_EVENT_KINDS,
     );
     expect(
+      attachments.transcriptFeed
+        .events()
+        .some(
+          (event) =>
+            event.kind === "capability.invocation.completed" &&
+            event.capabilityId === "falryn:composition:v1" &&
+            event.payload.composition?.topology.length === 1,
+        ),
+    ).toBe(true);
+    expect(
       attachments.transcriptFeed.events().find((event) => event.kind === "turn.completed")?.payload,
     ).toMatchObject({ outcome: { kind: "completed" } });
 

@@ -414,6 +414,14 @@ describe("runCoding", () => {
     expect(replayed.ok).toBe(true);
     if (replayed.ok) {
       expect(replayed.value.map((event) => event.kind)).toEqual(LIVE_TURN_MATRIX_EVENT_KINDS);
+      expect(
+        replayed.value.some(
+          (event) =>
+            event.kind === "capability.invocation.completed" &&
+            event.capabilityId === "falryn:composition:v1" &&
+            event.payload.composition?.topology.length === 1,
+        ),
+      ).toBe(true);
       const completed = replayed.value.find(
         (event) => event.kind === "capability.invocation.completed",
       );

@@ -1,3 +1,4 @@
+import type { CompositionProvenance } from "../capabilities/composition.ts";
 /**
  * Tool-call pipeline contracts: proposal binding, effect class, and typed
  * invocation outcomes.
@@ -145,7 +146,10 @@ type ToolInvocationResultCarrier = {
  * Pre-execution outcomes (`denied`, `unavailable`, `malformed`) always carry
  * `effect: "none"`.
  */
-export type ToolInvocationOutcome = { readonly admission?: ResourceAdmissionReceipt } & (
+export type ToolInvocationOutcome = {
+  readonly admission?: ResourceAdmissionReceipt;
+  readonly composition?: CompositionProvenance;
+} & (
   | (ToolInvocationResultCarrier & {
       readonly status: "completed";
       readonly output: Readonly<Record<string, unknown>>;

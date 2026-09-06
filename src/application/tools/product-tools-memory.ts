@@ -134,6 +134,7 @@ export function composeProductMemoryTools(ports: ProductMemoryToolPorts): Produc
   const registry = registryResult.value;
 
   const runner: ToolRunnerPort = {
+    hasBinding: (id) => registry.resolveByCapabilityId(id) !== null,
     async execute(request: ToolRunnerRequest): Promise<ToolInvocationOutcome> {
       switch (request.toolName) {
         case "memory_admit": {

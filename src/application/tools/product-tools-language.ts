@@ -82,6 +82,7 @@ export function composeProductLanguageTools(ports: ProductLanguageToolPorts): Pr
     ports.fileSystem === undefined ? null : createWorkspacePathBinder(ports.fileSystem);
 
   const runner: ToolRunnerPort = {
+    hasBinding: (id) => registry.resolveByCapabilityId(id) !== null,
     async execute(request: ToolRunnerRequest): Promise<ToolInvocationOutcome> {
       if (request.signal.aborted) {
         return { status: "cancelled", effect: "none" };

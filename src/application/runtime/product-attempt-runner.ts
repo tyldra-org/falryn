@@ -1,3 +1,5 @@
+import type { CapabilityRegistry } from "../../domain/capabilities/index.ts";
+import { createCapabilityComposition } from "../capabilities/capability-composition.ts";
 /**
  * Production provider/tool continuation controller (#786).
  *
@@ -73,6 +75,7 @@ import type { TurnCoordinator } from "./turn-coordinator.ts";
 import type { TurnEventJournalPort } from "./turn-event-journal.ts";
 
 export type ProductAttemptRunnerOptions = {
+  readonly capabilities?: CapabilityRegistry;
   readonly resources?: ProductResources;
   readonly clock: ClockPort;
   readonly coordinator: TurnCoordinator;
@@ -840,6 +843,18 @@ export function createProductAttemptRunner(
           ? {}
           : { opportunityPlan: input.disclosure.opportunityPlan }),
       });
+      const composition = createCapabilityComposition({
+        ...(options.capabilities === undefined ? {} : { capabilities: options.capabilities }),
+        registry: options.registry,
+        nativeRunner: options.toolRunner,
+        gateway,
+        taskResources,
+        journal: options.journal,
+        clock: options.clock,
+        correlation: options.correlation,
+        turnId: request.turnId,
+        disclosedToolNames: new Set(input.disclosure.toolNames),
+      });
       const consumer = createProviderStreamConsumer({
         clock: options.clock,
         coordinator: options.coordinator,
@@ -1020,7 +1035,7 @@ export function createProductAttemptRunner(
         const loop = createToolCallLoop({
           coordinator: options.coordinator,
           catalog: options.registry.catalog,
-          runner: gateway,
+          runner: composition.runner,
           ...(runtimeFallbackPolicy === undefined ? {} : { fallbackPolicy: runtimeFallbackPolicy }),
         });
         const loopOutcome = await loop.run({

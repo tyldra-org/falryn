@@ -11,7 +11,7 @@ import {
   createCapabilityRegistryEntry,
   defaultCapabilityOperationalState,
 } from "../../domain/capabilities/index.ts";
-import type { ConfigurationGeneration } from "../../domain/foundation/index.ts";
+import type { CapabilityId, ConfigurationGeneration } from "../../domain/foundation/index.ts";
 import type {
   ToolCapabilityKind,
   ToolRegistry,
@@ -75,7 +75,10 @@ function maximumConcurrency(entry: ToolRegistryEntry): number | null {
   return declared.length === 0 ? null : Math.min(...declared);
 }
 
-export function capabilityEntryFromTool(entry: ToolRegistryEntry): CapabilityRegistryEntry {
+export function capabilityEntryFromTool(
+  entry: ToolRegistryEntry,
+  executable = false,
+): CapabilityRegistryEntry {
   const platforms = entry.manifest.platforms;
   const created = createCapabilityRegistryEntry(
     {
@@ -108,12 +111,12 @@ export function capabilityEntryFromTool(entry: ToolRegistryEntry): CapabilityReg
         latencyClass: "unknown",
       },
       state: {
-        availability: "available",
-        availabilityReason: null,
-        health: "healthy",
-        healthReason: null,
-        executable: true,
-        executionReason: null,
+        availability: executable ? "available" : "unavailable",
+        availabilityReason: executable ? null : "missing-native-binding",
+        health: executable ? "healthy" : "unknown",
+        healthReason: executable ? null : "missing-native-binding",
+        executable,
+        executionReason: executable ? null : "missing-native-binding",
         operational: defaultCapabilityOperationalState(),
       },
       schemas: {
@@ -134,12 +137,15 @@ export function createProductCapabilityRegistry(
   generation: ConfigurationGeneration,
   tools: ToolRegistry,
   contributions: readonly CapabilityRegistryEntry[] = [],
+  hasBinding: (id: CapabilityId) => boolean = () => false,
 ): CapabilityRegistry {
   if (tools.generation !== generation) {
     throw new Error("tool and capability catalog generations do not match");
   }
   const created = createCapabilityRegistry(generation, [
-    ...tools.entries.map(capabilityEntryFromTool),
+    ...tools.entries.map((entry) =>
+      capabilityEntryFromTool(entry, hasBinding(entry.manifest.capabilityId)),
+    ),
     ...contributions,
   ]);
   if (!created.ok) {
