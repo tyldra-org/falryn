@@ -39,7 +39,7 @@ roadmaps, detailed future designs, unannounced capabilities, or research here.
 
 | Work | Skill |
 | --- | --- |
-| Non-trivial design, implementation, refactoring, debugging, migrations, or architecture | software-engineering-discipline (global only) |
+| Software design, implementation, refactoring, debugging, migrations, reliability, or performance | software-engineering-discipline (global only) |
 | TypeScript, TSX, JavaScript, tests, build scripts, or tsconfig | typescript-best-practices |
 | OpenTUI behavior, layout, input, rendering, or packaging | opentui-best-practices |
 | Mutating Git work | git-workflow |
@@ -48,16 +48,17 @@ roadmaps, detailed future designs, unannounced capabilities, or research here.
 | Falryn Plan, Implement, Review, Verify, Merge, Deliver, Next, greetings, walkthroughs, or project-status routing | falryn-workflow |
 
 Load `software-engineering-discipline` only from the global installation at
-`~/.agents/skills/software-engineering-discipline/SKILL.md`. Use it for the
-non-trivial work listed above; skip trivial mechanical edits. Do not vendor or
-copy this skill into the repository. This is agent guidance, not a build or
+`~/.agents/skills/software-engineering-discipline/SKILL.md`. Follow its
+task-scaled workflow and load the supporting references relevant to the change.
+Keep the engineering guidance in that skill; do not duplicate it here or copy
+the skill into the repository. This is agent guidance, not a build or
 human-contributor prerequisite.
 
 For the other skills, use the vendored bundle appropriate to the checkout.
 Each `SKILL.md` is a compact router; load only the deep reference that owns the
-task. The five portable
-vendored skills must not acquire Falryn product strategy. `falryn-workflow` is
-the sole repository-specific exception and contains the complete public-checkout
+task. The five portable vendored skills must not acquire Falryn product
+strategy. `falryn-workflow` is the sole repository-specific exception and
+contains the complete public-checkout
 workflow. Private Falryn Docs and Roadmap authority is an authenticated
 maintainer addition, never a prerequisite for ordinary public work. This
 checkout is authoritative for its vendored bundles. Global copies of those
