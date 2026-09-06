@@ -52,7 +52,9 @@ import {
   resolveNextFallback,
 } from "../../providers/index.ts";
 import type { ProviderFailure, ProviderFailureKind } from "../../providers/protocol/errors.ts";
+import { processProductResources } from "../orchestration/product-resources.ts";
 import { providerPromptCachePolicy } from "../providers/provider-prompt-cache.ts";
+import { roleResourceLimits } from "./provider-resource-admission.ts";
 import { awaitBackoff } from "./recovery.ts";
 import type {
   AttemptModelInput,
@@ -565,242 +567,224 @@ export function createTurnAttemptPolicy(options: TurnAttemptPolicyOptions): Turn
         };
       }
 
-      let receipt = initial.receipt;
-      const visited = new Set<string>([providerModelIdentityKey(routeIdentity(receipt))]);
-      let attemptsOnCurrentRoute = 0;
-      let elapsedMs = 0;
-      let generation = input.configurationGeneration;
-      const startedAt = options.clock.now();
+      const taskResources = (options.resources ?? processProductResources).openTask(
+        String(input.configurationGeneration),
+        roleResourceLimits(initial.receipt.budgets),
+      );
+      try {
+        let resourceCapability = initial.capability;
+        let receipt = initial.receipt;
+        const visited = new Set<string>([providerModelIdentityKey(routeIdentity(receipt))]);
+        let attemptsOnCurrentRoute = 0;
+        let elapsedMs = 0;
+        let generation = input.configurationGeneration;
+        const startedAt = options.clock.now();
 
-      const prepared = advanceToAssemblingContext(options.coordinator, input.turnId, generation);
-      if (prepared !== null) {
-        return {
-          kind: "turn-error",
-          error: prepared,
-          attempts,
-          turn: options.coordinator.get(input.turnId),
-        };
-      }
-
-      const opened = options.coordinator.get(input.turnId);
-      if (opened !== null) {
-        await persistFacts(
-          turnLifecycleJournal,
-          [{ kind: "turn.started", correlation: correlationFor(opened) }],
-          input.signal,
-        );
-      }
-
-      while (true) {
-        if (input.signal.aborted) {
-          const cancelled = settleFromClassification(
-            options.coordinator,
-            input.turnId,
-            generation,
+        const prepared = advanceToAssemblingContext(options.coordinator, input.turnId, generation);
+        if (prepared !== null) {
+          return {
+            kind: "turn-error",
+            error: prepared,
             attempts,
-            {
-              kind: "cancelled",
-              effect: "none",
-            },
-          );
-          const settled = options.coordinator.get(input.turnId);
-          if (settled?.status === "terminal") {
-            await persistFacts(
-              turnLifecycleJournal,
-              [
-                {
-                  kind: "turn.completed",
-                  correlation: correlationFor(settled),
-                  outcome: settled.outcome,
-                },
-              ],
-              input.signal,
-            );
-          }
-          return cancelled;
+            turn: options.coordinator.get(input.turnId),
+          };
         }
 
-        const current = options.coordinator.get(input.turnId);
-        if (current?.status === "terminal") {
-          const nextGeneration = (generation + 1) as ConfigurationGeneration;
-          const recovered = recoverForNextAttempt(
-            options.coordinator,
-            input.turnId,
-            nextGeneration,
-          );
-          if (recovered !== null) {
-            return {
-              kind: "turn-error",
-              error: recovered,
-              attempts,
-              turn: options.coordinator.get(input.turnId),
-            };
-          }
-          generation = nextGeneration;
-        }
-
-        const attemptNumber = attempts.length + 1;
-        const identity: AttemptIdentity = {
-          attemptNumber,
-          modelAttemptId: allocateAttemptId(attemptNumber),
-          fallbackPosition: receipt.fallbackPosition,
-          providerKey: receipt.providerId,
-          modelKey: receipt.modelId,
-        };
-
-        const live = options.coordinator.get(input.turnId);
-        const promptCache =
-          live === null ||
-          input.modelInput?.promptCache === undefined ||
-          receipt.promptCacheMode === null ||
-          receipt.promptCacheMode === undefined
-            ? undefined
-            : providerPromptCachePolicy({
-                sessionId: live.sessionId,
-                configurationGeneration: input.configurationGeneration,
-                receipt,
-                seed: input.modelInput.promptCache,
-              });
-        if (live !== null) {
+        const opened = options.coordinator.get(input.turnId);
+        if (opened !== null) {
           await persistFacts(
-            options.journal,
-            [
-              {
-                kind: "model.attempt.started",
-                correlation: correlationFor(live),
-                modelAttemptId: identity.modelAttemptId,
-                binding: attemptBinding(
-                  receipt,
-                  input.modelInput,
-                  input.configurationGeneration,
-                  promptCache,
-                ),
-              },
-            ],
+            turnLifecycleJournal,
+            [{ kind: "turn.started", correlation: correlationFor(opened) }],
             input.signal,
           );
         }
 
-        const runnerResult = await options.runner.run({
-          turnId: input.turnId,
-          identity,
-          receipt,
-          boundConfigurationGeneration: input.configurationGeneration,
-          configurationGeneration: generation,
-          signal: input.signal,
-          modelInput: input.modelInput ?? null,
-          ...(promptCache === undefined ? {} : { promptCache }),
-        });
-
-        elapsedMs = Math.max(elapsedMs, Number(options.clock.now()) - Number(startedAt));
-
-        const classification = classifyAttempt(runnerResult.fact);
-        const fallbackProbe = resolveNextFallback(
-          { ...routeInput, visited, now: options.clock.now() },
-          receipt,
-        );
-        const fallbackAvailable = fallbackProbe.kind === "selected";
-
-        let retryDecision = null;
-        if (classification.kind === "may-retry-same") {
-          attemptsOnCurrentRoute += 1;
-          retryDecision = evaluateRetry({
-            error: {
-              code: "provider.attempt.retryable",
-              category: "provider",
-              message: classification.message,
-              retryable: true,
-              effect: classification.effect,
-              cause: null,
-              correlation: { ...NO_CORRELATION, turnId: input.turnId },
-              recovery: ["retry"],
-              exitCategory: "runtime-error",
-              related: [],
-              relatedDropped: 0,
-              recognized: true,
-            },
-            policy: retryPolicy,
-            attemptsMade: attemptsOnCurrentRoute,
-            elapsedMs,
-            elapsedBudgetMs: input.elapsedBudgetMs ?? null,
-            idempotent: true,
-            cancelled: input.signal.aborted,
-            backoff,
-            jitter,
-          });
-        }
-
-        const action = decideAttemptAction({
-          classification,
-          retryDecision,
-          fallbackAvailable,
-        });
-
-        attempts.push({
-          identity,
-          receipt,
-          fact: runnerResult.fact,
-          classification,
-          action,
-          output: runnerResult.output ?? null,
-        });
-
-        const attemptOutcome = outcomeForAttemptRecord(classification);
-        const afterAttempt = options.coordinator.get(input.turnId);
-        if (afterAttempt !== null) {
-          await persistFacts(
-            options.journal,
-            [
-              {
-                kind: "model.attempt.completed",
-                correlation: correlationFor(afterAttempt),
-                modelAttemptId: identity.modelAttemptId,
-                outcome: attemptOutcome,
-              },
-            ],
-            input.signal,
-          );
-        }
-
-        switch (action.kind) {
-          case "settle": {
-            const settled = settleFromClassification(
+        while (true) {
+          if (input.signal.aborted) {
+            const cancelled = settleFromClassification(
               options.coordinator,
               input.turnId,
               generation,
               attempts,
-              action.classification,
-              runnerResult.turn,
+              {
+                kind: "cancelled",
+                effect: "none",
+              },
             );
-            const terminal = options.coordinator.get(input.turnId);
-            if (terminal?.status === "terminal") {
+            const settled = options.coordinator.get(input.turnId);
+            if (settled?.status === "terminal") {
               await persistFacts(
                 turnLifecycleJournal,
                 [
                   {
                     kind: "turn.completed",
-                    correlation: correlationFor(terminal),
-                    outcome: terminal.outcome,
+                    correlation: correlationFor(settled),
+                    outcome: settled.outcome,
                   },
                 ],
                 input.signal,
               );
             }
-            return settled;
+            return cancelled;
           }
-          case "retry-same": {
-            const waited = await awaitBackoff(
-              options.clock,
-              { kind: "retry", attempt: action.attempt, delayMs: action.delayMs },
+
+          const current = options.coordinator.get(input.turnId);
+          if (current?.status === "terminal") {
+            const nextGeneration = (generation + 1) as ConfigurationGeneration;
+            const recovered = recoverForNextAttempt(
+              options.coordinator,
+              input.turnId,
+              nextGeneration,
+            );
+            if (recovered !== null) {
+              return {
+                kind: "turn-error",
+                error: recovered,
+                attempts,
+                turn: options.coordinator.get(input.turnId),
+              };
+            }
+            generation = nextGeneration;
+          }
+
+          const attemptNumber = attempts.length + 1;
+          const identity: AttemptIdentity = {
+            attemptNumber,
+            modelAttemptId: allocateAttemptId(attemptNumber),
+            fallbackPosition: receipt.fallbackPosition,
+            providerKey: receipt.providerId,
+            modelKey: receipt.modelId,
+          };
+
+          const live = options.coordinator.get(input.turnId);
+          const promptCache =
+            live === null ||
+            input.modelInput?.promptCache === undefined ||
+            receipt.promptCacheMode === null ||
+            receipt.promptCacheMode === undefined
+              ? undefined
+              : providerPromptCachePolicy({
+                  sessionId: live.sessionId,
+                  configurationGeneration: input.configurationGeneration,
+                  receipt,
+                  seed: input.modelInput.promptCache,
+                });
+          if (live !== null) {
+            await persistFacts(
+              options.journal,
+              [
+                {
+                  kind: "model.attempt.started",
+                  correlation: correlationFor(live),
+                  modelAttemptId: identity.modelAttemptId,
+                  binding: attemptBinding(
+                    receipt,
+                    input.modelInput,
+                    input.configurationGeneration,
+                    promptCache,
+                  ),
+                },
+              ],
               input.signal,
             );
-            if (waited === "cancelled" || input.signal.aborted) {
-              const cancelled = settleFromClassification(
+          }
+
+          taskResources.tighten(roleResourceLimits(receipt.budgets));
+          const runnerResult = await options.runner.run({
+            taskResources,
+            resourceCapability,
+            turnId: input.turnId,
+            identity,
+            receipt,
+            boundConfigurationGeneration: input.configurationGeneration,
+            configurationGeneration: generation,
+            signal: input.signal,
+            modelInput: input.modelInput ?? null,
+            ...(promptCache === undefined ? {} : { promptCache }),
+          });
+
+          elapsedMs = Math.max(elapsedMs, Number(options.clock.now()) - Number(startedAt));
+
+          const classification = classifyAttempt(runnerResult.fact);
+          const fallbackProbe = resolveNextFallback(
+            { ...routeInput, visited, now: options.clock.now() },
+            receipt,
+          );
+          const fallbackAvailable = fallbackProbe.kind === "selected";
+
+          let retryDecision = null;
+          if (classification.kind === "may-retry-same") {
+            attemptsOnCurrentRoute += 1;
+            retryDecision = evaluateRetry({
+              error: {
+                code: "provider.attempt.retryable",
+                category: "provider",
+                message: classification.message,
+                retryable: true,
+                effect: classification.effect,
+                cause: null,
+                correlation: { ...NO_CORRELATION, turnId: input.turnId },
+                recovery: ["retry"],
+                exitCategory: "runtime-error",
+                related: [],
+                relatedDropped: 0,
+                recognized: true,
+              },
+              policy: retryPolicy,
+              attemptsMade: attemptsOnCurrentRoute,
+              elapsedMs,
+              elapsedBudgetMs: input.elapsedBudgetMs ?? null,
+              idempotent: true,
+              cancelled: input.signal.aborted,
+              backoff,
+              jitter,
+            });
+          }
+
+          const action = decideAttemptAction({
+            classification,
+            retryDecision,
+            fallbackAvailable,
+          });
+
+          attempts.push({
+            identity,
+            receipt,
+            fact: runnerResult.fact,
+            classification,
+            action,
+            output: runnerResult.output ?? null,
+          });
+
+          const attemptOutcome = outcomeForAttemptRecord(classification);
+          const afterAttempt = options.coordinator.get(input.turnId);
+          if (afterAttempt !== null) {
+            await persistFacts(
+              options.journal,
+              [
+                {
+                  kind: "model.attempt.completed",
+                  ...(runnerResult.output?.admissions === undefined
+                    ? {}
+                    : { admissions: runnerResult.output.admissions }),
+                  correlation: correlationFor(afterAttempt),
+                  modelAttemptId: identity.modelAttemptId,
+                  outcome: attemptOutcome,
+                },
+              ],
+              input.signal,
+            );
+          }
+
+          switch (action.kind) {
+            case "settle": {
+              const settled = settleFromClassification(
                 options.coordinator,
                 input.turnId,
                 generation,
                 attempts,
-                { kind: "cancelled", effect: "none" },
+                action.classification,
+                runnerResult.turn,
               );
               const terminal = options.coordinator.get(input.turnId);
               if (terminal?.status === "terminal") {
@@ -816,34 +800,68 @@ export function createTurnAttemptPolicy(options: TurnAttemptPolicyOptions): Turn
                   input.signal,
                 );
               }
-              return cancelled;
+              return settled;
             }
-            continue;
-          }
-          case "fallback": {
-            if (fallbackProbe.kind !== "selected") {
+            case "retry-same": {
+              const waited = await awaitBackoff(
+                options.clock,
+                { kind: "retry", attempt: action.attempt, delayMs: action.delayMs },
+                input.signal,
+              );
+              if (waited === "cancelled" || input.signal.aborted) {
+                const cancelled = settleFromClassification(
+                  options.coordinator,
+                  input.turnId,
+                  generation,
+                  attempts,
+                  { kind: "cancelled", effect: "none" },
+                );
+                const terminal = options.coordinator.get(input.turnId);
+                if (terminal?.status === "terminal") {
+                  await persistFacts(
+                    turnLifecycleJournal,
+                    [
+                      {
+                        kind: "turn.completed",
+                        correlation: correlationFor(terminal),
+                        outcome: terminal.outcome,
+                      },
+                    ],
+                    input.signal,
+                  );
+                }
+                return cancelled;
+              }
+              continue;
+            }
+            case "fallback": {
+              if (fallbackProbe.kind !== "selected") {
+                return {
+                  kind: "exhausted",
+                  reason: "fallback-exhausted",
+                  attempts,
+                  turn: options.coordinator.get(input.turnId),
+                };
+              }
+              receipt = fallbackProbe.receipt;
+              resourceCapability = fallbackProbe.capability;
+              visited.add(providerModelIdentityKey(routeIdentity(receipt)));
+              attemptsOnCurrentRoute = 0;
+              continue;
+            }
+            case "exhausted":
               return {
                 kind: "exhausted",
-                reason: "fallback-exhausted",
+                reason: action.reason,
                 attempts,
                 turn: options.coordinator.get(input.turnId),
               };
-            }
-            receipt = fallbackProbe.receipt;
-            visited.add(providerModelIdentityKey(routeIdentity(receipt)));
-            attemptsOnCurrentRoute = 0;
-            continue;
+            default:
+              return assertNever(action, "unhandled attempt action");
           }
-          case "exhausted":
-            return {
-              kind: "exhausted",
-              reason: action.reason,
-              attempts,
-              turn: options.coordinator.get(input.turnId),
-            };
-          default:
-            return assertNever(action, "unhandled attempt action");
         }
+      } finally {
+        taskResources.close();
       }
     },
   };

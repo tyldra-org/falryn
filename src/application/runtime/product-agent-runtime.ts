@@ -44,6 +44,10 @@ import {
   createCapabilityInspector,
 } from "../capabilities/capability-inspector.ts";
 import { createProductCapabilityRegistry } from "../capabilities/product-capability-registry.ts";
+import {
+  type ProductResources,
+  processProductResources,
+} from "../orchestration/product-resources.ts";
 import type { SessionRuntime } from "../sessions/session-runtime.ts";
 import { createSessionRuntime } from "../sessions/session-runtime.ts";
 import type { SessionTurnTranscriptProducer } from "../sessions/session-turn-transcript-producer.ts";
@@ -58,6 +62,7 @@ import type { PersistTurnEventsOutcome, TurnEventJournal } from "./turn-event-jo
 import { createTurnEventJournal } from "./turn-event-journal.ts";
 
 export type ProductAgentRuntimePorts = {
+  readonly resources?: ProductResources;
   readonly eventStore: EventStorePort;
   readonly clock: ClockPort;
   readonly streamId: StreamId;
@@ -117,6 +122,7 @@ export type ProductAgentPortResult<Value> =
   | { readonly ok: false; readonly error: ProductAgentRuntimeError };
 
 export type ProductAgentRuntime = {
+  readonly resources: ProductResources;
   readonly sessionRuntime: SessionRuntime;
   readonly turnCoordinator: TurnCoordinator;
   readonly journal: TurnEventJournal;
@@ -241,6 +247,7 @@ export function composeProductAgentRuntime(
     ports.attemptRunner ??
     (providerAdapter !== null && toolRunner !== null && toolRegistry !== null
       ? createProductAttemptRunner({
+          resources: ports.resources ?? processProductResources,
           clock: ports.clock,
           coordinator: turnCoordinator,
           provider: providerAdapter,
@@ -263,6 +270,7 @@ export function composeProductAgentRuntime(
   });
 
   const runtime: ProductAgentRuntime = {
+    resources: ports.resources ?? processProductResources,
     sessionRuntime,
     turnCoordinator,
     journal,

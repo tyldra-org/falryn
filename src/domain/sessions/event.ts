@@ -33,6 +33,7 @@ import type {
   ModelCapabilityBrief,
 } from "../orchestration/opportunity-plan.ts";
 import type { TerminalOutcome } from "../orchestration/outcome.ts";
+import type { ResourceAdmissionReceipt } from "../orchestration/resource-admission.ts";
 import type { ExecutionProfileCompletion, ExecutionProfileId } from "./execution-profile.ts";
 
 export const EVENT_KINDS = [
@@ -210,6 +211,7 @@ export type CapabilityInvocationStartedPayload = {
 };
 
 export type CapabilityInvocationCompletedPayload = TerminalPayload & {
+  readonly admission?: ResourceAdmissionReceipt | undefined;
   /** Exact normalized runner status; absent on legacy events. */
   readonly observedStatus?:
     | "completed"
@@ -283,7 +285,7 @@ export type ModelAttemptStartedEvent = Envelope<
 export type ModelAttemptCompletedEvent = Envelope<
   "model.attempt.completed",
   TurnCorrelation,
-  TerminalPayload
+  TerminalPayload & { readonly admissions?: readonly ResourceAdmissionReceipt[] | undefined }
 > & {
   readonly modelAttemptId: ModelAttemptId;
 };

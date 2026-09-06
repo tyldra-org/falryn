@@ -13,13 +13,16 @@
  */
 
 import { z } from "zod";
-
 import { toCodecIssues } from "../foundation/branded-schema.ts";
 import type { CodecIssue } from "../foundation/codec-error.ts";
 import type { CapabilityId, ConfigurationGeneration } from "../foundation/identity.ts";
 import { capabilityId } from "../foundation/identity.ts";
 import { MAX_IDENTIFIER_LENGTH } from "../foundation/limits.ts";
 import { err, ok, type Result } from "../foundation/result.ts";
+import {
+  type ResourceAmounts,
+  resourceAmountsSchema,
+} from "../orchestration/resource-admission.ts";
 import {
   type ConflictKey,
   EFFECT_CLASSES,
@@ -151,6 +154,8 @@ export type ToolManifestDocument = {
   readonly platforms: readonly PlatformConstraint[];
   readonly limits: ToolLimits;
   readonly concurrency: ConcurrencyContract;
+  /** Declared maximum resource use; omitted dimensions are unknown, never measured zero. */
+  readonly resourceAmounts?: ResourceAmounts | undefined;
   readonly resultProjection: ProjectionContract;
 };
 
@@ -245,6 +250,7 @@ const toolManifestDocumentSchema: z.ZodType<ToolManifestDocument> = z
     platforms: z.array(platformConstraintSchema).max(8),
     limits: toolLimitsSchema,
     concurrency: concurrencyContractSchema,
+    resourceAmounts: resourceAmountsSchema.optional(),
     resultProjection: projectionContractSchema,
   })
   .strict();

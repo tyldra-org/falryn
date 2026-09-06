@@ -1,6 +1,5 @@
 import { describe, expect, test } from "bun:test";
 import { z } from "zod";
-
 import { artifactId } from "../../domain/artifacts/index.ts";
 import {
   configurationGeneration,
@@ -24,6 +23,7 @@ import {
   defaultToolLimits,
 } from "../../domain/tools/index.ts";
 import { createInMemoryFileSystem, localPath } from "../../domain/workspace/index.ts";
+import { createProductResources } from "../orchestration/product-resources.ts";
 import { createTurnEventJournal } from "../runtime/turn-event-journal.ts";
 import { createProductToolGateway } from "./product-tool-gateway.ts";
 import { composeProductWorkspaceTools } from "./product-tools-workspace.ts";
@@ -94,6 +94,7 @@ describe("createProductToolGateway", () => {
     }
     const gateway = createProductToolGateway({
       clock,
+      resources: createProductResources(clock),
       registry: tools.registry,
       runner: {
         async execute(request) {
@@ -168,6 +169,7 @@ describe("createProductToolGateway", () => {
     let runnerCalls = 0;
     const gateway = createProductToolGateway({
       clock,
+      resources: createProductResources(clock),
       registry: tools.registry,
       runner: {
         execute: async (request) => {
@@ -216,6 +218,7 @@ describe("createProductToolGateway", () => {
     let confirmations = 0;
     const gateway = createProductToolGateway({
       clock,
+      resources: createProductResources(clock),
       registry: tools.registry,
       runner: {
         execute: async (request) => {
@@ -295,6 +298,7 @@ describe("createProductToolGateway", () => {
     let confirmations = 0;
     const gateway = createProductToolGateway({
       clock,
+      resources: createProductResources(clock),
       registry: registry.value,
       runner: {
         execute: async (request) => {
@@ -333,4 +337,99 @@ describe("createProductToolGateway", () => {
     expect(confirmations).toBe(1);
     expect(effects).toEqual(["observation", "interactive"]);
   });
+});
+
+test("live gateways share manifest capacity across registry generations and workspace bindings", async () => {
+  const { tools, clock, eventStore } = setup();
+  const journals: ReturnType<typeof createTurnEventJournal>[] = [];
+  const resources = createProductResources(clock);
+  const source = tools.registry.resolveByName("read_file");
+  if (source === null) throw new Error("read_file required");
+  const entry = {
+    ...source,
+    manifest: { ...source.manifest, concurrency: { maxGlobal: 1, maxPerWorkspace: 1 } },
+  };
+  let release: (() => void) | undefined;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let running = 0;
+  let maximum = 0;
+  let launches = 0;
+  const runner = {
+    async execute(request: Parameters<typeof tools.runner.execute>[0]) {
+      running++;
+      launches++;
+      maximum = Math.max(maximum, running);
+      if (launches === 1) await held;
+      const result = await tools.runner.execute(request);
+      running--;
+      return result;
+    },
+  };
+  const gateway = (version: number) => {
+    const registry = createToolRegistry(configurationGeneration.from(version), [entry]);
+    if (!registry.ok) throw new Error("registry required");
+    const hooks = createToolHookRegistry(configurationGeneration.from(version), []);
+    if (!hooks.ok) throw new Error("hooks required");
+    const boundCorrelation = {
+      ...correlation,
+      configurationGeneration: configurationGeneration.from(version),
+      workspaceId: workspaceId.from(`workspace-${version}`),
+    };
+    const journal = createTurnEventJournal({
+      clock,
+      eventStore,
+      streamId: streamId.from(`session:gateway-${version}`),
+      correlation: boundCorrelation,
+    });
+    journals.push(journal);
+    return createProductToolGateway({
+      clock,
+      resources,
+      registry: registry.value,
+      runner,
+      hooks: hooks.value,
+      journal,
+      correlation: {
+        ...correlation,
+        configurationGeneration: configurationGeneration.from(version),
+        workspaceId: workspaceId.from(`workspace-${version}`),
+      },
+      turnId: turnId.from(`turn-${version}`),
+      disclosedToolNames: new Set(["read_file"]),
+      effectLedger: new Map(),
+    });
+  };
+  const request = (id: string) => ({
+    invocationId: invocationId.from(id),
+    toolCallId: id,
+    toolName: "read_file",
+    capabilityId: entry.manifest.capabilityId,
+    version: entry.manifest.version,
+    effect: entry.manifest.effect,
+    input: { path: "a.ts" },
+    signal: new AbortController().signal,
+  });
+  const first = gateway(3).execute(request("first"));
+  const second = gateway(4).execute(request("second"));
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(launches).toBe(1);
+  release?.();
+  const outcomes = await Promise.all([first, second]);
+  expect(maximum).toBe(1);
+  expect(outcomes).toMatchObject([
+    { status: "completed", admission: { released: true } },
+    { status: "completed", admission: { released: true } },
+  ]);
+  for (const journal of journals) {
+    const replay = await journal.replay();
+    if (replay.kind !== "rebuilt" && replay.kind !== "partial")
+      throw new Error("journal replay required");
+    const completions = replay.events.filter(
+      (event) => event.kind === "capability.invocation.completed",
+    );
+    expect(completions.length).toBe(1);
+    expect(completions.every((event) => event.payload.admission?.acquired)).toBe(true);
+  }
 });

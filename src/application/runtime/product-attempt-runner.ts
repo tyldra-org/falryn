@@ -8,8 +8,13 @@
  */
 
 import { recordBriefDelivery } from "../../domain/compression/index.ts";
-import { assertNever, type ClockPort } from "../../domain/foundation/index.ts";
+import { assertNever, type ClockPort, deadlineAt, instant } from "../../domain/foundation/index.ts";
 import type { EffectCertainty, ModelCapabilityBrief } from "../../domain/orchestration/index.ts";
+import type {
+  ResourceAdmissionReceipt,
+  ResourceAmounts,
+} from "../../domain/orchestration/resource-admission.ts";
+import { conflictKey, NO_RETRY, workUnitId } from "../../domain/orchestration/work.ts";
 import {
   type AttemptFact,
   type EffectiveExecutionPolicy,
@@ -36,6 +41,10 @@ import {
 } from "../../providers/index.ts";
 import { createBriefComposer } from "../compression/brief.ts";
 import { briefNeedAfterToolResults } from "../compression/product-brief.ts";
+import {
+  type ProductResources,
+  processProductResources,
+} from "../orchestration/product-resources.ts";
 import { promptCacheStablePrefixDigest } from "../providers/provider-prompt-cache.ts";
 import {
   createProviderStreamConsumer,
@@ -46,6 +55,7 @@ import {
   createProductToolGateway,
   type ProductToolConfirmationPort,
 } from "../tools/product-tool-gateway.ts";
+import { providerCostMaximum, roleResourceLimits } from "./provider-resource-admission.ts";
 import {
   createToolCallLoop,
   type ToolCallLoopOutcome,
@@ -63,6 +73,7 @@ import type { TurnCoordinator } from "./turn-coordinator.ts";
 import type { TurnEventJournalPort } from "./turn-event-journal.ts";
 
 export type ProductAttemptRunnerOptions = {
+  readonly resources?: ProductResources;
   readonly clock: ClockPort;
   readonly coordinator: TurnCoordinator;
   readonly provider: ProviderAdapterPort;
@@ -775,13 +786,30 @@ export function createProductAttemptRunner(
         );
       }
 
+      const taskResources =
+        request.taskResources ??
+        (options.resources ?? processProductResources).openTask(
+          String(request.boundConfigurationGeneration),
+          roleResourceLimits(request.receipt.budgets),
+        );
+      taskResources.tighten(roleResourceLimits(request.receipt.budgets));
       let budgets = effectiveBudgets(request);
+      budgets = {
+        ...budgets,
+        wallTimeMs: Math.min(
+          budgets.wallTimeMs ?? Number.MAX_SAFE_INTEGER,
+          taskResources.remaining("wallTimeMs"),
+        ),
+      };
+      const admissions: ResourceAdmissionReceipt[] = [];
+      let admissionFailure: string | null = null;
       const deadline = attemptDeadline(request.signal, budgets.wallTimeMs);
       const messages: ModelMessage[] = [...input.messages];
       const assistantText: string[] = [];
       const reasoningText: string[] = [];
       const effectLedger = new Map<string, ToolInvocationRecord["outcome"]>();
       let requestSequence = 0;
+      let launchedRequests = 0;
       let sentResults = 0;
       const usage: (UsageUnits | null)[] = [];
       const providerMetadata: Record<string, string> = {};
@@ -793,6 +821,7 @@ export function createProductAttemptRunner(
 
       const gateway = createProductToolGateway({
         clock: options.clock,
+        taskResources,
         registry: options.registry,
         runner: options.toolRunner,
         hooks: options.hooks,
@@ -839,13 +868,115 @@ export function createProductAttemptRunner(
           responseDensityControl,
           requestSequence,
         );
-        const outcome = await consumer.consume({
-          turnId: request.turnId,
-          configurationGeneration: request.configurationGeneration,
-          events: options.provider.stream(currentRequest, { signal: deadline.signal }),
+        const inputMaximum =
+          budgets.maxInputTokens ?? request.resourceCapability?.contextTokens ?? undefined;
+        const outputMaximum =
+          budgets.maxOutputTokens ?? request.resourceCapability?.outputTokens ?? undefined;
+        const outputRemaining = taskResources.remaining("outputTokens");
+        const selectedOutput =
+          outputMaximum === undefined ? undefined : Math.min(outputMaximum, outputRemaining);
+        const costMaximum = providerCostMaximum(
+          request.resourceCapability?.pricing,
+          inputMaximum,
+          selectedOutput,
+        );
+        if (
+          (request.receipt.budgets.cost !== undefined && costMaximum === null) ||
+          (request.receipt.budgets.inputTokens !== undefined && inputMaximum === undefined) ||
+          (request.receipt.budgets.outputTokens !== undefined && selectedOutput === undefined)
+        ) {
+          admissions.push(taskResources.refusal("quota-unknown", "costMicros"));
+          throw new Error("resource-admission:quota-unknown");
+        }
+        if (selectedOutput === 0 || taskResources.remaining("wallTimeMs") === 0) {
+          admissions.push(
+            taskResources.refusal(
+              "limit-exceeded",
+              selectedOutput === 0 ? "outputTokens" : "wallTimeMs",
+            ),
+          );
+          throw new Error("resource-admission:limit-exceeded");
+        }
+        const amounts: ResourceAmounts = {
+          requests: 1,
+          ...(requestSequence === 1
+            ? { attempts: 1, retries: request.identity.attemptNumber > 1 ? 1 : 0 }
+            : {}),
+          ...(inputMaximum === undefined ? {} : { inputTokens: inputMaximum }),
+          ...(selectedOutput === undefined ? {} : { outputTokens: selectedOutput }),
+          ...(costMaximum === null ? {} : { costMicros: costMaximum }),
+        };
+        const admitted = await taskResources.execute({
+          operation: `provider-request-${requestSequence}`,
+          attempt: String(request.identity.modelAttemptId),
+          generation: String(request.boundConfigurationGeneration),
+          amounts,
+          unknownDimensions: [
+            ...(inputMaximum === undefined ? ["inputTokens" as const] : []),
+            ...(selectedOutput === undefined ? ["outputTokens" as const] : []),
+            ...(costMaximum === null ? ["costMicros" as const] : []),
+          ],
+          inputBytes: new TextEncoder().encode(JSON.stringify(messages)).length,
           signal: deadline.signal,
-          abortAs: () => (deadline.timedOut() ? "timeout" : "cancel"),
+          unit: {
+            id: workUnitId(`${request.identity.modelAttemptId}:request:${requestSequence}`),
+            effect: "external",
+            priority: "interactive",
+            conflictKeys: [
+              conflictKey(
+                "provider-request",
+                `${taskResources.id}:${request.identity.modelAttemptId}:${requestSequence}`,
+              ),
+            ],
+            dependencies: [],
+            deadline: deadlineAt(
+              instant(Number(options.clock.now()) + taskResources.remaining("wallTimeMs")),
+            ),
+            expectedOutputBytes: 0,
+            retry: NO_RETRY,
+            scopeId: null,
+          },
+          async run(signal) {
+            launchedRequests += 1;
+            const value = await consumer.consume({
+              turnId: request.turnId,
+              configurationGeneration: request.configurationGeneration,
+              events: options.provider.stream(
+                {
+                  ...currentRequest,
+                  budgets: {
+                    ...currentRequest.budgets,
+                    ...(selectedOutput === undefined ? {} : { maxOutputTokens: selectedOutput }),
+                  },
+                },
+                { signal },
+              ),
+              signal,
+              abortAs: () => (deadline.timedOut() ? "timeout" : "cancel"),
+            });
+            const observed = value.snapshot?.usage;
+            const actual: ResourceAmounts = {
+              ...amounts,
+              ...(value.kind === "finished" &&
+              observed?.provenance === "provider-reported" &&
+              observed.inputTokens !== undefined &&
+              inputMaximum !== undefined
+                ? { inputTokens: observed.inputTokens }
+                : {}),
+              ...(value.kind === "finished" &&
+              observed?.provenance === "provider-reported" &&
+              observed.outputTokens !== undefined &&
+              selectedOutput !== undefined
+                ? { outputTokens: observed.outputTokens }
+                : {}),
+            };
+            return { value, actual, terminated: value.kind === "finished" };
+          },
         });
+        admissions.push(admitted.receipt);
+        if (admitted.kind !== "completed")
+          throw new Error(`resource-admission:${admitted.receipt.state}`);
+        const outcome = admitted.value;
         if (outcome.snapshot !== null && outcome.snapshot.text.length > 0) {
           assistantText.push(outcome.snapshot.text);
         }
@@ -863,7 +994,8 @@ export function createProductAttemptRunner(
         text: assistantText.join(""),
         reasoning: reasoningText.join(""),
         toolResults,
-        providerRequests: requestSequence,
+        providerRequests: launchedRequests,
+        admissions: [...admissions],
         usage: aggregateProviderUsage(usage),
         briefReceipt,
         providerMetadata: { ...providerMetadata },
@@ -942,7 +1074,15 @@ export function createProductAttemptRunner(
                 ),
               };
             }
-            const continued = await consume();
+            let continued: ProviderStreamConsumeOutcome;
+            try {
+              continued = await consume();
+            } catch (error) {
+              if (!(error instanceof Error) || !error.message.startsWith("resource-admission:"))
+                throw error;
+              admissionFailure = error.message;
+              return { kind: "stop" };
+            }
             continuation.terminal = continued;
             if (continued.kind !== "finished" || continued.toolProposals.length === 0) {
               return { kind: "stop" };
@@ -954,7 +1094,7 @@ export function createProductAttemptRunner(
 
         const terminalStream = continuation.terminal;
         const fact =
-          briefFailure !== null
+          briefFailure !== null || admissionFailure !== null
             ? {
                 kind: "failed" as const,
                 category: "invalid-request" as const,
@@ -962,7 +1102,7 @@ export function createProductAttemptRunner(
                 effect: effectFromToolResults(loopOutcome),
                 observedContent: loopOutcome.results.length > 0,
                 emittedToolProposal: true,
-                message: `Brief continuation failed (${briefFailure})`,
+                message: admissionFailure ?? `Brief continuation failed (${briefFailure})`,
               }
             : terminalStream !== null &&
                 (terminalStream.kind !== "finished" || terminalStream.toolProposals.length === 0)
@@ -973,7 +1113,21 @@ export function createProductAttemptRunner(
           turn: loopOutcome.turn,
           output: output(loopOutcome.results.length),
         };
+      } catch (error) {
+        if (!(error instanceof Error) || !error.message.startsWith("resource-admission:"))
+          throw error;
+        return {
+          ...invalidAttempt(error.message),
+          turn: options.coordinator.get(request.turnId),
+          ...(deadline.timedOut()
+            ? { fact: { kind: "timed-out" as const, effect: "none" as const, retryable: true } }
+            : request.signal.aborted
+              ? { fact: { kind: "cancelled" as const, effect: "none" as const } }
+              : {}),
+          output: output(sentResults),
+        };
       } finally {
+        if (request.taskResources === undefined) taskResources.close();
         deadline.dispose();
       }
     },

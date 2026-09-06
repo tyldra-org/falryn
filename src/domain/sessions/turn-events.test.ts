@@ -185,6 +185,7 @@ describe("reduceTurnEvents", () => {
         startedAt: occurredAt,
         completedAt: occurredAt,
         outcome: { kind: "failed", effect: "none" },
+        admission: null,
         observedStatus: "unavailable",
         degradation: {
           decision: "fallback-available",

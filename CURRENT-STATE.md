@@ -624,9 +624,13 @@ posture, but never choose a hidden provider or grant authority through model
 routing. The current product turn still receives one selected provider catalog
 and fixed adapter, so cross-profile or cross-provider fallback is not
 executable; GitHub issue #215 owns immutable per-attempt route and provider
-recovery. Configured role-level aggregate token, time, and cost budgets are
-recorded rather than enforced across retries and provider continuations; #936
-owns their hierarchical enforcement.
+recovery. Configured role-level attempts, input/output tokens, wall time, and integer
+USD microunit cost limits now narrow one task scope across retries and provider
+continuations. Admission reserves declared maxima. Provider-reported token usage
+can reconcile those reservations; absent or estimated usage retains the maximum.
+A configured cost ceiling requires complete published pricing and token maxima;
+missing evidence refuses the request before contacting the provider. Cost uses a
+conservative published-tier maximum, not an exact billing claim.
 
 OpenTUI's model picker is connected to the live turn path. A selection must
 exist in the current catalog generation, must not be unavailable, and must be
@@ -824,20 +828,36 @@ that all 59 schemas are placed in every prompt.
 ## Current product-integration limits
 
 The model tool loop defaults to four concurrent executions and enforces an
-implementation ceiling of sixteen, while the generic scheduler defaults to
-eight concurrent units and one per conflict key. The tool manifest's separate
-`maxGlobal` and `maxPerWorkspace` declarations are not propagated by the
-product gateway, which schedules each concurrent invocation as its own one-item
-batch. The standalone hierarchical `BudgetLedger` is not composed into the
-runtime. Its limits are validated non-negative safe integers and copied at
-creation; reservation IDs cannot be reused after admission or settlement.
-Reservations check every ancestor before charging, including the safe-integer
-accounting ceiling for unlimited dimensions. Each scheduled execution uses a
-fresh reservation ID even when work names recur across scheduler generations
-or instances. These accounting guarantees do not enforce live product budgets.
-GitHub issue #936 owns manifest-limit propagation and shared whole-task
-admission; #937 owns durable coordination and uncertain settlement; #938 owns
-platform resource ceilings. #158 applies those bounds to nested agent scopes.
+implementation ceiling of sixteen. Product tool gateways and provider requests
+share one process-owned resource ledger and the existing scheduler. Manifest
+`maxGlobal`, `maxPerWorkspace`, timeout, conflict keys, and declared resource
+amounts enter admission. Tool-family capacity survives registry generations;
+workspace capacity is scoped separately. The generic scheduler's standalone
+`BudgetLedger` remains available to non-product callers.
+
+Product defaults bound running operations to sixteen, reserve one slot for
+interactive or aged work, and bound the queue to 64 entries, 16 MiB of input,
+and thirty seconds. Aging operates across scheduler generations. Queue
+cancellation and deadlines prevent launch. Each task allows at most 512
+operations, 64 provider requests, and thirty minutes; configured role ceilings
+can only narrow them. Child scopes debit the same parent transaction. Closing
+a task invalidates its scope, while uncertain non-fenceable reservations remain
+charged. Cancellation alone cannot release resource occupancy or conflict-key
+capacity; late authoritative completion can reconcile it.
+
+Versioned identities separate capacity owners from reservation bindings.
+Reservations atomically preflight overlapping scopes, reject conflicting
+replays, conservatively join aliases, and detect safe-integer overflow and
+reported overruns. Receipts use opaque identifiers and pass through tool results,
+attempt output, and durable lifecycle events. Replay retains receipts without
+caching whole model/tool outputs. Missing resource measurements are not treated
+as authoritative zero usage. Undeclared dimensions have no measured platform
+ceiling: these are admission limits, not OS CPU/RSS enforcement.
+
+GitHub issue #937 owns durable cross-process coordination and recovery;
+#938 owns platform resource ceilings. No other process or non-Falryn client is
+observed. The process owner exposes explicit shutdown; ordinary task completion
+closes only its task scope. #158 owns production nested-agent composition.
 
 The gateway accepts an injectable `ProductToolConfirmationPort` and fails closed
 when confirmation is required but no authorized presenter exists. Normal CLI

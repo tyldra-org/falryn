@@ -59,6 +59,7 @@ import {
   OPPORTUNITY_SIGNAL_FAMILIES,
 } from "../orchestration/opportunity-plan.ts";
 import type { TerminalOutcome } from "../orchestration/outcome.ts";
+import { resourceAdmissionReceiptSchema } from "../orchestration/resource-admission.ts";
 import { EFFECT_CLASSES } from "../orchestration/work.ts";
 import {
   type CapabilityInvocationCompletedPayload,
@@ -332,6 +333,7 @@ const capabilityInvocationStartedPayloadSchema: z.ZodType<CapabilityInvocationSt
 const capabilityInvocationCompletedPayloadSchema: z.ZodType<CapabilityInvocationCompletedPayload> =
   z.object({
     outcome: terminalOutcomeSchema,
+    admission: resourceAdmissionReceiptSchema.optional(),
     observedStatus: z
       .enum([
         "completed",
@@ -422,7 +424,10 @@ const runtimeEventSchema: z.ZodType<RuntimeEvent> = z.discriminatedUnion("kind",
     ...modelIdentity,
     kind: z.literal("model.attempt.completed"),
     correlation: turnCorrelationSchema,
-    payload: terminalPayloadSchema,
+    payload: z.object({
+      outcome: terminalOutcomeSchema,
+      admissions: z.array(resourceAdmissionReceiptSchema).max(65).optional(),
+    }),
   }),
   z.object({
     ...envelopeSpine,
@@ -500,11 +505,16 @@ function payloadToJson(event: RuntimeEvent): Record<string, unknown> {
           : { inputDigest: event.payload.inputDigest }),
       };
     case "turn.completed":
-    case "model.attempt.completed":
       return { outcome: outcomeToJson(event.payload.outcome) };
+    case "model.attempt.completed":
+      return {
+        outcome: outcomeToJson(event.payload.outcome),
+        ...(event.payload.admissions === undefined ? {} : { admissions: event.payload.admissions }),
+      };
     case "capability.invocation.completed":
       return {
         outcome: outcomeToJson(event.payload.outcome),
+        ...(event.payload.admission === undefined ? {} : { admission: event.payload.admission }),
         ...(event.payload.observedStatus === undefined
           ? {}
           : { observedStatus: event.payload.observedStatus }),

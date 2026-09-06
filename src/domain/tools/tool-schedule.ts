@@ -222,6 +222,9 @@ function outcomeFromRefusal(error: SchedulingError): ToolInvocationOutcome {
       return { status: "unavailable", reason: "dependency-failed", effect: "none" };
     case "lock-acquisition-timeout":
       return { status: "timed-out", effect: "none" };
+    case "resource-admission":
+      return { status: "unavailable", reason: error.receipt.state, effect: "none" };
+    case "queue-limit":
     case "concurrency-limit":
     case "budget-exhausted":
       return { status: "unavailable", reason: error.code, effect: "none" };

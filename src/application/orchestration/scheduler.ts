@@ -84,6 +84,7 @@ export type SchedulerOptions = {
    */
   readonly scopeTree?: ScopeTree;
   readonly diagnostics?: DiagnosticsCollector;
+  readonly capacityChanges?: { subscribe(wake: () => void): () => void };
 };
 
 type EntryState = "blocked" | "ready" | "running" | "settled";
@@ -92,6 +93,11 @@ type Entry<Value> = {
   readonly unit: WorkUnit;
   readonly run: WorkRunner<Value>;
   readonly index: number;
+  readonly arrival: number;
+  readonly queuedAt: number;
+  readonly inputBytes: number;
+  readonly admit: ScheduledWork<Value>["admit"];
+  capacityBlocked: boolean;
   readonly keys: readonly ConflictKey[];
   state: EntryState;
   /** When the unit first became dependency-ready, for the lock timeout. */
@@ -113,6 +119,8 @@ function refusedOutcome(): TerminalOutcome {
 
 function recoveryFor(error: SchedulingError): readonly RecoveryOption[] {
   switch (error.code) {
+    case "resource-admission":
+    case "queue-limit":
     case "budget-exhausted":
       return ["raise-limit", "reduce-scope", "retry-later"];
     case "lock-acquisition-timeout":
@@ -181,6 +189,7 @@ export function createScheduler<Value>(options: SchedulerOptions): SchedulerPort
   /** Held keys and how many holders each has, shared across generations. */
   const held = new Map<ConflictKey, number>();
   let running = 0;
+  let arrival = 0;
   /**
    * Every unit currently waiting across all generations.
    *
@@ -336,6 +345,11 @@ export function createScheduler<Value>(options: SchedulerOptions): SchedulerPort
       unit: item.unit,
       run: item.run,
       index,
+      arrival: arrival++,
+      queuedAt: Number(clock.now()),
+      inputBytes: item.inputBytes ?? 0,
+      admit: item.admit,
+      capacityBlocked: false,
       keys: effectiveConflictKeys(item.unit),
       state: "blocked",
       readySince: null,
@@ -398,6 +412,38 @@ export function createScheduler<Value>(options: SchedulerOptions): SchedulerPort
       }));
     }
 
+    const queuedBytes = [...waitingUnits].reduce((sum, entry) => sum + entry.inputBytes, 0);
+    const newBytes = entries.reduce((sum, entry) => sum + entry.inputBytes, 0);
+    const invalidBytes = entries.some(
+      (entry) => !Number.isSafeInteger(entry.inputBytes) || entry.inputBytes < 0,
+    );
+    if (
+      waitingUnits.size + entries.length > (limits.maxQueued ?? Number.MAX_SAFE_INTEGER) ||
+      invalidBytes ||
+      newBytes > (limits.maxQueuedBytes ?? Number.MAX_SAFE_INTEGER) - queuedBytes
+    ) {
+      return entries.map((entry) => {
+        refuse(entry, {
+          code: "queue-limit",
+          unitId: entry.unit.id,
+          dimension:
+            invalidBytes ||
+            newBytes > (limits.maxQueuedBytes ?? Number.MAX_SAFE_INTEGER) - queuedBytes
+              ? "bytes"
+              : "items",
+        });
+        if (entry.result === null) throw new Error("missing queue refusal");
+        return entry.result;
+      });
+    }
+    for (const entry of entries) waitingUnits.add(entry);
+    const onQueuedAbort = () => notifyCapacityChanged();
+    signal?.addEventListener("abort", onQueuedAbort, { once: true });
+    const unsubscribe = options.capacityChanges?.subscribe(() => {
+      for (const entry of entries) entry.capacityBlocked = false;
+      notifyCapacityChanged();
+    });
+
     // --- run ---
     const inflight = new Map<WorkUnitId, Promise<void>>();
 
@@ -415,6 +461,23 @@ export function createScheduler<Value>(options: SchedulerOptions): SchedulerPort
     };
 
     const start = (entry: Entry<Value>): void => {
+      const admission = entry.admit?.();
+      if (admission?.kind === "wait") {
+        if (!entry.capacityBlocked) {
+          entry.capacityBlocked = true;
+          notifyCapacityChanged();
+        }
+        return;
+      }
+      if (admission?.kind === "refused") {
+        refuse(entry, {
+          code: "resource-admission",
+          unitId: entry.unit.id,
+          receipt: admission.receipt,
+        });
+        return;
+      }
+
       if (budget !== undefined) {
         // Work IDs may recur across generations and scheduler instances.
         // Capacity belongs to this execution, not to the reusable work label.
@@ -443,6 +506,8 @@ export function createScheduler<Value>(options: SchedulerOptions): SchedulerPort
       acquire(entry.keys);
       entry.state = "running";
       running += 1;
+      waitingUnits.delete(entry);
+      for (const waiting of waitingUnits) waiting.passedOver += 1;
 
       const controller = new AbortController();
       entry.controller = controller;
@@ -491,6 +556,7 @@ export function createScheduler<Value>(options: SchedulerOptions): SchedulerPort
         running -= 1;
         signal?.removeEventListener("abort", onOuterAbort);
         releaseScopeListener?.();
+        entry.controller?.abort();
         if (budget !== undefined && entry.reservation !== null) {
           if (settlement.kind === "completed") {
             budget.ledger.consume(entry.reservation, {
@@ -614,6 +680,17 @@ export function createScheduler<Value>(options: SchedulerOptions): SchedulerPort
         break;
       }
 
+      for (const entry of entries) {
+        if (
+          (entry.state === "ready" || entry.state === "blocked") &&
+          entry.unit.deadline !== null &&
+          now() >= entry.unit.deadline.expiresAt
+        ) {
+          settle(entry, { kind: "timed-out", effect: "none" });
+          waitingUnits.delete(entry);
+        }
+      }
+
       // Promote blocked units whose dependencies have settled, and refuse the
       // ones whose dependency did not complete.
       for (const entry of entries) {
@@ -648,13 +725,30 @@ export function createScheduler<Value>(options: SchedulerOptions): SchedulerPort
       // unit that has waited longer genuinely overtakes one that has not.
       const ordered = [...ready].sort((left, right) => {
         const byEffective = effectiveRank(left) - effectiveRank(right);
-        return byEffective !== 0 ? byEffective : left.index - right.index;
+        return byEffective !== 0 ? byEffective : left.arrival - right.arrival;
       });
 
-      let admitted = 0;
       const skipped: Entry<Value>[] = [];
       for (const entry of ordered) {
-        if (running >= limits.maxConcurrent || !keysAvailable(entry.keys)) {
+        const rank = effectiveRank(entry);
+        const reserved = Math.min(
+          limits.reservedInteractive ?? 0,
+          Math.max(0, limits.maxConcurrent - 1),
+        );
+        const higherWaiting = [...waitingUnits].some(
+          (other) =>
+            other !== entry &&
+            other.state === "ready" &&
+            !other.capacityBlocked &&
+            keysAvailable(other.keys) &&
+            (effectiveRank(other) < rank ||
+              (effectiveRank(other) === rank && other.arrival < entry.arrival)),
+        );
+        if (
+          running >= limits.maxConcurrent - (rank === 0 ? 0 : reserved) ||
+          !keysAvailable(entry.keys) ||
+          higherWaiting
+        ) {
           skipped.push(entry);
           continue;
         }
@@ -662,18 +756,15 @@ export function createScheduler<Value>(options: SchedulerOptions): SchedulerPort
           counters.promotions += 1;
         }
         start(entry);
-        admitted += 1;
-      }
-      for (const entry of skipped) {
-        if (admitted > 0) {
-          entry.passedOver += 1;
+        if (entry.state === "ready") {
+          skipped.push(entry);
         }
       }
 
       // Synced after admission so a unit that just started is not still counted
       // as queued.
       for (const entry of entries) {
-        if (entry.state === "ready") {
+        if (entry.state === "ready" || entry.state === "blocked") {
           waitingUnits.add(entry);
         } else {
           waitingUnits.delete(entry);
@@ -685,7 +776,10 @@ export function createScheduler<Value>(options: SchedulerOptions): SchedulerPort
         .filter((entry) => entry.state === "ready" && entry.readySince !== null)
         .map((entry) => ({
           entry,
-          expiresAt: (entry.readySince ?? 0) + limits.lockAcquisitionTimeoutMs,
+          expiresAt: Math.min(
+            entry.queuedAt + limits.lockAcquisitionTimeoutMs,
+            entry.unit.deadline?.expiresAt ?? Number.POSITIVE_INFINITY,
+          ),
         }));
 
       let timedOutAny = false;
@@ -733,15 +827,14 @@ export function createScheduler<Value>(options: SchedulerOptions): SchedulerPort
       // locks, so this one waits for capacity rather than refusing work that is
       // merely queued behind someone else. The lock-acquisition deadline is
       // what eventually turns a wait into a refusal.
-      const wakeUp: Promise<unknown>[] =
-        inflight.size > 0
-          ? [...inflight.values()]
-          : [new Promise<void>((resolve) => capacityWaiters.push(resolve))];
-
-      if (nextLockDeadline === null) {
-        await Promise.race(wakeUp);
-        continue;
-      }
+      let wakeCapacity: (() => void) | undefined;
+      const wakeUp: Promise<unknown>[] = [
+        ...inflight.values(),
+        new Promise<void>((resolve) => {
+          wakeCapacity = resolve;
+          capacityWaiters.push(resolve);
+        }),
+      ];
 
       // The lock-deadline wait is abandoned as soon as anything else settles,
       // or it would outlive the loop iteration and hold a timer for a deadline
@@ -750,13 +843,19 @@ export function createScheduler<Value>(options: SchedulerOptions): SchedulerPort
       try {
         await Promise.race([
           ...wakeUp,
-          clock.waitUntil(instant(nextLockDeadline), lockWait.signal).then(() => undefined),
+          ...(nextLockDeadline === null
+            ? []
+            : [clock.waitUntil(instant(nextLockDeadline), lockWait.signal).then(() => undefined)]),
         ]);
       } finally {
         lockWait.abort();
+        capacityWaiters = capacityWaiters.filter((wake) => wake !== wakeCapacity);
       }
     }
 
+    signal?.removeEventListener("abort", onQueuedAbort);
+    unsubscribe?.();
+    notifyCapacityChanged();
     // The generation is over; nothing in it is waiting any more.
     for (const entry of entries) {
       waitingUnits.delete(entry);

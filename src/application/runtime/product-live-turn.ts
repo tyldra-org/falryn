@@ -766,6 +766,7 @@ export function createProductLiveTurnExecutor(
       }
 
       const attemptPolicy = createTurnAttemptPolicy({
+        resources: options.runtime.resources,
         clock: options.clock,
         coordinator: options.runtime.turnCoordinator,
         runner: attemptRunner.value,
