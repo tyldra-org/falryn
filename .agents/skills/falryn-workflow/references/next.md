@@ -39,10 +39,16 @@ explicit single-issue request into a chain. A parent link alone is not enough:
 verify the native hierarchy, remaining scope, ownership, and ordering first.
 Use the single-issue form when only that child's delivery is established.
 
-Suggest a manual mode when the user requests that stage or step-by-step control,
-or when a concrete task requires an isolated planning, review, verification, or
-merge operation rather than the delivery controller. Explain why that manual
-step is needed. Do not use manual modes to bypass missing authority, another
+This preference covers Plan, Implement, Review, Verify, and Merge. An existing
+implementation branch or PR, review findings, pending checks, or a verified PR
+awaiting merge normally belongs to the same delivery controller. Recommend
+continuing Deliver for its resolved issue or active parent chain instead of
+asking the user to advance through those stages with separate prompts.
+
+Suggest a manual mode only when the user requests that stage or step-by-step
+control, or the specific task cannot be handled by the delivery controller and
+requires an isolated operation. Name that concrete reason; reaching a normal
+delivery stage is not one. Do not use manual modes to bypass missing authority, another
 owner, an unresolved decision, or a failed audit. Those remain prerequisites.
 
 Next recommends a prompt; it never starts delivery. A new chain suggestion
