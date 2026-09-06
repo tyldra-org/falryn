@@ -4,7 +4,7 @@
  * Media is summary-only: format, byte length, and a hex prefix. No decode.
  */
 
-import type { ArtifactView, ArtifactViewState } from "../../domain/index.ts";
+import type { ArtifactView, ArtifactViewState } from "../../domain/artifacts/index.ts";
 
 export type MediaViewModel = {
   readonly artifactId: string;

@@ -1,7 +1,8 @@
 /** Shared command result construction and effect declarations. */
 
-import { adoptForeignError } from "../../application/index.ts";
-import type { FalrynError, TerminalOutcome } from "../../domain/index.ts";
+import { adoptForeignError } from "../../application/diagnostics/index.ts";
+import type { FalrynError } from "../../domain/foundation/index.ts";
+import type { TerminalOutcome } from "../../domain/orchestration/index.ts";
 import {
   COMMAND_RESULT_SCHEMA_FAMILY,
   COMMAND_RESULT_SCHEMA_VERSION,
@@ -9,11 +10,11 @@ import {
   type CommandId,
   type CommandResultOf,
   READ_ONLY_EFFECT,
-} from "../result.ts";
+} from "../output/result.ts";
 import {
   describeWorkspaceResolveError,
   type WorkspaceResolveError,
-} from "../workspace-resolution.ts";
+} from "../runtime/workspace-resolution.ts";
 
 export function resultFor<Command extends CommandId, Payload>(
   command: Command,

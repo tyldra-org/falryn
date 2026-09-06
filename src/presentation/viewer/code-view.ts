@@ -9,7 +9,7 @@ import type {
   ArtifactView,
   ArtifactViewCodeLanguage,
   ArtifactViewState,
-} from "../../domain/index.ts";
+} from "../../domain/artifacts/index.ts";
 
 export type CodeViewModel = {
   readonly artifactId: string;

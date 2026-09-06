@@ -5,7 +5,7 @@ import {
   fromExportError,
   fromSqliteStoreError,
   fromUnknown,
-} from "../../application/index.ts";
+} from "../../application/diagnostics/index.ts";
 import {
   createRecordRepositories,
   createSqliteEventStore,
@@ -16,19 +16,20 @@ import {
   sqliteDatabasePath,
   writePackage,
 } from "../../data/index.ts";
+import { createInMemoryPackageWriter } from "../../domain/extensions/index.ts";
+import type {
+  ExportCounts,
+  ExportInventory,
+  ExportOmission,
+  ExportRedaction,
+  ExportSelectionSummary,
+} from "../../domain/sessions/index.ts";
 import {
-  createInMemoryPackageWriter,
   DEFAULT_BUSY_TIMEOUT_MS,
-  type ExportCounts,
-  type ExportInventory,
-  type ExportOmission,
-  type ExportRedaction,
-  type ExportSelectionSummary,
   isRootUsable,
-  joinPath,
-  type LocalPath,
   type RootStatus,
-} from "../../domain/index.ts";
+} from "../../domain/storage/index.ts";
+import { joinPath, type LocalPath } from "../../domain/workspace/index.ts";
 import {
   createHostBlobStore,
   createHostPackageWriter,
@@ -36,8 +37,8 @@ import {
   openBunSqlite,
 } from "../../integrations/index.ts";
 import type { ExportCommandArguments } from "../command-tree.ts";
-import { type CommandEffect, type CommandResultOf, READ_ONLY_EFFECT } from "../result.ts";
-import type { ServiceProvider } from "../services.ts";
+import { type CommandEffect, type CommandResultOf, READ_ONLY_EFFECT } from "../output/result.ts";
+import type { ServiceProvider } from "../runtime/services.ts";
 import { FALRYN_VERSION } from "../version.ts";
 import { MUTATION_NOT_OBSERVED, resultFor, WRITE_COMPLETED_EFFECT } from "./shared.ts";
 

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { known, unavailable, type WorkspaceHeaderModel } from "../view-model.ts";
+import { known, unavailable, type WorkspaceHeaderModel } from "../shell/view-model.ts";
 import {
   type ControlCatalog,
   EMPTY_CONTROL_CATALOG,

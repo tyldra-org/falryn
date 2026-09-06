@@ -1,15 +1,17 @@
 import {
-  DEFAULT_SESSION_LIST_LIMIT,
-  MAX_SESSION_CATALOG,
-  SESSION_CATALOG_FILTERS,
-  type SessionCatalogFilter,
   type SessionId,
   type StreamId,
   sessionId,
   streamId,
-  TERMINAL_OUTCOME_PROJECTION_GENERATION,
   workspaceId,
-} from "../../domain/index.ts";
+} from "../../domain/foundation/index.ts";
+import {
+  DEFAULT_SESSION_LIST_LIMIT,
+  MAX_SESSION_CATALOG,
+  SESSION_CATALOG_FILTERS,
+  type SessionCatalogFilter,
+  TERMINAL_OUTCOME_PROJECTION_GENERATION,
+} from "../../domain/sessions/index.ts";
 
 import {
   type RawArguments,

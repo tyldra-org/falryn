@@ -27,15 +27,15 @@
  * monochrome one.
  */
 
+import type { ScopeId } from "../../domain/foundation/index.ts";
 import type {
   EffectCertainty,
   ScopeEvent,
-  ScopeId,
   ScopeKind,
   ScopeStatus,
   TerminalOutcome,
-} from "../../domain/index.ts";
-import { effectOf } from "../../domain/index.ts";
+} from "../../domain/orchestration/index.ts";
+import { effectOf } from "../../domain/orchestration/index.ts";
 
 /**
  * What produced an entry.

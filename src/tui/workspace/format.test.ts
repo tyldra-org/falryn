@@ -1,12 +1,11 @@
 import { describe, expect, test } from "bun:test";
-
+import { workspaceRootId } from "../../domain/foundation/index.ts";
 import {
   createInMemoryFileSystem,
   createWorkspaceSet,
   localPath,
-  workspaceRootId,
-} from "../../domain/index.ts";
-import { known, unavailable } from "../view-model.ts";
+} from "../../domain/workspace/index.ts";
+import { known, unavailable } from "../shell/view-model.ts";
 import { createWorkspaceController } from "./controller.ts";
 import { formatWorkspaceHeaderText, projectWorkspaceHeader, workspaceRootFacts } from "./format.ts";
 

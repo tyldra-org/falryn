@@ -8,7 +8,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import type { QueueReport, SchedulerReport } from "../../domain/index.ts";
+import type { QueueReport, SchedulerReport } from "../../domain/orchestration/index.ts";
 import { everyOutcome, running, settled } from "./fixtures.ts";
 import { HEALTH_LEVELS, type HealthInput, NO_HEALTH_INPUT, projectHealth } from "./health.ts";
 import { EMPTY_ACTIVITY, reduceActivity } from "./reducer.ts";

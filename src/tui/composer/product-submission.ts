@@ -10,17 +10,19 @@ import {
   composeProductBriefControls,
   composeProductOutputControls,
   type ProductBriefControls,
-  type ProductExecutionProfileControls,
-  type ProductLiveTurnExecutor,
-  type ProductModelSelectionControls,
   type ProductOutputControls,
-} from "../../application/index.ts";
+} from "../../application/compression/index.ts";
+import type {
+  ProductExecutionProfileControls,
+  ProductLiveTurnExecutor,
+  ProductModelSelectionControls,
+} from "../../application/runtime/index.ts";
 import {
   type ConfigurationGeneration,
   type SessionId,
   type TurnId,
   turnId,
-} from "../../domain/index.ts";
+} from "../../domain/foundation/index.ts";
 import type { ComposerSnapshot, SubmissionOutcome, SubmissionPort } from "./submission.ts";
 
 export const PRODUCT_SUBMISSION_OWNER = "#707";

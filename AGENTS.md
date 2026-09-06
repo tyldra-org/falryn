@@ -19,7 +19,7 @@ roadmaps, detailed future designs, unannounced capabilities, or research here.
 ## Before acting
 
 1. Read applicable higher-priority instructions and this file.
-2. Load the applicable vendored skill from `.agents/skills/`.
+2. Load the applicable skills using the routing below.
 3. Read `DEVELOPMENT.md` and the named public issue or pull request.
 4. Treat repository source, tests, and public current-state documentation as the
    evidence for a public claim.
@@ -39,6 +39,7 @@ roadmaps, detailed future designs, unannounced capabilities, or research here.
 
 | Work | Skill |
 | --- | --- |
+| Non-trivial design, implementation, refactoring, debugging, migrations, or architecture | software-engineering-discipline (global only) |
 | TypeScript, TSX, JavaScript, tests, build scripts, or tsconfig | typescript-best-practices |
 | OpenTUI behavior, layout, input, rendering, or packaging | opentui-best-practices |
 | Mutating Git work | git-workflow |
@@ -46,14 +47,29 @@ roadmaps, detailed future designs, unannounced capabilities, or research here.
 | Local diff, branch, or pull-request review | change-review plus the relevant stack skill |
 | Falryn Plan, Implement, Review, Verify, Merge, Deliver, Next, greetings, walkthroughs, or project-status routing | falryn-workflow |
 
-Use the vendored skill appropriate to the checkout. Each `SKILL.md` is a compact
-router; load only the deep reference that owns the task. The five portable
+Load `software-engineering-discipline` only from the global installation at
+`~/.agents/skills/software-engineering-discipline/SKILL.md`. Use it for the
+non-trivial work listed above; skip trivial mechanical edits. Do not vendor or
+copy this skill into the repository. This is agent guidance, not a build or
+human-contributor prerequisite.
+
+For the other skills, use the vendored bundle appropriate to the checkout.
+Each `SKILL.md` is a compact router; load only the deep reference that owns the
+task. The five portable
 vendored skills must not acquire Falryn product strategy. `falryn-workflow` is
 the sole repository-specific exception and contains the complete public-checkout
 workflow. Private Falryn Docs and Roadmap authority is an authenticated
 maintainer addition, never a prerequisite for ordinary public work. This
-checkout is authoritative for its vendored bundles. A global installation is an
-optional convenience and must not become a public-checkout dependency.
+checkout is authoritative for its vendored bundles. Global copies of those
+bundles are optional conveniences, not public-checkout dependencies.
+
+## Source organization
+
+Follow the capability layout in `DEVELOPMENT.md`. Extend the owning capability
+within its layer; keep test fixtures beside their subject and host composition
+out of application actions. Revisit the complete design before adding a special
+case. Do not create empty source files for open issues or revive layer-wide
+export catalogs.
 
 ## Validation
 

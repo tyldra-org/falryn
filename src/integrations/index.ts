@@ -5,105 +5,108 @@
  * Bun and system APIs; nothing here may be imported by `src/domain`.
  */
 
-export type {
-  AnthropicSdkAdapterOptions,
-  AnthropicSdkFetch,
-  AnthropicSdkStreamFactory,
-} from "./anthropic-sdk-adapter.ts";
-export { createAnthropicSdkAdapter } from "./anthropic-sdk-adapter.ts";
-export type { HostAuthorizedProviderLoginOptions } from "./authorized-login-host.ts";
+export type { HostAuthorizedProviderLoginOptions } from "./authentication/authorized-login-host.ts";
 export {
   createAuthorizationCrypto,
   createBunAuthorizationLoopback,
   createHostAuthorizedProviderLogin,
-} from "./authorized-login-host.ts";
-export { classifySqliteError, openBunSqlite } from "./bun-sqlite.ts";
-export type { CommandCodeProviderAdapterOptions } from "./command-code-provider-adapter.ts";
-export { createCommandCodeProviderAdapter } from "./command-code-provider-adapter.ts";
-export { createSha256Hasher } from "./content-digest.ts";
-export { createEnvironmentCredentialStore } from "./environment-credentials.ts";
+} from "./authentication/authorized-login-host.ts";
+export { createEnvironmentCredentialStore } from "./authentication/environment-credentials.ts";
 export type {
-  GoogleCachedContentBinding,
-  GoogleCachedContentBindingPort,
-  GoogleGenAiSdkAdapterOptions,
-  GoogleGenAiStreamFactory,
-} from "./google-genai-sdk-adapter.ts";
-export { createGoogleGenAiSdkAdapter } from "./google-genai-sdk-adapter.ts";
-export type { HostBlobStore, HostBlobStoreOptions } from "./host-blobs.ts";
-export { createHostBlobStore } from "./host-blobs.ts";
-export type { HostCommandRunnerOptions } from "./host-commands.ts";
-export { createHostCommandRunner } from "./host-commands.ts";
+  KeychainCredentialStoreOptions,
+  OperatingSystemSecretsPort,
+} from "./authentication/keychain-credentials.ts";
+export { createKeychainCredentialStore } from "./authentication/keychain-credentials.ts";
+export type {
+  CredentialWriteResult,
+  WriteKeychainCredentialOptions,
+} from "./authentication/keychain-write.ts";
+export { writeKeychainCredential } from "./authentication/keychain-write.ts";
+export { createOpenAiCodexAuthorizedLoginAdapter } from "./authentication/openai-codex-authorized-login-adapter.ts";
+export type {
+  SessionEnvironmentCredentialLookupOptions,
+  SessionEnvironmentCredentialLookupPort,
+  SessionEnvironmentLookupOutcome,
+} from "./authentication/session-environment-credentials.ts";
+export {
+  createSessionEnvironmentCredentialLookup,
+  LAUNCHCTL_EXECUTABLE,
+} from "./authentication/session-environment-credentials.ts";
 export {
   createHostFileChangeSubscriber,
   createManualFileChangeSubscriber,
   type HostFileChangeSubscriber,
-} from "./host-configuration-watch.ts";
-export { createHostEnvironment, hostHome, hostPlatform } from "./host-environment.ts";
-export { createHostFileOutputStream, createHostFileSystem } from "./host-filesystem.ts";
-export type { HostGitOptions } from "./host-git.ts";
-export { createHostGitPort } from "./host-git.ts";
+} from "./configuration/host-configuration-watch.ts";
+export { createHostEnvironment, hostHome, hostPlatform } from "./configuration/host-environment.ts";
+export type { HostPackageWriter, HostPackageWriterOptions } from "./extensions/host-packages.ts";
+export { createHostPackageWriter, STAGED_SUFFIX } from "./extensions/host-packages.ts";
+export { createSha256Hasher } from "./filesystem/content-digest.ts";
+export type { HostBlobStore, HostBlobStoreOptions } from "./filesystem/host-blobs.ts";
+export { createHostBlobStore } from "./filesystem/host-blobs.ts";
+export { createHostFileOutputStream, createHostFileSystem } from "./filesystem/host-filesystem.ts";
+export type { HostGitOptions } from "./git/host-git.ts";
+export { createHostGitPort } from "./git/host-git.ts";
+export type { HostCommandRunnerOptions } from "./process/host-commands.ts";
+export { createHostCommandRunner } from "./process/host-commands.ts";
 export {
   createOwnedProcessRegistry,
   OWNED_PROCESS_SHUTDOWN_PARTICIPANT,
   type OwnedProcessRegistry,
   type OwnedProcessRegistryBundle,
-} from "./host-owned-process-registry.ts";
-export type { HostPackageWriter, HostPackageWriterOptions } from "./host-packages.ts";
-export { createHostPackageWriter, STAGED_SUFFIX } from "./host-packages.ts";
-export type { HostProcessCaptureOptions } from "./host-process-capture.ts";
-export { createHostProcessCapturePort } from "./host-process-capture.ts";
+} from "./process/host-owned-process-registry.ts";
+export type { HostProcessCaptureOptions } from "./process/host-process-capture.ts";
+export { createHostProcessCapturePort } from "./process/host-process-capture.ts";
 export type {
   HostManagedServicePortOptions,
   HostPtySessionPortOptions,
-} from "./host-process-sessions.ts";
-export { createHostManagedServicePort, createHostPtySessionPort } from "./host-process-sessions.ts";
+} from "./process/host-process-sessions.ts";
+export {
+  createHostManagedServicePort,
+  createHostPtySessionPort,
+} from "./process/host-process-sessions.ts";
 export {
   escalateOwnedTree,
   ownedTreeSpawnOptions,
   processIsAlive,
   signalOwnedTree,
-} from "./host-process-tree.ts";
-export type { HostInputStreamOptions, HostOutputStreamOptions } from "./host-terminal.ts";
+} from "./process/host-process-tree.ts";
+export { createProcessSignalPort, observedPlatformSignals } from "./process/process-signals.ts";
+export type {
+  AnthropicSdkAdapterOptions,
+  AnthropicSdkFetch,
+  AnthropicSdkStreamFactory,
+} from "./providers/anthropic-sdk-adapter.ts";
+export { createAnthropicSdkAdapter } from "./providers/anthropic-sdk-adapter.ts";
+export type { CommandCodeProviderAdapterOptions } from "./providers/command-code-provider-adapter.ts";
+export { createCommandCodeProviderAdapter } from "./providers/command-code-provider-adapter.ts";
+export type {
+  GoogleCachedContentBinding,
+  GoogleCachedContentBindingPort,
+  GoogleGenAiSdkAdapterOptions,
+  GoogleGenAiStreamFactory,
+} from "./providers/google-genai-sdk-adapter.ts";
+export { createGoogleGenAiSdkAdapter } from "./providers/google-genai-sdk-adapter.ts";
+export type {
+  OfficialModelDiscoveryLoaders,
+  OfficialModelDiscoveryOptions,
+} from "./providers/official-model-discovery.ts";
+export {
+  createOfficialModelDiscovery,
+  officialModelCapabilityTranslators,
+} from "./providers/official-model-discovery.ts";
+export type { OpenAiProviderAdapterOptions } from "./providers/openai-provider-adapter.ts";
+export { createOpenAiProviderAdapter } from "./providers/openai-provider-adapter.ts";
+export type {
+  OpenAiResponsesSdkAdapterOptions,
+  OpenAiResponsesSdkFetch,
+} from "./providers/openai-responses-sdk-adapter.ts";
+export { createOpenAiResponsesSdkAdapter } from "./providers/openai-responses-sdk-adapter.ts";
+export type { OpenAiSdkAdapterOptions, OpenAiSdkFetch } from "./providers/openai-sdk-adapter.ts";
+export { createOpenAiSdkAdapter } from "./providers/openai-sdk-adapter.ts";
+export { classifySqliteError, openBunSqlite } from "./storage/bun-sqlite.ts";
+export type { HostInputStreamOptions, HostOutputStreamOptions } from "./terminal/host-terminal.ts";
 export {
   createHostInputStream,
   createHostOutputStream,
   observeHandles,
-} from "./host-terminal.ts";
-export type {
-  KeychainCredentialStoreOptions,
-  OperatingSystemSecretsPort,
-} from "./keychain-credentials.ts";
-export { createKeychainCredentialStore } from "./keychain-credentials.ts";
-export type {
-  CredentialWriteResult,
-  WriteKeychainCredentialOptions,
-} from "./keychain-write.ts";
-export { writeKeychainCredential } from "./keychain-write.ts";
-export type {
-  OfficialModelDiscoveryLoaders,
-  OfficialModelDiscoveryOptions,
-} from "./official-model-discovery.ts";
-export {
-  createOfficialModelDiscovery,
-  officialModelCapabilityTranslators,
-} from "./official-model-discovery.ts";
-export { createOpenAiCodexAuthorizedLoginAdapter } from "./openai-codex-authorized-login-adapter.ts";
-export type { OpenAiProviderAdapterOptions } from "./openai-provider-adapter.ts";
-export { createOpenAiProviderAdapter } from "./openai-provider-adapter.ts";
-export type {
-  OpenAiResponsesSdkAdapterOptions,
-  OpenAiResponsesSdkFetch,
-} from "./openai-responses-sdk-adapter.ts";
-export { createOpenAiResponsesSdkAdapter } from "./openai-responses-sdk-adapter.ts";
-export type { OpenAiSdkAdapterOptions, OpenAiSdkFetch } from "./openai-sdk-adapter.ts";
-export { createOpenAiSdkAdapter } from "./openai-sdk-adapter.ts";
-export { createProcessSignalPort, observedPlatformSignals } from "./process-signals.ts";
-export type {
-  SessionEnvironmentCredentialLookupOptions,
-  SessionEnvironmentCredentialLookupPort,
-  SessionEnvironmentLookupOutcome,
-} from "./session-environment-credentials.ts";
-export {
-  createSessionEnvironmentCredentialLookup,
-  LAUNCHCTL_EXECUTABLE,
-} from "./session-environment-credentials.ts";
+} from "./terminal/host-terminal.ts";

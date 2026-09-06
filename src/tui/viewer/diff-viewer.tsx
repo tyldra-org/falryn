@@ -5,10 +5,10 @@
 import { RGBA, SyntaxStyle } from "@opentui/core";
 import type { ReactNode } from "react";
 import { type DiffViewModel, diffTextForHunk } from "../../presentation/viewer/index.ts";
-import { useFrame } from "../components/context.tsx";
-import { Line } from "../components/primitives.tsx";
+import { useFrame } from "../shell/context.tsx";
 import type { ColorToken } from "../theme/index.ts";
 import type { Theme } from "../theme/theme.ts";
+import { Line } from "../visual/primitives.tsx";
 import { filetypeFor } from "./code-viewer.tsx";
 
 const PANEL_CHROME_COLUMNS = 4;

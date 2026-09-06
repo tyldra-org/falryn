@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { commandById } from "../commands.ts";
+import { commandById } from "../commands/commands.ts";
 import {
   parseComposerSlash,
   WORKSPACE_SLASH_ALIASES,

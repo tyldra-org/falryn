@@ -25,7 +25,7 @@ import {
   turnCompleted,
   turnStarted,
 } from "../../domain/fixtures.ts";
-import { capabilityId, sequence } from "../../domain/index.ts";
+import { capabilityId, sequence } from "../../domain/foundation/index.ts";
 import { outcomeOf } from "./blocks.ts";
 import { TRANSCRIPT_PROJECTION_GENERATION } from "./generation.ts";
 import { blockFor, EMPTY_PROJECTION, reduceTranscript } from "./reducer.ts";

@@ -9,25 +9,21 @@
 import { describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 
+import { type ArtifactStorePort, artifactId, contentDigest } from "../domain/artifacts/index.ts";
+import { err, ok, timestampFromEpochMilliseconds } from "../domain/foundation/index.ts";
 import {
-  type ArtifactStorePort,
-  artifactId,
-  contentDigest,
   createInMemoryFileSystem,
-  err,
   type FileSystemPort,
   localPath,
   MAX_READ_MANY_TARGETS,
-  ok,
-  timestampFromEpochMilliseconds,
-} from "../domain/index.ts";
-import { createCompactDocumentReader } from "./compact-document-read.ts";
-import { createImageReader } from "./image-read.ts";
-import { createNotebookReader } from "./notebook-read.ts";
-import { createPdfReader } from "./pdf-read.ts";
-import { createWorkspaceListing } from "./workspace-listing.ts";
-import { createWorkspacePathBinder } from "./workspace-path.ts";
-import { createWorkspaceReader } from "./workspace-read.ts";
+} from "../domain/workspace/index.ts";
+import { createCompactDocumentReader } from "./documents/compact-document-read.ts";
+import { createImageReader } from "./documents/image-read.ts";
+import { createNotebookReader } from "./documents/notebook-read.ts";
+import { createPdfReader } from "./documents/pdf-read.ts";
+import { createWorkspaceListing } from "./workspace/workspace-listing.ts";
+import { createWorkspacePathBinder } from "./workspace/workspace-path.ts";
+import { createWorkspaceReader } from "./workspace/workspace-read.ts";
 
 const root = localPath("/work/project");
 const SECRET = "sk-live-SECRET";

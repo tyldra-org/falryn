@@ -26,29 +26,31 @@ import {
 } from "../config/index.ts";
 import {
   createStaticEnvironment,
-  type EffectCertainty,
   type FalrynError,
   FIRST_SEQUENCE,
-  localPath,
   NO_CORRELATION,
-  type RuntimeEvent,
+  type Timestamp,
+} from "../domain/foundation/index.ts";
+import {
+  type EffectCertainty,
   TERMINAL_OUTCOME_KINDS,
   type TerminalOutcome,
-  type Timestamp,
-} from "../domain/index.ts";
+} from "../domain/orchestration/index.ts";
+import type { RuntimeEvent } from "../domain/sessions/index.ts";
+import { localPath } from "../domain/workspace/index.ts";
 import type { ConfigValidatePayload, DoctorPayload, RunCommandResult } from "./commands.ts";
 import { dispatch } from "./dispatch.ts";
 import type { GlobalOptions } from "./options.ts";
-import { renderJson } from "./render-json.ts";
-import { renderJsonl } from "./render-jsonl.ts";
+import { renderJson } from "./output/render-json.ts";
+import { renderJsonl } from "./output/render-jsonl.ts";
 import {
   COMMAND_RESULT_SCHEMA_FAMILY,
   COMMAND_RESULT_SCHEMA_VERSION,
   READ_ONLY_EFFECT,
-} from "./result.ts";
-import { CLI_SCHEMA_FAMILY, MAX_CLI_RECORD_BYTES, readCliStream } from "./schema.ts";
-import { createServiceProvider } from "./services.ts";
-import { createRecordingCliStreams } from "./streams.ts";
+} from "./output/result.ts";
+import { CLI_SCHEMA_FAMILY, MAX_CLI_RECORD_BYTES, readCliStream } from "./output/schema.ts";
+import { createRecordingCliStreams } from "./output/streams.ts";
+import { createServiceProvider } from "./runtime/services.ts";
 
 /** Token-shaped text the runtime redactor recognizes. Never a real credential. */
 const SECRET = "sk-live-ABCDEFGH12345678";

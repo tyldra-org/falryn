@@ -16,7 +16,7 @@ import { sourcePathFromGlob } from "./source-path-fixtures.ts";
 const SOURCE_ROOT = dirname(import.meta.path);
 
 /** The one module allowed to speak to the driver. */
-const ADAPTER = "integrations/bun-sqlite.ts";
+const ADAPTER = "integrations/storage/bun-sqlite.ts";
 
 /**
  * The boundary controls, which are exempt from every rule they state.
@@ -151,7 +151,7 @@ describe("the source tree", () => {
       (file) => isProduct(file) && file.includes("sqlite-store"),
     );
 
-    expect(owners.map((file) => file.slice(SQL_OWNER.length))).toEqual(["sqlite-store.ts"]);
+    expect(owners.map((file) => file.slice(SQL_OWNER.length))).toEqual(["sqlite/sqlite-store.ts"]);
   });
 });
 
@@ -168,7 +168,7 @@ describe("the event store", () => {
     }
     // The port is declared once. A second declaration would be a second
     // persistence interface, which is exactly what the port exists to prevent.
-    expect(implementations).toEqual(["domain/event-store.ts"]);
+    expect(implementations).toEqual(["domain/sessions/event-store.ts"]);
 
     const factories: string[] = [];
     for (const file of await sourceFiles()) {
@@ -180,13 +180,13 @@ describe("the event store", () => {
         factories.push(file);
       }
     }
-    expect(factories).toEqual(["data/event-store.ts"]);
+    expect(factories).toEqual(["data/sessions/event-store.ts"]);
   });
 
   test("keeps the in-memory double in the domain, as a double", async () => {
     // Neither deleted nor promoted to a fallback: it is what lets everything
     // above persistence be tested without a disk.
-    expect(await readSource("domain/event-store.ts")).toContain(
+    expect(await readSource("domain/sessions/event-store.ts")).toContain(
       "export function createInMemoryEventStore",
     );
   });
@@ -222,7 +222,7 @@ describe("row shapes and the database handle", () => {
 
 describe("artifact bytes", () => {
   /** The one module allowed to write them. */
-  const BLOB_ADAPTER = "integrations/host-blobs.ts";
+  const BLOB_ADAPTER = "integrations/filesystem/host-blobs.ts";
 
   test("are written in exactly one adapter module", async () => {
     // The three ways a module could hold a byte stream of its own: an open
@@ -237,7 +237,7 @@ describe("artifact bytes", () => {
         !isProduct(file) ||
         CONTROLS.includes(file) ||
         file === BLOB_ADAPTER ||
-        file === "integrations/host-packages.ts"
+        file === "integrations/extensions/host-packages.ts"
       ) {
         continue;
       }
@@ -251,9 +251,9 @@ describe("artifact bytes", () => {
   test("are reachable only by scope and digest, never by path", async () => {
     // `BlobLocation` names a scope and a digest. A module that turned one into
     // a path would put that path into an error, an event, or a diagnostic.
-    const source = await readSource("data/artifact-store.ts");
+    const source = await readSource("data/artifacts/artifact-store.ts");
     expect(source).not.toMatch(/\b(LocalPath|joinPath|localPath)\b/);
-    expect(await readSource("domain/blob.ts")).not.toMatch(/\bLocalPath\b/);
+    expect(await readSource("domain/artifacts/blob.ts")).not.toMatch(/\bLocalPath\b/);
   });
 
   test("have one artifact store and one blob port declaration", async () => {
@@ -271,15 +271,15 @@ describe("artifact bytes", () => {
         stores.push(file);
       }
     }
-    expect(ports).toEqual(["domain/blob.ts"]);
-    expect(stores).toEqual(["data/artifact-store.ts"]);
+    expect(ports).toEqual(["domain/artifacts/blob.ts"]);
+    expect(stores).toEqual(["data/artifacts/artifact-store.ts"]);
   });
 });
 
 describe("an artifact failure", () => {
   test("carries no digest, path, or byte in any declared member", async () => {
     const artifactErrors = /code: "(malformed-row|storage|already-exists|not-found)"/;
-    const source = await readSource("domain/artifact.ts");
+    const source = await readSource("domain/artifacts/artifact.ts");
     const union = source.slice(
       source.indexOf("export type ArtifactError"),
       source.indexOf("/** What a caller declares"),
@@ -293,7 +293,7 @@ describe("an artifact failure", () => {
 });
 
 describe("startup recovery", () => {
-  const RECOVERY = "data/recovery.ts";
+  const RECOVERY = "data/lifecycle/recovery.ts";
 
   test("deletes no record, whatever it concludes", async () => {
     const source = await readSource(RECOVERY);
@@ -312,7 +312,7 @@ describe("startup recovery", () => {
   });
 
   test("reports counts, and no path, digest, or byte", async () => {
-    const source = await readSource("domain/run.ts");
+    const source = await readSource("domain/sessions/run.ts");
     const report = source.slice(
       source.indexOf("export type RecoveryReport"),
       source.indexOf("export type RecoveryError"),
@@ -331,15 +331,15 @@ describe("startup recovery", () => {
 });
 
 describe("an export package", () => {
-  const EXPORT = "data/export.ts";
+  const EXPORT = "data/lifecycle/export.ts";
   const EXPORT_MODULES = [
     EXPORT,
-    "data/export/inventory.ts",
-    "data/export/package.ts",
-    "data/export/shared.ts",
+    "data/lifecycle/export/inventory.ts",
+    "data/lifecycle/export/package.ts",
+    "data/lifecycle/export/shared.ts",
   ] as const;
   /** The one module allowed to write one. */
-  const PACKAGE_ADAPTER = "integrations/host-packages.ts";
+  const PACKAGE_ADAPTER = "integrations/extensions/host-packages.ts";
 
   test("is written in exactly one adapter module", async () => {
     const byteWriters = /\b(fs\.open|writeFile|createWriteStream|Bun\.write)\b/;
@@ -349,7 +349,7 @@ describe("an export package", () => {
         !isProduct(file) ||
         CONTROLS.includes(file) ||
         file === PACKAGE_ADAPTER ||
-        file === "integrations/host-blobs.ts"
+        file === "integrations/filesystem/host-blobs.ts"
       ) {
         continue;
       }
@@ -365,7 +365,7 @@ describe("an export package", () => {
     // type reaches the service that decides what goes into one.
     const source = (await Promise.all(EXPORT_MODULES.map(readSource))).join("\n");
     expect(source).not.toMatch(/\b(LocalPath|joinPath|localPath)\b/);
-    expect(await readSource("domain/package.ts")).not.toMatch(/\bLocalPath\b/);
+    expect(await readSource("domain/extensions/package.ts")).not.toMatch(/\bLocalPath\b/);
   });
 
   test("can never reach a credential", async () => {
@@ -376,8 +376,8 @@ describe("an export package", () => {
       /\b(CredentialStorePort|SecretResolverPort|CredentialReference|SecretRequest)\b/;
     for (const file of [
       ...EXPORT_MODULES,
-      "domain/export.ts",
-      "domain/package.ts",
+      "domain/sessions/export.ts",
+      "domain/extensions/package.ts",
       PACKAGE_ADAPTER,
     ]) {
       expect(credentials.test(await readSource(file))).toBe(false);
@@ -385,7 +385,7 @@ describe("an export package", () => {
   });
 
   test("refuses restricted artifacts by vocabulary rather than by flag", async () => {
-    const source = await readSource("data/export/inventory.ts");
+    const source = await readSource("data/lifecycle/export/inventory.ts");
     // The check exists, and it is made before the sensitivity opt-in is
     // consulted, so a selection cannot opt back into content the label says
     // never leaves the machine.
@@ -406,7 +406,7 @@ describe("an export package", () => {
 });
 
 describe("session import and replay", () => {
-  const REPLAY = "data/session-replay.ts";
+  const REPLAY = "data/sessions/session-replay.ts";
 
   test("never names a command runner, provider, or network", async () => {
     const source = await readSource(REPLAY);
@@ -419,12 +419,12 @@ describe("session import and replay", () => {
     const credentials =
       /\b(CredentialStorePort|SecretResolverPort|CredentialReference|SecretRequest)\b/;
     expect(credentials.test(await readSource(REPLAY))).toBe(false);
-    expect(credentials.test(await readSource("domain/session-replay.ts"))).toBe(false);
+    expect(credentials.test(await readSource("domain/sessions/session-replay.ts"))).toBe(false);
   });
 });
 
 describe("user backup", () => {
-  const BACKUP = "data/backup.ts";
+  const BACKUP = "data/lifecycle/backup.ts";
 
   test("never names a command runner, provider, or network", async () => {
     const source = await readSource(BACKUP);
@@ -437,12 +437,12 @@ describe("user backup", () => {
     const credentials =
       /\b(CredentialStorePort|SecretResolverPort|CredentialReference|SecretRequest)\b/;
     expect(credentials.test(await readSource(BACKUP))).toBe(false);
-    expect(credentials.test(await readSource("domain/backup.ts"))).toBe(false);
+    expect(credentials.test(await readSource("domain/storage/backup.ts"))).toBe(false);
   });
 });
 
 describe("reachability garbage collection", () => {
-  const GC = "data/reachability-gc.ts";
+  const GC = "data/lifecycle/reachability-gc.ts";
 
   test("never names a command runner, provider, or network", async () => {
     const source = await readSource(GC);
@@ -455,7 +455,7 @@ describe("reachability garbage collection", () => {
     const credentials =
       /\b(CredentialStorePort|SecretResolverPort|CredentialReference|SecretRequest)\b/;
     expect(credentials.test(await readSource(GC))).toBe(false);
-    expect(credentials.test(await readSource("domain/reachability-gc.ts"))).toBe(false);
+    expect(credentials.test(await readSource("domain/storage/reachability-gc.ts"))).toBe(false);
   });
 });
 

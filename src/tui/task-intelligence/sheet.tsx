@@ -13,17 +13,17 @@ import {
   decomposeOutcome,
   projectOutcomeProgress,
   recommendOutcomeValidation,
-} from "../../application/index.ts";
+} from "../../application/orchestration/index.ts";
 import {
   runTaskCommitPlan,
   summarizeTaskCommitPlan,
   taskCommitPlanArgumentsFor,
-} from "../../cli/task-commit-plan-commands.ts";
+} from "../../cli/commands/task-commit-plan-commands.ts";
 import {
   summarizeTaskDecomposition,
   summarizeTaskProgress,
   summarizeTaskValidation,
-} from "../../cli/task-intelligence-commands.ts";
+} from "../../cli/commands/task-intelligence-commands.ts";
 import {
   decomposeArgumentsFromDraft,
   decomposeInputOf,
@@ -31,14 +31,14 @@ import {
   progressInputOf,
   validateArgumentsFromDraft,
   validateInputOf,
-} from "../../cli/task-intelligence-parse.ts";
+} from "../../cli/commands/task-intelligence-parse.ts";
 import {
   describeTaskDecomposeError,
   describeTaskProgressError,
   describeTaskValidationError,
-} from "../../domain/index.ts";
-import { useFrame } from "../components/context.tsx";
-import { Line } from "../components/primitives.tsx";
+} from "../../domain/orchestration/index.ts";
+import { useFrame } from "../shell/context.tsx";
+import { Line } from "../visual/primitives.tsx";
 import type { TaskIntelligencePanel } from "./format.ts";
 import { TASK_INTELLIGENCE_PANEL_TITLES } from "./format.ts";
 

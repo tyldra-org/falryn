@@ -7,9 +7,9 @@
 
 import type { SelectOption, SelectRenderable } from "@opentui/core";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
-import { useFrame } from "../components/context.tsx";
-import { Line } from "../components/primitives.tsx";
-import { useSelectNavigation } from "../components/select-navigation.ts";
+import { useSelectNavigation } from "../overlays/select-navigation.ts";
+import { useFrame } from "../shell/context.tsx";
+import { Line } from "../visual/primitives.tsx";
 import {
   describeSessionNavigationControllerError,
   noticeForFork,

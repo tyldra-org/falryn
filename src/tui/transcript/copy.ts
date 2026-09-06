@@ -11,7 +11,7 @@ import {
   resolveTranscriptPick,
   type TranscriptBlock,
 } from "../../presentation/index.ts";
-import { type CopyTextPort, type CopyTextResult, copyText } from "../clipboard.ts";
+import { type CopyTextPort, type CopyTextResult, copyText } from "../runtime/clipboard.ts";
 
 export type TranscriptCopyRequest = {
   readonly selected: string | null;

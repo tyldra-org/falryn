@@ -19,24 +19,26 @@ import {
   createDiagnosticsCollector,
   createRuntimeRedactor,
   REDACTED,
-} from "../application/index.ts";
+} from "../application/diagnostics/index.ts";
+import type { ConfigurationLoadOutcome } from "../domain/configuration/index.ts";
 import {
-  type ConfigurationLoadOutcome,
-  createInMemoryEventStore,
-  createInMemoryFileSystem,
   createManualClock,
   createStaticEnvironment,
-  type InMemoryNode,
-  localPath,
   sessionId,
   streamId,
   traceId,
   workspaceId,
-} from "../domain/index.ts";
-import { credentialReferenceKey, integerKey, pathOverrideKey } from "./declaration.ts";
-import { inspectGeneration } from "./inspection.ts";
-import { createConfigurationLoader } from "./loader.ts";
-import { createConfigurationRegistry } from "./registry.ts";
+} from "../domain/foundation/index.ts";
+import { createInMemoryEventStore } from "../domain/sessions/index.ts";
+import {
+  createInMemoryFileSystem,
+  type InMemoryNode,
+  localPath,
+} from "../domain/workspace/index.ts";
+import { credentialReferenceKey, integerKey, pathOverrideKey } from "./document/declaration.ts";
+import { inspectGeneration } from "./resolution/inspection.ts";
+import { createConfigurationLoader } from "./resolution/loader.ts";
+import { createConfigurationRegistry } from "./resolution/registry.ts";
 
 const SECRET = "sk-live-0123456789abcdefghij";
 const LOCATOR = "falryn-example-provider";

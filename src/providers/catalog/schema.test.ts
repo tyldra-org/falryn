@@ -3,7 +3,7 @@ import { describe, expect, test } from "bun:test";
 import {
   COMMAND_CODE_MODEL_MANIFESTS,
   COMMAND_CODE_MODEL_REASONING_CONTROLS,
-} from "../command-code.ts";
+} from "../protocol/command-code.ts";
 import { BUILTIN_MODEL_CATALOGS } from "./builtins.ts";
 import { parseModelCatalogDocument } from "./schema.ts";
 

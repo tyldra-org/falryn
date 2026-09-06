@@ -8,19 +8,18 @@
  */
 
 import { describe, expect, test } from "bun:test";
-
+import { createStaticEnvironment } from "../domain/foundation/index.ts";
+import type { RootLayout } from "../domain/storage/index.ts";
 import {
   createInMemoryFileSystem,
-  createStaticEnvironment,
   type InMemoryNode,
   localPath,
-  type RootLayout,
-} from "../domain/index.ts";
-import { createOwnershipRegistry } from "./ownership.ts";
-import { planReset, planUninstall } from "./removal.ts";
-import { reportRetention } from "./retention.ts";
-import { resolveRoots } from "./roots.ts";
-import { SQLITE_STATE_OWNERSHIP } from "./sqlite-store.ts";
+} from "../domain/workspace/index.ts";
+import { createOwnershipRegistry } from "./lifecycle/ownership.ts";
+import { planReset, planUninstall } from "./lifecycle/removal.ts";
+import { reportRetention } from "./lifecycle/retention.ts";
+import { resolveRoots } from "./lifecycle/roots.ts";
+import { SQLITE_STATE_OWNERSHIP } from "./sqlite/sqlite-store.ts";
 
 const OVERRIDES = {
   FALRYN_CONFIG_DIR: "/d/config",

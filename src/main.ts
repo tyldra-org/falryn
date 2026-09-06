@@ -17,14 +17,10 @@
  * resolution attach through typed application seams.
  */
 
+import { fromSqliteStoreError, fromUnknown } from "./application/diagnostics/index.ts";
+import { composeProductAgentRuntime, createRuntimeLifecycle } from "./application/runtime/index.ts";
 import {
-  composeProductAgentRuntime,
   composeProductCredentials,
-  createRuntimeLifecycle,
-  fromSqliteStoreError,
-  fromUnknown,
-} from "./application/index.ts";
-import {
   createHostCliStreams,
   createHostGovernance,
   dispatch,
@@ -58,24 +54,25 @@ import {
 import {
   configurationGeneration,
   createSystemClock,
-  DEFAULT_BUSY_TIMEOUT_MS,
   type EnvironmentPort,
   err,
   type FalrynError,
-  type LocalDataPlatform,
-  type LocalPath,
   ok,
-  type RecoveryReport,
   type Result,
   runId,
-  type ShutdownReport,
-  type SqliteOpenReport,
   sessionId,
   streamId,
-  type TerminalOutcome,
   traceId,
   workspaceId,
-} from "./domain/index.ts";
+} from "./domain/foundation/index.ts";
+import type { ShutdownReport, TerminalOutcome } from "./domain/orchestration/index.ts";
+import type { RecoveryReport } from "./domain/sessions/index.ts";
+import {
+  DEFAULT_BUSY_TIMEOUT_MS,
+  type LocalDataPlatform,
+  type SqliteOpenReport,
+} from "./domain/storage/index.ts";
+import type { LocalPath } from "./domain/workspace/index.ts";
 import {
   createHostBlobStore,
   createHostCommandRunner,

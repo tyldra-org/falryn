@@ -3,8 +3,8 @@
 import {
   type ProductBriefFrontendMode,
   productBriefModeFromFrontend,
-} from "../../application/index.ts";
-import type { CodingRunArguments } from "../coding-run.ts";
+} from "../../application/compression/index.ts";
+import type { CodingRunArguments } from "../runtime/coding-run.ts";
 
 import type {
   CompletionCommandArguments,

@@ -19,7 +19,8 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { CLI_SCHEMA_FAMILY, EXIT_CODES, FALRYN_VERSION, readCliStream } from "./cli/index.ts";
 import { MIGRATION_TABLE, PRODUCT_SCHEMA_VERSION, PRODUCT_TABLES } from "./data/index.ts";
-import { createStaticEnvironment, type LocalPath, localPath } from "./domain/index.ts";
+import { createStaticEnvironment } from "./domain/foundation/index.ts";
+import { type LocalPath, localPath } from "./domain/workspace/index.ts";
 import { openBunSqlite } from "./integrations/index.ts";
 import { main } from "./main.ts";
 

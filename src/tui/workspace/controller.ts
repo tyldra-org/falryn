@@ -10,7 +10,8 @@ import {
   createWorkspaceLayoutStore,
   resolveWorkspaceSet,
   type WorkspaceLayoutStore,
-} from "../../application/index.ts";
+} from "../../application/workspace/index.ts";
+import { workspaceRootId } from "../../domain/foundation/index.ts";
 import {
   createWorkspaceSet,
   type FileSystemPort,
@@ -18,8 +19,7 @@ import {
   parseLocalPath,
   resolveLocalPath,
   type WorkspaceSet,
-  workspaceRootId,
-} from "../../domain/index.ts";
+} from "../../domain/workspace/index.ts";
 import type { WorkspaceRootView, WorkspaceSetView } from "./format.ts";
 
 export type WorkspaceControllerError =

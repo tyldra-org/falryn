@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-
-import { MAX_LOCAL_PATH_LENGTH, modelId } from "../domain/index.ts";
+import { modelId } from "../domain/foundation/index.ts";
+import { MAX_LOCAL_PATH_LENGTH } from "../domain/workspace/index.ts";
 import { helpText, type Invocation, parseInvocation } from "./command-tree.ts";
 import {
   configurationOverridesFor,

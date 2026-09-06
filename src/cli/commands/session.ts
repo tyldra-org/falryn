@@ -5,23 +5,25 @@ import {
   fromSessionCatalogError,
   fromSessionIsolationError,
   fromUnknown,
+} from "../../application/diagnostics/index.ts";
+import {
   inspectWorkspaceSession,
   isolateWorkspaceSessions,
   queryWorkspaceSessions,
-} from "../../application/index.ts";
+} from "../../application/sessions/index.ts";
 import { createRecordRepositories } from "../../data/index.ts";
+import type { FalrynError } from "../../domain/foundation/index.ts";
 import {
-  type FalrynError,
   MAX_SESSION_CATALOG,
   type RecordError,
   type SessionCatalogEntry,
   type SessionCatalogError,
   type SessionIsolationError,
   type SessionIsolationWarning,
-} from "../../domain/index.ts";
+} from "../../domain/sessions/index.ts";
 import type { SessionCommandArguments } from "../command-tree.ts";
-import type { CommandResultOf, CommandTruncation, CommandWarning } from "../result.ts";
-import type { ServiceProvider } from "../services.ts";
+import type { CommandResultOf, CommandTruncation, CommandWarning } from "../output/result.ts";
+import type { ServiceProvider } from "../runtime/services.ts";
 import { resultFor, workspaceResolveError } from "./shared.ts";
 import { openSessionStore } from "./storage.ts";
 

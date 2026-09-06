@@ -59,7 +59,8 @@ import {
   createBenchmarkMeasurement,
   createBenchmarkReport,
   writeBenchmarkReport,
-} from "../../tools/benchmark-regression.ts";
+} from "../../tools/benchmarks/benchmark-regression.ts";
+import { type ArtifactId, artifactId, type BlobStorePort } from "../domain/artifacts/index.ts";
 import {
   capabilityInvocationCompleted,
   capabilityInvocationStarted,
@@ -70,33 +71,27 @@ import {
   turnRecord,
   turnStarted,
 } from "../domain/fixtures.ts";
-import type { ScopeEvent, TerminalOutcome } from "../domain/index.ts";
 import {
-  type ArtifactId,
-  artifactId,
-  type BlobStorePort,
   createManualClock,
-  DEFAULT_BUSY_TIMEOUT_MS,
   eventId,
   type InvocationId,
   idempotencyKey,
   invocationId,
-  type LocalPath,
-  localPath,
   type ModelAttemptId,
   modelAttemptId,
-  type RecordError,
-  type RuntimeEvent,
   runId as runIdCodec,
   type SessionId,
-  type SqliteStorePort,
   type StreamId,
   sequence,
   sessionId,
   streamId,
   type TurnId,
   turnId,
-} from "../domain/index.ts";
+} from "../domain/foundation/index.ts";
+import type { ScopeEvent, TerminalOutcome } from "../domain/orchestration/index.ts";
+import type { RecordError, RuntimeEvent } from "../domain/sessions/index.ts";
+import { DEFAULT_BUSY_TIMEOUT_MS, type SqliteStorePort } from "../domain/storage/index.ts";
+import { type LocalPath, localPath } from "../domain/workspace/index.ts";
 import { createHostBlobStore, createSha256Hasher, openBunSqlite } from "../integrations/index.ts";
 import { scopeEvent } from "../presentation/activity/fixtures.ts";
 import {
@@ -105,33 +100,33 @@ import {
   type TranscriptProjection,
 } from "../presentation/index.ts";
 import { everyBlockKind, FIXTURE_AT } from "../presentation/transcript/fixtures.ts";
-import { ShellApp } from "../tui/components/shell-app.tsx";
-import { countRenderables, frameOf, mount, type TerminalShape } from "../tui/harness.tsx";
+import { countRenderables, frameOf, mount, type TerminalShape } from "../tui/runtime/harness.tsx";
 import {
   measuredExecutableExists,
   openMeasurementPty,
   startCompiledMeasurement,
-} from "../tui/measurement-fixtures.ts";
-import { type RuntimeFeed, useRuntimeProjection } from "../tui/runtime-feed.ts";
+} from "../tui/runtime/measurement-fixtures.ts";
+import { type RuntimeFeed, useRuntimeProjection } from "../tui/runtime/runtime-feed.ts";
+import { ShellApp } from "../tui/shell/shell-app.tsx";
+import type { ShellModel } from "../tui/shell/view-model.ts";
+import { known, unavailable } from "../tui/shell/view-model.ts";
 import type { ThemeRequest } from "../tui/theme/index.ts";
-import type { ShellModel } from "../tui/view-model.ts";
-import { known, unavailable } from "../tui/view-model.ts";
-import { createArtifactRepository } from "./artifact-repository.ts";
-import { ARTIFACTS_TABLE } from "./artifact-schema.ts";
-import { createArtifactStore } from "./artifact-store.ts";
-import { createSqliteEventStore } from "./event-store.ts";
+import { createArtifactRepository } from "./artifacts/artifact-repository.ts";
+import { ARTIFACTS_TABLE } from "./artifacts/artifact-schema.ts";
+import { createArtifactStore } from "./artifacts/artifact-store.ts";
 import { FIXTURE_INSTANT, removeTemporaryRoots, temporaryRoot } from "./fixtures.ts";
-import { beginRun } from "./recovery.ts";
-import { createRecordRepositories } from "./repositories.ts";
+import { beginRun } from "./lifecycle/recovery.ts";
+import { createSqliteEventStore } from "./sessions/event-store.ts";
+import { createRecordRepositories } from "./sessions/repositories.ts";
 import {
   EVENTS_TABLE,
   INVOCATIONS_TABLE,
   MODEL_ATTEMPTS_TABLE,
   SESSIONS_TABLE,
   TURNS_TABLE,
-} from "./schema.ts";
-import { PRODUCT_SCHEMA_VERSION, PRODUCTION_MIGRATIONS } from "./sqlite-migrations.ts";
-import { openSqliteStore, sqliteDatabasePath } from "./sqlite-store.ts";
+} from "./sqlite/schema.ts";
+import { PRODUCT_SCHEMA_VERSION, PRODUCTION_MIGRATIONS } from "./sqlite/sqlite-migrations.ts";
+import { openSqliteStore, sqliteDatabasePath } from "./sqlite/sqlite-store.ts";
 
 /** Set by `bun run measure`. Anything else leaves the module visibly skipped. */
 const measuring = process.env.FALRYN_MEASURE === "1";

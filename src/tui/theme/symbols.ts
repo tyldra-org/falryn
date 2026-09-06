@@ -19,7 +19,7 @@
  * safe for decades.
  */
 
-import type { SymbolSupport } from "../../domain/index.ts";
+import type { SymbolSupport } from "../../domain/terminal/index.ts";
 
 /** Every symbol the interface can draw. Closed, so a set cannot omit one. */
 export const SYMBOL_ROLES = [

@@ -8,26 +8,26 @@
 import { describe, expect, test } from "bun:test";
 
 import { sessionStarted, turnStarted } from "./fixtures.ts";
-import { sessionId, streamId, turnId } from "./identity.ts";
-import { TERMINAL_OUTCOME_PROJECTION_GENERATION } from "./projection.ts";
-import { querySessionCatalog } from "./session-catalog.ts";
-import { inspectSessionIsolation } from "./session-isolation.ts";
-import { planSessionRecovery } from "./session-recovery.ts";
+import { sessionId, streamId, turnId } from "./foundation/identity.ts";
+import { TERMINAL_OUTCOME_PROJECTION_GENERATION } from "./sessions/projection.ts";
+import { querySessionCatalog } from "./sessions/session-catalog.ts";
+import { inspectSessionIsolation } from "./sessions/session-isolation.ts";
+import { planSessionRecovery } from "./sessions/session-recovery.ts";
 import {
   controlSessionReplay,
   SESSION_REPLAY_CONTROL_SOURCE,
   SESSION_REPLAY_CONTROL_VERSION,
-} from "./session-replay-control.ts";
+} from "./sessions/session-replay-control.ts";
 import {
   planSessionResume,
   SESSION_RESUME_SOURCE,
   SESSION_RESUME_VERSION,
-} from "./session-resume.ts";
+} from "./sessions/session-resume.ts";
 import {
   planSessionRewind,
   SESSION_REWIND_SOURCE,
   SESSION_REWIND_VERSION,
-} from "./session-rewind.ts";
+} from "./sessions/session-rewind.ts";
 
 const workspaceId = "workspace-bound";
 const bound = {

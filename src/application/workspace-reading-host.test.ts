@@ -10,9 +10,9 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { promises as fs } from "node:fs";
 import { tmpdir } from "node:os";
 
-import { type FileSystemPort, localPath, parseLocalPath } from "../domain/index.ts";
-import { createHostFileSystem } from "../integrations/host-filesystem.ts";
-import { createWorkspaceReader } from "./workspace-read.ts";
+import { type FileSystemPort, localPath, parseLocalPath } from "../domain/workspace/index.ts";
+import { createHostFileSystem } from "../integrations/filesystem/host-filesystem.ts";
+import { createWorkspaceReader } from "./workspace/workspace-read.ts";
 
 const host = createHostFileSystem();
 let root = localPath("/tmp");

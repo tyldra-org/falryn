@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { modelAttemptId } from "../domain/identity.ts";
-import { modelRequestId } from "./identity.ts";
+import { modelAttemptId } from "../domain/foundation/identity.ts";
+import { modelRequestId } from "./configuration/identity.ts";
 import {
   createDeterministicProviderAdapter,
   deterministicEchoRequest,

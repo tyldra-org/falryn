@@ -3,13 +3,15 @@
 import {
   artifactId,
   DEFAULT_ARTIFACT_LIST_LIMIT,
+  MAX_ARTIFACT_CATALOG,
+} from "../../domain/artifacts/index.ts";
+import {
   DEFAULT_WORKSPACE_LAYOUT_LIST_LIMIT,
   isLegalWorkspaceLayoutName,
   localPathTextError,
-  MAX_ARTIFACT_CATALOG,
   MAX_LOCAL_PATH_LENGTH,
   MAX_WORKSPACE_LAYOUT_CATALOG,
-} from "../../domain/index.ts";
+} from "../../domain/workspace/index.ts";
 
 import type {
   ArtifactCommandArguments,

@@ -18,22 +18,26 @@ import { sourcePathFromGlob } from "./source-path-fixtures.ts";
 const SOURCE_ROOT = dirname(import.meta.path);
 
 /** The one module allowed to name a host standard handle. */
-const HANDLE_ADAPTER = "integrations/host-terminal.ts";
+const HANDLE_ADAPTER = "integrations/terminal/host-terminal.ts";
 
 /** The one module that decides which handle carries what. */
-const STREAM_OWNER = "cli/streams.ts";
+const STREAM_OWNER = "cli/output/streams.ts";
 
 /** The one module that assigns a numeric exit code. */
-const EXIT_OWNER = "cli/exit.ts";
+const EXIT_OWNER = "cli/output/exit.ts";
 
 /** The one module that turns a result into human-readable text. */
-const RENDERER = "cli/render-human.ts";
+const RENDERER = "cli/output/render-human.ts";
 
 /** The one renderer module that owns ANSI styling and color application. */
-const COLOR_RENDERER = "cli/render-human/session.ts";
+const COLOR_RENDERER = "cli/output/render-human/session.ts";
 
 /** The projections that turn a result into records a machine reads. */
-const MACHINE_RENDERERS = ["cli/render-json.ts", "cli/render-jsonl.ts", "cli/schema.ts"];
+const MACHINE_RENDERERS = [
+  "cli/output/render-json.ts",
+  "cli/output/render-jsonl.ts",
+  "cli/output/schema.ts",
+];
 
 /** The composition root, and the only product module that sets an exit status. */
 const COMPOSITION_ROOT = "main.ts";
@@ -57,7 +61,7 @@ const HARNESS = "cli/probe-fixtures.ts";
  * out what a live renderer does to the handle `cli/streams.ts` owns — which it
  * can only answer by writing through the real port rather than around it.
  */
-const TUI_HARNESS = "tui/probe-fixtures.tsx";
+const TUI_HARNESS = "tui/runtime/probe-fixtures.tsx";
 
 async function sourceFiles(): Promise<readonly string[]> {
   // `.tsx` too, since #22. A renderer module that reached a handle directly
@@ -209,14 +213,14 @@ describe("the stream ports", () => {
         inputs.push(file);
       }
     }
-    expect(outputs).toEqual(["domain/terminal.ts"]);
-    expect(inputs).toEqual(["domain/terminal.ts"]);
+    expect(outputs).toEqual(["domain/terminal/terminal.ts"]);
+    expect(inputs).toEqual(["domain/terminal/terminal.ts"]);
   });
 
   test("keep their in-memory doubles in the domain, as doubles", async () => {
     // Neither deleted nor promoted to a fallback: they are what lets everything
     // above the boundary be tested without a handle.
-    const source = await readSource("domain/terminal.ts");
+    const source = await readSource("domain/terminal/terminal.ts");
     expect(source).toContain("export function createRecordingOutputStream");
     expect(source).toContain("export function createStaticInputStream");
   });
@@ -233,7 +237,7 @@ describe("terminal capability", () => {
         derivers.push(file);
       }
     }
-    expect(derivers).toEqual(["domain/terminal.ts"]);
+    expect(derivers).toEqual(["domain/terminal/terminal.ts"]);
   });
 
   test("derives the symbol repertoire in one place too", async () => {
@@ -249,11 +253,11 @@ describe("terminal capability", () => {
         derivers.push(file);
       }
     }
-    expect(derivers).toEqual(["domain/terminal.ts"]);
+    expect(derivers).toEqual(["domain/terminal/terminal.ts"]);
   });
 
   test("substitutes no width for a handle that reports none", async () => {
-    const source = await readSource("domain/terminal.ts");
+    const source = await readSource("domain/terminal/terminal.ts");
     // The failure this guards: `columns ?? 80`. A non-TTY treated as a narrow
     // terminal makes every layout decision taken from it wrong.
     expect(source).not.toMatch(/columns[^\n]*\?\?\s*\d/);
@@ -279,7 +283,7 @@ describe("the CLI area", () => {
     // #20's owners stayed unaware of #17. A yargs import in the exit table or
     // the stream contract would mean the process boundary had learned what a
     // command is.
-    for (const file of ["cli/exit.ts", "cli/streams.ts", "cli/result.ts"]) {
+    for (const file of ["cli/output/exit.ts", "cli/output/streams.ts", "cli/output/result.ts"]) {
       expect(await readCode(file)).not.toMatch(/\b(yargs|hideBin|commandDir)\b/);
     }
     // And the one module that is allowed to know is the one that does.
@@ -319,7 +323,7 @@ describe("the CLI area", () => {
   test("reaches configuration only through the area that owns it", async () => {
     // Imported, injected, and used — never reimplemented. The redactor the
     // loader gets is the runtime one.
-    const services = await readCode("cli/services.ts");
+    const services = await readCode("cli/runtime/services.ts");
     expect(services).toContain("createRuntimeRedactor()");
     expect(services).toContain("V0_1_CONFIGURATION_KEYS");
   });
@@ -413,14 +417,14 @@ describe("the CLI area", () => {
         declarers.push(file);
       }
     }
-    expect(declarers).toEqual(["cli/schema.ts"]);
+    expect(declarers).toEqual(["cli/output/schema.ts"]);
   });
 
   test("projects runtime events rather than describing them again", async () => {
     // JSON Lines carries the wire form the codec owns. A second event
     // vocabulary here would have to be kept in step with the first, and would
     // not be.
-    const source = await readCode("cli/render-jsonl.ts");
+    const source = await readCode("cli/output/render-jsonl.ts");
     expect(source).toContain("toWireEvent");
     for (const reinvented of ["session.started", "turn.completed", "EVENT_KINDS"]) {
       expect({ reinvented, found: source.includes(reinvented) }).toEqual({

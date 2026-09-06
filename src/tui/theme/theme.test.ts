@@ -8,7 +8,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { COLOR_LEVELS, SYMBOL_SUPPORTS } from "../../domain/index.ts";
+import { COLOR_LEVELS, SYMBOL_SUPPORTS } from "../../domain/terminal/index.ts";
 import { SYMBOL_ROLES } from "./symbols.ts";
 import { resolveTheme, selectVariant } from "./theme.ts";
 import {

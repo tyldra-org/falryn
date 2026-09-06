@@ -32,7 +32,7 @@ export type {
   ShellCapabilitiesRequest,
   ShellOverride,
   TerminalHints,
-} from "./capabilities.ts";
+} from "./runtime/capabilities.ts";
 export {
   CAPABILITY_SOURCES,
   FIRST_CAPABILITY_GENERATION,
@@ -47,9 +47,9 @@ export {
   usesMouse,
   withRendererCapabilities,
   withSize,
-} from "./capabilities.ts";
-export type { LaunchDecision, NonLaunchReason } from "./launch.ts";
-export { decideLaunch, NON_LAUNCH_REASONS, nonLaunchNotice } from "./launch.ts";
+} from "./runtime/capabilities.ts";
+export type { LaunchDecision, NonLaunchReason } from "./runtime/launch.ts";
+export { decideLaunch, NON_LAUNCH_REASONS, nonLaunchNotice } from "./runtime/launch.ts";
 /**
  * Types only, and deliberately so.
  *
@@ -64,4 +64,4 @@ export type {
   RestorableTerminal,
   RestorationReport,
   TerminalMode,
-} from "./renderer-session.ts";
+} from "./runtime/renderer-session.ts";

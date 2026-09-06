@@ -1,6 +1,6 @@
 # Roadmap fields and automation
 
-The private Falryn Roadmap owns scheduling metadata for maintainer-selected product-development issues in the two canonical repositories. Project membership is deliberate adoption into that plan. Repository issues outside the Project are ordinary contributions or discussions and have no Roadmap field requirements. This file owns the exact field vocabulary, option descriptions, transitions, and Project automation contract. The repository auditor in `tools/roadmap-governance.ts` is the executable copy of this contract.
+The private Falryn Roadmap owns scheduling metadata for maintainer-selected product-development issues in the two canonical repositories. Project membership is deliberate adoption into that plan. Repository issues outside the Project are ordinary contributions or discussions and have no Roadmap field requirements. This file owns the exact field vocabulary, option descriptions, transitions, and Project automation contract. The repository auditor in `tools/governance/roadmap-governance.ts` is the executable copy of this contract.
 
 ## Priority
 

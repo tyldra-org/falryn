@@ -7,25 +7,18 @@
  * request and stream types must not cross this provider-neutral boundary.
  */
 
-export type { DiscoveryPolicy, ProviderAdapterKind } from "./adapter-kind.ts";
-export {
-  DISCOVERY_POLICIES,
-  isDiscoveryPolicy,
-  isProviderAdapterKind,
-  PROVIDER_ADAPTER_KINDS,
-} from "./adapter-kind.ts";
 export type {
   ProviderAuthOutcome,
   ProviderAuthSnapshot,
   ProviderAuthState,
   ProviderRevocationReport,
-} from "./auth.ts";
+} from "./authentication/auth.ts";
 export {
   authStateForCredentialFailure,
   isProviderAuthState,
   PROVIDER_AUTH_STATES,
-} from "./auth.ts";
-export { establishProviderAuth, removeProviderCredential } from "./auth-service.ts";
+} from "./authentication/auth.ts";
+export { establishProviderAuth, removeProviderCredential } from "./authentication/auth-service.ts";
 export type {
   AuthorizationBrowserPort,
   AuthorizationCallback,
@@ -50,7 +43,7 @@ export type {
   ProviderPkceStartResult,
   ProviderRefreshResult,
   ProviderRemoteRevocationResult,
-} from "./authorized-login.ts";
+} from "./authentication/authorized-login.ts";
 export {
   AUTHORIZATION_CALLBACK_MODES,
   AUTHORIZATION_RECEIPT_OUTCOMES,
@@ -62,8 +55,8 @@ export {
   MAX_AUTHORIZATION_SCOPES,
   MAX_AUTHORIZATION_TOKEN_LENGTH,
   MAX_AUTHORIZATION_URL_LENGTH,
-} from "./authorized-login.ts";
-export type { AuthorizedLoginParseError } from "./authorized-login-schema.ts";
+} from "./authentication/authorized-login.ts";
+export type { AuthorizedLoginParseError } from "./authentication/authorized-login-schema.ts";
 export {
   authorizedProviderCredentialSchema,
   authorizedProviderLoginDescriptorSchema,
@@ -71,7 +64,22 @@ export {
   parseAuthorizedProviderLoginDescriptor,
   parseProviderAuthorizationReceipt,
   providerAuthorizationReceiptSchema,
-} from "./authorized-login-schema.ts";
+} from "./authentication/authorized-login-schema.ts";
+export type {
+  OfficialProviderCredentialId,
+  ProviderCredentialEnvironment,
+} from "./authentication/credential-environment.ts";
+export {
+  providerCredentialEnvironment,
+  providerCredentialEnvironmentAliases,
+  providerEnvironmentCredentialReference,
+} from "./authentication/credential-environment.ts";
+export {
+  OPENAI_CODEX_AUTHORIZATION_UNAVAILABLE_CODE,
+  OPENAI_CODEX_AUTHORIZATION_UNAVAILABLE_MESSAGE,
+  OPENAI_CODEX_PROVIDER_ID,
+  openAiCodexProfilePolicyIssue,
+} from "./authentication/openai-codex-policy.ts";
 export {
   BUILTIN_MODEL_CATALOGS,
   builtinModelCapability,
@@ -96,65 +104,6 @@ export {
   MODEL_CATALOG_SOURCE_FACTS,
   MODEL_CATALOG_SOURCE_KINDS,
 } from "./catalog/contracts.ts";
-export type { ModelCatalogParseError } from "./catalog/effective.ts";
-export { parseModelCatalog } from "./catalog/effective.ts";
-export type { ModelCatalogDocumentParseError } from "./catalog/schema.ts";
-export { modelCatalogDocumentSchema, parseModelCatalogDocument } from "./catalog/schema.ts";
-export type { CommandCodeProtocol } from "./command-code.ts";
-export {
-  COMMAND_CODE_ANTHROPIC_BASE_URL,
-  COMMAND_CODE_MODEL_MANIFESTS,
-  COMMAND_CODE_MODEL_PROTOCOLS,
-  COMMAND_CODE_MODEL_REASONING_CONTROLS,
-  COMMAND_CODE_OPENAI_BASE_URL,
-  COMMAND_CODE_PROVIDER_ID,
-  commandCodeProtocolFor,
-  commandCodeReasoningControlsFor,
-} from "./command-code.ts";
-export type {
-  ProviderAccountMetadata,
-  ProviderAuthMethod,
-  ProviderConnection,
-  ProviderConnectionState,
-} from "./connection.ts";
-export {
-  MAX_PROVIDER_CONNECTIONS,
-  PROVIDER_AUTH_METHODS,
-  PROVIDER_CONNECTION_SCHEMA_VERSION,
-} from "./connection.ts";
-export type { ProviderConnectionStateParseError } from "./connection-schema.ts";
-export {
-  parseProviderConnectionState,
-  providerConnectionStateSchema,
-} from "./connection-schema.ts";
-export type {
-  ProviderContinuationStateError,
-  ProviderContinuationStateKey,
-  ProviderContinuationStatePort,
-  ProviderContinuationStateRecord,
-} from "./continuation-state.ts";
-export { PROVIDER_CONTINUATION_STATE_SCHEMA_VERSION } from "./continuation-state.ts";
-export type {
-  OfficialProviderCredentialId,
-  ProviderCredentialEnvironment,
-} from "./credential-environment.ts";
-export {
-  providerCredentialEnvironment,
-  providerCredentialEnvironmentAliases,
-  providerEnvironmentCredentialReference,
-} from "./credential-environment.ts";
-export type {
-  DeterministicAbortableScript,
-  DeterministicFailureScript,
-  DeterministicProviderOptions,
-  DeterministicProviderScript,
-  DeterministicTextScript,
-  DeterministicToolScript,
-} from "./deterministic-adapter.ts";
-export {
-  createDeterministicProviderAdapter,
-  deterministicEchoRequest,
-} from "./deterministic-adapter.ts";
 export type {
   CatalogProvenance,
   DiscoveryFailureKind,
@@ -164,57 +113,23 @@ export type {
   ModelDiscoveryPort,
   ModelModality,
   StaticDiscoveryOptions,
-} from "./discovery.ts";
+} from "./catalog/discovery.ts";
 export {
   catalogFromAdapterModels,
   createDeterministicRemoteDiscovery,
   createStaticModelDiscovery,
   discoverModelCatalog,
   MODEL_MODALITIES,
-} from "./discovery.ts";
-export type { ProviderFailure, ProviderFailureKind } from "./errors.ts";
-export { isProviderFailureKind, PROVIDER_FAILURE_KINDS } from "./errors.ts";
-export type {
-  ModelRequestId,
-  ProviderIdentityError,
-  ProviderIdentityErrorCode,
-} from "./identity.ts";
-export { modelRequestId } from "./identity.ts";
+} from "./catalog/discovery.ts";
+export type { ModelCatalogParseError } from "./catalog/effective.ts";
+export { parseModelCatalog } from "./catalog/effective.ts";
 export {
   KNOWN_OPENAI_GPT_4O_MINI_CAPABILITY,
   KNOWN_OPENAI_MODEL_CAPABILITIES,
   knownModelCapability,
   LATEST_OPENAI_MODEL_CAPABILITIES,
   LATEST_OPENAI_MODEL_IDS,
-} from "./known-model-capability.ts";
-export {
-  MAX_ASSEMBLED_TEXT_LENGTH,
-  MAX_FINISH_REASON_LENGTH,
-  MAX_IN_FLIGHT_TOOL_CALLS,
-  MAX_MESSAGE_TEXT_LENGTH,
-  MAX_PROVIDER_METADATA_ENTRIES,
-  MAX_PROVIDER_METADATA_ENTRY_LENGTH,
-  MAX_REQUEST_MESSAGES,
-  MAX_REQUEST_TOOLS,
-  MAX_TOOL_ARGUMENT_FRAGMENT_LENGTH,
-  MAX_TOOL_NAME_LENGTH,
-  PROVIDER_BOUNDARY_MINIMUM_SCHEMA_VERSION,
-  PROVIDER_BOUNDARY_SCHEMA_FAMILY,
-  PROVIDER_BOUNDARY_SCHEMA_VERSION,
-} from "./limits.ts";
-export type {
-  ImageMessagePart,
-  MessagePart,
-  MessageRole,
-  ModelAssistantToolCall,
-  ModelBudgets,
-  ModelMessage,
-  ModelToolDefinition,
-  OutputContract,
-  RequestMetadata,
-  TextMessagePart,
-} from "./messages.ts";
-export { isMessageRole, MESSAGE_ROLES } from "./messages.ts";
+} from "./catalog/known-model-capability.ts";
 export type {
   ModelAvailability,
   ModelCapabilityCompleteness,
@@ -225,7 +140,7 @@ export type {
   ModelOutputModality,
   ModelPromptCacheMode,
   ModelResponseDensityControl,
-} from "./model-capability.ts";
+} from "./catalog/model-capability.ts";
 export {
   capabilityFromDeclaration,
   featureIsSupported,
@@ -239,25 +154,25 @@ export {
   MODEL_PROMPT_CACHE_MODES,
   MODEL_RESPONSE_DENSITY_CONTROLS,
   unknownModelCapability,
-} from "./model-capability.ts";
+} from "./catalog/model-capability.ts";
 export type {
   ModelCapabilityDeclarationParseError,
   ModelCapabilityParseError,
-} from "./model-capability-schema.ts";
+} from "./catalog/model-capability-schema.ts";
 export {
   modelCapabilityDeclarationSchema,
   parseModelCapability,
   parseModelCapabilityDeclaration,
-} from "./model-capability-schema.ts";
+} from "./catalog/model-capability-schema.ts";
 export type {
   ProviderModelIdentity,
   ProviderModelIdentityKeyParseResult,
-} from "./model-identity.ts";
+} from "./catalog/model-identity.ts";
 export {
   parseProviderModelIdentityKey,
   providerModelIdentityKey,
   sameProviderModelIdentity,
-} from "./model-identity.ts";
+} from "./catalog/model-identity.ts";
 export type {
   ModelBillingMode,
   ModelPricing,
@@ -265,19 +180,44 @@ export type {
   ModelPricingTier,
   ModelPricingUtcWindow,
   ModelTokenPrice,
-} from "./model-pricing.ts";
+} from "./catalog/model-pricing.ts";
 export {
   MODEL_BILLING_MODES,
   MODEL_PRICE_TOKEN_UNIT,
   MODEL_PRICING_KINDS,
   unknownModelPricing,
-} from "./model-pricing.ts";
+} from "./catalog/model-pricing.ts";
+export type { ModelCatalogDocumentParseError } from "./catalog/schema.ts";
+export { modelCatalogDocumentSchema, parseModelCatalogDocument } from "./catalog/schema.ts";
+export type { DiscoveryPolicy, ProviderAdapterKind } from "./configuration/adapter-kind.ts";
 export {
-  OPENAI_CODEX_AUTHORIZATION_UNAVAILABLE_CODE,
-  OPENAI_CODEX_AUTHORIZATION_UNAVAILABLE_MESSAGE,
-  OPENAI_CODEX_PROVIDER_ID,
-  openAiCodexProfilePolicyIssue,
-} from "./openai-codex-policy.ts";
+  DISCOVERY_POLICIES,
+  isDiscoveryPolicy,
+  isProviderAdapterKind,
+  PROVIDER_ADAPTER_KINDS,
+} from "./configuration/adapter-kind.ts";
+export type {
+  ProviderAccountMetadata,
+  ProviderAuthMethod,
+  ProviderConnection,
+  ProviderConnectionState,
+} from "./configuration/connection.ts";
+export {
+  MAX_PROVIDER_CONNECTIONS,
+  PROVIDER_AUTH_METHODS,
+  PROVIDER_CONNECTION_SCHEMA_VERSION,
+} from "./configuration/connection.ts";
+export type { ProviderConnectionStateParseError } from "./configuration/connection-schema.ts";
+export {
+  parseProviderConnectionState,
+  providerConnectionStateSchema,
+} from "./configuration/connection-schema.ts";
+export type {
+  ModelRequestId,
+  ProviderIdentityError,
+  ProviderIdentityErrorCode,
+} from "./configuration/identity.ts";
+export { modelRequestId } from "./configuration/identity.ts";
 export type {
   AdvisorRoleRoute,
   CompactRoleRoute,
@@ -289,7 +229,7 @@ export type {
   RoleBudgets,
   RoleRoute,
   VisionRoleRoute,
-} from "./policy.ts";
+} from "./configuration/policy.ts";
 export {
   DEFAULT_INTENT_ROLE_MAP,
   isCompleteIntentMap,
@@ -298,37 +238,30 @@ export {
   REASONING_EFFORTS,
   resolveIntentRole,
   roleRouteFor,
-} from "./policy.ts";
-export type { ModelPolicyParseError } from "./policy-schema.ts";
+} from "./configuration/policy.ts";
+export type { ModelPolicyParseError } from "./configuration/policy-schema.ts";
 export {
   assertDefaultIntentMapComplete,
   modelPolicySchema,
   parseModelPolicy,
-} from "./policy-schema.ts";
-export type {
-  ProviderAdapterIdentity,
-  ProviderAdapterPort,
-  ProviderStreamOptions,
-} from "./port.ts";
+} from "./configuration/policy-schema.ts";
 export type {
   ProviderNetworkTimeouts,
   ProviderProfile,
   ProviderProfileId,
-} from "./profile.ts";
-export { profileCredentialConsumer } from "./profile.ts";
-export type { ProviderProfileParseError } from "./profile-schema.ts";
+} from "./configuration/profile.ts";
+export { profileCredentialConsumer } from "./configuration/profile.ts";
+export type { ProviderProfileParseError } from "./configuration/profile-schema.ts";
 export {
   parseProviderProfile,
   providerEndpointIsAllowed,
   providerProfileSchema,
-} from "./profile-schema.ts";
-export type { ModelRequest, PromptCachePolicy, PromptCacheSeed } from "./request.ts";
-export { PROMPT_CACHE_POLICY_SCHEMA_VERSION } from "./request.ts";
+} from "./configuration/profile-schema.ts";
 export type {
   ResolveSpecializedRoleInput,
   RouteRequirement,
   SpecializedRoleOutcome,
-} from "./role-support.ts";
+} from "./configuration/role-support.ts";
 export {
   capabilityHasImage,
   defaultRequirementsForIntent,
@@ -338,53 +271,9 @@ export {
   primaryCapabilityForRole,
   reasoningEffortForRoute,
   resolveSpecializedRole,
-} from "./role-support.ts";
-export type { ModelRole, WorkIntent } from "./roles.ts";
-export { isModelRole, isWorkIntent, MODEL_ROLES, WORK_INTENTS } from "./roles.ts";
-export type {
-  ExplicitModelSelection,
-  ResolveRouteInput,
-  RoutedCatalogEntry,
-  RouteSelectionReason,
-  RoutingOutcome,
-  RoutingReceipt,
-} from "./routing.ts";
-export {
-  modelMatchesRequirements,
-  resolveModelRoute,
-  resolveNextFallback,
-} from "./routing.ts";
-export {
-  isSupportedProviderSchemaVersion,
-  modelRequestSchema,
-  normalizedProviderEventSchema,
-} from "./schemas.ts";
-export type {
-  OpenProviderSessionOptions,
-  OpenProviderSessionResult,
-  ProviderSession,
-  ProviderSessionPorts,
-} from "./session.ts";
-export { openProviderSession, revokeProviderSessionCredential } from "./session.ts";
-export type {
-  NormalizedProviderEvent,
-  ProviderEventKind,
-  ProviderEventSpine,
-  UsageUnits,
-} from "./stream.ts";
-export {
-  isProviderEventKind,
-  isTerminalProviderEvent,
-  PROVIDER_EVENT_KINDS,
-} from "./stream.ts";
-export type {
-  AssembledToolProposal,
-  StreamAssemblyDiagnostic,
-  StreamAssemblySnapshot,
-  StreamAssemblyStep,
-  StreamAssemblyTerminal,
-} from "./stream-assembly.ts";
-export { normalizeProviderStream, ProviderStreamAssembler } from "./stream-assembly.ts";
+} from "./configuration/role-support.ts";
+export type { ModelRole, WorkIntent } from "./configuration/roles.ts";
+export { isModelRole, isWorkIntent, MODEL_ROLES, WORK_INTENTS } from "./configuration/roles.ts";
 export type {
   AnthropicMessagesTransportCompatibilityDeclaration,
   CommandCodeTransportCompatibilityDeclaration,
@@ -416,7 +305,7 @@ export type {
   ProviderTransportCompatibilitySource,
   ProviderTransportCompatibilitySourceKind,
   ProviderTransportDialect,
-} from "./transport-compatibility.ts";
+} from "./configuration/transport-compatibility.ts";
 export {
   bindProviderTransportCompatibilityToModel,
   defaultProviderTransportCompatibility,
@@ -438,16 +327,127 @@ export {
   providerTransportCompatibilityMatchesAdapter,
   providerTransportCompatibilityReceiptMatchesPlan,
   resolveProviderTransportCompatibility,
-} from "./transport-compatibility.ts";
-export type { ProviderTransportCompatibilityDeclarationParseError } from "./transport-compatibility-schema.ts";
+} from "./configuration/transport-compatibility.ts";
+export type { ProviderTransportCompatibilityDeclarationParseError } from "./configuration/transport-compatibility-schema.ts";
 export {
   parseProviderTransportCompatibilityDeclaration,
   providerModelTransportCompatibilityOverrideSchema,
   providerTransportCompatibilityDeclarationSchema,
-} from "./transport-compatibility-schema.ts";
-export type { ProviderBoundaryParseError } from "./validate.ts";
+} from "./configuration/transport-compatibility-schema.ts";
+export type { CommandCodeProtocol } from "./protocol/command-code.ts";
+export {
+  COMMAND_CODE_ANTHROPIC_BASE_URL,
+  COMMAND_CODE_MODEL_MANIFESTS,
+  COMMAND_CODE_MODEL_PROTOCOLS,
+  COMMAND_CODE_MODEL_REASONING_CONTROLS,
+  COMMAND_CODE_OPENAI_BASE_URL,
+  COMMAND_CODE_PROVIDER_ID,
+  commandCodeProtocolFor,
+  commandCodeReasoningControlsFor,
+} from "./protocol/command-code.ts";
+export type {
+  ProviderContinuationStateError,
+  ProviderContinuationStateKey,
+  ProviderContinuationStatePort,
+  ProviderContinuationStateRecord,
+} from "./protocol/continuation-state.ts";
+export { PROVIDER_CONTINUATION_STATE_SCHEMA_VERSION } from "./protocol/continuation-state.ts";
+export type { ProviderFailure, ProviderFailureKind } from "./protocol/errors.ts";
+export { isProviderFailureKind, PROVIDER_FAILURE_KINDS } from "./protocol/errors.ts";
+export {
+  MAX_ASSEMBLED_TEXT_LENGTH,
+  MAX_FINISH_REASON_LENGTH,
+  MAX_IN_FLIGHT_TOOL_CALLS,
+  MAX_MESSAGE_TEXT_LENGTH,
+  MAX_PROVIDER_METADATA_ENTRIES,
+  MAX_PROVIDER_METADATA_ENTRY_LENGTH,
+  MAX_REQUEST_MESSAGES,
+  MAX_REQUEST_TOOLS,
+  MAX_TOOL_ARGUMENT_FRAGMENT_LENGTH,
+  MAX_TOOL_NAME_LENGTH,
+  PROVIDER_BOUNDARY_MINIMUM_SCHEMA_VERSION,
+  PROVIDER_BOUNDARY_SCHEMA_FAMILY,
+  PROVIDER_BOUNDARY_SCHEMA_VERSION,
+} from "./protocol/limits.ts";
+export type {
+  ImageMessagePart,
+  MessagePart,
+  MessageRole,
+  ModelAssistantToolCall,
+  ModelBudgets,
+  ModelMessage,
+  ModelToolDefinition,
+  OutputContract,
+  RequestMetadata,
+  TextMessagePart,
+} from "./protocol/messages.ts";
+export { isMessageRole, MESSAGE_ROLES } from "./protocol/messages.ts";
+export type {
+  ProviderAdapterIdentity,
+  ProviderAdapterPort,
+  ProviderStreamOptions,
+} from "./protocol/port.ts";
+export type { ModelRequest, PromptCachePolicy, PromptCacheSeed } from "./protocol/request.ts";
+export { PROMPT_CACHE_POLICY_SCHEMA_VERSION } from "./protocol/request.ts";
+export {
+  isSupportedProviderSchemaVersion,
+  modelRequestSchema,
+  normalizedProviderEventSchema,
+} from "./protocol/schemas.ts";
+export type {
+  OpenProviderSessionOptions,
+  OpenProviderSessionResult,
+  ProviderSession,
+  ProviderSessionPorts,
+} from "./protocol/session.ts";
+export { openProviderSession, revokeProviderSessionCredential } from "./protocol/session.ts";
+export type {
+  NormalizedProviderEvent,
+  ProviderEventKind,
+  ProviderEventSpine,
+  UsageUnits,
+} from "./protocol/stream.ts";
+export {
+  isProviderEventKind,
+  isTerminalProviderEvent,
+  PROVIDER_EVENT_KINDS,
+} from "./protocol/stream.ts";
+export type {
+  AssembledToolProposal,
+  StreamAssemblyDiagnostic,
+  StreamAssemblySnapshot,
+  StreamAssemblyStep,
+  StreamAssemblyTerminal,
+} from "./protocol/stream-assembly.ts";
+export { normalizeProviderStream, ProviderStreamAssembler } from "./protocol/stream-assembly.ts";
+export type { ProviderBoundaryParseError } from "./protocol/validate.ts";
 export {
   parseModelRequest,
   parseNormalizedProviderEvent,
   redactProviderDiagnosticText,
-} from "./validate.ts";
+} from "./protocol/validate.ts";
+export type {
+  DeterministicAbortableScript,
+  DeterministicFailureScript,
+  DeterministicProviderOptions,
+  DeterministicProviderScript,
+  DeterministicTextScript,
+  DeterministicToolScript,
+} from "./routing/deterministic-adapter.ts";
+export {
+  createDeterministicProviderAdapter,
+  deterministicEchoRequest,
+} from "./routing/deterministic-adapter.ts";
+export type {
+  ExplicitModelSelection,
+  ResolveRouteInput,
+  RoutedCatalogEntry,
+  RouteSelectionReason,
+  RoutingOutcome,
+  RoutingReceipt,
+} from "./routing/routing.ts";
+export {
+  modelMatchesRequirements,
+  resolveModelRoute,
+  resolveNextFallback,
+} from "./routing/routing.ts";

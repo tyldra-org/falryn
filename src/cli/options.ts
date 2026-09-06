@@ -22,7 +22,7 @@
  *   table looks uniform would put a setting into a schema nothing reads.
  */
 
-import type { ColorLevel } from "../domain/index.ts";
+import type { ColorLevel } from "../domain/terminal/index.ts";
 
 /** The four output contracts `reference/CLI.md` names. #18 and #19 render them. */
 export const OUTPUT_FORMATS = ["human", "json", "jsonl", "quiet"] as const;

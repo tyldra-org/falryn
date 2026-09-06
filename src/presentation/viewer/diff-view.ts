@@ -2,7 +2,11 @@
  * Render-safe projection of a typed diff artifact view.
  */
 
-import type { ArtifactView, ArtifactViewDiffMode, ArtifactViewState } from "../../domain/index.ts";
+import type {
+  ArtifactView,
+  ArtifactViewDiffMode,
+  ArtifactViewState,
+} from "../../domain/artifacts/index.ts";
 
 export type DiffViewModel = {
   readonly artifactId: string;

@@ -17,11 +17,12 @@ import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { createStaticEnvironment, localPath } from "../domain/index.ts";
+import { createStaticEnvironment } from "../domain/foundation/index.ts";
+import { localPath } from "../domain/workspace/index.ts";
 import { dispatch } from "./dispatch.ts";
-import { EXIT_CODES } from "./exit.ts";
-import type { ServiceProvider } from "./services.ts";
-import { createRecordingCliStreams } from "./streams.ts";
+import { EXIT_CODES } from "./output/exit.ts";
+import { createRecordingCliStreams } from "./output/streams.ts";
+import type { ServiceProvider } from "./runtime/services.ts";
 
 /** A provider that fails the test if anything asks it for a service. */
 function poisoned(): ServiceProvider {

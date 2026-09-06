@@ -3,7 +3,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { digestBytes } from "../../application/index.ts";
+import { digestBytes } from "../../application/context/index.ts";
 import { blockKey } from "../../presentation/index.ts";
 import { everyBlockKind } from "../../presentation/transcript/fixtures.ts";
 import { includeTranscriptInDraft } from "./include.ts";

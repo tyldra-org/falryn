@@ -10,7 +10,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { SYMBOL_SUPPORTS } from "../../domain/index.ts";
+import { SYMBOL_SUPPORTS } from "../../domain/terminal/index.ts";
 import {
   contrastFloorFor,
   contrastRatio,

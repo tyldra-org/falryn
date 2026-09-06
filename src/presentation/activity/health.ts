@@ -26,8 +26,9 @@
  * answer, made where the terminal's capabilities are known.
  */
 
-import type { ConfigurationGeneration, QueueReport, SchedulerReport } from "../../domain/index.ts";
-import { effectOf } from "../../domain/index.ts";
+import type { ConfigurationGeneration } from "../../domain/foundation/index.ts";
+import type { QueueReport, SchedulerReport } from "../../domain/orchestration/index.ts";
+import { effectOf } from "../../domain/orchestration/index.ts";
 import type { ActivityProjection } from "./reducer.ts";
 import { EMPTY_ACTIVITY, liveEntries } from "./reducer.ts";
 

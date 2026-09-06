@@ -12,14 +12,14 @@
  * writes what comes back to the handle that owns it.
  */
 
-import { createFileAttachmentProbe, createGitDashboard } from "../application/index.ts";
+import { createFileAttachmentProbe } from "../application/context/index.ts";
+import { createGitDashboard } from "../application/git/index.ts";
 import {
   assertNever,
   type EnvironmentPort,
-  parseLocalPath,
-  primaryWorkspaceRoot,
   workspaceId as workspaceIdCodec,
-} from "../domain/index.ts";
+} from "../domain/foundation/index.ts";
+import { parseLocalPath, primaryWorkspaceRoot } from "../domain/workspace/index.ts";
 import {
   createHostEnvironment,
   createHostGitPort,
@@ -41,40 +41,40 @@ import {
   type RunnableCommand,
 } from "./command-tree.ts";
 import { type RunCommandResult, stoppedResult } from "./commands.ts";
-import { composeSessionNavigationController } from "./compose-session-navigation-controller.ts";
-import { startConfigurationReloadWatcher } from "./configuration-reload.ts";
 import { produce } from "./dispatch/produce.ts";
 import { emit, render } from "./dispatch/render.ts";
-import { EXIT_CODES, type ExitCode, resolveExitCode } from "./exit.ts";
+import { configurationOverridesFor, type GlobalOptions } from "./options.ts";
+import { EXIT_CODES, type ExitCode, resolveExitCode } from "./output/exit.ts";
+import {
+  type CliStreams,
+  outcomeAfterFlush,
+  writeDiagnosticLine,
+  writeResultLine,
+} from "./output/streams.ts";
+import { composeSessionNavigationController } from "./runtime/compose-session-navigation-controller.ts";
+import { startConfigurationReloadWatcher } from "./runtime/configuration-reload.ts";
 import {
   createInvocationGovernance,
   type InvocationGovernance,
   openInvocationScope,
   runUnderScope,
   untilScopeStops,
-} from "./invocation-scope.ts";
-import { configurationOverridesFor, type GlobalOptions } from "./options.ts";
-import { openProductArtifactSession } from "./product-artifact-session.ts";
-import { composeProductProviderConnections } from "./product-provider-connections.ts";
-import { composeProductShellAttachments } from "./product-shell-attachments.ts";
+} from "./runtime/invocation-scope.ts";
+import { openProductArtifactSession } from "./runtime/product-artifact-session.ts";
+import { composeProductProviderConnections } from "./runtime/product-provider-connections.ts";
+import { composeProductShellAttachments } from "./runtime/product-shell-attachments.ts";
 import {
   createServiceProvider,
   type HostServiceOptions,
   type ServiceProvider,
-} from "./services.ts";
+} from "./runtime/services.ts";
+import { resolveShellBootstrapConfiguration } from "./runtime/shell-configuration.ts";
 import {
   completionInstallScript,
   completionRequestArgs,
   getCompletionCandidates,
   isCompletionRequest,
 } from "./shell-completion.ts";
-import { resolveShellBootstrapConfiguration } from "./shell-configuration.ts";
-import {
-  type CliStreams,
-  outcomeAfterFlush,
-  writeDiagnosticLine,
-  writeResultLine,
-} from "./streams.ts";
 import { versionText } from "./version.ts";
 
 export type DispatchOptions = {
@@ -446,7 +446,7 @@ async function launchShell(
   }
 
   let configurationReload: ReturnType<typeof startConfigurationReloadWatcher> | null = null;
-  let run: Awaited<ReturnType<typeof import("../tui/shell.tsx")["runShell"]>>;
+  let run: Awaited<ReturnType<typeof import("../tui/runtime/shell.tsx")["runShell"]>>;
   try {
     configurationReload = startConfigurationReloadWatcher(graph, globals, {
       streams,
@@ -455,7 +455,7 @@ async function launchShell(
 
     // Loaded here and nowhere earlier: this is the first line of the whole
     // invocation that requires OpenTUI to exist.
-    const { runShell } = await import("../tui/shell.tsx");
+    const { runShell } = await import("../tui/runtime/shell.tsx");
     run = await runShell({
       streams,
       capabilities,

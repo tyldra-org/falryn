@@ -6,7 +6,7 @@ import type {
   ArtifactView,
   ArtifactViewDocumentFamily,
   ArtifactViewState,
-} from "../../domain/index.ts";
+} from "../../domain/artifacts/index.ts";
 
 export type DocumentViewModel = {
   readonly artifactId: string;

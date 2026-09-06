@@ -13,7 +13,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { type MatrixRow, rowsWithoutOwner, TUI_MATRIX } from "./matrix-fixtures.ts";
+import { type MatrixRow, rowsWithoutOwner, TUI_MATRIX } from "./runtime/matrix-fixtures.ts";
 
 const AREA = dirname(import.meta.path);
 const SOURCE_ROOT = dirname(AREA);
@@ -24,11 +24,11 @@ const SELF = "tui-boundaries.test.ts";
 
 /** Test support is intentionally absent from the graph that `src/main.ts` ships. */
 const TEST_SUPPORT = [
-  "harness.tsx",
-  "matrix-fixtures.ts",
-  "measurement-fixtures.ts",
+  "runtime/harness.tsx",
+  "runtime/matrix-fixtures.ts",
+  "runtime/measurement-fixtures.ts",
   // #384: headless emulator for compiled-frame assertions. Dev dependency only.
-  "emulated-screen-fixtures.ts",
+  "runtime/emulated-screen-fixtures.ts",
 ] as const;
 
 /** The pure entrypoint: decisions only, and nothing that loads a renderer. */
@@ -36,36 +36,36 @@ const ENTRYPOINT = "index.ts";
 
 /** The modules allowed to reach OpenTUI's runtime. */
 const RENDERER_OWNERS = [
-  "renderer-session.ts",
-  "shell.tsx",
+  "runtime/renderer-session.ts",
+  "runtime/shell.tsx",
   // The composer subscribes to keys and pastes. #357: typing is not a command,
   // so the control receives raw input rather than routing every character
   // through the registry.
-  "components/composer.tsx",
+  "composer/composer.tsx",
   // Expanded transcript body selection (#622). OpenTUI owns the native range;
   // Falryn reads it at include/copy time rather than storing a second model.
-  "components/transcript-body.tsx",
+  "transcript/transcript-body.tsx",
   // Overlay motion is registered with OpenTUI's timeline hook rather than a
   // parallel timer implementation.
-  "components/overlay.tsx",
+  "overlays/overlay.tsx",
   // Labelled confirmation keys and masked secret capture. Installed Input has
   // no password echo, so the sheet subscribes to keys and pastes itself rather
   // than routing every character through the registry.
-  "components/confirmation.tsx",
+  "overlays/confirmation.tsx",
   // Select navigation is a renderer-owned hook shared by the palette and the
   // application pickers. Its inputs remain local renderable behaviour.
-  "components/select-navigation.ts",
+  "overlays/select-navigation.ts",
   // Task intelligence overlays (#726): Input draft → application advice ports.
   "task-intelligence/sheet.tsx",
   // The root measures the viewport through the renderer's own hooks. Nothing
   // below it does: every component reads the frame from context instead, which
   // is what keeps the measurement in one place.
-  "components/app-shell.tsx",
+  "shell/app-shell.tsx",
   // The interactive root builds the keymap over the live renderer, and the
   // bridge registers layers with it. Both are the seam between a plan this area
   // owns and a dispatcher it does not.
-  "components/shell-app.tsx",
-  "components/keymap-bridge.tsx",
+  "shell/shell-app.tsx",
+  "visual/keymap-bridge.tsx",
   // Artifact overlay renderers (#265 code, #266 diff). Document, media, and the
   // Git dashboard use scrollbox through JSX intrinsics only; they are mounted
   // from app-shell.
@@ -80,7 +80,7 @@ const PALETTE_OWNER = "theme/palette.ts";
 const THEME_CONTRACT = "theme/";
 
 /** The one module that turns a token into what OpenTUI draws with. */
-const STYLE_OWNER = "components/primitives.tsx";
+const STYLE_OWNER = "visual/primitives.tsx";
 
 /** The seam in the CLI that launches the shell. */
 const LAUNCH_SEAM = "cli/dispatch.ts";
@@ -105,7 +105,7 @@ async function areaFiles(): Promise<readonly string[]> {
  * and this module is loaded by `bun test` and by nothing else — which the
  * control in "the rendered test harness" asserts rather than assumes.
  */
-const HARNESS = "harness.tsx";
+const HARNESS = "runtime/harness.tsx";
 
 /** Files that are neither tests, fixtures, nor the harness — the ones that ship. */
 function isProduct(file: string): boolean {
@@ -184,7 +184,7 @@ describe("the cost of not launching", () => {
       for (const match of source.matchAll(/from "\.\/([\w./-]+\.tsx?)"/g)) {
         const target = match[1];
         if (target !== undefined) {
-          await visit(target);
+          await visit(join(dirname(file), target));
         }
       }
     };
@@ -207,13 +207,13 @@ describe("the cost of not launching", () => {
   });
 
   test("reaches the shell from the CLI only through a dynamic import", async () => {
-    // A static `import { runShell } from "../tui/shell.tsx"` would put the whole
+    // A static `import { runShell } from "./runtime/shell.tsx"` would put the whole
     // renderer on the module graph of every invocation and undo the control
     // above without touching this area at all.
     const seam = (await readFile(join(SOURCE_ROOT, LAUNCH_SEAM), "utf8"))
       .replaceAll(/\/\*[\s\S]*?\*\//g, "")
       .replaceAll(/\/\/[^\n]*/g, "");
-    expect(seam).toContain('await import("../tui/shell.tsx")');
+    expect(seam).toContain('await import("../tui/runtime/shell.tsx")');
     expect(seam).not.toMatch(/^import\s[^;]*from "\.\.\/tui\/(?!index\.ts)/m);
   });
 
@@ -330,7 +330,7 @@ describe("the interface area", () => {
         owners.push(file);
       }
     }
-    expect(owners).toEqual(["shutdown.ts"]);
+    expect(owners).toEqual(["runtime/shutdown.ts"]);
   });
 });
 
@@ -358,7 +358,12 @@ describe("the design system", () => {
     // means, reachable on paths where colour was refused.
     const setters: string[] = [];
     for (const file of await productFiles()) {
-      if (!file.startsWith("components/")) {
+      if (
+        !file.endsWith(".tsx") ||
+        !["shell/", "overlays/", "visual/", "composer/", "transcript/"].some((area) =>
+          file.startsWith(area),
+        )
+      ) {
         continue;
       }
       if (/\bfg=\{|\bbackgroundColor=\{|\battributes=\{/.test(await readCode(file))) {
@@ -376,7 +381,12 @@ describe("the design system", () => {
       // Scoped to the components, which is where text is laid out. `toHex` in
       // the palette pads a hex digit, which is formatting a number rather than
       // aligning a cell.
-      if (!file.startsWith("components/")) {
+      if (
+        !file.endsWith(".tsx") ||
+        !["shell/", "overlays/", "visual/", "composer/", "transcript/"].some((area) =>
+          file.startsWith(area),
+        )
+      ) {
         continue;
       }
       const source = await readCode(file);
@@ -405,7 +415,7 @@ describe("the design system", () => {
     // The positive half: the modules that lay text out do use the measured
     // function, so the control above is holding a line something actually walks.
     expect(await readCode(STYLE_OWNER)).toContain("truncateToWidth");
-    expect(await readCode("components/workspace-header.tsx")).toContain("displayWidth");
+    expect(await readCode("shell/workspace-header.tsx")).toContain("displayWidth");
   });
 
   test("keeps the theme contract free of the renderer and of React", async () => {
@@ -513,7 +523,7 @@ describe("the composer", () => {
     // History, paste policy, and draft survival remain assertable without a
     // terminal while cursor, selection, and motion stay in OpenTUI's textarea.
     for (const file of await productFiles()) {
-      if (!file.startsWith("composer/")) {
+      if (!file.startsWith("composer/") || file.endsWith(".tsx")) {
         continue;
       }
       const source = await readValues(file);
@@ -556,7 +566,7 @@ describe("the composer", () => {
     const history = await readCode("composer/history.ts");
     expect(history).toContain("looksSecret");
     for (const file of await productFiles()) {
-      if (!file.startsWith("composer/")) {
+      if (!file.startsWith("composer/") || file === "composer/paste.ts") {
         continue;
       }
       const source = await readCode(file);
@@ -608,8 +618,8 @@ describe("the composer", () => {
         declarers.push(file);
       }
     }
-    expect(declarers).toEqual(["layout.ts"]);
-    expect(await readCode("components/composer.tsx")).toContain("frame.composerRows");
+    expect(declarers).toEqual(["shell/layout.ts"]);
+    expect(await readCode("composer/composer.tsx")).toContain("frame.composerRows");
   });
 });
 
@@ -620,7 +630,7 @@ describe("the activity rail", () => {
     // somewhere they did not leave, and the only way to be sure it cannot happen
     // is that nothing here can write anywhere that outlives the process.
     for (const file of await productFiles()) {
-      if (!file.startsWith("activity") && file !== "components/activity-rail.tsx") {
+      if (!file.startsWith("activity") && file !== "transcript/activity-rail.tsx") {
         continue;
       }
       const source = await readCode(file);
@@ -657,8 +667,8 @@ describe("the activity rail", () => {
     // One persistent contextual surface on wide layouts, and no permanently
     // tiled control centre. The predicate is consulted rather than a width being
     // compared a second time.
-    expect(await readCode("components/app-shell.tsx")).toContain("hasContextPanel(");
-    expect(await readCode("components/app-shell.tsx")).toContain("<ActivityRail");
+    expect(await readCode("shell/app-shell.tsx")).toContain("hasContextPanel(");
+    expect(await readCode("shell/app-shell.tsx")).toContain("<ActivityRail");
   });
 
   test("projects health in one place, so the rail and the status line agree", async () => {
@@ -670,7 +680,7 @@ describe("the activity rail", () => {
         callers.push(file);
       }
     }
-    expect(callers).toEqual(["components/shell-app.tsx", "shell-model.ts"]);
+    expect(callers).toEqual(["shell/shell-app.tsx", "shell/shell-model.ts"]);
   });
 });
 
@@ -685,8 +695,8 @@ describe("the command palette", () => {
         matchers.push(file);
       }
     }
-    expect(matchers).toEqual(["components/shell-app.tsx"]);
-    expect(await readCode("components/shell-app.tsx")).toContain("searchCommands(");
+    expect(matchers).toEqual(["shell/shell-app.tsx"]);
+    expect(await readCode("shell/shell-app.tsx")).toContain("searchCommands(");
   });
 
   test("is driven by a product caller rather than only exported", async () => {
@@ -694,19 +704,21 @@ describe("the command palette", () => {
     // was exported, and had tests — and no product caller, so the palette was
     // handed a literal empty query and typing narrowed nothing. A matcher
     // nothing matches with is not a feature, it is a function that compiles.
-    const source = await readCode("components/shell-app.tsx");
+    const source = await readCode("shell/shell-app.tsx");
     expect(source).toContain("paletteRows(rows,");
-    expect(await readCode("components/app-shell.tsx")).not.toContain('query=""');
+    expect(await readCode("shell/app-shell.tsx")).not.toContain('query=""');
   });
 
   test("holds the query on the route rather than beside it", async () => {
     // Which is what makes "closing clears the search" true by construction:
     // closing replaces the route, so there is nowhere a stale query can survive.
-    expect(await readCode("view-model.ts")).toContain('kind: "palette"; readonly query: string');
+    expect(await readCode("shell/view-model.ts")).toContain(
+      'kind: "palette"; readonly query: string',
+    );
   });
 
   test("delegates editing and selection to OpenTUI controls", async () => {
-    const source = await readCode("components/overlay-routes.tsx");
+    const source = await readCode("overlays/overlay-routes.tsx");
     expect(source).toContain("<input");
     expect(source).toContain("<select");
     expect(source).not.toContain("function editFor");
@@ -722,7 +734,7 @@ describe("the command palette", () => {
     // `./palette.test.tsx`, at every budget. This guards the shape that made the
     // measurement wrong, because a clamp reads as defensive rather than as the
     // overdraw it is.
-    const source = await readCode("components/overlay-routes.tsx");
+    const source = await readCode("overlays/overlay-routes.tsx");
     const palette = source.slice(source.indexOf("export function CommandPalette"));
     expect(palette).not.toContain("Math.max(1, props.rows");
   });
@@ -736,7 +748,7 @@ describe("the command palette", () => {
     // Guarded on the function that decides the split rather than the whole
     // module, so the rule stays about the budget handed to a route rather than
     // about every arithmetic clamp in the file.
-    const source = await readCode("components/overlay.tsx");
+    const source = await readCode("overlays/overlay.tsx");
     const start = source.indexOf("export function overlayRows");
     // Asserted, not assumed. Slicing from a missing marker yields a string that
     // contains nothing, so without this the control passes against exactly the
@@ -760,11 +772,11 @@ describe("the activity projection", () => {
         callers.push(file);
       }
     }
-    expect(callers).toEqual(["runtime-feed.ts"]);
+    expect(callers).toEqual(["runtime/runtime-feed.ts"]);
     // Both halves. The resume path is what makes a cursor worth carrying, and a
     // caller that only ever rebuilt would leave it decorative.
-    expect(await readCode("runtime-feed.ts")).toContain("resubscribeActivity(");
-    expect(await readCode("shell.tsx")).toContain("useRuntimeProjection(");
+    expect(await readCode("runtime/runtime-feed.ts")).toContain("resubscribeActivity(");
+    expect(await readCode("runtime/shell.tsx")).toContain("useRuntimeProjection(");
   });
 
   test("is read through a feed rather than through the scope tree itself", async () => {
@@ -777,9 +789,14 @@ describe("the activity projection", () => {
         holders.push(file);
       }
     }
-    expect(holders.toSorted()).toEqual(["runtime-feed.ts", "shell.tsx"]);
+    expect(holders.toSorted()).toEqual(["runtime/runtime-feed.ts", "runtime/shell.tsx"]);
     for (const file of await productFiles()) {
-      if (!file.startsWith("components/")) {
+      if (
+        !file.endsWith(".tsx") ||
+        !["shell/", "overlays/", "visual/", "composer/", "transcript/"].some((area) =>
+          file.startsWith(area),
+        )
+      ) {
         continue;
       }
       const source = await readCode(file);
@@ -806,7 +823,7 @@ describe("the frame's row arithmetic", () => {
     //
     // The rule is not "the constant must be bigger". It is that a region does not
     // get to hold its own opinion of what the frame costs.
-    const source = await readCode("components/overlay.tsx");
+    const source = await readCode("overlays/overlay.tsx");
     expect(source).not.toContain("RESERVED_FRAME_ROWS");
     expect(source).toContain("primaryRows(frame.viewport, frame.composerRows)");
   });
@@ -821,13 +838,13 @@ describe("the frame's row arithmetic", () => {
         callers.push(file);
       }
     }
-    expect(callers.toSorted()).toEqual(["components/overlay.tsx", "components/transcript.tsx"]);
+    expect(callers.toSorted()).toEqual(["overlays/overlay.tsx", "transcript/transcript.tsx"]);
   });
 });
 
 describe("the mode contract", () => {
   test("has one explicit alternate-screen renderer configuration", async () => {
-    const source = await readCode("renderer-session.ts");
+    const source = await readCode("runtime/renderer-session.ts");
     expect(source).toContain('screenMode: "alternate-screen"');
     expect(source).toContain('externalOutputMode: "passthrough"');
     expect(source).not.toContain('screenMode: "split-footer"');
@@ -889,7 +906,11 @@ describe("the rendered test harness", () => {
   async function consumers(): Promise<readonly string[]> {
     const files: string[] = [];
     for (const file of await testFiles()) {
-      if ((await readValues(file)).includes(`/${HARNESS}"`)) {
+      if (
+        [...(await readValues(file)).matchAll(/from "(\.[^"\n]+)"/g)].some(
+          (match) => join(dirname(file), match[1] ?? "") === HARNESS,
+        )
+      ) {
         files.push(file);
       }
     }
@@ -916,26 +937,28 @@ describe("the rendered test harness", () => {
   test("is where every rendered check mounts", async () => {
     // Not an aspiration: every consumer is named, so a rendered check that
     // rolls its own setup shows up here rather than becoming another copy.
-    expect(await consumers()).toEqual([
-      "components/activity-rail.test.tsx",
-      "components/composer-keys.test.tsx",
-      "components/composer.test.tsx",
-      "components/compression-sheet.test.tsx",
-      "components/confirmation.test.tsx",
-      "components/controls.test.tsx",
-      "components/frame.test.tsx",
-      "components/interaction.test.tsx",
-      "components/live-composer-mid-turn.test.tsx",
-      "components/palette.test.tsx",
-      "components/render-gate.test.tsx",
-      "components/session-nav-sheet.test.tsx",
-      "components/shell-error-boundary.test.tsx",
-      "components/transcript.test.tsx",
-      "components/workspace-sheet.test.tsx",
-      // The harness's own checks, which are what prove it cleans up.
-      "harness.test.tsx",
-      "runtime-feed.test.tsx",
-    ]);
+    expect(await consumers()).toEqual(
+      [
+        "transcript/activity-rail.test.tsx",
+        "composer/composer-keys.test.tsx",
+        "composer/composer.test.tsx",
+        "overlays/compression-sheet.test.tsx",
+        "overlays/confirmation.test.tsx",
+        "overlays/controls.test.tsx",
+        "shell/frame.test.tsx",
+        "overlays/interaction.test.tsx",
+        "composer/live-composer-mid-turn.test.tsx",
+        "overlays/palette.test.tsx",
+        "visual/render-gate.test.tsx",
+        "overlays/session-nav-sheet.test.tsx",
+        "shell/shell-error-boundary.test.tsx",
+        "transcript/transcript.test.tsx",
+        "overlays/workspace-sheet.test.tsx",
+        // The harness's own checks, which are what prove it cleans up.
+        "runtime/harness.test.tsx",
+        "runtime/runtime-feed.test.tsx",
+      ].toSorted(),
+    );
   });
 
   test("owns teardown, so no check that uses it declares its own", async () => {
@@ -965,7 +988,7 @@ describe("the rendered test harness", () => {
         roots.push(file);
       }
     }
-    expect(roots.toSorted()).toEqual([HARNESS, "shell.tsx"]);
+    expect(roots.toSorted()).toEqual([HARNESS, "runtime/shell.tsx"]);
   });
 
   test("declares the settle predicate once", async () => {

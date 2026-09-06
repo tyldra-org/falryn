@@ -11,9 +11,11 @@
  * rather than inventing a second pattern.
  */
 
-import type { EffectClass, FocusedConfirmationRequest } from "../../domain/index.ts";
-import { assertNever, graphemes } from "../../domain/index.ts";
-import { looksSecret } from "../paste.ts";
+import { assertNever } from "../../domain/foundation/index.ts";
+import type { EffectClass } from "../../domain/orchestration/index.ts";
+import { graphemes } from "../../domain/terminal/index.ts";
+import type { FocusedConfirmationRequest } from "../../domain/tools/index.ts";
+import { looksSecret } from "../composer/paste.ts";
 
 export const CONFIRMATION_SCOPES = ["once"] as const;
 export type ConfirmationScope = (typeof CONFIRMATION_SCOPES)[number];

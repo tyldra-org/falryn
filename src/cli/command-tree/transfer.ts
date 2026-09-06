@@ -1,12 +1,8 @@
 /** Export, import, and replay argument normalization. */
 
-import {
-  type ExportName,
-  exportName,
-  parseTimestamp,
-  type SessionId,
-  sessionId,
-} from "../../domain/index.ts";
+import type { ExportName } from "../../domain/extensions/index.ts";
+import { parseTimestamp, type SessionId, sessionId } from "../../domain/foundation/index.ts";
+import { exportName } from "../../domain/sessions/index.ts";
 
 import type {
   ExportCommandArguments,

@@ -1,13 +1,13 @@
 /** Built-in catalog resources compiled into every Falryn executable. */
 
-import type { ProviderAdapterKind } from "../adapter-kind.ts";
-import type { ModelCapabilityDeclaration } from "../model-capability.ts";
+import type { ProviderAdapterKind } from "../configuration/adapter-kind.ts";
 import anthropicCatalogValue from "./builtin/anthropic.json";
 import commandCodeCatalogValue from "./builtin/commandcode.json";
 import googleCatalogValue from "./builtin/google.json";
 import openAiCatalogValue from "./builtin/openai.json";
 import type { ModelCatalogDocument } from "./contracts.ts";
 import { incompleteCompleteModelIds, inspectModelCatalogCoverage } from "./coverage.ts";
+import type { ModelCapabilityDeclaration } from "./model-capability.ts";
 import { parseModelCatalogDocument } from "./schema.ts";
 
 function requiredBuiltin(value: unknown): ModelCatalogDocument {

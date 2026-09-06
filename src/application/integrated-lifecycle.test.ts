@@ -12,21 +12,23 @@ import {
   createManualClock,
   createManualSignalPort,
   duration,
-  EVENT_KINDS,
-  effectOf,
   instant,
   type ManualClock,
   type ManualSignalPort,
   NO_CORRELATION,
-  NO_RETRY,
   type ScopeId,
-  type ShutdownReport,
   scopeId as scopeIdCodec,
+} from "../domain/foundation/index.ts";
+import {
+  effectOf,
+  NO_RETRY,
+  type ShutdownReport,
   type WorkUnit,
   workUnitId,
-} from "../domain/index.ts";
-import { fromUnknown, withContext } from "./error-translation.ts";
-import { createRuntimeLifecycle, type RuntimeLifecycle } from "./runtime-lifecycle.ts";
+} from "../domain/orchestration/index.ts";
+import { EVENT_KINDS } from "../domain/sessions/index.ts";
+import { fromUnknown, withContext } from "./diagnostics/error-translation.ts";
+import { createRuntimeLifecycle, type RuntimeLifecycle } from "./runtime/runtime-lifecycle.ts";
 
 function makeRuntime(schedulerLimits?: { maxConcurrent: number }): {
   clock: ManualClock;

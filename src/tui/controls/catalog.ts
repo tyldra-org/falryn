@@ -6,7 +6,7 @@
  * unavailable facts are the truth in a build with no producer, not placeholders.
  */
 
-import { type FactValue, known, type WorkspaceHeaderModel } from "../view-model.ts";
+import { type FactValue, known, type WorkspaceHeaderModel } from "../shell/view-model.ts";
 
 export const CONTROL_PANELS = ["session", "model", "profile", "context", "resource"] as const;
 export type ControlPanel = (typeof CONTROL_PANELS)[number];

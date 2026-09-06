@@ -9,7 +9,7 @@ import type {
   GitIdentity,
   GitStatusEntry,
   GitWorktreeRecord,
-} from "../../domain/index.ts";
+} from "../../domain/git/index.ts";
 
 export type ChangesDashboardInput = {
   readonly identity: GitIdentity;

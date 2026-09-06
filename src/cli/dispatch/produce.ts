@@ -1,5 +1,19 @@
-import { assertNever } from "../../domain/index.ts";
+import { assertNever } from "../../domain/foundation/index.ts";
 import type { Invocation, RunnableCommand } from "../command-tree.ts";
+import {
+  runDataBackup,
+  runDataDiagnostics,
+  runDataInspect,
+  runDataRestore,
+} from "../commands/data-backup-commands.ts";
+import { runDataGc, runDataRetention } from "../commands/data-retention-gc-commands.ts";
+import { runImport, runReplay } from "../commands/import-replay-commands.ts";
+import { runTaskCommitPlan } from "../commands/task-commit-plan-commands.ts";
+import {
+  runTaskDecompose,
+  runTaskProgress,
+  runTaskValidate,
+} from "../commands/task-intelligence-commands.ts";
 import {
   type RunCommandResult,
   runArtifactGet,
@@ -22,29 +36,15 @@ import {
   runWorkspaceSave,
   runWorkspaceShow,
 } from "../commands.ts";
-import {
-  runDataBackup,
-  runDataDiagnostics,
-  runDataInspect,
-  runDataRestore,
-} from "../data-backup-commands.ts";
-import { runDataGc, runDataRetention } from "../data-retention-gc-commands.ts";
-import { runImport, runReplay } from "../import-replay-commands.ts";
-import type { InvocationGovernance } from "../invocation-scope.ts";
 import type { GlobalOptions } from "../options.ts";
-import type { ServiceProvider } from "../services.ts";
+import type { CliStreams } from "../output/streams.ts";
+import type { InvocationGovernance } from "../runtime/invocation-scope.ts";
+import type { ServiceProvider } from "../runtime/services.ts";
 import {
   runSessionForkOrRewind,
   runSessionReplay,
   runSessionResume,
-} from "../session-navigation.ts";
-import type { CliStreams } from "../streams.ts";
-import { runTaskCommitPlan } from "../task-commit-plan-commands.ts";
-import {
-  runTaskDecompose,
-  runTaskProgress,
-  runTaskValidate,
-} from "../task-intelligence-commands.ts";
+} from "../runtime/session-navigation.ts";
 
 export type DispatchProduceOptions = {
   readonly streams: CliStreams;

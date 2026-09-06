@@ -70,6 +70,41 @@ source and tests before changing a boundary.
 | `src/cli/` | Command tree, process boundaries, output formats, and runtime composition |
 | `tools/` | Repository checks, governance auditors, generators, and benchmarks |
 
+Within each layer, folders name capabilities: `workspace`, `sessions`, `tools`,
+`orchestration`, `memory`, `context`, `compression`, `authentication`, `language`,
+and `debugging`. Use the same capability vocabulary across layers when they
+share a responsibility. A capability need not exist in every layer.
+
+Domain and application APIs live in capability-level `index.ts` files. Import
+the narrowest owner that supplies the contract; there is no domain-wide or
+application-wide export catalog. Keep private helpers beside the implementation
+that uses them and tests beside their subject. Cross-capability decisions go in
+the owner of the policy, not a growing `common`, `shared`, or `utils` folder.
+
+The CLI composes host adapters. Application actions consume ports; they do not
+construct filesystem, keychain, provider SDK, or terminal adapters. The terminal
+entrypoint exposes lightweight launch decisions and loads the renderer only
+when an interactive run is admitted. UI models and React views may share a
+capability folder, but model modules remain free of React and OpenTUI values.
+
+Repository tooling follows the same rule: `tools/quality`, `tools/governance`,
+`tools/catalogs`, and `tools/benchmarks` own their commands, tests, and helpers.
+Recorded benchmark fixtures retain their historical content and provenance.
+
+For an open issue, first find its existing capability and composition point.
+Create a new capability folder when implementing a distinct responsibility;
+create its contracts, behavior, and tests together. Empty files, placeholder
+classes, catch-all registries, and speculative packages do not establish
+ownership. Update the issue's concrete file references when an owner moves.
+
+Before adding a special case, describe the design that would fit if the
+requirement had existed from the start. Extract a parser, projection, operation
+family, or lifecycle owner when it reduces the state a reader must track. A
+large cohesive test matrix is different from a service mixing unrelated rules;
+line count is a review signal, not a reason to invent wrappers or extra layers.
+`src/source-structure.test.ts` checks capability placement and application/host
+separation, alongside the existing dependency-cycle and runtime-boundary tests.
+
 Falryn runs as one Bun process. External commands and stateful host behavior
 stay behind narrow typed adapters. Product behavior must reach its real CLI,
 OpenTUI, headless, model, export, replay, or diagnostic composition point. An

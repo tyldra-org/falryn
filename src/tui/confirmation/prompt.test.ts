@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { capabilityId, type FocusedConfirmationRequest, invocationId } from "../../domain/index.ts";
+import { capabilityId, invocationId } from "../../domain/foundation/index.ts";
+import type { FocusedConfirmationRequest } from "../../domain/tools/index.ts";
 import {
   applySecretEdit,
   CONFIRMATION_ALTERNATIVES,

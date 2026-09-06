@@ -5,15 +5,18 @@
  * identity is already-included, not a second chip.
  */
 
-import { createTranscriptAttachment, digestBytes } from "../../application/index.ts";
-import { type AttachmentDescriptor, includeTranscriptAttachment } from "../../domain/index.ts";
+import { createTranscriptAttachment, digestBytes } from "../../application/context/index.ts";
+import {
+  type AttachmentDescriptor,
+  includeTranscriptAttachment,
+} from "../../domain/context/index.ts";
 import {
   blockKey,
   type NativeTranscriptRange,
   resolveTranscriptPick,
   type TranscriptBlock,
 } from "../../presentation/index.ts";
-import { looksSecret } from "../paste.ts";
+import { looksSecret } from "../composer/paste.ts";
 
 export type TranscriptIncludeDraftRequest = {
   readonly selected: string | null;

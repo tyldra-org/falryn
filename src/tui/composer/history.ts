@@ -25,7 +25,7 @@
  * Pure data and pure functions: no clock, no storage, no renderer.
  */
 
-import { looksSecret } from "../paste.ts";
+import { looksSecret } from "./paste.ts";
 
 /**
  * Entries kept.

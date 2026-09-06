@@ -2,7 +2,8 @@ import { describe, expect, test } from "bun:test";
 
 import { helpText, parseInvocation } from "./command-tree.ts";
 import { dispatch } from "./dispatch.ts";
-import { EXIT_CODES } from "./exit.ts";
+import { EXIT_CODES } from "./output/exit.ts";
+import { createRecordingCliStreams } from "./output/streams.ts";
 import {
   COMPLETION_SHELLS,
   completionInstallScript,
@@ -11,7 +12,6 @@ import {
   isCompletionRequest,
   UNDECLARED_GROUPS,
 } from "./shell-completion.ts";
-import { createRecordingCliStreams } from "./streams.ts";
 
 describe("shell completion", () => {
   test("parses completion for each supported shell", async () => {

@@ -19,18 +19,21 @@
 
 import yargs from "yargs";
 
+import { DEFAULT_ARTIFACT_LIST_LIMIT, MAX_ARTIFACT_CATALOG } from "../domain/artifacts/index.ts";
 import {
-  DEFAULT_ARTIFACT_LIST_LIMIT,
   DEFAULT_SESSION_LIST_LIMIT,
-  DEFAULT_WORKSPACE_LAYOUT_LIST_LIMIT,
-  MAX_ARTIFACT_CATALOG,
   MAX_SESSION_CATALOG,
-  MAX_WORKSPACE_LAYOUT_CATALOG,
-  parseLocalPath,
   SESSION_CATALOG_FILTERS,
   type SessionCatalogFilter,
-} from "../domain/index.ts";
+} from "../domain/sessions/index.ts";
+import {
+  DEFAULT_WORKSPACE_LAYOUT_LIST_LIMIT,
+  MAX_WORKSPACE_LAYOUT_CATALOG,
+  parseLocalPath,
+} from "../domain/workspace/index.ts";
 import { createHostFileSystem } from "../integrations/index.ts";
+import { taskCommitPlanArgumentsFor } from "./commands/task-commit-plan-commands.ts";
+import { MAX_TASK_INPUT_FILE_BYTES, taskArgumentsFor } from "./commands/task-intelligence-parse.ts";
 import {
   COLOR_CHOICES,
   type ColorChoice,
@@ -38,8 +41,6 @@ import {
   OUTPUT_FORMATS,
   type OutputFormat,
 } from "./options.ts";
-import { taskCommitPlanArgumentsFor } from "./task-commit-plan-commands.ts";
-import { MAX_TASK_INPUT_FILE_BYTES, taskArgumentsFor } from "./task-intelligence-parse.ts";
 
 /** The name the tree reports itself as, whatever the executable is called. */
 

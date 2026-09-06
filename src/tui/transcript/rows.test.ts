@@ -9,7 +9,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { timestampFromEpochMilliseconds } from "../../domain/index.ts";
+import { timestampFromEpochMilliseconds } from "../../domain/foundation/index.ts";
 import type { ExpansionRoute, TranscriptBlock } from "../../presentation/index.ts";
 import {
   admitTranscriptRecord,

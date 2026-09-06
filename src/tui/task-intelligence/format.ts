@@ -2,7 +2,7 @@
  * Task-intelligence overlay routes and panel titles (#726 / #727).
  */
 
-import type { OverlayRoute } from "../view-model.ts";
+import type { OverlayRoute } from "../shell/view-model.ts";
 
 export const TASK_INTELLIGENCE_PANELS = [
   "decompose",

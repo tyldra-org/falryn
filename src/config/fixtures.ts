@@ -18,7 +18,7 @@ import {
   type ConfigurationValues,
   configurationKeyPath,
   type SensitiveValueRedactor,
-} from "../domain/index.ts";
+} from "../domain/configuration/index.ts";
 import {
   type ConfigurationKeyDeclaration,
   enumKey,
@@ -26,8 +26,8 @@ import {
   integerKey,
   mapKey,
   objectKey,
-} from "./declaration.ts";
-import type { ConfigurationCrossFieldRule } from "./registry.ts";
+} from "./document/declaration.ts";
+import type { ConfigurationCrossFieldRule } from "./resolution/registry.ts";
 
 /** A scalar that replaces on every layer. */
 export const FIXTURE_SCALAR_KEY: ConfigurationKeyDeclaration = integerKey({

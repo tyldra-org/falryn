@@ -17,24 +17,25 @@
 
 import { describe, expect, test } from "bun:test";
 import { createTestRenderer, type TestRendererSetup } from "@opentui/core/testing";
-import { createScopeTree } from "../application/index.ts";
+import { createScopeTree } from "../application/orchestration/index.ts";
 import {
-  createInMemoryFileSystem,
   createStaticEnvironment,
   createSystemClock,
   type EnvironmentPort,
-  localPath,
+} from "../domain/foundation/index.ts";
+import {
   type ObservedHandles,
   type StreamCapability,
   terminalCapabilities,
-} from "../domain/index.ts";
+} from "../domain/terminal/index.ts";
+import { createInMemoryFileSystem, localPath } from "../domain/workspace/index.ts";
 import type { RendererFactory } from "../tui/index.ts";
 import { dispatch } from "./dispatch.ts";
-import { EXIT_CODES } from "./exit.ts";
-import type { InvocationGovernance } from "./invocation-scope.ts";
 import type { GlobalOptions } from "./options.ts";
-import { createServiceProvider, type ServiceProvider } from "./services.ts";
-import { createRecordingCliStreams, type RecordedCliStreams } from "./streams.ts";
+import { EXIT_CODES } from "./output/exit.ts";
+import { createRecordingCliStreams, type RecordedCliStreams } from "./output/streams.ts";
+import type { InvocationGovernance } from "./runtime/invocation-scope.ts";
+import { createServiceProvider, type ServiceProvider } from "./runtime/services.ts";
 
 const INTERACTIVE: ObservedHandles = {
   stdout: { isTty: true, columns: 100, rows: 30 },

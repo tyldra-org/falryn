@@ -18,24 +18,26 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { createScopeTree } from "../application/index.ts";
+import { createScopeTree } from "../application/orchestration/index.ts";
 import {
-  createInMemoryFileSystem,
   createManualClock,
   createStaticEnvironment,
-  type FileSystemPort,
   instant,
-  localPath,
   type ScopeId,
   scopeId,
-} from "../domain/index.ts";
+} from "../domain/foundation/index.ts";
+import {
+  createInMemoryFileSystem,
+  type FileSystemPort,
+  localPath,
+} from "../domain/workspace/index.ts";
 import { dispatch } from "./dispatch.ts";
-import { EXIT_CODES } from "./exit.ts";
-import type { InvocationGovernance } from "./invocation-scope.ts";
 import type { GlobalOptions } from "./options.ts";
-import { readCliStream } from "./schema.ts";
-import { createServiceProvider } from "./services.ts";
-import { createRecordingCliStreams } from "./streams.ts";
+import { EXIT_CODES } from "./output/exit.ts";
+import { readCliStream } from "./output/schema.ts";
+import { createRecordingCliStreams } from "./output/streams.ts";
+import type { InvocationGovernance } from "./runtime/invocation-scope.ts";
+import { createServiceProvider } from "./runtime/services.ts";
 
 const INVOCATION: ScopeId = scopeId.from("test-invocation");
 

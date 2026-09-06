@@ -5,8 +5,8 @@ import {
   CONTENT_DIGEST_ALGORITHM,
   DEFAULT_ARTIFACT_VIEW_LIMITS,
   projectArtifactView,
-  timestampFromEpochMilliseconds,
-} from "../../domain/index.ts";
+} from "../../domain/artifacts/index.ts";
+import { timestampFromEpochMilliseconds } from "../../domain/foundation/index.ts";
 import { diffTextForHunk, diffViewFrom, hunkCountOfDiffText } from "./diff-view.ts";
 
 const LIMITS = DEFAULT_ARTIFACT_VIEW_LIMITS;

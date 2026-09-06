@@ -2,17 +2,20 @@
 
 import {
   adoptForeignError,
-  createWorkspaceLayoutStore,
   fromConfigurationIssue,
   fromUnknown,
+} from "../../application/diagnostics/index.ts";
+import {
+  createWorkspaceLayoutStore,
   type WorkspaceLayoutStoreError,
-} from "../../application/index.ts";
+} from "../../application/workspace/index.ts";
 import { configurationHomeIssue } from "../../config/index.ts";
-import { type FalrynError, MAX_WORKSPACE_LAYOUT_CATALOG } from "../../domain/index.ts";
+import type { FalrynError } from "../../domain/foundation/index.ts";
+import { MAX_WORKSPACE_LAYOUT_CATALOG } from "../../domain/workspace/index.ts";
 import type { WorkspaceCommandArguments } from "../command-tree.ts";
-import type { CommandResultOf, CommandTruncation } from "../result.ts";
-import type { ServiceProvider } from "../services.ts";
-import type { WorkspaceResolveError } from "../workspace-resolution.ts";
+import type { CommandResultOf, CommandTruncation } from "../output/result.ts";
+import type { ServiceProvider } from "../runtime/services.ts";
+import type { WorkspaceResolveError } from "../runtime/workspace-resolution.ts";
 import { resultFor, WRITE_COMPLETED_EFFECT, workspaceResolveError } from "./shared.ts";
 
 export type WorkspaceRootPayload = {

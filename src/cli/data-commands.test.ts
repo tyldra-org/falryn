@@ -1,18 +1,17 @@
 import { describe, expect, test } from "bun:test";
-
+import { createStaticEnvironment } from "../domain/foundation/index.ts";
 import {
   createInMemoryFileSystem,
-  createStaticEnvironment,
   type InMemoryNode,
   localPath,
-} from "../domain/index.ts";
+} from "../domain/workspace/index.ts";
 import { runDataReset, runDataUninstall, stoppedResult } from "./commands.ts";
 import { dispatch } from "./dispatch.ts";
-import { EXIT_CODES, resolveExitCode } from "./exit.ts";
 import type { GlobalOptions } from "./options.ts";
-import { readCliStream } from "./schema.ts";
-import { createServiceProvider } from "./services.ts";
-import { createRecordingCliStreams } from "./streams.ts";
+import { EXIT_CODES, resolveExitCode } from "./output/exit.ts";
+import { readCliStream } from "./output/schema.ts";
+import { createRecordingCliStreams } from "./output/streams.ts";
+import { createServiceProvider } from "./runtime/services.ts";
 
 const ROOTS = {
   FALRYN_CONFIG_DIR: "/d/config",

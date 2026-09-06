@@ -1,19 +1,21 @@
 import { describe, expect, test } from "bun:test";
 import { sessionRecord, sessionStarted, turnRecord, turnStarted } from "../../domain/fixtures.ts";
 import {
-  createInMemoryEventStore,
   err,
   ok,
+  type SessionId,
+  type TurnId,
+  type WorkspaceId,
+} from "../../domain/foundation/index.ts";
+import {
+  createInMemoryEventStore,
   type RecordError,
   type RecordWrite,
-  type SessionId,
   type SessionRecord,
   type SessionRepositoryPort,
-  type TurnId,
   type TurnRecord,
   type TurnRepositoryPort,
-  type WorkspaceId,
-} from "../../domain/index.ts";
+} from "../../domain/sessions/index.ts";
 import {
   createSessionNavigationController,
   noticeForReplay,

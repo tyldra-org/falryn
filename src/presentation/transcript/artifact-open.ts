@@ -8,7 +8,7 @@ import {
   type ArtifactId,
   type ArtifactOrigin,
   selectArtifactViewKind,
-} from "../../domain/index.ts";
+} from "../../domain/artifacts/index.ts";
 import { type BlockSource, expansionRoutesFor, type TranscriptBlock } from "./blocks.ts";
 
 export function primaryArtifactId(block: TranscriptBlock): ArtifactId | null {

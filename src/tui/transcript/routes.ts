@@ -15,7 +15,7 @@
  */
 
 import type { ExpansionRoute } from "../../presentation/index.ts";
-import type { CommandEntry } from "../view-model.ts";
+import type { CommandEntry } from "../shell/view-model.ts";
 
 /** The command each route dispatches. */
 export function commandForRoute(route: ExpansionRoute): string {

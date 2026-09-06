@@ -9,13 +9,13 @@
 import { describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 
-import { CONTENT_DIGEST_ALGORITHM, contentDigest } from "./artifact.ts";
-import type { ContentHasherPort } from "./blob.ts";
-import { type CompactModelPort, reduceCompact } from "./compact-model.ts";
-import { evaluateCompressionRun } from "./compression-eval.ts";
-import { checkpointHistory } from "./history-checkpoint.ts";
-import { ok } from "./result.ts";
-import { reduceStructural } from "./structural-reduce.ts";
+import { CONTENT_DIGEST_ALGORITHM, contentDigest } from "./artifacts/artifact.ts";
+import type { ContentHasherPort } from "./artifacts/blob.ts";
+import { type CompactModelPort, reduceCompact } from "./compression/compact-model.ts";
+import { evaluateCompressionRun } from "./compression/compression-eval.ts";
+import { checkpointHistory } from "./compression/history-checkpoint.ts";
+import { reduceStructural } from "./compression/structural-reduce.ts";
+import { ok } from "./foundation/result.ts";
 
 function hasher(): ContentHasherPort {
   return {

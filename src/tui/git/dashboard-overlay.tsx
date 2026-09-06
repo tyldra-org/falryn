@@ -6,15 +6,15 @@
  */
 
 import { type ReactNode, useEffect, useState } from "react";
-import { describeGitError, type GitDashboard } from "../../application/index.ts";
+import { describeGitError, type GitDashboard } from "../../application/git/index.ts";
 import {
   type ChangesDashboardModel,
   type ChangesTab,
   changesDashboardFrom,
   rowsForTab,
 } from "../../presentation/git/dashboard.ts";
-import { useFrame } from "../components/context.tsx";
-import { Line } from "../components/primitives.tsx";
+import { useFrame } from "../shell/context.tsx";
+import { Line } from "../visual/primitives.tsx";
 
 const PANEL_CHROME_COLUMNS = 4;
 

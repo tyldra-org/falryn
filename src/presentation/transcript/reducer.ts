@@ -36,8 +36,9 @@
  * guarantees it does not become two rows.
  */
 
-import type { RuntimeEvent, Sequence, StreamId } from "../../domain/index.ts";
-import { assertNever } from "../../domain/index.ts";
+import type { Sequence, StreamId } from "../../domain/foundation/index.ts";
+import { assertNever } from "../../domain/foundation/index.ts";
+import type { RuntimeEvent } from "../../domain/sessions/index.ts";
 import type { TranscriptBlock } from "./blocks.ts";
 import type { CoalescedTranscript } from "./coalesce.ts";
 import { applyRevision, EMPTY_TRANSCRIPT } from "./coalesce.ts";
