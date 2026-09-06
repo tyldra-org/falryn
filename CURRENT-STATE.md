@@ -365,14 +365,33 @@ entries and are capped at 256. Current production loaders contribute the
 built-in product tools. Live extension, agent, workflow, package-provider, and
 UI loaders remain with their owning issues.
 
-Current product publication does not yet prove each runner binding before it
-marks every registered tool available, healthy, and executable, so a tool such
-as `open_pty` can be advertised before its runner later returns `unavailable`.
-GitHub issue #195 owns executable binding proof and #150 owns truthful
-native-registry publication. The capability registry also keys identity by kind
+Product publication now requires an explicit native runner binding before
+marking a registered tool executable. The unbound `open_pty` descriptor remains
+unavailable. Invocation still checks policy, disclosure, generation and shared
+resource admission; a registered descriptor alone cannot execute. The
+capability registry still keys identity by kind
 plus namespace/name rather than the complete source-owner-qualified identity,
 so equal names from distinct owners cannot yet coexist; #898 owns the
 scope-bearing catalog identity correction.
+
+Provider tool batches now pass through the common capability composition owner
+in the product attempt runner. The same application port accepts dependency
+graphs with exact capability IDs, versions, effects and catalog generations.
+It rejects cycles, duplicate nodes, unknown edges and invalid inputs before
+effects. Graphs are limited to 64 nodes, 128 dependency/transfer edges and
+256 KiB of JSON, with four concurrent nodes by default and a ceiling of sixteen.
+The thirty-minute maximum deadline also respects the inherited task deadline.
+Every node uses the existing tool gateway and task allowance.
+
+Dependent nodes receive only completed, schema-valid, nontruncated output;
+transfers are capped at 64 KiB each and 256 KiB in total. Incomplete predecessors
+block dependents, while independent nodes can settle. Cancellation without
+termination proof remains uncertain. Native owners retain artifact ownership.
+Digest-only graph provenance, topology and node statuses persist with invocation
+events; replay rebuilds those facts without executing tools. Duplicate graph
+admission cannot repeat effects. Existing events without composition fields
+remain readable. Live MCP, package, delegated and browser hosts are not added
+by this common runtime path.
 
 Each registry generation can now be inspected through one consumer-specific
 capability-health snapshot. The pure evaluator combines declared lifecycle and

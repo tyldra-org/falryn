@@ -1,3 +1,4 @@
+import type { CompositionProvenance } from "../capabilities/composition.ts";
 /**
  * Turn lifecycle facts as durable runtime events, and pure replay of those
  * events into turn views.
@@ -81,6 +82,7 @@ export type TurnLifecycleFact =
     }
   | {
       readonly kind: "capability.invocation.started";
+      readonly composition?: CompositionProvenance;
       readonly correlation: TurnCorrelation;
       readonly invocationId: InvocationId;
       readonly capabilityId: CapabilityId;
@@ -89,6 +91,7 @@ export type TurnLifecycleFact =
     }
   | {
       readonly kind: "capability.invocation.completed";
+      readonly composition?: CompositionProvenance;
       readonly correlation: TurnCorrelation;
       readonly invocationId: InvocationId;
       readonly capabilityId: CapabilityId;
@@ -234,6 +237,7 @@ export function buildTurnLifecycleEvent(input: BuildTurnEventInput): RuntimeEven
             ? {}
             : { capabilityVersion: fact.capabilityVersion }),
           ...(fact.inputDigest === undefined ? {} : { inputDigest: fact.inputDigest }),
+          ...(fact.composition === undefined ? {} : { composition: fact.composition }),
         },
       };
       return event;
@@ -247,6 +251,7 @@ export function buildTurnLifecycleEvent(input: BuildTurnEventInput): RuntimeEven
         correlation: fact.correlation,
         payload: {
           outcome: fact.outcome,
+          ...(fact.composition === undefined ? {} : { composition: fact.composition }),
           ...(fact.admission === undefined ? {} : { admission: fact.admission }),
           ...(fact.observedStatus === undefined ? {} : { observedStatus: fact.observedStatus }),
           ...(fact.degradation === undefined ? {} : { degradation: fact.degradation }),
@@ -268,6 +273,7 @@ export type ReplayedAttempt = {
 };
 
 export type ReplayedInvocation = {
+  readonly composition?: CompositionProvenance | null;
   readonly invocationId: InvocationId;
   readonly capabilityId: CapabilityId;
   readonly startedAt: Timestamp | null;
@@ -317,6 +323,7 @@ type MutableAttempt = {
 };
 
 type MutableInvocation = {
+  composition: CompositionProvenance | null;
   invocationId: InvocationId;
   capabilityId: CapabilityId;
   startedAt: Timestamp | null;
@@ -449,11 +456,13 @@ export function reduceTurnEvents(events: readonly RuntimeEvent[]): TurnEventRedu
             admission: null,
             observedStatus: null,
             degradation: null,
+            composition: null,
           };
           turn.invocations.set(event.invocationId, invocation);
           turn.invocationOrder.push(event.invocationId);
         }
         invocation.startedAt = event.occurredAt;
+        invocation.composition = event.payload.composition ?? null;
         invocation.capabilityId = event.capabilityId;
         break;
       }
@@ -470,11 +479,13 @@ export function reduceTurnEvents(events: readonly RuntimeEvent[]): TurnEventRedu
             admission: null,
             observedStatus: null,
             degradation: null,
+            composition: null,
           };
           turn.invocations.set(event.invocationId, invocation);
           turn.invocationOrder.push(event.invocationId);
         }
         invocation.completedAt = event.occurredAt;
+        invocation.composition = event.payload.composition ?? invocation.composition;
         invocation.outcome = event.payload.outcome;
         invocation.admission = event.payload.admission ?? null;
         invocation.observedStatus = event.payload.observedStatus ?? null;
@@ -565,6 +576,7 @@ function freezeTurn(turn: MutableTurn): ReplayedTurn {
               admission: invocation.admission,
               observedStatus: invocation.observedStatus,
               degradation: invocation.degradation,
+              ...(invocation.composition === null ? {} : { composition: invocation.composition }),
             },
           ];
     }),

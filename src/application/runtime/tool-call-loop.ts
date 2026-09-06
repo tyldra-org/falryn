@@ -468,6 +468,10 @@ async function executeBoundBatch(input: {
   readonly aborted: boolean;
 }> {
   const { batch, runner, signal, maxConcurrent } = input;
+  if (runner.executeBatch !== undefined) {
+    const records = await runner.executeBatch(batch, signal, maxConcurrent);
+    return { records, aborted: signal.aborted };
+  }
   const records: ToolInvocationRecord[] = new Array(batch.length);
   let nextIndex = 0;
   let aborted = false;

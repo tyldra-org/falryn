@@ -1,3 +1,4 @@
+import type { CompositionProvenance } from "../capabilities/composition.ts";
 /**
  * The semantic event envelope.
  *
@@ -206,11 +207,13 @@ export type ModelAttemptStartedPayload = {
 
 /** Durable invocation metadata. Absent only on legacy events. */
 export type CapabilityInvocationStartedPayload = {
+  readonly composition?: CompositionProvenance | undefined;
   readonly capabilityVersion?: number | undefined;
   readonly inputDigest?: string | undefined;
 };
 
 export type CapabilityInvocationCompletedPayload = TerminalPayload & {
+  readonly composition?: CompositionProvenance | undefined;
   readonly admission?: ResourceAdmissionReceipt | undefined;
   /** Exact normalized runner status; absent on legacy events. */
   readonly observedStatus?:

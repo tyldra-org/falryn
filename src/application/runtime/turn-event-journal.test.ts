@@ -45,6 +45,34 @@ function journal(maxEvents?: number) {
 }
 
 describe("turn event journal persist", () => {
+  test("parallel appends and old duplicate receipts preserve the live sequence", async () => {
+    const { journal: j } = journal();
+    const facts: TurnLifecycleFact[] = Array.from({ length: 16 }, (_, index) => ({
+      kind: "capability.invocation.started",
+      correlation: turnCorrelation,
+      invocationId: invocationId.from(`parallel-${index}`),
+      capabilityId: capabilityId.from("read"),
+    }));
+    const observed: number[] = [];
+    j.subscribe((events) => observed.push(...events.map((event) => Number(event.sequence))));
+    const results = await Promise.all(facts.map((fact) => j.persist([fact])));
+    expect(results.every((result) => result.kind === "persisted")).toBe(true);
+    const first = facts[0];
+    if (first === undefined) throw new Error("missing first fact");
+    await j.persist([first]);
+    const last = await j.persist([
+      { kind: "turn.completed", correlation: turnCorrelation, outcome: { kind: "completed" } },
+    ]);
+    expect(last.kind).toBe("persisted");
+    expect(observed).toHaveLength(17);
+    expect(new Set(observed).size).toBe(17);
+    expect(
+      observed.every(
+        (sequence, index) => index === 0 || sequence === Number(observed[index - 1]) + 1,
+      ),
+    ).toBe(true);
+  });
+
   test("appends lifecycle facts through the existing event store", async () => {
     const { journal: j } = journal();
     const attempt = modelAttemptId.from("attempt-1");

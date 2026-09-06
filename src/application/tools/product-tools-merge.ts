@@ -63,8 +63,16 @@ export function mergeProductToolBundles(
     generation,
     registry,
     options.capabilityEntries,
+    (id) => {
+      const entry = registry.resolveByCapabilityId(id);
+      return entry !== null && runners.get(entry.descriptor.name)?.hasBinding?.(id) === true;
+    },
   );
   const runner: ToolRunnerPort = {
+    hasBinding(id) {
+      const entry = registry.resolveByCapabilityId(id);
+      return entry !== null && runners.get(entry.descriptor.name)?.hasBinding?.(id) === true;
+    },
     async execute(request: ToolRunnerRequest): Promise<ToolInvocationOutcome> {
       const owned = runners.get(request.toolName);
       if (owned === undefined) {

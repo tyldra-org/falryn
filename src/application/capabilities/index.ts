@@ -1,5 +1,7 @@
 /** Public contracts for this capability. Internal modules import their exact dependencies. */
 
+export type { CapabilityCompositionOptions, CompositionResult } from "./capability-composition.ts";
+export { createCapabilityComposition } from "./capability-composition.ts";
 export type {
   CapabilityProbeError,
   CapabilityProbePort,

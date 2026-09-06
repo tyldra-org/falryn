@@ -182,6 +182,7 @@ export function composeProductScratchTools(ports: ProductScratchToolPorts): Prod
   const registry = registryResult.value;
 
   const runner: ToolRunnerPort = {
+    hasBinding: (id) => registry.resolveByCapabilityId(id) !== null,
     async execute(request: ToolRunnerRequest): Promise<ToolInvocationOutcome> {
       if (request.signal.aborted) return { status: "cancelled", effect: "none" };
       switch (request.toolName) {

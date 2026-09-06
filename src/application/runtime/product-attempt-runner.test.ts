@@ -69,13 +69,21 @@ function setup(
     correlation,
     providerAdapter: adapter,
     toolRegistry: tools.registry,
-    toolRunner: wrapRunner(tools.runner),
+    toolRunner: {
+      ...wrapRunner(tools.runner),
+      hasBinding: (id) => tools.runner.hasBinding?.(id) === true,
+    },
   });
   if (!runtime.ok) {
     throw new Error(runtime.error.code);
   }
   const disclosure = discloseProductTools(
-    createProductCapabilityRegistry(tools.registry.generation, tools.registry),
+    createProductCapabilityRegistry(
+      tools.registry.generation,
+      tools.registry,
+      [],
+      (id) => tools.runner.hasBinding?.(id) === true,
+    ),
     tools.registry,
   );
   return {
@@ -549,6 +557,14 @@ describe("createProductAttemptRunner", () => {
     );
     expect(stored.ok).toBe(true);
     if (!stored.ok) throw new Error(stored.error.code);
+    expect(
+      stored.value.some(
+        (event) =>
+          event.kind === "capability.invocation.completed" &&
+          event.capabilityId === capabilityId.from("falryn:composition:v1") &&
+          event.payload.composition?.topology.length === 1,
+      ),
+    ).toBe(true);
     const readCompletion = stored.value.find(
       (event) =>
         event.kind === "capability.invocation.completed" &&
@@ -559,6 +575,7 @@ describe("createProductAttemptRunner", () => {
       throw new Error("missing durable read completion");
     }
     expect(readCompletion.payload).toMatchObject({
+      composition: { version: 1, graphId: expect.any(String), bindingDigest: expect.any(String) },
       observedStatus: "unavailable",
       degradation: {
         decision: "fallback-available",
@@ -1039,7 +1056,12 @@ describe("createProductAttemptRunner", () => {
       throw new Error(runtime.error.code);
     }
     const disclosure = discloseProductTools(
-      createProductCapabilityRegistry(tools.registry.generation, tools.registry),
+      createProductCapabilityRegistry(
+        tools.registry.generation,
+        tools.registry,
+        [],
+        (id) => tools.runner.hasBinding?.(id) === true,
+      ),
       tools.registry,
     );
     const targetTurn = turnId.from("turn-attempt-process");

@@ -217,7 +217,12 @@ export function composeProductAgentRuntime(
     ports.capabilityRegistry ??
     (toolRegistry === null
       ? null
-      : createProductCapabilityRegistry(ports.correlation.configurationGeneration, toolRegistry));
+      : createProductCapabilityRegistry(
+          ports.correlation.configurationGeneration,
+          toolRegistry,
+          [],
+          (id) => ports.toolRunner?.hasBinding?.(id) === true,
+        ));
   const toolCatalog =
     ports.toolCatalog ??
     toolRegistry?.catalog ??
@@ -252,6 +257,7 @@ export function composeProductAgentRuntime(
           coordinator: turnCoordinator,
           provider: providerAdapter,
           registry: toolRegistry,
+          ...(capabilityRegistry === null ? {} : { capabilities: capabilityRegistry }),
           toolRunner,
           hooks: hookRegistry,
           journal,

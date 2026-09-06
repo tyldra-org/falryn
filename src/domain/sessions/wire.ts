@@ -1,3 +1,4 @@
+import { compositionProvenanceSchema } from "../capabilities/composition.ts";
 /**
  * The JSON representation of a runtime event, and its Zod 4 schema.
  *
@@ -322,6 +323,7 @@ const modelAttemptStartedPayloadSchema: z.ZodType<ModelAttemptStartedPayload> = 
 
 const capabilityInvocationStartedPayloadSchema: z.ZodType<CapabilityInvocationStartedPayload> =
   z.object({
+    composition: compositionProvenanceSchema.optional(),
     capabilityVersion: z.int().min(1).optional(),
     inputDigest: z
       .string()
@@ -334,6 +336,7 @@ const capabilityInvocationCompletedPayloadSchema: z.ZodType<CapabilityInvocation
   z.object({
     outcome: terminalOutcomeSchema,
     admission: resourceAdmissionReceiptSchema.optional(),
+    composition: compositionProvenanceSchema.optional(),
     observedStatus: z
       .enum([
         "completed",
@@ -497,6 +500,9 @@ function payloadToJson(event: RuntimeEvent): Record<string, unknown> {
       return event.payload.binding === undefined ? {} : { binding: event.payload.binding };
     case "capability.invocation.started":
       return {
+        ...(event.payload.composition === undefined
+          ? {}
+          : { composition: event.payload.composition }),
         ...(event.payload.capabilityVersion === undefined
           ? {}
           : { capabilityVersion: event.payload.capabilityVersion }),
@@ -513,6 +519,9 @@ function payloadToJson(event: RuntimeEvent): Record<string, unknown> {
       };
     case "capability.invocation.completed":
       return {
+        ...(event.payload.composition === undefined
+          ? {}
+          : { composition: event.payload.composition }),
         outcome: outcomeToJson(event.payload.outcome),
         ...(event.payload.admission === undefined ? {} : { admission: event.payload.admission }),
         ...(event.payload.observedStatus === undefined

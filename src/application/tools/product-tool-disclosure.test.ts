@@ -30,7 +30,12 @@ describe("discloseProductTools", () => {
   test("publishes a bounded exact-schema subset with an inspectable receipt", () => {
     const tools = workspaceTools();
     const disclosure = discloseProductTools(
-      createProductCapabilityRegistry(tools.registry.generation, tools.registry),
+      createProductCapabilityRegistry(
+        tools.registry.generation,
+        tools.registry,
+        [],
+        (id) => tools.runner.hasBinding?.(id) === true,
+      ),
       tools.registry,
     );
 
@@ -67,7 +72,12 @@ describe("discloseProductTools", () => {
   test("uses the task-aware deterministic plan before publishing schemas", () => {
     const tools = workspaceTools();
     const disclosure = discloseProductTools(
-      createProductCapabilityRegistry(tools.registry.generation, tools.registry),
+      createProductCapabilityRegistry(
+        tools.registry.generation,
+        tools.registry,
+        [],
+        (id) => tools.runner.hasBinding?.(id) === true,
+      ),
       tools.registry,
       { task: "Find every reference to a.ts", intent: "read" },
     );
@@ -87,7 +97,12 @@ describe("discloseProductTools", () => {
   test("clamps disclosure count to the hard model-schema bound", () => {
     const tools = workspaceTools();
     const disclosure = discloseProductTools(
-      createProductCapabilityRegistry(tools.registry.generation, tools.registry),
+      createProductCapabilityRegistry(
+        tools.registry.generation,
+        tools.registry,
+        [],
+        (id) => tools.runner.hasBinding?.(id) === true,
+      ),
       tools.registry,
       { maximum: Number.POSITIVE_INFINITY },
     );
@@ -99,7 +114,12 @@ describe("discloseProductTools", () => {
   test("omits permissive schemas instead of exposing a catch-all boundary", () => {
     const tools = workspaceTools();
     const disclosure = discloseProductTools(
-      createProductCapabilityRegistry(tools.registry.generation, tools.registry),
+      createProductCapabilityRegistry(
+        tools.registry.generation,
+        tools.registry,
+        [],
+        (id) => tools.runner.hasBinding?.(id) === true,
+      ),
       tools.registry,
     );
 
@@ -114,7 +134,12 @@ describe("discloseProductTools", () => {
 
   test("makes profile restrictions inspectable while keeping eligible reads", () => {
     const registry = workspaceTools().registry;
-    const capabilities = createProductCapabilityRegistry(registry.generation, registry);
+    const capabilities = createProductCapabilityRegistry(
+      registry.generation,
+      registry,
+      [],
+      () => true,
+    );
     const ask = discloseProductTools(capabilities, registry, {
       executionPolicy: resolveExecutionProfile("ask", configurationGeneration.from(7)),
     });
@@ -141,7 +166,12 @@ describe("discloseProductTools", () => {
   test("does not disclose registered tools when the named consumer runtime is unavailable", () => {
     const tools = workspaceTools();
     const disclosure = discloseProductTools(
-      createProductCapabilityRegistry(tools.registry.generation, tools.registry),
+      createProductCapabilityRegistry(
+        tools.registry.generation,
+        tools.registry,
+        [],
+        (id) => tools.runner.hasBinding?.(id) === true,
+      ),
       tools.registry,
       {
         consumer: "native-model",

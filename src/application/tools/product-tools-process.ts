@@ -389,6 +389,10 @@ export function composeProductProcessTools(ports: ProductProcessToolPorts): Prod
   const registry = registryResult.value;
 
   const runner: ToolRunnerPort = {
+    hasBinding: (id) => {
+      const entry = registry.resolveByCapabilityId(id);
+      return entry !== null && entry.manifest.name !== "open_pty";
+    },
     async execute(request: ToolRunnerRequest): Promise<ToolInvocationOutcome> {
       if (request.signal.aborted) {
         return { status: "cancelled", effect: "none" };
