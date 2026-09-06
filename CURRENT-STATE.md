@@ -625,7 +625,7 @@ routing. The current product turn still receives one selected provider catalog
 and fixed adapter, so cross-profile or cross-provider fallback is not
 executable; GitHub issue #215 owns immutable per-attempt route and provider
 recovery. Configured role-level aggregate token, time, and cost budgets are
-recorded rather than enforced across retries and provider continuations; #205
+recorded rather than enforced across retries and provider continuations; #936
 owns their hierarchical enforcement.
 
 OpenTUI's model picker is connected to the live turn path. A selection must
@@ -829,9 +829,15 @@ eight concurrent units and one per conflict key. The tool manifest's separate
 `maxGlobal` and `maxPerWorkspace` declarations are not propagated by the
 product gateway, which schedules each concurrent invocation as its own one-item
 batch. The standalone hierarchical `BudgetLedger` is not composed into the
-runtime, and duplicate reservation IDs can overwrite ledger records. GitHub
-issue #205 owns manifest-limit propagation, reservation identity, and enforced
-hierarchical admission; #158 applies those bounds to nested agent scopes.
+runtime. Its limits are validated non-negative safe integers and copied at
+creation; reservation IDs cannot be reused after admission or settlement.
+Reservations check every ancestor before charging, including the safe-integer
+accounting ceiling for unlimited dimensions. Each scheduled execution uses a
+fresh reservation ID even when work names recur across scheduler generations
+or instances. These accounting guarantees do not enforce live product budgets.
+GitHub issue #936 owns manifest-limit propagation and shared whole-task
+admission; #937 owns durable coordination and uncertain settlement; #938 owns
+platform resource ceilings. #158 applies those bounds to nested agent scopes.
 
 The gateway accepts an injectable `ProductToolConfirmationPort` and fails closed
 when confirmation is required but no authorized presenter exists. Normal CLI

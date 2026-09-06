@@ -16,6 +16,7 @@ import {
   effectOf,
   NO_RETRY,
   type PriorityClass,
+  type ReservationId,
   type SchedulerPort,
   type ScopeKind,
   type WorkUnit,
@@ -624,6 +625,87 @@ describe("budgets", () => {
     const report = ledger.report(budgetId);
     expect(report?.dimensions.bytes.consumed).toBe(0);
     expect(report?.dimensions.bytes.reserved).toBe(0);
+    expect(ledger.openReservationCount()).toBe(0);
+  });
+});
+
+describe("reservation identity across executions", () => {
+  test("numeric accounting exhaustion is reported as a budget refusal before launch", async () => {
+    const clock = createManualClock(instant(0));
+    const ledger = createBudgetLedger();
+    const budgetId = "shared-budget" as BudgetId;
+    ledger.createRoot(budgetId, {});
+    const previous = "previous" as ReservationId;
+    ledger.reserve(budgetId, previous, { operations: Number.MAX_SAFE_INTEGER });
+    ledger.consume(previous, { operations: Number.MAX_SAFE_INTEGER });
+    const scheduler = createScheduler<string>({ clock, budget: { ledger, budgetId } });
+    let launched = false;
+    const result = await scheduler.submit(unit("overflow"), async () => {
+      launched = true;
+      return "unexpected";
+    });
+    expect(result.kind).toBe("refused");
+    if (result.kind === "refused") {
+      expect(result.error).toEqual({
+        code: "budget-exhausted",
+        unitId: workUnitId("overflow"),
+        dimension: "operations",
+        remaining: 0,
+      });
+    }
+    expect(launched).toBe(false);
+    expect(ledger.openReservationCount()).toBe(0);
+  });
+
+  test.each([false, true])(
+    "repeated work IDs settle separately across schedulers: %s",
+    async (separateSchedulers) => {
+      const clock = createManualClock(instant(0));
+      const ledger = createBudgetLedger();
+      const budgetId = "shared-budget" as BudgetId;
+      ledger.createRoot(budgetId, { operations: 2, bytes: 20 });
+      const options = { clock, budget: { ledger, budgetId } };
+      const first = createScheduler<string>(options);
+      const second = separateSchedulers ? createScheduler<string>(options) : first;
+      const left = deferred<string>();
+      const right = deferred<string>();
+      const pending = [
+        first.submit(unit("same", { expectedOutputBytes: 10 }), () => left.promise),
+        second.submit(unit("same", { expectedOutputBytes: 10 }), () => right.promise),
+      ];
+      await flush();
+      expect(ledger.openReservationCount()).toBe(2);
+      expect(ledger.report(budgetId)?.dimensions.operations.reserved).toBe(2);
+      left.resolve("left");
+      right.resolve("right");
+      expect((await Promise.all(pending)).map((result) => result.kind)).toEqual([
+        "completed",
+        "completed",
+      ]);
+      expect(ledger.openReservationCount()).toBe(0);
+      expect(ledger.report(budgetId)?.dimensions.operations.consumed).toBe(2);
+      expect(ledger.report(budgetId)?.dimensions.operations.reserved).toBe(0);
+      expect(ledger.report(budgetId)?.dimensions.bytes.remaining).toBe(0);
+      let launched = false;
+      const exhausted = await first.submit(unit("same"), async () => {
+        launched = true;
+        return "unexpected";
+      });
+      expect(exhausted.kind).toBe("refused");
+      expect(launched).toBe(false);
+    },
+  );
+
+  test("sequential submissions may reuse a work ID without reusing its reservation", async () => {
+    const clock = createManualClock(instant(0));
+    const ledger = createBudgetLedger();
+    const budgetId = "shared-budget" as BudgetId;
+    ledger.createRoot(budgetId, { operations: 2 });
+    const scheduler = createScheduler<string>({ clock, budget: { ledger, budgetId } });
+    for (let index = 0; index < 2; index += 1) {
+      expect((await scheduler.submit(unit("same"), async () => "done")).kind).toBe("completed");
+    }
+    expect(ledger.report(budgetId)?.dimensions.operations.consumed).toBe(2);
     expect(ledger.openReservationCount()).toBe(0);
   });
 });

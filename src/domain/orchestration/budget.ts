@@ -55,6 +55,13 @@ export type BudgetError =
   | { readonly code: "unknown-budget"; readonly budgetId: BudgetId }
   | { readonly code: "unknown-reservation"; readonly reservationId: ReservationId }
   | { readonly code: "duplicate-budget"; readonly budgetId: BudgetId }
+  | { readonly code: "duplicate-reservation"; readonly reservationId: ReservationId }
+  | {
+      readonly code: "accounting-overflow";
+      readonly budgetId: BudgetId;
+      readonly dimension: BudgetDimension;
+      readonly remaining: number;
+    }
   | {
       readonly code: "non-integer-amount";
       readonly dimension: BudgetDimension;
@@ -116,13 +123,13 @@ export function enlargesLimits(inherited: BudgetLimits, requested: BudgetLimits)
   });
 }
 
-export function validateAmounts(amounts: BudgetAmounts): Result<void, BudgetError> {
+function validateValues(values: BudgetLimits, allowUnlimited: boolean): Result<void, BudgetError> {
   for (const dimension of BUDGET_DIMENSIONS) {
-    const amount = amounts[dimension];
-    if (amount === undefined) {
+    const amount = values[dimension];
+    if (amount === undefined || (allowUnlimited && amount === null)) {
       continue;
     }
-    if (!Number.isSafeInteger(amount)) {
+    if (typeof amount !== "number" || !Number.isSafeInteger(amount)) {
       return err({ code: "non-integer-amount", dimension });
     }
     if (amount < 0) {
@@ -130,4 +137,12 @@ export function validateAmounts(amounts: BudgetAmounts): Result<void, BudgetErro
     }
   }
   return ok(undefined);
+}
+
+export function validateAmounts(amounts: BudgetAmounts): Result<void, BudgetError> {
+  return validateValues(amounts, false);
+}
+
+export function validateLimits(limits: BudgetLimits): Result<void, BudgetError> {
+  return validateValues(limits, true);
 }

@@ -16,6 +16,7 @@ export {
   isBudgetDimension,
   narrowLimits,
   validateAmounts,
+  validateLimits,
 } from "./budget.ts";
 export type {
   AutomationOpportunity,
