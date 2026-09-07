@@ -13,7 +13,7 @@ import type {
   ProcessStreamName,
 } from "../../process/process-capture.ts";
 
-export const HUSH_REDUCER_VERSION = "hush.v34";
+export const HUSH_REDUCER_VERSION = "hush.v35";
 
 /** Longest reduced projection Hush may emit. */
 export const MAX_HUSH_REDUCED_BYTES = 64 * 1_024;
@@ -35,11 +35,12 @@ export const HUSH_FAMILIES = [
   "http",
   "search",
   "listing",
-  "generic",
+  "compound",
+  "unknown",
 ] as const;
 export type HushFamily = (typeof HUSH_FAMILIES)[number];
 
-export const HUSH_STRATEGIES = ["specialized", "generic", "passthrough"] as const;
+export const HUSH_STRATEGIES = ["specialized", "passthrough"] as const;
 export type HushStrategy = (typeof HUSH_STRATEGIES)[number];
 
 export const HUSH_FIDELITIES = ["exact", "deterministic-reduction", "raw-fallback"] as const;
@@ -103,7 +104,7 @@ export type HushResult = {
 export type HushError = {
   readonly kind: "hush";
   readonly code: "invalid-request";
-  readonly reason: "invalid-reduced-limit" | "invalid-pattern";
+  readonly reason: "invalid-reduced-limit" | "invalid-pattern" | "invalid-strategy";
 };
 
 export type HushPort = {

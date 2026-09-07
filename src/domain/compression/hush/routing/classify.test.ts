@@ -15,6 +15,7 @@ describe("Hush rule matching", () => {
     });
     expect(classifyCommand(bash("git status && cargo test"), report(""))).toMatchObject({
       reducerId: "shell.compound",
+      family: "compound",
       matched: true,
       matchedBy: "shell-compound",
     });
@@ -26,7 +27,8 @@ describe("Hush rule matching", () => {
       matchedBy: "output-shape",
     });
     expect(classifyCommand(argv("/usr/bin/unknown"), report("plain output"))).toMatchObject({
-      reducerId: "generic",
+      reducerId: "safe.passthrough",
+      family: "unknown",
       matched: false,
       matchedBy: "fallback",
     });

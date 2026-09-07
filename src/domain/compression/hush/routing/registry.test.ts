@@ -275,7 +275,7 @@ describe("Hush command rules", () => {
         expect(shape.compound, example).toBe(false);
         const policy = matchHushCommand(shape.tokens);
         expect(policy?.reducerId, example).toBe(entry.reducerId);
-        expect(policy?.reducerId, example).not.toBe("generic");
+        expect(policy?.reducerId, example).not.toBe("safe.passthrough");
       }
     }
   });
@@ -356,7 +356,7 @@ describe("Hush command rules", () => {
     expect(reduced.value.truncated).toBe(false);
   });
 
-  test("runs every rule as a non-generic recoverable projection", () => {
+  test("runs every command rule as a recoverable projection", () => {
     const capture = longReport();
     for (const entry of HUSH_COMMAND_RULES) {
       const example = entry.examples[0];

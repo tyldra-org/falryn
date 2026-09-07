@@ -1,9 +1,9 @@
 /** Ordered Hush reducer routing and executable lookup. */
 
 import { reduceCompound } from "../reducers/compound/reduce.ts";
+import { passthroughProjection } from "../reducers/fallback.ts";
 import { reduceGitDiff } from "../reducers/git/diff.ts";
 import { reduceGitLog } from "../reducers/git/log/reduce.ts";
-import { reduceOperation } from "../reducers/operation/reduce.ts";
 import { reduceSearch } from "../reducers/search/reduce.ts";
 import {
   APPLE_AND_NATIVE_RULES,
@@ -62,15 +62,15 @@ export const HUSH_COMMAND_RULES = [
 
 export type HushCommandReducerId = (typeof HUSH_COMMAND_RULES)[number]["reducerId"];
 
-export const GENERIC_RULE: HushReductionRule = {
-  family: "generic",
-  reducerId: "generic",
-  projection: "operation",
-  reduce: reduceOperation,
+export const PASSTHROUGH_RULE: HushReductionRule = {
+  family: "unknown",
+  reducerId: "safe.passthrough",
+  projection: "passthrough",
+  reduce: ({ capture, maxBytes, patterns }) => passthroughProjection(capture, maxBytes, patterns),
 };
 
 export const SHELL_COMPOUND_RULE: HushReductionRule = {
-  family: "generic",
+  family: "compound",
   reducerId: "shell.compound",
   projection: "compound",
   reduce: reduceCompound,

@@ -10,13 +10,13 @@ import type {
 import type { HushCommandIdentity, HushFamily } from "../contracts.ts";
 import { commandShape, normalizeCommandTokens } from "../invocation/normalize.ts";
 import {
-  GENERIC_RULE,
   type HushCommandClassification,
   type HushReductionRule,
   matchHushCommand,
   OUTPUT_GIT_DIFF_RULE,
   OUTPUT_GIT_LOG_RULE,
   OUTPUT_SEARCH_RULE,
+  PASSTHROUGH_RULE,
   SHELL_COMPOUND_RULE,
 } from "./index.ts";
 
@@ -34,7 +34,7 @@ export function classifyCommand(
   }
   const outputPolicy = policyFromOutputShape(capture.stdout);
   if (outputPolicy === null) {
-    return { ...GENERIC_RULE, ...shape, matched: false, matchedBy: "fallback" };
+    return { ...PASSTHROUGH_RULE, ...shape, matched: false, matchedBy: "fallback" };
   }
   return { ...outputPolicy, ...shape, matched: true, matchedBy: "output-shape" };
 }
@@ -73,8 +73,10 @@ export function classifyReducerId(tokens: readonly string[], family: HushFamily)
     case "data":
     case "log":
     case "http":
-    case "generic":
-      return "generic";
+    case "unknown":
+      return "safe.passthrough";
+    case "compound":
+      return "shell.compound";
     default:
       return assertNever(family, "unhandled hush family");
   }

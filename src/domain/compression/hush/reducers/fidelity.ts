@@ -9,7 +9,7 @@ export function fidelityFor(
   projection: HushStreamProjection,
   capture: ProcessCaptureReport,
 ): HushFidelity {
-  if (fallback === "reducer-failure") {
+  if (fallback !== null) {
     return "raw-fallback";
   }
   if (

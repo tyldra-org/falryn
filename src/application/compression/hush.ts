@@ -106,7 +106,7 @@ export type HushIntegratorOptions = {
 export function expectedFamiliesForOrigin(origin: HushOrigin): readonly HushFamily[] | undefined {
   switch (origin) {
     case "shell":
-      return ["listing", "search", "generic"];
+      return ["listing", "search", "compound", "unknown"];
     case "git":
       return ["git"];
     case "test":
