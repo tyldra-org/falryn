@@ -70,7 +70,7 @@ export const DIRECT_DEPENDENCY_POLICY: readonly DirectDependencyPolicy[] = [
   {
     name: "openai",
     group: "dependencies",
-    version: "7.9.0",
+    version: "7.10.0",
     license: "Apache-2.0",
     repository: "github:openai/openai-node",
   },
