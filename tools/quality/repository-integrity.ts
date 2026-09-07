@@ -112,7 +112,7 @@ export const DIRECT_DEPENDENCY_POLICY: readonly DirectDependencyPolicy[] = [
   {
     name: "@types/bun",
     group: "devDependencies",
-    version: "1.4.0",
+    version: "1.4.1",
     license: "MIT",
     repository: "https://github.com/DefinitelyTyped/DefinitelyTyped",
   },
