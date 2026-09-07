@@ -4,7 +4,7 @@ import type { ProcessCaptureReport } from "../../../../../process/process-captur
 import type { HushStreamProjection } from "../../../contracts.ts";
 import { gitSubcommand, gitSubcommandArguments } from "../../../invocation/git.ts";
 import type { HushReducer } from "../../contracts.ts";
-import { genericProjection } from "../../fallback.ts";
+import { passthroughProjection } from "../../fallback.ts";
 import { shortestText } from "../../shared/text.ts";
 import { boundStream, boundText, joinStreams } from "../../stream.ts";
 import { formatNativeGitLog } from "./format.ts";
@@ -21,7 +21,7 @@ export function gitLogProjection(
 ): HushStreamProjection {
   const source = capture.stdout.inlineText;
   if (source === null || capture.stdout.encoding === "binary") {
-    return genericProjection(capture, maxBytes, patterns);
+    return passthroughProjection(capture, maxBytes, patterns);
   }
 
   const subcommand = gitSubcommand(commandTokens);

@@ -168,7 +168,7 @@ const processOutput = z
             .object({
               id: z.string().min(1),
               version: z.string().min(1),
-              strategy: z.enum(["specialized", "generic", "passthrough"]),
+              strategy: z.enum(["specialized", "passthrough"]),
             })
             .strict(),
           omissions: z.array(

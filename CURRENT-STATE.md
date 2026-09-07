@@ -775,6 +775,18 @@ confirmation, hooks, scheduling, capture, redaction, deadlines, cancellation,
 persistence, provenance, and result bounds remain on the same product-tool
 path.
 
+Hush `hush.v35` selects a supported command or output-shape reducer, or returns
+bounded raw output. Unknown commands and expected-family misses use
+`safe.passthrough`, strategy `passthrough`, and domain fidelity `raw-fallback`;
+reducer exceptions use the same fallback and record a failure omission.
+Repeated lines remain intact on these fallback paths. The generic strategy and
+reducer have been removed, and requests for the removed strategy are rejected.
+Unknown commands have family `unknown`; the existing shell compound reducer has
+family `compound`. Command-specific reducers retain their own output policies.
+The product envelope selects raw output whenever the domain returns passthrough
+and describes its actual inline or artifact-backed fidelity. Native structured
+Git tool results continue to return their typed results directly.
+
 Small non-secret raw text is returned exactly in separate stdout and stderr
 fields. Mandatory secret replacement preserves line and column layout. The
 projection states that ordering is preserved per stream rather than claiming a

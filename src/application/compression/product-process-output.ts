@@ -79,6 +79,12 @@ function exactInline(stream: ProcessStreamCapture): boolean {
   );
 }
 
+function exactRawInline(stream: ProcessStreamCapture): boolean {
+  return (
+    exactInline(stream) && stream.inlineBytes.byteLength <= MAX_PRODUCT_PROCESS_RAW_INLINE_BYTES
+  );
+}
+
 function needsExactArtifact(
   stream: ProcessStreamCapture,
   mode: ProductProcessOutputMode,
@@ -87,7 +93,7 @@ function needsExactArtifact(
   if (stream.byteCount === 0 && stream.artifact === null) {
     return false;
   }
-  return reduced || !exactInline(stream) || (mode === "raw" && stream.encoding === "binary");
+  return reduced || (mode === "raw" ? !exactRawInline(stream) : !exactInline(stream));
 }
 
 async function retainStream(
@@ -266,12 +272,24 @@ function streamProjection(
   recovery: ProductProcessRecoveryHandle | null,
   includeRawText: boolean,
 ) {
+  const rawText =
+    includeRawText && stream.encoding === "utf-8"
+      ? stream.inlineBytes.byteLength <= MAX_PRODUCT_PROCESS_RAW_INLINE_BYTES
+        ? stream.inlineText
+        : new TextDecoder("utf-8", { ignoreBOM: true }).decode(
+            stream.inlineBytes.subarray(0, MAX_PRODUCT_PROCESS_RAW_INLINE_BYTES),
+            { stream: true },
+          )
+      : null;
   return {
     byteCount: stream.byteCount,
     encoding: stream.encoding,
-    completeInline: mode === "raw" ? includeRawText && exactInline(stream) : exactInline(stream),
-    omittedBytes: mode === "raw" && !includeRawText ? stream.byteCount : stream.omittedBytes,
-    text: mode === "raw" && includeRawText ? stream.inlineText : null,
+    completeInline: mode === "raw" ? includeRawText && exactRawInline(stream) : exactInline(stream),
+    omittedBytes:
+      mode === "raw"
+        ? stream.byteCount - new TextEncoder().encode(rawText ?? "").byteLength
+        : stream.omittedBytes,
+    text: mode === "raw" ? rawText : null,
     recovery,
   };
 }
@@ -322,10 +340,10 @@ function outputValue(
 ) {
   const rawComplete =
     includeRawText &&
-    exactInline(observation.capture.stdout) &&
-    exactInline(observation.capture.stderr);
+    exactRawInline(observation.capture.stdout) &&
+    exactRawInline(observation.capture.stderr);
   const rawRecoveryRequired = [observation.capture.stdout, observation.capture.stderr].filter(
-    (stream) => stream.byteCount > 0 && (!includeRawText || !exactInline(stream)),
+    (stream) => stream.byteCount > 0 && (!includeRawText || !exactRawInline(stream)),
   );
   const rawRecoverable = rawRecoveryRequired.every((stream) => handles.has(stream.stream));
   return {
@@ -432,7 +450,9 @@ export async function projectProductProcessOutput(input: {
       ? outputValue(input.observation, input.invocationId, input.outputMode, "hush", noHandles)
       : bareRawOutput;
   const candidateMode =
-    input.outputMode === "raw" || encodedBytes(bareHushOutput) > encodedBytes(bareRawOutput)
+    input.outputMode === "raw" ||
+    !observedReduced ||
+    encodedBytes(bareHushOutput) > encodedBytes(bareRawOutput)
       ? "raw"
       : "hush";
   const candidateReduced = candidateMode === "hush" && observedReduced;

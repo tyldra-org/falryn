@@ -175,6 +175,84 @@ function processTools(capture: ProcessCapturePort = capturePort()) {
 }
 
 describe("composeProductProcessTools", () => {
+  test.skipIf(process.platform === "win32").each(["run_process", "run_shell"] as const)(
+    "%s keeps unsupported repeated output raw and retains exact oversized recovery",
+    async (toolName) => {
+      const artifacts = memoryArtifacts();
+      const tools = composeProductProcessTools({
+        generation: configurationGeneration.from(0),
+        capture: createHostProcessCapturePort({ artifacts }),
+        workspaceCwd: process.cwd(),
+        artifacts,
+        loom: createLoomPort({ artifacts }),
+        workspaceId: "ws-1",
+        sessionId: "session-1",
+      });
+      for (const { name, expected, inline } of [
+        { name: "small", expected: "repeat\n".repeat(10), inline: "repeat\n".repeat(10) },
+        {
+          name: "large",
+          expected: "repeat\n".repeat(1_600),
+          inline: "repeat\n".repeat(878).slice(0, 6 * 1_024),
+        },
+        { name: "utf8", expected: "ab🙂\n".repeat(1_600), inline: `${"ab🙂\n".repeat(877)}ab` },
+      ]) {
+        const outcome = await tools.runner.execute({
+          invocationId: invocationId.from(`inv-raw-fallback-${toolName}-${name}`),
+          toolCallId: `call-raw-fallback-${toolName}-${name}`,
+          toolName,
+          capabilityId: capabilityId.from(`builtin:workspace/${toolName}@1`),
+          version: 1,
+          effect: "mutation",
+          input:
+            toolName === "run_process"
+              ? { executable: "/usr/bin/printf", argv: ["%s", expected] }
+              : { command: `printf '%s' '${expected}'` },
+          signal: new AbortController().signal,
+        });
+        expect(outcome.status).toBe("completed");
+        if (outcome.status !== "completed") throw new Error("expected completed process");
+        expect(
+          tools.registry.resolveByName(toolName)?.manifest.outputSchema.safeParse(outcome.output)
+            .success,
+        ).toBe(true);
+        expect(outcome.output).toMatchObject({
+          outputMode: "hush",
+          projection: { kind: "raw" },
+          process: { exitCode: 0 },
+        });
+        expect(encoder.encode(JSON.stringify(outcome.output)).byteLength).toBeLessThanOrEqual(
+          MAX_PRODUCT_PROCESS_MODEL_BYTES,
+        );
+        if (name === "small") {
+          expect(outcome.output.stdout).toMatchObject({
+            text: expected,
+            completeInline: true,
+            recovery: null,
+          });
+        } else {
+          expect(outcome.output.stdout).toMatchObject({
+            text: inline,
+            completeInline: false,
+            omittedBytes: encoder.encode(expected).byteLength - encoder.encode(inline).byteLength,
+          });
+          expect((outcome.output.stdout as { recovery: unknown }).recovery).not.toBeNull();
+          const retained = outcome.result?.artifacts.find((artifact) => artifact.required);
+          expect(retained?.committed).toBe(true);
+          if (retained === undefined) throw new Error("missing exact fallback artifact");
+          const recovered = await artifacts.readRange(
+            retained.artifactId,
+            0,
+            encoder.encode(expected).byteLength,
+          );
+          expect(recovered.ok).toBe(true);
+          if (!recovered.ok) throw new Error("unable to recover output");
+          expect(new TextDecoder().decode(recovered.value.bytes)).toBe(expected);
+        }
+      }
+    },
+  );
+
   test("defaults outputMode to hush and rejects unsupported modes", () => {
     const { tools } = processTools();
     const process = tools.registry.resolveByName("run_process");

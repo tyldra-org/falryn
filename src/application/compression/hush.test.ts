@@ -158,7 +158,12 @@ const bunTest = [
 
 describe("createHushIntegrator", () => {
   test("maps origins onto expected hush families", () => {
-    expect(expectedFamiliesForOrigin("shell")).toEqual(["listing", "search", "generic"]);
+    expect(expectedFamiliesForOrigin("shell")).toEqual([
+      "listing",
+      "search",
+      "compound",
+      "unknown",
+    ]);
     expect(expectedFamiliesForOrigin("git")).toEqual(["git"]);
     expect(expectedFamiliesForOrigin("test")).toEqual(["test", "lint", "typecheck", "build"]);
     expect(expectedFamiliesForOrigin("search")).toEqual(["search"]);
@@ -323,7 +328,8 @@ describe("createHushIntegrator", () => {
       return;
     }
     expect(reduced.value.hush.family).toBe("git");
-    expect(reduced.value.hush.strategy).toBe("generic");
+    expect(reduced.value.hush.strategy).toBe("passthrough");
+    expect(reduced.value.projection).toBe(captured.stdout.inlineText ?? "");
     expect(reduced.value.hush.fallbackReason).toBe("expected-family-miss");
     expect(reduced.value.capture.stdout.inlineText).toBe(captured.stdout.inlineText);
   });

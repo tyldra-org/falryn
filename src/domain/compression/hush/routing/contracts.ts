@@ -38,7 +38,7 @@ export type HushCommandMatcher = (tokens: readonly string[]) => boolean;
 export type HushReductionRule = Readonly<{
   family: HushFamily;
   reducerId: string;
-  projection: HushProjectionKind;
+  projection: HushProjectionKind | "passthrough";
   reduce: HushReducer;
 }>;
 

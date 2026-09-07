@@ -19,11 +19,7 @@ import {
   MAX_HUSH_REDUCED_BYTES,
 } from "./hush/contracts.ts";
 import type { HushReduceInput } from "./hush/reducers/contracts.ts";
-import {
-  genericProjection,
-  passthroughProjection,
-  rawFallbackProjection,
-} from "./hush/reducers/fallback.ts";
+import { passthroughProjection, rawFallbackProjection } from "./hush/reducers/fallback.ts";
 import { fidelityFor } from "./hush/reducers/fidelity.ts";
 import { classifyCommand, commandIdentity } from "./hush/routing/classify.ts";
 
@@ -79,12 +75,11 @@ export function reduceHush(request: HushRequest): Result<HushResult, HushError> 
     selectedReducerId = "safe.passthrough";
     projection = passthroughProjection(request.capture, maxBytes, patterns);
   } else if (
-    requested === "generic" ||
     !classification.matched ||
     (request.expectedFamilies !== undefined && !request.expectedFamilies.includes(family))
   ) {
-    strategy = "generic";
-    selectedReducerId = "generic";
+    strategy = "passthrough";
+    selectedReducerId = "safe.passthrough";
     if (!classification.matched) {
       fallbackReason = "unknown-family";
     } else if (
@@ -93,7 +88,7 @@ export function reduceHush(request: HushRequest): Result<HushResult, HushError> 
     ) {
       fallbackReason = "expected-family-miss";
     }
-    projection = genericProjection(request.capture, maxBytes, patterns);
+    projection = passthroughProjection(request.capture, maxBytes, patterns);
   } else {
     try {
       projectionMaxBytes =
@@ -108,8 +103,8 @@ export function reduceHush(request: HushRequest): Result<HushResult, HushError> 
       };
       projection = classification.reduce(reducerInput);
     } catch {
-      strategy = "generic";
-      selectedReducerId = "generic";
+      strategy = "passthrough";
+      selectedReducerId = "safe.passthrough";
       fallbackReason = "reducer-failure";
       projection = rawFallbackProjection(request.capture, maxBytes);
     }
@@ -160,6 +155,13 @@ export function reduceHush(request: HushRequest): Result<HushResult, HushError> 
 }
 
 export function validateHushRequest(request: HushRequest): HushError["reason"] | null {
+  if (
+    request.strategy !== undefined &&
+    request.strategy !== "specialized" &&
+    request.strategy !== "passthrough"
+  ) {
+    return "invalid-strategy";
+  }
   if (
     request.maxReducedBytes !== undefined &&
     (!Number.isSafeInteger(request.maxReducedBytes) ||

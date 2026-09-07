@@ -2,7 +2,7 @@ import type { ProcessCaptureReport } from "../../../../process/process-capture.t
 import type { HushStreamProjection } from "../../contracts.ts";
 import type { HushReducer } from "../contracts.ts";
 import { formatExternalUnifiedDiff } from "../diff/format.ts";
-import { genericProjection } from "../fallback.ts";
+import { passthroughProjection } from "../fallback.ts";
 import { shortestText } from "../shared/text.ts";
 import { boundStream, boundText, joinStreams } from "../stream.ts";
 import { formatGitUnifiedDiff } from "./diff/format.ts";
@@ -19,7 +19,7 @@ export function gitDiffProjection(
 ): HushStreamProjection {
   const source = capture.stdout.inlineText;
   if (source === null || capture.stdout.encoding === "binary") {
-    return genericProjection(capture, maxBytes, patterns);
+    return passthroughProjection(capture, maxBytes, patterns);
   }
 
   const canFormat =
