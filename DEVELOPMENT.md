@@ -53,6 +53,23 @@ bun run build
 Falryn is pre-release. There is no supported package-manager installation or
 published binary yet.
 
+### Upgrade the Bun runtime
+
+Update both runtime selectors in `package.json` together. CI and benchmark jobs
+read that file through `.github/actions/setup-bun`; do not add another version
+pin to individual workflows. Updating `@types/bun` changes TypeScript definitions,
+not the installed runtime or an already compiled executable.
+
+Use the candidate runtime for frozen installation, `bun run check`,
+`bun run build`, and the applicable compiled smoke command. Check the executable's
+reported runtime with `./dist/falryn --version`. Preserve historical benchmark
+fixtures and qualify other platforms through their existing CI lanes.
+
+Evaluate bytecode, minification and test-isolation changes separately from the
+runtime upgrade. Measure Falryn startup, memory and artifact size before claiming
+an improvement; upstream benchmarks do not establish Falryn's results. Rollback
+requires restoring the previous runtime pin and rebuilding the executable.
+
 ## Repository map
 
 The directory name is not enough to prove ownership. Read the neighboring
