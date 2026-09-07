@@ -253,8 +253,8 @@ const STEP_TIMEOUT_MS = 4_000;
 type Driver = {
   readonly process: Bun.Subprocess;
   readonly pty: Pty;
-  /** Writes bytes as input and returns what the interface drew in response. */
-  press(bytes: string | readonly number[]): Promise<string>;
+  /** Waits for expected output before accepting a quiet rendering interval. */
+  press(bytes: string | readonly number[], expected?: readonly string[]): Promise<string>;
   /** Resizes the terminal under the running shell and returns what it redrew. */
   resize(columns: number, rows: number): Promise<string>;
 };
@@ -318,7 +318,7 @@ async function runOnPty(
 
   let read = pty.transcript().length;
   /** Waits until the interface stops drawing, and returns what this step drew. */
-  const drawn = async (): Promise<string> => {
+  const drawn = async (expected: readonly string[] = []): Promise<string> => {
     const deadline = Bun.nanoseconds() + STEP_TIMEOUT_MS * 1_000_000;
     let quietSince = Bun.nanoseconds();
     let seen = pty.transcript().length;
@@ -330,7 +330,10 @@ async function runOnPty(
         quietSince = Bun.nanoseconds();
         continue;
       }
-      if (Bun.nanoseconds() - quietSince >= QUIET_MS * 1_000_000) {
+      if (
+        Bun.nanoseconds() - quietSince >= QUIET_MS * 1_000_000 &&
+        expected.every((text) => pty.transcript().slice(read).includes(text))
+      ) {
         break;
       }
     }
@@ -349,12 +352,12 @@ async function runOnPty(
   await act({
     process: started,
     pty,
-    async press(bytes) {
+    async press(bytes, expected) {
       writeSync(
         pty.master,
         Buffer.from(typeof bytes === "string" ? bytes : Uint8Array.from(bytes)),
       );
-      return await drawn();
+      return await drawn(expected);
     },
     async resize(columns, rows) {
       const stty = Bun.spawn(["stty", "rows", String(rows), "columns", String(columns)], {
@@ -649,7 +652,9 @@ describe.if(runnable)("the compiled shell on a real terminal", () => {
         await driver.press([0x09]);
         await driver.press([0x09]);
         typed = await driver.press("hello");
-        submitted = await driver.press([0x0d]);
+        // Submission can pause between clearing the composer and resolving the
+        // provider. A quiet terminal alone does not establish completion.
+        submitted = await driver.press([0x0d], ["Not sent", "provider connection is unavailable"]);
         await driver.press([0x03]);
       });
       expect(run.exitCode).toBe(EXIT_CODES.COMPLETED);
