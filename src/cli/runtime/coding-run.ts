@@ -99,6 +99,7 @@ import {
 import { attachResultEvents } from "../output/result-events.ts";
 import type { CliStreams } from "../output/streams.ts";
 import { startConfigurationReloadWatcher } from "./configuration-reload.ts";
+import { modelPreferencesFrom } from "./model-configuration.ts";
 import {
   openProductArtifactSession,
   type ProductArtifactSession,
@@ -660,6 +661,9 @@ export async function runCoding(
             additionalCandidates: workspaceTools.contextCandidates,
           });
     const executor = createProductLiveTurnExecutor({
+      modelConfigurationGeneration: () => graph.loader.current()?.generation ?? generation,
+      modelPreferences: () =>
+        modelPreferencesFrom(graph.loader.current()?.values ?? configuration.values),
       runtime: composed.value,
       clock: graph.clock,
       providerCatalog,

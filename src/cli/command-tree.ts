@@ -1,3 +1,4 @@
+import { modelSettingsRequestSchema } from "../application/providers/model-settings.ts";
 /**
  * The yargs command tree, and the parse that never prints and never exits.
  *
@@ -330,6 +331,22 @@ function build(argv: readonly string[], lenientPositionals = false): ReturnType<
               type: "string",
               describe: "bounded JSON input file as an alternate to explicit flags",
             }),
+      )
+      .command(
+        lenientPositionals ? "model [action]" : "model <action>",
+        "Inspect or edit shared model role settings.",
+        (group) =>
+          group
+            .positional("action", {
+              type: "string",
+              choices: ["roles", "configure", "reset", "migrate", "clear"],
+            })
+            .option("input", {
+              type: "string",
+              describe:
+                "JSON file containing a shared model settings request; mutations require the inspected revision",
+            }),
+        () => {},
       )
       .command(
         providerCommand,
@@ -708,6 +725,41 @@ export async function parseInvocation(argv: readonly string[]): Promise<Invocati
   if (typeof commitPlanArgs === "string") {
     return { kind: "invalid", message: commitPlanArgs };
   }
+  let modelArgs:
+    | import("../application/providers/model-settings.ts").ModelSettingsRequest
+    | undefined;
+  if (command === "model") {
+    let request: unknown = { kind: "inspect" };
+    if (parsed.input !== undefined) {
+      const loaded = await loadTaskInputFile(parsed.input);
+      if (!loaded.ok) return { kind: "invalid", message: loaded.error };
+      try {
+        request = JSON.parse(loaded.value);
+      } catch {
+        return { kind: "invalid", message: "Model settings input must be JSON." };
+      }
+    } else if (parsed.action !== "roles")
+      return {
+        kind: "invalid",
+        message: "This model action requires --input with a settings request.",
+      };
+    const checked = modelSettingsRequestSchema.safeParse(request);
+    if (!checked.success) return { kind: "invalid", message: "Invalid model settings request." };
+    const matches =
+      parsed.action === "roles"
+        ? checked.data.kind === "inspect"
+        : parsed.action === "configure"
+          ? checked.data.kind === "edit" && checked.data.edit.kind !== "reset"
+          : parsed.action === "reset"
+            ? checked.data.kind === "edit" && checked.data.edit.kind === "reset"
+            : parsed.action === "migrate"
+              ? checked.data.kind === "preview-migration" || checked.data.kind === "apply-migration"
+              : parsed.action === "clear" &&
+                (checked.data.kind === "preview-clear" || checked.data.kind === "apply-clear");
+    if (!matches)
+      return { kind: "invalid", message: "The model action does not match its input request." };
+    modelArgs = checked.data;
+  }
   const providerArgs = providerArgumentsFor(command, parsed);
   if (typeof providerArgs === "string") {
     return { kind: "invalid", message: providerArgs };
@@ -730,6 +782,7 @@ export async function parseInvocation(argv: readonly string[]): Promise<Invocati
     taskArgs,
     commitPlanArgs,
     providerArgs,
+    ...(modelArgs === undefined ? {} : { modelArgs }),
   };
 }
 

@@ -143,4 +143,13 @@ export const APPLICATION_COMMANDS: readonly ShellCommand[] = [
     availability: (state) =>
       state.hasScrollableContent ? AVAILABLE : unavailable("nothing is scrollable yet"),
   },
+  {
+    id: "model.settings",
+    title: "Model roles",
+    description: "Inspect and configure shared model role defaults and overrides.",
+    context: "global",
+    defaultBinding: null,
+    keywords: ["model", "settings", "roles", "presets"],
+    availability: () => AVAILABLE,
+  },
 ];

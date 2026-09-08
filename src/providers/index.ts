@@ -220,7 +220,6 @@ export type {
 export { modelRequestId } from "./configuration/identity.ts";
 export type {
   AdvisorRoleRoute,
-  CompactRoleRoute,
   FallbackTarget,
   IntentRoleMap,
   ModelPolicy,

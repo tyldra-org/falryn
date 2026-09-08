@@ -23,6 +23,9 @@ import type { SessionCreationPort } from "../session-creation.ts";
 import type { ShellState } from "../shell-state.ts";
 
 export type ShellRuntime = {
+  readonly modelSettings:
+    | import("../../../application/providers/model-settings.ts").ModelSettingsService
+    | null;
   readonly state: ShellState;
   readonly commandState: CommandState;
   run(id: string): boolean;

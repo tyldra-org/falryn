@@ -61,23 +61,9 @@ function samplePolicy(overrides?: {
           : [],
         budgets: { attempts: 2 },
       },
-      "fast-read": {
-        providerProfileId: "primary-profile",
-        providerId: primary,
-        modelId: fast,
-        reasoning: "minimal",
-      },
-      "fast-edit": {
-        providerProfileId: "primary-profile",
-        providerId: primary,
-        modelId: fast,
-        reasoning: "minimal",
-      },
-      commit: {
-        providerProfileId: "primary-profile",
-        providerId: primary,
-        modelId: deep,
-        reasoning: "balanced",
+      fast: {
+        default: { providerProfileId: "primary-profile", providerId: primary, modelId: fast },
+        use: { memory: "evaluated", compaction: "evaluated" },
       },
       plan: {
         providerProfileId: "primary-profile",
@@ -97,12 +83,6 @@ function samplePolicy(overrides?: {
         providerId: secondary,
         modelId: deep,
         use: "explicit",
-      },
-      compact: {
-        providerProfileId: "primary-profile",
-        providerId: primary,
-        modelId: fast,
-        use: "evaluated",
       },
     },
   });
@@ -255,7 +235,7 @@ describe("model policy", () => {
     expect(policy.roles.default.fallbacks).toEqual([]);
     expect(policy.roles.default.budgets.attempts).toBe(2);
     expect(resolveIntentRole(policy, "planning")).toBe("plan");
-    expect(resolveIntentRole(policy, "read")).toBe("fast-read");
+    expect(resolveIntentRole(policy, "read")).toBe("default");
   });
 
   test("parseModelPolicy rejects unknown role keys", () => {
@@ -372,7 +352,7 @@ describe("resolveModelRoute", () => {
         : entry,
     );
     const selected = resolveModelRoute({
-      policy: samplePolicy(),
+      policy: samplePolicy({ reasoning: "provider-default" }),
       catalogs: googleCatalogs,
       intent: "coding",
     });
@@ -384,7 +364,7 @@ describe("resolveModelRoute", () => {
     expect(selected.receipt.promptCacheMinimumInputTokens).toBe(4096);
 
     const incompatible = resolveModelRoute({
-      policy: samplePolicy(),
+      policy: samplePolicy({ reasoning: "provider-default" }),
       catalogs: googleCatalogs.map((entry) =>
         entry.providerId === primary ? { ...entry, adapterKind: "openai" as const } : entry,
       ),
@@ -431,11 +411,7 @@ describe("resolveModelRoute", () => {
       catalogs: maxCatalogs,
       intent: "coding",
     });
-    expect(deepRequest.kind).toBe("selected");
-    if (deepRequest.kind === "selected") {
-      expect(deepRequest.receipt.reasoning).toBe("deep");
-      expect(deepRequest.receipt.reasoningControl).toBeNull();
-    }
+    expect(deepRequest.kind).toBe("no-eligible-route");
 
     const unsupported = resolveModelRoute({
       policy: samplePolicy({ reasoning: "max" }),
@@ -483,7 +459,7 @@ describe("resolveModelRoute", () => {
         catalogs: commandCodeCatalogs,
         intent: "coding",
       });
-      expect(selected.kind).toBe("selected");
+      expect(selected.kind).toBe(expected === null ? "no-eligible-route" : "selected");
       if (selected.kind === "selected") {
         expect(selected.receipt.reasoningControl).toBe(expected);
       }
@@ -743,8 +719,8 @@ describe("resolveModelRoute", () => {
 });
 
 describe("specialized role support", () => {
-  test("defaultRequirementsForIntent covers fast-edit, read, and vision", () => {
-    expect(defaultRequirementsForIntent("fastEdit")).toEqual({
+  test("defaultRequirementsForIntent covers edit, read, and vision", () => {
+    expect(defaultRequirementsForIntent("edit")).toEqual({
       tools: true,
       streaming: true,
     });
@@ -754,10 +730,10 @@ describe("specialized role support", () => {
     });
     expect(intentPrefersReasoningEffort("planning")).toBe(true);
     expect(intentPrefersReasoningEffort("deepReview")).toBe(true);
-    expect(intentPrefersReasoningEffort("fastEdit")).toBe(false);
+    expect(intentPrefersReasoningEffort("edit")).toBe(false);
   });
 
-  test("read and fastEdit map to distinct fast roles with requirement defaults", () => {
+  test("read and edit preserve the main route despite a configured Fast default", () => {
     const read = resolveModelRoute({
       policy: samplePolicy(),
       catalogs: catalogs(),
@@ -767,21 +743,22 @@ describe("specialized role support", () => {
     if (read.kind !== "selected") {
       return;
     }
-    expect(read.receipt.role).toBe("fast-read");
-    expect(read.receipt.modelId).toBe(fast);
+    expect(read.receipt.role).toBe("default");
+    expect(read.receipt.modelId).toBe(deep);
     expect(read.receipt.requiredCapabilities).toEqual({ streaming: true });
-    expect(read.receipt.reasoning).toBe("minimal");
+    expect(read.receipt.reasoning).toBe("balanced");
 
     const edit = resolveModelRoute({
       policy: samplePolicy(),
       catalogs: catalogs(),
-      intent: "fastEdit",
+      intent: "edit",
     });
     expect(edit.kind).toBe("selected");
     if (edit.kind !== "selected") {
       return;
     }
-    expect(edit.receipt.role).toBe("fast-edit");
+    expect(edit.receipt.role).toBe("default");
+    expect(edit.receipt.modelId).toBe(deep);
     expect(edit.receipt.requiredCapabilities).toEqual({ tools: true, streaming: true });
   });
 
@@ -880,7 +857,7 @@ describe("specialized role support", () => {
     });
   });
 
-  test("compact evaluated selects for compression and memory", () => {
+  test("Fast evaluated use selects for compression and memory", () => {
     for (const intent of ["compression", "memory"] as const) {
       const outcome = resolveModelRoute({
         policy: samplePolicy(),
@@ -891,20 +868,18 @@ describe("specialized role support", () => {
       if (outcome.kind !== "selected") {
         return;
       }
-      expect(outcome.receipt.role).toBe("compact");
+      expect(outcome.receipt.role).toBe("fast");
       expect(outcome.receipt.modelId).toBe(fast);
     }
   });
 
-  test("compact use off fails closed", () => {
+  test("Fast compaction use off fails closed", () => {
     const parsed = parseModelPolicy({
       roles: {
         default: { providerProfileId: "primary-profile", providerId: primary, modelId: deep },
-        compact: {
-          providerProfileId: "primary-profile",
-          providerId: primary,
-          modelId: fast,
-          use: "off",
+        fast: {
+          default: { providerProfileId: "primary-profile", providerId: primary, modelId: fast },
+          use: { compaction: "off" },
         },
       },
     });
@@ -919,7 +894,7 @@ describe("specialized role support", () => {
     });
     expect(outcome).toEqual({
       kind: "role-disabled",
-      role: "compact",
+      role: "fast",
       intent: "compression",
     });
   });

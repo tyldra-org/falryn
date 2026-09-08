@@ -293,7 +293,7 @@ describe("durable process tasks in product hosts", () => {
               account: null,
               updatedAt: graph.clock.now(),
               profile: {
-                profileId: "tasks",
+                profileId: provider.identity.profileId,
                 providerId: providerId.from("falryn-deterministic"),
                 adapterKind: "deterministic",
                 displayName: "Tasks",
@@ -309,7 +309,7 @@ describe("durable process tasks in product hosts", () => {
               },
             },
             auth: {
-              profileId: "tasks",
+              profileId: provider.identity.profileId,
               state: "ready",
               consumer: "provider:tasks",
               observedAt: instant(0),

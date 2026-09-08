@@ -571,6 +571,11 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
         return;
       }
 
+      if (slash.commandId === "model.settings") {
+        dispatch({ kind: "open-overlay", route: { kind: "model-settings" } });
+        dispatch({ kind: "composer", action: { kind: "draft", text: "" } });
+        return;
+      }
       if (slash.commandId === "compression.show") {
         dispatch({ kind: "open-overlay", route: { kind: "compression" } });
         dispatch({ kind: "composer", action: { kind: "draft", text: "" } });
@@ -933,6 +938,11 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
     confirm,
     editSecret,
     compression,
+    modelSettings:
+      options.submission !== undefined && "modelSettings" in options.submission
+        ? ((options.submission as import("../composer/product-submission.ts").ProductSubmissionPort)
+            .modelSettings ?? null)
+        : null,
     selectCompression,
     selectControl,
     selectProfile,

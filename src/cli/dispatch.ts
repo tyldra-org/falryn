@@ -14,6 +14,7 @@
 
 import { createFileAttachmentProbe } from "../application/context/index.ts";
 import { createGitDashboard } from "../application/git/index.ts";
+import type { ModelSettingsRequest } from "../application/providers/model-settings.ts";
 import {
   assertNever,
   type EnvironmentPort,
@@ -60,7 +61,9 @@ import {
   runUnderScope,
   untilScopeStops,
 } from "./runtime/invocation-scope.ts";
+import { modelPreferencesFrom } from "./runtime/model-configuration.ts";
 import { openProductArtifactSession } from "./runtime/product-artifact-session.ts";
+import { composeProductModelSettings } from "./runtime/product-model-settings.ts";
 import { composeProductProviderConnections } from "./runtime/product-provider-connections.ts";
 import { composeProductShellAttachments } from "./runtime/product-shell-attachments.ts";
 import {
@@ -78,6 +81,7 @@ import {
 import { versionText } from "./version.ts";
 
 export type DispatchOptions = {
+  readonly modelRequest?: ModelSettingsRequest;
   readonly argv: readonly string[];
   readonly streams: CliStreams;
   /**
@@ -246,7 +250,10 @@ async function runCommand(
     services,
     overrides,
     globals,
-    options,
+    {
+      ...options,
+      ...(invocation.modelArgs === undefined ? {} : { modelRequest: invocation.modelArgs }),
+    },
   );
   const rendered = await render(result, globals, streams, services);
   if (
@@ -434,6 +441,27 @@ async function launchShell(
   try {
     if (productArtifactSession !== null) {
       productAttachments = await composeProductShellAttachments({
+        modelConfigurationGeneration: () =>
+          graph.loader.current()?.generation ?? configurationGeneration,
+        modelPreferences: () =>
+          modelPreferencesFrom(graph.loader.current()?.values ?? configuration),
+        modelSettings: composeProductModelSettings(graph, globals, () => {
+          const selected = productAttachments?.submission.modelSelection.get();
+          if (selected === null || selected === undefined) return null;
+          const saved = modelPreferencesFrom(graph.loader.current()?.values ?? configuration).roles
+            .default;
+          return {
+            ...selected,
+            reasoning:
+              saved?.modelId === selected.modelId &&
+              saved.providerId === selected.providerId &&
+              saved.providerProfileId === selected.providerProfileId
+                ? saved.reasoning
+                : "provider-default",
+            fallbacks: [],
+            budgets: {},
+          };
+        }),
         eventStore: productArtifactSession.eventStore,
         clock: graph.clock,
         fileSystem: graph.fileSystem,

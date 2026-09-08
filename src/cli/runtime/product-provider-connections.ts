@@ -45,6 +45,7 @@ import {
 } from "../../providers/index.ts";
 import type { ProviderAdapterPort } from "../../providers/protocol/port.ts";
 import type { GlobalOptions } from "../options.ts";
+import { modelPreferencesFrom } from "./model-configuration.ts";
 import {
   loadProductConfiguration,
   productConfigurationLoadRequest,
@@ -181,7 +182,14 @@ export function composeProductProviderConnections(
   return {
     service,
     async resolveSelected(signal) {
-      const session = await service.openSelected(signal);
+      const values =
+        options.configuration ??
+        (await loadProductConfiguration(services, productConfigurationLoadRequest(globals), signal))
+          .values;
+      const session = await service.openSelected(
+        signal,
+        modelPreferencesFrom(values).roles.default?.providerProfileId,
+      );
       if (session.kind !== "ready") {
         return { kind: "unavailable", code: session.issue.code, session };
       }

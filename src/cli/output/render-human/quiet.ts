@@ -1,3 +1,4 @@
+import { modelSettingsLines } from "../../../application/providers/model-settings-format.ts";
 /** Primary-result projection for quiet CLI output. */
 
 import { assertNever } from "../../../domain/foundation/index.ts";
@@ -124,6 +125,8 @@ export function quietResultLines(result: RunCommandResult): readonly string[] {
               (root) => `${safe(root.rootId)}\t${safe(root.name)}\t${safe(root.path)}`,
             ),
           ];
+    case "model":
+      return result.payload === null ? [] : modelSettingsLines(result.payload).map(safe);
     case "provider":
       return result.payload === null || result.payload.kind === "failed"
         ? []
