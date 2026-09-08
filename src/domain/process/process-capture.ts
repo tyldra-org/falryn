@@ -68,6 +68,10 @@ export type ProcessCaptureRequest = CommandRequest & {
   readonly maxLineBytes?: number | undefined;
   readonly maxQueueBytes?: number | undefined;
   readonly maxArtifactBytes?: number | undefined;
+  /** Trusted supervisor callbacks. Never accepted from model input. */
+  readonly ownership?: ProcessCaptureOwnership;
+  /** Supervisors persist chunks separately instead of duplicating them in a report. */
+  readonly retainChunkEvents?: boolean;
 };
 
 export type ProcessCaptureExit = {
@@ -83,7 +87,15 @@ export type ProcessCaptureStop =
       readonly kind: "capture-exceeded";
       readonly reason: "total" | "artifact" | "queue" | "line" | "inline" | "encoding";
     }
-  | { readonly kind: "uncertain"; readonly reason: "artifact-ingest-failed" | "unconfirmed-exit" };
+  | {
+      readonly kind: "uncertain";
+      readonly reason:
+        | "artifact-ingest-failed"
+        | "unconfirmed-exit"
+        | "ownership-unavailable"
+        | "owned-descendants-remained"
+        | "owner-persistence-failed";
+    };
 
 export type ProcessCaptureArtifactRef = {
   readonly artifactId: ArtifactId;
@@ -183,11 +195,26 @@ export type ProcessCaptureError =
       readonly code: "spawn-failed";
       readonly detail: string | null;
     }
-  | { readonly kind: "process-capture"; readonly code: "invalid-capture-id" };
+  | {
+      readonly kind: "process-capture";
+      readonly code: "invalid-capture-id" | "ownership-unavailable";
+    };
 
 export type ProcessCaptureListener = (event: ProcessCaptureEvent) => void | Promise<void>;
 
+export type OwnedProcessCapture = {
+  readonly identity: import("./process-identity.ts").ProcessBirthIdentity;
+  /** Revalidate mutable application authority after the native birth probe, immediately before signaling. */
+  stop(force: boolean, authorize?: () => boolean): Promise<"requested" | "unavailable">;
+};
+
+export type ProcessCaptureOwnership = {
+  started(handle: OwnedProcessCapture): Promise<void>;
+  event(event: ProcessCaptureEvent): Promise<void>;
+};
+
 export type ProcessCapturePort = {
+  readonly supportsOwnership?: boolean;
   run(
     request: ProcessCaptureRequest,
     listener?: ProcessCaptureListener,
@@ -324,6 +351,7 @@ export function createProcessCaptureCollector(options: {
   readonly limits: ProcessCaptureLimits;
   readonly artifacts: ArtifactStorePort | null;
   readonly listener?: ProcessCaptureListener | undefined;
+  readonly retainChunkEvents?: boolean;
 }): ProcessCaptureCollector {
   const streams: Record<ProcessStreamName, StreamBuffer> = {
     stdout: newStreamBuffer(),
@@ -341,7 +369,7 @@ export function createProcessCaptureCollector(options: {
   const emit = async (detail: ProcessCaptureEventDetail): Promise<void> => {
     order += 1;
     const event = { captureId: options.captureId, order, ...detail } as ProcessCaptureEvent;
-    events.push(event);
+    if (event.kind !== "chunk" || options.retainChunkEvents !== false) events.push(event);
     if (options.listener === undefined) {
       return;
     }
@@ -495,6 +523,9 @@ export function createProcessCaptureCollector(options: {
       );
       if (spillFailed(stdout) || spillFailed(stderr)) {
         nextStop = { kind: "uncertain", reason: "artifact-ingest-failed" };
+      }
+      if (killStage === "unconfirmed") {
+        nextStop = { kind: "uncertain", reason: "unconfirmed-exit" };
       }
       await emit({ kind: "exited", exit, stop: nextStop });
       return {

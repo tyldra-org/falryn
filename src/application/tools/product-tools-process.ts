@@ -12,8 +12,14 @@ import { z } from "zod";
 import type { ArtifactStorePort } from "../../domain/artifacts/artifact.ts";
 import type { ConfigurationGeneration } from "../../domain/foundation/index.ts";
 import { duration, sessionId as sessionIdCodec } from "../../domain/foundation/index.ts";
+import {
+  processTaskControlSchema,
+  processTaskExecutionSchema,
+  processTaskReceiptSchema,
+} from "../../domain/orchestration/process-task.ts";
 import type { ProcessCapturePort, ProcessCaptureRequest } from "../../domain/process/index.ts";
 import { MAX_COMMAND_OUTPUT_BYTES } from "../../domain/process/index.ts";
+import type { ProcessCaptureOwnership } from "../../domain/process/process-capture.ts";
 import type {
   ToolCatalog,
   ToolInvocationOutcome,
@@ -45,7 +51,9 @@ import {
   type ProductProcessOutputMode,
   projectProductProcessOutput,
 } from "../compression/product-process-output.ts";
+import type { ProcessTaskSupervisor } from "../orchestration/process-task-supervisor.ts";
 import type { ToolRunnerPort, ToolRunnerRequest } from "../runtime/tool-call-loop.ts";
+import { createProcessTaskToolEntry } from "./process-task-tool.ts";
 
 export const PRODUCT_PROCESS_TOOLS_OWNER = "#712";
 
@@ -59,6 +67,7 @@ const runProcessInput = z
     argv: z.array(z.string()).default([]),
     cwd: z.string().min(1).optional(),
     timeoutMs: z.number().int().positive().optional(),
+    execution: processTaskExecutionSchema.optional(),
     origin: z.enum(["shell", "git", "test", "search", "process"]).optional(),
     environment: z.record(z.string(), z.string()).optional(),
     stdinScratch: z
@@ -75,6 +84,7 @@ const runShellInput = z
     bashExecutable: z.string().min(1).optional(),
     cwd: z.string().min(1).optional(),
     timeoutMs: z.number().int().positive().optional(),
+    execution: processTaskExecutionSchema.optional(),
     environment: z.record(z.string(), z.string()).optional(),
     outputMode: z.enum(PRODUCT_PROCESS_OUTPUT_MODES).default("hush"),
   })
@@ -140,6 +150,8 @@ const processOutput = z
           "capture-exceeded:encoding",
           "uncertain:artifact-ingest-failed",
           "uncertain:unconfirmed-exit",
+          "uncertain:ownership-unavailable",
+          "uncertain:owner-persistence-failed",
         ]),
         exitCode: z.int().nullable(),
         signal: z.string().nullable(),
@@ -268,6 +280,7 @@ function asStringRecord(value: unknown): Readonly<Record<string, string>> | null
 export type ProductProcessToolPorts = {
   readonly generation: ConfigurationGeneration;
   readonly capture: ProcessCapturePort;
+  readonly tasks?: ProcessTaskSupervisor;
   readonly workspaceCwd?: string;
   readonly artifacts?: ArtifactStorePort;
   readonly loom?: LoomPort;
@@ -304,8 +317,8 @@ export function composeProductProcessTools(ports: ProductProcessToolPorts): Prod
     if (typeof input !== "object" || input === null || Array.isArray(input)) {
       return { ok: false, code: "malformed-input" };
     }
-    const handle = Reflect.get(input, "handle");
-    const revision = Reflect.get(input, "revision");
+    const handle = "handle" in input ? input.handle : undefined;
+    const revision = "revision" in input ? input.revision : undefined;
     const owner = sessionIdCodec.parse(ports.sessionId);
     if (ports.scratch === undefined || !owner.ok) {
       return { ok: false, code: "scratch-unavailable" };
@@ -346,6 +359,62 @@ export function composeProductProcessTools(ports: ProductProcessToolPorts): Prod
     };
   };
 
+  const runCaptured = async (
+    request: ToolRunnerRequest,
+    origin: HushOrigin,
+    command: ProcessCaptureRequest,
+    outputMode: ProductProcessOutputMode,
+  ): Promise<ToolInvocationOutcome> => {
+    const execute = async (
+      ownership?: ProcessCaptureOwnership,
+      signal = request.signal,
+      timeoutMs = Number(command.timeoutMs),
+    ) => {
+      const observed = await observeCommand(
+        origin,
+        {
+          ...command,
+          signal,
+          timeoutMs: duration(timeoutMs),
+          ...(ownership === undefined ? {} : { ownership, retainChunkEvents: false }),
+        },
+        outputMode,
+      );
+      if (!observed.ok) return { capture: null, outcome: failed(errorCode(observed.error)) };
+      const outcome = await projectProductProcessOutput({
+        observation: observed.value,
+        invocationId: request.invocationId,
+        outputMode,
+        ports: {
+          generation: Number(ports.generation),
+          ...(ports.artifacts === undefined ? {} : { artifacts: ports.artifacts }),
+          ...(ports.loom === undefined ? {} : { loom: ports.loom }),
+          ...(ports.workspaceId === undefined ? {} : { workspaceId: ports.workspaceId }),
+          ...(ports.sessionId === undefined ? {} : { sessionId: ports.sessionId }),
+        },
+        signal,
+      });
+      return { capture: observed.value.capture, outcome };
+    };
+    if (request.input.execution === undefined) return (await execute()).outcome;
+    const execution = processTaskExecutionSchema.safeParse(request.input.execution);
+    if (!execution.success) return failed("malformed-execution");
+    if (ports.tasks === undefined || ports.capture.supportsOwnership !== true)
+      return {
+        status: "unavailable",
+        effect: "none",
+        reason: "process-task-ownership-unavailable",
+      };
+    return ports.tasks.run({
+      request,
+      execution: execution.data,
+      timeoutMs: Number(command.timeoutMs),
+      outputMode,
+      run: execute,
+    });
+  };
+  const processOrTaskOutput = z.union([processOutput, processTaskReceiptSchema]);
+
   const entries: ToolRegistryEntry[] = [
     mustEntry(
       createToolRegistryEntry(
@@ -355,7 +424,7 @@ export function composeProductProcessTools(ports: ProductProcessToolPorts): Prod
           "Run an argv process, optionally supplying one exact scratch revision through stdin. outputMode hush is the default; raw bypasses only reduction while capture, safety, redaction, bounds, and targeted Read recovery remain active",
           "mutation",
         ),
-        { inputSchema: runProcessInput, outputSchema: processOutput },
+        { inputSchema: runProcessInput, outputSchema: processOrTaskOutput },
       ),
     ),
     mustEntry(
@@ -366,7 +435,7 @@ export function composeProductProcessTools(ports: ProductProcessToolPorts): Prod
           "Run a Bash command. outputMode hush is the default; raw bypasses only reduction while capture, safety, redaction, bounds, and targeted Read recovery remain active",
           "mutation",
         ),
-        { inputSchema: runShellInput, outputSchema: processOutput },
+        { inputSchema: runShellInput, outputSchema: processOrTaskOutput },
       ),
     ),
     mustEntry(
@@ -380,6 +449,7 @@ export function composeProductProcessTools(ports: ProductProcessToolPorts): Prod
         { inputSchema: openObject, outputSchema: openObject },
       ),
     ),
+    ...(ports.tasks === undefined ? [] : [createProcessTaskToolEntry()]),
   ];
 
   const registryResult = createToolRegistry(ports.generation, entries);
@@ -398,6 +468,13 @@ export function composeProductProcessTools(ports: ProductProcessToolPorts): Prod
         return { status: "cancelled", effect: "none" };
       }
       switch (request.toolName) {
+        case "process_task": {
+          const input = processTaskControlSchema.safeParse(request.input);
+          if (!input.success) return failed("malformed-input");
+          return ports.tasks === undefined
+            ? { status: "unavailable", effect: "none", reason: "process-task-store-unavailable" }
+            : ports.tasks.control(request, input.data);
+        }
         case "run_process": {
           const executable = request.input.executable;
           const argv = request.input.argv;
@@ -427,7 +504,8 @@ export function composeProductProcessTools(ports: ProductProcessToolPorts): Prod
           const outputMode = ports.userOutputMode?.() === "raw" ? "raw" : requestedOutputMode;
           const stdin = await scratchStdin(request.input.stdinScratch, request.signal);
           if (!stdin.ok) return failed(stdin.code);
-          const observed = await observeCommand(
+          return runCaptured(
+            request,
             origin,
             {
               mode: "argv",
@@ -446,22 +524,6 @@ export function composeProductProcessTools(ports: ProductProcessToolPorts): Prod
             },
             outputMode,
           );
-          if (!observed.ok) {
-            return failed(errorCode(observed.error));
-          }
-          return projectProductProcessOutput({
-            observation: observed.value,
-            invocationId: request.invocationId,
-            outputMode,
-            ports: {
-              generation: Number(ports.generation),
-              ...(ports.artifacts === undefined ? {} : { artifacts: ports.artifacts }),
-              ...(ports.loom === undefined ? {} : { loom: ports.loom }),
-              ...(ports.workspaceId === undefined ? {} : { workspaceId: ports.workspaceId }),
-              ...(ports.sessionId === undefined ? {} : { sessionId: ports.sessionId }),
-            },
-            signal: request.signal,
-          });
         }
         case "run_shell": {
           const command = request.input.command;
@@ -489,7 +551,8 @@ export function composeProductProcessTools(ports: ProductProcessToolPorts): Prod
             return failed("malformed-input");
           }
           const outputMode = ports.userOutputMode?.() === "raw" ? "raw" : requestedOutputMode;
-          const observed = await observeCommand(
+          return runCaptured(
+            request,
             "shell",
             {
               mode: "bash",
@@ -507,22 +570,6 @@ export function composeProductProcessTools(ports: ProductProcessToolPorts): Prod
             },
             outputMode,
           );
-          if (!observed.ok) {
-            return failed(errorCode(observed.error));
-          }
-          return projectProductProcessOutput({
-            observation: observed.value,
-            invocationId: request.invocationId,
-            outputMode,
-            ports: {
-              generation: Number(ports.generation),
-              ...(ports.artifacts === undefined ? {} : { artifacts: ports.artifacts }),
-              ...(ports.loom === undefined ? {} : { loom: ports.loom }),
-              ...(ports.workspaceId === undefined ? {} : { workspaceId: ports.workspaceId }),
-              ...(ports.sessionId === undefined ? {} : { sessionId: ports.sessionId }),
-            },
-            signal: request.signal,
-          });
         }
         case "open_pty":
           return {

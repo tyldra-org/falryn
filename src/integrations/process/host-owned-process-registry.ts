@@ -22,11 +22,19 @@ const TERMINATE_POLL_MS = 10;
 export type OwnedProcessRegistry = {
   /** Track an owned child until its `exited` promise settles. */
   adopt(pid: number, exited: Promise<unknown>): void;
+  /** Transfer durable capture/store lifetime; normal dispatch drains after projecting its response. */
+  retain(lifetime: OwnedProcessLifetime): boolean;
+  drain(): Promise<boolean>;
 };
 
 export type OwnedProcessRegistryBundle = {
   readonly registry: OwnedProcessRegistry;
   readonly shutdownParticipant: ShutdownParticipant;
+};
+
+export type OwnedProcessLifetime = {
+  interrupt(): void;
+  drain(): Promise<boolean>;
 };
 
 type TrackedProcess = {
@@ -36,8 +44,31 @@ type TrackedProcess = {
 
 export function createOwnedProcessRegistry(): OwnedProcessRegistryBundle {
   const tracked = new Map<number, TrackedProcess>();
+  const lifetimes = new Set<OwnedProcessLifetime>();
+  let draining: Promise<boolean> | null = null;
+  let interrupted = false;
 
   const registry: OwnedProcessRegistry = {
+    retain(lifetime) {
+      if (draining !== null || lifetimes.size >= 64) return false;
+      lifetimes.add(lifetime);
+      if (interrupted) lifetime.interrupt();
+      return true;
+    },
+    drain() {
+      draining ??= Promise.all(
+        [...lifetimes].map(async (lifetime) => {
+          try {
+            return await lifetime.drain();
+          } catch {
+            return false;
+          } finally {
+            lifetimes.delete(lifetime);
+          }
+        }),
+      ).then((results) => results.every(Boolean));
+      return draining;
+    },
     adopt(pid, exited) {
       if (!isOwnedPid(pid)) {
         return;
@@ -52,7 +83,12 @@ export function createOwnedProcessRegistry(): OwnedProcessRegistryBundle {
   const shutdownParticipant: ShutdownParticipant = {
     name: OWNED_PROCESS_SHUTDOWN_PARTICIPANT,
     phase: "terminate-children",
-    run: (context) => terminateTracked(tracked, context),
+    async run(context) {
+      interrupted = true;
+      for (const lifetime of lifetimes) lifetime.interrupt();
+      const [closed] = await Promise.all([registry.drain(), terminateTracked(tracked, context)]);
+      if (!closed) return new Promise<void>(() => {});
+    },
   };
 
   return { registry, shutdownParticipant };

@@ -8,6 +8,7 @@
  * deleting metadata and bytes.
  */
 
+import { randomUUID } from "node:crypto";
 import {
   type ArtifactId,
   type ArtifactProvenancePort,
@@ -20,6 +21,7 @@ import {
 } from "../../domain/artifacts/index.ts";
 import type { ExportName, PackageWriterPort } from "../../domain/extensions/index.ts";
 import { err, ok, type Result, type SessionId, sessionId } from "../../domain/foundation/index.ts";
+import { processTaskSnapshotSchema } from "../../domain/orchestration/process-task.ts";
 import {
   exportName,
   MAX_EXPORTED_ARTIFACTS,
@@ -38,19 +40,13 @@ import type {
   GcRetentionReason,
   MeasurementCompleteness,
   ReachabilityGcError,
+  SqliteBindings,
+  SqliteStatements,
   SqliteStorePort,
 } from "../../domain/storage/index.ts";
 import { createArtifactProvenanceRepository } from "../artifacts/artifact-provenance-repository.ts";
-import { ARTIFACT_TRANSFORMATIONS_TABLE } from "../artifacts/artifact-provenance-schema.ts";
 import { ARTIFACTS_TABLE } from "../artifacts/artifact-schema.ts";
-import {
-  EVENTS_TABLE,
-  INVOCATIONS_TABLE,
-  MODEL_ATTEMPTS_TABLE,
-  PROJECTION_CURSORS_TABLE,
-  SESSIONS_TABLE,
-  TURNS_TABLE,
-} from "../sqlite/schema.ts";
+import { INVOCATIONS_TABLE, SESSIONS_TABLE, TURNS_TABLE } from "../sqlite/schema.ts";
 import { type ExportOptions, verifyPackage } from "./export.ts";
 
 /** Sessions one plan may examine before reporting partial. */
@@ -70,6 +66,11 @@ const SELECT_SESSION_ARTIFACTS = `SELECT DISTINCT a.artifact_id AS artifactId
   JOIN ${INVOCATIONS_TABLE} i ON i.invocation_id = a.invocation_id
   JOIN ${TURNS_TABLE} t ON t.turn_id = i.turn_id
   WHERE t.session_id = $sessionId
+    AND ($includeReleased = 1 OR NOT EXISTS (
+      SELECT 1 FROM process_task_artifacts p WHERE p.artifact_id = a.artifact_id
+    ) OR EXISTS (
+      SELECT 1 FROM process_task_artifacts p WHERE p.artifact_id = a.artifact_id AND p.released = 0
+    ))
   LIMIT $limit`;
 
 const SELECT_ARTIFACTS = `SELECT artifact_id AS artifactId, digest AS digest,
@@ -213,9 +214,11 @@ function listArtifacts(
 function sessionArtifacts(
   store: SqliteStorePort,
   session: SessionId,
+  includeReleased = true,
 ): Result<readonly ArtifactId[], ReachabilityGcError> {
   const rows = store.read(SELECT_SESSION_ARTIFACTS, {
     sessionId: session,
+    includeReleased: includeReleased ? 1 : 0,
     limit: MAX_GC_EXAMINED_ARTIFACTS,
   });
   if (!rows.ok) {
@@ -236,7 +239,7 @@ function expandArtifacts(
   provenance: ArtifactProvenancePort,
   seeds: ReadonlySet<string>,
   signal?: AbortSignal,
-): ReadonlySet<string> {
+): Result<ReadonlySet<string>, ReachabilityGcError> {
   const reachable = new Set(seeds);
   for (const seed of seeds) {
     if (aborted(signal)) {
@@ -252,6 +255,8 @@ function expandArtifacts(
       (edge) => edge.parentArtifactId,
       MAX_ARTIFACT_LINEAGE_DEPTH,
     );
+    if (!parents.ok)
+      return err({ kind: "reachability-gc", code: "storage", detail: "read artifact lineage" });
     if (parents.ok) {
       for (const edge of parents.value) {
         reachable.add(String(edge.parentArtifactId));
@@ -264,6 +269,8 @@ function expandArtifacts(
       (edge) => edge.childArtifactId,
       MAX_ARTIFACT_LINEAGE_DEPTH,
     );
+    if (!children.ok)
+      return err({ kind: "reachability-gc", code: "storage", detail: "read artifact lineage" });
     if (children.ok) {
       for (const edge of children.value) {
         reachable.add(String(edge.parentArtifactId));
@@ -271,7 +278,7 @@ function expandArtifacts(
       }
     }
   }
-  return reachable;
+  return ok(reachable);
 }
 
 async function exportSessionSeeds(
@@ -331,6 +338,72 @@ async function exportSessionSeeds(
   return ok(seeds);
 }
 
+/** Also used inside the metadata transaction, after asynchronous export verification. */
+function gcRoots(
+  store: SqliteStorePort,
+  pinned: ReadonlySet<string>,
+  exports: ReadonlySet<SessionId>,
+): Result<
+  {
+    seedSessions: Set<string>;
+    taskSessions: Set<string>;
+    reachableArtifacts: ReadonlySet<string>;
+  },
+  ReachabilityGcError
+> {
+  const sessions = listSessions(store, MAX_GC_EXAMINED_SESSIONS);
+  if (!sessions.ok) return sessions;
+  const tasks = store.read("SELECT snapshot FROM process_tasks LIMIT 257");
+  const owned = store.read(
+    "SELECT DISTINCT artifact_id FROM process_task_artifacts WHERE released = 0 LIMIT $limit",
+    { limit: MAX_GC_EXAMINED_ARTIFACTS + 1 },
+  );
+  if (!tasks.ok || !owned.ok)
+    return err({ kind: "reachability-gc", code: "storage", detail: "read task retention roots" });
+  if (tasks.value.length > 256 || owned.value.length > MAX_GC_EXAMINED_ARTIFACTS)
+    return err({ kind: "reachability-gc", code: "bound-exceeded", bound: "task retention roots" });
+  const taskSessions = new Set<string>();
+  for (const row of tasks.value) {
+    try {
+      const task = processTaskSnapshotSchema.parse(JSON.parse(String(row.snapshot)));
+      taskSessions.add(task.owner.sessionId);
+    } catch {
+      return err({
+        kind: "reachability-gc",
+        code: "storage",
+        detail: "invalid task retention root",
+      });
+    }
+  }
+  const seedSessions = new Set<string>([...pinned, ...exports, ...taskSessions]);
+  for (const row of sessions.value.rows) if (row.closedAt === null) seedSessions.add(row.sessionId);
+  const artifactSeeds = new Set<string>();
+  for (const row of owned.value) {
+    const id = artifactId.parse(row.artifact_id);
+    if (!id.ok)
+      return err({
+        kind: "reachability-gc",
+        code: "storage",
+        detail: "invalid task artifact root",
+      });
+    artifactSeeds.add(id.value);
+  }
+  for (const seed of seedSessions) {
+    const parsed = sessionId.parse(seed);
+    if (!parsed.ok) continue;
+    const artifacts = sessionArtifacts(
+      store,
+      parsed.value,
+      pinned.has(seed) || exports.has(parsed.value),
+    );
+    if (!artifacts.ok) return artifacts;
+    for (const id of artifacts.value) artifactSeeds.add(id);
+  }
+  const reachable = expandArtifacts(createArtifactProvenanceRepository(store), artifactSeeds);
+  if (!reachable.ok) return reachable;
+  return ok({ seedSessions, taskSessions, reachableArtifacts: reachable.value });
+}
+
 /** Builds a reachability GC plan without deleting anything. */
 export async function planReachabilityGc(
   inputs: ReachabilityGcInputs,
@@ -358,44 +431,27 @@ export async function planReachabilityGc(
     return exportSeeds;
   }
 
-  const seedSessions = new Set<string>();
-  for (const row of sessionsListed.value.rows) {
-    const id = String(row.sessionId);
-    if (pinned.has(id)) {
-      seedSessions.add(id);
-    }
-    if (row.closedAt === null) {
-      seedSessions.add(id);
-    }
-  }
-  for (const id of exportSeeds.value) {
-    seedSessions.add(String(id));
-  }
-
-  const provenance = createArtifactProvenanceRepository(inputs.store);
-  const invocationSeeds = new Set<string>();
-  for (const seed of seedSessions) {
-    if (aborted(signal)) {
-      completeness = "partial";
-      break;
-    }
-    const parsed = sessionId.parse(seed);
-    if (!parsed.ok) {
-      continue;
-    }
-    const artifacts = sessionArtifacts(inputs.store, parsed.value);
-    if (!artifacts.ok) {
-      return artifacts;
-    }
-    for (const id of artifacts.value) {
-      invocationSeeds.add(String(id));
-    }
-  }
-
-  const reachableArtifacts = expandArtifacts(provenance, invocationSeeds, signal);
+  const roots = gcRoots(inputs.store, pinned, exportSeeds.value);
+  if (!roots.ok) return roots;
+  const { seedSessions, reachableArtifacts, taskSessions } = roots.value;
   const retainedCounts = new Map<GcRetentionReason, number>();
   const omissions: GcOmission[] = [];
   const candidates: GcCandidate[] = [];
+  const claims = inputs.store.read("SELECT digest, artifact_id FROM artifact_gc_claims LIMIT 257");
+  if (!claims.ok)
+    return err({ kind: "reachability-gc", code: "storage", detail: "read GC claims" });
+  if (claims.value.length > 256)
+    return err({ kind: "reachability-gc", code: "bound-exceeded", bound: "GC claims" });
+  const claimedDigests = new Set(claims.value.map((row) => String(row.digest)));
+  for (const claim of claims.value) {
+    omissions.push({
+      kind: "artifact",
+      identity: String(claim.artifact_id),
+      reason: "gc-claim-outstanding",
+    });
+    retain(retainedCounts, "gc-claim-outstanding");
+    completeness = "partial";
+  }
 
   for (const row of sessionsListed.value.rows) {
     const id = String(row.sessionId);
@@ -405,7 +461,7 @@ export async function planReachabilityGc(
       } else if (exportSeeds.value.has(row.sessionId)) {
         retain(retainedCounts, "export-seed");
       } else {
-        retain(retainedCounts, "open-session");
+        retain(retainedCounts, taskSessions.has(id) ? "reachable" : "open-session");
       }
       continue;
     }
@@ -428,6 +484,7 @@ export async function planReachabilityGc(
 
   for (const row of artifactsListed.value.rows) {
     const id = String(row.artifactId);
+    if (claimedDigests.has(row.digest)) continue;
     if (reachableArtifacts.has(id)) {
       retain(retainedCounts, "reachable");
       continue;
@@ -441,6 +498,8 @@ export async function planReachabilityGc(
       digest: row.digest,
       artifactId: row.artifactId,
     });
+    if (!references.ok)
+      return err({ kind: "reachability-gc", code: "storage", detail: "read digest references" });
     if (references.ok && (integerOf(references.value[0]?.count) ?? 0) > 0) {
       retain(retainedCounts, "shared-digest");
       omissions.push({ kind: "artifact", identity: id, reason: "shared-digest" });
@@ -474,55 +533,121 @@ function gcEffect(deleted: number, failed: number): GcOutcome["effect"] {
   return failed === 0 ? "completed" : "partial";
 }
 
+function transactionView(store: SqliteStorePort, statements: SqliteStatements): SqliteStorePort {
+  return {
+    ...store,
+    read: (sql: string, bindings?: SqliteBindings) => ok(statements.all(sql, bindings)),
+  };
+}
+
 function deleteSessionTree(
-  store: SqliteStorePort,
+  inputs: ReachabilityGcInputs,
+  exports: ReadonlySet<SessionId>,
   session: SessionId,
   stream: string,
-): Result<null, ReachabilityGcError> {
-  const written = store.write((statements) => {
-    statements.run(`DELETE FROM ${EVENTS_TABLE} WHERE stream_id = $streamId`, { streamId: stream });
+): Result<boolean, ReachabilityGcError> {
+  const store = inputs.store;
+  const written = store.write((statements): Result<boolean, ReachabilityGcError> => {
+    const transactional = transactionView(store, statements);
+    const roots = gcRoots(transactional, new Set(inputs.pinnedSessionIds), exports);
+    if (!roots.ok) return roots;
+    if (roots.value.seedSessions.has(session)) return ok(false);
+    const artifacts = sessionArtifacts(transactional, session);
+    if (!artifacts.ok) return artifacts;
+    if (artifacts.value.some((id) => roots.value.reachableArtifacts.has(id))) return ok(false);
+    statements.run("DELETE FROM events WHERE stream_id = $streamId", { streamId: stream });
     statements.run(
-      `DELETE FROM ${INVOCATIONS_TABLE} WHERE turn_id IN
-        (SELECT turn_id FROM ${TURNS_TABLE} WHERE session_id = $sessionId)`,
+      `DELETE FROM invocations WHERE turn_id IN
+        (SELECT turn_id FROM turns WHERE session_id = $sessionId)`,
       { sessionId: session },
     );
     statements.run(
-      `DELETE FROM ${MODEL_ATTEMPTS_TABLE} WHERE turn_id IN
-        (SELECT turn_id FROM ${TURNS_TABLE} WHERE session_id = $sessionId)`,
+      `DELETE FROM model_attempts WHERE turn_id IN
+        (SELECT turn_id FROM turns WHERE session_id = $sessionId)`,
       { sessionId: session },
     );
-    statements.run(`DELETE FROM ${TURNS_TABLE} WHERE session_id = $sessionId`, {
+    statements.run("DELETE FROM turns WHERE session_id = $sessionId", {
       sessionId: session,
     });
-    statements.run(`DELETE FROM ${PROJECTION_CURSORS_TABLE} WHERE stream_id = $streamId`, {
+    statements.run("DELETE FROM projection_cursors WHERE stream_id = $streamId", {
       streamId: stream,
     });
-    statements.run(`DELETE FROM ${SESSIONS_TABLE} WHERE session_id = $sessionId`, {
+    statements.run("DELETE FROM sessions WHERE session_id = $sessionId", {
       sessionId: session,
     });
-    return null;
+    return ok(true);
   });
   return written.ok
-    ? ok(null)
+    ? written.value.value
     : err({ kind: "reachability-gc", code: "storage", detail: "delete session tree" });
 }
 
 function deleteArtifactRecord(
-  store: SqliteStorePort,
+  inputs: ReachabilityGcInputs,
+  exports: ReadonlySet<SessionId>,
   id: ArtifactId,
-): Result<null, ReachabilityGcError> {
-  const written = store.write((statements) => {
-    statements.run(
-      `DELETE FROM ${ARTIFACT_TRANSFORMATIONS_TABLE}
+  digest: ContentDigest,
+  owner: string,
+): Result<"deleted" | GcRetentionReason, ReachabilityGcError> {
+  const store = inputs.store;
+  const written = store.write(
+    (statements): Result<"deleted" | GcRetentionReason, ReachabilityGcError> => {
+      const transactional = transactionView(store, statements);
+      const roots = gcRoots(transactional, new Set(inputs.pinnedSessionIds), exports);
+      if (!roots.ok) return roots;
+      if (roots.value.reachableArtifacts.has(id)) return ok("referenced");
+      const record = statements.all(
+        "SELECT digest, availability FROM artifacts WHERE artifact_id = $id",
+        { id },
+      )[0];
+      if (record?.digest !== digest || record.availability !== "available")
+        return ok("reserved-or-quarantined");
+      if (
+        statements.all("SELECT digest FROM artifact_gc_claims WHERE digest = $digest", { digest })
+          .length > 0
+      )
+        return ok("gc-claim-outstanding");
+      const shared = statements.all(SELECT_DIGEST_REFERENCES, { digest, artifactId: id });
+      if ((integerOf(shared[0]?.count) ?? 0) > 0) return ok("shared-digest");
+      statements.run(
+        "INSERT INTO artifact_gc_claims (digest, artifact_id, owner_id) VALUES ($digest, $id, $owner)",
+        { digest, id, owner },
+      );
+      statements.run(
+        `DELETE FROM artifact_transformations
         WHERE child_artifact_id = $id OR parent_artifact_id = $id`,
-      { id },
-    );
-    statements.run(`DELETE FROM ${ARTIFACTS_TABLE} WHERE artifact_id = $id`, { id });
-    return null;
-  });
+        { id },
+      );
+      statements.run("DELETE FROM artifacts WHERE artifact_id = $id", { id });
+      return ok("deleted");
+    },
+  );
   return written.ok
-    ? ok(null)
-    : err({ kind: "reachability-gc", code: "storage", detail: "delete artifact record" });
+    ? written.value.value
+    : err({ kind: "reachability-gc", code: "storage", detail: "claim and delete artifact record" });
+}
+
+/** Never adopts a prior invocation's claim, even after its process has disappeared. */
+async function removeClaimedBlob(
+  inputs: ReachabilityGcInputs,
+  digest: ContentDigest,
+  owner: string,
+  signal?: AbortSignal,
+): Promise<boolean> {
+  const claim = inputs.store.read(
+    "SELECT owner_id FROM artifact_gc_claims WHERE digest = $digest",
+    { digest },
+  );
+  if (!claim.ok || claim.value[0]?.owner_id !== owner) return false;
+  const removed = await inputs.blobs.remove({ scope: "content", digest }, signal);
+  if (!removed.ok) return false;
+  const released = inputs.store.write((sql) =>
+    sql.run("DELETE FROM artifact_gc_claims WHERE digest = $digest AND owner_id = $owner", {
+      digest,
+      owner,
+    }),
+  );
+  return released.ok && released.value.value.changes === 1;
 }
 
 /** Applies a GC plan bound to that plan's identity. */
@@ -543,19 +668,22 @@ export async function executeReachabilityGc(
 
   const refreshed = await planReachabilityGc(inputs, signal);
   if (!refreshed.ok) {
-    return err({ code: "cancelled" });
+    return err(refreshed.error);
   }
   if (refreshed.value.planId !== plan.planId) {
     return err({ code: "plan-mismatch", expected: refreshed.value.planId, confirmed: plan.planId });
   }
+  const exportSeeds = await exportSessionSeeds(inputs, signal);
+  if (!exportSeeds.ok) return err(exportSeeds.error);
+  const owner = randomUUID();
 
   let deletedSessions = 0;
   let deletedArtifacts = 0;
   let deletedBytes = 0;
   let failed = 0;
-  let completeness: MeasurementCompleteness = "complete";
+  let completeness: MeasurementCompleteness = refreshed.value.completeness;
   const retainedCounts = new Map<GcRetentionReason, number>();
-  const omissions: GcOmission[] = [...plan.omissions];
+  const omissions: GcOmission[] = [...refreshed.value.omissions];
 
   const sessionRows = listSessions(inputs.store, MAX_GC_EXAMINED_SESSIONS);
   const streamBySession = new Map<string, string>();
@@ -565,7 +693,7 @@ export async function executeReachabilityGc(
     }
   }
 
-  for (const candidate of plan.candidates) {
+  for (const candidate of [...plan.candidates].sort((a, b) => a.kind.localeCompare(b.kind))) {
     if (aborted(signal)) {
       completeness = "partial";
       retain(retainedCounts, "not-reached");
@@ -587,12 +715,16 @@ export async function executeReachabilityGc(
         failed += 1;
         continue;
       }
-      const removed = deleteSessionTree(inputs.store, parsed.value, stream);
+      const removed = deleteSessionTree(inputs, exportSeeds.value, parsed.value, stream);
       if (!removed.ok) {
         failed += 1;
         continue;
       }
-      deletedSessions += 1;
+      if (removed.value) deletedSessions += 1;
+      else {
+        retain(retainedCounts, "referenced");
+        omissions.push({ kind: "session", identity: candidate.identity, reason: "referenced" });
+      }
       continue;
     }
 
@@ -606,34 +738,38 @@ export async function executeReachabilityGc(
       retain(retainedCounts, "reserved-or-quarantined");
       continue;
     }
-    const shared = inputs.store.read(SELECT_DIGEST_REFERENCES, {
-      digest: record.value.digest,
-      artifactId: parsed.value,
-    });
-    if (shared.ok && (integerOf(shared.value[0]?.count) ?? 0) > 0) {
-      retain(retainedCounts, "shared-digest");
-      omissions.push({
-        kind: "artifact",
-        identity: candidate.identity,
-        reason: "shared-digest",
-      });
-    } else {
-      const removedBytes = await inputs.blobs.remove(
-        { scope: "content", digest: record.value.digest },
-        signal,
-      );
-      if (!removedBytes.ok) {
-        failed += 1;
-        continue;
-      }
-    }
-    const removedRecord = deleteArtifactRecord(inputs.store, parsed.value);
+    const removedRecord = deleteArtifactRecord(
+      inputs,
+      exportSeeds.value,
+      parsed.value,
+      record.value.digest,
+      owner,
+    );
     if (!removedRecord.ok) {
       failed += 1;
       continue;
     }
+    if (removedRecord.value !== "deleted") {
+      retain(retainedCounts, removedRecord.value);
+      omissions.push({
+        kind: "artifact",
+        identity: candidate.identity,
+        reason: removedRecord.value,
+      });
+      continue;
+    }
     deletedArtifacts += 1;
-    deletedBytes += candidate.byteCount;
+    if (await removeClaimedBlob(inputs, record.value.digest, owner, signal)) {
+      deletedBytes += record.value.byteLength;
+    } else {
+      failed += 1;
+      completeness = "partial";
+      omissions.push({
+        kind: "artifact",
+        identity: candidate.identity,
+        reason: "gc-claim-outstanding",
+      });
+    }
   }
 
   return ok({

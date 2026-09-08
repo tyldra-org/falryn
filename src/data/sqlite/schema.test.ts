@@ -22,6 +22,7 @@ import {
   removeTemporaryRoots,
 } from "../fixtures.ts";
 import { MEMORY_SCHEMA_VERSION } from "../memory/memory-schema.ts";
+import { MIGRATION_0011 } from "../orchestration/process-task-schema.ts";
 import { MIGRATION_0007, MODEL_CATALOG_SCHEMA_VERSION } from "../providers/model-catalog-schema.ts";
 import { PROVIDER_CONTINUATION_SCHEMA_VERSION } from "../sessions/provider-continuation-schema.ts";
 import { RUN_SCHEMA_VERSION } from "../sessions/run-schema.ts";
@@ -85,6 +86,7 @@ describe("a fresh database", () => {
       MODEL_CATALOG_SCHEMA_VERSION,
       SCRATCH_RESOURCE_SCHEMA_VERSION,
       PROVIDER_CONTINUATION_SCHEMA_VERSION,
+      MIGRATION_0011.version,
     ]);
     // Nothing to lose: a database at version 0 holds no product row.
     expect(store.report.backupPath).toBeNull();
@@ -164,11 +166,12 @@ describe("a fresh database", () => {
     await legacy.close();
 
     const upgraded = await openProductStoreOrThrow(root);
-    expect(upgraded.report.schemaVersion).toBe(PROVIDER_CONTINUATION_SCHEMA_VERSION);
+    expect(upgraded.report.schemaVersion).toBe(PRODUCT_SCHEMA_VERSION);
     expect(upgraded.report.appliedThisRun).toEqual([
       MODEL_CATALOG_SCHEMA_VERSION,
       SCRATCH_RESOURCE_SCHEMA_VERSION,
       PROVIDER_CONTINUATION_SCHEMA_VERSION,
+      MIGRATION_0011.version,
     ]);
     expect(
       upgraded.read(

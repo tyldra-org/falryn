@@ -47,6 +47,14 @@ import {
 } from "../artifacts/scratch-resource-schema.ts";
 import { MEMORY_RECORDS_TABLE, MIGRATION_0005 } from "../memory/memory-schema.ts";
 import {
+  ARTIFACT_GC_CLAIMS_TABLE,
+  MIGRATION_0011,
+  PROCESS_TASK_ARTIFACTS_TABLE,
+  PROCESS_TASK_CHUNKS_TABLE,
+  PROCESS_TASK_WAKES_TABLE,
+  PROCESS_TASKS_TABLE,
+} from "../orchestration/process-task-schema.ts";
+import {
   MIGRATION_0007,
   MIGRATION_0008,
   MODEL_CATALOG_GENERATIONS_TABLE,
@@ -78,6 +86,7 @@ export const PRODUCTION_MIGRATIONS: readonly Migration[] = [
   MIGRATION_0008,
   MIGRATION_0009,
   MIGRATION_0010,
+  MIGRATION_0011,
 ];
 
 /** Every product table the registered set creates, in creation order. */
@@ -93,6 +102,11 @@ export const PRODUCT_TABLES: readonly string[] = [
   SCRATCH_RESOURCES_TABLE,
   SCRATCH_REVISIONS_TABLE,
   PROVIDER_CONTINUATION_STATES_TABLE,
+  PROCESS_TASKS_TABLE,
+  PROCESS_TASK_CHUNKS_TABLE,
+  PROCESS_TASK_WAKES_TABLE,
+  PROCESS_TASK_ARTIFACTS_TABLE,
+  ARTIFACT_GC_CLAIMS_TABLE,
 ];
 
 function issue(

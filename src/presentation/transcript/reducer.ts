@@ -147,6 +147,26 @@ export function blockFor(event: RuntimeEvent): TranscriptBlock | null {
   } as const;
 
   switch (event.kind) {
+    case "process.task.changed":
+      return {
+        ...spine,
+        kind: "notice",
+        anchor: {
+          of: "declared",
+          key: `process-task:${event.payload.task.handle.taskId}:${event.payload.task.handle.generation}`,
+        },
+        source: "runtime",
+        status: "final",
+        summary: complete(
+          `Process task ${event.payload.change === "cleaned" ? "cleaned" : event.payload.task.state}.`,
+        ),
+        invocationId: null,
+        note: complete(
+          event.payload.task.terminal === null
+            ? `${event.payload.task.attachment}; process result pending.`
+            : `${event.payload.task.terminal.outcome}; ${event.payload.task.terminal.reason}.`,
+        ),
+      };
     case "session.started":
       return {
         ...spine,

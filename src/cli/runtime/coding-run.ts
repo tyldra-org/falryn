@@ -384,7 +384,11 @@ export async function runCoding(
         : productConfigurationLoadRequest(options.globals);
     const configuration = await loadProductConfiguration(graph, configRequest, options.signal);
     const generation = configuration.generation;
-    productArtifactSession = await openProductArtifactSession(graph, options.signal);
+    productArtifactSession = await openProductArtifactSession(
+      graph,
+      options.signal,
+      options.ownedProcesses,
+    );
     if (productArtifactSession === null) {
       return codingResult(
         {
@@ -509,6 +513,7 @@ export async function runCoding(
     });
     const processTools = composeProductProcessTools({
       generation,
+      tasks: productArtifactSession.tasks,
       capture: options.processCapture ?? createHostProcessCapturePort(captureOptions),
       workspaceCwd: String(workspaceRoot),
       ...(productArtifacts === undefined ? {} : { artifacts: productArtifacts }),
@@ -557,7 +562,8 @@ export async function runCoding(
               afterMutation: async (signalRequest) => {
                 if (
                   signalRequest.toolName === "scratch_write" ||
-                  signalRequest.toolName === "scratch_discard"
+                  signalRequest.toolName === "scratch_discard" ||
+                  signalRequest.toolName === "process_task"
                 ) {
                   return {};
                 }
@@ -741,7 +747,7 @@ export async function runCoding(
       attempted.events,
     );
   } finally {
-    await productArtifactSession?.close();
+    if (options.ownedProcesses === undefined) await productArtifactSession?.close();
     configReload?.dispose();
   }
 }

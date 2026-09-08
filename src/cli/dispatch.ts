@@ -143,6 +143,13 @@ export async function dispatch(options: DispatchOptions): Promise<ExitCode> {
 
   const code = await run(invocation, options);
   const flush = await streams.flush();
+  // Project and flush the foreground response before waiting for detached capture/store owners.
+  const drained = await options.governance?.ownedProcesses?.drain();
+  if (drained === false) {
+    writeDiagnosticLine(streams, "background task settlement or durable cleanup is uncertain");
+    await streams.flush();
+    return resolveExitCode({ outcome: { kind: "uncertain", effect: "uncertain" }, error: null });
+  }
 
   // A result that could not be flushed did not reach anyone, so the run cannot
   // claim the code its work earned. A reader that simply left is unchanged.
@@ -399,7 +406,11 @@ async function launchShell(
     stopped.signal,
   );
 
-  const productArtifactSession = await openProductArtifactSession(graph, stopped.signal);
+  const productArtifactSession = await openProductArtifactSession(
+    graph,
+    stopped.signal,
+    governance.ownedProcesses,
+  );
   const productWorkspaceIndex =
     productArtifactSession === null || resolvedWorkspace.ok !== true
       ? null
@@ -433,6 +444,8 @@ async function launchShell(
         artifacts: productArtifactSession.artifacts,
         loom: productArtifactSession.loom,
         scratch: productArtifactSession.scratch,
+        tasks: productArtifactSession.tasks,
+        taskNotices: productArtifactSession.taskNotices,
         memoryRecords: productArtifactSession.memoryRecords,
         ...(productWorkspaceIndex === null ? {} : { index: productWorkspaceIndex }),
         ...(governance.ownedProcesses === undefined
@@ -489,8 +502,8 @@ async function launchShell(
     });
   } finally {
     configurationReload?.dispose();
-    finished.abort();
     await productArtifactSession?.close();
+    finished.abort();
     if (sessionNavigationBundle !== undefined) {
       await sessionNavigationBundle.close(stopped.signal);
     }

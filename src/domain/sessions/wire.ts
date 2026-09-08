@@ -60,6 +60,7 @@ import {
   OPPORTUNITY_SIGNAL_FAMILIES,
 } from "../orchestration/opportunity-plan.ts";
 import type { TerminalOutcome } from "../orchestration/outcome.ts";
+import { processTaskSnapshotSchema } from "../orchestration/process-task.ts";
 import { resourceAdmissionReceiptSchema } from "../orchestration/resource-admission.ts";
 import { EFFECT_CLASSES } from "../orchestration/work.ts";
 import {
@@ -458,6 +459,33 @@ const runtimeEventSchema: z.ZodType<RuntimeEvent> = z.discriminatedUnion("kind",
     correlation: sessionCorrelationSchema,
     payload: executionProfilePayloadSchema,
   }),
+  z
+    .object({
+      ...envelopeSpine,
+      kind: z.literal("process.task.changed"),
+      correlation: turnCorrelationSchema,
+      payload: z.strictObject({
+        change: z.enum([
+          "created",
+          "started",
+          "attachment",
+          "settling",
+          "sealed",
+          "reconciled",
+          "cleaned",
+        ]),
+        task: processTaskSnapshotSchema,
+      }),
+    })
+    .refine((event) => {
+      const owner = event.payload.task.owner;
+      return (
+        owner.sessionId === event.correlation.sessionId &&
+        owner.workspaceId === event.correlation.workspaceId &&
+        owner.turnId === event.correlation.turnId &&
+        owner.configurationGeneration === event.correlation.configurationGeneration
+      );
+    }, "task owner does not match event correlation"),
 ]);
 
 export type WireParseResult =
@@ -496,6 +524,8 @@ function outcomeToJson(outcome: TerminalOutcome): Record<string, unknown> {
 
 function payloadToJson(event: RuntimeEvent): Record<string, unknown> {
   switch (event.kind) {
+    case "process.task.changed":
+      return { change: event.payload.change, task: event.payload.task };
     case "model.attempt.started":
       return event.payload.binding === undefined ? {} : { binding: event.payload.binding };
     case "capability.invocation.started":

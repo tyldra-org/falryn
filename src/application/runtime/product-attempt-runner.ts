@@ -831,6 +831,7 @@ export function createProductAttemptRunner(
         journal: options.journal,
         correlation: options.correlation,
         turnId: request.turnId,
+        attemptId: String(request.identity.modelAttemptId),
         disclosedToolNames: new Set(input.disclosure.toolNames),
         policy: toolPolicyForExecution(
           input.executionPolicy ??

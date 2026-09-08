@@ -494,6 +494,8 @@ export function reduceTurnEvents(events: readonly RuntimeEvent[]): TurnEventRedu
         break;
       }
       case "configuration.generation.changed":
+      case "process.task.changed":
+        // Task ownership outlives the initiating turn. Its events never reopen or finish a turn.
         break;
       default:
         return assertNever(event, "unhandled runtime event kind");

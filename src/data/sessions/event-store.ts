@@ -415,6 +415,26 @@ function storedEventFromRow(row: SqliteRow): Result<StoredEvent, readonly CodecI
   });
 }
 
+/** Reuse event validation and ordering inside a data-owned atomic transition. */
+export function appendRuntimeEventInTransaction(
+  statements: SqliteStatements,
+  event: RuntimeEvent,
+  projectRecords = false,
+): Result<Omit<AppendReceipt, "cancelledAfterCommit">, EventStoreError> {
+  const encoded = encodeRuntimeEvent(event);
+  if (!encoded.ok) return err({ code: "codec", error: encoded.error });
+  const resolution = resolveAppend(statements, event, projectRecords);
+  switch (resolution.kind) {
+    case "malformed-row":
+      return err({ code: "codec", error: { kind: "invalid-envelope", issues: resolution.issues } });
+    case "rejected":
+      return err({ code: "sequence", error: resolution.error });
+    case "duplicate":
+    case "appended":
+      return ok({ kind: resolution.kind, sequence: resolution.sequence });
+  }
+}
+
 export function createSqliteEventStore(
   store: SqliteStorePort,
   options: SqliteEventStoreOptions = {},
@@ -426,37 +446,16 @@ export function createSqliteEventStore(
     event: RuntimeEvent,
     signal?: AbortSignal,
   ): Result<AppendReceipt, EventStoreError> {
-    // Encoded first: this both revalidates the event and enforces the 64 KiB
-    // bound on the canonical form, so an event that could not be read back is
-    // refused before a row exists for it.
-    const encoded = encodeRuntimeEvent(event);
-    if (!encoded.ok) {
-      return err({ code: "codec", error: encoded.error });
-    }
-
     const written = store.write(
-      (statements) => resolveAppend(statements, event, options.projectStartedRecords === true),
+      (statements) =>
+        appendRuntimeEventInTransaction(statements, event, options.projectStartedRecords === true),
       signal,
     );
-    if (!written.ok) {
-      return err(eventStoreErrorFor(written.error));
-    }
-
-    const resolution = written.value.value;
-    const cancelledAfterCommit = written.value.cancelledAfterCommit;
-    switch (resolution.kind) {
-      case "malformed-row":
-        return err({
-          code: "codec",
-          error: { kind: "invalid-envelope", issues: resolution.issues },
-        });
-      case "rejected":
-        return err({ code: "sequence", error: resolution.error });
-      case "duplicate":
-        return ok({ kind: "duplicate", sequence: resolution.sequence, cancelledAfterCommit });
-      case "appended":
-        return ok({ kind: "appended", sequence: resolution.sequence, cancelledAfterCommit });
-    }
+    if (!written.ok) return err(eventStoreErrorFor(written.error));
+    const appended = written.value.value;
+    return appended.ok
+      ? ok({ ...appended.value, cancelledAfterCommit: written.value.cancelledAfterCommit })
+      : appended;
   }
 
   return {

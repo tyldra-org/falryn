@@ -32,6 +32,7 @@ import type {
   ExecutionProfileSelectedEvent,
   ModelAttemptCompletedEvent,
   ModelAttemptStartedEvent,
+  ProcessTaskChangedEvent,
   RuntimeEvent,
   SessionCorrelation,
   SessionStartedEvent,
@@ -222,6 +223,47 @@ export function executionProfileSelected(position = 9): ExecutionProfileSelected
   };
 }
 
+export function processTaskChanged(position = 10): ProcessTaskChangedEvent {
+  return {
+    ...spine({
+      eventId: `event-task-${position}`,
+      sequence: position,
+      idempotencyKey: `key-task-${position}`,
+    }),
+    kind: "process.task.changed",
+    correlation: FIXTURE_TURN_CORRELATION,
+    payload: {
+      change: "created",
+      task: {
+        handle: { version: 1, taskId: "task-fixture", generation: "generation-fixture" },
+        revision: 1,
+        owner: {
+          sessionId: FIXTURE_TURN_CORRELATION.sessionId,
+          workspaceId: FIXTURE_TURN_CORRELATION.workspaceId,
+          turnId: FIXTURE_TURN_CORRELATION.turnId,
+          invocationId: "invocation-fixture",
+          attemptId: "attempt-fixture",
+          configurationGeneration: 0,
+          resourceTaskId: "resource-fixture",
+        },
+        supervisor: {
+          runId: "run-fixture",
+          process: { platform: "linux", pid: 100, birth: "boot-fixture:1000" },
+          leaseExpiresAt: 15_000,
+        },
+        attachment: "background",
+        createdAt: 0,
+        deadline: 30_000,
+        inputDigest: "a".repeat(64),
+        outputMode: "raw",
+        state: "queued",
+        process: null,
+        terminal: null,
+      },
+    },
+  };
+}
+
 /** One valid event per declared kind, already in stream order. */
 export function everyEventKind(): readonly RuntimeEvent[] {
   return [
@@ -234,6 +276,7 @@ export function everyEventKind(): readonly RuntimeEvent[] {
     capabilityInvocationCompleted(7),
     configurationGenerationChanged(8),
     executionProfileSelected(9),
+    processTaskChanged(10),
   ];
 }
 

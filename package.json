@@ -30,7 +30,7 @@
     "test:parallel": "bun test --parallel=4 --path-ignore-patterns=src/cli/process-boundary.test.ts --only-failures && bun test src/cli/process-boundary.test.ts --only-failures",
     "test:changed": "bun test --changed=main --only-failures",
     "test:watch": "bun test --hot --only-failures",
-    "test:platform-baseline": "bun test tools/benchmarks/benchmark-regression.test.ts src/cli-boundaries.test.ts src/sqlite-boundaries.test.ts src/source-path-fixtures.test.ts src/main.test.ts src/cli/version.test.ts src/data/lifecycle/roots.test.ts",
+    "test:platform-baseline": "bun test tools/benchmarks/benchmark-regression.test.ts src/cli-boundaries.test.ts src/sqlite-boundaries.test.ts src/source-path-fixtures.test.ts src/main.test.ts src/cli/version.test.ts src/data/lifecycle/roots.test.ts src/integrations/process/host-process-identity.test.ts src/integrations/process/host-process-capture-ownership.test.ts",
     "measure": "FALRYN_MEASURE=1 bun test src/data/measurement.test.ts",
     "benchmark:compare": "bun run tools/benchmarks/benchmark-regression.ts",
     "benchmark:hush-coverage": "bun run tools/benchmarks/hush-command-coverage.ts",

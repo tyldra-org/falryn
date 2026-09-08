@@ -26,7 +26,8 @@
 import { dlopen, FFIType, ptr } from "bun:ffi";
 import { afterEach, describe, expect, test } from "bun:test";
 import { closeSync, createReadStream, writeSync } from "node:fs";
-import { stat } from "node:fs/promises";
+import { mkdtemp, rm, stat } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { EXIT_CODES } from "../../cli/index.ts";
 import { emulateScreen, rowsCarryingMarksFromMultipleGroups } from "./emulated-screen-fixtures.ts";
@@ -191,13 +192,16 @@ if (requiresMacosArm64) {
 }
 
 const live: { process: Bun.Subprocess; pty: Pty }[] = [];
+const homes: string[] = [];
 
-afterEach(() => {
+afterEach(async () => {
   while (live.length > 0) {
     const run = live.pop();
     run?.process.kill("SIGKILL");
     run?.pty.close();
+    await run?.process.exited;
   }
+  for (const home of homes.splice(0)) await rm(home, { recursive: true, force: true });
 });
 
 type ShellRun = {
@@ -269,6 +273,9 @@ async function runOnPty(
     readonly env?: Readonly<Record<string, string>>;
   } = {},
 ): Promise<ShellRun> {
+  // Never read provider configuration or migration bookkeeping from the developer's home.
+  const home = await mkdtemp(join(tmpdir(), "falryn-compiled-shell-"));
+  homes.push(home);
   const pty = openPty(options.columns ?? COLUMNS, options.rows ?? ROWS);
   if (pty === null) {
     throw new Error("no pseudo-terminal");
@@ -280,7 +287,7 @@ async function runOnPty(
     stderr: pty.slave,
     env: {
       PATH: process.env.PATH ?? "",
-      HOME: process.env.HOME ?? "",
+      HOME: home,
       TERM: "xterm-256color",
       ...options.env,
     },
