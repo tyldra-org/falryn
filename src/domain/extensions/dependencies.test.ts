@@ -4,6 +4,15 @@ import { type DependencyCandidate, resolvePackageDependencies } from "./dependen
 
 const dep = (id: string, range = "*", optional = false) => ({ id, range, optional });
 
+test("stops an unsatisfiable combinatorial inventory at the decision limit", () => {
+  const ids = Array.from({ length: 15 }, (_, index) => `p${String(index).padStart(2, "0")}`);
+  const result = resolvePackageDependencies({
+    requirements: [...ids.map((id) => dep(id)), dep("z-missing")],
+    candidates: ids.flatMap((id) => [candidate(id, "1.0.0"), candidate(id, "2.0.0")]),
+  });
+  expect(result).toEqual({ ok: false, code: "dependency-limit" });
+});
+
 test("bounds graph depth independently of root count and visitation order", () => {
   const candidates = Array.from({ length: 100 }, (_, index) =>
     candidate(`p${String(index).padStart(3, "0")}`, "1.0.0"),
