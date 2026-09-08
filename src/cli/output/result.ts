@@ -86,6 +86,7 @@ export const COMMAND_IDS = [
   /** Provider profile, authentication, selection, and model-catalog actions (#798). */
   "provider",
   "model",
+  "extension.inspect",
   /** Shell completion install script (#731). */
   "completion",
   /** Headless coding entry (#708). */

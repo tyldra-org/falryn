@@ -37,6 +37,7 @@ export function isRawArguments(value: unknown): value is RawArguments {
     optionalString(field("after")) &&
     optionalString(field("before")) &&
     optionalString(field("name")) &&
+    optionalString(field("path")) &&
     optionalBoolean(field("write")) &&
     optionalBoolean(field("include-sensitive")) &&
     optionalString(field("id")) &&

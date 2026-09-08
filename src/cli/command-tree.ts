@@ -333,6 +333,15 @@ function build(argv: readonly string[], lenientPositionals = false): ReturnType<
             }),
       )
       .command(
+        lenientPositionals ? "extension [action] [path]" : "extension <action> <path>",
+        "Inspect a local extension package without activating it.",
+        (group) =>
+          group
+            .positional("action", { type: "string", choices: ["inspect"] })
+            .positional("path", { type: "string", describe: "local package directory path" }),
+        () => {},
+      )
+      .command(
         lenientPositionals ? "model [action]" : "model <action>",
         "Inspect or edit shared model role settings.",
         (group) =>
@@ -783,6 +792,9 @@ export async function parseInvocation(argv: readonly string[]): Promise<Invocati
     commitPlanArgs,
     providerArgs,
     ...(modelArgs === undefined ? {} : { modelArgs }),
+    ...(command === "extension.inspect" && parsed.path !== undefined
+      ? { extensionPath: parsed.path }
+      : {}),
   };
 }
 

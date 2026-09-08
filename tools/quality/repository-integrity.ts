@@ -89,6 +89,27 @@ export const DIRECT_DEPENDENCY_POLICY: readonly DirectDependencyPolicy[] = [
     repository: "https://github.com/yargs/yargs",
   },
   {
+    name: "semver",
+    group: "dependencies",
+    version: "7.8.5",
+    license: "ISC",
+    repository: "https://github.com/npm/node-semver",
+  },
+  {
+    name: "yaml",
+    group: "dependencies",
+    version: "2.9.0",
+    license: "ISC",
+    repository: "github:eemeli/yaml",
+  },
+  {
+    name: "@types/semver",
+    group: "devDependencies",
+    version: "7.8.0",
+    license: "MIT",
+    repository: "https://github.com/DefinitelyTyped/DefinitelyTyped",
+  },
+  {
     name: "zod",
     group: "dependencies",
     version: "4.5.4",

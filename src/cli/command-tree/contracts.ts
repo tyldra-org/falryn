@@ -206,6 +206,7 @@ export type Invocation =
       readonly commitPlanArgs: TaskCommitPlanArguments | null;
       readonly providerArgs: ProviderCommandArguments | null;
       readonly modelArgs?: ModelSettingsRequest;
+      readonly extensionPath?: string;
     }
   /** Show help. `topic` is `null` for the root, or the subcommand asked about. */
   | { readonly kind: "help"; readonly topic: string | null; readonly options: GlobalOptions }
@@ -221,6 +222,7 @@ export type Invocation =
 
 /** The shape yargs parses into. Narrowed into `GlobalOptions` after validation. */
 export type RawArguments = {
+  readonly path: string | undefined;
   readonly _: readonly (string | number)[];
   /** Bound by name from `config <action>`; it never appears in `_`. */
   readonly action: string | undefined;

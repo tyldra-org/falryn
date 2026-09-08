@@ -17,6 +17,7 @@ import { afterAll, afterEach, describe, expect, test } from "bun:test";
 import { mkdtemp, readdir, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { pluginManifest } from "./application/extensions/package-fixtures.ts";
 import { CLI_SCHEMA_FAMILY, EXIT_CODES, FALRYN_VERSION, readCliStream } from "./cli/index.ts";
 import { MIGRATION_TABLE, PRODUCT_SCHEMA_VERSION, PRODUCT_TABLES } from "./data/index.ts";
 import { createStaticEnvironment } from "./domain/foundation/index.ts";
@@ -171,6 +172,43 @@ function spawnCompiled(
 }
 
 describe.if(built)("the standalone executable", () => {
+  test(
+    "inspects package bytes consistently without executing content in every output format",
+    async () => {
+      const root = await temporaryRoot();
+      const packageRoot = await temporaryRoot();
+      await Bun.write(
+        join(packageRoot, "plugin.json"),
+        JSON.stringify(pluginManifest({ version: 1 }, { unknown: "PRIVATE-METADATA" })),
+      );
+      await Bun.write(
+        join(packageRoot, "prompts", "review.md"),
+        "---\ndescription: Review\nargument-hint: file\n---\nPRIVATE-INSTRUCTION",
+      );
+      await Bun.write(
+        join(packageRoot, "script.ts"),
+        `await Bun.write(${JSON.stringify(join(packageRoot, "EXECUTED"))}, "bad");`,
+      );
+      for (const format of ["human", "json", "jsonl", "quiet"]) {
+        const result = spawnCompiled(root, [
+          "extension",
+          "inspect",
+          packageRoot,
+          "--format",
+          format,
+        ]);
+        expect(result.exitCode).toBe(EXIT_CODES.COMPLETED);
+        expect(result.stdout).toContain("declared");
+        expect(result.stdout).toContain("review");
+        expect(result.stdout + result.stderr).not.toContain("PRIVATE-");
+        expect(result.stdout).not.toContain("PRIVATE-METADATA");
+        if (format === "json") expect(JSON.parse(result.stdout).command).toBe("extension.inspect");
+      }
+      expect(await Bun.file(join(packageRoot, "EXECUTED")).exists()).toBe(false);
+      expect(await readdir(root)).toEqual([]);
+    },
+    COMPILED_RUN_TIMEOUT_MS,
+  );
   test(
     "runs the CLI, and a bare invocation prints help without opening a database",
     async () => {

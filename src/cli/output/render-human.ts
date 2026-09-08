@@ -1,3 +1,4 @@
+import { packageInspectionLines } from "../../application/extensions/inspection-report.ts";
 import { modelSettingsLines } from "../../application/providers/model-settings-format.ts";
 /**
  * The human and quiet projections of a `CommandResult`.
@@ -470,6 +471,11 @@ function renderPayload(session: Session, result: RunCommandResult): RenderedPayl
       };
     case "provider":
       return renderProviderConnections(session, result.payload);
+    case "extension.inspect":
+      return {
+        lines: result.payload === null ? [] : packageInspectionLines(result.payload).map(safe),
+        diagnostics: [],
+      };
     case "run":
       return renderCodingRun(session, result.payload);
     default:
@@ -556,6 +562,7 @@ function quietFindingLines(result: RunCommandResult): readonly string[] {
     case "provider":
     case "model":
     case "run":
+    case "extension.inspect":
       return [];
     default:
       return assertNever(result, "unhandled command result");
