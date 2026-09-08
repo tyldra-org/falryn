@@ -13,13 +13,19 @@
 #
 # Bun itself (`packageManager` / `engines.bun`) is not a package Dependabot
 # updates; bump that pin when adopting a new Bun runtime.
+# Check every hour and exclude every dependency from release-age cooldown.
+# Scheduling and PR limits still apply; this does not enable automatic merging.
 version: 2
 
 updates:
   - package-ecosystem: github-actions
     directory: /
     schedule:
-      interval: weekly
+      interval: cron
+      cronjob: "0 * * * *"
+    cooldown:
+      exclude:
+        - "*"
     commit-message:
       prefix: ci
     labels:
@@ -30,7 +36,11 @@ updates:
   - package-ecosystem: github-actions
     directory: /.github/actions/setup-bun
     schedule:
-      interval: weekly
+      interval: cron
+      cronjob: "0 * * * *"
+    cooldown:
+      exclude:
+        - "*"
     commit-message:
       prefix: ci
     labels:
@@ -39,8 +49,11 @@ updates:
   - package-ecosystem: bun
     directory: /
     schedule:
-      interval: weekly
-      day: monday
+      interval: cron
+      cronjob: "0 * * * *"
+    cooldown:
+      exclude:
+        - "*"
     open-pull-requests-limit: 10
     commit-message:
       prefix: build
