@@ -50,7 +50,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.12",
-    "@types/bun": "1.4.1",
+    "@types/bun": "1.4.2",
     "@types/react": "19.2.18",
     "@types/react-reconciler": "0.33.0",
     "@types/yargs": "17.0.35",
@@ -58,11 +58,11 @@
     "typescript": "7.0.2"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "0.123.0",
+    "@anthropic-ai/sdk": "0.124.0",
     "@google/genai": "2.21.0",
-    "@opentui/core": "0.5.10",
-    "@opentui/keymap": "0.5.10",
-    "@opentui/react": "0.5.10",
+    "@opentui/core": "0.5.11",
+    "@opentui/keymap": "0.5.11",
+    "@opentui/react": "0.5.11",
     "jsonc-parser": "3.3.1",
     "openai": "7.10.0",
     "react": "19.2.8",

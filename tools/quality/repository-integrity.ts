@@ -27,7 +27,7 @@ export const DIRECT_DEPENDENCY_POLICY: readonly DirectDependencyPolicy[] = [
   {
     name: "@anthropic-ai/sdk",
     group: "dependencies",
-    version: "0.123.0",
+    version: "0.124.0",
     license: "MIT",
     repository: "github:anthropics/anthropic-sdk-typescript",
   },
@@ -42,21 +42,21 @@ export const DIRECT_DEPENDENCY_POLICY: readonly DirectDependencyPolicy[] = [
   {
     name: "@opentui/core",
     group: "dependencies",
-    version: "0.5.10",
+    version: "0.5.11",
     license: "MIT",
     repository: "https://github.com/anomalyco/opentui",
   },
   {
     name: "@opentui/keymap",
     group: "dependencies",
-    version: "0.5.10",
+    version: "0.5.11",
     license: "MIT",
     repository: "https://github.com/anomalyco/opentui",
   },
   {
     name: "@opentui/react",
     group: "dependencies",
-    version: "0.5.10",
+    version: "0.5.11",
     license: "MIT",
     repository: "https://github.com/anomalyco/opentui",
   },
@@ -112,7 +112,7 @@ export const DIRECT_DEPENDENCY_POLICY: readonly DirectDependencyPolicy[] = [
   {
     name: "@types/bun",
     group: "devDependencies",
-    version: "1.4.1",
+    version: "1.4.2",
     license: "MIT",
     repository: "https://github.com/DefinitelyTyped/DefinitelyTyped",
   },
