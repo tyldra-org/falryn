@@ -148,7 +148,11 @@ export function createModelSettingsService(store: ModelSettingsStore) {
             selection?.kind === "route" ? await store.validateRoute(selection.route, signal) : null;
           const definition =
             "id" in target
-              ? (snapshot.definitions.find((entry) => entry.id === target.id) ?? null)
+              ? (snapshot.definitions.find(
+                  (entry) =>
+                    entry.id === target.id &&
+                    entry.kind === (target.kind === "agent" ? "agent" : "workflow"),
+                ) ?? null)
               : null;
           rows.push({ target, selection, compatibility, definition });
         }

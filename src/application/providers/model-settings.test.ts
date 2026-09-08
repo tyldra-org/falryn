@@ -98,10 +98,15 @@ test("saved definition revisions survive edits, reset removes empty entries, and
   const flow: ModelDefinition = {
     ...agent,
     kind: "workflow",
-    id: "user:flow",
+    id: agent.id,
     nodes: [{ kind: "deterministic", key: "join" }],
   };
   const f = fixture([agent, flow]);
+  const inspection = await f.service.execute({
+    kind: "inspect",
+    target: { kind: "workflow", id: flow.id },
+  });
+  expect(inspection.kind === "inspection" && inspection.rows[0]?.definition?.kind).toBe("workflow");
   expect(
     (
       await f.service.execute({
