@@ -105,6 +105,7 @@ describe("parseComposerSlash", () => {
         alias.commandId === "hush.set" ||
         alias.commandId === "loom.set" ||
         alias.commandId === "compression.show" ||
+        alias.commandId === "model.settings" ||
         alias.commandId === "mode.select"
       ) {
         expect(workspacePanelForSlashCommand(alias.commandId)).toBeNull();

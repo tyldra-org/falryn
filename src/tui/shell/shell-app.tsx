@@ -250,6 +250,7 @@ export function ShellApp(props: ShellAppProps): ReactNode {
         typing={
           runtime.state.focus.focused === COMPOSER_REGION ||
           runtime.state.overlay.kind === "palette" ||
+          runtime.state.overlay.kind === "model-settings" ||
           (runtime.state.overlay.kind === "workspace" &&
             (runtime.state.overlay.panel === "add" || runtime.state.overlay.panel === "save")) ||
           (runtime.state.overlay.kind === "session-nav" &&
@@ -387,6 +388,7 @@ function ResolvedShell(
         }
       }}
       compression={props.runtime.compression}
+      modelSettings={props.runtime.modelSettings}
       onCompressionSelect={props.runtime.selectCompression}
       {...(props.artifactViewer === undefined ? {} : { artifactViewer: props.artifactViewer })}
       {...(props.gitDashboard === undefined ? {} : { gitDashboard: props.gitDashboard })}

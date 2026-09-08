@@ -19,6 +19,7 @@ import {
 import { type ProviderModelIdentity, providerModelIdentityKey } from "../catalog/model-identity.ts";
 import type { ProviderAdapterKind } from "../configuration/adapter-kind.ts";
 import {
+  fastOptionForIntent,
   isRoleDisabled,
   type ModelPolicy,
   type ReasoningEffort,
@@ -34,7 +35,7 @@ import {
   type RouteRequirement,
   resolveSpecializedRole,
 } from "../configuration/role-support.ts";
-import type { ModelRole, WorkIntent } from "../configuration/roles.ts";
+import type { FastOption, ModelRole, WorkIntent } from "../configuration/roles.ts";
 import {
   bindProviderTransportCompatibilityToModel,
   defaultProviderTransportCompatibility,
@@ -131,6 +132,7 @@ export type ResolveRouteInput = {
   /** Prefer explicit role when set; otherwise map from intent (default coding). */
   readonly intent?: WorkIntent;
   readonly role?: ModelRole;
+  readonly fastOption?: FastOption;
   readonly explicit?: ExplicitModelSelection;
   readonly required?: RouteRequirement;
   readonly now?: Instant;
@@ -294,7 +296,7 @@ const REASONING_CONTROL_PREFERENCES = {
   },
 } as const satisfies Record<ProviderAdapterKind, Record<ReasoningEffort, readonly string[]>>;
 
-function reasoningControlFor(
+export function reasoningControlFor(
   capability: ModelCapability,
   reasoning: ReasoningEffort,
   adapterKind: ProviderAdapterKind,
@@ -450,6 +452,7 @@ export function resolveModelRoute(input: ResolveRouteInput): RoutingOutcome {
     policy: input.policy,
     intent,
     primaryCapability,
+    ...(input.fastOption === undefined ? {} : { fastOption: input.fastOption }),
     ...(input.role !== undefined ? { role: input.role } : {}),
     ...(input.required !== undefined ? { required: input.required } : {}),
   });
@@ -458,7 +461,7 @@ export function resolveModelRoute(input: ResolveRouteInput): RoutingOutcome {
   }
   const { role, required } = specialized;
 
-  const route = roleRouteFor(input.policy, role);
+  const route = roleRouteFor(input.policy, role, input.fastOption ?? fastOptionForIntent(intent));
   if (route === undefined) {
     return { kind: "role-unconfigured", role, intent };
   }
@@ -507,14 +510,15 @@ export function resolveModelRoute(input: ResolveRouteInput): RoutingOutcome {
       continue;
     }
 
+    const reasoning = position === 0 ? route.reasoning : "provider-default";
     const reasoningControl = reasoningControlFor(
       found.capability,
-      route.reasoning,
+      reasoning,
       found.entry.adapterKind,
     );
-    // Unlike the adaptive postures, max is an exact quality-first request. It
-    // must never degrade to a provider default or another provider's "high".
-    if (route.reasoning === "max" && reasoningControl === null) {
+    // Explicit thinking belongs to this exact route. Fallback identities carry
+    // no thinking override and therefore use their own provider default.
+    if (reasoning !== "provider-default" && reasoningControl === null) {
       continue;
     }
 
@@ -543,7 +547,7 @@ export function resolveModelRoute(input: ResolveRouteInput): RoutingOutcome {
         transportCompatibilityId: transportCompatibility.compatibilityId,
         transportCompatibilityReceipt: transportCompatibility.receipt,
         modelId: candidate.modelId,
-        reasoning: route.reasoning,
+        reasoning,
         reasoningControl,
         responseDensityControls: responseDensityControlsFor(found.capability, found.entry),
         promptCacheMode: promptCacheModeFor(found.capability, found.entry.adapterKind),

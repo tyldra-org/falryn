@@ -88,13 +88,15 @@ export function createProviderConnectionService(
   return {
     execute,
     selected: (signal) => execute({ kind: "test", profileId: null }, signal),
-    async openSelected(signal) {
+    async openSelected(signal, profileId) {
       const snapshot = await ports.store.read(signal);
       const parsed = parseProviderConnectionState(snapshot.state);
-      if (!parsed.ok || parsed.value.selectedProfileId === null) {
+      if (!parsed.ok || (profileId === undefined && parsed.value.selectedProfileId === null)) {
         return unavailableHandoff("selected-profile-required", false);
       }
-      let connection = find(parsed.value, parsed.value.selectedProfileId);
+      const selectedProfileId = profileId ?? parsed.value.selectedProfileId;
+      if (selectedProfileId === null) return unavailableHandoff("selected-profile-required", false);
+      let connection = find(parsed.value, selectedProfileId);
       if (connection === null) {
         return unavailableHandoff("profile-missing", false);
       }

@@ -368,7 +368,7 @@ describe("composeProductShellAttachments", () => {
       throw new Error("deterministic provider has no model");
     }
     const profile = {
-      profileId: "matrix",
+      profileId: fixture.provider.identity.profileId,
       providerId: fixture.provider.identity.providerId,
       adapterKind: "deterministic" as const,
       displayName: "Live-turn matrix provider",
@@ -402,7 +402,7 @@ describe("composeProductShellAttachments", () => {
           kind: "ready",
           connection: { profile, account: null, updatedAt: services.clock.now() },
           auth: {
-            profileId: "matrix",
+            profileId: fixture.provider.identity.profileId,
             state: "ready",
             consumer: "provider:matrix",
             observedAt: instant(0),

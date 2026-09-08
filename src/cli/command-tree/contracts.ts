@@ -1,5 +1,6 @@
 /** Public invocation contracts and the private raw parser shape. */
 
+import type { ModelSettingsRequest } from "../../application/providers/model-settings.ts";
 import type { ArtifactId } from "../../domain/artifacts/index.ts";
 import type { ExportName } from "../../domain/extensions/index.ts";
 import type { SessionId, StreamId, WorkspaceId } from "../../domain/foundation/index.ts";
@@ -204,6 +205,7 @@ export type Invocation =
       readonly taskArgs: TaskCommandArguments | null;
       readonly commitPlanArgs: TaskCommitPlanArguments | null;
       readonly providerArgs: ProviderCommandArguments | null;
+      readonly modelArgs?: ModelSettingsRequest;
     }
   /** Show help. `topic` is `null` for the root, or the subcommand asked about. */
   | { readonly kind: "help"; readonly topic: string | null; readonly options: GlobalOptions }

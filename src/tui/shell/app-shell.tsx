@@ -28,6 +28,7 @@ import { useRenderer, useTerminalDimensions } from "@opentui/react";
 import { type ReactNode, useMemo, useRef } from "react";
 import type { ArtifactViewer } from "../../application/artifacts/index.ts";
 import type { GitDashboard } from "../../application/git/index.ts";
+import type { ModelSettingsService } from "../../application/providers/model-settings.ts";
 import type { Instant } from "../../domain/foundation/index.ts";
 import { ComposerView } from "../composer/composer.tsx";
 import type { ComposerAction } from "../composer/index.ts";
@@ -41,6 +42,7 @@ import { GitDashboardOverlay } from "../git/dashboard-overlay.tsx";
 import { CompressionSheet } from "../overlays/compression-sheet.tsx";
 import { ConfirmationSheet } from "../overlays/confirmation.tsx";
 import { ControlSheet } from "../overlays/controls.tsx";
+import { ModelSettingsSheet } from "../overlays/model-settings-sheet.tsx";
 import { OverlayHost } from "../overlays/overlay.tsx";
 import { CommandPalette, HelpOverlay } from "../overlays/overlay-routes.tsx";
 import { WorkspaceSheet, workspacePanelTitle } from "../overlays/workspace-sheet.tsx";
@@ -124,6 +126,9 @@ export type AppShellProps = {
   readonly selectedProfileId?: string | null;
   readonly onControlSelect?: (id: string) => void;
   readonly compression?: CompressionControlState;
+  readonly modelSettings?:
+    | import("../../application/providers/model-settings.ts").ModelSettingsService
+    | null;
   readonly onCompressionSelect?: (action: CompressionControlAction) => void;
   /** Loads artifact views for the code viewer overlay. Absent in static frames. */
   readonly artifactViewer?: ArtifactViewer;
@@ -230,6 +235,7 @@ export function AppShell(props: AppShellProps): ReactNode {
             ? {}
             : { onControlSelect: props.onControlSelect })}
           {...(props.compression === undefined ? {} : { compression: props.compression })}
+          {...(props.modelSettings === undefined ? {} : { modelSettings: props.modelSettings })}
           {...(props.onCompressionSelect === undefined
             ? {}
             : { onCompressionSelect: props.onCompressionSelect })}
@@ -305,6 +311,7 @@ function ShellFrame(props: {
   readonly selectedProfileId?: string | null;
   readonly onControlSelect?: (id: string) => void;
   readonly compression?: CompressionControlState;
+  readonly modelSettings?: ModelSettingsService | null;
   readonly onCompressionSelect?: (action: CompressionControlAction) => void;
   readonly artifactViewer?: ArtifactViewer;
   readonly gitDashboard?: GitDashboard;
@@ -433,6 +440,8 @@ function overlayTitle(
       return CONTROL_PANEL_TITLES[route.panel];
     case "compression":
       return "Compression";
+    case "model-settings":
+      return "Model roles";
     case "workspace":
       return workspacePanelTitle(route.panel);
     case "session-nav":
@@ -480,6 +489,9 @@ function overlayBody(
     readonly selectedProfileId?: string | null;
     readonly onControlSelect?: (id: string) => void;
     readonly compression?: CompressionControlState;
+    readonly modelSettings?:
+      | import("../../application/providers/model-settings.ts").ModelSettingsService
+      | null;
     readonly onCompressionSelect?: (action: CompressionControlAction) => void;
     readonly artifactViewer?: ArtifactViewer;
     readonly gitDashboard?: GitDashboard;
@@ -553,6 +565,8 @@ function overlayBody(
           {...(props.onControlSelect === undefined ? {} : { onSelect: props.onControlSelect })}
         />
       );
+    case "model-settings":
+      return <ModelSettingsSheet service={props.modelSettings ?? null} rows={rows} />;
     case "compression":
       return (
         <CompressionSheet

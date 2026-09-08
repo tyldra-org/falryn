@@ -59,23 +59,14 @@ function samplePolicy(): ModelPolicy {
         ],
         budgets: { attempts: 2 },
       },
-      "fast-read": {
-        providerProfileId: "primary-profile",
-        providerId: primary,
-        modelId: fast,
-        reasoning: "minimal",
-      },
-      "fast-edit": {
-        providerProfileId: "primary-profile",
-        providerId: primary,
-        modelId: fast,
-        reasoning: "minimal",
-      },
-      commit: {
-        providerProfileId: "primary-profile",
-        providerId: primary,
-        modelId: deep,
-        reasoning: "balanced",
+      fast: {
+        default: {
+          providerProfileId: "primary-profile",
+          providerId: primary,
+          modelId: fast,
+          reasoning: "minimal",
+        },
+        use: { memory: "evaluated", compaction: "evaluated" },
       },
       plan: {
         providerProfileId: "primary-profile",
@@ -95,12 +86,6 @@ function samplePolicy(): ModelPolicy {
         providerId: secondary,
         modelId: deep,
         use: "explicit",
-      },
-      compact: {
-        providerProfileId: "primary-profile",
-        providerId: primary,
-        modelId: fast,
-        use: "evaluated",
       },
     },
   });

@@ -6,7 +6,18 @@
  */
 
 import type { ProviderModelIdentity } from "../catalog/model-identity.ts";
-import { MODEL_ROLES, type ModelRole, WORK_INTENTS, type WorkIntent } from "./roles.ts";
+import type {
+  ParsedModelRoleSettings,
+  ParsedRoleBudgets,
+  ParsedRoleRoute,
+} from "./policy-schema.ts";
+import {
+  type FastOption,
+  MODEL_ROLES,
+  type ModelRole,
+  WORK_INTENTS,
+  type WorkIntent,
+} from "./roles.ts";
 
 export const REASONING_EFFORTS = [
   "minimal",
@@ -22,21 +33,9 @@ export function isReasoningEffort(value: unknown): value is ReasoningEffort {
   return typeof value === "string" && (REASONING_EFFORTS as readonly string[]).includes(value);
 }
 
-export type RoleBudgets = {
-  readonly attempts?: number;
-  readonly inputTokens?: number;
-  readonly outputTokens?: number;
-  readonly wallTimeMs?: number;
-  readonly cost?: number;
-};
-
+export type RoleBudgets = ParsedRoleBudgets;
 export type FallbackTarget = ProviderModelIdentity;
-
-export type RoleRoute = ProviderModelIdentity & {
-  readonly reasoning: ReasoningEffort;
-  readonly fallbacks: readonly FallbackTarget[];
-  readonly budgets: RoleBudgets;
-};
+export type RoleRoute = ParsedRoleRoute;
 
 export type VisionRoleRoute = RoleRoute & {
   readonly use: "fallback" | "always" | "off";
@@ -46,20 +45,7 @@ export type AdvisorRoleRoute = RoleRoute & {
   readonly use: "explicit" | "evaluated" | "off";
 };
 
-export type CompactRoleRoute = RoleRoute & {
-  readonly use: "evaluated" | "off";
-};
-
-export type ModelRoleRoutes = {
-  readonly default: RoleRoute;
-  readonly "fast-read"?: RoleRoute;
-  readonly "fast-edit"?: RoleRoute;
-  readonly plan?: RoleRoute;
-  readonly commit?: RoleRoute;
-  readonly vision?: VisionRoleRoute;
-  readonly advisor?: AdvisorRoleRoute;
-  readonly compact?: CompactRoleRoute;
-};
+export type ModelRoleRoutes = ParsedModelRoleSettings & { readonly default: RoleRoute };
 
 export type IntentRoleMap = {
   readonly [K in WorkIntent]: ModelRole;
@@ -68,16 +54,16 @@ export type IntentRoleMap = {
 /** Design-table defaults: intent → generative role. */
 export const DEFAULT_INTENT_ROLE_MAP = {
   coding: "default",
-  read: "fast-read",
-  toolRouting: "fast-read",
-  fastEdit: "fast-edit",
+  read: "default",
+  toolRouting: "default",
+  edit: "default",
   planning: "plan",
   deepReview: "default",
   verification: "default",
   visualUnderstanding: "vision",
   independentCritique: "advisor",
-  compression: "compact",
-  memory: "compact",
+  compression: "fast",
+  memory: "fast",
 } as const satisfies IntentRoleMap;
 
 export type ModelPolicy = {
@@ -100,57 +86,46 @@ export function isCompleteIntentMap(value: unknown): value is IntentRoleMap {
 }
 
 export function resolveIntentRole(policy: ModelPolicy, intent: WorkIntent): ModelRole {
+  if (intent === "coding" || intent === "read" || intent === "toolRouting" || intent === "edit")
+    return "default";
   return policy.intents[intent];
+}
+
+/** A Fast option is explicit operation context, never inferred from a model name. */
+export function fastOptionForIntent(intent: WorkIntent | null): FastOption | undefined {
+  return intent === "compression" ? "compaction" : intent === "memory" ? "memory" : undefined;
 }
 
 export function roleRouteFor(
   policy: ModelPolicy,
   role: ModelRole,
-): RoleRoute | VisionRoleRoute | AdvisorRoleRoute | CompactRoleRoute | undefined {
+  option?: FastOption,
+): RoleRoute | VisionRoleRoute | AdvisorRoleRoute | undefined {
   switch (role) {
     case "default":
       return policy.roles.default;
-    case "fast-read":
-      return policy.roles["fast-read"] ?? policy.roles.default;
-    case "fast-edit":
-      return policy.roles["fast-edit"] ?? policy.roles.default;
+    case "fast":
+      return (
+        (option === undefined ? undefined : policy.roles.fast?.options?.[option]) ??
+        policy.roles.fast?.default ??
+        policy.roles.default
+      );
+    case "subagents":
+      return policy.roles.subagents?.default ?? policy.roles.default;
+    case "workflows":
+      return policy.roles.workflows?.default ?? policy.roles.default;
     case "plan":
       return policy.roles.plan ?? policy.roles.default;
-    case "commit":
-      return policy.roles.commit ?? policy.roles.default;
     case "vision":
       return policy.roles.vision;
     case "advisor":
       return policy.roles.advisor;
-    case "compact":
-      return policy.roles.compact;
-    default: {
-      const _exhaustive: never = role;
-      return _exhaustive;
-    }
   }
 }
 
 export function isRoleDisabled(
-  route: RoleRoute | VisionRoleRoute | AdvisorRoleRoute | CompactRoleRoute,
+  route: RoleRoute | VisionRoleRoute | AdvisorRoleRoute,
   role: ModelRole,
 ): boolean {
-  switch (role) {
-    case "vision":
-      return "use" in route && route.use === "off";
-    case "advisor":
-      return "use" in route && route.use === "off";
-    case "compact":
-      return "use" in route && route.use === "off";
-    case "default":
-    case "fast-read":
-    case "fast-edit":
-    case "plan":
-    case "commit":
-      return false;
-    default: {
-      const _exhaustive: never = role;
-      return _exhaustive;
-    }
-  }
+  return (role === "vision" || role === "advisor") && "use" in route && route.use === "off";
 }

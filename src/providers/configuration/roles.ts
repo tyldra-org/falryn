@@ -7,13 +7,12 @@
 
 export const MODEL_ROLES = [
   "default",
-  "compact",
+  "fast",
+  "subagents",
+  "workflows",
   "vision",
   "plan",
   "advisor",
-  "commit",
-  "fast-read",
-  "fast-edit",
 ] as const;
 
 export type ModelRole = (typeof MODEL_ROLES)[number];
@@ -26,7 +25,7 @@ export const WORK_INTENTS = [
   "coding",
   "read",
   "toolRouting",
-  "fastEdit",
+  "edit",
   "planning",
   "deepReview",
   "verification",
@@ -41,3 +40,15 @@ export type WorkIntent = (typeof WORK_INTENTS)[number];
 export function isWorkIntent(value: unknown): value is WorkIntent {
   return typeof value === "string" && (WORK_INTENTS as readonly string[]).includes(value);
 }
+
+export const FAST_OPTIONS = [
+  "research",
+  "documents",
+  "background-results",
+  "memory",
+  "compaction",
+  "vision-media",
+] as const;
+export type FastOption = (typeof FAST_OPTIONS)[number];
+export const SUBAGENT_PRESETS = ["small", "medium", "big"] as const;
+export type SubagentPreset = (typeof SUBAGENT_PRESETS)[number];

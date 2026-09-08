@@ -84,7 +84,7 @@ function samplePolicy(): ModelPolicy {
         providerProfileId: "conformance",
         providerId: primary,
         modelId: fast,
-        reasoning: "minimal",
+        reasoning: "provider-default",
         fallbacks: [{ providerProfileId: "fallback", providerId: secondary, modelId: fast }],
       },
       vision: {

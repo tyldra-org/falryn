@@ -10,6 +10,7 @@
  * it into text.
  */
 
+import type { ModelSettingsResult } from "../application/providers/model-settings.ts";
 import { assertNever } from "../domain/foundation/index.ts";
 import { effectOf, type TerminalOutcome } from "../domain/orchestration/index.ts";
 import type {
@@ -41,6 +42,7 @@ import type { DataGcPayload, DataRetentionPayload } from "./commands/data-retent
 import type { DoctorPayload, runDoctor } from "./commands/doctor.ts";
 import type { ExportCommandPayload, runExport } from "./commands/export.ts";
 import type { runImport, runReplay } from "./commands/import-replay-commands.ts";
+import type { runModel } from "./commands/model.ts";
 import type { ProviderCommandPayload, runProvider } from "./commands/provider.ts";
 import type {
   runSessionList,
@@ -262,6 +264,8 @@ export function stoppedResult(
         outcome,
         effect,
       );
+    case "model":
+      return resultFor<"model", ModelSettingsResult>("model", null, [], outcome, effect);
     case "provider":
       return resultFor<"provider", ProviderCommandPayload>("provider", null, [], outcome, effect);
     case "run":
@@ -321,4 +325,5 @@ export type RunCommandResult =
   | Awaited<ReturnType<typeof runWorkspaceSave>>
   | Awaited<ReturnType<typeof runWorkspaceLoad>>
   | Awaited<ReturnType<typeof runProvider>>
+  | Awaited<ReturnType<typeof runModel>>
   | Awaited<ReturnType<typeof runCoding>>;

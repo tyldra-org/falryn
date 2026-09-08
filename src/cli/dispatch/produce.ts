@@ -1,3 +1,4 @@
+import type { ModelSettingsRequest } from "../../application/providers/model-settings.ts";
 import { assertNever } from "../../domain/foundation/index.ts";
 import type { Invocation, RunnableCommand } from "../command-tree.ts";
 import {
@@ -8,6 +9,7 @@ import {
 } from "../commands/data-backup-commands.ts";
 import { runDataGc, runDataRetention } from "../commands/data-retention-gc-commands.ts";
 import { runImport, runReplay } from "../commands/import-replay-commands.ts";
+import { runModel } from "../commands/model.ts";
 import { runTaskCommitPlan } from "../commands/task-commit-plan-commands.ts";
 import {
   runTaskDecompose,
@@ -47,6 +49,7 @@ import {
 } from "../runtime/session-navigation.ts";
 
 export type DispatchProduceOptions = {
+  readonly modelRequest?: ModelSettingsRequest;
   readonly streams: CliStreams;
   readonly governance?: InvocationGovernance;
 };
@@ -233,6 +236,9 @@ export async function produce(
         throw new Error("Missing parsed workspace load arguments.");
       }
       return runWorkspaceLoad(services, workspaceArgs, signal);
+    case "model":
+      if (options.modelRequest === undefined) throw new Error("Missing model settings request.");
+      return runModel(services, options.modelRequest, globals, signal, onMutationStart);
     case "provider":
       if (providerArgs === null) {
         throw new Error("Missing parsed provider arguments.");

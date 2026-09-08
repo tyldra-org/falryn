@@ -31,6 +31,11 @@ export type ComposerSlashAlias = {
  */
 export const WORKSPACE_SLASH_ALIASES: readonly ComposerSlashAlias[] = [
   {
+    forms: ["/model roles", "/model configure", "/settings models"],
+    commandId: "model.settings",
+    argument: "none",
+  },
+  {
     forms: ["/workspace add", "/add-dir"],
     commandId: "workspace.addRoot",
     argument: "path",

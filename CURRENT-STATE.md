@@ -181,8 +181,10 @@ so the same model ID can safely exist under multiple accounts, endpoints, or
 providers. The interactive model picker shows the provider display name and
 profile beside each model, and its selection notice repeats all three identity
 parts. Malformed, mismatched, missing, unavailable, or transport-ineligible
-selections fail without replacing the current model. Persistent role and model
-configuration editing remains future work under GitHub issue #273.
+selections fail without replacing the current model. Persistent model-role
+settings use the shared `model roles|configure|reset|migrate|clear` CLI actions
+and the OpenTUI panel reached through `/model roles`, `/model configure`, or
+`/settings models`. Mutations require the inspected file revision.
 Provider profiles select enabled model IDs and may reference user catalogs by
 identity, and optional inline profile declarations remain the highest-priority
 compatibility override. A user catalog is a bounded JSONC document at
@@ -635,10 +637,31 @@ the effective profile, completion criterion, model role, reasoning setting,
 policy generation, and Plan artifact identity when present. OpenTUI shows the
 active profile in the status line and emits a transcript notice when it changes.
 
-The public model roles are `default`, `compact`, `vision`, `plan`, `advisor`,
-`commit`, `fast-read`, and `fast-edit`. Unconfigured standard job roles inherit
-`default`; reasoning remains a supported setting on the effective model rather
-than a `thinking` or `deep` role. Profiles request a work intent and reasoning
+The public model roles are `default`, `fast`, `subagents`, `workflows`, `vision`,
+`plan`, and `advisor`. Ordinary coding, reading, tool selection, editing and
+commit work stays on the captured main model. Fast has independent research,
+documents, background-results, memory, compaction and vision-media options.
+Subagents has Default and Small/Medium/Big presets; Workflows has its own Default.
+Neither inherits Fast. Actual agent/workflow catalogs and runners are not yet
+attached to the product settings host; Advanced shows retained missing entries
+without inventing definitions or execution readiness. The shared resolver accepts
+owner-supplied definitions, stable node keys, and revision metadata, distinguishes
+model nodes from agent nodes, and gives deterministic nodes no model.
+
+`models.policy` stores schema version 2 in user or profile configuration. A
+profile replaces the complete user value. Project, environment and generic CLI
+overrides cannot set it. Reset removes one preference, preserving explicit
+descendants. Separate clear and legacy-import actions require a preview;
+import retains the original and previous destination in a recoverable local copy
+before atomic replacement. Legacy compact routes migrate independently to memory
+and compaction with explicit conflict decisions and preserved use; retired
+read/edit/commit routes never replace main. Historical receipt roles remain
+replay data. Route assignment does not enable model-assisted memory/compaction;
+their evaluated/off policy and existing workload admission remain separate.
+
+Thinking follows the winning model route and omitted thinking uses that model's
+provider default. Unsupported explicit thinking fails visibly. Reasoning remains
+a setting on the effective model, rather than a separate role. Profiles request a work intent and reasoning
 posture, but never choose a hidden provider or grant authority through model
 routing. The current product turn still receives one selected provider catalog
 and fixed adapter, so cross-profile or cross-provider fallback is not
@@ -656,8 +679,13 @@ exist in the current catalog generation, must not be unavailable, and must be
 executable by the selected provider adapter. A successful selection becomes the
 process-local default route for later turns and remains selected when the
 process creates a new session. An in-flight turn keeps the model identity it
-captured before provider execution. This selection remains process-local; durable role and
-fallback editing is still outside the current interface.
+captured before provider execution. Picker selections remain process-local and
+take precedence over the saved main default. Settings writes affect subsequent
+turns with their captured configuration generation; changing the saved provider
+profile requires reopening the shell to attach that profile's authenticated
+adapter. A mismatched selection fails closed. Headless configuration supports
+explicit bounded fallback lists; each fallback uses its own provider-default
+thinking and cannot implicitly reuse an unsupported primary-model control.
 
 The current disclosure path uses that task-aware opportunity plan to select a
 bounded profile-eligible subset from the shared registry, resolves exact

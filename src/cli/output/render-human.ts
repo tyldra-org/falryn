@@ -1,3 +1,4 @@
+import { modelSettingsLines } from "../../application/providers/model-settings-format.ts";
 /**
  * The human and quiet projections of a `CommandResult`.
  *
@@ -462,6 +463,11 @@ function renderPayload(session: Session, result: RunCommandResult): RenderedPayl
       return renderWorkspaceSet(session, result.payload, result.command);
     case "workspace.save":
       return renderWorkspaceSave(session, result.payload);
+    case "model":
+      return {
+        lines: result.payload === null ? [] : modelSettingsLines(result.payload).map(safe),
+        diagnostics: [],
+      };
     case "provider":
       return renderProviderConnections(session, result.payload);
     case "run":
@@ -548,6 +554,7 @@ function quietFindingLines(result: RunCommandResult): readonly string[] {
     case "workspace.load":
     case "workspace.save":
     case "provider":
+    case "model":
     case "run":
       return [];
     default:

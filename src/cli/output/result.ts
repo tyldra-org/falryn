@@ -85,6 +85,7 @@ export const COMMAND_IDS = [
   "workspace.load",
   /** Provider profile, authentication, selection, and model-catalog actions (#798). */
   "provider",
+  "model",
   /** Shell completion install script (#731). */
   "completion",
   /** Headless coding entry (#708). */

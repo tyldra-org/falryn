@@ -1,6 +1,6 @@
 /**
  * Specialized role support: vision use-policy, thinking/reasoning helpers,
- * fast-edit/read requirement defaults, and compact evaluated/off selection.
+ * ordinary main-model requirements, and Fast memory/compaction use policy.
  *
  * Pure library helpers consumed by `resolveModelRoute`. No live provider
  * thinking streams or vendor adapters.
@@ -9,13 +9,14 @@
 import type { ModelCapability } from "../catalog/discovery.ts";
 import type { ModelInputModality, ModelOutputModality } from "../catalog/model-capability.ts";
 import {
+  fastOptionForIntent,
   type ModelPolicy,
   type ReasoningEffort,
   type RoleRoute,
   resolveIntentRole,
   roleRouteFor,
 } from "./policy.ts";
-import type { ModelRole, WorkIntent } from "./roles.ts";
+import type { FastOption, ModelRole, WorkIntent } from "./roles.ts";
 
 export type RouteRequirement = {
   readonly modalities?: readonly ModelInputModality[];
@@ -38,7 +39,7 @@ export function defaultRequirementsForIntent(intent: WorkIntent): RouteRequireme
       return { streaming: true };
     case "toolRouting":
       return { tools: true };
-    case "fastEdit":
+    case "edit":
       return { tools: true, streaming: true };
     case "planning":
       return { reasoning: true };
@@ -138,7 +139,7 @@ export function intentPrefersReasoningEffort(intent: WorkIntent): boolean {
     case "coding":
     case "read":
     case "toolRouting":
-    case "fastEdit":
+    case "edit":
     case "verification":
     case "visualUnderstanding":
     case "independentCritique":
@@ -177,6 +178,7 @@ export type ResolveSpecializedRoleInput = {
   readonly policy: ModelPolicy;
   readonly intent?: WorkIntent | null;
   readonly role?: ModelRole;
+  readonly fastOption?: FastOption;
   readonly required?: RouteRequirement;
   /**
    * Capability of the tentative (pre-escalation) primary route when known.
@@ -187,7 +189,7 @@ export type ResolveSpecializedRoleInput = {
 
 /**
  * Resolve role + requirement defaults for specialized workloads (vision use,
- * compact evaluated/off, fast-edit/read defaults). Callers still run catalog
+ * Fast evaluated/off, ordinary main-model defaults). Callers still run catalog
  * compatibility via `resolveModelRoute`.
  */
 export function resolveSpecializedRole(input: ResolveSpecializedRoleInput): SpecializedRoleOutcome {
@@ -207,15 +209,17 @@ export function resolveSpecializedRole(input: ResolveSpecializedRoleInput): Spec
 
   let role = mappedRole;
 
-  // Compact: evaluated allows selection when mapped; off fails closed.
-  if (role === "compact") {
-    const compact = input.policy.roles.compact;
-    if (compact === undefined) {
-      return { kind: "role-unconfigured", role: "compact", intent };
+  // Configuring a route cannot enable model-assisted memory or compaction.
+  if (role === "fast") {
+    const option = input.fastOption ?? fastOptionForIntent(intent);
+    if (option === undefined) return { kind: "role-unconfigured", role, intent };
+    if (
+      (option === "memory" || option === "compaction") &&
+      input.policy.roles.fast?.use?.[option] !== "evaluated"
+    ) {
+      return { kind: "role-disabled", role, intent };
     }
-    if (compact.use === "off") {
-      return { kind: "role-disabled", role: "compact", intent };
-    }
+    // An explicit Fast media operation does not chain the general vision role.
     return { kind: "resolved", role, required };
   }
 

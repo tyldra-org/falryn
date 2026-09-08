@@ -44,7 +44,7 @@ export function productOpportunityIntentFamilies(
     case "toolRouting":
     case "compression":
       return ["capability"];
-    case "fastEdit":
+    case "edit":
       return ["read", "edit"];
     case "deepReview":
       return ["search", "read", "run"];

@@ -9,7 +9,12 @@ import {
 } from "../../domain/artifacts/index.ts";
 import type { BriefReceipt, BriefRequest } from "../../domain/compression/index.ts";
 import type { EvidenceCandidate, PromptSectionInput } from "../../domain/context/index.ts";
-import type { ClockPort, ModelId, TurnId } from "../../domain/foundation/index.ts";
+import type {
+  ClockPort,
+  ConfigurationGeneration,
+  ModelId,
+  TurnId,
+} from "../../domain/foundation/index.ts";
 import type { TerminalOutcome } from "../../domain/orchestration/index.ts";
 import {
   type EffectiveExecutionPolicy,
@@ -131,6 +136,8 @@ export type ProductLiveTurnExecutor = {
 };
 
 export type ProductLiveTurnExecutorOptions = {
+  readonly modelPreferences?: () => import("../../providers/configuration/policy-schema.ts").ModelPreferences;
+  readonly modelConfigurationGeneration?: () => ConfigurationGeneration;
   readonly runtime: ProductAgentRuntime;
   readonly clock: ClockPort;
   readonly providerCatalog: ModelCatalog | null;
@@ -172,7 +179,18 @@ export function productModelPolicy(
   catalog: ModelCatalog,
   executionPolicy?: EffectiveExecutionPolicy,
   selectedModel?: ProviderModelIdentity | null,
+  preferences?: import("../../providers/configuration/policy-schema.ts").ModelPreferences,
 ): ModelPolicy | null {
+  if (
+    selectedModel !== undefined &&
+    selectedModel !== null &&
+    (selectedModel.providerProfileId !== adapter.identity.profileId ||
+      selectedModel.providerId !== adapter.identity.providerId ||
+      !catalog.models.some(
+        (model) => model.modelId === selectedModel.modelId && model.availability !== "unavailable",
+      ))
+  )
+    return null;
   const selected =
     (selectedModel === undefined ||
     selectedModel === null ||
@@ -186,18 +204,29 @@ export function productModelPolicy(
   if (selected === undefined) {
     return null;
   }
+  const configured = preferences?.roles.default;
+  const saved =
+    configured !== undefined &&
+    configured.providerProfileId === adapter.identity.profileId &&
+    configured.providerId === adapter.identity.providerId &&
+    configured.modelId === selected.modelId
+      ? configured
+      : undefined;
   return {
     roles: {
+      ...preferences?.roles,
       default: {
         providerProfileId: adapter.identity.profileId,
         providerId: adapter.identity.providerId,
         modelId: selected.modelId,
-        reasoning: executionPolicy?.reasoning === "balanced" ? "balanced" : "provider-default",
-        fallbacks: [],
-        budgets: {},
+        reasoning:
+          saved?.reasoning ??
+          (executionPolicy?.reasoning === "balanced" ? "balanced" : "provider-default"),
+        fallbacks: saved?.fallbacks ?? [],
+        budgets: saved?.budgets ?? {},
       },
     },
-    intents: DEFAULT_INTENT_ROLE_MAP,
+    intents: preferences?.intents ?? DEFAULT_INTENT_ROLE_MAP,
   };
 }
 
@@ -213,6 +242,7 @@ export function createProductLiveTurnExecutor(
   )?.modelId;
   let activeModel: ProviderModelIdentity | null =
     options.initialModel ??
+    options.modelPreferences?.().roles.default ??
     (providerIdentity === null || initialCatalogModel === undefined
       ? null
       : {
@@ -220,6 +250,7 @@ export function createProductLiveTurnExecutor(
           providerId: providerIdentity.providerId,
           modelId: initialCatalogModel,
         });
+  let activeModelExplicit = options.initialModel !== undefined;
   let sessionStarted = false;
   let initialProfilePersisted = false;
 
@@ -410,7 +441,7 @@ export function createProductLiveTurnExecutor(
       sessionId: correlation.sessionId,
       workspaceId: correlation.workspaceId,
       traceId: correlation.traceId,
-      configurationGeneration: correlation.configurationGeneration,
+      configurationGeneration: policy.configurationGeneration,
       outcome,
     });
     await producer.refreshFromStore();
@@ -502,6 +533,7 @@ export function createProductLiveTurnExecutor(
         }
         const changed = !sameProviderModelIdentity(activeModel, identity);
         activeModel = identity;
+        activeModelExplicit = true;
         return {
           ok: true,
           providerProfileId: identity.providerProfileId,
@@ -514,15 +546,25 @@ export function createProductLiveTurnExecutor(
     },
     startSession,
     async run(input) {
+      const modelPreferences = options.modelPreferences?.();
+      const generation =
+        options.modelConfigurationGeneration?.() ?? correlation.configurationGeneration;
+      if (!activeModelExplicit)
+        activeModel =
+          modelPreferences?.roles.default ??
+          (providerIdentity === null || initialCatalogModel === undefined
+            ? null
+            : {
+                providerProfileId: providerIdentity.profileId,
+                providerId: providerIdentity.providerId,
+                modelId: initialCatalogModel,
+              });
+      const selectedModel = activeModel;
       const sessionFailure = await startSession();
       if (sessionFailure !== null) {
         return sessionFailure;
       }
-      const executionPolicy = resolveExecutionProfile(
-        activeProfile,
-        correlation.configurationGeneration,
-      );
-      const selectedModel = activeModel;
+      const executionPolicy = resolveExecutionProfile(activeProfile, generation);
       if (executionPolicy.completion === "durable-plan" && options.artifacts === undefined) {
         return result({
           kind: "unavailable",
@@ -547,7 +589,7 @@ export function createProductLiveTurnExecutor(
         sessionId: correlation.sessionId,
         workspaceId: correlation.workspaceId,
         traceId: correlation.traceId,
-        configurationGeneration: correlation.configurationGeneration,
+        configurationGeneration: generation,
       });
       if (!startedTurn.ok) {
         return result({
@@ -685,7 +727,7 @@ export function createProductLiveTurnExecutor(
         turnId: input.turnId,
         sessionId: correlation.sessionId,
         workspaceId: correlation.workspaceId,
-        configurationGeneration: correlation.configurationGeneration,
+        configurationGeneration: generation,
         task: input.prompt,
         candidates: prepared.candidates,
         tools: disclosure.promptTools,
@@ -742,6 +784,7 @@ export function createProductLiveTurnExecutor(
               options.providerCatalog,
               executionPolicy,
               selectedModel,
+              modelPreferences,
             );
       if (!attemptRunner.ok || options.providerCatalog === null || policy === null) {
         return settleFailure(
@@ -793,7 +836,7 @@ export function createProductLiveTurnExecutor(
       });
       const attempted = await attemptPolicy.run({
         turnId: input.turnId,
-        configurationGeneration: correlation.configurationGeneration,
+        configurationGeneration: generation,
         signal: input.signal ?? new AbortController().signal,
         intent: input.intent ?? executionPolicy.workIntent,
         modelInput: attemptModelInputFromPrompt(planned.value.prompt, disclosure, executionPolicy, {
@@ -839,7 +882,7 @@ export function createProductLiveTurnExecutor(
         sessionId: correlation.sessionId,
         workspaceId: correlation.workspaceId,
         traceId: correlation.traceId,
-        configurationGeneration: correlation.configurationGeneration,
+        configurationGeneration: generation,
         outcome: terminalOutcome,
       });
       const refreshed = await producer.refreshFromStore();

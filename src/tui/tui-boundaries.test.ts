@@ -947,6 +947,7 @@ describe("the rendered test harness", () => {
         "overlays/controls.test.tsx",
         "shell/frame.test.tsx",
         "overlays/interaction.test.tsx",
+        "overlays/model-settings-sheet.test.tsx",
         "composer/live-composer-mid-turn.test.tsx",
         "overlays/palette.test.tsx",
         "visual/render-gate.test.tsx",

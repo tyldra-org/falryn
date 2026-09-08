@@ -221,7 +221,8 @@ export type ProviderConnectionService = {
     signal?: AbortSignal,
   ): Promise<ProviderConnectionActionResult>;
   selected(signal?: AbortSignal): Promise<ProviderConnectionActionResult>;
-  openSelected(signal?: AbortSignal): Promise<ProviderConnectionHandoffResult>;
+  /** A captured model-role profile overrides selection for this handoff only. */
+  openSelected(signal?: AbortSignal, profileId?: string): Promise<ProviderConnectionHandoffResult>;
 };
 
 /** Internal handoff for the live attempt owner. Contains references, not secrets. */

@@ -80,6 +80,9 @@ import type { TranscriptFeed } from "../../tui/transcript/transcript-feed.ts";
 import type { ProductProviderConnectionHandoff } from "./product-provider-connections.ts";
 
 export type ProductShellAttachmentPorts = {
+  readonly modelPreferences?: () => import("../../providers/configuration/policy-schema.ts").ModelPreferences;
+  readonly modelConfigurationGeneration?: () => ConfigurationGeneration;
+  readonly modelSettings?: import("../../application/providers/model-settings.ts").ModelSettingsService;
   /** Durable in production; tests may inject the in-memory event-store double. */
   readonly eventStore: EventStorePort;
   readonly clock: ClockPort;
@@ -143,13 +146,15 @@ export async function composeProductShellAttachments(
           ?.modelId
       : undefined;
   let selectedModel: ProviderModelIdentity | null =
-    providerProfile === null || defaultModelId === undefined
+    ports.modelPreferences?.().roles.default ??
+    (providerProfile === null || defaultModelId === undefined
       ? null
       : {
           providerProfileId: providerProfile.profileId,
           providerId: providerProfile.providerId,
           modelId: defaultModelId,
-        };
+        });
+  let selectedModelExplicit = false;
 
   const workspaceRoot =
     ports.workspaceSet === null ? null : primaryWorkspaceRoot(ports.workspaceSet).path;
@@ -350,6 +355,10 @@ export async function composeProductShellAttachments(
             recall: memoryTools.recall,
           });
     const executor = createProductLiveTurnExecutor({
+      ...(ports.modelConfigurationGeneration === undefined
+        ? {}
+        : { modelConfigurationGeneration: ports.modelConfigurationGeneration }),
+      ...(ports.modelPreferences === undefined ? {} : { modelPreferences: ports.modelPreferences }),
       runtime: composed.value,
       clock: ports.clock,
       providerCatalog: ports.provider?.kind === "ready" ? ports.provider.session.catalog : null,
@@ -361,7 +370,7 @@ export async function composeProductShellAttachments(
       ...(memory === undefined ? {} : { memory }),
       ...(ports.artifacts === undefined ? {} : { artifacts: ports.artifacts }),
       initialExecutionProfile: selectedExecutionProfile,
-      ...(selectedModel === null ? {} : { initialModel: selectedModel }),
+      ...(selectedModel === null || !selectedModelExplicit ? {} : { initialModel: selectedModel }),
     });
     return {
       sessionId,
@@ -405,6 +414,7 @@ export async function composeProductShellAttachments(
   };
   let activeSubmissions = 0;
   const submission = {
+    ...(ports.modelSettings === undefined ? {} : { modelSettings: ports.modelSettings }),
     brief,
     output,
     executionProfile: {
@@ -427,6 +437,7 @@ export async function composeProductShellAttachments(
       async select(identity: ProviderModelIdentity) {
         const selected = await active.executor.modelSelection.select(identity);
         if (selected.ok) {
+          selectedModelExplicit = true;
           selectedModel = {
             providerProfileId: selected.providerProfileId,
             providerId: selected.providerId,
