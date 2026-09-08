@@ -45,9 +45,18 @@ export function modelSettingsLines(result: ModelSettingsResult): readonly string
           if (selection === null) return [`${label}: main model unavailable`];
           if (selection.kind === "no-model") return [`${label}: deterministic; no model`];
           const { route } = selection;
+          const savedMain =
+            target.kind === "role" && target.role === "default"
+              ? result.preferences.roles.default
+              : undefined;
           return [
             `${label}: ${route.providerProfileId} / ${String(route.modelId)} · ${route.reasoning}`,
             `  from ${selection.source} · ${selection.availability}${compatibility?.ok === false ? ` · ${compatibility.code}` : ""}`,
+            ...(savedMain === undefined
+              ? []
+              : [
+                  `  saved default: ${savedMain.providerProfileId} / ${String(savedMain.modelId)} · ${savedMain.reasoning}; session selection takes precedence`,
+                ]),
             ...(selection.reason === null ? [] : [`  ${selection.reason}`]),
             ...(definition === null
               ? []

@@ -173,7 +173,10 @@ export function ModelSettingsSheet({
   } else if (page.kind === "target") {
     const target = page.target;
     const selection = inspection?.rows[0]?.selection;
-    const route = selection?.kind === "route" ? selection.route : null;
+    const route =
+      (target.kind === "role" && target.role === "default"
+        ? inspection?.preferences.roles.default
+        : undefined) ?? (selection?.kind === "route" ? selection.route : null);
     if (selection?.kind !== "no-model") {
       items.push({
         title: "Configure model",

@@ -6,6 +6,7 @@ import {
   roleRouteBaseSchema,
 } from "../../providers/configuration/policy-schema.ts";
 import { createModelSettingsService, type ModelSettingsStore } from "./model-settings.ts";
+import { modelSettingsLines } from "./model-settings-format.ts";
 
 const route = (modelId: string) =>
   roleRouteBaseSchema.parse({ providerProfileId: "account", providerId: "test", modelId });
@@ -205,4 +206,24 @@ test("changed migration candidates and clear previews cannot overwrite a later r
       expectedRevision: clear.expectedRevision,
     }),
   ).toEqual({ kind: "failed", code: "stale-settings" });
+});
+
+test("inspection distinguishes the saved main default from a captured session selection", async () => {
+  const f = fixture();
+  await f.service.execute({
+    kind: "edit",
+    edit: {
+      kind: "configure",
+      target: { kind: "role", role: "default" },
+      route: route("next-main"),
+    },
+    expectedRevision: null,
+  });
+  const result = await f.service.execute({
+    kind: "inspect",
+    target: { kind: "role", role: "default" },
+  });
+  const text = modelSettingsLines(result).join("\n");
+  expect(text).toContain("default: account / main");
+  expect(text).toContain("saved default: account / next-main");
 });
