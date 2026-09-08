@@ -20,6 +20,8 @@ import {
 import { createDebugAdapterSupervisor } from "../../application/debugging/index.ts";
 import { createLanguageServerSupervisor } from "../../application/language/index.ts";
 import { composeProductMemoryTurn, type MemoryRecords } from "../../application/memory/index.ts";
+import type { ProcessTaskNotices } from "../../application/orchestration/process-task-notices.ts";
+import type { ProcessTaskSupervisor } from "../../application/orchestration/process-task-supervisor.ts";
 import {
   composeProductAgentRuntime,
   createProductLiveTurnExecutor,
@@ -96,6 +98,8 @@ export type ProductShellAttachmentPorts = {
   readonly scratch?: ScratchResourcePort;
   /** Injectable process host for deterministic public-entrypoint integration tests. */
   readonly processCapture?: ProcessCapturePort;
+  readonly tasks?: ProcessTaskSupervisor;
+  readonly taskNotices?: ProcessTaskNotices;
   /** Application-owned focused confirmation host for consequential tool calls. */
   readonly toolConfirmation?: ProductToolConfirmationPort;
   readonly index?: WorkspaceIndexPort & WorkspaceIndexWritePort;
@@ -194,6 +198,7 @@ export async function composeProductShellAttachments(
         ? null
         : composeProductProcessTools({
             generation,
+            ...(ports.tasks === undefined ? {} : { tasks: ports.tasks }),
             capture:
               ports.processCapture ??
               createHostProcessCapturePort({
@@ -273,7 +278,8 @@ export async function composeProductShellAttachments(
               afterMutation: async (request) => {
                 if (
                   request.toolName === "scratch_write" ||
-                  request.toolName === "scratch_discard"
+                  request.toolName === "scratch_discard" ||
+                  request.toolName === "process_task"
                 ) {
                   return {};
                 }
@@ -382,10 +388,19 @@ export async function composeProductShellAttachments(
     for (const listener of listeners) listener();
   });
   const transcriptFeed: TranscriptFeed = {
-    events: () => active.producer.events(),
+    events: () => [
+      ...active.producer.events(),
+      ...(ports.taskNotices
+        ?.events()
+        .filter((event) => event.correlation.sessionId === active.sessionId) ?? []),
+    ],
     subscribe(listener) {
       listeners.add(listener);
-      return () => listeners.delete(listener);
+      const unsubscribeTasks = ports.taskNotices?.subscribe(listener);
+      return () => {
+        listeners.delete(listener);
+        unsubscribeTasks?.();
+      };
     },
   };
   let activeSubmissions = 0;

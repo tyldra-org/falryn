@@ -1,6 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { createManualClock, deadlineAt, duration, instant } from "../../domain/foundation/index.ts";
-import { NO_RETRY, type WorkUnit, workUnitId } from "../../domain/orchestration/work.ts";
+import {
+  conflictKey,
+  NO_RETRY,
+  type WorkUnit,
+  workUnitId,
+} from "../../domain/orchestration/work.ts";
 import {
   capacityScope,
   createProductResources,
@@ -326,4 +331,217 @@ test("a later role limit cannot turn previous unknown usage into zero", async ()
       .state,
   ).toBe("quota-unknown");
   task.close();
+});
+
+describe("retained task resources", () => {
+  test("caller close preserves execution and conflict occupancy, but refuses new authority", async () => {
+    const owner = createProductResources(createManualClock(), { maxConcurrent: 2 });
+    const task = owner.openTask("1", { requests: 2 });
+    const sibling = owner.openTask("1");
+    const release = task.retain();
+    if (release === null) throw new Error("retention refused");
+    const held = deferred<{ value: string; terminated: boolean }>();
+    const started = deferred<AbortSignal>();
+    const conflicting = (id: string): WorkUnit => ({
+      ...unit(id),
+      effect: "mutation",
+      conflictKeys: [conflictKey("workspace", "same-workspace")],
+    });
+    const active = task.execute({
+      operation: "held",
+      attempt: "a",
+      generation: "1",
+      unit: conflicting("held"),
+      inputBytes: 1,
+      amounts: { requests: 1 },
+      signal: new AbortController().signal,
+      run(signal) {
+        started.resolve(signal);
+        return held.promise;
+      },
+    });
+    const signal = await started.promise;
+    task.close();
+    expect(signal.aborted).toBe(false);
+    expect(task.remaining("requests")).toBe(1);
+    expect(task.retain()).toBeNull();
+    expect(task.subdivide({})).toBeNull();
+    let launches = 0;
+    const run = async () => {
+      launches++;
+      return { value: "next", terminated: true };
+    };
+    expect((await request(task, "after-close", run)).receipt.state).toBe("stale-generation");
+    const queued = sibling.execute({
+      operation: "conflict",
+      attempt: "a",
+      generation: "1",
+      unit: conflicting("conflict"),
+      inputBytes: 1,
+      amounts: {},
+      signal: new AbortController().signal,
+      run,
+    });
+    await flush();
+    expect(launches).toBe(0);
+    expect(owner.report().tasks).toBe(2);
+    held.resolve({ value: "settled", terminated: true });
+    expect((await active).kind).toBe("completed");
+    expect((await queued).kind).toBe("completed");
+    expect(launches).toBe(1);
+    release();
+    release();
+    sibling.close();
+    expect(owner.report().tasks).toBe(0);
+    expect(owner.report().uncertain).toBe(0);
+  });
+
+  test("a descendant hold retains each ancestor without reopening their budgets", async () => {
+    const owner = createProductResources(createManualClock());
+    const parent = owner.openTask("1", { requests: 2 });
+    const child = parent.subdivide({ requests: 1 });
+    const grandchild = child?.subdivide({ requests: 1 });
+    if (!child || !grandchild) throw new Error("subdivision refused");
+    const release = grandchild.retain();
+    if (release === null) throw new Error("retention refused");
+    const held = deferred<{ value: string; terminated: boolean }>();
+    const active = request(grandchild, "held", () => held.promise);
+    await flush();
+    grandchild.close();
+    child.close();
+    parent.close();
+    expect(owner.report().tasks).toBe(1);
+    expect(parent.remaining("requests")).toBe(1);
+    expect(child.remaining("requests")).toBe(0);
+    expect(grandchild.remaining("requests")).toBe(0);
+    const run = async () => ({ value: "must-not-launch", terminated: true });
+    for (const scope of [parent, child, grandchild]) {
+      expect(scope.retain()).toBeNull();
+      expect(scope.subdivide({})).toBeNull();
+      expect((await request(scope, "new", run)).receipt.state).toBe("stale-generation");
+    }
+    held.resolve({ value: "settled", terminated: true });
+    expect((await active).kind).toBe("completed");
+    release();
+    release();
+    expect(owner.report().tasks).toBe(0);
+  });
+
+  test.each(["caller", "shutdown", "deadline"] as const)(
+    "%s cancellation still stops retained execution and holds uncertain capacity",
+    async (stop) => {
+      const clock = createManualClock();
+      const owner = createProductResources(clock, { maxConcurrent: 1 });
+      const task = owner.openTask("1", { wallTimeMs: 10 });
+      const release = task.retain();
+      if (release === null) throw new Error("retention refused");
+      const held = deferred<{ value: string; terminated: boolean }>();
+      const started = deferred<AbortSignal>();
+      const abort = new AbortController();
+      const active = task.execute({
+        operation: "held",
+        attempt: "a",
+        generation: "1",
+        unit: unit("held"),
+        inputBytes: 1,
+        amounts: {},
+        signal: abort.signal,
+        run(signal) {
+          started.resolve(signal);
+          return held.promise;
+        },
+      });
+      const signal = await started.promise;
+      task.close();
+      if (stop === "caller") abort.abort();
+      else if (stop === "shutdown") owner.shutdown();
+      else await clock.advance(duration(10));
+      expect((await active).receipt.state).toBe("uncertain-after-interruption");
+      expect(signal.aborted).toBe(true);
+      release();
+      expect(owner.report().uncertain).toBe(1);
+      held.resolve({ value: "terminated", terminated: true });
+      await flush();
+      expect(owner.report().uncertain).toBe(0);
+      expect(owner.report().tasks).toBe(0);
+    },
+  );
+});
+
+describe("early receipts retain the admitted execution", () => {
+  test.each([false, true])("same operation survives caller close, child=%s", async (nested) => {
+    const owner = createProductResources(createManualClock(), { maxConcurrent: 1 });
+    const parent = owner.openTask("1");
+    const task = nested ? parent.subdivide({}) : parent;
+    if (task === null) throw new Error("child refused");
+    const held = deferred<{ value: string; terminated: boolean }>();
+    const started = deferred<AbortSignal>();
+    const active = task.execute<string>({
+      operation: "background",
+      attempt: "a",
+      generation: "1",
+      unit: unit("background"),
+      inputBytes: 1,
+      amounts: {},
+      signal: new AbortController().signal,
+      run(signal, publish) {
+        started.resolve(signal);
+        expect(publish("committed-task-handle")).toBe(true);
+        expect(publish("duplicate")).toBe(false);
+        return held.promise;
+      },
+    });
+    const receipt = await active;
+    const signal = await started.promise;
+    expect(receipt.kind).toBe("completed");
+    if (receipt.kind === "completed") expect(receipt.value).toBe("committed-task-handle");
+    task.close();
+    parent.close();
+    expect(signal.aborted).toBe(false);
+    expect(owner.report().tasks).toBe(1);
+    const other = owner.openTask("1");
+    let launched = false;
+    const waiting = request(other, "other", async () => {
+      launched = true;
+      return { value: "done", terminated: true };
+    });
+    await flush();
+    expect(launched).toBe(false);
+    held.resolve({ value: "sealed-result", terminated: true });
+    expect((await waiting).kind).toBe("completed");
+    await flush();
+    expect(owner.report().tasks).toBe(1);
+    expect(owner.report().uncertain).toBe(0);
+    other.close();
+    expect(owner.report().tasks).toBe(0);
+  });
+
+  test("interruption retains lifetime until the actual native work settles", async () => {
+    const owner = createProductResources(createManualClock(), { maxConcurrent: 1 });
+    const task = owner.openTask("1");
+    const abort = new AbortController();
+    const held = deferred<{ value: string; terminated: boolean }>();
+    await task.execute<string>({
+      operation: "background",
+      attempt: "a",
+      generation: "1",
+      unit: unit("background"),
+      inputBytes: 1,
+      amounts: {},
+      signal: abort.signal,
+      run(_signal, publish) {
+        publish("handle");
+        return held.promise;
+      },
+    });
+    task.close();
+    abort.abort();
+    await flush();
+    expect(owner.report().tasks).toBe(1);
+    expect(owner.report().uncertain).toBe(1);
+    held.resolve({ value: "sealed", terminated: true });
+    await flush();
+    expect(owner.report().tasks).toBe(0);
+    expect(owner.report().uncertain).toBe(0);
+  });
 });

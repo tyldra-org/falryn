@@ -61,6 +61,56 @@ export async function escalateOwnedTree(options: {
   return processTreeCleanupAfter("kill", false);
 }
 
+/** Join the original POSIX group after Bun has reaped its leader. Never signal the reaped PID. */
+export async function settleOwnedGroupAfterLeader(pid: number): Promise<{
+  readonly hadMembers: boolean;
+  readonly cleanup: ProcessTreeCleanup;
+}> {
+  const groupState = (): "present" | "gone" | "unavailable" => {
+    if (!POSIX || !isSignalablePid(pid)) return "unavailable";
+    try {
+      process.kill(-pid, 0);
+      return "present";
+    } catch (error) {
+      return error !== null &&
+        typeof error === "object" &&
+        "code" in error &&
+        error.code === "ESRCH"
+        ? "gone"
+        : "unavailable";
+    }
+  };
+  if (groupState() === "gone")
+    return { hadMembers: false, cleanup: { stage: "none", certainty: "reaped" } };
+  const waitForGroup = async (): Promise<boolean> => {
+    const deadline = performance.now() + DEFAULT_PROCESS_TREE_GRACE_MS;
+    while (performance.now() < deadline) {
+      const state = groupState();
+      if (state === "gone") return true;
+      if (state === "unavailable") return false;
+      await new Promise<void>((resolve) => setTimeout(resolve, 10));
+    }
+    return groupState() === "gone";
+  };
+  for (const signal of ["SIGTERM", "SIGKILL"] as const) {
+    const state = groupState();
+    if (state === "unavailable") break;
+    if (state === "present") {
+      try {
+        process.kill(-pid, signal);
+      } catch {
+        /* Verification below decides certainty. */
+      }
+    }
+    if (await waitForGroup())
+      return {
+        hadMembers: true,
+        cleanup: processTreeCleanupAfter(signal === "SIGTERM" ? "terminate" : "kill", true),
+      };
+  }
+  return { hadMembers: true, cleanup: processTreeCleanupAfter("kill", false) };
+}
+
 export function processIsAlive(pid: number): boolean {
   if (!Number.isSafeInteger(pid) || pid <= 0) {
     return false;

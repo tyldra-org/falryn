@@ -31,6 +31,7 @@ export const GC_RETENTION_REASONS = [
   "referenced",
   "reserved-or-quarantined",
   "not-reached",
+  "gc-claim-outstanding",
 ] as const;
 
 export type GcRetentionReason = (typeof GC_RETENTION_REASONS)[number];
@@ -70,6 +71,7 @@ export type GcConfirmation = {
 };
 
 export type GcRefusal =
+  | ReachabilityGcError
   | {
       readonly code: "plan-mismatch";
       readonly expected: GcPlanId;

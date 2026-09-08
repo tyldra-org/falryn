@@ -856,6 +856,59 @@ call passes through the unified policy, confirmation, hooks, scheduler,
 capture, journal, and projection gateway. Registration alone does not imply
 that all 59 schemas are placed in every prompt.
 
+## Captured background tasks
+
+`run_process` and `run_shell` accept an optional strict version-1 `execution`
+object with `attachment: foreground|background`, `foregroundWaitMs`,
+`onSettle: notify`, and `shutdown: drain`. Omitting it preserves foreground
+capture. The wait defaults to 1,000 ms and accepts 1–30,000 ms; a running receipt
+is nonterminal and never authorizes implicit detachment. Attached tasks cancel
+when their parent closes. Explicit detach/reattach preserves the same process,
+invocation, deadline, resource reservations, and cumulative allowance.
+
+The non-launching `process_task` tool offers inspect, logs, result, wait, detach,
+reattach, cancel, kill, and cleanup through the existing gateway. Controls bind
+the current session/workspace, task generation, and mutation revision. Task
+controls use reserved interactive admission and do not contend for the process's
+held workspace-effect lock. Both product hosts compose the durable supervisor.
+
+SQLite task transitions, semantic events, and terminal wake records commit
+atomically. Capture and result artifacts seal before terminal publication.
+Model log/result reads accept at most 32 KiB of source bytes within a 64 KiB
+response, with offsets, continuation, declared encoding, and completeness facts.
+Native writes coalesce into 64 KiB blocks per stream. Live reads distinguish
+available bytes from committed `durableBytes`; up to 64 KiB per stream may remain
+buffered or awaiting persistence. Settlement flushes that tail before sealing.
+A crash can lose nondurable bytes and recovery reports incomplete, uncertain output.
+Redacted views disclaim exactness. Receipts and notifications contain no argv,
+environment values, or captured output. A store retains at most 256 tasks;
+a supervisor permits 64 concurrent waits. Full capacity refuses admission.
+Cleanup requires terminal sealing and notification disposition.
+Retained tasks protect their artifacts even after session closure. Cleanup
+releases task-only retention without removing invocation provenance or shared,
+pinned, or exported roots. Reachability GC claims digests before deleting metadata
+and bytes, preventing concurrent reuse. Unconfirmed deletion leaves a visible
+`gc-claim-outstanding` omission; at most 256 claims may remain, and maintenance
+recovery for abandoned claims is unavailable.
+
+Notify-only delivery makes at most three durable attempts with one notification
+identity. The interactive transcript receives committed terminal notices without
+starting another provider request. Restart validates semantic state and probes
+supervisor/process birth identities, never adopting or signaling from a PID
+alone. Vanished or replaced supervisors with expired unchanged leases become
+uncertain; live or unreachable ownership is not silently rewritten.
+Known dead owners found before lease expiry are checked again at expiry during
+the same host session, with a fresh identity probe and fenced reconciliation.
+
+Normal headless response projection precedes detached-task drainage. The same
+Falryn process stays alive until tasks settle or reach their deadlines; event,
+artifact, index, and SQLite stores remain open through capture and its observers.
+Failed run finalization, checkpoint, or store closure makes shutdown uncertain.
+Explicit interruption cancels owned work. Linux/macOS support captured task
+ownership; Windows background launch fails closed before spawn. There is no
+daemon, automatic relaunch, or post-crash survival guarantee. Shared task UI,
+direct task CLI controls, PTY, delegated agents, and workflows remain separate.
+
 ## Current product-integration limits
 
 The model tool loop defaults to four concurrent executions and enforces an
@@ -886,7 +939,7 @@ as authoritative zero usage. Undeclared dimensions have no measured platform
 ceiling: these are admission limits, not OS CPU/RSS enforcement.
 
 GitHub issue #937 owns durable cross-process coordination and recovery;
-#938 owns platform resource ceilings. No other process or non-Falryn client is
+GitHub issue #938 owns platform resource ceilings. No other process or non-Falryn client is
 observed. The process owner exposes explicit shutdown; ordinary task completion
 closes only its task scope. #158 owns production nested-agent composition.
 
@@ -901,8 +954,8 @@ GitHub issue #200 owns both final pre-effect product paths.
 Built-in before/after capability hooks run in process. Package hook loading is
 not composed, shipped ordering uses descending priority and hook ID rather than
 the full planned dependency/source/owner order, and a timeout settles the hook
-without propagating an `AbortSignal` to stop late asynchronous work. GitHub issue
-#143 owns those hook-runtime corrections.
+without propagating an `AbortSignal` to stop late asynchronous work.
+GitHub issue #143 owns those hook-runtime corrections.
 
 Read, Loom, Hush, and selected process paths retain exact overflow artifacts,
 but the generic gateway can still replace an oversized result with an omission
@@ -914,11 +967,11 @@ Image, PDF, and notebook readers exist in the application source but are not
 registered in the product tool bundle, and live provider adapters accept text
 only; their document/media owners remain GitHub issues #183–#188.
 
-No durable background-job, delegated-agent, nested-subagent, workflow, schedule,
-goal/loop, structured-question, work-item, or cross-session mailbox runner is
-product-composed. Current opportunity records for those families are plans, not
-execution. Their existing owners include GitHub issues #155–#162, #284, #797,
-#890, #891, and #897. Extensions, MCP servers, package contributions, skills,
+Apart from captured process tasks above, no delegated-agent, nested-subagent,
+workflow, schedule, goal/loop, structured-question, work-item, or cross-session
+mailbox runner is product-composed. Opportunity records do not automatically
+launch those runtimes. Their existing owners include GitHub issues #155–#162,
+#284, #797, #890, #891, and #897. Extensions, MCP servers, package contributions, skills,
 prompts, and external hosts likewise remain registry contracts or planned
 loaders unless explicitly described above as built-in production behavior.
 

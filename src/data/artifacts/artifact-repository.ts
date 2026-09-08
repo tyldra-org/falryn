@@ -226,10 +226,39 @@ export function createArtifactRepository(
         record.artifactId,
         (statements) => {
           const identity = record.artifactId;
+          if (
+            statements.all("SELECT digest FROM artifact_gc_claims WHERE digest = $digest", {
+              digest: record.digest,
+            }).length > 0
+          ) {
+            return storageError(
+              {
+                kind: "sqlite-store",
+                code: "unavailable",
+                operation: "transaction",
+                effect: "none",
+                cause: {
+                  kind: "sqlite",
+                  code: "busy",
+                  operation: "transaction",
+                  driverCode: null,
+                  detail:
+                    "Artifact digest has an outstanding GC deletion claim; maintenance recovery is unavailable.",
+                },
+              },
+              identity,
+            );
+          }
           if (statements.all(SELECT_EXISTING, { id: identity }).length > 0) {
             return { kind: "artifact", code: "already-exists", artifactId: identity };
           }
           statements.run(INSERT_RESERVED, bindingsFor(record, run));
+          statements.run(
+            `INSERT INTO process_task_artifacts (artifact_id, task_id, generation)
+             SELECT $artifactId, task_id, generation FROM process_tasks
+             WHERE json_extract(snapshot, '$.owner.invocationId') = $invocationId`,
+            { artifactId: record.artifactId, invocationId: record.invocationId },
+          );
           return null;
         },
         signal,
@@ -272,7 +301,8 @@ export function createArtifactRepository(
         });
         const rows = store.read(
           `SELECT DISTINCT digest AS digest FROM ${ARTIFACTS_TABLE}
-           WHERE digest IN (${placeholders})`,
+           WHERE digest IN (${placeholders})
+           UNION SELECT digest FROM artifact_gc_claims WHERE digest IN (${placeholders})`,
           bindings,
         );
         if (!rows.ok) {

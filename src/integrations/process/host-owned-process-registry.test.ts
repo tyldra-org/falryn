@@ -86,4 +86,58 @@ describe("owned-process shutdown participant", () => {
     expect(report.unfinished).toContain(OWNED_PROCESS_SHUTDOWN_PARTICIPANT);
     expect(report.outcome).toEqual({ kind: "uncertain", effect: "uncertain" });
   });
+
+  test("normal drain retains durable owners without interrupting and is idempotent", async () => {
+    const bundle = createOwnedProcessRegistry();
+    const finish = Promise.withResolvers<boolean>();
+    let interrupts = 0;
+    let drains = 0;
+    const lifetime = {
+      interrupt() {
+        interrupts++;
+      },
+      drain() {
+        drains++;
+        return finish.promise;
+      },
+    };
+    expect(bundle.registry.retain(lifetime)).toBe(true);
+    const first = bundle.registry.drain();
+    expect(bundle.registry.drain()).toBe(first);
+    expect(bundle.registry.retain(lifetime)).toBe(false);
+    expect(interrupts).toBe(0);
+    expect(drains).toBe(1);
+    finish.resolve(true);
+    expect(await first).toBe(true);
+  });
+
+  test("shutdown interrupts retained owners and records failed durable settlement", async () => {
+    const bundle = createOwnedProcessRegistry();
+    const clock = createManualClock();
+    const coordinator = createShutdownCoordinator({ clock });
+    coordinator.register(bundle.shutdownParticipant);
+    const finish = Promise.withResolvers<boolean>();
+    let interrupted = false;
+    bundle.registry.retain({
+      interrupt() {
+        interrupted = true;
+        finish.resolve(false);
+      },
+      drain: () => finish.promise,
+    });
+    const shuttingDown = coordinator.shutdown();
+    await clock.runUntilIdle();
+    const report = await shuttingDown;
+    expect(interrupted).toBe(true);
+    expect(report.unfinished).toContain(OWNED_PROCESS_SHUTDOWN_PARTICIPANT);
+    expect(await bundle.registry.drain()).toBe(false);
+  });
+
+  test("refuses durable owner capacity instead of evicting it", async () => {
+    const bundle = createOwnedProcessRegistry();
+    for (let index = 0; index < 64; index++)
+      expect(bundle.registry.retain({ interrupt() {}, drain: async () => true })).toBe(true);
+    expect(bundle.registry.retain({ interrupt() {}, drain: async () => true })).toBe(false);
+    expect(await bundle.registry.drain()).toBe(true);
+  });
 });

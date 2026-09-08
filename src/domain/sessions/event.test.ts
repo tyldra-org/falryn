@@ -31,6 +31,7 @@ function carriesTurnIdentity(event: RuntimeEvent): boolean {
     case "model.attempt.completed":
     case "capability.invocation.started":
     case "capability.invocation.completed":
+    case "process.task.changed":
       return true;
     default:
       return assertNever(event, "unhandled event kind");

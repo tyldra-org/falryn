@@ -8,6 +8,19 @@ import {
 import { createLoomPort, type LoomPort } from "../../application/compression/index.ts";
 import { createDurableMemoryRecords, type MemoryRecords } from "../../application/memory/index.ts";
 import {
+  createProcessTaskNotices,
+  type ProcessTaskNotices,
+} from "../../application/orchestration/process-task-notices.ts";
+import {
+  type ProcessTaskRecovery,
+  reconcileProcessTasks,
+  watchProcessTaskRecovery,
+} from "../../application/orchestration/process-task-recovery.ts";
+import {
+  createProcessTaskSupervisor,
+  type ProcessTaskSupervisor,
+} from "../../application/orchestration/process-task-supervisor.ts";
+import {
   beginRun,
   createArtifactRepository,
   createArtifactStore,
@@ -27,9 +40,11 @@ import {
   sqliteDatabasePath,
   type WorkspaceIndexStore,
 } from "../../data/index.ts";
+import { createSqliteProcessTaskStore } from "../../data/orchestration/process-task-store.ts";
 import { runId } from "../../domain/foundation/index.ts";
 import {
   DEFAULT_BUSY_TIMEOUT_MS,
+  isCleanClose,
   isRootUsable,
   type RootStatus,
 } from "../../domain/storage/index.ts";
@@ -39,6 +54,8 @@ import {
   createSha256Hasher,
   openBunSqlite,
 } from "../../integrations/index.ts";
+import type { OwnedProcessRegistry } from "../../integrations/process/host-owned-process-registry.ts";
+import { createHostProcessIdentityPort } from "../../integrations/process/host-process-identity.ts";
 import type { ProviderContinuationStatePort } from "../../providers/index.ts";
 import type { Services } from "./services.ts";
 
@@ -50,11 +67,14 @@ export type ProductArtifactSession = {
   readonly modelCatalogs: ModelCatalogGenerationRepository;
   readonly providerContinuations: ProviderContinuationStatePort;
   readonly scratch: ScratchResourcePort;
+  readonly tasks: ProcessTaskSupervisor;
+  readonly taskNotices: ProcessTaskNotices;
+  readonly taskRecovery: readonly ProcessTaskRecovery[];
   openWorkspaceIndex(
     workspaceRoot: LocalPath,
     signal?: AbortSignal,
   ): Promise<WorkspaceIndexStore | null>;
-  close(signal?: AbortSignal): Promise<void>;
+  close(signal?: AbortSignal): Promise<boolean>;
 };
 
 function rootReady(status: RootStatus): boolean {
@@ -75,6 +95,7 @@ function workspaceIndexPath(stateRoot: LocalPath, workspaceRoot: LocalPath): Loc
 export async function openProductArtifactSession(
   services: Services,
   signal?: AbortSignal,
+  ownedProcesses?: OwnedProcessRegistry,
 ): Promise<ProductArtifactSession | null> {
   const roots = ["state", "artifacts", "temporaryIngest"] as const;
   const prepared = await services.localData.prepareRoots([...roots], signal);
@@ -123,6 +144,7 @@ export async function openProductArtifactSession(
     await store.close();
     return null;
   }
+  const runSession = run.value;
 
   const artifacts = createArtifactStore({
     repository: createArtifactRepository(store, run.value.record.runId),
@@ -148,10 +170,83 @@ export async function openProductArtifactSession(
     await store.close();
     return null;
   }
+  const identities = createHostProcessIdentityPort();
+  const processIdentity = await identities.inspect(process.pid);
+  const taskStore = createSqliteProcessTaskStore(store);
+  const recovered = await reconcileProcessTasks({
+    store: taskStore,
+    identities,
+    now: () => Number(services.clock.now()),
+    ...(signal === undefined ? {} : { signal }),
+  });
+  if (!recovered.ok) {
+    await artifacts.quiesce();
+    await eventStore.quiesce();
+    run.value.end();
+    await store.close();
+    return null;
+  }
+  const taskNotices = createProcessTaskNotices(eventStore);
+  const tasks = createProcessTaskSupervisor({
+    store: taskStore,
+    artifacts,
+    clock: services.clock,
+    runId: String(run.value.record.runId),
+    process: processIdentity.kind === "present" ? processIdentity.identity : null,
+    notify: taskNotices.notify,
+  });
+  const listed = taskStore.list();
+  if (listed.ok)
+    for (const task of listed.value) if (task.state === "terminal") await tasks.deliver(task);
+  const recovery = watchProcessTaskRecovery({
+    store: taskStore,
+    identities,
+    clock: services.clock,
+    initial: recovered.value,
+    settled: (task) => tasks.deliver(task),
+  });
+  const interrupt = () => tasks.interrupt();
+  signal?.addEventListener("abort", interrupt, { once: true });
+  if (signal?.aborted) interrupt();
   const indexes = new Map<string, WorkspaceIndexStore>();
   let closed = false;
+  let closing: Promise<boolean> | null = null;
 
-  return {
+  async function closeStores(): Promise<boolean> {
+    closed = true;
+    let clean = true;
+    const attempt = async (close: () => void | Promise<void>) => {
+      try {
+        await close();
+      } catch {
+        clean = false;
+      }
+    };
+    await attempt(async () => {
+      if (!(await recovery.close())) clean = false;
+    });
+    await attempt(async () => {
+      if (!(await tasks.drain()).ok) clean = false;
+    });
+    for (const index of indexes.values()) await attempt(() => index.close());
+    await attempt(() => artifacts.quiesce());
+    await attempt(() => eventStore.quiesce());
+    await attempt(() => {
+      if (!runSession.end().ok) clean = false;
+    });
+    await attempt(async () => {
+      if (!isCleanClose(await store.close())) clean = false;
+    });
+    signal?.removeEventListener("abort", interrupt);
+    taskNotices.dispose();
+    return clean;
+  }
+  const session: ProductArtifactSession = {
+    tasks,
+    taskNotices,
+    get taskRecovery() {
+      return recovery.reports();
+    },
     artifacts,
     eventStore,
     loom,
@@ -187,27 +282,19 @@ export async function openProductArtifactSession(
       indexes.set(key, openedIndex.value);
       return openedIndex.value;
     },
-    async close(closeSignal) {
-      if (closed) {
-        return;
-      }
-      closed = true;
-      try {
-        for (const index of indexes.values()) {
-          await index.close();
-        }
-      } finally {
-        try {
-          await artifacts.quiesce(closeSignal);
-        } finally {
-          try {
-            await eventStore.quiesce();
-          } finally {
-            run.value.end(closeSignal);
-            await store.close();
-          }
-        }
-      }
+    close(closeSignal) {
+      if (closeSignal?.aborted) interrupt();
+      closing ??= closeStores();
+      return closing;
     },
   };
+  if (
+    ownedProcesses !== undefined &&
+    !ownedProcesses.retain({ interrupt, drain: () => session.close() })
+  ) {
+    interrupt();
+    await session.close();
+    return null;
+  }
+  return session;
 }

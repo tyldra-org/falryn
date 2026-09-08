@@ -42,6 +42,7 @@ import {
 } from "../orchestration/product-resources.ts";
 import type { ToolRunnerPort, ToolRunnerRequest } from "../runtime/tool-call-loop.ts";
 import type { TurnEventJournalPort } from "../runtime/turn-event-journal.ts";
+import { PROCESS_TASK_CONTROL_CAPABILITY } from "./process-task-tool.ts";
 import { createToolHookRunner } from "./tool-hook-runner.ts";
 import { envelopeToolResult } from "./tool-result-envelope.ts";
 
@@ -68,6 +69,7 @@ export type ProductToolGatewayOptions = {
   readonly journal: TurnEventJournalPort;
   readonly correlation: SessionCorrelation;
   readonly turnId: TurnId;
+  readonly attemptId?: string;
   readonly disclosedToolNames: ReadonlySet<string>;
   readonly hooks: ToolHookRegistry;
   readonly policy?: ToolPolicyProfile;
@@ -381,11 +383,16 @@ export function createProductToolGateway(options: ProductToolGatewayOptions): To
         manifest.limits.defaultTimeoutMs === null
           ? null
           : deadlineAt(instant(Number(startedAt) + manifest.limits.defaultTimeoutMs));
-      const admitted = await task.execute({
+      const admitted = await task.execute<ToolInvocationOutcome>({
         operation: String(request.invocationId),
-        attempt: String(options.turnId),
+        attempt: options.attemptId ?? String(options.turnId),
         generation: String(options.registry.generation),
-        unit: workUnitForAuthorized({ authorized: authorized.value }, workDeadline, null),
+        unit: {
+          ...workUnitForAuthorized({ authorized: authorized.value }, workDeadline, null),
+          ...(String(manifest.capabilityId) === PROCESS_TASK_CONTROL_CAPABILITY
+            ? { priority: "interactive" as const }
+            : {}),
+        },
         inputBytes: new TextEncoder().encode(JSON.stringify(ready.input)).length,
         amounts: {
           ...manifest.resourceAmounts,
@@ -394,7 +401,7 @@ export function createProductToolGateway(options: ProductToolGatewayOptions): To
         },
         scopes,
         signal: request.signal,
-        async run(signal) {
+        async run(signal, publishReceipt) {
           if (
             request.composition !== undefined &&
             options.runner.hasBinding?.(manifest.capabilityId) !== true
@@ -408,23 +415,56 @@ export function createProductToolGateway(options: ProductToolGatewayOptions): To
               terminated: true,
             };
           }
-          const { captureExactOutput: _captureExactOutput, ...nativeRequest } = request;
-          const value = await options.runner.execute({
-            ...nativeRequest,
-            taskResources: task,
-            capabilityId: manifest.capabilityId,
-            version: manifest.version,
-            effect: ready.effect,
-            input: ready.input,
-            signal,
-          });
+          const {
+            captureExactOutput: _captureExactOutput,
+            processTask: _processTask,
+            ...nativeRequest
+          } = request;
+          let nativeTerminated: boolean | undefined;
+          const finished = Promise.withResolvers<void>();
+          const value = await options.runner
+            .execute({
+              ...nativeRequest,
+              taskResources: task,
+              ...(options.attemptId === undefined || options.correlation.workspaceId === null
+                ? {}
+                : {
+                    processTask: {
+                      owner: {
+                        sessionId: String(options.correlation.sessionId),
+                        workspaceId: String(options.correlation.workspaceId),
+                        turnId: String(options.turnId),
+                        invocationId: String(request.invocationId),
+                        attemptId: options.attemptId,
+                        configurationGeneration: Number(options.registry.generation),
+                        resourceTaskId: task.id,
+                      },
+                      publishReceipt,
+                      finished: finished.promise,
+                      deadline: Math.min(
+                        task.expiresAt,
+                        Number(workDeadline?.expiresAt ?? task.expiresAt),
+                      ),
+                      reportTermination(terminated) {
+                        nativeTerminated = terminated;
+                      },
+                    },
+                  }),
+              capabilityId: manifest.capabilityId,
+              version: manifest.version,
+              effect: ready.effect,
+              input: ready.input,
+              signal,
+            })
+            .finally(() => finished.resolve());
           return {
             value,
             terminated:
-              value.status === "completed" ||
-              value.status === "denied" ||
-              value.status === "malformed" ||
-              value.status === "unavailable",
+              nativeTerminated ??
+              (value.status === "completed" ||
+                value.status === "denied" ||
+                value.status === "malformed" ||
+                value.status === "unavailable"),
           };
         },
       });
@@ -497,7 +537,7 @@ export function createProductToolGateway(options: ProductToolGatewayOptions): To
       const validatedOutcome = projectedOutcome(
         enveloped.result.status,
         enveloped.result.effect,
-        enveloped.projection as unknown as Readonly<Record<string, unknown>>,
+        { ...enveloped.projection },
         failureReason(outcome),
       );
       const committed = await persist(options, {
@@ -520,7 +560,7 @@ export function createProductToolGateway(options: ProductToolGatewayOptions): To
       ) {
         request.captureExactOutput?.(enveloped.result.value);
       }
-      const projection = enveloped.projection as unknown as Readonly<Record<string, unknown>>;
+      const projection = { ...enveloped.projection };
       const projected = projectedOutcome(
         enveloped.result.status,
         enveloped.result.effect,

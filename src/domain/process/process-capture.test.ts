@@ -122,6 +122,25 @@ describe("process capture request contracts", () => {
 });
 
 describe("ordered capture and spillover", () => {
+  test.each(["cancelled", "timed-out"] as const)(
+    "%s cannot conceal unconfirmed tree cleanup",
+    async (kind) => {
+      const collector = createProcessCaptureCollector({
+        captureId: processCaptureId.from("unconfirmed"),
+        limits: resolveProcessCaptureLimits(BASE),
+        artifacts: null,
+      });
+      await collector.start(9, instant(0));
+      const report = await collector.finish(
+        { exitCode: null, signal: "SIGTERM" },
+        instant(100),
+        kind === "cancelled" ? { kind } : { kind, timeoutMs: duration(100) },
+        "unconfirmed",
+      );
+      expect(report.stop).toEqual({ kind: "uncertain", reason: "unconfirmed-exit" });
+      expect(report.events.at(-1)).toMatchObject({ stop: report.stop });
+    },
+  );
   test("records merged order across stdout and stderr", async () => {
     const collector = createProcessCaptureCollector({
       captureId: processCaptureId.from("cap-1"),

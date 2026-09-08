@@ -30,8 +30,15 @@ import {
   resolveProcessCaptureLimits,
   validateProcessCaptureRequest,
 } from "../../domain/process/index.ts";
+import { sameProcessBirth } from "../../domain/process/process-identity.ts";
 import type { OwnedProcessRegistry } from "./host-owned-process-registry.ts";
-import { escalateOwnedTree, ownedTreeSpawnOptions } from "./host-process-tree.ts";
+import { createHostProcessIdentityPort } from "./host-process-identity.ts";
+import {
+  escalateOwnedTree,
+  ownedTreeSpawnOptions,
+  settleOwnedGroupAfterLeader,
+  signalOwnedTree,
+} from "./host-process-tree.ts";
 
 export type HostProcessCaptureOptions = {
   readonly artifacts?: ArtifactStorePort;
@@ -45,7 +52,9 @@ export function createHostProcessCapturePort(
   const clock = options.clock ?? createSystemClock();
   const artifacts = options.artifacts ?? null;
   const ownedProcesses = options.ownedProcesses;
+  const identities = createHostProcessIdentityPort();
   return {
+    supportsOwnership: process.platform === "linux" || process.platform === "darwin",
     async run(
       request: ProcessCaptureRequest,
       listener?: ProcessCaptureListener,
@@ -54,25 +63,33 @@ export function createHostProcessCapturePort(
       if (invalid !== null) {
         return invalidProcessCaptureRequest(invalid);
       }
+      if (
+        request.ownership !== undefined &&
+        (await identities.inspect(process.pid)).kind !== "present"
+      )
+        return err({ kind: "process-capture", code: "ownership-unavailable" });
       if (request.signal?.aborted === true) {
         return cancelledWithoutProcess(clock, artifacts, request, listener);
       }
 
       const captureId = captureIdFor(request);
-      const collector = createProcessCaptureCollector({
-        captureId,
-        ...(request.invocationId === undefined ? {} : { invocationId: request.invocationId }),
-        limits: resolveProcessCaptureLimits(request),
-        artifacts,
-        listener,
-      });
       const controller = new AbortController();
       let ended: ProcessCaptureStop | null = null;
       let started = false;
       let child: Bun.Subprocess | null = null;
       let treeStop: Promise<{ readonly stage: ProcessKillStage }> | null = null;
+      let forceRequested = false;
 
-      const stopFor = (reason: ProcessCaptureStop): void => {
+      const stopFor = (reason: ProcessCaptureStop, force = false): void => {
+        if (force && child !== null && typeof child.pid === "number") {
+          forceRequested = true;
+          signalOwnedTree(child.pid, "SIGKILL");
+        }
+        if (ended !== null && reason.kind === "uncertain") {
+          // A later evidence failure must survive an earlier cancellation request.
+          ended = reason;
+          return;
+        }
         if (ended === null) {
           ended = reason;
           controller.abort();
@@ -81,6 +98,24 @@ export function createHostProcessCapturePort(
           }
         }
       };
+
+      const collector = createProcessCaptureCollector({
+        captureId,
+        ...(request.invocationId === undefined ? {} : { invocationId: request.invocationId }),
+        ...(request.retainChunkEvents === undefined
+          ? {}
+          : { retainChunkEvents: request.retainChunkEvents }),
+        limits: resolveProcessCaptureLimits(request),
+        artifacts,
+        listener: async (event) => {
+          try {
+            await request.ownership?.event(event);
+          } catch {
+            stopFor({ kind: "uncertain", reason: "owner-persistence-failed" });
+          }
+          await listener?.(event);
+        },
+      });
 
       const timer = setTimeout(() => {
         stopFor({ kind: "timed-out", timeoutMs: request.timeoutMs });
@@ -110,6 +145,31 @@ export function createHostProcessCapturePort(
         const pid = typeof spawned.pid === "number" ? spawned.pid : 0;
         await collector.start(pid, clock.now());
         started = true;
+        if (request.ownership !== undefined) {
+          const birth = await identities.inspect(pid);
+          if (birth.kind !== "present")
+            stopFor({ kind: "uncertain", reason: "ownership-unavailable" });
+          else {
+            try {
+              await request.ownership.started({
+                identity: birth.identity,
+                async stop(force, authorize) {
+                  const current = await identities.inspect(pid);
+                  if (
+                    current.kind !== "present" ||
+                    !sameProcessBirth(birth.identity, current.identity)
+                  )
+                    return "unavailable";
+                  if (authorize !== undefined && !authorize()) return "unavailable";
+                  stopFor({ kind: "cancelled" }, force);
+                  return "requested";
+                },
+              });
+            } catch {
+              stopFor({ kind: "uncertain", reason: "owner-persistence-failed" });
+            }
+          }
+        }
 
         let chain = Promise.resolve();
         const serialize = (work: () => Promise<CapturePressure>): Promise<CapturePressure> => {
@@ -126,13 +186,27 @@ export function createHostProcessCapturePort(
           readStream(spawned.stderr, "stderr", serialize, collector, stopFor),
         ]);
         const exitCode = await spawned.exited;
-        const cleanup = treeStop === null ? null : await treeStop;
+        let cleanup = treeStop === null ? null : await treeStop;
+        if (request.ownership !== undefined) {
+          // Leader exit and closed pipes do not prove that redirected descendants stopped.
+          clearTimeout(timer);
+          request.signal?.removeEventListener("abort", onAbort);
+          const group = await settleOwnedGroupAfterLeader(pid);
+          if (group.hadMembers) {
+            ended ??= { kind: "uncertain", reason: "owned-descendants-remained" };
+            cleanup = group.cleanup;
+          }
+        }
         return ok(
           await collector.finish(
             { exitCode, signal: signalText(spawned.signalCode) },
             clock.now(),
             ended ?? { kind: "exited" },
-            cleanup?.stage ?? "none",
+            cleanup?.stage === "unconfirmed"
+              ? "unconfirmed"
+              : forceRequested
+                ? "kill"
+                : (cleanup?.stage ?? "none"),
           ),
         );
       } catch (thrown) {
@@ -143,7 +217,7 @@ export function createHostProcessCapturePort(
               { exitCode: null, signal: null },
               clock.now(),
               ended,
-              cleanup?.stage ?? "none",
+              forceRequested ? "kill" : (cleanup?.stage ?? "none"),
             ),
           );
         }

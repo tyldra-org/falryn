@@ -87,6 +87,13 @@ const GENERATION_3 = [
     outcome: null,
     disclosure: null,
   },
+  {
+    kind: "notice",
+    key: "declared:process-task:task-fixture:generation-fixture",
+    status: "final",
+    outcome: null,
+    disclosure: null,
+  },
 ] as const;
 
 function snapshot(): readonly unknown[] {

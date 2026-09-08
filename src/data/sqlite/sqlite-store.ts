@@ -214,8 +214,21 @@ async function runCloseSequence(connection: SqliteConnectionPort): Promise<Sqlit
   }
 
   const checkpoint = connection.pragma("wal_checkpoint(TRUNCATE)");
+  const checkpointed =
+    checkpoint.ok &&
+    checkpoint.value.every(
+      (row) => integerOf(row.busy) === 0 && integerOf(row.log) === integerOf(row.checkpointed),
+    );
   if (!checkpoint.ok) {
     failures.push(checkpoint.error);
+  } else if (!checkpointed) {
+    failures.push({
+      kind: "sqlite",
+      code: "busy",
+      operation: "pragma",
+      driverCode: null,
+      detail: "WAL checkpoint did not finish because readers remain active.",
+    });
   }
 
   const closed = await connection.close();
@@ -225,7 +238,7 @@ async function runCloseSequence(connection: SqliteConnectionPort): Promise<Sqlit
 
   return {
     persistentWalDisabled: persistentWal.ok,
-    checkpointed: checkpoint.ok,
+    checkpointed,
     closed: closed.ok,
     failures,
   };

@@ -34,6 +34,7 @@ import type {
   ModelCapabilityBrief,
 } from "../orchestration/opportunity-plan.ts";
 import type { TerminalOutcome } from "../orchestration/outcome.ts";
+import type { ProcessTaskSnapshot } from "../orchestration/process-task.ts";
 import type { ResourceAdmissionReceipt } from "../orchestration/resource-admission.ts";
 import type { ExecutionProfileCompletion, ExecutionProfileId } from "./execution-profile.ts";
 
@@ -47,6 +48,7 @@ export const EVENT_KINDS = [
   "capability.invocation.completed",
   "configuration.generation.changed",
   "execution.profile.selected",
+  "process.task.changed",
 ] as const;
 
 export type EventKind = (typeof EVENT_KINDS)[number];
@@ -323,6 +325,22 @@ export type ExecutionProfileSelectedEvent = Envelope<
   ExecutionProfileSelectedPayload
 >;
 
+export type ProcessTaskChangedEvent = Envelope<
+  "process.task.changed",
+  TurnCorrelation,
+  {
+    readonly change:
+      | "created"
+      | "started"
+      | "attachment"
+      | "settling"
+      | "sealed"
+      | "reconciled"
+      | "cleaned";
+    readonly task: ProcessTaskSnapshot;
+  }
+>;
+
 export type RuntimeEvent =
   | SessionStartedEvent
   | TurnStartedEvent
@@ -332,7 +350,8 @@ export type RuntimeEvent =
   | CapabilityInvocationStartedEvent
   | CapabilityInvocationCompletedEvent
   | ConfigurationGenerationChangedEvent
-  | ExecutionProfileSelectedEvent;
+  | ExecutionProfileSelectedEvent
+  | ProcessTaskChangedEvent;
 
 export type ModelEvent = ModelAttemptStartedEvent | ModelAttemptCompletedEvent;
 

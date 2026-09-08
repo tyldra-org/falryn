@@ -50,6 +50,15 @@ export type ToolRunnerRequest = {
   readonly captureExactOutput?: (value: Readonly<Record<string, unknown>>) => void;
   /** Product-owned parent allowance for composition; never supplied by a model. */
   readonly taskResources?: ProductTaskResources;
+  /** Gateway-owned task lineage and commit-before-receipt lifetime transfer. */
+  readonly processTask?: {
+    readonly owner: import("../../../domain/orchestration/process-task.ts").ProcessTaskOwner;
+    readonly deadline?: number;
+    /** Resolves after the native runner and its post-effect observers finish. */
+    readonly finished?: Promise<void>;
+    reportTermination?(terminated: boolean): void;
+    publishReceipt(outcome: ToolInvocationOutcome): boolean;
+  };
   readonly invocationId: InvocationId;
   readonly toolCallId: string;
   readonly toolName: string;

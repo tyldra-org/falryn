@@ -20,6 +20,7 @@ import {
 } from "../../domain/orchestration/resource-admission.ts";
 import { effectiveConflictKeys, type WorkUnit } from "../../domain/orchestration/work.ts";
 import { createResourceLedger } from "./resource-ledger.ts";
+import { createResourceLifetime } from "./resource-lifetime.ts";
 import { createScheduler } from "./scheduler.ts";
 
 export type ResourceExecution<Value> =
@@ -39,7 +40,13 @@ export type ResourceWork<Value> = {
   readonly unknownDimensions?: readonly ResourceDimension[];
   readonly scopes?: readonly ResourceDebit[];
   readonly signal: AbortSignal;
-  run(signal: AbortSignal): Promise<{
+  /** Child scopes supply their whole ancestor lifetime for an early receipt. */
+  readonly retain?: () => (() => void) | null;
+  /** Publish a committed control receipt while this same execution retains its reservations. */
+  run(
+    signal: AbortSignal,
+    publish: (value: Value) => boolean,
+  ): Promise<{
     readonly value: Value;
     readonly actual?: ResourceAmounts;
     readonly terminated: boolean;
@@ -57,6 +64,9 @@ export type ProductTaskResources = {
   tighten(limits: ResourceAmounts): boolean;
   execute<Value>(work: ResourceWork<Value>): Promise<ResourceExecution<Value>>;
   subdivide(limits: ResourceAmounts): ProductTaskResources | null;
+  /** Hold existing execution through caller close; grants no new execution authority. */
+  retain(): (() => void) | null;
+  onClose(listener: () => void): (() => void) | null;
   close(): void;
 };
 export type ProductResources = ReturnType<typeof createProductResources>;
@@ -167,22 +177,33 @@ export function createProductResources(
         queuePosition: null,
         deadline: expiresAt,
       });
-      const close = () => {
+      const lifetime = createResourceLifetime(() => {
         closed = true;
         cancellation.abort();
         tasks.delete(id);
         replays.clear();
         ledger.closeTask(id);
-      };
+      });
+      const close = lifetime.close;
       const task: ProductTaskResources = {
         subdivide(narrower) {
-          if (!resourceAmountsSchema.safeParse(narrower).success || !claimChild()) return null;
+          if (
+            !lifetime.accepting() ||
+            !resourceAmountsSchema.safeParse(narrower).success ||
+            !claimChild()
+          )
+            return null;
           return childTask(task, narrower, clock, ledger, 1, claimChild);
         },
         id,
         generation,
         expiresAt,
         close,
+        onClose: lifetime.onClose,
+        retain() {
+          if (closed || shutdown.signal.aborted || task.remaining("wallTimeMs") === 0) return null;
+          return lifetime.retain();
+        },
         refusal(state, dimension) {
           return { ...stoppedReceipt(state), dimension: dimension ?? null };
         },
@@ -210,7 +231,8 @@ export function createProductResources(
               receipt: stoppedReceipt(state),
             });
           if (shutdown.signal.aborted) return refuse("shutdown");
-          if (closed || work.generation !== generation) return refuse("stale-generation");
+          if (closed || !lifetime.accepting() || work.generation !== generation)
+            return refuse("stale-generation");
           if (work.signal.aborted) return refuse("cancelled");
           if (overrun) return refuse("limit-exceeded");
           if ([...unknownUsage].some((dimension) => currentLimits[dimension] !== undefined))
@@ -271,6 +293,14 @@ export function createProductResources(
             return previous.result;
           }
           if (replays.size >= 512) return refuse("limit-exceeded");
+          const early = Promise.withResolvers<ResourceExecution<Value>>();
+          let published = false;
+          let release: (() => void) | null = null;
+          let workFinished = false;
+          let schedulerFinished = false;
+          const releaseWhenFinished = () => {
+            if (workFinished && schedulerFinished) release?.();
+          };
           const run = async (): Promise<ResourceExecution<Value>> => {
             let acquired = false;
             let receipt = stoppedReceipt("queued");
@@ -319,7 +349,14 @@ export function createProductResources(
                     for (const dimension of work.unknownDimensions ?? [])
                       unknownUsage.add(dimension);
                     try {
-                      const outcome = await work.run(context.signal);
+                      const outcome = await work.run(context.signal, (value) => {
+                        if (published || context.signal.aborted) return false;
+                        release = (work.retain ?? task.retain)();
+                        if (release === null) return false;
+                        published = true;
+                        early.resolve({ kind: "completed", value, receipt });
+                        return true;
+                      });
                       const actual =
                         outcome.actual === undefined
                           ? null
@@ -341,6 +378,8 @@ export function createProductResources(
                       receipt = ledger.settle(reservation, null, false) ?? receipt;
                       throw new Error("admitted operation failed without termination evidence");
                     } finally {
+                      workFinished = true;
+                      releaseWhenFinished();
                       if (closed) ledger.closeTask(id);
                     }
                   },
@@ -367,12 +406,15 @@ export function createProductResources(
               };
             return { kind: "stopped", receipt };
           };
-          const result = run();
+          const result = run().finally(() => {
+            schedulerFinished = true;
+            releaseWhenFinished();
+          });
           replays.set(reservation, {
             fingerprint,
             result: result.then((settled) => ({ kind: "replayed", receipt: settled.receipt })),
           });
-          return result;
+          return Promise.race([result, early.promise]);
         },
       };
       if (!denied) tasks.set(id, { expiresAt, close });
@@ -405,6 +447,10 @@ function childTask(
   const stop = new AbortController();
   const started = Number(clock.now());
   const scope = (dimension: ResourceDimension) => capacityScope("agent", id, "child", dimension);
+  const lifetime = createResourceLifetime(() => {
+    closed = true;
+    stop.abort();
+  });
   const child: ProductTaskResources = {
     id,
     refusal(state, dimension) {
@@ -412,6 +458,20 @@ function childTask(
     },
     generation: parent.generation,
     expiresAt: Math.min(parent.expiresAt, started + (limits.wallTimeMs ?? Number.MAX_SAFE_INTEGER)),
+    retain() {
+      if (closed || !lifetime.accepting() || child.remaining("wallTimeMs") === 0) return null;
+      const releaseParent = parent.retain();
+      if (releaseParent === null) return null;
+      const releaseChild = lifetime.retain();
+      if (releaseChild === null) {
+        releaseParent();
+        return null;
+      }
+      return () => {
+        releaseChild();
+        releaseParent();
+      };
+    },
     remaining(dimension) {
       if (closed) return 0;
       const own =
@@ -434,9 +494,15 @@ function childTask(
       return true;
     },
     execute(work) {
+      if (!lifetime.accepting())
+        return Promise.resolve({
+          kind: "stopped" as const,
+          receipt: parent.refusal("stale-generation"),
+        });
       const amounts = { ...work.amounts, operations: 1 };
       return parent.execute({
         ...work,
+        retain: work.retain ?? (() => child.retain()),
         operation: createHash("sha256")
           .update(canonicalResourceValue([id, work.operation]))
           .digest("hex"),
@@ -465,6 +531,7 @@ function childTask(
     subdivide(narrower) {
       if (
         closed ||
+        !lifetime.accepting() ||
         depth >= 4 ||
         children >= 8 ||
         !resourceAmountsSchema.safeParse(narrower).success
@@ -473,10 +540,8 @@ function childTask(
       children++;
       return childTask(child, narrower, clock, ledger, depth + 1, claimChild);
     },
-    close() {
-      closed = true;
-      stop.abort();
-    },
+    close: lifetime.close,
+    onClose: lifetime.onClose,
   };
   return child;
 }
