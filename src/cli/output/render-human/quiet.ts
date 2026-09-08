@@ -1,3 +1,4 @@
+import { packageInspectionLines } from "../../../application/extensions/inspection-report.ts";
 import { modelSettingsLines } from "../../../application/providers/model-settings-format.ts";
 /** Primary-result projection for quiet CLI output. */
 
@@ -127,6 +128,8 @@ export function quietResultLines(result: RunCommandResult): readonly string[] {
           ];
     case "model":
       return result.payload === null ? [] : modelSettingsLines(result.payload).map(safe);
+    case "extension.inspect":
+      return result.payload === null ? [] : packageInspectionLines(result.payload).map(safe);
     case "provider":
       return result.payload === null || result.payload.kind === "failed"
         ? []

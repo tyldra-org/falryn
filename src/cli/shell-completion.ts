@@ -34,10 +34,11 @@ export const DECLARED_TOP_LEVEL_GROUPS = [
   "artifact",
   "workspace",
   "completion",
+  "extension",
 ] as const;
 
 /** Groups named in docs but intentionally absent from the shipped tree. */
-export const UNDECLARED_GROUPS = ["provider", "tool", "extension", "update", "uninstall"] as const;
+export const UNDECLARED_GROUPS = ["provider", "tool", "update", "uninstall"] as const;
 
 const COMPLETION_FLAG = "--get-yargs-completions";
 
@@ -60,6 +61,7 @@ const GLOBAL_OPTIONS = [
 ] as const;
 
 const GROUP_ACTIONS: Readonly<Record<string, readonly string[]>> = {
+  extension: ["inspect"],
   config: ["show", "validate", "path", "set"],
   data: ["reset", "uninstall", "backup", "restore", "inspect", "diagnostics", "retention", "gc"],
   task: ["decompose", "validate", "progress", "commit-plan"],

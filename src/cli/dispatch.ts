@@ -82,6 +82,7 @@ import { versionText } from "./version.ts";
 
 export type DispatchOptions = {
   readonly modelRequest?: ModelSettingsRequest;
+  readonly extensionPath?: string;
   readonly argv: readonly string[];
   readonly streams: CliStreams;
   /**
@@ -253,6 +254,9 @@ async function runCommand(
     {
       ...options,
       ...(invocation.modelArgs === undefined ? {} : { modelRequest: invocation.modelArgs }),
+      ...(invocation.extensionPath === undefined
+        ? {}
+        : { extensionPath: invocation.extensionPath }),
     },
   );
   const rendered = await render(result, globals, streams, services);

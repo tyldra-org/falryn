@@ -8,6 +8,7 @@ import {
   runDataRestore,
 } from "../commands/data-backup-commands.ts";
 import { runDataGc, runDataRetention } from "../commands/data-retention-gc-commands.ts";
+import { runExtensionInspect } from "../commands/extension.ts";
 import { runImport, runReplay } from "../commands/import-replay-commands.ts";
 import { runModel } from "../commands/model.ts";
 import { runTaskCommitPlan } from "../commands/task-commit-plan-commands.ts";
@@ -50,6 +51,7 @@ import {
 
 export type DispatchProduceOptions = {
   readonly modelRequest?: ModelSettingsRequest;
+  readonly extensionPath?: string;
   readonly streams: CliStreams;
   readonly governance?: InvocationGovernance;
 };
@@ -239,6 +241,9 @@ export async function produce(
     case "model":
       if (options.modelRequest === undefined) throw new Error("Missing model settings request.");
       return runModel(services, options.modelRequest, globals, signal, onMutationStart);
+    case "extension.inspect":
+      if (options.extensionPath === undefined) throw new Error("Missing extension package path.");
+      return runExtensionInspect(options.extensionPath, signal);
     case "provider":
       if (providerArgs === null) {
         throw new Error("Missing parsed provider arguments.");

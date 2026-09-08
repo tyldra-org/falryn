@@ -356,6 +356,39 @@ the selected mechanism, eligibility threshold, cache digests, and stable
 boundary, never prompt text or credentials. Normalized usage keeps
 provider-reported cache reads and cache writes distinct.
 
+`falryn extension inspect <path>` reads a local package directory and prepares
+inert declarations from Agent Plugins 1.0.0 `plugin.json`, immediate
+`skills/*/SKILL.md`, root `mcp.json`, non-recursive `prompts/*.md`, and strict
+version-1 `org.tyldra.falryn` metadata. Human, quiet, JSON, and JSONL output
+report identities, declared effects and permissions, compatibility, dependency
+resolution and bounded diagnostics without printing instructions, environment
+values, headers or raw manifest metadata. Inspection does not execute package
+code, fetch dependencies, write state, install packages or activate bindings.
+Invalid portable components leave valid siblings inspectable; malformed core
+or Falryn metadata rejects the package.
+
+The extensions domain owns six strict version-1 identity codecs and canonical
+UTF-8 JSON with NFC strings, LF line endings, sorted keys and SHA-256 digests.
+Exact file bytes have separate integrity hashes. Executable declarations must
+name locked package files; their execution mode is a declaration, not a sandbox
+or an executable admission. A missing or non-semver portable version has a null
+normalized package version and cannot serve as a dependency candidate. The
+pinned semver resolver uses caller-supplied inventories, exact digest locks,
+prerelease opt-in and dependency-first ordering. The standalone preparation API
+retains skill, prompt and MCP-connection source ownership without inventing
+installed packages. These records do not replace the live registry's existing
+identity model or implement extension lifecycle owners.
+
+Directory reads reject unsafe paths, skip unsupported links/special entries
+with diagnostics, and verify observed file identities before returning bytes.
+Inspection limits are 4,096 entries, 64 directory levels, 1 MiB structured
+metadata, 16 MiB other files, 64 MiB total and a 30-second read deadline.
+Declarations are capped at 1,024 contributions, metadata depth 32 and 128
+diagnostics plus an omission count. Dependency resolution permits 256 candidates,
+32 dependency levels and 10,000 search decisions. Missing batch declarations
+default to serial, foreground, non-native-batch metadata. Unknown Falryn fields
+and unsupported schema vocabulary fail closed.
+
 Falryn publishes the registered built-in product-tool inventory into one
 immutable shared capability registry generation. Its strict contribution
 contract covers tools, MCP tools/resources/prompts, skills, hooks, plugins,
