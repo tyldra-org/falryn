@@ -61,7 +61,7 @@ const GLOBAL_OPTIONS = [
 ] as const;
 
 const GROUP_ACTIONS: Readonly<Record<string, readonly string[]>> = {
-  extension: ["inspect"],
+  extension: ["inspect", "trust"],
   config: ["show", "validate", "path", "set"],
   data: ["reset", "uninstall", "backup", "restore", "inspect", "diagnostics", "retention", "gc"],
   task: ["decompose", "validate", "progress", "commit-plan"],

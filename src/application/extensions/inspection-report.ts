@@ -1,11 +1,13 @@
+import type { PackageTrustResult } from "./package-trust.ts";
 import type { PackagePreparation } from "./prepare-package.ts";
 
 /** Deliberately excludes raw manifests, instructions, arguments, environment, and header values. */
-export function packageInspectionReport(result: PackagePreparation) {
+export function packageInspectionReport(result: PackagePreparation, trust?: PackageTrustResult) {
   if (!result.ok) return { status: "failed" as const, code: result.code };
   const prepared = result.package;
   return {
     status: "inspected" as const,
+    trust: trust ?? null,
     state: "declared" as const,
     packageId: prepared.identity.packageId,
     packageVersion: prepared.identity.packageVersion,
@@ -64,6 +66,30 @@ export function packageInspectionLines(report: PackageInspectionReport): string[
     `Identity: ${report.identityDigest}`,
     `Package: ${report.packageDigest}`,
     `Manifest: ${report.manifestDigest}`,
+    ...(report.trust === null
+      ? []
+      : report.trust.status === "failed"
+        ? [`Trust unavailable: ${report.trust.code}`]
+        : [
+            `Trust: ${report.trust.trust.state}; decision: ${report.trust.trust.decisionStatus}; ${report.trust.status}.`,
+            `Trust subject: ${report.trust.trust.subject.identity.packageId}@${report.trust.trust.subject.identity.packageVersion ?? "unversioned"}; digest: ${report.trust.trust.subject.identity.packageDigest}.`,
+            `Source owner: ${report.trust.trust.subject.ownership.sourceOwner ?? "unknown"}; publisher evidence: ${report.trust.trust.subject.ownership.publisher ?? "unavailable"}.`,
+            `Integrity: ${report.trust.trust.evidence.integrity}; signature: ${report.trust.trust.evidence.signature}; advisories: ${report.trust.trust.freshness}; online: ${report.trust.trust.online}.`,
+            `Health: ${report.trust.trust.health}; availability: ${report.trust.trust.availability}; trust does not grant execution permission.`,
+            `Scope: ${report.trust.trust.scope.kind}/${report.trust.trust.scope.authority}; policy generation: ${report.trust.trust.policyGeneration}.`,
+            ...(report.trust.trust.decision === null
+              ? []
+              : [
+                  `Decision key: ${report.trust.trust.decisionKey}`,
+                  `Decision: ${report.trust.trust.decision.action}; actor: ${report.trust.trust.decision.actor}; revision: ${report.trust.trust.decision.revision}; decided at: ${report.trust.trust.decision.decidedAt}; expires at: ${report.trust.trust.decision.expiresAt ?? "never (revocation)"}.`,
+                ]),
+            ...(report.trust.confirmation === null
+              ? []
+              : [`Confirm this exact decision: ${report.trust.confirmation}`]),
+            ...report.trust.affectedContributions.map(
+              (identity) => `Affected contribution: ${identity}`,
+            ),
+          ]),
     ...report.contributions.flatMap((entry) => [
       `${entry.kind} ${entry.namespace}/${entry.id}: ${entry.mode}, ${entry.compatibility}`,
       `Declared effects: ${entry.authority.effects.join(", ") || "none"}; permissions: ${entry.authority.permissions.join(", ") || "none"}.`,

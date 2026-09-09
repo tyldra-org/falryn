@@ -25,12 +25,17 @@ import {
   defaultToolLimits,
   type ToolInvocationOutcome,
 } from "../../domain/tools/index.ts";
+import { createCapabilityTrust } from "../extensions/capability-trust.ts";
+import { inspectPackageTrust } from "../extensions/package-trust.ts";
+import { memoryTrustStore, trustFixture } from "../extensions/trust-fixtures.ts";
 import { createProductResources } from "../orchestration/product-resources.ts";
 import type { ToolRunnerRequest } from "../runtime/tool-call-loop.ts";
 import { createTurnEventJournal } from "../runtime/turn-event-journal.ts";
 import { createProductToolGateway } from "../tools/product-tool-gateway.ts";
 import { createCapabilityComposition } from "./capability-composition.ts";
 import { createProductCapabilityRegistry } from "./product-capability-registry.ts";
+
+const trustTemplate = await trustFixture();
 
 function fixture(
   run: (request: ToolRunnerRequest) => Promise<ToolInvocationOutcome> = async (request) => ({
@@ -42,6 +47,24 @@ function fixture(
 ) {
   const generation = configurationGeneration.from(3);
   const clock = createManualClock(instant(100));
+  const trustStore = memoryTrustStore();
+  const observation = {
+    ...trustTemplate.observation,
+    now: 100,
+    evidence: { ...trustTemplate.observation.evidence, observedAt: 100 },
+  };
+  const approval = { action: "approve" as const, expiresAt: 10_000 };
+  const preview = inspectPackageTrust(trustStore, observation, [], approval);
+  if (preview.status !== "preview" || preview.confirmation === null)
+    throw new Error("trust fixture preview");
+  inspectPackageTrust(trustStore, observation, [], {
+    ...approval,
+    confirmation: preview.confirmation,
+  });
+  const trust = createCapabilityTrust(trustStore, () => ({
+    ...observation,
+    now: Number(clock.now()),
+  }));
   const resources = createProductResources(clock);
   const taskResources = resources.openTask(String(generation));
   const correlation = {
@@ -107,6 +130,7 @@ function fixture(
     disclosedToolNames,
   };
   const gateway = createProductToolGateway({
+    trust,
     ...options,
     runner: nativeRunner,
     hooks: hooks.value,

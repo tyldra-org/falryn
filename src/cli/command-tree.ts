@@ -334,10 +334,14 @@ function build(argv: readonly string[], lenientPositionals = false): ReturnType<
       )
       .command(
         lenientPositionals ? "extension [action] [path]" : "extension <action> <path>",
-        "Inspect a local extension package without activating it.",
+        "Inspect a local package or review a scoped trust decision without activation.",
         (group) =>
           group
-            .positional("action", { type: "string", choices: ["inspect"] })
+            .positional("action", { type: "string", choices: ["inspect", "trust"] })
+            .option("input", {
+              type: "string",
+              describe: "bounded trust decision JSON request file",
+            })
             .positional("path", { type: "string", describe: "local package directory path" }),
         () => {},
       )
@@ -769,6 +773,22 @@ export async function parseInvocation(argv: readonly string[]): Promise<Invocati
       return { kind: "invalid", message: "The model action does not match its input request." };
     modelArgs = checked.data;
   }
+  let extensionTrust: import("../application/extensions/package-trust.ts").TrustRequest | undefined;
+  if (command === "extension.trust") {
+    if (parsed.input === undefined)
+      return { kind: "invalid", message: "extension trust requires --input." };
+    const loaded = await loadTaskInputFile(parsed.input);
+    if (!loaded.ok || loaded.value.length > 4_096)
+      return { kind: "invalid", message: "Invalid trust request file (maximum 4096 bytes)." };
+    const { trustRequestSchema } = await import("../application/extensions/package-trust.ts");
+    try {
+      const checked = trustRequestSchema.safeParse(JSON.parse(loaded.value));
+      if (!checked.success) return { kind: "invalid", message: "Invalid trust request." };
+      extensionTrust = checked.data;
+    } catch {
+      return { kind: "invalid", message: "Invalid trust request JSON." };
+    }
+  }
   const providerArgs = providerArgumentsFor(command, parsed);
   if (typeof providerArgs === "string") {
     return { kind: "invalid", message: providerArgs };
@@ -792,7 +812,9 @@ export async function parseInvocation(argv: readonly string[]): Promise<Invocati
     commitPlanArgs,
     providerArgs,
     ...(modelArgs === undefined ? {} : { modelArgs }),
-    ...(command === "extension.inspect" && parsed.path !== undefined
+    ...(extensionTrust === undefined ? {} : { extensionTrust }),
+    ...((command === "extension.inspect" || command === "extension.trust") &&
+    parsed.path !== undefined
       ? { extensionPath: parsed.path }
       : {}),
   };

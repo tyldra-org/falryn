@@ -87,6 +87,7 @@ export const COMMAND_IDS = [
   "provider",
   "model",
   "extension.inspect",
+  "extension.trust",
   /** Shell completion install script (#731). */
   "completion",
   /** Headless coding entry (#708). */

@@ -35,6 +35,10 @@ import {
 } from "../../domain/tools/index.ts";
 import { createRuntimeProjectionRedactor } from "../diagnostics/redaction.ts";
 import {
+  type CapabilityTrustPort,
+  requiresEcosystemTrust,
+} from "../extensions/capability-trust.ts";
+import {
   capacityScope,
   type ProductResources,
   type ProductTaskResources,
@@ -61,6 +65,7 @@ export type ProductToolConfirmationPort = {
 export type ProductToolEffectLedger = Map<string, ToolInvocationOutcome>;
 
 export type ProductToolGatewayOptions = {
+  readonly trust?: CapabilityTrustPort;
   readonly delegation?: ToolRunnerRequest["delegation"];
   readonly clock: ClockPort;
   readonly resources?: ProductResources;
@@ -329,6 +334,11 @@ export function createProductToolGateway(options: ProductToolGatewayOptions): To
         }
       }
 
+      if (
+        requiresEcosystemTrust(ready.entry.manifest.source) &&
+        options.trust?.inspect(String(ready.entry.manifest.capabilityId))?.eligible !== true
+      )
+        return { status: "denied", reason: "ecosystem-trust-required", effect: "none" };
       const authorized = await authorize(ready, options, request.signal);
       if (!authorized.ok) {
         return {
@@ -434,6 +444,20 @@ export function createProductToolGateway(options: ProductToolGatewayOptions): To
               value: {
                 status: "unavailable",
                 reason: "missing-native-binding",
+                effect: "none",
+              } as const,
+              terminated: true,
+              observedEffect: "none",
+            };
+          }
+          if (
+            requiresEcosystemTrust(manifest.source) &&
+            options.trust?.inspect(String(manifest.capabilityId))?.eligible !== true
+          ) {
+            return {
+              value: {
+                status: "denied",
+                reason: "ecosystem-trust-required",
                 effect: "none",
               } as const,
               terminated: true,

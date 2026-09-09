@@ -2,7 +2,6 @@
 
 import { createHash } from "node:crypto";
 import { z } from "zod";
-
 import {
   type CapabilityFamily,
   type CapabilityRegistry,
@@ -17,6 +16,10 @@ import type {
   ToolRegistry,
   ToolRegistryEntry,
 } from "../../domain/tools/index.ts";
+import {
+  type CapabilityTrustPort,
+  requiresEcosystemTrust,
+} from "../extensions/capability-trust.ts";
 
 function digestSchema(schema: z.ZodType<Readonly<Record<string, unknown>>>): string {
   const encoded = JSON.stringify(z.toJSONSchema(schema));
@@ -79,7 +82,17 @@ function maximumConcurrency(entry: ToolRegistryEntry): number | null {
 export function capabilityEntryFromTool(
   entry: ToolRegistryEntry,
   executable = false,
+  trustPort?: CapabilityTrustPort,
 ): CapabilityRegistryEntry {
+  const required = requiresEcosystemTrust(entry.manifest.source);
+  const trust = required ? (trustPort?.inspect(String(entry.manifest.capabilityId)) ?? null) : null;
+  const eligible = !required || trust?.eligible === true;
+  executable = executable && eligible;
+  const executionReason = executable
+    ? null
+    : eligible
+      ? "missing-native-binding"
+      : "ecosystem-trust-required";
   const platforms = entry.manifest.platforms;
   const created = createCapabilityRegistryEntry(
     {
@@ -113,19 +126,23 @@ export function capabilityEntryFromTool(
       },
       state: {
         availability: executable ? "available" : "unavailable",
-        availabilityReason: executable ? null : "missing-native-binding",
+        availabilityReason: executionReason,
         health: executable ? "healthy" : "unknown",
-        healthReason: executable ? null : "missing-native-binding",
+        healthReason: executionReason,
         executable,
-        executionReason: executable ? null : "missing-native-binding",
-        operational: defaultCapabilityOperationalState(),
+        executionReason,
+        operational: {
+          ...defaultCapabilityOperationalState(),
+          allowed: eligible,
+          denied: !eligible,
+        },
       },
       schemas: {
         inputDigest: digestSchema(entry.manifest.inputSchema),
         outputDigest: digestSchema(entry.manifest.outputSchema),
       },
     },
-    { capabilityId: entry.manifest.capabilityId },
+    { capabilityId: entry.manifest.capabilityId, trust },
   );
   if (!created.ok) {
     throw new Error(`tool capability publication failed: ${created.error.code}`);
@@ -139,13 +156,14 @@ export function createProductCapabilityRegistry(
   tools: ToolRegistry,
   contributions: readonly CapabilityRegistryEntry[] = [],
   hasBinding: (id: CapabilityId) => boolean = () => false,
+  trust?: CapabilityTrustPort,
 ): CapabilityRegistry {
   if (tools.generation !== generation) {
     throw new Error("tool and capability catalog generations do not match");
   }
   const created = createCapabilityRegistry(generation, [
     ...tools.entries.map((entry) =>
-      capabilityEntryFromTool(entry, hasBinding(entry.manifest.capabilityId)),
+      capabilityEntryFromTool(entry, hasBinding(entry.manifest.capabilityId), trust),
     ),
     ...contributions,
   ]);

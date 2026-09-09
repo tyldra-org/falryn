@@ -33,6 +33,7 @@ import type {
   InspectionDiagnostic,
   PackageSource,
 } from "../../domain/extensions/package-source.ts";
+import { trustSubjectSchema } from "../../domain/security/ecosystem-trust.ts";
 import { markdownMetadata, portableComponents } from "./portable-components.ts";
 
 export type PreparedContribution = {
@@ -52,6 +53,7 @@ export type PreparedContribution = {
   };
 };
 export type PreparedPackage = {
+  readonly ownership: { readonly sourceOwner: string | null; readonly publisher: string | null };
   readonly compatibility: "compatible" | "incompatible";
   readonly identity: PackageIdentityV1;
   readonly identityDigest: string;
@@ -176,6 +178,11 @@ export async function preparePackage(
       manifestDigest: canonicalDigest(normalizedManifest),
     });
     if (!decoded.ok) throw new ExtensionInputError("invalid-package-identity");
+    const subject = trustSubjectSchema.safeParse({
+      identity: decoded.value,
+      ownership: snapshot.ownership ?? { sourceOwner: null, publisher: null },
+    });
+    if (!subject.success) throw new ExtensionInputError("invalid-package-ownership");
     const contributions: PreparedContribution[] = [];
     const claimed = new Set<string>();
     const add = (
@@ -299,6 +306,7 @@ export async function preparePackage(
     return {
       ok: true,
       package: freezeMetadata({
+        ownership: subject.data.ownership,
         compatibility: compatibleWith(falryn.compatibility, host) ? "compatible" : "incompatible",
         identity: decoded.value,
         identityDigest: decoded.digest,

@@ -45,6 +45,8 @@ export function createHostPackageSource(directory: string): PackageSource {
           if (depth > 64) throw new ExtensionInputError("directory-depth-limit");
           const directoryPath = join(root, relative);
           const before = await lstat(directoryPath, { bigint: true });
+          if (relative === "" && !same(rootStat, before))
+            throw new ExtensionInputError("package-input-changed");
           observations.push({
             path: directoryPath,
             physical: join(physicalRoot, relative),
@@ -135,7 +137,18 @@ export function createHostPackageSource(directory: string): PackageSource {
             throw new ExtensionInputError("package-input-changed");
         }
         guard();
-        return { sourceId: bytesDigest(physicalRoot), files, diagnostics, omittedDiagnostics };
+        return {
+          sourceId: bytesDigest(physicalRoot),
+          ownership: {
+            sourceOwner: bytesDigest(
+              `${rootStat.dev}:${rootStat.ino}:${rootStat.uid}:${rootStat.gid}`,
+            ),
+            publisher: null,
+          },
+          files,
+          diagnostics,
+          omittedDiagnostics,
+        };
       } catch (error) {
         if (error instanceof ExtensionInputError) throw error;
         throw new ExtensionInputError("package-read-failed");
