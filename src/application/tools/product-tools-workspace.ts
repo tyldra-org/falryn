@@ -10,6 +10,10 @@ import { z } from "zod";
 
 import type { ArtifactStorePort } from "../../domain/artifacts/index.ts";
 import type { EvidenceCandidate } from "../../domain/context/index.ts";
+import {
+  resourceReadInputSchema,
+  resourceSearchInputSchema,
+} from "../../domain/documents/resource-read.ts";
 import type {
   ConfigurationGeneration,
   SessionId,
@@ -36,11 +40,18 @@ import type {
   LocalPath,
   WorkspaceIndexPort,
 } from "../../domain/workspace/index.ts";
+import type { ScratchResourcePort } from "../artifacts/scratch-resources.ts";
 import { createLoomPort, type LoomPort } from "../compression/loom.ts";
 import { createCompactDocumentReader } from "../documents/compact-document-read.ts";
+import {
+  createResourceResolver,
+  type ResourceResolver,
+  type ResourceResolverOptions,
+} from "../documents/resource-resolver.ts";
 import type { ToolRunnerPort, ToolRunnerRequest } from "../runtime/tool-call-loop.ts";
 import type { ProductReadOutputMode } from "../workspace/product-read.ts";
 import { createProductReadCoordinator, productReadInputSchema } from "../workspace/product-read.ts";
+import { searchResources } from "../workspace/resource-search.ts";
 import { createWorkspaceDiscovery } from "../workspace/workspace-discovery.ts";
 import { createWorkspaceListing } from "../workspace/workspace-listing.ts";
 import { createWorkspaceMutator } from "../workspace/workspace-mutate.ts";
@@ -95,7 +106,9 @@ function document(
     platforms: [],
     limits: defaultToolLimits(),
     concurrency: defaultConcurrencyContract({ maxPerWorkspace: 8 }),
-    resultProjection: defaultProjectionContract(),
+    resultProjection: defaultProjectionContract(
+      name === "read" || name === "search" ? { modelMaxBytes: 1024 * 1024 } : {},
+    ),
   };
 }
 
@@ -136,6 +149,8 @@ export type ProductWorkspaceToolPorts = {
   readonly workspaceId?: WorkspaceId;
   readonly sessionId?: SessionId;
   readonly index?: WorkspaceIndexPort;
+  readonly scratch?: ScratchResourcePort;
+  readonly virtualResources?: ResourceResolverOptions["virtual"];
   /** Session/user preference. `raw` is authoritative over a model request for Loom. */
   readonly userReadOutputMode?: () => ProductReadOutputMode;
 };
@@ -146,6 +161,7 @@ export type ProductWorkspaceTools = {
   readonly catalog: ToolCatalog;
   readonly runner: ToolRunnerPort;
   readonly toolNames: readonly string[];
+  readonly resources: ResourceResolver | null;
   contextCandidates(): readonly EvidenceCandidate[];
   invalidateContext(): number;
 };
@@ -175,6 +191,20 @@ export function composeProductWorkspaceTools(
     ...(ports.userReadOutputMode === undefined ? {} : { userOutputMode: ports.userReadOutputMode }),
   });
   const compact = createCompactDocumentReader(reader);
+  const resources =
+    ports.workspaceId === undefined || ports.sessionId === undefined
+      ? null
+      : createResourceResolver({
+          reader,
+          workspaceRoot: ports.workspaceRoot,
+          workspaceId: ports.workspaceId,
+          sessionId: ports.sessionId,
+          generation: String(ports.generation),
+          ...(ports.artifacts === undefined ? {} : { artifacts: ports.artifacts }),
+          ...(ports.scratch === undefined ? {} : { scratch: ports.scratch }),
+          ...(ports.virtualResources === undefined ? {} : { virtual: ports.virtualResources }),
+          ...(loom === null ? {} : { loom }),
+        });
   const writer = createWorkspaceWriter({ fileSystem: ports.fileSystem });
   const mutator = createWorkspaceMutator({ fileSystem: ports.fileSystem });
   const discovery = createWorkspaceDiscovery(ports.fileSystem);
@@ -189,6 +219,34 @@ export function composeProductWorkspaceTools(
   };
 
   const entries: ToolRegistryEntry[] = [
+    ...(resources === null
+      ? []
+      : [
+          mustEntry(
+            createToolRegistryEntry(
+              document(
+                "read",
+                "Read resources",
+                "Read exact retained evidence, workspace files, scratch revisions and admitted artifacts. Return bounded byte ranges, head/tail or structural outlines. Evidence references grant no write permission.",
+                "observation",
+                "filesystem",
+              ),
+              { inputSchema: resourceReadInputSchema, outputSchema: openObject },
+            ),
+          ),
+          mustEntry(
+            createToolRegistryEntry(
+              document(
+                "search",
+                "Search resources",
+                "Search literal text in workspace files, scratch revisions and admitted retained artifacts. Results carry exact source references and coverage; missing resource hosts stay unavailable.",
+                "observation",
+                "search",
+              ),
+              { inputSchema: resourceSearchInputSchema, outputSchema: openObject },
+            ),
+          ),
+        ]),
     mustEntry(
       createToolRegistryEntry(
         document(
@@ -353,6 +411,23 @@ export function composeProductWorkspaceTools(
         return { status: "cancelled", effect: "none" };
       }
       switch (request.toolName) {
+        case "read":
+        case "search": {
+          if (resources === null) return failed("resource-scope-unavailable");
+          const input: unknown = request.input;
+          if (request.toolName === "search") {
+            const parsed = resourceSearchInputSchema.safeParse(request.input);
+            if (!parsed.success) return failed("malformed-input");
+            const searched = await searchResources(
+              parsed.data,
+              { resources, search, discovery, root },
+              request.signal,
+            );
+            return searched.ok ? completed(searched.value) : failed(searched.error.code);
+          }
+          const result = await resources.read(input, request.signal);
+          return result.ok ? completed(result.value) : failed(result.error.code);
+        }
         case "list_dir": {
           const path = request.input.path;
           if (typeof path !== "string") {
@@ -400,11 +475,29 @@ export function composeProductWorkspaceTools(
         }
         case "discover_files": {
           const result = await discovery.discover(root, request.input, request.signal);
-          return result.ok ? completed(result.value) : failed(errorCode(result.error));
+          return result.ok
+            ? completed({
+                ...result.value,
+                matches: result.value.matches.map((match) => ({
+                  ...match,
+                  freshness: "discovery",
+                  readTarget: { kind: "workspace", path: match.logical, root: String(root) },
+                })),
+              })
+            : failed(errorCode(result.error));
         }
         case "search_text": {
           const result = await search.search(root, request.input, request.signal);
-          return result.ok ? completed(result.value) : failed(errorCode(result.error));
+          return result.ok
+            ? completed({
+                ...result.value,
+                matches: result.value.matches.map((match) => ({
+                  ...match,
+                  freshness: "discovery",
+                  readTarget: { kind: "workspace", path: match.logical, root: String(root) },
+                })),
+              })
+            : failed(errorCode(result.error));
         }
         case "preview_patch": {
           const result = await patcher.preview(root, request.input, request.signal);
@@ -433,6 +526,7 @@ export function composeProductWorkspaceTools(
     catalog: registry.catalog,
     runner,
     toolNames: entries.map((entry) => entry.descriptor.name),
+    resources,
     contextCandidates: productRead.candidates,
     invalidateContext: productRead.invalidate,
   };

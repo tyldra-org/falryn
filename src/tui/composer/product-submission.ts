@@ -83,8 +83,8 @@ export function createProductSubmissionPort(
     output,
     executionProfile,
     modelSelection: options.executor.modelSelection,
-    async submit(snapshot: ComposerSnapshot): Promise<SubmissionOutcome> {
-      if (snapshot.text.trim() === "") {
+    async submit(snapshot, context): Promise<SubmissionOutcome> {
+      if (snapshot.text.trim() === "" && snapshot.attachments.length === 0) {
         return unavailable(snapshot, "the composer is empty");
       }
       if (options.isAccepting !== undefined && !options.isAccepting()) {
@@ -101,6 +101,12 @@ export function createProductSubmissionPort(
       });
       const started = await options.executor.run({
         prompt: snapshot.text,
+        attachmentSelection: {
+          attachments: snapshot.attachments,
+          mentions: snapshot.mentions,
+          ...(context === undefined ? {} : { payloads: context.payloads }),
+        },
+        ...(context?.signal === undefined ? {} : { signal: context.signal }),
         turnId: id,
         ...(briefRequest === null ? {} : { briefRequest }),
       });

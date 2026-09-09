@@ -24,9 +24,9 @@ import type {
   ProductOutputControls,
 } from "../../application/compression/index.ts";
 import {
-  admitComposerContext,
   digestBytes,
   enhancePrompt,
+  resolveComposerAttachments,
 } from "../../application/context/index.ts";
 import type {
   ProductExecutionProfileControls,
@@ -604,17 +604,14 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
     }
 
     void (async () => {
-      const resolved = await admitComposerContext(
-        {
-          attachments: current.attachments,
-          mentions: parseMentions(current.text),
-          payloads: payloads.current,
-        },
+      const resolved = await resolveComposerAttachments(
+        current.attachments,
+        parseMentions(current.text),
         fileProbe,
       );
       dispatch({
         kind: "composer",
-        action: { kind: "submit", attachments: resolved.attachments },
+        action: { kind: "submit", attachments: resolved },
       });
     })();
   }, [
@@ -846,13 +843,23 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
       return;
     }
     let cancelled = false;
-    void Promise.resolve(port.submit(inFlight)).then((outcome) => {
+    const controller = new AbortController();
+    const selectedPayloads = new Map(
+      inFlight.attachments.map((item) => [item.id, payloads.current.get(item.id)?.slice() ?? null]),
+    );
+    void Promise.resolve(
+      port.submit(inFlight, {
+        payloads: { get: (id) => selectedPayloads.get(id) ?? null },
+        signal: controller.signal,
+      }),
+    ).then((outcome) => {
       if (!cancelled) {
         dispatch({ kind: "composer", action: { kind: "resolve", outcome } });
       }
     });
     return () => {
       cancelled = true;
+      controller.abort();
     };
   }, [inFlight, port]);
 

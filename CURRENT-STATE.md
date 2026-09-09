@@ -880,6 +880,40 @@ recalled before prompt composition. A new record is admitted only after the
 model attempt, terminal turn event, and durable replay all report completion;
 failed, cancelled, partial, or uncertain turns are not learned.
 
+## Unified resource Read and Search
+
+Live CLI and OpenTUI turns register `read` and `search` alongside the existing
+workspace tools. Typed targets identify primary-workspace files, exact session
+scratch revisions, artifacts admitted by a scoped Loom manifest, and retained
+evidence references. Search accepts known resources or bounded workspace path,
+literal, and regex discovery. Hits carry Read targets; verified line evidence
+is distinguished from discovery that could not be refreshed.
+
+Read supports UTF-8 exact content, byte ranges, line ranges, head/tail, literal
+matches, and heuristic outlines. It checks at most 16 resources sequentially,
+with an 8 MiB source ceiling and an aggregate output ceiling of 64 KiB, default
+16 KiB. References preserve scope, revision, digest, byte coverage and fidelity
+in the existing artifact store. Scratch retains its own payload owner. Exact
+recovery survives store restart and consumer context replacement. Changed
+workspace content makes retained evidence historical; references never grant
+write permission. Missing, discarded, expired, corrupt, wrong-scope, denied,
+unsupported and cancelled resources remain explicit per-resource outcomes.
+
+Resolved composer attachments and mentions reach the shared live-turn input.
+Supported attachment-only submissions work. Selected paste and transcript bytes
+are retained before reference; stale files, unavailable payloads, unsupported
+media and secret selections refuse admission without accepting the draft.
+Attachment admission and provider/tool work share the turn's resource budget.
+
+An injected virtual-resource host must reauthorize each use and provide
+digest-verifiable bytes. The default CLI/TUI composition has no live browser,
+notebook, or MCP resource host and reports those targets unavailable. Binary,
+extracted-document and sources above the source ceiling are unavailable in this
+text route. Native structured Search has no qualified Hush projection adapter
+and returns bounded structured facts with that reason. Heuristic outlines are
+structural evidence, not exact edit preimages. Revision-bound edit preparation
+is not implemented by this reader.
+
 ## Session scratch resources
 
 The live CLI and OpenTUI tool loops expose `scratch_write`, `scratch_read`,

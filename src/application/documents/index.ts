@@ -8,5 +8,7 @@ export type { NotebookReader } from "./notebook-read.ts";
 export { createNotebookReader } from "./notebook-read.ts";
 export type { PdfReader } from "./pdf-read.ts";
 export { createPdfReader } from "./pdf-read.ts";
+export type { ResourceResolver, ResourceResolverOptions } from "./resource-resolver.ts";
+export { createResourceResolver } from "./resource-resolver.ts";
 export type { VirtualResourceReader } from "./virtual-resource-read.ts";
 export { createVirtualResourceReader } from "./virtual-resource-read.ts";

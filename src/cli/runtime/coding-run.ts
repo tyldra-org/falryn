@@ -587,6 +587,7 @@ export async function runCoding(
       ...(productArtifacts === undefined ? {} : { artifacts: productArtifacts }),
     };
     const workspaceTools = composeProductWorkspaceTools({
+      scratch: productArtifactSession.scratch,
       generation,
       fileSystem: graph.fileSystem,
       commands: createHostCommandRunner(ownedProcessOptions),
@@ -765,6 +766,7 @@ export async function runCoding(
             additionalCandidates: workspaceTools.contextCandidates,
           });
     const executor = createProductLiveTurnExecutor({
+      ...(workspaceTools.resources === null ? {} : { resources: workspaceTools.resources }),
       modelConfigurationGeneration: () => graph.loader.current()?.generation ?? generation,
       modelPreferences: () =>
         modelPreferencesFrom(graph.loader.current()?.values ?? configuration.values),
