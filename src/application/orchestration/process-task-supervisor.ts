@@ -311,7 +311,7 @@ export function createProcessTaskSupervisor(options: ProcessTaskSupervisorOption
       result.capture,
       result.outcome,
       entry.failure,
-      current.value.executionKind,
+      current.value.executionKind === "agent" ? "agent" : "process",
     );
     const facts =
       current.value.executionKind === "agent" && result.agentTerminal && entry.failure === null
@@ -569,6 +569,7 @@ export function createProcessTaskSupervisor(options: ProcessTaskSupervisorOption
       !retained.ok && retained.error.code === "not-found" && input.operation === "cleanup";
     const current = cleaned ? store.cleaned(input) : retained;
     if (!current.ok) return refused(`process-task-${current.error.code}`);
+    if (current.value.executionKind === "question") return refused("question-owner-required");
     if (
       scope === undefined ||
       current.value.owner.sessionId !== scope.sessionId ||

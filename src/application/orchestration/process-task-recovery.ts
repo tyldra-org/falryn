@@ -43,6 +43,8 @@ export async function reconcileProcessTasks(options: {
   const reports: ProcessTaskRecovery[] = [];
   for (const task of listed.value) {
     if (options.signal?.aborted) return err({ code: "cancelled" });
+    // Questions own durable deadlines, not an OS process lease or restart execution.
+    if (task.executionKind === "question") continue;
     if (task.state === "terminal") {
       reports.push({
         handle: task.handle,

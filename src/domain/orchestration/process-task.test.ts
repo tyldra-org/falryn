@@ -11,7 +11,9 @@ import {
   transitionProcessTask,
 } from "./process-task.ts";
 
-function queued(): ProcessTaskSnapshot {
+function queued(): ProcessTaskSnapshot & {
+  supervisor: { process: NonNullable<ProcessTaskSnapshot["supervisor"]["process"]> };
+} {
   return {
     handle: { version: 1, taskId: "task-1", generation: "generation-1" },
     revision: 1,

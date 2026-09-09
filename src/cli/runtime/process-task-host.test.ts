@@ -3,8 +3,16 @@ import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { z } from "zod";
+import { taskValue } from "../../application/orchestration/process-task.fixtures.ts";
+import { createProductResources } from "../../application/orchestration/product-resources.ts";
 import { taskStream } from "../../data/orchestration/process-task-records.ts";
 import { sqliteDatabasePath } from "../../data/sqlite/sqlite-store.ts";
+import {
+  capabilityInvocationStarted,
+  processTaskChanged,
+  sessionStarted,
+  turnStarted,
+} from "../../domain/fixtures.ts";
 import {
   configurationGeneration,
   createStaticEnvironment,
@@ -150,6 +158,87 @@ function scripted(gate: string, attachment: "foreground" | "background", timeout
 }
 
 describe("durable process tasks in product hosts", () => {
+  test("question service survives host close and resumes only its authorized owner", async () => {
+    const f = await setup();
+    const services = f.services();
+    const resources = createProductResources(services.clock);
+    const budget = resources.openTask("question-owner");
+    const presenterBudget = resources.openTask("question-presenter");
+    const stop = new AbortController().signal;
+    const first = await openProductArtifactSession(services);
+    if (!first?.questions) throw new Error("question host unavailable");
+    let second: Awaited<ReturnType<typeof openProductArtifactSession>> = null;
+    try {
+      for (const event of [sessionStarted(1), turnStarted(2), capabilityInvocationStarted(3)])
+        taskValue(await first.eventStore.append(event));
+      const principal = {
+        actorId: "local-user",
+        channel: "local-user" as const,
+        bindingId: "host",
+      };
+      const created = taskValue(
+        await first.questions.create(
+          {
+            ...processTaskChanged().payload.task.owner,
+            resourceTaskId: budget.id,
+            generation: budget.generation,
+          },
+          budget,
+          {
+            version: 1,
+            handle: { version: 1, taskId: "question-host", generation: "first" },
+            items: [{ id: "review", kind: "review", prompt: "Review this result" }],
+            sensitivity: "normal",
+            retention: "answer",
+            presenter: principal,
+          },
+          stop,
+        ),
+      );
+      taskValue(await created.control.publish(stop));
+      expect(await first.close()).toBe(true);
+      budget.close();
+      second = await openProductArtifactSession(services);
+      if (!second?.questions) throw new Error("recovered question host unavailable");
+      const resumed = taskValue(
+        second.questions.resume(
+          created.request.handle,
+          created.ownerToken,
+          resources.openTask("question-owner"),
+        ),
+      );
+      expect(taskValue(resumed.inspect()).state).toBe("waiting");
+      const waiting = resumed.wait(stop);
+      taskValue(
+        await second.questions.presenter(
+          created.request.handle,
+          created.presenterToken,
+          principal,
+          "connect",
+          null,
+          presenterBudget,
+          stop,
+        ),
+      );
+      taskValue(
+        await second.questions.presenter(
+          created.request.handle,
+          created.presenterToken,
+          principal,
+          "answer",
+          [{ itemId: "review", kind: "review", acknowledged: true }],
+          presenterBudget,
+          stop,
+        ),
+      );
+      expect(taskValue(await waiting)).toMatchObject({ kind: "answered", effectAuthority: false });
+      expect(second.taskRecovery).toEqual([]);
+    } finally {
+      await first.close();
+      await second?.close();
+      resources.shutdown();
+    }
+  });
   nativeTest.each(["run-end", "checkpoint"] as const)(
     "host drain reports failed %s",
     async (failure) => {
