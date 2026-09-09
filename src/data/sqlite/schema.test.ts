@@ -23,6 +23,7 @@ import {
   removeTemporaryRoots,
 } from "../fixtures.ts";
 import { MEMORY_SCHEMA_VERSION } from "../memory/memory-schema.ts";
+import { MIGRATION_0016 } from "../orchestration/agent-join-schema.ts";
 import { MIGRATION_0011 } from "../orchestration/process-task-schema.ts";
 import { MIGRATION_0015 } from "../orchestration/question-store.ts";
 import { MIGRATION_0007, MODEL_CATALOG_SCHEMA_VERSION } from "../providers/model-catalog-schema.ts";
@@ -95,6 +96,7 @@ describe("a fresh database", () => {
       MIGRATION_0013.version,
       MIGRATION_0014.version,
       MIGRATION_0015.version,
+      MIGRATION_0016.version,
     ]);
     // Nothing to lose: a database at version 0 holds no product row.
     expect(store.report.backupPath).toBeNull();
@@ -110,7 +112,7 @@ describe("a fresh database", () => {
     );
 
     expect(tables.ok && tables.value.map((row) => row.name)).toEqual(
-      [MIGRATION_TABLE, ...PRODUCT_TABLES].sort(),
+      [MIGRATION_TABLE, "sqlite_sequence", ...PRODUCT_TABLES].sort(),
     );
     await store.close();
   });
@@ -127,6 +129,8 @@ describe("a fresh database", () => {
     // Implicit indexes behind UNIQUE and PRIMARY KEY are excluded by
     // `sql IS NOT NULL`; what is listed here is what was declared on purpose.
     expect(indexes.ok && indexes.value.map((row) => row.name)).toEqual([
+      "agent_children_owner",
+      "agent_joins_owner",
       "artifact_transformations_by_parent",
       "artifacts_by_digest",
       "artifacts_by_invocation",
@@ -187,6 +191,7 @@ describe("a fresh database", () => {
       MIGRATION_0013.version,
       MIGRATION_0014.version,
       MIGRATION_0015.version,
+      MIGRATION_0016.version,
     ]);
     expect(
       upgraded.read(

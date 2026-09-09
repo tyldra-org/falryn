@@ -47,9 +47,11 @@ export type AdmittedChild = {
   /** Logical admission is not a claim of OS confinement. */
   readonly isolation: "logical-only";
   admit(request: unknown): ChildAdmissionResult;
+  cancellationBoundary(enabled: boolean): boolean;
   close(): void;
 };
 const admittedHandles = new WeakSet<object>();
+const accountingResources = new WeakMap<ProductTaskResources, ProductTaskResources>();
 /** Serialized handles are evidence only; another process must reconcile before re-admission. */
 export function isAdmittedChild(value: unknown): value is AdmittedChild {
   return value !== null && typeof value === "object" && admittedHandles.has(value);
@@ -93,10 +95,13 @@ export function createChildAdmission(options: {
       return { kind: "refused", reason: "authority-denied" };
     const derived = tree.derive(parentScope.scopeId, { kind: "child" });
     if (!derived.ok) return { kind: "refused", reason: "scope-limit" };
-    const allocation = parentResources.subdivide(request.limits, {
-      id: request.id,
-      workDigest: request.workDigest,
-    });
+    const allocation = (accountingResources.get(parentResources) ?? parentResources).subdivide(
+      request.limits,
+      {
+        id: request.id,
+        workDigest: request.workDigest,
+      },
+    );
     if (!allocation) {
       tree.fail(derived.value.scopeId);
       return { kind: "refused", reason: "resource-limit" };
@@ -124,6 +129,7 @@ export function createChildAdmission(options: {
         acknowledge();
       },
     });
+    accountingResources.set(resources, allocation);
     let closed = false;
     const onAbort = () => {
       resources.close();
@@ -137,6 +143,7 @@ export function createChildAdmission(options: {
       authority: boundary,
       isolation: "logical-only",
       admit: (value) => admit(resources, scope, boundary, value),
+      cancellationBoundary: (enabled) => tree.cancellationBoundary(scope.scopeId, enabled),
       close() {
         if (closed) return;
         closed = true;

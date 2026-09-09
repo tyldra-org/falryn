@@ -129,6 +129,8 @@ export type LateEffectRecord = {
 };
 
 export type ScopeTree = {
+  /** Transfer cancellation ownership without changing lineage, deadlines or effect attribution. */
+  cancellationBoundary(scopeId: ScopeId, enabled: boolean): boolean;
   root(): ScopeHandle;
   derive(parentId: ScopeId, options: DeriveScopeOptions): Result<ScopeHandle, ScopeError>;
 
@@ -381,7 +383,8 @@ export function createScopeTree(options: ScopeTreeOptions): ScopeTree {
     depth: node.depth,
   });
 
-  const descendantsOf = (start: ScopeNode): ScopeNode[] => {
+  const cancellationBoundaries = new Set<ScopeId>();
+  const descendantsOf = (start: ScopeNode, cancellation = false): ScopeNode[] => {
     const collected: ScopeNode[] = [];
     const queue: ScopeId[] = [...start.children];
     while (queue.length > 0) {
@@ -393,6 +396,7 @@ export function createScopeTree(options: ScopeTreeOptions): ScopeTree {
       if (node === undefined) {
         continue;
       }
+      if (cancellation && cancellationBoundaries.has(node.scopeId)) continue;
       collected.push(node);
       queue.push(...node.children);
     }
@@ -445,6 +449,7 @@ export function createScopeTree(options: ScopeTreeOptions): ScopeTree {
       }
     }
     nodes.delete(node.scopeId);
+    cancellationBoundaries.delete(node.scopeId);
     rememberTombstone(node.scopeId, ancestorIds);
     return true;
   };
@@ -579,6 +584,17 @@ export function createScopeTree(options: ScopeTreeOptions): ScopeTree {
   };
 
   return {
+    cancellationBoundary(id, enabled) {
+      const node = nodes.get(id);
+      if (node?.state.status !== "active" || node.parentId === null) return false;
+      if (enabled) cancellationBoundaries.add(id);
+      else {
+        const parent = nodes.get(node.parentId);
+        if (parent?.state.status !== "active") return false;
+        cancellationBoundaries.delete(id);
+      }
+      return true;
+    },
     root(): ScopeHandle {
       return handleOf(rootNode);
     },
@@ -654,7 +670,7 @@ export function createScopeTree(options: ScopeTreeOptions): ScopeTree {
       const collected: ScopeEvent[] = [];
 
       beginCancelling(target, reason, at, collected);
-      for (const descendant of descendantsOf(target)) {
+      for (const descendant of descendantsOf(target, true)) {
         beginCancelling(
           descendant,
           { kind: "parent-cancelled", originScopeId: targetId },
@@ -753,7 +769,7 @@ export function createScopeTree(options: ScopeTreeOptions): ScopeTree {
           escalated,
         };
         beginCancelling(node, reason, at, collected);
-        for (const descendant of descendantsOf(node)) {
+        for (const descendant of descendantsOf(node, true)) {
           beginCancelling(
             descendant,
             { kind: "parent-cancelled", originScopeId: node.scopeId },

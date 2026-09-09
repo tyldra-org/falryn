@@ -1170,6 +1170,55 @@ Runtime events now declare schema version 2 and a version-2 reader floor for
 the agent task semantics. Version-1 stored events remain readable; older builds
 reject the new event envelopes rather than interpreting an agent as an OS process.
 
+Attached launches are required by default. `required: false` declares an optional
+child; background launch or explicit detachment transfers cancellation ownership
+to the existing background supervisor. Detachment preserves the original
+lineage, narrowed authority, deadline and cumulative resource allowance, including
+for descendants. The originating root session can control a detached child. A
+later assignment creates a new child generation with its current immediate
+parent while preserving the original root and allowance. Reattachment requires
+the immediate parent to remain available.
+
+The same model tool supports `join`, `join-inspect`, `join-integrate`,
+`join-cancel` and `join-cleanup`. A join names its `id`, `generation`, exact
+child handles and a policy with `mode`, `quorum`, `partialOnFailure` and
+`cancelRemaining`. Modes are `all`, `first-success` and `quorum`. `quorum` is
+null for the first two modes and an integer from one through the selected child
+count for the third. Required children must succeed under every mode.
+`first-success` selects the earliest durably sealed successful child by journal
+sequence. A faster failure cannot win. `join-inspect` optionally waits up to
+30 seconds through the existing task wait owner without holding a runnable slot.
+
+Only schema-valid sealed artifacts from the exact immediate parent and current
+child generation can satisfy a join. Integration is explicit: `accepted`,
+`rejected`, `partial` or `follow-up-required`. A failed join exposes selected
+partial evidence only when its policy permits it. Join settlement can request
+cancellation of remaining children, but a cancellation request never counts as
+terminal evidence. Parent termination independently closes attached work;
+detached subtrees retain their background ownership.
+
+Migration 0016 persists parent obligations, exact child links, bounded join
+revisions and a monotonic task settlement sequence. Each join generation commits
+one continuation receipt. Replays return that receipt without executing a child
+or an external effect. Parent completion fails when required children remain
+unaccepted, failed, missing or stale. Parent closure freezes outstanding joins
+as follow-up-required and releases active join retention. Later child effects
+remain in their own terminal records. Child result envelopes reference descendant
+joins without copying their transcripts into ancestor results.
+
+Joins select at most 16 children, allow 64 join generations/identities per parent,
+and retain at most 256 active joins. Each revision is bounded to 64 KiB and each
+join has at most three semantic revisions. Cleanup releases active retention
+but keeps immutable receipt history; task cleanup protects artifacts still
+needed by unresolved integration. Exact results stay in the existing sensitive
+artifact store. Default notifications cover background task settlement;
+intermediate attached child settlements remain inspectable. The process tool
+cannot bypass the delegation owner's agent mutation controls.
+
+Restart restores sealed evidence and join receipts. It does not reconstruct a
+live parent executor or grant a new turn the authority of an old parent.
+Workflow execution and broad task dashboards remain separate integrations.
+
 Custom definitions are inert configuration under `agents.definitions` in user
 or profile scope. [The complete example](examples/agent-definitions.json) registers
 `user/custom:source-inspector`. Save an edited copy with the ordinary configuration

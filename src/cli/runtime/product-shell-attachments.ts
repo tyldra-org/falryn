@@ -105,6 +105,7 @@ export type ProductShellAttachmentPorts = {
   /** Injectable process host for deterministic public-entrypoint integration tests. */
   readonly processCapture?: ProcessCapturePort;
   readonly tasks?: ProcessTaskSupervisor;
+  readonly joins?: import("../../application/orchestration/agent-joins.ts").AgentJoins;
   readonly taskNotices?: ProcessTaskNotices;
   /** Application-owned focused confirmation host for consequential tool calls. */
   readonly toolConfirmation?: ProductToolConfirmationPort;
@@ -317,6 +318,7 @@ export async function composeProductShellAttachments(
         ? (runtimePorts: Parameters<typeof composeProductAgentRuntime>[0]) =>
             composeDelegatedAgentRuntime(runtimePorts, {
               tasks,
+              ...(ports.joins ? { joins: ports.joins } : {}),
               artifacts,
               ...(ports.agentRegistry ? { registry: ports.agentRegistry } : {}),
               ...(ports.resolveAgentProvider

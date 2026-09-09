@@ -64,7 +64,15 @@ export type TurnCoordinator = {
   terminals(turnId: TurnId): readonly TerminalOutcome[];
 };
 
-export function createTurnCoordinator(): TurnCoordinator {
+export function createTurnCoordinator(
+  options: {
+    readonly canComplete?: (turn: TurnSnapshot) => {
+      readonly allowed: boolean;
+      readonly effect: EffectCertainty;
+    };
+    readonly onTerminal?: (turn: TurnSnapshot) => void;
+  } = {},
+): TurnCoordinator {
   const snapshots = new Map<TurnId, TurnSnapshot>();
   const history = new Map<TurnId, TurnObservation[]>();
 
@@ -91,7 +99,7 @@ export function createTurnCoordinator(): TurnCoordinator {
         };
       }
 
-      const result = applyTurnTransition({
+      const transition = {
         snapshot: current,
         command: input.command,
         configurationGeneration: input.configurationGeneration,
@@ -102,7 +110,13 @@ export function createTurnCoordinator(): TurnCoordinator {
         ...(input.recoveryGeneration === undefined
           ? {}
           : { recoveryGeneration: input.recoveryGeneration }),
-      });
+      };
+      let result = applyTurnTransition(transition);
+      if (result.kind === "rejected") return { ok: false, error: result.error };
+      // Only a legal completion may freeze durable child ownership.
+      const completion = input.command === "complete" ? options.canComplete?.(current) : undefined;
+      if (completion?.allowed === false)
+        result = applyTurnTransition({ ...transition, command: "fail", effect: completion.effect });
 
       if (result.kind === "rejected") {
         return { ok: false, error: result.error };
@@ -111,6 +125,8 @@ export function createTurnCoordinator(): TurnCoordinator {
       snapshots.set(input.turnId, result.snapshot);
       const prior = history.get(input.turnId) ?? [];
       history.set(input.turnId, [...prior, result.observation]);
+      if (current.status !== "terminal" && result.snapshot.status === "terminal")
+        options.onTerminal?.(result.snapshot);
       return {
         ok: true,
         value: { snapshot: result.snapshot, observation: result.observation },

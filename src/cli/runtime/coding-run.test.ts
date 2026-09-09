@@ -7,7 +7,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { chmod, mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-
+import { sealedAgentResultSchema } from "../../application/orchestration/delegation-contract.ts";
 import { CONFIGURATION_FILE_NAME } from "../../config/index.ts";
 import { type ArtifactStorePort, artifactId } from "../../domain/artifacts/index.ts";
 import {
@@ -892,7 +892,7 @@ describe("runCoding", () => {
     const requests: ModelRequest[] = [];
     const adapter = createDeterministicProviderAdapter({
       onRequest: (request) => requests.push(request),
-      script: (_request, index) => {
+      script: (request, index) => {
         if (index === 0)
           return {
             kind: "tool",
@@ -934,7 +934,49 @@ describe("runCoding", () => {
               unknowns: [],
             }),
           };
-        return { kind: "text", text: "Parent received child evidence." };
+        if (index === 3) {
+          const part = request.messages
+            .findLast((message) => message.role === "tool")
+            ?.parts.find((part) => part.kind === "text");
+          if (part?.kind !== "text") throw new Error("missing child result");
+          const child = sealedAgentResultSchema.parse(JSON.parse(part.text).output.value);
+          return {
+            kind: "tool",
+            toolCallId: "join-child",
+            name: "delegate",
+            argumentFragments: [
+              JSON.stringify({
+                operation: "join",
+                join: {
+                  id: "inspection",
+                  generation: 1,
+                  children: [child.handle],
+                  policy: {
+                    mode: "all",
+                    quorum: null,
+                    partialOnFailure: false,
+                    cancelRemaining: false,
+                  },
+                },
+              }),
+            ],
+          };
+        }
+        if (index === 4)
+          return {
+            kind: "tool",
+            toolCallId: "accept-child",
+            name: "delegate",
+            argumentFragments: [
+              JSON.stringify({
+                operation: "join-integrate",
+                joinId: "inspection",
+                joinGeneration: 1,
+                integration: "accepted",
+              }),
+            ],
+          };
+        return { kind: "text", text: "Parent accepted child evidence." };
       },
     });
     const result = await runCoding(
@@ -954,7 +996,7 @@ describe("runCoding", () => {
           request.messages.filter((message) => message.role === "tool"),
         ),
       ),
-    ).toHaveLength(4);
+    ).toHaveLength(6);
     expect(requests[0]?.tools.some((tool) => tool.name === "delegate")).toBe(true);
     expect(requests[1]?.tools.map((tool) => tool.name)).toEqual(["list_dir"]);
     expect(JSON.stringify(requests[2]?.messages)).toContain("child-evidence.ts");
@@ -963,6 +1005,7 @@ describe("runCoding", () => {
     expect(parentResult).toContain("not-asserted");
     expect(parentResult).toContain("observationRefs");
     expect(parentResult).toContain("child-evidence.ts");
+    expect(JSON.stringify(requests[5]?.messages)).toContain("join:sha256:");
   });
 
   test("continues prompt to tool result to final text through the product gateway", async () => {

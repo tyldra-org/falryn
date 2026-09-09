@@ -1,6 +1,11 @@
 /** Versioned control inputs and immutable child-result facts. */
 import { z } from "zod";
 import { digestSchema, identityText } from "../../domain/extensions/identity.ts";
+import {
+  descendantFactSchema,
+  joinInputSchema,
+  joinIntegrationSchema,
+} from "../../domain/orchestration/agent-join.ts";
 import { childAuthoritySchema } from "../../domain/orchestration/child-admission.ts";
 import {
   processTaskExecutionSchema,
@@ -31,6 +36,7 @@ const launch = {
   execution: processTaskExecutionSchema,
   model: roleRouteBaseSchema.optional(),
   name: identityText.optional(),
+  required: z.boolean().default(true),
 };
 export const delegationCommandSchema = z.discriminatedUnion("operation", [
   z.strictObject({
@@ -41,6 +47,29 @@ export const delegationCommandSchema = z.discriminatedUnion("operation", [
   z.strictObject({ operation: z.literal("definition"), definitionId: identityText }),
   z.strictObject({ operation: z.literal("resolve"), name: identityText }),
   z.strictObject({ operation: z.literal("launch"), ...launch }),
+  z.strictObject({ operation: z.literal("join"), join: joinInputSchema }),
+  z.strictObject({
+    operation: z.literal("join-inspect"),
+    joinId: identityText,
+    joinGeneration: z.int().min(1).max(64),
+    waitMs: z.int().min(1).max(30000).optional(),
+  }),
+  z.strictObject({
+    operation: z.literal("join-integrate"),
+    joinId: identityText,
+    joinGeneration: z.int().min(1).max(64),
+    integration: joinIntegrationSchema,
+  }),
+  z.strictObject({
+    operation: z.literal("join-cancel"),
+    joinId: identityText,
+    joinGeneration: z.int().min(1).max(64),
+  }),
+  z.strictObject({
+    operation: z.literal("join-cleanup"),
+    joinId: identityText,
+    joinGeneration: z.int().min(1).max(64),
+  }),
   z.strictObject({
     operation: z.literal("continue"),
     handle: agentHandleSchema,
@@ -100,6 +129,8 @@ export const sealedAgentResultSchema = z.strictObject({
     omitted: z.array(z.strictObject({ id: identityText, reason: identityText })).max(256),
   }),
   previousResultDigest: digestSchema.nullable(),
+  joins: z.array(identityText).max(64).optional(),
+  children: z.array(descendantFactSchema).max(64).optional(),
   resultDigest: digestSchema,
   outcome: z.enum(["completed", "failed", "cancelled", "timed-out", "uncertain"]),
   effect: z.enum(["none", "partial", "completed", "uncertain"]),

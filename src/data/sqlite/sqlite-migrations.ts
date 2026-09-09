@@ -50,6 +50,7 @@ import {
   PACKAGE_LIFECYCLE_TABLES,
 } from "../extensions/package-lifecycle-repository.ts";
 import { MEMORY_RECORDS_TABLE, MIGRATION_0005 } from "../memory/memory-schema.ts";
+import { AGENT_JOIN_TABLES, MIGRATION_0016 } from "../orchestration/agent-join-schema.ts";
 import {
   ARTIFACT_GC_CLAIMS_TABLE,
   MIGRATION_0011,
@@ -98,6 +99,7 @@ export const PRODUCTION_MIGRATIONS: readonly Migration[] = [
   MIGRATION_0013,
   MIGRATION_0014,
   MIGRATION_0015,
+  MIGRATION_0016,
 ];
 
 /** Every product table the registered set creates, in creation order. */
@@ -122,6 +124,7 @@ export const PRODUCT_TABLES: readonly string[] = [
   WORKSPACE_TRUST_TABLE,
   ...PACKAGE_LIFECYCLE_TABLES,
   ...QUESTION_TABLES,
+  ...AGENT_JOIN_TABLES,
 ];
 
 function issue(

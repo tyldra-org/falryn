@@ -456,7 +456,9 @@ describe.if(built)("the standalone executable", () => {
       // The runner's own table plus every product table migration 0001
       // declares. A missing table here is a migration that did not survive
       // `bun build --compile`.
-      expect(tables).toEqual([MIGRATION_TABLE, ...PRODUCT_TABLES].sort().map((name) => ({ name })));
+      expect(tables).toEqual(
+        [MIGRATION_TABLE, "sqlite_sequence", ...PRODUCT_TABLES].sort().map((name) => ({ name })),
+      );
 
       const version = opened.value.all(
         `SELECT COALESCE(MAX(version), 0) AS recordedVersion FROM ${MIGRATION_TABLE}`,

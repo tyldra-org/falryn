@@ -13,6 +13,46 @@ const generation = configurationGeneration.from(0);
 const recoveryGeneration = configurationGeneration.from(3);
 
 describe("turn coordinator", () => {
+  test("an illegal completion cannot freeze child ownership", () => {
+    let closed = 0;
+    const coordinator = createTurnCoordinator({
+      canComplete() {
+        closed++;
+        return { allowed: true, effect: "none" };
+      },
+    });
+    const id = turnId.from("partial-parent");
+    coordinator.start({
+      turnId: id,
+      sessionId: sessionId.from("session-1"),
+      workspaceId: workspaceId.from("workspace-1"),
+      traceId: traceId.from("trace-1"),
+      configurationGeneration: generation,
+    });
+    for (const command of [
+      "begin-orienting",
+      "begin-assembling-context",
+      "begin-awaiting-model",
+      "begin-handling-model-event",
+      "begin-evaluating-completion",
+    ] as const) {
+      expect(
+        coordinator.apply({
+          turnId: id,
+          command,
+          configurationGeneration: generation,
+          effect: "partial",
+        }).ok,
+      ).toBe(true);
+    }
+    expect(
+      coordinator.apply({ turnId: id, command: "complete", configurationGeneration: generation })
+        .ok,
+    ).toBe(false);
+    expect(closed).toBe(0);
+    expect(coordinator.get(id)?.status).toBe("active");
+  });
+
   test("runs a turn to completion through the public boundary", () => {
     const coordinator = createTurnCoordinator();
     const started = coordinator.start({

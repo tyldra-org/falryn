@@ -562,6 +562,7 @@ export function createProcessTaskSupervisor(options: ProcessTaskSupervisorOption
   async function control(
     request: ToolRunnerRequest,
     input: ProcessTaskControl,
+    agentControl = false,
   ): Promise<ToolInvocationOutcome> {
     const scope = request.processTask?.owner;
     const retained = store.get(input);
@@ -578,6 +579,12 @@ export function createProcessTaskSupervisor(options: ProcessTaskSupervisorOption
       return refused("process-task-foreign-owner");
     if (request.signal.aborted) return { status: "cancelled", effect: "none" };
     const task = current.value;
+    if (
+      task.executionKind === "agent" &&
+      !agentControl &&
+      !["inspect", "result", "logs", "wait"].includes(input.operation)
+    )
+      return refused("agent-control-owner-required");
     if ("expectedRevision" in input && input.expectedRevision !== task.revision - (cleaned ? 1 : 0))
       return refused("process-task-stale-revision");
     if (cleaned) return boundedOutput({ kind: "process-task-cleaned", handle: task.handle });
@@ -678,6 +685,8 @@ export function createProcessTaskSupervisor(options: ProcessTaskSupervisorOption
   return {
     run,
     control,
+    controlAgent: (request: ToolRunnerRequest, input: ProcessTaskControl) =>
+      control(request, input, true),
     deliver,
     onInterrupt(listener: () => void) {
       interruptionListeners.add(listener);

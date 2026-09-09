@@ -79,6 +79,31 @@ const read: ChildWorkTarget = {
   capabilityGeneration: "1",
 };
 
+test("detached grandchildren preserve lineage and budgets after ancestor cancellation", async () => {
+  const s = setup();
+  const first = admitted(s.admission.admit(request("parent")));
+  const detached = admitted(first.admit(request("detached")));
+  const leaf = admitted(detached.admit(request("leaf")));
+  const attached = admitted(first.admit(request("attached")));
+  const release = leaf.resources.retain();
+  expect(release).not.toBeNull();
+  expect(detached.cancellationBoundary(true)).toBe(true);
+  first.close();
+  s.root.close();
+  expect(attached.scope.signal.aborted).toBe(true);
+  expect(detached.scope.signal.aborted).toBe(false);
+  expect(leaf.scope.signal.aborted).toBe(false);
+  expect(detached.scope.parentId).toBe(first.scope.scopeId);
+  const result = await leaf.resources.execute(work("after-detach", read));
+  expect(result.kind, JSON.stringify(result.receipt)).toBe("completed");
+  expect(detached.cancellationBoundary(false)).toBe(false);
+  detached.close();
+  expect(leaf.scope.signal.aborted).toBe(true);
+  release?.();
+  leaf.close();
+  expect(s.resources.report().tasks).toBe(0);
+});
+
 test("nested authority intersects ancestors and is immutable", async () => {
   const s = setup();
   const first = admitted(

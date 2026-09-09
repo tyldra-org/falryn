@@ -63,6 +63,8 @@ import type { PersistTurnEventsOutcome, TurnEventJournal } from "./turn-event-jo
 import { createTurnEventJournal } from "./turn-event-journal.ts";
 
 export type ProductAgentRuntimePorts = {
+  readonly canComplete?: NonNullable<Parameters<typeof createTurnCoordinator>[0]>["canComplete"];
+  readonly onTerminal?: NonNullable<Parameters<typeof createTurnCoordinator>[0]>["onTerminal"];
   readonly takeSteering?: () => readonly { readonly id: string; readonly text: string }[];
   readonly resources?: ProductResources;
   readonly eventStore: EventStorePort;
@@ -236,7 +238,10 @@ export function composeProductAgentRuntime(
   const providerAdapter = ports.providerAdapter ?? null;
 
   const sessionRuntime = createSessionRuntime();
-  const turnCoordinator = createTurnCoordinator();
+  const turnCoordinator = createTurnCoordinator({
+    ...(ports.canComplete ? { canComplete: ports.canComplete } : {}),
+    ...(ports.onTerminal ? { onTerminal: ports.onTerminal } : {}),
+  });
   const journal = createTurnEventJournal({
     eventStore: ports.eventStore,
     clock: ports.clock,

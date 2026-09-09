@@ -8,6 +8,7 @@ import {
   parseMetadata,
 } from "../../domain/extensions/canonical.ts";
 import { type ClockPort, scopeId } from "../../domain/foundation/index.ts";
+import type { JoinOwner } from "../../domain/orchestration/agent-join.ts";
 import type {
   ChildAuthority,
   ChildProviderBinding,
@@ -18,6 +19,7 @@ import {
   type ProcessTaskHandle,
   processTaskControlSchema,
 } from "../../domain/orchestration/process-task.ts";
+import { worstEffect } from "../../domain/orchestration/scope.ts";
 import type { ToolInvocationOutcome } from "../../domain/tools/index.ts";
 import {
   type ModelSelection,
@@ -33,6 +35,7 @@ import {
   type RegisteredAgent,
   validateAgentValue,
 } from "./agent-definition.ts";
+import type { AgentJoins } from "./agent-joins.ts";
 import type { AgentRegistry } from "./agent-registry.ts";
 import { type AdmittedChild, createChildAdmission } from "./child-admission.ts";
 import {
@@ -65,6 +68,7 @@ export type AgentExecution = {
 export type AgentRun = {
   readonly handle: AgentHandle;
   readonly rootTaskId: string;
+  readonly rootSessionId: string;
   readonly parentTaskId: string;
   readonly prepared: PreparedAgent;
   readonly admission: AdmittedChild;
@@ -77,6 +81,7 @@ export type DelegationOptions = {
   readonly registry: AgentRegistry;
   readonly clock: ClockPort;
   readonly tasks: ProcessTaskSupervisor;
+  readonly joins?: AgentJoins;
   preferences(): ModelPreferences;
   configurationGeneration(): number;
   /** Native capability owner includes readiness and selected non-tool instruction content. */
@@ -103,9 +108,11 @@ type Steering = { id: string; text: string; state: "queued" | "admitted" | "miss
 type Retained = {
   handle: AgentHandle;
   readonly rootTaskId: string;
-  readonly parentTaskId: string;
-  readonly parentSessionId: string;
-  readonly parentTurnId: string;
+  readonly rootSessionId: string;
+  parentTaskId: string;
+  parentSessionId: string;
+  parentTurnId: string;
+  parentGeneration: number;
   readonly workspaceId: string;
   readonly prepared: PreparedAgent;
   readonly admission: AdmittedChild;
@@ -117,6 +124,7 @@ type Retained = {
   readonly history: Map<number, SealedAgentResult>;
   steering: Steering[];
   readonly workDigests: Set<string>;
+  detached: boolean;
 };
 const refused = (reason: string): ToolInvocationOutcome => ({
   status: "unavailable",
@@ -278,11 +286,37 @@ export function createDelegation(options: DelegationOptions) {
         entry.handle = { ...entry.handle, task };
       },
       async run(_ownership, signal) {
+        if (!entry.handle.task || !options.joins)
+          return { outcome: refused("agent-joins-unavailable"), capture: null };
+        const registered = options.joins.store.register({
+          handle: { ...entry.handle, task: entry.handle.task },
+          owner: {
+            sessionId: entry.parentSessionId,
+            turnId: entry.parentTurnId,
+            workspaceId: entry.workspaceId,
+            taskId: entry.parentTaskId,
+            generation: entry.parentGeneration,
+          },
+          rootTaskId: entry.rootTaskId,
+          rootSessionId: entry.rootSessionId,
+          required: entry.launch.required,
+          detached: entry.launch.execution.attachment === "background",
+          definitionDigest: entry.prepared.definition.digest,
+          resultSchema: entry.prepared.definition.definition.resultSchema,
+        });
+        if (!registered.ok)
+          return { outcome: refused(`agent-join-${registered.error.code}`), capture: null };
+        if (entry.detached && !entry.admission.cancellationBoundary(true))
+          return { outcome: refused("agent-detachment-unavailable"), capture: null };
+        const cancelSubtree = () => entry.admission.close();
+        signal.addEventListener("abort", cancelSubtree, { once: true });
+        if (signal.aborted) cancelSubtree();
         let execution: AgentExecution;
         try {
           execution = await options.execute({
             handle: entry.handle,
             rootTaskId: entry.rootTaskId,
+            rootSessionId: entry.rootSessionId,
             parentTaskId: entry.parentTaskId,
             prepared,
             admission: entry.admission,
@@ -306,6 +340,21 @@ export function createDelegation(options: DelegationOptions) {
             usage: null,
           };
         }
+        signal.removeEventListener("abort", cancelSubtree);
+        const integration = options.joins.store.finishAgent(
+          entry.handle.taskId,
+          entry.handle.generation,
+        );
+        if (!integration.ok || !integration.value.complete)
+          execution = {
+            ...execution,
+            outcome: execution.outcome === "completed" ? "failed" : execution.outcome,
+            effect: worstEffect(
+              execution.effect,
+              integration.ok ? integration.value.effect : "uncertain",
+            ),
+            reason: "agent-child-integration-incomplete",
+          };
         const responseTooLarge = Buffer.byteLength(execution.response) > MAX_AGENT_RESULT_BYTES / 2;
         let claims: unknown = null;
         try {
@@ -335,6 +384,8 @@ export function createDelegation(options: DelegationOptions) {
           preparationDigest: canonicalDigest(prepared),
           preparation,
           previousResultDigest: entry.result?.resultDigest ?? null,
+          joins: integration.ok ? integration.value.joins : [],
+          children: integration.ok ? integration.value.children : [],
           outcome:
             !valid && execution.outcome === "completed" ? ("failed" as const) : execution.outcome,
           effect: execution.effect,
@@ -446,7 +497,8 @@ export function createDelegation(options: DelegationOptions) {
       const matches = [...retained.values()].filter(
         (entry) =>
           entry.launch.name === command.name &&
-          entry.parentSessionId === owner?.sessionId &&
+          (entry.parentSessionId === owner?.sessionId ||
+            (entry.detached && !parent && entry.rootSessionId === owner?.sessionId)) &&
           entry.workspaceId === owner.workspaceId,
       );
       return matches.length === 1 && matches[0]
@@ -454,7 +506,99 @@ export function createDelegation(options: DelegationOptions) {
         : refused(matches.length > 1 ? "agent-name-ambiguous" : "agent-name-not-found");
     }
     if (request.signal.aborted) return { status: "cancelled", effect: "none" };
+    const caller = request.processTask?.owner;
+    const joinOwner: JoinOwner | null =
+      caller && request.taskResources
+        ? {
+            sessionId: caller.sessionId,
+            turnId: caller.turnId,
+            workspaceId: caller.workspaceId,
+            taskId: parent?.handle.taskId ?? request.taskResources.id,
+            generation: parent?.handle.generation ?? 1,
+          }
+        : null;
+    if (
+      command.operation === "join" ||
+      command.operation === "join-inspect" ||
+      command.operation === "join-integrate" ||
+      command.operation === "join-cancel" ||
+      command.operation === "join-cleanup"
+    ) {
+      if (!options.joins || !joinOwner) return refused("agent-join-owner-unavailable");
+      const input =
+        command.operation === "join"
+          ? command.join
+          : { id: command.joinId, generation: command.joinGeneration };
+      if (command.operation === "join-cleanup") {
+        const cleaned = options.joins.store.cleanup(joinOwner, input);
+        return cleaned.ok
+          ? completed({ kind: "agent-join-cleaned", ...input })
+          : refused(`agent-join-${cleaned.error.code}`);
+      }
+      const loaded =
+        command.operation === "join"
+          ? options.joins.store.create(joinOwner, command.join)
+          : options.joins.store.get(joinOwner, input);
+      if (!loaded.ok) return refused(`agent-join-${loaded.error.code}`);
+      let settled = await options.joins.refresh(
+        loaded.value,
+        request.signal,
+        command.operation === "join-cancel",
+      );
+      if (
+        settled.ok &&
+        settled.value.state === "waiting" &&
+        command.operation === "join-inspect" &&
+        command.waitMs !== undefined
+      ) {
+        const stop = new AbortController();
+        const pending = settled.value.input.children.filter((child) => {
+          const task = options.joins?.task(child.task);
+          return task?.ok && task.value.state !== "terminal";
+        });
+        try {
+          if (pending.length > 0)
+            await Promise.race(
+              pending.map((child) =>
+                options.tasks.controlAgent(
+                  { ...request, signal: AbortSignal.any([request.signal, stop.signal]) },
+                  { operation: "wait", ...child.task, waitMs: command.waitMs ?? 1 },
+                ),
+              ),
+            );
+        } finally {
+          stop.abort();
+        }
+        settled = await options.joins.refresh(settled.value, request.signal);
+      }
+      if (!settled.ok) return refused(`agent-join-${settled.error.code}`);
+      if (
+        settled.value.state === "cancelled" ||
+        (settled.value.state !== "waiting" && settled.value.input.policy.cancelRemaining)
+      ) {
+        for (const child of settled.value.input.children) {
+          if (settled.value.selected.includes(child.taskId)) continue;
+          const live = retained.get(child.taskId);
+          const task = options.joins.task(child.task);
+          if (task.ok && task.value.state !== "terminal")
+            await options.tasks.controlAgent(request, {
+              operation: "cancel",
+              ...child.task,
+              expectedRevision: task.value.revision,
+            });
+          if (live?.handle.generation === child.generation && live.running) live.admission.close();
+        }
+      }
+      if (command.operation === "join-integrate") {
+        const integrated = options.joins.store.integrate(settled.value, command.integration);
+        return integrated.ok
+          ? completed(integrated.value)
+          : refused(`agent-join-${integrated.error.code}`);
+      }
+      return completed(settled.value);
+    }
     if (command.operation === "launch") {
+      if (!options.joins) return refused("agent-joins-unavailable");
       if (retained.size >= MAX_RETAINED_PROCESS_TASKS) return refused("agent-retention-capacity");
       const prepared = await prepare(command, request, parent);
       if ("reason" in prepared) return refused(prepared.reason);
@@ -520,9 +664,11 @@ export function createDelegation(options: DelegationOptions) {
       const entry: Retained = {
         handle: { taskId: id, generation: 1 },
         rootTaskId: parent?.rootTaskId ?? resources.id,
+        rootSessionId: parent?.rootSessionId ?? owner.sessionId,
         parentTaskId: parent?.handle.taskId ?? resources.id,
         parentSessionId: owner.sessionId,
         parentTurnId: owner.turnId,
+        parentGeneration: parent?.handle.generation ?? 1,
         workspaceId: owner.workspaceId,
         prepared,
         admission: admitted.child,
@@ -537,6 +683,7 @@ export function createDelegation(options: DelegationOptions) {
         history: new Map(),
         steering: [],
         workDigests: new Set([workDigest]),
+        detached: command.execution.attachment === "background",
       };
       entry.expires.unref?.();
       retained.set(id, entry);
@@ -551,8 +698,34 @@ export function createDelegation(options: DelegationOptions) {
         )
       ) {
         const { handle: _handle, ...control } = command;
-        return options.tasks.control(
-          request,
+        const link = options.joins?.store.link({ ...command.handle, task: command.handle.task });
+        let controlRequest = request;
+        if (!link?.ok) {
+          const actual = options.joins?.store.taskLink(command.handle.task);
+          if (!actual?.ok || actual.value !== null)
+            return refused("agent-ownership-evidence-unavailable");
+        }
+        if (link?.ok) {
+          if (command.operation === "detach" || command.operation === "reattach")
+            return refused("agent-retained-context-unavailable");
+          const immediate = joinOwner && options.joins?.ownerMatches(joinOwner, link.value.owner);
+          const background =
+            link.value.detached &&
+            !parent &&
+            caller?.sessionId === link.value.rootSessionId &&
+            caller.workspaceId === link.value.owner.workspaceId;
+          if (!immediate && !background) return refused("agent-foreign-parent");
+          if (background && !immediate && request.processTask) {
+            const task = options.joins?.task(command.handle.task);
+            if (!task?.ok) return refused("agent-task-unavailable");
+            controlRequest = {
+              ...request,
+              processTask: { ...request.processTask, owner: task.value.owner },
+            };
+          }
+        }
+        return options.tasks.controlAgent(
+          controlRequest,
           processTaskControlSchema.parse({
             ...control,
             ...command.handle.task,
@@ -561,17 +734,34 @@ export function createDelegation(options: DelegationOptions) {
       }
       return refused("agent-retained-context-unavailable");
     }
-    if (
-      request.processTask?.owner.sessionId !== entry.parentSessionId ||
-      request.processTask.owner.workspaceId !== entry.workspaceId
-    )
-      return refused("agent-foreign-parent");
+    const immediate =
+      caller?.sessionId === entry.parentSessionId &&
+      caller.workspaceId === entry.workspaceId &&
+      joinOwner?.taskId === entry.parentTaskId &&
+      joinOwner.generation === entry.parentGeneration &&
+      joinOwner.turnId === entry.parentTurnId;
+    const background =
+      entry.detached &&
+      !parent &&
+      caller?.sessionId === entry.rootSessionId &&
+      caller.workspaceId === entry.workspaceId;
+    if (!immediate && !background) return refused("agent-foreign-parent");
+    if (command.operation === "reattach" && !immediate)
+      return refused("agent-reattach-parent-unavailable");
     if (command.handle.generation !== entry.handle.generation) {
       const previous = entry.history.get(command.handle.generation);
-      return command.operation === "result" && previous
+      return command.operation === "result" &&
+        previous &&
+        (!command.handle.task ||
+          canonicalDigest(command.handle.task) === canonicalDigest(previous.handle.task))
         ? completed(previous)
         : refused("agent-stale-generation");
     }
+    if (
+      command.handle.task &&
+      canonicalDigest(command.handle.task) !== canonicalDigest(entry.handle.task)
+    )
+      return refused("agent-stale-generation");
     if (
       command.operation === "result" &&
       entry.result?.handle.generation === entry.handle.generation &&
@@ -637,6 +827,11 @@ export function createDelegation(options: DelegationOptions) {
       const workDigest = canonicalDigest({ input, context: checked.context }).slice(7);
       if (entry.workDigests.has(workDigest)) return refused("agent-no-progress");
       entry.workDigests.add(workDigest);
+      if (!joinOwner) return refused("agent-parent-unavailable");
+      entry.parentTaskId = joinOwner.taskId;
+      entry.parentSessionId = joinOwner.sessionId;
+      entry.parentTurnId = joinOwner.turnId;
+      entry.parentGeneration = joinOwner.generation;
       entry.handle = { taskId: entry.handle.taskId, generation: entry.handle.generation + 1 };
       entry.running = true;
       entry.steering = [];
@@ -644,13 +839,35 @@ export function createDelegation(options: DelegationOptions) {
     }
     if (!entry.handle.task) return refused("agent-task-not-admitted");
     const { handle: _handle, ...control } = command;
-    const result = await options.tasks.control(
-      request,
+    let controlRequest = request;
+    if (background && !immediate && request.processTask) {
+      const task = options.joins?.task(entry.handle.task);
+      if (!task?.ok) return refused("agent-task-unavailable");
+      controlRequest = {
+        ...request,
+        processTask: { ...request.processTask, owner: task.value.owner },
+      };
+    }
+    const result = await options.tasks.controlAgent(
+      controlRequest,
       processTaskControlSchema.parse({
         ...control,
         ...entry.handle.task,
       }),
     );
+    if (
+      (command.operation === "detach" || command.operation === "reattach") &&
+      result.status === "completed" &&
+      options.joins
+    ) {
+      const link = options.joins.store.link({ ...entry.handle, task: entry.handle.task });
+      const detached = command.operation === "detach";
+      if (!link.ok) return refused("agent-detachment-evidence-unavailable");
+      const changed = options.joins.store.detach(link.value, detached);
+      if (!changed.ok || !entry.admission.cancellationBoundary(detached))
+        return refused("agent-detachment-unavailable");
+      entry.detached = detached;
+    }
     if (command.operation === "cleanup" && result.status === "completed") close(entry);
     return result;
   }
@@ -659,6 +876,13 @@ export function createDelegation(options: DelegationOptions) {
   });
   return {
     execute,
+    finishTurn(sessionId: string, turnId: string) {
+      const result = options.joins?.store.finishTurn(sessionId, turnId);
+      for (const entry of retained.values())
+        if (entry.parentSessionId === sessionId && entry.parentTurnId === turnId && !entry.detached)
+          entry.admission.close();
+      return result;
+    },
     close() {
       unsubscribe();
       for (const entry of retained.values()) close(entry);

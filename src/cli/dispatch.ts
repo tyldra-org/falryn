@@ -540,6 +540,7 @@ async function launchShell(
               loom: productArtifactSession.loom,
               scratch: productArtifactSession.scratch,
               tasks: productArtifactSession.tasks,
+              joins: productArtifactSession.joins,
               taskNotices: productArtifactSession.taskNotices,
               memoryRecords: productArtifactSession.memoryRecords,
               ...(productWorkspaceIndex === null ? {} : { index: productWorkspaceIndex }),

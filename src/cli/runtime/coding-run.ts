@@ -696,6 +696,7 @@ export async function runCoding(
       },
       {
         tasks: productArtifactSession.tasks,
+        joins: productArtifactSession.joins,
         artifacts: options.artifacts ?? productArtifactSession.artifacts,
         providerCatalog,
         registry: agentRegistryFrom(configuration.values),
