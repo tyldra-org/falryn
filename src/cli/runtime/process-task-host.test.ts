@@ -288,6 +288,7 @@ describe("durable process tasks in product hosts", () => {
           adapter: provider,
           session: {
             kind: "ready",
+            release: async () => {},
             catalog,
             connection: {
               account: null,

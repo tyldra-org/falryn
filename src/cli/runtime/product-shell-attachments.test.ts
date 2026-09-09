@@ -176,6 +176,7 @@ describe("composeProductShellAttachments", () => {
         }),
         session: {
           kind: "ready",
+          release: async () => {},
           connection: { profile, account: null, updatedAt: clock.now() },
           auth: {
             profileId: "demo",
@@ -400,6 +401,7 @@ describe("composeProductShellAttachments", () => {
         adapter: fixture.provider,
         session: {
           kind: "ready",
+          release: async () => {},
           connection: { profile, account: null, updatedAt: services.clock.now() },
           auth: {
             profileId: fixture.provider.identity.profileId,
@@ -524,6 +526,7 @@ describe("composeProductShellAttachments", () => {
         adapter: scratchProvider,
         session: {
           kind: "ready",
+          release: async () => {},
           connection: { profile, account: null, updatedAt: services.clock.now() },
           auth: {
             profileId: "matrix",
