@@ -9,16 +9,29 @@ import {
   trustDecisionKey,
   trustDecisionSchema,
 } from "../../domain/security/ecosystem-trust.ts";
+import {
+  type PackageProvenance,
+  packageVerificationSchema,
+} from "../../domain/security/package-provenance.ts";
 import type { PreparedPackage } from "./prepare-package.ts";
 
 export const TRUST_POLICY_GENERATION = 1;
 export const MAX_TRUST_APPROVAL_MS = 30 * 24 * 60 * 60 * 1_000;
-export const trustRequestSchema = z.strictObject({
-  action: z.enum(["approve", "revoke"]),
-  expiresAt: z.int().nonnegative().nullable(),
-  confirmation: digestSchema.optional(),
-  decisionKey: digestSchema.optional(),
-});
+export const trustRequestSchema = z
+  .strictObject({
+    action: z.enum(["approve", "revoke", "refresh"]),
+    expiresAt: z.int().nonnegative().nullable(),
+    confirmation: digestSchema.optional(),
+    decisionKey: digestSchema.optional(),
+    verification: packageVerificationSchema.optional(),
+  })
+  .refine((value) =>
+    value.action === "refresh"
+      ? value.verification !== undefined &&
+        value.expiresAt === null &&
+        value.decisionKey === undefined
+      : value.verification === undefined,
+  );
 export type TrustRequest = z.infer<typeof trustRequestSchema>;
 export type PackageTrustResult =
   | { readonly status: "failed"; readonly code: string }
@@ -27,6 +40,7 @@ export type PackageTrustResult =
       readonly trust: TrustProjection;
       readonly confirmation: string | null;
       readonly affectedContributions: readonly string[];
+      readonly provenance?: PackageProvenance | null;
     };
 
 export function packageTrustObservation(
@@ -65,6 +79,8 @@ export function inspectPackageTrust(
   signal?: AbortSignal,
 ): PackageTrustResult {
   if (signal?.aborted) return { status: "failed", code: "cancelled" };
+  if (request?.action === "refresh")
+    return { status: "failed", code: "verification-owner-required" };
   if (request !== undefined && !trustRequestSchema.safeParse(request).success)
     return { status: "failed", code: "malformed" };
   if (request?.decisionKey !== undefined && request.action !== "revoke")

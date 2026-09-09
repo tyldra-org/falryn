@@ -4,8 +4,10 @@ import { artifactId } from "../../domain/artifacts/index.ts";
 import {
   configurationGeneration,
   createManualClock,
+  err,
   instant,
   invocationId,
+  ok,
   sessionId,
   streamId,
   traceId,
@@ -13,6 +15,7 @@ import {
   workspaceId,
 } from "../../domain/foundation/index.ts";
 import { createStubCommandRunner } from "../../domain/process/index.ts";
+import type { PackageProvenance } from "../../domain/security/package-provenance.ts";
 import { createInMemoryEventStore } from "../../domain/sessions/index.ts";
 import {
   createToolHookRegistry,
@@ -23,9 +26,12 @@ import {
   defaultToolLimits,
 } from "../../domain/tools/index.ts";
 import { createInMemoryFileSystem, localPath } from "../../domain/workspace/index.ts";
+import { ed25519PackageVerifier } from "../../integrations/extensions/package-signature.ts";
 import { capabilityEntryFromTool } from "../capabilities/product-capability-registry.ts";
 import { createCapabilityTrust } from "../extensions/capability-trust.ts";
+import { verifyPackageProvenance } from "../extensions/package-provenance.ts";
 import { inspectPackageTrust } from "../extensions/package-trust.ts";
+import { signedVerification } from "../extensions/provenance-fixtures.ts";
 import { memoryTrustStore, trustFixture } from "../extensions/trust-fixtures.ts";
 import { createProductResources } from "../orchestration/product-resources.ts";
 import { createTurnEventJournal } from "../runtime/turn-event-journal.ts";
@@ -66,110 +72,126 @@ function setup() {
 }
 
 describe("createProductToolGateway", () => {
-  test("external sources require exact trust and recheck revocation after asynchronous hooks", async () => {
-    const { clock, journal } = setup();
-    const { observation } = await trustFixture();
-    const store = memoryTrustStore();
-    const trust = createCapabilityTrust(store, () => observation);
-    const entry = createToolRegistryEntry(
-      {
-        namespace: "extension",
-        name: "inspect_fixture",
-        version: 1,
-        source: "plugin",
-        title: "Inspect",
-        description: "Read a fixture",
-        effect: "observation",
-        capabilityKind: "plugin",
-        platforms: [],
-        limits: defaultToolLimits(),
-        concurrency: defaultConcurrencyContract(),
-        resultProjection: defaultProjectionContract(),
-      },
-      {
-        inputSchema: z.object({}).strict(),
-        outputSchema: z.object({ result: z.string() }).strict(),
-      },
-    );
-    if (!entry.ok) throw new Error(entry.error.code);
-    const registry = createToolRegistry(generation, [entry.value]);
-    if (!registry.ok) throw new Error(registry.error.code);
-    let revokeDuringHook = false;
-    const hooks = createToolHookRegistry(generation, [
-      {
-        id: "revoke",
-        point: "before-capability-invocation",
-        priority: 1,
-        run: () => {
-          if (revokeDuringHook) {
-            const preview = inspectPackageTrust(store, observation, [], {
-              action: "revoke",
-              expiresAt: null,
-            });
-            if (preview.status !== "preview" || preview.confirmation === null)
-              throw new Error("revoke preview");
-            inspectPackageTrust(store, observation, [], {
-              action: "revoke",
-              expiresAt: null,
-              confirmation: preview.confirmation,
-            });
-          }
-          return { kind: "allow" };
-        },
-      },
-    ]);
-    if (!hooks.ok) throw new Error(hooks.error.code);
-    let effects = 0;
-    const gateway = createProductToolGateway({
-      clock,
-      journal,
-      resources: createProductResources(clock),
-      registry: registry.value,
-      runner: {
-        execute: async () => {
-          effects++;
-          return { status: "completed", output: { result: "ok" }, effect: "completed" };
-        },
-      },
-      hooks: hooks.value,
-      correlation,
-      turnId: turn,
-      disclosedToolNames: new Set(["inspect_fixture"]),
-      effectLedger: new Map(),
-      trust,
-    });
-    const run = (id: string) =>
-      gateway.execute({
-        invocationId: invocationId.from(id),
-        toolCallId: id,
-        toolName: "inspect_fixture",
-        capabilityId: entry.value.manifest.capabilityId,
-        version: 1,
-        effect: "observation",
-        input: {},
-        signal: new AbortController().signal,
+  test.each(["user", "advisory"] as const)(
+    "external sources recheck %s revocation after asynchronous hooks",
+    async (cause) => {
+      const { clock, journal } = setup();
+      const { observation } = await trustFixture();
+      const store = memoryTrustStore();
+      let facts: PackageProvenance | null = null;
+      const trust = createCapabilityTrust(store, () => observation, {
+        get: () => ok(facts),
+        replace: () => err({ code: "unavailable" }),
       });
-    expect((await run("trust-absent")).status).toBe("denied");
-    expect(capabilityEntryFromTool(entry.value, true, trust).state.executable).toBe(false);
-    const approve = inspectPackageTrust(store, observation, [], {
-      action: "approve",
-      expiresAt: 10_000,
-    });
-    if (approve.status !== "preview" || approve.confirmation === null)
-      throw new Error("approve preview");
-    inspectPackageTrust(store, observation, [], {
-      action: "approve",
-      expiresAt: 10_000,
-      confirmation: approve.confirmation,
-    });
-    const published = capabilityEntryFromTool(entry.value, true, trust);
-    expect(published.trust?.state).toBe("user-approved");
-    expect((await run("trust-approved")).status).toBe("completed");
-    revokeDuringHook = true;
-    expect((await run("trust-revoked-in-hook")).status).toBe("denied");
-    expect(effects).toBe(1);
-    expect(capabilityEntryFromTool(entry.value, true, trust).trust?.state).toBe("revoked");
-  });
+      const entry = createToolRegistryEntry(
+        {
+          namespace: "extension",
+          name: "inspect_fixture",
+          version: 1,
+          source: "plugin",
+          title: "Inspect",
+          description: "Read a fixture",
+          effect: "observation",
+          capabilityKind: "plugin",
+          platforms: [],
+          limits: defaultToolLimits(),
+          concurrency: defaultConcurrencyContract(),
+          resultProjection: defaultProjectionContract(),
+        },
+        {
+          inputSchema: z.object({}).strict(),
+          outputSchema: z.object({ result: z.string() }).strict(),
+        },
+      );
+      if (!entry.ok) throw new Error(entry.error.code);
+      const registry = createToolRegistry(generation, [entry.value]);
+      if (!registry.ok) throw new Error(registry.error.code);
+      let revokeDuringHook = false;
+      const hooks = createToolHookRegistry(generation, [
+        {
+          id: "revoke",
+          point: "before-capability-invocation",
+          priority: 1,
+          run: () => {
+            if (revokeDuringHook) {
+              if (cause === "advisory") {
+                facts = verifyPackageProvenance(
+                  observation,
+                  signedVerification(observation, { status: "revoked" }),
+                  ed25519PackageVerifier,
+                  1,
+                );
+                return { kind: "allow" };
+              }
+              const preview = inspectPackageTrust(store, observation, [], {
+                action: "revoke",
+                expiresAt: null,
+              });
+              if (preview.status !== "preview" || preview.confirmation === null)
+                throw new Error("revoke preview");
+              inspectPackageTrust(store, observation, [], {
+                action: "revoke",
+                expiresAt: null,
+                confirmation: preview.confirmation,
+              });
+            }
+            return { kind: "allow" };
+          },
+        },
+      ]);
+      if (!hooks.ok) throw new Error(hooks.error.code);
+      let effects = 0;
+      const gateway = createProductToolGateway({
+        clock,
+        journal,
+        resources: createProductResources(clock),
+        registry: registry.value,
+        runner: {
+          execute: async () => {
+            effects++;
+            return { status: "completed", output: { result: "ok" }, effect: "completed" };
+          },
+        },
+        hooks: hooks.value,
+        correlation,
+        turnId: turn,
+        disclosedToolNames: new Set(["inspect_fixture"]),
+        effectLedger: new Map(),
+        trust,
+      });
+      const run = (id: string) =>
+        gateway.execute({
+          invocationId: invocationId.from(id),
+          toolCallId: id,
+          toolName: "inspect_fixture",
+          capabilityId: entry.value.manifest.capabilityId,
+          version: 1,
+          effect: "observation",
+          input: {},
+          signal: new AbortController().signal,
+        });
+      expect((await run("trust-absent")).status).toBe("denied");
+      expect(capabilityEntryFromTool(entry.value, true, trust).state.executable).toBe(false);
+      const approve = inspectPackageTrust(store, observation, [], {
+        action: "approve",
+        expiresAt: 10_000,
+      });
+      if (approve.status !== "preview" || approve.confirmation === null)
+        throw new Error("approve preview");
+      inspectPackageTrust(store, observation, [], {
+        action: "approve",
+        expiresAt: 10_000,
+        confirmation: approve.confirmation,
+      });
+      const published = capabilityEntryFromTool(entry.value, true, trust);
+      expect(published.trust?.state).toBe("user-approved");
+      expect((await run("trust-approved")).status).toBe("completed");
+      revokeDuringHook = true;
+      expect((await run("trust-revoked-in-hook")).status).toBe("denied");
+      expect(effects).toBe(1);
+      expect(capabilityEntryFromTool(entry.value, true, trust).trust?.state).toBe("revoked");
+    },
+  );
   test("runs observations through hooks, scheduling, projection, and durable facts", async () => {
     const { tools, clock, journal } = setup();
     const hookPoints: string[] = [];

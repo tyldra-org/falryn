@@ -805,11 +805,12 @@ export async function parseInvocation(argv: readonly string[]): Promise<Invocati
     if (parsed.input === undefined)
       return { kind: "invalid", message: "extension trust requires --input." };
     const loaded = await loadTaskInputFile(parsed.input);
-    if (!loaded.ok || loaded.value.length > 4_096)
-      return { kind: "invalid", message: "Invalid trust request file (maximum 4096 bytes)." };
+    if (!loaded.ok || Buffer.byteLength(loaded.value) > 65_536)
+      return { kind: "invalid", message: "Invalid trust request file (maximum 65536 bytes)." };
     const { trustRequestSchema } = await import("../application/extensions/package-trust.ts");
+    const { parseMetadata } = await import("../domain/extensions/canonical.ts");
     try {
-      const checked = trustRequestSchema.safeParse(JSON.parse(loaded.value));
+      const checked = trustRequestSchema.safeParse(parseMetadata(loaded.value));
       if (!checked.success) return { kind: "invalid", message: "Invalid trust request." };
       extensionTrust = checked.data;
     } catch {

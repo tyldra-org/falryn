@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { packageInspectionLines } from "../../application/extensions/inspection-report.ts";
 import { pluginManifest } from "../../application/extensions/package-fixtures.ts";
+import { signedVerification } from "../../application/extensions/provenance-fixtures.ts";
 import { createStaticEnvironment } from "../../domain/foundation/index.ts";
 import { localPath } from "../../domain/workspace/index.ts";
 import { parseInvocation } from "../command-tree.ts";
@@ -13,6 +14,93 @@ import { runExtensionInspect } from "./extension.ts";
 const roots: string[] = [];
 afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
+});
+
+test("public trust input verifies offline evidence, confirms refresh, and exposes revocation after restart", async () => {
+  const home = await mkdtemp(join(tmpdir(), "falryn-signature-command-"));
+  roots.push(home);
+  const packageRoot = join(home, "package");
+  await mkdir(packageRoot);
+  await writeFile(join(packageRoot, "plugin.json"), JSON.stringify(pluginManifest()));
+  const invocation = await parseInvocation([
+    "extension",
+    "inspect",
+    packageRoot,
+    "--format",
+    "json",
+    "--non-interactive",
+  ]);
+  if (invocation.kind !== "run") throw new Error("parse");
+  const services = () =>
+    createServiceProvider(invocation.options, {
+      environment: createStaticEnvironment({
+        FALRYN_STATE_DIR: join(home, "state"),
+        FALRYN_CONFIG_DIR: join(home, "config"),
+      }),
+      home: localPath(home),
+      currentDirectory: localPath(home),
+    });
+  const inspected = await runExtensionInspect(packageRoot, undefined, services());
+  const inspectedTrust = inspected.payload?.status === "inspected" ? inspected.payload.trust : null;
+  if (inspectedTrust == null || inspectedTrust.status === "failed") throw new Error("inspect");
+  const observation = {
+    ...inspectedTrust.trust,
+    actor: inspectedTrust.trust.scope.authority,
+    now: Date.now(),
+  };
+  const verification = signedVerification(observation, { status: "revoked" });
+  const request = { action: "refresh" as const, expiresAt: null, verification };
+  const input = join(home, "request.json");
+  await writeFile(input, JSON.stringify(request));
+  const parsed = await parseInvocation(["extension", "trust", packageRoot, "--input", input]);
+  if (parsed.kind !== "run") throw new Error("refresh parse");
+  const preview = await runExtensionInspect(
+    packageRoot,
+    undefined,
+    services(),
+    parsed.extensionTrust,
+  );
+  const projected = preview.payload?.status === "inspected" ? preview.payload.trust : null;
+  if (projected?.status !== "preview" || projected.confirmation === null)
+    throw new Error("refresh preview");
+  expect(preview.effect.observed).toBe("none");
+  expect(projected.trust).toMatchObject({
+    state: "revoked",
+    eligible: false,
+    evidence: { signature: "verified", curation: "unavailable" },
+  });
+  expect(JSON.stringify(preview)).not.toContain(verification.keys[0]?.publicKey ?? "missing");
+  const applied = await runExtensionInspect(packageRoot, undefined, services(), {
+    ...request,
+    confirmation: projected.confirmation,
+  });
+  expect(applied.effect.observed).toBe("completed");
+  const restarted = await runExtensionInspect(packageRoot, undefined, services());
+  expect(restarted.payload).toMatchObject({
+    trust: { trust: { state: "revoked", eligible: false } },
+  });
+  if (restarted.payload != null)
+    expect(packageInspectionLines(restarted.payload).join("\n")).toContain("signature: verified");
+  const denied = await runExtensionInspect(packageRoot, undefined, services(), {
+    action: "approve",
+    expiresAt: Date.now() + 10000,
+  });
+  expect(denied.payload).toMatchObject({ trust: { code: "trust-evidence-denied" } });
+  await writeFile(
+    input,
+    JSON.stringify({ action: "grant", expiresAt: null, identity: { mode: "full-user" } }),
+  );
+  expect((await parseInvocation(["extension", "trust", packageRoot, "--input", input])).kind).toBe(
+    "invalid",
+  );
+  await writeFile(input, '{"action":"approve","action":"revoke","expiresAt":null}');
+  expect((await parseInvocation(["extension", "trust", packageRoot, "--input", input])).kind).toBe(
+    "invalid",
+  );
+  await writeFile(input, " ".repeat(65_537));
+  expect((await parseInvocation(["extension", "trust", packageRoot, "--input", input])).kind).toBe(
+    "invalid",
+  );
 });
 test("routes an explicit directory and rejects missing paths or activation verbs", async () => {
   const parsed = await parseInvocation(["extension", "inspect", "./package", "--format", "json"]);

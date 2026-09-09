@@ -88,6 +88,12 @@ export type TrustProjection = {
   readonly availability: TrustObservation["availability"];
   /** Eligibility is an additional check, never a full-user grant or tool permission. */
   readonly eligible: boolean;
+  readonly executionGrant?: {
+    readonly eligible: boolean;
+    readonly reason: string;
+    readonly id: string;
+    readonly revision: number;
+  };
 };
 export function trustDecisionKey(subject: TrustSubject, scope: TrustScope, actor: string): string {
   return canonicalDigest({ subject, scope, actor });

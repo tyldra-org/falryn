@@ -36,7 +36,7 @@ export function packageInspectionReport(result: PackagePreparation, trust?: Pack
       batching: entry.batching,
       disclosure:
         entry.mode === "full-user"
-          ? "Activation would grant full user process access; inspection does not activate it."
+          ? "Activation would grant full user process access without a security sandbox; inspection does not activate it."
           : null,
     })),
     dependencies: prepared.dependencies.ok
@@ -75,6 +75,13 @@ export function packageInspectionLines(report: PackageInspectionReport): string[
             `Trust subject: ${report.trust.trust.subject.identity.packageId}@${report.trust.trust.subject.identity.packageVersion ?? "unversioned"}; digest: ${report.trust.trust.subject.identity.packageDigest}.`,
             `Source owner: ${report.trust.trust.subject.ownership.sourceOwner ?? "unknown"}; publisher evidence: ${report.trust.trust.subject.ownership.publisher ?? "unavailable"}.`,
             `Integrity: ${report.trust.trust.evidence.integrity}; signature: ${report.trust.trust.evidence.signature}; advisories: ${report.trust.trust.freshness}; online: ${report.trust.trust.online}.`,
+            ...(report.trust.provenance == null
+              ? []
+              : [
+                  `Signer key: ${report.trust.provenance.signingKey ?? "unavailable"}; signature digest: ${report.trust.provenance.signatureDigest ?? "unavailable"}.`,
+                  `Advisory state: ${report.trust.provenance.evidence.advisory}; sequence: ${report.trust.provenance.advisorySequence}; evidence revision: ${report.trust.provenance.revision}.`,
+                  "A verified signature proves the supplied key signed these bytes, not publisher safety or curation. Attestation and transparency verification are unavailable.",
+                ]),
             `Health: ${report.trust.trust.health}; availability: ${report.trust.trust.availability}; trust does not grant execution permission.`,
             `Scope: ${report.trust.trust.scope.kind}/${report.trust.trust.scope.authority}; policy generation: ${report.trust.trust.policyGeneration}.`,
             ...(report.trust.trust.decision === null

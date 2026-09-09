@@ -1,10 +1,13 @@
+import { canonicalDigest } from "../../domain/extensions/canonical.ts";
 import { err, ok } from "../../domain/foundation/result.ts";
 import {
   type TrustDecision,
   type TrustDecisionStore,
   trustDecisionKey,
   trustDecisionSchema,
+  trustEvidenceBinding,
 } from "../../domain/security/ecosystem-trust.ts";
+import { packageProvenanceSchema } from "../../domain/security/package-provenance.ts";
 import type { SqliteStorePort } from "../../domain/storage/index.ts";
 
 function decode(row: Record<string, unknown>, key: string): TrustDecision | null {
@@ -52,6 +55,37 @@ export function createTrustDecisionRepository(store: SqliteStorePort): TrustDeci
       )
         return err({ code: "malformed" });
       const written = store.write((statements) => {
+        if (decision.action === "approve") {
+          const evidenceKey = canonicalDigest({
+            identity: decision.subject.identity,
+            owner: decision.subject.ownership.sourceOwner,
+            actor: decision.actor,
+            scope: decision.scope,
+          });
+          const row = statements.all(
+            "SELECT record_json FROM package_provenance WHERE evidence_key=$key",
+            { key: evidenceKey },
+          )[0];
+          if (row !== undefined) {
+            if (typeof row.record_json !== "string" || Buffer.byteLength(row.record_json) > 16384)
+              return "malformed" as const;
+            let raw: unknown;
+            try {
+              raw = JSON.parse(row.record_json);
+            } catch {
+              return "malformed" as const;
+            }
+            const facts = packageProvenanceSchema.safeParse(raw);
+            if (!facts.success || facts.data.key !== evidenceKey) return "malformed" as const;
+            if (
+              trustEvidenceBinding(facts.data.evidence) !==
+                trustEvidenceBinding(decision.evidence) ||
+              facts.data.publisher !== decision.subject.ownership.publisher
+            )
+              return "conflict" as const;
+          } else if (decision.evidence.reference !== decision.subject.identity.packageDigest)
+            return "conflict" as const;
+        }
         const existing = statements.all(
           "SELECT revision, decision_json FROM trust_decisions WHERE decision_key = $key",
           { key },
@@ -61,6 +95,17 @@ export function createTrustDecisionRepository(store: SqliteStorePort): TrustDeci
         statements.run(
           "INSERT INTO trust_decisions (decision_key, revision, decision_json) VALUES ($key, $revision, $json) ON CONFLICT(decision_key) DO UPDATE SET revision = excluded.revision, decision_json = excluded.decision_json",
           { key, revision: decision.revision, json },
+        );
+        statements.run(
+          "INSERT INTO package_trust_receipts(subject_id,revision,record_digest,action,observed_at,record_json) VALUES($key,$revision,$digest,$action,$time,$json)",
+          {
+            key,
+            revision: decision.revision,
+            digest: canonicalDigest(decision),
+            action: decision.action,
+            time: decision.decidedAt,
+            json,
+          },
         );
         return null;
       }, signal);
