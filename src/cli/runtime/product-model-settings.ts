@@ -12,6 +12,7 @@ import { parseProviderConnectionState } from "../../providers/configuration/conn
 import type { RoleRoute } from "../../providers/configuration/policy.ts";
 import { reasoningControlFor } from "../../providers/routing/routing.ts";
 import type { GlobalOptions } from "../options.ts";
+import { agentRegistryFrom } from "./agent-configuration.ts";
 import {
   MODEL_POLICY_CONFIGURATION_KEY,
   modelPreferencesFrom,
@@ -88,8 +89,7 @@ export function composeProductModelSettings(
         scope,
         generation: Number(loaded.generation),
         main: captured,
-        // Definition owners attach their actual catalogs when their runtime ships.
-        definitions: [],
+        definitions: agentRegistryFrom(loaded.values).models(),
       };
     },
     async write(preferences, expectedRevision, signal) {

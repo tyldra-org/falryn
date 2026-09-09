@@ -85,6 +85,8 @@ export const processTaskTerminalSchema = z
       "supervisor-replaced",
       "supervisor-unreachable",
       "ownership-uncertain",
+      "agent-completed",
+      "agent-failed",
     ]),
     exitCode: z.int().nullable(),
     signal: identity.nullable(),
@@ -93,8 +95,16 @@ export const processTaskTerminalSchema = z
     outputComplete: z.boolean().optional(),
   })
   .refine((terminal) => {
+    if (terminal.reason === "agent-completed" && terminal.outcome !== "completed") return false;
     if (terminal.outcome === "uncertain") return terminal.effect === "uncertain";
     if (terminal.outcome !== "completed") return true;
+    if (terminal.reason === "agent-completed")
+      return (
+        terminal.effect !== "uncertain" &&
+        terminal.exitCode === null &&
+        terminal.signal === null &&
+        terminal.result !== null
+      );
     return (
       terminal.effect === "completed" &&
       terminal.reason === "exited" &&
@@ -106,6 +116,8 @@ export const processTaskTerminalSchema = z
 export type ProcessTaskTerminal = z.infer<typeof processTaskTerminalSchema>;
 
 const common = {
+  /** Omitted in existing captured-process records. Both kinds use the same durable lifecycle. */
+  executionKind: z.enum(["process", "agent"]).optional(),
   handle: processTaskHandleSchema,
   revision,
   owner: processTaskOwnerSchema,
@@ -129,7 +141,7 @@ export const processTaskSnapshotSchema = z
     z.strictObject({
       ...common,
       state: z.literal("running"),
-      process: processBirthIdentitySchema,
+      process: processBirthIdentitySchema.nullable(),
       terminal: z.null(),
     }),
     z.strictObject({
@@ -148,14 +160,20 @@ export const processTaskSnapshotSchema = z
   .refine(
     (task) =>
       task.deadline >= task.createdAt &&
+      (task.executionKind !== "agent" || task.process === null) &&
+      (task.state !== "running" || task.executionKind === "agent" || task.process !== null) &&
       (task.state !== "terminal" ||
         (task.terminal.sealedAt >= task.createdAt &&
-          (task.terminal.outcome !== "completed" || task.process !== null))),
+          (task.terminal.outcome !== "completed" ||
+            (task.executionKind === "agent"
+              ? task.terminal.reason === "agent-completed"
+              : task.process !== null && task.terminal.reason === "exited")))),
     "task lifecycle contradicts process evidence",
   );
 export type ProcessTaskSnapshot = z.infer<typeof processTaskSnapshotSchema>;
 
 export const processTaskReceiptSchema = z.strictObject({
+  executionKind: common.executionKind,
   kind: z.literal("process-task-receipt"),
   handle: processTaskHandleSchema,
   revision,
@@ -191,6 +209,7 @@ export type ProcessTaskReceipt = z.infer<typeof processTaskReceiptSchema>;
 
 export function processTaskReceipt(task: ProcessTaskSnapshot): ProcessTaskReceipt {
   return {
+    ...(task.executionKind === undefined ? {} : { executionKind: task.executionKind }),
     kind: "process-task-receipt",
     handle: task.handle,
     revision: task.revision,
@@ -243,7 +262,7 @@ export const processTaskControlSchema = z.discriminatedUnion("operation", [
 export type ProcessTaskControl = z.infer<typeof processTaskControlSchema>;
 
 export type ProcessTaskTransition =
-  | { readonly kind: "started"; readonly process: ProcessBirthIdentity }
+  | { readonly kind: "started"; readonly process: ProcessBirthIdentity | null }
   | { readonly kind: "attachment"; readonly attachment: ProcessTaskExecution["attachment"] }
   | { readonly kind: "settling" }
   | { readonly kind: "sealed"; readonly terminal: ProcessTaskTerminal };
@@ -290,7 +309,9 @@ export function transitionProcessTask(
   const next = { ...current, revision: current.revision + 1 };
   switch (change.kind) {
     case "started":
-      return current.state === "queued" && now < current.deadline
+      return current.state === "queued" &&
+        now < current.deadline &&
+        (current.executionKind === "agent" ? change.process === null : change.process !== null)
         ? {
             ok: true,
             value: { ...next, state: "running", process: change.process, terminal: null },
@@ -308,7 +329,10 @@ export function transitionProcessTask(
       return current.state === "settling" &&
         change.terminal.sealedAt === now &&
         processTaskTerminalSchema.safeParse(change.terminal).success &&
-        (change.terminal.outcome !== "completed" || current.process !== null)
+        (change.terminal.outcome !== "completed" ||
+          (current.executionKind === "agent"
+            ? change.terminal.reason === "agent-completed"
+            : current.process !== null && change.terminal.reason === "exited"))
         ? { ok: true, value: { ...next, state: "terminal", terminal: change.terminal } }
         : { ok: false, code: "invalid-transition" };
   }

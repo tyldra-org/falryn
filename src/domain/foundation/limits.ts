@@ -15,7 +15,8 @@
 export const RUNTIME_EVENT_SCHEMA_FAMILY = "falryn.runtime-event";
 
 /** Schema version this build writes and is able to fully interpret. */
-export const RUNTIME_EVENT_SCHEMA_VERSION = 1;
+// Version 2 adds delegated-agent tasks without fictitious child-process evidence.
+export const RUNTIME_EVENT_SCHEMA_VERSION = 2;
 
 /**
  * Lowest `schemaVersion` this build accepts. Older durable events are migrated

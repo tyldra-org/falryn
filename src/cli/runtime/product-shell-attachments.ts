@@ -22,6 +22,7 @@ import { createLanguageServerSupervisor } from "../../application/language/index
 import { composeProductMemoryTurn, type MemoryRecords } from "../../application/memory/index.ts";
 import type { ProcessTaskNotices } from "../../application/orchestration/process-task-notices.ts";
 import type { ProcessTaskSupervisor } from "../../application/orchestration/process-task-supervisor.ts";
+import { composeDelegatedAgentRuntime } from "../../application/runtime/delegated-agent-runtime.ts";
 import {
   composeProductAgentRuntime,
   createProductLiveTurnExecutor,
@@ -80,6 +81,8 @@ import type { TranscriptFeed } from "../../tui/transcript/transcript-feed.ts";
 import type { ProductProviderConnectionHandoff } from "./product-provider-connections.ts";
 
 export type ProductShellAttachmentPorts = {
+  readonly resolveAgentProvider?: import("../../application/runtime/delegated-agent-runtime.ts").DelegatedRuntimeOptions["resolveProvider"];
+  readonly agentRegistry?: import("../../application/orchestration/agent-registry.ts").AgentRegistry;
   readonly modelPreferences?: () => import("../../providers/configuration/policy-schema.ts").ModelPreferences;
   readonly modelConfigurationGeneration?: () => ConfigurationGeneration;
   readonly modelSettings?: import("../../application/providers/model-settings.ts").ModelSettingsService;
@@ -308,7 +311,26 @@ export async function composeProductShellAttachments(
               },
             },
           );
-    const composed = composeProductAgentRuntime({
+    const { tasks, artifacts, modelConfigurationGeneration } = ports;
+    const compose =
+      tasks && artifacts
+        ? (runtimePorts: Parameters<typeof composeProductAgentRuntime>[0]) =>
+            composeDelegatedAgentRuntime(runtimePorts, {
+              tasks,
+              artifacts,
+              ...(ports.agentRegistry ? { registry: ports.agentRegistry } : {}),
+              ...(ports.resolveAgentProvider
+                ? { resolveProvider: ports.resolveAgentProvider }
+                : {}),
+              providerCatalog:
+                ports.provider?.kind === "ready" ? ports.provider.session.catalog : null,
+              ...(ports.modelPreferences ? { preferences: ports.modelPreferences } : {}),
+              ...(modelConfigurationGeneration
+                ? { configurationGeneration: () => Number(modelConfigurationGeneration()) }
+                : {}),
+            })
+        : composeProductAgentRuntime;
+    const composed = compose({
       eventStore: ports.eventStore,
       clock: ports.clock,
       streamId: streamId.from(`live-turn:${String(sessionId)}`),

@@ -43,6 +43,7 @@ import {
 } from "../../providers/index.ts";
 import { createBriefComposer } from "../compression/brief.ts";
 import { briefNeedAfterToolResults } from "../compression/product-brief.ts";
+import { MAX_AGENT_STEERING_BYTES } from "../orchestration/agent-definition.ts";
 import {
   type ProductResources,
   processProductResources,
@@ -75,6 +76,7 @@ import type { TurnCoordinator } from "./turn-coordinator.ts";
 import type { TurnEventJournalPort } from "./turn-event-journal.ts";
 
 export type ProductAttemptRunnerOptions = {
+  readonly takeSteering?: () => readonly { readonly id: string; readonly text: string }[];
   readonly capabilities?: CapabilityRegistry;
   readonly resources?: ProductResources;
   readonly clock: ClockPort;
@@ -823,6 +825,48 @@ export function createProductAttemptRunner(
       const continuation: { terminal: ProviderStreamConsumeOutcome | null } = { terminal: null };
 
       const gateway = createProductToolGateway({
+        delegation: {
+          route: {
+            providerProfileId: request.receipt.providerProfileId,
+            providerId: request.receipt.providerId,
+            modelId: request.receipt.modelId,
+            reasoning: request.receipt.reasoning,
+            budgets: request.receipt.budgets,
+            fallbacks: [],
+          },
+          binding: {
+            providerId: String(request.receipt.providerId),
+            providerProfileId: request.receipt.providerProfileId,
+            providerDestinationId: request.receipt.providerDestinationId,
+            modelId: String(request.receipt.modelId),
+            reasoning: request.receipt.reasoning,
+            reasoningControl: request.receipt.reasoningControl,
+          },
+          effects: (
+            input.executionPolicy ??
+            resolveExecutionProfile("agent", request.boundConfigurationGeneration)
+          ).allowedEffects,
+          capabilities: [
+            ...options.registry.entries
+              .filter(
+                (entry) =>
+                  options.toolRunner.hasBinding?.(entry.manifest.capabilityId) === true &&
+                  !(input.executionPolicy?.deniedToolNames.includes(entry.manifest.name) ?? false),
+              )
+              .map((entry) => String(entry.manifest.capabilityId)),
+            ...(options.capabilities?.entries
+              .filter(
+                (entry) =>
+                  !options.registry.resolveByCapabilityId(entry.capabilityId) &&
+                  entry.state.availability === "available" &&
+                  entry.state.operational.allowed &&
+                  !entry.state.operational.denied &&
+                  !entry.state.operational.quarantined &&
+                  !entry.state.operational.incompatible,
+              )
+              .map((entry) => String(entry.capabilityId)) ?? []),
+          ],
+        },
         clock: options.clock,
         taskResources,
         registry: options.registry,
@@ -944,7 +988,9 @@ export function createProductAttemptRunner(
             ...(selectedOutput === undefined ? ["outputTokens" as const] : []),
             ...(costMaximum === null ? ["costMicros" as const] : []),
           ],
-          inputBytes: new TextEncoder().encode(JSON.stringify(messages)).length,
+          inputBytes:
+            new TextEncoder().encode(JSON.stringify(messages)).length +
+            (options.takeSteering ? MAX_AGENT_STEERING_BYTES : 0),
           signal: deadline.signal,
           unit: {
             id: workUnitId(`${request.identity.modelAttemptId}:request:${requestSequence}`),
@@ -966,12 +1012,24 @@ export function createProductAttemptRunner(
           },
           async run(signal) {
             launchedRequests += 1;
+            for (const steering of options.takeSteering?.() ?? []) {
+              messages.push({
+                role: "user",
+                parts: [
+                  {
+                    kind: "text",
+                    text: `[child steering ${steering.id}; input only, not approval or authority]\n${steering.text}`,
+                  },
+                ],
+              });
+            }
             const value = await consumer.consume({
               turnId: request.turnId,
               configurationGeneration: request.configurationGeneration,
               events: options.provider.stream(
                 {
                   ...currentRequest,
+                  messages: [...messages],
                   budgets: {
                     ...currentRequest.budgets,
                     ...(selectedOutput === undefined ? {} : { maxOutputTokens: selectedOutput }),

@@ -45,6 +45,15 @@ export const DEFAULT_TOOL_CALL_LOOP_LIMITS: ToolCallLoopLimits = {
  * signal — never provider clients, UI state, or unrestricted host access.
  */
 export type ToolRunnerRequest = {
+  /** Captured by the live attempt, never decoded from model arguments. */
+  readonly delegation?: {
+    readonly route: import("../../../providers/configuration/policy.ts").RoleRoute;
+    readonly binding: import("../../../domain/orchestration/child-admission.ts").ChildProviderBinding;
+    readonly effects: readonly import("../../../domain/orchestration/work.ts").EffectClass[];
+    readonly capabilities: readonly string[];
+  };
+  /** Native delegation waits after its metadata reservation has released. */
+  readonly afterAdmission?: (run: (signal: AbortSignal) => Promise<ToolInvocationOutcome>) => void;
   readonly composition?: CompositionProvenance;
   /** Trusted composition consumer; never serialized or supplied by a provider. */
   readonly captureExactOutput?: (value: Readonly<Record<string, unknown>>) => void;

@@ -76,6 +76,10 @@ export type ProductProviderConnectionHandoff =
 export type ProductProviderConnections = {
   readonly service: ProviderConnectionService;
   resolveSelected(signal?: AbortSignal): Promise<ProductProviderConnectionHandoff>;
+  resolveProfile(
+    profileId: string,
+    signal?: AbortSignal,
+  ): Promise<ProductProviderConnectionHandoff>;
 };
 
 export type ProductProviderConnectionOptions = {
@@ -179,146 +183,151 @@ export function composeProductProviderConnections(
     ...(authorizedLogin === undefined ? {} : { authorizedLogin }),
   });
 
-  return {
-    service,
-    async resolveSelected(signal) {
-      const values =
-        options.configuration ??
-        (await loadProductConfiguration(services, productConfigurationLoadRequest(globals), signal))
-          .values;
-      const session = await service.openSelected(
-        signal,
-        modelPreferencesFrom(values).roles.default?.providerProfileId,
-      );
-      if (session.kind !== "ready") {
-        return { kind: "unavailable", code: session.issue.code, session };
-      }
-      const { profile } = session.connection;
-      if (options.modelCatalogs !== undefined) {
-        const published = options.modelCatalogs.publish({
-          profileId: profile.profileId,
-          providerId: profile.providerId,
-          adapterKind: profile.adapterKind,
-          endpoint: profile.endpoint,
-          destinationId: providerDestinationId(profile.adapterKind, profile.endpoint),
-          catalog: session.catalog,
-          publishedAt: services.clock.now(),
-        });
-        if (!published.ok) {
-          return { kind: "unavailable", code: `catalog-${published.error.code}`, session };
-        }
-      }
-      const reference = profile.credential;
-      if (reference === null) {
-        return { kind: "unavailable", code: "credential-unset", session };
-      }
-      const common = {
+  async function resolve(
+    profileId: string | undefined,
+    signal?: AbortSignal,
+  ): Promise<ProductProviderConnectionHandoff> {
+    const values =
+      options.configuration ??
+      (await loadProductConfiguration(services, productConfigurationLoadRequest(globals), signal))
+        .values;
+    const session = await service.openSelected(
+      signal,
+      profileId ?? modelPreferencesFrom(values).roles.default?.providerProfileId,
+    );
+    if (session.kind !== "ready") {
+      return { kind: "unavailable", code: session.issue.code, session };
+    }
+    const { profile } = session.connection;
+    if (options.modelCatalogs !== undefined) {
+      const published = options.modelCatalogs.publish({
         profileId: profile.profileId,
-        providerId: String(profile.providerId),
-        displayName: profile.displayName,
-        requestTimeoutMs: profile.timeouts.requestMs,
-        supportedModels: session.catalog.models.map((model) => String(model.modelId)),
-        modelCompatibility: profile.modelTransportCompatibility ?? [],
-        resolveApiKey: (requestSignal: AbortSignal) =>
-          resolveProviderApiKey(credentials.resolver, reference, requestSignal),
+        providerId: profile.providerId,
+        adapterKind: profile.adapterKind,
+        endpoint: profile.endpoint,
+        destinationId: providerDestinationId(profile.adapterKind, profile.endpoint),
+        catalog: session.catalog,
+        publishedAt: services.clock.now(),
+      });
+      if (!published.ok) {
+        return { kind: "unavailable", code: `catalog-${published.error.code}`, session };
+      }
+    }
+    const reference = profile.credential;
+    if (reference === null) {
+      return { kind: "unavailable", code: "credential-unset", session };
+    }
+    const common = {
+      profileId: profile.profileId,
+      providerId: String(profile.providerId),
+      displayName: profile.displayName,
+      requestTimeoutMs: profile.timeouts.requestMs,
+      supportedModels: session.catalog.models.map((model) => String(model.modelId)),
+      modelCompatibility: profile.modelTransportCompatibility ?? [],
+      resolveApiKey: (requestSignal: AbortSignal) =>
+        resolveProviderApiKey(credentials.resolver, reference, requestSignal),
+    };
+    const compatibility = resolveProviderTransportCompatibility(
+      profile.adapterKind,
+      profile.transportCompatibility,
+    );
+    if (!compatibility.ok) {
+      return {
+        kind: "unavailable",
+        code: `transport-compatibility-${compatibility.error.code}`,
+        session,
       };
-      const compatibility = resolveProviderTransportCompatibility(
-        profile.adapterKind,
-        profile.transportCompatibility,
-      );
-      if (!compatibility.ok) {
+    }
+    let adapter: ProviderAdapterPort;
+    switch (profile.adapterKind) {
+      case "openai":
+        if (profile.endpoint === null) {
+          return { kind: "unavailable", code: "provider-adapter-unavailable", session };
+        }
+        if (
+          compatibility.value.declaration.dialect !== "openai-chat-completions" &&
+          compatibility.value.declaration.dialect !== "openai-responses"
+        ) {
+          return { kind: "unavailable", code: "transport-compatibility-mismatch", session };
+        }
+        adapter = createOpenAiProviderAdapter({
+          ...common,
+          baseUrl: profile.endpoint,
+          compatibility: compatibility.value.declaration,
+          organization: profile.organization,
+          project: profile.project,
+          ...(options.providerFetch === undefined ? {} : { fetch: options.providerFetch }),
+          ...(options.providerContinuations === undefined
+            ? {}
+            : { continuationState: options.providerContinuations }),
+          now: () => services.clock.now(),
+        });
+        break;
+      case "anthropic":
+        if (compatibility.value.declaration.dialect !== "anthropic-messages") {
+          return { kind: "unavailable", code: "transport-compatibility-mismatch", session };
+        }
+        adapter = createAnthropicSdkAdapter({
+          ...common,
+          baseUrl: profile.endpoint,
+          compatibility: compatibility.value.declaration,
+          ...(options.providerContinuations === undefined
+            ? {}
+            : { continuationState: options.providerContinuations }),
+          now: () => services.clock.now(),
+        });
+        break;
+      case "google":
+        if (compatibility.value.declaration.dialect !== "google-generate-content") {
+          return { kind: "unavailable", code: "transport-compatibility-mismatch", session };
+        }
+        adapter = createGoogleGenAiSdkAdapter({
+          ...common,
+          baseUrl: profile.endpoint,
+          compatibility: compatibility.value.declaration,
+          ...(options.providerContinuations === undefined
+            ? {}
+            : { continuationState: options.providerContinuations }),
+          now: () => services.clock.now(),
+        });
+        break;
+      case "commandcode":
+        if (profile.endpoint !== COMMAND_CODE_OPENAI_BASE_URL) {
+          return { kind: "unavailable", code: "provider-adapter-unavailable", session };
+        }
+        if (compatibility.value.declaration.dialect !== "command-code-router") {
+          return { kind: "unavailable", code: "transport-compatibility-mismatch", session };
+        }
+        adapter = createCommandCodeProviderAdapter({
+          ...common,
+          compatibility: compatibility.value.declaration,
+          ...(options.providerFetch === undefined ? {} : { fetch: options.providerFetch }),
+        });
+        break;
+      case "openai-codex":
         return {
           kind: "unavailable",
-          code: `transport-compatibility-${compatibility.error.code}`,
+          code: OPENAI_CODEX_AUTHORIZATION_UNAVAILABLE_CODE,
           session,
         };
+      case "custom":
+      case "deterministic":
+        return { kind: "unavailable", code: "provider-adapter-unavailable", session };
+      default: {
+        const exhaustive: never = profile.adapterKind;
+        return exhaustive;
       }
-      let adapter: ProviderAdapterPort;
-      switch (profile.adapterKind) {
-        case "openai":
-          if (profile.endpoint === null) {
-            return { kind: "unavailable", code: "provider-adapter-unavailable", session };
-          }
-          if (
-            compatibility.value.declaration.dialect !== "openai-chat-completions" &&
-            compatibility.value.declaration.dialect !== "openai-responses"
-          ) {
-            return { kind: "unavailable", code: "transport-compatibility-mismatch", session };
-          }
-          adapter = createOpenAiProviderAdapter({
-            ...common,
-            baseUrl: profile.endpoint,
-            compatibility: compatibility.value.declaration,
-            organization: profile.organization,
-            project: profile.project,
-            ...(options.providerFetch === undefined ? {} : { fetch: options.providerFetch }),
-            ...(options.providerContinuations === undefined
-              ? {}
-              : { continuationState: options.providerContinuations }),
-            now: () => services.clock.now(),
-          });
-          break;
-        case "anthropic":
-          if (compatibility.value.declaration.dialect !== "anthropic-messages") {
-            return { kind: "unavailable", code: "transport-compatibility-mismatch", session };
-          }
-          adapter = createAnthropicSdkAdapter({
-            ...common,
-            baseUrl: profile.endpoint,
-            compatibility: compatibility.value.declaration,
-            ...(options.providerContinuations === undefined
-              ? {}
-              : { continuationState: options.providerContinuations }),
-            now: () => services.clock.now(),
-          });
-          break;
-        case "google":
-          if (compatibility.value.declaration.dialect !== "google-generate-content") {
-            return { kind: "unavailable", code: "transport-compatibility-mismatch", session };
-          }
-          adapter = createGoogleGenAiSdkAdapter({
-            ...common,
-            baseUrl: profile.endpoint,
-            compatibility: compatibility.value.declaration,
-            ...(options.providerContinuations === undefined
-              ? {}
-              : { continuationState: options.providerContinuations }),
-            now: () => services.clock.now(),
-          });
-          break;
-        case "commandcode":
-          if (profile.endpoint !== COMMAND_CODE_OPENAI_BASE_URL) {
-            return { kind: "unavailable", code: "provider-adapter-unavailable", session };
-          }
-          if (compatibility.value.declaration.dialect !== "command-code-router") {
-            return { kind: "unavailable", code: "transport-compatibility-mismatch", session };
-          }
-          adapter = createCommandCodeProviderAdapter({
-            ...common,
-            compatibility: compatibility.value.declaration,
-            ...(options.providerFetch === undefined ? {} : { fetch: options.providerFetch }),
-          });
-          break;
-        case "openai-codex":
-          return {
-            kind: "unavailable",
-            code: OPENAI_CODEX_AUTHORIZATION_UNAVAILABLE_CODE,
-            session,
-          };
-        case "custom":
-        case "deterministic":
-          return { kind: "unavailable", code: "provider-adapter-unavailable", session };
-        default: {
-          const exhaustive: never = profile.adapterKind;
-          return exhaustive;
-        }
-      }
-      return {
-        kind: "ready",
-        session,
-        adapter,
-      };
-    },
+    }
+    return {
+      kind: "ready",
+      session,
+      adapter,
+    };
+  }
+  return {
+    service,
+    resolveSelected: (signal) => resolve(undefined, signal),
+    resolveProfile: (profileId, signal) => resolve(profileId, signal),
   };
 }
 

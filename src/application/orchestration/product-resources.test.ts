@@ -334,6 +334,28 @@ test("a later role limit cannot turn previous unknown usage into zero", async ()
 });
 
 describe("retained task resources", () => {
+  test("retained children start later segments and descendants against the original allowance", async () => {
+    const owner = createProductResources(createManualClock());
+    const parent = owner.openTask("1", { requests: 2 });
+    const child = parent.subdivide({ requests: 2 });
+    if (!child) throw new Error("subdivision refused");
+    const release = child.retain();
+    if (!release) throw new Error("retention refused");
+    parent.close();
+    const run = async () => ({ value: "done", terminated: true });
+    expect((await request(parent, "root", run)).receipt.state).toBe("stale-generation");
+    expect(parent.subdivide({})).toBeNull();
+    expect((await request(child, "next", run)).kind).toBe("completed");
+    const descendant = child.subdivide({ requests: 1 });
+    if (!descendant) throw new Error("retained descendant refused");
+    expect((await request(descendant, "nested", run)).kind).toBe("completed");
+    expect(parent.remaining("requests")).toBe(0);
+    expect((await request(child, "exhausted", run)).kind).toBe("stopped");
+    descendant.close();
+    child.close();
+    release();
+    expect(owner.report().tasks).toBe(0);
+  });
   test("caller close preserves execution and conflict occupancy, but refuses new authority", async () => {
     const owner = createProductResources(createManualClock(), { maxConcurrent: 2 });
     const task = owner.openTask("1", { requests: 2 });

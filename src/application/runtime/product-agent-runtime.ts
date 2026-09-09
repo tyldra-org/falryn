@@ -63,6 +63,7 @@ import type { PersistTurnEventsOutcome, TurnEventJournal } from "./turn-event-jo
 import { createTurnEventJournal } from "./turn-event-journal.ts";
 
 export type ProductAgentRuntimePorts = {
+  readonly takeSteering?: () => readonly { readonly id: string; readonly text: string }[];
   readonly resources?: ProductResources;
   readonly eventStore: EventStorePort;
   readonly clock: ClockPort;
@@ -256,6 +257,7 @@ export function composeProductAgentRuntime(
     ports.attemptRunner ??
     (providerAdapter !== null && toolRunner !== null && toolRegistry !== null
       ? createProductAttemptRunner({
+          ...(ports.takeSteering === undefined ? {} : { takeSteering: ports.takeSteering }),
           resources: ports.resources ?? processProductResources,
           clock: ports.clock,
           coordinator: turnCoordinator,

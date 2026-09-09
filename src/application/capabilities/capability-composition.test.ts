@@ -38,6 +38,7 @@ function fixture(
     effect: "completed",
     output: { text: request.input.text },
   }),
+  effectFor?: (input: Readonly<Record<string, unknown>>) => "observation" | "mutation",
 ) {
   const generation = configurationGeneration.from(3);
   const clock = createManualClock(instant(100));
@@ -68,6 +69,7 @@ function fixture(
       {
         inputSchema: z.strictObject({ text: z.string() }),
         outputSchema: z.strictObject({ text: z.string() }),
+        ...(effectFor ? { effectFor } : {}),
       },
     );
     if (!entry.ok) throw new Error(entry.error.code);
@@ -146,6 +148,13 @@ function required<T>(value: T | undefined): T {
 const signal = () => new AbortController().signal;
 
 describe("capability composition", () => {
+  test("a graph cannot label an input-dependent mutation as observation", async () => {
+    const f = fixture(undefined, () => "mutation");
+    const result = await f.compose().execute(f.graph(), signal());
+    expect(result.status).not.toBe("completed");
+    expect(f.calls).toHaveLength(0);
+    f.taskResources.close();
+  });
   test("all native origins share typed transfers, admission, durable provenance and effect-free replay", async () => {
     const f = fixture();
     const graph = f.graph();

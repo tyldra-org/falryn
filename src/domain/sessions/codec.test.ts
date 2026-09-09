@@ -21,6 +21,12 @@ function decodeJson(value: unknown) {
 }
 
 describe("round trip", () => {
+  test("version 1 events remain readable after agent task semantics raise the writer version", () => {
+    const decoded = decodeJson(wireOf({ schemaVersion: 1, minimumReaderSchemaVersion: 1 }));
+    expect(decoded.ok).toBe(true);
+    if (decoded.ok) expect(decoded.value.schemaVersion).toBe(1);
+    expect(RUNTIME_EVENT_SCHEMA_VERSION).toBe(2);
+  });
   test.each(everyEventKind().map((event) => [event.kind, event] as const))(
     "%s survives encode and decode unchanged",
     (_kind, event) => {
