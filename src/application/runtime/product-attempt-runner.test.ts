@@ -32,11 +32,13 @@ import {
 } from "../../providers/index.ts";
 import { createProductCapabilityRegistry } from "../capabilities/product-capability-registry.ts";
 import { createProductResources } from "../orchestration/product-resources.ts";
+import { createScopeTree } from "../orchestration/scope-tree.ts";
 import { promptCacheStablePrefixDigest } from "../providers/provider-prompt-cache.ts";
 import { discloseProductTools } from "../tools/product-tool-disclosure.ts";
 import { composeProductProcessTools } from "../tools/product-tools-process.ts";
 import { composeProductWorkspaceTools } from "../tools/product-tools-workspace.ts";
 import { composeProductAgentRuntime } from "./product-agent-runtime.ts";
+import { createProductLiveTurnExecutor } from "./product-live-turn.ts";
 import type { ToolRunnerPort } from "./tool-call-loop.ts";
 
 const generation = configurationGeneration.from(5);
@@ -178,6 +180,180 @@ function disclosureInput(product: ReturnType<typeof setup>) {
     schemaTokensEstimated: product.disclosure.receipt.schemaTokensEstimated,
   };
 }
+
+test.each([true, false])(
+  "product child admission enforces provider/tool authority and ancestor spend, tool allowed=%s",
+  async (allowTool) => {
+    let nativeCalls = 0;
+    let providerCalls = 0;
+    const adapter = createDeterministicProviderAdapter({
+      script: (_request, index) =>
+        index === 0
+          ? {
+              kind: "tool",
+              toolCallId: "child-list",
+              name: "list_dir",
+              argumentFragments: ['{"path":"."}'],
+            }
+          : { kind: "text", text: "Child result received." },
+      onRequest: () => {
+        providerCalls++;
+      },
+    });
+    const product = setup(adapter, (base) => ({
+      execute(request) {
+        nativeCalls++;
+        return base.execute(request);
+      },
+    }));
+    const selected = receipt(product);
+    const root = product.runtime.resources.openTask(String(generation), { requests: 2 });
+    const tree = createScopeTree({ clock: createManualClock(instant(100)) });
+    const list = product.disclosure.receipt.disclosed.find((tool) => tool.name === "list_dir");
+    if (!list) throw new Error("missing list_dir");
+    const authority = {
+      version: 1 as const,
+      workspaceId: String(product.correlation.workspaceId),
+      configurationGeneration: String(generation),
+      capabilityGeneration: String(generation),
+      providers: [
+        {
+          providerId: String(selected.providerId),
+          providerProfileId: selected.providerProfileId,
+          providerDestinationId: selected.providerDestinationId,
+          modelId: String(selected.modelId),
+          reasoning: selected.reasoning,
+          reasoningControl: selected.reasoningControl,
+        },
+      ],
+      capabilities: allowTool ? [String(list.capabilityId)] : [],
+      effects: ["observation" as const],
+    };
+    const admission = product.runtime.childAdmission({
+      resources: root,
+      tree,
+      scope: tree.root(),
+      authority,
+    });
+    const opened = admission.admit({
+      id: "child",
+      workDigest: "a".repeat(64),
+      authority,
+      limits: { concurrency: 1 },
+    });
+    if (opened.kind !== "admitted") throw new Error(opened.reason);
+    const runner = product.runtime.requireAttemptRunner();
+    if (!runner.ok) throw new Error(runner.error.code);
+    const run = async (id: string) =>
+      runner.value.run({
+        taskResources: opened.child.resources,
+        turnId: await start(product, id),
+        identity: {
+          attemptNumber: 1,
+          modelAttemptId: modelAttemptId.from(id),
+          fallbackPosition: 0,
+          providerKey: adapter.identity.providerId,
+          modelKey: String(adapter.supportedModels[0]),
+        },
+        receipt: selected,
+        boundConfigurationGeneration: generation,
+        configurationGeneration: generation,
+        signal: new AbortController().signal,
+        modelInput: {
+          messages: [{ role: "user", parts: [{ kind: "text", text: "Inspect the workspace." }] }],
+          tools: product.disclosure.modelTools,
+          output: { kind: "text" },
+          budgets: {},
+          disclosure: disclosureInput(product),
+        },
+      });
+    const result = await run("child-turn");
+    expect(result.fact.kind).toBe(allowTool ? "completed" : "failed");
+    expect(result.output?.toolResults).toBe(1);
+    expect(providerCalls).toBe(allowTool ? 2 : 1);
+    expect(nativeCalls).toBe(allowTool ? 1 : 0);
+    expect(root.remaining("requests")).toBe(allowTool ? 0 : 1);
+    if (!allowTool) expect((await run("consume-remaining")).fact.kind).toBe("completed");
+    const continuation = await run("child-continuation");
+    expect(continuation.output?.admissions?.some((item) => item.state === "limit-exceeded")).toBe(
+      true,
+    );
+    expect(providerCalls).toBe(2);
+    opened.child.close();
+    root.close();
+  },
+);
+
+test("shared live-turn entry keeps child allowance across turns and refuses serialized admission", async () => {
+  let calls = 0;
+  const adapter = createDeterministicProviderAdapter({
+    script: { kind: "text", text: "Child done." },
+    onRequest: () => {
+      calls++;
+    },
+  });
+  const product = setup(adapter);
+  const clock = createManualClock(instant(100));
+  const root = product.runtime.resources.openTask(String(generation), { requests: 1 });
+  const tree = createScopeTree({ clock });
+  const selected = receipt(product);
+  const authority = {
+    version: 1 as const,
+    workspaceId: String(product.correlation.workspaceId),
+    configurationGeneration: String(generation),
+    capabilityGeneration: String(generation),
+    providers: [
+      {
+        providerId: String(selected.providerId),
+        providerProfileId: selected.providerProfileId,
+        providerDestinationId: selected.providerDestinationId,
+        modelId: String(selected.modelId),
+        reasoning: selected.reasoning,
+        reasoningControl: selected.reasoningControl,
+      },
+    ],
+    capabilities: [],
+    effects: ["observation" as const],
+  };
+  const opened = product.runtime
+    .childAdmission({ resources: root, tree, scope: tree.root(), authority })
+    .admit({ id: "live-child", workDigest: "b".repeat(64), authority, limits: {} });
+  if (opened.kind !== "admitted") throw new Error(opened.reason);
+  const executor = createProductLiveTurnExecutor({
+    runtime: product.runtime,
+    clock,
+    providerCatalog: {
+      generation: 1,
+      provenance: "static-config",
+      fetchedAt: null,
+      expiresAt: null,
+      models: adapter.modelCapabilities ?? [],
+    },
+  });
+  const first = await executor.run({
+    prompt: "Report the result.",
+    turnId: turnId.from("live-child-one"),
+    childAdmission: opened.child,
+  });
+  expect(first.kind).toBe("completed");
+  expect(calls).toBe(1);
+  const second = await executor.run({
+    prompt: "Continue.",
+    turnId: turnId.from("live-child-two"),
+    childAdmission: opened.child,
+  });
+  expect(second.kind).toBe("failed");
+  expect(calls).toBe(1);
+  const serialized = await executor.run({
+    prompt: "Resume.",
+    turnId: turnId.from("live-child-serialized"),
+    childAdmission: JSON.parse(JSON.stringify(opened.child)),
+  });
+  expect(serialized.code).toBe("child-admission.stale-parent");
+  expect(calls).toBe(1);
+  opened.child.close();
+  root.close();
+});
 
 function anthropicStream(
   events: readonly RawMessageStreamEvent[],

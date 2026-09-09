@@ -6,6 +6,8 @@ import {
   deadlineAt,
   instant,
 } from "../../domain/foundation/index.ts";
+import type { ChildWorkTarget } from "../../domain/orchestration/child-admission.ts";
+import type { EffectCertainty } from "../../domain/orchestration/outcome.ts";
 import type {
   ResourceAdmissionReceipt,
   ResourceAmounts,
@@ -18,10 +20,29 @@ import {
   canonicalResourceValue,
   resourceAmountsSchema,
 } from "../../domain/orchestration/resource-admission.ts";
-import { effectiveConflictKeys, type WorkUnit } from "../../domain/orchestration/work.ts";
+import {
+  type EffectClass,
+  effectiveConflictKeys,
+  type WorkUnit,
+} from "../../domain/orchestration/work.ts";
 import { createResourceLedger } from "./resource-ledger.ts";
 import { createResourceLifetime } from "./resource-lifetime.ts";
 import { createScheduler } from "./scheduler.ts";
+import { MAX_SCOPE_DEPTH } from "./scope-tree.ts";
+
+/** Occupancy is released only after authoritative termination, at every depth. */
+function bucketKind(dimension: ResourceDimension) {
+  return [
+    "memoryBytes",
+    "bufferedBytes",
+    "bufferedItems",
+    "processes",
+    "descendants",
+    "concurrency",
+  ].includes(dimension)
+    ? ("occupancy" as const)
+    : ("cumulative" as const);
+}
 
 export type ResourceExecution<Value> =
   | {
@@ -31,6 +52,9 @@ export type ResourceExecution<Value> =
     }
   | { readonly kind: "stopped" | "replayed"; readonly receipt: ResourceAdmissionReceipt };
 export type ResourceWork<Value> = {
+  readonly target?: ChildWorkTarget;
+  /** Synchronous owner checks repeated immediately before acquiring capacity. */
+  readonly checkAdmission?: () => ResourceAdmissionReceipt | null;
   readonly operation: string;
   readonly attempt: string;
   readonly generation: string;
@@ -49,10 +73,13 @@ export type ResourceWork<Value> = {
   ): Promise<{
     readonly value: Value;
     readonly actual?: ResourceAmounts;
+    readonly observedEffect?: EffectCertainty;
     readonly terminated: boolean;
   }>;
 };
 export type ProductTaskResources = {
+  childIdentity(id: string, workDigest: string): "available" | "duplicate-child" | "no-progress";
+  checkAuthority(target: ChildWorkTarget, effect: EffectClass): ResourceAdmissionReceipt | null;
   readonly id: string;
   readonly generation: string;
   readonly expiresAt: number;
@@ -63,7 +90,10 @@ export type ProductTaskResources = {
   remaining(dimension: ResourceDimension): number;
   tighten(limits: ResourceAmounts): boolean;
   execute<Value>(work: ResourceWork<Value>): Promise<ResourceExecution<Value>>;
-  subdivide(limits: ResourceAmounts): ProductTaskResources | null;
+  subdivide(
+    limits: ResourceAmounts,
+    identity?: { readonly id: string; readonly workDigest: string },
+  ): ProductTaskResources | null;
   /** Hold existing execution through caller close; grants no new execution authority. */
   retain(): (() => void) | null;
   onClose(listener: () => void): (() => void) | null;
@@ -131,26 +161,21 @@ export function createProductResources(
       const startedAt = Number(clock.now());
       const expiresAt = startedAt + (limits.wallTimeMs ?? 30 * 60_000);
       const taskScope = (dimension: ResourceDimension) =>
-        capacityScope(
-          "task",
-          id,
-          "whole-task",
-          dimension,
-          [
-            "memoryBytes",
-            "bufferedBytes",
-            "bufferedItems",
-            "processes",
-            "descendants",
-            "concurrency",
-          ].includes(dimension)
-            ? "occupancy"
-            : "cumulative",
-        );
+        capacityScope("task", id, "whole-task", dimension, bucketKind(dimension));
       let subdivisions = 0;
-      const claimChild = () => {
-        if (closed || subdivisions >= 64) return false;
+      const childIds = new Set<string>();
+      const childWork = new Set<string>();
+      const childIdentity: ProductTaskResources["childIdentity"] = (id, digest) =>
+        childIds.has(id) ? "duplicate-child" : childWork.has(digest) ? "no-progress" : "available";
+      const claimChild = (identity?: { readonly id: string; readonly workDigest: string }) => {
+        if (closed || !lifetime.accepting() || subdivisions >= 64) return false;
+        if (identity && childIdentity(identity.id, identity.workDigest) !== "available")
+          return false;
         subdivisions++;
+        if (identity) {
+          childIds.add(identity.id);
+          childWork.add(identity.workDigest);
+        }
         return true;
       };
       const replays = new Map<
@@ -186,14 +211,16 @@ export function createProductResources(
       });
       const close = lifetime.close;
       const task: ProductTaskResources = {
-        subdivide(narrower) {
+        childIdentity,
+        checkAuthority: () => null,
+        subdivide(narrower, identity) {
           if (
             !lifetime.accepting() ||
             !resourceAmountsSchema.safeParse(narrower).success ||
-            !claimChild()
+            !claimChild(identity)
           )
             return null;
-          return childTask(task, narrower, clock, ledger, 1, claimChild);
+          return childTask(task, narrower, clock, ledger, 1, claimChild, unknownUsage, id);
         },
         id,
         generation,
@@ -221,6 +248,7 @@ export function createProductResources(
           for (const [dimension, limit] of Object.entries(narrower)) {
             const key = dimension as ResourceDimension;
             currentLimits[key] = Math.min(currentLimits[key] ?? Number.MAX_SAFE_INTEGER, limit);
+            ledger.narrow(taskScope(key), currentLimits[key], id);
           }
           return true;
         },
@@ -240,7 +268,24 @@ export function createProductResources(
           if (task.remaining("wallTimeMs") === 0) return refuse("admission-timeout");
           if (!resourceAmountsSchema.safeParse(work.amounts).success)
             return refuse("quota-unknown");
-          const amounts = { ...work.amounts, operations: 1 };
+          const earlyRefusal = work.checkAdmission?.();
+          if (earlyRefusal) return Promise.resolve({ kind: "stopped", receipt: earlyRefusal });
+          if (
+            (work.unknownDimensions ?? []).some(
+              (dimension) =>
+                currentLimits[dimension] !== undefined ||
+                work.scopes?.some(
+                  (debit) =>
+                    debit.scope.dimension === dimension && debit.limit < Number.MAX_SAFE_INTEGER,
+                ),
+            )
+          )
+            return refuse("quota-unknown");
+          const amounts = {
+            ...work.amounts,
+            operations: 1,
+            concurrency: Math.max(1, work.amounts.concurrency ?? 1),
+          };
           const debits: ResourceDebit[] = [
             ...effectiveConflictKeys(work.unit).map((key) => ({
               scope: capacityScope(
@@ -286,6 +331,7 @@ export function createProductResources(
             unit: work.unit,
             inputBytes: work.inputBytes,
             unknownDimensions: work.unknownDimensions,
+            target: work.target,
           });
           const previous = replays.get(reservation);
           if (previous !== undefined) {
@@ -316,6 +362,8 @@ export function createProductResources(
                   unit: { ...work.unit, deadline: deadlineAt(instant(deadline)) },
                   inputBytes: work.inputBytes,
                   admit() {
+                    const refusal = work.checkAdmission?.();
+                    if (refusal) return { kind: "refused", receipt: refusal };
                     if (closed || work.generation !== generation)
                       return { kind: "refused", receipt: stoppedReceipt("stale-generation") };
                     if (task.remaining("wallTimeMs") === 0)
@@ -365,7 +413,14 @@ export function createProductResources(
                               amount:
                                 debit.scope.ownerKind === "task" ||
                                 debit.scope.ownerKind === "agent"
-                                  ? (outcome.actual?.[debit.scope.dimension] ?? debit.amount)
+                                  ? ["operations", "requests", "attempts", "retries"].includes(
+                                      debit.scope.dimension,
+                                    )
+                                    ? Math.max(
+                                        debit.amount,
+                                        outcome.actual?.[debit.scope.dimension] ?? debit.amount,
+                                      )
+                                    : (outcome.actual?.[debit.scope.dimension] ?? debit.amount)
                                   : debit.amount,
                             }));
                       receipt =
@@ -438,7 +493,9 @@ function childTask(
   clock: ClockPort,
   ledger: ReturnType<typeof createResourceLedger>,
   depth: number,
-  claimChild: () => boolean,
+  claimChild: (identity?: { readonly id: string; readonly workDigest: string }) => boolean,
+  unknownUsage: ReadonlySet<ResourceDimension>,
+  rootId: string,
 ): ProductTaskResources {
   const id = randomUUID();
   let limits = { ...initial };
@@ -446,12 +503,15 @@ function childTask(
   let children = 0;
   const stop = new AbortController();
   const started = Number(clock.now());
-  const scope = (dimension: ResourceDimension) => capacityScope("agent", id, "child", dimension);
+  const scope = (dimension: ResourceDimension) =>
+    capacityScope("agent", id, "child", dimension, bucketKind(dimension));
   const lifetime = createResourceLifetime(() => {
     closed = true;
     stop.abort();
   });
   const child: ProductTaskResources = {
+    childIdentity: (id, digest) => parent.childIdentity(id, digest),
+    checkAuthority: (target, effect) => parent.checkAuthority(target, effect),
     id,
     refusal(state, dimension) {
       return parent.refusal(state, dimension);
@@ -491,6 +551,8 @@ function childTask(
           Math.min(value, limits[name as ResourceDimension] ?? Number.MAX_SAFE_INTEGER),
         ]),
       );
+      for (const [name, value] of Object.entries(limits))
+        ledger.narrow(scope(name as ResourceDimension), value, rootId);
       return true;
     },
     execute(work) {
@@ -499,9 +561,26 @@ function childTask(
           kind: "stopped" as const,
           receipt: parent.refusal("stale-generation"),
         });
-      const amounts = { ...work.amounts, operations: 1 };
+      if ([...unknownUsage].some((dimension) => limits[dimension] !== undefined))
+        return Promise.resolve({
+          kind: "stopped" as const,
+          receipt: parent.refusal("quota-unknown"),
+        });
+      const amounts = {
+        ...work.amounts,
+        operations: 1,
+        concurrency: Math.max(1, work.amounts.concurrency ?? 1),
+      };
       return parent.execute({
         ...work,
+        checkAdmission() {
+          if (!lifetime.accepting()) return child.refusal("stale-generation");
+          if (child.remaining("wallTimeMs") === 0)
+            return child.refusal("admission-timeout", "wallTimeMs");
+          if ([...unknownUsage].some((dimension) => limits[dimension] !== undefined))
+            return child.refusal("quota-unknown");
+          return work.checkAdmission?.() ?? null;
+        },
         retain: work.retain ?? (() => child.retain()),
         operation: createHash("sha256")
           .update(canonicalResourceValue([id, work.operation]))
@@ -520,6 +599,31 @@ function childTask(
         },
         scopes: [
           ...(work.scopes ?? []),
+          ...((work.scopes ?? []).some(
+            (debit) =>
+              debit.scope.family === "child-runnable" && debit.scope.destination === rootId,
+          )
+            ? []
+            : [
+                {
+                  scope: capacityScope(
+                    "task",
+                    rootId,
+                    "child-runnable",
+                    "concurrency",
+                    "occupancy",
+                  ),
+                  amount: 1,
+                  limit: 4,
+                },
+              ]),
+          ...Object.keys(limits)
+            .filter((dimension) => !(dimension in amounts))
+            .map((dimension) => ({
+              scope: scope(dimension as ResourceDimension),
+              amount: 0,
+              limit: limits[dimension as ResourceDimension] ?? 0,
+            })),
           ...Object.entries(amounts).map(([dimension, amount]) => ({
             scope: scope(dimension as ResourceDimension),
             amount,
@@ -528,17 +632,18 @@ function childTask(
         ],
       });
     },
-    subdivide(narrower) {
+    subdivide(narrower, identity) {
       if (
         closed ||
         !lifetime.accepting() ||
-        depth >= 4 ||
-        children >= 8 ||
-        !resourceAmountsSchema.safeParse(narrower).success
+        depth >= MAX_SCOPE_DEPTH ||
+        children >= 64 ||
+        !resourceAmountsSchema.safeParse(narrower).success ||
+        !claimChild(identity)
       )
         return null;
       children++;
-      return childTask(child, narrower, clock, ledger, depth + 1, claimChild);
+      return childTask(child, narrower, clock, ledger, depth + 1, claimChild, unknownUsage, rootId);
     },
     close: lifetime.close,
     onClose: lifetime.onClose,

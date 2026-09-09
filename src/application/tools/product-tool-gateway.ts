@@ -305,6 +305,22 @@ export function createProductToolGateway(options: ProductToolGatewayOptions): To
         ready.input,
         ready.effect,
       )}`;
+      const childRefusal = options.taskResources?.checkAuthority(
+        {
+          kind: "tool",
+          workspaceId: String(options.correlation.workspaceId),
+          capabilityId: String(request.capabilityId),
+          capabilityGeneration: String(options.registry.generation),
+        },
+        ready.effect,
+      );
+      if (childRefusal)
+        return {
+          status: "denied",
+          reason: childRefusal.state,
+          effect: "none",
+          admission: childRefusal,
+        };
       if (ready.effect !== "observation") {
         const prior = options.effectLedger.get(ledgerKey);
         if (prior !== undefined) {
@@ -384,6 +400,12 @@ export function createProductToolGateway(options: ProductToolGatewayOptions): To
           ? null
           : deadlineAt(instant(Number(startedAt) + manifest.limits.defaultTimeoutMs));
       const admitted = await task.execute<ToolInvocationOutcome>({
+        target: {
+          kind: "tool",
+          workspaceId: String(options.correlation.workspaceId),
+          capabilityId: String(request.capabilityId),
+          capabilityGeneration: String(options.registry.generation),
+        },
         operation: String(request.invocationId),
         attempt: options.attemptId ?? String(options.turnId),
         generation: String(options.registry.generation),
@@ -413,6 +435,7 @@ export function createProductToolGateway(options: ProductToolGatewayOptions): To
                 effect: "none",
               } as const,
               terminated: true,
+              observedEffect: "none",
             };
           }
           const {
@@ -459,6 +482,7 @@ export function createProductToolGateway(options: ProductToolGatewayOptions): To
             .finally(() => finished.resolve());
           return {
             value,
+            observedEffect: value.effect,
             terminated:
               nativeTerminated ??
               (value.status === "completed" ||

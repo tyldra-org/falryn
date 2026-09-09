@@ -27,6 +27,18 @@ function identity(
   };
 }
 describe("shared resource ledger", () => {
+  test("aliased child limits survive another owner's close and retire after both owners close", () => {
+    const ledger = createResourceLedger();
+    const first = capacityScope("agent", "first", "child", "requests");
+    const second = capacityScope("agent", "second", "child", "requests");
+    ledger.narrow(first, 1, "root-first");
+    ledger.narrow(second, 2, "root-second");
+    expect(ledger.joinAliases(first, second)).toBe(true);
+    ledger.closeTask("root-first");
+    expect(ledger.remaining(second, 2)).toBe(1);
+    ledger.closeTask("root-second");
+    expect(ledger.report().buckets).toBe(0);
+  });
   test("rejects caller and generation dimensions in capacity identity", () => {
     expect(
       sharedCapacityScopeIdentitySchema.safeParse({ ...token, credentialBinding: "key" }).success,

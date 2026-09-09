@@ -1002,7 +1002,32 @@ ceiling: these are admission limits, not OS CPU/RSS enforcement.
 GitHub issue #937 owns durable cross-process coordination and recovery;
 GitHub issue #938 owns platform resource ceilings. No other process or non-Falryn client is
 observed. The process owner exposes explicit shutdown; ordinary task completion
-closes only its task scope. #158 owns production nested-agent composition.
+closes only its task scope.
+
+The product runtime can admit a host-selected child against its existing scope
+tree and task allocation. It freezes the allowed provider profile, destination,
+model and thinking, capability IDs, effects, workspace and configuration/catalog
+generations. Descendants intersect that ceiling; native tool policy and focused
+confirmation still apply. Provider requests and tool dispatch check the binding
+again before acquiring capacity. A child passed to the shared live-turn executor
+keeps the same root allocation across retries and later turns.
+
+One root allows 64 cumulative resource subdivisions and at most four runnable
+descendant operations, further narrowed by root and child limits. All derived
+scope kinds count toward the existing sixteen-level scope bound. Reusing a
+child ID or unchanged host-computed work digest is refused across the root,
+including through another admission facade. Idle child metadata holds no
+runnable slot; provider/tool segments acquire capacity as they execute. Closing
+a child cancels its descendants, while uncertain native work retains occupancy
+until termination is observed. Tightened limits apply to queued work, occupancy
+is released at every depth, and admitted operation/request counts cannot be
+refunded by an alias or an actual-usage report.
+
+This is logical admission, not OS confinement. Serialized handles cannot start
+or resume work; durable restoration must reconcile ownership and budgets before
+obtaining fresh admission. The host admission seam does not select definitions,
+launch agents automatically, or implement workflow, schedule or mailbox runners.
+Those consumers retain their own delivery owners.
 
 The gateway accepts an injectable `ProductToolConfirmationPort` and fails closed
 when confirmation is required but no authorized presenter exists. Normal CLI
