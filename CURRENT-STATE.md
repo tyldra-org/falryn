@@ -408,8 +408,9 @@ apply the normal schema migrations. An absent database stays absent on inspectio
 Invalid portable components leave valid siblings inspectable; malformed core
 or Falryn metadata rejects the package.
 
-`falryn extension trust <path> --input <request.json>` previews an `approve` or
-`revoke` decision. The bounded JSON request contains `action`, `expiresAt`
+`falryn extension trust <path> --input <request.json>` previews an `approve`,
+`revoke`, or evidence `refresh` decision. The JSON request is bounded to 65,536
+UTF-8 bytes and contains `action`, `expiresAt`
 (epoch milliseconds for approval, null for revocation), and optionally the exact
 `confirmation` returned by the preview. Approval expires within 30 days. A
 revocation may name a prior `decisionKey` after the source changes; the preview
@@ -417,6 +418,34 @@ shows the contributions recorded with that decision. Only the same local actor
 and scope can revoke it. Confirmation binds the subject, owner, evidence, policy,
 revision, expiry, action and contribution identities. No prompt or implicit
 approval occurs in headless mode.
+
+Evidence refresh uses `expiresAt: null` and a strict version-1 `verification`
+object containing `keys`, nullable `signature`, and nullable `advisory`. Keys
+are explicitly selected by the invoking user/host, never read from package
+metadata. Each has `role: publisher | advisory`, `id: sha256:<DER bytes>`, and
+`publicKey` containing canonical base64 DER/SPKI Ed25519 bytes. At most 16
+distinct role/key pairs are accepted; each encoded key is at most 1,024
+characters. A proof contains `algorithm: ed25519`, `keyId`, the canonical base64
+64-byte `signature`, and `statement`. Verification signs Falryn canonical JSON
+UTF-8, including the exact `PackageIdentityV1` as `subject` and integer
+`issuedAt`/`expiresAt` milliseconds with a positive lifetime of at most 30 days.
+The package statement's type is `falryn.package-integrity.v1` and includes a
+publisher identity digest. The advisory statement's type is
+`falryn.package-advisory.v1` and includes a positive `sequence`, `status:
+clear | quarantined | revoked`, and at most 32 `advisoryIds`.
+
+Refresh first previews the resulting facts and a confirmation token. Repeating
+the exact request with that token writes one evidence revision. It does not
+approve the package. Verification proves a supplied key signed the exact
+package identity; it does not certify the claimed publisher's real-world
+identity, safety, or curation. Invalid signatures deny eligibility. Future or
+expired evidence remains stale, including offline. Missing signatures are
+unsigned, and missing advisories remain unavailable. Attestation, certificate,
+transparency-log verification, automatic key discovery and advisory networking
+are unavailable. A refresh cannot lower an established advisory sequence,
+remove it, or change its statement at the same sequence. Rejected refreshes
+leave prior evidence intact; inspect the failure before retrying. A signed
+withdrawal needs a higher sequence and does not restore an old approval.
 
 `falryn package <action> --input <request.json>` implements local package
 installation transactions. Actions are `inspect`, `install`, `update`,
@@ -462,9 +491,9 @@ compatible database backup rather than opening schema 0014.
 Trust decisions use version-1 records in the product database's migration 0012,
 with 128 KiB per record and transactional revision checks. The current CLI uses
 local-user scope and policy generation 1. Source ownership comes from observed
-filesystem device, inode, uid and gid, not manifest authorship. Publisher,
-signature, curation and advisory verification remain unavailable on this local
-inspection path; computed hashes are not verified publisher evidence. Trust,
+filesystem device, inode, uid and gid, not manifest authorship. Inspection reads
+explicitly refreshed signer and advisory facts when present; otherwise those
+facts remain unavailable. Computed hashes are not verified publisher evidence. Trust,
 evidence freshness, compatibility, health and availability are separate fields
 in human, quiet, JSON and JSONL output. Package and contribution identities stay
 visible independent of their short names. Approval never installs or activates
@@ -476,13 +505,37 @@ its affirmative result in addition to existing tool policy; the gateway checks
 again after hooks and immediately before the native runner. Missing trust stays
 unavailable in the product catalog. Health/card projections retain the same
 trust facts rather than deriving approval from a healthy status. No live package
-runtime or signature/advisory fetcher is added. Expired or changed approvals
+runtime or signature/advisory fetcher is added. Evidence is reread at admission,
+and CLI approval writes compare its binding within the transaction. Expired or changed approvals
 require a new preview. Revocation survives policy changes and expiry; restoring
 exact package bytes only restores eligibility while its prior approval remains
 valid and unrevoked. Trust records are local authority, not portable grants in
 session exports. Older binaries refuse the newer database schema; downgrade
 requires a compatible backup. Restoring a whole database can restore its old
 decisions, so inspect and revoke them before continuing.
+
+Migration 0017 adds package evidence (16 KiB per record), exact full-user grant
+records (512 KiB), and append-only redacted metadata receipts for evidence,
+CLI approval/revocation, and grant revisions. No public-key material, raw
+signatures, argv values, credentials or executable bytes enter these records.
+`FullUserGrantIdentityV1` binds the complete package/contribution/source,
+explicit nullable provenance, schema and lock digests, entrypoint/helper/loader
+identities, target OS/architecture/ABI, `most-specific-v1` selection, access and
+cleanup digests, scope/workspace set, platform qualification and policy
+generation. Helper paths are unique and sorted. Durable grant ID/revision and
+explicit/automatic/suspended/revoked state are separate from this immutable key.
+Automatic allowance requires a later revision of an explicit allowance.
+The shared admission owner compares existing references, denies changed
+identity/evidence/policy, and persists suspension with a receipt. A stale
+reference cannot overwrite a newer decision. Package quarantine, rollback and
+restore enforcement remain separate lifecycle work; this owner produces trust
+facts and grant eligibility, not a second package-disable state machine.
+
+There is no full-user grant creation/import command, execution profile, qualified
+launcher or activation UI on this path. Those consumers must supply the complete
+host-qualified identity and an existing grant reference. Unknown loader,
+platform or helper qualification must remain unavailable. The ordinary trust
+approval above never substitutes for that grant.
 
 The extensions domain owns six strict version-1 identity codecs and canonical
 UTF-8 JSON with NFC strings, LF line endings, sorted keys and SHA-256 digests.
