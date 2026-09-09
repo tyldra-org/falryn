@@ -128,6 +128,8 @@ export function quietResultLines(result: RunCommandResult): readonly string[] {
           ];
     case "model":
       return result.payload === null ? [] : modelSettingsLines(result.payload).map(safe);
+    case "package":
+      return result.payload === null ? [] : [safe(JSON.stringify(result.payload))];
     case "extension.inspect":
     case "extension.trust":
       return result.payload === null ? [] : packageInspectionLines(result.payload).map(safe);

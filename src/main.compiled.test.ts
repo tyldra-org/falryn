@@ -18,6 +18,7 @@ import { mkdtemp, readdir, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { pluginManifest } from "./application/extensions/package-fixtures.ts";
+import { packageCliJourney } from "./cli/commands/package-fixtures.ts";
 import { CLI_SCHEMA_FAMILY, EXIT_CODES, FALRYN_VERSION, readCliStream } from "./cli/index.ts";
 import { MIGRATION_TABLE, PRODUCT_SCHEMA_VERSION, PRODUCT_TABLES } from "./data/index.ts";
 import { createStaticEnvironment } from "./domain/foundation/index.ts";
@@ -172,6 +173,9 @@ function spawnCompiled(
 }
 
 describe.if(built)("the standalone executable", () => {
+  test("installed package generations survive command restart and offline rollback", async () => {
+    await packageCliJourney([EXECUTABLE], await temporaryRoot());
+  }, 30_000);
   test(
     "persists and revokes scoped trust through the compiled command boundary",
     async () => {

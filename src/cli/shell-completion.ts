@@ -35,6 +35,7 @@ export const DECLARED_TOP_LEVEL_GROUPS = [
   "workspace",
   "completion",
   "extension",
+  "package",
 ] as const;
 
 /** Groups named in docs but intentionally absent from the shipped tree. */
@@ -62,6 +63,16 @@ const GLOBAL_OPTIONS = [
 
 const GROUP_ACTIONS: Readonly<Record<string, readonly string[]>> = {
   extension: ["inspect", "trust"],
+  package: [
+    "inspect",
+    "install",
+    "update",
+    "rollback",
+    "disable",
+    "uninstall",
+    "recover",
+    "enable",
+  ],
   config: ["show", "validate", "path", "set"],
   data: ["reset", "uninstall", "backup", "restore", "inspect", "diagnostics", "retention", "gc"],
   task: ["decompose", "validate", "progress", "commit-plan"],

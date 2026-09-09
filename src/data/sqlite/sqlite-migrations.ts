@@ -45,6 +45,10 @@ import {
   SCRATCH_RESOURCES_TABLE,
   SCRATCH_REVISIONS_TABLE,
 } from "../artifacts/scratch-resource-schema.ts";
+import {
+  MIGRATION_0014,
+  PACKAGE_LIFECYCLE_TABLES,
+} from "../extensions/package-lifecycle-repository.ts";
 import { MEMORY_RECORDS_TABLE, MIGRATION_0005 } from "../memory/memory-schema.ts";
 import {
   ARTIFACT_GC_CLAIMS_TABLE,
@@ -91,6 +95,7 @@ export const PRODUCTION_MIGRATIONS: readonly Migration[] = [
   MIGRATION_0011,
   MIGRATION_0012,
   MIGRATION_0013,
+  MIGRATION_0014,
 ];
 
 /** Every product table the registered set creates, in creation order. */
@@ -113,6 +118,7 @@ export const PRODUCT_TABLES: readonly string[] = [
   ARTIFACT_GC_CLAIMS_TABLE,
   TRUST_DECISIONS_TABLE,
   WORKSPACE_TRUST_TABLE,
+  ...PACKAGE_LIFECYCLE_TABLES,
 ];
 
 function issue(

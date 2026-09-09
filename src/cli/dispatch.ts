@@ -257,6 +257,7 @@ async function runCommand(
     globals,
     {
       ...options,
+      ...(invocation.packageArgs === undefined ? {} : { packageArgs: invocation.packageArgs }),
       ...(invocation.modelArgs === undefined ? {} : { modelRequest: invocation.modelArgs }),
       ...(invocation.extensionPath === undefined
         ? {}

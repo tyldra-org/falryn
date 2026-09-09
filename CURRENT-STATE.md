@@ -418,6 +418,47 @@ and scope can revoke it. Confirmation binds the subject, owner, evidence, policy
 revision, expiry, action and contribution identities. No prompt or implicit
 approval occurs in headless mode.
 
+`falryn package <action> --input <request.json>` implements local package
+installation transactions. Actions are `inspect`, `install`, `update`,
+`rollback`, `disable`, `uninstall`, `recover`, and `enable`. Every request names
+`packageId`, a UUID `operationId`, and `expectedRevision`. Install/update also
+name `sourcePath`; rollback names a previously returned `versionDigest`.
+Mutations first return a `confirmation` digest. Repeat the same request with
+that digest to apply it. A committed operation ID replays its recorded receipt
+without repeating the mutation; changed intent under that ID is refused.
+
+Installation validates complete local package bytes and the installed dependency
+closure without running scripts. Invalid entries, incompatible candidates and
+missing dependencies fail closed. Dependency inventories are bounded to 256
+packages per validation. SQLite migration 0014 owns package revisions,
+dependency locks, version ownership and operation receipts. Inert byte containers
+live under the state root's `packages` directory with owner-only permissions.
+Publication writes and flushes the candidate under the SQLite writer before
+switching the current generation. Interrupted candidates remain recorded for
+`recover`; neither partial files nor orphan candidates become installed.
+
+Updates retain prior versions. Rollback revalidates exact cached bytes and host
+compatibility without fetching, migrating package state or restoring grants.
+Update and rollback refuse a digest change required by an installed dependent.
+Uninstall refuses installed dependents. Its `retention` choice defaults to
+`retain`; `remove` claims owned versions for deletion after logical removal.
+Cleanup processes at most 64 versions per operation and reports remaining or
+failed cleanup explicitly. `recover` retries claimed cleanup and discards
+uncommitted candidates while preserving retained versions. Source directories
+and unrelated files are never removal targets. Inspection reports the current
+digest, revision, retained count and pending cleanup; save version digests from
+receipts for exact rollback. Human, quiet, JSON and JSONL expose the same facts.
+
+Installed packages remain disabled. `enable` returns
+`activation-owner-unavailable`; installation and approval never create runnable
+bindings. Remote acquisition, native contribution registration, scoped
+activation, package configuration/state migrations and executable grants are
+unavailable on this lifecycle path. Package cache files retain exact source
+bytes and are not redacted artifacts. SQLite-only backups and session exports
+do not include those bytes or confer package authority. Removing the state root
+removes both lifecycle records and its package cache; older binaries require a
+compatible database backup rather than opening schema 0014.
+
 Trust decisions use version-1 records in the product database's migration 0012,
 with 128 KiB per record and transactional revision checks. The current CLI uses
 local-user scope and policy generation 1. Source ownership comes from observed
@@ -453,7 +494,7 @@ pinned semver resolver uses caller-supplied inventories, exact digest locks,
 prerelease opt-in and dependency-first ordering. The standalone preparation API
 retains skill, prompt and MCP-connection source ownership without inventing
 installed packages. These records do not replace the live registry's existing
-identity model or implement extension lifecycle owners.
+identity model. The separate package lifecycle consumes these prepared identities.
 
 Directory reads reject unsafe paths, skip unsupported links/special entries
 with diagnostics, and verify observed file identities before returning bytes.

@@ -11,6 +11,7 @@ import { runDataGc, runDataRetention } from "../commands/data-retention-gc-comma
 import { runExtensionInspect } from "../commands/extension.ts";
 import { runImport, runReplay } from "../commands/import-replay-commands.ts";
 import { runModel } from "../commands/model.ts";
+import { type PackageArguments, runPackage } from "../commands/package.ts";
 import { runTaskCommitPlan } from "../commands/task-commit-plan-commands.ts";
 import {
   runTaskDecompose,
@@ -50,6 +51,7 @@ import {
 } from "../runtime/session-navigation.ts";
 
 export type DispatchProduceOptions = {
+  readonly packageArgs?: PackageArguments;
   readonly modelRequest?: ModelSettingsRequest;
   readonly extensionPath?: string;
   readonly extensionTrust?: import("../../application/extensions/package-trust.ts").TrustRequest;
@@ -80,6 +82,10 @@ export async function produce(
   onMutationStart?: () => void,
 ): Promise<RunCommandResult> {
   switch (command) {
+    case "package":
+      if (options.packageArgs === undefined) throw new Error("Missing package arguments.");
+      if (options.packageArgs.request.confirmation !== undefined) onMutationStart?.();
+      return runPackage(services, options.packageArgs, signal);
     case "config.show":
       return runConfigShow(services, overrides, globals, signal);
     case "config.validate":

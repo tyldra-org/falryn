@@ -16,6 +16,7 @@ import { ARTIFACT_PROVENANCE_SCHEMA_VERSION } from "../artifacts/artifact-proven
 import { ARTIFACT_SCHEMA_VERSION } from "../artifacts/artifact-schema.ts";
 import { LOOM_SCHEMA_VERSION } from "../artifacts/loom-schema.ts";
 import { SCRATCH_RESOURCE_SCHEMA_VERSION } from "../artifacts/scratch-resource-schema.ts";
+import { MIGRATION_0014 } from "../extensions/package-lifecycle-repository.ts";
 import {
   temporaryRoot as makeTemporaryRoot,
   openProductStoreOrThrow,
@@ -91,6 +92,7 @@ describe("a fresh database", () => {
       MIGRATION_0011.version,
       MIGRATION_0012.version,
       MIGRATION_0013.version,
+      MIGRATION_0014.version,
     ]);
     // Nothing to lose: a database at version 0 holds no product row.
     expect(store.report.backupPath).toBeNull();
@@ -133,6 +135,8 @@ describe("a fresh database", () => {
       "model_attempts_by_turn",
       "model_catalog_generations_by_provider",
       "model_catalog_route_bindings_by_profile",
+      "package_dependency_consumers",
+      "package_versions_by_owner",
       "provider_continuation_states_by_age",
       "scratch_resources_by_session",
       "scratch_revisions_by_artifact",
@@ -178,6 +182,7 @@ describe("a fresh database", () => {
       MIGRATION_0011.version,
       MIGRATION_0012.version,
       MIGRATION_0013.version,
+      MIGRATION_0014.version,
     ]);
     expect(
       upgraded.read(
