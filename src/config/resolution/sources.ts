@@ -152,13 +152,20 @@ export async function readSource(
     return { ...base, outcome: outcomeForRead(text.error.code), issues: [] };
   }
 
-  if (text.value.trim().length === 0) {
+  return parseSourceText(discovered, text.value);
+}
+
+/** Parses bytes already pinned by the workspace trust gate with the normal source semantics. */
+export function parseSourceText(discovered: DiscoveredSource, text: string | null): ReadSource {
+  const base = { source: discovered.source, document: undefined, position: null };
+  if (text === null) return { ...base, outcome: "absent", issues: [] };
+  if (text.trim().length === 0) {
     // An empty file is a deliberate act — it is what `> falryn.jsonc` leaves —
     // and it sets nothing without being an error.
     return { ...base, outcome: "empty", issues: [] };
   }
 
-  const parsed = parseJsonc(text.value);
+  const parsed = parseJsonc(text);
   if (!parsed.ok) {
     return {
       ...base,

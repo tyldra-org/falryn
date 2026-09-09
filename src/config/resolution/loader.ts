@@ -56,7 +56,7 @@ import { configurationHomeIssue, resolveConfigurationHome } from "../host/home.t
 import { type BridgeResult, readEnvironmentLayer, readOverrideLayer } from "./bridges.ts";
 import { composeLayers, declaredKeysOf, type LayerInput } from "./composition.ts";
 import { diffGenerations, nextGeneration, strongestApplicationClass } from "./generation.ts";
-import { discoverSources, readSource } from "./sources.ts";
+import { discoverSources, parseSourceText, readSource } from "./sources.ts";
 
 /**
  * Re-reads the abort flag without letting the compiler narrow it away.
@@ -96,6 +96,8 @@ export type ConfigurationLoaderOptions = {
 };
 
 export type LoadRequest = {
+  /** Product startup supplies inspected bytes; null explicitly disables project settings. */
+  readonly projectText?: string | null;
   readonly configurationRoot: LocalPath;
   /** Previous platform-default root; absent for direct library callers. */
   readonly legacyConfigurationRoot?: LocalPath | null;
@@ -161,7 +163,11 @@ export function createConfigurationLoader(
         if (isAborted(signal)) {
           return { kind: "cancelled" };
         }
-        const read = await readSource(options.fileSystem, discovered, signal);
+        const pinned =
+          discovered.source.kind === "project-file" && request.projectText !== undefined;
+        const read = !pinned
+          ? await readSource(options.fileSystem, discovered, signal)
+          : parseSourceText(discovered, request.projectText ?? null);
         if (read.outcome !== "loaded") {
           reports.push({
             source: read.source,

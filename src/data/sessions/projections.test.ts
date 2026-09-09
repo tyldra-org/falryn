@@ -108,7 +108,7 @@ describe("advancing a projection", () => {
       eventsRead: everyEventKind().length,
       applied: 3,
       unmatched: 0,
-      lastAppliedSequence: sequence.from(10),
+      lastAppliedSequence: sequence.from(11),
       stopped: false,
     });
 
@@ -128,7 +128,7 @@ describe("advancing a projection", () => {
       value: {
         projection: "terminal-outcomes",
         streamId: sessionRecord().streamId,
-        lastAppliedSequence: sequence.from(10),
+        lastAppliedSequence: sequence.from(11),
         schemaGeneration: TERMINAL_OUTCOME_PROJECTION_GENERATION,
         updatedAt: turnRecord().startedAt,
       },
@@ -352,7 +352,7 @@ describe("the checkpoint-projections participant", () => {
     expect(report.outcome).toEqual({ kind: "completed" });
     expect(runner.readCursor(sessionRecord().streamId)).toMatchObject({
       ok: true,
-      value: { lastAppliedSequence: sequence.from(10) },
+      value: { lastAppliedSequence: sequence.from(11) },
     });
     await store.close();
   });

@@ -26,7 +26,7 @@
 import { dlopen, FFIType, ptr } from "bun:ffi";
 import { afterEach, describe, expect, test } from "bun:test";
 import { closeSync, createReadStream, writeSync } from "node:fs";
-import { mkdtemp, rm, stat } from "node:fs/promises";
+import { mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { EXIT_CODES } from "../../cli/index.ts";
@@ -271,17 +271,20 @@ async function runOnPty(
     readonly columns?: number;
     readonly rows?: number;
     readonly env?: Readonly<Record<string, string>>;
+    readonly prepare?: (home: string) => Promise<void>;
   } = {},
 ): Promise<ShellRun> {
   // Never read provider configuration or migration bookkeeping from the developer's home.
   const home = await mkdtemp(join(tmpdir(), "falryn-compiled-shell-"));
   homes.push(home);
+  await options.prepare?.(home);
   const pty = openPty(options.columns ?? COLUMNS, options.rows ?? ROWS);
   if (pty === null) {
     throw new Error("no pseudo-terminal");
   }
 
   const started = Bun.spawn([EXECUTABLE, ...argv], {
+    cwd: home,
     stdin: pty.slave,
     stdout: pty.slave,
     stderr: pty.slave,
@@ -424,11 +427,8 @@ describe.if(runnable)("the compiled shell on a real terminal", () => {
       // The frame, on a real terminal, uses the full alternate-screen viewport.
       expect(run.transcript).toContain("\u001b[?1049h");
       expect(run.transcript).toContain("workspace");
-      // A fact in its `unavailable` state, in words. Short enough to survive the
-      // header's per-field share at this width, which "no session yet" is not —
-      // that one arrives truncated with the theme's mark, which is itself the
-      // measured-width contract working.
-      expect(run.transcript).toContain("no Git yet");
+      // The isolated workspace name can truncate the end of this header field.
+      expect(run.transcript).toContain("no Git");
       expect(run.transcript).toContain("^C");
       // 256-colour escapes, not 24-bit: `TERM=xterm-256color` says what this
       // terminal has, and the palette was lowered to it rather than emitted at
@@ -483,6 +483,43 @@ describe.if(runnable)("the compiled shell on a real terminal", () => {
       expect(mixed).toEqual([]);
     },
     RUN_TIMEOUT_MS,
+  );
+
+  test(
+    "reviews project instructions before startup and persists only Proceed",
+    async () => {
+      for (const choice of ["n", "y"]) {
+        let home = "";
+        const run = await runOnPty(
+          [],
+          async (driver) => {
+            expect(driver.pty.transcript()).toContain("Review workspace trust");
+            expect(driver.pty.transcript()).not.toContain("private-workspace-secret");
+            await driver.press(choice, ["Nothing has happened in this session yet"]);
+            await driver.press([0x03]);
+          },
+          {
+            prepare: async (root) => {
+              home = root;
+              await writeFile(join(root, "AGENTS.md"), "private-workspace-secret");
+            },
+          },
+        );
+        expect(run.exitCode).toBe(EXIT_CODES.COMPLETED);
+        expectRestored(run);
+        const doctor = Bun.spawn([EXECUTABLE, "doctor", "--format", "json"], {
+          cwd: home,
+          env: { HOME: home, PATH: process.env.PATH ?? "" },
+          stdout: "pipe",
+          stderr: "pipe",
+        });
+        const output = await new Response(doctor.stdout).text();
+        await doctor.exited;
+        expect(output).toContain(choice === "y" ? '"accepted"' : '"review-required"');
+        expect(output).not.toContain("private-workspace-secret");
+      }
+    },
+    RUN_TIMEOUT_MS * 2,
   );
 
   test(

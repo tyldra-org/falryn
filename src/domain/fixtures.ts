@@ -277,6 +277,25 @@ export function everyEventKind(): readonly RuntimeEvent[] {
     configurationGenerationChanged(8),
     executionProfileSelected(9),
     processTaskChanged(10),
+    {
+      ...spine({
+        eventId: "event-workspace-trust-11",
+        sequence: 11,
+        idempotencyKey: "key-workspace-trust-11",
+      }),
+      kind: "workspace.trust.reviewed",
+      correlation: FIXTURE_SESSION_CORRELATION,
+      payload: {
+        version: 1,
+        status: "refused",
+        inventory: null,
+        priorGeneration: null,
+        reason: "project-loaders-disabled",
+        added: 0,
+        changed: 0,
+        removed: 0,
+      },
+    },
   ];
 }
 

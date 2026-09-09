@@ -81,6 +81,12 @@ export async function resolveShellBootstrapConfiguration(
   const { streams } = request;
   const graph = request.services(globals)();
   const loaded = await loadProductConfiguration(graph, productConfigurationLoadRequest(globals));
+  if (!["accepted", "empty"].includes(loaded.trust.status)) {
+    writeDiagnosticLine(
+      streams,
+      `Workspace project loaders are disabled (${loaded.trust.reason}). Review the workspace before using project configuration.`,
+    );
+  }
 
   if (loaded.outcome.kind === "published" || loaded.outcome.kind === "unchanged") {
     return { values: loaded.values, generation: loaded.generation };

@@ -253,6 +253,22 @@ export function blockFor(event: RuntimeEvent): TranscriptBlock | null {
         ),
       };
 
+    case "workspace.trust.reviewed":
+      return {
+        ...spine,
+        kind: "notice",
+        anchor: {
+          of: "declared",
+          key: `workspace-trust:${event.payload.inventory?.generation ?? event.eventId}`,
+        },
+        source: "runtime",
+        status: "final",
+        summary: complete(`Workspace trust: ${event.payload.status}.`),
+        invocationId: null,
+        note: bound(
+          `${event.payload.reason}. Replay cannot grant trust or activate project loaders.`,
+        ),
+      };
     case "execution.profile.selected":
       return {
         ...spine,

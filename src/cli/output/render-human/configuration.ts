@@ -283,6 +283,11 @@ export function renderDoctor(
   const rootWidth = Math.max(...payload.roots.map((entry) => entry.root.length));
   const lines = [
     paint(session, "plain", "Falryn diagnostics"),
+    ...(payload.workspaceTrust === undefined
+      ? []
+      : [
+          `  Workspace trust  ${payload.workspaceTrust.status}: ${safe(payload.workspaceTrust.reason)}`,
+        ]),
     `  Build      ${safe(payload.build.platform)} ${safe(payload.build.architecture)}`,
     `  Config     ${fit(session, configurationHomeSentence(payload.configurationHome), session.columns - 13)}`,
     "  Data roots",

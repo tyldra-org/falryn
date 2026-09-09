@@ -8,6 +8,7 @@ import {
   type StorageProbe,
   sqliteDatabasePath,
 } from "../../data/index.ts";
+import type { WorkspaceTrustReport } from "../../domain/security/workspace-trust.ts";
 import {
   blocksLocalData,
   LOCAL_DATA_ROOTS,
@@ -18,8 +19,10 @@ import {
 } from "../../domain/storage/index.ts";
 import type { LocalPath } from "../../domain/workspace/index.ts";
 import { openBunSqlite } from "../../integrations/index.ts";
+import type { GlobalOptions } from "../options.ts";
 import type { CommandResultOf } from "../output/result.ts";
 import type { ServiceProvider } from "../runtime/services.ts";
+import { inspectWorkspaceTrust } from "../runtime/workspace-trust.ts";
 import { resultFor } from "./shared.ts";
 
 export type DoctorStorage =
@@ -27,6 +30,7 @@ export type DoctorStorage =
   | { readonly kind: "undetermined"; readonly reason: "state-root-not-viable" };
 
 export type DoctorPayload = {
+  readonly workspaceTrust?: WorkspaceTrustReport;
   /** Effective user-authored configuration home selected without mutation. */
   readonly configurationHome: ConfigurationHomeResolution;
   /**
@@ -76,6 +80,7 @@ export type DoctorPayload = {
  */
 export async function runDoctor(
   services: ServiceProvider,
+  globals?: GlobalOptions,
 ): Promise<CommandResultOf<"doctor", DoctorPayload>> {
   try {
     const { configurationHomeForRead, localData } = services();
@@ -122,6 +127,9 @@ export async function runDoctor(
       "doctor",
       {
         configurationHome,
+        ...(globals === undefined
+          ? {}
+          : { workspaceTrust: await inspectWorkspaceTrust(services(), globals) }),
         roots,
         rootIssues: localData.resolutionIssues.map((issue) => issue.code),
         databasePath,

@@ -132,7 +132,7 @@ export async function produce(
       }
       return runDataGc(services, dataLifecycleArgs, signal, onMutationStart);
     case "doctor":
-      return runDoctor(services);
+      return runDoctor(services, globals);
     case "export":
       if (exportArgs === null) {
         throw new Error("Missing parsed export arguments.");

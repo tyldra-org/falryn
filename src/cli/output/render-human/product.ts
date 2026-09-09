@@ -78,6 +78,18 @@ export function renderCodingRun(
   if (payload.planArtifactId !== undefined && payload.planArtifactId !== null) {
     lines.push(`  Plan artifact ${safe(payload.planArtifactId)}`);
   }
+  if (payload.workspaceTrust !== undefined) {
+    const trust = payload.workspaceTrust;
+    lines.push(`  Trust        ${trust.status}: ${safe(trust.reason)}`);
+    if (trust.inventory !== null) {
+      lines.push(`  Generation   ${trust.inventory.generation}`);
+      for (const family of ["settings", "instructions", "mcp", "hooks", "skills"]) {
+        lines.push(
+          `  ${family} files  ${trust.inventory.loaders.filter((entry) => entry.family === family).length}`,
+        );
+      }
+    }
+  }
   if (payload.response !== undefined && payload.response.length > 0) {
     lines.push("", paint(session, "plain", "Response"), payload.response);
   }

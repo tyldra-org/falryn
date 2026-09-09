@@ -35,7 +35,7 @@ import { initialCursor, resumable, TRANSCRIPT_PROJECTION_GENERATION } from "./ge
 import { reduceTranscript } from "./reducer.ts";
 
 /**
- * What generation 3 produces for `everyEventKind()`.
+ * What generation 4 produces for `everyEventKind()`.
  *
  * Reduced to the facts a change would alter: which blocks exist, in what order,
  * what each is anchored to, whether it settled, what outcome it reports, and
@@ -44,7 +44,7 @@ import { reduceTranscript } from "./reducer.ts";
  * summary string would fail on a typo fix and teach everyone to update it
  * without reading it.
  */
-const GENERATION_3 = [
+const GENERATION_4 = [
   {
     kind: "notice",
     key: "session:session-fixture",
@@ -94,6 +94,13 @@ const GENERATION_3 = [
     outcome: null,
     disclosure: null,
   },
+  {
+    kind: "notice",
+    key: "declared:workspace-trust:event-workspace-trust-11",
+    status: "final",
+    outcome: null,
+    disclosure: null,
+  },
 ] as const;
 
 function snapshot(): readonly unknown[] {
@@ -139,14 +146,14 @@ function snapshot(): readonly unknown[] {
 
 describe("replaying the fixture run", () => {
   test("produces what this generation recorded", () => {
-    expect(snapshot()).toEqual([...GENERATION_3]);
+    expect(snapshot()).toEqual([...GENERATION_4]);
   });
 
   test("is the snapshot for the generation the build declares", () => {
     // The other direction of the guard. Raising the generation without
     // revisiting the recorded output leaves a snapshot describing a reducer
     // that no longer exists.
-    expect(TRANSCRIPT_PROJECTION_GENERATION).toBe(3);
+    expect(TRANSCRIPT_PROJECTION_GENERATION).toBe(4);
   });
 
   test("replays identically twice", () => {
