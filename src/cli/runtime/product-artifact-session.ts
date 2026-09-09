@@ -21,6 +21,10 @@ import {
   type ProcessTaskSupervisor,
 } from "../../application/orchestration/process-task-supervisor.ts";
 import {
+  createStructuredQuestions,
+  type StructuredQuestions,
+} from "../../application/orchestration/structured-questions.ts";
+import {
   beginRun,
   createArtifactRepository,
   createArtifactStore,
@@ -41,6 +45,7 @@ import {
   type WorkspaceIndexStore,
 } from "../../data/index.ts";
 import { createSqliteProcessTaskStore } from "../../data/orchestration/process-task-store.ts";
+import { createQuestionStore } from "../../data/orchestration/question-store.ts";
 import { runId } from "../../domain/foundation/index.ts";
 import {
   DEFAULT_BUSY_TIMEOUT_MS,
@@ -68,6 +73,7 @@ export type ProductArtifactSession = {
   readonly providerContinuations: ProviderContinuationStatePort;
   readonly scratch: ScratchResourcePort;
   readonly tasks: ProcessTaskSupervisor;
+  readonly questions: StructuredQuestions | null;
   readonly taskNotices: ProcessTaskNotices;
   readonly taskRecovery: readonly ProcessTaskRecovery[];
   openWorkspaceIndex(
@@ -187,17 +193,35 @@ export async function openProductArtifactSession(
     return null;
   }
   const taskNotices = createProcessTaskNotices(eventStore);
+  let questions: StructuredQuestions | null = null;
   const tasks = createProcessTaskSupervisor({
     store: taskStore,
     artifacts,
     clock: services.clock,
     runId: String(run.value.record.runId),
     process: processIdentity.kind === "present" ? processIdentity.identity : null,
-    notify: taskNotices.notify,
+    notify: (notice, signal) =>
+      notice.task.executionKind === "question"
+        ? (questions?.notify(notice, signal) ?? Promise.resolve(false))
+        : taskNotices.notify(notice, signal),
   });
+  questions = createStructuredQuestions({
+    store: createQuestionStore(store, {
+      runId: String(run.value.record.runId),
+      process: null,
+    }),
+    tasks: taskStore,
+    clock: services.clock,
+    deliver: tasks.deliver,
+  });
+  if (!questions.recover().ok) {
+    questions.close();
+    questions = null;
+  }
   const listed = taskStore.list();
   if (listed.ok)
-    for (const task of listed.value) if (task.state === "terminal") await tasks.deliver(task);
+    for (const task of listed.value)
+      if (task.state === "terminal" && task.executionKind !== "question") await tasks.deliver(task);
   const recovery = watchProcessTaskRecovery({
     store: taskStore,
     identities,
@@ -215,6 +239,7 @@ export async function openProductArtifactSession(
   async function closeStores(): Promise<boolean> {
     closed = true;
     let clean = true;
+    if (questions !== null && !questions.close()) clean = false;
     const attempt = async (close: () => void | Promise<void>) => {
       try {
         await close();
@@ -243,6 +268,7 @@ export async function openProductArtifactSession(
   }
   const session: ProductArtifactSession = {
     tasks,
+    questions,
     taskNotices,
     get taskRecovery() {
       return recovery.reports();

@@ -58,6 +58,7 @@ import {
   PROCESS_TASK_WAKES_TABLE,
   PROCESS_TASKS_TABLE,
 } from "../orchestration/process-task-schema.ts";
+import { MIGRATION_0015, QUESTION_TABLES } from "../orchestration/question-store.ts";
 import {
   MIGRATION_0007,
   MIGRATION_0008,
@@ -96,6 +97,7 @@ export const PRODUCTION_MIGRATIONS: readonly Migration[] = [
   MIGRATION_0012,
   MIGRATION_0013,
   MIGRATION_0014,
+  MIGRATION_0015,
 ];
 
 /** Every product table the registered set creates, in creation order. */
@@ -119,6 +121,7 @@ export const PRODUCT_TABLES: readonly string[] = [
   TRUST_DECISIONS_TABLE,
   WORKSPACE_TRUST_TABLE,
   ...PACKAGE_LIFECYCLE_TABLES,
+  ...QUESTION_TABLES,
 ];
 
 function issue(

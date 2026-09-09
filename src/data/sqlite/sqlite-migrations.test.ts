@@ -109,12 +109,12 @@ describe("latest version", () => {
 });
 
 describe("the production set", () => {
-  test("is migrations 0001 through 0014, and validates", () => {
+  test("is migrations 0001 through 0015, and validates", () => {
     // A real run creates the database, creates the bookkeeping table, verifies
     // integrity, applies the record, artifact, run, and provenance schemas in
     // order, and closes at the derived product schema version.
     expect(PRODUCTION_MIGRATIONS.map((migration) => migration.version)).toEqual([
-      1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14,
+      1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
     ]);
     expect(validateMigrationSet(PRODUCTION_MIGRATIONS).ok).toBe(true);
   });

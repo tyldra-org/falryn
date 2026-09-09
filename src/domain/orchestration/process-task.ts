@@ -57,7 +57,7 @@ export type ProcessTaskOwner = z.infer<typeof processTaskOwnerSchema>;
 
 export const processTaskSupervisorSchema = z.strictObject({
   runId: identity,
-  process: processBirthIdentitySchema,
+  process: processBirthIdentitySchema.nullable(),
   leaseExpiresAt: timestamp,
 });
 export type ProcessTaskSupervisor = z.infer<typeof processTaskSupervisorSchema>;
@@ -87,6 +87,7 @@ export const processTaskTerminalSchema = z
       "ownership-uncertain",
       "agent-completed",
       "agent-failed",
+      "question-settled",
     ]),
     exitCode: z.int().nullable(),
     signal: identity.nullable(),
@@ -98,6 +99,13 @@ export const processTaskTerminalSchema = z
     if (terminal.reason === "agent-completed" && terminal.outcome !== "completed") return false;
     if (terminal.outcome === "uncertain") return terminal.effect === "uncertain";
     if (terminal.outcome !== "completed") return true;
+    if (terminal.reason === "question-settled")
+      return (
+        terminal.effect === "none" &&
+        terminal.exitCode === null &&
+        terminal.signal === null &&
+        terminal.result === null
+      );
     if (terminal.reason === "agent-completed")
       return (
         terminal.effect !== "uncertain" &&
@@ -116,8 +124,8 @@ export const processTaskTerminalSchema = z
 export type ProcessTaskTerminal = z.infer<typeof processTaskTerminalSchema>;
 
 const common = {
-  /** Omitted in existing captured-process records. Both kinds use the same durable lifecycle. */
-  executionKind: z.enum(["process", "agent"]).optional(),
+  /** Omitted in existing captured-process records. Task kinds share durable ownership. */
+  executionKind: z.enum(["process", "agent", "question"]).optional(),
   handle: processTaskHandleSchema,
   revision,
   owner: processTaskOwnerSchema,
@@ -160,14 +168,26 @@ export const processTaskSnapshotSchema = z
   .refine(
     (task) =>
       task.deadline >= task.createdAt &&
-      (task.executionKind !== "agent" || task.process === null) &&
+      (task.executionKind === "question"
+        ? task.state === "queued" ||
+          (task.state === "terminal" &&
+            task.terminal.reason === "question-settled" &&
+            task.terminal.effect === "none" &&
+            task.terminal.exitCode === null &&
+            task.terminal.signal === null &&
+            task.terminal.result === null)
+        : task.state !== "terminal" || task.terminal.reason !== "question-settled") &&
+      (task.executionKind === "question" || task.supervisor.process !== null) &&
+      (!["agent", "question"].includes(task.executionKind ?? "process") || task.process === null) &&
       (task.state !== "running" || task.executionKind === "agent" || task.process !== null) &&
       (task.state !== "terminal" ||
         (task.terminal.sealedAt >= task.createdAt &&
           (task.terminal.outcome !== "completed" ||
-            (task.executionKind === "agent"
-              ? task.terminal.reason === "agent-completed"
-              : task.process !== null && task.terminal.reason === "exited")))),
+            (task.executionKind === "question"
+              ? task.terminal.reason === "question-settled"
+              : task.executionKind === "agent"
+                ? task.terminal.reason === "agent-completed"
+                : task.process !== null && task.terminal.reason === "exited")))),
     "task lifecycle contradicts process evidence",
   );
 export type ProcessTaskSnapshot = z.infer<typeof processTaskSnapshotSchema>;

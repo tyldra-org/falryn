@@ -1088,6 +1088,43 @@ daemon, automatic relaunch, or post-crash survival guarantee. Shared task UI,
 direct task CLI controls, PTY, and workflows remain separate. Delegated agents
 use this same durable attachment and settlement owner without a child OS process.
 
+## Structured questions
+
+The shared product host composes a host-only structured-question service. It
+creates, publishes, inspects, answers, refuses, cancels, resumes, and cleans up
+version-1 requests. Single-select, multi-select, UTF-8-bounded text, and review
+items share one generation-bound contract. Presenter and owner capabilities are
+separate opaque tokens; only their hashes enter storage. The caller must retain
+these capabilities to reconnect after restart. No question CLI command, model
+tool, presenter, workflow, or goal adapter is exposed by this slice.
+
+Migration 0015 journals bounded question revisions alongside the existing task
+owner. Publication requires a committed owner; terminal question state, its task
+event, and its notify-only wake commit together. Active states are created,
+published, and waiting; settlements are answered, refused, expired, cancelled,
+and unavailable. Disconnect is a presenter fact. Exact normalized answer replay
+returns the same authorized settlement; conflicting or forged submissions do
+not disclose the stored answer. Answers always report `effectAuthority: false`.
+
+Requests allow eight items, 32 options per item, 32 KiB of request data, and
+16 KiB of answer data. They expire after 15 minutes by default, narrowed by the
+owner deadline, with an admitted maximum of 30 minutes. An owner may retain
+64 records, at most eight active; each request allows 64 semantic revisions,
+including a reserved terminal revision. The shared store's 256-task capacity
+and the service's 64 concurrent wait limit also apply. Full capacity refuses
+admission. Acknowledged terminal records can be removed after their expiry;
+metadata-only task events remain as generation reuse evidence.
+
+Recovery restores semantic waits and deadlines without probing or restarting
+an OS process. The existing wake outbox supplies one terminal notification
+identity and bounded delivery attempts. A disconnected owner can reconnect and
+consume pending settlement; an acknowledged settlement remains inspectable.
+Unavailable delivery reports recovery-required instead of waiting forever.
+This does not promise exactly-once execution of an external continuation.
+Protected input accepts only a non-retention fact, never secret bytes. Answer
+bodies are retained only under the normal answer-retention policy; task events
+and notices contain neither question text nor answers.
+
 ## Delegated agents
 
 The model-facing `delegate` tool is composed in headless runs and the live shell.
@@ -1234,11 +1271,11 @@ Image, PDF, and notebook readers exist in the application source but are not
 registered in the product tool bundle, and live provider adapters accept text
 only; their document/media owners remain GitHub issues #183–#188.
 
-Apart from captured process tasks and delegated agents above, no
-workflow, schedule, goal/loop, structured-question, work-item, or cross-session
+Apart from captured process tasks, delegated agents, and the host-only question
+service above, no workflow, schedule, goal/loop, work-item, or cross-session
 mailbox runner is product-composed. Opportunity records do not automatically
 launch those runtimes. Their existing owners include GitHub issues #155–#162,
-#284, #797, #890, #891, and #897. Extensions, MCP servers, package contributions, skills,
+#284, #797, #890, and #897. Extensions, MCP servers, package contributions, skills,
 prompts, and external hosts likewise remain registry contracts or planned
 loaders unless explicitly described above as built-in production behavior.
 

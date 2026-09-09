@@ -49,6 +49,8 @@ export async function createProcessTaskFixture(seedInvocation = true) {
     hasher: createSha256Hasher(),
     clock,
   });
+  const snapshot = processTaskChanged().payload.task;
+  if (snapshot.supervisor.process === null) throw new Error("process fixture needs birth identity");
   return {
     database,
     events,
@@ -56,7 +58,10 @@ export async function createProcessTaskFixture(seedInvocation = true) {
     blobs,
     artifacts,
     tasks: createSqliteProcessTaskStore(database),
-    snapshot: processTaskChanged().payload.task,
+    snapshot: {
+      ...snapshot,
+      supervisor: { ...snapshot.supervisor, process: snapshot.supervisor.process },
+    },
     async close() {
       await artifacts.quiesce();
       await database.close();
