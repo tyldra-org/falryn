@@ -2,6 +2,7 @@
 import { z } from "zod";
 import { identityText } from "../../domain/extensions/identity.ts";
 import type { ConfigurationGeneration } from "../../domain/foundation/index.ts";
+import { joinInputSchema, joinIntegrationSchema } from "../../domain/orchestration/agent-join.ts";
 import { processTaskExecutionSchema } from "../../domain/orchestration/process-task.ts";
 import { resourceAmountsSchema } from "../../domain/orchestration/resource-admission.ts";
 import { conflictKey, EFFECT_CLASSES } from "../../domain/orchestration/work.ts";
@@ -42,6 +43,11 @@ const operations = [
   "reattach",
   "cancel",
   "cleanup",
+  "join",
+  "join-inspect",
+  "join-integrate",
+  "join-cancel",
+  "join-cleanup",
 ] as const;
 const inputSchema = z
   .strictObject({
@@ -64,6 +70,11 @@ const inputSchema = z
     execution: processTaskExecutionSchema.optional(),
     model: z.fromJSONSchema(z.toJSONSchema(roleRouteBaseSchema, { io: "input" })).optional(),
     name: identityText.optional(),
+    required: z.boolean().optional(),
+    join: joinInputSchema.optional(),
+    joinId: identityText.optional(),
+    joinGeneration: z.int().min(1).max(64).optional(),
+    integration: joinIntegrationSchema.optional(),
     handle: agentHandleSchema.optional(),
     text: z.string().min(1).max(MAX_AGENT_STEERING_BYTES).optional(),
     waitMs: z.int().min(1).max(30000).optional(),
@@ -88,7 +99,7 @@ export function composeDelegationTool(
       source: "builtin",
       title: "Delegate bounded work or control a child",
       description:
-        "List or inspect exact agent definitions. Launch one bounded child with selected evidence, capabilities, effects, limits and a foreground/background policy. Use its exact handle for inspect, result, wait, steer, continue, detach, reattach, cancel or cleanup. Child results do not verify the parent's broader objective. Missing definitions never fall back to General. inputJson must match the inspected definition's schema.",
+        "List or inspect exact agent definitions. Launch bounded children with selected evidence, capabilities, effects, limits and foreground/background policy. Attached children are required unless required=false. Create a join with exact child handles and an all, first-success or quorum policy. Use join-inspect until settled, then join-integrate to record accepted, rejected, partial or follow-up-required evidence. Required unaccepted children prevent parent completion. Use child handles for inspect, result, wait, steer, continue, detach, reattach, cancel or cleanup. Missing definitions never fall back to General. inputJson must match the definition schema.",
       effect: "observation",
       capabilityKind: "other",
       platforms: [],
@@ -105,9 +116,19 @@ export function composeDelegationTool(
       outputSchema: z.record(z.string(), z.unknown()),
       effectFor(input) {
         if (
-          ["list", "definition", "resolve", "inspect", "result", "wait"].includes(
-            String(input.operation),
-          )
+          [
+            "list",
+            "definition",
+            "resolve",
+            "inspect",
+            "result",
+            "wait",
+            "join",
+            "join-inspect",
+            "join-integrate",
+            "join-cancel",
+            "join-cleanup",
+          ].includes(String(input.operation))
         )
           return "observation";
         if (input.operation === "launch") {

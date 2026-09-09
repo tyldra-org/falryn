@@ -7,6 +7,7 @@ import {
 } from "../../application/artifacts/index.ts";
 import { createLoomPort, type LoomPort } from "../../application/compression/index.ts";
 import { createDurableMemoryRecords, type MemoryRecords } from "../../application/memory/index.ts";
+import { type AgentJoins, createAgentJoins } from "../../application/orchestration/agent-joins.ts";
 import {
   createProcessTaskNotices,
   type ProcessTaskNotices,
@@ -44,6 +45,7 @@ import {
   sqliteDatabasePath,
   type WorkspaceIndexStore,
 } from "../../data/index.ts";
+import { createAgentJoinStore } from "../../data/orchestration/agent-join-store.ts";
 import { createSqliteProcessTaskStore } from "../../data/orchestration/process-task-store.ts";
 import { createQuestionStore } from "../../data/orchestration/question-store.ts";
 import { runId } from "../../domain/foundation/index.ts";
@@ -73,6 +75,7 @@ export type ProductArtifactSession = {
   readonly providerContinuations: ProviderContinuationStatePort;
   readonly scratch: ScratchResourcePort;
   readonly tasks: ProcessTaskSupervisor;
+  readonly joins: AgentJoins;
   readonly questions: StructuredQuestions | null;
   readonly taskNotices: ProcessTaskNotices;
   readonly taskRecovery: readonly ProcessTaskRecovery[];
@@ -179,6 +182,11 @@ export async function openProductArtifactSession(
   const identities = createHostProcessIdentityPort();
   const processIdentity = await identities.inspect(process.pid);
   const taskStore = createSqliteProcessTaskStore(store);
+  const joins = createAgentJoins({
+    store: createAgentJoinStore(store),
+    tasks: taskStore,
+    artifacts,
+  });
   const recovered = await reconcileProcessTasks({
     store: taskStore,
     identities,
@@ -203,7 +211,14 @@ export async function openProductArtifactSession(
     notify: (notice, signal) =>
       notice.task.executionKind === "question"
         ? (questions?.notify(notice, signal) ?? Promise.resolve(false))
-        : taskNotices.notify(notice, signal),
+        : (() => {
+            const visible = joins.store.notificationBoundary(notice.task.handle);
+            return visible.ok
+              ? visible.value
+                ? taskNotices.notify(notice, signal)
+                : Promise.resolve(true)
+              : Promise.resolve(false);
+          })(),
   });
   questions = createStructuredQuestions({
     store: createQuestionStore(store, {
@@ -268,6 +283,7 @@ export async function openProductArtifactSession(
   }
   const session: ProductArtifactSession = {
     tasks,
+    joins,
     questions,
     taskNotices,
     get taskRecovery() {

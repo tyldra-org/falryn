@@ -595,7 +595,8 @@ function childTask(
       return true;
     },
     execute<Value>(work: ResourceWork<Value>) {
-      if (!lifetime.accepting() || !canContinue())
+      const retainedDescendant = retainedChildSegments.get(work) === rootId && lifetime.retained();
+      if ((!lifetime.accepting() && !retainedDescendant) || !canContinue())
         return Promise.resolve({
           kind: "stopped" as const,
           receipt: parent.refusal("stale-generation"),
@@ -613,7 +614,8 @@ function childTask(
       const segment: ResourceWork<Value> = {
         ...work,
         checkAdmission() {
-          if (!lifetime.accepting() || !canContinue()) return child.refusal("stale-generation");
+          if ((!lifetime.accepting() && !retainedDescendant) || !canContinue())
+            return child.refusal("stale-generation");
           if (child.remaining("wallTimeMs") === 0)
             return child.refusal("admission-timeout", "wallTimeMs");
           if ([...unknownUsage].some((dimension) => limits[dimension] !== undefined))

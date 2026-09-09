@@ -37,6 +37,7 @@ import {
 import { createProductLiveTurnExecutor } from "./product-live-turn.ts";
 
 export type DelegatedRuntimeOptions = {
+  readonly joins?: import("../orchestration/agent-joins.ts").AgentJoins;
   readonly tasks: ProcessTaskSupervisor;
   readonly providerCatalog: ModelCatalog | null;
   readonly artifacts: ArtifactStorePort;
@@ -90,6 +91,7 @@ export function composeDelegatedAgentRuntime(
     registry,
     clock: ports.clock,
     tasks: options.tasks,
+    ...(options.joins ? { joins: options.joins } : {}),
     preferences,
     configurationGeneration: currentGeneration,
     validateContext: (context, request) =>
@@ -288,6 +290,20 @@ export function composeDelegatedAgentRuntime(
     );
     return composeProductAgentRuntime({
       ...childPorts,
+      canComplete(turn) {
+        const prior = childPorts.canComplete?.(turn);
+        if (prior?.allowed === false) return prior;
+        const result = options.joins?.store.finishTurn(String(turn.sessionId), String(turn.turnId));
+        return result === undefined
+          ? { allowed: true, effect: "none" }
+          : result.ok
+            ? { allowed: result.value.complete, effect: result.value.effect }
+            : { allowed: false, effect: "uncertain" };
+      },
+      onTerminal(turn) {
+        delegation.finishTurn(String(turn.sessionId), String(turn.turnId));
+        childPorts.onTerminal?.(turn);
+      },
       toolRegistry: tools.registry,
       toolRunner: tools.runner,
       toolCatalog: tools.catalog,

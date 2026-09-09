@@ -1,6 +1,7 @@
 import { afterEach, expect, test } from "bun:test";
 import { z } from "zod";
 import { removeTemporaryRoots } from "../../data/fixtures.ts";
+import { createAgentJoinStore } from "../../data/orchestration/agent-join-store.ts";
 import { createCapabilityRegistry } from "../../domain/capabilities/index.ts";
 import {
   configurationGeneration,
@@ -31,6 +32,11 @@ import {
   type ModelRequest,
 } from "../../providers/index.ts";
 import { capabilityEntryFromTool } from "../capabilities/product-capability-registry.ts";
+import { createAgentJoins } from "../orchestration/agent-joins.ts";
+import {
+  type SealedAgentResult,
+  sealedAgentResultSchema,
+} from "../orchestration/delegation-contract.ts";
 import { createProcessTaskFixture, taskValue } from "../orchestration/process-task.fixtures.ts";
 import { createProcessTaskSupervisor } from "../orchestration/process-task-supervisor.ts";
 import { createProductResources } from "../orchestration/product-resources.ts";
@@ -63,6 +69,7 @@ function launch(
   objective: string,
   capabilities: string[],
   effects: string[] = ["observation"],
+  required = false,
 ): DeterministicProviderScript {
   return {
     kind: "tool",
@@ -71,6 +78,7 @@ function launch(
     argumentFragments: [
       JSON.stringify({
         operation: "launch",
+        required,
         definitionId: `builtin/falryn/agents:${definition}`,
         inputJson: JSON.stringify({ objective }),
         context: [],
@@ -200,7 +208,17 @@ async function run(
         },
       },
     },
-    { tasks, artifacts: f.artifacts, providerCatalog: catalog, ...options },
+    {
+      tasks,
+      joins: createAgentJoins({
+        store: createAgentJoinStore(f.database),
+        tasks: f.tasks,
+        artifacts: f.artifacts,
+      }),
+      artifacts: f.artifacts,
+      providerCatalog: catalog,
+      ...options,
+    },
   );
   if (!composed.ok) throw new Error(composed.error.code);
   const executor = createProductLiveTurnExecutor({
@@ -304,6 +322,96 @@ test("nested children complete with one runnable slot and return immediate-paren
   expect(JSON.stringify(requests[4]?.messages)).toContain("agent-result");
   expect(JSON.stringify(requests[5]?.messages)).toContain("agent-result");
   expect(requests[2]?.tools.map((tool) => tool.name)).toEqual(["inspect"]);
+});
+
+function childResult(request: ModelRequest): SealedAgentResult {
+  function find(value: unknown, depth = 0): SealedAgentResult | null {
+    const parsed = sealedAgentResultSchema.safeParse(value);
+    if (parsed.success) return parsed.data;
+    if (depth > 8) return null;
+    if (typeof value === "string") {
+      try {
+        return find(JSON.parse(value), depth + 1);
+      } catch {
+        return null;
+      }
+    }
+    if (typeof value !== "object" || value === null) return null;
+    for (const item of Object.values(value)) {
+      const result = find(item, depth + 1);
+      if (result) return result;
+    }
+    return null;
+  }
+  for (const message of [...request.messages].reverse()) {
+    if (message.role !== "tool") continue;
+    const result = find(message.parts);
+    if (result) return result;
+  }
+  throw new Error("provider continuation lacks a sealed immediate-child result");
+}
+function joinTool(id: string, input: Record<string, unknown>): DeterministicProviderScript {
+  return {
+    kind: "tool",
+    name: "delegate",
+    toolCallId: id,
+    argumentFragments: [JSON.stringify(input)],
+  };
+}
+
+test("three nested child levels integrate through delegate before any parent completes", async () => {
+  const receipts: SealedAgentResult[] = [];
+  const { result, requests } = await run((request, index) => {
+    if (index === 0 || index === 1)
+      return launch("general", `Nested level ${index}`, [delegate], ["observation"], true);
+    if (index === 2) return launch("explorer", "Final leaf", [], ["observation"], true);
+    if (index === 3) return { kind: "text", text: explorerResult };
+    if ([4, 7, 10].includes(index)) {
+      const child = childResult(request);
+      receipts.push(child);
+      expect(child.outcome).toBe("completed");
+      return joinTool(`join-${index}`, {
+        operation: "join",
+        join: {
+          id: "children",
+          generation: 1,
+          children: [child.handle],
+          policy: { mode: "all", quorum: null, partialOnFailure: false, cancelRemaining: false },
+        },
+      });
+    }
+    if ([5, 8, 11].includes(index))
+      return joinTool(`integrate-${index}`, {
+        operation: "join-integrate",
+        joinId: "children",
+        joinGeneration: 1,
+        integration: "accepted",
+      });
+    return {
+      kind: "text",
+      text: index === 12 ? "Root integrated all descendants." : generalResult,
+    };
+  });
+  expect(result.terminalOutcome.kind).toBe("completed");
+  expect(receipts).toHaveLength(3);
+  expect(receipts[0]?.parent.taskId).toBe(receipts[1]?.handle.taskId);
+  expect(receipts[1]?.parent.taskId).toBe(receipts[2]?.handle.taskId);
+  expect(requests).toHaveLength(13);
+  expect(JSON.stringify(requests[12]?.messages)).toContain("join:sha256:");
+  expect(receipts.slice(1).every((receipt) => (receipt.joins?.length ?? 0) === 1)).toBe(true);
+});
+
+test("a provider final response cannot bypass mandatory integration", async () => {
+  const { result } = await run((_request, index) =>
+    index === 0
+      ? launch("explorer", "Required inspection", [], ["observation"], true)
+      : { kind: "text", text: index === 1 ? explorerResult : "Claimed complete without joining." },
+  );
+  expect(result.kind).toBe("failed");
+  expect(result.terminalOutcome.kind).toBe("failed");
+  expect(
+    result.events.filter((event) => event.kind === "turn.completed").at(-1)?.payload,
+  ).toMatchObject({ outcome: { kind: "failed" } });
 });
 
 test("an unknown definition remains unstarted and does not substitute General", async () => {

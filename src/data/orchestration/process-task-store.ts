@@ -10,6 +10,7 @@ import {
 } from "../../domain/orchestration/process-task.ts";
 import type { ProcessTaskStore } from "../../domain/orchestration/process-task-store.ts";
 import type { SqliteStorePort } from "../../domain/storage/index.ts";
+import { pendingJoinReference } from "./agent-join-schema.ts";
 import { ownsTaskArtifact } from "./process-task-artifacts.ts";
 import { processTaskOutputAccess } from "./process-task-output.ts";
 import {
@@ -249,8 +250,23 @@ export function createSqliteProcessTaskStore(store: SqliteStorePort): ProcessTas
           const wake = loadWake(statements, handle);
           if (task.state !== "terminal" || !wake.ok || wake.value.state === "pending")
             return taskFailure("busy");
+          if (
+            task.attachment === "foreground" &&
+            statements.all(
+              "SELECT 1 FROM agent_children c JOIN agent_parents p USING(owner) WHERE json_extract(c.record,'$.handle.task.taskId')=$taskId AND json_extract(c.record,'$.handle.task.generation')=$generation AND c.integrated=0 AND p.closed=0 LIMIT 1",
+              task.handle,
+            ).length > 0
+          )
+            return taskFailure("busy");
           if (!Number.isSafeInteger(now) || now < task.terminal.sealedAt)
             return taskFailure("invalid-record");
+          if (
+            statements.all(
+              `SELECT 1 WHERE ${pendingJoinReference("$taskId", "$generation")}`,
+              task.handle,
+            ).length > 0
+          )
+            return taskFailure("busy");
           const event = appendTaskEvent(
             statements,
             { ...task, revision: task.revision + 1 },

@@ -19,7 +19,8 @@ export function taskValue<T>(result: Result<T, unknown>): T {
 }
 
 export async function createProcessTaskFixture(seedInvocation = true) {
-  const database = await openProductStoreOrThrow(await temporaryRoot("falryn-process-task-app-"));
+  const root = await temporaryRoot("falryn-process-task-app-");
+  const database = await openProductStoreOrThrow(root);
   const events = createSqliteEventStore(database, { projectStartedRecords: true });
   for (const event of [
     sessionStarted(1),
@@ -52,6 +53,7 @@ export async function createProcessTaskFixture(seedInvocation = true) {
   const snapshot = processTaskChanged().payload.task;
   if (snapshot.supervisor.process === null) throw new Error("process fixture needs birth identity");
   return {
+    root,
     database,
     events,
     clock,

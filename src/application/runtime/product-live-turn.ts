@@ -929,6 +929,7 @@ export function createProductLiveTurnExecutor(
       const refreshed = await producer.refreshFromStore();
       const succeeded =
         attempted.kind === "completed" &&
+        terminalOutcome.kind === "completed" &&
         completed.ok &&
         refreshed.ok &&
         (executionPolicy.completion !== "durable-plan" || planArtifactId !== null);

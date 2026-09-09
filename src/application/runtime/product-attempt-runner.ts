@@ -316,6 +316,23 @@ function factFromStream(outcome: ProviderStreamConsumeOutcome): AttemptFact {
 }
 
 function factFromToolLoop(outcome: ToolCallLoopOutcome): AttemptFact {
+  if (
+    outcome.kind === "completed" &&
+    outcome.turn.status === "terminal" &&
+    outcome.turn.outcome.kind !== "completed"
+  )
+    return {
+      kind: "failed",
+      category: "other",
+      retryable: false,
+      effect:
+        outcome.turn.outcome && "effect" in outcome.turn.outcome
+          ? outcome.turn.outcome.effect
+          : "uncertain",
+      observedContent: true,
+      emittedToolProposal: outcome.results.length > 0,
+      message: "parent-child-integration-incomplete",
+    };
   const effect = foldToolEffects(
     outcome.results.map((record) => {
       const result = record.outcome;
