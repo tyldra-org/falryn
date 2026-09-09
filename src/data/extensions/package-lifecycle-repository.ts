@@ -159,6 +159,13 @@ export function createPackageLifecycleRepository(store: SqliteStorePort): Packag
           })[0];
           if (staged?.state !== (input.stageBytes === undefined ? "retained" : "staged"))
             return "version-unavailable";
+          if (
+            sql.all(
+              "SELECT owner FROM package_dependencies WHERE dependency=$id AND owner<>$id AND identity_digest<>$digest LIMIT 1",
+              { id: expected.packageId, digest: candidate.identityDigest },
+            ).length > 0
+          )
+            return "package-required";
           for (const dependency of candidate.dependencies) {
             const current = sql.all(
               "SELECT v.identity_digest FROM installed_packages p JOIN package_versions v ON v.storage_id=p.storage_id WHERE p.package_id=$id AND v.state='retained'",

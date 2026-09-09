@@ -439,6 +439,7 @@ switching the current generation. Interrupted candidates remain recorded for
 
 Updates retain prior versions. Rollback revalidates exact cached bytes and host
 compatibility without fetching, migrating package state or restoring grants.
+Update and rollback refuse a digest change required by an installed dependent.
 Uninstall refuses installed dependents. Its `retention` choice defaults to
 `retain`; `remove` claims owned versions for deletion after logical removal.
 Cleanup processes at most 64 versions per operation and reports remaining or

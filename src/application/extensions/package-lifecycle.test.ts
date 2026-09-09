@@ -2,6 +2,7 @@ import { afterEach, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { readdir, readFile, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { createPackageLifecycleRepository } from "../../data/extensions/package-lifecycle-repository.ts";
 import {
   openProductStoreOrThrow,
@@ -72,7 +73,7 @@ for (const phase of ["before-bytes", "after-bytes", "after-commit"]) {
     const child = Bun.spawnSync(
       [
         process.execPath,
-        new URL("./package-crash-fixtures.ts", import.meta.url).pathname,
+        fileURLToPath(new URL("./package-crash-fixtures.ts", import.meta.url)),
         root,
         phase,
       ],
@@ -334,6 +335,14 @@ test("uninstall refuses live dependents and candidate validation cannot bypass m
     expect(
       await apply(owner, "install", request(0, { packageId: "dependent" }), dependent),
     ).toMatchObject({ status: "completed" });
+    expect(
+      await apply(
+        owner,
+        "update",
+        request(1),
+        packageSource(pluginManifest(undefined, { version: "2.0.0" })),
+      ),
+    ).toMatchObject({ status: "failed", code: "package-required", revision: 1 });
     expect(await apply(owner, "uninstall", request(1, { retention: "remove" }))).toMatchObject({
       status: "failed",
       code: "package-required",
