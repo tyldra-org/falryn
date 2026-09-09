@@ -42,6 +42,7 @@ export function commandFrom(
     return "run";
   }
   if (group === "model") return action === null ? null : "model";
+  if (group === "package") return action === null ? null : "package";
   if (group === "extension")
     return action === "inspect"
       ? "extension.inspect"

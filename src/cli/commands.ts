@@ -12,6 +12,7 @@
 
 import type { PackageInspectionReport } from "../application/extensions/inspection-report.ts";
 import type { ModelSettingsResult } from "../application/providers/model-settings.ts";
+import type { PackageReceipt } from "../domain/extensions/lifecycle.ts";
 import { assertNever } from "../domain/foundation/index.ts";
 import { effectOf, type TerminalOutcome } from "../domain/orchestration/index.ts";
 import type {
@@ -266,6 +267,8 @@ export function stoppedResult(
         outcome,
         effect,
       );
+    case "package":
+      return resultFor<"package", PackageReceipt>("package", null, [], outcome, effect);
     case "model":
       return resultFor<"model", ModelSettingsResult>("model", null, [], outcome, effect);
     case "extension.inspect":
@@ -303,6 +306,7 @@ export function stoppedResult(
  * text rather than a result — dispatch resolves them before any command runs.
  */
 export type RunCommandResult =
+  | CommandResultOf<"package", PackageReceipt>
   | Awaited<ReturnType<typeof runConfigShow>>
   | Awaited<ReturnType<typeof runConfigValidate>>
   | Awaited<ReturnType<typeof runConfigPath>>

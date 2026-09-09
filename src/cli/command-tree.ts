@@ -1,4 +1,5 @@
 import { modelSettingsRequestSchema } from "../application/providers/model-settings.ts";
+import { PACKAGE_ACTIONS, packageRequestSchema } from "../domain/extensions/lifecycle.ts";
 /**
  * The yargs command tree, and the parse that never prints and never exits.
  *
@@ -331,6 +332,15 @@ function build(argv: readonly string[], lenientPositionals = false): ReturnType<
               type: "string",
               describe: "bounded JSON input file as an alternate to explicit flags",
             }),
+      )
+      .command(
+        lenientPositionals ? "package [action]" : "package <action>",
+        "Inspect or change installed package generations without activation.",
+        (group) =>
+          group
+            .positional("action", { type: "string", choices: PACKAGE_ACTIONS })
+            .option("input", { type: "string", describe: "bounded lifecycle request JSON file" }),
+        () => {},
       )
       .command(
         lenientPositionals ? "extension [action] [path]" : "extension <action> <path>",
@@ -774,6 +784,23 @@ export async function parseInvocation(argv: readonly string[]): Promise<Invocati
     modelArgs = checked.data;
   }
   let extensionTrust: import("../application/extensions/package-trust.ts").TrustRequest | undefined;
+  let packageArgs: import("./commands/package.ts").PackageArguments | undefined;
+  if (command === "package") {
+    if (parsed.input === undefined)
+      return { kind: "invalid", message: "package requires --input." };
+    const loaded = await loadTaskInputFile(parsed.input);
+    if (!loaded.ok || loaded.value.length > 16_384)
+      return { kind: "invalid", message: "Invalid package request (maximum 16384 bytes)." };
+    try {
+      const checked = packageRequestSchema.safeParse(JSON.parse(loaded.value));
+      const action = PACKAGE_ACTIONS.find((a) => a === parsed.action);
+      if (!checked.success || action === undefined)
+        return { kind: "invalid", message: "Invalid package request." };
+      packageArgs = { action, request: checked.data };
+    } catch {
+      return { kind: "invalid", message: "Invalid package request JSON." };
+    }
+  }
   if (command === "extension.trust") {
     if (parsed.input === undefined)
       return { kind: "invalid", message: "extension trust requires --input." };
@@ -813,6 +840,7 @@ export async function parseInvocation(argv: readonly string[]): Promise<Invocati
     providerArgs,
     ...(modelArgs === undefined ? {} : { modelArgs }),
     ...(extensionTrust === undefined ? {} : { extensionTrust }),
+    ...(packageArgs === undefined ? {} : { packageArgs }),
     ...((command === "extension.inspect" || command === "extension.trust") &&
     parsed.path !== undefined
       ? { extensionPath: parsed.path }

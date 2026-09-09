@@ -471,6 +471,23 @@ function renderPayload(session: Session, result: RunCommandResult): RenderedPayl
       };
     case "provider":
       return renderProviderConnections(session, result.payload);
+    case "package":
+      return {
+        lines:
+          result.payload === null
+            ? []
+            : [
+                `${safe(result.payload.packageId)}: ${result.payload.status} (${safe(result.payload.code)})`,
+                `revision ${result.payload.revision}; activation unavailable; retained versions ${result.payload.retainedVersions}; pending cleanup ${result.payload.pendingCleanup}`,
+                `current version: ${result.payload.currentDigest ?? "none"}`,
+                `previous version: ${result.payload.priorDigest ?? "none"}`,
+                ...(result.payload.confirmation === null
+                  ? []
+                  : [`confirmation: ${result.payload.confirmation}`]),
+                `recovery: ${result.payload.recovery}`,
+              ],
+        diagnostics: [],
+      };
     case "extension.inspect":
     case "extension.trust":
       return {
@@ -565,6 +582,7 @@ function quietFindingLines(result: RunCommandResult): readonly string[] {
     case "run":
     case "extension.inspect":
     case "extension.trust":
+    case "package":
       return [];
     default:
       return assertNever(result, "unhandled command result");
