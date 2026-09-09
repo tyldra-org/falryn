@@ -42,7 +42,12 @@ export function commandFrom(
     return "run";
   }
   if (group === "model") return action === null ? null : "model";
-  if (group === "extension") return action === "inspect" ? "extension.inspect" : null;
+  if (group === "extension")
+    return action === "inspect"
+      ? "extension.inspect"
+      : action === "trust"
+        ? "extension.trust"
+        : null;
   if (group === "provider") {
     return action === null ? null : "provider";
   }

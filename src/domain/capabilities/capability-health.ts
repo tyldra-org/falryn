@@ -166,6 +166,7 @@ export type CapabilityHealthEvidence = {
 };
 
 export type CapabilityHealthEntry = {
+  readonly trust: import("../security/ecosystem-trust.ts").TrustProjection | null;
   readonly capabilityId: CapabilityId;
   readonly title: string;
   readonly summary: string;
@@ -736,6 +737,7 @@ function healthEntry(
   const card = capabilityCard(entry, { disclosed, projected });
   return Object.freeze({
     capabilityId: entry.capabilityId,
+    trust: entry.trust ?? null,
     title: card.title,
     summary: card.summary,
     kind: card.kind,

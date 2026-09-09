@@ -16,6 +16,7 @@ import { capabilityId } from "../foundation/identity.ts";
 import { MAX_IDENTIFIER_LENGTH } from "../foundation/limits.ts";
 import { err, ok, type Result } from "../foundation/result.ts";
 import { EFFECT_CLASSES, type EffectClass } from "../orchestration/work.ts";
+import type { TrustProjection } from "../security/ecosystem-trust.ts";
 
 export const CAPABILITY_REGISTRY_SCHEMA_VERSION = 1;
 export const DEFAULT_CAPABILITY_QUERY_LIMIT = 32;
@@ -176,6 +177,7 @@ export type CapabilityRegistryDocument = {
 };
 
 export type CapabilityRegistryEntry = CapabilityRegistryDocument & {
+  readonly trust?: TrustProjection | null;
   readonly identity: CapabilityIdentity;
   readonly capabilityId: CapabilityId;
   /** Collision key excludes source and version: only one active owner may publish it. */
@@ -183,6 +185,7 @@ export type CapabilityRegistryEntry = CapabilityRegistryDocument & {
 };
 
 export type CapabilityRegistryEntryOptions = {
+  readonly trust?: TrustProjection | null;
   /**
    * Adopt an already-published canonical identity, such as a ToolRegistry ID.
    * The caller is a trusted adapter; untrusted documents cannot supply it.
@@ -202,6 +205,7 @@ export type CapabilityLifecycle = {
 };
 
 export type CapabilityCard = {
+  readonly trust: TrustProjection | null;
   readonly capabilityId: CapabilityId;
   readonly title: string;
   readonly summary: string;
@@ -419,6 +423,7 @@ export function createCapabilityRegistryEntry(
   }
   return ok({
     ...parsed.value,
+    ...(options.trust === undefined ? {} : { trust: options.trust }),
     identity,
     capabilityId: encoded.value,
     registryKey: capabilityRegistryKey(identity),
@@ -489,6 +494,7 @@ export function capabilityCard(
 ): CapabilityCard {
   return {
     capabilityId: entry.capabilityId,
+    trust: entry.trust ?? null,
     title: entry.title,
     summary: entry.summary,
     kind: entry.kind,

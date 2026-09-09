@@ -269,8 +269,9 @@ export function stoppedResult(
     case "model":
       return resultFor<"model", ModelSettingsResult>("model", null, [], outcome, effect);
     case "extension.inspect":
-      return resultFor<"extension.inspect", PackageInspectionReport>(
-        "extension.inspect",
+    case "extension.trust":
+      return resultFor<"extension.inspect" | "extension.trust", PackageInspectionReport>(
+        command,
         null,
         [],
         outcome,

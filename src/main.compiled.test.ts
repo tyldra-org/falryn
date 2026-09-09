@@ -173,6 +173,65 @@ function spawnCompiled(
 
 describe.if(built)("the standalone executable", () => {
   test(
+    "persists and revokes scoped trust through the compiled command boundary",
+    async () => {
+      const root = await temporaryRoot();
+      const packageRoot = await temporaryRoot();
+      await Bun.write(join(packageRoot, "plugin.json"), JSON.stringify(pluginManifest()));
+      // Request files are outside the package inventory whose identity is being approved.
+      const requestRoot = await temporaryRoot();
+      const requestPath = join(requestRoot, "request.json");
+      const request = { action: "approve", expiresAt: Date.now() + 60_000 };
+      await Bun.write(requestPath, JSON.stringify(request));
+      const args = [
+        "extension",
+        "trust",
+        packageRoot,
+        "--input",
+        requestPath,
+        "--format",
+        "json",
+        "--non-interactive",
+      ];
+      const preview = spawnCompiled(root, args);
+      expect(preview.exitCode).toBe(EXIT_CODES.COMPLETED);
+      const payload = JSON.parse(preview.stdout).payload.trust;
+      expect(payload.status).toBe("preview");
+      await Bun.write(
+        requestPath,
+        JSON.stringify({ ...request, confirmation: payload.confirmation }),
+      );
+      const applied = spawnCompiled(root, args);
+      expect(applied.exitCode).toBe(EXIT_CODES.COMPLETED);
+      expect(JSON.parse(applied.stdout).effect.observed).toBe("completed");
+      for (const format of ["human", "quiet", "json", "jsonl"]) {
+        const inspect = spawnCompiled(root, [
+          "extension",
+          "inspect",
+          packageRoot,
+          "--format",
+          format,
+        ]);
+        expect(inspect.exitCode).toBe(EXIT_CODES.COMPLETED);
+        expect(inspect.stdout).toContain("user-approved");
+      }
+      await Bun.write(requestPath, JSON.stringify({ action: "revoke", expiresAt: null }));
+      const revocation = JSON.parse(spawnCompiled(root, args).stdout).payload.trust;
+      await Bun.write(
+        requestPath,
+        JSON.stringify({
+          action: "revoke",
+          expiresAt: null,
+          confirmation: revocation.confirmation,
+        }),
+      );
+      const revoked = spawnCompiled(root, args);
+      expect(revoked.exitCode).toBe(EXIT_CODES.COMPLETED);
+      expect(JSON.parse(revoked.stdout).payload.trust.trust.state).toBe("revoked");
+    },
+    COMPILED_RUN_TIMEOUT_MS,
+  );
+  test(
     "inspects package bytes consistently without executing content in every output format",
     async () => {
       const root = await temporaryRoot();

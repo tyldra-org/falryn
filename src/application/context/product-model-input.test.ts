@@ -88,6 +88,7 @@ function disclosure(): ProductToolDisclosure {
       families: [{ family: "read", available: true, reason: null }],
       capabilityCards: [
         {
+          trust: null,
           capabilityId: id,
           title: "Read file",
           summary: "Read a file",
@@ -126,6 +127,7 @@ function disclosure(): ProductToolDisclosure {
         },
         entries: [
           {
+            trust: null,
             capabilityId: id,
             title: "Read file",
             summary: "Read a file",

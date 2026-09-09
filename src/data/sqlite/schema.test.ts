@@ -24,6 +24,7 @@ import {
 import { MEMORY_SCHEMA_VERSION } from "../memory/memory-schema.ts";
 import { MIGRATION_0011 } from "../orchestration/process-task-schema.ts";
 import { MIGRATION_0007, MODEL_CATALOG_SCHEMA_VERSION } from "../providers/model-catalog-schema.ts";
+import { MIGRATION_0012 } from "../security/trust-schema.ts";
 import { PROVIDER_CONTINUATION_SCHEMA_VERSION } from "../sessions/provider-continuation-schema.ts";
 import { RUN_SCHEMA_VERSION } from "../sessions/run-schema.ts";
 import { MIGRATION_0001, RECORD_SCHEMA_VERSION, RECORD_TABLES } from "./schema.ts";
@@ -87,6 +88,7 @@ describe("a fresh database", () => {
       SCRATCH_RESOURCE_SCHEMA_VERSION,
       PROVIDER_CONTINUATION_SCHEMA_VERSION,
       MIGRATION_0011.version,
+      MIGRATION_0012.version,
     ]);
     // Nothing to lose: a database at version 0 holds no product row.
     expect(store.report.backupPath).toBeNull();
@@ -172,6 +174,7 @@ describe("a fresh database", () => {
       SCRATCH_RESOURCE_SCHEMA_VERSION,
       PROVIDER_CONTINUATION_SCHEMA_VERSION,
       MIGRATION_0011.version,
+      MIGRATION_0012.version,
     ]);
     expect(
       upgraded.read(

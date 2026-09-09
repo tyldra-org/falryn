@@ -84,6 +84,7 @@ import { versionText } from "./version.ts";
 export type DispatchOptions = {
   readonly modelRequest?: ModelSettingsRequest;
   readonly extensionPath?: string;
+  readonly extensionTrust?: import("../application/extensions/package-trust.ts").TrustRequest;
   readonly argv: readonly string[];
   readonly streams: CliStreams;
   /**
@@ -258,6 +259,9 @@ async function runCommand(
       ...(invocation.extensionPath === undefined
         ? {}
         : { extensionPath: invocation.extensionPath }),
+      ...(invocation.extensionTrust === undefined
+        ? {}
+        : { extensionTrust: invocation.extensionTrust }),
     },
   );
   const rendered = await render(result, globals, streams, services);

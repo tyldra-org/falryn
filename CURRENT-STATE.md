@@ -372,9 +372,46 @@ version-1 `org.tyldra.falryn` metadata. Human, quiet, JSON, and JSONL output
 report identities, declared effects and permissions, compatibility, dependency
 resolution and bounded diagnostics without printing instructions, environment
 values, headers or raw manifest metadata. Inspection does not execute package
-code, fetch dependencies, write state, install packages or activate bindings.
+code, fetch dependencies, install packages or activate bindings. It reads scoped
+trust decisions from an existing product database; opening that database may
+apply the normal schema migrations. An absent database stays absent on inspection.
 Invalid portable components leave valid siblings inspectable; malformed core
 or Falryn metadata rejects the package.
+
+`falryn extension trust <path> --input <request.json>` previews an `approve` or
+`revoke` decision. The bounded JSON request contains `action`, `expiresAt`
+(epoch milliseconds for approval, null for revocation), and optionally the exact
+`confirmation` returned by the preview. Approval expires within 30 days. A
+revocation may name a prior `decisionKey` after the source changes; the preview
+shows the contributions recorded with that decision. Only the same local actor
+and scope can revoke it. Confirmation binds the subject, owner, evidence, policy,
+revision, expiry, action and contribution identities. No prompt or implicit
+approval occurs in headless mode.
+
+Trust decisions use version-1 records in the product database's migration 0012,
+with 128 KiB per record and transactional revision checks. The current CLI uses
+local-user scope and policy generation 1. Source ownership comes from observed
+filesystem device, inode, uid and gid, not manifest authorship. Publisher,
+signature, curation and advisory verification remain unavailable on this local
+inspection path; computed hashes are not verified publisher evidence. Trust,
+evidence freshness, compatibility, health and availability are separate fields
+in human, quiet, JSON and JSONL output. Package and contribution identities stay
+visible independent of their short names. Approval never installs or activates
+content or supplies a full-user execution grant.
+
+The shared capability trust owner evaluates exact subject, owner, actor, scope,
+policy, evidence and expiry at admission. Plugin and MCP tool bindings require
+its affirmative result in addition to existing tool policy; the gateway checks
+again after hooks and immediately before the native runner. Missing trust stays
+unavailable in the product catalog. Health/card projections retain the same
+trust facts rather than deriving approval from a healthy status. No live package
+runtime or signature/advisory fetcher is added. Expired or changed approvals
+require a new preview. Revocation survives policy changes and expiry; restoring
+exact package bytes only restores eligibility while its prior approval remains
+valid and unrevoked. Trust records are local authority, not portable grants in
+session exports. Older binaries refuse the newer database schema; downgrade
+requires a compatible backup. Restoring a whole database can restore its old
+decisions, so inspect and revoke them before continuing.
 
 The extensions domain owns six strict version-1 identity codecs and canonical
 UTF-8 JSON with NFC strings, LF line endings, sorted keys and SHA-256 digests.

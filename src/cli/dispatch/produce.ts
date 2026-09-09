@@ -52,6 +52,7 @@ import {
 export type DispatchProduceOptions = {
   readonly modelRequest?: ModelSettingsRequest;
   readonly extensionPath?: string;
+  readonly extensionTrust?: import("../../application/extensions/package-trust.ts").TrustRequest;
   readonly streams: CliStreams;
   readonly governance?: InvocationGovernance;
 };
@@ -242,8 +243,12 @@ export async function produce(
       if (options.modelRequest === undefined) throw new Error("Missing model settings request.");
       return runModel(services, options.modelRequest, globals, signal, onMutationStart);
     case "extension.inspect":
+    case "extension.trust":
       if (options.extensionPath === undefined) throw new Error("Missing extension package path.");
-      return runExtensionInspect(options.extensionPath, signal);
+      if (command === "extension.trust" && options.extensionTrust === undefined)
+        throw new Error("Missing trust request.");
+      if (options.extensionTrust?.confirmation !== undefined) onMutationStart?.();
+      return runExtensionInspect(options.extensionPath, signal, services, options.extensionTrust);
     case "provider":
       if (providerArgs === null) {
         throw new Error("Missing parsed provider arguments.");

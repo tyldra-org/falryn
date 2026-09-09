@@ -472,6 +472,7 @@ function renderPayload(session: Session, result: RunCommandResult): RenderedPayl
     case "provider":
       return renderProviderConnections(session, result.payload);
     case "extension.inspect":
+    case "extension.trust":
       return {
         lines: result.payload === null ? [] : packageInspectionLines(result.payload).map(safe),
         diagnostics: [],
@@ -563,6 +564,7 @@ function quietFindingLines(result: RunCommandResult): readonly string[] {
     case "model":
     case "run":
     case "extension.inspect":
+    case "extension.trust":
       return [];
     default:
       return assertNever(result, "unhandled command result");
