@@ -8,10 +8,25 @@
  */
 
 import type { Instant } from "../../domain/foundation/clock.ts";
+import type { CredentialPartOutcome } from "../../domain/security/credential.ts";
 import type { ProviderProfile } from "./profile.ts";
 
-export const PROVIDER_CONNECTION_SCHEMA_VERSION = 1;
+export const PROVIDER_CONNECTION_SCHEMA_VERSION = 2;
 export const MAX_PROVIDER_CONNECTIONS = 64;
+export const MAX_PROVIDER_CREDENTIAL_RETIREMENTS = 128;
+
+export type ProviderCredentialRetirement = {
+  readonly connection: ProviderConnection;
+  readonly remoteRequested: boolean;
+  readonly status:
+    | "pending"
+    | "retiring"
+    | "retirement-unavailable"
+    | "retirement-failed"
+    | "retirement-uncertain";
+  readonly local: CredentialPartOutcome;
+  readonly remote: "revoked" | "not-attempted" | "failed" | "unsupported" | "uncertain";
+};
 
 export const PROVIDER_AUTH_METHODS = ["api-key", "oauth-pkce", "device-code"] as const;
 export type ProviderAuthMethod = (typeof PROVIDER_AUTH_METHODS)[number];
@@ -37,4 +52,6 @@ export type ProviderConnectionState = {
   readonly revision: number;
   readonly selectedProfileId: string | null;
   readonly connections: readonly ProviderConnection[];
+  /** Opaque cleanup intentions and observed outcomes; never authentication bytes. */
+  readonly credentialRetirements?: readonly ProviderCredentialRetirement[];
 };

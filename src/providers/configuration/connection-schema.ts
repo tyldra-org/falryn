@@ -6,9 +6,11 @@ import { toCodecIssues } from "../../domain/foundation/branded-schema.ts";
 import { instant } from "../../domain/foundation/clock.ts";
 import type { CodecIssue } from "../../domain/foundation/codec-error.ts";
 import { err, ok, type Result } from "../../domain/foundation/result.ts";
+import { CREDENTIAL_PART_RESULTS } from "../../domain/security/credential.ts";
 import { MAX_PROVIDER_METADATA_ENTRY_LENGTH } from "../protocol/limits.ts";
 import {
   MAX_PROVIDER_CONNECTIONS,
+  MAX_PROVIDER_CREDENTIAL_RETIREMENTS,
   PROVIDER_AUTH_METHODS,
   PROVIDER_CONNECTION_SCHEMA_VERSION,
   type ProviderConnectionState,
@@ -37,13 +39,38 @@ const connectionSchema = z
 
 export const providerConnectionStateSchema = z
   .strictObject({
-    schemaVersion: z.literal(PROVIDER_CONNECTION_SCHEMA_VERSION),
+    schemaVersion: z
+      .union([z.literal(1), z.literal(PROVIDER_CONNECTION_SCHEMA_VERSION)])
+      .transform(
+        (): typeof PROVIDER_CONNECTION_SCHEMA_VERSION => PROVIDER_CONNECTION_SCHEMA_VERSION,
+      ),
     revision: z.number().int().nonnegative(),
     selectedProfileId: z.union([
       z.string().min(1).max(MAX_PROVIDER_METADATA_ENTRY_LENGTH),
       z.null(),
     ]),
     connections: z.array(connectionSchema).max(MAX_PROVIDER_CONNECTIONS),
+    credentialRetirements: z
+      .array(
+        z.strictObject({
+          connection: connectionSchema,
+          remoteRequested: z.boolean(),
+          status: z.enum([
+            "pending",
+            "retiring",
+            "retirement-unavailable",
+            "retirement-failed",
+            "retirement-uncertain",
+          ]),
+          local: z.strictObject({
+            result: z.enum(CREDENTIAL_PART_RESULTS),
+            code: z.string().max(128).nullable(),
+          }),
+          remote: z.enum(["revoked", "not-attempted", "failed", "unsupported", "uncertain"]),
+        }),
+      )
+      .max(MAX_PROVIDER_CREDENTIAL_RETIREMENTS)
+      .default([]),
   })
   .strict()
   .superRefine((state, context) => {

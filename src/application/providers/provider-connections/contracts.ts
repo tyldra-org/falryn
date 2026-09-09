@@ -29,6 +29,8 @@ export type ProviderConnectionStoreWriteResult =
   | { readonly kind: "failed"; readonly code: string };
 
 export type ProviderConnectionStorePort = {
+  /** Shared identity for services over the same configuration owner in this process. */
+  readonly ownership?: object;
   read(signal?: AbortSignal): Promise<ProviderConnectionStoreSnapshot>;
   write(
     state: ProviderConnectionState,
@@ -86,10 +88,12 @@ export type AuthorizedProviderLoginPort = {
     profile: ProviderProfile,
     method: Exclude<ProviderAuthMethod, "api-key">,
     signal?: AbortSignal,
+    beforePlacement?: (reference: CredentialReference) => Promise<boolean>,
   ): Promise<AuthorizedProviderLoginResult>;
   refresh(
     connection: ProviderConnection,
     signal?: AbortSignal,
+    beforePlacement?: (reference: CredentialReference) => Promise<boolean>,
   ): Promise<AuthorizedProviderRefreshResult>;
   revoke(
     connection: ProviderConnection,
@@ -181,7 +185,7 @@ export type ProviderConnectionDiscoveryView =
       readonly retryable: boolean;
     };
 
-export type ProviderConnectionActionResult =
+export type ProviderConnectionActionResult = (
   | {
       readonly kind: "completed";
       readonly action: ProviderConnectionAction["kind"];
@@ -205,7 +209,13 @@ export type ProviderConnectionActionResult =
       readonly catalog: ModelCatalog | null;
       readonly discovery: ProviderConnectionDiscoveryView;
       readonly authorization: ProviderAuthorizationReceipt | null;
-    };
+    }
+) & { readonly credentialChange?: ProviderCredentialChange | null };
+
+export type ProviderCredentialChange = {
+  readonly publication: "replacement-published" | "replacement-rejected" | null;
+  readonly retirements: readonly import("./credential-lifetime.ts").CredentialRetirementReport[];
+};
 
 export type ProviderConnectionServicePorts = {
   readonly store: ProviderConnectionStorePort;
@@ -216,6 +226,7 @@ export type ProviderConnectionServicePorts = {
 };
 
 export type ProviderConnectionService = {
+  reconcile(): Promise<readonly import("./credential-lifetime.ts").CredentialRetirementReport[]>;
   execute(
     action: ProviderConnectionAction,
     signal?: AbortSignal,
@@ -226,12 +237,14 @@ export type ProviderConnectionService = {
 };
 
 /** Internal handoff for the live attempt owner. Contains references, not secrets. */
-export type ProviderConnectionHandoffResult =
+export type ProviderConnectionHandoffResult = (
   | {
       readonly kind: "ready";
       readonly connection: ProviderConnection;
       readonly auth: ProviderAuthSnapshot;
       readonly catalog: ModelCatalog;
+      /** Release the immutable credential generation after all admitted work settles. */
+      release(): Promise<void>;
     }
   | {
       readonly kind: "unavailable";
@@ -239,4 +252,5 @@ export type ProviderConnectionHandoffResult =
       readonly connection: ProviderConnection | null;
       readonly auth: ProviderAuthSnapshot | null;
       readonly catalog: ModelCatalog | null;
-    };
+    }
+) & { readonly credentialChange?: ProviderCredentialChange | null };

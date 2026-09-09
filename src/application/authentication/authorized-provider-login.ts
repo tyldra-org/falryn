@@ -67,7 +67,7 @@ export function createAuthorizedProviderLogin(
 
   return {
     methods: (profile) => options.registry.methods(profile),
-    async authorize(profile, method, signal) {
+    async authorize(profile, method, signal, beforePlacement) {
       if (activeProfiles.has(profile.profileId) || activeProfiles.size >= maxActiveAttempts) {
         return {
           kind: "failed",
@@ -90,13 +90,13 @@ export function createAuthorizedProviderLogin(
       );
       activeProfiles.add(profile.profileId);
       try {
-        return await runAttempt(attempt, signal);
+        return await runAttempt({ ...attempt, beforePlacement }, signal);
       } finally {
         activeProfiles.delete(profile.profileId);
       }
     },
-    async refresh(connection, signal) {
-      return refreshConnection(options, connection, signal);
+    async refresh(connection, signal, beforePlacement) {
+      return refreshConnection(options, connection, signal, beforePlacement);
     },
     async revoke(connection, signal) {
       return revokeConnection(options, connection, signal);
@@ -105,6 +105,7 @@ export function createAuthorizedProviderLogin(
 }
 
 type Attempt = {
+  readonly beforePlacement?: ((reference: CredentialReference) => Promise<boolean>) | undefined;
   readonly options: AuthorizedProviderLoginOptions;
   readonly profile: ProviderProfile;
   readonly method: AuthorizedLoginMethod;
@@ -404,6 +405,8 @@ async function finalizeAuthorization(
     return failed(attempt, normalized.code, normalized.retryable);
   }
   const reference = credentialReference(attempt.profile, attempt.attemptId);
+  if (attempt.beforePlacement !== undefined && !(await attempt.beforePlacement(reference)))
+    return failed(attempt, "authorized-credential-intent-failed", true);
   const written = await attempt.options.credentials.placeAuthorizedCredential({
     reference,
     credential: normalized.credential,
@@ -477,6 +480,7 @@ async function refreshConnection(
   options: AuthorizedProviderLoginOptions,
   connection: ProviderConnection,
   signal?: AbortSignal,
+  beforePlacement?: (reference: CredentialReference) => Promise<boolean>,
 ): Promise<AuthorizedProviderRefreshResult> {
   const method = connection.account?.authMethod;
   const reference = connection.profile.credential;
@@ -534,6 +538,8 @@ async function refreshConnection(
   const credential = parsedCredential.value;
   const attemptId = `refresh-${options.host.crypto.randomBase64Url(ATTEMPT_ID_BYTES)}`;
   const nextReference = credentialReference(connection.profile, attemptId);
+  if (beforePlacement !== undefined && !(await beforePlacement(nextReference)))
+    return { kind: "failed", code: "refresh-credential-intent-failed", retryable: true };
   const written = await options.credentials.placeAuthorizedCredential({
     reference: nextReference,
     credential,

@@ -129,13 +129,22 @@ the operating-system vault and persists only its opaque reference plus safe
 account metadata. Public results carry a secret-free terminal receipt with the
 attempt, adapter, generation, method, outcome, and structural failure code.
 Immediately before provider handoff, an expired authorized connection refreshes
-through its bound adapter, writes a rotated vault reference, publishes the
-connection change, and then removes the old local credential. The current
-refresh path removes that replaced reference without first proving that another
-profile does not still own the same store, locator, consumer, and account-label
-identity; logout and profile removal already use the shared-reference check.
-GitHub issue #910 owns the focused refresh correction. Logout reports remote
-revocation and local deletion separately. This shared lifecycle does not claim
+through its bound adapter and records the replacement reference before vault
+placement. Connection schema 2 reads schema 1 and atomically publishes profile
+changes with bounded cleanup intentions. Refresh, configure, login rollback,
+logout, and removal share `credentialRemovalIdentity` equality over store,
+locator, consumer, and nullable account label. A stale publication preserves the
+previous reference; a shared replacement is never deleted as rollback.
+
+Within the owning Bun process, current profiles and admitted provider handoffs
+retain their credential generation. Product streams bind the current profile
+on each attempt and release it on iterator settlement, cancellation, or failure.
+Profile mutation contention returns a retryable stale-state result without
+adding a scheduler. Cleanup retries reread current ownership; interrupted local
+deletion first observes presence. Failed, unavailable, and uncertain outcomes
+remain in configuration for reconciliation. Uncertain remote revocation is not
+blindly repeated. Logout reports remote revocation and local deletion separately.
+This shared lifecycle does not claim
 that a provider supports subscription login until an installed adapter
 advertises the method as available.
 

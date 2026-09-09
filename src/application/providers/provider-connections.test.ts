@@ -2,7 +2,11 @@ import { describe, expect, test } from "bun:test";
 
 import type { CredentialReference } from "../../domain/configuration/index.ts";
 import { createManualClock, instant, modelId, providerId } from "../../domain/foundation/index.ts";
-import { type CredentialStorePort, healthForStatus } from "../../domain/security/index.ts";
+import {
+  type CredentialStorePort,
+  credentialRemovalIdentity,
+  healthForStatus,
+} from "../../domain/security/index.ts";
 import {
   AUTHORIZED_LOGIN_SCHEMA_VERSION,
   type ModelDiscoveryPort,
@@ -60,6 +64,7 @@ function memoryStore(
   let current = initial;
   let revision = "r0";
   let remainingStale = staleWrites;
+  let writes = 0;
   return {
     state: () => current,
     port: {
@@ -75,7 +80,7 @@ function memoryStore(
           return { kind: "stale" };
         }
         current = next;
-        revision = `r${next.revision}`;
+        revision = `r${++writes}`;
         return { kind: "written", fileRevision: revision };
       },
     },
@@ -83,7 +88,8 @@ function memoryStore(
 }
 
 function mutableCredentials(clock: ReturnType<typeof createManualClock>) {
-  const secrets = new Map<string, string>();
+  const secrets = new Map<string, { reference: CredentialReference; secret: string }>();
+  const removals: string[] = [];
   const keychain: CredentialStorePort = {
     storeKind: "operating-system-keychain",
     availability: () => ({ kind: "available" }),
@@ -101,7 +107,7 @@ function mutableCredentials(clock: ReturnType<typeof createManualClock>) {
           },
         };
       }
-      const secret = secrets.get(reference.locator);
+      const secret = secrets.get(credentialRemovalIdentity(reference))?.secret;
       if (secret === undefined) {
         return {
           kind: "unresolved",
@@ -126,21 +132,26 @@ function mutableCredentials(clock: ReturnType<typeof createManualClock>) {
       };
     },
     async removeSecret(reference) {
-      return secrets.delete(reference.locator)
+      removals.push(credentialRemovalIdentity(reference));
+      return secrets.delete(credentialRemovalIdentity(reference))
         ? { result: "removed", code: null }
         : { result: "not-present", code: null };
     },
   };
   return {
+    removals,
     bundle: {
       stores: [keychain],
       resolver: createSecretResolver({ stores: [keychain], clock }),
       async placeApiKey({ reference, secret }) {
-        secrets.set(reference.locator, secret);
+        secrets.set(credentialRemovalIdentity(reference), { reference, secret });
         return { kind: "written" };
       },
       async placeAuthorizedCredential({ reference, credential }) {
-        secrets.set(reference.locator, JSON.stringify(credential));
+        secrets.set(credentialRemovalIdentity(reference), {
+          reference,
+          secret: JSON.stringify(credential),
+        });
         return { kind: "written" };
       },
       async withAuthorizedCredential(reference, use, signal) {
@@ -163,10 +174,10 @@ function mutableCredentials(clock: ReturnType<typeof createManualClock>) {
       },
     } satisfies ProductCredentialBundle,
     place(reference: CredentialReference, secret: string) {
-      secrets.set(reference.locator, secret);
+      secrets.set(credentialRemovalIdentity(reference), { reference, secret });
     },
     has(locator: string): boolean {
-      return secrets.has(locator);
+      return [...secrets.values()].some((entry) => entry.reference.locator === locator);
     },
   };
 }
@@ -375,7 +386,7 @@ describe("provider connection service", () => {
     expect(JSON.stringify(result)).not.toContain("authorized-secret");
   });
 
-  test("removes an unselected profile credential and reports state divergence after deletion", async () => {
+  test("removes an unselected profile credential only after publication succeeds", async () => {
     const clock = createManualClock(instant(250));
     const reference: CredentialReference = {
       storeKind: "operating-system-keychain",
@@ -429,9 +440,9 @@ describe("provider connection service", () => {
     const diverged = await staleService.execute({ kind: "remove", profileId: "backup" });
     expect(diverged).toMatchObject({
       kind: "failed",
-      issue: { code: "credential-state-diverged", retryable: true },
+      issue: { code: "state-stale", retryable: true },
     });
-    expect(staleCredentials.has(reference.locator)).toBe(false);
+    expect(staleCredentials.has(reference.locator)).toBe(true);
     expect(staleStored.state().connections[1]?.profile.credential).toEqual(reference);
   });
 
@@ -860,6 +871,401 @@ describe("provider connection service", () => {
       issue: { code: "credential-expired" },
       auth: { state: "invalid", code: "credential-expired" },
     });
+  });
+});
+
+describe("shared credential lifetime", () => {
+  const oldReference: CredentialReference = {
+    storeKind: "operating-system-keychain",
+    locator: "fixture-old",
+    consumer: "provider:shared",
+    accountLabel: null,
+  };
+  const newReference: CredentialReference = { ...oldReference, locator: "fixture-new" };
+
+  function fixture(shared = true) {
+    const clock = createManualClock(instant(100));
+    const profiles = state(
+      { ...profile("primary"), credential: oldReference },
+      ...(shared ? [{ ...profile("other"), credential: { ...oldReference } }] : []),
+    );
+    const expired: ProviderConnectionState = {
+      ...profiles,
+      connections: profiles.connections.map((connection, index) =>
+        index !== 0
+          ? connection
+          : {
+              ...connection,
+              account: {
+                accountId: null,
+                displayName: "Fixture account",
+                authMethod: "oauth-pkce",
+                authorizedAt: instant(0),
+                expiresAt: instant(50),
+              },
+            },
+      ),
+    };
+    const stored = memoryStore(expired);
+    const credentials = mutableCredentials(clock);
+    credentials.place(oldReference, "fixture-secret-old");
+    const authorizedLogin: AuthorizedProviderLoginPort = {
+      methods: () => ["oauth-pkce"],
+      authorize: async () => ({ kind: "cancelled", receipt: null }),
+      async refresh(connection, _signal, beforePlacement) {
+        if (beforePlacement !== undefined && !(await beforePlacement(newReference)))
+          return { kind: "failed", code: "fixture-intent-failed", retryable: true };
+        credentials.place(newReference, "fixture-secret-new");
+        return {
+          kind: "refreshed",
+          reference: newReference,
+          account: {
+            accountId: null,
+            displayName: connection.account?.displayName ?? null,
+            authMethod: "oauth-pkce",
+            authorizedAt: clock.now(),
+            expiresAt: instant(1_000),
+          },
+        };
+      },
+      revoke: async () => ({ remote: "unsupported", code: null }),
+    };
+    const ports = { store: stored.port, credentials: credentials.bundle, clock, authorizedLogin };
+    return { clock, stored, credentials, ports, service: createProviderConnectionService(ports) };
+  }
+
+  for (const action of ["logout", "remove"] as const) {
+    test(`refresh preserves another profile and its admitted generation through ${action}`, async () => {
+      const { service, credentials, stored, ports } = fixture();
+      const admitted = await service.openSelected(undefined, "other");
+      expect(admitted.kind).toBe("ready");
+      const refreshed = await service.openSelected();
+      expect(refreshed).toMatchObject({
+        kind: "ready",
+        connection: { profile: { credential: newReference } },
+        credentialChange: {
+          publication: "replacement-published",
+          retirements: [{ outcome: "old-reference-retained-shared" }],
+        },
+      });
+      expect(credentials.has(oldReference.locator)).toBe(true);
+      // A second service over the same owner observes the outstanding generation.
+      const second = createProviderConnectionService(ports);
+      expect(await second.execute({ kind: action, profileId: "other" })).toMatchObject({
+        kind: "completed",
+        revocation: { local: "not-attempted" },
+      });
+      expect(credentials.has(oldReference.locator)).toBe(true);
+      if (admitted.kind !== "ready" || refreshed.kind !== "ready")
+        throw new Error("fixture admission failed");
+      await admitted.release();
+      await admitted.release();
+      expect(credentials.has(oldReference.locator)).toBe(false);
+      expect(
+        credentials.removals.filter((id) => id === credentialRemovalIdentity(oldReference)),
+      ).toHaveLength(1);
+      expect(credentials.has(newReference.locator)).toBe(true);
+      expect(stored.state().connections[0]?.profile.credential).toEqual(newReference);
+      await refreshed.release();
+      expect(JSON.stringify(stored.state())).not.toContain("fixture-secret");
+      expect(JSON.stringify(refreshed)).not.toContain("fixture-secret");
+    });
+  }
+
+  test("configure uses the same ownership predicate and new admissions bind the replacement", async () => {
+    const { service, credentials, stored } = fixture();
+    const configured = stored.state().connections[1]?.profile;
+    if (configured === undefined) throw new Error("missing fixture");
+    credentials.place(newReference, "fixture-secret-new");
+    expect(
+      await service.execute({
+        kind: "configure",
+        profile: { ...configured, credential: newReference },
+        preserveCredential: false,
+        preserveCapabilities: true,
+        preserveTransportCompatibility: true,
+      }),
+    ).toMatchObject({ kind: "completed" });
+    expect(credentials.has(oldReference.locator)).toBe(true);
+    const admitted = await service.openSelected(undefined, "other");
+    expect(admitted).toMatchObject({
+      kind: "ready",
+      connection: { profile: { credential: newReference } },
+    });
+    if (admitted.kind === "ready") await admitted.release();
+  });
+
+  test("an equal replacement retains the reference without local or remote revocation", async () => {
+    const { ports, credentials } = fixture(false);
+    const service = createProviderConnectionService({
+      ...ports,
+      authorizedLogin: {
+        ...ports.authorizedLogin,
+        async refresh(connection) {
+          if (connection.account === null) throw new Error("missing account fixture");
+          return {
+            kind: "refreshed",
+            reference: { ...oldReference },
+            account: { ...connection.account, expiresAt: instant(1_000) },
+          };
+        },
+      },
+    });
+    const result = await service.openSelected();
+    expect(result.kind).toBe("ready");
+    expect(credentials.removals).toHaveLength(0);
+    if (result.kind === "ready") await result.release();
+  });
+
+  for (const mutation of ["logout", "remove", "configure", "use", "refresh"] as const) {
+    test(`a concurrent ${mutation} cannot overtake refresh publication`, async () => {
+      const { ports, credentials, stored } = fixture();
+      const entered = Promise.withResolvers<void>();
+      const resume = Promise.withResolvers<void>();
+      const service = createProviderConnectionService({
+        ...ports,
+        authorizedLogin: {
+          ...ports.authorizedLogin,
+          async refresh(...args) {
+            entered.resolve();
+            await resume.promise;
+            return ports.authorizedLogin.refresh(...args);
+          },
+        },
+      });
+      const opening = service.openSelected();
+      await entered.promise;
+      const concurrent =
+        mutation === "refresh"
+          ? await service.openSelected()
+          : mutation === "configure"
+            ? await service.execute({
+                kind: "configure",
+                profile: profile("primary"),
+                preserveCredential: false,
+                preserveCapabilities: false,
+                preserveTransportCompatibility: false,
+              })
+            : await service.execute({ kind: mutation, profileId: "other" });
+      expect(concurrent).toMatchObject({ issue: { code: "state-stale" } });
+      expect(credentials.removals).toHaveLength(0);
+      resume.resolve();
+      const result = await opening;
+      expect(result.kind).toBe("ready");
+      expect(stored.state().connections[0]?.profile.credential).toEqual(newReference);
+      if (result.kind === "ready") await result.release();
+    });
+  }
+
+  for (const failure of ["stale", "failed"] as const) {
+    test(`a ${failure} publication cleans only the unpublished replacement`, async () => {
+      const { ports, credentials, stored } = fixture(false);
+      const service = createProviderConnectionService({
+        ...ports,
+        store: {
+          ...ports.store,
+          async write(next, expected, signal) {
+            return next.revision > 0
+              ? failure === "stale"
+                ? { kind: "stale" }
+                : { kind: "failed", code: "fixture-write-failed" }
+              : ports.store.write(next, expected, signal);
+          },
+        },
+      });
+      expect(await service.openSelected()).toMatchObject({
+        kind: "unavailable",
+        issue: { code: failure === "stale" ? "state-stale" : "state-write-failed" },
+      });
+      expect(credentials.has(oldReference.locator)).toBe(true);
+      expect(credentials.has(newReference.locator)).toBe(false);
+      expect(stored.state().connections[0]?.profile.credential).toEqual(oldReference);
+    });
+  }
+
+  for (const stage of [
+    "pending",
+    "retiring",
+    "retirement-failed",
+    "retirement-uncertain",
+  ] as const) {
+    test(`restart reconciles ${stage} local cleanup after rereading ownership`, async () => {
+      const { ports, credentials, stored } = fixture(false);
+      const connection = stored.state().connections[0];
+      if (connection === undefined) throw new Error("missing fixture");
+      const restartedStore = memoryStore({
+        ...stored.state(),
+        connections: [],
+        selectedProfileId: null,
+        credentialRetirements: [
+          {
+            connection,
+            status: stage,
+            local: { result: "not-attempted", code: null },
+            remote: "not-attempted",
+            remoteRequested: false,
+          },
+        ],
+      });
+      const restarted = createProviderConnectionService({ ...ports, store: restartedStore.port });
+      expect(await restarted.reconcile()).toMatchObject([
+        { outcome: "old-reference-retired", local: "removed", remote: "not-attempted" },
+      ]);
+      expect(await restarted.reconcile()).toEqual([]);
+      expect(credentials.removals).toHaveLength(1);
+    });
+  }
+
+  test("a delete that takes effect then throws is reconciled by presence without another delete", async () => {
+    const { ports, credentials, stored } = fixture(false);
+    const nativeStore = ports.credentials.stores[0];
+    if (nativeStore === undefined) throw new Error("missing credential store fixture");
+    const service = createProviderConnectionService({
+      ...ports,
+      credentials: {
+        ...ports.credentials,
+        stores: [
+          {
+            ...nativeStore,
+            async removeSecret(reference) {
+              await nativeStore.removeSecret(reference);
+              throw new Error("fixture-secret-must-not-escape");
+            },
+          },
+        ],
+      },
+    });
+    const result = await service.openSelected();
+    expect(result).toMatchObject({
+      kind: "ready",
+      credentialChange: { retirements: [{ outcome: "retirement-uncertain" }] },
+    });
+    expect(stored.state().credentialRetirements?.[0]?.status).toBe("retirement-uncertain");
+    expect(JSON.stringify(stored.state())).not.toContain("fixture-secret");
+    expect(await service.reconcile()).toMatchObject([
+      { outcome: "old-reference-retired", local: "not-present" },
+    ]);
+    expect(credentials.removals).toHaveLength(1);
+    if (result.kind === "ready") await result.release();
+  });
+
+  test("failed deletion retains the exact outcome and a later retry rereads shared ownership", async () => {
+    const { ports, credentials, stored } = fixture(false);
+    const nativeStore = ports.credentials.stores[0];
+    if (nativeStore === undefined) throw new Error("missing credential store fixture");
+    const service = createProviderConnectionService({
+      ...ports,
+      credentials: {
+        ...ports.credentials,
+        stores: [
+          {
+            ...nativeStore,
+            async removeSecret() {
+              return { result: "failed", code: "fixture-vault-denied" };
+            },
+          },
+        ],
+      },
+    });
+    const result = await service.openSelected();
+    expect(result.kind).toBe("ready");
+    expect(stored.state().credentialRetirements?.[0]).toMatchObject({
+      status: "retirement-failed",
+      local: { result: "failed", code: "fixture-vault-denied" },
+    });
+    expect(
+      await service.execute({
+        kind: "add",
+        profile: { ...profile("reused"), credential: oldReference },
+      }),
+    ).toMatchObject({ kind: "completed" });
+    const reconciler = createProviderConnectionService(ports);
+    expect(await reconciler.reconcile()).toMatchObject([
+      { outcome: "old-reference-retained-shared" },
+    ]);
+    expect(credentials.has(oldReference.locator)).toBe(true);
+    if (result.kind === "ready") await result.release();
+  });
+
+  for (const differing of [
+    { consumer: "provider:different" },
+    { accountLabel: "different" },
+    { locator: "different" },
+  ] as const) {
+    test(`retirement identity includes ${Object.keys(differing)[0]}`, async () => {
+      const { ports, credentials, stored } = fixture();
+      const other = stored.state().connections[1];
+      const primary = stored.state().connections[0];
+      if (other === undefined || primary === undefined)
+        throw new Error("missing connection fixture");
+      const reference = { ...oldReference, ...differing };
+      credentials.place(reference, "fixture-other-secret");
+      const separate = memoryStore({
+        ...stored.state(),
+        connections: [primary, { ...other, profile: { ...other.profile, credential: reference } }],
+      });
+      const service = createProviderConnectionService({ ...ports, store: separate.port });
+      const result = await service.openSelected();
+      expect(result.kind).toBe("ready");
+      expect(credentials.removals).toEqual([credentialRemovalIdentity(oldReference)]);
+      expect(await service.openSelected(undefined, "other")).toMatchObject({ kind: "ready" });
+      if (result.kind === "ready") await result.release();
+    });
+  }
+
+  test("an uncertain remote effect stays recorded after local absence and is never repeated", async () => {
+    const { ports, credentials, stored } = fixture(false);
+    let revocations = 0;
+    const service = createProviderConnectionService({
+      ...ports,
+      authorizedLogin: {
+        ...ports.authorizedLogin,
+        async revoke() {
+          revocations += 1;
+          throw new Error("fixture-secret-remote-error");
+        },
+      },
+    });
+    expect(await service.execute({ kind: "logout", profileId: "primary" })).toMatchObject({
+      kind: "completed",
+      revocation: { outcome: "retirement-uncertain", remote: "uncertain" },
+    });
+    expect(stored.state().credentialRetirements?.[0]?.remote).toBe("uncertain");
+    await service.reconcile();
+    expect(revocations).toBe(1);
+    const nativeStore = ports.credentials.stores[0];
+    if (nativeStore === undefined) throw new Error("missing fixture store");
+    await nativeStore.removeSecret(oldReference);
+    expect(await service.reconcile()).toMatchObject([
+      { outcome: "retirement-uncertain", local: "not-present", remote: "uncertain" },
+    ]);
+    expect(stored.state().credentialRetirements?.[0]?.remote).toBe("uncertain");
+    expect(revocations).toBe(1);
+    expect(credentials.has(oldReference.locator)).toBe(false);
+  });
+
+  test("startup cleans an unpublished replacement while preserving the current profile", async () => {
+    const { ports, stored, credentials } = fixture(false);
+    const current = stored.state().connections[0];
+    if (current === undefined) throw new Error("missing fixture connection");
+    credentials.place(newReference, "fixture-orphan-secret");
+    const restartedStore = memoryStore({
+      ...stored.state(),
+      credentialRetirements: [
+        {
+          connection: { ...current, profile: { ...current.profile, credential: newReference } },
+          remoteRequested: false,
+          status: "pending",
+          local: { result: "not-attempted", code: null },
+          remote: "not-attempted",
+        },
+      ],
+    });
+    const restarted = createProviderConnectionService({ ...ports, store: restartedStore.port });
+    expect(await restarted.execute({ kind: "list" })).toMatchObject({ kind: "completed" });
+    expect(credentials.has(newReference.locator)).toBe(false);
+    expect(credentials.has(oldReference.locator)).toBe(true);
+    expect(restartedStore.state().connections[0]?.profile.credential).toEqual(oldReference);
   });
 });
 

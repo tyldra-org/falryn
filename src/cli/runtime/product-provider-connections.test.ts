@@ -201,6 +201,99 @@ describe("product provider connection persistence", () => {
     expect(document).not.toContain("sk-live-secret-material");
   });
 
+  test("an admitted stream retains its credential through logout and the next stream uses the new login", async () => {
+    const home = await mkdtemp(join(tmpdir(), "falryn-credential-lifetime-"));
+    homes.push(home);
+    const services = createServiceProvider(GLOBALS, {
+      home: localPath(home),
+      platform: "darwin",
+      currentDirectory: localPath(home),
+      environment: createStaticEnvironment({ FALRYN_STATE_DIR: home }),
+    });
+    const secrets = new Map<string, string>();
+    const deleted: string[] = [];
+    const credentialSecrets: OperatingSystemSecretsPort = {
+      get: async (key) => secrets.get(JSON.stringify(key)) ?? null,
+      set: async ({ service, name, value }) => {
+        secrets.set(JSON.stringify({ service, name }), value);
+      },
+      delete: async (key) => {
+        deleted.push(JSON.stringify(key));
+        return secrets.delete(JSON.stringify(key));
+      },
+    };
+    const entered = Promise.withResolvers<void>();
+    const resume = Promise.withResolvers<void>();
+    const headers: string[] = [];
+    const product = composeProductProviderConnections(services(), GLOBALS, {
+      credentialSecrets,
+      providerFetch: async (_input, init) => {
+        headers.push(new Headers(init?.headers).get("authorization") ?? "");
+        if (headers.length === 1) {
+          entered.resolve();
+          await resume.promise;
+        }
+        return sse([
+          { choices: [{ delta: { content: "done" } }] },
+          { choices: [{ delta: {}, finish_reason: "stop" }] },
+        ]);
+      },
+    });
+    expect(await product.service.execute({ kind: "add", profile: localProfile() })).toMatchObject({
+      kind: "completed",
+    });
+    expect(
+      await product.service.execute({
+        kind: "login-api-key",
+        profileId: "local",
+        secret: "fixture-stream-old",
+        accountLabel: null,
+      }),
+    ).toMatchObject({ kind: "completed" });
+    expect(await product.service.execute({ kind: "use", profileId: "local" })).toMatchObject({
+      kind: "completed",
+    });
+    const selected = await product.resolveSelected();
+    if (selected.kind !== "ready") throw new Error("missing fixture provider");
+    const request: ModelRequest = {
+      requestId: modelRequestId.from("credential-lifetime"),
+      providerId: providerId.from("local"),
+      modelId: modelId.from("coder"),
+      messages: [{ role: "user", parts: [{ kind: "text", text: "hello" }] }],
+      tools: [],
+      output: { kind: "text" },
+      budgets: {},
+      metadata: { role: "default" },
+    };
+    const first = providerEvents(selected.adapter, request);
+    await entered.promise;
+    expect(await product.service.execute({ kind: "logout", profileId: "local" })).toMatchObject({
+      kind: "completed",
+      revocation: { local: "not-attempted" },
+    });
+    expect(deleted).toHaveLength(0);
+    expect(
+      await product.service.execute({
+        kind: "login-api-key",
+        profileId: "local",
+        secret: "fixture-stream-new",
+        accountLabel: null,
+      }),
+    ).toMatchObject({ kind: "completed" });
+    resume.resolve();
+    expect((await first).at(-1)).toMatchObject({ kind: "finished" });
+    expect(deleted).toHaveLength(1);
+    expect((await providerEvents(selected.adapter, request)).at(-1)).toMatchObject({
+      kind: "finished",
+    });
+    expect(headers).toEqual(["Bearer fixture-stream-old", "Bearer fixture-stream-new"]);
+    const document = await readFile(
+      join(services().configurationRoot, CONFIGURATION_FILE_NAME),
+      "utf8",
+    );
+    expect(document).not.toContain("fixture-stream");
+  });
+
   test("fails OpenAI Codex subscription login with the source-verified provider-policy code", async () => {
     const home = await mkdtemp(join(tmpdir(), "falryn-provider-openai-codex-"));
     homes.push(home);
