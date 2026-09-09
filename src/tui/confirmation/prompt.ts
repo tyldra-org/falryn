@@ -17,7 +17,7 @@ import { graphemes } from "../../domain/terminal/index.ts";
 import type { FocusedConfirmationRequest } from "../../domain/tools/index.ts";
 import { looksSecret } from "../composer/paste.ts";
 
-export const CONFIRMATION_SCOPES = ["once"] as const;
+export const CONFIRMATION_SCOPES = ["once", "workspace-generation"] as const;
 export type ConfirmationScope = (typeof CONFIRMATION_SCOPES)[number];
 
 export type ConfirmationChoiceId = "accept" | "deny";
@@ -153,6 +153,11 @@ export function confirmationIsStale(
 }
 
 export function labelledChoices(prompt: ConfirmationPrompt): readonly ConfirmationChoice[] {
+  if (prompt.scope === "workspace-generation")
+    return [
+      { id: "accept", label: "Proceed", key: "y" },
+      { id: "deny", label: "Refuse", key: "n" },
+    ];
   if (prompt.secret !== null) {
     return [
       { id: "accept", label: "Accept", key: "return" },

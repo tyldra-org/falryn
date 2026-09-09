@@ -21,6 +21,7 @@ import { createShutdownCoordinator } from "../../application/runtime/index.ts";
 import { createRecordingCliStreams, type GlobalOptions } from "../../cli/index.ts";
 import { createManualClock, createStaticEnvironment } from "../../domain/foundation/index.ts";
 import { type ObservedHandles, terminalCapabilities } from "../../domain/terminal/index.ts";
+import { workspaceTrustPrompt } from "../confirmation/workspace-trust.ts";
 import { SHELL_KEY_HINTS } from "../shell/shell-model.ts";
 import { type ShellCapabilities, shellCapabilities } from "./capabilities.ts";
 import { hasOpenRendererSession, type RendererFactory } from "./renderer-session.ts";
@@ -146,6 +147,78 @@ function composerTextarea(setup: TestRendererSetup): TextareaRenderable {
   }
   throw new Error("expected the shell to mount a composer textarea");
 }
+
+test("workspace startup reviews on one renderer before product preparation; refusal and terminal loss never approve", async () => {
+  for (const choice of ["y", "n", "lost"] as const) {
+    const stop = new AbortController();
+    const streams = createRecordingCliStreams();
+    const request = {
+      streams,
+      capabilities: record(),
+      clock: createManualClock(),
+      options: OPTIONS,
+      environment: ENVIRONMENT,
+      stop: stop.signal,
+      createRenderer: inMemory,
+    };
+    const decisions: boolean[] = [];
+    const pending = runShell({
+      ...request,
+      prepare: async (confirm) => {
+        const prompt = workspaceTrustPrompt({
+          version: 1,
+          status: "review-required",
+          inventory: null,
+          priorGeneration: null,
+          reason: "workspace-trust-required",
+          added: 5,
+          removed: 0,
+          changed: 0,
+        });
+        decisions.push(
+          await confirm(
+            choice === "y"
+              ? {
+                  ...prompt,
+                  alternatives: [
+                    ...Array.from(
+                      { length: 40 },
+                      (_, index) => `root 1/skill-${index}: skills, unavailable`,
+                    ),
+                    ...prompt.alternatives,
+                  ],
+                }
+              : prompt,
+          ),
+        );
+        return request;
+      },
+    });
+    const setup = await mounting;
+    if (setup === null) throw new Error("renderer missing");
+    expect(await frameWith(setup, "Review workspace trust")).toContain("Review workspace trust");
+    expect(await frameWith(setup, "Proceed")).toContain("Proceed");
+    expect(setup.captureCharFrame()).toContain("Refuse");
+    for (let index = 0; index < (choice === "y" ? 50 : 1); index++) {
+      setup.mockInput.pressArrow("down");
+      await Bun.sleep(5);
+      await setup.flush();
+    }
+    expect(await frameWith(setup, "Generation unavailable")).toContain("Generation unavailable");
+    expect(decisions).toEqual([]);
+    if (choice === "lost") setup.renderer.destroy();
+    else {
+      await setup.mockInput.typeText(choice);
+      const deadline = Date.now() + 2_000;
+      while (decisions.length === 0 && Date.now() < deadline) await Bun.sleep(5);
+      stop.abort();
+    }
+    await pending;
+    expect(decisions).toEqual([choice === "y"]);
+    expect(hasOpenRendererSession()).toBe(false);
+    mounting = null;
+  }
+});
 
 describe("a shell that was stopped", () => {
   test("reports that it was stopped rather than that it finished", async () => {

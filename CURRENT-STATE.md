@@ -52,6 +52,36 @@ Credential bytes remain in the operating-system keychain or an explicitly
 referenced external source. Help, version, doctor, and configuration inspection
 do not create `~/.falryn` or trigger migration.
 
+## Workspace trust
+
+Interactive startup reviews project settings, instructions, MCP declarations,
+hooks, and skills before applying project settings. The existing confirmation
+sheet shows loader families, redacted relative source labels, generation changes,
+and the effects of Proceed or Refuse. Arrow and page keys scroll the inventory;
+the decision keys stay visible. Refuse or cancellation leaves project loaders
+disabled. User configuration remains available.
+
+Proceed commits a decision in the existing product database (migration 0013),
+bound to the local actor, canonical workspace roots, exact inventory generation,
+trust policy, and relevant configuration. Restart reuses only a matching record.
+Changed files, permissions, user/profile configuration, or workspace identity
+invalidate approval. Project configuration uses the reviewed bytes and rechecks
+the generation on reload. MCP, hook, skill, and instruction activation remain
+unavailable; workspace approval does not grant tool permissions or a sandbox.
+
+Headless `falryn run` requires a matching decision when project loaders exist.
+Otherwise it returns `workspace.trust-required` without prompting. There is no
+headless approval bypass. `doctor` reports trust state without creating or
+migrating a database; JSONL includes `workspace.trust.reviewed` facts. Replaying
+those events displays a notice and never grants trust.
+
+Inventory work uses shared product admission and scans known loader locations
+only: at most 1,024 files, 4,096 entries, 1 MiB per file, 16 MiB total, 16 nested
+levels, and 30 seconds. Malformed, unreadable, linked, escaped, changing, or
+over-limit declarations and failed decision writes keep project loaders disabled.
+The decision contains hashes and redacted labels, not file contents or credentials.
+After correcting a failure or change, reopen interactively to review again.
+
 ## Provider connections
 
 Provider profiles are stored in the typed `providers.connections`

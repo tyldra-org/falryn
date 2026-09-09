@@ -43,6 +43,7 @@ import type { ClockPort, EnvironmentPort, FalrynError } from "../../domain/found
 import { plainPrintLabeledCopy } from "../../integrations/terminal/host-terminal.ts";
 import { initialActivityCursor } from "../../presentation/index.ts";
 import type { SubmissionPort } from "../composer/submission.ts";
+import type { ConfirmationDecision, ConfirmationPrompt } from "../confirmation/index.ts";
 import type { ControlCatalog } from "../controls/index.ts";
 import type { SessionNavigationController } from "../session-nav/index.ts";
 import {
@@ -69,6 +70,13 @@ import { type RuntimeFeed, runtimeFeed, useRuntimeProjection } from "./runtime-f
 import { createTerminalShutdownParticipant } from "./shutdown.ts";
 
 export type ShellRunRequest = {
+  /** Runs before attaching product loaders, using this renderer's existing confirmation sheet. */
+  readonly prepare?: (
+    confirm: (prompt: ConfirmationPrompt) => Promise<boolean>,
+    signal: AbortSignal,
+  ) => Promise<ShellRunRequest>;
+  readonly confirmation?: ConfirmationPrompt;
+  readonly onConfirmation?: (decision: ConfirmationDecision) => void;
   readonly streams: CliStreams;
   readonly capabilities: ShellCapabilities;
   /**
@@ -239,7 +247,40 @@ async function drive(session: RendererSession, request: ShellRunRequest): Promis
   });
 
   try {
-    root.render(await frameFor(session, request, () => closed.abort()));
+    const stop = AbortSignal.any([request.stop, lost.signal, closed.signal]);
+    const confirm = async (prompt: ConfirmationPrompt): Promise<boolean> => {
+      if (stop.aborted) return false;
+      return new Promise<boolean>((resolve) => {
+        let done = false;
+        const finish = (accepted: boolean) => {
+          if (done) return;
+          done = true;
+          stop.removeEventListener("abort", refuse);
+          resolve(accepted && !stop.aborted);
+        };
+        const refuse = () => finish(false);
+        stop.addEventListener("abort", refuse, { once: true });
+        void frameFor(
+          session,
+          {
+            ...request,
+            confirmation: prompt,
+            onConfirmation: (decision) =>
+              finish(
+                decision.status === "accepted" &&
+                  decision.id === prompt.id &&
+                  decision.fingerprint === prompt.fingerprint,
+              ),
+          },
+          () => closed.abort(),
+        ).then((frame) => {
+          if (!done) root.render(frame);
+        }, refuse);
+      });
+    };
+    const prepared = request.prepare === undefined ? request : await request.prepare(confirm, stop);
+    if (stop.aborted) return closed.signal.aborted ? { kind: "closed" } : { kind: "stopped" };
+    root.render(await frameFor(session, prepared, () => closed.abort()));
     await settled(request.stop, lost.signal, closed.signal);
 
     if (lost.signal.aborted && !request.stop.aborted && !closed.signal.aborted) {
@@ -306,6 +347,8 @@ async function frameFor(session: RendererSession, request: ShellRunRequest, onEx
 
   return (
     <LiveShell
+      {...(request.confirmation === undefined ? {} : { confirmation: request.confirmation })}
+      {...(request.onConfirmation === undefined ? {} : { onConfirmation: request.onConfirmation })}
       theme={theme}
       model={model}
       onExit={onExit}
@@ -340,6 +383,8 @@ async function frameFor(session: RendererSession, request: ShellRunRequest, onEx
  * projection to.
  */
 function LiveShell(props: {
+  readonly confirmation?: ConfirmationPrompt;
+  readonly onConfirmation?: (decision: ConfirmationDecision) => void;
   readonly theme: ThemeRequest;
   readonly model: Parameters<typeof ShellApp>[0]["model"];
   readonly onExit: () => void;
@@ -358,6 +403,8 @@ function LiveShell(props: {
   return (
     <RenderGateProvider clock={props.clock}>
       <ProjectedShell
+        {...(props.confirmation === undefined ? {} : { confirmation: props.confirmation })}
+        {...(props.onConfirmation === undefined ? {} : { onConfirmation: props.onConfirmation })}
         theme={props.theme}
         model={props.model}
         onExit={props.onExit}
@@ -382,6 +429,8 @@ function LiveShell(props: {
 }
 
 function ProjectedShell(props: {
+  readonly confirmation?: ConfirmationPrompt;
+  readonly onConfirmation?: (decision: ConfirmationDecision) => void;
   readonly theme: ThemeRequest;
   readonly model: Parameters<typeof ShellApp>[0]["model"];
   readonly onExit: () => void;
@@ -402,6 +451,8 @@ function ProjectedShell(props: {
   const transcript = useTranscriptProjection(props.transcriptFeed, gate);
   return (
     <ShellApp
+      {...(props.confirmation === undefined ? {} : { confirmation: props.confirmation })}
+      {...(props.onConfirmation === undefined ? {} : { onConfirmation: props.onConfirmation })}
       theme={props.theme}
       model={props.model}
       onExit={props.onExit}

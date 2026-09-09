@@ -63,6 +63,7 @@ import type { TerminalOutcome } from "../orchestration/outcome.ts";
 import { processTaskSnapshotSchema } from "../orchestration/process-task.ts";
 import { resourceAdmissionReceiptSchema } from "../orchestration/resource-admission.ts";
 import { EFFECT_CLASSES } from "../orchestration/work.ts";
+import { workspaceTrustEventPayloadSchema } from "../security/workspace-trust.ts";
 import {
   type CapabilityInvocationCompletedPayload,
   type CapabilityInvocationStartedPayload,
@@ -455,6 +456,12 @@ const runtimeEventSchema: z.ZodType<RuntimeEvent> = z.discriminatedUnion("kind",
   }),
   z.object({
     ...envelopeSpine,
+    kind: z.literal("workspace.trust.reviewed"),
+    correlation: sessionCorrelationSchema,
+    payload: workspaceTrustEventPayloadSchema,
+  }),
+  z.object({
+    ...envelopeSpine,
     kind: z.literal("execution.profile.selected"),
     correlation: sessionCorrelationSchema,
     payload: executionProfilePayloadSchema,
@@ -563,6 +570,8 @@ function payloadToJson(event: RuntimeEvent): Record<string, unknown> {
       };
     case "configuration.generation.changed":
       return configurationPayloadToJson(event);
+    case "workspace.trust.reviewed":
+      return event.payload;
     case "execution.profile.selected":
       return {
         selectionId: event.payload.selectionId,

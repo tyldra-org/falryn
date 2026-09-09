@@ -18,6 +18,7 @@ import {
   type ConfigurationGeneration,
   FIRST_CONFIGURATION_GENERATION,
 } from "../../domain/foundation/index.ts";
+import type { WorkspaceTrustReport } from "../../domain/security/workspace-trust.ts";
 import { configurationOverridesFor, type GlobalOptions } from "../options.ts";
 import type { Services } from "./services.ts";
 
@@ -76,6 +77,7 @@ export function configurationValuesFromLoadOutcome(
 }
 
 export type ProductConfigurationLoadResult = {
+  readonly trust: WorkspaceTrustReport;
   readonly outcome: ConfigurationLoadOutcome;
   readonly generation: ConfigurationGeneration;
   readonly values: ConfigurationValues;
@@ -87,17 +89,26 @@ export async function loadProductConfiguration(
   request: ProductConfigurationLoadRequest,
   signal?: AbortSignal,
 ): Promise<ProductConfigurationLoadResult> {
-  const outcome = await graph.loader.load(
-    {
-      configurationRoot: graph.configurationRoot,
-      legacyConfigurationRoot: graph.legacyConfigurationRoot,
-      workspaceRoot: graph.workspaceRoot,
-      profile: request.profile,
-      overrides: request.overrides,
-    },
-    signal,
-  );
+  const project = await graph.workspaceTrust.project(signal);
+  const load = (projectText: string | null) =>
+    graph.loader.load(
+      {
+        projectText,
+        configurationRoot: graph.configurationRoot,
+        legacyConfigurationRoot: graph.legacyConfigurationRoot,
+        workspaceRoot: graph.workspaceRoot,
+        profile: request.profile,
+        overrides: request.overrides,
+      },
+      signal,
+    );
+  let outcome = await load(project.text);
+  // Global/profile files are read by the normal loader. Reject project activation
+  // if that read crossed a change to the configuration reviewed by this decision.
+  const confirmed = project.text === null ? project : await graph.workspaceTrust.project(signal);
+  if (confirmed.report.status !== "accepted" && project.text !== null) outcome = await load(null);
   return {
+    trust: confirmed.report,
     outcome,
     generation: configurationGenerationFromLoadOutcome(outcome, graph.loader),
     values: configurationValuesFromLoadOutcome(outcome, graph.registry),

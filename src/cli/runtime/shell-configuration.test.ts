@@ -53,6 +53,11 @@ function provider(
   fileSystem: FileSystemPort,
   variables: Readonly<Record<string, string>> = {},
 ): (options: GlobalOptions) => ServiceProvider {
+  // Real workspace roots exist before the configuration/trust bootstrap runs.
+  if ("put" in fileSystem && typeof fileSystem.put === "function") {
+    fileSystem.put("/workspace", { kind: "directory" });
+    fileSystem.put("/workspace/.falryn", { kind: "directory" });
+  }
   return (globals) =>
     createServiceProvider(globals, {
       home: localPath("/home/tester"),
@@ -165,7 +170,7 @@ describe("settings that cannot be used", () => {
     // It said something.
     const said = streams.diagnosticWrites().join("");
     expect(said).not.toBe("");
-    expect(said).toContain("defaults are in effect");
+    expect(said).toContain("project loaders are disabled");
     // And it answered with something usable rather than nothing.
     expect(values[STATE_ROOT]).toBeDefined();
     expect(values[STATE_ROOT]).not.toBe(42);
@@ -222,7 +227,7 @@ describe("settings that cannot be used", () => {
     expect(values[STATE_ROOT]).toBeDefined();
   });
 
-  test("say what was wrong in the vocabulary the config commands already use", async () => {
+  test("reject malformed project configuration during trust inventory without echoing values", async () => {
     const fileSystem = createInMemoryFileSystem();
     fileSystem.put(`/workspace/${PROJECT_CONFIGURATION_DIRECTORY}/${CONFIGURATION_FILE_NAME}`, {
       kind: "file",
@@ -232,9 +237,6 @@ describe("settings that cannot be used", () => {
     const streams = createRecordingCliStreams();
     await resolveShellConfiguration(GLOBALS, { streams, services: provider(fileSystem) });
 
-    // `fromConfigurationIssues` owns this sentence, so a user reads one
-    // vocabulary whether they hit the problem through `config show` or by
-    // opening the shell.
-    expect(streams.diagnosticWrites().join("")).toContain("configuration key is not recognized");
+    expect(streams.diagnosticWrites().join("")).toContain("inventory-malformed");
   });
 });

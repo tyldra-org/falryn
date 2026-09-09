@@ -17,6 +17,7 @@ import { createHostFileChangeSubscriber } from "../../integrations/index.ts";
 import type { GlobalOptions } from "../options.ts";
 import { type CliStreams, writeDiagnosticLine } from "../output/streams.ts";
 import {
+  loadProductConfiguration,
   type ProductConfigurationLoadRequest,
   productConfigurationLoadRequest,
 } from "./product-configuration.ts";
@@ -50,7 +51,11 @@ export function startConfigurationReloadWatcher(
   ].filter((path, index, all) => all.indexOf(path) === index);
   const streams = options.streams;
   return createConfigurationReloadWatcher({
-    loader: graph.loader,
+    loader: {
+      current: graph.loader.current,
+      load: async (_request, signal) =>
+        (await loadProductConfiguration(graph, loadRequest, signal)).outcome,
+    },
     loadRequest: {
       configurationRoot: graph.configurationRoot,
       legacyConfigurationRoot: graph.legacyConfigurationRoot,

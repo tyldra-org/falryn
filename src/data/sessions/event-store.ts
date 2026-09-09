@@ -173,6 +173,7 @@ function projectStartedRecord(statements: SqliteStatements, event: RuntimeEvent)
     case "model.attempt.completed":
     case "capability.invocation.completed":
     case "configuration.generation.changed":
+    case "workspace.trust.reviewed":
     case "execution.profile.selected":
       return;
   }

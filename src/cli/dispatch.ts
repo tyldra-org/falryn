@@ -64,6 +64,7 @@ import {
 } from "./runtime/invocation-scope.ts";
 import { modelPreferencesFrom } from "./runtime/model-configuration.ts";
 import { openProductArtifactSession } from "./runtime/product-artifact-session.ts";
+import { configurationValuesFromLoadOutcome } from "./runtime/product-configuration.ts";
 import { composeProductModelSettings } from "./runtime/product-model-settings.ts";
 import { composeProductProviderConnections } from "./runtime/product-provider-connections.ts";
 import { composeProductShellAttachments } from "./runtime/product-shell-attachments.ts";
@@ -73,6 +74,7 @@ import {
   type ServiceProvider,
 } from "./runtime/services.ts";
 import { resolveShellBootstrapConfiguration } from "./runtime/shell-configuration.ts";
+import { workspaceTrustEvent } from "./runtime/workspace-trust.ts";
 import {
   completionInstallScript,
   completionRequestArgs,
@@ -343,215 +345,256 @@ async function launchShell(
   const { streams } = options;
   const governance = options.governance ?? createInvocationGovernance();
   const scope = openInvocationScope(governance, globals.timeoutMs);
-
-  // Read here and nowhere earlier. `decideLaunch` has already said launch, so a
-  // run that was never going to open a shell still builds nothing — which is the
-  // property `runDefault` exists to hold and this must not spend. And it is read
-  // before the renderer, because the diagnostic handle is an ordinary terminal
-  // until one is up; after that it is not, which is why the unrecognized-override
-  // notice is written where it is.
   const services = options.services ?? defaultProvider(options);
-  const bootstrap = await resolveShellBootstrapConfiguration(globals, {
-    streams,
-    services,
-  });
-  const configuration = bootstrap.values;
-  const configurationGeneration = bootstrap.generation;
   const graph = services(globals)();
-  const fileProbe = createFileAttachmentProbe({
-    fileSystem: graph.fileSystem,
-    workspace: graph.workspaceRoot,
-  });
-  const gitExecutable = Bun.which("git");
-  const gitDashboard =
-    gitExecutable === null || graph.workspaceRoot === null
-      ? undefined
-      : createGitDashboard({
-          git: createHostGitPort({ capture: createHostProcessCapturePort() }),
-          gitExecutable,
-          startPath: graph.workspaceRoot,
-        });
-
-  // Aborts when the shell is done, so a run given a long `--timeout` does not
-  // leave a timer armed over a process with nothing left to govern.
   const finished = new AbortController();
   const stopped = new AbortController();
   if (scope !== null) {
     void untilScopeStops(governance, scope, finished.signal).then(() => stopped.abort());
   }
-
-  const resolvedWorkspace = await graph.ensureWorkspaceSet(stopped.signal);
-
-  // Workspace controller is OpenTUI-free but lives under `tui/`, so it loads on
-  // the same dynamic seam the launch boundary requires for the shell.
-  const { createWorkspaceController } = await import("../tui/workspace/index.ts");
-  const workspaceController =
-    resolvedWorkspace.ok === true
-      ? createWorkspaceController({
-          fileSystem: graph.fileSystem,
-          configurationRoot: graph.configurationRoot,
-          configurationRootFor: async (intent, signal) => {
-            const home =
-              intent === "write"
-                ? await graph.configurationHomeForWrite(signal)
-                : await graph.configurationHomeForRead(signal);
-            if (home.kind === "ready") {
-              return home.root;
-            }
-            if (home.kind === "current" || home.kind === "legacy" || home.kind === "empty") {
-              return home.root;
-            }
-            return null;
-          },
-          currentDirectory: (() => {
-            const cwd = parseLocalPath(process.cwd());
-            return cwd.ok ? cwd.value : null;
-          })(),
-          initial: resolvedWorkspace.value.set,
-        })
-      : undefined;
-  const workspace = workspaceController?.initial;
-
-  const sessionNavigationWorkspaceId =
-    resolvedWorkspace.ok === true
-      ? workspaceIdCodec.from(primaryWorkspaceRoot(resolvedWorkspace.value.set).rootId)
-      : workspaceIdCodec.from("workspace-unbound");
-  const sessionNavigationBundle = await composeSessionNavigationController(
-    services(globals),
-    sessionNavigationWorkspaceId,
-    stopped.signal,
-  );
-
-  const productArtifactSession = await openProductArtifactSession(
-    graph,
-    stopped.signal,
-    governance.ownedProcesses,
-  );
-  const productWorkspaceIndex =
-    productArtifactSession === null || resolvedWorkspace.ok !== true
-      ? null
-      : await productArtifactSession.openWorkspaceIndex(
-          primaryWorkspaceRoot(resolvedWorkspace.value.set).path,
-          stopped.signal,
-        );
-  const providerConnections = composeProductProviderConnections(graph, globals, {
-    ...(productArtifactSession === null
-      ? {}
-      : {
-          modelCatalogs: productArtifactSession.modelCatalogs,
-          providerContinuations: productArtifactSession.providerContinuations,
-        }),
-    configuration,
-    ...(governance.ownedProcesses === undefined
-      ? {}
-      : { ownedProcesses: governance.ownedProcesses }),
-  });
-  const provider = await providerConnections.resolveSelected(stopped.signal);
-  let productAttachments: Awaited<ReturnType<typeof composeProductShellAttachments>> = null;
-  try {
-    if (productArtifactSession !== null) {
-      productAttachments = await composeProductShellAttachments({
-        async resolveAgentProvider(profileId, signal) {
-          const resolved = await providerConnections.resolveProfile(profileId, signal);
-          return resolved.kind === "ready"
-            ? { adapter: resolved.adapter, catalog: resolved.session.catalog }
-            : { reason: `agent-provider-${resolved.code}` };
-        },
-        agentRegistry: agentRegistryFrom(configuration),
-        modelConfigurationGeneration: () =>
-          graph.loader.current()?.generation ?? configurationGeneration,
-        modelPreferences: () =>
-          modelPreferencesFrom(graph.loader.current()?.values ?? configuration),
-        modelSettings: composeProductModelSettings(graph, globals, () => {
-          const selected = productAttachments?.submission.modelSelection.get();
-          if (selected === null || selected === undefined) return null;
-          const saved = modelPreferencesFrom(graph.loader.current()?.values ?? configuration).roles
-            .default;
-          return {
-            ...selected,
-            reasoning:
-              saved?.modelId === selected.modelId &&
-              saved.providerId === selected.providerId &&
-              saved.providerProfileId === selected.providerProfileId
-                ? saved.reasoning
-                : "provider-default",
-            fallbacks: [],
-            budgets: {},
-          };
-        }),
-        eventStore: productArtifactSession.eventStore,
-        clock: graph.clock,
-        fileSystem: graph.fileSystem,
-        workspaceSet: resolvedWorkspace.ok === true ? resolvedWorkspace.value.set : null,
-        configurationGeneration,
-        signal: stopped.signal,
-        provider,
-        artifacts: productArtifactSession.artifacts,
-        loom: productArtifactSession.loom,
-        scratch: productArtifactSession.scratch,
-        tasks: productArtifactSession.tasks,
-        taskNotices: productArtifactSession.taskNotices,
-        memoryRecords: productArtifactSession.memoryRecords,
-        ...(productWorkspaceIndex === null ? {} : { index: productWorkspaceIndex }),
-        ...(governance.ownedProcesses === undefined
-          ? {}
-          : { ownedProcesses: governance.ownedProcesses }),
-      });
-    }
-  } catch (thrown: unknown) {
-    await productArtifactSession?.close();
-    throw thrown;
-  }
-
+  let productArtifactSession: Awaited<ReturnType<typeof openProductArtifactSession>> = null;
+  let sessionNavigationBundle: Awaited<ReturnType<typeof composeSessionNavigationController>>;
   let configurationReload: ReturnType<typeof startConfigurationReloadWatcher> | null = null;
+  const closePrepared = async () => {
+    configurationReload?.dispose();
+    await productArtifactSession?.close();
+    if (sessionNavigationBundle !== undefined) await sessionNavigationBundle.close(stopped.signal);
+  };
   let run: Awaited<ReturnType<typeof import("../tui/runtime/shell.tsx")["runShell"]>>;
   try {
-    configurationReload = startConfigurationReloadWatcher(graph, globals, {
-      streams,
-      signal: stopped.signal,
-    });
-
-    // Loaded here and nowhere earlier: this is the first line of the whole
-    // invocation that requires OpenTUI to exist.
     const { runShell } = await import("../tui/runtime/shell.tsx");
+    const { workspaceTrustPrompt } = await import("../tui/confirmation/workspace-trust.ts");
+    // Terminal settings come from user configuration before project approval.
+    const initialConfiguration = await graph.loader.load(
+      {
+        configurationRoot: graph.configurationRoot,
+        legacyConfigurationRoot: graph.legacyConfigurationRoot,
+        workspaceRoot: null,
+        profile: globals.profile,
+        overrides: configurationOverridesFor(globals),
+      },
+      stopped.signal,
+    );
     run = await runShell({
+      configuration: configurationValuesFromLoadOutcome(initialConfiguration, graph.registry),
       streams,
       capabilities,
       clock: governance.clock,
       options: globals,
       environment,
-      configuration,
       stop: stopped.signal,
-      // The rail's source. Handed over read-only: the shell folds the tree's
-      // ordered events into its activity projection and never asks it to do
-      // anything. Before #370 nothing supplied this, so the interface reported
-      // that no runtime was attached while running inside one.
-      scopes: governance.scopes,
-      ...(fileProbe === null ? {} : { fileProbe }),
-      ...(gitDashboard === undefined ? {} : { gitDashboard }),
-      ...(workspaceController === undefined ? {} : { workspaceController }),
-      ...(workspace === undefined ? {} : { workspace }),
-      ...(sessionNavigationBundle === undefined
-        ? {}
-        : { sessionNavigationController: sessionNavigationBundle.controller }),
-      ...(governance.shutdown === undefined ? {} : { shutdown: governance.shutdown }),
       ...(options.createRenderer === undefined ? {} : { createRenderer: options.createRenderer }),
-      ...(productAttachments === null
-        ? {}
-        : {
-            submission: productAttachments.submission,
-            transcriptFeed: productAttachments.transcriptFeed,
-            sessionCreation: productAttachments.sessionCreation,
-            controls: productAttachments.controls,
-          }),
+      ...(governance.shutdown === undefined ? {} : { shutdown: governance.shutdown }),
+      prepare: async (confirm, signal) => {
+        const trust = await graph.workspaceTrust.resolve(
+          async (report) => ((await confirm(workspaceTrustPrompt(report))) ? "proceed" : "refuse"),
+          signal,
+        );
+        if (signal.aborted)
+          return {
+            streams,
+            capabilities,
+            clock: governance.clock,
+            options: globals,
+            environment,
+            stop: signal,
+          };
+        if (trust.status !== "accepted" && trust.status !== "empty" && trust.status !== "refused") {
+          await graph.workspaceTrust.resolve(async () => "refuse", signal);
+        }
+        const bootstrap = await resolveShellBootstrapConfiguration(globals, {
+          streams,
+          services: () => () => graph,
+        });
+        const configuration = bootstrap.values;
+        const configurationGeneration = bootstrap.generation;
+        const fileProbe = createFileAttachmentProbe({
+          fileSystem: graph.fileSystem,
+          workspace: graph.workspaceRoot,
+        });
+        const gitExecutable = Bun.which("git");
+        const gitDashboard =
+          gitExecutable === null || graph.workspaceRoot === null
+            ? undefined
+            : createGitDashboard({
+                git: createHostGitPort({ capture: createHostProcessCapturePort() }),
+                gitExecutable,
+                startPath: graph.workspaceRoot,
+              });
+
+        const resolvedWorkspace = await graph.ensureWorkspaceSet(stopped.signal);
+
+        // Workspace controller is OpenTUI-free but lives under `tui/`, so it loads on
+        // the same dynamic seam the launch boundary requires for the shell.
+        const { createWorkspaceController } = await import("../tui/workspace/index.ts");
+        const workspaceController =
+          resolvedWorkspace.ok === true
+            ? createWorkspaceController({
+                fileSystem: graph.fileSystem,
+                configurationRoot: graph.configurationRoot,
+                configurationRootFor: async (intent, signal) => {
+                  const home =
+                    intent === "write"
+                      ? await graph.configurationHomeForWrite(signal)
+                      : await graph.configurationHomeForRead(signal);
+                  if (home.kind === "ready") {
+                    return home.root;
+                  }
+                  if (home.kind === "current" || home.kind === "legacy" || home.kind === "empty") {
+                    return home.root;
+                  }
+                  return null;
+                },
+                currentDirectory: (() => {
+                  const cwd = parseLocalPath(process.cwd());
+                  return cwd.ok ? cwd.value : null;
+                })(),
+                initial: resolvedWorkspace.value.set,
+              })
+            : undefined;
+        const workspace = workspaceController?.initial;
+
+        const sessionNavigationWorkspaceId =
+          resolvedWorkspace.ok === true
+            ? workspaceIdCodec.from(primaryWorkspaceRoot(resolvedWorkspace.value.set).rootId)
+            : workspaceIdCodec.from("workspace-unbound");
+        sessionNavigationBundle = await composeSessionNavigationController(
+          () => graph,
+          sessionNavigationWorkspaceId,
+          stopped.signal,
+        );
+
+        productArtifactSession = await openProductArtifactSession(
+          graph,
+          stopped.signal,
+          governance.ownedProcesses,
+        );
+        if (productArtifactSession !== null && trust.status !== "empty") {
+          const recorded = await productArtifactSession.eventStore.append(
+            workspaceTrustEvent(graph.workspaceTrust.current(), Number(graph.clock.now())),
+            signal,
+          );
+          if (!recorded.ok) throw new Error("Workspace trust evidence could not be recorded.");
+        }
+        const productWorkspaceIndex =
+          productArtifactSession === null || resolvedWorkspace.ok !== true
+            ? null
+            : await productArtifactSession.openWorkspaceIndex(
+                primaryWorkspaceRoot(resolvedWorkspace.value.set).path,
+                stopped.signal,
+              );
+        const providerConnections = composeProductProviderConnections(graph, globals, {
+          ...(productArtifactSession === null
+            ? {}
+            : {
+                modelCatalogs: productArtifactSession.modelCatalogs,
+                providerContinuations: productArtifactSession.providerContinuations,
+              }),
+          configuration,
+          ...(governance.ownedProcesses === undefined
+            ? {}
+            : { ownedProcesses: governance.ownedProcesses }),
+        });
+        const provider = await providerConnections.resolveSelected(stopped.signal);
+        let productAttachments: Awaited<ReturnType<typeof composeProductShellAttachments>> = null;
+        try {
+          if (productArtifactSession !== null) {
+            productAttachments = await composeProductShellAttachments({
+              async resolveAgentProvider(profileId, signal) {
+                const resolved = await providerConnections.resolveProfile(profileId, signal);
+                return resolved.kind === "ready"
+                  ? { adapter: resolved.adapter, catalog: resolved.session.catalog }
+                  : { reason: `agent-provider-${resolved.code}` };
+              },
+              agentRegistry: agentRegistryFrom(configuration),
+              modelConfigurationGeneration: () =>
+                graph.loader.current()?.generation ?? configurationGeneration,
+              modelPreferences: () =>
+                modelPreferencesFrom(graph.loader.current()?.values ?? configuration),
+              modelSettings: composeProductModelSettings(graph, globals, () => {
+                const selected = productAttachments?.submission.modelSelection.get();
+                if (selected === null || selected === undefined) return null;
+                const saved = modelPreferencesFrom(graph.loader.current()?.values ?? configuration)
+                  .roles.default;
+                return {
+                  ...selected,
+                  reasoning:
+                    saved?.modelId === selected.modelId &&
+                    saved.providerId === selected.providerId &&
+                    saved.providerProfileId === selected.providerProfileId
+                      ? saved.reasoning
+                      : "provider-default",
+                  fallbacks: [],
+                  budgets: {},
+                };
+              }),
+              eventStore: productArtifactSession.eventStore,
+              clock: graph.clock,
+              fileSystem: graph.fileSystem,
+              workspaceSet: resolvedWorkspace.ok === true ? resolvedWorkspace.value.set : null,
+              configurationGeneration,
+              signal: stopped.signal,
+              provider,
+              artifacts: productArtifactSession.artifacts,
+              loom: productArtifactSession.loom,
+              scratch: productArtifactSession.scratch,
+              tasks: productArtifactSession.tasks,
+              taskNotices: productArtifactSession.taskNotices,
+              memoryRecords: productArtifactSession.memoryRecords,
+              ...(productWorkspaceIndex === null ? {} : { index: productWorkspaceIndex }),
+              ...(governance.ownedProcesses === undefined
+                ? {}
+                : { ownedProcesses: governance.ownedProcesses }),
+            });
+          }
+        } catch (thrown: unknown) {
+          await productArtifactSession?.close();
+          throw thrown;
+        }
+
+        configurationReload = startConfigurationReloadWatcher(graph, globals, {
+          streams,
+          signal: stopped.signal,
+        });
+
+        return {
+          streams,
+          capabilities,
+          clock: governance.clock,
+          options: globals,
+          environment,
+          configuration,
+          stop: stopped.signal,
+          // The rail's source. Handed over read-only: the shell folds the tree's
+          // ordered events into its activity projection and never asks it to do
+          // anything. Before #370 nothing supplied this, so the interface reported
+          // that no runtime was attached while running inside one.
+          scopes: governance.scopes,
+          ...(fileProbe === null ? {} : { fileProbe }),
+          ...(gitDashboard === undefined ? {} : { gitDashboard }),
+          ...(workspaceController === undefined ? {} : { workspaceController }),
+          ...(workspace === undefined ? {} : { workspace }),
+          ...(sessionNavigationBundle === undefined
+            ? {}
+            : { sessionNavigationController: sessionNavigationBundle.controller }),
+          ...(governance.shutdown === undefined ? {} : { shutdown: governance.shutdown }),
+          ...(options.createRenderer === undefined
+            ? {}
+            : { createRenderer: options.createRenderer }),
+          ...(productAttachments === null
+            ? {}
+            : {
+                submission: productAttachments.submission,
+                transcriptFeed: productAttachments.transcriptFeed,
+                sessionCreation: productAttachments.sessionCreation,
+                controls: productAttachments.controls,
+              }),
+        };
+      },
     });
   } finally {
-    configurationReload?.dispose();
-    await productArtifactSession?.close();
+    await closePrepared();
     finished.abort();
-    if (sessionNavigationBundle !== undefined) {
-      await sessionNavigationBundle.close(stopped.signal);
-    }
   }
 
   if (run.kind === "failed") {

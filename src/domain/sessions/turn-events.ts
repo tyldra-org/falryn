@@ -494,6 +494,7 @@ export function reduceTurnEvents(events: readonly RuntimeEvent[]): TurnEventRedu
         break;
       }
       case "configuration.generation.changed":
+      case "workspace.trust.reviewed":
       case "process.task.changed":
         // Task ownership outlives the initiating turn. Its events never reopen or finish a turn.
         break;

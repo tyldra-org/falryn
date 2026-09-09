@@ -111,6 +111,7 @@ import { composeProductCredentials } from "./product-credentials.ts";
 import { composeProductProviderConnections } from "./product-provider-connections.ts";
 import type { ServiceProvider } from "./services.ts";
 import { describeWorkspaceResolveError } from "./workspace-resolution.ts";
+import { workspaceTrustEvent } from "./workspace-trust.ts";
 
 export const CODING_RUN_COMMAND = "run" as const;
 export const CODING_RUN_OWNER = "#708";
@@ -130,6 +131,7 @@ export type CodingRunArguments = {
 };
 
 export type CodingRunPayload = {
+  readonly workspaceTrust?: import("../../domain/security/workspace-trust.ts").WorkspaceTrustReport;
   readonly prompt: string;
   readonly sessionId: string;
   readonly turnId: string | null;
@@ -138,6 +140,7 @@ export type CodingRunPayload = {
   readonly stage:
     | "prompt-missing"
     | "workspace-refused"
+    | "trust-required"
     | "compose-failed"
     | "provider-required"
     | "attempt-completed"
@@ -355,6 +358,35 @@ export async function runCoding(
     );
   }
 
+  const trust = await graph.workspaceTrust.resolve(undefined, options.signal);
+  const trustEvents =
+    trust.status === "empty" ? [] : [workspaceTrustEvent(trust, Number(graph.clock.now()))];
+  if (trust.status !== "accepted" && trust.status !== "empty") {
+    return codingResult(
+      {
+        prompt: resolved.prompt,
+        sessionId: "",
+        turnId: null,
+        workspaceId: "",
+        stage: "trust-required",
+        eventCount: trustEvents.length,
+        workspaceTrust: trust,
+      },
+      [
+        adoptForeignError(
+          {
+            code: "workspace.trust-required",
+            category: "workspace",
+            message: `Workspace trust required (${trust.reason}). Open Falryn interactively to review the current loader generation. Project loaders remain disabled.`,
+          },
+          { operation: "review workspace trust" },
+        ),
+      ],
+      undefined,
+      READ_ONLY_EFFECT,
+      trustEvents,
+    );
+  }
   const configReload =
     options.globals === undefined
       ? null
@@ -383,6 +415,34 @@ export async function runCoding(
         ? { profile: null, overrides: {} }
         : productConfigurationLoadRequest(options.globals);
     const configuration = await loadProductConfiguration(graph, configRequest, options.signal);
+    if (configuration.trust.status !== "accepted" && configuration.trust.status !== "empty") {
+      const changedEvent = workspaceTrustEvent(configuration.trust, Number(graph.clock.now()));
+      return codingResult(
+        {
+          prompt: resolved.prompt,
+          sessionId: "",
+          turnId: null,
+          workspaceId: "",
+          stage: "trust-required",
+          eventCount: 1,
+          workspaceTrust: configuration.trust,
+        },
+        [
+          adoptForeignError(
+            {
+              code: "workspace.trust-required",
+              category: "workspace",
+              message:
+                "Workspace loader generation changed before startup. Reopen interactively to review it.",
+            },
+            { operation: "admit workspace loaders" },
+          ),
+        ],
+        undefined,
+        READ_ONLY_EFFECT,
+        [changedEvent],
+      );
+    }
     const generation = configuration.generation;
     productArtifactSession = await openProductArtifactSession(
       graph,
@@ -413,6 +473,32 @@ export async function runCoding(
     }
 
     const workspaceRoot = primaryWorkspaceRoot(workspace.value.set).path;
+    for (const event of trustEvents) {
+      const recorded = await productArtifactSession.eventStore.append(event, options.signal);
+      if (!recorded.ok)
+        return codingResult(
+          {
+            prompt: resolved.prompt,
+            sessionId: "",
+            turnId: null,
+            workspaceId: "",
+            stage: "trust-required",
+            eventCount: 0,
+            workspaceTrust: trust,
+          },
+          [
+            adoptForeignError(
+              {
+                code: "workspace.trust-event-unavailable",
+                category: "persistence",
+                message:
+                  "Workspace trust evidence could not be recorded. No live turn was started.",
+              },
+              { operation: "record workspace trust" },
+            ),
+          ],
+        );
+    }
     const indexStore = await productArtifactSession.openWorkspaceIndex(
       workspaceRoot,
       options.signal,
@@ -734,7 +820,8 @@ export async function runCoding(
             : succeeded
               ? "attempt-completed"
               : "attempt-failed",
-        eventCount: attempted.events.length,
+        eventCount: attempted.events.length + trustEvents.length,
+        workspaceTrust: graph.workspaceTrust.current(),
         contextPackItems: attempted.contextPackItems,
         contextPlannerOwner,
         indexFreshness,
@@ -765,7 +852,7 @@ export async function runCoding(
       errors,
       attempted.terminalOutcome,
       READ_ONLY_EFFECT,
-      attempted.events,
+      [...trustEvents, ...attempted.events],
     );
   } finally {
     if (options.ownedProcesses === undefined) await productArtifactSession?.close();

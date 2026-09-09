@@ -13,7 +13,7 @@
 
 import type { KeyEvent, PasteEvent } from "@opentui/core";
 import { useKeyboard, usePaste } from "@opentui/react";
-import { type ReactNode, useCallback } from "react";
+import { type ReactNode, useCallback, useState } from "react";
 import { classifyPaste } from "../composer/paste.ts";
 import {
   type ConfirmationChoiceId,
@@ -44,11 +44,38 @@ export function ConfirmationSheet(props: ConfirmationSheetProps): ReactNode {
 
   const onChoice = props.onChoice;
   const onSecretEdit = props.onSecretEdit;
+  const [page, setPage] = useState({ fingerprint: "", offset: 0 });
+  const inventoryReview = props.confirmation?.prompt.scope === "workspace-generation";
+  const fingerprint = props.confirmation?.prompt.fingerprint ?? "";
+  const offset = page.fingerprint === fingerprint ? page.offset : 0;
 
   const onKey = useCallback(
     (key: KeyEvent): void => {
       const view = props.confirmation;
       if (view === null || onChoice === undefined) {
+        return;
+      }
+      if (
+        inventoryReview &&
+        ["up", "down", "pageup", "pagedown", "home", "end"].includes(key.name)
+      ) {
+        key.preventDefault();
+        const step = Math.max(1, props.rows - view.choices.length - 1);
+        const maximum = Math.max(0, sheetLines(view, "").length - view.choices.length - step);
+        const next =
+          key.name === "home"
+            ? 0
+            : key.name === "end"
+              ? maximum
+              : offset +
+                (key.name === "up"
+                  ? -1
+                  : key.name === "down"
+                    ? 1
+                    : key.name === "pageup"
+                      ? -step
+                      : step);
+        setPage({ fingerprint, offset: Math.max(0, Math.min(maximum, next)) });
         return;
       }
       if (capturingSecret && onSecretEdit !== undefined) {
@@ -81,7 +108,16 @@ export function ConfirmationSheet(props: ConfirmationSheetProps): ReactNode {
         onChoice("deny");
       }
     },
-    [capturingSecret, onChoice, onSecretEdit, props.confirmation],
+    [
+      capturingSecret,
+      onChoice,
+      onSecretEdit,
+      props.confirmation,
+      props.rows,
+      inventoryReview,
+      fingerprint,
+      offset,
+    ],
   );
 
   useKeyboard(onKey);
@@ -116,6 +152,35 @@ export function ConfirmationSheet(props: ConfirmationSheetProps): ReactNode {
   }
 
   const entries = sheetLines(props.confirmation, theme.marks.bullet);
+  if (inventoryReview) {
+    const choices = entries.filter((line) => line.key.startsWith("choice-"));
+    const facts = entries.filter((line) => !line.key.startsWith("choice-"));
+    const budget = Math.max(0, props.rows - choices.length - 1);
+    const start = Math.min(offset, Math.max(0, facts.length - budget));
+    return (
+      <box flexDirection="column">
+        {facts.slice(start, start + budget).map((line) => (
+          <Line
+            key={line.key}
+            color={line.color}
+            typography={line.typography}
+            maxColumns={columns}
+            untrusted={line.untrusted}
+          >
+            {line.text}
+          </Line>
+        ))}
+        <Line color="mutedForeground" typography="muted" maxColumns={columns}>
+          {`↑/↓ PgUp/PgDn: review ${start + 1}–${Math.min(facts.length, start + budget)} of ${facts.length}`}
+        </Line>
+        {choices.slice(0, Math.max(0, props.rows - 1)).map((line) => (
+          <Line key={line.key} color={line.color} maxColumns={columns}>
+            {line.text}
+          </Line>
+        ))}
+      </box>
+    );
+  }
   const needsNotice = entries.length > props.rows;
   const budget = needsNotice && props.rows >= 2 ? props.rows - 1 : Math.max(0, props.rows);
   const visible = entries.slice(0, budget);
@@ -167,10 +232,16 @@ function sheetLines(view: ConfirmationView, maskChar: string): readonly SheetLin
     fact("target", prompt.target, true),
     fact("why", prompt.reason, false),
     fact("effect", prompt.effect, false),
-    fact("scope", "This decision applies once.", false),
+    fact(
+      "scope",
+      prompt.scope === "workspace-generation"
+        ? "Approval is saved for this exact workspace loader generation."
+        : "This decision applies once.",
+      false,
+    ),
   ];
   for (const [index, alternative] of prompt.alternatives.entries()) {
-    lines.push(fact(`alternative-${index}`, alternative, false));
+    lines.push(fact(`alternative-${index}`, alternative, prompt.scope === "workspace-generation"));
   }
   if (prompt.secret !== null) {
     const mask = maskSecret(view.secretGraphemes, maskChar);

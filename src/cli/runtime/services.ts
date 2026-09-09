@@ -17,6 +17,7 @@ import {
   createRuntimeRedactor,
   DIAGNOSTICS_OWNERSHIP,
 } from "../../application/diagnostics/index.ts";
+import type { WorkspaceTrust } from "../../application/workspace/workspace-trust.ts";
 import {
   CONFIGURATION_OWNERSHIP,
   type ConfigurationHomeResolution,
@@ -50,6 +51,7 @@ import {
   traceId,
   workspaceId,
 } from "../../domain/foundation/index.ts";
+import type { WorkspaceTrustStore } from "../../domain/security/workspace-trust.ts";
 import { createInMemoryEventStore, type EventStorePort } from "../../domain/sessions/index.ts";
 import type { LocalDataPlatform, OwnershipRegistration } from "../../domain/storage/index.ts";
 import {
@@ -76,6 +78,7 @@ import {
   resolveCliWorkspace,
   type WorkspaceResolveError,
 } from "./workspace-resolution.ts";
+import { composeWorkspaceTrust } from "./workspace-trust.ts";
 
 /**
  * The stream every event this process appends belongs to.
@@ -95,6 +98,7 @@ export const PRODUCT_CONFIGURATION_KEYS = [
 ] as const;
 
 export type Services = {
+  readonly workspaceTrust: WorkspaceTrust;
   readonly fileSystem: FileSystemPort;
   readonly environment: EnvironmentPort;
   readonly clock: ClockPort;
@@ -161,6 +165,7 @@ export type Services = {
 export type ServiceProvider = () => Services;
 
 export type HostServiceOptions = {
+  readonly workspaceTrustStore?: WorkspaceTrustStore;
   /** Supplied by tests so a run never touches the developer's real roots. */
   readonly environment?: EnvironmentPort;
   readonly fileSystem?: FileSystemPort;
@@ -237,7 +242,12 @@ export function createServiceProvider(
       | { readonly ok: false; readonly error: WorkspaceResolveError }
       | null = null;
 
+    let trust: WorkspaceTrust | null = null;
     const services: Services = {
+      get workspaceTrust() {
+        trust ??= composeWorkspaceTrust(services, options, overrides.workspaceTrustStore);
+        return trust;
+      },
       fileSystem,
       environment,
       clock,
