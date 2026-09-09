@@ -44,6 +44,7 @@ import {
   createCapabilityInspector,
 } from "../capabilities/capability-inspector.ts";
 import { createProductCapabilityRegistry } from "../capabilities/product-capability-registry.ts";
+import { createChildAdmission } from "../orchestration/child-admission.ts";
 import {
   type ProductResources,
   processProductResources,
@@ -122,6 +123,9 @@ export type ProductAgentPortResult<Value> =
   | { readonly ok: false; readonly error: ProductAgentRuntimeError };
 
 export type ProductAgentRuntime = {
+  childAdmission(
+    input: Parameters<typeof createChildAdmission>[0],
+  ): ReturnType<typeof createChildAdmission>;
   readonly resources: ProductResources;
   readonly sessionRuntime: SessionRuntime;
   readonly turnCoordinator: TurnCoordinator;
@@ -277,6 +281,17 @@ export function composeProductAgentRuntime(
 
   const runtime: ProductAgentRuntime = {
     resources: ports.resources ?? processProductResources,
+    childAdmission(input) {
+      if (
+        input.authority.workspaceId !== String(ports.correlation.workspaceId) ||
+        input.authority.configurationGeneration !==
+          String(ports.correlation.configurationGeneration) ||
+        input.authority.capabilityGeneration !==
+          String(toolRegistry?.generation ?? ports.correlation.configurationGeneration)
+      )
+        throw new Error("child admission does not belong to this runtime generation");
+      return createChildAdmission(input);
+    },
     sessionRuntime,
     turnCoordinator,
     journal,

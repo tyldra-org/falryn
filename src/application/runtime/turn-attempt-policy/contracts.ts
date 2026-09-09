@@ -180,6 +180,8 @@ export type TurnAttemptPolicyOptions = {
 };
 
 export type RunTurnAttemptPolicyInput = {
+  /** A child continues on its existing ancestor allocation across retries and turns. */
+  readonly taskResources?: ProductTaskResources;
   readonly turnId: TurnId;
   readonly configurationGeneration: ConfigurationGeneration;
   readonly signal: AbortSignal;

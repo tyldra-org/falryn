@@ -43,11 +43,14 @@ import type {
 } from "../context/product-context-source.ts";
 import { attemptModelInputFromPrompt } from "../context/product-model-input.ts";
 import type { ProductMemoryTurn } from "../memory/product-memory-turn.ts";
+import { type AdmittedChild, isAdmittedChild } from "../orchestration/child-admission.ts";
 import { discloseProductTools } from "../tools/product-tool-disclosure.ts";
 import type { ProductAgentRuntime } from "./product-agent-runtime.ts";
 import { createTurnAttemptPolicy } from "./turn-attempt-policy.ts";
 
 export type ProductLiveTurnInput = {
+  /** Trusted host admission; no prompt or saved agent definition can manufacture this handle. */
+  readonly childAdmission?: AdmittedChild;
   readonly prompt: string;
   readonly turnId: TurnId;
   readonly signal?: AbortSignal;
@@ -545,7 +548,16 @@ export function createProductLiveTurnExecutor(
       },
     },
     startSession,
-    async run(input) {
+    async run(requestInput) {
+      const input = !isAdmittedChild(requestInput.childAdmission)
+        ? requestInput
+        : {
+            ...requestInput,
+            signal: AbortSignal.any([
+              requestInput.signal ?? new AbortController().signal,
+              requestInput.childAdmission.scope.signal,
+            ]),
+          };
       const modelPreferences = options.modelPreferences?.();
       const generation =
         options.modelConfigurationGeneration?.() ?? correlation.configurationGeneration;
@@ -565,6 +577,32 @@ export function createProductLiveTurnExecutor(
         return sessionFailure;
       }
       const executionPolicy = resolveExecutionProfile(activeProfile, generation);
+      if (
+        input.childAdmission &&
+        (!isAdmittedChild(input.childAdmission) ||
+          input.childAdmission.scope.signal.aborted ||
+          input.childAdmission.authority.workspaceId !== String(correlation.workspaceId) ||
+          input.childAdmission.authority.configurationGeneration !== String(generation) ||
+          input.childAdmission.resources.remaining("wallTimeMs") === 0)
+      ) {
+        return result({
+          kind: "unavailable",
+          code: "child-admission.stale-parent",
+          message:
+            "Child admission is cancelled, expired or belongs to another workspace generation",
+          response: "",
+          terminalOutcome: FAILED,
+          contextPackItems: 0,
+          modelAttempts: 0,
+          toolResults: 0,
+          disclosedTools: 0,
+          contextStatus: "static",
+          contextGeneration: null,
+          recalledMemories: 0,
+          memoryAdmission: "skipped",
+          executionProfile: executionPolicy.profileId,
+        });
+      }
       if (executionPolicy.completion === "durable-plan" && options.artifacts === undefined) {
         return result({
           kind: "unavailable",
@@ -835,6 +873,9 @@ export function createProductLiveTurnExecutor(
         persistTurnLifecycle: false,
       });
       const attempted = await attemptPolicy.run({
+        ...(input.childAdmission === undefined
+          ? {}
+          : { taskResources: input.childAdmission.resources }),
         turnId: input.turnId,
         configurationGeneration: generation,
         signal: input.signal ?? new AbortController().signal,

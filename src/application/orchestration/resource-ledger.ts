@@ -11,6 +11,7 @@ import {
 } from "../../domain/orchestration/resource-admission.ts";
 
 type Bucket = {
+  parentScopes?: Set<string>;
   scope: SharedCapacityScopeIdentityV1;
   used: number;
   limit: number;
@@ -145,6 +146,9 @@ export function createResourceLedger(maxRecords = 8192) {
       for (const [scopeKey, group] of groups) {
         const bucket = buckets.get(scopeKey);
         buckets.set(scopeKey, {
+          ...(group.debit.scope.ownerKind === "task" || group.debit.scope.ownerKind === "agent"
+            ? { parentScopes: new Set([...(bucket?.parentScopes ?? []), identity.parentScope]) }
+            : {}),
           scope: group.debit.scope,
           used: (bucket?.used ?? 0) + group.amount,
           limit: Math.min(bucket?.limit ?? group.limit, group.limit),
@@ -257,6 +261,7 @@ export function createResourceLedger(maxRecords = 8192) {
       if (!Number.isSafeInteger(used)) return false;
       aliases.set(b, a);
       buckets.set(a, {
+        parentScopes: new Set([...(first?.parentScopes ?? []), ...(second?.parentScopes ?? [])]),
         scope: left,
         used,
         limit: Math.min(
@@ -275,6 +280,25 @@ export function createResourceLedger(maxRecords = 8192) {
         ? 0
         : Math.max(0, Math.min(limit, bucket?.limit ?? limit) - (bucket?.used ?? 0));
     },
+    /** Tightening applies to already queued work as well as future reservations. */
+    narrow(scope: SharedCapacityScopeIdentityV1, limit: number, parentScope: string) {
+      if (
+        !sharedCapacityScopeIdentitySchema.safeParse(scope).success ||
+        !Number.isSafeInteger(limit) ||
+        limit < 0
+      )
+        throw new Error("invalid resource limit");
+      const scopeKey = root(key(scope));
+      const bucket = buckets.get(scopeKey);
+      buckets.set(scopeKey, {
+        parentScopes: new Set([...(bucket?.parentScopes ?? []), parentScope]),
+        scope,
+        used: bucket?.used ?? 0,
+        limit: Math.min(bucket?.limit ?? limit, limit),
+        poisoned: bucket?.poisoned ?? false,
+      });
+      notify();
+    },
     closeTask(parentScope: string) {
       for (const [id, record] of records)
         if (record.identity.parentScope === parentScope && record.settled) records.delete(id);
@@ -284,10 +308,12 @@ export function createResourceLedger(maxRecords = 8192) {
         ),
       );
       for (const [scopeKey, bucket] of buckets) {
+        bucket.parentScopes?.delete(parentScope);
         if (
           !referenced.has(scopeKey) &&
-          (bucket.scope.ownerKind === "task" ||
-            (bucket.scope.ownerKind === "agent" && bucket.scope.family === "child") ||
+          (((bucket.scope.ownerKind === "task" ||
+            (bucket.scope.ownerKind === "agent" && bucket.scope.family === "child")) &&
+            bucket.parentScopes?.size === 0) ||
             (bucket.used === 0 && bucket.scope.family.startsWith("conflict:")))
         )
           buckets.delete(scopeKey);

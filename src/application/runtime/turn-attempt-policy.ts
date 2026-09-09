@@ -567,10 +567,12 @@ export function createTurnAttemptPolicy(options: TurnAttemptPolicyOptions): Turn
         };
       }
 
-      const taskResources = (options.resources ?? processProductResources).openTask(
-        String(input.configurationGeneration),
-        roleResourceLimits(initial.receipt.budgets),
-      );
+      const taskResources =
+        input.taskResources ??
+        (options.resources ?? processProductResources).openTask(
+          String(input.configurationGeneration),
+          roleResourceLimits(initial.receipt.budgets),
+        );
       try {
         let resourceCapability = initial.capability;
         let receipt = initial.receipt;
@@ -861,7 +863,7 @@ export function createTurnAttemptPolicy(options: TurnAttemptPolicyOptions): Turn
           }
         }
       } finally {
-        taskResources.close();
+        if (input.taskResources === undefined) taskResources.close();
       }
     },
   };

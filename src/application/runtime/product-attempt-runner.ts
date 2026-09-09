@@ -923,6 +923,18 @@ export function createProductAttemptRunner(
           ...(costMaximum === null ? {} : { costMicros: costMaximum }),
         };
         const admitted = await taskResources.execute({
+          target: {
+            kind: "provider",
+            workspaceId: String(options.correlation.workspaceId),
+            binding: {
+              providerId: String(request.receipt.providerId),
+              providerProfileId: request.receipt.providerProfileId,
+              providerDestinationId: request.receipt.providerDestinationId,
+              modelId: String(request.receipt.modelId),
+              reasoning: request.receipt.reasoning,
+              reasoningControl: request.receipt.reasoningControl,
+            },
+          },
           operation: `provider-request-${requestSequence}`,
           attempt: String(request.identity.modelAttemptId),
           generation: String(request.boundConfigurationGeneration),
@@ -986,7 +998,12 @@ export function createProductAttemptRunner(
                 ? { outputTokens: observed.outputTokens }
                 : {}),
             };
-            return { value, actual, terminated: value.kind === "finished" };
+            return {
+              value,
+              actual,
+              terminated: value.kind === "finished",
+              observedEffect: value.kind === "finished" ? "completed" : "uncertain",
+            };
           },
         });
         admissions.push(admitted.receipt);

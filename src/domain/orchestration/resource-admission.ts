@@ -71,6 +71,7 @@ export const ADMISSION_STATES = [
   "admission-timeout",
   "cancelled",
   "stale-generation",
+  "authority-denied",
   "quota-unknown",
   "uncertain-after-interruption",
   "shutdown",
