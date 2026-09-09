@@ -1,0 +1,50 @@
+{
+  "version": 1,
+  "entries": [
+    {
+      "namespace": "custom",
+      "localId": "source-inspector",
+      "enabled": true,
+      "definition": {
+        "version": 1,
+        "label": "Source inspector",
+        "purpose": "Inspect a bounded source question and report evidence and unknowns.",
+        "instructions": "Inspect the requested source using the admitted tools. Cite only observed evidence and report unknowns. Do not edit files.",
+        "inputSchema": {
+          "type": "object",
+          "properties": { "objective": { "type": "string", "maxLength": 8192 } },
+          "required": ["objective"],
+          "additionalProperties": false
+        },
+        "resultSchema": {
+          "type": "object",
+          "properties": {
+            "evidence": {
+              "type": "array",
+              "items": { "type": "string", "maxLength": 4096 },
+              "maxItems": 32
+            },
+            "unknowns": {
+              "type": "array",
+              "items": { "type": "string", "maxLength": 4096 },
+              "maxItems": 32
+            }
+          },
+          "required": ["evidence", "unknowns"],
+          "additionalProperties": false
+        },
+        "capabilities": { "required": ["builtin:workspace/read_file@1"], "optional": [] },
+        "effects": ["observation"],
+        "context": "selected-evidence",
+        "workspace": "inherited",
+        "modelRole": "subagents",
+        "preset": "small",
+        "limits": { "requests": 8, "wallTimeMs": 60000 },
+        "concurrencyClass": "inherited",
+        "nestedDelegation": false,
+        "completionCriteria": ["Return observed evidence and unresolved questions."],
+        "cancellation": "propagate"
+      }
+    }
+  ]
+}

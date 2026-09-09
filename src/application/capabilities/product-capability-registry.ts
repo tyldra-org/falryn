@@ -61,6 +61,7 @@ export function capabilityFamilyForTool(kind: ToolCapabilityKind, name: string):
     case "composite":
       return "capability";
     case "other":
+      if (name === "delegate") return "delegate";
       if (name === "memory_recall") return "read";
       if (name === "memory_admit") return "edit";
       return "capability";

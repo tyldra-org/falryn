@@ -31,10 +31,8 @@ import { createDebugAdapterSupervisor } from "../../application/debugging/index.
 import { adoptForeignError } from "../../application/diagnostics/index.ts";
 import { createLanguageServerSupervisor } from "../../application/language/index.ts";
 import { composeProductMemoryTurn } from "../../application/memory/index.ts";
-import {
-  composeProductAgentRuntime,
-  createProductLiveTurnExecutor,
-} from "../../application/runtime/index.ts";
+import { composeDelegatedAgentRuntime } from "../../application/runtime/delegated-agent-runtime.ts";
+import { createProductLiveTurnExecutor } from "../../application/runtime/index.ts";
 import {
   composeProductGitTools,
   composeProductLanguageTools,
@@ -98,6 +96,7 @@ import {
 } from "../output/result.ts";
 import { attachResultEvents } from "../output/result-events.ts";
 import type { CliStreams } from "../output/streams.ts";
+import { agentRegistryFrom } from "./agent-configuration.ts";
 import { startConfigurationReloadWatcher } from "./configuration-reload.ts";
 import { modelPreferencesFrom } from "./model-configuration.ts";
 import {
@@ -457,30 +456,31 @@ export async function runCoding(
         });
       }
     }
+    const providerConnections = composeProductProviderConnections(
+      graph,
+      options.globals ?? {
+        format: "human",
+        color: "auto",
+        quiet: false,
+        verbose: false,
+        nonInteractive: true,
+        workspace: null,
+        addDirs: [],
+        profile: null,
+        timeoutMs: null,
+        help: false,
+        version: false,
+      },
+      {
+        configuration: configuration.values,
+        modelCatalogs: productArtifactSession.modelCatalogs,
+        providerContinuations: productArtifactSession.providerContinuations,
+        ...ownedProcessOptions,
+        ...(options.openaiFetch === undefined ? {} : { providerFetch: options.openaiFetch }),
+      },
+    );
     if (providerAdapter === undefined) {
-      const handoff = await composeProductProviderConnections(
-        graph,
-        options.globals ?? {
-          format: "human",
-          color: "auto",
-          quiet: false,
-          verbose: false,
-          nonInteractive: true,
-          workspace: null,
-          addDirs: [],
-          profile: null,
-          timeoutMs: null,
-          help: false,
-          version: false,
-        },
-        {
-          configuration: configuration.values,
-          modelCatalogs: productArtifactSession.modelCatalogs,
-          providerContinuations: productArtifactSession.providerContinuations,
-          ...ownedProcessOptions,
-          ...(options.openaiFetch === undefined ? {} : { providerFetch: options.openaiFetch }),
-        },
-      ).resolveSelected(options.signal);
+      const handoff = await providerConnections.resolveSelected(options.signal);
       providerAdapter = handoff.kind === "ready" ? handoff.adapter : null;
       providerCatalog = handoff.kind === "ready" ? handoff.session.catalog : null;
       providerUnavailableCode = handoff.kind === "unavailable" ? handoff.code : null;
@@ -588,25 +588,42 @@ export async function runCoding(
               },
             },
           );
-    const composed = composeProductAgentRuntime({
-      eventStore: productArtifactSession.eventStore,
-      clock: graph.clock,
-      streamId: streamId.from(`live-turn:${String(sessionId)}`),
-      correlation: {
-        workspaceId,
-        sessionId,
-        traceId,
-        configurationGeneration: generation,
+    const composed = composeDelegatedAgentRuntime(
+      {
+        eventStore: productArtifactSession.eventStore,
+        clock: graph.clock,
+        streamId: streamId.from(`live-turn:${String(sessionId)}`),
+        correlation: {
+          workspaceId,
+          sessionId,
+          traceId,
+          configurationGeneration: generation,
+        },
+        ...(providerAdapter !== undefined && providerAdapter !== null ? { providerAdapter } : {}),
+        toolRegistry: productTools.registry,
+        capabilityRegistry: productTools.capabilityRegistry,
+        toolCatalog: productTools.catalog,
+        toolRunner: productTools.runner,
+        ...(options.toolConfirmation === undefined
+          ? {}
+          : { toolConfirmation: options.toolConfirmation }),
       },
-      ...(providerAdapter !== undefined && providerAdapter !== null ? { providerAdapter } : {}),
-      toolRegistry: productTools.registry,
-      capabilityRegistry: productTools.capabilityRegistry,
-      toolCatalog: productTools.catalog,
-      toolRunner: productTools.runner,
-      ...(options.toolConfirmation === undefined
-        ? {}
-        : { toolConfirmation: options.toolConfirmation }),
-    });
+      {
+        tasks: productArtifactSession.tasks,
+        artifacts: options.artifacts ?? productArtifactSession.artifacts,
+        providerCatalog,
+        registry: agentRegistryFrom(configuration.values),
+        async resolveProvider(profileId, signal) {
+          const resolved = await providerConnections.resolveProfile(profileId, signal);
+          return resolved.kind === "ready"
+            ? { adapter: resolved.adapter, catalog: resolved.session.catalog }
+            : { reason: `agent-provider-${resolved.code}` };
+        },
+        preferences: () =>
+          modelPreferencesFrom(graph.loader.current()?.values ?? configuration.values),
+        configurationGeneration: () => Number(graph.loader.current()?.generation ?? generation),
+      },
+    );
     if (!composed.ok) {
       return codingResult(
         {

@@ -43,6 +43,8 @@ export type ProcessTaskNotification = {
   readonly action: "inspect-result";
 };
 export type ProcessTaskRun = {
+  readonly onAdmitted?: (handle: ProcessTaskHandle) => void;
+  readonly executionKind?: "process" | "agent";
   readonly request: ToolRunnerRequest;
   readonly execution: ProcessTaskExecution;
   readonly timeoutMs: number;
@@ -54,6 +56,7 @@ export type ProcessTaskRun = {
   ): Promise<{
     readonly outcome: ToolInvocationOutcome;
     readonly capture: ProcessCaptureReport | null;
+    readonly agentTerminal?: Pick<ProcessTaskTerminal, "outcome" | "effect">;
   }>;
 };
 export type ProcessTaskSupervisorOptions = {
@@ -94,6 +97,7 @@ function terminalFacts(
   capture: ProcessCaptureReport | null,
   outcome: ToolInvocationOutcome,
   failure: string | null,
+  executionKind: "process" | "agent" = "process",
 ): Omit<ProcessTaskTerminal, "sealedAt" | "result"> {
   const evidence = {
     exitCode: capture?.exit.exitCode ?? null,
@@ -113,6 +117,31 @@ function terminalFacts(
       effect: "uncertain",
       reason: "persistence-unavailable",
     };
+  if (executionKind === "agent") {
+    const observed = { exitCode: null, signal: null, outputComplete: true };
+    if (outcome.status === "completed")
+      return {
+        ...observed,
+        outcome: "completed",
+        effect: outcome.effect,
+        reason: "agent-completed",
+      };
+    if (outcome.status === "uncertain")
+      return {
+        ...observed,
+        outcome: "uncertain",
+        effect: "uncertain",
+        reason: "ownership-uncertain",
+      };
+    if (outcome.status === "cancelled" || outcome.status === "timed-out")
+      return {
+        ...observed,
+        outcome: outcome.status,
+        effect: outcome.effect,
+        reason: outcome.status,
+      };
+    return { ...observed, outcome: "failed", effect: outcome.effect, reason: "agent-failed" };
+  }
   if (capture === null)
     return outcome.status === "cancelled"
       ? { ...evidence, outcome: "cancelled", effect: "none", reason: "cancelled" }
@@ -148,6 +177,7 @@ export function createProcessTaskSupervisor(options: ProcessTaskSupervisorOption
   const waits = new Set<{ handle: ProcessTaskHandle; notify(): void }>();
   const failures = new Set<string>();
   let accepting = true;
+  const interruptionListeners = new Set<() => void>();
   const now = () => Number(clock.now());
   const owned = (handle: ProcessTaskHandle) => {
     const current = active.get(handle.taskId);
@@ -277,7 +307,26 @@ export function createProcessTaskSupervisor(options: ProcessTaskSupervisorOption
         effect: "uncertain",
         recoveryHint: "task-settlement-unavailable",
       };
-    const facts = terminalFacts(result.capture, result.outcome, entry.failure);
+    const observed = terminalFacts(
+      result.capture,
+      result.outcome,
+      entry.failure,
+      current.value.executionKind,
+    );
+    const facts =
+      current.value.executionKind === "agent" && result.agentTerminal && entry.failure === null
+        ? {
+            ...observed,
+            ...result.agentTerminal,
+            reason:
+              result.agentTerminal.outcome === "completed"
+                ? ("agent-completed" as const)
+                : result.agentTerminal.outcome === "cancelled" ||
+                    result.agentTerminal.outcome === "timed-out"
+                  ? result.agentTerminal.outcome
+                  : ("agent-failed" as const),
+          }
+        : observed;
     const sealedAt = now();
     const sealed = store.transition(
       fence(current.value),
@@ -324,6 +373,7 @@ export function createProcessTaskSupervisor(options: ProcessTaskSupervisorOption
         .digest("hex"),
     };
     const task: ProcessTaskSnapshot = {
+      ...(input.executionKind === undefined ? {} : { executionKind: input.executionKind }),
       handle,
       revision: 1,
       owner: authority.owner,
@@ -347,6 +397,7 @@ export function createProcessTaskSupervisor(options: ProcessTaskSupervisorOption
     };
     const created = store.create(task, input.request.signal);
     if (!created.ok) return refused(`process-task-${created.error.code}`);
+    input.onAdmitted?.(handle);
     const done = Promise.withResolvers<void>();
     const finished = Promise.all([done.promise, authority.finished]).then(() => {
       active.delete(taskId);
@@ -399,6 +450,14 @@ export function createProcessTaskSupervisor(options: ProcessTaskSupervisorOption
       if (input.execution.attachment === "background") publish();
       else timer = setTimeout(publish, input.execution.foregroundWaitMs);
       const signal = AbortSignal.any([input.request.signal, entry.cancel.signal]);
+      if (input.executionKind === "agent") {
+        const current = store.get(handle);
+        if (
+          !current.ok ||
+          !store.transition(fence(current.value), { kind: "started", process: null }, now()).ok
+        )
+          throw new Error("agent start commit failed");
+      }
       const result = await input.run(
         {
           async started(native) {
@@ -619,8 +678,15 @@ export function createProcessTaskSupervisor(options: ProcessTaskSupervisorOption
     run,
     control,
     deliver,
+    onInterrupt(listener: () => void) {
+      interruptionListeners.add(listener);
+      return () => {
+        interruptionListeners.delete(listener);
+      };
+    },
     interrupt() {
       for (const entry of active.values()) entry.cancel.abort();
+      for (const listener of interruptionListeners) listener();
     },
     async drain(): Promise<Result<void, TaskError>> {
       accepting = false;

@@ -886,6 +886,85 @@ describe("runCoding", () => {
     await second.close();
   });
 
+  test("delegates from the main model through a real child tool and seals its evidence", async () => {
+    const seeded = await seededHome();
+    await writeFile(join(seeded.primary, "child-evidence.ts"), "export const child = true;\n");
+    const requests: ModelRequest[] = [];
+    const adapter = createDeterministicProviderAdapter({
+      onRequest: (request) => requests.push(request),
+      script: (_request, index) => {
+        if (index === 0)
+          return {
+            kind: "tool",
+            toolCallId: "launch-explorer",
+            name: "delegate",
+            argumentFragments: [
+              JSON.stringify({
+                operation: "launch",
+                definitionId: "builtin/falryn/agents:explorer",
+                inputJson: JSON.stringify({ objective: "Inspect the workspace directory" }),
+                context: [],
+                capabilities: ["builtin:workspace/list_dir@1"],
+                effects: ["observation"],
+                limits: {},
+                execution: {
+                  version: 1,
+                  attachment: "foreground",
+                  foregroundWaitMs: 30000,
+                  onSettle: "notify",
+                  shutdown: "drain",
+                },
+              }),
+            ],
+          };
+        if (index === 1)
+          return {
+            kind: "tool",
+            toolCallId: "child-list",
+            name: "list_dir",
+            argumentFragments: ['{"path":"."}'],
+          };
+        if (index === 2)
+          return {
+            kind: "text",
+            text: JSON.stringify({
+              locations: ["child-evidence.ts"],
+              flow: [],
+              findings: ["Inspected directory"],
+              unknowns: [],
+            }),
+          };
+        return { kind: "text", text: "Parent received child evidence." };
+      },
+    });
+    const result = await runCoding(
+      providerFor(seeded)(globalsFor(seeded)),
+      { promptParts: ["Delegate an independent workspace inspection to Explorer"] },
+      {
+        input: createRecordingCliStreams({ stdin: null }).input,
+        globals: globalsFor(seeded),
+        providerAdapter: adapter,
+      },
+    );
+    expect(result.outcome.kind, JSON.stringify({ result, requests })).toBe("completed");
+    expect(
+      requests,
+      JSON.stringify(
+        requests.flatMap((request) =>
+          request.messages.filter((message) => message.role === "tool"),
+        ),
+      ),
+    ).toHaveLength(4);
+    expect(requests[0]?.tools.some((tool) => tool.name === "delegate")).toBe(true);
+    expect(requests[1]?.tools.map((tool) => tool.name)).toEqual(["list_dir"]);
+    expect(JSON.stringify(requests[2]?.messages)).toContain("child-evidence.ts");
+    const parentResult = JSON.stringify(requests[3]?.messages);
+    expect(parentResult).toContain("agent-result");
+    expect(parentResult).toContain("not-asserted");
+    expect(parentResult).toContain("observationRefs");
+    expect(parentResult).toContain("child-evidence.ts");
+  });
+
   test("continues prompt to tool result to final text through the product gateway", async () => {
     const seeded = await seededHome();
     await writeFile(join(seeded.primary, "hello.ts"), "export const answer = 42;\n", "utf8");

@@ -78,9 +78,15 @@ export function createCapabilityComposition(options: CapabilityCompositionOption
     if (
       entry === null ||
       entry.manifest.version !== node.capabilityVersion ||
-      entry.manifest.effect !== node.effect
+      (entry.manifest.effectFor === undefined && entry.manifest.effect !== node.effect)
     )
       return "capability-binding-mismatch";
+    if (entry.manifest.effectFor && node.transfers.length === 0) {
+      const input = entry.manifest.inputSchema.safeParse(node.input);
+      if (!input.success) return "composition-node-input-invalid";
+      if (entry.manifest.effectFor(input.data) !== node.effect)
+        return "capability-binding-mismatch";
+    }
     if (!options.disclosedToolNames.has(entry.manifest.name)) return "tool-not-disclosed";
     if (options.nativeRunner.hasBinding?.(entry.manifest.capabilityId) !== true)
       return "missing-native-binding";

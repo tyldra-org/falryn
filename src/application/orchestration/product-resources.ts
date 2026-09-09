@@ -30,6 +30,10 @@ import { createResourceLifetime } from "./resource-lifetime.ts";
 import { createScheduler } from "./scheduler.ts";
 import { MAX_SCOPE_DEPTH } from "./scope-tree.ts";
 
+// Only the existing child allocation can mark a later segment as retained work.
+// Root callers and serialized requests cannot acquire this continuation authority.
+const retainedChildSegments = new WeakMap<object, string>();
+
 /** Occupancy is released only after authoritative termination, at every depth. */
 function bucketKind(dimension: ResourceDimension) {
   return [
@@ -167,8 +171,17 @@ export function createProductResources(
       const childWork = new Set<string>();
       const childIdentity: ProductTaskResources["childIdentity"] = (id, digest) =>
         childIds.has(id) ? "duplicate-child" : childWork.has(digest) ? "no-progress" : "available";
-      const claimChild = (identity?: { readonly id: string; readonly workDigest: string }) => {
-        if (closed || !lifetime.accepting() || subdivisions >= 64) return false;
+      const claimChild = (
+        identity?: { readonly id: string; readonly workDigest: string },
+        retained = false,
+      ) => {
+        if (
+          closed ||
+          (!lifetime.accepting() && !retained) ||
+          shutdown.signal.aborted ||
+          subdivisions >= 64
+        )
+          return false;
         if (identity && childIdentity(identity.id, identity.workDigest) !== "available")
           return false;
         subdivisions++;
@@ -220,7 +233,22 @@ export function createProductResources(
             !claimChild(identity)
           )
             return null;
-          return childTask(task, narrower, clock, ledger, 1, claimChild, unknownUsage, id);
+          return childTask(
+            task,
+            narrower,
+            clock,
+            ledger,
+            1,
+            claimChild,
+            unknownUsage,
+            id,
+            lifetime.accepting,
+            () => {
+              if (closed || shutdown.signal.aborted || task.remaining("wallTimeMs") === 0)
+                return null;
+              return lifetime.retainExisting();
+            },
+          );
         },
         id,
         generation,
@@ -259,7 +287,11 @@ export function createProductResources(
               receipt: stoppedReceipt(state),
             });
           if (shutdown.signal.aborted) return refuse("shutdown");
-          if (closed || !lifetime.accepting() || work.generation !== generation)
+          if (
+            closed ||
+            (!lifetime.accepting() && retainedChildSegments.get(work) !== id) ||
+            work.generation !== generation
+          )
             return refuse("stale-generation");
           if (work.signal.aborted) return refuse("cancelled");
           if (overrun) return refuse("limit-exceeded");
@@ -493,9 +525,14 @@ function childTask(
   clock: ClockPort,
   ledger: ReturnType<typeof createResourceLedger>,
   depth: number,
-  claimChild: (identity?: { readonly id: string; readonly workDigest: string }) => boolean,
+  claimChild: (
+    identity?: { readonly id: string; readonly workDigest: string },
+    retained?: boolean,
+  ) => boolean,
   unknownUsage: ReadonlySet<ResourceDimension>,
   rootId: string,
+  parentAccepting: () => boolean,
+  retainParent: () => (() => void) | null,
 ): ProductTaskResources {
   const id = randomUUID();
   let limits = { ...initial };
@@ -509,6 +546,7 @@ function childTask(
     closed = true;
     stop.abort();
   });
+  const canContinue = () => parentAccepting() || lifetime.retained();
   const child: ProductTaskResources = {
     childIdentity: (id, digest) => parent.childIdentity(id, digest),
     checkAuthority: (target, effect) => parent.checkAuthority(target, effect),
@@ -519,8 +557,9 @@ function childTask(
     generation: parent.generation,
     expiresAt: Math.min(parent.expiresAt, started + (limits.wallTimeMs ?? Number.MAX_SAFE_INTEGER)),
     retain() {
-      if (closed || !lifetime.accepting() || child.remaining("wallTimeMs") === 0) return null;
-      const releaseParent = parent.retain();
+      if (closed || !lifetime.accepting() || !canContinue() || child.remaining("wallTimeMs") === 0)
+        return null;
+      const releaseParent = retainParent();
       if (releaseParent === null) return null;
       const releaseChild = lifetime.retain();
       if (releaseChild === null) {
@@ -555,8 +594,8 @@ function childTask(
         ledger.narrow(scope(name as ResourceDimension), value, rootId);
       return true;
     },
-    execute(work) {
-      if (!lifetime.accepting())
+    execute<Value>(work: ResourceWork<Value>) {
+      if (!lifetime.accepting() || !canContinue())
         return Promise.resolve({
           kind: "stopped" as const,
           receipt: parent.refusal("stale-generation"),
@@ -571,10 +610,10 @@ function childTask(
         operations: 1,
         concurrency: Math.max(1, work.amounts.concurrency ?? 1),
       };
-      return parent.execute({
+      const segment: ResourceWork<Value> = {
         ...work,
         checkAdmission() {
-          if (!lifetime.accepting()) return child.refusal("stale-generation");
+          if (!lifetime.accepting() || !canContinue()) return child.refusal("stale-generation");
           if (child.remaining("wallTimeMs") === 0)
             return child.refusal("admission-timeout", "wallTimeMs");
           if ([...unknownUsage].some((dimension) => limits[dimension] !== undefined))
@@ -630,20 +669,34 @@ function childTask(
             limit: limits[dimension as ResourceDimension] ?? Number.MAX_SAFE_INTEGER,
           })),
         ],
-      });
+      };
+      retainedChildSegments.set(segment, rootId);
+      return parent.execute(segment);
     },
     subdivide(narrower, identity) {
       if (
         closed ||
         !lifetime.accepting() ||
+        !canContinue() ||
         depth >= MAX_SCOPE_DEPTH ||
         children >= 64 ||
         !resourceAmountsSchema.safeParse(narrower).success ||
-        !claimChild(identity)
+        !claimChild(identity, canContinue())
       )
         return null;
       children++;
-      return childTask(child, narrower, clock, ledger, depth + 1, claimChild, unknownUsage, rootId);
+      return childTask(
+        child,
+        narrower,
+        clock,
+        ledger,
+        depth + 1,
+        claimChild,
+        unknownUsage,
+        rootId,
+        canContinue,
+        () => child.retain(),
+      );
     },
     close: lifetime.close,
     onClose: lifetime.onClose,

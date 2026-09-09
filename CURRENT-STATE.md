@@ -397,7 +397,7 @@ treating those primitives as one executor. Existing tool capability IDs remain
 canonical; `ToolRegistry` continues to own exact schemas and runner bindings.
 Installed inventory has no arbitrary entry quota, while queries default to 32
 entries and are capped at 256. Current production loaders contribute the
-built-in product tools. Live extension, agent, workflow, package-provider, and
+built-in product tools, including the delegate control. Live extension, workflow, package-provider, and
 UI loaders remain with their owning issues.
 
 Product publication now requires an explicit native runner binding before
@@ -425,7 +425,7 @@ termination proof remains uncertain. Native owners retain artifact ownership.
 Digest-only graph provenance, topology and node statuses persist with invocation
 events; replay rebuilds those facts without executing tools. Duplicate graph
 admission cannot repeat effects. Existing events without composition fields
-remain readable. Live MCP, package, delegated and browser hosts are not added
+remain readable. Live MCP, package and browser hosts are not added
 by this common runtime path.
 
 Each registry generation can now be inspected through one consumer-specific
@@ -675,9 +675,9 @@ The public model roles are `default`, `fast`, `subagents`, `workflows`, `vision`
 commit work stays on the captured main model. Fast has independent research,
 documents, background-results, memory, compaction and vision-media options.
 Subagents has Default and Small/Medium/Big presets; Workflows has its own Default.
-Neither inherits Fast. Actual agent/workflow catalogs and runners are not yet
-attached to the product settings host; Advanced shows retained missing entries
-without inventing definitions or execution readiness. The shared resolver accepts
+Neither inherits Fast. The agent catalog supplies six built-ins and configured
+user definitions to Advanced. Workflow definitions remain unattached, and
+retained missing entries stay inspectable. The shared resolver accepts
 owner-supplied definitions, stable node keys, and revision metadata, distinguishes
 model nodes from agent nodes, and gives deterministic nodes no model.
 
@@ -724,8 +724,8 @@ The current disclosure path uses that task-aware opportunity plan to select a
 bounded profile-eligible subset from the shared registry, resolves exact
 executable schemas through `ToolRegistry`, and records selected, fallback,
 rejected, omitted, unavailable, and non-executable facts. Automatic skill and
-workflow loading, MCP/plugin execution, delegated/nested agents, and durable
-background scheduling still belong to their dedicated runtimes; #193 exposes
+workflow loading, MCP/plugin execution, and scheduled background work still
+belong to their dedicated runtimes; #193 exposes
 the deterministic opportunity and truthful availability without claiming those
 sibling executors.
 
@@ -968,7 +968,71 @@ Failed run finalization, checkpoint, or store closure makes shutdown uncertain.
 Explicit interruption cancels owned work. Linux/macOS support captured task
 ownership; Windows background launch fails closed before spawn. There is no
 daemon, automatic relaunch, or post-crash survival guarantee. Shared task UI,
-direct task CLI controls, PTY, delegated agents, and workflows remain separate.
+direct task CLI controls, PTY, and workflows remain separate. Delegated agents
+use this same durable attachment and settlement owner without a child OS process.
+
+## Delegated agents
+
+The model-facing `delegate` tool is composed in headless runs and the live shell.
+It discovers and inspects General, Explorer, Researcher, Planner, Implementer,
+Reviewer and configured user definitions. Built-in IDs have the form
+`builtin/falryn/agents:explorer`; labels never select a definition. Explorer uses
+the Small preset, General/Researcher/Implementer use Medium, and Planner/Reviewer
+use Big. Shared Subagents settings resolve the model and thinking together,
+independently of Fast, including another configured provider account. Missing
+accounts, unsupported thinking, unavailable native capabilities and undisclosable
+tool schemas return an explicit unstarted result.
+
+Each launch supplies an objective through `inputJson`, selected context, exact
+capability IDs, requested effects, resource limits and the existing version-1
+foreground/background policy. Children use the ordinary provider/tool runtime,
+the same workspace and shared resource admission. Explorer, Researcher, Planner
+and Reviewer have an observation-only ceiling. General and Implementer can
+narrow the parent's effects and explicitly admit nested delegation. Consequential
+operations still require the normal confirmation host; the existing lack of a
+production confirmation presenter remains a limitation.
+
+Definitions and selected context are bounded to 64 KiB each. Context text carries
+a digest and source generation. Selected artifact references also require matching
+metadata, verified bytes and a permitted sensitivity. Children receive selected
+evidence, their definition and the preceding sealed result on continuation.
+They do not receive the parent's transcript. Child results separate schema-checked
+claims from native observation references, usage, actual outcome and effects;
+they never assert verification of the parent's wider objective. Results are
+bounded to 64 KiB, with an explicit failure for oversized or invalid output.
+Raw durable results retain their digest; model projections apply normal redaction.
+
+The returned handle names the logical child generation and its durable task.
+`inspect`, `result`, `wait`, `steer`, `continue`, `detach`, `reattach`, `cancel`
+and `cleanup` use exact handles. `resolve` accepts a unique friendly name and
+refuses ambiguity. Steering queues at most 64 messages and 8 KiB total, and records
+admission at a provider boundary separately from model compliance. Continuations
+serialize, recheck definition/configuration/route/capabilities/context, preserve
+earlier results and reuse the original allowance. Repeated unchanged work and
+more than 64 generations are refused. Retention expires with the inherited
+deadline or explicit cleanup. Restart can inspect durable tasks and results;
+serialized handles cannot restore live continuation authority.
+Runtime events now declare schema version 2 and a version-2 reader floor for
+the agent task semantics. Version-1 stored events remain readable; older builds
+reject the new event envelopes rather than interpreting an agent as an OS process.
+
+Custom definitions are inert configuration under `agents.definitions` in user
+or profile scope. [The complete example](examples/agent-definitions.json) registers
+`user/custom:source-inspector`. Save an edited copy with the ordinary configuration
+command, supplying the current file revision when replacing existing settings:
+
+```sh
+falryn config set agents.definitions "$(cat examples/agent-definitions.json)" --file-scope user
+falryn config validate
+```
+
+This replaces the complete definitions value; preserve other entries in the file.
+Reopen the shell after editing definitions. Setting `enabled` to false preserves
+the identity and saved model preference. Saving, listing and editing do not launch
+an agent. The native registry accepts admitted package definitions through the
+same codec and owner-digest checks, but package installation/publication remains
+unimplemented. Required browser, computer, MCP or instruction preparation needs
+its native owner; a descriptor alone does not make it ready.
 
 ## Current product-integration limits
 
@@ -1053,7 +1117,7 @@ Image, PDF, and notebook readers exist in the application source but are not
 registered in the product tool bundle, and live provider adapters accept text
 only; their document/media owners remain GitHub issues #183–#188.
 
-Apart from captured process tasks above, no delegated-agent, nested-subagent,
+Apart from captured process tasks and delegated agents above, no
 workflow, schedule, goal/loop, structured-question, work-item, or cross-session
 mailbox runner is product-composed. Opportunity records do not automatically
 launch those runtimes. Their existing owners include GitHub issues #155–#162,

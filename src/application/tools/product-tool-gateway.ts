@@ -61,6 +61,7 @@ export type ProductToolConfirmationPort = {
 export type ProductToolEffectLedger = Map<string, ToolInvocationOutcome>;
 
 export type ProductToolGatewayOptions = {
+  readonly delegation?: ToolRunnerRequest["delegation"];
   readonly clock: ClockPort;
   readonly resources?: ProductResources;
   readonly taskResources?: ProductTaskResources;
@@ -296,7 +297,7 @@ export function createProductToolGateway(options: ProductToolGatewayOptions): To
       if (
         ready.entry.manifest.capabilityId !== request.capabilityId ||
         ready.entry.manifest.version !== request.version ||
-        (request.composition !== undefined && ready.entry.manifest.effect !== request.effect)
+        (request.composition !== undefined && ready.effect !== request.effect)
       ) {
         return { status: "unavailable", reason: "capability-binding-mismatch", effect: "none" };
       }
@@ -399,6 +400,7 @@ export function createProductToolGateway(options: ProductToolGatewayOptions): To
         manifest.limits.defaultTimeoutMs === null
           ? null
           : deadlineAt(instant(Number(startedAt) + manifest.limits.defaultTimeoutMs));
+      const deferred: { run?: (signal: AbortSignal) => Promise<ToolInvocationOutcome> } = {};
       const admitted = await task.execute<ToolInvocationOutcome>({
         target: {
           kind: "tool",
@@ -441,6 +443,8 @@ export function createProductToolGateway(options: ProductToolGatewayOptions): To
           const {
             captureExactOutput: _captureExactOutput,
             processTask: _processTask,
+            delegation: _delegation,
+            afterAdmission: _afterAdmission,
             ...nativeRequest
           } = request;
           let nativeTerminated: boolean | undefined;
@@ -449,6 +453,16 @@ export function createProductToolGateway(options: ProductToolGatewayOptions): To
             .execute({
               ...nativeRequest,
               taskResources: task,
+              ...(options.delegation === undefined ? {} : { delegation: options.delegation }),
+              ...(String(manifest.capabilityId) !== "builtin:orchestration/delegate@1"
+                ? {}
+                : {
+                    afterAdmission(run: (signal: AbortSignal) => Promise<ToolInvocationOutcome>) {
+                      if (deferred.run !== undefined)
+                        throw new Error("duplicate deferred delegation");
+                      deferred.run = run;
+                    },
+                  }),
               ...(options.attemptId === undefined || options.correlation.workspaceId === null
                 ? {}
                 : {
@@ -493,10 +507,20 @@ export function createProductToolGateway(options: ProductToolGatewayOptions): To
         },
       });
       if (options.taskResources === undefined) task.close();
+      const deferredOutcome =
+        admitted.kind === "completed" && deferred.run !== undefined
+          ? await deferred.run(request.signal).catch(
+              (): ToolInvocationOutcome => ({
+                status: "uncertain",
+                effect: "uncertain",
+                recoveryHint: "delegation-control-interrupted",
+              }),
+            )
+          : null;
       const endedAt = options.clock.now();
       const outcome: ToolInvocationOutcome =
         admitted.kind === "completed"
-          ? { ...admitted.value, admission: admitted.receipt }
+          ? { ...(deferredOutcome ?? admitted.value), admission: admitted.receipt }
           : admitted.kind === "replayed"
             ? {
                 status: "unavailable",

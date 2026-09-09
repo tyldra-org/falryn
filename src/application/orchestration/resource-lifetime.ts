@@ -10,9 +10,20 @@ export function createResourceLifetime(dispose: () => void) {
     disposed = true;
     dispose();
   };
+  const hold = () => {
+    holders++;
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      holders--;
+      settle();
+    };
+  };
 
   return {
     accepting: () => accepting,
+    retained: () => holders > 0,
     onClose(listener: () => void): (() => void) | null {
       if (!accepting) {
         listener();
@@ -26,14 +37,12 @@ export function createResourceLifetime(dispose: () => void) {
     },
     retain(): (() => void) | null {
       if (!accepting || holders >= 64) return null;
-      holders++;
-      let released = false;
-      return () => {
-        if (released) return;
-        released = true;
-        holders--;
-        settle();
-      };
+      return hold();
+    },
+    /** Only an existing child allocation may extend a still-retained ancestor. */
+    retainExisting(): (() => void) | null {
+      if (disposed || holders >= 64 || (!accepting && holders === 0)) return null;
+      return hold();
     },
     close() {
       if (!accepting) return;

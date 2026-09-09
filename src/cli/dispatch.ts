@@ -52,6 +52,7 @@ import {
   writeDiagnosticLine,
   writeResultLine,
 } from "./output/streams.ts";
+import { agentRegistryFrom } from "./runtime/agent-configuration.ts";
 import { composeSessionNavigationController } from "./runtime/compose-session-navigation-controller.ts";
 import { startConfigurationReloadWatcher } from "./runtime/configuration-reload.ts";
 import {
@@ -429,7 +430,7 @@ async function launchShell(
           primaryWorkspaceRoot(resolvedWorkspace.value.set).path,
           stopped.signal,
         );
-  const provider = await composeProductProviderConnections(graph, globals, {
+  const providerConnections = composeProductProviderConnections(graph, globals, {
     ...(productArtifactSession === null
       ? {}
       : {
@@ -440,11 +441,19 @@ async function launchShell(
     ...(governance.ownedProcesses === undefined
       ? {}
       : { ownedProcesses: governance.ownedProcesses }),
-  }).resolveSelected(stopped.signal);
+  });
+  const provider = await providerConnections.resolveSelected(stopped.signal);
   let productAttachments: Awaited<ReturnType<typeof composeProductShellAttachments>> = null;
   try {
     if (productArtifactSession !== null) {
       productAttachments = await composeProductShellAttachments({
+        async resolveAgentProvider(profileId, signal) {
+          const resolved = await providerConnections.resolveProfile(profileId, signal);
+          return resolved.kind === "ready"
+            ? { adapter: resolved.adapter, catalog: resolved.session.catalog }
+            : { reason: `agent-provider-${resolved.code}` };
+        },
+        agentRegistry: agentRegistryFrom(configuration),
         modelConfigurationGeneration: () =>
           graph.loader.current()?.generation ?? configurationGeneration,
         modelPreferences: () =>
