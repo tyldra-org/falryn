@@ -244,6 +244,19 @@ export {
   pdfReadLimits,
 } from "./pdf-read.ts";
 export type {
+  ResourceEvidence,
+  ResourceFailure,
+  ResourceProjection,
+  ResourceReadItem,
+  ResourceReadResult,
+  ResourceTarget,
+} from "./resource-read.ts";
+export {
+  resourceReadInputSchema,
+  resourceSearchInputSchema,
+  resourceTargetSchema,
+} from "./resource-read.ts";
+export type {
   NormalizedVirtualResourceReadRequest,
   VirtualResourceFreshness,
   VirtualResourcePort,

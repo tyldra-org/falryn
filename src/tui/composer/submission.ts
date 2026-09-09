@@ -46,7 +46,12 @@ export function snapshotOf(
   attachments: readonly AttachmentDescriptor[] = [],
   mentions: readonly MentionSpan[] = [],
 ): ComposerSnapshot {
-  return Object.freeze({ text, sequence, attachments, mentions });
+  return Object.freeze({
+    text,
+    sequence,
+    attachments: Object.freeze(attachments.map((item) => Object.freeze({ ...item }))),
+    mentions: Object.freeze(mentions.map((item) => Object.freeze({ ...item }))),
+  });
 }
 
 export const SUBMISSION_OUTCOMES = ["accepted", "unavailable"] as const;
@@ -86,7 +91,13 @@ export type SubmissionOutcome =
  * while holding the user's text.
  */
 export type SubmissionPort = {
-  submit(snapshot: ComposerSnapshot): SubmissionOutcome | Promise<SubmissionOutcome>;
+  submit(
+    snapshot: ComposerSnapshot,
+    context?: {
+      readonly payloads: { get(id: string): Uint8Array | null };
+      readonly signal?: AbortSignal;
+    },
+  ): SubmissionOutcome | Promise<SubmissionOutcome>;
 };
 
 /** The issue that owns making a submission do something. */

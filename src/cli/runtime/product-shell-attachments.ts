@@ -191,6 +191,7 @@ export async function composeProductShellAttachments(
       workspaceRoot === null
         ? null
         : composeProductWorkspaceTools({
+            ...(ports.scratch === undefined ? {} : { scratch: ports.scratch }),
             generation,
             fileSystem: ports.fileSystem,
             commands,
@@ -379,6 +380,7 @@ export async function composeProductShellAttachments(
             recall: memoryTools.recall,
           });
     const executor = createProductLiveTurnExecutor({
+      ...(workspaceTools?.resources == null ? {} : { resources: workspaceTools.resources }),
       ...(ports.modelConfigurationGeneration === undefined
         ? {}
         : { modelConfigurationGeneration: ports.modelConfigurationGeneration }),
@@ -471,11 +473,14 @@ export async function composeProductShellAttachments(
         return selected;
       },
     },
-    async submit(snapshot: Parameters<SubmissionPort["submit"]>[0]) {
+    async submit(
+      snapshot: Parameters<SubmissionPort["submit"]>[0],
+      context: Parameters<SubmissionPort["submit"]>[1],
+    ) {
       const target = active.submission;
       activeSubmissions += 1;
       try {
-        return await target.submit(snapshot);
+        return await target.submit(snapshot, context);
       } finally {
         activeSubmissions -= 1;
       }

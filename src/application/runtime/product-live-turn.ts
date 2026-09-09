@@ -42,6 +42,11 @@ import type {
   ProductContextSource,
 } from "../context/product-context-source.ts";
 import { attemptModelInputFromPrompt } from "../context/product-model-input.ts";
+import {
+  admitResourceAttachments,
+  type ResourceAttachmentSelection,
+} from "../context/resource-attachments.ts";
+import type { ResourceResolver } from "../documents/resource-resolver.ts";
 import type { ProductMemoryTurn } from "../memory/product-memory-turn.ts";
 import { type AdmittedChild, isAdmittedChild } from "../orchestration/child-admission.ts";
 import { discloseProductTools } from "../tools/product-tool-disclosure.ts";
@@ -52,6 +57,7 @@ export type ProductLiveTurnInput = {
   /** Trusted host admission; no prompt or saved agent definition can manufacture this handle. */
   readonly childAdmission?: AdmittedChild;
   readonly prompt: string;
+  readonly attachmentSelection?: ResourceAttachmentSelection;
   readonly turnId: TurnId;
   readonly signal?: AbortSignal;
   readonly intent?: WorkIntent;
@@ -139,6 +145,7 @@ export type ProductLiveTurnExecutor = {
 };
 
 export type ProductLiveTurnExecutorOptions = {
+  readonly resources?: ResourceResolver;
   readonly modelPreferences?: () => import("../../providers/configuration/policy-schema.ts").ModelPreferences;
   readonly modelConfigurationGeneration?: () => ConfigurationGeneration;
   readonly runtime: ProductAgentRuntime;
@@ -548,7 +555,11 @@ export function createProductLiveTurnExecutor(
       },
     },
     startSession,
-    async run(requestInput) {
+    async run(rawInput) {
+      const requestInput =
+        rawInput.prompt.trim() === "" && (rawInput.attachmentSelection?.attachments.length ?? 0) > 0
+          ? { ...rawInput, prompt: "Read the attached resources." }
+          : rawInput;
       const input = !isAdmittedChild(requestInput.childAdmission)
         ? requestInput
         : {
@@ -622,371 +633,403 @@ export function createProductLiveTurnExecutor(
         });
       }
 
-      const startedTurn = await producer.startTurn({
-        turnId: input.turnId,
-        sessionId: correlation.sessionId,
-        workspaceId: correlation.workspaceId,
-        traceId: correlation.traceId,
-        configurationGeneration: generation,
-      });
-      if (!startedTurn.ok) {
-        return result({
-          kind: "failed",
-          code: `producer.${startedTurn.error.code}`,
-          message: `turn could not start (${startedTurn.error.code})`,
-          response: "",
-          terminalOutcome: FAILED,
-          contextPackItems: 0,
-          modelAttempts: 0,
-          toolResults: 0,
-          disclosedTools: 0,
-          contextStatus: "static",
-          contextGeneration: null,
-          recalledMemories: 0,
-          memoryAdmission: "skipped",
-          executionProfile: executionPolicy.profileId,
-        });
-      }
-
-      const prepared =
-        options.contextSource === undefined
-          ? {
-              candidates: options.contextCandidates?.() ?? [],
-              sections: [] as readonly PromptSectionInput[],
-              receipt: null,
-            }
-          : await options.contextSource.prepare(input.prompt, input.signal);
-      if (prepared.receipt?.status === "cancelled") {
-        return settleFailure(
-          input,
-          {
-            kind: "failed",
-            code: "context.cancelled",
-            message: "context preparation was cancelled",
-            contextStatus: "cancelled",
-            contextGeneration: prepared.receipt.generation,
-          },
-          executionPolicy,
-          { kind: "cancelled", effect: "none" },
+      const taskResources =
+        input.childAdmission?.resources ?? options.runtime.resources.openTask(String(generation));
+      try {
+        const attachments = await admitResourceAttachments(
+          input.attachmentSelection ?? { attachments: [], mentions: [] },
+          options.resources,
+          taskResources,
+          input.signal ?? new AbortController().signal,
         );
-      }
+        if (!attachments.ok)
+          return result({
+            kind: "unavailable",
+            code: `context.${attachments.error.code}`,
+            message: `Selected resources could not be admitted (${attachments.error.code})`,
+            response: "",
+            terminalOutcome: FAILED,
+            contextPackItems: 0,
+            modelAttempts: 0,
+            toolResults: 0,
+            disclosedTools: 0,
+            contextStatus: "static",
+            contextGeneration: null,
+            recalledMemories: 0,
+            memoryAdmission: "skipped",
+          });
+        const startedTurn = await producer.startTurn({
+          turnId: input.turnId,
+          sessionId: correlation.sessionId,
+          workspaceId: correlation.workspaceId,
+          traceId: correlation.traceId,
+          configurationGeneration: generation,
+        });
+        if (!startedTurn.ok) {
+          return result({
+            kind: "failed",
+            code: `producer.${startedTurn.error.code}`,
+            message: `turn could not start (${startedTurn.error.code})`,
+            response: "",
+            terminalOutcome: FAILED,
+            contextPackItems: 0,
+            modelAttempts: 0,
+            toolResults: 0,
+            disclosedTools: 0,
+            contextStatus: "static",
+            contextGeneration: null,
+            recalledMemories: 0,
+            memoryAdmission: "skipped",
+            executionProfile: executionPolicy.profileId,
+          });
+        }
 
-      const recalled = options.memory?.recallBeforeTurn({
-        workspaceId: correlation.workspaceId,
-        task: input.prompt,
-        ...(input.signal === undefined ? {} : { signal: input.signal }),
-      });
-      const memorySection: PromptSectionInput | null =
-        recalled?.ok === true
-          ? recalled.value.memorySection
-          : options.memory === undefined
+        const prepared =
+          options.contextSource === undefined
+            ? {
+                candidates: options.contextCandidates?.() ?? [],
+                sections: [] as readonly PromptSectionInput[],
+                receipt: null,
+              }
+            : await options.contextSource.prepare(input.prompt, input.signal);
+        if (prepared.receipt?.status === "cancelled") {
+          return settleFailure(
+            input,
+            {
+              kind: "failed",
+              code: "context.cancelled",
+              message: "context preparation was cancelled",
+              contextStatus: "cancelled",
+              contextGeneration: prepared.receipt.generation,
+            },
+            executionPolicy,
+            { kind: "cancelled", effect: "none" },
+          );
+        }
+
+        const recalled = options.memory?.recallBeforeTurn({
+          workspaceId: correlation.workspaceId,
+          task: input.prompt,
+          ...(input.signal === undefined ? {} : { signal: input.signal }),
+        });
+        const memorySection: PromptSectionInput | null =
+          recalled?.ok === true
+            ? recalled.value.memorySection
+            : options.memory === undefined
+              ? null
+              : {
+                  id: "memory",
+                  role: "memory",
+                  source: "memory:#720",
+                  content: `Memory unavailable (${recalled?.error.code ?? "unavailable"}).`,
+                  required: false,
+                  available: false,
+                };
+        const recalledMemories = recalled?.ok === true ? recalled.value.recalledCount : 0;
+
+        if (input.briefRequest !== undefined && input.responsePolicySection !== undefined) {
+          return settleFailure(
+            input,
+            {
+              kind: "failed",
+              code: "brief.conflicting-policy",
+              message: "Brief and comparison response policies cannot both be active",
+              contextStatus: prepared.receipt?.status ?? "static",
+              contextGeneration: prepared.receipt?.generation ?? null,
+              recalledMemories,
+            },
+            executionPolicy,
+          );
+        }
+        const briefRequest =
+          input.briefRequest === undefined
             ? null
             : {
-                id: "memory",
-                role: "memory",
-                source: "memory:#720",
-                content: `Memory unavailable (${recalled?.error.code ?? "unavailable"}).`,
-                required: false,
-                available: false,
+                ...input.briefRequest,
+                need: briefNeedAfterContext(input.briefRequest.need, {
+                  status: prepared.receipt?.status ?? "static",
+                  candidateCount: prepared.candidates.length,
+                }),
               };
-      const recalledMemories = recalled?.ok === true ? recalled.value.recalledCount : 0;
+        const briefed =
+          briefRequest === null
+            ? null
+            : createBriefComposer().projectForTurn(input.turnId, briefRequest);
+        if (briefed !== null && !briefed.ok) {
+          return settleFailure(
+            input,
+            {
+              kind: "failed",
+              code: `brief.${briefed.error.code}`,
+              message: `Brief could not prepare the response policy (${briefed.error.code})`,
+              contextStatus: prepared.receipt?.status ?? "static",
+              contextGeneration: prepared.receipt?.generation ?? null,
+              recalledMemories,
+            },
+            executionPolicy,
+          );
+        }
 
-      if (input.briefRequest !== undefined && input.responsePolicySection !== undefined) {
-        return settleFailure(
-          input,
-          {
-            kind: "failed",
-            code: "brief.conflicting-policy",
-            message: "Brief and comparison response policies cannot both be active",
-            contextStatus: prepared.receipt?.status ?? "static",
-            contextGeneration: prepared.receipt?.generation ?? null,
-            recalledMemories,
-          },
+        const registry = options.runtime.toolRegistry;
+        const capabilityRegistry = options.runtime.capabilityRegistry;
+        if (registry === null || capabilityRegistry === null) {
+          return settleFailure(
+            input,
+            {
+              kind: "unavailable",
+              code: "runtime.capability-registry-required",
+              message: "the capability or executable tool registry is unavailable",
+            },
+            executionPolicy,
+          );
+        }
+        const disclosure = discloseProductTools(capabilityRegistry, registry, {
           executionPolicy,
-        );
-      }
-      const briefRequest =
-        input.briefRequest === undefined
-          ? null
-          : {
-              ...input.briefRequest,
-              need: briefNeedAfterContext(input.briefRequest.need, {
-                status: prepared.receipt?.status ?? "static",
-                candidateCount: prepared.candidates.length,
+          consumer: "native-model",
+          task: input.prompt,
+          intent: input.intent ?? executionPolicy.workIntent,
+          healthEvidence: {
+            now: options.clock.now(),
+            runtime: {
+              attemptRunner: options.runtime.attemptRunner === null ? "missing" : "available",
+              provider: options.runtime.providerAdapter === null ? "missing" : "available",
+              workspace: "available",
+            },
+          },
+        });
+        const planned = createContextPlanner().composeTurn({
+          turnId: input.turnId,
+          sessionId: correlation.sessionId,
+          workspaceId: correlation.workspaceId,
+          configurationGeneration: generation,
+          task: input.prompt,
+          candidates: prepared.candidates,
+          tools: disclosure.promptTools,
+          otherSections: [
+            executionProfileSection(executionPolicy),
+            ...(input.otherSections ?? []),
+            ...attachments.value,
+            ...prepared.sections,
+            ...(memorySection === null ? [] : [memorySection]),
+            ...(briefed?.ok ? [briefed.value.section] : []),
+            ...(input.responsePolicySection === undefined ? [] : [input.responsePolicySection]),
+          ],
+        });
+        if (!planned.ok) {
+          return settleFailure(
+            input,
+            {
+              kind: "failed",
+              code: "context.planner-failed",
+              message: `context planner could not compose (${
+                "code" in planned.error ? planned.error.code : "failed"
+              })`,
+              disclosedTools: disclosure.receipt.disclosed.length,
+              contextStatus: prepared.receipt?.status ?? "static",
+              contextGeneration: prepared.receipt?.generation ?? null,
+              recalledMemories,
+            },
+            executionPolicy,
+          );
+        }
+
+        const provider = options.runtime.requireProviderAdapter();
+        if (!provider.ok) {
+          return settleFailure(
+            input,
+            {
+              kind: "unavailable",
+              code: "provider.adapter-required",
+              message: "the selected provider connection is unavailable",
+              contextPackItems: planned.value.plan.pack.items.length,
+              disclosedTools: disclosure.receipt.disclosed.length,
+              contextStatus: prepared.receipt?.status ?? "static",
+              contextGeneration: prepared.receipt?.generation ?? null,
+              recalledMemories,
+            },
+            executionPolicy,
+          );
+        }
+        const attemptRunner = options.runtime.requireAttemptRunner();
+        const policy =
+          options.providerCatalog === null
+            ? null
+            : productModelPolicy(
+                provider.value,
+                options.providerCatalog,
+                executionPolicy,
+                selectedModel,
+                modelPreferences,
+              );
+        if (!attemptRunner.ok || options.providerCatalog === null || policy === null) {
+          return settleFailure(
+            input,
+            {
+              kind: "unavailable",
+              code: "runtime.attempt-runner-required",
+              message:
+                options.providerCatalog === null
+                  ? "the selected provider has no usable model catalog"
+                  : policy === null
+                    ? "the selected provider catalog contains no model"
+                    : "the product attempt runner is unavailable",
+              contextPackItems: planned.value.plan.pack.items.length,
+              disclosedTools: disclosure.receipt.disclosed.length,
+              contextStatus: prepared.receipt?.status ?? "static",
+              contextGeneration: prepared.receipt?.generation ?? null,
+              recalledMemories,
+            },
+            executionPolicy,
+          );
+        }
+
+        const attemptPolicy = createTurnAttemptPolicy({
+          resources: options.runtime.resources,
+          clock: options.clock,
+          coordinator: options.runtime.turnCoordinator,
+          runner: attemptRunner.value,
+          policy,
+          catalogs: [
+            {
+              providerId: provider.value.identity.providerId,
+              profileId: provider.value.identity.profileId,
+              adapterKind: provider.value.identity.adapterKind,
+              destinationId: provider.value.identity.destinationId,
+              transportCompatibilityId: provider.value.identity.transportCompatibilityId,
+              transportCompatibility: provider.value.transportCompatibility,
+              modelTransportCompatibility: options.providerCatalog.models.flatMap((model) => {
+                const plan = provider.value.transportCompatibilityFor(model.modelId);
+                return plan === null ? [] : [{ modelId: model.modelId, plan }];
               }),
-            };
-      const briefed =
-        briefRequest === null
-          ? null
-          : createBriefComposer().projectForTurn(input.turnId, briefRequest);
-      if (briefed !== null && !briefed.ok) {
-        return settleFailure(
-          input,
-          {
-            kind: "failed",
-            code: `brief.${briefed.error.code}`,
-            message: `Brief could not prepare the response policy (${briefed.error.code})`,
-            contextStatus: prepared.receipt?.status ?? "static",
-            contextGeneration: prepared.receipt?.generation ?? null,
-            recalledMemories,
-          },
-          executionPolicy,
+              requestInputModalities: provider.value.requestInputModalities,
+              requestResponseDensityControls: provider.value.requestResponseDensityControls ?? [],
+              catalog: options.providerCatalog,
+            },
+          ],
+          journal: options.runtime.journal,
+          persistTurnLifecycle: false,
+        });
+        const attempted = await attemptPolicy.run({
+          taskResources,
+          turnId: input.turnId,
+          configurationGeneration: generation,
+          signal: input.signal ?? new AbortController().signal,
+          intent: input.intent ?? executionPolicy.workIntent,
+          modelInput: attemptModelInputFromPrompt(
+            planned.value.prompt,
+            disclosure,
+            executionPolicy,
+            {
+              ...(briefed?.ok && briefRequest !== null
+                ? { brief: { request: briefRequest, projection: briefed.value.projection } }
+                : {}),
+              ...(input.maxOutputTokens === undefined
+                ? {}
+                : { maxOutputTokens: input.maxOutputTokens }),
+            },
+          ),
+        });
+        const attemptOutcome =
+          attempted.turn?.status === "terminal" && attempted.turn.outcome !== null
+            ? attempted.turn.outcome
+            : FAILED;
+        const lastAttempt = attempted.attempts.at(-1) ?? null;
+        const response = lastAttempt?.output?.text ?? "";
+        const toolResults = attempted.attempts.reduce(
+          (total, attempt) => total + (attempt.output?.toolResults ?? 0),
+          0,
         );
-      }
-
-      const registry = options.runtime.toolRegistry;
-      const capabilityRegistry = options.runtime.capabilityRegistry;
-      if (registry === null || capabilityRegistry === null) {
-        return settleFailure(
-          input,
-          {
-            kind: "unavailable",
-            code: "runtime.capability-registry-required",
-            message: "the capability or executable tool registry is unavailable",
-          },
-          executionPolicy,
+        const providerRequests = attempted.attempts.reduce(
+          (total, attempt) => total + (attempt.output?.providerRequests ?? 0),
+          0,
         );
-      }
-      const disclosure = discloseProductTools(capabilityRegistry, registry, {
-        executionPolicy,
-        consumer: "native-model",
-        task: input.prompt,
-        intent: input.intent ?? executionPolicy.workIntent,
-        healthEvidence: {
-          now: options.clock.now(),
-          runtime: {
-            attemptRunner: options.runtime.attemptRunner === null ? "missing" : "available",
-            provider: options.runtime.providerAdapter === null ? "missing" : "available",
-            workspace: "available",
-          },
-        },
-      });
-      const planned = createContextPlanner().composeTurn({
-        turnId: input.turnId,
-        sessionId: correlation.sessionId,
-        workspaceId: correlation.workspaceId,
-        configurationGeneration: generation,
-        task: input.prompt,
-        candidates: prepared.candidates,
-        tools: disclosure.promptTools,
-        otherSections: [
-          executionProfileSection(executionPolicy),
-          ...(input.otherSections ?? []),
-          ...prepared.sections,
-          ...(memorySection === null ? [] : [memorySection]),
-          ...(briefed?.ok ? [briefed.value.section] : []),
-          ...(input.responsePolicySection === undefined ? [] : [input.responsePolicySection]),
-        ],
-      });
-      if (!planned.ok) {
-        return settleFailure(
-          input,
-          {
-            kind: "failed",
-            code: "context.planner-failed",
-            message: `context planner could not compose (${
-              "code" in planned.error ? planned.error.code : "failed"
-            })`,
-            disclosedTools: disclosure.receipt.disclosed.length,
-            contextStatus: prepared.receipt?.status ?? "static",
-            contextGeneration: prepared.receipt?.generation ?? null,
-            recalledMemories,
-          },
-          executionPolicy,
+        const providerUsage = aggregateAttemptUsage(
+          attempted.attempts.map((attempt) => attempt.output),
         );
+        const briefReceipt =
+          lastAttempt?.output?.briefReceipt ??
+          (briefed?.ok ? briefed.value.projection.receipt : null);
+        const planArtifactId =
+          attempted.kind === "completed"
+            ? await retainPlan(executionPolicy, input.turnId, response, input.signal)
+            : null;
+        const planArtifactFailed =
+          attempted.kind === "completed" &&
+          executionPolicy.completion === "durable-plan" &&
+          planArtifactId === null;
+        const terminalOutcome = planArtifactFailed ? FAILED : attemptOutcome;
+        const completed = await producer.completeTurn({
+          turnId: input.turnId,
+          sessionId: correlation.sessionId,
+          workspaceId: correlation.workspaceId,
+          traceId: correlation.traceId,
+          configurationGeneration: generation,
+          outcome: terminalOutcome,
+        });
+        const refreshed = await producer.refreshFromStore();
+        const succeeded =
+          attempted.kind === "completed" &&
+          terminalOutcome.kind === "completed" &&
+          completed.ok &&
+          refreshed.ok &&
+          (executionPolicy.completion !== "durable-plan" || planArtifactId !== null);
+        const memoryAdmission =
+          !succeeded || options.memory === undefined
+            ? null
+            : options.memory.admitAfterTurn({
+                turnId: input.turnId,
+                workspaceId: correlation.workspaceId,
+                task: input.prompt,
+                outcome: terminalOutcome,
+                ...(input.signal === undefined ? {} : { signal: input.signal }),
+              });
+        return result({
+          kind: succeeded ? "completed" : "failed",
+          code: succeeded
+            ? "completed"
+            : planArtifactFailed
+              ? "execution-profile.plan-artifact-failed"
+              : `runtime.attempt-${attempted.kind}`,
+          message: succeeded
+            ? "turn completed"
+            : planArtifactFailed
+              ? "model attempt completed but the reviewable plan artifact could not be retained"
+              : !completed.ok
+                ? `turn settled as ${attempted.kind}; completion failed (${completed.error.code})`
+                : !refreshed.ok
+                  ? `turn settled as ${attempted.kind}; durable replay failed (${refreshed.error.code})`
+                  : `turn settled as ${attempted.kind}`,
+          response,
+          terminalOutcome,
+          contextPackItems: planned.value.plan.pack.items.length,
+          modelAttempts: attempted.attempts.length,
+          toolResults,
+          disclosedTools: disclosure.receipt.disclosed.length,
+          contextStatus: prepared.receipt?.status ?? "static",
+          contextGeneration: prepared.receipt?.generation ?? null,
+          recalledMemories,
+          memoryAdmission:
+            memoryAdmission === null
+              ? "skipped"
+              : memoryAdmission.ok && memoryAdmission.value.admitted
+                ? "admitted"
+                : memoryAdmission.ok
+                  ? "skipped"
+                  : "failed",
+          executionProfile: executionPolicy.profileId,
+          executionProfileVersion: executionPolicy.profileVersion,
+          completionCriterion: executionPolicy.completion,
+          effectiveModelRole: lastAttempt?.receipt.role ?? null,
+          effectiveReasoning: lastAttempt?.receipt.reasoning ?? null,
+          policyGeneration: Number(executionPolicy.configurationGeneration),
+          planArtifactId,
+          briefReceipt,
+          providerUsage,
+          providerRequests,
+        });
+      } finally {
+        if (input.childAdmission === undefined) taskResources.close();
       }
-
-      const provider = options.runtime.requireProviderAdapter();
-      if (!provider.ok) {
-        return settleFailure(
-          input,
-          {
-            kind: "unavailable",
-            code: "provider.adapter-required",
-            message: "the selected provider connection is unavailable",
-            contextPackItems: planned.value.plan.pack.items.length,
-            disclosedTools: disclosure.receipt.disclosed.length,
-            contextStatus: prepared.receipt?.status ?? "static",
-            contextGeneration: prepared.receipt?.generation ?? null,
-            recalledMemories,
-          },
-          executionPolicy,
-        );
-      }
-      const attemptRunner = options.runtime.requireAttemptRunner();
-      const policy =
-        options.providerCatalog === null
-          ? null
-          : productModelPolicy(
-              provider.value,
-              options.providerCatalog,
-              executionPolicy,
-              selectedModel,
-              modelPreferences,
-            );
-      if (!attemptRunner.ok || options.providerCatalog === null || policy === null) {
-        return settleFailure(
-          input,
-          {
-            kind: "unavailable",
-            code: "runtime.attempt-runner-required",
-            message:
-              options.providerCatalog === null
-                ? "the selected provider has no usable model catalog"
-                : policy === null
-                  ? "the selected provider catalog contains no model"
-                  : "the product attempt runner is unavailable",
-            contextPackItems: planned.value.plan.pack.items.length,
-            disclosedTools: disclosure.receipt.disclosed.length,
-            contextStatus: prepared.receipt?.status ?? "static",
-            contextGeneration: prepared.receipt?.generation ?? null,
-            recalledMemories,
-          },
-          executionPolicy,
-        );
-      }
-
-      const attemptPolicy = createTurnAttemptPolicy({
-        resources: options.runtime.resources,
-        clock: options.clock,
-        coordinator: options.runtime.turnCoordinator,
-        runner: attemptRunner.value,
-        policy,
-        catalogs: [
-          {
-            providerId: provider.value.identity.providerId,
-            profileId: provider.value.identity.profileId,
-            adapterKind: provider.value.identity.adapterKind,
-            destinationId: provider.value.identity.destinationId,
-            transportCompatibilityId: provider.value.identity.transportCompatibilityId,
-            transportCompatibility: provider.value.transportCompatibility,
-            modelTransportCompatibility: options.providerCatalog.models.flatMap((model) => {
-              const plan = provider.value.transportCompatibilityFor(model.modelId);
-              return plan === null ? [] : [{ modelId: model.modelId, plan }];
-            }),
-            requestInputModalities: provider.value.requestInputModalities,
-            requestResponseDensityControls: provider.value.requestResponseDensityControls ?? [],
-            catalog: options.providerCatalog,
-          },
-        ],
-        journal: options.runtime.journal,
-        persistTurnLifecycle: false,
-      });
-      const attempted = await attemptPolicy.run({
-        ...(input.childAdmission === undefined
-          ? {}
-          : { taskResources: input.childAdmission.resources }),
-        turnId: input.turnId,
-        configurationGeneration: generation,
-        signal: input.signal ?? new AbortController().signal,
-        intent: input.intent ?? executionPolicy.workIntent,
-        modelInput: attemptModelInputFromPrompt(planned.value.prompt, disclosure, executionPolicy, {
-          ...(briefed?.ok && briefRequest !== null
-            ? { brief: { request: briefRequest, projection: briefed.value.projection } }
-            : {}),
-          ...(input.maxOutputTokens === undefined
-            ? {}
-            : { maxOutputTokens: input.maxOutputTokens }),
-        }),
-      });
-      const attemptOutcome =
-        attempted.turn?.status === "terminal" && attempted.turn.outcome !== null
-          ? attempted.turn.outcome
-          : FAILED;
-      const lastAttempt = attempted.attempts.at(-1) ?? null;
-      const response = lastAttempt?.output?.text ?? "";
-      const toolResults = attempted.attempts.reduce(
-        (total, attempt) => total + (attempt.output?.toolResults ?? 0),
-        0,
-      );
-      const providerRequests = attempted.attempts.reduce(
-        (total, attempt) => total + (attempt.output?.providerRequests ?? 0),
-        0,
-      );
-      const providerUsage = aggregateAttemptUsage(
-        attempted.attempts.map((attempt) => attempt.output),
-      );
-      const briefReceipt =
-        lastAttempt?.output?.briefReceipt ??
-        (briefed?.ok ? briefed.value.projection.receipt : null);
-      const planArtifactId =
-        attempted.kind === "completed"
-          ? await retainPlan(executionPolicy, input.turnId, response, input.signal)
-          : null;
-      const planArtifactFailed =
-        attempted.kind === "completed" &&
-        executionPolicy.completion === "durable-plan" &&
-        planArtifactId === null;
-      const terminalOutcome = planArtifactFailed ? FAILED : attemptOutcome;
-      const completed = await producer.completeTurn({
-        turnId: input.turnId,
-        sessionId: correlation.sessionId,
-        workspaceId: correlation.workspaceId,
-        traceId: correlation.traceId,
-        configurationGeneration: generation,
-        outcome: terminalOutcome,
-      });
-      const refreshed = await producer.refreshFromStore();
-      const succeeded =
-        attempted.kind === "completed" &&
-        terminalOutcome.kind === "completed" &&
-        completed.ok &&
-        refreshed.ok &&
-        (executionPolicy.completion !== "durable-plan" || planArtifactId !== null);
-      const memoryAdmission =
-        !succeeded || options.memory === undefined
-          ? null
-          : options.memory.admitAfterTurn({
-              turnId: input.turnId,
-              workspaceId: correlation.workspaceId,
-              task: input.prompt,
-              outcome: terminalOutcome,
-              ...(input.signal === undefined ? {} : { signal: input.signal }),
-            });
-      return result({
-        kind: succeeded ? "completed" : "failed",
-        code: succeeded
-          ? "completed"
-          : planArtifactFailed
-            ? "execution-profile.plan-artifact-failed"
-            : `runtime.attempt-${attempted.kind}`,
-        message: succeeded
-          ? "turn completed"
-          : planArtifactFailed
-            ? "model attempt completed but the reviewable plan artifact could not be retained"
-            : !completed.ok
-              ? `turn settled as ${attempted.kind}; completion failed (${completed.error.code})`
-              : !refreshed.ok
-                ? `turn settled as ${attempted.kind}; durable replay failed (${refreshed.error.code})`
-                : `turn settled as ${attempted.kind}`,
-        response,
-        terminalOutcome,
-        contextPackItems: planned.value.plan.pack.items.length,
-        modelAttempts: attempted.attempts.length,
-        toolResults,
-        disclosedTools: disclosure.receipt.disclosed.length,
-        contextStatus: prepared.receipt?.status ?? "static",
-        contextGeneration: prepared.receipt?.generation ?? null,
-        recalledMemories,
-        memoryAdmission:
-          memoryAdmission === null
-            ? "skipped"
-            : memoryAdmission.ok && memoryAdmission.value.admitted
-              ? "admitted"
-              : memoryAdmission.ok
-                ? "skipped"
-                : "failed",
-        executionProfile: executionPolicy.profileId,
-        executionProfileVersion: executionPolicy.profileVersion,
-        completionCriterion: executionPolicy.completion,
-        effectiveModelRole: lastAttempt?.receipt.role ?? null,
-        effectiveReasoning: lastAttempt?.receipt.reasoning ?? null,
-        policyGeneration: Number(executionPolicy.configurationGeneration),
-        planArtifactId,
-        briefReceipt,
-        providerUsage,
-        providerRequests,
-      });
     },
   };
 }
