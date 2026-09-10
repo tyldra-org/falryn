@@ -240,6 +240,98 @@ test("recipient rate policy and live waiter capacity apply explicit backpressure
     await store.close();
   }
 });
+test("scope, generation, fan-out and envelope bounds refuse admission without inventing acceptance", async () => {
+  const { store, repository, a, b, register } = await fixture();
+  try {
+    for (const dimension of ["workspace", "project", "user", "environment", "trust"] as const)
+      expect(
+        repository.admit(
+          b,
+          request({ scope: { ...scope, [dimension]: canonicalDigest("other") } }),
+          now,
+        ),
+      ).toEqual({ ok: false, error: { code: "denied" } });
+    expect(repository.admit(b, request({ text: "x".repeat(16_385) }), now)).toEqual({
+      ok: false,
+      error: { code: "invalid" },
+    });
+    for (let i = 0; i < 17; i += 1) {
+      const peer = identity(`fanout-${i}`);
+      const lease = register(peer);
+      expect(
+        repository.policy(lease, sender, { mode: "allow", muted: false, perMinute: 64 }, now).ok,
+      ).toBe(true);
+      const admitted = repository.admit(
+        lease,
+        request({ id: `fanout-${i}`, recipient: peer }),
+        now,
+      );
+      expect(admitted).toMatchObject(
+        i < 16 ? { ok: true } : { ok: false, error: { code: "full" } },
+      );
+    }
+    register({ ...recipient, generation: 2 }, "replacement");
+    expect(repository.admit(b, request(), now)).toEqual({ ok: false, error: { code: "stale" } });
+    const discovered = repository.discover(a, 0, 100, now);
+    expect(
+      discovered.ok &&
+        discovered.value.items.some((peer) => peer.identity.sessionId === recipient.sessionId),
+    ).toBe(false);
+  } finally {
+    await store.close();
+  }
+});
+
+test("payload bytes and retained lineage budgets have independent backpressure", async () => {
+  const { store, repository, a, b } = await fixture();
+  try {
+    let accepted = 0;
+    for (let i = 1; i <= 64; i += 1) {
+      const result = repository.admit(
+        b,
+        request({ id: `bytes-${i}`, laneSequence: i, text: "x".repeat(16_384) }),
+        now,
+      );
+      if (!result.ok) {
+        expect(result.error.code).toBe("full");
+        break;
+      }
+      accepted += 1;
+    }
+    expect(accepted).toBeGreaterThan(50);
+    expect(accepted).toBeLessThan(64);
+    const page = repository.history(b, 0, 100, now);
+    if (!page.ok) throw new Error(page.error.code);
+    for (const item of page.value.items)
+      expect(repository.cleanup(b, item.receipt.key, now + 21_000).ok).toBe(true);
+    let full = false;
+    for (const at of [now + 22_000, now + 44_000]) {
+      expect(repository.renew(a, "idle", at).ok).toBe(true);
+      expect(repository.renew(b, "idle", at).ok).toBe(true);
+    }
+    for (let i = 65; i < 260; i += 1) {
+      const at = now + 66_000 + (i - 65) * 3_000;
+      expect(repository.renew(a, "idle", at).ok).toBe(true);
+      expect(repository.renew(b, "idle", at).ok).toBe(true);
+      const message = request({
+        id: `retained-${i}`,
+        laneSequence: i,
+        createdAt: at,
+        expiresAt: at + 1_000,
+      });
+      const result = repository.admit(b, message, at);
+      if (!result.ok) {
+        expect(result.error.code).toBe("full");
+        full = true;
+        break;
+      }
+      expect(repository.cleanup(b, messageKey(message), at + 2_000).ok).toBe(true);
+    }
+    expect(full).toBe(true);
+  } finally {
+    await store.close();
+  }
+});
 test("an offline proposal has three durable delivery attempts and never becomes accepted", async () => {
   const { store, repository, a, b } = await fixture();
   try {

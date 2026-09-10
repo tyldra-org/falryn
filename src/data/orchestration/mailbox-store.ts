@@ -710,7 +710,8 @@ export function createMailboxRepository(store: SqliteStorePort): MailboxReposito
         !parsed.success ||
         registration.publicKey.length > 256 ||
         registration.address.length > 256 ||
-        registration.fence.length < 32
+        registration.fence.length < 32 ||
+        registration.fence.length > 128
       )
         return err({ code: "invalid" });
       return write((sql) => {

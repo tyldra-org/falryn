@@ -1,5 +1,6 @@
 /** Versioned peer evidence. Neither envelopes nor receipts carry execution authority. */
 import { z } from "zod";
+import { artifactId, contentDigest } from "../artifacts/index.ts";
 import { canonicalDigest } from "../extensions/canonical.ts";
 import type { Result } from "../foundation/result.ts";
 
@@ -59,8 +60,8 @@ export const peerEndpointSchema = z.strictObject({
 });
 export type PeerEndpoint = z.infer<typeof peerEndpointSchema>;
 export const peerArtifactSchema = z.strictObject({
-  artifactId: id,
-  digest,
+  artifactId: z.string().refine((value) => artifactId.parse(value).ok),
+  digest: z.string().refine((value) => contentDigest.parse(value).ok),
   bytes: z.number().int().nonnegative().max(MAILBOX_LIMITS.attachmentBytes),
 });
 export const peerMessageSchema = z

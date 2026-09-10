@@ -438,8 +438,15 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
       void peer(action, controller.signal)
         .then(
           (result) => {
-            if (!controller.signal.aborted)
-              dispatch({ kind: "notice", message: JSON.stringify(result).slice(0, 262_144) });
+            if (controller.signal.aborted) return;
+            const text = JSON.stringify(result);
+            dispatch({
+              kind: "notice",
+              message:
+                encoder.encode(text).byteLength <= 262_144
+                  ? text
+                  : "Peer result exceeds 256 KiB. Request a smaller history page or inspect one receipt.",
+            });
           },
           () => {
             if (!controller.signal.aborted)

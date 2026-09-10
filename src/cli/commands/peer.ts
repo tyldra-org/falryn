@@ -26,13 +26,20 @@ export async function runPeer(
   const graph = services();
   const workspace = await graph.ensureWorkspaceSet(signal);
   const unavailable: PeerPayload = err({ code: "unavailable" });
+  let registered = false;
+  const failureEffect = (payload: PeerPayload) =>
+    !payload.ok && payload.error.code === "uncertain"
+      ? ("uncertain" as const)
+      : registered
+        ? ("partial" as const)
+        : ("none" as const);
   const result = (payload: PeerPayload) =>
     resultFor(
       "peer",
       payload,
       [],
-      payload.ok ? { kind: "completed" } : { kind: "failed", effect: "none" },
-      { intent: "mutate", observed: payload.ok ? "completed" : "none" },
+      payload.ok ? { kind: "completed" } : { kind: "failed", effect: failureEffect(payload) },
+      { intent: "mutate", observed: payload.ok ? "completed" : failureEffect(payload) },
     );
   if (!workspace.ok) return result(unavailable);
   await graph.workspaceTrust.resolve(undefined, signal);
@@ -44,6 +51,7 @@ export async function runPeer(
       agentId: "main",
       generation: 1,
     });
+    registered = peer !== null;
     const selected = args.action.as
       ? (product.peers.owned(args.action.as, args.sessionId) ?? peer)
       : peer;

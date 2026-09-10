@@ -1,6 +1,7 @@
 import { afterEach, expect, test } from "bun:test";
 import { createRuntimeRedactor } from "../../application/diagnostics/index.ts";
 import { artifactId, createInMemoryBlobStore } from "../../domain/artifacts/index.ts";
+import { canonicalDigest } from "../../domain/extensions/canonical.ts";
 import { createInMemoryPackageWriter } from "../../domain/extensions/index.ts";
 import {
   capabilityInvocationStarted,
@@ -17,6 +18,7 @@ import {
   sessionId,
   type Timestamp,
 } from "../../domain/foundation/index.ts";
+import type { PeerMessage } from "../../domain/orchestration/peer-mailbox.ts";
 import type { ProcessTaskSnapshot } from "../../domain/orchestration/process-task.ts";
 import { exportName } from "../../domain/sessions/index.ts";
 import type { SqliteStorePort } from "../../domain/storage/index.ts";
@@ -29,6 +31,7 @@ import {
   reservedArtifact,
   temporaryRoot,
 } from "../fixtures.ts";
+import { createMailboxRepository } from "../orchestration/mailbox-store.ts";
 import { createSqliteProcessTaskStore } from "../orchestration/process-task-store.ts";
 import { createSqliteEventStore } from "../sessions/event-store.ts";
 import { createRecordRepositories } from "../sessions/repositories.ts";
@@ -178,6 +181,99 @@ async function harness() {
     collect,
   };
 }
+
+test("mailbox admission rejects a GC claim and pins selected bytes until tombstoned cleanup", async () => {
+  const h = await harness();
+  try {
+    const record = await h.ingest("mailed-artifact", "selected evidence", false);
+    const mailbox = createMailboxRepository(h.store);
+    const scope = {
+      workspace: canonicalDigest("w"),
+      project: canonicalDigest("p"),
+      user: canonicalDigest("u"),
+      environment: canonicalDigest("e"),
+      trust: canonicalDigest("t"),
+    };
+    const register = (name: string) =>
+      value(
+        mailbox.register(
+          {
+            endpoint: {
+              version: 1,
+              identity: { sessionId: name, agentId: "main", generation: 1 },
+              scope,
+              label: name,
+              state: "idle",
+              processGeneration: name,
+              leaseUntil: 30_000,
+            },
+            publicKey: "test-public-key",
+            address: "host-private",
+            fence: `${name}-${"x".repeat(40)}`,
+          },
+          0,
+        ),
+      );
+    const sender = register("sender");
+    const recipient = register("recipient");
+    value(
+      mailbox.policy(recipient, sender.identity, { mode: "allow", muted: false, perMinute: 64 }, 0),
+    );
+    const message: PeerMessage = {
+      version: 1,
+      id: "mailed",
+      sender: sender.identity,
+      recipient: recipient.identity,
+      scope,
+      laneSequence: 1,
+      createdAt: 0,
+      expiresAt: 1_000,
+      kind: "message",
+      correlation: null,
+      text: "selected evidence",
+      artifacts: [
+        { artifactId: String(record.artifactId), digest: record.digest, bytes: record.byteLength },
+      ],
+      sensitivity: "internal",
+      retention: "normal",
+      provenance: { source: "peer-evidence", effectAuthority: false, causalMessage: null, hops: 0 },
+    };
+    value(
+      h.store.write((sql) =>
+        sql.run(
+          "INSERT INTO artifact_gc_claims (digest, artifact_id, owner_id) VALUES ($digest,$id,'mailbox-test')",
+          { digest: record.digest, id: record.artifactId },
+        ),
+      ),
+    );
+    expect(mailbox.admit(recipient, message, 0)).toEqual({ ok: false, error: { code: "denied" } });
+    value(
+      h.store.write((sql) =>
+        sql.run("DELETE FROM artifact_gc_claims WHERE owner_id='mailbox-test'"),
+      ),
+    );
+    const accepted = value(mailbox.admit(recipient, message, 0));
+    expect(
+      value(await planReachabilityGc(h.inputs)).candidates.some(
+        (candidate) => candidate.identity === record.artifactId,
+      ),
+    ).toBe(false);
+    expect(value(mailbox.cleanup(recipient, accepted.key, 2_000)).tombstoned).toBe(true);
+    expect(
+      value(await planReachabilityGc(h.inputs)).candidates.some(
+        (candidate) => candidate.identity === record.artifactId,
+      ),
+    ).toBe(true);
+    await h.collect();
+    expect(h.blobs.bytesAt({ scope: "content", digest: record.digest })).toBeNull();
+    expect(value(mailbox.inspect(sender, accepted.key, 2_000))).toMatchObject({
+      message: null,
+      receipt: { delivery: "expired", tombstoned: true },
+    });
+  } finally {
+    await h.store.close();
+  }
+});
 
 for (const state of ["active", "terminal"] as const) {
   test(`${state} retained task roots survive session closure before any chunk/result reference`, async () => {
