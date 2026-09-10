@@ -86,6 +86,16 @@ export function readOverrideLayer(
       continue;
     }
     const { descriptor } = resolution;
+    if (!descriptor.scopes.includes("cli")) {
+      issues.push({
+        kind: "scope-unavailable",
+        severity: "error",
+        path: descriptor.path,
+        scope: "cli",
+        availableScopes: descriptor.scopes,
+      });
+      continue;
+    }
     const coerced = coerce(raw, descriptor);
     if (coerced === null) {
       issues.push(invalidFor(descriptor));

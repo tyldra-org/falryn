@@ -65,7 +65,7 @@ export function configurationGenerationFromLoadOutcome(
   }
 }
 
-/** Values in effect for one outcome — record on success, declared defaults otherwise. */
+/** Values from the accepted or retained generation; defaults only before any usable publication. */
 export function configurationValuesFromLoadOutcome(
   outcome: ConfigurationLoadOutcome,
   registry: ConfigurationRegistryPort,
@@ -73,6 +73,11 @@ export function configurationValuesFromLoadOutcome(
   if (outcome.kind === "published" || outcome.kind === "unchanged") {
     return outcome.record.values;
   }
+  if (
+    (outcome.kind === "rejected" || outcome.kind === "publish-failed") &&
+    outcome.retained !== null
+  )
+    return outcome.retained.values;
   return registry.defaults();
 }
 

@@ -112,6 +112,10 @@ export function renderReplay(
       `  Stream       ${safe(payload.streamId)}`,
       `  Turns        ${payload.turnCount}`,
       `  Artifacts    ${payload.artifactCount}`,
+      ...(payload.packageData ?? []).map(
+        (bundle) =>
+          `  Package data ${safe(bundle.packageId)}: ${bundle.records.length} inert records, ${bundle.omitted} omitted; import ${safe(bundle.importId)}`,
+      ),
       ...(payload.truncated ? ["  Note         truncated; widen the read bound to see more"] : []),
     ],
     diagnostics: [

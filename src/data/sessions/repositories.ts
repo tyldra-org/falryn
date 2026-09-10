@@ -70,6 +70,10 @@ import type {
   SqliteStorePort,
 } from "../../domain/storage/index.ts";
 import {
+  closePackageSessionState,
+  forkPackageSessionState,
+} from "../extensions/package-session-state.ts";
+import {
   INVOCATIONS_TABLE,
   MODEL_ATTEMPTS_TABLE,
   SESSIONS_TABLE,
@@ -398,6 +402,8 @@ function createRepository<Record, Id extends string, ParentId extends string>(
           outcomeKind: outcome.outcomeKind,
           outcomeEffect: outcome.outcomeEffect,
         });
+        if (changed.changes > 0 && spec.entity === "session")
+          closePackageSessionState(statements, id, Date.parse(completion.completedAt));
         return changed.changes === 0
           ? { kind: "record", code: "not-found", entity: spec.entity, identity: id }
           : null;
@@ -443,7 +449,43 @@ function createRepository<Record, Id extends string, ParentId extends string>(
 /** Every repository over one open database. */
 export function createRecordRepositories(store: SqliteStorePort): RecordRepositories {
   return {
-    sessions: createRepository<SessionRecord, SessionId, WorkspaceId>(store, sessionSpec),
+    sessions: {
+      ...createRepository<SessionRecord, SessionId, WorkspaceId>(store, sessionSpec),
+      fork(source, destination, signal) {
+        const written = store.write((sql): RecordError | null => {
+          const row = sql.all(
+            `SELECT ${sessionSpec.selectList} FROM sessions WHERE session_id=$id`,
+            { id: source.sessionId },
+          )[0];
+          const current = row === undefined ? null : sessionSpec.parse(withOutcome(row));
+          if (!current?.ok || JSON.stringify(current.value) !== JSON.stringify(source))
+            return {
+              kind: "record",
+              code: "not-found",
+              entity: "session",
+              identity: source.sessionId,
+            };
+          if (
+            sql.all("SELECT session_id FROM sessions WHERE session_id=$id", {
+              id: destination.sessionId,
+            }).length
+          )
+            return {
+              kind: "record",
+              code: "already-exists",
+              entity: "session",
+              identity: destination.sessionId,
+            };
+          forkPackageSessionState(sql, source, destination);
+          sql.run(sessionSpec.insert, sessionSpec.bindingsFor(destination));
+          return null;
+        }, signal);
+        if (!written.ok) return err(storageError("session", written.error));
+        return written.value.value === null
+          ? ok({ cancelledAfterCommit: written.value.cancelledAfterCommit })
+          : err(written.value.value);
+      },
+    },
     turns: createRepository<TurnRecord, TurnId, SessionId>(store, turnSpec),
     modelAttempts: createRepository<ModelAttemptRecord, ModelAttemptId, TurnId>(
       store,

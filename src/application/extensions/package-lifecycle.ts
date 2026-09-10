@@ -11,7 +11,10 @@ import {
   type PackageRequest,
   packageRequestSchema,
 } from "../../domain/extensions/lifecycle.ts";
+import type { PackageDataDocument } from "../../domain/extensions/package-data-store.ts";
 import type { PackageSnapshot, PackageSource } from "../../domain/extensions/package-source.ts";
+import { planPackageDataCleanup } from "./package-data-cleanup.ts";
+import { packageDeclarations, preparePackageDataPublication } from "./package-data-policy.ts";
 import { type InspectionHost, type PreparedPackage, preparePackage } from "./prepare-package.ts";
 
 export type PackageLifecycle = ReturnType<typeof createPackageLifecycle>;
@@ -21,6 +24,7 @@ export function createPackageLifecycle(
   store: PackageLifecycleStore,
   bytes: PackageBytes,
   host: InspectionHost,
+  validateConfiguration?: (document: PackageDataDocument, signal: AbortSignal) => Promise<string>,
 ) {
   function counted(receipt: PackageReceipt): PackageReceipt {
     const counts = store.counts(receipt.packageId);
@@ -175,25 +179,77 @@ export function createPackageLifecycle(
         };
         if (action === "inspect") {
           if (state.current !== null) await readVersion(state.current, signal);
+          const data = store.data?.(request.packageId);
+          if (data && !data.ok) return fail(data.error.code);
           return counted({
             ...receipt,
             status: "completed",
             code: state.current === null ? "not-installed" : "installed-disabled",
             recovery: "none",
+            ...(data?.ok && data.value
+              ? {
+                  data: {
+                    version: 1,
+                    revision: data.value.revision,
+                    configurationRevision: data.value.configurationRevision,
+                    configuration: data.value.declarations.configuration.map(
+                      ({ id, contribution, scopes, sensitivity, application }) => ({
+                        id,
+                        contribution,
+                        scopes,
+                        sensitivity,
+                        application,
+                      }),
+                    ),
+                    state: data.value.declarations.state.map(
+                      ({
+                        id,
+                        contribution,
+                        schemaVersion,
+                        scopes,
+                        retention,
+                        cleanup,
+                        maxBytes,
+                        maxRecords,
+                      }) => ({
+                        id,
+                        contribution,
+                        schemaVersion,
+                        scopes,
+                        retention,
+                        cleanup,
+                        maxBytes,
+                        maxRecords,
+                      }),
+                    ),
+                    retainedRecords: data.value.records.filter((record) => !record.tombstone)
+                      .length,
+                  },
+                }
+              : {}),
           });
         }
         if (action === "enable") return fail("activation-owner-unavailable");
+        if (action === "data") return fail("package-data-owner-required");
+        if (request.data !== undefined) return fail("unexpected-package-data-request");
         if (request.expectedRevision !== state.revision) return fail("stale-package-revision");
         if (action !== "rollback" && request.versionDigest !== undefined)
           return fail("unexpected-version-digest");
         if (action !== "uninstall" && request.retention !== "retain")
           return fail("unexpected-retention-choice");
+        if (action !== "uninstall" && request.dataCleanup !== undefined)
+          return fail("unexpected-data-cleanup-choice");
         if (!["install", "update"].includes(action) && source !== undefined)
           return fail("unexpected-package-source");
         if (action === "install" && state.current !== null) return fail("already-installed");
         if (["update", "rollback", "disable"].includes(action) && state.current === null)
           return fail("not-installed");
         let candidate = state.current;
+        let dataPublication:
+          | { expectedRevision: number; document: PackageDataDocument }
+          | undefined;
+        const dataBefore = store.data?.(request.packageId);
+        if (dataBefore && !dataBefore.ok) return fail(dataBefore.error.code);
         let snapshot: PackageSnapshot | undefined;
         if (action === "install" || action === "update") {
           if (source === undefined) return fail("package-source-required");
@@ -221,7 +277,21 @@ export function createPackageLifecycle(
           if (!prepared.package.dependencies.ok) return fail(prepared.package.dependencies.code);
           if (prepared.package.diagnostics.length > 0 || prepared.package.omittedDiagnostics > 0)
             return fail("package-validation-failed");
+          const declarations = packageDeclarations(prepared.package);
+          if (store.data !== undefined)
+            dataPublication = {
+              expectedRevision: dataBefore?.ok ? (dataBefore.value?.revision ?? 0) : 0,
+              document: preparePackageDataPublication(
+                dataBefore?.ok ? dataBefore.value : null,
+                prepared.package,
+                signal,
+                state.revision + 1,
+              ),
+            };
+          else if (declarations.configuration.length || declarations.state.length)
+            return fail("package-data-owner-unavailable");
           candidate = {
+            dataDeclarations: declarations,
             identity: prepared.package.identity,
             identityDigest: prepared.package.identityDigest,
             sourceId: snapshot.sourceId,
@@ -240,8 +310,42 @@ export function createPackageLifecycle(
           const checked = await readVersion(retained.value, signal);
           if (checked.compatibility !== "compatible" || !checked.dependencies.ok)
             return fail("rollback-incompatible");
+          if (store.data !== undefined)
+            dataPublication = {
+              expectedRevision: dataBefore?.ok ? (dataBefore.value?.revision ?? 0) : 0,
+              document: preparePackageDataPublication(
+                dataBefore?.ok ? dataBefore.value : null,
+                checked,
+                signal,
+                state.revision + 1,
+              ),
+            };
           candidate = retained.value;
-        } else if (action === "uninstall") candidate = null;
+        } else if (action === "uninstall") {
+          candidate = null;
+          if (dataBefore?.ok && dataBefore.value) {
+            const cleanup = planPackageDataCleanup(dataBefore.value, request.dataCleanup);
+            dataPublication = {
+              expectedRevision: dataBefore.value.revision,
+              document: cleanup.document,
+            };
+            receipt = { ...receipt, data: cleanup.summary };
+          }
+        } else if (action === "disable" && dataBefore?.ok && dataBefore.value) {
+          receipt = {
+            ...receipt,
+            data: {
+              version: 1,
+              configuration: "retained",
+              state: "retained",
+              revision: dataBefore.value.revision,
+            },
+          };
+        }
+        const configurationSource =
+          dataPublication && action !== "uninstall"
+            ? await validateConfiguration?.(dataPublication.document, signal)
+            : undefined;
         const counts = store.counts(request.packageId);
         if (!counts.ok) return fail(counts.error.code);
         const confirmation = canonicalDigest({
@@ -251,6 +355,8 @@ export function createPackageLifecycle(
           prior: state.current?.identityDigest ?? null,
           candidate: candidate?.identityDigest ?? null,
           counts: counts.value,
+          dataRevision: dataBefore?.ok ? (dataBefore.value?.revision ?? 0) : 0,
+          ...(configurationSource === undefined ? {} : { configurationSource }),
         });
         if (request.confirmation === undefined)
           return counted({
@@ -287,6 +393,7 @@ export function createPackageLifecycle(
           {
             expected: state,
             candidate,
+            ...(dataPublication === undefined ? {} : { dataPublication }),
             remove: action === "uninstall" && request.retention === "remove",
             fingerprint,
             receipt: committed,

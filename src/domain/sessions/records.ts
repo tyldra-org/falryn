@@ -226,7 +226,13 @@ export type RecordRepositoryPort<Record, Id extends string, ParentId extends str
   listByParent(parentId: ParentId, limit: number): Result<readonly Record[], RecordError>;
 };
 
-export type SessionRepositoryPort = RecordRepositoryPort<SessionRecord, SessionId, WorkspaceId>;
+export type SessionRepositoryPort = RecordRepositoryPort<SessionRecord, SessionId, WorkspaceId> & {
+  fork?(
+    source: SessionRecord,
+    destination: SessionRecord,
+    signal?: AbortSignal,
+  ): Result<RecordWrite, RecordError>;
+};
 export type TurnRepositoryPort = RecordRepositoryPort<TurnRecord, TurnId, SessionId>;
 export type ModelAttemptRepositoryPort = RecordRepositoryPort<
   ModelAttemptRecord,

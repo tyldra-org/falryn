@@ -866,9 +866,10 @@ export async function parseInvocation(argv: readonly string[]): Promise<Invocati
   if (command === "package") {
     if (parsed.input === undefined)
       return { kind: "invalid", message: "package requires --input." };
-    const loaded = await loadTaskInputFile(parsed.input);
-    if (!loaded.ok || loaded.value.length > 16_384)
-      return { kind: "invalid", message: "Invalid package request (maximum 16384 bytes)." };
+    const limit = parsed.action === "data" ? 8_388_608 : 16_384;
+    const loaded = await loadTaskInputFile(parsed.input, limit);
+    if (!loaded.ok || Buffer.byteLength(loaded.value) > limit)
+      return { kind: "invalid", message: `Invalid package request (maximum ${limit} bytes).` };
     try {
       const checked = packageRequestSchema.safeParse(JSON.parse(loaded.value));
       const action = PACKAGE_ACTIONS.find((a) => a === parsed.action);
@@ -931,6 +932,7 @@ export async function parseInvocation(argv: readonly string[]): Promise<Invocati
 
 async function loadTaskInputFile(
   pathText: string,
+  limit = MAX_TASK_INPUT_FILE_BYTES,
 ): Promise<
   { readonly ok: true; readonly value: string } | { readonly ok: false; readonly error: string }
 > {
@@ -938,7 +940,7 @@ async function loadTaskInputFile(
   if (!parsed.ok) {
     return { ok: false, error: "Argument input must be a local path." };
   }
-  const read = await createHostFileSystem().readText(parsed.value, MAX_TASK_INPUT_FILE_BYTES);
+  const read = await createHostFileSystem().readText(parsed.value, limit);
   if (!read.ok) {
     return { ok: false, error: "Argument input must name a readable JSON file." };
   }

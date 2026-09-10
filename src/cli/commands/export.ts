@@ -1,3 +1,4 @@
+import { listPackageData } from "../../data/extensions/package-data-inventory.ts";
 /** Export preview and package-writing command family. */
 
 import {
@@ -38,6 +39,7 @@ import {
 } from "../../integrations/index.ts";
 import type { ExportCommandArguments } from "../command-tree.ts";
 import { type CommandEffect, type CommandResultOf, READ_ONLY_EFFECT } from "../output/result.ts";
+import { packageDataForSessionExport } from "../runtime/package-data-history.ts";
 import type { ServiceProvider } from "../runtime/services.ts";
 import { FALRYN_VERSION } from "../version.ts";
 import { MUTATION_NOT_OBSERVED, resultFor, WRITE_COMPLETED_EFFECT } from "./shared.ts";
@@ -200,7 +202,13 @@ async function exportThroughStore(
 
     onMutationStart?.();
     const written = await writePackage(
-      options,
+      {
+        ...options,
+        packageData: packageDataForSessionExport(
+          listPackageData(opened.value, false, 64),
+          inventory.value.sessionIds,
+        ),
+      },
       name,
       arguments_.selection,
       inventory.value,

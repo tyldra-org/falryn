@@ -289,6 +289,12 @@ export type ConfigurationIssueSeverity = "error" | "warning";
  * the input.
  */
 export type ConfigurationIssue =
+  | {
+      readonly kind: "package-unavailable";
+      readonly severity: "warning";
+      readonly path: string;
+      readonly retained: boolean;
+    }
   /** Both the current and legacy user configuration homes contain data. */
   | {
       readonly kind: "configuration-home-conflict";

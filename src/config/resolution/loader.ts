@@ -93,6 +93,18 @@ export type ConfigurationLoaderOptions = {
   /** Identities the event's correlation needs, supplied by the caller. */
   readonly correlation: Omit<SessionCorrelation, "configurationGeneration">;
   readonly streamId: StreamId;
+  /** Dynamic host-owned declarations are staged with the same complete source read. */
+  readonly prepare?: (
+    request: LoadRequest,
+    signal?: AbortSignal,
+  ) => Promise<{
+    readonly registry: ConfigurationRegistryPort;
+    readonly declarations: readonly ConfigurationKeyDeclaration[];
+    readonly layers: readonly LayerInput[];
+    readonly generation: string;
+    readonly issues?: readonly ConfigurationIssue[];
+    readonly publish: () => void;
+  }>;
 };
 
 export type LoadRequest = {
@@ -115,10 +127,11 @@ export type ConfigurationLoader = {
 };
 
 export function createConfigurationLoader(
-  options: ConfigurationLoaderOptions,
+  initialOptions: ConfigurationLoaderOptions,
 ): ConfigurationLoader {
   let current: ConfigurationGenerationRecord | null = null;
   let sequence: Sequence = FIRST_SEQUENCE;
+  let publishedSourceGeneration: string | null = null;
 
   return {
     current: () => current,
@@ -128,9 +141,26 @@ export function createConfigurationLoader(
         return { kind: "cancelled" };
       }
 
+      let prepared:
+        | Awaited<ReturnType<NonNullable<ConfigurationLoaderOptions["prepare"]>>>
+        | undefined;
+      try {
+        prepared = await initialOptions.prepare?.(request, signal);
+      } catch {
+        return {
+          kind: "publish-failed",
+          code: "package-configuration-unavailable",
+          retained: current,
+        };
+      }
+      const options =
+        prepared === undefined
+          ? initialOptions
+          : { ...initialOptions, registry: prepared.registry, declarations: prepared.declarations };
+
       const reports: SourceReport[] = [];
-      const layers: LayerInput[] = [];
-      const issues: ConfigurationIssue[] = [];
+      const layers: LayerInput[] = [...(prepared?.layers ?? [])];
+      const issues: ConfigurationIssue[] = [...(prepared?.issues ?? [])];
 
       const home = await resolveConfigurationHome(
         options.fileSystem,
@@ -169,6 +199,21 @@ export function createConfigurationLoader(
           ? await readSource(options.fileSystem, discovered, signal)
           : parseSourceText(discovered, request.projectText ?? null);
         if (read.outcome !== "loaded") {
+          // Removing or losing a previously loaded package source must not silently
+          // revert its settings while an admitted operation still holds that generation.
+          if (
+            current !== null &&
+            !(pinned && request.projectText === null) &&
+            options.declarations.some((d) => d.descriptor.path.startsWith("packages.")) &&
+            current.sources.some(
+              (source) => source.source.file === read.source.file && source.outcome === "loaded",
+            )
+          )
+            return {
+              kind: "publish-failed",
+              code: "package-configuration-source-unavailable",
+              retained: current,
+            };
           reports.push({
             source: read.source,
             outcome: read.outcome,
@@ -260,7 +305,23 @@ export function createConfigurationLoader(
           ? diffGenerations(options.registry, {}, composed.values)
           : diffGenerations(options.registry, current.values, composed.values);
 
-      if (current !== null && changes.length === 0) {
+      if (
+        current !== null &&
+        changes.length === 0 &&
+        (prepared?.generation ?? null) === publishedSourceGeneration &&
+        JSON.stringify({
+          sources: reports,
+          provenance: composed.provenance,
+          overridden: composed.overridden,
+          issues,
+        }) ===
+          JSON.stringify({
+            sources: current.sources,
+            provenance: current.provenance,
+            overridden: current.overridden,
+            issues: current.issues,
+          })
+      ) {
         // Nothing moved. No generation is allocated and no event is appended,
         // so a caller polling this cannot manufacture a change per poll.
         return { kind: "unchanged", record: current };
@@ -279,6 +340,8 @@ export function createConfigurationLoader(
       }
       sequence = nextSequence(sequence);
       current = record;
+      publishedSourceGeneration = prepared?.generation ?? null;
+      prepared?.publish();
 
       return { kind: "published", record, changes, applicationClass };
     },

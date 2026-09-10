@@ -10,6 +10,10 @@ import {
   NATIVE_CONTRIBUTION_KINDS,
   relativePathSchema,
 } from "./identity.ts";
+import {
+  packageConfigurationDeclarationSchema,
+  packageStateDeclarationSchema,
+} from "./package-data.ts";
 
 export const PORTABLE_PLUGIN_SCHEMA = "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json";
 export const PORTABLE_MCP_SCHEMA = "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json";
@@ -258,8 +262,14 @@ export const falrynManifestSchema = z.strictObject({
   compatibility: compatibility.optional(),
   scopes: z.array(z.enum(EXTENSION_SCOPES)).max(5).default([]),
   files: z.array(integrityFileSchema).max(4_096).default([]),
-  configuration: z.array(stateFamily).max(128).default([]),
-  state: z.array(stateFamily).max(128).default([]),
+  configuration: z
+    .array(z.union([packageConfigurationDeclarationSchema, stateFamily]))
+    .max(128)
+    .default([]),
+  state: z
+    .array(z.union([packageStateDeclarationSchema, stateFamily]))
+    .max(128)
+    .default([]),
 });
 export type ContributionDeclaration = z.infer<typeof contributionDeclarationSchema>;
 export type FalrynManifest = z.infer<typeof falrynManifestSchema>;

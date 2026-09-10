@@ -90,12 +90,14 @@ export type ImportError =
   | { readonly kind: "import"; readonly code: "events"; readonly error: EventStoreError };
 
 export type ImportResult = {
+  readonly packageDataImports?: readonly string[];
   readonly sessionIds: readonly SessionId[];
   readonly events: number;
   readonly artifacts: number;
 };
 
 export type SessionReplay = {
+  readonly packageData?: readonly import("../extensions/package-data-transfer.ts").PackageDataReplay[];
   readonly sessionId: SessionId;
   readonly extensionCatalog?: CatalogHistory | undefined;
   readonly streamId: StreamId;

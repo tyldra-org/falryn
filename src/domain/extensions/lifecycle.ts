@@ -2,10 +2,13 @@ import { z } from "zod";
 import type { Result } from "../foundation/result.ts";
 import { dependencyCandidateSchema } from "./dependencies.ts";
 import { digestSchema, identityText, packageIdentityV1Schema } from "./identity.ts";
+import { packageDataRequestSchema } from "./package-data-control.ts";
+import { type PackageDataDocument, packageDataDeclarationsSchema } from "./package-data-store.ts";
 import type { PackageSnapshot } from "./package-source.ts";
 
 export const PACKAGE_ACTIONS = [
   "inspect",
+  "data",
   "install",
   "update",
   "rollback",
@@ -21,7 +24,14 @@ export const packageRequestSchema = z.strictObject({
   sourcePath: z.string().min(1).max(4096).optional(),
   versionDigest: digestSchema.optional(),
   retention: z.enum(["retain", "remove"]).default("retain"),
+  dataCleanup: z
+    .strictObject({
+      configuration: z.enum(["retain", "remove"]),
+      state: z.enum(["retain", "declared"]),
+    })
+    .optional(),
   confirmation: digestSchema.optional(),
+  data: packageDataRequestSchema.optional(),
 });
 export type PackageRequest = z.infer<typeof packageRequestSchema>;
 export type PackageAction = (typeof PACKAGE_ACTIONS)[number];
@@ -38,6 +48,7 @@ export const installedVersionSchema = z.strictObject({
   fileCount: z.int().nonnegative().max(4096),
   storageId: z.string().uuid(),
   state: z.enum(["staged", "retained", "deleting", "deleted"]),
+  dataDeclarations: packageDataDeclarationsSchema.optional(),
 });
 export type InstalledVersion = z.infer<typeof installedVersionSchema>;
 export type InstalledPackage = {
@@ -60,6 +71,8 @@ export const packageReceiptSchema = z.strictObject({
   retainedVersions: z.int().nonnegative(),
   pendingCleanup: z.int().nonnegative(),
   recovery: z.enum(["none", "inspect", "fresh-preview", "recover"]),
+  dataEffect: z.enum(["none", "completed"]).optional(),
+  data: z.json().optional(),
 });
 export type PackageReceipt = z.infer<typeof packageReceiptSchema>;
 export type LifecycleError = { readonly code: string };
@@ -74,6 +87,7 @@ export type PackageOperation = {
   readonly receipt: PackageReceipt;
 };
 export interface PackageLifecycleStore {
+  data?(packageId: string): Result<PackageDataDocument | null, LifecycleError>;
   current(packageId: string): Result<InstalledPackage, LifecycleError>;
   version(packageId: string, digest: string): Result<InstalledVersion | null, LifecycleError>;
   operation(id: string): Result<PackageOperation | null, LifecycleError>;
@@ -93,6 +107,10 @@ export interface PackageLifecycleStore {
       };
       /** Bounded byte publication runs while the SQLite writer owns this transaction. */
       readonly stageBytes?: () => void;
+      readonly dataPublication?: {
+        readonly expectedRevision: number;
+        readonly document: PackageDataDocument;
+      };
     },
     signal: AbortSignal,
   ): Result<PackageReceipt, LifecycleError>;

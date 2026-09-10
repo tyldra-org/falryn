@@ -206,7 +206,10 @@ export async function writePackage(
     format: EXPORT_FORMAT,
     schemaVersion: EXPORT_SCHEMA_VERSION,
     minimumCompatibleSchemaVersion: MINIMUM_COMPATIBLE_EXPORT_SCHEMA_VERSION,
-    schemaFamilies: WRITTEN_SCHEMA_FAMILIES,
+    schemaFamilies:
+      (options.packageData?.length ?? 0) === 0
+        ? WRITTEN_SCHEMA_FAMILIES
+        : [...WRITTEN_SCHEMA_FAMILIES, { family: "falryn.package-data", schemaVersion: 1 }],
     createdAt: timestampFromEpochMilliseconds(options.clock.now()) as Timestamp,
     createdBy: options.buildIdentity,
     selection: summarize(selection, inventory.counts.sessions),
@@ -215,6 +218,9 @@ export async function writePackage(
     omissions: inventory.omissions,
     redactions: records.value.redactions,
     configuration: configuration.value,
+    ...(options.packageData === undefined || options.packageData.length === 0
+      ? {}
+      : { packageData: options.packageData }),
   };
 
   const trailer = encoder.encode(`${JSON.stringify(manifest)}\n`);

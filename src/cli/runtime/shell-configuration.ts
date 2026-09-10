@@ -92,7 +92,13 @@ export async function resolveShellBootstrapConfiguration(
     return { values: loaded.values, generation: loaded.generation };
   }
 
-  writeDiagnosticLine(streams, whyDefaults(loaded.outcome));
+  writeDiagnosticLine(
+    streams,
+    (loaded.outcome.kind === "rejected" || loaded.outcome.kind === "publish-failed") &&
+      loaded.outcome.retained !== null
+      ? "Configuration refresh failed. The last valid generation remains in effect."
+      : whyDefaults(loaded.outcome),
+  );
   return { values: loaded.values, generation: loaded.generation };
 }
 
