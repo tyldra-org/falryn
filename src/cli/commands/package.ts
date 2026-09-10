@@ -1,7 +1,10 @@
 import { join } from "node:path";
+import { z } from "zod";
 import { adoptForeignError } from "../../application/diagnostics/index.ts";
 import { createPackageLifecycle } from "../../application/extensions/package-lifecycle.ts";
 import { processProductResources } from "../../application/orchestration/product-resources.ts";
+import { createPackageDataImportRepository } from "../../data/extensions/package-data-import-repository.ts";
+import { createPackageDataRepository } from "../../data/extensions/package-data-repository.ts";
 import { createPackageLifecycleRepository } from "../../data/extensions/package-lifecycle-repository.ts";
 import {
   openSqliteStore,
@@ -9,6 +12,7 @@ import {
   rootChild,
   sqliteDatabasePath,
 } from "../../data/index.ts";
+import { createRecordRepositories } from "../../data/sessions/repositories.ts";
 import type {
   PackageAction,
   PackageLifecycleStore,
@@ -23,6 +27,9 @@ import { createHostPackageCache } from "../../integrations/extensions/host-packa
 import { createHostPackageSource } from "../../integrations/extensions/host-package-inspection.ts";
 import { openBunSqlite } from "../../integrations/index.ts";
 import type { CommandResultOf } from "../output/result.ts";
+import { validatePackageConfigurationCandidate } from "../runtime/package-configuration-candidate.ts";
+import { inspectPackageConfiguration } from "../runtime/package-configuration-inspection.ts";
+import { runPackageDataControl, runPackageDataImport } from "../runtime/package-data.ts";
 import type { ServiceProvider } from "../runtime/services.ts";
 import { FALRYN_VERSION } from "../version.ts";
 import { resultFor } from "./shared.ts";
@@ -30,6 +37,7 @@ import { openSessionStore } from "./storage.ts";
 
 export type PackageArguments = { readonly action: PackageAction; readonly request: PackageRequest };
 const absent: PackageLifecycleStore = {
+  data: () => ok(null),
   current: (packageId) => ok({ packageId, revision: 0, current: null }),
   version: () => ok(null),
   operation: () => ok(null),
@@ -98,7 +106,7 @@ export async function runPackage(
       ? "uncertain"
       : receipt.status === "partial"
         ? "partial"
-        : receipt.revision > receipt.priorRevision
+        : receipt.dataEffect === "completed" || receipt.revision > receipt.priorRevision
           ? "completed"
           : "none";
   const errors =
@@ -163,13 +171,91 @@ export async function runPackage(
         opened.kind === "absent" ? absent : createPackageLifecycleRepository(opened.store),
         createHostPackageCache(join(stateRoot, "packages")),
         { falryn: FALRYN_VERSION, bun: Bun.version, os: process.platform, arch: process.arch },
+        (document, signal) => validatePackageConfigurationCandidate(resolved, document, signal),
       );
-      result = await lifecycle.run(
-        action,
-        request,
-        operationSignal,
-        request.sourcePath === undefined ? undefined : createHostPackageSource(request.sourcePath),
-      );
+      if (action === "data") {
+        if (opened.kind !== "open") {
+          const preview = runPackageDataImport(
+            { read: () => ok(null), save: () => err({ code: "package-store-absent" }) },
+            request,
+            operationSignal,
+          );
+          result =
+            preview.status === "preview"
+              ? {
+                  ...failure("package-data-preview"),
+                  status: "preview",
+                  confirmation: preview.confirmation,
+                  data: z.json().parse(preview),
+                }
+              : failure(preview.status === "failed" ? preview.code : "package-data-unavailable");
+        } else {
+          const installed = createPackageLifecycleRepository(opened.store).current(
+            request.packageId,
+          );
+          if (!installed.ok) throw new Error(installed.error.code);
+          const data = await runPackageDataControl(
+            resolved,
+            {
+              packages: createPackageLifecycleRepository(opened.store),
+              data: createPackageDataRepository(opened.store),
+              imports: createPackageDataImportRepository(opened.store),
+              sessions: createRecordRepositories(opened.store).sessions,
+            },
+            request,
+            operationSignal,
+          );
+          result = {
+            ...failure(
+              data.status === "failed" || data.status === "uncertain"
+                ? data.code
+                : `package-data-${data.status}`,
+            ),
+            status:
+              data.status === "inspected" || data.status === "imported" ? "completed" : data.status,
+            confirmation: data.status === "preview" ? data.confirmation : null,
+            priorRevision: installed.value.revision,
+            revision: installed.value.revision,
+            priorDigest: installed.value.current?.identityDigest ?? null,
+            currentDigest: installed.value.current?.identityDigest ?? null,
+            dataEffect:
+              data.status === "imported" ||
+              (data.status === "completed" &&
+                data.receipt.afterRevision > data.receipt.beforeRevision)
+                ? "completed"
+                : "none",
+            recovery: data.status === "uncertain" ? "inspect" : "none",
+            data: z.json().parse(JSON.parse(JSON.stringify(data))),
+          };
+        }
+      } else
+        result = await lifecycle.run(
+          action,
+          request,
+          operationSignal,
+          request.sourcePath === undefined
+            ? undefined
+            : createHostPackageSource(request.sourcePath),
+        );
+      if (action === "inspect" && result.status === "completed" && result.currentDigest !== null) {
+        const effectiveConfiguration = await inspectPackageConfiguration(
+          resolved,
+          request.packageId,
+          null,
+          operationSignal,
+        );
+        result = {
+          ...result,
+          data: z.json().parse({
+            ...(result.data !== null &&
+            typeof result.data === "object" &&
+            !Array.isArray(result.data)
+              ? result.data
+              : {}),
+            effectiveConfiguration,
+          }),
+        };
+      }
     } catch {
       result = failure("package-operation-failed");
     }

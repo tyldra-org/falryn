@@ -492,6 +492,9 @@ function renderPayload(session: Session, result: RunCommandResult): RenderedPayl
                   ? []
                   : [`confirmation: ${result.payload.confirmation}`]),
                 `recovery: ${result.payload.recovery}`,
+                ...(result.payload.data === undefined
+                  ? []
+                  : [safe(JSON.stringify(result.payload.data))]),
               ],
         diagnostics: [],
       };

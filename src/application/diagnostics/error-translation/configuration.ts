@@ -55,6 +55,10 @@ export function fromConfigurationIssues(
 
 function configurationMessage(issue: ConfigurationIssue): string {
   switch (issue.kind) {
+    case "package-unavailable":
+      return issue.retained
+        ? "Package configuration is unavailable; its last valid declaration and values remain active."
+        : "Package configuration is unavailable; other packages remain usable.";
     case "configuration-home-conflict":
       return "Both the current and legacy configuration homes contain data.";
     case "configuration-home-unavailable":
@@ -150,6 +154,7 @@ function configurationDetail(issue: ConfigurationIssue): string {
       break;
     case "unknown-key":
     case "invalid-schema-version":
+    case "package-unavailable":
       break;
     default:
       assertNever(issue, "unhandled configuration issue");

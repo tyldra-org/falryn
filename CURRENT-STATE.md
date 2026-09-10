@@ -449,7 +449,7 @@ leave prior evidence intact; inspect the failure before retrying. A signed
 withdrawal needs a higher sequence and does not restore an old approval.
 
 `falryn package <action> --input <request.json>` implements local package
-installation transactions. Actions are `inspect`, `install`, `update`,
+installation transactions. Actions are `inspect`, `data`, `install`, `update`,
 `rollback`, `disable`, `uninstall`, `recover`, and `enable`. Every request names
 `packageId`, a UUID `operationId`, and `expectedRevision`. Install/update also
 name `sourcePath`; rollback names a previously returned `versionDigest`.
@@ -468,7 +468,9 @@ switching the current generation. Interrupted candidates remain recorded for
 `recover`; neither partial files nor orphan candidates become installed.
 
 Updates retain prior versions. Rollback revalidates exact cached bytes and host
-compatibility without fetching, migrating package state or restoring grants.
+compatibility without fetching or restoring grants. Declared configuration and
+state migrations stage with candidate bytes; incompatible rollback preserves
+the installed version and its state.
 Update and rollback refuse a digest change required by an installed dependent.
 Uninstall refuses installed dependents. Its `retention` choice defaults to
 `retain`; `remove` claims owned versions for deletion after logical removal.
@@ -481,13 +483,42 @@ receipts for exact rollback. Human, quiet, JSON and JSONL expose the same facts.
 
 Installed package lifecycle records remain disabled. `package enable` returns
 `activation-owner-unavailable`; installation and approval never create runnable
-bindings. Remote acquisition, native contribution registration, package
-configuration/state migrations and executable grants remain unavailable on this
-lifecycle path. Separate scope controls below manage metadata preferences only.
+bindings. Remote acquisition, native contribution registration and executable
+grants remain unavailable on this lifecycle path. Separate scope controls below manage metadata preferences only.
 Package cache files retain exact source bytes and are not redacted artifacts.
 SQLite-only backups and session exports do not include those bytes or confer
 package authority. Removing the state root removes both lifecycle records and
 its package cache. Older binaries require a compatible database backup.
+
+`falryn package data --input request.json` exposes version-1 host-owned
+configuration and state operations. Its outer request binds the installed package
+revision; nested `data.expectedRevision` binds the data document. Inspection
+returns usable scope identities, declaration metadata, quota use and effective
+configuration. Configuration uses qualified `packages.p<digest>.<key>` paths in
+the normal registry, files, profile, environment bridge, `config show`, and
+`config set`. Invalid refresh retains the last valid generation. Package update
+validates candidate declarations and current normal sources before publication.
+
+SQLite migration 0020 stores package documents, operation/recovery receipts,
+inert imports and artifact ownership. State supports bounded reads, metadata
+pages, revision-guarded writes, tombstones, namespace reset and guarded rollback.
+User, workspace and session state is durable; host-owned process/development
+stores are ephemeral. Native session fork copies only declared copyable records
+under fresh session identities. Session closure applies declared removal policy.
+Pure bounded rename/default/remove migrations run with package publication;
+failed or incompatible migrations retain the previous complete publication.
+
+Export omits sensitive values and credential references. Native session exports
+carry admitted session state with the `falryn.package-data` schema family.
+Import retains those records separately, even without an installed package;
+replay shows historical metadata without state payloads or execution. Adoption
+is a separately confirmed revision-guarded action into one durable layer or state
+scope, with retain/replace outcomes and a durable recovery receipt. Artifact
+references require existing user-supplied native artifacts with matching metadata
+and owned reachability; standalone data export omits artifact bytes explicitly.
+Retained recovery and artifact claims are bounded and are not silently pruned.
+The supervised version-1 configuration/state port is contract-tested; connecting
+running contributions remains with the native activation owner.
 
 `falryn extension scope --input request.json` previews and confirms exact
 package-wide or contribution-specific enabled, preferred and explicit-only

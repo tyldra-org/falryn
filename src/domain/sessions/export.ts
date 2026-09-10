@@ -45,6 +45,10 @@ import type { BlobError } from "../artifacts/blob.ts";
 import type { SensitiveValueRedactor } from "../configuration/configuration.ts";
 import { digestSchema, extensionActivationIdentityV1Schema } from "../extensions/identity.ts";
 import type { ExportName, PackageError } from "../extensions/package.ts";
+import {
+  type PackageDataBundle,
+  packageDataBundleSchema,
+} from "../extensions/package-data-transfer.ts";
 import { brandedString, timestampSchema } from "../foundation/branded-schema.ts";
 import type { CodecIssue } from "../foundation/codec-error.ts";
 import type {
@@ -82,7 +86,7 @@ export const MINIMUM_COMPATIBLE_EXPORT_SCHEMA_VERSION = 1;
  * The tuple is also the list's bound — a package cannot name more families than
  * exist.
  */
-export const EXPORT_SCHEMA_FAMILIES = [RUNTIME_EVENT_SCHEMA_FAMILY] as const;
+export const EXPORT_SCHEMA_FAMILIES = [RUNTIME_EVENT_SCHEMA_FAMILY, "falryn.package-data"] as const;
 
 export type ExportSchemaFamily = (typeof EXPORT_SCHEMA_FAMILIES)[number];
 
@@ -347,6 +351,7 @@ export type ExportInventory = {
 };
 
 export type ExportManifest = {
+  readonly packageData?: readonly PackageDataBundle[] | undefined;
   readonly format: string;
   readonly schemaVersion: number;
   /** The oldest reader that can open this package. */
@@ -529,6 +534,7 @@ const manifestSchema = z.object({
     )
     .max(MAX_EXPORT_REDACTIONS)
     .default([]),
+  packageData: z.array(packageDataBundleSchema).max(64).optional(),
   configuration: z
     .array(
       z.object({
@@ -558,6 +564,13 @@ export function parseExportManifest(value: unknown): Result<ExportManifest, read
       })),
     );
   }
+  if (
+    (parsed.data.packageData?.length ?? 0) > 0 &&
+    !parsed.data.schemaFamilies.some(
+      (family) => family.family === "falryn.package-data" && family.schemaVersion === 1,
+    )
+  )
+    return err([{ path: "packageData", code: "schema-family-required" }]);
   return ok(parsed.data);
 }
 

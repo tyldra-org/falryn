@@ -30,6 +30,7 @@ import {
   V0_1_CONFIGURATION_KEYS,
   V0_1_CROSS_FIELD_RULES,
 } from "../../config/index.ts";
+import { createRegistryPublication } from "../../config/resolution/registry-publication.ts";
 import {
   ARTIFACTS_OWNERSHIP,
   CREDENTIAL_REFERENCE_OWNERSHIP,
@@ -71,6 +72,7 @@ import {
 import type { GlobalOptions } from "../options.ts";
 import { AGENT_CONFIGURATION_KEYS } from "./agent-configuration.ts";
 import { MODEL_CONFIGURATION_KEYS } from "./model-configuration.ts";
+import { loadPackageConfiguration } from "./package-configuration.ts";
 import { PROVIDER_CONNECTION_KEYS } from "./provider-configuration.ts";
 import {
   describeWorkspaceResolveError,
@@ -225,11 +227,18 @@ export function createServiceProvider(
       }
     }
 
-    const registry = createConfigurationRegistry({
-      declarations: PRODUCT_CONFIGURATION_KEYS,
-      crossFieldRules: V0_1_CROSS_FIELD_RULES,
-      redactor: createRuntimeRedactor(),
-    });
+    const registryPublication = createRegistryPublication(
+      createConfigurationRegistry({
+        declarations: PRODUCT_CONFIGURATION_KEYS,
+        crossFieldRules: V0_1_CROSS_FIELD_RULES,
+        redactor: createRuntimeRedactor(),
+      }),
+    );
+    const registry = registryPublication.registry;
+    let packageConfigurationDocuments = new Map<
+      string,
+      import("../../domain/extensions/package-data-store.ts").PackageDataDocument
+    >();
 
     const eventStore = createInMemoryEventStore();
     const configurationRoot = rootChild(localData.layout, "configuration") ?? home;
@@ -256,6 +265,29 @@ export function createServiceProvider(
       removalData,
       registry,
       loader: createConfigurationLoader({
+        prepare: async (request, signal) => {
+          const packages = await loadPackageConfiguration(
+            services,
+            request,
+            signal,
+            packageConfigurationDocuments,
+          );
+          const declarations = [...PRODUCT_CONFIGURATION_KEYS, ...packages.declarations];
+          const candidate = createConfigurationRegistry({
+            declarations,
+            crossFieldRules: V0_1_CROSS_FIELD_RULES,
+            redactor: createRuntimeRedactor(),
+          });
+          return {
+            ...packages,
+            declarations,
+            registry: candidate,
+            publish: () => {
+              registryPublication.publish(candidate);
+              packageConfigurationDocuments = packages.documents;
+            },
+          };
+        },
         registry,
         declarations: PRODUCT_CONFIGURATION_KEYS,
         fileSystem,

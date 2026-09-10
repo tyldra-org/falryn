@@ -362,12 +362,17 @@ function gcRoots(
     "SELECT DISTINCT json_extract(a.value,'$.artifactId') AS artifact_id FROM peer_messages m,json_each(m.payload,'$.artifacts') a WHERE json_extract(m.receipt,'$.tombstoned')=0 LIMIT $limit",
     { limit: MAX_GC_EXAMINED_ARTIFACTS + 1 },
   );
-  if (!tasks.ok || !owned.ok || !mailed.ok)
+  const packages = store.read(
+    "SELECT DISTINCT artifact_id FROM package_data_artifacts LIMIT $limit",
+    { limit: MAX_GC_EXAMINED_ARTIFACTS + 1 },
+  );
+  if (!tasks.ok || !owned.ok || !mailed.ok || !packages.ok)
     return err({ kind: "reachability-gc", code: "storage", detail: "read task retention roots" });
   if (
     tasks.value.length > 256 ||
     owned.value.length > MAX_GC_EXAMINED_ARTIFACTS ||
-    mailed.value.length > MAX_GC_EXAMINED_ARTIFACTS
+    mailed.value.length > MAX_GC_EXAMINED_ARTIFACTS ||
+    packages.value.length > MAX_GC_EXAMINED_ARTIFACTS
   )
     return err({ kind: "reachability-gc", code: "bound-exceeded", bound: "task retention roots" });
   const taskSessions = new Set<string>();
@@ -386,7 +391,7 @@ function gcRoots(
   const seedSessions = new Set<string>([...pinned, ...exports, ...taskSessions]);
   for (const row of sessions.value.rows) if (row.closedAt === null) seedSessions.add(row.sessionId);
   const artifactSeeds = new Set<string>();
-  for (const row of [...owned.value, ...mailed.value]) {
+  for (const row of [...owned.value, ...mailed.value, ...packages.value]) {
     const id = artifactId.parse(row.artifact_id);
     if (!id.ok)
       return err({

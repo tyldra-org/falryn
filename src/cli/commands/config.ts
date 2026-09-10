@@ -273,8 +273,19 @@ export async function runConfigSet(
       workspaceResolveError(workspace.error),
     ]);
   }
-  const { registry, fileSystem, configurationRoot, legacyConfigurationRoot, workspaceRoot } =
-    services();
+  const {
+    loader,
+    registry,
+    fileSystem,
+    configurationRoot,
+    legacyConfigurationRoot,
+    workspaceRoot,
+  } = services();
+  // Installed package declarations are published by the normal configuration load.
+  await loader.load(
+    { configurationRoot, legacyConfigurationRoot, workspaceRoot, profile: options.profile },
+    signal,
+  );
   onMutationStart?.();
   const outcome = await writeConfigurationKey(
     registry,

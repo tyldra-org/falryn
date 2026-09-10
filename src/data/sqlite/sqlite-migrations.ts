@@ -45,6 +45,7 @@ import {
   SCRATCH_RESOURCES_TABLE,
   SCRATCH_REVISIONS_TABLE,
 } from "../artifacts/scratch-resource-schema.ts";
+import { MIGRATION_0020, PACKAGE_DATA_TABLES } from "../extensions/package-data-repository.ts";
 import {
   MIGRATION_0014,
   PACKAGE_LIFECYCLE_TABLES,
@@ -106,6 +107,7 @@ export const PRODUCTION_MIGRATIONS: readonly Migration[] = [
   MIGRATION_0017,
   MIGRATION_0018,
   MIGRATION_0019,
+  MIGRATION_0020,
 ];
 
 /** Every product table the registered set creates, in creation order. */
@@ -134,6 +136,7 @@ export const PRODUCT_TABLES: readonly string[] = [
   ...PROVENANCE_TABLES,
   ...MAILBOX_TABLES,
   ...SCOPE_CONTROL_TABLES,
+  ...PACKAGE_DATA_TABLES,
 ];
 
 function issue(

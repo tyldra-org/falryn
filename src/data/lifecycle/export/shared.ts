@@ -36,6 +36,7 @@ export type ExportOptions = {
   readonly redactor: SensitiveValueRedactor;
   /** Already-redacted configuration facts to declare on the package. */
   readonly configuration?: readonly ExportConfigurationEntry[];
+  readonly packageData?: readonly import("../../../domain/extensions/package-data-transfer.ts").PackageDataBundle[];
   readonly maxPackageBytes?: number;
 };
 

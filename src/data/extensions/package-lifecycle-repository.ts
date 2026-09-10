@@ -1,12 +1,19 @@
-import { canonicalDigest } from "../../domain/extensions/canonical.ts";
+import { canonicalDigest, ExtensionInputError } from "../../domain/extensions/canonical.ts";
 import {
   type InstalledVersion,
   installedVersionSchema,
   type PackageLifecycleStore,
   packageReceiptSchema,
 } from "../../domain/extensions/lifecycle.ts";
+import { PACKAGE_DATA_LIMITS } from "../../domain/extensions/package-data.ts";
+import {
+  encodePackageData,
+  packageDocumentDigest,
+} from "../../domain/extensions/package-data-store.ts";
 import { err, ok } from "../../domain/foundation/result.ts";
 import type { Migration, SqliteStorePort } from "../../domain/storage/index.ts";
+import { retainPackageArtifacts } from "./package-artifact-ownership.ts";
+import { createPackageDataRepository } from "./package-data-repository.ts";
 
 export const PACKAGE_LIFECYCLE_TABLES = [
   "installed_packages",
@@ -59,6 +66,7 @@ export function createPackageLifecycleRepository(store: SqliteStorePort): Packag
     }
   };
   const repository: PackageLifecycleStore = {
+    data: createPackageDataRepository(store).read,
     current(packageId) {
       return safely(() => {
         const row = read(
@@ -124,99 +132,150 @@ export function createPackageLifecycleRepository(store: SqliteStorePort): Packag
     },
     publish(input, signal) {
       const { expected, candidate, receipt } = input;
+      let stageFailure: string | null = null;
       const written = store.write((sql) => {
-        const prior = sql.all(
-          "SELECT fingerprint, receipt FROM package_operations WHERE operation_id = $id",
-          { id: receipt.operationId },
-        )[0];
-        if (prior !== undefined) return "operation-already-recorded";
-        const live = sql.all(
-          "SELECT revision, storage_id FROM installed_packages WHERE package_id = $id",
-          { id: expected.packageId },
-        )[0];
-        if (
-          (live?.revision ?? 0) !== expected.revision ||
-          (live?.storage_id ?? null) !== (expected.current?.storageId ?? null)
-        )
-          return "stale-package-revision";
-        const counts = sql.all(
-          "SELECT state,count(*) AS count,max(sequence) AS epoch FROM package_versions WHERE package_id=$id GROUP BY state",
-          { id: expected.packageId },
-        );
-        const retained = counts
-          .filter((r) => r.state === "retained")
-          .reduce((n, r) => n + Number(r.count), 0);
-        const pending = counts
-          .filter((r) => r.state !== "retained" && r.state !== "deleted")
-          .reduce((n, r) => n + Number(r.count), 0);
-        if (retained !== input.expectedCounts.retained || pending !== input.expectedCounts.pending)
-          return "stale-package-confirmation";
-        if (Math.max(0, ...counts.map((r) => Number(r.epoch))) !== input.expectedCounts.epoch)
-          return "stale-package-confirmation";
-        if (candidate !== null) {
-          const staged = sql.all("SELECT state FROM package_versions WHERE storage_id = $storage", {
-            storage: candidate.storageId,
-          })[0];
-          if (staged?.state !== (input.stageBytes === undefined ? "retained" : "staged"))
-            return "version-unavailable";
+        try {
+          const prior = sql.all(
+            "SELECT fingerprint, receipt FROM package_operations WHERE operation_id = $id",
+            { id: receipt.operationId },
+          )[0];
+          if (prior !== undefined) return "operation-already-recorded";
+          const live = sql.all(
+            "SELECT revision, storage_id FROM installed_packages WHERE package_id = $id",
+            { id: expected.packageId },
+          )[0];
           if (
+            (live?.revision ?? 0) !== expected.revision ||
+            (live?.storage_id ?? null) !== (expected.current?.storageId ?? null)
+          )
+            return "stale-package-revision";
+          const counts = sql.all(
+            "SELECT state,count(*) AS count,max(sequence) AS epoch FROM package_versions WHERE package_id=$id GROUP BY state",
+            { id: expected.packageId },
+          );
+          const retained = counts
+            .filter((r) => r.state === "retained")
+            .reduce((n, r) => n + Number(r.count), 0);
+          const pending = counts
+            .filter((r) => r.state !== "retained" && r.state !== "deleted")
+            .reduce((n, r) => n + Number(r.count), 0);
+          if (
+            retained !== input.expectedCounts.retained ||
+            pending !== input.expectedCounts.pending
+          )
+            return "stale-package-confirmation";
+          if (Math.max(0, ...counts.map((r) => Number(r.epoch))) !== input.expectedCounts.epoch)
+            return "stale-package-confirmation";
+          if (candidate !== null) {
+            const staged = sql.all(
+              "SELECT state FROM package_versions WHERE storage_id = $storage",
+              {
+                storage: candidate.storageId,
+              },
+            )[0];
+            if (staged?.state !== (input.stageBytes === undefined ? "retained" : "staged"))
+              return "version-unavailable";
+            if (
+              sql.all(
+                "SELECT owner FROM package_dependencies WHERE dependency=$id AND owner<>$id AND identity_digest<>$digest LIMIT 1",
+                { id: expected.packageId, digest: candidate.identityDigest },
+              ).length > 0
+            )
+              return "package-required";
+            for (const dependency of candidate.dependencies) {
+              const current = sql.all(
+                "SELECT v.identity_digest FROM installed_packages p JOIN package_versions v ON v.storage_id=p.storage_id WHERE p.package_id=$id AND v.state='retained'",
+                { id: dependency.id },
+              )[0];
+              if (current?.identity_digest !== dependency.digest) return "dependency-changed";
+            }
+          } else if (
             sql.all(
-              "SELECT owner FROM package_dependencies WHERE dependency=$id AND owner<>$id AND identity_digest<>$digest LIMIT 1",
-              { id: expected.packageId, digest: candidate.identityDigest },
+              "SELECT owner FROM package_dependencies WHERE dependency = $id AND owner <> $id LIMIT 1",
+              { id: expected.packageId },
             ).length > 0
           )
             return "package-required";
-          for (const dependency of candidate.dependencies) {
-            const current = sql.all(
-              "SELECT v.identity_digest FROM installed_packages p JOIN package_versions v ON v.storage_id=p.storage_id WHERE p.package_id=$id AND v.state='retained'",
-              { id: dependency.id },
+          input.stageBytes?.();
+          if (input.dataPublication !== undefined) {
+            const { document, expectedRevision } = input.dataPublication;
+            const data = sql.all("SELECT revision,bytes FROM package_data WHERE package_id=$id", {
+              id: expected.packageId,
+            })[0];
+            if ((data?.revision ?? 0) !== expectedRevision)
+              throw new ExtensionInputError("stale-package-data-publication");
+            if (
+              document.packageId !== expected.packageId ||
+              document.packageDigest !==
+                (candidate?.identityDigest ?? expected.current?.identityDigest) ||
+              document.revision !== expectedRevision + 1
+            )
+              throw new ExtensionInputError("invalid-package-data-publication");
+            const metadata = encodePackageData(document);
+            retainPackageArtifacts(sql, document, false);
+            const bytes = Buffer.byteLength(metadata);
+            const used = sql.all(
+              "SELECT (SELECT coalesce(sum(bytes),0) FROM package_data)+(SELECT coalesce(sum(bytes),0) FROM package_data_operations)+(SELECT coalesce(sum(bytes),0) FROM package_data_imports) AS bytes",
             )[0];
-            if (current?.identity_digest !== dependency.digest) return "dependency-changed";
+            if (
+              Number(used?.bytes) - Number(data?.bytes ?? 0) + bytes >
+              PACKAGE_DATA_LIMITS.globalBytes
+            )
+              throw new ExtensionInputError("global-package-quota-exceeded");
+            sql.run(
+              "INSERT INTO package_data(package_id,revision,digest,bytes,metadata) VALUES($id,$revision,$digest,$bytes,$metadata) ON CONFLICT(package_id) DO UPDATE SET revision=excluded.revision,digest=excluded.digest,bytes=excluded.bytes,metadata=excluded.metadata",
+              {
+                id: expected.packageId,
+                revision: document.revision,
+                digest: packageDocumentDigest(document),
+                bytes,
+                metadata,
+              },
+            );
           }
-        } else if (
-          sql.all(
-            "SELECT owner FROM package_dependencies WHERE dependency = $id AND owner <> $id LIMIT 1",
-            { id: expected.packageId },
-          ).length > 0
-        )
-          return "package-required";
-        input.stageBytes?.();
-        if (candidate !== null)
-          sql.run("UPDATE package_versions SET state='retained' WHERE storage_id=$storage", {
-            storage: candidate.storageId,
-          });
-        sql.run(
-          "INSERT INTO installed_packages(package_id,revision,storage_id) VALUES($id,$revision,$storage) ON CONFLICT(package_id) DO UPDATE SET revision=excluded.revision, storage_id=excluded.storage_id",
-          {
-            id: expected.packageId,
-            revision: receipt.revision,
-            storage: candidate?.storageId ?? null,
-          },
-        );
-        sql.run("DELETE FROM package_dependencies WHERE owner=$id", { id: expected.packageId });
-        for (const dependency of candidate?.dependencies ?? [])
+          if (candidate !== null)
+            sql.run("UPDATE package_versions SET state='retained' WHERE storage_id=$storage", {
+              storage: candidate.storageId,
+            });
           sql.run(
-            "INSERT INTO package_dependencies(owner,dependency,identity_digest) VALUES($owner,$dependency,$digest)",
-            { owner: expected.packageId, dependency: dependency.id, digest: dependency.digest },
+            "INSERT INTO installed_packages(package_id,revision,storage_id) VALUES($id,$revision,$storage) ON CONFLICT(package_id) DO UPDATE SET revision=excluded.revision, storage_id=excluded.storage_id",
+            {
+              id: expected.packageId,
+              revision: receipt.revision,
+              storage: candidate?.storageId ?? null,
+            },
           );
-        if (input.remove)
+          sql.run("DELETE FROM package_dependencies WHERE owner=$id", { id: expected.packageId });
+          for (const dependency of candidate?.dependencies ?? [])
+            sql.run(
+              "INSERT INTO package_dependencies(owner,dependency,identity_digest) VALUES($owner,$dependency,$digest)",
+              { owner: expected.packageId, dependency: dependency.id, digest: dependency.digest },
+            );
+          if (input.remove)
+            sql.run(
+              "UPDATE package_versions SET state='deleting' WHERE package_id=$id AND state <> 'deleted'",
+              { id: expected.packageId },
+            );
           sql.run(
-            "UPDATE package_versions SET state='deleting' WHERE package_id=$id AND state <> 'deleted'",
-            { id: expected.packageId },
+            "INSERT INTO package_operations(operation_id,fingerprint,receipt) VALUES($id,$fingerprint,$receipt)",
+            {
+              id: receipt.operationId,
+              fingerprint: input.fingerprint,
+              receipt: JSON.stringify(receipt),
+            },
           );
-        sql.run(
-          "INSERT INTO package_operations(operation_id,fingerprint,receipt) VALUES($id,$fingerprint,$receipt)",
-          {
-            id: receipt.operationId,
-            fingerprint: input.fingerprint,
-            receipt: JSON.stringify(receipt),
-          },
-        );
-        return null;
+          return null;
+        } catch (error) {
+          if (error instanceof ExtensionInputError) stageFailure = error.code;
+          throw error;
+        }
       }, signal);
       if (!written.ok)
         return err({
-          code: written.error.effect === "uncertain" ? "uncertain" : "publication-failed",
+          code:
+            written.error.effect === "uncertain"
+              ? "uncertain"
+              : (stageFailure ?? written.error.code),
         });
       return written.value.value === null ? ok(receipt) : err({ code: written.value.value });
     },

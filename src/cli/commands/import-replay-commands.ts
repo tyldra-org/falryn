@@ -7,11 +7,17 @@
  * which moves a cursor over recorded events (#721).
  */
 
+import { userInfo } from "node:os";
 import {
   createRuntimeRedactor,
   fromImportError,
   fromUnknown,
 } from "../../application/diagnostics/index.ts";
+import {
+  importPackageData,
+  validateInertPackageData,
+} from "../../application/extensions/package-data-transfer.ts";
+import { createPackageDataImportRepository } from "../../data/extensions/package-data-import-repository.ts";
 import {
   beginRun,
   createRecordRepositories,
@@ -23,9 +29,13 @@ import {
   rootChild,
   sqliteDatabasePath,
 } from "../../data/index.ts";
+import { canonicalDigest } from "../../domain/extensions/canonical.ts";
 import type { CatalogHistory } from "../../domain/extensions/catalog-history.ts";
+import type { PackageDataBundle } from "../../domain/extensions/package-data-transfer.ts";
 import { type FalrynError, runId } from "../../domain/foundation/index.ts";
+import { err, ok, type Result } from "../../domain/foundation/result.ts";
 import type { TerminalOutcome } from "../../domain/orchestration/index.ts";
+import type { ImportError } from "../../domain/sessions/session-replay.ts";
 import {
   blocksLocalData,
   DEFAULT_BUSY_TIMEOUT_MS,
@@ -60,6 +70,7 @@ const CLI_IMPORT_RUN = runId.from("cli-import");
 type SessionStore = Extract<Awaited<ReturnType<typeof openSqliteStore>>, { ok: true }>["value"];
 
 export type ImportCommandPayload = {
+  readonly packageDataImports?: readonly string[];
   readonly owner: typeof IMPORT_REPLAY_OWNER;
   readonly name: string;
   readonly sessionIds: readonly string[];
@@ -68,6 +79,7 @@ export type ImportCommandPayload = {
 };
 
 export type ReplayCommandPayload = {
+  readonly packageData?: readonly import("../../domain/extensions/package-data-transfer.ts").PackageDataReplay[];
   readonly extensionCatalog?: CatalogHistory;
   readonly owner: typeof IMPORT_REPLAY_OWNER;
   readonly sessionId: string;
@@ -218,6 +230,48 @@ function importOptionsFor(
   clock: ReturnType<ServiceProvider>["clock"],
 ) {
   return {
+    importPackageData: (
+      bundles: readonly PackageDataBundle[],
+      signal?: AbortSignal,
+    ): Result<readonly string[], ImportError> => {
+      const failure = (): Result<readonly string[], ImportError> =>
+        err({
+          kind: "import",
+          code: "malformed-record",
+          issues: [{ path: "packageData", code: "inert-import-failed" }],
+        });
+      try {
+        const validated = bundles.map(validateInertPackageData);
+        const user = userInfo();
+        const owner = canonicalDigest({
+          kind: "local-user",
+          uid: user.uid,
+          username: user.username,
+        });
+        const repository = createPackageDataImportRepository(store);
+        const ids: string[] = [];
+        for (const bundle of validated) {
+          const input = {
+            store: repository,
+            owner,
+            packageId: bundle.packageId,
+            operationId: bundle.exportId,
+            raw: bundle,
+          };
+          const preview = importPackageData(input, signal);
+          if (preview.status !== "preview") return failure();
+          const imported = importPackageData(
+            { ...input, confirmation: preview.confirmation },
+            signal,
+          );
+          if (imported.status !== "imported") return failure();
+          ids.push(imported.receipt.importId);
+        }
+        return ok(ids);
+      } catch {
+        return failure();
+      }
+    },
     store,
     repositories: createRecordRepositories(store),
     events: createSqliteEventStore(store),
@@ -300,6 +354,9 @@ export async function runImport(
           sessionIds: imported.value.sessionIds.map((id) => id),
           events: imported.value.events,
           artifacts: imported.value.artifacts,
+          ...(imported.value.packageDataImports === undefined
+            ? {}
+            : { packageDataImports: imported.value.packageDataImports }),
         },
         [],
         undefined,
@@ -371,6 +428,9 @@ export async function runReplay(
         owner: IMPORT_REPLAY_OWNER,
         sessionId: replayed.value.sessionId,
         streamId: replayed.value.streamId,
+        ...(replayed.value.packageData === undefined
+          ? {}
+          : { packageData: replayed.value.packageData }),
         turnCount: replayed.value.turns.length,
         artifactCount: replayed.value.artifacts.length,
         truncated: replayed.value.truncated,

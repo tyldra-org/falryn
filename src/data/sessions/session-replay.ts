@@ -41,10 +41,15 @@ import {
 } from "../../domain/sessions/index.ts";
 import { createArtifactRepository } from "../artifacts/artifact-repository.ts";
 import { createArtifactStore } from "../artifacts/artifact-store.ts";
+import { replayPackageData } from "../extensions/package-data-import-repository.ts";
 import { EXPORT_CHUNK_BYTES, type ExportOptions, verifyPackage } from "../lifecycle/export.ts";
 
 export type ImportOptions = ExportOptions & {
   readonly runId: RunId;
+  readonly importPackageData?: (
+    bundles: readonly import("../../domain/extensions/package-data-transfer.ts").PackageDataBundle[],
+    signal?: AbortSignal,
+  ) => Result<readonly string[], ImportError>;
 };
 
 const cancelled: ImportError = { kind: "import", code: "cancelled" };
@@ -89,6 +94,18 @@ export async function importPackage(
   }
   if (!verified.value.verified) {
     return err({ kind: "import", code: "unverified-package" });
+  }
+  let packageDataImports: readonly string[] = [];
+  if ((verified.value.manifest.packageData?.length ?? 0) > 0) {
+    if (!options.importPackageData)
+      return err({
+        kind: "import",
+        code: "malformed-record",
+        issues: [{ path: "packageData", code: "owner-unavailable" }],
+      });
+    const imported = options.importPackageData(verified.value.manifest.packageData ?? [], signal);
+    if (!imported.ok) return imported;
+    packageDataImports = imported.value;
   }
 
   const recordsMember = verified.value.manifest.members.find((member) => member.kind === "records");
@@ -161,7 +178,12 @@ export async function importPackage(
   if (sessionIds.length === 0) {
     return err({ kind: "import", code: "empty-package" });
   }
-  return ok({ sessionIds, events, artifacts });
+  return ok({
+    sessionIds,
+    events,
+    artifacts,
+    ...(packageDataImports.length === 0 ? {} : { packageDataImports }),
+  });
 }
 
 /**
@@ -223,9 +245,17 @@ export async function replaySession(
   if (!listed.ok) {
     return listed;
   }
+  const packageData = replayPackageData(options.store, sessionId);
+  if (!packageData.ok)
+    return err({
+      kind: "import",
+      code: "malformed-record",
+      issues: [{ path: "packageData", code: packageData.error.code }],
+    });
 
   return ok({
     sessionId,
+    ...(packageData.value.length === 0 ? {} : { packageData: packageData.value }),
     streamId: session.value.streamId,
     ...(session.value.extensionCatalog === undefined
       ? {}
@@ -288,7 +318,9 @@ export function forkSession(
     closedAt: null,
     outcome: null,
   };
-  const inserted = options.repositories.sessions.insert(forked, signal);
+  const inserted = options.repositories.sessions.fork
+    ? options.repositories.sessions.fork(source.value, forked, signal)
+    : options.repositories.sessions.insert(forked, signal);
   if (!inserted.ok) {
     return err(fromRecord(inserted.error));
   }

@@ -55,18 +55,18 @@ function insertFork(
   if (existing.value !== null) {
     return err(rewindError("malformed", "identities.sessionId"));
   }
-  const inserted = sessions.insert(
-    {
-      ...source,
-      sessionId: identities.sessionId,
-      streamId: identities.streamId,
-      workspaceId: identities.workspaceId,
-      configurationGeneration: configurationGeneration.from(source.configurationGeneration + 1),
-      closedAt: null,
-      outcome: null,
-    },
-    signal,
-  );
+  const destination: SessionRecord = {
+    ...source,
+    sessionId: identities.sessionId,
+    streamId: identities.streamId,
+    workspaceId: identities.workspaceId,
+    configurationGeneration: configurationGeneration.from(source.configurationGeneration + 1),
+    closedAt: null,
+    outcome: null,
+  };
+  const inserted = sessions.fork
+    ? sessions.fork(source, destination, signal)
+    : sessions.insert(destination, signal);
   if (!inserted.ok) {
     return err(rewindError("malformed", "session"));
   }

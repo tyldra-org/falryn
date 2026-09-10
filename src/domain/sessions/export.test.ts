@@ -251,7 +251,7 @@ describe("the declared vocabularies", () => {
   test("name the runtime-event family from its own source owner", () => {
     // Imported rather than restated: a second literal in the export path is a
     // copy that can drift from the one `limits.ts` owns.
-    expect(EXPORT_SCHEMA_FAMILIES).toEqual([RUNTIME_EVENT_SCHEMA_FAMILY]);
+    expect(EXPORT_SCHEMA_FAMILIES).toEqual([RUNTIME_EVENT_SCHEMA_FAMILY, "falryn.package-data"]);
   });
 });
 

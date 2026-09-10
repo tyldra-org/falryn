@@ -189,6 +189,10 @@ function issueLines(session: Session, issue: ConfigurationIssue): readonly strin
 
 export function issueSentence(issue: ConfigurationIssue): string {
   switch (issue.kind) {
+    case "package-unavailable":
+      return issue.retained
+        ? "package data is unavailable; the last valid package configuration is retained."
+        : "package data is unavailable; other packages remain usable.";
     case "configuration-home-conflict":
       return `also has data at the legacy location ${safe(issue.legacyPath)}; move or remove one configuration home before continuing.`;
     case "configuration-home-unavailable":
