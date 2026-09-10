@@ -51,6 +51,10 @@ import { createAgentJoinStore } from "../../data/orchestration/agent-join-store.
 import { createMailboxRepository } from "../../data/orchestration/mailbox-store.ts";
 import { createSqliteProcessTaskStore } from "../../data/orchestration/process-task-store.ts";
 import { createQuestionStore } from "../../data/orchestration/question-store.ts";
+import {
+  createWorkQueueLocations,
+  type WorkQueueLocations,
+} from "../../data/orchestration/work-queue-locations.ts";
 import { runId } from "../../domain/foundation/index.ts";
 import {
   DEFAULT_BUSY_TIMEOUT_MS,
@@ -75,6 +79,7 @@ import {
 import type { Services } from "./services.ts";
 
 export type ProductArtifactSession = {
+  readonly workQueues: WorkQueueLocations;
   readonly peers: ProductPeerMailboxes;
   readonly artifacts: DurableArtifactStore;
   readonly eventStore: DurableEventStore;
@@ -154,6 +159,12 @@ export async function openProductArtifactSession(
   }
 
   const store = opened.value;
+  const workQueues = createWorkQueueLocations({
+    state: store,
+    stateRoot,
+    clock: services.clock,
+    open: openBunSqlite,
+  });
   const run = beginRun({
     store,
     clock: services.clock,
@@ -289,11 +300,15 @@ export async function openProductArtifactSession(
     await attempt(async () => {
       if (!isCleanClose(await store.close())) clean = false;
     });
+    await attempt(async () => {
+      if (!(await workQueues.close())) clean = false;
+    });
     signal?.removeEventListener("abort", interrupt);
     taskNotices.dispose();
     return clean;
   }
   const session: ProductArtifactSession = {
+    workQueues,
     async rehydrateExtensions(signal, session) {
       if (closed) return { status: "failed", code: "catalog-host-closed" };
       const owner = composeExtensionCatalog({

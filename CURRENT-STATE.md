@@ -1195,6 +1195,49 @@ call passes through the unified policy, confirmation, hooks, scheduler,
 capture, journal, and projection gateway. Registration alone does not imply
 that all 59 schemas are placed in every prompt.
 
+## Scoped work-item records
+
+`createWorkQueueActions` is the bounded application boundary for version-1 work
+queues and items. It creates lists, adds and updates records, manages reciprocal
+dependency edges and blockers, claims/releases assignments, records completion
+claims and validator decisions, and cancels, archives or tombstones records.
+These actions mutate data; they never launch or stop an executor. Shared command,
+model, OpenTUI and task-profile registration remains with its existing owners.
+
+The product storage host exposes registered `workspace-state`, `user-state` and
+`memory` locators. The durable locators use indexed namespaces in the existing
+state database; the memory locator uses the same SQLite adapter and migrations
+without a database file. Session is the default scope. Session-owned lists in
+nonpersistent sessions use memory; project/shared lists retain independent durable
+storage. Queue headers persist the chosen locator, workspace and scope generation,
+owner and membership. Resume resolves existing bindings before new defaults.
+Additional locations require host registration; request text cannot open a path.
+
+Migration 0021 stores queues, items, item versions, dependency edges and versions,
+mutation identities, and session bindings. A mutation's rows and `work.queue.changed`
+receipt commit together through the existing journal transaction. Expected queue
+revisions prevent lost updates. Exact retries return their recorded receipt and
+revision; changed identity reuse fails. An uncertain commit requires receipt
+reconciliation. Missing or corrupt records never become an empty successful list.
+
+Limits are per operation: 100 mutations, 100 records per page, 16 KiB aggregate
+inline fields per item, 32 KiB encoded records, 1 MiB requests/responses, 10,000
+validation traversal steps and a 30-second deadline narrowed by task admission.
+Graph validation is iterative and paged. Exhaustion rolls back the entire batch;
+previous accepted batches and stable IDs remain. There is no lifetime list-size,
+creation-count or total dependency-edge quota. Pages and historical replay bind
+to exact revisions and refuse stale continuation.
+
+Readiness requires satisfied dependencies and no blocker. Completion remains a
+claim until a host-authorized validator accepts exact item, criteria, claim and
+evidence generations. Claims record holder identity and generation atomically.
+Release without observed settlement or fencing remains pending, including after
+restart; cancellation of a record does not signal its execution. Deletion refuses
+active claims and removes both dependency directions in the same transaction.
+Deleted prerequisites leave dependent criteria unresolved. Tombstones and revision
+history preserve identity and evidence; explicit content erasure remains with the
+existing retention owner. Rejected batches return their original source handle.
+
 ## Captured background tasks
 
 `run_process` and `run_shell` accept an optional strict version-1 `execution`
@@ -1563,7 +1606,7 @@ Apart from captured process tasks, delegated agents, and the host-only question
 service above, no workflow, schedule, goal/loop, work-item, or cross-session
 mailbox runner is product-composed. Opportunity records do not automatically
 launch those runtimes. Their existing owners include GitHub issues #155–#162,
-#284, #797, #890, and #897. Extensions, MCP servers, package contributions, skills,
+#284, #797, and #897. Extensions, MCP servers, package contributions, skills,
 prompts, and external hosts likewise remain registry contracts or planned
 loaders unless explicitly described above as built-in production behavior.
 

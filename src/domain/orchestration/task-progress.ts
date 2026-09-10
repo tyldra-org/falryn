@@ -7,10 +7,10 @@
  */
 
 import { z } from "zod";
-
 import { brandedString } from "../foundation/branded-schema.ts";
 import { type OutcomeId, type TaskId, taskId } from "../foundation/identity.ts";
 import { assertNever, err, ok, type Result } from "../foundation/result.ts";
+import { dependencyJoinSatisfied } from "./dependency-graph.ts";
 import {
   planTaskGraph,
   type TaskGraphError,
@@ -187,17 +187,10 @@ function parseNote(
 }
 
 function joinSatisfied(node: TaskGraphNode, completed: ReadonlySet<string>): boolean {
-  if (node.dependsOn.length === 0) {
-    return true;
-  }
-  switch (node.join) {
-    case "all":
-      return node.dependsOn.every((id) => completed.has(id));
-    case "any":
-      return node.dependsOn.some((id) => completed.has(id));
-    default:
-      return assertNever(node.join, "unhandled join policy");
-  }
+  return dependencyJoinSatisfied(
+    node.join,
+    node.dependsOn.map((id) => completed.has(id)),
+  );
 }
 
 function parseObservations(

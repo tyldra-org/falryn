@@ -37,6 +37,7 @@ import type {
 import type { TerminalOutcome } from "../orchestration/outcome.ts";
 import type { ProcessTaskSnapshot } from "../orchestration/process-task.ts";
 import type { ResourceAdmissionReceipt } from "../orchestration/resource-admission.ts";
+import type { WorkReceipt } from "../orchestration/work-queue.ts";
 import type { WorkspaceTrustEventPayload } from "../security/workspace-trust.ts";
 import type { ExecutionProfileCompletion, ExecutionProfileId } from "./execution-profile.ts";
 
@@ -52,6 +53,7 @@ export const EVENT_KINDS = [
   "execution.profile.selected",
   "process.task.changed",
   "workspace.trust.reviewed",
+  "work.queue.changed",
 ] as const;
 
 export type EventKind = (typeof EVENT_KINDS)[number];
@@ -348,7 +350,10 @@ export type ProcessTaskChangedEvent = Envelope<
   }
 >;
 
+export type WorkQueueChangedEvent = Envelope<"work.queue.changed", SessionCorrelation, WorkReceipt>;
+
 export type RuntimeEvent =
+  | WorkQueueChangedEvent
   | Envelope<"workspace.trust.reviewed", SessionCorrelation, WorkspaceTrustEventPayload>
   | SessionStartedEvent
   | TurnStartedEvent

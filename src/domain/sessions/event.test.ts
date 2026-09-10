@@ -24,6 +24,7 @@ function carriesTurnIdentity(event: RuntimeEvent): boolean {
     case "session.started":
     case "configuration.generation.changed":
     case "workspace.trust.reviewed":
+    case "work.queue.changed":
     case "execution.profile.selected":
       return false;
     case "turn.started":

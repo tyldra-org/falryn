@@ -7,10 +7,10 @@
  */
 
 import { z } from "zod";
-
 import { brandedString } from "../foundation/branded-schema.ts";
 import { type OutcomeId, outcomeId, type TaskId, taskId } from "../foundation/identity.ts";
 import { assertNever, err, ok, type Result } from "../foundation/result.ts";
+import { findDependencyCycle } from "./dependency-graph.ts";
 
 export const TASK_GRAPH_VERSION = "task-graph.v1";
 export const TASK_GRAPH_SOURCE = "deterministic-structure";
@@ -349,44 +349,6 @@ function parseCriteria(
   return ok(items);
 }
 
-function findCycle(
-  taskIds: readonly TaskId[],
-  dependsOn: ReadonlyMap<TaskId, readonly TaskId[]>,
-): readonly TaskId[] | null {
-  const state = new Map<TaskId, "visiting" | "done">();
-  const stack: TaskId[] = [];
-
-  const visit = (id: TaskId): readonly TaskId[] | null => {
-    const current = state.get(id);
-    if (current === "done") {
-      return null;
-    }
-    if (current === "visiting") {
-      const start = stack.indexOf(id);
-      return stack.slice(start >= 0 ? start : 0);
-    }
-    state.set(id, "visiting");
-    stack.push(id);
-    for (const predecessor of dependsOn.get(id) ?? []) {
-      const found = visit(predecessor);
-      if (found !== null) {
-        return found;
-      }
-    }
-    stack.pop();
-    state.set(id, "done");
-    return null;
-  };
-
-  for (const id of taskIds) {
-    const found = visit(id);
-    if (found !== null) {
-      return found;
-    }
-  }
-  return null;
-}
-
 function readinessFor(
   dependsOn: readonly TaskId[],
   blockers: readonly string[],
@@ -457,7 +419,7 @@ export function planTaskGraph(
       list.push(edge.predecessor);
     }
   }
-  const cycle = findCycle(tasks.value, dependsOn);
+  const cycle = findDependencyCycle(tasks.value, (id) => dependsOn.get(id) ?? []);
   if (cycle !== null) {
     return err(graphError("cycle", "dependencies"));
   }
