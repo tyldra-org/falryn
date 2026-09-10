@@ -49,7 +49,11 @@ export function commandFrom(
       ? "extension.inspect"
       : action === "trust"
         ? "extension.trust"
-        : null;
+        : action === "catalog"
+          ? "extension.catalog"
+          : action === "scope"
+            ? "extension.scope"
+            : null;
   if (group === "provider") {
     return action === null ? null : "provider";
   }

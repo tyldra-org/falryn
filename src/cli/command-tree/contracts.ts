@@ -207,6 +207,7 @@ export type Invocation =
       readonly providerArgs: ProviderCommandArguments | null;
       readonly modelArgs?: ModelSettingsRequest;
       readonly extensionPath?: string;
+      readonly extensionCatalogArgs?: import("../commands/extension-catalog.ts").ExtensionCatalogArguments;
       readonly packageArgs?: import("../commands/package.ts").PackageArguments;
       readonly peerArgs?: import("../commands/peer.ts").PeerArguments;
       readonly extensionTrust?: import("../../application/extensions/package-trust.ts").TrustRequest;

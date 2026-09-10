@@ -1,3 +1,4 @@
+import { extensionCatalogLines } from "../../application/extensions/catalog-report.ts";
 import { packageInspectionLines } from "../../application/extensions/inspection-report.ts";
 import { modelSettingsLines } from "../../application/providers/model-settings-format.ts";
 /**
@@ -494,6 +495,12 @@ function renderPayload(session: Session, result: RunCommandResult): RenderedPayl
               ],
         diagnostics: [],
       };
+    case "extension.catalog":
+    case "extension.scope":
+      return {
+        lines: result.payload === null ? [] : extensionCatalogLines(result.payload).map(safe),
+        diagnostics: [],
+      };
     case "extension.inspect":
     case "extension.trust":
       return {
@@ -588,6 +595,8 @@ function quietFindingLines(result: RunCommandResult): readonly string[] {
     case "run":
     case "extension.inspect":
     case "extension.trust":
+    case "extension.catalog":
+    case "extension.scope":
     case "package":
     case "peer":
       return [];

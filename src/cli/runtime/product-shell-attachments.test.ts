@@ -9,6 +9,9 @@ import { join } from "node:path";
 import { z } from "zod";
 import { createEphemeralProductIndexPort } from "../../application/workspace/index.ts";
 import { CONFIGURATION_FILE_NAME } from "../../config/index.ts";
+import { bytesDigest } from "../../domain/extensions/canonical.ts";
+import { createExtensionCatalog } from "../../domain/extensions/catalog.ts";
+import { catalogFixture } from "../../domain/extensions/catalog-fixtures.ts";
 import {
   configurationGeneration,
   createStaticEnvironment,
@@ -98,6 +101,7 @@ describe("composeProductShellAttachments", () => {
         workspaceSet: services.workspaceSet,
         configurationGeneration: configurationGeneration.from(0),
         peers: product.peers,
+        rehydrateExtensions: product.rehydrateExtensions,
       });
       if (!attached?.submission.peer) throw new Error("peer controls unavailable");
       const signal = new AbortController().signal;
@@ -188,6 +192,63 @@ describe("composeProductShellAttachments", () => {
     } finally {
       await product.close();
     }
+  });
+
+  test("rehydrates each new session and updates the captured OpenTUI catalog without native execution", async () => {
+    let refreshes = 0;
+    const attached = await composeProductShellAttachments({
+      eventStore: createInMemoryEventStore(),
+      clock: createSystemClock(),
+      environment: createStaticEnvironment({}),
+      fileSystem: createInMemoryFileSystem({ nodes: {} }),
+      workspaceSet: null,
+      configurationGeneration: configurationGeneration.from(0),
+      rehydrateExtensions: async () => {
+        refreshes++;
+        return {
+          status: "rehydrated",
+          catalog: createExtensionCatalog({
+            generation: refreshes,
+            inputs: bytesDigest(`inputs-${refreshes}`),
+            entries: [catalogFixture(`entry-${refreshes}`)],
+          }),
+        };
+      },
+    });
+    if (!attached) throw new Error("catalog composition unavailable");
+    const controls = attached.controls;
+    expect(controls.resources.some((entry) => entry.label === "skill entry-1")).toBe(true);
+    expect((await attached.submission.submit(snapshotOf("first session", 1))).kind).toBe(
+      "unavailable",
+    );
+    const firstStart = attached.transcriptFeed
+      .events()
+      .find((event) => event.kind === "session.started");
+    expect(firstStart?.payload).toMatchObject({
+      extensionCatalog: { kind: "historical", total: 1 },
+    });
+    expect((await attached.sessionCreation.create()).ok).toBe(true);
+    expect(refreshes).toBe(2);
+    expect(controls.resources.some((entry) => entry.label === "skill entry-1")).toBe(false);
+    expect(controls.resources.some((entry) => entry.label === "skill entry-2")).toBe(true);
+    expect(JSON.stringify(controls)).toContain("historical, no native execution");
+    expect((await attached.submission.submit(snapshotOf("no native runner", 1))).kind).toBe(
+      "unavailable",
+    );
+  });
+
+  test("refuses session composition when extension reconciliation fails", async () => {
+    const store = createInMemoryEventStore();
+    const attached = await composeProductShellAttachments({
+      eventStore: store,
+      clock: createSystemClock(),
+      workspaceSet: null,
+      environment: createStaticEnvironment({}),
+      fileSystem: createInMemoryFileSystem({ nodes: {} }),
+      configurationGeneration: configurationGeneration.from(0),
+      rehydrateExtensions: async () => ({ status: "failed", code: "stale-catalog-inputs" }),
+    });
+    expect(attached).toBeNull();
   });
 
   test("fails closed when no provider or executable workspace catalog is attached", async () => {

@@ -17,6 +17,7 @@ import {
   CAPABILITY_CONTRIBUTION_KINDS,
   CAPABILITY_SOURCES,
 } from "../capabilities/capability-registry.ts";
+import { catalogHistorySchema } from "../extensions/catalog-history.ts";
 import {
   brandedInteger,
   brandedString,
@@ -403,7 +404,7 @@ const runtimeEventSchema: z.ZodType<RuntimeEvent> = z.discriminatedUnion("kind",
     ...envelopeSpine,
     kind: z.literal("session.started"),
     correlation: sessionCorrelationSchema,
-    payload: emptyPayloadSchema,
+    payload: z.object({ extensionCatalog: catalogHistorySchema.optional() }),
   }),
   z.object({
     ...envelopeSpine,
@@ -531,6 +532,10 @@ function outcomeToJson(outcome: TerminalOutcome): Record<string, unknown> {
 
 function payloadToJson(event: RuntimeEvent): Record<string, unknown> {
   switch (event.kind) {
+    case "session.started":
+      return event.payload.extensionCatalog === undefined
+        ? {}
+        : { extensionCatalog: event.payload.extensionCatalog };
     case "process.task.changed":
       return { change: event.payload.change, task: event.payload.task };
     case "model.attempt.started":

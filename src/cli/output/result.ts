@@ -88,6 +88,8 @@ export const COMMAND_IDS = [
   "model",
   "extension.inspect",
   "extension.trust",
+  "extension.catalog",
+  "extension.scope",
   "package",
   "peer",
   /** Shell completion install script (#731). */

@@ -53,6 +53,7 @@ import type { ArtifactStorePort } from "../../domain/artifacts/index.ts";
 import type { BriefReceipt } from "../../domain/compression/index.ts";
 import type { CredentialReference } from "../../domain/configuration/index.ts";
 import type { PromptSectionInput } from "../../domain/context/index.ts";
+import { projectCatalogHistory } from "../../domain/extensions/catalog-history.ts";
 import {
   type FalrynError,
   type Instant,
@@ -786,7 +787,33 @@ export async function runCoding(
             workspaceId,
             additionalCandidates: workspaceTools.contextCandidates,
           });
+    const extensions = await productArtifactSession.rehydrateExtensions(
+      options.signal ?? new AbortController().signal,
+    );
+    if (extensions.status === "failed")
+      return codingResult(
+        {
+          prompt: resolved.prompt,
+          sessionId: ids.sessionId,
+          turnId: null,
+          workspaceId: String(workspaceId),
+          stage: "compose-failed",
+          eventCount: 0,
+        },
+        [
+          adoptForeignError(
+            {
+              code: `extensions.${extensions.code}`,
+              category: "configuration",
+              message:
+                "The session catalog could not be reconciled. Inspect extension catalog state before retrying.",
+            },
+            { operation: "rehydrate extension catalog" },
+          ),
+        ],
+      );
     const executor = createProductLiveTurnExecutor({
+      extensionCatalog: projectCatalogHistory(extensions.catalog, workspace.value.set),
       ...(workspaceTools.resources === null ? {} : { resources: workspaceTools.resources }),
       modelConfigurationGeneration: () => graph.loader.current()?.generation ?? generation,
       modelPreferences: () =>

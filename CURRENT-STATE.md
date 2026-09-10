@@ -19,6 +19,7 @@ application. The current command surface includes:
 | falryn provider list / add / use / configure / test / login / logout / remove | Manage local provider profiles and credentials |
 | falryn data backup / inspect / restore / diagnostics / retention / gc / reset / uninstall | Inspect, preserve, repair, retain, collect, or preview/apply confirmed removal of Falryn-owned local data |
 | falryn workspace list / show / save / load | Inspect or persist named workspace sets |
+| falryn extension inspect / trust / scope / catalog | Inspect local declarations, confirm trust or scoped metadata preferences, and query the inert catalog |
 | falryn export / import | Preview or write a versioned local export package, or import one after verification |
 | falryn replay | Rebuild one stored session projection without repeating effects |
 | falryn session list / show / resume / fork / rewind / replay | Inspect or navigate durable session history while preserving lineage |
@@ -478,15 +479,58 @@ and unrelated files are never removal targets. Inspection reports the current
 digest, revision, retained count and pending cleanup; save version digests from
 receipts for exact rollback. Human, quiet, JSON and JSONL expose the same facts.
 
-Installed packages remain disabled. `enable` returns
+Installed package lifecycle records remain disabled. `package enable` returns
 `activation-owner-unavailable`; installation and approval never create runnable
-bindings. Remote acquisition, native contribution registration, scoped
-activation, package configuration/state migrations and executable grants are
-unavailable on this lifecycle path. Package cache files retain exact source
-bytes and are not redacted artifacts. SQLite-only backups and session exports
-do not include those bytes or confer package authority. Removing the state root
-removes both lifecycle records and its package cache; older binaries require a
-compatible database backup rather than opening schema 0014.
+bindings. Remote acquisition, native contribution registration, package
+configuration/state migrations and executable grants remain unavailable on this
+lifecycle path. Separate scope controls below manage metadata preferences only.
+Package cache files retain exact source bytes and are not redacted artifacts.
+SQLite-only backups and session exports do not include those bytes or confer
+package authority. Removing the state root removes both lifecycle records and
+its package cache. Older binaries require a compatible database backup.
+
+`falryn extension scope --input request.json` previews and confirms exact
+package-wide or contribution-specific enabled, preferred and explicit-only
+choices. Its strict request contains `action: "scope"`, `packageId`, `scope`,
+and a nested `request` with UUID `operationId`, `expectedRevision`, exact
+`packageIdentity` digest and `choice`. A confirmed retry repeats the returned
+`receipt.confirmation` inside `request`; a new intent needs a new operation ID.
+Session scope additionally names an existing durable `session` whose saved
+workspace binding matches the current host-resolved roots. Missing legacy or
+foreign bindings produce `session-workspace-unverified`. User and workspace
+choices persist separately from installation and trust. Workspace choices bind
+the host-resolved root set and current trust generation. Existing exact choices
+can be narrowed after package trust revocation; widening still requires admission.
+Process/development bindings belong to one host admission. Cross-process CLI
+writes explicitly return `scope-requires-live-host` rather than unusable previews.
+Built-ins and standalone owners have separate identities, not synthetic packages.
+
+`falryn extension catalog` returns current compact package descriptors, including
+disabled and unavailable states. Optional `--input` accepts an `action: "catalog"`
+request with an exact catalog-bound `query` and optional `session`. Queries default
+to 32 entries and allow 256. Continuation handles bind the query and catalog;
+changed controls, package bytes, lifecycle, compatibility or trust reject stale
+handles. Human, quiet, JSON and JSONL expose the same bounded facts. An absent
+database remains absent during inspection and previews.
+
+SQLite migration 0019 stores revision-guarded scope choices and idempotent
+receipts. Reconciliation selects current authority keys before admitting at most
+1,024 controls, 4,096 descriptors and 16 MiB compact metadata within 30 seconds.
+Unrelated scope history stays stored. Failed or stale reconciliation preserves
+the previous snapshot. These are operation bounds, not a stored-history quota.
+Package descriptors have no native binding and remain unavailable even
+when their scoped preference is enabled. Rehydration does not prepare full
+instructions or schemas, resolve credentials, start code, or contact a model.
+
+Headless runs and new interactive sessions rehydrate before producer composition.
+The same migration stores a version-1 historical catalog with `session.started` and
+the session record. It retains at most 32 entries and 49,152 bytes, with total
+and omitted counts, exact owner/generation facts and no executable bindings.
+Session show, fork and replay expose these historical facts; resume also reports
+current reconciliation separately and remains cursor-only. Export/import and
+fork preserve provenance without copying active scope controls. OpenTUI resource
+inspection labels its session-start catalog historical and non-executable.
+Runtime workspace-root replacement and native package execution are not added.
 
 Trust decisions use version-1 records in the product database's migration 0012,
 with 128 KiB per record and transactional revision checks. The current CLI uses
@@ -574,10 +618,9 @@ Product publication now requires an explicit native runner binding before
 marking a registered tool executable. The unbound `open_pty` descriptor remains
 unavailable. Invocation still checks policy, disclosure, generation and shared
 resource admission; a registered descriptor alone cannot execute. The
-capability registry still keys identity by kind
-plus namespace/name rather than the complete source-owner-qualified identity,
-so equal names from distinct owners cannot yet coexist; #898 owns the
-scope-bearing catalog identity correction.
+capability registry still keys identity by kind plus namespace/name. The separate
+inert Extensions catalog preserves exact source-owner-qualified candidates and
+scope-aware alias resolution without changing executable registry identity.
 
 Provider tool batches now pass through the common capability composition owner
 in the product attempt runner. The same application port accepts dependency

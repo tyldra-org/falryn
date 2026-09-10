@@ -1,4 +1,5 @@
 import type { CompositionProvenance } from "../capabilities/composition.ts";
+import type { CatalogHistory } from "../extensions/catalog-history.ts";
 /**
  * The semantic event envelope.
  *
@@ -275,7 +276,11 @@ type Envelope<Kind extends EventKind, Correlation, Payload> = {
   readonly payload: Payload;
 };
 
-export type SessionStartedEvent = Envelope<"session.started", SessionCorrelation, EmptyPayload>;
+export type SessionStartedEvent = Envelope<
+  "session.started",
+  SessionCorrelation,
+  { readonly extensionCatalog?: CatalogHistory | undefined }
+>;
 
 export type TurnStartedEvent = Envelope<"turn.started", TurnCorrelation, EmptyPayload>;
 

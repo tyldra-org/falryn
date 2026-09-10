@@ -43,6 +43,7 @@ import type { ArtifactId, ContentDigest } from "../artifacts/artifact.ts";
 import { artifactId, contentDigest } from "../artifacts/artifact.ts";
 import type { BlobError } from "../artifacts/blob.ts";
 import type { SensitiveValueRedactor } from "../configuration/configuration.ts";
+import { digestSchema, extensionActivationIdentityV1Schema } from "../extensions/identity.ts";
 import type { ExportName, PackageError } from "../extensions/package.ts";
 import { brandedString, timestampSchema } from "../foundation/branded-schema.ts";
 import type { CodecIssue } from "../foundation/codec-error.ts";
@@ -656,10 +657,21 @@ function walkExportValue(
   if (typeof value !== "object") {
     return ok(value);
   }
+  // These two fields are structural, digest-only scope provenance, not authentication.
+  // Exempt only a fully parsed activation identity; arbitrary similarly named metadata
+  // and credential-shaped strings still follow the normal redaction rules.
+  const activation =
+    "scopeAuthorityId" in value ? extensionActivationIdentityV1Schema.safeParse(value) : null;
+  const scopeIdentity = activation?.success === true;
+  const scopeDigest =
+    scopeIdentity && digestSchema.safeParse(activation.data.scopeAuthorityId).success;
   const next: Record<string, unknown> = {};
   for (const [key, nested] of Object.entries(value)) {
     const nestedPath = childPath(path, key);
-    if (redactor.isSecretName(key)) {
+    const structuralScopeFact =
+      (key === "scopeAuthorityGeneration" && scopeIdentity) ||
+      (key === "scopeAuthorityId" && scopeDigest);
+    if (redactor.isSecretName(key) && !structuralScopeFact) {
       const recorded = recordRedaction(redactions, nestedPath);
       if (!recorded.ok) {
         return recorded;

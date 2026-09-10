@@ -25,6 +25,7 @@
  *   rejected value.
  */
 
+import { CATALOG_HISTORY_BYTES } from "../../domain/extensions/catalog-history.ts";
 import {
   type CodecIssue,
   err,
@@ -124,6 +125,26 @@ function withOutcome(row: SqliteRow): Record<string, unknown> {
   return { ...rest, outcome: outcomeFromColumns(outcomeKind ?? null, outcomeEffect ?? null) };
 }
 
+function parseStoredSession(value: unknown): Result<SessionRecord, readonly CodecIssue[]> {
+  if (typeof value !== "object" || value === null || !("extensionCatalog" in value)) {
+    return parseSessionRecord(value);
+  }
+  const { extensionCatalog, ...record } = value;
+  if (extensionCatalog === null) return parseSessionRecord(record);
+  if (typeof extensionCatalog !== "string") {
+    return err([{ path: "extensionCatalog", code: "invalid_type" }]);
+  }
+  if (Buffer.byteLength(extensionCatalog) > CATALOG_HISTORY_BYTES) {
+    return err([{ path: "extensionCatalog", code: "too_big" }]);
+  }
+  try {
+    const history: unknown = JSON.parse(extensionCatalog);
+    return parseSessionRecord({ ...record, extensionCatalog: history });
+  } catch {
+    return err([{ path: "extensionCatalog", code: "invalid_type" }]);
+  }
+}
+
 const sessionSpec: TableSpec<SessionRecord> = {
   entity: "session",
   table: SESSIONS_TABLE,
@@ -132,12 +153,14 @@ const sessionSpec: TableSpec<SessionRecord> = {
   completedColumn: "closed_at",
   selectList: `session_id AS sessionId, workspace_id AS workspaceId, stream_id AS streamId,
     title AS title, configuration_generation AS configurationGeneration,
-    started_at AS startedAt, closed_at AS closedAt, ${LIFECYCLE_COLUMNS}`,
+    started_at AS startedAt, closed_at AS closedAt, ${LIFECYCLE_COLUMNS},
+    CASE WHEN length(CAST(extension_catalog AS BLOB)) > ${CATALOG_HISTORY_BYTES}
+      THEN 0 ELSE extension_catalog END AS extensionCatalog`,
   insert: `INSERT INTO ${SESSIONS_TABLE}
     (session_id, workspace_id, stream_id, title, configuration_generation,
-     started_at, closed_at, outcome_kind, outcome_effect)
+     started_at, closed_at, outcome_kind, outcome_effect, extension_catalog)
     VALUES ($sessionId, $workspaceId, $streamId, $title, $configurationGeneration,
-            $startedAt, $completedAt, $outcomeKind, $outcomeEffect)`,
+            $startedAt, $completedAt, $outcomeKind, $outcomeEffect, $extensionCatalog)`,
   bindingsFor: (record) => ({
     sessionId: record.sessionId,
     workspaceId: record.workspaceId,
@@ -147,9 +170,11 @@ const sessionSpec: TableSpec<SessionRecord> = {
     startedAt: record.startedAt,
     completedAt: record.closedAt,
     ...outcomeBindings(record.outcome),
+    extensionCatalog:
+      record.extensionCatalog === undefined ? null : JSON.stringify(record.extensionCatalog),
   }),
   identityOf: (record) => record.sessionId,
-  parse: parseSessionRecord,
+  parse: parseStoredSession,
 };
 
 const turnSpec: TableSpec<TurnRecord> = {

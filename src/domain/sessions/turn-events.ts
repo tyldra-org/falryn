@@ -1,4 +1,5 @@
 import type { CompositionProvenance } from "../capabilities/composition.ts";
+import type { CatalogHistory } from "../extensions/catalog-history.ts";
 /**
  * Turn lifecycle facts as durable runtime events, and pure replay of those
  * events into turn views.
@@ -49,6 +50,7 @@ export type TurnLifecycleFact =
   | {
       readonly kind: "session.started";
       readonly correlation: SessionCorrelation;
+      readonly extensionCatalog?: CatalogHistory | undefined;
     }
   | {
       readonly kind: "execution.profile.selected";
@@ -165,7 +167,8 @@ export function buildTurnLifecycleEvent(input: BuildTurnEventInput): RuntimeEven
         ...spine,
         kind: "session.started",
         correlation: fact.correlation,
-        payload: {},
+        payload:
+          fact.extensionCatalog === undefined ? {} : { extensionCatalog: fact.extensionCatalog },
       };
       return event;
     }

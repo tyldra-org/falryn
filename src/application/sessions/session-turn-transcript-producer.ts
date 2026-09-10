@@ -11,6 +11,7 @@
  * vendor adapters (#709).
  */
 
+import type { CatalogHistory } from "../../domain/extensions/catalog-history.ts";
 import {
   type CapabilityId,
   type ConfigurationGeneration,
@@ -54,6 +55,7 @@ export type ProducerSessionInput = {
   readonly sessionId: SessionId;
   readonly workspaceId: WorkspaceId;
   readonly configurationGeneration: ConfigurationGeneration;
+  readonly extensionCatalog?: CatalogHistory | undefined;
 };
 
 export type ProducerTurnInput = StartTurnInput;
@@ -228,7 +230,9 @@ export function createSessionTurnTranscriptProducer(
         traceId: options.correlation.traceId,
         configurationGeneration: input.configurationGeneration,
       };
-      const persisted = await persistFacts([{ kind: "session.started", correlation }]);
+      const persisted = await persistFacts([
+        { kind: "session.started", correlation, extensionCatalog: input.extensionCatalog },
+      ]);
       if (!persisted.ok) {
         return persisted;
       }

@@ -359,14 +359,17 @@ function build(argv: readonly string[], lenientPositionals = false): ReturnType<
         () => {},
       )
       .command(
-        lenientPositionals ? "extension [action] [path]" : "extension <action> <path>",
-        "Inspect a local package or review a scoped trust decision without activation.",
+        lenientPositionals ? "extension [action] [path]" : "extension <action> [path]",
+        "Inspect packages, trust, and scoped catalogs without native execution.",
         (group) =>
           group
-            .positional("action", { type: "string", choices: ["inspect", "trust"] })
+            .positional("action", {
+              type: "string",
+              choices: ["inspect", "trust", "catalog", "scope"],
+            })
             .option("input", {
               type: "string",
-              describe: "bounded trust decision JSON request file",
+              describe: "bounded trust, scope, or catalog query JSON request file",
             })
             .positional("path", { type: "string", describe: "local package directory path" }),
         () => {},
@@ -799,6 +802,44 @@ export async function parseInvocation(argv: readonly string[]): Promise<Invocati
       return { kind: "invalid", message: "The model action does not match its input request." };
     modelArgs = checked.data;
   }
+  let extensionCatalogArgs:
+    | import("./commands/extension-catalog.ts").ExtensionCatalogArguments
+    | undefined;
+  if (
+    (command === "extension.inspect" || command === "extension.trust") &&
+    parsed.path === undefined
+  )
+    return { kind: "invalid", message: "Extension inspection and trust require a local path." };
+  if (command === "extension.catalog" || command === "extension.scope") {
+    if (parsed.path !== undefined)
+      return {
+        kind: "invalid",
+        message: "Catalog and scope commands do not accept a package path.",
+      };
+    const action = command === "extension.catalog" ? "catalog" : "scope";
+    let input: unknown = { action };
+    if (parsed.input !== undefined) {
+      const loaded = await loadTaskInputFile(parsed.input);
+      if (!loaded.ok || Buffer.byteLength(loaded.value) > 16_384)
+        return {
+          kind: "invalid",
+          message: "Invalid extension request file (maximum 16384 bytes).",
+        };
+      try {
+        input = JSON.parse(loaded.value);
+      } catch {
+        return { kind: "invalid", message: "Invalid extension request JSON." };
+      }
+    }
+    const { extensionCatalogArgumentsSchema } = await import("./commands/extension-catalog.ts");
+    const checked = extensionCatalogArgumentsSchema.safeParse(input);
+    if (!checked.success || checked.data.action !== action)
+      return {
+        kind: "invalid",
+        message: "The extension action must match its bounded input request.",
+      };
+    extensionCatalogArgs = checked.data;
+  }
   let extensionTrust: import("../application/extensions/package-trust.ts").TrustRequest | undefined;
   let packageArgs: import("./commands/package.ts").PackageArguments | undefined;
   let peerArgs: import("./commands/peer.ts").PeerArguments | undefined;
@@ -877,6 +918,7 @@ export async function parseInvocation(argv: readonly string[]): Promise<Invocati
     commitPlanArgs,
     providerArgs,
     ...(modelArgs === undefined ? {} : { modelArgs }),
+    ...(extensionCatalogArgs === undefined ? {} : { extensionCatalogArgs }),
     ...(extensionTrust === undefined ? {} : { extensionTrust }),
     ...(packageArgs === undefined ? {} : { packageArgs }),
     ...(peerArgs === undefined ? {} : { peerArgs }),

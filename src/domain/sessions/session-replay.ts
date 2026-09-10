@@ -24,6 +24,7 @@ import {
   type ArtifactRecord,
   parseArtifactRecord,
 } from "../artifacts/artifact.ts";
+import type { CatalogHistory } from "../extensions/catalog-history.ts";
 import type { CodecIssue } from "../foundation/codec-error.ts";
 import type { SessionId, StreamId, TurnId, WorkspaceId } from "../foundation/identity.ts";
 import { err, ok, type Result } from "../foundation/result.ts";
@@ -96,6 +97,7 @@ export type ImportResult = {
 
 export type SessionReplay = {
   readonly sessionId: SessionId;
+  readonly extensionCatalog?: CatalogHistory | undefined;
   readonly streamId: StreamId;
   readonly turns: readonly ReplayedTurn[];
   readonly artifacts: readonly ArtifactRecord[];

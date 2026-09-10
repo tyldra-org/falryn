@@ -6,6 +6,7 @@ import {
   type ScratchResourcePort,
 } from "../../application/artifacts/index.ts";
 import { createLoomPort, type LoomPort } from "../../application/compression/index.ts";
+import type { CatalogRehydration } from "../../application/extensions/catalog-rehydration.ts";
 import { createDurableMemoryRecords, type MemoryRecords } from "../../application/memory/index.ts";
 import { type AgentJoins, createAgentJoins } from "../../application/orchestration/agent-joins.ts";
 import {
@@ -25,6 +26,7 @@ import {
   createStructuredQuestions,
   type StructuredQuestions,
 } from "../../application/orchestration/structured-questions.ts";
+import { createCatalogRepositories } from "../../data/extensions/catalog-repositories.ts";
 import {
   beginRun,
   createArtifactRepository,
@@ -65,6 +67,7 @@ import {
 import type { OwnedProcessRegistry } from "../../integrations/process/host-owned-process-registry.ts";
 import { createHostProcessIdentityPort } from "../../integrations/process/host-process-identity.ts";
 import type { ProviderContinuationStatePort } from "../../providers/index.ts";
+import { composeExtensionCatalog } from "./extension-catalog.ts";
 import {
   composeProductPeerMailboxes,
   type ProductPeerMailboxes,
@@ -85,6 +88,7 @@ export type ProductArtifactSession = {
   readonly questions: StructuredQuestions | null;
   readonly taskNotices: ProcessTaskNotices;
   readonly taskRecovery: readonly ProcessTaskRecovery[];
+  rehydrateExtensions(signal: AbortSignal, session?: string): Promise<CatalogRehydration>;
   openWorkspaceIndex(
     workspaceRoot: LocalPath,
     signal?: AbortSignal,
@@ -290,6 +294,16 @@ export async function openProductArtifactSession(
     return clean;
   }
   const session: ProductArtifactSession = {
+    async rehydrateExtensions(signal, session) {
+      if (closed) return { status: "failed", code: "catalog-host-closed" };
+      const owner = composeExtensionCatalog({
+        services,
+        records: createCatalogRepositories(store),
+        ...(session === undefined ? {} : { session }),
+      });
+      const result = await owner.refresh(signal);
+      return closed ? { status: "failed", code: "catalog-host-closed" } : result;
+    },
     peers,
     tasks,
     joins,

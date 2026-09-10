@@ -18,6 +18,7 @@ import {
   createUnavailableProductContextSource,
 } from "../../application/context/index.ts";
 import { createDebugAdapterSupervisor } from "../../application/debugging/index.ts";
+import type { CatalogRehydration } from "../../application/extensions/catalog-rehydration.ts";
 import { createLanguageServerSupervisor } from "../../application/language/index.ts";
 import { composeProductMemoryTurn, type MemoryRecords } from "../../application/memory/index.ts";
 import {
@@ -44,6 +45,7 @@ import {
 import { composePeerTool } from "../../application/tools/peer-tool.ts";
 import { composeProductIndexLifecycle } from "../../application/workspace/index.ts";
 import type { ArtifactStorePort } from "../../domain/artifacts/index.ts";
+import { projectCatalogHistory } from "../../domain/extensions/catalog-history.ts";
 import {
   type ClockPort,
   type ConfigurationGeneration,
@@ -86,6 +88,7 @@ import type { TranscriptFeed } from "../../tui/transcript/transcript-feed.ts";
 import type { ProductProviderConnectionHandoff } from "./product-provider-connections.ts";
 
 export type ProductShellAttachmentPorts = {
+  readonly rehydrateExtensions?: (signal: AbortSignal) => Promise<CatalogRehydration>;
   readonly peers?: import("./product-peer-mailboxes.ts").ProductPeerMailboxes;
   readonly resolveAgentProvider?: import("../../application/runtime/delegated-agent-runtime.ts").DelegatedRuntimeOptions["resolveProvider"];
   readonly agentRegistry?: import("../../application/orchestration/agent-registry.ts").AgentRegistry;
@@ -192,6 +195,14 @@ export async function composeProductShellAttachments(
 
   async function buildSession() {
     const sessionId = sessionIdCodec.from(`session-shell-${randomUUID()}`);
+    const extensions = await ports.rehydrateExtensions?.(
+      ports.signal ?? new AbortController().signal,
+    );
+    if (extensions?.status === "failed") return null;
+    const extensionCatalog =
+      extensions === undefined
+        ? undefined
+        : projectCatalogHistory(extensions.catalog, ports.workspaceSet);
     const traceId = traceIdCodec.from(`trace-shell-${randomUUID()}`);
     const workspaceTools =
       workspaceRoot === null
@@ -391,6 +402,7 @@ export async function composeProductShellAttachments(
             recall: memoryTools.recall,
           });
     const executor = createProductLiveTurnExecutor({
+      ...(extensionCatalog === undefined ? {} : { extensionCatalog }),
       ...(workspaceTools?.resources == null ? {} : { resources: workspaceTools.resources }),
       ...(ports.modelConfigurationGeneration === undefined
         ? {}
@@ -410,6 +422,7 @@ export async function composeProductShellAttachments(
       ...(selectedModel === null || !selectedModelExplicit ? {} : { initialModel: selectedModel }),
     });
     return {
+      extensionCatalog,
       sessionId,
       producer: composed.value.attachments.turnProducer,
       peer,
@@ -574,7 +587,31 @@ export async function composeProductShellAttachments(
         }
       },
     },
-    controls: providerControls(ports.provider),
+    controls: {
+      ...providerControls(ports.provider),
+      get resources() {
+        const resources = providerControls(ports.provider).resources;
+        const catalog = active.extensionCatalog;
+        if (catalog === undefined) return resources;
+        return [
+          ...resources,
+          {
+            label: "Extensions catalog",
+            value: {
+              kind: "known" as const,
+              text: `${catalog.catalog}; generation ${catalog.generation}; ${catalog.total} descriptors; ${catalog.omitted} omitted; historical, no native execution`,
+            },
+          },
+          ...catalog.entries.map((entry) => ({
+            label: `${entry.contribution.nativeKind} ${entry.contribution.localId}`,
+            value: {
+              kind: "known" as const,
+              text: `${entry.wasEnabled ? "enabled" : "disabled"}; ${entry.reason}; owner ${entry.contribution.owner.digest}`,
+            },
+          })),
+        ];
+      },
+    },
   };
 }
 
