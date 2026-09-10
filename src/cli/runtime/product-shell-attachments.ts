@@ -20,6 +20,10 @@ import {
 import { createDebugAdapterSupervisor } from "../../application/debugging/index.ts";
 import { createLanguageServerSupervisor } from "../../application/language/index.ts";
 import { composeProductMemoryTurn, type MemoryRecords } from "../../application/memory/index.ts";
+import {
+  executePeerAction,
+  peerActionSchema,
+} from "../../application/orchestration/peer-actions.ts";
 import type { ProcessTaskNotices } from "../../application/orchestration/process-task-notices.ts";
 import type { ProcessTaskSupervisor } from "../../application/orchestration/process-task-supervisor.ts";
 import { composeDelegatedAgentRuntime } from "../../application/runtime/delegated-agent-runtime.ts";
@@ -37,6 +41,7 @@ import {
   mergeProductToolBundles,
   type ProductToolConfirmationPort,
 } from "../../application/tools/index.ts";
+import { composePeerTool } from "../../application/tools/peer-tool.ts";
 import { composeProductIndexLifecycle } from "../../application/workspace/index.ts";
 import type { ArtifactStorePort } from "../../domain/artifacts/index.ts";
 import {
@@ -81,6 +86,7 @@ import type { TranscriptFeed } from "../../tui/transcript/transcript-feed.ts";
 import type { ProductProviderConnectionHandoff } from "./product-provider-connections.ts";
 
 export type ProductShellAttachmentPorts = {
+  readonly peers?: import("./product-peer-mailboxes.ts").ProductPeerMailboxes;
   readonly resolveAgentProvider?: import("../../application/runtime/delegated-agent-runtime.ts").DelegatedRuntimeOptions["resolveProvider"];
   readonly agentRegistry?: import("../../application/orchestration/agent-registry.ts").AgentRegistry;
   readonly modelPreferences?: () => import("../../providers/configuration/policy-schema.ts").ModelPreferences;
@@ -184,7 +190,7 @@ export async function composeProductShellAttachments(
   });
   const output = composeProductOutputControls();
 
-  function buildSession() {
+  async function buildSession() {
     const sessionId = sessionIdCodec.from(`session-shell-${randomUUID()}`);
     const traceId = traceIdCodec.from(`trace-shell-${randomUUID()}`);
     const workspaceTools =
@@ -267,6 +273,9 @@ export async function composeProductShellAttachments(
             generation,
             ...(ports.memoryRecords === undefined ? {} : { records: ports.memoryRecords }),
           });
+    const peer =
+      (await ports.peers?.open({ sessionId: String(sessionId), agentId: "main", generation: 1 })) ??
+      null;
     const productTools =
       workspaceTools === null ||
       processTools === null ||
@@ -283,6 +292,7 @@ export async function composeProductShellAttachments(
               gitTools,
               languageTools,
               memoryTools,
+              composePeerTool(generation, peer),
             ],
             {
               afterMutation: async (request) => {
@@ -320,6 +330,7 @@ export async function composeProductShellAttachments(
             composeDelegatedAgentRuntime(runtimePorts, {
               tasks,
               ...(ports.joins ? { joins: ports.joins } : {}),
+              ...(ports.peers ? { peers: ports.peers } : {}),
               artifacts,
               ...(ports.agentRegistry ? { registry: ports.agentRegistry } : {}),
               ...(ports.resolveAgentProvider
@@ -401,6 +412,7 @@ export async function composeProductShellAttachments(
     return {
       sessionId,
       producer: composed.value.attachments.turnProducer,
+      peer,
       executor,
       submission: createProductSubmissionPort({
         executor,
@@ -413,7 +425,7 @@ export async function composeProductShellAttachments(
     };
   }
 
-  const initial = buildSession();
+  const initial = await buildSession();
   if (initial === null) {
     return null;
   }
@@ -439,7 +451,35 @@ export async function composeProductShellAttachments(
     },
   };
   let activeSubmissions = 0;
+  const peerListeners = new Set<
+    (notice: import("../../domain/orchestration/peer-mailbox.ts").PeerNotice) => void
+  >();
+  const notifyPeer = (notice: import("../../domain/orchestration/peer-mailbox.ts").PeerNotice) => {
+    for (const listener of peerListeners) listener(notice);
+  };
+  let unsubscribePeer: (() => void) | null = null;
   const submission = {
+    subscribePeer(
+      listener: (notice: import("../../domain/orchestration/peer-mailbox.ts").PeerNotice) => void,
+    ) {
+      peerListeners.add(listener);
+      unsubscribePeer ??= ports.peers?.subscribe(String(active.sessionId), notifyPeer) ?? null;
+      return () => {
+        peerListeners.delete(listener);
+        if (peerListeners.size === 0) {
+          unsubscribePeer?.();
+          unsubscribePeer = null;
+        }
+      };
+    },
+    peer: (input: unknown, signal: AbortSignal) => {
+      const parsed = peerActionSchema.safeParse(input);
+      const selected =
+        parsed.success && parsed.data.as
+          ? (ports.peers?.owned(parsed.data.as, String(active.sessionId)) ?? active.peer)
+          : active.peer;
+      return executePeerAction(selected, input, "user", signal);
+    },
     ...(ports.modelSettings === undefined ? {} : { modelSettings: ports.modelSettings }),
     brief,
     output,
@@ -479,10 +519,12 @@ export async function composeProductShellAttachments(
     ) {
       const target = active.submission;
       activeSubmissions += 1;
+      active.peer?.state("busy");
       try {
         return await target.submit(snapshot, context);
       } finally {
         activeSubmissions -= 1;
+        if (activeSubmissions === 0) active.peer?.state("idle");
       }
     },
   };
@@ -492,16 +534,23 @@ export async function composeProductShellAttachments(
     if (activeSubmissions > 0) {
       return { ok: false as const, reason: "the current session still has an active turn" };
     }
-    const candidate = buildSession();
+    const candidate = await buildSession();
     if (candidate === null) {
       return { ok: false as const, reason: "the product runtime could not compose" };
     }
     const failed = await candidate.executor.startSession();
     if (failed !== null) {
+      await candidate.peer?.close();
       return { ok: false as const, reason: failed.message };
     }
     unsubscribeActive();
+    unsubscribePeer?.();
+    await active.peer?.close();
     active = candidate;
+    unsubscribePeer =
+      peerListeners.size > 0
+        ? (ports.peers?.subscribe(String(active.sessionId), notifyPeer) ?? null)
+        : null;
     unsubscribeActive = active.producer.subscribe(() => {
       for (const listener of listeners) listener();
     });

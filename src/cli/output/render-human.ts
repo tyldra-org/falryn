@@ -472,6 +472,12 @@ function renderPayload(session: Session, result: RunCommandResult): RenderedPayl
     case "provider":
       return renderProviderConnections(session, result.payload);
     case "package":
+    case "peer":
+      if (result.command === "peer")
+        return {
+          lines: result.payload === null ? [] : [safe(JSON.stringify(result.payload))],
+          diagnostics: [],
+        };
       return {
         lines:
           result.payload === null
@@ -583,6 +589,7 @@ function quietFindingLines(result: RunCommandResult): readonly string[] {
     case "extension.inspect":
     case "extension.trust":
     case "package":
+    case "peer":
       return [];
     default:
       return assertNever(result, "unhandled command result");

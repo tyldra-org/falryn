@@ -6,6 +6,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { chmod, mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { z } from "zod";
 import { createEphemeralProductIndexPort } from "../../application/workspace/index.ts";
 import { CONFIGURATION_FILE_NAME } from "../../config/index.ts";
 import {
@@ -18,6 +19,7 @@ import {
   streamId,
   workspaceRootId,
 } from "../../domain/foundation/index.ts";
+import { type PeerNotice, peerEndpointSchema } from "../../domain/orchestration/peer-mailbox.ts";
 import { createInMemoryEventStore } from "../../domain/sessions/index.ts";
 import {
   createInMemoryFileSystem,
@@ -73,6 +75,121 @@ afterEach(async () => {
 });
 
 describe("composeProductShellAttachments", () => {
+  test("the product host routes child mailbox controls and notifications to its owning session", async () => {
+    const home = await mkdtemp(join(tmpdir(), "falryn-peer-host-"));
+    homes.push(home);
+    const services = createServiceProvider(GLOBALS, {
+      home: localPath(home),
+      environment: createStaticEnvironment({
+        FALRYN_STATE_DIR: join(home, "state"),
+        FALRYN_CONFIG_DIR: join(home, "config"),
+      }),
+      currentDirectory: localPath(home),
+    })();
+    expect((await services.ensureWorkspaceSet()).ok).toBe(true);
+    await services.workspaceTrust.resolve();
+    const product = await openProductArtifactSession(services);
+    if (!product) throw new Error("product store unavailable");
+    try {
+      const attached = await composeProductShellAttachments({
+        eventStore: createInMemoryEventStore(),
+        clock: services.clock,
+        fileSystem: services.fileSystem,
+        workspaceSet: services.workspaceSet,
+        configurationGeneration: configurationGeneration.from(0),
+        peers: product.peers,
+      });
+      if (!attached?.submission.peer) throw new Error("peer controls unavailable");
+      const signal = new AbortController().signal;
+      const endpoint = await attached.submission.peer({ operation: "endpoint" }, signal);
+      const main = z
+        .object({ ok: z.literal(true), value: peerEndpointSchema })
+        .parse(endpoint).value;
+      const childIdentity = { ...main.identity, agentId: "owned-child", generation: 2 };
+      const notices: PeerNotice[] = [];
+      const unsubscribe = attached.submission.subscribePeer?.((notice) => notices.push(notice));
+      const child = await product.peers.open(childIdentity, undefined, "busy");
+      const remote = await product.peers.open({
+        sessionId: "remote",
+        agentId: "main",
+        generation: 1,
+      });
+      if (!child || !remote) throw new Error("child/remote unavailable");
+      expect(
+        await attached.submission.peer({ operation: "endpoint", as: remote.identity }, signal),
+      ).toEqual({ ok: false, error: { code: "unavailable" } });
+      expect(
+        await attached.submission.peer(
+          { operation: "allow", as: childIdentity, peer: remote.identity },
+          signal,
+        ),
+      ).toMatchObject({ ok: true });
+      const receipt = await remote.send(
+        {
+          version: 1,
+          id: "child-mail",
+          sender: remote.identity,
+          recipient: childIdentity,
+          scope: main.scope,
+          laneSequence: 1,
+          createdAt: Number(services.clock.now()),
+          kind: "message",
+          correlation: null,
+          text: "inspect this evidence",
+          artifacts: [],
+          sensitivity: "internal",
+          retention: "normal",
+          provenance: {
+            source: "peer-evidence",
+            effectAuthority: false,
+            causalMessage: null,
+            hops: 0,
+          },
+        },
+        signal,
+      );
+      expect(receipt).toMatchObject({ ok: true });
+      if (!receipt.ok) throw new Error(receipt.error.code);
+      expect(notices.map((notice) => notice.key)).toEqual([receipt.value.key]);
+      expect(
+        await attached.submission.peer(
+          { operation: "inspect", as: childIdentity, key: receipt.value.key },
+          signal,
+        ),
+      ).toMatchObject({ ok: true, value: { message: { text: "inspect this evidence" } } });
+      expect(child.endpoint()).toMatchObject({ ok: true, value: { endpoint: { state: "busy" } } });
+      child.state("terminal");
+      await child.close();
+      expect(
+        await attached.submission.peer(
+          { operation: "inspect", as: childIdentity, key: receipt.value.key },
+          signal,
+        ),
+      ).toMatchObject({
+        ok: true,
+        value: { receipt: { handling: "refused" }, message: { text: "inspect this evidence" } },
+      });
+      expect(
+        await attached.submission.peer({ operation: "history", as: childIdentity }, signal),
+      ).toMatchObject({ ok: true, value: { complete: true, cursor: { endpoint: childIdentity } } });
+      expect(
+        await attached.submission.peer(
+          { operation: "inspect", as: remote.identity, key: receipt.value.key },
+          signal,
+        ),
+      ).toEqual({ ok: false, error: { code: "denied" } });
+      expect(
+        await attached.submission.peer(
+          { operation: "reply", as: childIdentity, messageJson: "{}" },
+          signal,
+        ),
+      ).toEqual({ ok: false, error: { code: "unavailable" } });
+      unsubscribe?.();
+    } finally {
+      await product.close();
+    }
+  });
+
   test("fails closed when no provider or executable workspace catalog is attached", async () => {
     const attachments = await composeProductShellAttachments({
       eventStore: createInMemoryEventStore(),

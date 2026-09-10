@@ -258,6 +258,7 @@ async function runCommand(
     {
       ...options,
       ...(invocation.packageArgs === undefined ? {} : { packageArgs: invocation.packageArgs }),
+      ...(invocation.peerArgs === undefined ? {} : { peerArgs: invocation.peerArgs }),
       ...(invocation.modelArgs === undefined ? {} : { modelRequest: invocation.modelArgs }),
       ...(invocation.extensionPath === undefined
         ? {}
@@ -541,6 +542,7 @@ async function launchShell(
               scratch: productArtifactSession.scratch,
               tasks: productArtifactSession.tasks,
               joins: productArtifactSession.joins,
+              peers: productArtifactSession.peers,
               taskNotices: productArtifactSession.taskNotices,
               memoryRecords: productArtifactSession.memoryRecords,
               ...(productWorkspaceIndex === null ? {} : { index: productWorkspaceIndex }),

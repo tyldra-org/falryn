@@ -91,6 +91,10 @@ export type SubmissionOutcome =
  * while holding the user's text.
  */
 export type SubmissionPort = {
+  readonly peer?: (input: unknown, signal: AbortSignal) => Promise<unknown>;
+  readonly subscribePeer?: (
+    listener: (notice: import("../../domain/orchestration/peer-mailbox.ts").PeerNotice) => void,
+  ) => () => void;
   submit(
     snapshot: ComposerSnapshot,
     context?: {

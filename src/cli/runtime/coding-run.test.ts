@@ -8,6 +8,7 @@ import { chmod, mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { sealedAgentResultSchema } from "../../application/orchestration/delegation-contract.ts";
+import { MAX_DISCLOSED_PRODUCT_TOOLS } from "../../application/tools/product-tool-disclosure.ts";
 import { CONFIGURATION_FILE_NAME } from "../../config/index.ts";
 import { type ArtifactStorePort, artifactId } from "../../domain/artifacts/index.ts";
 import {
@@ -1050,7 +1051,8 @@ describe("runCoding", () => {
     });
     expect(requests).toHaveLength(2);
     expect(requests[0]?.tools.length).toBeGreaterThan(0);
-    expect(requests[0]?.tools.length).toBeLessThanOrEqual(20);
+    expect(requests[0]?.tools.length).toBeLessThanOrEqual(MAX_DISCLOSED_PRODUCT_TOOLS);
+    expect(requests[0]?.tools.some((tool) => tool.name === "peer")).toBe(true);
     expect(
       requests[1]?.messages.some(
         (message) => message.role === "assistant" && message.toolCalls?.[0]?.name === "list_dir",

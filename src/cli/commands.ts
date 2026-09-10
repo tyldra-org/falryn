@@ -46,6 +46,7 @@ import type { ExportCommandPayload, runExport } from "./commands/export.ts";
 import type { runExtensionInspect } from "./commands/extension.ts";
 import type { runImport, runReplay } from "./commands/import-replay-commands.ts";
 import type { runModel } from "./commands/model.ts";
+import type { PeerPayload } from "./commands/peer.ts";
 import type { ProviderCommandPayload, runProvider } from "./commands/provider.ts";
 import type {
   runSessionList,
@@ -269,6 +270,8 @@ export function stoppedResult(
       );
     case "package":
       return resultFor<"package", PackageReceipt>("package", null, [], outcome, effect);
+    case "peer":
+      return resultFor<"peer", PeerPayload>("peer", null, [], outcome, effect);
     case "model":
       return resultFor<"model", ModelSettingsResult>("model", null, [], outcome, effect);
     case "extension.inspect":
@@ -306,6 +309,7 @@ export function stoppedResult(
  * text rather than a result — dispatch resolves them before any command runs.
  */
 export type RunCommandResult =
+  | CommandResultOf<"peer", PeerPayload>
   | CommandResultOf<"package", PackageReceipt>
   | Awaited<ReturnType<typeof runConfigShow>>
   | Awaited<ReturnType<typeof runConfigValidate>>

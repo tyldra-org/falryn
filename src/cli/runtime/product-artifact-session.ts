@@ -46,6 +46,7 @@ import {
   type WorkspaceIndexStore,
 } from "../../data/index.ts";
 import { createAgentJoinStore } from "../../data/orchestration/agent-join-store.ts";
+import { createMailboxRepository } from "../../data/orchestration/mailbox-store.ts";
 import { createSqliteProcessTaskStore } from "../../data/orchestration/process-task-store.ts";
 import { createQuestionStore } from "../../data/orchestration/question-store.ts";
 import { runId } from "../../domain/foundation/index.ts";
@@ -64,9 +65,14 @@ import {
 import type { OwnedProcessRegistry } from "../../integrations/process/host-owned-process-registry.ts";
 import { createHostProcessIdentityPort } from "../../integrations/process/host-process-identity.ts";
 import type { ProviderContinuationStatePort } from "../../providers/index.ts";
+import {
+  composeProductPeerMailboxes,
+  type ProductPeerMailboxes,
+} from "./product-peer-mailboxes.ts";
 import type { Services } from "./services.ts";
 
 export type ProductArtifactSession = {
+  readonly peers: ProductPeerMailboxes;
   readonly artifacts: DurableArtifactStore;
   readonly eventStore: DurableEventStore;
   readonly loom: LoomPort;
@@ -162,6 +168,7 @@ export async function openProductArtifactSession(
     clock: services.clock,
   });
   const eventStore = createSqliteEventStore(store, { projectStartedRecords: true });
+  const peers = composeProductPeerMailboxes(services, createMailboxRepository(store), artifacts);
   const loom = createLoomPort({
     artifacts,
     manifests: createLoomManifestRepository({ store, clock: services.clock }),
@@ -265,6 +272,7 @@ export async function openProductArtifactSession(
     await attempt(async () => {
       if (!(await recovery.close())) clean = false;
     });
+    await attempt(() => peers.close());
     await attempt(async () => {
       if (!(await tasks.drain()).ok) clean = false;
     });
@@ -282,6 +290,7 @@ export async function openProductArtifactSession(
     return clean;
   }
   const session: ProductArtifactSession = {
+    peers,
     tasks,
     joins,
     questions,

@@ -2,7 +2,9 @@ import { afterEach, expect, test } from "bun:test";
 import { z } from "zod";
 import { removeTemporaryRoots } from "../../data/fixtures.ts";
 import { createAgentJoinStore } from "../../data/orchestration/agent-join-store.ts";
+import { createMailboxRepository } from "../../data/orchestration/mailbox-store.ts";
 import { createCapabilityRegistry } from "../../domain/capabilities/index.ts";
+import { canonicalDigest } from "../../domain/extensions/canonical.ts";
 import {
   configurationGeneration,
   instant,
@@ -21,6 +23,8 @@ import {
   defaultToolLimits,
 } from "../../domain/tools/index.ts";
 import { createInMemoryFileSystem, localPath } from "../../domain/workspace/index.ts";
+import { createPeerCrypto } from "../../integrations/process/peer-crypto.ts";
+import { createPeerIpc } from "../../integrations/process/peer-ipc.ts";
 import {
   EMPTY_MODEL_PREFERENCES,
   roleRouteBaseSchema,
@@ -37,9 +41,11 @@ import {
   type SealedAgentResult,
   sealedAgentResultSchema,
 } from "../orchestration/delegation-contract.ts";
+import { openPeerMailbox, type PeerMailbox } from "../orchestration/peer-mailbox.ts";
 import { createProcessTaskFixture, taskValue } from "../orchestration/process-task.fixtures.ts";
 import { createProcessTaskSupervisor } from "../orchestration/process-task-supervisor.ts";
 import { createProductResources } from "../orchestration/product-resources.ts";
+import { composePeerTool, PEER_CAPABILITY } from "../tools/peer-tool.ts";
 import { createWorkspacePatcher } from "../workspace/workspace-patch.ts";
 import {
   composeDelegatedAgentRuntime,
@@ -101,7 +107,7 @@ async function run(
   script: (request: ModelRequest, index: number) => DeterministicProviderScript,
   options: Partial<
     Pick<DelegatedRuntimeOptions, "preferences" | "resolveProvider" | "registry">
-  > & { nativeDenied?: boolean } = {},
+  > & { nativeDenied?: boolean; withPeers?: boolean } = {},
   nativeEffect: "observation" | "mutation" | "external" = "observation",
   native?: {
     name: string;
@@ -156,7 +162,13 @@ async function run(
       },
     ),
   );
-  const registry = taskValue(createToolRegistry(configurationGeneration.from(0), [entry]));
+  const peerTool = composePeerTool(configurationGeneration.from(0), null);
+  const registry = taskValue(
+    createToolRegistry(configurationGeneration.from(0), [
+      entry,
+      ...(options.withPeers ? peerTool.registry.entries : []),
+    ]),
+  );
   const capability = capabilityEntryFromTool(entry, true);
   const capabilityRegistry = taskValue(
     createCapabilityRegistry(configurationGeneration.from(0), [
@@ -175,6 +187,9 @@ async function run(
   );
   let tools = 0;
   const resources = createProductResources(f.clock, { maxConcurrent });
+  const peers: PeerMailbox[] = [];
+  const peerIdentities: unknown[] = [];
+  const repository = createMailboxRepository(f.database);
   const composed = composeDelegatedAgentRuntime(
     {
       eventStore: f.events,
@@ -196,7 +211,9 @@ async function run(
       toolRegistry: registry,
       capabilityRegistry,
       toolRunner: {
-        hasBinding: (id) => id === entry.manifest.capabilityId,
+        hasBinding: (id) =>
+          id === entry.manifest.capabilityId ||
+          (options.withPeers === true && String(id) === PEER_CAPABILITY),
         async execute(request) {
           tools++;
           if (native) return native.execute(request);
@@ -217,6 +234,38 @@ async function run(
       }),
       artifacts: f.artifacts,
       providerCatalog: catalog,
+      ...(options.withPeers
+        ? {
+            peers: {
+              async open(identity, task, initialState) {
+                if (!task) throw new Error("child resource scope missing");
+                const opened = await openPeerMailbox({
+                  repository,
+                  clock: f.clock,
+                  resources: task,
+                  identity,
+                  initialState: initialState ?? "idle",
+                  label: "child",
+                  crypto: createPeerCrypto(),
+                  transport: createPeerIpc({ directory: `${f.root}/ipc` }),
+                  scope: {
+                    workspace: canonicalDigest("w"),
+                    project: canonicalDigest("p"),
+                    user: canonicalDigest("u"),
+                    environment: canonicalDigest("e"),
+                    trust: canonicalDigest("t"),
+                  },
+                  authorizeArtifacts: async (message) => message.artifacts.length === 0,
+                  redact: (text) => text,
+                });
+                if (!opened.ok) throw new Error(opened.error.code);
+                peers.push(opened.value);
+                peerIdentities.push({ identity, state: opened.value.endpoint() });
+                return opened.value;
+              },
+            } satisfies NonNullable<DelegatedRuntimeOptions["peers"]>,
+          }
+        : {}),
       ...options,
     },
   );
@@ -237,13 +286,54 @@ async function run(
       afterParent();
       await tasks.drain();
     }
-    return { result, requests, tools, notices };
+    return {
+      result,
+      requests,
+      tools,
+      notices,
+      peerIdentities,
+      peerEndpoints: peers.map((peer) => peer.endpoint()),
+    };
   } finally {
     tasks.interrupt();
     await tasks.drain();
+    for (const peer of peers) await peer.close();
     await f.close();
   }
 }
+
+test("an admitted child receives its exact owning-session endpoint and closes it terminal", async () => {
+  const observed = await run(
+    (request, index) => {
+      if (index === 0) return launch("general", "Inspect child endpoint", [PEER_CAPABILITY]);
+      if (request.tools.some((tool) => tool.name === "delegate"))
+        return { kind: "text", text: "Child finished." };
+      if (!request.messages.some((message) => message.role === "tool"))
+        return {
+          kind: "tool",
+          name: "peer",
+          toolCallId: "child-endpoint",
+          argumentFragments: [JSON.stringify({ operation: "endpoint" })],
+        };
+      return { kind: "text", text: generalResult };
+    },
+    { withPeers: true },
+  );
+  expect(observed.peerIdentities).toHaveLength(1);
+  expect(observed.peerIdentities[0]).toMatchObject({
+    identity: { sessionId: "agent-test-parent", generation: 1 },
+    state: { ok: true, value: { endpoint: { state: "busy" } } },
+  });
+  expect(observed.peerEndpoints[0]).toMatchObject({
+    ok: true,
+    value: { endpoint: { state: "terminal" } },
+  });
+  expect(observed.tools).toBe(0);
+  const toolMessages = observed.requests.flatMap((request) =>
+    request.messages.filter((message) => message.role === "tool"),
+  );
+  expect(JSON.stringify(toolMessages)).toContain("agent-test-parent");
+});
 
 test("a background child completes another provider turn after its parent has closed", async () => {
   let release!: () => void;
