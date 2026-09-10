@@ -280,3 +280,14 @@ export {
   priorityRank,
   workUnitId,
 } from "./work.ts";
+export type {
+  WorkItem,
+  WorkItemId,
+  WorkQueue,
+  WorkQueueAuthority,
+  WorkQueueId,
+  WorkQueueStore,
+  WorkReceipt,
+  WorkResult,
+} from "./work-queue.ts";
+export { WORK_QUEUE_LIMITS, workItemSchema, workQueueSchema } from "./work-queue.ts";

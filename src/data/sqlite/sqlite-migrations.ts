@@ -63,6 +63,7 @@ import {
   PROCESS_TASKS_TABLE,
 } from "../orchestration/process-task-schema.ts";
 import { MIGRATION_0015, QUESTION_TABLES } from "../orchestration/question-store.ts";
+import { MIGRATION_0021, WORK_QUEUE_TABLES } from "../orchestration/work-queue-schema.ts";
 import {
   MIGRATION_0007,
   MIGRATION_0008,
@@ -108,6 +109,7 @@ export const PRODUCTION_MIGRATIONS: readonly Migration[] = [
   MIGRATION_0018,
   MIGRATION_0019,
   MIGRATION_0020,
+  MIGRATION_0021,
 ];
 
 /** Every product table the registered set creates, in creation order. */
@@ -137,6 +139,7 @@ export const PRODUCT_TABLES: readonly string[] = [
   ...MAILBOX_TABLES,
   ...SCOPE_CONTROL_TABLES,
   ...PACKAGE_DATA_TABLES,
+  ...WORK_QUEUE_TABLES,
 ];
 
 function issue(

@@ -180,7 +180,7 @@ export type SqliteConnectionPort = SqliteStatements & {
 };
 
 export type SqliteOpenOptions = {
-  readonly path: LocalPath;
+  readonly path: LocalPath | ":memory:";
   /** Whether a missing file may be created. False refuses to invent a database. */
   readonly create: boolean;
 };
@@ -435,7 +435,7 @@ export type SqliteWriteOutcome<Value> = {
 
 /** What opening produced, before any product code has read a row. */
 export type SqliteOpenReport = {
-  readonly path: LocalPath;
+  readonly path: LocalPath | ":memory:";
   readonly created: boolean;
   readonly schemaVersion: number;
   readonly applied: readonly AppliedMigration[];
@@ -478,7 +478,7 @@ export type SqliteStorePort = {
 export type SqliteStoreOptions = {
   readonly open: SqliteOpener;
   readonly clock: ClockPort;
-  readonly databasePath: LocalPath;
+  readonly databasePath: LocalPath | ":memory:";
   /** Where a pre-migration backup is written. Inside the `state` root. */
   readonly backupDirectory: LocalPath;
   readonly migrations: readonly Migration[];

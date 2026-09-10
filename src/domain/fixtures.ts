@@ -25,6 +25,7 @@ import {
 import { RUNTIME_EVENT_SCHEMA_VERSION } from "./foundation/limits.ts";
 import { timestampFromEpochMilliseconds } from "./foundation/time.ts";
 import type { TerminalOutcome } from "./orchestration/outcome.ts";
+import { workQueueIdSchema } from "./orchestration/work-queue.ts";
 import type {
   CapabilityInvocationCompletedEvent,
   CapabilityInvocationStartedEvent,
@@ -294,6 +295,32 @@ export function everyEventKind(): readonly RuntimeEvent[] {
         added: 0,
         changed: 0,
         removed: 0,
+      },
+    },
+    {
+      ...spine({
+        eventId: "event-work-queue-12",
+        sequence: 12,
+        idempotencyKey: "key-work-queue-12",
+      }),
+      kind: "work.queue.changed",
+      correlation: FIXTURE_SESSION_CORRELATION,
+      payload: {
+        version: 1,
+        queueId: workQueueIdSchema.parse("queue-fixture"),
+        scopeGeneration: "scope-fixture",
+        mutationId: "mutation-fixture",
+        intent: "0".repeat(64),
+        queueDigest: "1".repeat(64),
+        edgesDigest: "2".repeat(64),
+        previousRevision: 0,
+        revision: 1,
+        actor: "user-fixture",
+        source: "prompt-fixture",
+        sourceGeneration: "source-1",
+        reason: "record work",
+        at: 1,
+        items: [],
       },
     },
   ];

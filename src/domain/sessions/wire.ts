@@ -64,6 +64,7 @@ import type { TerminalOutcome } from "../orchestration/outcome.ts";
 import { processTaskSnapshotSchema } from "../orchestration/process-task.ts";
 import { resourceAdmissionReceiptSchema } from "../orchestration/resource-admission.ts";
 import { EFFECT_CLASSES } from "../orchestration/work.ts";
+import { workReceiptSchema } from "../orchestration/work-queue.ts";
 import { workspaceTrustEventPayloadSchema } from "../security/workspace-trust.ts";
 import {
   type CapabilityInvocationCompletedPayload,
@@ -457,6 +458,12 @@ const runtimeEventSchema: z.ZodType<RuntimeEvent> = z.discriminatedUnion("kind",
   }),
   z.object({
     ...envelopeSpine,
+    kind: z.literal("work.queue.changed"),
+    correlation: sessionCorrelationSchema,
+    payload: workReceiptSchema,
+  }),
+  z.object({
+    ...envelopeSpine,
     kind: z.literal("workspace.trust.reviewed"),
     correlation: sessionCorrelationSchema,
     payload: workspaceTrustEventPayloadSchema,
@@ -576,6 +583,7 @@ function payloadToJson(event: RuntimeEvent): Record<string, unknown> {
     case "configuration.generation.changed":
       return configurationPayloadToJson(event);
     case "workspace.trust.reviewed":
+    case "work.queue.changed":
       return event.payload;
     case "execution.profile.selected":
       return {

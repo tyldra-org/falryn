@@ -147,6 +147,9 @@ export function blockFor(event: RuntimeEvent): TranscriptBlock | null {
   } as const;
 
   switch (event.kind) {
+    case "work.queue.changed":
+      // The queue journal is available to its store consumers; #161 owns shared projections.
+      return null;
     case "process.task.changed":
       return {
         ...spine,

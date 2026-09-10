@@ -202,7 +202,7 @@ function precreatePrivateDatabase(path: LocalPath): void {
 export function openBunSqlite(
   options: SqliteOpenOptions,
 ): Result<SqliteConnectionPort, SqliteFailure> {
-  if (options.create) {
+  if (options.create && options.path !== ":memory:") {
     // Only when creation is permitted: `create: false` must not invent a file.
     precreatePrivateDatabase(options.path);
   }
@@ -329,6 +329,7 @@ export function openBunSqlite(
       if (closed) {
         return err(closedFailure("file-control"));
       }
+      if (options.path === ":memory:") return ok(null);
       try {
         database.fileControl(constants.SQLITE_FCNTL_PERSIST_WAL, enabled ? 1 : 0);
         return ok(null);

@@ -38,3 +38,4 @@ export { decomposeOutcome } from "./task-decompose.ts";
 export { planOutcomeTaskGraph } from "./task-graph.ts";
 export { projectOutcomeProgress } from "./task-progress.ts";
 export { recommendOutcomeValidation } from "./task-validation.ts";
+export { createWorkQueueActions, type WorkQueueResponse } from "./work-queues.ts";
