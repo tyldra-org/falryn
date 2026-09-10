@@ -12,6 +12,7 @@ import { runExtensionInspect } from "../commands/extension.ts";
 import { runImport, runReplay } from "../commands/import-replay-commands.ts";
 import { runModel } from "../commands/model.ts";
 import { type PackageArguments, runPackage } from "../commands/package.ts";
+import { type PeerArguments, runPeer } from "../commands/peer.ts";
 import { runTaskCommitPlan } from "../commands/task-commit-plan-commands.ts";
 import {
   runTaskDecompose,
@@ -52,6 +53,7 @@ import {
 
 export type DispatchProduceOptions = {
   readonly packageArgs?: PackageArguments;
+  readonly peerArgs?: PeerArguments;
   readonly modelRequest?: ModelSettingsRequest;
   readonly extensionPath?: string;
   readonly extensionTrust?: import("../../application/extensions/package-trust.ts").TrustRequest;
@@ -86,6 +88,10 @@ export async function produce(
       if (options.packageArgs === undefined) throw new Error("Missing package arguments.");
       if (options.packageArgs.request.confirmation !== undefined) onMutationStart?.();
       return runPackage(services, options.packageArgs, signal);
+    case "peer":
+      if (!options.peerArgs) throw new Error("Missing peer arguments.");
+      onMutationStart?.();
+      return runPeer(services, options.peerArgs, signal);
     case "config.show":
       return runConfigShow(services, overrides, globals, signal);
     case "config.validate":

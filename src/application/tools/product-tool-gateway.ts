@@ -478,12 +478,14 @@ export function createProductToolGateway(options: ProductToolGatewayOptions): To
               ...nativeRequest,
               taskResources: task,
               ...(options.delegation === undefined ? {} : { delegation: options.delegation }),
-              ...(String(manifest.capabilityId) !== "builtin:orchestration/delegate@1"
+              ...(!["builtin:orchestration/delegate@1", "builtin:orchestration/peer@1"].includes(
+                String(manifest.capabilityId),
+              )
                 ? {}
                 : {
                     afterAdmission(run: (signal: AbortSignal) => Promise<ToolInvocationOutcome>) {
                       if (deferred.run !== undefined)
-                        throw new Error("duplicate deferred delegation");
+                        throw new Error("duplicate deferred orchestration action");
                       deferred.run = run;
                     },
                   }),

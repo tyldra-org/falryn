@@ -208,6 +208,7 @@ export type Invocation =
       readonly modelArgs?: ModelSettingsRequest;
       readonly extensionPath?: string;
       readonly packageArgs?: import("../commands/package.ts").PackageArguments;
+      readonly peerArgs?: import("../commands/peer.ts").PeerArguments;
       readonly extensionTrust?: import("../../application/extensions/package-trust.ts").TrustRequest;
     }
   /** Show help. `topic` is `null` for the root, or the subcommand asked about. */

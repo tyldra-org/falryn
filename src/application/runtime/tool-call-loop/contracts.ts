@@ -52,7 +52,7 @@ export type ToolRunnerRequest = {
     readonly effects: readonly import("../../../domain/orchestration/work.ts").EffectClass[];
     readonly capabilities: readonly string[];
   };
-  /** Native delegation waits after its metadata reservation has released. */
+  /** Native delegation and peer actions wait after their metadata reservation has released. */
   readonly afterAdmission?: (run: (signal: AbortSignal) => Promise<ToolInvocationOutcome>) => void;
   readonly composition?: CompositionProvenance;
   /** Trusted composition consumer; never serialized or supplied by a provider. */

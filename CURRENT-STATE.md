@@ -1212,6 +1212,84 @@ Protected input accepts only a non-retention fact, never secret bytes. Answer
 bodies are retained only under the normal answer-retention policy; task events
 and notices contain neither question text nor answers.
 
+## Peer mailboxes
+
+Main sessions and admitted child generations have authenticated same-machine
+mailboxes. The `peer` model tool, direct `/peer <JSON action>` composer input,
+and `falryn peer <action> <session-id> --input <JSON-file>` share application
+actions. JSON and JSONL use the normal CLI result envelope; human output renders
+bounded JSON. `/peer` is direct composer input, not a command-palette entry.
+
+Run `/peer` in each live shell to obtain its exact identity and scope. The
+recipient's user must allow the sender, for example
+`/peer {"operation":"allow","peer":{"sessionId":"sender-session","agentId":"main","generation":1}}`,
+using the actual identity returned by that sender. `hold` permits persistence
+but hides the body from model retrieval until explicit `release`; `deny` refuses
+new admission. `muted` and `perMinute` narrow notification and rate policy.
+Names are discovery hints, never authority. Different workspace/project, user,
+environment or trust scope is denied.
+
+`send` and `reply` take `messageJson`, a JSON-encoded version-1 envelope with
+`id`, exact `sender` and `recipient`, the endpoint's `scope`, increasing
+`laneSequence`, millisecond `createdAt`, `kind` (`message`, `request` or `reply`),
+explicit `correlation` or null, `text`, selected `artifacts`, `sensitivity`,
+`retention` and `provenance`. Normal evidence uses `sensitivity: "internal"`,
+`retention: "normal"`, and provenance
+`{"source":"peer-evidence","effectAuthority":false,"causalMessage":null,"hops":0}`.
+Omitted `expiresAt` defaults to 24 hours, narrowed by the original request for
+a reply. Replies name the request ID in `correlation` and reverse its endpoints.
+
+Only recipient commit establishes `accepted-for-persistence`. Offline proposals
+remain unavailable until explicitly retried against a reachable recipient.
+Receipts retain independent delivery, remote-handling and local-wait axes;
+delivery does not mean read, acted on or answered. Equal ID/digest retries return
+the existing receipt, while conflicting content is refused and audited within
+the bounded lineage. Replies seal the original request once. Cancelling or timing
+out a local wait cannot cancel remote work.
+
+`inspect`, `history`, `cursor`, `export` and `replay` expose exact receipts or
+paged metadata. History excludes message bodies; an authorized inspect retrieves
+retained text. For example, `falryn peer history my-session --format json` reads
+one bounded page and its continuation cursor. Each CLI command acquires a fresh
+process lease and closes it on exit; it cannot take over an already-live owner.
+Use the live shell's controls when that shell owns the endpoint.
+
+`wait` observes a request. `subscribe` takes an explicit subscription ID, exact
+peer, `idle` or `terminal` predicate and bounded `waitMs`. Registration and
+predicate testing are atomic. Watches settle once on observation, cancellation,
+expiry or revocation. Idle means no active or queued admitted turn for that
+endpoint. It does not mean its task, descendants or workflow completed. Escape
+cancels the shell's local peer wait. `inspect-subscription` and
+`cancel-subscription` address its durable ID.
+
+Arrival and settlement notifications contain a stable inspect handle, including
+the child identity. Arrival/release starts no model turn, changes no authority
+and copies no transcript. The user's `as` selector can address an owned live
+child; the owning main session can inspect retained child mail and history after
+closure. A closed child cannot reply or redirect mail to its parent/replacement.
+Children still settle their assigned results exclusively through normal joins.
+Model calls cannot change inbound policy or impersonate another endpoint.
+
+The normal SQLite store owns migration 18, fenced endpoint leases, admission,
+attempts, acknowledgements, subscriptions, notification consumption and cursors.
+UNIX sockets use private directories and mode 0600 entries; Windows uses local
+named pipes. Fresh process signing/encryption keys authenticate nonce-bound
+requests and opaque single-use operation capabilities. Private keys and tokens
+are not persisted. Expired process claims require fresh authentication after
+restart. Cross-machine transport and automatic collaboration turns are unavailable.
+
+Mailbox limits are 16 KiB text, 32 KiB envelopes, eight artifact handles totalling
+1 MiB, 64 pending messages/1 MiB queued bytes per endpoint, 64 sends/minute,
+16 recipients/minute, three delivery attempts, 64 live waits and 100 records/page.
+Transport admission is bounded to 30 seconds. Live registration is limited to
+256 endpoints with a separate 64 MiB registry storage bound. A 16 MiB retention
+budget reserves 80 KiB per receipt lineage plus payload bytes. Full or narrowed
+rate limits return explicit backpressure. These storage bounds are independent
+of task execution budgets. Expiry precedes explicit payload cleanup; policy
+holds retain evidence. Selected artifact references remain GC roots until payload
+cleanup. Digest receipts and bounded history remain, so cleanup does not restore
+capacity once retained receipt metadata fills the budget.
+
 ## Delegated agents
 
 The model-facing `delegate` tool is composed in headless runs and the live shell.

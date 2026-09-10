@@ -18,7 +18,7 @@ export {
 } from "./shell-state.ts";
 
 import type { TextareaRenderable } from "@opentui/core";
-import { useCallback, useEffect, useMemo, useReducer, useRef } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import type {
   ProductBriefControls,
   ProductOutputControls,
@@ -101,9 +101,11 @@ function resolveCommandState(
     readonly workspaceController?: WorkspaceController | null;
     readonly sessionNavigationController?: SessionNavigationController | null;
     readonly sessionCreation?: SessionCreationPort | null;
+    readonly peerPending?: boolean;
   },
 ): CommandState {
-  const base = commandStateFor(state, blocks);
+  const derived = commandStateFor(state, blocks);
+  const base = { ...derived, hasRunningWork: derived.hasRunningWork || ports.peerPending === true };
   let next = base;
   if (ports.workspaceController == null) {
     next = {
@@ -122,6 +124,8 @@ function resolveCommandState(
 }
 
 export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
+  const peerAction = useRef<AbortController | null>(null);
+  const [peerPending, setPeerPending] = useState(false);
   const modelSelection =
     options.submission !== undefined && "modelSelection" in options.submission
       ? (
@@ -146,6 +150,7 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
         workspaceController: options.workspaceController ?? null,
         sessionNavigationController: options.sessionNavigationController ?? null,
         sessionCreation: options.sessionCreation ?? null,
+        peerPending,
       }),
     [
       state,
@@ -153,6 +158,7 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
       options.workspaceController,
       options.sessionNavigationController,
       options.sessionCreation,
+      peerPending,
     ],
   );
   const commandStateRef = useRef(commandState);
@@ -404,6 +410,57 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
 
   const submitComposer = useCallback((): void => {
     const current = stateRef.current.composer;
+    if (/^\/peer(?:\s|$)/u.test(current.text.trim())) {
+      const peer = options.submission?.peer;
+      if (!peer) {
+        dispatch({ kind: "notice", message: "Peer messaging is unavailable for this session." });
+        return;
+      }
+      if (encoder.encode(current.text).byteLength > 65_536) {
+        dispatch({ kind: "notice", message: "Peer action exceeds 64 KiB." });
+        return;
+      }
+      let action: unknown;
+      try {
+        action = JSON.parse(current.text.trim().slice(5).trim() || '{"operation":"endpoint"}');
+      } catch {
+        dispatch({
+          kind: "notice",
+          message:
+            'Use /peer followed by a bounded JSON action, for example {"operation":"discover"}.',
+        });
+        return;
+      }
+      peerAction.current?.abort();
+      const controller = new AbortController();
+      peerAction.current = controller;
+      setPeerPending(true);
+      void peer(action, controller.signal)
+        .then(
+          (result) => {
+            if (controller.signal.aborted) return;
+            const text = JSON.stringify(result);
+            dispatch({
+              kind: "notice",
+              message:
+                encoder.encode(text).byteLength <= 262_144
+                  ? text
+                  : "Peer result exceeds 256 KiB. Request a smaller history page or inspect one receipt.",
+            });
+          },
+          () => {
+            if (!controller.signal.aborted)
+              dispatch({ kind: "notice", message: "Peer action unavailable." });
+          },
+        )
+        .finally(() => {
+          if (peerAction.current === controller) {
+            peerAction.current = null;
+            setPeerPending(false);
+          }
+        });
+      return;
+    }
     const slash = parseComposerSlash(current.text);
     if (slash !== null) {
       if (slash.kind === "unresolved") {
@@ -726,6 +783,16 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
           dispatch({ kind: "close-overlay" });
           return true;
         case "app.cancel": {
+          if (peerAction.current) {
+            peerAction.current.abort();
+            peerAction.current = null;
+            setPeerPending(false);
+            dispatch({
+              kind: "notice",
+              message: "Local peer wait cancelled. Remote work continues independently.",
+            });
+            return true;
+          }
           const midTurn = options.midTurn ?? null;
           if (midTurn !== null && midTurn.view().active !== null) {
             return submitMidTurn("interrupt");
@@ -823,6 +890,24 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
   );
 
   const { transcriptKeys } = options;
+  useEffect(() => {
+    const unsubscribe = options.submission?.subscribePeer?.((notice) => {
+      const identity =
+        notice.reason === "arrival" ? notice.receipt.recipient : notice.receipt.sender;
+      const action = JSON.stringify({ operation: "inspect", key: notice.key, as: identity });
+      dispatch({
+        kind: "notice",
+        message: `Peer ${notice.reason}: ${notice.key}. Use /peer ${action} to retrieve the receipt.`,
+      });
+    });
+    return () => {
+      unsubscribe?.();
+      const current = peerAction.current;
+      peerAction.current = null;
+      current?.abort();
+    };
+  }, [options.submission]);
+
   useEffect(() => {
     dispatch({ kind: "transcript", action: { kind: "reconcile", keys: transcriptKeys } });
   }, [transcriptKeys]);

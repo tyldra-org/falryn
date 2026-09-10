@@ -20,7 +20,7 @@ import { PACKAGE_ACTIONS, packageRequestSchema } from "../domain/extensions/life
  */
 
 import yargs from "yargs";
-
+import { peerActionSchema } from "../application/orchestration/peer-actions.ts";
 import { DEFAULT_ARTIFACT_LIST_LIMIT, MAX_ARTIFACT_CATALOG } from "../domain/artifacts/index.ts";
 import {
   DEFAULT_SESSION_LIST_LIMIT,
@@ -34,6 +34,7 @@ import {
   parseLocalPath,
 } from "../domain/workspace/index.ts";
 import { createHostFileSystem } from "../integrations/index.ts";
+import { peerArgumentsSchema } from "./commands/peer.ts";
 import { taskCommitPlanArgumentsFor } from "./commands/task-commit-plan-commands.ts";
 import { MAX_TASK_INPUT_FILE_BYTES, taskArgumentsFor } from "./commands/task-intelligence-parse.ts";
 import {
@@ -252,6 +253,21 @@ function build(argv: readonly string[], lenientPositionals = false): ReturnType<
             type: "string",
             describe: "session identity to rebuild (not `session replay`, which is cursor control)",
           }),
+      )
+      .command(
+        lenientPositionals ? "peer [action] [id]" : "peer <action> <id>",
+        "Use authenticated peer mailboxes for an exact session identity.",
+        (group) =>
+          group
+            .positional("action", {
+              type: "string",
+              choices: peerActionSchema.shape.operation.options,
+            })
+            .positional("id", { type: "string", describe: "stable owning session identity" })
+            .option("input", {
+              type: "string",
+              describe: "bounded JSON action file; never contains endpoint credentials",
+            }),
       )
       .command(
         taskCommand,
@@ -785,6 +801,27 @@ export async function parseInvocation(argv: readonly string[]): Promise<Invocati
   }
   let extensionTrust: import("../application/extensions/package-trust.ts").TrustRequest | undefined;
   let packageArgs: import("./commands/package.ts").PackageArguments | undefined;
+  let peerArgs: import("./commands/peer.ts").PeerArguments | undefined;
+  if (command === "peer") {
+    let action: unknown = { operation: parsed.action };
+    if (parsed.input !== undefined) {
+      const loaded = await loadTaskInputFile(parsed.input);
+      if (!loaded.ok || Buffer.byteLength(loaded.value) > 65_536)
+        return { kind: "invalid", message: "Invalid peer action file (maximum 65536 bytes)." };
+      try {
+        action = JSON.parse(loaded.value);
+      } catch {
+        return { kind: "invalid", message: "Invalid peer action JSON." };
+      }
+    }
+    const checked = peerArgumentsSchema.safeParse({ sessionId: parsed.id, action });
+    if (!checked.success || checked.data.action.operation !== parsed.action)
+      return {
+        kind: "invalid",
+        message: "The peer action and session identity must match the request.",
+      };
+    peerArgs = checked.data;
+  }
   if (command === "package") {
     if (parsed.input === undefined)
       return { kind: "invalid", message: "package requires --input." };
@@ -842,6 +879,7 @@ export async function parseInvocation(argv: readonly string[]): Promise<Invocati
     ...(modelArgs === undefined ? {} : { modelArgs }),
     ...(extensionTrust === undefined ? {} : { extensionTrust }),
     ...(packageArgs === undefined ? {} : { packageArgs }),
+    ...(peerArgs === undefined ? {} : { peerArgs }),
     ...((command === "extension.inspect" || command === "extension.trust") &&
     parsed.path !== undefined
       ? { extensionPath: parsed.path }

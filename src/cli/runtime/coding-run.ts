@@ -43,6 +43,7 @@ import {
   mergeProductToolBundles,
   type ProductToolConfirmationPort,
 } from "../../application/tools/index.ts";
+import { composePeerTool } from "../../application/tools/peer-tool.ts";
 import {
   composeProductIndexLifecycle,
   PRODUCT_INDEX_LIFECYCLE_OWNER,
@@ -397,6 +398,7 @@ export async function runCoding(
           ...(options.signal === undefined ? {} : { signal: options.signal }),
         });
   let productArtifactSession: ProductArtifactSession | null = null;
+  let mainPeer: import("../../application/orchestration/peer-mailbox.ts").PeerMailbox | null = null;
 
   try {
     const ids = options.identities ?? {
@@ -640,12 +642,30 @@ export async function runCoding(
       generation,
       records: productArtifactSession.memoryRecords,
     });
+    const peer = await productArtifactSession.peers.open(
+      {
+        sessionId: String(sessionId),
+        agentId: "main",
+        generation: 1,
+      },
+      undefined,
+      "busy",
+    );
+    mainPeer = peer;
     const productTools =
       options.toolExposureOverride === "none"
         ? mergeProductToolBundles(generation, [])
         : mergeProductToolBundles(
             generation,
-            [workspaceTools, processTools, scratchTools, gitTools, languageTools, memoryTools],
+            [
+              workspaceTools,
+              processTools,
+              scratchTools,
+              gitTools,
+              languageTools,
+              memoryTools,
+              composePeerTool(generation, peer),
+            ],
             {
               afterMutation: async (signalRequest) => {
                 if (
@@ -698,6 +718,7 @@ export async function runCoding(
       {
         tasks: productArtifactSession.tasks,
         joins: productArtifactSession.joins,
+        peers: productArtifactSession.peers,
         artifacts: options.artifacts ?? productArtifactSession.artifacts,
         providerCatalog,
         registry: agentRegistryFrom(configuration.values),
@@ -794,6 +815,7 @@ export async function runCoding(
             maxOutputTokens: options.responsePolicyOverride.maxOutputTokens,
           }),
     });
+    peer?.state("idle");
     const succeeded = attempted.kind === "completed";
     const errors = succeeded
       ? []
@@ -858,6 +880,7 @@ export async function runCoding(
       [...trustEvents, ...attempted.events],
     );
   } finally {
+    await mainPeer?.close();
     if (options.ownedProcesses === undefined) await productArtifactSession?.close();
     configReload?.dispose();
   }
