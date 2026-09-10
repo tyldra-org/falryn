@@ -227,13 +227,13 @@ export function createMailboxRepository(store: SqliteStorePort): MailboxReposito
       ? MAILBOX_LIMITS.revisions
       : terminal
         ? MAILBOX_LIMITS.revisions - 2
-        : MAILBOX_LIMITS.revisions - 3;
+        : MAILBOX_LIMITS.revisions - 6;
     if (receipt.revision >= ceiling) return err({ code: "full" });
     return ok(save(sql, { ...receipt, ...patch, revision: receipt.revision + 1 }, fact));
   }
   function conflict(sql: SqliteStatements, receipt: MailboxReceipt): PeerResult<never> {
     // Bound hostile retries while reserving room for settlement, expiry and cleanup.
-    if (receipt.revision < MAILBOX_LIMITS.revisions - 5) change(sql, receipt, {}, "conflict");
+    if (receipt.revision < MAILBOX_LIMITS.revisions - 6) change(sql, receipt, {}, "conflict");
     return err({ code: "conflict" });
   }
   function expire(sql: SqliteStatements, record: MailboxRecord, now: number): MailboxRecord {
@@ -824,6 +824,7 @@ export function createMailboxRepository(store: SqliteStorePort): MailboxReposito
             const loaded = load(sql, String(row.id));
             if (!loaded.ok) throw new Error("corrupt peer retirement");
             const receipt = loaded.value.receipt;
+            if (receipt.delivery === "expired") continue;
             const inbound = samePeer(receipt.recipient, lease.identity);
             if (state === "offline") {
               if (inbound && receipt.delivery === "accepted-for-persistence")
@@ -966,7 +967,7 @@ export function createMailboxRepository(store: SqliteStorePort): MailboxReposito
           ack.processGeneration !== lease.processGeneration
         )
           return err({ code: "denied" });
-        if (receipt.policy !== "allowed") return err({ code: "held" });
+        if (receipt.policy !== "allowed" && ack.kind !== "refused") return err({ code: "held" });
         if (receipt.delivery === "proposed") return err({ code: "unavailable" });
         if (receipt.delivery === "expired") return err({ code: "expired" });
         if (receipt.handling === "replied" || receipt.handling === "refused")

@@ -487,6 +487,48 @@ test("recipient commit owns acceptance, duplicate content is idempotent and conf
     await store.close();
   }
 });
+test("conflict floods reserve acceptance, both retirements, expiry and cleanup facts", async () => {
+  const { store, repository, a, b, register } = await fixture();
+  try {
+    const message = request();
+    const proposed = repository.propose(a, message, now);
+    if (!proposed.ok) throw new Error(proposed.error.code);
+    for (let i = 0; i < 30; i += 1)
+      expect(repository.propose(a, request({ text: `conflict-${i}` }), now)).toEqual({
+        ok: false,
+        error: { code: "conflict" },
+      });
+    expect(repository.admit(b, message, now)).toMatchObject({
+      ok: true,
+      value: { delivery: "accepted-for-persistence" },
+    });
+    expect(repository.renew(b, "offline", now).ok).toBe(true);
+    const resumed = register(recipient, "resumed");
+    expect(repository.renew(a, "retired", now).ok).toBe(true);
+    expect(
+      repository.acknowledge(
+        resumed,
+        {
+          version: 1,
+          key: proposed.value.key,
+          recipient,
+          processGeneration: resumed.processGeneration,
+          kind: "refused",
+        },
+        now,
+      ),
+    ).toMatchObject({ ok: true, value: { handling: "refused" } });
+    expect(repository.cleanup(resumed, proposed.value.key, now + 21_000)).toMatchObject({
+      ok: true,
+      value: { delivery: "expired", tombstoned: true },
+    });
+    expect(repository.renew(resumed, "retired", now + 21_000).ok).toBe(true);
+    const events = store.read("SELECT revision FROM peer_mailbox_events ORDER BY revision");
+    expect(events.ok && events.value.length).toBeLessThanOrEqual(16);
+  } finally {
+    await store.close();
+  }
+});
 test("local cancellation preserves an exact later reply and terminal handling seals once", async () => {
   const { store, repository, a, b } = await fixture();
   try {
