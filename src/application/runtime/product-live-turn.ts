@@ -9,6 +9,7 @@ import {
 } from "../../domain/artifacts/index.ts";
 import type { BriefReceipt, BriefRequest } from "../../domain/compression/index.ts";
 import type { EvidenceCandidate, PromptSectionInput } from "../../domain/context/index.ts";
+import type { CatalogHistory } from "../../domain/extensions/catalog-history.ts";
 import type {
   ClockPort,
   ConfigurationGeneration,
@@ -145,6 +146,8 @@ export type ProductLiveTurnExecutor = {
 };
 
 export type ProductLiveTurnExecutorOptions = {
+  /** Inert session-start provenance, not a source of executable capability bindings. */
+  readonly extensionCatalog?: CatalogHistory;
   readonly resources?: ResourceResolver;
   readonly modelPreferences?: () => import("../../providers/configuration/policy-schema.ts").ModelPreferences;
   readonly modelConfigurationGeneration?: () => ConfigurationGeneration;
@@ -344,6 +347,9 @@ export function createProductLiveTurnExecutor(
         sessionId: correlation.sessionId,
         workspaceId: correlation.workspaceId,
         configurationGeneration: correlation.configurationGeneration,
+        ...(options.extensionCatalog === undefined
+          ? {}
+          : { extensionCatalog: options.extensionCatalog }),
       });
       if (!started.ok) {
         return result({

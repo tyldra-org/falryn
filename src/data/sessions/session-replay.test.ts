@@ -10,7 +10,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { createRuntimeRedactor } from "../../application/diagnostics/index.ts";
 import { createInMemoryBlobStore } from "../../domain/artifacts/index.ts";
 import { createInMemoryPackageWriter, type ExportName } from "../../domain/extensions/index.ts";
-import { sessionStarted } from "../../domain/fixtures.ts";
+import { sessionRecord, sessionStarted } from "../../domain/fixtures.ts";
 import {
   createManualClock,
   invocationId,
@@ -31,6 +31,7 @@ import {
   removeTemporaryRoots,
 } from "../fixtures.ts";
 import { resolveInventory, writePackage } from "../lifecycle/export.ts";
+import { sessionCatalogHistoryFixture } from "./catalog-history-fixtures.ts";
 import { createSqliteEventStore } from "./event-store.ts";
 import { createRecordRepositories } from "./repositories.ts";
 import { forkSession, type ImportOptions, importPackage, replaySession } from "./session-replay.ts";
@@ -101,6 +102,7 @@ async function seedExportedPackage(): Promise<{
     startedAt: "2026-07-31T12:00:00.000Z" as never,
     closedAt: null,
     outcome: null,
+    extensionCatalog: sessionCatalogHistoryFixture(),
   });
   repositories.turns.insert({
     turnId: turnId.from("t-s1"),
@@ -178,12 +180,37 @@ async function seedExportedPackage(): Promise<{
   return { store, packages };
 }
 
+test("data fork preserves historical scope identities without transferring controls", async () => {
+  const destination = await openDestination(createInMemoryPackageWriter());
+  try {
+    const extensionCatalog = sessionCatalogHistoryFixture();
+    const original = sessionRecord({ extensionCatalog });
+    expect(destination.repositories.sessions.insert(original).ok).toBe(true);
+    const target = sessionId.from("historical-data-fork");
+    expect(
+      forkSession(destination, original.sessionId, {
+        sessionId: target,
+        streamId: streamId.from("historical-data-fork-stream"),
+        workspaceId: workspaceId.from("different-workspace"),
+      }).ok,
+    ).toBe(true);
+    const fork = destination.repositories.sessions.get(target);
+    expect(fork.ok && fork.value?.extensionCatalog).toEqual(extensionCatalog);
+    expect(destination.store.read("SELECT * FROM extension_scope_controls")).toEqual({
+      ok: true,
+      value: [],
+    });
+  } finally {
+    await destination.close();
+  }
+});
+
 describe("importing a verified package", () => {
   test("replays the imported session without repeating the original work", async () => {
     const { store, packages } = await seedExportedPackage();
     const destination = await openDestination(packages);
     const imported = await importPackage(destination, NAME);
-    expect(imported.ok).toBe(true);
+    expect(imported).toMatchObject({ ok: true });
     expect(imported.ok && imported.value.sessionIds).toEqual([SESSION]);
     expect(imported.ok && imported.value.artifacts).toBe(1);
 
@@ -192,6 +219,7 @@ describe("importing a verified package", () => {
     expect(replayed.ok && replayed.value.sessionId).toBe(SESSION);
     expect(replayed.ok && replayed.value.artifacts).toHaveLength(1);
     expect(replayed.ok && replayed.value.truncated).toBe(false);
+    expect(replayed.ok && replayed.value.extensionCatalog).toEqual(sessionCatalogHistoryFixture());
 
     const forked = forkSession(destination, SESSION, {
       sessionId: sessionId.from("s2"),
@@ -203,6 +231,15 @@ describe("importing a verified package", () => {
     expect(forked.ok && forked.value.sessionId).toBe(sessionId.from("s2"));
     const original = destination.repositories.sessions.get(SESSION);
     expect(original.ok && original.value?.sessionId).toBe(SESSION);
+    expect(original.ok && original.value?.extensionCatalog).toEqual(sessionCatalogHistoryFixture());
+    const historicalFork = destination.repositories.sessions.get(sessionId.from("s2"));
+    expect(historicalFork.ok && historicalFork.value?.extensionCatalog).toEqual(
+      sessionCatalogHistoryFixture(),
+    );
+    expect(destination.store.read("SELECT * FROM extension_scope_controls")).toEqual({
+      ok: true,
+      value: [],
+    });
 
     const again = await importPackage(destination, NAME);
     expect(again.ok).toBe(false);

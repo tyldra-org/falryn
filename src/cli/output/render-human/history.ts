@@ -1,5 +1,7 @@
 /** Human projections for export, replay, sessions, and retained artifacts. */
 
+import { extensionCatalogLines } from "../../../application/extensions/catalog-report.ts";
+import type { CatalogHistory } from "../../../domain/extensions/catalog-history.ts";
 import type {
   ImportCommandPayload,
   ReplayCommandPayload,
@@ -20,6 +22,18 @@ import type {
 import type { RenderedPayload } from "./payload.ts";
 import { paint, type Session } from "./session.ts";
 import { safe } from "./text.ts";
+
+function historicalCatalogLines(history: CatalogHistory | undefined): readonly string[] {
+  if (history === undefined) return [];
+  return [
+    `  Extensions   historical; ${history.total} descriptors; ${history.omitted} omitted; no native execution`,
+    `  Catalog      ${history.catalog}; generation ${history.generation}`,
+    ...history.entries.map(
+      (entry) =>
+        `    ${safe(entry.contribution.nativeKind)} ${safe(entry.contribution.localId)}; ${entry.wasEnabled ? "was enabled" : "was disabled"}; ${safe(entry.reason)}; owner ${safe(entry.contribution.owner.digest)}`,
+    ),
+  ];
+}
 
 export function renderExport(
   session: Session,
@@ -146,6 +160,7 @@ export function renderSessionShow(
       `  Pinned       ${entry.pinned ? "yes" : "no"}`,
       `  Started      ${safe(entry.startedAt)}`,
       `  Closed       ${entry.closedAt === null ? "(open)" : safe(entry.closedAt)}`,
+      ...historicalCatalogLines(payload.extensionCatalog),
     ],
     diagnostics: [],
   };
@@ -166,6 +181,10 @@ export function renderSessionResume(
       `  Stream       ${safe(payload.streamId)}`,
       `  After        ${payload.afterSequence === null ? "(start)" : String(payload.afterSequence)}`,
       `  Pending      ${payload.pending}`,
+      ...historicalCatalogLines(payload.extensionCatalog),
+      ...(payload.currentExtensions === undefined
+        ? []
+        : ["  Current Extensions", ...extensionCatalogLines(payload.currentExtensions).map(safe)]),
     ],
     diagnostics: [],
   };
@@ -190,6 +209,7 @@ export function renderSessionFork(
       `  Stream       ${safe(payload.streamId)}`,
       `  Workspace    ${safe(payload.workspaceId)}`,
       ...(payload.atTurnId === null ? [] : [`  At turn      ${safe(payload.atTurnId)}`]),
+      ...historicalCatalogLines(payload.extensionCatalog),
     ],
     diagnostics: [],
   };
@@ -210,6 +230,7 @@ export function renderSessionReplay(
       `  Status       ${safe(payload.status)}`,
       `  At sequence  ${payload.atSequence === null ? "(none)" : String(payload.atSequence)}`,
       `  Applied      ${payload.applied}`,
+      ...historicalCatalogLines(payload.extensionCatalog),
     ],
     diagnostics: [],
   };

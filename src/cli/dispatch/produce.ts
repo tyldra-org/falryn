@@ -9,6 +9,10 @@ import {
 } from "../commands/data-backup-commands.ts";
 import { runDataGc, runDataRetention } from "../commands/data-retention-gc-commands.ts";
 import { runExtensionInspect } from "../commands/extension.ts";
+import {
+  type ExtensionCatalogArguments,
+  runExtensionCatalog,
+} from "../commands/extension-catalog.ts";
 import { runImport, runReplay } from "../commands/import-replay-commands.ts";
 import { runModel } from "../commands/model.ts";
 import { type PackageArguments, runPackage } from "../commands/package.ts";
@@ -52,6 +56,7 @@ import {
 } from "../runtime/session-navigation.ts";
 
 export type DispatchProduceOptions = {
+  readonly extensionCatalogArgs?: ExtensionCatalogArguments;
   readonly packageArgs?: PackageArguments;
   readonly peerArgs?: PeerArguments;
   readonly modelRequest?: ModelSettingsRequest;
@@ -84,6 +89,16 @@ export async function produce(
   onMutationStart?: () => void,
 ): Promise<RunCommandResult> {
   switch (command) {
+    case "extension.catalog":
+    case "extension.scope":
+      if (options.extensionCatalogArgs === undefined)
+        throw new Error("Missing extension catalog arguments.");
+      if (
+        options.extensionCatalogArgs.action === "scope" &&
+        options.extensionCatalogArgs.request.confirmation !== undefined
+      )
+        onMutationStart?.();
+      return runExtensionCatalog(services, options.extensionCatalogArgs, signal);
     case "package":
       if (options.packageArgs === undefined) throw new Error("Missing package arguments.");
       if (options.packageArgs.request.confirmation !== undefined) onMutationStart?.();

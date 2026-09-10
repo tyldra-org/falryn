@@ -23,6 +23,7 @@ import {
   rootChild,
   sqliteDatabasePath,
 } from "../../data/index.ts";
+import type { CatalogHistory } from "../../domain/extensions/catalog-history.ts";
 import { type FalrynError, runId } from "../../domain/foundation/index.ts";
 import type { TerminalOutcome } from "../../domain/orchestration/index.ts";
 import {
@@ -67,6 +68,7 @@ export type ImportCommandPayload = {
 };
 
 export type ReplayCommandPayload = {
+  readonly extensionCatalog?: CatalogHistory;
   readonly owner: typeof IMPORT_REPLAY_OWNER;
   readonly sessionId: string;
   readonly streamId: string;
@@ -363,6 +365,9 @@ export async function runReplay(
         );
       }
       return resultFor("replay", {
+        ...(replayed.value.extensionCatalog === undefined
+          ? {}
+          : { extensionCatalog: replayed.value.extensionCatalog }),
         owner: IMPORT_REPLAY_OWNER,
         sessionId: replayed.value.sessionId,
         streamId: replayed.value.streamId,

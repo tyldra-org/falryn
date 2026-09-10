@@ -67,13 +67,7 @@ import type {
   SqliteStorePort,
   SqliteValue,
 } from "../../domain/storage/index.ts";
-import {
-  EVENTS_TABLE,
-  INVOCATIONS_TABLE,
-  MODEL_ATTEMPTS_TABLE,
-  SESSIONS_TABLE,
-  TURNS_TABLE,
-} from "../sqlite/schema.ts";
+import { EVENTS_TABLE } from "../sqlite/schema.ts";
 
 /** The `persist-outcomes` participant's name, reported when it does not finish. */
 export const EVENT_STORE_PARTICIPANT_NAME = "event-store";
@@ -98,23 +92,27 @@ function projectStartedRecord(statements: SqliteStatements, event: RuntimeEvent)
   switch (event.kind) {
     case "session.started":
       statements.run(
-        `INSERT INTO ${SESSIONS_TABLE}
+        `INSERT INTO sessions
           (session_id, workspace_id, stream_id, title, configuration_generation,
-           started_at, closed_at, outcome_kind, outcome_effect)
+           started_at, closed_at, outcome_kind, outcome_effect, extension_catalog)
          VALUES ($sessionId, $workspaceId, $streamId, NULL, $configurationGeneration,
-                 $startedAt, NULL, NULL, NULL)`,
+                 $startedAt, NULL, NULL, NULL, $extensionCatalog)`,
         {
           sessionId: event.correlation.sessionId,
           workspaceId: event.correlation.workspaceId,
           streamId: event.streamId,
           configurationGeneration: event.correlation.configurationGeneration,
           startedAt: event.occurredAt,
+          extensionCatalog:
+            event.payload.extensionCatalog === undefined
+              ? null
+              : JSON.stringify(event.payload.extensionCatalog),
         },
       );
       return;
     case "turn.started":
       statements.run(
-        `INSERT INTO ${TURNS_TABLE}
+        `INSERT INTO turns
           (turn_id, session_id, parent_turn_id, started_at, completed_at,
            outcome_kind, outcome_effect)
          VALUES ($turnId, $sessionId, NULL, $startedAt, NULL, NULL, NULL)`,
@@ -131,7 +129,7 @@ function projectStartedRecord(statements: SqliteStatements, event: RuntimeEvent)
         return;
       }
       statements.run(
-        `INSERT INTO ${MODEL_ATTEMPTS_TABLE}
+        `INSERT INTO model_attempts
           (model_attempt_id, turn_id, provider_id, model_id, started_at,
            completed_at, outcome_kind, outcome_effect)
          VALUES ($modelAttemptId, $turnId, $providerId, $modelId, $startedAt,
@@ -154,7 +152,7 @@ function projectStartedRecord(statements: SqliteStatements, event: RuntimeEvent)
         return;
       }
       statements.run(
-        `INSERT INTO ${INVOCATIONS_TABLE}
+        `INSERT INTO invocations
           (invocation_id, turn_id, capability_id, capability_version, input_digest,
            started_at, completed_at, outcome_kind, outcome_effect)
          VALUES ($invocationId, $turnId, $capabilityId, $capabilityVersion, $inputDigest,

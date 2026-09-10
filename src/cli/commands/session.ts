@@ -12,6 +12,7 @@ import {
   queryWorkspaceSessions,
 } from "../../application/sessions/index.ts";
 import { createRecordRepositories } from "../../data/index.ts";
+import type { CatalogHistory } from "../../domain/extensions/catalog-history.ts";
 import type { FalrynError } from "../../domain/foundation/index.ts";
 import {
   MAX_SESSION_CATALOG,
@@ -37,6 +38,7 @@ export type SessionListPayload = {
 };
 
 export type SessionShowPayload = {
+  readonly extensionCatalog?: CatalogHistory;
   readonly workspaceId: string;
   readonly session: SessionCatalogEntry;
   readonly warnings: readonly SessionIsolationWarning[];
@@ -198,8 +200,13 @@ async function sessionShowThroughStore(
     if (!inspected.ok) {
       return sessionShowFailure(inspected.error);
     }
+    const record = createRecordRepositories(opened.store).sessions.get(arguments_.sessionId);
+    if (!record.ok) return sessionShowFailure(record.error);
     return {
       ...resultFor("session.show", {
+        ...(record.value?.extensionCatalog === undefined
+          ? {}
+          : { extensionCatalog: record.value.extensionCatalog }),
         workspaceId: arguments_.workspaceId,
         session: inspected.value.entry,
         warnings: inspected.value.warnings,

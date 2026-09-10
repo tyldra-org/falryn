@@ -5,6 +5,9 @@ import {
   COMMAND_RESULT_SCHEMA_VERSION,
   READ_ONLY_EFFECT,
 } from "../../cli/output/result.ts";
+import { bytesDigest } from "../../domain/extensions/canonical.ts";
+import { createExtensionCatalog } from "../../domain/extensions/catalog.ts";
+import { projectCatalogHistory } from "../../domain/extensions/catalog-history.ts";
 import {
   capabilityId,
   configurationGeneration,
@@ -44,10 +47,18 @@ describe("session turn transcript producer", () => {
     }
 
     const producer = composed.value.attachments.turnProducer;
+    const extensionCatalog = projectCatalogHistory(
+      createExtensionCatalog({
+        entries: [],
+        generation: 1,
+        inputs: bytesDigest("producer-history"),
+      }),
+    );
     const session = await producer.startSession({
       sessionId: correlation.sessionId,
       workspaceId: correlation.workspaceId,
       configurationGeneration: correlation.configurationGeneration,
+      extensionCatalog,
     });
     expect(session.ok).toBe(true);
 
@@ -90,6 +101,9 @@ describe("session turn transcript producer", () => {
     expect(completed.ok).toBe(true);
 
     const events = producer.events();
+    expect(events[0]?.payload).toEqual({ extensionCatalog });
+    for (const event of events.slice(1))
+      expect(event.payload).not.toHaveProperty("extensionCatalog");
     expect(events.map((event) => event.kind)).toEqual([
       "session.started",
       "turn.started",

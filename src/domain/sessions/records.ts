@@ -27,6 +27,7 @@
  */
 
 import { z } from "zod";
+import { type CatalogHistory, catalogHistorySchema } from "../extensions/catalog-history.ts";
 
 import {
   brandedInteger,
@@ -94,6 +95,7 @@ export type SessionRecord = {
   readonly startedAt: Timestamp;
   readonly closedAt: Timestamp | null;
   readonly outcome: TerminalOutcome | null;
+  readonly extensionCatalog?: CatalogHistory | undefined;
 };
 
 export type TurnRecord = {
@@ -251,6 +253,7 @@ const sessionSchema = z.object({
   startedAt: timestampSchema,
   closedAt: timestampSchema.nullable(),
   outcome: outcomeSchema,
+  extensionCatalog: catalogHistorySchema.optional(),
 });
 
 const turnSchema = z.object({
@@ -320,10 +323,12 @@ export function parseInvocationRecord(
  * stored effect is dropped on the way back rather than being reintroduced as a
  * field the union does not have.
  *
- * The result is deliberately `unknown`: it is a candidate for
- * {@link terminalOutcomeSchema}, not an outcome yet.
+ * The candidate's fields remain untrusted until the owning record parser runs
+ * {@link terminalOutcomeSchema}.
  */
-export function outcomeFromColumns(kind: unknown, effect: unknown): unknown {
+type OutcomeColumnCandidate = { readonly kind: unknown; readonly effect?: unknown } | null;
+
+export function outcomeFromColumns(kind: unknown, effect: unknown): OutcomeColumnCandidate {
   if (kind === null || kind === undefined) {
     return null;
   }

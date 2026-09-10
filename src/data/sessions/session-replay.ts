@@ -227,6 +227,9 @@ export async function replaySession(
   return ok({
     sessionId,
     streamId: session.value.streamId,
+    ...(session.value.extensionCatalog === undefined
+      ? {}
+      : { extensionCatalog: session.value.extensionCatalog }),
     turns,
     artifacts: listed.value,
     report: classified.report,

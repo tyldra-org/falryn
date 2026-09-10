@@ -257,6 +257,9 @@ async function runCommand(
     globals,
     {
       ...options,
+      ...(invocation.extensionCatalogArgs === undefined
+        ? {}
+        : { extensionCatalogArgs: invocation.extensionCatalogArgs }),
       ...(invocation.packageArgs === undefined ? {} : { packageArgs: invocation.packageArgs }),
       ...(invocation.peerArgs === undefined ? {} : { peerArgs: invocation.peerArgs }),
       ...(invocation.modelArgs === undefined ? {} : { modelRequest: invocation.modelArgs }),
@@ -530,6 +533,7 @@ async function launchShell(
                   budgets: {},
                 };
               }),
+              rehydrateExtensions: productArtifactSession.rehydrateExtensions,
               eventStore: productArtifactSession.eventStore,
               clock: graph.clock,
               fileSystem: graph.fileSystem,

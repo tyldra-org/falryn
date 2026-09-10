@@ -11,6 +11,7 @@ import {
   resumeWorkspaceSession,
   rewindWorkspaceSession,
 } from "../../application/sessions/index.ts";
+import { createCatalogRepositories } from "../../data/extensions/catalog-repositories.ts";
 import {
   createRecordRepositories,
   createSqliteEventStore,
@@ -20,6 +21,8 @@ import {
   rootChild,
   sqliteDatabasePath,
 } from "../../data/index.ts";
+import { type CatalogPage, queryExtensionCatalog } from "../../domain/extensions/catalog.ts";
+import type { CatalogHistory } from "../../domain/extensions/catalog-history.ts";
 import {
   type FalrynError,
   type Sequence,
@@ -27,7 +30,11 @@ import {
   streamId,
 } from "../../domain/foundation/index.ts";
 import type { TerminalOutcome } from "../../domain/orchestration/index.ts";
-import { blocksLocalData, DEFAULT_BUSY_TIMEOUT_MS } from "../../domain/storage/index.ts";
+import {
+  blocksLocalData,
+  DEFAULT_BUSY_TIMEOUT_MS,
+  isCleanClose,
+} from "../../domain/storage/index.ts";
 import { openBunSqlite } from "../../integrations/index.ts";
 import type { SessionCommandArguments } from "../command-tree.ts";
 import {
@@ -38,6 +45,7 @@ import {
   type CommandResultOf,
   READ_ONLY_EFFECT,
 } from "../output/result.ts";
+import { composeExtensionCatalog } from "./extension-catalog.ts";
 import type { ServiceProvider } from "./services.ts";
 
 export const SESSION_NAVIGATION_OWNER = "#721";
@@ -47,6 +55,10 @@ const WRITE_COMPLETED_EFFECT: CommandEffect = { intent: "mutate", observed: "com
 type SessionStore = Extract<Awaited<ReturnType<typeof openSqliteStore>>, { ok: true }>["value"];
 
 export type SessionResumePayload = {
+  readonly extensionCatalog?: CatalogHistory;
+  readonly currentExtensions?:
+    | { readonly status: "inspected"; readonly page: CatalogPage }
+    | { readonly status: "failed"; readonly code: string };
   readonly owner: typeof SESSION_NAVIGATION_OWNER;
   readonly sessionId: string;
   readonly workspaceId: string;
@@ -56,6 +68,7 @@ export type SessionResumePayload = {
 };
 
 export type SessionForkPayload = {
+  readonly extensionCatalog?: CatalogHistory;
   readonly owner: typeof SESSION_NAVIGATION_OWNER;
   readonly sourceSessionId: string;
   readonly sessionId: string;
@@ -66,6 +79,7 @@ export type SessionForkPayload = {
 };
 
 export type SessionReplayPayload = {
+  readonly extensionCatalog?: CatalogHistory;
   readonly owner: typeof SESSION_NAVIGATION_OWNER;
   readonly sessionId: string;
   readonly workspaceId: string;
@@ -187,6 +201,18 @@ function navigationFailure(code: string, operation: string): FalrynError {
   return fromUnknown(new Error(`session navigation failed (${code})`), { operation });
 }
 
+async function withReadStore<T>(store: SessionStore, read: () => Promise<T>): Promise<T> {
+  let result: T;
+  try {
+    result = await read();
+  } catch (error) {
+    await store.close();
+    throw error;
+  }
+  if (!isCleanClose(await store.close())) throw new Error("session-store-close-failed");
+  return result;
+}
+
 /** Resume a session from a durable cursor without appending or forking. */
 export async function runSessionResume(
   services: ServiceProvider,
@@ -201,38 +227,62 @@ export async function runSessionResume(
     if (opened.kind === "absent") {
       return resultFor("session.resume", null, [absentError("resume session")]);
     }
-    const repositories = createRecordRepositories(opened.store);
-    const events = createSqliteEventStore(opened.store);
-    const resumed = await resumeWorkspaceSession(
-      repositories.sessions,
-      events,
-      {
-        sessionId: arguments_.sessionId,
-        cursor:
-          arguments_.afterSequence === null
-            ? null
+    return await withReadStore(opened.store, async () => {
+      const repositories = createRecordRepositories(opened.store);
+      const events = createSqliteEventStore(opened.store);
+      const resumed = await resumeWorkspaceSession(
+        repositories.sessions,
+        events,
+        {
+          sessionId: arguments_.sessionId,
+          cursor:
+            arguments_.afterSequence === null
+              ? null
+              : {
+                  afterSequence: arguments_.afterSequence as Sequence,
+                  schemaGeneration: arguments_.schemaGeneration,
+                },
+        },
+        signal,
+      );
+      if (!resumed.ok) {
+        return resultFor("session.resume", null, [
+          navigationFailure(resumed.error.code, "resume session"),
+        ]);
+      }
+      const record = repositories.sessions.get(arguments_.sessionId);
+      if (!record.ok || record.value === null)
+        return resultFor("session.resume", null, [
+          navigationFailure("session-not-found", "resume session"),
+        ]);
+      const reconciled = await composeExtensionCatalog({
+        services: services(),
+        records: createCatalogRepositories(opened.store),
+        session: arguments_.sessionId,
+      }).refresh(signal ?? new AbortController().signal);
+      return resultFor("session.resume", {
+        ...(record.value.extensionCatalog === undefined
+          ? {}
+          : { extensionCatalog: record.value.extensionCatalog }),
+        currentExtensions:
+          reconciled.status === "failed"
+            ? reconciled
             : {
-                afterSequence: arguments_.afterSequence as Sequence,
-                schemaGeneration: arguments_.schemaGeneration,
+                status: "inspected" as const,
+                page: queryExtensionCatalog(reconciled.catalog, {
+                  catalog: reconciled.catalog.identity,
+                }),
               },
-      },
-      signal,
-    );
-    if (!resumed.ok) {
-      return resultFor("session.resume", null, [
-        navigationFailure(resumed.error.code, "resume session"),
-      ]);
-    }
-    return resultFor("session.resume", {
-      owner: SESSION_NAVIGATION_OWNER,
-      sessionId: String(resumed.value.sessionId),
-      workspaceId: String(arguments_.workspaceId),
-      streamId: String(resumed.value.streamId),
-      afterSequence:
-        resumed.value.cursor.afterSequence === null
-          ? null
-          : Number(resumed.value.cursor.afterSequence),
-      pending: resumed.value.pending,
+        owner: SESSION_NAVIGATION_OWNER,
+        sessionId: String(resumed.value.sessionId),
+        workspaceId: String(arguments_.workspaceId),
+        streamId: String(resumed.value.streamId),
+        afterSequence:
+          resumed.value.cursor.afterSequence === null
+            ? null
+            : Number(resumed.value.cursor.afterSequence),
+        pending: resumed.value.pending,
+      });
     });
   } catch (error) {
     return resultFor("session.resume", null, [fromUnknown(error, { operation: "resume session" })]);
@@ -258,48 +308,58 @@ export async function runSessionForkOrRewind(
     if (opened.kind === "absent") {
       return resultFor(command, null, [absentError(`${arguments_.action} session`)]);
     }
-    const repositories = createRecordRepositories(opened.store);
-    const suffix = crypto.randomUUID();
-    const newSessionId =
-      arguments_.newSessionId ?? sessionId.from(`${arguments_.action}-${suffix}`);
-    const newStreamId =
-      arguments_.newStreamId ?? streamId.from(`stream-${arguments_.action}-${suffix}`);
-    const planned = rewindWorkspaceSession(
-      repositories.sessions,
-      repositories.turns,
-      {
-        sourceSessionId: arguments_.sessionId,
-        identities: {
-          sessionId: newSessionId,
-          streamId: newStreamId,
-          workspaceId: arguments_.workspaceId,
+    try {
+      const repositories = createRecordRepositories(opened.store);
+      const record = repositories.sessions.get(arguments_.sessionId);
+      if (!record.ok || record.value === null)
+        return resultFor(command, null, [navigationFailure("session-not-found", "fork session")]);
+      const suffix = crypto.randomUUID();
+      const newSessionId =
+        arguments_.newSessionId ?? sessionId.from(`${arguments_.action}-${suffix}`);
+      const newStreamId =
+        arguments_.newStreamId ?? streamId.from(`stream-${arguments_.action}-${suffix}`);
+      const planned = rewindWorkspaceSession(
+        repositories.sessions,
+        repositories.turns,
+        {
+          sourceSessionId: arguments_.sessionId,
+          identities: {
+            sessionId: newSessionId,
+            streamId: newStreamId,
+            workspaceId: arguments_.workspaceId,
+          },
+          edit:
+            arguments_.action === "fork"
+              ? { kind: "fork" }
+              : { kind: "rewind", atTurnId: arguments_.atTurnId },
         },
-        edit:
-          arguments_.action === "fork"
-            ? { kind: "fork" }
-            : { kind: "rewind", atTurnId: arguments_.atTurnId },
-      },
-      signal,
-    );
-    if (!planned.ok) {
-      return resultFor(command, null, [
-        navigationFailure(planned.error.code, `${arguments_.action} session`),
-      ]);
+        signal,
+      );
+      if (!planned.ok) {
+        return resultFor(command, null, [
+          navigationFailure(planned.error.code, `${arguments_.action} session`),
+        ]);
+      }
+      return resultFor(
+        command,
+        {
+          ...(record.value.extensionCatalog === undefined
+            ? {}
+            : { extensionCatalog: record.value.extensionCatalog }),
+          owner: SESSION_NAVIGATION_OWNER,
+          sourceSessionId: String(arguments_.sessionId),
+          sessionId: String(planned.value.sessionId),
+          streamId: String(planned.value.streamId),
+          workspaceId: String(arguments_.workspaceId),
+          kind: arguments_.action === "fork" ? "fork" : "rewind",
+          atTurnId: arguments_.action === "rewind" ? arguments_.atTurnId : null,
+        },
+        [],
+        WRITE_COMPLETED_EFFECT,
+      );
+    } finally {
+      await opened.store.close();
     }
-    return resultFor(
-      command,
-      {
-        owner: SESSION_NAVIGATION_OWNER,
-        sourceSessionId: String(arguments_.sessionId),
-        sessionId: String(planned.value.sessionId),
-        streamId: String(planned.value.streamId),
-        workspaceId: String(arguments_.workspaceId),
-        kind: arguments_.action === "fork" ? "fork" : "rewind",
-        atTurnId: arguments_.action === "rewind" ? arguments_.atTurnId : null,
-      },
-      [],
-      WRITE_COMPLETED_EFFECT,
-    );
   } catch (error) {
     return resultFor(command, null, [
       fromUnknown(error, { operation: `${arguments_.action} session` }),
@@ -321,30 +381,41 @@ export async function runSessionReplay(
     if (opened.kind === "absent") {
       return resultFor("session.replay", null, [absentError("replay session")]);
     }
-    const repositories = createRecordRepositories(opened.store);
-    const events = createSqliteEventStore(opened.store);
-    const controlled = await controlWorkspaceSessionReplay(
-      repositories.sessions,
-      events,
-      {
-        sessionId: arguments_.sessionId,
-        command: arguments_.replayCommand,
-      },
-      signal,
-    );
-    if (!controlled.ok) {
-      return resultFor("session.replay", null, [
-        navigationFailure(controlled.error.code, "replay session"),
-      ]);
-    }
-    return resultFor("session.replay", {
-      owner: SESSION_NAVIGATION_OWNER,
-      sessionId: String(arguments_.sessionId),
-      workspaceId: String(arguments_.workspaceId),
-      status: controlled.value.status,
-      atSequence: controlled.value.atSequence === null ? null : Number(controlled.value.atSequence),
-      applied: controlled.value.applied,
-      effectFree: true,
+    return await withReadStore(opened.store, async () => {
+      const repositories = createRecordRepositories(opened.store);
+      const record = repositories.sessions.get(arguments_.sessionId);
+      if (!record.ok || record.value === null)
+        return resultFor("session.replay", null, [
+          navigationFailure("session-not-found", "replay session"),
+        ]);
+      const events = createSqliteEventStore(opened.store);
+      const controlled = await controlWorkspaceSessionReplay(
+        repositories.sessions,
+        events,
+        {
+          sessionId: arguments_.sessionId,
+          command: arguments_.replayCommand,
+        },
+        signal,
+      );
+      if (!controlled.ok) {
+        return resultFor("session.replay", null, [
+          navigationFailure(controlled.error.code, "replay session"),
+        ]);
+      }
+      return resultFor("session.replay", {
+        ...(record.value.extensionCatalog === undefined
+          ? {}
+          : { extensionCatalog: record.value.extensionCatalog }),
+        owner: SESSION_NAVIGATION_OWNER,
+        sessionId: String(arguments_.sessionId),
+        workspaceId: String(arguments_.workspaceId),
+        status: controlled.value.status,
+        atSequence:
+          controlled.value.atSequence === null ? null : Number(controlled.value.atSequence),
+        applied: controlled.value.applied,
+        effectFree: true,
+      });
     });
   } catch (error) {
     return resultFor("session.replay", null, [fromUnknown(error, { operation: "replay session" })]);

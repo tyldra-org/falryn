@@ -99,6 +99,7 @@ describe("a fresh database", () => {
       MIGRATION_0016.version,
       17,
       18,
+      19,
     ]);
     // Nothing to lose: a database at version 0 holds no product row.
     expect(store.report.backupPath).toBeNull();
@@ -137,6 +138,8 @@ describe("a fresh database", () => {
       "artifacts_by_digest",
       "artifacts_by_invocation",
       "artifacts_reserved",
+      "extension_scope_controls_by_actor",
+      "extension_scope_controls_by_authority",
       "invocations_by_turn",
       "loom_manifests_by_scope",
       "memory_records_by_workspace",
@@ -200,6 +203,7 @@ describe("a fresh database", () => {
       MIGRATION_0016.version,
       17,
       18,
+      19,
     ]);
     expect(
       upgraded.read(
