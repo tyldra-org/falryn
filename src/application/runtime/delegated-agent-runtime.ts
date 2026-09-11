@@ -37,6 +37,7 @@ import { composeWorkflowTool } from "../tools/workflow-tool.ts";
 import {
   composeProductAgentRuntime,
   type ProductAgentRuntimePorts,
+  productAgentHost,
 } from "./product-agent-runtime.ts";
 import { createProductLiveTurnExecutor } from "./product-live-turn.ts";
 import { composeWorkflowRuntime, type WorkflowRuntimeOptions } from "./workflow-runtime.ts";
@@ -74,11 +75,12 @@ export function composeDelegatedAgentRuntime(
   const providers = new Map<string, { adapter: ProviderAdapterPort; catalog: ModelCatalog }>();
   if (adapter && options.providerCatalog)
     providers.set(adapter.identity.profileId, { adapter, catalog: options.providerCatalog });
-  const baseRegistry = ports.toolRegistry;
-  const baseRunner = ports.toolRunner;
+  let baseRegistry = ports.toolRegistry;
+  let baseRunner = ports.toolRunner;
   if (!baseRegistry || !baseRunner) return composeProductAgentRuntime(ports);
+  let baseCapabilities = ports.capabilityRegistry;
   const capabilityAllowed = (id: string) => {
-    const entry = ports.capabilityRegistry?.resolveById(capabilityId.from(id));
+    const entry = baseCapabilities?.resolveById(capabilityId.from(id));
     return (
       entry === undefined ||
       entry === null ||
@@ -89,11 +91,24 @@ export function composeDelegatedAgentRuntime(
         !entry.state.operational.incompatible)
     );
   };
-  const base: ProductToolSourceBundle = {
+  let base: ProductToolSourceBundle = {
     registry: baseRegistry,
     runner: baseRunner,
     catalog: baseRegistry.catalog,
     toolNames: baseRegistry.entries.map((entry) => entry.manifest.name),
+    trust: {
+      inspect: (id) => baseCapabilities?.resolveById(capabilityId.from(id))?.trust ?? null,
+    },
+    families: new Map(
+      baseCapabilities?.entries.flatMap((entry) =>
+        entry.family === null ? [] : [[entry.capabilityId, entry.family] as const],
+      ) ?? [],
+    ),
+    explicitOnly: new Set(
+      baseCapabilities?.entries
+        .filter((entry) => entry.state.explicitOnly)
+        .map((entry) => entry.capabilityId) ?? [],
+    ),
   };
   const delegation = createDelegation({
     registry,
@@ -107,11 +122,11 @@ export function composeDelegatedAgentRuntime(
     capability(id) {
       if (id === DELEGATE_CAPABILITY) return { ready: true, reason: "" };
       if (!capabilityAllowed(id)) return { ready: false, reason: "agent-capability-unavailable" };
-      const entry = baseRegistry.resolveByCapabilityId(capabilityId.from(id));
+      const entry = base.registry.resolveByCapabilityId(capabilityId.from(id));
       if (entry && !isClosedProductToolSchema(z.toJSONSchema(entry.manifest.inputSchema)))
         return { ready: false, reason: "agent-tool-schema-unavailable" };
       if (!entry) {
-        const registered = ports.capabilityRegistry?.resolveById(capabilityId.from(id));
+        const registered = baseCapabilities?.resolveById(capabilityId.from(id));
         if (
           registered?.state.availability === "available" &&
           registered.state.operational.allowed &&
@@ -128,7 +143,7 @@ export function composeDelegatedAgentRuntime(
         }
       }
       return {
-        ready: entry !== null && baseRunner.hasBinding?.(entry.manifest.capabilityId) === true,
+        ready: entry !== null && base.runner.hasBinding?.(entry.manifest.capabilityId) === true,
         reason: "agent-required-capability-unavailable",
       };
     },
@@ -274,10 +289,11 @@ export function composeDelegatedAgentRuntime(
       delegation.execute(request.input, request, parent),
     );
     const allowed = parent?.prepared.authority.capabilities;
+    const ownedBase = base;
     const entries =
       allowed === undefined
-        ? base.registry.entries
-        : base.registry.entries.filter(
+        ? ownedBase.registry.entries
+        : ownedBase.registry.entries.filter(
             (entry) =>
               String(entry.manifest.capabilityId) !== PEER_CAPABILITY &&
               allowed.includes(String(entry.manifest.capabilityId)),
@@ -285,21 +301,21 @@ export function composeDelegatedAgentRuntime(
     const filtered = createToolRegistry(generation, entries);
     if (!filtered.ok) throw new Error(filtered.error.code);
     const bundle = {
-      ...base,
+      ...ownedBase,
       registry: filtered.value,
       catalog: filtered.value.catalog,
       runner: {
-        ...base.runner,
-        hasBinding: (id: Parameters<NonNullable<typeof base.runner.hasBinding>>[0]) =>
-          capabilityAllowed(String(id)) && base.runner.hasBinding?.(id) === true,
-        execute: (request: Parameters<typeof base.runner.execute>[0]) =>
+        ...ownedBase.runner,
+        hasBinding: (id: Parameters<NonNullable<typeof ownedBase.runner.hasBinding>>[0]) =>
+          capabilityAllowed(String(id)) && ownedBase.runner.hasBinding?.(id) === true,
+        execute: (request: Parameters<typeof ownedBase.runner.execute>[0]) =>
           !capabilityAllowed(String(request.capabilityId)) || (parent && !current(parent))
             ? Promise.resolve({
                 status: "unavailable" as const,
                 reason: "agent-definition-or-configuration-changed",
                 effect: "none" as const,
               })
-            : base.runner.execute(request),
+            : ownedBase.runner.execute(request),
       },
     };
     const baseTools = mergeProductToolBundles(
@@ -317,9 +333,9 @@ export function composeDelegatedAgentRuntime(
       ],
       {
         capabilityEntries:
-          ports.capabilityRegistry?.entries.filter(
+          baseCapabilities?.entries.filter(
             (entry) =>
-              !base.registry.resolveByCapabilityId(entry.capabilityId) &&
+              !ownedBase.registry.resolveByCapabilityId(entry.capabilityId) &&
               (allowed === undefined || allowed.includes(String(entry.capabilityId))),
           ) ?? [],
       },
@@ -386,7 +402,30 @@ export function composeDelegatedAgentRuntime(
       capabilityRegistry: tools.capabilityRegistry,
     });
   }
-  return compose(undefined, ports);
+  const initial = compose(undefined, ports);
+  if (!initial.ok) return initial;
+  const decorate = (runtime: typeof initial.value): typeof initial.value => ({
+    ...runtime,
+    recomposeTools(bundle) {
+      const previous = { base, baseRegistry, baseRunner, baseCapabilities };
+      base = bundle;
+      baseRegistry = bundle.registry;
+      baseRunner = bundle.runner;
+      baseCapabilities = bundle.capabilityRegistry;
+      try {
+        const next = compose(undefined, { ...ports, host: productAgentHost(runtime) });
+        if (!next.ok) {
+          ({ base, baseRegistry, baseRunner, baseCapabilities } = previous);
+          return next;
+        }
+        return { ok: true, value: decorate(next.value) };
+      } catch (error) {
+        ({ base, baseRegistry, baseRunner, baseCapabilities } = previous);
+        throw error;
+      }
+    },
+  });
+  return { ok: true as const, value: decorate(initial.value) };
 
   function current(run: AgentRun) {
     const registered = registry.resolve(run.prepared.definition.id);

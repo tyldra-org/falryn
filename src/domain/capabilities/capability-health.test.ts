@@ -210,3 +210,36 @@ describe("capability health", () => {
     });
   });
 });
+
+test("a preparable native owner cannot override stale probes or unknown credentials", () => {
+  const base = document("native_answer");
+  const capabilities = registry({
+    ...base,
+    state: { ...base.state, health: "unknown", healthReason: "not started", preparable: true },
+  });
+  const target = capabilities.entries[0];
+  if (!target) throw new Error("native fixture");
+  expect(inspectCapabilityHealth(capabilities, "native-model", {}).entries[0]?.selectable).toBe(
+    true,
+  );
+  expect(
+    inspectCapabilityHealth(capabilities, "native-model", {
+      credentials: { [target.capabilityId]: "unknown" },
+    }).entries[0]?.selectable,
+  ).toBe(false);
+  expect(
+    inspectCapabilityHealth(capabilities, "native-model", {
+      now: instant(10),
+      probes: {
+        [target.capabilityId]: {
+          state: "healthy",
+          code: "probe-unknown",
+          message: "healthy",
+          observedAt: instant(1),
+          expiresAt: instant(2),
+          recovery: null,
+        },
+      },
+    }).entries[0]?.selectable,
+  ).toBe(false);
+});

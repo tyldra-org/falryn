@@ -542,10 +542,11 @@ and unrelated files are never removal targets. Inspection reports the current
 digest, revision, retained count and pending cleanup; save version digests from
 receipts for exact rollback. Human, quiet, JSON and JSONL expose the same facts.
 
-Installed package lifecycle records remain disabled. `package enable` returns
-`activation-owner-unavailable`; installation and approval never create runnable
-bindings. Remote acquisition, native contribution registration and executable
-grants remain unavailable on this lifecycle path. Separate scope controls below manage metadata preferences only.
+Installation and trust approval do not create executable bindings. `package enable`
+without a native activation request still returns `activation-owner-unavailable`.
+The explicit native tool path below publishes only its selected contribution
+identities. Remote acquisition, module services, full-user execution and other
+native-kind adapters remain unavailable. Scope controls remain metadata preferences.
 Package cache files retain exact source bytes and are not redacted artifacts.
 SQLite-only backups and session exports do not include those bytes or confer
 package authority. Removing the state root removes both lifecycle records and
@@ -574,6 +575,59 @@ keeps replacement fenced. Results report termination, retained files, uncertaint
 and timings without raw child output, argv, credentials or recovery paths.
 Source and compiled CLI journeys cover successful, hostile and cancelled peers.
 Health never enables native catalog bindings or automatic model invocation.
+
+`falryn package enable --input request.json` accepts a separate `nativeActivation`
+object with `scope` (`user` or `workspace`), `expectedRevision` (the activation
+revision, initially 0), and `contributions` (exact inspection identity digests).
+The outer `expectedRevision` is the installed package revision. Preview binds
+current trust, scope, installed bytes, dependency locks and configuration; repeat
+the same request with its returned `confirmation` to save activation. Migration
+0024 stores the allowlist and idempotent operation receipt under the existing
+SQLite writer. Scope preference, installation and approval alone remain inert.
+Session, process and development activation require an unavailable live host control.
+
+The first native owner registers offline observation tools whose governed native
+executable declares `falryn-package-tool/1`, a behavior family, closed object input
+and output schemas, and no filesystem, network, secret, child, configuration,
+state or host-service authority. It uses the same qualified macOS arm64 sandbox,
+installed admission, process supervision, occupancy, quarantine and recovery
+store as package health. CPU and memory ceilings remain unavailable and fail
+closed. Registration starts no code; an unprobed but preparable tool retains
+unknown health. Unsupported native kinds and disabled contributions stay
+inspectable with an unavailable binding. A failed candidate leaves the prior
+complete publication intact.
+
+Enabled tools with `choice.explicitOnly: false` can enter ordinary opportunity
+planning. Only selected schemas enter the model request, and invocation crosses
+the normal policy, trust, hook, resource, capture, journal and result gateway.
+Headless composition and each new shell turn refresh native publication; in-flight
+attempts retain immutable bindings. Disable, update, uninstall, changed scope or
+revocation rejects a stale tool before execution. Delegation preserves the same
+native registry and trust facts. Model-irrelevant package payloads remain outside
+model context. Exact package catalog identities remain inspectable when aliases
+are disabled or ambiguous.
+
+The tool protocol is versioned JSON lines, not JSON-RPC. Requests echo the
+health binding fields (`protocol`, `attempt`, `package`, `contribution`,
+`generation`) and use IDs 1–3 with methods `initialize`, `invoke`, `shutdown`.
+Only `invoke` adds `input`. Responses contain the same binding, ID and method
+plus `result`: `"ok"` for initialization/shutdown, or the declared output object
+for invocation. They omit `input`. Extra keys, forged identities, unsolicited or
+late frames and schema violations fail closed. Inputs are capped at 8 KiB,
+output objects and frames at 16 KiB, combined output at 64 KiB and total time at
+30 seconds, narrowed by declared limits. Every call owns one short-lived child.
+
+Native attempts use a durable operation UUID derived from the gateway invocation
+ID. Replaying it never repeats code. Unresolved process or retained-file failures
+include `operation=<uuid>`. To inspect or clean that attempt, use `package recover`
+with a new outer operation UUID, the exact package ID, its current installed
+revision and `nativeRecovery: { "operation": "<attempt-uuid>" }`; preview and
+confirm the recovery token. Cleanup uses recorded birth identity, not PID alone,
+and never invokes the package again. Unknown ownership remains fenced. A known
+output remains in the attempt record even when cleanup fails; cleanup success
+is separate from semantic invocation success. Source and compiled model fixtures
+verify a real native output, and source tests verify revocation between disclosure
+and invocation, disabled aliases and next-turn replacement.
 
 `falryn package data --input request.json` exposes version-1 host-owned
 configuration and state operations. Its outer request binds the installed package

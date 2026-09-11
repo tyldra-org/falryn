@@ -7,6 +7,7 @@ import {
 } from "../../application/artifacts/index.ts";
 import { createLoomPort, type LoomPort } from "../../application/compression/index.ts";
 import type { CatalogRehydration } from "../../application/extensions/catalog-rehydration.ts";
+import type { NativePublication } from "../../application/extensions/native-registration.ts";
 import { createDurableMemoryRecords, type MemoryRecords } from "../../application/memory/index.ts";
 import { type AgentJoins, createAgentJoins } from "../../application/orchestration/agent-joins.ts";
 import {
@@ -31,6 +32,8 @@ import {
   type WorkflowQuestions,
 } from "../../application/orchestration/workflow-questions.ts";
 import { createCatalogRepositories } from "../../data/extensions/catalog-repositories.ts";
+import { createNativeActivationRepository } from "../../data/extensions/native-activation-repository.ts";
+import { createPackageHealthRepository } from "../../data/extensions/package-health-repository.ts";
 import {
   beginRun,
   createArtifactRepository,
@@ -60,6 +63,7 @@ import {
   type WorkQueueLocations,
 } from "../../data/orchestration/work-queue-locations.ts";
 import { createWorkflowStore } from "../../data/orchestration/workflow-store.ts";
+import type { ConfigurationGeneration } from "../../domain/foundation/index.ts";
 import { runId } from "../../domain/foundation/index.ts";
 import type { WorkflowStore } from "../../domain/orchestration/workflow-state.ts";
 import {
@@ -78,6 +82,7 @@ import type { OwnedProcessRegistry } from "../../integrations/process/host-owned
 import { createHostProcessIdentityPort } from "../../integrations/process/host-process-identity.ts";
 import type { ProviderContinuationStatePort } from "../../providers/index.ts";
 import { composeExtensionCatalog } from "./extension-catalog.ts";
+import { composeNativePackages } from "./native-packages.ts";
 import {
   composeProductPeerMailboxes,
   type ProductPeerMailboxes,
@@ -101,6 +106,11 @@ export type ProductArtifactSession = {
   readonly questions: StructuredQuestions | null;
   readonly taskNotices: ProcessTaskNotices;
   readonly taskRecovery: readonly ProcessTaskRecovery[];
+  publishNativePackages(
+    generation: ConfigurationGeneration,
+    signal: AbortSignal,
+    session?: string,
+  ): Promise<NativePublication>;
   rehydrateExtensions(signal: AbortSignal, session?: string): Promise<CatalogRehydration>;
   openWorkspaceIndex(
     workspaceRoot: LocalPath,
@@ -278,6 +288,10 @@ export async function openProductArtifactSession(
   signal?.addEventListener("abort", interrupt, { once: true });
   if (signal?.aborted) interrupt();
   const indexes = new Map<string, WorkspaceIndexStore>();
+  let nativeOwner: {
+    session: string | undefined;
+    owner: ReturnType<typeof composeNativePackages>;
+  } | null = null;
   let closed = false;
   let closing: Promise<boolean> | null = null;
 
@@ -295,6 +309,7 @@ export async function openProductArtifactSession(
     await attempt(async () => {
       if (!(await recovery.close())) clean = false;
     });
+    await attempt(() => nativeOwner?.owner.close());
     await attempt(() => peers.close());
     await attempt(async () => {
       if (!(await tasks.drain()).ok) clean = false;
@@ -325,6 +340,25 @@ export async function openProductArtifactSession(
         })
       : null,
     workQueues,
+    async publishNativePackages(generation, signal, session) {
+      if (closed) throw new Error("catalog-host-closed");
+      if (nativeOwner === null || nativeOwner.session !== session) {
+        await nativeOwner?.owner.close();
+        nativeOwner = {
+          session,
+          owner: composeNativePackages({
+            services,
+            records: createCatalogRepositories(store),
+            activations: createNativeActivationRepository(store),
+            processes: createPackageHealthRepository(store),
+            ...(session === undefined ? {} : { session }),
+          }),
+        };
+      }
+      const publication = await nativeOwner.owner.publish(generation, signal);
+      if (closed) throw new Error("catalog-host-closed");
+      return publication;
+    },
     async rehydrateExtensions(signal, session) {
       if (closed) return { status: "failed", code: "catalog-host-closed" };
       const owner = composeExtensionCatalog({

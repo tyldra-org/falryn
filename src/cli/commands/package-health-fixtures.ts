@@ -10,16 +10,22 @@ import { packageReceiptSchema } from "../../domain/extensions/lifecycle.ts";
 import { packageHealthResultSchema } from "../../domain/extensions/package-health.ts";
 import { nativeHealthFixture } from "../../integrations/extensions/package-health-fixtures.ts";
 
-export async function packageHealthCliJourney(
+export async function preparePackageCliFixture(
   command: readonly string[],
   root: string,
   mode = "healthy",
+  tool = false,
 ) {
   const source = join(root, "package");
   await mkdir(source);
   const secret = join(root, "outside-secret");
   await writeFile(secret, "PRIVATE-CONTENT");
-  const fixture = await nativeHealthFixture(root, mode === "cancel" ? "timeout" : mode, secret);
+  const fixture = await nativeHealthFixture(
+    root,
+    mode === "cancel" ? "timeout" : mode,
+    secret,
+    tool,
+  );
   if (mode === "cancel" && fixture.declaration.execution)
     fixture.declaration.execution.resources.startupMs = 5000;
   await writeFile(join(source, "health-peer"), fixture.bytes);
@@ -28,7 +34,9 @@ export async function packageHealthCliJourney(
     JSON.stringify(
       pluginManifest({
         version: 1,
-        contributions: [fixture.declaration],
+        contributions: tool
+          ? [fixture.declaration, { ...fixture.declaration, id: "disabled" }]
+          : [fixture.declaration],
         files: [{ path: "health-peer", digest: fixture.digest }],
       }),
     ),
@@ -44,6 +52,8 @@ export async function packageHealthCliJourney(
   );
   const environment = {
     PATH: process.env.PATH ?? "",
+    USER: process.env.USER ?? "",
+    LOGNAME: process.env.LOGNAME ?? "",
     HOME: root,
     NO_COLOR: "1",
     FALRYN_HEALTH_SECRET: "HEALTH-SECRET-NEVER-IN-CHILD",
@@ -111,7 +121,7 @@ export async function packageHealthCliJourney(
       operationId: randomUUID(),
       expectedRevision: 0,
       packageIdentity: installed.currentDigest,
-      choice: { enabled: true, preferred: false, explicitOnly: true },
+      choice: { enabled: true, preferred: false, explicitOnly: !tool },
     },
   };
   const scopeSchema = z.object({
@@ -138,14 +148,49 @@ export async function packageHealthCliJourney(
       }),
     }),
   );
-  expect(catalog.page.entries).toHaveLength(1);
+  expect(catalog.page.entries).toHaveLength(tool ? 2 : 1);
   const catalogMs = performance.now() - catalogStart;
   const warmCatalogStart = performance.now();
   await invoke(["extension", "catalog"], { action: "catalog" }, z.object({ page: z.unknown() }));
   const warmCatalogMs = performance.now() - warmCatalogStart;
-  expect(catalog.page.entries[0]?.enabled).toBe(true);
-  const contribution = canonicalDigest(catalog.page.entries[0]?.contribution);
-  expect(trust.contributions[0]?.identityDigest).toBe(contribution);
+  const main = catalog.page.entries.find(
+    (entry) => z.object({ localId: z.string() }).parse(entry.contribution).localId === "health",
+  );
+  expect(main?.enabled).toBe(true);
+  const contribution = canonicalDigest(main?.contribution);
+  expect(trust.contributions.some((entry) => entry.identityDigest === contribution)).toBe(true);
+  if (tool) {
+    const disabled = catalog.page.entries.find(
+      (entry) => z.object({ localId: z.string() }).parse(entry.contribution).localId === "disabled",
+    );
+    const request = {
+      ...scope.request,
+      operationId: randomUUID(),
+      expectedRevision: 1,
+      contribution: canonicalDigest(disabled?.contribution),
+      choice: { enabled: false, preferred: false, explicitOnly: true },
+    };
+    const preview = await invoke(["extension", "scope"], { ...scope, request }, scopeSchema);
+    const changed = await invoke(
+      ["extension", "scope"],
+      { ...scope, request: { ...request, confirmation: preview.receipt.confirmation } },
+      scopeSchema,
+    );
+    expect(changed.status).toBe("applied");
+  }
+  return { invoke, contribution, source, environment, catalogMs, warmCatalogMs, scope, installed };
+}
+
+export async function packageHealthCliJourney(
+  command: readonly string[],
+  root: string,
+  mode = "healthy",
+) {
+  const { invoke, contribution, catalogMs, warmCatalogMs } = await preparePackageCliFixture(
+    command,
+    root,
+    mode,
+  );
   const request = {
     packageId: "fixture",
     operationId: randomUUID(),

@@ -3,10 +3,11 @@
  */
 
 import type {
+  CapabilityFamily,
   CapabilityRegistry,
   CapabilityRegistryEntry,
 } from "../../domain/capabilities/index.ts";
-import type { ConfigurationGeneration } from "../../domain/foundation/index.ts";
+import type { CapabilityId, ConfigurationGeneration } from "../../domain/foundation/index.ts";
 import type {
   ToolCatalog,
   ToolInvocationOutcome,
@@ -15,9 +16,14 @@ import type {
 } from "../../domain/tools/index.ts";
 import { createToolRegistry } from "../../domain/tools/index.ts";
 import { createProductCapabilityRegistry } from "../capabilities/product-capability-registry.ts";
+import type { CapabilityTrustPort } from "../extensions/capability-trust.ts";
 import type { ToolRunnerPort, ToolRunnerRequest } from "../runtime/tool-call-loop.ts";
 
 export type ProductToolSourceBundle = {
+  /** Host-validated native publication facts; package metadata cannot provide these ports. */
+  readonly trust?: CapabilityTrustPort;
+  readonly families?: ReadonlyMap<CapabilityId, CapabilityFamily>;
+  readonly explicitOnly?: ReadonlySet<CapabilityId>;
   readonly registry: ToolRegistry;
   readonly catalog: ToolCatalog;
   readonly runner: ToolRunnerPort;
@@ -48,10 +54,18 @@ export function mergeProductToolBundles(
 ): ProductToolBundle {
   const entries: ToolRegistryEntry[] = [];
   const runners = new Map<string, ToolRunnerPort>();
+  const trustOwners = new Map<string, CapabilityTrustPort>();
+  const families = new Map<CapabilityId, CapabilityFamily>();
+  const explicitOnly = new Set<CapabilityId>();
   for (const bundle of bundles) {
     for (const entry of bundle.registry.entries) {
       entries.push(entry);
       runners.set(entry.descriptor.name, bundle.runner);
+      if (bundle.trust) trustOwners.set(entry.manifest.capabilityId, bundle.trust);
+      const family = bundle.families?.get(entry.manifest.capabilityId);
+      if (family) families.set(entry.manifest.capabilityId, family);
+      if (bundle.explicitOnly?.has(entry.manifest.capabilityId))
+        explicitOnly.add(entry.manifest.capabilityId);
     }
   }
   const registryResult = createToolRegistry(generation, entries);
@@ -67,6 +81,9 @@ export function mergeProductToolBundles(
       const entry = registry.resolveByCapabilityId(id);
       return entry !== null && runners.get(entry.descriptor.name)?.hasBinding?.(id) === true;
     },
+    { inspect: (id) => trustOwners.get(id)?.inspect(id) ?? null },
+    families,
+    explicitOnly,
   );
   const runner: ToolRunnerPort = {
     hasBinding(id) {
@@ -109,5 +126,8 @@ export function mergeProductToolBundles(
     catalog: registry.catalog,
     runner,
     toolNames: entries.map((entry) => entry.descriptor.name),
+    trust: { inspect: (id) => trustOwners.get(id)?.inspect(id) ?? null },
+    families,
+    explicitOnly,
   };
 }

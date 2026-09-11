@@ -152,6 +152,7 @@ export type ProductLiveTurnExecutorOptions = {
   readonly modelPreferences?: () => import("../../providers/configuration/policy-schema.ts").ModelPreferences;
   readonly modelConfigurationGeneration?: () => ConfigurationGeneration;
   readonly runtime: ProductAgentRuntime;
+  readonly refreshRuntime?: (signal: AbortSignal) => Promise<ProductAgentRuntime>;
   readonly clock: ClockPort;
   readonly providerCatalog: ModelCatalog | null;
   readonly contextSource?: ProductContextSource;
@@ -246,10 +247,11 @@ export function productModelPolicy(
 export function createProductLiveTurnExecutor(
   options: ProductLiveTurnExecutorOptions,
 ): ProductLiveTurnExecutor {
-  const producer = options.runtime.attachments.turnProducer;
-  const correlation = options.runtime.correlation;
+  let runtime = options.runtime;
+  const producer = runtime.attachments.turnProducer;
+  const correlation = runtime.correlation;
   let activeProfile = options.initialExecutionProfile ?? "agent";
-  const providerIdentity = options.runtime.providerAdapter?.identity ?? null;
+  const providerIdentity = runtime.providerAdapter?.identity ?? null;
   const initialCatalogModel = options.providerCatalog?.models.find(
     (model) => model.availability !== "unavailable",
   )?.modelId;
@@ -513,7 +515,7 @@ export function createProductLiveTurnExecutor(
             message: "the selected provider has no usable model catalog",
           };
         }
-        const provider = options.runtime.requireProviderAdapter();
+        const provider = runtime.requireProviderAdapter();
         if (
           !provider.ok ||
           identity.providerProfileId !== provider.value.identity.profileId ||
@@ -639,8 +641,39 @@ export function createProductLiveTurnExecutor(
         });
       }
 
+      if (options.refreshRuntime) {
+        try {
+          const candidate = await options.refreshRuntime(
+            input.signal ?? new AbortController().signal,
+          );
+          if (
+            candidate.attachments.turnProducer !== producer ||
+            candidate.correlation !== runtime.correlation
+          )
+            throw new Error("native-runtime-host-mismatch");
+          runtime = candidate;
+        } catch {
+          return result({
+            kind: "unavailable",
+            code: "extensions.refresh-failed",
+            message:
+              "The current native catalog could not be published. Inspect extension catalog state before retrying.",
+            response: "",
+            terminalOutcome: FAILED,
+            contextPackItems: 0,
+            modelAttempts: 0,
+            toolResults: 0,
+            disclosedTools: 0,
+            contextStatus: "static",
+            contextGeneration: null,
+            recalledMemories: 0,
+            memoryAdmission: "skipped",
+            executionProfile: executionPolicy.profileId,
+          });
+        }
+      }
       const taskResources =
-        input.childAdmission?.resources ?? options.runtime.resources.openTask(String(generation));
+        input.childAdmission?.resources ?? runtime.resources.openTask(String(generation));
       try {
         const attachments = await admitResourceAttachments(
           input.attachmentSelection ?? { attachments: [], mentions: [] },
@@ -776,8 +809,8 @@ export function createProductLiveTurnExecutor(
           );
         }
 
-        const registry = options.runtime.toolRegistry;
-        const capabilityRegistry = options.runtime.capabilityRegistry;
+        const registry = runtime.toolRegistry;
+        const capabilityRegistry = runtime.capabilityRegistry;
         if (registry === null || capabilityRegistry === null) {
           return settleFailure(
             input,
@@ -797,8 +830,8 @@ export function createProductLiveTurnExecutor(
           healthEvidence: {
             now: options.clock.now(),
             runtime: {
-              attemptRunner: options.runtime.attemptRunner === null ? "missing" : "available",
-              provider: options.runtime.providerAdapter === null ? "missing" : "available",
+              attemptRunner: runtime.attemptRunner === null ? "missing" : "available",
+              provider: runtime.providerAdapter === null ? "missing" : "available",
               workspace: "available",
             },
           },
@@ -839,7 +872,7 @@ export function createProductLiveTurnExecutor(
           );
         }
 
-        const provider = options.runtime.requireProviderAdapter();
+        const provider = runtime.requireProviderAdapter();
         if (!provider.ok) {
           return settleFailure(
             input,
@@ -856,7 +889,7 @@ export function createProductLiveTurnExecutor(
             executionPolicy,
           );
         }
-        const attemptRunner = options.runtime.requireAttemptRunner();
+        const attemptRunner = runtime.requireAttemptRunner();
         const policy =
           options.providerCatalog === null
             ? null
@@ -890,9 +923,9 @@ export function createProductLiveTurnExecutor(
         }
 
         const attemptPolicy = createTurnAttemptPolicy({
-          resources: options.runtime.resources,
+          resources: runtime.resources,
           clock: options.clock,
-          coordinator: options.runtime.turnCoordinator,
+          coordinator: runtime.turnCoordinator,
           runner: attemptRunner.value,
           policy,
           catalogs: [
@@ -912,7 +945,7 @@ export function createProductLiveTurnExecutor(
               catalog: options.providerCatalog,
             },
           ],
-          journal: options.runtime.journal,
+          journal: runtime.journal,
           persistTurnLifecycle: false,
         });
         const attempted = await attemptPolicy.run({

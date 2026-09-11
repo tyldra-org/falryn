@@ -12,6 +12,8 @@ import {
   rewindWorkspaceSession,
 } from "../../application/sessions/index.ts";
 import { createCatalogRepositories } from "../../data/extensions/catalog-repositories.ts";
+import { createNativeActivationRepository } from "../../data/extensions/native-activation-repository.ts";
+import { createPackageHealthRepository } from "../../data/extensions/package-health-repository.ts";
 import {
   createRecordRepositories,
   createSqliteEventStore,
@@ -21,9 +23,11 @@ import {
   rootChild,
   sqliteDatabasePath,
 } from "../../data/index.ts";
+import { ExtensionInputError } from "../../domain/extensions/canonical.ts";
 import { type CatalogPage, queryExtensionCatalog } from "../../domain/extensions/catalog.ts";
 import type { CatalogHistory } from "../../domain/extensions/catalog-history.ts";
 import {
+  configurationGeneration,
   type FalrynError,
   type Sequence,
   sessionId,
@@ -45,7 +49,7 @@ import {
   type CommandResultOf,
   READ_ONLY_EFFECT,
 } from "../output/result.ts";
-import { composeExtensionCatalog } from "./extension-catalog.ts";
+import { composeNativePackages } from "./native-packages.ts";
 import type { ServiceProvider } from "./services.ts";
 
 export const SESSION_NAVIGATION_OWNER = "#721";
@@ -255,24 +259,41 @@ export async function runSessionResume(
         return resultFor("session.resume", null, [
           navigationFailure("session-not-found", "resume session"),
         ]);
-      const reconciled = await composeExtensionCatalog({
-        services: services(),
-        records: createCatalogRepositories(opened.store),
-        session: arguments_.sessionId,
-      }).refresh(signal ?? new AbortController().signal);
+      let currentExtensions: SessionResumePayload["currentExtensions"];
+      try {
+        const resolved = services();
+        await resolved.loader.load({
+          configurationRoot: resolved.configurationRoot,
+          legacyConfigurationRoot: resolved.legacyConfigurationRoot,
+          workspaceRoot: null,
+          profile: null,
+          overrides: {},
+        });
+        const reconciled = await composeNativePackages({
+          services: resolved,
+          records: createCatalogRepositories(opened.store),
+          activations: createNativeActivationRepository(opened.store),
+          processes: createPackageHealthRepository(opened.store),
+          session: arguments_.sessionId,
+        }).publish(
+          resolved.loader.current()?.generation ?? configurationGeneration.from(1),
+          signal ?? new AbortController().signal,
+        );
+        currentExtensions = {
+          status: "inspected",
+          page: queryExtensionCatalog(reconciled.catalog, { catalog: reconciled.catalog.identity }),
+        };
+      } catch (error) {
+        currentExtensions = {
+          status: "failed",
+          code: error instanceof ExtensionInputError ? error.code : "native-catalog-unavailable",
+        };
+      }
       return resultFor("session.resume", {
         ...(record.value.extensionCatalog === undefined
           ? {}
           : { extensionCatalog: record.value.extensionCatalog }),
-        currentExtensions:
-          reconciled.status === "failed"
-            ? reconciled
-            : {
-                status: "inspected" as const,
-                page: queryExtensionCatalog(reconciled.catalog, {
-                  catalog: reconciled.catalog.identity,
-                }),
-              },
+        currentExtensions,
         owner: SESSION_NAVIGATION_OWNER,
         sessionId: String(resumed.value.sessionId),
         workspaceId: String(arguments_.workspaceId),

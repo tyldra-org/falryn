@@ -18,8 +18,11 @@ import {
 } from "../../domain/extensions/canonical.ts";
 import {
   PACKAGE_HEALTH_LIMITS,
+  PACKAGE_HEALTH_PROTOCOL,
+  PACKAGE_TOOL_PROTOCOL,
   type PackageHealthRecord,
   packageHealthFrameSchema,
+  packageToolFrameSchema,
 } from "../../domain/extensions/package-health.ts";
 import { duration, managedServiceId } from "../../domain/foundation/index.ts";
 import { sameProcessBirth } from "../../domain/process/process-identity.ts";
@@ -77,7 +80,7 @@ export function validateHealthExecutable(bytes: Uint8Array, arch = process.arch)
   return offset === 32 + size ? null : "native-header-invalid";
 }
 
-export function createHostPackageHealth(options: {
+export function createHostPackageProcess(options: {
   directory: string;
   policy(): { mode: string; generation: number };
 }): PackageHealthHost {
@@ -178,7 +181,9 @@ export function createHostPackageHealth(options: {
             buffered = buffered.slice(newline + 1);
             if (++frames > PACKAGE_HEALTH_LIMITS.frames)
               return fail("health-frame-count-exhausted");
-            const frame = packageHealthFrameSchema.parse(parseMetadata(line));
+            const frame = input.invocation
+              ? packageToolFrameSchema.parse(parseMetadata(line))
+              : packageHealthFrameSchema.parse(parseMetadata(line));
             if (
               !pending ||
               frame.id !== pending.id ||
@@ -188,6 +193,11 @@ export function createHostPackageHealth(options: {
               )
             )
               return fail("health-protocol-forgery");
+            if (frame.method === "invoke") {
+              if (!input.invocation?.validateOutput(frame.result) || frame.result === "ok")
+                return fail("package-tool-output-invalid");
+              record = { ...record, result: { ...record.result, value: frame.result } };
+            } else if (frame.result !== "ok") return fail("health-protocol-malformed");
             pending.resolve();
             pending = null;
             newline = buffered.indexOf("\n");
@@ -209,6 +219,12 @@ export function createHostPackageHealth(options: {
         if (policy.mode !== "strict" || sandbox.probe().status !== "available")
           throw new ExtensionInputError("health-sandbox-unavailable");
         const execution = input.declaration.execution;
+        if (
+          record.result.binding.protocol !==
+            (input.invocation ? PACKAGE_TOOL_PROTOCOL : PACKAGE_HEALTH_PROTOCOL) ||
+          execution?.protocolVersion !== record.result.binding.protocol
+        )
+          throw new ExtensionInputError("package-process-protocol-mismatch");
         if (execution?.loader !== "native")
           throw new ExtensionInputError("health-loader-unavailable");
         const executable = input.snapshot.files.find((file) => file.path === execution.executable);
@@ -297,10 +313,21 @@ export function createHostPackageHealth(options: {
             subscriptions.push(attached.value.detach);
             consume(attached.value.replay.stdout);
             consume(attached.value.replay.stderr, true);
-            const methods = ["initialize", "health", "health", "shutdown"] as const;
+            const methods = input.invocation
+              ? (["initialize", "invoke", "shutdown"] as const)
+              : (["initialize", "health", "health", "shutdown"] as const);
             for (const [index, method] of methods.entries()) {
               if (signal.aborted) throw new ExtensionInputError(reason ?? "cancelled");
-              if (!(await input.current())) throw new ExtensionInputError("stale-health-authority");
+              if (!(input.invocation && method === "shutdown") && !(await input.current()))
+                throw new ExtensionInputError("stale-health-authority");
+              const encoded = `${JSON.stringify({
+                ...record.result.binding,
+                id: index + 1,
+                method,
+                ...(method === "invoke" ? { input: input.invocation?.input } : {}),
+              })}\n`;
+              if (Buffer.byteLength(encoded) > PACKAGE_HEALTH_LIMITS.frameBytes)
+                throw new ExtensionInputError("package-tool-input-exhausted");
               const requestStart = performance.now();
               const wait = Promise.withResolvers<void>();
               pending = {
@@ -321,9 +348,7 @@ export function createHostPackageHealth(options: {
               const sent = service.send(
                 id,
                 launched.value.generation,
-                new TextEncoder().encode(
-                  `${JSON.stringify({ ...record.result.binding, id: index + 1, method })}\n`,
-                ),
+                new TextEncoder().encode(encoded),
               );
               try {
                 await Promise.all([
@@ -378,8 +403,10 @@ export function createHostPackageHealth(options: {
         result: {
           ...record.result,
           state: terminated
-            ? reason === null && requests === 4
-              ? "healthy"
+            ? reason === null && requests === (input.invocation ? 3 : 4)
+              ? input.invocation
+                ? "completed"
+                : "healthy"
               : "failed"
             : "uncertain",
           code: !terminated ? "health-cleanup-uncertain" : (reason ?? "health-completed"),
@@ -398,7 +425,10 @@ export function createHostPackageHealth(options: {
         },
       };
       if (terminated) record = cleanup(record);
-      if (record.result.cleanup === "retained" && record.result.state === "healthy")
+      if (
+        record.result.cleanup === "retained" &&
+        ["healthy", "completed"].includes(record.result.state)
+      )
         record = {
           ...record,
           result: { ...record.result, state: "failed", code: "health-files-retained" },
@@ -467,3 +497,6 @@ export function createHostPackageHealth(options: {
     },
   };
 }
+
+/** Preserve the explicit health command over the same supervised process owner. */
+export const createHostPackageHealth = createHostPackageProcess;

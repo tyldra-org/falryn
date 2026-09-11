@@ -197,3 +197,26 @@ describe("discloseProductTools", () => {
     });
   });
 });
+
+test("explicit-only capabilities require an exact preferred identity before model disclosure", () => {
+  const tools = workspaceTools();
+  const target = tools.registry.entries.find((entry) => entry.manifest.name === "read_file");
+  if (!target) throw new Error("read fixture");
+  const capabilities = createProductCapabilityRegistry(
+    tools.registry.generation,
+    tools.registry,
+    [],
+    () => true,
+    undefined,
+    undefined,
+    new Set([target.manifest.capabilityId]),
+  );
+  expect(
+    discloseProductTools(capabilities, tools.registry).modelTools.map((tool) => tool.name),
+  ).not.toContain("read_file");
+  expect(
+    discloseProductTools(capabilities, tools.registry, {
+      preferredCapabilityIds: [target.manifest.capabilityId],
+    }).modelTools.map((tool) => tool.name),
+  ).toContain("read_file");
+});

@@ -77,6 +77,7 @@ import type { TurnCoordinator } from "./turn-coordinator.ts";
 import type { TurnEventJournalPort } from "./turn-event-journal.ts";
 
 export type ProductAttemptRunnerOptions = {
+  readonly toolHost?: import("../../domain/tools/index.ts").HostPlatform;
   readonly sandbox?: SandboxInvocationPort;
   readonly takeSteering?: () => readonly { readonly id: string; readonly text: string }[];
   readonly capabilities?: CapabilityRegistry;
@@ -844,6 +845,11 @@ export function createProductAttemptRunner(
       const continuation: { terminal: ProviderStreamConsumeOutcome | null } = { terminal: null };
 
       const gateway = createProductToolGateway({
+        trust: {
+          inspect: (id) =>
+            options.capabilities?.entries.find((entry) => entry.capabilityId === id)?.trust ?? null,
+        },
+        ...(options.toolHost === undefined ? {} : { toolHost: options.toolHost }),
         ...(options.sandbox === undefined ? {} : { sandbox: options.sandbox }),
         delegation: {
           route: {

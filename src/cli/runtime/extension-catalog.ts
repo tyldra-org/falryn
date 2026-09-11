@@ -109,9 +109,8 @@ export function composeExtensionCatalog(options: {
       }),
     };
   }
-  async function trust(installed: InstalledPackage): Promise<CatalogTrust> {
-    if (records === null || installed.current === null)
-      return { trust: "unknown", inputs: canonicalDigest({ installed }) };
+  async function trustProjection(installed: InstalledPackage) {
+    if (records === null || installed.current === null) return null;
     const version = installed.current;
     const result = inspectProvenanceTrust(
       {
@@ -142,7 +141,11 @@ export function composeExtensionCatalog(options: {
       [],
     );
     if (result.status === "failed") throw new ExtensionInputError(`trust-${result.code}`);
-    const projection = result.trust;
+    return result.trust;
+  }
+  async function trust(installed: InstalledPackage): Promise<CatalogTrust> {
+    const projection = await trustProjection(installed);
+    if (projection === null) return { trust: "unknown", inputs: canonicalDigest({ installed }) };
     return {
       trust: projection.eligible
         ? "accepted"
@@ -211,6 +214,10 @@ export function composeExtensionCatalog(options: {
     }
   }
   return {
+    authorityContext: context,
+    trustProjection,
+    /** Internal composition already owns its outer resource and cancellation boundary. */
+    captureMetadata: (signal: AbortSignal) => rehydrator.refresh(signal),
     async healthAuthority(
       installed: InstalledPackage,
       contribution: string | null,

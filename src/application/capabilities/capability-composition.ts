@@ -102,7 +102,8 @@ export function createCapabilityComposition(options: CapabilityCompositionOption
       const state = candidate.state;
       if (
         !state.executable ||
-        state.health !== "healthy" ||
+        (state.health !== "healthy" &&
+          !(state.health === "unknown" && state.preparable === true)) ||
         state.availability !== "available" ||
         !state.operational.allowed ||
         state.operational.denied ||

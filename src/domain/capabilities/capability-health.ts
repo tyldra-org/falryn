@@ -733,7 +733,17 @@ function healthEntry(
     lifecycle.available &&
     !["unavailable", "incompatible", "denied", "quarantined"].includes(health);
   const executable = lifecycle.executable && available;
-  const selectable = executable && (health === "healthy" || health === "degraded");
+  const unprobedNativeOwner =
+    entry.state.preparable === true &&
+    health === "unknown" &&
+    diagnostics.every(
+      (item) =>
+        item.source === "registry" &&
+        item.code === "runtime-unavailable" &&
+        item.state === "unknown",
+    );
+  const selectable =
+    executable && (health === "healthy" || health === "degraded" || unprobedNativeOwner);
   const card = capabilityCard(entry, { disclosed, projected });
   return Object.freeze({
     capabilityId: entry.capabilityId,

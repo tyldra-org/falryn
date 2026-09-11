@@ -1,4 +1,5 @@
 import type { SandboxInvocationPort } from "../../domain/security/sandbox.ts";
+import type { ProductToolBundle } from "../tools/product-tools-merge.ts";
 /**
  * Product bootstrap composition for the live coding agent host (#705).
  *
@@ -63,7 +64,23 @@ import { createTurnCoordinator } from "./turn-coordinator.ts";
 import type { PersistTurnEventsOutcome, TurnEventJournal } from "./turn-event-journal.ts";
 import { createTurnEventJournal } from "./turn-event-journal.ts";
 
+export type ProductAgentHost = Pick<
+  ProductAgentRuntime,
+  "sessionRuntime" | "turnCoordinator" | "journal" | "attachments" | "streamId" | "correlation"
+>;
+export function productAgentHost(runtime: ProductAgentRuntime): ProductAgentHost {
+  return {
+    sessionRuntime: runtime.sessionRuntime,
+    turnCoordinator: runtime.turnCoordinator,
+    journal: runtime.journal,
+    attachments: runtime.attachments,
+    streamId: runtime.streamId,
+    correlation: runtime.correlation,
+  };
+}
+
 export type ProductAgentRuntimePorts = {
+  readonly host?: ProductAgentHost;
   readonly sandbox?: SandboxInvocationPort;
   readonly canComplete?: NonNullable<Parameters<typeof createTurnCoordinator>[0]>["canComplete"];
   readonly onTerminal?: NonNullable<Parameters<typeof createTurnCoordinator>[0]>["onTerminal"];
@@ -83,6 +100,7 @@ export type ProductAgentRuntimePorts = {
   readonly capabilityRegistry?: CapabilityRegistry;
   /** Registry authority used for disclosure and the production lifecycle. */
   readonly toolRegistry?: ToolRegistry;
+  readonly toolHost?: import("../../domain/tools/index.ts").HostPlatform;
   /** Optional runner; absent means tools cannot execute (fail closed). */
   readonly toolRunner?: ToolRunnerPort;
   /** Optional live or deterministic adapter; absent means no model stream. */
@@ -128,6 +146,7 @@ export type ProductAgentPortResult<Value> =
   | { readonly ok: false; readonly error: ProductAgentRuntimeError };
 
 export type ProductAgentRuntime = {
+  recomposeTools(bundle: ProductToolBundle): ProductAgentRuntimeComposeResult;
   childAdmission(
     input: Parameters<typeof createChildAdmission>[0],
   ): ReturnType<typeof createChildAdmission>;
@@ -221,6 +240,12 @@ export function composeProductAgentRuntime(
     return { ok: false, error: correlationError };
   }
 
+  if (
+    ports.host &&
+    (ports.host.streamId !== ports.streamId || ports.host.correlation !== ports.correlation)
+  )
+    throw new Error("native-runtime-host-mismatch");
+
   const toolRegistry = ports.toolRegistry ?? null;
   const capabilityRegistry =
     ports.capabilityRegistry ??
@@ -239,17 +264,21 @@ export function composeProductAgentRuntime(
   const toolRunner = ports.toolRunner ?? null;
   const providerAdapter = ports.providerAdapter ?? null;
 
-  const sessionRuntime = createSessionRuntime();
-  const turnCoordinator = createTurnCoordinator({
-    ...(ports.canComplete ? { canComplete: ports.canComplete } : {}),
-    ...(ports.onTerminal ? { onTerminal: ports.onTerminal } : {}),
-  });
-  const journal = createTurnEventJournal({
-    eventStore: ports.eventStore,
-    clock: ports.clock,
-    streamId: ports.streamId,
-    correlation: ports.correlation,
-  });
+  const sessionRuntime = ports.host?.sessionRuntime ?? createSessionRuntime();
+  const turnCoordinator =
+    ports.host?.turnCoordinator ??
+    createTurnCoordinator({
+      ...(ports.canComplete ? { canComplete: ports.canComplete } : {}),
+      ...(ports.onTerminal ? { onTerminal: ports.onTerminal } : {}),
+    });
+  const journal =
+    ports.host?.journal ??
+    createTurnEventJournal({
+      eventStore: ports.eventStore,
+      clock: ports.clock,
+      streamId: ports.streamId,
+      correlation: ports.correlation,
+    });
   const hookRegistry = (() => {
     if (ports.toolHooks !== undefined) {
       return ports.toolHooks;
@@ -264,6 +293,7 @@ export function composeProductAgentRuntime(
     ports.attemptRunner ??
     (providerAdapter !== null && toolRunner !== null && toolRegistry !== null
       ? createProductAttemptRunner({
+          ...(ports.toolHost === undefined ? {} : { toolHost: ports.toolHost }),
           ...(ports.sandbox === undefined ? {} : { sandbox: ports.sandbox }),
           ...(ports.takeSteering === undefined ? {} : { takeSteering: ports.takeSteering }),
           resources: ports.resources ?? processProductResources,
@@ -280,16 +310,30 @@ export function composeProductAgentRuntime(
           ...(ports.toolConfirmation === undefined ? {} : { confirmation: ports.toolConfirmation }),
         })
       : null);
-  const turnProducer = createSessionTurnTranscriptProducer({
-    eventStore: ports.eventStore,
-    journal,
-    sessionRuntime,
-    turnCoordinator,
-    streamId: ports.streamId,
-    correlation: ports.correlation,
-  });
+  const turnProducer =
+    ports.host?.attachments.turnProducer ??
+    createSessionTurnTranscriptProducer({
+      eventStore: ports.eventStore,
+      journal,
+      sessionRuntime,
+      turnCoordinator,
+      streamId: ports.streamId,
+      correlation: ports.correlation,
+    });
 
   const runtime: ProductAgentRuntime = {
+    recomposeTools(bundle) {
+      if (bundle.registry.generation !== ports.correlation.configurationGeneration)
+        throw new Error("tool publication belongs to another configuration generation");
+      return composeProductAgentRuntime({
+        ...ports,
+        host: productAgentHost(runtime),
+        toolRegistry: bundle.registry,
+        toolRunner: bundle.runner,
+        toolCatalog: bundle.catalog,
+        capabilityRegistry: bundle.capabilityRegistry,
+      });
+    },
     resources: ports.resources ?? processProductResources,
     childAdmission(input) {
       if (

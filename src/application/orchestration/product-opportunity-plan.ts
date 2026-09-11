@@ -103,7 +103,10 @@ export function createProductOpportunityPlan(
         costClass: entry.routing.costClass,
         latencyClass: entry.routing.latencyClass,
         schemaTokensEstimated: schema.tokens,
-        modelSchemaEligible: schema.eligible,
+        modelSchemaEligible:
+          schema.eligible &&
+          (entry.state.explicitOnly !== true ||
+            options.preferredCapabilityIds?.includes(entry.capabilityId) === true),
         order,
       };
     }),

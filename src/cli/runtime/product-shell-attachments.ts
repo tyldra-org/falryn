@@ -1,4 +1,6 @@
+import type { NativePublication } from "../../application/extensions/native-registration.ts";
 import type { ConfigurationValues } from "../../domain/configuration/index.ts";
+import { productToolHost } from "./product-tool-host.ts";
 import { createProductSandbox } from "./sandbox-configuration.ts";
 /**
  * Default live-product attachments for the TUI.
@@ -94,6 +96,10 @@ export type ProductShellAttachmentPorts = {
   readonly sandboxConfiguration?: () =>
     | import("../../domain/configuration/index.ts").ConfigurationGenerationRecord
     | null;
+  readonly publishNativePackages?: (
+    generation: ConfigurationGeneration,
+    signal: AbortSignal,
+  ) => Promise<NativePublication>;
   readonly rehydrateExtensions?: (signal: AbortSignal) => Promise<CatalogRehydration>;
   readonly peers?: import("./product-peer-mailboxes.ts").ProductPeerMailboxes;
   readonly resolveAgentProvider?: import("../../application/runtime/delegated-agent-runtime.ts").DelegatedRuntimeOptions["resolveProvider"];
@@ -215,9 +221,14 @@ export async function composeProductShellAttachments(
 
   async function buildSession() {
     const sessionId = sessionIdCodec.from(`session-shell-${randomUUID()}`);
-    const extensions = await ports.rehydrateExtensions?.(
+    const native = await ports.publishNativePackages?.(
+      generation,
       ports.signal ?? new AbortController().signal,
     );
+    const extensions =
+      native === undefined
+        ? await ports.rehydrateExtensions?.(ports.signal ?? new AbortController().signal)
+        : { status: "ready" as const, catalog: native.catalog };
     if (extensions?.status === "failed") return null;
     const extensionCatalog =
       extensions === undefined
@@ -379,6 +390,13 @@ export async function composeProductShellAttachments(
                 : {}),
             })
         : composeProductAgentRuntime;
+    const initialTools =
+      productTools === null
+        ? null
+        : mergeProductToolBundles(generation, [
+            productTools,
+            ...(native === undefined ? [] : [native.tools]),
+          ]);
     const composed = compose({
       eventStore: ports.eventStore,
       clock: ports.clock,
@@ -391,13 +409,14 @@ export async function composeProductShellAttachments(
       },
       ...(providerAdapter === undefined ? {} : { providerAdapter }),
       ...(ports.toolConfirmation === undefined ? {} : { toolConfirmation: ports.toolConfirmation }),
-      ...(productTools === null
+      ...(initialTools === null
         ? {}
         : {
-            toolRegistry: productTools.registry,
-            capabilityRegistry: productTools.capabilityRegistry,
-            toolCatalog: productTools.catalog,
-            toolRunner: productTools.runner,
+            ...productToolHost(),
+            toolRegistry: initialTools.registry,
+            capabilityRegistry: initialTools.capabilityRegistry,
+            toolCatalog: initialTools.catalog,
+            toolRunner: initialTools.runner,
             sandbox,
           }),
     });
@@ -426,6 +445,7 @@ export async function composeProductShellAttachments(
             admission: memoryTools.admission,
             recall: memoryTools.recall,
           });
+    let publishedRuntime = composed.value;
     const executor = createProductLiveTurnExecutor({
       ...(extensionCatalog === undefined ? {} : { extensionCatalog }),
       ...(workspaceTools?.resources == null ? {} : { resources: workspaceTools.resources }),
@@ -434,6 +454,19 @@ export async function composeProductShellAttachments(
         : { modelConfigurationGeneration: ports.modelConfigurationGeneration }),
       ...(ports.modelPreferences === undefined ? {} : { modelPreferences: ports.modelPreferences }),
       runtime: composed.value,
+      ...(ports.publishNativePackages === undefined || productTools === null
+        ? {}
+        : {
+            async refreshRuntime(signal: AbortSignal) {
+              const publication = await ports.publishNativePackages?.(generation, signal);
+              if (!publication) throw new Error("native-publication-unavailable");
+              const tools = mergeProductToolBundles(generation, [productTools, publication.tools]);
+              const next = publishedRuntime.recomposeTools(tools);
+              if (!next.ok) throw new Error(next.error.code);
+              publishedRuntime = next.value;
+              return publishedRuntime;
+            },
+          }),
       clock: ports.clock,
       providerCatalog: ports.provider?.kind === "ready" ? ports.provider.session.catalog : null,
       ...(contextSource === undefined

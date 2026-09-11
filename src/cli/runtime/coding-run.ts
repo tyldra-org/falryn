@@ -1,4 +1,5 @@
 import { sandboxSummary } from "../../domain/security/sandbox.ts";
+import { productToolHost } from "./product-tool-host.ts";
 import { createProductSandbox } from "./sandbox-configuration.ts";
 /**
  * Headless `falryn run` coding command (#708).
@@ -665,12 +666,17 @@ export async function runCoding(
       "busy",
     );
     mainPeer = peer;
+    const extensions = await productArtifactSession.publishNativePackages(
+      generation,
+      options.signal ?? new AbortController().signal,
+    );
     const productTools =
       options.toolExposureOverride === "none"
         ? mergeProductToolBundles(generation, [])
         : mergeProductToolBundles(
             generation,
             [
+              extensions.tools,
               workspaceTools,
               processTools,
               scratchTools,
@@ -720,6 +726,7 @@ export async function runCoding(
           configurationGeneration: generation,
         },
         ...(providerAdapter !== undefined && providerAdapter !== null ? { providerAdapter } : {}),
+        ...productToolHost(),
         toolRegistry: productTools.registry,
         capabilityRegistry: productTools.capabilityRegistry,
         toolCatalog: productTools.catalog,
@@ -806,31 +813,6 @@ export async function runCoding(
             workspaceId,
             additionalCandidates: workspaceTools.contextCandidates,
           });
-    const extensions = await productArtifactSession.rehydrateExtensions(
-      options.signal ?? new AbortController().signal,
-    );
-    if (extensions.status === "failed")
-      return codingResult(
-        {
-          prompt: resolved.prompt,
-          sessionId: ids.sessionId,
-          turnId: null,
-          workspaceId: String(workspaceId),
-          stage: "compose-failed",
-          eventCount: 0,
-        },
-        [
-          adoptForeignError(
-            {
-              code: `extensions.${extensions.code}`,
-              category: "configuration",
-              message:
-                "The session catalog could not be reconciled. Inspect extension catalog state before retrying.",
-            },
-            { operation: "rehydrate extension catalog" },
-          ),
-        ],
-      );
     const executor = createProductLiveTurnExecutor({
       extensionCatalog: projectCatalogHistory(extensions.catalog, workspace.value.set),
       ...(workspaceTools.resources === null ? {} : { resources: workspaceTools.resources }),

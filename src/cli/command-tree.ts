@@ -351,7 +351,7 @@ function build(argv: readonly string[], lenientPositionals = false): ReturnType<
       )
       .command(
         lenientPositionals ? "package [action]" : "package <action>",
-        "Inspect or change installed packages, or explicitly check governed package health.",
+        "Inspect or change installed packages, activate qualified native tools, or check package health.",
         (group) =>
           group
             .positional("action", { type: "string", choices: PACKAGE_ACTIONS })

@@ -4,6 +4,7 @@ import { adoptForeignError } from "../../application/diagnostics/index.ts";
 import { createPackageLifecycle } from "../../application/extensions/package-lifecycle.ts";
 import { processProductResources } from "../../application/orchestration/product-resources.ts";
 import { createCatalogRepositories } from "../../data/extensions/catalog-repositories.ts";
+import { createNativeActivationRepository } from "../../data/extensions/native-activation-repository.ts";
 import { createPackageDataImportRepository } from "../../data/extensions/package-data-import-repository.ts";
 import { createPackageDataRepository } from "../../data/extensions/package-data-repository.ts";
 import { createPackageHealthRepository } from "../../data/extensions/package-health-repository.ts";
@@ -30,6 +31,7 @@ import { createHostPackageCache } from "../../integrations/extensions/host-packa
 import { createHostPackageSource } from "../../integrations/extensions/host-package-inspection.ts";
 import { openBunSqlite } from "../../integrations/index.ts";
 import type { CommandResultOf } from "../output/result.ts";
+import { composeNativePackages } from "../runtime/native-packages.ts";
 import { validatePackageConfigurationCandidate } from "../runtime/package-configuration-candidate.ts";
 import { inspectPackageConfiguration } from "../runtime/package-configuration-inspection.ts";
 import { runPackageDataControl, runPackageDataImport } from "../runtime/package-data.ts";
@@ -77,7 +79,11 @@ export async function runPackage(
   const task = processProductResources.openTask("package-lifecycle-v1");
   let receipt: PackageReceipt;
   try {
-    if (action === "health") receipt = await execute(signal);
+    if (request.nativeActivation && action !== "enable")
+      receipt = failure("invalid-native-activation-action");
+    else if (request.nativeRecovery && action !== "recover")
+      receipt = failure("invalid-native-recovery-action");
+    else if (action === "health") receipt = await execute(signal);
     else {
       const execution = await task.execute({
         operation: request.operationId,
@@ -185,7 +191,34 @@ export async function runPackage(
         { falryn: FALRYN_VERSION, bun: Bun.version, os: process.platform, arch: process.arch },
         (document, signal) => validatePackageConfigurationCandidate(resolved, document, signal),
       );
-      if (action === "health") {
+      if (
+        (action === "enable" && request.nativeActivation) ||
+        (action === "recover" && request.nativeRecovery)
+      ) {
+        await resolved.loader.load({
+          configurationRoot: resolved.configurationRoot,
+          legacyConfigurationRoot: resolved.legacyConfigurationRoot,
+          workspaceRoot: null,
+          profile: null,
+          overrides: {},
+        });
+        const native =
+          opened.kind === "open"
+            ? composeNativePackages({
+                services: resolved,
+                records: createCatalogRepositories(opened.store),
+                activations: createNativeActivationRepository(opened.store),
+                processes: createPackageHealthRepository(opened.store),
+              })
+            : null;
+        result =
+          native === null
+            ? failure("package-store-absent")
+            : await (action === "enable" ? native.activate : native.recover)(
+                request,
+                operationSignal,
+              );
+      } else if (action === "health") {
         result =
           opened.kind === "open"
             ? await runPackageHealth(

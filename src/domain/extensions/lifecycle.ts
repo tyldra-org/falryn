@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { Result } from "../foundation/result.ts";
 import { dependencyCandidateSchema } from "./dependencies.ts";
 import { digestSchema, identityText, packageIdentityV1Schema } from "./identity.ts";
+import { nativeActivationRequestSchema } from "./native-activation.ts";
 import { packageDataRequestSchema } from "./package-data-control.ts";
 import { type PackageDataDocument, packageDataDeclarationsSchema } from "./package-data-store.ts";
 import { packageHealthRequestSchema } from "./package-health.ts";
@@ -35,6 +36,8 @@ export const packageRequestSchema = z.strictObject({
   confirmation: digestSchema.optional(),
   data: packageDataRequestSchema.optional(),
   health: packageHealthRequestSchema.optional(),
+  nativeActivation: nativeActivationRequestSchema.optional(),
+  nativeRecovery: z.strictObject({ operation: z.string().uuid() }).optional(),
 });
 export type PackageRequest = z.infer<typeof packageRequestSchema>;
 export type PackageAction = (typeof PACKAGE_ACTIONS)[number];
@@ -69,7 +72,7 @@ export const packageReceiptSchema = z.strictObject({
   revision: z.int().nonnegative(),
   priorDigest: digestSchema.nullable(),
   currentDigest: digestSchema.nullable(),
-  activation: z.literal("unavailable"),
+  activation: z.enum(["unavailable", "enabled"]),
   confirmation: digestSchema.nullable(),
   retainedVersions: z.int().nonnegative(),
   pendingCleanup: z.int().nonnegative(),

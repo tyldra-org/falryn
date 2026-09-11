@@ -2,10 +2,18 @@ import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { bytesDigest } from "../../domain/extensions/canonical.ts";
 import { contributionDeclarationSchema } from "../../domain/extensions/manifest.ts";
-import { PACKAGE_HEALTH_PROTOCOL } from "../../domain/extensions/package-health.ts";
+import {
+  PACKAGE_HEALTH_PROTOCOL,
+  PACKAGE_TOOL_PROTOCOL,
+} from "../../domain/extensions/package-health.ts";
 
 /** A standalone native protocol peer. No package code is imported by Falryn. */
-export async function nativeHealthFixture(directory: string, mode = "healthy", target = "") {
+export async function nativeHealthFixture(
+  directory: string,
+  mode = "healthy",
+  target = "",
+  tool = false,
+) {
   const source = join(directory, "health.c"),
     output = join(directory, "health-peer");
   await writeFile(
@@ -40,7 +48,9 @@ int main(int argc,char **argv) {
     if(n<2 || line[n-1]!='}') return 30;
     if(argc>1 && strcmp(argv[1],"forged")==0) { puts("{\\"protocol\\":\\"forged\\"}"); continue; }
     if(argc>1 && strcmp(argv[1],"wrong-binding")==0) { char *digest=strstr(line,"sha256:"); if(digest) digest[7]=digest[7]=='a'?'b':'a'; }
-    printf("%.*s,\\"result\\":\\"ok\\"}\\n",(int)n-1,line);
+    char *input=strstr(line,",\\"input\\":");
+    if(input) { *input='\\0'; printf("%s,\\"result\\":{\\"answer\\":42}}\\n",line); }
+    else printf("%.*s,\\"result\\":\\"ok\\"}\\n",(int)n-1,line);
   }
   return 0;
 }
@@ -62,8 +72,22 @@ int main(int argc,char **argv) {
     id: "health",
     description: "Native health fixture",
     family: "read",
-    inputSchema: { type: "object" },
-    outputSchema: { type: "object" },
+    inputSchema: tool
+      ? {
+          type: "object",
+          properties: { question: { type: "string", maxLength: 128 } },
+          required: ["question"],
+          additionalProperties: false,
+        }
+      : { type: "object" },
+    outputSchema: tool
+      ? {
+          type: "object",
+          properties: { answer: { type: "integer" } },
+          required: ["answer"],
+          additionalProperties: false,
+        }
+      : { type: "object" },
     authority: {
       effects: ["observation"],
       permissions: [],
@@ -77,7 +101,7 @@ int main(int argc,char **argv) {
       executable: "health-peer",
       argv: [mode, target],
       loader: "native",
-      protocolVersion: PACKAGE_HEALTH_PROTOCOL,
+      protocolVersion: tool ? PACKAGE_TOOL_PROTOCOL : PACKAGE_HEALTH_PROTOCOL,
       compatibility: { os: ["darwin"], arch: ["arm64"] },
       resources: {
         startupMs: 1000,
