@@ -211,6 +211,32 @@ export function composeExtensionCatalog(options: {
     }
   }
   return {
+    async healthAuthority(
+      installed: InstalledPackage,
+      contribution: string | null,
+      signal: AbortSignal,
+    ) {
+      const refreshed = await rehydrator.refresh(signal);
+      const trusted = await trust(installed);
+      const entries =
+        refreshed.status === "rehydrated"
+          ? refreshed.catalog.entries.filter(
+              (entry) =>
+                entry.source.kind === "package" &&
+                entry.source.owner.packageId === installed.packageId &&
+                (contribution === null || canonicalDigest(entry.contribution) === contribution),
+            )
+          : [];
+      return {
+        trusted: trusted.trust === "accepted",
+        enabled: entries.some((entry) => entry.enabled),
+        catalogGeneration: refreshed.status === "rehydrated" ? refreshed.catalog.generation : 0,
+        inputs: canonicalDigest({
+          trust: trusted.inputs,
+          catalog: refreshed.status === "rehydrated" ? refreshed.catalog.inputs : refreshed.code,
+        }),
+      };
+    },
     current: rehydrator.current,
     refresh(signal: AbortSignal): Promise<CatalogRehydration> {
       return bounded("catalog-rehydrate", false, signal, (admitted) =>

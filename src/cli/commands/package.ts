@@ -3,8 +3,10 @@ import { z } from "zod";
 import { adoptForeignError } from "../../application/diagnostics/index.ts";
 import { createPackageLifecycle } from "../../application/extensions/package-lifecycle.ts";
 import { processProductResources } from "../../application/orchestration/product-resources.ts";
+import { createCatalogRepositories } from "../../data/extensions/catalog-repositories.ts";
 import { createPackageDataImportRepository } from "../../data/extensions/package-data-import-repository.ts";
 import { createPackageDataRepository } from "../../data/extensions/package-data-repository.ts";
+import { createPackageHealthRepository } from "../../data/extensions/package-health-repository.ts";
 import { createPackageLifecycleRepository } from "../../data/extensions/package-lifecycle-repository.ts";
 import {
   openSqliteStore,
@@ -19,6 +21,7 @@ import type {
   PackageReceipt,
   PackageRequest,
 } from "../../domain/extensions/lifecycle.ts";
+import { packageHealthResultSchema } from "../../domain/extensions/package-health.ts";
 import { recoveryForEffect } from "../../domain/foundation/index.ts";
 import { err, ok } from "../../domain/foundation/result.ts";
 import { conflictKey, NO_RETRY, workUnitId } from "../../domain/orchestration/work.ts";
@@ -30,6 +33,7 @@ import type { CommandResultOf } from "../output/result.ts";
 import { validatePackageConfigurationCandidate } from "../runtime/package-configuration-candidate.ts";
 import { inspectPackageConfiguration } from "../runtime/package-configuration-inspection.ts";
 import { runPackageDataControl, runPackageDataImport } from "../runtime/package-data.ts";
+import { runPackageHealth } from "../runtime/package-health.ts";
 import type { ServiceProvider } from "../runtime/services.ts";
 import { FALRYN_VERSION } from "../version.ts";
 import { resultFor } from "./shared.ts";
@@ -73,40 +77,47 @@ export async function runPackage(
   const task = processProductResources.openTask("package-lifecycle-v1");
   let receipt: PackageReceipt;
   try {
-    const execution = await task.execute({
-      operation: request.operationId,
-      attempt: "1",
-      generation: task.generation,
-      inputBytes: JSON.stringify(request).length,
-      amounts: { operations: 1, concurrency: 1, memoryBytes: 201_326_592 },
-      signal,
-      unit: {
-        id: workUnitId(request.operationId),
-        effect: request.confirmation === undefined ? "observation" : "mutation",
-        priority: "interactive",
-        conflictKeys: [conflictKey("package", request.packageId)],
-        dependencies: [],
-        deadline: null,
-        expectedOutputBytes: 16_384,
-        retry: NO_RETRY,
-        scopeId: null,
-      },
-      async run(admittedSignal) {
-        return { value: await execute(admittedSignal), terminated: true };
-      },
-    });
-    receipt = execution.kind === "completed" ? execution.value : failure(execution.receipt.state);
+    if (action === "health") receipt = await execute(signal);
+    else {
+      const execution = await task.execute({
+        operation: request.operationId,
+        attempt: "1",
+        generation: task.generation,
+        inputBytes: JSON.stringify(request).length,
+        amounts: { operations: 1, concurrency: 1, memoryBytes: 201_326_592 },
+        signal,
+        unit: {
+          id: workUnitId(request.operationId),
+          effect: request.confirmation === undefined ? "observation" : "mutation",
+          priority: "interactive",
+          conflictKeys: [conflictKey("package", request.packageId)],
+          dependencies: [],
+          deadline: null,
+          expectedOutputBytes: 16_384,
+          retry: NO_RETRY,
+          scopeId: null,
+        },
+        async run(admittedSignal) {
+          return { value: await execute(admittedSignal), terminated: true };
+        },
+      });
+      receipt = execution.kind === "completed" ? execution.value : failure(execution.receipt.state);
+    }
   } catch {
     receipt = failure("package-store-unavailable");
   } finally {
     task.close();
   }
+  const healthResult =
+    action === "health" ? packageHealthResultSchema.safeParse(receipt.data) : null;
   const observed =
     receipt.status === "uncertain"
       ? "uncertain"
       : receipt.status === "partial"
         ? "partial"
-        : receipt.dataEffect === "completed" || receipt.revision > receipt.priorRevision
+        : receipt.dataEffect === "completed" ||
+            receipt.revision > receipt.priorRevision ||
+            (healthResult?.success && healthResult.data.pid !== null)
           ? "completed"
           : "none";
   const errors =
@@ -147,6 +158,7 @@ export async function runPackage(
       opened.kind === "absent" &&
       request.confirmation !== undefined &&
       action !== "inspect" &&
+      action !== "health" &&
       action !== "enable"
     ) {
       const roots = await resolved.localData.prepareRoots(["state"], operationSignal);
@@ -173,7 +185,21 @@ export async function runPackage(
         { falryn: FALRYN_VERSION, bun: Bun.version, os: process.platform, arch: process.arch },
         (document, signal) => validatePackageConfigurationCandidate(resolved, document, signal),
       );
-      if (action === "data") {
+      if (action === "health") {
+        result =
+          opened.kind === "open"
+            ? await runPackageHealth(
+                resolved,
+                {
+                  catalog: createCatalogRepositories(opened.store),
+                  health: createPackageHealthRepository(opened.store),
+                },
+                task,
+                request,
+                operationSignal,
+              )
+            : failure("package-store-absent");
+      } else if (action === "data") {
         if (opened.kind !== "open") {
           const preview = runPackageDataImport(
             { read: () => ok(null), save: () => err({ code: "package-store-absent" }) },

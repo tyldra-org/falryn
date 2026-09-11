@@ -510,7 +510,7 @@ leave prior evidence intact; inspect the failure before retrying. A signed
 withdrawal needs a higher sequence and does not restore an old approval.
 
 `falryn package <action> --input <request.json>` implements local package
-installation transactions. Actions are `inspect`, `data`, `install`, `update`,
+installation transactions and explicit health checks. Actions are `inspect`, `data`, `health`, `install`, `update`,
 `rollback`, `disable`, `uninstall`, `recover`, and `enable`. Every request names
 `packageId`, a UUID `operationId`, and `expectedRevision`. Install/update also
 name `sourcePath`; rollback names a previously returned `versionDigest`.
@@ -550,6 +550,30 @@ Package cache files retain exact source bytes and are not redacted artifacts.
 SQLite-only backups and session exports do not include those bytes or confer
 package authority. Removing the state root removes both lifecycle records and
 its package cache. Older binaries require a compatible database backup.
+
+`falryn package health --input request.json` explicitly checks one installed
+contribution selected by its exact digest in `health.contribution`. Trust, scoped
+enablement, installed revisions and locked dependency compatibility are checked
+before confirmation and each protocol request. Preview starts no code. Confirmed
+health uses the product resource owner and the qualified macOS arm64 strict
+sandbox with package reads and its fixed system-runtime read allowance, no
+writes, network or children, and an empty environment. Other hosts, loaders, module services and full-user execution remain
+unavailable. Required CPU or memory controls, including inherited limits, refuse
+admission because the native profile cannot enforce them.
+
+The native `falryn-package-health/1` JSON-line peer handles initialization, two
+health requests on the same child, and shutdown. Frames bind exact attempt,
+package, contribution, generation and request identities. Output is capped at
+64 KiB, frames at 16 KiB, requests at five seconds and the whole attempt at
+30 seconds. Durable occupancy allows four unresolved attempts per state store
+and one per package; three failed attempts quarantine the exact generation.
+Migration 0023 records launch intent, process birth and terminal facts. Reusing
+an operation ID returns its receipt without execution. `health.recover: true`
+previews identity-checked cleanup for that same operation; unknown birth evidence
+keeps replacement fenced. Results report termination, retained files, uncertainty
+and timings without raw child output, argv, credentials or recovery paths.
+Source and compiled CLI journeys cover successful, hostile and cancelled peers.
+Health never enables native catalog bindings or automatic model invocation.
 
 `falryn package data --input request.json` exposes version-1 host-owned
 configuration and state operations. Its outer request binds the installed package

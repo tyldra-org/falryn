@@ -19,12 +19,14 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { pluginManifest } from "./application/extensions/package-fixtures.ts";
 import { packageCliJourney } from "./cli/commands/package-fixtures.ts";
+import { packageHealthCliJourney } from "./cli/commands/package-health-fixtures.ts";
 import { peerCliJourney } from "./cli/commands/peer-fixtures.ts";
 import { CLI_SCHEMA_FAMILY, EXIT_CODES, FALRYN_VERSION, readCliStream } from "./cli/index.ts";
 import { MIGRATION_TABLE, PRODUCT_SCHEMA_VERSION, PRODUCT_TABLES } from "./data/index.ts";
 import { createStaticEnvironment } from "./domain/foundation/index.ts";
 import { type LocalPath, localPath } from "./domain/workspace/index.ts";
 import { openBunSqlite } from "./integrations/index.ts";
+import { createHostSandbox } from "./integrations/security/host-sandbox.ts";
 import { main } from "./main.ts";
 
 /**
@@ -174,6 +176,15 @@ function spawnCompiled(
 }
 
 describe.if(built)("the standalone executable", () => {
+  test.skipIf(createHostSandbox().probe().status !== "available")(
+    "governed package health and replay cross the compiled command boundary",
+    async () => {
+      await packageHealthCliJourney([EXECUTABLE], await temporaryRoot());
+      await packageHealthCliJourney([EXECUTABLE], await temporaryRoot(), "hostile");
+      await packageHealthCliJourney([EXECUTABLE], await temporaryRoot(), "cancel");
+    },
+    30_000,
+  );
   test("peer mailbox receipts and replay survive compiled command restarts", async () => {
     await peerCliJourney([EXECUTABLE], await temporaryRoot());
   }, 30_000);
