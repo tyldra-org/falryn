@@ -1066,8 +1066,11 @@ describe("runCoding", () => {
             effect: "mutation",
             dependencies: ["apply"],
             input: {
-              executable: literal("/bin/sh"),
-              argv: literal(["-c", 'test "$(cat a.ts)" = new-a && test "$(cat b.ts)" = new-b']),
+              executable: literal(process.execPath),
+              argv: literal([
+                "-e",
+                'const a = await Bun.file("a.ts").text(); const b = await Bun.file("b.ts").text(); process.exit(a === "new-a\\n" && b === "new-b\\n" ? 0 : 1);',
+              ]),
               outputMode: literal("raw"),
             },
             resultPath: ["process", "exitCode"],
