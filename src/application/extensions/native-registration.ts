@@ -133,7 +133,8 @@ export function createNativeRegistrationPublisher(owners: readonly NativeRegistr
           registered.binding.nativeRegistryGeneration !== Number(input.generation) ||
           (entry.contribution.nativeKind === "tool" && registered.tool === undefined) ||
           (registered.tool !== undefined &&
-            registered.tool.runner.hasBinding?.(registered.tool.entry.manifest.capabilityId) !== true) ||
+            registered.tool.runner.hasBinding?.(registered.tool.entry.manifest.capabilityId) !==
+              true) ||
           (registered.tool !== undefined &&
             (entry.contribution.nativeKind !== "tool" ||
               registered.tool.entry.manifest.capabilityId !== registered.binding.actionId))
