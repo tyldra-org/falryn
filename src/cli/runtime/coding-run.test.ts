@@ -4,7 +4,7 @@
  */
 
 import { afterEach, describe, expect, test } from "bun:test";
-import { chmod, mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { sealedAgentResultSchema } from "../../application/orchestration/delegation-contract.ts";
@@ -885,6 +885,570 @@ describe("runCoding", () => {
     });
     expect(recovered.ok && recovered.value.text).toBe("durable loom payload");
     await second.close();
+  });
+
+  test("executes a generated native workflow through the real gateway without relay model turns", async () => {
+    const seeded = await seededHome();
+    await writeFile(
+      join(seeded.primary, "workflow-evidence.ts"),
+      "export const evidence = true;\n",
+    );
+    const services = providerFor(seeded)(globalsFor(seeded));
+    const requests: ModelRequest[] = [];
+    const handle = { id: "native-workflow", generation: "generation-1" };
+    const definition = {
+      version: 1,
+      id: "user/generated:native",
+      label: "Inspect workspace",
+      argumentsSchema: { type: "object", properties: {}, additionalProperties: false },
+      nodes: [
+        {
+          key: "list",
+          kind: "action",
+          capability: "builtin:workspace/list_dir@1",
+          effect: "observation",
+          input: { path: { from: "literal", value: "." } },
+          resultPath: ["entries", 0, "logical"],
+          resultSchema: { type: "string" },
+        },
+        {
+          key: "stat",
+          kind: "action",
+          capability: "builtin:workspace/stat_path@1",
+          effect: "observation",
+          dependencies: ["list"],
+          input: { path: { from: "node", node: "list" } },
+          resultPath: ["byteLength"],
+          resultSchema: { type: "number" },
+        },
+      ],
+      outputs: { fileSize: { from: "node", node: "stat" } },
+    };
+    const adapter = createDeterministicProviderAdapter({
+      onRequest: (request) => requests.push(request),
+      script: (_request, index) =>
+        index === 0
+          ? {
+              kind: "tool",
+              name: "workflow",
+              toolCallId: "execute-workflow",
+              argumentFragments: [
+                JSON.stringify({
+                  operation: "execute",
+                  handle,
+                  definitionJson: JSON.stringify(definition),
+                  argumentsJson: "{}",
+                }),
+              ],
+            }
+          : { kind: "text", text: "Inspected through the workflow." },
+    });
+    const result = await runCoding(
+      services,
+      { promptParts: ["Execute a workflow to inspect the workspace directory"] },
+      {
+        input: createRecordingCliStreams({ stdin: null }).input,
+        globals: globalsFor(seeded),
+        providerAdapter: adapter,
+        identities: {
+          sessionId: "workflow-native-session",
+          turnId: "workflow-native-turn",
+          traceId: "workflow-native-trace",
+        },
+      },
+    );
+    const messages = JSON.stringify(
+      requests.flatMap((request) => request.messages.filter((message) => message.role === "tool")),
+    );
+    const diagnostic = await openProductArtifactSession(services());
+    const observed = diagnostic
+      ? await diagnostic.eventStore.readFrom(
+          { streamId: streamId.from("live-turn:workflow-native-session"), afterSequence: null },
+          100,
+        )
+      : null;
+    const checkpoint = diagnostic?.workflows.get(handle);
+    await diagnostic?.close();
+    expect(result.outcome.kind, JSON.stringify({ checkpoint, observed })).toBe("completed");
+    expect(checkpoint, JSON.stringify(checkpoint)).toMatchObject({
+      ok: true,
+      value: { state: "completed" },
+    });
+    expect(requests, messages).toHaveLength(2);
+    expect(messages).toContain("workflow-run");
+    const reopened = await openProductArtifactSession(services());
+    if (!reopened) throw new Error("workflow fixture persistence unavailable");
+    try {
+      const record = reopened.workflows.get(handle);
+      expect(record, messages).toMatchObject({ ok: true, value: { state: "completed" } });
+      if (!record.ok) return;
+      expect(record.value.nodes).toHaveLength(2);
+      expect(record.value.nodes[0]).toMatchObject({
+        template: "list",
+        attempts: 1,
+        state: "completed",
+      });
+      expect(record.value.task).not.toBeNull();
+    } finally {
+      await reopened.close();
+    }
+  });
+
+  test("workflow search and parallel reads feed one revision-bound patch; an intervening writer blocks checks", async () => {
+    for (const changed of [false, true]) {
+      const seeded = await seededHome();
+      await writeFile(join(seeded.primary, "a.ts"), "old-a\n");
+      await writeFile(join(seeded.primary, "b.ts"), "old-b\n");
+      const services = providerFor(seeded)(globalsFor(seeded));
+      const requests: ModelRequest[] = [];
+      const confirmations: string[] = [];
+      const literal = (value: unknown) => ({ from: "literal", value });
+      const targets = ["a", "b"].map((name) => ({
+        path: `${name}.ts`,
+        hunks: [{ oldStart: 1, oldLines: [`old-${name}`], newLines: [`new-${name}`] }],
+      }));
+      const action = {
+        kind: "action",
+        effect: "observation",
+        resultSchema: { type: "string" },
+      };
+      const handle = { id: "patch-workflow", generation: "one" };
+      const definition = {
+        version: 1,
+        id: "user/generated:patch",
+        label: "Inspect, patch and check",
+        argumentsSchema: { type: "object", properties: {}, additionalProperties: false },
+        nodes: [
+          {
+            ...action,
+            key: "search",
+            capability: "builtin:workspace/search_text@1",
+            input: { query: literal("old-a"), path: literal(".") },
+            resultPath: ["matches", 0, "logical"],
+          },
+          {
+            ...action,
+            key: "read-a",
+            capability: "builtin:workspace/read_file@1",
+            dependencies: ["search"],
+            input: { path: { from: "node", node: "search" } },
+            resultPath: ["digest"],
+          },
+          {
+            ...action,
+            key: "read-b",
+            capability: "builtin:workspace/read_file@1",
+            input: { path: literal("b.ts") },
+            resultPath: ["digest"],
+          },
+          {
+            ...action,
+            key: "preview",
+            capability: "builtin:workspace/preview_patch@1",
+            dependencies: ["read-a", "read-b"],
+            input: { targets: literal(targets) },
+            resultPath: ["planId"],
+          },
+          {
+            ...action,
+            key: "apply",
+            capability: "builtin:workspace/apply_patch@1",
+            effect: "mutation",
+            dependencies: ["preview"],
+            input: { targets: literal(targets), expectedPlanId: { from: "node", node: "preview" } },
+            resultPath: ["items", 0, "status"],
+            resultSchema: { type: "string", enum: ["applied"] },
+          },
+          {
+            ...action,
+            key: "check",
+            capability: "builtin:workspace/run_process@1",
+            effect: "mutation",
+            dependencies: ["apply"],
+            input: {
+              executable: literal(process.execPath),
+              argv: literal([
+                "-e",
+                'const a = await Bun.file("a.ts").text(); const b = await Bun.file("b.ts").text(); process.exit(a === "new-a\\n" && b === "new-b\\n" ? 0 : 1);',
+              ]),
+              outputMode: literal("raw"),
+            },
+            resultPath: ["process", "exitCode"],
+            resultSchema: { type: "integer", enum: [0] },
+          },
+        ],
+        outputs: { exitCode: { from: "node", node: "check" } },
+      };
+      const adapter = createDeterministicProviderAdapter({
+        onRequest: (request) => requests.push(request),
+        script: (_request, index) =>
+          index === 0
+            ? {
+                kind: "tool",
+                name: "workflow",
+                toolCallId: "workflow-patch",
+                argumentFragments: [
+                  JSON.stringify({
+                    operation: "execute",
+                    handle,
+                    definitionJson: JSON.stringify(definition),
+                    argumentsJson: "{}",
+                  }),
+                ],
+              }
+            : { kind: "text", text: "The native workflow settled." },
+      });
+      const result = await runCoding(
+        services,
+        {
+          promptParts: [
+            "Execute a workflow to search, read, preview and apply a patch, then run checks",
+          ],
+        },
+        {
+          input: createRecordingCliStreams({ stdin: null }).input,
+          globals: globalsFor(seeded),
+          providerAdapter: adapter,
+          toolConfirmation: {
+            async resolve(request) {
+              confirmations.push(request.toolName);
+              if (changed && request.toolName === "apply_patch")
+                await writeFile(join(seeded.primary, "a.ts"), "another-writer\n");
+              return { kind: "confirmed", confirmationId: request.confirmationId };
+            },
+          },
+        },
+      );
+      expect(result.outcome.kind).toBe("completed");
+      const session = await openProductArtifactSession(services());
+      if (!session) throw new Error("Missing workflow store");
+      try {
+        const checkpoint = session.workflows.get(handle);
+        expect(checkpoint, JSON.stringify(checkpoint)).toMatchObject({
+          ok: true,
+          value: { state: changed ? "failed" : "completed" },
+        });
+        if (!checkpoint.ok) return;
+        expect(checkpoint.value.nodes.find((node) => node.key === "check")).toMatchObject({
+          state: changed ? "skipped" : "completed",
+        });
+        expect(
+          checkpoint.value.nodes
+            .filter((node) => node.attempts > 0)
+            .every((node) => node.attempts === 1),
+        ).toBe(true);
+      } finally {
+        await session.close();
+      }
+      expect(requests).toHaveLength(2);
+      expect(confirmations).toEqual(changed ? ["apply_patch"] : ["apply_patch", "run_process"]);
+      expect(await readFile(join(seeded.primary, "a.ts"), "utf8")).toBe(
+        changed ? "another-writer\n" : "new-a\n",
+      );
+      expect(await readFile(join(seeded.primary, "b.ts"), "utf8")).toBe(
+        changed ? "old-b\n" : "new-b\n",
+      );
+    }
+  });
+
+  test("workflow mutations use the native confirmation once and preserve it across dependent inspection", async () => {
+    for (const confirmed of [true, false]) {
+      const seeded = await seededHome();
+      const services = providerFor(seeded)(globalsFor(seeded));
+      const requests: ModelRequest[] = [];
+      const confirmations: string[] = [];
+      const handle = { id: "write-workflow", generation: "one" };
+      const definition = {
+        version: 1,
+        id: "user/generated:write",
+        label: "Write and inspect",
+        argumentsSchema: { type: "object", properties: {}, additionalProperties: false },
+        nodes: [
+          {
+            key: "write",
+            kind: "action",
+            capability: "builtin:workspace/write_files@1",
+            effect: "mutation",
+            input: {
+              targets: {
+                from: "literal",
+                value: [
+                  {
+                    kind: "create",
+                    path: "workflow-created.ts",
+                    text: "export const created = true;\n",
+                  },
+                ],
+              },
+            },
+            resultPath: ["items", 0, "byteLength"],
+            resultSchema: { type: "number" },
+          },
+          {
+            key: "stat",
+            kind: "action",
+            capability: "builtin:workspace/stat_path@1",
+            effect: "observation",
+            dependencies: ["write"],
+            input: { path: { from: "literal", value: "workflow-created.ts" } },
+            resultPath: ["byteLength"],
+            resultSchema: { type: "number" },
+          },
+        ],
+        outputs: {
+          written: { from: "node", node: "write" },
+          inspected: { from: "node", node: "stat" },
+        },
+      };
+      const adapter = createDeterministicProviderAdapter({
+        onRequest: (request) => requests.push(request),
+        script: (_request, index) =>
+          index === 0
+            ? {
+                kind: "tool",
+                name: "workflow",
+                toolCallId: "workflow-write",
+                argumentFragments: [
+                  JSON.stringify({
+                    operation: "execute",
+                    handle,
+                    definitionJson: JSON.stringify(definition),
+                    argumentsJson: "{}",
+                  }),
+                ],
+              }
+            : { kind: "text", text: "Created and inspected." },
+      });
+      const result = await runCoding(
+        services,
+        {
+          promptParts: ["Execute a workflow to write files and inspect their size with stat path"],
+        },
+        {
+          input: createRecordingCliStreams({ stdin: null }).input,
+          globals: globalsFor(seeded),
+          providerAdapter: adapter,
+          toolConfirmation: {
+            async resolve(request) {
+              confirmations.push(request.toolName);
+              return confirmed
+                ? { kind: "confirmed", confirmationId: request.confirmationId }
+                : { kind: "refused" };
+            },
+          },
+        },
+      );
+      expect(result.outcome.kind).toBe("completed");
+      expect(
+        confirmations,
+        JSON.stringify(
+          requests.flatMap((request) =>
+            request.messages.filter((message) => message.role === "tool"),
+          ),
+        ),
+      ).toEqual(["write_files"]);
+      if (confirmed)
+        expect(await readFile(join(seeded.primary, "workflow-created.ts"), "utf8")).toBe(
+          "export const created = true;\n",
+        );
+      else expect(await readdir(seeded.primary)).not.toContain("workflow-created.ts");
+      expect(requests).toHaveLength(2);
+      const session = await openProductArtifactSession(services());
+      if (!session) throw new Error("Missing session");
+      try {
+        expect(session.workflows.get(handle)).toMatchObject({
+          ok: true,
+          value: {
+            state: confirmed ? "completed" : "failed",
+            nodes: [
+              {
+                state: confirmed ? "completed" : "failed",
+                effect: confirmed ? "completed" : "none",
+                attempts: 1,
+              },
+              { state: confirmed ? "completed" : "skipped", attempts: confirmed ? 1 : 0 },
+            ],
+          },
+        });
+      } finally {
+        await session.close();
+      }
+    }
+  });
+
+  test("headless workflow questions return durable waiting receipts without requesting generic approval", async () => {
+    const seeded = await seededHome();
+    const services = providerFor(seeded)(globalsFor(seeded));
+    const requests: ModelRequest[] = [];
+    const handle = { id: "waiting-workflow", generation: "one" };
+    const definition = {
+      version: 1,
+      id: "user/generated:waiting",
+      label: "Choose",
+      argumentsSchema: { type: "object", properties: {}, additionalProperties: false },
+      outputs: {},
+      nodes: [
+        {
+          key: "question",
+          kind: "question",
+          resultPath: ["state"],
+          resultSchema: { type: "string" },
+          request: {
+            items: [
+              {
+                id: "choice",
+                kind: "single-select",
+                prompt: "Choose a value",
+                options: [
+                  { id: "a", label: "One" },
+                  { id: "b", label: "Two" },
+                ],
+              },
+            ],
+            sensitivity: "normal",
+            retention: "answer",
+            waitMs: 15000,
+            missingPresenter: "wait",
+          },
+        },
+      ],
+    };
+    const adapter = createDeterministicProviderAdapter({
+      onRequest: (request) => requests.push(request),
+      script: (_request, index) =>
+        index === 0
+          ? {
+              kind: "tool",
+              name: "workflow",
+              toolCallId: "workflow-question",
+              argumentFragments: [
+                JSON.stringify({
+                  operation: "execute",
+                  handle,
+                  definitionJson: JSON.stringify(definition),
+                  argumentsJson: "{}",
+                }),
+              ],
+            }
+          : { kind: "text", text: "The workflow is waiting for your answer." },
+    });
+    const result = await runCoding(
+      services,
+      { promptParts: ["Execute a workflow with a structured question"] },
+      {
+        input: createRecordingCliStreams({ stdin: null }).input,
+        globals: globalsFor(seeded),
+        providerAdapter: adapter,
+      },
+    );
+    expect(result.outcome.kind).toBe("completed");
+    expect(requests).toHaveLength(2);
+    const session = await openProductArtifactSession(services());
+    if (!session) throw new Error("Missing session");
+    try {
+      const current = session.workflows.get(handle);
+      expect(current).toMatchObject({
+        ok: true,
+        value: { state: "waiting", nodes: [{ state: "waiting", attempts: 1 }] },
+      });
+      if (current.ok) {
+        expect(current.value.nodes[0]?.question).not.toBeNull();
+        if (!current.value.task) throw new Error("Missing workflow task");
+        expect(session.joins.task(current.value.task)).toMatchObject({
+          ok: true,
+          value: { state: "terminal" },
+        });
+      }
+    } finally {
+      await session.close();
+    }
+  });
+
+  test("runs model and registered agent nodes through their ordinary runtimes", async () => {
+    const seeded = await seededHome();
+    const requests: ModelRequest[] = [];
+    const services = providerFor(seeded)(globalsFor(seeded));
+    const handle = { id: "mixed-workflow", generation: "one" };
+    const definition = {
+      version: 1,
+      id: "user/generated:mixed",
+      label: "Interpret and review",
+      argumentsSchema: { type: "object", properties: {}, additionalProperties: false },
+      nodes: [
+        {
+          key: "interpret",
+          kind: "model",
+          instruction: "Return the JSON string verified.",
+          resultSchema: { type: "string" },
+        },
+        {
+          key: "review",
+          kind: "agent",
+          agentId: "builtin/falryn/agents:explorer",
+          dependencies: ["interpret"],
+          input: { objective: { from: "node", node: "interpret" } },
+          capabilities: [],
+          effects: ["observation"],
+          resultPath: ["findings"],
+          resultSchema: { type: "array", items: { type: "string" } },
+        },
+      ],
+      outputs: { findings: { from: "node", node: "review" } },
+    };
+    const adapter = createDeterministicProviderAdapter({
+      onRequest: (request) => requests.push(request),
+      script: (_request, index) => {
+        if (index === 0)
+          return {
+            kind: "tool",
+            name: "workflow",
+            toolCallId: "mixed-workflow",
+            argumentFragments: [
+              JSON.stringify({
+                operation: "execute",
+                handle,
+                definitionJson: JSON.stringify(definition),
+                argumentsJson: "{}",
+              }),
+            ],
+          };
+        if (index === 1) return { kind: "text", text: '"verified"' };
+        if (index === 2)
+          return {
+            kind: "text",
+            text: JSON.stringify({
+              locations: [],
+              flow: [],
+              findings: ["Reviewed input"],
+              unknowns: [],
+            }),
+          };
+        return { kind: "text", text: "Workflow settled." };
+      },
+    });
+    const result = await runCoding(
+      services,
+      { promptParts: ["Execute a workflow with a model step and an Explorer review"] },
+      {
+        input: createRecordingCliStreams({ stdin: null }).input,
+        globals: globalsFor(seeded),
+        providerAdapter: adapter,
+      },
+    );
+    const reopened = await openProductArtifactSession(services());
+    if (!reopened) throw new Error("workflow fixture persistence unavailable");
+    try {
+      const record = reopened.workflows.get(handle);
+      expect(record, JSON.stringify({ record, requests, result })).toMatchObject({
+        ok: true,
+        value: { state: "completed" },
+      });
+      expect(requests).toHaveLength(4);
+      expect(requests[1]?.tools).toHaveLength(0);
+      expect(record.ok && record.value.nodes.map((node) => node.attempts)).toEqual([1, 1]);
+    } finally {
+      await reopened.close();
+    }
   });
 
   test("delegates from the main model through a real child tool and seals its evidence", async () => {

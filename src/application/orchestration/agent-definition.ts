@@ -1,5 +1,9 @@
 /** Inert agent definitions. Registration never authorizes execution. */
 import { z } from "zod";
+import { definitionValueSchema as jsonSchema } from "../../domain/orchestration/definition-values.ts";
+
+export { validateDefinitionValue as validateAgentValue } from "../../domain/orchestration/definition-values.ts";
+
 import {
   canonicalDigest,
   canonicalJson,
@@ -18,62 +22,6 @@ import { roleRouteBaseSchema } from "../../providers/configuration/policy-schema
 export const MAX_AGENT_CONTEXT_BYTES = 64 * 1024;
 export const MAX_AGENT_RESULT_BYTES = 64 * 1024;
 export const MAX_AGENT_STEERING_BYTES = 8 * 1024;
-
-/** The bounded JSON Schema subset accepted by definitions; executable expressions are excluded. */
-const jsonSchema = z.record(z.string(), z.json()).superRefine((value, context) => {
-  let nodes = 0;
-  const visit = (schema: unknown, depth: number): boolean => {
-    if (
-      ++nodes > 256 ||
-      depth > 16 ||
-      schema === null ||
-      typeof schema !== "object" ||
-      Array.isArray(schema)
-    )
-      return false;
-    const item = schema as Record<string, unknown>;
-    const keys = new Set([
-      "type",
-      "properties",
-      "required",
-      "additionalProperties",
-      "items",
-      "enum",
-      "description",
-      "minLength",
-      "maxLength",
-      "minimum",
-      "maximum",
-      "minItems",
-      "maxItems",
-    ]);
-    if (Object.keys(item).some((key) => !keys.has(key))) return false;
-    if (
-      !["object", "array", "string", "number", "integer", "boolean", "null"].includes(
-        String(item.type),
-      )
-    )
-      return false;
-    if (item.type === "object") {
-      if (
-        item.additionalProperties !== false ||
-        item.properties === null ||
-        typeof item.properties !== "object" ||
-        Array.isArray(item.properties)
-      )
-        return false;
-      if (!Object.values(item.properties).every((child) => visit(child, depth + 1))) return false;
-    }
-    return item.type !== "array" || visit(item.items, depth + 1);
-  };
-  try {
-    if (Buffer.byteLength(canonicalJson(value)) > MAX_AGENT_CONTEXT_BYTES || !visit(value, 0))
-      throw new Error("invalid");
-    z.fromJSONSchema(value);
-  } catch {
-    context.addIssue({ code: "custom", message: "unsupported-or-unbounded-agent-schema" });
-  }
-});
 
 export const agentDefinitionSchema = z.strictObject({
   version: z.literal(1),
@@ -137,21 +85,6 @@ export function decodeAgentDefinition(
     };
   } catch {
     return { ok: false, code: "invalid-agent-definition" };
-  }
-}
-
-export function validateAgentValue(
-  schema: AgentDefinition["inputSchema"],
-  value: unknown,
-  maximum: number,
-): boolean {
-  try {
-    return (
-      Buffer.byteLength(canonicalJson(value)) <= maximum &&
-      z.fromJSONSchema(schema).safeParse(value).success
-    );
-  } catch {
-    return false;
   }
 }
 

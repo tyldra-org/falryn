@@ -438,7 +438,7 @@ export function createDelegation(options: DelegationOptions) {
         return {
           outcome: completed(result),
           capture: null,
-          agentTerminal: { outcome: result.outcome, effect: result.effect },
+          executionTerminal: { outcome: result.outcome, effect: result.effect },
         };
       },
     });

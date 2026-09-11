@@ -26,6 +26,10 @@ import {
   createStructuredQuestions,
   type StructuredQuestions,
 } from "../../application/orchestration/structured-questions.ts";
+import {
+  createWorkflowQuestions,
+  type WorkflowQuestions,
+} from "../../application/orchestration/workflow-questions.ts";
 import { createCatalogRepositories } from "../../data/extensions/catalog-repositories.ts";
 import {
   beginRun,
@@ -55,7 +59,9 @@ import {
   createWorkQueueLocations,
   type WorkQueueLocations,
 } from "../../data/orchestration/work-queue-locations.ts";
+import { createWorkflowStore } from "../../data/orchestration/workflow-store.ts";
 import { runId } from "../../domain/foundation/index.ts";
+import type { WorkflowStore } from "../../domain/orchestration/workflow-state.ts";
 import {
   DEFAULT_BUSY_TIMEOUT_MS,
   isCleanClose,
@@ -79,6 +85,8 @@ import {
 import type { Services } from "./services.ts";
 
 export type ProductArtifactSession = {
+  readonly workflows: WorkflowStore;
+  readonly workflowQuestions: WorkflowQuestions | null;
   readonly workQueues: WorkQueueLocations;
   readonly peers: ProductPeerMailboxes;
   readonly artifacts: DurableArtifactStore;
@@ -308,6 +316,14 @@ export async function openProductArtifactSession(
     return clean;
   }
   const session: ProductArtifactSession = {
+    workflows: createWorkflowStore(store),
+    workflowQuestions: questions
+      ? createWorkflowQuestions(questions, {
+          actorId: "local-user",
+          channel: "headless-user",
+          bindingId: "workflow",
+        })
+      : null,
     workQueues,
     async rehydrateExtensions(signal, session) {
       if (closed) return { status: "failed", code: "catalog-host-closed" };

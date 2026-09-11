@@ -189,7 +189,11 @@ export function createWorkspaceInventory(options: {
               }),
               bytes: read.value.length,
               activation:
-                family === "settings" && rootIndex === 0 ? "configuration" : "unavailable",
+                family === "settings" && rootIndex === 0
+                  ? "configuration"
+                  : family === "workflows" && rootIndex === 0
+                    ? "definition"
+                    : "unavailable",
             });
           }
           const after = await fs.stat(path.value, stop);
@@ -211,6 +215,7 @@ export function createWorkspaceInventory(options: {
         await visit(".falryn/hooks.json", "hooks", 0, "file");
         await visit(".agents/skills", "skills", 0, "directory");
         await visit(".falryn/skills", "skills", 0, "directory");
+        await visit(".falryn/workflows", "workflows", 0, "directory");
       }
       check();
       loaders.sort((a, b) => a.source.localeCompare(b.source));

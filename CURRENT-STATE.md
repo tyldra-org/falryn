@@ -920,8 +920,8 @@ commit work stays on the captured main model. Fast has independent research,
 documents, background-results, memory, compaction and vision-media options.
 Subagents has Default and Small/Medium/Big presets; Workflows has its own Default.
 Neither inherits Fast. The agent catalog supplies six built-ins and configured
-user definitions to Advanced. Workflow definitions remain unattached, and
-retained missing entries stay inspectable. The shared resolver accepts
+user definitions to Advanced. Validated global and reviewed project workflow files
+supply workflow and stable-step entries; retained missing entries stay inspectable. The shared resolver accepts
 owner-supplied definitions, stable node keys, and revision metadata, distinguishes
 model nodes from agent nodes, and gives deterministic nodes no model.
 
@@ -967,8 +967,8 @@ thinking and cannot implicitly reuse an unsupported primary-model control.
 The current disclosure path uses that task-aware opportunity plan to select a
 bounded profile-eligible subset from the shared registry, resolves exact
 executable schemas through `ToolRegistry`, and records selected, fallback,
-rejected, omitted, unavailable, and non-executable facts. Automatic skill and
-workflow loading, MCP/plugin execution, and scheduled background work still
+rejected, omitted, unavailable, and non-executable facts. Automatic skill loading,
+MCP/plugin execution, and scheduled background work still
 belong to their dedicated runtimes; #193 exposes
 the deterministic opportunity and truthful availability without claiming those
 sibling executors.
@@ -1289,8 +1289,107 @@ Failed run finalization, checkpoint, or store closure makes shutdown uncertain.
 Explicit interruption cancels owned work. Linux/macOS support captured task
 ownership; Windows background launch fails closed before spawn. There is no
 daemon, automatic relaunch, or post-crash survival guarantee. Shared task UI,
-direct task CLI controls, PTY, and workflows remain separate. Delegated agents
-use this same durable attachment and settlement owner without a child OS process.
+direct task CLI controls, and PTY remain separate. Delegated agents and workflow
+runs use this durable attachment and settlement owner without a child OS process.
+
+
+## Typed workflows
+
+`workflow` is a built-in tool in the normal headless and interactive coding
+runtime. `validate` and `preview` inspect a version-1 JSON definition without
+starting work. `execute` requires a run handle, the definition, and arguments;
+`inspect`, `result`, `pause`, `resume`, `cancel`, and `list` use the same application
+action owner. Broad workflow dashboards and slash authoring are separate UI
+integrations. Automatic opportunity discovery never launches a graph.
+
+Definitions support native actions, model steps, registered agents, structured
+questions, typed conditions, and joins. Input references select literals,
+arguments, exact prerequisite results, or a mapped item. `resultPath` selects an
+own-property path from a native result before its declared schema is checked.
+There is no expression evaluator. A definition has at most 256 nodes and 1,024
+edges, with up to four concurrent nodes; the inherited task and subdivision
+ceilings can narrow execution further. Results are limited to 64 KiB each,
+definitions to 1 MiB, and checkpoints to 4 MiB.
+
+A minimal definition for reading a native file size is:
+
+```json
+{
+  "version": 1,
+  "id": "user/global/workflows:file-size",
+  "label": "File size",
+  "argumentsSchema": {
+    "type": "object",
+    "properties": { "path": { "type": "string" } },
+    "required": ["path"],
+    "additionalProperties": false
+  },
+  "nodes": [{
+    "key": "stat",
+    "kind": "action",
+    "capability": "builtin:workspace/stat_path@1",
+    "effect": "observation",
+    "input": { "path": { "from": "arguments", "path": ["path"] } },
+    "resultPath": ["byteLength"],
+    "resultSchema": { "type": "number" }
+  }],
+  "outputs": { "bytes": { "from": "node", "node": "stat" } }
+}
+```
+
+Save definitions through the ordinary file-editing owner at
+`<configuration-root>/workflows/<id>/workflow.jsonc` or
+`<workspace>/.falryn/workflows/<id>/workflow.jsonc`. The file's qualified identity
+must be `user/global/workflows:<id>` or `user/project/workflows:<id>` respectively.
+Project bytes must match the reviewed workspace inventory; symlink escapes and
+stale files fail closed. JSONC loading is inert and supplies the shared model
+settings catalog. Saving or changing a file does not run it or change an admitted
+snapshot. The direct action accepts the decoded definition; the model tool
+encodes it in `definitionJson`, arguments in `argumentsJson`, and an explicit
+handle such as `{"id":"file-size-run","generation":"one"}`. A later explicit
+run uses a new handle generation. Run and targeted step model overrides use
+`modelJson` and `stepsJson`; normal model-setting authority still applies.
+
+Workflow model steps use targeted, saved-step, node, run, saved-workflow,
+definition, Workflows, then main settings in order. Agent steps use their
+workflow step overrides before the ordinary agent/Subagents resolver.
+Admission freezes the selected routes and provider destinations. Deterministic
+steps make no provider request; model steps have no tools, while agents retain
+the normal delegated runtime and narrowed capabilities.
+
+Migration 0022 commits immutable graph, input, authority, route and budget facts
+with revisioned checkpoints and metadata-only `workflow.changed` events. Exact
+results stay in the existing sensitive artifact store. Each native operation
+re-enters the shared gateway; normal input validation, confirmation, hooks,
+conflicts and preimages still apply. Workflow question nodes use the existing
+question owner without treating an answer as permission for a later effect.
+Headless missing-presenter requests return durable waiting receipts. Restart
+requires the original host question capability to reconnect and answer.
+
+Mapped nodes expand only from sealed source items with unique stable keys.
+Each item's pipeline can advance independently; explicit joins wait for their
+declared prerequisites. Required failures stop later admissions unless the node
+declares continuation. Failed, skipped and uncertain nodes remain visible.
+Pause stops new work while admitted operations settle. Cancellation does not
+invent rollback. Safe observation retries are opt-in, at most two, and consume
+the original budget. Unknown in-flight effects require owner fencing and are
+never automatically replayed. New-generation reuse checks fingerprints, source
+and route generations, retained artifact integrity, schemas, and current native
+authority; failed reuse cannot repeat a completed mutation.
+
+The task-list adapter builds an immutable selected graph and uses existing
+work-item claims and evidence submission. `autoCascade` defaults to false.
+With explicit cascade admission, accepted prerequisite evidence unlocks later
+registered-agent nodes through this scheduler. An agent response alone leaves
+its item waiting for native criteria validation. The task-list UI and automatic
+consumer composition remain separate; configuration alone starts nothing.
+
+Integration tests observe two provider requests for parent authoring/final
+response around a native list→stat graph, and four for a graph adding one model
+and one registered-agent step. Native transfers add no relay model request.
+Receipts distinguish reserved budget consumption from reported measurements;
+missing token or commercial-cost measurements remain unknown. These request
+counts are fixture evidence, not a claimed wall-time or monetary saving.
 
 ## Structured questions
 
@@ -1299,8 +1398,9 @@ creates, publishes, inspects, answers, refuses, cancels, resumes, and cleans up
 version-1 requests. Single-select, multi-select, UTF-8-bounded text, and review
 items share one generation-bound contract. Presenter and owner capabilities are
 separate opaque tokens; only their hashes enter storage. The caller must retain
-these capabilities to reconnect after restart. No question CLI command, model
-tool, presenter, workflow, or goal adapter is exposed by this slice.
+these capabilities to reconnect after restart. Workflow question nodes use this
+service and retain only request/settlement references. A standalone question CLI,
+model answer tool, general presenter, and goal adapter remain separate.
 
 Migration 0015 journals bounded question revisions alongside the existing task
 owner. Publication requires a committed owner; terminal question state, its task
@@ -1499,7 +1599,7 @@ cannot bypass the delegation owner's agent mutation controls.
 
 Restart restores sealed evidence and join receipts. It does not reconstruct a
 live parent executor or grant a new turn the authority of an old parent.
-Workflow execution and broad task dashboards remain separate integrations.
+Workflow execution uses these shared owners; broad task dashboards remain a separate integration.
 
 Custom definitions are inert configuration under `agents.definitions` in user
 or profile scope. [The complete example](examples/agent-definitions.json) registers
@@ -1602,9 +1702,9 @@ Image, PDF, and notebook readers exist in the application source but are not
 registered in the product tool bundle, and live provider adapters accept text
 only; their document/media owners remain GitHub issues #183–#188.
 
-Apart from captured process tasks, delegated agents, and the host-only question
-service above, no workflow, schedule, goal/loop, work-item, or cross-session
-mailbox runner is product-composed. Opportunity records do not automatically
+Apart from the captured process, delegated agent, workflow, and host-only question
+paths described above, no schedule, goal/loop, or automatic work-item runner
+is product-composed. Opportunity records do not automatically
 launch those runtimes. Their existing owners include GitHub issues #155–#162,
 #284, #797, and #897. Extensions, MCP servers, package contributions, skills,
 prompts, and external hosts likewise remain registry contracts or planned

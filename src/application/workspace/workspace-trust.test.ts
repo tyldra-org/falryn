@@ -166,3 +166,16 @@ test("unreadable declarations and expired inventory deadlines fail closed", asyn
   });
   expect(await unreadable.inspect()).toMatchObject({ error: { code: "inventory-unreadable" } });
 });
+
+test("workflow inventory joins the reviewed loader families without granting execution", async () => {
+  const { fs, trust } = fixture();
+  fs.put("/work/.falryn/workflows", { kind: "directory" });
+  fs.put("/work/.falryn/workflows/check", { kind: "directory" });
+  fs.put("/work/.falryn/workflows/check/workflow.jsonc", { kind: "file", text: "{}" });
+  const reviewed = await trust.resolve(async () => "proceed");
+  expect(reviewed.status).toBe("accepted");
+  expect(new Set(reviewed.inventory?.loaders.map((loader) => loader.family)).size).toBe(6);
+  expect(
+    reviewed.inventory?.loaders.find((loader) => loader.family === "workflows")?.activation,
+  ).toBe("definition");
+});

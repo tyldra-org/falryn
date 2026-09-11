@@ -381,6 +381,15 @@ export function composeProductProcessTools(ports: ProductProcessToolPorts): Prod
         outputMode,
       );
       if (!observed.ok) return { capture: null, outcome: failed(errorCode(observed.error)) };
+      if (ownership === undefined) {
+        const capture = observed.value.capture;
+        // Capture owns process liveness. A later output-retention failure must not
+        // keep occupancy reserved for a process whose exit was confirmed.
+        request.processTask?.reportTermination?.(
+          capture.killStage !== "unconfirmed" &&
+            !(capture.stop.kind === "uncertain" && capture.stop.reason === "unconfirmed-exit"),
+        );
+      }
       const outcome = await projectProductProcessOutput({
         observation: observed.value,
         invocationId: request.invocationId,

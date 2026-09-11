@@ -323,6 +323,20 @@ export function everyEventKind(): readonly RuntimeEvent[] {
         items: [],
       },
     },
+    {
+      ...spine({ eventId: "event-workflow-13", sequence: 13, idempotencyKey: "key-workflow-13" }),
+      kind: "workflow.changed",
+      correlation: FIXTURE_SESSION_CORRELATION,
+      payload: {
+        version: 1,
+        handle: { id: "workflow-fixture", generation: "generation-1" },
+        revision: 1,
+        digest: `sha256:${"a".repeat(64)}`,
+        definitionDigest: `sha256:${"b".repeat(64)}`,
+        state: "admitted",
+        at: 1,
+      },
+    },
   ];
 }
 

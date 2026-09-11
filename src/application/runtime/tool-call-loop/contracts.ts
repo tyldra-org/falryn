@@ -45,6 +45,11 @@ export const DEFAULT_TOOL_CALL_LOOP_LIMITS: ToolCallLoopLimits = {
  * signal — never provider clients, UI state, or unrestricted host access.
  */
 export type ToolRunnerRequest = {
+  /** Native orchestration only: every downstream call re-enters this same gateway. */
+  readonly invokeCapability?: (
+    request: ToolRunnerRequest,
+    resources: ProductTaskResources,
+  ) => Promise<ToolInvocationOutcome>;
   /** Captured by the live attempt, never decoded from model arguments. */
   readonly delegation?: {
     readonly route: import("../../../providers/configuration/policy.ts").RoleRoute;

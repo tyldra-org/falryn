@@ -718,6 +718,12 @@ export async function runCoding(
       },
       {
         tasks: productArtifactSession.tasks,
+        ...(options.toolExposureOverride === "none"
+          ? {}
+          : { workflows: productArtifactSession.workflows }),
+        ...(productArtifactSession.workflowQuestions
+          ? { workflowQuestions: productArtifactSession.workflowQuestions }
+          : {}),
         joins: productArtifactSession.joins,
         peers: productArtifactSession.peers,
         artifacts: options.artifacts ?? productArtifactSession.artifacts,

@@ -512,6 +512,10 @@ async function launchShell(
                   : { reason: `agent-provider-${resolved.code}` };
               },
               agentRegistry: agentRegistryFrom(configuration),
+              workflows: productArtifactSession.workflows,
+              ...(productArtifactSession.workflowQuestions
+                ? { workflowQuestions: productArtifactSession.workflowQuestions }
+                : {}),
               modelConfigurationGeneration: () =>
                 graph.loader.current()?.generation ?? configurationGeneration,
               modelPreferences: () =>
