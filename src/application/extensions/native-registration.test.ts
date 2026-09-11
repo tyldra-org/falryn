@@ -245,3 +245,29 @@ test("native dependencies cannot bind a disabled sibling through another scope",
   ).toMatchObject({ availability: "available" });
   expect(published.tools.registry.entries).toHaveLength(2);
 });
+
+test("missing runners and forged families cannot replace a complete publication", async () => {
+  const { owner, input } = await fixture();
+  let fault: "missing" | "unbound" | "family" | null = null;
+  const adapter: NativeRegistrationOwner = {
+    ...owner,
+    register(context) {
+      const value = owner.register(context);
+      if (value.status !== "registered" || !fault) return value;
+      if (fault === "missing") return { status: "registered", binding: value.binding };
+      if (fault === "family") return { ...value, binding: { ...value.binding, family: "search" } };
+      if (!value.tool) throw new Error("tool fixture");
+      return {
+        ...value,
+        tool: { ...value.tool, runner: { ...value.tool.runner, hasBinding: () => false } },
+      };
+    },
+  };
+  const publisher = createNativeRegistrationPublisher([adapter]);
+  const prior = publisher.publish(input);
+  for (const kind of ["missing", "unbound", "family"] as const) {
+    fault = kind;
+    expect(() => publisher.publish(input)).toThrow();
+    expect(publisher.current()).toBe(prior);
+  }
+});
